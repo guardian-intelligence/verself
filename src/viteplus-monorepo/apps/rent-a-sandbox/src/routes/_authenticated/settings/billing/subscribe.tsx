@@ -1,8 +1,17 @@
 import { useMemo } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Badge } from "@forge-metal/ui/components/ui/badge";
 import { Button } from "@forge-metal/ui/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@forge-metal/ui/components/ui/card";
+import {
+  PageEyebrow,
+  PageSection,
+  PageSections,
+  SectionDescription,
+  SectionHeader,
+  SectionHeaderContent,
+  SectionTitle,
+} from "@forge-metal/ui/components/ui/page";
 import { ErrorCallout } from "~/components/error-callout";
 import { usePlanCardActionMutation } from "~/features/billing/mutations";
 import { loadSubscribePage } from "~/features/billing/queries";
@@ -34,40 +43,49 @@ function SubscribePage() {
   const cards = useMemo(() => deriveAllPlanCards(account, plans), [account, plans]);
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-1">
-        <h2 className="text-lg font-semibold">Choose a plan</h2>
-        <p className="text-sm text-muted-foreground">
-          Create a contract to get monthly bucketed allowances for sandbox usage.
-        </p>
-      </div>
+    <PageSections>
+      <PageSection>
+        <PageEyebrow>
+          <Link to="/settings/billing" className="hover:text-foreground">
+            ← Back to billing
+          </Link>
+        </PageEyebrow>
+        <SectionHeader>
+          <SectionHeaderContent>
+            <SectionTitle>Choose a plan</SectionTitle>
+            <SectionDescription>
+              Create a contract to get monthly bucketed allowances for sandbox usage.
+            </SectionDescription>
+          </SectionHeaderContent>
+        </SectionHeader>
 
-      {plans.length > 0 ? (
-        <div className="grid gap-4 md:grid-cols-3">
-          {cards.map((card) => {
-            const intent = intentFor(card, account);
-            return (
-              <PlanCardView
-                key={card.plan.plan_id}
-                account={account}
-                card={card}
-                intent={intent}
-                isPending={mutation.isPending}
-                onClick={() => mutation.mutate({ intent, plan: card.plan })}
-              />
-            );
-          })}
-        </div>
-      ) : (
-        <div className="rounded-md border bg-card p-6 text-sm text-muted-foreground">
-          No contract plans are currently available.
-        </div>
-      )}
+        {plans.length > 0 ? (
+          <div className="grid gap-4 md:grid-cols-3">
+            {cards.map((card) => {
+              const intent = intentFor(card, account);
+              return (
+                <PlanCardView
+                  key={card.plan.plan_id}
+                  account={account}
+                  card={card}
+                  intent={intent}
+                  isPending={mutation.isPending}
+                  onClick={() => mutation.mutate({ intent, plan: card.plan })}
+                />
+              );
+            })}
+          </div>
+        ) : (
+          <div className="rounded-md border bg-card p-6 text-sm text-muted-foreground">
+            No contract plans are currently available.
+          </div>
+        )}
 
-      {mutation.error ? (
-        <ErrorCallout error={mutation.error} title="Contract checkout failed" />
-      ) : null}
-    </div>
+        {mutation.error ? (
+          <ErrorCallout error={mutation.error} title="Contract checkout failed" />
+        ) : null}
+      </PageSection>
+    </PageSections>
   );
 }
 

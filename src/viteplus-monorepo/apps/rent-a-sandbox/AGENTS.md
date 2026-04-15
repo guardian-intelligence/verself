@@ -112,3 +112,7 @@ here. Bucket-level analytics belong in Grafana, not the customer UI.
 ## ShadCN/ui
 
 Use the /shadcn skill (if you're Claude) when working in this repo. All components are installed. Blocks are not installed.
+
+## Base UI
+
+This repo uses Shadcn with Base UI, which is extremely new. Please look up docs at https://base-ui.com/react/handbook/styling

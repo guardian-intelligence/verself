@@ -1,14 +1,16 @@
+import { Settings, Terminal, type LucideIcon } from "lucide-react";
+
 // Single source of truth for everything the app shell advertises.
 // Keep the shell UI, the command palette, and any programmatic route
 // gating (e.g. "is this route a settings subpage") keyed on this manifest
 // instead of fanning out hard-coded arrays across files.
 
-export type ProductNavEntry = {
+export type NavEntry = {
   readonly id: string;
   readonly label: string;
   readonly to: string;
   readonly matchPrefix: string;
-  readonly shortcutHint: string;
+  readonly icon: LucideIcon;
 };
 
 export type SettingsNavEntry = {
@@ -18,22 +20,34 @@ export type SettingsNavEntry = {
   readonly matchPrefix: string;
 };
 
-// Products live in the sidebar. Today there is exactly one; new product
-// surfaces (Workloads, Long-lived VMs, Observability) slot in here when
-// they land without touching the shell layout.
-export const PRODUCT_NAV: readonly ProductNavEntry[] = [
+// Product surfaces live at the top of the sidebar. Today there is exactly
+// one; new products (Workloads, Long-lived VMs, Observability) slot in
+// here without touching the shell layout.
+export const PRIMARY_NAV: readonly NavEntry[] = [
   {
     id: "executions",
     label: "Executions",
     to: "/executions",
     matchPrefix: "/executions",
-    shortcutHint: "G E",
+    icon: Terminal,
   },
 ] as const;
 
-// Settings subpages. The settings route is a separate route layout that
-// renders this list as a horizontal tab strip on desktop and a select on
-// mobile. Order here is the display order.
+// Evergreen (non-product) rail entries anchored to the bottom of the
+// sidebar above the account row. Currently just Settings; add future
+// entries like Support or Status here.
+export const EVERGREEN_NAV: readonly NavEntry[] = [
+  {
+    id: "settings",
+    label: "Settings",
+    to: "/settings",
+    matchPrefix: "/settings",
+    icon: Settings,
+  },
+] as const;
+
+// Settings subpages. Rendered as the internal left-nav of the settings
+// subtree, not as sidebar rows.
 export const SETTINGS_NAV: readonly SettingsNavEntry[] = [
   {
     id: "billing",

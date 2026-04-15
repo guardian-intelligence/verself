@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { useClerk } from "@forge-metal/auth-web/react";
 import { cn } from "@forge-metal/ui/lib/utils";
-import { PRODUCT_NAV, SETTINGS_NAV } from "./nav-config";
+import { PRIMARY_NAV, SETTINGS_NAV } from "./nav-config";
 
 // Hand-rolled command palette. We deliberately avoid cmdk + Radix Dialog:
 // cmdk transitively depends on @radix-ui/react-dialog, which pulls in the
@@ -26,7 +26,7 @@ type CommandEntry = {
 };
 
 function buildEntries(): readonly CommandEntry[] {
-  const navEntries: CommandEntry[] = PRODUCT_NAV.map((product) => ({
+  const navEntries: CommandEntry[] = PRIMARY_NAV.map((product) => ({
     id: `nav:${product.id}`,
     section: "Navigation",
     label: `Go to ${product.label}`,

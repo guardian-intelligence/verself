@@ -1,17 +1,22 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useMemo } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { Check, Rocket, Sparkles } from "lucide-react";
 import { Button } from "@forge-metal/ui/components/ui/button";
+import {
+  PageSection,
+  PageSections,
+  SectionDescription,
+  SectionHeader,
+  SectionHeaderContent,
+  SectionTitle,
+} from "@forge-metal/ui/components/ui/page";
 import { ErrorCallout } from "~/components/error-callout";
-import { TableEmptyRow } from "~/components/table-empty-row";
-import { BillingFlashNotice, ContractStatusPill } from "~/features/billing/components";
+import { BillingFlashNotice } from "~/features/billing/components";
 import { EntitlementsPanel } from "~/features/billing/entitlements";
 import { parseFlashSearch, projectFlashIntent } from "~/features/billing/flash";
-import {
-  useCancelContractMutation,
-  useCreatePortalSessionMutation,
-} from "~/features/billing/mutations";
+import { useCreatePortalSessionMutation } from "~/features/billing/mutations";
 import { loadBillingPage } from "~/features/billing/queries";
-import type { CreditsProductState } from "~/features/billing/state";
+import type { BillingAccount, CreditsProductState } from "~/features/billing/state";
 import { useBillingAccountWithStatement } from "~/features/billing/use-billing-account";
 import {
   formatDateTimeMillisUTC,
@@ -21,7 +26,7 @@ import {
   formatLedgerAmountPrecise,
   formatLedgerRate,
 } from "~/lib/format";
-import type { EntitlementSourceTotal, Statement } from "~/lib/sandbox-rental-api";
+import type { BillingPlan, EntitlementSourceTotal, Statement } from "~/lib/sandbox-rental-api";
 
 type StatementLineItem = Statement["line_items"][number];
 type LineItemDrainKey =
@@ -67,151 +72,153 @@ function BillingPage() {
     initialEntitlements: initial.entitlements,
     initialStatement: initial.statement,
   });
-  const [cancelTarget, setCancelTarget] = useState<string | null>(null);
   const portalMutation = useCreatePortalSessionMutation();
-  const cancelMutation = useCancelContractMutation();
 
-  const contractRows = snapshot.contracts.contracts ?? [];
   const statement = snapshot.statement;
   const sandboxCredits = account.credits.byProduct.get(SANDBOX_PRODUCT_ID);
+  const hasContract = account.kind !== "no_contract";
 
   return (
-    <div className="space-y-8">
-      {/* The settings shell already renders "Settings" + the "Billing"
-          section label, so the page starts straight into actions. */}
-      <div className="flex flex-wrap gap-3">
-        {contractRows.length > 0 ? (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => portalMutation.mutate()}
-            disabled={portalMutation.isPending}
-          >
-            {portalMutation.isPending ? "Opening…" : "Manage billing"}
+    <PageSections>
+      <PageSection>
+        <PlanHero account={account} />
+        <div className="flex flex-wrap gap-2">
+          {hasContract ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => portalMutation.mutate()}
+              disabled={portalMutation.isPending}
+            >
+              {portalMutation.isPending ? "Opening…" : "Manage billing"}
+            </Button>
+          ) : null}
+          <Button variant="default" render={<Link to="/settings/billing/credits" />}>
+            Buy credits
           </Button>
+        </div>
+        <BillingFlashNotice intent={flashIntent} />
+        {portalMutation.error ? (
+          <ErrorCallout error={portalMutation.error} title="Billing portal failed" />
         ) : null}
-        <Button variant="outline" render={<Link to="/settings/billing/subscribe" />}>
-          Choose plan
-        </Button>
-        <Button variant="default" render={<Link to="/settings/billing/credits" />}>
-          Buy credits
-        </Button>
-      </div>
+      </PageSection>
 
-      <BillingFlashNotice intent={flashIntent} />
-
-      {portalMutation.error ? (
-        <ErrorCallout error={portalMutation.error} title="Billing portal failed" />
-      ) : null}
-
-      {cancelMutation.error ? (
-        <ErrorCallout error={cancelMutation.error} title="Contract cancellation failed" />
-      ) : null}
-
-      <EntitlementsPanel view={snapshot.entitlements} />
+      <PageSection>
+        <EntitlementsPanel view={snapshot.entitlements} />
+      </PageSection>
 
       {statement ? (
-        <StatementPreview statement={statement} sandboxCredits={sandboxCredits} />
+        <PageSection>
+          <StatementPreview statement={statement} sandboxCredits={sandboxCredits} />
+        </PageSection>
       ) : null}
+    </PageSections>
+  );
+}
 
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold">Contracts</h2>
-        <div className="overflow-hidden rounded-md border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50">
-              <tr>
-                <th className="px-4 py-2 text-left font-medium">Plan</th>
-                <th className="px-4 py-2 text-left font-medium">Status</th>
-                <th className="px-4 py-2 text-left font-medium">Payment</th>
-                <th className="px-4 py-2 text-left font-medium">Entitlement</th>
-                <th className="px-4 py-2 text-left font-medium">Cadence</th>
-                <th className="px-4 py-2 text-left font-medium">Period end</th>
-                <th className="px-4 py-2 text-right font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {contractRows.length > 0 ? (
-                contractRows.map((contract) => {
-                  const canCancel =
-                    contract.status === "active" &&
-                    contract.entitlement_state !== "closed" &&
-                    contract.entitlement_state !== "voided";
-                  const isCancelTarget = cancelTarget === contract.contract_id;
-
-                  return (
-                    <tr
-                      key={contract.contract_id}
-                      data-testid={`contract-row-${contract.contract_id}`}
-                    >
-                      <td className="px-4 py-2 font-medium">{contract.plan_id}</td>
-                      <td className="px-4 py-2">
-                        <ContractStatusPill status={contract.status} />
-                      </td>
-                      <td className="px-4 py-2">{contract.payment_state}</td>
-                      <td className="px-4 py-2">{contract.entitlement_state}</td>
-                      <td className="px-4 py-2">{contract.cadence_kind}</td>
-                      <td className="px-4 py-2 text-muted-foreground">
-                        {contract.ends_at ? formatDateUTC(contract.ends_at) : "--"}
-                      </td>
-                      <td className="px-4 py-2 text-right">
-                        {canCancel ? (
-                          isCancelTarget ? (
-                            <div className="flex justify-end gap-2">
-                              <Button
-                                type="button"
-                                variant="destructive"
-                                size="sm"
-                                onClick={() => {
-                                  cancelMutation.mutate(contract.contract_id, {
-                                    onSuccess: () => setCancelTarget(null),
-                                  });
-                                }}
-                                disabled={cancelMutation.isPending}
-                              >
-                                {cancelMutation.isPending ? "Canceling…" : "Confirm"}
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setCancelTarget(null)}
-                                disabled={cancelMutation.isPending}
-                              >
-                                Keep
-                              </Button>
-                            </div>
-                          ) : (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              data-testid={`cancel-contract-${contract.contract_id}`}
-                              onClick={() => setCancelTarget(contract.contract_id)}
-                              disabled={cancelMutation.isPending}
-                            >
-                              Cancel
-                            </Button>
-                          )
-                        ) : (
-                          <span className="text-muted-foreground">--</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })
-              ) : (
-                <TableEmptyRow
-                  colSpan={7}
-                  title="No active contracts"
-                  description="Choose a plan to start receiving bucketed usage credits."
-                />
-              )}
-            </tbody>
-          </table>
+// PlanHero is the top-of-page summary block. Paid plans render as
+// "<plan> plan / price / auto-renew line" with an outline "Adjust plan"
+// action; free accounts render a short feature checklist with a filled
+// "Upgrade plan" action. Everything keys off BillingAccount discriminants
+// so the three paid kinds (active / pending_downgrade / pending_cancel)
+// render their own renewal line without branching at the call site.
+function PlanHero({ account }: { account: BillingAccount }) {
+  if (account.kind === "no_contract") {
+    return (
+      <section
+        className="flex items-start gap-4 rounded-lg border p-5"
+        data-testid="plan-hero"
+        data-account-kind="no_contract"
+      >
+        <PlanIcon variant="free" />
+        <div className="min-w-0 flex-1 space-y-3">
+          <div className="space-y-0.5">
+            <h3 className="text-base font-semibold">Free plan</h3>
+            <p className="text-sm text-muted-foreground">Try Rent-a-Sandbox</p>
+          </div>
+          <ul className="space-y-1.5 text-sm text-muted-foreground">
+            <FreeFeature>Run isolated Firecracker sandboxes on bare metal</FreeFeature>
+            <FreeFeature>Pay-as-you-go vCPU, memory, and disk metering</FreeFeature>
+            <FreeFeature>Upgrade for monthly credit grants and priority lanes</FreeFeature>
+          </ul>
         </div>
+        <Button data-testid="plan-hero-cta" render={<Link to="/settings/billing/subscribe" />}>
+          Upgrade plan
+        </Button>
       </section>
+    );
+  }
+
+  return (
+    <section
+      className="flex items-start gap-4 rounded-lg border p-5"
+      data-testid="plan-hero"
+      data-account-kind={account.kind}
+      data-plan-id={account.plan.plan_id}
+    >
+      <PlanIcon variant="paid" />
+      <div className="min-w-0 flex-1 space-y-1">
+        <h3 className="text-base font-semibold">{account.plan.display_name} plan</h3>
+        <p className="text-sm text-muted-foreground">
+          {formatMonthlyPrice(account.plan.monthly_amount_cents)}
+        </p>
+        <p className="text-sm text-muted-foreground" data-testid="plan-hero-renewal">
+          {renewalLineFor(account)}
+        </p>
+      </div>
+      <Button
+        variant="outline"
+        data-testid="plan-hero-cta"
+        render={<Link to="/settings/billing/subscribe" />}
+      >
+        Adjust plan
+      </Button>
+    </section>
+  );
+}
+
+function PlanIcon({ variant }: { variant: "free" | "paid" }) {
+  const Icon = variant === "free" ? Sparkles : Rocket;
+  return (
+    <div className="flex size-10 shrink-0 items-center justify-center rounded-full border">
+      <Icon className="size-5" />
     </div>
   );
+}
+
+function FreeFeature({ children }: { children: React.ReactNode }) {
+  return (
+    <li className="flex items-start gap-2">
+      <Check className="size-4 shrink-0 translate-y-0.5" />
+      <span>{children}</span>
+    </li>
+  );
+}
+
+function renewalLineFor(
+  account: Exclude<BillingAccount, { kind: "no_contract" }>,
+): string {
+  switch (account.kind) {
+    case "active": {
+      const renews = account.contract.phase_end;
+      return renews
+        ? `Your subscription will auto-renew on ${formatDateUTC(renews)}.`
+        : "Your subscription will auto-renew at the end of this cycle.";
+    }
+    case "pending_downgrade":
+      return account.effectiveAt
+        ? `Downgrades to ${account.target.display_name} on ${formatDateUTC(account.effectiveAt.toISOString())}.`
+        : `Downgrades to ${account.target.display_name} at the end of this cycle.`;
+    case "pending_cancel":
+      return account.effectiveAt
+        ? `Cancels on ${formatDateUTC(account.effectiveAt.toISOString())}.`
+        : "Cancels at the end of this cycle.";
+  }
+}
+
+function formatMonthlyPrice(cents: BillingPlan["monthly_amount_cents"]): string {
+  if (!Number.isFinite(cents)) return "Custom pricing";
+  return `$${(cents / 100).toFixed(2)} / month`;
 }
 
 function StatementPreview({
@@ -225,19 +232,21 @@ function StatementPreview({
   const grandTotal = statement.totals.total_due_units;
 
   return (
-    <section className="space-y-3" data-testid="statement-usage">
-      <div className="space-y-1">
-        <h2 className="text-sm font-semibold">Usage</h2>
-        <p className="text-xs text-muted-foreground">
-          Current cycle started {formatDateTimeMillisUTC(statement.period_start)}
-        </p>
-      </div>
+    <Fragment>
+      <SectionHeader>
+        <SectionHeaderContent>
+          <SectionTitle>Usage</SectionTitle>
+          <SectionDescription>
+            Current cycle started {formatDateTimeMillisUTC(statement.period_start)}
+          </SectionDescription>
+        </SectionHeaderContent>
+      </SectionHeader>
 
       {/* The statement body is the one part of the billing page where
           receipt-style monospaced numerics genuinely help — charges,
           drains, and the grand total line up across rows. Chrome
           around it (borders, heading) stays default shadcn. */}
-      <div className="overflow-hidden rounded-md border text-sm">
+      <div className="overflow-hidden rounded-md border text-sm" data-testid="statement-usage">
         <div className="flex items-baseline justify-between border-b bg-muted/50 px-4 py-2 text-xs font-medium">
           <span>SKU</span>
           <span>Usage</span>
@@ -272,7 +281,7 @@ function StatementPreview({
           </div>
         )}
       </div>
-    </section>
+    </Fragment>
   );
 }
 

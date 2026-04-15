@@ -1,5 +1,14 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Callout } from "~/components/callout";
+import {
+  Page,
+  PageDescription,
+  PageEyebrow,
+  PageHeader,
+  PageHeaderContent,
+  PageSection,
+  PageSections,
+  PageTitle,
+} from "@forge-metal/ui/components/ui/page";
 import { ExecutionSubmissionForm } from "~/features/executions/components";
 
 export const Route = createFileRoute("/_authenticated/executions/new")({
@@ -10,29 +19,33 @@ function NewExecutionPage() {
   const navigate = useNavigate();
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Link
-          to="/executions"
-          className="text-sm text-muted-foreground hover:text-foreground"
-        >
-          ← Back
-        </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">New execution</h1>
-      </div>
+    <Page variant="narrow">
+      <PageHeader>
+        <PageHeaderContent>
+          <PageEyebrow>
+            <Link to="/executions" className="hover:text-foreground">
+              ← Executions
+            </Link>
+          </PageEyebrow>
+          <PageTitle>New execution</PageTitle>
+          <PageDescription>
+            Direct executions run the submitted command in a fresh VM.
+          </PageDescription>
+        </PageHeaderContent>
+      </PageHeader>
 
-      <Callout title="Manual execution">
-        Direct executions run the submitted command in a fresh VM.
-      </Callout>
-
-      <ExecutionSubmissionForm
-        onSuccess={(execution) => {
-          void navigate({
-            to: "/executions/$executionId",
-            params: { executionId: execution.execution_id },
-          });
-        }}
-      />
-    </div>
+      <PageSections>
+        <PageSection>
+          <ExecutionSubmissionForm
+            onSuccess={(execution) => {
+              void navigate({
+                to: "/executions/$executionId",
+                params: { executionId: execution.execution_id },
+              });
+            }}
+          />
+        </PageSection>
+      </PageSections>
+    </Page>
   );
 }

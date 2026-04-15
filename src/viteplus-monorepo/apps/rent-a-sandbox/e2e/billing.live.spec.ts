@@ -42,7 +42,10 @@ test.describe("Rent-a-Sandbox Billing", () => {
       await beginCreditCheckout(app, /^\$100\b/);
 
       await completeStripeCheckout(app);
-      await app.expectSSRHTML("/settings/billing?purchased=true", ["Credits purchased", "Account Balance"]);
+      await app.expectSSRHTML("/settings/billing?purchased=true", [
+        "Credits purchased",
+        "Account Balance",
+      ]);
 
       run.detail_url = "/settings/billing?purchased=true";
       const purchaseResult = await app.waitForCondition("purchased balance", 90_000, async () => {
@@ -288,6 +291,143 @@ test.describe("Rent-a-Sandbox Billing", () => {
     }
   });
 
+  test("paid-plan billing hero shows a real renewal date, not placeholder copy", async ({
+    app,
+  }) => {
+    const run = app.createRun();
+
+    try {
+      // Stage: CEO on Pro with no pending changes — steady-state between
+      // cycles, the shape every paying customer sees most of the time.
+      await app.setBillingUserState({
+        businessNow: contractFixtureNow(app),
+        state: "pro",
+      });
+
+      await app.ensureLoggedIn();
+      app.resetBrowserSignals();
+
+      await app.goto("/settings/billing");
+
+      const hero = app.page.getByTestId("plan-hero");
+      await expect(hero).toBeVisible();
+
+      // Why: data-account-kind is the machine-readable projection of the
+      // BillingAccount discriminant. If it drifts from the rendered copy,
+      // we have a split brain between deriveBillingAccount and the hero
+      // template — a class of bug that looks right locally and wrong in
+      // production. Catching it at the attribute level is cheap and exact.
+      await expect(hero).toHaveAttribute("data-account-kind", "active");
+      await expect(hero).toHaveAttribute("data-plan-id", "sandbox-pro");
+
+      // Why: a regression here covers three different classes of bug at
+      // once — BillingPlan.display_name dropped at the apiwire boundary,
+      // the "active" branch of deriveBillingAccount misrouting to
+      // no_contract, or the hero template flipping to the free variant
+      // for an account that holds a contract. All three would land a
+      // paying customer on the Free plan card.
+      await expect(hero.getByRole("heading", { name: "Pro plan" })).toBeVisible();
+
+      // Why: the monetary literal is hardcoded to the seed fixture so that
+      // edits to plan pricing fail here instead of silently shipping to
+      // customers. When this breaks, check marketing, subscribe page, and
+      // the Stripe product catalog in the same commit.
+      await expect(hero).toContainText("$20.00 / month");
+
+      // Why: this is the assertion that would have caught the bug we
+      // shipped today. If phase_end is NULL in contract_phases, or the
+      // apiwire boundary drops the field, or the parser fails to hydrate
+      // it, renewalLineFor() falls through to its placeholder branch
+      // ("at the end of this cycle"). The customer then reads a card
+      // that promises a renewal date and doesn't name one — worse than
+      // saying nothing. The regex enforces "a real date is present"
+      // without coupling the test to formatDateUTC's exact output.
+      const renewal = hero.getByTestId("plan-hero-renewal");
+      await expect(renewal).toHaveText(/Your subscription will auto-renew on \d{4}-\d{2}-\d{2}\./);
+
+      run.detail_url = "/settings/billing";
+      run.finished_balance = await app.readBalance();
+      run.status = "succeeded";
+      run.terminal_observed_at = new Date().toISOString();
+    } catch (error) {
+      run.status = "failed";
+      run.error = error instanceof Error ? error.message : String(error);
+      throw error;
+    } finally {
+      await app.persistRun(run);
+    }
+  });
+
+  test("pending-downgrade billing hero names the target plan and the effective date", async ({
+    app,
+  }) => {
+    const run = app.createRun();
+
+    try {
+      // Stage: CEO on Pro, then schedule a period-end downgrade to Hobby
+      // through the real subscribe page. Driving the live flow (not a
+      // fixture short-circuit) means a regression in the downgrade HANDLER
+      // also surfaces here, not just the render layer — we test the pipe
+      // end-to-end.
+      await app.setBillingUserState({
+        businessNow: contractFixtureNow(app),
+        state: "pro",
+      });
+
+      await app.ensureLoggedIn();
+      app.resetBrowserSignals();
+
+      await app.goto("/settings/billing/subscribe");
+      const redirect = await beginContractCheckout(app, hobbyPlan);
+      if (redirect === "checkout") {
+        throw new Error("period-end downgrade unexpectedly required Stripe checkout");
+      }
+
+      await app.goto("/settings/billing");
+
+      const hero = app.page.getByTestId("plan-hero");
+      await expect(hero).toBeVisible();
+
+      // Why: during the grace period before a scheduled downgrade applies,
+      // the customer still holds the CURRENT plan's entitlements. The hero
+      // must continue to advertise the current plan as the headline so the
+      // customer doesn't think their access changed the moment they
+      // scheduled. A regression that flipped this to the target plan would
+      // manufacture support tickets at the rate of one per downgrade.
+      await expect(hero.getByRole("heading", { name: "Pro plan" })).toBeVisible();
+      await expect(hero).toHaveAttribute("data-plan-id", "sandbox-pro");
+
+      // Why: the discriminant and the copy must agree. This assertion
+      // catches render bugs where the copy says "downgrades" but the
+      // state is still "active" — split brain between the state machine
+      // and the template is the ugliest billing-bug class to diagnose in
+      // production because it usually looks right when an engineer opens
+      // the page locally with a different fixture.
+      await expect(hero).toHaveAttribute("data-account-kind", "pending_downgrade");
+
+      // Why: the hero must name the target plan explicitly (so the
+      // customer knows what they're downgrading TO) and the effective
+      // date (so they know WHEN). A regression that dropped either
+      // leaves the customer with ambient anxiety about an impending
+      // change they can't see. The regex enforces both: target plan
+      // name and a real date shape, without coupling to formatDateUTC's
+      // exact output.
+      const renewal = hero.getByTestId("plan-hero-renewal");
+      await expect(renewal).toHaveText(/Downgrades to Hobby on \d{4}-\d{2}-\d{2}\./);
+
+      run.detail_url = "/settings/billing";
+      run.finished_balance = await app.readBalance();
+      run.status = "succeeded";
+      run.terminal_observed_at = new Date().toISOString();
+    } catch (error) {
+      run.status = "failed";
+      run.error = error instanceof Error ? error.message : String(error);
+      throw error;
+    } finally {
+      await app.persistRun(run);
+    }
+  });
+
   test("same-plan start resumes a scheduled downgrade without Stripe checkout", async ({ app }) => {
     const run = app.createRun();
 
@@ -449,7 +589,10 @@ async function activateContract(app: SandboxHarness, plan: ContractPlanSpec) {
   if (redirect === "checkout") {
     await completeStripeCheckout(app, { returnURLIncludes: "/settings/billing?contracted=true" });
   }
-  await app.expectSSRHTML("/settings/billing?contracted=true", ["Plan checkout complete", "Contracts"]);
+  await app.expectSSRHTML("/settings/billing?contracted=true", [
+    "Plan checkout complete",
+    "Contracts",
+  ]);
   await app.goto("/settings/billing?contracted=true");
 
   return await app.waitForCondition(`${plan.planID} contract activation`, 30_000, async () => {
