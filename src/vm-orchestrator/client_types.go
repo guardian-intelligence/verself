@@ -2,64 +2,58 @@ package vmorchestrator
 
 import "time"
 
-const (
-	DefaultSocketPath = "/run/vm-orchestrator/api.sock"
-)
+const DefaultSocketPath = "/run/vm-orchestrator/api.sock"
 
-type RunState int
-
-const (
-	RunStateUnspecified RunState = iota
-	RunStatePending
-	RunStateRunning
-	RunStateSucceeded
-	RunStateFailed
-	RunStateCanceled
-)
-
-func (s RunState) Terminal() bool {
-	switch s {
-	case RunStateSucceeded, RunStateFailed, RunStateCanceled:
-		return true
-	default:
-		return false
-	}
-}
-
-type HostRunSpec struct {
-	RunID              string
-	WorkloadKind       string
-	RunnerClass        string
-	RunCommand         []string
-	RunWorkDir         string
-	Env                map[string]string
-	WorkflowYAML       string
-	WorkflowEnv        map[string]string
-	WorkflowSecrets    map[string]string
-	WorkflowEventName  string
-	WorkflowInputs     map[string]string
-	GitHubJITConfig    string
-	BillablePhases     []string
-	CheckpointSaveRefs []string
-	AttemptID          string
-	SegmentID          string
-}
-
-type HostRunSnapshot struct {
-	RunID          string
-	State          RunState
-	Terminal       bool
+type LeaseRecord struct {
+	LeaseID        string
+	State          LeaseState
+	AcquiredAt     time.Time
+	ReadyAt        time.Time
+	ExpiresAt      time.Time
+	TerminalAt     time.Time
 	TerminalReason string
-	Result         *RunResult
-	UpdatedAt      time.Time
+	VMIP           string
+	RuntimeProfile string
+	TrustClass     string
 }
 
-type HostRunEvent struct {
+type ExecRecord struct {
+	LeaseID                string
+	ExecID                 string
+	State                  ExecState
+	ExitCode               int
+	TerminalReason         string
+	QueuedAt               time.Time
+	StartedAt              time.Time
+	FirstByteAt            time.Time
+	ExitedAt               time.Time
+	StdoutBytes            uint64
+	StderrBytes            uint64
+	DroppedLogBytes        uint64
+	Output                 string
+	Metrics                *VMMetrics
+	ZFSWritten             uint64
+	RootfsProvisionedBytes uint64
+}
+
+type LeaseEvent struct {
+	LeaseID   string
 	Seq       uint64
-	RunID     string
-	EventType string
+	Type      LeaseEventType
+	ExecID    string
 	Attrs     map[string]string
 	CreatedAt time.Time
+}
+
+type Capacity struct {
+	GuestPoolCIDR          string
+	RuntimeProfile         string
+	TotalSlots             uint32
+	LeasesHeld             uint32
+	LeasesAvailable        uint32
+	VCPUsPerVM             uint32
+	MemoryMiBPerVM         uint32
+	RootfsProvisionedBytes uint64
 }
 
 type CheckpointEvent struct {
@@ -69,6 +63,14 @@ type CheckpointEvent struct {
 	Accepted  bool
 	VersionID string
 	Error     string
+}
+
+type TelemetryEvent struct {
+	LeaseID        string
+	ReceivedAtUnix time.Time
+	Hello          *TelemetryHello
+	Sample         *TelemetrySample
+	Diagnostic     *TelemetryDiagnostic
 }
 
 type TelemetryHello struct {
@@ -115,22 +117,4 @@ type TelemetryDiagnostic struct {
 	ExpectedSeq    uint32
 	ObservedSeq    uint32
 	MissingSamples uint32
-}
-
-type TelemetryEvent struct {
-	RunID          string
-	ReceivedAtUnix time.Time
-	Hello          *TelemetryHello
-	Sample         *TelemetrySample
-	Diagnostic     *TelemetryDiagnostic
-}
-
-type Capacity struct {
-	GuestPoolCIDR          string
-	TotalSlots             uint32
-	ActiveRuns             uint32
-	AvailableSlots         uint32
-	VCPUsPerVM             uint32
-	MemoryMiBPerVM         uint32
-	RootfsProvisionedBytes uint64
 }

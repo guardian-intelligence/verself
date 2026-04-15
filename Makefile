@@ -2,8 +2,8 @@
        hooks-install doctor inventory-check setup-dev setup-sops provision deprovision deploy site guest-rootfs security-patch identity-reset seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member \
        set-user-state billing-clock billing-wall-clock billing-state billing-documents billing-finalizations billing-events billing-pg-shell billing-pg-query billing-proof billing-reset verification-reset \
        vm-guest-telemetry-build traces deploy-trace telemetry-proof telemetry-proof-fail clickhouse-shell clickhouse-query clickhouse-schemas pg-shell pg-query pg-list tb-shell tb-command mail mail-accounts mail-mailboxes \
-       mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords mail-observe edit-secrets verification-repo \
-       wipe-pg-db wipe-server vm-orchestrator-proof vm-orchestrator-proof-gap vm-orchestrator-proof-regression vm-orchestrator-proof-bridge-fault sandbox-inner sandbox-middle sandbox-proof rent-ui-smoke rent-ui-local rent-local-dev scheduler-proof verify-scheduler grafana-proof observability-smoke vm-guest-telemetry-dev services-doctor
+       mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords mail-observe edit-secrets \
+       wipe-pg-db wipe-server vm-orchestrator-proof sandbox-inner sandbox-middle sandbox-proof rent-ui-smoke rent-ui-local rent-local-dev scheduler-proof verify-scheduler grafana-proof observability-smoke services-doctor
 
 FM       := src/platform
 AW       := src/apiwire
@@ -212,25 +212,13 @@ wipe-pg-db: inventory-check ## Wipe one managed PostgreSQL service DB: make wipe
 	@test -n "$(DB)" || { echo "ERROR: DB is required (billing|sandbox_rental|mailbox_service|identity_service)"; exit 1; }
 	cd $(FM)/ansible && ansible-playbook playbooks/wipe-pg-db.yml -e "wipe_pg_db_name=$(DB)"
 
-verification-repo: inventory-check ## Ensure the public local Forgejo verification repo exists and is force-pushed from the fixture
-	cd $(FM) && ./scripts/ensure-verification-repo.sh
-
-vm-orchestrator-proof: inventory-check ## Live proof for vm-orchestrator via firecracker deploy + telemetry-dev VM rehearsal
+vm-orchestrator-proof: inventory-check ## Live proof for vm-orchestrator lease/exec spans through the public sandbox API
 	cd $(FM) && ./scripts/verify-vm-orchestrator-live.sh
-
-vm-orchestrator-proof-gap: inventory-check ## Live proof with deterministic telemetry gap fault injection
-	cd $(FM) && VM_ORCHESTRATOR_PROOF_SCENARIO=telemetry_gap ./scripts/verify-vm-orchestrator-live.sh
-
-vm-orchestrator-proof-regression: inventory-check ## Live proof with deterministic telemetry regression fault injection
-	cd $(FM) && VM_ORCHESTRATOR_PROOF_SCENARIO=telemetry_regression ./scripts/verify-vm-orchestrator-live.sh
-
-vm-orchestrator-proof-bridge-fault: inventory-check ## Live proof with deterministic vm-bridge result sequence violation
-	cd $(FM) && VM_ORCHESTRATOR_PROOF_SCENARIO=bridge_result_seq_zero ./scripts/verify-vm-orchestrator-live.sh
 
 sandbox-inner: inventory-check ## Inner loop: default starts local HMR; use SANDBOX_INNER_MODE=verify for local smoke evidence
 	cd $(FM) && ./scripts/sandbox-inner.sh
 
-sandbox-middle: inventory-check ## Middle loop: default deploys UI and runs admin smoke; use SANDBOX_DEPLOY_TARGET=ui|service|both|none SANDBOX_VERIFY_TARGET=admin|import|refresh|execute|billing|none SANDBOX_SEED_VERIFY=1
+sandbox-middle: inventory-check ## Middle loop: default deploys UI and runs admin smoke; use SANDBOX_DEPLOY_TARGET=ui|service|both|none SANDBOX_VERIFY_TARGET=admin|execute|billing|none SANDBOX_SEED_VERIFY=1
 	cd $(FM) && ./scripts/sandbox-middle.sh
 
 sandbox-proof: inventory-check ## Proof loop: full reset, redeploy, reseed, and live full-lifecycle sandbox verification
@@ -271,9 +259,6 @@ telemetry-proof-fail: inventory-check ## Run observability smoke fail-path and v
 
 observability-smoke: inventory-check ## Run the raw Ansible observability smoke playbook
 	cd $(FM)/ansible && ansible-playbook playbooks/observability-smoke.yml
-
-vm-guest-telemetry-dev: inventory-check ## Hot-swap vm-guest-telemetry and run the dev VM probe
-	cd $(FM)/ansible && ansible-playbook playbooks/vm-guest-telemetry-dev.yml
 
 clickhouse-shell: inventory-check ## Open an interactive clickhouse-client session on the worker
 	cd $(FM) && ./scripts/clickhouse.sh

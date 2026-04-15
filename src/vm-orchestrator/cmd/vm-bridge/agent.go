@@ -59,21 +59,10 @@ func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-cha
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	jobCtx, jobCancel := context.WithCancel(context.Background())
-	defer jobCancel()
-	session.jobCancel = jobCancel
-
 	controlCh := make(chan vmproto.Envelope, 8)
 	go session.writeLoop(ctx)
 	go session.readLoop(ctx, controlCh)
-
-	go func() {
-		select {
-		case <-sigCh:
-			session.jobCancel()
-		case <-ctx.Done():
-		}
-	}()
+	go session.heartbeatLoop(ctx)
 
 	bootToReady := readyAt.Sub(bootStart)
 	if err := session.sendControl(vmproto.TypeHello, vmproto.Hello{
@@ -81,22 +70,16 @@ func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-cha
 	}); err != nil {
 		return err
 	}
-	go session.heartbeatLoop(ctx)
 
-	runReq, err := session.waitForRunRequest(controlCh)
+	initReq, err := session.waitForLeaseInit(controlCh)
 	if err != nil {
 		return session.fail(err)
 	}
-	if err := session.applyNetwork(runReq.Network); err != nil {
+	if err := session.applyNetwork(initReq.Network); err != nil {
 		return session.fail(err)
 	}
-	if err := setWallClock(runReq.HostWallclockUnixNS); err != nil {
-		session.sendLogString("system", fmt.Sprintf("%s warning: set wall clock: %v\n", logPrefix, err))
-	}
-
-	env, err := buildRuntimeEnv(runReq.Env, runReq.Network)
-	if err != nil {
-		return session.fail(err)
+	if err := setWallClock(initReq.HostWallclockUnixNS); err != nil {
+		session.sendLogString("", "system", fmt.Sprintf("%s warning: set wall clock: %v\n", logPrefix, err))
 	}
 
 	localControlCtx, localControlCancel := context.WithCancel(ctx)
@@ -110,38 +93,27 @@ func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-cha
 		stopLocalControl()
 	}()
 
-	var (
-		runDuration time.Duration
-		exitCode    int
-	)
-	runDuration, exitCode, err = session.runWorkload(jobCtx, controlCh, runReq, env)
-	if err != nil {
-		return session.fail(err)
-	}
+	for {
+		select {
+		case <-sigCh:
+			return session.shutdown()
+		default:
+		}
 
-	result := vmproto.Result{
-		ExitCode:        exitCode,
-		RunDurationMS:   runDuration.Milliseconds(),
-		BootToReadyMS:   bootToReady.Milliseconds(),
-		StdoutBytes:     session.stdoutBytes.Load(),
-		StderrBytes:     session.stderrBytes.Load(),
-		DroppedLogBytes: session.droppedLogBytes.Load(),
+		req, err := session.waitForExecRequest(controlCh)
+		if err != nil {
+			if errors.Is(err, errGuestShutdownRequested) {
+				return session.shutdown()
+			}
+			return session.fail(err)
+		}
+		if err := session.runOneExec(req, controlCh, initReq.Network); err != nil {
+			return session.fail(err)
+		}
 	}
-	resultEnv, err := session.sendResultEnvelope(result)
-	if err != nil {
-		return err
-	}
-	if err := session.waitForResultAck(controlCh, resultEnv.Seq); err != nil {
-		return session.fail(err)
-	}
-	if err := session.waitForShutdown(controlCh); err != nil {
-		return session.fail(err)
-	}
-
-	session.sendLogString("system", logPrefix+" shutdown acknowledged; syncing filesystems and rebooting to terminate the microVM\n")
-	syscall.Sync()
-	return syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
 }
+
+var errGuestShutdownRequested = errors.New("guest shutdown requested")
 
 func (s *agentSession) readLoop(ctx context.Context, controlCh chan<- vmproto.Envelope) {
 	for {
@@ -153,7 +125,9 @@ func (s *agentSession) readLoop(ctx context.Context, controlCh chan<- vmproto.En
 
 		env, err := s.codec.ReadEnvelope()
 		if err != nil {
-			s.jobCancel()
+			if s.jobCancel != nil {
+				s.jobCancel()
+			}
 			select {
 			case s.errCh <- fmt.Errorf("read control stream: %w", err):
 			default:
@@ -195,7 +169,9 @@ func (s *agentSession) writeLoop(ctx context.Context) {
 		}
 
 		if err := s.codec.WriteEnvelope(frame.envelope); err != nil {
-			s.jobCancel()
+			if s.jobCancel != nil {
+				s.jobCancel()
+			}
 			select {
 			case s.errCh <- fmt.Errorf("write control stream: %w", err):
 			default:
@@ -225,48 +201,127 @@ func (s *agentSession) heartbeatLoop(ctx context.Context) {
 	}
 }
 
-func (s *agentSession) waitForRunRequest(controlCh <-chan vmproto.Envelope) (vmproto.RunRequest, error) {
+func (s *agentSession) waitForLeaseInit(controlCh <-chan vmproto.Envelope) (vmproto.LeaseInit, error) {
 	for {
 		env, err := s.waitForControl(controlCh)
 		if err != nil {
-			return vmproto.RunRequest{}, err
+			return vmproto.LeaseInit{}, err
 		}
-		if err := requireControlSeq("await_run_request", env); err != nil {
-			return vmproto.RunRequest{}, err
+		if err := requireControlSeq("await_lease_init", env); err != nil {
+			return vmproto.LeaseInit{}, err
 		}
-
 		switch env.Type {
-		case vmproto.TypeRunRequest:
-			req, err := vmproto.DecodePayload[vmproto.RunRequest](env)
+		case vmproto.TypeLeaseInit:
+			req, err := vmproto.DecodePayload[vmproto.LeaseInit](env)
 			if err != nil {
-				return vmproto.RunRequest{}, protocolStateError("await_run_request", "decode run_request payload: %v", err)
+				return vmproto.LeaseInit{}, protocolStateError("await_lease_init", "decode lease_init payload: %v", err)
 			}
 			if req.ProtocolVersion != vmproto.ProtocolVersion {
-				return vmproto.RunRequest{}, protocolStateError(
-					"await_run_request",
-					"run_request protocol_version mismatch: got %d want %d",
-					req.ProtocolVersion,
-					vmproto.ProtocolVersion,
-				)
+				return vmproto.LeaseInit{}, protocolStateError("await_lease_init", "protocol_version mismatch: got %d want %d", req.ProtocolVersion, vmproto.ProtocolVersion)
 			}
-			req.WorkloadKind = vmproto.NormalizeWorkloadKind(req.WorkloadKind)
-			if err := vmproto.ValidateWorkloadKind(req.WorkloadKind); err != nil {
-				return vmproto.RunRequest{}, protocolStateError("await_run_request", "invalid run_request workload_kind: %v", err)
+			return req, nil
+		case vmproto.TypeShutdown:
+			return vmproto.LeaseInit{}, errGuestShutdownRequested
+		default:
+			return vmproto.LeaseInit{}, unexpectedControlFrame("await_lease_init", env.Type, vmproto.TypeLeaseInit, vmproto.TypeShutdown)
+		}
+	}
+}
+
+func (s *agentSession) waitForExecRequest(controlCh <-chan vmproto.Envelope) (vmproto.ExecRequest, error) {
+	for {
+		env, err := s.waitForControl(controlCh)
+		if err != nil {
+			return vmproto.ExecRequest{}, err
+		}
+		if err := requireControlSeq("await_exec_request", env); err != nil {
+			return vmproto.ExecRequest{}, err
+		}
+		switch env.Type {
+		case vmproto.TypeExecRequest:
+			req, err := vmproto.DecodePayload[vmproto.ExecRequest](env)
+			if err != nil {
+				return vmproto.ExecRequest{}, protocolStateError("await_exec_request", "decode exec_request payload: %v", err)
+			}
+			if req.ProtocolVersion != vmproto.ProtocolVersion {
+				return vmproto.ExecRequest{}, protocolStateError("await_exec_request", "protocol_version mismatch: got %d want %d", req.ProtocolVersion, vmproto.ProtocolVersion)
 			}
 			if rawMode, ok := req.Env[bridgeFaultEnvVar]; ok {
 				mode, err := parseBridgeFaultMode(rawMode)
 				if err != nil {
-					return vmproto.RunRequest{}, protocolStateError("await_run_request", "invalid run_request bridge fault mode: %v", err)
+					return vmproto.ExecRequest{}, protocolStateError("await_exec_request", "invalid bridge fault mode: %v", err)
 				}
 				s.bridgeFault = mode
 			}
+			if strings.TrimSpace(req.ExecID) == "" {
+				return vmproto.ExecRequest{}, protocolStateError("await_exec_request", "exec_id is required")
+			}
+			if len(req.Argv) == 0 {
+				return vmproto.ExecRequest{}, protocolStateError("await_exec_request", "argv is required")
+			}
 			return req, nil
+		case vmproto.TypeShutdown:
+			return vmproto.ExecRequest{}, errGuestShutdownRequested
 		case vmproto.TypeCancel:
-			s.jobCancel()
+			continue
 		default:
-			return vmproto.RunRequest{}, unexpectedControlFrame("await_run_request", env.Type, vmproto.TypeRunRequest, vmproto.TypeCancel)
+			return vmproto.ExecRequest{}, unexpectedControlFrame("await_exec_request", env.Type, vmproto.TypeExecRequest, vmproto.TypeShutdown, vmproto.TypeCancel)
 		}
 	}
+}
+
+func (s *agentSession) runOneExec(req vmproto.ExecRequest, controlCh <-chan vmproto.Envelope, network vmproto.NetworkConfig) error {
+	s.stdoutBytes.Store(0)
+	s.stderrBytes.Store(0)
+	s.droppedLogBytes.Store(0)
+
+	jobCtx, jobCancel := context.WithCancel(context.Background())
+	if req.MaxWallSeconds > 0 {
+		var cancel context.CancelFunc
+		jobCtx, cancel = context.WithTimeout(jobCtx, time.Duration(req.MaxWallSeconds)*time.Second)
+		jobCancel = cancel
+	}
+	s.jobCancel = jobCancel
+	defer func() {
+		jobCancel()
+		s.jobCancel = nil
+	}()
+
+	env, err := buildRuntimeEnv(req.Env, network)
+	if err != nil {
+		return err
+	}
+	if err := s.sendControl(vmproto.TypeExecStarted, vmproto.ExecStarted{
+		LeaseID:         req.LeaseID,
+		ExecID:          req.ExecID,
+		StartedUnixNS:   time.Now().UnixNano(),
+		ProtocolVersion: vmproto.ProtocolVersion,
+	}); err != nil {
+		return err
+	}
+
+	duration, exitCode, err := s.runExecCommand(jobCtx, req, env, controlCh)
+	if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+
+	result := vmproto.ExecResult{
+		LeaseID:         req.LeaseID,
+		ExecID:          req.ExecID,
+		ExitCode:        exitCode,
+		DurationMS:      duration.Milliseconds(),
+		StdoutBytes:     s.stdoutBytes.Load(),
+		StderrBytes:     s.stderrBytes.Load(),
+		DroppedLogBytes: s.droppedLogBytes.Load(),
+	}
+	resultEnv, err := s.sendResultEnvelope(result)
+	if err != nil {
+		return err
+	}
+	if err := s.waitForResultAck(controlCh, resultEnv.Seq); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *agentSession) waitForResultAck(controlCh <-chan vmproto.Envelope, resultSeq uint64) error {
@@ -275,48 +330,30 @@ func (s *agentSession) waitForResultAck(controlCh <-chan vmproto.Envelope, resul
 		if err != nil {
 			return err
 		}
-		if err := requireControlSeq("await_result_ack", env); err != nil {
+		if err := requireControlSeq("await_exec_result_ack", env); err != nil {
 			return err
 		}
-
 		switch env.Type {
 		case vmproto.TypeAck:
 			ack, err := vmproto.DecodePayload[vmproto.Ack](env)
 			if err != nil {
-				return protocolStateError("await_result_ack", "decode ack payload: %v", err)
+				return protocolStateError("await_exec_result_ack", "decode ack payload: %v", err)
 			}
-			if ack.ForType != vmproto.TypeResult {
-				return protocolStateError("await_result_ack", "ack for_type mismatch: got %s want %s", ack.ForType, vmproto.TypeResult)
+			if ack.ForType != vmproto.TypeExecResult {
+				return protocolStateError("await_exec_result_ack", "ack for_type mismatch: got %s want %s", ack.ForType, vmproto.TypeExecResult)
 			}
 			if ack.ForSeq != resultSeq {
-				return protocolStateError("await_result_ack", "ack for_seq mismatch: got %d want %d", ack.ForSeq, resultSeq)
+				return protocolStateError("await_exec_result_ack", "ack for_seq mismatch: got %d want %d", ack.ForSeq, resultSeq)
 			}
 			return nil
 		case vmproto.TypeCancel:
-			s.jobCancel()
-		default:
-			return unexpectedControlFrame("await_result_ack", env.Type, vmproto.TypeAck, vmproto.TypeCancel)
-		}
-	}
-}
-
-func (s *agentSession) waitForShutdown(controlCh <-chan vmproto.Envelope) error {
-	for {
-		env, err := s.waitForControl(controlCh)
-		if err != nil {
-			return err
-		}
-		if err := requireControlSeq("await_shutdown", env); err != nil {
-			return err
-		}
-
-		switch env.Type {
+			if s.jobCancel != nil {
+				s.jobCancel()
+			}
 		case vmproto.TypeShutdown:
-			return nil
-		case vmproto.TypeCancel:
-			s.jobCancel()
+			return errGuestShutdownRequested
 		default:
-			return unexpectedControlFrame("await_shutdown", env.Type, vmproto.TypeShutdown, vmproto.TypeCancel)
+			return unexpectedControlFrame("await_exec_result_ack", env.Type, vmproto.TypeAck, vmproto.TypeCancel, vmproto.TypeShutdown)
 		}
 	}
 }
@@ -351,12 +388,12 @@ func (s *agentSession) sendControlEnvelope(msgType vmproto.MessageType, payload 
 	return env, nil
 }
 
-func (s *agentSession) sendResultEnvelope(result vmproto.Result) (vmproto.Envelope, error) {
+func (s *agentSession) sendResultEnvelope(result vmproto.ExecResult) (vmproto.Envelope, error) {
 	if s.bridgeFault != bridgeFaultResultSeqZero {
-		return s.sendControlEnvelope(vmproto.TypeResult, result)
+		return s.sendControlEnvelope(vmproto.TypeExecResult, result)
 	}
 
-	env, err := vmproto.NewEnvelope(vmproto.TypeResult, 0, time.Since(s.bootStart).Nanoseconds(), result)
+	env, err := vmproto.NewEnvelope(vmproto.TypeExecResult, 0, time.Since(s.bootStart).Nanoseconds(), result)
 	if err != nil {
 		return vmproto.Envelope{}, err
 	}
@@ -375,11 +412,12 @@ func (s *agentSession) enqueueControl(env vmproto.Envelope) error {
 	}
 }
 
-func (s *agentSession) sendLogChunk(stream string, data []byte) {
+func (s *agentSession) sendLogChunk(execID, stream string, data []byte) {
 	if len(data) == 0 {
 		return
 	}
 	env, err := s.nextEnvelope(vmproto.TypeLogChunk, vmproto.LogChunk{
+		ExecID: execID,
 		Stream: stream,
 		Data:   data,
 	})
@@ -388,11 +426,7 @@ func (s *agentSession) sendLogChunk(stream string, data []byte) {
 		return
 	}
 
-	frame := outboundFrame{
-		envelope: env,
-		logBytes: uint64(len(data)),
-	}
-
+	frame := outboundFrame{envelope: env, logBytes: uint64(len(data))}
 	select {
 	case s.logQ <- frame:
 		return
@@ -412,8 +446,8 @@ func (s *agentSession) sendLogChunk(stream string, data []byte) {
 	}
 }
 
-func (s *agentSession) sendLogString(stream, value string) {
-	s.sendLogChunk(stream, []byte(value))
+func (s *agentSession) sendLogString(execID, stream, value string) {
+	s.sendLogChunk(execID, stream, []byte(value))
 }
 
 func (s *agentSession) applyNetwork(cfg vmproto.NetworkConfig) error {
@@ -464,23 +498,7 @@ func setWallClock(unixNS int64) error {
 		return nil
 	}
 	tv := syscall.NsecToTimeval(unixNS)
-	if err := syscall.Settimeofday(&tv); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (s *agentSession) runPhase(ctx context.Context, controlCh <-chan vmproto.Envelope, label string, argv []string, workDir string, env []string) (time.Duration, int, error) {
-	if len(argv) == 0 {
-		return 0, 0, nil
-	}
-	spec, err := phaseCommand(argv, workDir, env)
-	if err != nil {
-		s.sendLogString("system", fmt.Sprintf("%s %s resolve command: %v\n", logPrefix, label, err))
-		return 0, 127, nil
-	}
-	duration, exitCode, err := s.runCommand(ctx, label, spec, controlCh)
-	return duration, exitCode, err
+	return syscall.Settimeofday(&tv)
 }
 
 type commandSpec struct {
@@ -490,31 +508,20 @@ type commandSpec struct {
 	Env     []string
 }
 
-func phaseCommand(argv []string, workDir string, env []string) (commandSpec, error) {
-	argv0, err := resolveCommand(argv[0])
+func (s *agentSession) runExecCommand(ctx context.Context, req vmproto.ExecRequest, env []string, controlCh <-chan vmproto.Envelope) (time.Duration, int, error) {
+	spec, err := execCommand(req.Argv, req.WorkingDir, env)
 	if err != nil {
-		return commandSpec{}, err
+		s.sendLogString(req.ExecID, "system", fmt.Sprintf("%s resolve command: %v\n", logPrefix, err))
+		return 0, 127, nil
 	}
-	return commandSpec{
-		Path:    argv0,
-		Args:    argv,
-		WorkDir: workDir,
-		Env:     env,
-	}, nil
-}
 
-func (s *agentSession) runCommand(ctx context.Context, label string, spec commandSpec, controlCh <-chan vmproto.Envelope) (time.Duration, int, error) {
 	start := time.Now()
-	if err := s.sendControl(vmproto.TypePhaseStart, vmproto.PhaseStart{Name: label}); err != nil {
-		return 0, 0, err
-	}
-
 	cmd := exec.Command(spec.Path, spec.Args[1:]...)
 	cmd.Dir = spec.WorkDir
 	cmd.Env = spec.Env
-	cmd.Stdout = agentLogWriter{session: s, stream: "stdout"}
-	cmd.Stderr = agentLogWriter{session: s, stream: "stderr"}
-	// Drop customer code to an unprivileged user; vm-bridge remains the guest root boundary.
+	cmd.Stdout = agentLogWriter{session: s, execID: req.ExecID, stream: "stdout"}
+	cmd.Stderr = agentLogWriter{session: s, execID: req.ExecID, stream: "stderr"}
+	// Workload processes are unprivileged; PID 1 remains the guest control boundary.
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid:     true,
 		Credential: &syscall.Credential{Uid: runnerUID, Gid: runnerGID},
@@ -523,56 +530,58 @@ func (s *agentSession) runCommand(ctx context.Context, label string, spec comman
 	if err := cmd.Start(); err != nil {
 		return 0, 127, err
 	}
-
 	s.activeChildPID.Store(int64(cmd.Process.Pid))
 
 	waitCh := make(chan error, 1)
-	go func() {
-		waitCh <- cmd.Wait()
-	}()
+	go func() { waitCh <- cmd.Wait() }()
 
-	var waitErr error
 	for {
 		select {
-		case waitErr = <-waitCh:
+		case waitErr := <-waitCh:
 			s.activeChildPID.Store(0)
-			duration := time.Since(start)
-			exitCode := exitCodeFromWait(waitErr)
-			if err := s.sendControl(vmproto.TypePhaseEnd, vmproto.PhaseEnd{
-				Name:       label,
-				ExitCode:   exitCode,
-				DurationMS: duration.Milliseconds(),
-			}); err != nil {
-				return duration, exitCode, err
-			}
-			return duration, exitCode, nil
+			return time.Since(start), exitCodeFromWait(waitErr), nil
 		case env := <-controlCh:
-			if err := s.handleRunPhaseControl(env); err != nil {
+			switch env.Type {
+			case vmproto.TypeCancel:
+				cancel, err := vmproto.DecodePayload[vmproto.Cancel](env)
+				if err != nil {
+					terminateProcessGroup(cmd.Process.Pid)
+					return time.Since(start), 1, err
+				}
+				if cancel.ExecID == "" || cancel.ExecID == req.ExecID {
+					terminateProcessGroup(cmd.Process.Pid)
+					return time.Since(start), 130, context.Canceled
+				}
+			case vmproto.TypeShutdown:
 				terminateProcessGroup(cmd.Process.Pid)
-				s.activeChildPID.Store(0)
-				return time.Since(start), exitCodeFromWait(waitErr), err
+				return time.Since(start), 130, errGuestShutdownRequested
+			default:
+				terminateProcessGroup(cmd.Process.Pid)
+				return time.Since(start), 1, unexpectedControlFrame("exec_running", env.Type, vmproto.TypeCancel, vmproto.TypeShutdown)
 			}
 		case err := <-s.errCh:
 			terminateProcessGroup(cmd.Process.Pid)
-			s.activeChildPID.Store(0)
-			return time.Since(start), exitCodeFromWait(waitErr), err
+			return time.Since(start), 1, err
 		case <-ctx.Done():
 			terminateProcessGroup(cmd.Process.Pid)
 		}
 	}
 }
 
-func (s *agentSession) handleRunPhaseControl(env vmproto.Envelope) error {
-	switch env.Type {
-	case vmproto.TypeCancel:
-		if err := requireControlSeq("run_phase", env); err != nil {
-			return err
-		}
-		s.jobCancel()
-		return nil
-	default:
-		return unexpectedControlFrame("run_phase", env.Type, vmproto.TypeCancel)
+func execCommand(argv []string, workDir string, env []string) (commandSpec, error) {
+	if len(argv) == 0 {
+		return commandSpec{}, fmt.Errorf("argv is required")
 	}
+	argv0, err := resolveCommand(argv[0])
+	if err != nil {
+		return commandSpec{}, err
+	}
+	return commandSpec{
+		Path:    argv0,
+		Args:    append([]string(nil), argv...),
+		WorkDir: normalizeWorkDir(workDir),
+		Env:     append([]string(nil), env...),
+	}, nil
 }
 
 func unexpectedControlFrame(state string, got vmproto.MessageType, expected ...vmproto.MessageType) error {
@@ -596,6 +605,7 @@ func requireControlSeq(state string, env vmproto.Envelope) error {
 
 type agentLogWriter struct {
 	session *agentSession
+	execID  string
 	stream  string
 }
 
@@ -610,7 +620,7 @@ func (w agentLogWriter) Write(data []byte) (int, error) {
 	case "stderr":
 		w.session.stderrBytes.Add(uint64(len(data)))
 	}
-	w.session.sendLogChunk(w.stream, chunk)
+	w.session.sendLogChunk(w.execID, w.stream, chunk)
 	return len(data), nil
 }
 
@@ -664,6 +674,12 @@ func (s *agentSession) fail(err error) error {
 	}
 	_ = s.sendControl(vmproto.TypeFatal, vmproto.Fatal{Message: err.Error()})
 	return err
+}
+
+func (s *agentSession) shutdown() error {
+	s.sendLogString("", "system", logPrefix+" shutdown acknowledged; syncing filesystems and rebooting to terminate the microVM\n")
+	syscall.Sync()
+	return syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
 }
 
 func runCommandOutput(name string, args ...string) (string, error) {

@@ -15,15 +15,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
-const maxBufferedGuestLogs = 10 * 1024 * 1024
-
-type guestControlResult struct {
-	hello  vmproto.Hello
-	result vmproto.Result
-	logs   string
-	phases []PhaseResult
-}
-
 type guestControl struct {
 	conn   net.Conn
 	reader io.Reader
@@ -31,6 +22,8 @@ type guestControl struct {
 
 	mu  sync.Mutex
 	seq uint64
+
+	activeExecID string
 }
 
 type checkpointHandler func(vmproto.CheckpointRequest) vmproto.CheckpointResponse
@@ -40,12 +33,7 @@ func connectGuestControl(ctx context.Context, udsPath string, port int) (*guestC
 	if err != nil {
 		return nil, err
 	}
-
-	return &guestControl{
-		conn:   conn,
-		reader: reader,
-		codec:  vmproto.NewCodec(reader, conn),
-	}, nil
+	return &guestControl{conn: conn, reader: reader, codec: vmproto.NewCodec(reader, conn)}, nil
 }
 
 func connectGuestBridge(ctx context.Context, udsPath string, port int) (net.Conn, *bufio.Reader, error) {
@@ -59,7 +47,6 @@ func connectGuestBridge(ctx context.Context, udsPath string, port int) (net.Conn
 				continue
 			}
 		}
-
 		reader := bufio.NewReader(conn)
 		if _, err := io.WriteString(conn, fmt.Sprintf("CONNECT %d\n", port)); err != nil {
 			conn.Close()
@@ -70,7 +57,6 @@ func connectGuestBridge(ctx context.Context, udsPath string, port int) (net.Conn
 				continue
 			}
 		}
-
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			conn.Close()
@@ -81,12 +67,10 @@ func connectGuestBridge(ctx context.Context, udsPath string, port int) (net.Conn
 				continue
 			}
 		}
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "OK ") {
+		if !strings.HasPrefix(strings.TrimSpace(line), "OK ") {
 			conn.Close()
-			return nil, nil, fmt.Errorf("unexpected guest bridge ack %q", line)
+			return nil, nil, fmt.Errorf("unexpected guest bridge ack %q", strings.TrimSpace(line))
 		}
-
 		return conn, reader, nil
 	}
 }
@@ -98,7 +82,6 @@ func (c *guestControl) close() error {
 func (c *guestControl) send(msgType vmproto.MessageType, payload any) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
 	c.seq++
 	env, err := vmproto.NewEnvelope(msgType, c.seq, time.Now().UnixNano(), payload)
 	if err != nil {
@@ -114,191 +97,163 @@ func (c *guestControl) recv() (vmproto.Envelope, error) {
 	return c.codec.ReadEnvelope()
 }
 
-func (c *guestControl) run(ctx context.Context, run RunSpec, lease NetworkLease, hostServiceIP string, hostServicePort int, handleCheckpoint checkpointHandler, logger *slog.Logger, observer RunObserver) (guestControlResult, error) {
-	var (
-		logBuf       strings.Builder
-		hello        vmproto.Hello
-		gotHello     bool
-		phaseResults []PhaseResult
-	)
-	observer = normalizeRunObserver(observer)
-
-	resultWithLogs := func() guestControlResult {
-		return guestControlResult{
-			hello:  hello,
-			logs:   logBuf.String(),
-			phases: append([]PhaseResult(nil), phaseResults...),
-		}
-	}
-
-	_, endHelloSpan := startStepSpan(ctx, "vmorchestrator.guest.hello",
-		attribute.String("run.id", run.RunID),
-	)
+func (c *guestControl) awaitHello(ctx context.Context) error {
 	env, err := c.recv()
 	if err != nil {
-		endHelloSpan(err)
-		return guestControlResult{}, fmt.Errorf("read guest hello: %w", err)
+		return fmt.Errorf("read guest hello: %w", err)
 	}
 	if env.Type != vmproto.TypeHello {
-		err := unexpectedGuestControlFrame("await_guest_hello", env.Type, vmproto.TypeHello)
-		endHelloSpan(err)
-		return guestControlResult{}, err
+		return unexpectedGuestControlFrame("await_guest_hello", env.Type, vmproto.TypeHello)
 	}
-	hello, err = vmproto.DecodePayload[vmproto.Hello](env)
-	if err != nil {
-		err = guestProtocolError("await_guest_hello", "decode hello payload: %v", err)
-		endHelloSpan(err)
-		return guestControlResult{}, err
+	if _, err := vmproto.DecodePayload[vmproto.Hello](env); err != nil {
+		return guestProtocolError("await_guest_hello", "decode hello payload: %v", err)
 	}
-	gotHello = true
-	endHelloSpan(nil)
+	return nil
+}
 
-	_, endRunRequestSpan := startStepSpan(ctx, "vmorchestrator.guest.run_request",
-		attribute.String("run.id", run.RunID),
+func (c *guestControl) initLease(ctx context.Context, leaseID string, network vmproto.NetworkConfig) error {
+	_, endSpan := startStepSpan(ctx, "vmorchestrator.guest.lease_init",
+		attribute.String("lease.id", leaseID),
 	)
-	if err := c.send(vmproto.TypeRunRequest, vmproto.RunRequest{
-		RunID:               run.RunID,
-		WorkloadKind:        run.WorkloadKind,
-		RunnerClass:         run.RunnerClass,
-		RunCommand:          cloneStringSlice(run.RunCommand),
-		RunWorkDir:          run.RunWorkDir,
-		Env:                 cloneStringMap(run.Env),
-		WorkflowYAML:        run.WorkflowYAML,
-		WorkflowEnv:         cloneStringMap(run.WorkflowEnv),
-		WorkflowSecrets:     cloneStringMap(run.WorkflowSecrets),
-		WorkflowEventName:   run.WorkflowEventName,
-		WorkflowInputs:      cloneStringMap(run.WorkflowInputs),
-		GitHubJITConfig:     run.GitHubJITConfig,
-		Network:             lease.GuestNetworkConfig(hostServiceIP, hostServicePort),
+	err := c.send(vmproto.TypeLeaseInit, vmproto.LeaseInit{
+		LeaseID:             leaseID,
+		Network:             network,
 		HostWallclockUnixNS: time.Now().UnixNano(),
 		ProtocolVersion:     vmproto.ProtocolVersion,
-	}); err != nil {
-		endRunRequestSpan(err)
-		return guestControlResult{}, fmt.Errorf("send run request: %w", err)
+	})
+	endSpan(err)
+	if err != nil {
+		return fmt.Errorf("send lease init: %w", err)
 	}
-	endRunRequestSpan(nil)
+	return nil
+}
+
+func (c *guestControl) exec(ctx context.Context, leaseID string, spec ExecSpec, handleCheckpoint checkpointHandler, logger *slog.Logger) (ExecResult, error) {
+	execID := strings.TrimSpace(spec.Env["FORGE_METAL_EXEC_ID"])
+	if execID == "" {
+		return ExecResult{}, fmt.Errorf("FORGE_METAL_EXEC_ID is required")
+	}
+	var logBuf strings.Builder
+	var firstByteAt time.Time
+	startedAt := time.Time{}
+
+	c.activeExecID = execID
+	defer func() { c.activeExecID = "" }()
+
+	_, endExecRequestSpan := startStepSpan(ctx, "vmorchestrator.guest.exec_request",
+		attribute.String("lease.id", leaseID),
+		attribute.String("exec.id", execID),
+	)
+	if err := c.send(vmproto.TypeExecRequest, vmproto.ExecRequest{
+		LeaseID:         leaseID,
+		ExecID:          execID,
+		Argv:            cloneStringSlice(spec.Argv),
+		WorkingDir:      spec.WorkingDir,
+		Env:             cloneStringMap(spec.Env),
+		MaxWallSeconds:  spec.MaxWallSeconds,
+		ProtocolVersion: vmproto.ProtocolVersion,
+	}); err != nil {
+		endExecRequestSpan(err)
+		return ExecResult{}, fmt.Errorf("send exec request: %w", err)
+	}
+	endExecRequestSpan(nil)
 
 	for {
 		env, err := c.recv()
 		if err != nil {
-			if gotHello {
-				return resultWithLogs(), fmt.Errorf("read guest control stream: %w", err)
-			}
-			return guestControlResult{}, fmt.Errorf("read guest control stream: %w", err)
+			return ExecResult{StartedAt: startedAt, FirstByteAt: firstByteAt, Output: logBuf.String()}, fmt.Errorf("read guest control stream: %w", err)
 		}
-
 		switch env.Type {
+		case vmproto.TypeExecStarted:
+			msg, err := vmproto.DecodePayload[vmproto.ExecStarted](env)
+			if err != nil {
+				return ExecResult{Output: logBuf.String()}, err
+			}
+			startedAt = time.Unix(0, msg.StartedUnixNS).UTC()
+			if logger != nil {
+				logger.InfoContext(ctx, "guest exec started", "lease_id", leaseID, "exec_id", execID)
+			}
 		case vmproto.TypeLogChunk:
 			msg, err := vmproto.DecodePayload[vmproto.LogChunk](env)
 			if err != nil {
-				return resultWithLogs(), err
+				return ExecResult{StartedAt: startedAt, FirstByteAt: firstByteAt, Output: logBuf.String()}, err
+			}
+			if firstByteAt.IsZero() {
+				firstByteAt = time.Now().UTC()
 			}
 			appendLogChunk(&logBuf, msg.Data)
-			observer.OnGuestLogChunk(run.RunID, string(msg.Data))
 		case vmproto.TypeHeartbeat:
 		case vmproto.TypeCheckpointRequest:
 			req, err := vmproto.DecodePayload[vmproto.CheckpointRequest](env)
 			if err != nil {
-				return resultWithLogs(), err
+				return ExecResult{StartedAt: startedAt, FirstByteAt: firstByteAt, Output: logBuf.String()}, err
 			}
-			var resp vmproto.CheckpointResponse
-			if handleCheckpoint == nil {
-				resp = vmproto.CheckpointResponse{
-					RequestID: req.RequestID,
-					Operation: req.Operation,
-					Ref:       req.Ref,
-					Accepted:  false,
-					Error:     "checkpoint requests are not enabled for this VM",
-				}
-			} else {
+			resp := vmproto.CheckpointResponse{
+				RequestID: req.RequestID,
+				Operation: req.Operation,
+				Ref:       req.Ref,
+				Accepted:  false,
+				Error:     "checkpoint requests are not enabled",
+			}
+			if handleCheckpoint != nil {
 				resp = handleCheckpoint(req)
 			}
 			if err := c.send(vmproto.TypeCheckpointResponse, resp); err != nil {
-				return resultWithLogs(), fmt.Errorf("send checkpoint response: %w", err)
-			}
-		case vmproto.TypePhaseStart:
-			msg, err := vmproto.DecodePayload[vmproto.PhaseStart](env)
-			if err != nil {
-				return resultWithLogs(), err
-			}
-			_, endPhaseStartSpan := startStepSpan(ctx, "vmorchestrator.guest.phase_start",
-				attribute.String("run.id", run.RunID),
-				attribute.String("phase.name", msg.Name),
-			)
-			observer.OnGuestPhaseStart(run.RunID, msg.Name)
-			endPhaseStartSpan(nil)
-			if logger != nil {
-				logger.InfoContext(ctx, "guest phase start", "phase", msg.Name, "run_id", run.RunID)
-			}
-		case vmproto.TypePhaseEnd:
-			msg, err := vmproto.DecodePayload[vmproto.PhaseEnd](env)
-			if err != nil {
-				return resultWithLogs(), err
-			}
-			phaseResults = append(phaseResults, PhaseResult{
-				Name:       msg.Name,
-				ExitCode:   msg.ExitCode,
-				DurationMS: msg.DurationMS,
-			})
-			observer.OnGuestPhaseEnd(run.RunID, PhaseResult{
-				Name:       msg.Name,
-				ExitCode:   msg.ExitCode,
-				DurationMS: msg.DurationMS,
-			})
-			_, endPhaseEndSpan := startStepSpan(ctx, "vmorchestrator.guest.phase_end",
-				attribute.String("run.id", run.RunID),
-				attribute.String("phase.name", msg.Name),
-				attribute.Int("phase.exit_code", msg.ExitCode),
-				attribute.Int64("phase.duration_ms", msg.DurationMS),
-			)
-			endPhaseEndSpan(nil)
-			if logger != nil {
-				logger.InfoContext(ctx, "guest phase end", "phase", msg.Name, "exit_code", msg.ExitCode, "duration_ms", msg.DurationMS, "run_id", run.RunID)
+				return ExecResult{StartedAt: startedAt, FirstByteAt: firstByteAt, Output: logBuf.String()}, fmt.Errorf("send checkpoint response: %w", err)
 			}
 		case vmproto.TypeFatal:
 			msg, decodeErr := vmproto.DecodePayload[vmproto.Fatal](env)
 			if decodeErr != nil {
-				return resultWithLogs(), decodeErr
+				return ExecResult{StartedAt: startedAt, FirstByteAt: firstByteAt, Output: logBuf.String()}, decodeErr
 			}
-			return resultWithLogs(), fmt.Errorf("guest fatal: %s", strings.TrimSpace(msg.Message))
-		case vmproto.TypeResult:
+			return ExecResult{StartedAt: startedAt, FirstByteAt: firstByteAt, Output: logBuf.String()}, fmt.Errorf("guest fatal: %s", strings.TrimSpace(msg.Message))
+		case vmproto.TypeExecResult:
 			if env.Seq == 0 {
-				return resultWithLogs(), guestProtocolError("await_guest_result", "result seq must be non-zero")
+				return ExecResult{StartedAt: startedAt, FirstByteAt: firstByteAt, Output: logBuf.String()}, guestProtocolError("await_exec_result", "result seq must be non-zero")
 			}
-			msg, err := vmproto.DecodePayload[vmproto.Result](env)
+			msg, err := vmproto.DecodePayload[vmproto.ExecResult](env)
 			if err != nil {
-				return resultWithLogs(), guestProtocolError("await_guest_result", "decode result payload: %v", err)
+				return ExecResult{StartedAt: startedAt, FirstByteAt: firstByteAt, Output: logBuf.String()}, err
 			}
-			if err := c.send(vmproto.TypeAck, vmproto.Ack{ForType: vmproto.TypeResult, ForSeq: env.Seq}); err != nil {
-				outcome := resultWithLogs()
-				outcome.result = msg
-				return outcome, fmt.Errorf("ack guest result: %w", err)
+			if err := c.send(vmproto.TypeAck, vmproto.Ack{ForType: vmproto.TypeExecResult, ForSeq: env.Seq}); err != nil {
+				return ExecResult{StartedAt: startedAt, FirstByteAt: firstByteAt, Output: logBuf.String()}, fmt.Errorf("ack guest exec result: %w", err)
 			}
-			if logger != nil {
-				logger.InfoContext(ctx, "guest result received; requesting graceful guest reboot", "run_id", run.RunID, "exit_code", msg.ExitCode)
+			if startedAt.IsZero() {
+				startedAt = time.Now().UTC().Add(-time.Duration(msg.DurationMS) * time.Millisecond)
 			}
-			if err := c.send(vmproto.TypeShutdown, vmproto.Shutdown{}); err != nil {
-				outcome := resultWithLogs()
-				outcome.result = msg
-				return outcome, fmt.Errorf("send guest shutdown: %w", err)
-			}
-			outcome := resultWithLogs()
-			outcome.result = msg
-			return outcome, nil
+			exitedAt := time.Now().UTC()
+			return ExecResult{
+				ExitCode:        msg.ExitCode,
+				Output:          logBuf.String(),
+				Duration:        time.Duration(msg.DurationMS) * time.Millisecond,
+				StartedAt:       startedAt,
+				FirstByteAt:     firstByteAt,
+				ExitedAt:        exitedAt,
+				StdoutBytes:     msg.StdoutBytes,
+				StderrBytes:     msg.StderrBytes,
+				DroppedLogBytes: msg.DroppedLogBytes,
+			}, nil
 		default:
-			return resultWithLogs(), unexpectedGuestControlFrame(
-				"await_guest_events",
+			return ExecResult{StartedAt: startedAt, FirstByteAt: firstByteAt, Output: logBuf.String()}, unexpectedGuestControlFrame(
+				"await_guest_exec_events",
 				env.Type,
+				vmproto.TypeExecStarted,
 				vmproto.TypeLogChunk,
 				vmproto.TypeHeartbeat,
 				vmproto.TypeCheckpointRequest,
-				vmproto.TypePhaseStart,
-				vmproto.TypePhaseEnd,
 				vmproto.TypeFatal,
-				vmproto.TypeResult,
+				vmproto.TypeExecResult,
 			)
 		}
 	}
+}
+
+func (c *guestControl) cancelExec(execID, reason string) error {
+	return c.send(vmproto.TypeCancel, vmproto.Cancel{ExecID: execID, Reason: reason})
+}
+
+func (c *guestControl) shutdown() error {
+	return c.send(vmproto.TypeShutdown, vmproto.Shutdown{})
 }
 
 func unexpectedGuestControlFrame(state string, got vmproto.MessageType, expected ...vmproto.MessageType) error {

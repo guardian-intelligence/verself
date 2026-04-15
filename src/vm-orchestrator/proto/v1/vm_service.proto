@@ -5,45 +5,258 @@ package forge_metal.vm_orchestrator.v1;
 option go_package = "github.com/forge-metal/vm-orchestrator/proto/v1;vmrpc";
 
 service VMService {
-  rpc EnsureRun(EnsureRunRequest) returns (EnsureRunResponse);
-  rpc GetRun(GetRunRequest) returns (GetRunResponse);
-  rpc StreamRunEvents(StreamRunEventsRequest) returns (stream HostRunEvent);
-  rpc CancelRun(CancelRunRequest) returns (CancelRunResponse);
+  rpc AcquireLease(AcquireLeaseRequest) returns (AcquireLeaseResponse);
+  rpc RenewLease(RenewLeaseRequest) returns (RenewLeaseResponse);
+  rpc ReleaseLease(ReleaseLeaseRequest) returns (ReleaseLeaseResponse);
+  rpc GetLease(GetLeaseRequest) returns (GetLeaseResponse);
+  rpc ListLeases(ListLeasesRequest) returns (ListLeasesResponse);
+  rpc StreamLeaseEvents(StreamLeaseEventsRequest) returns (stream LeaseEvent);
+
+  rpc StartExec(StartExecRequest) returns (StartExecResponse);
+  rpc CancelExec(CancelExecRequest) returns (CancelExecResponse);
+  rpc GetExec(GetExecRequest) returns (GetExecResponse);
+  rpc WaitExec(WaitExecRequest) returns (WaitExecResponse);
+
+  rpc SaveCheckpoint(SaveCheckpointRequest) returns (SaveCheckpointResponse);
   rpc GetCapacity(GetCapacityRequest) returns (GetCapacityResponse);
 }
 
-enum RunState {
-  RUN_STATE_UNSPECIFIED = 0;
-  RUN_STATE_PENDING = 1;
-  RUN_STATE_RUNNING = 2;
-  RUN_STATE_SUCCEEDED = 3;
-  RUN_STATE_FAILED = 4;
-  RUN_STATE_CANCELED = 5;
+enum LeaseState {
+  LEASE_STATE_UNSPECIFIED = 0;
+  LEASE_STATE_ACQUIRING = 1;
+  LEASE_STATE_READY = 2;
+  LEASE_STATE_DRAINING = 3;
+  LEASE_STATE_RELEASED = 4;
+  LEASE_STATE_EXPIRED = 5;
+  LEASE_STATE_CRASHED = 6;
 }
 
-message HostRunSpec {
-  string run_id = 1;
-  repeated string run_command = 2;
-  string run_work_dir = 3;
-  map<string, string> env = 4;
-  repeated string billable_phases = 5;
-  repeated string checkpoint_save_refs = 6;
-  string attempt_id = 7;
-  string segment_id = 8;
-  string workload_kind = 9;
-  string runner_class = 10;
-  string workflow_yaml = 11;
-  map<string, string> workflow_env = 12;
-  map<string, string> workflow_secrets = 13;
-  string workflow_event_name = 14;
-  map<string, string> workflow_inputs = 15;
-  string github_jit_config = 16;
+enum ExecState {
+  EXEC_STATE_UNSPECIFIED = 0;
+  EXEC_STATE_PENDING = 1;
+  EXEC_STATE_RUNNING = 2;
+  EXEC_STATE_EXITED = 3;
+  EXEC_STATE_FAILED = 4;
+  EXEC_STATE_CANCELED = 5;
+  EXEC_STATE_KILLED_BY_LEASE_EXPIRY = 6;
 }
 
-message PhaseResult {
-  string name = 1;
-  int32 exit_code = 2;
-  int64 duration_ms = 3;
+enum StdioMode {
+  STDIO_MODE_UNSPECIFIED = 0;
+  STDIO_MODE_NONE = 1;
+  STDIO_MODE_BUFFERED = 2;
+  STDIO_MODE_STREAMED = 3;
+}
+
+enum NetworkAttachMode {
+  NETWORK_ATTACH_MODE_UNSPECIFIED = 0;
+  NETWORK_ATTACH_MODE_NAT = 1;
+  NETWORK_ATTACH_MODE_NONE = 2;
+}
+
+enum LeaseEventType {
+  LEASE_EVENT_TYPE_UNSPECIFIED = 0;
+  LEASE_EVENT_TYPE_LEASE_ACQUIRED = 1;
+  LEASE_EVENT_TYPE_VM_BOOTING = 2;
+  LEASE_EVENT_TYPE_VM_READY = 3;
+  LEASE_EVENT_TYPE_LEASE_RENEWED = 4;
+  LEASE_EVENT_TYPE_EXEC_STARTED = 5;
+  LEASE_EVENT_TYPE_EXEC_FINISHED = 6;
+  LEASE_EVENT_TYPE_EXEC_CANCELED = 7;
+  LEASE_EVENT_TYPE_CHECKPOINT_SAVED = 8;
+  LEASE_EVENT_TYPE_VM_SHUTDOWN = 9;
+  LEASE_EVENT_TYPE_LEASE_EXPIRED = 10;
+  LEASE_EVENT_TYPE_LEASE_RELEASED = 11;
+  LEASE_EVENT_TYPE_LEASE_CRASHED = 12;
+  LEASE_EVENT_TYPE_TELEMETRY_DIAGNOSTIC = 13;
+}
+
+message NetworkAttach {
+  NetworkAttachMode mode = 1;
+}
+
+message LeaseSpec {
+  string runtime_profile = 1;
+  uint32 vcpus = 2;
+  uint32 memory_mib = 3;
+  string from_checkpoint_ref = 4;
+  uint64 ttl_seconds = 5;
+  string trust_class = 6;
+  repeated string checkpoint_save_allowlist = 7;
+  NetworkAttach network = 8;
+}
+
+message AcquireLeaseRequest {
+  string idempotency_key = 1;
+  LeaseSpec spec = 2;
+}
+
+message AcquireLeaseResponse {
+  string lease_id = 1;
+  LeaseState state = 2;
+  uint64 acquired_at_unix_ns = 3;
+  uint64 expires_at_unix_ns = 4;
+  string vm_ip = 5;
+  string runtime_profile = 6;
+}
+
+message RenewLeaseRequest {
+  string lease_id = 1;
+  string idempotency_key = 2;
+  uint64 extend_seconds = 3;
+  repeated string checkpoint_save_allowlist = 4;
+}
+
+message RenewLeaseResponse {
+  string lease_id = 1;
+  uint64 expires_at_unix_ns = 2;
+}
+
+message ReleaseLeaseRequest {
+  string lease_id = 1;
+  string idempotency_key = 2;
+  string final_checkpoint_ref = 3;
+}
+
+message ReleaseLeaseResponse {
+  string lease_id = 1;
+  LeaseState state = 2;
+  uint64 released_at_unix_ns = 3;
+}
+
+message GetLeaseRequest {
+  string lease_id = 1;
+}
+
+message LeaseRecord {
+  string lease_id = 1;
+  LeaseState state = 2;
+  uint64 acquired_at_unix_ns = 3;
+  uint64 ready_at_unix_ns = 4;
+  uint64 expires_at_unix_ns = 5;
+  uint64 terminal_at_unix_ns = 6;
+  string terminal_reason = 7;
+  string vm_ip = 8;
+  string runtime_profile = 9;
+  string trust_class = 10;
+}
+
+message GetLeaseResponse {
+  LeaseRecord lease = 1;
+}
+
+message ListLeasesRequest {
+  bool include_terminal = 1;
+  uint32 limit = 2;
+}
+
+message ListLeasesResponse {
+  repeated LeaseRecord leases = 1;
+}
+
+message StreamLeaseEventsRequest {
+  string lease_id = 1;
+  uint64 from_seq = 2;
+  bool follow = 3;
+  uint32 batch_size = 4;
+}
+
+message LeaseEvent {
+  string lease_id = 1;
+  uint64 event_seq = 2;
+  LeaseEventType event_type = 3;
+  string exec_id = 4;
+  map<string, string> attrs = 5;
+  uint64 created_at_unix_ns = 6;
+}
+
+message ExecSpec {
+  repeated string argv = 1;
+  string working_dir = 2;
+  map<string, string> env = 3;
+  StdioMode stdin = 4;
+  StdioMode stdout = 5;
+  StdioMode stderr = 6;
+  uint64 max_wall_seconds = 7;
+}
+
+message StartExecRequest {
+  string lease_id = 1;
+  string idempotency_key = 2;
+  ExecSpec spec = 3;
+}
+
+message StartExecResponse {
+  string lease_id = 1;
+  string exec_id = 2;
+  ExecState state = 3;
+  uint64 started_at_unix_ns = 4;
+}
+
+message CancelExecRequest {
+  string lease_id = 1;
+  string exec_id = 2;
+  string idempotency_key = 3;
+  string reason = 4;
+}
+
+message CancelExecResponse {
+  string lease_id = 1;
+  string exec_id = 2;
+  ExecState state = 3;
+  bool accepted = 4;
+}
+
+message GetExecRequest {
+  string lease_id = 1;
+  string exec_id = 2;
+  bool include_output = 3;
+}
+
+message WaitExecRequest {
+  string lease_id = 1;
+  string exec_id = 2;
+  bool include_output = 3;
+}
+
+message ExecRecord {
+  string lease_id = 1;
+  string exec_id = 2;
+  ExecState state = 3;
+  int32 exit_code = 4;
+  string terminal_reason = 5;
+  uint64 queued_at_unix_ns = 6;
+  uint64 started_at_unix_ns = 7;
+  uint64 first_byte_at_unix_ns = 8;
+  uint64 exited_at_unix_ns = 9;
+  uint64 stdout_bytes = 10;
+  uint64 stderr_bytes = 11;
+  uint64 dropped_log_bytes = 12;
+  string output = 13;
+  VMMetrics metrics = 14;
+  uint64 zfs_written = 15;
+  uint64 rootfs_provisioned_bytes = 16;
+}
+
+message GetExecResponse {
+  ExecRecord exec = 1;
+}
+
+message WaitExecResponse {
+  ExecRecord exec = 1;
+}
+
+message SaveCheckpointRequest {
+  string lease_id = 1;
+  string idempotency_key = 2;
+  string ref = 3;
+}
+
+message SaveCheckpointResponse {
+  string lease_id = 1;
+  string ref = 2;
+  string version_id = 3;
+  uint64 saved_at_unix_ns = 4;
 }
 
 message VMMetrics {
@@ -57,85 +270,19 @@ message VMMetrics {
   uint64 vcpu_exit_count = 8;
 }
 
-message HostRunResult {
-  int32 exit_code = 1;
-  string logs = 2;
-  string serial_logs = 3;
-  int64 duration_ms = 4;
-  int64 clone_time_ms = 5;
-  int64 jail_setup_time_ms = 6;
-  int64 vm_boot_time_ms = 7;
-  int64 boot_to_ready_duration_ms = 8;
-  int64 run_duration_ms = 9;
-  int64 vm_exit_wait_duration_ms = 10;
-  int64 cleanup_time_ms = 11;
-  uint64 zfs_written = 12;
-  uint64 rootfs_provisioned_bytes = 13;
-  uint64 stdout_bytes = 14;
-  uint64 stderr_bytes = 15;
-  uint64 dropped_log_bytes = 16;
-  bool forced_shutdown = 17;
-  repeated PhaseResult phase_results = 18;
-  string failure_phase = 19;
-  VMMetrics metrics = 20;
-}
-
-message EnsureRunRequest {
-  HostRunSpec spec = 1;
-}
-
-message EnsureRunResponse {
-  string run_id = 1;
-  RunState state = 2;
-  bool created = 3;
-}
-
-message GetRunRequest {
-  string run_id = 1;
-  bool include_output = 2;
-}
-
-message GetRunResponse {
-  string run_id = 1;
-  RunState state = 2;
-  bool terminal = 3;
-  string terminal_reason = 4;
-  HostRunResult result = 5;
-  uint64 updated_at_unix_nano = 6;
-}
-
-message StreamRunEventsRequest {
-  string run_id = 1;
-  uint64 from_seq = 2;
-  bool follow = 3;
-  uint32 batch_size = 4;
-}
-
-message HostRunEvent {
-  string run_id = 1;
-  uint64 event_seq = 2;
-  string event_type = 3;
-  map<string, string> attrs = 4;
-  uint64 created_at_unix_nano = 5;
-}
-
-message CancelRunRequest {
-  string run_id = 1;
-  string reason = 2;
-}
-
-message CancelRunResponse {
-  bool accepted = 1;
+message RuntimeProfileCapacity {
+  string runtime_profile = 1;
+  uint32 total_slots = 2;
+  uint32 leases_held = 3;
+  uint32 leases_available = 4;
+  uint32 vcpus_per_slot = 5;
+  uint32 memory_mib_per_slot = 6;
+  uint64 rootfs_provisioned_bytes = 7;
 }
 
 message GetCapacityRequest {}
 
 message GetCapacityResponse {
   string guest_pool_cidr = 1;
-  uint32 total_slots = 2;
-  uint32 active_runs = 3;
-  uint32 available_slots = 4;
-  uint32 vcpus_per_vm = 5;
-  uint32 memory_mib_per_vm = 6;
-  uint64 rootfs_provisioned_bytes = 7;
+  repeated RuntimeProfileCapacity runtime_profiles = 2;
 }

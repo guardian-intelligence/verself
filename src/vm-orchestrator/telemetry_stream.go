@@ -15,8 +15,8 @@ var ErrTelemetryHelloFirst = errors.New("telemetry stream first frame must be he
 
 const telemetryFaultProfileEnvVar = "FORGE_METAL_TELEMETRY_FAULT_PROFILE"
 
-func streamGuestTelemetry(ctx context.Context, udsPath, runID string, observer RunObserver, logger *slog.Logger, faultProfile *telemetryFaultProfile) error {
-	observer = normalizeRunObserver(observer)
+func streamGuestTelemetry(ctx context.Context, udsPath, leaseID string, observer LeaseObserver, logger *slog.Logger, faultProfile *telemetryFaultProfile) error {
+	observer = normalizeLeaseObserver(observer)
 
 	conn, reader, err := connectGuestBridge(ctx, udsPath, guestTelemetryPort)
 	if err != nil {
@@ -24,7 +24,7 @@ func streamGuestTelemetry(ctx context.Context, udsPath, runID string, observer R
 	}
 	defer conn.Close()
 
-	return consumeGuestTelemetryStream(ctx, reader, runID, observer, logger, faultProfile)
+	return consumeGuestTelemetryStream(ctx, reader, leaseID, observer, logger, faultProfile)
 }
 
 type telemetryFaultProfileKind uint8
@@ -113,7 +113,7 @@ func injectTelemetryFault(profile *telemetryFaultProfile, event *TelemetryEvent)
 	}
 }
 
-func consumeGuestTelemetryStream(ctx context.Context, reader io.Reader, runID string, observer RunObserver, logger *slog.Logger, faultProfile *telemetryFaultProfile) error {
+func consumeGuestTelemetryStream(ctx context.Context, reader io.Reader, leaseID string, observer LeaseObserver, logger *slog.Logger, faultProfile *telemetryFaultProfile) error {
 	validator := telemetryStreamValidator{}
 
 	for {
@@ -133,7 +133,7 @@ func consumeGuestTelemetryStream(ctx context.Context, reader io.Reader, runID st
 			}
 			return err
 		}
-		event.RunID = runID
+		event.LeaseID = leaseID
 		event.ReceivedAtUnix = time.Now().UTC()
 		injectTelemetryFault(faultProfile, &event)
 
@@ -142,13 +142,13 @@ func consumeGuestTelemetryStream(ctx context.Context, reader io.Reader, runID st
 			return err
 		}
 		if emitFrame {
-			logTelemetryFrame(ctx, logger, runID, event)
+			logTelemetryFrame(ctx, logger, leaseID, event)
 			observer.OnTelemetryEvent(event)
 		}
 		if diagnostic != nil {
-			logTelemetryDiagnostic(ctx, logger, runID, *diagnostic)
+			logTelemetryDiagnostic(ctx, logger, leaseID, *diagnostic)
 			observer.OnTelemetryEvent(TelemetryEvent{
-				RunID:          runID,
+				LeaseID:        leaseID,
 				ReceivedAtUnix: event.ReceivedAtUnix,
 				Diagnostic:     diagnostic,
 			})
@@ -213,25 +213,25 @@ func telemetryEventKind(event TelemetryEvent) string {
 	}
 }
 
-func logTelemetryFrame(ctx context.Context, logger *slog.Logger, runID string, event TelemetryEvent) {
+func logTelemetryFrame(ctx context.Context, logger *slog.Logger, leaseID string, event TelemetryEvent) {
 	if logger == nil {
 		return
 	}
 	switch {
 	case event.Hello != nil:
-		logger.InfoContext(ctx, "guest telemetry hello received", "run_id", runID, "boot_id", event.Hello.BootID, "seq", event.Hello.Seq)
+		logger.InfoContext(ctx, "guest telemetry hello received", "lease_id", leaseID, "boot_id", event.Hello.BootID, "seq", event.Hello.Seq)
 	case event.Sample != nil:
-		logger.DebugContext(ctx, "guest telemetry sample received", "run_id", runID, "seq", event.Sample.Seq)
+		logger.DebugContext(ctx, "guest telemetry sample received", "lease_id", leaseID, "seq", event.Sample.Seq)
 	}
 }
 
-func logTelemetryDiagnostic(ctx context.Context, logger *slog.Logger, runID string, diagnostic TelemetryDiagnostic) {
+func logTelemetryDiagnostic(ctx context.Context, logger *slog.Logger, leaseID string, diagnostic TelemetryDiagnostic) {
 	if logger == nil {
 		return
 	}
 	logger.WarnContext(ctx,
 		"guest telemetry stream diagnostic",
-		"run_id", runID,
+		"lease_id", leaseID,
 		"kind", string(diagnostic.Kind),
 		"expected_seq", diagnostic.ExpectedSeq,
 		"observed_seq", diagnostic.ObservedSeq,

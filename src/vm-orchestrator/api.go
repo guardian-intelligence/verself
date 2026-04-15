@@ -76,7 +76,7 @@ type metricsReq struct {
 type entropyReq struct{}
 
 // The snapshot helpers below are intentionally reserved for the next runtime
-// phase. The current cold-boot path does not call them, but restore support
+// stage. The current cold-boot path does not call them, but restore support
 // will build on this exact Firecracker v1.15.0 API surface.
 type vmStateReq struct {
 	State string `json:"state"`

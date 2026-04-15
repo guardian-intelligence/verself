@@ -1,229 +1,302 @@
 package vmorchestrator
 
 import (
+	"strings"
 	"time"
 
 	vmrpc "github.com/forge-metal/vm-orchestrator/proto/v1"
 )
 
-func hostRunSpecToProto(spec HostRunSpec) *vmrpc.HostRunSpec {
-	return &vmrpc.HostRunSpec{
-		RunId:              spec.RunID,
-		WorkloadKind:       spec.WorkloadKind,
-		RunnerClass:        spec.RunnerClass,
-		RunCommand:         cloneStringSlice(spec.RunCommand),
-		RunWorkDir:         spec.RunWorkDir,
-		Env:                cloneStringMap(spec.Env),
-		WorkflowYaml:       spec.WorkflowYAML,
-		WorkflowEnv:        cloneStringMap(spec.WorkflowEnv),
-		WorkflowSecrets:    cloneStringMap(spec.WorkflowSecrets),
-		WorkflowEventName:  spec.WorkflowEventName,
-		WorkflowInputs:     cloneStringMap(spec.WorkflowInputs),
-		GithubJitConfig:    spec.GitHubJITConfig,
-		BillablePhases:     cloneStringSlice(spec.BillablePhases),
-		CheckpointSaveRefs: cloneStringSlice(spec.CheckpointSaveRefs),
-		AttemptId:          spec.AttemptID,
-		SegmentId:          spec.SegmentID,
-	}
-}
-
-func hostRunSpecFromProto(spec *vmrpc.HostRunSpec) HostRunSpec {
+func leaseSpecFromProto(spec *vmrpc.LeaseSpec, cfg Config) LeaseSpec {
 	if spec == nil {
-		return HostRunSpec{}
+		return normalizeLeaseSpec(LeaseSpec{}, cfg)
 	}
-	return HostRunSpec{
-		RunID:              spec.GetRunId(),
-		WorkloadKind:       spec.GetWorkloadKind(),
-		RunnerClass:        spec.GetRunnerClass(),
-		RunCommand:         cloneStringSlice(spec.GetRunCommand()),
-		RunWorkDir:         spec.GetRunWorkDir(),
-		Env:                cloneStringMap(spec.GetEnv()),
-		WorkflowYAML:       spec.GetWorkflowYaml(),
-		WorkflowEnv:        cloneStringMap(spec.GetWorkflowEnv()),
-		WorkflowSecrets:    cloneStringMap(spec.GetWorkflowSecrets()),
-		WorkflowEventName:  spec.GetWorkflowEventName(),
-		WorkflowInputs:     cloneStringMap(spec.GetWorkflowInputs()),
-		GitHubJITConfig:    spec.GetGithubJitConfig(),
-		BillablePhases:     cloneStringSlice(spec.GetBillablePhases()),
-		CheckpointSaveRefs: cloneStringSlice(spec.GetCheckpointSaveRefs()),
-		AttemptID:          spec.GetAttemptId(),
-		SegmentID:          spec.GetSegmentId(),
+	networkMode := "nat"
+	if spec.GetNetwork() != nil && spec.GetNetwork().GetMode() == vmrpc.NetworkAttachMode_NETWORK_ATTACH_MODE_NONE {
+		networkMode = "none"
+	}
+	return normalizeLeaseSpec(LeaseSpec{
+		RuntimeProfile:          spec.GetRuntimeProfile(),
+		VCPUs:                   spec.GetVcpus(),
+		MemoryMiB:               spec.GetMemoryMib(),
+		FromCheckpointRef:       spec.GetFromCheckpointRef(),
+		TTLSeconds:              spec.GetTtlSeconds(),
+		TrustClass:              spec.GetTrustClass(),
+		CheckpointSaveAllowlist: append([]string(nil), spec.GetCheckpointSaveAllowlist()...),
+		NetworkMode:             networkMode,
+	}, cfg)
+}
+
+func execSpecFromProto(spec *vmrpc.ExecSpec) ExecSpec {
+	if spec == nil {
+		return ExecSpec{}
+	}
+	return ExecSpec{
+		Argv:           append([]string(nil), spec.GetArgv()...),
+		WorkingDir:     spec.GetWorkingDir(),
+		Env:            cloneStringMap(spec.GetEnv()),
+		MaxWallSeconds: spec.GetMaxWallSeconds(),
 	}
 }
 
-func runSpecFromHostRunSpec(spec HostRunSpec) RunSpec {
-	return RunSpec{
-		RunID:              spec.RunID,
-		WorkloadKind:       spec.WorkloadKind,
-		RunnerClass:        spec.RunnerClass,
-		RunCommand:         cloneStringSlice(spec.RunCommand),
-		RunWorkDir:         spec.RunWorkDir,
-		Env:                cloneStringMap(spec.Env),
-		WorkflowYAML:       spec.WorkflowYAML,
-		WorkflowEnv:        cloneStringMap(spec.WorkflowEnv),
-		WorkflowSecrets:    cloneStringMap(spec.WorkflowSecrets),
-		WorkflowEventName:  spec.WorkflowEventName,
-		WorkflowInputs:     cloneStringMap(spec.WorkflowInputs),
-		GitHubJITConfig:    spec.GitHubJITConfig,
-		BillablePhases:     cloneStringSlice(spec.BillablePhases),
-		CheckpointSaveRefs: cloneStringSlice(spec.CheckpointSaveRefs),
+func acquireLeaseResponseFromRecord(record LeaseRecord) *vmrpc.AcquireLeaseResponse {
+	return &vmrpc.AcquireLeaseResponse{
+		LeaseId:          record.LeaseID,
+		State:            leaseStateToProto(record.State),
+		AcquiredAtUnixNs: uint64(record.AcquiredAt.UnixNano()),
+		ExpiresAtUnixNs:  uint64(record.ExpiresAt.UnixNano()),
+		VmIp:             record.VMIP,
+		RuntimeProfile:   record.RuntimeProfile,
 	}
 }
 
-func runResultToProto(result RunResult, includeOutput bool) *vmrpc.HostRunResult {
-	out := &vmrpc.HostRunResult{
-		ExitCode:               int32(result.ExitCode),
-		DurationMs:             result.Duration.Milliseconds(),
-		CloneTimeMs:            result.CloneTime.Milliseconds(),
-		JailSetupTimeMs:        result.JailSetupTime.Milliseconds(),
-		VmBootTimeMs:           result.VMBootTime.Milliseconds(),
-		BootToReadyDurationMs:  result.BootToReadyDuration.Milliseconds(),
-		RunDurationMs:          result.RunDuration.Milliseconds(),
-		VmExitWaitDurationMs:   result.VMExitWaitDuration.Milliseconds(),
-		CleanupTimeMs:          result.CleanupTime.Milliseconds(),
-		ZfsWritten:             result.ZFSWritten,
-		RootfsProvisionedBytes: result.RootfsProvisionedBytes,
-		StdoutBytes:            result.StdoutBytes,
-		StderrBytes:            result.StderrBytes,
-		DroppedLogBytes:        result.DroppedLogBytes,
-		ForcedShutdown:         result.ForcedShutdown,
-		FailurePhase:           result.FailurePhase,
+func leaseSnapshotToProto(snap leaseSnapshot) *vmrpc.LeaseRecord {
+	return &vmrpc.LeaseRecord{
+		LeaseId:          snap.LeaseID,
+		State:            leaseStateToProto(snap.State),
+		AcquiredAtUnixNs: uint64(snap.AcquiredAt.UnixNano()),
+		ReadyAtUnixNs:    uint64(snap.ReadyAt.UnixNano()),
+		ExpiresAtUnixNs:  uint64(snap.ExpiresAt.UnixNano()),
+		TerminalAtUnixNs: uint64(snap.TerminalAt.UnixNano()),
+		TerminalReason:   snap.TerminalReason,
+		VmIp:             snap.VMIP,
+		RuntimeProfile:   snap.RuntimeProfile,
+		TrustClass:       snap.TrustClass,
 	}
+}
+
+func execSnapshotToProto(snap execSnapshot, includeOutput bool) *vmrpc.ExecRecord {
+	output := ""
 	if includeOutput {
-		out.Logs = result.Logs
-		out.SerialLogs = result.SerialLogs
+		output = snap.Output
 	}
-	if result.Metrics != nil {
-		out.Metrics = &vmrpc.VMMetrics{
-			BootTimeUs:      result.Metrics.BootTimeUs,
-			BlockReadBytes:  result.Metrics.BlockReadBytes,
-			BlockWriteBytes: result.Metrics.BlockWriteBytes,
-			BlockReadCount:  result.Metrics.BlockReadCount,
-			BlockWriteCount: result.Metrics.BlockWriteCount,
-			NetRxBytes:      result.Metrics.NetRxBytes,
-			NetTxBytes:      result.Metrics.NetTxBytes,
-			VcpuExitCount:   result.Metrics.VCPUExitCount,
-		}
+	return &vmrpc.ExecRecord{
+		LeaseId:                snap.LeaseID,
+		ExecId:                 snap.ExecID,
+		State:                  execStateToProto(snap.State),
+		ExitCode:               int32(snap.ExitCode),
+		TerminalReason:         snap.TerminalReason,
+		QueuedAtUnixNs:         unixNs(snap.QueuedAt),
+		StartedAtUnixNs:        unixNs(snap.StartedAt),
+		FirstByteAtUnixNs:      unixNs(snap.FirstByteAt),
+		ExitedAtUnixNs:         unixNs(snap.ExitedAt),
+		StdoutBytes:            snap.StdoutBytes,
+		StderrBytes:            snap.StderrBytes,
+		DroppedLogBytes:        snap.DroppedLogBytes,
+		Output:                 output,
+		Metrics:                vmMetricsToProto(snap.Metrics),
+		ZfsWritten:             snap.ZFSWritten,
+		RootfsProvisionedBytes: snap.RootfsProvisionedBytes,
 	}
-	if len(result.PhaseResults) > 0 {
-		out.PhaseResults = make([]*vmrpc.PhaseResult, 0, len(result.PhaseResults))
-		for _, phase := range result.PhaseResults {
-			out.PhaseResults = append(out.PhaseResults, &vmrpc.PhaseResult{
-				Name:       phase.Name,
-				ExitCode:   int32(phase.ExitCode),
-				DurationMs: phase.DurationMS,
-			})
-		}
-	}
-	return out
 }
 
-func runResultFromProto(result *vmrpc.HostRunResult) *RunResult {
-	if result == nil {
+func leaseEventToProto(leaseID string, event leaseEventRecord) *vmrpc.LeaseEvent {
+	return &vmrpc.LeaseEvent{
+		LeaseId:         leaseID,
+		EventSeq:        event.Seq,
+		EventType:       leaseEventTypeToProto(event.Type),
+		ExecId:          event.ExecID,
+		Attrs:           cloneStringMap(event.Attrs),
+		CreatedAtUnixNs: uint64(event.CreatedAt.UnixNano()),
+	}
+}
+
+func leaseStateToProto(state LeaseState) vmrpc.LeaseState {
+	switch state {
+	case LeaseStateAcquiring:
+		return vmrpc.LeaseState_LEASE_STATE_ACQUIRING
+	case LeaseStateReady:
+		return vmrpc.LeaseState_LEASE_STATE_READY
+	case LeaseStateDraining:
+		return vmrpc.LeaseState_LEASE_STATE_DRAINING
+	case LeaseStateReleased:
+		return vmrpc.LeaseState_LEASE_STATE_RELEASED
+	case LeaseStateExpired:
+		return vmrpc.LeaseState_LEASE_STATE_EXPIRED
+	case LeaseStateCrashed:
+		return vmrpc.LeaseState_LEASE_STATE_CRASHED
+	default:
+		return vmrpc.LeaseState_LEASE_STATE_UNSPECIFIED
+	}
+}
+
+func leaseStateFromProto(state vmrpc.LeaseState) LeaseState {
+	switch state {
+	case vmrpc.LeaseState_LEASE_STATE_ACQUIRING:
+		return LeaseStateAcquiring
+	case vmrpc.LeaseState_LEASE_STATE_READY:
+		return LeaseStateReady
+	case vmrpc.LeaseState_LEASE_STATE_DRAINING:
+		return LeaseStateDraining
+	case vmrpc.LeaseState_LEASE_STATE_RELEASED:
+		return LeaseStateReleased
+	case vmrpc.LeaseState_LEASE_STATE_EXPIRED:
+		return LeaseStateExpired
+	case vmrpc.LeaseState_LEASE_STATE_CRASHED:
+		return LeaseStateCrashed
+	default:
+		return LeaseStateUnspecified
+	}
+}
+
+func execStateToProto(state ExecState) vmrpc.ExecState {
+	switch state {
+	case ExecStatePending:
+		return vmrpc.ExecState_EXEC_STATE_PENDING
+	case ExecStateRunning:
+		return vmrpc.ExecState_EXEC_STATE_RUNNING
+	case ExecStateExited:
+		return vmrpc.ExecState_EXEC_STATE_EXITED
+	case ExecStateFailed:
+		return vmrpc.ExecState_EXEC_STATE_FAILED
+	case ExecStateCanceled:
+		return vmrpc.ExecState_EXEC_STATE_CANCELED
+	case ExecStateKilledByLeaseExpiry:
+		return vmrpc.ExecState_EXEC_STATE_KILLED_BY_LEASE_EXPIRY
+	default:
+		return vmrpc.ExecState_EXEC_STATE_UNSPECIFIED
+	}
+}
+
+func execStateFromProto(state vmrpc.ExecState) ExecState {
+	switch state {
+	case vmrpc.ExecState_EXEC_STATE_PENDING:
+		return ExecStatePending
+	case vmrpc.ExecState_EXEC_STATE_RUNNING:
+		return ExecStateRunning
+	case vmrpc.ExecState_EXEC_STATE_EXITED:
+		return ExecStateExited
+	case vmrpc.ExecState_EXEC_STATE_FAILED:
+		return ExecStateFailed
+	case vmrpc.ExecState_EXEC_STATE_CANCELED:
+		return ExecStateCanceled
+	case vmrpc.ExecState_EXEC_STATE_KILLED_BY_LEASE_EXPIRY:
+		return ExecStateKilledByLeaseExpiry
+	default:
+		return ExecStateUnspecified
+	}
+}
+
+func leaseEventTypeToProto(eventType LeaseEventType) vmrpc.LeaseEventType {
+	switch eventType {
+	case LeaseEventLeaseAcquired:
+		return vmrpc.LeaseEventType_LEASE_EVENT_TYPE_LEASE_ACQUIRED
+	case LeaseEventVMBooting:
+		return vmrpc.LeaseEventType_LEASE_EVENT_TYPE_VM_BOOTING
+	case LeaseEventVMReady:
+		return vmrpc.LeaseEventType_LEASE_EVENT_TYPE_VM_READY
+	case LeaseEventLeaseRenewed:
+		return vmrpc.LeaseEventType_LEASE_EVENT_TYPE_LEASE_RENEWED
+	case LeaseEventExecStarted:
+		return vmrpc.LeaseEventType_LEASE_EVENT_TYPE_EXEC_STARTED
+	case LeaseEventExecFinished:
+		return vmrpc.LeaseEventType_LEASE_EVENT_TYPE_EXEC_FINISHED
+	case LeaseEventExecCanceled:
+		return vmrpc.LeaseEventType_LEASE_EVENT_TYPE_EXEC_CANCELED
+	case LeaseEventCheckpointSaved:
+		return vmrpc.LeaseEventType_LEASE_EVENT_TYPE_CHECKPOINT_SAVED
+	case LeaseEventVMShutdown:
+		return vmrpc.LeaseEventType_LEASE_EVENT_TYPE_VM_SHUTDOWN
+	case LeaseEventLeaseExpired:
+		return vmrpc.LeaseEventType_LEASE_EVENT_TYPE_LEASE_EXPIRED
+	case LeaseEventLeaseReleased:
+		return vmrpc.LeaseEventType_LEASE_EVENT_TYPE_LEASE_RELEASED
+	case LeaseEventLeaseCrashed:
+		return vmrpc.LeaseEventType_LEASE_EVENT_TYPE_LEASE_CRASHED
+	case LeaseEventTelemetryDiagnostic:
+		return vmrpc.LeaseEventType_LEASE_EVENT_TYPE_TELEMETRY_DIAGNOSTIC
+	default:
+		return vmrpc.LeaseEventType_LEASE_EVENT_TYPE_UNSPECIFIED
+	}
+}
+
+func leaseEventTypeFromProto(eventType vmrpc.LeaseEventType) LeaseEventType {
+	switch eventType {
+	case vmrpc.LeaseEventType_LEASE_EVENT_TYPE_LEASE_ACQUIRED:
+		return LeaseEventLeaseAcquired
+	case vmrpc.LeaseEventType_LEASE_EVENT_TYPE_VM_BOOTING:
+		return LeaseEventVMBooting
+	case vmrpc.LeaseEventType_LEASE_EVENT_TYPE_VM_READY:
+		return LeaseEventVMReady
+	case vmrpc.LeaseEventType_LEASE_EVENT_TYPE_LEASE_RENEWED:
+		return LeaseEventLeaseRenewed
+	case vmrpc.LeaseEventType_LEASE_EVENT_TYPE_EXEC_STARTED:
+		return LeaseEventExecStarted
+	case vmrpc.LeaseEventType_LEASE_EVENT_TYPE_EXEC_FINISHED:
+		return LeaseEventExecFinished
+	case vmrpc.LeaseEventType_LEASE_EVENT_TYPE_EXEC_CANCELED:
+		return LeaseEventExecCanceled
+	case vmrpc.LeaseEventType_LEASE_EVENT_TYPE_CHECKPOINT_SAVED:
+		return LeaseEventCheckpointSaved
+	case vmrpc.LeaseEventType_LEASE_EVENT_TYPE_VM_SHUTDOWN:
+		return LeaseEventVMShutdown
+	case vmrpc.LeaseEventType_LEASE_EVENT_TYPE_LEASE_EXPIRED:
+		return LeaseEventLeaseExpired
+	case vmrpc.LeaseEventType_LEASE_EVENT_TYPE_LEASE_RELEASED:
+		return LeaseEventLeaseReleased
+	case vmrpc.LeaseEventType_LEASE_EVENT_TYPE_LEASE_CRASHED:
+		return LeaseEventLeaseCrashed
+	case vmrpc.LeaseEventType_LEASE_EVENT_TYPE_TELEMETRY_DIAGNOSTIC:
+		return LeaseEventTelemetryDiagnostic
+	default:
+		return ""
+	}
+}
+
+func vmMetricsToProto(metrics *VMMetrics) *vmrpc.VMMetrics {
+	if metrics == nil {
 		return nil
 	}
-	out := &RunResult{
-		ExitCode:               int(result.GetExitCode()),
-		Logs:                   result.GetLogs(),
-		SerialLogs:             result.GetSerialLogs(),
-		Duration:               time.Duration(result.GetDurationMs()) * time.Millisecond,
-		CloneTime:              time.Duration(result.GetCloneTimeMs()) * time.Millisecond,
-		JailSetupTime:          time.Duration(result.GetJailSetupTimeMs()) * time.Millisecond,
-		VMBootTime:             time.Duration(result.GetVmBootTimeMs()) * time.Millisecond,
-		BootToReadyDuration:    time.Duration(result.GetBootToReadyDurationMs()) * time.Millisecond,
-		RunDuration:            time.Duration(result.GetRunDurationMs()) * time.Millisecond,
-		VMExitWaitDuration:     time.Duration(result.GetVmExitWaitDurationMs()) * time.Millisecond,
-		CleanupTime:            time.Duration(result.GetCleanupTimeMs()) * time.Millisecond,
-		ZFSWritten:             result.GetZfsWritten(),
-		RootfsProvisionedBytes: result.GetRootfsProvisionedBytes(),
-		StdoutBytes:            result.GetStdoutBytes(),
-		StderrBytes:            result.GetStderrBytes(),
-		DroppedLogBytes:        result.GetDroppedLogBytes(),
-		ForcedShutdown:         result.GetForcedShutdown(),
-		FailurePhase:           result.GetFailurePhase(),
+	return &vmrpc.VMMetrics{
+		BootTimeUs:      metrics.BootTimeUs,
+		BlockReadBytes:  metrics.BlockReadBytes,
+		BlockWriteBytes: metrics.BlockWriteBytes,
+		BlockReadCount:  metrics.BlockReadCount,
+		BlockWriteCount: metrics.BlockWriteCount,
+		NetRxBytes:      metrics.NetRxBytes,
+		NetTxBytes:      metrics.NetTxBytes,
+		VcpuExitCount:   metrics.VCPUExitCount,
 	}
-	if metrics := result.GetMetrics(); metrics != nil {
-		out.Metrics = &VMMetrics{
-			BootTimeUs:      metrics.GetBootTimeUs(),
-			BlockReadBytes:  metrics.GetBlockReadBytes(),
-			BlockWriteBytes: metrics.GetBlockWriteBytes(),
-			BlockReadCount:  metrics.GetBlockReadCount(),
-			BlockWriteCount: metrics.GetBlockWriteCount(),
-			NetRxBytes:      metrics.GetNetRxBytes(),
-			NetTxBytes:      metrics.GetNetTxBytes(),
-			VCPUExitCount:   metrics.GetVcpuExitCount(),
-		}
+}
+
+func vmMetricsFromProto(metrics *vmrpc.VMMetrics) *VMMetrics {
+	if metrics == nil {
+		return nil
 	}
-	if phases := result.GetPhaseResults(); len(phases) > 0 {
-		out.PhaseResults = make([]PhaseResult, 0, len(phases))
-		for _, phase := range phases {
-			out.PhaseResults = append(out.PhaseResults, PhaseResult{
-				Name:       phase.GetName(),
-				ExitCode:   int(phase.GetExitCode()),
-				DurationMS: phase.GetDurationMs(),
-			})
+	return &VMMetrics{
+		BootTimeUs:      metrics.GetBootTimeUs(),
+		BlockReadBytes:  metrics.GetBlockReadBytes(),
+		BlockWriteBytes: metrics.GetBlockWriteBytes(),
+		BlockReadCount:  metrics.GetBlockReadCount(),
+		BlockWriteCount: metrics.GetBlockWriteCount(),
+		NetRxBytes:      metrics.GetNetRxBytes(),
+		NetTxBytes:      metrics.GetNetTxBytes(),
+		VCPUExitCount:   metrics.GetVcpuExitCount(),
+	}
+}
+
+func unixNs(t time.Time) uint64 {
+	if t.IsZero() {
+		return 0
+	}
+	return uint64(t.UTC().UnixNano())
+}
+
+func timeFromUnixNs(value uint64) time.Time {
+	if value == 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, int64(value)).UTC()
+}
+
+func trimStringMap(values map[string]string) map[string]string {
+	out := make(map[string]string, len(values))
+	for key, value := range values {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
 		}
+		out[key] = value
 	}
 	return out
-}
-
-func runStateToProto(state RunState) vmrpc.RunState {
-	switch state {
-	case RunStatePending:
-		return vmrpc.RunState_RUN_STATE_PENDING
-	case RunStateRunning:
-		return vmrpc.RunState_RUN_STATE_RUNNING
-	case RunStateSucceeded:
-		return vmrpc.RunState_RUN_STATE_SUCCEEDED
-	case RunStateFailed:
-		return vmrpc.RunState_RUN_STATE_FAILED
-	case RunStateCanceled:
-		return vmrpc.RunState_RUN_STATE_CANCELED
-	default:
-		return vmrpc.RunState_RUN_STATE_UNSPECIFIED
-	}
-}
-
-func runStateFromProto(state vmrpc.RunState) RunState {
-	switch state {
-	case vmrpc.RunState_RUN_STATE_PENDING:
-		return RunStatePending
-	case vmrpc.RunState_RUN_STATE_RUNNING:
-		return RunStateRunning
-	case vmrpc.RunState_RUN_STATE_SUCCEEDED:
-		return RunStateSucceeded
-	case vmrpc.RunState_RUN_STATE_FAILED:
-		return RunStateFailed
-	case vmrpc.RunState_RUN_STATE_CANCELED:
-		return RunStateCanceled
-	default:
-		return RunStateUnspecified
-	}
-}
-
-func hostRunSnapshotFromProto(resp *vmrpc.GetRunResponse) HostRunSnapshot {
-	if resp == nil {
-		return HostRunSnapshot{}
-	}
-	return HostRunSnapshot{
-		RunID:          resp.GetRunId(),
-		State:          runStateFromProto(resp.GetState()),
-		Terminal:       resp.GetTerminal(),
-		TerminalReason: resp.GetTerminalReason(),
-		Result:         runResultFromProto(resp.GetResult()),
-		UpdatedAt:      time.Unix(0, int64(resp.GetUpdatedAtUnixNano())).UTC(),
-	}
-}
-
-func hostRunEventFromProto(event *vmrpc.HostRunEvent) HostRunEvent {
-	if event == nil {
-		return HostRunEvent{}
-	}
-	return HostRunEvent{
-		Seq:       event.GetEventSeq(),
-		RunID:     event.GetRunId(),
-		EventType: event.GetEventType(),
-		Attrs:     cloneStringMap(event.GetAttrs()),
-		CreatedAt: time.Unix(0, int64(event.GetCreatedAtUnixNano())).UTC(),
-	}
 }

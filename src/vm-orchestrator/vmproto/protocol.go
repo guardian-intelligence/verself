@@ -12,9 +12,8 @@ import (
 )
 
 const (
-	ProtocolVersion = 2
+	ProtocolVersion = 3
 	GuestPort       = 10789
-	GuestCID        = 52
 
 	ControlQueueCapacity = 32
 	LogQueueCapacity     = 256
@@ -31,12 +30,12 @@ type MessageType string
 
 const (
 	TypeHello              MessageType = "hello"
-	TypeRunRequest         MessageType = "run_request"
-	TypePhaseStart         MessageType = "phase_start"
-	TypePhaseEnd           MessageType = "phase_end"
+	TypeLeaseInit          MessageType = "lease_init"
+	TypeExecRequest        MessageType = "exec_request"
+	TypeExecStarted        MessageType = "exec_started"
 	TypeLogChunk           MessageType = "log_chunk"
 	TypeHeartbeat          MessageType = "heartbeat"
-	TypeResult             MessageType = "result"
+	TypeExecResult         MessageType = "exec_result"
 	TypeCheckpointRequest  MessageType = "checkpoint_request"
 	TypeCheckpointResponse MessageType = "checkpoint_response"
 	TypeFatal              MessageType = "fatal"
@@ -73,68 +72,43 @@ type NetworkConfig struct {
 	HostServicePort int      `json:"host_service_port,omitempty"`
 }
 
-type RunRequest struct {
-	RunID               string            `json:"run_id"`
-	WorkloadKind        string            `json:"workload_kind,omitempty"`
-	RunnerClass         string            `json:"runner_class,omitempty"`
-	RunCommand          []string          `json:"run_command"`
-	RunWorkDir          string            `json:"run_work_dir,omitempty"`
-	Env                 map[string]string `json:"env,omitempty"`
-	WorkflowYAML        string            `json:"workflow_yaml,omitempty"`
-	WorkflowEnv         map[string]string `json:"workflow_env,omitempty"`
-	WorkflowSecrets     map[string]string `json:"workflow_secrets,omitempty"`
-	WorkflowEventName   string            `json:"workflow_event_name,omitempty"`
-	WorkflowInputs      map[string]string `json:"workflow_inputs,omitempty"`
-	GitHubJITConfig     string            `json:"github_jit_config,omitempty"`
-	Network             NetworkConfig     `json:"network"`
-	HostWallclockUnixNS int64             `json:"host_wallclock_unix_ns"`
-	ProtocolVersion     int               `json:"protocol_version"`
+type LeaseInit struct {
+	LeaseID             string        `json:"lease_id"`
+	Network             NetworkConfig `json:"network"`
+	HostWallclockUnixNS int64         `json:"host_wallclock_unix_ns"`
+	ProtocolVersion     int           `json:"protocol_version"`
 }
 
-const (
-	WorkloadKindDirect          = "direct"
-	WorkloadKindForgejoWorkflow = "forgejo_workflow"
-	WorkloadKindGitHubRunner    = "github_runner"
-)
-
-func NormalizeWorkloadKind(kind string) string {
-	kind = strings.TrimSpace(kind)
-	if kind == "" {
-		return WorkloadKindDirect
-	}
-	return kind
+type ExecRequest struct {
+	LeaseID         string            `json:"lease_id"`
+	ExecID          string            `json:"exec_id"`
+	Argv            []string          `json:"argv"`
+	WorkingDir      string            `json:"working_dir,omitempty"`
+	Env             map[string]string `json:"env,omitempty"`
+	MaxWallSeconds  uint64            `json:"max_wall_seconds,omitempty"`
+	ProtocolVersion int               `json:"protocol_version"`
 }
 
-func ValidateWorkloadKind(kind string) error {
-	switch NormalizeWorkloadKind(kind) {
-	case WorkloadKindDirect, WorkloadKindForgejoWorkflow, WorkloadKindGitHubRunner:
-		return nil
-	default:
-		return fmt.Errorf("unsupported workload_kind %q", strings.TrimSpace(kind))
-	}
-}
-
-type PhaseStart struct {
-	Name string `json:"name"`
-}
-
-type PhaseEnd struct {
-	Name       string `json:"name"`
-	ExitCode   int    `json:"exit_code"`
-	DurationMS int64  `json:"duration_ms"`
+type ExecStarted struct {
+	LeaseID         string `json:"lease_id"`
+	ExecID          string `json:"exec_id"`
+	StartedUnixNS   int64  `json:"started_unix_ns"`
+	ProtocolVersion int    `json:"protocol_version"`
 }
 
 type LogChunk struct {
+	ExecID string `json:"exec_id,omitempty"`
 	Stream string `json:"stream"`
 	Data   []byte `json:"data"`
 }
 
 type Heartbeat struct{}
 
-type Result struct {
+type ExecResult struct {
+	LeaseID         string `json:"lease_id"`
+	ExecID          string `json:"exec_id"`
 	ExitCode        int    `json:"exit_code"`
-	RunDurationMS   int64  `json:"run_duration_ms"`
-	BootToReadyMS   int64  `json:"boot_to_ready_ms"`
+	DurationMS      int64  `json:"duration_ms"`
 	StdoutBytes     uint64 `json:"stdout_bytes"`
 	StderrBytes     uint64 `json:"stderr_bytes"`
 	DroppedLogBytes uint64 `json:"dropped_log_bytes"`
@@ -160,6 +134,7 @@ type Fatal struct {
 }
 
 type Cancel struct {
+	ExecID string `json:"exec_id,omitempty"`
 	Reason string `json:"reason,omitempty"`
 }
 

@@ -28,16 +28,16 @@ const (
 
 var ErrNoNetworkSlots = errors.New("no network slots available")
 
-// NetworkPoolConfig defines the host-managed pool used for Firecracker guests.
 type NetworkPoolConfig struct {
 	PoolCIDR      string
 	StateDBPath   string
 	HostInterface string
+	TapOwnerUID   int
+	TapOwnerGID   int
 }
 
-// NetworkLease is the persisted lease record for one Firecracker VM.
 type NetworkLease struct {
-	RunID                 string    `json:"run_id"`
+	LeaseID               string    `json:"lease_id"`
 	SlotIndex             int       `json:"slot_index"`
 	Generation            uint64    `json:"generation"`
 	SubnetCIDR            string    `json:"subnet_cidr"`
@@ -51,70 +51,67 @@ type NetworkLease struct {
 	CreatedAtUTC          time.Time `json:"created_at_utc"`
 }
 
-// Allocator manages persistent, host-wide network leases for Firecracker VMs.
 type Allocator struct {
 	cfg           NetworkPoolConfig
 	tapExistsFunc func(string) bool
 }
 
-// networkSetup is the runtime network configuration passed into Firecracker.
 type networkSetup struct {
 	Lease NetworkLease
 }
 
 func NewAllocator(cfg NetworkPoolConfig) *Allocator {
-	return &Allocator{
-		cfg:           normalizeNetworkPoolConfig(cfg),
-		tapExistsFunc: tapExists,
-	}
+	return &Allocator{cfg: normalizeNetworkPoolConfig(cfg), tapExistsFunc: tapExists}
 }
 
-func setupNetwork(ctx context.Context, runID string, cfg NetworkPoolConfig, ops PrivOps) (*networkSetup, func(), error) {
+func setupNetwork(ctx context.Context, leaseID string, cfg NetworkPoolConfig, ops PrivOps) (*networkSetup, func(), error) {
 	allocator := NewAllocator(cfg)
-	recoverCtx, endRecoverSpan := startStepSpan(ctx, "vmorchestrator.network.recover",
-		attribute.String("run.id", runID),
-		attribute.String("network.pool_cidr", allocator.cfg.PoolCIDR),
-	)
-	if err := allocator.Recover(recoverCtx, ops); err != nil {
-		endRecoverSpan(err)
-		return nil, nil, fmt.Errorf("recover stale leases: %w", err)
-	}
-	endRecoverSpan(nil)
-
 	acquireCtx, endAcquireSpan := startStepSpan(ctx, "vmorchestrator.network.acquire",
-		attribute.String("run.id", runID),
+		attribute.String("lease.id", leaseID),
 		attribute.String("network.pool_cidr", allocator.cfg.PoolCIDR),
 	)
-	lease, err := allocator.Acquire(acquireCtx, runID)
+	lease, err := allocator.Acquire(acquireCtx, leaseID)
+	endAcquireSpan(err)
 	if err != nil {
-		endAcquireSpan(err)
 		return nil, nil, err
 	}
-	endAcquireSpan(nil)
+
+	if allocator.tapExists(lease.TapName) {
+		recoverTapCtx, endRecoverTapSpan := startStepSpan(ctx, "vmorchestrator.network.recover_selected_tap",
+			attribute.String("lease.id", leaseID),
+			attribute.Int("network.slot_index", lease.SlotIndex),
+			attribute.String("network.tap", lease.TapName),
+		)
+		cleanupErr := cleanupNetworkOpsIfPresent(recoverTapCtx, lease.TapName, 3, ops, allocator.tapExists)
+		endRecoverTapSpan(cleanupErr)
+		if cleanupErr != nil {
+			_ = allocator.Release(context.Background(), leaseID)
+			return nil, nil, fmt.Errorf("recover selected network tap %s: %w", lease.TapName, cleanupErr)
+		}
+	}
 
 	completedSteps := 0
-
 	tapCreateCtx, endTapCreateSpan := startStepSpan(ctx, "vmorchestrator.network.tap_create",
-		attribute.String("run.id", runID),
+		attribute.String("lease.id", leaseID),
 		attribute.String("network.tap", lease.TapName),
 		attribute.String("network.host_cidr", lease.HostCIDR),
 	)
-	if err := ops.TapCreate(tapCreateCtx, lease.TapName, lease.HostCIDR); err != nil {
+	if err := ops.TapCreate(tapCreateCtx, lease.TapName, lease.HostCIDR, allocator.cfg.TapOwnerUID, allocator.cfg.TapOwnerGID); err != nil {
 		endTapCreateSpan(err)
-		_ = allocator.Release(context.Background(), runID)
+		_ = allocator.Release(context.Background(), leaseID)
 		return nil, nil, fmt.Errorf("network setup create tap: %w", err)
 	}
 	endTapCreateSpan(nil)
-	completedSteps = 2 // TapCreate covers both tuntap add + addr add
+	completedSteps = 2
 
 	tapUpCtx, endTapUpSpan := startStepSpan(ctx, "vmorchestrator.network.tap_up",
-		attribute.String("run.id", runID),
+		attribute.String("lease.id", leaseID),
 		attribute.String("network.tap", lease.TapName),
 	)
 	if err := ops.TapUp(tapUpCtx, lease.TapName); err != nil {
 		endTapUpSpan(err)
 		cleanupNetworkOps(context.Background(), lease.TapName, completedSteps, ops)
-		_ = allocator.Release(context.Background(), runID)
+		_ = allocator.Release(context.Background(), leaseID)
 		return nil, nil, fmt.Errorf("network setup link up: %w", err)
 	}
 	endTapUpSpan(nil)
@@ -122,12 +119,9 @@ func setupNetwork(ctx context.Context, runID string, cfg NetworkPoolConfig, ops 
 
 	cleanup := func() {
 		cleanupNetworkOps(context.Background(), lease.TapName, completedSteps, ops)
-		_ = allocator.Release(context.Background(), runID)
+		_ = allocator.Release(context.Background(), leaseID)
 	}
-
-	return &networkSetup{
-		Lease: lease,
-	}, cleanup, nil
+	return &networkSetup{Lease: lease}, cleanup, nil
 }
 
 func (l NetworkLease) GuestNetworkConfig(hostServiceIP string, hostServicePort int) vmproto.NetworkConfig {
@@ -146,44 +140,39 @@ func (l NetworkLease) GuestNetworkConfig(hostServiceIP string, hostServicePort i
 	}
 }
 
-// Acquire reserves a unique /30 slot for a Firecracker run.
-func (a *Allocator) Acquire(ctx context.Context, runID string) (NetworkLease, error) {
-	if runID == "" {
-		return NetworkLease{}, errors.New("run ID is required")
+func (a *Allocator) Acquire(ctx context.Context, leaseID string) (NetworkLease, error) {
+	if leaseID == "" {
+		return NetworkLease{}, errors.New("lease ID is required")
 	}
-
+	hostStateWriteMu.Lock()
+	defer hostStateWriteMu.Unlock()
 	pool, slotCount, err := a.pool()
 	if err != nil {
 		return NetworkLease{}, err
 	}
-
 	state, err := openHostStateStore(a.cfg.StateDBPath, nil)
 	if err != nil {
 		return NetworkLease{}, err
 	}
 	defer state.close()
-
 	tx, err := state.db.BeginTx(ctx, nil)
 	if err != nil {
-		return NetworkLease{}, fmt.Errorf("begin acquire lease tx: %w", err)
+		return NetworkLease{}, fmt.Errorf("begin acquire network tx: %w", err)
 	}
 	defer rollbackTx(tx)
-
 	if err := ensureNetworkSlotRowsTx(ctx, tx, slotCount); err != nil {
 		return NetworkLease{}, err
 	}
-
-	existing, err := selectAllocatedLeaseByRunTx(ctx, tx, runID)
+	existing, err := selectAllocatedLeaseByLeaseTx(ctx, tx, leaseID)
 	if err != nil {
 		return NetworkLease{}, err
 	}
 	if existing != nil {
 		if err := tx.Commit(); err != nil {
-			return NetworkLease{}, fmt.Errorf("commit acquire existing lease tx: %w", err)
+			return NetworkLease{}, fmt.Errorf("commit acquire existing network lease tx: %w", err)
 		}
 		return *existing, nil
 	}
-
 	slot, generation, err := selectFreeNetworkSlotTx(ctx, tx)
 	if err != nil {
 		return NetworkLease{}, err
@@ -191,21 +180,17 @@ func (a *Allocator) Acquire(ctx context.Context, runID string) (NetworkLease, er
 	if slot < 0 {
 		return NetworkLease{}, fmt.Errorf("%w in %s", ErrNoNetworkSlots, a.cfg.PoolCIDR)
 	}
-
-	lease, err := deriveLease(pool, runID, slot)
+	lease, err := deriveLease(pool, leaseID, slot)
 	if err != nil {
 		return NetworkLease{}, err
 	}
 	lease.Generation = generation + 1
 	lease.CreatedAtUTC = time.Now().UTC()
-
 	nowUnixNano := lease.CreatedAtUTC.UnixNano()
-	updateRes, err := tx.ExecContext(
-		ctx,
-		`UPDATE network_slots
+	res, err := tx.ExecContext(ctx, `UPDATE network_slots
 		 SET generation = generation + 1,
 		     state = 'allocated',
-		     run_id = ?,
+		     lease_id = ?,
 		     tap_name = ?,
 		     subnet_cidr = ?,
 		     host_cidr = ?,
@@ -217,88 +202,65 @@ func (a *Allocator) Acquire(ctx context.Context, runID string) (NetworkLease, er
 		     created_at_unix_nano = ?,
 		     updated_at_unix_nano = ?
 		 WHERE slot_index = ? AND state = 'free'`,
-		runID,
-		lease.TapName,
-		lease.SubnetCIDR,
-		lease.HostCIDR,
-		lease.GuestIP,
-		lease.GatewayIP,
-		lease.MAC,
-		nowUnixNano,
-		nowUnixNano,
-		slot,
-	)
+		leaseID, lease.TapName, lease.SubnetCIDR, lease.HostCIDR, lease.GuestIP, lease.GatewayIP, lease.MAC, nowUnixNano, nowUnixNano, slot)
 	if err != nil {
-		return NetworkLease{}, fmt.Errorf("allocate network slot %d for run %s: %w", slot, runID, err)
+		return NetworkLease{}, fmt.Errorf("allocate network slot %d for lease %s: %w", slot, leaseID, err)
 	}
-	rows, err := updateRes.RowsAffected()
-	if err != nil {
-		return NetworkLease{}, fmt.Errorf("rows affected allocating slot %d: %w", slot, err)
+	if rows, _ := res.RowsAffected(); rows != 1 {
+		return NetworkLease{}, fmt.Errorf("allocate network slot %d for lease %s: expected 1 row, got %d", slot, leaseID, rows)
 	}
-	if rows != 1 {
-		return NetworkLease{}, fmt.Errorf("allocate network slot %d for run %s: expected 1 row, got %d", slot, runID, rows)
-	}
-
 	if err := tx.Commit(); err != nil {
-		return NetworkLease{}, fmt.Errorf("commit acquire lease tx: %w", err)
+		return NetworkLease{}, fmt.Errorf("commit acquire network tx: %w", err)
 	}
 	return lease, nil
 }
 
-// Release deletes the lease record for a Firecracker run. It is idempotent.
-func (a *Allocator) Release(ctx context.Context, runID string) error {
+func (a *Allocator) Release(ctx context.Context, leaseID string) error {
+	hostStateWriteMu.Lock()
+	defer hostStateWriteMu.Unlock()
 	state, err := openHostStateStore(a.cfg.StateDBPath, nil)
 	if err != nil {
 		return err
 	}
 	defer state.close()
-
 	tx, err := state.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("begin release lease tx: %w", err)
+		return fmt.Errorf("begin release network tx: %w", err)
 	}
 	defer rollbackTx(tx)
-
 	nowUnixNano := time.Now().UTC().UnixNano()
-	if _, err := tx.ExecContext(
-		ctx,
-		`UPDATE network_slots
+	if _, err := tx.ExecContext(ctx, `UPDATE network_slots
 		 SET generation = generation + 1,
 		     state = 'free',
-		     run_id = '',
+		     lease_id = '',
 		     firecracker_pid = 0,
 		     firecracker_start_ticks = 0,
 		     updated_at_unix_nano = ?
-		 WHERE run_id = ? AND state = 'allocated'`,
-		nowUnixNano,
-		runID,
-	); err != nil {
-		return fmt.Errorf("release lease for run %s: %w", runID, err)
+		 WHERE lease_id = ? AND state = 'allocated'`, nowUnixNano, leaseID); err != nil {
+		return fmt.Errorf("release network lease %s: %w", leaseID, err)
 	}
-
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit release lease tx: %w", err)
+		return fmt.Errorf("commit release network lease %s: %w", leaseID, err)
 	}
 	return nil
 }
 
-// Recover reconciles stale ledger slots with live TAP devices and VM processes.
 func (a *Allocator) Recover(ctx context.Context, ops PrivOps) error {
+	hostStateWriteMu.Lock()
+	defer hostStateWriteMu.Unlock()
 	pool, slotCount, err := a.pool()
 	if err != nil {
 		return err
 	}
-	_ = pool // pool validation enforces cfg sanity for slot table reconciliation
-
+	_ = pool
 	state, err := openHostStateStore(a.cfg.StateDBPath, nil)
 	if err != nil {
 		return err
 	}
 	defer state.close()
-
 	tx, err := state.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("begin recover lease tx: %w", err)
+		return fmt.Errorf("begin network recover tx: %w", err)
 	}
 	if err := ensureNetworkSlotRowsTx(ctx, tx, slotCount); err != nil {
 		rollbackTx(tx)
@@ -315,9 +277,8 @@ func (a *Allocator) Recover(ctx context.Context, ops PrivOps) error {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit recover scan tx: %w", err)
+		return fmt.Errorf("commit network recover scan tx: %w", err)
 	}
-
 	now := time.Now().UTC()
 	for _, lease := range allocated {
 		if lease.FirecrackerPID > 0 && processMatchesStartTicks(lease.FirecrackerPID, lease.FirecrackerStartTicks) {
@@ -326,45 +287,39 @@ func (a *Allocator) Recover(ctx context.Context, ops PrivOps) error {
 		if lease.FirecrackerPID == 0 && now.Sub(lease.CreatedAtUTC) < pendingLeaseTTL {
 			continue
 		}
-
-		tapPresent := a.tapExists(lease.TapName)
-		if tapPresent {
+		if a.tapExists(lease.TapName) {
 			if ops == nil {
 				return fmt.Errorf("cleanup stale tap %s: privileged ops are required", lease.TapName)
 			}
-			if cleanupErr := cleanupNetworkOpsIfPresent(ctx, lease.TapName, 3, ops, a.tapExists); cleanupErr != nil {
-				return cleanupErr
+			if err := cleanupNetworkOpsIfPresent(ctx, lease.TapName, 3, ops, a.tapExists); err != nil {
+				return err
 			}
 		}
-
 		releaseTx, err := state.db.BeginTx(ctx, nil)
 		if err != nil {
-			return fmt.Errorf("begin recover release tx: %w", err)
+			return fmt.Errorf("begin recover release network slot tx: %w", err)
 		}
-		_, err = releaseTx.ExecContext(
-			ctx,
-			`UPDATE network_slots
+		_, err = releaseTx.ExecContext(ctx, `UPDATE network_slots
 			 SET generation = generation + 1,
 			     state = 'free',
-			     run_id = '',
+			     lease_id = '',
 			     firecracker_pid = 0,
 			     firecracker_start_ticks = 0,
 			     updated_at_unix_nano = ?
 			 WHERE slot_index = ? AND generation = ? AND state = 'allocated'`,
-			now.UnixNano(),
-			lease.SlotIndex,
-			lease.Generation,
-		)
+			now.UnixNano(), lease.SlotIndex, lease.Generation)
 		if err != nil {
 			rollbackTx(releaseTx)
 			return fmt.Errorf("clear stale network slot %d: %w", lease.SlotIndex, err)
 		}
 		if err := releaseTx.Commit(); err != nil {
-			return fmt.Errorf("commit recover release slot %d: %w", lease.SlotIndex, err)
+			return fmt.Errorf("commit recover release network slot %d: %w", lease.SlotIndex, err)
 		}
 	}
-
 	for _, slot := range freeTaps {
+		if slot.TapName == "" {
+			slot.TapName = tapDeviceName(slot.SlotIndex)
+		}
 		if !a.tapExists(slot.TapName) {
 			continue
 		}
@@ -382,55 +337,41 @@ func (a *Allocator) Recover(ctx context.Context, ops PrivOps) error {
 			return cleanupErr
 		}
 	}
-
 	return nil
 }
 
-// AttachPID records the Firecracker process PID metadata for stale lease recovery.
-func (a *Allocator) AttachPID(ctx context.Context, runID string, pid int) error {
+func (a *Allocator) AttachPID(ctx context.Context, leaseID string, pid int) error {
 	startTicks, err := processStartTicks(pid)
 	if err != nil {
 		return fmt.Errorf("read process start ticks for pid %d: %w", pid, err)
 	}
-
+	hostStateWriteMu.Lock()
+	defer hostStateWriteMu.Unlock()
 	state, err := openHostStateStore(a.cfg.StateDBPath, nil)
 	if err != nil {
 		return err
 	}
 	defer state.close()
-
 	tx, err := state.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin attach pid tx: %w", err)
 	}
 	defer rollbackTx(tx)
-
 	nowUnixNano := time.Now().UTC().UnixNano()
-	res, err := tx.ExecContext(
-		ctx,
-		`UPDATE network_slots
+	res, err := tx.ExecContext(ctx, `UPDATE network_slots
 		 SET firecracker_pid = ?,
 		     firecracker_start_ticks = ?,
 		     updated_at_unix_nano = ?
-		 WHERE run_id = ? AND state = 'allocated'`,
-		pid,
-		startTicks,
-		nowUnixNano,
-		runID,
-	)
+		 WHERE lease_id = ? AND state = 'allocated'`,
+		pid, startTicks, nowUnixNano, leaseID)
 	if err != nil {
-		return fmt.Errorf("attach pid for run %s: %w", runID, err)
+		return fmt.Errorf("attach pid for lease %s: %w", leaseID, err)
 	}
-	rows, err := res.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("rows affected attaching pid for run %s: %w", runID, err)
+	if rows, _ := res.RowsAffected(); rows == 0 {
+		return fmt.Errorf("network lease %s not found", leaseID)
 	}
-	if rows == 0 {
-		return fmt.Errorf("lease for run %s not found", runID)
-	}
-
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit attach pid for run %s: %w", runID, err)
+		return fmt.Errorf("commit attach pid for lease %s: %w", leaseID, err)
 	}
 	return nil
 }
@@ -447,106 +388,61 @@ func (a *Allocator) pool() (netip.Prefix, int, error) {
 	if pool.Bits() > 30 {
 		return netip.Prefix{}, 0, fmt.Errorf("guest pool %s is too small for /30 slots", a.cfg.PoolCIDR)
 	}
+	return pool, 1 << (30 - pool.Bits()), nil
+}
 
-	slotBits := 30 - pool.Bits()
-	if slotBits < 0 || slotBits > 30 {
-		return netip.Prefix{}, 0, fmt.Errorf("guest pool %s yields invalid slot space", a.cfg.PoolCIDR)
+func totalGuestSlots(poolCIDR string) int {
+	_, slots, err := (&Allocator{cfg: NetworkPoolConfig{PoolCIDR: poolCIDR}}).pool()
+	if err != nil {
+		return 0
 	}
-
-	return pool, 1 << slotBits, nil
+	return slots
 }
 
 func ensureNetworkSlotRowsTx(ctx context.Context, tx *sql.Tx, slotCount int) error {
-	for slot := 0; slot < slotCount; slot++ {
-		if _, err := tx.ExecContext(
-			ctx,
-			`INSERT INTO network_slots (slot_index, generation, state) VALUES (?, 0, 'free') ON CONFLICT(slot_index) DO NOTHING`,
-			slot,
-		); err != nil {
-			return fmt.Errorf("ensure network slot row %d: %w", slot, err)
+	var existing int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM network_slots`).Scan(&existing); err != nil {
+		return fmt.Errorf("count network slot rows: %w", err)
+	}
+	if existing < slotCount {
+		for slot := existing; slot < slotCount; slot++ {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO network_slots (slot_index, generation, state, tap_name) VALUES (?, 0, 'free', ?) ON CONFLICT(slot_index) DO NOTHING`, slot, tapDeviceName(slot)); err != nil {
+				return fmt.Errorf("ensure network slot row %d: %w", slot, err)
+			}
 		}
 	}
-
 	var activeBeyond int
-	if err := tx.QueryRowContext(
-		ctx,
-		`SELECT COUNT(*) FROM network_slots WHERE slot_index >= ? AND state = 'allocated'`,
-		slotCount,
-	).Scan(&activeBeyond); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM network_slots WHERE slot_index >= ? AND state = 'allocated'`, slotCount).Scan(&activeBeyond); err != nil {
 		return fmt.Errorf("count allocated slots outside pool: %w", err)
 	}
 	if activeBeyond > 0 {
 		return fmt.Errorf("guest pool shrink would orphan %d allocated slots", activeBeyond)
 	}
-
 	if _, err := tx.ExecContext(ctx, `DELETE FROM network_slots WHERE slot_index >= ?`, slotCount); err != nil {
 		return fmt.Errorf("trim free slots outside pool: %w", err)
 	}
-
 	return nil
 }
 
-func selectAllocatedLeaseByRunTx(ctx context.Context, tx *sql.Tx, runID string) (*NetworkLease, error) {
-	row := tx.QueryRowContext(
-		ctx,
-		`SELECT slot_index,
-		        generation,
-		        subnet_cidr,
-		        tap_name,
-		        host_cidr,
-		        guest_ip,
-		        gateway_ip,
-		        mac,
-		        firecracker_pid,
-		        firecracker_start_ticks,
-		        created_at_unix_nano
-		 FROM network_slots
-		 WHERE state = 'allocated' AND run_id = ?`,
-		runID,
-	)
-
-	var (
-		lease         NetworkLease
-		createdUnixNs int64
-	)
-	if err := row.Scan(
-		&lease.SlotIndex,
-		&lease.Generation,
-		&lease.SubnetCIDR,
-		&lease.TapName,
-		&lease.HostCIDR,
-		&lease.GuestIP,
-		&lease.GatewayIP,
-		&lease.MAC,
-		&lease.FirecrackerPID,
-		&lease.FirecrackerStartTicks,
-		&createdUnixNs,
-	); err != nil {
+func selectAllocatedLeaseByLeaseTx(ctx context.Context, tx *sql.Tx, leaseID string) (*NetworkLease, error) {
+	row := tx.QueryRowContext(ctx, `SELECT slot_index, generation, subnet_cidr, tap_name, host_cidr, guest_ip, gateway_ip, mac, firecracker_pid, firecracker_start_ticks, created_at_unix_nano FROM network_slots WHERE state = 'allocated' AND lease_id = ?`, leaseID)
+	var lease NetworkLease
+	var createdUnixNS int64
+	if err := row.Scan(&lease.SlotIndex, &lease.Generation, &lease.SubnetCIDR, &lease.TapName, &lease.HostCIDR, &lease.GuestIP, &lease.GatewayIP, &lease.MAC, &lease.FirecrackerPID, &lease.FirecrackerStartTicks, &createdUnixNS); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("query existing lease for run %s: %w", runID, err)
+		return nil, fmt.Errorf("query existing network lease %s: %w", leaseID, err)
 	}
-	lease.RunID = runID
-	if createdUnixNs > 0 {
-		lease.CreatedAtUTC = time.Unix(0, createdUnixNs).UTC()
-	}
+	lease.LeaseID = leaseID
+	lease.CreatedAtUTC = unixNanoTime(createdUnixNS)
 	return &lease, nil
 }
 
 func selectFreeNetworkSlotTx(ctx context.Context, tx *sql.Tx) (int, uint64, error) {
-	row := tx.QueryRowContext(
-		ctx,
-		`SELECT slot_index, generation
-		 FROM network_slots
-		 WHERE state = 'free'
-		 ORDER BY slot_index ASC
-		 LIMIT 1`,
-	)
-	var (
-		slot       int
-		generation uint64
-	)
+	row := tx.QueryRowContext(ctx, `SELECT slot_index, generation FROM network_slots WHERE state = 'free' ORDER BY slot_index ASC LIMIT 1`)
+	var slot int
+	var generation uint64
 	if err := row.Scan(&slot, &generation); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return -1, 0, nil
@@ -557,53 +453,19 @@ func selectFreeNetworkSlotTx(ctx context.Context, tx *sql.Tx) (int, uint64, erro
 }
 
 func listAllocatedNetworkLeasesTx(ctx context.Context, tx *sql.Tx) ([]NetworkLease, error) {
-	rows, err := tx.QueryContext(
-		ctx,
-		`SELECT run_id,
-		        slot_index,
-		        generation,
-		        subnet_cidr,
-		        tap_name,
-		        host_cidr,
-		        guest_ip,
-		        gateway_ip,
-		        mac,
-		        firecracker_pid,
-		        firecracker_start_ticks,
-		        created_at_unix_nano
-		 FROM network_slots
-		 WHERE state = 'allocated'`,
-	)
+	rows, err := tx.QueryContext(ctx, `SELECT lease_id, slot_index, generation, subnet_cidr, tap_name, host_cidr, guest_ip, gateway_ip, mac, firecracker_pid, firecracker_start_ticks, created_at_unix_nano FROM network_slots WHERE state = 'allocated'`)
 	if err != nil {
 		return nil, fmt.Errorf("query allocated network slots: %w", err)
 	}
 	defer rows.Close()
-
-	out := make([]NetworkLease, 0)
+	out := []NetworkLease{}
 	for rows.Next() {
-		var (
-			lease         NetworkLease
-			createdUnixNs int64
-		)
-		if err := rows.Scan(
-			&lease.RunID,
-			&lease.SlotIndex,
-			&lease.Generation,
-			&lease.SubnetCIDR,
-			&lease.TapName,
-			&lease.HostCIDR,
-			&lease.GuestIP,
-			&lease.GatewayIP,
-			&lease.MAC,
-			&lease.FirecrackerPID,
-			&lease.FirecrackerStartTicks,
-			&createdUnixNs,
-		); err != nil {
+		var lease NetworkLease
+		var createdUnixNS int64
+		if err := rows.Scan(&lease.LeaseID, &lease.SlotIndex, &lease.Generation, &lease.SubnetCIDR, &lease.TapName, &lease.HostCIDR, &lease.GuestIP, &lease.GatewayIP, &lease.MAC, &lease.FirecrackerPID, &lease.FirecrackerStartTicks, &createdUnixNS); err != nil {
 			return nil, fmt.Errorf("scan allocated network slot: %w", err)
 		}
-		if createdUnixNs > 0 {
-			lease.CreatedAtUTC = time.Unix(0, createdUnixNs).UTC()
-		}
+		lease.CreatedAtUTC = unixNanoTime(createdUnixNS)
 		out = append(out, lease)
 	}
 	if err := rows.Err(); err != nil {
@@ -619,28 +481,24 @@ type freeNetworkSlotTap struct {
 }
 
 func listFreeNetworkSlotsWithTapTx(ctx context.Context, tx *sql.Tx) ([]freeNetworkSlotTap, error) {
-	rows, err := tx.QueryContext(
-		ctx,
-		`SELECT slot_index, generation, tap_name
-		 FROM network_slots
-		 WHERE state = 'free' AND tap_name != ''
-		 ORDER BY slot_index ASC`,
-	)
+	rows, err := tx.QueryContext(ctx, `SELECT slot_index, generation, tap_name FROM network_slots WHERE state = 'free' ORDER BY slot_index ASC`)
 	if err != nil {
-		return nil, fmt.Errorf("query free network slots with tap metadata: %w", err)
+		return nil, fmt.Errorf("query free network slots: %w", err)
 	}
 	defer rows.Close()
-
-	out := make([]freeNetworkSlotTap, 0)
+	out := []freeNetworkSlotTap{}
 	for rows.Next() {
 		var slot freeNetworkSlotTap
 		if err := rows.Scan(&slot.SlotIndex, &slot.Generation, &slot.TapName); err != nil {
-			return nil, fmt.Errorf("scan free network slot with tap metadata: %w", err)
+			return nil, fmt.Errorf("scan free network slot: %w", err)
+		}
+		if slot.TapName == "" {
+			slot.TapName = tapDeviceName(slot.SlotIndex)
 		}
 		out = append(out, slot)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate free network slots with tap metadata: %w", err)
+		return nil, fmt.Errorf("iterate free network slots: %w", err)
 	}
 	return out, nil
 }
@@ -655,14 +513,13 @@ func normalizeNetworkPoolConfig(cfg NetworkPoolConfig) NetworkPoolConfig {
 	return cfg
 }
 
-func deriveLease(pool netip.Prefix, runID string, slot int) (NetworkLease, error) {
+func deriveLease(pool netip.Prefix, leaseID string, slot int) (NetworkLease, error) {
 	subnetPrefix, hostCIDR, guestIP, gatewayIP, err := slotAddrs(pool, slot)
 	if err != nil {
 		return NetworkLease{}, err
 	}
-
 	return NetworkLease{
-		RunID:      runID,
+		LeaseID:    leaseID,
 		SlotIndex:  slot,
 		SubnetCIDR: subnetPrefix.String(),
 		TapName:    tapDeviceName(slot),
@@ -684,7 +541,6 @@ func slotAddrs(pool netip.Prefix, slot int) (netip.Prefix, string, netip.Addr, n
 	if slot >= slotCount {
 		return netip.Prefix{}, "", netip.Addr{}, netip.Addr{}, fmt.Errorf("slot index %d exceeds pool capacity %d", slot, slotCount)
 	}
-
 	base := ipv4ToUint32(pool.Addr())
 	subnetBase := base + uint32(slot*4)
 	hostAddr := uint32ToIPv4(subnetBase + 1)
@@ -694,12 +550,7 @@ func slotAddrs(pool netip.Prefix, slot int) (netip.Prefix, string, netip.Addr, n
 }
 
 func macForSlot(slot int) string {
-	return fmt.Sprintf("06:fc:%02x:%02x:%02x:%02x",
-		byte(slot>>24),
-		byte(slot>>16),
-		byte(slot>>8),
-		byte(slot),
-	)
+	return fmt.Sprintf("06:fc:%02x:%02x:%02x:%02x", byte(slot>>24), byte(slot>>16), byte(slot>>8), byte(slot))
 }
 
 func tapDeviceName(slot int) string {
@@ -738,14 +589,6 @@ func tapExists(name string) bool {
 	return err == nil
 }
 
-func processExists(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	_, err := os.Stat(filepath.Join("/proc", strconv.Itoa(pid)))
-	return err == nil
-}
-
 func processMatchesStartTicks(pid int, expectedStartTicks uint64) bool {
 	if pid <= 0 || expectedStartTicks == 0 {
 		return false
@@ -765,19 +608,16 @@ func processStartTicks(pid int) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-
 	line := strings.TrimSpace(string(data))
 	closing := strings.LastIndex(line, ")")
 	if closing == -1 || closing+2 >= len(line) {
 		return 0, fmt.Errorf("unexpected /proc stat format for pid %d", pid)
 	}
-
 	rest := strings.Fields(line[closing+2:])
-	const startTicksIndexInRest = 19 // /proc/<pid>/stat field 22 minus field 3 offset.
+	const startTicksIndexInRest = 19
 	if len(rest) <= startTicksIndexInRest {
 		return 0, fmt.Errorf("unexpected /proc stat field count for pid %d", pid)
 	}
-
 	value, err := strconv.ParseUint(rest[startTicksIndexInRest], 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("parse process start ticks for pid %d: %w", pid, err)
@@ -785,7 +625,6 @@ func processStartTicks(pid int) (uint64, error) {
 	return value, nil
 }
 
-// runCmd executes a host command with context. Used by direct privileged ops.
 func runCmd(ctx context.Context, name string, args ...string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
 	out, err := cmd.CombinedOutput()

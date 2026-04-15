@@ -15,7 +15,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -26,27 +25,32 @@ import (
 
 var tracer = otel.Tracer("vm-orchestrator")
 
-// Config holds settings for the Firecracker orchestrator.
+const (
+	defaultRuntimeProfile  = "fast.fc"
+	defaultTrustClass      = "trusted"
+	firecrackerStepTimeout = 5 * time.Second
+	maxBufferedGuestLogs   = 10 * 1024 * 1024
+)
+
 type Config struct {
-	Pool            string // ZFS pool name, e.g. "forgepool"
-	GoldenZvol      string // zvol name under pool, e.g. "golden-zvol"
-	WorkloadDataset string // dataset for ephemeral VM run clones
-	KernelPath      string // path to vmlinux on host
-	FirecrackerBin  string // path to firecracker binary
-	JailerBin       string // path to jailer binary
-	JailerRoot      string // chroot base dir, e.g. "/srv/jailer"
-	JailerUID       int    // unprivileged UID for jailer
-	JailerGID       int    // unprivileged GID for jailer
-	VCPUs           int    // vCPU count per VM (default 4)
-	MemoryMiB       int    // memory per VM in MiB (default 4096)
-	HostInterface   string // outbound interface for guest egress (auto-detected if empty)
-	GuestPoolCIDR   string // guest IPv4 pool subdivided into /30s
-	StateDBPath     string // durable host runtime ledger (SQLite WAL)
-	HostServiceIP   string // host-only service address reachable from guests
-	HostServicePort int    // host-only HTTP reverse proxy port for platform services
+	Pool            string
+	GoldenZvol      string
+	WorkloadDataset string
+	KernelPath      string
+	FirecrackerBin  string
+	JailerBin       string
+	JailerRoot      string
+	JailerUID       int
+	JailerGID       int
+	VCPUs           int
+	MemoryMiB       int
+	HostInterface   string
+	GuestPoolCIDR   string
+	StateDBPath     string
+	HostServiceIP   string
+	HostServicePort int
 }
 
-// DefaultConfig returns a Config with sensible defaults.
 func DefaultConfig() Config {
 	return Config{
 		Pool:            "forgepool",
@@ -67,104 +71,189 @@ func DefaultConfig() Config {
 	}
 }
 
-// RunSpec describes the command to run inside the VM.
-type RunSpec struct {
-	RunID              string            `json:"run_id"`
-	WorkloadKind       string            `json:"workload_kind,omitempty"`
-	RunnerClass        string            `json:"runner_class,omitempty"`
-	RunCommand         []string          `json:"run_command"`
-	RunWorkDir         string            `json:"run_work_dir,omitempty"`
-	Env                map[string]string `json:"env"`
-	WorkflowYAML       string            `json:"workflow_yaml,omitempty"`
-	WorkflowEnv        map[string]string `json:"workflow_env,omitempty"`
-	WorkflowSecrets    map[string]string `json:"workflow_secrets,omitempty"`
-	WorkflowEventName  string            `json:"workflow_event_name,omitempty"`
-	WorkflowInputs     map[string]string `json:"workflow_inputs,omitempty"`
-	GitHubJITConfig    string            `json:"github_jit_config,omitempty"`
-	BillablePhases     []string          `json:"billable_phases,omitempty"`
-	CheckpointSaveRefs []string          `json:"checkpoint_save_refs,omitempty"`
+type LeaseState int
+
+const (
+	LeaseStateUnspecified LeaseState = iota
+	LeaseStateAcquiring
+	LeaseStateReady
+	LeaseStateDraining
+	LeaseStateReleased
+	LeaseStateExpired
+	LeaseStateCrashed
+)
+
+func (s LeaseState) Terminal() bool {
+	return s == LeaseStateReleased || s == LeaseStateExpired || s == LeaseStateCrashed
 }
 
-type PhaseResult struct {
-	Name       string
-	ExitCode   int
-	DurationMS int64
+type ExecState int
+
+const (
+	ExecStateUnspecified ExecState = iota
+	ExecStatePending
+	ExecStateRunning
+	ExecStateExited
+	ExecStateFailed
+	ExecStateCanceled
+	ExecStateKilledByLeaseExpiry
+)
+
+func (s ExecState) Terminal() bool {
+	return s == ExecStateExited || s == ExecStateFailed || s == ExecStateCanceled || s == ExecStateKilledByLeaseExpiry
 }
 
-// RunResult holds the outcome of a VM run execution.
-type RunResult struct {
+type LeaseEventType string
+
+const (
+	LeaseEventLeaseAcquired       LeaseEventType = "lease_acquired"
+	LeaseEventVMBooting           LeaseEventType = "vm_booting"
+	LeaseEventVMReady             LeaseEventType = "vm_ready"
+	LeaseEventLeaseRenewed        LeaseEventType = "lease_renewed"
+	LeaseEventExecStarted         LeaseEventType = "exec_started"
+	LeaseEventExecFinished        LeaseEventType = "exec_finished"
+	LeaseEventExecCanceled        LeaseEventType = "exec_canceled"
+	LeaseEventCheckpointSaved     LeaseEventType = "checkpoint_saved"
+	LeaseEventVMShutdown          LeaseEventType = "vm_shutdown"
+	LeaseEventLeaseExpired        LeaseEventType = "lease_expired"
+	LeaseEventLeaseReleased       LeaseEventType = "lease_released"
+	LeaseEventLeaseCrashed        LeaseEventType = "lease_crashed"
+	LeaseEventTelemetryDiagnostic LeaseEventType = "telemetry_diagnostic"
+)
+
+type LeaseSpec struct {
+	RuntimeProfile          string
+	VCPUs                   uint32
+	MemoryMiB               uint32
+	FromCheckpointRef       string
+	TTLSeconds              uint64
+	TrustClass              string
+	CheckpointSaveAllowlist []string
+	NetworkMode             string
+}
+
+type ExecSpec struct {
+	Argv           []string
+	WorkingDir     string
+	Env            map[string]string
+	MaxWallSeconds uint64
+}
+
+type ExecResult struct {
 	ExitCode               int
-	Logs                   string
-	SerialLogs             string
+	Output                 string
 	Duration               time.Duration
-	CloneTime              time.Duration
-	JailSetupTime          time.Duration
-	VMBootTime             time.Duration
-	BootToReadyDuration    time.Duration
-	RunDuration            time.Duration
-	VMExitWaitDuration     time.Duration
-	CleanupTime            time.Duration
-	ZFSWritten             uint64
-	RootfsProvisionedBytes uint64
+	StartedAt              time.Time
+	FirstByteAt            time.Time
+	ExitedAt               time.Time
 	StdoutBytes            uint64
 	StderrBytes            uint64
 	DroppedLogBytes        uint64
-	ForcedShutdown         bool
-	PhaseResults           []PhaseResult
-	FailurePhase           string
+	ZFSWritten             uint64
+	RootfsProvisionedBytes uint64
 	Metrics                *VMMetrics
 }
 
-const firecrackerAPIStepTimeout = 5 * time.Second
+type LeaseRuntime struct {
+	LeaseID string
+	Dataset string
+	Network NetworkLease
 
-func validateRunSpec(run RunSpec) error {
-	if err := vmproto.ValidateWorkloadKind(run.WorkloadKind); err != nil {
-		return err
-	}
-	switch vmproto.NormalizeWorkloadKind(run.WorkloadKind) {
-	case vmproto.WorkloadKindDirect:
-		if len(run.RunCommand) == 0 {
-			return fmt.Errorf("run command is required")
-		}
-	case vmproto.WorkloadKindForgejoWorkflow:
-		if strings.TrimSpace(run.WorkflowYAML) == "" {
-			return fmt.Errorf("workflow_yaml is required for workload_kind %q", vmproto.WorkloadKindForgejoWorkflow)
-		}
-	case vmproto.WorkloadKindGitHubRunner:
-		if strings.TrimSpace(run.GitHubJITConfig) == "" {
-			return fmt.Errorf("github_jit_config is required for workload_kind %q", vmproto.WorkloadKindGitHubRunner)
-		}
-	}
-	return nil
+	control         *guestControl
+	jailer          *JailerProcess
+	metricsPath     string
+	cancelTelemetry context.CancelFunc
+	telemetryDone   chan struct{}
+
+	waitDone     chan error
+	jailerExited atomic.Bool
+	serialBuf    strings.Builder
+	logWg        sync.WaitGroup
+
+	cleanups []func()
+	logger   *slog.Logger
 }
 
-// Orchestrator manages the full lifecycle of a Firecracker VM run.
 type Orchestrator struct {
 	cfg    Config
 	logger *slog.Logger
 	ops    PrivOps
 }
 
-// New creates an Orchestrator from configuration. Options override defaults;
-// without WithPrivOps, DirectPrivOps{} is used (requires root).
+type Option func(*Orchestrator)
+
+func WithPrivOps(ops PrivOps) Option {
+	return func(o *Orchestrator) {
+		o.ops = ops
+	}
+}
+
 func New(cfg Config, logger *slog.Logger, opts ...Option) *Orchestrator {
-	if cfg.VCPUs == 0 {
-		cfg.VCPUs = 4
+	base := DefaultConfig()
+	if cfg.Pool != "" {
+		base = cfg
 	}
-	if cfg.MemoryMiB == 0 {
-		cfg.MemoryMiB = 4096
+	if base.VCPUs == 0 {
+		base.VCPUs = 4
 	}
-	if cfg.HostServiceIP == "" {
-		cfg.HostServiceIP = defaultHostServiceIP
+	if base.MemoryMiB == 0 {
+		base.MemoryMiB = 4096
 	}
-	if cfg.HostServicePort == 0 {
-		cfg.HostServicePort = defaultHostServicePort
+	if base.HostServiceIP == "" {
+		base.HostServiceIP = defaultHostServiceIP
 	}
-	o := &Orchestrator{cfg: cfg, logger: logger, ops: DirectPrivOps{}}
+	if base.HostServicePort == 0 {
+		base.HostServicePort = defaultHostServicePort
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
+	o := &Orchestrator{cfg: base, logger: logger, ops: DirectPrivOps{}}
 	for _, opt := range opts {
 		opt(o)
 	}
 	return o
+}
+
+func normalizeLeaseSpec(spec LeaseSpec, cfg Config) LeaseSpec {
+	spec.RuntimeProfile = strings.TrimSpace(spec.RuntimeProfile)
+	if spec.RuntimeProfile == "" {
+		spec.RuntimeProfile = defaultRuntimeProfile
+	}
+	spec.TrustClass = strings.TrimSpace(spec.TrustClass)
+	if spec.TrustClass == "" {
+		spec.TrustClass = defaultTrustClass
+	}
+	if spec.VCPUs == 0 {
+		spec.VCPUs = uint32(cfg.VCPUs)
+	}
+	if spec.MemoryMiB == 0 {
+		spec.MemoryMiB = uint32(cfg.MemoryMiB)
+	}
+	if spec.TTLSeconds == 0 {
+		spec.TTLSeconds = 5 * 60
+	}
+	return spec
+}
+
+func normalizeExecSpec(spec ExecSpec) ExecSpec {
+	spec.WorkingDir = strings.TrimSpace(spec.WorkingDir)
+	if spec.Env == nil {
+		spec.Env = map[string]string{}
+	}
+	return spec
+}
+
+func validateExecSpec(spec ExecSpec) error {
+	if len(spec.Argv) == 0 {
+		return fmt.Errorf("argv is required")
+	}
+	for _, arg := range spec.Argv {
+		if strings.ContainsRune(arg, 0) {
+			return fmt.Errorf("argv contains NUL byte")
+		}
+	}
+	return nil
 }
 
 func (o *Orchestrator) goldenZvolDataset() string {
@@ -175,286 +264,200 @@ func (o *Orchestrator) goldenSnapshot() string {
 	return o.goldenZvolDataset() + "@ready"
 }
 
-func (o *Orchestrator) cloneDataset(runID string) string {
-	return fmt.Sprintf("%s/%s/%s", o.cfg.Pool, o.cfg.WorkloadDataset, runID)
+func (o *Orchestrator) leaseDataset(leaseID string) string {
+	return fmt.Sprintf("%s/%s/%s", o.cfg.Pool, o.cfg.WorkloadDataset, leaseID)
 }
 
-func (o *Orchestrator) jailDir(runID string) string {
-	return filepath.Join(o.cfg.JailerRoot, "firecracker", runID, "root")
+func (o *Orchestrator) jailDir(leaseID string) string {
+	return filepath.Join(o.cfg.JailerRoot, "firecracker", leaseID, "root")
 }
 
 func (o *Orchestrator) workloadDatasetPrefix() string {
 	return fmt.Sprintf("%s/%s/", o.cfg.Pool, o.cfg.WorkloadDataset)
 }
 
-func (o *Orchestrator) destroyDisposableWorkloadDataset(ctx context.Context, dataset string, checkpointSaved bool) (retained bool, err error) {
+func (o *Orchestrator) destroyDisposableWorkloadDataset(ctx context.Context, dataset string) error {
 	if !strings.HasPrefix(dataset, o.workloadDatasetPrefix()) {
-		return false, nil
+		return nil
 	}
-	if checkpointSaved {
-		return true, nil
-	}
-	return false, o.ops.ZFSDestroy(ctx, dataset)
+	return o.ops.ZFSDestroy(ctx, dataset)
 }
 
-// Run executes a command inside a Firecracker VM.
-func (o *Orchestrator) Run(ctx context.Context, run RunSpec) (result RunResult, err error) {
-	return o.RunObserved(ctx, run, nil)
-}
-
-// RunObserved executes a command inside a Firecracker VM and forwards live
-// guest events to observer when it is non-nil.
-func (o *Orchestrator) RunObserved(ctx context.Context, run RunSpec, observer RunObserver) (result RunResult, err error) {
-	if _, parseErr := uuid.Parse(run.RunID); parseErr != nil {
-		err = fmt.Errorf("invalid run ID (must be UUID): %w", parseErr)
-		return
-	}
-	run.WorkloadKind = vmproto.NormalizeWorkloadKind(run.WorkloadKind)
-	if validateErr := validateRunSpec(run); validateErr != nil {
-		err = validateErr
-		return
-	}
-
-	ctx, span := tracer.Start(ctx, "vmorchestrator.Run",
+func (o *Orchestrator) BootLease(ctx context.Context, leaseID string, spec LeaseSpec, observer LeaseObserver) (*LeaseRuntime, error) {
+	spec = normalizeLeaseSpec(spec, o.cfg)
+	ctx, span := tracer.Start(ctx, "vmorchestrator.lease.boot",
 		trace.WithAttributes(
-			attribute.String("run.id", run.RunID),
-			attribute.String("run.workload_kind", run.WorkloadKind),
-			attribute.String("run.runner_class", run.RunnerClass),
+			attribute.String("lease.id", leaseID),
+			attribute.String("runtime_profile", spec.RuntimeProfile),
 		),
 	)
+	var err error
 	defer func() {
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 		}
-		span.SetAttributes(
-			attribute.Int("run.exit_code", result.ExitCode),
-			attribute.Int64("run.duration_ms", result.Duration.Milliseconds()),
-			attribute.Int64("run.zfs_written", int64(result.ZFSWritten)),
-		)
 		span.End()
 	}()
 
-	// --- 1. Verify golden snapshot ---
 	snapshotCtx, endSnapshotSpan := startStepSpan(ctx, "vmorchestrator.zfs.snapshot_check",
-		attribute.String("run.id", run.RunID),
+		attribute.String("lease.id", leaseID),
 		attribute.String("zfs.snapshot", o.goldenSnapshot()),
 	)
 	exists, checkErr := zfsSnapshotExists(snapshotCtx, o.goldenSnapshot())
 	endSnapshotSpan(checkErr)
 	if checkErr != nil {
 		err = fmt.Errorf("check golden snapshot: %w", checkErr)
-		return
+		return nil, err
 	}
 	if !exists {
-		err = fmt.Errorf("golden snapshot %s does not exist — run golden image setup first", o.goldenSnapshot())
-		return
+		err = fmt.Errorf("golden snapshot %s does not exist", o.goldenSnapshot())
+		return nil, err
 	}
 
-	// --- 2. Clone zvol ---
-	cloneStart := time.Now()
-	dataset := o.cloneDataset(run.RunID)
+	dataset := o.leaseDataset(leaseID)
 	cloneCtx, endCloneSpan := startStepSpan(ctx, "vmorchestrator.zfs.clone",
-		attribute.String("run.id", run.RunID),
+		attribute.String("lease.id", leaseID),
 		attribute.String("zfs.snapshot", o.goldenSnapshot()),
 		attribute.String("zfs.dataset", dataset),
 	)
-	if cloneErr := o.ops.ZFSClone(cloneCtx, o.goldenSnapshot(), dataset, run.RunID); cloneErr != nil {
+	if cloneErr := o.ops.ZFSClone(cloneCtx, o.goldenSnapshot(), dataset, leaseID); cloneErr != nil {
 		endCloneSpan(cloneErr)
 		err = fmt.Errorf("clone zvol: %w", cloneErr)
-		return
+		return nil, err
 	}
 	endCloneSpan(nil)
-	cloneDuration := time.Since(cloneStart)
-	o.logger.InfoContext(ctx, "zvol cloned", "run_id", run.RunID, "duration_ms", cloneDuration.Milliseconds(), "dataset", dataset)
 
-	result, err = o.runDataset(ctx, run, dataset, true, observer)
-	if err != nil {
-		return result, err
+	runtime, bootErr := o.bootDataset(ctx, leaseID, spec, dataset, observer)
+	if bootErr != nil {
+		_ = o.destroyDisposableWorkloadDataset(context.Background(), dataset)
+		err = bootErr
+		return nil, err
 	}
-	result.CloneTime = cloneDuration
-	return result, nil
-}
-
-// RunDataset executes a run against an existing zvol dataset. When destroyAfter
-// is true, the dataset is destroyed during cleanup.
-func (o *Orchestrator) RunDataset(ctx context.Context, run RunSpec, dataset string, destroyAfter bool) (RunResult, error) {
-	return o.RunDatasetObserved(ctx, run, dataset, destroyAfter, nil)
-}
-
-// RunDatasetObserved executes a run against an existing zvol dataset. When
-// destroyAfter is true, the dataset is destroyed during cleanup.
-func (o *Orchestrator) RunDatasetObserved(ctx context.Context, run RunSpec, dataset string, destroyAfter bool, observer RunObserver) (RunResult, error) {
-	if _, parseErr := uuid.Parse(run.RunID); parseErr != nil {
-		return RunResult{}, fmt.Errorf("invalid run ID (must be UUID): %w", parseErr)
-	}
-	if len(run.RunCommand) == 0 {
-		return RunResult{}, fmt.Errorf("run command is required")
-	}
-	return o.runDataset(ctx, run, dataset, destroyAfter, observer)
-}
-
-func (o *Orchestrator) runDataset(ctx context.Context, run RunSpec, dataset string, destroyAfter bool, observer RunObserver) (result RunResult, err error) {
-	start := time.Now()
-	observer = normalizeRunObserver(observer)
-
-	ctx, span := tracer.Start(ctx, "vmorchestrator.runDataset",
-		trace.WithAttributes(
-			attribute.String("run.id", run.RunID),
-			attribute.String("dataset", dataset),
-		),
-	)
-	defer func() {
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
+	runtime.cleanups = append(runtime.cleanups, func() {
+		if destroyErr := o.destroyDisposableWorkloadDataset(context.Background(), dataset); destroyErr != nil {
+			runtime.logger.WarnContext(context.Background(), "zvol destroy failed", "error", destroyErr, "dataset", dataset)
 		}
-		span.End()
-	}()
+	})
+	return runtime, nil
+}
 
-	logger := o.logger.With("run_id", run.RunID, "dataset", dataset)
-
-	var checkpointSaved atomic.Bool
-	var cleanups []func()
-	defer func() {
-		cleanupStart := time.Now()
-		for i := len(cleanups) - 1; i >= 0; i-- {
-			cleanups[i]()
-		}
-		result.CleanupTime = time.Since(cleanupStart)
-		result.Duration = time.Since(start)
-	}()
-
-	if destroyAfter {
-		cleanups = append(cleanups, func() {
-			retained, destroyErr := o.destroyDisposableWorkloadDataset(context.Background(), dataset, checkpointSaved.Load())
-			if destroyErr != nil {
-				logger.WarnContext(ctx, "zvol destroy failed", "err", destroyErr)
-				return
-			}
-			if retained {
-				logger.InfoContext(ctx, "retaining workload zvol because checkpoint snapshot was saved")
-			}
-		})
+func (o *Orchestrator) bootDataset(ctx context.Context, leaseID string, spec LeaseSpec, dataset string, observer LeaseObserver) (*LeaseRuntime, error) {
+	logger := o.logger.With("lease_id", leaseID, "dataset", dataset)
+	runtime := &LeaseRuntime{
+		LeaseID: leaseID,
+		Dataset: dataset,
+		logger:  logger,
 	}
+	cleanupOnErr := true
+	defer func() {
+		if cleanupOnErr {
+			runtime.Cleanup("boot_failed")
+		}
+	}()
 
 	devPath := zvolDevicePath(dataset)
 	deviceCtx, endDeviceSpan := startStepSpan(ctx, "vmorchestrator.zvol.wait_device",
-		attribute.String("run.id", run.RunID),
+		attribute.String("lease.id", leaseID),
 		attribute.String("zfs.dataset", dataset),
 		attribute.String("device.path", devPath),
 	)
-	if deviceErr := waitForDevice(deviceCtx, devPath); deviceErr != nil {
-		endDeviceSpan(deviceErr)
-		return result, fmt.Errorf("wait for zvol device %s: %w", devPath, deviceErr)
+	if err := waitForDevice(deviceCtx, devPath); err != nil {
+		endDeviceSpan(err)
+		return nil, fmt.Errorf("wait for zvol device %s: %w", devPath, err)
 	}
 	endDeviceSpan(nil)
 
-	jailStart := time.Now()
-	jailRoot := o.jailDir(run.RunID)
+	jailRoot := o.jailDir(leaseID)
 	jailCtx, endJailSpan := startStepSpan(ctx, "vmorchestrator.jail.setup",
-		attribute.String("run.id", run.RunID),
+		attribute.String("lease.id", leaseID),
 		attribute.String("jail.root", jailRoot),
 		attribute.String("device.path", devPath),
 	)
-	if jailErr := o.ops.SetupJail(jailCtx, jailRoot, devPath, o.cfg.KernelPath, o.cfg.JailerUID, o.cfg.JailerGID); jailErr != nil {
-		endJailSpan(jailErr)
-		return result, fmt.Errorf("setup jail: %w", jailErr)
+	if err := o.ops.SetupJail(jailCtx, jailRoot, devPath, o.cfg.KernelPath, o.cfg.JailerUID, o.cfg.JailerGID); err != nil {
+		endJailSpan(err)
+		return nil, fmt.Errorf("setup jail: %w", err)
 	}
 	endJailSpan(nil)
-	result.JailSetupTime = time.Since(jailStart)
-	logger.InfoContext(ctx, "jail ready", "duration_ms", result.JailSetupTime.Milliseconds())
 
-	jailBase := filepath.Dir(filepath.Dir(jailRoot))
-	cleanups = append(cleanups, func() {
-		_ = os.RemoveAll(jailBase)
+	leaseJailDir := filepath.Dir(jailRoot)
+	runtime.cleanups = append(runtime.cleanups, func() {
+		// Never remove the shared jailer base; concurrent failed boots can otherwise erase live lease chroots.
+		if filepath.Base(leaseJailDir) == leaseID {
+			_ = os.RemoveAll(leaseJailDir)
+		}
 	})
 
 	netCfg := NetworkPoolConfig{
 		PoolCIDR:      o.cfg.GuestPoolCIDR,
 		StateDBPath:   o.cfg.StateDBPath,
 		HostInterface: o.cfg.HostInterface,
+		TapOwnerUID:   o.cfg.JailerUID,
+		TapOwnerGID:   o.cfg.JailerGID,
 	}
 	netCtx, endNetworkSpan := startStepSpan(ctx, "vmorchestrator.network.setup",
-		attribute.String("run.id", run.RunID),
+		attribute.String("lease.id", leaseID),
 		attribute.String("network.pool_cidr", netCfg.PoolCIDR),
 	)
-	netSetup, netCleanup, netErr := setupNetwork(netCtx, run.RunID, netCfg, o.ops)
-	endNetworkSpan(netErr)
-	if netErr != nil {
-		return result, fmt.Errorf("setup network: %w", netErr)
+	netSetup, netCleanup, err := setupNetwork(netCtx, leaseID, netCfg, o.ops)
+	endNetworkSpan(err)
+	if err != nil {
+		return nil, fmt.Errorf("setup network: %w", err)
 	}
-	cleanups = append(cleanups, netCleanup)
-	logger.InfoContext(ctx, "network ready",
-		"tap", netSetup.Lease.TapName,
-		"subnet", netSetup.Lease.SubnetCIDR,
-		"guest_ip", netSetup.Lease.GuestIP,
-	)
+	runtime.Network = netSetup.Lease
+	runtime.cleanups = append(runtime.cleanups, netCleanup)
 
 	apiSockHost := filepath.Join(jailRoot, "run", "firecracker.sock")
 	controlSockHost := filepath.Join(jailRoot, "run", "forge-control.sock")
-	metricsPathHost := filepath.Join(jailRoot, "metrics.json")
+	runtime.metricsPath = filepath.Join(jailRoot, "metrics.json")
 
 	jailerCtx, endJailerSpan := startStepSpan(ctx, "vmorchestrator.jailer.start",
-		attribute.String("run.id", run.RunID),
+		attribute.String("lease.id", leaseID),
 	)
-	jailer, startErr := o.ops.StartJailer(jailerCtx, run.RunID, JailerConfig{
+	jailer, err := o.ops.StartJailer(jailerCtx, leaseID, JailerConfig{
 		FirecrackerBin: o.cfg.FirecrackerBin,
 		JailerBin:      o.cfg.JailerBin,
 		ChrootBaseDir:  o.cfg.JailerRoot,
 		UID:            o.cfg.JailerUID,
 		GID:            o.cfg.JailerGID,
 	})
-	endJailerSpan(startErr)
-	if startErr != nil {
-		return result, fmt.Errorf("start jailer: %w", startErr)
+	endJailerSpan(err)
+	if err != nil {
+		return nil, fmt.Errorf("start jailer: %w", err)
 	}
-	attachCtx, endAttachSpan := startStepSpan(ctx, "vmorchestrator.network.attach_pid",
-		attribute.String("run.id", run.RunID),
-		attribute.Int("process.pid", jailer.Pid),
-	)
-	if attachErr := NewAllocator(netCfg).AttachPID(attachCtx, run.RunID, jailer.Pid); attachErr != nil {
-		endAttachSpan(attachErr)
-		return result, fmt.Errorf("record network lease pid: %w", attachErr)
+	runtime.jailer = jailer
+	if err := NewAllocator(netCfg).AttachPID(ctx, leaseID, jailer.Pid); err != nil {
+		return nil, fmt.Errorf("record network lease pid: %w", err)
 	}
-	endAttachSpan(nil)
-
-	var jailerExited atomic.Bool
-	cleanups = append(cleanups, func() {
-		if !jailerExited.Load() {
+	runtime.cleanups = append(runtime.cleanups, func() {
+		if !runtime.jailerExited.Load() {
 			_ = jailer.Kill()
 			_ = jailer.Wait()
 		}
 	})
-
-	var serialBuf strings.Builder
-	var logWg sync.WaitGroup
 	if jailer.Stdout != nil {
-		logWg.Add(1)
-		go captureSerialOutput(jailer.Stdout, &serialBuf, &logWg)
+		runtime.logWg.Add(1)
+		go captureSerialOutput(jailer.Stdout, &runtime.serialBuf, &runtime.logWg)
 	}
 	if jailer.Stderr != nil {
-		logWg.Add(1)
-		go captureSerialOutput(jailer.Stderr, &serialBuf, &logWg)
+		runtime.logWg.Add(1)
+		go captureSerialOutput(jailer.Stderr, &runtime.serialBuf, &runtime.logWg)
 	}
-
-	logger.InfoContext(ctx, "jailer started", "pid", jailer.Pid)
+	runtime.waitDone = make(chan error, 1)
+	go func() { runtime.waitDone <- jailer.Wait() }()
 
 	apiSocketCtx, endAPISocketSpan := startStepSpan(ctx, "vmorchestrator.firecracker.api_socket_wait",
-		attribute.String("run.id", run.RunID),
+		attribute.String("lease.id", leaseID),
 		attribute.String("socket.path", apiSockHost),
 	)
-	if waitErr := waitForSocket(apiSocketCtx, apiSockHost); waitErr != nil {
-		endAPISocketSpan(waitErr)
-		return result, fmt.Errorf("wait for API socket: %w", waitErr)
+	if err := waitForSocket(apiSocketCtx, apiSockHost); err != nil {
+		endAPISocketSpan(err)
+		return nil, fmt.Errorf("wait for API socket: %w", err)
 	}
 	endAPISocketSpan(nil)
 
-	bootStart := time.Now()
 	client := newAPIClient(apiSockHost)
-
 	bootArgs := "root=/dev/vda rw console=ttyS0 reboot=k panic=1 init=/sbin/init"
-
 	apiSteps := []struct {
 		name string
 		fn   func(context.Context) error
@@ -463,249 +466,150 @@ func (o *Orchestrator) runDataset(ctx context.Context, run RunSpec, dataset stri
 		{"boot-source", func(stepCtx context.Context) error { return client.putBootSource(stepCtx, "/vmlinux", bootArgs) }},
 		{"rootfs", func(stepCtx context.Context) error { return client.putDrive(stepCtx, "rootfs", "/rootfs", true) }},
 		{"machine-config", func(stepCtx context.Context) error {
-			return client.putMachineConfig(stepCtx, o.cfg.VCPUs, o.cfg.MemoryMiB)
+			return client.putMachineConfig(stepCtx, int(spec.VCPUs), int(spec.MemoryMiB))
 		}},
 		{"network", func(stepCtx context.Context) error {
 			return client.putNetworkInterface(stepCtx, "eth0", netSetup.Lease.TapName, netSetup.Lease.MAC)
 		}},
 		{"vsock", func(stepCtx context.Context) error {
-			// Each VM needs a unique CID on the host. CID 0-2 are reserved
-			// (0=hypervisor, 1=reserved, 2=host). Derive from the network
-			// slot index which is already unique per concurrent VM.
 			cid := uint32(netSetup.Lease.SlotIndex) + 3
 			return client.putVsock(stepCtx, cid, "/run/forge-control.sock")
 		}},
 		{"entropy", func(stepCtx context.Context) error { return client.putEntropy(stepCtx) }},
 	}
-
 	for _, step := range apiSteps {
-		stepStart := time.Now()
-		logger.InfoContext(ctx, "configuring firecracker", "step", step.name)
-		stepCtx, cancel := context.WithTimeout(ctx, firecrackerAPIStepTimeout)
+		stepCtx, cancel := context.WithTimeout(ctx, firecrackerStepTimeout)
 		stepCtx, endStepSpan := startStepSpan(stepCtx, "vmorchestrator.firecracker.configure",
-			attribute.String("run.id", run.RunID),
+			attribute.String("lease.id", leaseID),
 			attribute.String("firecracker.step", step.name),
 		)
-		apiErr := step.fn(stepCtx)
-		endStepSpan(apiErr)
+		stepErr := step.fn(stepCtx)
+		endStepSpan(stepErr)
 		cancel()
-		if apiErr != nil {
-			return result, fmt.Errorf("configure VM %s: %w", step.name, apiErr)
+		if stepErr != nil {
+			return nil, fmt.Errorf("configure VM %s: %w", step.name, stepErr)
 		}
-		logger.InfoContext(ctx, "configured firecracker",
-			"step", step.name,
-			"duration_ms", time.Since(stepStart).Milliseconds(),
-		)
 	}
 
-	startVMStart := time.Now()
-	logger.InfoContext(ctx, "configuring firecracker", "step", "instance-start")
-	startCtx, cancel := context.WithTimeout(ctx, firecrackerAPIStepTimeout)
+	startCtx, cancel := context.WithTimeout(ctx, firecrackerStepTimeout)
 	startCtx, endStartSpan := startStepSpan(startCtx, "vmorchestrator.firecracker.instance_start",
-		attribute.String("run.id", run.RunID),
+		attribute.String("lease.id", leaseID),
 	)
-	startVMErr := client.startInstance(startCtx)
-	endStartSpan(startVMErr)
+	startErr := client.startInstance(startCtx)
+	endStartSpan(startErr)
 	cancel()
-	if startVMErr != nil {
-		return result, fmt.Errorf("start VM: %w", startVMErr)
+	if startErr != nil {
+		return nil, fmt.Errorf("start VM: %w", startErr)
 	}
-	logger.InfoContext(ctx, "configured firecracker",
-		"step", "instance-start",
-		"duration_ms", time.Since(startVMStart).Milliseconds(),
-	)
-	result.VMBootTime = time.Since(bootStart)
-	logger.InfoContext(ctx, "VM started", "boot_ms", result.VMBootTime.Milliseconds())
 
 	controlSocketCtx, endControlSocketSpan := startStepSpan(ctx, "vmorchestrator.guest.control_socket_wait",
-		attribute.String("run.id", run.RunID),
+		attribute.String("lease.id", leaseID),
 		attribute.String("socket.path", controlSockHost),
 	)
-	if waitErr := waitForPath(controlSocketCtx, controlSockHost); waitErr != nil {
-		endControlSocketSpan(waitErr)
-		return result, fmt.Errorf("wait for guest control socket: %w", waitErr)
+	if err := waitForPath(controlSocketCtx, controlSockHost); err != nil {
+		endControlSocketSpan(err)
+		return nil, fmt.Errorf("wait for guest control socket: %w", err)
 	}
 	endControlSocketSpan(nil)
-	if chmodErr := o.ops.Chmod(ctx, controlSockHost, 0o770); chmodErr != nil {
-		return result, fmt.Errorf("chmod guest control socket: %w", chmodErr)
+	if err := o.ops.Chmod(ctx, controlSockHost, 0o770); err != nil {
+		return nil, fmt.Errorf("chmod guest control socket: %w", err)
 	}
 
 	telemetryCtx, telemetryCancel := context.WithCancel(ctx)
-	defer telemetryCancel()
-	telemetryFaultProfile, telemetryFaultErr := parseTelemetryFaultProfile(strings.TrimSpace(run.Env[telemetryFaultProfileEnvVar]))
-	if telemetryFaultErr != nil {
-		return result, fmt.Errorf("parse telemetry fault profile: %w", telemetryFaultErr)
-	}
-	if telemetryFaultProfile != nil {
-		logger.WarnContext(ctx, "telemetry fault injection enabled", "profile", strings.TrimSpace(run.Env[telemetryFaultProfileEnvVar]))
-	}
-	var telemetryWg sync.WaitGroup
-	telemetryWg.Add(1)
+	runtime.cancelTelemetry = telemetryCancel
+	runtime.telemetryDone = make(chan struct{})
 	go func() {
-		defer telemetryWg.Done()
-		if telemetryErr := streamGuestTelemetry(telemetryCtx, controlSockHost, run.RunID, observer, logger, telemetryFaultProfile); telemetryErr != nil && !errors.Is(telemetryErr, context.Canceled) {
-			logger.WarnContext(ctx, "guest telemetry stream ended", "run_id", run.RunID, "err", telemetryErr)
+		defer close(runtime.telemetryDone)
+		if err := streamGuestTelemetry(telemetryCtx, controlSockHost, leaseID, observer, logger, nil); err != nil && !errors.Is(err, context.Canceled) {
+			logger.WarnContext(ctx, "guest telemetry stream ended", "lease_id", leaseID, "error", err)
 		}
 	}()
-	defer telemetryWg.Wait()
-
-	waitDone := make(chan error, 1)
-	go func() { waitDone <- jailer.Wait() }()
 
 	controlCtx, endControlConnectSpan := startStepSpan(ctx, "vmorchestrator.guest.control_connect",
-		attribute.String("run.id", run.RunID),
+		attribute.String("lease.id", leaseID),
 		attribute.String("socket.path", controlSockHost),
 	)
-	control, controlErr := connectGuestControl(controlCtx, controlSockHost, vmproto.GuestPort)
-	endControlConnectSpan(controlErr)
-	if controlErr != nil {
-		_ = jailer.Kill()
-		<-waitDone
-		jailerExited.Store(true)
-		telemetryCancel()
-		logWg.Wait()
-		result.SerialLogs = serialBuf.String()
-		return result, fmt.Errorf("connect guest control: %w", controlErr)
+	control, err := connectGuestControl(controlCtx, controlSockHost, vmproto.GuestPort)
+	endControlConnectSpan(err)
+	if err != nil {
+		return nil, fmt.Errorf("connect guest control: %w", err)
 	}
-	defer control.close()
+	runtime.control = control
+	runtime.cleanups = append(runtime.cleanups, func() { _ = control.close() })
 
-	controlDone := make(chan struct {
-		result guestControlResult
-		err    error
-	}, 1)
-	handleCheckpoint := o.checkpointHandler(ctx, run, dataset, observer, logger)
-	go func() {
-		controlResult, err := control.run(ctx, run, netSetup.Lease, o.cfg.HostServiceIP, o.cfg.HostServicePort, func(req vmproto.CheckpointRequest) vmproto.CheckpointResponse {
-			resp := handleCheckpoint(req)
-			if resp.Accepted {
-				checkpointSaved.Store(true)
-			}
-			return resp
-		}, logger, observer)
-		controlDone <- struct {
-			result guestControlResult
-			err    error
-		}{result: controlResult, err: err}
-	}()
-
-	var (
-		controlResult guestControlResult
-		controlRunErr error
-	)
-
-	select {
-	case outcome := <-controlDone:
-		controlResult = outcome.result
-		controlRunErr = outcome.err
-	case <-ctx.Done():
-		_ = control.send(vmproto.TypeCancel, vmproto.Cancel{Reason: ctx.Err().Error()})
-		select {
-		case outcome := <-controlDone:
-			controlResult = outcome.result
-			controlRunErr = ctx.Err()
-			if outcome.err != nil {
-				controlRunErr = outcome.err
-			}
-		case <-time.After(vmproto.CancelGracePeriod):
-			_ = jailer.Kill()
-			<-waitDone
-			jailerExited.Store(true)
-			telemetryCancel()
-			logWg.Wait()
-			result.Logs = controlResult.logs
-			result.SerialLogs = serialBuf.String()
-			return result, ctx.Err()
-		}
+	_, endHelloSpan := startStepSpan(ctx, "vmorchestrator.guest.hello", attribute.String("lease.id", leaseID))
+	if err := control.awaitHello(ctx); err != nil {
+		endHelloSpan(err)
+		return nil, err
+	}
+	endHelloSpan(nil)
+	if err := control.initLease(ctx, leaseID, netSetup.Lease.GuestNetworkConfig(o.cfg.HostServiceIP, o.cfg.HostServicePort)); err != nil {
+		return nil, err
 	}
 
-	shutdownWaitStart := time.Now()
-	_, endExitWaitSpan := startStepSpan(ctx, "vmorchestrator.vm.exit_wait",
-		attribute.String("run.id", run.RunID),
-	)
-	select {
-	case waitErr := <-waitDone:
-		result.VMExitWaitDuration = time.Since(shutdownWaitStart)
-		endExitWaitSpan(waitErr)
-		jailerExited.Store(true)
-		telemetryCancel()
-		if waitErr != nil && controlRunErr == nil {
-			controlRunErr = fmt.Errorf("wait for VM exit: %w", waitErr)
-		}
-		logger.InfoContext(ctx, "VM process exited after guest shutdown", "wait_ms", result.VMExitWaitDuration.Milliseconds())
-	case <-time.After(15 * time.Second):
-		result.VMExitWaitDuration = time.Since(shutdownWaitStart)
-		result.ForcedShutdown = true
-		endExitWaitSpan(fmt.Errorf("timed out waiting for VM exit after guest shutdown"))
-		logger.WarnContext(ctx, "VM did not exit after guest shutdown; killing Firecracker", "wait_ms", result.VMExitWaitDuration.Milliseconds())
-		_ = jailer.Kill()
-		<-waitDone
-		jailerExited.Store(true)
-		telemetryCancel()
-		if controlRunErr == nil {
-			controlRunErr = fmt.Errorf("timed out waiting for VM exit after guest shutdown")
-		}
+	cleanupOnErr = false
+	return runtime, nil
+}
+
+func (r *LeaseRuntime) Exec(ctx context.Context, spec ExecSpec, handleCheckpoint checkpointHandler) (ExecResult, error) {
+	if r == nil || r.control == nil {
+		return ExecResult{}, fmt.Errorf("lease runtime is not ready")
 	}
-
-	logWg.Wait()
-	result.Logs = controlResult.logs
-	result.SerialLogs = serialBuf.String()
-	result.ExitCode = controlResult.result.ExitCode
-	result.RunDuration = time.Duration(controlResult.result.RunDurationMS) * time.Millisecond
-	result.BootToReadyDuration = time.Duration(controlResult.hello.BootToReadyMS) * time.Millisecond
-	result.StdoutBytes = controlResult.result.StdoutBytes
-	result.StderrBytes = controlResult.result.StderrBytes
-	result.DroppedLogBytes = controlResult.result.DroppedLogBytes
-	result.PhaseResults = append([]PhaseResult(nil), controlResult.phases...)
-	result.FailurePhase = firstFailedPhase(controlResult.phases)
-	logger.InfoContext(ctx, "VM exited", "exit_code", result.ExitCode)
-
-	result.Metrics = parseMetricsFile(metricsPathHost)
-
-	bgCtx, bgCancel := context.WithTimeout(detachedTraceContext(ctx), 10*time.Second)
-	defer bgCancel()
-	writtenCtx, endWrittenSpan := startStepSpan(bgCtx, "vmorchestrator.zfs.written",
-		attribute.String("run.id", run.RunID),
-		attribute.String("zfs.dataset", dataset),
-	)
-	if written, writtenErr := zfsWritten(writtenCtx, dataset); writtenErr == nil {
+	if err := validateExecSpec(spec); err != nil {
+		return ExecResult{}, err
+	}
+	result, err := r.control.exec(ctx, r.LeaseID, spec, handleCheckpoint, r.logger)
+	result.Metrics = parseMetricsFile(r.metricsPath)
+	if written, writtenErr := zfsWritten(context.Background(), r.Dataset); writtenErr == nil {
 		result.ZFSWritten = written
-		endWrittenSpan(nil)
-	} else {
-		endWrittenSpan(writtenErr)
-		logger.WarnContext(ctx, "zfs written unavailable", "dataset", dataset, "error", writtenErr)
 	}
-	volsizeCtx, endVolsizeSpan := startStepSpan(bgCtx, "vmorchestrator.zfs.volsize",
-		attribute.String("run.id", run.RunID),
-		attribute.String("zfs.dataset", dataset),
-	)
-	if provisioned, volsizeErr := zfsVolsize(volsizeCtx, dataset); volsizeErr == nil {
+	if provisioned, volsizeErr := zfsVolsize(context.Background(), r.Dataset); volsizeErr == nil {
 		result.RootfsProvisionedBytes = provisioned
-		endVolsizeSpan(nil)
-	} else {
-		endVolsizeSpan(volsizeErr)
-		logger.WarnContext(ctx, "zfs volsize unavailable", "dataset", dataset, "error", volsizeErr)
 	}
-
-	logger.InfoContext(ctx, "run complete",
-		"exit_code", result.ExitCode,
-		"total_ms", time.Since(start).Milliseconds(),
-		"boot_ms", result.VMBootTime.Milliseconds(),
-		"zfs_written_mb", result.ZFSWritten/(1024*1024),
-	)
-
-	return result, controlRunErr
+	return result, err
 }
 
-func firstFailedPhase(phases []PhaseResult) string {
-	for _, phase := range phases {
-		if phase.ExitCode != 0 {
-			return phase.Name
+func (r *LeaseRuntime) CancelExec(execID, reason string) error {
+	if r == nil || r.control == nil {
+		return nil
+	}
+	return r.control.cancelExec(execID, reason)
+}
+
+func (r *LeaseRuntime) Cleanup(reason string) {
+	if r == nil {
+		return
+	}
+	if r.control != nil {
+		_ = r.control.shutdown()
+	}
+	if r.cancelTelemetry != nil {
+		r.cancelTelemetry()
+	}
+	if r.waitDone != nil {
+		select {
+		case <-r.waitDone:
+			r.jailerExited.Store(true)
+		case <-time.After(2 * time.Second):
+			if r.jailer != nil {
+				_ = r.jailer.Kill()
+			}
+			<-r.waitDone
+			r.jailerExited.Store(true)
 		}
 	}
-	return ""
+	if r.telemetryDone != nil {
+		<-r.telemetryDone
+	}
+	r.logWg.Wait()
+	for i := len(r.cleanups) - 1; i >= 0; i-- {
+		r.cleanups[i]()
+	}
+	if r.logger != nil {
+		r.logger.Info("lease runtime cleaned up", "lease_id", r.LeaseID, "reason", reason)
+	}
 }
 
-// waitForSocket polls until the Unix socket is connectable.
 func waitForSocket(ctx context.Context, path string) error {
 	for {
 		conn, dialErr := net.DialTimeout("unix", path, 100*time.Millisecond)
@@ -742,7 +646,7 @@ func captureSerialOutput(reader io.Reader, dst *strings.Builder, wg *sync.WaitGr
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if dst.Len() < 10*1024*1024 {
+		if dst.Len() < maxBufferedGuestLogs {
 			dst.WriteString(line)
 			dst.WriteByte('\n')
 		}
