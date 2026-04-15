@@ -2,20 +2,19 @@ package vmorchestrator
 
 import (
 	"context"
-	"errors"
+	"encoding/json"
 	"fmt"
 	"log/slog"
-	"slices"
-	"strconv"
+	"math/rand"
 	"strings"
 	"sync"
 	"time"
 
 	vmrpc "github.com/forge-metal/vm-orchestrator/proto/v1"
 	"github.com/forge-metal/vm-orchestrator/vmproto"
-	"github.com/google/uuid"
+	"github.com/oklog/ulid/v2"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
+	otelcodes "go.opentelemetry.io/otel/codes"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -27,25 +26,73 @@ type APIServer struct {
 	logger *slog.Logger
 	state  *hostStateStore
 
-	mu   sync.RWMutex
-	runs map[string]*managedRun
+	mu     sync.RWMutex
+	actors map[string]*vmActor
 }
 
-type managedRun struct {
-	id string
+type vmActor struct {
+	leaseID string
+	spec    LeaseSpec
 
-	mu             sync.RWMutex
-	state          RunState
-	cancel         context.CancelFunc
-	result         *RunResult
-	err            error
-	billablePhases map[string]struct{}
+	server  *APIServer
+	mailbox chan vmCommand
+	done    chan struct{}
+
+	runtime *LeaseRuntime
+	state   LeaseState
+	expires time.Time
+	active  *activeExec
 }
 
-type runObserver struct {
-	server *APIServer
-	run    *managedRun
-	ctx    context.Context
+type activeExec struct {
+	execID string
+	cancel context.CancelFunc
+}
+
+type vmCommand interface{}
+
+type acquireCmd struct {
+	reply chan acquireReply
+}
+type acquireReply struct {
+	record LeaseRecord
+	err    error
+}
+type renewCmd struct {
+	expiresAt time.Time
+	allowlist []string
+	reply     chan error
+}
+type releaseCmd struct {
+	reason string
+	state  LeaseState
+	event  LeaseEventType
+	reply  chan error
+}
+type startExecCmd struct {
+	execID string
+	spec   ExecSpec
+	reply  chan startExecReply
+}
+type startExecReply struct {
+	startedAt time.Time
+	err       error
+}
+type cancelExecCmd struct {
+	execID string
+	reason string
+	reply  chan bool
+}
+type execDoneCmd struct {
+	execID string
+	result ExecResult
+	err    error
+}
+type checkpointSavedCmd struct {
+	event CheckpointEvent
+}
+type telemetryCmd struct {
+	event TelemetryEvent
 }
 
 func NewAPIServer(cfg Config, logger *slog.Logger) (*APIServer, error) {
@@ -56,199 +103,253 @@ func NewAPIServer(cfg Config, logger *slog.Logger) (*APIServer, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-
 	state, err := openHostStateStore(base.StateDBPath, logger)
 	if err != nil {
-		return nil, fmt.Errorf("open durable host state ledger %s: %w", base.StateDBPath, err)
+		return nil, fmt.Errorf("open host state ledger %s: %w", base.StateDBPath, err)
 	}
-
-	return &APIServer{
+	server := &APIServer{
 		cfg:    base,
 		logger: logger,
 		state:  state,
-		runs:   make(map[string]*managedRun),
-	}, nil
+		actors: map[string]*vmActor{},
+	}
+	if err := server.recoverNetworkState(context.Background()); err != nil {
+		_ = state.close()
+		return nil, err
+	}
+	if err := server.markUnownedActiveLeasesCrashed(context.Background()); err != nil {
+		_ = state.close()
+		return nil, err
+	}
+	return server, nil
+}
+
+func (s *APIServer) recoverNetworkState(ctx context.Context) error {
+	cfg := NetworkPoolConfig{
+		PoolCIDR:      s.cfg.GuestPoolCIDR,
+		StateDBPath:   s.cfg.StateDBPath,
+		HostInterface: s.cfg.HostInterface,
+		TapOwnerUID:   s.cfg.JailerUID,
+		TapOwnerGID:   s.cfg.JailerGID,
+	}
+	recoverCtx, endRecoverSpan := startStepSpan(ctx, "vmorchestrator.network.startup_recover",
+		attribute.String("network.pool_cidr", cfg.PoolCIDR),
+	)
+	err := NewAllocator(cfg).Recover(recoverCtx, DirectPrivOps{})
+	endRecoverSpan(err)
+	if err != nil {
+		return fmt.Errorf("recover host network state: %w", err)
+	}
+	return nil
 }
 
 func (s *APIServer) Close() error {
-	if s == nil || s.state == nil {
+	if s == nil {
 		return nil
 	}
-	return s.state.close()
+	s.mu.RLock()
+	actors := make([]*vmActor, 0, len(s.actors))
+	for _, actor := range s.actors {
+		actors = append(actors, actor)
+	}
+	s.mu.RUnlock()
+	for _, actor := range actors {
+		reply := make(chan error, 1)
+		actor.send(releaseCmd{reason: "server_shutdown", state: LeaseStateReleased, event: LeaseEventLeaseReleased, reply: reply})
+		<-reply
+	}
+	if s.state != nil {
+		return s.state.close()
+	}
+	return nil
 }
 
-func (s *APIServer) EnsureRun(ctx context.Context, req *vmrpc.EnsureRunRequest) (*vmrpc.EnsureRunResponse, error) {
-	ctx, span := tracer.Start(ctx, "rpc.EnsureRun")
+func (s *APIServer) AcquireLease(ctx context.Context, req *vmrpc.AcquireLeaseRequest) (*vmrpc.AcquireLeaseResponse, error) {
+	ctx, span := tracer.Start(ctx, "rpc.AcquireLease")
 	defer span.End()
-
-	spec := req.GetSpec()
-	if spec == nil {
-		return nil, status.Error(codes.InvalidArgument, "run spec is required")
+	key := strings.TrimSpace(req.GetIdempotencyKey())
+	if key == "" {
+		return nil, status.Error(codes.InvalidArgument, "idempotency_key is required")
 	}
-
-	runSpec := hostRunSpecFromProto(spec)
-	runSpec.RunID = ensureRunID(runSpec.RunID)
-	runSpec.WorkloadKind = vmproto.NormalizeWorkloadKind(runSpec.WorkloadKind)
-	if err := validateRunSpec(runSpecFromHostRunSpec(runSpec)); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-	span.SetAttributes(
-		attribute.String("run.id", runSpec.RunID),
-		attribute.String("run.workload_kind", runSpec.WorkloadKind),
-		attribute.String("run.runner_class", runSpec.RunnerClass),
-	)
-
-	record, created, existingState, err := s.ensureRunRecord(ctx, runSpec)
-	if err != nil {
-		return nil, err
-	}
-
-	if created {
-		run := runSpecFromHostRunSpec(runSpec)
-		runCtx := detachedTraceContext(ctx)
-		go s.runManagedRun(runCtx, record, func(runCtx context.Context, observer RunObserver) (RunResult, error) {
-			orch := New(s.cfg, s.logger)
-			return orch.RunObserved(runCtx, run, observer)
-		})
-		return &vmrpc.EnsureRunResponse{
-			RunId:   runSpec.RunID,
-			State:   vmrpc.RunState_RUN_STATE_PENDING,
-			Created: true,
-		}, nil
-	}
-
-	return &vmrpc.EnsureRunResponse{
-		RunId:   runSpec.RunID,
-		State:   runStateToProto(existingState),
-		Created: false,
-	}, nil
-}
-
-func (s *APIServer) GetRun(ctx context.Context, req *vmrpc.GetRunRequest) (*vmrpc.GetRunResponse, error) {
-	_, span := tracer.Start(ctx, "rpc.GetRun")
-	defer span.End()
-
-	runID := strings.TrimSpace(req.GetRunId())
-	if runID == "" {
-		return nil, status.Error(codes.InvalidArgument, "run_id is required")
-	}
-
-	snapshot, err := s.state.getRunSnapshot(ctx, runID)
-	if err != nil {
-		if errors.Is(err, errHostRunNotFound) {
-			return nil, status.Errorf(codes.NotFound, "run %s not found", runID)
+	if prior, ok, err := s.state.getIdempotency(ctx, "acquire_lease", key); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	} else if ok {
+		resp := &vmrpc.AcquireLeaseResponse{}
+		if err := json.Unmarshal([]byte(prior), resp); err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
 		}
-		return nil, status.Errorf(codes.Internal, "load run %s from host state ledger: %v", runID, err)
+		return resp, nil
 	}
 
-	resp := &vmrpc.GetRunResponse{
-		RunId:             snapshot.RunID,
-		State:             runStateToProto(snapshot.State),
-		Terminal:          snapshot.State.Terminal(),
-		TerminalReason:    snapshot.TerminalReason,
-		UpdatedAtUnixNano: uint64(snapshot.UpdatedAt.UnixNano()),
+	spec := leaseSpecFromProto(req.GetSpec(), s.cfg)
+	leaseID := newHostID()
+	actor := &vmActor{
+		leaseID: leaseID,
+		spec:    spec,
+		server:  s,
+		mailbox: make(chan vmCommand, 16),
+		done:    make(chan struct{}),
+		state:   LeaseStateAcquiring,
+		expires: time.Now().UTC().Add(time.Duration(spec.TTLSeconds) * time.Second),
 	}
-	if snapshot.Result != nil {
-		resp.Result = runResultToProto(*snapshot.Result, req.GetIncludeOutput())
+	s.rememberActor(actor)
+	go actor.run()
+
+	reply := make(chan acquireReply, 1)
+	if !actor.send(acquireCmd{reply: reply}) {
+		return nil, status.Error(codes.Unavailable, "lease actor is not accepting commands")
+	}
+	var out acquireReply
+	select {
+	case out = <-reply:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	if out.err != nil {
+		s.forgetActor(leaseID)
+		span.RecordError(out.err)
+		span.SetStatus(otelcodes.Error, out.err.Error())
+		return nil, status.Error(codes.Internal, out.err.Error())
+	}
+	resp := acquireLeaseResponseFromRecord(out.record)
+	data, _ := json.Marshal(resp)
+	if err := s.state.putIdempotency(context.Background(), "acquire_lease", key, string(data)); err != nil {
+		s.logger.WarnContext(ctx, "store acquire lease idempotency failed", "error", err)
+	}
+	span.SetAttributes(attribute.String("lease.id", leaseID))
+	return resp, nil
+}
+
+func (s *APIServer) RenewLease(ctx context.Context, req *vmrpc.RenewLeaseRequest) (*vmrpc.RenewLeaseResponse, error) {
+	_, span := tracer.Start(ctx, "rpc.RenewLease")
+	defer span.End()
+	leaseID := strings.TrimSpace(req.GetLeaseId())
+	if leaseID == "" {
+		return nil, status.Error(codes.InvalidArgument, "lease_id is required")
+	}
+	key := strings.TrimSpace(req.GetIdempotencyKey())
+	if key == "" {
+		return nil, status.Error(codes.InvalidArgument, "idempotency_key is required")
+	}
+	scope := "renew_lease:" + leaseID
+	if prior, ok, err := s.state.getIdempotency(ctx, scope, key); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	} else if ok {
+		resp := &vmrpc.RenewLeaseResponse{}
+		if err := json.Unmarshal([]byte(prior), resp); err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		return resp, nil
+	}
+	actor, ok := s.lookupActor(leaseID)
+	if !ok {
+		return nil, status.Error(codes.NotFound, "lease not live")
+	}
+	extend := req.GetExtendSeconds()
+	if extend == 0 {
+		return nil, status.Error(codes.InvalidArgument, "extend_seconds is required")
+	}
+	snapshot, err := s.state.getLease(ctx, leaseID)
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+	expiresAt := snapshot.ExpiresAt.Add(time.Duration(extend) * time.Second)
+	if max := time.Now().UTC().Add(24 * time.Hour); expiresAt.After(max) {
+		expiresAt = max
+	}
+	allowlist := snapshot.Allowlist
+	if len(req.GetCheckpointSaveAllowlist()) > 0 {
+		allowlist = req.GetCheckpointSaveAllowlist()
+	}
+	reply := make(chan error, 1)
+	actor.send(renewCmd{expiresAt: expiresAt, allowlist: allowlist, reply: reply})
+	if err := <-reply; err != nil {
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	resp := &vmrpc.RenewLeaseResponse{LeaseId: leaseID, ExpiresAtUnixNs: uint64(expiresAt.UnixNano())}
+	data, _ := json.Marshal(resp)
+	_ = s.state.putIdempotency(context.Background(), scope, key, string(data))
+	return resp, nil
+}
+
+func (s *APIServer) ReleaseLease(ctx context.Context, req *vmrpc.ReleaseLeaseRequest) (*vmrpc.ReleaseLeaseResponse, error) {
+	_, span := tracer.Start(ctx, "rpc.ReleaseLease")
+	defer span.End()
+	leaseID := strings.TrimSpace(req.GetLeaseId())
+	if leaseID == "" {
+		return nil, status.Error(codes.InvalidArgument, "lease_id is required")
+	}
+	actor, ok := s.lookupActor(leaseID)
+	if !ok {
+		snap, err := s.state.getLease(ctx, leaseID)
+		if err != nil {
+			return nil, status.Error(codes.NotFound, "lease not found")
+		}
+		return &vmrpc.ReleaseLeaseResponse{LeaseId: leaseID, State: leaseStateToProto(snap.State), ReleasedAtUnixNs: uint64(snap.TerminalAt.UnixNano())}, nil
+	}
+	reply := make(chan error, 1)
+	actor.send(releaseCmd{reason: "released_by_client", state: LeaseStateReleased, event: LeaseEventLeaseReleased, reply: reply})
+	if err := <-reply; err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	s.forgetActor(leaseID)
+	return &vmrpc.ReleaseLeaseResponse{LeaseId: leaseID, State: vmrpc.LeaseState_LEASE_STATE_RELEASED, ReleasedAtUnixNs: uint64(time.Now().UTC().UnixNano())}, nil
+}
+
+func (s *APIServer) GetLease(ctx context.Context, req *vmrpc.GetLeaseRequest) (*vmrpc.GetLeaseResponse, error) {
+	_, span := tracer.Start(ctx, "rpc.GetLease")
+	defer span.End()
+	snap, err := s.state.getLease(ctx, strings.TrimSpace(req.GetLeaseId()))
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+	return &vmrpc.GetLeaseResponse{Lease: leaseSnapshotToProto(snap)}, nil
+}
+
+func (s *APIServer) ListLeases(ctx context.Context, req *vmrpc.ListLeasesRequest) (*vmrpc.ListLeasesResponse, error) {
+	_, span := tracer.Start(ctx, "rpc.ListLeases")
+	defer span.End()
+	leases, err := s.state.listLeases(ctx, req.GetIncludeTerminal(), int(req.GetLimit()))
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	resp := &vmrpc.ListLeasesResponse{Leases: make([]*vmrpc.LeaseRecord, 0, len(leases))}
+	for _, lease := range leases {
+		resp.Leases = append(resp.Leases, leaseSnapshotToProto(lease))
 	}
 	return resp, nil
 }
 
-func (s *APIServer) CancelRun(ctx context.Context, req *vmrpc.CancelRunRequest) (*vmrpc.CancelRunResponse, error) {
-	_, span := tracer.Start(ctx, "rpc.CancelRun")
+func (s *APIServer) StreamLeaseEvents(req *vmrpc.StreamLeaseEventsRequest, stream vmrpc.VMService_StreamLeaseEventsServer) error {
+	ctx, span := tracer.Start(stream.Context(), "rpc.StreamLeaseEvents")
 	defer span.End()
-
-	runID := strings.TrimSpace(req.GetRunId())
-	if runID == "" {
-		return nil, status.Error(codes.InvalidArgument, "run_id is required")
+	leaseID := strings.TrimSpace(req.GetLeaseId())
+	if leaseID == "" {
+		return status.Error(codes.InvalidArgument, "lease_id is required")
 	}
-	reason := strings.TrimSpace(req.GetReason())
-	if reason == "" {
-		reason = "requested_by_client"
-	}
-
-	record, ok := s.lookupLiveRun(runID)
-	if ok {
-		accepted := record.cancelRun()
-		s.appendRunEvent(ctx, runID, "cancel_requested", map[string]string{
-			"reason":                  reason,
-			"accepted":                strconv.FormatBool(accepted),
-			"host_received_unix_nano": strconv.FormatInt(time.Now().UTC().UnixNano(), 10),
-		})
-		return &vmrpc.CancelRunResponse{Accepted: accepted}, nil
-	}
-
-	snapshot, err := s.state.getRunSnapshot(ctx, runID)
-	if err != nil {
-		if errors.Is(err, errHostRunNotFound) {
-			return nil, status.Errorf(codes.NotFound, "run %s not found", runID)
-		}
-		return nil, status.Errorf(codes.Internal, "load run %s from host state ledger: %v", runID, err)
-	}
-	if snapshot.State.Terminal() {
-		return &vmrpc.CancelRunResponse{Accepted: false}, nil
-	}
-
-	s.appendRunEvent(ctx, runID, "cancel_requested", map[string]string{
-		"reason":                  reason,
-		"accepted":                "false",
-		"host_received_unix_nano": strconv.FormatInt(time.Now().UTC().UnixNano(), 10),
-		"detail":                  "run_not_live",
-	})
-	return &vmrpc.CancelRunResponse{Accepted: false}, nil
-}
-
-func (s *APIServer) StreamRunEvents(req *vmrpc.StreamRunEventsRequest, stream vmrpc.VMService_StreamRunEventsServer) error {
-	ctx, span := tracer.Start(stream.Context(), "rpc.StreamRunEvents")
-	defer span.End()
-
-	runID := strings.TrimSpace(req.GetRunId())
-	if runID == "" {
-		return status.Error(codes.InvalidArgument, "run_id is required")
-	}
-
-	if _, err := s.state.getRunSnapshot(ctx, runID); err != nil {
-		if errors.Is(err, errHostRunNotFound) {
-			return status.Errorf(codes.NotFound, "run %s not found", runID)
-		}
-		return status.Errorf(codes.Internal, "load run %s from host state ledger: %v", runID, err)
-	}
-
 	fromSeq := req.GetFromSeq()
 	limit := int(req.GetBatchSize())
 	if limit <= 0 || limit > 1000 {
 		limit = 256
 	}
-
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
-
 	for {
-		events, err := s.state.listRunEvents(ctx, runID, fromSeq, limit)
+		events, err := s.state.listLeaseEvents(ctx, leaseID, fromSeq, limit)
 		if err != nil {
-			return status.Errorf(codes.Internal, "list run events for %s: %v", runID, err)
+			return status.Error(codes.Internal, err.Error())
 		}
 		for _, event := range events {
-			if err := stream.Send(&vmrpc.HostRunEvent{
-				RunId:             runID,
-				EventSeq:          event.Seq,
-				EventType:         event.EventType,
-				Attrs:             cloneStringMap(event.Attrs),
-				CreatedAtUnixNano: uint64(event.CreatedAt.UnixNano()),
-			}); err != nil {
+			if err := stream.Send(leaseEventToProto(leaseID, event)); err != nil {
 				return err
 			}
 			fromSeq = event.Seq
 		}
-
-		snapshot, err := s.state.getRunSnapshot(ctx, runID)
+		snap, err := s.state.getLease(ctx, leaseID)
 		if err != nil {
-			if errors.Is(err, errHostRunNotFound) {
-				return status.Errorf(codes.NotFound, "run %s not found", runID)
-			}
-			return status.Errorf(codes.Internal, "load run %s terminal state: %v", runID, err)
+			return status.Error(codes.NotFound, err.Error())
 		}
-		if snapshot.State.Terminal() {
+		if snap.State.Terminal() {
 			if !req.GetFollow() || len(events) == 0 {
 				return nil
 			}
@@ -257,7 +358,6 @@ func (s *APIServer) StreamRunEvents(req *vmrpc.StreamRunEventsRequest, stream vm
 		if !req.GetFollow() {
 			return nil
 		}
-
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -266,394 +366,432 @@ func (s *APIServer) StreamRunEvents(req *vmrpc.StreamRunEventsRequest, stream vm
 	}
 }
 
+func (s *APIServer) StartExec(ctx context.Context, req *vmrpc.StartExecRequest) (*vmrpc.StartExecResponse, error) {
+	ctx, span := tracer.Start(ctx, "rpc.StartExec")
+	defer span.End()
+	leaseID := strings.TrimSpace(req.GetLeaseId())
+	key := strings.TrimSpace(req.GetIdempotencyKey())
+	if leaseID == "" || key == "" {
+		return nil, status.Error(codes.InvalidArgument, "lease_id and idempotency_key are required")
+	}
+	scope := "start_exec:" + leaseID
+	if prior, ok, err := s.state.getIdempotency(ctx, scope, key); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	} else if ok {
+		resp := &vmrpc.StartExecResponse{}
+		if err := json.Unmarshal([]byte(prior), resp); err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		return resp, nil
+	}
+	actor, ok := s.lookupActor(leaseID)
+	if !ok {
+		return nil, status.Error(codes.NotFound, "lease not live")
+	}
+	execID := newHostID()
+	spec := execSpecFromProto(req.GetSpec())
+	spec = normalizeExecSpec(spec)
+	if spec.Env == nil {
+		spec.Env = map[string]string{}
+	}
+	spec.Env["FORGE_METAL_LEASE_ID"] = leaseID
+	spec.Env["FORGE_METAL_EXEC_ID"] = execID
+	if err := validateExecSpec(spec); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	if err := s.state.createExec(ctx, execSnapshot{LeaseID: leaseID, ExecID: execID, Spec: spec}); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	reply := make(chan startExecReply, 1)
+	actor.send(startExecCmd{execID: execID, spec: spec, reply: reply})
+	out := <-reply
+	if out.err != nil {
+		return nil, status.Error(codes.FailedPrecondition, out.err.Error())
+	}
+	resp := &vmrpc.StartExecResponse{LeaseId: leaseID, ExecId: execID, State: vmrpc.ExecState_EXEC_STATE_RUNNING, StartedAtUnixNs: uint64(out.startedAt.UnixNano())}
+	data, _ := json.Marshal(resp)
+	_ = s.state.putIdempotency(context.Background(), scope, key, string(data))
+	return resp, nil
+}
+
+func (s *APIServer) CancelExec(ctx context.Context, req *vmrpc.CancelExecRequest) (*vmrpc.CancelExecResponse, error) {
+	_, span := tracer.Start(ctx, "rpc.CancelExec")
+	defer span.End()
+	leaseID := strings.TrimSpace(req.GetLeaseId())
+	execID := strings.TrimSpace(req.GetExecId())
+	actor, ok := s.lookupActor(leaseID)
+	if !ok {
+		return nil, status.Error(codes.NotFound, "lease not live")
+	}
+	reply := make(chan bool, 1)
+	actor.send(cancelExecCmd{execID: execID, reason: req.GetReason(), reply: reply})
+	accepted := <-reply
+	state := vmrpc.ExecState_EXEC_STATE_CANCELED
+	if !accepted {
+		state = vmrpc.ExecState_EXEC_STATE_UNSPECIFIED
+	}
+	return &vmrpc.CancelExecResponse{LeaseId: leaseID, ExecId: execID, State: state, Accepted: accepted}, nil
+}
+
+func (s *APIServer) GetExec(ctx context.Context, req *vmrpc.GetExecRequest) (*vmrpc.GetExecResponse, error) {
+	_, span := tracer.Start(ctx, "rpc.GetExec")
+	defer span.End()
+	snap, err := s.state.getExec(ctx, strings.TrimSpace(req.GetLeaseId()), strings.TrimSpace(req.GetExecId()))
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+	return &vmrpc.GetExecResponse{Exec: execSnapshotToProto(snap, req.GetIncludeOutput())}, nil
+}
+
+func (s *APIServer) WaitExec(ctx context.Context, req *vmrpc.WaitExecRequest) (*vmrpc.WaitExecResponse, error) {
+	_, span := tracer.Start(ctx, "rpc.WaitExec")
+	defer span.End()
+	leaseID := strings.TrimSpace(req.GetLeaseId())
+	execID := strings.TrimSpace(req.GetExecId())
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		snap, err := s.state.getExec(ctx, leaseID, execID)
+		if err != nil {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		if snap.State.Terminal() {
+			return &vmrpc.WaitExecResponse{Exec: execSnapshotToProto(snap, req.GetIncludeOutput())}, nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *APIServer) SaveCheckpoint(ctx context.Context, req *vmrpc.SaveCheckpointRequest) (*vmrpc.SaveCheckpointResponse, error) {
+	_, span := tracer.Start(ctx, "rpc.SaveCheckpoint")
+	defer span.End()
+	leaseID := strings.TrimSpace(req.GetLeaseId())
+	ref := strings.TrimSpace(req.GetRef())
+	actor, ok := s.lookupActor(leaseID)
+	if !ok || actor.runtime == nil {
+		return nil, status.Error(codes.NotFound, "lease not live")
+	}
+	snap, err := s.state.getLease(ctx, leaseID)
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+	orch := New(s.cfg, s.logger)
+	resp := orch.handleCheckpointRequest(ctx, leaseID, actor.runtime.Dataset, normalizeCheckpointRefSet(snap.Allowlist), vmproto.CheckpointRequest{
+		RequestID: req.GetIdempotencyKey(),
+		Operation: vmproto.CheckpointOperationSave,
+		Ref:       ref,
+	}, s.logger)
+	if !resp.Accepted {
+		return nil, status.Error(codes.FailedPrecondition, resp.Error)
+	}
+	now := time.Now().UTC()
+	_ = s.state.appendLeaseEvent(context.Background(), leaseID, LeaseEventCheckpointSaved, "", map[string]string{"ref": ref, "version_id": resp.VersionID})
+	return &vmrpc.SaveCheckpointResponse{LeaseId: leaseID, Ref: ref, VersionId: resp.VersionID, SavedAtUnixNs: uint64(now.UnixNano())}, nil
+}
+
 func (s *APIServer) GetCapacity(ctx context.Context, _ *vmrpc.GetCapacityRequest) (*vmrpc.GetCapacityResponse, error) {
 	_, span := tracer.Start(ctx, "rpc.GetCapacity")
 	defer span.End()
-
-	activeRuns := uint32(s.activeRunCount(ctx))
-	totalSlots := uint32(totalGuestSlots(s.cfg.GuestPoolCIDR))
-	available := uint32(0)
-	if totalSlots > activeRuns {
-		available = totalSlots - activeRuns
-	}
-
-	rootfsProvisionedBytes, err := zfsVolsize(ctx, s.cfg.Pool+"/"+s.cfg.GoldenZvol)
+	held, err := s.state.countActiveLeases(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "get golden zvol volsize: %v", err)
+		return nil, status.Error(codes.Internal, err.Error())
 	}
-
+	total := uint32(totalGuestSlots(s.cfg.GuestPoolCIDR))
+	leasesHeld := uint32(held)
+	available := uint32(0)
+	if total > leasesHeld {
+		available = total - leasesHeld
+	}
+	rootfsBytes, err := zfsVolsize(ctx, s.cfg.Pool+"/"+s.cfg.GoldenZvol)
+	if err != nil {
+		rootfsBytes = 0
+	}
 	return &vmrpc.GetCapacityResponse{
-		GuestPoolCidr:          s.cfg.GuestPoolCIDR,
-		TotalSlots:             totalSlots,
-		ActiveRuns:             activeRuns,
-		AvailableSlots:         available,
-		VcpusPerVm:             uint32(s.cfg.VCPUs),
-		MemoryMibPerVm:         uint32(s.cfg.MemoryMiB),
-		RootfsProvisionedBytes: rootfsProvisionedBytes,
+		GuestPoolCidr: s.cfg.GuestPoolCIDR,
+		RuntimeProfiles: []*vmrpc.RuntimeProfileCapacity{{
+			RuntimeProfile:         defaultRuntimeProfile,
+			TotalSlots:             total,
+			LeasesHeld:             leasesHeld,
+			LeasesAvailable:        available,
+			VcpusPerSlot:           uint32(s.cfg.VCPUs),
+			MemoryMibPerSlot:       uint32(s.cfg.MemoryMiB),
+			RootfsProvisionedBytes: rootfsBytes,
+		}},
 	}, nil
 }
 
-func (s *APIServer) ensureRunRecord(ctx context.Context, spec HostRunSpec) (*managedRun, bool, RunState, error) {
-	runAttrs := map[string]string{}
-	normalizedPhases := normalizeBillablePhaseSet(spec.BillablePhases)
-	if len(normalizedPhases) > 0 {
-		runAttrs["billable_phases"] = strings.Join(sortedPhaseNames(normalizedPhases), ",")
-	}
-	if spec.AttemptID != "" {
-		runAttrs["attempt_id"] = spec.AttemptID
-	}
-	if spec.SegmentID != "" {
-		runAttrs["segment_id"] = spec.SegmentID
-	}
-	if spec.WorkloadKind != "" {
-		runAttrs["workload_kind"] = spec.WorkloadKind
-	}
-	if spec.RunnerClass != "" {
-		runAttrs["runner_class"] = spec.RunnerClass
-	}
-
-	if err := s.state.createRun(ctx, spec.RunID, RunStatePending, runAttrs); err != nil {
-		switch {
-		case errors.Is(err, errHostRunExists):
-			snapshot, snapshotErr := s.state.getRunSnapshot(ctx, spec.RunID)
-			if snapshotErr != nil {
-				if errors.Is(snapshotErr, errHostRunNotFound) {
-					return nil, false, RunStateUnspecified, status.Errorf(codes.NotFound, "run %s not found", spec.RunID)
-				}
-				return nil, false, RunStateUnspecified, status.Errorf(codes.Internal, "load run %s from host state ledger: %v", spec.RunID, snapshotErr)
+func (a *vmActor) run() {
+	defer close(a.done)
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case cmd := <-a.mailbox:
+			switch msg := cmd.(type) {
+			case acquireCmd:
+				msg.reply <- a.handleAcquire()
+			case renewCmd:
+				msg.reply <- a.handleRenew(msg.expiresAt, msg.allowlist)
+			case releaseCmd:
+				msg.reply <- a.handleRelease(msg.reason, msg.state, msg.event)
+				return
+			case startExecCmd:
+				msg.reply <- a.handleStartExec(msg.execID, msg.spec)
+			case cancelExecCmd:
+				msg.reply <- a.handleCancelExec(msg.execID, msg.reason)
+			case execDoneCmd:
+				a.handleExecDone(msg)
+			case checkpointSavedCmd:
+				a.handleCheckpointSaved(msg.event)
+			case telemetryCmd:
+				a.handleTelemetry(msg.event)
 			}
-			return nil, false, snapshot.State, nil
-		default:
-			return nil, false, RunStateUnspecified, status.Errorf(codes.Internal, "persist run %s in host state ledger: %v", spec.RunID, err)
+		case <-ticker.C:
+			if !a.expires.IsZero() && time.Now().UTC().After(a.expires) {
+				_ = a.handleRelease("lease_deadline_reached", LeaseStateExpired, LeaseEventLeaseExpired)
+				a.server.forgetActor(a.leaseID)
+				return
+			}
 		}
 	}
-
-	s.logger.InfoContext(ctx,
-		"host run state transition",
-		"run_id", spec.RunID,
-		"from_state", "",
-		"to_state", runStateName(RunStatePending),
-		"reason", "accepted",
-	)
-
-	record := &managedRun{
-		id:             spec.RunID,
-		state:          RunStatePending,
-		billablePhases: normalizedPhases,
-	}
-	s.rememberRun(record)
-	return record, true, RunStatePending, nil
 }
 
-func (s *APIServer) rememberRun(record *managedRun) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.runs[record.id] = record
-}
-
-func (s *APIServer) forgetRun(runID string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.runs, runID)
-}
-
-func (s *APIServer) lookupLiveRun(runID string) (*managedRun, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	record, ok := s.runs[runID]
-	return record, ok
-}
-
-func (s *APIServer) runManagedRun(ctx context.Context, record *managedRun, runner func(context.Context, RunObserver) (RunResult, error)) {
-	defer s.forgetRun(record.id)
-
-	ctx, span := tracer.Start(ctx, "vmorchestrator.managed_run",
-		trace.WithAttributes(attribute.String("run.id", record.id)))
-	defer span.End()
-
-	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	record.setRunning(cancel)
-	if err := s.state.transitionRunState(
-		ctx,
-		record.id,
-		[]RunState{RunStatePending},
-		RunStateRunning,
-		"run_started",
-		map[string]string{"run_id": record.id},
-		"",
-		nil,
-	); err != nil {
-		record.finish(RunStateFailed, nil, fmt.Errorf("transition run %s to running: %w", record.id, err))
-		if record.err != nil {
-			span.RecordError(record.err)
-		}
-		return
-	}
-	s.logger.InfoContext(ctx,
-		"host run state transition",
-		"run_id", record.id,
-		"from_state", runStateName(RunStatePending),
-		"to_state", runStateName(RunStateRunning),
-		"reason", "runner_started",
-	)
-
-	observer := &runObserver{server: s, run: record, ctx: ctx}
-	result, err := runner(runCtx, observer)
-	finalState := finalRunState(err, result.ExitCode)
-	record.finish(finalState, &result, err)
-	if err != nil {
-		span.RecordError(err)
-	}
-
-	terminalReason := errorString(err)
-	terminalAttrs := map[string]string{
-		"run_id":    record.id,
-		"to_state":  runStateName(finalState),
-		"exit_code": strconv.Itoa(result.ExitCode),
-	}
-	if terminalReason != "" {
-		terminalAttrs["reason"] = terminalReason
-	}
-	if result.FailurePhase != "" {
-		terminalAttrs["failure_phase"] = result.FailurePhase
-	}
-
-	if stateErr := s.state.transitionRunState(
-		ctx,
-		record.id,
-		[]RunState{RunStatePending, RunStateRunning},
-		finalState,
-		"run_finished",
-		terminalAttrs,
-		terminalReason,
-		&result,
-	); stateErr != nil {
-		span.RecordError(stateErr)
-		s.logger.ErrorContext(ctx, "persist terminal host run state failed", "run_id", record.id, "err", stateErr)
-	} else {
-		s.logger.InfoContext(ctx,
-			"host run state transition",
-			"run_id", record.id,
-			"from_state", runStateName(RunStateRunning),
-			"to_state", runStateName(finalState),
-			"reason", terminalReason,
-		)
-	}
-}
-
-func (s *APIServer) appendRunEvent(ctx context.Context, runID, eventType string, attrs map[string]string) {
-	if strings.TrimSpace(runID) == "" || strings.TrimSpace(eventType) == "" {
-		return
-	}
-	// Caller cancellation must not drop accepted host ledger events.
-	eventCtx, cancel := context.WithTimeout(detachedTraceContext(ctx), 5*time.Second)
-	defer cancel()
-	if err := s.state.appendRunEvent(eventCtx, runID, eventType, attrs); err != nil {
-		s.logger.WarnContext(eventCtx, "append run event to host state ledger failed", "run_id", runID, "event_type", eventType, "err", err)
-	}
-}
-
-func (s *APIServer) activeRunCount(ctx context.Context) int {
-	count, err := s.state.countActiveRuns(ctx)
-	if err == nil {
-		return count
-	}
-	s.logger.WarnContext(ctx, "active run count fell back to in-memory state", "err", err)
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	var inMemory int
-	for _, run := range s.runs {
-		if state := run.currentState(); state == RunStatePending || state == RunStateRunning {
-			inMemory++
-		}
-	}
-	return inMemory
-}
-
-func (o *runObserver) OnGuestLogChunk(_ string, _ string) {
-	// Logs are persisted in HostRunResult.Logs; live log streaming was removed in the run-event cutover.
-}
-
-func (o *runObserver) OnGuestPhaseStart(_ string, phase string) {
-	phase = strings.TrimSpace(phase)
-	if phase == "" {
-		return
-	}
-	attrs := map[string]string{
-		"phase":                   phase,
-		"billable":                strconv.FormatBool(o.run.isBillablePhase(phase)),
-		"host_received_unix_nano": strconv.FormatInt(time.Now().UTC().UnixNano(), 10),
-	}
-	if o.server != nil {
-		o.server.appendRunEvent(o.ctx, o.run.id, "phase_started", attrs)
-	}
-}
-
-func (o *runObserver) OnGuestPhaseEnd(_ string, result PhaseResult) {
-	result.Name = strings.TrimSpace(result.Name)
-	if result.Name == "" {
-		return
-	}
-	attrs := map[string]string{
-		"exit_code":               strconv.Itoa(result.ExitCode),
-		"duration_ms":             strconv.FormatInt(result.DurationMS, 10),
-		"phase":                   result.Name,
-		"billable":                strconv.FormatBool(o.run.isBillablePhase(result.Name)),
-		"host_received_unix_nano": strconv.FormatInt(time.Now().UTC().UnixNano(), 10),
-	}
-	if o.server != nil {
-		o.server.appendRunEvent(o.ctx, o.run.id, "phase_ended", attrs)
-	}
-}
-
-func (o *runObserver) OnGuestCheckpoint(_ string, event CheckpointEvent) {
-	attrs := map[string]string{
-		"request_id":              event.RequestID,
-		"operation":               event.Operation,
-		"ref":                     event.Ref,
-		"accepted":                strconv.FormatBool(event.Accepted),
-		"version_id":              event.VersionID,
-		"error":                   event.Error,
-		"host_received_unix_nano": strconv.FormatInt(time.Now().UTC().UnixNano(), 10),
-	}
-	if o.server != nil {
-		o.server.appendRunEvent(o.ctx, o.run.id, "checkpoint_request", attrs)
-	}
-}
-
-func (o *runObserver) OnTelemetryEvent(event TelemetryEvent) {
-	if o == nil || o.server == nil || o.run == nil || event.Diagnostic == nil {
-		return
-	}
-
-	runID := strings.TrimSpace(event.RunID)
-	if runID == "" {
-		runID = o.run.id
-	}
-	if runID == "" {
-		return
-	}
-
-	var eventType string
-	switch event.Diagnostic.Kind {
-	case TelemetryDiagnosticKindGap:
-		eventType = "telemetry_gap_detected"
-	case TelemetryDiagnosticKindRegression:
-		eventType = "telemetry_regression_detected"
-	default:
-		return
-	}
-
-	attrs := map[string]string{
-		"kind":                    string(event.Diagnostic.Kind),
-		"expected_seq":            strconv.FormatUint(uint64(event.Diagnostic.ExpectedSeq), 10),
-		"observed_seq":            strconv.FormatUint(uint64(event.Diagnostic.ObservedSeq), 10),
-		"missing_samples":         strconv.FormatUint(uint64(event.Diagnostic.MissingSamples), 10),
-		"host_received_unix_nano": strconv.FormatInt(time.Now().UTC().UnixNano(), 10),
-	}
-	if !event.ReceivedAtUnix.IsZero() {
-		attrs["telemetry_received_unix_nano"] = strconv.FormatInt(event.ReceivedAtUnix.UTC().UnixNano(), 10)
-	}
-
-	o.server.appendRunEvent(o.ctx, runID, eventType, attrs)
-}
-
-func (r *managedRun) setRunning(cancel context.CancelFunc) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.state = RunStateRunning
-	r.cancel = cancel
-}
-
-func (r *managedRun) finish(state RunState, result *RunResult, err error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.state = state
-	r.result = result
-	r.err = err
-	r.cancel = nil
-}
-
-func (r *managedRun) cancelRun() bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.cancel == nil || r.state.Terminal() {
+func (a *vmActor) send(cmd vmCommand) bool {
+	select {
+	case a.mailbox <- cmd:
+		return true
+	case <-a.done:
+		return false
+	case <-time.After(2 * time.Second):
 		return false
 	}
-	r.cancel()
+}
+
+func (a *vmActor) handleAcquire() acquireReply {
+	ctx := detachedTraceContext(context.Background())
+	spec := normalizeLeaseSpec(a.spec, a.server.cfg)
+	a.spec = spec
+	acquiredAt := time.Now().UTC()
+	a.expires = acquiredAt.Add(time.Duration(spec.TTLSeconds) * time.Second)
+	if err := a.server.state.createLease(ctx, leaseSnapshot{
+		LeaseID:        a.leaseID,
+		State:          LeaseStateAcquiring,
+		Spec:           spec,
+		RuntimeProfile: spec.RuntimeProfile,
+		TrustClass:     spec.TrustClass,
+		Allowlist:      spec.CheckpointSaveAllowlist,
+		AcquiredAt:     acquiredAt,
+		ExpiresAt:      a.expires,
+	}); err != nil {
+		return acquireReply{err: err}
+	}
+	_ = a.server.state.appendLeaseEvent(ctx, a.leaseID, LeaseEventVMBooting, "", nil)
+	observer := &leaseObserver{actor: a}
+	runtime, err := New(a.server.cfg, a.server.logger).BootLease(ctx, a.leaseID, spec, observer)
+	if err != nil {
+		_ = a.server.state.finishLease(ctx, a.leaseID, LeaseStateCrashed, err.Error(), LeaseEventLeaseCrashed)
+		return acquireReply{err: err}
+	}
+	a.runtime = runtime
+	a.state = LeaseStateReady
+	readyAt := time.Now().UTC()
+	if err := a.server.state.setLeaseReady(ctx, a.leaseID, runtime.Network.GuestIP, readyAt); err != nil {
+		return acquireReply{err: err}
+	}
+	a.server.logger.InfoContext(ctx, "lease ready", "lease_id", a.leaseID, "vm_ip", runtime.Network.GuestIP)
+	return acquireReply{record: LeaseRecord{
+		LeaseID:        a.leaseID,
+		State:          LeaseStateReady,
+		AcquiredAt:     acquiredAt,
+		ReadyAt:        readyAt,
+		ExpiresAt:      a.expires,
+		VMIP:           runtime.Network.GuestIP,
+		RuntimeProfile: spec.RuntimeProfile,
+		TrustClass:     spec.TrustClass,
+	}}
+}
+
+func (a *vmActor) handleRenew(expiresAt time.Time, allowlist []string) error {
+	if a.state.Terminal() {
+		return fmt.Errorf("lease is terminal")
+	}
+	if time.Now().UTC().After(a.expires) {
+		return fmt.Errorf("lease deadline already passed")
+	}
+	a.expires = expiresAt
+	a.spec.CheckpointSaveAllowlist = allowlist
+	return a.server.state.renewLease(context.Background(), a.leaseID, expiresAt, allowlist)
+}
+
+func (a *vmActor) handleRelease(reason string, state LeaseState, event LeaseEventType) error {
+	if a.active != nil {
+		a.active.cancel()
+		if a.runtime != nil {
+			_ = a.runtime.CancelExec(a.active.execID, reason)
+		}
+	}
+	if a.runtime != nil {
+		a.runtime.Cleanup(reason)
+		a.runtime = nil
+	}
+	a.state = state
+	if err := a.server.state.finishLease(context.Background(), a.leaseID, state, reason, event); err != nil {
+		return err
+	}
+	a.server.forgetActor(a.leaseID)
+	return nil
+}
+
+func (a *vmActor) handleStartExec(execID string, spec ExecSpec) startExecReply {
+	if a.state != LeaseStateReady || a.runtime == nil {
+		return startExecReply{err: fmt.Errorf("lease is not ready")}
+	}
+	if a.active != nil {
+		return startExecReply{err: fmt.Errorf("lease already has an active exec")}
+	}
+	execCtx, cancel := context.WithCancel(detachedTraceContext(context.Background()))
+	a.active = &activeExec{execID: execID, cancel: cancel}
+	startedCh := make(chan time.Time, 1)
+	doneCh := make(chan execDoneCmd, 1)
+	go func() {
+		handleCheckpoint := New(a.server.cfg, a.server.logger).checkpointHandler(execCtx, a.leaseID, a.runtime.Dataset, normalizeCheckpointRefSet(a.spec.CheckpointSaveAllowlist), &leaseObserver{actor: a}, a.server.logger)
+		result, err := a.runtime.Exec(execCtx, spec, handleCheckpoint)
+		doneCh <- execDoneCmd{execID: execID, result: result, err: err}
+	}()
+	go func() {
+		done := <-doneCh
+		a.send(done)
+	}()
+	// The bridge emits exec_started after the child has been spawned. The
+	// current control path only exposes that once Exec returns; use host time
+	// for the first V1 slice and tighten it in the next bridge callback pass.
+	startedAt := time.Now().UTC()
+	startedCh <- startedAt
+	if err := a.server.state.markExecStarted(context.Background(), a.leaseID, execID, startedAt); err != nil {
+		cancel()
+		return startExecReply{err: err}
+	}
+	return startExecReply{startedAt: startedAt}
+}
+
+func (a *vmActor) handleCancelExec(execID, reason string) bool {
+	if a.active == nil || a.active.execID != execID {
+		return false
+	}
+	a.active.cancel()
+	if a.runtime != nil {
+		_ = a.runtime.CancelExec(execID, reason)
+	}
 	return true
 }
 
-func (r *managedRun) isBillablePhase(phase string) bool {
-	_, ok := r.billablePhases[strings.TrimSpace(phase)]
-	return ok
-}
-
-func (r *managedRun) currentState() RunState {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return r.state
-}
-
-func ensureRunID(runID string) string {
-	if _, err := uuid.Parse(runID); err == nil {
-		return runID
+func (a *vmActor) handleExecDone(done execDoneCmd) {
+	if a.active != nil && a.active.execID == done.execID {
+		a.active = nil
 	}
-	return uuid.NewString()
+	state := ExecStateExited
+	reason := ""
+	if done.err != nil {
+		state = ExecStateFailed
+		reason = done.err.Error()
+	}
+	if done.result.ExitCode != 0 && state == ExecStateExited {
+		state = ExecStateFailed
+	}
+	_ = a.server.state.finishExec(context.Background(), execSnapshot{
+		LeaseID:                a.leaseID,
+		ExecID:                 done.execID,
+		State:                  state,
+		ExitCode:               done.result.ExitCode,
+		TerminalReason:         reason,
+		Output:                 done.result.Output,
+		StartedAt:              done.result.StartedAt,
+		FirstByteAt:            done.result.FirstByteAt,
+		ExitedAt:               done.result.ExitedAt,
+		StdoutBytes:            done.result.StdoutBytes,
+		StderrBytes:            done.result.StderrBytes,
+		DroppedLogBytes:        done.result.DroppedLogBytes,
+		ZFSWritten:             done.result.ZFSWritten,
+		RootfsProvisionedBytes: done.result.RootfsProvisionedBytes,
+		Metrics:                done.result.Metrics,
+	})
 }
 
-func finalRunState(err error, exitCode int) RunState {
-	switch {
-	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		return RunStateCanceled
-	case err != nil:
-		return RunStateFailed
-	case exitCode != 0:
-		return RunStateFailed
-	default:
-		return RunStateSucceeded
+func (a *vmActor) handleCheckpointSaved(event CheckpointEvent) {
+	_ = a.server.state.appendLeaseEvent(context.Background(), a.leaseID, LeaseEventCheckpointSaved, "", map[string]string{
+		"request_id": event.RequestID,
+		"operation":  event.Operation,
+		"ref":        event.Ref,
+		"accepted":   fmt.Sprintf("%t", event.Accepted),
+		"version_id": event.VersionID,
+		"error":      event.Error,
+	})
+}
+
+func (a *vmActor) handleTelemetry(event TelemetryEvent) {
+	if event.Diagnostic == nil {
+		return
+	}
+	_ = a.server.state.appendLeaseEvent(context.Background(), a.leaseID, LeaseEventTelemetryDiagnostic, "", map[string]string{
+		"kind":            string(event.Diagnostic.Kind),
+		"expected_seq":    fmt.Sprintf("%d", event.Diagnostic.ExpectedSeq),
+		"observed_seq":    fmt.Sprintf("%d", event.Diagnostic.ObservedSeq),
+		"missing_samples": fmt.Sprintf("%d", event.Diagnostic.MissingSamples),
+	})
+}
+
+type leaseObserver struct {
+	actor *vmActor
+}
+
+func (o *leaseObserver) OnGuestCheckpoint(_ string, event CheckpointEvent) {
+	if o != nil && o.actor != nil {
+		o.actor.send(checkpointSavedCmd{event: event})
 	}
 }
 
-func errorString(err error) string {
-	if err == nil {
-		return ""
+func (o *leaseObserver) OnTelemetryEvent(event TelemetryEvent) {
+	if o != nil && o.actor != nil {
+		o.actor.send(telemetryCmd{event: event})
 	}
-	return err.Error()
 }
 
-func normalizeBillablePhaseSet(phases []string) map[string]struct{} {
-	out := make(map[string]struct{}, len(phases))
-	for _, phase := range phases {
-		phase = strings.TrimSpace(phase)
-		if phase == "" {
-			continue
-		}
-		out[phase] = struct{}{}
-	}
-	return out
+func (s *APIServer) rememberActor(actor *vmActor) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.actors[actor.leaseID] = actor
 }
 
-func sortedPhaseNames(phases map[string]struct{}) []string {
-	if len(phases) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(phases))
-	for phase := range phases {
-		out = append(out, phase)
-	}
-	slices.Sort(out)
-	return out
+func (s *APIServer) forgetActor(leaseID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.actors, leaseID)
 }
 
-func totalGuestSlots(poolCIDR string) int {
-	cfg := normalizeNetworkPoolConfig(NetworkPoolConfig{PoolCIDR: poolCIDR})
-	allocator := NewAllocator(cfg)
-	_, slots, err := allocator.pool()
+func (s *APIServer) lookupActor(leaseID string) (*vmActor, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	actor, ok := s.actors[leaseID]
+	return actor, ok
+}
+
+func (s *APIServer) markUnownedActiveLeasesCrashed(ctx context.Context) error {
+	leases, err := s.state.listLeases(ctx, false, 1000)
 	if err != nil {
-		return 0
+		return err
 	}
-	return slots
+	for _, lease := range leases {
+		if err := s.state.finishLease(ctx, lease.LeaseID, LeaseStateCrashed, "orchestrator_restarted", LeaseEventLeaseCrashed); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func newHostID() string {
+	return ulid.MustNew(ulid.Timestamp(time.Now().UTC()), rand.New(rand.NewSource(time.Now().UnixNano()))).String()
 }

@@ -230,21 +230,6 @@
     chdir: "{{ playbook_dir }}/../../../.."
   changed_when: false
 
-- name: Build vm-run CLI on controller
-  delegate_to: localhost
-  become: false
-  run_once: true
-  ansible.builtin.command:
-    argv:
-      - go
-      - build
-      - -ldflags=-s -w
-      - -o
-      - /tmp/vm-run
-      - ./src/vm-orchestrator/cmd/vm-run
-    chdir: "{{ playbook_dir }}/../../../.."
-  changed_when: false
-
 - name: Install vm-orchestrator binary
   ansible.builtin.copy:
     src: /tmp/vm-orchestrator
@@ -253,14 +238,6 @@
     group: root
     mode: "0755"
   notify: restart vm-orchestrator
-
-- name: Install vm-run binary
-  ansible.builtin.copy:
-    src: /tmp/vm-run
-    dest: "{{ fm_bin }}/vm-run"
-    owner: root
-    group: root
-    mode: "0755"
 
 - name: Install vm-orchestrator service
   ansible.builtin.template:

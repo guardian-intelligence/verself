@@ -19,21 +19,35 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	VMService_EnsureRun_FullMethodName       = "/forge_metal.vm_orchestrator.v1.VMService/EnsureRun"
-	VMService_GetRun_FullMethodName          = "/forge_metal.vm_orchestrator.v1.VMService/GetRun"
-	VMService_StreamRunEvents_FullMethodName = "/forge_metal.vm_orchestrator.v1.VMService/StreamRunEvents"
-	VMService_CancelRun_FullMethodName       = "/forge_metal.vm_orchestrator.v1.VMService/CancelRun"
-	VMService_GetCapacity_FullMethodName     = "/forge_metal.vm_orchestrator.v1.VMService/GetCapacity"
+	VMService_AcquireLease_FullMethodName      = "/forge_metal.vm_orchestrator.v1.VMService/AcquireLease"
+	VMService_RenewLease_FullMethodName        = "/forge_metal.vm_orchestrator.v1.VMService/RenewLease"
+	VMService_ReleaseLease_FullMethodName      = "/forge_metal.vm_orchestrator.v1.VMService/ReleaseLease"
+	VMService_GetLease_FullMethodName          = "/forge_metal.vm_orchestrator.v1.VMService/GetLease"
+	VMService_ListLeases_FullMethodName        = "/forge_metal.vm_orchestrator.v1.VMService/ListLeases"
+	VMService_StreamLeaseEvents_FullMethodName = "/forge_metal.vm_orchestrator.v1.VMService/StreamLeaseEvents"
+	VMService_StartExec_FullMethodName         = "/forge_metal.vm_orchestrator.v1.VMService/StartExec"
+	VMService_CancelExec_FullMethodName        = "/forge_metal.vm_orchestrator.v1.VMService/CancelExec"
+	VMService_GetExec_FullMethodName           = "/forge_metal.vm_orchestrator.v1.VMService/GetExec"
+	VMService_WaitExec_FullMethodName          = "/forge_metal.vm_orchestrator.v1.VMService/WaitExec"
+	VMService_SaveCheckpoint_FullMethodName    = "/forge_metal.vm_orchestrator.v1.VMService/SaveCheckpoint"
+	VMService_GetCapacity_FullMethodName       = "/forge_metal.vm_orchestrator.v1.VMService/GetCapacity"
 )
 
 // VMServiceClient is the client API for VMService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type VMServiceClient interface {
-	EnsureRun(ctx context.Context, in *EnsureRunRequest, opts ...grpc.CallOption) (*EnsureRunResponse, error)
-	GetRun(ctx context.Context, in *GetRunRequest, opts ...grpc.CallOption) (*GetRunResponse, error)
-	StreamRunEvents(ctx context.Context, in *StreamRunEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[HostRunEvent], error)
-	CancelRun(ctx context.Context, in *CancelRunRequest, opts ...grpc.CallOption) (*CancelRunResponse, error)
+	AcquireLease(ctx context.Context, in *AcquireLeaseRequest, opts ...grpc.CallOption) (*AcquireLeaseResponse, error)
+	RenewLease(ctx context.Context, in *RenewLeaseRequest, opts ...grpc.CallOption) (*RenewLeaseResponse, error)
+	ReleaseLease(ctx context.Context, in *ReleaseLeaseRequest, opts ...grpc.CallOption) (*ReleaseLeaseResponse, error)
+	GetLease(ctx context.Context, in *GetLeaseRequest, opts ...grpc.CallOption) (*GetLeaseResponse, error)
+	ListLeases(ctx context.Context, in *ListLeasesRequest, opts ...grpc.CallOption) (*ListLeasesResponse, error)
+	StreamLeaseEvents(ctx context.Context, in *StreamLeaseEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[LeaseEvent], error)
+	StartExec(ctx context.Context, in *StartExecRequest, opts ...grpc.CallOption) (*StartExecResponse, error)
+	CancelExec(ctx context.Context, in *CancelExecRequest, opts ...grpc.CallOption) (*CancelExecResponse, error)
+	GetExec(ctx context.Context, in *GetExecRequest, opts ...grpc.CallOption) (*GetExecResponse, error)
+	WaitExec(ctx context.Context, in *WaitExecRequest, opts ...grpc.CallOption) (*WaitExecResponse, error)
+	SaveCheckpoint(ctx context.Context, in *SaveCheckpointRequest, opts ...grpc.CallOption) (*SaveCheckpointResponse, error)
 	GetCapacity(ctx context.Context, in *GetCapacityRequest, opts ...grpc.CallOption) (*GetCapacityResponse, error)
 }
 
@@ -45,33 +59,63 @@ func NewVMServiceClient(cc grpc.ClientConnInterface) VMServiceClient {
 	return &vMServiceClient{cc}
 }
 
-func (c *vMServiceClient) EnsureRun(ctx context.Context, in *EnsureRunRequest, opts ...grpc.CallOption) (*EnsureRunResponse, error) {
+func (c *vMServiceClient) AcquireLease(ctx context.Context, in *AcquireLeaseRequest, opts ...grpc.CallOption) (*AcquireLeaseResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(EnsureRunResponse)
-	err := c.cc.Invoke(ctx, VMService_EnsureRun_FullMethodName, in, out, cOpts...)
+	out := new(AcquireLeaseResponse)
+	err := c.cc.Invoke(ctx, VMService_AcquireLease_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *vMServiceClient) GetRun(ctx context.Context, in *GetRunRequest, opts ...grpc.CallOption) (*GetRunResponse, error) {
+func (c *vMServiceClient) RenewLease(ctx context.Context, in *RenewLeaseRequest, opts ...grpc.CallOption) (*RenewLeaseResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetRunResponse)
-	err := c.cc.Invoke(ctx, VMService_GetRun_FullMethodName, in, out, cOpts...)
+	out := new(RenewLeaseResponse)
+	err := c.cc.Invoke(ctx, VMService_RenewLease_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *vMServiceClient) StreamRunEvents(ctx context.Context, in *StreamRunEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[HostRunEvent], error) {
+func (c *vMServiceClient) ReleaseLease(ctx context.Context, in *ReleaseLeaseRequest, opts ...grpc.CallOption) (*ReleaseLeaseResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &VMService_ServiceDesc.Streams[0], VMService_StreamRunEvents_FullMethodName, cOpts...)
+	out := new(ReleaseLeaseResponse)
+	err := c.cc.Invoke(ctx, VMService_ReleaseLease_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &grpc.GenericClientStream[StreamRunEventsRequest, HostRunEvent]{ClientStream: stream}
+	return out, nil
+}
+
+func (c *vMServiceClient) GetLease(ctx context.Context, in *GetLeaseRequest, opts ...grpc.CallOption) (*GetLeaseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetLeaseResponse)
+	err := c.cc.Invoke(ctx, VMService_GetLease_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *vMServiceClient) ListLeases(ctx context.Context, in *ListLeasesRequest, opts ...grpc.CallOption) (*ListLeasesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListLeasesResponse)
+	err := c.cc.Invoke(ctx, VMService_ListLeases_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *vMServiceClient) StreamLeaseEvents(ctx context.Context, in *StreamLeaseEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[LeaseEvent], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &VMService_ServiceDesc.Streams[0], VMService_StreamLeaseEvents_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[StreamLeaseEventsRequest, LeaseEvent]{ClientStream: stream}
 	if err := x.ClientStream.SendMsg(in); err != nil {
 		return nil, err
 	}
@@ -82,12 +126,52 @@ func (c *vMServiceClient) StreamRunEvents(ctx context.Context, in *StreamRunEven
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type VMService_StreamRunEventsClient = grpc.ServerStreamingClient[HostRunEvent]
+type VMService_StreamLeaseEventsClient = grpc.ServerStreamingClient[LeaseEvent]
 
-func (c *vMServiceClient) CancelRun(ctx context.Context, in *CancelRunRequest, opts ...grpc.CallOption) (*CancelRunResponse, error) {
+func (c *vMServiceClient) StartExec(ctx context.Context, in *StartExecRequest, opts ...grpc.CallOption) (*StartExecResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(CancelRunResponse)
-	err := c.cc.Invoke(ctx, VMService_CancelRun_FullMethodName, in, out, cOpts...)
+	out := new(StartExecResponse)
+	err := c.cc.Invoke(ctx, VMService_StartExec_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *vMServiceClient) CancelExec(ctx context.Context, in *CancelExecRequest, opts ...grpc.CallOption) (*CancelExecResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CancelExecResponse)
+	err := c.cc.Invoke(ctx, VMService_CancelExec_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *vMServiceClient) GetExec(ctx context.Context, in *GetExecRequest, opts ...grpc.CallOption) (*GetExecResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetExecResponse)
+	err := c.cc.Invoke(ctx, VMService_GetExec_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *vMServiceClient) WaitExec(ctx context.Context, in *WaitExecRequest, opts ...grpc.CallOption) (*WaitExecResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WaitExecResponse)
+	err := c.cc.Invoke(ctx, VMService_WaitExec_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *vMServiceClient) SaveCheckpoint(ctx context.Context, in *SaveCheckpointRequest, opts ...grpc.CallOption) (*SaveCheckpointResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SaveCheckpointResponse)
+	err := c.cc.Invoke(ctx, VMService_SaveCheckpoint_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -108,10 +192,17 @@ func (c *vMServiceClient) GetCapacity(ctx context.Context, in *GetCapacityReques
 // All implementations must embed UnimplementedVMServiceServer
 // for forward compatibility.
 type VMServiceServer interface {
-	EnsureRun(context.Context, *EnsureRunRequest) (*EnsureRunResponse, error)
-	GetRun(context.Context, *GetRunRequest) (*GetRunResponse, error)
-	StreamRunEvents(*StreamRunEventsRequest, grpc.ServerStreamingServer[HostRunEvent]) error
-	CancelRun(context.Context, *CancelRunRequest) (*CancelRunResponse, error)
+	AcquireLease(context.Context, *AcquireLeaseRequest) (*AcquireLeaseResponse, error)
+	RenewLease(context.Context, *RenewLeaseRequest) (*RenewLeaseResponse, error)
+	ReleaseLease(context.Context, *ReleaseLeaseRequest) (*ReleaseLeaseResponse, error)
+	GetLease(context.Context, *GetLeaseRequest) (*GetLeaseResponse, error)
+	ListLeases(context.Context, *ListLeasesRequest) (*ListLeasesResponse, error)
+	StreamLeaseEvents(*StreamLeaseEventsRequest, grpc.ServerStreamingServer[LeaseEvent]) error
+	StartExec(context.Context, *StartExecRequest) (*StartExecResponse, error)
+	CancelExec(context.Context, *CancelExecRequest) (*CancelExecResponse, error)
+	GetExec(context.Context, *GetExecRequest) (*GetExecResponse, error)
+	WaitExec(context.Context, *WaitExecRequest) (*WaitExecResponse, error)
+	SaveCheckpoint(context.Context, *SaveCheckpointRequest) (*SaveCheckpointResponse, error)
 	GetCapacity(context.Context, *GetCapacityRequest) (*GetCapacityResponse, error)
 	mustEmbedUnimplementedVMServiceServer()
 }
@@ -123,17 +214,38 @@ type VMServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedVMServiceServer struct{}
 
-func (UnimplementedVMServiceServer) EnsureRun(context.Context, *EnsureRunRequest) (*EnsureRunResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method EnsureRun not implemented")
+func (UnimplementedVMServiceServer) AcquireLease(context.Context, *AcquireLeaseRequest) (*AcquireLeaseResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AcquireLease not implemented")
 }
-func (UnimplementedVMServiceServer) GetRun(context.Context, *GetRunRequest) (*GetRunResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method GetRun not implemented")
+func (UnimplementedVMServiceServer) RenewLease(context.Context, *RenewLeaseRequest) (*RenewLeaseResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RenewLease not implemented")
 }
-func (UnimplementedVMServiceServer) StreamRunEvents(*StreamRunEventsRequest, grpc.ServerStreamingServer[HostRunEvent]) error {
-	return status.Error(codes.Unimplemented, "method StreamRunEvents not implemented")
+func (UnimplementedVMServiceServer) ReleaseLease(context.Context, *ReleaseLeaseRequest) (*ReleaseLeaseResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReleaseLease not implemented")
 }
-func (UnimplementedVMServiceServer) CancelRun(context.Context, *CancelRunRequest) (*CancelRunResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method CancelRun not implemented")
+func (UnimplementedVMServiceServer) GetLease(context.Context, *GetLeaseRequest) (*GetLeaseResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetLease not implemented")
+}
+func (UnimplementedVMServiceServer) ListLeases(context.Context, *ListLeasesRequest) (*ListLeasesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListLeases not implemented")
+}
+func (UnimplementedVMServiceServer) StreamLeaseEvents(*StreamLeaseEventsRequest, grpc.ServerStreamingServer[LeaseEvent]) error {
+	return status.Error(codes.Unimplemented, "method StreamLeaseEvents not implemented")
+}
+func (UnimplementedVMServiceServer) StartExec(context.Context, *StartExecRequest) (*StartExecResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method StartExec not implemented")
+}
+func (UnimplementedVMServiceServer) CancelExec(context.Context, *CancelExecRequest) (*CancelExecResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CancelExec not implemented")
+}
+func (UnimplementedVMServiceServer) GetExec(context.Context, *GetExecRequest) (*GetExecResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetExec not implemented")
+}
+func (UnimplementedVMServiceServer) WaitExec(context.Context, *WaitExecRequest) (*WaitExecResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method WaitExec not implemented")
+}
+func (UnimplementedVMServiceServer) SaveCheckpoint(context.Context, *SaveCheckpointRequest) (*SaveCheckpointResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SaveCheckpoint not implemented")
 }
 func (UnimplementedVMServiceServer) GetCapacity(context.Context, *GetCapacityRequest) (*GetCapacityResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetCapacity not implemented")
@@ -159,67 +271,193 @@ func RegisterVMServiceServer(s grpc.ServiceRegistrar, srv VMServiceServer) {
 	s.RegisterService(&VMService_ServiceDesc, srv)
 }
 
-func _VMService_EnsureRun_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(EnsureRunRequest)
+func _VMService_AcquireLease_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AcquireLeaseRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(VMServiceServer).EnsureRun(ctx, in)
+		return srv.(VMServiceServer).AcquireLease(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: VMService_EnsureRun_FullMethodName,
+		FullMethod: VMService_AcquireLease_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(VMServiceServer).EnsureRun(ctx, req.(*EnsureRunRequest))
+		return srv.(VMServiceServer).AcquireLease(ctx, req.(*AcquireLeaseRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _VMService_GetRun_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetRunRequest)
+func _VMService_RenewLease_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RenewLeaseRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(VMServiceServer).GetRun(ctx, in)
+		return srv.(VMServiceServer).RenewLease(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: VMService_GetRun_FullMethodName,
+		FullMethod: VMService_RenewLease_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(VMServiceServer).GetRun(ctx, req.(*GetRunRequest))
+		return srv.(VMServiceServer).RenewLease(ctx, req.(*RenewLeaseRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _VMService_StreamRunEvents_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(StreamRunEventsRequest)
+func _VMService_ReleaseLease_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReleaseLeaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VMServiceServer).ReleaseLease(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VMService_ReleaseLease_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VMServiceServer).ReleaseLease(ctx, req.(*ReleaseLeaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _VMService_GetLease_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetLeaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VMServiceServer).GetLease(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VMService_GetLease_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VMServiceServer).GetLease(ctx, req.(*GetLeaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _VMService_ListLeases_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListLeasesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VMServiceServer).ListLeases(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VMService_ListLeases_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VMServiceServer).ListLeases(ctx, req.(*ListLeasesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _VMService_StreamLeaseEvents_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(StreamLeaseEventsRequest)
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}
-	return srv.(VMServiceServer).StreamRunEvents(m, &grpc.GenericServerStream[StreamRunEventsRequest, HostRunEvent]{ServerStream: stream})
+	return srv.(VMServiceServer).StreamLeaseEvents(m, &grpc.GenericServerStream[StreamLeaseEventsRequest, LeaseEvent]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type VMService_StreamRunEventsServer = grpc.ServerStreamingServer[HostRunEvent]
+type VMService_StreamLeaseEventsServer = grpc.ServerStreamingServer[LeaseEvent]
 
-func _VMService_CancelRun_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CancelRunRequest)
+func _VMService_StartExec_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartExecRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(VMServiceServer).CancelRun(ctx, in)
+		return srv.(VMServiceServer).StartExec(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: VMService_CancelRun_FullMethodName,
+		FullMethod: VMService_StartExec_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(VMServiceServer).CancelRun(ctx, req.(*CancelRunRequest))
+		return srv.(VMServiceServer).StartExec(ctx, req.(*StartExecRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _VMService_CancelExec_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CancelExecRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VMServiceServer).CancelExec(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VMService_CancelExec_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VMServiceServer).CancelExec(ctx, req.(*CancelExecRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _VMService_GetExec_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetExecRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VMServiceServer).GetExec(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VMService_GetExec_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VMServiceServer).GetExec(ctx, req.(*GetExecRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _VMService_WaitExec_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WaitExecRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VMServiceServer).WaitExec(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VMService_WaitExec_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VMServiceServer).WaitExec(ctx, req.(*WaitExecRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _VMService_SaveCheckpoint_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveCheckpointRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VMServiceServer).SaveCheckpoint(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VMService_SaveCheckpoint_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VMServiceServer).SaveCheckpoint(ctx, req.(*SaveCheckpointRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -250,16 +488,44 @@ var VMService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*VMServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "EnsureRun",
-			Handler:    _VMService_EnsureRun_Handler,
+			MethodName: "AcquireLease",
+			Handler:    _VMService_AcquireLease_Handler,
 		},
 		{
-			MethodName: "GetRun",
-			Handler:    _VMService_GetRun_Handler,
+			MethodName: "RenewLease",
+			Handler:    _VMService_RenewLease_Handler,
 		},
 		{
-			MethodName: "CancelRun",
-			Handler:    _VMService_CancelRun_Handler,
+			MethodName: "ReleaseLease",
+			Handler:    _VMService_ReleaseLease_Handler,
+		},
+		{
+			MethodName: "GetLease",
+			Handler:    _VMService_GetLease_Handler,
+		},
+		{
+			MethodName: "ListLeases",
+			Handler:    _VMService_ListLeases_Handler,
+		},
+		{
+			MethodName: "StartExec",
+			Handler:    _VMService_StartExec_Handler,
+		},
+		{
+			MethodName: "CancelExec",
+			Handler:    _VMService_CancelExec_Handler,
+		},
+		{
+			MethodName: "GetExec",
+			Handler:    _VMService_GetExec_Handler,
+		},
+		{
+			MethodName: "WaitExec",
+			Handler:    _VMService_WaitExec_Handler,
+		},
+		{
+			MethodName: "SaveCheckpoint",
+			Handler:    _VMService_SaveCheckpoint_Handler,
 		},
 		{
 			MethodName: "GetCapacity",
@@ -268,8 +534,8 @@ var VMService_ServiceDesc = grpc.ServiceDesc{
 	},
 	Streams: []grpc.StreamDesc{
 		{
-			StreamName:    "StreamRunEvents",
-			Handler:       _VMService_StreamRunEvents_Handler,
+			StreamName:    "StreamLeaseEvents",
+			Handler:       _VMService_StreamLeaseEvents_Handler,
 			ServerStreams: true,
 		},
 	},

@@ -2,6 +2,7 @@ package vmorchestrator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -9,16 +10,8 @@ import (
 
 	vmrpc "github.com/forge-metal/vm-orchestrator/proto/v1"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-)
-
-const (
-	defaultPollInterval   = 200 * time.Millisecond
-	defaultMaxMessageSize = 32 << 20
 )
 
 type Client struct {
@@ -30,29 +23,17 @@ func NewClient(ctx context.Context, socketPath string) (*Client, error) {
 	if socketPath == "" {
 		socketPath = DefaultSocketPath
 	}
-
-	conn, err := grpc.DialContext(
-		ctx,
-		"vm-orchestrator",
+	conn, err := grpc.DialContext(ctx, "vm-orchestrator",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
-			var dialer net.Dialer
-			return dialer.DialContext(ctx, "unix", socketPath)
+			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
 		}),
-		grpc.WithDefaultCallOptions(
-			grpc.MaxCallRecvMsgSize(defaultMaxMessageSize),
-			grpc.MaxCallSendMsgSize(defaultMaxMessageSize),
-		),
 		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("dial vm-orchestrator socket %s: %w", socketPath, err)
+		return nil, fmt.Errorf("create vm-orchestrator client: %w", err)
 	}
-
-	return &Client{
-		conn:   conn,
-		client: vmrpc.NewVMServiceClient(conn),
-	}, nil
+	return &Client{conn: conn, client: vmrpc.NewVMServiceClient(conn)}, nil
 }
 
 func (c *Client) Close() error {
@@ -62,127 +43,93 @@ func (c *Client) Close() error {
 	return c.conn.Close()
 }
 
-func (c *Client) EnsureRun(ctx context.Context, spec HostRunSpec) (string, bool, error) {
-	ctx, span := tracer.Start(ctx, "vm-orchestrator.EnsureRun")
-	defer span.End()
-	span.SetAttributes(attribute.String("run.id", spec.RunID))
-
-	resp, err := c.client.EnsureRun(ctx, &vmrpc.EnsureRunRequest{Spec: hostRunSpecToProto(spec)})
+func (c *Client) AcquireLease(ctx context.Context, key string, spec LeaseSpec) (LeaseRecord, error) {
+	resp, err := c.client.AcquireLease(ctx, &vmrpc.AcquireLeaseRequest{IdempotencyKey: key, Spec: leaseSpecToProto(spec)})
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return "", false, fmt.Errorf("ensure run: %w", err)
+		return LeaseRecord{}, fmt.Errorf("acquire lease: %w", err)
 	}
-	span.SetAttributes(
-		attribute.String("run.id", resp.GetRunId()),
-		attribute.Bool("run.created", resp.GetCreated()),
-		attribute.String("run.state", resp.GetState().String()),
-	)
-	return resp.GetRunId(), resp.GetCreated(), nil
+	return LeaseRecord{
+		LeaseID:        resp.GetLeaseId(),
+		State:          leaseStateFromProto(resp.GetState()),
+		AcquiredAt:     timeFromUnixNs(resp.GetAcquiredAtUnixNs()),
+		ExpiresAt:      timeFromUnixNs(resp.GetExpiresAtUnixNs()),
+		VMIP:           resp.GetVmIp(),
+		RuntimeProfile: resp.GetRuntimeProfile(),
+	}, nil
 }
 
-func (c *Client) Run(ctx context.Context, spec HostRunSpec) (RunResult, error) {
-	runID, _, err := c.EnsureRun(ctx, spec)
+func (c *Client) RenewLease(ctx context.Context, leaseID, key string, extendSeconds uint64, allowlist []string) (time.Time, error) {
+	resp, err := c.client.RenewLease(ctx, &vmrpc.RenewLeaseRequest{LeaseId: leaseID, IdempotencyKey: key, ExtendSeconds: extendSeconds, CheckpointSaveAllowlist: allowlist})
 	if err != nil {
-		return RunResult{}, err
+		return time.Time{}, fmt.Errorf("renew lease %s: %w", leaseID, err)
 	}
-
-	snapshot, err := c.WaitRun(ctx, runID, true)
-	if err != nil {
-		cancelErr := err
-		if ctx.Err() != nil {
-			_, _ = c.CancelRun(context.Background(), runID, "context_canceled")
-			cancelErr = ctx.Err()
-		}
-		return RunResult{}, cancelErr
-	}
-	if snapshot.Result == nil {
-		return RunResult{}, fmt.Errorf("run %s completed without result", snapshot.RunID)
-	}
-	if snapshot.TerminalReason != "" && snapshot.State != RunStateSucceeded {
-		return *snapshot.Result, fmt.Errorf("run %s failed: %s", snapshot.RunID, snapshot.TerminalReason)
-	}
-	return *snapshot.Result, nil
+	return timeFromUnixNs(resp.GetExpiresAtUnixNs()), nil
 }
 
-func (c *Client) WaitRun(ctx context.Context, runID string, includeOutput bool) (HostRunSnapshot, error) {
-	ctx, span := tracer.Start(ctx, "vm-orchestrator.WaitRun",
-		trace.WithAttributes(
-			attribute.String("run.id", runID),
-			attribute.Bool("run.include_output", includeOutput),
-		))
-	defer span.End()
-
-	ticker := time.NewTicker(defaultPollInterval)
-	defer ticker.Stop()
-
-	for {
-		snapshot, err := c.GetRun(ctx, runID, includeOutput)
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			return HostRunSnapshot{}, err
-		}
-		if snapshot.Terminal {
-			span.SetAttributes(
-				attribute.String("run.state", runStateName(snapshot.State)),
-				attribute.Bool("run.terminal", snapshot.Terminal),
-				attribute.String("run.terminal_reason", snapshot.TerminalReason),
-			)
-			return snapshot, nil
-		}
-
-		select {
-		case <-ctx.Done():
-			return HostRunSnapshot{}, ctx.Err()
-		case <-ticker.C:
-		}
+func (c *Client) ReleaseLease(ctx context.Context, leaseID, key string) error {
+	_, err := c.client.ReleaseLease(ctx, &vmrpc.ReleaseLeaseRequest{LeaseId: leaseID, IdempotencyKey: key})
+	if err != nil {
+		return fmt.Errorf("release lease %s: %w", leaseID, err)
 	}
+	return nil
 }
 
-func (c *Client) GetRun(ctx context.Context, runID string, includeOutput bool) (HostRunSnapshot, error) {
-	resp, err := c.client.GetRun(ctx, &vmrpc.GetRunRequest{
-		RunId:         runID,
-		IncludeOutput: includeOutput,
-	})
+func (c *Client) StartExec(ctx context.Context, leaseID, key string, spec ExecSpec) (ExecRecord, error) {
+	resp, err := c.client.StartExec(ctx, &vmrpc.StartExecRequest{LeaseId: leaseID, IdempotencyKey: key, Spec: execSpecToProto(spec)})
 	if err != nil {
-		return HostRunSnapshot{}, fmt.Errorf("get run %s: %w", runID, err)
+		return ExecRecord{}, fmt.Errorf("start exec %s: %w", leaseID, err)
 	}
-	return hostRunSnapshotFromProto(resp), nil
+	return ExecRecord{
+		LeaseID:   resp.GetLeaseId(),
+		ExecID:    resp.GetExecId(),
+		State:     execStateFromProto(resp.GetState()),
+		StartedAt: timeFromUnixNs(resp.GetStartedAtUnixNs()),
+	}, nil
 }
 
-func (c *Client) StreamRunEvents(ctx context.Context, runID string, fromSeq uint64, follow bool, handler func(HostRunEvent) error) error {
-	stream, err := c.client.StreamRunEvents(ctx, &vmrpc.StreamRunEventsRequest{
-		RunId:   runID,
-		FromSeq: fromSeq,
-		Follow:  follow,
-	})
+func (c *Client) WaitExec(ctx context.Context, leaseID, execID string, includeOutput bool) (ExecRecord, error) {
+	resp, err := c.client.WaitExec(ctx, &vmrpc.WaitExecRequest{LeaseId: leaseID, ExecId: execID, IncludeOutput: includeOutput})
 	if err != nil {
-		return fmt.Errorf("stream run events %s: %w", runID, err)
+		return ExecRecord{}, fmt.Errorf("wait exec %s/%s: %w", leaseID, execID, err)
 	}
-	for {
-		event, recvErr := stream.Recv()
-		if recvErr != nil {
-			if recvErr == io.EOF {
-				return nil
-			}
-			return fmt.Errorf("recv run event %s: %w", runID, recvErr)
-		}
-		if handler == nil {
-			continue
-		}
-		if err := handler(hostRunEventFromProto(event)); err != nil {
-			return err
-		}
-	}
+	return execRecordFromProto(resp.GetExec()), nil
 }
 
-func (c *Client) CancelRun(ctx context.Context, runID, reason string) (bool, error) {
-	resp, err := c.client.CancelRun(ctx, &vmrpc.CancelRunRequest{RunId: runID, Reason: reason})
+func (c *Client) GetExec(ctx context.Context, leaseID, execID string, includeOutput bool) (ExecRecord, error) {
+	resp, err := c.client.GetExec(ctx, &vmrpc.GetExecRequest{LeaseId: leaseID, ExecId: execID, IncludeOutput: includeOutput})
 	if err != nil {
-		return false, fmt.Errorf("cancel run %s: %w", runID, err)
+		return ExecRecord{}, fmt.Errorf("get exec %s/%s: %w", leaseID, execID, err)
+	}
+	return execRecordFromProto(resp.GetExec()), nil
+}
+
+func (c *Client) CancelExec(ctx context.Context, leaseID, execID, key, reason string) (bool, error) {
+	resp, err := c.client.CancelExec(ctx, &vmrpc.CancelExecRequest{LeaseId: leaseID, ExecId: execID, IdempotencyKey: key, Reason: reason})
+	if err != nil {
+		return false, fmt.Errorf("cancel exec %s/%s: %w", leaseID, execID, err)
 	}
 	return resp.GetAccepted(), nil
+}
+
+func (c *Client) StreamLeaseEvents(ctx context.Context, leaseID string, fromSeq uint64, follow bool, handler func(LeaseEvent) error) error {
+	stream, err := c.client.StreamLeaseEvents(ctx, &vmrpc.StreamLeaseEventsRequest{LeaseId: leaseID, FromSeq: fromSeq, Follow: follow})
+	if err != nil {
+		return fmt.Errorf("stream lease events %s: %w", leaseID, err)
+	}
+	for {
+		event, err := stream.Recv()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return fmt.Errorf("recv lease event %s: %w", leaseID, err)
+		}
+		if handler != nil {
+			if err := handler(leaseEventFromProto(event)); err != nil {
+				return err
+			}
+		}
+	}
 }
 
 func (c *Client) GetCapacity(ctx context.Context) (Capacity, error) {
@@ -190,13 +137,83 @@ func (c *Client) GetCapacity(ctx context.Context) (Capacity, error) {
 	if err != nil {
 		return Capacity{}, fmt.Errorf("get capacity: %w", err)
 	}
-	return Capacity{
-		GuestPoolCIDR:          resp.GetGuestPoolCidr(),
-		TotalSlots:             resp.GetTotalSlots(),
-		ActiveRuns:             resp.GetActiveRuns(),
-		AvailableSlots:         resp.GetAvailableSlots(),
-		VCPUsPerVM:             resp.GetVcpusPerVm(),
-		MemoryMiBPerVM:         resp.GetMemoryMibPerVm(),
-		RootfsProvisionedBytes: resp.GetRootfsProvisionedBytes(),
-	}, nil
+	out := Capacity{GuestPoolCIDR: resp.GetGuestPoolCidr(), RuntimeProfile: defaultRuntimeProfile}
+	if len(resp.GetRuntimeProfiles()) > 0 {
+		profile := resp.GetRuntimeProfiles()[0]
+		out.RuntimeProfile = profile.GetRuntimeProfile()
+		out.TotalSlots = profile.GetTotalSlots()
+		out.LeasesHeld = profile.GetLeasesHeld()
+		out.LeasesAvailable = profile.GetLeasesAvailable()
+		out.VCPUsPerVM = profile.GetVcpusPerSlot()
+		out.MemoryMiBPerVM = profile.GetMemoryMibPerSlot()
+		out.RootfsProvisionedBytes = profile.GetRootfsProvisionedBytes()
+	}
+	return out, nil
+}
+
+func leaseSpecToProto(spec LeaseSpec) *vmrpc.LeaseSpec {
+	mode := vmrpc.NetworkAttachMode_NETWORK_ATTACH_MODE_NAT
+	if spec.NetworkMode == "none" {
+		mode = vmrpc.NetworkAttachMode_NETWORK_ATTACH_MODE_NONE
+	}
+	return &vmrpc.LeaseSpec{
+		RuntimeProfile:          spec.RuntimeProfile,
+		Vcpus:                   spec.VCPUs,
+		MemoryMib:               spec.MemoryMiB,
+		FromCheckpointRef:       spec.FromCheckpointRef,
+		TtlSeconds:              spec.TTLSeconds,
+		TrustClass:              spec.TrustClass,
+		CheckpointSaveAllowlist: append([]string(nil), spec.CheckpointSaveAllowlist...),
+		Network:                 &vmrpc.NetworkAttach{Mode: mode},
+	}
+}
+
+func execSpecToProto(spec ExecSpec) *vmrpc.ExecSpec {
+	return &vmrpc.ExecSpec{
+		Argv:           append([]string(nil), spec.Argv...),
+		WorkingDir:     spec.WorkingDir,
+		Env:            cloneStringMap(spec.Env),
+		Stdin:          vmrpc.StdioMode_STDIO_MODE_NONE,
+		Stdout:         vmrpc.StdioMode_STDIO_MODE_BUFFERED,
+		Stderr:         vmrpc.StdioMode_STDIO_MODE_BUFFERED,
+		MaxWallSeconds: spec.MaxWallSeconds,
+	}
+}
+
+func execRecordFromProto(record *vmrpc.ExecRecord) ExecRecord {
+	if record == nil {
+		return ExecRecord{}
+	}
+	return ExecRecord{
+		LeaseID:                record.GetLeaseId(),
+		ExecID:                 record.GetExecId(),
+		State:                  execStateFromProto(record.GetState()),
+		ExitCode:               int(record.GetExitCode()),
+		TerminalReason:         record.GetTerminalReason(),
+		QueuedAt:               timeFromUnixNs(record.GetQueuedAtUnixNs()),
+		StartedAt:              timeFromUnixNs(record.GetStartedAtUnixNs()),
+		FirstByteAt:            timeFromUnixNs(record.GetFirstByteAtUnixNs()),
+		ExitedAt:               timeFromUnixNs(record.GetExitedAtUnixNs()),
+		StdoutBytes:            record.GetStdoutBytes(),
+		StderrBytes:            record.GetStderrBytes(),
+		DroppedLogBytes:        record.GetDroppedLogBytes(),
+		Output:                 record.GetOutput(),
+		Metrics:                vmMetricsFromProto(record.GetMetrics()),
+		ZFSWritten:             record.GetZfsWritten(),
+		RootfsProvisionedBytes: record.GetRootfsProvisionedBytes(),
+	}
+}
+
+func leaseEventFromProto(event *vmrpc.LeaseEvent) LeaseEvent {
+	if event == nil {
+		return LeaseEvent{}
+	}
+	return LeaseEvent{
+		LeaseID:   event.GetLeaseId(),
+		Seq:       event.GetEventSeq(),
+		Type:      leaseEventTypeFromProto(event.GetEventType()),
+		ExecID:    event.GetExecId(),
+		Attrs:     cloneStringMap(event.GetAttrs()),
+		CreatedAt: timeFromUnixNs(event.GetCreatedAtUnixNs()),
+	}
 }

@@ -47,7 +47,7 @@ func (s *agentSession) startLocalControlServer(ctx context.Context) (func(), err
 				select {
 				case <-ctx.Done():
 				default:
-					s.sendLogString("system", fmt.Sprintf("%s local control accept failed: %v\n", logPrefix, err))
+					s.sendLogString("", "system", fmt.Sprintf("%s local control accept failed: %v\n", logPrefix, err))
 				}
 				return
 			}

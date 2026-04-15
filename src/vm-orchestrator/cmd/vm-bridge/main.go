@@ -2,7 +2,7 @@
 //
 // As PID 1 it mounts a minimal Linux userspace, brings up loopback, waits for a
 // host vsock control connection, applies runtime network state from the host,
-// runs the requested workload command, and exposes a local CLI control socket.
+// executes host-directed commands, and exposes a local CLI control socket.
 // As a user-invoked CLI it forwards snapshot requests to the PID 1 bridge.
 package main
 
