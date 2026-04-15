@@ -539,6 +539,9 @@ func (c *Client) applyPaidUpgrade(ctx context.Context, quote contractChangeQuote
 	finalizationIDValue := finalizationID("contract_change", quote.ChangeID)
 	documentIDValue := documentID("contract_change", quote.ChangeID)
 	if err := c.WithTx(ctx, "billing.contract_change.apply_upgrade", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
+		if err := c.lockOrgProductTx(ctx, tx, quote.OrgID, quote.ProductID); err != nil {
+			return err
+		}
 		closed, err := c.supersedeContractPhaseForUpgradeTx(ctx, tx, quote)
 		if err != nil {
 			return err
@@ -872,6 +875,9 @@ func (c *Client) activateCatalogContract(ctx context.Context, orgID OrgID, produ
 	}
 	var freeFinalizationID string
 	err = c.WithTx(ctx, "billing.contract.activate", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
+		if err := c.lockOrgProductTx(ctx, tx, orgID, productID); err != nil {
+			return err
+		}
 		var alreadyActive bool
 		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM contract_phases WHERE phase_id = $1 AND contract_id = $2 AND state = 'active' AND payment_state = 'paid')`, phaseID, contractID).Scan(&alreadyActive); err != nil {
 			return fmt.Errorf("check active contract phase: %w", err)
