@@ -200,6 +200,22 @@ Each Electric instance also needs its own publication (`CREATE PUBLICATION ... F
 
 **Shared frontend time abstraction:** use `formatUTCDateTime()` from `src/viteplus-monorepo/packages/web-env/src/time.ts` for SSR-visible timestamps in the web apps. It centralizes `Intl.DateTimeFormat` with `timeZone: "UTC"` and caches formatters so `letters`, `mail`, and `rent-a-sandbox` render the same text on the server and client.
 
-### - UI
+### UI primitives
 
-Use the shadcn/ui components from src/viteplus-monorepo/packages/ui/src/components/ui
+Use the shadcn/ui components from `src/viteplus-monorepo/packages/ui/src/components/ui`. They are shadcn-shaped exports wrapping Base UI (`@base-ui/react`) primitives, not Radix. Commit 4d7567b cut the whole stack over; Radix, cmdk, and vaul are gone.
+
+#### Base UI gotchas
+
+- **Group parts must live inside `Menu.Group`.** `DropdownMenuLabel` is a `Menu.GroupLabel`, `DropdownMenuRadioGroup` is a `Menu.RadioGroup`, etc. — they throw synchronously if rendered without the surrounding Group/GroupRoot context.
+- **Decoding minified production errors.** The `https://base-ui.com/production-error?code=N` URL is a template placeholder — it will not tell you what `N` means. Instead, grep the installed package: `grep -rn "formatErrorMessage(N" node_modules/.pnpm/@base-ui+react*/`. Every throw site pairs the minified code with a readable `NODE_ENV !== "production"` branch right next to it; that branch is the real message.
+- Use `<DropdownMenuContent side="top" align="end" sideOffset={8}>` and let Base UI's `Menu.Positioner` handle flipping, collision, and anchor offset.
+- **`render` prop composition.** Base UI primitives (Menu.Trigger, Dialog.Trigger, Sidebar's `SidebarMenuButton`) accept a `render` prop that is either a ReactElement (cloned, props merged) or `(props, state) => ReactElement` (function form for conditional rendering). Nesting two layers that both use `useRender` internally works — e.g. `<DropdownMenuTrigger render={<SidebarMenuButton size="lg">…</SidebarMenuButton>} />` composes the trigger's a11y/event props through `SidebarMenuButton`'s own `useRender` without fighting. Pass visual children as children of the outer primitive, not inside the `render` element.
+- **Open-state data attribute is `data-popup-open`, not `data-state=open`.** Style the trigger while the menu is open with `data-popup-open:bg-sidebar-accent`. The Radix-era `data-[state=open]:…` selector no longer matches.
+- **Anything wrapped in `fastComponent` crashes nitro SSR.** Confirmed broken as of `@base-ui/react@1.4.0`: `MenuRoot`, `MenuTrigger`, `TooltipRoot`, `TooltipTrigger` (so: `DropdownMenu*`, `SidebarMenuButton` with the `tooltip` prop, anything else that pulls those in). The chain is `fastComponent` → `use-sync-external-store/shim` → `require("react")`, which Rolldown bundles into a duplicate React module instance whose hook dispatcher is null at SSR time, surfacing as `TypeError: Cannot read properties of null (reading 'useSyncExternalStore')`. Tracked upstream at `vitejs/rolldown-vite#596` and `mui/base-ui#3194` — both closed, no fix shipped. Workaround: gate the offending subtree on hydration. `useHydrated()` for the conditional `tooltip` prop (spread it: `{...(hydrated ? { tooltip: label } : {})}` to satisfy `exactOptionalPropertyTypes`); `<ClientOnly fallback={<StaticTrigger />}>` around `DropdownMenu` / `Tooltip` blocks with a fallback that renders the trigger shape only. Reference: `apps/rent-a-sandbox/src/features/shell/app-shell.tsx`. Safe surfaces (no `fastComponent` in the tree): `Sidebar` block body, `Dialog`, `Sheet`, `Popover`, `Avatar`, `Button`, `Separator`, `Skeleton`, `Switch`, `Tooltip` *as long as you skip the `tooltip` prop on `SidebarMenuButton`*. The hand-rolled `command-palette.tsx` and the previous "overlays are banned" comment predate this diagnosis but happen to land in the right place for the wrong reason.
+
+#### Sidebar block patterns
+
+The `@forge-metal/ui/components/ui/sidebar` block is the shadcn App Shell with Base UI under it. Two patterns worth knowing:
+
+- **Bottom-anchored groups.** To pin a `SidebarGroup` to the bottom of `SidebarContent` (evergreen non-product entries like Settings, Support, Status), give the group `className="mt-auto"`. `SidebarContent` is a `flex-col` with `flex-1`; `mt-auto` does the right thing in both expanded and icon-collapsed states.
+- **`SidebarInset` is the main column.** Place `<header>` + `<main>` inside `<SidebarInset>`, not as a sibling of `<Sidebar>`. The inset variant handles border-radius, shadow, and the sidebar-collapsed margin correctly; hand-rolled flex layouts will drift.
