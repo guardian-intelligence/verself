@@ -27,7 +27,6 @@ Run from `src/platform/ansible/`. `--tags` targets individual roles (e.g. `--tag
 | `site.yml` | Multi-node deploy (workers + infra) |
 | `guest-rootfs.yml` | Build guest rootfs, stage Firecracker guest artifacts |
 | `observability-smoke.yml` | Minimal smoke probe used by `telemetry-proof` (`debug/assert` + `fm_uri`) |
-| `vm-guest-telemetry-dev.yml` | Hot-swap vm-guest-telemetry, boot + probe in Firecracker VM (~10s) |
 | `security-patch.yml` | Rolling OS security updates |
 | `billing-reset.yml` | Exhaustively wipe TigerBeetle + billing PostgreSQL database `billing` and restart callers |
 | `identity-reset.yml` | Exhaustively wipe identity-service PG state, re-apply migrations, restart |

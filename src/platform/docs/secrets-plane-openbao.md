@@ -49,7 +49,7 @@ OpenBao provides the primitives we need for a first-class secrets plane:
 - KV v2 secret storage with version lifecycle (soft delete, undelete, destroy, metadata)
 - Transit encryption service for envelope encryption and crypto operations
 - Dynamic credentials (database engine) with lease/revocation model
-- Path/capability ACL model that maps directly to org/repo/environment path prefixes
+- Path/capability ACL model that maps directly to org/source/environment path prefixes
 - Audit devices with request/response coverage and hash-redaction
 
 Primary source anchors:
@@ -149,10 +149,10 @@ Recommendation: pin production deploys to stable tags and track upgrade guides b
 Define explicit Forge Metal resources:
 
 - `org_secret`
-- `repo_secret`
+- `source_secret`
 - `env_secret`
 - `org_variable`
-- `repo_variable`
+- `source_variable`
 - `env_variable`
 - `transit_key` (customer-visible key metadata)
 
@@ -163,7 +163,7 @@ Map to OpenBao mount/path conventions:
 
 Path pattern example:
 
-- `kv/data/orgs/{org_id}/repos/{repo_id}/envs/{env_id}/secrets/{secret_name}`
+- `kv/data/orgs/{org_id}/sources/{source_id}/envs/{env_id}/secrets/{secret_name}`
 - `kv/metadata/...` for lifecycle/list metadata ops
 
 Policy generation model:
@@ -262,7 +262,7 @@ Emit metering rows from `secrets-service` into `forge_metal.metering` via billin
 
 Dimension recommendations:
 
-- `scope_level` (`org|repo|environment`)
+- `scope_level` (`org|source|environment`)
 - `operation` (`get|put|list|delete|rotate|encrypt|decrypt|sign|verify`)
 - `backend` (`openbao`)
 - `trust_class` (`trusted|untrusted`)
@@ -290,7 +290,7 @@ Internal usage must traverse the same product APIs and metering paths as custome
 - Forge Metal platform org receives unlimited usage through entitlement + invoice-time adjustment
 - no direct backend bypass, no hidden "operator-only free path"
 
-This follows repo IAM/billing invariants:
+This follows product IAM/billing invariants:
 
 - [identity-and-iam.md](./identity-and-iam.md)
 - [billing-architecture.md](../../billing-service/docs/billing-architecture.md)
@@ -345,7 +345,7 @@ No compatibility shims in public API: adapter differences are internal, product 
 
 ## Recommended Build Sequence
 
-1. Create `secrets-service` with org/repo/environment resources and operation catalog only (no workload injection yet).
+1. Create `secrets-service` with org/source/environment resources and operation catalog only (no workload injection yet).
 2. Add OpenBao adapter with KV v2 + Transit.
 3. Add billing metering + SKU catalog for `secrets` product.
 4. Add trusted/untrusted event gating in `sandbox-rental-service` and wire to `secrets-service`.

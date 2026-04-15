@@ -1,25 +1,11 @@
 package api
 
 import (
-	"encoding/json"
 	"strconv"
 
 	"github.com/forge-metal/apiwire"
 	"github.com/forge-metal/sandbox-rental-service/internal/jobs"
 )
-
-func importRepoRequest(request apiwire.SandboxImportRepoRequest) jobs.ImportRepoRequest {
-	return jobs.ImportRepoRequest{
-		Provider:       request.Provider,
-		ProviderHost:   request.ProviderHost,
-		ProviderRepoID: request.ProviderRepoID,
-		Owner:          request.Owner,
-		Name:           request.Name,
-		FullName:       request.FullName,
-		CloneURL:       request.CloneURL,
-		DefaultBranch:  request.DefaultBranch,
-	}
-}
 
 func submitRequest(request apiwire.SandboxSubmitRequest) jobs.SubmitRequest {
 	return jobs.SubmitRequest{
@@ -28,44 +14,9 @@ func submitRequest(request apiwire.SandboxSubmitRequest) jobs.SubmitRequest {
 		ProductID:      request.ProductID,
 		Provider:       request.Provider,
 		IdempotencyKey: request.IdempotencyKey,
-		RepoID:         request.RepoID,
-		Repo:           request.Repo,
-		RepoURL:        request.RepoURL,
-		Ref:            request.Ref,
-		DefaultBranch:  request.DefaultBranch,
 		RunCommand:     request.RunCommand,
+		MaxWallSeconds: request.MaxWallSeconds,
 	}
-}
-
-func repoRecord(record jobs.RepoRecord) apiwire.SandboxRepoRecord {
-	return apiwire.SandboxRepoRecord{
-		RepoID:               record.RepoID,
-		OrgID:                apiwire.Uint64(record.OrgID),
-		Provider:             record.Provider,
-		ProviderHost:         record.ProviderHost,
-		ProviderRepoID:       record.ProviderRepoID,
-		Owner:                record.Owner,
-		Name:                 record.Name,
-		FullName:             record.FullName,
-		CloneURL:             record.CloneURL,
-		DefaultBranch:        record.DefaultBranch,
-		State:                record.State,
-		CompatibilityStatus:  record.CompatibilityStatus,
-		CompatibilitySummary: append(json.RawMessage(nil), record.CompatibilitySummary...),
-		LastScannedSHA:       record.LastScannedSHA,
-		LastError:            record.LastError,
-		CreatedAt:            record.CreatedAt,
-		UpdatedAt:            record.UpdatedAt,
-		ArchivedAt:           record.ArchivedAt,
-	}
-}
-
-func repoRecords(records []jobs.RepoRecord) []apiwire.SandboxRepoRecord {
-	out := make([]apiwire.SandboxRepoRecord, 0, len(records))
-	for _, record := range records {
-		out = append(out, repoRecord(record))
-	}
-	return out
 }
 
 func githubInstallationRecord(record jobs.GitHubInstallationRecord) apiwire.SandboxGitHubInstallationRecord {
@@ -113,11 +64,6 @@ func executionRecord(record jobs.ExecutionRecord) apiwire.SandboxExecutionRecord
 		Status:           record.Status,
 		CorrelationID:    record.CorrelationID,
 		IdempotencyKey:   record.IdempotencyKey,
-		RepoID:           record.RepoID,
-		Repo:             record.Repo,
-		RepoURL:          record.RepoURL,
-		Ref:              record.Ref,
-		DefaultBranch:    record.DefaultBranch,
 		RunCommand:       record.RunCommand,
 		LatestAttempt:    attemptRecord(record.LatestAttempt),
 		CreatedAt:        record.CreatedAt,
@@ -128,22 +74,23 @@ func executionRecord(record jobs.ExecutionRecord) apiwire.SandboxExecutionRecord
 
 func attemptRecord(record jobs.AttemptRecord) apiwire.SandboxAttemptRecord {
 	return apiwire.SandboxAttemptRecord{
-		AttemptID:         record.AttemptID,
-		AttemptSeq:        record.AttemptSeq,
-		State:             record.State,
-		OrchestratorRunID: record.OrchestratorRunID,
-		BillingJobID:      record.BillingJobID,
-		FailureReason:     record.FailureReason,
-		ExitCode:          record.ExitCode,
-		DurationMs:        record.DurationMs,
-		ZFSWritten:        record.ZFSWritten,
-		StdoutBytes:       record.StdoutBytes,
-		StderrBytes:       record.StderrBytes,
-		TraceID:           record.TraceID,
-		StartedAt:         record.StartedAt,
-		CompletedAt:       record.CompletedAt,
-		CreatedAt:         record.CreatedAt,
-		UpdatedAt:         record.UpdatedAt,
+		AttemptID:     record.AttemptID,
+		AttemptSeq:    record.AttemptSeq,
+		State:         record.State,
+		LeaseID:       record.LeaseID,
+		ExecID:        record.ExecID,
+		BillingJobID:  record.BillingJobID,
+		FailureReason: record.FailureReason,
+		ExitCode:      record.ExitCode,
+		DurationMs:    record.DurationMs,
+		ZFSWritten:    record.ZFSWritten,
+		StdoutBytes:   record.StdoutBytes,
+		StderrBytes:   record.StderrBytes,
+		TraceID:       record.TraceID,
+		StartedAt:     record.StartedAt,
+		CompletedAt:   record.CompletedAt,
+		CreatedAt:     record.CreatedAt,
+		UpdatedAt:     record.UpdatedAt,
 	}
 }
 

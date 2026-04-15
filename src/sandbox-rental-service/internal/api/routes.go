@@ -20,133 +20,6 @@ import (
 // RegisterRoutes wires all sandbox-rental-service endpoints onto the Huma API.
 func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.ServiceClient, publicConfig PublicAPIConfig) {
 	registerSecured(api, secured(huma.Operation{
-		OperationID:   "import-repo",
-		Method:        http.MethodPost,
-		Path:          "/api/v1/repos",
-		Summary:       "Import or rescan repo metadata",
-		DefaultStatus: 201,
-	}, operationPolicy{
-		Permission:     permissionRepoWrite,
-		Resource:       "repo",
-		Action:         "import",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "repo_mutation",
-		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "sandbox.repo.import",
-		BodyLimitBytes: bodyLimitRepoImport,
-	}), importRepo(svc))
-
-	registerSecured(api, secured(huma.Operation{
-		OperationID: "list-repos",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/repos",
-		Summary:     "List imported repos for the current org",
-	}, operationPolicy{
-		Permission:     permissionRepoRead,
-		Resource:       "repo",
-		Action:         "list",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "sandbox.repo.list",
-	}), listRepos(svc))
-
-	registerSecured(api, secured(huma.Operation{
-		OperationID: "get-repo",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/repos/{repo_id}",
-		Summary:     "Get repo state and compatibility details",
-	}, operationPolicy{
-		Permission:     permissionRepoRead,
-		Resource:       "repo",
-		Action:         "read",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "sandbox.repo.read",
-	}), getRepo(svc))
-
-	registerSecured(api, secured(huma.Operation{
-		OperationID:   "rescan-repo",
-		Method:        http.MethodPost,
-		Path:          "/api/v1/repos/{repo_id}/rescan",
-		Summary:       "Rescan repo metadata",
-		DefaultStatus: 200,
-	}, operationPolicy{
-		Permission:     permissionRepoWrite,
-		Resource:       "repo",
-		Action:         "rescan",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "repo_mutation",
-		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "sandbox.repo.rescan",
-		BodyLimitBytes: bodyLimitNoBody,
-	}), rescanRepo(svc))
-
-	registerSecured(api, secured(huma.Operation{
-		OperationID:   "create-webhook-endpoint",
-		Method:        http.MethodPost,
-		Path:          "/api/v1/webhook-endpoints",
-		Summary:       "Create a git webhook endpoint",
-		DefaultStatus: 201,
-	}, operationPolicy{
-		Permission:     permissionWebhookWrite,
-		Resource:       "webhook_endpoint",
-		Action:         "create",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "webhook_endpoint_mutation",
-		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "sandbox.webhook_endpoint.create",
-		BodyLimitBytes: bodyLimitSmallJSON,
-	}), createWebhookEndpoint(svc, publicConfig.PublicBaseURL))
-
-	registerSecured(api, secured(huma.Operation{
-		OperationID: "list-webhook-endpoints",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/webhook-endpoints",
-		Summary:     "List git webhook endpoints for the current org",
-	}, operationPolicy{
-		Permission:     permissionWebhookRead,
-		Resource:       "webhook_endpoint",
-		Action:         "list",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "sandbox.webhook_endpoint.list",
-	}), listWebhookEndpoints(svc))
-
-	registerSecured(api, secured(huma.Operation{
-		OperationID:   "rotate-webhook-endpoint-secret",
-		Method:        http.MethodPost,
-		Path:          "/api/v1/webhook-endpoints/{endpoint_id}/rotate",
-		Summary:       "Rotate a git webhook endpoint secret",
-		DefaultStatus: 200,
-	}, operationPolicy{
-		Permission:     permissionWebhookWrite,
-		Resource:       "webhook_endpoint_secret",
-		Action:         "rotate",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "webhook_endpoint_mutation",
-		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "sandbox.webhook_endpoint.secret.rotate",
-		BodyLimitBytes: bodyLimitNoBody,
-	}), rotateWebhookEndpointSecret(svc))
-
-	registerSecured(api, secured(huma.Operation{
-		OperationID:   "delete-webhook-endpoint",
-		Method:        http.MethodDelete,
-		Path:          "/api/v1/webhook-endpoints/{endpoint_id}",
-		Summary:       "Deactivate a git webhook endpoint",
-		DefaultStatus: 204,
-	}, operationPolicy{
-		Permission:     permissionWebhookWrite,
-		Resource:       "webhook_endpoint",
-		Action:         "delete",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "webhook_endpoint_mutation",
-		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "sandbox.webhook_endpoint.delete",
-		BodyLimitBytes: bodyLimitNoBody,
-	}), deleteWebhookEndpoint(svc))
-
-	registerSecured(api, secured(huma.Operation{
 		OperationID:   "begin-github-installation",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/github/installations/connect",
@@ -387,22 +260,6 @@ type SubmitExecutionInput struct {
 	Body apiwire.SandboxSubmitRequest
 }
 
-type ImportRepoInput struct {
-	Body apiwire.SandboxImportRepoRequest
-}
-
-type RepoIDPath struct {
-	RepoID string `path:"repo_id" doc:"Repo UUID"`
-}
-
-type RepoOutput struct {
-	Body apiwire.SandboxRepoRecord
-}
-
-type ListReposOutput struct {
-	Body []apiwire.SandboxRepoRecord
-}
-
 type SubmitExecutionOutput struct {
 	Body apiwire.SandboxSubmitExecutionResult
 }
@@ -526,82 +383,6 @@ func requireOrgID(ctx context.Context) (uint64, error) {
 	return orgID, nil
 }
 
-func importRepo(svc *jobs.Service) func(context.Context, *ImportRepoInput) (*RepoOutput, error) {
-	return func(ctx context.Context, input *ImportRepoInput) (*RepoOutput, error) {
-		orgID, err := requireOrgID(ctx)
-		if err != nil {
-			return nil, err
-		}
-		repo, err := svc.ImportRepo(ctx, orgID, importRepoRequest(input.Body))
-		if err != nil {
-			if errors.Is(err, jobs.ErrRepoScanCapacity) {
-				return nil, tooManyRequests(ctx, "repo-scan-capacity-exceeded", "repo scan capacity exceeded")
-			}
-			return nil, internalFailure(ctx, "import-repo-failed", "import repo failed", err)
-		}
-		return &RepoOutput{Body: repoRecord(*repo)}, nil
-	}
-}
-
-func listRepos(svc *jobs.Service) func(context.Context, *EmptyInput) (*ListReposOutput, error) {
-	return func(ctx context.Context, _ *EmptyInput) (*ListReposOutput, error) {
-		orgID, err := requireOrgID(ctx)
-		if err != nil {
-			return nil, err
-		}
-		repos, err := svc.ListRepos(ctx, orgID)
-		if err != nil {
-			return nil, internalFailure(ctx, "list-repos-failed", "list repos failed", err)
-		}
-		return &ListReposOutput{Body: repoRecords(repos)}, nil
-	}
-}
-
-func getRepo(svc *jobs.Service) func(context.Context, *RepoIDPath) (*RepoOutput, error) {
-	return func(ctx context.Context, input *RepoIDPath) (*RepoOutput, error) {
-		orgID, err := requireOrgID(ctx)
-		if err != nil {
-			return nil, err
-		}
-		repoID, err := uuid.Parse(input.RepoID)
-		if err != nil {
-			return nil, badRequest(ctx, "invalid-repo-id", "repo_id must be a UUID", err)
-		}
-		repo, err := svc.GetRepo(ctx, orgID, repoID)
-		if err != nil {
-			if errors.Is(err, jobs.ErrRepoMissing) {
-				return nil, notFound(ctx, "repo-not-found", "repo not found")
-			}
-			return nil, internalFailure(ctx, "get-repo-failed", "get repo failed", err)
-		}
-		return &RepoOutput{Body: repoRecord(*repo)}, nil
-	}
-}
-
-func rescanRepo(svc *jobs.Service) func(context.Context, *RepoIDPath) (*RepoOutput, error) {
-	return func(ctx context.Context, input *RepoIDPath) (*RepoOutput, error) {
-		orgID, err := requireOrgID(ctx)
-		if err != nil {
-			return nil, err
-		}
-		repoID, err := uuid.Parse(input.RepoID)
-		if err != nil {
-			return nil, badRequest(ctx, "invalid-repo-id", "repo_id must be a UUID", err)
-		}
-		repo, err := svc.RescanRepo(ctx, orgID, repoID)
-		if err != nil {
-			if errors.Is(err, jobs.ErrRepoMissing) {
-				return nil, notFound(ctx, "repo-not-found", "repo not found")
-			}
-			if errors.Is(err, jobs.ErrRepoScanCapacity) {
-				return nil, tooManyRequests(ctx, "repo-scan-capacity-exceeded", "repo scan capacity exceeded")
-			}
-			return nil, internalFailure(ctx, "rescan-repo-failed", "rescan repo failed", err)
-		}
-		return &RepoOutput{Body: repoRecord(*repo)}, nil
-	}
-}
-
 func submitExecution(svc *jobs.Service) func(context.Context, *SubmitExecutionInput) (*SubmitExecutionOutput, error) {
 	return func(ctx context.Context, input *SubmitExecutionInput) (*SubmitExecutionOutput, error) {
 		identity, err := requireIdentity(ctx)
@@ -619,8 +400,6 @@ func submitExecution(svc *jobs.Service) func(context.Context, *SubmitExecutionIn
 			switch {
 			case errors.Is(err, jobs.ErrQuotaExceeded):
 				return nil, tooManyRequests(ctx, "quota-exceeded", "quota exceeded")
-			case errors.Is(err, jobs.ErrRepoNotReady):
-				return nil, conflict(ctx, "repo-not-ready", "repo is not ready")
 			case errors.Is(err, jobs.ErrRunnerClassMissing):
 				return nil, badRequest(ctx, "runner-class-unavailable", "runner class is not available", err)
 			case errors.Is(err, billingclient.ErrPaymentRequired):

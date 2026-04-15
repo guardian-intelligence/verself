@@ -13,7 +13,7 @@ func TestLimitPublicAPIRequestBodiesRejectsKnownOversizeBody(t *testing.T) {
 		t.Fatal("handler should not receive an oversized API request")
 	}), 8)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/repos", strings.NewReader("123456789"))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/executions", strings.NewReader("123456789"))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -30,7 +30,7 @@ func TestLimitPublicAPIRequestBodiesWrapsChunkedOversizeBody(t *testing.T) {
 		w.WriteHeader(http.StatusRequestEntityTooLarge)
 	}), 8)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/repos", strings.NewReader("123456789"))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/executions", strings.NewReader("123456789"))
 	req.ContentLength = -1
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -52,7 +52,7 @@ func TestLimitPublicAPIRequestBodiesLeavesNonAPIRequestsAlone(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}), 8)
 
-	req := httptest.NewRequest(http.MethodPost, "/webhooks/ingest/00000000-0000-0000-0000-000000000000", strings.NewReader("123456789"))
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/github/actions", strings.NewReader("123456789"))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 

@@ -281,11 +281,11 @@ verification_collect_run_or_window_evidence() {
   local window_end="$4"
 
   if [[ -f "${run_json_path}" ]]; then
-    "${VERIFICATION_SCRIPT_DIR}/collect-sandbox-verification-evidence.sh" "${run_json_path}" "${output_dir}"
-    return
+    window_start="$(python3 -c 'import json, sys; print((json.load(open(sys.argv[1], encoding="utf-8")).get("submitted_at") or sys.argv[2]))' "${run_json_path}" "${window_start}")"
+    window_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  else
+    echo "run json not found; collecting fallback evidence for ${window_start}..${window_end}" >&2
   fi
-
-  echo "run json not found; collecting fallback evidence for ${window_start}..${window_end}" >&2
   verification_collect_window_evidence "${output_dir}" "${window_start}" "${window_end}"
 }
 

@@ -113,17 +113,19 @@ jobs:
       - run: echo "github-runner-marker $(uname -a)"
 ```
 
-Expected trace order:
+Expected control-plane order:
 
-1. `sandbox-rental.github_runner.workflow_job`
-2. `sandbox-rental.github_runner.create_jit_config`
-3. `sandbox-rental.execution.submit`
-4. `river.insert_many`
-5. `river.work/execution.advance`
-6. `vm-orchestrator.EnsureRun`
-7. `vmorchestrator.guest.phase_start`
-8. `vmorchestrator.guest.phase_end`
-9. `sandbox-rental.execution.finalize`
+1. GitHub `workflow_job` webhook is verified and upserted into
+   `github_workflow_jobs`.
+2. `github.capacity.reconcile` compares queued unbound demand against active
+   allocations for the installation/repo/runner class.
+3. Runner allocation creates GitHub runner capacity and then submits a
+   `github_runner` execution.
+4. GitHub assignment is recorded only when webhook or polling evidence proves
+   the runner identity that accepted the job.
+5. The execution path emits the same lease/exec evidence as direct execution:
+   `rpc.AcquireLease`, `rpc.StartExec`, `rpc.WaitExec`, `rpc.ReleaseLease`, and
+   `forge_metal.vm_lease_evidence`.
 
 ## Primary Sources
 

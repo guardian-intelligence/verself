@@ -244,15 +244,9 @@ func TestOperationPolicyRequiresDeclaredIdempotency(t *testing.T) {
 			ctx:    context.Background(),
 		},
 		{
-			name:   "repo import header key",
+			name:   "github install header key",
 			policy: operationPolicy{Idempotency: idempotencyHeaderKey},
-			input:  &ImportRepoInput{Body: apiwire.SandboxImportRepoRequest{}},
-			ctx:    context.Background(),
-		},
-		{
-			name:   "header idempotency key",
-			policy: operationPolicy{Idempotency: idempotencyHeaderKey},
-			input:  &RepoIDPath{RepoID: "repo-id"},
+			input:  &EmptyInput{},
 			ctx:    context.Background(),
 		},
 	}
@@ -270,19 +264,19 @@ func TestOperationPolicyRequiresDeclaredIdempotency(t *testing.T) {
 
 func TestFixedWindowOperationRateLimiter(t *testing.T) {
 	limiter := newFixedWindowOperationRateLimiter(map[string]rateLimitRule{
-		"repo_mutation": {Limit: 2, Window: time.Minute},
+		"execution_submit": {Limit: 2, Window: time.Minute},
 	})
 	now := time.Unix(1700000000, 0)
-	if decision := limiter.allow("repo_mutation", "org:subject:ip", now); !decision.Allowed {
+	if decision := limiter.allow("execution_submit", "org:subject:ip", now); !decision.Allowed {
 		t.Fatalf("first request should be allowed: %#v", decision)
 	}
-	if decision := limiter.allow("repo_mutation", "org:subject:ip", now.Add(time.Second)); !decision.Allowed {
+	if decision := limiter.allow("execution_submit", "org:subject:ip", now.Add(time.Second)); !decision.Allowed {
 		t.Fatalf("second request should be allowed: %#v", decision)
 	}
-	if decision := limiter.allow("repo_mutation", "org:subject:ip", now.Add(2*time.Second)); decision.Allowed || decision.RetryAfter <= 0 {
+	if decision := limiter.allow("execution_submit", "org:subject:ip", now.Add(2*time.Second)); decision.Allowed || decision.RetryAfter <= 0 {
 		t.Fatalf("third request should be throttled with retry_after: %#v", decision)
 	}
-	if decision := limiter.allow("repo_mutation", "org:subject:ip", now.Add(time.Minute)); !decision.Allowed {
+	if decision := limiter.allow("execution_submit", "org:subject:ip", now.Add(time.Minute)); !decision.Allowed {
 		t.Fatalf("next window should be allowed: %#v", decision)
 	}
 }
