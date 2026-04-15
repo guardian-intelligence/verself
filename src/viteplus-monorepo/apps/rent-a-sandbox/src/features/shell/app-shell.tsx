@@ -1,156 +1,140 @@
 import { useEffect, useState } from "react";
-import { Link, Outlet, useRouterState } from "@tanstack/react-router";
+import { ClientOnly, Link, Outlet, useHydrated, useRouterState } from "@tanstack/react-router";
+import { LogOut } from "lucide-react";
 import { SignedIn, SignedOut, SignInButton } from "@forge-metal/auth-web/components";
 import { useClerk, useUser } from "@forge-metal/auth-web/react";
-import { cn } from "@forge-metal/ui/lib/utils";
 import { Avatar, AvatarFallback } from "@forge-metal/ui/components/ui/avatar";
-import { Button } from "@forge-metal/ui/components/ui/button";
-import { PRODUCT_NAV, isPathActive, type ProductNavEntry } from "./nav-config";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@forge-metal/ui/components/ui/dropdown-menu";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarTrigger,
+} from "@forge-metal/ui/components/ui/sidebar";
+import { EVERGREEN_NAV, isPathActive, PRIMARY_NAV, type NavEntry } from "./nav-config";
 import { CommandPalette, useCommandPaletteHotkey } from "./command-palette";
 
-// Rent-a-Sandbox app shell. Hand-rolled on purpose — see command-palette.tsx
-// for the explanation of why Radix overlays (and therefore shadcn Sidebar /
-// Sheet / Dialog / DropdownMenu / Command) cannot appear in this app's SSR
-// module graph. Every interactive surface in the shell is built on plain
-// Tailwind + local state, but the visual language is standard shadcn: soft
-// rounding, `bg-card`/`bg-background`/`text-muted-foreground` tokens, no
-// hand-rolled receipt chrome.
+// Rent-a-Sandbox app shell, built on the Base UI Sidebar block shipped from
+// @forge-metal/ui. The hand-rolled shell that preceded this file existed
+// because Radix overlays were banned by the SSR module graph; commit
+// 4d7567b moved the package to Base UI, but Base UI's Menu and Tooltip
+// primitives are wrapped in @base-ui/utils fastComponent, which calls
+// React.useSyncExternalStore through use-sync-external-store/shim. Under
+// nitro SSR + Rolldown, that shim resolves through CJS createRequire and
+// gets a duplicate React module instance whose hook dispatcher is null —
+// the SSR render crashes with "Cannot read properties of null (reading
+// 'useSyncExternalStore')". Tracked upstream at vitejs/rolldown-vite#596
+// and mui/base-ui#3194, both closed but neither shipped a fix yet. We
+// gate every Base UI Menu/Tooltip surface on hydration via ClientOnly /
+// useHydrated until upstream resolves it. See AGENTS.md "Base UI gotchas".
 
 export function AppShell() {
-  const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const path = useRouterState({ select: (s) => s.location.pathname });
 
   useCommandPaletteHotkey(() => setPaletteOpen(true));
 
-  // Close the mobile drawer whenever the route actually changes so
-  // navigation feels instant instead of stuck with an open overlay.
+  // Close the palette on route change so navigation feels instant instead
+  // of leaving the overlay hanging.
   useEffect(() => {
-    setMobileOpen(false);
+    setPaletteOpen(false);
   }, [path]);
 
   return (
-    <div className="relative flex min-h-svh bg-background text-foreground">
-      <DesktopSidebar path={path} />
-      <MobileDrawer open={mobileOpen} onClose={() => setMobileOpen(false)}>
-        <SidebarContents path={path} variant="mobile" />
-      </MobileDrawer>
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar
-          onOpenMenu={() => setMobileOpen(true)}
-          onOpenPalette={() => setPaletteOpen(true)}
-        />
+    <SidebarProvider>
+      <AppSidebar path={path} />
+      <SidebarInset>
+        <TopBar onOpenPalette={() => setPaletteOpen(true)} />
         <main id="main" className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 md:px-8 md:py-8">
           <Outlet />
         </main>
-      </div>
-
+      </SidebarInset>
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
-    </div>
+    </SidebarProvider>
   );
 }
 
-// DesktopSidebar is position:sticky + height:svh so as the main column
-// scrolls, the rail stays pinned and the account footer is always in
-// view. This is the same trick shadcn's own Sidebar uses, just without
-// Radix overlays.
-function DesktopSidebar({ path }: { path: string }) {
+function AppSidebar({ path }: { path: string }) {
   return (
-    <aside
-      aria-label="Primary"
-      className="sticky top-0 hidden h-svh w-60 shrink-0 flex-col border-r bg-card md:flex"
-    >
-      <SidebarContents path={path} variant="desktop" />
-    </aside>
-  );
-}
+    <Sidebar collapsible="icon">
+      <SidebarHeader>
+        <div className="flex h-10 items-center gap-2 px-2">
+          <span aria-hidden="true" className="text-base font-semibold">
+            ◼
+          </span>
+          <span className="truncate text-base font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
+            Rent-a-Sandbox
+          </span>
+        </div>
+      </SidebarHeader>
 
-function MobileDrawer({
-  open,
-  onClose,
-  children,
-}: {
-  open: boolean;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  // Locks body scroll while the drawer is open. Cheaper than pulling in
-  // react-remove-scroll (which is in the banned theKashey chain anyway).
-  useEffect(() => {
-    if (!open) return;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previous;
-    };
-  }, [open]);
+      <SidebarContent>
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <NavMenu entries={PRIMARY_NAV} path={path} />
+          </SidebarGroupContent>
+        </SidebarGroup>
 
-  if (!open) return null;
+        {/* mt-auto anchors the evergreen group (Settings) to the bottom of
+            the rail above the account footer, regardless of how many
+            product rows are above it. */}
+        <SidebarGroup className="mt-auto">
+          <SidebarGroupContent>
+            <NavMenu entries={EVERGREEN_NAV} path={path} />
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
 
-  return (
-    <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-modal="true" aria-label="Menu">
-      <button
-        type="button"
-        aria-label="Close menu"
-        onClick={onClose}
-        className="absolute inset-0 bg-black/40"
-      />
-      <div className="relative flex h-full w-72 max-w-[85vw] flex-col border-r bg-card shadow-lg">
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function SidebarContents({
-  path,
-  variant: _variant,
-}: {
-  path: string;
-  variant: "desktop" | "mobile";
-}) {
-  return (
-    <>
-      <div className="flex h-14 items-center gap-2 border-b px-4">
-        <span aria-hidden="true" className="text-sm font-semibold">
-          ◼
-        </span>
-        <span className="text-sm font-semibold">Rent-a-Sandbox</span>
-      </div>
-
-      <nav className="flex-1 overflow-y-auto px-2 py-4" aria-label="Products">
-        <div className="px-2 pb-1 text-xs font-medium text-muted-foreground">Products</div>
-        <ul className="flex flex-col gap-1">
-          {PRODUCT_NAV.map((product) => (
-            <SidebarItem key={product.id} entry={product} active={isPathActive(path, product)} />
-          ))}
-        </ul>
-      </nav>
-
-      <div className="border-t p-2">
+      <SidebarFooter>
         <SidebarAccountRow />
-      </div>
-    </>
+      </SidebarFooter>
+    </Sidebar>
   );
 }
 
-function SidebarItem({ entry, active }: { entry: ProductNavEntry; active: boolean }) {
+function NavMenu({ entries, path }: { entries: readonly NavEntry[]; path: string }) {
+  // SidebarMenuButton's tooltip prop wraps the button in Base UI's Tooltip
+  // primitive (TooltipRoot/TooltipTrigger), which is a fastComponent and
+  // crashes SSR. Gate the prop on hydration so the server renders without
+  // it and the client adds collapsed-rail tooltips after mount.
+  const hydrated = useHydrated();
   return (
-    <li>
-      <Link
-        to={entry.to}
-        data-testid={`nav-${entry.id}`}
-        className={cn(
-          "flex h-9 items-center rounded-md px-3 text-sm",
-          active
-            ? "bg-accent font-medium text-accent-foreground"
-            : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-        )}
-      >
-        {entry.label}
-      </Link>
-    </li>
+    <SidebarMenu>
+      {entries.map((entry) => {
+        const active = isPathActive(path, entry);
+        const Icon = entry.icon;
+        return (
+          <SidebarMenuItem key={entry.id}>
+            <SidebarMenuButton
+              isActive={active}
+              {...(hydrated ? { tooltip: entry.label } : {})}
+              render={
+                <Link to={entry.to} data-testid={`nav-${entry.id}`}>
+                  <Icon />
+                  <span>{entry.label}</span>
+                </Link>
+              }
+            />
+          </SidebarMenuItem>
+        );
+      })}
+    </SidebarMenu>
   );
 }
 
@@ -170,24 +154,6 @@ function SidebarAccountRow() {
 function AccountMenu() {
   const { user } = useUser();
   const { redirectToSignOut } = useClerk();
-  const [open, setOpen] = useState(false);
-
-  // Click-outside to close. Window listener is lighter than Radix's outside
-  // press helper and avoids every overlay package in the tslib-incompatible
-  // chain.
-  useEffect(() => {
-    if (!open) return;
-    const handler = (event: MouseEvent) => {
-      const target = event.target;
-      if (!(target instanceof Node)) return;
-      const root = document.querySelector("[data-shell-account-root]");
-      if (root && !root.contains(target)) {
-        setOpen(false);
-      }
-    };
-    window.addEventListener("mousedown", handler);
-    return () => window.removeEventListener("mousedown", handler);
-  }, [open]);
 
   if (!user) return null;
 
@@ -195,98 +161,109 @@ function AccountMenu() {
   const email = user.email ?? "";
   const initials = initialsFor(display);
 
-  return (
-    <div data-shell-account-root className="relative">
-      <button
-        type="button"
-        data-testid="shell-account-trigger"
-        aria-expanded={open}
-        aria-haspopup="menu"
-        onClick={() => setOpen((prev) => !prev)}
-        className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left hover:bg-accent"
-      >
-        <Avatar className="size-8 shrink-0">
-          <AvatarFallback>{initials}</AvatarFallback>
-        </Avatar>
-        <div className="min-w-0 flex-1 text-sm">
-          <div className="truncate font-medium">{display}</div>
-          {email ? (
-            <div className="truncate text-xs text-muted-foreground">{email}</div>
-          ) : null}
-        </div>
-      </button>
+  // ClientOnly fallback renders the trigger button only — no DropdownMenu
+  // wrapper, no MenuRoot/MenuTrigger fastComponent, so SSR is safe. After
+  // hydration the real DropdownMenu mounts with the same trigger shape so
+  // there is no layout shift; the popover wires up its event listeners on
+  // the client.
+  const triggerContent = (
+    <AccountTriggerContent display={display} email={email} initials={initials} />
+  );
 
-      {open ? (
-        <div
-          role="menu"
-          data-testid="shell-account-menu"
-          className="absolute bottom-[calc(100%+0.25rem)] left-0 right-0 overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md"
+  return (
+    <SidebarMenu>
+      <SidebarMenuItem>
+        <ClientOnly
+          fallback={
+            <SidebarMenuButton
+              size="lg"
+              variant="outline"
+              data-testid="shell-account-trigger"
+              disabled
+              aria-busy="true"
+            >
+              {triggerContent}
+            </SidebarMenuButton>
+          }
         >
-          <Link
-            to="/settings/billing"
-            role="menuitem"
-            onClick={() => setOpen(false)}
-            className="block px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
-          >
-            Settings
-          </Link>
-          <Link
-            to="/settings/organization"
-            role="menuitem"
-            onClick={() => setOpen(false)}
-            className="block px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
-          >
-            Manage organization
-          </Link>
-          <button
-            type="button"
-            role="menuitem"
-            data-testid="shell-account-sign-out"
-            onClick={() => {
-              setOpen(false);
-              void redirectToSignOut();
-            }}
-            className="block w-full px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground"
-          >
-            Sign out
-          </button>
-        </div>
-      ) : null}
-    </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <SidebarMenuButton
+                  size="lg"
+                  variant="outline"
+                  data-testid="shell-account-trigger"
+                  className="data-popup-open:bg-sidebar-accent"
+                >
+                  {triggerContent}
+                </SidebarMenuButton>
+              }
+            />
+            <DropdownMenuContent
+              data-testid="shell-account-menu"
+              side="top"
+              align="end"
+              sideOffset={8}
+              className="min-w-60"
+            >
+              <DropdownMenuGroup>
+                <DropdownMenuLabel className="flex flex-col gap-0.5">
+                  <span className="truncate text-sm font-medium text-foreground">{display}</span>
+                  {email ? (
+                    <span className="truncate text-xs text-muted-foreground">{email}</span>
+                  ) : null}
+                </DropdownMenuLabel>
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                data-testid="shell-account-sign-out"
+                onClick={() => {
+                  void redirectToSignOut();
+                }}
+              >
+                <LogOut />
+                Sign out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </ClientOnly>
+      </SidebarMenuItem>
+    </SidebarMenu>
   );
 }
 
-// Top bar lays the omnibar out in a three-column arrangement: mobile
-// hamburger flush-left (mobile only), omnibar centred in the remaining
-// space, and a right-side spacer that balances the hamburger so the
-// omnibar stays visually centred on desktop too.
-function TopBar({
-  onOpenMenu,
-  onOpenPalette,
+function AccountTriggerContent({
+  display,
+  email,
+  initials,
 }: {
-  onOpenMenu: () => void;
-  onOpenPalette: () => void;
+  display: string;
+  email: string;
+  initials: string;
 }) {
   return (
-    <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:px-6">
-      <div className="flex w-10 shrink-0 justify-start md:hidden">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={onOpenMenu}
-          aria-label="Open menu"
-          data-testid="shell-mobile-menu-trigger"
-        >
-          <span aria-hidden="true" className="text-lg leading-none">
-            ≡
-          </span>
-        </Button>
+    <>
+      <Avatar className="size-8 shrink-0">
+        <AvatarFallback className="text-xs">{initials}</AvatarFallback>
+      </Avatar>
+      <div className="grid min-w-0 flex-1 text-left leading-tight">
+        <span className="truncate text-sm font-medium">{display}</span>
+        {email ? (
+          <span className="truncate text-xs text-muted-foreground">{email}</span>
+        ) : null}
       </div>
+    </>
+  );
+}
+
+function TopBar({ onOpenPalette }: { onOpenPalette: () => void }) {
+  return (
+    <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:px-6">
+      <SidebarTrigger className="-ml-1" data-testid="shell-sidebar-trigger" />
       <div className="flex flex-1 justify-center">
         <OmniBar onOpen={onOpenPalette} />
       </div>
-      <div className="hidden w-10 shrink-0 md:block" aria-hidden="true" />
+      <div className="hidden w-9 shrink-0 md:block" aria-hidden="true" />
     </header>
   );
 }

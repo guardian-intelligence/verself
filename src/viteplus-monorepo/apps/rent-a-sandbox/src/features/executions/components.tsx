@@ -1,12 +1,23 @@
 import { useForm } from "@tanstack/react-form";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { ClientOnly, Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useStickToBottom } from "use-stick-to-bottom";
 import { useSignedInAuth } from "@forge-metal/auth-web/react";
 import { Button } from "@forge-metal/ui/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@forge-metal/ui/components/ui/card";
 import { Field, FieldError, FieldLabel } from "@forge-metal/ui/components/ui/field";
+import {
+  Page,
+  PageEyebrow,
+  PageHeader,
+  PageHeaderContent,
+  PageSection,
+  PageSections,
+  PageTitle,
+  SectionHeader,
+  SectionHeaderContent,
+  SectionTitle,
+} from "@forge-metal/ui/components/ui/page";
 import { Textarea } from "@forge-metal/ui/components/ui/textarea";
 import {
   Table,
@@ -78,54 +89,66 @@ function ExecutionDetailPanelContent({ executionId }: { executionId: string }) {
   const isRunning = isExecutionActiveStatus(execution.status);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-3">
-        <Link to="/executions" className="text-sm text-muted-foreground hover:text-foreground">
-          Executions
-        </Link>
-        <span className="text-muted-foreground">/</span>
-        <h1 className="font-mono text-xl font-semibold">{execution.execution_id.slice(0, 8)}</h1>
-        <ExecutionStatusBadge status={execution.status} />
-      </div>
+    <Page>
+      <PageHeader>
+        <PageHeaderContent>
+          <PageEyebrow>
+            <Link to="/executions" className="hover:text-foreground">
+              ← Executions
+            </Link>
+          </PageEyebrow>
+          <div className="flex flex-wrap items-center gap-3">
+            <PageTitle className="font-mono">{execution.execution_id.slice(0, 8)}</PageTitle>
+            <ExecutionStatusBadge status={execution.status} />
+          </div>
+        </PageHeaderContent>
+      </PageHeader>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <InfoCard
-          label="Source"
-          value={execution.source_ref || execution.source_kind || "--"}
-        />
-        <InfoCard label="Kind" value={execution.kind} />
-        <InfoCard
-          label="Duration"
-          value={attempt.duration_ms ? `${(attempt.duration_ms / 1000).toFixed(1)}s` : "--"}
-        />
-        <InfoCard label="Exit code" value={String(attempt.exit_code ?? "--")} />
-        <InfoCard
-          label="ZFS written"
-          value={attempt.zfs_written ? formatBytes(attempt.zfs_written) : "--"}
-        />
-        <InfoCard label="Attempt" value={attempt.attempt_id.slice(0, 8)} />
-      </div>
+      <PageSections>
+        <PageSection>
+          <ExecutionTimingSummary execution={execution} isRunning={isRunning} />
+        </PageSection>
 
-      <ClientOnly fallback={<ExecutionLogsLoading isRunning={isRunning} />}>
-        <ExecutionLogsPanel attemptId={attempt.attempt_id} isRunning={isRunning} />
-      </ClientOnly>
-    </div>
+        <PageSection>
+          <SectionHeader>
+            <SectionHeaderContent>
+              <SectionTitle>Output</SectionTitle>
+            </SectionHeaderContent>
+          </SectionHeader>
+          <ClientOnly fallback={<ExecutionLogsLoading isRunning={isRunning} />}>
+            <ExecutionLogsPanel attemptId={attempt.attempt_id} isRunning={isRunning} />
+          </ClientOnly>
+        </PageSection>
+      </PageSections>
+    </Page>
   );
 }
 
 function ExecutionDetailLoading({ executionId }: { executionId: string }) {
   const executionPrefix = executionId.slice(0, 8);
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Link to="/executions" className="text-sm text-muted-foreground hover:text-foreground">
-          Executions
-        </Link>
-        <span className="text-muted-foreground">/</span>
-        <h1 className="font-mono text-xl font-semibold">{executionPrefix}</h1>
-      </div>
-      <ExecutionLogsLoading isRunning />
-    </div>
+    <Page>
+      <PageHeader>
+        <PageHeaderContent>
+          <PageEyebrow>
+            <Link to="/executions" className="hover:text-foreground">
+              ← Executions
+            </Link>
+          </PageEyebrow>
+          <PageTitle className="font-mono">{executionPrefix}</PageTitle>
+        </PageHeaderContent>
+      </PageHeader>
+      <PageSections>
+        <PageSection>
+          <SectionHeader>
+            <SectionHeaderContent>
+              <SectionTitle>Output</SectionTitle>
+            </SectionHeaderContent>
+          </SectionHeader>
+          <ExecutionLogsLoading isRunning />
+        </PageSection>
+      </PageSections>
+    </Page>
   );
 }
 
@@ -154,7 +177,7 @@ export function ExecutionSubmissionForm({
         e.stopPropagation();
         void form.handleSubmit();
       }}
-      className="max-w-xl space-y-4"
+      className="space-y-4"
     >
       <form.Field
         name="runCommand"
@@ -388,40 +411,33 @@ function ExecutionListEmpty() {
 
 function ExecutionLogsLoading({ isRunning }: { isRunning: boolean }) {
   return (
-    <div>
-      <h2 className="mb-2 text-sm font-semibold">Logs</h2>
-      <Callout title="Loading logs">
-        {isRunning ? "Waiting for output…" : "No log output yet."}
-      </Callout>
-    </div>
+    <Callout title="Loading output">
+      {isRunning ? "Waiting for stdout or stderr…" : "No stdout or stderr yet."}
+    </Callout>
   );
 }
 
 function ExecutionLogsError({ status, isRunning }: { status: string; isRunning: boolean }) {
   return (
-    <div>
-      <h2 className="mb-2 text-sm font-semibold">Logs</h2>
-      <ErrorCallout
-        title="Log stream unavailable"
-        error={`Log stream unavailable (${status}).`}
-        action={
-          <div className="text-xs text-muted-foreground">
-            {isRunning
-              ? "The attempt is still running, but logs have not synced yet."
-              : "No log output is available."}
-          </div>
-        }
-      />
-    </div>
+    <ErrorCallout
+      title="Output unavailable"
+      error={`Output stream unavailable (${status}).`}
+      action={
+        <div className="text-xs text-muted-foreground">
+          {isRunning
+            ? "The command is still running, but output has not synced yet."
+            : "No stdout or stderr is available."}
+        </div>
+      }
+    />
   );
 }
 
 function ExecutionLogsEmpty({ isRunning }: { isRunning: boolean }) {
   return (
-    <div>
-      <h2 className="mb-2 text-sm font-semibold">Logs</h2>
-      <Callout title="Logs">{isRunning ? "Waiting for output…" : "No log output."}</Callout>
-    </div>
+    <Callout title="Output">
+      {isRunning ? "Waiting for stdout or stderr…" : "No stdout or stderr."}
+    </Callout>
   );
 }
 
@@ -429,41 +445,205 @@ function ExecutionLogsBody({ logText }: { logText: string }) {
   const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useStickToBottom();
 
   return (
-    <div>
-      <h2 className="mb-2 text-sm font-semibold">Logs</h2>
-      <div className="relative">
-        <pre
-          ref={scrollRef}
-          className="max-h-[600px] overflow-x-auto overflow-y-auto whitespace-pre-wrap rounded-md border bg-muted/40 p-4 font-mono text-xs"
+    <div className="relative">
+      <pre
+        ref={scrollRef}
+        className="max-h-[600px] overflow-x-auto overflow-y-auto whitespace-pre-wrap rounded-md border bg-muted/40 p-4 font-mono text-xs"
+      >
+        <code ref={contentRef}>{logText}</code>
+      </pre>
+      {!isAtBottom && logText ? (
+        <Button
+          type="button"
+          onClick={() => scrollToBottom()}
+          className="absolute bottom-3 right-3 shadow-md"
+          size="sm"
         >
-          <code ref={contentRef}>{logText}</code>
-        </pre>
-        {!isAtBottom && logText ? (
-          <Button
-            type="button"
-            onClick={() => scrollToBottom()}
-            className="absolute bottom-3 right-3 shadow-md"
-            size="sm"
-          >
-            Scroll to bottom
-          </Button>
-        ) : null}
-      </div>
+          Scroll to bottom
+        </Button>
+      ) : null}
     </div>
   );
 }
 
-function InfoCard({ label, value }: { label: string; value: string }) {
+function ExecutionTimingSummary({
+  execution,
+  isRunning,
+}: {
+  execution: {
+    created_at: string;
+    latest_attempt: {
+      completed_at?: string | null | undefined;
+      duration_ms?: number | null | undefined;
+      exit_code?: number | null | undefined;
+      started_at?: string | null | undefined;
+      zfs_written?: number | null | undefined;
+    };
+  };
+  isRunning: boolean;
+}) {
+  const attempt = execution.latest_attempt;
+  const exitCode = formatExitCode(attempt);
+
   return (
-    <Card className="gap-1 p-3">
-      <CardHeader className="p-0">
-        <CardTitle className="text-xs font-medium text-muted-foreground">{label}</CardTitle>
-      </CardHeader>
-      <CardContent className="p-0">
-        <div className="truncate text-sm font-medium">{value}</div>
-      </CardContent>
-    </Card>
+    <dl className="grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
+      <ExecutionMetric
+        label="Runtime"
+        value={<RuntimeValue attempt={attempt} isRunning={isRunning} />}
+      />
+      <ExecutionMetric
+        label="Started after"
+        value={
+          <StartupValue
+            createdAt={execution.created_at}
+            startedAt={attempt.started_at}
+            isRunning={isRunning}
+          />
+        }
+      />
+      <ExecutionMetric label="Exit code" value={exitCode} />
+      <ExecutionMetric
+        label="ZFS written"
+        value={attempt.zfs_written ? formatBytes(attempt.zfs_written) : "--"}
+      />
+    </dl>
   );
+}
+
+function ExecutionMetric({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
+      <dd className="mt-1 truncate font-mono text-sm font-semibold tabular-nums">{value}</dd>
+    </div>
+  );
+}
+
+function RuntimeValue({
+  attempt,
+  isRunning,
+}: {
+  attempt: {
+    duration_ms?: number | null | undefined;
+    started_at?: string | null | undefined;
+  };
+  isRunning: boolean;
+}) {
+  if (typeof attempt.duration_ms === "number" && attempt.duration_ms > 0) {
+    return formatDurationMs(attempt.duration_ms);
+  }
+  if (isRunning && attempt.started_at) {
+    return <LiveElapsed startAt={attempt.started_at} />;
+  }
+  return "--";
+}
+
+function StartupValue({
+  createdAt,
+  startedAt,
+}: {
+  createdAt: string;
+  startedAt?: string | null | undefined;
+  isRunning: boolean;
+}) {
+  if (startedAt) {
+    return formatDurationBetween(createdAt, startedAt);
+  }
+  return "Starting VM...";
+}
+
+function formatExitCode(attempt: { exit_code?: number | null | undefined }): string {
+  if (typeof attempt.exit_code === "number") {
+    return String(attempt.exit_code);
+  }
+  return "--";
+}
+
+function LiveElapsed({ startAt }: { startAt: string }) {
+  const nowMs = useAnimationFrameNowMs();
+  const startMs = Date.parse(startAt);
+
+  if (!Number.isFinite(startMs)) {
+    return "--";
+  }
+
+  return formatDurationMs(nowMs - startMs);
+}
+
+const animationFrameSubscribers = new Set<() => void>();
+let animationFrameID: number | null = null;
+
+function subscribeAnimationFrame(callback: () => void): () => void {
+  if (typeof window === "undefined") {
+    return () => {};
+  }
+
+  animationFrameSubscribers.add(callback);
+  if (animationFrameID === null) {
+    animationFrameID = window.requestAnimationFrame(tickAnimationFrameSubscribers);
+  }
+
+  return () => {
+    animationFrameSubscribers.delete(callback);
+    if (animationFrameSubscribers.size === 0 && animationFrameID !== null) {
+      window.cancelAnimationFrame(animationFrameID);
+      animationFrameID = null;
+    }
+  };
+}
+
+function tickAnimationFrameSubscribers() {
+  for (const callback of animationFrameSubscribers) {
+    callback();
+  }
+
+  if (animationFrameSubscribers.size > 0) {
+    animationFrameID = window.requestAnimationFrame(tickAnimationFrameSubscribers);
+  } else {
+    animationFrameID = null;
+  }
+}
+
+function useAnimationFrameNowMs(): number {
+  return useSyncExternalStore(subscribeAnimationFrame, Date.now, () => 0);
+}
+
+function formatDurationBetween(startAt: string, endAt: string): string {
+  const startMs = Date.parse(startAt);
+  const endMs = Date.parse(endAt);
+
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) {
+    return "--";
+  }
+
+  return formatDurationMs(endMs - startMs);
+}
+
+function formatDurationMs(durationMs: number): string {
+  const ms = Math.max(0, Math.floor(durationMs));
+
+  if (ms < 1_000) {
+    return `${ms}ms`;
+  }
+
+  const totalSeconds = Math.floor(ms / 1_000);
+  const milliseconds = ms % 1_000;
+
+  if (totalSeconds < 60) {
+    return `${totalSeconds}s ${milliseconds.toString().padStart(3, "0")}ms`;
+  }
+
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  if (totalMinutes < 60) {
+    return `${totalMinutes}m ${seconds}s`;
+  }
+
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  return `${hours}h ${minutes}m`;
 }
 
 function formatBytes(bytes: number): string {

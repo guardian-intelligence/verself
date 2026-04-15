@@ -1,32 +1,36 @@
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { cn } from "@forge-metal/ui/lib/utils";
+import {
+  Page,
+  PageDescription,
+  PageHeader,
+  PageHeaderContent,
+  PageTitle,
+} from "@forge-metal/ui/components/ui/page";
 import { isPathActive, SETTINGS_NAV } from "~/features/shell/nav-config";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   component: SettingsLayout,
 });
 
-// Secondary layout for the settings subtree. Claude.ai-style: single
-// "Settings" page title at the top, a vertical section list on the left,
-// and main content on the right. On mobile the section list collapses
-// into a horizontal scroll strip above the content.
+// Secondary layout for the settings subtree. Single "Settings" page title,
+// a vertical section list on the left, main content on the right. The
+// outer Page owns rhythm; child routes render their own PageSections
+// directly into the Outlet without a second PageHeader.
 function SettingsLayout() {
   const path = useRouterState({ select: (s) => s.location.pathname });
 
   return (
-    <div className="space-y-6">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted-foreground">
-          Manage your plan, credits, and organization.
-        </p>
-      </header>
+    <Page>
+      <PageHeader>
+        <PageHeaderContent>
+          <PageTitle>Settings</PageTitle>
+          <PageDescription>Manage your plan, credits, and organization.</PageDescription>
+        </PageHeaderContent>
+      </PageHeader>
 
-      <div className="flex flex-col gap-6 md:flex-row md:gap-10">
-        <nav
-          aria-label="Settings sections"
-          className="md:w-48 md:shrink-0"
-        >
+      <div className="flex flex-col gap-8 md:flex-row md:gap-10">
+        <nav aria-label="Settings sections" className="md:w-48 md:shrink-0">
           <ul className="flex gap-1 overflow-x-auto md:flex-col">
             {SETTINGS_NAV.map((entry) => {
               const active = isPathActive(path, entry);
@@ -55,6 +59,6 @@ function SettingsLayout() {
           <Outlet />
         </div>
       </div>
-    </div>
+    </Page>
   );
 }

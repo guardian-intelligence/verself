@@ -28,6 +28,7 @@
     "@tanstack/react-query": "catalog:",
     "@tanstack/react-router": "catalog:",
     "@tanstack/react-start": "catalog:",
+    "lucide-react": "catalog:",
     "nitro": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",

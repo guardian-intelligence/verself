@@ -48,14 +48,12 @@ test.describe("Rent-a-Sandbox Shell", () => {
       await app.assertStableRoute({
         path: "/executions",
         ready: app.page.getByTestId("shell-omnibar"),
+        stableContent: app.page.locator("body"),
         expectedText: ["Executions", "Search or jump to"],
       });
 
-      // Navigate from Executions to Settings → Billing via the rail + the
-      // account popover. The popover must be opened before the Settings
-      // link is visible.
-      await app.page.getByTestId("shell-account-trigger").click();
-      await app.page.getByRole("menuitem", { name: /^Settings$/ }).click();
+      // Navigate from Executions to Settings → Billing via the evergreen rail.
+      await app.page.getByTestId("nav-settings").click();
       await expect(app.page).toHaveURL(/\/settings\/billing$/);
       await expect(app.page.getByTestId("settings-tab-billing")).toHaveAttribute(
         "data-status",
