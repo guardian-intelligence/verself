@@ -1151,7 +1151,51 @@ func (c *Client) grantBalancesTx(ctx context.Context, tx pgx.Tx, orgID OrgID, pr
 	if err := c.hydrateGrantLedgerBalances(ctx, out); err != nil {
 		return nil, err
 	}
+	reserving, err := c.grantReservingUsageTx(ctx, tx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		amount := reserving[out[i].GrantID]
+		if amount == 0 {
+			continue
+		}
+		out[i].Pending += amount
+		if amount >= out[i].Available {
+			out[i].Available = 0
+			continue
+		}
+		out[i].Available -= amount
+	}
 	return grantsByFundingPriority(out), nil
+}
+
+func (c *Client) grantReservingUsageTx(ctx context.Context, tx pgx.Tx, orgID OrgID) (map[string]uint64, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT l.grant_id, SUM(l.amount_reserved)
+		FROM billing_windows w
+		JOIN billing_window_ledger_legs l ON l.window_id = w.window_id
+		WHERE w.org_id = $1
+		  AND w.state = 'reserving'
+		  AND l.grant_id IS NOT NULL
+		GROUP BY l.grant_id
+	`, orgIDText(orgID))
+	if err != nil {
+		return nil, fmt.Errorf("query reserving grant usage tx: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]uint64{}
+	for rows.Next() {
+		var grantID string
+		var amount int64
+		if err := rows.Scan(&grantID, &amount); err != nil {
+			return nil, fmt.Errorf("scan reserving grant usage: %w", err)
+		}
+		if amount > 0 {
+			out[grantID] = uint64(amount)
+		}
+	}
+	return out, rows.Err()
 }
 
 func (c *Client) grantUsageTx(ctx context.Context, tx pgx.Tx, orgID OrgID) (map[string]uint64, map[string]uint64, error) {
