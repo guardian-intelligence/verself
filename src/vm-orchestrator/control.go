@@ -351,7 +351,10 @@ func (c *guestControl) exec(ctx context.Context, leaseID string, spec ExecSpec, 
 	c.activeExecID = execID
 	defer func() { c.activeExecID = "" }()
 
-	_, endExecRequestSpan := startStepSpan(ctx, "vmorchestrator.guest.exec_request",
+	// exec_dispatch measures the host-side send of the ExecRequest envelope.
+	// It's typically sub-millisecond; the interesting latency lives in
+	// exec_workload (customer code) and exec_teardown (result drain + ack).
+	dispatchCtx, endExecDispatchSpan := startStepSpan(ctx, "vmorchestrator.guest.exec_dispatch",
 		attribute.String("lease.id", leaseID),
 		attribute.String("exec.id", execID),
 	)
@@ -364,10 +367,11 @@ func (c *guestControl) exec(ctx context.Context, leaseID string, spec ExecSpec, 
 		MaxWallSeconds:  spec.MaxWallSeconds,
 		ProtocolVersion: vmproto.ProtocolVersion,
 	}); err != nil {
-		endExecRequestSpan(err)
+		endExecDispatchSpan(err)
 		return ExecResult{}, fmt.Errorf("send exec request: %w", err)
 	}
-	endExecRequestSpan(nil)
+	endExecDispatchSpan(nil)
+	_ = dispatchCtx
 
 	for {
 		env, err := c.recv()
@@ -426,13 +430,38 @@ func (c *guestControl) exec(ctx context.Context, leaseID string, spec ExecSpec, 
 			if err != nil {
 				return ExecResult{StartedAt: startedAt, FirstByteAt: firstByteAt, Output: logBuf.String()}, err
 			}
+			resultReceivedAt := time.Now().UTC()
+			// exec_teardown wraps the ack send + result drain + return. Covered
+			// as a real span (not synthetic) because the ack write is on the
+			// critical path and we want failures visible in-trace.
+			teardownCtx, endExecTeardownSpan := startStepSpan(ctx, "vmorchestrator.guest.exec_teardown",
+				attribute.String("lease.id", leaseID),
+				attribute.String("exec.id", execID),
+			)
+			_ = teardownCtx
 			if err := c.send(vmproto.TypeAck, vmproto.Ack{ForType: vmproto.TypeExecResult, ForSeq: env.Seq}); err != nil {
+				endExecTeardownSpan(err)
 				return ExecResult{StartedAt: startedAt, FirstByteAt: firstByteAt, Output: logBuf.String()}, fmt.Errorf("ack guest exec result: %w", err)
 			}
 			if startedAt.IsZero() {
-				startedAt = time.Now().UTC().Add(-time.Duration(msg.DurationMS) * time.Millisecond)
+				startedAt = resultReceivedAt.Add(-time.Duration(msg.DurationMS) * time.Millisecond)
 			}
 			exitedAt := time.Now().UTC()
+			// exec_workload is the customer-code window. Anchored from the
+			// guest-reported startedAt (via ExecStarted) and ending at
+			// resultReceivedAt (when ExecResult hit the host). Dashboards
+			// plot this phase as "customer workload time" — independent of
+			// host-side orchestration overhead.
+			workloadEnd := resultReceivedAt
+			if !startedAt.IsZero() && startedAt.Before(workloadEnd) {
+				recordObservedIntervalSpan(ctx, "vmorchestrator.guest.exec_workload", startedAt, workloadEnd,
+					attribute.String("lease.id", leaseID),
+					attribute.String("exec.id", execID),
+					attribute.Int64("exec.duration_ms", msg.DurationMS),
+					attribute.Int("exec.exit_code", msg.ExitCode),
+				)
+			}
+			endExecTeardownSpan(nil)
 			return ExecResult{
 				ExitCode:        msg.ExitCode,
 				Output:          logBuf.String(),

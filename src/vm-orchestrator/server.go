@@ -51,7 +51,12 @@ type activeExec struct {
 
 type vmCommand interface{}
 
+// acquireCmd carries the caller's context so the lease boot path can inherit
+// its SpanContext. detachedTraceContext strips cancellation but preserves the
+// trace/baggage, so the lease goroutine outlives the RPC while staying joined
+// to the same trace.
 type acquireCmd struct {
+	ctx   context.Context
 	reply chan acquireReply
 }
 type acquireReply struct {
@@ -70,6 +75,7 @@ type releaseCmd struct {
 	reply  chan error
 }
 type startExecCmd struct {
+	ctx    context.Context
 	execID string
 	spec   ExecSpec
 	reply  chan startExecReply
@@ -196,7 +202,7 @@ func (s *APIServer) AcquireLease(ctx context.Context, req *vmrpc.AcquireLeaseReq
 	go actor.run()
 
 	reply := make(chan acquireReply, 1)
-	if !actor.send(acquireCmd{reply: reply}) {
+	if !actor.send(acquireCmd{ctx: ctx, reply: reply}) {
 		return nil, status.Error(codes.Unavailable, "lease actor is not accepting commands")
 	}
 	var out acquireReply
@@ -403,7 +409,7 @@ func (s *APIServer) StartExec(ctx context.Context, req *vmrpc.StartExecRequest) 
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	reply := make(chan startExecReply, 1)
-	actor.send(startExecCmd{execID: execID, spec: spec, reply: reply})
+	actor.send(startExecCmd{ctx: ctx, execID: execID, spec: spec, reply: reply})
 	out := <-reply
 	if out.err != nil {
 		return nil, status.Error(codes.FailedPrecondition, out.err.Error())
@@ -533,14 +539,14 @@ func (a *vmActor) run() {
 		case cmd := <-a.mailbox:
 			switch msg := cmd.(type) {
 			case acquireCmd:
-				msg.reply <- a.handleAcquire()
+				msg.reply <- a.handleAcquire(msg.ctx)
 			case renewCmd:
 				msg.reply <- a.handleRenew(msg.expiresAt, msg.allowlist)
 			case releaseCmd:
 				msg.reply <- a.handleRelease(msg.reason, msg.state, msg.event)
 				return
 			case startExecCmd:
-				msg.reply <- a.handleStartExec(msg.execID, msg.spec)
+				msg.reply <- a.handleStartExec(msg.ctx, msg.execID, msg.spec)
 			case cancelExecCmd:
 				msg.reply <- a.handleCancelExec(msg.execID, msg.reason)
 			case execDoneCmd:
@@ -571,8 +577,11 @@ func (a *vmActor) send(cmd vmCommand) bool {
 	}
 }
 
-func (a *vmActor) handleAcquire() acquireReply {
-	ctx := detachedTraceContext(context.Background())
+func (a *vmActor) handleAcquire(callerCtx context.Context) acquireReply {
+	// Inherit the caller's SpanContext + baggage so lease.boot reparents under
+	// rpc.AcquireLease. detachedTraceContext drops cancellation (the lease
+	// must outlive the RPC), but the trace/baggage ride through.
+	ctx := detachedTraceContext(callerCtx)
 	spec := normalizeLeaseSpec(a.spec, a.server.cfg)
 	a.spec = spec
 	acquiredAt := time.Now().UTC()
@@ -646,14 +655,17 @@ func (a *vmActor) handleRelease(reason string, state LeaseState, event LeaseEven
 	return nil
 }
 
-func (a *vmActor) handleStartExec(execID string, spec ExecSpec) startExecReply {
+func (a *vmActor) handleStartExec(callerCtx context.Context, execID string, spec ExecSpec) startExecReply {
 	if a.state != LeaseStateReady || a.runtime == nil {
 		return startExecReply{err: fmt.Errorf("lease is not ready")}
 	}
 	if a.active != nil {
 		return startExecReply{err: fmt.Errorf("lease already has an active exec")}
 	}
-	execCtx, cancel := context.WithCancel(detachedTraceContext(context.Background()))
+	// Reparent exec spans to the caller's trace (rpc.StartExec). The workload
+	// outlives the RPC reply; detachedTraceContext keeps trace/baggage without
+	// tying workload lifetime to the short RPC call.
+	execCtx, cancel := context.WithCancel(detachedTraceContext(callerCtx))
 	a.active = &activeExec{execID: execID, cancel: cancel}
 	startedCh := make(chan time.Time, 1)
 	doneCh := make(chan execDoneCmd, 1)

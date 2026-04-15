@@ -426,6 +426,9 @@ func (o *Orchestrator) bootDataset(ctx context.Context, leaseID string, spec Lea
 		return nil, fmt.Errorf("start jailer: %w", err)
 	}
 	runtime.jailer = jailer
+	// Surface the Firecracker PID on the lease.boot span so traces are joinable
+	// to host cgroup/process-level metrics without another query.
+	trace.SpanFromContext(ctx).SetAttributes(attribute.Int("firecracker.pid", jailer.Pid))
 	if err := NewAllocator(netCfg).AttachPID(ctx, leaseID, jailer.Pid); err != nil {
 		return nil, fmt.Errorf("record network lease pid: %w", err)
 	}
@@ -477,8 +480,16 @@ func (o *Orchestrator) bootDataset(ctx context.Context, leaseID string, spec Lea
 		}},
 		{"entropy", func(stepCtx context.Context) error { return client.putEntropy(stepCtx) }},
 	}
+	// Roll up the seven FC API PUTs under a single parent span so dashboards
+	// can chart "total configure time" without summing across step children.
+	configureCtx, endConfigureAll := startStepSpan(ctx, "vmorchestrator.firecracker.configure_all",
+		attribute.String("lease.id", leaseID),
+		attribute.Int("firecracker.step_count", len(apiSteps)),
+		attribute.Int("vmresources.vcpus", int(spec.VCPUs)),
+		attribute.Int("vmresources.memory_mib", int(spec.MemoryMiB)),
+	)
 	for _, step := range apiSteps {
-		stepCtx, cancel := context.WithTimeout(ctx, firecrackerStepTimeout)
+		stepCtx, cancel := context.WithTimeout(configureCtx, firecrackerStepTimeout)
 		stepCtx, endStepSpan := startStepSpan(stepCtx, "vmorchestrator.firecracker.configure",
 			attribute.String("lease.id", leaseID),
 			attribute.String("firecracker.step", step.name),
@@ -487,9 +498,11 @@ func (o *Orchestrator) bootDataset(ctx context.Context, leaseID string, spec Lea
 		endStepSpan(stepErr)
 		cancel()
 		if stepErr != nil {
+			endConfigureAll(stepErr)
 			return nil, fmt.Errorf("configure VM %s: %w", step.name, stepErr)
 		}
 	}
+	endConfigureAll(nil)
 
 	startCtx, cancel := context.WithTimeout(ctx, firecrackerStepTimeout)
 	startCtx, endStartSpan := startStepSpan(startCtx, "vmorchestrator.firecracker.instance_start",
@@ -501,7 +514,6 @@ func (o *Orchestrator) bootDataset(ctx context.Context, leaseID string, spec Lea
 	if startErr != nil {
 		return nil, fmt.Errorf("start VM: %w", startErr)
 	}
-	instanceStartedAt := time.Now()
 
 	controlSocketCtx, endControlSocketSpan := startStepSpan(ctx, "vmorchestrator.guest.control_socket_wait",
 		attribute.String("lease.id", leaseID),
@@ -531,14 +543,10 @@ func (o *Orchestrator) bootDataset(ctx context.Context, leaseID string, spec Lea
 		attribute.String("socket.path", controlSockHost),
 	)
 	control, err := connectGuestControl(controlCtx, controlSockHost, vmproto.GuestPort, leaseID)
-	controlConnectedAt := time.Now()
 	endControlConnectSpan(err)
 	if err != nil {
 		return nil, fmt.Errorf("connect guest control: %w", err)
 	}
-	recordObservedIntervalSpan(ctx, "vmorchestrator.guest.instance_start_to_control_connect", instanceStartedAt, controlConnectedAt,
-		attribute.String("lease.id", leaseID),
-	)
 	runtime.control = control
 	runtime.cleanups = append(runtime.cleanups, func() { _ = control.close() })
 
@@ -550,9 +558,6 @@ func (o *Orchestrator) bootDataset(ctx context.Context, leaseID string, spec Lea
 		return nil, err
 	}
 	endHelloSpan(nil)
-	recordObservedIntervalSpan(ctx, "vmorchestrator.guest.instance_start_to_hello", instanceStartedAt, helloObservedAt,
-		attribute.String("lease.id", leaseID),
-	)
 	recordGuestBootTimingSpans(ctx, leaseID, hello, helloObservedAt)
 	if err := control.initLease(ctx, leaseID, netSetup.Lease.GuestNetworkConfig(o.cfg.HostServiceIP, o.cfg.HostServicePort)); err != nil {
 		return nil, err
