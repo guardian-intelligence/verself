@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as LogoutRouteImport } from './routes/logout'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as DocsRouteImport } from './routes/docs'
 import { Route as CallbackRouteImport } from './routes/callback'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
@@ -32,6 +33,11 @@ const LogoutRoute = LogoutRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DocsRoute = DocsRouteImport.update({
+  id: '/docs',
+  path: '/docs',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CallbackRoute = CallbackRouteImport.update({
@@ -106,6 +112,7 @@ const AuthenticatedSettingsBillingCreditsRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/callback': typeof CallbackRoute
+  '/docs': typeof DocsRoute
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
   '/settings': typeof AuthenticatedSettingsRouteRouteWithChildren
@@ -121,6 +128,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/callback': typeof CallbackRoute
+  '/docs': typeof DocsRoute
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
   '/executions/$executionId': typeof AuthenticatedExecutionsExecutionIdRoute
@@ -137,6 +145,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/callback': typeof CallbackRoute
+  '/docs': typeof DocsRoute
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRouteRouteWithChildren
@@ -154,6 +163,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/callback'
+    | '/docs'
     | '/login'
     | '/logout'
     | '/settings'
@@ -169,6 +179,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/callback'
+    | '/docs'
     | '/login'
     | '/logout'
     | '/executions/$executionId'
@@ -184,6 +195,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_authenticated'
     | '/callback'
+    | '/docs'
     | '/login'
     | '/logout'
     | '/_authenticated/settings'
@@ -201,6 +213,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   CallbackRoute: typeof CallbackRoute
+  DocsRoute: typeof DocsRoute
   LoginRoute: typeof LoginRoute
   LogoutRoute: typeof LogoutRoute
 }
@@ -219,6 +232,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/docs': {
+      id: '/docs'
+      path: '/docs'
+      fullPath: '/docs'
+      preLoaderRoute: typeof DocsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/callback': {
@@ -356,6 +376,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   CallbackRoute: CallbackRoute,
+  DocsRoute: DocsRoute,
   LoginRoute: LoginRoute,
   LogoutRoute: LogoutRoute,
 }
