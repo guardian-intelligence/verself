@@ -82,13 +82,12 @@ func (c *Client) statementWindows(ctx context.Context, orgID OrgID, productID st
 	rows, err := c.pg.Query(ctx, `
 		SELECT window_id
 		FROM billing_windows
-		WHERE org_id = $1
-		  AND product_id = $2
+		WHERE cycle_id = $1
+		  AND org_id = $2
+		  AND product_id = $3
 		  AND state IN ('reserved','active','settled')
-		  AND window_start >= $3
-		  AND window_start < $4
 		ORDER BY window_start, window_seq, window_id
-	`, orgIDText(orgID), productID, cycle.StartsAt, cycle.EndsAt)
+	`, cycle.CycleID, orgIDText(orgID), productID)
 	if err != nil {
 		return nil, fmt.Errorf("query statement windows: %w", err)
 	}
