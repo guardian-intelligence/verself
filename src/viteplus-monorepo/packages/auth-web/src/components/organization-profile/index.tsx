@@ -3,15 +3,16 @@ import { useForm } from "@tanstack/react-form";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { Badge } from "@forge-metal/ui/components/ui/badge";
 import { Button } from "@forge-metal/ui/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@forge-metal/ui/components/ui/card";
 import { Input } from "@forge-metal/ui/components/ui/input";
 import { Label } from "@forge-metal/ui/components/ui/label";
+import {
+  PageSection,
+  PageSections,
+  SectionDescription,
+  SectionHeader,
+  SectionHeaderContent,
+  SectionTitle,
+} from "@forge-metal/ui/components/ui/page";
 import { Switch } from "@forge-metal/ui/components/ui/switch";
 import {
   Table,
@@ -81,7 +82,7 @@ export function OrganizationProfile(_props: OrganizationProfileProps = {}) {
   );
 
   return (
-    <div className="space-y-6">
+    <PageSections>
       <GeneralSection organization={organization} />
       <InviteMemberSection canInvite={canInvite} />
       <MembersSection canUpdateRoles={canUpdateRoles} members={[...members]} />
@@ -93,7 +94,7 @@ export function OrganizationProfile(_props: OrganizationProfileProps = {}) {
         key={memberCapabilities.document.version}
         memberCapabilities={memberCapabilities}
       />
-    </div>
+    </PageSections>
   );
 }
 
@@ -108,14 +109,14 @@ interface GeneralSectionProps {
 function GeneralSection({ organization }: GeneralSectionProps) {
   const callerRoles = organization.caller.role_keys;
   return (
-    <Card>
-      <CardHeader>
-        <CardDescription>Organization</CardDescription>
-        <CardTitle role="heading" aria-level={1} className="break-words text-2xl">
-          {organization.name}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-4 md:grid-cols-3">
+    <PageSection>
+      <SectionHeader>
+        <SectionHeaderContent>
+          <SectionTitle className="break-words">{organization.name}</SectionTitle>
+          <SectionDescription>Organization</SectionDescription>
+        </SectionHeaderContent>
+      </SectionHeader>
+      <dl className="grid gap-x-8 gap-y-4 sm:grid-cols-3">
         <Metric label="Org ID" value={<code className="break-all">{organization.org_id}</code>} />
         <Metric label="Signed in as" value={organization.caller.email} />
         <Metric
@@ -134,16 +135,16 @@ function GeneralSection({ organization }: GeneralSectionProps) {
             )
           }
         />
-      </CardContent>
-    </Card>
+      </dl>
+    </PageSection>
   );
 }
 
 function Metric({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="rounded-md border border-border px-3 py-2">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-1 break-words text-sm font-medium">{value}</div>
+    <div className="min-w-0">
+      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
+      <dd className="mt-1 break-words font-mono text-sm tabular-nums">{value}</dd>
     </div>
   );
 }
@@ -164,14 +165,14 @@ function InviteMemberSection({ canInvite }: { canInvite: boolean }) {
   });
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle role="heading" aria-level={2}>
-          Invite member
-        </CardTitle>
-        <CardDescription>New members receive a Zitadel email code.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <PageSection>
+      <SectionHeader>
+        <SectionHeaderContent>
+          <SectionTitle>Invite member</SectionTitle>
+          <SectionDescription>New members receive a Zitadel email code.</SectionDescription>
+        </SectionHeaderContent>
+      </SectionHeader>
+      <div className="space-y-4">
         {!canInvite ? (
           <PermissionAlert title="Invite permission required">
             Your current role can view members but cannot invite users.
@@ -286,8 +287,8 @@ function InviteMemberSection({ canInvite }: { canInvite: boolean }) {
             </div>
           </div>
         </form>
-      </CardContent>
-    </Card>
+      </div>
+    </PageSection>
   );
 }
 
@@ -299,14 +300,14 @@ function MembersSection({
   members: Array<Member>;
 }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle role="heading" aria-level={2}>
-          Members
-        </CardTitle>
-        <CardDescription>Role assignments are written to Zitadel.</CardDescription>
-      </CardHeader>
-      <CardContent>
+    <PageSection>
+      <SectionHeader>
+        <SectionHeaderContent>
+          <SectionTitle>Members</SectionTitle>
+          <SectionDescription>Role assignments are written to Zitadel.</SectionDescription>
+        </SectionHeaderContent>
+      </SectionHeader>
+      <div className="overflow-hidden rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
@@ -336,8 +337,8 @@ function MembersSection({
             )}
           </TableBody>
         </Table>
-      </CardContent>
-    </Card>
+      </div>
+    </PageSection>
   );
 }
 
@@ -460,59 +461,58 @@ function CapabilitySection({
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle role="heading" aria-level={2}>
-          Member capabilities
-        </CardTitle>
-        <CardDescription>
-          Toggle which actions the <strong>member</strong> role can take in this organization.
-          Owners and admins always have full access.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {!canEditCapabilities ? (
-          <PermissionAlert title="Capability edit permission required">
-            Your current role can view member capabilities but cannot save changes.
-          </PermissionAlert>
+    <PageSection>
+      <SectionHeader>
+        <SectionHeaderContent>
+          <SectionTitle>Member capabilities</SectionTitle>
+          <SectionDescription>
+            Toggle which actions the member role can take in this organization. Owners and admins
+            always have full access.
+          </SectionDescription>
+        </SectionHeaderContent>
+      </SectionHeader>
+
+      {!canEditCapabilities ? (
+        <PermissionAlert title="Capability edit permission required">
+          Your current role can view member capabilities but cannot save changes.
+        </PermissionAlert>
+      ) : null}
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="divide-y divide-border rounded-md border border-border">
+          {memberCapabilities.catalog.map((capability) => {
+            const switchId = `capability-${capability.key}`;
+            const checked = enabled.has(capability.key);
+            return (
+              <div key={capability.key} className="flex items-start justify-between gap-4 p-4">
+                <div className="space-y-1">
+                  <Label htmlFor={switchId} className="text-sm font-medium">
+                    {capability.label}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">{capability.description}</p>
+                </div>
+                <Switch
+                  id={switchId}
+                  checked={checked}
+                  onCheckedChange={(next) => handleToggle(capability.key, next)}
+                  disabled={!canEditCapabilities || mutation.isPending}
+                  aria-label={capability.label}
+                />
+              </div>
+            );
+          })}
+        </div>
+
+        {mutation.error ? (
+          <ErrorAlert error={mutation.error} title="Capabilities save failed" />
         ) : null}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="divide-y divide-border rounded-md border border-border">
-            {memberCapabilities.catalog.map((capability) => {
-              const switchId = `capability-${capability.key}`;
-              const checked = enabled.has(capability.key);
-              return (
-                <div key={capability.key} className="flex items-start justify-between gap-4 p-4">
-                  <div className="space-y-1">
-                    <Label htmlFor={switchId} className="text-sm font-medium">
-                      {capability.label}
-                    </Label>
-                    <p className="text-sm text-muted-foreground">{capability.description}</p>
-                  </div>
-                  <Switch
-                    id={switchId}
-                    checked={checked}
-                    onCheckedChange={(next) => handleToggle(capability.key, next)}
-                    disabled={!canEditCapabilities || mutation.isPending}
-                    aria-label={capability.label}
-                  />
-                </div>
-              );
-            })}
-          </div>
-
-          {mutation.error ? (
-            <ErrorAlert error={mutation.error} title="Capabilities save failed" />
-          ) : null}
-
-          <div className="flex justify-end">
-            <Button type="submit" disabled={!canEditCapabilities || !isDirty || mutation.isPending}>
-              {mutation.isPending ? "Saving…" : "Save capabilities"}
-            </Button>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
+        <div className="flex justify-end">
+          <Button type="submit" disabled={!canEditCapabilities || !isDirty || mutation.isPending}>
+            {mutation.isPending ? "Saving…" : "Save capabilities"}
+          </Button>
+        </div>
+      </form>
+    </PageSection>
   );
 }
