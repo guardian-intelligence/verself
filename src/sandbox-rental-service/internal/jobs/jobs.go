@@ -79,23 +79,29 @@ type Runner interface {
 
 type SchedulerRuntime interface {
 	EnqueueExecutionAdvanceTx(ctx context.Context, tx pgx.Tx, req scheduler.ExecutionAdvanceRequest) (scheduler.ExecutionAdvanceResult, error)
+	EnqueueGitHubCapacityReconcileTx(ctx context.Context, tx pgx.Tx, req scheduler.GitHubCapacityReconcileRequest) (scheduler.ProbeResult, error)
+	EnqueueGitHubRunnerAllocateTx(ctx context.Context, tx pgx.Tx, req scheduler.GitHubRunnerAllocateRequest) (scheduler.ProbeResult, error)
+	EnqueueGitHubJobBindTx(ctx context.Context, tx pgx.Tx, req scheduler.GitHubJobBindRequest) (scheduler.ProbeResult, error)
+	EnqueueGitHubRunnerCleanup(ctx context.Context, req scheduler.GitHubRunnerCleanupRequest) (scheduler.ProbeResult, error)
 	EnqueueProbe(ctx context.Context, req scheduler.ProbeRequest) (scheduler.ProbeResult, error)
 }
 
 type SubmitRequest struct {
-	Kind             string              `json:"kind,omitempty"`
-	RunnerClass      string              `json:"runner_class,omitempty"`
-	ProductID        string              `json:"product_id,omitempty"`
-	Provider         string              `json:"provider,omitempty"`
-	IdempotencyKey   string              `json:"idempotency_key"`
-	SourceKind       string              `json:"source_kind,omitempty"`
-	WorkloadKind     string              `json:"workload_kind,omitempty"`
-	SourceRef        string              `json:"source_ref,omitempty"`
-	ExternalProvider string              `json:"external_provider,omitempty"`
-	ExternalTaskID   string              `json:"external_task_id,omitempty"`
-	RunCommand       string              `json:"run_command,omitempty"`
-	MaxWallSeconds   uint64              `json:"max_wall_seconds,omitempty"`
-	Resources        apiwire.VMResources `json:"resources"`
+	Kind               string              `json:"kind,omitempty"`
+	RunnerClass        string              `json:"runner_class,omitempty"`
+	ProductID          string              `json:"product_id,omitempty"`
+	Provider           string              `json:"provider,omitempty"`
+	IdempotencyKey     string              `json:"idempotency_key"`
+	SourceKind         string              `json:"source_kind,omitempty"`
+	WorkloadKind       string              `json:"workload_kind,omitempty"`
+	SourceRef          string              `json:"source_ref,omitempty"`
+	ExternalProvider   string              `json:"external_provider,omitempty"`
+	ExternalTaskID     string              `json:"external_task_id,omitempty"`
+	RunCommand         string              `json:"run_command,omitempty"`
+	MaxWallSeconds     uint64              `json:"max_wall_seconds,omitempty"`
+	Resources          apiwire.VMResources `json:"resources"`
+	GitHubAllocationID uuid.UUID           `json:"-"`
+	GitHubJITConfig    string              `json:"-"`
 }
 
 type ExecutionRecord struct {
@@ -281,6 +287,14 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req 
 	) VALUES ($1,$2,1,$3,$4,$4)`, attemptID, executionID, StateQueued, now); err != nil {
 		return uuid.Nil, uuid.Nil, fmt.Errorf("insert attempt: %w", err)
 	}
+	if req.WorkloadKind == WorkloadKindGitHubRunner && req.GitHubAllocationID != uuid.Nil {
+		if s.GitHubRunner == nil {
+			return uuid.Nil, uuid.Nil, ErrGitHubRunnerNotConfigured
+		}
+		if err := s.GitHubRunner.attachAllocationExecutionTx(ctx, tx, req.GitHubAllocationID, executionID, attemptID, req.GitHubJITConfig); err != nil {
+			return uuid.Nil, uuid.Nil, err
+		}
+	}
 	if err := s.enqueueExecutionAdvance(ctx, tx, executionID, attemptID, orgID, actorID, correlationID); err != nil {
 		return uuid.Nil, uuid.Nil, err
 	}
@@ -381,7 +395,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	execSpec := vmorchestrator.ExecSpec{
 		Argv:           []string{"sh", "-c", item.RunCommand},
 		WorkingDir:     "/workspace",
-		Env:            executionEnv(item),
+		Env:            s.executionEnv(ctx, item),
 		MaxWallSeconds: maxWallSeconds(item, s.WorkloadTimeout),
 	}
 	execRecord, err := s.Orchestrator.StartExec(ctx, lease.LeaseID, item.AttemptID.String()+":exec", execSpec)
@@ -450,6 +464,9 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		BillingJobID: billingJobID, PricingPhase: reservation.PricingPhase, CorrelationID: item.CorrelationID,
 		StartedAt: execRecord.StartedAt, CompletedAt: completedAt, CreatedAt: time.Now().UTC(), TraceID: span.SpanContext().TraceID().String(),
 	})
+	if item.WorkloadKind == WorkloadKindGitHubRunner && s.GitHubRunner != nil {
+		s.GitHubRunner.MarkExecutionExited(detachedContext(ctx), item.ExecutionID)
+	}
 	return nil
 }
 
@@ -792,13 +809,19 @@ func (s *Service) normalizeSubmitRequest(req SubmitRequest) (SubmitRequest, erro
 	return req, nil
 }
 
-func executionEnv(item executionWorkItem) map[string]string {
-	return map[string]string{
+func (s *Service) executionEnv(ctx context.Context, item executionWorkItem) map[string]string {
+	env := map[string]string{
 		"FORGE_METAL_EXECUTION_ID": item.ExecutionID.String(),
 		"FORGE_METAL_ATTEMPT_ID":   item.AttemptID.String(),
 		"FORGE_METAL_RUNNER_CLASS": item.RunnerClass,
 		"FORGE_METAL_SOURCE_KIND":  item.SourceKind,
 	}
+	if item.WorkloadKind == WorkloadKindGitHubRunner && s.GitHubRunner != nil {
+		for key, value := range s.GitHubRunner.execEnv(ctx, item.ExecutionID, item.AttemptID) {
+			env[key] = value
+		}
+	}
+	return env
 }
 
 func usageSummary(exec vmorchestrator.ExecRecord) map[string]any {

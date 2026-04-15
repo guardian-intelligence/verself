@@ -195,6 +195,8 @@ CREATE TABLE github_workflow_jobs (
     labels_json            JSONB       NOT NULL DEFAULT '[]'::jsonb,
     runner_id              BIGINT      NOT NULL DEFAULT 0,
     runner_name            TEXT        NOT NULL DEFAULT '',
+    started_at             TIMESTAMPTZ,
+    completed_at           TIMESTAMPTZ,
     last_webhook_delivery  TEXT        NOT NULL DEFAULT '',
     updated_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
     created_at             TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -234,6 +236,25 @@ CREATE INDEX idx_github_runner_allocations_state
 CREATE UNIQUE INDEX idx_github_runner_allocations_execution
     ON github_runner_allocations (execution_id)
     WHERE execution_id IS NOT NULL;
+CREATE UNIQUE INDEX idx_github_runner_allocations_runner_name
+    ON github_runner_allocations (runner_name)
+    WHERE runner_name <> '';
+
+CREATE TABLE github_runner_jit_configs (
+    allocation_id      UUID        PRIMARY KEY REFERENCES github_runner_allocations(allocation_id) ON DELETE CASCADE,
+    attempt_id         UUID        NOT NULL REFERENCES execution_attempts(attempt_id) ON DELETE CASCADE,
+    fetch_token_hash   TEXT        NOT NULL UNIQUE CHECK (fetch_token_hash <> ''),
+    encoded_jit_config TEXT        NOT NULL CHECK (encoded_jit_config <> ''),
+    expires_at         TIMESTAMPTZ NOT NULL,
+    consumed_at        TIMESTAMPTZ,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_github_runner_jit_configs_attempt
+    ON github_runner_jit_configs (attempt_id);
+CREATE INDEX idx_github_runner_jit_configs_expires
+    ON github_runner_jit_configs (expires_at)
+    WHERE consumed_at IS NULL;
 
 CREATE TABLE github_runner_job_bindings (
     binding_id       UUID        PRIMARY KEY,

@@ -14,6 +14,7 @@ import (
 const (
 	githubActionsWebhookPath       = "/webhooks/github/actions"
 	githubInstallationCallbackPath = "/github/installations/callback"
+	githubRunnerJITConfigPath      = "/internal/sandbox/v1/github-runner-jit"
 	publicWebhookBodyLimit         = 1 << 20
 )
 
@@ -29,6 +30,7 @@ func RegisterPublicRoutes(mux *http.ServeMux, svc *jobs.Service) {
 	}
 	mux.HandleFunc(githubActionsWebhookPath, githubActionsWebhookHandler(svc))
 	mux.HandleFunc(githubInstallationCallbackPath, githubInstallationCallbackHandler(svc))
+	mux.HandleFunc(githubRunnerJITConfigPath, githubRunnerJITConfigHandler(svc))
 }
 
 func githubActionsWebhookHandler(svc *jobs.Service) http.HandlerFunc {
@@ -86,6 +88,32 @@ func writeGitHubActionsWebhookResponse(w http.ResponseWriter, status int, respon
 	_ = json.NewEncoder(w).Encode(response)
 }
 
+func githubRunnerJITConfigHandler(svc *jobs.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if svc.GitHubRunner == nil || !svc.GitHubRunner.Configured() {
+			http.Error(w, "github runner is not configured", http.StatusServiceUnavailable)
+			return
+		}
+		token := strings.TrimSpace(r.URL.Query().Get("token"))
+		if token == "" {
+			http.Error(w, "missing token", http.StatusBadRequest)
+			return
+		}
+		config, err := svc.GitHubRunner.ConsumeJITConfig(r.Context(), token)
+		if err != nil {
+			writePublicWebhookError(w, http.StatusNotFound, err)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write([]byte(config))
+	}
+}
+
 func githubInstallationCallbackHandler(svc *jobs.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -98,14 +126,13 @@ func githubInstallationCallbackHandler(svc *jobs.Service) http.HandlerFunc {
 		}
 		query := r.URL.Query()
 		state := strings.TrimSpace(query.Get("state"))
-		code := strings.TrimSpace(query.Get("code"))
 		rawInstallationID := strings.TrimSpace(query.Get("installation_id"))
 		installationID, err := strconv.ParseInt(rawInstallationID, 10, 64)
-		if err != nil || installationID <= 0 || state == "" || code == "" {
+		if err != nil || installationID <= 0 || state == "" {
 			http.Error(w, "invalid github installation callback", http.StatusBadRequest)
 			return
 		}
-		record, err := svc.GitHubRunner.CompleteInstallation(r.Context(), state, code, installationID)
+		record, err := svc.GitHubRunner.CompleteInstallation(r.Context(), state, "", installationID)
 		if err != nil {
 			status := http.StatusInternalServerError
 			switch {
