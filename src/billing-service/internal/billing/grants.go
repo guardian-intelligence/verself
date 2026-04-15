@@ -154,11 +154,11 @@ func (c *Client) grantUsage(ctx context.Context, orgID OrgID) (map[string]uint64
 func grantsByFundingPriority(grants []GrantBalance) []GrantBalance {
 	out := append([]GrantBalance(nil), grants...)
 	sort.SliceStable(out, func(i, j int) bool {
-		if scopePriority(out[i].ScopeType) != scopePriority(out[j].ScopeType) {
-			return scopePriority(out[i].ScopeType) < scopePriority(out[j].ScopeType)
-		}
 		if sourcePriority(out[i].Source) != sourcePriority(out[j].Source) {
 			return sourcePriority(out[i].Source) < sourcePriority(out[j].Source)
+		}
+		if scopePriority(out[i].ScopeType) != scopePriority(out[j].ScopeType) {
+			return scopePriority(out[i].ScopeType) < scopePriority(out[j].ScopeType)
 		}
 		if planPriority(out[i].PlanTier, out[i].PlanID) != planPriority(out[j].PlanTier, out[j].PlanID) {
 			return planPriority(out[i].PlanTier, out[i].PlanID) < planPriority(out[j].PlanTier, out[j].PlanID)

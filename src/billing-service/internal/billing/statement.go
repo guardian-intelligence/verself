@@ -147,6 +147,7 @@ func addReservedStatementWindow(statement *Statement, lines map[statementLineKey
 
 func statementLine(lines map[statementLineKey]*StatementLineItem, window persistedWindow, skuID string, rate uint64) *StatementLineItem {
 	bucketID := window.RateContext.SKUBuckets[skuID]
+	bucketOrder := skuBucketOrder(window.RateContext, skuID)
 	key := statementLineKey{ProductID: window.ProductID, PlanID: window.PricingPlanID, BucketID: bucketID, SKUID: skuID, PricingPhase: window.PricingPhase, UnitRate: rate}
 	item := lines[key]
 	if item == nil {
@@ -154,8 +155,11 @@ func statementLine(lines map[statementLineKey]*StatementLineItem, window persist
 		if quantityUnit == "" {
 			quantityUnit = "unit"
 		}
-		item = &StatementLineItem{ProductID: window.ProductID, PlanID: window.PricingPlanID, BucketID: bucketID, BucketDisplayName: window.RateContext.BucketDisplayNames[bucketID], SKUID: skuID, SKUDisplayName: window.RateContext.SKUDisplayNames[skuID], QuantityUnit: quantityUnit, PricingPhase: window.PricingPhase, UnitRate: rate}
+		item = &StatementLineItem{ProductID: window.ProductID, PlanID: window.PricingPlanID, BucketID: bucketID, BucketOrder: bucketOrder, BucketDisplayName: window.RateContext.BucketDisplayNames[bucketID], SKUID: skuID, SKUDisplayName: window.RateContext.SKUDisplayNames[skuID], QuantityUnit: quantityUnit, PricingPhase: window.PricingPhase, UnitRate: rate}
 		lines[key] = item
+	}
+	if bucketOrder < item.BucketOrder {
+		item.BucketOrder = bucketOrder
 	}
 	return item
 }
@@ -166,6 +170,10 @@ func sortedStatementLines(lines map[statementLineKey]*StatementLineItem) []State
 		keys = append(keys, key)
 	}
 	sort.Slice(keys, func(i, j int) bool {
+		left, right := lines[keys[i]], lines[keys[j]]
+		if left.BucketOrder != right.BucketOrder {
+			return left.BucketOrder < right.BucketOrder
+		}
 		if keys[i].BucketID != keys[j].BucketID {
 			return keys[i].BucketID < keys[j].BucketID
 		}

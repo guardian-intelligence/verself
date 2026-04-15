@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"time"
 
@@ -32,6 +33,7 @@ type pricingContext struct {
 	Currency           string            `json:"currency"`
 	SKURates           map[string]uint64 `json:"sku_rates"`
 	SKUBuckets         map[string]string `json:"sku_buckets"`
+	SKUBucketOrders    map[string]int    `json:"sku_bucket_orders,omitempty"`
 	SKUDisplayNames    map[string]string `json:"sku_display_names"`
 	SKUQuantityUnits   map[string]string `json:"sku_quantity_units"`
 	BucketDisplayNames map[string]string `json:"bucket_display_names"`
@@ -181,7 +183,7 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 			if pricing.ContractID == "" || pricing.OveragePolicy != "bill_published_rate" {
 				return ErrInsufficientBalance
 			}
-			for _, skuID := range sortedKeys(componentCharges) {
+			for _, skuID := range componentChargeOrder(componentCharges, pricing) {
 				funded := fundingLegsForComponent(legs, skuID)
 				if funded >= componentCharges[skuID] {
 					continue
@@ -1032,11 +1034,12 @@ func (c *Client) loadPricingContextTx(ctx context.Context, tx pgx.Tx, orgID OrgI
 	}
 	out.SKURates = map[string]uint64{}
 	out.SKUBuckets = map[string]string{}
+	out.SKUBucketOrders = map[string]int{}
 	out.SKUDisplayNames = map[string]string{}
 	out.SKUQuantityUnits = map[string]string{}
 	out.BucketDisplayNames = map[string]string{}
 	rows, err := tx.Query(ctx, `
-		SELECT r.sku_id, r.unit_rate, s.bucket_id, s.display_name, s.quantity_unit, b.display_name
+		SELECT r.sku_id, r.unit_rate, s.bucket_id, s.display_name, s.quantity_unit, b.display_name, b.sort_order
 		FROM plan_sku_rates r
 		JOIN skus s ON s.sku_id = r.sku_id
 		JOIN credit_buckets b ON b.bucket_id = s.bucket_id
@@ -1049,12 +1052,14 @@ func (c *Client) loadPricingContextTx(ctx context.Context, tx pgx.Tx, orgID OrgI
 	defer rows.Close()
 	for rows.Next() {
 		var skuID, bucketID, skuName, quantityUnit, bucketName string
+		var bucketOrder int
 		var rate int64
-		if err := rows.Scan(&skuID, &rate, &bucketID, &skuName, &quantityUnit, &bucketName); err != nil {
+		if err := rows.Scan(&skuID, &rate, &bucketID, &skuName, &quantityUnit, &bucketName, &bucketOrder); err != nil {
 			return pricingContext{}, fmt.Errorf("scan sku rate: %w", err)
 		}
 		out.SKURates[skuID] = uint64(rate)
 		out.SKUBuckets[skuID] = bucketID
+		out.SKUBucketOrders[skuID] = bucketOrder
 		out.SKUDisplayNames[skuID] = skuName
 		out.SKUQuantityUnits[skuID] = quantityUnit
 		out.BucketDisplayNames[bucketID] = bucketName
@@ -1071,7 +1076,7 @@ func (c *Client) fundReservationTx(ctx context.Context, tx pgx.Tx, orgID OrgID, 
 		return nil, err
 	}
 	legs := []fundingLeg{}
-	for _, skuID := range sortedKeys(componentCharges) {
+	for _, skuID := range componentChargeOrder(componentCharges, pricing) {
 		remaining := componentCharges[skuID]
 		if remaining == 0 {
 			continue
@@ -1248,6 +1253,35 @@ func computeWindowCharges(allocation map[string]float64, rates map[string]uint64
 		buckets[skuBuckets[skuID]] += charge
 	}
 	return components, buckets, costPerUnit, nil
+}
+
+func componentChargeOrder(componentCharges map[string]uint64, pricing pricingContext) []string {
+	skus := make([]string, 0, len(componentCharges))
+	for skuID := range componentCharges {
+		skus = append(skus, skuID)
+	}
+	sort.Slice(skus, func(i, j int) bool {
+		left, right := skus[i], skus[j]
+		leftOrder, rightOrder := skuBucketOrder(pricing, left), skuBucketOrder(pricing, right)
+		if leftOrder != rightOrder {
+			return leftOrder < rightOrder
+		}
+		leftBucket, rightBucket := pricing.SKUBuckets[left], pricing.SKUBuckets[right]
+		if leftBucket != rightBucket {
+			return leftBucket < rightBucket
+		}
+		return left < right
+	})
+	return skus
+}
+
+func skuBucketOrder(pricing pricingContext, skuID string) int {
+	if pricing.SKUBucketOrders != nil {
+		if order, ok := pricing.SKUBucketOrders[skuID]; ok {
+			return order
+		}
+	}
+	return int(^uint(0) >> 1)
 }
 
 func (c *Client) projectMeteringForWindow(ctx context.Context, w persistedWindow) error {

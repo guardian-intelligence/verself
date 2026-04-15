@@ -20,6 +20,38 @@ mkdir -p "${artifact_dir}/payloads" "${artifact_dir}/responses" "${artifact_dir}
 # shellcheck disable=SC1090
 source <("${script_dir}/assume-persona.sh" acme-admin --print)
 
+billing_fixture_path="${artifact_dir}/billing-fixture.json"
+"${script_dir}/set-user-state.sh" \
+  --email "acme-admin@${VERIFICATION_DOMAIN}" \
+  --org "Acme Corp" \
+  --product-id "sandbox" \
+  --state "pro" \
+  --balance-units "500000000000" >"${billing_fixture_path}"
+billing_org_id="$(
+  python3 - "${billing_fixture_path}" <<'PY'
+import json
+import sys
+
+print(json.load(open(sys.argv[1], encoding="utf-8"))["org_id"])
+PY
+)"
+
+platform_billing_fixture_path="${artifact_dir}/platform-billing-fixture.json"
+"${script_dir}/set-user-state.sh" \
+  --email "ceo@${VERIFICATION_DOMAIN}" \
+  --org "platform" \
+  --product-id "sandbox" \
+  --state "pro" \
+  --balance-units "500000000000" >"${platform_billing_fixture_path}"
+platform_billing_org_id="$(
+  python3 - "${platform_billing_fixture_path}" <<'PY'
+import json
+import sys
+
+print(json.load(open(sys.argv[1], encoding="utf-8"))["org_id"])
+PY
+)"
+
 api_base_url="${BASE_URL:-https://rentasandbox.${VERIFICATION_DOMAIN}}"
 api_url="${api_base_url%/}/api/v1/executions"
 submitted_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -117,6 +149,61 @@ remote_psql() {
   local sql="$1"
   verification_ssh "sudo -u postgres psql -d sandbox_rental -X -A -t -P footer=off -c \"$sql\""
 }
+
+billing_psql() {
+  local sql="$1"
+  verification_ssh "sudo -u postgres psql -d billing -X -A -t -P footer=off -c \"$sql\""
+}
+
+platform_active_sku_rates="$(
+  billing_psql "COPY (
+    WITH business_clock AS (
+      SELECT COALESCE(
+        (
+          SELECT business_now
+          FROM billing_clock_overrides
+          WHERE scope_kind = 'org_product'
+            AND scope_id = '${platform_billing_org_id}:sandbox'
+        ),
+        now()
+      ) AS now_at
+    ), active_phase AS (
+      SELECT cp.plan_id
+      FROM contract_phases cp
+      JOIN contracts c ON c.contract_id = cp.contract_id
+      CROSS JOIN business_clock clock
+      WHERE cp.org_id = '${platform_billing_org_id}'
+        AND cp.product_id = 'sandbox'
+        AND cp.state IN ('active','grace')
+        AND cp.effective_start <= clock.now_at
+        AND (cp.effective_end IS NULL OR cp.effective_end > clock.now_at)
+        AND c.state IN ('active','past_due','cancel_scheduled')
+      ORDER BY cp.effective_start DESC, cp.phase_id DESC
+      LIMIT 1
+    ), chosen AS (
+      SELECT COALESCE(
+        (SELECT plan_id FROM active_phase),
+        (SELECT plan_id FROM plans WHERE product_id = 'sandbox' AND active AND is_default ORDER BY plan_id LIMIT 1)
+      ) AS plan_id
+    )
+    SELECT count(*)
+    FROM plan_sku_rates r
+    CROSS JOIN business_clock clock
+    WHERE r.plan_id = (SELECT plan_id FROM chosen)
+      AND r.sku_id IN (
+        'sandbox_compute_amd_epyc_4484px_vcpu_ms',
+        'sandbox_memory_standard_gib_ms',
+        'sandbox_block_storage_premium_nvme_gib_ms'
+      )
+      AND r.active
+      AND r.active_from <= clock.now_at
+      AND (r.active_until IS NULL OR r.active_until > clock.now_at)
+  ) TO STDOUT WITH CSV;"
+)"
+if [[ "${platform_active_sku_rates}" -ne 3 ]]; then
+  echo "platform billing fixture has ${platform_active_sku_rates} active sandbox SKU rates; expected 3" >&2
+  exit 1
+fi
 
 deadline=$((SECONDS + proof_timeout_seconds))
 final_counts=""
@@ -243,6 +330,118 @@ if [[ "${sku_mapped_windows}" -ne "${submission_count}" ]]; then
   echo "expected ${submission_count} billing reservations with SKU-mapped allocations, found ${sku_mapped_windows}" >&2
   exit 1
 fi
+
+remote_psql "COPY (
+  SELECT w.billing_window_id
+  FROM execution_billing_windows w
+  JOIN execution_attempts a ON a.attempt_id = w.attempt_id
+  WHERE a.execution_id = ANY(${pg_uuid_array})
+  ORDER BY w.window_start, w.attempt_id, w.window_seq
+) TO STDOUT WITH CSV;" >"${artifact_dir}/postgres/billing-window-ids.csv"
+
+billing_window_array="$(
+  python3 - "${artifact_dir}/postgres/billing-window-ids.csv" <<'PY'
+import pathlib
+import sys
+
+ids = [line.strip() for line in pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines() if line.strip()]
+if not ids:
+    raise SystemExit("no billing window IDs were exported from sandbox_rental")
+print("ARRAY[" + ",".join("'" + item.replace("'", "''") + "'" for item in ids) + "]::text[]")
+PY
+)"
+
+billing_psql "COPY (
+  SELECT
+    l.window_id,
+    l.leg_seq,
+    COALESCE(b.sort_order, 9999) AS bucket_order,
+    l.component_bucket_id,
+    l.component_sku_id,
+    l.source,
+    CASE l.source
+      WHEN 'free_tier' THEN 1
+      WHEN 'contract' THEN 2
+      WHEN 'promo' THEN 3
+      WHEN 'refund' THEN 4
+      WHEN 'purchase' THEN 5
+      WHEN 'receivable' THEN 6
+      ELSE 7
+    END AS source_order,
+    l.amount_reserved,
+    l.amount_posted,
+    l.amount_voided,
+    l.state
+  FROM billing_window_ledger_legs l
+  JOIN billing_windows w ON w.window_id = l.window_id
+  LEFT JOIN credit_buckets b ON b.bucket_id = l.component_bucket_id
+  WHERE l.window_id = ANY(${billing_window_array})
+  ORDER BY l.window_id, l.leg_seq
+) TO STDOUT WITH CSV HEADER;" >"${artifact_dir}/postgres/billing_window_ledger_legs.csv"
+
+funding_order_violations="$(
+  billing_psql "COPY (
+    WITH ordered AS (
+      SELECT
+        l.window_id,
+        l.leg_seq,
+        COALESCE(b.sort_order, 9999) AS bucket_order,
+        l.component_bucket_id,
+        l.component_sku_id,
+        l.source,
+        CASE l.source
+          WHEN 'free_tier' THEN 1
+          WHEN 'contract' THEN 2
+          WHEN 'promo' THEN 3
+          WHEN 'refund' THEN 4
+          WHEN 'purchase' THEN 5
+          WHEN 'receivable' THEN 6
+          ELSE 7
+        END AS source_order
+      FROM billing_window_ledger_legs l
+      LEFT JOIN credit_buckets b ON b.bucket_id = l.component_bucket_id
+      WHERE l.window_id = ANY(${billing_window_array})
+    ), violations AS (
+      SELECT DISTINCT before_leg.window_id
+      FROM ordered before_leg
+      JOIN ordered after_leg
+        ON after_leg.window_id = before_leg.window_id
+       AND after_leg.leg_seq > before_leg.leg_seq
+      WHERE (
+        before_leg.bucket_order,
+        before_leg.source_order,
+        before_leg.component_bucket_id,
+        before_leg.source,
+        before_leg.component_sku_id
+      ) > (
+        after_leg.bucket_order,
+        after_leg.source_order,
+        after_leg.component_bucket_id,
+        after_leg.source,
+        after_leg.component_sku_id
+      )
+    )
+    SELECT count(*) FROM violations
+  ) TO STDOUT WITH CSV;"
+)"
+if [[ "${funding_order_violations}" -ne 0 ]]; then
+  echo "billing funding waterfall order violations: ${funding_order_violations}; see ${artifact_dir}/postgres/billing_window_ledger_legs.csv" >&2
+  exit 1
+fi
+
+billing_statement_path="${artifact_dir}/postgres/billing-statement.json"
+verification_ssh "curl -fsS 'http://127.0.0.1:4242/internal/billing/v1/orgs/${billing_org_id}/statement?product_id=sandbox'" >"${billing_statement_path}"
+python3 - "${billing_statement_path}" <<'PY'
+import json
+import sys
+
+statement = json.load(open(sys.argv[1], encoding="utf-8"))
+line_items = statement.get("line_items") or []
+observed = [item.get("bucket_id") for item in line_items]
+expected = ["compute", "memory", "block_storage"]
+if observed[: len(expected)] != expected:
+    raise SystemExit(f"billing statement line order {observed!r} did not start with {expected!r}")
+PY
 
 hello_logs="$(
   remote_psql "COPY (

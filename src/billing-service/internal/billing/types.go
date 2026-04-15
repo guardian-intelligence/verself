@@ -240,6 +240,7 @@ type StatementLineItem struct {
 	ProductID         string
 	PlanID            string
 	BucketID          string
+	BucketOrder       int
 	BucketDisplayName string
 	SKUID             string
 	SKUDisplayName    string
