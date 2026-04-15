@@ -9,19 +9,10 @@ src/vm-guest-telemetry -- Zig guest agent that streams health samples from Firec
 
 Run `make pg-list` to list the pg databases.
 
-This repo is for a free open-source software product that is a turnkey "software company in a box": fully self-hosted bare-metal platform with Forgejo, Fast CI via Firecracker + deep ZFS optimizations, Grafana + ClickHouse observability (logs + traces + metrics), TigerBeetle for financial OTLP, Stripe integration, Zitadel for enterprise-grade auth, PostgreSQL for general purpose RDBMS. This is not a PaaS -- the user owns what they deploy.
-
-Features:
-
-Bootstrapping: single command to go from their laptop -> bare metal instance -> all services + 2 deployed frontend apps reading/writing off the same DB.
-Git Hosting + Fast CI through ZFS
-Billing figured out for you, layered on top of Stripe to make it easy to go from "Product Idea" -> Revenue without having to reinvent metering, transactin processing, tax, accounts receivable, dunning, invoicing, etc. 
-
 ## Direction
 
 * vm-orchestrator (Go daemon) is the single privileged host process that manages Firecracker VMs: ZFS clones/checkpoints, TAP networking, jailer lifecycle, vm-bridge control, and guest telemetry aggregation. It exposes a gRPC API over a Unix socket for service callers. vm-guest-telemetry (Zig) is the minimal guest agent streaming 60Hz health samples over vsock. sandbox-rental-service is the product control plane layered on that substrate.
 * Avoid CLIs. Things talk to each other over HTTP. 
-* We're moving to k3s soon.
 * Broad direction: every service should do the following:
         1. Be designed for use by customers in a multi-tenant, organization-based fashion and integrated into our policy and billing abstractions.
         2. Be designed such that we are the principal customers (dogfooding, essentially). We go through the same policy and billing abstractions, except our usage is unlimited and our bill at invoice time nets to 0 after applying an adjustment. Currently not doing Mail because that's pretty simple but it would be good to dogfood that too.
@@ -29,7 +20,7 @@ Billing figured out for you, layered on top of Stripe to make it easy to go from
 
 * Product IAM direction: Zitadel owns identity, organizations, users, OAuth/OIDC, project roles, and role assignments; Forge Metal owns the product policy model; each Go service owns and enforces its operation catalog. The platform should ship working default role bundles and policy documents, then expose customer editing through a constrained Forge Metal organization console rather than requiring operators to hand-author IAM documents. See src/platform/docs/identity-and-iam.md.
 * Improvements to our usage-based billing system with subscriptions + credits
-* An S-Team goal is for us to start dogfooding our own Forgejo and running our own CI, establishing a main, beta, gamma, and different preview environments of the entire system for different dev branches -- with automatic promotions: dev branches merge to gamma, gamma bakes and runs more expensive automation tests and promots to beta. Beta may see some private invite-only users and have manual or time-gated promotion to main. Dev branches are accesible only by the operator and their agent.
+* A core tenet goal is for us to start dogfooding our own Forgejo and running our own CI, establishing a main, beta, gamma, and different preview environments of the entire system for different dev branches -- with automatic promotions: dev branches merge to gamma, gamma bakes and runs more expensive automation tests and promots to beta. Beta may see some private invite-only users and have manual or time-gated promotion to main. Dev branches are accesible only by the operator and their agent.
 * in a similar vein we want to start defining e2e canaries of our own infrastructure as repeatable/scheduled workloads
 
 ### Sandbox Runtime Products
