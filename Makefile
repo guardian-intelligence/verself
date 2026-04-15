@@ -3,7 +3,7 @@
        set-user-state billing-clock billing-wall-clock billing-state billing-documents billing-finalizations billing-events billing-pg-shell billing-pg-query billing-proof billing-reset verification-reset \
        vm-guest-telemetry-build traces deploy-trace telemetry-proof telemetry-proof-fail clickhouse-shell clickhouse-query clickhouse-schemas pg-shell pg-query pg-list tb-shell tb-command mail mail-accounts mail-mailboxes \
        mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords mail-observe edit-secrets \
-       wipe-pg-db wipe-server vm-orchestrator-proof sandbox-inner sandbox-middle sandbox-proof rent-ui-smoke rent-ui-local rent-local-dev scheduler-proof verify-scheduler grafana-proof observability-smoke services-doctor
+       wipe-pg-db wipe-server vm-orchestrator-proof stress sandbox-inner sandbox-middle sandbox-proof rent-ui-smoke rent-ui-local rent-local-dev scheduler-proof verify-scheduler grafana-proof observability-smoke services-doctor
 
 FM       := src/platform
 AW       := src/apiwire
@@ -214,6 +214,14 @@ wipe-pg-db: inventory-check ## Wipe one managed PostgreSQL service DB: make wipe
 
 vm-orchestrator-proof: inventory-check ## Live proof for vm-orchestrator lease/exec spans through the public sandbox API
 	cd $(FM) && ./scripts/verify-vm-orchestrator-live.sh
+
+stress: inventory-check ## Burst N parallel sandbox submissions to produce a real p50/p99/p100 distribution. Bypasses the full reseed. Usage: make stress [SUBMISSIONS=200] [PARALLEL=40] [PROFILE=echo|cpu|mem|disk|cpu-mem] [TIMEOUT=1800]
+	cd $(FM) && \
+	  SANDBOX_PROOF_SUBMISSIONS="$(if $(SUBMISSIONS),$(SUBMISSIONS),200)" \
+	  SANDBOX_PROOF_SUBMIT_PARALLEL="$(if $(PARALLEL),$(PARALLEL),40)" \
+	  SANDBOX_PROOF_WORKLOAD_PROFILE="$(if $(PROFILE),$(PROFILE),echo)" \
+	  SANDBOX_PROOF_TIMEOUT_SECONDS="$(if $(TIMEOUT),$(TIMEOUT),1800)" \
+	  ./scripts/verify-sandbox-public-api.sh
 
 sandbox-inner: inventory-check ## Inner loop: default starts local HMR; use SANDBOX_INNER_MODE=verify for local smoke evidence
 	cd $(FM) && ./scripts/sandbox-inner.sh

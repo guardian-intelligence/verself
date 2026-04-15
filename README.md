@@ -164,6 +164,25 @@ make pg-query DB=billing QUERY='SELECT event_type, count(*) FROM billing_events 
 make pg-query DB=sandbox_rental QUERY='SELECT count(*) FROM executions'
 ```
 
+Use `make stress` to burst parallel sandbox submissions through the public API
+and land a real distribution (not one-shot evidence) in ClickHouse. The stress
+target skips the full identity/billing reseed that `make sandbox-proof` runs
+every time, so it finishes in the time the VMs actually take to boot and run:
+
+```bash
+make stress                                 # defaults: 200 submissions, 40-way parallel, echo workload
+make stress SUBMISSIONS=50 PARALLEL=10      # smaller burst
+make stress PROFILE=cpu-mem SUBMISSIONS=100 # 100 leases exercising cpu+memory
+make stress PROFILE=disk SUBMISSIONS=100    # 100 leases writing/fsyncing to the rootfs
+```
+
+`PROFILE` accepts `echo`, `cpu`, `mem`, `disk`, or `cpu-mem`; the fine-grain
+`SANDBOX_PROOF_WORKLOAD_*` env vars described in
+`src/platform/scripts/verify-sandbox-public-api.sh` still work when a profile
+preset isn't enough. Artifacts land under `artifacts/sandbox-public-api/<run-id>/`;
+inspect the resulting span distributions with
+`make clickhouse-query DATABASE=default QUERY='SELECT SpanName, quantile(0.5)(Duration/1e6), quantile(0.99)(Duration/1e6), max(Duration/1e6) FROM otel_traces WHERE Timestamp > now() - INTERVAL 30 MINUTE AND SpanName LIKE ''vmorchestrator.%'' GROUP BY SpanName'`.
+
 ### 5. Log in
 
 ```bash
