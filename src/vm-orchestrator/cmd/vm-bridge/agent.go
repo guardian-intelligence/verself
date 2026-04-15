@@ -69,6 +69,7 @@ func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-cha
 
 	bootToReady := readyAt.Sub(bootStart)
 	bootTimings.HelloEnqueueStartMS = time.Since(bootStart).Milliseconds()
+	bootTimings.KernelBootToHelloEnqueueStartMS = kernelUptimeMS()
 	bootTimings.HelloEnqueueDoneMS = bootTimings.HelloEnqueueStartMS
 	if err := session.sendControl(vmproto.TypeHello, vmproto.Hello{
 		BootToReadyMS: bootToReady.Milliseconds(),

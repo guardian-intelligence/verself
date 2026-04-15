@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/forge-metal/vm-orchestrator/vmproto"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -55,6 +56,7 @@ func main() {
 func runInit() error {
 	bootStart := time.Now()
 	bootTimings := vmproto.GuestBootTimings{
+		KernelBootToInitStartMS:        kernelUptimeMS(),
 		InitStartMS:                    0,
 		MountVirtualFilesystemsStartMS: 0,
 	}
@@ -93,6 +95,7 @@ func runInit() error {
 
 	readyAt := time.Now()
 	bootTimings.VSockListenDoneMS = readyAt.Sub(bootStart).Milliseconds()
+	bootTimings.KernelBootToVSockListenDoneMS = kernelUptimeMS()
 	fmt.Fprintf(os.Stdout, "%s vsock listener ready (%dms)\n", logPrefix, readyAt.Sub(bootStart).Milliseconds())
 
 	bootTimings.VSockAcceptStartMS = elapsedBootMS(bootStart)
@@ -101,6 +104,7 @@ func runInit() error {
 		return fmt.Errorf("accept vsock connection: %w", err)
 	}
 	bootTimings.VSockAcceptDoneMS = elapsedBootMS(bootStart)
+	bootTimings.KernelBootToVSockAcceptDoneMS = kernelUptimeMS()
 	defer conn.Close()
 
 	return runAgent(conn, bootStart, readyAt, sigCh, bridgeFault, bootTimings)
@@ -108,6 +112,14 @@ func runInit() error {
 
 func elapsedBootMS(start time.Time) int64 {
 	return time.Since(start).Milliseconds()
+}
+
+func kernelUptimeMS() int64 {
+	var ts unix.Timespec
+	if err := unix.ClockGettime(unix.CLOCK_BOOTTIME, &ts); err != nil {
+		return -1
+	}
+	return ts.Sec*1000 + ts.Nsec/int64(time.Millisecond)
 }
 
 func parseBridgeFaultMode(raw string) (bridgeFaultMode, error) {

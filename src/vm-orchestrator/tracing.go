@@ -39,6 +39,15 @@ func startStepSpan(ctx context.Context, name string, attrs ...attribute.KeyValue
 	}
 }
 
+func recordObservedIntervalSpan(ctx context.Context, name string, startedAt, endedAt time.Time, attrs ...attribute.KeyValue) {
+	if startedAt.IsZero() || endedAt.IsZero() || endedAt.Before(startedAt) {
+		return
+	}
+	attrs = append(attrs, attribute.Int64("observed.duration_ms", endedAt.Sub(startedAt).Milliseconds()))
+	_, span := tracer.Start(ctx, name, trace.WithTimestamp(startedAt), trace.WithAttributes(attrs...))
+	span.End(trace.WithTimestamp(endedAt))
+}
+
 func recordGuestBootTimingSpans(ctx context.Context, leaseID string, hello vmproto.Hello, observedAt time.Time) {
 	timings := hello.BootTimings
 	if timings == nil {
@@ -66,6 +75,10 @@ func recordGuestBootTimingSpans(ctx context.Context, leaseID string, hello vmpro
 		trace.WithAttributes(
 			attribute.String("lease.id", leaseID),
 			attribute.Int64("guest.boot.total_ms", totalMS),
+			attribute.Int64("guest.kernel_boot_to_init_start_ms", timings.KernelBootToInitStartMS),
+			attribute.Int64("guest.kernel_boot_to_vsock_listen_done_ms", timings.KernelBootToVSockListenDoneMS),
+			attribute.Int64("guest.kernel_boot_to_vsock_accept_done_ms", timings.KernelBootToVSockAcceptDoneMS),
+			attribute.Int64("guest.kernel_boot_to_hello_enqueue_start_ms", timings.KernelBootToHelloEnqueueStartMS),
 			attribute.Int64("guest.boot.boot_to_ready_ms", hello.BootToReadyMS),
 			attribute.Int64("guest.boot.mount_virtual_filesystems_done_ms", timings.MountVirtualFilesystemsDoneMS),
 			attribute.Int64("guest.boot.configure_loopback_done_ms", timings.ConfigureLoopbackDoneMS),
@@ -79,6 +92,13 @@ func recordGuestBootTimingSpans(ctx context.Context, leaseID string, hello vmpro
 			attribute.Int64("guest.boot.hello_enqueue_done_ms", timings.HelloEnqueueDoneMS),
 		),
 	)
+	if timings.KernelBootToInitStartMS > 0 {
+		kernelStartedAt := base.Add(-time.Duration(timings.KernelBootToInitStartMS) * time.Millisecond)
+		addGuestKernelUptimeSpan(reportCtx, leaseID, kernelStartedAt, "vmorchestrator.guest.kernel_boot_to_pid1", "pid1_start", timings.KernelBootToInitStartMS)
+		addGuestKernelUptimeSpan(reportCtx, leaseID, kernelStartedAt, "vmorchestrator.guest.kernel_boot_to_vsock_listen", "vsock_listen_done", timings.KernelBootToVSockListenDoneMS)
+		addGuestKernelUptimeSpan(reportCtx, leaseID, kernelStartedAt, "vmorchestrator.guest.kernel_boot_to_vsock_accept", "vsock_accept_done", timings.KernelBootToVSockAcceptDoneMS)
+		addGuestKernelUptimeSpan(reportCtx, leaseID, kernelStartedAt, "vmorchestrator.guest.kernel_boot_to_hello_enqueue", "hello_enqueue_start", timings.KernelBootToHelloEnqueueStartMS)
+	}
 	addGuestBootStepSpan(reportCtx, leaseID, base, "vmorchestrator.guest.boot.mount_virtual_filesystems", "mount_virtual_filesystems", timings.MountVirtualFilesystemsStartMS, timings.MountVirtualFilesystemsDoneMS)
 	addGuestBootStepSpan(reportCtx, leaseID, base, "vmorchestrator.guest.boot.configure_loopback", "configure_loopback", timings.ConfigureLoopbackStartMS, timings.ConfigureLoopbackDoneMS)
 	addGuestBootStepSpan(reportCtx, leaseID, base, "vmorchestrator.guest.boot.set_subreaper", "set_subreaper", timings.SetSubreaperStartMS, timings.SetSubreaperDoneMS)
@@ -90,6 +110,22 @@ func recordGuestBootTimingSpans(ctx context.Context, leaseID string, hello vmpro
 	addGuestBootStepSpan(reportCtx, leaseID, base, "vmorchestrator.guest.boot.agent_io_loops_start", "agent_io_loops_start", timings.AgentSessionReadyMS, timings.AgentIOLoopsStartedMS)
 	addGuestBootStepSpan(reportCtx, leaseID, base, "vmorchestrator.guest.boot.hello_enqueue", "hello_enqueue", timings.HelloEnqueueStartMS, timings.HelloEnqueueDoneMS)
 	reportSpan.End(trace.WithTimestamp(observedAt))
+}
+
+func addGuestKernelUptimeSpan(ctx context.Context, leaseID string, kernelStartedAt time.Time, name, marker string, endMS int64) {
+	if endMS <= 0 {
+		return
+	}
+	endedAt := kernelStartedAt.Add(time.Duration(endMS) * time.Millisecond)
+	_, span := tracer.Start(ctx, name,
+		trace.WithTimestamp(kernelStartedAt),
+		trace.WithAttributes(
+			attribute.String("lease.id", leaseID),
+			attribute.String("guest.kernel.marker", marker),
+			attribute.Int64("guest.kernel.uptime_end_ms", endMS),
+		),
+	)
+	span.End(trace.WithTimestamp(endedAt))
 }
 
 func addGuestBootStepSpan(ctx context.Context, leaseID string, base time.Time, name, step string, startMS, endMS int64) {

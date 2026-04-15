@@ -501,6 +501,7 @@ func (o *Orchestrator) bootDataset(ctx context.Context, leaseID string, spec Lea
 	if startErr != nil {
 		return nil, fmt.Errorf("start VM: %w", startErr)
 	}
+	instanceStartedAt := time.Now()
 
 	controlSocketCtx, endControlSocketSpan := startStepSpan(ctx, "vmorchestrator.guest.control_socket_wait",
 		attribute.String("lease.id", leaseID),
@@ -530,10 +531,14 @@ func (o *Orchestrator) bootDataset(ctx context.Context, leaseID string, spec Lea
 		attribute.String("socket.path", controlSockHost),
 	)
 	control, err := connectGuestControl(controlCtx, controlSockHost, vmproto.GuestPort, leaseID)
+	controlConnectedAt := time.Now()
 	endControlConnectSpan(err)
 	if err != nil {
 		return nil, fmt.Errorf("connect guest control: %w", err)
 	}
+	recordObservedIntervalSpan(ctx, "vmorchestrator.guest.instance_start_to_control_connect", instanceStartedAt, controlConnectedAt,
+		attribute.String("lease.id", leaseID),
+	)
 	runtime.control = control
 	runtime.cleanups = append(runtime.cleanups, func() { _ = control.close() })
 
@@ -545,6 +550,9 @@ func (o *Orchestrator) bootDataset(ctx context.Context, leaseID string, spec Lea
 		return nil, err
 	}
 	endHelloSpan(nil)
+	recordObservedIntervalSpan(ctx, "vmorchestrator.guest.instance_start_to_hello", instanceStartedAt, helloObservedAt,
+		attribute.String("lease.id", leaseID),
+	)
 	recordGuestBootTimingSpans(ctx, leaseID, hello, helloObservedAt)
 	if err := control.initLease(ctx, leaseID, netSetup.Lease.GuestNetworkConfig(o.cfg.HostServiceIP, o.cfg.HostServicePort)); err != nil {
 		return nil, err
