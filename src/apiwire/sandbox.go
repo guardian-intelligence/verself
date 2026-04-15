@@ -7,13 +7,14 @@ import (
 )
 
 type SandboxSubmitRequest struct {
-	Kind           string `json:"kind"`
-	RunnerClass    string `json:"runner_class,omitempty" doc:"Runner class label, for example metal-4vcpu-ubuntu-2404."`
-	ProductID      string `json:"product_id,omitempty"`
-	Provider       string `json:"provider,omitempty"`
-	IdempotencyKey string `json:"idempotency_key" required:"true" maxLength:"128"`
-	RunCommand     string `json:"run_command,omitempty"`
-	MaxWallSeconds uint64 `json:"max_wall_seconds,omitempty" minimum:"1" maximum:"9007199254740991"`
+	Kind           string      `json:"kind"`
+	RunnerClass    string      `json:"runner_class,omitempty" doc:"Runner class label, for example metal-4vcpu-ubuntu-2404."`
+	ProductID      string      `json:"product_id,omitempty"`
+	Provider       string      `json:"provider,omitempty"`
+	IdempotencyKey string      `json:"idempotency_key" required:"true" maxLength:"128"`
+	RunCommand     string      `json:"run_command,omitempty"`
+	MaxWallSeconds uint64      `json:"max_wall_seconds,omitempty" minimum:"1" maximum:"9007199254740991"`
+	Resources      VMResources `json:"resources,omitempty" doc:"Requested VM shape (vCPUs, memory, root disk). Omit to use defaults; out-of-bounds shapes are rejected with 400."`
 }
 
 type SandboxGitHubInstallationConnectResponse struct {

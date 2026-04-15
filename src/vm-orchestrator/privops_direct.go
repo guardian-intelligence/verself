@@ -65,6 +65,17 @@ func (DirectPrivOps) ZFSDestroy(ctx context.Context, dataset string) error {
 	return nil
 }
 
+func (DirectPrivOps) ZFSSetProperty(ctx context.Context, dataset, key, value string) error {
+	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "zfs", "set", key+"="+value, dataset)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("zfs set %s=%s on %s: %s: %w", key, value, dataset, strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
 func (DirectPrivOps) TapCreate(ctx context.Context, tapName, hostCIDR string, ownerUID, ownerGID int) error {
 	if err := ctx.Err(); err != nil {
 		return err

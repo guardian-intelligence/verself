@@ -16,6 +16,7 @@ func submitRequest(request apiwire.SandboxSubmitRequest) jobs.SubmitRequest {
 		IdempotencyKey: request.IdempotencyKey,
 		RunCommand:     request.RunCommand,
 		MaxWallSeconds: request.MaxWallSeconds,
+		Resources:      request.Resources,
 	}
 }
 

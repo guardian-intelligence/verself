@@ -49,12 +49,12 @@ func (c *Client) AcquireLease(ctx context.Context, key string, spec LeaseSpec) (
 		return LeaseRecord{}, fmt.Errorf("acquire lease: %w", err)
 	}
 	return LeaseRecord{
-		LeaseID:        resp.GetLeaseId(),
-		State:          leaseStateFromProto(resp.GetState()),
-		AcquiredAt:     timeFromUnixNs(resp.GetAcquiredAtUnixNs()),
-		ExpiresAt:      timeFromUnixNs(resp.GetExpiresAtUnixNs()),
-		VMIP:           resp.GetVmIp(),
-		RuntimeProfile: resp.GetRuntimeProfile(),
+		LeaseID:    resp.GetLeaseId(),
+		State:      leaseStateFromProto(resp.GetState()),
+		AcquiredAt: timeFromUnixNs(resp.GetAcquiredAtUnixNs()),
+		ExpiresAt:  timeFromUnixNs(resp.GetExpiresAtUnixNs()),
+		VMIP:       resp.GetVmIp(),
+		Resources:  vmResourcesFromProto(resp.GetResources()),
 	}, nil
 }
 
@@ -137,16 +137,15 @@ func (c *Client) GetCapacity(ctx context.Context) (Capacity, error) {
 	if err != nil {
 		return Capacity{}, fmt.Errorf("get capacity: %w", err)
 	}
-	out := Capacity{GuestPoolCIDR: resp.GetGuestPoolCidr(), RuntimeProfile: defaultRuntimeProfile}
-	if len(resp.GetRuntimeProfiles()) > 0 {
-		profile := resp.GetRuntimeProfiles()[0]
-		out.RuntimeProfile = profile.GetRuntimeProfile()
-		out.TotalSlots = profile.GetTotalSlots()
-		out.LeasesHeld = profile.GetLeasesHeld()
-		out.LeasesAvailable = profile.GetLeasesAvailable()
-		out.VCPUsPerVM = profile.GetVcpusPerSlot()
-		out.MemoryMiBPerVM = profile.GetMemoryMibPerSlot()
-		out.RootfsProvisionedBytes = profile.GetRootfsProvisionedBytes()
+	out := Capacity{GuestPoolCIDR: resp.GetGuestPoolCidr()}
+	if pool := resp.GetPool(); pool != nil {
+		out.TotalSlots = pool.GetTotalSlots()
+		out.LeasesHeld = pool.GetLeasesHeld()
+		out.LeasesAvailable = pool.GetLeasesAvailable()
+		out.MaxVCPUsPerLease = pool.GetMaxVcpusPerLease()
+		out.MaxMemoryMiBPerLease = pool.GetMaxMemoryMibPerLease()
+		out.MaxRootDiskGiBPerLease = pool.GetMaxRootDiskGibPerLease()
+		out.RootfsProvisionedBytes = pool.GetRootfsProvisionedBytes()
 	}
 	return out, nil
 }
@@ -157,9 +156,7 @@ func leaseSpecToProto(spec LeaseSpec) *vmrpc.LeaseSpec {
 		mode = vmrpc.NetworkAttachMode_NETWORK_ATTACH_MODE_NONE
 	}
 	return &vmrpc.LeaseSpec{
-		RuntimeProfile:          spec.RuntimeProfile,
-		Vcpus:                   spec.VCPUs,
-		MemoryMib:               spec.MemoryMiB,
+		Resources:               vmResourcesToProto(spec.Resources),
 		FromCheckpointRef:       spec.FromCheckpointRef,
 		TtlSeconds:              spec.TTLSeconds,
 		TrustClass:              spec.TrustClass,

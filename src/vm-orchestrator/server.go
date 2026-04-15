@@ -187,7 +187,10 @@ func (s *APIServer) AcquireLease(ctx context.Context, req *vmrpc.AcquireLeaseReq
 		return resp, nil
 	}
 
-	spec := leaseSpecFromProto(req.GetSpec(), s.cfg)
+	spec, specErr := leaseSpecFromProto(req.GetSpec(), s.cfg)
+	if specErr != nil {
+		return nil, status.Error(codes.InvalidArgument, specErr.Error())
+	}
 	leaseID := newHostID()
 	actor := &vmActor{
 		leaseID: leaseID,
@@ -518,15 +521,15 @@ func (s *APIServer) GetCapacity(ctx context.Context, _ *vmrpc.GetCapacityRequest
 	}
 	return &vmrpc.GetCapacityResponse{
 		GuestPoolCidr: s.cfg.GuestPoolCIDR,
-		RuntimeProfiles: []*vmrpc.RuntimeProfileCapacity{{
-			RuntimeProfile:         defaultRuntimeProfile,
+		Pool: &vmrpc.VMPoolCapacity{
 			TotalSlots:             total,
 			LeasesHeld:             leasesHeld,
 			LeasesAvailable:        available,
-			VcpusPerSlot:           uint32(s.cfg.VCPUs),
-			MemoryMibPerSlot:       uint32(s.cfg.MemoryMiB),
+			MaxVcpusPerLease:       s.cfg.Bounds.MaxVCPUs,
+			MaxMemoryMibPerLease:   s.cfg.Bounds.MaxMemoryMiB,
+			MaxRootDiskGibPerLease: s.cfg.Bounds.MaxRootDiskGiB,
 			RootfsProvisionedBytes: rootfsBytes,
-		}},
+		},
 	}, nil
 }
 
@@ -582,19 +585,21 @@ func (a *vmActor) handleAcquire(callerCtx context.Context) acquireReply {
 	// rpc.AcquireLease. detachedTraceContext drops cancellation (the lease
 	// must outlive the RPC), but the trace/baggage ride through.
 	ctx := detachedTraceContext(callerCtx)
-	spec := normalizeLeaseSpec(a.spec, a.server.cfg)
+	spec, normErr := normalizeLeaseSpec(a.spec, a.server.cfg)
+	if normErr != nil {
+		return acquireReply{err: normErr}
+	}
 	a.spec = spec
 	acquiredAt := time.Now().UTC()
 	a.expires = acquiredAt.Add(time.Duration(spec.TTLSeconds) * time.Second)
 	if err := a.server.state.createLease(ctx, leaseSnapshot{
-		LeaseID:        a.leaseID,
-		State:          LeaseStateAcquiring,
-		Spec:           spec,
-		RuntimeProfile: spec.RuntimeProfile,
-		TrustClass:     spec.TrustClass,
-		Allowlist:      spec.CheckpointSaveAllowlist,
-		AcquiredAt:     acquiredAt,
-		ExpiresAt:      a.expires,
+		LeaseID:    a.leaseID,
+		State:      LeaseStateAcquiring,
+		Spec:       spec,
+		TrustClass: spec.TrustClass,
+		Allowlist:  spec.CheckpointSaveAllowlist,
+		AcquiredAt: acquiredAt,
+		ExpiresAt:  a.expires,
 	}); err != nil {
 		return acquireReply{err: err}
 	}
@@ -613,14 +618,14 @@ func (a *vmActor) handleAcquire(callerCtx context.Context) acquireReply {
 	}
 	a.server.logger.InfoContext(ctx, "lease ready", "lease_id", a.leaseID, "vm_ip", runtime.Network.GuestIP)
 	return acquireReply{record: LeaseRecord{
-		LeaseID:        a.leaseID,
-		State:          LeaseStateReady,
-		AcquiredAt:     acquiredAt,
-		ReadyAt:        readyAt,
-		ExpiresAt:      a.expires,
-		VMIP:           runtime.Network.GuestIP,
-		RuntimeProfile: spec.RuntimeProfile,
-		TrustClass:     spec.TrustClass,
+		LeaseID:    a.leaseID,
+		State:      LeaseStateReady,
+		AcquiredAt: acquiredAt,
+		ReadyAt:    readyAt,
+		ExpiresAt:  a.expires,
+		VMIP:       runtime.Network.GuestIP,
+		Resources:  spec.Resources,
+		TrustClass: spec.TrustClass,
 	}}
 }
 

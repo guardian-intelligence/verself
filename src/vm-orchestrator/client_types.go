@@ -1,6 +1,10 @@
 package vmorchestrator
 
-import "time"
+import (
+	"time"
+
+	"github.com/forge-metal/apiwire"
+)
 
 const DefaultSocketPath = "/run/vm-orchestrator/api.sock"
 
@@ -13,7 +17,7 @@ type LeaseRecord struct {
 	TerminalAt     time.Time
 	TerminalReason string
 	VMIP           string
-	RuntimeProfile string
+	Resources      apiwire.VMResources
 	TrustClass     string
 }
 
@@ -47,12 +51,12 @@ type LeaseEvent struct {
 
 type Capacity struct {
 	GuestPoolCIDR          string
-	RuntimeProfile         string
 	TotalSlots             uint32
 	LeasesHeld             uint32
 	LeasesAvailable        uint32
-	VCPUsPerVM             uint32
-	MemoryMiBPerVM         uint32
+	MaxVCPUsPerLease       uint32
+	MaxMemoryMiBPerLease   uint32
+	MaxRootDiskGiBPerLease uint32
 	RootfsProvisionedBytes uint64
 }
 

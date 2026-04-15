@@ -370,11 +370,79 @@ func (x *NetworkAttach) GetMode() NetworkAttachMode {
 	return NetworkAttachMode_NETWORK_ATTACH_MODE_UNSPECIFIED
 }
 
+// VMResources is the customer-requested VM shape. Canonical wire type;
+// see src/apiwire/vmresources.go for the Go-side mirror and validation.
+type VMResources struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Vcpus         uint32                 `protobuf:"varint,1,opt,name=vcpus,proto3" json:"vcpus,omitempty"`
+	MemoryMib     uint32                 `protobuf:"varint,2,opt,name=memory_mib,json=memoryMib,proto3" json:"memory_mib,omitempty"`
+	RootDiskGib   uint32                 `protobuf:"varint,3,opt,name=root_disk_gib,json=rootDiskGib,proto3" json:"root_disk_gib,omitempty"`
+	KernelImage   string                 `protobuf:"bytes,4,opt,name=kernel_image,json=kernelImage,proto3" json:"kernel_image,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VMResources) Reset() {
+	*x = VMResources{}
+	mi := &file_proto_v1_vm_service_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VMResources) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VMResources) ProtoMessage() {}
+
+func (x *VMResources) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_vm_service_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VMResources.ProtoReflect.Descriptor instead.
+func (*VMResources) Descriptor() ([]byte, []int) {
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *VMResources) GetVcpus() uint32 {
+	if x != nil {
+		return x.Vcpus
+	}
+	return 0
+}
+
+func (x *VMResources) GetMemoryMib() uint32 {
+	if x != nil {
+		return x.MemoryMib
+	}
+	return 0
+}
+
+func (x *VMResources) GetRootDiskGib() uint32 {
+	if x != nil {
+		return x.RootDiskGib
+	}
+	return 0
+}
+
+func (x *VMResources) GetKernelImage() string {
+	if x != nil {
+		return x.KernelImage
+	}
+	return ""
+}
+
 type LeaseSpec struct {
 	state                   protoimpl.MessageState `protogen:"open.v1"`
-	RuntimeProfile          string                 `protobuf:"bytes,1,opt,name=runtime_profile,json=runtimeProfile,proto3" json:"runtime_profile,omitempty"`
-	Vcpus                   uint32                 `protobuf:"varint,2,opt,name=vcpus,proto3" json:"vcpus,omitempty"`
-	MemoryMib               uint32                 `protobuf:"varint,3,opt,name=memory_mib,json=memoryMib,proto3" json:"memory_mib,omitempty"`
+	Resources               *VMResources           `protobuf:"bytes,1,opt,name=resources,proto3" json:"resources,omitempty"`
 	FromCheckpointRef       string                 `protobuf:"bytes,4,opt,name=from_checkpoint_ref,json=fromCheckpointRef,proto3" json:"from_checkpoint_ref,omitempty"`
 	TtlSeconds              uint64                 `protobuf:"varint,5,opt,name=ttl_seconds,json=ttlSeconds,proto3" json:"ttl_seconds,omitempty"`
 	TrustClass              string                 `protobuf:"bytes,6,opt,name=trust_class,json=trustClass,proto3" json:"trust_class,omitempty"`
@@ -386,7 +454,7 @@ type LeaseSpec struct {
 
 func (x *LeaseSpec) Reset() {
 	*x = LeaseSpec{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[1]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -398,7 +466,7 @@ func (x *LeaseSpec) String() string {
 func (*LeaseSpec) ProtoMessage() {}
 
 func (x *LeaseSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[1]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -411,28 +479,14 @@ func (x *LeaseSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LeaseSpec.ProtoReflect.Descriptor instead.
 func (*LeaseSpec) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{1}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *LeaseSpec) GetRuntimeProfile() string {
+func (x *LeaseSpec) GetResources() *VMResources {
 	if x != nil {
-		return x.RuntimeProfile
+		return x.Resources
 	}
-	return ""
-}
-
-func (x *LeaseSpec) GetVcpus() uint32 {
-	if x != nil {
-		return x.Vcpus
-	}
-	return 0
-}
-
-func (x *LeaseSpec) GetMemoryMib() uint32 {
-	if x != nil {
-		return x.MemoryMib
-	}
-	return 0
+	return nil
 }
 
 func (x *LeaseSpec) GetFromCheckpointRef() string {
@@ -480,7 +534,7 @@ type AcquireLeaseRequest struct {
 
 func (x *AcquireLeaseRequest) Reset() {
 	*x = AcquireLeaseRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[2]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -492,7 +546,7 @@ func (x *AcquireLeaseRequest) String() string {
 func (*AcquireLeaseRequest) ProtoMessage() {}
 
 func (x *AcquireLeaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[2]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -505,7 +559,7 @@ func (x *AcquireLeaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcquireLeaseRequest.ProtoReflect.Descriptor instead.
 func (*AcquireLeaseRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{2}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *AcquireLeaseRequest) GetIdempotencyKey() string {
@@ -529,14 +583,14 @@ type AcquireLeaseResponse struct {
 	AcquiredAtUnixNs uint64                 `protobuf:"varint,3,opt,name=acquired_at_unix_ns,json=acquiredAtUnixNs,proto3" json:"acquired_at_unix_ns,omitempty"`
 	ExpiresAtUnixNs  uint64                 `protobuf:"varint,4,opt,name=expires_at_unix_ns,json=expiresAtUnixNs,proto3" json:"expires_at_unix_ns,omitempty"`
 	VmIp             string                 `protobuf:"bytes,5,opt,name=vm_ip,json=vmIp,proto3" json:"vm_ip,omitempty"`
-	RuntimeProfile   string                 `protobuf:"bytes,6,opt,name=runtime_profile,json=runtimeProfile,proto3" json:"runtime_profile,omitempty"`
+	Resources        *VMResources           `protobuf:"bytes,6,opt,name=resources,proto3" json:"resources,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
 
 func (x *AcquireLeaseResponse) Reset() {
 	*x = AcquireLeaseResponse{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[3]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -548,7 +602,7 @@ func (x *AcquireLeaseResponse) String() string {
 func (*AcquireLeaseResponse) ProtoMessage() {}
 
 func (x *AcquireLeaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[3]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -561,7 +615,7 @@ func (x *AcquireLeaseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcquireLeaseResponse.ProtoReflect.Descriptor instead.
 func (*AcquireLeaseResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{3}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *AcquireLeaseResponse) GetLeaseId() string {
@@ -599,11 +653,11 @@ func (x *AcquireLeaseResponse) GetVmIp() string {
 	return ""
 }
 
-func (x *AcquireLeaseResponse) GetRuntimeProfile() string {
+func (x *AcquireLeaseResponse) GetResources() *VMResources {
 	if x != nil {
-		return x.RuntimeProfile
+		return x.Resources
 	}
-	return ""
+	return nil
 }
 
 type RenewLeaseRequest struct {
@@ -618,7 +672,7 @@ type RenewLeaseRequest struct {
 
 func (x *RenewLeaseRequest) Reset() {
 	*x = RenewLeaseRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[4]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -630,7 +684,7 @@ func (x *RenewLeaseRequest) String() string {
 func (*RenewLeaseRequest) ProtoMessage() {}
 
 func (x *RenewLeaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[4]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -643,7 +697,7 @@ func (x *RenewLeaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenewLeaseRequest.ProtoReflect.Descriptor instead.
 func (*RenewLeaseRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{4}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *RenewLeaseRequest) GetLeaseId() string {
@@ -684,7 +738,7 @@ type RenewLeaseResponse struct {
 
 func (x *RenewLeaseResponse) Reset() {
 	*x = RenewLeaseResponse{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[5]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -696,7 +750,7 @@ func (x *RenewLeaseResponse) String() string {
 func (*RenewLeaseResponse) ProtoMessage() {}
 
 func (x *RenewLeaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[5]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -709,7 +763,7 @@ func (x *RenewLeaseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenewLeaseResponse.ProtoReflect.Descriptor instead.
 func (*RenewLeaseResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{5}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *RenewLeaseResponse) GetLeaseId() string {
@@ -737,7 +791,7 @@ type ReleaseLeaseRequest struct {
 
 func (x *ReleaseLeaseRequest) Reset() {
 	*x = ReleaseLeaseRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[6]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -749,7 +803,7 @@ func (x *ReleaseLeaseRequest) String() string {
 func (*ReleaseLeaseRequest) ProtoMessage() {}
 
 func (x *ReleaseLeaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[6]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -762,7 +816,7 @@ func (x *ReleaseLeaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseLeaseRequest.ProtoReflect.Descriptor instead.
 func (*ReleaseLeaseRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{6}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ReleaseLeaseRequest) GetLeaseId() string {
@@ -797,7 +851,7 @@ type ReleaseLeaseResponse struct {
 
 func (x *ReleaseLeaseResponse) Reset() {
 	*x = ReleaseLeaseResponse{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[7]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -809,7 +863,7 @@ func (x *ReleaseLeaseResponse) String() string {
 func (*ReleaseLeaseResponse) ProtoMessage() {}
 
 func (x *ReleaseLeaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[7]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -822,7 +876,7 @@ func (x *ReleaseLeaseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseLeaseResponse.ProtoReflect.Descriptor instead.
 func (*ReleaseLeaseResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{7}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ReleaseLeaseResponse) GetLeaseId() string {
@@ -855,7 +909,7 @@ type GetLeaseRequest struct {
 
 func (x *GetLeaseRequest) Reset() {
 	*x = GetLeaseRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[8]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -867,7 +921,7 @@ func (x *GetLeaseRequest) String() string {
 func (*GetLeaseRequest) ProtoMessage() {}
 
 func (x *GetLeaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[8]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -880,7 +934,7 @@ func (x *GetLeaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetLeaseRequest.ProtoReflect.Descriptor instead.
 func (*GetLeaseRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{8}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetLeaseRequest) GetLeaseId() string {
@@ -900,7 +954,7 @@ type LeaseRecord struct {
 	TerminalAtUnixNs uint64                 `protobuf:"varint,6,opt,name=terminal_at_unix_ns,json=terminalAtUnixNs,proto3" json:"terminal_at_unix_ns,omitempty"`
 	TerminalReason   string                 `protobuf:"bytes,7,opt,name=terminal_reason,json=terminalReason,proto3" json:"terminal_reason,omitempty"`
 	VmIp             string                 `protobuf:"bytes,8,opt,name=vm_ip,json=vmIp,proto3" json:"vm_ip,omitempty"`
-	RuntimeProfile   string                 `protobuf:"bytes,9,opt,name=runtime_profile,json=runtimeProfile,proto3" json:"runtime_profile,omitempty"`
+	Resources        *VMResources           `protobuf:"bytes,9,opt,name=resources,proto3" json:"resources,omitempty"`
 	TrustClass       string                 `protobuf:"bytes,10,opt,name=trust_class,json=trustClass,proto3" json:"trust_class,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
@@ -908,7 +962,7 @@ type LeaseRecord struct {
 
 func (x *LeaseRecord) Reset() {
 	*x = LeaseRecord{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[9]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -920,7 +974,7 @@ func (x *LeaseRecord) String() string {
 func (*LeaseRecord) ProtoMessage() {}
 
 func (x *LeaseRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[9]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -933,7 +987,7 @@ func (x *LeaseRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LeaseRecord.ProtoReflect.Descriptor instead.
 func (*LeaseRecord) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{9}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *LeaseRecord) GetLeaseId() string {
@@ -992,11 +1046,11 @@ func (x *LeaseRecord) GetVmIp() string {
 	return ""
 }
 
-func (x *LeaseRecord) GetRuntimeProfile() string {
+func (x *LeaseRecord) GetResources() *VMResources {
 	if x != nil {
-		return x.RuntimeProfile
+		return x.Resources
 	}
-	return ""
+	return nil
 }
 
 func (x *LeaseRecord) GetTrustClass() string {
@@ -1015,7 +1069,7 @@ type GetLeaseResponse struct {
 
 func (x *GetLeaseResponse) Reset() {
 	*x = GetLeaseResponse{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[10]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1027,7 +1081,7 @@ func (x *GetLeaseResponse) String() string {
 func (*GetLeaseResponse) ProtoMessage() {}
 
 func (x *GetLeaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[10]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1040,7 +1094,7 @@ func (x *GetLeaseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetLeaseResponse.ProtoReflect.Descriptor instead.
 func (*GetLeaseResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{10}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *GetLeaseResponse) GetLease() *LeaseRecord {
@@ -1060,7 +1114,7 @@ type ListLeasesRequest struct {
 
 func (x *ListLeasesRequest) Reset() {
 	*x = ListLeasesRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[11]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1072,7 +1126,7 @@ func (x *ListLeasesRequest) String() string {
 func (*ListLeasesRequest) ProtoMessage() {}
 
 func (x *ListLeasesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[11]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1085,7 +1139,7 @@ func (x *ListLeasesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListLeasesRequest.ProtoReflect.Descriptor instead.
 func (*ListLeasesRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{11}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ListLeasesRequest) GetIncludeTerminal() bool {
@@ -1111,7 +1165,7 @@ type ListLeasesResponse struct {
 
 func (x *ListLeasesResponse) Reset() {
 	*x = ListLeasesResponse{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[12]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1123,7 +1177,7 @@ func (x *ListLeasesResponse) String() string {
 func (*ListLeasesResponse) ProtoMessage() {}
 
 func (x *ListLeasesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[12]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1136,7 +1190,7 @@ func (x *ListLeasesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListLeasesResponse.ProtoReflect.Descriptor instead.
 func (*ListLeasesResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{12}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ListLeasesResponse) GetLeases() []*LeaseRecord {
@@ -1158,7 +1212,7 @@ type StreamLeaseEventsRequest struct {
 
 func (x *StreamLeaseEventsRequest) Reset() {
 	*x = StreamLeaseEventsRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[13]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1170,7 +1224,7 @@ func (x *StreamLeaseEventsRequest) String() string {
 func (*StreamLeaseEventsRequest) ProtoMessage() {}
 
 func (x *StreamLeaseEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[13]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1183,7 +1237,7 @@ func (x *StreamLeaseEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamLeaseEventsRequest.ProtoReflect.Descriptor instead.
 func (*StreamLeaseEventsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{13}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *StreamLeaseEventsRequest) GetLeaseId() string {
@@ -1228,7 +1282,7 @@ type LeaseEvent struct {
 
 func (x *LeaseEvent) Reset() {
 	*x = LeaseEvent{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[14]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1240,7 +1294,7 @@ func (x *LeaseEvent) String() string {
 func (*LeaseEvent) ProtoMessage() {}
 
 func (x *LeaseEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[14]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1253,7 +1307,7 @@ func (x *LeaseEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LeaseEvent.ProtoReflect.Descriptor instead.
 func (*LeaseEvent) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{14}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *LeaseEvent) GetLeaseId() string {
@@ -1313,7 +1367,7 @@ type ExecSpec struct {
 
 func (x *ExecSpec) Reset() {
 	*x = ExecSpec{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[15]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1325,7 +1379,7 @@ func (x *ExecSpec) String() string {
 func (*ExecSpec) ProtoMessage() {}
 
 func (x *ExecSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[15]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1338,7 +1392,7 @@ func (x *ExecSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecSpec.ProtoReflect.Descriptor instead.
 func (*ExecSpec) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{15}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ExecSpec) GetArgv() []string {
@@ -1401,7 +1455,7 @@ type StartExecRequest struct {
 
 func (x *StartExecRequest) Reset() {
 	*x = StartExecRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[16]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1413,7 +1467,7 @@ func (x *StartExecRequest) String() string {
 func (*StartExecRequest) ProtoMessage() {}
 
 func (x *StartExecRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[16]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1426,7 +1480,7 @@ func (x *StartExecRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartExecRequest.ProtoReflect.Descriptor instead.
 func (*StartExecRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{16}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *StartExecRequest) GetLeaseId() string {
@@ -1462,7 +1516,7 @@ type StartExecResponse struct {
 
 func (x *StartExecResponse) Reset() {
 	*x = StartExecResponse{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[17]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1474,7 +1528,7 @@ func (x *StartExecResponse) String() string {
 func (*StartExecResponse) ProtoMessage() {}
 
 func (x *StartExecResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[17]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1487,7 +1541,7 @@ func (x *StartExecResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartExecResponse.ProtoReflect.Descriptor instead.
 func (*StartExecResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{17}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *StartExecResponse) GetLeaseId() string {
@@ -1530,7 +1584,7 @@ type CancelExecRequest struct {
 
 func (x *CancelExecRequest) Reset() {
 	*x = CancelExecRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[18]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1542,7 +1596,7 @@ func (x *CancelExecRequest) String() string {
 func (*CancelExecRequest) ProtoMessage() {}
 
 func (x *CancelExecRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[18]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1555,7 +1609,7 @@ func (x *CancelExecRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelExecRequest.ProtoReflect.Descriptor instead.
 func (*CancelExecRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{18}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *CancelExecRequest) GetLeaseId() string {
@@ -1598,7 +1652,7 @@ type CancelExecResponse struct {
 
 func (x *CancelExecResponse) Reset() {
 	*x = CancelExecResponse{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[19]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1610,7 +1664,7 @@ func (x *CancelExecResponse) String() string {
 func (*CancelExecResponse) ProtoMessage() {}
 
 func (x *CancelExecResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[19]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1623,7 +1677,7 @@ func (x *CancelExecResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelExecResponse.ProtoReflect.Descriptor instead.
 func (*CancelExecResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{19}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *CancelExecResponse) GetLeaseId() string {
@@ -1665,7 +1719,7 @@ type GetExecRequest struct {
 
 func (x *GetExecRequest) Reset() {
 	*x = GetExecRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[20]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1677,7 +1731,7 @@ func (x *GetExecRequest) String() string {
 func (*GetExecRequest) ProtoMessage() {}
 
 func (x *GetExecRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[20]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1690,7 +1744,7 @@ func (x *GetExecRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetExecRequest.ProtoReflect.Descriptor instead.
 func (*GetExecRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{20}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *GetExecRequest) GetLeaseId() string {
@@ -1725,7 +1779,7 @@ type WaitExecRequest struct {
 
 func (x *WaitExecRequest) Reset() {
 	*x = WaitExecRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[21]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1737,7 +1791,7 @@ func (x *WaitExecRequest) String() string {
 func (*WaitExecRequest) ProtoMessage() {}
 
 func (x *WaitExecRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[21]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1750,7 +1804,7 @@ func (x *WaitExecRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WaitExecRequest.ProtoReflect.Descriptor instead.
 func (*WaitExecRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{21}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *WaitExecRequest) GetLeaseId() string {
@@ -1798,7 +1852,7 @@ type ExecRecord struct {
 
 func (x *ExecRecord) Reset() {
 	*x = ExecRecord{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[22]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1810,7 +1864,7 @@ func (x *ExecRecord) String() string {
 func (*ExecRecord) ProtoMessage() {}
 
 func (x *ExecRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[22]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1823,7 +1877,7 @@ func (x *ExecRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecRecord.ProtoReflect.Descriptor instead.
 func (*ExecRecord) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{22}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ExecRecord) GetLeaseId() string {
@@ -1947,7 +2001,7 @@ type GetExecResponse struct {
 
 func (x *GetExecResponse) Reset() {
 	*x = GetExecResponse{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[23]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1959,7 +2013,7 @@ func (x *GetExecResponse) String() string {
 func (*GetExecResponse) ProtoMessage() {}
 
 func (x *GetExecResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[23]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1972,7 +2026,7 @@ func (x *GetExecResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetExecResponse.ProtoReflect.Descriptor instead.
 func (*GetExecResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{23}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *GetExecResponse) GetExec() *ExecRecord {
@@ -1991,7 +2045,7 @@ type WaitExecResponse struct {
 
 func (x *WaitExecResponse) Reset() {
 	*x = WaitExecResponse{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[24]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2003,7 +2057,7 @@ func (x *WaitExecResponse) String() string {
 func (*WaitExecResponse) ProtoMessage() {}
 
 func (x *WaitExecResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[24]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2016,7 +2070,7 @@ func (x *WaitExecResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WaitExecResponse.ProtoReflect.Descriptor instead.
 func (*WaitExecResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{24}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *WaitExecResponse) GetExec() *ExecRecord {
@@ -2037,7 +2091,7 @@ type SaveCheckpointRequest struct {
 
 func (x *SaveCheckpointRequest) Reset() {
 	*x = SaveCheckpointRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[25]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2049,7 +2103,7 @@ func (x *SaveCheckpointRequest) String() string {
 func (*SaveCheckpointRequest) ProtoMessage() {}
 
 func (x *SaveCheckpointRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[25]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2062,7 +2116,7 @@ func (x *SaveCheckpointRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveCheckpointRequest.ProtoReflect.Descriptor instead.
 func (*SaveCheckpointRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{25}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *SaveCheckpointRequest) GetLeaseId() string {
@@ -2098,7 +2152,7 @@ type SaveCheckpointResponse struct {
 
 func (x *SaveCheckpointResponse) Reset() {
 	*x = SaveCheckpointResponse{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[26]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2110,7 +2164,7 @@ func (x *SaveCheckpointResponse) String() string {
 func (*SaveCheckpointResponse) ProtoMessage() {}
 
 func (x *SaveCheckpointResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[26]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2123,7 +2177,7 @@ func (x *SaveCheckpointResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveCheckpointResponse.ProtoReflect.Descriptor instead.
 func (*SaveCheckpointResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{26}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *SaveCheckpointResponse) GetLeaseId() string {
@@ -2170,7 +2224,7 @@ type VMMetrics struct {
 
 func (x *VMMetrics) Reset() {
 	*x = VMMetrics{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[27]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2182,7 +2236,7 @@ func (x *VMMetrics) String() string {
 func (*VMMetrics) ProtoMessage() {}
 
 func (x *VMMetrics) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[27]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2195,7 +2249,7 @@ func (x *VMMetrics) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VMMetrics.ProtoReflect.Descriptor instead.
 func (*VMMetrics) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{27}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *VMMetrics) GetBootTimeUs() uint64 {
@@ -2254,34 +2308,38 @@ func (x *VMMetrics) GetVcpuExitCount() uint64 {
 	return 0
 }
 
-type RuntimeProfileCapacity struct {
+// VMPoolCapacity is the per-host capacity advertised by vm-orchestrator.
+// It replaces the old RuntimeProfileCapacity: there is one pool per host,
+// and customer shapes come from VMResources at AcquireLease time — not
+// from a fixed list of named profiles.
+type VMPoolCapacity struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
-	RuntimeProfile         string                 `protobuf:"bytes,1,opt,name=runtime_profile,json=runtimeProfile,proto3" json:"runtime_profile,omitempty"`
-	TotalSlots             uint32                 `protobuf:"varint,2,opt,name=total_slots,json=totalSlots,proto3" json:"total_slots,omitempty"`
-	LeasesHeld             uint32                 `protobuf:"varint,3,opt,name=leases_held,json=leasesHeld,proto3" json:"leases_held,omitempty"`
-	LeasesAvailable        uint32                 `protobuf:"varint,4,opt,name=leases_available,json=leasesAvailable,proto3" json:"leases_available,omitempty"`
-	VcpusPerSlot           uint32                 `protobuf:"varint,5,opt,name=vcpus_per_slot,json=vcpusPerSlot,proto3" json:"vcpus_per_slot,omitempty"`
-	MemoryMibPerSlot       uint32                 `protobuf:"varint,6,opt,name=memory_mib_per_slot,json=memoryMibPerSlot,proto3" json:"memory_mib_per_slot,omitempty"`
+	TotalSlots             uint32                 `protobuf:"varint,1,opt,name=total_slots,json=totalSlots,proto3" json:"total_slots,omitempty"`
+	LeasesHeld             uint32                 `protobuf:"varint,2,opt,name=leases_held,json=leasesHeld,proto3" json:"leases_held,omitempty"`
+	LeasesAvailable        uint32                 `protobuf:"varint,3,opt,name=leases_available,json=leasesAvailable,proto3" json:"leases_available,omitempty"`
+	MaxVcpusPerLease       uint32                 `protobuf:"varint,4,opt,name=max_vcpus_per_lease,json=maxVcpusPerLease,proto3" json:"max_vcpus_per_lease,omitempty"`
+	MaxMemoryMibPerLease   uint32                 `protobuf:"varint,5,opt,name=max_memory_mib_per_lease,json=maxMemoryMibPerLease,proto3" json:"max_memory_mib_per_lease,omitempty"`
+	MaxRootDiskGibPerLease uint32                 `protobuf:"varint,6,opt,name=max_root_disk_gib_per_lease,json=maxRootDiskGibPerLease,proto3" json:"max_root_disk_gib_per_lease,omitempty"`
 	RootfsProvisionedBytes uint64                 `protobuf:"varint,7,opt,name=rootfs_provisioned_bytes,json=rootfsProvisionedBytes,proto3" json:"rootfs_provisioned_bytes,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
 
-func (x *RuntimeProfileCapacity) Reset() {
-	*x = RuntimeProfileCapacity{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[28]
+func (x *VMPoolCapacity) Reset() {
+	*x = VMPoolCapacity{}
+	mi := &file_proto_v1_vm_service_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *RuntimeProfileCapacity) String() string {
+func (x *VMPoolCapacity) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*RuntimeProfileCapacity) ProtoMessage() {}
+func (*VMPoolCapacity) ProtoMessage() {}
 
-func (x *RuntimeProfileCapacity) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[28]
+func (x *VMPoolCapacity) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_vm_service_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2292,54 +2350,54 @@ func (x *RuntimeProfileCapacity) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use RuntimeProfileCapacity.ProtoReflect.Descriptor instead.
-func (*RuntimeProfileCapacity) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{28}
+// Deprecated: Use VMPoolCapacity.ProtoReflect.Descriptor instead.
+func (*VMPoolCapacity) Descriptor() ([]byte, []int) {
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{29}
 }
 
-func (x *RuntimeProfileCapacity) GetRuntimeProfile() string {
-	if x != nil {
-		return x.RuntimeProfile
-	}
-	return ""
-}
-
-func (x *RuntimeProfileCapacity) GetTotalSlots() uint32 {
+func (x *VMPoolCapacity) GetTotalSlots() uint32 {
 	if x != nil {
 		return x.TotalSlots
 	}
 	return 0
 }
 
-func (x *RuntimeProfileCapacity) GetLeasesHeld() uint32 {
+func (x *VMPoolCapacity) GetLeasesHeld() uint32 {
 	if x != nil {
 		return x.LeasesHeld
 	}
 	return 0
 }
 
-func (x *RuntimeProfileCapacity) GetLeasesAvailable() uint32 {
+func (x *VMPoolCapacity) GetLeasesAvailable() uint32 {
 	if x != nil {
 		return x.LeasesAvailable
 	}
 	return 0
 }
 
-func (x *RuntimeProfileCapacity) GetVcpusPerSlot() uint32 {
+func (x *VMPoolCapacity) GetMaxVcpusPerLease() uint32 {
 	if x != nil {
-		return x.VcpusPerSlot
+		return x.MaxVcpusPerLease
 	}
 	return 0
 }
 
-func (x *RuntimeProfileCapacity) GetMemoryMibPerSlot() uint32 {
+func (x *VMPoolCapacity) GetMaxMemoryMibPerLease() uint32 {
 	if x != nil {
-		return x.MemoryMibPerSlot
+		return x.MaxMemoryMibPerLease
 	}
 	return 0
 }
 
-func (x *RuntimeProfileCapacity) GetRootfsProvisionedBytes() uint64 {
+func (x *VMPoolCapacity) GetMaxRootDiskGibPerLease() uint32 {
+	if x != nil {
+		return x.MaxRootDiskGibPerLease
+	}
+	return 0
+}
+
+func (x *VMPoolCapacity) GetRootfsProvisionedBytes() uint64 {
 	if x != nil {
 		return x.RootfsProvisionedBytes
 	}
@@ -2354,7 +2412,7 @@ type GetCapacityRequest struct {
 
 func (x *GetCapacityRequest) Reset() {
 	*x = GetCapacityRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[29]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2366,7 +2424,7 @@ func (x *GetCapacityRequest) String() string {
 func (*GetCapacityRequest) ProtoMessage() {}
 
 func (x *GetCapacityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[29]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2379,20 +2437,20 @@ func (x *GetCapacityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCapacityRequest.ProtoReflect.Descriptor instead.
 func (*GetCapacityRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{29}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{30}
 }
 
 type GetCapacityResponse struct {
-	state           protoimpl.MessageState    `protogen:"open.v1"`
-	GuestPoolCidr   string                    `protobuf:"bytes,1,opt,name=guest_pool_cidr,json=guestPoolCidr,proto3" json:"guest_pool_cidr,omitempty"`
-	RuntimeProfiles []*RuntimeProfileCapacity `protobuf:"bytes,2,rep,name=runtime_profiles,json=runtimeProfiles,proto3" json:"runtime_profiles,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	GuestPoolCidr string                 `protobuf:"bytes,1,opt,name=guest_pool_cidr,json=guestPoolCidr,proto3" json:"guest_pool_cidr,omitempty"`
+	Pool          *VMPoolCapacity        `protobuf:"bytes,2,opt,name=pool,proto3" json:"pool,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetCapacityResponse) Reset() {
 	*x = GetCapacityResponse{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[30]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2404,7 +2462,7 @@ func (x *GetCapacityResponse) String() string {
 func (*GetCapacityResponse) ProtoMessage() {}
 
 func (x *GetCapacityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[30]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2417,7 +2475,7 @@ func (x *GetCapacityResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCapacityResponse.ProtoReflect.Descriptor instead.
 func (*GetCapacityResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{30}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *GetCapacityResponse) GetGuestPoolCidr() string {
@@ -2427,9 +2485,9 @@ func (x *GetCapacityResponse) GetGuestPoolCidr() string {
 	return ""
 }
 
-func (x *GetCapacityResponse) GetRuntimeProfiles() []*RuntimeProfileCapacity {
+func (x *GetCapacityResponse) GetPool() *VMPoolCapacity {
 	if x != nil {
-		return x.RuntimeProfiles
+		return x.Pool
 	}
 	return nil
 }
@@ -2440,12 +2498,15 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\n" +
 	"\x19proto/v1/vm_service.proto\x12\x1eforge_metal.vm_orchestrator.v1\"V\n" +
 	"\rNetworkAttach\x12E\n" +
-	"\x04mode\x18\x01 \x01(\x0e21.forge_metal.vm_orchestrator.v1.NetworkAttachModeR\x04mode\"\xe0\x02\n" +
-	"\tLeaseSpec\x12'\n" +
-	"\x0fruntime_profile\x18\x01 \x01(\tR\x0eruntimeProfile\x12\x14\n" +
-	"\x05vcpus\x18\x02 \x01(\rR\x05vcpus\x12\x1d\n" +
+	"\x04mode\x18\x01 \x01(\x0e21.forge_metal.vm_orchestrator.v1.NetworkAttachModeR\x04mode\"\x89\x01\n" +
+	"\vVMResources\x12\x14\n" +
+	"\x05vcpus\x18\x01 \x01(\rR\x05vcpus\x12\x1d\n" +
 	"\n" +
-	"memory_mib\x18\x03 \x01(\rR\tmemoryMib\x12.\n" +
+	"memory_mib\x18\x02 \x01(\rR\tmemoryMib\x12\"\n" +
+	"\rroot_disk_gib\x18\x03 \x01(\rR\vrootDiskGib\x12!\n" +
+	"\fkernel_image\x18\x04 \x01(\tR\vkernelImage\"\xcd\x02\n" +
+	"\tLeaseSpec\x12I\n" +
+	"\tresources\x18\x01 \x01(\v2+.forge_metal.vm_orchestrator.v1.VMResourcesR\tresources\x12.\n" +
 	"\x13from_checkpoint_ref\x18\x04 \x01(\tR\x11fromCheckpointRef\x12\x1f\n" +
 	"\vttl_seconds\x18\x05 \x01(\x04R\n" +
 	"ttlSeconds\x12\x1f\n" +
@@ -2455,14 +2516,14 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\anetwork\x18\b \x01(\v2-.forge_metal.vm_orchestrator.v1.NetworkAttachR\anetwork\"}\n" +
 	"\x13AcquireLeaseRequest\x12'\n" +
 	"\x0fidempotency_key\x18\x01 \x01(\tR\x0eidempotencyKey\x12=\n" +
-	"\x04spec\x18\x02 \x01(\v2).forge_metal.vm_orchestrator.v1.LeaseSpecR\x04spec\"\x8d\x02\n" +
+	"\x04spec\x18\x02 \x01(\v2).forge_metal.vm_orchestrator.v1.LeaseSpecR\x04spec\"\xaf\x02\n" +
 	"\x14AcquireLeaseResponse\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12@\n" +
 	"\x05state\x18\x02 \x01(\x0e2*.forge_metal.vm_orchestrator.v1.LeaseStateR\x05state\x12-\n" +
 	"\x13acquired_at_unix_ns\x18\x03 \x01(\x04R\x10acquiredAtUnixNs\x12+\n" +
 	"\x12expires_at_unix_ns\x18\x04 \x01(\x04R\x0fexpiresAtUnixNs\x12\x13\n" +
-	"\x05vm_ip\x18\x05 \x01(\tR\x04vmIp\x12'\n" +
-	"\x0fruntime_profile\x18\x06 \x01(\tR\x0eruntimeProfile\"\xba\x01\n" +
+	"\x05vm_ip\x18\x05 \x01(\tR\x04vmIp\x12I\n" +
+	"\tresources\x18\x06 \x01(\v2+.forge_metal.vm_orchestrator.v1.VMResourcesR\tresources\"\xba\x01\n" +
 	"\x11RenewLeaseRequest\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12'\n" +
 	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\x12%\n" +
@@ -2480,7 +2541,7 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\x05state\x18\x02 \x01(\x0e2*.forge_metal.vm_orchestrator.v1.LeaseStateR\x05state\x12-\n" +
 	"\x13released_at_unix_ns\x18\x03 \x01(\x04R\x10releasedAtUnixNs\",\n" +
 	"\x0fGetLeaseRequest\x12\x19\n" +
-	"\blease_id\x18\x01 \x01(\tR\aleaseId\"\xa6\x03\n" +
+	"\blease_id\x18\x01 \x01(\tR\aleaseId\"\xc8\x03\n" +
 	"\vLeaseRecord\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12@\n" +
 	"\x05state\x18\x02 \x01(\x0e2*.forge_metal.vm_orchestrator.v1.LeaseStateR\x05state\x12-\n" +
@@ -2489,8 +2550,8 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\x12expires_at_unix_ns\x18\x05 \x01(\x04R\x0fexpiresAtUnixNs\x12-\n" +
 	"\x13terminal_at_unix_ns\x18\x06 \x01(\x04R\x10terminalAtUnixNs\x12'\n" +
 	"\x0fterminal_reason\x18\a \x01(\tR\x0eterminalReason\x12\x13\n" +
-	"\x05vm_ip\x18\b \x01(\tR\x04vmIp\x12'\n" +
-	"\x0fruntime_profile\x18\t \x01(\tR\x0eruntimeProfile\x12\x1f\n" +
+	"\x05vm_ip\x18\b \x01(\tR\x04vmIp\x12I\n" +
+	"\tresources\x18\t \x01(\v2+.forge_metal.vm_orchestrator.v1.VMResourcesR\tresources\x12\x1f\n" +
 	"\vtrust_class\x18\n" +
 	" \x01(\tR\n" +
 	"trustClass\"U\n" +
@@ -2604,21 +2665,21 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"netRxBytes\x12 \n" +
 	"\fnet_tx_bytes\x18\a \x01(\x04R\n" +
 	"netTxBytes\x12&\n" +
-	"\x0fvcpu_exit_count\x18\b \x01(\x04R\rvcpuExitCount\"\xbd\x02\n" +
-	"\x16RuntimeProfileCapacity\x12'\n" +
-	"\x0fruntime_profile\x18\x01 \x01(\tR\x0eruntimeProfile\x12\x1f\n" +
-	"\vtotal_slots\x18\x02 \x01(\rR\n" +
+	"\x0fvcpu_exit_count\x18\b \x01(\x04R\rvcpuExitCount\"\xdb\x02\n" +
+	"\x0eVMPoolCapacity\x12\x1f\n" +
+	"\vtotal_slots\x18\x01 \x01(\rR\n" +
 	"totalSlots\x12\x1f\n" +
-	"\vleases_held\x18\x03 \x01(\rR\n" +
+	"\vleases_held\x18\x02 \x01(\rR\n" +
 	"leasesHeld\x12)\n" +
-	"\x10leases_available\x18\x04 \x01(\rR\x0fleasesAvailable\x12$\n" +
-	"\x0evcpus_per_slot\x18\x05 \x01(\rR\fvcpusPerSlot\x12-\n" +
-	"\x13memory_mib_per_slot\x18\x06 \x01(\rR\x10memoryMibPerSlot\x128\n" +
+	"\x10leases_available\x18\x03 \x01(\rR\x0fleasesAvailable\x12-\n" +
+	"\x13max_vcpus_per_lease\x18\x04 \x01(\rR\x10maxVcpusPerLease\x126\n" +
+	"\x18max_memory_mib_per_lease\x18\x05 \x01(\rR\x14maxMemoryMibPerLease\x12;\n" +
+	"\x1bmax_root_disk_gib_per_lease\x18\x06 \x01(\rR\x16maxRootDiskGibPerLease\x128\n" +
 	"\x18rootfs_provisioned_bytes\x18\a \x01(\x04R\x16rootfsProvisionedBytes\"\x14\n" +
-	"\x12GetCapacityRequest\"\xa0\x01\n" +
+	"\x12GetCapacityRequest\"\x81\x01\n" +
 	"\x13GetCapacityResponse\x12&\n" +
-	"\x0fguest_pool_cidr\x18\x01 \x01(\tR\rguestPoolCidr\x12a\n" +
-	"\x10runtime_profiles\x18\x02 \x03(\v26.forge_metal.vm_orchestrator.v1.RuntimeProfileCapacityR\x0fruntimeProfiles*\xc1\x01\n" +
+	"\x0fguest_pool_cidr\x18\x01 \x01(\tR\rguestPoolCidr\x12B\n" +
+	"\x04pool\x18\x02 \x01(\v2..forge_metal.vm_orchestrator.v1.VMPoolCapacityR\x04pool*\xc1\x01\n" +
 	"\n" +
 	"LeaseState\x12\x1b\n" +
 	"\x17LEASE_STATE_UNSPECIFIED\x10\x00\x12\x19\n" +
@@ -2691,7 +2752,7 @@ func file_proto_v1_vm_service_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_v1_vm_service_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_proto_v1_vm_service_proto_msgTypes = make([]protoimpl.MessageInfo, 33)
+var file_proto_v1_vm_service_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
 var file_proto_v1_vm_service_proto_goTypes = []any{
 	(LeaseState)(0),                  // 0: forge_metal.vm_orchestrator.v1.LeaseState
 	(ExecState)(0),                   // 1: forge_metal.vm_orchestrator.v1.ExecState
@@ -2699,91 +2760,95 @@ var file_proto_v1_vm_service_proto_goTypes = []any{
 	(NetworkAttachMode)(0),           // 3: forge_metal.vm_orchestrator.v1.NetworkAttachMode
 	(LeaseEventType)(0),              // 4: forge_metal.vm_orchestrator.v1.LeaseEventType
 	(*NetworkAttach)(nil),            // 5: forge_metal.vm_orchestrator.v1.NetworkAttach
-	(*LeaseSpec)(nil),                // 6: forge_metal.vm_orchestrator.v1.LeaseSpec
-	(*AcquireLeaseRequest)(nil),      // 7: forge_metal.vm_orchestrator.v1.AcquireLeaseRequest
-	(*AcquireLeaseResponse)(nil),     // 8: forge_metal.vm_orchestrator.v1.AcquireLeaseResponse
-	(*RenewLeaseRequest)(nil),        // 9: forge_metal.vm_orchestrator.v1.RenewLeaseRequest
-	(*RenewLeaseResponse)(nil),       // 10: forge_metal.vm_orchestrator.v1.RenewLeaseResponse
-	(*ReleaseLeaseRequest)(nil),      // 11: forge_metal.vm_orchestrator.v1.ReleaseLeaseRequest
-	(*ReleaseLeaseResponse)(nil),     // 12: forge_metal.vm_orchestrator.v1.ReleaseLeaseResponse
-	(*GetLeaseRequest)(nil),          // 13: forge_metal.vm_orchestrator.v1.GetLeaseRequest
-	(*LeaseRecord)(nil),              // 14: forge_metal.vm_orchestrator.v1.LeaseRecord
-	(*GetLeaseResponse)(nil),         // 15: forge_metal.vm_orchestrator.v1.GetLeaseResponse
-	(*ListLeasesRequest)(nil),        // 16: forge_metal.vm_orchestrator.v1.ListLeasesRequest
-	(*ListLeasesResponse)(nil),       // 17: forge_metal.vm_orchestrator.v1.ListLeasesResponse
-	(*StreamLeaseEventsRequest)(nil), // 18: forge_metal.vm_orchestrator.v1.StreamLeaseEventsRequest
-	(*LeaseEvent)(nil),               // 19: forge_metal.vm_orchestrator.v1.LeaseEvent
-	(*ExecSpec)(nil),                 // 20: forge_metal.vm_orchestrator.v1.ExecSpec
-	(*StartExecRequest)(nil),         // 21: forge_metal.vm_orchestrator.v1.StartExecRequest
-	(*StartExecResponse)(nil),        // 22: forge_metal.vm_orchestrator.v1.StartExecResponse
-	(*CancelExecRequest)(nil),        // 23: forge_metal.vm_orchestrator.v1.CancelExecRequest
-	(*CancelExecResponse)(nil),       // 24: forge_metal.vm_orchestrator.v1.CancelExecResponse
-	(*GetExecRequest)(nil),           // 25: forge_metal.vm_orchestrator.v1.GetExecRequest
-	(*WaitExecRequest)(nil),          // 26: forge_metal.vm_orchestrator.v1.WaitExecRequest
-	(*ExecRecord)(nil),               // 27: forge_metal.vm_orchestrator.v1.ExecRecord
-	(*GetExecResponse)(nil),          // 28: forge_metal.vm_orchestrator.v1.GetExecResponse
-	(*WaitExecResponse)(nil),         // 29: forge_metal.vm_orchestrator.v1.WaitExecResponse
-	(*SaveCheckpointRequest)(nil),    // 30: forge_metal.vm_orchestrator.v1.SaveCheckpointRequest
-	(*SaveCheckpointResponse)(nil),   // 31: forge_metal.vm_orchestrator.v1.SaveCheckpointResponse
-	(*VMMetrics)(nil),                // 32: forge_metal.vm_orchestrator.v1.VMMetrics
-	(*RuntimeProfileCapacity)(nil),   // 33: forge_metal.vm_orchestrator.v1.RuntimeProfileCapacity
-	(*GetCapacityRequest)(nil),       // 34: forge_metal.vm_orchestrator.v1.GetCapacityRequest
-	(*GetCapacityResponse)(nil),      // 35: forge_metal.vm_orchestrator.v1.GetCapacityResponse
-	nil,                              // 36: forge_metal.vm_orchestrator.v1.LeaseEvent.AttrsEntry
-	nil,                              // 37: forge_metal.vm_orchestrator.v1.ExecSpec.EnvEntry
+	(*VMResources)(nil),              // 6: forge_metal.vm_orchestrator.v1.VMResources
+	(*LeaseSpec)(nil),                // 7: forge_metal.vm_orchestrator.v1.LeaseSpec
+	(*AcquireLeaseRequest)(nil),      // 8: forge_metal.vm_orchestrator.v1.AcquireLeaseRequest
+	(*AcquireLeaseResponse)(nil),     // 9: forge_metal.vm_orchestrator.v1.AcquireLeaseResponse
+	(*RenewLeaseRequest)(nil),        // 10: forge_metal.vm_orchestrator.v1.RenewLeaseRequest
+	(*RenewLeaseResponse)(nil),       // 11: forge_metal.vm_orchestrator.v1.RenewLeaseResponse
+	(*ReleaseLeaseRequest)(nil),      // 12: forge_metal.vm_orchestrator.v1.ReleaseLeaseRequest
+	(*ReleaseLeaseResponse)(nil),     // 13: forge_metal.vm_orchestrator.v1.ReleaseLeaseResponse
+	(*GetLeaseRequest)(nil),          // 14: forge_metal.vm_orchestrator.v1.GetLeaseRequest
+	(*LeaseRecord)(nil),              // 15: forge_metal.vm_orchestrator.v1.LeaseRecord
+	(*GetLeaseResponse)(nil),         // 16: forge_metal.vm_orchestrator.v1.GetLeaseResponse
+	(*ListLeasesRequest)(nil),        // 17: forge_metal.vm_orchestrator.v1.ListLeasesRequest
+	(*ListLeasesResponse)(nil),       // 18: forge_metal.vm_orchestrator.v1.ListLeasesResponse
+	(*StreamLeaseEventsRequest)(nil), // 19: forge_metal.vm_orchestrator.v1.StreamLeaseEventsRequest
+	(*LeaseEvent)(nil),               // 20: forge_metal.vm_orchestrator.v1.LeaseEvent
+	(*ExecSpec)(nil),                 // 21: forge_metal.vm_orchestrator.v1.ExecSpec
+	(*StartExecRequest)(nil),         // 22: forge_metal.vm_orchestrator.v1.StartExecRequest
+	(*StartExecResponse)(nil),        // 23: forge_metal.vm_orchestrator.v1.StartExecResponse
+	(*CancelExecRequest)(nil),        // 24: forge_metal.vm_orchestrator.v1.CancelExecRequest
+	(*CancelExecResponse)(nil),       // 25: forge_metal.vm_orchestrator.v1.CancelExecResponse
+	(*GetExecRequest)(nil),           // 26: forge_metal.vm_orchestrator.v1.GetExecRequest
+	(*WaitExecRequest)(nil),          // 27: forge_metal.vm_orchestrator.v1.WaitExecRequest
+	(*ExecRecord)(nil),               // 28: forge_metal.vm_orchestrator.v1.ExecRecord
+	(*GetExecResponse)(nil),          // 29: forge_metal.vm_orchestrator.v1.GetExecResponse
+	(*WaitExecResponse)(nil),         // 30: forge_metal.vm_orchestrator.v1.WaitExecResponse
+	(*SaveCheckpointRequest)(nil),    // 31: forge_metal.vm_orchestrator.v1.SaveCheckpointRequest
+	(*SaveCheckpointResponse)(nil),   // 32: forge_metal.vm_orchestrator.v1.SaveCheckpointResponse
+	(*VMMetrics)(nil),                // 33: forge_metal.vm_orchestrator.v1.VMMetrics
+	(*VMPoolCapacity)(nil),           // 34: forge_metal.vm_orchestrator.v1.VMPoolCapacity
+	(*GetCapacityRequest)(nil),       // 35: forge_metal.vm_orchestrator.v1.GetCapacityRequest
+	(*GetCapacityResponse)(nil),      // 36: forge_metal.vm_orchestrator.v1.GetCapacityResponse
+	nil,                              // 37: forge_metal.vm_orchestrator.v1.LeaseEvent.AttrsEntry
+	nil,                              // 38: forge_metal.vm_orchestrator.v1.ExecSpec.EnvEntry
 }
 var file_proto_v1_vm_service_proto_depIdxs = []int32{
 	3,  // 0: forge_metal.vm_orchestrator.v1.NetworkAttach.mode:type_name -> forge_metal.vm_orchestrator.v1.NetworkAttachMode
-	5,  // 1: forge_metal.vm_orchestrator.v1.LeaseSpec.network:type_name -> forge_metal.vm_orchestrator.v1.NetworkAttach
-	6,  // 2: forge_metal.vm_orchestrator.v1.AcquireLeaseRequest.spec:type_name -> forge_metal.vm_orchestrator.v1.LeaseSpec
-	0,  // 3: forge_metal.vm_orchestrator.v1.AcquireLeaseResponse.state:type_name -> forge_metal.vm_orchestrator.v1.LeaseState
-	0,  // 4: forge_metal.vm_orchestrator.v1.ReleaseLeaseResponse.state:type_name -> forge_metal.vm_orchestrator.v1.LeaseState
-	0,  // 5: forge_metal.vm_orchestrator.v1.LeaseRecord.state:type_name -> forge_metal.vm_orchestrator.v1.LeaseState
-	14, // 6: forge_metal.vm_orchestrator.v1.GetLeaseResponse.lease:type_name -> forge_metal.vm_orchestrator.v1.LeaseRecord
-	14, // 7: forge_metal.vm_orchestrator.v1.ListLeasesResponse.leases:type_name -> forge_metal.vm_orchestrator.v1.LeaseRecord
-	4,  // 8: forge_metal.vm_orchestrator.v1.LeaseEvent.event_type:type_name -> forge_metal.vm_orchestrator.v1.LeaseEventType
-	36, // 9: forge_metal.vm_orchestrator.v1.LeaseEvent.attrs:type_name -> forge_metal.vm_orchestrator.v1.LeaseEvent.AttrsEntry
-	37, // 10: forge_metal.vm_orchestrator.v1.ExecSpec.env:type_name -> forge_metal.vm_orchestrator.v1.ExecSpec.EnvEntry
-	2,  // 11: forge_metal.vm_orchestrator.v1.ExecSpec.stdin:type_name -> forge_metal.vm_orchestrator.v1.StdioMode
-	2,  // 12: forge_metal.vm_orchestrator.v1.ExecSpec.stdout:type_name -> forge_metal.vm_orchestrator.v1.StdioMode
-	2,  // 13: forge_metal.vm_orchestrator.v1.ExecSpec.stderr:type_name -> forge_metal.vm_orchestrator.v1.StdioMode
-	20, // 14: forge_metal.vm_orchestrator.v1.StartExecRequest.spec:type_name -> forge_metal.vm_orchestrator.v1.ExecSpec
-	1,  // 15: forge_metal.vm_orchestrator.v1.StartExecResponse.state:type_name -> forge_metal.vm_orchestrator.v1.ExecState
-	1,  // 16: forge_metal.vm_orchestrator.v1.CancelExecResponse.state:type_name -> forge_metal.vm_orchestrator.v1.ExecState
-	1,  // 17: forge_metal.vm_orchestrator.v1.ExecRecord.state:type_name -> forge_metal.vm_orchestrator.v1.ExecState
-	32, // 18: forge_metal.vm_orchestrator.v1.ExecRecord.metrics:type_name -> forge_metal.vm_orchestrator.v1.VMMetrics
-	27, // 19: forge_metal.vm_orchestrator.v1.GetExecResponse.exec:type_name -> forge_metal.vm_orchestrator.v1.ExecRecord
-	27, // 20: forge_metal.vm_orchestrator.v1.WaitExecResponse.exec:type_name -> forge_metal.vm_orchestrator.v1.ExecRecord
-	33, // 21: forge_metal.vm_orchestrator.v1.GetCapacityResponse.runtime_profiles:type_name -> forge_metal.vm_orchestrator.v1.RuntimeProfileCapacity
-	7,  // 22: forge_metal.vm_orchestrator.v1.VMService.AcquireLease:input_type -> forge_metal.vm_orchestrator.v1.AcquireLeaseRequest
-	9,  // 23: forge_metal.vm_orchestrator.v1.VMService.RenewLease:input_type -> forge_metal.vm_orchestrator.v1.RenewLeaseRequest
-	11, // 24: forge_metal.vm_orchestrator.v1.VMService.ReleaseLease:input_type -> forge_metal.vm_orchestrator.v1.ReleaseLeaseRequest
-	13, // 25: forge_metal.vm_orchestrator.v1.VMService.GetLease:input_type -> forge_metal.vm_orchestrator.v1.GetLeaseRequest
-	16, // 26: forge_metal.vm_orchestrator.v1.VMService.ListLeases:input_type -> forge_metal.vm_orchestrator.v1.ListLeasesRequest
-	18, // 27: forge_metal.vm_orchestrator.v1.VMService.StreamLeaseEvents:input_type -> forge_metal.vm_orchestrator.v1.StreamLeaseEventsRequest
-	21, // 28: forge_metal.vm_orchestrator.v1.VMService.StartExec:input_type -> forge_metal.vm_orchestrator.v1.StartExecRequest
-	23, // 29: forge_metal.vm_orchestrator.v1.VMService.CancelExec:input_type -> forge_metal.vm_orchestrator.v1.CancelExecRequest
-	25, // 30: forge_metal.vm_orchestrator.v1.VMService.GetExec:input_type -> forge_metal.vm_orchestrator.v1.GetExecRequest
-	26, // 31: forge_metal.vm_orchestrator.v1.VMService.WaitExec:input_type -> forge_metal.vm_orchestrator.v1.WaitExecRequest
-	30, // 32: forge_metal.vm_orchestrator.v1.VMService.SaveCheckpoint:input_type -> forge_metal.vm_orchestrator.v1.SaveCheckpointRequest
-	34, // 33: forge_metal.vm_orchestrator.v1.VMService.GetCapacity:input_type -> forge_metal.vm_orchestrator.v1.GetCapacityRequest
-	8,  // 34: forge_metal.vm_orchestrator.v1.VMService.AcquireLease:output_type -> forge_metal.vm_orchestrator.v1.AcquireLeaseResponse
-	10, // 35: forge_metal.vm_orchestrator.v1.VMService.RenewLease:output_type -> forge_metal.vm_orchestrator.v1.RenewLeaseResponse
-	12, // 36: forge_metal.vm_orchestrator.v1.VMService.ReleaseLease:output_type -> forge_metal.vm_orchestrator.v1.ReleaseLeaseResponse
-	15, // 37: forge_metal.vm_orchestrator.v1.VMService.GetLease:output_type -> forge_metal.vm_orchestrator.v1.GetLeaseResponse
-	17, // 38: forge_metal.vm_orchestrator.v1.VMService.ListLeases:output_type -> forge_metal.vm_orchestrator.v1.ListLeasesResponse
-	19, // 39: forge_metal.vm_orchestrator.v1.VMService.StreamLeaseEvents:output_type -> forge_metal.vm_orchestrator.v1.LeaseEvent
-	22, // 40: forge_metal.vm_orchestrator.v1.VMService.StartExec:output_type -> forge_metal.vm_orchestrator.v1.StartExecResponse
-	24, // 41: forge_metal.vm_orchestrator.v1.VMService.CancelExec:output_type -> forge_metal.vm_orchestrator.v1.CancelExecResponse
-	28, // 42: forge_metal.vm_orchestrator.v1.VMService.GetExec:output_type -> forge_metal.vm_orchestrator.v1.GetExecResponse
-	29, // 43: forge_metal.vm_orchestrator.v1.VMService.WaitExec:output_type -> forge_metal.vm_orchestrator.v1.WaitExecResponse
-	31, // 44: forge_metal.vm_orchestrator.v1.VMService.SaveCheckpoint:output_type -> forge_metal.vm_orchestrator.v1.SaveCheckpointResponse
-	35, // 45: forge_metal.vm_orchestrator.v1.VMService.GetCapacity:output_type -> forge_metal.vm_orchestrator.v1.GetCapacityResponse
-	34, // [34:46] is the sub-list for method output_type
-	22, // [22:34] is the sub-list for method input_type
-	22, // [22:22] is the sub-list for extension type_name
-	22, // [22:22] is the sub-list for extension extendee
-	0,  // [0:22] is the sub-list for field type_name
+	6,  // 1: forge_metal.vm_orchestrator.v1.LeaseSpec.resources:type_name -> forge_metal.vm_orchestrator.v1.VMResources
+	5,  // 2: forge_metal.vm_orchestrator.v1.LeaseSpec.network:type_name -> forge_metal.vm_orchestrator.v1.NetworkAttach
+	7,  // 3: forge_metal.vm_orchestrator.v1.AcquireLeaseRequest.spec:type_name -> forge_metal.vm_orchestrator.v1.LeaseSpec
+	0,  // 4: forge_metal.vm_orchestrator.v1.AcquireLeaseResponse.state:type_name -> forge_metal.vm_orchestrator.v1.LeaseState
+	6,  // 5: forge_metal.vm_orchestrator.v1.AcquireLeaseResponse.resources:type_name -> forge_metal.vm_orchestrator.v1.VMResources
+	0,  // 6: forge_metal.vm_orchestrator.v1.ReleaseLeaseResponse.state:type_name -> forge_metal.vm_orchestrator.v1.LeaseState
+	0,  // 7: forge_metal.vm_orchestrator.v1.LeaseRecord.state:type_name -> forge_metal.vm_orchestrator.v1.LeaseState
+	6,  // 8: forge_metal.vm_orchestrator.v1.LeaseRecord.resources:type_name -> forge_metal.vm_orchestrator.v1.VMResources
+	15, // 9: forge_metal.vm_orchestrator.v1.GetLeaseResponse.lease:type_name -> forge_metal.vm_orchestrator.v1.LeaseRecord
+	15, // 10: forge_metal.vm_orchestrator.v1.ListLeasesResponse.leases:type_name -> forge_metal.vm_orchestrator.v1.LeaseRecord
+	4,  // 11: forge_metal.vm_orchestrator.v1.LeaseEvent.event_type:type_name -> forge_metal.vm_orchestrator.v1.LeaseEventType
+	37, // 12: forge_metal.vm_orchestrator.v1.LeaseEvent.attrs:type_name -> forge_metal.vm_orchestrator.v1.LeaseEvent.AttrsEntry
+	38, // 13: forge_metal.vm_orchestrator.v1.ExecSpec.env:type_name -> forge_metal.vm_orchestrator.v1.ExecSpec.EnvEntry
+	2,  // 14: forge_metal.vm_orchestrator.v1.ExecSpec.stdin:type_name -> forge_metal.vm_orchestrator.v1.StdioMode
+	2,  // 15: forge_metal.vm_orchestrator.v1.ExecSpec.stdout:type_name -> forge_metal.vm_orchestrator.v1.StdioMode
+	2,  // 16: forge_metal.vm_orchestrator.v1.ExecSpec.stderr:type_name -> forge_metal.vm_orchestrator.v1.StdioMode
+	21, // 17: forge_metal.vm_orchestrator.v1.StartExecRequest.spec:type_name -> forge_metal.vm_orchestrator.v1.ExecSpec
+	1,  // 18: forge_metal.vm_orchestrator.v1.StartExecResponse.state:type_name -> forge_metal.vm_orchestrator.v1.ExecState
+	1,  // 19: forge_metal.vm_orchestrator.v1.CancelExecResponse.state:type_name -> forge_metal.vm_orchestrator.v1.ExecState
+	1,  // 20: forge_metal.vm_orchestrator.v1.ExecRecord.state:type_name -> forge_metal.vm_orchestrator.v1.ExecState
+	33, // 21: forge_metal.vm_orchestrator.v1.ExecRecord.metrics:type_name -> forge_metal.vm_orchestrator.v1.VMMetrics
+	28, // 22: forge_metal.vm_orchestrator.v1.GetExecResponse.exec:type_name -> forge_metal.vm_orchestrator.v1.ExecRecord
+	28, // 23: forge_metal.vm_orchestrator.v1.WaitExecResponse.exec:type_name -> forge_metal.vm_orchestrator.v1.ExecRecord
+	34, // 24: forge_metal.vm_orchestrator.v1.GetCapacityResponse.pool:type_name -> forge_metal.vm_orchestrator.v1.VMPoolCapacity
+	8,  // 25: forge_metal.vm_orchestrator.v1.VMService.AcquireLease:input_type -> forge_metal.vm_orchestrator.v1.AcquireLeaseRequest
+	10, // 26: forge_metal.vm_orchestrator.v1.VMService.RenewLease:input_type -> forge_metal.vm_orchestrator.v1.RenewLeaseRequest
+	12, // 27: forge_metal.vm_orchestrator.v1.VMService.ReleaseLease:input_type -> forge_metal.vm_orchestrator.v1.ReleaseLeaseRequest
+	14, // 28: forge_metal.vm_orchestrator.v1.VMService.GetLease:input_type -> forge_metal.vm_orchestrator.v1.GetLeaseRequest
+	17, // 29: forge_metal.vm_orchestrator.v1.VMService.ListLeases:input_type -> forge_metal.vm_orchestrator.v1.ListLeasesRequest
+	19, // 30: forge_metal.vm_orchestrator.v1.VMService.StreamLeaseEvents:input_type -> forge_metal.vm_orchestrator.v1.StreamLeaseEventsRequest
+	22, // 31: forge_metal.vm_orchestrator.v1.VMService.StartExec:input_type -> forge_metal.vm_orchestrator.v1.StartExecRequest
+	24, // 32: forge_metal.vm_orchestrator.v1.VMService.CancelExec:input_type -> forge_metal.vm_orchestrator.v1.CancelExecRequest
+	26, // 33: forge_metal.vm_orchestrator.v1.VMService.GetExec:input_type -> forge_metal.vm_orchestrator.v1.GetExecRequest
+	27, // 34: forge_metal.vm_orchestrator.v1.VMService.WaitExec:input_type -> forge_metal.vm_orchestrator.v1.WaitExecRequest
+	31, // 35: forge_metal.vm_orchestrator.v1.VMService.SaveCheckpoint:input_type -> forge_metal.vm_orchestrator.v1.SaveCheckpointRequest
+	35, // 36: forge_metal.vm_orchestrator.v1.VMService.GetCapacity:input_type -> forge_metal.vm_orchestrator.v1.GetCapacityRequest
+	9,  // 37: forge_metal.vm_orchestrator.v1.VMService.AcquireLease:output_type -> forge_metal.vm_orchestrator.v1.AcquireLeaseResponse
+	11, // 38: forge_metal.vm_orchestrator.v1.VMService.RenewLease:output_type -> forge_metal.vm_orchestrator.v1.RenewLeaseResponse
+	13, // 39: forge_metal.vm_orchestrator.v1.VMService.ReleaseLease:output_type -> forge_metal.vm_orchestrator.v1.ReleaseLeaseResponse
+	16, // 40: forge_metal.vm_orchestrator.v1.VMService.GetLease:output_type -> forge_metal.vm_orchestrator.v1.GetLeaseResponse
+	18, // 41: forge_metal.vm_orchestrator.v1.VMService.ListLeases:output_type -> forge_metal.vm_orchestrator.v1.ListLeasesResponse
+	20, // 42: forge_metal.vm_orchestrator.v1.VMService.StreamLeaseEvents:output_type -> forge_metal.vm_orchestrator.v1.LeaseEvent
+	23, // 43: forge_metal.vm_orchestrator.v1.VMService.StartExec:output_type -> forge_metal.vm_orchestrator.v1.StartExecResponse
+	25, // 44: forge_metal.vm_orchestrator.v1.VMService.CancelExec:output_type -> forge_metal.vm_orchestrator.v1.CancelExecResponse
+	29, // 45: forge_metal.vm_orchestrator.v1.VMService.GetExec:output_type -> forge_metal.vm_orchestrator.v1.GetExecResponse
+	30, // 46: forge_metal.vm_orchestrator.v1.VMService.WaitExec:output_type -> forge_metal.vm_orchestrator.v1.WaitExecResponse
+	32, // 47: forge_metal.vm_orchestrator.v1.VMService.SaveCheckpoint:output_type -> forge_metal.vm_orchestrator.v1.SaveCheckpointResponse
+	36, // 48: forge_metal.vm_orchestrator.v1.VMService.GetCapacity:output_type -> forge_metal.vm_orchestrator.v1.GetCapacityResponse
+	37, // [37:49] is the sub-list for method output_type
+	25, // [25:37] is the sub-list for method input_type
+	25, // [25:25] is the sub-list for extension type_name
+	25, // [25:25] is the sub-list for extension extendee
+	0,  // [0:25] is the sub-list for field type_name
 }
 
 func init() { file_proto_v1_vm_service_proto_init() }
@@ -2797,7 +2862,7 @@ func file_proto_v1_vm_service_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_v1_vm_service_proto_rawDesc), len(file_proto_v1_vm_service_proto_rawDesc)),
 			NumEnums:      5,
-			NumMessages:   33,
+			NumMessages:   34,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
