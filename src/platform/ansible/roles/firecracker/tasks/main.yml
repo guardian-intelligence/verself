@@ -296,16 +296,21 @@
 - name: Verify guest kernel exists
   ansible.builtin.stat:
     path: "{{ firecracker_kernel_path }}"
+    # get_checksum defaults to true, which would sha1 the file. We only need existence + mtime.
+    get_checksum: false
   register: firecracker_guest_kernel
 
 - name: Verify guest rootfs exists
   ansible.builtin.stat:
     path: "{{ firecracker_rootfs_path }}"
+    # get_checksum defaults to true, which would sha1 the multi-GB rootfs every run (~4s). We only need existence + mtime.
+    get_checksum: false
   register: firecracker_guest_rootfs
 
 - name: Verify guest artifact manifest exists
   ansible.builtin.stat:
     path: "{{ firecracker_guest_artifact_manifest_path }}"
+    get_checksum: false
   register: firecracker_guest_artifacts
 
 - name: Fail if guest artifacts are missing
@@ -345,22 +350,15 @@
   changed_when: false
   failed_when: false
 
-- name: Compute guest rootfs checksum
-  ansible.builtin.command: "sha256sum {{ firecracker_rootfs_path }}"
-  register: firecracker_guest_rootfs_sha256
-  changed_when: false
-
-- name: Check recorded golden rootfs checksum
+- name: Stat recorded golden rootfs hash marker
   ansible.builtin.stat:
     path: "{{ firecracker_rootfs_hash_record }}"
+    get_checksum: false
   register: firecracker_golden_rootfs_hash_stat
 
-- name: Read recorded golden rootfs checksum
-  ansible.builtin.slurp:
-    src: "{{ firecracker_rootfs_hash_record }}"
-  register: firecracker_golden_rootfs_hash
-  when: firecracker_golden_rootfs_hash_stat.stat.exists
-
+# Staleness is determined by mtime, not by re-hashing the rootfs. The marker file is
+# touched after each successful golden refresh, so a rootfs mtime newer than the marker
+# mtime means the on-disk rootfs is newer than whatever was last promoted.
 - name: Decide whether the base golden needs refresh
   ansible.builtin.set_fact:
     firecracker_refresh_base_golden_needed: >-
@@ -369,8 +367,14 @@
         or firecracker_golden_zvol_check.rc != 0
         or firecracker_golden_snapshot_check.rc != 0
         or not firecracker_golden_rootfs_hash_stat.stat.exists
-        or ((firecracker_golden_rootfs_hash.content | default('') | b64decode | trim) != (firecracker_guest_rootfs_sha256.stdout.split()[0] | trim))
+        or (firecracker_guest_rootfs.stat.mtime | float) > (firecracker_golden_rootfs_hash_stat.stat.mtime | default(0) | float)
       }}
+
+- name: Compute guest rootfs checksum
+  ansible.builtin.command: "sha256sum {{ firecracker_rootfs_path }}"
+  register: firecracker_guest_rootfs_sha256
+  changed_when: false
+  when: firecracker_refresh_base_golden_needed
 
 # --- Atomic golden zvol refresh ---
 # Write to a staging zvol first. Only tear down the old golden after the

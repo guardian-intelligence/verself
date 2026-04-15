@@ -63,11 +63,14 @@
     - name: Check guest kernel exists
       ansible.builtin.stat:
         path: /var/lib/forge-metal/guest-artifacts/vmlinux
+        get_checksum: false
       register: preflight_guest_kernel
 
     - name: Check guest rootfs exists
       ansible.builtin.stat:
         path: /var/lib/forge-metal/guest-artifacts/rootfs.ext4
+        # get_checksum defaults to true, which would sha1 the multi-GB rootfs every preflight (~4s).
+        get_checksum: false
       register: preflight_guest_rootfs
 
     - name: Warn if ZFS pool is missing (firecracker role will fail)
