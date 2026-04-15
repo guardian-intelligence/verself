@@ -33,13 +33,16 @@ const (
 
 	ProbeKind            = "scheduler.probe"
 	ExecutionAdvanceKind = "execution.advance"
+
+	DefaultExecutionMaxWorkers = 16
 )
 
 var tracer = otel.Tracer("sandbox-rental-service/scheduler")
 
 type Config struct {
-	Logger          *slog.Logger
-	RegisterWorkers func(*river.Workers) error
+	Logger              *slog.Logger
+	RegisterWorkers     func(*river.Workers) error
+	ExecutionMaxWorkers int
 }
 
 type Runtime struct {
@@ -156,6 +159,7 @@ func NewRuntime(pool *pgxpool.Pool, cfg Config) (*Runtime, error) {
 		}
 	}
 
+	queues := queueConfig(cfg)
 	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
 		Logger: logger,
 		Middleware: []rivertype.Middleware{
@@ -166,7 +170,7 @@ func NewRuntime(pool *pgxpool.Pool, cfg Config) (*Runtime, error) {
 				EnableWorkSpanJobKindSuffix: true,
 			}),
 		},
-		Queues:  queueConfig(),
+		Queues:  queues,
 		Workers: workers,
 	})
 	if err != nil {
@@ -270,15 +274,22 @@ func (r *Runtime) EnqueueProbe(ctx context.Context, req ProbeRequest) (ProbeResu
 	}, nil
 }
 
-func queueConfig() map[string]river.QueueConfig {
+func queueConfig(cfg Config) map[string]river.QueueConfig {
 	return map[string]river.QueueConfig{
-		QueueExecution:    {MaxWorkers: 4},
+		QueueExecution:    {MaxWorkers: normalizeMaxWorkers(cfg.ExecutionMaxWorkers, DefaultExecutionMaxWorkers)},
 		QueueOrchestrator: {MaxWorkers: 2},
 		QueueRunner:       {MaxWorkers: 4},
 		QueueScheduler:    {MaxWorkers: 1},
 		QueueReconcile:    {MaxWorkers: 1},
 		QueueWebhook:      {MaxWorkers: 2},
 	}
+}
+
+func normalizeMaxWorkers(value, fallback int) int {
+	if value <= 0 {
+		return fallback
+	}
+	return value
 }
 
 func queueNames() []string {

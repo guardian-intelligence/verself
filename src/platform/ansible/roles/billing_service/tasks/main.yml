@@ -173,6 +173,10 @@
       Environment=BILLING_AUTH_ISSUER_URL={{ billing_service_auth_issuer_url }}
       Environment=BILLING_AUTH_JWKS_URL={{ billing_service_auth_jwks_url }}
       Environment=BILLING_AUTH_AUDIENCE={{ billing_service_auth_audience }}
+      Environment=BILLING_PG_MAX_CONNS={{ billing_service_pg_max_conns }}
+      Environment=BILLING_PG_MIN_CONNS={{ billing_service_pg_min_conns }}
+      Environment=BILLING_PG_CONN_MAX_LIFETIME_SECONDS={{ billing_service_pg_conn_max_lifetime_seconds }}
+      Environment=BILLING_PG_CONN_MAX_IDLE_SECONDS={{ billing_service_pg_conn_max_idle_seconds }}
       ExecStart={{ fm_bin }}/billing-service
       Restart=on-failure
       RestartSec=5

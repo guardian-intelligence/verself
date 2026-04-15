@@ -2,3 +2,8 @@
 electric_mail_version: "1.5.0"
 electric_mail_image: "docker.io/electricsql/electric:{{ electric_mail_version }}"
 electric_mail_storage_dir: /var/lib/electric-mail
+# Mail realtime sync is low traffic today, but the pool gates cold-start
+# burst parallelism, not user count. 10 gives room for parallel shape
+# backfills on tab-open storms while staying well under the per-role
+# postgres limit (postgresql_role_connection_limits.electric_mail = 25).
+electric_mail_db_pool_size: 10

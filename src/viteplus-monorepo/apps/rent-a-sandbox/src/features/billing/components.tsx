@@ -37,8 +37,8 @@ export function BillingFlashNotice({ intent }: { intent: FlashIntent }) {
     case "contract_started":
       return (
         <Callout tone="success" title="Plan checkout complete">
-          Stripe accepted the checkout. Your monthly allowances will be deposited after billing
-          applies the provider event.
+          Payment accepted. Your monthly allowances will be deposited once billing confirms the
+          charge.
         </Callout>
       );
     case "contract_upgraded":

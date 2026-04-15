@@ -2,3 +2,10 @@
 electric_version: "1.5.0"
 electric_image: "docker.io/electricsql/electric:{{ electric_version }}"
 electric_storage_dir: /var/lib/electric
+# Electric's upstream default is 20 shape-query connections plus the WAL slot
+# listener. We cap at 15 to stay under the per-role limit enforced in
+# postgresql_role_connection_limits.electric (25, which leaves headroom for
+# the slot listener and a couple of transient admin sessions). The pool size
+# gates concurrent shape *query* execution, not concurrent *users* — live
+# streaming is served by a single persistent replication slot reader.
+electric_db_pool_size: 15

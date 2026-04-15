@@ -194,12 +194,15 @@
       - name: billing
         password: "{{ postgresql_billing_password }}"
         role_attr_flags: LOGIN
+        conn_limit: "{{ postgresql_role_connection_limits.billing }}"
       - name: sandbox_rental
         password: "{{ postgresql_sandbox_rental_password }}"
         role_attr_flags: LOGIN
+        conn_limit: "{{ postgresql_role_connection_limits.sandbox_rental }}"
       - name: stalwart
         password: "{{ stalwart_db_password }}"
         role_attr_flags: LOGIN
+        conn_limit: "{{ postgresql_role_connection_limits.stalwart }}"
     postgresql_managed_databases:
       - name: "{{ billing_service_pg_database | default('billing') }}"
         owner: billing
@@ -242,6 +245,7 @@
         name: "{{ item.name }}"
         password: "{{ item.password }}"
         role_attr_flags: "{{ item.role_attr_flags }}"
+        conn_limit: "{{ item.conn_limit }}"
       loop: "{{ postgresql_managed_roles }}"
       loop_control:
         label: "{{ item.name }}"

@@ -39,6 +39,7 @@
         name: electric
         password: "{{ electric_pg_password }}"
         role_attr_flags: REPLICATION,LOGIN
+        conn_limit: "{{ postgresql_role_connection_limits.electric }}"
       no_log: true
 
     - name: Grant Electric role read access to sandbox_rental tables

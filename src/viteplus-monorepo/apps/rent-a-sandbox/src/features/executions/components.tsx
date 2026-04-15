@@ -259,19 +259,22 @@ function ExecutionTable({ executions }: { executions: ElectricExecution[] }) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>ID</TableHead>
-              <TableHead>Status</TableHead>
+              <TableHead className="w-[12rem]">ID</TableHead>
+              <TableHead className="w-[10rem]">Status</TableHead>
               <TableHead>Created</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {pageRows.map((execution) => (
-              <TableRow key={execution.execution_id}>
+              <TableRow
+                key={execution.execution_id}
+                className="group cursor-pointer hover:bg-muted/50"
+              >
                 <TableCell>
                   <Link
                     to="/executions/$executionId"
                     params={{ executionId: execution.execution_id }}
-                    className="font-mono text-primary hover:underline"
+                    className="font-mono text-sm font-semibold text-foreground group-hover:underline"
                   >
                     {execution.execution_id.slice(0, 8)}
                   </Link>
@@ -279,7 +282,7 @@ function ExecutionTable({ executions }: { executions: ElectricExecution[] }) {
                 <TableCell>
                   <ExecutionStatusBadge status={execution.status} />
                 </TableCell>
-                <TableCell className="text-muted-foreground">
+                <TableCell className="text-xs font-normal tabular-nums text-muted-foreground">
                   {formatDateTimeUTC(execution.created_at)}
                 </TableCell>
               </TableRow>
@@ -503,7 +506,7 @@ function ExecutionTimingSummary({
       />
       <ExecutionMetric label="Exit code" value={exitCode} />
       <ExecutionMetric
-        label="ZFS written"
+        label="Disk written"
         value={attempt.zfs_written ? formatBytes(attempt.zfs_written) : "--"}
       />
     </dl>

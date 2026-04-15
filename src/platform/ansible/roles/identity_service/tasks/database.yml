@@ -27,6 +27,7 @@
         name: identity_service
         password: "{{ postgresql_identity_service_password }}"
         role_attr_flags: LOGIN
+        conn_limit: "{{ postgresql_role_connection_limits.identity_service }}"
       no_log: true
 
     - name: Ensure identity_service database exists

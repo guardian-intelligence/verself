@@ -60,7 +60,15 @@ func run() error {
 	defer otelShutdown(context.Background())
 	slog.SetDefault(logger)
 
-	pgPool, err := pgxpool.New(ctx, pgDSN)
+	pgConfig, err := pgxpool.ParseConfig(pgDSN)
+	if err != nil {
+		return fmt.Errorf("parse postgres dsn: %w", err)
+	}
+	pgConfig.MaxConns = int32(envInt("BILLING_PG_MAX_CONNS", 12))
+	pgConfig.MinConns = int32(envInt("BILLING_PG_MIN_CONNS", 1))
+	pgConfig.MaxConnLifetime = time.Duration(envInt("BILLING_PG_CONN_MAX_LIFETIME_SECONDS", 1800)) * time.Second
+	pgConfig.MaxConnIdleTime = time.Duration(envInt("BILLING_PG_CONN_MAX_IDLE_SECONDS", 300)) * time.Second
+	pgPool, err := pgxpool.NewWithConfig(ctx, pgConfig)
 	if err != nil {
 		return fmt.Errorf("open postgres pool: %w", err)
 	}
@@ -227,6 +235,19 @@ func envOr(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func envInt(key string, fallback int) int {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "invalid %s=%q: %v\n", key, value, err)
+		os.Exit(1)
+	}
+	return parsed
 }
 
 func envUint64Or(key string, fallback uint64) uint64 {

@@ -40,3 +40,37 @@ sandbox_rental_service_github_app_settings_url: "https://github.com/organization
 wireguard_interface: wg0
 wireguard_port: 51820
 wireguard_network: "10.0.0.0/16"
+
+# PostgreSQL connection budget.
+#
+# max_connections is a shared global ceiling; if any one service's client-side
+# pool grows unbounded it will starve every other service and the operator
+# will see raw "remaining connection slots are reserved for roles with the
+# SUPERUSER attribute" 500s. The only durable bulkhead is per-role connection
+# limits enforced by postgres itself, declared here as the single source of
+# truth and applied at role-creation time by each service role.
+#
+# Budget rules:
+#   - Sum of limits ≤ postgresql_max_connections - postgresql_superuser_reserved_connections - headroom
+#   - Headroom absorbs one-off admin sessions and short-lived migration tools.
+#   - The `postgres` superuser is intentionally unlimited (-1) — locking it
+#     down risks locking yourself out of recovery.
+#
+# Observed steady-state connection counts (2026-04-15) for reference:
+#   billing ~22, sandbox_rental ~18, electric ~21 (pool 20 + slot 1),
+#   electric_mail ~21, zitadel ~4, grafana ~4, stalwart ~3, identity_service ~2,
+#   mailbox_service ~2. Current budget sums to 180, leaving ~110 under max after
+#   superuser reserve.
+postgresql_max_connections: 300
+postgresql_superuser_reserved_connections: 10
+postgresql_role_connection_limits:
+  billing: 30
+  sandbox_rental: 30
+  electric: 25
+  electric_mail: 25
+  zitadel: 15
+  frontend_auth: 15
+  grafana: 10
+  stalwart: 10
+  identity_service: 10
+  mailbox_service: 10

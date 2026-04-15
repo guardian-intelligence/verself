@@ -10,19 +10,46 @@ export function isExecutionActiveStatus(status?: string): boolean {
   );
 }
 
-const TERMINAL_SUCCESS = new Set(["succeeded"]);
-const TERMINAL_FAILURE = new Set(["failed", "lost"]);
-const TERMINAL_NEUTRAL = new Set(["canceled"]);
+// Five canonical status treatments. Every wire status collapses into one of
+// these — transient states share a single visual so the list doesn't turn
+// into a colour chart. If we ever need to distinguish (say) launching from
+// running, add a subordinate signal like a dot or label, not a new pill.
+type StatusKind = "queued" | "running" | "succeeded" | "failed" | "canceled";
 
-export function ExecutionStatusBadge({ status }: { status: string }) {
-  let variant: "default" | "secondary" | "outline" | "destructive" = "secondary";
-  if (TERMINAL_SUCCESS.has(status)) variant = "default";
-  else if (TERMINAL_FAILURE.has(status)) variant = "destructive";
-  else if (TERMINAL_NEUTRAL.has(status)) variant = "outline";
+const STATUS_KIND: Record<string, StatusKind> = {
+  queued: "queued",
+  reserved: "queued",
+  launching: "running",
+  running: "running",
+  finalizing: "running",
+  succeeded: "succeeded",
+  failed: "failed",
+  lost: "failed",
+  canceled: "canceled",
+};
+
+const KIND_VARIANT: Record<StatusKind, "secondary" | "info" | "success" | "destructive" | "outline"> = {
+  queued: "secondary",
+  running: "info",
+  succeeded: "success",
+  failed: "destructive",
+  canceled: "outline",
+};
+
+export function ExecutionStatusBadge({ status }: { status?: string | null }) {
+  const label = status?.trim() || "unknown";
+  const kind = STATUS_KIND[label] ?? "queued";
+  const variant = KIND_VARIANT[kind];
 
   return (
-    <Badge variant={variant} data-execution-status={status}>
-      {status}
+    <Badge variant={variant} data-execution-status={label} data-execution-status-kind={kind}>
+      {kind === "running" ? (
+        <span
+          aria-hidden="true"
+          className="size-1.5 rounded-full bg-current motion-safe:animate-pulse"
+        />
+      ) : null}
+      {label}
     </Badge>
   );
 }
