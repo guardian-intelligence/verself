@@ -8,6 +8,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/forge-metal/vm-orchestrator/vmproto"
+	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 )
 
@@ -77,9 +79,13 @@ func runInit() error {
 		fmt.Fprintf(os.Stderr, "%s warning: prctl PR_SET_CHILD_SUBREAPER: %v\n", logPrefix, errno)
 	}
 	bootTimings.SetSubreaperDoneMS = elapsedBootMS(bootStart)
+	// Telemetry start used to live here, before the vsock listen. Moved to
+	// after listener.Accept() below so the fork+exec does not steal CPU
+	// from the kernel_boot_to_hello_enqueue window. The StartTelemetry*
+	// fields are kept in the boot timings struct (zero-duration at this
+	// point) so host-side span ordering checks remain stable.
 	bootTimings.StartTelemetryStartMS = elapsedBootMS(bootStart)
-	maybeStartGuestTelemetry()
-	bootTimings.StartTelemetryDoneMS = elapsedBootMS(bootStart)
+	bootTimings.StartTelemetryDoneMS = bootTimings.StartTelemetryStartMS
 
 	bootTimings.SignalNotifyStartMS = elapsedBootMS(bootStart)
 	sigCh := make(chan os.Signal, 1)
@@ -106,6 +112,9 @@ func runInit() error {
 	bootTimings.VSockAcceptDoneMS = elapsedBootMS(bootStart)
 	bootTimings.KernelBootToVSockAcceptDoneMS = kernelUptimeMS()
 	defer conn.Close()
+	// Telemetry agent fork+exec happens after accept so the post-hello
+	// latency covers it instead of the pre-hello critical path.
+	maybeStartGuestTelemetry()
 
 	return runAgent(conn, bootStart, readyAt, sigCh, bridgeFault, bootTimings)
 }
@@ -146,15 +155,22 @@ func mountVirtualFilesystems() {
 	mustMount("tmpfs", "/tmp", "tmpfs", syscall.MS_NOSUID|syscall.MS_NODEV, "")
 }
 
+// configureLoopback brings up lo via raw netlink instead of forking
+// /sbin/ip. Two fork+exec cycles at boot consume ~10ms of CPU; three
+// netlink syscalls run in well under 1ms. AddrReplace is idempotent on
+// re-runs (AddrAdd would EEXIST on a second call via NLM_F_EXCL). Requires
+// CAP_NET_ADMIN, which PID 1 in a fresh guest netns has by default.
 func configureLoopback() error {
-	steps := [][]string{
-		{ipBin, "addr", "add", "127.0.0.1/8", "dev", "lo"},
-		{ipBin, "link", "set", "lo", "up"},
+	lo, err := netlink.LinkByName("lo")
+	if err != nil {
+		return fmt.Errorf("lookup lo: %w", err)
 	}
-	for _, args := range steps {
-		if out, err := runCommandOutput(args[0], args[1:]...); err != nil {
-			return fmt.Errorf("%s: %s", strings.Join(args, " "), strings.TrimSpace(out))
-		}
+	addr := &netlink.Addr{IPNet: &net.IPNet{IP: net.IPv4(127, 0, 0, 1), Mask: net.CIDRMask(8, 32)}}
+	if err := netlink.AddrReplace(lo, addr); err != nil {
+		return fmt.Errorf("addr replace 127.0.0.1/8 on lo: %w", err)
+	}
+	if err := netlink.LinkSetUp(lo); err != nil {
+		return fmt.Errorf("link set lo up: %w", err)
 	}
 	return nil
 }
