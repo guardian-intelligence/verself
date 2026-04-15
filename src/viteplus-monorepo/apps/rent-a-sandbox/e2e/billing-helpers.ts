@@ -6,7 +6,7 @@ export async function completeStripeCheckout(
   app: SandboxHarness,
   options: { returnURLIncludes?: string } = {},
 ): Promise<void> {
-  const returnURLIncludes = options.returnURLIncludes ?? "/billing?purchased=true";
+  const returnURLIncludes = options.returnURLIncludes ?? "/settings/billing?purchased=true";
 
   await app.waitForCondition("stripe checkout redirect", 30_000, async () => {
     return app.page.url().includes("checkout.stripe.com") ? true : false;

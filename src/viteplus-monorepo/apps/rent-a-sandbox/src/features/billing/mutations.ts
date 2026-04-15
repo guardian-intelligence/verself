@@ -20,8 +20,8 @@ export function useCreateCheckoutSessionMutation() {
         data: {
           product_id: SANDBOX_PRODUCT_ID,
           amount_cents: amountCents,
-          success_url: `${window.location.origin}/billing?purchased=true`,
-          cancel_url: `${window.location.origin}/billing/credits`,
+          success_url: `${window.location.origin}/settings/billing?purchased=true`,
+          cancel_url: `${window.location.origin}/settings/billing/credits`,
         },
       }),
     onSuccess: (data) => {
@@ -38,8 +38,8 @@ export function useCreateCheckoutSessionMutation() {
 export function usePlanCardActionMutation() {
   return useMutation({
     mutationFn: async ({ intent, plan }: { intent: PlanCardIntent; plan: BillingPlan }) => {
-      const baseSuccessURL = `${window.location.origin}/billing?contracted=true`;
-      const cancelURL = `${window.location.origin}/billing/subscribe`;
+      const baseSuccessURL = `${window.location.origin}/settings/billing?contracted=true`;
+      const cancelURL = `${window.location.origin}/settings/billing/subscribe`;
 
       switch (intent.kind) {
         case "start":
@@ -79,7 +79,7 @@ export function useCreatePortalSessionMutation() {
     mutationFn: () =>
       createPortalSession({
         data: {
-          return_url: `${window.location.origin}/billing`,
+          return_url: `${window.location.origin}/settings/billing`,
         },
       }),
     onSuccess: (data) => {

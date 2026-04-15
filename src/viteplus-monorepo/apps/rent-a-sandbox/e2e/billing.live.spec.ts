@@ -502,12 +502,21 @@ async function beginContractCheckout(
   }
 
   await subscribeButton.click();
-  // The handler either redirects to Stripe or to /billing?contracted=true —
-  // wait for whichever lands first.
+  // The handler either redirects to Stripe or to /settings/billing?contracted=true
+  // — wait for whichever lands first. A legal post-click URL that still renders
+  // AppNotFound would otherwise sail past this predicate as a false green, so
+  // we also assert the app didn't land on the 404 boundary.
   await app.page.waitForURL(
-    (url) => url.toString().includes("checkout.stripe.com") || isContractedBillingURL(url.toString()),
+    (url) =>
+      url.toString().includes("checkout.stripe.com") || isContractedBillingURL(url.toString()),
     { timeout: 30_000 },
   );
+  if (!app.page.url().includes("checkout.stripe.com")) {
+    await expect(
+      app.page.getByRole("heading", { name: "Not found" }),
+      "plan card click landed on the app-level 404 boundary — check that billing mutations redirect under /settings/billing",
+    ).toHaveCount(0);
+  }
   return app.page.url().includes("checkout.stripe.com") ? "checkout" : "billing";
 }
 
