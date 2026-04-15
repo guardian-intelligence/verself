@@ -985,7 +985,7 @@ func githubRunnerName(githubJobID int64, allocationID uuid.UUID) string {
 }
 
 func githubRunnerCommand() string {
-	return `set -euo pipefail
+	return `set -eu
 jit_file="$(mktemp)"
 cleanup() { rm -f "$jit_file"; }
 trap cleanup EXIT
