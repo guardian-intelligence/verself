@@ -17,9 +17,17 @@ export function ErrorAlert({ title, error }: { title: string; error: unknown }) 
   );
 }
 
-export function PermissionAlert({ title, children }: { title: string; children: React.ReactNode }) {
+export function PermissionAlert({
+  id,
+  title,
+  children,
+}: {
+  id?: string;
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
-    <Alert>
+    <Alert id={id}>
       <AlertCircleIcon />
       <AlertTitle>{title}</AlertTitle>
       <AlertDescription>{children}</AlertDescription>

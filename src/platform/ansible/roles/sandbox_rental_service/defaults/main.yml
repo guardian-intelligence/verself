@@ -11,14 +11,28 @@ sandbox_rental_service_billing_token_url: "http://{{ services.zitadel.host }}:{{
 sandbox_rental_service_vm_orchestrator_socket: "{{ firecracker_vm_orchestrator_api_socket | default('/run/vm-orchestrator/api.sock', true) }}"
 sandbox_rental_service_vm_orchestrator_socket_group: "{{ firecracker_vm_orchestrator_socket_group | default('vm-clients', true) }}"
 sandbox_rental_service_force_schema_reset: false
+
+# Regular database pool used by HTTP handlers and execution workers for service-owned
+# PostgreSQL state. This is separate from the River PGX pool below, so the two caps
+# must fit inside the node-wide PostgreSQL max_connections budget with Electric and
+# other service pools.
 sandbox_rental_service_pg_max_open_conns: 16
 sandbox_rental_service_pg_max_idle_conns: 8
 sandbox_rental_service_pg_conn_max_lifetime_seconds: 1800
 sandbox_rental_service_pg_conn_max_idle_seconds: 300
-sandbox_rental_service_river_pg_max_conns: 8
+
+# River uses its own pgxpool for queue polling, inserts, and worker leases. Keep this
+# close to the execution worker count; over-provisioning it can consume Postgres
+# slots without increasing VM throughput.
+sandbox_rental_service_river_pg_max_conns: 16
 sandbox_rental_service_river_pg_min_conns: 1
 sandbox_rental_service_river_pg_conn_max_lifetime_seconds: 1800
 sandbox_rental_service_river_pg_conn_max_idle_seconds: 300
+
+# VM execution queue parallelism. Each worker can hold one 4 vCPU / 4 GiB
+# Firecracker VM session, so this is the primary concurrency throttle for customer
+# workload execution on a single node.
+sandbox_rental_service_execution_max_workers: 16
 sandbox_rental_service_github_app_enabled: false
 sandbox_rental_service_github_app_id: 0
 sandbox_rental_service_github_app_slug: ""

@@ -1,7 +1,5 @@
-import { useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { Badge } from "@forge-metal/ui/components/ui/badge";
 import { Button } from "@forge-metal/ui/components/ui/button";
 import { Input } from "@forge-metal/ui/components/ui/input";
 import { Label } from "@forge-metal/ui/components/ui/label";
@@ -13,7 +11,9 @@ import {
   SectionHeaderContent,
   SectionTitle,
 } from "@forge-metal/ui/components/ui/page";
+import { Select } from "@forge-metal/ui/components/ui/select";
 import { Switch } from "@forge-metal/ui/components/ui/switch";
+import { toast } from "@forge-metal/ui/components/ui/sonner";
 import {
   Table,
   TableBody,
@@ -22,8 +22,6 @@ import {
   TableHeader,
   TableRow,
 } from "@forge-metal/ui/components/ui/table";
-import { useSignedInAuth } from "../../react.ts";
-import { useIdentityApi } from "../identity-api.ts";
 import {
   useInviteMemberMutation,
   usePutMemberCapabilitiesMutation,
@@ -34,36 +32,39 @@ import {
   organizationMemberCapabilitiesQuery,
   organizationQuery,
 } from "../queries.ts";
+import { useSignedInAuth } from "../../react.ts";
+import { useIdentityApi } from "../identity-api.ts";
 import type { Member, MemberCapabilities } from "../types.ts";
-import { ErrorAlert, formErrorText, PermissionAlert } from "./error-alert.tsx";
-import { RoleCheckboxes } from "./role-checkboxes.tsx";
+import { PermissionAlert } from "./error-alert.tsx";
 
 const PERMISSION_MEMBER_INVITE = "identity:member:invite";
 const PERMISSION_MEMBER_ROLES_WRITE = "identity:member:roles:write";
 const PERMISSION_MEMBER_CAPABILITIES_WRITE = "identity:member_capabilities:write";
 
-const INVITE_ROLES = [
+// Customer-facing roles. "owner" is intentionally omitted from the picker —
+// ownership is assigned at org creation and protected server-side; the UI
+// surfaces it as a read-only option if the current member holds it.
+const ASSIGNABLE_ROLES = [
   { role_key: "admin", display_name: "Admin" },
   { role_key: "member", display_name: "Member" },
 ] as const;
+
+const DEFAULT_INVITE_ROLE = "member";
+const ACTIVE_MEMBER_STATE = "USER_STATE_ACTIVE";
 
 function hasPermission(permissions: ReadonlyArray<string>, permission: string): boolean {
   return permissions.includes(permission);
 }
 
-function defaultRoleKeys(): Array<string> {
-  return ["member"];
-}
-
-function roleLabel(roleKey: string): string {
-  const known = INVITE_ROLES.find((role) => role.role_key === roleKey);
-  if (known) return known.display_name;
-  if (roleKey === "owner") return "Owner";
-  return roleKey;
+function primaryRoleKey(roleKeys: ReadonlyArray<string>): string {
+  // Highest-privilege role wins for display. Keeps row UI collapsed to a
+  // single value even if the backend returns an array with historical grants.
+  if (roleKeys.includes("owner")) return "owner";
+  if (roleKeys.includes("admin")) return "admin";
+  return "member";
 }
 
 export interface OrganizationProfileProps {
-  /** Optional override for the heading shown above the org name. */
   readonly heading?: string;
 }
 
@@ -81,71 +82,20 @@ export function OrganizationProfile(_props: OrganizationProfileProps = {}) {
     PERMISSION_MEMBER_CAPABILITIES_WRITE,
   );
 
+  const activeMembers = members.filter((member) => member.state === ACTIVE_MEMBER_STATE);
+
   return (
     <PageSections>
-      <GeneralSection organization={organization} />
       <InviteMemberSection canInvite={canInvite} />
-      <MembersSection canUpdateRoles={canUpdateRoles} members={[...members]} />
+      <MembersSection canUpdateRoles={canUpdateRoles} members={activeMembers} />
       <CapabilitySection
         canEditCapabilities={canEditCapabilities}
-        // Remount the editor whenever the server hands us a fresh document
-        // version (after save → invalidate → refetch). React-idiomatic state
-        // reset via key — see https://react.dev/reference/react/useState#resetting-state-with-a-key.
+        // Remount on server version bump so the initial form state is
+        // re-seeded from the authoritative document after save.
         key={memberCapabilities.document.version}
         memberCapabilities={memberCapabilities}
       />
     </PageSections>
-  );
-}
-
-interface GeneralSectionProps {
-  readonly organization: {
-    readonly org_id: string;
-    readonly name: string;
-    readonly caller: Member;
-  };
-}
-
-function GeneralSection({ organization }: GeneralSectionProps) {
-  const callerRoles = organization.caller.role_keys;
-  return (
-    <PageSection>
-      <SectionHeader>
-        <SectionHeaderContent>
-          <SectionTitle className="break-words">{organization.name}</SectionTitle>
-          <SectionDescription>Organization</SectionDescription>
-        </SectionHeaderContent>
-      </SectionHeader>
-      <dl className="grid gap-x-8 gap-y-4 sm:grid-cols-3">
-        <Metric label="Org ID" value={<code className="break-all">{organization.org_id}</code>} />
-        <Metric label="Signed in as" value={organization.caller.email} />
-        <Metric
-          label="Your roles"
-          value={
-            callerRoles.length > 0 ? (
-              <div className="flex flex-wrap gap-1">
-                {callerRoles.map((roleKey) => (
-                  <Badge key={roleKey} variant="secondary">
-                    {roleLabel(roleKey)}
-                  </Badge>
-                ))}
-              </div>
-            ) : (
-              <span className="text-muted-foreground">No role</span>
-            )
-          }
-        />
-      </dl>
-    </PageSection>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="min-w-0">
-      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
-      <dd className="mt-1 break-words font-mono text-sm tabular-nums">{value}</dd>
-    </div>
   );
 }
 
@@ -154,140 +104,116 @@ function InviteMemberSection({ canInvite }: { canInvite: boolean }) {
   const form = useForm({
     defaultValues: {
       email: "",
-      familyName: "",
-      givenName: "",
-      roleKeys: defaultRoleKeys(),
+      roleKey: DEFAULT_INVITE_ROLE,
     },
+    // Preconditions are enforced at submit time, not by disabling the button.
+    // Every failure mode surfaces as a specific toast so the user knows why
+    // the action didn't land.
     onSubmit: async ({ value }) => {
-      await inviteMutation.mutateAsync(value);
-      form.reset();
+      if (!canInvite) {
+        toast.error("You don't have permission to invite members.");
+        return;
+      }
+      const trimmedEmail = value.email.trim();
+      if (!trimmedEmail) {
+        toast.error("Enter an email address to send the invite.");
+        return;
+      }
+      if (inviteMutation.isPending) {
+        toast.info("Still sending the last invite…");
+        return;
+      }
+      try {
+        await inviteMutation.mutateAsync({
+          email: trimmedEmail,
+          roleKeys: [value.roleKey],
+        });
+        toast.success("Invite sent", {
+          description: `${trimmedEmail} will receive an email invite shortly.`,
+        });
+        form.reset();
+      } catch (error) {
+        toast.error("Invite failed", {
+          description: error instanceof Error ? error.message : String(error),
+        });
+      }
     },
   });
+
+  const inviteDescriptionId = "invite-member-permission-hint";
 
   return (
     <PageSection>
       <SectionHeader>
         <SectionHeaderContent>
           <SectionTitle>Invite member</SectionTitle>
-          <SectionDescription>New members receive a Zitadel email code.</SectionDescription>
+          <SectionDescription>New members receive an email invite.</SectionDescription>
         </SectionHeaderContent>
       </SectionHeader>
-      <div className="space-y-4">
-        {!canInvite ? (
-          <PermissionAlert title="Invite permission required">
-            Your current role can view members but cannot invite users.
-          </PermissionAlert>
-        ) : null}
 
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            void form.handleSubmit();
-          }}
-          className="grid gap-4 lg:grid-cols-[1fr_1fr]"
-        >
-          <div className="space-y-4">
-            <form.Field
-              name="email"
-              validators={{
-                onChange: ({ value }: { value: string }) =>
-                  !value.trim() ? "Email is required" : undefined,
-              }}
-            >
-              {(field) => (
-                <div className="space-y-1">
-                  <Label htmlFor={field.name}>Email</Label>
-                  <Input
-                    id={field.name}
-                    type="email"
-                    value={field.state.value}
-                    onBlur={field.handleBlur}
-                    onChange={(event) => field.handleChange(event.target.value)}
-                    disabled={!canInvite}
-                  />
-                  {field.state.meta.isTouched && field.state.meta.errors.length > 0 ? (
-                    <p className="text-sm text-destructive">
-                      {formErrorText(field.state.meta.errors[0])}
-                    </p>
-                  ) : null}
-                </div>
-              )}
-            </form.Field>
+      {!canInvite ? (
+        <PermissionAlert id={inviteDescriptionId} title="Invite permission required">
+          Your current role can view members but cannot invite users.
+        </PermissionAlert>
+      ) : null}
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <form.Field name="givenName">
-                {(field) => (
-                  <div className="space-y-1">
-                    <Label htmlFor={field.name}>Given name</Label>
-                    <Input
-                      id={field.name}
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
-                      onChange={(event) => field.handleChange(event.target.value)}
-                      disabled={!canInvite}
-                    />
-                  </div>
-                )}
-              </form.Field>
-              <form.Field name="familyName">
-                {(field) => (
-                  <div className="space-y-1">
-                    <Label htmlFor={field.name}>Family name</Label>
-                    <Input
-                      id={field.name}
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
-                      onChange={(event) => field.handleChange(event.target.value)}
-                      disabled={!canInvite}
-                    />
-                  </div>
-                )}
-              </form.Field>
-            </div>
-          </div>
-
-          <form.Field
-            name="roleKeys"
-            validators={{
-              onChange: ({ value }: { value: ReadonlyArray<string> }) =>
-                value.length === 0 ? "Select at least one role" : undefined,
-            }}
-          >
-            {(field) => (
-              <RoleCheckboxes
-                disabled={!canInvite}
-                error={
-                  field.state.meta.isTouched ? formErrorText(field.state.meta.errors[0]) : undefined
-                }
-                onChange={field.handleChange}
-                roles={INVITE_ROLES}
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          void form.handleSubmit();
+        }}
+        className="flex flex-col gap-3 sm:flex-row sm:items-end"
+      >
+        <form.Field name="email">
+          {(field) => (
+            <div className="flex-1 space-y-1.5">
+              <Label htmlFor={field.name}>Email</Label>
+              <Input
+                id={field.name}
+                type="email"
+                placeholder="teammate@example.com"
                 value={field.state.value}
-                legend="Invite roles"
+                onBlur={field.handleBlur}
+                onChange={(event) => field.handleChange(event.target.value)}
               />
-            )}
-          </form.Field>
-
-          <div className="space-y-3 lg:col-span-2">
-            {inviteMutation.error ? (
-              <ErrorAlert error={inviteMutation.error} title="Invite failed" />
-            ) : null}
-
-            <div className="flex justify-end">
-              <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
-                {([canSubmit, isSubmitting]) => (
-                  <Button
-                    type="submit"
-                    disabled={!canInvite || !canSubmit || isSubmitting || inviteMutation.isPending}
-                  >
-                    {isSubmitting || inviteMutation.isPending ? "Inviting…" : "Invite member"}
-                  </Button>
-                )}
-              </form.Subscribe>
             </div>
-          </div>
-        </form>
-      </div>
+          )}
+        </form.Field>
+
+        <form.Field name="roleKey">
+          {(field) => (
+            <div className="space-y-1.5 sm:w-40">
+              <Label htmlFor={field.name}>Role</Label>
+              <Select
+                id={field.name}
+                value={field.state.value}
+                onChange={(event) => field.handleChange(event.target.value)}
+              >
+                {ASSIGNABLE_ROLES.map((role) => (
+                  <option key={role.role_key} value={role.role_key}>
+                    {role.display_name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
+        </form.Field>
+
+        <form.Subscribe selector={(state) => state.isSubmitting}>
+          {(isSubmitting) => (
+            <Button
+              type="submit"
+              aria-busy={isSubmitting || inviteMutation.isPending}
+              aria-disabled={!canInvite || undefined}
+              aria-describedby={!canInvite ? inviteDescriptionId : undefined}
+              className="sm:shrink-0"
+            >
+              {isSubmitting || inviteMutation.isPending ? "Inviting…" : "Invite"}
+            </Button>
+          )}
+        </form.Subscribe>
+      </form>
     </PageSection>
   );
 }
@@ -297,14 +223,14 @@ function MembersSection({
   members,
 }: {
   canUpdateRoles: boolean;
-  members: Array<Member>;
+  members: ReadonlyArray<Member>;
 }) {
   return (
     <PageSection>
       <SectionHeader>
         <SectionHeaderContent>
           <SectionTitle>Members</SectionTitle>
-          <SectionDescription>Role assignments are written to Zitadel.</SectionDescription>
+          <SectionDescription>Change a member's role to adjust their access.</SectionDescription>
         </SectionHeaderContent>
       </SectionHeader>
       <div className="overflow-hidden rounded-md border">
@@ -312,8 +238,7 @@ function MembersSection({
           <TableHeader>
             <TableRow>
               <TableHead>Member</TableHead>
-              <TableHead>State</TableHead>
-              <TableHead>Roles</TableHead>
+              <TableHead className="w-[22rem]">Role</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -321,16 +246,16 @@ function MembersSection({
               members.map((member) => (
                 <MemberRow
                   canUpdateRoles={canUpdateRoles}
-                  key={`${member.user_id}:${member.role_keys.join(",")}`}
+                  key={member.user_id}
                   member={member}
                 />
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={3} className="py-8 text-center align-middle">
+                <TableCell colSpan={2} className="py-8 text-center align-middle">
                   <p className="font-medium">No members</p>
                   <p className="text-sm text-muted-foreground">
-                    Invited users appear here after Zitadel accepts the request.
+                    Invited users appear here once they accept the invite.
                   </p>
                 </TableCell>
               </TableRow>
@@ -344,71 +269,90 @@ function MembersSection({
 
 function MemberRow({ canUpdateRoles, member }: { canUpdateRoles: boolean; member: Member }) {
   const mutation = useUpdateMemberRolesMutation();
+  const initialRole = primaryRoleKey(member.role_keys);
+  const isOwner = initialRole === "owner";
   const form = useForm({
-    defaultValues: {
-      roleKeys: [...member.role_keys],
-    },
+    defaultValues: { roleKey: initialRole },
     onSubmit: async ({ value }) => {
-      await mutation.mutateAsync({
-        roleKeys: value.roleKeys,
-        userId: member.user_id,
-      });
+      if (!canUpdateRoles) {
+        toast.error("You don't have permission to change roles.");
+        return;
+      }
+      if (isOwner) {
+        toast.error("The organization owner's role can't be changed here.");
+        return;
+      }
+      if (value.roleKey === initialRole) {
+        toast.info("No role change to save.");
+        return;
+      }
+      if (mutation.isPending) {
+        toast.info("Still saving the last role change…");
+        return;
+      }
+      try {
+        await mutation.mutateAsync({
+          roleKeys: [value.roleKey],
+          userId: member.user_id,
+        });
+        toast.success("Role updated", {
+          description: `${member.email} is now ${value.roleKey}.`,
+        });
+      } catch (error) {
+        toast.error("Role update failed", {
+          description: error instanceof Error ? error.message : String(error),
+        });
+      }
     },
   });
 
   return (
     <TableRow>
-      <TableCell className="align-top">
+      <TableCell className="align-middle">
         <div className="font-medium">{member.display_name || member.email}</div>
         <div className="break-all text-xs text-muted-foreground">{member.email}</div>
       </TableCell>
-      <TableCell className="align-top text-muted-foreground">{member.state}</TableCell>
-      <TableCell className="align-top">
+      <TableCell className="align-middle">
         <form
           onSubmit={(event) => {
             event.preventDefault();
             event.stopPropagation();
             void form.handleSubmit();
           }}
-          className="space-y-2"
+          className="flex items-center gap-2"
         >
-          <form.Field
-            name="roleKeys"
-            validators={{
-              onChange: ({ value }: { value: ReadonlyArray<string> }) =>
-                value.length === 0 ? "Select at least one role" : undefined,
-            }}
-          >
+          <form.Field name="roleKey">
             {(field) => (
-              <RoleCheckboxes
-                disabled={!canUpdateRoles}
-                error={
-                  field.state.meta.isTouched ? formErrorText(field.state.meta.errors[0]) : undefined
-                }
-                onChange={field.handleChange}
-                roles={INVITE_ROLES}
+              <Select
                 value={field.state.value}
-                legend={`Roles for ${member.email}`}
-              />
+                onChange={(event) => field.handleChange(event.target.value)}
+                aria-label={`Role for ${member.email}`}
+                aria-readonly={isOwner || undefined}
+                className="flex-1"
+              >
+                {isOwner ? <option value="owner">Owner</option> : null}
+                {ASSIGNABLE_ROLES.map((role) => (
+                  <option key={role.role_key} value={role.role_key}>
+                    {role.display_name}
+                  </option>
+                ))}
+              </Select>
             )}
           </form.Field>
 
-          {mutation.error ? <ErrorAlert error={mutation.error} title="Role update failed" /> : null}
-
-          <div className="flex justify-end">
-            <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
-              {([canSubmit, isSubmitting]) => (
+          <form.Subscribe selector={(state) => [state.isDirty, state.isSubmitting]}>
+            {([isDirty, isSubmitting]) =>
+              isDirty ? (
                 <Button
                   type="submit"
-                  variant="outline"
                   size="sm"
-                  disabled={!canUpdateRoles || !canSubmit || isSubmitting || mutation.isPending}
+                  aria-busy={isSubmitting || mutation.isPending}
                 >
-                  {isSubmitting || mutation.isPending ? "Saving…" : "Save roles"}
+                  {isSubmitting || mutation.isPending ? "Saving…" : "Save"}
                 </Button>
-              )}
-            </form.Subscribe>
-          </div>
+              ) : null
+            }
+          </form.Subscribe>
         </form>
       </TableCell>
     </TableRow>
@@ -423,42 +367,43 @@ function CapabilitySection({
   memberCapabilities: MemberCapabilities;
 }) {
   const mutation = usePutMemberCapabilitiesMutation();
-  // The parent remounts this component on every server-confirmed version bump
-  // via key={...document.version}, so the initial server set never changes
-  // during a single mount — capture it once, derive isDirty inline.
-  const [initialKeys] = useState<ReadonlySet<string>>(
-    () => new Set(memberCapabilities.document.enabled_keys),
-  );
-  const [enabled, setEnabled] = useState<Set<string>>(() => new Set(initialKeys));
 
-  const isDirty = (() => {
-    if (enabled.size !== initialKeys.size) return true;
-    for (const key of enabled) {
-      if (!initialKeys.has(key)) return true;
-    }
-    return false;
-  })();
+  // Capabilities are a set of keys; tanstack form models each key as its own
+  // boolean field so isDirty light-up is per-field and we can submit the
+  // reconstructed set in onSubmit.
+  const initialEnabled = new Set(memberCapabilities.document.enabled_keys);
+  const defaultValues = Object.fromEntries(
+    memberCapabilities.catalog.map((capability) => [capability.key, initialEnabled.has(capability.key)]),
+  ) as Record<string, boolean>;
 
-  const handleToggle = (key: string, next: boolean) => {
-    setEnabled((previous) => {
-      const updated = new Set(previous);
-      if (next) {
-        updated.add(key);
-      } else {
-        updated.delete(key);
+  const form = useForm({
+    defaultValues,
+    onSubmit: async ({ value }) => {
+      if (!canEditCapabilities) {
+        toast.error("You don't have permission to edit member capabilities.");
+        return;
       }
-      return updated;
-    });
-  };
-
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    void mutation.mutateAsync({
-      enabled_keys: Array.from(enabled).sort(),
-      version: memberCapabilities.document.version,
-    });
-  };
+      if (mutation.isPending) {
+        toast.info("Still saving capabilities…");
+        return;
+      }
+      const enabledKeys = Object.entries(value)
+        .filter(([, enabled]) => enabled)
+        .map(([key]) => key)
+        .sort();
+      try {
+        await mutation.mutateAsync({
+          enabled_keys: enabledKeys,
+          version: memberCapabilities.document.version,
+        });
+        toast.success("Capabilities updated");
+      } catch (error) {
+        toast.error("Capabilities save failed", {
+          description: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+  });
 
   return (
     <PageSection>
@@ -466,8 +411,8 @@ function CapabilitySection({
         <SectionHeaderContent>
           <SectionTitle>Member capabilities</SectionTitle>
           <SectionDescription>
-            Toggle which actions the member role can take in this organization. Owners and admins
-            always have full access.
+            Toggle which actions the member role can take. Owners and admins always have full
+            access.
           </SectionDescription>
         </SectionHeaderContent>
       </SectionHeader>
@@ -478,40 +423,58 @@ function CapabilitySection({
         </PermissionAlert>
       ) : null}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          void form.handleSubmit();
+        }}
+        className="space-y-4"
+      >
         <div className="divide-y divide-border rounded-md border border-border">
           {memberCapabilities.catalog.map((capability) => {
             const switchId = `capability-${capability.key}`;
-            const checked = enabled.has(capability.key);
             return (
-              <div key={capability.key} className="flex items-start justify-between gap-4 p-4">
-                <div className="space-y-1">
-                  <Label htmlFor={switchId} className="text-sm font-medium">
-                    {capability.label}
-                  </Label>
-                  <p className="text-sm text-muted-foreground">{capability.description}</p>
-                </div>
-                <Switch
-                  id={switchId}
-                  checked={checked}
-                  onCheckedChange={(next) => handleToggle(capability.key, next)}
-                  disabled={!canEditCapabilities || mutation.isPending}
-                  aria-label={capability.label}
-                />
-              </div>
+              <form.Field key={capability.key} name={capability.key}>
+                {(field) => (
+                  <div className="flex items-start justify-between gap-4 p-4">
+                    <div className="space-y-1">
+                      <Label htmlFor={switchId} className="text-sm font-medium">
+                        {capability.label}
+                      </Label>
+                      <p className="text-sm text-muted-foreground">{capability.description}</p>
+                    </div>
+                    <Switch
+                      id={switchId}
+                      checked={Boolean(field.state.value)}
+                      onCheckedChange={(next) => {
+                        if (!canEditCapabilities) {
+                          toast.error("You don't have permission to edit member capabilities.");
+                          return;
+                        }
+                        field.handleChange(next);
+                      }}
+                      aria-label={capability.label}
+                      aria-readonly={!canEditCapabilities || undefined}
+                    />
+                  </div>
+                )}
+              </form.Field>
             );
           })}
         </div>
 
-        {mutation.error ? (
-          <ErrorAlert error={mutation.error} title="Capabilities save failed" />
-        ) : null}
-
-        <div className="flex justify-end">
-          <Button type="submit" disabled={!canEditCapabilities || !isDirty || mutation.isPending}>
-            {mutation.isPending ? "Saving…" : "Save capabilities"}
-          </Button>
-        </div>
+        <form.Subscribe selector={(state) => [state.isDirty, state.isSubmitting]}>
+          {([isDirty, isSubmitting]) =>
+            isDirty ? (
+              <div className="flex justify-end">
+                <Button type="submit" aria-busy={isSubmitting || mutation.isPending}>
+                  {isSubmitting || mutation.isPending ? "Saving…" : "Save capabilities"}
+                </Button>
+              </div>
+            ) : null
+          }
+        </form.Subscribe>
       </form>
     </PageSection>
   );

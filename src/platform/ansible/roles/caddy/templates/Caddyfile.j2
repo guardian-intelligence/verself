@@ -216,7 +216,14 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 		request_body {
 			max_size 65536
 		}
-		import sandbox_rental_api_proxy
+		# This route intentionally accepts shell commands; CRS RCE blocking would
+		# reject legitimate CI and sandbox workloads. Keep detection telemetry on.
+		import waf_detection
+		import sandbox_api_cors_headers
+		import api_security_headers
+		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }} {
+			header_up X-Real-IP {remote_host}
+		}
 	}
 
 	handle /api/* {

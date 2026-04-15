@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { useSignedInAuth } from "@forge-metal/auth-web/react";
 import { contractsQuery, entitlementsQuery, plansQuery, statementQuery } from "./queries";
 import { deriveBillingAccount, type BillingAccount, type BillingSnapshot } from "./state";
@@ -90,4 +90,29 @@ export function useBillingAccountWithStatement(
     };
     return { account: deriveBillingAccount(snapshot), snapshot };
   }, [plans, contracts, entitlements, statement]);
+}
+
+// Lightweight, non-suspending variant for chrome like the sidebar account
+// chip where the tier label is cosmetic and must not block shell render.
+// Returns null until both plans + contracts resolve so the caller can hide
+// the badge slot instead of flashing a placeholder. Intentionally does not
+// reuse deriveBillingAccount — that derivation also requires entitlements,
+// which we don't need for a plan-name lookup.
+export function useBillingTierLabel(): string | null {
+  const auth = useSignedInAuth();
+  const plans = useQuery(plansQuery(auth)).data;
+  const contracts = useQuery(contractsQuery(auth)).data;
+
+  return useMemo(() => {
+    if (!plans || !contracts) return null;
+    const active = (contracts.contracts ?? []).find(
+      (c) =>
+        c.product_id === "sandbox" &&
+        (c.status === "active" || c.status === "cancel_scheduled") &&
+        c.plan_id !== "",
+    );
+    if (!active) return "Free";
+    const plan = (plans.plans ?? []).find((p) => p.plan_id === active.plan_id);
+    return plan?.display_name || "Free";
+  }, [plans, contracts]);
 }

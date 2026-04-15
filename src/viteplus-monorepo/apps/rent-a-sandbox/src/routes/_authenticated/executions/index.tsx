@@ -69,8 +69,7 @@ function ExecutionsPage() {
             <ExecutionListPanel orgId={auth.orgId} />
           ) : (
             <Callout tone="destructive" title="Missing organization">
-              Your session does not include a Zitadel resource owner ID, so executions cannot be
-              scoped safely.
+              Your session is missing organization context. Try signing out and back in.
             </Callout>
           )}
         </PageSection>

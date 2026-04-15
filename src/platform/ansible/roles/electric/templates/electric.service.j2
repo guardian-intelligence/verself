@@ -13,6 +13,7 @@ ExecStart=/usr/bin/podman run --rm --replace \
   -e ELECTRIC_PORT={{ services.electric.port }} \
   -e ELECTRIC_SECRET={{ electric_api_secret }} \
   -e ELECTRIC_STORAGE_DIR=/data \
+  -e ELECTRIC_DB_POOL_SIZE={{ electric_db_pool_size }} \
   -e RELEASE_DISTRIBUTION=none \
   -v {{ electric_storage_dir }}:/data \
   {{ electric_image }}

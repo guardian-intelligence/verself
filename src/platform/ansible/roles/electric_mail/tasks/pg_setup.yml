@@ -43,6 +43,7 @@
         name: electric_mail
         password: "{{ electric_mail_pg_password }}"
         role_attr_flags: REPLICATION,LOGIN
+        conn_limit: "{{ postgresql_role_connection_limits.electric_mail }}"
       no_log: true
 
     - name: Grant Electric Mail role read access to mailbox_service tables

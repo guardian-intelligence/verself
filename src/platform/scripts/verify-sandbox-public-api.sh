@@ -14,16 +14,36 @@ submit_parallel="${SANDBOX_PROOF_SUBMIT_PARALLEL:-40}"
 proof_timeout_seconds="${SANDBOX_PROOF_TIMEOUT_SECONDS:-1800}"
 clickhouse_timeout_seconds="${SANDBOX_PROOF_CLICKHOUSE_TIMEOUT_SECONDS:-180}"
 max_wall_seconds="${SANDBOX_PROOF_MAX_WALL_SECONDS:-7200}"
+proof_persona="${SANDBOX_PROOF_PERSONA:-platform-admin}"
+workload_profile="${SANDBOX_PROOF_WORKLOAD_PROFILE:-echo}"
+workload_memory_mib="${SANDBOX_PROOF_WORKLOAD_MEMORY_MIB:-3072}"
+workload_cpu_seconds="${SANDBOX_PROOF_WORKLOAD_CPU_SECONDS:-3}"
+proof_log_marker="${SANDBOX_PROOF_LOG_MARKER:-forge-metal-proof}"
+
+case "${proof_persona}" in
+  platform-admin)
+    proof_billing_email="ceo@${VERIFICATION_DOMAIN}"
+    proof_billing_org="platform"
+    ;;
+  acme-admin | acme-member)
+    proof_billing_email="acme-admin@${VERIFICATION_DOMAIN}"
+    proof_billing_org="Acme Corp"
+    ;;
+  *)
+    echo "unsupported SANDBOX_PROOF_PERSONA=${proof_persona}" >&2
+    exit 1
+    ;;
+esac
 
 mkdir -p "${artifact_dir}/payloads" "${artifact_dir}/responses" "${artifact_dir}/clickhouse" "${artifact_dir}/postgres"
 
 # shellcheck disable=SC1090
-source <("${script_dir}/assume-persona.sh" acme-admin --print)
+source <("${script_dir}/assume-persona.sh" "${proof_persona}" --print)
 
 billing_fixture_path="${artifact_dir}/billing-fixture.json"
 "${script_dir}/set-user-state.sh" \
-  --email "acme-admin@${VERIFICATION_DOMAIN}" \
-  --org "Acme Corp" \
+  --email "${proof_billing_email}" \
+  --org "${proof_billing_org}" \
   --product-id "sandbox" \
   --state "pro" \
   --balance-units "500000000000" >"${billing_fixture_path}"
@@ -36,21 +56,24 @@ print(json.load(open(sys.argv[1], encoding="utf-8"))["org_id"])
 PY
 )"
 
-platform_billing_fixture_path="${artifact_dir}/platform-billing-fixture.json"
-"${script_dir}/set-user-state.sh" \
-  --email "ceo@${VERIFICATION_DOMAIN}" \
-  --org "platform" \
-  --product-id "sandbox" \
-  --state "pro" \
-  --balance-units "500000000000" >"${platform_billing_fixture_path}"
-platform_billing_org_id="$(
-  python3 - "${platform_billing_fixture_path}" <<'PY'
+platform_billing_org_id="${billing_org_id}"
+if [[ "${proof_billing_org}" != "platform" ]]; then
+  platform_billing_fixture_path="${artifact_dir}/platform-billing-fixture.json"
+  "${script_dir}/set-user-state.sh" \
+    --email "ceo@${VERIFICATION_DOMAIN}" \
+    --org "platform" \
+    --product-id "sandbox" \
+    --state "pro" \
+    --balance-units "500000000000" >"${platform_billing_fixture_path}"
+  platform_billing_org_id="$(
+    python3 - "${platform_billing_fixture_path}" <<'PY'
 import json
 import sys
 
 print(json.load(open(sys.argv[1], encoding="utf-8"))["org_id"])
 PY
-)"
+  )"
+fi
 
 api_base_url="${BASE_URL:-https://rentasandbox.${VERIFICATION_DOMAIN}}"
 api_url="${api_base_url%/}/api/v1/executions"
@@ -62,17 +85,95 @@ submit_one() {
   local response_path="${artifact_dir}/responses/${index}.json"
   local idempotency_key="${run_id}-${index}"
 
-  python3 - "${idempotency_key}" "${index}" "${max_wall_seconds}" >"${payload_path}" <<'PY'
+  python3 - "${idempotency_key}" "${index}" "${max_wall_seconds}" "${workload_profile}" "${workload_memory_mib}" "${workload_cpu_seconds}" >"${payload_path}" <<'PY'
+import base64
 import json
+import shlex
 import sys
 
-idempotency_key, index, max_wall_seconds = sys.argv[1:4]
+idempotency_key, index, max_wall_seconds, workload_profile, workload_memory_mib, workload_cpu_seconds = sys.argv[1:7]
+workload_profile = workload_profile.strip().lower()
+
+
+def echo_command(index_value: str) -> str:
+    return f"printf 'forge-metal-proof workload=echo index={index_value} ok\\n'"
+
+
+def cpu_mem_command(index_value: str, memory_mib_value: str, cpu_seconds_value: str) -> str:
+    index_int = int(index_value)
+    memory_mib_int = int(memory_mib_value)
+    cpu_seconds_float = float(cpu_seconds_value)
+    if memory_mib_int < 1:
+        raise SystemExit("SANDBOX_PROOF_WORKLOAD_MEMORY_MIB must be >= 1")
+    if cpu_seconds_float < 0:
+        raise SystemExit("SANDBOX_PROOF_WORKLOAD_CPU_SECONDS must be >= 0")
+    source = """import argparse
+import hashlib
+import resource
+import time
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--index", type=int, required=True)
+parser.add_argument("--memory-mib", type=int, required=True)
+parser.add_argument("--cpu-seconds", type=float, required=True)
+args = parser.parse_args()
+
+INDEX = args.index
+MEMORY_MIB = args.memory_mib
+CPU_SECONDS = args.cpu_seconds
+PAGE_BYTES = 4096
+TOTAL_BYTES = MEMORY_MIB * 1024 * 1024
+
+started = time.perf_counter()
+buf = bytearray(TOTAL_BYTES)
+for offset in range(0, TOTAL_BYTES, PAGE_BYTES):
+    buf[offset] = ((offset // PAGE_BYTES) + INDEX) & 0xFF
+touched = time.perf_counter()
+
+view = memoryview(buf)
+deadline = touched + CPU_SECONDS
+chunk_bytes = 1024 * 1024
+loops = 0
+digest = "0" * 64
+while time.perf_counter() < deadline:
+    h = hashlib.sha256()
+    for offset in range(0, TOTAL_BYTES, chunk_bytes):
+        h.update(view[offset:offset + chunk_bytes])
+        if time.perf_counter() >= deadline:
+            break
+    digest = h.hexdigest()
+    buf[(loops * 7919 * PAGE_BYTES) % TOTAL_BYTES] ^= loops & 0xFF
+    loops += 1
+
+rss_kib = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+print(
+    "forge-metal-proof "
+    f"workload=cpu-mem index={{INDEX}} memory_mib={{MEMORY_MIB}} "
+    f"cpu_seconds={{CPU_SECONDS:g}} touch_seconds={{touched - started:.3f}} "
+    f"loops={{loops}} rss_kib={{rss_kib}} digest={{digest[:16]}} ok",
+    flush=True,
+)
+"""
+    encoded = base64.b64encode(source.encode("utf-8")).decode("ascii")
+    return (
+        f"printf %s {shlex.quote(encoded)} | base64 -d | python3 - "
+        f"--index {index_int} --memory-mib {memory_mib_int} --cpu-seconds {cpu_seconds_float:g}"
+    )
+
+
+if workload_profile == "echo":
+    run_command = echo_command(index)
+elif workload_profile in ("cpu-mem", "cpu_mem"):
+    run_command = cpu_mem_command(index, workload_memory_mib, workload_cpu_seconds)
+else:
+    raise SystemExit(f"unsupported SANDBOX_PROOF_WORKLOAD_PROFILE={workload_profile!r}")
+
 print(json.dumps({
     "kind": "direct",
     "idempotency_key": idempotency_key,
     "runner_class": "metal-4vcpu-ubuntu-2404",
     "product_id": "sandbox",
-    "run_command": f"echo hello world {index}",
+    "run_command": run_command,
     "max_wall_seconds": int(max_wall_seconds),
 }))
 PY
@@ -86,7 +187,7 @@ PY
 }
 
 export -f submit_one
-export artifact_dir max_wall_seconds run_id SANDBOX_RENTAL_TOKEN api_url
+export artifact_dir max_wall_seconds run_id SANDBOX_RENTAL_TOKEN api_url workload_profile workload_memory_mib workload_cpu_seconds
 
 submit_failed=0
 active=0
@@ -142,6 +243,14 @@ import sys
 
 ids = [line.strip() for line in pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines() if line.strip()]
 print("ARRAY[" + ",".join("'" + item + "'" for item in ids) + "]::uuid[]")
+PY
+)"
+
+pg_log_marker_literal="$(
+  python3 - "${proof_log_marker}" <<'PY'
+import sys
+
+print("'" + sys.argv[1].replace("'", "''") + "'")
 PY
 )"
 
@@ -443,16 +552,16 @@ if observed[: len(expected)] != expected:
     raise SystemExit(f"billing statement line order {observed!r} did not start with {expected!r}")
 PY
 
-hello_logs="$(
+proof_marker_logs="$(
   remote_psql "COPY (
     SELECT count(*)
     FROM execution_logs l
     WHERE l.execution_id = ANY(${pg_uuid_array})
-      AND l.chunk LIKE '%hello world%'
+      AND l.chunk LIKE '%' || ${pg_log_marker_literal} || '%'
   ) TO STDOUT WITH CSV;"
 )"
-if [[ "${hello_logs}" -ne "${submission_count}" ]]; then
-  echo "expected ${submission_count} hello-world log chunks, found ${hello_logs}" >&2
+if [[ "${proof_marker_logs}" -ne "${submission_count}" ]]; then
+  echo "expected ${submission_count} proof marker log chunks, found ${proof_marker_logs}" >&2
   exit 1
 fi
 
@@ -600,16 +709,19 @@ if [[ "${span_counts_ok}" -ne 1 ]]; then
   exit 1
 fi
 
-python3 - "${artifact_dir}/run.json" "${run_id}" "${submitted_at}" "${submission_count}" "${artifact_dir}" <<'PY'
+python3 - "${artifact_dir}/run.json" "${run_id}" "${submitted_at}" "${submission_count}" "${artifact_dir}" "${workload_profile}" "${workload_memory_mib}" "${workload_cpu_seconds}" <<'PY'
 import json
 import sys
 
-out, run_id, submitted_at, submission_count, artifact_dir = sys.argv[1:6]
+out, run_id, submitted_at, submission_count, artifact_dir, workload_profile, workload_memory_mib, workload_cpu_seconds = sys.argv[1:9]
 print(json.dumps({
     "verification_run_id": run_id,
     "submitted_at": submitted_at,
     "submission_count": int(submission_count),
     "artifact_dir": artifact_dir,
+    "workload_profile": workload_profile,
+    "workload_memory_mib": int(workload_memory_mib),
+    "workload_cpu_seconds": float(workload_cpu_seconds),
 }, indent=2, sort_keys=True), file=open(out, "w", encoding="utf-8"))
 PY
 

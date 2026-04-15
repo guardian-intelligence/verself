@@ -4,6 +4,9 @@ import { LogOut } from "lucide-react";
 import { SignedIn, SignedOut, SignInButton } from "@forge-metal/auth-web/components";
 import { useClerk, useUser } from "@forge-metal/auth-web/react";
 import { Avatar, AvatarFallback } from "@forge-metal/ui/components/ui/avatar";
+import { Badge } from "@forge-metal/ui/components/ui/badge";
+import { Toaster } from "@forge-metal/ui/components/ui/sonner";
+import { useBillingTierLabel } from "~/features/billing/use-billing-account";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -66,6 +69,7 @@ export function AppShell() {
         </main>
       </SidebarInset>
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+      <Toaster />
     </SidebarProvider>
   );
 }
@@ -154,6 +158,7 @@ function SidebarAccountRow() {
 function AccountMenu() {
   const { user } = useUser();
   const { redirectToSignOut } = useClerk();
+  const tierLabel = useBillingTierLabel();
 
   if (!user) return null;
 
@@ -167,7 +172,7 @@ function AccountMenu() {
   // there is no layout shift; the popover wires up its event listeners on
   // the client.
   const triggerContent = (
-    <AccountTriggerContent display={display} email={email} initials={initials} />
+    <AccountTriggerContent display={display} initials={initials} tierLabel={tierLabel} />
   );
 
   return (
@@ -234,36 +239,42 @@ function AccountMenu() {
 
 function AccountTriggerContent({
   display,
-  email,
   initials,
+  tierLabel,
 }: {
   display: string;
-  email: string;
   initials: string;
+  tierLabel: string | null;
 }) {
   return (
     <>
       <Avatar className="size-8 shrink-0">
         <AvatarFallback className="text-xs">{initials}</AvatarFallback>
       </Avatar>
-      <div className="grid min-w-0 flex-1 text-left leading-tight">
-        <span className="truncate text-sm font-medium">{display}</span>
-        {email ? (
-          <span className="truncate text-xs text-muted-foreground">{email}</span>
-        ) : null}
-      </div>
+      <span className="min-w-0 flex-1 truncate text-left text-sm font-medium">{display}</span>
+      {tierLabel ? (
+        <Badge
+          variant="secondary"
+          data-testid="shell-account-tier"
+          className="shrink-0 group-data-[collapsible=icon]:hidden"
+        >
+          {tierLabel}
+        </Badge>
+      ) : null}
     </>
   );
 }
 
 function TopBar({ onOpenPalette }: { onOpenPalette: () => void }) {
+  // Top bar is chrome: it yields the primary visual weight to the page content.
+  // Sidebar toggle hugs the left, omnibar is small and right-aligned, page
+  // title on the route is what the user reads first.
   return (
-    <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:px-6">
+    <header className="sticky top-0 z-20 flex h-12 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:px-6">
       <SidebarTrigger className="-ml-1" data-testid="shell-sidebar-trigger" />
-      <div className="flex flex-1 justify-center">
+      <div className="flex flex-1 items-center justify-end">
         <OmniBar onOpen={onOpenPalette} />
       </div>
-      <div className="hidden w-9 shrink-0 md:block" aria-hidden="true" />
     </header>
   );
 }
@@ -274,11 +285,11 @@ function OmniBar({ onOpen }: { onOpen: () => void }) {
       type="button"
       onClick={onOpen}
       data-testid="shell-omnibar"
-      className="flex h-9 w-full max-w-lg items-center gap-2 rounded-md border bg-background px-3 text-left text-sm text-muted-foreground shadow-sm hover:bg-accent"
+      className="flex h-8 w-72 items-center gap-2 rounded-md border border-border/60 bg-background px-2.5 text-left text-xs text-muted-foreground transition-colors hover:border-border hover:bg-accent"
     >
-      <span aria-hidden="true">⌕</span>
+      <span aria-hidden="true" className="text-muted-foreground/70">⌕</span>
       <span className="flex-1 truncate">Search or jump to…</span>
-      <kbd className="hidden rounded border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground md:inline-block">
+      <kbd className="hidden rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground tabular-nums md:inline-block">
         ⌘K
       </kbd>
     </button>

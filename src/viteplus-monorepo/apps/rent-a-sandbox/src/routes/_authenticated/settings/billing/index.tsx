@@ -137,7 +137,7 @@ function PlanHero({ account }: { account: BillingAccount }) {
             <p className="text-sm text-muted-foreground">Try Rent-a-Sandbox</p>
           </div>
           <ul className="space-y-1.5 text-sm text-muted-foreground">
-            <FreeFeature>Run isolated Firecracker sandboxes on bare metal</FreeFeature>
+            <FreeFeature>Run isolated sandboxes on bare metal</FreeFeature>
             <FreeFeature>Pay-as-you-go vCPU, memory, and disk metering</FreeFeature>
             <FreeFeature>Upgrade for monthly credit grants and priority lanes</FreeFeature>
           </ul>

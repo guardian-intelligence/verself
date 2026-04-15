@@ -13,6 +13,7 @@ ExecStart=/usr/bin/podman run --rm --replace \
   -e ELECTRIC_PORT={{ services.electric_mail.port }} \
   -e ELECTRIC_SECRET={{ electric_mail_api_secret }} \
   -e ELECTRIC_STORAGE_DIR=/data \
+  -e ELECTRIC_DB_POOL_SIZE={{ electric_mail_db_pool_size }} \
   -e ELECTRIC_INSTANCE_ID=electric-mail \
   -e ELECTRIC_REPLICATION_STREAM_ID=mail \
   -e RELEASE_DISTRIBUTION=none \

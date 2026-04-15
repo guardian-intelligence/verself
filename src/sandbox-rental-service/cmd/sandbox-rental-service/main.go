@@ -218,7 +218,8 @@ func run() error {
 	jobService.GitHubRunner = githubRunner
 
 	schedulerRuntime, err := scheduler.NewRuntime(pgxPool, scheduler.Config{
-		Logger: logger,
+		Logger:              logger,
+		ExecutionMaxWorkers: envInt("SANDBOX_EXECUTION_MAX_WORKERS", scheduler.DefaultExecutionMaxWorkers),
 		RegisterWorkers: func(workers *river.Workers) error {
 			return jobs.RegisterSchedulerWorkers(workers, jobService)
 		},

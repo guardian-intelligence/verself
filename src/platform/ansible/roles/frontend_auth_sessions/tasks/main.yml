@@ -60,6 +60,7 @@
         name: "{{ frontend_auth_sessions_db_user }}"
         password: "{{ frontend_auth_sessions_pg_password }}"
         role_attr_flags: LOGIN
+        conn_limit: "{{ postgresql_role_connection_limits.frontend_auth }}"
       no_log: true
 
     - name: Ensure frontend auth database exists
