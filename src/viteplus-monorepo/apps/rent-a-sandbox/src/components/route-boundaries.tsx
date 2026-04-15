@@ -30,8 +30,8 @@ export function AppRouteError({ error, reset }: ErrorComponentProps) {
             <Button type="button" onClick={() => reset()}>
               Retry
             </Button>
-            <Button asChild variant="outline">
-              <Link to="/executions">Back to executions</Link>
+            <Button variant="outline" render={<Link to="/executions" />}>
+              Back to executions
             </Button>
           </div>
         }
@@ -46,9 +46,7 @@ export function AppNotFound(_props: NotFoundRouteProps) {
       title="Not found"
       body="The page or resource you requested does not exist."
       action={
-        <Button asChild>
-          <Link to="/executions">Return to executions</Link>
-        </Button>
+        <Button render={<Link to="/executions" />}>Return to executions</Button>
       }
     />
   );

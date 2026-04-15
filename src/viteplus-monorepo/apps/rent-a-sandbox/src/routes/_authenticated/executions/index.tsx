@@ -38,10 +38,11 @@ function ExecutionsPage() {
             New execution
           </Button>
         ) : (
-          <Button asChild variant="default">
-            <Link to="/executions/new" data-testid="new-execution">
-              New execution
-            </Link>
+          <Button
+            variant="default"
+            render={<Link to="/executions/new" data-testid="new-execution" />}
+          >
+            New execution
           </Button>
         )}
       </header>
@@ -72,10 +73,11 @@ function CreditsExhaustedCallout({ accountKind }: { accountKind: string }) {
       tone="warning"
       title="Your credit balance is empty"
       action={
-        <Button asChild variant="default">
-          <Link to={ctaTarget} data-testid="credits-exhausted-cta">
-            {ctaLabel}
-          </Link>
+        <Button
+          variant="default"
+          render={<Link to={ctaTarget} data-testid="credits-exhausted-cta" />}
+        >
+          {ctaLabel}
         </Button>
       }
     >
