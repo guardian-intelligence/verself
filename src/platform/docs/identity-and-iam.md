@@ -84,7 +84,7 @@ Zitadel role assignments:
 Forge Metal member capabilities:
 
 - Are a fixed, code-owned catalog of capability bundles (e.g.
-  `deploy_executions`, `manage_repositories`, `invite_members`,
+  `deploy_executions`, `manage_integrations`, `invite_members`,
   `view_billing`). Each bundle pins a hardcoded set of member-eligible
   permissions.
 - Are toggled per organization via a small switchboard in the org console.
@@ -330,7 +330,7 @@ Issuance and roll must validate every requested permission against the current
 service-declared operation catalog and against the creating principal's
 effective permissions. A caller cannot mint a credential with permissions they
 do not currently hold. Credential scopes are exact operation permissions such as
-`sandbox:execution:submit`, `sandbox:repo:write`, `sandbox:logs:read`,
+`sandbox:execution:submit`, `sandbox:github:write`, `sandbox:logs:read`,
 `billing:read`, and future CI operations such as `ci:workflow:dispatch`.
 
 Token minting uses a Zitadel pre-access-token Action. The signed Action
@@ -413,25 +413,18 @@ interactive UI path and a separate provider API credential model is introduced.
 Zitadel answers "who is allowed to configure this integration?" It does not
 answer "how does Forge Metal authenticate to the customer's git host?"
 
-Inbound webhooks should use provider-native verification: HMAC for Forgejo,
-GitHub, and similar hosts; constant-time token comparison for providers that use
-shared tokens; provider-specific signature validation where available. The
-verified credential must map to a Forge Metal integration or webhook endpoint
-row that carries `org_id`.
+Inbound webhooks should use provider-native verification: HMAC for GitHub and
+similar hosts; constant-time token comparison for providers that use shared
+tokens; provider-specific signature validation where available. The verified
+credential must map to a Forge Metal integration row that carries `org_id`.
 
-Private repository access is a separate credential plane. A webhook proves that
-an event was delivered through a configured endpoint; it does not grant clone
-access for private code. Private repo imports and future service-owned CI fetches
-need an org-owned git credential such as a deploy key, provider app
-installation token, or host-specific machine token. Store those as integration
-secrets scoped to organization, provider, provider host, and minimal repository
-or installation permissions. Do not reuse a human user's browser session token
-for background git fetches.
-
-Manual webhook endpoints are the right low-ceremony path for Codeberg, Forgejo,
-GitHub, and GitLab. Provider apps are a later automation layer that can create
-the same underlying integration credentials and webhook endpoints
-programmatically.
+Private source access for CI is a separate credential plane. A webhook proves
+that an event was delivered by the provider; it does not grant clone access for
+private code. Future service-owned CI fetches need an org-owned credential such
+as a deploy key, provider app installation token, or host-specific machine
+token. Store those as integration secrets scoped to organization, provider,
+provider host, and minimal repository or installation permissions. Do not reuse
+a human user's browser session token for background git fetches.
 
 ## Invariants
 
@@ -497,8 +490,6 @@ Local code anchors:
   service-to-service client-credentials scopes and single-node Host override.
 - `src/platform/ansible/playbooks/tasks/upsert_role_assignment.yml`: Zitadel
   Authorization service create/update calls for project role assignments.
-- `src/platform/ansible/playbooks/tasks/seed-forgejo-repos.yml`: live seed flow
-  for JWT machine users, role assignment, and client-credentials token request.
 
 Zitadel documents the Management Console at `/ui/console`, including its role as
 an admin dashboard and the option to restrict generic Console access when

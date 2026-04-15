@@ -135,8 +135,8 @@
           compute: 120000000
           memory: 60000000
           block_storage: 20000000
-    seed_system_platform_target_prepaid_units: 500000000
-    seed_system_customer_target_prepaid_units: 500000000
+    seed_system_platform_target_prepaid_units: 500000000000
+    seed_system_customer_target_prepaid_units: 500000000000
     seed_system_expires_after: 8760h
     # Acme demos the SKU branch of the entitlements view by carrying a small
     # promo grant pinned to a specific block-storage SKU. Without it the SKU

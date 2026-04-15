@@ -21,10 +21,6 @@ import (
 type permission string
 
 const (
-	permissionRepoRead        permission = "sandbox:repo:read"
-	permissionRepoWrite       permission = "sandbox:repo:write"
-	permissionWebhookRead     permission = "sandbox:webhook_endpoint:read"
-	permissionWebhookWrite    permission = "sandbox:webhook_endpoint:write"
 	permissionGitHubRead      permission = "sandbox:github_installation:read"
 	permissionGitHubWrite     permission = "sandbox:github_installation:write"
 	permissionExecutionSubmit permission = "sandbox:execution:submit"
@@ -43,7 +39,6 @@ const (
 
 	bodyLimitNoBody        int64 = 1024
 	bodyLimitSmallJSON     int64 = 8 << 10
-	bodyLimitRepoImport    int64 = 32 << 10
 	bodyLimitExecutionPost int64 = 64 << 10
 )
 
@@ -69,10 +64,6 @@ func secured(op huma.Operation, policy operationPolicy) securedOperation {
 
 var rolePermissionBundles = map[string][]permission{
 	roleSandboxOrgAdmin: {
-		permissionRepoRead,
-		permissionRepoWrite,
-		permissionWebhookRead,
-		permissionWebhookWrite,
 		permissionGitHubRead,
 		permissionGitHubWrite,
 		permissionExecutionSubmit,
@@ -82,8 +73,6 @@ var rolePermissionBundles = map[string][]permission{
 		permissionBillingCheckout,
 	},
 	roleSandboxOrgMember: {
-		permissionRepoRead,
-		permissionRepoWrite,
 		permissionExecutionSubmit,
 		permissionExecutionRead,
 		permissionLogsRead,
@@ -394,13 +383,12 @@ type fixedWindowOperationRateLimiter struct {
 }
 
 var apiOperationRateLimiter = newFixedWindowOperationRateLimiter(map[string]rateLimitRule{
-	"read":                      {Limit: 600, Window: time.Minute},
-	"logs_read":                 {Limit: 120, Window: time.Minute},
-	"repo_mutation":             {Limit: 120, Window: time.Minute},
-	"execution_submit":          {Limit: 120, Window: time.Minute},
-	"billing_mutation":          {Limit: 60, Window: time.Minute},
-	"scheduler_probe":           {Limit: 30, Window: time.Minute},
-	"webhook_endpoint_mutation": {Limit: 30, Window: time.Minute},
+	"read":                         {Limit: 600, Window: time.Minute},
+	"logs_read":                    {Limit: 120, Window: time.Minute},
+	"execution_submit":             {Limit: 600, Window: time.Minute},
+	"github_installation_mutation": {Limit: 30, Window: time.Minute},
+	"billing_mutation":             {Limit: 60, Window: time.Minute},
+	"scheduler_probe":              {Limit: 30, Window: time.Minute},
 })
 
 func newFixedWindowOperationRateLimiter(rules map[string]rateLimitRule) *fixedWindowOperationRateLimiter {

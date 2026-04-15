@@ -120,26 +120,26 @@
         IF to_regclass('public.execution_events') IS NOT NULL THEN
           EXECUTE 'ALTER TABLE public.execution_events OWNER TO sandbox_rental';
         END IF;
-        IF to_regclass('public.execution_workload_specs') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.execution_workload_specs OWNER TO sandbox_rental';
-        END IF;
-        IF to_regclass('public.execution_workload_secrets') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.execution_workload_secrets OWNER TO sandbox_rental';
-        END IF;
         IF to_regclass('public.runner_classes') IS NOT NULL THEN
           EXECUTE 'ALTER TABLE public.runner_classes OWNER TO sandbox_rental';
         END IF;
-        IF to_regclass('public.github_workflow_job_executions') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.github_workflow_job_executions OWNER TO sandbox_rental';
+        IF to_regclass('public.github_workflow_jobs') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.github_workflow_jobs OWNER TO sandbox_rental';
         END IF;
-        IF to_regclass('public.github_app_installations') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.github_app_installations OWNER TO sandbox_rental';
+        IF to_regclass('public.github_installations') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.github_installations OWNER TO sandbox_rental';
         END IF;
-        IF to_regclass('public.github_app_installation_states') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.github_app_installation_states OWNER TO sandbox_rental';
+        IF to_regclass('public.github_installation_states') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.github_installation_states OWNER TO sandbox_rental';
         END IF;
-        IF to_regclass('public.execution_billing_job_id_seq') IS NOT NULL THEN
-          EXECUTE 'ALTER SEQUENCE public.execution_billing_job_id_seq OWNER TO sandbox_rental';
+        IF to_regclass('public.github_runner_allocations') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.github_runner_allocations OWNER TO sandbox_rental';
+        END IF;
+        IF to_regclass('public.github_runner_job_bindings') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.github_runner_job_bindings OWNER TO sandbox_rental';
+        END IF;
+        IF to_regclass('public.execution_billing_job_seq') IS NOT NULL THEN
+          EXECUTE 'ALTER SEQUENCE public.execution_billing_job_seq OWNER TO sandbox_rental';
         END IF;
       END
       $$;
@@ -150,15 +150,15 @@
         public.execution_billing_windows,
         public.execution_logs,
         public.execution_events,
-        public.execution_workload_specs,
-        public.execution_workload_secrets,
         public.runner_classes,
-        public.github_app_installations,
-        public.github_app_installation_states,
-        public.github_workflow_job_executions
+        public.github_installations,
+        public.github_installation_states,
+        public.github_workflow_jobs,
+        public.github_runner_allocations,
+        public.github_runner_job_bindings
       TO sandbox_rental;
       GRANT ALL PRIVILEGES ON SEQUENCE
-        public.execution_billing_job_id_seq
+        public.execution_billing_job_seq
       TO sandbox_rental;
   environment:
     PGPASSWORD: "{{ postgresql_admin_password }}"

@@ -23,11 +23,6 @@
     "url": "https://github.com/actions/runner/releases/download/v2.333.1/actions-runner-linux-x64-2.333.1.tar.gz",
     "sha256": "18f8f68ed1892854ff2ab1bab4fcaa2f5abeedc98093b6cb13638991725cab74"
   },
-  "forgejo_runner": {
-    "version": "12.8.2",
-    "url": "https://code.forgejo.org/forgejo/runner/releases/download/v12.8.2/forgejo-runner-12.8.2-linux-amd64",
-    "sha256": "7be27f32a9a4a9bb701a3d8949069641816b7407eeacf9bfe441d3ba712a547e"
-  },
   "firecracker": {
     "version": "1.15.0",
     "arch": "x86_64",

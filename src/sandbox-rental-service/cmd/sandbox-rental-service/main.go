@@ -62,7 +62,6 @@ func run() error {
 	pgDSN := requireCredential("pg-dsn")
 	chPassword := credentialOr("ch-password", "")
 	billingClientSecret := requireCredential("billing-client-secret")
-	serviceSecretKEK := requireCredential("webhook-secret-kek")
 	githubAppPrivateKey := credentialOr("github-app-private-key", "")
 	githubAppWebhookSecret := credentialOr("github-app-webhook-secret", "")
 	githubAppClientSecret := credentialOr("github-app-client-secret", "")
@@ -186,11 +185,6 @@ func run() error {
 
 	// --- job service ---
 
-	secretCodec, err := jobs.NewSecretCodec(serviceSecretKEK)
-	if err != nil {
-		return fmt.Errorf("create service secret codec: %w", err)
-	}
-
 	jobService := &jobs.Service{
 		PG:                            pg,
 		PGX:                           pgxPool,
@@ -201,8 +195,8 @@ func run() error {
 		BillingVCPUs:                  int(capacity.VCPUsPerVM),
 		BillingMemMiB:                 int(capacity.MemoryMiBPerVM),
 		BillingRootfsProvisionedBytes: capacity.RootfsProvisionedBytes,
-		SecretCodec:                   secretCodec,
 		Logger:                        logger,
+		WorkloadTimeout:               time.Duration(envInt("SANDBOX_WORKLOAD_TIMEOUT_SECONDS", 7200)) * time.Second,
 	}
 	githubRunner, err := jobs.NewGitHubRunner(jobService, jobs.GitHubRunnerConfig{
 		AppID:         githubAppID,
@@ -314,7 +308,6 @@ func run() error {
 			}
 		}
 	}()
-	sandboxapi.StartWebhookDeliveryWorker(ctx, jobService)
 
 	logger.Info("sandbox-rental: listening", "addr", listenAddr)
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {

@@ -292,7 +292,6 @@
       LoadCredential=pg-dsn:/etc/credstore/sandbox-rental/pg-dsn
       LoadCredential=ch-password:/etc/credstore/sandbox-rental/ch-password
       LoadCredential=billing-client-secret:/etc/credstore/sandbox-rental/billing-client-secret
-      LoadCredential=webhook-secret-kek:/etc/credstore/sandbox-rental/webhook-secret-kek
       LoadCredential=github-app-private-key:/etc/credstore/sandbox-rental/github-app-private-key
       LoadCredential=github-app-webhook-secret:/etc/credstore/sandbox-rental/github-app-webhook-secret
       LoadCredential=github-app-client-secret:/etc/credstore/sandbox-rental/github-app-client-secret

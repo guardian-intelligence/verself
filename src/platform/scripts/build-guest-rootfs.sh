@@ -5,7 +5,7 @@ set -euo pipefail
 #
 # The image is the canonical runner substrate for the first public CI label:
 # metal-4vcpu-ubuntu-2404. It contains the vm-bridge PID 1, guest telemetry,
-# the official GitHub Actions runner, Forgejo runner, Go, Node.js, git, and the
+# the official GitHub Actions runner, Go, Node.js, git, and the
 # basic build tools expected by the forge-metal dogfood workflow.
 #
 # Two-layer architecture:
@@ -99,10 +99,6 @@ NODEJS_SHA256=$(json_string '.nodejs.sha256')
 GITHUB_ACTIONS_RUNNER_VERSION=$(json_string '.github_actions_runner.version')
 GITHUB_ACTIONS_RUNNER_URL=$(json_string '.github_actions_runner.url')
 GITHUB_ACTIONS_RUNNER_SHA256=$(json_string '.github_actions_runner.sha256')
-
-FORGEJO_RUNNER_VERSION=$(json_string '.forgejo_runner.version')
-FORGEJO_RUNNER_URL=$(json_string '.forgejo_runner.url')
-FORGEJO_RUNNER_SHA256=$(json_string '.forgejo_runner.sha256')
 
 case "$UBUNTU_BASE_ARCH:$GUEST_KERNEL_ARCH" in
   amd64:x86_64) ;;
@@ -247,11 +243,6 @@ mkdir -p "$ROOTFS/opt/actions-runner"
 tar -xzf "$GITHUB_RUNNER_TARBALL" -C "$ROOTFS/opt/actions-runner"
 run_chroot /bin/bash -lc 'cd /opt/actions-runner && ./bin/installdependencies.sh'
 
-echo "-> installing Forgejo runner $FORGEJO_RUNNER_VERSION"
-FORGEJO_RUNNER_TMP="$WORKDIR/forgejo-runner"
-download_checked "$FORGEJO_RUNNER_URL" "$FORGEJO_RUNNER_SHA256" "$FORGEJO_RUNNER_TMP"
-install -D -m 0755 "$FORGEJO_RUNNER_TMP" "$ROOTFS/usr/local/bin/forgejo-runner"
-
 echo "-> installing vm-bridge"
 rm -f "$ROOTFS/sbin/init"
 if [[ -f "$SCRIPT_DIR/vm-bridge" ]]; then
@@ -322,9 +313,6 @@ NODE_BINARY_SHA256=$(sha256sum "$ROOTFS/opt/forge-metal/nodejs/bin/node" | awk '
 NODE_BINARY_BYTES=$(stat -c '%s' "$ROOTFS/opt/forge-metal/nodejs/bin/node")
 GITHUB_RUNNER_SHA256=$(sha256sum "$ROOTFS/opt/actions-runner/run.sh" | awk '{print $1}')
 GITHUB_RUNNER_BYTES=$(stat -c '%s' "$ROOTFS/opt/actions-runner/run.sh")
-FORGEJO_RUNNER_BINARY_SHA256=$(sha256sum "$ROOTFS/usr/local/bin/forgejo-runner" | awk '{print $1}')
-FORGEJO_RUNNER_BINARY_BYTES=$(stat -c '%s' "$ROOTFS/usr/local/bin/forgejo-runner")
-
 {
   echo
   echo "# custom_components"
@@ -334,7 +322,6 @@ FORGEJO_RUNNER_BINARY_BYTES=$(stat -c '%s' "$ROOTFS/usr/local/bin/forgejo-runner
   echo "file path=/usr/local/go/bin/go component=go version=$GO_VERSION sha256=$GO_BINARY_SHA256 bytes=$GO_BINARY_BYTES"
   echo "file path=/opt/forge-metal/nodejs/bin/node component=nodejs version=$NODEJS_VERSION sha256=$NODE_BINARY_SHA256 bytes=$NODE_BINARY_BYTES"
   echo "file path=/opt/actions-runner/run.sh component=github-actions-runner version=$GITHUB_ACTIONS_RUNNER_VERSION sha256=$GITHUB_RUNNER_SHA256 bytes=$GITHUB_RUNNER_BYTES"
-  echo "file path=/usr/local/bin/forgejo-runner component=forgejo-runner version=$FORGEJO_RUNNER_VERSION sha256=$FORGEJO_RUNNER_BINARY_SHA256 bytes=$FORGEJO_RUNNER_BINARY_BYTES"
 } >> "$OUTPUT_DIR/sbom.txt"
 
 unmount_chroot_mounts
@@ -394,9 +381,6 @@ jq -n \
   --arg github_actions_runner_version "$GITHUB_ACTIONS_RUNNER_VERSION" \
   --arg github_actions_runner_sha256 "$GITHUB_RUNNER_SHA256" \
   --arg github_actions_runner_bytes "$GITHUB_RUNNER_BYTES" \
-  --arg forgejo_runner_version "$FORGEJO_RUNNER_VERSION" \
-  --arg forgejo_runner_sha256 "$FORGEJO_RUNNER_BINARY_SHA256" \
-  --arg forgejo_runner_bytes "$FORGEJO_RUNNER_BINARY_BYTES" \
   '{
     schema_version: 2,
     built_at_utc: $built_at_utc,
@@ -430,10 +414,7 @@ jq -n \
     nodejs_bytes: ($nodejs_bytes | tonumber),
     github_actions_runner_version: $github_actions_runner_version,
     github_actions_runner_sha256: $github_actions_runner_sha256,
-    github_actions_runner_bytes: ($github_actions_runner_bytes | tonumber),
-    forgejo_runner_version: $forgejo_runner_version,
-    forgejo_runner_sha256: $forgejo_runner_sha256,
-    forgejo_runner_bytes: ($forgejo_runner_bytes | tonumber)
+    github_actions_runner_bytes: ($github_actions_runner_bytes | tonumber)
   }' > "$OUTPUT_DIR/guest-artifacts.json"
 
 echo "OK rootfs built: $OUTPUT_DIR/rootfs.ext4"

@@ -572,6 +572,8 @@ components:
           maximum: 9007199254740991
           minimum: 0
           type: integer
+        exec_id:
+          type: string
         exit_code:
           format: int64
           maximum: 255
@@ -579,7 +581,7 @@ components:
           type: integer
         failure_reason:
           type: string
-        orchestrator_run_id:
+        lease_id:
           type: string
         started_at:
           format: date-time
@@ -759,82 +761,6 @@ components:
         - window_start
         - created_at
       type: object
-    SandboxCreateWebhookEndpointRequest:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/SandboxCreateWebhookEndpointRequest.json
-          format: uri
-          readOnly: true
-          type: string
-        label:
-          description: Operator-visible endpoint label
-          maxLength: 255
-          type: string
-        provider:
-          description: Git provider to accept webhook events from
-          enum:
-            - forgejo
-          type: string
-        provider_host:
-          description: Public git host, for example git.example.com or codeberg.org
-          maxLength: 255
-          type: string
-      required:
-        - provider_host
-      type: object
-    SandboxCreateWebhookEndpointResponse:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/SandboxCreateWebhookEndpointResponse.json
-          format: uri
-          readOnly: true
-          type: string
-        active:
-          type: boolean
-        created_at:
-          format: date-time
-          type: string
-        delivery_count:
-          format: int64
-          maximum: 9007199254740991
-          minimum: 0
-          type: integer
-        endpoint_id:
-          type: string
-        integration_id:
-          type: string
-        label:
-          type: string
-        provider:
-          type: string
-        provider_host:
-          type: string
-        secret:
-          type: string
-        secret_fingerprint:
-          type: string
-        updated_at:
-          format: date-time
-          type: string
-        webhook_url:
-          type: string
-      required:
-        - endpoint_id
-        - integration_id
-        - webhook_url
-        - secret
-        - provider
-        - provider_host
-        - label
-        - active
-        - created_at
-        - updated_at
-        - delivery_count
-      type: object
     SandboxExecutionLogs:
       additionalProperties: false
       properties:
@@ -876,8 +802,6 @@ components:
         created_at:
           format: date-time
           type: string
-        default_branch:
-          type: string
         execution_id:
           type: string
         external_provider:
@@ -896,14 +820,6 @@ components:
         product_id:
           type: string
         provider:
-          type: string
-        ref:
-          type: string
-        repo:
-          type: string
-        repo_id:
-          type: string
-        repo_url:
           type: string
         run_command:
           type: string
@@ -985,126 +901,6 @@ components:
         - created_at
         - updated_at
       type: object
-    SandboxImportRepoRequest:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/SandboxImportRepoRequest.json
-          format: uri
-          readOnly: true
-          type: string
-        clone_url:
-          type: string
-        default_branch:
-          type: string
-        full_name:
-          type: string
-        name:
-          type: string
-        owner:
-          type: string
-        provider:
-          type: string
-        provider_host:
-          type: string
-        provider_repo_id:
-          type: string
-      required:
-        - clone_url
-      type: object
-    SandboxRepoRecord:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/SandboxRepoRecord.json
-          format: uri
-          readOnly: true
-          type: string
-        archived_at:
-          format: date-time
-          type: string
-        clone_url:
-          type: string
-        compatibility_status:
-          type: string
-        compatibility_summary: {}
-        created_at:
-          format: date-time
-          type: string
-        default_branch:
-          type: string
-        full_name:
-          type: string
-        last_error:
-          type: string
-        last_scanned_sha:
-          type: string
-        name:
-          type: string
-        org_id:
-          pattern: ^[0-9]+$
-          type: string
-        owner:
-          type: string
-        provider:
-          type: string
-        provider_host:
-          type: string
-        provider_repo_id:
-          type: string
-        repo_id:
-          type: string
-        state:
-          type: string
-        updated_at:
-          format: date-time
-          type: string
-      required:
-        - repo_id
-        - org_id
-        - provider
-        - provider_host
-        - provider_repo_id
-        - owner
-        - name
-        - full_name
-        - clone_url
-        - default_branch
-        - state
-        - compatibility_status
-        - created_at
-        - updated_at
-      type: object
-    SandboxRotateWebhookEndpointSecretResponse:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/SandboxRotateWebhookEndpointSecretResponse.json
-          format: uri
-          readOnly: true
-          type: string
-        endpoint_id:
-          type: string
-        previous_retiring_at:
-          format: date-time
-          type: string
-        rotated_at:
-          format: date-time
-          type: string
-        secret:
-          type: string
-        secret_fingerprint:
-          type: string
-      required:
-        - endpoint_id
-        - secret
-        - secret_fingerprint
-        - rotated_at
-        - previous_retiring_at
-      type: object
     SandboxSubmitExecutionResult:
       additionalProperties: false
       properties:
@@ -1134,24 +930,19 @@ components:
           format: uri
           readOnly: true
           type: string
-        default_branch:
-          type: string
         idempotency_key:
           maxLength: 128
           type: string
         kind:
           type: string
+        max_wall_seconds:
+          format: int64
+          maximum: 9007199254740991
+          minimum: 1
+          type: integer
         product_id:
           type: string
         provider:
-          type: string
-        ref:
-          type: string
-        repo:
-          type: string
-        repo_id:
-          type: string
-        repo_url:
           type: string
         run_command:
           type: string
@@ -1161,52 +952,6 @@ components:
       required:
         - kind
         - idempotency_key
-      type: object
-    SandboxWebhookEndpointRecord:
-      additionalProperties: false
-      properties:
-        active:
-          type: boolean
-        created_at:
-          format: date-time
-          type: string
-        delivery_count:
-          format: int64
-          maximum: 9007199254740991
-          minimum: 0
-          type: integer
-        endpoint_id:
-          type: string
-        integration_id:
-          type: string
-        label:
-          type: string
-        last_delivery_at:
-          format: date-time
-          type: string
-        org_id:
-          pattern: ^[0-9]+$
-          type: string
-        provider:
-          type: string
-        provider_host:
-          type: string
-        secret_fingerprint:
-          type: string
-        updated_at:
-          format: date-time
-          type: string
-      required:
-        - endpoint_id
-        - integration_id
-        - org_id
-        - provider
-        - provider_host
-        - label
-        - active
-        - created_at
-        - updated_at
-        - delivery_count
       type: object
     SchedulerProbeRequest:
       additionalProperties: false
@@ -1750,309 +1495,5 @@ paths:
         rate_limit_class: github_installation_mutation
         request_body_max_bytes: 1024
         resource: github_installation
-  /api/v1/repos:
-    get:
-      operationId: list-repos
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                items:
-                  $ref: "#/components/schemas/SandboxRepoRecord"
-                nullable: true
-                type: array
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      security:
-        - bearerAuth: []
-      summary: List imported repos for the current org
-      x-forge-metal-iam:
-        action: list
-        audit_event: sandbox.repo.list
-        org_scope: token_org_id
-        permission: sandbox:repo:read
-        rate_limit_class: read
-        resource: repo
-    post:
-      operationId: import-repo
-      parameters:
-        - description: Stable caller-provided key used to make this mutation retry-safe.
-          in: header
-          name: Idempotency-Key
-          required: true
-          schema:
-            maxLength: 128
-            minLength: 1
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SandboxImportRepoRequest"
-        required: true
-      responses:
-        "201":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SandboxRepoRecord"
-          description: Created
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      security:
-        - bearerAuth: []
-      summary: Import or rescan repo metadata
-      x-forge-metal-iam:
-        action: import
-        audit_event: sandbox.repo.import
-        idempotency: idempotency_key_header
-        org_scope: token_org_id
-        permission: sandbox:repo:write
-        rate_limit_class: repo_mutation
-        request_body_max_bytes: 32768
-        resource: repo
-  /api/v1/repos/{repo_id}:
-    get:
-      operationId: get-repo
-      parameters:
-        - description: Repo UUID
-          in: path
-          name: repo_id
-          required: true
-          schema:
-            description: Repo UUID
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SandboxRepoRecord"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      security:
-        - bearerAuth: []
-      summary: Get repo state and compatibility details
-      x-forge-metal-iam:
-        action: read
-        audit_event: sandbox.repo.read
-        org_scope: token_org_id
-        permission: sandbox:repo:read
-        rate_limit_class: read
-        resource: repo
-  /api/v1/repos/{repo_id}/rescan:
-    post:
-      operationId: rescan-repo
-      parameters:
-        - description: Stable caller-provided key used to make this mutation retry-safe.
-          in: header
-          name: Idempotency-Key
-          required: true
-          schema:
-            maxLength: 128
-            minLength: 1
-            type: string
-        - description: Repo UUID
-          in: path
-          name: repo_id
-          required: true
-          schema:
-            description: Repo UUID
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SandboxRepoRecord"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      security:
-        - bearerAuth: []
-      summary: Rescan repo metadata
-      x-forge-metal-iam:
-        action: rescan
-        audit_event: sandbox.repo.rescan
-        idempotency: idempotency_key_header
-        org_scope: token_org_id
-        permission: sandbox:repo:write
-        rate_limit_class: repo_mutation
-        request_body_max_bytes: 1024
-        resource: repo
-  /api/v1/webhook-endpoints:
-    get:
-      operationId: list-webhook-endpoints
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                items:
-                  $ref: "#/components/schemas/SandboxWebhookEndpointRecord"
-                nullable: true
-                type: array
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      security:
-        - bearerAuth: []
-      summary: List git webhook endpoints for the current org
-      x-forge-metal-iam:
-        action: list
-        audit_event: sandbox.webhook_endpoint.list
-        org_scope: token_org_id
-        permission: sandbox:webhook_endpoint:read
-        rate_limit_class: read
-        resource: webhook_endpoint
-    post:
-      operationId: create-webhook-endpoint
-      parameters:
-        - description: Stable caller-provided key used to make this mutation retry-safe.
-          in: header
-          name: Idempotency-Key
-          required: true
-          schema:
-            maxLength: 128
-            minLength: 1
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SandboxCreateWebhookEndpointRequest"
-        required: true
-      responses:
-        "201":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SandboxCreateWebhookEndpointResponse"
-          description: Created
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      security:
-        - bearerAuth: []
-      summary: Create a git webhook endpoint
-      x-forge-metal-iam:
-        action: create
-        audit_event: sandbox.webhook_endpoint.create
-        idempotency: idempotency_key_header
-        org_scope: token_org_id
-        permission: sandbox:webhook_endpoint:write
-        rate_limit_class: webhook_endpoint_mutation
-        request_body_max_bytes: 8192
-        resource: webhook_endpoint
-  /api/v1/webhook-endpoints/{endpoint_id}:
-    delete:
-      operationId: delete-webhook-endpoint
-      parameters:
-        - description: Stable caller-provided key used to make this mutation retry-safe.
-          in: header
-          name: Idempotency-Key
-          required: true
-          schema:
-            maxLength: 128
-            minLength: 1
-            type: string
-        - description: Webhook endpoint UUID
-          in: path
-          name: endpoint_id
-          required: true
-          schema:
-            description: Webhook endpoint UUID
-            type: string
-      responses:
-        "204":
-          description: No Content
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      security:
-        - bearerAuth: []
-      summary: Deactivate a git webhook endpoint
-      x-forge-metal-iam:
-        action: delete
-        audit_event: sandbox.webhook_endpoint.delete
-        idempotency: idempotency_key_header
-        org_scope: token_org_id
-        permission: sandbox:webhook_endpoint:write
-        rate_limit_class: webhook_endpoint_mutation
-        request_body_max_bytes: 1024
-        resource: webhook_endpoint
-  /api/v1/webhook-endpoints/{endpoint_id}/rotate:
-    post:
-      operationId: rotate-webhook-endpoint-secret
-      parameters:
-        - description: Stable caller-provided key used to make this mutation retry-safe.
-          in: header
-          name: Idempotency-Key
-          required: true
-          schema:
-            maxLength: 128
-            minLength: 1
-            type: string
-        - description: Webhook endpoint UUID
-          in: path
-          name: endpoint_id
-          required: true
-          schema:
-            description: Webhook endpoint UUID
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SandboxRotateWebhookEndpointSecretResponse"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      security:
-        - bearerAuth: []
-      summary: Rotate a git webhook endpoint secret
-      x-forge-metal-iam:
-        action: rotate
-        audit_event: sandbox.webhook_endpoint.secret.rotate
-        idempotency: idempotency_key_header
-        org_scope: token_org_id
-        permission: sandbox:webhook_endpoint:write
-        rate_limit_class: webhook_endpoint_mutation
-        request_body_max_bytes: 1024
-        resource: webhook_endpoint_secret
 servers:
   - url: http://127.0.0.1:4243
