@@ -45,8 +45,11 @@ Direct execution flow:
 Single-node VM concurrency budget:
 
 - `SANDBOX_EXECUTION_MAX_WORKERS=16` is the production default for the current
-  single-node bare-metal profile: 24 logical CPUs, 93 GiB RAM, no swap, and the
-  `metal-4vcpu-ubuntu-2404` runner class at 4 vCPU / 4096 MiB / 8 GiB rootfs.
+  single-node bare-metal profile: 24 logical CPUs, 93 GiB RAM, no swap. The
+  per-lease shape is now a customer input via `apiwire.VMResources` (see
+  `src/apiwire/vmresources.go`); the historical fixture used for these proof
+  runs was the 4 vCPU / 4096 MiB / 8 GiB rootfs default, and admission against
+  the worker budget was reasoned from that.
 - Treat the worker count as the customer VM admission limit. One River execution
   worker can hold one active vm-orchestrator lease, so raising this value raises
   the maximum number of simultaneous Firecracker VMs, TAP slots, ZFS clones,
@@ -71,10 +74,12 @@ Single-node VM concurrency budget:
   memory admission, class-local proof runs, and tail-latency SLOs.
 - The current boot-time bottleneck is guest readiness, not Firecracker launch.
   Across these runs `vmorchestrator.firecracker.instance_start` stayed in the
-  tens of milliseconds, while `vmorchestrator.guest.control_connect` dominated
-  lease boot at roughly 1.0-1.4s p50 and worsened under CPU pressure. Direct
-  netlink can still improve TAP correctness and p99 setup, but it is not the
-  lever that removes the current ~1s boot floor.
+  tens of milliseconds, while `vmorchestrator.guest.control_socket_wait` and
+  `vmorchestrator.guest.control_connect` dominated lease boot at roughly
+  1.0-1.4s p50 and worsened under CPU pressure. The VMResources cutover
+  replaces vm-bridge `/sbin/ip` fork+exec with netlink syscalls and defers
+  telemetry past vsock accept; the expected post-cutover floor is closer to
+  the kernel-boot floor plus a single guest handshake.
 
 Expected proof surface:
 

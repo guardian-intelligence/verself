@@ -371,6 +371,24 @@ export const vSandboxSubmitExecutionResult = v.strictObject({
   status: v.string(),
 });
 
+export const vSchedulerProbeRequest = v.strictObject({
+  message: v.optional(v.pipe(v.string(), v.maxLength(512))),
+});
+
+export const vSchedulerProbeResponse = v.strictObject({
+  job_id: v.string(),
+  kind: v.string(),
+  queue: v.string(),
+  status: v.string(),
+});
+
+export const vVmResources = v.strictObject({
+  kernel_image: v.optional(v.string()),
+  memory_mib: v.pipe(v.number(), v.integer(), v.minValue(128), v.maxValue(524288)),
+  root_disk_gib: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(2048)),
+  vcpus: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(128)),
+});
+
 export const vSandboxSubmitRequest = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   idempotency_key: v.pipe(v.string(), v.maxLength(128)),
@@ -385,19 +403,9 @@ export const vSandboxSubmitRequest = v.strictObject({
   ),
   product_id: v.optional(v.string()),
   provider: v.optional(v.string()),
+  resources: v.optional(vVmResources),
   run_command: v.optional(v.string()),
   runner_class: v.optional(v.string()),
-});
-
-export const vSchedulerProbeRequest = v.strictObject({
-  message: v.optional(v.pipe(v.string(), v.maxLength(512))),
-});
-
-export const vSchedulerProbeResponse = v.strictObject({
-  job_id: v.string(),
-  kind: v.string(),
-  queue: v.string(),
-  status: v.string(),
 });
 
 export const vBillingCancelContractResponseWritable = v.strictObject({
@@ -538,6 +546,7 @@ export const vSandboxSubmitRequestWritable = v.strictObject({
   ),
   product_id: v.optional(v.string()),
   provider: v.optional(v.string()),
+  resources: v.optional(vVmResources),
   run_command: v.optional(v.string()),
   runner_class: v.optional(v.string()),
 });

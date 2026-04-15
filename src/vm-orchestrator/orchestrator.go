@@ -331,30 +331,15 @@ func (o *Orchestrator) BootLease(ctx context.Context, leaseID string, spec Lease
 	}
 	endCloneSpan(nil)
 
-	// Apply per-clone refquota matching the requested root disk size. This
-	// is a write cap — the guest-visible zvol volsize is inherited from the
-	// golden (unchanged), but writes past refquota return ENOSPC. Refquota
-	// is also what billing aggregates `disk_gib_ms` from. refreservation
-	// pre-reserves the space so parallel leases can't starve each other.
-	quotaValue := fmt.Sprintf("%dG", spec.Resources.RootDiskGiB)
-	quotaCtx, endQuotaSpan := startStepSpan(ctx, "vmorchestrator.zvol.quota_set",
-		attribute.String("lease.id", leaseID),
-		attribute.String("zfs.dataset", dataset),
-		attribute.Int("vmresources.root_disk_gib", int(spec.Resources.RootDiskGiB)),
-	)
-	if quotaErr := o.ops.ZFSSetProperty(quotaCtx, dataset, "refquota", quotaValue); quotaErr != nil {
-		endQuotaSpan(quotaErr)
-		err = fmt.Errorf("zfs refquota: %w", quotaErr)
-		_ = o.destroyDisposableWorkloadDataset(context.Background(), dataset)
-		return nil, err
-	}
-	if reserveErr := o.ops.ZFSSetProperty(quotaCtx, dataset, "refreservation", quotaValue); reserveErr != nil {
-		endQuotaSpan(reserveErr)
-		err = fmt.Errorf("zfs refreservation: %w", reserveErr)
-		_ = o.destroyDisposableWorkloadDataset(context.Background(), dataset)
-		return nil, err
-	}
-	endQuotaSpan(nil)
+	// NOTE: per-clone root disk sizing is tracked on the lease record
+	// (spec.Resources.RootDiskGiB) and priced accordingly, but it is not
+	// enforced at the ZFS layer today. The cloned dataset is a zvol, not a
+	// filesystem, so `refquota` is rejected by zfs (`'refquota' does not
+	// apply to datasets of this type`). The correct zvol knob is `volsize`,
+	// but shrinking a zvol below the guest's formatted filesystem size
+	// corrupts the filesystem, and growing is a follow-up feature. For now
+	// the requested RootDiskGiB surfaces on the lease.boot span + billing
+	// row, while hard enforcement waits on a zvol sizing story.
 
 	runtime, bootErr := o.bootDataset(ctx, leaseID, spec, dataset, observer)
 	if bootErr != nil {
