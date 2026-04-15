@@ -65,26 +65,30 @@ type Hello struct {
 }
 
 type GuestBootTimings struct {
-	InitStartMS                    int64 `json:"init_start_ms"`
-	MountVirtualFilesystemsStartMS int64 `json:"mount_virtual_filesystems_start_ms"`
-	MountVirtualFilesystemsDoneMS  int64 `json:"mount_virtual_filesystems_done_ms"`
-	ConfigureLoopbackStartMS       int64 `json:"configure_loopback_start_ms"`
-	ConfigureLoopbackDoneMS        int64 `json:"configure_loopback_done_ms"`
-	SetSubreaperStartMS            int64 `json:"set_subreaper_start_ms"`
-	SetSubreaperDoneMS             int64 `json:"set_subreaper_done_ms"`
-	StartTelemetryStartMS          int64 `json:"start_telemetry_start_ms"`
-	StartTelemetryDoneMS           int64 `json:"start_telemetry_done_ms"`
-	SignalNotifyStartMS            int64 `json:"signal_notify_start_ms"`
-	SignalNotifyDoneMS             int64 `json:"signal_notify_done_ms"`
-	VSockListenStartMS             int64 `json:"vsock_listen_start_ms"`
-	VSockListenDoneMS              int64 `json:"vsock_listen_done_ms"`
-	VSockAcceptStartMS             int64 `json:"vsock_accept_start_ms"`
-	VSockAcceptDoneMS              int64 `json:"vsock_accept_done_ms"`
-	AgentStartMS                   int64 `json:"agent_start_ms"`
-	AgentSessionReadyMS            int64 `json:"agent_session_ready_ms"`
-	AgentIOLoopsStartedMS          int64 `json:"agent_io_loops_started_ms"`
-	HelloEnqueueStartMS            int64 `json:"hello_enqueue_start_ms"`
-	HelloEnqueueDoneMS             int64 `json:"hello_enqueue_done_ms"`
+	KernelBootToInitStartMS         int64 `json:"kernel_boot_to_init_start_ms,omitempty"`
+	KernelBootToVSockListenDoneMS   int64 `json:"kernel_boot_to_vsock_listen_done_ms,omitempty"`
+	KernelBootToVSockAcceptDoneMS   int64 `json:"kernel_boot_to_vsock_accept_done_ms,omitempty"`
+	KernelBootToHelloEnqueueStartMS int64 `json:"kernel_boot_to_hello_enqueue_start_ms,omitempty"`
+	InitStartMS                     int64 `json:"init_start_ms"`
+	MountVirtualFilesystemsStartMS  int64 `json:"mount_virtual_filesystems_start_ms"`
+	MountVirtualFilesystemsDoneMS   int64 `json:"mount_virtual_filesystems_done_ms"`
+	ConfigureLoopbackStartMS        int64 `json:"configure_loopback_start_ms"`
+	ConfigureLoopbackDoneMS         int64 `json:"configure_loopback_done_ms"`
+	SetSubreaperStartMS             int64 `json:"set_subreaper_start_ms"`
+	SetSubreaperDoneMS              int64 `json:"set_subreaper_done_ms"`
+	StartTelemetryStartMS           int64 `json:"start_telemetry_start_ms"`
+	StartTelemetryDoneMS            int64 `json:"start_telemetry_done_ms"`
+	SignalNotifyStartMS             int64 `json:"signal_notify_start_ms"`
+	SignalNotifyDoneMS              int64 `json:"signal_notify_done_ms"`
+	VSockListenStartMS              int64 `json:"vsock_listen_start_ms"`
+	VSockListenDoneMS               int64 `json:"vsock_listen_done_ms"`
+	VSockAcceptStartMS              int64 `json:"vsock_accept_start_ms"`
+	VSockAcceptDoneMS               int64 `json:"vsock_accept_done_ms"`
+	AgentStartMS                    int64 `json:"agent_start_ms"`
+	AgentSessionReadyMS             int64 `json:"agent_session_ready_ms"`
+	AgentIOLoopsStartedMS           int64 `json:"agent_io_loops_started_ms"`
+	HelloEnqueueStartMS             int64 `json:"hello_enqueue_start_ms"`
+	HelloEnqueueDoneMS              int64 `json:"hello_enqueue_done_ms"`
 }
 
 type NetworkConfig struct {
