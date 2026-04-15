@@ -44,7 +44,8 @@ type agentSession struct {
 	checkpointWaiters map[string]chan vmproto.CheckpointResponse
 }
 
-func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-chan os.Signal, bridgeFault bridgeFaultMode) error {
+func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-chan os.Signal, bridgeFault bridgeFaultMode, bootTimings vmproto.GuestBootTimings) error {
+	bootTimings.AgentStartMS = time.Since(bootStart).Milliseconds()
 	session := &agentSession{
 		conn:        conn,
 		codec:       vmproto.NewCodec(conn, conn),
@@ -55,6 +56,7 @@ func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-cha
 		logQ:        make(chan outboundFrame, vmproto.LogQueueCapacity),
 		errCh:       make(chan error, 2),
 	}
+	bootTimings.AgentSessionReadyMS = time.Since(bootStart).Milliseconds()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -63,10 +65,14 @@ func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-cha
 	go session.writeLoop(ctx)
 	go session.readLoop(ctx, controlCh)
 	go session.heartbeatLoop(ctx)
+	bootTimings.AgentIOLoopsStartedMS = time.Since(bootStart).Milliseconds()
 
 	bootToReady := readyAt.Sub(bootStart)
+	bootTimings.HelloEnqueueStartMS = time.Since(bootStart).Milliseconds()
+	bootTimings.HelloEnqueueDoneMS = bootTimings.HelloEnqueueStartMS
 	if err := session.sendControl(vmproto.TypeHello, vmproto.Hello{
 		BootToReadyMS: bootToReady.Milliseconds(),
+		BootTimings:   &bootTimings,
 	}); err != nil {
 		return err
 	}
