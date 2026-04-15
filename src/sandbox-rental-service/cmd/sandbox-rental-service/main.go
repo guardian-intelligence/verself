@@ -21,6 +21,7 @@ import (
 	"github.com/riverqueue/river"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
+	"github.com/forge-metal/apiwire"
 	auth "github.com/forge-metal/auth-middleware"
 	billingclient "github.com/forge-metal/billing-service/client"
 	fmotel "github.com/forge-metal/otel"
@@ -155,11 +156,25 @@ func run() error {
 	}
 	defer orchestrator.Close()
 
+	// Probe the host pool ceilings once at startup. The pool ceiling is the
+	// default VMResourceBounds applied to intake when an org has no explicit
+	// row — apiwire.DefaultBounds clamped to what the host can actually
+	// schedule. Org-specific overrides live in the vm_resource_bounds table.
 	capacityCtx, cancelCapacity := context.WithTimeout(ctx, 5*time.Second)
 	defer cancelCapacity()
 	capacity, err := orchestrator.GetCapacity(capacityCtx)
 	if err != nil {
 		return fmt.Errorf("query vm-orchestrator capacity: %w", err)
+	}
+	hostBounds := apiwire.DefaultBounds
+	if capacity.MaxVCPUsPerLease > 0 {
+		hostBounds.MaxVCPUs = capacity.MaxVCPUsPerLease
+	}
+	if capacity.MaxMemoryMiBPerLease > 0 {
+		hostBounds.MaxMemoryMiB = capacity.MaxMemoryMiBPerLease
+	}
+	if capacity.MaxRootDiskGiBPerLease > 0 {
+		hostBounds.MaxRootDiskGiB = capacity.MaxRootDiskGiBPerLease
 	}
 
 	// --- billing client ---
@@ -186,17 +201,15 @@ func run() error {
 	// --- job service ---
 
 	jobService := &jobs.Service{
-		PG:                            pg,
-		PGX:                           pgxPool,
-		CH:                            chConn,
-		CHDatabase:                    "forge_metal",
-		Orchestrator:                  orchestrator,
-		Billing:                       billingClient,
-		BillingVCPUs:                  int(capacity.VCPUsPerVM),
-		BillingMemMiB:                 int(capacity.MemoryMiBPerVM),
-		BillingRootfsProvisionedBytes: capacity.RootfsProvisionedBytes,
-		Logger:                        logger,
-		WorkloadTimeout:               time.Duration(envInt("SANDBOX_WORKLOAD_TIMEOUT_SECONDS", 7200)) * time.Second,
+		PG:              pg,
+		PGX:             pgxPool,
+		CH:              chConn,
+		CHDatabase:      "forge_metal",
+		Orchestrator:    orchestrator,
+		Billing:         billingClient,
+		Bounds:          hostBounds,
+		Logger:          logger,
+		WorkloadTimeout: time.Duration(envInt("SANDBOX_WORKLOAD_TIMEOUT_SECONDS", 7200)) * time.Second,
 	}
 	githubRunner, err := jobs.NewGitHubRunner(jobService, jobs.GitHubRunnerConfig{
 		AppID:         githubAppID,

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"github.com/forge-metal/apiwire"
 	billingclient "github.com/forge-metal/billing-service/client"
 	vmorchestrator "github.com/forge-metal/vm-orchestrator"
 	"github.com/google/uuid"
@@ -82,18 +83,19 @@ type SchedulerRuntime interface {
 }
 
 type SubmitRequest struct {
-	Kind             string `json:"kind,omitempty"`
-	RunnerClass      string `json:"runner_class,omitempty"`
-	ProductID        string `json:"product_id,omitempty"`
-	Provider         string `json:"provider,omitempty"`
-	IdempotencyKey   string `json:"idempotency_key"`
-	SourceKind       string `json:"source_kind,omitempty"`
-	WorkloadKind     string `json:"workload_kind,omitempty"`
-	SourceRef        string `json:"source_ref,omitempty"`
-	ExternalProvider string `json:"external_provider,omitempty"`
-	ExternalTaskID   string `json:"external_task_id,omitempty"`
-	RunCommand       string `json:"run_command,omitempty"`
-	MaxWallSeconds   uint64 `json:"max_wall_seconds,omitempty"`
+	Kind             string              `json:"kind,omitempty"`
+	RunnerClass      string              `json:"runner_class,omitempty"`
+	ProductID        string              `json:"product_id,omitempty"`
+	Provider         string              `json:"provider,omitempty"`
+	IdempotencyKey   string              `json:"idempotency_key"`
+	SourceKind       string              `json:"source_kind,omitempty"`
+	WorkloadKind     string              `json:"workload_kind,omitempty"`
+	SourceRef        string              `json:"source_ref,omitempty"`
+	ExternalProvider string              `json:"external_provider,omitempty"`
+	ExternalTaskID   string              `json:"external_task_id,omitempty"`
+	RunCommand       string              `json:"run_command,omitempty"`
+	MaxWallSeconds   uint64              `json:"max_wall_seconds,omitempty"`
+	Resources        apiwire.VMResources `json:"resources"`
 }
 
 type ExecutionRecord struct {
@@ -154,19 +156,17 @@ type BillingWindow struct {
 }
 
 type Service struct {
-	PG                            *sql.DB
-	PGX                           *pgxpool.Pool
-	CH                            driver.Conn
-	CHDatabase                    string
-	Orchestrator                  Runner
-	Billing                       *billingclient.ServiceClient
-	BillingVCPUs                  int
-	BillingMemMiB                 int
-	BillingRootfsProvisionedBytes uint64
-	GitHubRunner                  *GitHubRunner
-	Scheduler                     SchedulerRuntime
-	Logger                        *slog.Logger
-	WorkloadTimeout               time.Duration
+	PG              *sql.DB
+	PGX             *pgxpool.Pool
+	CH              driver.Conn
+	CHDatabase      string
+	Orchestrator    Runner
+	Billing         *billingclient.ServiceClient
+	Bounds          apiwire.VMResourceBounds
+	GitHubRunner    *GitHubRunner
+	Scheduler       SchedulerRuntime
+	Logger          *slog.Logger
+	WorkloadTimeout time.Duration
 }
 
 type executionWorkItem struct {
@@ -188,6 +188,7 @@ type executionWorkItem struct {
 	LeaseID          string
 	ExecID           string
 	CorrelationID    string
+	Resources        apiwire.VMResources
 }
 
 type jobEventRow struct {
@@ -238,7 +239,7 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req 
 		}
 		span.End()
 	}()
-	req, err = normalizeSubmitRequest(req)
+	req, err = s.normalizeSubmitRequest(req)
 	if err != nil {
 		return uuid.Nil, uuid.Nil, err
 	}
@@ -257,13 +258,17 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req 
 	row := tx.QueryRow(ctx, `INSERT INTO executions (
 		execution_id, org_id, actor_id, kind, source_kind, workload_kind, source_ref,
 		runner_class, external_provider, external_task_id, provider, product_id,
-		state, correlation_id, idempotency_key, run_command, max_wall_seconds, created_at, updated_at
-	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$18)
+		state, correlation_id, idempotency_key, run_command, max_wall_seconds,
+		requested_vcpus, requested_memory_mib, requested_root_disk_gib, requested_kernel_image,
+		created_at, updated_at
+	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$22)
 	ON CONFLICT (org_id, idempotency_key) DO NOTHING
 	RETURNING execution_id`,
 		executionID, orgID, actorID, req.Kind, req.SourceKind, req.WorkloadKind, req.SourceRef,
 		req.RunnerClass, req.ExternalProvider, req.ExternalTaskID, req.Provider, req.ProductID,
-		StateQueued, correlationID, req.IdempotencyKey, req.RunCommand, req.MaxWallSeconds, now)
+		StateQueued, correlationID, req.IdempotencyKey, req.RunCommand, req.MaxWallSeconds,
+		int(req.Resources.VCPUs), int(req.Resources.MemoryMiB), int(req.Resources.RootDiskGiB), string(req.Resources.KernelImage),
+		now)
 	var inserted uuid.UUID
 	if err := row.Scan(&inserted); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -354,12 +359,10 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	}
 
 	lease, err := s.Orchestrator.AcquireLease(ctx, item.AttemptID.String()+":lease", vmorchestrator.LeaseSpec{
-		RuntimeProfile: "fast.fc",
-		VCPUs:          uint32(s.BillingVCPUs),
-		MemoryMiB:      uint32(s.BillingMemMiB),
-		TTLSeconds:     300,
-		TrustClass:     "trusted",
-		NetworkMode:    "nat",
+		Resources:   item.Resources,
+		TTLSeconds:  300,
+		TrustClass:  "trusted",
+		NetworkMode: "nat",
 	})
 	if err != nil {
 		cleanupCtx, cancel := context.WithTimeout(detachedContext(ctx), 5*time.Second)
@@ -453,15 +456,26 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 func (s *Service) loadWorkItem(ctx context.Context, executionID, attemptID uuid.UUID) (executionWorkItem, error) {
 	row := s.PGX.QueryRow(ctx, `SELECT e.execution_id, a.attempt_id, e.org_id, e.actor_id, e.kind, e.source_kind, e.workload_kind, e.source_ref,
 		e.runner_class, e.external_provider, e.external_task_id, e.provider, e.product_id, e.run_command, e.max_wall_seconds, e.correlation_id,
+		e.requested_vcpus, e.requested_memory_mib, e.requested_root_disk_gib, e.requested_kernel_image,
 		COALESCE(a.lease_id, ''), COALESCE(a.exec_id, '')
 		FROM executions e JOIN execution_attempts a ON a.execution_id = e.execution_id
 		WHERE e.execution_id = $1 AND a.attempt_id = $2`, executionID, attemptID)
 	var item executionWorkItem
-	if err := row.Scan(&item.ExecutionID, &item.AttemptID, &item.OrgID, &item.ActorID, &item.Kind, &item.SourceKind, &item.WorkloadKind, &item.SourceRef, &item.RunnerClass, &item.ExternalProvider, &item.ExternalTaskID, &item.Provider, &item.ProductID, &item.RunCommand, &item.MaxWallSeconds, &item.CorrelationID, &item.LeaseID, &item.ExecID); err != nil {
+	var (
+		vcpus, memMiB, diskGiB int
+		kernelImage            string
+	)
+	if err := row.Scan(&item.ExecutionID, &item.AttemptID, &item.OrgID, &item.ActorID, &item.Kind, &item.SourceKind, &item.WorkloadKind, &item.SourceRef, &item.RunnerClass, &item.ExternalProvider, &item.ExternalTaskID, &item.Provider, &item.ProductID, &item.RunCommand, &item.MaxWallSeconds, &item.CorrelationID, &vcpus, &memMiB, &diskGiB, &kernelImage, &item.LeaseID, &item.ExecID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return executionWorkItem{}, ErrExecutionMissing
 		}
 		return executionWorkItem{}, fmt.Errorf("load execution work item: %w", err)
+	}
+	item.Resources = apiwire.VMResources{
+		VCPUs:       uint32(vcpus),
+		MemoryMiB:   uint32(memMiB),
+		RootDiskGiB: uint32(diskGiB),
+		KernelImage: apiwire.KernelImageRef(kernelImage),
 	}
 	return item, nil
 }
@@ -475,11 +489,17 @@ func (s *Service) nextBillingJobID(ctx context.Context) (int64, error) {
 }
 
 func (s *Service) reserveBilling(ctx context.Context, item executionWorkItem, billingJobID int64) (billingclient.Reservation, error) {
-	// Billing rates are SKU-ms rates; host capacity facts must be translated into each SKU's advertised unit.
+	// Billing rates are SKU-ms rates; the customer's requested shape is
+	// what we charge for — not the host capacity headroom. Each SKU's
+	// advertised unit translates directly from VMResources: vCPUs into
+	// compute vCPU-ms, MemoryMiB into memory GiB-ms, RootDiskGiB into
+	// block-storage GiB-ms. Windows settle in millisecond quantities so
+	// the final magnitudes are (unit × duration_ms) per SKU.
+	res := item.Resources.Normalize()
 	allocation := map[string]float64{
-		billingSKUComputeVCPUMs:     float64(s.BillingVCPUs),
-		billingSKUMemoryGiBMs:       float64(s.BillingMemMiB) / billingMiBPerGiB,
-		billingSKUBlockStorageGiBMs: float64(s.BillingRootfsProvisionedBytes) / billingBytesPerGiB,
+		billingSKUComputeVCPUMs:     float64(res.VCPUs),
+		billingSKUMemoryGiBMs:       float64(res.MemoryMiB) / billingMiBPerGiB,
+		billingSKUBlockStorageGiBMs: float64(res.RootDiskGiB),
 	}
 	return s.Billing.Reserve(ctx, billingJobID, item.OrgID, item.ProductID, item.ActorID, 1, item.SourceKind, item.ExecutionID.String(), 1, allocation)
 }
@@ -736,7 +756,7 @@ func (s *Service) writeJobEvent(ctx context.Context, row jobEventRow) error {
 	return batch.Send()
 }
 
-func normalizeSubmitRequest(req SubmitRequest) (SubmitRequest, error) {
+func (s *Service) normalizeSubmitRequest(req SubmitRequest) (SubmitRequest, error) {
 	req.Kind = firstNonEmpty(strings.TrimSpace(req.Kind), KindDirect)
 	req.SourceKind = firstNonEmpty(strings.TrimSpace(req.SourceKind), SourceKindAPI)
 	req.WorkloadKind = firstNonEmpty(strings.TrimSpace(req.WorkloadKind), WorkloadKindDirect)
@@ -758,6 +778,16 @@ func normalizeSubmitRequest(req SubmitRequest) (SubmitRequest, error) {
 	case WorkloadKindDirect, WorkloadKindGitHubRunner:
 	default:
 		return SubmitRequest{}, fmt.Errorf("unsupported workload_kind %q", req.WorkloadKind)
+	}
+	// Apply defaults + bounds check at intake so the customer sees 400 on
+	// an out-of-bounds shape before any billing reservation is attempted.
+	req.Resources = req.Resources.Normalize()
+	bounds := s.Bounds
+	if bounds == (apiwire.VMResourceBounds{}) {
+		bounds = apiwire.DefaultBounds
+	}
+	if err := req.Resources.Validate(bounds); err != nil {
+		return SubmitRequest{}, err
 	}
 	return req, nil
 }

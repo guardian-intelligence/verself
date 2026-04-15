@@ -975,6 +975,9 @@ components:
           type: string
         provider:
           type: string
+        resources:
+          $ref: "#/components/schemas/VMResources"
+          description: Requested VM shape (vCPUs, memory, root disk). Omit to use defaults; out-of-bounds shapes are rejected with 400.
         run_command:
           type: string
         runner_class:
@@ -1009,6 +1012,35 @@ components:
         - kind
         - queue
         - status
+      type: object
+    VMResources:
+      additionalProperties: false
+      properties:
+        kernel_image:
+          description: Named guest kernel image. Defaults to "default".
+          type: string
+        memory_mib:
+          description: Guest RAM in MiB.
+          format: int32
+          maximum: 524288
+          minimum: 128
+          type: integer
+        root_disk_gib:
+          description: Root disk quota in GiB; enforced on the per-lease ZFS clone via refquota/refreservation.
+          format: int32
+          maximum: 2048
+          minimum: 1
+          type: integer
+        vcpus:
+          description: Number of vCPUs exposed to the guest.
+          format: int32
+          maximum: 128
+          minimum: 1
+          type: integer
+      required:
+        - vcpus
+        - memory_mib
+        - root_disk_gib
       type: object
   securitySchemes:
     bearerAuth:

@@ -4,10 +4,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/forge-metal/apiwire"
 	vmrpc "github.com/forge-metal/vm-orchestrator/proto/v1"
 )
 
-func leaseSpecFromProto(spec *vmrpc.LeaseSpec, cfg Config) LeaseSpec {
+func leaseSpecFromProto(spec *vmrpc.LeaseSpec, cfg Config) (LeaseSpec, error) {
 	if spec == nil {
 		return normalizeLeaseSpec(LeaseSpec{}, cfg)
 	}
@@ -16,15 +17,34 @@ func leaseSpecFromProto(spec *vmrpc.LeaseSpec, cfg Config) LeaseSpec {
 		networkMode = "none"
 	}
 	return normalizeLeaseSpec(LeaseSpec{
-		RuntimeProfile:          spec.GetRuntimeProfile(),
-		VCPUs:                   spec.GetVcpus(),
-		MemoryMiB:               spec.GetMemoryMib(),
+		Resources:               vmResourcesFromProto(spec.GetResources()),
 		FromCheckpointRef:       spec.GetFromCheckpointRef(),
 		TTLSeconds:              spec.GetTtlSeconds(),
 		TrustClass:              spec.GetTrustClass(),
 		CheckpointSaveAllowlist: append([]string(nil), spec.GetCheckpointSaveAllowlist()...),
 		NetworkMode:             networkMode,
 	}, cfg)
+}
+
+func vmResourcesFromProto(r *vmrpc.VMResources) apiwire.VMResources {
+	if r == nil {
+		return apiwire.VMResources{}
+	}
+	return apiwire.VMResources{
+		VCPUs:       r.GetVcpus(),
+		MemoryMiB:   r.GetMemoryMib(),
+		RootDiskGiB: r.GetRootDiskGib(),
+		KernelImage: apiwire.KernelImageRef(r.GetKernelImage()),
+	}
+}
+
+func vmResourcesToProto(r apiwire.VMResources) *vmrpc.VMResources {
+	return &vmrpc.VMResources{
+		Vcpus:       r.VCPUs,
+		MemoryMib:   r.MemoryMiB,
+		RootDiskGib: r.RootDiskGiB,
+		KernelImage: string(r.KernelImage),
+	}
 }
 
 func execSpecFromProto(spec *vmrpc.ExecSpec) ExecSpec {
@@ -46,7 +66,7 @@ func acquireLeaseResponseFromRecord(record LeaseRecord) *vmrpc.AcquireLeaseRespo
 		AcquiredAtUnixNs: uint64(record.AcquiredAt.UnixNano()),
 		ExpiresAtUnixNs:  uint64(record.ExpiresAt.UnixNano()),
 		VmIp:             record.VMIP,
-		RuntimeProfile:   record.RuntimeProfile,
+		Resources:        vmResourcesToProto(record.Resources),
 	}
 }
 
@@ -60,7 +80,7 @@ func leaseSnapshotToProto(snap leaseSnapshot) *vmrpc.LeaseRecord {
 		TerminalAtUnixNs: uint64(snap.TerminalAt.UnixNano()),
 		TerminalReason:   snap.TerminalReason,
 		VmIp:             snap.VMIP,
-		RuntimeProfile:   snap.RuntimeProfile,
+		Resources:        vmResourcesToProto(snap.Spec.Resources),
 		TrustClass:       snap.TrustClass,
 	}
 }

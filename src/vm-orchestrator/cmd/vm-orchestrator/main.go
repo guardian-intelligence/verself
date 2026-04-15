@@ -50,8 +50,9 @@ func run() error {
 	flag.StringVar(&cfg.JailerRoot, "jailer-root", cfg.JailerRoot, "Jailer chroot root directory")
 	flag.IntVar(&cfg.JailerUID, "jailer-uid", cfg.JailerUID, "UID used for the jailer process")
 	flag.IntVar(&cfg.JailerGID, "jailer-gid", cfg.JailerGID, "GID used for the jailer process")
-	flag.IntVar(&cfg.VCPUs, "vcpus", cfg.VCPUs, "Default vCPU count per VM")
-	flag.IntVar(&cfg.MemoryMiB, "memory-mib", cfg.MemoryMiB, "Default memory per VM in MiB")
+	// Per-VM shape is now a request-time parameter via apiwire.VMResources;
+	// flag-level --vcpus / --memory-mib have been removed. Operators tune
+	// per-org ceilings via the VMResourceBounds table in sandbox-rental-service.
 	flag.StringVar(&cfg.HostInterface, "host-interface", cfg.HostInterface, "Default uplink interface for guest egress")
 	flag.StringVar(&cfg.GuestPoolCIDR, "guest-pool-cidr", cfg.GuestPoolCIDR, "IPv4 pool reserved for Firecracker guests")
 	flag.StringVar(&cfg.StateDBPath, "state-db-path", cfg.StateDBPath, "Path to durable host runtime SQLite WAL ledger")

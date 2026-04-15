@@ -9,6 +9,7 @@ type PrivOps interface {
 	ZFSClone(ctx context.Context, snapshot, target, leaseID string) error
 	ZFSSnapshot(ctx context.Context, dataset, snapshotName string, properties map[string]string) error
 	ZFSDestroy(ctx context.Context, dataset string) error
+	ZFSSetProperty(ctx context.Context, dataset, key, value string) error
 	TapCreate(ctx context.Context, tapName, hostCIDR string, ownerUID, ownerGID int) error
 	TapUp(ctx context.Context, tapName string) error
 	TapDelete(ctx context.Context, tapName string) error

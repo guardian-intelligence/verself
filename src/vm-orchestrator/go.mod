@@ -3,6 +3,7 @@ module github.com/forge-metal/vm-orchestrator
 go 1.25.0
 
 require (
+	github.com/forge-metal/apiwire v0.0.0
 	github.com/forge-metal/otel v0.0.0
 	github.com/google/uuid v1.6.0
 	github.com/oklog/ulid/v2 v2.1.1
@@ -20,6 +21,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/danielgtaylor/huma/v2 v2.37.3 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -48,3 +50,5 @@ require (
 )
 
 replace github.com/forge-metal/otel => ../otel
+
+replace github.com/forge-metal/apiwire => ../apiwire

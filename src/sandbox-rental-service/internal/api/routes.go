@@ -397,7 +397,10 @@ func submitExecution(svc *jobs.Service) func(context.Context, *SubmitExecutionIn
 
 		executionID, attemptID, err := svc.Submit(ctx, orgID, identity.Subject, submitRequest(input.Body))
 		if err != nil {
+			var vmErr *apiwire.ValidationError
 			switch {
+			case errors.As(err, &vmErr):
+				return nil, badRequest(ctx, "vmresources-"+vmErr.Field+"-out-of-bounds", vmErr.Reason, err)
 			case errors.Is(err, jobs.ErrQuotaExceeded):
 				return nil, tooManyRequests(ctx, "quota-exceeded", "quota exceeded")
 			case errors.Is(err, jobs.ErrRunnerClassMissing):

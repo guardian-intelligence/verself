@@ -164,6 +164,18 @@
     group: root
     mode: "0755"
 
+# The state ledger shape changed in the VMResources cutover (runtime_profile
+# column dropped). vm-orchestrator's ensureLeasesShape will detect the old
+# shape and drop the leases/execs/lease_events tables on next start, but we
+# wipe the whole file preemptively so a restart cannot race a half-migrated
+# schema. In-flight leases would already be marked crashed on service restart
+# by markUnownedActiveLeasesCrashed; nothing of value lives in this file.
+- name: Wipe pre-vmresources vm-orchestrator state ledger
+  ansible.builtin.file:
+    path: "{{ firecracker_state_db_path }}"
+    state: absent
+  notify: restart vm-orchestrator
+
 # --- Host networking (native nftables) ---
 
 - name: Resolve uplink interface for Firecracker NAT

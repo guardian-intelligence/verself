@@ -75,10 +75,17 @@ message NetworkAttach {
   NetworkAttachMode mode = 1;
 }
 
+// VMResources is the customer-requested VM shape. Canonical wire type;
+// see src/apiwire/vmresources.go for the Go-side mirror and validation.
+message VMResources {
+  uint32 vcpus = 1;
+  uint32 memory_mib = 2;
+  uint32 root_disk_gib = 3;
+  string kernel_image = 4;
+}
+
 message LeaseSpec {
-  string runtime_profile = 1;
-  uint32 vcpus = 2;
-  uint32 memory_mib = 3;
+  VMResources resources = 1;
   string from_checkpoint_ref = 4;
   uint64 ttl_seconds = 5;
   string trust_class = 6;
@@ -97,7 +104,7 @@ message AcquireLeaseResponse {
   uint64 acquired_at_unix_ns = 3;
   uint64 expires_at_unix_ns = 4;
   string vm_ip = 5;
-  string runtime_profile = 6;
+  VMResources resources = 6;
 }
 
 message RenewLeaseRequest {
@@ -137,7 +144,7 @@ message LeaseRecord {
   uint64 terminal_at_unix_ns = 6;
   string terminal_reason = 7;
   string vm_ip = 8;
-  string runtime_profile = 9;
+  VMResources resources = 9;
   string trust_class = 10;
 }
 
@@ -270,13 +277,17 @@ message VMMetrics {
   uint64 vcpu_exit_count = 8;
 }
 
-message RuntimeProfileCapacity {
-  string runtime_profile = 1;
-  uint32 total_slots = 2;
-  uint32 leases_held = 3;
-  uint32 leases_available = 4;
-  uint32 vcpus_per_slot = 5;
-  uint32 memory_mib_per_slot = 6;
+// VMPoolCapacity is the per-host capacity advertised by vm-orchestrator.
+// It replaces the old RuntimeProfileCapacity: there is one pool per host,
+// and customer shapes come from VMResources at AcquireLease time — not
+// from a fixed list of named profiles.
+message VMPoolCapacity {
+  uint32 total_slots = 1;
+  uint32 leases_held = 2;
+  uint32 leases_available = 3;
+  uint32 max_vcpus_per_lease = 4;
+  uint32 max_memory_mib_per_lease = 5;
+  uint32 max_root_disk_gib_per_lease = 6;
   uint64 rootfs_provisioned_bytes = 7;
 }
 
@@ -284,5 +295,5 @@ message GetCapacityRequest {}
 
 message GetCapacityResponse {
   string guest_pool_cidr = 1;
-  repeated RuntimeProfileCapacity runtime_profiles = 2;
+  VMPoolCapacity pool = 2;
 }

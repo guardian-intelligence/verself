@@ -20,13 +20,13 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/forge-metal/apiwire"
 	"github.com/forge-metal/vm-orchestrator/vmproto"
 )
 
 var tracer = otel.Tracer("vm-orchestrator")
 
 const (
-	defaultRuntimeProfile  = "fast.fc"
 	defaultTrustClass      = "trusted"
 	firecrackerStepTimeout = 5 * time.Second
 	maxBufferedGuestLogs   = 10 * 1024 * 1024
@@ -42,8 +42,7 @@ type Config struct {
 	JailerRoot      string
 	JailerUID       int
 	JailerGID       int
-	VCPUs           int
-	MemoryMiB       int
+	Bounds          apiwire.VMResourceBounds
 	HostInterface   string
 	GuestPoolCIDR   string
 	StateDBPath     string
@@ -62,8 +61,7 @@ func DefaultConfig() Config {
 		JailerRoot:      "/srv/jailer",
 		JailerUID:       10000,
 		JailerGID:       10000,
-		VCPUs:           4,
-		MemoryMiB:       4096,
+		Bounds:          apiwire.DefaultBounds,
 		GuestPoolCIDR:   defaultGuestPoolCIDR,
 		StateDBPath:     defaultStateDBPath,
 		HostServiceIP:   defaultHostServiceIP,
@@ -122,9 +120,7 @@ const (
 )
 
 type LeaseSpec struct {
-	RuntimeProfile          string
-	VCPUs                   uint32
-	MemoryMiB               uint32
+	Resources               apiwire.VMResources
 	FromCheckpointRef       string
 	TTLSeconds              uint64
 	TrustClass              string
@@ -193,11 +189,8 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) *Orchestrator {
 	if cfg.Pool != "" {
 		base = cfg
 	}
-	if base.VCPUs == 0 {
-		base.VCPUs = 4
-	}
-	if base.MemoryMiB == 0 {
-		base.MemoryMiB = 4096
+	if base.Bounds == (apiwire.VMResourceBounds{}) {
+		base.Bounds = apiwire.DefaultBounds
 	}
 	if base.HostServiceIP == "" {
 		base.HostServiceIP = defaultHostServiceIP
@@ -215,25 +208,28 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) *Orchestrator {
 	return o
 }
 
-func normalizeLeaseSpec(spec LeaseSpec, cfg Config) LeaseSpec {
-	spec.RuntimeProfile = strings.TrimSpace(spec.RuntimeProfile)
-	if spec.RuntimeProfile == "" {
-		spec.RuntimeProfile = defaultRuntimeProfile
-	}
+// normalizeLeaseSpec fills in defaults and re-validates the VM shape
+// against the host bounds. Validation at this layer is a defense in depth
+// for callers that build LeaseSpec directly; the RPC path already checks
+// at rpc_convert, but in-process constructors (tests, tracer bullets)
+// still flow through here.
+func normalizeLeaseSpec(spec LeaseSpec, cfg Config) (LeaseSpec, error) {
 	spec.TrustClass = strings.TrimSpace(spec.TrustClass)
 	if spec.TrustClass == "" {
 		spec.TrustClass = defaultTrustClass
 	}
-	if spec.VCPUs == 0 {
-		spec.VCPUs = uint32(cfg.VCPUs)
+	spec.Resources = spec.Resources.Normalize()
+	bounds := cfg.Bounds
+	if bounds == (apiwire.VMResourceBounds{}) {
+		bounds = apiwire.DefaultBounds
 	}
-	if spec.MemoryMiB == 0 {
-		spec.MemoryMiB = uint32(cfg.MemoryMiB)
+	if err := spec.Resources.Validate(bounds); err != nil {
+		return LeaseSpec{}, err
 	}
 	if spec.TTLSeconds == 0 {
 		spec.TTLSeconds = 5 * 60
 	}
-	return spec
+	return spec, nil
 }
 
 func normalizeExecSpec(spec ExecSpec) ExecSpec {
@@ -284,11 +280,18 @@ func (o *Orchestrator) destroyDisposableWorkloadDataset(ctx context.Context, dat
 }
 
 func (o *Orchestrator) BootLease(ctx context.Context, leaseID string, spec LeaseSpec, observer LeaseObserver) (*LeaseRuntime, error) {
-	spec = normalizeLeaseSpec(spec, o.cfg)
+	normalized, normErr := normalizeLeaseSpec(spec, o.cfg)
+	if normErr != nil {
+		return nil, fmt.Errorf("normalize lease spec: %w", normErr)
+	}
+	spec = normalized
 	ctx, span := tracer.Start(ctx, "vmorchestrator.lease.boot",
 		trace.WithAttributes(
 			attribute.String("lease.id", leaseID),
-			attribute.String("runtime_profile", spec.RuntimeProfile),
+			attribute.Int("vmresources.vcpus", int(spec.Resources.VCPUs)),
+			attribute.Int("vmresources.memory_mib", int(spec.Resources.MemoryMiB)),
+			attribute.Int("vmresources.root_disk_gib", int(spec.Resources.RootDiskGiB)),
+			attribute.String("vmresources.kernel_image", string(spec.Resources.KernelImage)),
 		),
 	)
 	var err error
@@ -327,6 +330,31 @@ func (o *Orchestrator) BootLease(ctx context.Context, leaseID string, spec Lease
 		return nil, err
 	}
 	endCloneSpan(nil)
+
+	// Apply per-clone refquota matching the requested root disk size. This
+	// is a write cap — the guest-visible zvol volsize is inherited from the
+	// golden (unchanged), but writes past refquota return ENOSPC. Refquota
+	// is also what billing aggregates `disk_gib_ms` from. refreservation
+	// pre-reserves the space so parallel leases can't starve each other.
+	quotaValue := fmt.Sprintf("%dG", spec.Resources.RootDiskGiB)
+	quotaCtx, endQuotaSpan := startStepSpan(ctx, "vmorchestrator.zvol.quota_set",
+		attribute.String("lease.id", leaseID),
+		attribute.String("zfs.dataset", dataset),
+		attribute.Int("vmresources.root_disk_gib", int(spec.Resources.RootDiskGiB)),
+	)
+	if quotaErr := o.ops.ZFSSetProperty(quotaCtx, dataset, "refquota", quotaValue); quotaErr != nil {
+		endQuotaSpan(quotaErr)
+		err = fmt.Errorf("zfs refquota: %w", quotaErr)
+		_ = o.destroyDisposableWorkloadDataset(context.Background(), dataset)
+		return nil, err
+	}
+	if reserveErr := o.ops.ZFSSetProperty(quotaCtx, dataset, "refreservation", quotaValue); reserveErr != nil {
+		endQuotaSpan(reserveErr)
+		err = fmt.Errorf("zfs refreservation: %w", reserveErr)
+		_ = o.destroyDisposableWorkloadDataset(context.Background(), dataset)
+		return nil, err
+	}
+	endQuotaSpan(nil)
 
 	runtime, bootErr := o.bootDataset(ctx, leaseID, spec, dataset, observer)
 	if bootErr != nil {
@@ -460,7 +488,10 @@ func (o *Orchestrator) bootDataset(ctx context.Context, leaseID string, spec Lea
 	endAPISocketSpan(nil)
 
 	client := newAPIClient(apiSockHost)
-	bootArgs := "root=/dev/vda rw console=ttyS0 reboot=k panic=1 init=/sbin/init"
+	// Kernel cmdline rendered from the canonical apiwire flag list plus any
+	// lease-specific overrides. See src/apiwire/vmresources.go for why each
+	// flag is on the base list (or deliberately off).
+	bootArgs := apiwire.RenderCmdline(apiwire.DefaultKernelCmdlineBase)
 	apiSteps := []struct {
 		name string
 		fn   func(context.Context) error
@@ -469,7 +500,7 @@ func (o *Orchestrator) bootDataset(ctx context.Context, leaseID string, spec Lea
 		{"boot-source", func(stepCtx context.Context) error { return client.putBootSource(stepCtx, "/vmlinux", bootArgs) }},
 		{"rootfs", func(stepCtx context.Context) error { return client.putDrive(stepCtx, "rootfs", "/rootfs", true) }},
 		{"machine-config", func(stepCtx context.Context) error {
-			return client.putMachineConfig(stepCtx, int(spec.VCPUs), int(spec.MemoryMiB))
+			return client.putMachineConfig(stepCtx, int(spec.Resources.VCPUs), int(spec.Resources.MemoryMiB))
 		}},
 		{"network", func(stepCtx context.Context) error {
 			return client.putNetworkInterface(stepCtx, "eth0", netSetup.Lease.TapName, netSetup.Lease.MAC)
@@ -485,8 +516,9 @@ func (o *Orchestrator) bootDataset(ctx context.Context, leaseID string, spec Lea
 	configureCtx, endConfigureAll := startStepSpan(ctx, "vmorchestrator.firecracker.configure_all",
 		attribute.String("lease.id", leaseID),
 		attribute.Int("firecracker.step_count", len(apiSteps)),
-		attribute.Int("vmresources.vcpus", int(spec.VCPUs)),
-		attribute.Int("vmresources.memory_mib", int(spec.MemoryMiB)),
+		attribute.Int("vmresources.vcpus", int(spec.Resources.VCPUs)),
+		attribute.Int("vmresources.memory_mib", int(spec.Resources.MemoryMiB)),
+		attribute.Int("vmresources.root_disk_gib", int(spec.Resources.RootDiskGiB)),
 	)
 	for _, step := range apiSteps {
 		stepCtx, cancel := context.WithTimeout(configureCtx, firecrackerStepTimeout)
