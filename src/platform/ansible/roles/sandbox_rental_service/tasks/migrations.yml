@@ -138,6 +138,9 @@
         IF to_regclass('public.github_runner_job_bindings') IS NOT NULL THEN
           EXECUTE 'ALTER TABLE public.github_runner_job_bindings OWNER TO sandbox_rental';
         END IF;
+        IF to_regclass('public.github_runner_jit_configs') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.github_runner_jit_configs OWNER TO sandbox_rental';
+        END IF;
         IF to_regclass('public.execution_billing_job_seq') IS NOT NULL THEN
           EXECUTE 'ALTER SEQUENCE public.execution_billing_job_seq OWNER TO sandbox_rental';
         END IF;
@@ -155,6 +158,7 @@
         public.github_installation_states,
         public.github_workflow_jobs,
         public.github_runner_allocations,
+        public.github_runner_jit_configs,
         public.github_runner_job_bindings
       TO sandbox_rental;
       GRANT ALL PRIVILEGES ON SEQUENCE

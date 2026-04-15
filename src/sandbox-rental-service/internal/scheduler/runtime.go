@@ -31,8 +31,12 @@ const (
 	QueueReconcile    = "reconcile"
 	QueueWebhook      = "webhook"
 
-	ProbeKind            = "scheduler.probe"
-	ExecutionAdvanceKind = "execution.advance"
+	ProbeKind                   = "scheduler.probe"
+	ExecutionAdvanceKind        = "execution.advance"
+	GitHubCapacityReconcileKind = "github.capacity.reconcile"
+	GitHubRunnerAllocateKind    = "github.runner.allocate"
+	GitHubJobBindKind           = "github.job.bind"
+	GitHubRunnerCleanupKind     = "github.runner.cleanup"
 
 	DefaultExecutionMaxWorkers = 16
 )
@@ -80,6 +84,32 @@ type ExecutionAdvanceResult struct {
 	Status string
 }
 
+type GitHubCapacityReconcileRequest struct {
+	InstallationID int64
+	RepositoryID   int64
+	GitHubJobID    int64
+	CorrelationID  string
+	TraceParent    string
+}
+
+type GitHubRunnerAllocateRequest struct {
+	AllocationID  string
+	CorrelationID string
+	TraceParent   string
+}
+
+type GitHubJobBindRequest struct {
+	GitHubJobID   int64
+	CorrelationID string
+	TraceParent   string
+}
+
+type GitHubRunnerCleanupRequest struct {
+	AllocationID  string
+	CorrelationID string
+	TraceParent   string
+}
+
 type ProbeArgs struct {
 	Message       string `json:"message,omitempty"`
 	OrgID         uint64 `json:"org_id,omitempty"`
@@ -115,6 +145,76 @@ func (ExecutionAdvanceArgs) InsertOpts() river.InsertOpts {
 		MaxAttempts: 3,
 		Queue:       QueueExecution,
 		Tags:        []string{"execution"},
+	}
+}
+
+type GitHubCapacityReconcileArgs struct {
+	InstallationID int64  `json:"installation_id"`
+	RepositoryID   int64  `json:"repository_id,omitempty"`
+	GitHubJobID    int64  `json:"github_job_id,omitempty"`
+	CorrelationID  string `json:"correlation_id,omitempty"`
+	TraceParent    string `json:"trace_parent,omitempty"`
+	SubmittedAt    string `json:"submitted_at"`
+}
+
+func (GitHubCapacityReconcileArgs) Kind() string { return GitHubCapacityReconcileKind }
+
+func (GitHubCapacityReconcileArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{
+		MaxAttempts: 5,
+		Queue:       QueueRunner,
+		Tags:        []string{"github", "capacity"},
+	}
+}
+
+type GitHubRunnerAllocateArgs struct {
+	AllocationID  string `json:"allocation_id"`
+	CorrelationID string `json:"correlation_id,omitempty"`
+	TraceParent   string `json:"trace_parent,omitempty"`
+	SubmittedAt   string `json:"submitted_at"`
+}
+
+func (GitHubRunnerAllocateArgs) Kind() string { return GitHubRunnerAllocateKind }
+
+func (GitHubRunnerAllocateArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{
+		MaxAttempts: 3,
+		Queue:       QueueRunner,
+		Tags:        []string{"github", "runner", "allocate"},
+	}
+}
+
+type GitHubJobBindArgs struct {
+	GitHubJobID   int64  `json:"github_job_id"`
+	CorrelationID string `json:"correlation_id,omitempty"`
+	TraceParent   string `json:"trace_parent,omitempty"`
+	SubmittedAt   string `json:"submitted_at"`
+}
+
+func (GitHubJobBindArgs) Kind() string { return GitHubJobBindKind }
+
+func (GitHubJobBindArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{
+		MaxAttempts: 5,
+		Queue:       QueueRunner,
+		Tags:        []string{"github", "job", "bind"},
+	}
+}
+
+type GitHubRunnerCleanupArgs struct {
+	AllocationID  string `json:"allocation_id"`
+	CorrelationID string `json:"correlation_id,omitempty"`
+	TraceParent   string `json:"trace_parent,omitempty"`
+	SubmittedAt   string `json:"submitted_at"`
+}
+
+func (GitHubRunnerCleanupArgs) Kind() string { return GitHubRunnerCleanupKind }
+
+func (GitHubRunnerCleanupArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{
+		MaxAttempts: 5,
+		Queue:       QueueRunner,
+		Tags:        []string{"github", "runner", "cleanup"},
 	}
 }
 
@@ -217,6 +317,68 @@ func (r *Runtime) EnqueueExecutionAdvanceTx(ctx context.Context, tx pgx.Tx, req 
 		Queue:  job.Queue,
 		Status: string(job.State),
 	}, nil
+}
+
+func (r *Runtime) EnqueueGitHubCapacityReconcileTx(ctx context.Context, tx pgx.Tx, req GitHubCapacityReconcileRequest) (ProbeResult, error) {
+	args := GitHubCapacityReconcileArgs{
+		InstallationID: req.InstallationID,
+		RepositoryID:   req.RepositoryID,
+		GitHubJobID:    req.GitHubJobID,
+		CorrelationID:  strings.TrimSpace(req.CorrelationID),
+		TraceParent:    strings.TrimSpace(req.TraceParent),
+		SubmittedAt:    time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	result, err := r.client.InsertTx(ctx, tx, args, nil)
+	if err != nil {
+		return ProbeResult{}, fmt.Errorf("enqueue github capacity reconcile: %w", err)
+	}
+	job := result.Job
+	return ProbeResult{JobID: job.ID, Kind: job.Kind, Queue: job.Queue, Status: string(job.State)}, nil
+}
+
+func (r *Runtime) EnqueueGitHubRunnerAllocateTx(ctx context.Context, tx pgx.Tx, req GitHubRunnerAllocateRequest) (ProbeResult, error) {
+	args := GitHubRunnerAllocateArgs{
+		AllocationID:  strings.TrimSpace(req.AllocationID),
+		CorrelationID: strings.TrimSpace(req.CorrelationID),
+		TraceParent:   strings.TrimSpace(req.TraceParent),
+		SubmittedAt:   time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	result, err := r.client.InsertTx(ctx, tx, args, nil)
+	if err != nil {
+		return ProbeResult{}, fmt.Errorf("enqueue github runner allocate: %w", err)
+	}
+	job := result.Job
+	return ProbeResult{JobID: job.ID, Kind: job.Kind, Queue: job.Queue, Status: string(job.State)}, nil
+}
+
+func (r *Runtime) EnqueueGitHubJobBindTx(ctx context.Context, tx pgx.Tx, req GitHubJobBindRequest) (ProbeResult, error) {
+	args := GitHubJobBindArgs{
+		GitHubJobID:   req.GitHubJobID,
+		CorrelationID: strings.TrimSpace(req.CorrelationID),
+		TraceParent:   strings.TrimSpace(req.TraceParent),
+		SubmittedAt:   time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	result, err := r.client.InsertTx(ctx, tx, args, nil)
+	if err != nil {
+		return ProbeResult{}, fmt.Errorf("enqueue github job bind: %w", err)
+	}
+	job := result.Job
+	return ProbeResult{JobID: job.ID, Kind: job.Kind, Queue: job.Queue, Status: string(job.State)}, nil
+}
+
+func (r *Runtime) EnqueueGitHubRunnerCleanup(ctx context.Context, req GitHubRunnerCleanupRequest) (ProbeResult, error) {
+	args := GitHubRunnerCleanupArgs{
+		AllocationID:  strings.TrimSpace(req.AllocationID),
+		CorrelationID: strings.TrimSpace(req.CorrelationID),
+		TraceParent:   strings.TrimSpace(req.TraceParent),
+		SubmittedAt:   time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	result, err := r.client.Insert(ctx, args, nil)
+	if err != nil {
+		return ProbeResult{}, fmt.Errorf("enqueue github runner cleanup: %w", err)
+	}
+	job := result.Job
+	return ProbeResult{JobID: job.ID, Kind: job.Kind, Queue: job.Queue, Status: string(job.State)}, nil
 }
 
 func (r *Runtime) Start(ctx context.Context) error {

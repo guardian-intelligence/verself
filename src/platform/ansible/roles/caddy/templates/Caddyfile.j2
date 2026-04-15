@@ -111,6 +111,14 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 			header_up X-Forwarded-Proto https
 		}
 	}
+
+	@github_runner_jit_config {
+		method GET
+		path /internal/sandbox/v1/github-runner-jit
+	}
+	handle @github_runner_jit_config {
+		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}
+	}
 	respond 403
 }
 
