@@ -31,7 +31,9 @@ sandbox_rental_service_river_pg_conn_max_idle_seconds: 300
 
 # VM execution queue parallelism. Each worker can hold one 4 vCPU / 4 GiB
 # Firecracker VM session, so this is the primary concurrency throttle for customer
-# workload execution on a single node.
+# workload execution on a single node. Keep the default at 16 until admission
+# control separates full-memory arbitrary workloads from constrained CI jobs; see
+# src/sandbox-rental-service/docs/vm-execution-control-plane.md.
 sandbox_rental_service_execution_max_workers: 16
 sandbox_rental_service_github_app_enabled: false
 sandbox_rental_service_github_app_id: 0
