@@ -280,7 +280,7 @@ function ExecutionTable({ executions }: { executions: ElectricExecution[] }) {
                   </Link>
                 </TableCell>
                 <TableCell>
-                  <ExecutionStatusBadge status={execution.status} />
+                  <ExecutionStatusBadge status={execution.state} />
                 </TableCell>
                 <TableCell className="text-xs font-normal tabular-nums text-muted-foreground">
                   {formatDateTimeUTC(execution.created_at)}
