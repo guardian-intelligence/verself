@@ -18,6 +18,7 @@ const (
 	githubRunnerJITConfigPath      = "/internal/sandbox/v1/github-runner-jit"
 	githubStickyDiskRestorePath    = "/internal/sandbox/v1/stickydisk/restore"
 	githubStickyDiskCommitPath     = "/internal/sandbox/v1/stickydisk/commit"
+	githubCheckoutBundlePath       = "/internal/sandbox/v1/github-checkout/bundle"
 	publicWebhookBodyLimit         = 1 << 20
 )
 
@@ -36,6 +37,7 @@ func RegisterPublicRoutes(mux *http.ServeMux, svc *jobs.Service) {
 	mux.HandleFunc(githubRunnerJITConfigPath, githubRunnerJITConfigHandler(svc))
 	mux.HandleFunc(githubStickyDiskRestorePath, githubStickyDiskRestoreHandler(svc))
 	mux.HandleFunc(githubStickyDiskCommitPath, githubStickyDiskCommitHandler(svc))
+	mux.HandleFunc(githubCheckoutBundlePath, githubCheckoutBundleHandler(svc))
 }
 
 func githubActionsWebhookHandler(svc *jobs.Service) http.HandlerFunc {
@@ -188,6 +190,50 @@ func githubStickyDiskCommitHandler(svc *jobs.Service) http.HandlerFunc {
 	}
 }
 
+func githubCheckoutBundleHandler(svc *jobs.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if svc.GitHubRunner == nil || !svc.GitHubRunner.Configured() {
+			http.Error(w, "github runner is not configured", http.StatusServiceUnavailable)
+			return
+		}
+		identity, err := svc.GitHubRunner.AuthenticateCheckout(
+			r.Context(),
+			r.Header.Get("X-Forge-Metal-Execution-Id"),
+			r.Header.Get("X-Forge-Metal-Attempt-Id"),
+			r.Header.Get("Authorization"),
+		)
+		if err != nil {
+			writePublicWebhookError(w, http.StatusUnauthorized, err)
+			return
+		}
+		bundle, err := svc.GitHubRunner.PrepareCheckoutBundle(r.Context(), identity, jobs.CheckoutBundleRequest{
+			Repository: r.URL.Query().Get("repository"),
+			Ref:        r.URL.Query().Get("ref"),
+			SHA:        r.URL.Query().Get("sha"),
+		})
+		if err != nil {
+			writeCheckoutError(w, err)
+			return
+		}
+		file, err := os.Open(bundle.BundlePath)
+		if err != nil {
+			writeCheckoutError(w, err)
+			return
+		}
+		defer file.Close()
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Forge-Metal-Checkout-Cache-Hit", strconv.FormatBool(bundle.CacheHit))
+		w.Header().Set("X-Forge-Metal-Checkout-Size-Bytes", strconv.FormatInt(bundle.SizeBytes, 10))
+		w.Header().Set("X-Forge-Metal-Checkout-Sha", bundle.SHA)
+		_, _ = io.Copy(w, file)
+	}
+}
+
 func authenticateStickyDiskRequest(w http.ResponseWriter, r *http.Request, svc *jobs.Service) (jobs.StickyDiskIdentity, bool) {
 	identity, err := svc.GitHubRunner.AuthenticateStickyDisk(
 		r.Context(),
@@ -208,6 +254,17 @@ func writeStickyDiskError(w http.ResponseWriter, err error) {
 		status = http.StatusBadRequest
 	}
 	if errors.Is(err, jobs.ErrStickyDiskUnauthorized) {
+		status = http.StatusUnauthorized
+	}
+	writePublicWebhookError(w, status, err)
+}
+
+func writeCheckoutError(w http.ResponseWriter, err error) {
+	status := http.StatusInternalServerError
+	if errors.Is(err, jobs.ErrCheckoutInvalid) {
+		status = http.StatusBadRequest
+	}
+	if errors.Is(err, jobs.ErrCheckoutUnauthorized) {
 		status = http.StatusUnauthorized
 	}
 	writePublicWebhookError(w, status, err)

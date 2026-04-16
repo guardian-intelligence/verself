@@ -153,7 +153,7 @@ function DocsPage() {
                 <ApiLayer
                   name="Checkout"
                   syntax="uses: forge-metal/checkout@v1"
-                  description="Planned drop-in replacement for actions/checkout using a local Git mirror."
+                  description="Opt-in actions/checkout replacement using a Forge Metal host-local Git mirror."
                 />
                 <ApiLayer
                   name="Sticky Disk"
@@ -186,6 +186,21 @@ function DocsPage() {
                   post-job cleanup. The API is the durable part; ZFS-backed mounts replace the
                   archive path after the end-to-end flow is proven.
                 </Aside>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                <Policy title="Cache state">
+                  Sticky disks are acceleration state. If a job saves broken dependency or build
+                  output, future jobs may restore the same broken state.
+                </Policy>
+                <Policy title="Customer control">
+                  Repository maintainers own the commands that write sticky disks and can clear a
+                  repo, branch, or key when the saved state is no longer useful.
+                </Policy>
+                <Policy title="Platform guardrails">
+                  Forge Metal isolates trust scopes, bounds failed restores, releases VM resources,
+                  and falls back to clean state when a saved disk cannot boot or attach safely.
+                </Policy>
               </div>
             </PageSection>
 

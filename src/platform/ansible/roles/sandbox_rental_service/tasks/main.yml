@@ -33,6 +33,14 @@
     group: sandbox_rental
     mode: "0700"
 
+- name: Create sandbox-rental GitHub checkout cache directory
+  ansible.builtin.file:
+    path: "{{ sandbox_rental_service_github_checkout_cache_dir }}"
+    state: directory
+    owner: sandbox_rental
+    group: sandbox_rental
+    mode: "0700"
+
 # --- nftables egress rules ---
 
 - name: Deploy sandbox-rental-service nftables ruleset
@@ -332,6 +340,7 @@
       Environment=SANDBOX_GITHUB_WEB_BASE_URL={{ sandbox_rental_service_github_web_base_url }}
       Environment=SANDBOX_GITHUB_RUNNER_GROUP_ID={{ sandbox_rental_service_github_runner_group_id }}
       Environment=SANDBOX_STICKY_DISK_DIR={{ sandbox_rental_service_sticky_disk_dir }}
+      Environment=SANDBOX_GITHUB_CHECKOUT_CACHE_DIR={{ sandbox_rental_service_github_checkout_cache_dir }}
       ExecStart={{ fm_bin }}/sandbox-rental-service
       Restart=on-failure
       RestartSec=5

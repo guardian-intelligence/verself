@@ -162,18 +162,19 @@ type BillingWindow struct {
 }
 
 type Service struct {
-	PG              *sql.DB
-	PGX             *pgxpool.Pool
-	CH              driver.Conn
-	CHDatabase      string
-	Orchestrator    Runner
-	Billing         *billingclient.ServiceClient
-	Bounds          apiwire.VMResourceBounds
-	GitHubRunner    *GitHubRunner
-	Scheduler       SchedulerRuntime
-	Logger          *slog.Logger
-	WorkloadTimeout time.Duration
-	StickyDiskDir   string
+	PG               *sql.DB
+	PGX              *pgxpool.Pool
+	CH               driver.Conn
+	CHDatabase       string
+	Orchestrator     Runner
+	Billing          *billingclient.ServiceClient
+	Bounds           apiwire.VMResourceBounds
+	GitHubRunner     *GitHubRunner
+	Scheduler        SchedulerRuntime
+	Logger           *slog.Logger
+	WorkloadTimeout  time.Duration
+	StickyDiskDir    string
+	CheckoutCacheDir string
 }
 
 type executionWorkItem struct {

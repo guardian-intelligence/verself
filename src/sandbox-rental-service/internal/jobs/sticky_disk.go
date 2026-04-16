@@ -34,13 +34,14 @@ var (
 )
 
 type StickyDiskIdentity struct {
-	ExecutionID  uuid.UUID
-	AttemptID    uuid.UUID
-	AllocationID uuid.UUID
-	Installation int64
-	RepositoryID int64
-	GitHubJobID  int64
-	RunnerName   string
+	ExecutionID        uuid.UUID
+	AttemptID          uuid.UUID
+	AllocationID       uuid.UUID
+	Installation       int64
+	RepositoryID       int64
+	RepositoryFullName string
+	GitHubJobID        int64
+	RunnerName         string
 }
 
 type StickyDiskRestore struct {
@@ -83,30 +84,50 @@ func (r *GitHubRunner) AuthenticateStickyDisk(ctx context.Context, executionID, 
 	if err != nil {
 		return StickyDiskIdentity{}, fmt.Errorf("%w: invalid attempt id", ErrStickyDiskUnauthorized)
 	}
-	expected := r.deriveStickyDiskToken(execUUID, attemptUUID)
+	return r.authenticateGitHubExecution(ctx, execUUID, attemptUUID, bearer, r.deriveStickyDiskToken(execUUID, attemptUUID), ErrStickyDiskUnauthorized)
+}
+
+func (r *GitHubRunner) AuthenticateCheckout(ctx context.Context, executionID, attemptID, bearer string) (StickyDiskIdentity, error) {
+	executionID = strings.TrimSpace(executionID)
+	attemptID = strings.TrimSpace(attemptID)
+	bearer = strings.TrimSpace(strings.TrimPrefix(bearer, "Bearer "))
+	execUUID, err := uuid.Parse(executionID)
+	if err != nil {
+		return StickyDiskIdentity{}, fmt.Errorf("%w: invalid execution id", ErrCheckoutUnauthorized)
+	}
+	attemptUUID, err := uuid.Parse(attemptID)
+	if err != nil {
+		return StickyDiskIdentity{}, fmt.Errorf("%w: invalid attempt id", ErrCheckoutUnauthorized)
+	}
+	return r.authenticateGitHubExecution(ctx, execUUID, attemptUUID, bearer, r.deriveCheckoutToken(execUUID, attemptUUID), ErrCheckoutUnauthorized)
+}
+
+func (r *GitHubRunner) authenticateGitHubExecution(ctx context.Context, executionID, attemptID uuid.UUID, bearer, expected string, unauthorizedErr error) (StickyDiskIdentity, error) {
 	if bearer == "" || !hmac.Equal([]byte(bearer), []byte(expected)) {
-		return StickyDiskIdentity{}, ErrStickyDiskUnauthorized
+		return StickyDiskIdentity{}, unauthorizedErr
 	}
 
 	var identity StickyDiskIdentity
-	err = r.service.PGX.QueryRow(ctx, `SELECT
-		a.allocation_id,
-		a.installation_id,
-		a.repository_id,
-		COALESCE(b.github_job_id, a.requested_for_github_job_id),
-		a.runner_name
-		FROM github_runner_allocations a
-		LEFT JOIN github_runner_job_bindings b ON b.allocation_id = a.allocation_id
-		WHERE a.execution_id = $1 AND a.attempt_id = $2`,
-		execUUID, attemptUUID).Scan(&identity.AllocationID, &identity.Installation, &identity.RepositoryID, &identity.GitHubJobID, &identity.RunnerName)
+	err := r.service.PGX.QueryRow(ctx, `SELECT
+			a.allocation_id,
+			a.installation_id,
+			a.repository_id,
+			COALESCE(j.repository_full_name, ''),
+			COALESCE(b.github_job_id, a.requested_for_github_job_id),
+			a.runner_name
+			FROM github_runner_allocations a
+			LEFT JOIN github_runner_job_bindings b ON b.allocation_id = a.allocation_id
+			LEFT JOIN github_workflow_jobs j ON j.github_job_id = COALESCE(b.github_job_id, a.requested_for_github_job_id)
+			WHERE a.execution_id = $1 AND a.attempt_id = $2`,
+		executionID, attemptID).Scan(&identity.AllocationID, &identity.Installation, &identity.RepositoryID, &identity.RepositoryFullName, &identity.GitHubJobID, &identity.RunnerName)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return StickyDiskIdentity{}, ErrStickyDiskUnauthorized
+		return StickyDiskIdentity{}, unauthorizedErr
 	}
 	if err != nil {
 		return StickyDiskIdentity{}, err
 	}
-	identity.ExecutionID = execUUID
-	identity.AttemptID = attemptUUID
+	identity.ExecutionID = executionID
+	identity.AttemptID = attemptID
 	return identity, nil
 }
 

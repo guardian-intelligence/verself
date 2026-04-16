@@ -1,0 +1,30 @@
+name: Forge Metal Checkout
+description: Materialize the current GitHub workflow SHA from the Forge Metal host mirror.
+inputs:
+  repository:
+    description: Repository to checkout, formatted as owner/name.
+    required: false
+    default: ${{ github.repository }}
+  ref:
+    description: Full Git ref to fetch, for example refs/heads/main or refs/pull/1/merge.
+    required: false
+    default: ${{ github.ref }}
+  path:
+    description: Checkout path relative to GITHUB_WORKSPACE.
+    required: false
+    default: "."
+  clean:
+    description: Remove existing path contents before checkout.
+    required: false
+    default: "true"
+  fetch-depth:
+    description: Accepted for actions/checkout familiarity. Forge Metal checkout currently materializes one commit.
+    required: false
+    default: "1"
+  persist-credentials:
+    description: Accepted for actions/checkout familiarity. Forge Metal checkout does not persist GitHub credentials.
+    required: false
+    default: "false"
+runs:
+  using: node24
+  main: dist/index.js

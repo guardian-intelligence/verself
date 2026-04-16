@@ -40,6 +40,7 @@ const (
 	githubRunnerWorkFolder   = "_work"
 	githubJITConfigFetchPath = "/internal/sandbox/v1/github-runner-jit"
 	githubStickyDiskPath     = "/internal/sandbox/v1/stickydisk"
+	githubCheckoutPath       = "/internal/sandbox/v1/github-checkout"
 )
 
 type GitHubRunnerConfig struct {
@@ -61,6 +62,8 @@ type GitHubRunner struct {
 
 	tokenMu sync.Mutex
 	tokens  map[int64]githubInstallationToken
+
+	checkoutMu sync.Mutex
 }
 
 type GitHubInstallationConnect struct {
@@ -654,6 +657,8 @@ func (r *GitHubRunner) execEnv(ctx context.Context, executionID, attemptID uuid.
 		"FORGE_METAL_GITHUB_JIT_PATH":  githubJITConfigFetchPath,
 		"FORGE_METAL_STICKY_TOKEN":     r.deriveStickyDiskToken(executionID, attemptID),
 		"FORGE_METAL_STICKY_PATH":      githubStickyDiskPath,
+		"FORGE_METAL_CHECKOUT_TOKEN":   r.deriveCheckoutToken(executionID, attemptID),
+		"FORGE_METAL_CHECKOUT_PATH":    githubCheckoutPath,
 	}
 }
 
@@ -954,6 +959,14 @@ func (r *GitHubRunner) deriveJITFetchToken(allocationID, attemptID uuid.UUID) st
 
 func (r *GitHubRunner) deriveStickyDiskToken(executionID, attemptID uuid.UUID) string {
 	mac := hmac.New(sha256.New, []byte("forge-metal-sticky-disk:"+r.cfg.WebhookSecret))
+	mac.Write([]byte(executionID.String()))
+	mac.Write([]byte(":"))
+	mac.Write([]byte(attemptID.String()))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+func (r *GitHubRunner) deriveCheckoutToken(executionID, attemptID uuid.UUID) string {
+	mac := hmac.New(sha256.New, []byte("forge-metal-checkout:"+r.cfg.WebhookSecret))
 	mac.Write([]byte(executionID.String()))
 	mac.Write([]byte(":"))
 	mac.Write([]byte(attemptID.String()))
