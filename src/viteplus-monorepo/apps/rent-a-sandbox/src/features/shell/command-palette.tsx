@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { useClerk } from "@forge-metal/auth-web/react";
 import { cn } from "@forge-metal/ui/lib/utils";
-import { PRIMARY_NAV, SETTINGS_NAV } from "./nav-config";
+import { EVERGREEN_NAV, PRIMARY_NAV, SETTINGS_NAV } from "./nav-config";
 
 // Hand-rolled command palette. We deliberately avoid cmdk + Radix Dialog:
 // cmdk transitively depends on @radix-ui/react-dialog, which pulls in the
@@ -18,7 +18,7 @@ type CommandAction =
 
 type CommandEntry = {
   readonly id: string;
-  readonly section: "Navigation" | "Settings" | "Account";
+  readonly section: "Navigation" | "Docs" | "Settings" | "Account";
   readonly label: string;
   readonly description?: string;
   readonly keywords: string;
@@ -32,6 +32,13 @@ function buildEntries(): readonly CommandEntry[] {
     label: `Go to ${product.label}`,
     keywords: `${product.label} ${product.to}`,
     action: { kind: "navigate", to: product.to },
+  }));
+  const docsEntries: CommandEntry[] = EVERGREEN_NAV.filter((e) => e.id === "docs").map((entry) => ({
+    id: `docs:${entry.id}`,
+    section: "Docs",
+    label: `Go to ${entry.label}`,
+    keywords: `${entry.label} documentation guides reference`,
+    action: { kind: "navigate", to: entry.to },
   }));
   const settingsEntries: CommandEntry[] = SETTINGS_NAV.map((entry) => ({
     id: `settings:${entry.id}`,
@@ -49,7 +56,7 @@ function buildEntries(): readonly CommandEntry[] {
       action: { kind: "sign_out" },
     },
   ];
-  return [...navEntries, ...settingsEntries, ...accountEntries];
+  return [...navEntries, ...docsEntries, ...settingsEntries, ...accountEntries];
 }
 
 function matchesQuery(entry: CommandEntry, query: string): boolean {
@@ -239,7 +246,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteControlProp
 type GroupedSection = { readonly section: CommandEntry["section"]; readonly entries: CommandEntry[] };
 
 function groupBySection(entries: readonly CommandEntry[]): readonly GroupedSection[] {
-  const order: CommandEntry["section"][] = ["Navigation", "Settings", "Account"];
+  const order: CommandEntry["section"][] = ["Navigation", "Docs", "Settings", "Account"];
   const buckets = new Map<CommandEntry["section"], CommandEntry[]>();
   for (const entry of entries) {
     const bucket = buckets.get(entry.section) ?? [];
@@ -254,17 +261,17 @@ function groupBySection(entries: readonly CommandEntry[]): readonly GroupedSecti
 // useCommandPaletteHotkey registers the global Cmd/Ctrl+K binding. Lives in
 // the consumer's tree so the palette state stays local to whatever mounts
 // the shell, rather than globally mounted.
-export function useCommandPaletteHotkey(onOpen: () => void) {
+export function useCommandPaletteHotkey(onToggle: () => void) {
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        onOpen();
+        onToggle();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onOpen]);
+  }, [onToggle]);
 }
 
 // Re-export so the shell can subscribe to route changes (used to close the

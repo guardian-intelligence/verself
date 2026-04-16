@@ -33,25 +33,11 @@ import {
 import { EVERGREEN_NAV, isPathActive, PRIMARY_NAV, type NavEntry } from "./nav-config";
 import { CommandPalette, useCommandPaletteHotkey } from "./command-palette";
 
-// Rent-a-Sandbox app shell, built on the Base UI Sidebar block shipped from
-// @forge-metal/ui. The hand-rolled shell that preceded this file existed
-// because Radix overlays were banned by the SSR module graph; commit
-// 4d7567b moved the package to Base UI, but Base UI's Menu and Tooltip
-// primitives are wrapped in @base-ui/utils fastComponent, which calls
-// React.useSyncExternalStore through use-sync-external-store/shim. Under
-// nitro SSR + Rolldown, that shim resolves through CJS createRequire and
-// gets a duplicate React module instance whose hook dispatcher is null —
-// the SSR render crashes with "Cannot read properties of null (reading
-// 'useSyncExternalStore')". Tracked upstream at vitejs/rolldown-vite#596
-// and mui/base-ui#3194, both closed but neither shipped a fix yet. We
-// gate every Base UI Menu/Tooltip surface on hydration via ClientOnly /
-// useHydrated until upstream resolves it. See AGENTS.md "Base UI gotchas".
-
 export function AppShell() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const path = useRouterState({ select: (s) => s.location.pathname });
 
-  useCommandPaletteHotkey(() => setPaletteOpen(true));
+  useCommandPaletteHotkey(() => setPaletteOpen((prev) => !prev));
 
   // Close the palette on route change so navigation feels instant instead
   // of leaving the overlay hanging.
