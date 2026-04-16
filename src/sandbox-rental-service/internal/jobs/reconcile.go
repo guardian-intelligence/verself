@@ -20,6 +20,9 @@ func (s *Service) Reconcile(ctx context.Context) error {
 	if err := s.reconcileLaunchingAttempts(ctx); err != nil {
 		return err
 	}
+	if err := s.reconcileCleanedGitHubRunnerAttempts(ctx); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -88,6 +91,47 @@ func (s *Service) reconcileLaunchingAttempts(ctx context.Context) error {
 		}
 		if err := s.failAttempt(ctx, item.executionWorkItem, "reconciled_launch_timeout", nil); err != nil {
 			return fmt.Errorf("fail stale launching attempt %s: %w", item.AttemptID, err)
+		}
+	}
+	return rows.Err()
+}
+
+func (s *Service) reconcileCleanedGitHubRunnerAttempts(ctx context.Context) error {
+	rows, err := s.PGX.Query(ctx, `
+		SELECT e.execution_id, a.attempt_id, COALESCE(w.billing_window_id, '')
+		FROM executions e
+		JOIN execution_attempts a ON a.execution_id = e.execution_id
+		JOIN github_runner_allocations gha ON gha.execution_id = e.execution_id
+		LEFT JOIN LATERAL (
+			SELECT billing_window_id
+			FROM execution_billing_windows
+			WHERE attempt_id = a.attempt_id
+			ORDER BY window_seq DESC
+			LIMIT 1
+		) w ON true
+		WHERE e.workload_kind = $1
+		  AND a.state = $2
+		  AND gha.state = 'cleaned'
+		  AND gha.updated_at < (now() - ($3 * interval '1 second'))
+	`, WorkloadKindGitHubRunner, StateRunning, int((2 * time.Minute).Seconds()))
+	if err != nil {
+		return fmt.Errorf("query cleaned github runner attempts: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		item, err := s.scanReconcileWorkItem(ctx, rows)
+		if err != nil {
+			return err
+		}
+		if item.LeaseID != "" && s.Orchestrator != nil {
+			_ = s.Orchestrator.ReleaseLease(detachedContext(ctx), item.LeaseID, item.AttemptID.String()+":reconcile-cleaned-release")
+		}
+		if item.windowID != "" {
+			_ = s.markBillingWindow(ctx, item.AttemptID, item.windowID, "voided", 0)
+		}
+		if err := s.failAttempt(ctx, item.executionWorkItem, "reconciled_cleaned_github_runner", nil); err != nil {
+			return fmt.Errorf("fail cleaned github runner attempt %s: %w", item.AttemptID, err)
 		}
 	}
 	return rows.Err()
