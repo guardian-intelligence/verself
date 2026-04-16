@@ -94,6 +94,7 @@ func run() error {
 	githubWebBaseURL := envOr("SANDBOX_GITHUB_WEB_BASE_URL", "https://github.com")
 	githubRunnerGroupID := envInt64("SANDBOX_GITHUB_RUNNER_GROUP_ID", 1)
 	stickyDiskDir := envOr("SANDBOX_STICKY_DISK_DIR", "/var/lib/forge-metal/sandbox-rental/stickydisks")
+	checkoutCacheDir := envOr("SANDBOX_GITHUB_CHECKOUT_CACHE_DIR", "/var/lib/forge-metal/sandbox-rental/github-checkout")
 	if !githubAppEnabled && githubAppID == 0 && githubAppSlug == "" && githubAppClientID == "" {
 		githubAppPrivateKey = ""
 		githubAppWebhookSecret = ""
@@ -202,16 +203,17 @@ func run() error {
 	// --- job service ---
 
 	jobService := &jobs.Service{
-		PG:              pg,
-		PGX:             pgxPool,
-		CH:              chConn,
-		CHDatabase:      "forge_metal",
-		Orchestrator:    orchestrator,
-		Billing:         billingClient,
-		Bounds:          hostBounds,
-		Logger:          logger,
-		WorkloadTimeout: time.Duration(envInt("SANDBOX_WORKLOAD_TIMEOUT_SECONDS", 7200)) * time.Second,
-		StickyDiskDir:   stickyDiskDir,
+		PG:               pg,
+		PGX:              pgxPool,
+		CH:               chConn,
+		CHDatabase:       "forge_metal",
+		Orchestrator:     orchestrator,
+		Billing:          billingClient,
+		Bounds:           hostBounds,
+		Logger:           logger,
+		WorkloadTimeout:  time.Duration(envInt("SANDBOX_WORKLOAD_TIMEOUT_SECONDS", 7200)) * time.Second,
+		StickyDiskDir:    stickyDiskDir,
+		CheckoutCacheDir: checkoutCacheDir,
 	}
 	githubRunner, err := jobs.NewGitHubRunner(jobService, jobs.GitHubRunnerConfig{
 		AppID:         githubAppID,
