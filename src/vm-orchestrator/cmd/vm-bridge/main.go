@@ -181,6 +181,8 @@ func buildRuntimeEnv(overrides map[string]string, network vmproto.NetworkConfig,
 		"PATH":                         "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 		"TERM":                         "xterm",
 		"FORGE_METAL_VM_BRIDGE_SOCKET": bridgeSocketPath,
+		"RUNNER_TOOL_CACHE":            "/opt/hostedtoolcache",
+		"AGENT_TOOLSDIRECTORY":         "/opt/hostedtoolcache",
 	}
 	if len(filesystemMountPaths) > 0 {
 		envMap["FORGE_METAL_COMPOSED_ZVOL_MOUNTS"] = strings.Join(filesystemMountPaths, ":")

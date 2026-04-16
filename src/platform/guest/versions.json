@@ -14,9 +14,9 @@
     "sha256": "ceb5e041bbc3893846bd1614d76cb4681c91dadee579426cf21a63f2d7e03be6"
   },
   "nodejs": {
-    "version": "22.22.2",
-    "url": "https://nodejs.org/dist/v22.22.2/node-v22.22.2-linux-x64.tar.xz",
-    "sha256": "88fd1ce767091fd8d4a99fdb2356e98c819f93f3b1f8663853a2dee9b438068a"
+    "version": "24.15.0",
+    "url": "https://nodejs.org/dist/v24.15.0/node-v24.15.0-linux-x64.tar.xz",
+    "sha256": "472655581fb851559730c48763e0c9d3bc25975c59d518003fc0849d3e4ba0f6"
   },
   "pnpm": {
     "version": "10.33.0"

@@ -259,6 +259,13 @@ run_chroot /usr/local/bin/corepack prepare "pnpm@$PNPM_VERSION" --activate
 run_chroot /usr/local/bin/npm install --global --no-audit --no-fund "vite-plus@$VITE_PLUS_VERSION"
 ln -sf /opt/forge-metal/nodejs/bin/vp "$ROOTFS/usr/local/bin/vp"
 
+echo "-> priming GitHub Actions toolcache for Node.js $NODEJS_VERSION"
+NODE_TOOLCACHE="$ROOTFS/opt/hostedtoolcache/node/$NODEJS_VERSION/x64"
+rm -rf "$NODE_TOOLCACHE" "$NODE_TOOLCACHE.complete"
+mkdir -p "$NODE_TOOLCACHE"
+cp -a "$ROOTFS/opt/forge-metal/nodejs/." "$NODE_TOOLCACHE/"
+touch "$NODE_TOOLCACHE.complete"
+
 echo "-> installing GitHub Actions runner $GITHUB_ACTIONS_RUNNER_VERSION"
 GITHUB_RUNNER_TARBALL="$WORKDIR/actions-runner.tar.gz"
 download_checked "$GITHUB_ACTIONS_RUNNER_URL" "$GITHUB_ACTIONS_RUNNER_SHA256" "$GITHUB_RUNNER_TARBALL"
