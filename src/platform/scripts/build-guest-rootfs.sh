@@ -95,6 +95,8 @@ GO_SHA256=$(json_string '.go.sha256')
 NODEJS_VERSION=$(json_string '.nodejs.version')
 NODEJS_URL=$(json_string '.nodejs.url')
 NODEJS_SHA256=$(json_string '.nodejs.sha256')
+PNPM_VERSION=$(json_string '.pnpm.version')
+VITE_PLUS_VERSION=$(json_string '.vite_plus.version')
 
 GITHUB_ACTIONS_RUNNER_VERSION=$(json_string '.github_actions_runner.version')
 GITHUB_ACTIONS_RUNNER_URL=$(json_string '.github_actions_runner.url')
@@ -233,7 +235,10 @@ tar -xJf "$NODEJS_TARBALL" -C "$ROOTFS/opt/forge-metal/nodejs" --strip-component
 for binary in node npm npx corepack; do
   ln -sf "/opt/forge-metal/nodejs/bin/$binary" "$ROOTFS/usr/local/bin/$binary"
 done
-run_chroot /usr/local/bin/corepack enable
+run_chroot /usr/local/bin/corepack enable --install-directory /usr/local/bin
+run_chroot /usr/local/bin/corepack prepare "pnpm@$PNPM_VERSION" --activate
+run_chroot /usr/local/bin/npm install --global --no-audit --no-fund "vite-plus@$VITE_PLUS_VERSION"
+ln -sf /opt/forge-metal/nodejs/bin/vp "$ROOTFS/usr/local/bin/vp"
 
 echo "-> installing GitHub Actions runner $GITHUB_ACTIONS_RUNNER_VERSION"
 GITHUB_RUNNER_TARBALL="$WORKDIR/actions-runner.tar.gz"
@@ -311,6 +316,8 @@ GO_BINARY_SHA256=$(sha256sum "$ROOTFS/usr/local/go/bin/go" | awk '{print $1}')
 GO_BINARY_BYTES=$(stat -c '%s' "$ROOTFS/usr/local/go/bin/go")
 NODE_BINARY_SHA256=$(sha256sum "$ROOTFS/opt/forge-metal/nodejs/bin/node" | awk '{print $1}')
 NODE_BINARY_BYTES=$(stat -c '%s' "$ROOTFS/opt/forge-metal/nodejs/bin/node")
+VITE_PLUS_BINARY_SHA256=$(sha256sum "$ROOTFS/opt/forge-metal/nodejs/bin/vp" | awk '{print $1}')
+VITE_PLUS_BINARY_BYTES=$(stat -c '%s' "$ROOTFS/opt/forge-metal/nodejs/bin/vp")
 GITHUB_RUNNER_SHA256=$(sha256sum "$ROOTFS/opt/actions-runner/run.sh" | awk '{print $1}')
 GITHUB_RUNNER_BYTES=$(stat -c '%s' "$ROOTFS/opt/actions-runner/run.sh")
 {
@@ -321,6 +328,8 @@ GITHUB_RUNNER_BYTES=$(stat -c '%s' "$ROOTFS/opt/actions-runner/run.sh")
   echo "file path=/usr/local/bin/vm-guest-telemetry component=vm-guest-telemetry sha256=$VM_GUEST_TELEMETRY_SHA256 bytes=$VM_GUEST_TELEMETRY_BYTES"
   echo "file path=/usr/local/go/bin/go component=go version=$GO_VERSION sha256=$GO_BINARY_SHA256 bytes=$GO_BINARY_BYTES"
   echo "file path=/opt/forge-metal/nodejs/bin/node component=nodejs version=$NODEJS_VERSION sha256=$NODE_BINARY_SHA256 bytes=$NODE_BINARY_BYTES"
+  echo "file path=/opt/forge-metal/nodejs/bin/vp component=vite-plus version=$VITE_PLUS_VERSION sha256=$VITE_PLUS_BINARY_SHA256 bytes=$VITE_PLUS_BINARY_BYTES"
+  echo "symlink path=/usr/local/bin/vp target=/opt/forge-metal/nodejs/bin/vp component=vite-plus version=$VITE_PLUS_VERSION"
   echo "file path=/opt/actions-runner/run.sh component=github-actions-runner version=$GITHUB_ACTIONS_RUNNER_VERSION sha256=$GITHUB_RUNNER_SHA256 bytes=$GITHUB_RUNNER_BYTES"
 } >> "$OUTPUT_DIR/sbom.txt"
 
@@ -378,6 +387,10 @@ jq -n \
   --arg nodejs_version "$NODEJS_VERSION" \
   --arg nodejs_sha256 "$NODE_BINARY_SHA256" \
   --arg nodejs_bytes "$NODE_BINARY_BYTES" \
+  --arg pnpm_version "$PNPM_VERSION" \
+  --arg vite_plus_version "$VITE_PLUS_VERSION" \
+  --arg vite_plus_sha256 "$VITE_PLUS_BINARY_SHA256" \
+  --arg vite_plus_bytes "$VITE_PLUS_BINARY_BYTES" \
   --arg github_actions_runner_version "$GITHUB_ACTIONS_RUNNER_VERSION" \
   --arg github_actions_runner_sha256 "$GITHUB_RUNNER_SHA256" \
   --arg github_actions_runner_bytes "$GITHUB_RUNNER_BYTES" \
@@ -412,6 +425,10 @@ jq -n \
     nodejs_version: $nodejs_version,
     nodejs_sha256: $nodejs_sha256,
     nodejs_bytes: ($nodejs_bytes | tonumber),
+    pnpm_version: $pnpm_version,
+    vite_plus_version: $vite_plus_version,
+    vite_plus_sha256: $vite_plus_sha256,
+    vite_plus_bytes: ($vite_plus_bytes | tonumber),
     github_actions_runner_version: $github_actions_runner_version,
     github_actions_runner_sha256: $github_actions_runner_sha256,
     github_actions_runner_bytes: ($github_actions_runner_bytes | tonumber)
