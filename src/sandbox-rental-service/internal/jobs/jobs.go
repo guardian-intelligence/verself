@@ -425,9 +425,13 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	}
 	finalExec, waitErr := s.Orchestrator.WaitExec(waitCtx, lease.LeaseID, execRecord.ExecID, true)
 	if waitErr != nil {
-		_, _ = s.Orchestrator.CancelExec(detachedContext(ctx), lease.LeaseID, execRecord.ExecID, item.AttemptID.String()+":timeout", "execution_wait_failed")
-		s.cleanupLeaseAndReservation(ctx, lease.LeaseID, reservation)
-		return s.failAttempt(ctx, item, "exec_wait_failed", waitErr)
+		span.RecordError(waitErr)
+		span.SetStatus(codes.Error, waitErr.Error())
+		terminalCtx := detachedContext(ctx)
+		_, _ = s.Orchestrator.CancelExec(terminalCtx, lease.LeaseID, execRecord.ExecID, item.AttemptID.String()+":timeout", "execution_wait_failed")
+		s.cleanupLeaseAndReservation(terminalCtx, lease.LeaseID, reservation)
+		_ = s.markBillingWindow(terminalCtx, item.AttemptID, reservation.WindowId, "voided", 0)
+		return s.failAttempt(terminalCtx, item, "exec_wait_failed", waitErr)
 	}
 	stopRenew()
 	if err := s.Orchestrator.ReleaseLease(detachedContext(ctx), lease.LeaseID, item.AttemptID.String()+":release"); err != nil {
