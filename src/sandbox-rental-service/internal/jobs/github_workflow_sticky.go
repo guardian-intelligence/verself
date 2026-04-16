@@ -72,7 +72,7 @@ func (r *GitHubRunner) prepareStickyDiskMounts(ctx context.Context, allocation g
 		if err != nil {
 			return nil, err
 		}
-		mountPath, err := resolveStickyDiskPath(decl.Path)
+		mountPath, err := resolveStickyDiskPath(decl.Path, allocation.RepositoryFullName)
 		if err != nil {
 			return nil, err
 		}

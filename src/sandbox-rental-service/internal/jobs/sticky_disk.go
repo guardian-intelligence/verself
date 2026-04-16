@@ -29,7 +29,7 @@ const (
 	stickyDiskStateCommitted     = "committed"
 	stickyDiskStateFailed        = "failed"
 	stickyDiskStateSkipped       = "skipped"
-	stickyDiskWorkspaceRoot      = "/workspace"
+	stickyDiskRunnerWorkRoot     = "/workspace"
 	stickyDiskRunnerHome         = "/home/runner"
 	stickyDiskTargetRefHashBytes = 16
 )
@@ -447,7 +447,7 @@ func normalizeStickyDiskPath(mountPath string) (string, error) {
 	return mountPath, nil
 }
 
-func resolveStickyDiskPath(raw string) (string, error) {
+func resolveStickyDiskPath(raw, repositoryFullName string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return "", fmt.Errorf("%w: path is required", ErrStickyDiskInvalid)
@@ -460,8 +460,23 @@ func resolveStickyDiskPath(raw string) (string, error) {
 	case filepath.IsAbs(raw):
 		return normalizeStickyDiskPath(raw)
 	default:
-		return normalizeStickyDiskPath(filepath.Join(stickyDiskWorkspaceRoot, raw))
+		workspaceRoot, err := githubActionsWorkspaceRoot(repositoryFullName)
+		if err != nil {
+			return "", err
+		}
+		return normalizeStickyDiskPath(filepath.Join(workspaceRoot, raw))
 	}
+}
+
+func githubActionsWorkspaceRoot(repositoryFullName string) (string, error) {
+	_, repo, ok := strings.Cut(strings.TrimSpace(repositoryFullName), "/")
+	repo = strings.TrimSpace(repo)
+	if !ok || repo == "" || repo == "." || repo == ".." || strings.ContainsAny(repo, `/\`) {
+		return "", fmt.Errorf("%w: repository full name is required for relative sticky disk paths", ErrStickyDiskInvalid)
+	}
+	// The runner starts in /opt/actions-runner with _work -> /workspace, so GitHub sets
+	// GITHUB_WORKSPACE to /opt/actions-runner/_work/<repo>/<repo>.
+	return filepath.Join(stickyDiskRunnerWorkRoot, repo, repo), nil
 }
 
 func stickyDiskAttributes(identity StickyDiskIdentity, key string) []attribute.KeyValue {
