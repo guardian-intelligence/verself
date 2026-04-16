@@ -13,7 +13,7 @@ import {
 import { ErrorCallout } from "~/components/error-callout";
 import { useCreateCheckoutSessionMutation } from "~/features/billing/mutations";
 
-export const Route = createFileRoute("/_authenticated/settings/billing/credits")({
+export const Route = createFileRoute("/_shell/_authenticated/settings/billing/credits")({
   component: CreditsPage,
 });
 

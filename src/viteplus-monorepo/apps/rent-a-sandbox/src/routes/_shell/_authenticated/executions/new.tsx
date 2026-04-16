@@ -11,7 +11,7 @@ import {
 } from "@forge-metal/ui/components/ui/page";
 import { ExecutionSubmissionForm } from "~/features/executions/components";
 
-export const Route = createFileRoute("/_authenticated/executions/new")({
+export const Route = createFileRoute("/_shell/_authenticated/executions/new")({
   component: NewExecutionPage,
 });
 

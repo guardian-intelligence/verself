@@ -9,7 +9,7 @@ import {
 } from "@forge-metal/ui/components/ui/page";
 import { isPathActive, SETTINGS_NAV } from "~/features/shell/nav-config";
 
-export const Route = createFileRoute("/_authenticated/settings")({
+export const Route = createFileRoute("/_shell/_authenticated/settings")({
   component: SettingsLayout,
 });
 

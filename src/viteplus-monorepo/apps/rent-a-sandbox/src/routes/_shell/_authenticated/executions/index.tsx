@@ -15,7 +15,7 @@ import { useBillingAccount } from "~/features/billing/use-billing-account";
 import { ExecutionListPanel } from "~/features/executions/components";
 import { loadExecutionsIndex } from "~/features/executions/queries";
 
-export const Route = createFileRoute("/_authenticated/executions/")({
+export const Route = createFileRoute("/_shell/_authenticated/executions/")({
   loader: ({ context }) => loadExecutionsIndex(context.queryClient, context.auth),
   component: ExecutionsPage,
 });

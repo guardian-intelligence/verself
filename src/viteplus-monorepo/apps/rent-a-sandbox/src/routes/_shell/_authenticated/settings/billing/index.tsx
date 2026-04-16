@@ -56,7 +56,7 @@ const DRAIN_SOURCES: readonly DrainSourceSpec[] = [
 
 const SANDBOX_PRODUCT_ID = "sandbox";
 
-export const Route = createFileRoute("/_authenticated/settings/billing/")({
+export const Route = createFileRoute("/_shell/_authenticated/settings/billing/")({
   validateSearch: parseFlashSearch,
   loader: ({ context }) => loadBillingPage(context.queryClient, context.auth),
   component: BillingPage,
@@ -241,7 +241,6 @@ function StatementPreview({
           </SectionDescription>
         </SectionHeaderContent>
       </SectionHeader>
-
       {/* The statement body is the one part of the billing page where
           receipt-style monospaced numerics genuinely help — charges,
           drains, and the grand total line up across rows. Chrome
@@ -256,7 +255,7 @@ function StatementPreview({
           // (col 2), the "=" / "−" column (col 4), and the amount column (col 5)
           // all align across rows. Col 3 is a 1fr spacer that absorbs slack to
           // the LEFT of the equal sign.
-          <div className="grid grid-cols-[auto_auto_minmax(1rem,1fr)_auto_auto] items-baseline">
+          (<div className="grid grid-cols-[auto_auto_minmax(1rem,1fr)_auto_auto] items-baseline">
             {lineItems.map((line) => (
               <UsageLineRow
                 key={`${line.product_id}:${line.plan_id}:${line.bucket_id}:${line.sku_id}:${line.pricing_phase}:${line.unit_rate}`}
@@ -273,7 +272,7 @@ function StatementPreview({
                 {formatLedgerAmountPrecise(grandTotal)}
               </span>
             </div>
-          </div>
+          </div>)
         ) : (
           <div className="px-4 py-6 text-center text-muted-foreground">
             <div className="font-medium">No usage yet</div>
@@ -282,7 +281,7 @@ function StatementPreview({
         )}
       </div>
     </Fragment>
-  );
+  )
 }
 
 function UsageLineRow({
