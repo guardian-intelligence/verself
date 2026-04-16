@@ -154,7 +154,11 @@
         - otelcol
         - billing-service
         - sandbox-rental-service
-      failed_when: false
+      register: clickhouse_writers_stop_result
+      # Tolerate first-run case where the writer unit is not yet installed.
+      failed_when:
+        - clickhouse_writers_stop_result.failed | default(false)
+        - "'Could not find' not in (clickhouse_writers_stop_result.msg | default(''))"
       when: clickhouse_force_schema_reset
 
     - name: Drop forge_metal database before force schema reset
@@ -235,5 +239,9 @@
         - otelcol
         - billing-service
         - sandbox-rental-service
-      failed_when: false
+      register: clickhouse_writers_start_result
+      # Tolerate first-run case where the writer unit is not yet installed.
+      failed_when:
+        - clickhouse_writers_start_result.failed | default(false)
+        - "'Could not find' not in (clickhouse_writers_start_result.msg | default(''))"
       when: clickhouse_force_schema_reset
