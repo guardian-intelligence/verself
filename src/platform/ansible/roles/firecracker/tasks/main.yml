@@ -88,6 +88,8 @@
         else 'kvm_intel'
       }}
 
+# modprobe can return non-zero when KVM is built-in (not a loadable module);
+# we rely on the /dev/kvm stat below as the real check.
 - name: Ensure KVM module is loaded ({{ firecracker_kvm_module }})
   community.general.modprobe:
     name: "{{ firecracker_kvm_module }}"
@@ -355,9 +357,12 @@
 
 - name: Destroy stale empty sticky disk image zvol
   ansible.builtin.command: "zfs destroy -R {{ firecracker_zfs_pool }}/{{ firecracker_image_dataset }}/{{ firecracker_sticky_empty_image_ref }}"
+  register: firecracker_sticky_empty_destroy
   when: firecracker_refresh_sticky_empty_image_needed
-  failed_when: false
-  changed_when: true
+  changed_when: firecracker_sticky_empty_destroy.rc == 0
+  failed_when:
+    - firecracker_sticky_empty_destroy.rc != 0
+    - "'dataset does not exist' not in (firecracker_sticky_empty_destroy.stderr | default(''))"
 
 - name: Create empty sticky disk image zvol
   ansible.builtin.command: >
@@ -423,9 +428,12 @@
 
 - name: Destroy leftover Vite+ staging zvol
   ansible.builtin.command: "zfs destroy -r {{ firecracker_zfs_pool }}/{{ firecracker_image_dataset }}/{{ firecracker_viteplus_image_ref }}-staging"
+  register: firecracker_viteplus_staging_destroy
   when: firecracker_refresh_viteplus_image_needed
-  failed_when: false
-  changed_when: true
+  changed_when: firecracker_viteplus_staging_destroy.rc == 0
+  failed_when:
+    - firecracker_viteplus_staging_destroy.rc != 0
+    - "'dataset does not exist' not in (firecracker_viteplus_staging_destroy.stderr | default(''))"
 
 - name: Create Vite+ staging zvol
   ansible.builtin.command: >
@@ -458,9 +466,12 @@
 
 - name: Destroy old Vite+ image zvol
   ansible.builtin.command: "zfs destroy -R {{ firecracker_zfs_pool }}/{{ firecracker_image_dataset }}/{{ firecracker_viteplus_image_ref }}"
+  register: firecracker_viteplus_old_destroy
   when: firecracker_refresh_viteplus_image_needed
-  failed_when: false
-  changed_when: true
+  changed_when: firecracker_viteplus_old_destroy.rc == 0
+  failed_when:
+    - firecracker_viteplus_old_destroy.rc != 0
+    - "'dataset does not exist' not in (firecracker_viteplus_old_destroy.stderr | default(''))"
 
 - name: Promote Vite+ staging zvol
   ansible.builtin.command: >
@@ -540,25 +551,26 @@
 
 - name: Destroy leftover staging zvol from previous failed run
   ansible.builtin.command: "zfs destroy -r {{ firecracker_zfs_pool }}/{{ firecracker_golden_zvol }}-staging"
+  register: firecracker_staging_zvol_destroy
   when: firecracker_refresh_base_golden_needed
-  failed_when: false
-  changed_when: true
+  changed_when: firecracker_staging_zvol_destroy.rc == 0
+  failed_when:
+    - firecracker_staging_zvol_destroy.rc != 0
+    - "'dataset does not exist' not in (firecracker_staging_zvol_destroy.stderr | default(''))"
 
-- name: Wait for leftover staging zvol destroy to settle
+- name: Confirm leftover staging zvol is gone
   ansible.builtin.command: "zfs list -H {{ firecracker_zfs_pool }}/{{ firecracker_golden_zvol }}-staging"
-  register: firecracker_staging_zvol_absent
+  register: firecracker_staging_zvol_probe
   retries: 10
   delay: 1
-  until: firecracker_staging_zvol_absent.rc != 0
+  until:
+    - firecracker_staging_zvol_probe.rc == 1
+    - "'dataset does not exist' in (firecracker_staging_zvol_probe.stderr | default(''))"
   when: firecracker_refresh_base_golden_needed
-  failed_when: false
   changed_when: false
-
-- name: Assert leftover staging zvol is absent
-  ansible.builtin.assert:
-    that: firecracker_staging_zvol_absent.rc != 0
-    fail_msg: "Staging zvol {{ firecracker_zfs_pool }}/{{ firecracker_golden_zvol }}-staging still exists after destroy."
-  when: firecracker_refresh_base_golden_needed
+  failed_when:
+    - firecracker_staging_zvol_probe.rc != 0
+    - "'dataset does not exist' not in (firecracker_staging_zvol_probe.stderr | default(''))"
 
 - name: Create staging zvol
   ansible.builtin.command: >
@@ -597,13 +609,14 @@
 - name: Unmount stale VFS mounts on zvol block devices
   ansible.builtin.shell: |
     set -euo pipefail
-    awk '$1 ~ "^/dev/zvol/{{ firecracker_zfs_pool }}/" { print $2 }' /proc/mounts \
-      | xargs -r -n1 umount -l
+    mounts=$(awk '$1 ~ "^/dev/zvol/{{ firecracker_zfs_pool }}/" { print $2 }' /proc/mounts)
+    [ -z "$mounts" ] && exit 0
+    echo "$mounts" | xargs -n1 umount -l
   args:
     executable: /bin/bash
+  register: firecracker_stale_vfs_unmount
   when: firecracker_refresh_base_golden_needed
-  changed_when: true
-  failed_when: false
+  changed_when: firecracker_stale_vfs_unmount.stdout_lines | length > 0
 
 - name: Prune VM job clones derived from old golden
   ansible.builtin.shell: |
@@ -619,9 +632,12 @@
 
 - name: Destroy old golden zvol (cascade removes @ready snapshot)
   ansible.builtin.command: "zfs destroy -R {{ firecracker_zfs_pool }}/{{ firecracker_golden_zvol }}"
+  register: firecracker_old_golden_destroy
   when: firecracker_refresh_base_golden_needed
-  failed_when: false
-  changed_when: true
+  changed_when: firecracker_old_golden_destroy.rc == 0
+  failed_when:
+    - firecracker_old_golden_destroy.rc != 0
+    - "'dataset does not exist' not in (firecracker_old_golden_destroy.stderr | default(''))"
 
 - name: Promote staging zvol to golden
   ansible.builtin.command: >
