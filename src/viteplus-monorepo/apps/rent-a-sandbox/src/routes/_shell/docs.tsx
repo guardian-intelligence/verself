@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import {
   Page,
   PageDescription,
@@ -13,7 +13,7 @@ import {
   SectionTitle,
 } from "@forge-metal/ui/components/ui/page";
 
-export const Route = createFileRoute("/docs")({
+export const Route = createFileRoute("/_shell/docs")({
   component: DocsPage,
   head: () => ({
     meta: [
@@ -43,80 +43,34 @@ const EXPLICIT_CACHE_GO_CI = `jobs:
   unit:
     runs-on: metal-4vcpu-ubuntu-2404
     steps:
-      - uses: forge-metal/checkout@v1
+      - uses: actions/checkout@v5
 
-      - uses: forge-metal/mount@v1
+      - uses: forge-metal/stickydisk@v1
         with:
-          path: ~/go/pkg/mod
           key: go-mod-\${{ runner.os }}-\${{ runner.arch }}-\${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            go-mod-\${{ runner.os }}-\${{ runner.arch }}-
-          size: 20GiB
-          policy: pull-push
-          save: on-success
+          path: ~/go/pkg/mod
 
-      - uses: forge-metal/mount@v1
+      - uses: forge-metal/stickydisk@v1
+        with:
+          key: go-build-\${{ runner.os }}-\${{ runner.arch }}-\${{ hashFiles('go.work', '**/go.sum') }}
+          path: ~/.cache/go-build
+
+      - run: go test ./...`;
+
+const TRANSPARENT_CACHE_GO_CI = `jobs:
+  unit:
+    runs-on: metal-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/cache@v4
         with:
           path: ~/.cache/go-build
           key: go-build-\${{ runner.os }}-\${{ runner.arch }}-\${{ hashFiles('go.work', '**/go.sum') }}
           restore-keys: |
             go-build-\${{ runner.os }}-\${{ runner.arch }}-
-          size: 10GiB
-          policy: pull
 
       - run: go test ./...`;
-
-const PARALLEL_CACHE_GO_CI = `jobs:
-  warm-go-cache:
-    runs-on: metal-4vcpu-ubuntu-2404
-    steps:
-      - uses: forge-metal/checkout@v1
-      - uses: forge-metal/mount@v1
-        with:
-          path: ~/.cache/go-build
-          key: go-build-\${{ runner.os }}-\${{ runner.arch }}-\${{ hashFiles('go.work', '**/go.sum') }}
-          policy: push
-          save: on-success
-      - run: go test ./...
-
-  test:
-    needs: warm-go-cache
-    strategy:
-      matrix:
-        package: [apiwire, billing-service, sandbox-rental-service, vm-orchestrator]
-    runs-on: metal-4vcpu-ubuntu-2404
-    steps:
-      - uses: forge-metal/checkout@v1
-      - uses: forge-metal/mount@v1
-        with:
-          path: ~/.cache/go-build
-          key: go-build-\${{ runner.os }}-\${{ runner.arch }}-\${{ hashFiles('go.work', '**/go.sum') }}
-          policy: pull
-      - run: go test ./src/\${{ matrix.package }}/...`;
-
-const FORGE_METAL_CONFIG = `# forge-metal.yml
-version: 1
-
-defaults:
-  runner: metal-4vcpu-ubuntu-2404
-
-caches:
-  go-mod:
-    path: ~/go/pkg/mod
-    key: go-mod-\${{ runner.os }}-\${{ runner.arch }}-\${{ hashFiles('**/go.sum') }}
-    restore-keys:
-      - go-mod-\${{ runner.os }}-\${{ runner.arch }}-
-    size: 20GiB
-    policy: pull-push
-    save: on-success
-
-  go-build:
-    path: ~/.cache/go-build
-    key: go-build-\${{ runner.os }}-\${{ runner.arch }}-\${{ hashFiles('go.work', '**/go.sum') }}
-    restore-keys:
-      - go-build-\${{ runner.os }}-\${{ runner.arch }}-
-    size: 10GiB
-    policy: pull`;
 
 const POLYGLOT_CI = `jobs:
   test:
@@ -145,27 +99,7 @@ const POLYGLOT_CI = `jobs:
 
 function DocsPage() {
   return (
-    <main className="min-h-screen bg-background">
-      <div className="border-b border-border">
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-4 md:px-8">
-          <Link to="/docs" className="flex min-w-0 items-center gap-2 text-sm font-semibold">
-            <span aria-hidden="true" className="text-base">
-              ◼
-            </span>
-            <span className="truncate">Forge Metal Docs</span>
-          </Link>
-          <Link
-            to="/login"
-            search={{ redirect: undefined }}
-            className="text-sm font-medium text-muted-foreground hover:text-foreground"
-          >
-            Sign in
-          </Link>
-        </div>
-      </div>
-
-      <div className="mx-auto w-full max-w-6xl px-4 py-10 md:px-8 md:py-12">
-        <Page variant="full">
+    <Page variant="full">
           <PageHeader>
             <PageHeaderContent className="max-w-3xl">
               <PageTitle>GitHub Actions on Forge Metal</PageTitle>
@@ -201,10 +135,11 @@ function DocsPage() {
             <PageSection>
               <SectionHeader>
                 <SectionHeaderContent>
-                  <SectionTitle>Planned API Layers</SectionTitle>
+                  <SectionTitle>API Layers</SectionTitle>
                   <SectionDescription>
-                    The runner label is live. The acceleration actions are the public API direction:
-                    explicit, composable, and compatible with standard GitHub Actions workflows.
+                    The runner label is live. Sticky disks are the first explicit acceleration
+                    action; transparent cache and checkout acceleration follow the same GitHub
+                    Actions-native model.
                   </SectionDescription>
                 </SectionHeaderContent>
               </SectionHeader>
@@ -218,17 +153,17 @@ function DocsPage() {
                 <ApiLayer
                   name="Checkout"
                   syntax="uses: forge-metal/checkout@v1"
-                  description="Materializes source through an incrementally updated Git object store."
+                  description="Planned drop-in replacement for actions/checkout using a local Git mirror."
                 />
                 <ApiLayer
-                  name="Mount"
-                  syntax="uses: forge-metal/mount@v1"
-                  description="Restores a ZFS-backed cache generation at a path and optionally saves a new generation."
+                  name="Sticky Disk"
+                  syntax="uses: forge-metal/stickydisk@v1"
+                  description="Restores a named persistent disk at a path and commits it after the job."
                 />
                 <ApiLayer
-                  name="Setup"
-                  syntax="uses: forge-metal/setup-go@v1"
-                  description="Selects a toolchain and applies language-specific checkout and mount defaults."
+                  name="Transparent Cache"
+                  syntax="uses: actions/cache@v4"
+                  description="Planned acceleration for the standard GitHub cache protocol."
                 />
               </div>
             </PageSection>
@@ -236,19 +171,20 @@ function DocsPage() {
             <PageSection>
               <SectionHeader>
                 <SectionHeaderContent>
-                  <SectionTitle>Explicit Persistent State</SectionTitle>
+                  <SectionTitle>Sticky Disks</SectionTitle>
                   <SectionDescription>
-                    Mounts use the cache vocabulary CI users already know: path, key, restore keys,
-                    pull/push policy, and save-on-success behavior.
+                    The public contract is intentionally small: key and path. Forge Metal owns the
+                    restore, commit, scoping, eviction, observability, and billing behavior.
                   </SectionDescription>
                 </SectionHeaderContent>
               </SectionHeader>
 
               <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
                 <CodeBlock code={EXPLICIT_CACHE_GO_CI} />
-                <Aside title="Cache semantics">
-                  The job gets a private writable clone. Forge Metal saves a new immutable generation
-                  only when policy, trust level, and the job result all allow it.
+                <Aside title="Current tracer bullet">
+                  The first implementation restores an archive into the path and commits it during
+                  post-job cleanup. The API is the durable part; ZFS-backed mounts replace the
+                  archive path after the end-to-end flow is proven.
                 </Aside>
               </div>
             </PageSection>
@@ -256,15 +192,15 @@ function DocsPage() {
             <PageSection>
               <SectionHeader>
                 <SectionHeaderContent>
-                  <SectionTitle>Parallel Jobs</SectionTitle>
+                  <SectionTitle>Standard Cache</SectionTitle>
                   <SectionDescription>
-                    Use one writer and many readers when a large matrix shares the same cache. This
-                    follows the same pull, push, and pull-push model used by mature CI systems.
+                    The next compatibility layer is accelerating the normal GitHub cache action
+                    without asking customers to adopt a Forge Metal config file.
                   </SectionDescription>
                 </SectionHeaderContent>
               </SectionHeader>
 
-              <CodeBlock code={PARALLEL_CACHE_GO_CI} />
+              <CodeBlock code={TRANSPARENT_CACHE_GO_CI} />
             </PageSection>
 
             <PageSection>
@@ -286,44 +222,23 @@ function DocsPage() {
                 <SectionHeaderContent>
                   <SectionTitle>Security Defaults</SectionTitle>
                   <SectionDescription>
-                    Trust scope is platform policy, not a workflow knob. A pull request can use warm
-                    state without gaining write access to protected branch cache generations.
+                    Trust scope is platform policy, not a workflow knob. Pull requests can use warm
+                    state without gaining write access to protected branch sticky disks or caches.
                   </SectionDescription>
                 </SectionHeaderContent>
               </SectionHeader>
 
               <div className="grid gap-3 md:grid-cols-3">
                 <Policy title="Protected branches">
-                  Protected branch jobs can restore and write protected cache generations.
+                  Protected branch jobs can restore and write protected sticky disks.
                 </Policy>
                 <Policy title="Pull requests">
-                  Pull requests can restore trusted cache generations but write isolated pull-request
-                  generations by default.
+                  Pull requests can restore trusted state but write isolated pull-request state by
+                  default.
                 </Policy>
                 <Policy title="Forks">
-                  Forked runs cannot update repo, branch, or protected caches from workflow YAML.
+                  Forked runs cannot update repo, branch, or protected state from workflow YAML.
                 </Policy>
-              </div>
-            </PageSection>
-
-            <PageSection>
-              <SectionHeader>
-                <SectionHeaderContent>
-                  <SectionTitle>Forge Metal YAML</SectionTitle>
-                  <SectionDescription>
-                    The first repository config file should remove repetition, not replace GitHub
-                    Actions. Workflows can reference named defaults while the YAML keeps cache policy
-                    reviewable in the repository.
-                  </SectionDescription>
-                </SectionHeaderContent>
-              </SectionHeader>
-
-              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
-                <CodeBlock code={FORGE_METAL_CONFIG} />
-                <Aside title="Config direction">
-                  This file is optional. The GitHub workflow remains authoritative for jobs and
-                  steps; Forge Metal YAML centralizes runner and cache defaults.
-                </Aside>
               </div>
             </PageSection>
 
@@ -332,8 +247,8 @@ function DocsPage() {
                 <SectionHeaderContent>
                   <SectionTitle>What Comes Later</SectionTitle>
                   <SectionDescription>
-                    Workspace images are powerful, but they should sit above checkout and mounts
-                    instead of replacing them.
+                    Workspace images are powerful, but they should sit above checkout, cache, and
+                    sticky disks instead of replacing them.
                   </SectionDescription>
                 </SectionHeaderContent>
               </SectionHeader>
@@ -343,14 +258,12 @@ function DocsPage() {
                   A future workspace action can run declared preparation commands, persist selected
                   paths, and restore the resulting filesystem image for later jobs. That layer
                   should remain opt-in because normal workflows need transparent checkout, cache,
-                  and command semantics first.
+                  sticky-disk, and command semantics first.
                 </p>
               </div>
             </PageSection>
           </PageSections>
-        </Page>
-      </div>
-    </main>
+    </Page>
   );
 }
 

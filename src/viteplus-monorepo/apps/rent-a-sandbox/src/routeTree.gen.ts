@@ -11,19 +11,20 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as LogoutRouteImport } from './routes/logout'
 import { Route as LoginRouteImport } from './routes/login'
-import { Route as DocsRouteImport } from './routes/docs'
 import { Route as CallbackRouteImport } from './routes/callback'
-import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as AuthenticatedSettingsRouteRouteImport } from './routes/_authenticated/settings/route'
-import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
-import { Route as AuthenticatedExecutionsIndexRouteImport } from './routes/_authenticated/executions/index'
-import { Route as AuthenticatedSettingsOrganizationRouteImport } from './routes/_authenticated/settings/organization'
-import { Route as AuthenticatedExecutionsNewRouteImport } from './routes/_authenticated/executions/new'
-import { Route as AuthenticatedExecutionsExecutionIdRouteImport } from './routes/_authenticated/executions/$executionId'
-import { Route as AuthenticatedSettingsBillingIndexRouteImport } from './routes/_authenticated/settings/billing/index'
-import { Route as AuthenticatedSettingsBillingSubscribeRouteImport } from './routes/_authenticated/settings/billing/subscribe'
-import { Route as AuthenticatedSettingsBillingCreditsRouteImport } from './routes/_authenticated/settings/billing/credits'
+import { Route as ShellRouteRouteImport } from './routes/_shell/route'
+import { Route as ShellIndexRouteImport } from './routes/_shell/index'
+import { Route as ShellDocsRouteImport } from './routes/_shell/docs'
+import { Route as ShellAuthenticatedRouteRouteImport } from './routes/_shell/_authenticated/route'
+import { Route as ShellAuthenticatedSettingsRouteRouteImport } from './routes/_shell/_authenticated/settings/route'
+import { Route as ShellAuthenticatedSettingsIndexRouteImport } from './routes/_shell/_authenticated/settings/index'
+import { Route as ShellAuthenticatedExecutionsIndexRouteImport } from './routes/_shell/_authenticated/executions/index'
+import { Route as ShellAuthenticatedSettingsOrganizationRouteImport } from './routes/_shell/_authenticated/settings/organization'
+import { Route as ShellAuthenticatedExecutionsNewRouteImport } from './routes/_shell/_authenticated/executions/new'
+import { Route as ShellAuthenticatedExecutionsExecutionIdRouteImport } from './routes/_shell/_authenticated/executions/$executionId'
+import { Route as ShellAuthenticatedSettingsBillingIndexRouteImport } from './routes/_shell/_authenticated/settings/billing/index'
+import { Route as ShellAuthenticatedSettingsBillingSubscribeRouteImport } from './routes/_shell/_authenticated/settings/billing/subscribe'
+import { Route as ShellAuthenticatedSettingsBillingCreditsRouteImport } from './routes/_shell/_authenticated/settings/billing/credits'
 
 const LogoutRoute = LogoutRouteImport.update({
   id: '/logout',
@@ -35,137 +36,142 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DocsRoute = DocsRouteImport.update({
-  id: '/docs',
-  path: '/docs',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const CallbackRoute = CallbackRouteImport.update({
   id: '/callback',
   path: '/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
-  id: '/_authenticated',
+const ShellRouteRoute = ShellRouteRouteImport.update({
+  id: '/_shell',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
+const ShellIndexRoute = ShellIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => ShellRouteRoute,
 } as any)
-const AuthenticatedSettingsRouteRoute =
-  AuthenticatedSettingsRouteRouteImport.update({
+const ShellDocsRoute = ShellDocsRouteImport.update({
+  id: '/docs',
+  path: '/docs',
+  getParentRoute: () => ShellRouteRoute,
+} as any)
+const ShellAuthenticatedRouteRoute = ShellAuthenticatedRouteRouteImport.update({
+  id: '/_authenticated',
+  getParentRoute: () => ShellRouteRoute,
+} as any)
+const ShellAuthenticatedSettingsRouteRoute =
+  ShellAuthenticatedSettingsRouteRouteImport.update({
     id: '/settings',
     path: '/settings',
-    getParentRoute: () => AuthenticatedRouteRoute,
+    getParentRoute: () => ShellAuthenticatedRouteRoute,
   } as any)
-const AuthenticatedSettingsIndexRoute =
-  AuthenticatedSettingsIndexRouteImport.update({
+const ShellAuthenticatedSettingsIndexRoute =
+  ShellAuthenticatedSettingsIndexRouteImport.update({
     id: '/',
     path: '/',
-    getParentRoute: () => AuthenticatedSettingsRouteRoute,
+    getParentRoute: () => ShellAuthenticatedSettingsRouteRoute,
   } as any)
-const AuthenticatedExecutionsIndexRoute =
-  AuthenticatedExecutionsIndexRouteImport.update({
+const ShellAuthenticatedExecutionsIndexRoute =
+  ShellAuthenticatedExecutionsIndexRouteImport.update({
     id: '/executions/',
     path: '/executions/',
-    getParentRoute: () => AuthenticatedRouteRoute,
+    getParentRoute: () => ShellAuthenticatedRouteRoute,
   } as any)
-const AuthenticatedSettingsOrganizationRoute =
-  AuthenticatedSettingsOrganizationRouteImport.update({
+const ShellAuthenticatedSettingsOrganizationRoute =
+  ShellAuthenticatedSettingsOrganizationRouteImport.update({
     id: '/organization',
     path: '/organization',
-    getParentRoute: () => AuthenticatedSettingsRouteRoute,
+    getParentRoute: () => ShellAuthenticatedSettingsRouteRoute,
   } as any)
-const AuthenticatedExecutionsNewRoute =
-  AuthenticatedExecutionsNewRouteImport.update({
+const ShellAuthenticatedExecutionsNewRoute =
+  ShellAuthenticatedExecutionsNewRouteImport.update({
     id: '/executions/new',
     path: '/executions/new',
-    getParentRoute: () => AuthenticatedRouteRoute,
+    getParentRoute: () => ShellAuthenticatedRouteRoute,
   } as any)
-const AuthenticatedExecutionsExecutionIdRoute =
-  AuthenticatedExecutionsExecutionIdRouteImport.update({
+const ShellAuthenticatedExecutionsExecutionIdRoute =
+  ShellAuthenticatedExecutionsExecutionIdRouteImport.update({
     id: '/executions/$executionId',
     path: '/executions/$executionId',
-    getParentRoute: () => AuthenticatedRouteRoute,
+    getParentRoute: () => ShellAuthenticatedRouteRoute,
   } as any)
-const AuthenticatedSettingsBillingIndexRoute =
-  AuthenticatedSettingsBillingIndexRouteImport.update({
+const ShellAuthenticatedSettingsBillingIndexRoute =
+  ShellAuthenticatedSettingsBillingIndexRouteImport.update({
     id: '/billing/',
     path: '/billing/',
-    getParentRoute: () => AuthenticatedSettingsRouteRoute,
+    getParentRoute: () => ShellAuthenticatedSettingsRouteRoute,
   } as any)
-const AuthenticatedSettingsBillingSubscribeRoute =
-  AuthenticatedSettingsBillingSubscribeRouteImport.update({
+const ShellAuthenticatedSettingsBillingSubscribeRoute =
+  ShellAuthenticatedSettingsBillingSubscribeRouteImport.update({
     id: '/billing/subscribe',
     path: '/billing/subscribe',
-    getParentRoute: () => AuthenticatedSettingsRouteRoute,
+    getParentRoute: () => ShellAuthenticatedSettingsRouteRoute,
   } as any)
-const AuthenticatedSettingsBillingCreditsRoute =
-  AuthenticatedSettingsBillingCreditsRouteImport.update({
+const ShellAuthenticatedSettingsBillingCreditsRoute =
+  ShellAuthenticatedSettingsBillingCreditsRouteImport.update({
     id: '/billing/credits',
     path: '/billing/credits',
-    getParentRoute: () => AuthenticatedSettingsRouteRoute,
+    getParentRoute: () => ShellAuthenticatedSettingsRouteRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
+  '/': typeof ShellIndexRoute
   '/callback': typeof CallbackRoute
-  '/docs': typeof DocsRoute
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
-  '/settings': typeof AuthenticatedSettingsRouteRouteWithChildren
-  '/executions/$executionId': typeof AuthenticatedExecutionsExecutionIdRoute
-  '/executions/new': typeof AuthenticatedExecutionsNewRoute
-  '/settings/organization': typeof AuthenticatedSettingsOrganizationRoute
-  '/executions/': typeof AuthenticatedExecutionsIndexRoute
-  '/settings/': typeof AuthenticatedSettingsIndexRoute
-  '/settings/billing/credits': typeof AuthenticatedSettingsBillingCreditsRoute
-  '/settings/billing/subscribe': typeof AuthenticatedSettingsBillingSubscribeRoute
-  '/settings/billing/': typeof AuthenticatedSettingsBillingIndexRoute
+  '/docs': typeof ShellDocsRoute
+  '/settings': typeof ShellAuthenticatedSettingsRouteRouteWithChildren
+  '/executions/$executionId': typeof ShellAuthenticatedExecutionsExecutionIdRoute
+  '/executions/new': typeof ShellAuthenticatedExecutionsNewRoute
+  '/settings/organization': typeof ShellAuthenticatedSettingsOrganizationRoute
+  '/executions/': typeof ShellAuthenticatedExecutionsIndexRoute
+  '/settings/': typeof ShellAuthenticatedSettingsIndexRoute
+  '/settings/billing/credits': typeof ShellAuthenticatedSettingsBillingCreditsRoute
+  '/settings/billing/subscribe': typeof ShellAuthenticatedSettingsBillingSubscribeRoute
+  '/settings/billing/': typeof ShellAuthenticatedSettingsBillingIndexRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
   '/callback': typeof CallbackRoute
-  '/docs': typeof DocsRoute
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
-  '/executions/$executionId': typeof AuthenticatedExecutionsExecutionIdRoute
-  '/executions/new': typeof AuthenticatedExecutionsNewRoute
-  '/settings/organization': typeof AuthenticatedSettingsOrganizationRoute
-  '/executions': typeof AuthenticatedExecutionsIndexRoute
-  '/settings': typeof AuthenticatedSettingsIndexRoute
-  '/settings/billing/credits': typeof AuthenticatedSettingsBillingCreditsRoute
-  '/settings/billing/subscribe': typeof AuthenticatedSettingsBillingSubscribeRoute
-  '/settings/billing': typeof AuthenticatedSettingsBillingIndexRoute
+  '/': typeof ShellIndexRoute
+  '/docs': typeof ShellDocsRoute
+  '/executions/$executionId': typeof ShellAuthenticatedExecutionsExecutionIdRoute
+  '/executions/new': typeof ShellAuthenticatedExecutionsNewRoute
+  '/settings/organization': typeof ShellAuthenticatedSettingsOrganizationRoute
+  '/executions': typeof ShellAuthenticatedExecutionsIndexRoute
+  '/settings': typeof ShellAuthenticatedSettingsIndexRoute
+  '/settings/billing/credits': typeof ShellAuthenticatedSettingsBillingCreditsRoute
+  '/settings/billing/subscribe': typeof ShellAuthenticatedSettingsBillingSubscribeRoute
+  '/settings/billing': typeof ShellAuthenticatedSettingsBillingIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
-  '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
+  '/_shell': typeof ShellRouteRouteWithChildren
   '/callback': typeof CallbackRoute
-  '/docs': typeof DocsRoute
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
-  '/_authenticated/settings': typeof AuthenticatedSettingsRouteRouteWithChildren
-  '/_authenticated/executions/$executionId': typeof AuthenticatedExecutionsExecutionIdRoute
-  '/_authenticated/executions/new': typeof AuthenticatedExecutionsNewRoute
-  '/_authenticated/settings/organization': typeof AuthenticatedSettingsOrganizationRoute
-  '/_authenticated/executions/': typeof AuthenticatedExecutionsIndexRoute
-  '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
-  '/_authenticated/settings/billing/credits': typeof AuthenticatedSettingsBillingCreditsRoute
-  '/_authenticated/settings/billing/subscribe': typeof AuthenticatedSettingsBillingSubscribeRoute
-  '/_authenticated/settings/billing/': typeof AuthenticatedSettingsBillingIndexRoute
+  '/_shell/_authenticated': typeof ShellAuthenticatedRouteRouteWithChildren
+  '/_shell/docs': typeof ShellDocsRoute
+  '/_shell/': typeof ShellIndexRoute
+  '/_shell/_authenticated/settings': typeof ShellAuthenticatedSettingsRouteRouteWithChildren
+  '/_shell/_authenticated/executions/$executionId': typeof ShellAuthenticatedExecutionsExecutionIdRoute
+  '/_shell/_authenticated/executions/new': typeof ShellAuthenticatedExecutionsNewRoute
+  '/_shell/_authenticated/settings/organization': typeof ShellAuthenticatedSettingsOrganizationRoute
+  '/_shell/_authenticated/executions/': typeof ShellAuthenticatedExecutionsIndexRoute
+  '/_shell/_authenticated/settings/': typeof ShellAuthenticatedSettingsIndexRoute
+  '/_shell/_authenticated/settings/billing/credits': typeof ShellAuthenticatedSettingsBillingCreditsRoute
+  '/_shell/_authenticated/settings/billing/subscribe': typeof ShellAuthenticatedSettingsBillingSubscribeRoute
+  '/_shell/_authenticated/settings/billing/': typeof ShellAuthenticatedSettingsBillingIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/callback'
-    | '/docs'
     | '/login'
     | '/logout'
+    | '/docs'
     | '/settings'
     | '/executions/$executionId'
     | '/executions/new'
@@ -177,11 +183,11 @@ export interface FileRouteTypes {
     | '/settings/billing/'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/'
     | '/callback'
-    | '/docs'
     | '/login'
     | '/logout'
+    | '/'
+    | '/docs'
     | '/executions/$executionId'
     | '/executions/new'
     | '/settings/organization'
@@ -192,28 +198,27 @@ export interface FileRouteTypes {
     | '/settings/billing'
   id:
     | '__root__'
-    | '/'
-    | '/_authenticated'
+    | '/_shell'
     | '/callback'
-    | '/docs'
     | '/login'
     | '/logout'
-    | '/_authenticated/settings'
-    | '/_authenticated/executions/$executionId'
-    | '/_authenticated/executions/new'
-    | '/_authenticated/settings/organization'
-    | '/_authenticated/executions/'
-    | '/_authenticated/settings/'
-    | '/_authenticated/settings/billing/credits'
-    | '/_authenticated/settings/billing/subscribe'
-    | '/_authenticated/settings/billing/'
+    | '/_shell/_authenticated'
+    | '/_shell/docs'
+    | '/_shell/'
+    | '/_shell/_authenticated/settings'
+    | '/_shell/_authenticated/executions/$executionId'
+    | '/_shell/_authenticated/executions/new'
+    | '/_shell/_authenticated/settings/organization'
+    | '/_shell/_authenticated/executions/'
+    | '/_shell/_authenticated/settings/'
+    | '/_shell/_authenticated/settings/billing/credits'
+    | '/_shell/_authenticated/settings/billing/subscribe'
+    | '/_shell/_authenticated/settings/billing/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
+  ShellRouteRoute: typeof ShellRouteRouteWithChildren
   CallbackRoute: typeof CallbackRoute
-  DocsRoute: typeof DocsRoute
   LoginRoute: typeof LoginRoute
   LogoutRoute: typeof LogoutRoute
 }
@@ -234,13 +239,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/docs': {
-      id: '/docs'
-      path: '/docs'
-      fullPath: '/docs'
-      preLoaderRoute: typeof DocsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/callback': {
       id: '/callback'
       path: '/callback'
@@ -248,135 +246,168 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authenticated': {
-      id: '/_authenticated'
+    '/_shell': {
+      id: '/_shell'
       path: ''
       fullPath: '/'
-      preLoaderRoute: typeof AuthenticatedRouteRouteImport
+      preLoaderRoute: typeof ShellRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
+    '/_shell/': {
+      id: '/_shell/'
       path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof ShellIndexRouteImport
+      parentRoute: typeof ShellRouteRoute
     }
-    '/_authenticated/settings': {
-      id: '/_authenticated/settings'
+    '/_shell/docs': {
+      id: '/_shell/docs'
+      path: '/docs'
+      fullPath: '/docs'
+      preLoaderRoute: typeof ShellDocsRouteImport
+      parentRoute: typeof ShellRouteRoute
+    }
+    '/_shell/_authenticated': {
+      id: '/_shell/_authenticated'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof ShellAuthenticatedRouteRouteImport
+      parentRoute: typeof ShellRouteRoute
+    }
+    '/_shell/_authenticated/settings': {
+      id: '/_shell/_authenticated/settings'
       path: '/settings'
       fullPath: '/settings'
-      preLoaderRoute: typeof AuthenticatedSettingsRouteRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+      preLoaderRoute: typeof ShellAuthenticatedSettingsRouteRouteImport
+      parentRoute: typeof ShellAuthenticatedRouteRoute
     }
-    '/_authenticated/settings/': {
-      id: '/_authenticated/settings/'
+    '/_shell/_authenticated/settings/': {
+      id: '/_shell/_authenticated/settings/'
       path: '/'
       fullPath: '/settings/'
-      preLoaderRoute: typeof AuthenticatedSettingsIndexRouteImport
-      parentRoute: typeof AuthenticatedSettingsRouteRoute
+      preLoaderRoute: typeof ShellAuthenticatedSettingsIndexRouteImport
+      parentRoute: typeof ShellAuthenticatedSettingsRouteRoute
     }
-    '/_authenticated/executions/': {
-      id: '/_authenticated/executions/'
+    '/_shell/_authenticated/executions/': {
+      id: '/_shell/_authenticated/executions/'
       path: '/executions'
       fullPath: '/executions/'
-      preLoaderRoute: typeof AuthenticatedExecutionsIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+      preLoaderRoute: typeof ShellAuthenticatedExecutionsIndexRouteImport
+      parentRoute: typeof ShellAuthenticatedRouteRoute
     }
-    '/_authenticated/settings/organization': {
-      id: '/_authenticated/settings/organization'
+    '/_shell/_authenticated/settings/organization': {
+      id: '/_shell/_authenticated/settings/organization'
       path: '/organization'
       fullPath: '/settings/organization'
-      preLoaderRoute: typeof AuthenticatedSettingsOrganizationRouteImport
-      parentRoute: typeof AuthenticatedSettingsRouteRoute
+      preLoaderRoute: typeof ShellAuthenticatedSettingsOrganizationRouteImport
+      parentRoute: typeof ShellAuthenticatedSettingsRouteRoute
     }
-    '/_authenticated/executions/new': {
-      id: '/_authenticated/executions/new'
+    '/_shell/_authenticated/executions/new': {
+      id: '/_shell/_authenticated/executions/new'
       path: '/executions/new'
       fullPath: '/executions/new'
-      preLoaderRoute: typeof AuthenticatedExecutionsNewRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+      preLoaderRoute: typeof ShellAuthenticatedExecutionsNewRouteImport
+      parentRoute: typeof ShellAuthenticatedRouteRoute
     }
-    '/_authenticated/executions/$executionId': {
-      id: '/_authenticated/executions/$executionId'
+    '/_shell/_authenticated/executions/$executionId': {
+      id: '/_shell/_authenticated/executions/$executionId'
       path: '/executions/$executionId'
       fullPath: '/executions/$executionId'
-      preLoaderRoute: typeof AuthenticatedExecutionsExecutionIdRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+      preLoaderRoute: typeof ShellAuthenticatedExecutionsExecutionIdRouteImport
+      parentRoute: typeof ShellAuthenticatedRouteRoute
     }
-    '/_authenticated/settings/billing/': {
-      id: '/_authenticated/settings/billing/'
+    '/_shell/_authenticated/settings/billing/': {
+      id: '/_shell/_authenticated/settings/billing/'
       path: '/billing'
       fullPath: '/settings/billing/'
-      preLoaderRoute: typeof AuthenticatedSettingsBillingIndexRouteImport
-      parentRoute: typeof AuthenticatedSettingsRouteRoute
+      preLoaderRoute: typeof ShellAuthenticatedSettingsBillingIndexRouteImport
+      parentRoute: typeof ShellAuthenticatedSettingsRouteRoute
     }
-    '/_authenticated/settings/billing/subscribe': {
-      id: '/_authenticated/settings/billing/subscribe'
+    '/_shell/_authenticated/settings/billing/subscribe': {
+      id: '/_shell/_authenticated/settings/billing/subscribe'
       path: '/billing/subscribe'
       fullPath: '/settings/billing/subscribe'
-      preLoaderRoute: typeof AuthenticatedSettingsBillingSubscribeRouteImport
-      parentRoute: typeof AuthenticatedSettingsRouteRoute
+      preLoaderRoute: typeof ShellAuthenticatedSettingsBillingSubscribeRouteImport
+      parentRoute: typeof ShellAuthenticatedSettingsRouteRoute
     }
-    '/_authenticated/settings/billing/credits': {
-      id: '/_authenticated/settings/billing/credits'
+    '/_shell/_authenticated/settings/billing/credits': {
+      id: '/_shell/_authenticated/settings/billing/credits'
       path: '/billing/credits'
       fullPath: '/settings/billing/credits'
-      preLoaderRoute: typeof AuthenticatedSettingsBillingCreditsRouteImport
-      parentRoute: typeof AuthenticatedSettingsRouteRoute
+      preLoaderRoute: typeof ShellAuthenticatedSettingsBillingCreditsRouteImport
+      parentRoute: typeof ShellAuthenticatedSettingsRouteRoute
     }
   }
 }
 
-interface AuthenticatedSettingsRouteRouteChildren {
-  AuthenticatedSettingsOrganizationRoute: typeof AuthenticatedSettingsOrganizationRoute
-  AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute
-  AuthenticatedSettingsBillingCreditsRoute: typeof AuthenticatedSettingsBillingCreditsRoute
-  AuthenticatedSettingsBillingSubscribeRoute: typeof AuthenticatedSettingsBillingSubscribeRoute
-  AuthenticatedSettingsBillingIndexRoute: typeof AuthenticatedSettingsBillingIndexRoute
+interface ShellAuthenticatedSettingsRouteRouteChildren {
+  ShellAuthenticatedSettingsOrganizationRoute: typeof ShellAuthenticatedSettingsOrganizationRoute
+  ShellAuthenticatedSettingsIndexRoute: typeof ShellAuthenticatedSettingsIndexRoute
+  ShellAuthenticatedSettingsBillingCreditsRoute: typeof ShellAuthenticatedSettingsBillingCreditsRoute
+  ShellAuthenticatedSettingsBillingSubscribeRoute: typeof ShellAuthenticatedSettingsBillingSubscribeRoute
+  ShellAuthenticatedSettingsBillingIndexRoute: typeof ShellAuthenticatedSettingsBillingIndexRoute
 }
 
-const AuthenticatedSettingsRouteRouteChildren: AuthenticatedSettingsRouteRouteChildren =
+const ShellAuthenticatedSettingsRouteRouteChildren: ShellAuthenticatedSettingsRouteRouteChildren =
   {
-    AuthenticatedSettingsOrganizationRoute:
-      AuthenticatedSettingsOrganizationRoute,
-    AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,
-    AuthenticatedSettingsBillingCreditsRoute:
-      AuthenticatedSettingsBillingCreditsRoute,
-    AuthenticatedSettingsBillingSubscribeRoute:
-      AuthenticatedSettingsBillingSubscribeRoute,
-    AuthenticatedSettingsBillingIndexRoute:
-      AuthenticatedSettingsBillingIndexRoute,
+    ShellAuthenticatedSettingsOrganizationRoute:
+      ShellAuthenticatedSettingsOrganizationRoute,
+    ShellAuthenticatedSettingsIndexRoute: ShellAuthenticatedSettingsIndexRoute,
+    ShellAuthenticatedSettingsBillingCreditsRoute:
+      ShellAuthenticatedSettingsBillingCreditsRoute,
+    ShellAuthenticatedSettingsBillingSubscribeRoute:
+      ShellAuthenticatedSettingsBillingSubscribeRoute,
+    ShellAuthenticatedSettingsBillingIndexRoute:
+      ShellAuthenticatedSettingsBillingIndexRoute,
   }
 
-const AuthenticatedSettingsRouteRouteWithChildren =
-  AuthenticatedSettingsRouteRoute._addFileChildren(
-    AuthenticatedSettingsRouteRouteChildren,
+const ShellAuthenticatedSettingsRouteRouteWithChildren =
+  ShellAuthenticatedSettingsRouteRoute._addFileChildren(
+    ShellAuthenticatedSettingsRouteRouteChildren,
   )
 
-interface AuthenticatedRouteRouteChildren {
-  AuthenticatedSettingsRouteRoute: typeof AuthenticatedSettingsRouteRouteWithChildren
-  AuthenticatedExecutionsExecutionIdRoute: typeof AuthenticatedExecutionsExecutionIdRoute
-  AuthenticatedExecutionsNewRoute: typeof AuthenticatedExecutionsNewRoute
-  AuthenticatedExecutionsIndexRoute: typeof AuthenticatedExecutionsIndexRoute
+interface ShellAuthenticatedRouteRouteChildren {
+  ShellAuthenticatedSettingsRouteRoute: typeof ShellAuthenticatedSettingsRouteRouteWithChildren
+  ShellAuthenticatedExecutionsExecutionIdRoute: typeof ShellAuthenticatedExecutionsExecutionIdRoute
+  ShellAuthenticatedExecutionsNewRoute: typeof ShellAuthenticatedExecutionsNewRoute
+  ShellAuthenticatedExecutionsIndexRoute: typeof ShellAuthenticatedExecutionsIndexRoute
 }
 
-const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
-  AuthenticatedSettingsRouteRoute: AuthenticatedSettingsRouteRouteWithChildren,
-  AuthenticatedExecutionsExecutionIdRoute:
-    AuthenticatedExecutionsExecutionIdRoute,
-  AuthenticatedExecutionsNewRoute: AuthenticatedExecutionsNewRoute,
-  AuthenticatedExecutionsIndexRoute: AuthenticatedExecutionsIndexRoute,
+const ShellAuthenticatedRouteRouteChildren: ShellAuthenticatedRouteRouteChildren =
+  {
+    ShellAuthenticatedSettingsRouteRoute:
+      ShellAuthenticatedSettingsRouteRouteWithChildren,
+    ShellAuthenticatedExecutionsExecutionIdRoute:
+      ShellAuthenticatedExecutionsExecutionIdRoute,
+    ShellAuthenticatedExecutionsNewRoute: ShellAuthenticatedExecutionsNewRoute,
+    ShellAuthenticatedExecutionsIndexRoute:
+      ShellAuthenticatedExecutionsIndexRoute,
+  }
+
+const ShellAuthenticatedRouteRouteWithChildren =
+  ShellAuthenticatedRouteRoute._addFileChildren(
+    ShellAuthenticatedRouteRouteChildren,
+  )
+
+interface ShellRouteRouteChildren {
+  ShellAuthenticatedRouteRoute: typeof ShellAuthenticatedRouteRouteWithChildren
+  ShellDocsRoute: typeof ShellDocsRoute
+  ShellIndexRoute: typeof ShellIndexRoute
 }
 
-const AuthenticatedRouteRouteWithChildren =
-  AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
+const ShellRouteRouteChildren: ShellRouteRouteChildren = {
+  ShellAuthenticatedRouteRoute: ShellAuthenticatedRouteRouteWithChildren,
+  ShellDocsRoute: ShellDocsRoute,
+  ShellIndexRoute: ShellIndexRoute,
+}
+
+const ShellRouteRouteWithChildren = ShellRouteRoute._addFileChildren(
+  ShellRouteRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
-  AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
+  ShellRouteRoute: ShellRouteRouteWithChildren,
   CallbackRoute: CallbackRoute,
-  DocsRoute: DocsRoute,
   LoginRoute: LoginRoute,
   LogoutRoute: LogoutRoute,
 }

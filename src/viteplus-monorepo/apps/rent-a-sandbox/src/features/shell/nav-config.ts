@@ -1,4 +1,4 @@
-import { Settings, Terminal, type LucideIcon } from "lucide-react";
+import { BookOpen, Settings, Terminal, type LucideIcon } from "lucide-react";
 
 // Single source of truth for everything the app shell advertises.
 // Keep the shell UI, the command palette, and any programmatic route
@@ -34,9 +34,20 @@ export const PRIMARY_NAV: readonly NavEntry[] = [
 ] as const;
 
 // Evergreen (non-product) rail entries anchored to the bottom of the
-// sidebar above the account row. Currently just Settings; add future
-// entries like Support or Status here.
+// sidebar above the account row. Docs is public — visible to guests so
+// prospects browsing the marketing shell can jump straight into the
+// documentation without signing in. Settings is gated by the underlying
+// route, but we still surface the link to everyone: clicking it while
+// signed out triggers the Zitadel flow via the _shell/_authenticated
+// layout, matching the "no disabled buttons" rule.
 export const EVERGREEN_NAV: readonly NavEntry[] = [
+  {
+    id: "docs",
+    label: "Docs",
+    to: "/docs",
+    matchPrefix: "/docs",
+    icon: BookOpen,
+  },
   {
     id: "settings",
     label: "Settings",

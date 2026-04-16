@@ -26,7 +26,7 @@ import {
 import { useBillingAccount } from "~/features/billing/use-billing-account";
 import { formatCents, formatDateTimeUTC } from "~/lib/format";
 
-export const Route = createFileRoute("/_authenticated/settings/billing/subscribe")({
+export const Route = createFileRoute("/_shell/_authenticated/settings/billing/subscribe")({
   loader: ({ context }) => loadSubscribePage(context.queryClient, context.auth),
   component: SubscribePage,
 });
