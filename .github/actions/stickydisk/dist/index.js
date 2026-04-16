@@ -95,16 +95,31 @@ function requiredEnv(name) {
 }
 
 function expandPath(value) {
+  let expanded;
   if (value === "~") {
-    return os.homedir();
+    expanded = os.homedir();
+  } else if (value.startsWith("~/")) {
+    expanded = path.join(os.homedir(), value.slice(2));
+  } else if (path.isAbsolute(value)) {
+    expanded = value;
+  } else {
+    expanded = path.resolve(process.env.GITHUB_WORKSPACE || process.cwd(), value);
   }
-  if (value.startsWith("~/")) {
-    return path.join(os.homedir(), value.slice(2));
+  return realPathForMaybeMissing(expanded);
+}
+
+function realPathForMaybeMissing(targetPath) {
+  const suffix = [];
+  let current = path.resolve(targetPath);
+  while (!fs.existsSync(current)) {
+    const parent = path.dirname(current);
+    if (parent === current) {
+      return path.resolve(targetPath);
+    }
+    suffix.unshift(path.basename(current));
+    current = parent;
   }
-  if (path.isAbsolute(value)) {
-    return value;
-  }
-  return path.resolve(process.env.GITHUB_WORKSPACE || process.cwd(), value);
+  return path.join(fs.realpathSync.native(current), ...suffix);
 }
 
 function isMountPoint(targetPath) {
