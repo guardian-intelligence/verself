@@ -1,6 +1,7 @@
 package jobs
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -21,8 +22,7 @@ import (
 
 const (
 	defaultCheckoutCacheDir = "/var/lib/forge-metal/sandbox-rental/github-checkout"
-	checkoutBundleFilename  = "checkout.bundle"
-	checkoutBundleRef       = "refs/forge-metal/checkout"
+	checkoutBundleFilename  = "checkout.pack"
 	checkoutRequestedRef    = "refs/forge-metal/requested"
 	checkoutFetchedSHARef   = "refs/forge-metal/sha"
 )
@@ -214,20 +214,17 @@ func (r *GitHubRunner) createCheckoutBundle(ctx context.Context, mirrorDir, bund
 	if err := os.MkdirAll(filepath.Dir(bundlePath), 0o700); err != nil {
 		return err
 	}
-	if err := runCheckoutGit(ctx, "update_ref", mirrorDir, nil, "update-ref", checkoutBundleRef, sha); err != nil {
-		return err
-	}
 	tmp, err := os.CreateTemp(filepath.Dir(bundlePath), ".checkout-*.bundle")
 	if err != nil {
 		return err
 	}
 	tmpPath := tmp.Name()
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpPath)
+	defer func() { _ = os.Remove(tmpPath) }()
+	if err := writeCheckoutPack(ctx, mirrorDir, sha, tmp); err != nil {
+		_ = tmp.Close()
 		return err
 	}
-	defer func() { _ = os.Remove(tmpPath) }()
-	if err := runCheckoutGit(ctx, "bundle_create", mirrorDir, nil, "bundle", "create", tmpPath, checkoutBundleRef); err != nil {
+	if err := tmp.Close(); err != nil {
 		return err
 	}
 	return os.Rename(tmpPath, bundlePath)
@@ -265,6 +262,40 @@ func runCheckoutGit(ctx context.Context, label, dir string, extraEnv []string, a
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("git %s: %w: %s", label, err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+func writeCheckoutPack(ctx context.Context, mirrorDir, sha string, out *os.File) error {
+	revList := exec.CommandContext(ctx, "git", "rev-list", "--objects", "--no-object-names", "-1", sha)
+	revList.Dir = mirrorDir
+	packObjects := exec.CommandContext(ctx, "git", "pack-objects", "--stdout")
+	packObjects.Dir = mirrorDir
+
+	var revErr bytes.Buffer
+	var packErr bytes.Buffer
+	revList.Stderr = &revErr
+	packObjects.Stderr = &packErr
+	revStdout, err := revList.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	packObjects.Stdin = revStdout
+	packObjects.Stdout = out
+	if err := packObjects.Start(); err != nil {
+		return fmt.Errorf("git pack_objects: %w", err)
+	}
+	if err := revList.Start(); err != nil {
+		_ = packObjects.Process.Kill()
+		return fmt.Errorf("git rev_list: %w", err)
+	}
+	revWaitErr := revList.Wait()
+	packWaitErr := packObjects.Wait()
+	if revWaitErr != nil {
+		return fmt.Errorf("git rev_list: %w: %s", revWaitErr, strings.TrimSpace(revErr.String()))
+	}
+	if packWaitErr != nil {
+		return fmt.Errorf("git pack_objects: %w: %s", packWaitErr, strings.TrimSpace(packErr.String()))
 	}
 	return nil
 }
