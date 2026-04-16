@@ -614,8 +614,12 @@ func (s *Service) loadExecutionFilesystemMounts(ctx context.Context, executionID
 func billingJobIDForAttempt(attemptID uuid.UUID) int64 {
 	// A sandbox-local sequence collides after sandbox DB resets while billing
 	// keeps historical windows; the attempt UUID is the cross-service identity.
-	raw := binary.BigEndian.Uint64(attemptID[:8])
-	return int64(raw & math.MaxInt64)
+	const maxJSONSafePositiveInt = uint64(1<<53 - 1)
+	raw := binary.BigEndian.Uint64(attemptID[:8]) & maxJSONSafePositiveInt
+	if raw == 0 {
+		return 1
+	}
+	return int64(raw)
 }
 
 func (s *Service) reserveBilling(ctx context.Context, item executionWorkItem, billingJobID int64) (billingclient.Reservation, error) {
