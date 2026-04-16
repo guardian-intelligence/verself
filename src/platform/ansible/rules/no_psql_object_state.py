@@ -12,10 +12,17 @@ TASK_START_RE = re.compile(r"^-\s+")
 TASK_NAME_RE = re.compile(r"^-\s+name:\s*(.+?)\s*$")
 
 # File-local exceptions for deliberately low-level SQL paths.
+# The electric reconcile uses a raw psql DO block on purpose: an earlier
+# module-based version silently corrupted ANY() comparisons on positional_args
+# arrays (the loop no-opped and shape tables stayed on relreplident='d').
+# See the comment block at the top of roles/electric/tasks/pg_setup.yml.
 ALLOWED_TASKS = {
     "roles/zitadel/tasks/main.yml": {
         "Check if Login V2 is currently required",
         "Disable Login V2 via event store (use embedded Login V1)",
+    },
+    "roles/electric/tasks/pg_setup.yml": {
+        "Reconcile publication, ownership, and replica identity for {{ electric_service_name }}",
     },
 }
 
@@ -25,7 +32,6 @@ PROTECTED_FILES = {
     "roles/mailbox_service/tasks/database.yml",
     "roles/zitadel/tasks/main.yml",
     "roles/electric/tasks/pg_setup.yml",
-    "roles/electric_mail/tasks/pg_setup.yml",
 }
 
 

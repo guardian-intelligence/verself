@@ -1,9 +1,0 @@
-# Electric Mail sync service — loopback only, Caddy reverse proxy.
-table inet forge_metal_electric_mail
-delete table inet forge_metal_electric_mail
-table inet forge_metal_electric_mail {
-    chain input {
-        type filter hook input priority filter; policy accept;
-        tcp dport {{ services.electric_mail.port }} iifname != "lo" drop
-    }
-}

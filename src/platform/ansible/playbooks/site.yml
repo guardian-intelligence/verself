@@ -13,27 +13,8 @@
   gather_facts: false
   tags: [always]
   tasks:
-    - name: Zig must be available (needed by firecracker role)
-      ansible.builtin.command: zig version
-      changed_when: false
-
-    - name: Ansible collection community.general must be installed
-      ansible.builtin.command: ansible-galaxy collection list community.general
-      changed_when: false
-      register: preflight_cg
-      failed_when: "'community.general' not in preflight_cg.stdout"
-
-    - name: Ansible collection ansible.posix must be installed
-      ansible.builtin.command: ansible-galaxy collection list ansible.posix
-      changed_when: false
-      register: preflight_ap
-      failed_when: "'ansible.posix' not in preflight_ap.stdout"
-
-    - name: Ansible collection community.postgresql must be installed
-      ansible.builtin.command: ansible-galaxy collection list community.postgresql
-      changed_when: false
-      register: preflight_cp
-      failed_when: "'community.postgresql' not in preflight_cp.stdout"
+    - name: Run controller preflight checks
+      ansible.builtin.import_tasks: tasks/controller-preflight.yml
 
 - name: "Preflight: remote prerequisites"
   hosts: all
@@ -150,7 +131,22 @@
     - role: identity_service
       tags: [identity_service]
     - role: electric
-      tags: [electric]
+      vars:
+        electric_instance: default
+        electric_service_name: electric
+        electric_service_port: "{{ services.electric.port }}"
+        electric_pg_role: electric
+        electric_pg_conn_limit: "{{ postgresql_role_connection_limits.electric }}"
+        electric_db: sandbox_rental
+        electric_writer_role: sandbox_rental
+        electric_publication_name: electric_publication_default
+        electric_publication_tables: [executions, execution_logs]
+        electric_storage_dir: /var/lib/electric
+        electric_credstore_dir: /etc/credstore/electric
+        electric_nftables_table: forge_metal_electric
+        electric_nftables_file: /etc/nftables.d/electric.nft
+        electric_db_pool_size: 15
+      tags: [electric, sandbox_rental_service]
     - role: frontend_auth_sessions
       tags: [frontend_auth_sessions, rent_a_sandbox, webmail]
     - role: rent_a_sandbox
@@ -161,6 +157,30 @@
       tags: [otelcol]
     - role: mailbox_service
       tags: [mailbox_service]
+    - role: electric
+      vars:
+        electric_instance: mail
+        electric_service_name: electric-mail
+        electric_service_port: "{{ services.electric_mail.port }}"
+        electric_pg_role: electric_mail
+        electric_pg_conn_limit: "{{ postgresql_role_connection_limits.electric_mail }}"
+        electric_db: mailbox_service
+        electric_writer_role: mailbox_service
+        electric_publication_name: electric_publication_mail
+        electric_publication_tables:
+          - mailbox_accounts
+          - mailboxes
+          - emails
+          - email_mailboxes
+          - email_bodies
+          - threads
+        electric_storage_dir: /var/lib/electric-mail
+        electric_credstore_dir: /etc/credstore/electric-mail
+        electric_nftables_table: forge_metal_electric_mail
+        electric_nftables_file: /etc/nftables.d/electric-mail.nft
+        electric_db_pool_size: 10
+        electric_extra_systemd_after: [mailbox-service.service]
+      tags: [electric_mail, mailbox_service]
     - role: platform
       tags: [platform]
     - role: grafana

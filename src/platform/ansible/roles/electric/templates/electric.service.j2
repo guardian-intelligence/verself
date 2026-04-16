@@ -1,23 +1,27 @@
 [Unit]
-Description=Electric Sync Service
-After=forge-metal-firewall.target network.target postgresql.service
+Description=ElectricSQL sync ({{ electric_instance }})
+After=forge-metal-firewall.target network.target postgresql.service{% for u in electric_extra_systemd_after %} {{ u }}{% endfor %}
+
 Requires=forge-metal-firewall.target
-Wants=postgresql.service
+Wants=postgresql.service{% for u in electric_extra_systemd_after %} {{ u }}{% endfor %}
+
 
 [Service]
 Type=simple
 ExecStart=/usr/bin/podman run --rm --replace \
-  --name electric \
+  --name {{ electric_service_name }} \
   --network=host \
-  -e DATABASE_URL=postgresql://electric:{{ electric_pg_password }}@{{ services.postgresql.host }}:{{ services.postgresql.port }}/sandbox_rental \
-  -e ELECTRIC_PORT={{ services.electric.port }} \
+  -e DATABASE_URL=postgresql://{{ electric_pg_role }}:{{ electric_pg_password }}@{{ services.postgresql.host }}:{{ services.postgresql.port }}/{{ electric_db }} \
+  -e ELECTRIC_PORT={{ electric_service_port }} \
   -e ELECTRIC_SECRET={{ electric_api_secret }} \
   -e ELECTRIC_STORAGE_DIR=/data \
   -e ELECTRIC_DB_POOL_SIZE={{ electric_db_pool_size }} \
+  -e ELECTRIC_INSTANCE_ID={{ electric_service_name }} \
+  -e ELECTRIC_REPLICATION_STREAM_ID={{ electric_replication_stream_id }} \
   -e RELEASE_DISTRIBUTION=none \
   -v {{ electric_storage_dir }}:/data \
   {{ electric_image }}
-ExecStop=/usr/bin/podman stop electric
+ExecStop=/usr/bin/podman stop {{ electric_service_name }}
 Restart=on-failure
 RestartSec=5
 

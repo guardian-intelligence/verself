@@ -1,11 +1,19 @@
 ---
+# Shared across instances. Instance-specific vars (name, db, port, tables,
+# credstore, nft table, ...) must be passed by the caller.
 electric_version: "1.5.0"
 electric_image: "docker.io/electricsql/electric:{{ electric_version }}"
-electric_storage_dir: /var/lib/electric
-# Electric's upstream default is 20 shape-query connections plus the WAL slot
-# listener. We cap at 15 to stay under the per-role limit enforced in
-# postgresql_role_connection_limits.electric (25, which leaves headroom for
-# the slot listener and a couple of transient admin sessions). The pool size
-# gates concurrent shape *query* execution, not concurrent *users* — live
-# streaming is served by a single persistent replication slot reader.
-electric_db_pool_size: 15
+
+# Derived defaults — paths live under the caller's electric_credstore_dir.
+electric_pg_password_file: "{{ electric_credstore_dir }}/pg-password"
+electric_api_secret_file: "{{ electric_credstore_dir }}/api-secret"
+electric_transient_pgpass_file: "/root/.pgpass-electric-{{ electric_instance }}-reconcile"
+
+# Electric's replication stream id drives the Postgres slot name
+# (electric_slot_{stream_id}). Default Electric behaviour when the env var is
+# unset is "default"; we still set it for symmetry.
+electric_replication_stream_id: "{{ electric_instance }}"
+
+# Optional: extra systemd After/Wants units (e.g. the mail instance waits on
+# mailbox-service so emails aren't written before the shape slot is live).
+electric_extra_systemd_after: []
