@@ -114,22 +114,22 @@ deprovision: ## Destroy provisioned bare metal infrastructure: make deprovision 
 	cd $(FM)/ansible && ansible-playbook playbooks/deprovision.yml
 
 deploy: inventory-check ## Deploy single-node environment: make deploy [TAGS=billing_service,caddy]
-	cd $(FM)/ansible && ansible-playbook playbooks/dev-single-node.yml $(if $(TAGS),--tags "$(TAGS)",)
+	$(FM)/scripts/ansible-with-tunnel.sh playbooks/dev-single-node.yml $(if $(TAGS),--tags "$(TAGS)",)
 
 site: inventory-check ## Deploy multi-node site playbook
-	cd $(FM)/ansible && ansible-playbook playbooks/site.yml $(if $(TAGS),--tags "$(TAGS)",)
+	$(FM)/scripts/ansible-with-tunnel.sh playbooks/site.yml $(if $(TAGS),--tags "$(TAGS)",)
 
 guest-rootfs: inventory-check ## Build and stage Firecracker guest artifacts
-	cd $(FM)/ansible && ansible-playbook playbooks/guest-rootfs.yml $(if $(TAGS),--tags "$(TAGS)",)
+	$(FM)/scripts/ansible-with-tunnel.sh playbooks/guest-rootfs.yml $(if $(TAGS),--tags "$(TAGS)",)
 
 security-patch: inventory-check ## Apply OS security updates through Ansible
-	cd $(FM)/ansible && ansible-playbook playbooks/security-patch.yml
+	$(FM)/scripts/ansible-with-tunnel.sh playbooks/security-patch.yml
 
 identity-reset: inventory-check ## Exhaustively wipe identity-service PostgreSQL state and restart dependents
-	cd $(FM)/ansible && ansible-playbook playbooks/identity-reset.yml
+	$(FM)/scripts/ansible-with-tunnel.sh playbooks/identity-reset.yml
 
 seed-system: inventory-check ## Seed platform + Acme tenants, billing, mailboxes, and auth verify
-	cd $(FM)/ansible && ansible-playbook playbooks/seed-system.yml
+	$(FM)/scripts/ansible-with-tunnel.sh playbooks/seed-system.yml
 
 assume-persona: inventory-check ## Useful utility: write persona env file: make assume-persona PERSONA=platform-admin [OUTPUT=path] [PRINT=1]
 	@test -n "$(PERSONA)" || { echo "ERROR: PERSONA is required (platform-admin, acme-admin, acme-member)"; exit 1; }
@@ -203,14 +203,14 @@ billing-proof: inventory-check ## Run live billing browser proof and collect evi
 	cd $(FM) && ./scripts/verify-rent-billing-flow.sh
 
 billing-reset: inventory-check ## Exhaustively wipe billing state (TigerBeetle + billing PostgreSQL schema) and restart billing callers
-	cd $(FM)/ansible && ansible-playbook playbooks/billing-reset.yml
+	$(FM)/scripts/ansible-with-tunnel.sh playbooks/billing-reset.yml
 
 verification-reset: inventory-check ## Exhaustively wipe verification state (billing, sandbox_rental, ClickHouse forge_metal + telemetry)
-	cd $(FM)/ansible && ansible-playbook playbooks/verification-reset.yml
+	$(FM)/scripts/ansible-with-tunnel.sh playbooks/verification-reset.yml
 
 wipe-pg-db: inventory-check ## Wipe one managed PostgreSQL service DB: make wipe-pg-db DB=sandbox_rental
 	@test -n "$(DB)" || { echo "ERROR: DB is required (billing|sandbox_rental|mailbox_service|identity_service)"; exit 1; }
-	cd $(FM)/ansible && ansible-playbook playbooks/wipe-pg-db.yml -e "wipe_pg_db_name=$(DB)"
+	$(FM)/scripts/ansible-with-tunnel.sh playbooks/wipe-pg-db.yml -e "wipe_pg_db_name=$(DB)"
 
 vm-orchestrator-proof: inventory-check ## Live proof for vm-orchestrator lease/exec spans through the public sandbox API
 	cd $(FM) && ./scripts/verify-vm-orchestrator-live.sh
@@ -240,6 +240,15 @@ rent-ui-local: inventory-check ## Run rent-a-sandbox smoke against local HMR dev
 
 rent-local-dev: inventory-check ## Start local rent-a-sandbox dev tunnels and HMR server
 	cd $(FM) && ./scripts/run-rent-local-dev.sh $(if $(PRINT_ENV),--print-env,)
+
+rentasandbox-frontend-deploy-fast: inventory-check ## Ship UI-only changes to rent-a-sandbox: local build + rsync .output/ + restart (~5-10s). For API/env/systemd/OIDC changes use `ansible-playbook ... --tags rent_a_sandbox`.
+	$(FM)/scripts/rentasandbox-frontend-deploy-fast.sh
+
+platform-frontend-deploy-fast: inventory-check ## Ship UI-only changes to platform docs: local build + rsync .output/ + restart (~5-10s). For env/systemd/nftables/Caddy changes use `ansible-playbook ... --tags platform`.
+	$(FM)/scripts/platform-frontend-deploy-fast.sh
+
+platform-local-dev: ## Start local platform docs HMR dev server (no tunnels; no service deps)
+	cd src/viteplus-monorepo/apps/platform && FORGE_METAL_DOMAIN=$$(awk -F'"' '/^forge_metal_domain:/{print $$2}' $(FM)/ansible/group_vars/all/main.yml) vp dev
 
 scheduler-proof: inventory-check ## Proof loop: enqueue a River scheduler probe and assert PG + ClickHouse evidence
 	cd $(FM) && ./scripts/verify-scheduler-runtime.sh
