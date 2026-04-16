@@ -1,108 +1,19 @@
 ---
-- name: Compute local mailbox-service PostgreSQL migrations fingerprint
-  delegate_to: localhost
-  become: false
-  run_once: true
-  ansible.builtin.shell:
-    cmd: "set -o pipefail && find . -name '[0-9][0-9][0-9]_*.up.sql' -exec sha256sum {} + | sort | sha256sum"
-    chdir: "{{ playbook_dir }}/../../../mailbox-service/migrations"
-    executable: /bin/bash
-  register: mailbox_service_pg_migrations_local_hash
-  changed_when: false
-
-- name: Read remote mailbox-service PostgreSQL migrations fingerprint
-  ansible.builtin.slurp:
-    src: /opt/forge-metal/mailbox-service-migrations/.applied-hash
-  register: mailbox_service_pg_migrations_remote_hash
-  failed_when: false
-
-- name: Probe for expected mailbox-service tables
-  ansible.builtin.command:
-    cmd: >-
-      {{ fm_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
-      -U postgres
-      -d mailbox_service
-      -tAc
-      "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'mailbox_accounts';"
-  environment:
-    PGPASSWORD: "{{ postgresql_admin_password }}"
-  register: mailbox_service_pg_table_probe
-  # Only swallow the first-run case where the database does not exist. Any
-  # other psql failure must abort — silently falling through triggers the full
-  # schema reset block below.
-  failed_when:
-    - mailbox_service_pg_table_probe.rc != 0
-    - "'does not exist' not in (mailbox_service_pg_table_probe.stderr | default(''))"
-  changed_when: false
-  no_log: true
-
 - name: Apply mailbox-service PostgreSQL migrations
-  when: >-
-    mailbox_service_force_schema_reset
-    or mailbox_service_pg_migrations_remote_hash is failed
-    or (mailbox_service_pg_migrations_remote_hash.content | default('') | b64decode | trim)
-       != (mailbox_service_pg_migrations_local_hash.stdout.split()[0] | trim)
-    or (mailbox_service_pg_table_probe.stdout | default('0', true) | trim) == '0'
-  block:
-    - name: Remove deployed mailbox-service migrations directory
-      ansible.builtin.file:
-        path: /opt/forge-metal/mailbox-service-migrations
-        state: absent
-
-    - name: Create deployed mailbox-service migrations directory
-      ansible.builtin.file:
-        path: /opt/forge-metal/mailbox-service-migrations
-        state: directory
-        owner: root
-        group: root
-        mode: "0755"
-
-    - name: Upload mailbox-service PostgreSQL migrations
-      ansible.builtin.copy:
-        src: "{{ playbook_dir }}/../../../mailbox-service/migrations/"
-        dest: /opt/forge-metal/mailbox-service-migrations/
-        mode: "0644"
-
-    - name: Reset mailbox_service PostgreSQL database
-      ansible.builtin.include_role:
-        name: postgresql_db_reset
-      vars:
-        postgresql_db_reset_name: mailbox_service
-        postgresql_db_reset_owner: mailbox_service
-        postgresql_db_reset_stop_units:
-          - mailbox-service
-          - electric-mail
-
-    - name: Apply mailbox-service PostgreSQL migration files
-      ansible.builtin.command:
-        cmd: >-
-          {{ fm_bin }}/psql
-          -h {{ services.postgresql.host }}
-          -p {{ services.postgresql.port }}
-          -U mailbox_service
-          -d mailbox_service
-          -v ON_ERROR_STOP=1
-          -f /opt/forge-metal/mailbox-service-migrations/{{ item }}
-      environment:
-        PGPASSWORD: "{{ postgresql_mailbox_service_password }}"
-      loop: >-
-        {{
-          query('ansible.builtin.fileglob', playbook_dir + '/../../../mailbox-service/migrations/[0-9][0-9][0-9]_*.up.sql')
-          | map('basename')
-          | sort
-        }}
-      loop_control:
-        label: "{{ item }}"
-      changed_when: false
-      no_log: true
-
-    - name: Record mailbox-service PostgreSQL migrations fingerprint
-      ansible.builtin.copy:
-        content: "{{ mailbox_service_pg_migrations_local_hash.stdout.split()[0] }}\n"
-        dest: /opt/forge-metal/mailbox-service-migrations/.applied-hash
-        mode: "0644"
+  ansible.builtin.include_role:
+    name: service_pg_migrations
+  vars:
+    service_pg_migrations_service: mailbox-service
+    service_pg_migrations_db: mailbox_service
+    service_pg_migrations_db_user: mailbox_service
+    service_pg_migrations_db_owner: mailbox_service
+    service_pg_migrations_db_password: "{{ postgresql_mailbox_service_password }}"
+    service_pg_migrations_source_dir: "{{ playbook_dir }}/../../../mailbox-service/migrations"
+    service_pg_migrations_probe_table: mailbox_accounts
+    service_pg_migrations_stop_units:
+      - mailbox-service
+      - electric-mail
+    service_pg_migrations_force_reset: "{{ mailbox_service_force_schema_reset | default(false) | bool }}"
 
 - name: Reconcile mailbox-service object ownership and privileges
   ansible.builtin.command:

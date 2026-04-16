@@ -1,175 +1,47 @@
 ---
-- name: Compute local sandbox-rental PostgreSQL migrations fingerprint
-  delegate_to: localhost
-  become: false
-  run_once: true
-  ansible.builtin.shell:
-    cmd: "set -o pipefail && find . -name '[0-9][0-9][0-9]_*.up.sql' -exec sha256sum {} + | sort | sha256sum"
-    chdir: "{{ playbook_dir }}/../../../sandbox-rental-service/migrations"
-    executable: /bin/bash
-  register: sandbox_rental_service_pg_migrations_local_hash
-  changed_when: false
+- name: Apply sandbox-rental PostgreSQL migrations
+  ansible.builtin.include_role:
+    name: service_pg_migrations
+  vars:
+    service_pg_migrations_service: sandbox-rental
+    service_pg_migrations_db: sandbox_rental
+    service_pg_migrations_db_user: sandbox_rental
+    service_pg_migrations_db_owner: sandbox_rental
+    service_pg_migrations_db_password: "{{ postgresql_sandbox_rental_password }}"
+    service_pg_migrations_source_dir: "{{ playbook_dir }}/../../../sandbox-rental-service/migrations"
+    service_pg_migrations_probe_table: executions
+    service_pg_migrations_stop_units:
+      - electric
+      - sandbox-rental-service
+    service_pg_migrations_force_reset: "{{ sandbox_rental_service_force_schema_reset | default(false) | bool }}"
+    service_pg_migrations_pre_reset_tasks: "{{ role_path }}/tasks/migrations_pre_reset.yml"
+    service_pg_migrations_post_reset_tasks: "{{ role_path }}/tasks/migrations_post_reset.yml"
 
-- name: Read remote sandbox-rental PostgreSQL migrations fingerprint
-  ansible.builtin.slurp:
-    src: /opt/forge-metal/sandbox-rental-migrations/.applied-hash
-  register: sandbox_rental_service_pg_migrations_remote_hash
-  failed_when: false
-
-- name: Probe for expected sandbox-rental tables
+- name: Restore sandbox-rental GitHub installations after schema reset
   ansible.builtin.command:
     cmd: >-
       {{ fm_bin }}/psql
       -h {{ services.postgresql.host }}
       -p {{ services.postgresql.port }}
-      -U postgres
+      -U sandbox_rental
       -d sandbox_rental
-      -tAc
-      "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'executions';"
+      -v ON_ERROR_STOP=1
+    stdin: |
+      COPY public.github_installations (
+        installation_id, org_id, account_login, account_type, active, created_at, updated_at
+      ) FROM STDIN WITH (FORMAT csv, HEADER true);
+      {{ sandbox_rental_service_github_installations_export.stdout }}
+      \.
   environment:
-    PGPASSWORD: "{{ postgresql_admin_password }}"
-  register: sandbox_rental_service_pg_table_probe
-  # Only swallow the first-run case where the database does not exist. Any
-  # other psql failure must abort — silently falling through triggers the full
-  # schema reset block below.
-  failed_when:
-    - sandbox_rental_service_pg_table_probe.rc != 0
-    - "'does not exist' not in (sandbox_rental_service_pg_table_probe.stderr | default(''))"
-  changed_when: false
+    PGPASSWORD: "{{ postgresql_sandbox_rental_password }}"
+  changed_when: true
   no_log: true
-
-- name: Apply sandbox-rental PostgreSQL migrations
-  when: >-
-    (sandbox_rental_service_force_schema_reset | default(false) | bool)
-    or sandbox_rental_service_pg_migrations_remote_hash is failed
-    or (sandbox_rental_service_pg_migrations_remote_hash.content | default('') | b64decode | trim)
-       != (sandbox_rental_service_pg_migrations_local_hash.stdout.split()[0] | trim)
-    or (sandbox_rental_service_pg_table_probe.stdout | default('0', true) | trim) == '0'
-  block:
-    - name: Remove deployed sandbox-rental migrations directory
-      ansible.builtin.file:
-        path: /opt/forge-metal/sandbox-rental-migrations
-        state: absent
-
-    - name: Create deployed sandbox-rental migrations directory
-      ansible.builtin.file:
-        path: /opt/forge-metal/sandbox-rental-migrations
-        state: directory
-        owner: root
-        group: root
-        mode: "0755"
-
-    - name: Upload sandbox-rental PostgreSQL migrations
-      ansible.builtin.copy:
-        src: "{{ playbook_dir }}/../../../sandbox-rental-service/migrations/"
-        dest: /opt/forge-metal/sandbox-rental-migrations/
-        mode: "0644"
-
-    - name: Export sandbox-rental GitHub installations before schema reset
-      ansible.builtin.command:
-        cmd: >-
-          {{ fm_bin }}/psql
-          -h {{ services.postgresql.host }}
-          -p {{ services.postgresql.port }}
-          -U postgres
-          -d sandbox_rental
-          -v ON_ERROR_STOP=1
-          -tAc
-          "COPY (
-            SELECT installation_id, org_id, account_login, account_type, active, created_at, updated_at
-            FROM public.github_installations
-            ORDER BY installation_id
-          ) TO STDOUT WITH (FORMAT csv, HEADER true);"
-      environment:
-        PGPASSWORD: "{{ postgresql_admin_password }}"
-      register: sandbox_rental_service_github_installations_export
-      failed_when: false
-      changed_when: false
-      no_log: true
-      when: sandbox_rental_service_restore_github_installations_on_schema_reset | bool
-
-    - name: Reset sandbox_rental PostgreSQL database
-      ansible.builtin.include_role:
-        name: postgresql_db_reset
-      vars:
-        postgresql_db_reset_name: sandbox_rental
-        postgresql_db_reset_owner: sandbox_rental
-        postgresql_db_reset_stop_units:
-          - electric
-          - sandbox-rental-service
-
-    # Electric caches per-shape snapshots (rows + last-seen LSN) on disk in
-    # /var/lib/electric/. When the upstream database is dropped, those
-    # snapshots point at row ids and LSNs that no longer exist — Electric can
-    # serve stale rows on the next connect because it considers cached shapes
-    # "valid" until a publication change invalidates them. Wipe the storage
-    # directory here so Electric rebuilds every shape from the fresh schema.
-    - name: Clear Electric shape storage after sandbox_rental reset
-      ansible.builtin.file:
-        path: /var/lib/electric
-        state: absent
-
-    - name: Recreate empty Electric shape storage
-      ansible.builtin.file:
-        path: /var/lib/electric
-        state: directory
-        owner: root
-        group: root
-        mode: "0750"
-
-    - name: Apply sandbox-rental PostgreSQL migration files
-      ansible.builtin.command:
-        cmd: >-
-          {{ fm_bin }}/psql
-          -h {{ services.postgresql.host }}
-          -p {{ services.postgresql.port }}
-          -U sandbox_rental
-          -d sandbox_rental
-          -v ON_ERROR_STOP=1
-          -f /opt/forge-metal/sandbox-rental-migrations/{{ item }}
-      environment:
-        PGPASSWORD: "{{ postgresql_sandbox_rental_password }}"
-      loop: >-
-        {{
-          query('ansible.builtin.fileglob', playbook_dir + '/../../../sandbox-rental-service/migrations/[0-9][0-9][0-9]_*.up.sql')
-          | map('basename')
-          | sort
-        }}
-      loop_control:
-        label: "{{ item }}"
-      changed_when: false
-      no_log: true
-
-    - name: Restore sandbox-rental GitHub installations after schema reset
-      ansible.builtin.command:
-        cmd: >-
-          {{ fm_bin }}/psql
-          -h {{ services.postgresql.host }}
-          -p {{ services.postgresql.port }}
-          -U sandbox_rental
-          -d sandbox_rental
-          -v ON_ERROR_STOP=1
-        stdin: |
-          COPY public.github_installations (
-            installation_id, org_id, account_login, account_type, active, created_at, updated_at
-          ) FROM STDIN WITH (FORMAT csv, HEADER true);
-          {{ sandbox_rental_service_github_installations_export.stdout }}
-          \.
-      environment:
-        PGPASSWORD: "{{ postgresql_sandbox_rental_password }}"
-      changed_when: false
-      no_log: true
-      when:
-        - sandbox_rental_service_restore_github_installations_on_schema_reset | bool
-        - sandbox_rental_service_github_installations_export is defined
-        - sandbox_rental_service_github_installations_export.rc == 0
-        - (sandbox_rental_service_github_installations_export.stdout | trim) != ''
-
-    - name: Record sandbox-rental PostgreSQL migrations fingerprint
-      ansible.builtin.copy:
-        content: "{{ sandbox_rental_service_pg_migrations_local_hash.stdout.split()[0] }}\n"
-        dest: /opt/forge-metal/sandbox-rental-migrations/.applied-hash
-        mode: "0644"
+  when:
+    - service_pg_migrations_should_reset | default(false) | bool
+    - sandbox_rental_service_restore_github_installations_on_schema_reset | bool
+    - sandbox_rental_service_github_installations_export is defined
+    - sandbox_rental_service_github_installations_export.rc == 0
+    - (sandbox_rental_service_github_installations_export.stdout | trim) != ''
 
 - name: Reconcile sandbox-rental object ownership and privileges
   ansible.builtin.command:

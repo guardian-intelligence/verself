@@ -1,0 +1,23 @@
+---
+# Post-reset hook for service_pg_migrations: clear Electric's per-shape
+# snapshot cache (stale after the upstream DB is wiped) and restore the
+# github_installations export captured by migrations_pre_reset.yml.
+
+# Electric caches per-shape snapshots (rows + last-seen LSN) in
+# /var/lib/electric/. When the upstream database is dropped, those snapshots
+# point at row ids / LSNs that no longer exist — Electric serves stale rows
+# on the next connect because it considers cached shapes valid until a
+# publication change invalidates them. Wipe the storage directory so Electric
+# rebuilds every shape from the fresh schema.
+- name: Clear Electric shape storage after sandbox_rental reset
+  ansible.builtin.file:
+    path: /var/lib/electric
+    state: absent
+
+- name: Recreate empty Electric shape storage
+  ansible.builtin.file:
+    path: /var/lib/electric
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
