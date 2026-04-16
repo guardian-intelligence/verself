@@ -1140,28 +1140,38 @@
         - seed_system_machine_users_state.platform_admin.user_id | default('', true) | length > 0
       tags: [identity, stalwart]
 
+    - name: Clear existing seeded mailbox bindings
+      community.postgresql.postgresql_query:
+        login_host: "{{ services.postgresql.host }}"
+        login_port: "{{ services.postgresql.port }}"
+        login_user: mailbox_service
+        login_password: "{{ postgresql_mailbox_service_password }}"
+        login_db: mailbox_service
+        query: "DELETE FROM mailbox_bindings WHERE account_id IN ('ceo', 'agents')"
+      no_log: true
+      when: seed_system_seeded_mailbox_bindings | default([]) | length > 0
+      tags: [identity, stalwart]
+
     - name: Upsert seeded mailbox bindings
-      ansible.builtin.command:
-        cmd: >-
-          {{ fm_bin }}/psql
-          -h {{ services.postgresql.host }}
-          -p {{ services.postgresql.port }}
-          -U mailbox_service
-          -d mailbox_service
-          -v ON_ERROR_STOP=1
-        stdin: |
-          DELETE FROM mailbox_bindings
-          WHERE account_id IN ('ceo', 'agents');
-          {% for binding in seed_system_seeded_mailbox_bindings %}
+      community.postgresql.postgresql_query:
+        login_host: "{{ services.postgresql.host }}"
+        login_port: "{{ services.postgresql.port }}"
+        login_user: mailbox_service
+        login_password: "{{ postgresql_mailbox_service_password }}"
+        login_db: mailbox_service
+        query: >-
           INSERT INTO mailbox_bindings (subject, account_id, email_address)
-          VALUES ('{{ binding.subject }}', '{{ binding.account_id }}', '{{ binding.email_address }}')
+          VALUES (%s, %s, %s)
           ON CONFLICT (subject) DO UPDATE
           SET account_id = EXCLUDED.account_id,
-              email_address = EXCLUDED.email_address;
-          {% endfor %}
-      environment:
-        PGPASSWORD: "{{ postgresql_mailbox_service_password }}"
-      changed_when: false
+              email_address = EXCLUDED.email_address
+        positional_args:
+          - "{{ item.subject }}"
+          - "{{ item.account_id }}"
+          - "{{ item.email_address }}"
+      loop: "{{ seed_system_seeded_mailbox_bindings | default([]) }}"
+      loop_control:
+        label: "{{ item.email_address }}"
       no_log: true
       when: seed_system_seeded_mailbox_bindings | default([]) | length > 0
       tags: [identity, stalwart]
