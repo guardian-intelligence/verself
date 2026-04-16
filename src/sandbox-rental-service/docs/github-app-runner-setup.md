@@ -43,6 +43,7 @@ Permissions:
 
 - Repository permissions:
   - Actions: read
+  - Contents: read
   - Metadata: read
 - Organization permissions:
   - Self-hosted runners: read and write
