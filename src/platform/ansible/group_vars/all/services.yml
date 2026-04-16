@@ -125,6 +125,9 @@ services:
   letters:
     host: "127.0.0.1"
     port: 4247
+  platform:
+    host: "127.0.0.1"
+    port: 4249
   firecracker_host_service:
     host: "10.255.0.1"
     http_port: 18080

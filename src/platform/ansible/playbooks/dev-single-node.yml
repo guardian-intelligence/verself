@@ -146,6 +146,8 @@
       tags: [webmail]
     - role: letters
       tags: [letters]
+    - role: platform
+      tags: [platform]
     - role: grafana
       tags: [grafana]
     - role: verdaccio
