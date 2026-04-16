@@ -472,7 +472,11 @@ func (r *GitHubRunner) AllocateRunner(ctx context.Context, allocationID uuid.UUI
 	attemptID := uuid.New()
 	stickyMounts, err := r.prepareStickyDiskMounts(ctx, allocation, attemptID)
 	if err != nil {
-		_ = r.setAllocationState(ctx, allocationID, "failed", "sticky_disk_compile_failed")
+		failureReason := "sticky_disk_compile_failed"
+		if errors.Is(err, ErrGitHubWorkflowContentsPermission) {
+			failureReason = "github_app_contents_permission_required"
+		}
+		_ = r.setAllocationState(ctx, allocationID, "failed", failureReason)
 		return err
 	}
 	if err := r.setAllocationState(ctx, allocationID, "jit_creating", ""); err != nil {

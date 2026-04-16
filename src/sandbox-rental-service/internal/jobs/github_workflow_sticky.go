@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -11,6 +12,8 @@ import (
 	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 )
+
+var ErrGitHubWorkflowContentsPermission = errors.New("github app contents permission required")
 
 type githubWorkflowRunResponse struct {
 	ID         int64  `json:"id"`
@@ -206,6 +209,9 @@ func (r *GitHubRunner) fetchWorkflowFile(ctx context.Context, installationID int
 	var resp githubContentResponse
 	path := githubRepoAPIPath(repoFullName, "/contents/"+escapeGitHubPath(workflowPath)+"?ref="+url.QueryEscape(ref))
 	if err := r.githubRequest(ctx, http.MethodGet, path, token, nil, &resp, http.StatusOK); err != nil {
+		if strings.Contains(err.Error(), "status 403") && strings.Contains(err.Error(), "Resource not accessible by integration") {
+			return nil, fmt.Errorf("%w: repository Contents read permission is required to compile preboot sticky disks from workflow YAML: %v", ErrGitHubWorkflowContentsPermission, err)
+		}
 		return nil, err
 	}
 	if !strings.EqualFold(strings.TrimSpace(resp.Encoding), "base64") {
