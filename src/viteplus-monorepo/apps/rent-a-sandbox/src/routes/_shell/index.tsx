@@ -1,5 +1,9 @@
-import { createFileRoute, Link, redirect } from "@tanstack/react-router";
+import { createFileRoute, getRouteApi, Link, redirect } from "@tanstack/react-router";
 import { Button } from "@forge-metal/ui/components/ui/button";
+
+// Parent _shell route already loads the platform docs origin; reuse its
+// loader data so we don't double-fetch it per landing render.
+const shellRouteApi = getRouteApi("/_shell");
 
 export const Route = createFileRoute("/_shell/")({
   beforeLoad: ({ context }) => {
@@ -14,6 +18,7 @@ export const Route = createFileRoute("/_shell/")({
 });
 
 function LandingPage() {
+  const platformOrigin = shellRouteApi.useLoaderData();
   return (
     <div className="py-10 md:py-16">
       <div className="max-w-3xl">
@@ -25,7 +30,17 @@ function LandingPage() {
           and persistent mounts where they make the job faster.
         </p>
         <div className="mt-8 flex flex-wrap items-center gap-3">
-          <Button render={<Link to="/docs">Read the docs</Link>} />
+          <Button
+            render={
+              <a
+                href={`${platformOrigin.replace(/\/$/, "")}/docs`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Read the docs
+              </a>
+            }
+          />
           <Button
             variant="outline"
             render={
