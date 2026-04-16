@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+/*
+ * Tailwind v4 auto-detects source files in this app's directory tree but
+ * does not follow the module graph into sibling workspace packages. Any
+ * utility class referenced only inside @forge-metal/ui primitives must
+ * be registered here or it never reaches the final stylesheet.
+ * https://tailwindcss.com/docs/detecting-classes-in-source-files
+ */
+@source "../../../../packages/ui/src";
+
+@theme {
+  --color-background: oklch(1 0 0);
+  --color-foreground: oklch(0.145 0 0);
+  --color-card: oklch(1 0 0);
+  --color-card-foreground: oklch(0.145 0 0);
+  --color-popover: oklch(1 0 0);
+  --color-popover-foreground: oklch(0.145 0 0);
+  --color-primary: oklch(0.205 0 0);
+  --color-primary-foreground: oklch(0.985 0 0);
+  --color-secondary: oklch(0.97 0 0);
+  --color-secondary-foreground: oklch(0.205 0 0);
+  --color-muted: oklch(0.97 0 0);
+  --color-muted-foreground: oklch(0.556 0 0);
+  --color-accent: oklch(0.97 0 0);
+  --color-accent-foreground: oklch(0.205 0 0);
+  --color-destructive: oklch(0.577 0.245 27.325);
+  --color-destructive-foreground: oklch(0.577 0.245 27.325);
+  --color-border: oklch(0.922 0 0);
+  --color-input: oklch(0.922 0 0);
+  --color-ring: oklch(0.708 0 0);
+  --color-success: oklch(0.6 0.2 145);
+  --color-warning: oklch(0.75 0.18 85);
+  --color-danger: oklch(0.577 0.245 27.325);
+  --color-sidebar: oklch(0.985 0 0);
+  --color-sidebar-foreground: oklch(0.145 0 0);
+  --color-sidebar-primary: oklch(0.205 0 0);
+  --color-sidebar-primary-foreground: oklch(0.985 0 0);
+  --color-sidebar-accent: oklch(0.9 0 0);
+  --color-sidebar-accent-foreground: oklch(0.145 0 0);
+  --color-sidebar-border: oklch(0.922 0 0);
+  --color-sidebar-ring: oklch(0.708 0 0);
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  :root {
+    /* Header geometry — single source of truth. Both the <header> block
+       and everything that needs to clear it (scroll-padding, sticky
+       sibling offsets, scroll-spy rootMargin) reference these vars, so
+       raising the bar to, say, 4rem on a breakpoint only needs one edit
+       here. Breathing room sits in the offset so headings don't kiss
+       the bar when an anchor scrolls them into view. */
+    --header-h: 3.5rem;
+    --header-scroll-offset: calc(var(--header-h) + 1.5rem);
+  }
+  html {
+    scroll-padding-top: var(--header-scroll-offset);
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family:
+      system-ui,
+      -apple-system,
+      sans-serif;
+  }
+}
