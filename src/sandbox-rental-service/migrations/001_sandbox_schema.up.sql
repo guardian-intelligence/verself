@@ -1,8 +1,6 @@
 -- Sandbox rental service control-plane schema.
 -- Database: sandbox_rental (one database per service).
 
-CREATE SEQUENCE execution_billing_job_seq AS BIGINT;
-
 CREATE TABLE runner_classes (
     runner_class  TEXT        PRIMARY KEY,
     product_id    TEXT        NOT NULL DEFAULT 'sandbox',
