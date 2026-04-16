@@ -1,0 +1,189 @@
+---
+- name: Create platform install directory
+  ansible.builtin.file:
+    path: "{{ platform_install_dir }}"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0755"
+
+- name: Verify corepack exists in profile
+  ansible.builtin.stat:
+    path: "{{ fm_bin }}/corepack"
+  register: platform_corepack
+  failed_when: not platform_corepack.stat.exists
+
+- name: Remove generated platform artifacts before sync
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ platform_install_dir }}/.output"
+    - "{{ platform_install_dir }}/.tanstack"
+    - "{{ platform_install_dir }}/apps/platform/.output"
+    - "{{ platform_install_dir }}/apps/platform/.tanstack"
+    - "{{ platform_install_dir }}/packages/ui/dist"
+
+- name: Synchronize platform source
+  delegate_to: localhost
+  become: false
+  ansible.posix.synchronize:
+    src: "{{ playbook_dir }}/../../../viteplus-monorepo/"
+    dest: "{{ platform_install_dir }}/"
+    delete: true
+    recursive: true
+    rsync_opts:
+      - "--exclude=node_modules"
+      - "--exclude=.output"
+      - "--exclude=dist"
+      - "--exclude=.tanstack"
+      - "--exclude=apps/rent-a-sandbox"
+      - "--exclude=apps/rent-a-sandbox/**"
+      - "--exclude=apps/mail"
+      - "--exclude=apps/mail/**"
+      - "--exclude=apps/letters"
+      - "--exclude=apps/letters/**"
+      - "--exclude=playwright-report"
+      - "--exclude=test-results"
+      - "--exclude=HANDOFF_PROMPT.md"
+      - "--no-owner"
+      - "--no-group"
+
+- name: Compute platform workspace dependency fingerprint
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command:
+    argv:
+      - /bin/bash
+      - -lc
+      - |
+        set -euo pipefail
+        cd {{ playbook_dir }}/../../../viteplus-monorepo
+        {
+          printf '%s\0' package.json pnpm-lock.yaml pnpm-workspace.yaml apps/platform/package.json
+          find packages -mindepth 2 -maxdepth 2 -name package.json -print0
+        } | sort -z | xargs -0 sha256sum | sha256sum
+  register: platform_workspace_dependency_fingerprint
+  changed_when: false
+
+- name: Check cached platform install fingerprint
+  ansible.builtin.stat:
+    path: "{{ platform_dependencies_fingerprint_path }}"
+  register: platform_install_fingerprint_file
+
+- name: Read cached platform install fingerprint
+  ansible.builtin.slurp:
+    src: "{{ platform_dependencies_fingerprint_path }}"
+  register: platform_install_fingerprint_raw
+  when: platform_install_fingerprint_file.stat.exists
+
+- name: Check cached platform node_modules
+  ansible.builtin.stat:
+    path: "{{ platform_install_dir }}/node_modules"
+  register: platform_node_modules_dir
+
+- name: Install platform workspace dependencies when manifests change
+  become: false
+  ansible.builtin.command:
+    argv:
+      - "{{ fm_bin }}/corepack"
+      - pnpm
+      - install
+    chdir: "{{ platform_install_dir }}"
+  environment:
+    PATH: "{{ fm_bin }}:/usr/bin:/bin"
+    HOME: "/home/{{ ansible_user }}"
+  changed_when: true
+  when: >-
+    (not platform_node_modules_dir.stat.exists)
+    or (not platform_install_fingerprint_file.stat.exists)
+    or (
+      (platform_install_fingerprint_raw.content | default('') | b64decode | trim)
+      != (platform_workspace_dependency_fingerprint.stdout.split()[0] | trim)
+    )
+
+- name: Record cached platform install fingerprint
+  ansible.builtin.copy:
+    content: "{{ platform_workspace_dependency_fingerprint.stdout.split()[0] | trim }}\n"
+    dest: "{{ platform_dependencies_fingerprint_path }}"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0644"
+
+- name: Build platform package dependencies
+  become: false
+  ansible.builtin.command:
+    argv:
+      - "{{ fm_bin }}/corepack"
+      - pnpm
+      - --filter
+      - "@forge-metal/platform^..."
+      - run
+      - build
+    chdir: "{{ platform_install_dir }}"
+  environment:
+    PATH: "{{ fm_bin }}:/usr/bin:/bin"
+    HOME: "/home/{{ ansible_user }}"
+  changed_when: true
+  notify: Restart platform
+
+- name: Build platform app
+  become: false
+  ansible.builtin.command:
+    argv:
+      - "{{ fm_bin }}/corepack"
+      - pnpm
+      - --filter
+      - "@forge-metal/platform"
+      - run
+      - build
+    chdir: "{{ platform_install_dir }}"
+  environment:
+    PATH: "{{ fm_bin }}:/usr/bin:/bin"
+    HOME: "/home/{{ ansible_user }}"
+  changed_when: true
+  notify: Restart platform
+
+- name: Ensure platform env directory exists
+  ansible.builtin.file:
+    path: /etc/platform
+    state: directory
+    owner: root
+    group: "{{ ansible_user }}"
+    mode: "0750"
+
+- name: Deploy platform environment file
+  ansible.builtin.template:
+    src: env.j2
+    dest: /etc/platform/env
+    mode: "0640"
+    owner: root
+    group: "{{ ansible_user }}"
+  notify: Restart platform
+
+- name: Deploy platform systemd unit
+  ansible.builtin.template:
+    src: platform.service.j2
+    dest: /etc/systemd/system/platform.service
+    mode: "0644"
+  notify: Restart platform
+
+- name: Deploy platform nftables rules
+  ansible.builtin.template:
+    src: platform.nft.j2
+    dest: /etc/nftables.d/platform.nft
+    mode: "0644"
+  notify: Reload nftables
+
+- name: Enable and start platform
+  ansible.builtin.systemd:
+    name: platform
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for platform to be ready
+  ansible.builtin.wait_for:
+    host: "{{ services.platform.host }}"
+    port: "{{ services.platform.port }}"
+    timeout: 30

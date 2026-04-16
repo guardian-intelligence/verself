@@ -161,6 +161,8 @@
       tags: [otelcol]
     - role: mailbox_service
       tags: [mailbox_service]
+    - role: platform
+      tags: [platform]
     - role: grafana
       tags: [grafana]
     - role: verdaccio

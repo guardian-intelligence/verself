@@ -315,6 +315,16 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 	}
 }
 
+{{ platform_domain }} {
+	import access_log
+	import waf_detection
+
+	handle {
+		import frontend_security_headers
+		reverse_proxy {{ services.platform.host }}:{{ services.platform.port }}
+	}
+}
+
 {{ zitadel_domain }} {
 	import access_log
 	import waf_detection
