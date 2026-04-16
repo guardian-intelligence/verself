@@ -8,9 +8,61 @@ jobs:
   runner-canary:
     runs-on: metal-4vcpu-ubuntu-2404
     timeout-minutes: 10
+    env:
+      NODE_VERSION: "24.x"
+      PNPM_VERSION: "10.33.0"
+      VITE_PLUS_VERSION: "0.1.16"
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Mount npm cache
+        uses: ./.github/actions/stickydisk
+        with:
+          key: ${{ github.repository }}-npm-cache
+          path: ~/.npm
+
+      - name: Mount viteplus node_modules
+        uses: ./.github/actions/stickydisk
+        with:
+          key: ${{ github.repository }}-viteplus-node-modules
+          path: src/viteplus-monorepo/node_modules
+
+      - name: Mount pnpm store
+        uses: ./.github/actions/stickydisk
+        with:
+          key: ${{ github.repository }}-pnpm-store
+          path: ~/.pnpm-store
+
+      - name: Bootstrap Vite+
+        run: |
+          set -euo pipefail
+          mkdir -p "${HOME}/.local/bin"
+          echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
+          export PATH="${HOME}/.local/bin:${PATH}"
+          npm config set prefix "${HOME}/.local"
+          corepack enable --install-directory "${HOME}/.local/bin"
+          corepack prepare "pnpm@${PNPM_VERSION}" --activate
+          npm install --global "vite-plus@${VITE_PLUS_VERSION}"
+          vp --version
+
+      - name: Install JS dependencies with Vite+
+        working-directory: src/viteplus-monorepo
+        run: |
+          set -euo pipefail
+          vp pm config set store-dir ~/.pnpm-store
+          vp install --frozen-lockfile
+
+      - name: Build rent-a-sandbox with Vite+
+        working-directory: src/viteplus-monorepo
+        run: |
+          set -euo pipefail
+          vp run @forge-metal/rent-a-sandbox#build
 
       - name: Restore Forge Metal sticky disk
         uses: ./.github/actions/stickydisk
