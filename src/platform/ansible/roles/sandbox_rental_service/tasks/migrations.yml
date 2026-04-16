@@ -104,9 +104,6 @@
         IF to_regclass('public.github_runner_jit_configs') IS NOT NULL THEN
           EXECUTE 'ALTER TABLE public.github_runner_jit_configs OWNER TO sandbox_rental';
         END IF;
-        IF to_regclass('public.execution_billing_job_seq') IS NOT NULL THEN
-          EXECUTE 'ALTER SEQUENCE public.execution_billing_job_seq OWNER TO sandbox_rental';
-        END IF;
       END
       $$;
       GRANT USAGE, CREATE ON SCHEMA public TO sandbox_rental;
@@ -127,9 +124,6 @@
         public.github_runner_allocations,
         public.github_runner_jit_configs,
         public.github_runner_job_bindings
-      TO sandbox_rental;
-      GRANT ALL PRIVILEGES ON SEQUENCE
-        public.execution_billing_job_seq
       TO sandbox_rental;
   environment:
     PGPASSWORD: "{{ postgresql_admin_password }}"
