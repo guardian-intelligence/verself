@@ -16,10 +16,11 @@ repos:
           bash -lc '
             set -e
             cd src/platform/ansible
-            # Force in-memory fact caching for the duration of the hook so the
-            # syntax-check lane does not touch .cache/facts/. Writing those
-            # files mid-commit confuses pre-commit auto-fix rollback and rolls
-            # the commit back even when lint passes.
+            # Pin fact caching to memory and disable gather_facts for the
+            # duration of the hook. The syntax-check lane would otherwise write
+            # to .cache/facts/ via ansible.cfg's jsonfile cache plugin, which
+            # races with pre-commit's stash/restore of unstaged files. The
+            # disk cache remains authoritative for real playbook runs.
             export ANSIBLE_CACHE_PLUGIN=memory
             export ANSIBLE_GATHERING=explicit
             files=()
