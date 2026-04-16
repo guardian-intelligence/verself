@@ -30,7 +30,18 @@
     trust_input: false
   no_log: true
 
+- name: Stage transient pgpass for Electric reconcile
+  ansible.builtin.copy:
+    content: "{{ services.postgresql.host }}:{{ services.postgresql.port }}:sandbox_rental:postgres:{{ postgresql_admin_password }}\n"
+    dest: /root/.pgpass-electric-reconcile
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
 - name: Reconcile Electric publication, ownership, and replica identity
+  # Keep the whole reconcile in a single DO block so partial success is
+  # impossible. PGPASSFILE keeps the password off /proc/<pid>/environ.
   ansible.builtin.command:
     cmd: >-
       {{ fm_bin }}/psql
@@ -66,5 +77,10 @@
       END
       $$;
   environment:
-    PGPASSWORD: "{{ postgresql_admin_password }}"
+    PGPASSFILE: /root/.pgpass-electric-reconcile
   changed_when: true
+
+- name: Remove transient pgpass after Electric reconcile
+  ansible.builtin.file:
+    path: /root/.pgpass-electric-reconcile
+    state: absent
