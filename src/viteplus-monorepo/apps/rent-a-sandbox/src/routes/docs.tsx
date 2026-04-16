@@ -34,7 +34,7 @@ jobs:
   unit:
     runs-on: metal-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v5
 
       - name: Run Go tests
         run: go test ./...`;
