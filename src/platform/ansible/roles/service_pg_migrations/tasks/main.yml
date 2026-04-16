@@ -1,0 +1,125 @@
+---
+# Shared Postgres-migrations flow for Go services. Callers pass the service
+# name, DB, user, source dir, probe table, and the systemd units that must
+# stop during a schema reset. Optional pre/post-reset include hooks carry
+# data across the wipe (e.g. sandbox_rental's github_installations CSV).
+
+- name: Compute local migrations fingerprint ({{ service_pg_migrations_service }})
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.shell:
+    cmd: "set -o pipefail && find . -name '[0-9][0-9][0-9]_*.up.sql' -exec sha256sum {} + | sort | sha256sum"
+    chdir: "{{ service_pg_migrations_source_dir }}"
+    executable: /bin/bash
+  register: service_pg_migrations_local_hash
+  changed_when: false
+
+- name: Read remote migrations fingerprint ({{ service_pg_migrations_service }})
+  ansible.builtin.slurp:
+    src: "{{ service_pg_migrations_staging_dir }}/.applied-hash"
+  register: service_pg_migrations_remote_hash
+  failed_when: false
+  vars:
+    service_pg_migrations_staging_dir: "{{ service_pg_migrations_staging_root }}/{{ service_pg_migrations_service }}-migrations"
+
+- name: Probe for expected tables ({{ service_pg_migrations_service }})
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/psql
+      -h {{ services.postgresql.host }}
+      -p {{ services.postgresql.port }}
+      -U postgres
+      -d {{ service_pg_migrations_db }}
+      -tAc
+      "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '{{ service_pg_migrations_probe_table }}';"
+  environment:
+    PGPASSWORD: "{{ postgresql_admin_password }}"
+  register: service_pg_migrations_probe
+  # Only swallow the first-run case where the database does not exist. Any
+  # other psql failure must abort — silently falling through wipes the DB.
+  failed_when:
+    - service_pg_migrations_probe.rc != 0
+    - "'does not exist' not in (service_pg_migrations_probe.stderr | default(''))"
+  changed_when: false
+  no_log: true
+
+- name: Resolve whether migrations need to be (re)applied ({{ service_pg_migrations_service }})
+  ansible.builtin.set_fact:
+    service_pg_migrations_should_reset: >-
+      {{
+        (service_pg_migrations_force_reset | bool)
+        or (service_pg_migrations_remote_hash is failed)
+        or ((service_pg_migrations_remote_hash.content | default('') | b64decode | trim)
+           != (service_pg_migrations_local_hash.stdout.split()[0] | trim))
+        or ((service_pg_migrations_probe.stdout | default('0', true) | trim) == '0')
+      }}
+
+- name: Apply migrations ({{ service_pg_migrations_service }})
+  when: service_pg_migrations_should_reset | bool
+  vars:
+    _staging_dir: "{{ service_pg_migrations_staging_root }}/{{ service_pg_migrations_service }}-migrations"
+  block:
+    - name: Remove deployed migrations directory ({{ service_pg_migrations_service }})
+      ansible.builtin.file:
+        path: "{{ _staging_dir }}"
+        state: absent
+
+    - name: Create deployed migrations directory ({{ service_pg_migrations_service }})
+      ansible.builtin.file:
+        path: "{{ _staging_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Upload PostgreSQL migrations ({{ service_pg_migrations_service }})
+      ansible.builtin.copy:
+        src: "{{ service_pg_migrations_source_dir }}/"
+        dest: "{{ _staging_dir }}/"
+        mode: "0644"
+
+    - name: Include caller pre-reset tasks ({{ service_pg_migrations_service }})
+      ansible.builtin.include_tasks: "{{ service_pg_migrations_pre_reset_tasks }}"
+      when: service_pg_migrations_pre_reset_tasks | length > 0
+
+    - name: Reset PostgreSQL database ({{ service_pg_migrations_service }})
+      ansible.builtin.include_role:
+        name: postgresql_db_reset
+      vars:
+        postgresql_db_reset_name: "{{ service_pg_migrations_db }}"
+        postgresql_db_reset_owner: "{{ service_pg_migrations_db_owner }}"
+        postgresql_db_reset_stop_units: "{{ service_pg_migrations_stop_units }}"
+
+    - name: Include caller post-reset tasks ({{ service_pg_migrations_service }})
+      ansible.builtin.include_tasks: "{{ service_pg_migrations_post_reset_tasks }}"
+      when: service_pg_migrations_post_reset_tasks | length > 0
+
+    - name: Apply PostgreSQL migration files ({{ service_pg_migrations_service }})
+      ansible.builtin.command:
+        cmd: >-
+          {{ fm_bin }}/psql
+          -h {{ services.postgresql.host }}
+          -p {{ services.postgresql.port }}
+          -U {{ service_pg_migrations_db_user }}
+          -d {{ service_pg_migrations_db }}
+          -v ON_ERROR_STOP=1
+          -f {{ _staging_dir }}/{{ item }}
+      environment:
+        PGPASSWORD: "{{ service_pg_migrations_db_password }}"
+      loop: >-
+        {{
+          query('ansible.builtin.fileglob', service_pg_migrations_source_dir ~ '/[0-9][0-9][0-9]_*.up.sql')
+          | map('basename')
+          | sort
+        }}
+      loop_control:
+        label: "{{ item }}"
+      changed_when: true
+      no_log: true
+
+    - name: Record PostgreSQL migrations fingerprint ({{ service_pg_migrations_service }})
+      ansible.builtin.copy:
+        content: "{{ service_pg_migrations_local_hash.stdout.split()[0] }}\n"
+        dest: "{{ _staging_dir }}/.applied-hash"
+        mode: "0644"

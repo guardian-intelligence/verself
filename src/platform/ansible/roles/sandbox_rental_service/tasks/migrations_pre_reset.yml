@@ -1,0 +1,26 @@
+---
+# Pre-reset hook for service_pg_migrations: export github_installations so the
+# sandbox_rental DB reset doesn't lose the operator's GitHub App mapping.
+
+- name: Export sandbox-rental GitHub installations before schema reset
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/psql
+      -h {{ services.postgresql.host }}
+      -p {{ services.postgresql.port }}
+      -U postgres
+      -d sandbox_rental
+      -v ON_ERROR_STOP=1
+      -tAc
+      "COPY (
+        SELECT installation_id, org_id, account_login, account_type, active, created_at, updated_at
+        FROM public.github_installations
+        ORDER BY installation_id
+      ) TO STDOUT WITH (FORMAT csv, HEADER true);"
+  environment:
+    PGPASSWORD: "{{ postgresql_admin_password }}"
+  register: sandbox_rental_service_github_installations_export
+  failed_when: false
+  changed_when: false
+  no_log: true
+  when: sandbox_rental_service_restore_github_installations_on_schema_reset | bool

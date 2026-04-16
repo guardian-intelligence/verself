@@ -1,100 +1,43 @@
 ---
-- name: Compute local PostgreSQL migrations fingerprint
-  delegate_to: localhost
-  become: false
-  run_once: true
-  ansible.builtin.shell:
-    cmd: "set -o pipefail && find . -name '[0-9][0-9][0-9]_*.up.sql' -exec sha256sum {} + | sort | sha256sum"
-    chdir: "{{ playbook_dir }}/../../../billing-service/migrations"
-    executable: /bin/bash
-  register: billing_service_pg_migrations_local_hash
-  changed_when: false
-
-- name: Read remote PostgreSQL migrations fingerprint
-  ansible.builtin.slurp:
-    src: /opt/forge-metal/billing-service-migrations/.applied-hash
-  register: billing_service_pg_migrations_remote_hash
-  failed_when: false
-
-- name: Probe for expected billing tables
+- name: Probe billing callers before potential ledger reset
   ansible.builtin.command:
-    cmd: >-
-      {{ fm_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
-      -U postgres
-      -d {{ billing_service_pg_database }}
-      -tAc
-      "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'orgs';"
-  environment:
-    PGPASSWORD: "{{ postgresql_admin_password }}"
-  register: billing_service_pg_table_probe
-  # Only swallow the first-run case where the database itself does not exist.
-  # Any other psql failure (auth, network, role) must abort — silently falling
-  # through wipes the ledger in the reset block below.
-  failed_when:
-    - billing_service_pg_table_probe.rc != 0
-    - "'does not exist' not in (billing_service_pg_table_probe.stderr | default(''))"
+    argv:
+      - systemctl
+      - is-active
+      - "{{ item }}"
+  loop:
+    - sandbox-rental-service
+    - billing-service
+  loop_control:
+    label: "{{ item }}"
+  register: billing_service_ledger_reset_caller_states
+  # is-active returns non-zero when the unit is inactive — legitimate signal.
+  failed_when: false
   changed_when: false
-  no_log: true
-
-- name: Determine whether billing ledger reset is required
-  ansible.builtin.set_fact:
-    billing_service_should_reset_ledger: >-
-      {{
-        (billing_service_force_ledger_reset | default(false) | bool)
-        or (billing_service_pg_migrations_remote_hash is failed)
-        or ((billing_service_pg_migrations_remote_hash.content | default('') | b64decode | trim)
-           != (billing_service_pg_migrations_local_hash.stdout.split()[0] | trim))
-        or ((billing_service_pg_table_probe.stdout | default('0', true) | trim) == '0')
-      }}
 
 - name: Apply billing PostgreSQL migrations
-  when: billing_service_should_reset_ledger | bool
+  ansible.builtin.include_role:
+    name: service_pg_migrations
+  vars:
+    service_pg_migrations_service: billing-service
+    service_pg_migrations_db: "{{ billing_service_pg_database }}"
+    service_pg_migrations_db_user: billing
+    service_pg_migrations_db_owner: billing
+    service_pg_migrations_db_password: "{{ postgresql_billing_password }}"
+    service_pg_migrations_source_dir: "{{ playbook_dir }}/../../../billing-service/migrations"
+    service_pg_migrations_probe_table: orgs
+    service_pg_migrations_stop_units:
+      - sandbox-rental-service
+      - billing-service
+    service_pg_migrations_force_reset: "{{ billing_service_force_ledger_reset | default(false) | bool }}"
+
+# Billing is special: on ledger reset we also blow away and re-format the
+# TigerBeetle cluster so the account ledger matches the fresh schema. The
+# shared role doesn't know about TigerBeetle; keep the TB dance here gated
+# on the same "should reset" state it computed.
+- name: Reset TigerBeetle when billing schema resets
+  when: service_pg_migrations_should_reset | default(false) | bool
   block:
-    - name: Remove deployed PostgreSQL migrations directory
-      ansible.builtin.file:
-        path: /opt/forge-metal/billing-service-migrations
-        state: absent
-
-    - name: Create deployed PostgreSQL migrations directory
-      ansible.builtin.file:
-        path: /opt/forge-metal/billing-service-migrations
-        state: directory
-        owner: root
-        group: root
-        mode: "0755"
-
-    - name: Upload PostgreSQL migrations
-      ansible.builtin.copy:
-        src: "{{ playbook_dir }}/../../../billing-service/migrations/"
-        dest: /opt/forge-metal/billing-service-migrations/
-        mode: "0644"
-
-    - name: Probe billing callers before billing ledger reset
-      ansible.builtin.command:
-        argv:
-          - systemctl
-          - is-active
-          - "{{ item }}"
-      loop:
-        - sandbox-rental-service
-        - billing-service
-      loop_control:
-        label: "{{ item }}"
-      register: billing_service_ledger_reset_caller_states
-      failed_when: false
-      changed_when: false
-
-    - name: Stop billing callers before billing ledger reset
-      ansible.builtin.systemd:
-        name: "{{ item }}"
-        state: stopped
-      loop:
-        - sandbox-rental-service
-        - billing-service
-      failed_when: false
-
     - name: Stop TigerBeetle before billing ledger reset
       ansible.builtin.systemd:
         name: tigerbeetle
@@ -127,45 +70,6 @@
         host: "{{ services.tigerbeetle.host }}"
         port: "{{ services.tigerbeetle.port }}"
         timeout: 30
-
-    - name: Reset billing PostgreSQL database for billing schema
-      ansible.builtin.include_role:
-        name: postgresql_db_reset
-      vars:
-        postgresql_db_reset_name: "{{ billing_service_pg_database }}"
-        postgresql_db_reset_owner: billing
-        postgresql_db_reset_stop_units:
-          - sandbox-rental-service
-          - billing-service
-
-    - name: Apply PostgreSQL migration files
-      ansible.builtin.command:
-        cmd: >-
-          {{ fm_bin }}/psql
-          -h {{ services.postgresql.host }}
-          -p {{ services.postgresql.port }}
-          -U billing
-          -d {{ billing_service_pg_database }}
-          -v ON_ERROR_STOP=1
-          -f /opt/forge-metal/billing-service-migrations/{{ item }}
-      environment:
-        PGPASSWORD: "{{ postgresql_billing_password }}"
-      loop: >-
-        {{
-          query('ansible.builtin.fileglob', playbook_dir + '/../../../billing-service/migrations/[0-9][0-9][0-9]_*.up.sql')
-          | map('basename')
-          | sort
-        }}
-      loop_control:
-        label: "{{ item }}"
-      changed_when: false
-      no_log: true
-
-    - name: Record PostgreSQL migrations fingerprint
-      ansible.builtin.copy:
-        content: "{{ billing_service_pg_migrations_local_hash.stdout.split()[0] }}\n"
-        dest: /opt/forge-metal/billing-service-migrations/.applied-hash
-        mode: "0644"
 
 - name: Reconcile billing object ownership and privileges
   ansible.builtin.command:
