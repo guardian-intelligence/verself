@@ -79,6 +79,20 @@
     - "{{ rent_a_sandbox_install_dir }}/apps/rent-a-sandbox/.output"
     - "{{ rent_a_sandbox_install_dir }}/apps/rent-a-sandbox/.tanstack"
 
+# Opt-in clean rebuild: wipe node_modules and the install fingerprint so the
+# next pnpm install runs from scratch instead of reusing the cached store.
+# Trigger with `ansible-playbook ... --tags rent_a_sandbox --extra-vars rent_a_sandbox_full_rebuild=true`.
+# Use when a prior install left a corrupted store or an upstream package
+# linked the wrong version.
+- name: Wipe rent-a-sandbox install for clean rebuild (FULL=1)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ rent_a_sandbox_install_dir }}/node_modules"
+    - "{{ rent_a_sandbox_dependencies_fingerprint_path }}"
+  when: rent_a_sandbox_full_rebuild | default(false) | bool
+
 - name: Synchronize rent-a-sandbox source
   delegate_to: localhost
   become: false
@@ -197,7 +211,74 @@
   changed_when: true
 
 - name: Set up Zitadel OIDC application
-  ansible.builtin.include_tasks: zitadel_app.yml
+  ansible.builtin.include_role:
+    name: zitadel_oauth_app
+  vars:
+    zitadel_oauth_app_name: rent-a-sandbox
+    zitadel_oauth_app_project_name: "{{ rent_a_sandbox_auth_project_name }}"
+    zitadel_oauth_app_redirect_uris:
+      - "https://{{ rent_a_sandbox_domain }}/callback"
+    zitadel_oauth_app_post_logout_redirect_uris:
+      - "https://{{ rent_a_sandbox_domain }}"
+    zitadel_oauth_app_credstore_dir: /etc/credstore/rent-a-sandbox
+    zitadel_oauth_app_credstore_group: "{{ ansible_user }}"
+    zitadel_oauth_app_auth_method_type: OIDC_AUTH_METHOD_TYPE_POST
+    zitadel_oauth_app_grant_types:
+      - OIDC_GRANT_TYPE_AUTHORIZATION_CODE
+      - OIDC_GRANT_TYPE_REFRESH_TOKEN
+      - OIDC_GRANT_TYPE_TOKEN_EXCHANGE
+    zitadel_oauth_app_role_assertions: true
+    zitadel_oauth_app_cutover_marker_filename: oidc-web-cutover
+
+- name: Export rent-a-sandbox OIDC app facts for templates
+  ansible.builtin.set_fact:
+    rent_a_sandbox_app_id: "{{ zitadel_oauth_app_out_id }}"
+    rent_a_sandbox_project_id: "{{ zitadel_oauth_app_out_project_id }}"
+    rent_a_sandbox_client_id: "{{ zitadel_oauth_app_out_client_id }}"
+    rent_a_sandbox_client_secret: "{{ zitadel_oauth_app_out_client_secret }}"
+  no_log: true
+
+- name: Ensure sandbox-rental project roles exist
+  ansible.builtin.include_role:
+    name: zitadel_project_roles
+  vars:
+    zitadel_project_roles_admin_pat: "{{ zitadel_oauth_app_pat }}"
+    zitadel_project_roles_project_id: "{{ rent_a_sandbox_project_id }}"
+    zitadel_project_roles_definitions:
+      - key: sandbox_org_admin
+        display_name: Sandbox Org Admin
+        group: sandbox
+      - key: sandbox_org_member
+        display_name: Sandbox Org Member
+        group: sandbox
+
+- name: Resolve identity-service project ID for rent-a-sandbox
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/_search"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ zitadel_oauth_app_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      queries:
+        - nameQuery:
+            name: "{{ rent_a_sandbox_identity_project_name }}"
+            method: TEXT_QUERY_METHOD_EQUALS
+    status_code: 200
+  register: rent_a_sandbox_identity_project_search
+  no_log: true
+
+- name: Assert identity-service project exists for rent-a-sandbox
+  ansible.builtin.assert:
+    that: (rent_a_sandbox_identity_project_search.json.result | default([])) | length > 0
+    fail_msg: >-
+      Identity-service Zitadel project '{{ rent_a_sandbox_identity_project_name }}'
+      not found. Run the identity_service role before rent_a_sandbox.
+
+- name: Set rent-a-sandbox identity-service project ID fact
+  ansible.builtin.set_fact:
+    rent_a_sandbox_identity_project_id: "{{ rent_a_sandbox_identity_project_search.json.result[0].id }}"
 
 - name: Deploy rent-a-sandbox environment file
   ansible.builtin.template:
