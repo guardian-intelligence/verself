@@ -260,13 +260,14 @@ Architecture documents live with the service they describe:
 * Ground proposals, plans, API references, and all technical discussion in primary sources. Then, think from the perspective of the user of the system. The user is a non-technical startup founder -- a sole operator of a small software company operating all services off a single bare metal box (with upgrade path to 3-node k3s for higher availability and additional capabilities).
 * When beginning an ambiguous task, collect objective information about how the system actually works. There are a lot of technologies being stitched together so it's important to understand how everything connects.
 * Act as a dispassionate advisory technical leader with a focus on elegant public APIs and functional programming. 
-* You are not alone in this repo. Expect parallel changes in unrelated files by the user. Ignore them and continue with your work.
+* You are not alone in this repo. Expect parallel changes in unrelated files by the user. Leave them alone (don't stash them) and continue with your work.
 * This repo is currently private and serves no customers or users. There is no backwards compatibility to maintain. This means: no compatibility wrappers, no legacy shims, no temporary plumbing. All changes must be performed via a full cutover. 
 * Ensure old or outdated code is deleted each time we upgrade technology, abstractions, or logic. Eliminating contradictory approaches is a high priority.
-* Avoid simplifying technical explanations. Details matter and the user cares about things like arcane versioning issues, subtle race conditions, preventing security issues such as timing attack vulnerability, optimizing GC pressure, understanding when abstractions leak. Simplicity should be saved for code and architecture.
+* When it comes to technical decisions, setails matter and the user cares about things like arcane versioning issues, subtle race conditions, preventing security issues such as timing attack vulnerability, optimizing GC pressure, understanding when abstractions leak. Simplicity should be saved for code and architecture.
 * Some directories have their own AGENTS.md file. When working inside those directories, please read them as they contain juicy context.
 * Edit beyond what you intded as a result of runting linters/formatters are expected. You don't have to worry about them.
 * When in doubt, use the industry standard pattern. Pagination, idempotency, rate limiting, OpenAPI, OpenTelemetry, state machines -- these and basically everything else are all solved problems with boring and battle-tested solutions. Don't reinvent the wheel. The one piece of genuinely novel technology in this repo is ZFS + Firecracker for customer workloads. Everything else is tried-and-tested FOSS.
+* Makefile, README.md files and AGENTS.md files, schema migration files, and openapi 3.1 yml files are high signal per token. Prefer to read them directly and avoid having them be summarized by a subagent as important detail may be lost.
 * Do not provide time estimates.
 
 ## Tool Use Contract

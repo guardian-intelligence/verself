@@ -7,5 +7,19 @@ PasswordAuthentication no
 KbdInteractiveAuthentication no
 PubkeyAuthentication yes
 MaxAuthTries 3
-MaxSessions 3
 X11Forwarding no
+
+# Concurrency: multiple operator agents multiplex many channels through one
+# ControlMaster TCP session; each channel counts against MaxSessions. Default
+# (10) was too low for the agent fleet; 3 was catastrophic. MaxStartups loosened
+# for connection bursts during parallel playbook runs.
+MaxSessions 30
+MaxStartups 30:50:200
+LoginGraceTime 30
+
+# Server-side liveness: probe every 60s, drop after 3 misses so dead TCP
+# sessions release their MaxSessions slot instead of squatting until the kernel
+# notices.
+ClientAliveInterval 60
+ClientAliveCountMax 3
+TCPKeepAlive yes
