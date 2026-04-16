@@ -1,0 +1,41 @@
+{
+  "name": "@forge-metal/platform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "scripts": {
+    "dev": "vp dev",
+    "build": "vp build",
+    "preview": "vp preview",
+    "start": "node --import ./instrumentation.mts .output/server/index.mjs",
+    "typecheck": "vp exec tsc -p tsconfig.json",
+    "generate": "cp ../../../sandbox-rental-service/openapi/openapi-3.1.yaml src/__generated/sandbox-rental-api/openapi-3.1.yaml && cp ../../../identity-service/openapi/openapi-3.1.yaml src/__generated/identity-api/openapi-3.1.yaml && cp ../../../mailbox-service/openapi/openapi-3.1.yaml src/__generated/mailbox-api/openapi-3.1.yaml && cp ../../../billing-service/openapi/openapi-3.1.yaml src/__generated/billing-api/openapi-3.1.yaml"
+  },
+  "dependencies": {
+    "@forge-metal/nitro-plugins": "workspace:*",
+    "@forge-metal/ui": "workspace:*",
+    "@forge-metal/web-env": "workspace:*",
+    "@opentelemetry/api": "catalog:",
+    "@opentelemetry/semantic-conventions": "catalog:",
+    "@tanstack/react-router": "catalog:",
+    "@tanstack/react-start": "catalog:",
+    "lucide-react": "catalog:",
+    "nitro": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "valibot": "catalog:",
+    "yaml": "^2.8.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}
