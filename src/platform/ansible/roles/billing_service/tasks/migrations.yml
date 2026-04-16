@@ -29,7 +29,12 @@
   environment:
     PGPASSWORD: "{{ postgresql_admin_password }}"
   register: billing_service_pg_table_probe
-  failed_when: false
+  # Only swallow the first-run case where the database itself does not exist.
+  # Any other psql failure (auth, network, role) must abort — silently falling
+  # through wipes the ledger in the reset block below.
+  failed_when:
+    - billing_service_pg_table_probe.rc != 0
+    - "'does not exist' not in (billing_service_pg_table_probe.stderr | default(''))"
   changed_when: false
   no_log: true
 

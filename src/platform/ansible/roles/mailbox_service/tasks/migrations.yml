@@ -29,7 +29,12 @@
   environment:
     PGPASSWORD: "{{ postgresql_admin_password }}"
   register: mailbox_service_pg_table_probe
-  failed_when: false
+  # Only swallow the first-run case where the database does not exist. Any
+  # other psql failure must abort — silently falling through triggers the full
+  # schema reset block below.
+  failed_when:
+    - mailbox_service_pg_table_probe.rc != 0
+    - "'does not exist' not in (mailbox_service_pg_table_probe.stderr | default(''))"
   changed_when: false
   no_log: true
 
