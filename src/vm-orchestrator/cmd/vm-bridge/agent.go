@@ -595,6 +595,9 @@ func (s *agentSession) mountFilesystems(filesystems []vmproto.FilesystemMount) e
 			return fmt.Errorf("mount composed filesystem %s (%s) on %s: %w", fs.Name, fs.DevicePath, fs.MountPath, err)
 		}
 		if !fs.ReadOnly {
+			if err := removeEmptyLostFound(fs.MountPath); err != nil {
+				return fmt.Errorf("prepare composed filesystem %s root %s: %w", fs.Name, fs.MountPath, err)
+			}
 			if err := os.Chown(fs.MountPath, runnerUID, runnerGID); err != nil {
 				return fmt.Errorf("chown composed filesystem %s root %s: %w", fs.Name, fs.MountPath, err)
 			}
@@ -603,6 +606,24 @@ func (s *agentSession) mountFilesystems(filesystems []vmproto.FilesystemMount) e
 		mounted = append(mounted, fs)
 	}
 	s.filesystems = mounted
+	return nil
+}
+
+func removeEmptyLostFound(mountPath string) error {
+	lostFound := filepath.Join(mountPath, "lost+found")
+	entries, err := os.ReadDir(lostFound)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read lost+found: %w", err)
+	}
+	if len(entries) != 0 {
+		return nil
+	}
+	if err := os.Remove(lostFound); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove empty lost+found: %w", err)
+	}
 	return nil
 }
 
