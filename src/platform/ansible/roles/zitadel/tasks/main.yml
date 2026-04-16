@@ -347,7 +347,9 @@
     host: "{{ services.zitadel.host }}"
     timeout: 60
   when: >-
-    '"required": true' in zitadel_login_v2_state.stdout
+    (zitadel_login_v2_state.query_result | default([]))
+    | selectattr('payload', 'search', '"required": true')
+    | list | length > 0
 
 - name: Wait for Zitadel projections to rebuild
   ansible.builtin.uri:
