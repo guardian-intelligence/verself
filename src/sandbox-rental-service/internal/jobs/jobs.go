@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -431,10 +432,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		return err
 	}
 	ctx = WithCorrelationID(ctx, item.CorrelationID)
-	billingJobID, err := s.nextBillingJobID(ctx)
-	if err != nil {
-		return err
-	}
+	billingJobID := billingJobIDForAttempt(item.AttemptID)
 	if err := s.transition(ctx, item, StateQueued, StateReserved, "reserved", map[string]any{"billing_job_id": billingJobID}); err != nil {
 		return err
 	}
@@ -613,12 +611,11 @@ func (s *Service) loadExecutionFilesystemMounts(ctx context.Context, executionID
 	return out, nil
 }
 
-func (s *Service) nextBillingJobID(ctx context.Context) (int64, error) {
-	var id int64
-	if err := s.PGX.QueryRow(ctx, `SELECT nextval('execution_billing_job_seq')`).Scan(&id); err != nil {
-		return 0, fmt.Errorf("allocate billing job id: %w", err)
-	}
-	return id, nil
+func billingJobIDForAttempt(attemptID uuid.UUID) int64 {
+	// A sandbox-local sequence collides after sandbox DB resets while billing
+	// keeps historical windows; the attempt UUID is the cross-service identity.
+	raw := binary.BigEndian.Uint64(attemptID[:8])
+	return int64(raw & math.MaxInt64)
 }
 
 func (s *Service) reserveBilling(ctx context.Context, item executionWorkItem, billingJobID int64) (billingclient.Reservation, error) {
