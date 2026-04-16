@@ -56,7 +56,7 @@ jobs:
         working-directory: src/viteplus-monorepo
         run: |
           set -euo pipefail
-          vp pm config set store-dir ~/.pnpm-store
+          pnpm config set store-dir ~/.pnpm-store
           vp install --frozen-lockfile
 
       - name: Build rent-a-sandbox with Vite+
