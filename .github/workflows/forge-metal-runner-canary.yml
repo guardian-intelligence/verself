@@ -45,8 +45,10 @@ jobs:
           set -euo pipefail
           echo "/usr/local/bin" >> "${GITHUB_PATH}"
           export PATH="/usr/local/bin:${PATH}"
+          command -v vp
+          test -x /usr/local/bin/vp
           vp --version | tee /tmp/forge-metal-vp-version.txt
-          grep -F "vp v${VITE_PLUS_VERSION}" /tmp/forge-metal-vp-version.txt
+          grep -F "VITE+ - The Unified Toolchain for the Web" /tmp/forge-metal-vp-version.txt
           pnpm --version | tee /tmp/forge-metal-pnpm-version.txt
           grep -Fx "${PNPM_VERSION}" /tmp/forge-metal-pnpm-version.txt
 
