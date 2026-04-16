@@ -182,6 +182,24 @@ echo "-> preparing chroot"
 mkdir -p "$ROOTFS/usr/local/bin" "$ROOTFS/usr/sbin" "$ROOTFS/opt/forge-metal"
 rm -f "$ROOTFS/etc/resolv.conf"
 install -m 0644 /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
+cat > "$ROOTFS/etc/hosts" <<'HOSTS'
+127.0.0.1 localhost
+::1 localhost ip6-localhost ip6-loopback
+HOSTS
+cat > "$ROOTFS/etc/nsswitch.conf" <<'NSSWITCH'
+passwd:         files systemd
+group:          files systemd
+shadow:         files systemd
+gshadow:        files systemd
+
+hosts:          files dns
+networks:       files
+
+protocols:      db files
+services:       db files
+ethers:         db files
+rpc:            db files
+NSSWITCH
 cat > "$ROOTFS/usr/sbin/policy-rc.d" <<'POLICY'
 #!/bin/sh
 exit 101
