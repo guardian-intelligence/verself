@@ -271,14 +271,6 @@
         label: "{{ item.name }}"
       no_log: true
 
-    - name: Remove legacy billing PostgreSQL database name
-      community.postgresql.postgresql_db:
-        name: sandbox
-        state: absent
-        force: true
-      when: (billing_service_pg_database | default('billing')) != 'sandbox'
-      no_log: true
-
     - name: Verify PostgreSQL connectivity
       community.postgresql.postgresql_ping:
       register: postgresql_ping_result
