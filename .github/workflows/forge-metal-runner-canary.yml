@@ -59,6 +59,12 @@ jobs:
           pnpm config set store-dir ~/.pnpm-store
           vp install --frozen-lockfile
 
+      - name: Build shared Nitro plugins with Vite+
+        working-directory: src/viteplus-monorepo
+        run: |
+          set -euo pipefail
+          vp run @forge-metal/nitro-plugins#build
+
       - name: Build rent-a-sandbox with Vite+
         working-directory: src/viteplus-monorepo
         run: |
