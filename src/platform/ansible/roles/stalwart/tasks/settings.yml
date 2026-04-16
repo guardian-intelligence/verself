@@ -1,6 +1,7 @@
 ---
-# Push database-scoped settings via the Stalwart CLI. These settings are stored
-# in Stalwart's database config layer, not in the local TOML bootstrap file.
+# Push database-scoped settings via the Stalwart CLI. Stalwart CLI 0.15.x
+# accepts credentials via the CREDENTIALS env var (stalw.art/docs/management/cli);
+# we use that instead of -c so the admin password is never on the argv.
 
 - name: Push database settings via stalwart-cli
   ansible.builtin.command:
@@ -8,8 +9,6 @@
       - "{{ fm_bin }}/stalwart-cli"
       - -u
       - "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}"
-      - -c
-      - "admin:{{ stalwart_admin_password }}"
       - server
       - add-config
       - "{{ item.key }}"
@@ -30,6 +29,8 @@
       value: "http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}"
     - key: metrics.open-telemetry.interval
       value: 30s
+  environment:
+    CREDENTIALS: "admin:{{ stalwart_admin_password }}"
   changed_when: false
   no_log: true
 
@@ -39,8 +40,6 @@
       - "{{ fm_bin }}/stalwart-cli"
       - -u
       - "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}"
-      - -c
-      - "admin:{{ stalwart_admin_password }}"
       - server
       - delete-config
       - "{{ item }}"
@@ -53,8 +52,12 @@
     - session.data.script
     - sieve.trusted.scripts.operator_forward
     - sieve.trusted.scripts.operator_forward.contents
+  environment:
+    CREDENTIALS: "admin:{{ stalwart_admin_password }}"
+  # stalwart-cli 0.15.5 returns 0 on delete-config of a missing key, so the
+  # previous failed_when:false was load-bearing only for server-unreachable
+  # errors — which we now want to surface.
   changed_when: false
-  failed_when: false
   no_log: true
 
 - name: Reload Stalwart configuration after settings update
@@ -63,9 +66,9 @@
       - "{{ fm_bin }}/stalwart-cli"
       - -u
       - "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}"
-      - -c
-      - "admin:{{ stalwart_admin_password }}"
       - server
       - reload-config
+  environment:
+    CREDENTIALS: "admin:{{ stalwart_admin_password }}"
   changed_when: false
   no_log: true
