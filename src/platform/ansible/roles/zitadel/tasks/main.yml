@@ -360,7 +360,9 @@
   delay: 3
   until: zitadel_post_restart_health.status == 200
   when: >-
-    '"required": true' in zitadel_login_v2_state.stdout
+    (zitadel_login_v2_state.query_result | default([]))
+    | selectattr('payload', 'search', '"required": true')
+    | list | length > 0
 
 # --- Deep health checks ---
 
