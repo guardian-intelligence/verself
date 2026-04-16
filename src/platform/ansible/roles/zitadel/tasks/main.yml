@@ -218,10 +218,16 @@
   no_log: true
 
 - name: Write admin PAT back to SOPS secrets
+  # `sops set --value-stdin` reads the JSON-encoded value from stdin so the
+  # secret never lands on the process argv.
   ansible.builtin.command:
-    cmd: >-
-      sops --set '["zitadel_admin_pat"] "{{ zitadel_admin_pat }}"'
-      {{ playbook_dir }}/../group_vars/all/secrets.sops.yml
+    argv:
+      - sops
+      - set
+      - --value-stdin
+      - "{{ playbook_dir }}/../group_vars/all/secrets.sops.yml"
+      - '["zitadel_admin_pat"]'
+    stdin: "{{ zitadel_admin_pat | to_json }}"
   delegate_to: localhost
   become: false
   no_log: true
@@ -282,51 +288,53 @@
 # so the only bootstrapping path is a direct event store INSERT.
 
 - name: Check if Login V2 is currently required
-  ansible.builtin.command:
-    cmd: >-
-      {{ fm_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
-      -U zitadel -d zitadel -t -A -c
-      "SELECT payload FROM eventstore.events2
-       WHERE event_type = 'feature.instance.login_v2.set'
-       ORDER BY position DESC LIMIT 1;"
-  environment:
-    PGPASSWORD: "{{ zitadel_db_password }}"
+  community.postgresql.postgresql_query:
+    login_host: "{{ services.postgresql.host }}"
+    login_port: "{{ services.postgresql.port }}"
+    login_user: zitadel
+    login_password: "{{ zitadel_db_password }}"
+    login_db: zitadel
+    query: >-
+      SELECT payload::text AS payload
+      FROM eventstore.events2
+      WHERE event_type = 'feature.instance.login_v2.set'
+      ORDER BY position DESC LIMIT 1
   register: zitadel_login_v2_state
-  changed_when: false
+  no_log: true
 
 - name: Disable Login V2 via event store (use embedded Login V1)
-  ansible.builtin.command:
-    cmd: >-
-      {{ fm_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
-      -U zitadel -d zitadel -c
-      "INSERT INTO eventstore.events2
+  community.postgresql.postgresql_query:
+    login_host: "{{ services.postgresql.host }}"
+    login_port: "{{ services.postgresql.port }}"
+    login_user: zitadel
+    login_password: "{{ zitadel_db_password }}"
+    login_db: zitadel
+    query: >-
+      INSERT INTO eventstore.events2
         (instance_id, aggregate_type, aggregate_id, event_type,
          sequence, revision, created_at, payload,
          creator, owner, position, in_tx_order)
-       SELECT
-         instance_id, 'feature', aggregate_id,
-         'feature.instance.login_v2.set',
-         (SELECT MAX(sequence) + 1 FROM eventstore.events2
-          WHERE aggregate_type = 'feature'
-            AND aggregate_id = e.aggregate_id
-            AND instance_id = e.instance_id),
-         2, NOW(),
-         '{\"Value\": {\"required\": false}}'::jsonb,
-         '', owner,
-         EXTRACT(EPOCH FROM clock_timestamp()), 1
-       FROM eventstore.events2 e
-       WHERE event_type = 'feature.instance.login_v2.set'
-         AND payload = '{\"Value\": {\"required\": true}}'::jsonb
-       ORDER BY position DESC LIMIT 1;"
-  environment:
-    PGPASSWORD: "{{ zitadel_db_password }}"
+      SELECT
+        instance_id, 'feature', aggregate_id,
+        'feature.instance.login_v2.set',
+        (SELECT MAX(sequence) + 1 FROM eventstore.events2
+         WHERE aggregate_type = 'feature'
+           AND aggregate_id = e.aggregate_id
+           AND instance_id = e.instance_id),
+        2, NOW(),
+        '{"Value": {"required": false}}'::jsonb,
+        '', owner,
+        EXTRACT(EPOCH FROM clock_timestamp()), 1
+      FROM eventstore.events2 e
+      WHERE event_type = 'feature.instance.login_v2.set'
+        AND payload = '{"Value": {"required": true}}'::jsonb
+      ORDER BY position DESC LIMIT 1
   when: >-
-    '"required": true' in zitadel_login_v2_state.stdout
+    (zitadel_login_v2_state.query_result | default([]))
+    | selectattr('payload', 'search', '"required": true')
+    | list | length > 0
   changed_when: true
+  no_log: true
   notify:
     - restart zitadel
 
