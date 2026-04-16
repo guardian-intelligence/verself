@@ -6,7 +6,7 @@
   "sideEffects": false,
   "scripts": {
     "dev": "vp dev",
-    "build": "vp build",
+    "build": "vp run @forge-metal/nitro-plugins#build && vp build",
     "preview": "vp preview",
     "start": "node --import ./instrumentation.mts .output/server/index.mjs",
     "generate": "vp exec openapi-ts -i ../../../sandbox-rental-service/openapi/openapi-3.1.yaml -o src/__generated/sandbox-rental-api -p @hey-api/typescript @hey-api/sdk valibot && vp exec openapi-ts -i ../../../identity-service/openapi/openapi-3.1.yaml -o src/__generated/identity-api -p @hey-api/typescript @hey-api/sdk valibot && vp exec node ../../scripts/mark-generated-ts-nocheck.mjs src/__generated/sandbox-rental-api src/__generated/identity-api && vp fmt src/__generated/sandbox-rental-api src/__generated/identity-api --write",
