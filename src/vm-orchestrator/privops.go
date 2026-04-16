@@ -13,6 +13,7 @@ type PrivOps interface {
 	ZFSEnsureFilesystem(ctx context.Context, dataset string) error
 	ZFSSendReceive(ctx context.Context, snapshot, target string) error
 	ZFSSetProperty(ctx context.Context, dataset, key, value string) error
+	FlushBlockDevice(ctx context.Context, path string) error
 	TapCreate(ctx context.Context, tapName, hostCIDR string, ownerUID, ownerGID int) error
 	TapUp(ctx context.Context, tapName string) error
 	TapDelete(ctx context.Context, tapName string) error
