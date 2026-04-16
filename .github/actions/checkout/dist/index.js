@@ -52,7 +52,8 @@ function readSpec() {
   if (parseBoolean(input("persist-credentials") || "false")) {
     notice("persist-credentials is accepted for compatibility; Forge Metal checkout does not persist credentials.");
   }
-  return { repository, ref, sha, targetPath, clean };
+  const token = input("token");
+  return { repository, ref, sha, targetPath, clean, token };
 }
 
 function prepareTarget(targetPath, clean) {
@@ -65,8 +66,14 @@ function prepareTarget(targetPath, clean) {
 async function downloadBundle(spec, bundlePath) {
   const url = endpointURL(spec);
   const response = await fetch(url, {
-    method: "GET",
+    method: "POST",
     headers: requestHeaders(),
+    body: JSON.stringify({
+      repository: spec.repository,
+      ref: spec.ref,
+      sha: spec.sha,
+      github_token: spec.token,
+    }),
   });
   if (!response.ok) {
     throw new Error(`checkout bundle failed: HTTP ${response.status}: ${await response.text()}`);
@@ -93,15 +100,13 @@ function endpointURL(spec) {
   const origin = requiredEnv("FORGE_METAL_HOST_SERVICE_HTTP_ORIGIN");
   const basePath = process.env.FORGE_METAL_CHECKOUT_PATH || "/internal/sandbox/v1/github-checkout";
   const url = new URL(basePath.replace(/\/$/, "") + "/bundle", origin);
-  url.searchParams.set("repository", spec.repository);
-  url.searchParams.set("ref", spec.ref);
-  url.searchParams.set("sha", spec.sha);
   return url;
 }
 
 function requestHeaders() {
   return {
     Authorization: `Bearer ${requiredEnv("FORGE_METAL_CHECKOUT_TOKEN")}`,
+    "Content-Type": "application/json",
     "X-Forge-Metal-Execution-Id": requiredEnv("FORGE_METAL_EXECUTION_ID"),
     "X-Forge-Metal-Attempt-Id": requiredEnv("FORGE_METAL_ATTEMPT_ID"),
   };

@@ -25,6 +25,10 @@ inputs:
     description: Accepted for actions/checkout familiarity. Forge Metal checkout does not persist GitHub credentials.
     required: false
     default: "false"
+  token:
+    description: GitHub token used only when the host cache has to fetch the requested commit.
+    required: false
+    default: ${{ github.token }}
 runs:
   using: node24
   main: dist/index.js
