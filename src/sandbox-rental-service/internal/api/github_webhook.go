@@ -28,6 +28,13 @@ type githubActionsWebhookResponse struct {
 	Reason     string `json:"reason,omitempty"`
 }
 
+type githubCheckoutBundleRequest struct {
+	Repository  string `json:"repository"`
+	Ref         string `json:"ref"`
+	SHA         string `json:"sha"`
+	GitHubToken string `json:"github_token"`
+}
+
 func RegisterPublicRoutes(mux *http.ServeMux, svc *jobs.Service) {
 	if mux == nil || svc == nil {
 		return
@@ -192,7 +199,7 @@ func githubStickyDiskCommitHandler(svc *jobs.Service) http.HandlerFunc {
 
 func githubCheckoutBundleHandler(svc *jobs.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
+		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
@@ -210,10 +217,17 @@ func githubCheckoutBundleHandler(svc *jobs.Service) http.HandlerFunc {
 			writePublicWebhookError(w, http.StatusUnauthorized, err)
 			return
 		}
+		var req githubCheckoutBundleRequest
+		body := http.MaxBytesReader(w, r.Body, 16<<10)
+		if err := json.NewDecoder(body).Decode(&req); err != nil {
+			writeCheckoutError(w, jobs.ErrCheckoutInvalid)
+			return
+		}
 		bundle, err := svc.GitHubRunner.PrepareCheckoutBundle(r.Context(), identity, jobs.CheckoutBundleRequest{
-			Repository: r.URL.Query().Get("repository"),
-			Ref:        r.URL.Query().Get("ref"),
-			SHA:        r.URL.Query().Get("sha"),
+			Repository:  req.Repository,
+			Ref:         req.Ref,
+			SHA:         req.SHA,
+			GitHubToken: req.GitHubToken,
 		})
 		if err != nil {
 			writeCheckoutError(w, err)

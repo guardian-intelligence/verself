@@ -34,9 +34,10 @@ var (
 )
 
 type CheckoutBundleRequest struct {
-	Repository string
-	Ref        string
-	SHA        string
+	Repository  string
+	Ref         string
+	SHA         string
+	GitHubToken string
 }
 
 type CheckoutBundle struct {
@@ -101,7 +102,7 @@ func (r *GitHubRunner) PrepareCheckoutBundle(ctx context.Context, identity Stick
 		}, nil
 	}
 
-	token, err := r.installationToken(ctx, identity.Installation)
+	token, err := r.checkoutFetchToken(ctx, identity, req.GitHubToken)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -266,6 +267,17 @@ func runCheckoutGit(ctx context.Context, label, dir string, extraEnv []string, a
 		return fmt.Errorf("git %s: %w: %s", label, err, strings.TrimSpace(string(output)))
 	}
 	return nil
+}
+
+func (r *GitHubRunner) checkoutFetchToken(ctx context.Context, identity StickyDiskIdentity, token string) (string, error) {
+	token = strings.TrimSpace(token)
+	if token != "" {
+		if strings.ContainsAny(token, "\x00\r\n") {
+			return "", fmt.Errorf("%w: github token contains control characters", ErrCheckoutInvalid)
+		}
+		return token, nil
+	}
+	return r.installationToken(ctx, identity.Installation)
 }
 
 func normalizeCheckoutRepository(repository string) (string, error) {

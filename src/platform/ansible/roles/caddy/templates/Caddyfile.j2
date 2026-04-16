@@ -125,6 +125,13 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 	handle @github_sticky_disk {
 		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}
 	}
+	@github_checkout {
+		method POST
+		path /internal/sandbox/v1/github-checkout/bundle
+	}
+	handle @github_checkout {
+		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}
+	}
 	respond 403
 }
 
