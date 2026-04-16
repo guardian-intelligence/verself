@@ -11,6 +11,7 @@ sandbox_rental_service_billing_token_url: "http://{{ services.zitadel.host }}:{{
 sandbox_rental_service_vm_orchestrator_socket: "{{ firecracker_vm_orchestrator_api_socket | default('/run/vm-orchestrator/api.sock', true) }}"
 sandbox_rental_service_vm_orchestrator_socket_group: "{{ firecracker_vm_orchestrator_socket_group | default('vm-clients', true) }}"
 sandbox_rental_service_force_schema_reset: false
+sandbox_rental_service_sticky_disk_dir: /var/lib/forge-metal/sandbox-rental/stickydisks
 
 # Regular database pool used by HTTP handlers and execution workers for service-owned
 # PostgreSQL state. This is separate from the River PGX pool below, so the two caps

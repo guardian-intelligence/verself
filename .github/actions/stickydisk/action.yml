@@ -1,0 +1,13 @@
+name: Forge Metal Sticky Disk
+description: Restore and commit a Forge Metal sticky disk path.
+inputs:
+  key:
+    description: Sticky disk key.
+    required: true
+  path:
+    description: Path to restore and commit.
+    required: true
+runs:
+  using: node24
+  main: dist/index.js
+  post: dist/index.js
