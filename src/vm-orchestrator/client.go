@@ -111,6 +111,25 @@ func (c *Client) CancelExec(ctx context.Context, leaseID, execID, key, reason st
 	return resp.GetAccepted(), nil
 }
 
+func (c *Client) CommitFilesystemMount(ctx context.Context, leaseID, key, mountName, targetSourceRef string) (FilesystemCommitRecord, error) {
+	resp, err := c.client.CommitFilesystemMount(ctx, &vmrpc.CommitFilesystemMountRequest{
+		LeaseId:         leaseID,
+		IdempotencyKey:  key,
+		MountName:       mountName,
+		TargetSourceRef: targetSourceRef,
+	})
+	if err != nil {
+		return FilesystemCommitRecord{}, fmt.Errorf("commit filesystem mount %s/%s: %w", leaseID, mountName, err)
+	}
+	return FilesystemCommitRecord{
+		LeaseID:         resp.GetLeaseId(),
+		MountName:       resp.GetMountName(),
+		TargetSourceRef: resp.GetTargetSourceRef(),
+		Snapshot:        resp.GetSnapshot(),
+		CommittedAt:     timeFromUnixNs(resp.GetCommittedAtUnixNs()),
+	}, nil
+}
+
 func (c *Client) StreamLeaseEvents(ctx context.Context, leaseID string, fromSeq uint64, follow bool, handler func(LeaseEvent) error) error {
 	stream, err := c.client.StreamLeaseEvents(ctx, &vmrpc.StreamLeaseEventsRequest{LeaseId: leaseID, FromSeq: fromSeq, Follow: follow})
 	if err != nil {
@@ -162,6 +181,7 @@ func leaseSpecToProto(spec LeaseSpec) *vmrpc.LeaseSpec {
 		TrustClass:              spec.TrustClass,
 		CheckpointSaveAllowlist: append([]string(nil), spec.CheckpointSaveAllowlist...),
 		Network:                 &vmrpc.NetworkAttach{Mode: mode},
+		FilesystemMounts:        filesystemMountsToProto(spec.FilesystemMounts),
 	}
 }
 

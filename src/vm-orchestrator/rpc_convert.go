@@ -23,7 +23,45 @@ func leaseSpecFromProto(spec *vmrpc.LeaseSpec, cfg Config) (LeaseSpec, error) {
 		TrustClass:              spec.GetTrustClass(),
 		CheckpointSaveAllowlist: append([]string(nil), spec.GetCheckpointSaveAllowlist()...),
 		NetworkMode:             networkMode,
+		FilesystemMounts:        filesystemMountsFromProto(spec.GetFilesystemMounts()),
 	}, cfg)
+}
+
+func filesystemMountsFromProto(mounts []*vmrpc.FilesystemMount) []FilesystemMount {
+	if len(mounts) == 0 {
+		return nil
+	}
+	out := make([]FilesystemMount, 0, len(mounts))
+	for _, mount := range mounts {
+		if mount == nil {
+			continue
+		}
+		out = append(out, FilesystemMount{
+			Name:      mount.GetName(),
+			SourceRef: mount.GetSourceRef(),
+			MountPath: mount.GetMountPath(),
+			FSType:    mount.GetFsType(),
+			ReadOnly:  mount.GetReadOnly(),
+		})
+	}
+	return out
+}
+
+func filesystemMountsToProto(mounts []FilesystemMount) []*vmrpc.FilesystemMount {
+	if len(mounts) == 0 {
+		return nil
+	}
+	out := make([]*vmrpc.FilesystemMount, 0, len(mounts))
+	for _, mount := range mounts {
+		out = append(out, &vmrpc.FilesystemMount{
+			Name:      mount.Name,
+			SourceRef: mount.SourceRef,
+			MountPath: mount.MountPath,
+			FsType:    mount.FSType,
+			ReadOnly:  mount.ReadOnly,
+		})
+	}
+	return out
 }
 
 func vmResourcesFromProto(r *vmrpc.VMResources) apiwire.VMResources {

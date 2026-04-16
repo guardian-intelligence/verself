@@ -115,12 +115,12 @@ func (c *apiClient) putBootSource(ctx context.Context, kernelPath, bootArgs stri
 	})
 }
 
-func (c *apiClient) putDrive(ctx context.Context, driveID, path string, rootDevice bool) error {
+func (c *apiClient) putDrive(ctx context.Context, driveID, path string, rootDevice, readOnly bool) error {
 	return c.put(ctx, "/drives/"+driveID, driveReq{
 		DriveID:      driveID,
 		PathOnHost:   path,
 		IsRootDevice: rootDevice,
-		IsReadOnly:   false,
+		IsReadOnly:   readOnly,
 	})
 }
 

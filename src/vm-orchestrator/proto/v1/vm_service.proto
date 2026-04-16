@@ -17,6 +17,7 @@ service VMService {
   rpc GetExec(GetExecRequest) returns (GetExecResponse);
   rpc WaitExec(WaitExecRequest) returns (WaitExecResponse);
 
+  rpc CommitFilesystemMount(CommitFilesystemMountRequest) returns (CommitFilesystemMountResponse);
   rpc SaveCheckpoint(SaveCheckpointRequest) returns (SaveCheckpointResponse);
   rpc GetCapacity(GetCapacityRequest) returns (GetCapacityResponse);
 }
@@ -91,6 +92,15 @@ message LeaseSpec {
   string trust_class = 6;
   repeated string checkpoint_save_allowlist = 7;
   NetworkAttach network = 8;
+  repeated FilesystemMount filesystem_mounts = 9;
+}
+
+message FilesystemMount {
+  string name = 1;
+  string source_ref = 2;
+  string mount_path = 3;
+  string fs_type = 4;
+  bool read_only = 5;
 }
 
 message AcquireLeaseRequest {
@@ -264,6 +274,21 @@ message SaveCheckpointResponse {
   string ref = 2;
   string version_id = 3;
   uint64 saved_at_unix_ns = 4;
+}
+
+message CommitFilesystemMountRequest {
+  string lease_id = 1;
+  string mount_name = 2;
+  string target_source_ref = 3;
+  string idempotency_key = 4;
+}
+
+message CommitFilesystemMountResponse {
+  string lease_id = 1;
+  string mount_name = 2;
+  string target_source_ref = 3;
+  string snapshot = 4;
+  uint64 committed_at_unix_ns = 5;
 }
 
 message VMMetrics {

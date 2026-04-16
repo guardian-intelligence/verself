@@ -22,6 +22,41 @@ argument_specs:
         default: "8G"
         description: "Size of the golden zvol. Must include unit (e.g. 4G, 8G)."
 
+      firecracker_image_dataset:
+        type: str
+        default: images
+        description: "ZFS dataset under firecracker_zfs_pool for composable image zvols."
+
+      firecracker_viteplus_image_ref:
+        type: str
+        default: viteplus
+        description: "Composable image reference for the Vite+ toolchain zvol."
+
+      firecracker_viteplus_zvol_size:
+        type: str
+        default: "1G"
+        description: "Size of the Vite+ toolchain zvol. Must include unit (e.g. 1G)."
+
+      firecracker_viteplus_image_path:
+        type: path
+        default: /var/lib/forge-metal/guest-artifacts/viteplus.ext4
+        description: "Path to the Vite+ ext4 image staged by build-guest-rootfs.sh."
+
+      firecracker_viteplus_hash_record:
+        type: path
+        default: /var/lib/forge-metal/guest-artifacts/viteplus-zvol.sha256
+        description: "File recording the SHA256 of the Vite+ image written to the composable zvol."
+
+      firecracker_sticky_empty_image_ref:
+        type: str
+        default: sticky-empty
+        description: "Composable image reference for an empty writable sticky disk base zvol."
+
+      firecracker_sticky_empty_zvol_size:
+        type: str
+        default: "8G"
+        description: "Size of each sticky disk zvol generation. Must include unit (e.g. 8G)."
+
       firecracker_workload_dataset:
         type: str
         default: workloads

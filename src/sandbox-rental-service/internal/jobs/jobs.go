@@ -75,6 +75,7 @@ type Runner interface {
 	StartExec(ctx context.Context, leaseID, key string, spec vmorchestrator.ExecSpec) (vmorchestrator.ExecRecord, error)
 	WaitExec(ctx context.Context, leaseID, execID string, includeOutput bool) (vmorchestrator.ExecRecord, error)
 	CancelExec(ctx context.Context, leaseID, execID, key, reason string) (bool, error)
+	CommitFilesystemMount(ctx context.Context, leaseID, key, mountName, targetSourceRef string) (vmorchestrator.FilesystemCommitRecord, error)
 }
 
 type SchedulerRuntime interface {
@@ -87,21 +88,24 @@ type SchedulerRuntime interface {
 }
 
 type SubmitRequest struct {
-	Kind               string              `json:"kind,omitempty"`
-	RunnerClass        string              `json:"runner_class,omitempty"`
-	ProductID          string              `json:"product_id,omitempty"`
-	Provider           string              `json:"provider,omitempty"`
-	IdempotencyKey     string              `json:"idempotency_key"`
-	SourceKind         string              `json:"source_kind,omitempty"`
-	WorkloadKind       string              `json:"workload_kind,omitempty"`
-	SourceRef          string              `json:"source_ref,omitempty"`
-	ExternalProvider   string              `json:"external_provider,omitempty"`
-	ExternalTaskID     string              `json:"external_task_id,omitempty"`
-	RunCommand         string              `json:"run_command,omitempty"`
-	MaxWallSeconds     uint64              `json:"max_wall_seconds,omitempty"`
-	Resources          apiwire.VMResources `json:"resources"`
-	GitHubAllocationID uuid.UUID           `json:"-"`
-	GitHubJITConfig    string              `json:"-"`
+	Kind               string                           `json:"kind,omitempty"`
+	RunnerClass        string                           `json:"runner_class,omitempty"`
+	ProductID          string                           `json:"product_id,omitempty"`
+	Provider           string                           `json:"provider,omitempty"`
+	IdempotencyKey     string                           `json:"idempotency_key"`
+	SourceKind         string                           `json:"source_kind,omitempty"`
+	WorkloadKind       string                           `json:"workload_kind,omitempty"`
+	SourceRef          string                           `json:"source_ref,omitempty"`
+	ExternalProvider   string                           `json:"external_provider,omitempty"`
+	ExternalTaskID     string                           `json:"external_task_id,omitempty"`
+	RunCommand         string                           `json:"run_command,omitempty"`
+	MaxWallSeconds     uint64                           `json:"max_wall_seconds,omitempty"`
+	Resources          apiwire.VMResources              `json:"resources"`
+	FilesystemMounts   []vmorchestrator.FilesystemMount `json:"-"`
+	StickyDiskMounts   []StickyDiskMountSpec            `json:"-"`
+	AttemptID          uuid.UUID                        `json:"-"`
+	GitHubAllocationID uuid.UUID                        `json:"-"`
+	GitHubJITConfig    string                           `json:"-"`
 }
 
 type ExecutionRecord struct {
@@ -173,7 +177,6 @@ type Service struct {
 	Scheduler        SchedulerRuntime
 	Logger           *slog.Logger
 	WorkloadTimeout  time.Duration
-	StickyDiskDir    string
 	CheckoutCacheDir string
 }
 
@@ -197,6 +200,7 @@ type executionWorkItem struct {
 	ExecID           string
 	CorrelationID    string
 	Resources        apiwire.VMResources
+	FilesystemMounts []vmorchestrator.FilesystemMount
 }
 
 type jobEventRow struct {
@@ -256,7 +260,10 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req 
 	}
 	correlationID := CorrelationIDFromContext(ctx)
 	executionID = uuid.New()
-	attemptID = uuid.New()
+	attemptID = req.AttemptID
+	if attemptID == uuid.Nil {
+		attemptID = uuid.New()
+	}
 	now := time.Now().UTC()
 	tx, err := s.PGX.Begin(ctx)
 	if err != nil {
@@ -288,6 +295,22 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req 
 		attempt_id, execution_id, attempt_seq, state, created_at, updated_at
 	) VALUES ($1,$2,1,$3,$4,$4)`, attemptID, executionID, StateQueued, now); err != nil {
 		return uuid.Nil, uuid.Nil, fmt.Errorf("insert attempt: %w", err)
+	}
+	mounts := req.FilesystemMounts
+	if mounts == nil {
+		mounts, err = s.runnerClassFilesystemMounts(ctx, tx, req.RunnerClass)
+		if err != nil {
+			return uuid.Nil, uuid.Nil, err
+		}
+	}
+	for _, sticky := range req.StickyDiskMounts {
+		mounts = append(mounts, stickyDiskFilesystemMount(sticky))
+	}
+	if err := s.insertExecutionFilesystemMounts(ctx, tx, executionID, mounts); err != nil {
+		return uuid.Nil, uuid.Nil, err
+	}
+	if err := s.insertExecutionStickyDiskMounts(ctx, tx, executionID, attemptID, req.StickyDiskMounts); err != nil {
+		return uuid.Nil, uuid.Nil, err
 	}
 	if req.WorkloadKind == WorkloadKindGitHubRunner && req.GitHubAllocationID != uuid.Nil {
 		if s.GitHubRunner == nil {
@@ -342,6 +365,59 @@ func (s *Service) existingSubmission(ctx context.Context, orgID uint64, idempote
 	return executionID, attemptID, nil
 }
 
+func (s *Service) runnerClassFilesystemMounts(ctx context.Context, tx pgx.Tx, runnerClass string) ([]vmorchestrator.FilesystemMount, error) {
+	rows, err := tx.Query(ctx, `SELECT mount_name, source_ref, mount_path, fs_type, read_only
+		FROM runner_class_filesystem_mounts
+		WHERE runner_class = $1 AND active
+		ORDER BY sort_order, mount_name`, runnerClass)
+	if err != nil {
+		return nil, fmt.Errorf("load runner class filesystem mounts: %w", err)
+	}
+	defer rows.Close()
+	out := []vmorchestrator.FilesystemMount{}
+	for rows.Next() {
+		var mount vmorchestrator.FilesystemMount
+		if err := rows.Scan(&mount.Name, &mount.SourceRef, &mount.MountPath, &mount.FSType, &mount.ReadOnly); err != nil {
+			return nil, fmt.Errorf("scan runner class filesystem mount: %w", err)
+		}
+		out = append(out, mount)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate runner class filesystem mounts: %w", err)
+	}
+	return out, nil
+}
+
+func (s *Service) insertExecutionFilesystemMounts(ctx context.Context, tx pgx.Tx, executionID uuid.UUID, mounts []vmorchestrator.FilesystemMount) error {
+	for idx, mount := range mounts {
+		if _, err := tx.Exec(ctx, `INSERT INTO execution_filesystem_mounts (
+			execution_id, mount_name, source_ref, mount_path, fs_type, read_only, sort_order, created_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+			executionID, mount.Name, mount.SourceRef, mount.MountPath, firstNonEmpty(mount.FSType, "ext4"), mount.ReadOnly, idx, time.Now().UTC()); err != nil {
+			return fmt.Errorf("insert execution filesystem mount %s: %w", mount.Name, err)
+		}
+	}
+	return nil
+}
+
+func (s *Service) insertExecutionStickyDiskMounts(ctx context.Context, tx pgx.Tx, executionID, attemptID uuid.UUID, mounts []StickyDiskMountSpec) error {
+	for idx, mount := range mounts {
+		if mount.MountID == uuid.Nil {
+			mount.MountID = uuid.New()
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO execution_sticky_disk_mounts (
+			mount_id, execution_id, attempt_id, allocation_id, mount_name, key_hash, key, mount_path,
+			base_generation, source_ref, target_source_ref, save_requested, save_state, committed_generation,
+			failure_reason, sort_order, created_at, updated_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,false,$12,0,'',$13,$14,$14)`,
+			mount.MountID, executionID, attemptID, mount.AllocationID, mount.MountName, mount.KeyHash, mount.Key, mount.MountPath,
+			mount.BaseGeneration, mount.SourceRef, mount.TargetSourceRef, stickyDiskStateNotRequested, idx, time.Now().UTC()); err != nil {
+			return fmt.Errorf("insert execution sticky disk mount %s: %w", mount.MountName, err)
+		}
+	}
+	return nil
+}
+
 func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID uuid.UUID) error {
 	ctx, span := tracer.Start(ctx, "sandbox-rental.execution.run", trace.WithAttributes(
 		attribute.String("execution.id", executionID.String()),
@@ -375,10 +451,11 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	}
 
 	lease, err := s.Orchestrator.AcquireLease(ctx, item.AttemptID.String()+":lease", vmorchestrator.LeaseSpec{
-		Resources:   item.Resources,
-		TTLSeconds:  300,
-		TrustClass:  "trusted",
-		NetworkMode: "nat",
+		Resources:        item.Resources,
+		TTLSeconds:       300,
+		TrustClass:       "trusted",
+		NetworkMode:      "nat",
+		FilesystemMounts: item.FilesystemMounts,
 	})
 	if err != nil {
 		cleanupCtx, cancel := context.WithTimeout(detachedContext(ctx), 5*time.Second)
@@ -433,6 +510,11 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		s.cleanupLeaseAndReservation(terminalCtx, lease.LeaseID, reservation)
 		_ = s.markBillingWindow(terminalCtx, item.AttemptID, reservation.WindowId, "voided", 0)
 		return s.failAttempt(terminalCtx, item, "exec_wait_failed", waitErr)
+	}
+	if item.WorkloadKind == WorkloadKindGitHubRunner && s.GitHubRunner != nil {
+		if err := s.GitHubRunner.CommitPendingStickyDisks(ctx, item, lease.LeaseID); err != nil && s.Logger != nil {
+			s.Logger.WarnContext(ctx, "sticky disk async commits failed", "execution_id", item.ExecutionID, "attempt_id", item.AttemptID, "error", err)
+		}
 	}
 	stopRenew()
 	if err := s.Orchestrator.ReleaseLease(detachedContext(ctx), lease.LeaseID, item.AttemptID.String()+":release"); err != nil {
@@ -500,7 +582,35 @@ func (s *Service) loadWorkItem(ctx context.Context, executionID, attemptID uuid.
 		RootDiskGiB: uint32(diskGiB),
 		KernelImage: apiwire.KernelImageRef(kernelImage),
 	}
+	mounts, err := s.loadExecutionFilesystemMounts(ctx, executionID)
+	if err != nil {
+		return executionWorkItem{}, err
+	}
+	item.FilesystemMounts = mounts
 	return item, nil
+}
+
+func (s *Service) loadExecutionFilesystemMounts(ctx context.Context, executionID uuid.UUID) ([]vmorchestrator.FilesystemMount, error) {
+	rows, err := s.PGX.Query(ctx, `SELECT mount_name, source_ref, mount_path, fs_type, read_only
+		FROM execution_filesystem_mounts
+		WHERE execution_id = $1
+		ORDER BY sort_order, mount_name`, executionID)
+	if err != nil {
+		return nil, fmt.Errorf("load execution filesystem mounts: %w", err)
+	}
+	defer rows.Close()
+	out := []vmorchestrator.FilesystemMount{}
+	for rows.Next() {
+		var mount vmorchestrator.FilesystemMount
+		if err := rows.Scan(&mount.Name, &mount.SourceRef, &mount.MountPath, &mount.FSType, &mount.ReadOnly); err != nil {
+			return nil, fmt.Errorf("scan execution filesystem mount: %w", err)
+		}
+		out = append(out, mount)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate execution filesystem mounts: %w", err)
+	}
+	return out, nil
 }
 
 func (s *Service) nextBillingJobID(ctx context.Context) (int64, error) {

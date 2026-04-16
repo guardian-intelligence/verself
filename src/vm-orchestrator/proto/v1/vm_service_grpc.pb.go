@@ -19,18 +19,19 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	VMService_AcquireLease_FullMethodName      = "/forge_metal.vm_orchestrator.v1.VMService/AcquireLease"
-	VMService_RenewLease_FullMethodName        = "/forge_metal.vm_orchestrator.v1.VMService/RenewLease"
-	VMService_ReleaseLease_FullMethodName      = "/forge_metal.vm_orchestrator.v1.VMService/ReleaseLease"
-	VMService_GetLease_FullMethodName          = "/forge_metal.vm_orchestrator.v1.VMService/GetLease"
-	VMService_ListLeases_FullMethodName        = "/forge_metal.vm_orchestrator.v1.VMService/ListLeases"
-	VMService_StreamLeaseEvents_FullMethodName = "/forge_metal.vm_orchestrator.v1.VMService/StreamLeaseEvents"
-	VMService_StartExec_FullMethodName         = "/forge_metal.vm_orchestrator.v1.VMService/StartExec"
-	VMService_CancelExec_FullMethodName        = "/forge_metal.vm_orchestrator.v1.VMService/CancelExec"
-	VMService_GetExec_FullMethodName           = "/forge_metal.vm_orchestrator.v1.VMService/GetExec"
-	VMService_WaitExec_FullMethodName          = "/forge_metal.vm_orchestrator.v1.VMService/WaitExec"
-	VMService_SaveCheckpoint_FullMethodName    = "/forge_metal.vm_orchestrator.v1.VMService/SaveCheckpoint"
-	VMService_GetCapacity_FullMethodName       = "/forge_metal.vm_orchestrator.v1.VMService/GetCapacity"
+	VMService_AcquireLease_FullMethodName          = "/forge_metal.vm_orchestrator.v1.VMService/AcquireLease"
+	VMService_RenewLease_FullMethodName            = "/forge_metal.vm_orchestrator.v1.VMService/RenewLease"
+	VMService_ReleaseLease_FullMethodName          = "/forge_metal.vm_orchestrator.v1.VMService/ReleaseLease"
+	VMService_GetLease_FullMethodName              = "/forge_metal.vm_orchestrator.v1.VMService/GetLease"
+	VMService_ListLeases_FullMethodName            = "/forge_metal.vm_orchestrator.v1.VMService/ListLeases"
+	VMService_StreamLeaseEvents_FullMethodName     = "/forge_metal.vm_orchestrator.v1.VMService/StreamLeaseEvents"
+	VMService_StartExec_FullMethodName             = "/forge_metal.vm_orchestrator.v1.VMService/StartExec"
+	VMService_CancelExec_FullMethodName            = "/forge_metal.vm_orchestrator.v1.VMService/CancelExec"
+	VMService_GetExec_FullMethodName               = "/forge_metal.vm_orchestrator.v1.VMService/GetExec"
+	VMService_WaitExec_FullMethodName              = "/forge_metal.vm_orchestrator.v1.VMService/WaitExec"
+	VMService_CommitFilesystemMount_FullMethodName = "/forge_metal.vm_orchestrator.v1.VMService/CommitFilesystemMount"
+	VMService_SaveCheckpoint_FullMethodName        = "/forge_metal.vm_orchestrator.v1.VMService/SaveCheckpoint"
+	VMService_GetCapacity_FullMethodName           = "/forge_metal.vm_orchestrator.v1.VMService/GetCapacity"
 )
 
 // VMServiceClient is the client API for VMService service.
@@ -47,6 +48,7 @@ type VMServiceClient interface {
 	CancelExec(ctx context.Context, in *CancelExecRequest, opts ...grpc.CallOption) (*CancelExecResponse, error)
 	GetExec(ctx context.Context, in *GetExecRequest, opts ...grpc.CallOption) (*GetExecResponse, error)
 	WaitExec(ctx context.Context, in *WaitExecRequest, opts ...grpc.CallOption) (*WaitExecResponse, error)
+	CommitFilesystemMount(ctx context.Context, in *CommitFilesystemMountRequest, opts ...grpc.CallOption) (*CommitFilesystemMountResponse, error)
 	SaveCheckpoint(ctx context.Context, in *SaveCheckpointRequest, opts ...grpc.CallOption) (*SaveCheckpointResponse, error)
 	GetCapacity(ctx context.Context, in *GetCapacityRequest, opts ...grpc.CallOption) (*GetCapacityResponse, error)
 }
@@ -168,6 +170,16 @@ func (c *vMServiceClient) WaitExec(ctx context.Context, in *WaitExecRequest, opt
 	return out, nil
 }
 
+func (c *vMServiceClient) CommitFilesystemMount(ctx context.Context, in *CommitFilesystemMountRequest, opts ...grpc.CallOption) (*CommitFilesystemMountResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CommitFilesystemMountResponse)
+	err := c.cc.Invoke(ctx, VMService_CommitFilesystemMount_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *vMServiceClient) SaveCheckpoint(ctx context.Context, in *SaveCheckpointRequest, opts ...grpc.CallOption) (*SaveCheckpointResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SaveCheckpointResponse)
@@ -202,6 +214,7 @@ type VMServiceServer interface {
 	CancelExec(context.Context, *CancelExecRequest) (*CancelExecResponse, error)
 	GetExec(context.Context, *GetExecRequest) (*GetExecResponse, error)
 	WaitExec(context.Context, *WaitExecRequest) (*WaitExecResponse, error)
+	CommitFilesystemMount(context.Context, *CommitFilesystemMountRequest) (*CommitFilesystemMountResponse, error)
 	SaveCheckpoint(context.Context, *SaveCheckpointRequest) (*SaveCheckpointResponse, error)
 	GetCapacity(context.Context, *GetCapacityRequest) (*GetCapacityResponse, error)
 	mustEmbedUnimplementedVMServiceServer()
@@ -243,6 +256,9 @@ func (UnimplementedVMServiceServer) GetExec(context.Context, *GetExecRequest) (*
 }
 func (UnimplementedVMServiceServer) WaitExec(context.Context, *WaitExecRequest) (*WaitExecResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method WaitExec not implemented")
+}
+func (UnimplementedVMServiceServer) CommitFilesystemMount(context.Context, *CommitFilesystemMountRequest) (*CommitFilesystemMountResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CommitFilesystemMount not implemented")
 }
 func (UnimplementedVMServiceServer) SaveCheckpoint(context.Context, *SaveCheckpointRequest) (*SaveCheckpointResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SaveCheckpoint not implemented")
@@ -444,6 +460,24 @@ func _VMService_WaitExec_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _VMService_CommitFilesystemMount_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CommitFilesystemMountRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VMServiceServer).CommitFilesystemMount(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VMService_CommitFilesystemMount_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VMServiceServer).CommitFilesystemMount(ctx, req.(*CommitFilesystemMountRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _VMService_SaveCheckpoint_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SaveCheckpointRequest)
 	if err := dec(in); err != nil {
@@ -522,6 +556,10 @@ var VMService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "WaitExec",
 			Handler:    _VMService_WaitExec_Handler,
+		},
+		{
+			MethodName: "CommitFilesystemMount",
+			Handler:    _VMService_CommitFilesystemMount_Handler,
 		},
 		{
 			MethodName: "SaveCheckpoint",

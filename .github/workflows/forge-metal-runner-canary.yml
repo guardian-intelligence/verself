@@ -4,6 +4,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   runner-canary:
     runs-on: metal-4vcpu-ubuntu-2404
@@ -14,7 +18,12 @@ jobs:
       VITE_PLUS_VERSION: "0.1.16"
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: guardian-intelligence/forge-metal/.github/actions/checkout@main
+
+      - name: Prove GitHub OIDC federation
+        uses: ./.github/actions/oidc-tracer
+        with:
+          audience: forge-metal-ci
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -45,6 +54,9 @@ jobs:
           set -euo pipefail
           echo "/usr/local/bin" >> "${GITHUB_PATH}"
           export PATH="/usr/local/bin:${PATH}"
+          test -n "${FORGE_METAL_COMPOSED_ZVOL_MOUNTS:-}"
+          echo "composed_zvol_mounts=${FORGE_METAL_COMPOSED_ZVOL_MOUNTS}"
+          findmnt /opt/forge-metal/nodejs
           command -v vp
           test -x /usr/local/bin/vp
           vp --version | tee /tmp/forge-metal-vp-version.txt
@@ -66,6 +78,13 @@ jobs:
           export PATH="$PWD/node_modules/.bin:$PATH"
           command -v vp
           vp run --no-cache @forge-metal/nitro-plugins#build
+
+      - name: Run Vite+ workspace tests
+        working-directory: src/viteplus-monorepo
+        run: |
+          set -euo pipefail
+          export PATH="$PWD/node_modules/.bin:$PATH"
+          vp test run packages/ui/src/index.test.ts packages/auth-web/src/index.test.ts
 
       - name: Build rent-a-sandbox with Vite+
         working-directory: src/viteplus-monorepo

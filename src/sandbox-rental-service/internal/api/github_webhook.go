@@ -16,8 +16,7 @@ const (
 	githubActionsWebhookPath       = "/webhooks/github/actions"
 	githubInstallationCallbackPath = "/github/installations/callback"
 	githubRunnerJITConfigPath      = "/internal/sandbox/v1/github-runner-jit"
-	githubStickyDiskRestorePath    = "/internal/sandbox/v1/stickydisk/restore"
-	githubStickyDiskCommitPath     = "/internal/sandbox/v1/stickydisk/commit"
+	githubStickyDiskSavePath       = "/internal/sandbox/v1/stickydisk/save"
 	githubCheckoutBundlePath       = "/internal/sandbox/v1/github-checkout/bundle"
 	publicWebhookBodyLimit         = 1 << 20
 )
@@ -35,6 +34,11 @@ type githubCheckoutBundleRequest struct {
 	GitHubToken string `json:"github_token"`
 }
 
+type githubStickyDiskSaveRequest struct {
+	Key  string `json:"key"`
+	Path string `json:"path"`
+}
+
 func RegisterPublicRoutes(mux *http.ServeMux, svc *jobs.Service) {
 	if mux == nil || svc == nil {
 		return
@@ -42,8 +46,7 @@ func RegisterPublicRoutes(mux *http.ServeMux, svc *jobs.Service) {
 	mux.HandleFunc(githubActionsWebhookPath, githubActionsWebhookHandler(svc))
 	mux.HandleFunc(githubInstallationCallbackPath, githubInstallationCallbackHandler(svc))
 	mux.HandleFunc(githubRunnerJITConfigPath, githubRunnerJITConfigHandler(svc))
-	mux.HandleFunc(githubStickyDiskRestorePath, githubStickyDiskRestoreHandler(svc))
-	mux.HandleFunc(githubStickyDiskCommitPath, githubStickyDiskCommitHandler(svc))
+	mux.HandleFunc(githubStickyDiskSavePath, githubStickyDiskSaveHandler(svc))
 	mux.HandleFunc(githubCheckoutBundlePath, githubCheckoutBundleHandler(svc))
 }
 
@@ -128,46 +131,7 @@ func githubRunnerJITConfigHandler(svc *jobs.Service) http.HandlerFunc {
 	}
 }
 
-func githubStickyDiskRestoreHandler(svc *jobs.Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if svc.GitHubRunner == nil || !svc.GitHubRunner.Configured() {
-			http.Error(w, "github runner is not configured", http.StatusServiceUnavailable)
-			return
-		}
-		identity, ok := authenticateStickyDiskRequest(w, r, svc)
-		if !ok {
-			return
-		}
-		key := strings.TrimSpace(r.URL.Query().Get("key"))
-		restore, err := svc.GitHubRunner.RestoreStickyDisk(r.Context(), identity, key)
-		if err != nil {
-			if errors.Is(err, jobs.ErrStickyDiskMissing) {
-				w.WriteHeader(http.StatusNoContent)
-				return
-			}
-			writeStickyDiskError(w, err)
-			return
-		}
-		file, err := os.Open(restore.ArchivePath)
-		if err != nil {
-			writeStickyDiskError(w, err)
-			return
-		}
-		defer file.Close()
-		w.Header().Set("Content-Type", "application/gzip")
-		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("X-Forge-Metal-Sticky-Generation", strconv.FormatInt(restore.Generation, 10))
-		w.Header().Set("X-Forge-Metal-Sticky-Size-Bytes", strconv.FormatInt(restore.SizeBytes, 10))
-		w.Header().Set("X-Forge-Metal-Sticky-Sha256", restore.SHA256)
-		_, _ = io.Copy(w, file)
-	}
-}
-
-func githubStickyDiskCommitHandler(svc *jobs.Service) http.HandlerFunc {
+func githubStickyDiskSaveHandler(svc *jobs.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -181,8 +145,16 @@ func githubStickyDiskCommitHandler(svc *jobs.Service) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		key := strings.TrimSpace(r.URL.Query().Get("key"))
-		commit, err := svc.GitHubRunner.CommitStickyDisk(r.Context(), identity, key, r.Body)
+		var req githubStickyDiskSaveRequest
+		body := http.MaxBytesReader(w, r.Body, 16<<10)
+		if err := json.NewDecoder(body).Decode(&req); err != nil {
+			writeStickyDiskError(w, jobs.ErrStickyDiskInvalid)
+			return
+		}
+		if strings.TrimSpace(req.Key) == "" {
+			req.Key = strings.TrimSpace(r.URL.Query().Get("key"))
+		}
+		save, err := svc.GitHubRunner.RequestStickyDiskCommit(r.Context(), identity, req.Key, req.Path)
 		if err != nil {
 			writeStickyDiskError(w, err)
 			return
@@ -190,9 +162,8 @@ func githubStickyDiskCommitHandler(svc *jobs.Service) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"generation": commit.Generation,
-			"size_bytes": commit.SizeBytes,
-			"sha256":     commit.SHA256,
+			"state":     "queued",
+			"commit_id": save.CommitID.String(),
 		})
 	}
 }

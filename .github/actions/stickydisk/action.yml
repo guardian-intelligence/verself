@@ -1,11 +1,11 @@
 name: Forge Metal Sticky Disk
-description: Restore and commit a Forge Metal sticky disk path.
+description: Verify a pre-mounted Forge Metal sticky disk path and queue ZFS persistence after the job exits.
 inputs:
   key:
     description: Sticky disk key.
     required: true
   path:
-    description: Path to restore and commit.
+    description: Path to verify and persist.
     required: true
 runs:
   using: node24

@@ -21,6 +21,14 @@ type LeaseRecord struct {
 	TrustClass     string
 }
 
+type FilesystemCommitRecord struct {
+	LeaseID         string
+	MountName       string
+	TargetSourceRef string
+	Snapshot        string
+	CommittedAt     time.Time
+}
+
 type ExecRecord struct {
 	LeaseID                string
 	ExecID                 string

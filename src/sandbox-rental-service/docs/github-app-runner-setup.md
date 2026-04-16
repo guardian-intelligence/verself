@@ -105,11 +105,18 @@ Use all labels for the first proof:
 name: forge-metal-ci
 on: [push]
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   hello:
     runs-on: [self-hosted, linux, x64, metal-4vcpu-ubuntu-2404]
     steps:
       - uses: actions/checkout@v5
+      - uses: guardian-intelligence/forge-metal/.github/actions/oidc-tracer@main
+        with:
+          audience: forge-metal-ci
       - run: echo "github-runner-marker $(uname -a)"
 ```
 
@@ -127,6 +134,28 @@ Expected control-plane order:
    `rpc.AcquireLease`, `rpc.StartExec`, `rpc.WaitExec`, `rpc.ReleaseLease`, and
    `forge_metal.vm_lease_evidence`.
 
+## OIDC Tracer Bullet
+
+Forge Metal does not host customer secrets for the GitHub CI product. Workflows
+use GitHub's standard OpenID Connect path: grant `id-token: write`, ask GitHub
+for a job-scoped ID token with the audience required by the target cloud or
+secret broker, and exchange that token directly with the customer's AWS, GCP,
+Azure, Vault, or OpenBao trust configuration.
+
+The repo canary includes `.github/actions/oidc-tracer` as a local proof action.
+It requests a GitHub OIDC token from the runner-provided
+`ACTIONS_ID_TOKEN_REQUEST_URL`, verifies the JWT signature against GitHub's JWKS,
+and asserts `iss`, `aud`, `sub`, `repository`, `ref`, `sha`, and `run_id`
+claims. It prints only sanitized claims and never prints the JWT.
+
+Successful proof means:
+
+1. GitHub issued an OIDC token to a job running on the Forge Metal runner.
+2. The token can be verified using public GitHub OIDC metadata and JWKS.
+3. The token is bound to the expected repo, ref, SHA, and workflow run.
+4. Customers can bring the same cloud-federation policies they use with
+   GitHub-hosted runners.
+
 ## Primary Sources
 
 - GitHub App registration: https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app
@@ -136,3 +165,4 @@ Expected control-plane order:
 - GitHub self-hosted runner REST API: https://docs.github.com/en/rest/actions/self-hosted-runners
 - GitHub workflow job webhook event: https://docs.github.com/en/webhooks/webhook-events-and-payloads#workflow_job
 - GitHub self-hosted runner labels in workflows: https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/use-in-a-workflow
+- GitHub OIDC in Actions: https://docs.github.com/actions/reference/openid-connect-reference

@@ -1,90 +1,60 @@
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { execFile: execFileCallback } = require("node:child_process");
-const { promisify } = require("node:util");
-
-const execFile = promisify(execFileCallback);
 
 async function main() {
   if (isPost()) {
     await commit();
     return;
   }
-  await restore();
+  await verifyMounted();
 }
 
-async function restore() {
+async function verifyMounted() {
   const spec = readSpec();
   saveState("key", spec.key);
   saveState("path", spec.path);
   fs.mkdirSync(spec.path, { recursive: true });
-
-  const url = endpointURL("restore", spec.key);
-  const response = await fetch(url, {
-    method: "GET",
-    headers: requestHeaders(),
-  });
-  if (response.status === 204 || response.status === 404) {
-    notice(`Forge Metal sticky disk cache miss for ${spec.key}`);
-    return;
-  }
-  if (!response.ok) {
-    throw new Error(`restore failed: HTTP ${response.status}: ${await response.text()}`);
-  }
-
-  const tmp = path.join(os.tmpdir(), `forge-metal-stickydisk-${process.pid}-${Date.now()}.tgz`);
-  try {
-    const archive = Buffer.from(await response.arrayBuffer());
-    fs.writeFileSync(tmp, archive, { mode: 0o600 });
-    await run("tar", ["-xzf", tmp, "-C", spec.path]);
-    notice(
-      `Forge Metal sticky disk restored generation ${response.headers.get(
-        "x-forge-metal-sticky-generation",
-      ) ?? "unknown"} for ${spec.key}`,
+  if (!isMountPoint(spec.path)) {
+    throw new Error(
+      `Forge Metal sticky disk ${spec.key} was not mounted at ${spec.path}. ` +
+        "The runner should provision sticky disks before the VM boots.",
     );
-  } finally {
-    fs.rmSync(tmp, { force: true });
   }
+  notice(`Forge Metal sticky disk mounted for ${spec.key} at ${spec.path}`);
 }
 
 async function commit() {
   const key = process.env.STATE_key ?? "";
   const rawPath = process.env.STATE_path ?? "";
   if (!key || !rawPath) {
-    notice("Forge Metal sticky disk skipped commit because restore state is missing");
+    notice("Forge Metal sticky disk skipped save because mount state is missing");
     return;
   }
   const diskPath = expandPath(rawPath);
   if (!fs.existsSync(diskPath)) {
-    notice(`Forge Metal sticky disk path does not exist: ${diskPath}`);
+    warning(`Forge Metal sticky disk path does not exist: ${diskPath}`);
+    return;
+  }
+  if (!isMountPoint(diskPath)) {
+    warning(`Forge Metal sticky disk path is no longer mounted: ${diskPath}`);
     return;
   }
 
-  const tmp = path.join(os.tmpdir(), `forge-metal-stickydisk-${process.pid}-${Date.now()}.tgz`);
-  try {
-    await run("tar", ["-czf", tmp, "-C", diskPath, "."]);
-    const archive = fs.readFileSync(tmp);
-    if (archive.length === 0) {
-      notice(`Forge Metal sticky disk archive is empty for ${key}`);
-      return;
-    }
-    const response = await fetch(endpointURL("commit", key), {
-      method: "POST",
-      headers: {
-        ...requestHeaders(),
-        "Content-Type": "application/gzip",
-      },
-      body: archive,
-    });
-    if (!response.ok) {
-      throw new Error(`commit failed: HTTP ${response.status}: ${await response.text()}`);
-    }
-    const body = await response.json();
-    notice(`Forge Metal sticky disk committed generation ${body.generation} for ${key}`);
-  } finally {
-    fs.rmSync(tmp, { force: true });
+  const response = await fetch(endpointURL("save", key), {
+    method: "POST",
+    headers: {
+      ...requestHeaders(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ key, path: diskPath }),
+  });
+  if (!response.ok) {
+    warning(`Forge Metal sticky disk save request failed: HTTP ${response.status}: ${await response.text()}`);
+    return;
   }
+  const body = await response.json().catch(() => ({}));
+  notice(`Forge Metal sticky disk queued ZFS save ${body.commit_id ?? "unknown"} for ${key}`);
 }
 
 function readSpec() {
@@ -137,8 +107,21 @@ function expandPath(value) {
   return path.resolve(process.env.GITHUB_WORKSPACE || process.cwd(), value);
 }
 
-async function run(command, args) {
-  await execFile(command, args, { stdio: "inherit" });
+function isMountPoint(targetPath) {
+  const resolved = path.resolve(targetPath);
+  const entries = fs.readFileSync("/proc/self/mountinfo", "utf8").split("\n");
+  for (const entry of entries) {
+    if (!entry.trim()) continue;
+    const fields = entry.split(" ");
+    if (fields.length > 4 && decodeMountInfoPath(fields[4]) === resolved) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function decodeMountInfoPath(value) {
+  return value.replace(/\\([0-7]{3})/g, (_, octal) => String.fromCharCode(parseInt(octal, 8)));
 }
 
 function saveState(name, value) {
@@ -154,6 +137,10 @@ function isPost() {
 
 function notice(message) {
   console.log(`::notice::${message}`);
+}
+
+function warning(message) {
+  console.log(`::warning::${message}`);
 }
 
 main().catch((error) => {

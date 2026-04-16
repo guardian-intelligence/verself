@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	ProtocolVersion = 3
+	ProtocolVersion = 5
 	GuestPort       = 10789
 
 	ControlQueueCapacity = 32
@@ -29,19 +29,21 @@ var ErrFrameTooLarge = errors.New("frame too large")
 type MessageType string
 
 const (
-	TypeHello              MessageType = "hello"
-	TypeLeaseInit          MessageType = "lease_init"
-	TypeExecRequest        MessageType = "exec_request"
-	TypeExecStarted        MessageType = "exec_started"
-	TypeLogChunk           MessageType = "log_chunk"
-	TypeHeartbeat          MessageType = "heartbeat"
-	TypeExecResult         MessageType = "exec_result"
-	TypeCheckpointRequest  MessageType = "checkpoint_request"
-	TypeCheckpointResponse MessageType = "checkpoint_response"
-	TypeFatal              MessageType = "fatal"
-	TypeCancel             MessageType = "cancel"
-	TypeAck                MessageType = "ack"
-	TypeShutdown           MessageType = "shutdown"
+	TypeHello                 MessageType = "hello"
+	TypeLeaseInit             MessageType = "lease_init"
+	TypeExecRequest           MessageType = "exec_request"
+	TypeExecStarted           MessageType = "exec_started"
+	TypeLogChunk              MessageType = "log_chunk"
+	TypeHeartbeat             MessageType = "heartbeat"
+	TypeExecResult            MessageType = "exec_result"
+	TypeCheckpointRequest     MessageType = "checkpoint_request"
+	TypeCheckpointResponse    MessageType = "checkpoint_response"
+	TypeFilesystemSealRequest MessageType = "filesystem_seal_request"
+	TypeFilesystemSealResult  MessageType = "filesystem_seal_result"
+	TypeFatal                 MessageType = "fatal"
+	TypeCancel                MessageType = "cancel"
+	TypeAck                   MessageType = "ack"
+	TypeShutdown              MessageType = "shutdown"
 )
 
 const (
@@ -101,10 +103,20 @@ type NetworkConfig struct {
 }
 
 type LeaseInit struct {
-	LeaseID             string        `json:"lease_id"`
-	Network             NetworkConfig `json:"network"`
-	HostWallclockUnixNS int64         `json:"host_wallclock_unix_ns"`
-	ProtocolVersion     int           `json:"protocol_version"`
+	LeaseID             string            `json:"lease_id"`
+	Network             NetworkConfig     `json:"network"`
+	Filesystems         []FilesystemMount `json:"filesystems,omitempty"`
+	HostWallclockUnixNS int64             `json:"host_wallclock_unix_ns"`
+	ProtocolVersion     int               `json:"protocol_version"`
+}
+
+type FilesystemMount struct {
+	Name       string `json:"name"`
+	DriveID    string `json:"drive_id"`
+	DevicePath string `json:"device_path"`
+	MountPath  string `json:"mount_path"`
+	FSType     string `json:"fs_type"`
+	ReadOnly   bool   `json:"read_only,omitempty"`
 }
 
 type ExecRequest struct {
@@ -155,6 +167,19 @@ type CheckpointResponse struct {
 	Accepted  bool   `json:"accepted"`
 	VersionID string `json:"version_id,omitempty"`
 	Error     string `json:"error,omitempty"`
+}
+
+type FilesystemSealRequest struct {
+	LeaseID         string `json:"lease_id"`
+	Name            string `json:"name"`
+	ProtocolVersion int    `json:"protocol_version"`
+}
+
+type FilesystemSealResult struct {
+	LeaseID string `json:"lease_id"`
+	Name    string `json:"name"`
+	Sealed  bool   `json:"sealed"`
+	Error   string `json:"error,omitempty"`
 }
 
 type Fatal struct {

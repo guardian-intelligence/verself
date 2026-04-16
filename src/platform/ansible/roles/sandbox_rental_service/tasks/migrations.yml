@@ -35,7 +35,7 @@
 
 - name: Apply sandbox-rental PostgreSQL migrations
   when: >-
-    sandbox_rental_service_force_schema_reset
+    (sandbox_rental_service_force_schema_reset | default(false) | bool)
     or sandbox_rental_service_pg_migrations_remote_hash is failed
     or (sandbox_rental_service_pg_migrations_remote_hash.content | default('') | b64decode | trim)
        != (sandbox_rental_service_pg_migrations_local_hash.stdout.split()[0] | trim)
@@ -60,6 +60,29 @@
         dest: /opt/forge-metal/sandbox-rental-migrations/
         mode: "0644"
 
+    - name: Export sandbox-rental GitHub installations before schema reset
+      ansible.builtin.command:
+        cmd: >-
+          {{ fm_bin }}/psql
+          -h {{ services.postgresql.host }}
+          -p {{ services.postgresql.port }}
+          -U postgres
+          -d sandbox_rental
+          -v ON_ERROR_STOP=1
+          -tAc
+          "COPY (
+            SELECT installation_id, org_id, account_login, account_type, active, created_at, updated_at
+            FROM public.github_installations
+            ORDER BY installation_id
+          ) TO STDOUT WITH (FORMAT csv, HEADER true);"
+      environment:
+        PGPASSWORD: "{{ postgresql_admin_password }}"
+      register: sandbox_rental_service_github_installations_export
+      failed_when: false
+      changed_when: false
+      no_log: true
+      when: sandbox_rental_service_restore_github_installations_on_schema_reset | bool
+
     - name: Reset sandbox_rental PostgreSQL database
       ansible.builtin.include_role:
         name: postgresql_db_reset
@@ -69,6 +92,25 @@
         postgresql_db_reset_stop_units:
           - electric
           - sandbox-rental-service
+
+    # Electric caches per-shape snapshots (rows + last-seen LSN) on disk in
+    # /var/lib/electric/. When the upstream database is dropped, those
+    # snapshots point at row ids and LSNs that no longer exist — Electric can
+    # serve stale rows on the next connect because it considers cached shapes
+    # "valid" until a publication change invalidates them. Wipe the storage
+    # directory here so Electric rebuilds every shape from the fresh schema.
+    - name: Clear Electric shape storage after sandbox_rental reset
+      ansible.builtin.file:
+        path: /var/lib/electric
+        state: absent
+
+    - name: Recreate empty Electric shape storage
+      ansible.builtin.file:
+        path: /var/lib/electric
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
 
     - name: Apply sandbox-rental PostgreSQL migration files
       ansible.builtin.command:
@@ -92,6 +134,31 @@
         label: "{{ item }}"
       changed_when: false
       no_log: true
+
+    - name: Restore sandbox-rental GitHub installations after schema reset
+      ansible.builtin.command:
+        cmd: >-
+          {{ fm_bin }}/psql
+          -h {{ services.postgresql.host }}
+          -p {{ services.postgresql.port }}
+          -U sandbox_rental
+          -d sandbox_rental
+          -v ON_ERROR_STOP=1
+        stdin: |
+          COPY public.github_installations (
+            installation_id, org_id, account_login, account_type, active, created_at, updated_at
+          ) FROM STDIN WITH (FORMAT csv, HEADER true);
+          {{ sandbox_rental_service_github_installations_export.stdout }}
+          \.
+      environment:
+        PGPASSWORD: "{{ postgresql_sandbox_rental_password }}"
+      changed_when: false
+      no_log: true
+      when:
+        - sandbox_rental_service_restore_github_installations_on_schema_reset | bool
+        - sandbox_rental_service_github_installations_export is defined
+        - sandbox_rental_service_github_installations_export.rc == 0
+        - (sandbox_rental_service_github_installations_export.stdout | trim) != ''
 
     - name: Record sandbox-rental PostgreSQL migrations fingerprint
       ansible.builtin.copy:
@@ -123,6 +190,18 @@
         IF to_regclass('public.runner_classes') IS NOT NULL THEN
           EXECUTE 'ALTER TABLE public.runner_classes OWNER TO sandbox_rental';
         END IF;
+        IF to_regclass('public.runner_class_filesystem_mounts') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.runner_class_filesystem_mounts OWNER TO sandbox_rental';
+        END IF;
+        IF to_regclass('public.execution_filesystem_mounts') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.execution_filesystem_mounts OWNER TO sandbox_rental';
+        END IF;
+        IF to_regclass('public.github_sticky_disk_generations') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.github_sticky_disk_generations OWNER TO sandbox_rental';
+        END IF;
+        IF to_regclass('public.execution_sticky_disk_mounts') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.execution_sticky_disk_mounts OWNER TO sandbox_rental';
+        END IF;
         IF to_regclass('public.github_workflow_jobs') IS NOT NULL THEN
           EXECUTE 'ALTER TABLE public.github_workflow_jobs OWNER TO sandbox_rental';
         END IF;
@@ -153,7 +232,11 @@
         public.execution_billing_windows,
         public.execution_logs,
         public.execution_events,
+        public.execution_filesystem_mounts,
+        public.github_sticky_disk_generations,
+        public.execution_sticky_disk_mounts,
         public.runner_classes,
+        public.runner_class_filesystem_mounts,
         public.github_installations,
         public.github_installation_states,
         public.github_workflow_jobs,

@@ -58,9 +58,51 @@ function readSpec() {
 
 function prepareTarget(targetPath, clean) {
   if (clean) {
-    fs.rmSync(targetPath, { recursive: true, force: true });
+    cleanTargetPreservingMounts(targetPath);
   }
   fs.mkdirSync(targetPath, { recursive: true });
+}
+
+function cleanTargetPreservingMounts(targetPath) {
+  const protectedMounts = protectedMountsUnder(targetPath);
+  if (protectedMounts.length === 0) {
+    fs.rmSync(targetPath, { recursive: true, force: true });
+    return;
+  }
+  fs.mkdirSync(targetPath, { recursive: true });
+  for (const entry of fs.readdirSync(targetPath)) {
+    const fullPath = path.join(targetPath, entry);
+    if (isProtectedMountPath(fullPath, protectedMounts)) {
+      continue;
+    }
+    fs.rmSync(fullPath, { recursive: true, force: true });
+  }
+}
+
+function gitCleanMountExclusions(targetPath) {
+  const workspace = path.resolve(targetPath);
+  return protectedMountsUnder(targetPath).map((mountPath) => {
+    const rel = path.relative(workspace, mountPath).split(path.sep).join("/");
+    return rel.endsWith("/") ? rel : `${rel}/`;
+  }).flatMap((rel) => ["-e", rel]);
+}
+
+function protectedMountsUnder(targetPath) {
+  const root = path.resolve(targetPath);
+  return composedZvolMounts().filter((mountPath) => mountPath === root || mountPath.startsWith(root + path.sep));
+}
+
+function composedZvolMounts() {
+  return (process.env.FORGE_METAL_COMPOSED_ZVOL_MOUNTS || "")
+    .split(":")
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((value) => path.resolve(value));
+}
+
+function isProtectedMountPath(candidate, protectedMounts) {
+  const resolved = path.resolve(candidate);
+  return protectedMounts.some((mountPath) => mountPath === resolved || mountPath.startsWith(resolved + path.sep));
 }
 
 async function downloadBundle(spec, bundlePath) {
@@ -95,7 +137,7 @@ async function materializeCheckout(spec, bundlePath) {
   fs.writeFileSync(path.join(spec.targetPath, ".git", "shallow"), `${spec.sha}${os.EOL}`);
   await git(spec.targetPath, ["update-ref", "refs/forge-metal/checkout", spec.sha]);
   await git(spec.targetPath, ["checkout", "--force", "--detach", spec.sha]);
-  await git(spec.targetPath, ["clean", "-ffdx"]);
+  await git(spec.targetPath, ["clean", "-ffdx", ...gitCleanMountExclusions(spec.targetPath)]);
 }
 
 function endpointURL(spec) {
