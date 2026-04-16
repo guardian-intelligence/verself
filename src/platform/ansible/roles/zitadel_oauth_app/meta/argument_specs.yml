@@ -1,0 +1,99 @@
+---
+argument_specs:
+  main:
+    short_description: Provision a single Zitadel OIDC application.
+    description:
+      - >-
+        Provisions the Zitadel project (optionally creating it), then creates /
+        recreates the OIDC application when its stored config drifts from the
+        desired shape. Persists client_id, optionally client_secret, and a
+        cutover marker in the caller's credstore directory. Publishes output
+        facts so the caller can feed client_id / client_secret into
+        service-specific config files.
+    options:
+      zitadel_oauth_app_name:
+        type: str
+        required: true
+        description: Name of the OIDC application within the project.
+      zitadel_oauth_app_project_name:
+        type: str
+        required: true
+        description: Name of the Zitadel project that owns this app.
+      zitadel_oauth_app_redirect_uris:
+        type: list
+        elements: str
+        required: true
+      zitadel_oauth_app_post_logout_redirect_uris:
+        type: list
+        elements: str
+        required: true
+      zitadel_oauth_app_credstore_dir:
+        type: str
+        required: true
+        description: Absolute path to the directory where credentials are persisted.
+      zitadel_oauth_app_credstore_group:
+        type: str
+        required: true
+        description: POSIX group that should own the persisted credential files.
+      zitadel_oauth_app_auth_method_type:
+        type: str
+        default: OIDC_AUTH_METHOD_TYPE_POST
+        choices:
+          - OIDC_AUTH_METHOD_TYPE_POST
+          - OIDC_AUTH_METHOD_TYPE_BASIC
+          - OIDC_AUTH_METHOD_TYPE_NONE
+      zitadel_oauth_app_app_type:
+        type: str
+        default: OIDC_APP_TYPE_WEB
+      zitadel_oauth_app_access_token_type:
+        type: str
+        default: OIDC_TOKEN_TYPE_JWT
+      zitadel_oauth_app_grant_types:
+        type: list
+        elements: str
+        default:
+          - OIDC_GRANT_TYPE_AUTHORIZATION_CODE
+          - OIDC_GRANT_TYPE_REFRESH_TOKEN
+      zitadel_oauth_app_response_types:
+        type: list
+        elements: str
+        default:
+          - OIDC_RESPONSE_TYPE_CODE
+      zitadel_oauth_app_dev_mode:
+        type: bool
+        default: false
+      zitadel_oauth_app_role_assertions:
+        type: bool
+        default: false
+        description: When true, PUT oidc_config to enable access/id/userinfo role assertions after creation.
+      zitadel_oauth_app_create_project_if_missing:
+        type: bool
+        default: false
+      zitadel_oauth_app_project_role_assertion:
+        type: bool
+        default: false
+      zitadel_oauth_app_project_role_check:
+        type: bool
+        default: false
+      zitadel_oauth_app_persist_client_secret:
+        type: bool
+        default: true
+        description: Public clients (authMethodType=NONE) should set this to false.
+      zitadel_oauth_app_credstore_owner:
+        type: str
+        default: root
+      zitadel_oauth_app_credstore_mode:
+        type: str
+        default: "0640"
+      zitadel_oauth_app_credstore_dir_mode:
+        type: str
+        default: "0750"
+      zitadel_oauth_app_client_secret_filename:
+        type: str
+        default: oidc-client-secret
+      zitadel_oauth_app_cutover_marker_filename:
+        type: str
+        default: oidc-cutover
+      zitadel_oauth_app_admin_pat_file:
+        type: str
+        default: /etc/zitadel/admin.pat

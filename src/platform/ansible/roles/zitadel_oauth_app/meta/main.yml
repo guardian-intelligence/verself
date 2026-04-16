@@ -1,0 +1,20 @@
+---
+dependencies: []
+
+galaxy_info:
+  author: forge-metal
+  description: >-
+    Provision a Zitadel OIDC application end-to-end — search/create project,
+    detect drift against desired OIDC config, create or recreate the app,
+    persist client_id + client_secret + cutover marker.
+  role_name: zitadel_oauth_app
+  license: UNLICENSED
+  min_ansible_version: "2.18"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - noble
+  galaxy_tags:
+    - zitadel
+    - oidc
+    - oauth

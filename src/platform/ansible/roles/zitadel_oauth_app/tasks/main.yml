@@ -1,0 +1,339 @@
+---
+# Every caller used to carry ~200 lines of this boilerplate in its own
+# zitadel_app.yml. This role consolidates the flow. Callers pass the app-
+# shape parameters; we handle project lookup/create, drift detection, POST /
+# DELETE + POST on drift, optional role-assertions PUT, and credstore writes.
+
+- name: Wait for Zitadel readiness for OAuth app {{ zitadel_oauth_app_name }}
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/healthz"
+    status_code: 200
+  register: zitadel_oauth_app_health
+  until: zitadel_oauth_app_health.status == 200
+  retries: 30
+  delay: 2
+
+- name: Read Zitadel admin PAT for OAuth app {{ zitadel_oauth_app_name }}
+  ansible.builtin.slurp:
+    src: "{{ zitadel_oauth_app_admin_pat_file }}"
+  register: zitadel_oauth_app_pat_raw
+  no_log: true
+
+- name: Set Zitadel PAT fact for OAuth app {{ zitadel_oauth_app_name }}
+  ansible.builtin.set_fact:
+    zitadel_oauth_app_pat: "{{ zitadel_oauth_app_pat_raw.content | b64decode | trim }}"
+  no_log: true
+
+# --- Project resolution ---
+
+- name: Search for Zitadel project {{ zitadel_oauth_app_project_name }}
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/_search"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ zitadel_oauth_app_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      queries:
+        - nameQuery:
+            name: "{{ zitadel_oauth_app_project_name }}"
+            method: TEXT_QUERY_METHOD_EQUALS
+    status_code: 200
+  register: zitadel_oauth_app_project_search
+  no_log: true
+
+- name: Create Zitadel project if missing — {{ zitadel_oauth_app_project_name }}
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ zitadel_oauth_app_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      name: "{{ zitadel_oauth_app_project_name }}"
+      projectRoleAssertion: "{{ zitadel_oauth_app_project_role_assertion }}"
+      projectRoleCheck: "{{ zitadel_oauth_app_project_role_check }}"
+    status_code: 200
+  register: zitadel_oauth_app_project_created
+  when:
+    - zitadel_oauth_app_create_project_if_missing | bool
+    - (zitadel_oauth_app_project_search.json.result | default([])) | length == 0
+  no_log: true
+
+- name: Resolve Zitadel project ID — {{ zitadel_oauth_app_project_name }}
+  ansible.builtin.set_fact:
+    zitadel_oauth_app_out_project_id: >-
+      {{
+        (zitadel_oauth_app_project_search.json.result | default([]) | first | default({})).id
+        | default(zitadel_oauth_app_project_created.json.id | default(''), true)
+      }}
+
+- name: Assert Zitadel project ID resolved — {{ zitadel_oauth_app_project_name }}
+  ansible.builtin.assert:
+    that: zitadel_oauth_app_out_project_id | default('', true) | length > 0
+    fail_msg: >-
+      Zitadel project '{{ zitadel_oauth_app_project_name }}' not found and
+      zitadel_oauth_app_create_project_if_missing is false. Provision the
+      project via the owning role first.
+
+# Sync projectRoleAssertion / projectRoleCheck whether we created it or not,
+# so an operator toggling these flags at the call site converges on the next
+# deploy.
+- name: Reconcile Zitadel project flags — {{ zitadel_oauth_app_project_name }}
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/{{ zitadel_oauth_app_out_project_id }}"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ zitadel_oauth_app_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      name: "{{ zitadel_oauth_app_project_name }}"
+      projectRoleAssertion: "{{ zitadel_oauth_app_project_role_assertion }}"
+      projectRoleCheck: "{{ zitadel_oauth_app_project_role_check }}"
+    status_code: [200, 400]
+  register: zitadel_oauth_app_project_reconcile
+  # Zitadel returns 400 "No changes" when the PUT is a no-op.
+  failed_when: >-
+    zitadel_oauth_app_project_reconcile.status == 400
+    and 'No changes' not in (zitadel_oauth_app_project_reconcile.json.message | default(''))
+  changed_when: zitadel_oauth_app_project_reconcile.status == 200
+  when:
+    - zitadel_oauth_app_create_project_if_missing | bool
+    - (zitadel_oauth_app_project_search.json.result | default([])) | length > 0
+  no_log: true
+
+# --- App search + drift detection ---
+
+- name: Search for existing Zitadel app — {{ zitadel_oauth_app_name }}
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/{{ zitadel_oauth_app_out_project_id }}/apps/_search"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ zitadel_oauth_app_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      queries:
+        - nameQuery:
+            name: "{{ zitadel_oauth_app_name }}"
+            method: TEXT_QUERY_METHOD_EQUALS
+    status_code: 200
+  register: zitadel_oauth_app_search_result
+  no_log: true
+
+- name: Ensure credstore directory exists for OAuth app {{ zitadel_oauth_app_name }}
+  ansible.builtin.file:
+    path: "{{ zitadel_oauth_app_credstore_dir }}"
+    state: directory
+    owner: "{{ zitadel_oauth_app_credstore_owner }}"
+    group: "{{ zitadel_oauth_app_credstore_group }}"
+    mode: "{{ zitadel_oauth_app_credstore_dir_mode }}"
+
+- name: Check cutover marker for OAuth app {{ zitadel_oauth_app_name }}
+  ansible.builtin.stat:
+    path: "{{ zitadel_oauth_app_credstore_dir }}/{{ zitadel_oauth_app_cutover_marker_filename }}"
+  register: zitadel_oauth_app_cutover_marker
+
+- name: Check stored client secret for OAuth app {{ zitadel_oauth_app_name }}
+  ansible.builtin.stat:
+    path: "{{ zitadel_oauth_app_credstore_dir }}/{{ zitadel_oauth_app_client_secret_filename }}"
+  register: zitadel_oauth_app_secret_file
+
+- name: Classify existing state for OAuth app {{ zitadel_oauth_app_name }}
+  vars:
+    _existing: "{{ zitadel_oauth_app_search_result.json.result | default([]) | first | default({}) }}"
+    _existing_oidc: "{{ _existing.oidcConfig | default({}) }}"
+    _desired_redirects: "{{ zitadel_oauth_app_redirect_uris | sort }}"
+    _desired_post_logout: "{{ zitadel_oauth_app_post_logout_redirect_uris | sort }}"
+    _desired_grants: "{{ zitadel_oauth_app_grant_types | sort }}"
+    _desired_responses: "{{ zitadel_oauth_app_response_types | sort }}"
+    _needs_secret: "{{ zitadel_oauth_app_persist_client_secret | bool }}"
+  ansible.builtin.set_fact:
+    zitadel_oauth_app_existing: "{{ _existing }}"
+    zitadel_oauth_app_app_exists: "{{ _existing | length > 0 }}"
+    zitadel_oauth_app_requires_recreate: >-
+      {{
+        _existing | length > 0
+        and (
+          not zitadel_oauth_app_cutover_marker.stat.exists
+          or (_needs_secret and not zitadel_oauth_app_secret_file.stat.exists)
+          or _existing_oidc.authMethodType | default('') != zitadel_oauth_app_auth_method_type
+          or (_existing_oidc.redirectUris | default([]) | sort) != _desired_redirects
+          or (_existing_oidc.responseTypes | default([]) | sort) != _desired_responses
+          or (_existing_oidc.grantTypes | default([]) | sort) != _desired_grants
+          or (_existing_oidc.postLogoutRedirectUris | default([]) | sort) != _desired_post_logout
+          or _existing_oidc.accessTokenType | default('') != zitadel_oauth_app_access_token_type
+        )
+      }}
+  no_log: true
+
+# --- Recreate path ---
+
+- name: Delete incompatible Zitadel OIDC app — {{ zitadel_oauth_app_name }}
+  ansible.builtin.uri:
+    url: >-
+      http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/{{
+      zitadel_oauth_app_out_project_id }}/apps/{{ zitadel_oauth_app_existing.id }}
+    method: DELETE
+    headers:
+      Authorization: "Bearer {{ zitadel_oauth_app_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    status_code: 200
+  when:
+    - zitadel_oauth_app_app_exists | bool
+    - zitadel_oauth_app_requires_recreate | bool
+  no_log: true
+
+- name: Create Zitadel OIDC application — {{ zitadel_oauth_app_name }}
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/{{ zitadel_oauth_app_out_project_id }}/apps/oidc"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ zitadel_oauth_app_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      name: "{{ zitadel_oauth_app_name }}"
+      redirectUris: "{{ zitadel_oauth_app_redirect_uris }}"
+      responseTypes: "{{ zitadel_oauth_app_response_types }}"
+      grantTypes: "{{ zitadel_oauth_app_grant_types }}"
+      appType: "{{ zitadel_oauth_app_app_type }}"
+      authMethodType: "{{ zitadel_oauth_app_auth_method_type }}"
+      postLogoutRedirectUris: "{{ zitadel_oauth_app_post_logout_redirect_uris }}"
+      devMode: "{{ zitadel_oauth_app_dev_mode }}"
+      accessTokenType: "{{ zitadel_oauth_app_access_token_type }}"
+    status_code: 200
+    return_content: true
+  register: zitadel_oauth_app_create_result
+  when:
+    - (not zitadel_oauth_app_app_exists | bool) or (zitadel_oauth_app_requires_recreate | bool)
+  no_log: true
+
+- name: Stash created credentials for OAuth app {{ zitadel_oauth_app_name }}
+  ansible.builtin.set_fact:
+    zitadel_oauth_app_out_id: "{{ zitadel_oauth_app_create_result.json.appId }}"
+    zitadel_oauth_app_out_client_id: "{{ zitadel_oauth_app_create_result.json.clientId }}"
+    zitadel_oauth_app_out_client_secret: "{{ zitadel_oauth_app_create_result.json.clientSecret | default('') }}"
+  when: zitadel_oauth_app_create_result is not skipped
+  no_log: true
+
+# --- Steady-state: re-query when we did not just create ---
+
+- name: Re-query Zitadel app — {{ zitadel_oauth_app_name }}
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/{{ zitadel_oauth_app_out_project_id }}/apps/_search"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ zitadel_oauth_app_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      queries:
+        - nameQuery:
+            name: "{{ zitadel_oauth_app_name }}"
+            method: TEXT_QUERY_METHOD_EQUALS
+    status_code: 200
+  register: zitadel_oauth_app_requery
+  when: zitadel_oauth_app_create_result is skipped
+  no_log: true
+
+- name: Set final app facts from re-query — {{ zitadel_oauth_app_name }}
+  vars:
+    _match: "{{ zitadel_oauth_app_requery.json.result | default([]) | first | default({}) }}"
+  ansible.builtin.set_fact:
+    zitadel_oauth_app_out_id: "{{ _match.id | default('') }}"
+    zitadel_oauth_app_out_client_id: "{{ _match.oidcConfig.clientId | default('') }}"
+  when: zitadel_oauth_app_create_result is skipped
+  no_log: true
+
+- name: Read stored client secret from credstore — {{ zitadel_oauth_app_name }}
+  ansible.builtin.slurp:
+    src: "{{ zitadel_oauth_app_credstore_dir }}/{{ zitadel_oauth_app_client_secret_filename }}"
+  register: zitadel_oauth_app_stored_secret_raw
+  when:
+    - zitadel_oauth_app_persist_client_secret | bool
+    - zitadel_oauth_app_create_result is skipped
+    - zitadel_oauth_app_secret_file.stat.exists
+  no_log: true
+
+- name: Set stored client secret fact — {{ zitadel_oauth_app_name }}
+  ansible.builtin.set_fact:
+    zitadel_oauth_app_out_client_secret: "{{ zitadel_oauth_app_stored_secret_raw.content | b64decode | trim }}"
+  when:
+    - zitadel_oauth_app_persist_client_secret | bool
+    - zitadel_oauth_app_create_result is skipped
+    - zitadel_oauth_app_secret_file.stat.exists
+  no_log: true
+
+# --- Optional role-assertion convergence ---
+
+- name: Ensure role assertions are enabled on OIDC app — {{ zitadel_oauth_app_name }}
+  ansible.builtin.uri:
+    url: >-
+      http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/{{
+      zitadel_oauth_app_out_project_id }}/apps/{{ zitadel_oauth_app_out_id }}/oidc_config
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ zitadel_oauth_app_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      redirectUris: "{{ zitadel_oauth_app_redirect_uris }}"
+      responseTypes: "{{ zitadel_oauth_app_response_types }}"
+      grantTypes: "{{ zitadel_oauth_app_grant_types }}"
+      appType: "{{ zitadel_oauth_app_app_type }}"
+      authMethodType: "{{ zitadel_oauth_app_auth_method_type }}"
+      postLogoutRedirectUris: "{{ zitadel_oauth_app_post_logout_redirect_uris }}"
+      devMode: "{{ zitadel_oauth_app_dev_mode }}"
+      accessTokenType: "{{ zitadel_oauth_app_access_token_type }}"
+      accessTokenRoleAssertion: true
+      idTokenRoleAssertion: true
+      idTokenUserinfoAssertion: true
+    status_code: [200, 400]
+  register: zitadel_oauth_app_role_assertion_converged
+  # Zitadel returns 400 "No changes" when the PUT is a no-op.
+  failed_when: >-
+    zitadel_oauth_app_role_assertion_converged.status == 400
+    and 'No changes' not in (zitadel_oauth_app_role_assertion_converged.json.message | default(''))
+  changed_when: zitadel_oauth_app_role_assertion_converged.status == 200
+  when:
+    - zitadel_oauth_app_role_assertions | bool
+    - zitadel_oauth_app_out_id | default('', true) | length > 0
+  no_log: true
+
+# --- Persist ---
+
+- name: Assert credentials resolved for OAuth app {{ zitadel_oauth_app_name }}
+  ansible.builtin.assert:
+    that:
+      - zitadel_oauth_app_out_id | default('', true) | length > 0
+      - zitadel_oauth_app_out_client_id | default('', true) | length > 0
+      - (not zitadel_oauth_app_persist_client_secret | bool)
+        or (zitadel_oauth_app_out_client_secret | default('', true) | length > 0)
+    fail_msg: >-
+      {{ zitadel_oauth_app_name }} OIDC credentials could not be resolved.
+
+- name: Store client secret for OAuth app {{ zitadel_oauth_app_name }}
+  ansible.builtin.copy:
+    dest: "{{ zitadel_oauth_app_credstore_dir }}/{{ zitadel_oauth_app_client_secret_filename }}"
+    content: "{{ zitadel_oauth_app_out_client_secret }}"
+    owner: "{{ zitadel_oauth_app_credstore_owner }}"
+    group: "{{ zitadel_oauth_app_credstore_group }}"
+    mode: "{{ zitadel_oauth_app_credstore_mode }}"
+  when: zitadel_oauth_app_persist_client_secret | bool
+  no_log: true
+
+- name: Persist cutover marker for OAuth app {{ zitadel_oauth_app_name }}
+  ansible.builtin.copy:
+    dest: "{{ zitadel_oauth_app_credstore_dir }}/{{ zitadel_oauth_app_cutover_marker_filename }}"
+    owner: "{{ zitadel_oauth_app_credstore_owner }}"
+    group: "{{ zitadel_oauth_app_credstore_group }}"
+    mode: "{{ zitadel_oauth_app_credstore_mode }}"
+    content: |
+      app_id={{ zitadel_oauth_app_out_id }}
+      client_id={{ zitadel_oauth_app_out_client_id }}
+      auth_method={{ zitadel_oauth_app_auth_method_type }}
+  no_log: true
