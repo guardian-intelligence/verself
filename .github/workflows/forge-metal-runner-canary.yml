@@ -63,12 +63,16 @@ jobs:
         working-directory: src/viteplus-monorepo
         run: |
           set -euo pipefail
+          export PATH="$PWD/node_modules/.bin:$PATH"
+          command -v vp
           vp run @forge-metal/nitro-plugins#build
 
       - name: Build rent-a-sandbox with Vite+
         working-directory: src/viteplus-monorepo
         run: |
           set -euo pipefail
+          export PATH="$PWD/node_modules/.bin:$PATH"
+          command -v vp
           vp run @forge-metal/rent-a-sandbox#build
 
       - name: Restore Forge Metal sticky disk
