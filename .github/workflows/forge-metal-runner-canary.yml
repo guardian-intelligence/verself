@@ -65,7 +65,7 @@ jobs:
           set -euo pipefail
           export PATH="$PWD/node_modules/.bin:$PATH"
           command -v vp
-          vp run @forge-metal/nitro-plugins#build
+          vp run --no-cache @forge-metal/nitro-plugins#build
 
       - name: Build rent-a-sandbox with Vite+
         working-directory: src/viteplus-monorepo
