@@ -1,4 +1,11 @@
 ---
+# role_path rebinds inside include_role, so capture the sandbox_rental_service
+# role's own path eagerly and pass absolute pre/post-reset hook file paths
+# into the shared migrations role.
+- name: Capture sandbox_rental_service role path for hook files
+  ansible.builtin.set_fact:
+    sandbox_rental_service_role_dir: "{{ role_path }}"
+
 - name: Apply sandbox-rental PostgreSQL migrations
   ansible.builtin.include_role:
     name: service_pg_migrations
@@ -14,8 +21,8 @@
       - electric
       - sandbox-rental-service
     service_pg_migrations_force_reset: "{{ sandbox_rental_service_force_schema_reset | default(false) | bool }}"
-    service_pg_migrations_pre_reset_tasks: "{{ role_path }}/tasks/migrations_pre_reset.yml"
-    service_pg_migrations_post_reset_tasks: "{{ role_path }}/tasks/migrations_post_reset.yml"
+    service_pg_migrations_pre_reset_tasks: "{{ sandbox_rental_service_role_dir }}/tasks/migrations_pre_reset.yml"
+    service_pg_migrations_post_reset_tasks: "{{ sandbox_rental_service_role_dir }}/tasks/migrations_post_reset.yml"
 
 - name: Restore sandbox-rental GitHub installations after schema reset
   ansible.builtin.command:
