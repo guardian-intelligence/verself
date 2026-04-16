@@ -175,7 +175,28 @@
   notify: Restart webmail
 
 - name: Set up Zitadel OIDC application
-  ansible.builtin.include_tasks: zitadel_app.yml
+  ansible.builtin.include_role:
+    name: zitadel_oauth_app
+  vars:
+    zitadel_oauth_app_name: webmail
+    zitadel_oauth_app_project_name: "{{ webmail_auth_project_name }}"
+    zitadel_oauth_app_redirect_uris:
+      - "https://{{ webmail_domain }}/callback"
+    zitadel_oauth_app_post_logout_redirect_uris:
+      - "https://{{ webmail_domain }}"
+    zitadel_oauth_app_credstore_dir: /etc/credstore/webmail
+    zitadel_oauth_app_credstore_group: "{{ ansible_user }}"
+    zitadel_oauth_app_auth_method_type: OIDC_AUTH_METHOD_TYPE_NONE
+    zitadel_oauth_app_persist_client_secret: false
+    zitadel_oauth_app_role_assertions: true
+    zitadel_oauth_app_cutover_marker_filename: oidc-web-cutover
+
+- name: Export webmail OIDC app facts for templates
+  ansible.builtin.set_fact:
+    webmail_app_id: "{{ zitadel_oauth_app_out_id }}"
+    webmail_project_id: "{{ zitadel_oauth_app_out_project_id }}"
+    webmail_client_id: "{{ zitadel_oauth_app_out_client_id }}"
+  no_log: true
 
 - name: Deploy webmail environment file
   ansible.builtin.template:
