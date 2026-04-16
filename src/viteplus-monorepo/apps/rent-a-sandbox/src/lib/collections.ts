@@ -57,15 +57,12 @@ const electricExecutionRowSchema = v.object({
   updated_at: v.string(),
 });
 
-const electricExecutionSchema = v.pipe(
-  electricExecutionRowSchema,
-  v.transform((row) => ({
-    ...row,
-    status: row.state,
-  })),
-);
-
-export type ElectricExecution = v.InferOutput<typeof electricExecutionSchema>;
+// TanStack DB does not apply Valibot transforms to synced data — the schema
+// is used for type inference and client-side mutation validation only.  The
+// previous v.transform that mapped state→status never ran, so the UI received
+// the raw Electric row where `status` was undefined.  Use the row schema
+// directly and read `state` in components.
+export type ElectricExecution = v.InferOutput<typeof electricExecutionRowSchema>;
 
 export function createExecutionsCollection(auth: AuthenticatedAuth, orgId: string) {
   const validatedOrgID = requireDecimalID(orgId, "org_id");
@@ -73,7 +70,7 @@ export function createExecutionsCollection(auth: AuthenticatedAuth, orgId: strin
   return cachedElectricCollection(id, () =>
     createElectricShapeCollection({
       id,
-      schema: electricExecutionSchema,
+      schema: electricExecutionRowSchema,
       table: "executions",
       where: electricEqualsWhere("org_id", validatedOrgID),
       getKey: (item) => item.execution_id,
