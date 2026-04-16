@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -37,6 +38,7 @@ type agentSession struct {
 	stderrBytes     atomic.Uint64
 	droppedLogBytes atomic.Uint64
 	activeChildPID  atomic.Int64
+	filesystems     []vmproto.FilesystemMount
 
 	jobCancel context.CancelFunc
 
@@ -83,6 +85,9 @@ func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-cha
 		return session.fail(err)
 	}
 	if err := session.applyNetwork(initReq.Network); err != nil {
+		return session.fail(err)
+	}
+	if err := session.mountFilesystems(initReq.Filesystems); err != nil {
 		return session.fail(err)
 	}
 	if err := setWallClock(initReq.HostWallclockUnixNS); err != nil {
@@ -267,14 +272,70 @@ func (s *agentSession) waitForExecRequest(controlCh <-chan vmproto.Envelope) (vm
 				return vmproto.ExecRequest{}, protocolStateError("await_exec_request", "argv is required")
 			}
 			return req, nil
+		case vmproto.TypeFilesystemSealRequest:
+			if err := s.handleFilesystemSealRequest(env); err != nil {
+				return vmproto.ExecRequest{}, err
+			}
+			continue
 		case vmproto.TypeShutdown:
 			return vmproto.ExecRequest{}, errGuestShutdownRequested
 		case vmproto.TypeCancel:
 			continue
 		default:
-			return vmproto.ExecRequest{}, unexpectedControlFrame("await_exec_request", env.Type, vmproto.TypeExecRequest, vmproto.TypeShutdown, vmproto.TypeCancel)
+			return vmproto.ExecRequest{}, unexpectedControlFrame("await_exec_request", env.Type, vmproto.TypeExecRequest, vmproto.TypeFilesystemSealRequest, vmproto.TypeShutdown, vmproto.TypeCancel)
 		}
 	}
+}
+
+func (s *agentSession) handleFilesystemSealRequest(env vmproto.Envelope) error {
+	req, err := vmproto.DecodePayload[vmproto.FilesystemSealRequest](env)
+	if err != nil {
+		return protocolStateError("await_exec_request", "decode filesystem_seal_request payload: %v", err)
+	}
+	if req.ProtocolVersion != vmproto.ProtocolVersion {
+		return protocolStateError("await_exec_request", "protocol_version mismatch: got %d want %d", req.ProtocolVersion, vmproto.ProtocolVersion)
+	}
+	sealErr := s.sealFilesystem(req.Name)
+	result := vmproto.FilesystemSealResult{
+		LeaseID: req.LeaseID,
+		Name:    req.Name,
+		Sealed:  sealErr == nil,
+	}
+	if sealErr != nil {
+		result.Error = sealErr.Error()
+	}
+	if err := s.sendControl(vmproto.TypeFilesystemSealResult, result); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *agentSession) sealFilesystem(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("filesystem seal name is required")
+	}
+	idx := -1
+	var fs vmproto.FilesystemMount
+	for i, mounted := range s.filesystems {
+		if mounted.Name == name {
+			idx = i
+			fs = mounted
+			break
+		}
+	}
+	if idx < 0 {
+		return fmt.Errorf("filesystem %s is not mounted", name)
+	}
+	if fs.ReadOnly {
+		return fmt.Errorf("filesystem %s is read-only", name)
+	}
+	syscall.Sync()
+	if err := syscall.Unmount(fs.MountPath, 0); err != nil && err != syscall.EINVAL {
+		return fmt.Errorf("unmount filesystem %s at %s: %w", name, fs.MountPath, err)
+	}
+	s.filesystems = append(s.filesystems[:idx], s.filesystems[idx+1:]...)
+	return nil
 }
 
 func (s *agentSession) runOneExec(req vmproto.ExecRequest, controlCh <-chan vmproto.Envelope, network vmproto.NetworkConfig) error {
@@ -294,7 +355,7 @@ func (s *agentSession) runOneExec(req vmproto.ExecRequest, controlCh <-chan vmpr
 		s.jobCancel = nil
 	}()
 
-	env, err := buildRuntimeEnv(req.Env, network)
+	env, err := buildRuntimeEnv(req.Env, network, s.filesystemMountPaths())
 	if err != nil {
 		return err
 	}
@@ -500,6 +561,92 @@ func (s *agentSession) applyNetwork(cfg vmproto.NetworkConfig) error {
 	return nil
 }
 
+func (s *agentSession) mountFilesystems(filesystems []vmproto.FilesystemMount) error {
+	if len(filesystems) == 0 {
+		return nil
+	}
+	mounted := make([]vmproto.FilesystemMount, 0, len(filesystems))
+	for _, fs := range filesystems {
+		if err := validateFilesystemMount(fs); err != nil {
+			return err
+		}
+		if err := waitForBlockDevice(fs.DevicePath, 5*time.Second); err != nil {
+			return err
+		}
+		if err := os.MkdirAll(fs.MountPath, 0o755); err != nil {
+			return fmt.Errorf("mkdir composed filesystem mount %s: %w", fs.MountPath, err)
+		}
+		flags := uintptr(syscall.MS_NOATIME)
+		data := ""
+		if fs.ReadOnly {
+			flags |= syscall.MS_RDONLY
+			data = "ro"
+		}
+		if err := syscall.Mount(fs.DevicePath, fs.MountPath, firstNonEmpty(fs.FSType, "ext4"), flags, data); err != nil {
+			if err == syscall.EBUSY {
+				mounted = append(mounted, fs)
+				continue
+			}
+			return fmt.Errorf("mount composed filesystem %s (%s) on %s: %w", fs.Name, fs.DevicePath, fs.MountPath, err)
+		}
+		fmt.Fprintf(os.Stdout, "%s mounted composed filesystem name=%s device=%s path=%s read_only=%t\n", logPrefix, fs.Name, fs.DevicePath, fs.MountPath, fs.ReadOnly)
+		mounted = append(mounted, fs)
+	}
+	s.filesystems = mounted
+	return nil
+}
+
+func validateFilesystemMount(fs vmproto.FilesystemMount) error {
+	if strings.TrimSpace(fs.Name) == "" {
+		return fmt.Errorf("composed filesystem name is required")
+	}
+	if strings.TrimSpace(fs.DevicePath) == "" || !strings.HasPrefix(fs.DevicePath, "/dev/") {
+		return fmt.Errorf("composed filesystem %s has invalid device path %q", fs.Name, fs.DevicePath)
+	}
+	if strings.TrimSpace(fs.MountPath) == "" || !strings.HasPrefix(fs.MountPath, "/") {
+		return fmt.Errorf("composed filesystem %s has invalid mount path %q", fs.Name, fs.MountPath)
+	}
+	clean := filepath.Clean(fs.MountPath)
+	if clean != fs.MountPath || clean == "/" || strings.HasPrefix(clean, "/proc") || strings.HasPrefix(clean, "/sys") || strings.HasPrefix(clean, "/dev") || strings.HasPrefix(clean, "/run") {
+		return fmt.Errorf("composed filesystem %s mount path %q is not allowed", fs.Name, fs.MountPath)
+	}
+	switch firstNonEmpty(fs.FSType, "ext4") {
+	case "ext4":
+		return nil
+	default:
+		return fmt.Errorf("composed filesystem %s uses unsupported fs_type %q", fs.Name, fs.FSType)
+	}
+}
+
+func waitForBlockDevice(path string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		if stat, err := os.Stat(path); err == nil {
+			if stat.Mode()&os.ModeDevice != 0 {
+				return nil
+			}
+			return fmt.Errorf("composed filesystem device %s is not a device", path)
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("stat composed filesystem device %s: %w", path, err)
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("composed filesystem device %s did not appear", path)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+}
+
+func (s *agentSession) filesystemMountPaths() []string {
+	if len(s.filesystems) == 0 {
+		return nil
+	}
+	paths := make([]string, 0, len(s.filesystems))
+	for _, fs := range s.filesystems {
+		paths = append(paths, fs.MountPath)
+	}
+	return paths
+}
+
 func setWallClock(unixNS int64) error {
 	if unixNS <= 0 {
 		return nil
@@ -693,4 +840,13 @@ func runCommandOutput(name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }

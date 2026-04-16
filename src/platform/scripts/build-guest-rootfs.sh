@@ -97,6 +97,7 @@ NODEJS_URL=$(json_string '.nodejs.url')
 NODEJS_SHA256=$(json_string '.nodejs.sha256')
 PNPM_VERSION=$(json_string '.pnpm.version')
 VITE_PLUS_VERSION=$(json_string '.vite_plus.version')
+VITE_PLUS_IMAGE_SIZE=$(jq -er '.vite_plus.image_size // "1G"' "$VERSIONS")
 
 GITHUB_ACTIONS_RUNNER_VERSION=$(json_string '.github_actions_runner.version')
 GITHUB_ACTIONS_RUNNER_URL=$(json_string '.github_actions_runner.url')
@@ -356,6 +357,9 @@ unmount_chroot_mounts
 echo "-> building ext4 image ($ROOTFS_IMAGE_SIZE)"
 mke2fs -F -t ext4 -d "$ROOTFS" -L guestroot -b 4096 "$OUTPUT_DIR/rootfs.ext4" "$ROOTFS_IMAGE_SIZE"
 
+echo "-> building Vite+ composed zvol image ($VITE_PLUS_IMAGE_SIZE)"
+mke2fs -F -t ext4 -d "$ROOTFS/opt/forge-metal/nodejs" -L viteplus -b 4096 "$OUTPUT_DIR/viteplus.ext4" "$VITE_PLUS_IMAGE_SIZE"
+
 echo "-> computing guest artifact metrics"
 ROOTFS_TREE_BYTES=$(du -sb "$ROOTFS" | awk '{print $1}')
 ROOTFS_APPARENT_BYTES=$(stat -c '%s' "$OUTPUT_DIR/rootfs.ext4")
@@ -371,6 +375,8 @@ END {
   printf "%.0f %.0f %.0f", total, used, free
 }')"
 ROOTFS_SHA256=$(sha256sum "$OUTPUT_DIR/rootfs.ext4" | awk '{print $1}')
+VITE_PLUS_IMAGE_BYTES=$(stat -c '%s' "$OUTPUT_DIR/viteplus.ext4")
+VITE_PLUS_IMAGE_SHA256=$(sha256sum "$OUTPUT_DIR/viteplus.ext4" | awk '{print $1}')
 KERNEL_BYTES=$(stat -c '%s' "$OUTPUT_DIR/vmlinux")
 KERNEL_SHA256=$(sha256sum "$OUTPUT_DIR/vmlinux" | awk '{print $1}')
 SBOM_BYTES=$(stat -c '%s' "$OUTPUT_DIR/sbom.txt")
@@ -409,6 +415,9 @@ jq -n \
   --arg vite_plus_version "$VITE_PLUS_VERSION" \
   --arg vite_plus_sha256 "$VITE_PLUS_BINARY_SHA256" \
   --arg vite_plus_bytes "$VITE_PLUS_BINARY_BYTES" \
+  --arg vite_plus_image_size "$VITE_PLUS_IMAGE_SIZE" \
+  --arg vite_plus_image_sha256 "$VITE_PLUS_IMAGE_SHA256" \
+  --arg vite_plus_image_bytes "$VITE_PLUS_IMAGE_BYTES" \
   --arg github_actions_runner_version "$GITHUB_ACTIONS_RUNNER_VERSION" \
   --arg github_actions_runner_sha256 "$GITHUB_RUNNER_SHA256" \
   --arg github_actions_runner_bytes "$GITHUB_RUNNER_BYTES" \
@@ -447,11 +456,15 @@ jq -n \
     vite_plus_version: $vite_plus_version,
     vite_plus_sha256: $vite_plus_sha256,
     vite_plus_bytes: ($vite_plus_bytes | tonumber),
+    vite_plus_image_size: $vite_plus_image_size,
+    vite_plus_image_sha256: $vite_plus_image_sha256,
+    vite_plus_image_bytes: ($vite_plus_image_bytes | tonumber),
     github_actions_runner_version: $github_actions_runner_version,
     github_actions_runner_sha256: $github_actions_runner_sha256,
     github_actions_runner_bytes: ($github_actions_runner_bytes | tonumber)
   }' > "$OUTPUT_DIR/guest-artifacts.json"
 
 echo "OK rootfs built: $OUTPUT_DIR/rootfs.ext4"
+echo "OK Vite+ image built: $OUTPUT_DIR/viteplus.ext4"
 echo "OK SBOM written: $OUTPUT_DIR/sbom.txt"
 echo "OK guest artifact metrics written: $OUTPUT_DIR/guest-artifacts.json"

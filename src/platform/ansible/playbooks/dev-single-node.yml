@@ -73,6 +73,12 @@
         get_checksum: false
       register: preflight_guest_rootfs
 
+    - name: Check Vite+ composed image exists
+      ansible.builtin.stat:
+        path: /var/lib/forge-metal/guest-artifacts/viteplus.ext4
+        get_checksum: false
+      register: preflight_viteplus_image
+
     - name: Warn if ZFS pool is missing (firecracker role will fail)
       ansible.builtin.debug:
         msg: >-
@@ -83,9 +89,9 @@
     - name: Fail if guest artifacts are missing
       ansible.builtin.fail:
         msg: >-
-          Guest artifacts not staged. The firecracker role requires vmlinux and rootfs.ext4
+          Guest artifacts not staged. The firecracker role requires vmlinux, rootfs.ext4, and viteplus.ext4
           at /var/lib/forge-metal/guest-artifacts/. Run: cd ansible && ansible-playbook playbooks/guest-rootfs.yml
-      when: not preflight_guest_kernel.stat.exists or not preflight_guest_rootfs.stat.exists
+      when: not preflight_guest_kernel.stat.exists or not preflight_guest_rootfs.stat.exists or not preflight_viteplus_image.stat.exists
 
 # ── Deploy ───────────────────────────────────────────────────────────────────
 
@@ -116,8 +122,14 @@
       tags: [sandbox_rental_service]
     - role: identity_service
       tags: [identity_service]
+    # sandbox_rental_service's migration path drops and recreates its database
+    # when the schema fingerprint changes, which wipes Electric's publication,
+    # shape-table ownership, and REPLICA IDENTITY FULL — and leaves Electric
+    # stopped. Tagging this role with `sandbox_rental_service` guarantees the
+    # reconcile runs on any SR-scoped deploy, so partial invocations can't leave
+    # Electric crash-looping with "Publication not found".
     - role: electric
-      tags: [electric]
+      tags: [electric, sandbox_rental_service]
     - role: frontend_auth_sessions
       tags: [frontend_auth_sessions, rent_a_sandbox, webmail]
     - role: rent_a_sandbox

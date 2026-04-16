@@ -5,15 +5,14 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
+	vmorchestrator "github.com/forge-metal/vm-orchestrator"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"go.opentelemetry.io/otel/attribute"
@@ -21,10 +20,18 @@ import (
 )
 
 const (
-	defaultStickyDiskDir      = "/var/lib/forge-metal/sandbox-rental/stickydisks"
-	stickyDiskMaxKeyBytes     = 512
-	stickyDiskArchiveFilename = "archive.tgz"
-	stickyDiskMetaFilename    = "meta.json"
+	stickyDiskMaxKeyBytes        = 512
+	stickyDiskMaxPathBytes       = 4096
+	stickyDiskEmptySourceRef     = "sticky-empty"
+	stickyDiskStateNotRequested  = "not_requested"
+	stickyDiskStateRequested     = "requested"
+	stickyDiskStateRunning       = "running"
+	stickyDiskStateCommitted     = "committed"
+	stickyDiskStateFailed        = "failed"
+	stickyDiskStateSkipped       = "skipped"
+	stickyDiskWorkspaceRoot      = "/workspace"
+	stickyDiskRunnerHome         = "/home/runner"
+	stickyDiskTargetRefHashBytes = 16
 )
 
 var (
@@ -44,32 +51,38 @@ type StickyDiskIdentity struct {
 	RunnerName         string
 }
 
-type StickyDiskRestore struct {
+// StickyDiskSave is the guest-visible fast path. The action asks the control
+// plane to persist a pre-mounted zvol after the runner exits; no archive bytes
+// cross the guest boundary.
+type StickyDiskSave struct {
 	Identity    StickyDiskIdentity
-	Generation  int64
-	ArchivePath string
-	SizeBytes   int64
-	SHA256      string
+	CommitID    uuid.UUID
+	Key         string
+	MountPath   string
+	RequestedAt time.Time
 }
 
-type StickyDiskCommit struct {
-	Identity   StickyDiskIdentity
-	Generation int64
-	SizeBytes  int64
-	SHA256     string
+type StickyDiskMountSpec struct {
+	MountID         uuid.UUID
+	AllocationID    uuid.UUID
+	MountName       string
+	Key             string
+	KeyHash         string
+	MountPath       string
+	BaseGeneration  int64
+	SourceRef       string
+	TargetSourceRef string
 }
 
-type stickyDiskMetadata struct {
-	Key          string    `json:"key"`
-	Generation   int64     `json:"generation"`
-	SizeBytes    int64     `json:"size_bytes"`
-	SHA256       string    `json:"sha256"`
-	ExecutionID  string    `json:"execution_id"`
-	AttemptID    string    `json:"attempt_id"`
-	AllocationID string    `json:"allocation_id"`
-	GitHubJobID  int64     `json:"github_job_id"`
-	RunnerName   string    `json:"runner_name"`
-	CommittedAt  time.Time `json:"committed_at"`
+type stickyDiskPendingCommit struct {
+	MountID         uuid.UUID
+	Identity        StickyDiskIdentity
+	MountName       string
+	Key             string
+	KeyHash         string
+	MountPath       string
+	BaseGeneration  int64
+	TargetSourceRef string
 }
 
 func (r *GitHubRunner) AuthenticateStickyDisk(ctx context.Context, executionID, attemptID, bearer string) (StickyDiskIdentity, error) {
@@ -131,184 +144,270 @@ func (r *GitHubRunner) authenticateGitHubExecution(ctx context.Context, executio
 	return identity, nil
 }
 
-func (r *GitHubRunner) RestoreStickyDisk(ctx context.Context, identity StickyDiskIdentity, key string) (StickyDiskRestore, error) {
-	ctx, span := tracer.Start(ctx, "github.stickydisk.restore")
+func (r *GitHubRunner) RequestStickyDiskCommit(ctx context.Context, identity StickyDiskIdentity, key, mountPath string) (StickyDiskSave, error) {
+	ctx, span := tracer.Start(ctx, "github.stickydisk.save_request")
 	defer span.End()
 	key, err := normalizeStickyDiskKey(key)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return StickyDiskRestore{}, err
+		return StickyDiskSave{}, err
 	}
-	span.SetAttributes(stickyDiskAttributes(identity, key)...)
+	mountPath, err = normalizeStickyDiskPath(mountPath)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return StickyDiskSave{}, err
+	}
+	span.SetAttributes(append(stickyDiskAttributes(identity, key), attribute.String("github.stickydisk.mount_path", mountPath))...)
+	if r.service == nil || r.service.PGX == nil {
+		return StickyDiskSave{}, fmt.Errorf("%w: database unavailable", ErrStickyDiskInvalid)
+	}
 
-	meta, archivePath, err := r.readStickyDiskMetadata(identity, key)
-	if errors.Is(err, os.ErrNotExist) {
-		span.SetAttributes(attribute.Bool("github.stickydisk.hit", false))
-		return StickyDiskRestore{}, ErrStickyDiskMissing
+	now := time.Now().UTC()
+	keyHash := stickyDiskKeyHash(key)
+	var save StickyDiskSave
+	err = r.service.PGX.QueryRow(ctx, `UPDATE execution_sticky_disk_mounts
+		SET save_requested = true,
+		    save_state = $1,
+		    requested_at = $2,
+		    started_at = NULL,
+		    completed_at = NULL,
+		    failure_reason = '',
+		    updated_at = $2
+		WHERE attempt_id = $3
+		  AND key_hash = $4
+		  AND mount_path = $5
+		RETURNING mount_id, requested_at`, stickyDiskStateRequested, now, identity.AttemptID, keyHash, mountPath).Scan(&save.CommitID, &save.RequestedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		err = fmt.Errorf("%w: sticky disk %s at %s was not provisioned before VM boot", ErrStickyDiskInvalid, keyHash, mountPath)
 	}
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return StickyDiskRestore{}, err
+		return StickyDiskSave{}, err
 	}
-	span.SetAttributes(
-		attribute.Bool("github.stickydisk.hit", true),
-		attribute.Int64("github.stickydisk.generation", meta.Generation),
-		attribute.Int64("github.stickydisk.size_bytes", meta.SizeBytes),
-		attribute.String("github.stickydisk.sha256", meta.SHA256),
-	)
-	return StickyDiskRestore{
-		Identity:    identity,
-		Generation:  meta.Generation,
-		ArchivePath: archivePath,
-		SizeBytes:   meta.SizeBytes,
-		SHA256:      meta.SHA256,
-	}, nil
+	save.Identity = identity
+	save.Key = key
+	save.MountPath = mountPath
+	span.SetAttributes(attribute.String("github.stickydisk.mount_id", save.CommitID.String()))
+	return save, nil
 }
 
-func (r *GitHubRunner) CommitStickyDisk(ctx context.Context, identity StickyDiskIdentity, key string, archive io.Reader) (StickyDiskCommit, error) {
-	ctx, span := tracer.Start(ctx, "github.stickydisk.commit")
+func (r *GitHubRunner) CommitPendingStickyDisks(ctx context.Context, item executionWorkItem, leaseID string) error {
+	ctx, span := tracer.Start(ctx, "github.stickydisk.commit_pending")
 	defer span.End()
-	key, err := normalizeStickyDiskKey(key)
+	span.SetAttributes(attribute.String("execution.id", item.ExecutionID.String()), attribute.String("attempt.id", item.AttemptID.String()))
+	if strings.TrimSpace(leaseID) == "" || r == nil || r.service == nil || r.service.PGX == nil || r.service.Orchestrator == nil {
+		span.SetAttributes(attribute.Bool("github.stickydisk.noop", true))
+		return nil
+	}
+	pending, err := r.pendingStickyDiskCommits(ctx, item.AttemptID)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return StickyDiskCommit{}, err
+		return err
 	}
-	span.SetAttributes(stickyDiskAttributes(identity, key)...)
-	dir := r.stickyDiskDir(identity, key)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return StickyDiskCommit{}, err
+	span.SetAttributes(attribute.Int("github.stickydisk.pending_count", len(pending)))
+	for _, commit := range pending {
+		if err := r.commitStickyDiskMount(ctx, item, leaseID, commit); err != nil {
+			if r.service.Logger != nil {
+				r.service.Logger.WarnContext(ctx, "sticky disk zfs commit failed", "mount_id", commit.MountID, "attempt_id", item.AttemptID, "key_hash", commit.KeyHash, "error", err)
+			}
+		}
 	}
+	return nil
+}
 
-	prev, _, err := r.readStickyDiskMetadata(identity, key)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return StickyDiskCommit{}, err
-	}
-	generation := prev.Generation + 1
-	tmp, err := os.CreateTemp(dir, ".archive-*.tmp")
+func (r *GitHubRunner) pendingStickyDiskCommits(ctx context.Context, attemptID uuid.UUID) ([]stickyDiskPendingCommit, error) {
+	rows, err := r.service.PGX.Query(ctx, `SELECT
+		m.mount_id, m.mount_name, m.key, m.key_hash, m.mount_path, m.base_generation, m.target_source_ref,
+		m.execution_id, m.attempt_id, m.allocation_id,
+		a.installation_id, a.repository_id, COALESCE(j.repository_full_name, ''),
+		COALESCE(b.github_job_id, a.requested_for_github_job_id), a.runner_name
+		FROM execution_sticky_disk_mounts m
+		JOIN github_runner_allocations a ON a.allocation_id = m.allocation_id
+		LEFT JOIN github_runner_job_bindings b ON b.allocation_id = a.allocation_id
+		LEFT JOIN github_workflow_jobs j ON j.github_job_id = COALESCE(b.github_job_id, a.requested_for_github_job_id)
+		WHERE m.attempt_id = $1 AND m.save_requested AND m.save_state = $2
+		ORDER BY m.requested_at, m.mount_name`, attemptID, stickyDiskStateRequested)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return StickyDiskCommit{}, err
+		return nil, err
 	}
-	tmpPath := tmp.Name()
-	defer func() { _ = os.Remove(tmpPath) }()
+	defer rows.Close()
+	out := []stickyDiskPendingCommit{}
+	for rows.Next() {
+		var commit stickyDiskPendingCommit
+		if err := rows.Scan(&commit.MountID, &commit.MountName, &commit.Key, &commit.KeyHash, &commit.MountPath, &commit.BaseGeneration, &commit.TargetSourceRef,
+			&commit.Identity.ExecutionID, &commit.Identity.AttemptID, &commit.Identity.AllocationID,
+			&commit.Identity.Installation, &commit.Identity.RepositoryID, &commit.Identity.RepositoryFullName,
+			&commit.Identity.GitHubJobID, &commit.Identity.RunnerName); err != nil {
+			return nil, err
+		}
+		out = append(out, commit)
+	}
+	return out, rows.Err()
+}
 
-	hash := sha256.New()
-	written, copyErr := io.Copy(tmp, io.TeeReader(archive, hash))
-	closeErr := tmp.Close()
-	if copyErr != nil {
-		span.RecordError(copyErr)
-		span.SetStatus(codes.Error, copyErr.Error())
-		return StickyDiskCommit{}, copyErr
+func (r *GitHubRunner) commitStickyDiskMount(ctx context.Context, item executionWorkItem, leaseID string, commit stickyDiskPendingCommit) error {
+	ctx, span := tracer.Start(ctx, "github.stickydisk.commit_zfs")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("github.stickydisk.mount_id", commit.MountID.String()),
+		attribute.String("github.stickydisk.key_hash", commit.KeyHash),
+		attribute.String("github.stickydisk.mount_name", commit.MountName),
+		attribute.String("github.stickydisk.mount_path", commit.MountPath),
+		attribute.String("github.stickydisk.target_source_ref", commit.TargetSourceRef),
+		attribute.String("lease.id", leaseID),
+	)
+	if started, err := r.markStickyDiskCommitRunning(ctx, commit.MountID); err != nil || !started {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+		span.SetAttributes(attribute.Bool("github.stickydisk.already_claimed", true))
+		return nil
 	}
-	if closeErr != nil {
-		span.RecordError(closeErr)
-		span.SetStatus(codes.Error, closeErr.Error())
-		return StickyDiskCommit{}, closeErr
-	}
-	if written == 0 {
-		err := fmt.Errorf("%w: empty archive", ErrStickyDiskInvalid)
+
+	result, err := r.service.Orchestrator.CommitFilesystemMount(ctx, leaseID, item.AttemptID.String()+":stickydisk:"+commit.MountName, commit.MountName, commit.TargetSourceRef)
+	if err != nil {
+		_ = r.markStickyDiskCommitFinished(detachedContext(ctx), commit.MountID, stickyDiskStateFailed, "commit_filesystem_mount_failed: "+err.Error(), 0, "")
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return StickyDiskCommit{}, err
+		return err
 	}
-	sum := hex.EncodeToString(hash.Sum(nil))
-	archivePath := filepath.Join(dir, stickyDiskArchiveFilename)
-	if err := os.Rename(tmpPath, archivePath); err != nil {
+	generation := commit.BaseGeneration + 1
+	if err := r.promoteStickyDiskGeneration(ctx, commit, generation); err != nil {
+		_ = r.markStickyDiskCommitFinished(detachedContext(ctx), commit.MountID, stickyDiskStateFailed, "promote_generation_failed: "+err.Error(), 0, result.Snapshot)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return StickyDiskCommit{}, err
+		return err
 	}
-	meta := stickyDiskMetadata{
-		Key:          key,
-		Generation:   generation,
-		SizeBytes:    written,
-		SHA256:       sum,
-		ExecutionID:  identity.ExecutionID.String(),
-		AttemptID:    identity.AttemptID.String(),
-		AllocationID: identity.AllocationID.String(),
-		GitHubJobID:  identity.GitHubJobID,
-		RunnerName:   identity.RunnerName,
-		CommittedAt:  time.Now().UTC(),
-	}
-	if err := writeStickyDiskMetadata(filepath.Join(dir, stickyDiskMetaFilename), meta); err != nil {
+	if err := r.markStickyDiskCommitFinished(ctx, commit.MountID, stickyDiskStateCommitted, "", generation, result.Snapshot); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return StickyDiskCommit{}, err
+		return err
 	}
 	span.SetAttributes(
+		attribute.String("github.stickydisk.state", stickyDiskStateCommitted),
 		attribute.Int64("github.stickydisk.generation", generation),
-		attribute.Int64("github.stickydisk.size_bytes", written),
-		attribute.String("github.stickydisk.sha256", sum),
+		attribute.String("github.stickydisk.snapshot", result.Snapshot),
 	)
-	return StickyDiskCommit{
-		Identity:   identity,
-		Generation: generation,
-		SizeBytes:  written,
-		SHA256:     sum,
-	}, nil
+	return nil
 }
 
-func (r *GitHubRunner) stickyDiskRoot() string {
-	root := strings.TrimSpace(r.service.StickyDiskDir)
-	if root == "" {
-		return defaultStickyDiskDir
-	}
-	return root
-}
-
-func (r *GitHubRunner) stickyDiskDir(identity StickyDiskIdentity, key string) string {
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%d:%d:%s", identity.Installation, identity.RepositoryID, key)))
-	return filepath.Join(r.stickyDiskRoot(), hex.EncodeToString(sum[:]))
-}
-
-func (r *GitHubRunner) readStickyDiskMetadata(identity StickyDiskIdentity, key string) (stickyDiskMetadata, string, error) {
-	dir := r.stickyDiskDir(identity, key)
-	data, err := os.ReadFile(filepath.Join(dir, stickyDiskMetaFilename))
+func (r *GitHubRunner) markStickyDiskCommitRunning(ctx context.Context, mountID uuid.UUID) (bool, error) {
+	tag, err := r.service.PGX.Exec(ctx, `UPDATE execution_sticky_disk_mounts
+		SET save_state = $1, started_at = $2, updated_at = $2
+		WHERE mount_id = $3 AND save_state = $4`, stickyDiskStateRunning, time.Now().UTC(), mountID, stickyDiskStateRequested)
 	if err != nil {
-		return stickyDiskMetadata{}, "", err
+		return false, err
 	}
-	var meta stickyDiskMetadata
-	if err := json.Unmarshal(data, &meta); err != nil {
-		return stickyDiskMetadata{}, "", err
-	}
-	if meta.Key != key || meta.Generation <= 0 || meta.SHA256 == "" || meta.SizeBytes <= 0 {
-		return stickyDiskMetadata{}, "", fmt.Errorf("%w: invalid metadata", ErrStickyDiskInvalid)
-	}
-	archivePath := filepath.Join(dir, stickyDiskArchiveFilename)
-	if _, err := os.Stat(archivePath); err != nil {
-		return stickyDiskMetadata{}, "", err
-	}
-	return meta, archivePath, nil
+	return tag.RowsAffected() == 1, nil
 }
 
-func writeStickyDiskMetadata(path string, meta stickyDiskMetadata) error {
-	data, err := json.MarshalIndent(meta, "", "  ")
+func (r *GitHubRunner) markStickyDiskCommitFinished(ctx context.Context, mountID uuid.UUID, state, reason string, generation int64, snapshot string) error {
+	if len(reason) > 2048 {
+		reason = reason[:2048]
+	}
+	_, err := r.service.PGX.Exec(ctx, `UPDATE execution_sticky_disk_mounts
+		SET save_state = $1,
+		    failure_reason = $2,
+		    committed_generation = $3,
+		    committed_snapshot = $4,
+		    completed_at = $5,
+		    updated_at = $5
+		WHERE mount_id = $6`, state, reason, generation, snapshot, time.Now().UTC(), mountID)
+	return err
+}
+
+func (r *GitHubRunner) promoteStickyDiskGeneration(ctx context.Context, commit stickyDiskPendingCommit, generation int64) error {
+	tx, err := r.service.PGX.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	data = append(data, '\n')
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".meta-*.tmp")
+	defer func() { _ = tx.Rollback(ctx) }()
+	var current int64
+	err = tx.QueryRow(ctx, `SELECT current_generation
+		FROM github_sticky_disk_generations
+		WHERE installation_id = $1 AND repository_id = $2 AND key_hash = $3
+		FOR UPDATE`, commit.Identity.Installation, commit.Identity.RepositoryID, commit.KeyHash).Scan(&current)
+	if errors.Is(err, pgx.ErrNoRows) {
+		current = 0
+	} else if err != nil {
+		return err
+	}
+	if current != commit.BaseGeneration {
+		return fmt.Errorf("sticky disk generation moved from %d to %d while execution was running", commit.BaseGeneration, current)
+	}
+	now := time.Now().UTC()
+	_, err = tx.Exec(ctx, `INSERT INTO github_sticky_disk_generations (
+		installation_id, repository_id, key_hash, key, current_generation, current_source_ref, created_at, updated_at
+	) VALUES ($1,$2,$3,$4,$5,$6,$7,$7)
+	ON CONFLICT (installation_id, repository_id, key_hash) DO UPDATE SET
+		key = EXCLUDED.key,
+		current_generation = EXCLUDED.current_generation,
+		current_source_ref = EXCLUDED.current_source_ref,
+		updated_at = EXCLUDED.updated_at`, commit.Identity.Installation, commit.Identity.RepositoryID, commit.KeyHash, commit.Key, generation, commit.TargetSourceRef, now)
 	if err != nil {
 		return err
 	}
-	tmpPath := tmp.Name()
-	defer func() { _ = os.Remove(tmpPath) }()
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return err
+	return tx.Commit(ctx)
+}
+
+func (r *GitHubRunner) currentStickyDiskGeneration(ctx context.Context, installationID, repositoryID int64, key, keyHash string) (int64, string, error) {
+	var generation int64
+	var sourceRef string
+	err := r.service.PGX.QueryRow(ctx, `SELECT current_generation, current_source_ref
+		FROM github_sticky_disk_generations
+		WHERE installation_id = $1 AND repository_id = $2 AND key_hash = $3`, installationID, repositoryID, keyHash).Scan(&generation, &sourceRef)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, stickyDiskEmptySourceRef, nil
 	}
-	if err := tmp.Close(); err != nil {
-		return err
+	if err != nil {
+		return 0, "", err
 	}
-	return os.Rename(tmpPath, path)
+	if strings.TrimSpace(sourceRef) == "" {
+		sourceRef = stickyDiskEmptySourceRef
+	}
+	return generation, sourceRef, nil
+}
+
+func stickyDiskMountSpec(allocationID uuid.UUID, attemptID uuid.UUID, idx int, installationID, repositoryID int64, key, mountPath string, generation int64, sourceRef string) StickyDiskMountSpec {
+	keyHash := stickyDiskKeyHash(key)
+	nextGeneration := generation + 1
+	shortHash := keyHash
+	if len(shortHash) > stickyDiskTargetRefHashBytes {
+		shortHash = shortHash[:stickyDiskTargetRefHashBytes]
+	}
+	attemptPart := strings.ReplaceAll(attemptID.String(), "-", "")
+	if len(attemptPart) > 12 {
+		attemptPart = attemptPart[:12]
+	}
+	_ = installationID
+	_ = repositoryID
+	return StickyDiskMountSpec{
+		MountID:         uuid.New(),
+		AllocationID:    allocationID,
+		MountName:       fmt.Sprintf("sticky-%02d", idx),
+		Key:             key,
+		KeyHash:         keyHash,
+		MountPath:       mountPath,
+		BaseGeneration:  generation,
+		SourceRef:       sourceRef,
+		TargetSourceRef: fmt.Sprintf("sticky-%s-%s-g%d", shortHash, attemptPart, nextGeneration),
+	}
+}
+
+func stickyDiskFilesystemMount(spec StickyDiskMountSpec) vmorchestrator.FilesystemMount {
+	return vmorchestrator.FilesystemMount{
+		Name:      spec.MountName,
+		SourceRef: spec.SourceRef,
+		MountPath: spec.MountPath,
+		FSType:    "ext4",
+		ReadOnly:  false,
+	}
 }
 
 func normalizeStickyDiskKey(key string) (string, error) {
@@ -323,6 +422,46 @@ func normalizeStickyDiskKey(key string) (string, error) {
 		return "", fmt.Errorf("%w: key contains control characters", ErrStickyDiskInvalid)
 	}
 	return key, nil
+}
+
+func normalizeStickyDiskPath(mountPath string) (string, error) {
+	mountPath = filepath.Clean(strings.TrimSpace(mountPath))
+	if mountPath == "." || mountPath == "" {
+		return "", fmt.Errorf("%w: path is required", ErrStickyDiskInvalid)
+	}
+	if !filepath.IsAbs(mountPath) {
+		return "", fmt.Errorf("%w: path must be absolute", ErrStickyDiskInvalid)
+	}
+	if mountPath == "/" {
+		return "", fmt.Errorf("%w: root path cannot be sticky", ErrStickyDiskInvalid)
+	}
+	if strings.HasPrefix(mountPath, "/proc") || strings.HasPrefix(mountPath, "/sys") || strings.HasPrefix(mountPath, "/dev") || strings.HasPrefix(mountPath, "/run") {
+		return "", fmt.Errorf("%w: path is not mountable", ErrStickyDiskInvalid)
+	}
+	if len([]byte(mountPath)) > stickyDiskMaxPathBytes {
+		return "", fmt.Errorf("%w: path exceeds %d bytes", ErrStickyDiskInvalid, stickyDiskMaxPathBytes)
+	}
+	if strings.ContainsAny(mountPath, "\x00\r\n") {
+		return "", fmt.Errorf("%w: path contains control characters", ErrStickyDiskInvalid)
+	}
+	return mountPath, nil
+}
+
+func resolveStickyDiskPath(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", fmt.Errorf("%w: path is required", ErrStickyDiskInvalid)
+	}
+	switch {
+	case raw == "~":
+		return normalizeStickyDiskPath(stickyDiskRunnerHome)
+	case strings.HasPrefix(raw, "~/"):
+		return normalizeStickyDiskPath(filepath.Join(stickyDiskRunnerHome, strings.TrimPrefix(raw, "~/")))
+	case filepath.IsAbs(raw):
+		return normalizeStickyDiskPath(raw)
+	default:
+		return normalizeStickyDiskPath(filepath.Join(stickyDiskWorkspaceRoot, raw))
+	}
 }
 
 func stickyDiskAttributes(identity StickyDiskIdentity, key string) []attribute.KeyValue {
@@ -341,4 +480,9 @@ func stickyDiskAttributes(identity StickyDiskIdentity, key string) []attribute.K
 func stickyDiskKeyHash(key string) string {
 	sum := sha256.Sum256([]byte(key))
 	return hex.EncodeToString(sum[:])
+}
+
+func parseStickyDiskGeneration(value string) int64 {
+	parsed, _ := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+	return parsed
 }

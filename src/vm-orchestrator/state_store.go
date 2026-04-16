@@ -343,12 +343,13 @@ func (s *hostStateStore) createLease(ctx context.Context, snapshot leaseSnapshot
 		return fmt.Errorf("insert lease %s: %w", snapshot.LeaseID, err)
 	}
 	if err := insertLeaseEventTx(ctx, tx, snapshot.LeaseID, LeaseEventLeaseAcquired, "", map[string]string{
-		"vmresources.vcpus":        fmt.Sprintf("%d", snapshot.Spec.Resources.VCPUs),
-		"vmresources.memory_mib":   fmt.Sprintf("%d", snapshot.Spec.Resources.MemoryMiB),
+		"vmresources.vcpus":         fmt.Sprintf("%d", snapshot.Spec.Resources.VCPUs),
+		"vmresources.memory_mib":    fmt.Sprintf("%d", snapshot.Spec.Resources.MemoryMiB),
 		"vmresources.root_disk_gib": fmt.Sprintf("%d", snapshot.Spec.Resources.RootDiskGiB),
-		"vmresources.kernel_image": string(snapshot.Spec.Resources.KernelImage),
-		"trust_class":              snapshot.TrustClass,
-		"expires_at":               snapshot.ExpiresAt.Format(time.RFC3339Nano),
+		"vmresources.kernel_image":  string(snapshot.Spec.Resources.KernelImage),
+		"filesystem.mount_count":    fmt.Sprintf("%d", len(snapshot.Spec.FilesystemMounts)),
+		"trust_class":               snapshot.TrustClass,
+		"expires_at":                snapshot.ExpiresAt.Format(time.RFC3339Nano),
 	}, now.UnixNano()); err != nil {
 		return err
 	}

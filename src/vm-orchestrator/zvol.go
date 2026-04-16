@@ -34,6 +34,22 @@ func zfsSnapshotExists(ctx context.Context, snapshot string) (bool, error) {
 	return true, nil
 }
 
+// zfsDatasetExists checks whether a ZFS filesystem or volume exists.
+func zfsDatasetExists(ctx context.Context, dataset string) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "zfs", "list", "-H", dataset)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		if strings.Contains(string(out), "does not exist") {
+			return false, nil
+		}
+		return false, fmt.Errorf("zfs list %s: %w", dataset, err)
+	}
+	return true, nil
+}
+
 // zfsWritten returns bytes written to a dataset since it was cloned.
 func zfsWritten(ctx context.Context, dataset string) (uint64, error) {
 	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)

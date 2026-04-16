@@ -96,16 +96,19 @@ type GitHubWorkflowJobWebhook struct {
 		HTMLURL  string `json:"html_url"`
 	} `json:"repository"`
 	WorkflowJob struct {
-		ID          int64     `json:"id"`
-		RunID       int64     `json:"run_id"`
-		Name        string    `json:"name"`
-		Status      string    `json:"status"`
-		Conclusion  string    `json:"conclusion"`
-		Labels      []string  `json:"labels"`
-		RunnerID    int64     `json:"runner_id"`
-		RunnerName  string    `json:"runner_name"`
-		StartedAt   time.Time `json:"started_at"`
-		CompletedAt time.Time `json:"completed_at"`
+		ID           int64     `json:"id"`
+		RunID        int64     `json:"run_id"`
+		Name         string    `json:"name"`
+		Status       string    `json:"status"`
+		Conclusion   string    `json:"conclusion"`
+		Labels       []string  `json:"labels"`
+		RunnerID     int64     `json:"runner_id"`
+		RunnerName   string    `json:"runner_name"`
+		HeadSHA      string    `json:"head_sha"`
+		HeadBranch   string    `json:"head_branch"`
+		WorkflowName string    `json:"workflow_name"`
+		StartedAt    time.Time `json:"started_at"`
+		CompletedAt  time.Time `json:"completed_at"`
 	} `json:"workflow_job"`
 }
 
@@ -151,6 +154,9 @@ type githubQueuedJob struct {
 	RepositoryID       int64
 	RepositoryFullName string
 	RunID              int64
+	JobName            string
+	HeadSHA            string
+	HeadBranch         string
 	Labels             []string
 	OrgID              uint64
 	AccountLogin       string
@@ -164,6 +170,10 @@ type githubAllocation struct {
 	RunnerName         string
 	GitHubRunnerID     int64
 	RequestedJobID     int64
+	RunID              int64
+	JobName            string
+	HeadSHA            string
+	HeadBranch         string
 	ExecutionID        uuid.UUID
 	AttemptID          uuid.UUID
 	State              string
@@ -328,10 +338,14 @@ func (r *GitHubRunner) HandleWebhook(ctx context.Context, eventName string, deli
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	_, err = tx.Exec(ctx, `INSERT INTO github_workflow_jobs (
-		github_job_id, installation_id, repository_id, repository_full_name, run_id,
+		github_job_id, installation_id, repository_id, repository_full_name, run_id, job_name, head_sha, head_branch, workflow_name,
 		status, conclusion, labels_json, runner_id, runner_name, started_at, completed_at, last_webhook_delivery, updated_at
-	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
 	ON CONFLICT (github_job_id) DO UPDATE SET
+		job_name = EXCLUDED.job_name,
+		head_sha = COALESCE(NULLIF(EXCLUDED.head_sha, ''), github_workflow_jobs.head_sha),
+		head_branch = COALESCE(NULLIF(EXCLUDED.head_branch, ''), github_workflow_jobs.head_branch),
+		workflow_name = COALESCE(NULLIF(EXCLUDED.workflow_name, ''), github_workflow_jobs.workflow_name),
 		status = EXCLUDED.status,
 		conclusion = EXCLUDED.conclusion,
 		labels_json = EXCLUDED.labels_json,
@@ -341,7 +355,7 @@ func (r *GitHubRunner) HandleWebhook(ctx context.Context, eventName string, deli
 		completed_at = COALESCE(EXCLUDED.completed_at, github_workflow_jobs.completed_at),
 		last_webhook_delivery = EXCLUDED.last_webhook_delivery,
 		updated_at = EXCLUDED.updated_at`,
-		event.WorkflowJob.ID, event.Installation.ID, event.Repository.ID, event.Repository.FullName, event.WorkflowJob.RunID,
+		event.WorkflowJob.ID, event.Installation.ID, event.Repository.ID, event.Repository.FullName, event.WorkflowJob.RunID, event.WorkflowJob.Name, event.WorkflowJob.HeadSHA, event.WorkflowJob.HeadBranch, event.WorkflowJob.WorkflowName,
 		status, event.WorkflowJob.Conclusion, string(labels), event.WorkflowJob.RunnerID, event.WorkflowJob.RunnerName,
 		nullableTime(event.WorkflowJob.StartedAt), nullableTime(event.WorkflowJob.CompletedAt), deliveryID, now)
 	if err != nil {
@@ -455,6 +469,12 @@ func (r *GitHubRunner) AllocateRunner(ctx context.Context, allocationID uuid.UUI
 	if allocation.State == "vm_submitted" || allocation.State == "assigned" || allocation.State == "cleaned" {
 		return nil
 	}
+	attemptID := uuid.New()
+	stickyMounts, err := r.prepareStickyDiskMounts(ctx, allocation, attemptID)
+	if err != nil {
+		_ = r.setAllocationState(ctx, allocationID, "failed", "sticky_disk_compile_failed")
+		return err
+	}
 	if err := r.setAllocationState(ctx, allocationID, "jit_creating", ""); err != nil {
 		return err
 	}
@@ -485,6 +505,8 @@ func (r *GitHubRunner) AllocateRunner(ctx context.Context, allocationID uuid.UUI
 		RunCommand:         githubRunnerCommand(),
 		MaxWallSeconds:     uint64((3 * time.Hour).Seconds()),
 		Resources:          allocation.Resources,
+		AttemptID:          attemptID,
+		StickyDiskMounts:   stickyMounts,
 		GitHubAllocationID: allocationID,
 		GitHubJITConfig:    jit.EncodedJITConfig,
 	})
@@ -706,14 +728,14 @@ func (r *GitHubRunner) ConsumeJITConfig(ctx context.Context, token string) (stri
 
 func (r *GitHubRunner) loadQueuedJob(ctx context.Context, githubJobID int64) (githubQueuedJob, error) {
 	row := r.service.PGX.QueryRow(ctx, `SELECT
-		j.github_job_id, j.installation_id, j.repository_id, j.repository_full_name, j.run_id, j.labels_json,
+		j.github_job_id, j.installation_id, j.repository_id, j.repository_full_name, j.run_id, j.job_name, j.head_sha, j.head_branch, j.labels_json,
 		i.org_id, i.account_login
 		FROM github_workflow_jobs j
 		JOIN github_installations i ON i.installation_id = j.installation_id AND i.active
 		WHERE j.github_job_id = $1 AND j.status = 'queued'`, githubJobID)
 	var job githubQueuedJob
 	var labelsRaw []byte
-	if err := row.Scan(&job.GitHubJobID, &job.InstallationID, &job.RepositoryID, &job.RepositoryFullName, &job.RunID, &labelsRaw, &job.OrgID, &job.AccountLogin); err != nil {
+	if err := row.Scan(&job.GitHubJobID, &job.InstallationID, &job.RepositoryID, &job.RepositoryFullName, &job.RunID, &job.JobName, &job.HeadSHA, &job.HeadBranch, &labelsRaw, &job.OrgID, &job.AccountLogin); err != nil {
 		return githubQueuedJob{}, err
 	}
 	_ = json.Unmarshal(labelsRaw, &job.Labels)
@@ -763,7 +785,7 @@ func (r *GitHubRunner) activeAllocationForJob(ctx context.Context, githubJobID i
 func (r *GitHubRunner) loadAllocation(ctx context.Context, allocationID uuid.UUID) (githubAllocation, error) {
 	row := r.service.PGX.QueryRow(ctx, `SELECT
 		a.allocation_id, a.installation_id, a.repository_id, a.runner_class, a.runner_name,
-		a.github_runner_id, a.requested_for_github_job_id, COALESCE(a.execution_id, '00000000-0000-0000-0000-000000000000'::uuid),
+		a.github_runner_id, a.requested_for_github_job_id, COALESCE(j.run_id, 0), COALESCE(j.job_name, ''), COALESCE(j.head_sha, ''), COALESCE(j.head_branch, ''), COALESCE(a.execution_id, '00000000-0000-0000-0000-000000000000'::uuid),
 		COALESCE(a.attempt_id, '00000000-0000-0000-0000-000000000000'::uuid), a.state,
 		i.org_id, i.account_login, COALESCE(j.repository_full_name, ''),
 		c.product_id, c.vcpus, c.memory_mib, c.rootfs_gib
@@ -774,7 +796,7 @@ func (r *GitHubRunner) loadAllocation(ctx context.Context, allocationID uuid.UUI
 		WHERE a.allocation_id = $1`, allocationID)
 	var out githubAllocation
 	var vcpus, memoryMiB, rootfsGiB int
-	if err := row.Scan(&out.AllocationID, &out.InstallationID, &out.RepositoryID, &out.RunnerClass, &out.RunnerName, &out.GitHubRunnerID, &out.RequestedJobID, &out.ExecutionID, &out.AttemptID, &out.State, &out.OrgID, &out.AccountLogin, &out.RepositoryFullName, &out.ProductID, &vcpus, &memoryMiB, &rootfsGiB); err != nil {
+	if err := row.Scan(&out.AllocationID, &out.InstallationID, &out.RepositoryID, &out.RunnerClass, &out.RunnerName, &out.GitHubRunnerID, &out.RequestedJobID, &out.RunID, &out.JobName, &out.HeadSHA, &out.HeadBranch, &out.ExecutionID, &out.AttemptID, &out.State, &out.OrgID, &out.AccountLogin, &out.RepositoryFullName, &out.ProductID, &vcpus, &memoryMiB, &rootfsGiB); err != nil {
 		return githubAllocation{}, err
 	}
 	out.Resources = apiwire.VMResources{VCPUs: uint32(vcpus), MemoryMiB: uint32(memoryMiB), RootDiskGiB: uint32(rootfsGiB), KernelImage: apiwire.KernelImageDefault}

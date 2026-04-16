@@ -84,6 +84,16 @@ type startExecReply struct {
 	startedAt time.Time
 	err       error
 }
+type commitFilesystemMountCmd struct {
+	ctx             context.Context
+	mountName       string
+	targetSourceRef string
+	reply           chan commitFilesystemMountReply
+}
+type commitFilesystemMountReply struct {
+	result FilesystemCommitResult
+	err    error
+}
 type cancelExecCmd struct {
 	execID string
 	reason string
@@ -105,6 +115,9 @@ func NewAPIServer(cfg Config, logger *slog.Logger) (*APIServer, error) {
 	base := DefaultConfig()
 	if cfg.Pool != "" {
 		base = cfg
+	}
+	if base.ImageDataset == "" {
+		base.ImageDataset = "images"
 	}
 	if logger == nil {
 		logger = slog.Default()
@@ -475,6 +488,54 @@ func (s *APIServer) WaitExec(ctx context.Context, req *vmrpc.WaitExecRequest) (*
 	}
 }
 
+func (s *APIServer) CommitFilesystemMount(ctx context.Context, req *vmrpc.CommitFilesystemMountRequest) (*vmrpc.CommitFilesystemMountResponse, error) {
+	ctx, span := tracer.Start(ctx, "rpc.CommitFilesystemMount")
+	defer span.End()
+	leaseID := strings.TrimSpace(req.GetLeaseId())
+	mountName := strings.TrimSpace(req.GetMountName())
+	targetSourceRef := strings.TrimSpace(req.GetTargetSourceRef())
+	key := strings.TrimSpace(req.GetIdempotencyKey())
+	if leaseID == "" || mountName == "" || targetSourceRef == "" || key == "" {
+		return nil, status.Error(codes.InvalidArgument, "lease_id, mount_name, target_source_ref, and idempotency_key are required")
+	}
+	if !filesystemRefPattern.MatchString(targetSourceRef) {
+		return nil, status.Error(codes.InvalidArgument, "target_source_ref is invalid")
+	}
+	scope := "commit_filesystem_mount:" + leaseID
+	if prior, ok, err := s.state.getIdempotency(ctx, scope, key); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	} else if ok {
+		resp := &vmrpc.CommitFilesystemMountResponse{}
+		if err := json.Unmarshal([]byte(prior), resp); err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		return resp, nil
+	}
+	actor, ok := s.lookupActor(leaseID)
+	if !ok {
+		return nil, status.Error(codes.NotFound, "lease not live")
+	}
+	reply := make(chan commitFilesystemMountReply, 1)
+	actor.send(commitFilesystemMountCmd{ctx: ctx, mountName: mountName, targetSourceRef: targetSourceRef, reply: reply})
+	out := <-reply
+	if out.err != nil {
+		span.RecordError(out.err)
+		span.SetStatus(otelcodes.Error, out.err.Error())
+		return nil, status.Error(codes.FailedPrecondition, out.err.Error())
+	}
+	resp := &vmrpc.CommitFilesystemMountResponse{
+		LeaseId:           out.result.LeaseID,
+		MountName:         out.result.MountName,
+		TargetSourceRef:   out.result.TargetSourceRef,
+		Snapshot:          out.result.Snapshot,
+		CommittedAtUnixNs: uint64(out.result.CommittedAt.UnixNano()),
+	}
+	data, _ := json.Marshal(resp)
+	_ = s.state.putIdempotency(context.Background(), scope, key, string(data))
+	span.SetAttributes(attribute.String("lease.id", leaseID), attribute.String("filesystem.name", mountName), attribute.String("filesystem.target_source_ref", targetSourceRef))
+	return resp, nil
+}
+
 func (s *APIServer) SaveCheckpoint(ctx context.Context, req *vmrpc.SaveCheckpointRequest) (*vmrpc.SaveCheckpointResponse, error) {
 	_, span := tracer.Start(ctx, "rpc.SaveCheckpoint")
 	defer span.End()
@@ -550,6 +611,8 @@ func (a *vmActor) run() {
 				return
 			case startExecCmd:
 				msg.reply <- a.handleStartExec(msg.ctx, msg.execID, msg.spec)
+			case commitFilesystemMountCmd:
+				msg.reply <- a.handleCommitFilesystemMount(msg.ctx, msg.mountName, msg.targetSourceRef)
 			case cancelExecCmd:
 				msg.reply <- a.handleCancelExec(msg.execID, msg.reason)
 			case execDoneCmd:
@@ -693,6 +756,26 @@ func (a *vmActor) handleStartExec(callerCtx context.Context, execID string, spec
 		return startExecReply{err: err}
 	}
 	return startExecReply{startedAt: startedAt}
+}
+
+func (a *vmActor) handleCommitFilesystemMount(callerCtx context.Context, mountName, targetSourceRef string) commitFilesystemMountReply {
+	if a.state != LeaseStateReady || a.runtime == nil {
+		return commitFilesystemMountReply{err: fmt.Errorf("lease is not ready")}
+	}
+	if a.active != nil {
+		return commitFilesystemMountReply{err: fmt.Errorf("lease has an active exec")}
+	}
+	commitCtx := detachedTraceContext(callerCtx)
+	result, err := New(a.server.cfg, a.server.logger).CommitFilesystemMount(commitCtx, a.runtime, mountName, targetSourceRef)
+	if err != nil {
+		return commitFilesystemMountReply{err: err}
+	}
+	_ = a.server.state.appendLeaseEvent(context.Background(), a.leaseID, LeaseEventCheckpointSaved, "", map[string]string{
+		"filesystem_mount":  result.MountName,
+		"target_source_ref": result.TargetSourceRef,
+		"snapshot":          result.Snapshot,
+	})
+	return commitFilesystemMountReply{result: result}
 }
 
 func (a *vmActor) handleCancelExec(execID, reason string) bool {

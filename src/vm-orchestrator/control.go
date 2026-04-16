@@ -322,13 +322,15 @@ func (c *guestControl) awaitHello(ctx context.Context) (vmproto.Hello, error) {
 	return hello, nil
 }
 
-func (c *guestControl) initLease(ctx context.Context, leaseID string, network vmproto.NetworkConfig) error {
+func (c *guestControl) initLease(ctx context.Context, leaseID string, network vmproto.NetworkConfig, filesystems []vmproto.FilesystemMount) error {
 	_, endSpan := startStepSpan(ctx, "vmorchestrator.guest.lease_init",
 		attribute.String("lease.id", leaseID),
+		attribute.Int("filesystem.mount_count", len(filesystems)),
 	)
 	err := c.send(vmproto.TypeLeaseInit, vmproto.LeaseInit{
 		LeaseID:             leaseID,
 		Network:             network,
+		Filesystems:         filesystems,
 		HostWallclockUnixNS: time.Now().UnixNano(),
 		ProtocolVersion:     vmproto.ProtocolVersion,
 	})
@@ -484,6 +486,52 @@ func (c *guestControl) exec(ctx context.Context, leaseID string, spec ExecSpec, 
 				vmproto.TypeFatal,
 				vmproto.TypeExecResult,
 			)
+		}
+	}
+}
+
+func (c *guestControl) sealFilesystem(ctx context.Context, leaseID, mountName, mountPath string) error {
+	if c == nil {
+		return fmt.Errorf("guest control is not available")
+	}
+	if err := c.send(vmproto.TypeFilesystemSealRequest, vmproto.FilesystemSealRequest{
+		LeaseID:         leaseID,
+		Name:            mountName,
+		ProtocolVersion: vmproto.ProtocolVersion,
+	}); err != nil {
+		return fmt.Errorf("send filesystem seal request: %w", err)
+	}
+	for {
+		env, err := c.recv()
+		if err != nil {
+			return fmt.Errorf("read filesystem seal result: %w", err)
+		}
+		switch env.Type {
+		case vmproto.TypeFilesystemSealResult:
+			msg, err := vmproto.DecodePayload[vmproto.FilesystemSealResult](env)
+			if err != nil {
+				return err
+			}
+			if msg.LeaseID != leaseID || msg.Name != mountName {
+				return guestProtocolError("await_filesystem_seal_result", "result mismatch lease=%s mount=%s", msg.LeaseID, msg.Name)
+			}
+			if !msg.Sealed {
+				if strings.TrimSpace(msg.Error) == "" {
+					return fmt.Errorf("guest failed to seal filesystem %s at %s", mountName, mountPath)
+				}
+				return fmt.Errorf("guest failed to seal filesystem %s at %s: %s", mountName, mountPath, strings.TrimSpace(msg.Error))
+			}
+			return nil
+		case vmproto.TypeHeartbeat:
+			continue
+		case vmproto.TypeFatal:
+			msg, decodeErr := vmproto.DecodePayload[vmproto.Fatal](env)
+			if decodeErr != nil {
+				return decodeErr
+			}
+			return fmt.Errorf("guest fatal: %s", strings.TrimSpace(msg.Message))
+		default:
+			return unexpectedGuestControlFrame("await_filesystem_seal_result", env.Type, vmproto.TypeFilesystemSealResult, vmproto.TypeHeartbeat, vmproto.TypeFatal)
 		}
 	}
 }

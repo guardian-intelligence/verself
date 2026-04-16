@@ -1,0 +1,33 @@
+name: Forge Metal OIDC Tracer
+description: Request and verify a GitHub Actions OIDC token on a Forge Metal runner.
+inputs:
+  audience:
+    description: Audience to request from GitHub's OIDC token endpoint.
+    required: false
+    default: forge-metal-oidc-tracer
+  expected-repository:
+    description: Expected owner/repository claim.
+    required: false
+  expected-ref:
+    description: Expected Git ref claim.
+    required: false
+  expected-sha:
+    description: Expected commit SHA claim.
+    required: false
+  expected-run-id:
+    description: Expected GitHub Actions run ID claim.
+    required: false
+outputs:
+  issuer:
+    description: OIDC token issuer.
+  subject:
+    description: OIDC token subject.
+  audience:
+    description: Verified OIDC token audience.
+  repository:
+    description: Verified repository claim.
+  runner-environment:
+    description: GitHub runner_environment claim when present.
+runs:
+  using: node24
+  main: dist/index.js

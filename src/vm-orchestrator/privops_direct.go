@@ -65,6 +65,82 @@ func (DirectPrivOps) ZFSDestroy(ctx context.Context, dataset string) error {
 	return nil
 }
 
+func (DirectPrivOps) ZFSDestroyRecursive(ctx context.Context, dataset string) error {
+	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "zfs", "destroy", "-R", dataset)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("zfs destroy -R %s: %s: %w", dataset, strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+func (DirectPrivOps) ZFSEnsureFilesystem(ctx context.Context, dataset string) error {
+	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
+	defer cancel()
+	if strings.TrimSpace(dataset) == "" || strings.Contains(dataset, "@") {
+		return fmt.Errorf("zfs filesystem dataset is invalid: %s", dataset)
+	}
+	exists, err := zfsDatasetExists(ctx, dataset)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+	cmd := exec.CommandContext(ctx, "zfs", "create", "-p", dataset)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("zfs create -p %s: %s: %w", dataset, strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+func (DirectPrivOps) ZFSSendReceive(ctx context.Context, snapshot, target string) error {
+	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
+	defer cancel()
+	if strings.TrimSpace(snapshot) == "" || !strings.Contains(snapshot, "@") {
+		return fmt.Errorf("zfs send snapshot is invalid: %s", snapshot)
+	}
+	if strings.TrimSpace(target) == "" || strings.Contains(target, "@") {
+		return fmt.Errorf("zfs receive target is invalid: %s", target)
+	}
+	send := exec.CommandContext(ctx, "zfs", "send", snapshot)
+	recv := exec.CommandContext(ctx, "zfs", "receive", "-u", "-F", target)
+	pipe, err := send.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("zfs send stdout pipe: %w", err)
+	}
+	recv.Stdin = pipe
+	send.Stderr = new(strings.Builder)
+	recv.Stderr = new(strings.Builder)
+	if err := recv.Start(); err != nil {
+		return fmt.Errorf("start zfs receive %s: %w", target, err)
+	}
+	if err := send.Start(); err != nil {
+		_ = recv.Process.Kill()
+		return fmt.Errorf("start zfs send %s: %w", snapshot, err)
+	}
+	sendErr := send.Wait()
+	if closeErr := pipe.Close(); closeErr != nil && sendErr == nil {
+		sendErr = closeErr
+	}
+	recvErr := recv.Wait()
+	if sendErr != nil || recvErr != nil {
+		sendStderr := ""
+		recvStderr := ""
+		if b, ok := send.Stderr.(*strings.Builder); ok {
+			sendStderr = b.String()
+		}
+		if b, ok := recv.Stderr.(*strings.Builder); ok {
+			recvStderr = b.String()
+		}
+		return fmt.Errorf("zfs send %s | receive %s failed: send=%v %s receive=%v %s", snapshot, target, sendErr, strings.TrimSpace(sendStderr), recvErr, strings.TrimSpace(recvStderr))
+	}
+	return nil
+}
+
 func (DirectPrivOps) ZFSSetProperty(ctx context.Context, dataset, key, value string) error {
 	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
 	defer cancel()
@@ -136,8 +212,8 @@ func (DirectPrivOps) TapDelete(ctx context.Context, tapName string) error {
 	return nil
 }
 
-func (DirectPrivOps) SetupJail(ctx context.Context, jailRoot, zvolDev, kernelSrc string, uid, gid int) error {
-	for _, dir := range []string{jailRoot, filepath.Join(jailRoot, "run")} {
+func (DirectPrivOps) SetupJail(ctx context.Context, jailRoot, kernelSrc string, uid, gid int, devices []JailBlockDevice) error {
+	for _, dir := range []string{jailRoot, filepath.Join(jailRoot, "run"), filepath.Join(jailRoot, "drives")} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return fmt.Errorf("mkdir %s: %w", dir, err)
 		}
@@ -152,17 +228,13 @@ func (DirectPrivOps) SetupJail(ctx context.Context, jailRoot, zvolDev, kernelSrc
 		return fmt.Errorf("chown kernel: %w", err)
 	}
 
-	major, minor, err := deviceMajorMinor(ctx, zvolDev)
-	if err != nil {
-		return fmt.Errorf("device major/minor: %w", err)
+	if len(devices) == 0 {
+		return fmt.Errorf("at least one jail block device is required")
 	}
-	rootfsDev := filepath.Join(jailRoot, "rootfs")
-	mknodCmd := exec.CommandContext(ctx, "mknod", rootfsDev, "b", strconv.FormatUint(uint64(major), 10), strconv.FormatUint(uint64(minor), 10))
-	if out, mknodErr := mknodCmd.CombinedOutput(); mknodErr != nil {
-		return fmt.Errorf("mknod %s: %s: %w", rootfsDev, strings.TrimSpace(string(out)), mknodErr)
-	}
-	if err := os.Chown(rootfsDev, uid, gid); err != nil {
-		return fmt.Errorf("chown rootfs device: %w", err)
+	for _, device := range devices {
+		if err := createJailBlockDevice(ctx, jailRoot, device, uid, gid); err != nil {
+			return err
+		}
 	}
 
 	metricsFile := filepath.Join(jailRoot, "metrics.json")
@@ -171,6 +243,33 @@ func (DirectPrivOps) SetupJail(ctx context.Context, jailRoot, zvolDev, kernelSrc
 	}
 	if err := os.Chown(metricsFile, uid, gid); err != nil {
 		return fmt.Errorf("chown metrics file: %w", err)
+	}
+	return nil
+}
+
+func createJailBlockDevice(ctx context.Context, jailRoot string, device JailBlockDevice, uid, gid int) error {
+	if strings.TrimSpace(device.HostPath) == "" || strings.TrimSpace(device.JailPath) == "" {
+		return fmt.Errorf("jail block device host and jail paths are required")
+	}
+	major, minor, err := deviceMajorMinor(ctx, device.HostPath)
+	if err != nil {
+		return fmt.Errorf("device major/minor %s: %w", device.HostPath, err)
+	}
+	rel := strings.TrimPrefix(filepath.Clean(device.JailPath), string(os.PathSeparator))
+	if rel == "." || strings.HasPrefix(rel, "..") {
+		return fmt.Errorf("invalid jail device path %q", device.JailPath)
+	}
+	devicePath := filepath.Join(jailRoot, rel)
+	if err := os.MkdirAll(filepath.Dir(devicePath), 0o755); err != nil {
+		return fmt.Errorf("mkdir jail device dir %s: %w", filepath.Dir(devicePath), err)
+	}
+	_ = os.Remove(devicePath)
+	mknodCmd := exec.CommandContext(ctx, "mknod", devicePath, "b", strconv.FormatUint(uint64(major), 10), strconv.FormatUint(uint64(minor), 10))
+	if out, mknodErr := mknodCmd.CombinedOutput(); mknodErr != nil {
+		return fmt.Errorf("mknod %s: %s: %w", devicePath, strings.TrimSpace(string(out)), mknodErr)
+	}
+	if err := os.Chown(devicePath, uid, gid); err != nil {
+		return fmt.Errorf("chown jail device %s: %w", devicePath, err)
 	}
 	return nil
 }
