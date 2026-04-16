@@ -1,7 +1,7 @@
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { execFile: execFileCallback } = require("node:child_process");
+const { execFile: execFileCallback, spawn } = require("node:child_process");
 const { promisify } = require("node:util");
 
 const execFile = promisify(execFileCallback);
@@ -91,8 +91,10 @@ async function materializeCheckout(spec, bundlePath) {
   await git(spec.targetPath, ["remote", "add", "origin", `https://github.com/${spec.repository}.git`]).catch(async () => {
     await git(spec.targetPath, ["remote", "set-url", "origin", `https://github.com/${spec.repository}.git`]);
   });
-  await git(spec.targetPath, ["fetch", "--no-tags", "--prune", "--no-recurse-submodules", bundlePath, "refs/forge-metal/checkout"]);
-  await git(spec.targetPath, ["checkout", "--force", "FETCH_HEAD"]);
+  await indexPack(spec.targetPath, bundlePath);
+  fs.writeFileSync(path.join(spec.targetPath, ".git", "shallow"), `${spec.sha}${os.EOL}`);
+  await git(spec.targetPath, ["update-ref", "refs/forge-metal/checkout", spec.sha]);
+  await git(spec.targetPath, ["checkout", "--force", "--detach", spec.sha]);
   await git(spec.targetPath, ["clean", "-ffdx"]);
 }
 
@@ -132,6 +134,25 @@ async function git(cwd, args) {
 async function gitOutput(cwd, args) {
   const { stdout } = await execFile("git", args, { cwd, maxBuffer: 8 * 1024 * 1024 });
   return stdout;
+}
+
+async function indexPack(cwd, packPath) {
+  await new Promise((resolve, reject) => {
+    const child = spawn("git", ["index-pack", "--stdin"], { cwd, stdio: ["pipe", "ignore", "pipe"] });
+    let stderr = "";
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString("utf8");
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`git index-pack exited ${code}: ${stderr.trim()}`));
+      }
+    });
+    fs.createReadStream(packPath).on("error", reject).pipe(child.stdin);
+  });
 }
 
 function input(name) {
