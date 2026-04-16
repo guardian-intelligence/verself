@@ -70,12 +70,15 @@
     mode: "0644"
 
 - name: Ensure Verdaccio htpasswd file exists
-  ansible.builtin.file:
-    path: /etc/verdaccio/htpasswd
-    state: touch
+  # copy with force: false is atomic (no umask-default window between
+  # creation and chmod) — bcrypt hashes never sit at 0644 even for a moment.
+  ansible.builtin.copy:
+    content: ""
+    dest: /etc/verdaccio/htpasswd
     owner: verdaccio
     group: verdaccio
     mode: "0640"
+    force: false
 
 - name: Deploy Verdaccio config
   ansible.builtin.template:

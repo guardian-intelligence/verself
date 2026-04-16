@@ -97,6 +97,9 @@
   when: not stalwart_cert_check.stat.exists
   changed_when: true
 
+# Apply perms unconditionally: openssl leaves cert.pem at 0644 and key.pem at
+# 0600 by default; if perms drift (e.g. an operator overwrites the cert) the
+# earlier conditional task would leave the bad mode in place forever.
 - name: Set TLS cert ownership
   ansible.builtin.file:
     path: "{{ stalwart_tls_cert_dir }}/{{ item }}"
@@ -106,7 +109,6 @@
   loop:
     - cert.pem
     - key.pem
-  when: not stalwart_cert_check.stat.exists
 
 # --- DNS records ---
 
