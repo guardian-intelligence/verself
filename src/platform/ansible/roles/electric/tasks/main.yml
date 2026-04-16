@@ -1,5 +1,5 @@
 ---
-- name: Create Electric storage directory
+- name: "Create storage directory for {{ electric_service_name }}"
   ansible.builtin.file:
     path: "{{ electric_storage_dir }}"
     state: directory
@@ -7,100 +7,105 @@
     group: root
     mode: "0750"
 
-- name: Create Electric credstore directory
+- name: "Create credstore directory for {{ electric_service_name }}"
   ansible.builtin.file:
-    path: /etc/credstore/electric
+    path: "{{ electric_credstore_dir }}"
     state: directory
     owner: root
     group: root
     mode: "0750"
 
-- name: Check for existing Electric PG password
+- name: "Check for existing PG password for {{ electric_service_name }}"
   ansible.builtin.stat:
-    path: /etc/credstore/electric/pg-password
-  register: electric_pg_password_file
+    path: "{{ electric_pg_password_file }}"
+  register: electric_pg_password_stat
 
-- name: Generate Electric PG password
+- name: "Generate PG password for {{ electric_service_name }}"
   ansible.builtin.copy:
     content: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
-    dest: /etc/credstore/electric/pg-password
+    dest: "{{ electric_pg_password_file }}"
     owner: root
     group: root
     mode: "0640"
-  when: not electric_pg_password_file.stat.exists
+  when: not electric_pg_password_stat.stat.exists
   no_log: true
 
-- name: Check for existing Electric API secret
+- name: "Check for existing API secret for {{ electric_service_name }}"
   ansible.builtin.stat:
-    path: /etc/credstore/electric/api-secret
-  register: electric_api_secret_file
+    path: "{{ electric_api_secret_file }}"
+  register: electric_api_secret_stat
 
-- name: Generate Electric API secret
+- name: "Generate API secret for {{ electric_service_name }}"
   ansible.builtin.copy:
     content: "{{ lookup('password', '/dev/null length=48 chars=ascii_letters,digits') }}"
-    dest: /etc/credstore/electric/api-secret
+    dest: "{{ electric_api_secret_file }}"
     owner: root
     group: root
     mode: "0640"
-  when: not electric_api_secret_file.stat.exists
+  when: not electric_api_secret_stat.stat.exists
   no_log: true
 
-- name: Read Electric PG password
+- name: "Read PG password for {{ electric_service_name }}"
   ansible.builtin.slurp:
-    src: /etc/credstore/electric/pg-password
+    src: "{{ electric_pg_password_file }}"
   register: electric_pg_password_raw
+  no_log: true
 
-- name: Read Electric API secret
+- name: "Read API secret for {{ electric_service_name }}"
   ansible.builtin.slurp:
-    src: /etc/credstore/electric/api-secret
+    src: "{{ electric_api_secret_file }}"
   register: electric_api_secret_raw
+  no_log: true
 
-- name: Set Electric credential facts
+- name: "Set credential facts for {{ electric_service_name }}"
   ansible.builtin.set_fact:
     electric_pg_password: "{{ electric_pg_password_raw.content | b64decode | trim }}"
     electric_api_secret: "{{ electric_api_secret_raw.content | b64decode | trim }}"
+  no_log: true
 
-- name: Create Electric PostgreSQL role and publication
+- name: "Create PostgreSQL role and publication for {{ electric_service_name }}"
   ansible.builtin.include_tasks: pg_setup.yml
 
-- name: Check for local Electric container image
+- name: "Check for local container image for {{ electric_service_name }}"
   ansible.builtin.command:
     cmd: "podman image exists {{ electric_image }}"
-  register: electric_image_exists
+  register: electric_image_probe
   changed_when: false
-  failed_when: electric_image_exists.rc not in [0, 1]
+  failed_when: electric_image_probe.rc not in [0, 1]
 
-# Systemd restarts must not pull from Docker Hub; unauthenticated rate limits can block recovery.
-- name: Pull Electric container image
+# Systemd restarts must not pull from Docker Hub; unauthenticated rate limits
+# can block recovery. Pre-pull here so ExecStart's podman run serves from the
+# local image store.
+- name: "Pull container image for {{ electric_service_name }}"
   ansible.builtin.command:
     cmd: "podman pull {{ electric_image }}"
   changed_when: true
-  when: electric_image_exists.rc != 0
+  when: electric_image_probe.rc != 0
 
-- name: Deploy Electric systemd unit
+- name: "Deploy systemd unit for {{ electric_service_name }}"
   ansible.builtin.template:
     src: electric.service.j2
-    dest: /etc/systemd/system/electric.service
+    dest: "/etc/systemd/system/{{ electric_service_name }}.service"
     mode: "0644"
-  notify: Restart electric
+  notify: "Restart {{ electric_service_name }}"
 
-- name: Deploy Electric nftables rules
+- name: "Deploy nftables rules for {{ electric_service_name }}"
   ansible.builtin.template:
     src: electric.nft.j2
-    dest: /etc/nftables.d/electric.nft
+    dest: "{{ electric_nftables_file }}"
     mode: "0644"
   notify: Reload nftables
 
-- name: Enable and start Electric
+- name: "Enable and start {{ electric_service_name }}"
   ansible.builtin.systemd:
-    name: electric
+    name: "{{ electric_service_name }}"
     enabled: true
     state: started
     daemon_reload: true
 
-- name: Wait for Electric to become healthy
+- name: "Wait for health endpoint on {{ electric_service_name }}"
   ansible.builtin.uri:
-    url: "http://{{ services.electric.host }}:{{ services.electric.port }}/v1/health"
+    url: "http://127.0.0.1:{{ electric_service_port }}/v1/health"
     status_code: [200, 202]
   register: electric_health
   until: electric_health.status in [200, 202]

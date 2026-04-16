@@ -7,7 +7,7 @@
   ansible.builtin.command: zig version
   changed_when: false
 
-- name: Ansible collection {{ item }} must be installed
+- name: Require Ansible collection {{ item }}
   ansible.builtin.command: "ansible-galaxy collection list {{ item }}"
   register: controller_preflight_collection
   changed_when: false

@@ -1,86 +1,96 @@
 ---
-# Electric's publication, shape-table ownership, and REPLICA IDENTITY FULL must
-# stay configured in lockstep: a half-reconciled state (publication missing a
-# table, or a table without REPLICA IDENTITY FULL) crash-loops Electric on
-# startup with "Publication not found" or silently drops rows. sandbox_rental's
-# migrations path drops and recreates the database whenever the schema
-# fingerprint changes, which wipes all of this; we need to replay it
-# idempotently every time the electric role runs.
+# Electric's publication, shape-table ownership, and REPLICA IDENTITY FULL
+# must stay configured in lockstep: a half-reconciled state (publication
+# missing a table, or a table without REPLICA IDENTITY FULL) crash-loops
+# Electric on startup with "Publication not found" or silently drops rows on
+# ongoing replication. The application migration paths drop and recreate the
+# database whenever the schema fingerprint changes, which wipes all of this;
+# we need to replay it idempotently every time the electric role runs.
 #
-# Earlier versions of this file used community.postgresql.postgresql_query with
-# positional_args to discover tables missing REPLICA IDENTITY FULL. The module
-# serialises a list argument into a double-quoted Postgres array literal of the
-# form {'executions','execution_logs'} — Postgres then parses the single
-# quotes as *part of the string values*, so ANY() compares against
+# An earlier iteration of this file used community.postgresql.postgresql_query
+# with positional_args to discover tables missing REPLICA IDENTITY FULL. The
+# module serialises a list argument into a double-quoted Postgres array
+# literal of the form {'executions','execution_logs'} — Postgres then parses
+# the single quotes as *part of the string values*, so ANY() compares against
 # "'executions'" (with literal quotes) and matches nothing. The loop silently
 # skipped every run and tables stayed on relreplident='d'. We now fold the
-# whole reconcile into a single psql DO block so partial success is impossible
-# and no collection module quirks can intervene.
+# whole reconcile into a single psql DO block so partial success is
+# impossible and no collection-module quirks can intervene.
 
-- name: Create Electric PostgreSQL role
+- name: "Create PostgreSQL role for {{ electric_service_name }}"
   community.postgresql.postgresql_user:
     login_host: "{{ services.postgresql.host }}"
     login_port: "{{ services.postgresql.port }}"
     login_user: postgres
     login_password: "{{ postgresql_admin_password }}"
-    name: electric
+    name: "{{ electric_pg_role }}"
     password: "{{ electric_pg_password }}"
     role_attr_flags: REPLICATION,LOGIN
-    conn_limit: "{{ postgresql_role_connection_limits.electric }}"
+    conn_limit: "{{ electric_pg_conn_limit }}"
     trust_input: false
   no_log: true
 
-- name: Stage transient pgpass for Electric reconcile
+- name: "Stage transient pgpass for reconcile of {{ electric_service_name }}"
   ansible.builtin.copy:
-    content: "{{ services.postgresql.host }}:{{ services.postgresql.port }}:sandbox_rental:postgres:{{ postgresql_admin_password }}\n"
-    dest: /root/.pgpass-electric-reconcile
+    content: "{{ services.postgresql.host }}:{{ services.postgresql.port }}:{{ electric_db }}:postgres:{{ postgresql_admin_password }}\n"
+    dest: "{{ electric_transient_pgpass_file }}"
     owner: root
     group: root
     mode: "0600"
   no_log: true
 
-- name: Reconcile Electric publication, ownership, and replica identity
-  # Keep the whole reconcile in a single DO block so partial success is
-  # impossible. PGPASSFILE keeps the password off /proc/<pid>/environ.
+- name: "Reconcile publication, ownership, and replica identity for {{ electric_service_name }}"
+  # One psql DO block so partial success is impossible. PGPASSFILE keeps the
+  # password off /proc/<pid>/environ. The shape table list is materialized
+  # into a Postgres TEXT[] literal by Jinja so the DO block iterates the
+  # caller-supplied names directly.
   ansible.builtin.command:
     cmd: >-
       {{ fm_bin }}/psql
       -h {{ services.postgresql.host }}
       -p {{ services.postgresql.port }}
       -U postgres
-      -d sandbox_rental
+      -d {{ electric_db }}
       -v ON_ERROR_STOP=1
     stdin: |
       DO $$
       DECLARE
         tbl  TEXT;
-        tables TEXT[] := ARRAY['executions', 'execution_logs'];
+        tables TEXT[] := ARRAY[
+      {%- for t in electric_publication_tables %}
+          '{{ t }}'{% if not loop.last %},{% endif %}
+      {%- endfor %}
+        ];
       BEGIN
         FOREACH tbl IN ARRAY tables LOOP
-          EXECUTE format('ALTER TABLE public.%I OWNER TO electric', tbl);
+          EXECUTE format('ALTER TABLE public.%I OWNER TO {{ electric_pg_role }}', tbl);
           EXECUTE format('ALTER TABLE public.%I REPLICA IDENTITY FULL', tbl);
-          EXECUTE format('GRANT SELECT ON public.%I TO electric', tbl);
-          EXECUTE format('GRANT ALL PRIVILEGES ON public.%I TO sandbox_rental', tbl);
+          EXECUTE format('GRANT SELECT ON public.%I TO {{ electric_pg_role }}', tbl);
+          EXECUTE format('GRANT ALL PRIVILEGES ON public.%I TO {{ electric_writer_role }}', tbl);
         END LOOP;
 
         IF NOT EXISTS (
-          SELECT 1 FROM pg_publication WHERE pubname = 'electric_publication_default'
+          SELECT 1 FROM pg_publication WHERE pubname = '{{ electric_publication_name }}'
         ) THEN
-          CREATE PUBLICATION electric_publication_default
-            FOR TABLE public.executions, public.execution_logs;
+          EXECUTE format(
+            'CREATE PUBLICATION {{ electric_publication_name }} FOR TABLE %s',
+            (SELECT string_agg(format('public.%I', t), ', ') FROM unnest(tables) AS t)
+          );
         ELSE
-          ALTER PUBLICATION electric_publication_default
-            SET TABLE public.executions, public.execution_logs;
+          EXECUTE format(
+            'ALTER PUBLICATION {{ electric_publication_name }} SET TABLE %s',
+            (SELECT string_agg(format('public.%I', t), ', ') FROM unnest(tables) AS t)
+          );
         END IF;
 
-        EXECUTE 'ALTER PUBLICATION electric_publication_default OWNER TO electric';
+        EXECUTE 'ALTER PUBLICATION {{ electric_publication_name }} OWNER TO {{ electric_pg_role }}';
       END
       $$;
   environment:
-    PGPASSFILE: /root/.pgpass-electric-reconcile
+    PGPASSFILE: "{{ electric_transient_pgpass_file }}"
   changed_when: true
 
-- name: Remove transient pgpass after Electric reconcile
+- name: "Remove transient pgpass after reconcile for {{ electric_service_name }}"
   ansible.builtin.file:
-    path: /root/.pgpass-electric-reconcile
+    path: "{{ electric_transient_pgpass_file }}"
     state: absent

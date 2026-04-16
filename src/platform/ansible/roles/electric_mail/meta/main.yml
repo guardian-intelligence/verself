@@ -1,3 +1,0 @@
----
-# deploy_profile is ordered by deploy playbooks; Electric Mail itself uses container images.
-dependencies: []

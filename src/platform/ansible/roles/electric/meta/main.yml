@@ -1,3 +1,26 @@
 ---
-# deploy_profile is ordered by deploy playbooks; Electric itself uses container images.
+# Invoked twice per deploy (once per Electric instance) from the same play;
+# Ansible's default is to skip repeat invocations of a role in the roles:
+# block unless this flag is set.
+allow_duplicates: true
 dependencies: []
+
+galaxy_info:
+  author: forge-metal
+  description: >-
+    Provision one ElectricSQL sync container instance — create the pg role,
+    reconcile publication + REPLICA IDENTITY + ownership in a single psql
+    DO block (the module-based approach silently corrupts ANY()
+    comparisons), render the systemd unit and nft egress rules, ensure the
+    unit is up and healthy. Invoked twice in the deploy: once for
+    sandbox_rental ("default") and once for mailbox_service ("mail").
+  role_name: electric
+  license: UNLICENSED
+  min_ansible_version: "2.18"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - noble
+  galaxy_tags:
+    - electric
+    - postgresql

@@ -287,7 +287,9 @@ async function commandOutput(command, args) {
 }
 
 function input(name) {
-  return (process.env[`INPUT_${name.replaceAll("-", "_").toUpperCase()}`] || "").trim();
+  const exact = `INPUT_${name.replace(/ /g, "_").toUpperCase()}`;
+  const underscore = `INPUT_${name.replace(/[- ]/g, "_").toUpperCase()}`;
+  return (process.env[exact] || process.env[underscore] || "").trim();
 }
 
 function requiredEnv(name) {
