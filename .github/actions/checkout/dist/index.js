@@ -88,7 +88,7 @@ function gitCleanMountExclusions(targetPath) {
 }
 
 function protectedMountsUnder(targetPath) {
-  const root = path.resolve(targetPath);
+  const root = realPathForMaybeMissing(targetPath);
   return composedZvolMounts().filter((mountPath) => mountPath === root || mountPath.startsWith(root + path.sep));
 }
 
@@ -97,7 +97,7 @@ function composedZvolMounts() {
     .split(":")
     .map((value) => value.trim())
     .filter(Boolean)
-    .map((value) => path.resolve(value));
+    .map((value) => realPathForMaybeMissing(value));
 }
 
 function isProtectedMountPath(candidate, protectedMounts) {
@@ -166,7 +166,21 @@ function resolveCheckoutPath(value) {
   if (resolved !== workspaceRoot && !resolved.startsWith(workspaceRoot + path.sep)) {
     throw new Error("path must stay inside GITHUB_WORKSPACE");
   }
-  return resolved;
+  return realPathForMaybeMissing(resolved);
+}
+
+function realPathForMaybeMissing(targetPath) {
+  const suffix = [];
+  let current = path.resolve(targetPath);
+  while (!fs.existsSync(current)) {
+    const parent = path.dirname(current);
+    if (parent === current) {
+      return path.resolve(targetPath);
+    }
+    suffix.unshift(path.basename(current));
+    current = parent;
+  }
+  return path.join(fs.realpathSync.native(current), ...suffix);
 }
 
 async function git(cwd, args) {
