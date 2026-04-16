@@ -47,21 +47,76 @@ const EXPLICIT_CACHE_GO_CI = `jobs:
 
       - uses: forge-metal/mount@v1
         with:
-          key: go-mod-\${{ hashFiles('**/go.sum') }}
           path: ~/go/pkg/mod
+          key: go-mod-\${{ runner.os }}-\${{ runner.arch }}-\${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            go-mod-\${{ runner.os }}-\${{ runner.arch }}-
           size: 20GiB
-          scope: repo
+          policy: pull-push
           save: on-success
 
       - uses: forge-metal/mount@v1
         with:
-          key: go-build-\${{ github.ref_name }}
           path: ~/.cache/go-build
+          key: go-build-\${{ runner.os }}-\${{ runner.arch }}-\${{ hashFiles('go.work', '**/go.sum') }}
+          restore-keys: |
+            go-build-\${{ runner.os }}-\${{ runner.arch }}-
           size: 10GiB
-          scope: branch
-          save: on-success
+          policy: pull
 
       - run: go test ./...`;
+
+const PARALLEL_CACHE_GO_CI = `jobs:
+  warm-go-cache:
+    runs-on: metal-4vcpu-ubuntu-2404
+    steps:
+      - uses: forge-metal/checkout@v1
+      - uses: forge-metal/mount@v1
+        with:
+          path: ~/.cache/go-build
+          key: go-build-\${{ runner.os }}-\${{ runner.arch }}-\${{ hashFiles('go.work', '**/go.sum') }}
+          policy: push
+          save: on-success
+      - run: go test ./...
+
+  test:
+    needs: warm-go-cache
+    strategy:
+      matrix:
+        package: [apiwire, billing-service, sandbox-rental-service, vm-orchestrator]
+    runs-on: metal-4vcpu-ubuntu-2404
+    steps:
+      - uses: forge-metal/checkout@v1
+      - uses: forge-metal/mount@v1
+        with:
+          path: ~/.cache/go-build
+          key: go-build-\${{ runner.os }}-\${{ runner.arch }}-\${{ hashFiles('go.work', '**/go.sum') }}
+          policy: pull
+      - run: go test ./src/\${{ matrix.package }}/...`;
+
+const FORGE_METAL_CONFIG = `# forge-metal.yml
+version: 1
+
+defaults:
+  runner: metal-4vcpu-ubuntu-2404
+
+caches:
+  go-mod:
+    path: ~/go/pkg/mod
+    key: go-mod-\${{ runner.os }}-\${{ runner.arch }}-\${{ hashFiles('**/go.sum') }}
+    restore-keys:
+      - go-mod-\${{ runner.os }}-\${{ runner.arch }}-
+    size: 20GiB
+    policy: pull-push
+    save: on-success
+
+  go-build:
+    path: ~/.cache/go-build
+    key: go-build-\${{ runner.os }}-\${{ runner.arch }}-\${{ hashFiles('go.work', '**/go.sum') }}
+    restore-keys:
+      - go-build-\${{ runner.os }}-\${{ runner.arch }}-
+    size: 10GiB
+    policy: pull`;
 
 const POLYGLOT_CI = `jobs:
   test:
@@ -146,10 +201,10 @@ function DocsPage() {
             <PageSection>
               <SectionHeader>
                 <SectionHeaderContent>
-                  <SectionTitle>Public API Layers</SectionTitle>
+                  <SectionTitle>Planned API Layers</SectionTitle>
                   <SectionDescription>
-                    Each action owns one concern. Compose them per job instead of adopting a Forge
-                    Metal build system.
+                    The runner label is live. The acceleration actions are the public API direction:
+                    explicit, composable, and compatible with standard GitHub Actions workflows.
                   </SectionDescription>
                 </SectionHeaderContent>
               </SectionHeader>
@@ -168,12 +223,12 @@ function DocsPage() {
                 <ApiLayer
                   name="Mount"
                   syntax="uses: forge-metal/mount@v1"
-                  description="Attaches a named persistent ZFS-backed disk at a path."
+                  description="Restores a ZFS-backed cache generation at a path and optionally saves a new generation."
                 />
                 <ApiLayer
                   name="Setup"
                   syntax="uses: forge-metal/setup-go@v1"
-                  description="Installs or selects a toolchain and mounts its high-value caches."
+                  description="Selects a toolchain and applies language-specific checkout and mount defaults."
                 />
               </div>
             </PageSection>
@@ -183,20 +238,33 @@ function DocsPage() {
                 <SectionHeaderContent>
                   <SectionTitle>Explicit Persistent State</SectionTitle>
                   <SectionDescription>
-                    Persistent mounts are the primitive. Tool-specific setup actions are convenience
-                    wrappers over the same mount semantics.
+                    Mounts use the cache vocabulary CI users already know: path, key, restore keys,
+                    pull/push policy, and save-on-success behavior.
                   </SectionDescription>
                 </SectionHeaderContent>
               </SectionHeader>
 
               <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
                 <CodeBlock code={EXPLICIT_CACHE_GO_CI} />
-                <Aside title="Mount semantics">
-                  A mount restores the latest committed generation for its key, writes into the
-                  job's private VM filesystem, and commits a new generation only when the configured
-                  save policy allows it.
+                <Aside title="Cache semantics">
+                  The job gets a private writable clone. Forge Metal saves a new immutable generation
+                  only when policy, trust level, and the job result all allow it.
                 </Aside>
               </div>
+            </PageSection>
+
+            <PageSection>
+              <SectionHeader>
+                <SectionHeaderContent>
+                  <SectionTitle>Parallel Jobs</SectionTitle>
+                  <SectionDescription>
+                    Use one writer and many readers when a large matrix shares the same cache. This
+                    follows the same pull, push, and pull-push model used by mature CI systems.
+                  </SectionDescription>
+                </SectionHeaderContent>
+              </SectionHeader>
+
+              <CodeBlock code={PARALLEL_CACHE_GO_CI} />
             </PageSection>
 
             <PageSection>
@@ -218,24 +286,44 @@ function DocsPage() {
                 <SectionHeaderContent>
                   <SectionTitle>Security Defaults</SectionTitle>
                   <SectionDescription>
-                    Cache scope is part of the API because forked pull requests and protected
-                    branches cannot safely share writable state.
+                    Trust scope is platform policy, not a workflow knob. A pull request can use warm
+                    state without gaining write access to protected branch cache generations.
                   </SectionDescription>
                 </SectionHeaderContent>
               </SectionHeader>
 
               <div className="grid gap-3 md:grid-cols-3">
                 <Policy title="Protected branches">
-                  Protected branch jobs can write protected branch cache generations.
+                  Protected branch jobs can restore and write protected cache generations.
                 </Policy>
                 <Policy title="Pull requests">
-                  Pull requests restore trusted cache generations but write isolated pull-request
+                  Pull requests can restore trusted cache generations but write isolated pull-request
                   generations by default.
                 </Policy>
                 <Policy title="Forks">
-                  Forked runs do not write repo or branch caches unless an organization policy
-                  explicitly allows it.
+                  Forked runs cannot update repo, branch, or protected caches from workflow YAML.
                 </Policy>
+              </div>
+            </PageSection>
+
+            <PageSection>
+              <SectionHeader>
+                <SectionHeaderContent>
+                  <SectionTitle>Forge Metal YAML</SectionTitle>
+                  <SectionDescription>
+                    The first repository config file should remove repetition, not replace GitHub
+                    Actions. Workflows can reference named defaults while the YAML keeps cache policy
+                    reviewable in the repository.
+                  </SectionDescription>
+                </SectionHeaderContent>
+              </SectionHeader>
+
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
+                <CodeBlock code={FORGE_METAL_CONFIG} />
+                <Aside title="Config direction">
+                  This file is optional. The GitHub workflow remains authoritative for jobs and
+                  steps; Forge Metal YAML centralizes runner and cache defaults.
+                </Aside>
               </div>
             </PageSection>
 
