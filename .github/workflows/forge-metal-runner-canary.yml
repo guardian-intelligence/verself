@@ -6,7 +6,7 @@ on:
 
 jobs:
   runner-canary:
-    runs-on: metal-4vcpu-ubuntu-2404
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 10
     steps:
       - name: Check out repository
