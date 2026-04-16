@@ -33,7 +33,7 @@ import {
 import { EVERGREEN_NAV, isPathActive, PRIMARY_NAV, type NavEntry } from "./nav-config";
 import { CommandPalette, useCommandPaletteHotkey } from "./command-palette";
 
-export function AppShell() {
+export function AppShell({ platformOrigin }: { platformOrigin: string }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const path = useRouterState({ select: (s) => s.location.pathname });
 
@@ -47,20 +47,24 @@ export function AppShell() {
 
   return (
     <SidebarProvider>
-      <AppSidebar path={path} />
+      <AppSidebar path={path} platformOrigin={platformOrigin} />
       <SidebarInset>
         <TopBar onOpenPalette={() => setPaletteOpen(true)} />
         <main id="main" className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 md:px-8 md:py-8">
           <Outlet />
         </main>
       </SidebarInset>
-      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+      <CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        platformOrigin={platformOrigin}
+      />
       <Toaster />
     </SidebarProvider>
   );
 }
 
-function AppSidebar({ path }: { path: string }) {
+function AppSidebar({ path, platformOrigin }: { path: string; platformOrigin: string }) {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
@@ -77,7 +81,7 @@ function AppSidebar({ path }: { path: string }) {
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupContent>
-            <NavMenu entries={PRIMARY_NAV} path={path} />
+            <NavMenu entries={PRIMARY_NAV} path={path} platformOrigin={platformOrigin} />
           </SidebarGroupContent>
         </SidebarGroup>
 
@@ -86,7 +90,7 @@ function AppSidebar({ path }: { path: string }) {
             product rows are above it. */}
         <SidebarGroup className="mt-auto">
           <SidebarGroupContent>
-            <NavMenu entries={EVERGREEN_NAV} path={path} />
+            <NavMenu entries={EVERGREEN_NAV} path={path} platformOrigin={platformOrigin} />
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
@@ -98,7 +102,15 @@ function AppSidebar({ path }: { path: string }) {
   );
 }
 
-function NavMenu({ entries, path }: { entries: readonly NavEntry[]; path: string }) {
+function NavMenu({
+  entries,
+  path,
+  platformOrigin,
+}: {
+  entries: readonly NavEntry[];
+  path: string;
+  platformOrigin: string;
+}) {
   // SidebarMenuButton's tooltip prop wraps the button in Base UI's Tooltip
   // primitive (TooltipRoot/TooltipTrigger), which is a fastComponent and
   // crashes SSR. Gate the prop on hydration so the server renders without
@@ -107,8 +119,32 @@ function NavMenu({ entries, path }: { entries: readonly NavEntry[]; path: string
   return (
     <SidebarMenu>
       {entries.map((entry) => {
-        const active = isPathActive(path, entry);
         const Icon = entry.icon;
+        if (entry.kind === "external") {
+          // Origin from deriveAppBaseURL can come back with or without a
+          // trailing slash depending on the URL parser's normalization;
+          // strip it so `${origin}${/docs}` never produces a double slash.
+          const href = `${platformOrigin.replace(/\/$/, "")}${entry.path}`;
+          return (
+            <SidebarMenuItem key={entry.id}>
+              <SidebarMenuButton
+                {...(hydrated ? { tooltip: entry.label } : {})}
+                render={
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-testid={`nav-${entry.id}`}
+                  >
+                    <Icon />
+                    <span>{entry.label}</span>
+                  </a>
+                }
+              />
+            </SidebarMenuItem>
+          );
+        }
+        const active = isPathActive(path, entry);
         return (
           <SidebarMenuItem key={entry.id}>
             <SidebarMenuButton

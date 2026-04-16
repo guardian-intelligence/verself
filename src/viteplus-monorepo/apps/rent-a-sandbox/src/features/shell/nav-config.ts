@@ -5,13 +5,29 @@ import { BookOpen, Settings, Terminal, type LucideIcon } from "lucide-react";
 // gating (e.g. "is this route a settings subpage") keyed on this manifest
 // instead of fanning out hard-coded arrays across files.
 
-export type NavEntry = {
+// Internal destinations navigate within this app via TanStack Router.
+// External destinations open in a new tab — used for the Docs link that
+// now points at the standalone platform.<domain> docs site.
+export type InternalNavEntry = {
+  readonly kind: "internal";
   readonly id: string;
   readonly label: string;
   readonly to: string;
   readonly matchPrefix: string;
   readonly icon: LucideIcon;
 };
+
+export type ExternalNavEntry = {
+  readonly kind: "external";
+  readonly id: string;
+  readonly label: string;
+  // Path portion ("/docs") — consumers join it with the runtime-resolved
+  // platform origin so the link is portable across deployments.
+  readonly path: string;
+  readonly icon: LucideIcon;
+};
+
+export type NavEntry = InternalNavEntry | ExternalNavEntry;
 
 export type SettingsNavEntry = {
   readonly id: string;
@@ -25,37 +41,40 @@ export type SettingsNavEntry = {
 // here without touching the shell layout.
 export const PRIMARY_NAV: readonly NavEntry[] = [
   {
+    kind: "internal",
     id: "executions",
     label: "Executions",
     to: "/executions",
     matchPrefix: "/executions",
     icon: Terminal,
   },
-] as const;
+];
 
 // Evergreen (non-product) rail entries anchored to the bottom of the
-// sidebar above the account row. Docs is public — visible to guests so
-// prospects browsing the marketing shell can jump straight into the
-// documentation without signing in. Settings is gated by the underlying
-// route, but we still surface the link to everyone: clicking it while
-// signed out triggers the Zitadel flow via the _shell/_authenticated
-// layout, matching the "no disabled buttons" rule.
+// sidebar above the account row. Docs is served by the standalone
+// platform.<domain> site, so it's an external nav entry — clicking opens
+// a new tab rather than navigating the product shell away from the
+// customer's workflow. Settings is gated by the underlying route, but we
+// still surface the link to everyone: clicking it while signed out
+// triggers the Zitadel flow via the _shell/_authenticated layout,
+// matching the "no disabled buttons" rule.
 export const EVERGREEN_NAV: readonly NavEntry[] = [
   {
+    kind: "external",
     id: "docs",
     label: "Docs",
-    to: "/docs",
-    matchPrefix: "/docs",
+    path: "/docs",
     icon: BookOpen,
   },
   {
+    kind: "internal",
     id: "settings",
     label: "Settings",
     to: "/settings",
     matchPrefix: "/settings",
     icon: Settings,
   },
-] as const;
+];
 
 // Settings subpages. Rendered as the internal left-nav of the settings
 // subtree, not as sidebar rows.
@@ -72,7 +91,7 @@ export const SETTINGS_NAV: readonly SettingsNavEntry[] = [
     to: "/settings/organization",
     matchPrefix: "/settings/organization",
   },
-] as const;
+];
 
 export function isPathActive(currentPath: string, entry: { matchPrefix: string }): boolean {
   return currentPath === entry.matchPrefix || currentPath.startsWith(`${entry.matchPrefix}/`);

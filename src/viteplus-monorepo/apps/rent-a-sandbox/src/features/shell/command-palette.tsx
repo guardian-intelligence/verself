@@ -25,21 +25,39 @@ type CommandEntry = {
   readonly action: CommandAction;
 };
 
-function buildEntries(): readonly CommandEntry[] {
-  const navEntries: CommandEntry[] = PRIMARY_NAV.map((product) => ({
-    id: `nav:${product.id}`,
-    section: "Navigation",
-    label: `Go to ${product.label}`,
-    keywords: `${product.label} ${product.to}`,
-    action: { kind: "navigate", to: product.to },
-  }));
-  const docsEntries: CommandEntry[] = EVERGREEN_NAV.filter((e) => e.id === "docs").map((entry) => ({
-    id: `docs:${entry.id}`,
-    section: "Docs",
-    label: `Go to ${entry.label}`,
-    keywords: `${entry.label} documentation guides reference`,
-    action: { kind: "navigate", to: entry.to },
-  }));
+function buildEntries(platformOrigin: string): readonly CommandEntry[] {
+  const navEntries: CommandEntry[] = PRIMARY_NAV.flatMap((product) =>
+    product.kind === "internal"
+      ? [
+          {
+            id: `nav:${product.id}`,
+            section: "Navigation",
+            label: `Go to ${product.label}`,
+            keywords: `${product.label} ${product.to}`,
+            action: { kind: "navigate", to: product.to },
+          },
+        ]
+      : [],
+  );
+  // Docs lives on the platform.<domain> site so it opens in a new tab
+  // rather than replacing the product shell the user is working in.
+  const docsEntries: CommandEntry[] = EVERGREEN_NAV.flatMap((entry) =>
+    entry.kind === "external" && entry.id === "docs"
+      ? [
+          {
+            id: `docs:${entry.id}`,
+            section: "Docs",
+            label: `Open ${entry.label}`,
+            description: "Opens platform docs in a new tab",
+            keywords: `${entry.label} documentation guides reference`,
+            action: {
+              kind: "external",
+              href: `${platformOrigin.replace(/\/$/, "")}${entry.path}`,
+            },
+          },
+        ]
+      : [],
+  );
   const settingsEntries: CommandEntry[] = SETTINGS_NAV.map((entry) => ({
     id: `settings:${entry.id}`,
     section: "Settings",
@@ -78,9 +96,10 @@ function matchesQuery(entry: CommandEntry, query: string): boolean {
 type CommandPaletteControlProps = {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
+  readonly platformOrigin: string;
 };
 
-export function CommandPalette({ open, onOpenChange }: CommandPaletteControlProps) {
+export function CommandPalette({ open, onOpenChange, platformOrigin }: CommandPaletteControlProps) {
   const navigate = useNavigate();
   const { redirectToSignOut } = useClerk();
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -88,7 +107,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteControlProp
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
 
-  const allEntries = useMemo(() => buildEntries(), []);
+  const allEntries = useMemo(() => buildEntries(platformOrigin), [platformOrigin]);
   const filtered = useMemo(
     () => allEntries.filter((entry) => matchesQuery(entry, query)),
     [allEntries, query],
@@ -131,7 +150,10 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteControlProp
         await navigate({ to: action.to });
         return;
       case "external":
-        window.location.href = action.href;
+        // Open in a new tab — external hrefs here are docs/reference
+        // sites outside the product shell, and we don't want the user to
+        // lose their place in Executions mid-task.
+        window.open(action.href, "_blank", "noopener,noreferrer");
         return;
       case "sign_out":
         await redirectToSignOut();
