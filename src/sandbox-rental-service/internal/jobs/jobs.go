@@ -173,6 +173,7 @@ type Service struct {
 	Scheduler       SchedulerRuntime
 	Logger          *slog.Logger
 	WorkloadTimeout time.Duration
+	StickyDiskDir   string
 }
 
 type executionWorkItem struct {

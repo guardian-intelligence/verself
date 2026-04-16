@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -15,6 +16,8 @@ const (
 	githubActionsWebhookPath       = "/webhooks/github/actions"
 	githubInstallationCallbackPath = "/github/installations/callback"
 	githubRunnerJITConfigPath      = "/internal/sandbox/v1/github-runner-jit"
+	githubStickyDiskRestorePath    = "/internal/sandbox/v1/stickydisk/restore"
+	githubStickyDiskCommitPath     = "/internal/sandbox/v1/stickydisk/commit"
 	publicWebhookBodyLimit         = 1 << 20
 )
 
@@ -31,6 +34,8 @@ func RegisterPublicRoutes(mux *http.ServeMux, svc *jobs.Service) {
 	mux.HandleFunc(githubActionsWebhookPath, githubActionsWebhookHandler(svc))
 	mux.HandleFunc(githubInstallationCallbackPath, githubInstallationCallbackHandler(svc))
 	mux.HandleFunc(githubRunnerJITConfigPath, githubRunnerJITConfigHandler(svc))
+	mux.HandleFunc(githubStickyDiskRestorePath, githubStickyDiskRestoreHandler(svc))
+	mux.HandleFunc(githubStickyDiskCommitPath, githubStickyDiskCommitHandler(svc))
 }
 
 func githubActionsWebhookHandler(svc *jobs.Service) http.HandlerFunc {
@@ -112,6 +117,100 @@ func githubRunnerJITConfigHandler(svc *jobs.Service) http.HandlerFunc {
 		w.Header().Set("Cache-Control", "no-store")
 		_, _ = w.Write([]byte(config))
 	}
+}
+
+func githubStickyDiskRestoreHandler(svc *jobs.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if svc.GitHubRunner == nil || !svc.GitHubRunner.Configured() {
+			http.Error(w, "github runner is not configured", http.StatusServiceUnavailable)
+			return
+		}
+		identity, ok := authenticateStickyDiskRequest(w, r, svc)
+		if !ok {
+			return
+		}
+		key := strings.TrimSpace(r.URL.Query().Get("key"))
+		restore, err := svc.GitHubRunner.RestoreStickyDisk(r.Context(), identity, key)
+		if err != nil {
+			if errors.Is(err, jobs.ErrStickyDiskMissing) {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			writeStickyDiskError(w, err)
+			return
+		}
+		file, err := os.Open(restore.ArchivePath)
+		if err != nil {
+			writeStickyDiskError(w, err)
+			return
+		}
+		defer file.Close()
+		w.Header().Set("Content-Type", "application/gzip")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Forge-Metal-Sticky-Generation", strconv.FormatInt(restore.Generation, 10))
+		w.Header().Set("X-Forge-Metal-Sticky-Size-Bytes", strconv.FormatInt(restore.SizeBytes, 10))
+		w.Header().Set("X-Forge-Metal-Sticky-Sha256", restore.SHA256)
+		_, _ = io.Copy(w, file)
+	}
+}
+
+func githubStickyDiskCommitHandler(svc *jobs.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if svc.GitHubRunner == nil || !svc.GitHubRunner.Configured() {
+			http.Error(w, "github runner is not configured", http.StatusServiceUnavailable)
+			return
+		}
+		identity, ok := authenticateStickyDiskRequest(w, r, svc)
+		if !ok {
+			return
+		}
+		key := strings.TrimSpace(r.URL.Query().Get("key"))
+		commit, err := svc.GitHubRunner.CommitStickyDisk(r.Context(), identity, key, r.Body)
+		if err != nil {
+			writeStickyDiskError(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"generation": commit.Generation,
+			"size_bytes": commit.SizeBytes,
+			"sha256":     commit.SHA256,
+		})
+	}
+}
+
+func authenticateStickyDiskRequest(w http.ResponseWriter, r *http.Request, svc *jobs.Service) (jobs.StickyDiskIdentity, bool) {
+	identity, err := svc.GitHubRunner.AuthenticateStickyDisk(
+		r.Context(),
+		r.Header.Get("X-Forge-Metal-Execution-Id"),
+		r.Header.Get("X-Forge-Metal-Attempt-Id"),
+		r.Header.Get("Authorization"),
+	)
+	if err != nil {
+		writePublicWebhookError(w, http.StatusUnauthorized, err)
+		return jobs.StickyDiskIdentity{}, false
+	}
+	return identity, true
+}
+
+func writeStickyDiskError(w http.ResponseWriter, err error) {
+	status := http.StatusInternalServerError
+	if errors.Is(err, jobs.ErrStickyDiskInvalid) {
+		status = http.StatusBadRequest
+	}
+	if errors.Is(err, jobs.ErrStickyDiskUnauthorized) {
+		status = http.StatusUnauthorized
+	}
+	writePublicWebhookError(w, status, err)
 }
 
 func githubInstallationCallbackHandler(svc *jobs.Service) http.HandlerFunc {

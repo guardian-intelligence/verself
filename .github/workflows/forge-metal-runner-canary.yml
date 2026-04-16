@@ -12,6 +12,29 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v5
 
+      - name: Restore Forge Metal sticky disk
+        uses: ./.github/actions/stickydisk
+        with:
+          key: ${{ github.repository }}-runner-canary
+          path: ~/.cache/forge-metal-runner-canary
+
+      - name: Prove Forge Metal sticky disk
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.cache/forge-metal-runner-canary
+          if [ -f ~/.cache/forge-metal-runner-canary/marker.txt ]; then
+            echo "sticky disk restored"
+            cat ~/.cache/forge-metal-runner-canary/marker.txt
+          else
+            echo "sticky disk cold start"
+          fi
+          {
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo "job=${GITHUB_JOB}"
+            date -u +"committed_at=%Y-%m-%dT%H:%M:%SZ"
+          } > ~/.cache/forge-metal-runner-canary/marker.txt
+
       - name: Prove Forge Metal runner execution
         run: |
           set -euo pipefail
