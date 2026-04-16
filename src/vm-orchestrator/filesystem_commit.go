@@ -115,6 +115,18 @@ func (o *Orchestrator) CommitFilesystemMount(ctx context.Context, runtime *Lease
 		return FilesystemCommitResult{}, err
 	}
 
+	flushCtx, flushEnd := startStepSpan(ctx, "vmorchestrator.block.flush",
+		attribute.String("lease.id", runtime.LeaseID),
+		attribute.String("filesystem.name", mountName),
+		attribute.String("block.device", mount.HostDevicePath),
+	)
+	flushErr := o.ops.FlushBlockDevice(flushCtx, mount.HostDevicePath)
+	flushEnd(flushErr)
+	if flushErr != nil {
+		err = fmt.Errorf("flush filesystem mount device %s: %w", mountName, flushErr)
+		return FilesystemCommitResult{}, err
+	}
+
 	tempSnapshot := "commit-" + strings.ToLower(ulid.Make().String())
 	if err = validateZFSSnapshotName(tempSnapshot); err != nil {
 		return FilesystemCommitResult{}, err

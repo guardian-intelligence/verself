@@ -576,6 +576,11 @@ func (s *agentSession) mountFilesystems(filesystems []vmproto.FilesystemMount) e
 		if err := os.MkdirAll(fs.MountPath, 0o755); err != nil {
 			return fmt.Errorf("mkdir composed filesystem mount %s: %w", fs.MountPath, err)
 		}
+		if !fs.ReadOnly {
+			if err := prepareWritableMountPath(fs.MountPath); err != nil {
+				return err
+			}
+		}
 		flags := uintptr(syscall.MS_NOATIME)
 		data := ""
 		if fs.ReadOnly {
@@ -589,10 +594,50 @@ func (s *agentSession) mountFilesystems(filesystems []vmproto.FilesystemMount) e
 			}
 			return fmt.Errorf("mount composed filesystem %s (%s) on %s: %w", fs.Name, fs.DevicePath, fs.MountPath, err)
 		}
+		if !fs.ReadOnly {
+			if err := os.Chown(fs.MountPath, runnerUID, runnerGID); err != nil {
+				return fmt.Errorf("chown composed filesystem %s root %s: %w", fs.Name, fs.MountPath, err)
+			}
+		}
 		fmt.Fprintf(os.Stdout, "%s mounted composed filesystem name=%s device=%s path=%s read_only=%t\n", logPrefix, fs.Name, fs.DevicePath, fs.MountPath, fs.ReadOnly)
 		mounted = append(mounted, fs)
 	}
 	s.filesystems = mounted
+	return nil
+}
+
+func prepareWritableMountPath(path string) error {
+	clean := filepath.Clean(path)
+	var root string
+	switch {
+	case clean == "/home/runner" || strings.HasPrefix(clean, "/home/runner/"):
+		root = "/home/runner"
+	case clean == defaultWorkDir || strings.HasPrefix(clean, defaultWorkDir+"/"):
+		root = defaultWorkDir
+	default:
+		return fmt.Errorf("writable composed filesystem path %q must live under /home/runner or %s", path, defaultWorkDir)
+	}
+
+	current := root
+	if err := os.Chown(current, runnerUID, runnerGID); err != nil {
+		return fmt.Errorf("chown composed filesystem path %s: %w", current, err)
+	}
+	rel, err := filepath.Rel(root, clean)
+	if err != nil {
+		return fmt.Errorf("rel composed filesystem path %s: %w", clean, err)
+	}
+	if rel == "." {
+		return nil
+	}
+	for _, part := range strings.Split(rel, string(os.PathSeparator)) {
+		if part == "" || part == "." {
+			continue
+		}
+		current = filepath.Join(current, part)
+		if err := os.Chown(current, runnerUID, runnerGID); err != nil {
+			return fmt.Errorf("chown composed filesystem path %s: %w", current, err)
+		}
+	}
 	return nil
 }
 

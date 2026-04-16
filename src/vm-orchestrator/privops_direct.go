@@ -123,9 +123,8 @@ func (DirectPrivOps) ZFSSendReceive(ctx context.Context, snapshot, target string
 		return fmt.Errorf("start zfs send %s: %w", snapshot, err)
 	}
 	sendErr := send.Wait()
-	if closeErr := pipe.Close(); closeErr != nil && sendErr == nil {
-		sendErr = closeErr
-	}
+	// exec.Cmd owns the StdoutPipe lifecycle and closes it during Wait; closing
+	// it here races the command's cleanup path and reports a false failure.
 	recvErr := recv.Wait()
 	if sendErr != nil || recvErr != nil {
 		sendStderr := ""
@@ -148,6 +147,21 @@ func (DirectPrivOps) ZFSSetProperty(ctx context.Context, dataset, key, value str
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("zfs set %s=%s on %s: %s: %w", key, value, dataset, strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+func (DirectPrivOps) FlushBlockDevice(ctx context.Context, path string) error {
+	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
+	defer cancel()
+	path = strings.TrimSpace(path)
+	if path == "" || !strings.HasPrefix(path, "/dev/") {
+		return fmt.Errorf("block device path is invalid: %s", path)
+	}
+	cmd := exec.CommandContext(ctx, "blockdev", "--flushbufs", path)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("blockdev --flushbufs %s: %s: %w", path, strings.TrimSpace(string(out)), err)
 	}
 	return nil
 }
