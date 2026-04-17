@@ -9,4 +9,4 @@ mailboxes:
   abuse: abuse
   legal: legal
 
-routing: Every mailbox resolves to Stalwart on the operator's deployment domain and from there to tracked tickets. Security reports take precedence over routine policy correspondence.
+routing: Every mailbox resolves to our inbound mail server on the operator's deployment domain and from there to tracked tickets. Security reports take precedence over routine policy correspondence.

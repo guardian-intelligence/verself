@@ -45,7 +45,7 @@ windows:
 
   - id: volume_snapshots
     label: Per-volume snapshot generations
-    description: ZFS snapshot generations within each volume. Retained according to the volume's configured snapshot policy while the account is live; deleted with the parent volume at final deletion.
+    description: Snapshot generations within each durable volume. Retained according to the volume's configured snapshot policy while the account is live; deleted with the parent volume at final deletion.
     active: { kind: per_user_policy }
     past_due: { kind: per_user_policy }
     suspended: { kind: per_user_policy }
@@ -53,8 +53,7 @@ windows:
 
   - id: operational_logs
     label: Service logs
-    description: Application and system logs emitted via OpenTelemetry. Trimmed continuously by per-table TTL in ClickHouse.
-    source: ClickHouse `default.otel_logs`
+    description: Application and system logs emitted by the service mesh. Trimmed continuously by per-table TTL in the observability store.
     active: { kind: ttl_days, days: 30 }
     past_due: { kind: ttl_days, days: 30 }
     suspended: { kind: ttl_days, days: 30 }
@@ -62,8 +61,7 @@ windows:
 
   - id: operational_traces
     label: Traces
-    description: Distributed-tracing spans emitted via OpenTelemetry.
-    source: ClickHouse `default.otel_traces`
+    description: Distributed-tracing spans emitted as customer requests flow through the platform.
     active: { kind: ttl_days, days: 7 }
     past_due: { kind: ttl_days, days: 7 }
     suspended: { kind: ttl_days, days: 7 }
@@ -71,8 +69,7 @@ windows:
 
   - id: operational_metrics
     label: Metrics
-    description: Time-series metrics emitted via OpenTelemetry.
-    source: ClickHouse `default.otel_metrics_*`
+    description: Time-series metrics aggregated from every service on the platform.
     active: { kind: ttl_days, days: 90 }
     past_due: { kind: ttl_days, days: 90 }
     suspended: { kind: ttl_days, days: 90 }
@@ -88,7 +85,7 @@ windows:
 
   - id: billing_records
     label: Billing records
-    description: Invoices, payment events, TigerBeetle ledger entries, and tax documents. Retained for at least seven years, and longer where applicable tax or accounting law in the customer's jurisdiction requires — for example Germany (10 years under HGB §257), France (10 years), and the United Kingdom (6 years for most records).
+    description: Invoices, payment events, ledger entries, and tax documents. Retained for at least seven years, and longer where applicable tax or accounting law in the customer's jurisdiction requires — for example Germany (10 years under HGB §257), France (10 years), and the United Kingdom (6 years for most records).
     active: { kind: retain_years, years: 7 }
     past_due: { kind: retain_years, years: 7 }
     suspended: { kind: retain_years, years: 7 }
@@ -117,13 +114,13 @@ export:
   delivery: Signed URLs valid for 72 hours from issuance.
   formats:
     - class: Durable data
-      format: tar.gz of the volume's ZFS dataset contents
+      format: tar.gz of the volume's filesystem contents
     - class: Service logs
       format: newline-delimited JSON
     - class: Traces
-      format: newline-delimited JSON in OpenTelemetry OTLP/JSON encoding
+      format: newline-delimited JSON in OTLP/JSON encoding
     - class: Metrics
-      format: newline-delimited JSON in OpenTelemetry OTLP/JSON encoding
+      format: newline-delimited JSON in OTLP/JSON encoding
     - class: Audit events
       format: newline-delimited JSON
     - class: Billing records
@@ -147,9 +144,9 @@ deletion:
   soft_delete: false
   recoverable_after_execution: false
   methods:
-    - ZFS dataset destroy followed by pool free-space reclamation
-    - ClickHouse part drops driven by per-table TTL
-    - Postgres row deletes followed by autovacuum
+    - Durable-volume destroy followed by pool free-space reclamation
+    - Observability-store part drops driven by per-table TTL
+    - Relational-store row deletes followed by compaction
 
 anonymized_data:
   retained_indefinitely: true

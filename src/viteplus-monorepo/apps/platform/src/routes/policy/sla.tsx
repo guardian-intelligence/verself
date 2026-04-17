@@ -77,9 +77,9 @@ function CurrentTier() {
       <Prose>
         <p>
           Forge Metal is currently deployed on a single bare-metal node. Every component — the
-          orchestrator, databases, auth, billing, ingress — runs on that node and is not replicated
-          across failure domains. A hardware failure, a kernel crash, or a datacenter-level event is
-          therefore a correlated outage of the whole service.
+          compute orchestrator, databases, identity, billing, ingress — runs on that node and is
+          not replicated across failure domains. A hardware failure, a kernel crash, or a
+          datacenter-level event is therefore a correlated outage of the whole service.
         </p>
         <p>
           We do not offer a guaranteed availability percentage or service credits on this tier. This
@@ -140,18 +140,19 @@ function FutureTier() {
       <SectionHeading id="future-tier">Three-node tier (roadmap)</SectionHeading>
       <Prose>
         <p>
-          The next topology introduces three nodes, cross-node replication for every stateful
-          component (TigerBeetle consensus, ClickHouse ReplicatedMergeTree, Postgres streaming
-          replication, ZFS send-based durable data replication), and a Netbird overlay for
-          inter-node traffic. With this topology comes a 99.9%-per-calendar-month availability
-          commitment, measured as the percentage of minutes in which each customer-facing service
-          endpoint responds with a non-5xx status to a synthetic probe.
+          The next topology introduces three nodes with cross-node replication for every stateful
+          component — consensus replication for the ledger, replicated analytics storage,
+          streaming replication for the relational store, and send-based replication for durable
+          customer volumes — all carried over a private overlay network between nodes. With this
+          topology comes a 99.9%-per-calendar-month availability commitment, measured as the
+          percentage of minutes in which each customer-facing service endpoint responds with a
+          non-5xx status to a synthetic probe.
         </p>
         <p>
           Downtime below 99.9% triggers service credits on a sliding scale against the affected
           month's subscription fees. The exact credit schedule, exclusions (force majeure,
-          customer-caused outages, dependencies on third-party systems), and claim procedure will be
-          published alongside the three-node tier's general availability.
+          customer-caused outages, dependencies on third-party systems), and claim procedure will
+          be published alongside the three-node tier's general availability.
         </p>
       </Prose>
     </section>
