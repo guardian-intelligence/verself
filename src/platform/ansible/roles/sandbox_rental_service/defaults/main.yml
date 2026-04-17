@@ -10,6 +10,8 @@ sandbox_rental_service_billing_client_id: "sandbox-rental-billing-{{ inventory_h
 sandbox_rental_service_billing_token_url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/oauth/v2/token"
 sandbox_rental_service_vm_orchestrator_socket: "{{ firecracker_vm_orchestrator_api_socket | default('/run/vm-orchestrator/api.sock', true) }}"
 sandbox_rental_service_vm_orchestrator_socket_group: "{{ firecracker_vm_orchestrator_socket_group | default('vm-clients', true) }}"
+sandbox_rental_service_vm_orchestrator_allowed_socket_users:
+  - sandbox_rental
 sandbox_rental_service_force_schema_reset: false
 # GitHub App installations are operator configuration, not runtime execution state.
 # Preserve them across destructive sandbox_rental schema resets unless explicitly disabled.
