@@ -31,6 +31,13 @@ RestartSec=2
 RuntimeDirectory=vm-orchestrator
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 NoNewPrivileges=yes
+ProtectHome=true
+PrivateTmp=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target
