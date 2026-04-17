@@ -30,9 +30,11 @@ Use it from the repo root:
 
 ```bash
 make clickhouse-query QUERY='SHOW TABLES' DATABASE=forge_metal
-make clickhouse-shell
 ./src/platform/scripts/clickhouse.sh --database forge_metal --query 'SHOW TABLES'
 ```
+
+Interactive ClickHouse shells are intentionally unsupported. Use replayable
+`make clickhouse-query` invocations instead.
 
 The current database layout is:
 

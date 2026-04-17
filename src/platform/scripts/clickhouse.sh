@@ -38,8 +38,8 @@ remote_password_q="$(printf '%q' "$clickhouse_password")"
 remote_path_q="$(printf '%q' "$remote_path")"
 
 if [[ $# -eq 0 ]]; then
-  exec ssh "${ssh_opts[@]}" -t "${remote_user}@${remote_host}" \
-    "sudo env CLICKHOUSE_PASSWORD=${remote_password_q} bash -lc 'exec \"\$1\" --user default --password \"\$CLICKHOUSE_PASSWORD\"' _ ${remote_path_q}"
+  echo "ERROR: interactive ClickHouse shells are not supported. Use: make clickhouse-query QUERY='SELECT 1'" >&2
+  exit 2
 fi
 
 remote_args=()
