@@ -938,3 +938,69 @@ grafana_dashboards:
             OVER () as avg_pct FROM (SELECT $__timeInterval(TimeUnix) as time, 100 as heartbeat_pct FROM default.otel_metrics_sum WHERE
             $__timeFilter(TimeUnix) AND MetricName = 'process.memory.usage' AND ResourceAttributes['process.executable.name'] = 'zitadel' GROUP
             BY time)) ORDER BY time
+  - uid: "forge-metal-observability-query-model"
+    title: "Observability Query Model"
+    tags:
+      - "infrastructure"
+    panels:
+      - id: 1
+        uid: "live-metric-catalog"
+        title: "Live Metric Catalog"
+        type: "table"
+        x: 0
+        y: 0
+        w: 12
+        h: 9
+        query_type: "table"
+        query_format: 1
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT ServiceName, MetricName, MetricKind, MetricUnit, AttributeSets, Samples, LastSeenAt FROM default.otel_metric_catalog_live
+            WHERE $__timeFilter(LastSeenAt) ORDER BY LastSeenAt DESC, ServiceName, MetricName LIMIT 100
+      - id: 2
+        uid: "latest-scalar-metrics"
+        title: "Latest Scalar Metrics"
+        type: "table"
+        x: 12
+        y: 0
+        w: 12
+        h: 9
+        query_type: "table"
+        query_format: 1
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT ServiceName, MetricName, MetricKind, CurrentValue, MetricUnit, SampledAt, toString(Attributes) AS Attributes FROM
+            default.otel_metric_latest WHERE $__timeFilter(SampledAt) ORDER BY SampledAt DESC, ServiceName, MetricName LIMIT 100
+      - id: 3
+        uid: "recent-signal-errors"
+        title: "Recent Signal Errors"
+        type: "table"
+        x: 0
+        y: 9
+        w: 12
+        h: 9
+        query_type: "table"
+        query_format: 1
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT Timestamp, SignalKind, ServiceName, Severity, HttpStatus, Path, Name, TraceId FROM default.otel_signal_errors WHERE
+            $__timeFilter(Timestamp) ORDER BY Timestamp DESC LIMIT 100
+      - id: 4
+        uid: "observe-command-spans"
+        title: "Observe Command Spans"
+        type: "table"
+        x: 12
+        y: 9
+        w: 12
+        h: 9
+        query_type: "table"
+        query_format: 1
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT Timestamp, SpanName, StatusCode, SpanAttributes['observe.what'] AS Surface, SpanAttributes['clickhouse.query_name'] AS
+            QueryName, SpanAttributes['observe.run_id'] AS RunID, TraceId FROM default.otel_traces WHERE $__timeFilter(Timestamp) AND
+            ServiceName = 'fm-observe' ORDER BY Timestamp DESC LIMIT 100
