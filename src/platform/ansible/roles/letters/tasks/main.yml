@@ -1,10 +1,32 @@
 ---
+- name: Create letters runtime group
+  ansible.builtin.group:
+    name: "{{ letters_runtime_group }}"
+    system: true
+
+- name: Create letters runtime user
+  ansible.builtin.user:
+    name: "{{ letters_runtime_user }}"
+    group: "{{ letters_runtime_group }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ letters_state_dir }}"
+    create_home: false
+
+- name: Create letters state directory
+  ansible.builtin.file:
+    path: "{{ letters_state_dir }}"
+    state: directory
+    owner: "{{ letters_runtime_user }}"
+    group: "{{ letters_runtime_group }}"
+    mode: "0700"
+
 - name: Create letters install directory
   ansible.builtin.file:
     path: "{{ letters_install_dir }}"
     state: directory
     owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
+    group: "{{ letters_runtime_group }}"
     mode: "0755"
 
 - name: Verify corepack exists in profile
@@ -105,7 +127,7 @@
     content: "{{ letters_workspace_dependency_fingerprint.stdout.split()[0] | trim }}\n"
     dest: "{{ letters_dependencies_fingerprint_path }}"
     owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
+    group: "{{ letters_runtime_group }}"
     mode: "0644"
 
 - name: Build letters package dependencies
@@ -147,7 +169,7 @@
     path: /etc/letters
     state: directory
     owner: root
-    group: "{{ ansible_user }}"
+    group: "{{ letters_runtime_group }}"
     mode: "0750"
 
 - name: Deploy letters environment file
@@ -156,7 +178,7 @@
     dest: /etc/letters/env
     mode: "0640"
     owner: root
-    group: "{{ ansible_user }}"
+    group: "{{ letters_runtime_group }}"
   notify: Restart letters
 
 - name: Deploy letters systemd unit
