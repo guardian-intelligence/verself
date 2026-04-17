@@ -1,0 +1,12 @@
+version: 1
+effective_at: 2026-04-17
+
+mailboxes:
+  policy: policy
+  privacy: privacy
+  security: security
+  dpo: dpo
+  abuse: abuse
+  legal: legal
+
+routing: Every mailbox resolves to Stalwart on the operator's deployment domain and from there to tracked tickets. Security reports take precedence over routine policy correspondence.
