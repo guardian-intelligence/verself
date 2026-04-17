@@ -293,12 +293,14 @@ pub fn main() !void {
 // ---------------------------------------------------------------------------
 
 test "vectors.json matches canonical encoder output" {
-    const file = try std.fs.cwd().openFile("protocol/vectors.json", .{});
-    defer file.close();
-    const checked_in = try file.readToEndAlloc(std.testing.allocator, 64 * 1024);
-    defer std.testing.allocator.free(checked_in);
+    // Embedded at compile time via the "vectors_json" module import wired up
+    // in build.zig. Keeps the test runnable from any cwd (IDEs, package
+    // consumers pulling this repo via build.zig.zon, CI runners) while
+    // protocol/vectors.json remains the canonical on-disk conformance artifact
+    // that Go/TypeScript decoders also consume.
+    const checked_in = @embedFile("vectors_json");
 
-    var buf: [32768]u8 = undefined;
+    var buf: [32 * 1024]u8 = undefined;
     var w = Writer.fixed(&buf);
     try writeVectors(&w);
     try std.testing.expectEqualStrings(checked_in, w.buffered());
