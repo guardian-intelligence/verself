@@ -39,12 +39,12 @@ test.describe("Rent-a-Sandbox Billing", () => {
 
       await app.page.getByRole("link", { name: "Buy credits" }).click();
       await expect(app.page.getByRole("heading", { name: "Purchase credits" })).toBeVisible();
-      await beginCreditCheckout(app, /^\$100\b/);
+      await beginCreditCheckout(app, /^Buy \$100 credits$/);
 
       await completeStripeCheckout(app);
       await app.expectSSRHTML("/settings/billing?purchased=true", [
         "Credits purchased",
-        "Account Balance",
+        "Account balance",
       ]);
 
       run.detail_url = "/settings/billing?purchased=true";
@@ -211,7 +211,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
       await app.assertStableRoute({
         path: "/settings/billing/subscribe",
         ready: app.page.getByRole("heading", { name: "Choose a plan" }),
-        expectedText: ["Choose a Plan", hobbyPlan.displayName, hobbyPlan.priceText],
+        expectedText: ["Choose a plan", hobbyPlan.displayName, hobbyPlan.priceText],
       });
 
       const redirect = await beginContractCheckout(app, hobbyPlan);
@@ -446,7 +446,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
       await app.assertStableRoute({
         path: "/settings/billing/subscribe",
         ready: app.page.getByRole("heading", { name: "Choose a plan" }),
-        expectedText: ["Choose a Plan", hobbyPlan.displayName, hobbyPlan.priceText],
+        expectedText: ["Choose a plan", hobbyPlan.displayName, hobbyPlan.priceText],
       });
 
       const downgradeRedirect = await beginContractCheckout(app, hobbyPlan);
@@ -458,7 +458,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
       await app.assertStableRoute({
         path: "/settings/billing/subscribe",
         ready: app.page.getByRole("heading", { name: "Choose a plan" }),
-        expectedText: ["Choose a Plan", `Resume ${proPlan.displayName}`],
+        expectedText: ["Choose a plan", `Resume ${proPlan.displayName}`],
       });
 
       const resumeRedirect = await beginContractCheckout(app, proPlan);
@@ -574,7 +574,7 @@ function oneSecondAfter(value: Date) {
 
 async function activateContract(app: SandboxHarness, plan: ContractPlanSpec) {
   await app.expectSSRHTML("/settings/billing/subscribe", [
-    "Choose a Plan",
+    "Choose a plan",
     plan.displayName,
     plan.priceText.replace("/mo", ""),
     "/mo",
@@ -582,7 +582,7 @@ async function activateContract(app: SandboxHarness, plan: ContractPlanSpec) {
   await app.assertStableRoute({
     path: "/settings/billing/subscribe",
     ready: app.page.getByRole("heading", { name: "Choose a plan" }),
-    expectedText: ["Choose a Plan", plan.displayName, plan.priceText],
+    expectedText: ["Choose a plan", plan.displayName, plan.priceText],
   });
 
   const redirect = await beginContractCheckout(app, plan);
