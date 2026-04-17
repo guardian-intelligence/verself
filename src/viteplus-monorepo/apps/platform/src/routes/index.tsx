@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { BookOpen, Code2, Layers, ScrollText } from "lucide-react";
+import { BookOpen, Code2, ScrollText } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   component: LandingPage,
@@ -30,7 +30,7 @@ function LandingPage() {
         bare-metal node.
       </p>
 
-      <div className="mt-10 grid gap-3 md:grid-cols-2">
+      <div className="mt-10 grid gap-3 md:grid-cols-3">
         <LandingCard
           to="/docs"
           title="Docs"
@@ -48,12 +48,6 @@ function LandingPage() {
           title="Policy"
           description="Data retention, account lifecycle, and the commitments Forge Metal makes about what it stores on your behalf."
           icon={ScrollText}
-        />
-        <LandingCard
-          to="/docs"
-          title="Architecture"
-          description="How substrate, control planes, identity, and billing compose end-to-end."
-          icon={Layers}
         />
       </div>
     </div>
