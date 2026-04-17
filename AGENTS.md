@@ -192,22 +192,25 @@ OTel logs live in `default.otel_logs`, not `forge_metal.otel_logs`:
 make clickhouse-query QUERY='SELECT Timestamp, Body FROM default.otel_logs ORDER BY Timestamp DESC LIMIT 10'
 ```
 
-### Debug with traces
+### Debug with observe
 
-`make traces` pulls recent HTTP traces and structured logs from ClickHouse in a single command:
+`make observe` is the blessed operator query surface for ClickHouse-backed telemetry:
 
 ```bash
-make traces                              # Last 5 min, all services
-make traces SERVICE=billing-service      # Filter to one service
-make traces MINUTES=30                   # Last 30 minutes
-make traces ERRORS=1                     # Errors only (4xx/5xx + ERROR/WARN logs)
-make traces SERVICE=sandbox-rental ERRORS=1  # Combine filters
+make observe WHAT=catalog
+make observe WHAT=metric METRIC=system.cpu.time
+make observe WHAT=service SERVICE=billing-service
+make observe WHAT=service SERVICE=sandbox-rental-service ERRORS=1
+make observe WHAT=errors
+make observe WHAT=mail
+make observe WHAT=deploy
 ```
 
-Deploy playbook telemetry is queryable separately:
+Use `make clickhouse-query` or `make clickhouse-shell` only when the observe surface does not yet cover the question.
+
+Deploy playbook telemetry smoke probes remain:
 
 ```bash
-make deploy-trace QUERY="SpanName = 'ansible.task'"
 make telemetry-proof           # success path: ansible + service correlation
 make telemetry-proof-fail      # sad path: assert Error spans are emitted
 ```

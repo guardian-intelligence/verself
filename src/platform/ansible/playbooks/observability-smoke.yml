@@ -1,5 +1,5 @@
 ---
-# Tiny telemetry smoke probe for deploy-trace / telemetry-proof.
+# Tiny telemetry smoke probe for observe / telemetry-proof.
 
 - name: Observability smoke
   hosts: all

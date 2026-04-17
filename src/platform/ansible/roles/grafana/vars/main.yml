@@ -1003,4 +1003,4 @@ grafana_dashboards:
           >-
             SELECT Timestamp, SpanName, StatusCode, SpanAttributes['observe.what'] AS Surface, SpanAttributes['clickhouse.query_name'] AS
             QueryName, SpanAttributes['observe.run_id'] AS RunID, TraceId FROM default.otel_traces WHERE $__timeFilter(Timestamp) AND
-            ServiceName = 'fm-observe' ORDER BY Timestamp DESC LIMIT 100
+            ServiceName = 'observe' ORDER BY Timestamp DESC LIMIT 100

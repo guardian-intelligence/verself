@@ -145,8 +145,9 @@ curl -s -u admin:<admin_password> http://127.0.0.1:8090/api/principal/name/user
 Native OTLP over gRPC to otelcol-contrib on `127.0.0.1:4317`. Traces, logs, and metrics are all pushed — no scraping required. Data lands in ClickHouse under `ServiceName = 'stalwart'`.
 
 ```bash
-make traces SERVICE=stalwart           # recent traces + logs
-make traces SERVICE=stalwart ERRORS=1  # errors only
+make observe WHAT=service SERVICE=stalwart           # recent traces + logs
+make observe WHAT=service SERVICE=stalwart ERRORS=1  # errors only
+make observe WHAT=mail                               # mail events + metrics
 ```
 
 Stalwart emits 500+ event types across SMTP, IMAP, JMAP, auth, delivery, spam, TLS, and queue categories. All flow through the existing otelcol pipeline into `default.otel_logs` and `default.otel_traces`.
