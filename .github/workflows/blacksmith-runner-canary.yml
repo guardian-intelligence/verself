@@ -26,7 +26,7 @@ jobs:
         uses: useblacksmith/stickydisk@v1
         with:
           key: ${{ github.repository }}-viteplus-global-node24-vp-0.1.16
-          path: ~/.npm-global
+          path: /home/runner/.npm-global
 
       - name: Mount pnpm store
         uses: useblacksmith/stickydisk@v1
