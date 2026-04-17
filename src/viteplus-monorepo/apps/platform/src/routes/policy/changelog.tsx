@@ -4,7 +4,6 @@ import { requireOperatorDomain } from "@forge-metal/web-env";
 
 import { VERSIONS, formatPrettyDate } from "~/lib/policy-catalog";
 import {
-  ChangesSection,
   ContactSection,
   PolicyArticle,
   PolicyHeader,
@@ -35,7 +34,7 @@ function PolicyChangelog() {
   const sorted = [...VERSIONS.entries].sort((a, b) => (a.date < b.date ? 1 : -1));
   return (
     <PolicyArticle>
-      <PolicyHeader title="Policy Changelog" policyId="terms" />
+      <PolicyHeader title="Policy Changelog" />
       <Summary />
       <section className="flex flex-col gap-4">
         <SectionHeading id="entries">Entries</SectionHeading>
@@ -67,7 +66,6 @@ function PolicyChangelog() {
           ))}
         </ol>
       </section>
-      <ChangesSection policyId="terms" />
       <ContactSection operatorDomain={operatorDomain} primary="policy" />
     </PolicyArticle>
   );

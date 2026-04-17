@@ -24,6 +24,9 @@ export function PolicyArticle({ children }: { children: ReactNode }) {
   );
 }
 
+// Policy documents carry an Effective date derived from the changelog entry
+// that last listed them. Meta-documents (the changelog itself) carry only a
+// Last-updated timestamp; omit `policyId` in that case.
 export function PolicyHeader({
   eyebrow,
   title,
@@ -31,9 +34,8 @@ export function PolicyHeader({
 }: {
   eyebrow?: string;
   title: string;
-  policyId: PolicyId;
+  policyId?: PolicyId;
 }) {
-  const effective = formatPrettyDate(effectiveDateOf(policyId));
   const lastUpdated = formatPrettyDate(latestVersion().date);
   return (
     <header className="flex flex-col gap-4 border-b border-border pb-8">
@@ -42,7 +44,9 @@ export function PolicyHeader({
       </p>
       <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">{title}</h1>
       <dl className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
-        <MetaPair label="Effective date" value={effective} />
+        {policyId ? (
+          <MetaPair label="Effective date" value={formatPrettyDate(effectiveDateOf(policyId))} />
+        ) : null}
         <MetaPair label="Last updated" value={lastUpdated} />
       </dl>
     </header>
