@@ -88,8 +88,9 @@ make telemetry-proof-fail      # sad path: assert Error spans are emitted
 
 - `deploy_run_key` = `YYYY-MM-DD.<counter>@<controller-host>`
 - `deploy_id` = UUIDv5 over `forge-metal:${deploy_run_key}`
-- `deploy_events` row stores both `trace_id` and `deploy_run_key`
-- Ansible task probes via `fm_uri` propagate `traceparent`, `baggage`, and `X-Forge-Metal-*` headers so service spans join to deploy traces in ClickHouse.
+- `scripts/deploy_identity.sh` exports `TRACEPARENT=00-<deploy_id_hex>-<stable>-01` and `OTEL_RESOURCE_ATTRIBUTES=forge_metal.deploy_id=…,forge_metal.deploy_run_key=…,…`. The upstream `community.general.opentelemetry` Ansible callback and `fm_uri` probes both anchor to that trace-id.
+- The otelcol `transform/ansible_spans` processor renames upstream `<playbook>.yml` / `<task.name>` spans to `ansible.playbook` / `ansible.task` and mirrors `forge_metal.*` from `ResourceAttributes` onto `SpanAttributes`. Single query shape: `SpanAttributes['forge_metal.deploy_id']` works for ansible and service spans alike.
+- `fmotel.baggageSpanProcessor` projects W3C baggage members with the `forge_metal.` prefix onto every span a service creates — `fm_uri` emits `baggage: forge_metal.deploy_id=…,…` and services get the attribute without per-endpoint wiring.
 
 ## TLS with a real domain (Cloudflare)
 

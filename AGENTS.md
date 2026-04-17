@@ -186,8 +186,9 @@ Deterministic deploy correlation model:
 
 - `deploy_run_key`: `YYYY-MM-DD.<counter>@<controller-host>`
 - `deploy_id`: UUIDv5 over `forge-metal:${deploy_run_key}`
-- `deploy_events` row stores both `trace_id` and `deploy_run_key`
-- Ansible task probes via `fm_uri` propagate `traceparent`, `baggage`, and `X-Forge-Metal-*` headers so service spans can be joined to deploy traces in ClickHouse
+- `scripts/deploy_identity.sh` exports `TRACEPARENT=00-<deploy_id_hex>-<stable>-01` and `OTEL_RESOURCE_ATTRIBUTES=forge_metal.deploy_id=…,forge_metal.deploy_run_key=…,…`, anchoring the upstream `community.general.opentelemetry` Ansible callback and `fm_uri` probes to the same trace-id
+- The otelcol `transform/ansible_spans` processor renames upstream-emitted `<playbook>.yml` / `<task name>` spans to `ansible.playbook` / `ansible.task` and mirrors `forge_metal.*` from `ResourceAttributes` onto `SpanAttributes`, so the same query shape (`SpanAttributes['forge_metal.deploy_id']`) works for both ansible and service spans
+- Service spans pick up `forge_metal.*` via the `fmotel` baggage span processor (`src/otel/otel.go`), which projects every W3C baggage member with the `forge_metal.` prefix onto spans it sees
 
 ### TLS with a real domain (Cloudflare)
 
