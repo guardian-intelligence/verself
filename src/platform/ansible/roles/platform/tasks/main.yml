@@ -132,6 +132,25 @@
     group: "{{ platform_runtime_group }}"
     mode: "0644"
 
+- name: Ensure platform /.well-known directory exists in synced source
+  ansible.builtin.file:
+    path: "{{ platform_install_dir }}/apps/platform/public/.well-known"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ platform_runtime_group }}"
+    mode: "0755"
+
+# Templated against forge_metal_domain so the file always carries the real
+# operator domain without checking a deployment-specific value into git.
+- name: Template platform security.txt (RFC 9116)
+  ansible.builtin.template:
+    src: security.txt.j2
+    dest: "{{ platform_install_dir }}/apps/platform/public/.well-known/security.txt"
+    owner: "{{ ansible_user }}"
+    group: "{{ platform_runtime_group }}"
+    mode: "0644"
+  notify: Restart platform
+
 - name: Build platform package dependencies
   become: false
   ansible.builtin.command:
