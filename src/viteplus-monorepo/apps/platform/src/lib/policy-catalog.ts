@@ -1,17 +1,21 @@
 // Policy catalog — parses the machine-readable policy source at module load
-// and exposes typed constants every /policy/* page renders against. Raw YAML
-// files live in src/__generated/policies/, refreshed from the canonical
-// src/platform/policies/ tree by the `generate` package script. Keeping both
-// sides schema-gated on parse means a malformed edit breaks the build, not
-// just the runtime page.
+// and exposes typed constants every /policy/* page renders against. The raw
+// YAML is imported directly from src/platform/policies/ via ?raw; Rollup
+// inlines the content at build time and Vite's dev-server FS gate is widened
+// in vite.config.ts. One canonical location, no generated copy to drift.
+// A malformed edit breaks the Valibot parse at module load, not the runtime
+// page.
 import * as v from "valibot";
 import { parse as parseYaml } from "yaml";
 
-import retentionYaml from "../__generated/policies/retention.yml?raw";
-import subprocessorsYaml from "../__generated/policies/subprocessors.yml?raw";
-import ropaYaml from "../__generated/policies/ropa.yml?raw";
-import contactsYaml from "../__generated/policies/contacts.yml?raw";
-import versionsYaml from "../__generated/policies/versions.yml?raw";
+// Canonical policy source — readable by Vite because vite.config.ts extends
+// server.fs.allow to include src/platform/policies/. Build-time Rollup reads
+// the file directly; no generated copy is carried.
+import retentionYaml from "../../../../../platform/policies/retention.yml?raw";
+import subprocessorsYaml from "../../../../../platform/policies/subprocessors.yml?raw";
+import ropaYaml from "../../../../../platform/policies/ropa.yml?raw";
+import contactsYaml from "../../../../../platform/policies/contacts.yml?raw";
+import versionsYaml from "../../../../../platform/policies/versions.yml?raw";
 
 // ─── retention ──────────────────────────────────────────────────────────────
 
