@@ -67,7 +67,7 @@ func (c *Client) statementForCycle(ctx context.Context, orgID OrgID, productID s
 		switch window.State {
 		case "settled":
 			addSettledStatementWindow(&statement, lines, window)
-		case "reserved", "active":
+		case "reserved", "active", "settling":
 			addReservedStatementWindow(&statement, lines, window)
 		}
 	}
@@ -85,7 +85,7 @@ func (c *Client) statementWindows(ctx context.Context, orgID OrgID, productID st
 		WHERE cycle_id = $1
 		  AND org_id = $2
 		  AND product_id = $3
-		  AND state IN ('reserved','active','settled')
+		  AND state IN ('reserved','active','settling','settled')
 		ORDER BY window_start, window_seq, window_id
 	`, cycle.CycleID, orgIDText(orgID), productID)
 	if err != nil {

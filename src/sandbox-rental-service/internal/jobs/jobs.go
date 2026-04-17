@@ -635,7 +635,7 @@ func (s *Service) reserveBilling(ctx context.Context, item executionWorkItem, bi
 		billingSKUMemoryGiBMs:       float64(res.MemoryMiB) / billingMiBPerGiB,
 		billingSKUBlockStorageGiBMs: float64(res.RootDiskGiB),
 	}
-	return s.Billing.Reserve(ctx, billingJobID, item.OrgID, item.ProductID, item.ActorID, 1, item.SourceKind, item.ExecutionID.String(), 1, allocation)
+	return s.Billing.Reserve(ctx, billingJobID, item.OrgID, item.ProductID, item.ActorID, 1, item.SourceKind, item.ExecutionID.String(), 1, 0, allocation)
 }
 
 func (s *Service) insertBillingWindow(ctx context.Context, attemptID uuid.UUID, reservation billingclient.Reservation) error {

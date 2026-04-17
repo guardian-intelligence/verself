@@ -228,16 +228,8 @@ func (c *Client) completePostedLedgerCommand(ctx context.Context, commandID stri
 	switch command.Operation {
 	case "grant_deposit":
 		return c.markGrantLedgerPostingPosted(ctx, command.AggregateID)
-	case "reserve_window":
-		window, err := c.loadWindow(ctx, command.AggregateID)
-		if err != nil {
-			return err
-		}
-		return c.markWindowReservationPosted(ctx, window)
 	case "settle_window":
 		return c.markWindowSettlementPosted(ctx, command.AggregateID)
-	case "void_window":
-		return c.markWindowVoidPosted(ctx, command.AggregateID)
 	default:
 		return nil
 	}
@@ -367,17 +359,9 @@ func (c *Client) DispatchPendingLedgerCommands(ctx context.Context, limit int) (
 		        SELECT 1 FROM credit_grants g
 		        WHERE g.grant_id = aggregate_id AND g.ledger_posting_state <> 'posted'
 		      ))
-		      OR (operation = 'reserve_window' AND EXISTS (
-		        SELECT 1 FROM billing_windows w
-		        WHERE w.window_id = aggregate_id AND w.state = 'reserving'
-		      ))
 		      OR (operation = 'settle_window' AND EXISTS (
 		        SELECT 1 FROM billing_windows w
 		        WHERE w.window_id = aggregate_id AND w.state = 'settling'
-		      ))
-		      OR (operation = 'void_window' AND EXISTS (
-		        SELECT 1 FROM billing_windows w
-		        WHERE w.window_id = aggregate_id AND w.state = 'voiding'
 		      ))
 		    )
 		  )

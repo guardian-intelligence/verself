@@ -128,6 +128,7 @@ type ReserveRequest struct {
 	SourceType      string
 	SourceRef       string
 	WindowSeq       uint32
+	WindowMillis    uint32
 	Allocation      map[string]float64
 	BillingJobID    int64
 }

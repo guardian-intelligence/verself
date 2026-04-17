@@ -30,9 +30,9 @@ type Reservation struct {
 	ActorId          string
 	SourceType       string
 	SourceRef        string
-	WindowSeq        int32
+	WindowSeq        uint32
 	ReservationShape string
-	WindowMillis     int32
+	WindowMillis     uint32
 	PricingPhase     string
 	Allocation       map[string]float64
 	SKURates         map[string]int64
@@ -99,35 +99,37 @@ type billingResponse interface {
 	StatusCode() int
 }
 
-type BillingURLResponse = apiwire.BillingURLResponse
-type BillingCreateCheckoutRequest = apiwire.BillingCreateCheckoutRequest
-type BillingCreateContractRequest = apiwire.BillingCreateContractRequest
-type BillingCreateContractChangeRequest = apiwire.BillingCreateContractChangeRequest
-type BillingCreatePortalSessionRequest = apiwire.BillingCreatePortalSessionRequest
-type BillingCancelContractRequest = apiwire.BillingCancelContractRequest
-type BillingReserveWindowRequest = apiwire.BillingReserveWindowRequest
-type BillingActivateWindowRequest = apiwire.BillingActivateWindowRequest
-type BillingSettleWindowRequest = apiwire.BillingSettleWindowRequest
-type BillingVoidWindowRequest = apiwire.BillingVoidWindowRequest
-type BillingReserveWindowResult = apiwire.BillingReserveWindowResult
-type BillingActivateWindowResult = apiwire.BillingActivateWindowResult
-type BillingSettleResult = apiwire.BillingSettleResult
-type BillingVoidWindowResult = apiwire.BillingVoidWindowResult
-type BillingContracts = apiwire.BillingContracts
-type BillingPlans = apiwire.BillingPlans
-type BillingGrants = apiwire.BillingGrants
-type BillingStatement = apiwire.BillingStatement
-type BillingGrant = apiwire.BillingGrant
-type BillingStatementLineItem = apiwire.BillingStatementLineItem
-type BillingStatementGrantSummary = apiwire.BillingStatementGrantSummary
-type BillingStatementTotals = apiwire.BillingStatementTotals
-type BillingPlan = apiwire.BillingPlan
-type BillingContractChangeResponse = apiwire.BillingContractChangeResponse
-type BillingCancelContractResponse = apiwire.BillingCancelContractResponse
-type BillingContract = apiwire.BillingContract
-type BillingEntitlementSlot = apiwire.BillingEntitlementSlot
-type BillingEntitlementSourceTotal = apiwire.BillingEntitlementSourceTotal
-type BillingEntitlementBucketSection = apiwire.BillingEntitlementBucketSection
-type BillingEntitlementProductSection = apiwire.BillingEntitlementProductSection
-type BillingEntitlementsView = apiwire.BillingEntitlementsView
-type BillingWindowReservation = apiwire.BillingWindowReservation
+type (
+	BillingURLResponse                 = apiwire.BillingURLResponse
+	BillingCreateCheckoutRequest       = apiwire.BillingCreateCheckoutRequest
+	BillingCreateContractRequest       = apiwire.BillingCreateContractRequest
+	BillingCreateContractChangeRequest = apiwire.BillingCreateContractChangeRequest
+	BillingCreatePortalSessionRequest  = apiwire.BillingCreatePortalSessionRequest
+	BillingCancelContractRequest       = apiwire.BillingCancelContractRequest
+	BillingReserveWindowRequest        = apiwire.BillingReserveWindowRequest
+	BillingActivateWindowRequest       = apiwire.BillingActivateWindowRequest
+	BillingSettleWindowRequest         = apiwire.BillingSettleWindowRequest
+	BillingVoidWindowRequest           = apiwire.BillingVoidWindowRequest
+	BillingReserveWindowResult         = apiwire.BillingReserveWindowResult
+	BillingActivateWindowResult        = apiwire.BillingActivateWindowResult
+	BillingSettleResult                = apiwire.BillingSettleResult
+	BillingVoidWindowResult            = apiwire.BillingVoidWindowResult
+	BillingContracts                   = apiwire.BillingContracts
+	BillingPlans                       = apiwire.BillingPlans
+	BillingGrants                      = apiwire.BillingGrants
+	BillingStatement                   = apiwire.BillingStatement
+	BillingGrant                       = apiwire.BillingGrant
+	BillingStatementLineItem           = apiwire.BillingStatementLineItem
+	BillingStatementGrantSummary       = apiwire.BillingStatementGrantSummary
+	BillingStatementTotals             = apiwire.BillingStatementTotals
+	BillingPlan                        = apiwire.BillingPlan
+	BillingContractChangeResponse      = apiwire.BillingContractChangeResponse
+	BillingCancelContractResponse      = apiwire.BillingCancelContractResponse
+	BillingContract                    = apiwire.BillingContract
+	BillingEntitlementSlot             = apiwire.BillingEntitlementSlot
+	BillingEntitlementSourceTotal      = apiwire.BillingEntitlementSourceTotal
+	BillingEntitlementBucketSection    = apiwire.BillingEntitlementBucketSection
+	BillingEntitlementProductSection   = apiwire.BillingEntitlementProductSection
+	BillingEntitlementsView            = apiwire.BillingEntitlementsView
+	BillingWindowReservation           = apiwire.BillingWindowReservation
+)

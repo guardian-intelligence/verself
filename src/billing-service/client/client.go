@@ -20,8 +20,10 @@ type ServiceClient struct {
 	requestEditors []RequestEditorFn
 }
 
-type Client = ServiceClient
-type ClientWithResponses = ServiceClient
+type (
+	Client              = ServiceClient
+	ClientWithResponses = ServiceClient
+)
 
 func New(baseURL string, opts ...ClientOption) (*ServiceClient, error) {
 	parsed, err := url.Parse(strings.TrimSpace(baseURL))
@@ -216,7 +218,7 @@ func (c *ServiceClient) CreatePortalSession(ctx context.Context, orgID uint64, r
 	return out.URL, nil
 }
 
-func (c *ServiceClient) Reserve(ctx context.Context, jobID int64, orgID uint64, productID string, actorID string, concurrentCount uint64, sourceType string, sourceRef string, windowSeq uint32, allocation map[string]float64, reqEditors ...RequestEditorFn) (Reservation, error) {
+func (c *ServiceClient) Reserve(ctx context.Context, jobID int64, orgID uint64, productID string, actorID string, concurrentCount uint64, sourceType string, sourceRef string, windowSeq uint32, windowMillis uint32, allocation map[string]float64, reqEditors ...RequestEditorFn) (Reservation, error) {
 	body := apiwire.BillingReserveWindowRequest{
 		OrgID:           apiwire.Uint64(orgID),
 		ProductID:       productID,
@@ -225,6 +227,7 @@ func (c *ServiceClient) Reserve(ctx context.Context, jobID int64, orgID uint64, 
 		SourceType:      sourceType,
 		SourceRef:       sourceRef,
 		WindowSeq:       windowSeq,
+		WindowMillis:    windowMillis,
 		BillingJobID:    jobID,
 		Allocation:      allocation,
 	}
@@ -287,9 +290,9 @@ func parseReservation(in apiwire.BillingWindowReservation) (Reservation, error) 
 		ActorId:          in.ActorID,
 		SourceType:       in.SourceType,
 		SourceRef:        in.SourceRef,
-		WindowSeq:        int32(in.WindowSeq),
+		WindowSeq:        in.WindowSeq,
 		ReservationShape: in.ReservationShape,
-		WindowMillis:     int32(in.ReservedQuantity),
+		WindowMillis:     in.ReservedQuantity,
 		PricingPhase:     in.PricingPhase,
 		Allocation:       in.Allocation,
 		SKURates:         skuRates,

@@ -14,9 +14,7 @@ import (
 type fundingLeg struct {
 	GrantID           string `json:"grant_id,omitempty"`
 	GrantAccountID    string `json:"grant_account_id,omitempty"`
-	ReservationID     string `json:"reservation_transfer_id,omitempty"`
 	SettlementID      string `json:"settlement_transfer_id,omitempty"`
-	VoidID            string `json:"void_transfer_id,omitempty"`
 	Amount            uint64 `json:"amount"`
 	Source            string `json:"source"`
 	ScopeType         string `json:"scope_type,omitempty"`
@@ -86,6 +84,22 @@ func (c *Client) ListGrantBalances(ctx context.Context, orgID OrgID, productID s
 	if err := c.hydrateGrantLedgerBalances(ctx, out); err != nil {
 		return nil, err
 	}
+	authorized, err := c.grantAuthorizedUsage(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		amount := authorized[out[i].GrantID]
+		if amount == 0 {
+			continue
+		}
+		out[i].Pending += amount
+		if amount >= out[i].Available {
+			out[i].Available = 0
+			continue
+		}
+		out[i].Available -= amount
+	}
 	return grantsByFundingPriority(out), nil
 }
 
@@ -120,35 +134,33 @@ func (c *Client) hydrateGrantLedgerBalances(ctx context.Context, grants []GrantB
 	return nil
 }
 
-func (c *Client) grantUsage(ctx context.Context, orgID OrgID) (map[string]uint64, map[string]uint64, error) {
+func (c *Client) grantAuthorizedUsage(ctx context.Context, orgID OrgID) (map[string]uint64, error) {
 	rows, err := c.pg.Query(ctx, `
-		SELECT w.state, leg->>'grant_id', SUM((leg->>'amount')::bigint)
+		SELECT l.grant_id,
+		       SUM(CASE WHEN w.state = 'settling' THEN l.amount_posted ELSE l.amount_reserved END)
 		FROM billing_windows w
-		CROSS JOIN LATERAL jsonb_array_elements(w.funding_legs) leg
+		JOIN billing_window_ledger_legs l ON l.window_id = w.window_id
 		WHERE w.org_id = $1
-		  AND w.state IN ('reserved', 'active', 'settled')
-		  AND COALESCE(leg->>'grant_id','') <> ''
-		GROUP BY w.state, leg->>'grant_id'
+		  AND w.state IN ('reserved', 'active', 'settling')
+		  AND l.grant_id IS NOT NULL
+		GROUP BY l.grant_id
 	`, orgIDText(orgID))
 	if err != nil {
-		return nil, nil, fmt.Errorf("query grant usage: %w", err)
+		return nil, fmt.Errorf("query authorized grant usage: %w", err)
 	}
 	defer rows.Close()
-	spent := map[string]uint64{}
-	pending := map[string]uint64{}
+	authorized := map[string]uint64{}
 	for rows.Next() {
-		var state, grantID string
+		var grantID string
 		var amount int64
-		if err := rows.Scan(&state, &grantID, &amount); err != nil {
-			return nil, nil, fmt.Errorf("scan grant usage: %w", err)
+		if err := rows.Scan(&grantID, &amount); err != nil {
+			return nil, fmt.Errorf("scan authorized grant usage: %w", err)
 		}
-		if state == "settled" {
-			spent[grantID] += uint64(amount)
-		} else {
-			pending[grantID] += uint64(amount)
+		if amount > 0 {
+			authorized[grantID] = uint64(amount)
 		}
 	}
-	return spent, pending, rows.Err()
+	return authorized, rows.Err()
 }
 
 func grantsByFundingPriority(grants []GrantBalance) []GrantBalance {
