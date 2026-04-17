@@ -20,6 +20,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/riverqueue/river"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/baggage"
 
 	"github.com/forge-metal/apiwire"
 	auth "github.com/forge-metal/auth-middleware"
@@ -279,14 +280,22 @@ func run() error {
 			}
 		}
 		if correlationID != "" {
-			r = r.WithContext(jobs.WithCorrelationID(r.Context(), correlationID))
+			ctx := jobs.WithCorrelationID(r.Context(), correlationID)
+			// Mirror correlation_id into baggage so the fmotel span processor
+			// projects it onto service spans as forge_metal.correlation_id.
+			if member, err := baggage.NewMember(fmotel.BaggageAttributePrefix+"correlation_id", correlationID); err == nil {
+				bag := baggage.FromContext(ctx)
+				if next, err := bag.SetMember(member); err == nil {
+					ctx = baggage.ContextWithBaggage(ctx, next)
+				}
+			}
+			r = r.WithContext(ctx)
 		}
 		authHandler.ServeHTTP(w, r)
 	})
 	rootMux.Handle("/", correlationForwarder)
 	rootHandler := http.Handler(rootMux)
 	rootHandler = limitPublicAPIRequestBodies(rootHandler, sandboxAPIRequestBodyLimit)
-	rootHandler = fmotel.CorrelationMiddleware(rootHandler)
 	srv := &http.Server{
 		Addr:              listenAddr,
 		Handler:           otelhttp.NewHandler(rootHandler, "sandbox-rental-service"),

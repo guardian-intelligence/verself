@@ -133,7 +133,7 @@ func run() error {
 	protected := auth.Middleware(auth.Config{IssuerURL: authIssuerURL, Audience: authAudience, ProjectID: authAudience, JWKSURL: authJWKSURL})(privateMux)
 	rootMux.Handle("/", billingHandler(privateMux, protected))
 
-	srv := &http.Server{Addr: listenAddr, Handler: otelhttp.NewHandler(fmotel.CorrelationMiddleware(rootMux), "billing-service"), ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Addr: listenAddr, Handler: otelhttp.NewHandler(rootMux, "billing-service"), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

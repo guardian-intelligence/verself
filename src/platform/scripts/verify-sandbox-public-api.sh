@@ -293,7 +293,7 @@ PY
   curl -fsS \
     -H "Authorization: Bearer ${SANDBOX_RENTAL_TOKEN}" \
     -H "Content-Type: application/json" \
-    -H "X-Forge-Metal-Verification-Run: ${run_id}" \
+    -H "baggage: forge_metal.verification_run=${run_id}" \
     -d @"${payload_path}" \
     "${api_url}" >"${response_path}"
 }
