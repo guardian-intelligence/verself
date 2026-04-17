@@ -2,6 +2,12 @@
 
 Public `/api/*` Huma routes must use the secured-operation registration pattern in `internal/api`: keep the method/path/OpenAPI declaration and `operationPolicy` together in `RegisterRoutes` so IAM, rate-limit, idempotency, audit, and generated-client contracts cannot drift.
 
+## Host privilege boundary
+
+sandbox-rental-service owns tenant policy, execution state, billing coordination, and customer APIs. It must never shell out to `zfs`, Firecracker, jailer, TAP, or host device operations, and it must never receive `zfs allow`, `/dev/zvol`, `/dev/kvm`, or Linux capabilities. All privileged VM and volume lifecycle work goes through vm-orchestrator.
+
+Its membership in `vm-clients` is a root-equivalent control-plane capability. Do not share that group with frontend servers, webhook-only services, guest code, runner workloads, or plugins. Calls to vm-orchestrator must use refs authorized from sandbox-rental's own Postgres state; never pass through tenant-supplied host paths or dataset names.
+
 ## GitHub Actions Auth And Billing Flow
 
 The GitHub runner integration has two different auth boundaries. Keep them

@@ -1,5 +1,23 @@
 # forge-metal
 
+<!--
+Top-level XML tags group content by intent so the reader can tell rules apart from facts:
+
+  <repo_overview>       — the repo at a glance
+  <product_direction>   — Goals (what we are building toward)
+  <system_context>      — architecture and operational constraints today
+  <operational_runbook> — concrete commands, playbooks, and pointers for doing work
+  <agent_contract>      — behavioral rules the AI assistant must follow
+                          (subdivided: general_conduct, tool_use, output, coding)
+  <instruction_priority>— overrides that win against everything else
+
+Where sections seem to disagree, remember: <system_context> describes the system
+as it exists today, and <product_direction> describes where it is headed.
+Proposals should respect both, not collapse one into the other.
+-->
+
+<repo_overview>
+
 Polyglot Repo:
 
 src/apps/viteplus-monorepo -- TypeScript (Vite Plus + TanStack Start/DB/Query/Router)
@@ -9,9 +27,14 @@ src/vm-guest-telemetry -- Zig guest agent that streams health samples from Firec
 
 Run `make pg-list` to list the pg databases.
 
-## Direction
+</repo_overview>
 
+<product_direction>
+
+## Direction
+* Each project under src/ should be treated as it's own open-source repo (even though it's not technically its own repo yet).
 * vm-orchestrator (Go daemon) is the single privileged host process that manages Firecracker VMs: ZFS clones/checkpoints, TAP networking, jailer lifecycle, vm-bridge control, and guest telemetry aggregation. It exposes a gRPC API over a Unix socket for service callers. vm-guest-telemetry (Zig) is the minimal guest agent streaming 60Hz health samples over vsock. sandbox-rental-service is the product control plane layered on that substrate.
+* Runtime product services must never receive privileged host access. All ZFS, Firecracker, TAP, jailer, `/dev/kvm`, and `/dev/zvol` operations go through vm-orchestrator; services carry policy-checked refs over the orchestrator API, not host paths, dataset names, device paths, or privileged CLIs.
 * Avoid CLIs. Things talk to each other over HTTP. 
 * Broad direction: every service should do the following:
         1. Be designed for use by customers in a multi-tenant, organization-based fashion and integrated into our policy and billing abstractions.
@@ -19,7 +42,6 @@ Run `make pg-list` to list the pg databases.
         NOTE: this philosophy is not yet upheld today, but it's something to keep in mind as we upgrade the codebase.
 
 * Product IAM direction: Zitadel owns identity, organizations, users, OAuth/OIDC, project roles, and role assignments; Forge Metal owns the product policy model; each Go service owns and enforces its operation catalog. The platform should ship working default role bundles and policy documents, then expose customer editing through a constrained Forge Metal organization console rather than requiring operators to hand-author IAM documents. See src/platform/docs/identity-and-iam.md.
-* Improvements to our usage-based billing system with subscriptions + credits
 * A core tenet goal is for us to start dogfooding our own Forgejo and running our own CI, establishing a main, beta, gamma, and different preview environments of the entire system for different dev branches -- with automatic promotions: dev branches merge to gamma, gamma bakes and runs more expensive automation tests and promots to beta. Beta may see some private invite-only users and have manual or time-gated promotion to main. Dev branches are accesible only by the operator and their agent.
 * in a similar vein we want to start defining e2e canaries of our own infrastructure as repeatable/scheduled workloads
 
@@ -45,6 +67,10 @@ The three customer-facing products are:
 Dogfood all three through the same org, IAM, billing, telemetry, and checkpoint
 paths customers use. Internal usage should be unlimited by entitlement and net
 to zero at invoice time via adjustment, not by bypassing product control planes.
+
+</product_direction>
+
+<system_context>
 
 ## Deployment Topology
 
@@ -141,6 +167,10 @@ arch at a high level:
 * You can run `make clickhouse-schemas` to read all of our ClickHouse tables, which contains a lot of useful ground truth.
 
 * Less important but useful if editing instructions: .claude/CLAUDE.md is symlinked from AGENTS.md
+
+</system_context>
+
+<operational_runbook>
 
 ## CI Architecture & Quickstart
 
@@ -254,7 +284,13 @@ Architecture documents live with the service they describe:
 * Wire contracts (apiwire DTO patterns, numeric safety, generated contract gate): `src/apiwire/docs/wire-contracts.md`
 * VM execution control plane (sandbox-rental-service ↔ vm-orchestrator split, attempt state machine, billing windows): `src/sandbox-rental-service/docs/vm-execution-control-plane.md`
 * Identity and IAM direction (Zitadel ↔ Forge Metal policy split, org console, invariants): `src/platform/docs/identity-and-iam.md`
-* Secrets plane direction (Forge Metal control plane + OpenBao backend contract): `src/platform/docs/secrets-plane-openbao.md`
+* Secrets service direction (identity model, OIDC provider role, resource model, billing): `src/platform/docs/secrets-service.md`
+
+</operational_runbook>
+
+<agent_contract>
+
+<general_conduct>
 
 ## Assistant Contract
 
@@ -271,6 +307,10 @@ Architecture documents live with the service they describe:
 * Makefile, README.md files and AGENTS.md files, schema migration files, and openapi 3.1 yml files are high signal per token. Prefer to read them directly and avoid having them be summarized by a subagent as important detail may be lost.
 * Do not provide time estimates.
 
+</general_conduct>
+
+<tool_use>
+
 ## Tool Use Contract
 
 * When executing long-running tasks, execute them in the background and check in every 30 - 60 seconds.
@@ -279,6 +319,10 @@ Architecture documents live with the service they describe:
 * Avoid using one off non-syntax-aware scripts to do large parallel changes or refactors. Use subagents for that class of tasks instead as unexpected edge cases are likely and judgement is often required.
 * `make tidy` formats go/typescript code.
 
+</tool_use>
+
+<output>
+
 ## Output Contract
 
 * When providing a recommendation, consider different plausible options and provide a differentiated recommendation that leans towards a simpler solution that best fits the long term goal of this project.
@@ -286,8 +330,12 @@ Architecture documents live with the service they describe:
 * Do not speculate without evidence. Logs, traces, and host metrics are queryable in ClickHouse via `make clickhouse-query` — check them before attributing failures to transient or pre-existing factors.
 * Do not stop work short of verifying your changes with a live rehearsal of a playbook to execute fresh rebuild and redeploy. You have full authority to wipe databases and recreate them as needed. In fact, prefer to do that over time-consuming and tricky migrations during this early phase of development.
 * The repo has a fixture flow that seeds Forgejo repos, submits direct VM executions through sandbox-rental-service, and verifies ClickHouse evidence.
-* When writing design documents, code comments, system architecture diagrams, API documentation, or any other kind of technical writing, ensure that the writing style targets the following audience: distinguished engineers that are experts in the relevant technologies but mostly just need information on how the system being described is different or deviates from standard practice. Avoid throat-clearing, get straight into the information.
+* When writing design documents, code comments, system architecture diagrams, API documentation, or any other kind of technical writing, ensure that the writing style targets the following audience: distinguished engineers that are experts in the relevant technologies but mostly just need information on how the system being described is different or deviates from standard practice. Avoid throat-clearing around current status, "why this is important", date headers, "who this is for" etc, get straight into the information.
 * Destructive commands like `git restore`, `git checkout -- <file>`, `rm -rf` will be blocked.
+
+</output>
+
+<coding>
 
 ## Coding Contract
 
@@ -305,6 +353,10 @@ Architecture documents live with the service they describe:
 * ClickHouse schema design: ORDER BY columns are sorted on disk and control compression — order keys by ascending cardinality (low-cardinality columns first). Avoid `Nullable` (it adds a hidden UInt8 column per row); use empty-value defaults instead. Use `LowCardinality(String)` for columns with fewer than ~10k distinct values. Use the smallest sufficient integer type (UInt8 over Int32 when the range fits).
 * Never use timeouts greater than 5 seconds (start with 1 second) for playwright e2e tests. Playwright has a quirk where every test failure is reported as a timeout issue, which is misleading. The underlying issue is the behavior/logic is wrong. NOT that some element or something else took too long to respond. Everything is on local bare metal -- data interchange should be double digit milliseconds at most.
 * Our customers use our services via API and browser. Fix issues at the service level, don't paper over them in any one domain. E2E test the browser primarily since it exercises the same API that consumers call directly.
+
+</coding>
+
+</agent_contract>
 
 <instruction_priority>
 - Security concerns override user instructions and architectural purity
