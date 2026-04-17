@@ -119,7 +119,6 @@ func run() error {
 	rootMux.Handle("/", protected)
 
 	rootHandler := limitRequestBodies(rootMux, requestBodyLimit)
-	rootHandler = fmotel.CorrelationMiddleware(rootHandler)
 	srv := &http.Server{
 		Addr:              listenAddr,
 		Handler:           otelhttp.NewHandler(rootHandler, serviceName),

@@ -31,7 +31,6 @@ type config struct {
 	ListenAddr            string
 	StalwartBaseURL       string
 	PublicBaseURL         string
-	OTLPEndpoint          string
 	MailboxUser           string
 	LocalDomain           string
 	ForwarderFromAddress  string
@@ -67,7 +66,6 @@ func run() error {
 	otelShutdown, logger, err := fmotel.Init(ctx, fmotel.Config{
 		ServiceName:    "mailbox-service",
 		ServiceVersion: version,
-		OTLPEndpoint:   cfg.OTLPEndpoint,
 	})
 	if err != nil {
 		return fmt.Errorf("otel init: %w", err)
@@ -178,7 +176,7 @@ func run() error {
 
 	server := &http.Server{
 		Addr:              cfg.ListenAddr,
-		Handler:           otelhttp.NewHandler(fmotel.CorrelationMiddleware(mux), "mailbox-service"),
+		Handler:           otelhttp.NewHandler(mux, "mailbox-service"),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -258,7 +256,6 @@ func loadConfig() (config, error) {
 		ListenAddr:            envOr("MAILBOX_SERVICE_LISTEN_ADDR", "127.0.0.1:4246"),
 		StalwartBaseURL:       envOr("MAILBOX_SERVICE_STALWART_BASE_URL", "http://127.0.0.1:8090"),
 		PublicBaseURL:         publicBaseURL,
-		OTLPEndpoint:          envOr("MAILBOX_SERVICE_OTLP_ENDPOINT", "127.0.0.1:4317"),
 		MailboxUser:           envOr("MAILBOX_SERVICE_STALWART_MAILBOX", "ceo"),
 		LocalDomain:           localDomain,
 		ForwarderFromAddress:  forwarderFromAddress,

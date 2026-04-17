@@ -1,20 +1,27 @@
-"""fm_uri — `uri` with deterministic Forge Metal correlation headers.
+"""fm_uri — `uri` with Forge Metal trace + baggage correlation.
 
-This wrapper keeps the builtin `uri` behavior but injects correlation headers
-when they are supplied via environment or Ansible vars. It also derives a
-stable probe id from the deploy/task context so repeated calls are joinable in
-ClickHouse without depending on span parenting.
+Delegates to ansible.builtin.uri. Injects exactly two observability headers
+per request:
+  - traceparent:  W3C TraceContext v1. Anchors the probe under the deploy
+    trace (same trace-id as the playbook span). The span-id is a
+    deterministic SHA-256 derived from the task identity so repeated runs
+    of the same task share a probe parent span-id.
+  - baggage:      W3C Baggage. Carries forge_metal.* members that downstream
+    services project onto every span they create (see src/otel/otel.go,
+    baggageSpanProcessor). The product correlation header
+    X-Forge-Metal-Correlation-Id is unrelated to this plane.
+
+Deploy identity (FORGE_METAL_DEPLOY_ID, FORGE_METAL_DEPLOY_RUN_KEY) must be
+set in the environment before ansible-playbook runs — scripts/deploy_identity.sh
+is the single source of truth. The action fails fast if the identity is
+missing, because guessing it silently would break downstream trace joins.
 """
 
 from __future__ import annotations
 
 import collections.abc as _c
-import fcntl
 import hashlib
 import os
-import socket
-import time
-import uuid
 from copy import deepcopy
 from pathlib import Path
 from urllib.parse import quote, urlsplit
@@ -27,56 +34,25 @@ from ansible.plugins.action import ActionBase
 DOCUMENTATION = r"""
 name: fm_uri
 type: action
-short_description: `uri` wrapper with Forge Metal correlation headers
+short_description: `uri` wrapper emitting W3C traceparent + baggage
 description:
   - Delegates to ansible.builtin.uri / ansible.legacy.uri.
-  - Injects deterministic Forge Metal correlation headers when they are
-    available from environment variables or Ansible vars.
+  - Injects `traceparent` anchored to FORGE_METAL_DEPLOY_ID's UUIDv5 trace id.
+  - Injects `baggage` carrying forge_metal.* correlation members that
+    downstream services project onto their spans via the fmotel baggage
+    span processor.
   - Preserves any explicitly provided task headers.
 requirements:
   - ansible-core
+  - FORGE_METAL_DEPLOY_ID and FORGE_METAL_DEPLOY_RUN_KEY in the environment
+    (set by src/platform/scripts/deploy_identity.sh).
 """
 
-_CONTEXT_CACHE: dict[str, str] = {}
+
 _PROBE_ORDINALS: dict[tuple[str, str, str, str], int] = {}
 
-_HEADER_SOURCES = {
-    "X-Forge-Metal-Deploy-Id": ("FORGE_METAL_DEPLOY_ID", "forge_metal_deploy_id"),
-    "X-Forge-Metal-Deploy-Run-Key": (
-        "FORGE_METAL_DEPLOY_RUN_KEY",
-        "forge_metal_deploy_run_key",
-    ),
-    "X-Forge-Metal-Task-Template-Id": (
-        "FORGE_METAL_TASK_TEMPLATE_ID",
-        "forge_metal_task_template_id",
-    ),
-    "X-Forge-Metal-Task-Instance-Id": (
-        "FORGE_METAL_TASK_INSTANCE_ID",
-        "forge_metal_task_instance_id",
-    ),
-    "X-Forge-Metal-Probe-Id": ("FORGE_METAL_PROBE_ID", "forge_metal_probe_id"),
-    "X-Forge-Metal-Verification-Run": (
-        "FORGE_METAL_VERIFICATION_RUN",
-        "forge_metal_verification_run",
-    ),
-    "X-Forge-Metal-Correlation-Id": (
-        "FORGE_METAL_CORRELATION_ID",
-        "forge_metal_correlation_id",
-    ),
-}
 
-
-def _first_nonempty(*values):
-    for value in values:
-        if value is None:
-            continue
-        text = str(value).strip()
-        if text:
-            return text
-    return ""
-
-
-def _stable_hex(*parts: str, length: int = 32) -> str:
+def _stable_hex(*parts: str, length: int) -> str:
     digest = hashlib.sha256()
     for part in parts:
         digest.update(part.encode("utf-8"))
@@ -84,165 +60,76 @@ def _stable_hex(*parts: str, length: int = 32) -> str:
     return digest.hexdigest()[:length]
 
 
-def _cache_dir() -> Path:
-    root = os.environ.get("XDG_CACHE_HOME")
-    if not root:
-        root = str(Path.home() / ".cache")
-    return Path(root) / "forge-metal" / "deploy-run-key"
+def _require_env(name: str) -> str:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        raise AnsibleActionFail(
+            f"fm_uri: {name} is not set. Source scripts/deploy_identity.sh "
+            f"before running ansible-playbook."
+        )
+    return value
 
 
-def _generate_run_key() -> str:
-    today = time.strftime("%Y-%m-%d", time.gmtime())
-    cache_dir = _cache_dir()
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    counter_path = cache_dir / f"{today}.counter"
-    lock_path = cache_dir / f"{today}.lock"
-    hostname = socket.gethostname().split(".")[0] or "controller"
-
-    with lock_path.open("a+") as lock_file:
-        fcntl.flock(lock_file, fcntl.LOCK_EX)
-        try:
-            current = int(counter_path.read_text(encoding="utf-8").strip() or "0")
-        except FileNotFoundError:
-            current = 0
-        except ValueError:
-            current = 0
-        current += 1
-        counter_path.write_text(str(current), encoding="utf-8")
-    return f"{today}.{current:06d}@{hostname}"
-
-
-def _context_value(task_vars, env_name: str, var_name: str = "") -> str:
-    candidates = []
-    if env_name:
-        candidates.append(os.environ.get(env_name))
-    if var_name:
-        candidates.append(task_vars.get(var_name))
-    return _first_nonempty(*candidates)
-
-
-def _context() -> dict[str, str]:
-    if _CONTEXT_CACHE:
-        return _CONTEXT_CACHE
-
-    run_key = _first_nonempty(
-        os.environ.get("FORGE_METAL_DEPLOY_RUN_KEY"),
-        _generate_run_key(),
-    )
-    deploy_id = _first_nonempty(
-        os.environ.get("FORGE_METAL_DEPLOY_ID"),
-        str(uuid.uuid5(uuid.NAMESPACE_URL, f"forge-metal:{run_key}")),
-    )
-    _CONTEXT_CACHE.update(
-        {
-            "deploy_id": deploy_id,
-            "deploy_run_key": run_key,
-        }
-    )
-    return _CONTEXT_CACHE
-
-
-def _header_get(headers: dict, name: str) -> str:
-    for key, value in headers.items():
-        if str(key).lower() == name.lower():
-            return _first_nonempty(value)
-    return ""
-
-
-def _header_has(headers: dict, name: str) -> bool:
-    for key in headers.keys():
-        if str(key).lower() == name.lower():
-            return True
-    return False
+def _trace_id_hex() -> str:
+    deploy_id = _require_env("FORGE_METAL_DEPLOY_ID")
+    return deploy_id.replace("-", "")
 
 
 def _task_template_id(task, task_vars) -> str:
-    task_path = _first_nonempty(
-        getattr(task, "get_path", lambda: "")(),
-        task_vars.get("ansible_parent_role_names", ""),
-    )
-    task_name = _first_nonempty(task.get_name(), getattr(task, "action", ""))
-    task_action = _first_nonempty(getattr(task, "action", ""))
-    play_name = _first_nonempty(task_vars.get("ansible_play_name"))
-    return _stable_hex(play_name, task_path, task_name, task_action)
+    task_path = (getattr(task, "get_path", lambda: "")() or "").strip()
+    task_name = (task.get_name() or getattr(task, "action", "") or "").strip()
+    task_action = (getattr(task, "action", "") or "").strip()
+    play_name = (task_vars.get("ansible_play_name") or "").strip()
+    return _stable_hex(play_name, task_path, task_name, task_action, length=32)
 
 
-def _task_instance_id(task, task_vars, context: dict[str, str], task_template_id: str) -> str:
-    task_uuid = _first_nonempty(getattr(task, "_uuid", ""))
-    inventory_hostname = _first_nonempty(task_vars.get("inventory_hostname", ""))
+def _task_instance_id(task, task_vars, task_template_id: str) -> str:
+    deploy_id = _require_env("FORGE_METAL_DEPLOY_ID")
+    deploy_run_key = _require_env("FORGE_METAL_DEPLOY_RUN_KEY")
+    task_uuid = getattr(task, "_uuid", "") or ""
+    inventory_hostname = (task_vars.get("inventory_hostname") or "").strip()
     return _stable_hex(
-        context["deploy_id"],
-        context["deploy_run_key"],
+        deploy_id,
+        deploy_run_key,
         inventory_hostname,
         task_uuid,
         task_template_id,
+        length=32,
     )
 
 
-def _probe_ordinal(context: dict[str, str], task_instance_id: str, method: str, url: str) -> int:
+def _probe_span_id(task_instance_id: str, method: str, url: str) -> str:
     parsed = urlsplit(url)
     path = parsed.path or "/"
-    key = (context["deploy_id"], task_instance_id, method.upper(), path)
+    key = (_require_env("FORGE_METAL_DEPLOY_ID"), task_instance_id, method.upper(), path)
     ordinal = _PROBE_ORDINALS.get(key, 0)
     _PROBE_ORDINALS[key] = ordinal + 1
-    return ordinal
-
-
-def _probe_id(
-    context: dict[str, str],
-    task_instance_id: str,
-    method: str,
-    url: str,
-    ordinal: int,
-) -> str:
-    parsed = urlsplit(url)
-    path = parsed.path or "/"
-    return _stable_hex(
-        context["deploy_id"],
-        task_instance_id,
-        method.upper(),
-        path,
-        str(ordinal),
-    )
-
-
-def _trace_id(context: dict[str, str]) -> str:
-    deploy_id = _first_nonempty(context.get("deploy_id"))
-    try:
-        return uuid.UUID(deploy_id).hex
-    except Exception:
-        return _stable_hex(deploy_id, length=32)
-
-
-def _span_id(seed: str) -> str:
-    span_id = _stable_hex(seed, length=16)
-    if span_id == "0" * 16:
+    span = _stable_hex(task_instance_id, method.upper(), path, str(ordinal), length=16)
+    if span == "0" * 16:
         return "0000000000000001"
-    return span_id
+    return span
 
 
-def _traceparent(context: dict[str, str], task_instance_id: str) -> str:
-    return f"00-{_trace_id(context)}-{_span_id(task_instance_id)}-01"
+def _header_has(headers: dict, name: str) -> bool:
+    return any(str(k).lower() == name.lower() for k in headers.keys())
 
 
-def _baggage(headers: dict[str, str]) -> str:
-    items: list[tuple[str, str]] = []
-
-    def add(key: str, header_name: str):
-        value = _header_get(headers, header_name)
+def _baggage_value(task_template_id: str, task_instance_id: str, probe_span_id: str) -> str:
+    members: list[tuple[str, str]] = [
+        ("forge_metal.deploy_id", _require_env("FORGE_METAL_DEPLOY_ID")),
+        ("forge_metal.deploy_run_key", _require_env("FORGE_METAL_DEPLOY_RUN_KEY")),
+        ("forge_metal.task_template_id", task_template_id),
+        ("forge_metal.task_instance_id", task_instance_id),
+        ("forge_metal.probe_id", probe_span_id),
+    ]
+    for env_var, key in (
+        ("FORGE_METAL_VERIFICATION_RUN", "forge_metal.verification_run"),
+        ("FORGE_METAL_CORRELATION_ID", "forge_metal.correlation_id"),
+    ):
+        value = os.environ.get(env_var, "").strip()
         if value:
-            items.append((key, value))
-
-    add("forge_metal.deploy_id", "X-Forge-Metal-Deploy-Id")
-    add("forge_metal.deploy_run_key", "X-Forge-Metal-Deploy-Run-Key")
-    add("forge_metal.task_template_id", "X-Forge-Metal-Task-Template-Id")
-    add("forge_metal.task_instance_id", "X-Forge-Metal-Task-Instance-Id")
-    add("forge_metal.probe_id", "X-Forge-Metal-Probe-Id")
-    add("forge_metal.verification_run", "X-Forge-Metal-Verification-Run")
-    add("forge_metal.correlation_id", "X-Forge-Metal-Correlation-Id")
-
-    encoded = [f"{k}={quote(v, safe='-._~@:/')}" for k, v in items]
-    return ",".join(encoded)
+            members.append((key, value))
+    return ",".join(f"{k}={quote(v, safe='-._~@:/')}" for k, v in members if v)
 
 
 class ActionModule(ActionBase):
@@ -256,50 +143,25 @@ class ActionModule(ActionBase):
             task_vars = {}
 
         super().run(tmp, task_vars)
-        del tmp  # tmp no longer has any effect
+        del tmp
 
         body_format = self._task.args.get("body_format", "raw")
         body = self._task.args.get("body")
         src = self._task.args.get("src", None)
         remote_src = boolean(self._task.args.get("remote_src", "no"), strict=False)
         headers = dict(self._task.args.get("headers") or {})
-        context = _context()
-        method = _first_nonempty(self._task.args.get("method", "GET"))
-        url = _first_nonempty(self._task.args.get("url", ""))
+        method = (self._task.args.get("method") or "GET").strip() or "GET"
+        url = (self._task.args.get("url") or "").strip()
+
         task_template_id = _task_template_id(self._task, task_vars)
-        task_instance_id = _task_instance_id(self._task, task_vars, context, task_template_id)
+        task_instance_id = _task_instance_id(self._task, task_vars, task_template_id)
+        probe_span_id = _probe_span_id(task_instance_id, method, url) if url else ""
 
-        for header_name, sources in _HEADER_SOURCES.items():
-            if header_name in headers:
-                continue
-
-            if header_name == "X-Forge-Metal-Deploy-Id":
-                value = _context_value(task_vars, sources[0], sources[1]) or context["deploy_id"]
-            elif header_name == "X-Forge-Metal-Deploy-Run-Key":
-                value = _context_value(task_vars, sources[0], sources[1]) or context["deploy_run_key"]
-            elif header_name == "X-Forge-Metal-Task-Template-Id":
-                value = _context_value(task_vars, sources[0], sources[1]) or task_template_id
-            elif header_name == "X-Forge-Metal-Task-Instance-Id":
-                value = _context_value(task_vars, sources[0], sources[1]) or task_instance_id
-            elif header_name == "X-Forge-Metal-Probe-Id":
-                value = _context_value(task_vars, sources[0], sources[1])
-                if not value and url:
-                    ordinal = _probe_ordinal(context, task_instance_id, method, url)
-                    value = _probe_id(context, task_instance_id, method, url, ordinal)
-            else:
-                env_name, var_name = sources
-                value = _context_value(task_vars, env_name, var_name)
-
-            if value:
-                headers[header_name] = value
-
-        if url and not _header_has(headers, "traceparent"):
-            headers["traceparent"] = _traceparent(context, task_instance_id)
+        if url and not _header_has(headers, "traceparent") and probe_span_id:
+            headers["traceparent"] = f"00-{_trace_id_hex()}-{probe_span_id}-01"
 
         if not _header_has(headers, "baggage"):
-            baggage_value = _baggage(headers)
-            if baggage_value:
-                headers["baggage"] = baggage_value
+            headers["baggage"] = _baggage_value(task_template_id, task_instance_id, probe_span_id)
 
         try:
             if remote_src:
@@ -316,7 +178,6 @@ class ActionModule(ActionBase):
 
             if src:
                 src = self._find_needle("files", src)
-
                 tmp_src = self._connection._shell.join_path(
                     self._connection._shell.tmpdir,
                     os.path.basename(src),
@@ -340,7 +201,6 @@ class ActionModule(ActionBase):
                         continue
 
                     filename = self._find_needle("files", filename)
-
                     tmp_src = self._connection._shell.join_path(
                         self._connection._shell.tmpdir,
                         os.path.basename(filename),

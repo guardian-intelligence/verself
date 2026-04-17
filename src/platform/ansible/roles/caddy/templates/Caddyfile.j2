@@ -211,7 +211,7 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 		import sandbox_api_cors_headers
 		import api_security_headers
 		header {
-			Access-Control-Allow-Headers "Authorization, Content-Type, Idempotency-Key, X-Forge-Metal-Correlation-Id, X-Forge-Metal-Verification-Run"
+			Access-Control-Allow-Headers "Authorization, Content-Type, Idempotency-Key, X-Forge-Metal-Correlation-Id, baggage, traceparent"
 			Access-Control-Allow-Methods "GET, POST, DELETE, OPTIONS"
 			Access-Control-Max-Age 600
 		}

@@ -20,6 +20,10 @@ import (
 
 type permission string
 
+// LogValue renders named-string values as plain strings for the otelslog
+// bridge. Without this, the bridge emits `"unhandled: (permission) v"`.
+func (p permission) LogValue() slog.Value { return slog.StringValue(string(p)) }
+
 const (
 	permissionOrganizationRead        permission = identity.PermissionOrganizationRead
 	permissionMemberRead              permission = identity.PermissionMemberRead
