@@ -452,7 +452,7 @@ func (c *Client) SettleWindow(ctx context.Context, windowID string, actualQuanti
 		return SettleResult{}, err
 	}
 	if c.runtime == nil {
-		if err := c.projectMeteringForWindow(ctx, settled); err != nil {
+		if _, err := c.ProjectMeteringWindow(ctx, settled.WindowID); err != nil {
 			c.logger.WarnContext(ctx, "billing metering projection failed", "window_id", windowID, "error", err)
 			_, _ = c.pg.Exec(ctx, `UPDATE billing_windows SET last_projection_error = $2 WHERE window_id = $1`, windowID, err.Error())
 		}
@@ -507,9 +507,19 @@ func (c *Client) ProjectMeteringWindow(ctx context.Context, windowID string) (bo
 	if c.ch == nil {
 		return false, nil
 	}
+	tx, err := c.pg.Begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf("begin metering projection tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	// The direct per-window job and periodic pending scanner can overlap; the
+	// advisory lock makes ClickHouse insertion idempotent per billing window.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, "metering:"+windowID); err != nil {
+		return false, fmt.Errorf("lock metering projection window: %w", err)
+	}
 	var state string
 	var projectedAt pgtype.Timestamptz
-	err := c.pg.QueryRow(ctx, `SELECT state, metering_projected_at FROM billing_windows WHERE window_id = $1`, windowID).Scan(&state, &projectedAt)
+	err = tx.QueryRow(ctx, `SELECT state, metering_projected_at FROM billing_windows WHERE window_id = $1 FOR UPDATE`, windowID).Scan(&state, &projectedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, ErrWindowNotFound
 	}
@@ -523,10 +533,18 @@ func (c *Client) ProjectMeteringWindow(ctx context.Context, windowID string) (bo
 	if err != nil {
 		return false, err
 	}
-	if err := c.projectMeteringForWindow(ctx, settled); err != nil {
+	recordedAt, err := c.projectMeteringForWindow(ctx, settled)
+	if err != nil {
 		c.logger.WarnContext(ctx, "billing metering projection failed", "window_id", windowID, "error", err)
-		_, _ = c.pg.Exec(ctx, `UPDATE billing_windows SET last_projection_error = $2 WHERE window_id = $1`, windowID, err.Error())
+		_, _ = tx.Exec(ctx, `UPDATE billing_windows SET last_projection_error = $2 WHERE window_id = $1`, windowID, err.Error())
+		_ = tx.Commit(ctx)
 		return false, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE billing_windows SET metering_projected_at = $2, last_projection_error = '' WHERE window_id = $1`, windowID, recordedAt); err != nil {
+		return false, fmt.Errorf("mark metering projected: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, fmt.Errorf("commit metering projection: %w", err)
 	}
 	return true, nil
 }
@@ -1140,9 +1158,9 @@ func skuBucketOrder(pricing pricingContext, skuID string) int {
 	return int(^uint(0) >> 1)
 }
 
-func (c *Client) projectMeteringForWindow(ctx context.Context, w persistedWindow) error {
+func (c *Client) projectMeteringForWindow(ctx context.Context, w persistedWindow) (time.Time, error) {
 	if c.ch == nil || w.State != "settled" {
-		return nil
+		return time.Time{}, nil
 	}
 	ctx, span := tracer.Start(ctx, "billing.metering.project")
 	defer span.End()
@@ -1150,16 +1168,15 @@ func (c *Client) projectMeteringForWindow(ctx context.Context, w persistedWindow
 	row := meteringRowForWindow(w, time.Now().UTC())
 	batch, err := c.ch.PrepareBatch(ctx, "INSERT INTO forge_metal.metering")
 	if err != nil {
-		return fmt.Errorf("prepare metering batch: %w", err)
+		return time.Time{}, fmt.Errorf("prepare metering batch: %w", err)
 	}
 	if err := appendMeteringRow(batch, row); err != nil {
-		return err
+		return time.Time{}, err
 	}
 	if err := batch.Send(); err != nil {
-		return fmt.Errorf("send metering batch: %w", err)
+		return time.Time{}, fmt.Errorf("send metering batch: %w", err)
 	}
-	_, err = c.pg.Exec(ctx, `UPDATE billing_windows SET metering_projected_at = $2, last_projection_error = '' WHERE window_id = $1`, w.WindowID, row.RecordedAt)
-	return err
+	return row.RecordedAt, nil
 }
 
 func meteringRowForWindow(w persistedWindow, recordedAt time.Time) meteringRow {
