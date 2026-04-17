@@ -28,7 +28,10 @@ const STATUS_KIND: Record<string, StatusKind> = {
   canceled: "canceled",
 };
 
-const KIND_VARIANT: Record<StatusKind, "secondary" | "info" | "success" | "destructive" | "outline"> = {
+const KIND_VARIANT: Record<
+  StatusKind,
+  "secondary" | "info" | "success" | "destructive" | "outline"
+> = {
   queued: "secondary",
   running: "info",
   succeeded: "success",

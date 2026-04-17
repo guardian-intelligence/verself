@@ -21,10 +21,10 @@ answers these with charts, tables, and yaml. That is the wrong instrument for th
 ## 2. Product Concept
 
 A game-like, illustrative operator console styled after builder games (Clash of Clans,
-Townscaper, Dorfromantik). The platform is rendered as a *village*: each service is a
-*building*, each customer is a *villager*, *tent*, *house*, or *building* according to spend
+Townscaper, Dorfromantik). The platform is rendered as a _village_: each service is a
+_building_, each customer is a _villager_, _tent_, _house_, or _building_ according to spend
 tier, and incoming external dependencies (Stripe, Cloudflare, Resend, Latitude.sh) arrive
-as *caravans* from off-map.
+as _caravans_ from off-map.
 
 The village is the primary surface. Existing engineer-facing surfaces (Grafana, raw logs,
 traces) remain accessible through a "developer mode" but are not the main experience.
@@ -52,13 +52,13 @@ per day, mostly on phone, occasionally on desktop when something needs attention
 
 **Jobs:**
 
-| # | Job                                                  | Answered by      |
-|---|------------------------------------------------------|------------------|
-| 1 | "Is everything OK right now?"                        | System Health    |
-| 2 | "Did anything important happen since I last looked?" | Raven feed       |
-| 3 | "Did we make money today / this week / this month?"  | Financials       |
-| 4 | "Did anyone new sign up?"                            | Growth           |
-| 5 | "Something looks wrong — can you fix or explain it?" | Agent console    |
+| #   | Job                                                  | Answered by   |
+| --- | ---------------------------------------------------- | ------------- |
+| 1   | "Is everything OK right now?"                        | System Health |
+| 2   | "Did anything important happen since I last looked?" | Raven feed    |
+| 3   | "Did we make money today / this week / this month?"  | Financials    |
+| 4   | "Did anyone new sign up?"                            | Growth        |
+| 5   | "Something looks wrong — can you fix or explain it?" | Agent console |
 
 All five jobs must be completable in under sixty seconds on a phone.
 
@@ -87,61 +87,61 @@ On desktop these are side rails rather than tabs.
 
 ## 5. The Village: Districts and Buildings
 
-The village is divided into three *districts*. The districts map 1:1 onto the product's
+The village is divided into three _districts_. The districts map 1:1 onto the product's
 three security rings. The operator understands them as Outer Walls / Town Proper / Keep.
 The engineering team understands them as Ring 1 / Ring 2 / Ring 3.
 
 Within each district the operator may rearrange buildings freely. They may not drag a
 building across a district boundary. Attempting to do so snaps the building back with a
-subtle haptic and a toast explaining *why* ("The Smelter must live inside the Keep").
+subtle haptic and a toast explaining _why_ ("The Smelter must live inside the Keep").
 
 ### 5.1 Gate District (Ring 1, internet-exposed)
 
 Walled frontage. This is where all external traffic arrives. Buildings sit along or just
 inside the wall.
 
-| Building          | Service                                    | Notes                                                         |
-|-------------------|--------------------------------------------|---------------------------------------------------------------|
-| The Gate          | Caddy + Coraza WAF + nftables ingress      | Animated guards; "under attack" posture on WAF spikes         |
-| Herald's Stage × N| Frontend apps (TanStack Start)             | One per public app (this console, rent-a-sandbox, letters, …) |
-| Customs House     | sandbox-rental-service public API          | Packages and crates in the yard scale with active rentals     |
-| Letter Slot       | Stalwart SMTP/JMAP + mailbox-service hook  | Mail sacks pile up with queue depth                           |
-| Tollbooth         | billing-service Stripe webhook             | A visible coin-chute; clinks on charge                        |
-| Code Forge        | Forgejo                                    | Anvil sparks on pushes                                        |
-| Watchtower        | Grafana                                    | Deep-link surface for developer mode                          |
+| Building           | Service                                   | Notes                                                         |
+| ------------------ | ----------------------------------------- | ------------------------------------------------------------- |
+| The Gate           | Caddy + Coraza WAF + nftables ingress     | Animated guards; "under attack" posture on WAF spikes         |
+| Herald's Stage × N | Frontend apps (TanStack Start)            | One per public app (this console, rent-a-sandbox, letters, …) |
+| Customs House      | sandbox-rental-service public API         | Packages and crates in the yard scale with active rentals     |
+| Letter Slot        | Stalwart SMTP/JMAP + mailbox-service hook | Mail sacks pile up with queue depth                           |
+| Tollbooth          | billing-service Stripe webhook            | A visible coin-chute; clinks on charge                        |
+| Code Forge         | Forgejo                                   | Anvil sparks on pushes                                        |
+| Watchtower         | Grafana                                   | Deep-link surface for developer mode                          |
 
 ### 5.2 Town Proper (Ring 2, private userspace)
 
 Interior district. No direct external exposure. Services and stateful stores.
 
-| Building              | Service                                  | Notes                                                    |
-|-----------------------|------------------------------------------|----------------------------------------------------------|
-| Town Hall             | Zitadel                                  | Bell rings on new signup                                 |
-| Counting House        | billing-service core                     | Ledgers visible through open doors                       |
-| Treasury Vault        | TigerBeetle                              | Sits in the Counting House courtyard, not a separate pin |
-| Library Row × N       | Postgres databases (one building per DB) | billing, mailbox, sandbox-rental, zitadel, forgejo, …    |
-| Observatory           | ClickHouse                               | Telescope tracks event velocity                          |
-| Scribe's Office       | OTel collector                           | Scribe bustle scales with span rate                      |
-| Post Office           | Stalwart internal + mailbox-service core | Mail carts shuttle to/from Letter Slot                   |
-| Bazaar                | Verdaccio (npm mirror)                   | Stalls restock on fetches                                |
-| Cartographer's Guild  | Cloudflare DNS client                    | Only Ring 2 building with a dotted road off-map          |
+| Building             | Service                                  | Notes                                                    |
+| -------------------- | ---------------------------------------- | -------------------------------------------------------- |
+| Town Hall            | Zitadel                                  | Bell rings on new signup                                 |
+| Counting House       | billing-service core                     | Ledgers visible through open doors                       |
+| Treasury Vault       | TigerBeetle                              | Sits in the Counting House courtyard, not a separate pin |
+| Library Row × N      | Postgres databases (one building per DB) | billing, mailbox, sandbox-rental, zitadel, forgejo, …    |
+| Observatory          | ClickHouse                               | Telescope tracks event velocity                          |
+| Scribe's Office      | OTel collector                           | Scribe bustle scales with span rate                      |
+| Post Office          | Stalwart internal + mailbox-service core | Mail carts shuttle to/from Letter Slot                   |
+| Bazaar               | Verdaccio (npm mirror)                   | Stalls restock on fetches                                |
+| Cartographer's Guild | Cloudflare DNS client                    | Only Ring 2 building with a dotted road off-map          |
 
 ### 5.3 The Keep (Ring 3, root/host)
 
 Inner sanctum. Walled and moated from Town Proper. Only vm-orchestrator's gRPC socket
 bridges in and out; this is rendered as a single portcullis.
 
-| Building     | Service                                 | Notes                                                 |
-|--------------|-----------------------------------------|-------------------------------------------------------|
-| The Smelter  | vm-orchestrator (privileged Go daemon)  | Smoke plume intensity ≈ VM spawn rate                 |
-| Quarry       | ZFS pool                                | Stockpiles of stone = zvol snapshots / checkpoints    |
-| Jail         | jailer + Firecracker microVMs           | One structure, occupancy meter, not one-per-VM        |
-| Scout's Hut  | vm-guest-telemetry (inside each cell)   | Tiny antennae on each cell; visible only when zoomed  |
+| Building    | Service                                | Notes                                                |
+| ----------- | -------------------------------------- | ---------------------------------------------------- |
+| The Smelter | vm-orchestrator (privileged Go daemon) | Smoke plume intensity ≈ VM spawn rate                |
+| Quarry      | ZFS pool                               | Stockpiles of stone = zvol snapshots / checkpoints   |
+| Jail        | jailer + Firecracker microVMs          | One structure, occupancy meter, not one-per-VM       |
+| Scout's Hut | vm-guest-telemetry (inside each cell)  | Tiny antennae on each cell; visible only when zoomed |
 
 ### 5.4 Off-map caravans (external providers)
 
 External dependencies are roads leading off the edge of the canvas, not placeable buildings.
-This reinforces the self-hosting narrative: everything substantive is *inside* the village.
+This reinforces the self-hosting narrative: everything substantive is _inside_ the village.
 
 - **Stripe** — gold caravan into Tollbooth
 - **Resend** — mail caravan into Letter Slot
@@ -156,12 +156,12 @@ representation is therefore configurable, with opinionated defaults.
 
 ### 6.1 Default tier → visual mapping
 
-| Tier                         | Visual      | Placement                                       |
-|------------------------------|-------------|-------------------------------------------------|
-| Free / trial                 | Villager    | Walks the town square; idle animation           |
-| Active paid (below mid)      | Tent        | Encampment district just outside Town Proper    |
-| Mid ($1k–$10k MRR)           | House       | Neighborhood district with assigned plots       |
-| Enterprise ($10k+ MRR)       | Named Manor | Own micro-district with crest, name floats over |
+| Tier                    | Visual      | Placement                                       |
+| ----------------------- | ----------- | ----------------------------------------------- |
+| Free / trial            | Villager    | Walks the town square; idle animation           |
+| Active paid (below mid) | Tent        | Encampment district just outside Town Proper    |
+| Mid ($1k–$10k MRR)      | House       | Neighborhood district with assigned plots       |
+| Enterprise ($10k+ MRR)  | Named Manor | Own micro-district with crest, name floats over |
 
 ### 6.2 Operator configuration
 
@@ -172,7 +172,7 @@ presets: "SaaS with free tier", "B2B usage-billed", "Marketplace", etc.
 ### 6.3 Scale behavior
 
 Villagers and tents are aggregated once counts exceed a screen-legibility threshold
-(suggest ~40 per district); beyond that a *crowd* texture fills the plot with a live count
+(suggest ~40 per district); beyond that a _crowd_ texture fills the plot with a live count
 label. Individual named buildings (Enterprise) never aggregate.
 
 ## 7. Interaction Model
@@ -216,11 +216,11 @@ this surface is a read model, not a new source of truth.
 
 ### 8.1 Event categories
 
-| Category   | Examples                                                                   |
-|------------|----------------------------------------------------------------------------|
-| System     | VM spawn / void, WAF block spike, service restart, Postgres replication lag|
-| Financial  | New customer, subscription renewed, invoice finalized, credit grant, refund|
-| Growth     | Signup, first paid conversion, referral, org created                       |
+| Category  | Examples                                                                    |
+| --------- | --------------------------------------------------------------------------- |
+| System    | VM spawn / void, WAF block spike, service restart, Postgres replication lag |
+| Financial | New customer, subscription renewed, invoice finalized, credit grant, refund |
+| Growth    | Signup, first paid conversion, referral, org created                        |
 
 ### 8.2 Event card anatomy
 
@@ -239,25 +239,25 @@ these as a horizontal chip strip at the top of the feed.
 
 ### 8.4 Empty state
 
-Fresh install shows an illustration of a raven waiting at the tower. Copy: *"No news yet.
-The raven is watching."*
+Fresh install shows an illustration of a raven waiting at the tower. Copy: _"No news yet.
+The raven is watching."_
 
 ## 9. States & Visual Language
 
 ### 9.1 Per-building states
 
-| State           | Visual                                                  | When                                          |
-|-----------------|---------------------------------------------------------|-----------------------------------------------|
-| Healthy         | Default animations, ambient smoke, workers visible      | No active alerts                              |
-| Informational   | Small blue pennant atop building                        | Non-urgent signal (e.g., version available)   |
-| Degraded        | Amber smoke plume; warning icon hovers                  | Elevated error rate, latency, or queue depth  |
-| Critical        | Flames, red icon, subtle shake                          | Hard failures, thresholds breached            |
-| Offline / Ruined| Collapsed walls; crows circle                           | Service down / health check failing           |
-| Upgrading       | Scaffolding overlay                                     | Future: in-place version change               |
+| State            | Visual                                             | When                                         |
+| ---------------- | -------------------------------------------------- | -------------------------------------------- |
+| Healthy          | Default animations, ambient smoke, workers visible | No active alerts                             |
+| Informational    | Small blue pennant atop building                   | Non-urgent signal (e.g., version available)  |
+| Degraded         | Amber smoke plume; warning icon hovers             | Elevated error rate, latency, or queue depth |
+| Critical         | Flames, red icon, subtle shake                     | Hard failures, thresholds breached           |
+| Offline / Ruined | Collapsed walls; crows circle                      | Service down / health check failing          |
+| Upgrading        | Scaffolding overlay                                | Future: in-place version change              |
 
 ### 9.2 Animation tempo as data
 
-Health is not the only signal. *Bustle* — workers, smoke plume rate, mail cart frequency —
+Health is not the only signal. _Bustle_ — workers, smoke plume rate, mail cart frequency —
 conveys throughput. A quiet town at 11pm versus a bustling one at peak hours is itself a
 health signal the operator internalizes without reading a number.
 
@@ -354,7 +354,7 @@ The Raven feed surfaces each Oracle session as a dedicated event category.
 ## 12. Accessibility
 
 - Every building has a text label (default hidden, toggleable globally and on focus)
-- State is encoded redundantly: color *and* icon *and* text chip in drill-ins
+- State is encoded redundantly: color _and_ icon _and_ text chip in drill-ins
 - Motion-preference respected: bustle animations and camera parallax suppress under `prefers-reduced-motion`
 - All interactions reachable by keyboard; focus ring visible on desktop
 - VoiceOver / TalkBack tested on iOS / Android for mobile flows
@@ -444,14 +444,14 @@ Explicitly flagged for the head of design to pressure-test before IC work begins
 
 ## 17. Appendix A — Data Sources (for engineering)
 
-| Surface                 | Source                                                           |
-|-------------------------|------------------------------------------------------------------|
-| Building health state   | `forge_metal.otel_traces` status codes + `default.otel_logs` severity, per `service.name`, sliding window |
-| Building bustle tempo   | Per-building custom metric (RPS for APIs, VM spawn rate for Smelter, span rate for Scribe, queue depth for Letter Slot) |
-| Raven feed              | New unified view over ClickHouse wide events; schema to be added |
-| Financials              | TigerBeetle balances + billing Postgres + Stripe events          |
-| Growth                  | Zitadel `user.added` + billing new-subscription events           |
-| Oracle audit            | New ClickHouse table for agent tool calls                        |
+| Surface               | Source                                                                                                                  |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Building health state | `forge_metal.otel_traces` status codes + `default.otel_logs` severity, per `service.name`, sliding window               |
+| Building bustle tempo | Per-building custom metric (RPS for APIs, VM spawn rate for Smelter, span rate for Scribe, queue depth for Letter Slot) |
+| Raven feed            | New unified view over ClickHouse wide events; schema to be added                                                        |
+| Financials            | TigerBeetle balances + billing Postgres + Stripe events                                                                 |
+| Growth                | Zitadel `user.added` + billing new-subscription events                                                                  |
+| Oracle audit          | New ClickHouse table for agent tool calls                                                                               |
 
 Wire contracts follow the repo's `apiwire` conventions; Raven and Oracle endpoints are new
 Huma v2 handlers on the platform service.

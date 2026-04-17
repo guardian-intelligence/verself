@@ -13,7 +13,7 @@ doc, the screen is wrong.
 1. **Every route renders exactly one `<Page>` wrapper.** Never two.
 2. **Every route has at most one `<PageHeader>` with exactly one `<PageTitle>`.**
 3. **`<PageSection>` is bare by default.** Wrap in `<Card>` only when the
-   content *is* a distinct object with its own affordance (a plan hero, a
+   content _is_ a distinct object with its own affordance (a plan hero, a
    metric tile, a credit pack). Lists of members, capabilities, statements,
    and tables use bare sections.
 4. **Spacing is owned by the primitives.** A route must not set
@@ -74,23 +74,23 @@ Page (variant?)                         ← root wrapper; gap-10 between header 
 The `Page` component takes a `variant` prop that sets the page's max
 width. It is the **only** place a route decides width.
 
-| `variant`  | max width | When to use |
-|------------|-----------|-------------|
-| `default`  | 1152px inherited from AppShell | Dashboards, list routes, detail routes |
-| `narrow`   | `max-w-2xl` (672px) | Forms, short-form flows, single-focus pages |
-| `full`     | `max-w-none` | Data tables or canvas views that need to breathe |
+| `variant` | max width                      | When to use                                      |
+| --------- | ------------------------------ | ------------------------------------------------ |
+| `default` | 1152px inherited from AppShell | Dashboards, list routes, detail routes           |
+| `narrow`  | `max-w-2xl` (672px)            | Forms, short-form flows, single-focus pages      |
+| `full`    | `max-w-none`                   | Data tables or canvas views that need to breathe |
 
 ## The spacing scale
 
 One scale. Four rhythm tokens. Baked into primitives, never overridden by
 routes.
 
-| Token | Tailwind | Pixels | Where it lives |
-|-------|----------|--------|----------------|
-| header-to-body | `gap-10` | 40px | `<Page>` — between PageHeader and PageSections |
-| section-to-section | `gap-8` | 32px | `<PageSections>` — between adjacent PageSections |
-| section-header-to-body | `gap-4` | 16px | `<PageSection>` — between SectionHeader and the section body |
-| intra-section-group | `gap-6` | 24px | form rows, card grids, subgroup rhythm inside a section |
+| Token                  | Tailwind | Pixels | Where it lives                                               |
+| ---------------------- | -------- | ------ | ------------------------------------------------------------ |
+| header-to-body         | `gap-10` | 40px   | `<Page>` — between PageHeader and PageSections               |
+| section-to-section     | `gap-8`  | 32px   | `<PageSections>` — between adjacent PageSections             |
+| section-header-to-body | `gap-4`  | 16px   | `<PageSection>` — between SectionHeader and the section body |
+| intra-section-group    | `gap-6`  | 24px   | form rows, card grids, subgroup rhythm inside a section      |
 
 **Why 40/32/16.** Distinguished dashboards (Linear, Vercel, Radix Themes)
 converge on "generous between landmarks, tight between group members."
@@ -104,13 +104,13 @@ body."
 
 One scale. Five roles. Callers pick a **role**, not a size.
 
-| Role | Component | Tailwind | px | Weight |
-|------|-----------|----------|-----|--------|
-| Page title | `PageTitle` | `text-2xl font-semibold tracking-tight` | 24 | 600 |
-| Page description | `PageDescription` | `text-sm text-muted-foreground` | 14 | 400 |
-| Page eyebrow | `PageEyebrow` | `text-xs font-medium text-muted-foreground` | 12 | 500 |
-| Section title | `SectionTitle` | `text-sm font-semibold` | 14 | 600 |
-| Section description | `SectionDescription` | `text-xs text-muted-foreground` | 12 | 400 |
+| Role                | Component            | Tailwind                                    | px  | Weight |
+| ------------------- | -------------------- | ------------------------------------------- | --- | ------ |
+| Page title          | `PageTitle`          | `text-2xl font-semibold tracking-tight`     | 24  | 600    |
+| Page description    | `PageDescription`    | `text-sm text-muted-foreground`             | 14  | 400    |
+| Page eyebrow        | `PageEyebrow`        | `text-xs font-medium text-muted-foreground` | 12  | 500    |
+| Section title       | `SectionTitle`       | `text-sm font-semibold`                     | 14  | 600    |
+| Section description | `SectionDescription` | `text-xs text-muted-foreground`             | 12  | 400    |
 
 **Why section titles are 14px / semibold** (deliberately eyebrow-weight,
 not large). Once the PageHeader is a clear 24px landmark and the
@@ -180,7 +180,7 @@ Concrete examples from the current codebase:
   has its own shadow. It's the object "the plan you're on." Renders
   with a border.
 - **Credit packs** in `settings/billing/credits.tsx` — each `$10 / $25
-  / …` tile is an object. `Card`.
+/ …` tile is an object. `Card`.
 - **Plan tiles** in `settings/billing/subscribe.tsx` — each plan is an
   object you can click. `Card`.
 - **Usage statement** in `settings/billing/index.tsx` — a section of
@@ -351,12 +351,12 @@ disappear — no error, no warning, no visible effect.
 
 Translation table when porting from upstream shadcn examples:
 
-| Upstream shadcn | Our codebase |
-|-----------------|--------------|
+| Upstream shadcn              | Our codebase          |
+| ---------------------------- | --------------------- |
 | `hsl(var(--sidebar-border))` | `var(--color-border)` |
 | `hsl(var(--sidebar-accent))` | `var(--color-accent)` |
-| `hsl(var(--border))` | `var(--color-border)` |
-| `bg-sidebar-accent` | `bg-accent` |
+| `hsl(var(--border))`         | `var(--color-border)` |
+| `bg-sidebar-accent`          | `bg-accent`           |
 
 This was the root cause of a silent sidebar-outline bug: the
 variant class shipped from upstream shadcn referenced

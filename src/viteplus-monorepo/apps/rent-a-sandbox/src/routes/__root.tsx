@@ -1,9 +1,4 @@
-import {
-  createRootRouteWithContext,
-  HeadContent,
-  Outlet,
-  Scripts,
-} from "@tanstack/react-router";
+import { createRootRouteWithContext, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { type ReactNode } from "react";
 import { AuthProvider } from "@forge-metal/auth-web/react";
@@ -14,7 +9,11 @@ import {
   parseAuthSnapshot,
   syncAuthPartitionedCache,
 } from "@forge-metal/auth-web/isomorphic";
-import { getClientAuthSnapshot, getSignInRedirectURL, getSignOutRedirectURL } from "~/server-fns/auth";
+import {
+  getClientAuthSnapshot,
+  getSignInRedirectURL,
+  getSignOutRedirectURL,
+} from "~/server-fns/auth";
 import "~/styles/app.css";
 
 async function loadAuthSnapshot(): Promise<AuthSnapshot> {

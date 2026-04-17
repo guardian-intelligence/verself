@@ -86,11 +86,7 @@ export function ServiceSection({
 
 // ─── schemas section ────────────────────────────────────────────────────────
 
-export function SchemasSection({
-  services,
-}: {
-  services: readonly ServiceCatalogEntry[];
-}) {
+export function SchemasSection({ services }: { services: readonly ServiceCatalogEntry[] }) {
   return (
     <section id="schemas" className="flex flex-col gap-4 border-t border-border pt-8">
       <header className="flex flex-col gap-2">
@@ -191,10 +187,7 @@ function OperationCard({
         )}
 
         {requestBody?.content && (
-          <Subsection
-            label="Request Body"
-            suffix={requestBody.required ? "required" : undefined}
-          >
+          <Subsection label="Request Body" suffix={requestBody.required ? "required" : undefined}>
             {Object.entries(requestBody.content).map(([mediaType, media]) => (
               <MediaBlock
                 key={mediaType}
@@ -302,10 +295,10 @@ function ResponseRow({
     code === "default" || code.startsWith("5")
       ? "destructive"
       : code.startsWith("4")
-      ? "warning"
-      : code.startsWith("2")
-      ? "success"
-      : "secondary";
+        ? "warning"
+        : code.startsWith("2")
+          ? "success"
+          : "secondary";
   const contentEntries = response.content ? Object.entries(response.content) : [];
 
   return (
@@ -558,9 +551,7 @@ function SchemaLeaf({
   return (
     <div className="flex flex-col gap-0.5">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        {name !== undefined && (
-          <code className="font-mono text-xs text-foreground">{name}</code>
-        )}
+        {name !== undefined && <code className="font-mono text-xs text-foreground">{name}</code>}
         <span className="text-xs text-muted-foreground">{summary}</span>
         {required && (
           <span className="text-[0.65rem] font-medium uppercase tracking-wide text-destructive">

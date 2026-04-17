@@ -195,9 +195,7 @@ function FreeFeature({ children }: { children: React.ReactNode }) {
   );
 }
 
-function renewalLineFor(
-  account: Exclude<BillingAccount, { kind: "no_contract" }>,
-): string {
+function renewalLineFor(account: Exclude<BillingAccount, { kind: "no_contract" }>): string {
   switch (account.kind) {
     case "active": {
       const renews = account.contract.phase_end;
@@ -255,7 +253,7 @@ function StatementPreview({
           // (col 2), the "=" / "−" column (col 4), and the amount column (col 5)
           // all align across rows. Col 3 is a 1fr spacer that absorbs slack to
           // the LEFT of the equal sign.
-          (<div className="grid grid-cols-[auto_auto_minmax(1rem,1fr)_auto_auto] items-baseline">
+          <div className="grid grid-cols-[auto_auto_minmax(1rem,1fr)_auto_auto] items-baseline">
             {lineItems.map((line) => (
               <UsageLineRow
                 key={`${line.product_id}:${line.plan_id}:${line.bucket_id}:${line.sku_id}:${line.pricing_phase}:${line.unit_rate}`}
@@ -272,7 +270,7 @@ function StatementPreview({
                 {formatLedgerAmountPrecise(grandTotal)}
               </span>
             </div>
-          </div>)
+          </div>
         ) : (
           <div className="px-4 py-6 text-center text-muted-foreground">
             <div className="font-medium">No usage yet</div>
@@ -281,7 +279,7 @@ function StatementPreview({
         )}
       </div>
     </Fragment>
-  )
+  );
 }
 
 function UsageLineRow({

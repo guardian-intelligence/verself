@@ -26,8 +26,8 @@ function LandingPage() {
           GitHub Actions on isolated Firecracker VMs.
         </h1>
         <p className="mt-6 text-lg leading-7 text-muted-foreground">
-          Run your existing workflows on Forge Metal runners, then opt into ZFS-backed checkout
-          and persistent mounts where they make the job faster.
+          Run your existing workflows on Forge Metal runners, then opt into ZFS-backed checkout and
+          persistent mounts where they make the job faster.
         </p>
         <div className="mt-8 flex flex-wrap items-center gap-3">
           <Button

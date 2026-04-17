@@ -244,11 +244,7 @@ function MembersSection({
           <TableBody>
             {members.length > 0 ? (
               members.map((member) => (
-                <MemberRow
-                  canUpdateRoles={canUpdateRoles}
-                  key={member.user_id}
-                  member={member}
-                />
+                <MemberRow canUpdateRoles={canUpdateRoles} key={member.user_id} member={member} />
               ))
             ) : (
               <TableRow>
@@ -343,11 +339,7 @@ function MemberRow({ canUpdateRoles, member }: { canUpdateRoles: boolean; member
           <form.Subscribe selector={(state) => [state.isDirty, state.isSubmitting]}>
             {([isDirty, isSubmitting]) =>
               isDirty ? (
-                <Button
-                  type="submit"
-                  size="sm"
-                  aria-busy={isSubmitting || mutation.isPending}
-                >
+                <Button type="submit" size="sm" aria-busy={isSubmitting || mutation.isPending}>
                   {isSubmitting || mutation.isPending ? "Saving…" : "Save"}
                 </Button>
               ) : null
@@ -373,7 +365,10 @@ function CapabilitySection({
   // reconstructed set in onSubmit.
   const initialEnabled = new Set(memberCapabilities.document.enabled_keys);
   const defaultValues = Object.fromEntries(
-    memberCapabilities.catalog.map((capability) => [capability.key, initialEnabled.has(capability.key)]),
+    memberCapabilities.catalog.map((capability) => [
+      capability.key,
+      initialEnabled.has(capability.key),
+    ]),
   ) as Record<string, boolean>;
 
   const form = useForm({

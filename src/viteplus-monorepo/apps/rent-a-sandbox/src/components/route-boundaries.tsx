@@ -45,9 +45,7 @@ export function AppNotFound(_props: NotFoundRouteProps) {
     <EmptyState
       title="Not found"
       body="The page or resource you requested does not exist."
-      action={
-        <Button render={<Link to="/executions" />}>Return to executions</Button>
-      }
+      action={<Button render={<Link to="/executions" />}>Return to executions</Button>}
     />
   );
 }
