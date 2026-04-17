@@ -1,8 +1,8 @@
 .PHONY: help test lint lint-scripts lint-conversions lint-ansible fmt vet tidy openapi openapi-check openapi-wire-check \
        hooks-install doctor inventory-check setup-dev setup-sops provision deprovision deploy site guest-rootfs security-patch identity-reset seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member \
        set-user-state billing-clock billing-wall-clock billing-state billing-documents billing-finalizations billing-events billing-pg-shell billing-pg-query billing-proof billing-reset verification-reset \
-       vm-guest-telemetry-build observe observe-proof traces deploy-trace telemetry-proof telemetry-proof-fail clickhouse-shell clickhouse-query clickhouse-schemas pg-shell pg-query pg-list tb-shell tb-command mail mail-accounts mail-mailboxes \
-       mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords mail-observe edit-secrets \
+       vm-guest-telemetry-build observe telemetry-proof telemetry-proof-fail clickhouse-shell clickhouse-query clickhouse-schemas pg-shell pg-query pg-list tb-shell tb-command mail mail-accounts mail-mailboxes \
+       mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets \
        wipe-pg-db wipe-server vm-orchestrator-proof stress sandbox-inner sandbox-middle sandbox-proof rent-ui-smoke rent-ui-local rent-local-dev scheduler-proof verify-scheduler grafana-proof observability-smoke services-doctor
 
 FM       := src/platform
@@ -264,16 +264,6 @@ services-doctor: inventory-check ## Cross-check declared services.yml against li
 observe: inventory-check ## Query the operator observability surface: make observe WHAT=catalog|metric|service|errors|mail|deploy [SERVICE=...] [METRIC=...]
 	cd $(FM) && ./scripts/observe.sh $(if $(WHAT),--what "$(WHAT)",) $(if $(SERVICE),--service "$(SERVICE)",) $(if $(METRIC),--metric "$(METRIC)",) $(if $(MINUTES),--minutes "$(MINUTES)",) $(if $(LIMIT),--limit "$(LIMIT)",) $(if $(ERRORS),--errors,)
 
-observe-proof: inventory-check ## Verify observe CLI spans, semantic views, and ClickHouse query-log sequencing
-	cd $(FM) && ./scripts/verify-observe-live.sh
-
-traces: inventory-check ## Pull recent traces+logs: make traces [SERVICE=billing-service] [MINUTES=5] [ERRORS=1]
-	cd $(FM) && ./scripts/traces.sh $(if $(SERVICE),-s $(SERVICE),) $(if $(MINUTES),-m $(MINUTES),) $(if $(ERRORS),-e,)
-
-deploy-trace: inventory-check ## Query Ansible spans only: make deploy-trace QUERY='SpanName = ''ansible.task'''
-	@test -n "$(QUERY)" || { echo "ERROR: QUERY is required"; exit 1; }
-	cd $(FM) && QUERY="$(QUERY)" ./scripts/deploy-trace.sh
-
 telemetry-proof: inventory-check ## Run observability smoke and verify ansible spans land in ClickHouse
 	cd $(FM) && ./scripts/telemetry-proof.sh
 
@@ -347,9 +337,6 @@ mail-send-ceo: inventory-check ## Send via Resend to ceo inbox: make mail-send-c
 	@test -n "$(SUBJECT)" || { echo "ERROR: SUBJECT is required"; exit 1; }
 	@test -n "$(BODY)" || { echo "ERROR: BODY is required"; exit 1; }
 	cd $(FM) && ./scripts/mail-send.sh -t ceo -s "$(SUBJECT)" -b "$(BODY)"
-
-mail-observe: inventory-check ## Query ClickHouse mail events/metrics: make mail-observe [MAILBOX=ceo] [DIRECTION=inbound] [N=20]
-	cd $(FM) && ./scripts/mail-observe.sh $(if $(MAILBOX),--mailbox "$(MAILBOX)",) $(if $(DIRECTION),--direction "$(DIRECTION)",) $(if $(N),--limit "$(N)",) $(if $(METRICS),--metrics,)
 
 mail-passwords: inventory-check ## Show Stalwart mailbox passwords
 	@echo "ceo@$$(cd $(FM) && grep '^forge_metal_domain:' ansible/group_vars/all/main.yml | awk '{print $$2}' | tr -d '\"'):"

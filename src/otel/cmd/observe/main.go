@@ -23,7 +23,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const serviceName = "fm-observe"
+const serviceName = "observe"
 
 var safeCommentValue = regexp.MustCompile(`[^A-Za-z0-9_.:@-]`)
 
@@ -75,7 +75,7 @@ func main() {
 
 	runID := observeRunID()
 	tracer := otel.Tracer(serviceName)
-	ctx, span := tracer.Start(ctx, "fm.observe",
+	ctx, span := tracer.Start(ctx, "observe",
 		trace.WithAttributes(
 			attribute.String("observe.run_id", runID),
 			attribute.String("observe.what", cfg.what),
@@ -110,7 +110,7 @@ func main() {
 
 func parseConfig(args []string) (config, error) {
 	var cfg config
-	flags := flag.NewFlagSet("fm-observe", flag.ContinueOnError)
+	flags := flag.NewFlagSet("observe", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	flags.StringVar(&cfg.platformRoot, "platform-root", "", "path to src/platform")
 	flags.StringVar(&cfg.what, "what", strings.TrimSpace(os.Getenv("WHAT")), "surface to observe")
@@ -355,16 +355,11 @@ func runQuery(ctx context.Context, logger *slog.Logger, platformRoot, runID, sur
 	)
 	defer span.End()
 
-	marker := fmt.Sprintf("/* fm:observe run=%s surface=%s query=%s */\n",
-		commentValue(runID),
-		commentValue(surface),
-		commentValue(q.name),
-	)
 	args := []string{"--database", q.database, "--query_id", queryID(runID, surface, q)}
 	for key, value := range q.params {
 		args = append(args, "--param_"+key+"="+value)
 	}
-	args = append(args, "--query", marker+q.sql)
+	args = append(args, "--query", q.sql)
 
 	cmd := exec.CommandContext(ctx, filepath.Join(platformRoot, "scripts", "clickhouse.sh"), args...)
 	cmd.Dir = platformRoot
@@ -427,7 +422,7 @@ func queryHash(sql string) string {
 
 func queryID(runID, surface string, q query) string {
 	hash := queryHash(q.sql)
-	return fmt.Sprintf("fm-observe:%s:%s:%s", commentValue(runID), commentValue(surface), hash[:12])
+	return fmt.Sprintf("observe:%s:%s:%s", commentValue(runID), commentValue(surface), hash[:12])
 }
 
 func commentValue(value string) string {

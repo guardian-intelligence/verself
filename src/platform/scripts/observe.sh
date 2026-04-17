@@ -51,4 +51,4 @@ source "${script_dir}/deploy_identity.sh"
 export FM_OBSERVE_RUN_ID="${FM_OBSERVE_RUN_ID:-${FORGE_METAL_DEPLOY_RUN_KEY}}"
 
 cd "${repo_root}"
-exec go run ./src/otel/cmd/fm-observe --platform-root "${platform_root}" "$@"
+exec go run ./src/otel/cmd/observe --platform-root "${platform_root}" "$@"
