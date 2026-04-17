@@ -27,160 +27,160 @@ type Spec struct {
 // ─── retention ─────────────────────────────────────────────────────────────
 
 type Retention struct {
-	Version        int                  `yaml:"version" validate:"required"`
-	EffectiveAt    string               `yaml:"effective_at" validate:"required"`
-	StateMachine   []LifecycleState     `yaml:"state_machine" validate:"required,min=1"`
-	Transitions    []LifecycleTransition `yaml:"transitions" validate:"required,min=1"`
-	Windows        []Window             `yaml:"windows" validate:"required,min=1"`
-	Export         RetentionExport      `yaml:"export" validate:"required"`
-	Extensions     RetentionExtensions  `yaml:"extensions" validate:"required"`
-	LegalHold      RetentionLegalHold   `yaml:"legal_hold" validate:"required"`
-	Deletion       RetentionDeletion    `yaml:"deletion" validate:"required"`
-	AnonymizedData RetentionAnonymized  `yaml:"anonymized_data" validate:"required"`
-	Changes        RetentionChanges     `yaml:"changes" validate:"required"`
+	Version        int                   `yaml:"version"`
+	EffectiveAt    string                `yaml:"effective_at"`
+	StateMachine   []LifecycleState      `yaml:"state_machine"`
+	Transitions    []LifecycleTransition `yaml:"transitions"`
+	Windows        []Window              `yaml:"windows"`
+	Export         RetentionExport       `yaml:"export"`
+	Extensions     RetentionExtensions   `yaml:"extensions"`
+	LegalHold      RetentionLegalHold    `yaml:"legal_hold"`
+	Deletion       RetentionDeletion     `yaml:"deletion"`
+	AnonymizedData RetentionAnonymized   `yaml:"anonymized_data"`
+	Changes        RetentionChanges      `yaml:"changes"`
 }
 
 type LifecycleState struct {
-	Key   string `yaml:"key" validate:"required"`
-	Label string `yaml:"label" validate:"required"`
-	Blurb string `yaml:"blurb" validate:"required"`
+	Key   string `yaml:"key"`
+	Label string `yaml:"label"`
+	Blurb string `yaml:"blurb"`
 }
 
 type LifecycleTransition struct {
-	From    string `yaml:"from" validate:"required"`
-	To      string `yaml:"to" validate:"required"`
-	Trigger string `yaml:"trigger" validate:"required"`
+	From    string `yaml:"from"`
+	To      string `yaml:"to"`
+	Trigger string `yaml:"trigger"`
 	Days    int    `yaml:"days,omitempty"`
 }
 
 type Window struct {
-	ID              string      `yaml:"id" validate:"required"`
-	Label           string      `yaml:"label" validate:"required"`
-	Description     string      `yaml:"description" validate:"required"`
+	ID              string      `yaml:"id"`
+	Label           string      `yaml:"label"`
+	Description     string      `yaml:"description"`
 	Source          string      `yaml:"source,omitempty"`
-	Active          WindowValue `yaml:"active" validate:"required"`
-	PastDue         WindowValue `yaml:"past_due" validate:"required"`
-	Suspended       WindowValue `yaml:"suspended" validate:"required"`
-	PendingDeletion WindowValue `yaml:"pending_deletion" validate:"required"`
+	Active          WindowValue `yaml:"active"`
+	PastDue         WindowValue `yaml:"past_due"`
+	Suspended       WindowValue `yaml:"suspended"`
+	PendingDeletion WindowValue `yaml:"pending_deletion"`
 }
 
 // WindowValue is a discriminated union tagged by Kind. Each Kind uses a
-// different subset of the numeric fields; the loader verifies the
-// combination is legal.
+// different subset of the numeric fields; validateWindowValue enforces the
+// legal combinations.
 type WindowValue struct {
-	Kind  string `yaml:"kind" validate:"required,oneof=preserved per_user_policy delete_with_parent not_provided delete_after ttl_days retain_years"`
+	Kind  string `yaml:"kind"`
 	Days  int    `yaml:"days,omitempty"`
 	Years int    `yaml:"years,omitempty"`
 }
 
 type RetentionExport struct {
-	AvailableDuring []string               `yaml:"available_during" validate:"required"`
-	PostClosureDays int                    `yaml:"post_closure_days" validate:"required"`
-	ResetsClock     bool                   `yaml:"resets_clock"`
-	Delivery        string                 `yaml:"delivery" validate:"required"`
-	Formats         []RetentionExportFormat `yaml:"formats" validate:"required,min=1"`
+	AvailableDuring []string                `yaml:"available_during"`
+	PostClosureDays int                     `yaml:"post_closure_days"`
+	ResetsClock     bool                    `yaml:"resets_clock"`
+	Delivery        string                  `yaml:"delivery"`
+	Formats         []RetentionExportFormat `yaml:"formats"`
 }
 
 type RetentionExportFormat struct {
-	Class  string `yaml:"class" validate:"required"`
-	Format string `yaml:"format" validate:"required"`
+	Class  string `yaml:"class"`
+	Format string `yaml:"format"`
 }
 
 type RetentionExtensions struct {
 	AllowMultiple     bool     `yaml:"allow_multiple"`
-	ClockBehavior     string   `yaml:"clock_behavior" validate:"required"`
-	DeclineConditions string   `yaml:"decline_conditions" validate:"required"`
-	AuditedFields     []string `yaml:"audited_fields" validate:"required,min=1"`
+	ClockBehavior     string   `yaml:"clock_behavior"`
+	DeclineConditions string   `yaml:"decline_conditions"`
+	AuditedFields     []string `yaml:"audited_fields"`
 }
 
 type RetentionLegalHold struct {
-	Behavior string `yaml:"behavior" validate:"required"`
+	Behavior string `yaml:"behavior"`
 }
 
 type RetentionDeletion struct {
 	SoftDelete                bool     `yaml:"soft_delete"`
 	RecoverableAfterExecution bool     `yaml:"recoverable_after_execution"`
-	Methods                   []string `yaml:"methods" validate:"required,min=1"`
+	Methods                   []string `yaml:"methods"`
 }
 
 type RetentionAnonymized struct {
 	RetainedIndefinitely bool   `yaml:"retained_indefinitely"`
-	Description          string `yaml:"description" validate:"required"`
+	Description          string `yaml:"description"`
 }
 
 type RetentionChanges struct {
-	NoticeDays           int    `yaml:"notice_days" validate:"required"`
-	NotificationChannel  string `yaml:"notification_channel" validate:"required"`
-	PriorVersionsSurface string `yaml:"prior_versions_surface" validate:"required"`
+	NoticeDays           int    `yaml:"notice_days"`
+	NotificationChannel  string `yaml:"notification_channel"`
+	PriorVersionsSurface string `yaml:"prior_versions_surface"`
 }
 
 // ─── subprocessors ─────────────────────────────────────────────────────────
 
 type Subprocessors struct {
-	Version             int                  `yaml:"version" validate:"required"`
-	EffectiveAt         string               `yaml:"effective_at" validate:"required"`
-	Subprocessors       []Subprocessor       `yaml:"subprocessors" validate:"required,min=1"`
-	ChangeNotification  ChangeNotification   `yaml:"change_notification" validate:"required"`
+	Version            int                `yaml:"version"`
+	EffectiveAt        string             `yaml:"effective_at"`
+	Subprocessors      []Subprocessor     `yaml:"subprocessors"`
+	ChangeNotification ChangeNotification `yaml:"change_notification"`
 }
 
 type Subprocessor struct {
-	ID                 string   `yaml:"id" validate:"required"`
-	Name               string   `yaml:"name" validate:"required"`
-	Purpose            string   `yaml:"purpose" validate:"required"`
-	DataCategories     []string `yaml:"data_categories" validate:"required,min=1"`
-	ProcessingLocation string   `yaml:"processing_location" validate:"required"`
-	DPAURL             string   `yaml:"dpa_url" validate:"required,url"`
+	ID                 string   `yaml:"id"`
+	Name               string   `yaml:"name"`
+	Purpose            string   `yaml:"purpose"`
+	DataCategories     []string `yaml:"data_categories"`
+	ProcessingLocation string   `yaml:"processing_location"`
+	DPAURL             string   `yaml:"dpa_url"`
 }
 
 type ChangeNotification struct {
-	Channel       string `yaml:"channel" validate:"required"`
-	LeadTimeDays  int    `yaml:"lead_time_days" validate:"required"`
+	Channel      string `yaml:"channel"`
+	LeadTimeDays int    `yaml:"lead_time_days"`
 }
 
 // ─── ropa ──────────────────────────────────────────────────────────────────
 
 type ROPA struct {
-	Version              int                  `yaml:"version" validate:"required"`
-	EffectiveAt          string               `yaml:"effective_at" validate:"required"`
-	ProcessingActivities []ProcessingActivity `yaml:"processing_activities" validate:"required,min=1"`
+	Version              int                  `yaml:"version"`
+	EffectiveAt          string               `yaml:"effective_at"`
+	ProcessingActivities []ProcessingActivity `yaml:"processing_activities"`
 }
 
 type ProcessingActivity struct {
-	ID             string   `yaml:"id" validate:"required"`
-	Role           string   `yaml:"role" validate:"required,oneof=controller processor"`
-	Purpose        string   `yaml:"purpose" validate:"required"`
-	DataCategories []string `yaml:"data_categories" validate:"required,min=1"`
-	LawfulBasis    string   `yaml:"lawful_basis" validate:"required"`
-	RetentionRef   string   `yaml:"retention_ref" validate:"required"`
+	ID             string   `yaml:"id"`
+	Role           string   `yaml:"role"`
+	Purpose        string   `yaml:"purpose"`
+	DataCategories []string `yaml:"data_categories"`
+	LawfulBasis    string   `yaml:"lawful_basis"`
+	RetentionRef   string   `yaml:"retention_ref"`
 }
 
 // ─── contacts ──────────────────────────────────────────────────────────────
 
 type Contacts struct {
-	Version     int                `yaml:"version" validate:"required"`
-	EffectiveAt string             `yaml:"effective_at" validate:"required"`
-	Mailboxes   ContactsMailboxes  `yaml:"mailboxes" validate:"required"`
-	Routing     string             `yaml:"routing" validate:"required"`
+	Version     int               `yaml:"version"`
+	EffectiveAt string            `yaml:"effective_at"`
+	Mailboxes   ContactsMailboxes `yaml:"mailboxes"`
+	Routing     string            `yaml:"routing"`
 }
 
 type ContactsMailboxes struct {
-	Policy   string `yaml:"policy" validate:"required"`
-	Privacy  string `yaml:"privacy" validate:"required"`
-	Security string `yaml:"security" validate:"required"`
-	DPO      string `yaml:"dpo" validate:"required"`
-	Abuse    string `yaml:"abuse" validate:"required"`
-	Legal    string `yaml:"legal" validate:"required"`
+	Policy   string `yaml:"policy"`
+	Privacy  string `yaml:"privacy"`
+	Security string `yaml:"security"`
+	DPO      string `yaml:"dpo"`
+	Abuse    string `yaml:"abuse"`
+	Legal    string `yaml:"legal"`
 }
 
 // ─── versions ──────────────────────────────────────────────────────────────
 
 type Versions struct {
-	Entries []VersionEntry `yaml:"entries" validate:"required,min=1"`
+	Entries []VersionEntry `yaml:"entries"`
 }
 
 type VersionEntry struct {
-	Date     string   `yaml:"date" validate:"required"`
-	Version  string   `yaml:"version" validate:"required"`
-	Policies []string `yaml:"policies" validate:"required,min=1"`
-	Summary  string   `yaml:"summary" validate:"required"`
+	Date     string   `yaml:"date"`
+	Version  string   `yaml:"version"`
+	Policies []string `yaml:"policies"`
+	Summary  string   `yaml:"summary"`
 }
