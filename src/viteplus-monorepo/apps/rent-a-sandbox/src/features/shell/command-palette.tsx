@@ -265,7 +265,10 @@ export function CommandPalette({ open, onOpenChange, platformOrigin }: CommandPa
   );
 }
 
-type GroupedSection = { readonly section: CommandEntry["section"]; readonly entries: CommandEntry[] };
+type GroupedSection = {
+  readonly section: CommandEntry["section"];
+  readonly entries: CommandEntry[];
+};
 
 function groupBySection(entries: readonly CommandEntry[]): readonly GroupedSection[] {
   const order: CommandEntry["section"][] = ["Navigation", "Docs", "Settings", "Account"];

@@ -50,4 +50,3 @@ export function buildLogText(chunks: readonly { chunk: string }[]) {
   if (chunks.length === 0) return "";
   return chunks.map((chunk) => chunk.chunk).join("");
 }
-

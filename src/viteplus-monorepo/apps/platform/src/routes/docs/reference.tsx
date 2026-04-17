@@ -9,9 +9,7 @@ import { SchemasSection, ServiceSection } from "~/features/reference/reference-r
 // and is the base of every service subdomain surfaced in the reference
 // ("rentasandbox.<domain>", "mail.<domain>"). Reading it here rather
 // than hardcoding keeps platform docs portable across deployments.
-const getOperatorDomain = createServerFn({ method: "GET" }).handler(() =>
-  requireOperatorDomain(),
-);
+const getOperatorDomain = createServerFn({ method: "GET" }).handler(() => requireOperatorDomain());
 
 export const Route = createFileRoute("/docs/reference")({
   component: ReferencePage,
@@ -33,8 +31,8 @@ function ReferencePage() {
         <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">API Reference</h1>
         <p className="max-w-2xl text-sm leading-6 text-muted-foreground md:text-base md:leading-7">
           HTTP surface of every Forge Metal service. Operations below are generated from each
-          service's committed OpenAPI 3.1 spec, so what you read here is the same contract the
-          Go handlers serve and the typed TypeScript clients consume.
+          service's committed OpenAPI 3.1 spec, so what you read here is the same contract the Go
+          handlers serve and the typed TypeScript clients consume.
         </p>
       </header>
 

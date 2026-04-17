@@ -132,9 +132,12 @@ export type ServiceCatalogEntry = {
 };
 
 function parseDocument(yaml: string, label: string): OpenApiDocument {
-  return v.parse(OpenApiDocumentShape, parseYaml(yaml), { abortEarly: false }) ?? (() => {
-    throw new Error(`OpenAPI spec ${label} failed validation`);
-  })();
+  return (
+    v.parse(OpenApiDocumentShape, parseYaml(yaml), { abortEarly: false }) ??
+    (() => {
+      throw new Error(`OpenAPI spec ${label} failed validation`);
+    })()
+  );
 }
 
 // Order here is the order sections render on /docs/reference and the

@@ -64,10 +64,7 @@ function PageHeader({ className, ...props }: React.ComponentProps<"header">) {
   return (
     <header
       data-slot="page-header"
-      className={cn(
-        "flex flex-wrap items-start justify-between gap-x-6 gap-y-4",
-        className,
-      )}
+      className={cn("flex flex-wrap items-start justify-between gap-x-6 gap-y-4", className)}
       {...props}
     />
   );
@@ -89,10 +86,7 @@ function PageEyebrow({ className, ...props }: React.ComponentProps<"nav">) {
     <nav
       aria-label="Breadcrumb"
       data-slot="page-eyebrow"
-      className={cn(
-        "flex items-center gap-2 text-xs font-medium text-muted-foreground",
-        className,
-      )}
+      className={cn("flex items-center gap-2 text-xs font-medium text-muted-foreground", className)}
       {...props}
     />
   );
@@ -132,11 +126,7 @@ function PageSections({ className, ...props }: React.ComponentProps<"div">) {
   // Container for multiple PageSections. Loose inter-section gap (48px) so
   // sibling sections read as *separate*; callers never pick space-y-*.
   return (
-    <div
-      data-slot="page-sections"
-      className={cn("flex flex-col gap-12", className)}
-      {...props}
-    />
+    <div data-slot="page-sections" className={cn("flex flex-col gap-12", className)} {...props} />
   );
 }
 
@@ -144,11 +134,7 @@ function PageSection({ className, ...props }: React.ComponentProps<"section">) {
   // Tight section rhythm: 12px between the SectionHeader and its body so the
   // header visually groups with its content rather than orphaning.
   return (
-    <section
-      data-slot="page-section"
-      className={cn("flex flex-col gap-3", className)}
-      {...props}
-    />
+    <section data-slot="page-section" className={cn("flex flex-col gap-3", className)} {...props} />
   );
 }
 
@@ -156,10 +142,7 @@ function SectionHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="section-header"
-      className={cn(
-        "flex flex-wrap items-start justify-between gap-x-6 gap-y-2",
-        className,
-      )}
+      className={cn("flex flex-wrap items-start justify-between gap-x-6 gap-y-2", className)}
       {...props}
     />
   );

@@ -39,9 +39,7 @@ function resolveCssLength(value: string): number | undefined {
 }
 
 function resolveHeaderOffset(): number {
-  const raw = getComputedStyle(document.documentElement).getPropertyValue(
-    "--header-scroll-offset",
-  );
+  const raw = getComputedStyle(document.documentElement).getPropertyValue("--header-scroll-offset");
   return resolveCssLength(raw) ?? FALLBACK_OFFSET_PX;
 }
 

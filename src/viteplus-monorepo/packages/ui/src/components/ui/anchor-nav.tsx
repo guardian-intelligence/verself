@@ -27,9 +27,7 @@ function AnchorNavChips({ sections, label = "On this page", className }: AnchorN
 
   React.useEffect(() => {
     if (!active || !railRef.current) return;
-    const el = railRef.current.querySelector<HTMLAnchorElement>(
-      `a[href="#${CSS.escape(active)}"]`,
-    );
+    const el = railRef.current.querySelector<HTMLAnchorElement>(`a[href="#${CSS.escape(active)}"]`);
     el?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
   }, [active]);
 
