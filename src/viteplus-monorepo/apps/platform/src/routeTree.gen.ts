@@ -14,7 +14,16 @@ import { Route as DocsRouteRouteImport } from './routes/docs/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as PolicyIndexRouteImport } from './routes/policy/index'
 import { Route as DocsIndexRouteImport } from './routes/docs/index'
+import { Route as PolicyTermsRouteImport } from './routes/policy/terms'
+import { Route as PolicySubprocessorsRouteImport } from './routes/policy/subprocessors'
+import { Route as PolicySlaRouteImport } from './routes/policy/sla'
+import { Route as PolicySecurityRouteImport } from './routes/policy/security'
+import { Route as PolicyPrivacyRouteImport } from './routes/policy/privacy'
+import { Route as PolicyDpaRouteImport } from './routes/policy/dpa'
 import { Route as PolicyDataRetentionRouteImport } from './routes/policy/data-retention'
+import { Route as PolicyCookiesRouteImport } from './routes/policy/cookies'
+import { Route as PolicyChangelogRouteImport } from './routes/policy/changelog'
+import { Route as PolicyAcceptableUseRouteImport } from './routes/policy/acceptable-use'
 import { Route as DocsReferenceRouteImport } from './routes/docs/reference'
 
 const PolicyRouteRoute = PolicyRouteRouteImport.update({
@@ -42,9 +51,54 @@ const DocsIndexRoute = DocsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => DocsRouteRoute,
 } as any)
+const PolicyTermsRoute = PolicyTermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => PolicyRouteRoute,
+} as any)
+const PolicySubprocessorsRoute = PolicySubprocessorsRouteImport.update({
+  id: '/subprocessors',
+  path: '/subprocessors',
+  getParentRoute: () => PolicyRouteRoute,
+} as any)
+const PolicySlaRoute = PolicySlaRouteImport.update({
+  id: '/sla',
+  path: '/sla',
+  getParentRoute: () => PolicyRouteRoute,
+} as any)
+const PolicySecurityRoute = PolicySecurityRouteImport.update({
+  id: '/security',
+  path: '/security',
+  getParentRoute: () => PolicyRouteRoute,
+} as any)
+const PolicyPrivacyRoute = PolicyPrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => PolicyRouteRoute,
+} as any)
+const PolicyDpaRoute = PolicyDpaRouteImport.update({
+  id: '/dpa',
+  path: '/dpa',
+  getParentRoute: () => PolicyRouteRoute,
+} as any)
 const PolicyDataRetentionRoute = PolicyDataRetentionRouteImport.update({
   id: '/data-retention',
   path: '/data-retention',
+  getParentRoute: () => PolicyRouteRoute,
+} as any)
+const PolicyCookiesRoute = PolicyCookiesRouteImport.update({
+  id: '/cookies',
+  path: '/cookies',
+  getParentRoute: () => PolicyRouteRoute,
+} as any)
+const PolicyChangelogRoute = PolicyChangelogRouteImport.update({
+  id: '/changelog',
+  path: '/changelog',
+  getParentRoute: () => PolicyRouteRoute,
+} as any)
+const PolicyAcceptableUseRoute = PolicyAcceptableUseRouteImport.update({
+  id: '/acceptable-use',
+  path: '/acceptable-use',
   getParentRoute: () => PolicyRouteRoute,
 } as any)
 const DocsReferenceRoute = DocsReferenceRouteImport.update({
@@ -58,14 +112,32 @@ export interface FileRoutesByFullPath {
   '/docs': typeof DocsRouteRouteWithChildren
   '/policy': typeof PolicyRouteRouteWithChildren
   '/docs/reference': typeof DocsReferenceRoute
+  '/policy/acceptable-use': typeof PolicyAcceptableUseRoute
+  '/policy/changelog': typeof PolicyChangelogRoute
+  '/policy/cookies': typeof PolicyCookiesRoute
   '/policy/data-retention': typeof PolicyDataRetentionRoute
+  '/policy/dpa': typeof PolicyDpaRoute
+  '/policy/privacy': typeof PolicyPrivacyRoute
+  '/policy/security': typeof PolicySecurityRoute
+  '/policy/sla': typeof PolicySlaRoute
+  '/policy/subprocessors': typeof PolicySubprocessorsRoute
+  '/policy/terms': typeof PolicyTermsRoute
   '/docs/': typeof DocsIndexRoute
   '/policy/': typeof PolicyIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/docs/reference': typeof DocsReferenceRoute
+  '/policy/acceptable-use': typeof PolicyAcceptableUseRoute
+  '/policy/changelog': typeof PolicyChangelogRoute
+  '/policy/cookies': typeof PolicyCookiesRoute
   '/policy/data-retention': typeof PolicyDataRetentionRoute
+  '/policy/dpa': typeof PolicyDpaRoute
+  '/policy/privacy': typeof PolicyPrivacyRoute
+  '/policy/security': typeof PolicySecurityRoute
+  '/policy/sla': typeof PolicySlaRoute
+  '/policy/subprocessors': typeof PolicySubprocessorsRoute
+  '/policy/terms': typeof PolicyTermsRoute
   '/docs': typeof DocsIndexRoute
   '/policy': typeof PolicyIndexRoute
 }
@@ -75,7 +147,16 @@ export interface FileRoutesById {
   '/docs': typeof DocsRouteRouteWithChildren
   '/policy': typeof PolicyRouteRouteWithChildren
   '/docs/reference': typeof DocsReferenceRoute
+  '/policy/acceptable-use': typeof PolicyAcceptableUseRoute
+  '/policy/changelog': typeof PolicyChangelogRoute
+  '/policy/cookies': typeof PolicyCookiesRoute
   '/policy/data-retention': typeof PolicyDataRetentionRoute
+  '/policy/dpa': typeof PolicyDpaRoute
+  '/policy/privacy': typeof PolicyPrivacyRoute
+  '/policy/security': typeof PolicySecurityRoute
+  '/policy/sla': typeof PolicySlaRoute
+  '/policy/subprocessors': typeof PolicySubprocessorsRoute
+  '/policy/terms': typeof PolicyTermsRoute
   '/docs/': typeof DocsIndexRoute
   '/policy/': typeof PolicyIndexRoute
 }
@@ -86,18 +167,50 @@ export interface FileRouteTypes {
     | '/docs'
     | '/policy'
     | '/docs/reference'
+    | '/policy/acceptable-use'
+    | '/policy/changelog'
+    | '/policy/cookies'
     | '/policy/data-retention'
+    | '/policy/dpa'
+    | '/policy/privacy'
+    | '/policy/security'
+    | '/policy/sla'
+    | '/policy/subprocessors'
+    | '/policy/terms'
     | '/docs/'
     | '/policy/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/docs/reference' | '/policy/data-retention' | '/docs' | '/policy'
+  to:
+    | '/'
+    | '/docs/reference'
+    | '/policy/acceptable-use'
+    | '/policy/changelog'
+    | '/policy/cookies'
+    | '/policy/data-retention'
+    | '/policy/dpa'
+    | '/policy/privacy'
+    | '/policy/security'
+    | '/policy/sla'
+    | '/policy/subprocessors'
+    | '/policy/terms'
+    | '/docs'
+    | '/policy'
   id:
     | '__root__'
     | '/'
     | '/docs'
     | '/policy'
     | '/docs/reference'
+    | '/policy/acceptable-use'
+    | '/policy/changelog'
+    | '/policy/cookies'
     | '/policy/data-retention'
+    | '/policy/dpa'
+    | '/policy/privacy'
+    | '/policy/security'
+    | '/policy/sla'
+    | '/policy/subprocessors'
+    | '/policy/terms'
     | '/docs/'
     | '/policy/'
   fileRoutesById: FileRoutesById
@@ -145,11 +258,74 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DocsIndexRouteImport
       parentRoute: typeof DocsRouteRoute
     }
+    '/policy/terms': {
+      id: '/policy/terms'
+      path: '/terms'
+      fullPath: '/policy/terms'
+      preLoaderRoute: typeof PolicyTermsRouteImport
+      parentRoute: typeof PolicyRouteRoute
+    }
+    '/policy/subprocessors': {
+      id: '/policy/subprocessors'
+      path: '/subprocessors'
+      fullPath: '/policy/subprocessors'
+      preLoaderRoute: typeof PolicySubprocessorsRouteImport
+      parentRoute: typeof PolicyRouteRoute
+    }
+    '/policy/sla': {
+      id: '/policy/sla'
+      path: '/sla'
+      fullPath: '/policy/sla'
+      preLoaderRoute: typeof PolicySlaRouteImport
+      parentRoute: typeof PolicyRouteRoute
+    }
+    '/policy/security': {
+      id: '/policy/security'
+      path: '/security'
+      fullPath: '/policy/security'
+      preLoaderRoute: typeof PolicySecurityRouteImport
+      parentRoute: typeof PolicyRouteRoute
+    }
+    '/policy/privacy': {
+      id: '/policy/privacy'
+      path: '/privacy'
+      fullPath: '/policy/privacy'
+      preLoaderRoute: typeof PolicyPrivacyRouteImport
+      parentRoute: typeof PolicyRouteRoute
+    }
+    '/policy/dpa': {
+      id: '/policy/dpa'
+      path: '/dpa'
+      fullPath: '/policy/dpa'
+      preLoaderRoute: typeof PolicyDpaRouteImport
+      parentRoute: typeof PolicyRouteRoute
+    }
     '/policy/data-retention': {
       id: '/policy/data-retention'
       path: '/data-retention'
       fullPath: '/policy/data-retention'
       preLoaderRoute: typeof PolicyDataRetentionRouteImport
+      parentRoute: typeof PolicyRouteRoute
+    }
+    '/policy/cookies': {
+      id: '/policy/cookies'
+      path: '/cookies'
+      fullPath: '/policy/cookies'
+      preLoaderRoute: typeof PolicyCookiesRouteImport
+      parentRoute: typeof PolicyRouteRoute
+    }
+    '/policy/changelog': {
+      id: '/policy/changelog'
+      path: '/changelog'
+      fullPath: '/policy/changelog'
+      preLoaderRoute: typeof PolicyChangelogRouteImport
+      parentRoute: typeof PolicyRouteRoute
+    }
+    '/policy/acceptable-use': {
+      id: '/policy/acceptable-use'
+      path: '/acceptable-use'
+      fullPath: '/policy/acceptable-use'
+      preLoaderRoute: typeof PolicyAcceptableUseRouteImport
       parentRoute: typeof PolicyRouteRoute
     }
     '/docs/reference': {
@@ -177,12 +353,30 @@ const DocsRouteRouteWithChildren = DocsRouteRoute._addFileChildren(
 )
 
 interface PolicyRouteRouteChildren {
+  PolicyAcceptableUseRoute: typeof PolicyAcceptableUseRoute
+  PolicyChangelogRoute: typeof PolicyChangelogRoute
+  PolicyCookiesRoute: typeof PolicyCookiesRoute
   PolicyDataRetentionRoute: typeof PolicyDataRetentionRoute
+  PolicyDpaRoute: typeof PolicyDpaRoute
+  PolicyPrivacyRoute: typeof PolicyPrivacyRoute
+  PolicySecurityRoute: typeof PolicySecurityRoute
+  PolicySlaRoute: typeof PolicySlaRoute
+  PolicySubprocessorsRoute: typeof PolicySubprocessorsRoute
+  PolicyTermsRoute: typeof PolicyTermsRoute
   PolicyIndexRoute: typeof PolicyIndexRoute
 }
 
 const PolicyRouteRouteChildren: PolicyRouteRouteChildren = {
+  PolicyAcceptableUseRoute: PolicyAcceptableUseRoute,
+  PolicyChangelogRoute: PolicyChangelogRoute,
+  PolicyCookiesRoute: PolicyCookiesRoute,
   PolicyDataRetentionRoute: PolicyDataRetentionRoute,
+  PolicyDpaRoute: PolicyDpaRoute,
+  PolicyPrivacyRoute: PolicyPrivacyRoute,
+  PolicySecurityRoute: PolicySecurityRoute,
+  PolicySlaRoute: PolicySlaRoute,
+  PolicySubprocessorsRoute: PolicySubprocessorsRoute,
+  PolicyTermsRoute: PolicyTermsRoute,
   PolicyIndexRoute: PolicyIndexRoute,
 }
 

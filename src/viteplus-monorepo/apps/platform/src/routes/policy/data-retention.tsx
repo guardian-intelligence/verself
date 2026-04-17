@@ -1,9 +1,22 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { requireOperatorDomain } from "@forge-metal/web-env";
-import { Link as LinkIcon } from "lucide-react";
 
 import { cn } from "@forge-metal/ui/lib/utils";
+import { RETENTION, formatWindowValue, type Window } from "~/lib/policy-catalog";
+import {
+  ChangesSection,
+  ContactSection,
+  DefinitionCard,
+  DefinitionGrid,
+  PolicyArticle,
+  PolicyHeader,
+  Prose,
+  SectionHeading,
+  SubHeading,
+  SummaryItem,
+  SummaryPanel,
+} from "~/features/policy/policy-primitives";
 
 const getOperatorDomain = createServerFn({ method: "GET" }).handler(() => requireOperatorDomain());
 
@@ -25,118 +38,62 @@ export const Route = createFileRoute("/policy/data-retention")({
 function DataRetentionPolicy() {
   const operatorDomain = Route.useLoaderData();
   return (
-    <article className="flex flex-col gap-10 [&_h2]:scroll-mt-[var(--header-scroll-offset)] [&_h3]:scroll-mt-[var(--header-scroll-offset)]">
-      <PolicyHeader />
+    <PolicyArticle>
+      <PolicyHeader title="Data Retention" policyId="data-retention" />
       <Summary />
       <Scope />
+      <Roles />
       <Lifecycle />
       <RetentionWindows />
       <DataExport />
+      <DataSubjectRights />
       <Extensions />
+      <LegalHold />
       <FinalDeletion />
+      <AnonymizedData />
+      <IncidentData />
       <OperatorHandling />
-      <Changes />
-      <Contact operatorDomain={operatorDomain} />
-    </article>
-  );
-}
-
-function PolicyHeader() {
-  return (
-    <header className="flex flex-col gap-4 border-b border-border pb-8">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        Platform Policy
-      </p>
-      <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Data Retention</h1>
-      <dl className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
-        <MetaPair label="Effective date" value="April 17, 2026" />
-        <MetaPair label="Last updated" value="April 17, 2026" />
-      </dl>
-    </header>
-  );
-}
-
-function MetaPair({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-baseline gap-2">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="font-medium tabular-nums">{value}</dd>
-    </div>
-  );
-}
-
-function SectionHeading({ id, children }: { id: string; children: React.ReactNode }) {
-  return (
-    <h2 id={id} className="group flex items-baseline gap-2 text-2xl font-semibold tracking-tight">
-      <span>{children}</span>
-      <a
-        href={`#${id}`}
-        aria-label="Anchor"
-        className="opacity-0 transition-opacity group-hover:opacity-60"
-      >
-        <LinkIcon className="size-4" />
-      </a>
-    </h2>
-  );
-}
-
-function Prose({ children, className }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div
-      className={cn(
-        "flex flex-col gap-4 text-sm leading-6 text-foreground/90 md:text-[15px] md:leading-7",
-        "[&_p]:max-w-[68ch] [&_ul]:max-w-[68ch] [&_ol]:max-w-[68ch]",
-        "[&_a]:underline [&_a]:decoration-muted-foreground/60 [&_a]:underline-offset-4 [&_a:hover]:decoration-foreground",
-        "[&_code]:rounded [&_code]:bg-secondary [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-[0.85em]",
-        "[&_strong]:font-semibold [&_strong]:text-foreground",
-        className,
-      )}
-    >
-      {children}
-    </div>
+      <ChangesSection policyId="data-retention" />
+      <ContactSection operatorDomain={operatorDomain} primary="privacy" />
+    </PolicyArticle>
   );
 }
 
 // ─── sections ────────────────────────────────────────────────────────────────
 
 function Summary() {
+  const durable = RETENTION.windows.find((w) => w.id === "durable_data");
+  const billing = RETENTION.windows.find((w) => w.id === "billing_records");
+  const pendingDays = extractDeleteAfterDays(durable);
+  const billingYears = extractRetainYears(billing);
   return (
     <section className="flex flex-col gap-4">
       <SectionHeading id="summary">Summary</SectionHeading>
-      <aside className="relative rounded-lg border border-border bg-secondary/50 p-5 pl-6 before:absolute before:inset-y-3 before:left-0 before:w-0.5 before:rounded-full before:bg-foreground">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          At a glance
-        </p>
-        <ul className="mt-3 grid gap-x-6 gap-y-2 text-sm leading-6 md:grid-cols-2">
-          <li>
-            <strong className="font-medium">Durable data:</strong> retained while your account is
-            open; preserved for 90 days after closure.
-          </li>
-          <li>
-            <strong className="font-medium">Export:</strong> available throughout the first 30 days
-            after closure.
-          </li>
-          <li>
-            <strong className="font-medium">Billing records:</strong> retained for 7 years for tax
-            and accounting compliance.
-          </li>
-          <li>
-            <strong className="font-medium">Backups:</strong> not provided — you are responsible for
-            your own.
-          </li>
-        </ul>
-      </aside>
+      <SummaryPanel>
+        <SummaryItem term="Durable data">
+          retained while your account is open; preserved for {pendingDays} days after closure.
+        </SummaryItem>
+        <SummaryItem term="Export">
+          available throughout the first {RETENTION.export.post_closure_days} days after closure.
+        </SummaryItem>
+        <SummaryItem term="Billing records">
+          retained for at least {billingYears} years for tax and accounting compliance, longer where
+          law requires.
+        </SummaryItem>
+        <SummaryItem term="Backups">not provided — you are responsible for your own.</SummaryItem>
+      </SummaryPanel>
       <Prose>
         <p>
           This page describes what Forge Metal keeps on your behalf, how long we keep it, and under
           what conditions it can be exported, preserved, or deleted. The retention windows listed
           here are commitments; they apply equally to every customer organization on this
-          deployment.
+          deployment, and the same windows drive the ClickHouse TTLs and deletion scheduler that
+          execute them.
         </p>
         <p>
           Our own organizations — the platform tenant and its parent-company tenant — are subject to
-          this policy in the same terms as any other customer. See{" "}
-          <a href="#operator">Operator handling</a> for why.
+          this policy on the same terms as any other customer. See{" "}
+          <a href="#operator">Operator handling</a>.
         </p>
       </Prose>
     </section>
@@ -150,71 +107,67 @@ function Scope() {
       <Prose>
         <p>
           This policy covers data Forge Metal stores in your organization's account on this
-          deployment. It does not cover data held by third-party providers we integrate with; those
-          retention rules are documented alongside each integration.
+          deployment. It does not cover data held by third-party subprocessors we integrate with;
+          their retention is governed by their own DPAs, listed on{" "}
+          <a href="/policy/subprocessors">our subprocessor page</a>.
         </p>
         <p>The categories below are referenced throughout this document.</p>
       </Prose>
-      <dl className="grid gap-4 md:grid-cols-2">
+      <DefinitionGrid>
         <DefinitionCard
           term="Durable data"
-          definition="Persistent VM disks, workspace volumes, and any object you have created with the expectation that it survives between sessions. Engineering calls this 'durable customer data.'"
+          definition={`Persistent VM disks, workspace volumes, and any object you have created with the expectation that it survives between sessions. Engineering calls this "durable customer data."`}
         />
         <DefinitionCard
           term="Operational data"
-          definition="Logs, traces, metrics, and audit records generated as a byproduct of running your workloads. Retained per-signal based on its usefulness and cost."
+          definition="Logs, traces, metrics, and audit records generated as a byproduct of running your workloads. Each signal has its own TTL."
         />
         <DefinitionCard
           term="Billing records"
-          definition="Invoices, payment events, ledger entries, and tax documents. Governed by separate statutory retention requirements that outlive your account."
+          definition="Invoices, payment events, ledger entries, and tax documents. Governed by statutory retention that outlives your account."
         />
         <DefinitionCard
           term="Backups"
-          definition="Forge Metal does not currently offer a backup product. You are responsible for your own backups unless a backup product is purchased. Export during the retention window is not a substitute for backups."
+          definition="Forge Metal does not currently offer a backup product. Customers are responsible for their own backups unless a backup product is purchased. Export during the retention window is not a substitute for backups."
         />
-      </dl>
+      </DefinitionGrid>
     </section>
   );
 }
 
-function DefinitionCard({ term, definition }: { term: string; definition: string }) {
+function Roles() {
   return (
-    <div className="flex flex-col gap-1.5 rounded-lg border border-border bg-card p-4">
-      <dt className="font-medium">{term}</dt>
-      <dd className="text-sm leading-6 text-muted-foreground">{definition}</dd>
-    </div>
+    <section className="flex flex-col gap-4">
+      <SectionHeading id="roles">Roles under data-protection law</SectionHeading>
+      <Prose>
+        <p>
+          Forge Metal plays two distinct roles with respect to the data it handles. Which role
+          applies determines who is responsible for responding to data-subject requests and under
+          what legal basis the data is processed.
+        </p>
+        <ul>
+          <li>
+            <strong>Controller</strong> for your organization's account and billing information —
+            administrator contacts, authentication events, invoices, tax records, usage metering
+            aggregates.
+          </li>
+          <li>
+            <strong>Processor</strong> for the workload data your users place into the substrate —
+            durable volumes, execution logs, mailboxes, and other objects your organization creates
+            on our compute. Forge Metal processes that data only on your documented instructions, in
+            line with GDPR Art. 28 and our <a href="/policy/dpa">Data Processing Addendum</a>.
+          </li>
+        </ul>
+        <p>
+          A full <a href="/policy/privacy#ropa">Record of Processing Activities</a> is published as
+          part of the Privacy Policy.
+        </p>
+      </Prose>
+    </section>
   );
 }
 
 function Lifecycle() {
-  const states: { key: string; label: string; blurb: string }[] = [
-    {
-      key: "active",
-      label: "Active",
-      blurb: "Your account is in good standing. All services run normally.",
-    },
-    {
-      key: "past_due",
-      label: "Past due",
-      blurb: "A payment has failed. Services continue while retries run, up to 14 days.",
-    },
-    {
-      key: "suspended",
-      label: "Suspended",
-      blurb: "Compute is stopped. Durable data is preserved and remains exportable.",
-    },
-    {
-      key: "pending_deletion",
-      label: "Pending deletion",
-      blurb: "Account has closed. A 90-day countdown begins before deletion.",
-    },
-    {
-      key: "deleted",
-      label: "Deleted",
-      blurb: "Durable data has been deleted. Billing records are retained.",
-    },
-  ];
-
   return (
     <section className="flex flex-col gap-4">
       <SectionHeading id="lifecycle">Account lifecycle</SectionHeading>
@@ -222,16 +175,16 @@ function Lifecycle() {
         <p>
           Every Forge Metal account passes through up to five observable states. The current state
           is visible on your billing page, and every transition is written to an audit log you can
-          read.
+          read at <code>Billing → Activity</code> or via the audit-events API.
         </p>
       </Prose>
       <ol className="flex flex-col gap-0 overflow-hidden rounded-lg border border-border bg-card md:flex-row">
-        {states.map((state, i) => (
+        {RETENTION.state_machine.map((state, i) => (
           <li
             key={state.key}
             className={cn(
               "flex-1 border-border p-4",
-              i < states.length - 1 && "border-b md:border-b-0 md:border-r",
+              i < RETENTION.state_machine.length - 1 && "border-b md:border-b-0 md:border-r",
             )}
           >
             <div className="flex items-center gap-2">
@@ -245,61 +198,29 @@ function Lifecycle() {
         ))}
       </ol>
       <Prose>
-        <p>
-          The transition from <strong>active</strong> to <strong>past due</strong> happens when a
-          payment attempt fails. The transition from <strong>past due</strong> to{" "}
-          <strong>suspended</strong> happens after the Stripe retry window closes without payment
-          (typically 14 days). The transition from <strong>suspended</strong> to{" "}
-          <strong>pending deletion</strong> happens when your account is closed — either by you, by
-          the operator for non-payment, or by contract expiration.
-        </p>
+        <ul>
+          {RETENTION.transitions.map((t) => (
+            <li key={`${t.from}->${t.to}`}>
+              <strong>
+                {labelOf(t.from)} → {labelOf(t.to)}:
+              </strong>{" "}
+              {t.trigger}
+            </li>
+          ))}
+        </ul>
       </Prose>
     </section>
   );
 }
 
 function RetentionWindows() {
-  const rows: { data: string; active: string; suspended: string; pendingDeletion: string }[] = [
-    {
-      data: "Durable data",
-      active: "Preserved",
-      suspended: "Preserved",
-      pendingDeletion: "Deleted at 90 days",
-    },
-    {
-      data: "Per-volume snapshot generations",
-      active: "Per your configured retention policy",
-      suspended: "Per your configured retention policy",
-      pendingDeletion: "Deleted with the parent volume",
-    },
-    {
-      data: "Operational data (logs, traces, metrics)",
-      active: "Per-signal TTL",
-      suspended: "Per-signal TTL",
-      pendingDeletion: "Per-signal TTL",
-    },
-    {
-      data: "Billing records",
-      active: "Retained for 7 years",
-      suspended: "Retained for 7 years",
-      pendingDeletion: "Retained for 7 years",
-    },
-    {
-      data: "Backups",
-      active: "Not provided",
-      suspended: "Not provided",
-      pendingDeletion: "Not provided",
-    },
-  ];
-
   return (
     <section className="flex flex-col gap-4">
       <SectionHeading id="retention">Retention windows</SectionHeading>
       <Prose>
         <p>
-          Windows are measured from the date of the state transition recorded on your billing page.
-          An <a href="#extensions">extension</a> granted by the operator supersedes the default
-          window.
+          Windows are measured from the state-transition timestamp recorded on your billing page. An{" "}
+          <a href="#extensions">extension</a> granted by the operator supersedes the default window.
         </p>
       </Prose>
       <div className="overflow-x-auto rounded-lg border border-border bg-card">
@@ -321,15 +242,22 @@ function RetentionWindows() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
+            {RETENTION.windows.map((row) => (
               <tr
-                key={row.data}
+                key={row.id}
                 className="border-b border-border last:border-b-0 [&_td]:px-4 [&_td]:py-3 [&_td]:align-top"
               >
-                <td className="font-medium">{row.data}</td>
-                <td className="text-muted-foreground">{row.active}</td>
-                <td className="text-muted-foreground">{row.suspended}</td>
-                <td className="text-muted-foreground">{row.pendingDeletion}</td>
+                <td className="font-medium">
+                  {row.label}
+                  {row.source ? (
+                    <div className="mt-1 text-xs font-normal text-muted-foreground">
+                      {row.source}
+                    </div>
+                  ) : null}
+                </td>
+                <td className="text-muted-foreground">{formatWindowValue(row.active)}</td>
+                <td className="text-muted-foreground">{formatWindowValue(row.suspended)}</td>
+                <td className="text-muted-foreground">{formatWindowValue(row.pending_deletion)}</td>
               </tr>
             ))}
           </tbody>
@@ -342,30 +270,91 @@ function RetentionWindows() {
           windows above; a volume with a 30-day snapshot policy still has its snapshots deleted with
           the parent volume when the account reaches final deletion.
         </p>
+        <p>
+          Jurisdictions with longer billing-records retention requirements — for example Germany (10
+          years, HGB §257), France (10 years), and the United Kingdom (6 years) — are honored
+          automatically where they apply to the customer's billing entity.
+        </p>
       </Prose>
     </section>
   );
 }
 
 function DataExport() {
+  const { export: exp } = RETENTION;
   return (
     <section className="flex flex-col gap-4">
       <SectionHeading id="export">Data export</SectionHeading>
       <Prose>
         <p>
-          You can export your durable data throughout the active, past due, and suspended states.
-          Export access continues for the first 30 days after your account enters pending deletion,
-          then stops.
+          You can export your durable data throughout the{" "}
+          {exp.available_during.map(labelOf).join(", ")} states. Export access continues for the
+          first {exp.post_closure_days} days after your account enters pending deletion, then stops.
         </p>
         <p>
           Export is performed from your billing page via the <code>Export data</code> action or the
-          equivalent API endpoint. Operational data and billing records can be exported through the
-          same interface. Exports are delivered as signed URLs valid for 72 hours.
+          equivalent API endpoint. {exp.delivery} Export is read-only and does not reset the
+          retention clock; if you need more time to complete one, request an{" "}
+          <a href="#extensions">extension</a> before the window closes.
         </p>
+      </Prose>
+      <SubHeading id="export-formats">Formats</SubHeading>
+      <div className="overflow-x-auto rounded-lg border border-border bg-card">
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-border bg-secondary/40 text-left">
+              <th scope="col" className="px-4 py-3 font-medium">
+                Class
+              </th>
+              <th scope="col" className="px-4 py-3 font-medium">
+                Format
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {exp.formats.map((f) => (
+              <tr
+                key={f.class}
+                className="border-b border-border last:border-b-0 [&_td]:px-4 [&_td]:py-3 [&_td]:align-top"
+              >
+                <td className="font-medium">{f.class}</td>
+                <td className="text-muted-foreground">{f.format}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function DataSubjectRights() {
+  return (
+    <section className="flex flex-col gap-4">
+      <SectionHeading id="dsr">Data-subject requests</SectionHeading>
+      <Prose>
         <p>
-          Export is read-only and does not reset the retention clock. If you need more than 30 days
-          of export access after closure, request an <a href="#extensions">extension</a> before the
-          window closes.
+          Under GDPR Articles 15–22 and comparable laws (California CPRA §1798.100 et seq., Virginia
+          VCDPA, Colorado CPA, and others), end users have rights to access, correct, delete, and
+          port personal data about them.
+        </p>
+        <ul>
+          <li>
+            <strong>Where Forge Metal is the processor</strong> — for data your organization
+            processes about its own end users on our substrate — route requests through the customer
+            (that is, your organization). We will forward requests received directly and cooperate
+            with your response on the timeline the law requires.
+          </li>
+          <li>
+            <strong>Where Forge Metal is the controller</strong> — billing contacts, organization
+            administrators, support correspondence — requests go to the{" "}
+            <a href="#contact">privacy mailbox</a>. We respond within the statutory window (30 days
+            under GDPR, 45 days under CPRA) and record each request in the audit log.
+          </li>
+        </ul>
+        <p>
+          A deletion request served before the 90-day retention window closes is honored early; the
+          same deletion guarantees and methods in <a href="#deletion">Final deletion</a> apply.
         </p>
       </Prose>
     </section>
@@ -373,40 +362,93 @@ function DataExport() {
 }
 
 function Extensions() {
+  const { extensions } = RETENTION;
   return (
     <section className="flex flex-col gap-4">
       <SectionHeading id="extensions">Extensions</SectionHeading>
       <Prose>
         <p>
           If you need more time to resolve a billing issue or complete an export, you can request an
-          extension. Extensions are granted by Forge Metal operator staff and are recorded with the
-          requesting principal, the requested duration, and the justification.
+          extension. Extensions are granted by Forge Metal operator staff and recorded with the{" "}
+          {extensions.audited_fields.join(", ")} on the extension record.
         </p>
+        <p>{extensions.clock_behavior}</p>
         <p>
-          An extension resets the retention clock but does not restore compute and does not change
-          the amount owed. You can request multiple extensions; each is audited independently. There
-          is no default limit on the number of extensions, but repeated extension requests without a
-          path to resolution may be declined.
+          An extension does not restore compute and does not change the amount owed.{" "}
+          {extensions.allow_multiple
+            ? "Multiple extensions may be granted; each is audited independently. "
+            : ""}
+          {extensions.decline_conditions}
         </p>
       </Prose>
     </section>
   );
 }
 
+function LegalHold() {
+  return (
+    <section className="flex flex-col gap-4">
+      <SectionHeading id="legal-hold">Legal hold</SectionHeading>
+      <Prose>
+        <p>{RETENTION.legal_hold.behavior}</p>
+      </Prose>
+    </section>
+  );
+}
+
 function FinalDeletion() {
+  const { deletion } = RETENTION;
   return (
     <section className="flex flex-col gap-4">
       <SectionHeading id="deletion">Final deletion</SectionHeading>
       <Prose>
         <p>
-          When the retention window closes, your durable data is deleted from our storage. This is
-          not a soft delete. Once deletion has executed, Forge Metal cannot recover the data, even
-          with operator intervention.
+          When the retention window closes, your durable data is deleted from our storage.
+          {deletion.soft_delete ? "" : " This is not a soft delete."}{" "}
+          {deletion.recoverable_after_execution
+            ? "Deletion is recoverable by operator intervention."
+            : "Once deletion has executed, Forge Metal cannot recover the data, even with operator intervention."}
         </p>
+        <p>Deletion is implemented using:</p>
+        <ul>
+          {deletion.methods.map((m) => (
+            <li key={m}>{m}</li>
+          ))}
+        </ul>
         <p>
           Billing records are retained beyond final deletion in accordance with applicable tax and
           accounting law. See <a href="#retention">Retention windows</a> for specifics.
         </p>
+      </Prose>
+    </section>
+  );
+}
+
+function AnonymizedData() {
+  const { anonymized_data } = RETENTION;
+  return (
+    <section className="flex flex-col gap-4">
+      <SectionHeading id="anonymized">Anonymized and aggregated data</SectionHeading>
+      <Prose>
+        <p>
+          {anonymized_data.description}{" "}
+          {anonymized_data.retained_indefinitely
+            ? "Such data falls outside the retention windows above."
+            : ""}
+        </p>
+      </Prose>
+    </section>
+  );
+}
+
+function IncidentData() {
+  const incident = RETENTION.windows.find((w) => w.id === "security_incident_artifacts");
+  if (!incident) return null;
+  return (
+    <section className="flex flex-col gap-4">
+      <SectionHeading id="incident">Incident and forensic artifacts</SectionHeading>
+      <Prose>
+        <p>{incident.description}</p>
       </Prose>
     </section>
   );
@@ -419,7 +461,7 @@ function OperatorHandling() {
       <Prose>
         <p>
           Forge Metal's own organizations — the platform tenant and its parent-company tenant — are
-          subject to this policy in the same terms as any other customer. Internal usage accrues
+          subject to this policy on the same terms as any other customer. Internal usage accrues
           real invoices; those invoices are finalized with a 100% showback adjustment rather than
           being excluded from the billing pipeline.
         </p>
@@ -433,43 +475,20 @@ function OperatorHandling() {
   );
 }
 
-function Changes() {
-  return (
-    <section className="flex flex-col gap-4">
-      <SectionHeading id="changes">Changes to this policy</SectionHeading>
-      <Prose>
-        <p>
-          This page is the source of truth for Forge Metal's data-retention commitments. Material
-          changes take effect 30 days after they are announced by email to the account
-          administrators on each affected organization. The date at the top of this page is the date
-          the current version took effect.
-        </p>
-        <p>
-          Previous versions of this policy are preserved in the platform repository's git history
-          and can be retrieved on request.
-        </p>
-      </Prose>
-    </section>
-  );
+// ─── helpers ─────────────────────────────────────────────────────────────────
+
+function labelOf(key: string): string {
+  return RETENTION.state_machine.find((s) => s.key === key)?.label ?? key;
 }
 
-function Contact({ operatorDomain }: { operatorDomain: string }) {
-  const policyEmail = `policy@${operatorDomain}`;
-  const securityEmail = `security@${operatorDomain}`;
-  return (
-    <section className="flex flex-col gap-4">
-      <SectionHeading id="contact">Contact</SectionHeading>
-      <Prose>
-        <p>
-          Questions about this policy, requests for data export, extension requests, or questions
-          about a specific deletion timeline can be sent to{" "}
-          <a href={`mailto:${policyEmail}`}>{policyEmail}</a>.
-        </p>
-        <p>
-          Security reports should go to <a href={`mailto:${securityEmail}`}>{securityEmail}</a> and
-          take precedence over routine policy questions.
-        </p>
-      </Prose>
-    </section>
-  );
+function extractDeleteAfterDays(window: Window | undefined): number {
+  if (!window) return 0;
+  const v = window.pending_deletion;
+  return v.kind === "delete_after" ? v.days : 0;
+}
+
+function extractRetainYears(window: Window | undefined): number {
+  if (!window) return 0;
+  const v = window.active;
+  return v.kind === "retain_years" ? v.years : 0;
 }
