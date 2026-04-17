@@ -6,5 +6,4 @@ Contact: mailto:security@{{ forge_metal_domain }}
 Expires: {{ (ansible_date_time.iso8601[:10] ~ 'T00:00:00.000Z') | replace(ansible_date_time.iso8601[:4], (ansible_date_time.iso8601[:4] | int + 1) | string) }}
 Preferred-Languages: en
 Canonical: https://platform.{{ forge_metal_domain }}/.well-known/security.txt
-Policy: https://platform.{{ forge_metal_domain }}/policy/security
-Acknowledgments: https://platform.{{ forge_metal_domain }}/policy/security#disclosure
+Policy: https://platform.{{ forge_metal_domain }}/policy/security#disclosure
