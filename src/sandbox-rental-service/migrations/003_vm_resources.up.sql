@@ -1,10 +1,10 @@
 -- Per-execution VM shape and per-org resource ceilings.
--- Defaults mirror apiwire.DefaultResources / apiwire.DefaultBounds.
+-- Defaults mirror the default runner class and apiwire.DefaultBounds.
 
 ALTER TABLE executions
-    ADD COLUMN requested_vcpus        INT  NOT NULL DEFAULT 1   CHECK (requested_vcpus > 0),
-    ADD COLUMN requested_memory_mib   INT  NOT NULL DEFAULT 1024 CHECK (requested_memory_mib > 0),
-    ADD COLUMN requested_root_disk_gib INT NOT NULL DEFAULT 10  CHECK (requested_root_disk_gib > 0),
+    ADD COLUMN requested_vcpus        INT  NOT NULL DEFAULT 4     CHECK (requested_vcpus > 0),
+    ADD COLUMN requested_memory_mib   INT  NOT NULL DEFAULT 16384 CHECK (requested_memory_mib > 0),
+    ADD COLUMN requested_root_disk_gib INT NOT NULL DEFAULT 80    CHECK (requested_root_disk_gib > 0),
     ADD COLUMN requested_kernel_image TEXT NOT NULL DEFAULT 'default';
 
 CREATE TABLE vm_resource_bounds (

@@ -252,12 +252,12 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req 
 		}
 		span.End()
 	}()
-	req, err = s.normalizeSubmitRequest(req)
-	if err != nil {
-		return uuid.Nil, uuid.Nil, err
-	}
 	if s.PGX == nil || s.Orchestrator == nil || s.Billing == nil {
 		return uuid.Nil, uuid.Nil, ErrRunnerUnavailable
+	}
+	req, err = s.normalizeSubmitRequest(ctx, req)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, err
 	}
 	correlationID := CorrelationIDFromContext(ctx)
 	executionID = uuid.New()
@@ -364,6 +364,26 @@ func (s *Service) existingSubmission(ctx context.Context, orgID uint64, idempote
 		return uuid.Nil, uuid.Nil, fmt.Errorf("load existing execution: %w", err)
 	}
 	return executionID, attemptID, nil
+}
+
+func (s *Service) runnerClassResources(ctx context.Context, runnerClass string) (apiwire.VMResources, string, bool, error) {
+	var (
+		productID                   string
+		vcpus, memoryMiB, rootfsGiB int
+	)
+	err := s.PGX.QueryRow(ctx, `SELECT product_id, vcpus, memory_mib, rootfs_gib FROM runner_classes WHERE runner_class = $1 AND active`, runnerClass).Scan(&productID, &vcpus, &memoryMiB, &rootfsGiB)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return apiwire.VMResources{}, "", false, nil
+	}
+	if err != nil {
+		return apiwire.VMResources{}, "", false, fmt.Errorf("load runner class resources: %w", err)
+	}
+	return apiwire.VMResources{
+		VCPUs:       uint32(vcpus),
+		MemoryMiB:   uint32(memoryMiB),
+		RootDiskGiB: uint32(rootfsGiB),
+		KernelImage: apiwire.KernelImageDefault,
+	}, productID, true, nil
 }
 
 func (s *Service) runnerClassFilesystemMounts(ctx context.Context, tx pgx.Tx, runnerClass string) ([]vmorchestrator.FilesystemMount, error) {
@@ -890,12 +910,11 @@ func (s *Service) writeJobEvent(ctx context.Context, row jobEventRow) error {
 	return batch.Send()
 }
 
-func (s *Service) normalizeSubmitRequest(req SubmitRequest) (SubmitRequest, error) {
+func (s *Service) normalizeSubmitRequest(ctx context.Context, req SubmitRequest) (SubmitRequest, error) {
 	req.Kind = firstNonEmpty(strings.TrimSpace(req.Kind), KindDirect)
 	req.SourceKind = firstNonEmpty(strings.TrimSpace(req.SourceKind), SourceKindAPI)
 	req.WorkloadKind = firstNonEmpty(strings.TrimSpace(req.WorkloadKind), WorkloadKindDirect)
 	req.RunnerClass = firstNonEmpty(strings.TrimSpace(req.RunnerClass), DefaultRunnerClassLabel)
-	req.ProductID = firstNonEmpty(strings.TrimSpace(req.ProductID), defaultProductID)
 	req.Provider = strings.TrimSpace(req.Provider)
 	req.IdempotencyKey = strings.TrimSpace(req.IdempotencyKey)
 	req.SourceRef = strings.TrimSpace(req.SourceRef)
@@ -913,9 +932,20 @@ func (s *Service) normalizeSubmitRequest(req SubmitRequest) (SubmitRequest, erro
 	default:
 		return SubmitRequest{}, fmt.Errorf("unsupported workload_kind %q", req.WorkloadKind)
 	}
-	// Apply defaults + bounds check at intake so the customer sees 400 on
-	// an out-of-bounds shape before any billing reservation is attempted.
-	req.Resources = req.Resources.Normalize()
+	classResources, classProductID, ok, err := s.runnerClassResources(ctx, req.RunnerClass)
+	if err != nil {
+		return SubmitRequest{}, err
+	}
+	if !ok {
+		return SubmitRequest{}, fmt.Errorf("%w: %s", ErrRunnerClassMissing, req.RunnerClass)
+	}
+	req.ProductID = firstNonEmpty(strings.TrimSpace(req.ProductID), classProductID, defaultProductID)
+	if req.ProductID != classProductID {
+		return SubmitRequest{}, fmt.Errorf("runner_class %s belongs to product %s, got product_id %s", req.RunnerClass, classProductID, req.ProductID)
+	}
+	// Runner classes are product defaults. Fill omitted fields from the class
+	// before bounds validation so billing, traces, and VM admission agree.
+	req.Resources = vmResourcesWithDefaults(req.Resources, classResources)
 	bounds := s.Bounds
 	if bounds == (apiwire.VMResourceBounds{}) {
 		bounds = apiwire.DefaultBounds
@@ -924,6 +954,22 @@ func (s *Service) normalizeSubmitRequest(req SubmitRequest) (SubmitRequest, erro
 		return SubmitRequest{}, err
 	}
 	return req, nil
+}
+
+func vmResourcesWithDefaults(resources, defaults apiwire.VMResources) apiwire.VMResources {
+	if resources.VCPUs == 0 {
+		resources.VCPUs = defaults.VCPUs
+	}
+	if resources.MemoryMiB == 0 {
+		resources.MemoryMiB = defaults.MemoryMiB
+	}
+	if resources.RootDiskGiB == 0 {
+		resources.RootDiskGiB = defaults.RootDiskGiB
+	}
+	if resources.KernelImage == "" {
+		resources.KernelImage = defaults.KernelImage
+	}
+	return resources
 }
 
 func (s *Service) executionEnv(ctx context.Context, item executionWorkItem) map[string]string {

@@ -977,7 +977,7 @@ components:
           type: string
         resources:
           $ref: "#/components/schemas/VMResources"
-          description: Requested VM shape (vCPUs, memory, root disk). Omit to use defaults; out-of-bounds shapes are rejected with 400.
+          description: Requested VM shape (vCPUs, memory, root disk). Omitted fields use the runner class defaults; out-of-bounds shapes are rejected with 400.
         run_command:
           type: string
         runner_class:
