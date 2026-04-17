@@ -183,7 +183,6 @@ Use the Makefile wrappers instead of typing the SSH and password prefix by hand.
 ```bash
 make inventory-check
 make clickhouse-query QUERY='SHOW TABLES' DATABASE=forge_metal
-make clickhouse-shell
 ```
 
 OTel logs live in `default.otel_logs`, not `forge_metal.otel_logs`:
@@ -206,7 +205,7 @@ make observe WHAT=mail
 make observe WHAT=deploy
 ```
 
-Use `make clickhouse-query` or `make clickhouse-shell` only when the observe surface does not yet cover the question.
+Use `make clickhouse-query` only when the observe surface does not yet cover the question. Interactive ClickHouse shells are intentionally unsupported because agent workflows need replayable commands.
 
 Deploy playbook telemetry smoke probes remain:
 
