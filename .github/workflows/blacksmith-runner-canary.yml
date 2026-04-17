@@ -32,7 +32,7 @@ jobs:
         uses: useblacksmith/stickydisk@v1
         with:
           key: ${{ github.repository }}-viteplus-pnpm-store-node24-${{ hashFiles('src/viteplus-monorepo/pnpm-lock.yaml') }}
-          path: ~/.pnpm-store
+          path: /home/runner/.pnpm-store
 
       - name: Mount node_modules
         uses: useblacksmith/stickydisk@v1
