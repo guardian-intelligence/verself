@@ -95,4 +95,12 @@ INSERT INTO runner_class_filesystem_mounts (
     'ext4',
     true,
     10
+), (
+    'metal-2vcpu-ubuntu-2404',
+    'viteplus',
+    'viteplus',
+    '/opt/forge-metal/nodejs',
+    'ext4',
+    true,
+    10
 ) ON CONFLICT (runner_class, mount_name) DO NOTHING;

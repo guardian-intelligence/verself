@@ -215,10 +215,10 @@ wipe-pg-db: inventory-check ## Wipe one managed PostgreSQL service DB: make wipe
 vm-orchestrator-proof: inventory-check ## Live proof for vm-orchestrator lease/exec spans through the public sandbox API
 	cd $(FM) && ./scripts/verify-vm-orchestrator-live.sh
 
-stress: inventory-check ## Burst N parallel sandbox submissions to produce a real p50/p99/p100 distribution. Bypasses the full reseed. Usage: make stress [SUBMISSIONS=200] [PARALLEL=40] [PROFILE=echo|cpu|mem|disk|cpu-mem] [TIMEOUT=1800]
+stress: inventory-check ## Burst N parallel sandbox submissions to produce a real p50/p99/p100 distribution. Bypasses the full reseed. Usage: make stress [SUBMISSIONS=200] [PARALLEL=8] [PROFILE=echo|cpu-mem|disk|mixed] [TIMEOUT=1800]
 	cd $(FM) && \
 	  SANDBOX_PROOF_SUBMISSIONS="$(if $(SUBMISSIONS),$(SUBMISSIONS),200)" \
-	  SANDBOX_PROOF_SUBMIT_PARALLEL="$(if $(PARALLEL),$(PARALLEL),40)" \
+	  SANDBOX_PROOF_SUBMIT_PARALLEL="$(if $(PARALLEL),$(PARALLEL),8)" \
 	  SANDBOX_PROOF_WORKLOAD_PROFILE="$(if $(PROFILE),$(PROFILE),echo)" \
 	  SANDBOX_PROOF_TIMEOUT_SECONDS="$(if $(TIMEOUT),$(TIMEOUT),1800)" \
 	  ./scripts/verify-sandbox-public-api.sh

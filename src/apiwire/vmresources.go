@@ -54,13 +54,13 @@ var DefaultBounds = VMResourceBounds{
 	MaxRootDiskGiB: 512,
 }
 
-// DefaultResources is applied when a caller omits VMResources. Phase 2
-// drops this to 1 vCPU / 1 GiB / 10 GiB to cut boot cost on the hot path
-// for ad-hoc workloads. Callers wanting more must ask for more.
+// DefaultResources mirrors the default sandbox runner class. Sandbox-rental
+// fills omitted public API resource fields from runner_classes before calling
+// Normalize, so non-default classes can carry their own product shape.
 var DefaultResources = VMResources{
-	VCPUs:       1,
-	MemoryMiB:   1024,
-	RootDiskGiB: 10,
+	VCPUs:       4,
+	MemoryMiB:   16384,
+	RootDiskGiB: 80,
 	KernelImage: KernelImageDefault,
 }
 

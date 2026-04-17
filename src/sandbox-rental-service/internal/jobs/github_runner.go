@@ -752,23 +752,14 @@ func (r *GitHubRunner) runnerClassForLabels(ctx context.Context, labels []string
 		if label == "" {
 			continue
 		}
-		var (
-			productID                   string
-			vcpus, memoryMiB, rootfsGiB int
-		)
-		err := r.service.PGX.QueryRow(ctx, `SELECT product_id, vcpus, memory_mib, rootfs_gib FROM runner_classes WHERE runner_class = $1 AND active`, label).Scan(&productID, &vcpus, &memoryMiB, &rootfsGiB)
-		if errors.Is(err, pgx.ErrNoRows) {
-			continue
-		}
+		resources, productID, ok, err := r.service.runnerClassResources(ctx, label)
 		if err != nil {
 			return "", apiwire.VMResources{}, "", err
 		}
-		return label, apiwire.VMResources{
-			VCPUs:       uint32(vcpus),
-			MemoryMiB:   uint32(memoryMiB),
-			RootDiskGiB: uint32(rootfsGiB),
-			KernelImage: apiwire.KernelImageDefault,
-		}, productID, nil
+		if !ok {
+			continue
+		}
+		return label, resources, productID, nil
 	}
 	return "", apiwire.VMResources{}, "", nil
 }

@@ -44,12 +44,12 @@ Direct execution flow:
 
 Single-node VM concurrency budget:
 
-- `SANDBOX_EXECUTION_MAX_WORKERS=16` is the production default for the current
+- `SANDBOX_EXECUTION_MAX_WORKERS=4` is the production default for the current
   single-node bare-metal profile: 24 logical CPUs, 93 GiB RAM, no swap. The
-  per-lease shape is now a customer input via `apiwire.VMResources` (see
-  `src/apiwire/vmresources.go`); the historical fixture used for these proof
-  runs was the 4 vCPU / 4096 MiB / 8 GiB rootfs default, and admission against
-  the worker budget was reasoned from that.
+  default public sandbox class is `metal-4vcpu-ubuntu-2404`, which reserves
+  4 vCPU / 16 GiB / 80 GiB unless the caller supplies an explicit shape. The
+  global worker limit stays below the host memory ceiling until admission
+  control distinguishes runner classes and requested memory.
 - Treat the worker count as the customer VM admission limit. One River execution
   worker can hold one active vm-orchestrator lease, so raising this value raises
   the maximum number of simultaneous Firecracker VMs, TAP slots, ZFS clones,
@@ -60,15 +60,15 @@ Single-node VM concurrency budget:
   CPU-bound workers for 3 seconds, and writing/fsyncing/reading 128 MiB. It
   passed with exec p50 7.53s, exec p99 8.97s, max 9.21s, max observed 1-minute
   load 35.07, and minimum observed `MemAvailable` 46.07 GiB.
-- 20 and 24 workers are proven burst settings for smaller CI-shaped jobs, not
-  defaults for arbitrary customer workloads. The same four-worker mixed profile
+- 20 and 24 workers are historical burst settings for the older 4 GiB fixture,
+  not defaults for arbitrary customer workloads. The same four-worker mixed profile
   passed at 20 workers in
   `sandbox-mixedcpu4-20w-2048m-128d-3cpu-20260415T075342Z`, but exec p99 grew
   to 11.45s and load peaked at 43.79. It passed at 24 workers in
   `sandbox-mixedcpu4-24w-2048m-128d-3cpu-20260415T080126Z`, but exec p99 grew
   to 11.97s, max execution duration to 13.50s, boot p99 to 3.32s, load peaked
   at 52.13, and minimum observed `MemAvailable` fell to 26.59 GiB.
-- Do not set the global default above 16 until admission control distinguishes
+- Do not set the global default above 4 until admission control distinguishes
   full-memory arbitrary workloads from constrained CI runner workloads. A future
   CI runner class may use a higher class-specific limit after it has explicit
   memory admission, class-local proof runs, and tail-latency SLOs.
@@ -87,7 +87,9 @@ Expected proof surface:
   `queued -> reserved -> launching -> running -> finalizing -> succeeded`.
 - ClickHouse `forge_metal.job_events` has one succeeded row per execution.
 - ClickHouse `forge_metal.vm_lease_evidence` has `lease_ready`,
-  `exec_started`, and `lease_cleanup` rows for each host lease.
+  `exec_started`, and `lease_cleanup` rows for each host lease. `telemetry_hello`
+  is collected when the guest lives long enough to emit it; telemetry-specific
+  proof runs opt into requiring it with `SANDBOX_PROOF_REQUIRE_TELEMETRY_HELLO=1`.
 - OTel traces include `sandbox-rental.execution.submit`,
   `sandbox-rental.execution.run`, `rpc.AcquireLease`, `rpc.StartExec`,
   `rpc.WaitExec`, `rpc.ReleaseLease`, and `vmorchestrator.lease.boot`.

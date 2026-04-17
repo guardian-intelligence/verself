@@ -36,8 +36,19 @@ INSERT INTO runner_classes (
     '24.04',
     'x86_64',
     4,
-    4096,
-    8,
+    16384,
+    80,
+    'ubuntu-2404-actions-runner'
+), (
+    'metal-2vcpu-ubuntu-2404',
+    'sandbox',
+    'Metal 2 vCPU Ubuntu 24.04',
+    'ubuntu',
+    '24.04',
+    'x86_64',
+    2,
+    8192,
+    80,
     'ubuntu-2404-actions-runner'
 );
 

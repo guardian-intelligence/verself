@@ -10,19 +10,22 @@ run_id="${VERIFICATION_RUN_ID:-sandbox-public-api-$(date -u +%Y%m%dT%H%M%SZ)}"
 artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_REPO_ROOT}/artifacts/sandbox-public-api}"
 artifact_dir="${artifact_root}/${run_id}"
 submission_count="${SANDBOX_PROOF_SUBMISSIONS:-200}"
-submit_parallel="${SANDBOX_PROOF_SUBMIT_PARALLEL:-40}"
+submit_parallel="${SANDBOX_PROOF_SUBMIT_PARALLEL:-8}"
 proof_timeout_seconds="${SANDBOX_PROOF_TIMEOUT_SECONDS:-1800}"
 clickhouse_timeout_seconds="${SANDBOX_PROOF_CLICKHOUSE_TIMEOUT_SECONDS:-180}"
 max_wall_seconds="${SANDBOX_PROOF_MAX_WALL_SECONDS:-7200}"
 proof_persona="${SANDBOX_PROOF_PERSONA:-platform-admin}"
 workload_profile="${SANDBOX_PROOF_WORKLOAD_PROFILE:-echo}"
-workload_memory_mib="${SANDBOX_PROOF_WORKLOAD_MEMORY_MIB:-3072}"
+# Keep guest/kernel/Python headroom inside the 16 GiB default runner class while
+# still making cpu-mem stress materially exercise memory admission and billing.
+workload_memory_mib="${SANDBOX_PROOF_WORKLOAD_MEMORY_MIB:-8192}"
 workload_cpu_seconds="${SANDBOX_PROOF_WORKLOAD_CPU_SECONDS:-3}"
 workload_cpu_workers="${SANDBOX_PROOF_WORKLOAD_CPU_WORKERS:-1}"
 workload_disk_mib="${SANDBOX_PROOF_WORKLOAD_DISK_MIB:-256}"
 workload_disk_block_kib="${SANDBOX_PROOF_WORKLOAD_DISK_BLOCK_KIB:-1024}"
 proof_log_marker="${SANDBOX_PROOF_LOG_MARKER:-forge-metal-proof}"
 telemetry_fault_profile="${SANDBOX_PROOF_TELEMETRY_FAULT_PROFILE:-}"
+require_telemetry_hello="${SANDBOX_PROOF_REQUIRE_TELEMETRY_HELLO:-0}"
 telemetry_fault_kind=""
 telemetry_fault_expected_seq="0"
 telemetry_fault_observed_seq="0"
@@ -759,6 +762,12 @@ ch_query --database forge_metal \
     FORMAT TSVWithNames
   " >"${artifact_dir}/clickhouse/job_events.tsv"
 
+if [[ "${require_telemetry_hello}" == "1" || "${require_telemetry_hello,,}" == "true" ]]; then
+  telemetry_hello_target="${submission_count}"
+else
+  telemetry_hello_target="0"
+fi
+
 lease_evidence="0,0,0,0"
 IFS=',' read -r lease_ready_count lease_exec_started_count lease_telemetry_hello_count lease_cleanup_count <<<"${lease_evidence}"
 clickhouse_deadline=$((SECONDS + clickhouse_timeout_seconds))
@@ -778,12 +787,12 @@ while [[ "${SECONDS}" -lt "${clickhouse_deadline}" ]]; do
       " | tr '\t' ','
   )"
   IFS=',' read -r lease_ready_count lease_exec_started_count lease_telemetry_hello_count lease_cleanup_count <<<"${lease_evidence}"
-  if [[ "${lease_ready_count}" -ge "${submission_count}" && "${lease_exec_started_count}" -ge "${submission_count}" && "${lease_telemetry_hello_count}" -ge "${submission_count}" && "${lease_cleanup_count}" -ge "${submission_count}" ]]; then
+  if [[ "${lease_ready_count}" -ge "${submission_count}" && "${lease_exec_started_count}" -ge "${submission_count}" && "${lease_telemetry_hello_count}" -ge "${telemetry_hello_target}" && "${lease_cleanup_count}" -ge "${submission_count}" ]]; then
     break
   fi
   sleep 1
 done
-if [[ "${lease_ready_count}" -lt "${submission_count}" || "${lease_exec_started_count}" -lt "${submission_count}" || "${lease_telemetry_hello_count}" -lt "${submission_count}" || "${lease_cleanup_count}" -lt "${submission_count}" ]]; then
+if [[ "${lease_ready_count}" -lt "${submission_count}" || "${lease_exec_started_count}" -lt "${submission_count}" || "${lease_telemetry_hello_count}" -lt "${telemetry_hello_target}" || "${lease_cleanup_count}" -lt "${submission_count}" ]]; then
   echo "vm_lease_evidence incomplete: ready=${lease_ready_count} exec_started=${lease_exec_started_count} telemetry_hello=${lease_telemetry_hello_count} cleanup=${lease_cleanup_count}" >&2
   exit 1
 fi
