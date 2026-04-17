@@ -2,6 +2,14 @@
 
 Privileged Go daemon for lease-scoped Firecracker lifecycle management: ZFS clone/snapshot/destroy, jailer setup, TAP networking, vm-bridge control, guest telemetry aggregation, and host-side state reconciliation. The public surface is the V1 lease/exec API over a Unix socket (`/run/vm-orchestrator/api.sock`); the daemon owns no product submission queue, payment policy, or mutable workload policy.
 
+## Privilege Boundary
+
+vm-orchestrator is the only runtime process allowed to hold host privileges for ZFS, Firecracker, TAP, jailer, `/dev/kvm`, or `/dev/zvol`. Product services never receive `zfs allow`, host device access, root-equivalent capabilities, or Firecracker/jailer arguments. They send service-authorized refs and lifecycle intents over the Unix socket; vm-orchestrator resolves those refs to contained host resources.
+
+Treat membership in the socket group (`vm-clients`) as root-equivalent for this daemon's API. Keep it to explicitly approved internal callers, audit it in Ansible, and do not add browser frontends, webhook-only services, guest agents, or general platform services to that group.
+
+PrivOps accepts host-level names because it is the privileged adapter. All callers above it must use typed refs or constructors that enforce pool/dataset containment before invoking ZFS, Firecracker, TAP, or jailer operations.
+
 ## Lease/Exec Model
 
 `LeaseSpec` reserves a single VM with an absolute host-enforced deadline. `ExecSpec` is a unit of work attached to an existing lease. Host state is authoritative for lease lifecycle, exec lifecycle, lease events, checkpoint refs, and cleanup. Guest/control-plane messages are untrusted inputs and must be validated before host mutation.

@@ -115,7 +115,7 @@ See [identity-and-iam.md](../../src/platform/docs/identity-and-iam.md). Zitadel 
 
 ## Secrets Plane
 
-See [secrets-plane-openbao.md](../../src/platform/docs/secrets-plane-openbao.md). `secrets-service` is the customer-facing control plane for org/repo/environment secrets and variables, with OpenBao as the preferred backend implementation.
+See [secrets-service.md](../../src/platform/docs/secrets-service.md). `secrets-service` is the customer-facing control plane for secrets, variables, dynamic credentials, and crypto operations across org, source, environment, and branch scopes; SPIFFE/SPIRE attests sandbox workloads; the service runs an OIDC provider so Forge Metal compute can federate to customer clouds without bootstrap API keys. OpenBao is the backend implementation, not the product contract.
 
 ## Deploy Trace Correlation
 

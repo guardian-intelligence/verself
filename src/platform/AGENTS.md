@@ -13,6 +13,12 @@ All server software is managed by the `deploy_profile` Ansible role, which popul
 
 The only other `apt install` is `zfsutils-linux` (kernel-dependent, must match the running kernel). Ubuntu 24.04 only.
 
+## Runtime privilege boundary
+
+Deploy-time Ansible may perform privileged host mutations. Runtime product services must not. Service units run as dedicated system users, not `root` or `ansible_user`, unless the unit is an explicitly privileged infrastructure daemon such as vm-orchestrator.
+
+Non-vm-orchestrator services must not receive `zfs allow`, `/dev/zvol`, `/dev/kvm`, TAP, Firecracker, jailer, host network administration, or broad Linux capabilities. The vm-orchestrator Unix socket group (`vm-clients`) is root-equivalent for VM/ZFS lifecycle operations; membership is limited to approved internal control-plane callers and must be audited in Ansible.
+
 ## Ansible playbooks
 
 Run from `src/platform/ansible/`. `--tags` targets individual roles (e.g. `--tags caddy`, `--tags clickhouse`); preflight checks run regardless of tag selection.
