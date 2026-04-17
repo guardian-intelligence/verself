@@ -58,10 +58,9 @@ func loadYAML(path string, out any) error {
 	return nil
 }
 
-// validateSpec enforces the cross-file invariants a single per-file struct
-// validator can't see. Each check emits a single error so the caller gets a
-// full picture of what's broken rather than a "fix one, re-run, fix next"
-// loop.
+// validateSpec enforces the cross-file and cross-field invariants that the
+// YAML decoder's shape check cannot express. Returns on the first failure so
+// the caller gets a precise, line-addressable error.
 func validateSpec(spec *Spec) error {
 	stateKeys := map[string]struct{}{}
 	for _, s := range spec.Retention.StateMachine {

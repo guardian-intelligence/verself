@@ -18,7 +18,10 @@ are accountable to. A PR that touches any file here should also update
 | `contacts.yml` | Policy mailbox local-parts; resolved to the operator's deployment domain at render time. | Every `/policy/*` page's Contact section. |
 | `versions.yml` | Append-only changelog. Each entry records effective date, affected policies, one-line summary. | `/policy/changelog`; RSS feed. |
 
-Validation: the Go side uses `go-playground/validator` on unmarshaled structs;
-the TypeScript side parses with Valibot schemas defined in
+Validation: the Go side rejects unknown fields at decode time (`yaml.Decoder`
+with `KnownFields(true)`) and then enforces cross-file invariants in
+`policyspec.validateSpec` (state-machine coverage, window-kind/days-years
+well-formedness, ROPA `retention_ref` resolves to a declared window). The
+TypeScript side parses with Valibot schemas defined in
 `src/viteplus-monorepo/apps/platform/src/lib/policy-catalog.ts`. Schema changes
 must land on both sides in the same commit.
