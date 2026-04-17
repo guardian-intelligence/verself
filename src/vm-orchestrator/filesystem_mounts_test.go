@@ -40,6 +40,20 @@ func TestNormalizeFilesystemMountsRejectsUnsafeMountPath(t *testing.T) {
 	}
 }
 
+func TestNormalizeFilesystemMountsRejectsHostPathRefs(t *testing.T) {
+	cases := []FilesystemMount{
+		{Name: "bad/name", SourceRef: "viteplus", MountPath: "/opt/forge-metal/nodejs"},
+		{Name: "bad@snap", SourceRef: "viteplus", MountPath: "/opt/forge-metal/nodejs"},
+		{Name: "viteplus", SourceRef: "images/viteplus", MountPath: "/opt/forge-metal/nodejs"},
+		{Name: "viteplus", SourceRef: "viteplus@ready", MountPath: "/opt/forge-metal/nodejs"},
+	}
+	for _, tc := range cases {
+		if _, err := normalizeFilesystemMounts([]FilesystemMount{tc}); err == nil {
+			t.Fatalf("expected host-shaped ref to be rejected: %#v", tc)
+		}
+	}
+}
+
 func TestPreparedFilesystemMountsBecomeGuestManifest(t *testing.T) {
 	manifest := guestFilesystemMounts([]preparedFilesystemMount{{
 		Spec: FilesystemMount{
