@@ -41,7 +41,7 @@ Forge Metal follows the industry-standard price-side shape: immediate upgrades c
 - Request-path reservation must not depend on a scheduled job having run on time.
 - Request-path self-healing may create deterministic current-period entitlement rows and grants from already-authorized PostgreSQL state.
 - Request-path self-healing must not call Stripe, infer payment facts, or depend on ClickHouse.
-- Spendable balances, pending reservations, posted consumption, voids, top-up deposits, receivable accrual, receivable clearing, expiry sweeps, and financial corrections must be represented in TigerBeetle. PostgreSQL rows describe the domain operation; TigerBeetle accounts and transfers are the balance authority.
+- Spendable balances, posted consumption, top-up deposits, receivable accrual, receivable clearing, expiry sweeps, and financial corrections must be represented in TigerBeetle. Request-path admission holds are PostgreSQL authorization windows. PostgreSQL rows describe the domain operation; TigerBeetle accounts and transfers are the posted-balance authority.
 - PostgreSQL domain identifiers remain deterministic text identifiers. TigerBeetle account IDs, transfer IDs, and correlation IDs are separate 128-bit values generated with TigerBeetle's time-based ID scheme, persisted before dispatch, and reused on retry.
 - A PostgreSQL row must not become customer-spendable or terminally settled until the corresponding TigerBeetle command has been acknowledged or reconciled as already posted.
 - Billing cycles define backend billing periods only. Contract phases define commercial policy intervals. Do not add a parallel `plan_bindings` table unless `contract_phases` is being renamed.
@@ -64,7 +64,7 @@ Forge Metal follows the industry-standard price-side shape: immediate upgrades c
 |---|---|
 | PostgreSQL | Source of truth for catalog tables, contracts, contract changes, phases, entitlement lines, entitlement periods, credit-grant metadata, billing cycles, billing-window metadata, finalizations, billing documents, invoice adjustments, payment methods, provider bindings, provider events, ledger command state, billing event rows, event-delivery queue rows, schedule-defining timestamps, and reconciliation cursors. |
 | River | Durable queue and scheduler runtime for provider-event application, contract-change execution, phase-boundary advancement, entitlement-period materialization, ledger command dispatch, ledger reconciliation, cycle rollover, finalization, Stripe invoice collection, document email delivery, retries, and periodic repair. |
-| TigerBeetle | Operational financial ledger for credit balances, top-up deposits, recurring allowance deposits, receivables, pending reservations, settlements, voids, refunds, expiry sweeps, corrections, showback transfers, and spend-cap enforcement. TigerBeetle is not the customer billing document artifact and not a substitute for PostgreSQL domain state. |
+| TigerBeetle | Operational financial ledger for credit balances, top-up deposits, recurring allowance deposits, receivables, settlements, refunds, expiry sweeps, corrections, showback transfers, and spend-cap enforcement. TigerBeetle is not the customer billing document artifact, not the request-path authorization engine, and not a substitute for PostgreSQL domain state. |
 | ClickHouse | Append-only usage evidence plus billing event, metering, document, adjustment, and provider-event projections used for document preview, statements, dashboards, verification, and reconciliation. |
 | Stripe | SetupIntents, PaymentMethods, Customer Portal, one-off invoice collection, payment intents, refunds, disputes, optional Stripe Tax, and hosted payment artifacts. Stripe Subscriptions are not part of the target domain model. |
 | Mailbox service | Transactional delivery of Forge Metal document emails from the stored billing document artifact. Stripe invoice emailing is disabled in the target Forge Metal canonical-document path. |
@@ -227,7 +227,7 @@ Account codes are stable protocol values once production data exists. The exact 
 | `operator_revenue` | singleton or per product | credit-positive settlement | `debits_must_not_exceed_credits`, `history` | Receives posted usage value, recognized invoice value, and revenue-classified clearing movements. Do not treat this raw operational account as GAAP revenue without invoice classification. |
 | `operator_receivable` | singleton or per product | credit-positive clearing | `debits_must_not_exceed_credits`, `history` | Counterparty for explicitly consented postpaid usage while the customer receivable is awaiting document issue or payment clearing. |
 | `operator_revoked_contract_allowance` | singleton or per product | credit-positive sink | `debits_must_not_exceed_credits`, `history` | Receives unused recurring contract allowance swept after terminal non-payment, fraud, cancellation reversal, or operator correction. |
-| `customer_grant` | one per `credit_grants` row | credit-positive spendable balance | `debits_must_not_exceed_credits`, `history` | Holds one scoped grant. Available balance is `credits_posted - debits_posted - debits_pending`. |
+| `customer_grant` | one per `credit_grants` row | credit-positive spendable balance | `debits_must_not_exceed_credits`, `history` | Holds one scoped grant. Posted availability is `credits_posted - debits_posted`; request-path authorization subtracts active PostgreSQL window legs. |
 | `customer_receivable` | per org/product/cycle or per document | debit-positive receivable | `credits_must_not_exceed_debits`, `history` | Accrues explicitly consented postpaid overage or document receivables and is cleared by payment or adjustment. |
 
 Operator singleton account IDs are generated once and stored in `billing_ledger_accounts`. Customer grant and receivable account IDs are TigerBeetle time-based IDs generated when PostgreSQL creates the corresponding domain row. On boot and during reconciliation, billing verifies that registered operator accounts exist with the expected ledger, code, flags, and user data.
@@ -242,10 +242,7 @@ Transfer codes are stable protocol values once production data exists. Target tr
 |---|---|---|---:|---|
 | `stripe_payment_in` | `operator_stripe_external` | `operator_stripe_holding` | no | Records a successful Stripe payment in ledger units. |
 | `grant_deposit` | source funding account | `customer_grant` | no | Creates spendable credit. The debit account identifies whether the grant came from free tier, contract allowance, top-up payment, promo, or refund policy. |
-| `reservation_grant` | `customer_grant` | `operator_revenue` | yes | Locks grant-backed usage before work starts. |
-| `reservation_receivable` | `customer_receivable` | `operator_receivable` | yes | Locks explicitly consented postpaid overage before work starts without pretending that a vaulted payment method is overage consent. |
-| `settlement_post` | references pending transfer | references pending transfer | no | Posts all or part of a pending reservation. |
-| `settlement_void` | references pending transfer | references pending transfer | no | Releases all or part of a pending reservation. |
+| `usage_spend` | `customer_grant` | `operator_revenue` | no | Posts final settled grant-backed usage. Admission holds are PostgreSQL authorization windows, not TigerBeetle pending transfers. |
 | `document_receivable_accrue` | `customer_receivable` | `operator_receivable` | no | Accrues collectible document amounts that are not already represented by posted receivable reservation legs. |
 | `receivable_revenue_recognition` | `operator_receivable` | `operator_revenue` | no | Reclassifies issued or collected receivable value into the operational revenue account when invoice policy says the amount is no longer merely pending collection. |
 | `grant_expiry_sweep` | `customer_grant` | `operator_expired_credits` | no | Removes unused grant balance at `expires_at`. |
@@ -255,7 +252,7 @@ Transfer codes are stable protocol values once production data exists. Target tr
 | `no_consent_adjustment_showback` | `operator_writeoff_expense` | `operator_revenue` | no | Records absorbed leaked usage for marketing/policy showback without creating customer debt. The paired operational revenue credit preserves gross usage value while the expense debit identifies the operator-funded adjustment. |
 | `ledger_correction` | correction-specific | correction-specific | no or pending | Corrects an erroneous prior movement using the same `user_data_128` correlation as the original operation. |
 
-Settlement transfers must use TigerBeetle `pending_id` to reference the reservation transfer. The transfer ID never encodes leg order, operation kind, or source. Leg order is stored in PostgreSQL `billing_window_ledger_legs.leg_seq`, and operation meaning is stored in the TigerBeetle `code` plus PostgreSQL command metadata.
+Settlement transfer IDs are persisted on `billing_window_ledger_legs.settlement_transfer_id`. The transfer ID never encodes leg order, operation kind, or source. Leg order is stored in PostgreSQL `billing_window_ledger_legs.leg_seq`, and operation meaning is stored in the TigerBeetle `code` plus PostgreSQL command metadata.
 
 ### Ledger commands
 
@@ -275,11 +272,11 @@ dead_letter -> pending (operator requeue, generation incremented)
 
 Dispatch rules:
 
-- Grant deposits and request-path reservations dispatch synchronously before returning customer-visible success.
-- Settlement and void commands may be retried by River, but `billing_windows` must remain in a non-terminal `settling` or `voiding` state until TigerBeetle acknowledges the post/void transfers.
+- Grant deposits dispatch synchronously before a grant becomes spendable. Request-path reservations are PostgreSQL authorization commits and do not create TigerBeetle commands.
+- Settlement commands may be retried by River, but `billing_windows` must remain in non-terminal `settling` until TigerBeetle acknowledges the posted usage-spend transfers.
 - Background commands such as expiry sweeps, receivable clearing, document showback, and corrections dispatch through River and are repaired by reconciliation.
 - A command in `in_progress` whose lease expires is eligible for re-lease and replay with the same persisted payload. A process crash after lease acquisition must not require operator intervention.
-- A command in `posted` whose aggregate row is still non-terminal is eligible for aggregate completion without replaying TigerBeetle. Examples: a posted `grant_deposit` with `credit_grants.ledger_posting_state != 'posted'`, a posted `reserve_window` with `billing_windows.state = 'reserving'`, a posted `settle_window` with `state = 'settling'`, or a posted `void_window` with `state = 'voiding'`.
+- A command in `posted` whose aggregate row is still non-terminal is eligible for aggregate completion without replaying TigerBeetle. Examples: a posted `grant_deposit` with `credit_grants.ledger_posting_state != 'posted'` or a posted `settle_window` with `billing_windows.state = 'settling'`.
 - A command retry must submit the exact same TigerBeetle IDs and linked-chain layout. Changing amount, account, code, flags, or ordering requires a new command generation and an explicit correction plan.
 - Linked transfer chains must close inside a single TigerBeetle request. Large sweeps split into independently atomic commands before hitting TigerBeetle's batch limit.
 
@@ -289,8 +286,8 @@ Customer balance reads load grant metadata from PostgreSQL and balances from Tig
 
 1. PostgreSQL selects open, active, in-scope `credit_grants` whose `ledger_posting_state = 'posted'` and whose time window contains the business clock.
 2. Billing batches `LookupAccounts(account_id...)` for those grants.
-3. For each `customer_grant` account, spendable availability is `credits_posted - debits_posted - debits_pending`.
-4. Pending amount is `debits_pending`.
+3. For each `customer_grant` account, posted availability is `credits_posted - debits_posted`; TigerBeetle `debits_pending` must normally be zero.
+4. Pending amount is the sum of PostgreSQL `billing_window_ledger_legs` attached to `billing_windows.state IN ('reserved', 'active', 'settling')`.
 5. Customer-facing spent-by-source and spent-by-SKU is derived from settled `billing_window_ledger_legs` and metering projection, not from raw `debits_posted`, because expiry sweeps, refunds, and corrections also debit grant accounts.
 6. The entitlements view groups the same grant metadata and TB balances into account/product/bucket/SKU slots. It must not synthesize a top-line balance that can be spent across incompatible scopes.
 
@@ -328,32 +325,28 @@ Reservation is the admission-control path:
 
 1. PostgreSQL locks `(org_id, product_id)`.
 2. Reserve self-heals current-period free-tier and already-active/grace contract grants from PostgreSQL facts.
-3. PostgreSQL loads posted grant metadata and TigerBeetle balances, then builds a strict waterfall: scope tightness first, source priority second, paid tier priority third, oldest grant first.
-4. PostgreSQL inserts `billing_windows(state = 'reserving')`, `billing_window_ledger_legs(state = 'pending_tb')`, and one ledger command containing linked pending transfers.
-5. Billing dispatches the command synchronously to TigerBeetle.
-6. If TigerBeetle accepts every pending transfer, PostgreSQL marks the window `reserved` and the legs `pending`.
-7. If TigerBeetle rejects the command for insufficient credits, PostgreSQL marks the window `denied`; the caller must not start work.
-8. If TigerBeetle is unavailable after the PostgreSQL command commit, the caller receives a retryable dependency error and the window remains `reserving` until command dispatch or reconciliation resolves it. A `reserving` window is not a valid reservation.
+3. PostgreSQL loads posted grant metadata and TigerBeetle balances, subtracts active PostgreSQL authorizations, then builds a strict waterfall: scope tightness first, source priority second, paid tier priority third, oldest grant first.
+4. PostgreSQL inserts `billing_windows(state = 'reserved')`, `billing_window_ledger_legs(state = 'pending')`, and reserve events in one transaction.
+5. If posted grant balances minus active PostgreSQL authorizations cannot fund the window, the caller receives no-capacity and must not start work.
 
 Settlement is the completion path:
 
 1. The caller reports billable usage evidence. For sandbox time windows, billable quantity is milliseconds of guest workload runtime, not VM launch/setup latency.
 2. PostgreSQL computes billable charge units from the captured `rate_context`, trims the already-reserved legs in stored waterfall order, records `actual_quantity`, `billable_quantity`, `funding_legs`, `settled_at`, and no-consent writeoff evidence, and then moves the window to `settling`.
-3. PostgreSQL creates post/void command transfers referencing each pending reservation transfer by `pending_id`.
-4. PostgreSQL stays in `settling` until TigerBeetle acknowledges the post/void command.
+3. PostgreSQL creates direct usage-spend transfers for grant-backed posted legs and records released authorization amounts as `amount_voided`.
+4. PostgreSQL stays in `settling` until TigerBeetle acknowledges the usage-spend command.
 5. After acknowledgement, PostgreSQL marks legs `posted` or `voided`, marks the window `settled`, emits `billing_window_settled`, and enqueues metering projection.
 
 Void is the safe-failure path:
 
-1. PostgreSQL creates a void command for each still-pending reservation leg.
-2. PostgreSQL stays in `voiding` until TigerBeetle acknowledges the voids or reconciliation proves they expired/voided.
-3. After acknowledgement, PostgreSQL marks the window `voided`, emits `billing_window_voided`, and the grant balances become available again.
+1. PostgreSQL marks each pending leg `voided`, records `amount_voided = amount_reserved`, marks the window `voided`, and emits `billing_window_voided`.
+2. No TigerBeetle command is created because no TigerBeetle transfer exists before settlement.
 
 ### Receivables and overage consent
 
 Receivable-backed funding is allowed only when the customer has explicitly accepted the relevant overage model. A vaulted card is not enough.
 
-For paid orgs with `overage_policy = 'bill_published_rate'`, reserve may add `reservation_receivable` legs after all eligible grants and prepaid balances are exhausted. Those legs debit a `customer_receivable` account and credit `operator_receivable` as pending transfers. Settlement posts the actual billable amount and voids the unused remainder. Finalization then renders the receivable into customer-facing document lines and collection jobs.
+For paid orgs with `overage_policy = 'bill_published_rate'`, reserve may add receivable legs after all eligible grants and prepaid balances are exhausted. Those legs are PostgreSQL authorization rows until settlement. Finalization then renders the receivable into customer-facing document lines, receivable ledger commands, and collection jobs.
 
 Recurring base charges, upgrade price deltas, taxes, and other document amounts that are not grant-backed usage are represented by PostgreSQL document lines first. When they create a collectible amount due, finalization creates or updates the relevant `customer_receivable` ledger account and posts a receivable-accrual command. Payment success clears that receivable through `operator_stripe_holding`. If collection happens before issue in a hosted payment flow, the provider event is still recorded first, and finalization reconciles the already-collected provider amount to the issued Forge Metal document.
 
@@ -379,8 +372,8 @@ Billing reconciliation compares PostgreSQL ledger metadata against TigerBeetle s
 
 1. Operator account integrity: each registered operator account exists with expected ledger, code, flags, and `user_data`.
 2. Grant account parity: every posted grant has a TigerBeetle account; every customer-grant account known to PostgreSQL maps to exactly one grant row.
-3. Grant balance parity: posted grant deposits, pending reservation legs, posted settlement legs, expiry sweeps, refunds, and corrections reconcile to the TigerBeetle account balances.
-4. Window leg parity: every `billing_window_ledger_legs` row in `pending`, `posted`, or `voided` has the expected TigerBeetle reservation/post/void transfer IDs.
+3. Grant balance parity: posted grant deposits, posted settlement legs, expiry sweeps, refunds, and corrections reconcile to TigerBeetle account balances.
+4. Window leg parity: every settled grant-backed `billing_window_ledger_legs` row has the expected TigerBeetle settlement transfer ID, and active `pending` legs exist only as PostgreSQL authorization holds.
 5. Command drain health: no ledger command remains due, leased, or retryable beyond policy without alerting or DLQ transition.
 6. Receivable parity: customer receivable balances reconcile to unfinalized/finalized receivable document lines, payments, adjustments, and corrections.
 7. Accounting identity: all included account movements on a ledger net to zero under the configured account balance convention.
@@ -423,7 +416,7 @@ billing_cycles
   -> billing_windows bounded by cycle interval
   -> billing_window_ledger_legs
   -> billing_ledger_commands
-  -> TigerBeetle pending/post/void transfers
+  -> TigerBeetle usage-spend transfers
   -> billing_finalizations
   -> billing_documents
   -> billing_document_line_items
@@ -1029,7 +1022,7 @@ Key fields:
 - `source_type`
 - `source_ref`
 - `window_seq`
-- `state` (`reserving`, `reserved`, `active`, `settling`, `settled`, `voiding`, `voided`, `denied`, `failed`)
+- `state` (`reserved`, `active`, `settling`, `settled`, `voided`)
 - `reservation_shape`
 - `reserved_quantity`
 - `actual_quantity`
@@ -1053,17 +1046,17 @@ Key fields:
 - `metering_projected_at`
 - `last_projection_error`
 
-`billing_windows` are request-path financial locks, not queued jobs. A `reserved` window means TigerBeetle accepted the pending reservation transfers. A `reserving` window is not a valid reservation and must not let a caller start work. A `settling` window has durable settlement math and a posted-or-pending ledger command, but it is not terminal and must not be projected as settled customer usage. A `settled` or `voided` window means TigerBeetle accepted the corresponding post/void command or reconciliation proved the pending transfers resolved. Settlement and projection can be retried asynchronously, but terminal window state must not lead TigerBeetle acknowledgement.
+`billing_windows` are request-path authorization locks, not queued jobs. A `reserved` window means PostgreSQL committed the admission hold after loading posted TigerBeetle grant balances and subtracting active PostgreSQL authorizations. A `settling` window has durable settlement math and a posted-or-pending ledger command, but it is not terminal and must not be projected as settled customer usage. A `settled` window means TigerBeetle accepted the final usage-spend command or reconciliation proved the transfer exists. A `voided` window is PostgreSQL-only authorization release and creates no TigerBeetle movement.
 
 Sandbox time windows use AWS-Lambda-style millisecond quantities. `reserved_quantity`, `actual_quantity`, `billable_quantity`, and `writeoff_quantity` are milliseconds for `reservation_shape = 'time'`; the SKU quantity unit makes the resource dimension explicit (`vCPU-ms`, `GiB-ms`). VM launch and environment setup time are not billable. The billed duration comes from the billable guest `run` phase duration when available and falls back to host-side billable phase start/end evidence only when the guest duration is absent.
 
-`funding_legs` may be retained as a denormalized snapshot for API and ClickHouse projection, but it is not the authoritative financial leg table. `billing_window_ledger_legs` owns per-leg transfer IDs, source attribution, component SKU attribution, and leg state.
+`funding_legs` may be retained as a denormalized snapshot for API and ClickHouse projection, but it is not the authoritative financial leg table. `billing_window_ledger_legs` owns per-leg settlement transfer IDs, source attribution, component SKU attribution, authorization amounts, posted amounts, released amounts, and leg state.
 
 `writeoff_quantity` and `writeoff_charge_units` are settlement evidence, not a customer credit. They capture usage that was admitted but cannot be billed because it exceeded the reserved quantity or the org's overage-consent policy. Finalization turns that evidence into deterministic `invoice_adjustments` rows when the window would otherwise create unauthorized receivable units. Optional TigerBeetle showback transfers mirror those adjustments for operator reporting without creating customer debt.
 
 ### `billing_window_ledger_legs`
 
-Normalized reservation, settlement, void, and source-attribution legs for a billing window.
+Normalized authorization, settlement, release, and source-attribution legs for a billing window.
 
 Key fields:
 
@@ -1076,9 +1069,7 @@ Key fields:
 - `grant_id`
 - `customer_receivable_account_id`
 - `grant_account_id`
-- `reservation_transfer_id`
 - `settlement_transfer_id`
-- `void_transfer_id`
 - `component_sku_id`
 - `component_bucket_id`
 - `scope_type`
@@ -1090,11 +1081,11 @@ Key fields:
 - `amount_reserved`
 - `amount_posted`
 - `amount_voided`
-- `state` (`pending_tb`, `pending`, `posted`, `voided`, `failed`)
+- `state` (`pending`, `posted`, `voided`)
 - `created_at`
 - `updated_at`
 
-The primary key is `(window_id, leg_seq)`. Leg order is the exact funding waterfall order used for settlement trimming and document attribution. The transfer IDs are TigerBeetle IDs, not domain IDs. `source = 'receivable'` uses `customer_receivable_account_id` and leaves `grant_id` empty; grant-backed sources require `grant_id` and `grant_account_id`. There is no `internal` source because dogfood usage is funded by internal contracts using the normal `contract` source and then netted by invoice adjustment.
+The primary key is `(window_id, leg_seq)`. Leg order is the exact funding waterfall order used for settlement trimming and document attribution. `settlement_transfer_id` is a TigerBeetle transfer ID, not a domain ID. `source = 'receivable'` leaves `grant_id` empty; grant-backed sources require `grant_id` and `grant_account_id`. There is no `internal` source because dogfood usage is funded by internal contracts using the normal `contract` source and then netted by invoice adjustment.
 
 This table is the indexed source for explaining how a window drained balances. TigerBeetle is still the balance authority, but PostgreSQL stores the domain reason for each transfer so documents, support tools, and ClickHouse projections do not need to depend on preview TigerBeetle query APIs.
 
@@ -1124,7 +1115,7 @@ Durable PostgreSQL command state for TigerBeetle side effects.
 Key fields:
 
 - `command_id`
-- `operation` (`grant_deposit`, `reserve_window`, `settle_window`, `void_window`, `document_receivable_accrue`, `expire_grant`, `revoke_contract_allowance`, `refund_balance_remove`, `receivable_clear_payment`, `receivable_revenue_recognition`, `adjustment_showback`, `ledger_correction`)
+- `operation` (`grant_deposit`, `settle_window`, `document_receivable_accrue`, `expire_grant`, `revoke_contract_allowance`, `refund_balance_remove`, `receivable_clear_payment`, `receivable_revenue_recognition`, `adjustment_showback`, `ledger_correction`)
 - `aggregate_type`
 - `aggregate_id`
 - `org_id`
@@ -1583,19 +1574,15 @@ any non-posted -> failed
 ### Billing-window ledger lifecycle
 
 ```text
-reserving -> reserved
-reserving -> denied
-reserving -> failed
 reserved -> active
 reserved -> settling -> settled
 active -> settling -> settled
-reserved -> voiding -> voided
-active -> voiding -> voided
+reserved -> voided
+active -> voided
 settling --ledger command retryable_failed--> settling
-voiding --ledger command retryable_failed--> voiding
 ```
 
-`reserved` is reached only after TigerBeetle accepts the pending reservation transfers. `settled` is reached only after TigerBeetle accepts the post/void transfers for every reservation leg. `voided` is reached only after TigerBeetle accepts void transfers or reconciliation proves the pending transfers have expired or were already voided. Ledger command retry failures keep the window in `settling` or `voiding`; they must not be returned to callers as usable reservations or terminal settlements.
+`reserved` is a PostgreSQL authorization commit and is returned to callers only after active grant balances and active PostgreSQL authorization holds prove the workload can be admitted. `settled` is reached only after TigerBeetle accepts the final usage-spend transfers for grant-backed posted legs. `voided` is a PostgreSQL-only release of a reserved or active authorization. Ledger command retry failures keep the window in `settling`; they must not be returned to callers as terminal settlements.
 
 ### Billing-document lifecycle
 
@@ -1660,21 +1647,19 @@ Ledger command workers submit persisted TigerBeetle account/transfer specs. `pos
 
 ## Request-path reservation and self-healing
 
-Reservation is a financial lock, not a final charge.
+Reservation is an authorization lock, not a final charge.
 
 1. Reserve validates org/product/actor/source input.
 2. Reserve performs entitlement readiness self-healing from PostgreSQL-only facts.
 3. Reserve loads the open billing cycle for the org/product.
 4. Reserve loads active pricing and active/grace contract phases from PostgreSQL.
 5. Reserve loads eligible posted grant metadata from PostgreSQL and balances from TigerBeetle.
-6. Reserve chooses funding legs by the strict scope/source/tier/age waterfall.
-7. Reserve inserts `billing_windows(state = 'reserving')`, normalized `billing_window_ledger_legs`, and a `billing_ledger_commands(operation = 'reserve_window')` row containing the exact TigerBeetle pending transfers.
-8. Reserve synchronously dispatches the ledger command. The request path may wait on TigerBeetle here because this is the financial lock that decides whether the workload may start.
-9. On TigerBeetle success, PostgreSQL marks the window `reserved` and returns admission to the caller.
-10. On TigerBeetle insufficient-balance rejection, PostgreSQL marks the window `denied` and returns a no-capacity response.
-11. On TigerBeetle unavailability, PostgreSQL leaves the window `reserving` and returns a retryable dependency error. A `reserving` window must not be treated as a valid reservation.
-12. Settle computes actual usage, posts final spend, voids any remainder, and only then marks the window `settled`.
-13. Metering projection is scheduled after settlement.
+6. Reserve subtracts active PostgreSQL authorizations for `reserved`, `active`, and `settling` windows from those posted balances.
+7. Reserve chooses funding legs by the strict scope/source/tier/age waterfall.
+8. Reserve inserts `billing_windows(state = 'reserved')`, normalized `billing_window_ledger_legs(state = 'pending')`, and `billing_window_reserved` evidence in one PostgreSQL transaction.
+9. If posted grants minus active authorizations cannot fund the window and overage policy does not allow receivable funding, reserve returns no-capacity and the caller must not start work.
+10. Settle computes actual usage, posts final spend through `billing_ledger_commands(operation = 'settle_window')`, releases any unbilled authorization remainder in PostgreSQL, and only then marks the window `settled`.
+11. Metering projection is scheduled after settlement.
 
 The request path never waits for River, Stripe, finalization, email delivery, or ClickHouse to prove current entitlements. It either creates missing deterministic current-period entitlement rows in the request transaction, or fails because the contract state/policy says the org is not entitled.
 
@@ -1686,7 +1671,7 @@ Self-healing rules:
 - If the product intentionally allows immediate access before payment finality, that must be represented by an explicit `grace` transition in PostgreSQL, not inferred during reserve.
 - Reserve may close or ignore local rows only when their authoritative PostgreSQL phase/period state already proves they cannot fund current usage.
 - Reserve must never call Stripe, scan provider APIs, render billing documents, send emails, or read ClickHouse.
-- Reserve must never return a usable reservation before TigerBeetle accepts the pending transfer command.
+- Reserve must never return a usable reservation before PostgreSQL commits the authorization window and normalized funding legs.
 - Reserve must never fall back to PostgreSQL arithmetic when TigerBeetle balance lookup fails.
 - Reserve must not create receivable funding legs for org/product postures that lack overage consent. Free-tier orgs and paid hard-cap orgs must deny admission once authorized grants and prepaid balances are exhausted.
 - Settlement may record writeoff evidence for leaked no-consent usage, but that evidence must not become a customer receivable. Finalization is the only place where it becomes an automatic adjustment line.
@@ -1819,7 +1804,7 @@ Post-upgrade paid compute available: 3,000,000 Hobby carryforward + 67,500,000 P
 
 The customer does not get a full prorated Pro grant of `120,000,000 * 75% = 90,000,000` units on top of heavy Hobby usage, because that creates step-through-tier arbitrage. The customer also does not lose unused Hobby allowance when they upgrade early, because that makes upgrades feel punitive when usage is low. The path-independent total paid entitlement for the cycle is the original Hobby grant plus the prorated positive delta from Hobby to Pro.
 
-Pending reservations that already selected old Hobby funding before the upgrade settle or void against their original funding legs. The upgrade path must not snapshot TigerBeetle balances and re-mint "remaining Hobby" into a replacement grant; keeping the old current-cycle grant open until expiry avoids double-spend and lost-capacity races around pending reservations. New reservations after Pro activation can consume remaining Hobby carryforward plus the Pro delta grant, while their pricing context is captured from the active Pro phase.
+Pending authorization windows that already selected old Hobby funding before the upgrade settle or void against their original funding legs. The upgrade path must not snapshot TigerBeetle balances and re-mint "remaining Hobby" into a replacement grant; keeping the old current-cycle grant open until expiry avoids double-spend and lost-capacity races around active authorization windows. New reservations after Pro activation can consume remaining Hobby carryforward plus the Pro delta grant, while their pricing context is captured from the active Pro phase.
 
 Paid overages accrued before the upgrade remain attached to the old phase/rate context captured in their billing windows. They are not netted against the upgrade charge or erased by the Pro activation. If usage leaked without overage consent, finalization applies the automatic no-consent adjustment rules rather than charging the customer.
 
@@ -2096,11 +2081,10 @@ Ledger fault cases:
 
 - Grant deposit command posts in TigerBeetle but the process crashes before PostgreSQL marks the grant posted.
 - Grant deposit command persists in PostgreSQL but TigerBeetle is unavailable before dispatch.
-- Reservation command persists with `billing_windows.state = 'reserving'` and the process crashes before dispatch.
-- Reservation command posts in TigerBeetle but PostgreSQL update to `reserved` fails.
-- Reservation command is rejected for insufficient balance after PostgreSQL selected apparently eligible grants.
+- Reservation transaction rolls back after selecting apparently eligible grants; no caller-visible reservation exists.
+- Two concurrent reserve requests target the same org/product; the PostgreSQL org/product lock serializes authorization arithmetic.
 - Settlement command posts only after a retry; the window must remain non-terminal until acknowledgement.
-- Void command is delayed after a workload launch failure; pending balance must be released by retry or TigerBeetle timeout.
+- Void after a workload launch failure is PostgreSQL-only and releases the authorization in the same transaction.
 - Duplicate ledger command dispatch replays the same TigerBeetle IDs and receives idempotent exists/already-posted results.
 - Operator account registry differs from TigerBeetle account flags, ledger, code, or `user_data`.
 - Reconciliation finds a posted PostgreSQL leg without the expected TigerBeetle transfer.
@@ -2145,17 +2129,17 @@ The deterministic period/grant uniqueness constraints pick one PostgreSQL row. O
 
 ### Reservation, settlement, and voiding
 
-**Reservation command posts in TigerBeetle, then PostgreSQL fails before `billing_windows.state = 'reserved'`.**
+**Reservation transaction fails before `billing_windows.state = 'reserved'` commits.**
 
-The original caller must not start work unless it receives the reserved response. A retry with the same idempotency key or a repair scanner finds `billing_ledger_commands(state = 'posted')`, completes the window transition to `reserved`, marks legs `pending`, and emits `billing_window_reserved`. The same pending transfer IDs are reused; no second reservation is created.
+The original caller must not start work unless it receives the reserved response. No TigerBeetle transfer exists to repair. A retry with the same source identity either creates the authorization window or returns the already-committed reserved window.
 
 **Reservation is rejected for insufficient balance after PostgreSQL selected eligible grants.**
 
-TigerBeetle is authoritative. PostgreSQL marks the window `denied`, marks legs failed or removes unposted legs according to the state-machine convention, emits the denial event, and the caller must not launch work. This is the expected result when a concurrent reservation consumed the balance between grant selection and ledger dispatch.
+PostgreSQL rolls back the authorization transaction and the caller must not launch work. This is the expected result when an earlier serialized reservation consumed the balance before the later request acquired the org/product lock.
 
-**Work launches, launch fails, and void dispatch is delayed.**
+**Work launches, launch fails, and the caller voids the window.**
 
-The window moves to `voiding` and remains non-terminal until TigerBeetle accepts the void or reconciliation proves the pending reservation expired without posting. Pending balance may be temporarily unavailable, which is safer than double-spending it. No metering row or document usage line is emitted for a voiding window.
+The void path is PostgreSQL-only: pending legs move to `voided`, the window moves to `voided`, and no metering row or document usage line is emitted.
 
 **Settlement command posts, then PostgreSQL fails before `billing_windows.state = 'settled'`.**
 
@@ -2163,7 +2147,7 @@ The window remains `settling`, which means settlement math is durable but termin
 
 **A settlement reports less usage than the reservation.**
 
-Settlement posts only the billable amount in waterfall order and voids the unused remainder. It never scales all sources proportionally. This preserves the hierarchy: tightest scope first, then free tier, contract, promo, refund, purchase, and finally consented receivable funding if allowed.
+Settlement posts only the billable amount in waterfall order and releases the unused authorization remainder. It never scales all sources proportionally. This preserves the hierarchy: tightest scope first, then free tier, contract, promo, refund, purchase, and finally consented receivable funding if allowed.
 
 **A workload duration includes launch/setup time and guest runtime.**
 

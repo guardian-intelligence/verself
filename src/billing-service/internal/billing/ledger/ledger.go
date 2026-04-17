@@ -37,7 +37,7 @@ const (
 
 const (
 	TransferCodeGrantDeposit    uint16 = 1
-	TransferCodeReservation     uint16 = 2
+	TransferCodeUsageSpend      uint16 = 2
 	TransferCodeStripePaymentIn uint16 = 3
 	TransferCodeGrantSweep      uint16 = 4
 	TransferCodeCorrection      uint16 = 5
@@ -280,7 +280,7 @@ func LinkTransfers(transfers []TransferPayload) {
 	}
 }
 
-func PendingReservationTransfer(id ID, grantAccountID ID, revenueAccountID ID, amount uint64, windowCorrelation ID, businessTimeMS uint64, timeoutSeconds uint32) TransferPayload {
+func UsageSpendTransfer(id ID, grantAccountID ID, revenueAccountID ID, amount uint64, windowCorrelation ID, businessTimeMS uint64) TransferPayload {
 	return TransferPayload{
 		ID:              id.String(),
 		DebitAccountID:  grantAccountID.String(),
@@ -288,35 +288,8 @@ func PendingReservationTransfer(id ID, grantAccountID ID, revenueAccountID ID, a
 		Amount:          amount,
 		UserData128:     windowCorrelation.String(),
 		UserData64:      businessTimeMS,
-		Timeout:         timeoutSeconds,
 		Ledger:          DefaultLedger,
-		Code:            TransferCodeReservation,
-		Flags:           tbtypes.TransferFlags{Pending: true}.ToUint16(),
-	}
-}
-
-func PostPendingTransfer(id ID, pendingID ID, amount uint64, windowCorrelation ID, businessTimeMS uint64) TransferPayload {
-	return TransferPayload{
-		ID:          id.String(),
-		PendingID:   pendingID.String(),
-		Amount:      amount,
-		UserData128: windowCorrelation.String(),
-		UserData64:  businessTimeMS,
-		Ledger:      DefaultLedger,
-		Code:        TransferCodeReservation,
-		Flags:       tbtypes.TransferFlags{PostPendingTransfer: true}.ToUint16(),
-	}
-}
-
-func VoidPendingTransfer(id ID, pendingID ID, windowCorrelation ID, businessTimeMS uint64) TransferPayload {
-	return TransferPayload{
-		ID:          id.String(),
-		PendingID:   pendingID.String(),
-		UserData128: windowCorrelation.String(),
-		UserData64:  businessTimeMS,
-		Ledger:      DefaultLedger,
-		Code:        TransferCodeReservation,
-		Flags:       tbtypes.TransferFlags{VoidPendingTransfer: true}.ToUint16(),
+		Code:            TransferCodeUsageSpend,
 	}
 }
 

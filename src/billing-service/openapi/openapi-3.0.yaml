@@ -689,6 +689,11 @@ components:
           maxLength: 255
           minLength: 1
           type: string
+        window_millis:
+          format: int32
+          maximum: 4294967295
+          minimum: 0
+          type: integer
         window_seq:
           format: int32
           maximum: 2147483647

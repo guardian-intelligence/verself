@@ -306,7 +306,7 @@ func (h *Handler) reserveWindow(ctx context.Context, input *body[apiwire.Billing
 	if err != nil {
 		return nil, err
 	}
-	reservation, err := h.client.ReserveWindow(ctx, billing.ReserveRequest{OrgID: orgID, ProductID: input.Body.ProductID, ActorID: input.Body.ActorID, ConcurrentCount: input.Body.ConcurrentCount, SourceType: input.Body.SourceType, SourceRef: input.Body.SourceRef, WindowSeq: input.Body.WindowSeq, BillingJobID: input.Body.BillingJobID, Allocation: input.Body.Allocation})
+	reservation, err := h.client.ReserveWindow(ctx, billing.ReserveRequest{OrgID: orgID, ProductID: input.Body.ProductID, ActorID: input.Body.ActorID, ConcurrentCount: input.Body.ConcurrentCount, SourceType: input.Body.SourceType, SourceRef: input.Body.SourceRef, WindowSeq: input.Body.WindowSeq, WindowMillis: input.Body.WindowMillis, BillingJobID: input.Body.BillingJobID, Allocation: input.Body.Allocation})
 	if err != nil {
 		return nil, h.windowError(ctx, "reserve", err)
 	}

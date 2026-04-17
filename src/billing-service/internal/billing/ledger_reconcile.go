@@ -74,6 +74,7 @@ func (c *Client) reconcileGrantLedgerBalances(ctx context.Context, limit int) (i
 	}
 	grants := []grantSnapshot{}
 	ids := []ledger.ID{}
+	grantIDs := []string{}
 	for rows.Next() {
 		var grant grantSnapshot
 		var amount int64
@@ -89,6 +90,7 @@ func (c *Client) reconcileGrantLedgerBalances(ctx context.Context, limit int) (i
 		grant.AccountID = id
 		grants = append(grants, grant)
 		ids = append(ids, id)
+		grantIDs = append(grantIDs, grant.GrantID)
 	}
 	if err := rows.Err(); err != nil {
 		return 0, err
@@ -97,6 +99,10 @@ func (c *Client) reconcileGrantLedgerBalances(ctx context.Context, limit int) (i
 		return 0, nil
 	}
 	balances, err := c.ledger.LookupBalances(ctx, ids)
+	if err != nil {
+		return 0, err
+	}
+	settledUsage, err := c.settledGrantUsage(ctx, grantIDs)
 	if err != nil {
 		return 0, err
 	}
@@ -117,8 +123,52 @@ func (c *Client) reconcileGrantLedgerBalances(ctx context.Context, limit int) (i
 				return drifts, err
 			}
 		}
+		if balance.Pending != 0 {
+			drifts++
+			if err := c.recordLedgerDrift(ctx, "grant_pending_balance_unexpected", "critical", "credit_grant", grant.GrantID, map[string]any{"grant_id": grant.GrantID}, map[string]any{"account_id": grant.AccountID.String(), "pending": balance.Pending}); err != nil {
+				return drifts, err
+			}
+		}
+		expectedSpent := settledUsage[grant.GrantID]
+		if balance.Spent != expectedSpent {
+			drifts++
+			if err := c.recordLedgerDrift(ctx, "grant_spend_mismatch", "critical", "credit_grant", grant.GrantID, map[string]any{"grant_id": grant.GrantID, "settled_usage": expectedSpent}, map[string]any{"account_id": grant.AccountID.String(), "spent": balance.Spent}); err != nil {
+				return drifts, err
+			}
+		}
 	}
 	return drifts, nil
+}
+
+func (c *Client) settledGrantUsage(ctx context.Context, grantIDs []string) (map[string]uint64, error) {
+	out := map[string]uint64{}
+	if len(grantIDs) == 0 {
+		return out, nil
+	}
+	rows, err := c.pg.Query(ctx, `
+		SELECT l.grant_id, SUM(l.amount_posted)
+		FROM billing_window_ledger_legs l
+		JOIN billing_windows w ON w.window_id = l.window_id
+		WHERE w.state = 'settled'
+		  AND l.state = 'posted'
+		  AND l.grant_id = ANY($1)
+		GROUP BY l.grant_id
+	`, grantIDs)
+	if err != nil {
+		return nil, fmt.Errorf("query settled grant usage: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var grantID string
+		var amount int64
+		if err := rows.Scan(&grantID, &amount); err != nil {
+			return nil, fmt.Errorf("scan settled grant usage: %w", err)
+		}
+		if amount > 0 {
+			out[grantID] = uint64(amount)
+		}
+	}
+	return out, rows.Err()
 }
 
 func (c *Client) recordLedgerDrift(ctx context.Context, kind, severity, aggregateType, aggregateID string, pgSnapshot map[string]any, tbSnapshot map[string]any) error {

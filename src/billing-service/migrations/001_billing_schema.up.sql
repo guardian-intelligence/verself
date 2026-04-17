@@ -585,8 +585,8 @@ CREATE TABLE billing_windows (
     source_ref              TEXT        NOT NULL CHECK (source_ref <> ''),
     billing_job_id          TEXT,
     window_seq              BIGINT      NOT NULL CHECK (window_seq >= 0),
-    state                   TEXT        NOT NULL CHECK (state IN ('reserving', 'reserved', 'active', 'settling', 'settled', 'voiding', 'voided', 'denied', 'failed')),
-    reservation_shape       TEXT        NOT NULL CHECK (reservation_shape IN ('time', 'units')),
+    state                   TEXT        NOT NULL CHECK (state IN ('reserved', 'active', 'settling', 'settled', 'voided')),
+    reservation_shape       TEXT        NOT NULL CHECK (reservation_shape = 'time'),
     reserved_quantity       BIGINT      NOT NULL CHECK (reserved_quantity >= 0),
     actual_quantity         BIGINT      NOT NULL DEFAULT 0 CHECK (actual_quantity >= 0),
     billable_quantity       BIGINT      NOT NULL DEFAULT 0 CHECK (billable_quantity >= 0),
@@ -616,7 +616,7 @@ CREATE TABLE billing_windows (
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (expires_at > window_start),
     CHECK (settled_at IS NULL OR state IN ('settling', 'settled')),
-    CHECK (activated_at IS NULL OR state IN ('active', 'settling', 'settled', 'voiding', 'voided')),
+    CHECK (activated_at IS NULL OR state IN ('active', 'settling', 'settled', 'voided')),
     UNIQUE (product_id, source_type, source_ref, window_seq)
 );
 
@@ -636,9 +636,7 @@ CREATE TABLE billing_window_ledger_legs (
     leg_seq                 INTEGER     NOT NULL CHECK (leg_seq >= 0),
     grant_id                TEXT        REFERENCES credit_grants(grant_id) ON DELETE RESTRICT,
     grant_account_id        tbid,
-    reservation_transfer_id tbid,
     settlement_transfer_id  tbid,
-    void_transfer_id        tbid,
     component_sku_id        TEXT        NOT NULL DEFAULT '',
     component_bucket_id     TEXT        NOT NULL DEFAULT '',
     source                  TEXT        NOT NULL CHECK (source IN ('free_tier', 'contract', 'purchase', 'promo', 'refund', 'receivable', 'adjustment')),
@@ -650,7 +648,7 @@ CREATE TABLE billing_window_ledger_legs (
     amount_reserved         BIGINT      NOT NULL CHECK (amount_reserved >= 0),
     amount_posted           BIGINT      NOT NULL DEFAULT 0 CHECK (amount_posted >= 0),
     amount_voided           BIGINT      NOT NULL DEFAULT 0 CHECK (amount_voided >= 0),
-    state                   TEXT        NOT NULL CHECK (state IN ('pending_tb', 'pending', 'posted', 'voided', 'failed')),
+    state                   TEXT        NOT NULL CHECK (state IN ('pending', 'posted', 'voided')),
     created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (window_id, leg_seq)
