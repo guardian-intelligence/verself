@@ -14,6 +14,12 @@
     name: sandbox_rental
     system: true
 
+- name: Ensure vm-orchestrator client socket group exists
+  ansible.builtin.group:
+    name: "{{ sandbox_rental_service_vm_orchestrator_socket_group }}"
+    system: true
+    state: present
+
 - name: Create sandbox_rental system user
   ansible.builtin.user:
     name: sandbox_rental
@@ -24,6 +30,42 @@
     system: true
     shell: /usr/sbin/nologin
     create_home: false
+
+- name: Read vm-orchestrator client socket group members
+  ansible.builtin.getent:
+    database: group
+    key: "{{ sandbox_rental_service_vm_orchestrator_socket_group }}"
+
+- name: Read local users for vm-orchestrator socket group audit
+  ansible.builtin.getent:
+    database: passwd
+
+- name: Assert vm-orchestrator socket group has only approved runtime callers
+  ansible.builtin.assert:
+    that:
+      - >-
+        (
+          (
+            (
+              ansible_facts.getent_group[sandbox_rental_service_vm_orchestrator_socket_group][2].split(',')
+              | reject('equalto', '')
+              | list
+            )
+            + (
+              ansible_facts.getent_passwd
+              | dict2items
+              | selectattr('value.2', 'equalto', ansible_facts.getent_group[sandbox_rental_service_vm_orchestrator_socket_group][1])
+              | map(attribute='key')
+              | list
+            )
+          )
+          | unique
+          | sort
+        ) == (sandbox_rental_service_vm_orchestrator_allowed_socket_users | sort)
+    fail_msg: >-
+      {{ sandbox_rental_service_vm_orchestrator_socket_group }} grants privileged
+      vm-orchestrator access and must contain only
+      {{ sandbox_rental_service_vm_orchestrator_allowed_socket_users | join(', ') }}.
 
 - name: Create sandbox-rental GitHub checkout cache directory
   ansible.builtin.file:
@@ -297,6 +339,7 @@
       Type=simple
       User=sandbox_rental
       Group=sandbox_rental
+      SupplementaryGroups={{ sandbox_rental_service_vm_orchestrator_socket_group }}
       LoadCredential=pg-dsn:/etc/credstore/sandbox-rental/pg-dsn
       LoadCredential=ch-password:/etc/credstore/sandbox-rental/ch-password
       LoadCredential=billing-client-secret:/etc/credstore/sandbox-rental/billing-client-secret
