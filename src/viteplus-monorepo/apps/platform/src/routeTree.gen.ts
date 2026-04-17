@@ -9,11 +9,19 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as PolicyRouteRouteImport } from './routes/policy/route'
 import { Route as DocsRouteRouteImport } from './routes/docs/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as PolicyIndexRouteImport } from './routes/policy/index'
 import { Route as DocsIndexRouteImport } from './routes/docs/index'
+import { Route as PolicyDataRetentionRouteImport } from './routes/policy/data-retention'
 import { Route as DocsReferenceRouteImport } from './routes/docs/reference'
 
+const PolicyRouteRoute = PolicyRouteRouteImport.update({
+  id: '/policy',
+  path: '/policy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DocsRouteRoute = DocsRouteRouteImport.update({
   id: '/docs',
   path: '/docs',
@@ -24,10 +32,20 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PolicyIndexRoute = PolicyIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => PolicyRouteRoute,
+} as any)
 const DocsIndexRoute = DocsIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => DocsRouteRoute,
+} as any)
+const PolicyDataRetentionRoute = PolicyDataRetentionRouteImport.update({
+  id: '/data-retention',
+  path: '/data-retention',
+  getParentRoute: () => PolicyRouteRoute,
 } as any)
 const DocsReferenceRoute = DocsReferenceRouteImport.update({
   id: '/reference',
@@ -38,36 +56,67 @@ const DocsReferenceRoute = DocsReferenceRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/docs': typeof DocsRouteRouteWithChildren
+  '/policy': typeof PolicyRouteRouteWithChildren
   '/docs/reference': typeof DocsReferenceRoute
+  '/policy/data-retention': typeof PolicyDataRetentionRoute
   '/docs/': typeof DocsIndexRoute
+  '/policy/': typeof PolicyIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/docs/reference': typeof DocsReferenceRoute
+  '/policy/data-retention': typeof PolicyDataRetentionRoute
   '/docs': typeof DocsIndexRoute
+  '/policy': typeof PolicyIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/docs': typeof DocsRouteRouteWithChildren
+  '/policy': typeof PolicyRouteRouteWithChildren
   '/docs/reference': typeof DocsReferenceRoute
+  '/policy/data-retention': typeof PolicyDataRetentionRoute
   '/docs/': typeof DocsIndexRoute
+  '/policy/': typeof PolicyIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/docs' | '/docs/reference' | '/docs/'
+  fullPaths:
+    | '/'
+    | '/docs'
+    | '/policy'
+    | '/docs/reference'
+    | '/policy/data-retention'
+    | '/docs/'
+    | '/policy/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/docs/reference' | '/docs'
-  id: '__root__' | '/' | '/docs' | '/docs/reference' | '/docs/'
+  to: '/' | '/docs/reference' | '/policy/data-retention' | '/docs' | '/policy'
+  id:
+    | '__root__'
+    | '/'
+    | '/docs'
+    | '/policy'
+    | '/docs/reference'
+    | '/policy/data-retention'
+    | '/docs/'
+    | '/policy/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DocsRouteRoute: typeof DocsRouteRouteWithChildren
+  PolicyRouteRoute: typeof PolicyRouteRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/policy': {
+      id: '/policy'
+      path: '/policy'
+      fullPath: '/policy'
+      preLoaderRoute: typeof PolicyRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/docs': {
       id: '/docs'
       path: '/docs'
@@ -82,12 +131,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/policy/': {
+      id: '/policy/'
+      path: '/'
+      fullPath: '/policy/'
+      preLoaderRoute: typeof PolicyIndexRouteImport
+      parentRoute: typeof PolicyRouteRoute
+    }
     '/docs/': {
       id: '/docs/'
       path: '/'
       fullPath: '/docs/'
       preLoaderRoute: typeof DocsIndexRouteImport
       parentRoute: typeof DocsRouteRoute
+    }
+    '/policy/data-retention': {
+      id: '/policy/data-retention'
+      path: '/data-retention'
+      fullPath: '/policy/data-retention'
+      preLoaderRoute: typeof PolicyDataRetentionRouteImport
+      parentRoute: typeof PolicyRouteRoute
     }
     '/docs/reference': {
       id: '/docs/reference'
@@ -113,9 +176,24 @@ const DocsRouteRouteWithChildren = DocsRouteRoute._addFileChildren(
   DocsRouteRouteChildren,
 )
 
+interface PolicyRouteRouteChildren {
+  PolicyDataRetentionRoute: typeof PolicyDataRetentionRoute
+  PolicyIndexRoute: typeof PolicyIndexRoute
+}
+
+const PolicyRouteRouteChildren: PolicyRouteRouteChildren = {
+  PolicyDataRetentionRoute: PolicyDataRetentionRoute,
+  PolicyIndexRoute: PolicyIndexRoute,
+}
+
+const PolicyRouteRouteWithChildren = PolicyRouteRoute._addFileChildren(
+  PolicyRouteRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DocsRouteRoute: DocsRouteRouteWithChildren,
+  PolicyRouteRoute: PolicyRouteRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
