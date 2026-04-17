@@ -59,6 +59,7 @@ func run() error {
 	flag.StringVar(&cfg.StateDBPath, "state-db-path", cfg.StateDBPath, "Path to durable host runtime SQLite WAL ledger")
 	flag.StringVar(&cfg.HostServiceIP, "host-service-ip", cfg.HostServiceIP, "Host-only service IP exposed to Firecracker guests")
 	flag.IntVar(&cfg.HostServicePort, "host-service-port", cfg.HostServicePort, "Host-only HTTP reverse proxy port exposed to Firecracker guests")
+	flag.StringVar(&cfg.TelemetryFaultProfile, "telemetry-fault-profile", os.Getenv(vmorchestrator.TelemetryFaultProfileEnvVar), "Verification-only host-side telemetry fault profile: empty, gap_once@N, or regression_once@N")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

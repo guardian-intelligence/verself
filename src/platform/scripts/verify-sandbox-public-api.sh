@@ -22,6 +22,37 @@ workload_cpu_workers="${SANDBOX_PROOF_WORKLOAD_CPU_WORKERS:-1}"
 workload_disk_mib="${SANDBOX_PROOF_WORKLOAD_DISK_MIB:-256}"
 workload_disk_block_kib="${SANDBOX_PROOF_WORKLOAD_DISK_BLOCK_KIB:-1024}"
 proof_log_marker="${SANDBOX_PROOF_LOG_MARKER:-forge-metal-proof}"
+telemetry_fault_profile="${SANDBOX_PROOF_TELEMETRY_FAULT_PROFILE:-}"
+telemetry_fault_kind=""
+telemetry_fault_expected_seq="0"
+telemetry_fault_observed_seq="0"
+telemetry_fault_missing_samples="0"
+
+if [[ -n "${telemetry_fault_profile}" ]]; then
+  telemetry_fault_expectation="$(
+    python3 - "${telemetry_fault_profile}" <<'PY'
+import re
+import sys
+
+profile = sys.argv[1]
+match = re.fullmatch(r"(gap_once|regression_once)@([0-9]+)", profile)
+if not match:
+    raise SystemExit("SANDBOX_PROOF_TELEMETRY_FAULT_PROFILE must be gap_once@N or regression_once@N")
+
+kind, raw_seq = match.groups()
+seq = int(raw_seq)
+if kind == "gap_once":
+    if seq >= 2**32 - 1:
+        raise SystemExit("gap_once@N requires N <= 4294967294")
+    print(f"gap,{seq},{seq + 1},1")
+else:
+    if seq == 0 or seq > 2**32 - 1:
+        raise SystemExit("regression_once@N requires 1 <= N <= 4294967295")
+    print(f"regression,{seq},{seq - 1},0")
+PY
+  )"
+  IFS=',' read -r telemetry_fault_kind telemetry_fault_expected_seq telemetry_fault_observed_seq telemetry_fault_missing_samples <<<"${telemetry_fault_expectation}"
+fi
 
 case "${workload_profile,,}" in
   disk | disk-write | disk_write)
@@ -728,8 +759,8 @@ ch_query --database forge_metal \
     FORMAT TSVWithNames
   " >"${artifact_dir}/clickhouse/job_events.tsv"
 
-lease_evidence="0,0,0"
-IFS=',' read -r lease_ready_count lease_exec_started_count lease_cleanup_count <<<"${lease_evidence}"
+lease_evidence="0,0,0,0"
+IFS=',' read -r lease_ready_count lease_exec_started_count lease_telemetry_hello_count lease_cleanup_count <<<"${lease_evidence}"
 clickhouse_deadline=$((SECONDS + clickhouse_timeout_seconds))
 while [[ "${SECONDS}" -lt "${clickhouse_deadline}" ]]; do
   lease_evidence="$(
@@ -739,20 +770,21 @@ while [[ "${SECONDS}" -lt "${clickhouse_deadline}" ]]; do
         SELECT
           countIf(evidence_type = 'lease_ready'),
           countIf(evidence_type = 'exec_started'),
+          countIf(evidence_type = 'telemetry_hello'),
           countIf(evidence_type = 'lease_cleanup')
         FROM vm_lease_evidence
         WHERE has(splitByChar(',', {lease_ids:String}), lease_id)
         FORMAT TSVRaw
       " | tr '\t' ','
   )"
-  IFS=',' read -r lease_ready_count lease_exec_started_count lease_cleanup_count <<<"${lease_evidence}"
-  if [[ "${lease_ready_count}" -ge "${submission_count}" && "${lease_exec_started_count}" -ge "${submission_count}" && "${lease_cleanup_count}" -ge "${submission_count}" ]]; then
+  IFS=',' read -r lease_ready_count lease_exec_started_count lease_telemetry_hello_count lease_cleanup_count <<<"${lease_evidence}"
+  if [[ "${lease_ready_count}" -ge "${submission_count}" && "${lease_exec_started_count}" -ge "${submission_count}" && "${lease_telemetry_hello_count}" -ge "${submission_count}" && "${lease_cleanup_count}" -ge "${submission_count}" ]]; then
     break
   fi
   sleep 1
 done
-if [[ "${lease_ready_count}" -lt "${submission_count}" || "${lease_exec_started_count}" -lt "${submission_count}" || "${lease_cleanup_count}" -lt "${submission_count}" ]]; then
-  echo "vm_lease_evidence incomplete: ready=${lease_ready_count} exec_started=${lease_exec_started_count} cleanup=${lease_cleanup_count}" >&2
+if [[ "${lease_ready_count}" -lt "${submission_count}" || "${lease_exec_started_count}" -lt "${submission_count}" || "${lease_telemetry_hello_count}" -lt "${submission_count}" || "${lease_cleanup_count}" -lt "${submission_count}" ]]; then
+  echo "vm_lease_evidence incomplete: ready=${lease_ready_count} exec_started=${lease_exec_started_count} telemetry_hello=${lease_telemetry_hello_count} cleanup=${lease_cleanup_count}" >&2
   exit 1
 fi
 
@@ -765,6 +797,67 @@ ch_query --database forge_metal \
     ORDER BY evidence_time, lease_id, exec_id
     FORMAT TSVWithNames
   " >"${artifact_dir}/clickhouse/vm_lease_evidence.tsv"
+
+if [[ -n "${telemetry_fault_profile}" ]]; then
+  telemetry_diagnostic_count="0"
+  clickhouse_deadline=$((SECONDS + clickhouse_timeout_seconds))
+  while [[ "${SECONDS}" -lt "${clickhouse_deadline}" ]]; do
+    telemetry_diagnostic_count="$(
+      ch_query --database forge_metal \
+        --param_lease_ids="${lease_ids_csv}" \
+        --param_diagnostic_kind="${telemetry_fault_kind}" \
+        --param_expected_seq="${telemetry_fault_expected_seq}" \
+        --param_observed_seq="${telemetry_fault_observed_seq}" \
+        --param_missing_samples="${telemetry_fault_missing_samples}" \
+        --query "
+          SELECT count()
+          FROM vm_lease_evidence
+          WHERE has(splitByChar(',', {lease_ids:String}), lease_id)
+            AND evidence_type = 'telemetry_diagnostic'
+            AND diagnostic_kind = {diagnostic_kind:String}
+            AND expected_seq = {expected_seq:UInt32}
+            AND observed_seq = {observed_seq:UInt32}
+            AND missing_samples = {missing_samples:UInt32}
+          FORMAT TSVRaw
+        " | tr -d '[:space:]'
+    )"
+    if [[ "${telemetry_diagnostic_count}" -ge "${submission_count}" ]]; then
+      break
+    fi
+    sleep 1
+  done
+  if [[ "${telemetry_diagnostic_count}" -lt "${submission_count}" ]]; then
+    echo "expected ${submission_count} telemetry ${telemetry_fault_profile} diagnostics, found ${telemetry_diagnostic_count}" >&2
+    exit 1
+  fi
+
+  ch_query --database forge_metal \
+    --param_lease_ids="${lease_ids_csv}" \
+    --param_diagnostic_kind="${telemetry_fault_kind}" \
+    --param_expected_seq="${telemetry_fault_expected_seq}" \
+    --param_observed_seq="${telemetry_fault_observed_seq}" \
+    --param_missing_samples="${telemetry_fault_missing_samples}" \
+    --query "
+      SELECT
+        evidence_time,
+        lease_id,
+        evidence_type,
+        diagnostic_kind,
+        expected_seq,
+        observed_seq,
+        missing_samples,
+        trace_id
+      FROM vm_lease_evidence
+      WHERE has(splitByChar(',', {lease_ids:String}), lease_id)
+        AND evidence_type = 'telemetry_diagnostic'
+        AND diagnostic_kind = {diagnostic_kind:String}
+        AND expected_seq = {expected_seq:UInt32}
+        AND observed_seq = {observed_seq:UInt32}
+        AND missing_samples = {missing_samples:UInt32}
+      ORDER BY evidence_time, lease_id
+      FORMAT TSVWithNames
+    " >"${artifact_dir}/clickhouse/vm_telemetry_diagnostics.tsv"
+fi
 
 required_spans=(
   "sandbox-rental.execution.submit"
@@ -821,11 +914,11 @@ if [[ "${span_counts_ok}" -ne 1 ]]; then
   exit 1
 fi
 
-python3 - "${artifact_dir}/run.json" "${run_id}" "${submitted_at}" "${submission_count}" "${artifact_dir}" "${workload_profile}" "${workload_memory_mib}" "${workload_cpu_seconds}" "${workload_cpu_workers}" "${workload_disk_mib}" "${workload_disk_block_kib}" <<'PY'
+python3 - "${artifact_dir}/run.json" "${run_id}" "${submitted_at}" "${submission_count}" "${artifact_dir}" "${workload_profile}" "${workload_memory_mib}" "${workload_cpu_seconds}" "${workload_cpu_workers}" "${workload_disk_mib}" "${workload_disk_block_kib}" "${telemetry_fault_profile}" "${telemetry_fault_kind}" "${telemetry_fault_expected_seq}" "${telemetry_fault_observed_seq}" "${telemetry_fault_missing_samples}" <<'PY'
 import json
 import sys
 
-out, run_id, submitted_at, submission_count, artifact_dir, workload_profile, workload_memory_mib, workload_cpu_seconds, workload_cpu_workers, workload_disk_mib, workload_disk_block_kib = sys.argv[1:12]
+out, run_id, submitted_at, submission_count, artifact_dir, workload_profile, workload_memory_mib, workload_cpu_seconds, workload_cpu_workers, workload_disk_mib, workload_disk_block_kib, telemetry_fault_profile, telemetry_fault_kind, telemetry_fault_expected_seq, telemetry_fault_observed_seq, telemetry_fault_missing_samples = sys.argv[1:17]
 print(json.dumps({
     "verification_run_id": run_id,
     "submitted_at": submitted_at,
@@ -837,6 +930,11 @@ print(json.dumps({
     "workload_cpu_workers": int(workload_cpu_workers),
     "workload_disk_mib": int(workload_disk_mib),
     "workload_disk_block_kib": int(workload_disk_block_kib),
+    "telemetry_fault_profile": telemetry_fault_profile,
+    "telemetry_fault_kind": telemetry_fault_kind,
+    "telemetry_fault_expected_seq": int(telemetry_fault_expected_seq),
+    "telemetry_fault_observed_seq": int(telemetry_fault_observed_seq),
+    "telemetry_fault_missing_samples": int(telemetry_fault_missing_samples),
 }, indent=2, sort_keys=True), file=open(out, "w", encoding="utf-8"))
 PY
 

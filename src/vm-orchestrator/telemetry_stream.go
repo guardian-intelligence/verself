@@ -15,7 +15,7 @@ import (
 
 var ErrTelemetryHelloFirst = errors.New("telemetry stream first frame must be hello")
 
-const telemetryFaultProfileEnvVar = "FORGE_METAL_TELEMETRY_FAULT_PROFILE"
+const TelemetryFaultProfileEnvVar = "FORGE_METAL_TELEMETRY_FAULT_PROFILE"
 
 func streamGuestTelemetry(ctx context.Context, udsPath, leaseID string, observer LeaseObserver, logger *slog.Logger, faultProfile *telemetryFaultProfile) error {
 	observer = normalizeLeaseObserver(observer)
@@ -46,6 +46,14 @@ type telemetryFaultProfile struct {
 	targetSeq uint32
 	injected  bool
 	seqDelta  int8
+}
+
+func telemetryFaultProfileFromConfig(cfg Config) (*telemetryFaultProfile, error) {
+	profile, err := parseTelemetryFaultProfile(cfg.TelemetryFaultProfile)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", TelemetryFaultProfileEnvVar, err)
+	}
+	return profile, nil
 }
 
 func parseTelemetryFaultProfile(raw string) (*telemetryFaultProfile, error) {

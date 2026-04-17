@@ -1,0 +1,70 @@
+---
+# Toggle verification-only host-side telemetry ingestion fault profiles.
+
+- name: Configure vm-orchestrator telemetry fault profile
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    vm_orchestrator_telemetry_fault_profile: ""
+    vm_orchestrator_telemetry_fault_dropin_dir: /etc/systemd/system/vm-orchestrator.service.d
+    vm_orchestrator_telemetry_fault_dropin_path: /etc/systemd/system/vm-orchestrator.service.d/99-verification-telemetry-fault.conf
+    vm_orchestrator_api_socket: /run/vm-orchestrator/api.sock
+    vm_orchestrator_telemetry_fault_seq: "{{ (vm_orchestrator_telemetry_fault_profile.split('@') | last) | int }}"
+  tasks:
+    - name: Validate telemetry fault profile
+      ansible.builtin.assert:
+        that:
+          - >-
+            vm_orchestrator_telemetry_fault_profile == ''
+            or vm_orchestrator_telemetry_fault_profile is match('^(gap_once|regression_once)@[0-9]+$')
+          - >-
+            vm_orchestrator_telemetry_fault_profile == ''
+            or vm_orchestrator_telemetry_fault_profile is not match('^gap_once@')
+            or vm_orchestrator_telemetry_fault_seq <= 4294967294
+          - >-
+            vm_orchestrator_telemetry_fault_profile == ''
+            or vm_orchestrator_telemetry_fault_profile is not match('^regression_once@')
+            or (vm_orchestrator_telemetry_fault_seq >= 1 and vm_orchestrator_telemetry_fault_seq <= 4294967295)
+        fail_msg: >-
+          vm_orchestrator_telemetry_fault_profile must be empty, gap_once@N, or regression_once@N.
+
+    - name: Ensure vm-orchestrator drop-in directory exists
+      ansible.builtin.file:
+        path: "{{ vm_orchestrator_telemetry_fault_dropin_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      when: vm_orchestrator_telemetry_fault_profile | length > 0
+
+    - name: Install telemetry fault profile drop-in
+      ansible.builtin.copy:
+        dest: "{{ vm_orchestrator_telemetry_fault_dropin_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Service]
+          Environment=FORGE_METAL_TELEMETRY_FAULT_PROFILE={{ vm_orchestrator_telemetry_fault_profile }}
+      when: vm_orchestrator_telemetry_fault_profile | length > 0
+
+    - name: Remove telemetry fault profile drop-in
+      ansible.builtin.file:
+        path: "{{ vm_orchestrator_telemetry_fault_dropin_path }}"
+        state: absent
+      when: vm_orchestrator_telemetry_fault_profile | length == 0
+
+    - name: Restart vm-orchestrator
+      ansible.builtin.systemd:
+        name: vm-orchestrator.service
+        state: restarted
+        daemon_reload: true
+
+    - name: Verify vm-orchestrator API socket is present
+      ansible.builtin.command: "test -S {{ vm_orchestrator_api_socket }}"
+      register: vm_orchestrator_api_socket_check
+      changed_when: false
+      retries: 30
+      delay: 1
+      until: vm_orchestrator_api_socket_check.rc == 0

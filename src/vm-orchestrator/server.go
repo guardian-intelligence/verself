@@ -122,6 +122,9 @@ func NewAPIServer(cfg Config, logger *slog.Logger) (*APIServer, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	if _, err := telemetryFaultProfileFromConfig(base); err != nil {
+		return nil, err
+	}
 	state, err := openHostStateStore(base.StateDBPath, logger)
 	if err != nil {
 		return nil, fmt.Errorf("open host state ledger %s: %w", base.StateDBPath, err)
