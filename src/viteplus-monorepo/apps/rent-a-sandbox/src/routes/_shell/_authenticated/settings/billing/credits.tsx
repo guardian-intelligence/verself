@@ -52,6 +52,7 @@ function CreditsPage() {
                 <span className="text-xs text-muted-foreground">Account top-up</span>
                 <Button
                   type="button"
+                  aria-label={`Buy ${pack.label} credits`}
                   className="mt-2 w-full"
                   onClick={() => mutation.mutate(pack.cents)}
                   disabled={mutation.isPending}

@@ -253,7 +253,7 @@ export class SandboxHarness {
       await this.goto(path);
     }
 
-    const content = stableContent ?? this.page.locator("main");
+    const content = stableContent ?? this.page.locator("main").last();
     await expect(ready).toBeVisible({ timeout: shortTimeoutMS });
 
     // Drive every fragment through expect.poll so Playwright keeps auto-
