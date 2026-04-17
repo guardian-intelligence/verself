@@ -85,15 +85,21 @@ pub fn build(b: *std.Build) void {
     });
     const run_guest_tests = b.addRunArtifact(guest_tests);
 
+    const vectors_tests_mod = b.createModule(.{
+        .root_source_file = b.path("src/generate_vectors.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "vm_guest_telemetry", .module = mod },
+        },
+    });
+    // Expose protocol/vectors.json as a named import so the staleness test can
+    // @embedFile it. Without this, src/ has no visibility into ../protocol/.
+    vectors_tests_mod.addAnonymousImport("vectors_json", .{
+        .root_source_file = b.path("protocol/vectors.json"),
+    });
     const vectors_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/generate_vectors.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "vm_guest_telemetry", .module = mod },
-            },
-        }),
+        .root_module = vectors_tests_mod,
     });
     const run_vectors_tests = b.addRunArtifact(vectors_tests);
 
