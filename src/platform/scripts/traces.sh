@@ -69,7 +69,7 @@ if $SHOW_TRACES; then
   echo ""
   ch_query "
     SELECT
-      formatDateTime(Timestamp, '%H:%M:%S') AS time,
+      formatDateTime(Timestamp, '%H:%i:%S') AS time,
       ServiceName AS service,
       SpanAttributes['http.method'] AS method,
       SpanAttributes['http.target'] AS path,
@@ -99,7 +99,7 @@ if $SHOW_LOGS; then
   echo ""
   ch_query "
     SELECT
-      formatDateTime(Timestamp, '%H:%M:%S') AS time,
+      formatDateTime(Timestamp, '%H:%i:%S') AS time,
       ServiceName AS service,
       SeverityText AS level,
       Body AS message,
