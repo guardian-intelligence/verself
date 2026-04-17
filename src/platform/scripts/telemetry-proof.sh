@@ -1,32 +1,32 @@
 #!/usr/bin/env bash
 # Prove that Ansible deploys emit ClickHouse-queryable spans and that service
-# spans can be joined to the deploy via deterministic correlation attributes.
+# spans can be joined to the deploy via deterministic correlation.
 #
 # Flow:
-#   1. Generate deterministic deploy_id + deploy_run_key (the deploy_traces
-#      callback uses these as span identity; the verify step then queries by
-#      the same IDs).
-#   2. Run observability-smoke.yml through scripts/ansible-with-tunnel.sh so
-#      the OTLP tunnel + FORGE_METAL_OTLP_ENDPOINT are set up consistently
-#      with regular `make deploy`.
-#   3. Poll ClickHouse for matching ansible.playbook/play/task spans, assert
-#      their status matches expectations (ok on the happy path, error on
-#      TELEMETRY_PROOF_EXPECT_FAIL=1).
-#   4. Assert forge_metal.deploy_events has a row with the same trace id.
-#   5. On the happy path, assert billing-service spans carry the matching
-#      forge_metal.deploy_id (confirms fm_uri trace propagation works).
+#   1. Derive deterministic deploy identity via scripts/deploy_identity.sh.
+#      FORGE_METAL_DEPLOY_ID's UUIDv5 becomes the trace-id shared by the
+#      upstream Ansible OTel callback (via TRACEPARENT) and fm_uri probes.
+#   2. Run observability-smoke.yml through scripts/ansible-with-tunnel.sh.
+#   3. Poll ClickHouse for matching ansible.playbook/ansible.task spans
+#      (renamed from the upstream plugin's raw names by the otelcol
+#      transform/ansible_spans processor).
+#   4. Assert the collector transform copied forge_metal.deploy_id from
+#      ResourceAttributes onto SpanAttributes, giving ansible and service
+#      spans a shared query shape.
+#   5. On the happy path, assert billing-service spans carry matching
+#      forge_metal.deploy_id (proves fm_uri traceparent+baggage propagation
+#      reached the service via otelhttp + fmotel baggage span processor).
 #
 # Env:
-#   TELEMETRY_PROOF_EXPECT_FAIL=1 — assert the playbook *failed* and the root
-#     span has Error status. Used by `make telemetry-proof-fail`.
+#   TELEMETRY_PROOF_EXPECT_FAIL=1 — assert the playbook *failed* and the
+#     playbook span has Error status.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
 # --- Deterministic deploy identity ------------------------------------------
-# Counter + lock file give each run on a given day a monotonically-increasing
-# suffix so deploy_run_key is unique per run, which the deploy_traces callback
-# hashes into the trace_id.
+# Pre-seed the identity helper with a telemetry-proof-specific run counter
+# so concurrent runs on the same day don't collide.
 run_date="$(date -u +%Y-%m-%d)"
 run_host="$(hostname -s 2>/dev/null || hostname)"
 counter_dir="${XDG_CACHE_HOME:-$HOME/.cache}/forge-metal/telemetry-proof"
@@ -38,7 +38,6 @@ run_counter="$(python3 - "${counter_file}" "${lock_file}" <<'PY'
 import fcntl
 import pathlib
 import sys
-
 counter_path = pathlib.Path(sys.argv[1])
 lock_path = pathlib.Path(sys.argv[2])
 with lock_path.open("a+") as lock_file:
@@ -54,11 +53,10 @@ PY
 )"
 
 deploy_run_key="${run_date}.${run_counter}@${run_host}"
-deploy_id="$(python3 -c '
-import sys, uuid
-print(uuid.uuid5(uuid.NAMESPACE_URL, f"forge-metal:{sys.argv[1]}"))
-' "${deploy_run_key}")"
+deploy_id="$(python3 -c 'import sys, uuid; print(uuid.uuid5(uuid.NAMESPACE_URL, f"forge-metal:{sys.argv[1]}"))' "${deploy_run_key}")"
 
+# Export so ansible-with-tunnel.sh's deploy_identity.sh picks them up instead
+# of generating its own.
 export FORGE_METAL_DEPLOY_ID="${deploy_id}"
 export FORGE_METAL_DEPLOY_RUN_KEY="${deploy_run_key}"
 export FORGE_METAL_VERIFICATION_RUN="${deploy_run_key}"
@@ -91,12 +89,11 @@ elif [[ "${ansible_rc}" -ne 0 ]]; then
   exit "${ansible_rc}"
 fi
 
-if ! grep -Eq 'deploy_events: .*inserted into ClickHouse|deploy_events: insert failed|deploy_events: inserted using legacy schema' "${output_file}"; then
-  echo "ERROR: deploy_events callback did not emit its run marker." >&2
-  exit 1
-fi
-
 # --- Verify spans reached ClickHouse ----------------------------------------
+# Trace id = deploy id with dashes stripped (the TRACEPARENT our identity
+# helper emits). Every ansible and probe-triggered service span shares it.
+trace_id_hex="${deploy_id//-/}"
+
 assert_spans_ready() {
   local query_output="$1"
   FORGE_EXPECT_FAIL="${expect_fail}" python3 -c '
@@ -106,9 +103,8 @@ payload = sys.argv[1].strip()
 row = json.loads(payload.splitlines()[0]) if payload else {}
 ready = (
     row.get("playbooks", 0) == 1
-    and row.get("plays", 0) >= 1
     and row.get("tasks", 0) >= 1
-    and row.get("run_key_attrs", 0) >= 1
+    and row.get("deploy_id_attrs", 0) >= 1
 )
 if expect_fail == "1":
     ready = ready and row.get("errors", 0) >= 1 and row.get("root_status", "") == "Error"
@@ -123,14 +119,13 @@ for _ in $(seq 1 45); do
   query_output="$(./scripts/clickhouse.sh --database default --query "
     SELECT
       countIf(SpanName = 'ansible.playbook') AS playbooks,
-      countIf(SpanName = 'ansible.play') AS plays,
-      countIf(SpanName IN ('ansible.task', 'ansible.handler')) AS tasks,
+      countIf(SpanName = 'ansible.task') AS tasks,
       countIf(StatusCode = 'Error') AS errors,
       anyIf(StatusCode, SpanName = 'ansible.playbook') AS root_status,
-      countIf(SpanAttributes['forge_metal.deploy_run_key'] = '${deploy_run_key}') AS run_key_attrs
+      countIf(SpanAttributes['forge_metal.deploy_id'] = '${deploy_id}') AS deploy_id_attrs
     FROM default.otel_traces
     WHERE ServiceName = 'ansible'
-      AND SpanAttributes['cicd.pipeline.run.id'] = '${deploy_id}'
+      AND TraceId = '${trace_id_hex}'
     FORMAT JSONEachRow
   " || true)"
   if assert_spans_ready "${query_output}"; then
@@ -140,37 +135,17 @@ for _ in $(seq 1 45); do
 done
 
 if ! assert_spans_ready "${query_output}"; then
-  echo "ERROR: timed out waiting for verified ansible spans in default.otel_traces." >&2
+  echo "ERROR: timed out waiting for ansible spans in default.otel_traces." >&2
   printf 'Last query row: %s\n' "${query_output}" >&2
   exit 1
 fi
 
-# deploy_events row from this run must carry trace_id + run_key. Filter by a
-# recent time window so counter-file rollover collisions from older runs
-# don't trip the check.
-deploy_event_row="$(./scripts/clickhouse.sh --database forge_metal --query "
-  SELECT
-    count() AS rows,
-    any(trace_id) AS trace_id,
-    any(deploy_run_key) AS run_key
-  FROM forge_metal.deploy_events
-  WHERE deploy_id = '${deploy_id}'
-    AND started_at >= now() - INTERVAL 10 MINUTE
-  FORMAT JSONEachRow
-" || true)"
-if ! printf '%s\n' "${deploy_event_row}" | python3 -c '
-import json, sys
-lines = [line for line in sys.stdin.read().splitlines() if line.strip()]
-row = json.loads(lines[0]) if lines else {}
-raise SystemExit(0 if row.get("rows", 0) >= 1 and str(row.get("trace_id","")).strip() and str(row.get("run_key","")).strip() else 1)
-'; then
-  echo "ERROR: deploy_events row is missing trace identity fields." >&2
-  printf 'deploy_events row: %s\n' "${deploy_event_row}" >&2
-  exit 1
-fi
-
-# Happy path only: service spans must carry the deploy_id propagated via
-# fm_uri's X-Forge-Metal-* headers + traceparent.
+# --- Service-level correlation (happy path only) ---------------------------
+# fm_uri probes the billing-service /healthz. otelhttp on the service side
+# extracts traceparent + baggage; the fmotel baggage span processor
+# projects forge_metal.* baggage members onto every span the service
+# creates. A matching SpanAttributes['forge_metal.deploy_id'] row confirms
+# the full pipeline: deploy_identity → fm_uri → otelhttp → baggage → span.
 if [[ "${expect_fail}" != "1" ]]; then
   billing_corr_row=""
   for _ in $(seq 1 30); do
@@ -199,10 +174,10 @@ lines = [line for line in sys.stdin.read().splitlines() if line.strip()]
 row = json.loads(lines[0]) if lines else {}
 raise SystemExit(0 if row.get("rows", 0) >= 1 else 1)
 '; then
-    echo "ERROR: billing-service spans missing deterministic deploy correlation attributes." >&2
+    echo "ERROR: billing-service spans missing deterministic deploy correlation." >&2
     printf 'billing correlation row: %s\n' "${billing_corr_row}" >&2
     exit 1
   fi
 fi
 
-echo "telemetry-proof: verified deploy_id=${deploy_id} deploy_run_key=${deploy_run_key}"
+echo "telemetry-proof: verified deploy_id=${deploy_id} deploy_run_key=${deploy_run_key} trace_id=${trace_id_hex}"

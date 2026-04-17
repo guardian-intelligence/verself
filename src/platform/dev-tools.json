@@ -35,7 +35,8 @@
     "with": [
       "ansible-lint==26.4.0",
       "opentelemetry-sdk==1.41.0",
-      "opentelemetry-exporter-otlp-proto-grpc==1.41.0"
+      "opentelemetry-exporter-otlp-proto-grpc==1.41.0",
+      "opentelemetry-exporter-otlp-proto-http==1.41.0"
     ],
     "version_cmd": "ansible --version"
   },
@@ -48,6 +49,11 @@
     "version": "1.41.0",
     "strategy": "uv_tool_companion",
     "version_cmd": "/opt/uv-tools/ansible-core/bin/python -c \"import importlib.metadata as m; print(m.version('opentelemetry-exporter-otlp-proto-grpc'))\""
+  },
+  "ansible-opentelemetry-exporter-otlp-proto-http": {
+    "version": "1.41.0",
+    "strategy": "uv_tool_companion",
+    "version_cmd": "/opt/uv-tools/ansible-core/bin/python -c \"import importlib.metadata as m; print(m.version('opentelemetry-exporter-otlp-proto-http'))\""
   },
   "ansible-lint": {
     "version": "26.4.0",

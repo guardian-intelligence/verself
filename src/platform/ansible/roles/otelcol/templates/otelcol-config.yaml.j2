@@ -368,6 +368,30 @@ processors:
   batch:
     send_batch_size: 10000
     timeout: 5s
+  # Upstream community.general.opentelemetry emits the playbook span named
+  # after the playbook file (e.g. "dev-single-node.yml") and each task span
+  # named after the raw task title. Rename to a stable
+  # ansible.playbook/ansible.task schema so downstream queries don't have to
+  # special-case per-playbook names, and mirror forge_metal.* resource
+  # attributes onto span attributes so ansible and service spans share one
+  # query shape: SpanAttributes['forge_metal.deploy_id'].
+  transform/ansible_spans:
+    error_mode: ignore
+    trace_statements:
+      - context: span
+        conditions:
+          - resource.attributes["service.name"] == "ansible"
+        statements:
+          - set(name, "ansible.playbook") where IsMatch(name, ".*\\.ya?ml$")
+          - set(name, "ansible.task") where name != "ansible.playbook"
+          - set(attributes["forge_metal.deploy_id"], resource.attributes["forge_metal.deploy_id"]) where resource.attributes["forge_metal.deploy_id"] != nil
+          - set(attributes["forge_metal.deploy_run_key"], resource.attributes["forge_metal.deploy_run_key"]) where resource.attributes["forge_metal.deploy_run_key"] != nil
+          - set(attributes["forge_metal.commit_sha"], resource.attributes["forge_metal.commit_sha"]) where resource.attributes["forge_metal.commit_sha"] != nil
+          - set(attributes["forge_metal.branch"], resource.attributes["forge_metal.branch"]) where resource.attributes["forge_metal.branch"] != nil
+          - set(attributes["forge_metal.commit_message"], resource.attributes["forge_metal.commit_message"]) where resource.attributes["forge_metal.commit_message"] != nil
+          - set(attributes["forge_metal.author"], resource.attributes["forge_metal.author"]) where resource.attributes["forge_metal.author"] != nil
+          - set(attributes["forge_metal.dirty"], resource.attributes["forge_metal.dirty"]) where resource.attributes["forge_metal.dirty"] != nil
+          - set(attributes["forge_metal.deploy_kind"], resource.attributes["forge_metal.deploy_kind"]) where resource.attributes["forge_metal.deploy_kind"] != nil
 
 exporters:
   clickhouse:
@@ -392,7 +416,7 @@ service:
       exporters: [clickhouse]
     traces:
       receivers: [otlp]
-      processors: [batch]
+      processors: [transform/ansible_spans, batch]
       exporters: [clickhouse]
     metrics:
       receivers: [otlp, hostmetrics, postgresql, statsd]

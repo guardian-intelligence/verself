@@ -119,16 +119,40 @@ See [secrets-plane-openbao.md](../../src/platform/docs/secrets-plane-openbao.md)
 
 ## Deploy Trace Correlation
 
-Ansible deploys emit OTLP traces (`ServiceName='ansible'`) to `default.otel_traces`
-through `deploy_traces.py`, while `deploy_events.py` writes one rollup row to
-`forge_metal.deploy_events`. Both are keyed by the same deterministic identity:
+Ansible deploys emit OTLP traces via the upstream
+`community.general.opentelemetry` callback; every span lands in
+`default.otel_traces` with `ServiceName='ansible'`. There is no separate
+`deploy_events` rollup — history queries run over `otel_traces` directly
+(see `src/platform/ansible/roles/grafana/vars/main.yml`).
+
+Deterministic identity is exported by `src/platform/scripts/deploy_identity.sh`
+before `ansible-playbook` runs:
 
 - `deploy_run_key = YYYY-MM-DD.<counter>@<controller-host>`
-- `deploy_id = UUIDv5("forge-metal:" + deploy_run_key)`
-- `trace_id = hex(deploy_id)`
+- `deploy_id      = UUIDv5("forge-metal:" + deploy_run_key)`
+- `TRACEPARENT    = 00-<hex(deploy_id)>-<stable_span>-01`
+- `OTEL_RESOURCE_ATTRIBUTES = forge_metal.deploy_id=…,forge_metal.deploy_run_key=…,forge_metal.commit_sha=…,forge_metal.dirty=…,forge_metal.branch=…,forge_metal.commit_message=…,forge_metal.author=…,forge_metal.deploy_kind=…`
 
-`fm_uri` carries this identity into service HTTP probes via `traceparent`,
-`baggage`, and `X-Forge-Metal-*` headers. Go services attach those headers as
-span attributes (`forge_metal.deploy_id`, `forge_metal.task_instance_id`,
-`forge_metal.probe_id`, etc.), so a single ClickHouse query over `TraceId` can
-show both deploy tasks and downstream service spans for proof-level debugging.
+The callback inherits the TRACEPARENT-anchored trace-id, so its
+playbook/task spans share it with every `fm_uri` probe (which emits the
+same `traceparent` and a `baggage` header carrying the same
+`forge_metal.*` members).
+
+Two collector-side normalizations keep the query surface flat:
+
+1. `transform/ansible_spans` in `otelcol-config.yaml.j2` rewrites the
+   upstream span names (`<playbook>.yml`, `<task.name>`) to
+   `ansible.playbook` / `ansible.task` and mirrors `forge_metal.*` from
+   `ResourceAttributes` onto `SpanAttributes`.
+2. `fmotel.baggageSpanProcessor` (`src/otel/otel.go`) copies every
+   incoming baggage member with the `forge_metal.` prefix onto every
+   span a service creates.
+
+One ClickHouse query joins deploy and service spans:
+
+```sql
+SELECT SpanName, ServiceName, StatusCode
+FROM default.otel_traces
+WHERE SpanAttributes['forge_metal.deploy_id'] = '…'
+ORDER BY Timestamp;
+```

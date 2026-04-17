@@ -162,8 +162,12 @@ grafana_dashboards:
         unit: "short"
         raw_sql:
           >-
-            SELECT toStartOfDay(started_at) as time, 'success rate' as series, round(countIf(ok = 1) * 100.0 / greatest(count(), 1), 1) as rate
-            FROM forge_metal.deploy_events WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time ORDER BY time
+            SELECT toStartOfDay(Timestamp) AS time, 'success rate' AS series,
+              round(countIf(StatusCode = 'Ok') * 100.0 / greatest(count(), 1), 1) AS rate
+            FROM default.otel_traces
+            WHERE ServiceName = 'ansible' AND SpanName = 'ansible.playbook'
+              AND Timestamp >= now() - INTERVAL 7 DAY
+            GROUP BY time ORDER BY time
       - id: 2
         uid: "deploy-duration-p50-p95"
         title: "Deploy Duration (p50 / p95)"
@@ -177,10 +181,21 @@ grafana_dashboards:
         unit: "short"
         raw_sql:
           >-
-            SELECT time, series, seconds FROM (SELECT toStartOfDay(started_at) as time, 'p50' as series, round(quantile(0.5)(total_ns /
-            1000000000), 1) as seconds FROM forge_metal.deploy_events WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time UNION ALL SELECT
-            toStartOfDay(started_at) as time, 'p95' as series, round(quantile(0.95)(total_ns / 1000000000), 1) as seconds FROM
-            forge_metal.deploy_events WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time) ORDER BY time
+            SELECT time, series, seconds FROM (
+              SELECT toStartOfDay(Timestamp) AS time, 'p50' AS series,
+                round(quantile(0.5)(Duration / 1000000000), 1) AS seconds
+              FROM default.otel_traces
+              WHERE ServiceName = 'ansible' AND SpanName = 'ansible.playbook'
+                AND Timestamp >= now() - INTERVAL 7 DAY
+              GROUP BY time
+              UNION ALL
+              SELECT toStartOfDay(Timestamp) AS time, 'p95' AS series,
+                round(quantile(0.95)(Duration / 1000000000), 1) AS seconds
+              FROM default.otel_traces
+              WHERE ServiceName = 'ansible' AND SpanName = 'ansible.playbook'
+                AND Timestamp >= now() - INTERVAL 7 DAY
+              GROUP BY time
+            ) ORDER BY time
       - id: 3
         uid: "deploy-frequency"
         title: "Deploy Frequency"
@@ -194,8 +209,11 @@ grafana_dashboards:
         unit: "short"
         raw_sql:
           >-
-            SELECT toStartOfDay(started_at) as time, 'deploys' as series, toFloat64(count()) as deploys FROM forge_metal.deploy_events WHERE
-            started_at >= now() - INTERVAL 30 DAY GROUP BY time ORDER BY time
+            SELECT toStartOfDay(Timestamp) AS time, 'deploys' AS series, toFloat64(count()) AS deploys
+            FROM default.otel_traces
+            WHERE ServiceName = 'ansible' AND SpanName = 'ansible.playbook'
+              AND Timestamp >= now() - INTERVAL 30 DAY
+            GROUP BY time ORDER BY time
       - id: 4
         uid: "recent-deploys"
         title: "Recent Deploys"
@@ -209,9 +227,16 @@ grafana_dashboards:
         unit: "short"
         raw_sql:
           >-
-            SELECT formatDateTime(started_at, '%Y-%m-%d %H:%i:%S') as time, playbook, if(ok = 1, 'OK', 'FAIL') as status, round(total_ns /
-            1000000000, 1) as duration_s, substring(commit_sha, 1, 8) as commit, if(dirty = 1, 'dirty', 'clean') as tree, tasks_changed FROM
-            forge_metal.deploy_events ORDER BY started_at DESC LIMIT 20
+            SELECT formatDateTime(Timestamp, '%Y-%m-%d %H:%i:%S') AS time,
+              ResourceAttributes['forge_metal.deploy_kind'] AS kind,
+              if(StatusCode = 'Ok', 'OK', 'FAIL') AS status,
+              round(Duration / 1000000000, 1) AS duration_s,
+              substring(ResourceAttributes['forge_metal.commit_sha'], 1, 8) AS commit,
+              if(ResourceAttributes['forge_metal.dirty'] = 'true', 'dirty', 'clean') AS tree,
+              ResourceAttributes['forge_metal.branch'] AS branch
+            FROM default.otel_traces
+            WHERE ServiceName = 'ansible' AND SpanName = 'ansible.playbook'
+            ORDER BY Timestamp DESC LIMIT 20
       - id: 5
         uid: "top-10-slowest-tasks-last-30d"
         title: "Top 10 Slowest Tasks (last 30d)"
@@ -225,10 +250,14 @@ grafana_dashboards:
         unit: "short"
         raw_sql:
           >-
-            SELECT task_name, round(avg(duration_s), 2) as avg_seconds, round(max(duration_s), 2) as max_seconds, count() as occurrences FROM
-            (SELECT JSONExtractString(task, 'name') as task_name, JSONExtractFloat(task, 'duration_ns') / 1000000000 as duration_s FROM
-            forge_metal.deploy_events ARRAY JOIN JSONExtractArrayRaw(slowest_tasks) as task WHERE started_at >= now() - INTERVAL 30 DAY) GROUP
-            BY task_name ORDER BY avg_seconds DESC LIMIT 10
+            SELECT SpanAttributes['ansible.task.name'] AS task_name,
+              round(avg(Duration / 1000000000), 2) AS avg_seconds,
+              round(max(Duration / 1000000000), 2) AS max_seconds,
+              count() AS occurrences
+            FROM default.otel_traces
+            WHERE ServiceName = 'ansible' AND SpanName = 'ansible.task'
+              AND Timestamp >= now() - INTERVAL 30 DAY
+            GROUP BY task_name ORDER BY avg_seconds DESC LIMIT 10
   - uid: "forge-metal-billing-service"
     title: "Billing Service"
     tags:
