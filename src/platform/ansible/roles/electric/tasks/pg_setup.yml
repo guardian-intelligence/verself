@@ -56,8 +56,7 @@
       DO $$
       DECLARE
         tbl  TEXT;
-        tables TEXT[] := ARRAY[
-      {%- for t in electric_publication_tables %}
+        tables TEXT[] := ARRAY[{%- for t in electric_publication_tables %}
           '{{ t }}'{% if not loop.last %},{% endif %}
       {%- endfor %}
         ];
