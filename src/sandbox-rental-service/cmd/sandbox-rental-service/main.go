@@ -20,7 +20,9 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/riverqueue/river"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/forge-metal/apiwire"
 	auth "github.com/forge-metal/auth-middleware"
@@ -281,14 +283,16 @@ func run() error {
 		}
 		if correlationID != "" {
 			ctx := jobs.WithCorrelationID(r.Context(), correlationID)
-			// Mirror correlation_id into baggage so the fmotel span processor
-			// projects it onto service spans as forge_metal.correlation_id.
-			if member, err := baggage.NewMember(fmotel.BaggageAttributePrefix+"correlation_id", correlationID); err == nil {
-				bag := baggage.FromContext(ctx)
-				if next, err := bag.SetMember(member); err == nil {
-					ctx = baggage.ContextWithBaggage(ctx, next)
-				}
-			}
+			// Mirror correlation_id into baggage so child spans pick it up
+			// via fmotel.baggageSpanProcessor. The otelhttp server span was
+			// already started before this middleware ran, so set it directly
+			// on the live span too. NewMemberRaw + SetMember are infallible
+			// for our constant key and arbitrary value.
+			attrKey := fmotel.BaggageAttributePrefix + "correlation_id"
+			member, _ := baggage.NewMemberRaw(attrKey, correlationID)
+			bag, _ := baggage.FromContext(ctx).SetMember(member)
+			ctx = baggage.ContextWithBaggage(ctx, bag)
+			trace.SpanFromContext(ctx).SetAttributes(attribute.String(attrKey, correlationID))
 			r = r.WithContext(ctx)
 		}
 		authHandler.ServeHTTP(w, r)

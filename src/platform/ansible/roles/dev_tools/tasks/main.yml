@@ -687,6 +687,15 @@
   failed_when: false
   when: dev_tools_manifest['ansible-opentelemetry-exporter-otlp-proto-grpc'] is defined
 
+- name: Check ansible tool OTLP HTTP exporter version
+  ansible.builtin.command: >-
+    /opt/uv-tools/ansible-core/bin/python -c
+    "import importlib.metadata as m; print(m.version('opentelemetry-exporter-otlp-proto-http'))"
+  register: dev_tools_ansible_otel_exporter_http_current
+  changed_when: false
+  failed_when: false
+  when: dev_tools_manifest['ansible-opentelemetry-exporter-otlp-proto-http'] is defined
+
 - name: Install ansible-core with ansible-lint via uv tool
   ansible.builtin.command:
     cmd: >-
@@ -719,6 +728,11 @@
             dev_tools_ansible_otel_exporter_current.rc != 0
             or dev_tools_manifest['ansible-opentelemetry-exporter-otlp-proto-grpc'].version
               not in (dev_tools_ansible_otel_exporter_current.stdout | default(''))
+         ))
+      or (dev_tools_manifest['ansible-opentelemetry-exporter-otlp-proto-http'] is defined and (
+            dev_tools_ansible_otel_exporter_http_current.rc != 0
+            or dev_tools_manifest['ansible-opentelemetry-exporter-otlp-proto-http'].version
+              not in (dev_tools_ansible_otel_exporter_http_current.stdout | default(''))
          ))
 
 # uv tool install --with does not symlink companion executables; ensure ansible-lint is linked.
@@ -765,6 +779,17 @@
     dev_tools_manifest['ansible-opentelemetry-exporter-otlp-proto-grpc'].version
     not in dev_tools_ansible_otel_exporter_version_check.stdout
   when: dev_tools_manifest['ansible-opentelemetry-exporter-otlp-proto-grpc'] is defined
+
+- name: Verify ansible tool OTLP HTTP exporter version
+  ansible.builtin.command: >-
+    /opt/uv-tools/ansible-core/bin/python -c
+    "import importlib.metadata as m; print(m.version('opentelemetry-exporter-otlp-proto-http'))"
+  register: dev_tools_ansible_otel_exporter_http_version_check
+  changed_when: false
+  failed_when: >-
+    dev_tools_manifest['ansible-opentelemetry-exporter-otlp-proto-http'].version
+    not in dev_tools_ansible_otel_exporter_http_version_check.stdout
+  when: dev_tools_manifest['ansible-opentelemetry-exporter-otlp-proto-http'] is defined
 
 - name: Check pre-commit version
   ansible.builtin.command: /usr/local/bin/pre-commit --version
