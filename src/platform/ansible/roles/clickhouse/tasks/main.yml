@@ -177,7 +177,7 @@
           SELECT concat(database, '.', name)
           FROM system.tables
           WHERE database = 'default'
-            AND engine != 'MaterializedView'
+            AND engine NOT IN ('MaterializedView', 'View')
             AND (name LIKE 'otel_%' OR name = 'http_access_logs')
           ORDER BY name
           FORMAT TSVRaw
