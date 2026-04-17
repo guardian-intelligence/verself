@@ -1,0 +1,47 @@
+version: 1
+effective_at: 2026-04-17
+
+subprocessors:
+  - id: stripe
+    name: Stripe
+    purpose: Payments, tax calculation, invoices, dunning, payment method management
+    data_categories:
+      - Billing contact name
+      - Billing email
+      - Payment instrument (card, ACH, etc.)
+      - Transaction amount and currency
+      - Tax identifier
+      - IP address (fraud detection)
+    processing_location: United States
+    dpa_url: https://stripe.com/legal/dpa
+
+  - id: cloudflare
+    name: Cloudflare
+    purpose: DNS for the operator's domain, TLS certificate issuance via DNS-01
+    data_categories:
+      - Operator DNS records
+    processing_location: Global edge; primary United States
+    dpa_url: https://www.cloudflare.com/cloudflare-customer-dpa/
+
+  - id: latitude-sh
+    name: Latitude.sh
+    purpose: Bare-metal server provisioning and lifecycle management
+    data_categories:
+      - Server inventory
+      - Operator contact on the Latitude.sh account
+    processing_location: Operator-selected datacenter region
+    dpa_url: https://www.latitude.sh/legal/dpa
+
+  - id: resend
+    name: Resend
+    purpose: Transactional outbound email delivery
+    data_categories:
+      - Recipient email address
+      - Message body and subject
+      - Delivery metadata (bounces, complaints)
+    processing_location: United States
+    dpa_url: https://resend.com/legal/dpa
+
+change_notification:
+  channel: Email to the administrators on each affected organization plus an entry on /policy/changelog.
+  lead_time_days: 30
