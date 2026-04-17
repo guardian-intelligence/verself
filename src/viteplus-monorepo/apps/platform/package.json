@@ -10,7 +10,7 @@
     "preview": "vp preview",
     "start": "node --import ./instrumentation.mts .output/server/index.mjs",
     "typecheck": "vp exec tsc -p tsconfig.json",
-    "generate": "cp ../../../sandbox-rental-service/openapi/openapi-3.1.yaml src/__generated/sandbox-rental-api/openapi-3.1.yaml && cp ../../../identity-service/openapi/openapi-3.1.yaml src/__generated/identity-api/openapi-3.1.yaml && cp ../../../mailbox-service/openapi/openapi-3.1.yaml src/__generated/mailbox-api/openapi-3.1.yaml && cp ../../../billing-service/openapi/openapi-3.1.yaml src/__generated/billing-api/openapi-3.1.yaml && cp ../../../platform/policies/retention.yml src/__generated/policies/retention.yml && cp ../../../platform/policies/subprocessors.yml src/__generated/policies/subprocessors.yml && cp ../../../platform/policies/ropa.yml src/__generated/policies/ropa.yml && cp ../../../platform/policies/contacts.yml src/__generated/policies/contacts.yml && cp ../../../platform/policies/versions.yml src/__generated/policies/versions.yml"
+    "generate": "cp ../../../sandbox-rental-service/openapi/openapi-3.1.yaml src/__generated/sandbox-rental-api/openapi-3.1.yaml && cp ../../../identity-service/openapi/openapi-3.1.yaml src/__generated/identity-api/openapi-3.1.yaml && cp ../../../mailbox-service/openapi/openapi-3.1.yaml src/__generated/mailbox-api/openapi-3.1.yaml && cp ../../../billing-service/openapi/openapi-3.1.yaml src/__generated/billing-api/openapi-3.1.yaml"
   },
   "dependencies": {
     "@forge-metal/nitro-plugins": "workspace:*",
