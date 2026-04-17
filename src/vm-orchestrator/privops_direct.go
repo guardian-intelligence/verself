@@ -228,8 +228,8 @@ func (DirectPrivOps) TapDelete(ctx context.Context, tapName string) error {
 
 func (DirectPrivOps) SetupJail(ctx context.Context, jailRoot, kernelSrc string, uid, gid int, devices []JailBlockDevice) error {
 	for _, dir := range []string{jailRoot, filepath.Join(jailRoot, "run"), filepath.Join(jailRoot, "drives")} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return fmt.Errorf("mkdir %s: %w", dir, err)
+		if err := ensureJailDirectory(dir); err != nil {
+			return err
 		}
 	}
 	kernelDst := filepath.Join(jailRoot, "vmlinux")
@@ -274,8 +274,8 @@ func createJailBlockDevice(ctx context.Context, jailRoot string, device JailBloc
 		return fmt.Errorf("invalid jail device path %q", device.JailPath)
 	}
 	devicePath := filepath.Join(jailRoot, rel)
-	if err := os.MkdirAll(filepath.Dir(devicePath), 0o755); err != nil {
-		return fmt.Errorf("mkdir jail device dir %s: %w", filepath.Dir(devicePath), err)
+	if err := ensureJailDirectory(filepath.Dir(devicePath)); err != nil {
+		return err
 	}
 	_ = os.Remove(devicePath)
 	mknodCmd := exec.CommandContext(ctx, "mknod", devicePath, "b", strconv.FormatUint(uint64(major), 10), strconv.FormatUint(uint64(minor), 10))
@@ -284,6 +284,18 @@ func createJailBlockDevice(ctx context.Context, jailRoot string, device JailBloc
 	}
 	if err := os.Chown(devicePath, uid, gid); err != nil {
 		return fmt.Errorf("chown jail device %s: %w", devicePath, err)
+	}
+	return nil
+}
+
+func ensureJailDirectory(path string) error {
+	const mode os.FileMode = 0o755
+	if err := os.MkdirAll(path, mode); err != nil {
+		return fmt.Errorf("mkdir jail directory %s: %w", path, err)
+	}
+	// systemd UMask applies to MkdirAll, so pin chroot directory visibility explicitly.
+	if err := os.Chmod(path, mode); err != nil {
+		return fmt.Errorf("chmod jail directory %s to %o: %w", path, mode, err)
 	}
 	return nil
 }

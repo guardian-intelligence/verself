@@ -32,6 +32,21 @@
     - role: sandbox_rental_service
       tags: [sandbox_rental_service]
     - role: electric
+      vars:
+        electric_instance: default
+        electric_service_name: electric
+        electric_service_port: "{{ services.electric.port }}"
+        electric_pg_role: electric
+        electric_pg_conn_limit: "{{ postgresql_role_connection_limits.electric }}"
+        electric_db: sandbox_rental
+        electric_writer_role: sandbox_rental
+        electric_publication_name: electric_publication_default
+        electric_publication_tables: [executions, execution_logs]
+        electric_storage_dir: /var/lib/electric
+        electric_credstore_dir: /etc/credstore/electric
+        electric_nftables_table: forge_metal_electric
+        electric_nftables_file: /etc/nftables.d/electric.nft
+        electric_db_pool_size: 15
       tags: [electric]
     - role: frontend_auth_sessions
       tags: [frontend_auth_sessions, rent_a_sandbox]

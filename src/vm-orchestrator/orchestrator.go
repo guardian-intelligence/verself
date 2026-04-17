@@ -53,6 +53,10 @@ type Config struct {
 	StateDBPath     string
 	HostServiceIP   string
 	HostServicePort int
+
+	// Host-side deterministic telemetry faults are verification-only and must
+	// be empty in normal service operation.
+	TelemetryFaultProfile string
 }
 
 func DefaultConfig() Config {
@@ -564,6 +568,10 @@ func guestFilesystemMounts(mounts []preparedFilesystemMount) []vmproto.Filesyste
 
 func (o *Orchestrator) bootDataset(ctx context.Context, leaseID string, spec LeaseSpec, dataset string, mounts []preparedFilesystemMount, observer LeaseObserver) (*LeaseRuntime, error) {
 	logger := o.logger.With("lease_id", leaseID, "dataset", dataset)
+	telemetryFaultProfile, err := telemetryFaultProfileFromConfig(o.cfg)
+	if err != nil {
+		return nil, err
+	}
 	runtime := &LeaseRuntime{
 		LeaseID: leaseID,
 		Dataset: dataset,
@@ -789,7 +797,7 @@ func (o *Orchestrator) bootDataset(ctx context.Context, leaseID string, spec Lea
 	runtime.telemetryDone = make(chan struct{})
 	go func() {
 		defer close(runtime.telemetryDone)
-		if err := streamGuestTelemetry(telemetryCtx, controlSockHost, leaseID, observer, logger, nil); err != nil && !errors.Is(err, context.Canceled) {
+		if err := streamGuestTelemetry(telemetryCtx, controlSockHost, leaseID, observer, logger, telemetryFaultProfile); err != nil && !errors.Is(err, context.Canceled) {
 			logger.WarnContext(ctx, "guest telemetry stream ended", "lease_id", leaseID, "error", err)
 		}
 	}()
