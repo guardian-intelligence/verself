@@ -141,13 +141,20 @@ func textMapPropagator() propagation.TextMapPropagator {
 type baggageSpanProcessor struct{}
 
 func (baggageSpanProcessor) OnStart(parentCtx context.Context, span sdktrace.ReadWriteSpan) {
-	bag := baggage.FromContext(parentCtx)
-	for _, m := range bag.Members() {
+	members := baggage.FromContext(parentCtx).Members()
+	if len(members) == 0 {
+		return
+	}
+	attrs := make([]attribute.KeyValue, 0, len(members))
+	for _, m := range members {
 		key := m.Key()
 		if !strings.HasPrefix(key, BaggageAttributePrefix) {
 			continue
 		}
-		span.SetAttributes(attribute.String(key, m.Value()))
+		attrs = append(attrs, attribute.String(key, m.Value()))
+	}
+	if len(attrs) > 0 {
+		span.SetAttributes(attrs...)
 	}
 }
 
