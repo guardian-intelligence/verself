@@ -178,7 +178,7 @@
       Environment=MAILBOX_SERVICE_FORWARDER_FROM_NAME={{ resend_sender_name }}
       Environment=MAILBOX_SERVICE_FORWARDER_POLL_INTERVAL=5s
       Environment=MAILBOX_SERVICE_FORWARDER_STATE_PATH=/var/lib/mailbox-service/forwarder-state.json
-      Environment=MAILBOX_SERVICE_OTLP_ENDPOINT={{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}
+      Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}
       ExecStart={{ fm_bin }}/mailbox-service
       Restart=always
       RestartSec=5
