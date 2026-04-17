@@ -1,10 +1,32 @@
 ---
+- name: Create webmail runtime group
+  ansible.builtin.group:
+    name: "{{ webmail_runtime_group }}"
+    system: true
+
+- name: Create webmail runtime user
+  ansible.builtin.user:
+    name: "{{ webmail_runtime_user }}"
+    group: "{{ webmail_runtime_group }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ webmail_state_dir }}"
+    create_home: false
+
+- name: Create webmail state directory
+  ansible.builtin.file:
+    path: "{{ webmail_state_dir }}"
+    state: directory
+    owner: "{{ webmail_runtime_user }}"
+    group: "{{ webmail_runtime_group }}"
+    mode: "0700"
+
 - name: Create webmail credstore directory
   ansible.builtin.file:
     path: /etc/credstore/webmail
     state: directory
     owner: root
-    group: "{{ ansible_user }}"
+    group: "{{ webmail_runtime_group }}"
     mode: "0750"
 
 - name: Check for existing webmail auth session secret
@@ -17,10 +39,17 @@
     content: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits') }}"
     dest: /etc/credstore/webmail/auth-session-secret
     owner: root
-    group: "{{ ansible_user }}"
+    group: "{{ webmail_runtime_group }}"
     mode: "0640"
   when: not webmail_auth_session_secret_file.stat.exists
   no_log: true
+
+- name: Converge webmail auth session secret permissions
+  ansible.builtin.file:
+    path: /etc/credstore/webmail/auth-session-secret
+    owner: root
+    group: "{{ webmail_runtime_group }}"
+    mode: "0640"
 
 - name: Read webmail auth session secret
   ansible.builtin.slurp:
@@ -36,7 +65,7 @@
     path: "{{ webmail_install_dir }}"
     state: directory
     owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
+    group: "{{ webmail_runtime_group }}"
     mode: "0755"
 
 - name: Verify corepack exists in profile
@@ -137,7 +166,7 @@
     content: "{{ webmail_workspace_dependency_fingerprint.stdout.split()[0] | trim }}\n"
     dest: "{{ webmail_dependencies_fingerprint_path }}"
     owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
+    group: "{{ webmail_runtime_group }}"
     mode: "0644"
 
 - name: Build webmail package dependencies
@@ -185,7 +214,7 @@
     zitadel_oauth_app_post_logout_redirect_uris:
       - "https://{{ webmail_domain }}"
     zitadel_oauth_app_credstore_dir: /etc/credstore/webmail
-    zitadel_oauth_app_credstore_group: "{{ ansible_user }}"
+    zitadel_oauth_app_credstore_group: "{{ webmail_runtime_group }}"
     zitadel_oauth_app_auth_method_type: OIDC_AUTH_METHOD_TYPE_NONE
     zitadel_oauth_app_persist_client_secret: false
     zitadel_oauth_app_role_assertions: true
@@ -198,13 +227,21 @@
     webmail_client_id: "{{ zitadel_oauth_app_out_client_id }}"
   no_log: true
 
+- name: Ensure webmail env directory exists
+  ansible.builtin.file:
+    path: /etc/webmail
+    state: directory
+    owner: root
+    group: "{{ webmail_runtime_group }}"
+    mode: "0750"
+
 - name: Deploy webmail environment file
   ansible.builtin.template:
     src: env.j2
     dest: /etc/webmail/env
     mode: "0640"
     owner: root
-    group: "{{ ansible_user }}"
+    group: "{{ webmail_runtime_group }}"
   notify: Restart webmail
 
 - name: Deploy webmail systemd unit
