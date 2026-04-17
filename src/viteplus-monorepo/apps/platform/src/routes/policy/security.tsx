@@ -54,11 +54,13 @@ function Summary() {
     <section className="flex flex-col gap-4">
       <SectionHeading id="summary">Summary</SectionHeading>
       <SummaryPanel>
-        <SummaryItem term="Isolation">Firecracker microVMs + ZFS dataset separation.</SummaryItem>
-        <SummaryItem term="Identity">
-          Zitadel; JWT-based; every service is its own security boundary.
+        <SummaryItem term="Workload isolation">
+          Hardware-virtualized microVMs with per-tenant durable-storage separation.
         </SummaryItem>
-        <SummaryItem term="Transport">TLS 1.3 everywhere.</SummaryItem>
+        <SummaryItem term="Identity">
+          Single sign-on with short-lived bearer tokens; every service is its own security boundary.
+        </SummaryItem>
+        <SummaryItem term="Transport">TLS 1.3 everywhere; first-party reverse proxy with an inline web application firewall.</SummaryItem>
         <SummaryItem term="Disclosure">
           Coordinated via the security mailbox; safe-harbor for good-faith research.
         </SummaryItem>
@@ -73,15 +75,16 @@ function Identity() {
       <SectionHeading id="identity">Identity and access</SectionHeading>
       <Prose>
         <p>
-          Zitadel is the sole identity provider. Every Go service validates JWTs against Zitadel's
-          JWKS endpoint using cached keys and local crypto; identity (subject, organization, roles)
-          is extracted from token claims and attached to the request context. No long-lived
-          credentials live in services; short-lived JWTs replace them.
+          One identity provider is the authority for authentication and organization membership.
+          Every service validates bearer tokens against the provider's published key set using
+          cached keys and local cryptography; identity (subject, organization, roles) is extracted
+          from token claims and attached to the request context. No long-lived service credentials
+          are issued; short-lived bearer tokens replace them.
         </p>
         <p>
-          Organization administrators can require MFA and passkeys through the identity console.
-          Zitadel session configuration is not something customers edit indirectly via Forge Metal;
-          they own their identity configuration end-to-end.
+          Organization administrators can require multi-factor authentication and passkeys through
+          the identity console. Session configuration — password rules, MFA enforcement, SSO
+          federation — is customer-editable end to end.
         </p>
       </Prose>
     </section>
@@ -94,16 +97,16 @@ function Isolation() {
       <SectionHeading id="isolation">Workload isolation</SectionHeading>
       <Prose>
         <p>
-          Customer workloads run in Firecracker microVMs under jailer, with per-tenant ZFS datasets
-          as durable storage. VM-to-VM isolation is a hypervisor-level boundary; host access is
-          restricted to the privileged vm-orchestrator daemon. Product services do not have host
-          access to <code>/dev/kvm</code>, <code>/dev/zvol</code>, jailer directories, or ZFS
-          administrative commands; they interact with the substrate only via the orchestrator's gRPC
-          API.
+          Customer workloads run inside hardware-virtualized microVMs, with per-tenant durable
+          volumes as their filesystem. VM-to-VM isolation is a hypervisor-level boundary; host
+          access is restricted to a single privileged orchestration daemon. Product services have
+          no host-level access to the hypervisor device nodes, storage administration interfaces,
+          or jail directories — they interact with the compute substrate only through a narrow,
+          policy-checked API.
         </p>
         <p>
-          Execution telemetry is collected via a 60-Hz vsock-based Zig guest agent; nothing on the
-          guest side has host-network egress by default.
+          In-guest telemetry is collected over an isolated host-to-guest channel; the guest does
+          not reach the host network by default.
         </p>
       </Prose>
     </section>
@@ -116,15 +119,16 @@ function Encryption() {
       <SectionHeading id="encryption">Encryption and key management</SectionHeading>
       <Prose>
         <p>
-          All external and inter-service traffic uses TLS 1.3, terminated by Caddy with a Coraza WAF
-          module; certificates are issued automatically via DNS-01 against Cloudflare. Secrets are
-          SOPS-encrypted in the platform inventory and delivered to each service through systemd{" "}
-          <code>LoadCredential=</code>, so application processes read them from the ephemeral{" "}
-          <code>$CREDENTIALS_DIRECTORY</code> rather than from the filesystem.
+          All external and inter-service traffic uses TLS 1.3, terminated by a first-party reverse
+          proxy running a web application firewall; certificates are issued automatically using
+          DNS-01 challenges. Operational secrets are held encrypted at rest in the platform
+          inventory and delivered to each service through an ephemeral credential loader, so
+          application processes read them from process-private memory rather than from files on
+          disk.
         </p>
         <p>
-          ZFS dataset-level encryption is supported for durable customer volumes; the specific
-          encryption posture per volume is visible on the volume's billing record.
+          Dataset-level encryption at rest is supported for durable customer volumes; the
+          encryption posture of each volume is visible on its billing record.
         </p>
       </Prose>
     </section>
@@ -137,11 +141,11 @@ function Network() {
       <SectionHeading id="network">Network posture</SectionHeading>
       <Prose>
         <p>
-          The host uses nftables to deny by default and allow on a per-service basis; services
-          listen only where their role declares they should. The single-node topology keeps
-          inter-service traffic on loopback; the 3-node topology uses a Netbird overlay with
-          analogous allowlists. Customer-facing ingress is TLS-terminated at Caddy before reaching
-          Go services.
+          The host firewall denies by default and allows inbound traffic on a per-service basis;
+          services listen only where their declared role requires. Single-node deployments keep
+          inter-service traffic on loopback; multi-node deployments route inter-service traffic
+          over a private overlay network with the same allowlist model. Customer-facing ingress is
+          TLS-terminated at the reverse proxy before reaching any product service.
         </p>
       </Prose>
     </section>
@@ -154,15 +158,14 @@ function Logging() {
       <SectionHeading id="logging">Logging and detection</SectionHeading>
       <Prose>
         <p>
-          Every service emits OpenTelemetry logs, traces, and metrics into ClickHouse via the
-          otelcol-contrib collector. Ansible playbook runs emit spans that correlate to the same
-          trace-id as the service calls they trigger, so post-hoc inspection of a deploy is
-          straightforward.
+          Every service emits structured logs, traces, and metrics into a central observability
+          store. Administrative actions taken on the host — including deploys — emit spans
+          correlated to the same trace identifier as the service calls they trigger, so
+          post-incident inspection reads as a single narrative.
         </p>
         <p>
-          Detection thresholds and alert routes are configured in Grafana and checked through the{" "}
-          <code>make observe</code> operator surface. Security-incident artifacts are retained
-          separately from normal operational TTLs — see the{" "}
+          Detection thresholds and alert routes run on the operator dashboard. Security-incident
+          artifacts are retained separately from normal operational TTLs — see the{" "}
           <a href="/policy/data-retention#incident">Data Retention policy</a>.
         </p>
       </Prose>
@@ -176,9 +179,9 @@ function Personnel() {
       <SectionHeading id="personnel">Personnel and access</SectionHeading>
       <Prose>
         <p>
-          Access to the host and to production data is restricted to a named set of operators on the
-          account, who authenticate with hardware security keys. Administrative actions taken on the
-          host are audit-logged and fed into the same OpenTelemetry pipeline as service traces.
+          Access to the host and to production data is restricted to a named set of operators,
+          authenticating with hardware security keys. Administrative actions taken on the host are
+          audit-logged and fed into the same observability pipeline as service traces.
         </p>
       </Prose>
     </section>
@@ -199,8 +202,8 @@ function Disclosure() {
           </a>{" "}
           core terms is covered by a safe-harbor commitment: we will not pursue legal action, and
           will work with you on coordinated disclosure. Do not exfiltrate customer data; do not
-          degrade service for other customers; respect the 90-day coordinated-disclosure norm unless
-          we agree a different timeline.
+          degrade service for other customers; respect the 90-day coordinated-disclosure norm
+          unless we agree on a different timeline.
         </p>
       </Prose>
     </section>

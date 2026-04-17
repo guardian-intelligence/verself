@@ -25,7 +25,7 @@ processing_activities:
 
   - id: sandbox-workloads
     role: processor
-    purpose: Execute customer-defined compute workloads on Firecracker
+    purpose: Execute customer-defined compute workloads in hardware-virtualized microVMs
     data_categories:
       - Durable VM disk contents (customer-controlled)
       - Execution logs (customer-controlled)

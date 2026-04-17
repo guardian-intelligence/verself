@@ -146,17 +146,17 @@ function SecuritySection() {
           security appropriate to the risk. Those measures include:
         </p>
         <ul>
-          <li>Firecracker-based VM isolation of tenant workloads.</li>
-          <li>ZFS dataset-level separation, with encryption at rest where configured.</li>
+          <li>Hardware-virtualized microVM isolation of tenant workloads.</li>
+          <li>Per-tenant durable-storage separation, with encryption at rest where configured.</li>
           <li>
-            TLS 1.3 for all inter-service and customer-facing traffic; JWTs signed by Zitadel and
-            verified against its JWKS.
+            TLS 1.3 for all inter-service and customer-facing traffic; short-lived bearer tokens
+            validated against the identity provider's published key set.
           </li>
           <li>
-            Defense-in-depth via host nftables, Caddy+Coraza WAF, and per-service credential
-            isolation.
+            Defense-in-depth via a host firewall, an inline web application firewall at the edge
+            reverse proxy, and per-service credential isolation.
           </li>
-          <li>Comprehensive audit logging and OpenTelemetry observability.</li>
+          <li>Comprehensive audit logging and distributed-tracing observability.</li>
         </ul>
         <p>
           The customer is responsible for ensuring the availability of Customer Personal Data by

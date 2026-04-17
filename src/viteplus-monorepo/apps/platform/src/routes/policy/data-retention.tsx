@@ -87,8 +87,8 @@ function Summary() {
           This page describes what Forge Metal keeps on your behalf, how long we keep it, and under
           what conditions it can be exported, preserved, or deleted. The retention windows listed
           here are commitments; they apply equally to every customer organization on this
-          deployment, and the same windows drive the ClickHouse TTLs and deletion scheduler that
-          execute them.
+          deployment, and the same windows drive the observability-store TTLs and deletion
+          scheduler that execute them.
         </p>
         <p>
           Our own organizations — the platform tenant and its parent-company tenant — are subject to
@@ -265,10 +265,10 @@ function RetentionWindows() {
       </div>
       <Prose>
         <p>
-          Per-volume snapshot retention is a separate setting that governs how long ZFS snapshot
+          Per-volume snapshot retention is a separate setting that governs how long snapshot
           generations are kept within each volume. It is independent from the account-lifecycle
-          windows above; a volume with a 30-day snapshot policy still has its snapshots deleted with
-          the parent volume when the account reaches final deletion.
+          windows above; a volume with a 30-day snapshot policy still has its snapshots deleted
+          with the parent volume when the account reaches final deletion.
         </p>
         <p>
           Jurisdictions with longer billing-records retention requirements — for example Germany (10

@@ -165,9 +165,10 @@ function Mail() {
       <Prose>
         <p>
           Outbound email sent through Forge Metal must comply with the CAN-SPAM Act, GDPR lawful
-          marketing bases, and the policies of upstream providers (including Resend). Inbound mail
-          delivered to customer mailboxes is the customer's to handle; automated campaigns,
-          subscribe-on-behalf-of-third-parties, and credential-harvesting via email are prohibited.
+          marketing bases, and the policies of our upstream email-delivery subprocessor. Inbound
+          mail delivered to customer mailboxes is the customer's to handle; automated campaigns,
+          subscribe-on-behalf-of-third-parties, and credential-harvesting via email are
+          prohibited.
         </p>
       </Prose>
     </section>
@@ -180,11 +181,12 @@ function Sandbox() {
       <SectionHeading id="sandbox">Sandbox and VM workloads</SectionHeading>
       <Prose>
         <p>
-          Our sandbox and long-running VM products are isolation-hardened via Firecracker and ZFS,
-          but that isolation is not a license for hostile workloads. You may not attempt to break
-          out of your VM boundary, probe other tenants, or exploit known Firecracker, jailer, or
-          host-kernel vulnerabilities. Bona-fide security research against your own tenant is
-          encouraged under <a href="/policy/security">our Security Overview's disclosure terms</a>.
+          Our sandbox and long-running VM products are isolation-hardened via hardware
+          virtualization and per-tenant durable storage, but that isolation is not a license for
+          hostile workloads. You may not attempt to break out of your VM boundary, probe other
+          tenants, or exploit known hypervisor or host-kernel vulnerabilities. Bona-fide security
+          research against your own tenant is encouraged under{" "}
+          <a href="/policy/security">our Security Overview's disclosure terms</a>.
         </p>
       </Prose>
     </section>

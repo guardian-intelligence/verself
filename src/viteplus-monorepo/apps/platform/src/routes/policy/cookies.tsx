@@ -96,9 +96,9 @@ function Inventory() {
               <td className="font-mono text-xs">fm_session</td>
               <td className="text-muted-foreground">Strictly necessary</td>
               <td className="text-muted-foreground">
-                HTTP-only, SameSite=Lax session cookie backing the server-owned Zitadel session. Its
-                value is an opaque server identifier that maps to the row in the
-                <code> frontend_auth_sessions</code> PostgreSQL database.
+                HTTP-only, SameSite=Lax session cookie backing the server-owned single sign-on
+                session. Its value is an opaque server identifier that resolves to the session
+                record in our server-side session store.
               </td>
               <td className="text-muted-foreground">Session; rotated on sign-in</td>
             </tr>
@@ -126,7 +126,7 @@ function Analytics() {
         <p>
           We do not set analytics, advertising, retargeting, or social-widget cookies on customer
           surfaces. Product analytics — where we measure them — run server-side against request
-          traces in ClickHouse and do not require browser-side cookies to be useful.
+          traces in our observability store and do not require browser-side cookies to be useful.
         </p>
       </Prose>
     </section>
