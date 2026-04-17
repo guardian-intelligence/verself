@@ -4,8 +4,8 @@
     path: "{{ frontend_auth_sessions_credstore_dir }}"
     state: directory
     owner: root
-    group: "{{ ansible_user }}"
-    mode: "0750"
+    group: root
+    mode: "0700"
 
 - name: Check for existing frontend auth PostgreSQL password
   ansible.builtin.stat:
@@ -17,10 +17,17 @@
     content: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
     dest: "{{ frontend_auth_sessions_credstore_dir }}/pg-password"
     owner: root
-    group: "{{ ansible_user }}"
-    mode: "0640"
+    group: root
+    mode: "0600"
   when: not frontend_auth_sessions_pg_password_file.stat.exists
   no_log: true
+
+- name: Converge frontend auth PostgreSQL password permissions
+  ansible.builtin.file:
+    path: "{{ frontend_auth_sessions_credstore_dir }}/pg-password"
+    owner: root
+    group: root
+    mode: "0600"
 
 - name: Read frontend auth PostgreSQL password
   ansible.builtin.slurp:
