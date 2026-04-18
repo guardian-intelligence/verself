@@ -1,4 +1,4 @@
-.PHONY: help test lint lint-scripts lint-conversions lint-ansible fmt vet tidy policy-check openapi openapi-check openapi-wire-check \
+.PHONY: help test lint lint-scripts lint-conversions lint-ansible fmt vet tidy openapi openapi-check openapi-wire-check \
        hooks-install doctor inventory-check setup-dev setup-sops provision deprovision deploy site guest-rootfs security-patch identity-reset seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member \
        set-user-state billing-clock billing-wall-clock billing-state billing-documents billing-finalizations billing-events billing-pg-shell billing-pg-query billing-proof billing-reset verification-reset \
        vm-guest-telemetry-build observe telemetry-proof telemetry-proof-fail clickhouse-query clickhouse-schemas pg-shell pg-query pg-list tb-shell tb-command mail mail-accounts mail-mailboxes \
@@ -15,9 +15,8 @@ AM       := src/auth-middleware
 SR       := src/sandbox-rental-service
 MS       := src/mailbox-service
 OT       := src/otel
-PS       := src/platform/policyspec
 INVENTORY := $(FM)/ansible/inventory/hosts.ini
-GO_DIRS  := $(AW) $(VMO) $(BS) $(GS) $(IS) $(AM) $(SR) $(MS) $(OT) $(PS)
+GO_DIRS  := $(AW) $(VMO) $(BS) $(GS) $(IS) $(AM) $(SR) $(MS) $(OT)
 GO_PKGS  := $(addsuffix /...,$(addprefix ./,$(GO_DIRS)))
 BILLING_PRODUCT_ID ?= sandbox
 ASSUME_PERSONA_OUTPUT_FLAG := $(if $(OUTPUT),--output "$(OUTPUT)",)
@@ -68,11 +67,7 @@ tidy:
 	cd $(SR) && go mod tidy
 	cd $(MS) && go mod tidy
 	cd $(OT) && go mod tidy
-	cd $(PS) && go mod tidy
 	cd src/viteplus-monorepo && vp fmt . --write
-
-policy-check: ## Validate src/platform/policies/*.yml and emit a ClickHouse-searchable span
-	cd $(PS) && go run ./cmd/forge-metal-policy-check --source-dir ../policies
 
 openapi: ## Regenerate committed OpenAPI 3.0 and 3.1 specs for Go services
 	go run ./$(BS)/cmd/billing-openapi --format 3.0 > $(BS)/openapi/openapi-3.0.yaml

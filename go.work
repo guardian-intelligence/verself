@@ -8,7 +8,6 @@ use (
 	./src/identity-service
 	./src/mailbox-service
 	./src/otel
-	./src/platform/policyspec
 	./src/sandbox-rental-service
 	./src/vm-orchestrator
 )
