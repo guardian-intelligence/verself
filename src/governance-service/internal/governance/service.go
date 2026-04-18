@@ -29,23 +29,33 @@ var (
 var tracer = otel.Tracer("governance-service/internal/governance")
 
 type Service struct {
-	PG            *pgxpool.Pool
-	IdentityPG    *pgxpool.Pool
-	BillingPG     *pgxpool.Pool
-	SandboxPG     *pgxpool.Pool
-	CH            driver.Conn
-	Logger        *slog.Logger
-	HMACKey       []byte
-	ExportDir     string
-	ExportTTL     time.Duration
-	PublicBaseURL string
+	PG               *pgxpool.Pool
+	IdentityPG       *pgxpool.Pool
+	BillingPG        *pgxpool.Pool
+	SandboxPG        *pgxpool.Pool
+	CH               driver.Conn
+	Logger           *slog.Logger
+	HMACKey          []byte
+	HMACKeyID        string
+	ExportDir        string
+	ExportTTL        time.Duration
+	PublicBaseURL    string
+	Environment      string
+	ServiceVersion   string
+	WriterInstanceID string
 }
 
 type Principal struct {
-	OrgID   string
-	Subject string
-	Email   string
-	Type    string
+	OrgID                 string
+	Subject               string
+	Email                 string
+	Type                  string
+	CredentialID          string
+	CredentialName        string
+	CredentialFingerprint string
+	ActorOwnerID          string
+	ActorOwnerDisplay     string
+	AuthMethod            string
 }
 
 func (s *Service) Validate() error {

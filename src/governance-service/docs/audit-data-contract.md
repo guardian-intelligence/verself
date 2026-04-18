@@ -7,12 +7,11 @@ governance audit rows after making those decisions. Zitadel remains the identity
 provider, while Forge Metal owns product policy and API credential metadata as
 described in [identity-and-iam.md](../../platform/docs/identity-and-iam.md).
 
-The current first-pass implementation writes the subset in
+The canonical implementation writes the schema in
 [019_governance_audit_events.up.sql](../../platform/migrations/019_governance_audit_events.up.sql)
-from [audit.go](../internal/governance/audit.go). The next schema cutover uses
-the vocabulary below. Customer-facing surfaces call the caller an `Actor`, not a
-`Principal`; `principal_*` remains acceptable only as an internal compatibility
-name while the ClickHouse schema is rewritten.
+from [audit.go](../internal/governance/audit.go). Customer-facing surfaces call
+the caller an `Actor`, not a `Principal`; tenant scope is captured separately as
+`org_id`.
 
 ## Product Surfaces
 
@@ -54,8 +53,10 @@ request boundary; result facts come from the handler or integration.
 | Integrity | `sequence`, `prev_hmac`, `row_hmac`, `hmac_key_id`, `ingested_at`, `retention_class`, `legal_hold` |
 
 `operation_type` is one of `read`, `write`, `delete`, `authn`, `authz`,
-`billing`, `export`, `system`, or `unknown`. `risk_level` is operation-catalog
-metadata, not a runtime guess: `low`, `medium`, `high`, or `critical`.
+`export`, `system`, or `unknown`. Billing is an `event_category` and
+`source_product_area`, not an operation type. `risk_level` is
+operation-catalog metadata, not a runtime guess: `low`, `medium`, `high`, or
+`critical`.
 High-risk operations include credential creation/roll/revoke, permission
 changes, org membership changes, data export creation/download, payment/billing
 changes, cryptographic key use/rotation, secret reads/writes, workload
@@ -94,7 +95,7 @@ immutable actor id recorded for the audit event.
   handler runs; allowed/error results are recorded after the handler returns.
 - Static fields come from the service-owned operation catalog:
   `permission`, `operation_id`, `operation_type`, `risk_level`,
-  `event_category`, `resource_kind`, `action`, `org_scope`, idempotency policy,
+  `event_category`, `target_kind`, `action`, `org_scope`, idempotency policy,
   and rate-limit class.
 - Actor and credential fields come from the validated JWT plus Forge
   Metal-owned API credential metadata. Human OAuth scopes are not product
