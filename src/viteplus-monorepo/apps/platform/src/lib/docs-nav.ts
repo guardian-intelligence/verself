@@ -28,6 +28,22 @@ export const DOCS_NAV: readonly DocsNavEntry[] = [
     exactMatch: true,
   },
   {
+    id: "secrets-and-keys",
+    label: "Secrets & Keys",
+    to: "/docs/secrets",
+    matchPrefix: "/docs/secrets",
+    children: [
+      { id: "overview", label: "Overview" },
+      { id: "shared-responsibility", label: "Shared responsibility" },
+      { id: "secrets", label: "Secrets" },
+      { id: "keys", label: "Keys" },
+      { id: "sandboxes", label: "Using in sandboxes" },
+      { id: "access-control", label: "Access control" },
+      { id: "audit-trail", label: "Audit trail" },
+      { id: "limits", label: "Limits" },
+    ],
+  },
+  {
     id: "reference",
     label: "API Reference",
     to: "/docs/reference",
