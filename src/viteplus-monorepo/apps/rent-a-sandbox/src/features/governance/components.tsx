@@ -88,7 +88,7 @@ export function GovernanceSettings({
           <SectionHeaderContent>
             <SectionTitle>Audit trail</SectionTitle>
             <SectionDescription>
-              Recent authorization decisions and operational changes for this organization.
+              High-risk operations, denied requests, and export activity for this organization.
             </SectionDescription>
           </SectionHeaderContent>
         </SectionHeader>
@@ -166,10 +166,13 @@ function AuditEventsTable({ events }: { events: Array<GovernanceAuditEvent> }) {
       <TableHeader>
         <TableRow>
           <TableHead>Time</TableHead>
-          <TableHead>Service</TableHead>
+          <TableHead>Risk</TableHead>
+          <TableHead>Actor</TableHead>
           <TableHead>Operation</TableHead>
+          <TableHead>Target</TableHead>
           <TableHead>Result</TableHead>
-          <TableHead>Principal</TableHead>
+          <TableHead>Location</TableHead>
+          <TableHead>Source</TableHead>
           <TableHead>Sequence</TableHead>
         </TableRow>
       </TableHeader>
@@ -177,18 +180,38 @@ function AuditEventsTable({ events }: { events: Array<GovernanceAuditEvent> }) {
         {events.map((event) => (
           <TableRow key={event.event_id}>
             <TableCell>{formatDate(event.recorded_at)}</TableCell>
-            <TableCell>{event.service_name}</TableCell>
-            <TableCell>{event.operation_id}</TableCell>
+            <TableCell>
+              <RiskBadge risk={event.risk_level} />
+            </TableCell>
+            <TableCell>
+              <div className="flex flex-col gap-1">
+                <span>{actorLabel(event)}</span>
+                <span className="text-muted-foreground">{event.actor_type}</span>
+              </div>
+            </TableCell>
+            <TableCell>
+              <div className="flex flex-col gap-1">
+                <span>{event.operation_display || event.operation_id}</span>
+                <span className="text-muted-foreground">{event.operation_type}</span>
+              </div>
+            </TableCell>
+            <TableCell>{targetLabel(event)}</TableCell>
             <TableCell>
               <StatusBadge status={event.result} />
             </TableCell>
-            <TableCell>{event.principal_email || event.principal_id}</TableCell>
+            <TableCell>{locationLabel(event)}</TableCell>
+            <TableCell>{event.source_product_area || event.service_name}</TableCell>
             <TableCell>{event.sequence}</TableCell>
           </TableRow>
         ))}
       </TableBody>
     </Table>
   );
+}
+
+function RiskBadge({ risk }: { risk: string }) {
+  const variant = risk === "critical" || risk === "high" ? "warning" : "secondary";
+  return <Badge variant={variant}>{risk}</Badge>;
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -199,6 +222,23 @@ function StatusBadge({ status }: { status: string }) {
         ? "destructive"
         : "secondary";
   return <Badge variant={variant}>{status}</Badge>;
+}
+
+function actorLabel(event: GovernanceAuditEvent) {
+  if (event.actor_type === "api_credential" && event.credential_name) {
+    return event.credential_name;
+  }
+  return event.actor_display || event.actor_id;
+}
+
+function targetLabel(event: GovernanceAuditEvent) {
+  const target = event.target_display || event.target_id || "organization";
+  return `${event.target_kind}: ${target}`;
+}
+
+function locationLabel(event: GovernanceAuditEvent) {
+  const parts = [event.geo_country, event.client_ip_version].filter(Boolean);
+  return parts.length > 0 ? parts.join(" ") : "unknown";
 }
 
 function formatDate(value: string) {
