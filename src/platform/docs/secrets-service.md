@@ -240,19 +240,22 @@ access patterns.
 ## Audit
 
 Dual-write: OpenBao's native audit device (JSON file, rotated and shipped)
-plus a structured audit row into ClickHouse on the request path. The
-ClickHouse row is the queryable surface.
+plus a structured Forge Metal governance audit row into ClickHouse on the
+request path. The ClickHouse row is the customer-queryable surface; the
+OpenBao row remains raw integration evidence.
 
-Row shape (abridged):
+Secrets rows use the same `forge_metal.audit_events` contract documented in
+`src/governance-service/docs/audit-data-contract.md`. The product-specific
+fields are:
 
 ```
-request_id, timestamp, org_id, source_id, env_id, branch,
-principal_type (user|api_credential|workload),
-principal_id, principal_spiffe_id,
-operation, resource_scope, resource_name,
-result (ok|denied|error), denial_reason,
-trust_class, resolution_path,
-prev_hmac, row_hmac
+source_product_area = 'Secrets'
+operation_type = read|write|delete|authz
+risk_level = high|critical for secret value reads, writes, key use, and rotation
+target_kind = secret|secret_environment|secret_branch|transit_key|lease
+secret_mount, secret_path_hash, secret_version, secret_operation
+lease_id_hash, lease_ttl_seconds, key_id
+openbao_request_id, openbao_accessor_hash
 ```
 
 Each row carries `row_hmac = HMAC(prev_hmac || canonical_serialization,

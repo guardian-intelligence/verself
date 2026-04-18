@@ -26,18 +26,46 @@ paths:
                   schema:
                     type: string
                     maxLength: 1024
-                - name: service_name
+                - name: actor_id
                   in: query
                   explode: false
                   schema:
                     type: string
-                    maxLength: 128
+                    maxLength: 255
+                - name: audit_event
+                  in: query
+                  explode: false
+                  schema:
+                    type: string
+                    maxLength: 255
+                - name: high_risk
+                  in: query
+                  description: Return events that are high or critical risk, write/delete/export operations, denials, or errors.
+                  explode: false
+                  schema:
+                    type: boolean
+                    description: Return events that are high or critical risk, write/delete/export operations, denials, or errors.
                 - name: operation_id
                   in: query
                   explode: false
                   schema:
                     type: string
                     maxLength: 128
+                - name: operation_type
+                  in: query
+                  explode: false
+                  schema:
+                    type: string
+                    enum:
+                        - read
+                        - write
+                        - delete
+                        - authn
+                        - authz
+                        - billing
+                        - export
+                        - system
+                        - unknown
                 - name: result
                   in: query
                   explode: false
@@ -47,6 +75,40 @@ paths:
                         - allowed
                         - denied
                         - error
+                - name: risk_level
+                  in: query
+                  explode: false
+                  schema:
+                    type: string
+                    enum:
+                        - low
+                        - medium
+                        - high
+                        - critical
+                - name: service_name
+                  in: query
+                  explode: false
+                  schema:
+                    type: string
+                    maxLength: 128
+                - name: source_product_area
+                  in: query
+                  explode: false
+                  schema:
+                    type: string
+                    maxLength: 128
+                - name: target_id
+                  in: query
+                  explode: false
+                  schema:
+                    type: string
+                    maxLength: 255
+                - name: target_kind
+                  in: query
+                  explode: false
+                  schema:
+                    type: string
+                    maxLength: 128
             responses:
                 "200":
                     description: OK
@@ -65,10 +127,16 @@ paths:
             x-forge-metal-iam:
                 action: list
                 audit_event: governance.audit_event.list
+                data_classification: restricted
+                event_category: governance
+                operation_display: List audit events
+                operation_type: read
                 org_scope: token_org_id
                 permission: governance:audit:read
                 rate_limit_class: read
                 resource: audit_event
+                risk_level: medium
+                source_product_area: Governance
     /api/v1/governance/exports:
         get:
             summary: List organization data exports
@@ -91,10 +159,16 @@ paths:
             x-forge-metal-iam:
                 action: list
                 audit_event: governance.data_export.list
+                data_classification: restricted
+                event_category: export
+                operation_display: List data exports
+                operation_type: read
                 org_scope: token_org_id
                 permission: governance:export:read
                 rate_limit_class: read
                 resource: data_export
+                risk_level: medium
+                source_product_area: Governance
         post:
             summary: Create an organization data export
             operationId: create-data-export
@@ -131,12 +205,18 @@ paths:
             x-forge-metal-iam:
                 action: create
                 audit_event: governance.data_export.create
+                data_classification: restricted
+                event_category: export
                 idempotency: idempotency_key_header
+                operation_display: Create data export
+                operation_type: export
                 org_scope: token_org_id
                 permission: governance:export:create
                 rate_limit_class: export_create
                 request_body_max_bytes: 16384
                 resource: data_export
+                risk_level: high
+                source_product_area: Governance
     /api/v1/governance/exports/{export_id}:
         get:
             summary: Get an organization data export
@@ -166,10 +246,16 @@ paths:
             x-forge-metal-iam:
                 action: read
                 audit_event: governance.data_export.read
+                data_classification: restricted
+                event_category: export
+                operation_display: Read data export
+                operation_type: read
                 org_scope: token_org_id
                 permission: governance:export:read
                 rate_limit_class: read
                 resource: data_export
+                risk_level: medium
+                source_product_area: Governance
     /api/v1/governance/exports/{export_id}/download:
         get:
             summary: Download an organization data export artifact
@@ -207,10 +293,16 @@ paths:
             x-forge-metal-iam:
                 action: download
                 audit_event: governance.data_export.download
+                data_classification: restricted
+                event_category: export
+                operation_display: Download data export
+                operation_type: export
                 org_scope: token_org_id
                 permission: governance:export:read
                 rate_limit_class: export_download
                 resource: data_export
+                risk_level: high
+                source_product_area: Governance
 components:
     schemas:
         ErrorDetail:
@@ -278,30 +370,99 @@ components:
                 action:
                     type: string
                     description: Action declared by the operation catalog.
+                actor_display:
+                    type: string
+                    description: Display label for the actor when available.
+                actor_id:
+                    type: string
+                    description: Exact authenticated actor ID.
+                actor_owner_display:
+                    type: string
+                    description: Display label for the actor owner when known.
+                actor_owner_id:
+                    type: string
+                    description: Owner of an API credential or workload actor when known.
+                actor_type:
+                    type: string
+                    description: Actor class, for example user, api_credential, workload, service, or operator.
+                asn:
+                    type: string
+                    description: Locally enriched autonomous system number when configured.
+                asn_org:
+                    type: string
+                    description: Locally enriched autonomous system organization when configured.
                 audit_event:
                     type: string
                     description: Stable audit event name.
+                auth_method:
+                    type: string
+                    description: Authentication method used by the actor.
                 client_ip:
                     type: string
-                    description: Client IP observed at the service boundary.
+                    description: Client IP observed at the trusted service boundary.
+                client_ip_version:
+                    type: string
+                    description: IPv4 or IPv6.
                 content_sha256:
                     type: string
                     description: Canonical payload SHA-256.
+                credential_fingerprint:
+                    type: string
+                    description: Non-secret credential fingerprint when known.
+                credential_id:
+                    type: string
+                    description: Forge Metal API credential ID when the actor is a credential.
+                credential_name:
+                    type: string
+                    description: API credential display name when known.
+                decision:
+                    type: string
+                    description: Authorization decision.
+                denial_reason:
+                    type: string
+                    description: Stable denial reason when authorization denied the operation.
                 error_code:
                     type: string
                     description: Stable problem code when the operation failed.
                 error_message:
                     type: string
                     description: Redacted failure detail.
+                event_category:
+                    type: string
+                    description: Audit event family for filtering.
                 event_id:
                     type: string
                     description: Audit event UUID.
+                geo_country:
+                    type: string
+                    description: Locally enriched country code when configured.
+                geo_region:
+                    type: string
+                    description: Locally enriched region when configured.
+                hmac_key_id:
+                    type: string
+                    description: Audit HMAC key identifier.
                 idempotency_key_hash:
                     type: string
                     description: SHA-256 hash of the caller-provided idempotency key.
+                ip_chain:
+                    type: string
+                    description: Comma-separated proxy chain retained as request evidence.
+                mfa_present:
+                    type: boolean
+                    description: Whether MFA was present in the authenticated request context.
+                network_type:
+                    type: string
+                    description: Locally enriched network type when configured.
+                operation_display:
+                    type: string
+                    description: Short customer-facing operation label.
                 operation_id:
                     type: string
                     description: Stable OpenAPI operation ID.
+                operation_type:
+                    type: string
+                    description: read, write, delete, authn, authz, billing, export, system, or unknown.
                 org_id:
                     type: string
                     description: Organization ID derived from the caller's token.
@@ -314,18 +475,6 @@ components:
                 prev_hmac:
                     type: string
                     description: Previous audit row HMAC in the organization chain.
-                principal_email:
-                    type: string
-                    description: Email when available for human users.
-                principal_id:
-                    type: string
-                    description: Zitadel subject or service-account subject.
-                principal_type:
-                    type: string
-                    description: Principal class, for example user or api_credential.
-                rate_limit_class:
-                    type: string
-                    description: Rate-limit bucket applied to the operation.
                 recorded_at:
                     type: string
                     description: UTC time when the event was recorded.
@@ -333,15 +482,12 @@ components:
                 request_id:
                     type: string
                     description: Caller or service request ID when available.
-                resource_id:
-                    type: string
-                    description: Resource identifier when known and safe to expose.
-                resource_kind:
-                    type: string
-                    description: Resource kind declared by the operation catalog.
                 result:
                     type: string
                     description: allowed, denied, or error.
+                risk_level:
+                    type: string
+                    description: low, medium, high, or critical.
                 row_hmac:
                     type: string
                     description: Current audit row HMAC.
@@ -350,23 +496,50 @@ components:
                     description: Per-organization tamper-evident sequence number.
                 service_name:
                     type: string
-                    description: Service that enforced the operation.
+                    description: Internal service that enforced the operation.
+                source_product_area:
+                    type: string
+                    description: Customer-facing product area, for example Governance or Sandbox.
+                target_display:
+                    type: string
+                    description: Target display label when known.
+                target_id:
+                    type: string
+                    description: Target identifier when known and safe to expose.
+                target_kind:
+                    type: string
+                    description: Resource kind declared by the operation catalog.
+                target_scope:
+                    type: string
+                    description: Target scoping rule or resolved scope.
                 trace_id:
                     type: string
                     description: OpenTelemetry trace ID.
+                trust_class:
+                    type: string
+                    description: Trust class used by the policy decision.
+                user_agent_hash:
+                    type: string
+                    description: SHA-256 hash of the sanitized User-Agent.
             required:
                 - event_id
                 - recorded_at
                 - org_id
+                - source_product_area
                 - service_name
                 - operation_id
                 - audit_event
-                - principal_type
-                - principal_id
+                - operation_display
+                - operation_type
+                - event_category
+                - risk_level
+                - actor_type
+                - actor_id
+                - target_kind
                 - permission
-                - resource_kind
                 - action
                 - org_scope
+                - decision
                 - result
                 - sequence
                 - prev_hmac
@@ -399,11 +572,27 @@ components:
             type: object
             additionalProperties: false
             properties:
+                actor_id:
+                    type: string
+                audit_event:
+                    type: string
+                high_risk:
+                    type: boolean
                 operation_id:
+                    type: string
+                operation_type:
                     type: string
                 result:
                     type: string
+                risk_level:
+                    type: string
                 service_name:
+                    type: string
+                source_product_area:
+                    type: string
+                target_id:
+                    type: string
+                target_kind:
                     type: string
         GovernanceCreateExportRequest:
             type: object
@@ -533,6 +722,6 @@ components:
     securitySchemes:
         bearerAuth:
             type: http
-            description: Zitadel-issued bearer token scoped to the identity-service API audience.
+            description: Zitadel-issued bearer token scoped to the governance-service API audience.
             scheme: bearer
             bearerFormat: JWT

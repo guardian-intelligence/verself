@@ -56,6 +56,7 @@ func run() error {
 	authJWKSURL := envOr("GOVERNANCE_AUTH_JWKS_URL", "")
 	exportDir := envOr("GOVERNANCE_EXPORT_DIR", "/var/lib/governance-service/exports")
 	publicBaseURL := envOr("GOVERNANCE_PUBLIC_BASE_URL", "")
+	writerInstanceID := envOr("GOVERNANCE_WRITER_INSTANCE_ID", hostname())
 
 	pg, err := openPool(ctx, pgDSN, envInt("GOVERNANCE_PG_MAX_CONNS", 8))
 	if err != nil {
@@ -92,16 +93,20 @@ func run() error {
 	defer func() { _ = chConn.Close() }()
 
 	svc := &governance.Service{
-		PG:            pg,
-		IdentityPG:    identityPG,
-		BillingPG:     billingPG,
-		SandboxPG:     sandboxPG,
-		CH:            chConn,
-		Logger:        logger,
-		HMACKey:       auditHMACKey,
-		ExportDir:     exportDir,
-		ExportTTL:     time.Duration(envInt("GOVERNANCE_EXPORT_TTL_HOURS", 168)) * time.Hour,
-		PublicBaseURL: publicBaseURL,
+		PG:               pg,
+		IdentityPG:       identityPG,
+		BillingPG:        billingPG,
+		SandboxPG:        sandboxPG,
+		CH:               chConn,
+		Logger:           logger,
+		HMACKey:          auditHMACKey,
+		HMACKeyID:        envOr("GOVERNANCE_AUDIT_HMAC_KEY_ID", "governance-service.v1"),
+		ExportDir:        exportDir,
+		ExportTTL:        time.Duration(envInt("GOVERNANCE_EXPORT_TTL_HOURS", 168)) * time.Hour,
+		PublicBaseURL:    publicBaseURL,
+		Environment:      envOr("GOVERNANCE_ENVIRONMENT", "single-node"),
+		ServiceVersion:   "1.0.0",
+		WriterInstanceID: writerInstanceID,
 	}
 	if err := svc.Ready(ctx); err != nil {
 		return fmt.Errorf("governance readiness: %w", err)
@@ -207,6 +212,18 @@ func envOr(name, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func hostname() string {
+	name, err := os.Hostname()
+	if err != nil {
+		return "unknown"
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "unknown"
+	}
+	return name
 }
 
 func envInt(name string, fallback int) int {
