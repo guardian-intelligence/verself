@@ -20,6 +20,11 @@ func TestZitadelActionAppendsCredentialClaims(t *testing.T) {
 		result: identity.ResolveAPICredentialClaimsResult{
 			CredentialID: "credential-1",
 			OrgID:        "42",
+			DisplayName:  "deploy bot",
+			AuthMethod:   identity.APICredentialAuthMethodPrivateKeyJWT,
+			Fingerprint:  "sha256:abcdef",
+			OwnerID:      "owner-1",
+			OwnerDisplay: "owner@example.test",
 			Permissions:  []string{"sandbox:logs:read"},
 		},
 	}
@@ -44,6 +49,13 @@ func TestZitadelActionAppendsCredentialClaims(t *testing.T) {
 	}
 	if claims["forge_metal:credential_id"] != "credential-1" || claims["org_id"] != "42" {
 		t.Fatalf("missing identity claims: %#v", claims)
+	}
+	if claims["forge_metal:credential_name"] != "deploy bot" ||
+		claims["forge_metal:credential_fingerprint"] != "sha256:abcdef" ||
+		claims["forge_metal:credential_owner_id"] != "owner-1" ||
+		claims["forge_metal:credential_owner_display"] != "owner@example.test" ||
+		claims["forge_metal:credential_auth_method"] != "private_key_jwt" {
+		t.Fatalf("missing credential audit claims: %#v", claims)
 	}
 	permissions, ok := claims["permissions"].([]any)
 	if !ok || len(permissions) != 1 || permissions[0] != "sandbox:logs:read" {

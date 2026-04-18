@@ -19,7 +19,7 @@ test.describe("Rent-a-Sandbox Organization", () => {
         "Members",
         "Member capabilities",
         "Deploy executions",
-        "Manage repositories",
+        "View volumes",
         "Invite members",
         "View billing",
       ]);
@@ -31,16 +31,13 @@ test.describe("Rent-a-Sandbox Organization", () => {
           "Members",
           "Member capabilities",
           "Deploy executions",
-          "Manage repositories",
+          "View volumes",
           "Owner",
         ],
       });
 
-      await expect(app.page.getByRole("button", { name: "Invite member" })).toBeEnabled();
-      // Save capabilities starts disabled until the switchboard becomes dirty.
-      // Asserting visibility is enough here; a separate test will exercise
-      // toggle → save → reload persistence once stable.
-      await expect(app.page.getByRole("button", { name: "Save capabilities" })).toBeVisible();
+      await expect(app.page.getByRole("button", { name: "Invite" })).toBeEnabled();
+      await expect(app.page.getByRole("switch", { name: "View volumes" })).toBeChecked();
 
       run.detail_url = "/settings/organization";
       run.status = "succeeded";

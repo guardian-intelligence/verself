@@ -1304,12 +1304,18 @@ paths:
       x-forge-metal-iam:
         action: create
         audit_event: billing.checkout.create
+        data_classification: restricted
+        event_category: billing
         idempotency: idempotency_key_header
+        operation_display: create billing checkout
+        operation_type: write
         org_scope: token_org_id
         permission: billing:checkout
         rate_limit_class: billing_mutation
         request_body_max_bytes: 8192
         resource: billing_checkout
+        risk_level: high
+        source_product_area: Billing
   /api/v1/billing/contracts:
     get:
       operationId: list-billing-contracts
@@ -1332,10 +1338,16 @@ paths:
       x-forge-metal-iam:
         action: list
         audit_event: billing.contract.list
+        data_classification: restricted
+        event_category: billing
+        operation_display: list billing contracts
+        operation_type: read
         org_scope: token_org_id
         permission: billing:read
         rate_limit_class: read
         resource: billing_contract
+        risk_level: low
+        source_product_area: Billing
     post:
       operationId: create-billing-contract
       parameters:
@@ -1372,12 +1384,18 @@ paths:
       x-forge-metal-iam:
         action: create
         audit_event: billing.contract_checkout.create
+        data_classification: restricted
+        event_category: billing
         idempotency: idempotency_key_header
+        operation_display: create billing contract
+        operation_type: write
         org_scope: token_org_id
         permission: billing:checkout
         rate_limit_class: billing_mutation
         request_body_max_bytes: 8192
         resource: billing_contract_checkout
+        risk_level: high
+        source_product_area: Billing
   /api/v1/billing/contracts/{contract_id}/cancel:
     post:
       operationId: cancel-billing-contract
@@ -1416,12 +1434,18 @@ paths:
       x-forge-metal-iam:
         action: cancel
         audit_event: billing.contract.cancel
+        data_classification: restricted
+        event_category: billing
         idempotency: idempotency_key_header
+        operation_display: cancel billing contract
+        operation_type: delete
         org_scope: token_org_id
         permission: billing:checkout
         rate_limit_class: billing_mutation
         request_body_max_bytes: 1024
         resource: billing_contract
+        risk_level: high
+        source_product_area: Billing
   /api/v1/billing/contracts/{contract_id}/changes:
     post:
       operationId: create-billing-contract-change
@@ -1466,12 +1490,18 @@ paths:
       x-forge-metal-iam:
         action: create
         audit_event: billing.contract_change.create
+        data_classification: restricted
+        event_category: billing
         idempotency: idempotency_key_header
+        operation_display: create billing contract change
+        operation_type: write
         org_scope: token_org_id
         permission: billing:checkout
         rate_limit_class: billing_mutation
         request_body_max_bytes: 8192
         resource: billing_contract_change
+        risk_level: high
+        source_product_area: Billing
   /api/v1/billing/entitlements:
     get:
       operationId: get-billing-entitlements
@@ -1494,10 +1524,16 @@ paths:
       x-forge-metal-iam:
         action: read
         audit_event: billing.entitlements.read
+        data_classification: restricted
+        event_category: billing
+        operation_display: get billing entitlements
+        operation_type: read
         org_scope: token_org_id
         permission: billing:read
         rate_limit_class: read
         resource: billing_entitlements
+        risk_level: low
+        source_product_area: Billing
   /api/v1/billing/plans:
     get:
       operationId: list-billing-plans
@@ -1520,10 +1556,16 @@ paths:
       x-forge-metal-iam:
         action: list
         audit_event: billing.plan.list
+        data_classification: restricted
+        event_category: billing
+        operation_display: list billing plans
+        operation_type: read
         org_scope: token_org_id
         permission: billing:read
         rate_limit_class: read
         resource: billing_plan
+        risk_level: low
+        source_product_area: Billing
   /api/v1/billing/portal:
     post:
       operationId: create-billing-portal
@@ -1561,12 +1603,18 @@ paths:
       x-forge-metal-iam:
         action: create
         audit_event: billing.portal.create
+        data_classification: restricted
+        event_category: billing
         idempotency: idempotency_key_header
+        operation_display: create billing portal
+        operation_type: write
         org_scope: token_org_id
         permission: billing:checkout
         rate_limit_class: billing_mutation
         request_body_max_bytes: 8192
         resource: billing_portal
+        risk_level: high
+        source_product_area: Billing
   /api/v1/billing/statement:
     get:
       operationId: get-billing-statement
@@ -1600,10 +1648,16 @@ paths:
       x-forge-metal-iam:
         action: read
         audit_event: billing.statement.read
+        data_classification: restricted
+        event_category: billing
+        operation_display: get billing statement
+        operation_type: read
         org_scope: token_org_id
         permission: billing:read
         rate_limit_class: read
         resource: billing_statement
+        risk_level: low
+        source_product_area: Billing
   /api/v1/executions:
     post:
       operationId: submit-execution
@@ -1632,12 +1686,18 @@ paths:
       x-forge-metal-iam:
         action: submit
         audit_event: sandbox.execution.submit
+        data_classification: restricted
+        event_category: sandbox
         idempotency: request_body_idempotency_key
+        operation_display: submit execution
+        operation_type: write
         org_scope: token_org_id
         permission: sandbox:execution:submit
         rate_limit_class: execution_submit
         request_body_max_bytes: 65536
         resource: execution
+        risk_level: high
+        source_product_area: Sandbox
   /api/v1/executions/{execution_id}:
     get:
       operationId: get-execution
@@ -1668,10 +1728,16 @@ paths:
       x-forge-metal-iam:
         action: read
         audit_event: sandbox.execution.read
+        data_classification: restricted
+        event_category: sandbox
+        operation_display: get execution
+        operation_type: read
         org_scope: token_org_id
         permission: sandbox:execution:read
         rate_limit_class: read
         resource: execution
+        risk_level: low
+        source_product_area: Sandbox
   /api/v1/executions/{execution_id}/logs:
     get:
       operationId: get-execution-logs
@@ -1702,10 +1768,16 @@ paths:
       x-forge-metal-iam:
         action: read
         audit_event: sandbox.execution.logs.read
+        data_classification: restricted
+        event_category: sandbox
+        operation_display: get execution logs
+        operation_type: read
         org_scope: token_org_id
         permission: sandbox:logs:read
         rate_limit_class: logs_read
         resource: execution_logs
+        risk_level: low
+        source_product_area: Sandbox
   /api/v1/github/installations:
     get:
       operationId: list-github-installations
@@ -1731,10 +1803,16 @@ paths:
       x-forge-metal-iam:
         action: list
         audit_event: sandbox.github_installation.list
+        data_classification: restricted
+        event_category: integration
+        operation_display: list github installations
+        operation_type: read
         org_scope: token_org_id
         permission: sandbox:github_installation:read
         rate_limit_class: read
         resource: github_installation
+        risk_level: low
+        source_product_area: Sandbox
   /api/v1/github/installations/connect:
     post:
       operationId: begin-github-installation
@@ -1766,12 +1844,18 @@ paths:
       x-forge-metal-iam:
         action: connect
         audit_event: sandbox.github_installation.connect
+        data_classification: restricted
+        event_category: integration
         idempotency: idempotency_key_header
+        operation_display: begin github installation
+        operation_type: write
         org_scope: token_org_id
         permission: sandbox:github_installation:write
         rate_limit_class: github_installation_mutation
         request_body_max_bytes: 1024
         resource: github_installation
+        risk_level: high
+        source_product_area: Sandbox
   /api/v1/volumes:
     get:
       operationId: list-volumes
@@ -1797,10 +1881,16 @@ paths:
       x-forge-metal-iam:
         action: list
         audit_event: sandbox.volume.list
+        data_classification: restricted
+        event_category: sandbox
+        operation_display: list volumes
+        operation_type: read
         org_scope: token_org_id
         permission: sandbox:volume:read
         rate_limit_class: read
         resource: volume
+        risk_level: low
+        source_product_area: Sandbox
     post:
       operationId: create-volume
       requestBody:
@@ -1828,12 +1918,18 @@ paths:
       x-forge-metal-iam:
         action: create
         audit_event: sandbox.volume.create
+        data_classification: restricted
+        event_category: sandbox
         idempotency: request_body_idempotency_key
+        operation_display: create volume
+        operation_type: write
         org_scope: token_org_id
         permission: sandbox:volume:write
         rate_limit_class: volume_mutation
         request_body_max_bytes: 8192
         resource: volume
+        risk_level: high
+        source_product_area: Sandbox
   /api/v1/volumes/{volume_id}:
     get:
       operationId: get-volume
@@ -1864,9 +1960,15 @@ paths:
       x-forge-metal-iam:
         action: read
         audit_event: sandbox.volume.read
+        data_classification: restricted
+        event_category: sandbox
+        operation_display: get volume
+        operation_type: read
         org_scope: token_org_id
         permission: sandbox:volume:read
         rate_limit_class: read
         resource: volume
+        risk_level: low
+        source_product_area: Sandbox
 servers:
   - url: http://127.0.0.1:4243

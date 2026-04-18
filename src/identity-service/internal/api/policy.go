@@ -2,10 +2,12 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -45,14 +47,20 @@ const (
 )
 
 type operationPolicy struct {
-	Permission     permission
-	Resource       string
-	Action         string
-	OrgScope       string
-	RateLimitClass string
-	Idempotency    string
-	AuditEvent     string
-	BodyLimitBytes int64
+	Permission         permission
+	Resource           string
+	Action             string
+	OrgScope           string
+	RateLimitClass     string
+	Idempotency        string
+	AuditEvent         string
+	SourceProductArea  string
+	OperationDisplay   string
+	OperationType      string
+	EventCategory      string
+	RiskLevel          string
+	DataClassification string
+	BodyLimitBytes     int64
 }
 
 type securedOperation struct {
@@ -73,20 +81,21 @@ func registerSecured[I, O any](api huma.API, svc *identity.Service, securedOp se
 	if !strings.HasPrefix(op.Path, "/api/") {
 		panic("secured public API route must live under /api/: " + op.OperationID)
 	}
+	policy = normalizeOperationPolicy(op.OperationID, policy)
 	op = withOperationPolicy(op, policy)
 	op.Middlewares = append(op.Middlewares, operationRequestMiddleware)
 	huma.Register(api, op, func(ctx context.Context, input *I) (*O, error) {
 		identity, err := enforceOperationPolicy(ctx, svc, policy)
 		if err != nil {
-			auditOperation(ctx, op.OperationID, policy, identity, "denied", err)
+			auditOperation(ctx, op.OperationID, policy, identity, input, nil, "denied", err)
 			return nil, err
 		}
 		output, err := handler(ctx, input)
 		if err != nil {
-			auditOperation(ctx, op.OperationID, policy, identity, "error", err)
+			auditOperation(ctx, op.OperationID, policy, identity, input, nil, "error", err)
 			return nil, err
 		}
-		auditOperation(ctx, op.OperationID, policy, identity, "allowed", nil)
+		auditOperation(ctx, op.OperationID, policy, identity, input, output, "allowed", nil)
 		return output, nil
 	})
 }
@@ -110,6 +119,9 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 	if policy.AuditEvent == "" {
 		panic("empty audit event for operation: " + op.OperationID)
 	}
+	if policy.SourceProductArea == "" || policy.OperationDisplay == "" || policy.OperationType == "" || policy.EventCategory == "" || policy.RiskLevel == "" || policy.DataClassification == "" {
+		panic("empty audit classification for operation: " + op.OperationID)
+	}
 	if operationRequiresBodyBudget(op) && policy.BodyLimitBytes <= 0 {
 		panic("empty request body limit for mutating operation: " + op.OperationID)
 	}
@@ -127,12 +139,18 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 		op.Extensions = map[string]any{}
 	}
 	iam := map[string]any{
-		"permission":       string(policy.Permission),
-		"resource":         policy.Resource,
-		"action":           policy.Action,
-		"org_scope":        policy.OrgScope,
-		"rate_limit_class": policy.RateLimitClass,
-		"audit_event":      policy.AuditEvent,
+		"permission":          string(policy.Permission),
+		"resource":            policy.Resource,
+		"action":              policy.Action,
+		"org_scope":           policy.OrgScope,
+		"rate_limit_class":    policy.RateLimitClass,
+		"audit_event":         policy.AuditEvent,
+		"source_product_area": policy.SourceProductArea,
+		"operation_display":   policy.OperationDisplay,
+		"operation_type":      policy.OperationType,
+		"event_category":      policy.EventCategory,
+		"risk_level":          policy.RiskLevel,
+		"data_classification": policy.DataClassification,
 	}
 	if policy.Idempotency != "" {
 		iam["idempotency"] = policy.Idempotency
@@ -297,13 +315,15 @@ func clientIPFromHuma(ctx huma.Context) string {
 	return remote
 }
 
-func auditOperation(ctx context.Context, operationID string, policy operationPolicy, identity *auth.Identity, outcome string, err error) {
+func auditOperation(ctx context.Context, operationID string, policy operationPolicy, identity *auth.Identity, input any, output any, outcome string, err error) {
 	args := []any{
 		"audit_event", policy.AuditEvent,
 		"operation_id", operationID,
 		"operation_permission", policy.Permission,
 		"operation_resource", policy.Resource,
 		"operation_action", policy.Action,
+		"operation_type", policy.OperationType,
+		"risk_level", policy.RiskLevel,
 		"rate_limit_class", policy.RateLimitClass,
 		"outcome", outcome,
 	}
@@ -319,32 +339,187 @@ func auditOperation(ctx context.Context, operationID string, policy operationPol
 	}
 	info := operationRequestInfoFromContext(ctx)
 	principalType := "user"
-	if credentialID, _ := identity.Raw["forge_metal:credential_id"].(string); strings.TrimSpace(credentialID) != "" {
+	credentialID := claimString(identity.Raw, "forge_metal:credential_id")
+	if credentialID != "" {
 		principalType = "api_credential"
 	}
+	targetID, targetDisplay := targetFromBoundary(input, output)
 	record := governanceAuditRecord{
-		OrgID:              identity.OrgID,
-		ServiceName:        "identity-service",
-		OperationID:        operationID,
-		AuditEvent:         policy.AuditEvent,
-		PrincipalType:      principalType,
-		PrincipalID:        identity.Subject,
-		PrincipalEmail:     identity.Email,
-		Permission:         string(policy.Permission),
-		ResourceKind:       policy.Resource,
-		Action:             policy.Action,
-		OrgScope:           policy.OrgScope,
-		RateLimitClass:     policy.RateLimitClass,
-		Result:             outcome,
-		ClientIP:           info.ClientIP,
-		UserAgent:          info.UserAgent,
-		IdempotencyKeyHash: hashTextForAudit(info.IdempotencyKey),
+		OrgID:                 identity.OrgID,
+		SourceProductArea:     policy.SourceProductArea,
+		ServiceName:           "identity-service",
+		OperationID:           operationID,
+		AuditEvent:            policy.AuditEvent,
+		OperationDisplay:      policy.OperationDisplay,
+		OperationType:         policy.OperationType,
+		EventCategory:         policy.EventCategory,
+		RiskLevel:             policy.RiskLevel,
+		DataClassification:    policy.DataClassification,
+		ActorType:             principalType,
+		ActorID:               identity.Subject,
+		ActorDisplay:          identity.Email,
+		ActorOwnerID:          claimString(identity.Raw, "forge_metal:credential_owner_id"),
+		ActorOwnerDisplay:     claimString(identity.Raw, "forge_metal:credential_owner_display"),
+		CredentialID:          credentialID,
+		CredentialName:        claimString(identity.Raw, "forge_metal:credential_name"),
+		CredentialFingerprint: claimString(identity.Raw, "forge_metal:credential_fingerprint"),
+		AuthMethod:            claimString(identity.Raw, "forge_metal:credential_auth_method"),
+		Permission:            string(policy.Permission),
+		TargetKind:            policy.Resource,
+		TargetID:              targetID,
+		TargetDisplay:         targetDisplay,
+		TargetScope:           policy.OrgScope,
+		Action:                policy.Action,
+		OrgScope:              policy.OrgScope,
+		RateLimitClass:        policy.RateLimitClass,
+		Decision:              outcomeDecision(outcome),
+		Result:                outcome,
+		ClientIP:              info.ClientIP,
+		IPChain:               info.ClientIP,
+		IPChainTrustedHops:    1,
+		UserAgentRaw:          info.UserAgent,
+		IdempotencyKeyHash:    hashTextForAudit(info.IdempotencyKey),
 	}
 	if err != nil {
-		record.ErrorCode = "operation-failed"
+		record.ErrorCode = problemCode(err)
+		record.ErrorClass = "application"
 		record.ErrorMessage = err.Error()
+		if outcome == "denied" {
+			record.DenialReason = record.ErrorCode
+		}
 	}
 	sendGovernanceAudit(ctx, record)
+}
+
+func targetFromBoundary(input any, output any) (string, string) {
+	if targetID, targetDisplay := targetFromValue(output); targetID != "" || targetDisplay != "" {
+		return targetID, targetDisplay
+	}
+	return targetFromValue(input)
+}
+
+func targetFromValue(input any) (string, string) {
+	value := reflectValue(input)
+	for _, fieldName := range []string{"CredentialID", "UserID", "OrgID", "ID"} {
+		if text := stringField(value, fieldName); text != "" {
+			return text, text
+		}
+	}
+	if !value.IsValid() || value.Kind() != reflect.Struct {
+		return "", ""
+	}
+	body := value.FieldByName("Body")
+	if body.IsValid() {
+		body = reflectValue(body.Interface())
+		for _, fieldName := range []string{"CredentialID", "UserID", "OrgID", "ID"} {
+			if text := stringField(body, fieldName); text != "" {
+				return text, text
+			}
+		}
+	}
+	return "", ""
+}
+
+func reflectValue(input any) reflect.Value {
+	value := reflect.ValueOf(input)
+	for value.IsValid() && (value.Kind() == reflect.Pointer || value.Kind() == reflect.Interface) {
+		if value.IsNil() {
+			return reflect.Value{}
+		}
+		value = value.Elem()
+	}
+	return value
+}
+
+func stringField(value reflect.Value, name string) string {
+	if !value.IsValid() || value.Kind() != reflect.Struct {
+		return ""
+	}
+	field := value.FieldByName(name)
+	if !field.IsValid() || field.Kind() != reflect.String {
+		return ""
+	}
+	return strings.TrimSpace(field.String())
+}
+
+func claimString(claims map[string]any, key string) string {
+	if claims == nil {
+		return ""
+	}
+	value, _ := claims[key].(string)
+	return strings.TrimSpace(value)
+}
+
+func normalizeOperationPolicy(operationID string, policy operationPolicy) operationPolicy {
+	policy.SourceProductArea = firstNonEmpty(policy.SourceProductArea, "Identity")
+	policy.OperationDisplay = firstNonEmpty(policy.OperationDisplay, operationDisplay(operationID))
+	policy.OperationType = firstNonEmpty(policy.OperationType, operationType(policy))
+	policy.EventCategory = firstNonEmpty(policy.EventCategory, "identity")
+	policy.RiskLevel = firstNonEmpty(policy.RiskLevel, riskLevel(policy))
+	policy.DataClassification = firstNonEmpty(policy.DataClassification, "restricted")
+	return policy
+}
+
+func operationDisplay(operationID string) string {
+	return strings.ReplaceAll(strings.TrimSpace(operationID), "-", " ")
+}
+
+func operationType(policy operationPolicy) string {
+	switch policy.Action {
+	case "read", "list":
+		return "read"
+	case "delete", "revoke":
+		return "delete"
+	default:
+		return "write"
+	}
+}
+
+func riskLevel(policy operationPolicy) string {
+	event := policy.AuditEvent
+	switch {
+	case strings.Contains(event, "api_credential") || strings.Contains(event, "member_capabilities") || strings.Contains(event, "roles.write") || strings.Contains(event, "member.invite"):
+		return "high"
+	case policy.Action == "read" || policy.Action == "list":
+		return "medium"
+	default:
+		return "medium"
+	}
+}
+
+func outcomeDecision(outcome string) string {
+	switch outcome {
+	case "allowed":
+		return "allow"
+	case "denied":
+		return "deny"
+	case "error":
+		return "error"
+	default:
+		return ""
+	}
+}
+
+func problemCode(err error) string {
+	var model *huma.ErrorModel
+	if errors.As(err, &model) {
+		if model.Type != "" {
+			if index := strings.LastIndex(model.Type, ":"); index >= 0 && index+1 < len(model.Type) {
+				return model.Type[index+1:]
+			}
+			return model.Type
+		}
+	}
+	return "operation-failed"
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 type rateLimitRule struct {

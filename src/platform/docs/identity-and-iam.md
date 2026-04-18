@@ -330,18 +330,21 @@ Issuance and roll must validate every requested permission against the current
 service-declared operation catalog and against the creating principal's
 effective permissions. A caller cannot mint a credential with permissions they
 do not currently hold. Credential scopes are exact operation permissions such as
-`sandbox:execution:submit`, `sandbox:github:write`, `sandbox:logs:read`,
-`billing:read`, and future CI operations such as `ci:workflow:dispatch`.
+`sandbox:execution:submit`, `sandbox:github_installation:write`,
+`sandbox:logs:read`, `sandbox:volume:read`, `billing:read`, and future CI
+operations such as `ci:workflow:dispatch`.
 
 Token minting uses a Zitadel pre-access-token Action. The signed Action
 callback is exposed through Caddy on `auth.<domain>` because Zitadel rejects
 loopback/private target URLs. The Action appends `forge_metal:credential_id`,
+non-secret credential metadata (`forge_metal:credential_name`,
+`forge_metal:credential_fingerprint`, owner id/display, and auth method),
 `org_id`, and an exact `permissions` claim from Forge Metal-owned credential
-metadata. It must not embed full Forge Metal policy
-documents into the token. If the Action cannot resolve an active credential or
-exact permission set, the token must not receive Forge Metal direct-permission
-claims; services already fail closed because direct permission claims are only
-accepted when the credential marker and organization scope are present.
+metadata. It must not embed full Forge Metal policy documents into the token.
+If the Action cannot resolve an active credential or exact permission set, the
+token must not receive Forge Metal direct-permission claims; services already
+fail closed because direct permission claims are only accepted when the
+credential marker and organization scope are present.
 
 Product services must continue to verify issuer, signature, expiration, and
 audience, but audience is not authorization. Zitadel can place requested
@@ -535,6 +538,7 @@ services still need roles, scopes, or custom claims:
 <https://help.zitadel.com/security-best-practices-validating-audience-aud-claims-in-zitadel-access-tokens>
 
 Zitadel Actions can append permission claims during pre-access-token issuance.
-Forge Metal uses that as the mechanism for `forge_metal:credential_id` plus
-exact API credential permissions, not as a place to store full product policy:
+Forge Metal uses that as the mechanism for `forge_metal:credential_id`,
+non-secret credential audit metadata, and exact API credential permissions, not
+as a place to store full product policy:
 <https://help.zitadel.com/extend-authorization-in-zitadel-with-organization-metadata-preaccesstoken-action->

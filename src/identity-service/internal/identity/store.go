@@ -283,32 +283,44 @@ func (s SQLStore) ResolveAPICredentialClaims(ctx context.Context, subjectID stri
 	if s.DB == nil {
 		return ResolveAPICredentialClaimsResult{}, ErrStoreUnavailable
 	}
-	var credentialID, orgID string
+	var result ResolveAPICredentialClaimsResult
+	var authMethod string
 	err := s.DB.QueryRowContext(ctx, `
-SELECT credential_id, org_id
-FROM identity_api_credentials
-WHERE subject_id = $1
-  AND status = 'active'
-  AND (expires_at IS NULL OR expires_at > $2)
-`, subjectID, usedAt).Scan(&credentialID, &orgID)
+SELECT c.credential_id, c.org_id, c.display_name, c.auth_method,
+       COALESCE((
+           SELECT s.fingerprint
+           FROM identity_api_credential_secrets s
+           WHERE s.credential_id = c.credential_id AND s.revoked_at IS NULL
+           ORDER BY s.created_at DESC
+           LIMIT 1
+       ), '') AS fingerprint,
+       c.created_by
+FROM identity_api_credentials c
+WHERE c.subject_id = $1
+  AND c.status = 'active'
+  AND (c.expires_at IS NULL OR c.expires_at > $2)
+`, subjectID, usedAt).Scan(&result.CredentialID, &result.OrgID, &result.DisplayName, &authMethod, &result.Fingerprint, &result.OwnerID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ResolveAPICredentialClaimsResult{}, ErrAPICredentialMissing
 	}
 	if err != nil {
 		return ResolveAPICredentialClaimsResult{}, fmt.Errorf("resolve api credential claims: %w", err)
 	}
-	permissions, err := s.apiCredentialPermissions(ctx, credentialID)
+	result.AuthMethod = APICredentialAuthMethod(authMethod)
+	result.OwnerDisplay = result.OwnerID
+	permissions, err := s.apiCredentialPermissions(ctx, result.CredentialID)
 	if err != nil {
 		return ResolveAPICredentialClaimsResult{}, err
 	}
+	result.Permissions = permissions
 	if _, err := s.DB.ExecContext(ctx, `
 UPDATE identity_api_credentials
 SET last_used_at = $2, updated_at = $2
 WHERE credential_id = $1
-`, credentialID, usedAt); err != nil {
+`, result.CredentialID, usedAt); err != nil {
 		return ResolveAPICredentialClaimsResult{}, fmt.Errorf("record api credential use: %w", err)
 	}
-	return ResolveAPICredentialClaimsResult{CredentialID: credentialID, OrgID: orgID, Permissions: permissions}, nil
+	return result, nil
 }
 
 func apiCredentialSelectSQL() string {

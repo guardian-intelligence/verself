@@ -184,6 +184,11 @@ type RollAPICredentialResult struct {
 type ResolveAPICredentialClaimsResult struct {
 	CredentialID string
 	OrgID        string
+	DisplayName  string
+	AuthMethod   APICredentialAuthMethod
+	Fingerprint  string
+	OwnerID      string
+	OwnerDisplay string
 	Permissions  []string
 }
 

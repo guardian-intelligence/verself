@@ -42,15 +42,12 @@ var defaultCapabilities = []Capability{
 		},
 	},
 	{
-		Key:            "manage_repositories",
-		Label:          "Manage repositories",
-		Description:    "Import, list, and rescan repositories. Create and rotate webhook endpoints.",
+		Key:            "view_volumes",
+		Label:          "View volumes",
+		Description:    "List durable volumes and read their current state.",
 		DefaultEnabled: true,
 		Permissions: []string{
-			PermissionSandboxRepoRead,
-			PermissionSandboxRepoWrite,
-			PermissionSandboxWebhookRead,
-			PermissionSandboxWebhookWrite,
+			PermissionSandboxVolumeRead,
 		},
 	},
 	{

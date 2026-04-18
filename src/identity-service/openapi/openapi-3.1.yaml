@@ -559,10 +559,16 @@ paths:
       x-forge-metal-iam:
         action: read
         audit_event: identity.organization.read
+        data_classification: restricted
+        event_category: identity
+        operation_display: get organization
+        operation_type: read
         org_scope: token_org_id
         permission: identity:organization:read
         rate_limit_class: read
         resource: organization
+        risk_level: medium
+        source_product_area: Identity
   /api/v1/organization/api-credentials:
     get:
       operationId: list-api-credentials
@@ -585,10 +591,16 @@ paths:
       x-forge-metal-iam:
         action: list
         audit_event: identity.api_credential.list
+        data_classification: restricted
+        event_category: identity
+        operation_display: list api credentials
+        operation_type: read
         org_scope: token_org_id
         permission: identity:api_credentials:read
         rate_limit_class: read
         resource: api_credential
+        risk_level: high
+        source_product_area: Identity
     post:
       operationId: create-api-credential
       parameters:
@@ -625,12 +637,18 @@ paths:
       x-forge-metal-iam:
         action: create
         audit_event: identity.api_credential.create
+        data_classification: restricted
+        event_category: identity
         idempotency: idempotency_key_header
+        operation_display: create api credential
+        operation_type: write
         org_scope: token_org_id
         permission: identity:api_credentials:create
         rate_limit_class: api_credential_mutation
         request_body_max_bytes: 16384
         resource: api_credential
+        risk_level: high
+        source_product_area: Identity
   /api/v1/organization/api-credentials/{credential_id}:
     delete:
       operationId: revoke-api-credential
@@ -669,12 +687,18 @@ paths:
       x-forge-metal-iam:
         action: revoke
         audit_event: identity.api_credential.revoke
+        data_classification: restricted
+        event_category: identity
         idempotency: idempotency_key_header
+        operation_display: revoke api credential
+        operation_type: delete
         org_scope: token_org_id
         permission: identity:api_credentials:revoke
         rate_limit_class: api_credential_mutation
         request_body_max_bytes: 1024
         resource: api_credential
+        risk_level: high
+        source_product_area: Identity
     get:
       operationId: get-api-credential
       parameters:
@@ -704,10 +728,16 @@ paths:
       x-forge-metal-iam:
         action: read
         audit_event: identity.api_credential.read
+        data_classification: restricted
+        event_category: identity
+        operation_display: get api credential
+        operation_type: read
         org_scope: token_org_id
         permission: identity:api_credentials:read
         rate_limit_class: read
         resource: api_credential
+        risk_level: high
+        source_product_area: Identity
   /api/v1/organization/api-credentials/{credential_id}/roll:
     post:
       operationId: roll-api-credential
@@ -752,12 +782,18 @@ paths:
       x-forge-metal-iam:
         action: roll
         audit_event: identity.api_credential.roll
+        data_classification: restricted
+        event_category: identity
         idempotency: idempotency_key_header
+        operation_display: roll api credential
+        operation_type: write
         org_scope: token_org_id
         permission: identity:api_credentials:roll
         rate_limit_class: api_credential_mutation
         request_body_max_bytes: 16384
         resource: api_credential
+        risk_level: high
+        source_product_area: Identity
   /api/v1/organization/member-capabilities:
     get:
       operationId: get-organization-member-capabilities
@@ -780,10 +816,16 @@ paths:
       x-forge-metal-iam:
         action: read
         audit_event: identity.organization.member_capabilities.read
+        data_classification: restricted
+        event_category: identity
+        operation_display: get organization member capabilities
+        operation_type: read
         org_scope: token_org_id
         permission: identity:member_capabilities:read
         rate_limit_class: read
         resource: organization_member_capabilities
+        risk_level: high
+        source_product_area: Identity
     put:
       operationId: put-organization-member-capabilities
       parameters:
@@ -820,12 +862,18 @@ paths:
       x-forge-metal-iam:
         action: write
         audit_event: identity.organization.member_capabilities.write
+        data_classification: restricted
+        event_category: identity
         idempotency: idempotency_key_header
+        operation_display: put organization member capabilities
+        operation_type: write
         org_scope: token_org_id
         permission: identity:member_capabilities:write
         rate_limit_class: member_capabilities_mutation
         request_body_max_bytes: 16384
         resource: organization_member_capabilities
+        risk_level: high
+        source_product_area: Identity
   /api/v1/organization/members:
     get:
       operationId: list-organization-members
@@ -848,10 +896,16 @@ paths:
       x-forge-metal-iam:
         action: list
         audit_event: identity.organization.member.list
+        data_classification: restricted
+        event_category: identity
+        operation_display: list organization members
+        operation_type: read
         org_scope: token_org_id
         permission: identity:member:read
         rate_limit_class: read
         resource: organization_member
+        risk_level: medium
+        source_product_area: Identity
     post:
       operationId: invite-organization-member
       parameters:
@@ -888,12 +942,18 @@ paths:
       x-forge-metal-iam:
         action: invite
         audit_event: identity.organization.member.invite
+        data_classification: restricted
+        event_category: identity
         idempotency: idempotency_key_header
+        operation_display: invite organization member
+        operation_type: write
         org_scope: token_org_id
         permission: identity:member:invite
         rate_limit_class: member_mutation
         request_body_max_bytes: 16384
         resource: organization_member
+        risk_level: high
+        source_product_area: Identity
   /api/v1/organization/members/{user_id}/roles:
     put:
       operationId: update-organization-member-roles
@@ -938,11 +998,17 @@ paths:
       x-forge-metal-iam:
         action: write
         audit_event: identity.organization.member.roles.write
+        data_classification: restricted
+        event_category: identity
         idempotency: idempotency_key_header
+        operation_display: update organization member roles
+        operation_type: write
         org_scope: token_org_id
         permission: identity:member:roles:write
         rate_limit_class: member_mutation
         request_body_max_bytes: 16384
         resource: organization_member_roles
+        risk_level: high
+        source_product_area: Identity
 servers:
   - url: http://127.0.0.1:4248
