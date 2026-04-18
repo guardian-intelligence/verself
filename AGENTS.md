@@ -1,16 +1,6 @@
 # forge-metal
 
 <!--
-Top-level XML tags group content by intent so the reader can tell rules apart from facts:
-
-  <repo_overview>       — the repo at a glance
-  <product_direction>   — Goals (what we are building toward)
-  <system_context>      — architecture and operational constraints today
-  <operational_runbook> — concrete commands, playbooks, and pointers for doing work
-  <agent_contract>      — behavioral rules the AI assistant must follow
-                          (subdivided: general_conduct, tool_use, output, coding)
-  <instruction_priority>— overrides that win against everything else
-
 Where sections seem to disagree, remember: <system_context> describes the system
 as it exists today, and <product_direction> describes where it is headed.
 Proposals should respect both, not collapse one into the other.
@@ -29,13 +19,22 @@ Run `make pg-list` to list the pg databases.
 
 </repo_overview>
 
+<product_policy>
+See src/viteplus-monorepo/apps/platform/src/routes/policy for public commitments regarding:
+
+* Data Processing
+* Acceptable Use
+* Security
+* SLA
+* Data Retention
+
+</product_policy>
 <product_direction>
 
 ## Direction
-* Each project under src/ should be treated as it's own open-source repo (even though it's not technically its own repo yet).
+* Each project under src/ should be treated as it's own public open-source repo
 * vm-orchestrator (Go daemon) is the single privileged host process that manages Firecracker VMs: ZFS clones/checkpoints, TAP networking, jailer lifecycle, vm-bridge control, and guest telemetry aggregation. It exposes a gRPC API over a Unix socket for service callers. vm-guest-telemetry (Zig) is the minimal guest agent streaming 60Hz health samples over vsock. sandbox-rental-service is the product control plane layered on that substrate.
 * Runtime product services must never receive privileged host access. All ZFS, Firecracker, TAP, jailer, `/dev/kvm`, and `/dev/zvol` operations go through vm-orchestrator; services carry policy-checked refs over the orchestrator API, not host paths, dataset names, device paths, or privileged CLIs.
-* Avoid CLIs. Things talk to each other over HTTP. 
 * Broad direction: every service should do the following:
         1. Be designed for use by customers in a multi-tenant, organization-based fashion and integrated into our policy and billing abstractions.
         2. Be designed such that we are the principal customers (dogfooding, essentially). We go through the same policy and billing abstractions, except our usage is unlimited and our bill at invoice time nets to 0 after applying an adjustment. Currently not doing Mail because that's pretty simple but it would be good to dogfood that too.
@@ -148,11 +147,13 @@ Self-hosted inbound mail is done via Stalwart. See src/mailbox-service/docs/inbo
 
 ## Context
 
+* Avoid CLIs. Things talk to each other over HTTP. 
+
 Key focus areas for this project
 
 * Secure by default, above and beyond most SaaS provided options. Security must be regularly audited and verified (still working on this)
 * Cheap -- the operator, when starting and operating their business. They only pay for compute and object storage which are commodity priced, not for DataDog's operating margin.
-* [aspirational, not yet fully implemented] Solves genuinely difficult problems faced by businesses - Lowering a price for a product should be easy and fast: when the operator of the company reduces the price of a metered product, customer billing pages should update, marketing pages' pricing sections should update, emails should go out to customers, end-of-month invoices should reflect usage at both old and new prices, metering should update at a specified effective_at field, customer support agents (not yet implemented) should be able to answer questions and query safe tables to pull information about recent price changes and the customer's spend history that may have impacted them. All of this should happen seamlessly via a combination of maintaining a robust system of record and deterministic workflows.
+* [aspirational, not yet fully implemented] Forge Metal solves the hard problems faced by new businesses. Lowering a price for a product, for example, should be easy and fast: when the operator of the company reduces the price of a metered product, customer billing pages should update, marketing pages' pricing sections should update, emails should go out to customers, end-of-month invoices should reflect usage at both old and new prices, metering should update at a specified effective_at field, customer support agents (not yet implemented) should be able to answer questions and query safe tables to pull information about recent price changes and the customer's spend history that may have impacted them. All of this should happen seamlessly via a combination of maintaining a robust system of record and deterministic workflows.
 * Observable - o11y 2.0. Logs, traces, and metrics are one thing: the Wide Event. ClickHouse can handle millions of writes per second, leverage that by instrumenting as much as possible. It's easier to reduce instrumentation that's unnecessary than it is to backfill gaps.
 
 arch at a high level:
@@ -164,7 +165,9 @@ arch at a high level:
 - Payments: Stripe + TigerBeetle + PostgreSQL
 - otelcol-config.yaml.j2 contains a lot of our custom otel collection config.
 
-* You can run `make clickhouse-schemas` to read all of our ClickHouse tables, which contains a lot of useful ground truth.
+* You can run `make observe 
+
+* You can run `make clickhouse-schemas` to read all of our ClickHouse tables, which contains a lot of useful ground truth. Prefer 
 
 * Less important but useful if editing instructions: .claude/CLAUDE.md is symlinked from AGENTS.md
 
