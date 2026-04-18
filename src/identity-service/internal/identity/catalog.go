@@ -11,13 +11,13 @@ const (
 	PermissionAPICredentialsCreate    = "identity:api_credentials:create"
 	PermissionAPICredentialsRoll      = "identity:api_credentials:roll"
 	PermissionAPICredentialsRevoke    = "identity:api_credentials:revoke"
-	PermissionSandboxRepoRead         = "sandbox:repo:read"
-	PermissionSandboxRepoWrite        = "sandbox:repo:write"
-	PermissionSandboxWebhookRead      = "sandbox:webhook_endpoint:read"
-	PermissionSandboxWebhookWrite     = "sandbox:webhook_endpoint:write"
+	PermissionSandboxGitHubRead       = "sandbox:github_installation:read"
+	PermissionSandboxGitHubWrite      = "sandbox:github_installation:write"
 	PermissionSandboxExecutionSubmit  = "sandbox:execution:submit"
 	PermissionSandboxExecutionRead    = "sandbox:execution:read"
 	PermissionSandboxLogsRead         = "sandbox:logs:read"
+	PermissionSandboxVolumeRead       = "sandbox:volume:read"
+	PermissionSandboxVolumeWrite      = "sandbox:volume:write"
 	PermissionBillingRead             = "billing:read"
 	PermissionBillingCheckout         = "billing:checkout"
 )
@@ -47,23 +47,23 @@ var defaultOperations = Operations{
 		{
 			Service: "sandbox-rental-service",
 			Operations: []Operation{
-				{OperationID: "import-repo", Permission: PermissionSandboxRepoWrite, Resource: "repo", Action: "import", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "list-repos", Permission: PermissionSandboxRepoRead, Resource: "repo", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "get-repo", Permission: PermissionSandboxRepoRead, Resource: "repo", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "rescan-repo", Permission: PermissionSandboxRepoWrite, Resource: "repo", Action: "rescan", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "create-webhook-endpoint", Permission: PermissionSandboxWebhookWrite, Resource: "webhook_endpoint", Action: "create", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "list-webhook-endpoints", Permission: PermissionSandboxWebhookRead, Resource: "webhook_endpoint", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "rotate-webhook-endpoint-secret", Permission: PermissionSandboxWebhookWrite, Resource: "webhook_endpoint_secret", Action: "rotate", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "delete-webhook-endpoint", Permission: PermissionSandboxWebhookWrite, Resource: "webhook_endpoint", Action: "delete", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "begin-github-installation", Permission: PermissionSandboxGitHubWrite, Resource: "github_installation", Action: "connect", OrgScope: "token_org_id"},
+				{OperationID: "list-github-installations", Permission: PermissionSandboxGitHubRead, Resource: "github_installation", Action: "list", OrgScope: "token_org_id"},
 				{OperationID: "submit-execution", Permission: PermissionSandboxExecutionSubmit, Resource: "execution", Action: "submit", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "get-execution", Permission: PermissionSandboxExecutionRead, Resource: "execution", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "get-execution-logs", Permission: PermissionSandboxLogsRead, Resource: "execution_logs", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "create-scheduler-probe", Permission: PermissionSandboxExecutionSubmit, Resource: "scheduler_probe", Action: "create", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "create-volume", Permission: PermissionSandboxVolumeWrite, Resource: "volume", Action: "create", OrgScope: "token_org_id"},
+				{OperationID: "list-volumes", Permission: PermissionSandboxVolumeRead, Resource: "volume", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "get-volume", Permission: PermissionSandboxVolumeRead, Resource: "volume", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "create-volume-meter-tick", Permission: PermissionSandboxVolumeWrite, Resource: "volume_meter_tick", Action: "create", OrgScope: "token_org_id"},
 				{OperationID: "get-billing-entitlements", Permission: PermissionBillingRead, Resource: "billing_entitlements", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "list-billing-contracts", Permission: PermissionBillingRead, Resource: "billing_contract", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "list-billing-plans", Permission: PermissionBillingRead, Resource: "billing_plan", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "get-billing-statement", Permission: PermissionBillingRead, Resource: "billing_statement", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "create-billing-checkout", Permission: PermissionBillingCheckout, Resource: "billing_checkout", Action: "create", OrgScope: "token_org_id"},
 				{OperationID: "create-billing-contract", Permission: PermissionBillingCheckout, Resource: "billing_contract_checkout", Action: "create", OrgScope: "token_org_id"},
+				{OperationID: "create-billing-contract-change", Permission: PermissionBillingCheckout, Resource: "billing_contract_change", Action: "create", OrgScope: "token_org_id"},
 				{OperationID: "cancel-billing-contract", Permission: PermissionBillingCheckout, Resource: "billing_contract", Action: "cancel", OrgScope: "token_org_id"},
 				{OperationID: "create-billing-portal", Permission: PermissionBillingCheckout, Resource: "billing_portal", Action: "create", OrgScope: "token_org_id"},
 			},

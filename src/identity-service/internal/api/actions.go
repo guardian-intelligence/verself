@@ -78,6 +78,11 @@ func zitadelActionHandler(svc *identity.Service, signingKey string) http.Handler
 		}
 		writeActionResponse(w, zitadelActionResponse{AppendClaims: []zitadelActionClaim{
 			{Key: "forge_metal:credential_id", Value: claims.CredentialID},
+			{Key: "forge_metal:credential_name", Value: claims.DisplayName},
+			{Key: "forge_metal:credential_fingerprint", Value: claims.Fingerprint},
+			{Key: "forge_metal:credential_owner_id", Value: claims.OwnerID},
+			{Key: "forge_metal:credential_owner_display", Value: claims.OwnerDisplay},
+			{Key: "forge_metal:credential_auth_method", Value: string(claims.AuthMethod)},
 			{Key: "org_id", Value: claims.OrgID},
 			{Key: "permissions", Value: claims.Permissions},
 		}})

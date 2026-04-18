@@ -124,7 +124,9 @@ exact operation permissions, created/revoked timestamps, and last-used
 telemetry. Never persist or return plaintext customer credential secrets.
 
 Use a Zitadel pre-access-token Action to append `forge_metal:credential_id`,
-`org_id`, and the exact Forge Metal operation permissions granted to the active
+non-secret credential metadata (`forge_metal:credential_name`,
+`forge_metal:credential_fingerprint`, owner id/display, auth method), `org_id`,
+and the exact Forge Metal operation permissions granted to the active
 credential. Member capability state stays in `identity_member_capabilities`
 PostgreSQL; it is not embedded into Zitadel tokens. Issuance and roll must
 reject any requested permission that is not in a service-declared operation
