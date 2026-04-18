@@ -1,6 +1,7 @@
 .PHONY: help test lint lint-scripts lint-conversions lint-ansible fmt vet tidy openapi openapi-check openapi-wire-check \
        hooks-install doctor inventory-check setup-dev setup-sops provision deprovision deploy site guest-rootfs security-patch identity-reset seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member \
        set-user-state billing-clock billing-wall-clock billing-state billing-documents billing-finalizations billing-events billing-pg-shell billing-pg-query billing-proof billing-reset verification-reset \
+       secrets-proof \
        vm-guest-telemetry-build observe telemetry-proof telemetry-proof-fail clickhouse-query clickhouse-schemas pg-shell pg-query pg-list tb-shell tb-command mail mail-accounts mail-mailboxes \
        mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets \
        wipe-pg-db wipe-server vm-orchestrator-proof stress sandbox-inner sandbox-middle sandbox-proof rent-ui-smoke rent-ui-local rent-local-dev scheduler-proof verify-scheduler grafana-proof observability-smoke services-doctor
@@ -11,12 +12,13 @@ VMO      := src/vm-orchestrator
 BS       := src/billing-service
 GS       := src/governance-service
 IS       := src/identity-service
+SS       := src/secrets-service
 AM       := src/auth-middleware
 SR       := src/sandbox-rental-service
 MS       := src/mailbox-service
 OT       := src/otel
 INVENTORY := $(FM)/ansible/inventory/hosts.ini
-GO_DIRS  := $(AW) $(VMO) $(BS) $(GS) $(IS) $(AM) $(SR) $(MS) $(OT)
+GO_DIRS  := $(AW) $(VMO) $(BS) $(GS) $(IS) $(SS) $(AM) $(SR) $(MS) $(OT)
 GO_PKGS  := $(addsuffix /...,$(addprefix ./,$(GO_DIRS)))
 BILLING_PRODUCT_ID ?= sandbox
 ASSUME_PERSONA_OUTPUT_FLAG := $(if $(OUTPUT),--output "$(OUTPUT)",)
@@ -63,6 +65,7 @@ tidy:
 	cd $(BS) && go mod tidy
 	cd $(GS) && go mod tidy
 	cd $(IS) && go mod tidy
+	cd $(SS) && go mod tidy
 	cd $(AM) && go mod tidy
 	cd $(SR) && go mod tidy
 	cd $(MS) && go mod tidy
@@ -78,6 +81,9 @@ openapi: ## Regenerate committed OpenAPI 3.0 and 3.1 specs for Go services
 	mkdir -p $(IS)/openapi
 	go run ./$(IS)/cmd/identity-openapi --format 3.0 > $(IS)/openapi/openapi-3.0.yaml
 	go run ./$(IS)/cmd/identity-openapi --format 3.1 > $(IS)/openapi/openapi-3.1.yaml
+	mkdir -p $(SS)/openapi
+	go run ./$(SS)/cmd/secrets-openapi --format 3.0 > $(SS)/openapi/openapi-3.0.yaml
+	go run ./$(SS)/cmd/secrets-openapi --format 3.1 > $(SS)/openapi/openapi-3.1.yaml
 	go run ./$(MS)/cmd/mailbox-openapi --format 3.0 > $(MS)/openapi/openapi-3.0.yaml
 	go run ./$(MS)/cmd/mailbox-openapi --format 3.1 > $(MS)/openapi/openapi-3.1.yaml
 	mkdir -p $(SR)/openapi
@@ -91,6 +97,8 @@ openapi-check: ## Verify committed OpenAPI specs are up to date
 	cd $(GS) && go run ./cmd/governance-openapi --format 3.1 --check
 	cd $(IS) && go run ./cmd/identity-openapi --format 3.0 --check
 	cd $(IS) && go run ./cmd/identity-openapi --format 3.1 --check
+	cd $(SS) && go run ./cmd/secrets-openapi --format 3.0 --check
+	cd $(SS) && go run ./cmd/secrets-openapi --format 3.1 --check
 	cd $(MS) && go run ./cmd/mailbox-openapi --format 3.0 --check
 	cd $(MS) && go run ./cmd/mailbox-openapi --format 3.1 --check
 	cd $(SR) && go run ./cmd/sandbox-rental-openapi --format 3.0 --check
@@ -102,6 +110,7 @@ openapi-wire-check: ## Verify frontend-consumed OpenAPI 3.1 specs are JS wire-sa
 		$(BS)/openapi/openapi-3.1.yaml \
 		$(GS)/openapi/openapi-3.1.yaml \
 		$(IS)/openapi/openapi-3.1.yaml \
+		$(SS)/openapi/openapi-3.1.yaml \
 		$(MS)/openapi/openapi-3.1.yaml \
 		$(SR)/openapi/openapi-3.1.yaml
 
@@ -210,6 +219,9 @@ billing-pg-query: inventory-check ## Run a PostgreSQL query against billing: mak
 billing-proof: inventory-check ## Run live billing browser proof and collect evidence
 	cd $(FM) && ./scripts/verify-rent-billing-flow.sh
 
+secrets-proof: inventory-check ## Run live secrets API and sandbox injection proof
+	cd $(FM) && ./scripts/verify-secrets-live.sh
+
 billing-reset: inventory-check ## Exhaustively wipe billing state (TigerBeetle + billing PostgreSQL schema) and restart billing callers
 	$(FM)/scripts/ansible-with-tunnel.sh playbooks/billing-reset.yml
 
@@ -217,7 +229,7 @@ verification-reset: inventory-check ## Exhaustively wipe verification state (bil
 	$(FM)/scripts/ansible-with-tunnel.sh playbooks/verification-reset.yml
 
 wipe-pg-db: inventory-check ## Wipe one managed PostgreSQL service DB: make wipe-pg-db DB=sandbox_rental
-	@test -n "$(DB)" || { echo "ERROR: DB is required (billing|sandbox_rental|mailbox_service|identity_service)"; exit 1; }
+	@test -n "$(DB)" || { echo "ERROR: DB is required (billing|sandbox_rental|mailbox_service|identity_service|secrets_service)"; exit 1; }
 	$(FM)/scripts/ansible-with-tunnel.sh playbooks/wipe-pg-db.yml -e "wipe_pg_db_name=$(DB)"
 
 vm-orchestrator-proof: inventory-check ## Live proof for vm-orchestrator lease/exec spans through the public sandbox API

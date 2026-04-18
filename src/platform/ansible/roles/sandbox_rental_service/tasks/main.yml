@@ -347,8 +347,10 @@
       LoadCredential=github-app-webhook-secret:/etc/credstore/sandbox-rental/github-app-webhook-secret
       LoadCredential=github-app-client-secret:/etc/credstore/sandbox-rental/github-app-client-secret
       LoadCredential=governance-internal-audit-token:/etc/credstore/governance-service/internal-audit-token
+      LoadCredential=secrets-internal-token:/etc/credstore/secrets-service/internal-injection-token
       Environment=SANDBOX_LISTEN_ADDR={{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}
       Environment=SANDBOX_GOVERNANCE_AUDIT_URL=http://{{ services.governance_service.host }}:{{ services.governance_service.port }}/internal/v1/audit/events
+      Environment=SANDBOX_SECRETS_URL=http://{{ services.secrets_service.host }}:{{ services.secrets_service.port }}
       Environment=SANDBOX_CH_ADDRESS={{ services.clickhouse.host }}:{{ services.clickhouse.native_port }}
       Environment=SANDBOX_BILLING_URL=http://{{ services.billing.host }}:{{ services.billing.port }}
       Environment=SANDBOX_BILLING_CLIENT_ID={{ sandbox_rental_service_billing_client_id }}

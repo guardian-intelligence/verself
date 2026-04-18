@@ -930,6 +930,44 @@ components:
         - created_at
         - updated_at
       type: object
+    SandboxSecretEnvVar:
+      additionalProperties: false
+      properties:
+        branch:
+          maxLength: 255
+          type: string
+        env_id:
+          maxLength: 255
+          type: string
+        env_name:
+          description: Environment variable name to inject into the sandbox process.
+          maxLength: 255
+          type: string
+        kind:
+          description: Resource kind. Defaults to secret.
+          enum:
+            - secret
+            - variable
+          type: string
+        scope_level:
+          description: Resolution scope. Defaults to org.
+          enum:
+            - org
+            - source
+            - environment
+            - branch
+          type: string
+        secret_name:
+          description: Secrets-service resource name to resolve.
+          maxLength: 255
+          type: string
+        source_id:
+          maxLength: 255
+          type: string
+      required:
+        - env_name
+        - secret_name
+      type: object
     SandboxSubmitExecutionResult:
       additionalProperties: false
       properties:
@@ -983,6 +1021,13 @@ components:
         runner_class:
           description: Runner class label, for example metal-4vcpu-ubuntu-2404.
           type: string
+        secret_env:
+          description: Secret references resolved by secrets-service immediately before VM exec and injected as environment variables. Values are never stored in sandbox-rental-service.
+          items:
+            $ref: "#/components/schemas/SandboxSecretEnvVar"
+          type:
+            - array
+            - "null"
       required:
         - kind
         - idempotency_key

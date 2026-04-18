@@ -1,0 +1,6 @@
+---
+secrets_service_auth_issuer_url: "https://auth.{{ forge_metal_domain }}"
+secrets_service_auth_jwks_url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/oauth/v2/keys"
+secrets_service_auth_project_name: secrets-service
+secrets_service_force_schema_reset: false
+secrets_service_pg_max_conns: 8

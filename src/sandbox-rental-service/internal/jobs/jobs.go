@@ -62,10 +62,12 @@ const (
 )
 
 var (
-	ErrQuotaExceeded      = errors.New("sandbox-rental: quota exceeded")
-	ErrExecutionMissing   = errors.New("sandbox-rental: execution missing")
-	ErrRunnerUnavailable  = errors.New("sandbox-rental: runner unavailable")
-	ErrRunnerClassMissing = errors.New("sandbox-rental: runner class missing")
+	ErrQuotaExceeded              = errors.New("sandbox-rental: quota exceeded")
+	ErrExecutionMissing           = errors.New("sandbox-rental: execution missing")
+	ErrRunnerUnavailable          = errors.New("sandbox-rental: runner unavailable")
+	ErrRunnerClassMissing         = errors.New("sandbox-rental: runner class missing")
+	ErrInvalidSecretInjection     = errors.New("sandbox-rental: invalid secret injection")
+	ErrSecretInjectionUnavailable = errors.New("sandbox-rental: secret injection unavailable")
 )
 
 var tracer = otel.Tracer("sandbox-rental-service/jobs")
@@ -105,6 +107,7 @@ type SubmitRequest struct {
 	RunCommand         string                           `json:"run_command,omitempty"`
 	MaxWallSeconds     uint64                           `json:"max_wall_seconds,omitempty"`
 	Resources          apiwire.VMResources              `json:"resources"`
+	SecretEnv          []SecretEnvVar                   `json:"secret_env,omitempty"`
 	FilesystemMounts   []vmorchestrator.FilesystemMount `json:"-"`
 	StickyDiskMounts   []StickyDiskMountSpec            `json:"-"`
 	AttemptID          uuid.UUID                        `json:"-"`
@@ -182,29 +185,32 @@ type Service struct {
 	Logger           *slog.Logger
 	WorkloadTimeout  time.Duration
 	CheckoutCacheDir string
+	Secrets          SecretResolver
 }
 
 type executionWorkItem struct {
-	ExecutionID      uuid.UUID
-	AttemptID        uuid.UUID
-	OrgID            uint64
-	ActorID          string
-	Kind             string
-	SourceKind       string
-	WorkloadKind     string
-	SourceRef        string
-	RunnerClass      string
-	ExternalProvider string
-	ExternalTaskID   string
-	Provider         string
-	ProductID        string
-	RunCommand       string
-	MaxWallSeconds   uint64
-	LeaseID          string
-	ExecID           string
-	CorrelationID    string
-	Resources        apiwire.VMResources
-	FilesystemMounts []vmorchestrator.FilesystemMount
+	ExecutionID       uuid.UUID
+	AttemptID         uuid.UUID
+	OrgID             uint64
+	ActorID           string
+	Kind              string
+	SourceKind        string
+	WorkloadKind      string
+	SourceRef         string
+	RunnerClass       string
+	ExternalProvider  string
+	ExternalTaskID    string
+	Provider          string
+	ProductID         string
+	RunCommand        string
+	MaxWallSeconds    uint64
+	LeaseID           string
+	ExecID            string
+	CorrelationID     string
+	Resources         apiwire.VMResources
+	FilesystemMounts  []vmorchestrator.FilesystemMount
+	SecretEnv         []SecretEnvVar
+	ResolvedSecretEnv map[string]string
 }
 
 type jobEventRow struct {
@@ -314,6 +320,9 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req 
 		return uuid.Nil, uuid.Nil, err
 	}
 	if err := s.insertExecutionStickyDiskMounts(ctx, tx, executionID, attemptID, req.StickyDiskMounts); err != nil {
+		return uuid.Nil, uuid.Nil, err
+	}
+	if err := s.insertExecutionSecretEnv(ctx, tx, executionID, req.SecretEnv); err != nil {
 		return uuid.Nil, uuid.Nil, err
 	}
 	if req.WorkloadKind == WorkloadKindGitHubRunner && req.GitHubAllocationID != uuid.Nil {
@@ -455,6 +464,14 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		return err
 	}
 	ctx = WithCorrelationID(ctx, item.CorrelationID)
+	resolvedSecretEnv, err := s.resolveExecutionSecretEnv(ctx, item)
+	if err != nil {
+		_ = s.failAttempt(context.Background(), item, "secret_injection_failed", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	item.ResolvedSecretEnv = resolvedSecretEnv
 	billingJobID := billingJobIDForAttempt(item.AttemptID)
 	if err := s.transition(ctx, item, StateQueued, StateReserved, "reserved", map[string]any{"billing_job_id": billingJobID}); err != nil {
 		return err
@@ -608,6 +625,11 @@ func (s *Service) loadWorkItem(ctx context.Context, executionID, attemptID uuid.
 		return executionWorkItem{}, err
 	}
 	item.FilesystemMounts = mounts
+	secretEnv, err := s.loadExecutionSecretEnv(ctx, executionID)
+	if err != nil {
+		return executionWorkItem{}, err
+	}
+	item.SecretEnv = secretEnv
 	return item, nil
 }
 
@@ -956,6 +978,10 @@ func (s *Service) normalizeSubmitRequest(ctx context.Context, req SubmitRequest)
 	if err := req.Resources.Validate(bounds); err != nil {
 		return SubmitRequest{}, err
 	}
+	req.SecretEnv, err = normalizeSecretEnvVars(req.SecretEnv)
+	if err != nil {
+		return SubmitRequest{}, err
+	}
 	return req, nil
 }
 
@@ -986,6 +1012,9 @@ func (s *Service) executionEnv(ctx context.Context, item executionWorkItem) map[
 		for key, value := range s.GitHubRunner.execEnv(ctx, item.ExecutionID, item.AttemptID) {
 			env[key] = value
 		}
+	}
+	for key, value := range item.ResolvedSecretEnv {
+		env[key] = value
 	}
 	return env
 }

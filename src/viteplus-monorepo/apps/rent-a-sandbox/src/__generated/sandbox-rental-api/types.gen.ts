@@ -383,6 +383,28 @@ export type SandboxGitHubInstallationRecord = {
   updated_at: string;
 };
 
+export type SandboxSecretEnvVar = {
+  branch?: string;
+  env_id?: string;
+  /**
+   * Environment variable name to inject into the sandbox process.
+   */
+  env_name: string;
+  /**
+   * Resource kind. Defaults to secret.
+   */
+  kind?: "secret" | "variable";
+  /**
+   * Resolution scope. Defaults to org.
+   */
+  scope_level?: "org" | "source" | "environment" | "branch";
+  /**
+   * Secrets-service resource name to resolve.
+   */
+  secret_name: string;
+  source_id?: string;
+};
+
 export type SandboxSubmitExecutionResult = {
   /**
    * A URL to the JSON Schema for this object.
@@ -412,6 +434,10 @@ export type SandboxSubmitRequest = {
    * Runner class label, for example metal-4vcpu-ubuntu-2404.
    */
   runner_class?: string;
+  /**
+   * Secret references resolved by secrets-service immediately before VM exec and injected as environment variables. Values are never stored in sandbox-rental-service.
+   */
+  secret_env?: Array<SandboxSecretEnvVar> | null;
 };
 
 export type SandboxVolumeCreateRequest = {
@@ -705,6 +731,10 @@ export type SandboxSubmitRequestWritable = {
    * Runner class label, for example metal-4vcpu-ubuntu-2404.
    */
   runner_class?: string;
+  /**
+   * Secret references resolved by secrets-service immediately before VM exec and injected as environment variables. Values are never stored in sandbox-rental-service.
+   */
+  secret_env?: Array<SandboxSecretEnvVar> | null;
 };
 
 export type SandboxVolumeCreateRequestWritable = {

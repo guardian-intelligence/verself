@@ -18,7 +18,27 @@ func submitRequest(request apiwire.SandboxSubmitRequest) jobs.SubmitRequest {
 		RunCommand:     request.RunCommand,
 		MaxWallSeconds: request.MaxWallSeconds,
 		Resources:      request.Resources,
+		SecretEnv:      secretEnvVars(request.SecretEnv),
 	}
+}
+
+func secretEnvVars(vars []apiwire.SandboxSecretEnvVar) []jobs.SecretEnvVar {
+	if len(vars) == 0 {
+		return nil
+	}
+	out := make([]jobs.SecretEnvVar, 0, len(vars))
+	for _, item := range vars {
+		out = append(out, jobs.SecretEnvVar{
+			EnvName:    item.EnvName,
+			Kind:       item.Kind,
+			SecretName: item.SecretName,
+			ScopeLevel: item.ScopeLevel,
+			SourceID:   item.SourceID,
+			EnvID:      item.EnvID,
+			Branch:     item.Branch,
+		})
+	}
+	return out
 }
 
 func volumeCreateRequest(request apiwire.SandboxVolumeCreateRequest) jobs.VolumeCreateRequest {

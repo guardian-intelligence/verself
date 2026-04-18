@@ -7,14 +7,25 @@ import (
 )
 
 type SandboxSubmitRequest struct {
-	Kind           string      `json:"kind"`
-	RunnerClass    string      `json:"runner_class,omitempty" doc:"Runner class label, for example metal-4vcpu-ubuntu-2404."`
-	ProductID      string      `json:"product_id,omitempty"`
-	Provider       string      `json:"provider,omitempty"`
-	IdempotencyKey string      `json:"idempotency_key" required:"true" maxLength:"128"`
-	RunCommand     string      `json:"run_command,omitempty"`
-	MaxWallSeconds uint64      `json:"max_wall_seconds,omitempty" minimum:"1" maximum:"9007199254740991"`
-	Resources      VMResources `json:"resources,omitempty" doc:"Requested VM shape (vCPUs, memory, root disk). Omitted fields use the runner class defaults; out-of-bounds shapes are rejected with 400."`
+	Kind           string                `json:"kind"`
+	RunnerClass    string                `json:"runner_class,omitempty" doc:"Runner class label, for example metal-4vcpu-ubuntu-2404."`
+	ProductID      string                `json:"product_id,omitempty"`
+	Provider       string                `json:"provider,omitempty"`
+	IdempotencyKey string                `json:"idempotency_key" required:"true" maxLength:"128"`
+	RunCommand     string                `json:"run_command,omitempty"`
+	MaxWallSeconds uint64                `json:"max_wall_seconds,omitempty" minimum:"1" maximum:"9007199254740991"`
+	Resources      VMResources           `json:"resources,omitempty" doc:"Requested VM shape (vCPUs, memory, root disk). Omitted fields use the runner class defaults; out-of-bounds shapes are rejected with 400."`
+	SecretEnv      []SandboxSecretEnvVar `json:"secret_env,omitempty" doc:"Secret references resolved by secrets-service immediately before VM exec and injected as environment variables. Values are never stored in sandbox-rental-service."`
+}
+
+type SandboxSecretEnvVar struct {
+	EnvName    string `json:"env_name" required:"true" maxLength:"255" doc:"Environment variable name to inject into the sandbox process."`
+	SecretName string `json:"secret_name" required:"true" maxLength:"255" doc:"Secrets-service resource name to resolve."`
+	Kind       string `json:"kind,omitempty" enum:"secret,variable" doc:"Resource kind. Defaults to secret."`
+	ScopeLevel string `json:"scope_level,omitempty" enum:"org,source,environment,branch" doc:"Resolution scope. Defaults to org."`
+	SourceID   string `json:"source_id,omitempty" maxLength:"255"`
+	EnvID      string `json:"env_id,omitempty" maxLength:"255"`
+	Branch     string `json:"branch,omitempty" maxLength:"255"`
 }
 
 type SandboxGitHubInstallationConnectResponse struct {

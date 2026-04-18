@@ -67,6 +67,7 @@ func run() error {
 	chPassword := credentialOr("ch-password", "")
 	billingClientSecret := requireCredential("billing-client-secret")
 	governanceAuditToken := credentialOr("governance-internal-audit-token", "")
+	secretsInternalToken := requireCredential("secrets-internal-token")
 	githubAppPrivateKey := credentialOr("github-app-private-key", "")
 	githubAppWebhookSecret := credentialOr("github-app-webhook-secret", "")
 	githubAppClientSecret := credentialOr("github-app-client-secret", "")
@@ -76,6 +77,7 @@ func run() error {
 	chAddress := envOr("SANDBOX_CH_ADDRESS", "127.0.0.1:9000")
 	billingURL := envOr("SANDBOX_BILLING_URL", "http://127.0.0.1:4242")
 	governanceAuditURL := envOr("SANDBOX_GOVERNANCE_AUDIT_URL", "")
+	secretsURL := envOr("SANDBOX_SECRETS_URL", "http://127.0.0.1:4251")
 	billingClientID := requireEnv("SANDBOX_BILLING_CLIENT_ID")
 	billingTokenURL := requireEnv("SANDBOX_BILLING_TOKEN_URL")
 	billingAuthAudience := requireEnv("SANDBOX_BILLING_AUTH_AUDIENCE")
@@ -217,6 +219,7 @@ func run() error {
 		Logger:           logger,
 		WorkloadTimeout:  time.Duration(envInt("SANDBOX_WORKLOAD_TIMEOUT_SECONDS", 7200)) * time.Second,
 		CheckoutCacheDir: checkoutCacheDir,
+		Secrets:          jobs.NewSecretsHTTPResolver(secretsURL, secretsInternalToken),
 	}
 	githubRunner, err := jobs.NewGitHubRunner(jobService, jobs.GitHubRunnerConfig{
 		AppID:         githubAppID,

@@ -1,0 +1,864 @@
+openapi: 3.1.0
+info:
+    title: Forge Metal Secrets Service API
+    version: dev
+servers:
+    - url: http://127.0.0.1:4251
+paths:
+    /api/v1/secrets:
+        get:
+            summary: List secret or variable metadata
+            operationId: list-secrets
+            parameters:
+                - name: kind
+                  in: query
+                  explode: false
+                  schema:
+                    type: string
+                    enum:
+                        - secret
+                        - variable
+                - name: limit
+                  in: query
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                    minimum: 1
+                    maximum: 200
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SecretsDTO'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+            security:
+                - bearerAuth: []
+            x-forge-metal-iam:
+                action: list
+                audit_event: secrets.secret.list
+                data_classification: secret
+                event_category: secrets
+                operation_display: list secrets
+                operation_type: read
+                org_scope: token_org_id
+                permission: secrets:secret:read
+                rate_limit_class: read
+                resource: secret
+                risk_level: high
+                source_product_area: Secrets
+    /api/v1/secrets/{name}:
+        get:
+            summary: Resolve and read a secret or variable
+            operationId: read-secret
+            parameters:
+                - name: name
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                    minLength: 1
+                    maxLength: 255
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SecretValueDTO'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+            security:
+                - bearerAuth: []
+            x-forge-metal-iam:
+                action: read
+                audit_event: secrets.secret.read
+                data_classification: secret
+                event_category: secrets
+                operation_display: read secret
+                operation_type: read
+                org_scope: token_org_id
+                permission: secrets:secret:read
+                rate_limit_class: read
+                resource: secret
+                risk_level: critical
+                source_product_area: Secrets
+        put:
+            summary: Create or rotate a secret or variable
+            operationId: put-secret
+            parameters:
+                - name: Idempotency-Key
+                  in: header
+                  description: Stable caller-provided key used to make this mutation retry-safe.
+                  required: true
+                  schema:
+                    type: string
+                    minLength: 1
+                    maxLength: 128
+                - name: name
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                    minLength: 1
+                    maxLength: 255
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/PutSecretBody'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SecretDTO'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+            security:
+                - bearerAuth: []
+            x-forge-metal-iam:
+                action: write
+                audit_event: secrets.secret.write
+                data_classification: secret
+                event_category: secrets
+                operation_display: put secret
+                operation_type: write
+                org_scope: token_org_id
+                permission: secrets:secret:write
+                rate_limit_class: secret_mutation
+                resource: secret
+                risk_level: high
+                source_product_area: Secrets
+        delete:
+            summary: Soft-delete a secret or variable
+            operationId: delete-secret
+            parameters:
+                - name: Idempotency-Key
+                  in: header
+                  description: Stable caller-provided key used to make this mutation retry-safe.
+                  required: true
+                  schema:
+                    type: string
+                    minLength: 1
+                    maxLength: 128
+                - name: name
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                    minLength: 1
+                    maxLength: 255
+                - name: kind
+                  in: query
+                  explode: false
+                  schema:
+                    type: string
+                    enum:
+                        - secret
+                        - variable
+                - name: scope_level
+                  in: query
+                  explode: false
+                  schema:
+                    type: string
+                    enum:
+                        - org
+                        - source
+                        - environment
+                        - branch
+                - name: source_id
+                  in: query
+                  explode: false
+                  schema:
+                    type: string
+                    maxLength: 255
+                - name: env_id
+                  in: query
+                  explode: false
+                  schema:
+                    type: string
+                    maxLength: 255
+                - name: branch
+                  in: query
+                  explode: false
+                  schema:
+                    type: string
+                    maxLength: 255
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/DeleteSecretInputBody'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SecretDTO'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+            security:
+                - bearerAuth: []
+            x-forge-metal-iam:
+                action: delete
+                audit_event: secrets.secret.delete
+                data_classification: secret
+                event_category: secrets
+                operation_display: delete secret
+                operation_type: delete
+                org_scope: token_org_id
+                permission: secrets:secret:delete
+                rate_limit_class: secret_mutation
+                resource: secret
+                risk_level: high
+                source_product_area: Secrets
+    /api/v1/transit/keys:
+        post:
+            summary: Create a transit key
+            operationId: create-transit-key
+            parameters:
+                - name: Idempotency-Key
+                  in: header
+                  description: Stable caller-provided key used to make this mutation retry-safe.
+                  required: true
+                  schema:
+                    type: string
+                    minLength: 1
+                    maxLength: 128
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreateTransitKeyInputBody'
+                required: true
+            responses:
+                "201":
+                    description: Created
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/TransitKeyDTO'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+            security:
+                - bearerAuth: []
+            x-forge-metal-iam:
+                action: create
+                audit_event: secrets.transit_key.create
+                data_classification: secret
+                event_category: secrets
+                operation_display: create transit key
+                operation_type: write
+                org_scope: token_org_id
+                permission: secrets:transit:write
+                rate_limit_class: key_mutation
+                resource: transit_key
+                risk_level: high
+                source_product_area: Secrets
+    /api/v1/transit/keys/{key_name}/decrypt:
+        post:
+            summary: Decrypt with a transit key
+            operationId: decrypt-with-transit-key
+            parameters:
+                - name: key_name
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                    minLength: 1
+                    maxLength: 255
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/TransitPayloadInputBody'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/DecryptOutputBody'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+            security:
+                - bearerAuth: []
+            x-forge-metal-iam:
+                action: decrypt
+                audit_event: secrets.transit_key.decrypt
+                data_classification: secret
+                event_category: secrets
+                operation_display: decrypt with transit key
+                operation_type: write
+                org_scope: token_org_id
+                permission: secrets:transit:use
+                rate_limit_class: crypto
+                resource: transit_key
+                risk_level: critical
+                source_product_area: Secrets
+    /api/v1/transit/keys/{key_name}/encrypt:
+        post:
+            summary: Encrypt with a transit key
+            operationId: encrypt-with-transit-key
+            parameters:
+                - name: key_name
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                    minLength: 1
+                    maxLength: 255
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/TransitPayloadInputBody'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/EncryptOutputBody'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+            security:
+                - bearerAuth: []
+            x-forge-metal-iam:
+                action: encrypt
+                audit_event: secrets.transit_key.encrypt
+                data_classification: secret
+                event_category: secrets
+                operation_display: encrypt with transit key
+                operation_type: write
+                org_scope: token_org_id
+                permission: secrets:transit:use
+                rate_limit_class: crypto
+                resource: transit_key
+                risk_level: high
+                source_product_area: Secrets
+    /api/v1/transit/keys/{key_name}/rotate:
+        post:
+            summary: Rotate a transit key
+            operationId: rotate-transit-key
+            parameters:
+                - name: Idempotency-Key
+                  in: header
+                  description: Stable caller-provided key used to make this mutation retry-safe.
+                  required: true
+                  schema:
+                    type: string
+                    minLength: 1
+                    maxLength: 128
+                - name: key_name
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                    minLength: 1
+                    maxLength: 255
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/TransitKeyDTO'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+            security:
+                - bearerAuth: []
+            x-forge-metal-iam:
+                action: rotate
+                audit_event: secrets.transit_key.rotate
+                data_classification: secret
+                event_category: secrets
+                operation_display: rotate transit key
+                operation_type: write
+                org_scope: token_org_id
+                permission: secrets:transit:rotate
+                rate_limit_class: key_mutation
+                resource: transit_key
+                risk_level: high
+                source_product_area: Secrets
+    /api/v1/transit/keys/{key_name}/sign:
+        post:
+            summary: Sign with a transit key
+            operationId: sign-with-transit-key
+            parameters:
+                - name: key_name
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                    minLength: 1
+                    maxLength: 255
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/TransitPayloadInputBody'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SignOutputBody'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+            security:
+                - bearerAuth: []
+            x-forge-metal-iam:
+                action: sign
+                audit_event: secrets.transit_key.sign
+                data_classification: secret
+                event_category: secrets
+                operation_display: sign with transit key
+                operation_type: write
+                org_scope: token_org_id
+                permission: secrets:transit:use
+                rate_limit_class: crypto
+                resource: transit_key
+                risk_level: high
+                source_product_area: Secrets
+    /api/v1/transit/keys/{key_name}/verify:
+        post:
+            summary: Verify with a transit key
+            operationId: verify-with-transit-key
+            parameters:
+                - name: key_name
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                    minLength: 1
+                    maxLength: 255
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/TransitPayloadInputBody'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/VerifyOutputBody'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+            security:
+                - bearerAuth: []
+            x-forge-metal-iam:
+                action: verify
+                audit_event: secrets.transit_key.verify
+                data_classification: secret
+                event_category: secrets
+                operation_display: verify with transit key
+                operation_type: write
+                org_scope: token_org_id
+                permission: secrets:transit:use
+                rate_limit_class: crypto
+                resource: transit_key
+                risk_level: high
+                source_product_area: Secrets
+components:
+    schemas:
+        CreateTransitKeyInputBody:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - http://127.0.0.1:4251/schemas/CreateTransitKeyInputBody.json
+                    readOnly: true
+                name:
+                    type: string
+                    minLength: 1
+                    maxLength: 255
+            required:
+                - name
+        DecryptOutputBody:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - http://127.0.0.1:4251/schemas/DecryptOutputBody.json
+                    readOnly: true
+                plaintext_base64:
+                    type: string
+            required:
+                - plaintext_base64
+        DeleteSecretInputBody:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - http://127.0.0.1:4251/schemas/DeleteSecretInputBody.json
+                    readOnly: true
+        EncryptOutputBody:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - http://127.0.0.1:4251/schemas/EncryptOutputBody.json
+                    readOnly: true
+                ciphertext:
+                    type: string
+                version:
+                    type: string
+            required:
+                - ciphertext
+                - version
+        ErrorDetail:
+            type: object
+            additionalProperties: false
+            properties:
+                location:
+                    type: string
+                    description: Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'
+                message:
+                    type: string
+                    description: Error message text
+                value:
+                    description: The value at the given location
+        ErrorModel:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - http://127.0.0.1:4251/schemas/ErrorModel.json
+                    readOnly: true
+                detail:
+                    type: string
+                    description: A human-readable explanation specific to this occurrence of the problem.
+                    examples:
+                        - Property foo is required but is missing.
+                errors:
+                    type: array
+                    description: Optional list of individual error details
+                    items:
+                        $ref: '#/components/schemas/ErrorDetail'
+                instance:
+                    type: string
+                    description: A URI reference that identifies the specific occurrence of the problem.
+                    format: uri
+                    examples:
+                        - https://example.com/error-log/abc123
+                status:
+                    type: integer
+                    description: HTTP status code
+                    format: int64
+                    examples:
+                        - 400
+                    maximum: 599
+                title:
+                    type: string
+                    description: A short, human-readable summary of the problem type. This value should not change between occurrences of the error.
+                    examples:
+                        - Bad Request
+                type:
+                    type: string
+                    description: A URI reference to human-readable documentation for the error.
+                    format: uri
+                    default: about:blank
+                    examples:
+                        - https://example.com/errors/example
+        PutSecretBody:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - http://127.0.0.1:4251/schemas/PutSecretBody.json
+                    readOnly: true
+                branch:
+                    type: string
+                    maxLength: 255
+                env_id:
+                    type: string
+                    maxLength: 255
+                kind:
+                    type: string
+                    enum:
+                        - secret
+                        - variable
+                scope_level:
+                    type: string
+                    enum:
+                        - org
+                        - source
+                        - environment
+                        - branch
+                source_id:
+                    type: string
+                    maxLength: 255
+                value:
+                    type: string
+                    maxLength: 65536
+            required:
+                - value
+        SecretDTO:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - http://127.0.0.1:4251/schemas/SecretDTO.json
+                    readOnly: true
+                branch:
+                    type: string
+                created_at:
+                    type: string
+                    format: date-time
+                current_version:
+                    type: string
+                env_id:
+                    type: string
+                kind:
+                    type: string
+                name:
+                    type: string
+                scope_level:
+                    type: string
+                secret_id:
+                    type: string
+                source_id:
+                    type: string
+                updated_at:
+                    type: string
+                    format: date-time
+            required:
+                - secret_id
+                - kind
+                - name
+                - scope_level
+                - current_version
+                - created_at
+                - updated_at
+        SecretValueDTO:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - http://127.0.0.1:4251/schemas/SecretValueDTO.json
+                    readOnly: true
+                branch:
+                    type: string
+                created_at:
+                    type: string
+                    format: date-time
+                current_version:
+                    type: string
+                env_id:
+                    type: string
+                kind:
+                    type: string
+                name:
+                    type: string
+                scope_level:
+                    type: string
+                secret_id:
+                    type: string
+                source_id:
+                    type: string
+                updated_at:
+                    type: string
+                    format: date-time
+                value:
+                    type: string
+            required:
+                - value
+                - secret_id
+                - kind
+                - name
+                - scope_level
+                - current_version
+                - created_at
+                - updated_at
+        SecretsDTO:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - http://127.0.0.1:4251/schemas/SecretsDTO.json
+                    readOnly: true
+                secrets:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/SecretDTO'
+            required:
+                - secrets
+        SignOutputBody:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - http://127.0.0.1:4251/schemas/SignOutputBody.json
+                    readOnly: true
+                signature:
+                    type: string
+            required:
+                - signature
+        TransitKeyDTO:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - http://127.0.0.1:4251/schemas/TransitKeyDTO.json
+                    readOnly: true
+                created_at:
+                    type: string
+                    format: date-time
+                current_version:
+                    type: string
+                key_id:
+                    type: string
+                name:
+                    type: string
+                updated_at:
+                    type: string
+                    format: date-time
+            required:
+                - key_id
+                - name
+                - current_version
+                - created_at
+                - updated_at
+        TransitPayloadInputBody:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - http://127.0.0.1:4251/schemas/TransitPayloadInputBody.json
+                    readOnly: true
+                ciphertext:
+                    type: string
+                    maxLength: 262144
+                message_base64:
+                    type: string
+                    maxLength: 262144
+                plaintext_base64:
+                    type: string
+                    maxLength: 262144
+                signature:
+                    type: string
+                    maxLength: 262144
+        VerifyOutputBody:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - http://127.0.0.1:4251/schemas/VerifyOutputBody.json
+                    readOnly: true
+                valid:
+                    type: boolean
+            required:
+                - valid
+    securitySchemes:
+        bearerAuth:
+            type: http
+            description: Zitadel-issued bearer token scoped to the secrets-service API audience.
+            scheme: bearer
+            bearerFormat: JWT
