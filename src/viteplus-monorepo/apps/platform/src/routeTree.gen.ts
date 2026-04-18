@@ -24,6 +24,7 @@ import { Route as PolicyDataRetentionRouteImport } from './routes/policy/data-re
 import { Route as PolicyCookiesRouteImport } from './routes/policy/cookies'
 import { Route as PolicyChangelogRouteImport } from './routes/policy/changelog'
 import { Route as PolicyAcceptableUseRouteImport } from './routes/policy/acceptable-use'
+import { Route as DocsSecretsRouteImport } from './routes/docs/secrets'
 import { Route as DocsReferenceRouteImport } from './routes/docs/reference'
 
 const PolicyRouteRoute = PolicyRouteRouteImport.update({
@@ -101,6 +102,11 @@ const PolicyAcceptableUseRoute = PolicyAcceptableUseRouteImport.update({
   path: '/acceptable-use',
   getParentRoute: () => PolicyRouteRoute,
 } as any)
+const DocsSecretsRoute = DocsSecretsRouteImport.update({
+  id: '/secrets',
+  path: '/secrets',
+  getParentRoute: () => DocsRouteRoute,
+} as any)
 const DocsReferenceRoute = DocsReferenceRouteImport.update({
   id: '/reference',
   path: '/reference',
@@ -112,6 +118,7 @@ export interface FileRoutesByFullPath {
   '/docs': typeof DocsRouteRouteWithChildren
   '/policy': typeof PolicyRouteRouteWithChildren
   '/docs/reference': typeof DocsReferenceRoute
+  '/docs/secrets': typeof DocsSecretsRoute
   '/policy/acceptable-use': typeof PolicyAcceptableUseRoute
   '/policy/changelog': typeof PolicyChangelogRoute
   '/policy/cookies': typeof PolicyCookiesRoute
@@ -128,6 +135,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/docs/reference': typeof DocsReferenceRoute
+  '/docs/secrets': typeof DocsSecretsRoute
   '/policy/acceptable-use': typeof PolicyAcceptableUseRoute
   '/policy/changelog': typeof PolicyChangelogRoute
   '/policy/cookies': typeof PolicyCookiesRoute
@@ -147,6 +155,7 @@ export interface FileRoutesById {
   '/docs': typeof DocsRouteRouteWithChildren
   '/policy': typeof PolicyRouteRouteWithChildren
   '/docs/reference': typeof DocsReferenceRoute
+  '/docs/secrets': typeof DocsSecretsRoute
   '/policy/acceptable-use': typeof PolicyAcceptableUseRoute
   '/policy/changelog': typeof PolicyChangelogRoute
   '/policy/cookies': typeof PolicyCookiesRoute
@@ -167,6 +176,7 @@ export interface FileRouteTypes {
     | '/docs'
     | '/policy'
     | '/docs/reference'
+    | '/docs/secrets'
     | '/policy/acceptable-use'
     | '/policy/changelog'
     | '/policy/cookies'
@@ -183,6 +193,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/docs/reference'
+    | '/docs/secrets'
     | '/policy/acceptable-use'
     | '/policy/changelog'
     | '/policy/cookies'
@@ -201,6 +212,7 @@ export interface FileRouteTypes {
     | '/docs'
     | '/policy'
     | '/docs/reference'
+    | '/docs/secrets'
     | '/policy/acceptable-use'
     | '/policy/changelog'
     | '/policy/cookies'
@@ -328,6 +340,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PolicyAcceptableUseRouteImport
       parentRoute: typeof PolicyRouteRoute
     }
+    '/docs/secrets': {
+      id: '/docs/secrets'
+      path: '/secrets'
+      fullPath: '/docs/secrets'
+      preLoaderRoute: typeof DocsSecretsRouteImport
+      parentRoute: typeof DocsRouteRoute
+    }
     '/docs/reference': {
       id: '/docs/reference'
       path: '/reference'
@@ -340,11 +359,13 @@ declare module '@tanstack/react-router' {
 
 interface DocsRouteRouteChildren {
   DocsReferenceRoute: typeof DocsReferenceRoute
+  DocsSecretsRoute: typeof DocsSecretsRoute
   DocsIndexRoute: typeof DocsIndexRoute
 }
 
 const DocsRouteRouteChildren: DocsRouteRouteChildren = {
   DocsReferenceRoute: DocsReferenceRoute,
+  DocsSecretsRoute: DocsSecretsRoute,
   DocsIndexRoute: DocsIndexRoute,
 }
 
