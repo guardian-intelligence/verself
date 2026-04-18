@@ -165,9 +165,9 @@ arch at a high level:
 - Payments: Stripe + TigerBeetle + PostgreSQL
 - otelcol-config.yaml.j2 contains a lot of our custom otel collection config.
 
-* You can run `make observe 
+* Start telemetry investigation with `make observe`. It is a discoverability-first query engine: no-arg output lists query families, `WHAT=queries` documents executable query IDs, `WHAT=catalog SIGNAL=...` discovers live telemetry vocabulary, and `WHAT=describe ...` explains metrics, services, spans, log fields, or observe queries before you drill into operational views.
 
-* You can run `make clickhouse-schemas` to read all of our ClickHouse tables, which contains a lot of useful ground truth. Prefer 
+* You can run `make clickhouse-schemas` to read all of our ClickHouse tables, which contains a lot of useful ground truth. Prefer `make observe` first, then fall back to raw `make clickhouse-query` when observe has no named query for the question.
 
 * Less important but useful if editing instructions: .claude/CLAUDE.md is symlinked from AGENTS.md
 
@@ -196,16 +196,19 @@ make clickhouse-query QUERY='SELECT Timestamp, Body FROM default.otel_logs ORDER
 
 ### Debug with observe
 
-`make observe` is the blessed operator query surface for ClickHouse-backed telemetry:
+`make observe` is the blessed operator query surface for ClickHouse-backed telemetry. It is designed for progressive disclosure: discover the available query and signal vocabulary first, then run explicit operational queries when needed.
 
 ```bash
-make observe WHAT=catalog
-make observe WHAT=metric METRIC=system.cpu.time
+make observe
+make observe WHAT=queries
+make observe WHAT=catalog SIGNAL=metrics
+make observe WHAT=catalog SIGNAL=traces
+make observe WHAT=describe QUERY=metric.latest
+make observe WHAT=describe METRIC=system.cpu.time
 make observe WHAT=service SERVICE=billing-service
-make observe WHAT=service SERVICE=sandbox-rental-service ERRORS=1
 make observe WHAT=errors
 make observe WHAT=mail
-make observe WHAT=deploy
+make observe WHAT=deploy RUN_KEY=<deploy-run-key>
 ```
 
 Use `make clickhouse-query` only when the observe surface does not yet cover the question. Interactive ClickHouse shells are intentionally unsupported because agent workflows need replayable commands.
