@@ -939,13 +939,13 @@ grafana_dashboards:
             $__timeFilter(TimeUnix) AND MetricName = 'process.memory.usage' AND ResourceAttributes['process.executable.name'] = 'zitadel' GROUP
             BY time)) ORDER BY time
   - uid: "forge-metal-observability-query-model"
-    title: "Observability Query Model"
+    title: "Observability Query Vocabulary"
     tags:
       - "infrastructure"
     panels:
       - id: 1
         uid: "live-metric-catalog"
-        title: "Live Metric Catalog"
+        title: "Metric Namespace Catalog"
         type: "table"
         x: 0
         y: 0
@@ -956,11 +956,13 @@ grafana_dashboards:
         unit: "short"
         raw_sql:
           >-
-            SELECT ServiceName, MetricName, MetricKind, MetricUnit, AttributeSets, Samples, LastSeenAt FROM default.otel_metric_catalog_live
-            WHERE $__timeFilter(LastSeenAt) ORDER BY LastSeenAt DESC, ServiceName, MetricName LIMIT 100
+            SELECT if(position(MetricName, '.') = 0, concat(MetricName, '.*'), concat(arrayElement(splitByChar('.', MetricName), 1), '.*')) AS
+            Namespace, countDistinct(MetricName) AS Metrics, arrayStringConcat(arraySort(groupUniqArray(MetricKind)), ', ') AS Kinds,
+            arrayStringConcat(arraySlice(arraySort(groupUniqArray(if(ServiceName = '', '<resource-only>', ServiceName))), 1, 8), ', ') AS
+            Services FROM default.otel_metric_catalog_live WHERE $__timeFilter(LastSeenAt) GROUP BY Namespace ORDER BY Namespace LIMIT 100
       - id: 2
         uid: "latest-scalar-metrics"
-        title: "Latest Scalar Metrics"
+        title: "Metric Names"
         type: "table"
         x: 12
         y: 0
@@ -971,8 +973,10 @@ grafana_dashboards:
         unit: "short"
         raw_sql:
           >-
-            SELECT ServiceName, MetricName, MetricKind, CurrentValue, MetricUnit, SampledAt, toString(Attributes) AS Attributes FROM
-            default.otel_metric_latest WHERE $__timeFilter(SampledAt) ORDER BY SampledAt DESC, ServiceName, MetricName LIMIT 100
+            SELECT MetricName, arrayStringConcat(arraySort(groupUniqArray(MetricKind)), ', ') AS Kinds, any(MetricUnit) AS Unit,
+            arrayStringConcat(arraySlice(arraySort(groupUniqArray(if(ServiceName = '', '<resource-only>', ServiceName))), 1, 8), ', ') AS
+            Services, sum(Samples) AS Samples, sum(AttributeSets) AS AttributeSets FROM default.otel_metric_catalog_live WHERE
+            $__timeFilter(LastSeenAt) GROUP BY MetricName ORDER BY MetricName LIMIT 100
       - id: 3
         uid: "recent-signal-errors"
         title: "Recent Signal Errors"
@@ -1001,6 +1005,7 @@ grafana_dashboards:
         unit: "short"
         raw_sql:
           >-
-            SELECT Timestamp, SpanName, StatusCode, SpanAttributes['observe.what'] AS Surface, SpanAttributes['clickhouse.query_name'] AS
-            QueryName, SpanAttributes['observe.run_id'] AS RunID, TraceId FROM default.otel_traces WHERE $__timeFilter(Timestamp) AND
-            ServiceName = 'observe' ORDER BY Timestamp DESC LIMIT 100
+            SELECT Timestamp, SpanName, StatusCode, SpanAttributes['observe.what'] AS Surface, SpanAttributes['observe.signal'] AS Signal,
+            SpanAttributes['observe.query_id'] AS QueryID, SpanAttributes['observe.query_family'] AS Family,
+            SpanAttributes['clickhouse.query_name'] AS QueryName, SpanAttributes['observe.run_id'] AS RunID, TraceId FROM default.otel_traces
+            WHERE $__timeFilter(Timestamp) AND ServiceName = 'observe' ORDER BY Timestamp DESC LIMIT 100
