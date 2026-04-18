@@ -97,6 +97,25 @@
     GOARCH: amd64
   changed_when: false
 
+- name: Build governance-service binary
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.command:
+    argv:
+      - go
+      - build
+      - -ldflags=-s -w -X main.version={{ forge_metal_version | default('dev') }}
+      - -o
+      - "{{ deploy_profile_repo_root }}/src/governance-service/governance-service"
+      - ./src/governance-service/cmd/governance-service
+    chdir: "{{ deploy_profile_repo_root }}"
+  environment:
+    CGO_ENABLED: "0"
+    GOOS: linux
+    GOARCH: amd64
+  changed_when: false
+
 - name: Copy Go binaries to server
   ansible.builtin.copy:
     src: "{{ item.src }}"
@@ -109,6 +128,7 @@
     - { src: "{{ deploy_profile_repo_root }}/src/billing-service/tb-inspect", name: tb-inspect }
     - { src: "{{ deploy_profile_repo_root }}/src/sandbox-rental-service/sandbox-rental-service", name: sandbox-rental-service }
     - { src: "{{ deploy_profile_repo_root }}/src/identity-service/identity-service", name: identity-service }
+    - { src: "{{ deploy_profile_repo_root }}/src/governance-service/governance-service", name: governance-service }
 
 - name: Set billing-service binary copy fact
   ansible.builtin.set_fact:
@@ -177,3 +197,20 @@
   ansible.builtin.command: /bin/true
   changed_when: deploy_profile_identity_service_binary_copy.changed | default(false)
   notify: deploy-profile restart identity-service
+
+- name: Set governance-service binary copy fact
+  ansible.builtin.set_fact:
+    deploy_profile_governance_service_binary_copy: >-
+      {{
+        (
+          deploy_profile_go_binary_copy_results.results
+          | selectattr('item.name', 'equalto', 'governance-service')
+          | list
+          | first
+        ) | default({})
+      }}
+
+- name: Trigger governance-service restart when binary changed
+  ansible.builtin.command: /bin/true
+  changed_when: deploy_profile_governance_service_binary_copy.changed | default(false)
+  notify: deploy-profile restart governance-service

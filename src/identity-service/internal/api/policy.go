@@ -78,15 +78,15 @@ func registerSecured[I, O any](api huma.API, svc *identity.Service, securedOp se
 	huma.Register(api, op, func(ctx context.Context, input *I) (*O, error) {
 		identity, err := enforceOperationPolicy(ctx, svc, policy)
 		if err != nil {
-			auditOperation(ctx, policy, identity, "denied", err)
+			auditOperation(ctx, op.OperationID, policy, identity, "denied", err)
 			return nil, err
 		}
 		output, err := handler(ctx, input)
 		if err != nil {
-			auditOperation(ctx, policy, identity, "error", err)
+			auditOperation(ctx, op.OperationID, policy, identity, "error", err)
 			return nil, err
 		}
-		auditOperation(ctx, policy, identity, "allowed", nil)
+		auditOperation(ctx, op.OperationID, policy, identity, "allowed", nil)
 		return output, nil
 	})
 }
@@ -230,12 +230,14 @@ type operationRequestInfoKey struct{}
 
 type operationRequestInfo struct {
 	ClientIP       string
+	UserAgent      string
 	IdempotencyKey string
 }
 
 func operationRequestMiddleware(ctx huma.Context, next func(huma.Context)) {
 	info := operationRequestInfo{
 		ClientIP:       clientIPFromHuma(ctx),
+		UserAgent:      strings.TrimSpace(ctx.Header("User-Agent")),
 		IdempotencyKey: strings.TrimSpace(ctx.Header("Idempotency-Key")),
 	}
 	next(huma.WithValue(ctx, operationRequestInfoKey{}, info))
@@ -295,9 +297,10 @@ func clientIPFromHuma(ctx huma.Context) string {
 	return remote
 }
 
-func auditOperation(ctx context.Context, policy operationPolicy, identity *auth.Identity, outcome string, err error) {
+func auditOperation(ctx context.Context, operationID string, policy operationPolicy, identity *auth.Identity, outcome string, err error) {
 	args := []any{
 		"audit_event", policy.AuditEvent,
+		"operation_id", operationID,
 		"operation_permission", policy.Permission,
 		"operation_resource", policy.Resource,
 		"operation_action", policy.Action,
@@ -311,6 +314,37 @@ func auditOperation(ctx context.Context, policy operationPolicy, identity *auth.
 		args = append(args, "error", err.Error())
 	}
 	slog.Default().InfoContext(ctx, "identity api operation", args...)
+	if identity == nil {
+		return
+	}
+	info := operationRequestInfoFromContext(ctx)
+	principalType := "user"
+	if credentialID, _ := identity.Raw["forge_metal:credential_id"].(string); strings.TrimSpace(credentialID) != "" {
+		principalType = "api_credential"
+	}
+	record := governanceAuditRecord{
+		OrgID:              identity.OrgID,
+		ServiceName:        "identity-service",
+		OperationID:        operationID,
+		AuditEvent:         policy.AuditEvent,
+		PrincipalType:      principalType,
+		PrincipalID:        identity.Subject,
+		PrincipalEmail:     identity.Email,
+		Permission:         string(policy.Permission),
+		ResourceKind:       policy.Resource,
+		Action:             policy.Action,
+		OrgScope:           policy.OrgScope,
+		RateLimitClass:     policy.RateLimitClass,
+		Result:             outcome,
+		ClientIP:           info.ClientIP,
+		UserAgent:          info.UserAgent,
+		IdempotencyKeyHash: hashTextForAudit(info.IdempotencyKey),
+	}
+	if err != nil {
+		record.ErrorCode = "operation-failed"
+		record.ErrorMessage = err.Error()
+	}
+	sendGovernanceAudit(ctx, record)
 }
 
 type rateLimitRule struct {
@@ -335,10 +369,10 @@ type fixedWindowOperationRateLimiter struct {
 }
 
 var apiOperationRateLimiter = newFixedWindowOperationRateLimiter(map[string]rateLimitRule{
-	"read":                          {Limit: 600, Window: time.Minute},
-	"member_mutation":               {Limit: 60, Window: time.Minute},
-	"member_capabilities_mutation":  {Limit: 30, Window: time.Minute},
-	"api_credential_mutation":       {Limit: 30, Window: time.Minute},
+	"read":                         {Limit: 600, Window: time.Minute},
+	"member_mutation":              {Limit: 60, Window: time.Minute},
+	"member_capabilities_mutation": {Limit: 30, Window: time.Minute},
+	"api_credential_mutation":      {Limit: 30, Window: time.Minute},
 })
 
 func newFixedWindowOperationRateLimiter(rules map[string]rateLimitRule) *fixedWindowOperationRateLimiter {

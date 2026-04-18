@@ -53,8 +53,10 @@ func run() error {
 	pgDSN := requireCredential("pg-dsn")
 	zitadelAdminToken := requireCredential("zitadel-admin-token")
 	zitadelActionSigningKey := requireCredential("zitadel-action-signing-key")
+	governanceAuditToken := credentialOr("governance-internal-audit-token", "")
 
 	listenAddr := envOr("IDENTITY_LISTEN_ADDR", "127.0.0.1:4248")
+	governanceAuditURL := envOr("IDENTITY_GOVERNANCE_AUDIT_URL", "")
 	authIssuerURL := requireEnv("IDENTITY_AUTH_ISSUER_URL")
 	authAudience := requireEnv("IDENTITY_AUTH_AUDIENCE")
 	authJWKSURL := envOr("IDENTITY_AUTH_JWKS_URL", "")
@@ -92,6 +94,7 @@ func run() error {
 		Directory: zitadelClient,
 		ProjectID: projectID,
 	}
+	api.ConfigureAuditSink(governanceAuditURL, governanceAuditToken)
 
 	rootMux := http.NewServeMux()
 	rootMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -165,6 +168,14 @@ func requireCredential(name string) string {
 	if value == "" {
 		fmt.Fprintf(os.Stderr, "required credential %s is empty\n", name)
 		os.Exit(1)
+	}
+	return value
+}
+
+func credentialOr(name, fallback string) string {
+	value, err := loadCredential(name)
+	if err != nil || value == "" {
+		return fallback
 	}
 	return value
 }

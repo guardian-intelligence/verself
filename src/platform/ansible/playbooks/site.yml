@@ -117,7 +117,7 @@
     - role: resend
       tags: [resend]
     - role: clickhouse
-      tags: [clickhouse, billing_service, sandbox_rental_service]
+      tags: [clickhouse, billing_service, sandbox_rental_service, governance_service]
     - role: tigerbeetle
       tags: [tigerbeetle]
     - role: postgresql
@@ -130,6 +130,8 @@
       tags: [sandbox_rental_service]
     - role: identity_service
       tags: [identity_service]
+    - role: governance_service
+      tags: [governance_service]
     - role: electric
       vars:
         electric_instance: default
@@ -150,7 +152,7 @@
     - role: frontend_auth_sessions
       tags: [frontend_auth_sessions, rent_a_sandbox, webmail]
     - role: rent_a_sandbox
-      tags: [rent_a_sandbox]
+      tags: [rent_a_sandbox, governance_service]
     - role: stalwart
       tags: [stalwart]
     - role: otelcol

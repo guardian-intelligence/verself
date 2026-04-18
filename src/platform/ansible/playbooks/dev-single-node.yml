@@ -90,7 +90,7 @@
     - role: cloudflare_dns
       tags: [cloudflare_dns]
     - role: clickhouse
-      tags: [clickhouse, billing_service, sandbox_rental_service]
+      tags: [clickhouse, billing_service, sandbox_rental_service, governance_service]
     - role: tigerbeetle
       tags: [tigerbeetle]
     - role: postgresql
@@ -103,6 +103,8 @@
       tags: [sandbox_rental_service]
     - role: identity_service
       tags: [identity_service]
+    - role: governance_service
+      tags: [governance_service]
     # sandbox_rental_service's migration path drops and recreates its database
     # when the schema fingerprint changes, which wipes Electric's publication,
     # shape-table ownership, and REPLICA IDENTITY FULL — and leaves Electric
@@ -129,7 +131,7 @@
     - role: frontend_auth_sessions
       tags: [frontend_auth_sessions, rent_a_sandbox, webmail]
     - role: rent_a_sandbox
-      tags: [rent_a_sandbox]
+      tags: [rent_a_sandbox, governance_service]
     - role: stalwart
       tags: [stalwart]
     - role: otelcol
