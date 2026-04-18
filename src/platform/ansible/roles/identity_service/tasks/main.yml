@@ -247,7 +247,9 @@
       LoadCredential=pg-dsn:/etc/credstore/identity-service/pg-dsn
       LoadCredential=zitadel-admin-token:/etc/credstore/identity-service/zitadel-admin-token
       LoadCredential=zitadel-action-signing-key:/etc/credstore/identity-service/zitadel-action-signing-key
+      LoadCredential=governance-internal-audit-token:/etc/credstore/governance-service/internal-audit-token
       Environment=IDENTITY_LISTEN_ADDR={{ services.identity_service.host }}:{{ services.identity_service.port }}
+      Environment=IDENTITY_GOVERNANCE_AUDIT_URL=http://{{ services.governance_service.host }}:{{ services.governance_service.port }}/internal/v1/audit/events
       Environment=IDENTITY_AUTH_ISSUER_URL={{ identity_service_auth_issuer_url }}
       Environment=IDENTITY_AUTH_JWKS_URL={{ identity_service_auth_jwks_url }}
       Environment=IDENTITY_AUTH_AUDIENCE={{ identity_service_auth_audience }}

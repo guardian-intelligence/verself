@@ -34,6 +34,7 @@
 #      4243  sandbox-rental-service
 #      4246  mailbox-service
 #      4248  identity-service
+#      4250  governance-service
 #
 #    TanStack frontends (Nitro SSR):             4240–4259 (shared block)
 #      4244  rent-a-sandbox
@@ -100,6 +101,9 @@ services:
   identity_service:
     host: "127.0.0.1"
     port: 4248
+  governance_service:
+    host: "127.0.0.1"
+    port: 4250
   rent_a_sandbox:
     host: "127.0.0.1"
     port: 4244

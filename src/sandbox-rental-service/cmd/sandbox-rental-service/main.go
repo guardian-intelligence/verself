@@ -66,6 +66,7 @@ func run() error {
 	pgDSN := requireCredential("pg-dsn")
 	chPassword := credentialOr("ch-password", "")
 	billingClientSecret := requireCredential("billing-client-secret")
+	governanceAuditToken := credentialOr("governance-internal-audit-token", "")
 	githubAppPrivateKey := credentialOr("github-app-private-key", "")
 	githubAppWebhookSecret := credentialOr("github-app-webhook-secret", "")
 	githubAppClientSecret := credentialOr("github-app-client-secret", "")
@@ -74,6 +75,7 @@ func run() error {
 	listenAddr := envOr("SANDBOX_LISTEN_ADDR", "127.0.0.1:4243")
 	chAddress := envOr("SANDBOX_CH_ADDRESS", "127.0.0.1:9000")
 	billingURL := envOr("SANDBOX_BILLING_URL", "http://127.0.0.1:4242")
+	governanceAuditURL := envOr("SANDBOX_GOVERNANCE_AUDIT_URL", "")
 	billingClientID := requireEnv("SANDBOX_BILLING_CLIENT_ID")
 	billingTokenURL := requireEnv("SANDBOX_BILLING_TOKEN_URL")
 	billingAuthAudience := requireEnv("SANDBOX_BILLING_AUTH_AUDIENCE")
@@ -234,6 +236,7 @@ func run() error {
 		return fmt.Errorf("create github runner adapter: %w", err)
 	}
 	jobService.GitHubRunner = githubRunner
+	sandboxapi.ConfigureAuditSink(governanceAuditURL, governanceAuditToken)
 
 	schedulerRuntime, err := scheduler.NewRuntime(pgxPool, scheduler.Config{
 		Logger:              logger,

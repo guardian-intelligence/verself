@@ -1,0 +1,165 @@
+---
+- name: Verify governance-service binary exists in profile
+  ansible.builtin.stat:
+    path: "{{ fm_bin }}/governance-service"
+  register: governance_service_binary
+  failed_when: not governance_service_binary.stat.exists
+
+- name: Create governance_service system group
+  ansible.builtin.group:
+    name: governance_service
+    system: true
+
+- name: Create governance_service system user
+  ansible.builtin.user:
+    name: governance_service
+    group: governance_service
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ governance_service_state_dir }}"
+    create_home: false
+
+- name: Create governance-service state directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: governance_service
+    group: governance_service
+    mode: "0750"
+  loop:
+    - "{{ governance_service_state_dir }}"
+    - "{{ governance_service_export_dir }}"
+
+- name: Deploy governance-service nftables ruleset
+  ansible.builtin.template:
+    src: governance-service.nft.j2
+    dest: /etc/nftables.d/governance-service.nft
+    mode: "0644"
+  notify: reload nftables
+
+- name: Apply governance-service nftables before proceeding
+  ansible.builtin.meta: flush_handlers
+
+- name: Include governance-service generated credential tasks
+  ansible.builtin.include_tasks: credentials.yml
+
+- name: Include governance-service PostgreSQL database tasks
+  ansible.builtin.include_tasks: database.yml
+
+- name: Include governance-service PostgreSQL migration tasks
+  ansible.builtin.include_tasks: migrations.yml
+
+- name: Wait for Zitadel before resolving governance-service auth audience
+  ansible.builtin.wait_for:
+    host: "{{ services.zitadel.host }}"
+    port: "{{ services.zitadel.port }}"
+    timeout: 60
+
+- name: Read Zitadel admin PAT for governance-service auth setup
+  ansible.builtin.slurp:
+    src: /etc/zitadel/admin.pat
+  register: governance_service_zitadel_admin_pat_raw
+  no_log: true
+
+- name: Set governance-service Zitadel admin PAT fact
+  ansible.builtin.set_fact:
+    governance_service_zitadel_admin_pat: "{{ governance_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
+  no_log: true
+
+- name: Find identity-service auth project for governance-service bearer validation
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/_search"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ governance_service_zitadel_admin_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      queries:
+        - nameQuery:
+            name: "{{ governance_service_identity_project_name }}"
+            method: TEXT_QUERY_METHOD_EQUALS
+    status_code: 200
+    return_content: true
+  register: governance_service_identity_project_search
+  no_log: true
+
+- name: Assert identity-service auth project exists for governance-service
+  ansible.builtin.assert:
+    that: (governance_service_identity_project_search.json.result | default([])) | length > 0
+    fail_msg: >-
+      Identity-service Zitadel project '{{ governance_service_identity_project_name }}'
+      not found. Run the identity_service role before governance_service.
+
+- name: Set governance-service auth audience fact
+  ansible.builtin.set_fact:
+    governance_service_auth_audience: "{{ governance_service_identity_project_search.json.result[0].id }}"
+
+- name: Deploy governance-service systemd unit
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=Governance Service
+      After=forge-metal-firewall.target network.target postgresql.service clickhouse-server.service zitadel.service
+      Requires=forge-metal-firewall.target
+      Wants=postgresql.service clickhouse-server.service zitadel.service
+
+      [Service]
+      Type=simple
+      User=governance_service
+      Group=governance_service
+      LoadCredential=pg-dsn:/etc/credstore/governance-service/pg-dsn
+      LoadCredential=identity-pg-dsn:/etc/credstore/governance-service/identity-pg-dsn
+      LoadCredential=billing-pg-dsn:/etc/credstore/governance-service/billing-pg-dsn
+      LoadCredential=sandbox-pg-dsn:/etc/credstore/governance-service/sandbox-pg-dsn
+      LoadCredential=ch-password:/etc/credstore/governance-service/ch-password
+      LoadCredential=audit-hmac-key:/etc/credstore/governance-service/audit-hmac-key
+      LoadCredential=internal-audit-token:/etc/credstore/governance-service/internal-audit-token
+      Environment=GOVERNANCE_LISTEN_ADDR={{ services.governance_service.host }}:{{ services.governance_service.port }}
+      Environment=GOVERNANCE_CH_ADDRESS={{ services.clickhouse.host }}:{{ services.clickhouse.native_port }}
+      Environment=GOVERNANCE_AUTH_ISSUER_URL={{ governance_service_auth_issuer_url }}
+      Environment=GOVERNANCE_AUTH_JWKS_URL={{ governance_service_auth_jwks_url }}
+      Environment=GOVERNANCE_AUTH_AUDIENCE={{ governance_service_auth_audience }}
+      Environment=GOVERNANCE_EXPORT_DIR={{ governance_service_export_dir }}
+      Environment=OTEL_SERVICE_NAME=governance-service
+      Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}
+      ExecStart={{ fm_bin }}/governance-service
+      Restart=on-failure
+      RestartSec=5
+      CapabilityBoundingSet=
+      ProtectHome=true
+      ProtectSystem=strict
+      ReadWritePaths={{ governance_service_state_dir }}
+      PrivateDevices=true
+      PrivateTmp=true
+      ProtectClock=true
+      ProtectControlGroups=true
+      ProtectKernelLogs=true
+      ProtectKernelModules=true
+      ProtectKernelTunables=true
+      LockPersonality=true
+      NoNewPrivileges=true
+      RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+      RestrictRealtime=true
+      RestrictSUIDSGID=true
+      SystemCallArchitectures=native
+      UMask=0077
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/governance-service.service
+    mode: "0644"
+  notify: restart governance-service
+
+- name: Enable and start governance-service
+  ansible.builtin.systemd:
+    name: governance-service
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for governance-service to be ready
+  ansible.builtin.wait_for:
+    host: "{{ services.governance_service.host }}"
+    port: "{{ services.governance_service.port }}"
+    timeout: 30

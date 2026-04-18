@@ -17,12 +17,13 @@
   vars:
     billing_service_force_ledger_reset: true
     sandbox_rental_service_force_schema_reset: true
+    governance_service_force_schema_reset: true
     clickhouse_force_schema_reset: true
   roles:
     - role: deploy_profile
       tags: [deploy_profile]
     - role: clickhouse
-      tags: [clickhouse, billing_service, sandbox_rental_service]
+      tags: [clickhouse, billing_service, sandbox_rental_service, governance_service]
     - role: tigerbeetle
       tags: [tigerbeetle]
     - role: postgresql
@@ -31,6 +32,8 @@
       tags: [billing_service]
     - role: sandbox_rental_service
       tags: [sandbox_rental_service]
+    - role: governance_service
+      tags: [governance_service]
     - role: electric
       vars:
         electric_instance: default
@@ -51,7 +54,7 @@
     - role: frontend_auth_sessions
       tags: [frontend_auth_sessions, rent_a_sandbox]
     - role: rent_a_sandbox
-      tags: [rent_a_sandbox]
+      tags: [rent_a_sandbox, governance_service]
     - role: otelcol
       tags: [otelcol]
     - role: grafana
