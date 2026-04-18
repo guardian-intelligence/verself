@@ -269,8 +269,8 @@ grafana-proof: inventory-check ## Verify Grafana health, datasource execution, P
 services-doctor: inventory-check ## Cross-check declared services.yml against live listeners on the box: make services-doctor [FORMAT=table|json|nftables]
 	@python3 $(FM)/scripts/services-doctor.py
 
-observe: inventory-check ## Query the operator observability surface: make observe WHAT=catalog|metric|service|errors|mail|deploy [SERVICE=...] [METRIC=...]
-	cd $(FM) && ./scripts/observe.sh $(if $(WHAT),--what "$(WHAT)",) $(if $(SERVICE),--service "$(SERVICE)",) $(if $(METRIC),--metric "$(METRIC)",) $(if $(MINUTES),--minutes "$(MINUTES)",) $(if $(LIMIT),--limit "$(LIMIT)",) $(if $(ERRORS),--errors,)
+observe: inventory-check ## Discover/query telemetry: make observe [WHAT=catalog|queries|describe|metric|trace|logs|http|service|errors|mail|deploy] [SIGNAL=...] [FORMAT=table|json|markdown]
+	cd $(FM) && ./scripts/observe.sh $(if $(WHAT),--what "$(WHAT)",) $(if $(SIGNAL),--signal "$(SIGNAL)",) $(if $(SERVICE),--service "$(SERVICE)",) $(if $(METRIC),--metric "$(METRIC)",) $(if $(SPAN),--span "$(SPAN)",) $(if $(FIELD),--field "$(FIELD)",) $(if $(QUERY),--query "$(QUERY)",) $(if $(PREFIX),--prefix "$(PREFIX)",) $(if $(SEARCH),--search "$(SEARCH)",) $(if $(GROUP_BY),--group-by "$(GROUP_BY)",) $(if $(MODE),--mode "$(MODE)",) $(if $(TRACE_ID),--trace-id "$(TRACE_ID)",) $(if $(RUN_KEY),--run-key "$(RUN_KEY)",) $(if $(HOST),--host "$(HOST)",) $(if $(STATUS_MIN),--status-min "$(STATUS_MIN)",) $(if $(FORMAT),--format "$(FORMAT)",) $(if $(MINUTES),--minutes "$(MINUTES)",) $(if $(LIMIT),--limit "$(LIMIT)",) $(if $(ERRORS),--errors,)
 
 telemetry-proof: inventory-check ## Run observability smoke and verify ansible spans land in ClickHouse
 	cd $(FM) && ./scripts/telemetry-proof.sh

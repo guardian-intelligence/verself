@@ -44,10 +44,12 @@ The checker also treats OpenAPI 3.1 nullable integer schemas such as `type: [int
 
 ## TypeScript Boundary Pattern
 
-Generated clients stay generated. App code imports wrapper functions, not raw generated SDK calls. Wrappers parse generated responses with Valibot before values reach app logic, then deliberately convert DTO fields:
+Generated clients stay generated and are the supported service SDK surface. TanStack Start server functions, service-side adapters, and external customers may call generated SDK functions directly with the appropriate bearer token, headers, and base URL.
+
+Browser UI code should not hand-roll service fetches. It should go through server functions or app-facing wrapper modules so bearer forwarding, audience selection, idempotency headers, Valibot parsing, and DTO conversion stay in one server-owned boundary. Those wrappers parse generated responses with Valibot before values reach app logic, then deliberately convert DTO fields:
 
 - identifiers usually remain branded decimal strings
 - safe bounded quantities become `number`
 - unbounded quantities become `bigint` only when the wrapper intentionally exposes that type
 
-Do not parse `response.json()` directly in app code for service APIs. If a wrapper needs a field that the generated client does not expose cleanly, fix the Go DTO/OpenAPI source and regenerate.
+Do not parse `response.json()` directly for service APIs when a generated SDK exists. If a wrapper or server function needs a field that the generated client does not expose cleanly, fix the Go DTO/OpenAPI source and regenerate.

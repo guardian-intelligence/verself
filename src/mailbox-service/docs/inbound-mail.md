@@ -145,6 +145,8 @@ curl -s -u admin:<admin_password> http://127.0.0.1:8090/api/principal/name/user
 Native OTLP over gRPC to otelcol-contrib on `127.0.0.1:4317`. Traces, logs, and metrics are all pushed — no scraping required. Data lands in ClickHouse under `ServiceName = 'stalwart'`.
 
 ```bash
+make observe WHAT=describe SERVICE=stalwart        # discover Stalwart telemetry
+make observe WHAT=catalog SIGNAL=logs SERVICE=stalwart
 make observe WHAT=service SERVICE=stalwart           # recent traces + logs
 make observe WHAT=service SERVICE=stalwart ERRORS=1  # errors only
 make observe WHAT=mail                               # mail events + metrics
