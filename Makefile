@@ -9,6 +9,7 @@ FM       := src/platform
 AW       := src/apiwire
 VMO      := src/vm-orchestrator
 BS       := src/billing-service
+GS       := src/governance-service
 IS       := src/identity-service
 AM       := src/auth-middleware
 SR       := src/sandbox-rental-service
@@ -16,7 +17,7 @@ MS       := src/mailbox-service
 OT       := src/otel
 PS       := src/platform/policyspec
 INVENTORY := $(FM)/ansible/inventory/hosts.ini
-GO_DIRS  := $(AW) $(VMO) $(BS) $(IS) $(AM) $(SR) $(MS) $(OT) $(PS)
+GO_DIRS  := $(AW) $(VMO) $(BS) $(GS) $(IS) $(AM) $(SR) $(MS) $(OT) $(PS)
 GO_PKGS  := $(addsuffix /...,$(addprefix ./,$(GO_DIRS)))
 BILLING_PRODUCT_ID ?= sandbox
 ASSUME_PERSONA_OUTPUT_FLAG := $(if $(OUTPUT),--output "$(OUTPUT)",)
@@ -61,6 +62,7 @@ tidy:
 	cd $(AW) && go mod tidy
 	cd $(VMO) && go mod tidy
 	cd $(BS) && go mod tidy
+	cd $(GS) && go mod tidy
 	cd $(IS) && go mod tidy
 	cd $(AM) && go mod tidy
 	cd $(SR) && go mod tidy
@@ -75,6 +77,9 @@ policy-check: ## Validate src/platform/policies/*.yml and emit a ClickHouse-sear
 openapi: ## Regenerate committed OpenAPI 3.0 and 3.1 specs for Go services
 	go run ./$(BS)/cmd/billing-openapi --format 3.0 > $(BS)/openapi/openapi-3.0.yaml
 	go run ./$(BS)/cmd/billing-openapi --format 3.1 > $(BS)/openapi/openapi-3.1.yaml
+	mkdir -p $(GS)/openapi
+	go run ./$(GS)/cmd/governance-openapi --format 3.0 > $(GS)/openapi/openapi-3.0.yaml
+	go run ./$(GS)/cmd/governance-openapi --format 3.1 > $(GS)/openapi/openapi-3.1.yaml
 	mkdir -p $(IS)/openapi
 	go run ./$(IS)/cmd/identity-openapi --format 3.0 > $(IS)/openapi/openapi-3.0.yaml
 	go run ./$(IS)/cmd/identity-openapi --format 3.1 > $(IS)/openapi/openapi-3.1.yaml
@@ -87,6 +92,8 @@ openapi: ## Regenerate committed OpenAPI 3.0 and 3.1 specs for Go services
 openapi-check: ## Verify committed OpenAPI specs are up to date
 	cd $(BS) && go run ./cmd/billing-openapi --format 3.0 --check
 	cd $(BS) && go run ./cmd/billing-openapi --format 3.1 --check
+	cd $(GS) && go run ./cmd/governance-openapi --format 3.0 --check
+	cd $(GS) && go run ./cmd/governance-openapi --format 3.1 --check
 	cd $(IS) && go run ./cmd/identity-openapi --format 3.0 --check
 	cd $(IS) && go run ./cmd/identity-openapi --format 3.1 --check
 	cd $(MS) && go run ./cmd/mailbox-openapi --format 3.0 --check
@@ -98,6 +105,7 @@ openapi-check: ## Verify committed OpenAPI specs are up to date
 openapi-wire-check: ## Verify frontend-consumed OpenAPI 3.1 specs are JS wire-safe
 	go run ./$(AW)/cmd/openapi-wire-check \
 		$(BS)/openapi/openapi-3.1.yaml \
+		$(GS)/openapi/openapi-3.1.yaml \
 		$(IS)/openapi/openapi-3.1.yaml \
 		$(MS)/openapi/openapi-3.1.yaml \
 		$(SR)/openapi/openapi-3.1.yaml

@@ -1,0 +1,538 @@
+openapi: 3.0.3
+info:
+    title: Forge Metal Governance Service API
+    version: dev
+servers:
+    - url: http://127.0.0.1:4250
+paths:
+    /api/v1/governance/audit/events:
+        get:
+            summary: List organization audit events
+            operationId: list-audit-events
+            parameters:
+                - name: limit
+                  in: query
+                  description: Maximum events to return.
+                  explode: false
+                  schema:
+                    type: integer
+                    description: Maximum events to return.
+                    format: int64
+                    minimum: 1
+                    maximum: 200
+                - name: cursor
+                  in: query
+                  explode: false
+                  schema:
+                    type: string
+                    maxLength: 1024
+                - name: service_name
+                  in: query
+                  explode: false
+                  schema:
+                    type: string
+                    maxLength: 128
+                - name: operation_id
+                  in: query
+                  explode: false
+                  schema:
+                    type: string
+                    maxLength: 128
+                - name: result
+                  in: query
+                  explode: false
+                  schema:
+                    type: string
+                    enum:
+                        - allowed
+                        - denied
+                        - error
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/GovernanceAuditEvents'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+            security:
+                - bearerAuth: []
+            x-forge-metal-iam:
+                action: list
+                audit_event: governance.audit_event.list
+                org_scope: token_org_id
+                permission: governance:audit:read
+                rate_limit_class: read
+                resource: audit_event
+    /api/v1/governance/exports:
+        get:
+            summary: List organization data exports
+            operationId: list-data-exports
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/GovernanceExportJobs'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+            security:
+                - bearerAuth: []
+            x-forge-metal-iam:
+                action: list
+                audit_event: governance.data_export.list
+                org_scope: token_org_id
+                permission: governance:export:read
+                rate_limit_class: read
+                resource: data_export
+        post:
+            summary: Create an organization data export
+            operationId: create-data-export
+            parameters:
+                - name: Idempotency-Key
+                  in: header
+                  description: Stable caller-provided key used to make this mutation retry-safe.
+                  required: true
+                  schema:
+                    type: string
+                    minLength: 1
+                    maxLength: 128
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/GovernanceCreateExportRequest'
+                required: true
+            responses:
+                "201":
+                    description: Created
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/GovernanceExportJob'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+            security:
+                - bearerAuth: []
+            x-forge-metal-iam:
+                action: create
+                audit_event: governance.data_export.create
+                idempotency: idempotency_key_header
+                org_scope: token_org_id
+                permission: governance:export:create
+                rate_limit_class: export_create
+                request_body_max_bytes: 16384
+                resource: data_export
+    /api/v1/governance/exports/{export_id}:
+        get:
+            summary: Get an organization data export
+            operationId: get-data-export
+            parameters:
+                - name: export_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                    format: uuid
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/GovernanceExportJob'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+            security:
+                - bearerAuth: []
+            x-forge-metal-iam:
+                action: read
+                audit_event: governance.data_export.read
+                org_scope: token_org_id
+                permission: governance:export:read
+                rate_limit_class: read
+                resource: data_export
+    /api/v1/governance/exports/{export_id}/download:
+        get:
+            summary: Download an organization data export artifact
+            operationId: download-data-export
+            parameters:
+                - name: export_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                    format: uuid
+            responses:
+                "200":
+                    description: tar.gz export artifact
+                    headers:
+                        Content-Disposition:
+                            schema:
+                                type: string
+                        Content-Type:
+                            schema:
+                                type: string
+                    content:
+                        application/gzip:
+                            schema:
+                                type: string
+                                format: binary
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+            security:
+                - bearerAuth: []
+            x-forge-metal-iam:
+                action: download
+                audit_event: governance.data_export.download
+                org_scope: token_org_id
+                permission: governance:export:read
+                rate_limit_class: export_download
+                resource: data_export
+components:
+    schemas:
+        ErrorDetail:
+            type: object
+            additionalProperties: false
+            properties:
+                location:
+                    type: string
+                    description: Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'
+                message:
+                    type: string
+                    description: Error message text
+                value:
+                    description: The value at the given location
+        ErrorModel:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - http://127.0.0.1:4250/schemas/ErrorModel.json
+                    readOnly: true
+                detail:
+                    type: string
+                    description: A human-readable explanation specific to this occurrence of the problem.
+                    examples:
+                        - Property foo is required but is missing.
+                errors:
+                    type: array
+                    description: Optional list of individual error details
+                    items:
+                        $ref: '#/components/schemas/ErrorDetail'
+                instance:
+                    type: string
+                    description: A URI reference that identifies the specific occurrence of the problem.
+                    format: uri
+                    examples:
+                        - https://example.com/error-log/abc123
+                status:
+                    type: integer
+                    description: HTTP status code
+                    format: int64
+                    examples:
+                        - 400
+                    maximum: 599
+                title:
+                    type: string
+                    description: A short, human-readable summary of the problem type. This value should not change between occurrences of the error.
+                    examples:
+                        - Bad Request
+                type:
+                    type: string
+                    description: A URI reference to human-readable documentation for the error.
+                    format: uri
+                    default: about:blank
+                    examples:
+                        - https://example.com/errors/example
+        GovernanceAuditEvent:
+            type: object
+            additionalProperties: false
+            properties:
+                action:
+                    type: string
+                    description: Action declared by the operation catalog.
+                audit_event:
+                    type: string
+                    description: Stable audit event name.
+                client_ip:
+                    type: string
+                    description: Client IP observed at the service boundary.
+                content_sha256:
+                    type: string
+                    description: Canonical payload SHA-256.
+                error_code:
+                    type: string
+                    description: Stable problem code when the operation failed.
+                error_message:
+                    type: string
+                    description: Redacted failure detail.
+                event_id:
+                    type: string
+                    description: Audit event UUID.
+                idempotency_key_hash:
+                    type: string
+                    description: SHA-256 hash of the caller-provided idempotency key.
+                operation_id:
+                    type: string
+                    description: Stable OpenAPI operation ID.
+                org_id:
+                    type: string
+                    description: Organization ID derived from the caller's token.
+                org_scope:
+                    type: string
+                    description: Organization scoping rule used for the decision.
+                permission:
+                    type: string
+                    description: Forge Metal operation permission.
+                prev_hmac:
+                    type: string
+                    description: Previous audit row HMAC in the organization chain.
+                principal_email:
+                    type: string
+                    description: Email when available for human users.
+                principal_id:
+                    type: string
+                    description: Zitadel subject or service-account subject.
+                principal_type:
+                    type: string
+                    description: Principal class, for example user or api_credential.
+                rate_limit_class:
+                    type: string
+                    description: Rate-limit bucket applied to the operation.
+                recorded_at:
+                    type: string
+                    description: UTC time when the event was recorded.
+                    format: date-time
+                request_id:
+                    type: string
+                    description: Caller or service request ID when available.
+                resource_id:
+                    type: string
+                    description: Resource identifier when known and safe to expose.
+                resource_kind:
+                    type: string
+                    description: Resource kind declared by the operation catalog.
+                result:
+                    type: string
+                    description: allowed, denied, or error.
+                row_hmac:
+                    type: string
+                    description: Current audit row HMAC.
+                sequence:
+                    type: string
+                    description: Per-organization tamper-evident sequence number.
+                service_name:
+                    type: string
+                    description: Service that enforced the operation.
+                trace_id:
+                    type: string
+                    description: OpenTelemetry trace ID.
+            required:
+                - event_id
+                - recorded_at
+                - org_id
+                - service_name
+                - operation_id
+                - audit_event
+                - principal_type
+                - principal_id
+                - permission
+                - resource_kind
+                - action
+                - org_scope
+                - result
+                - sequence
+                - prev_hmac
+                - row_hmac
+                - content_sha256
+        GovernanceAuditEvents:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                events:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/GovernanceAuditEvent'
+                filters:
+                    $ref: '#/components/schemas/GovernanceAuditFilters'
+                limit:
+                    type: integer
+                    description: Applied page size.
+                    format: int32
+                next_cursor:
+                    type: string
+                    description: Cursor for the next page.
+            required:
+                - events
+                - limit
+                - filters
+        GovernanceAuditFilters:
+            type: object
+            additionalProperties: false
+            properties:
+                operation_id:
+                    type: string
+                result:
+                    type: string
+                service_name:
+                    type: string
+        GovernanceCreateExportRequest:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - http://127.0.0.1:4250/schemas/GovernanceCreateExportRequest.json
+                    readOnly: true
+                include_logs:
+                    type: boolean
+                    description: Include high-volume sandbox log content.
+                scopes:
+                    type: array
+                    description: Export scopes. Empty means identity, billing, sandbox, and audit.
+                    items:
+                        type: string
+        GovernanceExportFile:
+            type: object
+            additionalProperties: false
+            properties:
+                bytes:
+                    type: string
+                    description: JavaScript-safe file byte count.
+                content_type:
+                    type: string
+                    description: File media type.
+                path:
+                    type: string
+                    description: Path inside the tar.gz artifact.
+                rows:
+                    type: string
+                    description: JavaScript-safe row count.
+                sha256:
+                    type: string
+                    description: File SHA-256.
+            required:
+                - path
+                - content_type
+                - rows
+                - bytes
+                - sha256
+        GovernanceExportJob:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - http://127.0.0.1:4250/schemas/GovernanceExportJob.json
+                    readOnly: true
+                artifact_bytes:
+                    type: string
+                artifact_sha256:
+                    type: string
+                completed_at:
+                    type: string
+                    format: date-time
+                created_at:
+                    type: string
+                    format: date-time
+                download_url:
+                    type: string
+                error_code:
+                    type: string
+                error_message:
+                    type: string
+                expires_at:
+                    type: string
+                    format: date-time
+                export_id:
+                    type: string
+                    description: Export job UUID.
+                files:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/GovernanceExportFile'
+                format:
+                    type: string
+                include_logs:
+                    type: boolean
+                org_id:
+                    type: string
+                    description: Organization ID.
+                requested_by:
+                    type: string
+                    description: Zitadel subject that requested the export.
+                scopes:
+                    type: array
+                    items:
+                        type: string
+                state:
+                    type: string
+                updated_at:
+                    type: string
+                    format: date-time
+            required:
+                - export_id
+                - org_id
+                - requested_by
+                - scopes
+                - include_logs
+                - format
+                - state
+                - artifact_bytes
+                - files
+                - created_at
+                - updated_at
+                - expires_at
+        GovernanceExportJobs:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                exports:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/GovernanceExportJob'
+            required:
+                - exports
+    securitySchemes:
+        bearerAuth:
+            type: http
+            description: Zitadel-issued bearer token scoped to the identity-service API audience.
+            scheme: bearer
+            bearerFormat: JWT

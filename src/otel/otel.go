@@ -21,6 +21,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.opentelemetry.io/otel"
@@ -39,6 +40,8 @@ import (
 // whose key starts with this prefix. Kept exported so tests can assert the
 // contract.
 const BaggageAttributePrefix = "forge_metal."
+
+const telemetryExportInterval = time.Second
 
 // Config controls the OTel providers. Only ServiceName is required.
 type Config struct {
@@ -87,7 +90,7 @@ func Init(ctx context.Context, cfg Config) (shutdown func(context.Context) error
 
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithSpanProcessor(baggageSpanProcessor{}),
-		sdktrace.WithBatcher(traceExp),
+		sdktrace.WithBatcher(traceExp, sdktrace.WithBatchTimeout(telemetryExportInterval)),
 		sdktrace.WithResource(res),
 	)
 
@@ -103,7 +106,7 @@ func Init(ctx context.Context, cfg Config) (shutdown func(context.Context) error
 	}
 
 	lp := sdklog.NewLoggerProvider(
-		sdklog.WithProcessor(sdklog.NewBatchProcessor(logExp)),
+		sdklog.WithProcessor(sdklog.NewBatchProcessor(logExp, sdklog.WithExportInterval(telemetryExportInterval))),
 		sdklog.WithResource(res),
 	)
 
@@ -158,6 +161,6 @@ func (baggageSpanProcessor) OnStart(parentCtx context.Context, span sdktrace.Rea
 	}
 }
 
-func (baggageSpanProcessor) OnEnd(sdktrace.ReadOnlySpan)            {}
-func (baggageSpanProcessor) Shutdown(context.Context) error         { return nil }
-func (baggageSpanProcessor) ForceFlush(context.Context) error       { return nil }
+func (baggageSpanProcessor) OnEnd(sdktrace.ReadOnlySpan)      {}
+func (baggageSpanProcessor) Shutdown(context.Context) error   { return nil }
+func (baggageSpanProcessor) ForceFlush(context.Context) error { return nil }
