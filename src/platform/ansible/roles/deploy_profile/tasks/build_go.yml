@@ -116,6 +116,25 @@
     GOARCH: amd64
   changed_when: false
 
+- name: Build secrets-service binary
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.command:
+    argv:
+      - go
+      - build
+      - -ldflags=-s -w -X main.version={{ forge_metal_version | default('dev') }}
+      - -o
+      - "{{ deploy_profile_repo_root }}/src/secrets-service/secrets-service"
+      - ./src/secrets-service/cmd/secrets-service
+    chdir: "{{ deploy_profile_repo_root }}"
+  environment:
+    CGO_ENABLED: "0"
+    GOOS: linux
+    GOARCH: amd64
+  changed_when: false
+
 - name: Copy Go binaries to server
   ansible.builtin.copy:
     src: "{{ item.src }}"
@@ -129,6 +148,7 @@
     - { src: "{{ deploy_profile_repo_root }}/src/sandbox-rental-service/sandbox-rental-service", name: sandbox-rental-service }
     - { src: "{{ deploy_profile_repo_root }}/src/identity-service/identity-service", name: identity-service }
     - { src: "{{ deploy_profile_repo_root }}/src/governance-service/governance-service", name: governance-service }
+    - { src: "{{ deploy_profile_repo_root }}/src/secrets-service/secrets-service", name: secrets-service }
 
 - name: Set billing-service binary copy fact
   ansible.builtin.set_fact:
@@ -214,3 +234,20 @@
   ansible.builtin.command: /bin/true
   changed_when: deploy_profile_governance_service_binary_copy.changed | default(false)
   notify: deploy-profile restart governance-service
+
+- name: Set secrets-service binary copy fact
+  ansible.builtin.set_fact:
+    deploy_profile_secrets_service_binary_copy: >-
+      {{
+        (
+          deploy_profile_go_binary_copy_results.results
+          | selectattr('item.name', 'equalto', 'secrets-service')
+          | list
+          | first
+        ) | default({})
+      }}
+
+- name: Trigger secrets-service restart when binary changed
+  ansible.builtin.command: /bin/true
+  changed_when: deploy_profile_secrets_service_binary_copy.changed | default(false)
+  notify: deploy-profile restart secrets-service

@@ -1,0 +1,53 @@
+---
+- name: Apply secrets-service PostgreSQL migrations
+  ansible.builtin.include_role:
+    name: service_pg_migrations
+  vars:
+    service_pg_migrations_service: secrets-service
+    service_pg_migrations_db: secrets_service
+    service_pg_migrations_db_user: secrets_service
+    service_pg_migrations_db_owner: secrets_service
+    service_pg_migrations_db_password: "{{ secrets_service_pg_password }}"
+    service_pg_migrations_source_dir: "{{ playbook_dir }}/../../../secrets-service/migrations"
+    service_pg_migrations_probe_table: secret_resources
+    service_pg_migrations_stop_units:
+      - secrets-service
+    service_pg_migrations_force_reset: "{{ secrets_service_force_schema_reset | default(false) | bool }}"
+
+- name: Reconcile secrets-service object ownership and privileges
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/psql
+      -h {{ services.postgresql.host }}
+      -p {{ services.postgresql.port }}
+      -U postgres
+      -d secrets_service
+      -v ON_ERROR_STOP=1
+    stdin: |
+      DO $$
+      BEGIN
+        IF to_regclass('public.secret_resources') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.secret_resources OWNER TO secrets_service';
+        END IF;
+        IF to_regclass('public.secret_versions') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.secret_versions OWNER TO secrets_service';
+        END IF;
+        IF to_regclass('public.transit_keys') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.transit_keys OWNER TO secrets_service';
+        END IF;
+        IF to_regclass('public.transit_key_versions') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.transit_key_versions OWNER TO secrets_service';
+        END IF;
+      END
+      $$;
+      GRANT USAGE, CREATE ON SCHEMA public TO secrets_service;
+      GRANT ALL PRIVILEGES ON TABLE
+        public.secret_resources,
+        public.secret_versions,
+        public.transit_keys,
+        public.transit_key_versions
+      TO secrets_service;
+  environment:
+    PGPASSWORD: "{{ postgresql_admin_password }}"
+  changed_when: false
+  no_log: true

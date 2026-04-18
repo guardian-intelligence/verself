@@ -144,6 +144,7 @@ export type {
   SandboxGitHubInstallationConnectResponse,
   SandboxGitHubInstallationConnectResponseWritable,
   SandboxGitHubInstallationRecord,
+  SandboxSecretEnvVar,
   SandboxSubmitExecutionResult,
   SandboxSubmitExecutionResultWritable,
   SandboxSubmitRequest,

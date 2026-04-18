@@ -364,6 +364,16 @@ export const vSandboxGitHubInstallationRecord = v.strictObject({
   updated_at: v.pipe(v.string(), v.isoTimestamp()),
 });
 
+export const vSandboxSecretEnvVar = v.strictObject({
+  branch: v.optional(v.pipe(v.string(), v.maxLength(255))),
+  env_id: v.optional(v.pipe(v.string(), v.maxLength(255))),
+  env_name: v.pipe(v.string(), v.maxLength(255)),
+  kind: v.optional(v.picklist(["secret", "variable"])),
+  scope_level: v.optional(v.picklist(["org", "source", "environment", "branch"])),
+  secret_name: v.pipe(v.string(), v.maxLength(255)),
+  source_id: v.optional(v.pipe(v.string(), v.maxLength(255))),
+});
+
 export const vSandboxSubmitExecutionResult = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   attempt_id: v.string(),
@@ -485,6 +495,7 @@ export const vSandboxSubmitRequest = v.strictObject({
   resources: v.optional(vVmResources),
   run_command: v.optional(v.string()),
   runner_class: v.optional(v.string()),
+  secret_env: v.nullish(v.array(vSandboxSecretEnvVar)),
 });
 
 export const vBillingCancelContractResponseWritable = v.strictObject({
@@ -628,6 +639,7 @@ export const vSandboxSubmitRequestWritable = v.strictObject({
   resources: v.optional(vVmResources),
   run_command: v.optional(v.string()),
   runner_class: v.optional(v.string()),
+  secret_env: v.nullish(v.array(vSandboxSecretEnvVar)),
 });
 
 export const vSandboxVolumeCreateRequestWritable = v.strictObject({

@@ -493,6 +493,8 @@ func submitExecution(svc *jobs.Service) func(context.Context, *SubmitExecutionIn
 				return nil, tooManyRequests(ctx, "quota-exceeded", "quota exceeded")
 			case errors.Is(err, jobs.ErrRunnerClassMissing):
 				return nil, badRequest(ctx, "runner-class-unavailable", "runner class is not available", err)
+			case errors.Is(err, jobs.ErrInvalidSecretInjection):
+				return nil, badRequest(ctx, "invalid-secret-injection", err.Error(), err)
 			case errors.Is(err, billingclient.ErrPaymentRequired):
 				return nil, paymentRequired(ctx, "insufficient balance")
 			default:

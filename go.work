@@ -9,5 +9,6 @@ use (
 	./src/mailbox-service
 	./src/otel
 	./src/sandbox-rental-service
+	./src/secrets-service
 	./src/vm-orchestrator
 )

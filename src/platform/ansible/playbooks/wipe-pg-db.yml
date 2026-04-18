@@ -9,6 +9,7 @@
 # - sandbox_rental
 # - mailbox_service
 # - identity_service
+# - secrets_service
 
 - name: Wipe one managed PostgreSQL database
   hosts: all
@@ -20,6 +21,7 @@
       - sandbox_rental
       - mailbox_service
       - identity_service
+      - secrets_service
   pre_tasks:
     - name: Assert supported PostgreSQL wipe target
       ansible.builtin.assert:
@@ -124,3 +126,11 @@
       vars:
         identity_service_force_schema_reset: true
       when: wipe_pg_db_name == 'identity_service'
+
+    - name: Include secrets-service for secrets_service PostgreSQL wipe
+      ansible.builtin.include_role:
+        name: secrets_service
+      tags: [secrets_service]
+      vars:
+        secrets_service_force_schema_reset: true
+      when: wipe_pg_db_name == 'secrets_service'

@@ -18,6 +18,7 @@
     billing_service_force_ledger_reset: true
     sandbox_rental_service_force_schema_reset: true
     governance_service_force_schema_reset: true
+    secrets_service_force_schema_reset: true
     clickhouse_force_schema_reset: true
   roles:
     - role: deploy_profile
@@ -30,10 +31,12 @@
       tags: [postgresql]
     - role: billing_service
       tags: [billing_service]
-    - role: sandbox_rental_service
-      tags: [sandbox_rental_service]
     - role: governance_service
       tags: [governance_service]
+    - role: secrets_service
+      tags: [secrets_service]
+    - role: sandbox_rental_service
+      tags: [sandbox_rental_service]
     - role: electric
       vars:
         electric_instance: default

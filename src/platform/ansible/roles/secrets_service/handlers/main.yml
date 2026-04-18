@@ -1,0 +1,7 @@
+---
+- name: Restart secrets-service
+  listen: restart secrets-service
+  ansible.builtin.systemd:
+    name: secrets-service
+    state: restarted
+    daemon_reload: true
