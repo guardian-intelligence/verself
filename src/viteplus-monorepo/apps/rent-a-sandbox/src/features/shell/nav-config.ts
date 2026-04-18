@@ -91,6 +91,12 @@ export const SETTINGS_NAV: readonly SettingsNavEntry[] = [
     to: "/settings/organization",
     matchPrefix: "/settings/organization",
   },
+  {
+    id: "governance",
+    label: "Governance",
+    to: "/settings/governance",
+    matchPrefix: "/settings/governance",
+  },
 ];
 
 export function isPathActive(currentPath: string, entry: { matchPrefix: string }): boolean {

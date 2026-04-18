@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import * as v from "valibot";
 import { requireURLFromEnv } from "@forge-metal/web-env";
 import {
   IdentityApiError,
@@ -13,6 +14,14 @@ import {
   updateMemberRoles as updateMemberRolesRequest,
   updateMemberRolesRequestSchema,
 } from "~/lib/identity-api";
+import {
+  GovernanceApiError,
+  createDataExport as createDataExportRequest,
+  createExportRequestSchema,
+  isGovernanceApiError,
+  listAuditEvents as listAuditEventsRequest,
+  listDataExports as listDataExportsRequest,
+} from "~/lib/governance-api";
 import type {
   InviteMemberRequest,
   InviteMemberResponse,
@@ -24,6 +33,12 @@ import type {
   PutMemberCapabilitiesRequest,
   UpdateMemberRolesRequest,
 } from "~/lib/identity-api";
+import type {
+  CreateExportRequest,
+  GovernanceAuditEvent,
+  GovernanceAuditEvents,
+  GovernanceExportJob,
+} from "~/lib/governance-api";
 import {
   cancelContract as cancelContractRequest,
   cancelContractRequestSchema,
@@ -67,15 +82,24 @@ import type {
   ContractsResponse,
 } from "~/lib/sandbox-rental-api";
 import type { AuthSession } from "@forge-metal/auth-web/server";
-import { getAccessTokenForAudience } from "@forge-metal/auth-web/server";
+import { getAccessTokenForAudience, getAuthSession } from "@forge-metal/auth-web/server";
+import { getAuthConfig } from "../server/auth";
 import { rentASandboxAuthMiddleware } from "./auth";
 
 const IDENTITY_SERVICE_BASE_URL = requireURLFromEnv("IDENTITY_SERVICE_BASE_URL");
+const GOVERNANCE_SERVICE_BASE_URL = requireURLFromEnv("GOVERNANCE_SERVICE_BASE_URL");
 const SANDBOX_RENTAL_SERVICE_BASE_URL = requireURLFromEnv("SANDBOX_RENTAL_SERVICE_BASE_URL");
 const IDENTITY_SERVICE_AUTH_PROJECT_ID = process.env.IDENTITY_SERVICE_AUTH_PROJECT_ID?.trim();
 
 export { IdentityApiError, isIdentityApiError };
+export { GovernanceApiError, isGovernanceApiError };
 export { SandboxRentalApiError, isSandboxRentalApiError, isSandboxRentalNotFound };
+export type {
+  CreateExportRequest,
+  GovernanceAuditEvent,
+  GovernanceAuditEvents,
+  GovernanceExportJob,
+};
 export type {
   CheckoutRequest,
   CancelContractRequest,
@@ -113,10 +137,6 @@ async function resolveAuthContext(
     return context.auth;
   }
   // Start server functions invoked during SSR can miss middleware context; re-read the server-owned session before crossing the service boundary.
-  const [{ getAuthSession }, { getAuthConfig }] = await Promise.all([
-    import("@forge-metal/auth-web/server"),
-    import("../server/auth"),
-  ]);
   const auth = await getAuthSession(getAuthConfig());
   if (!auth) {
     throw new Error("Authentication required");
@@ -134,13 +154,20 @@ async function sandboxRentalClientOptions(context: { auth?: AuthSession } | unde
 
 async function identityClientOptions(context: { auth?: AuthSession } | undefined) {
   const auth = await resolveAuthContext(context);
-  const { getAuthConfig } = await import("../server/auth");
   const accessToken = IDENTITY_SERVICE_AUTH_PROJECT_ID
     ? await getAccessTokenForAudience(getAuthConfig(), auth, IDENTITY_SERVICE_AUTH_PROJECT_ID)
     : auth.accessToken;
   return {
     accessToken,
     baseUrl: IDENTITY_SERVICE_BASE_URL,
+  };
+}
+
+async function governanceClientOptions(context: { auth?: AuthSession } | undefined) {
+  const identityOptions = await identityClientOptions(context);
+  return {
+    ...identityOptions,
+    baseUrl: GOVERNANCE_SERVICE_BASE_URL,
   };
 }
 
@@ -190,6 +217,68 @@ export const putMemberCapabilities = createServerFn({ method: "POST" })
       ...(await identityClientOptions(context)),
       body: data,
     });
+  });
+
+export const listGovernanceAuditEvents = createServerFn({ method: "GET" })
+  .middleware([rentASandboxAuthMiddleware])
+  .handler(async ({ context }) => {
+    return listAuditEventsRequest({
+      ...(await governanceClientOptions(context)),
+      query: { limit: 50 },
+    });
+  });
+
+export const listGovernanceDataExports = createServerFn({ method: "GET" })
+  .middleware([rentASandboxAuthMiddleware])
+  .handler(async ({ context }) => {
+    return listDataExportsRequest(await governanceClientOptions(context));
+  });
+
+export const createGovernanceDataExport = createServerFn({ method: "POST" })
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(createExportRequestSchema)
+  .handler(async ({ context, data }) => {
+    return createDataExportRequest({
+      ...(await governanceClientOptions(context)),
+      body: data,
+    });
+  });
+
+const governanceDownloadRequestSchema = v.strictObject({
+  export_id: v.pipe(v.string(), v.uuid()),
+});
+
+export const downloadGovernanceDataExport = createServerFn({ method: "POST" })
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(governanceDownloadRequestSchema)
+  .handler(async ({ context, data }) => {
+    const options = await governanceClientOptions(context);
+    const response = await fetch(
+      `${options.baseUrl}/api/v1/governance/exports/${data.export_id}/download`,
+      {
+        headers: {
+          Accept: "application/gzip",
+          Authorization: `Bearer ${options.accessToken}`,
+        },
+      },
+    );
+    if (!response.ok) {
+      throw new GovernanceApiError(
+        response.status,
+        `/api/v1/governance/exports/${data.export_id}/download`,
+        await response.text(),
+      );
+    }
+    const contentDisposition = response.headers.get("content-disposition") ?? "";
+    const fileName =
+      /filename="([^"]+)"/.exec(contentDisposition)?.[1] ??
+      `forge-metal-export-${data.export_id}.tar.gz`;
+    const bytes = Buffer.from(await response.arrayBuffer());
+    return {
+      content_type: response.headers.get("content-type") ?? "application/gzip",
+      data_base64: bytes.toString("base64"),
+      file_name: fileName,
+    };
   });
 
 export const getEntitlements = createServerFn({ method: "GET" })

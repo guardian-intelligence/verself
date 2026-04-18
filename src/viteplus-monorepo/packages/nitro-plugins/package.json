@@ -16,8 +16,8 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "vp pack src/index.ts src/observability-plugin.ts src/otel.ts",
-    "dev": "vp pack src/index.ts src/observability-plugin.ts src/otel.ts --watch",
+    "build": "vp pack src/index.ts src/observability-plugin.ts src/otel.ts --dts",
+    "dev": "vp pack src/index.ts src/observability-plugin.ts src/otel.ts --dts --watch",
     "typecheck": "vp exec tsc -p tsconfig.json"
   },
   "dependencies": {

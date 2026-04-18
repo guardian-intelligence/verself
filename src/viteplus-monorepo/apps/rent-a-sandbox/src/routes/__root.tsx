@@ -17,11 +17,6 @@ import {
 import "~/styles/app.css";
 
 async function loadAuthSnapshot(): Promise<AuthSnapshot> {
-  if (import.meta.env.SSR) {
-    const [{ getClientAuthSnapshot: readClientAuthSnapshot }, { getAuthConfig }] =
-      await Promise.all([import("@forge-metal/auth-web/server"), import("../server/auth")]);
-    return readClientAuthSnapshot(getAuthConfig());
-  }
   return getClientAuthSnapshot();
 }
 

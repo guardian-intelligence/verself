@@ -2,13 +2,6 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 import { getSignInRedirectURL } from "~/server-fns/auth";
 
 async function getRouteSignInRedirectURL(redirectTo: string | undefined): Promise<string> {
-  if (import.meta.env.SSR) {
-    const [{ beginLogin }, { getAuthConfig }] = await Promise.all([
-      import("@forge-metal/auth-web/server"),
-      import("../server/auth"),
-    ]);
-    return beginLogin(getAuthConfig(), redirectTo);
-  }
   return getSignInRedirectURL({
     data: redirectTo ? { redirectTo } : {},
   });

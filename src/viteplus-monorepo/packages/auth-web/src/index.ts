@@ -1,5 +1,7 @@
 import { createMiddleware } from "@tanstack/react-start";
+import { getRequestUrl, useSession } from "@tanstack/react-start/server";
 import { decodeJwt, createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
+import postgres, { type Sql } from "postgres";
 import * as v from "valibot";
 import { anonymousAuth, parseAuthSnapshot } from "./isomorphic.ts";
 import { resolveAuthConfig } from "./config.ts";
@@ -171,13 +173,12 @@ const pendingLoginTTL = 5 * 60 * 1000;
 const maxPendingLoginTransactions = 5;
 const metadataCache = new Map<string, Promise<ProviderMetadata>>();
 const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
-type SQLClient = import("postgres").Sql<Record<string, unknown>>;
+type SQLClient = Sql<Record<string, unknown>>;
 const sqlCache = new Map<string, SQLClient>();
 
 async function getSQL(databaseURL: string): Promise<SQLClient> {
   let sql = sqlCache.get(databaseURL);
   if (!sql) {
-    const { default: postgres } = await import("postgres");
     sql = postgres(databaseURL, {
       max: 5,
       idle_timeout: 20,
@@ -234,12 +235,7 @@ async function verifyAccessTokenExpiresAt(
   throw new Error("OIDC access token is missing exp");
 }
 
-async function getStartServerModule() {
-  return import("@tanstack/react-start/server");
-}
-
 async function getBaseURL(): Promise<URL> {
-  const { getRequestUrl } = await getStartServerModule();
   return new URL(getRequestUrl({ xForwardedHost: true, xForwardedProto: true }).toString());
 }
 
@@ -373,7 +369,6 @@ async function sanitizeRedirectTarget(
 }
 
 async function getSessionManager(config: AuthConfig) {
-  const { useSession } = await getStartServerModule();
   return useSession<AuthCookieData>({
     password: config.sessionPassword,
     name: config.sessionCookieName ?? `${config.appName}-session`,
