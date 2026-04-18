@@ -5,8 +5,8 @@
   "type": "module",
   "sideEffects": false,
   "scripts": {
-    "dev": "pnpm generate && vp dev",
-    "build": "pnpm generate && vp build",
+    "dev": "vp dev",
+    "build": "vp build",
     "preview": "vp preview",
     "start": "node --import ./instrumentation.mts .output/server/index.mjs",
     "typecheck": "vp exec tsc -p tsconfig.json",
