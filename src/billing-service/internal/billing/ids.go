@@ -51,8 +51,8 @@ func grantID(orgID OrgID, source, scopeType, productID, bucketID, skuID, sourceR
 	return textID("grant", orgIDText(orgID), source, scopeType, productID, bucketID, skuID, sourceRef)
 }
 
-func billingWindowID(productID, sourceType, sourceRef string, seq uint32) string {
-	return textID("win", productID, sourceType, sourceRef, strconv.FormatUint(uint64(seq), 10))
+func billingWindowID(orgID OrgID, productID, sourceType, sourceRef string, seq uint32) string {
+	return textID("win", orgIDText(orgID), productID, sourceType, sourceRef, strconv.FormatUint(uint64(seq), 10))
 }
 
 func contractID(orgID OrgID, productID string) string {

@@ -1021,6 +1021,7 @@ Key fields:
 - `actor_id`
 - `source_type`
 - `source_ref`
+- `source_fingerprint`
 - `window_seq`
 - `state` (`reserved`, `active`, `settling`, `settled`, `voided`)
 - `reservation_shape`
@@ -1049,6 +1050,24 @@ Key fields:
 `billing_windows` are request-path authorization locks, not queued jobs. A `reserved` window means PostgreSQL committed the admission hold after loading posted TigerBeetle grant balances and subtracting active PostgreSQL authorizations. A `settling` window has durable settlement math and a posted-or-pending ledger command, but it is not terminal and must not be projected as settled customer usage. A `settled` window means TigerBeetle accepted the final usage-spend command or reconciliation proved the transfer exists. A `voided` window is PostgreSQL-only authorization release and creates no TigerBeetle movement.
 
 Sandbox time windows use AWS-Lambda-style millisecond quantities. `reserved_quantity`, `actual_quantity`, `billable_quantity`, and `writeoff_quantity` are milliseconds for `reservation_shape = 'time'`; the SKU quantity unit makes the resource dimension explicit (`vCPU-ms`, `GiB-ms`). VM launch and environment setup time are not billable. The billed duration comes from the billable guest `run` phase duration when available and falls back to host-side billable phase start/end evidence only when the guest duration is absent.
+
+Reserve accepts a caller-provided `window_millis` quantity. `window_millis = 0`
+uses the billing-service default window; nonzero values choose the reserved
+millisecond quantity for authorization, `reserved_quantity`, expiry, returned
+reservation, events, and projection. This keeps VM execution admission policy
+separate from storage or routine sweep cadence.
+
+`source_fingerprint` is the idempotency key for source-addressed replay. It is
+derived from org, product, source type, source ref, sequence, quantity, and
+allocation. Repeating the same source request returns the existing
+`reserved`/`active`/`settling`/`settled` window. Reusing the same source with a
+different quantity or allocation is a conflict because it would otherwise blur
+already-settled usage.
+
+Window charge math rounds only after all usage dimensions are multiplied:
+`ceil(allocation * quantity * unit_rate)`. Rounding `allocation * unit_rate`
+before multiplying by milliseconds overstates tiny fractional GiB quantities and
+is not allowed for measured at-rest bytes.
 
 `funding_legs` may be retained as a denormalized snapshot for API and ClickHouse projection, but it is not the authoritative financial leg table. `billing_window_ledger_legs` owns per-leg settlement transfer IDs, source attribution, component SKU attribution, authorization amounts, posted amounts, released amounts, and leg state.
 
@@ -1656,7 +1675,7 @@ Reservation is an authorization lock, not a final charge.
 5. Reserve loads eligible posted grant metadata from PostgreSQL and balances from TigerBeetle.
 6. Reserve subtracts active PostgreSQL authorizations for `reserved`, `active`, and `settling` windows from those posted balances.
 7. Reserve chooses funding legs by the strict scope/source/tier/age waterfall.
-8. Reserve inserts `billing_windows(state = 'reserved')`, normalized `billing_window_ledger_legs(state = 'pending')`, and `billing_window_reserved` evidence in one PostgreSQL transaction.
+8. Reserve inserts `billing_windows(state = 'reserved')`, normalized `billing_window_ledger_legs(state = 'pending')`, `source_fingerprint`, the resolved millisecond quantity, and `billing_window_reserved` evidence in one PostgreSQL transaction.
 9. If posted grants minus active authorizations cannot fund the window and overage policy does not allow receivable funding, reserve returns no-capacity and the caller must not start work.
 10. Settle computes actual usage, posts final spend through `billing_ledger_commands(operation = 'settle_window')`, releases any unbilled authorization remainder in PostgreSQL, and only then marks the window `settled`.
 11. Metering projection is scheduled after settlement.

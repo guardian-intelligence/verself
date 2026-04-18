@@ -583,6 +583,7 @@ CREATE TABLE billing_windows (
     actor_id                TEXT        NOT NULL DEFAULT '',
     source_type             TEXT        NOT NULL CHECK (source_type <> ''),
     source_ref              TEXT        NOT NULL CHECK (source_ref <> ''),
+    source_fingerprint      TEXT        NOT NULL CHECK (source_fingerprint <> ''),
     billing_job_id          TEXT,
     window_seq              BIGINT      NOT NULL CHECK (window_seq >= 0),
     state                   TEXT        NOT NULL CHECK (state IN ('reserved', 'active', 'settling', 'settled', 'voided')),
@@ -617,7 +618,8 @@ CREATE TABLE billing_windows (
     CHECK (expires_at > window_start),
     CHECK (settled_at IS NULL OR state IN ('settling', 'settled')),
     CHECK (activated_at IS NULL OR state IN ('active', 'settling', 'settled', 'voided')),
-    UNIQUE (product_id, source_type, source_ref, window_seq)
+    UNIQUE (org_id, product_id, source_type, source_ref, window_seq),
+    UNIQUE (source_fingerprint)
 );
 
 CREATE UNIQUE INDEX billing_windows_billing_job_seq_idx

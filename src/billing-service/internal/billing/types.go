@@ -43,6 +43,7 @@ var (
 	ErrWindowNotFound       = errors.New("billing: window not found")
 	ErrWindowNotReserved    = errors.New("billing: window not reserved")
 	ErrWindowNotActivated   = errors.New("billing: window not activated")
+	ErrWindowSourceConflict = errors.New("billing: window source conflict")
 	ErrWindowAlreadySettled = errors.New("billing: window already settled")
 	ErrWindowAlreadyVoided  = errors.New("billing: window already voided")
 )
