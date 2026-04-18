@@ -57,17 +57,73 @@ export type GovernanceAuditEvent = {
    */
   action: string;
   /**
+   * Display label for the actor when available.
+   */
+  actor_display?: string;
+  /**
+   * Exact authenticated actor ID.
+   */
+  actor_id: string;
+  /**
+   * Display label for the actor owner when known.
+   */
+  actor_owner_display?: string;
+  /**
+   * Owner of an API credential or workload actor when known.
+   */
+  actor_owner_id?: string;
+  /**
+   * Actor class, for example user, api_credential, workload, service, or operator.
+   */
+  actor_type: string;
+  /**
+   * Locally enriched autonomous system number when configured.
+   */
+  asn?: string;
+  /**
+   * Locally enriched autonomous system organization when configured.
+   */
+  asn_org?: string;
+  /**
    * Stable audit event name.
    */
   audit_event: string;
   /**
-   * Client IP observed at the service boundary.
+   * Authentication method used by the actor.
+   */
+  auth_method?: string;
+  /**
+   * Client IP observed at the trusted service boundary.
    */
   client_ip?: string;
+  /**
+   * IPv4 or IPv6.
+   */
+  client_ip_version?: string;
   /**
    * Canonical payload SHA-256.
    */
   content_sha256: string;
+  /**
+   * Non-secret credential fingerprint when known.
+   */
+  credential_fingerprint?: string;
+  /**
+   * Forge Metal API credential ID when the actor is a credential.
+   */
+  credential_id?: string;
+  /**
+   * API credential display name when known.
+   */
+  credential_name?: string;
+  /**
+   * Authorization decision.
+   */
+  decision: string;
+  /**
+   * Stable denial reason when authorization denied the operation.
+   */
+  denial_reason?: string;
   /**
    * Stable problem code when the operation failed.
    */
@@ -77,17 +133,53 @@ export type GovernanceAuditEvent = {
    */
   error_message?: string;
   /**
+   * Audit event family for filtering.
+   */
+  event_category: string;
+  /**
    * Audit event UUID.
    */
   event_id: string;
+  /**
+   * Locally enriched country code when configured.
+   */
+  geo_country?: string;
+  /**
+   * Locally enriched region when configured.
+   */
+  geo_region?: string;
+  /**
+   * Audit HMAC key identifier.
+   */
+  hmac_key_id?: string;
   /**
    * SHA-256 hash of the caller-provided idempotency key.
    */
   idempotency_key_hash?: string;
   /**
+   * Comma-separated proxy chain retained as request evidence.
+   */
+  ip_chain?: string;
+  /**
+   * Whether MFA was present in the authenticated request context.
+   */
+  mfa_present?: boolean;
+  /**
+   * Locally enriched network type when configured.
+   */
+  network_type?: string;
+  /**
+   * Short customer-facing operation label.
+   */
+  operation_display: string;
+  /**
    * Stable OpenAPI operation ID.
    */
   operation_id: string;
+  /**
+   * read, write, delete, authn, authz, billing, export, system, or unknown.
+   */
+  operation_type: string;
   /**
    * Organization ID derived from the caller's token.
    */
@@ -105,22 +197,6 @@ export type GovernanceAuditEvent = {
    */
   prev_hmac: string;
   /**
-   * Email when available for human users.
-   */
-  principal_email?: string;
-  /**
-   * Zitadel subject or service-account subject.
-   */
-  principal_id: string;
-  /**
-   * Principal class, for example user or api_credential.
-   */
-  principal_type: string;
-  /**
-   * Rate-limit bucket applied to the operation.
-   */
-  rate_limit_class?: string;
-  /**
    * UTC time when the event was recorded.
    */
   recorded_at: string;
@@ -129,17 +205,13 @@ export type GovernanceAuditEvent = {
    */
   request_id?: string;
   /**
-   * Resource identifier when known and safe to expose.
-   */
-  resource_id?: string;
-  /**
-   * Resource kind declared by the operation catalog.
-   */
-  resource_kind: string;
-  /**
    * allowed, denied, or error.
    */
   result: string;
+  /**
+   * low, medium, high, or critical.
+   */
+  risk_level: string;
   /**
    * Current audit row HMAC.
    */
@@ -149,13 +221,41 @@ export type GovernanceAuditEvent = {
    */
   sequence: string;
   /**
-   * Service that enforced the operation.
+   * Internal service that enforced the operation.
    */
   service_name: string;
+  /**
+   * Customer-facing product area, for example Governance or Sandbox.
+   */
+  source_product_area: string;
+  /**
+   * Target display label when known.
+   */
+  target_display?: string;
+  /**
+   * Target identifier when known and safe to expose.
+   */
+  target_id?: string;
+  /**
+   * Resource kind declared by the operation catalog.
+   */
+  target_kind: string;
+  /**
+   * Target scoping rule or resolved scope.
+   */
+  target_scope?: string;
   /**
    * OpenTelemetry trace ID.
    */
   trace_id?: string;
+  /**
+   * Trust class used by the policy decision.
+   */
+  trust_class?: string;
+  /**
+   * SHA-256 hash of the sanitized User-Agent.
+   */
+  user_agent_hash?: string;
 };
 
 export type GovernanceAuditEvents = {
@@ -173,9 +273,17 @@ export type GovernanceAuditEvents = {
 };
 
 export type GovernanceAuditFilters = {
+  actor_id?: string;
+  audit_event?: string;
+  high_risk?: boolean;
   operation_id?: string;
+  operation_type?: string;
   result?: string;
+  risk_level?: string;
   service_name?: string;
+  source_product_area?: string;
+  target_id?: string;
+  target_kind?: string;
 };
 
 export type GovernanceCreateExportRequest = {
@@ -335,9 +443,29 @@ export type ListAuditEventsData = {
      */
     limit?: number;
     cursor?: string;
-    service_name?: string;
+    actor_id?: string;
+    audit_event?: string;
+    /**
+     * Return events that are high or critical risk, write/delete/export operations, denials, or errors.
+     */
+    high_risk?: boolean;
     operation_id?: string;
+    operation_type?:
+      | "read"
+      | "write"
+      | "delete"
+      | "authn"
+      | "authz"
+      | "billing"
+      | "export"
+      | "system"
+      | "unknown";
     result?: "allowed" | "denied" | "error";
+    risk_level?: "low" | "medium" | "high" | "critical";
+    service_name?: string;
+    source_product_area?: string;
+    target_id?: string;
+    target_kind?: string;
   };
   url: "/api/v1/governance/audit/events";
 };

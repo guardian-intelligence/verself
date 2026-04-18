@@ -93,11 +93,31 @@ export const createExportRequestSchema = v.strictObject({
 export type CreateExportRequest = v.InferInput<typeof createExportRequestSchema>;
 
 export const auditEventsQuerySchema = v.strictObject({
+  actor_id: v.optional(v.string()),
+  audit_event: v.optional(v.string()),
   cursor: v.optional(v.string()),
+  high_risk: v.optional(v.boolean()),
   limit: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(200))),
   operation_id: v.optional(v.string()),
+  operation_type: v.optional(
+    v.picklist([
+      "read",
+      "write",
+      "delete",
+      "authn",
+      "authz",
+      "billing",
+      "export",
+      "system",
+      "unknown",
+    ]),
+  ),
   result: v.optional(v.picklist(["allowed", "denied", "error"])),
+  risk_level: v.optional(v.picklist(["low", "medium", "high", "critical"])),
   service_name: v.optional(v.string()),
+  source_product_area: v.optional(v.string()),
+  target_id: v.optional(v.string()),
+  target_kind: v.optional(v.string()),
 });
 
 export type AuditEventsQuery = v.InferInput<typeof auditEventsQuerySchema>;
@@ -108,11 +128,23 @@ export async function listAuditEvents(
   const client = createGovernanceClient(options);
   const parsedQuery = v.parse(auditEventsQuerySchema, options.query ?? {});
   const query: NonNullable<ListAuditEventsData["query"]> = {
+    ...(parsedQuery.actor_id !== undefined ? { actor_id: parsedQuery.actor_id } : {}),
+    ...(parsedQuery.audit_event !== undefined ? { audit_event: parsedQuery.audit_event } : {}),
     ...(parsedQuery.cursor !== undefined ? { cursor: parsedQuery.cursor } : {}),
+    ...(parsedQuery.high_risk !== undefined ? { high_risk: parsedQuery.high_risk } : {}),
     ...(parsedQuery.limit !== undefined ? { limit: parsedQuery.limit } : {}),
     ...(parsedQuery.operation_id !== undefined ? { operation_id: parsedQuery.operation_id } : {}),
+    ...(parsedQuery.operation_type !== undefined
+      ? { operation_type: parsedQuery.operation_type }
+      : {}),
     ...(parsedQuery.result !== undefined ? { result: parsedQuery.result } : {}),
+    ...(parsedQuery.risk_level !== undefined ? { risk_level: parsedQuery.risk_level } : {}),
     ...(parsedQuery.service_name !== undefined ? { service_name: parsedQuery.service_name } : {}),
+    ...(parsedQuery.source_product_area !== undefined
+      ? { source_product_area: parsedQuery.source_product_area }
+      : {}),
+    ...(parsedQuery.target_id !== undefined ? { target_id: parsedQuery.target_id } : {}),
+    ...(parsedQuery.target_kind !== undefined ? { target_kind: parsedQuery.target_kind } : {}),
   };
   const path = "/api/v1/governance/audit/events";
   const result = await listGeneratedAuditEvents({

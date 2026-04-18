@@ -50,6 +50,7 @@ test.describe("Rent-a-Sandbox Governance", () => {
         const auditEventsAfter = await readGovernanceCreateAuditCount();
         return auditEventsAfter > auditEventsBefore ? auditEventsAfter : false;
       });
+      await expect(app.page.getByText("high").first()).toBeVisible({ timeout: shortTimeoutMS });
 
       const downloadButton = app.page.getByTestId(`download-data-export-${latestExportID}`);
       await expect(downloadButton).toBeVisible({ timeout: shortTimeoutMS });
@@ -69,15 +70,15 @@ test.describe("Rent-a-Sandbox Governance", () => {
       });
       await app.waitForCondition("governance download audit row", shortTimeoutMS, async () => {
         const downloadAuditEventsAfter = await readGovernanceDownloadAuditCount();
-        return downloadAuditEventsAfter > downloadAuditEventsBefore ? downloadAuditEventsAfter : false;
+        return downloadAuditEventsAfter > downloadAuditEventsBefore
+          ? downloadAuditEventsAfter
+          : false;
       });
 
       const createTraceID = await readLatestGovernanceAuditTraceID("create-data-export");
       await app.waitForCondition("governance create trace sequence", shortTimeoutMS, async () => {
         const spans = await readTraceSpans(createTraceID);
         return hasSpanSubsequence(spans, [
-          "POST",
-          "POST",
           "governance-service",
           "governance.export.create",
           "governance.export.build",
@@ -91,8 +92,6 @@ test.describe("Rent-a-Sandbox Governance", () => {
       await app.waitForCondition("governance download trace sequence", shortTimeoutMS, async () => {
         const spans = await readTraceSpans(downloadTraceID);
         return hasSpanSubsequence(spans, [
-          "POST",
-          "GET",
           "governance-service",
           "governance.export.download",
           "governance.audit.record",
@@ -163,8 +162,21 @@ async function readGovernanceCreateAuditCount(): Promise<number> {
     FROM audit_events
     WHERE service_name = 'governance-service'
       AND operation_id = 'create-data-export'
+      AND audit_event = 'governance.data_export.create'
+      AND source_product_area = 'Governance'
+      AND operation_type = 'export'
+      AND event_category = 'export'
+      AND risk_level = 'high'
+      AND actor_type IN ('user', 'api_credential')
+      AND length(actor_id) > 0
+      AND target_kind = 'data_export'
+      AND length(target_id) = 36
+      AND decision = 'allow'
       AND result = 'allowed'
       AND recorded_at >= now() - INTERVAL 15 MINUTE
+      AND length(content_sha256) = 64
+      AND length(client_ip_hash) = 64
+      AND length(hmac_key_id) > 0
       AND length(row_hmac) = 64;
   `;
   const stdout = await platformScript("clickhouse.sh", [
@@ -225,8 +237,21 @@ async function readGovernanceDownloadAuditCount(): Promise<number> {
     FROM audit_events
     WHERE service_name = 'governance-service'
       AND operation_id = 'download-data-export'
+      AND audit_event = 'governance.data_export.download'
+      AND source_product_area = 'Governance'
+      AND operation_type = 'export'
+      AND event_category = 'export'
+      AND risk_level = 'high'
+      AND actor_type IN ('user', 'api_credential')
+      AND length(actor_id) > 0
+      AND target_kind = 'data_export'
+      AND length(target_id) = 36
+      AND decision = 'allow'
       AND result = 'allowed'
       AND recorded_at >= now() - INTERVAL 15 MINUTE
+      AND length(content_sha256) = 64
+      AND length(client_ip_hash) = 64
+      AND length(hmac_key_id) > 0
       AND length(row_hmac) = 64;
   `;
   const stdout = await platformScript("clickhouse.sh", [

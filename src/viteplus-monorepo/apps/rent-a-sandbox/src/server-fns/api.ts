@@ -224,7 +224,7 @@ export const listGovernanceAuditEvents = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     return listAuditEventsRequest({
       ...(await governanceClientOptions(context)),
-      query: { limit: 50 },
+      query: { high_risk: true, limit: 50 },
     });
   });
 
