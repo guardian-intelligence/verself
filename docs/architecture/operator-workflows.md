@@ -36,6 +36,38 @@ make clickhouse-query QUERY='SHOW TABLES' DATABASE=forge_metal
 Interactive ClickHouse shells are intentionally unsupported. Use replayable
 `make clickhouse-query` invocations instead.
 
+## Observe
+
+Use `make observe` before raw ClickHouse when the question starts with
+"what telemetry exists?" or "which query should I run?" The no-arg output is a
+discoverability index, not a recency dashboard.
+
+```bash
+make observe
+make observe WHAT=queries
+make observe WHAT=catalog SIGNAL=metrics
+make observe WHAT=catalog SIGNAL=logs SERVICE=observe
+make observe WHAT=describe METRIC=system.cpu.time
+make observe WHAT=describe SERVICE=observe
+make observe WHAT=metric METRIC=system.cpu.time GROUP_BY=state FORMAT=json
+```
+
+Operational recent-window queries are explicit:
+
+```bash
+make observe WHAT=errors MINUTES=15
+make observe WHAT=logs SERVICE=observe FIELD=query_id MINUTES=15
+make observe WHAT=service SERVICE=billing-service MINUTES=15
+make observe WHAT=http STATUS_MIN=400 MINUTES=15
+make observe WHAT=deploy RUN_KEY=<deploy-run-key>
+make observe WHAT=trace TRACE_ID=<trace-id>
+```
+
+Every ClickHouse-backed observe query emits an `observe` trace and a
+`clickhouse.query` span with `observe.query_id`,
+`observe.query_family`, `clickhouse.query_id`, and
+`clickhouse.query_sha256` attributes.
+
 The current database layout is:
 
 - `forge_metal.job_events`

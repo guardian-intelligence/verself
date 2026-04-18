@@ -71,16 +71,19 @@ make pg-shell DB=billing
 
 ## Debug with observe
 
-`make observe` is the blessed operator query surface for ClickHouse-backed telemetry:
+`make observe` is the blessed operator query surface for ClickHouse-backed telemetry. It is discoverability-first: begin with the query registry and signal catalogs, then use explicit operational queries for recent errors, services, HTTP access, mail, deploys, and traces.
 
 ```bash
-make observe WHAT=catalog
-make observe WHAT=metric METRIC=system.cpu.time
+make observe
+make observe WHAT=queries
+make observe WHAT=catalog SIGNAL=metrics
+make observe WHAT=catalog SIGNAL=traces
+make observe WHAT=describe QUERY=metric.latest
+make observe WHAT=describe METRIC=system.cpu.time
 make observe WHAT=service SERVICE=billing-service
-make observe WHAT=service SERVICE=sandbox-rental-service ERRORS=1
 make observe WHAT=errors
 make observe WHAT=mail
-make observe WHAT=deploy
+make observe WHAT=deploy RUN_KEY=<deploy-run-key>
 ```
 
 Use `make clickhouse-query` only when the observe surface does not yet cover the question. Interactive ClickHouse shells are intentionally unsupported because agent workflows need replayable commands.
