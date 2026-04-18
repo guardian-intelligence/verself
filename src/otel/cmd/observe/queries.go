@@ -89,13 +89,22 @@ func buildDescribeQueries(cfg config, params map[string]string) ([]query, error)
 			primaryTargets++
 		}
 	}
+	if cfg.queryName != "" {
+		primaryTargets++
+	}
+	if cfg.service != "" && primaryTargets == 0 {
+		primaryTargets++
+	}
 	if primaryTargets > 1 {
 		return nil, errors.New("WHAT=describe requires exactly one primary target: METRIC, SPAN, FIELD, SERVICE, or QUERY")
+	}
+	if cfg.queryName != "" {
+		return nil, errors.New("WHAT=describe QUERY is handled without ClickHouse; run `make observe WHAT=describe QUERY=<query-id>`")
 	}
 	if cfg.metric != "" && cfg.service != "" {
 		return nil, errors.New("WHAT=describe METRIC does not accept SERVICE; use WHAT=catalog SIGNAL=metrics SERVICE=...")
 	}
-	if primaryTargets == 0 && cfg.service == "" {
+	if primaryTargets == 0 {
 		return nil, errors.New("WHAT=describe requires METRIC, SERVICE, SPAN, FIELD, or QUERY")
 	}
 	switch {

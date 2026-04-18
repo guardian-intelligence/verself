@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -74,6 +75,11 @@ var queryDocs = []queryDoc{
 		Examples: []string{
 			"make observe WHAT=queries",
 			"make observe WHAT=describe QUERY=metric.latest",
+		},
+		Next: []string{
+			"make observe WHAT=catalog SIGNAL=metrics",
+			"make observe WHAT=describe QUERY=metric.latest",
+			"make observe WHAT=errors",
 		},
 	},
 	{
@@ -267,6 +273,10 @@ var queryDocs = []queryDoc{
 			"make observe WHAT=describe QUERY=metric.latest",
 			"make observe WHAT=describe QUERY=catalog.metrics",
 		},
+		Next: []string{
+			"make observe WHAT=queries",
+			"Run one of the described query examples",
+		},
 	},
 	{
 		ID:      "metric.latest",
@@ -329,6 +339,11 @@ var queryDocs = []queryDoc{
 			"make observe WHAT=service SERVICE=billing-service",
 			"make observe WHAT=service SERVICE=sandbox-rental-service ERRORS=1",
 		},
+		Next: []string{
+			"make observe WHAT=describe SERVICE=<service>",
+			"make observe WHAT=catalog SIGNAL=logs SERVICE=<service>",
+			"make observe WHAT=errors SERVICE=<service>",
+		},
 	},
 	{
 		ID:      "errors.recent",
@@ -344,6 +359,11 @@ var queryDocs = []queryDoc{
 		Examples: []string{
 			"make observe WHAT=errors",
 			"make observe WHAT=errors SERVICE=caddy",
+		},
+		Next: []string{
+			"make observe WHAT=service SERVICE=<service> ERRORS=1",
+			"make observe WHAT=trace TRACE_ID=<trace-id>",
+			"make observe WHAT=http STATUS_MIN=400",
 		},
 	},
 	{
@@ -362,6 +382,11 @@ var queryDocs = []queryDoc{
 		Examples: []string{
 			"make observe WHAT=http STATUS_MIN=400",
 			"make observe WHAT=http HOST=auth.example.com STATUS_MIN=400",
+		},
+		Next: []string{
+			"make observe WHAT=catalog SIGNAL=http",
+			"make observe WHAT=errors",
+			"make observe WHAT=trace TRACE_ID=<trace-id>",
 		},
 	},
 	{
@@ -400,6 +425,10 @@ var queryDocs = []queryDoc{
 		Examples: []string{
 			"make observe WHAT=trace TRACE_ID=<trace-id>",
 		},
+		Next: []string{
+			"make observe WHAT=describe SPAN=<span>",
+			"make observe WHAT=service SERVICE=<service>",
+		},
 	},
 	{
 		ID:      "deploy.tasks",
@@ -416,6 +445,10 @@ var queryDocs = []queryDoc{
 			"make observe WHAT=deploy",
 			"make observe WHAT=deploy RUN_KEY=2026-04-17.000017@rust-forge-01",
 		},
+		Next: []string{
+			"make observe WHAT=catalog SIGNAL=deploys",
+			"make observe WHAT=trace TRACE_ID=<trace-id>",
+		},
 	},
 	{
 		ID:      "mail.events",
@@ -429,6 +462,11 @@ var queryDocs = []queryDoc{
 		},
 		Examples: []string{
 			"make observe WHAT=mail",
+		},
+		Next: []string{
+			"make observe WHAT=describe SERVICE=stalwart",
+			"make observe WHAT=catalog SIGNAL=logs SERVICE=stalwart",
+			"make observe WHAT=service SERVICE=stalwart",
 		},
 	},
 }
@@ -445,6 +483,9 @@ func handleStatic(cfg config) (bool, error) {
 		return true, printQueries(cfg)
 	case "describe":
 		if cfg.queryName != "" {
+			if cfg.metric != "" || cfg.service != "" || cfg.span != "" || cfg.field != "" {
+				return true, errors.New("WHAT=describe QUERY does not accept METRIC, SERVICE, SPAN, or FIELD")
+			}
 			return true, printQueryDescription(cfg)
 		}
 	}
