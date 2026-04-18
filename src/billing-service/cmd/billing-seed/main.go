@@ -19,10 +19,12 @@ import (
 )
 
 const (
-	sandboxProductID       = "sandbox"
-	sandboxComputeSKU      = "sandbox_compute_amd_epyc_4484px_vcpu_ms"
-	sandboxMemorySKU       = "sandbox_memory_standard_gib_ms"
-	sandboxBlockStorageSKU = "sandbox_block_storage_premium_nvme_gib_ms"
+	sandboxProductID                = "sandbox"
+	sandboxComputeSKU               = "sandbox_compute_amd_epyc_4484px_vcpu_ms"
+	sandboxMemorySKU                = "sandbox_memory_standard_gib_ms"
+	sandboxExecutionRootStorageSKU  = "sandbox_execution_root_storage_premium_nvme_gib_ms"
+	sandboxDurableVolumeLiveSKU     = "sandbox_durable_volume_live_storage_gib_ms"
+	sandboxDurableVolumeRetainedSKU = "sandbox_durable_volume_retained_snapshot_gib_ms"
 )
 
 type config struct {
@@ -366,9 +368,20 @@ func sortedMapKeys(in map[string]uint64) []string {
 }
 
 func sandboxBuckets() []bucketSeed {
-	return []bucketSeed{{"compute", "Compute", 10}, {"memory", "Memory", 20}, {"block_storage", "Block Storage", 30}}
+	return []bucketSeed{
+		{"compute", "Compute", 10},
+		{"memory", "Memory", 20},
+		{"execution_root_storage", "Execution Root Storage", 30},
+		{"durable_volume_storage", "Durable Volume Storage", 40},
+	}
 }
 
 func sandboxSKUs() []skuSeed {
-	return []skuSeed{{sandboxComputeSKU, "compute", "AMD EPYC 4484PX", "vCPU-ms", 325}, {sandboxMemorySKU, "memory", "DDR5-5200", "GiB-ms", 40}, {sandboxBlockStorageSKU, "block_storage", "Premium NVMe", "GiB-ms", 10}}
+	return []skuSeed{
+		{sandboxComputeSKU, "compute", "AMD EPYC 4484PX", "vCPU-ms", 325},
+		{sandboxMemorySKU, "memory", "DDR5-5200", "GiB-ms", 40},
+		{sandboxExecutionRootStorageSKU, "execution_root_storage", "Premium NVMe root disk", "GiB-ms", 10},
+		{sandboxDurableVolumeLiveSKU, "durable_volume_storage", "Durable volume live bytes", "GiB-ms", 10},
+		{sandboxDurableVolumeRetainedSKU, "durable_volume_storage", "Durable volume retained snapshots", "GiB-ms", 5},
+	}
 }

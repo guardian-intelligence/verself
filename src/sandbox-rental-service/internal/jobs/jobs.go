@@ -42,11 +42,11 @@ const (
 	defaultProductID        = "sandbox"
 	defaultRunCommand       = "echo hello"
 
-	billingSKUComputeVCPUMs     = "sandbox_compute_amd_epyc_4484px_vcpu_ms"
-	billingSKUMemoryGiBMs       = "sandbox_memory_standard_gib_ms"
-	billingSKUBlockStorageGiBMs = "sandbox_block_storage_premium_nvme_gib_ms"
-	billingMiBPerGiB            = 1024
-	billingBytesPerGiB          = 1024 * 1024 * 1024
+	billingSKUComputeVCPUMs             = "sandbox_compute_amd_epyc_4484px_vcpu_ms"
+	billingSKUMemoryGiBMs               = "sandbox_memory_standard_gib_ms"
+	billingSKUExecutionRootStorageGiBMs = "sandbox_execution_root_storage_premium_nvme_gib_ms"
+	billingMiBPerGiB                    = 1024
+	billingBytesPerGiB                  = 1024 * 1024 * 1024
 
 	StateQueued     = "queued"
 	StateReserved   = "reserved"
@@ -651,9 +651,9 @@ func (s *Service) reserveBilling(ctx context.Context, item executionWorkItem, bi
 	// the final magnitudes are (unit × duration_ms) per SKU.
 	res := item.Resources.Normalize()
 	allocation := map[string]float64{
-		billingSKUComputeVCPUMs:     float64(res.VCPUs),
-		billingSKUMemoryGiBMs:       float64(res.MemoryMiB) / billingMiBPerGiB,
-		billingSKUBlockStorageGiBMs: float64(res.RootDiskGiB),
+		billingSKUComputeVCPUMs:             float64(res.VCPUs),
+		billingSKUMemoryGiBMs:               float64(res.MemoryMiB) / billingMiBPerGiB,
+		billingSKUExecutionRootStorageGiBMs: float64(res.RootDiskGiB),
 	}
 	return s.Billing.Reserve(ctx, billingJobID, item.OrgID, item.ProductID, item.ActorID, 1, item.SourceKind, item.ExecutionID.String(), 1, 0, allocation)
 }
