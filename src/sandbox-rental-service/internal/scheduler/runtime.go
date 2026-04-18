@@ -30,6 +30,7 @@ const (
 	QueueScheduler    = "scheduler"
 	QueueReconcile    = "reconcile"
 	QueueWebhook      = "webhook"
+	QueueVolume       = "volume"
 
 	ProbeKind                   = "scheduler.probe"
 	ExecutionAdvanceKind        = "execution.advance"
@@ -37,8 +38,9 @@ const (
 	GitHubRunnerAllocateKind    = "github.runner.allocate"
 	GitHubJobBindKind           = "github.job.bind"
 	GitHubRunnerCleanupKind     = "github.runner.cleanup"
+	VolumeMeterTickKind         = "volume.meter_tick"
 
-	DefaultExecutionMaxWorkers = 16
+	DefaultExecutionMaxWorkers = 4
 )
 
 var tracer = otel.Tracer("sandbox-rental-service/scheduler")
@@ -106,6 +108,12 @@ type GitHubJobBindRequest struct {
 
 type GitHubRunnerCleanupRequest struct {
 	AllocationID  string
+	CorrelationID string
+	TraceParent   string
+}
+
+type VolumeMeterTickRequest struct {
+	MeterTickID   string
 	CorrelationID string
 	TraceParent   string
 }
@@ -215,6 +223,23 @@ func (GitHubRunnerCleanupArgs) InsertOpts() river.InsertOpts {
 		MaxAttempts: 5,
 		Queue:       QueueRunner,
 		Tags:        []string{"github", "runner", "cleanup"},
+	}
+}
+
+type VolumeMeterTickArgs struct {
+	MeterTickID   string `json:"meter_tick_id"`
+	CorrelationID string `json:"correlation_id,omitempty"`
+	TraceParent   string `json:"trace_parent,omitempty"`
+	SubmittedAt   string `json:"submitted_at"`
+}
+
+func (VolumeMeterTickArgs) Kind() string { return VolumeMeterTickKind }
+
+func (VolumeMeterTickArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{
+		MaxAttempts: 5,
+		Queue:       QueueVolume,
+		Tags:        []string{"volume", "meter"},
 	}
 }
 
@@ -381,6 +406,21 @@ func (r *Runtime) EnqueueGitHubRunnerCleanup(ctx context.Context, req GitHubRunn
 	return ProbeResult{JobID: job.ID, Kind: job.Kind, Queue: job.Queue, Status: string(job.State)}, nil
 }
 
+func (r *Runtime) EnqueueVolumeMeterTickTx(ctx context.Context, tx pgx.Tx, req VolumeMeterTickRequest) (ProbeResult, error) {
+	args := VolumeMeterTickArgs{
+		MeterTickID:   strings.TrimSpace(req.MeterTickID),
+		CorrelationID: strings.TrimSpace(req.CorrelationID),
+		TraceParent:   strings.TrimSpace(req.TraceParent),
+		SubmittedAt:   time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	result, err := r.client.InsertTx(ctx, tx, args, nil)
+	if err != nil {
+		return ProbeResult{}, fmt.Errorf("enqueue volume meter tick: %w", err)
+	}
+	job := result.Job
+	return ProbeResult{JobID: job.ID, Kind: job.Kind, Queue: job.Queue, Status: string(job.State)}, nil
+}
+
 func (r *Runtime) Start(ctx context.Context) error {
 	if err := r.client.Start(ctx); err != nil {
 		return fmt.Errorf("start river client: %w", err)
@@ -444,6 +484,7 @@ func queueConfig(cfg Config) map[string]river.QueueConfig {
 		QueueScheduler:    {MaxWorkers: 1},
 		QueueReconcile:    {MaxWorkers: 1},
 		QueueWebhook:      {MaxWorkers: 2},
+		QueueVolume:       {MaxWorkers: 2},
 	}
 }
 
@@ -462,5 +503,6 @@ func queueNames() []string {
 		QueueScheduler,
 		QueueReconcile,
 		QueueWebhook,
+		QueueVolume,
 	}
 }

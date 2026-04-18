@@ -9,7 +9,7 @@ telemetry.
 Code pointers:
 
 - `internal/jobs/` - River workers, execution attempts, billing windows,
-  GitHub demand records, and reconciliation.
+  durable volume meter ticks, GitHub demand records, and reconciliation.
 - `internal/api/` - secured Huma routes and the sandbox operation catalog.
 - `migrations/` - PostgreSQL tables for executions, attempts, billing windows,
   logs, GitHub workflow jobs, runner allocations, and assignment bindings.
@@ -25,6 +25,10 @@ State model:
   host-assigned `lease_id` and `exec_id` only after the host returns them.
 - `execution_billing_windows` are control-plane billing records. The host never
   receives billing, org, customer, attempt, or quota vocabulary.
+- `volumes`, `volume_generations`, `volume_events`, and `volume_meter_ticks`
+  are product-owned durable volume state. They store typed refs, placement
+  fields, usage measurements, billing state, and projection state without
+  granting product services host/ZFS privilege.
 - `github_workflow_jobs` are GitHub demand facts from webhooks and polling.
 - `github_runner_allocations` are Forge Metal capacity records.
 - `github_runner_job_bindings` are the only authoritative job-to-runner
@@ -41,6 +45,26 @@ Direct execution flow:
 4. Reconciliation repairs stale reserved/launching attempts by voiding reserved
    windows, releasing any lease ID already recorded, and terminalizing the
    attempt.
+
+Durable volume meter tick flow:
+
+1. `POST /api/v1/volumes` records the product-owned durable volume identity,
+   org, product, single-node placement fields, and initial generation metadata.
+2. `POST /api/v1/volumes/{volume_id}/meter-ticks` records a measurement tick
+   and transactionally enqueues `volume.meter_tick` River work. The first cut
+   accepts measured ZFS facts from the caller for proof; vm-orchestrator
+   lifecycle work remains out of scope.
+3. The worker computes live bytes as `max(used - usedbysnapshots, 0)`, retained
+   bytes as `usedbysnapshots`, reserves billing with
+   `source_type = volume_meter_tick` and `window_millis` equal to the sweep
+   duration, then settles the same quantity.
+4. On successful billing settlement, sandbox-rental updates Postgres state and
+   projects a ClickHouse `forge_metal.volume_meter_ticks` row. Billing-service
+   independently projects the settled window into `forge_metal.metering`.
+5. If billing denies the tick, sandbox-rental marks the tick `billing_failed`,
+   marks the volume `write_blocked`, and projects unbilled usage evidence. The
+   product layer owns the customer consequence; billing-service remains the
+   authorization and settlement boundary.
 
 Single-node VM concurrency budget:
 
@@ -93,3 +117,9 @@ Expected proof surface:
 - OTel traces include `sandbox-rental.execution.submit`,
   `sandbox-rental.execution.run`, `rpc.AcquireLease`, `rpc.StartExec`,
   `rpc.WaitExec`, `rpc.ReleaseLease`, and `vmorchestrator.lease.boot`.
+- Durable volume proof includes `sandbox-rental.volume.create`,
+  `sandbox-rental.volume.meter_tick.enqueue`,
+  `river.work/volume.meter_tick`, `sandbox-rental.volume.meter_tick.run`,
+  `billing.authorization.commit_pg`, `billing.ledger.settle.dispatch`,
+  `river.work/billing.metering.project_window`, and
+  `billing.metering.project`.

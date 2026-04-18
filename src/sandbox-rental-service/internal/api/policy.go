@@ -30,6 +30,8 @@ const (
 	permissionExecutionSubmit permission = "sandbox:execution:submit"
 	permissionExecutionRead   permission = "sandbox:execution:read"
 	permissionLogsRead        permission = "sandbox:logs:read"
+	permissionVolumeRead      permission = "sandbox:volume:read"
+	permissionVolumeWrite     permission = "sandbox:volume:write"
 	permissionBillingRead     permission = "billing:read"
 	permissionBillingCheckout permission = "billing:checkout"
 
@@ -73,6 +75,8 @@ var rolePermissionBundles = map[string][]permission{
 		permissionExecutionSubmit,
 		permissionExecutionRead,
 		permissionLogsRead,
+		permissionVolumeRead,
+		permissionVolumeWrite,
 		permissionBillingRead,
 		permissionBillingCheckout,
 	},
@@ -80,6 +84,7 @@ var rolePermissionBundles = map[string][]permission{
 		permissionExecutionSubmit,
 		permissionExecutionRead,
 		permissionLogsRead,
+		permissionVolumeRead,
 	},
 }
 
@@ -427,6 +432,7 @@ var apiOperationRateLimiter = newFixedWindowOperationRateLimiter(map[string]rate
 	"github_installation_mutation": {Limit: 30, Window: time.Minute},
 	"billing_mutation":             {Limit: 60, Window: time.Minute},
 	"scheduler_probe":              {Limit: 30, Window: time.Minute},
+	"volume_mutation":              {Limit: 120, Window: time.Minute},
 })
 
 func newFixedWindowOperationRateLimiter(rules map[string]rateLimitRule) *fixedWindowOperationRateLimiter {

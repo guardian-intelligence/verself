@@ -42,11 +42,13 @@ const (
 	defaultProductID        = "sandbox"
 	defaultRunCommand       = "echo hello"
 
-	billingSKUComputeVCPUMs             = "sandbox_compute_amd_epyc_4484px_vcpu_ms"
-	billingSKUMemoryGiBMs               = "sandbox_memory_standard_gib_ms"
-	billingSKUExecutionRootStorageGiBMs = "sandbox_execution_root_storage_premium_nvme_gib_ms"
-	billingMiBPerGiB                    = 1024
-	billingBytesPerGiB                  = 1024 * 1024 * 1024
+	billingSKUComputeVCPUMs              = "sandbox_compute_amd_epyc_4484px_vcpu_ms"
+	billingSKUMemoryGiBMs                = "sandbox_memory_standard_gib_ms"
+	billingSKUExecutionRootStorageGiBMs  = "sandbox_execution_root_storage_premium_nvme_gib_ms"
+	billingSKUDurableVolumeLiveGiBMs     = "sandbox_durable_volume_live_storage_gib_ms"
+	billingSKUDurableVolumeRetainedGiBMs = "sandbox_durable_volume_retained_snapshot_gib_ms"
+	billingMiBPerGiB                     = 1024
+	billingBytesPerGiB                   = 1024 * 1024 * 1024
 
 	StateQueued     = "queued"
 	StateReserved   = "reserved"
@@ -85,6 +87,7 @@ type SchedulerRuntime interface {
 	EnqueueGitHubRunnerAllocateTx(ctx context.Context, tx pgx.Tx, req scheduler.GitHubRunnerAllocateRequest) (scheduler.ProbeResult, error)
 	EnqueueGitHubJobBindTx(ctx context.Context, tx pgx.Tx, req scheduler.GitHubJobBindRequest) (scheduler.ProbeResult, error)
 	EnqueueGitHubRunnerCleanup(ctx context.Context, req scheduler.GitHubRunnerCleanupRequest) (scheduler.ProbeResult, error)
+	EnqueueVolumeMeterTickTx(ctx context.Context, tx pgx.Tx, req scheduler.VolumeMeterTickRequest) (scheduler.ProbeResult, error)
 	EnqueueProbe(ctx context.Context, req scheduler.ProbeRequest) (scheduler.ProbeResult, error)
 }
 

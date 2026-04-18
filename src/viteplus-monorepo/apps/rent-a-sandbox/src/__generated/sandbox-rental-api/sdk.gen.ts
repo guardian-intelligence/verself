@@ -22,6 +22,9 @@ import type {
   CreateBillingPortalData,
   CreateBillingPortalErrors,
   CreateBillingPortalResponses,
+  CreateVolumeData,
+  CreateVolumeErrors,
+  CreateVolumeResponses,
   GetBillingEntitlementsData,
   GetBillingEntitlementsErrors,
   GetBillingEntitlementsResponses,
@@ -34,6 +37,9 @@ import type {
   GetExecutionLogsErrors,
   GetExecutionLogsResponses,
   GetExecutionResponses,
+  GetVolumeData,
+  GetVolumeErrors,
+  GetVolumeResponses,
   ListBillingContractsData,
   ListBillingContractsErrors,
   ListBillingContractsResponses,
@@ -43,6 +49,9 @@ import type {
   ListGithubInstallationsData,
   ListGithubInstallationsErrors,
   ListGithubInstallationsResponses,
+  ListVolumesData,
+  ListVolumesErrors,
+  ListVolumesResponses,
   SubmitExecutionData,
   SubmitExecutionErrors,
   SubmitExecutionResponses,
@@ -291,5 +300,45 @@ export const beginGithubInstallation = <ThrowOnError extends boolean = false>(
   >({
     security: [{ scheme: "bearer", type: "http" }],
     url: "/api/v1/github/installations/connect",
+    ...options,
+  });
+
+/**
+ * List durable volumes
+ */
+export const listVolumes = <ThrowOnError extends boolean = false>(
+  options?: Options<ListVolumesData, ThrowOnError>,
+) =>
+  (options?.client ?? client).get<ListVolumesResponses, ListVolumesErrors, ThrowOnError>({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/volumes",
+    ...options,
+  });
+
+/**
+ * Create a durable volume
+ */
+export const createVolume = <ThrowOnError extends boolean = false>(
+  options: Options<CreateVolumeData, ThrowOnError>,
+) =>
+  (options.client ?? client).post<CreateVolumeResponses, CreateVolumeErrors, ThrowOnError>({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/volumes",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
+
+/**
+ * Get durable volume current state
+ */
+export const getVolume = <ThrowOnError extends boolean = false>(
+  options: Options<GetVolumeData, ThrowOnError>,
+) =>
+  (options.client ?? client).get<GetVolumeResponses, GetVolumeErrors, ThrowOnError>({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/volumes/{volume_id}",
     ...options,
   });

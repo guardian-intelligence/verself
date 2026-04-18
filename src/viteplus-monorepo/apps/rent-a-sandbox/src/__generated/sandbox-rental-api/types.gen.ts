@@ -404,7 +404,7 @@ export type SandboxSubmitRequest = {
   product_id?: string;
   provider?: string;
   /**
-   * Requested VM shape (vCPUs, memory, root disk). Omit to use defaults; out-of-bounds shapes are rejected with 400.
+   * Requested VM shape (vCPUs, memory, root disk). Omitted fields use the runner class defaults; out-of-bounds shapes are rejected with 400.
    */
   resources?: VmResources;
   run_command?: string;
@@ -412,6 +412,94 @@ export type SandboxSubmitRequest = {
    * Runner class label, for example metal-4vcpu-ubuntu-2404.
    */
   runner_class?: string;
+};
+
+export type SandboxVolumeCreateRequest = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  display_name?: string;
+  idempotency_key: string;
+  product_id?: string;
+};
+
+export type SandboxVolumeMeterTickRecord = {
+  actor_id?: string;
+  allocation: {
+    [key: string]: number;
+  };
+  billable_live_bytes: string;
+  billable_retained_bytes: string;
+  billed_charge_units: string;
+  billing_failure_reason?: string;
+  billing_window_id?: string;
+  clickhouse_projected_at?: string;
+  created_at: string;
+  meter_tick_id: string;
+  observed_at: string;
+  org_id: string;
+  product_id: string;
+  provisioned_bytes: string;
+  source_ref: string;
+  source_type: string;
+  state: string;
+  updated_at: string;
+  used_bytes: string;
+  usedbysnapshots_bytes: string;
+  volume_id: string;
+  window_end: string;
+  window_millis: number;
+  window_seq: number;
+  window_start: string;
+  written_bytes: string;
+};
+
+export type SandboxVolumeMeterTickRequest = {
+  idempotency_key: string;
+  observed_at?: string;
+  provisioned_bytes?: string;
+  used_bytes: string;
+  usedbysnapshots_bytes: string;
+  window_millis?: number;
+  written_bytes?: string;
+};
+
+export type SandboxVolumeMeterTickResult = {
+  /**
+   * River job ID encoded as a decimal string for JavaScript-safe transport.
+   */
+  job_id?: string;
+  kind?: string;
+  meter_tick: SandboxVolumeMeterTickRecord;
+  queue?: string;
+  status?: string;
+};
+
+export type SandboxVolumeRecord = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  actor_id?: string;
+  billable_live_bytes: string;
+  billable_retained_bytes: string;
+  created_at: string;
+  current_generation_id?: string;
+  dataset_ref: string;
+  display_name?: string;
+  last_metered_at?: string;
+  org_id: string;
+  pool_id: string;
+  product_id: string;
+  provisioned_bytes: string;
+  state: string;
+  storage_node_id: string;
+  updated_at: string;
+  used_bytes: string;
+  usedbysnapshots_bytes: string;
+  volume_id: string;
+  written_bytes: string;
 };
 
 export type SchedulerProbeRequest = {
@@ -609,7 +697,7 @@ export type SandboxSubmitRequestWritable = {
   product_id?: string;
   provider?: string;
   /**
-   * Requested VM shape (vCPUs, memory, root disk). Omit to use defaults; out-of-bounds shapes are rejected with 400.
+   * Requested VM shape (vCPUs, memory, root disk). Omitted fields use the runner class defaults; out-of-bounds shapes are rejected with 400.
    */
   resources?: VmResources;
   run_command?: string;
@@ -617,6 +705,34 @@ export type SandboxSubmitRequestWritable = {
    * Runner class label, for example metal-4vcpu-ubuntu-2404.
    */
   runner_class?: string;
+};
+
+export type SandboxVolumeCreateRequestWritable = {
+  display_name?: string;
+  idempotency_key: string;
+  product_id?: string;
+};
+
+export type SandboxVolumeRecordWritable = {
+  actor_id?: string;
+  billable_live_bytes: string;
+  billable_retained_bytes: string;
+  created_at: string;
+  current_generation_id?: string;
+  dataset_ref: string;
+  display_name?: string;
+  last_metered_at?: string;
+  org_id: string;
+  pool_id: string;
+  product_id: string;
+  provisioned_bytes: string;
+  state: string;
+  storage_node_id: string;
+  updated_at: string;
+  used_bytes: string;
+  usedbysnapshots_bytes: string;
+  volume_id: string;
+  written_bytes: string;
 };
 
 export type CreateBillingCheckoutData = {
@@ -1041,3 +1157,83 @@ export type BeginGithubInstallationResponses = {
 
 export type BeginGithubInstallationResponse =
   BeginGithubInstallationResponses[keyof BeginGithubInstallationResponses];
+
+export type ListVolumesData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/api/v1/volumes";
+};
+
+export type ListVolumesErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type ListVolumesError = ListVolumesErrors[keyof ListVolumesErrors];
+
+export type ListVolumesResponses = {
+  /**
+   * OK
+   */
+  200: Array<SandboxVolumeRecord> | null;
+};
+
+export type ListVolumesResponse = ListVolumesResponses[keyof ListVolumesResponses];
+
+export type CreateVolumeData = {
+  body: SandboxVolumeCreateRequestWritable;
+  path?: never;
+  query?: never;
+  url: "/api/v1/volumes";
+};
+
+export type CreateVolumeErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type CreateVolumeError = CreateVolumeErrors[keyof CreateVolumeErrors];
+
+export type CreateVolumeResponses = {
+  /**
+   * Created
+   */
+  201: SandboxVolumeRecord;
+};
+
+export type CreateVolumeResponse = CreateVolumeResponses[keyof CreateVolumeResponses];
+
+export type GetVolumeData = {
+  body?: never;
+  path: {
+    /**
+     * Volume UUID
+     */
+    volume_id: string;
+  };
+  query?: never;
+  url: "/api/v1/volumes/{volume_id}";
+};
+
+export type GetVolumeErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type GetVolumeError = GetVolumeErrors[keyof GetVolumeErrors];
+
+export type GetVolumeResponses = {
+  /**
+   * OK
+   */
+  200: SandboxVolumeRecord;
+};
+
+export type GetVolumeResponse = GetVolumeResponses[keyof GetVolumeResponses];

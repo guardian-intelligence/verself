@@ -371,6 +371,85 @@ export const vSandboxSubmitExecutionResult = v.strictObject({
   status: v.string(),
 });
 
+export const vSandboxVolumeCreateRequest = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  display_name: v.optional(v.pipe(v.string(), v.maxLength(255))),
+  idempotency_key: v.pipe(v.string(), v.maxLength(128)),
+  product_id: v.optional(v.pipe(v.string(), v.maxLength(255))),
+});
+
+export const vSandboxVolumeMeterTickRecord = v.strictObject({
+  actor_id: v.optional(v.string()),
+  allocation: v.record(v.string(), v.number()),
+  billable_live_bytes: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  billable_retained_bytes: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  billed_charge_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  billing_failure_reason: v.optional(v.string()),
+  billing_window_id: v.optional(v.string()),
+  clickhouse_projected_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  created_at: v.pipe(v.string(), v.isoTimestamp()),
+  meter_tick_id: v.string(),
+  observed_at: v.pipe(v.string(), v.isoTimestamp()),
+  org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  product_id: v.string(),
+  provisioned_bytes: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  source_ref: v.string(),
+  source_type: v.string(),
+  state: v.string(),
+  updated_at: v.pipe(v.string(), v.isoTimestamp()),
+  used_bytes: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  usedbysnapshots_bytes: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  volume_id: v.string(),
+  window_end: v.pipe(v.string(), v.isoTimestamp()),
+  window_millis: v.pipe(v.number(), v.integer(), v.minValue(30000), v.maxValue(4294967295)),
+  window_seq: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(4294967295)),
+  window_start: v.pipe(v.string(), v.isoTimestamp()),
+  written_bytes: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+});
+
+export const vSandboxVolumeMeterTickRequest = v.strictObject({
+  idempotency_key: v.pipe(v.string(), v.maxLength(128)),
+  observed_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  provisioned_bytes: v.optional(v.pipe(v.string(), v.regex(/^[0-9]+$/))),
+  used_bytes: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  usedbysnapshots_bytes: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  window_millis: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(30000), v.maxValue(4294967295)),
+  ),
+  written_bytes: v.optional(v.pipe(v.string(), v.regex(/^[0-9]+$/))),
+});
+
+export const vSandboxVolumeMeterTickResult = v.strictObject({
+  job_id: v.optional(v.string()),
+  kind: v.optional(v.string()),
+  meter_tick: vSandboxVolumeMeterTickRecord,
+  queue: v.optional(v.string()),
+  status: v.optional(v.string()),
+});
+
+export const vSandboxVolumeRecord = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  actor_id: v.optional(v.string()),
+  billable_live_bytes: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  billable_retained_bytes: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  created_at: v.pipe(v.string(), v.isoTimestamp()),
+  current_generation_id: v.optional(v.string()),
+  dataset_ref: v.string(),
+  display_name: v.optional(v.string()),
+  last_metered_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  pool_id: v.string(),
+  product_id: v.string(),
+  provisioned_bytes: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  state: v.string(),
+  storage_node_id: v.string(),
+  updated_at: v.pipe(v.string(), v.isoTimestamp()),
+  used_bytes: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  usedbysnapshots_bytes: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  volume_id: v.string(),
+  written_bytes: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+});
+
 export const vSchedulerProbeRequest = v.strictObject({
   message: v.optional(v.pipe(v.string(), v.maxLength(512))),
 });
@@ -551,6 +630,34 @@ export const vSandboxSubmitRequestWritable = v.strictObject({
   runner_class: v.optional(v.string()),
 });
 
+export const vSandboxVolumeCreateRequestWritable = v.strictObject({
+  display_name: v.optional(v.pipe(v.string(), v.maxLength(255))),
+  idempotency_key: v.pipe(v.string(), v.maxLength(128)),
+  product_id: v.optional(v.pipe(v.string(), v.maxLength(255))),
+});
+
+export const vSandboxVolumeRecordWritable = v.strictObject({
+  actor_id: v.optional(v.string()),
+  billable_live_bytes: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  billable_retained_bytes: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  created_at: v.pipe(v.string(), v.isoTimestamp()),
+  current_generation_id: v.optional(v.string()),
+  dataset_ref: v.string(),
+  display_name: v.optional(v.string()),
+  last_metered_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  pool_id: v.string(),
+  product_id: v.string(),
+  provisioned_bytes: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  state: v.string(),
+  storage_node_id: v.string(),
+  updated_at: v.pipe(v.string(), v.isoTimestamp()),
+  used_bytes: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  usedbysnapshots_bytes: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  volume_id: v.string(),
+  written_bytes: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+});
+
 export const vCreateBillingCheckoutBody = vSandboxBillingCheckoutRequestWritable;
 
 export const vCreateBillingCheckoutHeaders = v.object({
@@ -676,3 +783,24 @@ export const vBeginGithubInstallationHeaders = v.object({
  * Created
  */
 export const vBeginGithubInstallationResponse = vSandboxGitHubInstallationConnectResponse;
+
+/**
+ * OK
+ */
+export const vListVolumesResponse = v.nullable(v.array(vSandboxVolumeRecord));
+
+export const vCreateVolumeBody = vSandboxVolumeCreateRequestWritable;
+
+/**
+ * Created
+ */
+export const vCreateVolumeResponse = vSandboxVolumeRecord;
+
+export const vGetVolumePath = v.object({
+  volume_id: v.string(),
+});
+
+/**
+ * OK
+ */
+export const vGetVolumeResponse = vSandboxVolumeRecord;
