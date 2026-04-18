@@ -14,7 +14,7 @@ Forge Metal owns billing periods, plan policy, finalization, billing documents, 
 Stripe is a payment rail and hosted payment-method provider, not the billing domain model.
 ```
 
-PostgreSQL owns billing domain state and scheduling facts: catalog rows, contracts, contract changes, contract phases, entitlement lines, entitlement periods, credit-grant metadata, billing-cycle rows, billing-window metadata, finalizations, billing documents, invoice adjustments, provider bindings, provider events, ledger command rows, billing event rows, event-delivery queue rows, and reconciliation cursors. TigerBeetle owns accepted balance-changing account and transfer facts. River owns durable asynchronous execution of billing work derived from PostgreSQL state. A River job is a wakeup, retry, concurrency, and observability handle; it is not entitlement or ledger truth. If a River job is late, duplicated, retried, canceled, or reconstructed by reconciliation, deterministic PostgreSQL identifiers and persisted TigerBeetle IDs still converge to the same contract, phase, cycle, entitlement period, grant, ledger command, finalization, document, adjustment, and billing event facts.
+PostgreSQL owns billing domain state and scheduling facts: catalog rows, contracts, contract changes, contract phases, entitlement lines, entitlement periods, credit-grant metadata, billing-cycle rows, billing-window metadata, finalizations, billing documents, invoice adjustments, provider bindings, provider events, ledger command rows, billing event rows, event-delivery queue rows, projection-delivery queue rows, and reconciliation cursors. TigerBeetle owns accepted balance-changing account and transfer facts. River owns durable asynchronous execution of billing work derived from PostgreSQL state. A River job is a wakeup, retry, concurrency, and observability handle; it is not entitlement or ledger truth. If a River job is late, duplicated, retried, canceled, or reconstructed by reconciliation, deterministic PostgreSQL identifiers and persisted TigerBeetle IDs still converge to the same contract, phase, cycle, entitlement period, grant, ledger command, finalization, document, adjustment, and billing event facts.
 
 Stripe is a payment and hosted billing provider. The target architecture does not use Stripe Subscriptions as the self-serve contract state machine. Forge Metal owns cadence, cycle rollover, contract changes, plan phases, entitlement materialization, finalization, billing document issue, overage consent, and dunning policy. Stripe is consulted when a card is vaulted, a hosted payment-method management surface is needed, a Forge Metal invoice document is sent to Stripe for collection, a payment/refund/dispute event arrives, or Stripe Tax is enabled.
 
@@ -62,7 +62,7 @@ Forge Metal follows the industry-standard price-side shape: immediate upgrades c
 
 | System | Role |
 |---|---|
-| PostgreSQL | Source of truth for catalog tables, contracts, contract changes, phases, entitlement lines, entitlement periods, credit-grant metadata, billing cycles, billing-window metadata, finalizations, billing documents, invoice adjustments, payment methods, provider bindings, provider events, ledger command state, billing event rows, event-delivery queue rows, schedule-defining timestamps, and reconciliation cursors. |
+| PostgreSQL | Source of truth for catalog tables, contracts, contract changes, phases, entitlement lines, entitlement periods, credit-grant metadata, billing cycles, billing-window metadata, finalizations, billing documents, invoice adjustments, payment methods, provider bindings, provider events, ledger command state, billing event rows, event-delivery queue rows, projection-delivery queue rows, schedule-defining timestamps, and reconciliation cursors. |
 | River | Durable queue and scheduler runtime for provider-event application, contract-change execution, phase-boundary advancement, entitlement-period materialization, ledger command dispatch, ledger reconciliation, cycle rollover, finalization, Stripe invoice collection, document email delivery, retries, and periodic repair. |
 | TigerBeetle | Operational financial ledger for credit balances, top-up deposits, recurring allowance deposits, receivables, settlements, refunds, expiry sweeps, corrections, showback transfers, and spend-cap enforcement. TigerBeetle is not the customer billing document artifact, not the request-path authorization engine, and not a substitute for PostgreSQL domain state. |
 | ClickHouse | Append-only usage evidence plus billing event, metering, document, adjustment, and provider-event projections used for document preview, statements, dashboards, verification, and reconciliation. |
@@ -122,9 +122,15 @@ Workers are thin executors. A worker must:
 1. Load the authoritative PostgreSQL row by deterministic domain identity.
 2. Verify the transition is still due and allowed.
 3. Apply one bounded state-machine step with compare-and-swap semantics.
-4. Write any immutable `billing_events` facts and corresponding `billing_event_delivery_queue` rows in the same transaction as the authoritative state change.
+4. Write any immutable `billing_events` facts and corresponding
+   `billing_event_delivery_queue` rows in the same transaction as the
+   authoritative state change.
 5. Enqueue follow-up River jobs in the same transaction when the transition creates new due work.
-6. Exit without side effects when the row is already terminal, superseded, not yet due, or already applied.
+6. Write non-event ClickHouse projection delivery rows in the same transaction
+   as the authoritative state change when a read model, such as metering, must
+   be projected from mutable domain rows rather than from a `billing_events`
+   fact.
+7. Exit without side effects when the row is already terminal, superseded, not yet due, or already applied.
 
 Reconciliation reconstructs missing River work from PostgreSQL state. If a job is missing but a row is due, reconciliation enqueues another deterministic job. If a job is duplicated, the worker sees already-applied state and exits.
 
@@ -153,8 +159,9 @@ The first implemented River cut keeps bounded repair scanners as
 and `billing.entitlements.reconcile`, and adds the one-row
 `billing.event_delivery.project` worker for precise event delivery. Producers
 that cannot enqueue River transactionally with their current SQL transaction
-still converge through the delivery queue plus periodic scanner; the target
-shape is to enqueue one-row jobs in the same transaction as the domain row.
+still converge through a PostgreSQL delivery queue plus periodic scanner; the
+target shape is to enqueue one-row jobs in the same transaction as the domain
+row.
 
 Job uniqueness must be derived from domain identity, not random worker identity:
 
@@ -1462,6 +1469,38 @@ Expected event types include:
 - `contract_allowance_revoked`
 - `billing_document_email_sent`
 
+### Billing projection delivery
+
+Non-event ClickHouse read models use the same transactional outbox discipline as
+`billing_event_delivery_queue`, but their source identity is the domain row that
+owns the projection. Billing metering is the first required non-event
+projection:
+
+- source kind: `billing_window`
+- source id: `window_id`
+- sink: `clickhouse.metering`
+- generation: monotonic integer used when an operator intentionally reprojects
+  a corrected row
+
+The delivery row must be inserted in the same PostgreSQL transaction that makes
+the source row projectable. For metering, that is the transition of
+`billing_windows.state` to `settled` after ledger settlement posting is
+acknowledged or reconciled. A marker such as `metering_projected_at` is useful as
+a cached status field, but it is not the durable outbox and must not be the only
+record that projection work is due.
+
+Projection workers lease due rows, hydrate the current authoritative PostgreSQL
+state, insert an idempotent ClickHouse row, and mark the delivery succeeded. If
+the ClickHouse insert succeeds but the PostgreSQL success mark fails, replay is
+allowed and expected; the ClickHouse table and all customer/operator queries must
+deduplicate by the deterministic source identity. For `forge_metal.metering`,
+that identity is `window_id`.
+
+Implementation may generalize the event queue into a typed projection delivery
+table or add a sibling `billing_projection_delivery_queue`. The product invariant
+is the same either way: no ClickHouse billing projection is driven only by an
+in-memory River job, a marker timestamp, or a best-effort direct insert.
+
 ## State machines
 
 There is not a separate state machine for enterprise contracts. The same state machines apply to every recurring paid agreement; only phase kind, recurrence anchor, collection method, and provider binding differ.
@@ -2030,7 +2069,25 @@ That keeps the preview structurally aligned with the final document rather than 
 
 ClickHouse stores the billing document and metering read models, not the transaction ledger.
 
-Billing event projection is at-least-once. Projection tables that use `ReplacingMergeTree` deduplicate during background merges, so they can temporarily expose duplicate rows for the same deterministic key. Operator verification queries that require immediate uniqueness must query PostgreSQL domain truth, use ClickHouse `FINAL`, or explicitly group by deterministic identifiers such as `event_id` and the relevant version column. Production authorization, document issuance, ledger writes, queue deletion, and provider-event application must not depend on ClickHouse merge timing.
+All ClickHouse billing projections are at-least-once and must be backed by a
+PostgreSQL delivery row written in the same transaction as the authoritative
+domain transition. Billing events use `billing_event_delivery_queue`; metering
+uses a non-event projection delivery row keyed by `window_id`.
+
+Projection tables that use `ReplacingMergeTree` deduplicate during background
+merges, so they can temporarily expose duplicate rows for the same deterministic
+key. Operator verification queries that require immediate uniqueness must query
+PostgreSQL domain truth, use ClickHouse `FINAL`, or explicitly group by
+deterministic identifiers such as `event_id` or `window_id` and the relevant
+version column. Production authorization, document issuance, ledger writes,
+queue deletion, and provider-event application must not depend on ClickHouse
+merge timing.
+
+`forge_metal.metering` must be idempotent by `window_id`. Its partition key must
+be derived from a stable domain timestamp, such as `started_at`, not
+`recorded_at`; otherwise a retry across a month boundary can strand duplicate
+logical rows in different partitions. Customer-facing billing usage queries read
+through a deduped view or aggregate by `window_id`.
 
 The target metering projection contains row-level usage evidence and projected charge units, including:
 
@@ -2093,6 +2150,8 @@ Scheduler fault cases:
 - River job retried after the phase has already closed.
 - Entitlement materialization job runs twice for the same period.
 - Event delivery projection job fails after ClickHouse insert but before deleting the queue row.
+- Metering projection job fails after ClickHouse insert but before marking the
+  projection delivery row succeeded.
 - Reserve runs before scheduled free-tier or active contract entitlement materialization.
 - Finalization is delayed while the successor cycle remains open for valid usage.
 
@@ -2256,9 +2315,13 @@ The provider event worker may resolve the event through `provider_bindings` only
 
 ### Projection, reconciliation, and operator repair
 
-**ClickHouse contains duplicate event rows after a retry.**
+**ClickHouse contains duplicate projection rows after a retry.**
 
-This is acceptable for at-least-once delivery. Proof queries use `FINAL`, deterministic `event_id`, or aggregation by `event_id` depending on the table engine. Authorization, document issue, and balance reads never depend on ClickHouse immediate exactness.
+This is acceptable for at-least-once delivery. Proof queries use `FINAL`,
+deterministic source IDs, or aggregation by source ID depending on the table
+engine. Billing events deduplicate by `event_id`; metering deduplicates by
+`window_id`. Authorization, document issue, and balance reads never depend on
+ClickHouse immediate exactness.
 
 **A finalization row needs to notify Stripe, mailbox-service, and ClickHouse.**
 

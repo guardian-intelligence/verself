@@ -48,7 +48,9 @@ The customer-facing concepts are:
 - `storage_usage`: measured durable storage at rest, derived from authoritative
   ZFS properties and recorded as meter ticks.
 
-The customer API lives in sandbox-rental-service, for example:
+The canonical customer API contract lives in
+`src/sandbox-rental-service/docs/durable-volume-api-and-metering.md`. The
+target surface is:
 
 - `GET /api/v1/storage/summary`
 - `GET /api/v1/volumes`
@@ -60,7 +62,9 @@ The API enforces the caller's Zitadel organization context and operation
 permission before reading sandbox-rental Postgres or querying ClickHouse.
 ClickHouse may serve usage history through sandbox-rental, but it is not the
 source of truth for volume ownership, current generation, IAM, or lifecycle
-state.
+state. Customer DTOs must not expose storage node IDs, pool IDs, dataset refs,
+snapshot refs, zvol device paths, host mount paths, or orchestrator
+implementation names.
 
 ## Privilege Boundary
 
@@ -276,9 +280,11 @@ thin, copy-on-write cache volumes rather than customer-sized raw disks.
 
 The 60s meter sweep records a sandbox-rental `volume_meter_ticks` row, enqueues
 bounded River work, reserves a billing-service time window with
-`window_millis = 60000`, settles the same quantity, and projects both
-`forge_metal.volume_meter_ticks` and billing-service `forge_metal.metering`
-evidence. The product layer owns the consequence of a failed storage billing
+`window_millis = 60000`, settles the same quantity, and records transactional
+projection delivery rows for ClickHouse evidence. sandbox-rental projects
+`forge_metal.volume_meter_ticks` from its product projection outbox;
+billing-service projects `forge_metal.metering` from its billing projection
+outbox. The product layer owns the consequence of a failed storage billing
 window; billing-service stays agnostic and reports the denied authorization.
 
 Billing-service accepts caller-configurable `WindowMillis` on reservation. A
@@ -332,9 +338,17 @@ Key columns:
 - `component_quantities`
 - `trace_id`
 
-sandbox-rental inserts meter rows with `batch.AppendStruct` and `ch` struct
-tags. Grafana dashboards, billing projection, and customer usage history all
-read the same meter table or materialized views over it.
+sandbox-rental projects meter rows from a PostgreSQL delivery outbox. Delivery
+is at-least-once: if ClickHouse insertion succeeds but the PostgreSQL success
+mark fails, replay may insert the same logical row again. The ClickHouse table
+and all Grafana/customer queries must therefore be idempotent by
+`meter_tick_id`, using a deduped view, `FINAL`, or grouping by deterministic ID
+as appropriate. Partitioning must use a stable domain timestamp such as
+`window_start` or `observed_at`, not `recorded_at`, so retries across month
+boundaries cannot strand duplicate logical rows in different partitions.
+
+Grafana dashboards, billing projection, and customer usage history read the
+meter table or materialized/deduped views over it.
 
 The customer API returns:
 
@@ -365,6 +379,8 @@ The Grafana dashboard should show:
   snapshot/send/receive; generation rotation replaces it.
 - `src/sandbox-rental-service/migrations/` - target migrations for `volumes`,
   `volume_generations`, `volume_current_generation`, and `retention_policies`.
+- `src/sandbox-rental-service/docs/durable-volume-api-and-metering.md` -
+  customer API boundary, internal metering source, and product projection outbox.
 - `src/platform/ansible/roles/grafana/` - provisioned dashboard target.
 
 ## Primary References
