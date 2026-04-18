@@ -977,7 +977,7 @@ components:
           type: string
         resources:
           $ref: "#/components/schemas/VMResources"
-          description: Requested VM shape (vCPUs, memory, root disk). Omit to use defaults; out-of-bounds shapes are rejected with 400.
+          description: Requested VM shape (vCPUs, memory, root disk). Omitted fields use the runner class defaults; out-of-bounds shapes are rejected with 400.
         run_command:
           type: string
         runner_class:
@@ -986,6 +986,253 @@ components:
       required:
         - kind
         - idempotency_key
+      type: object
+    SandboxVolumeCreateRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4243/schemas/SandboxVolumeCreateRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        display_name:
+          maxLength: 255
+          type: string
+        idempotency_key:
+          maxLength: 128
+          type: string
+        product_id:
+          maxLength: 255
+          type: string
+      required:
+        - idempotency_key
+      type: object
+    SandboxVolumeMeterTickRecord:
+      additionalProperties: false
+      properties:
+        actor_id:
+          type: string
+        allocation:
+          additionalProperties:
+            format: double
+            type: number
+          type: object
+        billable_live_bytes:
+          pattern: ^[0-9]+$
+          type: string
+        billable_retained_bytes:
+          pattern: ^[0-9]+$
+          type: string
+        billed_charge_units:
+          pattern: ^[0-9]+$
+          type: string
+        billing_failure_reason:
+          type: string
+        billing_window_id:
+          type: string
+        clickhouse_projected_at:
+          format: date-time
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        meter_tick_id:
+          type: string
+        observed_at:
+          format: date-time
+          type: string
+        org_id:
+          pattern: ^[0-9]+$
+          type: string
+        product_id:
+          type: string
+        provisioned_bytes:
+          pattern: ^[0-9]+$
+          type: string
+        source_ref:
+          type: string
+        source_type:
+          type: string
+        state:
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+        used_bytes:
+          pattern: ^[0-9]+$
+          type: string
+        usedbysnapshots_bytes:
+          pattern: ^[0-9]+$
+          type: string
+        volume_id:
+          type: string
+        window_end:
+          format: date-time
+          type: string
+        window_millis:
+          format: int32
+          maximum: 4294967295
+          minimum: 30000
+          type: integer
+        window_seq:
+          format: int32
+          maximum: 4294967295
+          minimum: 0
+          type: integer
+        window_start:
+          format: date-time
+          type: string
+        written_bytes:
+          pattern: ^[0-9]+$
+          type: string
+      required:
+        - meter_tick_id
+        - volume_id
+        - org_id
+        - product_id
+        - source_type
+        - source_ref
+        - window_seq
+        - window_millis
+        - state
+        - observed_at
+        - window_start
+        - window_end
+        - used_bytes
+        - usedbysnapshots_bytes
+        - billable_live_bytes
+        - billable_retained_bytes
+        - written_bytes
+        - provisioned_bytes
+        - allocation
+        - billed_charge_units
+        - created_at
+        - updated_at
+      type: object
+    SandboxVolumeMeterTickRequest:
+      additionalProperties: false
+      properties:
+        idempotency_key:
+          maxLength: 128
+          type: string
+        observed_at:
+          format: date-time
+          type: string
+        provisioned_bytes:
+          pattern: ^[0-9]+$
+          type: string
+        used_bytes:
+          pattern: ^[0-9]+$
+          type: string
+        usedbysnapshots_bytes:
+          pattern: ^[0-9]+$
+          type: string
+        window_millis:
+          format: int32
+          maximum: 4294967295
+          minimum: 30000
+          type: integer
+        written_bytes:
+          pattern: ^[0-9]+$
+          type: string
+      required:
+        - idempotency_key
+        - used_bytes
+        - usedbysnapshots_bytes
+      type: object
+    SandboxVolumeMeterTickResult:
+      additionalProperties: false
+      properties:
+        job_id:
+          description: River job ID encoded as a decimal string for JavaScript-safe transport.
+          type: string
+        kind:
+          type: string
+        meter_tick:
+          $ref: "#/components/schemas/SandboxVolumeMeterTickRecord"
+        queue:
+          type: string
+        status:
+          type: string
+      required:
+        - meter_tick
+      type: object
+    SandboxVolumeRecord:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4243/schemas/SandboxVolumeRecord.json
+          format: uri
+          readOnly: true
+          type: string
+        actor_id:
+          type: string
+        billable_live_bytes:
+          pattern: ^[0-9]+$
+          type: string
+        billable_retained_bytes:
+          pattern: ^[0-9]+$
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        current_generation_id:
+          type: string
+        dataset_ref:
+          type: string
+        display_name:
+          type: string
+        last_metered_at:
+          format: date-time
+          type: string
+        org_id:
+          pattern: ^[0-9]+$
+          type: string
+        pool_id:
+          type: string
+        product_id:
+          type: string
+        provisioned_bytes:
+          pattern: ^[0-9]+$
+          type: string
+        state:
+          type: string
+        storage_node_id:
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+        used_bytes:
+          pattern: ^[0-9]+$
+          type: string
+        usedbysnapshots_bytes:
+          pattern: ^[0-9]+$
+          type: string
+        volume_id:
+          type: string
+        written_bytes:
+          pattern: ^[0-9]+$
+          type: string
+      required:
+        - volume_id
+        - org_id
+        - product_id
+        - state
+        - storage_node_id
+        - pool_id
+        - dataset_ref
+        - used_bytes
+        - usedbysnapshots_bytes
+        - billable_live_bytes
+        - billable_retained_bytes
+        - written_bytes
+        - provisioned_bytes
+        - created_at
+        - updated_at
       type: object
     SchedulerProbeRequest:
       additionalProperties: false
@@ -1559,5 +1806,102 @@ paths:
         rate_limit_class: github_installation_mutation
         request_body_max_bytes: 1024
         resource: github_installation
+  /api/v1/volumes:
+    get:
+      operationId: list-volumes
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/SandboxVolumeRecord"
+                type:
+                  - array
+                  - "null"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: List durable volumes
+      x-forge-metal-iam:
+        action: list
+        audit_event: sandbox.volume.list
+        org_scope: token_org_id
+        permission: sandbox:volume:read
+        rate_limit_class: read
+        resource: volume
+    post:
+      operationId: create-volume
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SandboxVolumeCreateRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SandboxVolumeRecord"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Create a durable volume
+      x-forge-metal-iam:
+        action: create
+        audit_event: sandbox.volume.create
+        idempotency: request_body_idempotency_key
+        org_scope: token_org_id
+        permission: sandbox:volume:write
+        rate_limit_class: volume_mutation
+        request_body_max_bytes: 8192
+        resource: volume
+  /api/v1/volumes/{volume_id}:
+    get:
+      operationId: get-volume
+      parameters:
+        - description: Volume UUID
+          in: path
+          name: volume_id
+          required: true
+          schema:
+            description: Volume UUID
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SandboxVolumeRecord"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Get durable volume current state
+      x-forge-metal-iam:
+        action: read
+        audit_event: sandbox.volume.read
+        org_scope: token_org_id
+        permission: sandbox:volume:read
+        rate_limit_class: read
+        resource: volume
 servers:
   - url: http://127.0.0.1:4243

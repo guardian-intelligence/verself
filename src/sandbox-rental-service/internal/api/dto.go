@@ -2,6 +2,7 @@ package api
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/forge-metal/apiwire"
 	"github.com/forge-metal/sandbox-rental-service/internal/jobs"
@@ -17,6 +18,30 @@ func submitRequest(request apiwire.SandboxSubmitRequest) jobs.SubmitRequest {
 		RunCommand:     request.RunCommand,
 		MaxWallSeconds: request.MaxWallSeconds,
 		Resources:      request.Resources,
+	}
+}
+
+func volumeCreateRequest(request apiwire.SandboxVolumeCreateRequest) jobs.VolumeCreateRequest {
+	return jobs.VolumeCreateRequest{
+		ProductID:      request.ProductID,
+		IdempotencyKey: request.IdempotencyKey,
+		DisplayName:    request.DisplayName,
+	}
+}
+
+func volumeMeterTickRequest(request apiwire.SandboxVolumeMeterTickRequest) jobs.VolumeMeterTickRequest {
+	observedAt := time.Time{}
+	if request.ObservedAt != nil {
+		observedAt = request.ObservedAt.UTC()
+	}
+	return jobs.VolumeMeterTickRequest{
+		IdempotencyKey:       request.IdempotencyKey,
+		WindowMillis:         request.WindowMillis,
+		UsedBytes:            request.UsedBytes.Uint64(),
+		UsedBySnapshotsBytes: request.UsedBySnapshotsBytes.Uint64(),
+		WrittenBytes:         request.WrittenBytes.Uint64(),
+		ProvisionedBytes:     request.ProvisionedBytes.Uint64(),
+		ObservedAt:           observedAt,
 	}
 }
 
@@ -46,6 +71,69 @@ func githubInstallationRecords(records []jobs.GitHubInstallationRecord) []apiwir
 		out = append(out, githubInstallationRecord(record))
 	}
 	return out
+}
+
+func volumeRecord(record jobs.VolumeRecord) apiwire.SandboxVolumeRecord {
+	return apiwire.SandboxVolumeRecord{
+		VolumeID:              record.VolumeID,
+		OrgID:                 apiwire.Uint64(record.OrgID),
+		ActorID:               record.ActorID,
+		ProductID:             record.ProductID,
+		DisplayName:           record.DisplayName,
+		State:                 record.State,
+		StorageNodeID:         record.StorageNodeID,
+		PoolID:                record.PoolID,
+		DatasetRef:            record.DatasetRef,
+		CurrentGenerationID:   record.CurrentGenerationID,
+		UsedBytes:             apiwire.Uint64(record.UsedBytes),
+		UsedBySnapshotsBytes:  apiwire.Uint64(record.UsedBySnapshotsBytes),
+		BillableLiveBytes:     apiwire.Uint64(record.BillableLiveBytes),
+		BillableRetainedBytes: apiwire.Uint64(record.BillableRetainedBytes),
+		WrittenBytes:          apiwire.Uint64(record.WrittenBytes),
+		ProvisionedBytes:      apiwire.Uint64(record.ProvisionedBytes),
+		LastMeteredAt:         record.LastMeteredAt,
+		CreatedAt:             record.CreatedAt,
+		UpdatedAt:             record.UpdatedAt,
+	}
+}
+
+func volumeRecords(records []jobs.VolumeRecord) []apiwire.SandboxVolumeRecord {
+	out := make([]apiwire.SandboxVolumeRecord, 0, len(records))
+	for _, record := range records {
+		out = append(out, volumeRecord(record))
+	}
+	return out
+}
+
+func volumeMeterTickRecord(record jobs.VolumeMeterTickRecord) apiwire.SandboxVolumeMeterTickRecord {
+	return apiwire.SandboxVolumeMeterTickRecord{
+		MeterTickID:           record.MeterTickID,
+		VolumeID:              record.VolumeID,
+		OrgID:                 apiwire.Uint64(record.OrgID),
+		ActorID:               record.ActorID,
+		ProductID:             record.ProductID,
+		SourceType:            record.SourceType,
+		SourceRef:             record.SourceRef,
+		WindowSeq:             record.WindowSeq,
+		WindowMillis:          record.WindowMillis,
+		State:                 record.State,
+		ObservedAt:            record.ObservedAt,
+		WindowStart:           record.WindowStart,
+		WindowEnd:             record.WindowEnd,
+		UsedBytes:             apiwire.Uint64(record.UsedBytes),
+		UsedBySnapshotsBytes:  apiwire.Uint64(record.UsedBySnapshotsBytes),
+		BillableLiveBytes:     apiwire.Uint64(record.BillableLiveBytes),
+		BillableRetainedBytes: apiwire.Uint64(record.BillableRetainedBytes),
+		WrittenBytes:          apiwire.Uint64(record.WrittenBytes),
+		ProvisionedBytes:      apiwire.Uint64(record.ProvisionedBytes),
+		Allocation:            record.Allocation,
+		BillingWindowID:       record.BillingWindowID,
+		BilledChargeUnits:     apiwire.Uint64(record.BilledChargeUnits),
+		BillingFailureReason:  record.BillingFailureReason,
+		ClickHouseProjectedAt: record.ClickHouseProjectedAt,
+		CreatedAt:             record.CreatedAt,
+		UpdatedAt:             record.UpdatedAt,
+	}
 }
 
 func executionRecord(record jobs.ExecutionRecord) apiwire.SandboxExecutionRecord {

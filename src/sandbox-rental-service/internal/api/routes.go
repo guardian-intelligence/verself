@@ -112,6 +112,69 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.Serv
 		BodyLimitBytes: bodyLimitSmallJSON,
 	}), createSchedulerProbe(svc))
 
+	registerSecured(api, secured(huma.Operation{
+		OperationID:   "create-volume",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/volumes",
+		Summary:       "Create a durable volume",
+		DefaultStatus: 201,
+	}, operationPolicy{
+		Permission:     permissionVolumeWrite,
+		Resource:       "volume",
+		Action:         "create",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "volume_mutation",
+		Idempotency:    idempotencyRequestBodyKey,
+		AuditEvent:     "sandbox.volume.create",
+		BodyLimitBytes: bodyLimitSmallJSON,
+	}), createVolume(svc))
+
+	registerSecured(api, secured(huma.Operation{
+		OperationID: "list-volumes",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/volumes",
+		Summary:     "List durable volumes",
+	}, operationPolicy{
+		Permission:     permissionVolumeRead,
+		Resource:       "volume",
+		Action:         "list",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "read",
+		AuditEvent:     "sandbox.volume.list",
+	}), listVolumes(svc))
+
+	registerSecured(api, secured(huma.Operation{
+		OperationID: "get-volume",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/volumes/{volume_id}",
+		Summary:     "Get durable volume current state",
+	}, operationPolicy{
+		Permission:     permissionVolumeRead,
+		Resource:       "volume",
+		Action:         "read",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "read",
+		AuditEvent:     "sandbox.volume.read",
+	}), getVolume(svc))
+
+	registerSecured(api, secured(huma.Operation{
+		OperationID:   "create-volume-meter-tick",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/volumes/{volume_id}/meter-ticks",
+		Summary:       "Queue a durable volume meter tick",
+		DefaultStatus: 202,
+		Hidden:        true,
+	}, operationPolicy{
+		Permission:     permissionVolumeWrite,
+		Resource:       "volume_meter_tick",
+		Action:         "create",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "volume_mutation",
+		Idempotency:    idempotencyRequestBodyKey,
+		AuditEvent:     "sandbox.volume.meter_tick.create",
+		BodyLimitBytes: bodyLimitSmallJSON,
+	}), createVolumeMeterTick(svc))
+
 	// Billing proxy — frontend calls these; we enforce org_id from JWT
 	// and forward to the billing-service on loopback.
 	registerSecured(api, secured(huma.Operation{
@@ -305,6 +368,31 @@ type SchedulerProbeResponse struct {
 	Status string `json:"status"`
 }
 
+type CreateVolumeInput struct {
+	Body apiwire.SandboxVolumeCreateRequest
+}
+
+type VolumeIDPath struct {
+	VolumeID string `path:"volume_id" doc:"Volume UUID"`
+}
+
+type VolumeOutput struct {
+	Body apiwire.SandboxVolumeRecord
+}
+
+type ListVolumesOutput struct {
+	Body []apiwire.SandboxVolumeRecord
+}
+
+type VolumeMeterTickInput struct {
+	VolumeID string `path:"volume_id" doc:"Volume UUID"`
+	Body     apiwire.SandboxVolumeMeterTickRequest
+}
+
+type VolumeMeterTickOutput struct {
+	Body apiwire.SandboxVolumeMeterTickResult
+}
+
 type EntitlementsOutput struct {
 	Body apiwire.BillingEntitlementsView
 }
@@ -489,6 +577,90 @@ func createSchedulerProbe(svc *jobs.Service) func(context.Context, *SchedulerPro
 			Kind:   result.Kind,
 			Queue:  result.Queue,
 			Status: result.Status,
+		}}, nil
+	}
+}
+
+func createVolume(svc *jobs.Service) func(context.Context, *CreateVolumeInput) (*VolumeOutput, error) {
+	return func(ctx context.Context, input *CreateVolumeInput) (*VolumeOutput, error) {
+		identity, err := requireIdentity(ctx)
+		if err != nil {
+			return nil, err
+		}
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		record, err := svc.CreateVolume(ctx, orgID, identity.Subject, volumeCreateRequest(input.Body))
+		if err != nil {
+			return nil, internalFailure(ctx, "create-volume-failed", "create volume failed", err)
+		}
+		return &VolumeOutput{Body: volumeRecord(record)}, nil
+	}
+}
+
+func listVolumes(svc *jobs.Service) func(context.Context, *EmptyInput) (*ListVolumesOutput, error) {
+	return func(ctx context.Context, _ *EmptyInput) (*ListVolumesOutput, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		records, err := svc.ListVolumes(ctx, orgID)
+		if err != nil {
+			return nil, internalFailure(ctx, "list-volumes-failed", "list volumes failed", err)
+		}
+		return &ListVolumesOutput{Body: volumeRecords(records)}, nil
+	}
+}
+
+func getVolume(svc *jobs.Service) func(context.Context, *VolumeIDPath) (*VolumeOutput, error) {
+	return func(ctx context.Context, input *VolumeIDPath) (*VolumeOutput, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		volumeID, err := uuid.Parse(input.VolumeID)
+		if err != nil {
+			return nil, badRequest(ctx, "invalid-volume-id", "volume_id must be a UUID", err)
+		}
+		record, err := svc.GetVolume(ctx, orgID, volumeID)
+		if err != nil {
+			if errors.Is(err, jobs.ErrVolumeMissing) {
+				return nil, notFound(ctx, "volume-not-found", "volume not found")
+			}
+			return nil, internalFailure(ctx, "get-volume-failed", "get volume failed", err)
+		}
+		return &VolumeOutput{Body: volumeRecord(record)}, nil
+	}
+}
+
+func createVolumeMeterTick(svc *jobs.Service) func(context.Context, *VolumeMeterTickInput) (*VolumeMeterTickOutput, error) {
+	return func(ctx context.Context, input *VolumeMeterTickInput) (*VolumeMeterTickOutput, error) {
+		identity, err := requireIdentity(ctx)
+		if err != nil {
+			return nil, err
+		}
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		volumeID, err := uuid.Parse(input.VolumeID)
+		if err != nil {
+			return nil, badRequest(ctx, "invalid-volume-id", "volume_id must be a UUID", err)
+		}
+		tick, job, err := svc.EnqueueVolumeMeterTick(ctx, orgID, identity.Subject, volumeID, volumeMeterTickRequest(input.Body))
+		if err != nil {
+			if errors.Is(err, jobs.ErrVolumeMissing) {
+				return nil, notFound(ctx, "volume-not-found", "volume not found")
+			}
+			return nil, internalFailure(ctx, "create-volume-meter-tick-failed", "create volume meter tick failed", err)
+		}
+		return &VolumeMeterTickOutput{Body: apiwire.SandboxVolumeMeterTickResult{
+			MeterTick: volumeMeterTickRecord(tick),
+			JobID:     strconv.FormatInt(job.JobID, 10),
+			Kind:      job.Kind,
+			Queue:     job.Queue,
+			Status:    job.Status,
 		}}, nil
 	}
 }

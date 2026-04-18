@@ -239,15 +239,22 @@ higher-performance disks may add provisioned IOPS/throughput meters.
 
 First-cut volume SKUs:
 
-- `sandbox_volume_live_storage_gib_ms`: top-line tenant storage minus retained
-  snapshot bytes, clamped at zero.
-- `sandbox_volume_retained_snapshot_gib_ms`: retained generation/snapshot
+- `sandbox_durable_volume_live_storage_gib_ms`: top-line tenant storage minus
+  retained snapshot bytes, clamped at zero.
+- `sandbox_durable_volume_retained_snapshot_gib_ms`: retained generation/snapshot
   tail.
 
-Do not charge ingress/egress through the volume SKU. Network egress, cross-node
-replication traffic, and backup transfer are separate future meters. Guest block
-read/write IO and Firecracker network IO remain execution telemetry until a
-specific product SKU needs performance-based charging.
+Execution root disks use the separate
+`sandbox_execution_root_storage_premium_nvme_gib_ms` SKU and the
+`execution_root_storage` bucket. Durable volume bytes use the
+`durable_volume_storage` bucket. Do not collapse those buckets unless the
+commercial entitlement policy intentionally treats ephemeral execution disks and
+retained customer data as the same allowance.
+
+Do not charge ingress/egress through the durable volume SKU. Network egress,
+cross-node replication traffic, and backup transfer are separate future meters.
+Guest block read/write IO and Firecracker network IO remain execution telemetry
+until a specific product SKU needs performance-based charging.
 
 For clone-backed, operator-owned bases, the authoritative ZFS properties are:
 
@@ -267,16 +274,20 @@ the industry-standard block-volume model. Sticky disks and managed workspace
 volumes should start with measured at-rest bytes because they are product-owned,
 thin, copy-on-write cache volumes rather than customer-sized raw disks.
 
-The 60s meter sweep emits `runtime.volume.meter_tick` wide events. billing-service
-integrates GiB-ms from those rows the same way the existing billing window
-projection integrates execution usage.
+The 60s meter sweep records a sandbox-rental `volume_meter_ticks` row, enqueues
+bounded River work, reserves a billing-service time window with
+`window_millis = 60000`, settles the same quantity, and projects both
+`forge_metal.volume_meter_ticks` and billing-service `forge_metal.metering`
+evidence. The product layer owns the consequence of a failed storage billing
+window; billing-service stays agnostic and reports the denied authorization.
 
-Billing-service must make `ReservedQuantity`/`WindowMillis` caller-configurable
-on reservation. The current five-minute reservation quantity was an early
-sandbox execution simplification, not a product invariant. Autobuilder,
-Routines, long-running VMs, sticky volumes, retained generations, and future
-storage products all reuse the same billing window machinery but may need
-different reservation durations:
+Billing-service accepts caller-configurable `WindowMillis` on reservation. A
+zero value preserves the default reservation duration; nonzero values choose the
+millisecond quantity used for authorization, `reserved_quantity`, expiry, and
+projection. Charge rounding happens after quantity:
+`ceil(allocation * quantity * unit_rate)`. Autobuilder, Routines, long-running
+VMs, sticky volumes, retained generations, and future storage products all reuse
+the same billing window machinery but may need different reservation durations:
 
 - VM executions can continue reserving multi-minute windows if that is the
   right credit-lock behavior for active workloads.
@@ -291,29 +302,34 @@ different reservation durations:
 ClickHouse is the evidence and analytics store, not the lifecycle source of
 truth.
 
-Target ClickHouse table:
+Implemented ClickHouse table:
 
 ```
 forge_metal.volume_meter_ticks
 ```
 
-Minimum columns:
+Key columns:
 
 - `recorded_at`
 - `org_id`
 - `volume_id`
-- `volume_generation_id`
-- `component_kind`
-- `trust_class`
-- `retention_policy`
+- `meter_tick_id`
+- `product_id`
+- `state`
+- `window_millis`
 - `used_bytes`
 - `usedbysnapshots_bytes`
 - `billable_live_bytes`
 - `billable_retained_bytes`
 - `written_bytes`
 - `provisioned_bytes`
+- `allocation_bytes`
+- `billing_window_id`
+- `billed_charge_units`
 - `source_type`
 - `source_ref`
+- `dimensions`
+- `component_quantities`
 - `trace_id`
 
 sandbox-rental inserts meter rows with `batch.AppendStruct` and `ch` struct
