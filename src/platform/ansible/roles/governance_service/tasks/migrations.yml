@@ -29,6 +29,9 @@
         IF to_regclass('public.governance_audit_chain_state') IS NOT NULL THEN
           EXECUTE 'ALTER TABLE public.governance_audit_chain_state OWNER TO governance_service';
         END IF;
+        IF to_regclass('public.governance_audit_events') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.governance_audit_events OWNER TO governance_service';
+        END IF;
         IF to_regclass('public.governance_export_jobs') IS NOT NULL THEN
           EXECUTE 'ALTER TABLE public.governance_export_jobs OWNER TO governance_service';
         END IF;
@@ -40,6 +43,7 @@
       GRANT USAGE, CREATE ON SCHEMA public TO governance_service;
       GRANT ALL PRIVILEGES ON TABLE
         public.governance_audit_chain_state,
+        public.governance_audit_events,
         public.governance_export_jobs,
         public.governance_export_files
       TO governance_service;
