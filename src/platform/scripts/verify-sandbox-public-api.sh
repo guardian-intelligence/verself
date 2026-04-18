@@ -448,7 +448,7 @@ platform_active_sku_rates="$(
       AND r.sku_id IN (
         'sandbox_compute_amd_epyc_4484px_vcpu_ms',
         'sandbox_memory_standard_gib_ms',
-        'sandbox_block_storage_premium_nvme_gib_ms'
+        'sandbox_execution_root_storage_premium_nvme_gib_ms'
       )
       AND r.active
       AND r.active_from <= clock.now_at
@@ -575,7 +575,7 @@ sku_mapped_windows="$(
     WHERE a.execution_id = ANY(${pg_uuid_array})
       AND ((w.reservation_jsonb->'Allocation') ? 'sandbox_compute_amd_epyc_4484px_vcpu_ms')
       AND ((w.reservation_jsonb->'Allocation') ? 'sandbox_memory_standard_gib_ms')
-      AND ((w.reservation_jsonb->'Allocation') ? 'sandbox_block_storage_premium_nvme_gib_ms')
+      AND ((w.reservation_jsonb->'Allocation') ? 'sandbox_execution_root_storage_premium_nvme_gib_ms')
       AND NOT ((w.reservation_jsonb->'Allocation') ? 'vcpu')
       AND NOT ((w.reservation_jsonb->'Allocation') ? 'memory_mib')
       AND NOT ((w.reservation_jsonb->'Allocation') ? 'rootfs_bytes')
@@ -693,7 +693,7 @@ import sys
 statement = json.load(open(sys.argv[1], encoding="utf-8"))
 line_items = statement.get("line_items") or []
 observed = [item.get("bucket_id") for item in line_items]
-expected = ["compute", "memory", "block_storage"]
+expected = ["compute", "memory", "execution_root_storage"]
 if observed[: len(expected)] != expected:
     raise SystemExit(f"billing statement line order {observed!r} did not start with {expected!r}")
 PY

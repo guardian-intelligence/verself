@@ -112,7 +112,7 @@
     seed_system_free_tier_buckets:
       compute: 10000000
       memory: 5000000
-      block_storage: 2000000
+      execution_root_storage: 2000000
     seed_system_plan_entitlements: {}
     seed_system_contract_tiers:
       - plan_id: sandbox-hobby
@@ -124,7 +124,7 @@
         entitlements:
           compute: 30000000
           memory: 15000000
-          block_storage: 5000000
+          execution_root_storage: 5000000
       - plan_id: sandbox-pro
         display_name: Pro
         tier: pro
@@ -134,15 +134,15 @@
         entitlements:
           compute: 120000000
           memory: 60000000
-          block_storage: 20000000
+          execution_root_storage: 20000000
     seed_system_platform_target_prepaid_units: 500000000000
     seed_system_customer_target_prepaid_units: 500000000000
     seed_system_expires_after: 8760h
     # Acme demos the SKU branch of the entitlements view by carrying a small
-    # promo grant pinned to a specific block-storage SKU. Without it the SKU
+    # promo grant pinned to the execution root-storage SKU. Without it the SKU
     # row in the rent-a-sandbox /billing screen never renders.
     seed_system_acme_sku_scoped_grants:
-      - sku_id: sandbox_block_storage_premium_nvme_gib_ms
+      - sku_id: sandbox_execution_root_storage_premium_nvme_gib_ms
         units: 50000000
         source: promo
     seed_system_helper_local_path: "/tmp/billing-seed-{{ inventory_hostname }}"
