@@ -52,7 +52,7 @@ func toEntitlementsDTO(orgID billing.OrgID, view billing.EntitlementsView) apiwi
 }
 ```
 
-Generated clients should parse decimal-string DTO fields back into the app-facing type they intentionally expose. TypeScript app code should call wrapper modules that Valibot-parse generated responses before business logic sees them.
+Generated clients are the supported SDK surface. Server functions and service-side adapters may invoke generated clients directly at the transport boundary, then Valibot-parse generated responses and convert decimal-string DTO fields into the app-facing type they intentionally expose. Browser-facing TypeScript app code should call server functions or wrapper modules instead of hand-rolling service fetches.
 
 ## Verification
 
