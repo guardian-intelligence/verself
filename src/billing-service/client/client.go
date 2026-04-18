@@ -251,6 +251,11 @@ func (c *ServiceClient) Activate(ctx context.Context, reservation Reservation, a
 }
 
 func (c *ServiceClient) Settle(ctx context.Context, reservation Reservation, actualQuantity uint32, usageSummary map[string]any, reqEditors ...RequestEditorFn) error {
+	_, err := c.SettleResult(ctx, reservation, actualQuantity, usageSummary, reqEditors...)
+	return err
+}
+
+func (c *ServiceClient) SettleResult(ctx context.Context, reservation Reservation, actualQuantity uint32, usageSummary map[string]any, reqEditors ...RequestEditorFn) (apiwire.BillingSettleResult, error) {
 	body := apiwire.BillingSettleWindowRequest{
 		WindowID:       reservation.WindowId,
 		ActualQuantity: actualQuantity,
@@ -259,7 +264,10 @@ func (c *ServiceClient) Settle(ctx context.Context, reservation Reservation, act
 		body.UsageSummary = usageSummary
 	}
 	var out apiwire.BillingSettleResult
-	return c.postJSON(ctx, "/internal/billing/v1/settle", body, &out, "settle", nil, reqEditors...)
+	if err := c.postJSON(ctx, "/internal/billing/v1/settle", body, &out, "settle", nil, reqEditors...); err != nil {
+		return apiwire.BillingSettleResult{}, err
+	}
+	return out, nil
 }
 
 func (c *ServiceClient) Void(ctx context.Context, reservation Reservation, reqEditors ...RequestEditorFn) error {

@@ -79,6 +79,66 @@ func TestValidateReserveWindowMillisRejectsSubThirtySecondCustomWindow(t *testin
 	}
 }
 
+func TestBillingWindowIDIsOrgScoped(t *testing.T) {
+	t.Parallel()
+
+	left := billingWindowID(42, "sandbox", "volume_meter_tick", "tick-1", 1)
+	right := billingWindowID(43, "sandbox", "volume_meter_tick", "tick-1", 1)
+
+	if left == right {
+		t.Fatalf("billingWindowID collided across orgs: %s", left)
+	}
+}
+
+func TestReserveSourceFingerprintUsesResolvedQuantityAndAllocation(t *testing.T) {
+	t.Parallel()
+
+	base := ReserveRequest{
+		OrgID:           42,
+		ProductID:       "sandbox",
+		ActorID:         "actor",
+		ConcurrentCount: 1,
+		SourceType:      "volume_meter_tick",
+		SourceRef:       "tick-1",
+		WindowSeq:       1,
+		Allocation:      map[string]float64{"durable_volume_live_storage_gib_ms": 0.000001},
+		BillingJobID:    100,
+	}
+
+	implicitDefault := reserveSourceFingerprint(base, reserveWindowQuantity(base))
+	explicitDefault := base
+	explicitDefault.WindowMillis = defaultWindowMillis
+	if got := reserveSourceFingerprint(explicitDefault, reserveWindowQuantity(explicitDefault)); got != implicitDefault {
+		t.Fatalf("fingerprint changed between implicit and explicit default quantity: %s != %s", got, implicitDefault)
+	}
+
+	changed := base
+	changed.Allocation = map[string]float64{"durable_volume_live_storage_gib_ms": 0.000002}
+	if got := reserveSourceFingerprint(changed, reserveWindowQuantity(changed)); got == implicitDefault {
+		t.Fatalf("fingerprint did not change after allocation changed: %s", got)
+	}
+}
+
+func TestComputeWindowChargesRoundsAfterQuantity(t *testing.T) {
+	t.Parallel()
+
+	componentCharges, bucketCharges, _, err := computeWindowCharges(
+		map[string]float64{"durable_volume_live_storage_gib_ms": 0.000001},
+		map[string]uint64{"durable_volume_live_storage_gib_ms": 1},
+		map[string]string{"durable_volume_live_storage_gib_ms": "durable_storage"},
+		60_000,
+	)
+	if err != nil {
+		t.Fatalf("computeWindowCharges() error = %v", err)
+	}
+	if got := componentCharges["durable_volume_live_storage_gib_ms"]; got != 1 {
+		t.Fatalf("component charge = %d, want 1", got)
+	}
+	if got := bucketCharges["durable_storage"]; got != 1 {
+		t.Fatalf("bucket charge = %d, want 1", got)
+	}
+}
+
 func TestReservationExposesChosenQuantity(t *testing.T) {
 	t.Parallel()
 
@@ -117,7 +177,7 @@ func TestMeteringRowForWindowUsesSettledQuantity(t *testing.T) {
 
 	startedAt := time.Date(2026, 4, 17, 10, 0, 0, 0, time.UTC)
 	recordedAt := startedAt.Add(2 * time.Minute)
-	row := meteringRowForWindow(persistedWindow{
+	row, err := meteringRowForWindow(persistedWindow{
 		WindowID:          "win_metering",
 		CycleID:           "cycle",
 		OrgID:             42,
@@ -131,13 +191,16 @@ func TestMeteringRowForWindowUsesSettledQuantity(t *testing.T) {
 		ActualQuantity:    60_000,
 		BillableQuantity:  60_000,
 		PricingPhase:      pricingPhaseIncluded,
-		Allocation:        map[string]float64{"sandbox_volume_live_storage_gib_ms": 2.5},
-		RateContext:       pricingContext{SKURates: map[string]uint64{"sandbox_volume_live_storage_gib_ms": 10}, SKUBuckets: map[string]string{"sandbox_volume_live_storage_gib_ms": "block_storage"}, CostPerUnit: 25},
+		Allocation:        map[string]float64{"sandbox_durable_volume_live_storage_gib_ms": 2.5},
+		RateContext:       pricingContext{SKURates: map[string]uint64{"sandbox_durable_volume_live_storage_gib_ms": 10}, SKUBuckets: map[string]string{"sandbox_durable_volume_live_storage_gib_ms": "durable_volume_storage"}, CostPerUnit: 25},
 		WindowStart:       startedAt,
 		BilledChargeUnits: 1_500_000,
 		UsageSummary:      map[string]any{"samples": []any{map[string]any{"observed_ms": float64(60_000)}}},
-		FundingLegs:       []fundingLeg{{Source: "free_tier", Amount: 1_500_000, ComponentSKUID: "sandbox_volume_live_storage_gib_ms"}},
+		FundingLegs:       []fundingLeg{{Source: "free_tier", Amount: 1_500_000, ComponentSKUID: "sandbox_durable_volume_live_storage_gib_ms"}},
 	}, recordedAt)
+	if err != nil {
+		t.Fatalf("meteringRowForWindow() error = %v", err)
+	}
 
 	if row.ReservedQuantity != 60_000 {
 		t.Fatalf("row ReservedQuantity = %d, want 60000", row.ReservedQuantity)
@@ -148,8 +211,48 @@ func TestMeteringRowForWindowUsesSettledQuantity(t *testing.T) {
 	if got := row.EndedAt.Sub(row.StartedAt); got != time.Minute {
 		t.Fatalf("row duration = %s, want 1m", got)
 	}
-	if got := row.ComponentQuantities["sandbox_volume_live_storage_gib_ms"]; got != 150_000 {
+	if got := row.ComponentQuantities["sandbox_durable_volume_live_storage_gib_ms"]; got != 150_000 {
 		t.Fatalf("component quantity = %f, want 150000", got)
+	}
+}
+
+func TestMeteringRowForWindowRoundsComponentChargesAfterQuantity(t *testing.T) {
+	t.Parallel()
+
+	startedAt := time.Date(2026, 4, 17, 10, 0, 0, 0, time.UTC)
+	row, err := meteringRowForWindow(persistedWindow{
+		WindowID:         "win_metering_fractional",
+		CycleID:          "cycle",
+		OrgID:            42,
+		ActorID:          "actor",
+		ProductID:        "sandbox",
+		SourceType:       "volume_meter_tick",
+		SourceRef:        "tiny-volume",
+		WindowSeq:        1,
+		ReservationShape: "time",
+		ReservedQuantity: 60_000,
+		ActualQuantity:   60_000,
+		BillableQuantity: 60_000,
+		PricingPhase:     pricingPhaseIncluded,
+		Allocation:       map[string]float64{"durable_volume_live_storage_gib_ms": 0.000001},
+		RateContext: pricingContext{
+			SKURates:    map[string]uint64{"durable_volume_live_storage_gib_ms": 1},
+			SKUBuckets:  map[string]string{"durable_volume_live_storage_gib_ms": "durable_storage"},
+			CostPerUnit: 1,
+		},
+		WindowStart:       startedAt,
+		BilledChargeUnits: 1,
+		FundingLegs:       []fundingLeg{{Source: "free_tier", Amount: 1, ComponentSKUID: "durable_volume_live_storage_gib_ms"}},
+	}, startedAt.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("meteringRowForWindow() error = %v", err)
+	}
+
+	if got := row.ComponentChargeUnits["durable_volume_live_storage_gib_ms"]; got != 1 {
+		t.Fatalf("component charge = %d, want 1", got)
+	}
+	if got := row.BucketChargeUnits["durable_storage"]; got != 1 {
+		t.Fatalf("bucket charge = %d, want 1", got)
 	}
 }
 

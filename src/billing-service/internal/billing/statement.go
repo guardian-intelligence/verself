@@ -3,7 +3,6 @@ package billing
 import (
 	"context"
 	"fmt"
-	"math"
 	"sort"
 	"time"
 )
@@ -66,7 +65,9 @@ func (c *Client) statementForCycle(ctx context.Context, orgID OrgID, productID s
 	for _, window := range windows {
 		switch window.State {
 		case "settled":
-			addSettledStatementWindow(&statement, lines, window)
+			if err := addSettledStatementWindow(&statement, lines, window); err != nil {
+				return Statement{}, err
+			}
 		case "reserved", "active", "settling":
 			addReservedStatementWindow(&statement, lines, window)
 		}
@@ -107,7 +108,7 @@ func (c *Client) statementWindows(ctx context.Context, orgID OrgID, productID st
 	return out, rows.Err()
 }
 
-func addSettledStatementWindow(statement *Statement, lines map[statementLineKey]*StatementLineItem, window persistedWindow) {
+func addSettledStatementWindow(statement *Statement, lines map[statementLineKey]*StatementLineItem, window persistedWindow) error {
 	statement.Totals.ChargeUnits += window.BilledChargeUnits
 	statement.Totals.ReservedUnits += 0
 	statement.Totals.TotalDueUnits += sourceTotal(window.FundingLegs, "receivable")
@@ -118,7 +119,10 @@ func addSettledStatementWindow(statement *Statement, lines map[statementLineKey]
 	statement.Totals.RefundUnits += sourceTotal(window.FundingLegs, "refund")
 	statement.Totals.ReceivableUnits += sourceTotal(window.FundingLegs, "receivable")
 	for skuID, rate := range window.RateContext.SKURates {
-		charge := uint64(window.BillableQuantity) * uint64FromFloatRate(window.Allocation[skuID], rate)
+		charge, err := chargeUnitsForQuantity(skuID, window.Allocation[skuID], rate, window.BillableQuantity)
+		if err != nil {
+			return err
+		}
 		if charge == 0 {
 			continue
 		}
@@ -132,6 +136,7 @@ func addSettledStatementWindow(statement *Statement, lines map[statementLineKey]
 		item.RefundUnits += componentSourceTotal(window.FundingLegs, skuID, "refund")
 		item.ReceivableUnits += componentSourceTotal(window.FundingLegs, skuID, "receivable")
 	}
+	return nil
 }
 
 func addReservedStatementWindow(statement *Statement, lines map[statementLineKey]*StatementLineItem, window persistedWindow) {
@@ -225,8 +230,4 @@ func componentSourceTotal(legs []fundingLeg, skuID string, source string) uint64
 		}
 	}
 	return out
-}
-
-func uint64FromFloatRate(units float64, rate uint64) uint64 {
-	return uint64(math.Ceil(units * float64(rate)))
 }

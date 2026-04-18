@@ -54,6 +54,7 @@ type persistedWindow struct {
 	PricingPlanID       string
 	SourceType          string
 	SourceRef           string
+	SourceFingerprint   string
 	WindowSeq           uint32
 	State               string
 	ReservationShape    string
@@ -134,12 +135,19 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 	if err := validateReserveWindowMillis(req.WindowMillis); err != nil {
 		return WindowReservation{}, err
 	}
-	if existing, ok, err := c.loadWindowBySource(ctx, req.ProductID, req.SourceType, req.SourceRef, req.WindowSeq); err != nil {
+	quantity := reserveWindowQuantity(req)
+	sourceFingerprint := reserveSourceFingerprint(req, quantity)
+	if existing, ok, err := c.loadWindowBySource(ctx, req.OrgID, req.ProductID, req.SourceType, req.SourceRef, req.WindowSeq); err != nil {
 		return WindowReservation{}, err
 	} else if ok {
+		if existing.SourceFingerprint != sourceFingerprint {
+			return WindowReservation{}, fmt.Errorf("%w: existing window %s has a different request fingerprint", ErrWindowSourceConflict, existing.WindowID)
+		}
 		switch existing.State {
-		case "reserved", "active", "settling":
+		case "reserved", "active", "settling", "settled":
 			return existing.reservation(), nil
+		case "voided":
+			return WindowReservation{}, fmt.Errorf("%w: existing window %s is voided", ErrWindowAlreadyVoided, existing.WindowID)
 		default:
 			return WindowReservation{}, fmt.Errorf("%w: existing window %s is %s", ErrWindowNotReserved, existing.WindowID, existing.State)
 		}
@@ -172,7 +180,6 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 		if err != nil {
 			return err
 		}
-		quantity := reserveWindowQuantity(req)
 		componentCharges, bucketCharges, costPerUnit, err := computeWindowCharges(req.Allocation, pricing.SKURates, pricing.SKUBuckets, quantity)
 		if err != nil {
 			return err
@@ -211,7 +218,7 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 		if err != nil {
 			return err
 		}
-		windowID := billingWindowID(req.ProductID, req.SourceType, req.SourceRef, req.WindowSeq)
+		windowID := billingWindowID(req.OrgID, req.ProductID, req.SourceType, req.SourceRef, req.WindowSeq)
 		ledgerCorrelationID := ledger.NewID()
 		expiresAt, renewBy := reserveWindowTiming(now, quantity)
 		billingJobID := ""
@@ -224,18 +231,18 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 		_, err = tx.Exec(ctx, `
 			INSERT INTO billing_windows (
 				window_id, cycle_id, org_id, actor_id, product_id, pricing_contract_id, pricing_phase_id, pricing_plan_id,
-				source_type, source_ref, billing_job_id, window_seq, state, reservation_shape, reserved_quantity,
+				source_type, source_ref, source_fingerprint, billing_job_id, window_seq, state, reservation_shape, reserved_quantity,
 				reserved_charge_units, pricing_phase, allocation, rate_context, funding_legs, ledger_correlation_id, window_start, expires_at, renew_by
-			) VALUES ($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),$9,$10,NULLIF($11,''),$12,'reserved','time',$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
-		`, windowID, cycle.CycleID, orgIDText(req.OrgID), req.ActorID, req.ProductID, pricing.ContractID, pricing.PhaseID, pricing.PlanID, req.SourceType, req.SourceRef, billingJobID, int64(req.WindowSeq), int64(quantity), int64(chargeUnits), pricingPhaseIncluded, allocationJSON, rateJSON, fundingJSON, ledgerCorrelationID.Bytes(), now, expiresAt, renewBy)
+			) VALUES ($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),$9,$10,$11,NULLIF($12,''),$13,'reserved','time',$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+		`, windowID, cycle.CycleID, orgIDText(req.OrgID), req.ActorID, req.ProductID, pricing.ContractID, pricing.PhaseID, pricing.PlanID, req.SourceType, req.SourceRef, sourceFingerprint, billingJobID, int64(req.WindowSeq), int64(quantity), int64(chargeUnits), pricingPhaseIncluded, allocationJSON, rateJSON, fundingJSON, ledgerCorrelationID.Bytes(), now, expiresAt, renewBy)
 		if err != nil {
 			return fmt.Errorf("insert billing window: %w", err)
 		}
 		if err := c.insertWindowLedgerLegsTx(ctx, tx, windowID, legs); err != nil {
 			return err
 		}
-		reserved = persistedWindow{WindowID: windowID, CycleID: cycle.CycleID, OrgID: req.OrgID, ActorID: req.ActorID, ProductID: req.ProductID, PricingContractID: pricing.ContractID, PricingPhaseID: pricing.PhaseID, PricingPlanID: pricing.PlanID, SourceType: req.SourceType, SourceRef: req.SourceRef, WindowSeq: req.WindowSeq, State: "reserved", ReservationShape: "time", ReservedQuantity: quantity, ReservedChargeUnits: chargeUnits, PricingPhase: pricingPhaseIncluded, Allocation: cloneFloatMap(req.Allocation), RateContext: pricing, FundingLegs: legs, WindowStart: now, ExpiresAt: expiresAt, RenewBy: &renewBy}
-		if err := appendEvent(ctx, tx, q, eventFact{EventType: "billing_window_reserve_requested", AggregateType: "billing_window", AggregateID: windowID, OrgID: req.OrgID, ProductID: req.ProductID, OccurredAt: now, Payload: map[string]any{"window_id": windowID, "cycle_id": cycle.CycleID, "pricing_plan_id": pricing.PlanID, "pricing_phase_id": pricing.PhaseID, "pricing_contract_id": pricing.ContractID, "source_type": req.SourceType, "source_ref": req.SourceRef, "window_seq": req.WindowSeq, "reserved_quantity": quantity, "charge_units": chargeUnits, "component_charge_units": componentCharges, "bucket_charge_units": bucketCharges}}); err != nil {
+		reserved = persistedWindow{WindowID: windowID, CycleID: cycle.CycleID, OrgID: req.OrgID, ActorID: req.ActorID, ProductID: req.ProductID, PricingContractID: pricing.ContractID, PricingPhaseID: pricing.PhaseID, PricingPlanID: pricing.PlanID, SourceType: req.SourceType, SourceRef: req.SourceRef, SourceFingerprint: sourceFingerprint, WindowSeq: req.WindowSeq, State: "reserved", ReservationShape: "time", ReservedQuantity: quantity, ReservedChargeUnits: chargeUnits, PricingPhase: pricingPhaseIncluded, Allocation: cloneFloatMap(req.Allocation), RateContext: pricing, FundingLegs: legs, WindowStart: now, ExpiresAt: expiresAt, RenewBy: &renewBy}
+		if err := appendEvent(ctx, tx, q, eventFact{EventType: "billing_window_reserve_requested", AggregateType: "billing_window", AggregateID: windowID, OrgID: req.OrgID, ProductID: req.ProductID, OccurredAt: now, Payload: map[string]any{"window_id": windowID, "cycle_id": cycle.CycleID, "pricing_plan_id": pricing.PlanID, "pricing_phase_id": pricing.PhaseID, "pricing_contract_id": pricing.ContractID, "source_type": req.SourceType, "source_ref": req.SourceRef, "source_fingerprint": sourceFingerprint, "window_seq": req.WindowSeq, "reserved_quantity": quantity, "charge_units": chargeUnits, "component_charge_units": componentCharges, "bucket_charge_units": bucketCharges}}); err != nil {
 			return err
 		}
 		return appendEvent(ctx, tx, q, eventFact{
@@ -253,6 +260,7 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 				"pricing_contract_id":     pricing.ContractID,
 				"source_type":             req.SourceType,
 				"source_ref":              req.SourceRef,
+				"source_fingerprint":      sourceFingerprint,
 				"window_seq":              req.WindowSeq,
 				"reserved_quantity":       quantity,
 				"charge_units":            chargeUnits,
@@ -273,6 +281,29 @@ func reserveWindowQuantity(req ReserveRequest) uint32 {
 		return req.WindowMillis
 	}
 	return defaultWindowMillis
+}
+
+func reserveSourceFingerprint(req ReserveRequest, quantity uint32) string {
+	parts := []string{
+		orgIDText(req.OrgID),
+		req.ProductID,
+		req.ActorID,
+		req.SourceType,
+		req.SourceRef,
+		strconv.FormatUint(uint64(req.WindowSeq), 10),
+		strconv.FormatUint(uint64(quantity), 10),
+		strconv.FormatUint(req.ConcurrentCount, 10),
+		strconv.FormatInt(req.BillingJobID, 10),
+	}
+	skus := make([]string, 0, len(req.Allocation))
+	for skuID := range req.Allocation {
+		skus = append(skus, skuID)
+	}
+	sort.Strings(skus)
+	for _, skuID := range skus {
+		parts = append(parts, skuID, strconv.FormatFloat(req.Allocation[skuID], 'g', -1, 64))
+	}
+	return textID("winfp", parts...)
 }
 
 func validateReserveWindowMillis(windowMillis uint32) error {
@@ -383,12 +414,16 @@ func (c *Client) SettleWindow(ctx context.Context, windowID string, actualQuanti
 		billable = window.ReservedQuantity
 		writeoff = actualQuantity - window.ReservedQuantity
 	}
-	componentBilled, _, costPerUnit, err := computeWindowCharges(window.Allocation, window.RateContext.SKURates, window.RateContext.SKUBuckets, billable)
+	componentBilled, _, _, err := computeWindowCharges(window.Allocation, window.RateContext.SKURates, window.RateContext.SKUBuckets, billable)
 	if err != nil {
 		return SettleResult{}, err
 	}
 	billedUnits := sumUint64Map(componentBilled)
-	writeoffUnits := uint64(writeoff) * costPerUnit
+	componentWriteoff, _, _, err := computeWindowCharges(window.Allocation, window.RateContext.SKURates, window.RateContext.SKUBuckets, writeoff)
+	if err != nil {
+		return SettleResult{}, err
+	}
+	writeoffUnits := sumUint64Map(componentWriteoff)
 	settledAt := time.Now().UTC()
 	usageJSON, err := json.Marshal(usageSummary)
 	if err != nil {
@@ -792,9 +827,9 @@ func (w persistedWindow) settleResult() SettleResult {
 	return SettleResult{WindowID: w.WindowID, ActualQuantity: w.ActualQuantity, BillableQuantity: w.BillableQuantity, WriteoffQuantity: w.WriteoffQuantity, BilledChargeUnits: w.BilledChargeUnits, WriteoffChargeUnits: w.WriteoffChargeUnits, SettledAt: settledAt}
 }
 
-func (c *Client) loadWindowBySource(ctx context.Context, productID, sourceType, sourceRef string, seq uint32) (persistedWindow, bool, error) {
+func (c *Client) loadWindowBySource(ctx context.Context, orgID OrgID, productID, sourceType, sourceRef string, seq uint32) (persistedWindow, bool, error) {
 	windowID := ""
-	err := c.pg.QueryRow(ctx, `SELECT window_id FROM billing_windows WHERE product_id = $1 AND source_type = $2 AND source_ref = $3 AND window_seq = $4`, productID, sourceType, sourceRef, int64(seq)).Scan(&windowID)
+	err := c.pg.QueryRow(ctx, `SELECT window_id FROM billing_windows WHERE org_id = $1 AND product_id = $2 AND source_type = $3 AND source_ref = $4 AND window_seq = $5`, orgIDText(orgID), productID, sourceType, sourceRef, int64(seq)).Scan(&windowID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return persistedWindow{}, false, nil
 	}
@@ -814,12 +849,12 @@ func (c *Client) loadWindow(ctx context.Context, windowID string) (persistedWind
 	var activatedAt, renewBy, settledAt pgtype.Timestamptz
 	err := c.pg.QueryRow(ctx, `
 		SELECT window_id, cycle_id, org_id, actor_id, product_id, COALESCE(pricing_contract_id,''), COALESCE(pricing_phase_id,''), COALESCE(pricing_plan_id,''),
-		       source_type, source_ref, window_seq, state, reservation_shape, reserved_quantity, actual_quantity, billable_quantity, writeoff_quantity,
+		       source_type, source_ref, source_fingerprint, window_seq, state, reservation_shape, reserved_quantity, actual_quantity, billable_quantity, writeoff_quantity,
 		       reserved_charge_units, billed_charge_units, writeoff_charge_units, pricing_phase, allocation, rate_context, usage_summary, funding_legs,
 		       window_start, activated_at, expires_at, renew_by, settled_at, created_at
 		FROM billing_windows
 		WHERE window_id = $1
-	`, windowID).Scan(&w.WindowID, &w.CycleID, &orgIDTextValue, &w.ActorID, &w.ProductID, &pricingContractID, &pricingPhaseID, &pricingPlanID, &w.SourceType, &w.SourceRef, &windowSeq, &w.State, &w.ReservationShape, &reservedQuantity, &actualQuantity, &billableQuantity, &writeoffQuantity, &reservedUnits, &billedUnits, &writeoffUnits, &w.PricingPhase, &allocationBytes, &rateBytes, &usageBytes, &fundingBytes, &w.WindowStart, &activatedAt, &w.ExpiresAt, &renewBy, &settledAt, &w.CreatedAt)
+	`, windowID).Scan(&w.WindowID, &w.CycleID, &orgIDTextValue, &w.ActorID, &w.ProductID, &pricingContractID, &pricingPhaseID, &pricingPlanID, &w.SourceType, &w.SourceRef, &w.SourceFingerprint, &windowSeq, &w.State, &w.ReservationShape, &reservedQuantity, &actualQuantity, &billableQuantity, &writeoffQuantity, &reservedUnits, &billedUnits, &writeoffUnits, &w.PricingPhase, &allocationBytes, &rateBytes, &usageBytes, &fundingBytes, &w.WindowStart, &activatedAt, &w.ExpiresAt, &renewBy, &settledAt, &w.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return persistedWindow{}, ErrWindowNotFound
 	}
@@ -1113,20 +1148,53 @@ func computeWindowCharges(allocation map[string]float64, rates map[string]uint64
 	buckets := map[string]uint64{}
 	costPerUnit := uint64(0)
 	for skuID, units := range allocation {
-		if units < 0 || math.IsNaN(units) || math.IsInf(units, 0) {
-			return nil, nil, 0, fmt.Errorf("invalid allocation for sku %s", skuID)
-		}
 		rate, ok := rates[skuID]
 		if !ok {
 			return nil, nil, 0, fmt.Errorf("no active rate for sku %s", skuID)
 		}
-		componentPerUnit := uint64(math.Ceil(units * float64(rate)))
-		costPerUnit += componentPerUnit
-		charge := uint64(quantity) * componentPerUnit
+		componentPerUnit, err := chargeUnitsForQuantity(skuID, units, rate, 1)
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		nextCostPerUnit, err := addChargeUnits(costPerUnit, componentPerUnit, "cost_per_unit")
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		charge, err := chargeUnitsForQuantity(skuID, units, rate, quantity)
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		bucketID := skuBuckets[skuID]
+		nextBucketCharge, err := addChargeUnits(buckets[bucketID], charge, "bucket "+bucketID)
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		costPerUnit = nextCostPerUnit
 		components[skuID] = charge
-		buckets[skuBuckets[skuID]] += charge
+		buckets[bucketID] = nextBucketCharge
 	}
 	return components, buckets, costPerUnit, nil
+}
+
+func chargeUnitsForQuantity(skuID string, units float64, rate uint64, quantity uint32) (uint64, error) {
+	if units < 0 || math.IsNaN(units) || math.IsInf(units, 0) {
+		return 0, fmt.Errorf("invalid allocation for sku %s", skuID)
+	}
+	if units == 0 || rate == 0 || quantity == 0 {
+		return 0, nil
+	}
+	charge := units * float64(quantity) * float64(rate)
+	if math.IsNaN(charge) || math.IsInf(charge, 0) || charge >= float64(^uint64(0)) {
+		return 0, fmt.Errorf("charge overflow for sku %s", skuID)
+	}
+	return uint64(math.Ceil(charge)), nil
+}
+
+func addChargeUnits(left, right uint64, label string) (uint64, error) {
+	if right > ^uint64(0)-left {
+		return 0, fmt.Errorf("charge overflow for %s", label)
+	}
+	return left + right, nil
 }
 
 func componentChargeOrder(componentCharges map[string]uint64, pricing pricingContext) []string {
@@ -1165,7 +1233,10 @@ func (c *Client) projectMeteringForWindow(ctx context.Context, w persistedWindow
 	ctx, span := tracer.Start(ctx, "billing.metering.project")
 	defer span.End()
 	span.SetAttributes(attribute.String("billing.window_id", w.WindowID), attribute.String("billing.org_id", orgIDText(w.OrgID)), attribute.String("billing.product_id", w.ProductID), attribute.Int64("billing.actual_quantity", int64(w.ActualQuantity)))
-	row := meteringRowForWindow(w, time.Now().UTC())
+	row, err := meteringRowForWindow(w, time.Now().UTC())
+	if err != nil {
+		return time.Time{}, err
+	}
 	batch, err := c.ch.PrepareBatch(ctx, "INSERT INTO forge_metal.metering")
 	if err != nil {
 		return time.Time{}, fmt.Errorf("prepare metering batch: %w", err)
@@ -1179,16 +1250,27 @@ func (c *Client) projectMeteringForWindow(ctx context.Context, w persistedWindow
 	return row.RecordedAt, nil
 }
 
-func meteringRowForWindow(w persistedWindow, recordedAt time.Time) meteringRow {
+func meteringRowForWindow(w persistedWindow, recordedAt time.Time) (meteringRow, error) {
 	componentQuantities := map[string]float64{}
 	componentCharges := map[string]uint64{}
 	bucketCharges := map[string]uint64{}
 	for skuID, units := range w.Allocation {
 		componentQuantities[skuID] = units * float64(w.BillableQuantity)
-		rate := w.RateContext.SKURates[skuID]
-		charge := uint64(math.Ceil(units*float64(rate))) * uint64(w.BillableQuantity)
+		rate, ok := w.RateContext.SKURates[skuID]
+		if !ok {
+			return meteringRow{}, fmt.Errorf("no active rate for sku %s", skuID)
+		}
+		charge, err := chargeUnitsForQuantity(skuID, units, rate, w.BillableQuantity)
+		if err != nil {
+			return meteringRow{}, err
+		}
 		componentCharges[skuID] = charge
-		bucketCharges[w.RateContext.SKUBuckets[skuID]] += charge
+		bucketID := w.RateContext.SKUBuckets[skuID]
+		nextBucketCharge, err := addChargeUnits(bucketCharges[bucketID], charge, "bucket "+bucketID)
+		if err != nil {
+			return meteringRow{}, err
+		}
+		bucketCharges[bucketID] = nextBucketCharge
 	}
 	bySource := map[string]uint64{}
 	componentBySource := map[string]map[string]uint64{
@@ -1207,7 +1289,7 @@ func meteringRowForWindow(w persistedWindow, recordedAt time.Time) meteringRow {
 	if w.SettledAt != nil && w.ActualQuantity == 0 {
 		endedAt = *w.SettledAt
 	}
-	return meteringRow{WindowID: w.WindowID, OrgID: orgIDText(w.OrgID), ActorID: w.ActorID, ProductID: w.ProductID, SourceType: w.SourceType, SourceRef: w.SourceRef, WindowSeq: w.WindowSeq, ReservationShape: w.ReservationShape, StartedAt: w.WindowStart, EndedAt: endedAt, ReservedQuantity: uint64(w.ReservedQuantity), ActualQuantity: uint64(w.ActualQuantity), BillableQuantity: uint64(w.BillableQuantity), WriteoffQuantity: uint64(w.WriteoffQuantity), CycleID: w.CycleID, PricingContractID: w.PricingContractID, PricingPhaseID: w.PricingPhaseID, PricingPlanID: w.PricingPlanID, PricingPhase: w.PricingPhase, Dimensions: cloneFloatMap(w.Allocation), ComponentQuantities: componentQuantities, ComponentChargeUnits: componentCharges, BucketChargeUnits: bucketCharges, ChargeUnits: w.BilledChargeUnits, WriteoffChargeUnits: w.WriteoffChargeUnits, FreeTierUnits: bySource["free_tier"], ContractUnits: bySource["contract"], PurchaseUnits: bySource["purchase"], PromoUnits: bySource["promo"], RefundUnits: bySource["refund"], ReceivableUnits: bySource["receivable"], AdjustmentUnits: bySource["adjustment"], ComponentFreeTierUnits: componentBySource["free_tier"], ComponentContractUnits: componentBySource["contract"], ComponentPurchaseUnits: componentBySource["purchase"], ComponentPromoUnits: componentBySource["promo"], ComponentRefundUnits: componentBySource["refund"], ComponentReceivableUnits: componentBySource["receivable"], ComponentAdjustmentUnits: componentBySource["adjustment"], UsageEvidence: usageEvidence(w.UsageSummary), CostPerUnit: w.RateContext.CostPerUnit, RecordedAt: recordedAt}
+	return meteringRow{WindowID: w.WindowID, OrgID: orgIDText(w.OrgID), ActorID: w.ActorID, ProductID: w.ProductID, SourceType: w.SourceType, SourceRef: w.SourceRef, WindowSeq: w.WindowSeq, ReservationShape: w.ReservationShape, StartedAt: w.WindowStart, EndedAt: endedAt, ReservedQuantity: uint64(w.ReservedQuantity), ActualQuantity: uint64(w.ActualQuantity), BillableQuantity: uint64(w.BillableQuantity), WriteoffQuantity: uint64(w.WriteoffQuantity), CycleID: w.CycleID, PricingContractID: w.PricingContractID, PricingPhaseID: w.PricingPhaseID, PricingPlanID: w.PricingPlanID, PricingPhase: w.PricingPhase, Dimensions: cloneFloatMap(w.Allocation), ComponentQuantities: componentQuantities, ComponentChargeUnits: componentCharges, BucketChargeUnits: bucketCharges, ChargeUnits: w.BilledChargeUnits, WriteoffChargeUnits: w.WriteoffChargeUnits, FreeTierUnits: bySource["free_tier"], ContractUnits: bySource["contract"], PurchaseUnits: bySource["purchase"], PromoUnits: bySource["promo"], RefundUnits: bySource["refund"], ReceivableUnits: bySource["receivable"], AdjustmentUnits: bySource["adjustment"], ComponentFreeTierUnits: componentBySource["free_tier"], ComponentContractUnits: componentBySource["contract"], ComponentPurchaseUnits: componentBySource["purchase"], ComponentPromoUnits: componentBySource["promo"], ComponentRefundUnits: componentBySource["refund"], ComponentReceivableUnits: componentBySource["receivable"], ComponentAdjustmentUnits: componentBySource["adjustment"], UsageEvidence: usageEvidence(w.UsageSummary), CostPerUnit: w.RateContext.CostPerUnit, RecordedAt: recordedAt}, nil
 }
 
 func appendMeteringRow(batch driver.Batch, row meteringRow) error {
