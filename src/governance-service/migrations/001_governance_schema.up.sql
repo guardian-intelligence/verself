@@ -7,6 +7,35 @@ CREATE TABLE IF NOT EXISTS governance_audit_chain_state (
     CHECK (length(row_hmac) = 64)
 );
 
+CREATE TABLE IF NOT EXISTS governance_audit_events (
+    org_id TEXT NOT NULL,
+    sequence BIGINT NOT NULL CHECK (sequence >= 0),
+    event_id UUID NOT NULL,
+    recorded_at TIMESTAMPTZ NOT NULL,
+    event_date DATE NOT NULL,
+    ingested_at TIMESTAMPTZ NOT NULL,
+    schema_version TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    row_json TEXT NOT NULL,
+    prev_hmac TEXT NOT NULL,
+    row_hmac TEXT NOT NULL,
+    hmac_key_id TEXT NOT NULL,
+    projected_at TIMESTAMPTZ,
+    PRIMARY KEY (org_id, sequence),
+    UNIQUE (event_id),
+    CHECK (length(btrim(org_id)) > 0),
+    CHECK (length(btrim(schema_version)) > 0),
+    CHECK (length(btrim(payload_json)) > 0),
+    CHECK (length(btrim(row_json)) > 0),
+    CHECK (length(prev_hmac) = 64),
+    CHECK (length(row_hmac) = 64),
+    CHECK (length(btrim(hmac_key_id)) > 0)
+);
+
+CREATE INDEX IF NOT EXISTS governance_audit_events_pending_idx
+    ON governance_audit_events (projected_at, recorded_at, sequence, event_id)
+    WHERE projected_at IS NULL;
+
 CREATE TABLE IF NOT EXISTS governance_export_jobs (
     export_id UUID PRIMARY KEY,
     org_id TEXT NOT NULL,

@@ -111,6 +111,7 @@ func run() error {
 	if err := svc.Ready(ctx); err != nil {
 		return fmt.Errorf("governance readiness: %w", err)
 	}
+	go runAuditProjector(ctx, logger, svc)
 
 	rootMux := http.NewServeMux()
 	rootMux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -165,6 +166,32 @@ func run() error {
 		return fmt.Errorf("serve governance-service: %w", err)
 	}
 	return nil
+}
+
+func runAuditProjector(ctx context.Context, logger *slog.Logger, svc *governance.Service) {
+	project := func(ctx context.Context) {
+		projectCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		count, err := svc.ProjectPendingAuditEvents(projectCtx, 100)
+		if err != nil {
+			logger.ErrorContext(ctx, "governance: project pending audit events", "error", err)
+			return
+		}
+		if count > 0 {
+			logger.InfoContext(ctx, "governance: projected pending audit events", "count", count)
+		}
+	}
+	project(ctx)
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			project(ctx)
+		}
+	}
 }
 
 func openPool(ctx context.Context, dsn string, maxConns int) (*pgxpool.Pool, error) {
