@@ -13,6 +13,8 @@ Code pointers:
 - `internal/api/` - secured Huma routes and the sandbox operation catalog.
 - `migrations/` - PostgreSQL tables for executions, attempts, billing windows,
   logs, GitHub workflow jobs, runner allocations, and assignment bindings.
+- `docs/durable-volume-api-and-metering.md` - customer volume API boundary,
+  internal metering source, and ClickHouse projection outbox target.
 - `../../vm-orchestrator/proto/v1/` - host lease/exec gRPC API. This is V1 of
   the rewritten orchestrator contract; the old Run API is gone.
 - `../../apiwire/sandbox.go` - service wire DTOs.
@@ -46,7 +48,7 @@ Direct execution flow:
    windows, releasing any lease ID already recorded, and terminalizing the
    attempt.
 
-Durable volume meter tick flow:
+Target durable volume meter tick flow:
 
 1. `POST /api/v1/volumes` records the product-owned durable volume identity,
    org, product, single-node placement fields, and initial generation metadata.
@@ -59,12 +61,20 @@ Durable volume meter tick flow:
    `source_type = volume_meter_tick` and `window_millis` equal to the sweep
    duration, then settles the same quantity.
 4. On successful billing settlement, sandbox-rental updates Postgres state and
-   projects a ClickHouse `forge_metal.volume_meter_ticks` row. Billing-service
-   independently projects the settled window into `forge_metal.metering`.
+   records a transactional projection delivery row for
+   `forge_metal.volume_meter_ticks`. Billing-service independently projects the
+   settled window into `forge_metal.metering` from its own billing projection
+   delivery queue.
 5. If billing denies the tick, sandbox-rental marks the tick `billing_failed`,
-   marks the volume `write_blocked`, and projects unbilled usage evidence. The
-   product layer owns the customer consequence; billing-service remains the
-   authorization and settlement boundary.
+   marks the volume `write_blocked`, and projects unbilled usage evidence through
+   the same product projection path. The product layer owns the customer
+   consequence; billing-service remains the authorization and settlement
+   boundary.
+
+The current proof path still accepts measured facts from the caller and may
+project ClickHouse rows directly. Replace that with the target authoritative
+vm-orchestrator measurement path and product projection outbox before exposing
+customer-facing usage history.
 
 Single-node VM concurrency budget:
 
@@ -121,5 +131,5 @@ Expected proof surface:
   `sandbox-rental.volume.meter_tick.enqueue`,
   `river.work/volume.meter_tick`, `sandbox-rental.volume.meter_tick.run`,
   `billing.authorization.commit_pg`, `billing.ledger.settle.dispatch`,
-  `river.work/billing.metering.project_window`, and
-  `billing.metering.project`.
+  `river.work/billing.metering.project_window`, `billing.metering.project`, and
+  product projection delivery for `clickhouse.volume_meter_ticks`.
