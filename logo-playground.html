@@ -5,7 +5,7 @@
   <title>Ramp logo study</title>
   <style>
     :root { color-scheme: dark; --bg: #0e0e10; --panel: #17171a; --line: #2a2a2f;
-      --ramp: #C7F02E; --black: #0B0B0B; }
+      --iron-bg: #0E0E0E; --iron-mark: #F5F5F5; }
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; background: var(--bg); color: #e7e7ea;
       font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Inter", sans-serif; }
@@ -15,14 +15,18 @@
     h2:first-child { margin-top: 0; }
     .grid { display: grid; gap: 16px; }
     .grid.refs { grid-template-columns: repeat(3, 1fr); }
-    .grid.ramp { grid-template-columns: repeat(8, 1fr); gap: 8px; }
+    .grid.locked { grid-template-columns: minmax(0, 560px); }
     .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
       overflow: hidden; }
-    .frame { aspect-ratio: 1 / 1; background: var(--ramp); }
+    .frame { aspect-ratio: 1 / 1; }
     .frame img, .frame svg { width: 100%; height: 100%; display: block; }
     .label { font: 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-      padding: 6px 8px; color: #9a9aa2; background: var(--panel);
-      border-top: 1px solid var(--line); display: flex; justify-content: space-between; }
+      padding: 8px; color: #9a9aa2; background: var(--panel);
+      border-top: 1px solid var(--line); display: block; }
+    .label .row { display: flex; justify-content: space-between; }
+    .label .row + .row { margin-top: 3px; }
+    .label .name { color: #e7e7ea; }
+    .label .tag { color: #6c6c74; text-transform: uppercase; letter-spacing: 0.06em; font-size: 9px; }
     .label .hex { color: #e7e7ea; }
   </style>
 </head>
@@ -31,14 +35,14 @@
   <h2>Reference</h2>
   <div class="grid refs">
     <div class="card">
-      <div class="frame">
+      <div class="frame" style="background: #C7F02E;">
         <svg id="reference" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
          <path d="M141.544 135.456v0.315l-45.249 0.016v-0.331c6.5247-3.738 11.0285-7.5457 15.0812-11.5245h18.5798zm-11.2116-59.7761-11.4695-11.4119h-0.3332s0.1936 21.2676-19.0635 40.6099c-18.8433 18.9308-41.0029 18.9735-41.0029 18.9735v0.3318l11.6844 11.6095s21.8369 0.2195 41.1264-18.9735c19.2196-19.1284 19.0582-41.1393 19.0582-41.1393z"></path>
         </svg>
       </div>
     </div>
     <div class="card">
-      <div class="frame">
+      <div class="frame" style="background: #C7F02E;">
         <svg id="dirty" xmlns="http://www.w3.org/2000/svg" viewBox="30.01 31.08 291.14 291.14">
           <rect x="30.01" y="31.08" width="291.14" height="291.14" fill="#C7F02E"/>
           <path fill="#0B0B0B" d="M124.497 236.057L226.107 116.237L225.816 161.189C222.205 165.295 221.465 170.585 204.635 182.995C187.815 195.405 138.065 227.365 124.497 236.057ZM130.031 237.06C142.891 235.13 191.081 235.09 207.191 225.49C223.291 215.9 223.421 187.17 226.671 179.5C219.181 185.187 197.671 203.647 181.671 213.117C165.671 222.587 139.191 232.527 130.031 237.06Z"/>
@@ -46,64 +50,31 @@
       </div>
     </div>
     <div class="card">
-      <div class="frame" style="background: #0B0B0B;">
+      <div class="frame" style="background: var(--iron-bg);">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="30.01 31.08 291.14 291.14">
-          <rect x="30.01" y="31.08" width="291.14" height="291.14" fill="#0B0B0B"/>
-          <path fill="#FFFFFF" d="M124.497 236.057L226.107 116.237L225.816 161.189C222.205 165.295 221.465 170.585 204.635 182.995C187.815 195.405 138.065 227.365 124.497 236.057ZM130.031 237.06C142.891 235.13 191.081 235.09 207.191 225.49C223.291 215.9 223.421 187.17 226.671 179.5C219.181 185.187 197.671 203.647 181.671 213.117C165.671 222.587 139.191 232.527 130.031 237.06Z"/>
+          <rect x="30.01" y="31.08" width="291.14" height="291.14" fill="#0E0E0E"/>
+          <path fill="#F5F5F5" d="M124.497 236.057L226.107 116.237L225.816 161.189C222.205 165.295 221.465 170.585 204.635 182.995C187.815 195.405 138.065 227.365 124.497 236.057ZM130.031 237.06C142.891 235.13 191.081 235.09 207.191 225.49C223.291 215.9 223.421 187.17 226.671 179.5C219.181 185.187 197.671 203.647 181.671 213.117C165.671 222.587 139.191 232.527 130.031 237.06Z"/>
         </svg>
       </div>
     </div>
   </div>
 
-  <h2>Gold ramp · narrowed band #DAE727 → #DBD527 (50 stops on #0B0B0B)</h2>
-  <div class="grid ramp" id="gold-ramp"></div>
-</main>
-
-<script>
-  // Mark path; reused for every gold-ramp card.
-  const PATH = "M124.497 236.057L226.107 116.237L225.816 161.189C222.205 165.295 221.465 170.585 204.635 182.995C187.815 195.405 138.065 227.365 124.497 236.057ZM130.031 237.06C142.891 235.13 191.081 235.09 207.191 225.49C223.291 215.9 223.421 187.17 226.671 179.5C219.181 185.187 197.671 203.647 181.671 213.117C165.671 222.587 139.191 232.527 130.031 237.06Z";
-
-  // Narrowed band — interpolating in HSL between the prior ramp's #12 and #20.
-  // This is a fine-toothed comb across a slim slice of acid yellow, where
-  // green-cast vs red-cast and a sliver of saturation/lightness drift are
-  // the only variables left to feel out.
-  const START = { h: 64, s: 80, l: 53 };  // ~ #DAE727 (greener, slightly brighter)
-  const END   = { h: 58, s: 71, l: 51 };  // ~ #DBD527 (warmer, slightly muted)
-  const N = 50;
-
-  const lerp = (a, b, t) => a + (b - a) * t;
-  const hslToHex = (h, s, l) => {
-    s /= 100; l /= 100;
-    const k = n => (n + h / 30) % 12;
-    const a = s * Math.min(l, 1 - l);
-    const f = n => {
-      const c = l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
-      return Math.round(c * 255).toString(16).padStart(2, '0');
-    };
-    return `#${f(0)}${f(8)}${f(4)}`.toUpperCase();
-  };
-
-  const ramp = document.getElementById('gold-ramp');
-  for (let i = 0; i < N; i++) {
-    const t = i / (N - 1);
-    const h = lerp(START.h, END.h, t);
-    const s = lerp(START.s, END.s, t);
-    const l = lerp(START.l, END.l, t);
-    const hex = hslToHex(h, s, l);
-
-    const card = document.createElement('div');
-    card.className = 'card';
-    card.innerHTML = `
-      <div class="frame" style="background:#0B0B0B;">
+  <h2>Locked · Iron</h2>
+  <div class="grid locked">
+    <div class="card">
+      <div class="frame" style="background: var(--iron-bg);">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="30.01 31.08 291.14 291.14">
-          <rect x="30.01" y="31.08" width="291.14" height="291.14" fill="#0B0B0B"/>
-          <path fill="${hex}" d="${PATH}"/>
+          <rect x="30.01" y="31.08" width="291.14" height="291.14" fill="#0E0E0E"/>
+          <path fill="#F5F5F5" d="M124.497 236.057L226.107 116.237L225.816 161.189C222.205 165.295 221.465 170.585 204.635 182.995C187.815 195.405 138.065 227.365 124.497 236.057ZM130.031 237.06C142.891 235.13 191.081 235.09 207.191 225.49C223.291 215.9 223.421 187.17 226.671 179.5C219.181 185.187 197.671 203.647 181.671 213.117C165.671 222.587 139.191 232.527 130.031 237.06Z"/>
         </svg>
       </div>
-      <div class="label"><span>#${String(i + 1).padStart(2, '0')}</span><span class="hex">${hex}</span></div>
-    `;
-    ramp.appendChild(card);
-  }
-</script>
+      <div class="label">
+        <div class="row"><span class="name">Iron</span><span class="tag">locked</span></div>
+        <div class="row"><span>bg</span><span class="hex">#0E0E0E</span></div>
+        <div class="row"><span>mark</span><span class="hex">#F5F5F5</span></div>
+      </div>
+    </div>
+  </div>
+</main>
 </body>
 </html>
