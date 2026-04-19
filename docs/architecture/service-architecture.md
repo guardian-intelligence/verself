@@ -113,6 +113,26 @@ See [wire-contracts.md](../../src/apiwire/docs/wire-contracts.md). `src/apiwire`
 
 See [identity-and-iam.md](../../src/platform/docs/identity-and-iam.md). Zitadel owns identity and role assignments. Forge Metal pins three role keys per project (`owner`, `admin`, `member`), exposes a fixed switchboard of code-owned member-capability bundles in the org console, and each Go service owns the operation catalog it enforces. Members can never receive a permission whose operation is not tagged `member_eligible: true`; the boundary is enforced at catalog `init()` and at credential issuance.
 
+## Authorization Direction (Future)
+
+Authorization today is enforced per service in Go: `auth-middleware` validates the Zitadel JWT, each service's `policy.go` maps roles and permissions to operations, and `x-forge-metal-iam` OpenAPI extensions surface the catalog to identity-service. The role-to-capability matrix is duplicated across services; retiring that duplication is the direction, not committed work.
+
+The target is a centralized Policy Decision Point (PDP) — Open Policy Agent (OPA) is the planned choice — deployed as a sidecar beside each service. The shape:
+
+- `x-forge-metal-iam` extensions remain the declared input contract.
+- Per-service `policy.go` shrinks to: shape the OPA input, make a localhost decision call, honor the result. Rate limiting, idempotency, body limits, and governance audit emission stay in Go.
+- Rego policies live in the monorepo, reviewed in PRs, tested with `opa test` in CI, distributed as signed bundles.
+- Decision logs ship to ClickHouse alongside governance audit; the two are different grains — governance records business events, OPA records policy decisions.
+
+Two layers, cleanly separated:
+
+- **Operation-level authz** — "is this principal allowed to invoke this operation at all?" — becomes OPA's job.
+- **Resource-level authz** — "once allowed, can this specific path or record be read/written?" — stays in the resource plane that owns the data (for example, OpenBao policies in the secrets plane once OpenBao is stood up).
+
+This mirrors AWS's split: Zitadel is the IdP (equivalent to IAM Identity Center), OPA is the identity-based policy engine (equivalent to IAM), per-resource authz is resource-based policy, and `governance-service` is the CloudTrail-equivalent outside the authz path.
+
+Until the PDP migration lands, current `policy.go` files are the reference implementation that future OPA policies must match. Keep role matrices declarative and avoid control-flow creep so the translation is mechanical.
+
 ## Secrets Plane
 
 See [secrets-service.md](../../src/platform/docs/secrets-service.md). `secrets-service` is the customer-facing control plane for secrets, variables, dynamic credentials, and crypto operations across org, source, environment, and branch scopes; SPIFFE/SPIRE attests sandbox workloads; the service runs an OIDC provider so Forge Metal compute can federate to customer clouds without bootstrap API keys. OpenBao is the backend implementation, not the product contract.
