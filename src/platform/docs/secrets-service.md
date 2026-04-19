@@ -2,14 +2,105 @@
 
 `secrets-service` is the Forge Metal product boundary for customer-managed
 secrets, variables, transit keys, and execution-time injection into sandboxed
-workloads. The first implementation is intentionally narrow: no AWS/GCP IAM
-integration, no outward OIDC provider, no dynamic database credentials, and no
-customer-visible OpenBao dependency.
+workloads. The customer-facing surface stays narrow: no AWS/GCP IAM
+integration, no outward OIDC provider, no dynamic database credentials, no
+customer-visible backend identity.
 
-The service is a Huma v2 HTTP API backed by a local envelope-encrypted
-PostgreSQL store. That adapter is the product implementation until OpenBao is
-introduced for operational reasons; the public API must not expose backend
-paths, OpenBao mount names, host paths, or privileged runtime details.
+The service is a Huma v2 HTTP API. The target backend is OpenBao; the current
+envelope-encrypted PostgreSQL store and the `fmtransit:v1:` / `fmsig:v1:` wire
+formats are stop-gap and will cut over cleanly — no customer-issued material
+exists to preserve, so there is no dual-write window and no compatibility
+layer. The public API must not expose backend paths, OpenBao mount or
+namespace names, host paths, or privileged runtime details.
+
+## Target Architecture: OpenBao
+
+All secret storage and transit cryptography move to OpenBao; envelope-wrapped
+PG is dropped at cutover.
+
+### Tenancy
+
+Namespace-per-org. Each Forge Metal org gets its own OpenBao namespace with
+its own KV v2 and Transit mounts, policies, and JWT auth config. If the
+deployed OpenBao build lacks namespaces, fall back to one KV + one Transit
+mount per org with path-prefixed, policy-scoped access — tenancy stays an
+OpenBao primitive, never application code. Org deletion marks the namespace
+disabled rather than destroying it, deferring retention and legal-hold
+design.
+
+### KV layout
+
+`kv/data/<kind>/{org|source|env|branch}/…/<name>`. Resolution walks four
+deterministic subtrees rather than listing-and-filtering metadata. Branch
+names stay SHA256-hashed at the path
+(`.../branch/<source>/<env>/<branch_hash>/<name>`) — data minimization,
+OWASP ASVS V8. Variables share the same KV mount as secrets; `<kind>/`
+distinguishes. Different sensitivity uses different paths, not different
+mounts.
+
+### Transit algorithms
+
+- `aes256-gcm96` for encrypt/decrypt. Semantically identical to current behavior.
+- `ed25519` for sign/verify. Asymmetric — verifiers no longer need the key.
+
+### Auth to OpenBao
+
+No long-lived service token. Two callers, same mechanism:
+
+- User path: the caller's Zitadel JWT is exchanged for a short-lived OpenBao
+  token per request, cached on `(jti, namespace)`.
+- Injection path: `secrets-service` holds its own Zitadel service-account
+  JWT, auto-refreshed, exchanged per request, cached on `(service_subject,
+  namespace)`. The loopback internal injection endpoint keeps its existing
+  shared token — that authenticates sandbox-rental → secrets-service, not
+  secrets-service → OpenBao.
+
+Raw JWT capture lives in a wrapper middleware inside `secrets-service`;
+shared `auth-middleware` stays single-purpose (verify and extract claims).
+
+### Policy split
+
+- Zitadel = IdP (authn).
+- OpenBao = resource-level authz for the secrets plane (KV path + Transit key
+  capabilities, per-namespace HCL).
+- `policy.go` keeps the coarse has-any-secrets-role check, governance audit
+  emission, rate limits, idempotency, and body limits. The fine-grained
+  role/capability matrix moves into OpenBao policies.
+- OPA = future operation-level PDP. `policy.go` stays declarative so the
+  eventual translation is mechanical.
+- governance-service = audit.
+
+Mirrors AWS Identity-Center / IAM / KMS / CloudTrail.
+
+### List semantics
+
+`GET /api/v1/secrets` fans out LIST + per-path metadata read over loopback,
+bounded by the existing `limit<=200`. Preserves the current DTO. Revisit with
+a read-through cache only if telemetry shows contention.
+
+### Namespace provisioning
+
+Idempotent Ansible playbook reconciles Zitadel orgs → OpenBao namespaces,
+mounts, and policies. Declarative, runs after seed and on demand. A Zitadel
+Action webhook for lower-latency creation can land later; the reconciler
+remains source of truth.
+
+### Single-node deployment
+
+Single-node Raft. Manual unseal from credstore shards. 2-node OpenBao and
+auto-unseal deferred until growth past one node. Token-cache TTL bounds,
+cache-key shape, and the manual-unseal runbook go into the updated
+`secrets_service` and new `openbao` Ansible roles alongside this doc.
+
+### Migration sequence
+
+1. OpenBao Ansible role.
+2. Namespace provisioning playbook (driven by identity-service's org inventory).
+3. New `baostore.go` backend behind the current `Service` interface.
+4. `policy.go` rewrite for JWT pass-through.
+5. One-shot PG → OpenBao data migration tool.
+6. Cutover.
+7. Drop PG tables; remove `envelope-key` from credstore/SOPS.
 
 ## Product Boundary
 
@@ -170,8 +261,11 @@ only prints the secret hash, and asserts:
 - The local envelope key is deployment secret material and must be 32 bytes.
 - Secret names should not encode sensitive facts; audit still treats path names
   as sensitive and records hashes.
-- Cloud IAM, outward OIDC federation, dynamic credentials, and OpenBao adapter
-  work are future phases, not part of the current product contract.
+- Cloud IAM integration, outward OIDC federation, and dynamic credentials
+  remain future phases outside the current product contract.
+- The OpenBao backend is not customer-visible: mount names, namespace names,
+  and backend paths never appear in API responses, error messages, or
+  customer-facing UI copy.
 
 ## Source Anchors
 

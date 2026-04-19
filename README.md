@@ -61,15 +61,7 @@ make assume-acme-member
 make assume-persona PERSONA=platform-admin OUTPUT=/tmp/platform-admin.env
 ```
 
-`platform-admin` is for dogfooding internal platform operations. It has
-sandbox-rental, webmail/mailbox-service, Letters, and Forgejo OIDC project
-access, plus operator command hints for ClickHouse and provider-native Forgejo
-automation. `acme-admin` and `acme-member` rehearse the customer org roles used
-by rent-a-sandbox.
-
-These scripts do not export the Zitadel admin PAT, ClickHouse password,
-Stalwart direct protocol passwords, or Forgejo provider API token. Those remain
-behind the existing operator wrappers and remote credstore files.
+`platform-admin` is our internal organization for dogfooding internal platform operations.
 
 Use the helper below to move a seeded user's billing fixture state quickly when
 you need to run end-to-end scenarios against a known plan tier or prepaid

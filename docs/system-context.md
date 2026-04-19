@@ -24,11 +24,11 @@ Single-node is the default deployment — everything runs on one box with no rep
 
 Hard product requirement: everything self-hosted. Exceptions:
 
-- **Optional — Backups.** Target providers: Backblaze B2, Cloudflare R2, AWS S3 (planned, via `zfs send`). Not yet implemented.
-- **Required — Domain Registrar:** Cloudflare.
-- **Required — Compute Provider:** Latitude.sh.
-- **Required — Email Delivery:** Resend (outbound). Inbound self-hosted via Stalwart.
-- **Required — Payments, Dunning, Tax, Invoices, Payment Methods:** Stripe.
+- **Backups.** Target providers: Backblaze B2, Cloudflare R2, AWS S3 (planned, via `zfs send`). Not yet implemented.
+- **Domain Registrar:** Cloudflare.
+- **Compute Provider:** Latitude.sh.
+- **Email Delivery:** Resend (outbound). Inbound self-hosted via Stalwart.
+- **Payments, Tax, Payment Methods:** Stripe.
 
 ## Auth and IAM
 
@@ -37,6 +37,8 @@ Zitadel is the sole IdP. All Go services import `src/auth-middleware/`, which va
 Auth at the web application level is treated only as a UX concern. Authentication and authorization happen in services validating JWTs and calling out to Zitadel, and sometimes at the DB level. Any violation of this principle is a critical security concern.
 
 Full model — organization boundary, three-role IAM (`owner`/`admin`/`member`), capability catalog, API credentials, SCIM, TanStack Start server-owned OAuth sessions, browser CSP bearer isolation, and the single-node JWKS loopback path — lives in `src/platform/docs/identity-and-iam.md`.
+
+We use OpenBao Transit for KMS and OpenBao KV for Secrets Management.
 
 ## Dual-Write Pattern
 
