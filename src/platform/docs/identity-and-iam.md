@@ -288,6 +288,40 @@ service accounts:
   fetching the client-credentials token.
 - Delete or rotate the seed credential when it is no longer needed.
 
+## Inbound SCIM Provisioning
+
+Zitadel ships a SCIM 2.0 server (User resource only, currently preview,
+feature-flagged) at `https://auth.<domain>/scim/v2/{orgId}/`. Customer IdPs —
+Okta, Entra, JumpCloud, OneLogin — point their SCIM connector at that URL and
+authenticate with a per-org Zitadel service-account credential. User CRUD,
+PATCH, Bulk, filter, and `.search` route directly to Zitadel. Forge Metal does
+not proxy, re-terminate, or re-implement the User half of the SCIM surface.
+
+Groups, the `groups` field on the User resource, role-bound group provisioning,
+and `/Me` are out of scope. Zitadel does not implement Groups in its SCIM
+surface, and Forge Metal does not layer a Groups shim over it. Customers
+assign the three-role set (`owner`, `admin`, `member`) through the Forge Metal
+organization console; the IdP's group state is not consulted. Attempts to push
+a `groups` attribute or a `Group` resource through Zitadel's SCIM endpoint are
+rejected by Zitadel per its documented scope.
+
+A Forge Metal Groups + role-binding shim is a deliberate future option, not
+current scope. If a customer eventually demands group-driven role assignment,
+the shape is a Forge Metal `/scim/v2/{orgId}/` endpoint that terminates the
+full SCIM surface, handles Groups and role-binding locally, and forwards User
+CRUD to Zitadel's SCIM using the same per-org service-account credential. The
+three-role invariant stays intact: SCIM Groups would bind to at most one
+existing role; they would not mint new roles.
+
+Per-org SCIM credentials are provisioned through `identity-service`'s API
+credential surface so they inherit the standard audit, revoke, roll, and
+last-used lifecycle. The issued credential is a Zitadel service-account
+credential under the hood (private-key JWT preferred, client secret
+acceptable). The `urn:zitadel:scim:provisioningDomain` Zitadel metadata field
+namespaces `externalId` per IdP source so multi-IdP provisioning against the
+same org does not collide. SCIM access is gated by plan entitlement at
+credential issuance, not at request time.
+
 ## API Credential Model
 
 Customer API credentials are Forge Metal product resources backed by Zitadel
@@ -471,6 +505,11 @@ a human user's browser session token for background git fetches.
 - Customer API credential tables exist, and services recognize
   `forge_metal:credential_id`, but the create/list/read/roll/revoke lifecycle
   and Zitadel pre-access-token Action are not implemented yet.
+- Zitadel SCIM 2.0 is preview and feature-flagged; Users only, no Groups, no
+  `/Me`, no ETag, Bulk capped at 100 operations. The Forge Metal position
+  (terminate at Zitadel, defer Groups) assumes the preview remains stable or
+  graduates; if Zitadel removes the surface, a Forge Metal SCIM server becomes
+  required, not optional.
 
 ## Source Notes
 
@@ -542,3 +581,10 @@ Forge Metal uses that as the mechanism for `forge_metal:credential_id`,
 non-secret credential audit metadata, and exact API credential permissions, not
 as a place to store full product policy:
 <https://help.zitadel.com/extend-authorization-in-zitadel-with-organization-metadata-preaccesstoken-action->
+
+Zitadel SCIM 2.0 server. Preview, User resource only, org-scoped URL, Bulk
+capped at 100 operations, filter vocabulary enumerated. No Groups, no `/Me`,
+no ETag. This is the surface Forge Metal points customer IdPs at directly:
+<https://zitadel.com/docs/apis/scim2>
+<https://zitadel.com/docs/guides/manage/user/scim2>
+<https://zitadel.com/docs/guides/integrate/scim-okta-guide>
