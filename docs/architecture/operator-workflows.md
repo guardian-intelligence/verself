@@ -110,3 +110,72 @@ The billing product ID remains `sandbox`. Do not use `DB=sandbox`; that was a
 legacy billing database name and should not exist on a current deployment.
 
 Use `guest-rootfs.yml` when the guest kernel, rootfs, or staged Firecracker guest artifacts changed. It rebuilds and restages the guest artifacts without touching the rest of the platform.
+
+## Telemetry Proof
+
+Deploy playbook telemetry smoke probes:
+
+```bash
+make telemetry-proof           # success path: ansible + service correlation
+make telemetry-proof-fail      # sad path: assert Error spans are emitted
+```
+
+## Deploy Correlation Model
+
+Deterministic deploy correlation:
+
+- `deploy_run_key`: `YYYY-MM-DD.<counter>@<controller-host>`
+- `deploy_id`: UUIDv5 over `forge-metal:${deploy_run_key}`
+- `scripts/deploy_identity.sh` exports `TRACEPARENT=00-<deploy_id_hex>-<stable>-01` and `OTEL_RESOURCE_ATTRIBUTES=forge_metal.deploy_id=…,forge_metal.deploy_run_key=…,…`, anchoring the upstream `community.general.opentelemetry` Ansible callback and `fm_uri` probes to the same trace-id.
+- The otelcol `transform/ansible_spans` processor renames upstream-emitted `<playbook>.yml` / `<task name>` spans to `ansible.playbook` / `ansible.task` and mirrors `forge_metal.*` from `ResourceAttributes` onto `SpanAttributes`, so the same query shape (`SpanAttributes['forge_metal.deploy_id']`) works for both ansible and service spans.
+- Service spans pick up `forge_metal.*` via the `fmotel` baggage span processor (`src/otel/otel.go`), which projects every W3C baggage member with the `forge_metal.` prefix onto spans it sees.
+
+## TLS with a Real Domain (Cloudflare)
+
+```bash
+cd src/platform/ansible
+sops group_vars/all/secrets.sops.yml   # set forge_metal_domain and cloudflare_api_token
+ansible-playbook playbooks/dev-single-node.yml
+```
+
+Services get subdomains configured via Cloudflare:
+
+| Subdomain | Service |
+|-----------|---------|
+| `dashboard.<domain>` | Grafana |
+| `git.<domain>` | Forgejo |
+| `auth.<domain>` | Zitadel |
+| `mail.<domain>` | Stalwart (JMAP API + webmail) |
+
+## Server Profile
+
+All server software is managed by the `deploy_profile` Ansible role. It populates `/opt/forge-metal/profile/bin/` via three strategies:
+
+- **Go service binaries** (billing-service, sandbox-rental-service, mailbox-service): built on the controller via `go build`, copied to server.
+- **Caddy** (with Coraza WAF plugin): built on the controller via `xcaddy`, copied to server.
+- **Static binaries** (ClickHouse, TigerBeetle, Zitadel, Forgejo, Grafana, grafana-clickhouse-datasource plugin, otelcol-contrib, containerd, Node.js, Stalwart, stalwart-cli): pinned in `src/platform/server-tools.json` with URLs and SHA256 hashes, downloaded and verified on the server.
+- **apt packages** (PostgreSQL 16, wireguard-tools): installed from PGDG/Ubuntu repos, symlinked into `fm_bin`.
+
+The only other `apt install` is `zfsutils-linux` (kernel-dependent, must match the running kernel).
+
+## Ansible Playbooks
+
+All remote orchestration runs via Ansible playbooks from `src/platform/ansible/`.
+
+| Playbook | Description |
+|----------|-------------|
+| `playbooks/setup-dev.yml` | Install pinned dev tools from `dev-tools.json`. |
+| `playbooks/setup-sops.yml` | Bootstrap SOPS+Age encryption for secrets. |
+| `playbooks/provision.yml` | Provision bare metal via OpenTofu, generate inventory. |
+| `playbooks/deprovision.yml` | Destroy bare-metal infrastructure, remove inventory. |
+| `playbooks/dev-single-node.yml` | Deploy to single node (idempotent). |
+| `playbooks/site.yml` | Deploy to multi-node cluster (workers + infra). |
+| `playbooks/guest-rootfs.yml` | Build guest rootfs and stage Firecracker guest artifacts. |
+| `playbooks/observability-smoke.yml` | Minimal smoke probe used by `telemetry-proof` (`debug/assert` + `fm_uri`). |
+| `playbooks/vm-guest-telemetry-dev.yml` | Hot-swap `vm-guest-telemetry`, boot + probe in Firecracker VM (~10s). |
+| `playbooks/security-patch.yml` | Rolling OS security updates. |
+| `playbooks/billing-reset.yml` | Exhaustively wipe TigerBeetle + billing PostgreSQL database `billing` and restart billing callers. |
+| `playbooks/seed-system.yml` | Seed the platform tenant plus Acme tenant, billing, mailboxes, and auth verify (supports `--tags identity,billing,stalwart,verify,dev-oidc`). |
+
+All deploy playbooks support `--tags` for targeting individual roles (e.g. `--tags caddy`, `--tags clickhouse`). Preflight checks run regardless of tag selection.
+
