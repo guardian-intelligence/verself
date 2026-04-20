@@ -107,12 +107,13 @@ func run() error {
 
 	privateMux := http.NewServeMux()
 	secretsapi.NewAPI(privateMux, serviceVersion, "http://"+listenAddr, svc)
-	protected := auth.Middleware(auth.Config{
+	authenticated := auth.Middleware(auth.Config{
 		IssuerURL: authIssuerURL,
 		Audience:  authAudience,
 		ProjectID: authProjectID,
 		JWKSURL:   authJWKSURL,
 	})(privateMux)
+	protected := secretsapi.CaptureRawBearerToken(authenticated)
 	rootMux.Handle("/", protected)
 
 	server := &http.Server{

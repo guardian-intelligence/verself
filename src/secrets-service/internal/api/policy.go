@@ -597,6 +597,17 @@ func problemCode(err error) string {
 			}
 			return model.Type
 		}
+		for _, detail := range model.Errors {
+			if detail == nil {
+				continue
+			}
+			if value, ok := detail.Value.(string); ok && strings.TrimSpace(value) != "" {
+				return strings.TrimSpace(value)
+			}
+			if strings.TrimSpace(detail.Message) != "" {
+				return strings.TrimSpace(detail.Message)
+			}
+		}
 	}
 	return "operation-failed"
 }

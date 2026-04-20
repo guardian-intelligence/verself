@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -117,11 +118,12 @@ func Init(ctx context.Context, cfg Config) (shutdown func(context.Context) error
 
 	// The OTel Log SDK automatically extracts trace_id and span_id from the
 	// context passed to slog.*Context methods, so callers get trace-log
-	// correlation for free. Named-string types are handled by implementing
-	// slog.LogValuer at their definition sites, not by a wrapping handler.
-	logger = slog.New(otelslog.NewHandler(cfg.ServiceName,
+	// correlation for free. The redacting wrapper is a last-resort guard for
+	// bearer/JWT-shaped material that should never be handed to logging in the
+	// first place.
+	logger = slog.New(redactingHandler{next: otelslog.NewHandler(cfg.ServiceName,
 		otelslog.WithLoggerProvider(lp),
-	))
+	)})
 
 	shutdown = func(ctx context.Context) error {
 		return errors.Join(tp.Shutdown(ctx), lp.Shutdown(ctx))
@@ -134,6 +136,99 @@ func textMapPropagator() propagation.TextMapPropagator {
 		propagation.TraceContext{},
 		propagation.Baggage{},
 	)
+}
+
+const redactedSecret = "[redacted:secret]"
+
+var (
+	bearerValuePattern = regexp.MustCompile(`(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+`)
+	jwtValuePattern    = regexp.MustCompile(`\b[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b`)
+)
+
+type redactingHandler struct {
+	next slog.Handler
+}
+
+func (h redactingHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return h.next.Enabled(ctx, level)
+}
+
+func (h redactingHandler) Handle(ctx context.Context, record slog.Record) error {
+	redacted := slog.NewRecord(record.Time, record.Level, redactString(record.Message), record.PC)
+	record.Attrs(func(attr slog.Attr) bool {
+		redacted.AddAttrs(redactAttr(attr))
+		return true
+	})
+	return h.next.Handle(ctx, redacted)
+}
+
+func (h redactingHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	redacted := make([]slog.Attr, 0, len(attrs))
+	for _, attr := range attrs {
+		redacted = append(redacted, redactAttr(attr))
+	}
+	return redactingHandler{next: h.next.WithAttrs(redacted)}
+}
+
+func (h redactingHandler) WithGroup(name string) slog.Handler {
+	return redactingHandler{next: h.next.WithGroup(name)}
+}
+
+func redactAttr(attr slog.Attr) slog.Attr {
+	if attr.Key == "" {
+		return attr
+	}
+	value := attr.Value.Resolve()
+	if sensitiveLogKey(attr.Key) {
+		return slog.String(attr.Key, redactedSecret)
+	}
+	attr.Value = redactValue(value)
+	return attr
+}
+
+func redactValue(value slog.Value) slog.Value {
+	value = value.Resolve()
+	switch value.Kind() {
+	case slog.KindString:
+		return slog.StringValue(redactString(value.String()))
+	case slog.KindGroup:
+		attrs := value.Group()
+		redacted := make([]slog.Attr, 0, len(attrs))
+		for _, attr := range attrs {
+			redacted = append(redacted, redactAttr(attr))
+		}
+		return slog.GroupValue(redacted...)
+	case slog.KindAny:
+		if value.Any() == nil {
+			return value
+		}
+		text := fmt.Sprint(value.Any())
+		redacted := redactString(text)
+		if redacted != text {
+			return slog.StringValue(redacted)
+		}
+		return value
+	default:
+		return value
+	}
+}
+
+func redactString(value string) string {
+	value = bearerValuePattern.ReplaceAllString(value, "Bearer [redacted:jwt]")
+	return jwtValuePattern.ReplaceAllString(value, "[redacted:jwt]")
+}
+
+func sensitiveLogKey(key string) bool {
+	normalized := strings.ToLower(strings.NewReplacer("-", "_", ".", "_", " ", "_").Replace(strings.TrimSpace(key)))
+	switch normalized {
+	case "authorization", "proxy_authorization", "cookie", "set_cookie", "token", "jwt", "access_token", "id_token", "refresh_token", "client_secret", "password", "passwd", "secret":
+		return true
+	default:
+		return strings.HasSuffix(normalized, "_token") ||
+			strings.HasSuffix(normalized, "_jwt") ||
+			strings.HasSuffix(normalized, "_secret") ||
+			strings.HasSuffix(normalized, "_password")
+	}
 }
 
 // baggageSpanProcessor copies W3C baggage members with key prefix
