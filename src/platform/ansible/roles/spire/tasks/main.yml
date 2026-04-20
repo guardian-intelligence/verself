@@ -1,0 +1,230 @@
+---
+- name: Verify spire-server binary exists in profile
+  ansible.builtin.stat:
+    path: "{{ fm_bin }}/spire-server"
+  register: spire_server_binary
+  failed_when: not spire_server_binary.stat.exists
+
+- name: Verify spire-agent binary exists in profile
+  ansible.builtin.stat:
+    path: "{{ fm_bin }}/spire-agent"
+  register: spire_agent_binary
+  failed_when: not spire_agent_binary.stat.exists
+
+- name: Create spire system group
+  ansible.builtin.group:
+    name: spire
+    system: true
+
+- name: Create SPIRE workload socket group
+  ansible.builtin.group:
+    name: "{{ spire_workload_group }}"
+    system: true
+
+- name: Create spire system user
+  ansible.builtin.user:
+    name: spire
+    group: spire
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Create SPIRE directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /etc/spire/server, owner: root, group: spire, mode: "0750" }
+    - { path: /etc/spire/agent, owner: root, group: spire, mode: "0750" }
+    - { path: /var/lib/spire, owner: root, group: spire, mode: "0750" }
+    - { path: /var/lib/spire/server, owner: spire, group: spire, mode: "0700" }
+    - { path: /var/lib/spire/agent, owner: spire, group: spire, mode: "0700" }
+    - { path: /etc/credstore/spire, owner: root, group: spire, mode: "0750" }
+    - { path: /run/spire-server/private, owner: spire, group: spire, mode: "0750" }
+    - { path: /run/spire-agent/sockets, owner: spire, group: "{{ spire_workload_group }}", mode: "0750" }
+
+- name: Converge SPIRE agent state ownership
+  ansible.builtin.file:
+    path: /var/lib/spire/agent
+    state: directory
+    owner: spire
+    group: spire
+    mode: "0700"
+    recurse: true
+  notify: restart spire-agent
+
+- name: Deploy SPIRE server config
+  ansible.builtin.template:
+    src: server.conf.j2
+    dest: /etc/spire/server/server.conf
+    owner: root
+    group: spire
+    mode: "0640"
+  notify: restart spire-server
+
+- name: Deploy SPIRE agent config
+  ansible.builtin.template:
+    src: agent.conf.j2
+    dest: /etc/spire/agent/agent.conf
+    owner: root
+    group: spire
+    mode: "0640"
+  notify: restart spire-agent
+
+- name: Validate SPIRE server config
+  ansible.builtin.command:
+    cmd: "{{ fm_bin }}/spire-server validate -config /etc/spire/server/server.conf"
+  changed_when: false
+
+- name: Validate SPIRE agent config
+  ansible.builtin.command:
+    cmd: "{{ fm_bin }}/spire-agent validate -config /etc/spire/agent/agent.conf"
+  changed_when: false
+
+- name: Deploy spire-server systemd unit
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=SPIRE Server
+      After=forge-metal-firewall.target network.target
+      Requires=forge-metal-firewall.target
+
+      [Service]
+      Type=simple
+      User=spire
+      Group=spire
+      RuntimeDirectory=spire-server/private
+      RuntimeDirectoryMode=0750
+      ExecStart={{ fm_bin }}/spire-server run -config /etc/spire/server/server.conf
+      Restart=on-failure
+      RestartSec=5
+      CapabilityBoundingSet=
+      ProtectHome=true
+      ProtectSystem=strict
+      ReadWritePaths=/var/lib/spire/server /run/spire-server/private
+      PrivateDevices=true
+      PrivateTmp=true
+      ProtectClock=true
+      ProtectControlGroups=true
+      ProtectKernelLogs=true
+      ProtectKernelModules=true
+      ProtectKernelTunables=true
+      LockPersonality=true
+      NoNewPrivileges=true
+      RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+      RestrictRealtime=true
+      RestrictSUIDSGID=true
+      SystemCallArchitectures=native
+      UMask=0077
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/spire-server.service
+    mode: "0644"
+  notify: restart spire-server
+
+- name: Apply SPIRE server unit and config changes before proceeding
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start spire-server
+  ansible.builtin.systemd:
+    name: spire-server
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for SPIRE server API socket
+  ansible.builtin.wait_for:
+    path: "{{ spire_server_socket_path }}"
+    timeout: 30
+
+- name: Check SPIRE single-node join token
+  ansible.builtin.stat:
+    path: /etc/credstore/spire/join-token
+  register: spire_join_token_file
+  no_log: true
+
+- name: Generate SPIRE single-node join token
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server token generate
+      -socketPath {{ spire_server_socket_path }}
+      -spiffeID {{ spire_agent_id }}
+      -ttl 600
+      -output json
+  register: spire_join_token
+  changed_when: true
+  when: not spire_join_token_file.stat.exists
+  no_log: true
+
+- name: Store SPIRE single-node join token
+  ansible.builtin.copy:
+    content: "{{ (spire_join_token.stdout | from_json).value }}"
+    dest: /etc/credstore/spire/join-token
+    owner: root
+    group: spire
+    mode: "0640"
+  when: spire_join_token is defined and not (spire_join_token.skipped | default(false))
+  no_log: true
+  notify: restart spire-agent
+
+- name: Deploy spire-agent systemd unit
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=SPIRE Agent
+      After=forge-metal-firewall.target network.target spire-server.service
+      Requires=forge-metal-firewall.target spire-server.service
+
+      [Service]
+      Type=simple
+      User=spire
+      Group={{ spire_workload_group }}
+      SupplementaryGroups=spire
+      RuntimeDirectory=spire-agent/sockets
+      RuntimeDirectoryMode=0750
+      ExecStart={{ fm_bin }}/spire-agent run -config /etc/spire/agent/agent.conf -joinTokenFile /etc/credstore/spire/join-token
+      Restart=on-failure
+      RestartSec=5
+      CapabilityBoundingSet=
+      ProtectHome=true
+      ProtectSystem=strict
+      ReadWritePaths=/var/lib/spire/agent /run/spire-agent/sockets
+      PrivateDevices=true
+      PrivateTmp=true
+      ProtectClock=true
+      ProtectControlGroups=true
+      ProtectKernelLogs=true
+      ProtectKernelModules=true
+      ProtectKernelTunables=true
+      LockPersonality=true
+      NoNewPrivileges=true
+      RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+      RestrictRealtime=true
+      RestrictSUIDSGID=true
+      SystemCallArchitectures=native
+      UMask=0007
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/spire-agent.service
+    mode: "0644"
+  notify: restart spire-agent
+
+- name: Apply SPIRE unit changes before proceeding
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start spire-agent
+  ansible.builtin.systemd:
+    name: spire-agent
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for SPIRE workload API socket
+  ansible.builtin.wait_for:
+    path: "{{ spire_agent_socket_path }}"
+    timeout: 30

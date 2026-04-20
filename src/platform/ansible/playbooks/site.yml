@@ -116,6 +116,8 @@
       tags: [cloudflare_dns]
     - role: resend
       tags: [resend]
+    - role: spire
+      tags: [spire, secrets_service, sandbox_rental_service]
     - role: clickhouse
       tags: [clickhouse, billing_service, sandbox_rental_service, governance_service, openbao, openbao_tenancy]
     - role: tigerbeetle

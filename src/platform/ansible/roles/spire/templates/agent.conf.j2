@@ -1,0 +1,25 @@
+agent {
+    data_dir = "/var/lib/spire/agent"
+    log_level = "INFO"
+    trust_domain = "{{ spire_trust_domain }}"
+    server_address = "{{ spire_server_bind_address }}"
+    server_port = {{ spire_server_bind_port }}
+    socket_path = "{{ spire_agent_socket_path }}"
+    insecure_bootstrap = true
+}
+
+plugins {
+    KeyManager "disk" {
+        plugin_data {
+            directory = "/var/lib/spire/agent"
+        }
+    }
+
+    NodeAttestor "join_token" {
+        plugin_data {}
+    }
+
+    WorkloadAttestor "unix" {
+        plugin_data {}
+    }
+}
