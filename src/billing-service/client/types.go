@@ -21,6 +21,11 @@ const problemTypeNoStripeCustomer = "urn:forge-metal:problem:billing:no-stripe-c
 
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
 
+const (
+	ReservationShapeTime  = "time"
+	ReservationShapeCount = "count"
+)
+
 type Reservation struct {
 	WindowId         string
 	JobId            int64
@@ -32,11 +37,11 @@ type Reservation struct {
 	SourceRef        string
 	WindowSeq        uint32
 	ReservationShape string
-	WindowMillis     uint32
+	ReservedQuantity uint32
 	PricingPhase     string
 	Allocation       map[string]float64
 	SKURates         map[string]int64
-	CostPerMillis    int64
+	CostPerUnit      int64
 	WindowStart      time.Time
 	ActivatedAt      *time.Time
 	ExpiresAt        time.Time

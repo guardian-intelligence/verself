@@ -858,6 +858,59 @@
         or ((seed_system_billing_result_raw.stdout | from_json).sku_grants_deposited | int) > 0
       tags: [billing]
 
+    - name: Run free secrets billing catalog seed for platform and Acme
+      ansible.builtin.command:
+        argv:
+          - "{{ seed_system_helper_remote_path }}"
+          - --pg-dsn-file
+          - /etc/credstore/billing/pg-dsn
+          - --org-id
+          - "{{ item.org_id }}"
+          - --org-name
+          - "{{ item.org_name }}"
+          - --org-trust-tier
+          - "{{ item.org_trust_tier }}"
+          - --product-id
+          - secrets
+          - --product-display-name
+          - Secrets
+          - --meter-unit
+          - operations
+          - --billing-model
+          - metered
+          - --plan-id
+          - secrets-default
+          - --plan-display-name
+          - Secrets Free
+          - --free-tier-buckets-json
+          - "{}"
+          - --plan-entitlements-json
+          - "{}"
+          - --target-prepaid-units
+          - "0"
+          - --prepaid-source
+          - purchase
+          - --expires-after
+          - "{{ seed_system_expires_after }}"
+          - --sku-scoped-grants-json
+          - "[]"
+      loop:
+        - key: platform
+          org_id: "{{ seed_system_orgs.platform.organization_id }}"
+          org_name: "{{ seed_system_orgs.platform.name }}"
+          org_trust_tier: platform
+        - key: acme
+          org_id: "{{ seed_system_orgs.acme.organization_id }}"
+          org_name: "{{ seed_system_orgs.acme.name }}"
+          org_trust_tier: established
+      loop_control:
+        label: "{{ item.key }}"
+      register: seed_system_secrets_billing_result_raw
+      changed_when: >-
+        ((seed_system_secrets_billing_result_raw.stdout | from_json).deposited_units | int) > 0
+        or ((seed_system_secrets_billing_result_raw.stdout | from_json).sku_grants_deposited | int) > 0
+      tags: [billing]
+
     - name: Parse billing seed results
       ansible.builtin.set_fact:
         seed_system_billing_results: >-

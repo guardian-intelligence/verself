@@ -680,7 +680,7 @@ func (s *Service) reserveBilling(ctx context.Context, item executionWorkItem, bi
 		billingSKUMemoryGiBMs:               float64(res.MemoryMiB) / billingMiBPerGiB,
 		billingSKUExecutionRootStorageGiBMs: float64(res.RootDiskGiB),
 	}
-	return s.Billing.Reserve(ctx, billingJobID, item.OrgID, item.ProductID, item.ActorID, 1, item.SourceKind, item.ExecutionID.String(), 1, 0, allocation)
+	return s.Billing.Reserve(ctx, billingJobID, item.OrgID, item.ProductID, item.ActorID, 1, item.SourceKind, item.ExecutionID.String(), 1, billingclient.ReservationShapeTime, 0, allocation)
 }
 
 func (s *Service) insertBillingWindow(ctx context.Context, attemptID uuid.UUID, reservation billingclient.Reservation) error {
@@ -689,7 +689,7 @@ func (s *Service) insertBillingWindow(ctx context.Context, attemptID uuid.UUID, 
 		attempt_id, window_seq, billing_window_id, reservation_shape, reserved_quantity, actual_quantity,
 		pricing_phase, state, window_start, created_at, reservation_jsonb
 	) VALUES ($1,$2,$3,$4,$5,0,$6,'reserved',$7,$8,$9)`,
-		attemptID, reservation.WindowSeq, reservation.WindowId, reservation.ReservationShape, reservation.WindowMillis, reservation.PricingPhase, reservation.WindowStart, time.Now().UTC(), payload)
+		attemptID, reservation.WindowSeq, reservation.WindowId, reservation.ReservationShape, reservation.ReservedQuantity, reservation.PricingPhase, reservation.WindowStart, time.Now().UTC(), payload)
 	if err != nil {
 		return fmt.Errorf("insert billing window: %w", err)
 	}

@@ -10,19 +10,27 @@ func TestReserveWindowQuantity(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name string
-		req  ReserveRequest
-		want uint32
+		name      string
+		shape     string
+		requested uint32
+		want      uint32
 	}{
 		{
-			name: "zero uses default five minute reservation",
-			req:  ReserveRequest{},
-			want: defaultWindowMillis,
+			name:  "zero time uses default five minute reservation",
+			shape: ReservationShapeTime,
+			want:  defaultWindowMillis,
 		},
 		{
-			name: "custom window duration is honored",
-			req:  ReserveRequest{WindowMillis: 60_000},
-			want: 60_000,
+			name:      "custom time duration is honored",
+			shape:     ReservationShapeTime,
+			requested: 60_000,
+			want:      60_000,
+		},
+		{
+			name:      "count quantity is honored",
+			shape:     ReservationShapeCount,
+			requested: 1,
+			want:      1,
 		},
 	}
 
@@ -30,7 +38,11 @@ func TestReserveWindowQuantity(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := reserveWindowQuantity(tt.req); got != tt.want {
+			got, err := reserveWindowQuantity(tt.shape, tt.requested)
+			if err != nil {
+				t.Fatalf("reserveWindowQuantity() error = %v", err)
+			}
+			if got != tt.want {
 				t.Fatalf("reserveWindowQuantity() = %d, want %d", got, tt.want)
 			}
 		})
@@ -41,7 +53,7 @@ func TestReserveWindowTimingUsesChosenQuantity(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 4, 17, 10, 0, 0, 0, time.UTC)
-	expiresAt, renewBy := reserveWindowTiming(now, 60_000)
+	expiresAt, renewBy := reserveWindowTiming(ReservationShapeTime, now, 60_000)
 
 	if got := expiresAt.Sub(now); got != time.Minute {
 		t.Fatalf("expiresAt - now = %s, want 1m", got)
@@ -55,7 +67,7 @@ func TestReserveWindowTimingSupportsThirtySecondWindows(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 4, 17, 10, 0, 0, 0, time.UTC)
-	expiresAt, renewBy := reserveWindowTiming(now, 30_000)
+	expiresAt, renewBy := reserveWindowTiming(ReservationShapeTime, now, 30_000)
 
 	if got := expiresAt.Sub(now); got != 30*time.Second {
 		t.Fatalf("expiresAt - now = %s, want 30s", got)
@@ -65,17 +77,20 @@ func TestReserveWindowTimingSupportsThirtySecondWindows(t *testing.T) {
 	}
 }
 
-func TestValidateReserveWindowMillisRejectsSubThirtySecondCustomWindow(t *testing.T) {
+func TestReserveWindowQuantityRejectsInvalidQuantities(t *testing.T) {
 	t.Parallel()
 
-	if err := validateReserveWindowMillis(0); err != nil {
+	if _, err := reserveWindowQuantity(ReservationShapeTime, 0); err != nil {
 		t.Fatalf("zero default window returned error: %v", err)
 	}
-	if err := validateReserveWindowMillis(30_000); err != nil {
+	if _, err := reserveWindowQuantity(ReservationShapeTime, 30_000); err != nil {
 		t.Fatalf("30s custom window returned error: %v", err)
 	}
-	if err := validateReserveWindowMillis(29_999); err == nil {
+	if _, err := reserveWindowQuantity(ReservationShapeTime, 29_999); err == nil {
 		t.Fatalf("29.999s custom window returned nil error")
+	}
+	if _, err := reserveWindowQuantity(ReservationShapeCount, 0); err == nil {
+		t.Fatalf("zero count quantity returned nil error")
 	}
 }
 
@@ -94,28 +109,43 @@ func TestReserveSourceFingerprintUsesResolvedQuantityAndAllocation(t *testing.T)
 	t.Parallel()
 
 	base := ReserveRequest{
-		OrgID:           42,
-		ProductID:       "sandbox",
-		ActorID:         "actor",
-		ConcurrentCount: 1,
-		SourceType:      "volume_meter_tick",
-		SourceRef:       "tick-1",
-		WindowSeq:       1,
-		Allocation:      map[string]float64{"durable_volume_live_storage_gib_ms": 0.000001},
-		BillingJobID:    100,
+		OrgID:            42,
+		ProductID:        "sandbox",
+		ActorID:          "actor",
+		ConcurrentCount:  1,
+		SourceType:       "volume_meter_tick",
+		SourceRef:        "tick-1",
+		WindowSeq:        1,
+		ReservationShape: ReservationShapeTime,
+		Allocation:       map[string]float64{"durable_volume_live_storage_gib_ms": 0.000001},
+		BillingJobID:     100,
 	}
 
-	implicitDefault := reserveSourceFingerprint(base, reserveWindowQuantity(base))
+	quantity, err := reserveWindowQuantity(base.ReservationShape, base.ReservedQuantity)
+	if err != nil {
+		t.Fatalf("reserveWindowQuantity() error = %v", err)
+	}
+	implicitDefault := reserveSourceFingerprint(base, base.ReservationShape, quantity)
 	explicitDefault := base
-	explicitDefault.WindowMillis = defaultWindowMillis
-	if got := reserveSourceFingerprint(explicitDefault, reserveWindowQuantity(explicitDefault)); got != implicitDefault {
+	explicitDefault.ReservedQuantity = defaultWindowMillis
+	explicitQuantity, err := reserveWindowQuantity(explicitDefault.ReservationShape, explicitDefault.ReservedQuantity)
+	if err != nil {
+		t.Fatalf("reserveWindowQuantity() explicit error = %v", err)
+	}
+	if got := reserveSourceFingerprint(explicitDefault, explicitDefault.ReservationShape, explicitQuantity); got != implicitDefault {
 		t.Fatalf("fingerprint changed between implicit and explicit default quantity: %s != %s", got, implicitDefault)
 	}
 
 	changed := base
 	changed.Allocation = map[string]float64{"durable_volume_live_storage_gib_ms": 0.000002}
-	if got := reserveSourceFingerprint(changed, reserveWindowQuantity(changed)); got == implicitDefault {
+	if got := reserveSourceFingerprint(changed, changed.ReservationShape, quantity); got == implicitDefault {
 		t.Fatalf("fingerprint did not change after allocation changed: %s", got)
+	}
+
+	changedShape := base
+	changedShape.ReservationShape = ReservationShapeCount
+	if got := reserveSourceFingerprint(changedShape, ReservationShapeCount, 1); got == implicitDefault {
+		t.Fatalf("fingerprint did not change after shape changed: %s", got)
 	}
 }
 
@@ -143,7 +173,7 @@ func TestReservationExposesChosenQuantity(t *testing.T) {
 	t.Parallel()
 
 	windowStart := time.Date(2026, 4, 17, 10, 0, 0, 0, time.UTC)
-	expiresAt, renewBy := reserveWindowTiming(windowStart, 60_000)
+	expiresAt, renewBy := reserveWindowTiming(ReservationShapeTime, windowStart, 60_000)
 	reservation := persistedWindow{
 		WindowID:            "win_test",
 		OrgID:               42,
