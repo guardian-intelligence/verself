@@ -16,10 +16,12 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"github.com/stripe/stripe-go/v85"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	auth "github.com/forge-metal/auth-middleware"
+	workloadauth "github.com/forge-metal/auth-middleware/workload"
 	"github.com/forge-metal/billing-service/internal/billing"
 	"github.com/forge-metal/billing-service/internal/billing/ledger"
 	"github.com/forge-metal/billing-service/internal/billingapi"
@@ -36,19 +38,19 @@ func main() {
 }
 
 func run() error {
-	pgDSN := requireCredential("pg-dsn")
+	pgDSN := requireEnv("BILLING_PG_DSN")
 	stripeKey := credentialOr("stripe-secret-key", "")
 	webhookSecret := credentialOr("stripe-webhook-secret", "")
 	chPassword := credentialOr("ch-password", "")
 
 	listenAddr := envOr("BILLING_LISTEN_ADDR", "127.0.0.1:4242")
+	internalListenAddr := envOr("BILLING_INTERNAL_LISTEN_ADDR", "127.0.0.1:4255")
 	chAddress := envOr("BILLING_CH_ADDRESS", "127.0.0.1:9000")
 	tbAddress := envOr("BILLING_TB_ADDRESS", "127.0.0.1:3320")
 	tbClusterID := envUint64Or("BILLING_TB_CLUSTER_ID", 0)
 	authIssuerURL := requireEnv("BILLING_AUTH_ISSUER_URL")
 	authAudience := requireEnv("BILLING_AUTH_AUDIENCE")
 	authJWKSURL := envOr("BILLING_AUTH_JWKS_URL", "")
-	internalRole := envOr("BILLING_INTERNAL_ROLE", "billing_internal")
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -125,8 +127,26 @@ func run() error {
 	defer bgCancel()
 	go runBackgroundLoop(bgCtx, logger, billingRuntime, cfg)
 
+	spiffeSource, err := workloadauth.Source(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
+	if err != nil {
+		return fmt.Errorf("billing spiffe workload source: %w", err)
+	}
+	defer func() {
+		if err := spiffeSource.Close(); err != nil {
+			logger.ErrorContext(context.Background(), "billing-service spiffe source close", "error", err)
+		}
+	}()
+	internalPeerIDs, err := parseSPIFFEIDsFromEnv("BILLING_INTERNAL_CLIENT_SPIFFE_IDS")
+	if err != nil {
+		return err
+	}
+	internalTLSConfig, err := workloadauth.MTLSServerConfigForAny(spiffeSource, internalPeerIDs...)
+	if err != nil {
+		return fmt.Errorf("billing spiffe internal tls: %w", err)
+	}
+
 	privateMux := http.NewServeMux()
-	billingapi.NewAPI(privateMux, billingapi.Config{Version: serviceVersion, ListenAddr: listenAddr, Client: billingClient, Logger: logger, InternalRole: internalRole, StripeWebhookSecret: webhookSecret})
+	billingapi.NewAPI(privateMux, billingapi.Config{Version: serviceVersion, ListenAddr: listenAddr, Client: billingClient, Logger: logger, InternalPeers: internalPeerIDs, StripeWebhookSecret: webhookSecret})
 	rootMux := http.NewServeMux()
 	rootMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
 	rootMux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
@@ -134,6 +154,16 @@ func run() error {
 	rootMux.Handle("/", billingHandler(privateMux, protected))
 
 	srv := &http.Server{Addr: listenAddr, Handler: otelhttp.NewHandler(rootMux, "billing-service"), ReadHeaderTimeout: 10 * time.Second}
+	internalSrv := &http.Server{
+		Addr:              internalListenAddr,
+		Handler:           otelhttp.NewHandler(workloadauth.ServerPeerAllowlistMiddleware(internalPeerIDs, privateMux), "billing-service-internal"),
+		TLSConfig:         internalTLSConfig,
+		ReadHeaderTimeout: 2 * time.Second,
+		ReadTimeout:       5 * time.Second,
+		WriteTimeout:      5 * time.Second,
+		IdleTimeout:       30 * time.Second,
+		MaxHeaderBytes:    16 << 10,
+	}
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -141,10 +171,36 @@ func run() error {
 		if err := srv.Shutdown(shutdownCtx); err != nil {
 			logger.ErrorContext(context.Background(), "billing shutdown", "error", err)
 		}
+		if err := internalSrv.Shutdown(shutdownCtx); err != nil {
+			logger.ErrorContext(context.Background(), "billing internal shutdown", "error", err)
+		}
 	}()
 	logger.Info("billing-service listening", "addr", listenAddr)
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("listen billing-service: %w", err)
+	logger.Info("billing-service internal listening", "addr", internalListenAddr)
+	errCh := make(chan error, 2)
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- fmt.Errorf("listen billing-service: %w", err)
+			return
+		}
+		errCh <- nil
+	}()
+	go func() {
+		if err := internalSrv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- fmt.Errorf("listen billing-service internal: %w", err)
+			return
+		}
+		errCh <- nil
+	}()
+	var firstErr error
+	for range 2 {
+		if err := <-errCh; err != nil && firstErr == nil {
+			firstErr = err
+			stop()
+		}
+	}
+	if firstErr != nil {
+		return firstErr
 	}
 	return nil
 }
@@ -235,6 +291,23 @@ func envOr(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func parseSPIFFEIDsFromEnv(name string) ([]spiffeid.ID, error) {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return nil, fmt.Errorf("required env %s is empty", name)
+	}
+	parts := strings.Split(raw, ",")
+	ids := make([]spiffeid.ID, 0, len(parts))
+	for _, part := range parts {
+		id, err := workloadauth.ParseID(part)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
 }
 
 func envInt(key string, fallback int) int {

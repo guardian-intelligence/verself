@@ -2,7 +2,6 @@ package jobs
 
 import (
 	"context"
-	"crypto/ed25519"
 	"database/sql"
 	"encoding/binary"
 	"encoding/json"
@@ -187,10 +186,6 @@ type Service struct {
 	WorkloadTimeout  time.Duration
 	CheckoutCacheDir string
 	Secrets          SecretResolver
-
-	SecretGrantPrivateKey       ed25519.PrivateKey
-	SecretGrantIssuerSPIFFEID   string
-	SecretGrantAudienceSPIFFEID string
 }
 
 type executionWorkItem struct {

@@ -11,31 +11,23 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
-
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 type auditSinkConfig struct {
 	URL    string
-	Token  string
 	Client *http.Client
 }
 
 var configuredAuditSink atomic.Pointer[auditSinkConfig]
 
-func ConfigureAuditSink(url, token string) {
+func ConfigureAuditSink(url string, client *http.Client) {
 	url = strings.TrimSpace(url)
-	token = strings.TrimSpace(token)
-	if url == "" || token == "" {
+	if url == "" || client == nil {
 		return
 	}
 	configuredAuditSink.Store(&auditSinkConfig{
-		URL:   url,
-		Token: token,
-		Client: &http.Client{
-			Transport: otelhttp.NewTransport(http.DefaultTransport),
-			Timeout:   time.Second,
-		},
+		URL:    url,
+		Client: client,
 	})
 }
 
@@ -116,7 +108,6 @@ func sendGovernanceAudit(ctx context.Context, record governanceAuditRecord) {
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+sink.Token)
 	resp, err := sink.Client.Do(req)
 	if err != nil {
 		slog.Default().ErrorContext(ctx, "secrets governance audit send failed", "error", err)
