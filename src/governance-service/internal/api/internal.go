@@ -1,21 +1,21 @@
 package api
 
 import (
-	"crypto/subtle"
 	"encoding/json"
 	"net/http"
-	"strings"
 
+	workloadauth "github.com/forge-metal/auth-middleware/workload"
 	"github.com/forge-metal/governance-service/internal/governance"
 )
 
-func RegisterInternalRoutes(mux *http.ServeMux, svc *governance.Service, token string) {
+func RegisterInternalRoutes(mux *http.ServeMux, svc *governance.Service) {
 	mux.HandleFunc("/internal/v1/audit/events", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		if !validInternalBearer(token, r.Header.Get("Authorization")) {
+		peerID, ok := workloadauth.PeerIDFromContext(r.Context())
+		if !ok {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -26,6 +26,15 @@ func RegisterInternalRoutes(mux *http.ServeMux, svc *governance.Service, token s
 		if err := decoder.Decode(&record); err != nil {
 			http.Error(w, "invalid audit event", http.StatusBadRequest)
 			return
+		}
+		if record.ActorSPIFFEID == "" {
+			record.ActorSPIFFEID = peerID.String()
+		}
+		if record.CredentialID == "" {
+			record.CredentialID = peerID.String()
+		}
+		if record.AuthMethod == "" {
+			record.AuthMethod = "spiffe"
 		}
 		event, err := svc.RecordAuditEvent(r.Context(), record)
 		if err != nil {
@@ -40,17 +49,4 @@ func RegisterInternalRoutes(mux *http.ServeMux, svc *governance.Service, token s
 			"row_hmac": event.RowHMAC,
 		})
 	})
-}
-
-func validInternalBearer(expected, header string) bool {
-	expected = strings.TrimSpace(expected)
-	header = strings.TrimSpace(header)
-	if expected == "" || !strings.HasPrefix(header, "Bearer ") {
-		return false
-	}
-	got := strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
-	if len(got) != len(expected) {
-		return false
-	}
-	return subtle.ConstantTimeCompare([]byte(got), []byte(expected)) == 1
 }

@@ -29,6 +29,7 @@ var version = "dev"
 
 type config struct {
 	ListenAddr            string
+	PGDSN                 string
 	StalwartBaseURL       string
 	PublicBaseURL         string
 	MailboxUser           string
@@ -95,10 +96,6 @@ func run() error {
 		return fmt.Errorf("create session proxy: %w", err)
 	}
 
-	pgDSN, err := loadCredential("pg-dsn")
-	if err != nil {
-		return err
-	}
 	adminPassword, err := loadCredential("stalwart-admin-password")
 	if err != nil {
 		return err
@@ -124,7 +121,7 @@ func run() error {
 		return err
 	}
 
-	pgConfig, err := pgxpool.ParseConfig(pgDSN)
+	pgConfig, err := pgxpool.ParseConfig(cfg.PGDSN)
 	if err != nil {
 		return fmt.Errorf("parse pg-dsn: %w", err)
 	}
@@ -254,6 +251,7 @@ func loadConfig() (config, error) {
 
 	return config{
 		ListenAddr:            envOr("MAILBOX_SERVICE_LISTEN_ADDR", "127.0.0.1:4246"),
+		PGDSN:                 envOr("MAILBOX_SERVICE_PG_DSN", "postgres://mailbox_service@/mailbox_service?host=/var/run/postgresql&sslmode=disable"),
 		StalwartBaseURL:       envOr("MAILBOX_SERVICE_STALWART_BASE_URL", "http://127.0.0.1:8090"),
 		PublicBaseURL:         publicBaseURL,
 		MailboxUser:           envOr("MAILBOX_SERVICE_STALWART_MAILBOX", "ceo"),

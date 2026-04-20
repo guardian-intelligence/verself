@@ -46,20 +46,20 @@ type Service struct {
 }
 
 type Principal struct {
-	OrgID                  string
-	Subject                string
-	Email                  string
-	Type                   string
-	CredentialID           string
-	CredentialName         string
-	CredentialFingerprint  string
-	ActorOwnerID           string
-	ActorOwnerDisplay      string
-	AuthMethod             string
-	OpenBaoRole            string
-	UseServiceAccountToken bool
-	JWTID                  string
-	TokenExpiresAt         time.Time
+	OrgID                 string
+	Subject               string
+	Email                 string
+	Type                  string
+	CredentialID          string
+	CredentialName        string
+	CredentialFingerprint string
+	ActorOwnerID          string
+	ActorOwnerDisplay     string
+	AuthMethod            string
+	OpenBaoRole           string
+	UseWorkloadSVID       bool
+	JWTID                 string
+	TokenExpiresAt        time.Time
 }
 
 type Scope struct {

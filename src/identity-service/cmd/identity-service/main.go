@@ -16,6 +16,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	auth "github.com/forge-metal/auth-middleware"
+	workloadauth "github.com/forge-metal/auth-middleware/workload"
 	"github.com/forge-metal/identity-service/internal/api"
 	"github.com/forge-metal/identity-service/internal/identity"
 	"github.com/forge-metal/identity-service/internal/zitadel"
@@ -50,13 +51,16 @@ func run() error {
 		}
 	}()
 
-	pgDSN := requireCredential("pg-dsn")
+	pgDSN := requireEnv("IDENTITY_PG_DSN")
 	zitadelAdminToken := requireCredential("zitadel-admin-token")
 	zitadelActionSigningKey := requireCredential("zitadel-action-signing-key")
-	governanceAuditToken := credentialOr("governance-internal-audit-token", "")
 
 	listenAddr := envOr("IDENTITY_LISTEN_ADDR", "127.0.0.1:4248")
 	governanceAuditURL := envOr("IDENTITY_GOVERNANCE_AUDIT_URL", "")
+	governanceSPIFFEID, err := workloadauth.ParseID(requireEnv("IDENTITY_GOVERNANCE_SPIFFE_ID"))
+	if err != nil {
+		return err
+	}
 	authIssuerURL := requireEnv("IDENTITY_AUTH_ISSUER_URL")
 	authAudience := requireEnv("IDENTITY_AUTH_AUDIENCE")
 	authJWKSURL := envOr("IDENTITY_AUTH_JWKS_URL", "")
@@ -94,7 +98,20 @@ func run() error {
 		Directory: zitadelClient,
 		ProjectID: projectID,
 	}
-	api.ConfigureAuditSink(governanceAuditURL, governanceAuditToken)
+	spiffeSource, err := workloadauth.Source(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
+	if err != nil {
+		return fmt.Errorf("identity spiffe workload source: %w", err)
+	}
+	defer func() {
+		if err := spiffeSource.Close(); err != nil {
+			logger.ErrorContext(context.Background(), "identity-service spiffe source close", "error", err)
+		}
+	}()
+	governanceAuditClient, err := workloadauth.MTLSClient(spiffeSource, governanceSPIFFEID, http.DefaultTransport)
+	if err != nil {
+		return fmt.Errorf("identity governance spiffe client: %w", err)
+	}
+	api.ConfigureAuditSink(governanceAuditURL, governanceAuditClient)
 
 	rootMux := http.NewServeMux()
 	rootMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {

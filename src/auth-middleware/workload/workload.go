@@ -12,6 +12,7 @@ import (
 
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"
+	"github.com/spiffe/go-spiffe/v2/svid/jwtsvid"
 	"github.com/spiffe/go-spiffe/v2/svid/x509svid"
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
 	"go.opentelemetry.io/otel"
@@ -59,6 +60,62 @@ func Source(ctx context.Context, socket string) (*workloadapi.X509Source, error)
 	return source, nil
 }
 
+// JWTSource returns a Workload API JWT source for repo-owned workload auth
+// against relying parties such as OpenBao.
+func JWTSource(ctx context.Context, socket string) (*workloadapi.JWTSource, error) {
+	socket = strings.TrimSpace(socket)
+	if socket == "" {
+		socket = strings.TrimSpace(os.Getenv(EndpointSocketEnv))
+	}
+	ctx, span := tracer.Start(ctx, "auth.spiffe.jwt_source.init")
+	defer span.End()
+	span.SetAttributes(attribute.String("spiffe.endpoint_socket", socket))
+	if socket == "" {
+		err := fmt.Errorf("%s is required", EndpointSocketEnv)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
+	}
+	initCtx, cancel := context.WithTimeout(ctx, sourceInitTimeout)
+	defer cancel()
+	source, err := workloadapi.NewJWTSource(initCtx, workloadapi.WithClientOptions(workloadapi.WithAddr(socket)))
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
+	}
+	return source, nil
+}
+
+func FetchJWTSVID(ctx context.Context, source *workloadapi.JWTSource, audience string, subject spiffeid.ID) (string, time.Time, spiffeid.ID, error) {
+	if source == nil {
+		return "", time.Time{}, spiffeid.ID{}, errors.New("spiffe jwt source is required")
+	}
+	audience = strings.TrimSpace(audience)
+	if audience == "" {
+		return "", time.Time{}, spiffeid.ID{}, errors.New("jwt-svid audience is required")
+	}
+	ctx, span := tracer.Start(ctx, "auth.spiffe.jwt_svid.fetch")
+	defer span.End()
+	span.SetAttributes(attribute.String("jwt.audience", audience))
+	params := jwtsvid.Params{Audience: audience}
+	if !subject.IsZero() {
+		params.Subject = subject
+		span.SetAttributes(attribute.String("spiffe.subject", subject.String()))
+	}
+	svid, err := source.FetchJWTSVID(ctx, params)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return "", time.Time{}, spiffeid.ID{}, err
+	}
+	span.SetAttributes(
+		attribute.String("spiffe.id", svid.ID.String()),
+		attribute.Int64("jwt.expires_in_ms", time.Until(svid.Expiry).Milliseconds()),
+	)
+	return svid.Marshal(), svid.Expiry, svid.ID, nil
+}
+
 func ParseID(raw string) (spiffeid.ID, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -104,6 +161,17 @@ func MTLSServerConfig(source *workloadapi.X509Source, expectedClientID spiffeid.
 		return nil, errors.New("expected client spiffe id is required")
 	}
 	return tlsconfig.MTLSServerConfig(source, source, tlsconfig.AuthorizeID(expectedClientID)), nil
+}
+
+func MTLSServerConfigForAny(source *workloadapi.X509Source, expectedClientIDs ...spiffeid.ID) (*tls.Config, error) {
+	if source == nil {
+		return nil, errors.New("spiffe x509 source is required")
+	}
+	ids, err := nonZeroIDs(expectedClientIDs)
+	if err != nil {
+		return nil, err
+	}
+	return tlsconfig.MTLSServerConfig(source, source, tlsconfig.AuthorizeOneOf(ids...)), nil
 }
 
 func PeerIDFromRequest(r *http.Request) (spiffeid.ID, bool) {
@@ -155,6 +223,45 @@ func ServerPeerMiddleware(expectedClientID spiffeid.ID, next http.Handler) http.
 	})
 }
 
+func ServerPeerAllowlistMiddleware(expectedClientIDs []spiffeid.ID, next http.Handler) http.Handler {
+	ids, err := nonZeroIDs(expectedClientIDs)
+	expected := make(map[spiffeid.ID]struct{}, len(ids))
+	expectedStrings := make([]string, 0, len(ids))
+	for _, id := range ids {
+		expected[id] = struct{}{}
+		expectedStrings = append(expectedStrings, id.String())
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, span := tracer.Start(r.Context(), "auth.spiffe.mtls.server")
+		defer span.End()
+		span.SetAttributes(attribute.StringSlice("spiffe.expected_client_ids", expectedStrings))
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		peerID, ok := PeerIDFromRequest(r)
+		if !ok {
+			err := errors.New("missing SPIFFE peer certificate")
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		span.SetAttributes(attribute.String("spiffe.peer_id", peerID.String()))
+		if _, ok := expected[peerID]; !ok {
+			err := fmt.Errorf("unexpected SPIFFE peer %s", peerID.String())
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		r = r.WithContext(ContextWithPeerID(ctx, peerID))
+		next.ServeHTTP(w, r)
+	})
+}
+
 type clientSpanTransport struct {
 	next             http.RoundTripper
 	expectedServerID string
@@ -191,4 +298,18 @@ func cloneTransport(base http.RoundTripper) (*http.Transport, error) {
 		return transport.Clone(), nil
 	}
 	return nil, fmt.Errorf("spiffe mTLS requires *http.Transport, got %T", base)
+}
+
+func nonZeroIDs(ids []spiffeid.ID) ([]spiffeid.ID, error) {
+	if len(ids) == 0 {
+		return nil, errors.New("at least one expected spiffe id is required")
+	}
+	out := make([]spiffeid.ID, 0, len(ids))
+	for _, id := range ids {
+		if id.IsZero() {
+			return nil, errors.New("expected spiffe id is required")
+		}
+		out = append(out, id)
+	}
+	return out, nil
 }

@@ -26,7 +26,6 @@ import (
 
 	"github.com/forge-metal/apiwire"
 	auth "github.com/forge-metal/auth-middleware"
-	"github.com/forge-metal/auth-middleware/delegation"
 	workloadauth "github.com/forge-metal/auth-middleware/workload"
 	billingclient "github.com/forge-metal/billing-service/client"
 	fmotel "github.com/forge-metal/otel"
@@ -35,7 +34,6 @@ import (
 	sandboxapi "github.com/forge-metal/sandbox-rental-service/internal/api"
 	"github.com/forge-metal/sandbox-rental-service/internal/jobs"
 	"github.com/forge-metal/sandbox-rental-service/internal/scheduler"
-	"github.com/forge-metal/sandbox-rental-service/internal/serviceauth"
 )
 
 const (
@@ -64,12 +62,10 @@ func run() error {
 	defer otelShutdown(context.Background())
 	slog.SetDefault(logger)
 
-	// Secrets via systemd LoadCredential=.
-	pgDSN := requireCredential("pg-dsn")
+	// Secret material still arrives through systemd LoadCredential=; PostgreSQL
+	// runtime auth is local peer over the Unix socket.
+	pgDSN := requireEnv("SANDBOX_PG_DSN")
 	chPassword := credentialOr("ch-password", "")
-	billingClientSecret := requireCredential("billing-client-secret")
-	secretInjectionGrantPrivateKeyPEM := requireCredential("secret-injection-grant-ed25519.pem")
-	governanceAuditToken := credentialOr("governance-internal-audit-token", "")
 	githubAppPrivateKey := credentialOr("github-app-private-key", "")
 	githubAppWebhookSecret := credentialOr("github-app-webhook-secret", "")
 	githubAppClientSecret := credentialOr("github-app-client-secret", "")
@@ -80,9 +76,6 @@ func run() error {
 	billingURL := envOr("SANDBOX_BILLING_URL", "http://127.0.0.1:4242")
 	governanceAuditURL := envOr("SANDBOX_GOVERNANCE_AUDIT_URL", "")
 	secretsURL := envOr("SANDBOX_SECRETS_URL", "https://127.0.0.1:4253")
-	billingClientID := requireEnv("SANDBOX_BILLING_CLIENT_ID")
-	billingTokenURL := requireEnv("SANDBOX_BILLING_TOKEN_URL")
-	billingAuthAudience := requireEnv("SANDBOX_BILLING_AUTH_AUDIENCE")
 	billingReturnOrigins, err := sandboxapi.ParseBillingReturnOrigins(requireEnv("SANDBOX_BILLING_RETURN_ORIGINS"))
 	if err != nil {
 		return fmt.Errorf("SANDBOX_BILLING_RETURN_ORIGINS: %w", err)
@@ -94,17 +87,17 @@ func run() error {
 	authIssuerURL := requireEnv("SANDBOX_AUTH_ISSUER_URL")
 	authAudience := requireEnv("SANDBOX_AUTH_AUDIENCE")
 	authJWKSURL := envOr("SANDBOX_AUTH_JWKS_URL", "")
-	sandboxSPIFFEID, err := workloadauth.ParseID(requireEnv("SANDBOX_SPIFFE_ID"))
-	if err != nil {
-		return err
-	}
 	secretsSPIFFEID, err := workloadauth.ParseID(requireEnv("SANDBOX_SECRETS_SPIFFE_ID"))
 	if err != nil {
 		return err
 	}
-	secretInjectionGrantPrivateKey, err := delegation.ParseEd25519PrivateKeyPEM([]byte(secretInjectionGrantPrivateKeyPEM))
+	billingSPIFFEID, err := workloadauth.ParseID(requireEnv("SANDBOX_BILLING_SPIFFE_ID"))
 	if err != nil {
-		return fmt.Errorf("secret injection grant private key: %w", err)
+		return err
+	}
+	governanceSPIFFEID, err := workloadauth.ParseID(requireEnv("SANDBOX_GOVERNANCE_SPIFFE_ID"))
+	if err != nil {
+		return err
 	}
 	vmOrchestratorSocket := envOr("SANDBOX_VM_ORCHESTRATOR_SOCKET", vmorchestrator.DefaultSocketPath)
 	githubAppEnabled := envBool("SANDBOX_GITHUB_APP_ENABLED", false)
@@ -201,24 +194,6 @@ func run() error {
 
 	// --- billing client ---
 
-	billingAuthEditor, err := serviceauth.NewBearerTokenRequestEditor(serviceauth.ClientCredentialsConfig{
-		IssuerURL:    authIssuerURL,
-		TokenURL:     billingTokenURL,
-		ClientID:     billingClientID,
-		ClientSecret: billingClientSecret,
-		Audience:     billingAuthAudience,
-		Transport:    otelhttp.NewTransport(http.DefaultTransport),
-	})
-	if err != nil {
-		return fmt.Errorf("create billing auth editor: %w", err)
-	}
-	billingClient, err := billingclient.New(billingURL, billingclient.WithHTTPClient(&http.Client{
-		Transport: otelhttp.NewTransport(http.DefaultTransport),
-		Timeout:   10 * time.Second,
-	}), billingclient.WithRequestEditorFn(billingAuthEditor))
-	if err != nil {
-		return fmt.Errorf("create billing client: %w", err)
-	}
 	spiffeSource, err := workloadauth.Source(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
 	if err != nil {
 		return fmt.Errorf("spiffe workload source: %w", err)
@@ -228,9 +203,21 @@ func run() error {
 			logger.ErrorContext(context.Background(), "sandbox-rental: spiffe source close", "error", err)
 		}
 	}()
+	billingHTTPClient, err := workloadauth.MTLSClient(spiffeSource, billingSPIFFEID, http.DefaultTransport)
+	if err != nil {
+		return fmt.Errorf("billing spiffe client: %w", err)
+	}
+	billingClient, err := billingclient.New(billingURL, billingclient.WithHTTPClient(billingHTTPClient))
+	if err != nil {
+		return fmt.Errorf("create billing client: %w", err)
+	}
 	secretsHTTPClient, err := workloadauth.MTLSClient(spiffeSource, secretsSPIFFEID, http.DefaultTransport)
 	if err != nil {
 		return fmt.Errorf("secrets spiffe client: %w", err)
+	}
+	governanceAuditClient, err := workloadauth.MTLSClient(spiffeSource, governanceSPIFFEID, http.DefaultTransport)
+	if err != nil {
+		return fmt.Errorf("governance spiffe client: %w", err)
 	}
 
 	// --- job service ---
@@ -247,10 +234,6 @@ func run() error {
 		WorkloadTimeout:  time.Duration(envInt("SANDBOX_WORKLOAD_TIMEOUT_SECONDS", 7200)) * time.Second,
 		CheckoutCacheDir: checkoutCacheDir,
 		Secrets:          jobs.NewSecretsHTTPResolver(secretsURL, secretsHTTPClient),
-
-		SecretGrantPrivateKey:       secretInjectionGrantPrivateKey,
-		SecretGrantIssuerSPIFFEID:   sandboxSPIFFEID.String(),
-		SecretGrantAudienceSPIFFEID: secretsSPIFFEID.String(),
 	}
 	githubRunner, err := jobs.NewGitHubRunner(jobService, jobs.GitHubRunnerConfig{
 		AppID:         githubAppID,
@@ -270,7 +253,7 @@ func run() error {
 		return fmt.Errorf("create github runner adapter: %w", err)
 	}
 	jobService.GitHubRunner = githubRunner
-	sandboxapi.ConfigureAuditSink(governanceAuditURL, governanceAuditToken)
+	sandboxapi.ConfigureAuditSink(governanceAuditURL, governanceAuditClient)
 
 	schedulerRuntime, err := scheduler.NewRuntime(pgxPool, scheduler.Config{
 		Logger:              logger,

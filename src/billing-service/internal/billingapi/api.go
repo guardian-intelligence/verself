@@ -12,12 +12,12 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
 	"github.com/forge-metal/apiwire"
-	auth "github.com/forge-metal/auth-middleware"
+	workloadauth "github.com/forge-metal/auth-middleware/workload"
 	"github.com/forge-metal/billing-service/internal/billing"
+	"github.com/spiffe/go-spiffe/v2/spiffeid"
 )
 
 const (
-	defaultInternalRole         = "billing_internal"
 	problemTypeNoStripeCustomer = "urn:forge-metal:problem:billing:no-stripe-customer"
 )
 
@@ -26,14 +26,14 @@ type Config struct {
 	ListenAddr          string
 	Client              *billing.Client
 	Logger              *slog.Logger
-	InternalRole        string
+	InternalPeers       []spiffeid.ID
 	StripeWebhookSecret string
 }
 
 type Handler struct {
 	client              *billing.Client
 	logger              *slog.Logger
-	internalRole        string
+	internalPeers       []spiffeid.ID
 	stripeWebhookSecret string
 }
 
@@ -95,17 +95,17 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 }
 
 func OpenAPIYAML() ([]byte, error) {
-	api := NewAPI(http.NewServeMux(), Config{Version: "2.0.0", ListenAddr: "127.0.0.1:4242", InternalRole: defaultInternalRole})
+	api := NewAPI(http.NewServeMux(), Config{Version: "2.0.0", ListenAddr: "127.0.0.1:4242"})
 	return api.OpenAPI().YAML()
 }
 
 func OpenAPIDowngradeYAML() ([]byte, error) {
-	api := NewAPI(http.NewServeMux(), Config{Version: "2.0.0", ListenAddr: "127.0.0.1:4242", InternalRole: defaultInternalRole})
+	api := NewAPI(http.NewServeMux(), Config{Version: "2.0.0", ListenAddr: "127.0.0.1:4242"})
 	return api.OpenAPI().DowngradeYAML()
 }
 
 func RegisterRoutes(api huma.API, cfg Config) {
-	h := &Handler{client: cfg.Client, logger: cfg.Logger, internalRole: firstNonEmpty(cfg.InternalRole, defaultInternalRole), stripeWebhookSecret: cfg.StripeWebhookSecret}
+	h := &Handler{client: cfg.Client, logger: cfg.Logger, internalPeers: cfg.InternalPeers, stripeWebhookSecret: cfg.StripeWebhookSecret}
 	public := huma.NewGroup(api, "/internal/billing/v1")
 	huma.Get(public, "/orgs/{org_id}/entitlements", h.getEntitlements, op("get-entitlements", "Get org entitlements view"))
 	huma.Get(public, "/orgs/{org_id}/grants", h.listGrants, op("list-grants", "List org credit grants"))
@@ -120,7 +120,7 @@ func RegisterRoutes(api huma.API, cfg Config) {
 	huma.Post(public, "/portal", h.createPortal, op("create-portal", "Create Stripe portal session"))
 
 	service := huma.NewGroup(api, "/internal/billing/v1")
-	service.UseMiddleware(requireInternalRoleMiddleware(api, h.internalRole))
+	service.UseMiddleware(requireInternalPeerMiddleware(api, h.internalPeers))
 	huma.Post(service, "/reserve", h.reserveWindow, op("reserve-window", "Reserve billing window", http.StatusPaymentRequired, http.StatusForbidden))
 	huma.Post(service, "/activate", h.activateWindow, op("activate-window", "Activate billing window", http.StatusNotFound))
 	huma.Post(service, "/settle", h.settleWindow, op("settle-window", "Settle billing window", http.StatusNotFound))
@@ -476,28 +476,23 @@ func (h *Handler) internalError(ctx context.Context, operation string, err error
 	return huma.Error500InternalServerError(operation, err)
 }
 
-func requireInternalRoleMiddleware(api huma.API, role string) func(huma.Context, func(huma.Context)) {
+func requireInternalPeerMiddleware(api huma.API, peers []spiffeid.ID) func(huma.Context, func(huma.Context)) {
+	allowed := map[spiffeid.ID]struct{}{}
+	for _, peer := range peers {
+		if !peer.IsZero() {
+			allowed[peer] = struct{}{}
+		}
+	}
 	return func(ctx huma.Context, next func(huma.Context)) {
-		identity := auth.FromContext(ctx.Context())
-		if identity == nil {
-			huma.WriteErr(api, ctx, http.StatusUnauthorized, "missing identity")
+		peerID, ok := workloadauth.PeerIDFromContext(ctx.Context())
+		if !ok {
+			huma.WriteErr(api, ctx, http.StatusUnauthorized, "missing spiffe peer")
 			return
 		}
-		for _, candidate := range identity.Roles {
-			if candidate == role {
-				next(ctx)
-				return
-			}
+		if _, ok := allowed[peerID]; ok {
+			next(ctx)
+			return
 		}
-		huma.WriteErr(api, ctx, http.StatusForbidden, "missing internal billing role")
+		huma.WriteErr(api, ctx, http.StatusForbidden, "unexpected spiffe peer")
 	}
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
 }

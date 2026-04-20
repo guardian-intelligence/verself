@@ -14,13 +14,11 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	auth "github.com/forge-metal/auth-middleware"
-	"github.com/forge-metal/auth-middleware/delegation"
 	workloadauth "github.com/forge-metal/auth-middleware/workload"
 	billingclient "github.com/forge-metal/billing-service/client"
 	fmotel "github.com/forge-metal/otel"
 	secretsapi "github.com/forge-metal/secrets-service/internal/api"
 	"github.com/forge-metal/secrets-service/internal/secrets"
-	"github.com/forge-metal/secrets-service/internal/serviceauth"
 )
 
 const (
@@ -51,11 +49,6 @@ func run() error {
 		}
 	}()
 
-	governanceAuditToken := credentialOr("governance-internal-audit-token", "")
-	serviceAccountSecret := requireCredential("service-account-client-secret")
-	billingClientSecret := requireCredential("billing-client-secret")
-	sandboxInjectionGrantPublicKeyPEM := requireCredential("sandbox-injection-grant-ed25519.pub.pem")
-
 	listenAddr := envOr("SECRETS_LISTEN_ADDR", "127.0.0.1:4251")
 	internalListenAddr := envOr("SECRETS_INTERNAL_LISTEN_ADDR", "127.0.0.1:4253")
 	governanceAuditURL := envOr("SECRETS_GOVERNANCE_AUDIT_URL", "")
@@ -65,13 +58,7 @@ func run() error {
 	authJWKSURL := envOr("SECRETS_AUTH_JWKS_URL", "")
 	openBaoAddr := requireEnv("SECRETS_OPENBAO_ADDR")
 	openBaoCACert := credentialPath("openbao-ca-cert")
-	serviceAccountClientID := requireEnv("SECRETS_SERVICE_ACCOUNT_CLIENT_ID")
-	serviceAccountTokenURL := requireEnv("SECRETS_SERVICE_ACCOUNT_TOKEN_URL")
-	serviceAccountTokenHost := envOr("SECRETS_SERVICE_ACCOUNT_TOKEN_HOST", "")
 	billingURL := requireEnv("SECRETS_BILLING_URL")
-	billingClientID := requireEnv("SECRETS_BILLING_CLIENT_ID")
-	billingTokenURL := requireEnv("SECRETS_BILLING_TOKEN_URL")
-	billingAudience := requireEnv("SECRETS_BILLING_AUTH_AUDIENCE")
 	secretsSPIFFEID, err := workloadauth.ParseID(requireEnv("SECRETS_SPIFFE_ID"))
 	if err != nil {
 		return err
@@ -80,10 +67,32 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	sandboxInjectionGrantPublicKey, err := delegation.ParseEd25519PublicKeyPEM([]byte(sandboxInjectionGrantPublicKeyPEM))
+	billingSPIFFEID, err := workloadauth.ParseID(requireEnv("SECRETS_BILLING_SPIFFE_ID"))
 	if err != nil {
-		return fmt.Errorf("sandbox injection grant public key: %w", err)
+		return err
 	}
+	governanceSPIFFEID, err := workloadauth.ParseID(requireEnv("SECRETS_GOVERNANCE_SPIFFE_ID"))
+	if err != nil {
+		return err
+	}
+	spiffeSource, err := workloadauth.Source(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
+	if err != nil {
+		return fmt.Errorf("spiffe workload source: %w", err)
+	}
+	defer func() {
+		if err := spiffeSource.Close(); err != nil {
+			logger.ErrorContext(context.Background(), "secrets-service spiffe source close", "error", err)
+		}
+	}()
+	workloadJWTSource, err := workloadauth.JWTSource(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
+	if err != nil {
+		return fmt.Errorf("spiffe jwt source: %w", err)
+	}
+	defer func() {
+		if err := workloadJWTSource.Close(); err != nil {
+			logger.ErrorContext(context.Background(), "secrets-service spiffe jwt source close", "error", err)
+		}
+	}()
 
 	store, err := secrets.NewBaoStore(ctx, secrets.BaoStoreConfig{
 		Address:       openBaoAddr,
@@ -91,33 +100,23 @@ func run() error {
 		KVMountPrefix: envOr("SECRETS_OPENBAO_KV_PREFIX", "kv"),
 		TransitPrefix: envOr("SECRETS_OPENBAO_TRANSIT_PREFIX", "transit"),
 		JWTAuthPrefix: envOr("SECRETS_OPENBAO_JWT_PREFIX", "jwt"),
-		ServiceAccount: secrets.ServiceAccountConfig{
-			ClientID:  serviceAccountClientID,
-			Secret:    serviceAccountSecret,
-			TokenURL:  serviceAccountTokenURL,
-			TokenHost: serviceAccountTokenHost,
-			ProjectID: authProjectID,
+		WorkloadJWT: secrets.WorkloadJWTConfig{
+			Source:     workloadJWTSource,
+			Audience:   envOr("SECRETS_OPENBAO_WORKLOAD_AUDIENCE", "openbao"),
+			Subject:    secretsSPIFFEID,
+			AuthPrefix: envOr("SECRETS_OPENBAO_SPIFFE_JWT_PREFIX", "spiffe-jwt"),
 		},
 	}, logger)
 	if err != nil {
 		return fmt.Errorf("openbao store: %w", err)
 	}
-	billingAuthEditor, err := serviceauth.NewBearerTokenRequestEditor(serviceauth.ClientCredentialsConfig{
-		IssuerURL:    authIssuerURL,
-		TokenURL:     billingTokenURL,
-		ClientID:     billingClientID,
-		ClientSecret: billingClientSecret,
-		Audience:     billingAudience,
-		Transport:    otelhttp.NewTransport(http.DefaultTransport),
-		Timeout:      5 * time.Second,
-	})
+	billingHTTPClient, err := workloadauth.MTLSClient(spiffeSource, billingSPIFFEID, http.DefaultTransport)
 	if err != nil {
-		return fmt.Errorf("billing auth: %w", err)
+		return fmt.Errorf("billing spiffe client: %w", err)
 	}
 	billingClient, err := billingclient.New(
 		billingURL,
-		billingclient.WithHTTPClient(&http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport), Timeout: 5 * time.Second}),
-		billingclient.WithRequestEditorFn(billingAuthEditor),
+		billingclient.WithHTTPClient(billingHTTPClient),
 	)
 	if err != nil {
 		return fmt.Errorf("billing client: %w", err)
@@ -133,16 +132,11 @@ func run() error {
 	if err := svc.Ready(ctx); err != nil {
 		return fmt.Errorf("secrets readiness: %w", err)
 	}
-	secretsapi.ConfigureAuditSink(governanceAuditURL, governanceAuditToken)
-	spiffeSource, err := workloadauth.Source(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
+	governanceAuditClient, err := workloadauth.MTLSClient(spiffeSource, governanceSPIFFEID, http.DefaultTransport)
 	if err != nil {
-		return fmt.Errorf("spiffe workload source: %w", err)
+		return fmt.Errorf("governance spiffe client: %w", err)
 	}
-	defer func() {
-		if err := spiffeSource.Close(); err != nil {
-			logger.ErrorContext(context.Background(), "secrets-service spiffe source close", "error", err)
-		}
-	}()
+	secretsapi.ConfigureAuditSink(governanceAuditURL, governanceAuditClient)
 	internalTLSConfig, err := workloadauth.MTLSServerConfig(spiffeSource, sandboxSPIFFEID)
 	if err != nil {
 		return fmt.Errorf("spiffe internal tls: %w", err)
@@ -174,11 +168,7 @@ func run() error {
 	protected := secretsapi.CaptureRawBearerToken(authenticated)
 	rootMux.Handle("/", protected)
 	internalMux := http.NewServeMux()
-	secretsapi.RegisterInternalRoutes(internalMux, svc, secretsapi.InternalRouteConfig{
-		GrantPublicKey:           sandboxInjectionGrantPublicKey,
-		ExpectedIssuerSPIFFEID:   sandboxSPIFFEID.String(),
-		ExpectedAudienceSPIFFEID: secretsSPIFFEID.String(),
-	})
+	secretsapi.RegisterInternalRoutes(internalMux, svc)
 
 	server := &http.Server{
 		Addr:              listenAddr,

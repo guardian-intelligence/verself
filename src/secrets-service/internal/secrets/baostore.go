@@ -21,7 +21,10 @@ import (
 	"sync"
 	"time"
 
+	workloadauth "github.com/forge-metal/auth-middleware/workload"
 	"github.com/google/uuid"
+	"github.com/spiffe/go-spiffe/v2/spiffeid"
+	"github.com/spiffe/go-spiffe/v2/workloadapi"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -43,17 +46,16 @@ type BaoStoreConfig struct {
 	KVMountPrefix     string
 	TransitPrefix     string
 	JWTAuthPrefix     string
-	ServiceAccount    ServiceAccountConfig
+	WorkloadJWT       WorkloadJWTConfig
 	TokenCacheSkew    time.Duration
 	HTTPClientTimeout time.Duration
 }
 
-type ServiceAccountConfig struct {
-	ClientID  string
-	Secret    string
-	TokenURL  string
-	TokenHost string
-	ProjectID string
+type WorkloadJWTConfig struct {
+	Source     *workloadapi.JWTSource
+	Audience   string
+	Subject    spiffeid.ID
+	AuthPrefix string
 }
 
 type BaoStore struct {
@@ -65,8 +67,11 @@ type BaoStore struct {
 	jwtPrefix     string
 	cacheSkew     time.Duration
 
-	tokens         *baoTokenCache
-	serviceAccount *serviceAccountTokenSource
+	tokens                *baoTokenCache
+	workloadJWT           *workloadapi.JWTSource
+	workloadJWTAudience   string
+	workloadJWTSubject    spiffeid.ID
+	workloadJWTAuthPrefix string
 }
 
 type baoTokenCache struct {
@@ -79,16 +84,6 @@ type baoTokenEntry struct {
 	token        string
 	accessorHash string
 	expiresAt    time.Time
-}
-
-type serviceAccountTokenSource struct {
-	cfg    ServiceAccountConfig
-	client *http.Client
-	skew   time.Duration
-
-	mu        sync.Mutex
-	token     RawBearerToken
-	expiresAt time.Time
 }
 
 type baoResponse struct {
@@ -171,13 +166,10 @@ func NewBaoStore(ctx context.Context, cfg BaoStoreConfig, logger *slog.Logger) (
 		cacheSkew:     skew,
 		tokens:        &baoTokenCache{entries: map[string]baoTokenEntry{}},
 	}
-	if cfg.ServiceAccount.ClientID != "" || cfg.ServiceAccount.Secret != "" || cfg.ServiceAccount.TokenURL != "" {
-		source, err := newServiceAccountTokenSource(cfg.ServiceAccount, transport, skew)
-		if err != nil {
-			return nil, err
-		}
-		store.serviceAccount = source
-	}
+	store.workloadJWT = cfg.WorkloadJWT.Source
+	store.workloadJWTAudience = strings.TrimSpace(cfg.WorkloadJWT.Audience)
+	store.workloadJWTSubject = cfg.WorkloadJWT.Subject
+	store.workloadJWTAuthPrefix = firstNonEmpty(strings.TrimSpace(cfg.WorkloadJWT.AuthPrefix), "spiffe-jwt")
 	if err := store.Ready(ctx); err != nil {
 		return nil, err
 	}
@@ -200,26 +192,6 @@ func openBaoTransport(caPath string) (*http.Transport, error) {
 	}
 	base.TLSClientConfig = &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}
 	return base, nil
-}
-
-func newServiceAccountTokenSource(cfg ServiceAccountConfig, transport http.RoundTripper, skew time.Duration) (*serviceAccountTokenSource, error) {
-	cfg.ClientID = strings.TrimSpace(cfg.ClientID)
-	cfg.Secret = strings.TrimSpace(cfg.Secret)
-	cfg.TokenURL = strings.TrimSpace(cfg.TokenURL)
-	cfg.TokenHost = strings.TrimSpace(cfg.TokenHost)
-	cfg.ProjectID = strings.TrimSpace(cfg.ProjectID)
-	if cfg.ClientID == "" || cfg.Secret == "" || cfg.TokenURL == "" || cfg.ProjectID == "" {
-		return nil, fmt.Errorf("%w: complete service-account token config is required", ErrStore)
-	}
-	parsed, err := url.Parse(cfg.TokenURL)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return nil, fmt.Errorf("%w: invalid service-account token URL", ErrStore)
-	}
-	return &serviceAccountTokenSource{
-		cfg:    cfg,
-		client: &http.Client{Transport: otelhttp.NewTransport(&hostOverrideTransport{base: transport, host: cfg.TokenHost}), Timeout: 2 * time.Second},
-		skew:   skew,
-	}, nil
 }
 
 func (s *BaoStore) Ready(ctx context.Context) error {
@@ -760,16 +732,29 @@ func (s *BaoStore) readSigningKey(ctx context.Context, entry baoTokenEntry, prin
 func (s *BaoStore) token(ctx context.Context, principal Principal) (baoTokenEntry, error) {
 	role := strings.TrimSpace(principal.OpenBaoRole)
 	raw, ok := RawBearerTokenFromContext(ctx)
-	if principal.UseServiceAccountToken {
-		role = openBaoRoleInjection
-		if s.serviceAccount == nil {
-			return baoTokenEntry{}, fmt.Errorf("%w: service-account token source is not configured", ErrStore)
+	authMount := s.jwtMount(principal.OrgID)
+	spanName := "secrets.bao.jwt.login"
+	if principal.UseWorkloadSVID {
+		if principal.OrgID == "" {
+			return baoTokenEntry{}, fmt.Errorf("%w: org id is required for workload OpenBao login", ErrForbidden)
 		}
-		var err error
-		raw, err = s.serviceAccount.Token(ctx)
+		role = openBaoRoleInjection + "-" + principal.OrgID
+		if s.workloadJWT == nil || s.workloadJWTAudience == "" {
+			return baoTokenEntry{}, fmt.Errorf("%w: workload JWT-SVID source is not configured", ErrStore)
+		}
+		token, expiresAt, subject, err := workloadauth.FetchJWTSVID(ctx, s.workloadJWT, s.workloadJWTAudience, s.workloadJWTSubject)
 		if err != nil {
 			return baoTokenEntry{}, err
 		}
+		var tokenOK bool
+		raw, tokenOK = NewRawBearerToken(token)
+		if !tokenOK {
+			return baoTokenEntry{}, fmt.Errorf("%w: SPIRE returned an empty JWT-SVID", ErrStore)
+		}
+		principal.JWTID = subject.String()
+		principal.TokenExpiresAt = expiresAt
+		authMount = s.workloadJWTAuthPrefix
+		spanName = "secrets.bao.jwt_svid.login"
 		ok = true
 	}
 	if !ok {
@@ -796,7 +781,7 @@ func (s *BaoStore) token(ctx context.Context, principal Principal) (baoTokenEntr
 	}
 	s.tokens.mu.Unlock()
 	s.tokenCacheSpan(ctx, namespace, "miss", time.Time{})
-	entry, err := s.jwtLogin(ctx, principal, role, raw)
+	entry, err := s.jwtLogin(ctx, principal, role, raw, authMount, spanName)
 	if err != nil {
 		return baoTokenEntry{}, err
 	}
@@ -837,14 +822,13 @@ func (s *BaoStore) tokenCacheSpan(ctx context.Context, namespace, outcome string
 	)
 }
 
-func (s *BaoStore) jwtLogin(ctx context.Context, principal Principal, role string, jwt RawBearerToken) (baoTokenEntry, error) {
-	ctx, span := tracer.Start(ctx, "secrets.bao.jwt.login")
+func (s *BaoStore) jwtLogin(ctx context.Context, principal Principal, role string, jwt RawBearerToken, authMount string, spanName string) (baoTokenEntry, error) {
+	ctx, span := tracer.Start(ctx, spanName)
 	defer span.End()
 	body := map[string]any{
 		"role": role,
 		"jwt":  strings.TrimPrefix(jwt.AuthorizationHeader(), "Bearer "),
 	}
-	authMount := s.jwtMount(principal.OrgID)
 	response, status, err := s.do(ctx, http.MethodPost, joinPath("auth", authMount, "login"), "", nil, body, http.StatusOK)
 	if err != nil {
 		span.SetAttributes(attribute.Int("bao.http_status", status))
@@ -865,7 +849,8 @@ func (s *BaoStore) jwtLogin(ctx context.Context, principal Principal, role strin
 	}
 	span.SetAttributes(
 		attribute.String("bao.namespace", principal.OrgID),
-		attribute.String("bao.auth_method", "jwt"),
+		attribute.String("bao.auth_method", firstNonEmpty(strings.TrimPrefix(spanName, "secrets.bao."), "jwt")),
+		attribute.String("bao.role", role),
 		attribute.String("bao.request_id", response.RequestID),
 		attribute.Int("bao.http_status", status),
 		attribute.String("forge_metal.org_id", principal.OrgID),
@@ -873,64 +858,6 @@ func (s *BaoStore) jwtLogin(ctx context.Context, principal Principal, role strin
 	)
 	recordOpenBaoAuditInfo(ctx, "", response.RequestID, accessorHash, 0)
 	return entry, nil
-}
-
-func (s *serviceAccountTokenSource) Token(ctx context.Context) (RawBearerToken, error) {
-	s.mu.Lock()
-	if s.token.value != "" && s.expiresAt.After(time.Now().Add(s.skew)) {
-		token := s.token
-		s.mu.Unlock()
-		return token, nil
-	}
-	s.mu.Unlock()
-
-	ctx, span := tracer.Start(ctx, "secrets.bao.service_jwt.refresh")
-	defer span.End()
-	form := url.Values{}
-	form.Set("grant_type", "client_credentials")
-	form.Set("scope", "openid profile urn:zitadel:iam:user:resourceowner urn:zitadel:iam:org:projects:roles urn:zitadel:iam:org:project:id:"+s.cfg.ProjectID+":aud")
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.cfg.TokenURL, strings.NewReader(form.Encode()))
-	if err != nil {
-		return RawBearerToken{}, fmt.Errorf("%w: create service-account token request: %v", ErrStore, err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Accept", "application/json")
-	req.SetBasicAuth(s.cfg.ClientID, s.cfg.Secret)
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return RawBearerToken{}, fmt.Errorf("%w: service-account token request: %v", ErrStore, err)
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return RawBearerToken{}, fmt.Errorf("%w: service-account token status %d", ErrStore, resp.StatusCode)
-	}
-	var payload struct {
-		AccessToken string `json:"access_token"`
-		ExpiresIn   int64  `json:"expires_in"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return RawBearerToken{}, fmt.Errorf("%w: decode service-account token: %v", ErrStore, err)
-	}
-	token, ok := NewRawBearerToken(payload.AccessToken)
-	if !ok {
-		return RawBearerToken{}, fmt.Errorf("%w: service-account token response omitted access_token", ErrStore)
-	}
-	ttl := time.Duration(payload.ExpiresIn) * time.Second
-	if ttl <= 0 {
-		ttl = 5 * time.Minute
-	}
-	expiresAt := time.Now().Add(ttl).Add(-s.skew)
-	s.mu.Lock()
-	s.token = token
-	s.expiresAt = expiresAt
-	s.mu.Unlock()
-	span.SetAttributes(
-		attribute.String("bao.namespace", ""),
-		attribute.String("zitadel.subject", s.cfg.ClientID),
-		attribute.Int64("jwt.expires_in_ms", ttl.Milliseconds()),
-	)
-	return token, nil
 }
 
 func (s *BaoStore) doBao(ctx context.Context, spanName, method, mount, apiPrefix string, path []string, entry baoTokenEntry, body any, expected ...int) (baoResponse, int, error) {
@@ -1304,18 +1231,4 @@ func parseTime(value string) time.Time {
 		return parsed.UTC()
 	}
 	return time.Time{}
-}
-
-type hostOverrideTransport struct {
-	base http.RoundTripper
-	host string
-}
-
-func (t *hostOverrideTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if t.host == "" {
-		return t.base.RoundTrip(req)
-	}
-	req = req.Clone(req.Context())
-	req.Host = t.host
-	return t.base.RoundTrip(req)
 }

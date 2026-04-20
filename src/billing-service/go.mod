@@ -13,6 +13,7 @@ require (
 	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.34.0
 	github.com/riverqueue/river/rivertype v0.34.0
 	github.com/riverqueue/rivercontrib/otelriver v0.7.0
+	github.com/spiffe/go-spiffe/v2 v2.6.0
 	github.com/stripe/stripe-go/v85 v85.0.0
 	github.com/tigerbeetle/tigerbeetle-go v0.16.78
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.60.0
@@ -22,6 +23,7 @@ require (
 
 require (
 	github.com/ClickHouse/ch-go v0.63.1 // indirect
+	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/andybalholm/brotli v1.2.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect

@@ -15,9 +15,11 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	auth "github.com/forge-metal/auth-middleware"
+	workloadauth "github.com/forge-metal/auth-middleware/workload"
 	governanceapi "github.com/forge-metal/governance-service/internal/api"
 	"github.com/forge-metal/governance-service/internal/governance"
 	fmotel "github.com/forge-metal/otel"
@@ -41,15 +43,15 @@ func run() error {
 	defer otelShutdown(context.Background())
 	slog.SetDefault(logger)
 
-	pgDSN := requireCredential("pg-dsn")
-	identityPGDSN := requireCredential("identity-pg-dsn")
-	billingPGDSN := requireCredential("billing-pg-dsn")
-	sandboxPGDSN := requireCredential("sandbox-pg-dsn")
+	pgDSN := requireEnv("GOVERNANCE_PG_DSN")
+	identityPGDSN := requireEnv("GOVERNANCE_IDENTITY_PG_DSN")
+	billingPGDSN := requireEnv("GOVERNANCE_BILLING_PG_DSN")
+	sandboxPGDSN := requireEnv("GOVERNANCE_SANDBOX_PG_DSN")
 	chPassword := credentialOr("ch-password", "")
 	auditHMACKey := []byte(requireCredential("audit-hmac-key"))
-	internalAuditToken := requireCredential("internal-audit-token")
 
 	listenAddr := envOr("GOVERNANCE_LISTEN_ADDR", "127.0.0.1:4250")
+	internalListenAddr := envOr("GOVERNANCE_INTERNAL_LISTEN_ADDR", "127.0.0.1:4254")
 	chAddress := envOr("GOVERNANCE_CH_ADDRESS", "127.0.0.1:9000")
 	authIssuerURL := requireEnv("GOVERNANCE_AUTH_ISSUER_URL")
 	authAudience := requireEnv("GOVERNANCE_AUTH_AUDIENCE")
@@ -113,6 +115,24 @@ func run() error {
 	}
 	go runAuditProjector(ctx, logger, svc)
 
+	spiffeSource, err := workloadauth.Source(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
+	if err != nil {
+		return fmt.Errorf("governance spiffe workload source: %w", err)
+	}
+	defer func() {
+		if err := spiffeSource.Close(); err != nil {
+			logger.ErrorContext(context.Background(), "governance-service spiffe source close", "error", err)
+		}
+	}()
+	auditClientIDs, err := parseSPIFFEIDsFromEnv("GOVERNANCE_INTERNAL_CLIENT_SPIFFE_IDS")
+	if err != nil {
+		return err
+	}
+	internalTLSConfig, err := workloadauth.MTLSServerConfigForAny(spiffeSource, auditClientIDs...)
+	if err != nil {
+		return fmt.Errorf("governance spiffe internal tls: %w", err)
+	}
+
 	rootMux := http.NewServeMux()
 	rootMux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -128,7 +148,6 @@ func run() error {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ready\n"))
 	})
-	governanceapi.RegisterInternalRoutes(rootMux, svc, internalAuditToken)
 
 	privateMux := http.NewServeMux()
 	governanceapi.NewAPI(privateMux, "1.0.0", "http://"+listenAddr, svc)
@@ -140,11 +159,24 @@ func run() error {
 	})(privateMux)
 	rootMux.Handle("/", authHandler)
 
+	internalMux := http.NewServeMux()
+	governanceapi.RegisterInternalRoutes(internalMux, svc)
+
 	handler := http.Handler(rootMux)
 	handler = maxBody(handler, 1<<20)
 	server := &http.Server{
 		Addr:              listenAddr,
 		Handler:           otelhttp.NewHandler(handler, "governance-service"),
+		ReadHeaderTimeout: 2 * time.Second,
+		ReadTimeout:       5 * time.Second,
+		WriteTimeout:      5 * time.Second,
+		IdleTimeout:       30 * time.Second,
+		MaxHeaderBytes:    16 << 10,
+	}
+	internalServer := &http.Server{
+		Addr:              internalListenAddr,
+		Handler:           otelhttp.NewHandler(maxBody(workloadauth.ServerPeerAllowlistMiddleware(auditClientIDs, internalMux), 1<<20), "governance-service-internal"),
+		TLSConfig:         internalTLSConfig,
 		ReadHeaderTimeout: 2 * time.Second,
 		ReadTimeout:       5 * time.Second,
 		WriteTimeout:      5 * time.Second,
@@ -159,11 +191,37 @@ func run() error {
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			logger.ErrorContext(context.Background(), "governance: shutdown", "error", err)
 		}
+		if err := internalServer.Shutdown(shutdownCtx); err != nil {
+			logger.ErrorContext(context.Background(), "governance: internal shutdown", "error", err)
+		}
 	}()
 
 	logger.InfoContext(ctx, "governance-service listening", "addr", listenAddr)
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		return fmt.Errorf("serve governance-service: %w", err)
+	logger.InfoContext(ctx, "governance-service internal listening", "addr", internalListenAddr)
+	errCh := make(chan error, 2)
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			errCh <- fmt.Errorf("serve governance-service: %w", err)
+			return
+		}
+		errCh <- nil
+	}()
+	go func() {
+		if err := internalServer.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+			errCh <- fmt.Errorf("serve governance-service internal: %w", err)
+			return
+		}
+		errCh <- nil
+	}()
+	var firstErr error
+	for range 2 {
+		if err := <-errCh; err != nil && firstErr == nil {
+			firstErr = err
+			stop()
+		}
+	}
+	if firstErr != nil {
+		return firstErr
 	}
 	return nil
 }
@@ -231,6 +289,23 @@ func requireEnv(name string) string {
 		panic("missing required env " + name)
 	}
 	return value
+}
+
+func parseSPIFFEIDsFromEnv(name string) ([]spiffeid.ID, error) {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return nil, fmt.Errorf("missing required env %s", name)
+	}
+	parts := strings.Split(raw, ",")
+	ids := make([]spiffeid.ID, 0, len(parts))
+	for _, part := range parts {
+		id, err := workloadauth.ParseID(part)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
 }
 
 func envOr(name, fallback string) string {
