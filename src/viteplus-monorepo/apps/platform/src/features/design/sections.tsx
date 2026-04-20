@@ -170,10 +170,19 @@ function SectionAudienceSplit() {
         </>
       }
     >
-      <div className="grid gap-4 md:grid-cols-2">
+      {/* Two columns only once the viewport is wide enough to hold a
+          size="lg" Lockup per card without overflow. Under ~1280px the panels
+          stack; under ~640px the lockup inside each panel drops to size="md"
+          so "Guardian Intelligence" doesn't collide with the card edge. */}
+      <div className="grid gap-4 xl:grid-cols-2">
         <AudiencePanel ground="iron">
           <div className="role-eyebrow">Customers</div>
-          <Lockup size="lg" />
+          <span className="audience-lockup audience-lockup-md">
+            <Lockup size="md" />
+          </span>
+          <span className="audience-lockup audience-lockup-lg">
+            <Lockup size="lg" />
+          </span>
           <p className="audience-job">
             Product UI, docs, dashboards, billing, contracts, email. Where the work happens.
           </p>
@@ -182,7 +191,12 @@ function SectionAudienceSplit() {
           <div className="role-eyebrow" style={{ color: "rgba(11,11,11,0.7)" }}>
             The world
           </div>
-          <Lockup size="lg" variant="emboss" wordmarkColor="var(--color-ink)" />
+          <span className="audience-lockup audience-lockup-md">
+            <Lockup size="md" variant="emboss" wordmarkColor="var(--color-ink)" />
+          </span>
+          <span className="audience-lockup audience-lockup-lg">
+            <Lockup size="lg" variant="emboss" wordmarkColor="var(--color-ink)" />
+          </span>
           <p className="audience-job" style={{ color: "var(--color-ink)" }}>
             Social, press, investor decks, billboards, conferences, merch. Where attention is
             captured.
@@ -218,10 +232,16 @@ const audiencePanelStyle = `
     font-family: "Fraunces", Georgia, serif;
     font-variation-settings: "opsz" 96, "SOFT" 20;
     font-weight: 400;
-    font-size: 28px;
+    font-size: clamp(20px, 2.4vw, 28px);
     line-height: 1.15;
     letter-spacing: -0.015em;
     margin: 0;
+  }
+  .audience-lockup { display: inline-flex; }
+  .audience-lockup-lg { display: none; }
+  @media (min-width: 640px) {
+    .audience-lockup-md { display: none; }
+    .audience-lockup-lg { display: inline-flex; }
   }
 `;
 
@@ -280,6 +300,7 @@ function SectionClearSpace() {
           padding: "calc(64px * 0.45)",
           border: `1px solid ${LINE}`,
           borderRadius: "12px",
+          overflowX: "auto",
         }}
       >
         <span
@@ -306,6 +327,9 @@ function SectionClearSpace() {
         </small>
       </div>
 
+      {/* The lg lockup specimen is wider than a phone viewport by design
+          (spec is pixel-exact). overflow-x:auto lets the specimen scroll
+          inside the card instead of pushing the whole page wider. */}
       <div
         style={{
           marginTop: "20px",
@@ -315,8 +339,17 @@ function SectionClearSpace() {
           background: PANEL_2_BG,
           display: "grid",
           gap: "24px",
+          overflowX: "auto",
         }}
       >
+        <style>{`
+          .clear-space-row { grid-template-columns: 1fr; }
+          .clear-space-meta { text-align: left; }
+          @media (min-width: 640px) {
+            .clear-space-row { grid-template-columns: 1fr 220px; }
+            .clear-space-meta { text-align: right; }
+          }
+        `}</style>
         {[
           { size: "lg", markPx: 96, gap: "18 px", role: "ceiling" },
           { size: "md", markPx: 52, gap: "14.6 px", role: "proportional" },
@@ -324,15 +357,16 @@ function SectionClearSpace() {
         ].map((row) => (
           <div
             key={row.markPx}
+            className="clear-space-row"
             style={{
               display: "grid",
-              gridTemplateColumns: "1fr 220px",
               alignItems: "center",
-              gap: "24px",
+              gap: "12px 24px",
             }}
           >
             <Lockup size={row.size as "sm" | "md" | "lg"} />
             <div
+              className="clear-space-meta"
               style={{
                 display: "flex",
                 flexDirection: "column",
@@ -341,7 +375,6 @@ function SectionClearSpace() {
                 letterSpacing: "0.12em",
                 textTransform: "uppercase",
                 color: MUTED,
-                textAlign: "right",
               }}
             >
               <span>mark {row.markPx} px</span>
@@ -497,7 +530,141 @@ function Surface({
 }
 
 // ============================================================================
-// 06 — System · colour
+// 06 — Identity · product marque
+// ============================================================================
+function SectionProductMarque() {
+  const meta = sectionByID("product-marque");
+  const rowStyle: CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    gap: "clamp(12px, 2vw, 20px)",
+    padding: "22px 24px",
+    borderBottom: `1px solid ${LINE}`,
+    flexWrap: "wrap",
+  };
+  const lastRowStyle: CSSProperties = { ...rowStyle, borderBottom: 0 };
+  const houseStyle: CSSProperties = {
+    fontFamily: "'Fraunces', Georgia, serif",
+    fontVariationSettings: '"opsz" 96',
+    fontWeight: 400,
+    fontSize: "clamp(22px, 3vw, 28px)",
+    letterSpacing: "-0.015em",
+    color: "var(--color-type-iron)",
+  };
+  const productStyle: CSSProperties = {
+    fontFamily: "'Geist', sans-serif",
+    fontWeight: 500,
+    fontSize: "clamp(20px, 2.6vw, 26px)",
+    letterSpacing: "-0.01em",
+    color: "var(--color-type-iron)",
+  };
+  const jobStyle: CSSProperties = {
+    marginLeft: "auto",
+    fontFamily: "'Geist Mono', ui-monospace, monospace",
+    fontSize: "11px",
+    letterSpacing: "0.12em",
+    textTransform: "uppercase",
+    color: MUTED_2,
+  };
+  const divider: CSSProperties = {
+    width: "1px",
+    height: "22px",
+    background: LINE,
+    display: "inline-block",
+  };
+  return (
+    <Section
+      meta={meta}
+      lede={
+        <>
+          <b>Guardian</b> is the house. Products ride under it. The wings and the Fraunces
+          masthead belong to <i>Guardian Intelligence</i> alone — they do not lock up with a
+          product name. Products take the Geist sans, set alongside the Guardian masthead when
+          they need to be introduced, and stand on their own after first reference.{" "}
+          <b>Metal</b> is the compute product — sandboxes, Firecracker, ZFS. <b>Console</b> is
+          the customer application where the work happens; mailbox is a feature inside it, not a
+          separate marque. <b>Letters</b> is an editorial surface and carries the Dispatch
+          treatment in §11; it has no product lockup.
+        </>
+      }
+    >
+      <div
+        style={{
+          background: PANEL_BG,
+          border: `1px solid ${LINE}`,
+          borderRadius: "12px",
+          overflow: "hidden",
+        }}
+      >
+        <div style={rowStyle}>
+          <WingsArgent style={{ width: "32px", height: "32px", flex: "0 0 32px" }} />
+          <span style={houseStyle}>Guardian</span>
+          <span style={divider} aria-hidden="true" />
+          <span style={productStyle}>Metal</span>
+          <span style={jobStyle}>Compute · sandboxes</span>
+        </div>
+        <div style={rowStyle}>
+          <WingsArgent style={{ width: "32px", height: "32px", flex: "0 0 32px" }} />
+          <span style={houseStyle}>Guardian</span>
+          <span style={divider} aria-hidden="true" />
+          <span style={productStyle}>Console</span>
+          <span style={jobStyle}>The customer app · work happens here</span>
+        </div>
+        <div style={lastRowStyle}>
+          <WingsArgent style={{ width: "32px", height: "32px", flex: "0 0 32px" }} />
+          <span style={houseStyle}>Guardian</span>
+          <span style={divider} aria-hidden="true" />
+          <span style={{ ...productStyle, fontFamily: "'Fraunces', Georgia, serif", fontStyle: "italic" }}>
+            Letters
+          </span>
+          <span style={jobStyle}>Editorial · see Dispatch §11</span>
+        </div>
+      </div>
+      <div
+        style={{
+          marginTop: "16px",
+          padding: "18px 22px",
+          border: `1px solid ${LINE}`,
+          borderRadius: "10px",
+          background: PANEL_2_BG,
+          fontFamily: "'Geist', sans-serif",
+          fontSize: "13px",
+          color: MUTED,
+          display: "grid",
+          gap: "8px",
+        }}
+      >
+        <div>
+          <b style={{ color: "var(--color-type-iron)" }}>Rule.</b> The wings lock up with
+          &ldquo;Guardian Intelligence&rdquo; only. Never with a product name.
+        </div>
+        <div>
+          <b style={{ color: "var(--color-type-iron)" }}>On first reference.</b>{" "}
+          <i>&ldquo;Guardian Metal&rdquo;</i> in prose;{" "}
+          <code
+            style={{
+              fontFamily: "'Geist Mono', ui-monospace, monospace",
+              background: "#0a0a0a",
+              padding: "2px 6px",
+              borderRadius: "4px",
+              color: "var(--color-type-iron)",
+            }}
+          >
+            metal.guardianintelligence.org
+          </code>{" "}
+          in URLs.
+        </div>
+        <div>
+          <b style={{ color: "var(--color-type-iron)" }}>After first reference.</b> Products go
+          it alone: &ldquo;Metal&rdquo;, &ldquo;Console&rdquo;.
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+// ============================================================================
+// 07 — System · colour
 // ============================================================================
 function SectionColour() {
   const meta = sectionByID("colour");
@@ -510,7 +677,7 @@ function SectionColour() {
           <b>Flare</b> is the action — Pantone 389 C — used sparingly, 99% of the time reserved for
           the single primary action in view. <b>Paper</b> is the editorial ground, for long-form
           prose. Two accents travel between them: <b>Argent</b> is the wings' colour — never a
-          ground — and <b>Oxblood</b> is the editorial mark, appearing only on Paper to rule
+          ground — and <b>Bordeaux</b> is the editorial mark, appearing only on Paper to rule
           pull-quotes and underline the links worth following.
         </>
       }
@@ -543,10 +710,10 @@ function SectionColour() {
             chip: "#FFFFFF",
           },
           {
-            n: "Oxblood",
+            n: "Bordeaux",
             d: "Editorial accent. Paper-only. Pull-quote rules, active links, drop-cap ornaments.",
-            k: "HEX #5C1F1E · RGB 92 · 31 · 30",
-            chip: "var(--color-oxblood)",
+            k: "HEX #5C1F1E · RGB 92 · 31 · 30 · Pantone 504 C",
+            chip: "var(--color-bordeaux)",
           },
         ].map((s) => (
           <div
@@ -650,7 +817,11 @@ function SectionTypography() {
         </>
       }
     >
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+      {/* Typography specimens set at spec (64/48/32…) are intentionally wider than
+          a mobile viewport. Wrapping the table in overflow-x:auto lets the spec
+          stay pixel-exact without forcing the page into horizontal scroll. */}
+      <div style={{ overflowX: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px", minWidth: "720px" }}>
         <thead>
           <tr>
             <th style={{ ...headCell, width: "55%" }}>Sample</th>
@@ -795,6 +966,7 @@ function SectionTypography() {
           </tr>
         </tbody>
       </table>
+      </div>
     </Section>
   );
 }
@@ -814,20 +986,42 @@ function SectionHeroIron() {
         </>
       }
     >
-      <Surface ground="iron" style={{ padding: "72px 56px", borderRadius: "16px" }}>
+      <Surface
+        ground="iron"
+        style={{ padding: "clamp(32px, 5vw, 72px) clamp(20px, 4vw, 56px)", borderRadius: "16px" }}
+      >
         <div className="hero-kicker">
-          An American Applied Intelligence firm · Est. 2026 · Delaware
+          An American applied intelligence company · Est. 2026 · Seattle, Washington
         </div>
-        <h1 className="hero-h1">Toward the first million solo-founded billion-ARR startups.</h1>
-        <p className="hero-lede">
-          We begin with the application layer for AI — compute services, enterprise integrations,
-          and operator tooling. A 10,000× increase in value-generation per capita is not a slogan.
-          It is an engineering target. One person proves it can be done. Then we open source the
-          formula for everyone with an idea.
-        </p>
+        <h1 className="hero-h1">
+          The world needs your business to succeed, and we're here to help.
+        </h1>
         <div className="hero-cta-row">
           <button className="hero-btn primary">Request access</button>
           <button className="hero-btn ghost">Read the dispatch →</button>
+        </div>
+        {/* Mission block lives directly beneath the hero on the same Iron
+            canvas. Hero claims; mission cashes. Paragraphs stay in Geist (the
+            body family) so the Fraunces h1 above carries the display weight. */}
+        <div className="mission-block">
+          <p>
+            Every founder spends the first year on the same dozen systems — identity, billing,
+            analytics, email, infrastructure, security, the thousand edges where a real company
+            touches the real world. None of it is what you started the company to build. We build
+            the reference architecture for all of it — open-source, documented, and clean enough
+            that one operator with <b>Claude Code</b> can run a billion-dollar company.
+          </p>
+          <p>
+            Value created per capita is the ultimate metric. Value is more than a transaction. It
+            is a painting. A novel. An API in front of a physical service. A quiet service that
+            sends a calendar invite to the neighborhood when the dog park is going to be 72 and
+            sunny with 80% confidence. Humanity's golden age is the one where every person gets
+            to contribute unprecedented value to the world, and software and AI finally supply the
+            leverage to make that possible for everyone.
+          </p>
+          <p className="mission-closer">
+            If you want to do something good for the world, we want to make it easy.
+          </p>
         </div>
       </Surface>
       <style>{heroStyle}</style>
@@ -850,7 +1044,10 @@ function SectionHeroFlare() {
         </>
       }
     >
-      <Surface ground="flare" style={{ padding: "72px 56px", borderRadius: "16px" }}>
+      <Surface
+        ground="flare"
+        style={{ padding: "clamp(32px, 5vw, 72px) clamp(20px, 4vw, 56px)", borderRadius: "16px" }}
+      >
         <div style={{ marginBottom: "20px" }}>
           <Lockup size="md" variant="emboss" wordmarkColor="var(--color-ink)" />
         </div>
@@ -896,23 +1093,55 @@ const heroStyle = `
     font-family: "Fraunces", Georgia, serif;
     font-variation-settings: "opsz" 144, "SOFT" 30;
     font-weight: 400;
-    font-size: 84px;
-    line-height: 0.98;
-    letter-spacing: -0.028em;
-    margin: 0 0 24px;
-    max-width: 16ch;
+    /* Fluid from phone (~38px) to desktop (72px). Slightly smaller ceiling
+       than the original 84px because the new headline has more words and
+       benefits from a tighter optical size at display. */
+    font-size: clamp(38px, 6.8vw, 72px);
+    line-height: 1.0;
+    letter-spacing: -0.026em;
+    margin: 0 0 28px;
+    max-width: 22ch;
     text-transform: none;
   }
   .hero-lede {
     font-family: "Geist", sans-serif;
     font-weight: 400;
-    font-size: 20px;
+    font-size: clamp(16px, 2vw, 20px);
     line-height: 1.45;
     max-width: 52ch;
     margin: 0 0 36px;
     opacity: 0.82;
   }
   .hero-cta-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .mission-block {
+    margin-top: 48px;
+    padding-top: 40px;
+    border-top: 1px solid rgba(245,245,245,0.12);
+    max-width: 62ch;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+  .mission-block p {
+    font-family: "Geist", sans-serif;
+    font-weight: 400;
+    font-size: clamp(16px, 1.7vw, 18px);
+    line-height: 1.55;
+    margin: 0;
+    color: rgba(245,245,245,0.82);
+  }
+  .mission-block .mission-closer {
+    font-family: "Fraunces", Georgia, serif;
+    font-variation-settings: "opsz" 72, "SOFT" 30;
+    font-weight: 400;
+    font-style: italic;
+    font-size: clamp(20px, 2.4vw, 26px);
+    line-height: 1.3;
+    letter-spacing: -0.01em;
+    color: var(--color-type-iron);
+    max-width: 34ch;
+    margin-top: 8px;
+  }
   .hero-btn {
     font-family: "Geist", sans-serif;
     font-weight: 500;
@@ -945,13 +1174,16 @@ function SectionDispatch() {
           The <i>Dispatch</i> — Guardian's essay surface. Paper ground, Fraunces masthead, Fraunces
           body for flowing prose, Geist for bylines and metadata. The mark travels to Paper inside
           its iron chip — the wings never change colour.{" "}
-          <b style={{ color: "var(--color-oxblood)" }}>Oxblood</b> (#5C1F1E) marks pull-quotes,
+          <b style={{ color: "var(--color-bordeaux)" }}>Bordeaux</b> (#5C1F1E) marks pull-quotes,
           active links, and drop-cap ornaments — the one editorial-only accent, reserved for Paper
           surfaces. Flare does not appear on editorial; it is too loud for reading.
         </>
       }
     >
-      <Surface ground="paper" style={{ padding: "64px 56px", borderRadius: "16px" }}>
+      <Surface
+        ground="paper"
+        style={{ padding: "clamp(32px, 5vw, 64px) clamp(20px, 4vw, 56px)", borderRadius: "16px" }}
+      >
         <div style={{ display: "flex", alignItems: "center", gap: "16px", margin: "0 0 32px" }}>
           <WingsChip style={{ width: "36px", height: "36px" }} />
           <span
@@ -988,7 +1220,7 @@ function SectionDispatch() {
             fontFamily: "'Fraunces', Georgia, serif",
             fontVariationSettings: '"opsz" 144, "SOFT" 50, "WONK" 0',
             fontWeight: 400,
-            fontSize: "64px",
+            fontSize: "clamp(36px, 6vw, 64px)",
             lineHeight: 1.02,
             letterSpacing: "-0.025em",
             margin: "0 0 20px",
@@ -1014,7 +1246,7 @@ function SectionDispatch() {
           <span
             style={{ width: "4px", height: "4px", background: "#5d5a52", borderRadius: "2px" }}
           />
-          <span>Filed from Wilmington, DE</span>
+          <span>Filed from Seattle, WA</span>
         </div>
         <p
           style={{
@@ -1034,11 +1266,11 @@ function SectionDispatch() {
               fontFamily: "'Fraunces', Georgia, serif",
               fontVariationSettings: '"opsz" 144, "SOFT" 50',
               fontWeight: 400,
-              fontSize: "88px",
+              fontSize: "clamp(56px, 8vw, 88px)",
               lineHeight: 0.9,
               float: "left",
               margin: "6px 14px 0 0",
-              color: "var(--color-oxblood)",
+              color: "var(--color-bordeaux)",
             }}
           >
             T
@@ -1056,12 +1288,12 @@ function SectionDispatch() {
             fontStyle: "italic",
             fontVariationSettings: '"opsz" 72, "SOFT" 60',
             fontWeight: 400,
-            fontSize: "34px",
+            fontSize: "clamp(22px, 3.4vw, 34px)",
             lineHeight: 1.2,
             letterSpacing: "-0.012em",
             margin: "32px 0",
             padding: "0 0 0 20px",
-            borderLeft: "3px solid var(--color-oxblood)",
+            borderLeft: "3px solid var(--color-bordeaux)",
             color: "var(--color-ink)",
             maxWidth: "40ch",
           }}
@@ -1158,6 +1390,9 @@ function SectionProduct() {
             <span style={{ color: MUTED }}>Dispatches</span>
           </nav>
           <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+            {/* Status pill is Argent/quiet, not Flare. Flare is reserved for the
+                single primary action in view — the Deploy button below. Two
+                Flares in one chrome band would dilute the action signal. */}
             <span
               style={{
                 display: "inline-flex",
@@ -1168,13 +1403,23 @@ function SectionProduct() {
                 textTransform: "uppercase",
                 padding: "4px 10px",
                 borderRadius: "999px",
-                border: "1px solid var(--color-flare)",
+                border: "1px solid rgba(245,245,245,0.2)",
                 fontFamily: "'Geist', sans-serif",
                 fontWeight: 500,
-                color: "var(--color-flare)",
+                color: "rgba(245,245,245,0.7)",
               }}
             >
-              ● Live
+              <span
+                aria-hidden="true"
+                style={{
+                  width: "6px",
+                  height: "6px",
+                  borderRadius: "50%",
+                  background: "var(--color-flare)",
+                  boxShadow: "0 0 0 2px rgba(204,255,0,0.18)",
+                }}
+              />
+              Live
             </span>
             <button
               className="hero-btn primary"
@@ -1184,15 +1429,29 @@ function SectionProduct() {
             </button>
           </div>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", minHeight: "420px" }}>
-          <aside
-            style={{
-              borderRight: `1px solid ${LINE}`,
-              padding: "20px 16px",
-              fontFamily: "'Geist', sans-serif",
-              fontSize: "13px",
-            }}
-          >
+        <div className="product-chrome-body">
+          <aside className="product-chrome-aside">
+            <style>{`
+              .product-chrome-body {
+                display: grid;
+                grid-template-columns: 1fr;
+                min-height: 420px;
+              }
+              .product-chrome-aside {
+                border-bottom: 1px solid ${LINE};
+                padding: 16px 20px;
+                font-family: 'Geist', sans-serif;
+                font-size: 13px;
+              }
+              @media (min-width: 768px) {
+                .product-chrome-body { grid-template-columns: 220px 1fr; }
+                .product-chrome-aside {
+                  border-right: 1px solid ${LINE};
+                  border-bottom: 0;
+                  padding: 20px 16px;
+                }
+              }
+            `}</style>
             <div
               style={{
                 color: MUTED_2,
@@ -1243,13 +1502,13 @@ function SectionProduct() {
               </span>
             ))}
           </aside>
-          <div style={{ padding: "28px 32px" }}>
+          <div style={{ padding: "clamp(20px, 3vw, 28px) clamp(20px, 3vw, 32px)", minWidth: 0 }}>
             <h2
               style={{
                 fontFamily: "'Fraunces', Georgia, serif",
                 fontVariationSettings: '"opsz" 96',
                 fontWeight: 400,
-                fontSize: "32px",
+                fontSize: "clamp(24px, 3.2vw, 32px)",
                 letterSpacing: "-0.018em",
                 margin: "0 0 6px",
                 color: "var(--color-type-iron)",
@@ -1268,12 +1527,14 @@ function SectionProduct() {
             >
               14 active across 4 tenants · 3 h 22 m median lease · 99.98% attestation rate
             </p>
+            <div style={{ overflowX: "auto" }}>
             <table
               style={{
                 width: "100%",
                 borderCollapse: "collapse",
                 fontFamily: "'Geist', sans-serif",
                 fontSize: "13px",
+                minWidth: "520px",
               }}
             >
               <thead>
@@ -1354,6 +1615,7 @@ function SectionProduct() {
                 ))}
               </tbody>
             </table>
+            </div>
             <pre
               style={{
                 background: "#050505",
@@ -1583,6 +1845,9 @@ function SectionOgCard() {
         </>
       }
     >
+      {/* Container queries keep the OG card proportional regardless of viewport:
+          the card aspect-ratios itself, then every inner element sizes as a
+          fraction of the card's own width via cqi units. */}
       <div
         style={{
           width: "100%",
@@ -1591,20 +1856,21 @@ function SectionOgCard() {
           color: "var(--color-type-iron)",
           borderRadius: "12px",
           border: `1px solid ${LINE}`,
-          padding: "56px",
+          padding: "4.67cqi",
           position: "relative",
           display: "flex",
           flexDirection: "column",
           justifyContent: "space-between",
+          containerType: "inline-size",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-          <WingsArgent style={{ width: "44px", height: "44px" }} />
+        <div style={{ display: "flex", alignItems: "center", gap: "1.17cqi" }}>
+          <WingsArgent style={{ width: "3.67cqi", height: "3.67cqi" }} />
           <span
             style={{
               fontFamily: "'Fraunces', Georgia, serif",
               fontVariationSettings: '"opsz" 72',
-              fontSize: "28px",
+              fontSize: "2.33cqi",
               letterSpacing: "-0.01em",
             }}
           >
@@ -1616,7 +1882,7 @@ function SectionOgCard() {
             fontFamily: "'Fraunces', Georgia, serif",
             fontVariationSettings: '"opsz" 144, "SOFT" 40',
             fontWeight: 400,
-            fontSize: "56px",
+            fontSize: "4.67cqi",
             lineHeight: 1.02,
             letterSpacing: "-0.025em",
             maxWidth: "22ch",
@@ -1630,11 +1896,11 @@ function SectionOgCard() {
             display: "flex",
             justifyContent: "space-between",
             fontFamily: "'Geist', sans-serif",
-            fontSize: "13px",
+            fontSize: "1.08cqi",
             color: MUTED,
           }}
         >
-          <span>guardian.com</span>
+          <span>guardianintelligence.org</span>
           <span style={{ color: "var(--color-flare)" }}>Applied, not promised.</span>
         </div>
       </div>
@@ -1657,6 +1923,8 @@ function SectionBusinessCards() {
         </>
       }
     >
+      {/* 3.5 × 2" aspect ratio keeps the card proportional at any column width,
+          so two-up survives to narrower viewports than the Audience Split. */}
       <div className="grid gap-4 md:grid-cols-2">
         <BizCard ground="iron" />
         <BizCard ground="flare" />
@@ -1675,7 +1943,8 @@ function BizCard({ ground }: { ground: "iron" | "flare" }) {
       style={{
         aspectRatio: "3.5 / 2",
         borderRadius: "10px",
-        padding: "28px",
+        padding: "clamp(14px, 3cqi, 28px)",
+        containerType: "inline-size",
         display: "grid",
         gridTemplateRows: "auto 1fr auto",
         gap: "12px",
@@ -1686,15 +1955,27 @@ function BizCard({ ground }: { ground: "iron" | "flare" }) {
     >
       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
         {ground === "iron" ? (
-          <WingsArgent style={{ width: "28px", height: "28px", flex: "0 0 28px" }} />
+          <WingsArgent
+            style={{
+              width: "clamp(18px, 7cqi, 28px)",
+              height: "clamp(18px, 7cqi, 28px)",
+              flex: "0 0 clamp(18px, 7cqi, 28px)",
+            }}
+          />
         ) : (
-          <WingsEmboss style={{ width: "28px", height: "28px", flex: "0 0 28px" }} />
+          <WingsEmboss
+            style={{
+              width: "clamp(18px, 7cqi, 28px)",
+              height: "clamp(18px, 7cqi, 28px)",
+              flex: "0 0 clamp(18px, 7cqi, 28px)",
+            }}
+          />
         )}
         <span
           style={{
             fontFamily: "'Fraunces', Georgia, serif",
             fontVariationSettings: '"opsz" 72',
-            fontSize: "22px",
+            fontSize: "clamp(14px, 5.5cqi, 22px)",
             letterSpacing: "-0.01em",
           }}
         >
@@ -1726,7 +2007,7 @@ function BizCard({ ground }: { ground: "iron" | "flare" }) {
           justifyContent: "space-between",
         }}
       >
-        <span>operator@guardian.com</span>
+        <span>operator@guardianintelligence.org</span>
         <span>+1 (302) XXX XXXX</span>
       </div>
     </div>
@@ -1784,18 +2065,20 @@ function SectionEmailSignature() {
         </div>
         <div style={{ fontWeight: 600, fontSize: "15px" }}>Operator Name</div>
         <div style={{ color: "#5d5a52", marginBottom: "12px" }}>Founder · Applied Intelligence</div>
+        {/* Hairline in Bordeaux, not Flare. The signature lands on Paper/white
+            client grounds — the editorial palette is the honest palette here. */}
         <div
           style={{
-            height: "2px",
+            height: "1px",
             width: "44px",
-            background: "var(--color-flare)",
+            background: "var(--color-bordeaux)",
             margin: "8px 0 12px",
           }}
         />
         <div style={{ display: "flex", gap: "12px", color: "#5d5a52", fontSize: "12px" }}>
-          <span>operator@guardian.com</span>
+          <span>operator@guardianintelligence.org</span>
           <span>·</span>
-          <span>guardian.com</span>
+          <span>guardianintelligence.org</span>
           <span>·</span>
           <span>/dispatch</span>
         </div>
@@ -1815,6 +2098,7 @@ export function DesignSections() {
       <SectionClearSpace />
       <SectionSizeLadder />
       <SectionLockups />
+      <SectionProductMarque />
       <SectionColour />
       <SectionTypography />
       <SectionHeroIron />

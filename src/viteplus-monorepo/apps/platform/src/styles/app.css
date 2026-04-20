@@ -99,7 +99,7 @@
   --color-paper: #f6f4ed;
   --color-argent: #ffffff;
   --color-ink: #0b0b0b;
-  --color-oxblood: #5c1f1e;
+  --color-bordeaux: #5c1f1e;
   --color-type-iron: #f5f5f5;
 
   --font-display: "Fraunces", Georgia, serif;
@@ -130,6 +130,10 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
+    /* overflow-x: clip (not hidden) contains inner page overflow from
+       pixel-exact brand specimens without establishing a scroll container,
+       so position:sticky keeps working for the top bar and /design rail. */
+    overflow-x: clip;
     font-family:
       "Geist",
       ui-sans-serif,
