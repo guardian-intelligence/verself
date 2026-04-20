@@ -93,10 +93,9 @@ function TopBar() {
   );
 }
 
-// Phase 1 ships a minimal footer. Phase 4 populates the company-site footer
-// with the IA (Dispatch / Products / Trust / Press / …) once those routes
-// exist. The legal tree for Metal lives on the platform app and is not
-// duplicated here.
+// Company-site footer. Four columns mirror the IA. The full legal tree for
+// Metal lives on the platform app at platform.anveio.com/policy and is linked
+// from /legal and /trust rather than duplicated here.
 function SiteFooter() {
   return (
     <footer
@@ -107,8 +106,34 @@ function SiteFooter() {
         borderTop: "1px solid rgba(245,245,245,0.08)",
       }}
     >
+      <div className="mx-auto grid w-full max-w-7xl gap-8 px-4 py-10 md:grid-cols-4 md:px-6">
+        <FooterColumn heading="Company">
+          <FooterLink to="/company">About</FooterLink>
+          <FooterLink to="/careers">Careers</FooterLink>
+          <FooterLink to="/changelog">Changelog</FooterLink>
+          <FooterLink to="/contact">Contact</FooterLink>
+        </FooterColumn>
+        <FooterColumn heading="Products">
+          <FooterLink to="/products">Overview</FooterLink>
+          <FooterExternal href="https://platform.anveio.com">Metal</FooterExternal>
+          <FooterExternal href="https://platform.anveio.com">Console</FooterExternal>
+          <FooterExternal href="https://letters.anveio.com">Letters</FooterExternal>
+        </FooterColumn>
+        <FooterColumn heading="Read">
+          <FooterLink to="/dispatch">Dispatch</FooterLink>
+          <FooterExternal href="/dispatch/rss">RSS</FooterExternal>
+          <FooterLink to="/design">Design system</FooterLink>
+          <FooterLink to="/press">Press kit</FooterLink>
+        </FooterColumn>
+        <FooterColumn heading="Trust">
+          <FooterLink to="/trust">Commitments</FooterLink>
+          <FooterLink to="/legal">Legal</FooterLink>
+          <FooterExternal href="https://platform.anveio.com/policy">Policy tree</FooterExternal>
+          <FooterExternal href="/.well-known/security.txt">Security.txt</FooterExternal>
+        </FooterColumn>
+      </div>
       <div
-        className="mx-auto w-full max-w-7xl px-4 py-10 md:px-6"
+        className="mx-auto w-full max-w-7xl px-4 pb-10 md:px-6"
         style={{
           fontFamily: "'Geist Mono', ui-monospace, monospace",
           fontSize: "11px",
@@ -120,5 +145,47 @@ function SiteFooter() {
         © 2026 Guardian Intelligence · Seattle, Washington
       </div>
     </footer>
+  );
+}
+
+function FooterColumn({ heading, children }: { heading: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-3">
+      <p
+        className="font-mono text-[10px] font-medium uppercase tracking-[0.18em]"
+        style={{ color: "rgba(245,245,245,0.4)" }}
+      >
+        {heading}
+      </p>
+      <ul className="flex flex-col gap-2 text-sm">{children}</ul>
+    </div>
+  );
+}
+
+function FooterLink({ to, children }: { to: string; children: ReactNode }) {
+  return (
+    <li>
+      <Link
+        to={to}
+        className="transition-colors hover:underline hover:underline-offset-4"
+        style={{ color: "rgba(245,245,245,0.72)" }}
+      >
+        {children}
+      </Link>
+    </li>
+  );
+}
+
+function FooterExternal({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <li>
+      <a
+        href={href}
+        className="transition-colors hover:underline hover:underline-offset-4"
+        style={{ color: "rgba(245,245,245,0.72)" }}
+      >
+        {children}
+      </a>
+    </li>
   );
 }
