@@ -59,10 +59,10 @@ Self-hosted inbound via Stalwart. Boundary, auth, storage, and the mailbox-servi
 - Git repos (including this one) are hosted on the deployed Forgejo instance at `git.<domain>`.
 - NPM mirror self-hosted via Verdaccio.
 
-## Operator Focus Areas
+## Founder Focus Areas
 
 - **Secure by default.** Above and beyond most SaaS options. Security is regularly audited and verified (work in progress).
-- **Cheap.** The operator pays only for compute and object storage at commodity prices, not for DataDog operating margin.
+- **Cheap.** The founder pays only for compute and object storage at commodity prices, not for DataDog operating margin.
 - **Solve hard problems faced by new businesses** (aspirational, not yet fully implemented). Lowering a price for a metered product should propagate seamlessly: customer billing pages, marketing pricing sections, customer emails, end-of-month invoices reflecting usage at both old and new prices at a specified `effective_at`, metering updates, and customer support agents (not yet implemented) answering questions from safe tables. Achieved via a robust system of record + deterministic workflows.
 - **Observable — o11y 2.0.** Logs, traces, metrics are one thing: the Wide Event. ClickHouse handles millions of writes per second; instrument aggressively. Easier to reduce noisy instrumentation than to backfill gaps.
 
@@ -78,5 +78,5 @@ Self-hosted inbound via Stalwart. Boundary, auth, storage, and the mailbox-servi
 ## Platform Contracts
 
 - Avoid CLIs. Things talk to each other over HTTP.
-- Start telemetry investigation with `make observe` — discoverability-first. See `docs/architecture/operator-workflows.md` for the full flow.
+- Start telemetry investigation with `make observe` — discoverability-first. See `docs/architecture/founder-workflows.md` for the full flow.
 - `make clickhouse-schemas` reads all ClickHouse tables (ground truth). Prefer `make observe` first, fall back to raw `make clickhouse-query` when observe has no named query.

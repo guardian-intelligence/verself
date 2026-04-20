@@ -43,7 +43,7 @@ then inside the other customer-facing frontend apps. It talks to
 `identity-service` through frontend server functions; browser code does not
 receive Zitadel bearer tokens.
 
-The raw Zitadel Management Console remains an operator/admin identity tool at
+The raw Zitadel Management Console remains a founder/admin identity tool at
 `/ui/console`; it is not the long-term customer product console. A future
 standalone organization route on the auth host is still possible, for example
 `https://auth.<domain>/organization`, but it should be another embedding of the
@@ -433,14 +433,14 @@ Current access coverage:
 | rent-a-sandbox organization surface / `identity-service` | browser and machine `owner` | browser `owner`, machine `admin` | Acme `member` | BFF token exchange and `IDENTITY_SERVICE_ACCESS_TOKEN` |
 | webmail / `mailbox-service` | `mailbox_user`, bound to `agents` | none | none | Zitadel browser login and `MAILBOX_SERVICE_ACCESS_TOKEN` |
 | Forgejo OIDC login | `forgejo_admin` | none | none | Zitadel browser login and `FORGEJO_OIDC_ACCESS_TOKEN` |
-| ClickHouse | operator access only | none | none | `CLICKHOUSE_OPERATOR_COMMAND`, currently `make clickhouse-query` |
-| Forgejo provider API automation | operator access only | none | none | `FORGEJO_OPERATOR_CREDENTIAL`, currently the remote `forgejo-automation` token |
-| Stalwart direct JMAP/IMAP/SMTP | not a persona grant | not a persona grant | not a persona grant | use `mailbox-service`/webmail or explicit operator mail tooling |
+| ClickHouse | founder access only | none | none | `CLICKHOUSE_OPERATOR_COMMAND`, currently `make clickhouse-query` |
+| Forgejo provider API automation | founder access only | none | none | `FORGEJO_OPERATOR_CREDENTIAL`, currently the remote `forgejo-automation` token |
+| Stalwart direct JMAP/IMAP/SMTP | not a persona grant | not a persona grant | not a persona grant | use `mailbox-service`/webmail or explicit founder mail tooling |
 | `billing-service` direct API | service-to-service only | service-to-service only | service-to-service only | customer-facing billing access goes through `sandbox-rental-service` |
 
 The platform admin persona intentionally does not export the Zitadel admin PAT,
 ClickHouse password, or Forgejo automation token. ClickHouse access remains the
-operator Make wrapper (`make clickhouse-query`) because it is not a Zitadel
+founder Make wrapper (`make clickhouse-query`) because it is not a Zitadel
 resource yet. Forgejo API automation remains provider-native
 `forgejo-automation` until Forgejo OIDC group/role claims are proven for the
 interactive UI path and a separate provider API credential model is introduced.
@@ -469,7 +469,7 @@ a human user's browser session token for background git fetches.
   gate UX.
 - Operation permission is necessary but not sufficient; handlers still enforce
   organization/resource ownership from storage.
-- Built-in defaults must remain enough for a non-technical operator to run the
+- Built-in defaults must remain enough for a non-technical founder to run the
   platform.
 - A member can never be granted a permission whose operation is not tagged
   `member_eligible: true`. The catalog's init() check enforces this for the

@@ -1,20 +1,9 @@
-# forge-metal
-
-<!--
-Where sections seem to disagree, remember: <system_context> describes the system
-as it exists today, and <product_direction> describes where it is headed.
-Proposals should respect both, not collapse one into the other.
--->
-
 <repo_overview>
-
-README.md contains 
-
 Canonical layout in `docs/architecture/directory-structure.md`. Read that file directly if exploring the repo.
 
 Polyglot monorepo:
 
-- **TypeScript** — `src/viteplus-monorepo/` (pnpm, Vite Plus + TanStack Start/DB/Query/Router). Apps: `rent-a-sandbox`, `letters`, `mail`.
+- **TypeScript** — `src/viteplus-monorepo/` (pnpm, Vite Plus + TanStack Start/DB/Query/Router). Apps: `company` (marketing site at anveio.com), `platform` (product console at platform.anveio.com), `mail`.
 - **Go** — `go.work` at repo root, covers most of `src/*`. Services: `sandbox-rental-service`, `billing-service`, `identity-service`, `mailbox-service`, `governance-service`, `secrets-service`, `platform`, `vm-orchestrator`. Shared libs: `apiwire`, `auth-middleware`, `otel`.
 - **Zig** — `src/vm-guest-telemetry/` (guest agent, runs *inside* Firecracker VMs, not on the host).
 - **YAML* -- Infrastructure code defined with Ansible.
@@ -32,7 +21,7 @@ Boundary components that sit outside the usual service shape:
 
 Top-level landmarks:
 
-- `Makefile` — canonical operator/agent entry point. Read before reaching for ad-hoc scripts.
+- `Makefile` — canonical founder/agent entry point. Read before reaching for ad-hoc scripts.
 - `docs/` — cross-service architecture; `docs/references/` is read-only third-party material. Grep through docs/references instead of reading directly.
 
 Orienting commands: `make pg-list` enumerates per-service PostgreSQL databases, `make observe` opens the telemetry surface, `make clickhouse-schemas` lists ClickHouse tables.
@@ -44,16 +33,6 @@ Orienting commands: `make pg-list` enumerates per-service PostgreSQL databases, 
 Public commitments for Data Processing, Acceptable Use, Security, SLA, and Data Retention live in `src/viteplus-monorepo/apps/platform/src/routes/policy`.
 
 </product_policy>
-
-<architecture_policy>
-Authentication - Zitadel is the service IdP.
-Identity-Based Policy - auth-middleware library + policy.go per service (centralized PDP planned)
-Resource-Based Policy - Nothing yet
-KMS - OpenBao Transit (exposed through `secrets-service`)
-Secrets KV - OpenBao KV (exposed through `secrets-service`)
-
-Payments Truth (did we get paid?) - Stripe
-</architecture_policy>
 
 <product_direction>
 
@@ -67,7 +46,7 @@ See `docs/product-direction.md`.
 
 <system_context>
 
-How the platform is wired today: service topology, three safety rings, self-hosted mandate + allowed third-party providers (Cloudflare, Latitude.sh, Resend, Stripe), dual-write pattern, billing model summary, supply chain, operator focus areas, bare-metal OS/arch invariants.
+How the platform is wired today: service topology, three safety rings, self-hosted mandate + allowed third-party providers (Cloudflare, Latitude.sh, Resend, Stripe), dual-write pattern, billing model summary, supply chain, founder focus areas, bare-metal OS/arch invariants.
 
 **Keywords:** Huma v2, OpenAPI 3.0/3.1, oapi-codegen, @hey-api/openapi-ts, apiwire, SOPS, systemd LoadCredential, credstore, nftables, safety rings, Cloudflare, Latitude.sh, Resend, Stripe, Backblaze, PostgreSQL, ClickHouse, TigerBeetle, Zitadel, Stalwart, ElectricSQL, TanStack DB, dual-write, reconciliation, metering, credits, entitlements, Verdaccio NPM mirror, Forgejo, Ubuntu 24.04, Netbird, 3-node topology, self-hosted, vsock 10790.
 
@@ -79,13 +58,13 @@ Python package management is done through `uv`.
 
 <operational_runbook>
 
-Operator workflows: `make observe` for discoverability-first telemetry, `make clickhouse-query`/`make pg-query` wrappers, deploy playbooks and correlation model (`deploy_run_key`, `deploy_id`, `traceparent`), TLS via Cloudflare, the `deploy_profile` server-binaries strategy, Ansible playbooks table.
+Run `make observe` to discover available telemetry, run `make clickhouse-query`/`make pg-query` wrappers to easily query ClickHouse/PG with fewer shell string escaping issues, deploy playbooks and correlation model (`deploy_run_key`, `deploy_id`, `traceparent`), TLS via Cloudflare, the `deploy_profile` server-binaries strategy, Ansible playbooks table.
 
-**Keywords:** make observe, make clickhouse-query, make clickhouse-schemas, make pg-list, make pg-query, make telemetry-proof, make services-doctor, make grafana-proof, deploy_run_key, deploy_id, traceparent, OTEL_RESOURCE_ATTRIBUTES, fm_uri, fmotel baggage, deploy_profile, server-tools.json, xcaddy, Coraza WAF, --tags, preflight, dev-single-node.yml, seed-system.yml, observability-smoke.yml, vm-guest-telemetry-dev.yml, billing-reset.yml, guest-rootfs.yml, Ansible.
-
-See `docs/architecture/operator-workflows.md`. The repo started as a CI orchestrator; that history lives in `README.md`.
+See `docs/architecture/founder-workflows.md` for more. The repo started as a CI orchestrator; that history lives in `README.md`.
 
 ### High-signal Documents.
+
+Recommended that you read relevant ones directly. You can have a subagent summarize the ones that are not related to your task.
 
 - **Inbound mail, Stalwart, mailbox-service, JMAP, SMTP, inbound routing, tenant isolation, webmail:** `src/mailbox-service/docs/inbound-mail.md`
 - **vm-orchestrator privilege boundary, Firecracker VM networking, TAP allocator, host service plane, nftables, guest CIDR, lease/exec model, vm-bridge control:** `src/vm-orchestrator/AGENTS.md`
@@ -94,17 +73,17 @@ See `docs/architecture/operator-workflows.md`. The repo started as a CI orchestr
 - **VM execution control plane, sandbox-rental-service ↔ vm-orchestrator split, attempt state machine, billing windows, execution lifecycle:** `src/sandbox-rental-service/docs/vm-execution-control-plane.md`
 - **Identity and IAM, Zitadel, SCIM 2.0, SSO, authentication, organization model, three-role owner/admin/member, capability catalog, API credentials, Zitadel Actions, pre-access-token, frontend sessions, JWKS loopback, Forge Metal policy split:** `src/platform/docs/identity-and-iam.md`
 - **Secrets service, identity model, OIDC provider role, resource model, billing, KMS alternative:** `src/platform/docs/secrets-service.md`
-- * architecture, credit subscription, entitlements, metering, TigerBeetle, PostgreSQL, Reconcile, refunds, plan change, dual-write, Stripe webhooks, invoices:** `src/billing-service/docs/billing-architecture.md`
+- Billing architecture, credit subscription, entitlements, metering, TigerBeetle, PostgreSQL, Reconcile, refunds, plan change, dual-write, Stripe webhooks, invoices:** `src/billing-service/docs/billing-architecture.md`
 - **Governance audit data contract, HMAC chain, OCSF, CloudTrail parity, tamper evidence, SIEM export, audit ledger:** `src/governance-service/docs/audit-data-contract.md`
 - **Service architecture overview, port map, listener matrix, topology:** `docs/architecture/service-architecture.md`
 - **Directory structure, repo layout:** `docs/architecture/directory-structure.md`
 - **Agent workspace, QEMU/KVM, AI coding agent VMs:** `docs/architecture/agent-workspace.md`
-- **Operator workflows, deploy, observe, pg-query, clickhouse-query, playbooks:** `docs/architecture/operator-workflows.md`
+- **Founder workflows, deploy, observe, pg-query, clickhouse-query, playbooks:** `docs/architecture/founder-workflows.md`
 
 </operational_runbook>
 
 <assistant_contract>
-- Ground proposals, plans, API references, and all technical discussion in primary sources. Then think from the perspective of the user of the system: a non-technical startup founder, sole operator of a small software company running all services off a single bare-metal box (with upgrade path to 3-node k3s).
+- Ground proposals, plans, API references, and all technical discussion in primary sources. Then think from the perspective of the user of the system: a non-technical startup founder running all services off a single bare-metal box (with upgrade path to 3-node k3s).
 - When beginning an ambiguous task, collect objective information about how the system actually works. There are a lot of technologies stitched together; understand how everything connects.
 - Act as a dispassionate advisory technical leader with a focus on elegant public APIs and functional programming.
 - You are not alone in this repo. Expect parallel changes in unrelated files by the user. Leave them alone (don't stash them) and continue with your work.
@@ -112,7 +91,7 @@ See `docs/architecture/operator-workflows.md`. The repo started as a CI orchestr
 - This software is currently pre-release and serves no customers or users. There is no backwards compatibility to maintain. No compatibility wrappers, no legacy shims, no temporary plumbing. All changes must be performed via a full cutover.
 </important>
 - Ensure old or outdated code is deleted each time we upgrade technology, abstractions, or logic. Eliminating contradictory approaches is a high priority.
-- Details matter. The operator cares about arcane versioning issues, subtle race conditions, timing-attack vulnerabilities, GC pressure, and abstraction leaks. Simplicity is for code and architecture, not for technical argument.
+- Details matter. The founder cares about arcane versioning issues, subtle race conditions, timing-attack vulnerabilities, GC pressure, and abstraction leaks. Simplicity is for code and architecture, not for technical argument.
 - Some directories have their own `AGENTS.md` file. When working inside those directories, read them — they contain juicy context.
 - Incidental edits from running linters and formatters are expected. Don't worry about them.
 - When in doubt, use the industry-standard pattern. Pagination, idempotency, rate limiting, OpenAPI, OpenTelemetry, state machines — these are all solved problems with boring, battle-tested solutions. Don't reinvent the wheel. The one piece of genuinely novel technology in this repo is ZFS + Firecracker for customer workloads. Everything else is tried-and-tested FOSS.

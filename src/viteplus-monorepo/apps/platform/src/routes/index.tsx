@@ -18,7 +18,7 @@ export const Route = createFileRoute("/")({
       {
         property: "og:description",
         content:
-          "We build the reference architecture for the systems every founder has to build before they can build what matters — so one operator with Claude Code can run a billion-dollar company.",
+          "We build the reference architecture for the systems every founder has to build before they can build what matters — so one founder with Claude Code can run a billion-dollar company.",
       },
     ],
   }),
@@ -68,7 +68,7 @@ function LandingPage() {
           analytics, email, infrastructure, security, the thousand edges where a real company
           touches the real world. None of it is what you started the company to build. We build the
           reference architecture for all of it — open-source, documented, and clean enough that one
-          operator with <b>Claude Code</b> can run a billion-dollar company.
+          founder with <b>Claude Code</b> can run a billion-dollar company.
         </p>
         <p
           style={{

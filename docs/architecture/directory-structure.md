@@ -7,7 +7,7 @@ Monorepo rooted at the repo top level. All Go services share one `go.work`; the 
 - `src/` — all first-party source.
 - `docs/` — cross-service architecture docs and vendored references (`docs/references/` is read-only third-party material).
 - `artifacts/` — gitignored run outputs (proof bundles, personas, playwright traces).
-- `Makefile` — canonical entry point for operator/agent workflows. Read before reaching for ad-hoc scripts.
+- `Makefile` — canonical entry point for founder/agent workflows. Read before reaching for ad-hoc scripts.
 
 ## Go services (`src/`)
 
@@ -33,7 +33,7 @@ Monorepo rooted at the repo top level. All Go services share one `go.work`; the 
 
 - `ansible/` — playbooks, roles, SOPS-encrypted `group_vars/`, inventory.
 - `terraform/` — OpenTofu bare-metal provisioning (Latitude.sh).
-- `scripts/` — operator wrappers invoked by the Makefile.
+- `scripts/` — founder wrappers invoked by the Makefile.
 - `server-tools.json` / `dev-tools.json` — pinned binary manifests (URL + SHA256).
 
 Service-local docs live under each service's `docs/` directory (e.g. `src/sandbox-rental-service/docs/`). Directory-specific conventions are captured in per-directory `AGENTS.md` files.
