@@ -41,6 +41,6 @@ When you are unsure, read a paragraph from one of these:
 - Berkshire Hathaway shareholder letters
 - The Economist leader column
 - Muji product descriptions
-- 37signals, *How We Work*
+- 37signals, _How We Work_
 
 If the paragraph reads like a VC deck, a LinkedIn post, or a keynote hook, it fails.

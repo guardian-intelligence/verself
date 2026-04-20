@@ -96,6 +96,11 @@
   body {
     @apply bg-background text-foreground antialiased;
     overflow-x: clip;
-    font-family: "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font-family:
+      "Geist",
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      sans-serif;
   }
 }

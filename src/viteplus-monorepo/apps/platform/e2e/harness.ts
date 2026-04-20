@@ -103,7 +103,9 @@ export interface ClickhouseRow {
 // assert on actual span content rather than waiting blindly for materialisation.
 export async function clickhouseQuery(query: string): Promise<ClickhouseRow[]> {
   const trimmed = query.trim().replace(/;\s*$/, "");
-  const formatted = /\bFORMAT\b/i.test(trimmed) ? trimmed : `${trimmed} FORMAT TabSeparatedWithNames`;
+  const formatted = /\bFORMAT\b/i.test(trimmed)
+    ? trimmed
+    : `${trimmed} FORMAT TabSeparatedWithNames`;
   const { stdout } = await execFile(
     "bash",
     [

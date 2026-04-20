@@ -120,6 +120,31 @@ make telemetry-proof           # success path: ansible + service correlation
 make telemetry-proof-fail      # sad path: assert Error spans are emitted
 ```
 
+## Company Site Proof
+
+End-to-end canary for the Guardian Intelligence company site at
+`forge_metal_domain` (anveio.com today). Walks every IA route in a
+headless browser, hits the dynamic OG generator, downloads the press
+brand kit, and asserts the corresponding `company.*` spans land in
+ClickHouse within 60 seconds of emit.
+
+```bash
+make company-proof
+```
+
+Assertions (all on `default.otel_traces` with `ServiceName = 'company-web'`):
+
+- `SpanName = 'company.route_view'` emitted for every walked route
+  (/, /design, /dispatch, /products, /company, /careers, /press,
+  /trust, /changelog, /contact, /legal, /dispatch/<seeded-slug>).
+- `SpanName = 'company.landing.hero_view'` emitted once per landing
+  load.
+- `SpanName = 'company.og.render'` emitted with
+  `SpanAttributes['og.voice_pass'] = 'true'` for each OG card the
+  canary visits.
+- `SpanName = 'company.press.kit_download'` emitted when the canary
+  clicks the brand kit link on `/press`.
+
 ## Deploy Correlation Model
 
 Deterministic deploy correlation:

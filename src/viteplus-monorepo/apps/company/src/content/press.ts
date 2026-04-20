@@ -29,6 +29,6 @@ export const press = {
   writingGuide: [
     'On first reference, write "Guardian Intelligence." On subsequent reference, "Guardian."',
     "The company is an American applied intelligence firm based in Seattle.",
-    "Never write \"founder\" as \"Founder\" (capital F) outside of a title slot. It is a role, not a rank.",
+    'Never write "founder" as "Founder" (capital F) outside of a title slot. It is a role, not a rank.',
   ],
 } as const;

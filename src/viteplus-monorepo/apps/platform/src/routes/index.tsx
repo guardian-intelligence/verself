@@ -53,10 +53,7 @@ function LandingPage() {
           hero. Voice: first-person plural, present tense, grandfather-calm.
           The closer returns to Fraunces italic so the paragraph that opens the
           page in serif ends the section in the same register. */}
-      <div
-        className="mt-12 flex flex-col gap-5"
-        style={{ maxWidth: "62ch" }}
-      >
+      <div className="mt-12 flex flex-col gap-5" style={{ maxWidth: "62ch" }}>
         <p
           style={{
             fontFamily: "'Geist', sans-serif",
@@ -69,9 +66,9 @@ function LandingPage() {
         >
           Every founder spends the first year on the same dozen systems — identity, billing,
           analytics, email, infrastructure, security, the thousand edges where a real company
-          touches the real world. None of it is what you started the company to build. We build
-          the reference architecture for all of it — open-source, documented, and clean enough
-          that one operator with <b>Claude Code</b> can run a billion-dollar company.
+          touches the real world. None of it is what you started the company to build. We build the
+          reference architecture for all of it — open-source, documented, and clean enough that one
+          operator with <b>Claude Code</b> can run a billion-dollar company.
         </p>
         <p
           style={{
@@ -83,12 +80,12 @@ function LandingPage() {
             margin: 0,
           }}
         >
-          Value created per capita is the ultimate metric. Value is more than a transaction. It
-          is a painting. A novel. An API in front of a physical service. A quiet service that
-          sends a calendar invite to the neighborhood when the dog park is going to be 72 and
-          sunny with 80% confidence. Humanity&apos;s golden age is the one where every person
-          gets to contribute unprecedented value to the world, and software and AI finally supply
-          the leverage to make that possible for everyone.
+          Value created per capita is the ultimate metric. Value is more than a transaction. It is a
+          painting. A novel. An API in front of a physical service. A quiet service that sends a
+          calendar invite to the neighborhood when the dog park is going to be 72 and sunny with 80%
+          confidence. Humanity&apos;s golden age is the one where every person gets to contribute
+          unprecedented value to the world, and software and AI finally supply the leverage to make
+          that possible for everyone.
         </p>
         <p
           style={{
