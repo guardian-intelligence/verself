@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as DesignRouteImport } from './routes/design'
 import { Route as PolicyRouteRouteImport } from './routes/policy/route'
 import { Route as DocsRouteRouteImport } from './routes/docs/route'
 import { Route as IndexRouteImport } from './routes/index'
@@ -28,6 +29,11 @@ import { Route as DocsSecretsRouteImport } from './routes/docs/secrets'
 import { Route as DocsReferenceRouteImport } from './routes/docs/reference'
 import { Route as ApiOtelV1TracesRouteImport } from './routes/api/otel/v1/traces'
 
+const DesignRoute = DesignRouteImport.update({
+  id: '/design',
+  path: '/design',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PolicyRouteRoute = PolicyRouteRouteImport.update({
   id: '/policy',
   path: '/policy',
@@ -123,6 +129,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/docs': typeof DocsRouteRouteWithChildren
   '/policy': typeof PolicyRouteRouteWithChildren
+  '/design': typeof DesignRoute
   '/docs/reference': typeof DocsReferenceRoute
   '/docs/secrets': typeof DocsSecretsRoute
   '/policy/acceptable-use': typeof PolicyAcceptableUseRoute
@@ -141,6 +148,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/design': typeof DesignRoute
   '/docs/reference': typeof DocsReferenceRoute
   '/docs/secrets': typeof DocsSecretsRoute
   '/policy/acceptable-use': typeof PolicyAcceptableUseRoute
@@ -162,6 +170,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/docs': typeof DocsRouteRouteWithChildren
   '/policy': typeof PolicyRouteRouteWithChildren
+  '/design': typeof DesignRoute
   '/docs/reference': typeof DocsReferenceRoute
   '/docs/secrets': typeof DocsSecretsRoute
   '/policy/acceptable-use': typeof PolicyAcceptableUseRoute
@@ -184,6 +193,7 @@ export interface FileRouteTypes {
     | '/'
     | '/docs'
     | '/policy'
+    | '/design'
     | '/docs/reference'
     | '/docs/secrets'
     | '/policy/acceptable-use'
@@ -202,6 +212,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/design'
     | '/docs/reference'
     | '/docs/secrets'
     | '/policy/acceptable-use'
@@ -222,6 +233,7 @@ export interface FileRouteTypes {
     | '/'
     | '/docs'
     | '/policy'
+    | '/design'
     | '/docs/reference'
     | '/docs/secrets'
     | '/policy/acceptable-use'
@@ -243,11 +255,19 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DocsRouteRoute: typeof DocsRouteRouteWithChildren
   PolicyRouteRoute: typeof PolicyRouteRouteWithChildren
+  DesignRoute: typeof DesignRoute
   ApiOtelV1TracesRoute: typeof ApiOtelV1TracesRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/design': {
+      id: '/design'
+      path: '/design'
+      fullPath: '/design'
+      preLoaderRoute: typeof DesignRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/policy': {
       id: '/policy'
       path: '/policy'
@@ -429,6 +449,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DocsRouteRoute: DocsRouteRouteWithChildren,
   PolicyRouteRoute: PolicyRouteRouteWithChildren,
+  DesignRoute: DesignRoute,
   ApiOtelV1TracesRoute: ApiOtelV1TracesRoute,
 }
 export const routeTree = rootRouteImport
