@@ -31,6 +31,7 @@ const (
 	permissionExecutionSubmit permission = "sandbox:execution:submit"
 	permissionExecutionRead   permission = "sandbox:execution:read"
 	permissionLogsRead        permission = "sandbox:logs:read"
+	permissionSecretRead      permission = "secrets:secret:read"
 	permissionVolumeRead      permission = "sandbox:volume:read"
 	permissionVolumeWrite     permission = "sandbox:volume:write"
 	permissionBillingRead     permission = "billing:read"
@@ -232,6 +233,9 @@ func enforceOperationPolicy(ctx context.Context, policy operationPolicy, input a
 	if !identityHasPermission(identity, policy.Permission) {
 		return identity, forbidden(ctx, "permission-denied", fmt.Sprintf("missing required permission %q", policy.Permission))
 	}
+	if submitRequestsSecretEnv(input) && !identityHasDirectPermission(identity, permissionSecretRead) {
+		return identity, forbidden(ctx, "permission-denied", fmt.Sprintf("secret_env requires direct permission %q", permissionSecretRead))
+	}
 	if err := requireOperationIdempotency(ctx, policy, input); err != nil {
 		return identity, err
 	}
@@ -239,6 +243,11 @@ func enforceOperationPolicy(ctx context.Context, policy operationPolicy, input a
 		return identity, rateLimitExceeded(ctx, decision.RetryAfter)
 	}
 	return identity, nil
+}
+
+func submitRequestsSecretEnv(input any) bool {
+	submit, ok := input.(*SubmitExecutionInput)
+	return ok && len(submit.Body.SecretEnv) > 0
 }
 
 func identityHasPermission(identity *auth.Identity, required permission) bool {

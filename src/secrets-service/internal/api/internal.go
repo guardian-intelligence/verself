@@ -2,14 +2,20 @@ package api
 
 import (
 	"context"
-	"crypto/subtle"
+	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/forge-metal/auth-middleware/delegation"
+	workloadauth "github.com/forge-metal/auth-middleware/workload"
 	"github.com/forge-metal/secrets-service/internal/secrets"
+	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 const injectionRequestMaxBytes = 128 << 10
@@ -30,6 +36,8 @@ type injectionSecretRequest struct {
 	SourceID   string `json:"source_id,omitempty"`
 	EnvID      string `json:"env_id,omitempty"`
 	Branch     string `json:"branch,omitempty"`
+	GrantID    string `json:"grant_id"`
+	GrantToken string `json:"grant_token"`
 }
 
 type injectionResolveResponse struct {
@@ -41,13 +49,19 @@ type injectionEnvValue struct {
 	Value string `json:"value"`
 }
 
-func RegisterInternalRoutes(mux *http.ServeMux, svc *secrets.Service, token string) {
+type InternalRouteConfig struct {
+	GrantPublicKey           ed25519.PublicKey
+	ExpectedIssuerSPIFFEID   string
+	ExpectedAudienceSPIFFEID string
+}
+
+func RegisterInternalRoutes(mux *http.ServeMux, svc *secrets.Service, cfg InternalRouteConfig) {
 	mux.HandleFunc("/internal/v1/injections/resolve", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		if !validInternalBearer(token, r.Header.Get("Authorization")) {
+		if _, ok := workloadauth.PeerIDFromContext(r.Context()); !ok {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -59,11 +73,13 @@ func RegisterInternalRoutes(mux *http.ServeMux, svc *secrets.Service, token stri
 			http.Error(w, "invalid injection request", http.StatusBadRequest)
 			return
 		}
-		response, err := resolveInjection(r.Context(), svc, request)
+		response, err := resolveInjection(r.Context(), svc, cfg, request)
 		if err != nil {
 			switch {
 			case errors.Is(err, secrets.ErrInvalidArgument):
 				http.Error(w, "invalid injection request", http.StatusBadRequest)
+			case errors.Is(err, secrets.ErrForbidden):
+				http.Error(w, "forbidden", http.StatusForbidden)
 			case errors.Is(err, secrets.ErrNotFound):
 				http.Error(w, "secret not found", http.StatusNotFound)
 			default:
@@ -77,27 +93,49 @@ func RegisterInternalRoutes(mux *http.ServeMux, svc *secrets.Service, token stri
 	})
 }
 
-func resolveInjection(ctx context.Context, svc *secrets.Service, request injectionResolveRequest) (injectionResolveResponse, error) {
+func resolveInjection(ctx context.Context, svc *secrets.Service, cfg InternalRouteConfig, request injectionResolveRequest) (injectionResolveResponse, error) {
+	ctx, span := apiTracer.Start(ctx, "secrets.injection.resolve")
+	defer span.End()
 	ctx = secrets.ContextWithOpenBaoAuditInfo(ctx)
 	request.OrgID = strings.TrimSpace(request.OrgID)
 	request.ActorID = strings.TrimSpace(request.ActorID)
 	request.ExecutionID = strings.TrimSpace(request.ExecutionID)
 	request.AttemptID = strings.TrimSpace(request.AttemptID)
+	peerID, _ := workloadauth.PeerIDFromContext(ctx)
+	span.SetAttributes(
+		attribute.String("forge_metal.org_id", request.OrgID),
+		attribute.String("forge_metal.execution_id", request.ExecutionID),
+		attribute.String("forge_metal.attempt_id", request.AttemptID),
+		attribute.String("spiffe.peer_id", peerID.String()),
+		attribute.Int("forge_metal.secret_env_count", len(request.Secrets)),
+	)
 	if request.OrgID == "" || request.ActorID == "" || request.ExecutionID == "" || request.AttemptID == "" {
-		return injectionResolveResponse{}, fmt.Errorf("%w: org_id, actor_id, execution_id, and attempt_id are required", secrets.ErrInvalidArgument)
+		err := fmt.Errorf("%w: org_id, actor_id, execution_id, and attempt_id are required", secrets.ErrInvalidArgument)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return injectionResolveResponse{}, err
 	}
 	if len(request.Secrets) == 0 {
 		return injectionResolveResponse{Env: []injectionEnvValue{}}, nil
 	}
 	if len(request.Secrets) > 64 {
-		return injectionResolveResponse{}, fmt.Errorf("%w: at most 64 secret injections are allowed", secrets.ErrInvalidArgument)
+		err := fmt.Errorf("%w: at most 64 secret injections are allowed", secrets.ErrInvalidArgument)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return injectionResolveResponse{}, err
+	}
+	if err := verifyInjectionGrant(ctx, cfg, request); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return injectionResolveResponse{}, err
 	}
 	principal := secrets.Principal{
-		OrgID:        request.OrgID,
-		Subject:      request.ActorID,
-		Type:         "sandbox_execution",
-		AuthMethod:   "internal_token",
-		CredentialID: "sandbox-rental-service",
+		OrgID:                  request.OrgID,
+		Subject:                request.ActorID,
+		Type:                   "sandbox_execution",
+		AuthMethod:             "spiffe_mtls",
+		CredentialID:           peerID.String(),
+		UseServiceAccountToken: true,
 	}
 	response := injectionResolveResponse{Env: make([]injectionEnvValue, 0, len(request.Secrets))}
 	names := map[string]struct{}{}
@@ -120,11 +158,99 @@ func resolveInjection(ctx context.Context, svc *secrets.Service, request injecti
 		value, err := svc.ReadSecret(ctx, principal, requested.Kind, requested.SecretName, scope)
 		auditInjection(ctx, request, requested, value, err)
 		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
 			return injectionResolveResponse{}, err
 		}
 		response.Env = append(response.Env, injectionEnvValue{Name: requested.EnvName, Value: value.Value})
 	}
 	return response, nil
+}
+
+func verifyInjectionGrant(ctx context.Context, cfg InternalRouteConfig, request injectionResolveRequest) error {
+	_, span := apiTracer.Start(ctx, "secrets.injection.grant.verify")
+	defer span.End()
+	peerID, _ := workloadauth.PeerIDFromContext(ctx)
+	span.SetAttributes(
+		attribute.String("forge_metal.org_id", request.OrgID),
+		attribute.String("forge_metal.execution_id", request.ExecutionID),
+		attribute.String("forge_metal.attempt_id", request.AttemptID),
+		attribute.String("spiffe.peer_id", peerID.String()),
+		attribute.Int("forge_metal.secret_env_count", len(request.Secrets)),
+	)
+	if len(cfg.GrantPublicKey) != ed25519.PublicKeySize || cfg.ExpectedIssuerSPIFFEID == "" || cfg.ExpectedAudienceSPIFFEID == "" {
+		err := fmt.Errorf("%w: injection grant verifier is not configured", secrets.ErrStore)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	seen := map[string]struct{}{}
+	for _, requested := range request.Secrets {
+		grantID := strings.TrimSpace(requested.GrantID)
+		if grantID == "" {
+			err := fmt.Errorf("%w: injection grant_id is required", secrets.ErrForbidden)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+		if _, err := uuid.Parse(grantID); err != nil {
+			err := fmt.Errorf("%w: injection grant_id is malformed", secrets.ErrForbidden)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+		if _, exists := seen[grantID]; exists {
+			err := fmt.Errorf("%w: duplicate injection grant_id", secrets.ErrForbidden)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+		seen[grantID] = struct{}{}
+		grant, err := delegation.VerifyInjectionGrant(cfg.GrantPublicKey, requested.GrantToken, time.Now())
+		if err != nil {
+			err := fmt.Errorf("%w: injection grant token is invalid", secrets.ErrForbidden)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+		if err := matchInjectionGrant(request, requested, peerID.String(), cfg, grant); err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+	}
+	return nil
+}
+
+func matchInjectionGrant(request injectionResolveRequest, requested injectionSecretRequest, peerID string, cfg InternalRouteConfig, grant delegation.InjectionGrant) error {
+	expected := delegation.InjectionGrant{
+		Version:          delegation.InjectionGrantVersion,
+		GrantID:          strings.TrimSpace(requested.GrantID),
+		IssuerSPIFFEID:   cfg.ExpectedIssuerSPIFFEID,
+		AudienceSPIFFEID: cfg.ExpectedAudienceSPIFFEID,
+		OrgID:            request.OrgID,
+		ActorID:          request.ActorID,
+		ExecutionID:      request.ExecutionID,
+		AttemptID:        request.AttemptID,
+		EnvName:          strings.TrimSpace(requested.EnvName),
+		Kind:             strings.TrimSpace(requested.Kind),
+		SecretName:       strings.TrimSpace(requested.SecretName),
+		ScopeLevel:       strings.TrimSpace(requested.ScopeLevel),
+		SourceID:         strings.TrimSpace(requested.SourceID),
+		EnvID:            strings.TrimSpace(requested.EnvID),
+		Branch:           strings.TrimSpace(requested.Branch),
+		ExpiresAtUnix:    grant.ExpiresAtUnix,
+	}
+	if expected.Kind == "" {
+		expected.Kind = secrets.KindSecret
+	}
+	if expected.ScopeLevel == "" {
+		expected.ScopeLevel = secrets.ScopeOrg
+	}
+	if peerID != cfg.ExpectedIssuerSPIFFEID || grant != expected {
+		return fmt.Errorf("%w: injection grant does not match request", secrets.ErrForbidden)
+	}
+	return nil
 }
 
 func auditInjection(ctx context.Context, request injectionResolveRequest, requested injectionSecretRequest, value secrets.SecretValue, err error) {
@@ -167,9 +293,10 @@ func auditInjection(ctx context.Context, request injectionResolveRequest, reques
 		DataClassification:  "secret",
 		ActorType:           "sandbox_execution",
 		ActorID:             request.ActorID,
-		CredentialID:        "sandbox-rental-service",
+		ActorSPIFFEID:       spiffePeerID(ctx),
+		CredentialID:        spiffePeerID(ctx),
 		CredentialName:      "sandbox-rental-service",
-		AuthMethod:          "internal_token",
+		AuthMethod:          "spiffe_mtls",
 		Permission:          "secrets:secret:read",
 		TargetKind:          "secret",
 		TargetScope:         scope.Level,
@@ -199,15 +326,10 @@ func auditInjection(ctx context.Context, request injectionResolveRequest, reques
 	sendGovernanceAudit(ctx, record)
 }
 
-func validInternalBearer(expected, header string) bool {
-	expected = strings.TrimSpace(expected)
-	header = strings.TrimSpace(header)
-	if expected == "" || !strings.HasPrefix(header, "Bearer ") {
-		return false
+func spiffePeerID(ctx context.Context) string {
+	id, ok := workloadauth.PeerIDFromContext(ctx)
+	if !ok {
+		return ""
 	}
-	got := strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
-	if len(got) != len(expected) {
-		return false
-	}
-	return subtle.ConstantTimeCompare([]byte(got), []byte(expected)) == 1
+	return id.String()
 }

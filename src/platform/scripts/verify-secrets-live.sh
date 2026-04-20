@@ -24,6 +24,7 @@ source <("${script_dir}/assume-persona.sh" acme-admin --print)
 admin_secrets_token="${SECRETS_SERVICE_ACCESS_TOKEN}"
 admin_sandbox_token="${SANDBOX_RENTAL_ACCESS_TOKEN}"
 admin_identity_token="${IDENTITY_SERVICE_ACCESS_TOKEN}"
+sandbox_rental_project_id="${SANDBOX_RENTAL_AUTH_PROJECT_ID}"
 secrets_service_project_id="${SECRETS_SERVICE_AUTH_PROJECT_ID}"
 
 # shellcheck disable=SC1090
@@ -317,6 +318,9 @@ print(json.dumps({
         "secrets:secret:read",
         "secrets:secret:list",
         "secrets:transit:verify",
+        "sandbox:execution:submit",
+        "sandbox:execution:read",
+        "sandbox:logs:read",
     ],
 }))
 PY
@@ -337,6 +341,7 @@ json.dump(redacted, open(redacted_path, "w", encoding="utf-8"), indent=2, sort_k
 PY
 )
 api_credential_secrets_token="$(mint_api_credential_token "${api_credential_client_id}" "${api_credential_client_secret}" "${secrets_service_project_id}")"
+api_credential_sandbox_token="$(mint_api_credential_token "${api_credential_client_id}" "${api_credential_client_secret}" "${sandbox_rental_project_id}")"
 
 read_response="$(mktemp)"
 tmp_files+=("${read_response}")
@@ -568,7 +573,7 @@ PY
 
 submit_response="${artifact_dir}/responses/sandbox-submit.json"
 curl -fsS \
-  -H "Authorization: Bearer ${admin_sandbox_token}" \
+  -H "Authorization: Bearer ${api_credential_sandbox_token}" \
   -H "Content-Type: application/json" \
   --data-binary "@${submit_payload}" \
   "${api_base_url%/}/api/v1/executions" >"${submit_response}"
@@ -584,7 +589,7 @@ PY
 status="queued"
 for _ in $(seq 1 180); do
   curl -fsS \
-    -H "Authorization: Bearer ${admin_sandbox_token}" \
+    -H "Authorization: Bearer ${api_credential_sandbox_token}" \
     "${api_base_url%/}/api/v1/executions/${execution_id}" >"${artifact_dir}/responses/sandbox-execution.json"
   status="$(
     python3 - "${artifact_dir}/responses/sandbox-execution.json" <<'PY'
@@ -607,7 +612,7 @@ if [[ "${status}" != "succeeded" ]]; then
 fi
 
 curl -fsS \
-  -H "Authorization: Bearer ${admin_sandbox_token}" \
+  -H "Authorization: Bearer ${api_credential_sandbox_token}" \
   "${api_base_url%/}/api/v1/executions/${execution_id}/logs" >"${artifact_dir}/responses/sandbox-logs.json"
 
 python3 - "${secret_hash}" "${artifact_dir}/responses/sandbox-logs.json" <<'PY'
@@ -620,6 +625,38 @@ if needle not in logs:
     raise SystemExit("sandbox logs did not contain expected secret hash proof")
 PY
 
+printf '%s' "${secret_value}" | verification_ssh "sudo python3 -c '
+import json
+import os
+import sqlite3
+import sys
+
+secret = sys.stdin.read().encode()
+db_path = \"/var/lib/forge-metal/vm-orchestrator/state.db\"
+paths = [db_path, db_path + \"-wal\", db_path + \"-shm\"]
+hits = []
+checked = []
+for path in paths:
+    if not os.path.exists(path):
+        continue
+    checked.append(path)
+    with open(path, \"rb\") as handle:
+        if secret and secret in handle.read():
+            hits.append(path)
+if os.path.exists(db_path):
+    conn = sqlite3.connect(db_path)
+    try:
+        for rowid, spec_json in conn.execute(\"SELECT rowid, spec_json FROM execs\"):
+            if secret.decode() in (spec_json or \"\"):
+                hits.append(f\"execs.spec_json:{rowid}\")
+    finally:
+        conn.close()
+if hits:
+    raise SystemExit(\"vm-orchestrator persisted secret material: \" + \", \".join(hits))
+json.dump({\"checked_paths\": checked, \"secret_hits\": 0}, sys.stdout, indent=2, sort_keys=True)
+print()
+'" >"${artifact_dir}/responses/vm-orchestrator-secret-persistence.json"
+
 remote_secrets_api DELETE "/api/v1/secrets/${secret_name}?kind=secret&scope_level=org" "${admin_secrets_token}" "" "${artifact_dir}/responses/secret-delete.json" "${run_id}-delete"
 
 window_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -628,13 +665,45 @@ window_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   cd "${VERIFICATION_PLATFORM_ROOT}"
   ./scripts/pg.sh sandbox_rental --query "
     COPY (
-      SELECT env_name, kind, secret_name, scope_level
+      SELECT env_name, kind, secret_name, scope_level, grant_id
       FROM execution_secret_env
       WHERE execution_id = '${execution_id}'
       ORDER BY sort_order
     ) TO STDOUT WITH CSV HEADER;
   "
 ) >"${artifact_dir}/postgres/sandbox-secret-env.csv"
+
+python3 - "${artifact_dir}/postgres/sandbox-secret-env.csv" <<'PY'
+import csv
+import sys
+rows = list(csv.DictReader(open(sys.argv[1], encoding="utf-8")))
+if not rows:
+    raise SystemExit("sandbox execution_secret_env did not persist secret refs")
+missing = [row.get("env_name", "") for row in rows if not row.get("grant_id")]
+if missing:
+    raise SystemExit(f"sandbox execution_secret_env rows missing grant_id: {missing}")
+for row in rows:
+    for column in ("env_name", "kind", "secret_name", "scope_level"):
+        if not row.get(column):
+            raise SystemExit(f"sandbox execution_secret_env row missing {column}")
+PY
+
+(
+  cd "${VERIFICATION_PLATFORM_ROOT}"
+  ./scripts/pg.sh sandbox_rental --query "
+    COPY (
+      SELECT count(*)
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'execution_secret_env'
+        AND column_name = 'grant_token'
+    ) TO STDOUT;
+  "
+) >"${artifact_dir}/postgres/sandbox-secret-env-grant-token-column-count.tsv"
+if [[ "$(tr -d '[:space:]' <"${artifact_dir}/postgres/sandbox-secret-env-grant-token-column-count.tsv")" != "0" ]]; then
+  echo "sandbox execution_secret_env still persists grant_token" >&2
+  exit 1
+fi
 
 (
   cd "${VERIFICATION_REPO_ROOT}"
@@ -646,7 +715,7 @@ if grep -Eq '(^|[[:space:]|])secrets_service([[:space:]|])' "${artifact_dir}/pos
 fi
 
 verification_ssh "sudo python3 -c '
-import hashlib, json, ssl, sys, urllib.error, urllib.request
+import json, ssl, sys, urllib.error, urllib.request
 base = \"https://127.0.0.1:8200\"
 ctx = ssl._create_unverified_context()
 token = open(\"/etc/credstore/openbao/root-token\", encoding=\"utf-8\").read().strip()
@@ -659,21 +728,31 @@ def get_status(path):
     except urllib.error.HTTPError as exc:
         return exc.code, {}
 
-status, document = get_status(\"/v1/platform-internal/data/service-credentials/secrets-service/internal-injection-token\")
-value = document.get(\"data\", {}).get(\"data\", {}).get(\"value\", \"\") if status == 200 else \"\"
+legacy_status, _ = get_status(\"/v1/platform-internal/data/service-credentials/secrets-service/internal-injection-token\")
+legacy_metadata_status, _ = get_status(\"/v1/platform-internal/metadata/service-credentials/secrets-service/internal-injection-token\")
 unsafe = {
     \"openbao-root-token\": get_status(\"/v1/platform-internal/data/openbao/root-token\")[0],
     \"openbao-unseal-key-1\": get_status(\"/v1/platform-internal/data/openbao/unseal-key-1\")[0],
     \"zitadel-masterkey\": get_status(\"/v1/platform-internal/data/zitadel/masterkey\")[0],
 }
-if status != 200 or not value:
-    raise SystemExit(\"OpenBao internal injection token document missing\")
+unsafe_metadata = {
+    \"openbao-root-token\": get_status(\"/v1/platform-internal/metadata/openbao/root-token\")[0],
+    \"openbao-unseal-key-1\": get_status(\"/v1/platform-internal/metadata/openbao/unseal-key-1\")[0],
+    \"zitadel-masterkey\": get_status(\"/v1/platform-internal/metadata/zitadel/masterkey\")[0],
+}
+if legacy_status != 404 or legacy_metadata_status != 404:
+    raise SystemExit(\"legacy OpenBao internal injection token document or metadata is still present\")
 for name, status_code in unsafe.items():
     if status_code != 404:
         raise SystemExit(f\"unsafe bootstrap credential {name} unexpectedly present in OpenBao\")
+for name, status_code in unsafe_metadata.items():
+    if status_code != 404:
+        raise SystemExit(f\"unsafe bootstrap credential metadata {name} unexpectedly present in OpenBao\")
 json.dump({
-    \"injection_token_sha256\": hashlib.sha256(value.encode()).hexdigest(),
+    \"legacy_injection_token_status\": legacy_status,
+    \"legacy_injection_token_metadata_status\": legacy_metadata_status,
     \"unsafe_bootstrap_statuses\": unsafe,
+    \"unsafe_bootstrap_metadata_statuses\": unsafe_metadata,
 }, sys.stdout, indent=2, sort_keys=True)
 print()
 '" >"${artifact_dir}/responses/openbao-service-credential-dogfood.json"
@@ -750,6 +829,31 @@ wait_for_clickhouse_count default "
     AND ServiceName = 'sandbox-rental-service'
     AND SpanName = 'sandbox-rental.secrets.resolve'
 " 1 "${artifact_dir}/clickhouse/sandbox-secret-resolve-spans-count.tsv"
+
+wait_for_clickhouse_count default "
+  SELECT count()
+  FROM otel_traces
+  WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
+    AND ServiceName = 'sandbox-rental-service'
+    AND SpanName IN ('secrets.injection.grant.issue', 'secrets.injection.grant.verify', 'auth.spiffe.mtls.client')
+" 3 "${artifact_dir}/clickhouse/sandbox-spiffe-injection-spans-count.tsv"
+
+wait_for_clickhouse_count default "
+  SELECT count()
+  FROM otel_traces
+  WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
+    AND ServiceName = 'secrets-service'
+    AND SpanName IN ('auth.spiffe.mtls.server', 'secrets.injection.resolve', 'secrets.injection.grant.verify')
+" 3 "${artifact_dir}/clickhouse/secrets-spiffe-injection-spans-count.tsv"
+
+wait_for_clickhouse_count default "
+  SELECT count()
+  FROM otel_traces
+  WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
+    AND ServiceName = 'vm-orchestrator'
+    AND SpanName = 'vmorchestrator.exec.spec.redact'
+    AND arrayElement(SpanAttributes, 'vmorchestrator.exec.env_values_redacted') = 'true'
+" 1 "${artifact_dir}/clickhouse/vmorchestrator-redaction-spans-count.tsv"
 
 wait_for_clickhouse_count forge_metal "
   SELECT count()

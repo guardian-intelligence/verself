@@ -51,9 +51,9 @@ No long-lived service token. Two callers, same mechanism:
   token per request, cached on `(jti, namespace)`.
 - Injection path: `secrets-service` holds its own Zitadel service-account
   JWT, auto-refreshed, exchanged per request, cached on `(service_subject,
-  namespace)`. The loopback internal injection endpoint keeps its existing
-  shared token — that authenticates sandbox-rental → secrets-service, not
-  secrets-service → OpenBao.
+  namespace)`. The loopback internal injection endpoint is authenticated with
+  SPIFFE mTLS and accepts only signed, attempt-scoped injection grants issued
+  by `sandbox-rental-service`.
 
 Raw JWT capture lives in a wrapper middleware inside `secrets-service`;
 shared `auth-middleware` stays single-purpose (verify and extract claims).
@@ -112,8 +112,9 @@ The customer-facing surface is `secrets-service`:
 - Internal execution-time injection for `sandbox-rental-service`.
 
 `sandbox-rental-service` stores only secret references on execution rows. At
-worker time it calls the loopback-only internal injection endpoint with a
-shared service token. Secret values are resolved immediately before
+worker time it calls the loopback-only internal injection endpoint over SPIFFE
+mTLS and sends the signed grant attached to each reference. Secret values are
+resolved immediately before
 `vm-orchestrator.StartExec` and are passed only in `ExecSpec.Env`; they are not
 persisted by sandbox-rental-service, written to ClickHouse, or included in
 audit payloads.
@@ -131,12 +132,16 @@ project roles. `secrets-service` owns its operation catalog and maps roles as:
 Sandbox injection is service-to-service, not user-token forwarding. The sandbox
 worker sends `org_id`, `actor_id`, `execution_id`, `attempt_id`, and a bounded
 set of references to `/internal/v1/injections/resolve`. That endpoint is not in
-OpenAPI, is loopback-only by nftables, and requires
-`/etc/credstore/secrets-service/internal-injection-token`.
+OpenAPI, is loopback-only by nftables, and requires SPIFFE mTLS with the exact
+`sandbox-rental-service` workload ID. Each persisted reference carries a
+sandbox-issued Ed25519-signed injection grant bound to org, actor, execution,
+attempt, env name, secret reference, issuer SPIFFE ID, audience SPIFFE ID, and
+expiry; `secrets-service` verifies both the signature and the SPIFFE peer before
+reading from OpenBao with its service account.
 
-SPIFFE/SPIRE remains the right future direction for in-VM per-request secret
-access, but it is not part of this first shipped cut. Until then, injection is
-launch-time environment materialization controlled by sandbox-rental-service.
+SPIFFE/SPIRE is the service-to-service workload identity primitive. In-VM
+per-request secret access is still deferred; injection remains launch-time
+environment materialization controlled by sandbox-rental-service.
 
 ## Resource Model
 
@@ -216,13 +221,11 @@ vm-orchestrator: rpc.StartExec
 
 The Ansible role creates:
 
-- `secrets_service` Unix user and PostgreSQL role.
-- `secrets_service` PostgreSQL database.
-- `/etc/credstore/secrets-service/pg-dsn`
-- `/etc/credstore/secrets-service/envelope-key`
-- `/etc/credstore/secrets-service/internal-injection-token`
-- loopback-only nftables rules for PostgreSQL, Zitadel, governance audit, and
-  OTLP egress.
+- `secrets_service` Unix user with SPIRE workload socket group access.
+- loopback-only public and internal listeners; the internal listener requires
+  SPIFFE mTLS.
+- loopback-only nftables rules for Zitadel, OpenBao, billing, governance audit,
+  and OTLP egress.
 - a Zitadel project named `secrets-service` with `owner`, `admin`, and
   `member` roles.
 

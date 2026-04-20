@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"crypto/ed25519"
 	"database/sql"
 	"encoding/binary"
 	"encoding/json"
@@ -186,6 +187,10 @@ type Service struct {
 	WorkloadTimeout  time.Duration
 	CheckoutCacheDir string
 	Secrets          SecretResolver
+
+	SecretGrantPrivateKey       ed25519.PrivateKey
+	SecretGrantIssuerSPIFFEID   string
+	SecretGrantAudienceSPIFFEID string
 }
 
 type executionWorkItem struct {
@@ -274,6 +279,7 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req 
 	if attemptID == uuid.Nil {
 		attemptID = uuid.New()
 	}
+	req.SecretEnv = assignSecretEnvGrantIDs(req.SecretEnv)
 	now := time.Now().UTC()
 	tx, err := s.PGX.Begin(ctx)
 	if err != nil {

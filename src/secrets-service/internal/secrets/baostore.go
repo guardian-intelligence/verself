@@ -760,7 +760,7 @@ func (s *BaoStore) readSigningKey(ctx context.Context, entry baoTokenEntry, prin
 func (s *BaoStore) token(ctx context.Context, principal Principal) (baoTokenEntry, error) {
 	role := strings.TrimSpace(principal.OpenBaoRole)
 	raw, ok := RawBearerTokenFromContext(ctx)
-	if principal.AuthMethod == "internal_token" {
+	if principal.UseServiceAccountToken {
 		role = openBaoRoleInjection
 		if s.serviceAccount == nil {
 			return baoTokenEntry{}, fmt.Errorf("%w: service-account token source is not configured", ErrStore)

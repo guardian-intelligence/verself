@@ -55,6 +55,7 @@ type governanceAuditRecord struct {
 	ActorDisplay          string `json:"actor_display,omitempty"`
 	ActorOwnerID          string `json:"actor_owner_id,omitempty"`
 	ActorOwnerDisplay     string `json:"actor_owner_display,omitempty"`
+	ActorSPIFFEID         string `json:"actor_spiffe_id,omitempty"`
 	CredentialID          string `json:"credential_id,omitempty"`
 	CredentialName        string `json:"credential_name,omitempty"`
 	CredentialFingerprint string `json:"credential_fingerprint,omitempty"`
