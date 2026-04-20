@@ -142,7 +142,7 @@ See [secrets-service.md](../../src/platform/docs/secrets-service.md). `secrets-s
 Ansible deploys emit OTLP traces via the upstream
 `community.general.opentelemetry` callback; every span lands in
 `default.otel_traces` with `ServiceName='ansible'`. There is no separate
-`deploy_events` rollup. The canonical operator surface is
+`deploy_events` rollup. The canonical founder surface is
 `make observe WHAT=deploy RUN_KEY=<deploy_run_key>`; raw history queries still
 run over `otel_traces` directly when observe has no named query for the task.
 

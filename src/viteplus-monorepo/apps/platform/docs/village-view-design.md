@@ -1,15 +1,15 @@
-# Village View — Operator Console Design Brief (v0)
+# Village View — Founder Console Design Brief (v0)
 
 ## 1. Context
 
-forge-metal is a self-hosted product substrate that a solo non-technical founder ("the
-operator") uses to run an online business off a single bare-metal server. The substrate
-bundles identity, billing, inbound mail, source control, CI runners, isolated VM workloads,
-observability, and frontend apps. It is designed to replace an armful of SaaS vendors at
-commodity infrastructure cost.
+forge-metal is a self-hosted product substrate that a solo non-technical founder uses to
+run an online business off a single bare-metal server. The substrate bundles identity,
+billing, inbound mail, source control, CI runners, isolated VM workloads, observability,
+and frontend apps. It is designed to replace an armful of SaaS vendors at commodity
+infrastructure cost.
 
-The operator is not an SRE. They are a founder who wants a five-minute check-in, usually on
-their phone, to answer three questions:
+The founder is not an SRE. They want a five-minute check-in, usually on their phone, to
+answer three questions:
 
 1. Is anything on fire?
 2. Did we make money today?
@@ -20,7 +20,7 @@ answers these with charts, tables, and yaml. That is the wrong instrument for th
 
 ## 2. Product Concept
 
-A game-like, illustrative operator console styled after builder games (Clash of Clans,
+A game-like, illustrative founder console styled after builder games (Clash of Clans,
 Townscaper, Dorfromantik). The platform is rendered as a _village_: each service is a
 _building_, each customer is a _villager_, _tent_, _house_, or _building_ according to spend
 tier, and incoming external dependencies (Stripe, Cloudflare, Resend, Latitude.sh) arrive
@@ -33,9 +33,9 @@ traces) remain accessible through a "developer mode" but are not the main experi
 
 - **Legibility at a glance.** A burning building communicates more than a red dot on a dashboard.
 - **Affective feedback.** A growing village that fills with tents as customers sign up creates
-  an intrinsic reward loop for the operator during the early-stage slog.
+  an intrinsic reward loop for the founder during the early-stage slog.
 - **Teachability.** Infrastructure concepts (trust tiers, service dependencies, ingress) map
-  naturally onto castle/keep/gate archetypes the operator already has intuition for.
+  naturally onto castle/keep/gate archetypes the founder already has intuition for.
 
 ### What it is not
 
@@ -47,8 +47,8 @@ traces) remain accessible through a "developer mode" but are not the main experi
 
 ## 3. Primary User & Jobs-to-be-Done
 
-**Primary user.** Solo operator. Non-technical founder. Checks the console two to six times
-per day, mostly on phone, occasionally on desktop when something needs attention.
+**Primary user.** Solo, non-technical founder. Checks the console two to six times per
+day, mostly on phone, occasionally on desktop when something needs attention.
 
 **Jobs:**
 
@@ -88,10 +88,10 @@ On desktop these are side rails rather than tabs.
 ## 5. The Village: Districts and Buildings
 
 The village is divided into three _districts_. The districts map 1:1 onto the product's
-three security rings. The operator understands them as Outer Walls / Town Proper / Keep.
+three security rings. The founder understands them as Outer Walls / Town Proper / Keep.
 The engineering team understands them as Ring 1 / Ring 2 / Ring 3.
 
-Within each district the operator may rearrange buildings freely. They may not drag a
+Within each district the founder may rearrange buildings freely. They may not drag a
 building across a district boundary. Attempting to do so snaps the building back with a
 subtle haptic and a toast explaining _why_ ("The Smelter must live inside the Keep").
 
@@ -148,9 +148,9 @@ This reinforces the self-hosting narrative: everything substantive is _inside_ t
 - **Cloudflare** — cartographer's raven flying off to Cartographer's Guild
 - **Latitude.sh** — the ground itself; rendered as a foundation stone stamp at map corner
 
-## 6. Customer Representation (operator-configurable)
+## 6. Customer Representation (founder-configurable)
 
-Different operators run different businesses. A SaaS with a generous free tier will look
+Different founders run different businesses. A SaaS with a generous free tier will look
 very different from a B2B usage-billed product. The mapping between spend tier and visual
 representation is therefore configurable, with opinionated defaults.
 
@@ -163,10 +163,10 @@ representation is therefore configurable, with opinionated defaults.
 | Mid ($1k–$10k MRR)      | House       | Neighborhood district with assigned plots       |
 | Enterprise ($10k+ MRR)  | Named Manor | Own micro-district with crest, name floats over |
 
-### 6.2 Operator configuration
+### 6.2 Founder configuration
 
-The operator edits thresholds (in a simple, opinionated settings screen — not free-form
-yaml) to match their revenue model. Default thresholds are per-operator business-type
+The founder edits thresholds (in a simple, opinionated settings screen — not free-form
+yaml) to match their revenue model. Default thresholds are per-founder business-type
 presets: "SaaS with free tier", "B2B usage-billed", "Marketplace", etc.
 
 ### 6.3 Scale behavior
@@ -259,7 +259,7 @@ The raven is watching."_
 
 Health is not the only signal. _Bustle_ — workers, smoke plume rate, mail cart frequency —
 conveys throughput. A quiet town at 11pm versus a bustling one at peak hours is itself a
-health signal the operator internalizes without reading a number.
+health signal the founder internalizes without reading a number.
 
 Animation tempo is driven by real telemetry via a small number of building-specific data
 bindings (see §13).
@@ -295,7 +295,7 @@ v0 (v0 uses a hue-shift overlay).
 ## 10. The Oracle (Agent Console)
 
 v0's only action surface. A persistent VM running Claude Code, with SSH-level access to the
-bare-metal box, acts as the operator's fix-it and explain-it layer. The UI surface is a
+bare-metal box, acts as the founder's fix-it and explain-it layer. The UI surface is a
 chat drawer that can be invoked from:
 
 - Any building drill-in ("Ask the Oracle about the Counting House")
@@ -311,7 +311,7 @@ When invoked from a building or event, the Oracle receives a structured context 
 - Last N relevant Raven events
 - A time-bounded slice of relevant ClickHouse rows (latency, error spans, logs)
 
-The operator does not assemble this. It is the difference between "a chat with Claude" and
+The founder does not assemble this. It is the difference between "a chat with Claude" and
 "a chat with Claude that already knows what I'm looking at."
 
 ### 10.2 UX
@@ -323,7 +323,7 @@ The operator does not assemble this. It is the difference between "a chat with C
 
 ### 10.3 Safety
 
-The Oracle can read and act on the box. For v0 we treat it as an operator-authored action
+The Oracle can read and act on the box. For v0 we treat it as a founder-authored action
 with full trust, but every tool call the agent makes is recorded to ClickHouse for audit.
 The Raven feed surfaces each Oracle session as a dedicated event category.
 
@@ -418,14 +418,14 @@ All buildings share:
 - Semantic topology editing (dragging connections generates policy). v0 rearrangement is aesthetic.
 - Custom per-building templates (marketplace skins). v0 ships a single village.
 - Separate night sprite set. v0 uses a hue-shift overlay.
-- Multi-operator (multiple villages under one login). Single operator assumed.
+- Multi-founder (multiple villages under one login). Single founder assumed.
 - Historic playback ("rewind my village to last Tuesday"). Great for v1.
 
 ## 16. Open Design Questions
 
 Explicitly flagged for the head of design to pressure-test before IC work begins.
 
-1. **Bustle vs. numerics.** How far does the bustle-as-data signal carry before the operator
+1. **Bustle vs. numerics.** How far does the bustle-as-data signal carry before the founder
    still needs a number? Suggest: bustle is the ambient signal, exact numbers appear in
    the drill-in, not the map.
 2. **Default connection visibility.** Roads off vs. on by default. This document says off;
@@ -437,10 +437,10 @@ Explicitly flagged for the head of design to pressure-test before IC work begins
 5. **Developer mode toggle.** Global toggle vs. per-drill-in gear. Recommend global,
    surfaced in the gear menu, persisted per device.
 6. **Enterprise building naming.** Who writes the "Acme Corp" label? Pulled from Zitadel
-   organization display name, or operator-edited? Recommend: pulled by default, editable
+   organization display name, or founder-edited? Recommend: pulled by default, editable
    inline by long-press.
 7. **Empty state for Financials / Growth on day one.** Both sections will be nearly empty
-   for new operators. Needs illustrative empty states that are motivating, not sad.
+   for new founders. Needs illustrative empty states that are motivating, not sad.
 
 ## 17. Appendix A — Data Sources (for engineering)
 
