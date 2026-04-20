@@ -1,13 +1,20 @@
 # Identity And IAM Direction
 
-Zitadel is the identity system. Forge Metal is the product IAM system. Go
-services are the authorization enforcement points.
+Zitadel is the human, organization, and customer/API credential identity
+system. SPIRE is the repo-owned workload identity system. Forge Metal is the
+product IAM system. Go services are the authorization enforcement points.
 
 ## Boundary
 
-Zitadel owns authentication, organizations, users, service accounts, OIDC/OAuth
-applications, project roles, role assignments, project grants, JWKS, MFA,
-passkeys, and social identity providers.
+Zitadel owns authentication, organizations, users, customer/API credential
+service accounts, OIDC/OAuth applications, project roles, role assignments,
+project grants, JWKS, MFA, passkeys, and social identity providers.
+
+SPIRE owns repo-owned workload identity. Internal service-to-service calls
+between Forge Metal services use SPIFFE X.509-SVID mTLS or SPIFFE JWT-SVIDs,
+not Zitadel machine users, shared bearer tokens, or OpenBao as an identity
+source. The workload identity contract lives in
+`docs/architecture/workload-identity.md`.
 
 Forge Metal services own their operation catalogs. A service operation is a
 code-defined contract such as `sandbox:execution:submit`; it is not a
@@ -74,7 +81,8 @@ Service operation catalogs:
 Zitadel role assignments:
 
 - Prove who the caller is and which organization/project roles they hold.
-- Are the membership plane for users and service accounts.
+- Are the membership plane for users and customer/API credential service
+  accounts.
 - Are surfaced to Go services through validated JWT claims or, when needed,
   through Zitadel APIs.
 - Within the identity-service Zitadel project, only three role keys exist:
@@ -108,9 +116,10 @@ checks the token issuer and audience, verifies the signature from Zitadel JWKS,
 extracts identity fields into request context, and leaves operation-specific
 authorization to the service.
 
-The runtime identity object is:
+The runtime identity object for Zitadel-authenticated public/customer APIs is:
 
-- `Subject`: Zitadel user or service-account ID from `sub`.
+- `Subject`: Zitadel user or customer/API credential service-account ID from
+  `sub`.
 - `OrgID`: active organization/resource-owner ID when present.
 - `ProjectID`: target service project ID whose role claim was accepted.
 - `Roles`: role keys extracted only from that target service project claim.
@@ -151,19 +160,24 @@ role assignments whose `ProjectID` matches the target service project and whose
 `OrganizationID` matches the request identity's `OrgID`. Missing target audience
 or missing target project role claim fails closed.
 
-OIDC and service-account setup has several sharp edges:
+OIDC and customer/API credential service-account setup has several sharp edges:
 
 - Access tokens presented to Go services must be JWTs. Opaque Zitadel access
   tokens fail local JWKS validation. Frontend OIDC applications need
   `OIDC_TOKEN_TYPE_JWT`; machine users need `ACCESS_TOKEN_TYPE_JWT`.
-- Service-to-service client credentials must request an audience scope for the
-  target project: `urn:zitadel:iam:org:project:id:<project_id>:aud`.
-- Service-to-service callers that need roles in the token must request
+- Customer/API credential client-credentials flows must request an audience
+  scope for the target project:
+  `urn:zitadel:iam:org:project:id:<project_id>:aud`.
+- Customer/API credential callers that need roles in the token must request
   `urn:zitadel:iam:org:projects:roles`. The spelling is plural `projects`.
 - Callers that need a resource-owner organization ID in the token must request
   `urn:zitadel:iam:user:resourceowner`.
 - `openid` and `profile` are still requested for normal OIDC token shape and
   identity claims.
+
+Repo-owned service-to-service calls do not use Zitadel client credentials.
+Those callers use SPIFFE mTLS for HTTP and SPIRE JWT-SVIDs for OpenBao
+workload auth.
 
 Single-node deployments use a split issuer/JWKS path. The token `iss` claim is
 validated against the public issuer, for example `https://auth.<domain>`, while
@@ -278,8 +292,8 @@ within one organization. Project grants let another organization manage role
 assignments for its users; they are not a substitute for Forge Metal operation
 policies.
 
-Temporary seed or rehearsal users should follow the same model as long-lived
-service accounts:
+Temporary seed or rehearsal API personas should follow the same model as
+customer API credentials:
 
 - Create the machine user in the target organization.
 - Configure the machine user for JWT access tokens.
@@ -326,9 +340,10 @@ credential issuance, not at request time.
 
 Customer API credentials are Forge Metal product resources backed by Zitadel
 service accounts. They are not git-provider credentials, webhook secrets, or
-human browser sessions. The durable Forge Metal resource is readable as
-metadata; secret material is returned only on creation or roll and must never be
-read back later.
+human browser sessions. They are also not repo-owned workload identities;
+repo-owned services use SPIFFE/SPIRE. The durable Forge Metal resource is
+readable as metadata; secret material is returned only on creation or roll and
+must never be read back later.
 
 The researched Zitadel pattern is:
 
@@ -395,8 +410,9 @@ revocation window is unacceptable for customer-facing usage.
 ## Seeded Rehearsal Personas
 
 `seed-system.yml` provisions three long-lived rehearsal personas for operators
-and agents. Each persona has a human browser login and a matching machine user
-for API rehearsal:
+and agents. Each persona has a human browser login and a matching Zitadel
+machine user for customer/API rehearsal. These machine users are not the
+repo-owned service-to-service identity model:
 
 | Persona | Human login | Machine user | Organization | Built-in roles |
 |---|---|---|---|---|
@@ -485,6 +501,9 @@ a human user's browser session token for background git fetches.
 - Customer API credentials are Forge Metal-managed Zitadel service-account
   credentials. Secret material is visible only at creation/roll; metadata
   remains readable for audit, rotation, and revocation.
+- Repo-owned workload identity is SPIFFE/SPIRE. Reintroducing shared bearer
+  tokens, Zitadel client secrets for internal service calls, or OpenBao as a
+  workload identity source is a security regression.
 
 ## Current Limitations
 
@@ -528,8 +547,8 @@ Local code anchors:
 - `src/sandbox-rental-service/internal/api/policy.go`: operation policy
   catalog, `x-forge-metal-iam`, sandbox role bundles, direct-scope permission
   checks, idempotency and rate-limit hooks.
-- `src/sandbox-rental-service/internal/serviceauth/client_credentials.go`:
-  service-to-service client-credentials scopes and single-node Host override.
+- `src/auth-middleware/workload`: SPIFFE Workload API source, mTLS peer
+  authorization, and workload identity trace spans.
 - `src/platform/ansible/playbooks/tasks/upsert_role_assignment.yml`: Zitadel
   Authorization service create/update calls for project role assignments.
 
@@ -556,10 +575,11 @@ Zitadel Actions can customize behavior such as role assignment after external
 identity-provider registration:
 <https://zitadel.com/docs/guides/manage/customize/behavior>
 
-Zitadel service accounts are the recommended machine identity model. They
-support private-key JWT, client credentials, and personal access tokens; the
-Zitadel guidance recommends private-key JWT for most service-account scenarios
-and treats PATs as convenient but long-lived bearer tokens:
+Zitadel service accounts are the recommended customer/API credential machine
+identity model. They support private-key JWT, client credentials, and personal
+access tokens; the Zitadel guidance recommends private-key JWT for most
+service-account scenarios and treats PATs as convenient but long-lived bearer
+tokens:
 <https://zitadel.com/docs/guides/integrate/service-accounts/authenticate-service-accounts>
 
 Zitadel machine users must be configured for JWT access tokens when Forge Metal

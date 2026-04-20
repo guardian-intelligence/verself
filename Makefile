@@ -1,7 +1,7 @@
 .PHONY: help test lint lint-scripts lint-conversions lint-ansible lint-voice company-proof fmt vet tidy openapi openapi-check openapi-wire-check \
        hooks-install doctor inventory-check setup-dev setup-sops provision deprovision deploy site guest-rootfs security-patch identity-reset seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member \
        set-user-state billing-clock billing-wall-clock billing-state billing-documents billing-finalizations billing-events billing-pg-shell billing-pg-query billing-proof billing-reset verification-reset \
-       secrets-proof secrets-leak-proof openbao-proof openbao-tenancy-proof \
+       secrets-proof secrets-leak-proof openbao-proof openbao-tenancy-proof workload-identity-proof \
        vm-guest-telemetry-build observe telemetry-proof telemetry-proof-fail clickhouse-query clickhouse-schemas pg-shell pg-query pg-list tb-shell tb-command mail mail-accounts mail-mailboxes \
        mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets \
        wipe-pg-db wipe-server vm-orchestrator-proof stress sandbox-inner sandbox-middle sandbox-proof rent-ui-smoke rent-ui-local rent-local-dev scheduler-proof verify-scheduler grafana-proof observability-smoke services-doctor
@@ -234,8 +234,11 @@ secrets-leak-proof: inventory-check ## Prove bearer/JWT material is absent from 
 openbao-proof: inventory-check ## Prove OpenBao process, health, metrics, audit log, nftables, and ClickHouse evidence
 	cd $(FM) && ./scripts/verify-openbao-live.sh
 
-openbao-tenancy-proof: inventory-check ## Prove OpenBao per-org mounts, JWT roles, policies, audit rows, and ClickHouse spans
+openbao-tenancy-proof: inventory-check ## Prove OpenBao per-org mounts, JWT roles, SPIFFE workload roles, policies, and ClickHouse spans
 	cd $(FM) && ./scripts/verify-openbao-tenancy-live.sh
+
+workload-identity-proof: inventory-check ## Prove SPIFFE mTLS/JWT-SVID boundaries, SPIRE OIDC, stale credential deletion, and ClickHouse evidence
+	cd $(FM) && ./scripts/verify-workload-identity-live.sh
 
 billing-reset: inventory-check ## Exhaustively wipe billing state (TigerBeetle + billing PostgreSQL schema) and restart billing callers
 	$(FM)/scripts/ansible-with-tunnel.sh playbooks/billing-reset.yml
@@ -296,7 +299,7 @@ grafana-proof: inventory-check ## Verify Grafana health, datasource execution, P
 services-doctor: inventory-check ## Cross-check declared services.yml against live listeners on the box: make services-doctor [FORMAT=table|json|nftables]
 	@python3 $(FM)/scripts/services-doctor.py
 
-observe: inventory-check ## Discover/query telemetry: make observe [WHAT=catalog|queries|describe|metric|trace|logs|http|service|errors|mail|deploy] [SIGNAL=...] [FORMAT=table|json|markdown]
+observe: inventory-check ## Discover/query telemetry: make observe [WHAT=catalog|queries|describe|metric|trace|logs|http|service|errors|mail|deploy|workload-identity] [SIGNAL=...] [FORMAT=table|json|markdown]
 	cd $(FM) && ./scripts/observe.sh $(if $(WHAT),--what "$(WHAT)",) $(if $(SIGNAL),--signal "$(SIGNAL)",) $(if $(SERVICE),--service "$(SERVICE)",) $(if $(METRIC),--metric "$(METRIC)",) $(if $(SPAN),--span "$(SPAN)",) $(if $(FIELD),--field "$(FIELD)",) $(if $(QUERY),--query "$(QUERY)",) $(if $(PREFIX),--prefix "$(PREFIX)",) $(if $(SEARCH),--search "$(SEARCH)",) $(if $(GROUP_BY),--group-by "$(GROUP_BY)",) $(if $(MODE),--mode "$(MODE)",) $(if $(TRACE_ID),--trace-id "$(TRACE_ID)",) $(if $(RUN_KEY),--run-key "$(RUN_KEY)",) $(if $(HOST),--host "$(HOST)",) $(if $(STATUS_MIN),--status-min "$(STATUS_MIN)",) $(if $(FORMAT),--format "$(FORMAT)",) $(if $(MINUTES),--minutes "$(MINUTES)",) $(if $(LIMIT),--limit "$(LIMIT)",) $(if $(ERRORS),--errors,)
 
 telemetry-proof: inventory-check ## Run observability smoke and verify ansible spans land in ClickHouse

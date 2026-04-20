@@ -45,15 +45,15 @@ mounts.
 
 ### Auth to OpenBao
 
-No long-lived service token. Two callers, same mechanism:
+No long-lived service token. Two identity inputs, explicit boundary:
 
 - User path: the caller's Zitadel JWT is exchanged for a short-lived OpenBao
   token per request, cached on `(jti, namespace)`.
-- Injection path: `secrets-service` holds its own Zitadel service-account
-  JWT, auto-refreshed, exchanged per request, cached on `(service_subject,
-  namespace)`. The loopback internal injection endpoint is authenticated with
-  SPIFFE mTLS and accepts only signed, attempt-scoped injection grants issued
-  by `sandbox-rental-service`.
+- Workload path: `secrets-service` fetches a SPIRE JWT-SVID with audience
+  `openbao`, logs in through OpenBao JWT auth, and receives a short-lived
+  OpenBao token bound to its SPIFFE subject. The loopback internal injection
+  endpoint is authenticated with SPIFFE mTLS and the persisted execution
+  attempt/grant context, not a static service-account client secret.
 
 Raw JWT capture lives in a wrapper middleware inside `secrets-service`;
 shared `auth-middleware` stays single-purpose (verify and extract claims).
@@ -61,8 +61,10 @@ shared `auth-middleware` stays single-purpose (verify and extract claims).
 ### Policy split
 
 - Zitadel = IdP (authn).
+- SPIRE = repo-owned workload identity.
 - OpenBao = resource-level authz for the secrets plane (KV path + Transit key
-  capabilities, per-namespace HCL).
+  capabilities, per-namespace HCL). OpenBao is a relying party for workload
+  identity, not the source of truth for it.
 - `policy.go` keeps the coarse has-any-secrets-role check, governance audit
   emission, rate limits, idempotency, and body limits. The fine-grained
   role/capability matrix moves into OpenBao policies.
@@ -113,8 +115,8 @@ The customer-facing surface is `secrets-service`:
 
 `sandbox-rental-service` stores only secret references on execution rows. At
 worker time it calls the loopback-only internal injection endpoint over SPIFFE
-mTLS and sends the signed grant attached to each reference. Secret values are
-resolved immediately before
+mTLS with attempt-scoped persisted grant context. Secret values are resolved
+immediately before
 `vm-orchestrator.StartExec` and are passed only in `ExecSpec.Env`; they are not
 persisted by sandbox-rental-service, written to ClickHouse, or included in
 audit payloads.
@@ -133,11 +135,9 @@ Sandbox injection is service-to-service, not user-token forwarding. The sandbox
 worker sends `org_id`, `actor_id`, `execution_id`, `attempt_id`, and a bounded
 set of references to `/internal/v1/injections/resolve`. That endpoint is not in
 OpenAPI, is loopback-only by nftables, and requires SPIFFE mTLS with the exact
-`sandbox-rental-service` workload ID. Each persisted reference carries a
-sandbox-issued Ed25519-signed injection grant bound to org, actor, execution,
-attempt, env name, secret reference, issuer SPIFFE ID, audience SPIFFE ID, and
-expiry; `secrets-service` verifies both the signature and the SPIFFE peer before
-reading from OpenBao with its service account.
+`sandbox-rental-service` workload ID. `secrets-service` verifies the SPIFFE
+peer and the persisted attempt/grant context before reading from OpenBao with a
+SPIRE JWT-SVID-authenticated OpenBao token.
 
 SPIFFE/SPIRE is the service-to-service workload identity primitive. In-VM
 per-request secret access is still deferred; injection remains launch-time
@@ -224,8 +224,8 @@ The Ansible role creates:
 - `secrets_service` Unix user with SPIRE workload socket group access.
 - loopback-only public and internal listeners; the internal listener requires
   SPIFFE mTLS.
-- loopback-only nftables rules for Zitadel, OpenBao, billing, governance audit,
-  and OTLP egress.
+- loopback-only nftables rules for Zitadel, OpenBao, SPIRE OIDC Discovery,
+  billing, governance audit, and OTLP egress.
 - a Zitadel project named `secrets-service` with `owner`, `admin`, and
   `member` roles.
 
@@ -261,7 +261,8 @@ only prints the secret hash, and asserts:
 - Runtime product services never receive host privilege. Secret injection is an
   HTTP boundary from sandbox-rental-service to secrets-service; VM launch still
   goes through vm-orchestrator.
-- The local envelope key is deployment secret material and must be 32 bytes.
+- The historical local envelope key is stop-gap deployment secret material; it
+  is removed when the OpenBao backend is the only executable path.
 - Secret names should not encode sensitive facts; audit still treats path names
   as sensitive and records hashes.
 - Cloud IAM integration, outward OIDC federation, and dynamic credentials
@@ -269,10 +270,14 @@ only prints the secret hash, and asserts:
 - The OpenBao backend is not customer-visible: mount names, namespace names,
   and backend paths never appear in API responses, error messages, or
   customer-facing UI copy.
+- OpenBao is not the repo-owned workload identity source of truth. It accepts
+  SPIRE-issued identity documents and maps trusted SPIFFE subjects to resource
+  policies.
 
 ## Source Anchors
 
 - Service architecture: `docs/architecture/service-architecture.md`
+- Workload identity: `docs/architecture/workload-identity.md`
 - Identity and IAM split: `src/platform/docs/identity-and-iam.md`
 - Audit contract: `src/governance-service/docs/audit-data-contract.md`
 - Sandbox control plane: `src/sandbox-rental-service/docs/vm-execution-control-plane.md`

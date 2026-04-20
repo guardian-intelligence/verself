@@ -43,6 +43,11 @@ func buildQueries(cfg config) ([]query, error) {
 			newQuery("mail.events", mailEventsSQL, params),
 			newQuery("mail.metrics", mailMetricsSQL, params),
 		}, nil
+	case "workload-identity":
+		return []query{
+			newQuery("workload_identity.spans", workloadIdentitySpansSQL, params),
+			newQuery("workload_identity.spire_logs", workloadIdentitySpireLogsSQL, params),
+		}, nil
 	case "deploy":
 		if cfg.runKey != "" {
 			return []query{newQuery("deploy.run", deployRunSQL, params)}, nil
@@ -480,6 +485,41 @@ SELECT
   SampledAt AS sampled_at
 FROM default.mail_metrics_latest
 ORDER BY metric_group, metric
+LIMIT {row_limit:UInt32}`
+
+const workloadIdentitySpansSQL = `
+SELECT
+  formatDateTime(Timestamp, '%H:%i:%S') AS time,
+  ServiceName AS service,
+  SpanName AS span,
+  nullIf(SpanAttributes['spiffe.peer_id'], '') AS peer_id,
+  nullIf(SpanAttributes['spiffe.expected_server_id'], '') AS expected_server_id,
+  nullIf(SpanAttributes['spiffe.id'], '') AS svid_id,
+  nullIf(SpanAttributes['jwt.audience'], '') AS audience,
+  nullIf(SpanAttributes['bao.role'], '') AS bao_role,
+  StatusCode AS status,
+  intDiv(Duration, 1000000) AS ms,
+  TraceId AS trace_id
+FROM default.otel_traces
+WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+  AND (
+    startsWith(SpanName, 'auth.spiffe.')
+    OR SpanName IN ('secrets.bao.jwt_svid.login', 'secrets.injection.service_token.exchange')
+  )
+ORDER BY Timestamp DESC
+LIMIT {row_limit:UInt32}`
+
+const workloadIdentitySpireLogsSQL = `
+SELECT
+  formatDateTime(Timestamp, '%H:%i:%S') AS time,
+  ServiceName AS service,
+  SeverityText AS level,
+  Body AS message,
+  toString(LogAttributes) AS attributes
+FROM default.otel_logs
+WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+  AND ServiceName IN ('spire-server', 'spire-agent', 'spire-oidc-discovery-provider')
+ORDER BY Timestamp DESC
 LIMIT {row_limit:UInt32}`
 
 const deployTasksSQL = `

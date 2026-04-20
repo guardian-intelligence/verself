@@ -64,7 +64,8 @@ __deploy_identity_span_id() {
   python3 -c 'import hashlib, sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest()[:16])' "$1"
 }
 
-export FORGE_METAL_DEPLOY_RUN_KEY="$(__deploy_identity_run_key)"
+FORGE_METAL_DEPLOY_RUN_KEY="$(__deploy_identity_run_key)"
+export FORGE_METAL_DEPLOY_RUN_KEY
 if [ -z "${FORGE_METAL_DEPLOY_ID:-}" ]; then
   FORGE_METAL_DEPLOY_ID="$(__deploy_identity_uuid5 "${FORGE_METAL_DEPLOY_RUN_KEY}")"
 fi
@@ -81,10 +82,14 @@ export TRACEPARENT="00-${__trace_hex}-${__span_hex}-01"
 # callback, so they survive into ClickHouse ResourceAttributes for reporting.
 __repo_root="$(git rev-parse --show-toplevel 2>/dev/null || echo '')"
 __git() { git -C "${__repo_root}" "$@" 2>/dev/null || true; }
-export FORGE_METAL_COMMIT_SHA="$(__git rev-parse HEAD)"
-export FORGE_METAL_BRANCH="$(__git rev-parse --abbrev-ref HEAD)"
-export FORGE_METAL_COMMIT_MESSAGE="$(__git log -1 --format=%s)"
-export FORGE_METAL_AUTHOR="$(__git log -1 --format=%ae)"
+FORGE_METAL_COMMIT_SHA="$(__git rev-parse HEAD)"
+FORGE_METAL_BRANCH="$(__git rev-parse --abbrev-ref HEAD)"
+FORGE_METAL_COMMIT_MESSAGE="$(__git log -1 --format=%s)"
+FORGE_METAL_AUTHOR="$(__git log -1 --format=%ae)"
+export FORGE_METAL_COMMIT_SHA
+export FORGE_METAL_BRANCH
+export FORGE_METAL_COMMIT_MESSAGE
+export FORGE_METAL_AUTHOR
 if [ -n "$(__git status --porcelain)" ]; then
   export FORGE_METAL_DIRTY="true"
 else
@@ -101,7 +106,7 @@ export OTEL_SERVICE_NAME="ansible"
 # SDK decodes percent-encoded values on read. Commit messages can contain
 # commas, equals signs, etc. — percent-encode with python to stay within
 # the spec.
-export OTEL_RESOURCE_ATTRIBUTES="$(python3 - <<'PY'
+OTEL_RESOURCE_ATTRIBUTES="$(python3 - <<'PY'
 import os, urllib.parse as up
 parts = [
     ("forge_metal.deploy_id", os.environ["FORGE_METAL_DEPLOY_ID"]),
@@ -116,6 +121,7 @@ parts = [
 print(",".join(f"{k}={up.quote(v, safe='')}" for k, v in parts if v))
 PY
 )"
+export OTEL_RESOURCE_ATTRIBUTES
 
 unset -f __deploy_identity_counter __deploy_identity_run_key __deploy_identity_uuid5 __deploy_identity_span_id __git
 unset __repo_root __trace_hex __span_hex
