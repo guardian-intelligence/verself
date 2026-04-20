@@ -938,6 +938,376 @@ grafana_dashboards:
             OVER () as avg_pct FROM (SELECT $__timeInterval(TimeUnix) as time, 100 as heartbeat_pct FROM default.otel_metrics_sum WHERE
             $__timeFilter(TimeUnix) AND MetricName = 'process.memory.usage' AND ResourceAttributes['process.executable.name'] = 'zitadel' GROUP
             BY time)) ORDER BY time
+  - uid: "forge-metal-secrets"
+    title: "Secrets & OpenBao"
+    tags:
+      - "security"
+    panels:
+      - id: 1
+        uid: "seal-and-active"
+        title: "Seal Status & Active Node"
+        type: "timeseries"
+        x: 0
+        y: 0
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT time, series, v FROM (SELECT $__timeInterval(TimeUnix) AS time, 'unsealed (1=ok)' AS series, avg(Value) AS v FROM
+            default.otel_metrics_gauge WHERE $__timeFilter(TimeUnix) AND MetricName = 'vault_core_unsealed' GROUP BY time UNION ALL SELECT
+            $__timeInterval(TimeUnix) AS time, 'active-node (1=leader)' AS series, avg(Value) AS v FROM default.otel_metrics_gauge WHERE
+            $__timeFilter(TimeUnix) AND MetricName = 'vault_core_active' GROUP BY time) ORDER BY time
+      - id: 2
+        uid: "raft-and-autopilot"
+        title: "Raft Peers & Autopilot Health"
+        type: "timeseries"
+        x: 8
+        y: 0
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT time, series, v FROM (SELECT $__timeInterval(TimeUnix) AS time, 'raft_peers' AS series, max(Value) AS v FROM
+            default.otel_metrics_gauge WHERE $__timeFilter(TimeUnix) AND MetricName = 'vault_raft_peers' GROUP BY time UNION ALL SELECT
+            $__timeInterval(TimeUnix) AS time, 'autopilot_healthy (1=ok)' AS series, avg(Value) AS v FROM default.otel_metrics_gauge WHERE
+            $__timeFilter(TimeUnix) AND MetricName = 'vault_autopilot_healthy' GROUP BY time UNION ALL SELECT $__timeInterval(TimeUnix) AS
+            time, 'failure_tolerance' AS series, avg(Value) AS v FROM default.otel_metrics_gauge WHERE $__timeFilter(TimeUnix) AND
+            MetricName = 'vault_autopilot_failure_tolerance' GROUP BY time) ORDER BY time
+      - id: 3
+        uid: "audit-log-failures"
+        title: "Audit Log Failures (any non-zero = P1)"
+        type: "timeseries"
+        x: 16
+        y: 0
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT time, series, failures FROM (SELECT time, 'request_failures' AS series, greatest(val_last - val_prev, 0) AS failures FROM
+            (SELECT $__timeInterval(TimeUnix) AS time, argMax(Value, TimeUnix) AS val_last, lagInFrame(argMax(Value, TimeUnix)) OVER (ORDER BY
+            $__timeInterval(TimeUnix)) AS val_prev FROM default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND MetricName =
+            'vault_audit_log_request_failure' GROUP BY time) WHERE val_prev IS NOT NULL UNION ALL SELECT time, 'response_failures' AS series,
+            greatest(val_last - val_prev, 0) AS failures FROM (SELECT $__timeInterval(TimeUnix) AS time, argMax(Value, TimeUnix) AS val_last,
+            lagInFrame(argMax(Value, TimeUnix)) OVER (ORDER BY $__timeInterval(TimeUnix)) AS val_prev FROM default.otel_metrics_sum WHERE
+            $__timeFilter(TimeUnix) AND MetricName = 'vault_audit_log_response_failure' GROUP BY time) WHERE val_prev IS NOT NULL) ORDER BY time
+      - id: 4
+        uid: "api-latency-p95"
+        title: "API Latency p95 (ms) by operation"
+        type: "timeseries"
+        x: 0
+        y: 9
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "ms"
+        raw_sql:
+          >-
+            SELECT $__timeInterval(Timestamp) AS time, replaceOne(SpanName, 'secrets.', '') AS operation,
+            round(quantile(0.95)(Duration / 1000000), 2) AS p95_ms FROM default.otel_traces WHERE $__timeFilter(Timestamp) AND ServiceName =
+            'secrets-service' AND SpanName LIKE 'secrets.%' AND SpanName NOT LIKE 'secrets.bao.%' AND SpanName != 'secrets.ready' AND
+            Duration > 0 GROUP BY time, operation ORDER BY time
+      - id: 5
+        uid: "backend-rtt-p95"
+        title: "OpenBao Backend RTT p95 (ms)"
+        type: "timeseries"
+        x: 8
+        y: 9
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "ms"
+        raw_sql:
+          >-
+            SELECT $__timeInterval(Timestamp) AS time, replaceOne(SpanName, 'secrets.bao.', '') AS backend_op,
+            round(quantile(0.95)(Duration / 1000000), 2) AS p95_ms FROM default.otel_traces WHERE $__timeFilter(Timestamp) AND ServiceName =
+            'secrets-service' AND SpanName LIKE 'secrets.bao.%' AND SpanName != 'secrets.bao.ready' AND Duration > 0 GROUP BY time,
+            backend_op ORDER BY time
+      - id: 6
+        uid: "api-error-rate"
+        title: "API Error Rate (%)"
+        type: "timeseries"
+        x: 16
+        y: 9
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT time, concat('error rate (avg: ', toString(round(avg_pct, 2)), '%)') AS series, error_pct FROM (SELECT *, avg(error_pct)
+            OVER () AS avg_pct FROM (SELECT $__timeInterval(Timestamp) AS time, round(countIf(StatusCode = 'Error') / greatest(count(), 1) *
+            100, 2) AS error_pct FROM default.otel_traces WHERE $__timeFilter(Timestamp) AND ServiceName = 'secrets-service' AND SpanName
+            LIKE 'secrets.%' AND SpanName NOT LIKE 'secrets.bao.%' GROUP BY time)) ORDER BY time
+      - id: 7
+        uid: "requests-by-operation"
+        title: "Requests by Operation"
+        type: "timeseries"
+        x: 0
+        y: 18
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT $__timeInterval(Timestamp) AS time, replaceOne(SpanName, 'secrets.', '') AS operation, toFloat64(count()) AS reqs FROM
+            default.otel_traces WHERE $__timeFilter(Timestamp) AND ServiceName = 'secrets-service' AND SpanName LIKE 'secrets.%' AND
+            SpanName NOT LIKE 'secrets.bao.%' AND SpanName != 'secrets.ready' GROUP BY time, operation ORDER BY time
+      - id: 8
+        uid: "in-flight-requests"
+        title: "OpenBao In-Flight Requests"
+        type: "timeseries"
+        x: 8
+        y: 18
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT $__timeInterval(TimeUnix) AS time, 'in_flight' AS series, avg(Value) AS v FROM default.otel_metrics_gauge WHERE
+            $__timeFilter(TimeUnix) AND MetricName = 'vault_core_in_flight_requests' GROUP BY time ORDER BY time
+      - id: 9
+        uid: "locked-users-and-logins"
+        title: "Locked Users & JWT Logins"
+        type: "timeseries"
+        x: 16
+        y: 18
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT time, series, v FROM (SELECT $__timeInterval(TimeUnix) AS time, 'locked_users' AS series, max(Value) AS v FROM
+            default.otel_metrics_gauge WHERE $__timeFilter(TimeUnix) AND MetricName = 'vault_core_locked_users' GROUP BY time UNION ALL
+            SELECT $__timeInterval(Timestamp) AS time, 'jwt_login_ok' AS series, toFloat64(countIf(StatusCode != 'Error')) AS v FROM
+            default.otel_traces WHERE $__timeFilter(Timestamp) AND ServiceName = 'secrets-service' AND SpanName = 'secrets.bao.jwt.login'
+            GROUP BY time UNION ALL SELECT $__timeInterval(Timestamp) AS time, 'jwt_login_err' AS series, toFloat64(countIf(StatusCode =
+            'Error')) AS v FROM default.otel_traces WHERE $__timeFilter(Timestamp) AND ServiceName = 'secrets-service' AND SpanName =
+            'secrets.bao.jwt.login' GROUP BY time) ORDER BY time
+      - id: 10
+        uid: "kv-and-token-count"
+        title: "KV Secrets & Tokens"
+        type: "timeseries"
+        x: 0
+        y: 27
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT time, series, v FROM (SELECT $__timeInterval(TimeUnix) AS time, 'kv_secrets' AS series, max(Value) AS v FROM
+            default.otel_metrics_gauge WHERE $__timeFilter(TimeUnix) AND MetricName = 'vault_secret_kv_count' GROUP BY time UNION ALL SELECT
+            $__timeInterval(TimeUnix) AS time, 'tokens_total' AS series, max(Value) AS v FROM default.otel_metrics_gauge WHERE
+            $__timeFilter(TimeUnix) AND MetricName = 'vault_token_count' GROUP BY time UNION ALL SELECT $__timeInterval(TimeUnix) AS time,
+            'identity_entities' AS series, max(Value) AS v FROM default.otel_metrics_gauge WHERE $__timeFilter(TimeUnix) AND MetricName =
+            'vault_identity_entity_count' GROUP BY time) ORDER BY time
+      - id: 11
+        uid: "leases"
+        title: "Leases (active vs irrevocable)"
+        type: "timeseries"
+        x: 8
+        y: 27
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT time, series, v FROM (SELECT $__timeInterval(TimeUnix) AS time, 'leases_active' AS series, max(Value) AS v FROM
+            default.otel_metrics_gauge WHERE $__timeFilter(TimeUnix) AND MetricName = 'vault_expire_num_leases' GROUP BY time UNION ALL
+            SELECT $__timeInterval(TimeUnix) AS time, 'leases_irrevocable (should=0)' AS series, max(Value) AS v FROM
+            default.otel_metrics_gauge WHERE $__timeFilter(TimeUnix) AND MetricName = 'vault_expire_num_irrevocable_leases' GROUP BY time)
+            ORDER BY time
+      - id: 12
+        uid: "transit-ops"
+        title: "Transit Ops (encrypt/decrypt/sign/verify)"
+        type: "timeseries"
+        x: 16
+        y: 27
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT $__timeInterval(Timestamp) AS time, replaceOne(SpanName, 'secrets.transit.', '') AS op, toFloat64(count()) AS ops FROM
+            default.otel_traces WHERE $__timeFilter(Timestamp) AND ServiceName = 'secrets-service' AND SpanName LIKE 'secrets.transit.%' AND
+            SpanName NOT LIKE 'secrets.transit.key.%' GROUP BY time, op ORDER BY time
+      - id: 13
+        uid: "raft-commit-lag"
+        title: "Raft Commit Lag (applied vs commit index)"
+        type: "timeseries"
+        x: 0
+        y: 36
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT time, max(commit_idx - applied_idx) AS lag FROM (SELECT $__timeInterval(TimeUnix) AS time, maxIf(Value, MetricName =
+            'vault_raft_storage_stats_commit_index') AS commit_idx, maxIf(Value, MetricName = 'vault_raft_storage_stats_applied_index') AS
+            applied_idx FROM default.otel_metrics_gauge WHERE $__timeFilter(TimeUnix) AND MetricName IN
+            ('vault_raft_storage_stats_commit_index', 'vault_raft_storage_stats_applied_index') GROUP BY time) GROUP BY time ORDER BY time
+      - id: 14
+        uid: "fsm-and-rollback"
+        title: "FSM Pending & Rollback Queue"
+        type: "timeseries"
+        x: 8
+        y: 36
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT time, series, v FROM (SELECT $__timeInterval(TimeUnix) AS time, 'fsm_pending' AS series, max(Value) AS v FROM
+            default.otel_metrics_gauge WHERE $__timeFilter(TimeUnix) AND MetricName = 'vault_raft_storage_stats_fsm_pending' GROUP BY time
+            UNION ALL SELECT $__timeInterval(TimeUnix) AS time, 'rollback_inflight' AS series, max(Value) AS v FROM
+            default.otel_metrics_gauge WHERE $__timeFilter(TimeUnix) AND MetricName = 'vault_rollback_inflight' GROUP BY time UNION ALL
+            SELECT $__timeInterval(TimeUnix) AS time, 'rollback_queued' AS series, max(Value) AS v FROM default.otel_metrics_gauge WHERE
+            $__timeFilter(TimeUnix) AND MetricName = 'vault_rollback_queued' GROUP BY time UNION ALL SELECT $__timeInterval(TimeUnix) AS
+            time, 'expire_job_queue' AS series, max(Value) AS v FROM default.otel_metrics_gauge WHERE $__timeFilter(TimeUnix) AND MetricName
+            = 'vault_expire_job_manager_queue_length' GROUP BY time) ORDER BY time
+      - id: 15
+        uid: "raft-apply-and-boltdb"
+        title: "Raft Apply Rate & BoltDB Bytes"
+        type: "timeseries"
+        x: 16
+        y: 36
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT time, series, v FROM (SELECT time, 'raft_apply/s' AS series, greatest(round((val_last - val_prev) /
+            greatest(dateDiff('second', ts_prev, time), 1), 2), 0) AS v FROM (SELECT $__timeInterval(TimeUnix) AS time, argMax(Value,
+            TimeUnix) AS val_last, lagInFrame(argMax(Value, TimeUnix)) OVER (ORDER BY $__timeInterval(TimeUnix)) AS val_prev,
+            lagInFrame($__timeInterval(TimeUnix)) OVER (ORDER BY $__timeInterval(TimeUnix)) AS ts_prev FROM default.otel_metrics_sum WHERE
+            $__timeFilter(TimeUnix) AND MetricName = 'vault_raft_apply' GROUP BY time) WHERE val_prev IS NOT NULL UNION ALL SELECT
+            $__timeInterval(TimeUnix) AS time, 'boltdb_bytes (MB)' AS series, round(max(Value) / 1048576, 2) AS v FROM
+            default.otel_metrics_gauge WHERE $__timeFilter(TimeUnix) AND MetricName = 'vault_raft_storage_bolt_page_bytes_allocated' GROUP BY
+            time) ORDER BY time
+      - id: 16
+        uid: "bao-memory"
+        title: "OpenBao Memory (RSS + Go heap)"
+        type: "timeseries"
+        x: 0
+        y: 45
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "bytes"
+        raw_sql:
+          >-
+            SELECT time, series, bytes FROM (SELECT $__timeInterval(TimeUnix) AS time, 'rss' AS series, avg(Value) AS bytes FROM
+            default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND MetricName = 'process.memory.usage' AND
+            ResourceAttributes['process.executable.name'] = 'bao' GROUP BY time UNION ALL SELECT $__timeInterval(TimeUnix) AS time, 'go_heap_alloc'
+            AS series, avg(Value) AS bytes FROM default.otel_metrics_gauge WHERE $__timeFilter(TimeUnix) AND MetricName =
+            'vault_runtime_alloc_bytes' GROUP BY time UNION ALL SELECT $__timeInterval(TimeUnix) AS time, 'go_sys' AS series, avg(Value) AS
+            bytes FROM default.otel_metrics_gauge WHERE $__timeFilter(TimeUnix) AND MetricName = 'vault_runtime_sys_bytes' GROUP BY time)
+            ORDER BY time
+      - id: 17
+        uid: "bao-goroutines"
+        title: "OpenBao Goroutines & GC"
+        type: "timeseries"
+        x: 8
+        y: 45
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT time, series, v FROM (SELECT $__timeInterval(TimeUnix) AS time, 'goroutines' AS series, avg(Value) AS v FROM
+            default.otel_metrics_gauge WHERE $__timeFilter(TimeUnix) AND MetricName = 'vault_runtime_num_goroutines' GROUP BY time UNION ALL
+            SELECT $__timeInterval(TimeUnix) AS time, 'heap_objects (k)' AS series, avg(Value) / 1000 AS v FROM default.otel_metrics_gauge
+            WHERE $__timeFilter(TimeUnix) AND MetricName = 'vault_runtime_heap_objects' GROUP BY time UNION ALL SELECT time, 'gc_pause_ms/min'
+            AS series, greatest(round((val_last - val_prev) / 1000000, 2), 0) AS v FROM (SELECT $__timeInterval(TimeUnix) AS time,
+            argMax(Value, TimeUnix) AS val_last, lagInFrame(argMax(Value, TimeUnix)) OVER (ORDER BY $__timeInterval(TimeUnix)) AS val_prev
+            FROM default.otel_metrics_gauge WHERE $__timeFilter(TimeUnix) AND MetricName = 'vault_runtime_total_gc_pause_ns' GROUP BY time)
+            WHERE val_prev IS NOT NULL) ORDER BY time
+      - id: 18
+        uid: "secrets-service-process"
+        title: "secrets-service RSS & CPU"
+        type: "timeseries"
+        x: 16
+        y: 45
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT time, series, v FROM (SELECT $__timeInterval(TimeUnix) AS time, 'rss_mb' AS series, round(avg(Value) / 1048576, 1) AS v
+            FROM default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND MetricName = 'process.memory.usage' AND
+            ResourceAttributes['process.executable.name'] = 'secrets-service' GROUP BY time UNION ALL SELECT ts AS time, 'cpu_cores' AS
+            series, round(sum(delta) / greatest(max(span), 1), 4) AS v FROM (SELECT $__timeInterval(TimeUnix) AS ts,
+            ResourceAttributes['process.pid'] AS pid, Attributes['state'] AS state, max(Value) - min(Value) AS delta, dateDiff('second',
+            min(TimeUnix), max(TimeUnix)) AS span FROM default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND MetricName =
+            'process.cpu.time' AND ResourceAttributes['process.executable.name'] = 'secrets-service' GROUP BY ts, pid, state) GROUP BY ts) ORDER BY time
+      - id: 19
+        uid: "recent-errors"
+        title: "Recent secrets-service Errors"
+        type: "table"
+        x: 0
+        y: 54
+        w: 12
+        h: 9
+        query_type: "table"
+        query_format: 1
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT formatDateTime(Timestamp, '%Y-%m-%d %H:%i:%S') AS time, SpanName AS operation, StatusMessage AS error,
+            SpanAttributes['forge_metal.org_id'] AS org, SpanAttributes['forge_metal.secret_kind'] AS kind,
+            SpanAttributes['forge_metal.secret_id'] AS secret_id, substring(TraceId, 1, 16) AS trace_id FROM default.otel_traces WHERE
+            ServiceName = 'secrets-service' AND StatusCode = 'Error' AND SpanName LIKE 'secrets.%' ORDER BY Timestamp DESC LIMIT 20
+      - id: 20
+        uid: "top-operations"
+        title: "Top Operations by Volume (last window)"
+        type: "table"
+        x: 12
+        y: 54
+        w: 12
+        h: 9
+        query_type: "table"
+        query_format: 1
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT SpanName AS operation, count() AS calls, countIf(StatusCode = 'Error') AS errors, round(quantile(0.5)(Duration /
+            1000000), 2) AS p50_ms, round(quantile(0.95)(Duration / 1000000), 2) AS p95_ms, round(max(Duration / 1000000), 2) AS max_ms FROM
+            default.otel_traces WHERE $__timeFilter(Timestamp) AND ServiceName = 'secrets-service' AND SpanName LIKE 'secrets.%' AND
+            SpanName != 'secrets.ready' GROUP BY operation ORDER BY calls DESC LIMIT 30
   - uid: "forge-metal-observability-query-model"
     title: "Observability Query Vocabulary"
     tags:

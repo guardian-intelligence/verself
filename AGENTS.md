@@ -19,6 +19,11 @@ Polyglot monorepo:
 - **Zig** — `src/vm-guest-telemetry/` (guest agent, runs *inside* Firecracker VMs, not on the host).
 - **YAML* -- Infrastructure code defined with Ansible.
 
+Invariant patterns:
+
+* Service-oriented-architecture: with notable exceptions, all of our services talk to each other through the same APIs as the ones customers use. 
+* Dogfood everything that is customer-facing: We are a customer on our platform. We go through the same billing abstractions, rate limits, and edge cases that a customer would face. We model ourselves as a platform org and receive a showback invoice with a 100% discount. 
+
 Boundary components that sit outside the usual service shape:
 
 - `src/vm-orchestrator/` — the one privileged host daemon (Firecracker, ZFS, TAP, jailer, vm-bridge, gRPC over Unix socket). Deliberately outside the service mesh.
@@ -28,7 +33,7 @@ Boundary components that sit outside the usual service shape:
 Top-level landmarks:
 
 - `Makefile` — canonical operator/agent entry point. Read before reaching for ad-hoc scripts.
-- `docs/` — cross-service architecture; `docs/references/` is read-only third-party material.
+- `docs/` — cross-service architecture; `docs/references/` is read-only third-party material. Grep through docs/references instead of reading directly.
 
 Orienting commands: `make pg-list` enumerates per-service PostgreSQL databases, `make observe` opens the telemetry surface, `make clickhouse-schemas` lists ClickHouse tables.
 
