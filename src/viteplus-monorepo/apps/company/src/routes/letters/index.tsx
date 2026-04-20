@@ -1,35 +1,35 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { DISPATCH_META, sortedPosts } from "~/content/dispatch";
+import { LETTERS_META, sortedLetters } from "~/content/letters";
 import { PageShell } from "~/components/page-shell";
 
-export const Route = createFileRoute("/dispatch/")({
-  component: DispatchIndex,
+export const Route = createFileRoute("/letters/")({
+  component: LettersIndex,
   head: () => ({
     meta: [
-      { title: DISPATCH_META.title },
-      { name: "description", content: DISPATCH_META.description },
-      { property: "og:image", content: "/og/dispatch" },
+      { title: LETTERS_META.title },
+      { name: "description", content: LETTERS_META.description },
+      { property: "og:image", content: "/og/letters" },
       { property: "og:image:type", content: "image/svg+xml" },
       { property: "og:image:width", content: "1200" },
       { property: "og:image:height", content: "630" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:image", content: "/og/dispatch" },
+      { name: "twitter:image", content: "/og/letters" },
     ],
     links: [
       {
         rel: "alternate",
         type: "application/rss+xml",
-        href: "/dispatch/rss",
-        title: DISPATCH_META.title,
+        href: "/letters/rss",
+        title: LETTERS_META.title,
       },
     ],
   }),
 });
 
-function DispatchIndex() {
-  const posts = sortedPosts();
+function LettersIndex() {
+  const letters = sortedLetters();
   return (
-    <PageShell kicker="The Dispatch" heading="Long-form from Guardian Intelligence.">
+    <PageShell kicker="Letters" heading="Long-form from Guardian Intelligence.">
       <p
         style={{
           fontFamily: "'Geist', sans-serif",
@@ -39,14 +39,14 @@ function DispatchIndex() {
           margin: 0,
         }}
       >
-        {DISPATCH_META.description}
+        {LETTERS_META.description}
       </p>
       <ul className="mt-4 flex flex-col gap-6">
-        {posts.map((post) => (
-          <li key={post.slug}>
+        {letters.map((letter) => (
+          <li key={letter.slug}>
             <Link
-              to="/dispatch/$slug"
-              params={{ slug: post.slug }}
+              to="/letters/$slug"
+              params={{ slug: letter.slug }}
               className="group flex flex-col gap-1.5 rounded-md px-1 py-2 transition-colors"
               style={{ color: "var(--color-type-iron)" }}
             >
@@ -54,7 +54,7 @@ function DispatchIndex() {
                 className="font-mono text-[10px] uppercase tracking-[0.18em]"
                 style={{ color: "rgba(245,245,245,0.45)" }}
               >
-                {post.publishedAt} · {post.kicker}
+                {letter.publishedAt} · {letter.kicker}
               </span>
               <span
                 style={{
@@ -66,7 +66,7 @@ function DispatchIndex() {
                   letterSpacing: "-0.018em",
                 }}
               >
-                {post.title}
+                {letter.title}
               </span>
               <span
                 style={{
@@ -76,7 +76,7 @@ function DispatchIndex() {
                   color: "rgba(245,245,245,0.68)",
                 }}
               >
-                {post.summary}
+                {letter.summary}
               </span>
             </Link>
           </li>
@@ -86,7 +86,7 @@ function DispatchIndex() {
         className="mt-6 font-mono text-[10px] uppercase tracking-[0.18em]"
         style={{ color: "rgba(245,245,245,0.45)" }}
       >
-        <a href="/dispatch/rss" style={{ color: "var(--color-flare)" }}>
+        <a href="/letters/rss" style={{ color: "var(--color-flare)" }}>
           RSS →
         </a>
       </p>

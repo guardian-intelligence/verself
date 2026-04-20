@@ -41,7 +41,6 @@
 #    TanStack frontends (Nitro SSR):             4240–4259 (shared block)
 #      4244  rent-a-sandbox
 #      4245  webmail
-#      4247  letters
 #      4249  platform
 #      4252  company
 #
@@ -137,9 +136,6 @@ services:
   webmail:
     host: "127.0.0.1"
     port: 4245
-  letters:
-    host: "127.0.0.1"
-    port: 4247
   platform:
     host: "127.0.0.1"
     port: 4249

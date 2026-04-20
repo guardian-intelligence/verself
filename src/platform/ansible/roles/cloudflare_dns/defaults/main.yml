@@ -13,7 +13,6 @@ cloudflare_dns_records:
   - "{{ billing_service_subdomain | default('billing') }}"
   - "{{ rent_a_sandbox_subdomain | default('rentasandbox') }}"
   - "{{ stalwart_subdomain | default('mail') }}"
-  - "{{ letters_subdomain | default('letters') }}"
   - "{{ platform_subdomain | default('platform') }}"
 
 # DNS record type. Override to AAAA for IPv6-only hosts.

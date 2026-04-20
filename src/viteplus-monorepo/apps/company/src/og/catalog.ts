@@ -19,11 +19,11 @@ export const OG_CATALOG: Record<string, OGSpec> = {
     footerLeft: "anveio.com/design",
     footerRight: "Seattle · 2026",
   },
-  dispatch: {
-    slug: "dispatch",
+  letters: {
+    slug: "letters",
     title: "Long-form from Guardian Intelligence.",
     flare: "Long-form",
-    footerLeft: "anveio.com/dispatch",
+    footerLeft: "anveio.com/letters",
     footerRight: "Seattle · 2026",
   },
   solutions: {

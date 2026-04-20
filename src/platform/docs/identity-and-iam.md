@@ -235,7 +235,7 @@ authorization.
 
 This rule is enforced at the edge by a Content-Security-Policy header with
 `connect-src 'self'` applied to every customer-facing frontend domain
-(`rent_a_sandbox_domain`, `stalwart_domain`, `letters_domain`). The policy lives
+(`rent_a_sandbox_domain`, `stalwart_domain`). The policy lives
 in the `frontend_security_headers` snippet in
 `src/platform/ansible/roles/caddy/templates/Caddyfile.j2`. Because `connect-src`
 is restricted to the frontend's own origin, the browser cannot issue `fetch`,

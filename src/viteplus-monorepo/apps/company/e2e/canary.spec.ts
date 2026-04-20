@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-// Company-site canary. Walks every IA route, the seeded Dispatch post, each
+// Company-site canary. Walks every IA route, the seeded Letter, each
 // dynamic OG card, and the press brand-kit download, then asserts the basic
 // content shape on each. The accompanying scripts/verify-company-live.sh
 // queries ClickHouse for the corresponding `company.*` spans after this
@@ -9,17 +9,25 @@ import { expect, test } from "@playwright/test";
 const IA_ROUTES: readonly string[] = [
   "/",
   "/design",
-  "/dispatch",
+  "/letters",
   "/solutions",
   "/company",
   "/careers",
   "/press",
   "/changelog",
   "/contact",
+  "/letters/ship-the-reference-architecture",
+];
+
+// Retired routes that must not resurrect after the Dispatch → Letters rename
+// or the apps/letters retirement. The canary asserts each returns 404.
+const RETIRED_ROUTES: readonly string[] = [
+  "/dispatch",
+  "/dispatch/rss",
   "/dispatch/ship-the-reference-architecture",
 ];
 
-const OG_SLUGS: readonly string[] = ["home", "design", "dispatch", "solutions"];
+const OG_SLUGS: readonly string[] = ["home", "design", "letters", "solutions"];
 
 test("company canary — walk IA + exercise OG + brand kit", async ({ page, request }) => {
   // 1. Walk every IA node. Each triggers a company.route_view browser span.
@@ -38,9 +46,9 @@ test("company canary — walk IA + exercise OG + brand kit", async ({ page, requ
   const wings = page.locator("svg").first();
   await expect(wings).toBeVisible();
 
-  // 3. Dispatch RSS must parse as well-formed XML.
-  const rss = await request.get("/dispatch/rss");
-  expect(rss.status(), "GET /dispatch/rss").toBe(200);
+  // 3. Letters RSS must parse as well-formed XML.
+  const rss = await request.get("/letters/rss");
+  expect(rss.status(), "GET /letters/rss").toBe(200);
   const rssContentType = rss.headers()["content-type"] ?? "";
   expect(rssContentType).toContain("application/rss+xml");
   const rssBody = await rss.text();
@@ -61,7 +69,17 @@ test("company canary — walk IA + exercise OG + brand kit", async ({ page, requ
     expect(ogBody).toContain("Guardian Intelligence");
   }
 
-  // 5. Brand kit download — assert the response is a real zip (starts with
+  // 5. Retired routes must return 404. Asserts the Dispatch → Letters rename
+  // and the apps/letters retirement actually cut over — no stale route
+  // registration, no regenerated artifact, no 301 shim.
+  for (const path of RETIRED_ROUTES) {
+    const response = await request.get(path);
+    expect(response.status(), `GET ${path} must be gone`).toBe(404);
+  }
+  const retiredOg = await request.get("/og/dispatch");
+  expect(retiredOg.status(), "GET /og/dispatch must be gone").toBe(404);
+
+  // 6. Brand kit download — assert the response is a real zip (starts with
   // the PK signature) and emit a click-handler-equivalent request so the
   // canary has exercised the same path a press visitor would.
   const kit = await request.get("/brand-kit/guardian-intelligence.zip");
@@ -70,7 +88,7 @@ test("company canary — walk IA + exercise OG + brand kit", async ({ page, requ
   expect(kitBytes.length).toBeGreaterThan(256);
   expect(kitBytes.subarray(0, 2).toString("ascii")).toBe("PK");
 
-  // 6. Visit /press and click the brand kit link so the
+  // 7. Visit /press and click the brand kit link so the
   // company.press.kit_download span fires (this is the click-time emission,
   // distinct from the GET above which goes direct to the static file).
   await page.goto("/press");

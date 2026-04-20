@@ -63,8 +63,6 @@
       - "--exclude=apps/rent-a-sandbox/**"
       - "--exclude=apps/mail"
       - "--exclude=apps/mail/**"
-      - "--exclude=apps/letters"
-      - "--exclude=apps/letters/**"
       - "--exclude=apps/platform"
       - "--exclude=apps/platform/**"
       - "--exclude=playwright-report"

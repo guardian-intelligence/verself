@@ -1,5 +1,5 @@
 ---
-# The company app owns the root domain — unlike platform/letters/webmail which
+# The company app owns the root domain — unlike platform/webmail which
 # live on subdomains, anveio.com (or whatever forge_metal_domain is set to)
 # resolves directly to this service. The Caddy block in roles/caddy/templates
 # /Caddyfile.j2 routes `{{ company_domain }}` here.

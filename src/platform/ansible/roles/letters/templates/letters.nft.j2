@@ -1,9 +1,0 @@
-# Letters frontend — loopback only, Caddy reverse proxy.
-table inet forge_metal_letters
-delete table inet forge_metal_letters
-table inet forge_metal_letters {
-    chain input {
-        type filter hook input priority filter; policy accept;
-        tcp dport {{ services.letters.port }} iifname != "lo" drop
-    }
-}

@@ -135,8 +135,8 @@ make company-proof
 Assertions (all on `default.otel_traces` with `ServiceName = 'company-web'`):
 
 - `SpanName = 'company.route_view'` emitted for every walked route
-  (/, /design, /dispatch, /products, /company, /careers, /press,
-  /trust, /changelog, /contact, /legal, /dispatch/<seeded-slug>).
+  (/, /design, /letters, /solutions, /company, /careers, /press,
+  /changelog, /contact, /letters/<seeded-slug>).
 - `SpanName = 'company.landing.hero_view'` emitted once per landing
   load.
 - `SpanName = 'company.og.render'` emitted with

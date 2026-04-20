@@ -1,11 +1,11 @@
-// The Dispatch — Guardian Intelligence's long-form. One seeded post ships
-// alongside the scaffold so the index, the post route, and the RSS feed all
+// Letters — Guardian Intelligence's long-form. One seeded letter ships
+// alongside the scaffold so the index, the letter route, and the RSS feed all
 // render real content on the first deploy instead of empty states.
 //
-// Adding a post: append an entry to POSTS with a unique slug and a body as an
-// array of paragraphs. The voice lint scans every paragraph on build.
+// Adding a letter: append an entry to LETTERS with a unique slug and a body as
+// an array of paragraphs. The voice lint scans every paragraph on build.
 
-export interface DispatchPost {
+export interface Letter {
   readonly slug: string;
   readonly title: string;
   readonly kicker: string;
@@ -15,15 +15,15 @@ export interface DispatchPost {
   readonly body: readonly string[];
 }
 
-export const DISPATCH_META = {
-  title: "The Dispatch — Guardian Intelligence",
+export const LETTERS_META = {
+  title: "Letters — Guardian Intelligence",
   description:
     "Long-form from Guardian Intelligence. Published when we have something to say, not on a calendar.",
   editor: "Guardian Intelligence",
   siteURL: "https://anveio.com",
 } as const;
 
-export const POSTS: readonly DispatchPost[] = [
+export const LETTERS: readonly Letter[] = [
   {
     slug: "ship-the-reference-architecture",
     kicker: "A note from the founders",
@@ -36,16 +36,16 @@ export const POSTS: readonly DispatchPost[] = [
       "We started Guardian Intelligence to do two things: run our own company with as few people as possible, and open-source the formula for everyone else.",
       "The first year of any company is spent on the same dozen systems. Identity. Billing. Analytics. Email. Infrastructure. Security. The thousand edges where a real company touches the real world. None of it is what a founder started the company to build. All of it has to be right.",
       "The open-source world is rich in primitives and thin in assemblies. There are a hundred identity providers, a hundred billing systems, a hundred metrics pipelines. There is no single codebase that takes all of them, wires them together the way a real company would, and then operates itself on that codebase.",
-      "We build that codebase. The repo is one per subdirectory — platform, mailbox-service, billing-service, identity-service, sandbox-rental-service, vm-orchestrator, and the pieces that hold them together. We dogfood every service on the same substrate our customers use. The Dispatch is the place where we talk about why and how.",
+      "We build that codebase. The repo is one per subdirectory — platform, mailbox-service, billing-service, identity-service, sandbox-rental-service, vm-orchestrator, and the pieces that hold them together. We dogfood every service on the same substrate our customers use. Letters is the place where we talk about why and how.",
       "The first customer of Guardian Intelligence is Guardian Intelligence.",
     ],
   },
 ];
 
-export function postBySlug(slug: string): DispatchPost | undefined {
-  return POSTS.find((post) => post.slug === slug);
+export function letterBySlug(slug: string): Letter | undefined {
+  return LETTERS.find((letter) => letter.slug === slug);
 }
 
-export function sortedPosts(): readonly DispatchPost[] {
-  return [...POSTS].sort((a, b) => (a.publishedAt < b.publishedAt ? 1 : -1));
+export function sortedLetters(): readonly Letter[] {
+  return [...LETTERS].sort((a, b) => (a.publishedAt < b.publishedAt ? 1 : -1));
 }

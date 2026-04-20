@@ -119,8 +119,8 @@ function SiteFooter() {
           <FooterExternal href="https://platform.anveio.com">Metal Platform</FooterExternal>
         </FooterColumn>
         <FooterColumn heading="Read">
-          <FooterLink to="/dispatch">Dispatch</FooterLink>
-          <FooterExternal href="/dispatch/rss">RSS</FooterExternal>
+          <FooterLink to="/letters">Letters</FooterLink>
+          <FooterExternal href="/letters/rss">RSS</FooterExternal>
           <FooterLink to="/design">Design system</FooterLink>
           <FooterLink to="/press">Press kit</FooterLink>
         </FooterColumn>
