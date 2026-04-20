@@ -60,7 +60,9 @@ function Summary() {
         <SummaryItem term="Identity">
           Single sign-on with short-lived bearer tokens; every service is its own security boundary.
         </SummaryItem>
-        <SummaryItem term="Transport">TLS 1.3 everywhere; first-party reverse proxy with an inline web application firewall.</SummaryItem>
+        <SummaryItem term="Transport">
+          TLS 1.3 everywhere; first-party reverse proxy with an inline web application firewall.
+        </SummaryItem>
         <SummaryItem term="Disclosure">
           Coordinated via the security mailbox; safe-harbor for good-faith research.
         </SummaryItem>
@@ -99,14 +101,14 @@ function Isolation() {
         <p>
           Customer workloads run inside hardware-virtualized microVMs, with per-tenant durable
           volumes as their filesystem. VM-to-VM isolation is a hypervisor-level boundary; host
-          access is restricted to a single privileged orchestration daemon. Product services have
-          no host-level access to the hypervisor device nodes, storage administration interfaces,
-          or jail directories — they interact with the compute substrate only through a narrow,
+          access is restricted to a single privileged orchestration daemon. Product services have no
+          host-level access to the hypervisor device nodes, storage administration interfaces, or
+          jail directories — they interact with the compute substrate only through a narrow,
           policy-checked API.
         </p>
         <p>
-          In-guest telemetry is collected over an isolated host-to-guest channel; the guest does
-          not reach the host network by default.
+          In-guest telemetry is collected over an isolated host-to-guest channel; the guest does not
+          reach the host network by default.
         </p>
       </Prose>
     </section>
@@ -127,8 +129,8 @@ function Encryption() {
           disk.
         </p>
         <p>
-          Dataset-level encryption at rest is supported for durable customer volumes; the
-          encryption posture of each volume is visible on its billing record.
+          Dataset-level encryption at rest is supported for durable customer volumes; the encryption
+          posture of each volume is visible on its billing record.
         </p>
       </Prose>
     </section>
@@ -143,8 +145,8 @@ function Network() {
         <p>
           The host firewall denies by default and allows inbound traffic on a per-service basis;
           services listen only where their declared role requires. Single-node deployments keep
-          inter-service traffic on loopback; multi-node deployments route inter-service traffic
-          over a private overlay network with the same allowlist model. Customer-facing ingress is
+          inter-service traffic on loopback; multi-node deployments route inter-service traffic over
+          a private overlay network with the same allowlist model. Customer-facing ingress is
           TLS-terminated at the reverse proxy before reaching any product service.
         </p>
       </Prose>
@@ -202,8 +204,8 @@ function Disclosure() {
           </a>{" "}
           core terms is covered by a safe-harbor commitment: we will not pursue legal action, and
           will work with you on coordinated disclosure. Do not exfiltrate customer data; do not
-          degrade service for other customers; respect the 90-day coordinated-disclosure norm
-          unless we agree on a different timeline.
+          degrade service for other customers; respect the 90-day coordinated-disclosure norm unless
+          we agree on a different timeline.
         </p>
       </Prose>
     </section>

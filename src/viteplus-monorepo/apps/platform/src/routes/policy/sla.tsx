@@ -77,8 +77,8 @@ function CurrentTier() {
       <Prose>
         <p>
           Forge Metal is currently deployed on a single bare-metal node. Every component — the
-          compute orchestrator, databases, identity, billing, ingress — runs on that node and is
-          not replicated across failure domains. A hardware failure, a kernel crash, or a
+          compute orchestrator, databases, identity, billing, ingress — runs on that node and is not
+          replicated across failure domains. A hardware failure, a kernel crash, or a
           datacenter-level event is therefore a correlated outage of the whole service.
         </p>
         <p>
@@ -141,18 +141,18 @@ function FutureTier() {
       <Prose>
         <p>
           The next topology introduces three nodes with cross-node replication for every stateful
-          component — consensus replication for the ledger, replicated analytics storage,
-          streaming replication for the relational store, and send-based replication for durable
-          customer volumes — all carried over a private overlay network between nodes. With this
-          topology comes a 99.9%-per-calendar-month availability commitment, measured as the
-          percentage of minutes in which each customer-facing service endpoint responds with a
-          non-5xx status to a synthetic probe.
+          component — consensus replication for the ledger, replicated analytics storage, streaming
+          replication for the relational store, and send-based replication for durable customer
+          volumes — all carried over a private overlay network between nodes. With this topology
+          comes a 99.9%-per-calendar-month availability commitment, measured as the percentage of
+          minutes in which each customer-facing service endpoint responds with a non-5xx status to a
+          synthetic probe.
         </p>
         <p>
           Downtime below 99.9% triggers service credits on a sliding scale against the affected
           month's subscription fees. The exact credit schedule, exclusions (force majeure,
-          customer-caused outages, dependencies on third-party systems), and claim procedure will
-          be published alongside the three-node tier's general availability.
+          customer-caused outages, dependencies on third-party systems), and claim procedure will be
+          published alongside the three-node tier's general availability.
         </p>
       </Prose>
     </section>

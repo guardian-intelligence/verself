@@ -64,8 +64,8 @@ function Overview() {
           vocabulary on this page is the same.
         </p>
         <p>
-          Both services share one access-control model, one audit trail, and one injection path
-          into sandbox workloads, so what you learn about one applies to the other.
+          Both services share one access-control model, one audit trail, and one injection path into
+          sandbox workloads, so what you learn about one applies to the other.
         </p>
       </Prose>
       <SummaryPanel>
@@ -158,8 +158,8 @@ function Secrets() {
         <p>
           A secret is a named value plus its version history. Updating a secret creates a new
           version; older versions remain addressable within the retention window, so a workload
-          already running on the previous version can finish cleanly while new workloads pick up
-          the new value.
+          already running on the previous version can finish cleanly while new workloads pick up the
+          new value.
         </p>
       </Prose>
 
@@ -172,8 +172,8 @@ function Secrets() {
           </p>
           <ol>
             <li>
-              <strong>Branch</strong> — one branch of one repository. Useful for short-lived
-              preview and dev work.
+              <strong>Branch</strong> — one branch of one repository. Useful for short-lived preview
+              and dev work.
             </li>
             <li>
               <strong>Environment</strong> — one environment such as <code>production</code> or{" "}
@@ -235,8 +235,8 @@ function Keys() {
       <Prose>
         <p>
           Keys are cryptographic material your code uses for encryption and signing. A secret holds
-          a value you read as-is; a key is never read as-is. Your code sends data to Forge Metal
-          and receives back ciphertext, plaintext, a signature, or a data key.
+          a value you read as-is; a key is never read as-is. Your code sends data to Forge Metal and
+          receives back ciphertext, plaintext, a signature, or a data key.
         </p>
       </Prose>
 
@@ -254,9 +254,8 @@ function Keys() {
               handed to external verifiers.
             </li>
             <li>
-              <strong>MAC keys</strong> — HMAC-SHA256 for <code>sign</code> and{" "}
-              <code>verify</code> when both producer and verifier are yours and a shared secret is
-              acceptable.
+              <strong>MAC keys</strong> — HMAC-SHA256 for <code>sign</code> and <code>verify</code>{" "}
+              when both producer and verifier are yours and a shared secret is acceptable.
             </li>
             <li>
               <strong>Data keys</strong> — <code>generate-data-key</code> returns a fresh symmetric
@@ -310,9 +309,9 @@ function Sandboxes() {
       <Prose>
         <p>
           Sandbox workloads — CI jobs, one-off scripts, scheduled tasks, long-running development
-          environments — consume secrets without touching storage paths, credentials, or Forge
-          Metal APIs directly. You declare what the workload needs; Forge Metal wires it up at
-          sandbox start.
+          environments — consume secrets without touching storage paths, credentials, or Forge Metal
+          APIs directly. You declare what the workload needs; Forge Metal wires it up at sandbox
+          start.
         </p>
       </Prose>
 
@@ -321,10 +320,9 @@ function Sandboxes() {
         <Prose>
           <p>
             A <strong>secret profile</strong> is a named collection of secret references — not the
-            values themselves. A <code>dev-env</code> profile might bundle{" "}
-            <code>GITHUB_TOKEN</code>, <code>STRIPE_TEST_KEY</code>, and{" "}
-            <code>OPENAI_API_KEY</code>. Create the profile once; attach it to every sandbox that
-            should receive those secrets.
+            values themselves. A <code>dev-env</code> profile might bundle <code>GITHUB_TOKEN</code>
+            , <code>STRIPE_TEST_KEY</code>, and <code>OPENAI_API_KEY</code>. Create the profile
+            once; attach it to every sandbox that should receive those secrets.
           </p>
           <p>
             Profiles carry their own access-control grants. A member can be allowed to launch
@@ -356,8 +354,8 @@ function Sandboxes() {
           </ul>
           <p>
             Certain environment variable names are reserved and cannot be overridden by profiles,
-            including <code>HOME</code>, <code>PATH</code>, runtime-controlled variables used by
-            the sandbox runner, and any name beginning with <code>FORGE_METAL_</code>.
+            including <code>HOME</code>, <code>PATH</code>, runtime-controlled variables used by the
+            sandbox runner, and any name beginning with <code>FORGE_METAL_</code>.
           </p>
         </Prose>
       </div>
@@ -368,9 +366,9 @@ function Sandboxes() {
           <p>
             Short-lived workloads pick up the current value at start and run to completion on that
             value. Long-running sandboxes, including development environments, receive rotation
-            events from Forge Metal and refresh environment variables and tmpfs files in place.
-            Your code can watch for file changes or re-read environment variables on demand;
-            rotation never takes effect mid-request for a read already in progress.
+            events from Forge Metal and refresh environment variables and tmpfs files in place. Your
+            code can watch for file changes or re-read environment variables on demand; rotation
+            never takes effect mid-request for a read already in progress.
           </p>
         </Prose>
       </div>
@@ -391,8 +389,8 @@ function Sandboxes() {
               of scope or name overlap.
             </li>
             <li>
-              Platform-curated sandbox images — the shared base snapshots every customer clones
-              from — never contain customer secrets.
+              Platform-curated sandbox images — the shared base snapshots every customer clones from
+              — never contain customer secrets.
             </li>
           </ul>
         </Prose>
@@ -453,22 +451,22 @@ function AuditTrail() {
       <SectionHeading id="audit-trail">Audit trail</SectionHeading>
       <Prose>
         <p>
-          Every public operation on secrets and keys, and every injection read into a sandbox,
-          emits a structured audit record. Records include actor, organization, operation, target
+          Every public operation on secrets and keys, and every injection read into a sandbox, emits
+          a structured audit record. Records include actor, organization, operation, target
           resource, version, outcome, request ID, client IP, route, and timestamp.
         </p>
         <p>
-          Audit records are stored by Forge Metal's governance service: written to a durable
-          primary store on the request path, chained with a keyed HMAC so that tampering with any
-          row invalidates the chain from that point forward, and projected to a long-term analytics
+          Audit records are stored by Forge Metal's governance service: written to a durable primary
+          store on the request path, chained with a keyed HMAC so that tampering with any row
+          invalidates the chain from that point forward, and projected to a long-term analytics
           store for querying and dashboards. Retention follows your organization's data-retention
           policy.
         </p>
         <p>
           Secret values never appear in audit records. Secret paths are stored only as keyed HMAC
           hashes, so names like <code>PROD_STRIPE_KEY</code> do not become searchable data in your
-          audit store. High-risk events — key rotation, grant changes, production secret reads —
-          are surfaced on a dedicated risk feed in the governance dashboard.
+          audit store. High-risk events — key rotation, grant changes, production secret reads — are
+          surfaced on a dedicated risk feed in the governance dashboard.
         </p>
       </Prose>
     </section>
@@ -483,8 +481,8 @@ function Limits() {
         <ul>
           <li>Secret value size: up to 64 KB per version.</li>
           <li>
-            Secret name: up to 256 characters; alphanumeric with <code>-</code>, <code>_</code>,
-            and <code>/</code> for path segments.
+            Secret name: up to 256 characters; alphanumeric with <code>-</code>, <code>_</code>, and{" "}
+            <code>/</code> for path segments.
           </li>
           <li>
             Key name: up to 256 characters; alphanumeric with <code>-</code> and <code>_</code>.
