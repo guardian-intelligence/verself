@@ -119,8 +119,8 @@ function WhatWeCollect() {
           </li>
           <li>
             <strong>Billing.</strong> Billing contact, tax identifier, payment instrument metadata
-            (held by our payments subprocessor; we see descriptive tokens only), invoice line
-            items, usage aggregates.
+            (held by our payments subprocessor; we see descriptive tokens only), invoice line items,
+            usage aggregates.
           </li>
           <li>
             <strong>Support correspondence.</strong> Anything you send to our policy, security, or

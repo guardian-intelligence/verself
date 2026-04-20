@@ -167,8 +167,7 @@ function Mail() {
           Outbound email sent through Forge Metal must comply with the CAN-SPAM Act, GDPR lawful
           marketing bases, and the policies of our upstream email-delivery subprocessor. Inbound
           mail delivered to customer mailboxes is the customer's to handle; automated campaigns,
-          subscribe-on-behalf-of-third-parties, and credential-harvesting via email are
-          prohibited.
+          subscribe-on-behalf-of-third-parties, and credential-harvesting via email are prohibited.
         </p>
       </Prose>
     </section>
