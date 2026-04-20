@@ -1,11 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import {
-  Lockup,
-  StackedLockup,
-  WingsArgent,
-  WingsChip,
-  WingsEmboss,
-} from "@forge-metal/brand";
+import { Lockup, StackedLockup, WingsArgent, WingsChip, WingsEmboss } from "@forge-metal/brand";
 import { DESIGN_SECTIONS } from "~/lib/design-nav";
 import { Section } from "./section-shell";
 
@@ -79,11 +73,7 @@ function MarkCard({
             </span>
             <span
               style={{
-                color: row.isHex
-                  ? "var(--color-type-iron)"
-                  : row.isName
-                    ? MUTED_2
-                    : undefined,
+                color: row.isHex ? "var(--color-type-iron)" : row.isName ? MUTED_2 : undefined,
                 textTransform: row.isName ? "uppercase" : undefined,
                 letterSpacing: row.isName ? "0.08em" : undefined,
               }}
@@ -279,13 +269,11 @@ function SectionClearSpace() {
           the upper wing's tip, exposed as{" "}
           <code style={{ color: "var(--color-type-iron)" }}>--wing-unit</code>. <b>Inside</b> the
           lockup, the gap between mark and wordmark uses{" "}
-          <code style={{ color: "var(--color-type-iron)" }}>
-            clamp(8px, 0.28·mark-h, 18px)
-          </code>{" "}
-          — proportional most of the time, but with a floor so small surfaces still read as a
-          lockup and a ceiling so oversize ones don't feel airy. Below the floor, the mark and
-          wordmark stop reading as paired; above the ceiling, the mark stops looking like it
-          belongs to the wordmark.
+          <code style={{ color: "var(--color-type-iron)" }}>clamp(8px, 0.28·mark-h, 18px)</code> —
+          proportional most of the time, but with a floor so small surfaces still read as a lockup
+          and a ceiling so oversize ones don't feel airy. Below the floor, the mark and wordmark
+          stop reading as paired; above the ceiling, the mark stops looking like it belongs to the
+          wordmark.
         </>
       }
     >
@@ -380,7 +368,9 @@ function SectionClearSpace() {
               <span>mark {row.markPx} px</span>
               <span>
                 gap{" "}
-                <b style={{ color: "var(--color-flare)", fontWeight: 600, letterSpacing: "0.08em" }}>
+                <b
+                  style={{ color: "var(--color-flare)", fontWeight: 600, letterSpacing: "0.08em" }}
+                >
                   {row.gap}
                 </b>{" "}
                 · {row.role}
@@ -403,10 +393,9 @@ function SectionSizeLadder() {
       meta={meta}
       lede={
         <>
-          The wings hold form from 16 px to 512 px. Below 16 px, the lower wing compacts to a
-          single stroke — a silhouette, not an illustration. Favicons and app-icons always carry
-          the iron chip, so the wings keep their ground regardless of where the operating system
-          drops them.
+          The wings hold form from 16 px to 512 px. Below 16 px, the lower wing compacts to a single
+          stroke — a silhouette, not an illustration. Favicons and app-icons always carry the iron
+          chip, so the wings keep their ground regardless of where the operating system drops them.
         </>
       }
     >
@@ -484,9 +473,7 @@ function SectionLockups() {
           HORIZONTAL · SMALL · SHORT FORM
         </div>
         <Lockup size="sm" wordmark="Guardian" />
-        <div style={{ ...eyebrowStyle, margin: "40px 0 0" }}>
-          STACKED · CENTRED · WITH TAGLINE
-        </div>
+        <div style={{ ...eyebrowStyle, margin: "40px 0 0" }}>STACKED · CENTRED · WITH TAGLINE</div>
         <div style={{ display: "flex", justifyContent: "center" }}>
           <StackedLockup tagline="American Applied Intelligence" />
         </div>
@@ -577,14 +564,13 @@ function SectionProductMarque() {
       meta={meta}
       lede={
         <>
-          <b>Guardian</b> is the house. Products ride under it. The wings and the Fraunces
-          masthead belong to <i>Guardian Intelligence</i> alone — they do not lock up with a
-          product name. Products take the Geist sans, set alongside the Guardian masthead when
-          they need to be introduced, and stand on their own after first reference.{" "}
-          <b>Metal</b> is the compute product — sandboxes, Firecracker, ZFS. <b>Console</b> is
-          the customer application where the work happens; mailbox is a feature inside it, not a
-          separate marque. <b>Letters</b> is an editorial surface and carries the Dispatch
-          treatment in §11; it has no product lockup.
+          <b>Guardian</b> is the house. Products ride under it. The wings and the Fraunces masthead
+          belong to <i>Guardian Intelligence</i> alone — they do not lock up with a product name.
+          Products take the Geist sans, set alongside the Guardian masthead when they need to be
+          introduced, and stand on their own after first reference. <b>Metal</b> is the compute
+          product — sandboxes, Firecracker, ZFS. <b>Console</b> is the customer application where
+          the work happens; mailbox is a feature inside it, not a separate marque. <b>Letters</b> is
+          an editorial surface and carries the Dispatch treatment in §11; it has no product lockup.
         </>
       }
     >
@@ -614,7 +600,13 @@ function SectionProductMarque() {
           <WingsArgent style={{ width: "32px", height: "32px", flex: "0 0 32px" }} />
           <span style={houseStyle}>Guardian</span>
           <span style={divider} aria-hidden="true" />
-          <span style={{ ...productStyle, fontFamily: "'Fraunces', Georgia, serif", fontStyle: "italic" }}>
+          <span
+            style={{
+              ...productStyle,
+              fontFamily: "'Fraunces', Georgia, serif",
+              fontStyle: "italic",
+            }}
+          >
             Letters
           </span>
           <span style={jobStyle}>Editorial · see Dispatch §11</span>
@@ -655,8 +647,8 @@ function SectionProductMarque() {
           in URLs.
         </div>
         <div>
-          <b style={{ color: "var(--color-type-iron)" }}>After first reference.</b> Products go
-          it alone: &ldquo;Metal&rdquo;, &ldquo;Console&rdquo;.
+          <b style={{ color: "var(--color-type-iron)" }}>After first reference.</b> Products go it
+          alone: &ldquo;Metal&rdquo;, &ldquo;Console&rdquo;.
         </div>
       </div>
     </Section>
@@ -682,7 +674,10 @@ function SectionColour() {
         </>
       }
     >
-      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}>
+      <div
+        className="grid gap-3"
+        style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}
+      >
         {[
           {
             n: "Iron",
@@ -810,10 +805,10 @@ function SectionTypography() {
       lede={
         <>
           <b>Fraunces</b> carries the voice — masthead, headline, editorial. <b>Geist</b> carries
-          the work — navigation, controls, data, body. <b>Geist Mono</b> carries the machine —
-          code, identifiers, telemetry. All three are distributed under the SIL Open Font License:
-          free for any use, commercial or otherwise, forever. No vendor blockers, no per-seat
-          licence, no renewal risk.
+          the work — navigation, controls, data, body. <b>Geist Mono</b> carries the machine — code,
+          identifiers, telemetry. All three are distributed under the SIL Open Font License: free
+          for any use, commercial or otherwise, forever. No vendor blockers, no per-seat licence, no
+          renewal risk.
         </>
       }
     >
@@ -821,151 +816,153 @@ function SectionTypography() {
           a mobile viewport. Wrapping the table in overflow-x:auto lets the spec
           stay pixel-exact without forcing the page into horizontal scroll. */}
       <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px", minWidth: "720px" }}>
-        <thead>
-          <tr>
-            <th style={{ ...headCell, width: "55%" }}>Sample</th>
-            <th style={headCell}>Role</th>
-            <th style={headCell}>Spec</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td
-              style={{
-                ...sample,
-                fontFamily: "'Fraunces', Georgia, serif",
-                fontVariationSettings: '"opsz" 144, "SOFT" 30',
-                fontWeight: 400,
-                fontSize: "64px",
-                lineHeight: 1.02,
-                letterSpacing: "-0.025em",
-              }}
-            >
-              The application layer is the product.
-            </td>
-            <td style={role}>display · hero</td>
-            <td style={spec}>Fraunces / 64 / 1.02 / -25 · opsz 144 · SOFT 30</td>
-          </tr>
-          <tr>
-            <td
-              style={{
-                ...sample,
-                fontFamily: "'Fraunces', Georgia, serif",
-                fontVariationSettings: '"opsz" 96, "SOFT" 20',
-                fontWeight: 400,
-                fontSize: "48px",
-                lineHeight: 1.05,
-                letterSpacing: "-0.02em",
-              }}
-            >
-              Toward a million solo-founded companies.
-            </td>
-            <td style={role}>h1 · page</td>
-            <td style={spec}>Fraunces / 48 / 1.05 / -20 · opsz 96 · SOFT 20</td>
-          </tr>
-          <tr>
-            <td
-              style={{
-                ...sample,
-                fontFamily: "'Fraunces', Georgia, serif",
-                fontVariationSettings: '"opsz" 72',
-                fontWeight: 400,
-                fontSize: "32px",
-                lineHeight: 1.1,
-                letterSpacing: "-0.018em",
-              }}
-            >
-              Compute, integrations, and founder tooling.
-            </td>
-            <td style={role}>h2 · section</td>
-            <td style={spec}>Fraunces / 32 / 1.1 / -18 · opsz 72</td>
-          </tr>
-          <tr>
-            <td
-              style={{
-                ...sample,
-                fontFamily: "'Geist', sans-serif",
-                fontWeight: 600,
-                fontSize: "20px",
-                lineHeight: 1.3,
-                letterSpacing: "-0.01em",
-              }}
-            >
-              Sandbox execution
-            </td>
-            <td style={role}>h3 · ui</td>
-            <td style={spec}>Geist / 20 / 1.3 / -10 · SemiBold</td>
-          </tr>
-          <tr>
-            <td
-              style={{
-                ...sample,
-                fontFamily: "'Geist', sans-serif",
-                fontWeight: 400,
-                fontSize: "16px",
-                lineHeight: 1.55,
-              }}
-            >
-              Guardian Intelligence is an American applied intelligence firm. We build the compute,
-              the integrations, and the founder tooling that make a one-person billion-ARR company
-              an engineering target rather than a slogan.
-            </td>
-            <td style={role}>body</td>
-            <td style={spec}>Geist / 16 / 1.55 · Regular</td>
-          </tr>
-          <tr>
-            <td
-              style={{
-                ...sample,
-                fontFamily: "'Geist', sans-serif",
-                fontWeight: 400,
-                fontSize: "13px",
-                lineHeight: 1.5,
-                color: MUTED,
-              }}
-            >
-              Secondary copy, metadata, form help text, caption.
-            </td>
-            <td style={role}>small</td>
-            <td style={spec}>Geist / 13 / 1.5 · Regular</td>
-          </tr>
-          <tr>
-            <td
-              style={{
-                ...sample,
-                fontFamily: "'Geist Mono', ui-monospace, monospace",
-                fontWeight: 400,
-                fontSize: "12px",
-                lineHeight: 1.5,
-                color: MUTED,
-              }}
-            >
-              curl -sSL guardian.sh | sh
-            </td>
-            <td style={role}>mono</td>
-            <td style={spec}>Geist Mono / 12 / 1.5 · Regular</td>
-          </tr>
-          <tr>
-            <td style={sample}>
-              <span
+        <table
+          style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px", minWidth: "720px" }}
+        >
+          <thead>
+            <tr>
+              <th style={{ ...headCell, width: "55%" }}>Sample</th>
+              <th style={headCell}>Role</th>
+              <th style={headCell}>Spec</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td
                 style={{
-                  fontFamily: "'Geist', sans-serif",
-                  fontWeight: 500,
-                  fontSize: "10px",
-                  lineHeight: 1,
-                  letterSpacing: "0.18em",
-                  textTransform: "uppercase",
+                  ...sample,
+                  fontFamily: "'Fraunces', Georgia, serif",
+                  fontVariationSettings: '"opsz" 144, "SOFT" 30',
+                  fontWeight: 400,
+                  fontSize: "64px",
+                  lineHeight: 1.02,
+                  letterSpacing: "-0.025em",
                 }}
               >
-                Dispatch № 3 · 19 Apr 2026
-              </span>
-            </td>
-            <td style={role}>badge / eyebrow</td>
-            <td style={spec}>Geist / 10 / 1 / +180 · Medium · UPPER</td>
-          </tr>
-        </tbody>
-      </table>
+                The application layer is the product.
+              </td>
+              <td style={role}>display · hero</td>
+              <td style={spec}>Fraunces / 64 / 1.02 / -25 · opsz 144 · SOFT 30</td>
+            </tr>
+            <tr>
+              <td
+                style={{
+                  ...sample,
+                  fontFamily: "'Fraunces', Georgia, serif",
+                  fontVariationSettings: '"opsz" 96, "SOFT" 20',
+                  fontWeight: 400,
+                  fontSize: "48px",
+                  lineHeight: 1.05,
+                  letterSpacing: "-0.02em",
+                }}
+              >
+                Toward a million solo-founded companies.
+              </td>
+              <td style={role}>h1 · page</td>
+              <td style={spec}>Fraunces / 48 / 1.05 / -20 · opsz 96 · SOFT 20</td>
+            </tr>
+            <tr>
+              <td
+                style={{
+                  ...sample,
+                  fontFamily: "'Fraunces', Georgia, serif",
+                  fontVariationSettings: '"opsz" 72',
+                  fontWeight: 400,
+                  fontSize: "32px",
+                  lineHeight: 1.1,
+                  letterSpacing: "-0.018em",
+                }}
+              >
+                Compute, integrations, and founder tooling.
+              </td>
+              <td style={role}>h2 · section</td>
+              <td style={spec}>Fraunces / 32 / 1.1 / -18 · opsz 72</td>
+            </tr>
+            <tr>
+              <td
+                style={{
+                  ...sample,
+                  fontFamily: "'Geist', sans-serif",
+                  fontWeight: 600,
+                  fontSize: "20px",
+                  lineHeight: 1.3,
+                  letterSpacing: "-0.01em",
+                }}
+              >
+                Sandbox execution
+              </td>
+              <td style={role}>h3 · ui</td>
+              <td style={spec}>Geist / 20 / 1.3 / -10 · SemiBold</td>
+            </tr>
+            <tr>
+              <td
+                style={{
+                  ...sample,
+                  fontFamily: "'Geist', sans-serif",
+                  fontWeight: 400,
+                  fontSize: "16px",
+                  lineHeight: 1.55,
+                }}
+              >
+                Guardian Intelligence is an American applied intelligence firm. We build the
+                compute, the integrations, and the founder tooling that make a one-person
+                billion-ARR company an engineering target rather than a slogan.
+              </td>
+              <td style={role}>body</td>
+              <td style={spec}>Geist / 16 / 1.55 · Regular</td>
+            </tr>
+            <tr>
+              <td
+                style={{
+                  ...sample,
+                  fontFamily: "'Geist', sans-serif",
+                  fontWeight: 400,
+                  fontSize: "13px",
+                  lineHeight: 1.5,
+                  color: MUTED,
+                }}
+              >
+                Secondary copy, metadata, form help text, caption.
+              </td>
+              <td style={role}>small</td>
+              <td style={spec}>Geist / 13 / 1.5 · Regular</td>
+            </tr>
+            <tr>
+              <td
+                style={{
+                  ...sample,
+                  fontFamily: "'Geist Mono', ui-monospace, monospace",
+                  fontWeight: 400,
+                  fontSize: "12px",
+                  lineHeight: 1.5,
+                  color: MUTED,
+                }}
+              >
+                curl -sSL guardian.sh | sh
+              </td>
+              <td style={role}>mono</td>
+              <td style={spec}>Geist Mono / 12 / 1.5 · Regular</td>
+            </tr>
+            <tr>
+              <td style={sample}>
+                <span
+                  style={{
+                    fontFamily: "'Geist', sans-serif",
+                    fontWeight: 500,
+                    fontSize: "10px",
+                    lineHeight: 1,
+                    letterSpacing: "0.18em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Dispatch № 3 · 19 Apr 2026
+                </span>
+              </td>
+              <td style={role}>badge / eyebrow</td>
+              <td style={spec}>Geist / 10 / 1 / +180 · Medium · UPPER</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </Section>
   );
@@ -1012,11 +1009,11 @@ function SectionHeroIron() {
             that one founder with <b>Claude Code</b> can run a billion-dollar company.
           </p>
           <p>
-            Value created per capita is the ultimate metric. A painting. A novel. An API in front
-            of a physical service. A quiet service that sends a calendar invite to the neighborhood
-            when the dog park is going to be 72 and sunny with 80% confidence. Humanity's golden
-            age is the one where every person contributes unprecedented value to the world, and
-            software and AI finally make that possible for everyone.
+            Value created per capita is the ultimate metric. A painting. A novel. An API in front of
+            a physical service. A quiet service that sends a calendar invite to the neighborhood
+            when the dog park is going to be 72 and sunny with 80% confidence. Humanity's golden age
+            is the one where every person contributes unprecedented value to the world, and software
+            and AI finally make that possible for everyone.
           </p>
           <p className="mission-closer">
             If you want to do something good for the world, we want to make it easy.
@@ -1316,8 +1313,8 @@ function SectionDispatch() {
           infrastructure can stand up, scale, and shut down services that previously required a
           platform team. The second is integration: that the economic work of a company is mostly
           the work of moving structured information between counterparties, and that most of this
-          work is mechanically obvious once named. The third is tooling for the founder themselves
-          — the judgment-amplification layer, which is the hardest to build and the easiest to
+          work is mechanically obvious once named. The third is tooling for the founder themselves —
+          the judgment-amplification layer, which is the hardest to build and the easiest to
           recognise once you've used one that works.
         </p>
       </Surface>
@@ -1420,10 +1417,7 @@ function SectionProduct() {
               />
               Live
             </span>
-            <button
-              className="hero-btn primary"
-              style={{ padding: "8px 14px", fontSize: "13px" }}
-            >
+            <button className="hero-btn primary" style={{ padding: "8px 14px", fontSize: "13px" }}>
               Deploy
             </button>
           </div>
@@ -1527,93 +1521,100 @@ function SectionProduct() {
               14 active across 4 tenants · 3 h 22 m median lease · 99.98% attestation rate
             </p>
             <div style={{ overflowX: "auto" }}>
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                fontFamily: "'Geist', sans-serif",
-                fontSize: "13px",
-                minWidth: "520px",
-              }}
-            >
-              <thead>
-                <tr>
-                  {["Tenant", "Region", "Workload", "Lease", "Status"].map((col, i) => (
-                    <th
-                      key={col}
-                      style={{
-                        padding: "12px 14px",
-                        textAlign: i === 3 ? "right" : "left",
-                        borderBottom: `1px solid ${LINE}`,
-                        fontSize: "10px",
-                        letterSpacing: "0.14em",
-                        textTransform: "uppercase",
-                        color: MUTED_2,
-                        fontWeight: 500,
-                      }}
-                    >
-                      {col}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {[
-                  ["acme-corp", "us-east-1", "inference · h100×8", "0x41e9f2a", "● attested", "ok"],
-                  ["hex-labs", "us-east-1", "ci · runner-pool", "0x41e9f2b", "● attested", "ok"],
-                  [
-                    "lumen-mail",
-                    "eu-west-1",
-                    "stateful · zfs-pool",
-                    "0x41e9f2c",
-                    "○ draining",
-                    "warn",
-                  ],
-                  [
-                    "solo-founder",
-                    "us-west-2",
-                    "editor · agent-vm",
-                    "0x41e9f2d",
-                    "● attested",
-                    "ok",
-                  ],
-                ].map((row) => (
-                  <tr key={row[0]}>
-                    <td style={{ padding: "12px 14px", borderBottom: `1px solid ${LINE}` }}>
-                      {row[0]}
-                    </td>
-                    <td style={{ padding: "12px 14px", borderBottom: `1px solid ${LINE}` }}>
-                      {row[1]}
-                    </td>
-                    <td style={{ padding: "12px 14px", borderBottom: `1px solid ${LINE}` }}>
-                      {row[2]}
-                    </td>
-                    <td
-                      style={{
-                        padding: "12px 14px",
-                        borderBottom: `1px solid ${LINE}`,
-                        fontFamily: "'Geist Mono', ui-monospace, monospace",
-                        fontSize: "12px",
-                        color: "var(--color-type-iron)",
-                        textAlign: "right",
-                      }}
-                    >
-                      {row[3]}
-                    </td>
-                    <td
-                      style={{
-                        padding: "12px 14px",
-                        borderBottom: `1px solid ${LINE}`,
-                        color: row[5] === "ok" ? "var(--color-flare)" : "#f0c74f",
-                        fontWeight: 500,
-                      }}
-                    >
-                      {row[4]}
-                    </td>
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  fontFamily: "'Geist', sans-serif",
+                  fontSize: "13px",
+                  minWidth: "520px",
+                }}
+              >
+                <thead>
+                  <tr>
+                    {["Tenant", "Region", "Workload", "Lease", "Status"].map((col, i) => (
+                      <th
+                        key={col}
+                        style={{
+                          padding: "12px 14px",
+                          textAlign: i === 3 ? "right" : "left",
+                          borderBottom: `1px solid ${LINE}`,
+                          fontSize: "10px",
+                          letterSpacing: "0.14em",
+                          textTransform: "uppercase",
+                          color: MUTED_2,
+                          fontWeight: 500,
+                        }}
+                      >
+                        {col}
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {[
+                    [
+                      "acme-corp",
+                      "us-east-1",
+                      "inference · h100×8",
+                      "0x41e9f2a",
+                      "● attested",
+                      "ok",
+                    ],
+                    ["hex-labs", "us-east-1", "ci · runner-pool", "0x41e9f2b", "● attested", "ok"],
+                    [
+                      "lumen-mail",
+                      "eu-west-1",
+                      "stateful · zfs-pool",
+                      "0x41e9f2c",
+                      "○ draining",
+                      "warn",
+                    ],
+                    [
+                      "solo-founder",
+                      "us-west-2",
+                      "editor · agent-vm",
+                      "0x41e9f2d",
+                      "● attested",
+                      "ok",
+                    ],
+                  ].map((row) => (
+                    <tr key={row[0]}>
+                      <td style={{ padding: "12px 14px", borderBottom: `1px solid ${LINE}` }}>
+                        {row[0]}
+                      </td>
+                      <td style={{ padding: "12px 14px", borderBottom: `1px solid ${LINE}` }}>
+                        {row[1]}
+                      </td>
+                      <td style={{ padding: "12px 14px", borderBottom: `1px solid ${LINE}` }}>
+                        {row[2]}
+                      </td>
+                      <td
+                        style={{
+                          padding: "12px 14px",
+                          borderBottom: `1px solid ${LINE}`,
+                          fontFamily: "'Geist Mono', ui-monospace, monospace",
+                          fontSize: "12px",
+                          color: "var(--color-type-iron)",
+                          textAlign: "right",
+                        }}
+                      >
+                        {row[3]}
+                      </td>
+                      <td
+                        style={{
+                          padding: "12px 14px",
+                          borderBottom: `1px solid ${LINE}`,
+                          color: row[5] === "ok" ? "var(--color-flare)" : "#f0c74f",
+                          fontWeight: 500,
+                        }}
+                      >
+                        {row[4]}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
             <pre
               style={{
@@ -1839,8 +1840,8 @@ function SectionOgCard() {
       meta={meta}
       lede={
         <>
-          What Guardian Intelligence looks like when it appears in someone else's feed. Iron
-          canvas; Argent mark; Flare only on the one word that earns it.
+          What Guardian Intelligence looks like when it appears in someone else's feed. Iron canvas;
+          Argent mark; Flare only on the one word that earns it.
         </>
       }
     >
@@ -1887,8 +1888,8 @@ function SectionOgCard() {
             maxWidth: "22ch",
           }}
         >
-          We ship the reference{" "}
-          <span style={{ color: "var(--color-flare)" }}>architecture</span> every founder needs.
+          We ship the reference <span style={{ color: "var(--color-flare)" }}>architecture</span>{" "}
+          every founder needs.
         </div>
         <div
           style={{

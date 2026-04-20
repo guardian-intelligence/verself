@@ -18,7 +18,9 @@ export type VoiceViolation =
       readonly context: string;
     };
 
-export type VoiceResult = { readonly ok: true } | { readonly ok: false; readonly violations: readonly VoiceViolation[] };
+export type VoiceResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly violations: readonly VoiceViolation[] };
 
 // Use lower-case; match with word boundaries. "operator" is banned in
 // user-facing copy but allowed in internal identifiers — the lint runs against
@@ -53,7 +55,10 @@ const BANNED_HOOKS: ReadonlyArray<{ readonly name: string; readonly regex: RegEx
   { name: "it_s_not_just", regex: /\bit'?s\s+not\s+just\b[^.!?]*,[^.!?]*\bit'?s\b/i },
   { name: "that_s_not_an", regex: /\bthat'?s\s+not\s+(?:a|an|the)\b[^.!?]*,[^.!?]*\bthat'?s\b/i },
   { name: "it_s_more_than", regex: /\bit'?s\s+more\s+than\b[^.!?]*,[^.!?]*\bit'?s\b/i },
-  { name: "not_x_but_y", regex: /\bnot\s+(?:a|an|the)\s+[a-z]+[^.!?]*,\s*but\s+(?:a|an|the)\s+[a-z]+/i },
+  {
+    name: "not_x_but_y",
+    regex: /\bnot\s+(?:a|an|the)\s+[a-z]+[^.!?]*,\s*but\s+(?:a|an|the)\s+[a-z]+/i,
+  },
 ];
 
 export function assertVoice(input: string, contextLabel = ""): VoiceResult {

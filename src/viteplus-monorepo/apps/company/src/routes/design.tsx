@@ -84,15 +84,15 @@ function DesignHeader() {
         className="max-w-3xl text-base leading-relaxed"
         style={{ color: "rgba(245,245,245,0.72)" }}
       >
-        Guardian Intelligence is an American applied intelligence company, based in Seattle. Fraunces
-        carries the voice. Geist carries the work. Geist Mono carries the machine — three families,
-        all under the SIL Open Font License, no commercial fee, ever. The system runs on three
-        grounds — <b>Iron</b>, <b>Flare</b>, and <b>Paper</b> — one invariant —{" "}
+        Guardian Intelligence is an American applied intelligence company, based in Seattle.
+        Fraunces carries the voice. Geist carries the work. Geist Mono carries the machine — three
+        families, all under the SIL Open Font License, no commercial fee, ever. The system runs on
+        three grounds — <b>Iron</b>, <b>Flare</b>, and <b>Paper</b> — one invariant —{" "}
         <b>the wings are always Argent</b> — and two carrier forms that let the wings travel: an
         iron chip on Paper, and a circular ink emboss on Flare. Only Guardian carries the wings;
-        products — <b>Metal</b>, <b>Console</b> — inherit the house and set their own name in
-        Geist. This page specifies the mark, the type, the colour, and how they appear in the
-        surfaces the company actually ships: marketing, editorial, product, and external.
+        products — <b>Metal</b>, <b>Console</b> — inherit the house and set their own name in Geist.
+        This page specifies the mark, the type, the colour, and how they appear in the surfaces the
+        company actually ships: marketing, editorial, product, and external.
       </p>
     </header>
   );

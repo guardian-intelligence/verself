@@ -6,10 +6,7 @@ import { emitSpan } from "~/lib/telemetry/browser";
 export const Route = createFileRoute("/press")({
   component: PressPage,
   head: () => ({
-    meta: [
-      { title: PRESS_META.title },
-      { name: "description", content: PRESS_META.description },
-    ],
+    meta: [{ title: PRESS_META.title }, { name: "description", content: PRESS_META.description }],
   }),
 });
 

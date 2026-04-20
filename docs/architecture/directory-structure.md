@@ -22,8 +22,13 @@ Monorepo rooted at the repo top level. All Go services share one `go.work`; the 
 
 ## Frontend (`src/viteplus-monorepo/`)
 
-- `apps/` — TanStack Start applications: `rent-a-sandbox`, `letters`, `mail`. `letters` is the operator's blog.
-- `packages/` — shared UI, generated OpenAPI clients, Valibot validators.
+- `apps/` — TanStack Start applications:
+  - `company` — Guardian Intelligence company site on the root `forge_metal_domain` (anveio.com today). Owns landing, `/design`, `/dispatch` (+ RSS), `/products`, `/company`, `/careers`, `/press`, `/trust`, `/changelog`, `/contact`, `/legal`, `/og/*` dynamic OG cards. Forker-friendly split: `src/content/`, `src/brand/`, `src/routes/`, `src/components/`.
+  - `platform` — Metal product console on `platform.<domain>`. Owns `/docs`, `/docs/reference`, and the canonical legal tree at `/policy/*` (Terms, Privacy, DPA, AUP, Cookies, Security, SLA, Subprocessors, Data Retention, Policy Changelog). Future: resolves at `console.<domain>`.
+  - `letters` — long-form editorial platform on `letters.<domain>`.
+  - `rent-a-sandbox` — sandbox rental app on `rentasandbox.<domain>`.
+  - `mail` — webmail on `mail.<domain>`.
+- `packages/` — shared UI, brand marks, generated OpenAPI clients, Valibot validators.
 
 ## Platform (`src/platform/`)
 

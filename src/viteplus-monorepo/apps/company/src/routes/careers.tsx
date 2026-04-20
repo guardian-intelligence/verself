@@ -30,10 +30,8 @@ function CareersPage() {
             lineHeight: 1.55,
           }}
         >
-          {careers.emptyState} <a
-            href={`mailto:${careers.contactEmail}`}
-            style={{ color: "var(--color-flare)" }}
-          >
+          {careers.emptyState}{" "}
+          <a href={`mailto:${careers.contactEmail}`} style={{ color: "var(--color-flare)" }}>
             {careers.contactEmail}
           </a>
         </p>

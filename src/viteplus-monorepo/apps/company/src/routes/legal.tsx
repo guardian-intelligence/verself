@@ -5,10 +5,7 @@ import { BodyParagraph, PageShell } from "~/components/page-shell";
 export const Route = createFileRoute("/legal")({
   component: LegalPage,
   head: () => ({
-    meta: [
-      { title: LEGAL_META.title },
-      { name: "description", content: LEGAL_META.description },
-    ],
+    meta: [{ title: LEGAL_META.title }, { name: "description", content: LEGAL_META.description }],
   }),
 });
 

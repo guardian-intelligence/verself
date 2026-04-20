@@ -43,10 +43,7 @@ function LandingPage() {
           every ground density. */}
       <FilmGrain intensity={0.22} />
 
-      <RevealSpan
-        spanName="company.landing.hero_view"
-        attrs={{ "hero.variant": "iron" }}
-      >
+      <RevealSpan spanName="company.landing.hero_view" attrs={{ "hero.variant": "iron" }}>
         {/* Argent wings at hero scale, on the fold. Honors /design §09 Iron
             spec. */}
         <div style={{ marginBottom: "40px", position: "relative" }}>

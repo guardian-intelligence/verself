@@ -17,9 +17,9 @@ const MUTED = "rgba(245,245,245,0.6)";
 
 export interface OGSpec {
   readonly slug: string;
-  readonly title: string;       // Fraunces headline
-  readonly flare: string;       // The one loud word — must appear in title
-  readonly footerLeft: string;  // e.g. "guardianintelligence.org"
+  readonly title: string; // Fraunces headline
+  readonly flare: string; // The one loud word — must appear in title
+  readonly footerLeft: string; // e.g. "guardianintelligence.org"
   readonly footerRight: string; // e.g. "Seattle · 2026"
 }
 
