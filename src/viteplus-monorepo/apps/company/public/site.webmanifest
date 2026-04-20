@@ -1,0 +1,13 @@
+{
+  "name": "Guardian Intelligence",
+  "short_name": "Guardian",
+  "icons": [
+    { "src": "/favicon.svg", "type": "image/svg+xml", "sizes": "any" },
+    { "src": "/maskable-icon.png", "type": "image/png", "sizes": "512x512", "purpose": "maskable" },
+    { "src": "/apple-touch-icon.png", "type": "image/png", "sizes": "180x180" }
+  ],
+  "theme_color": "#0E0E0E",
+  "background_color": "#0E0E0E",
+  "display": "standalone",
+  "start_url": "/"
+}

@@ -139,6 +139,8 @@
       - "--exclude=apps/mail/**"
       - "--exclude=apps/letters"
       - "--exclude=apps/letters/**"
+      - "--exclude=apps/company"
+      - "--exclude=apps/company/**"
       - "--exclude=playwright-report"
       - "--exclude=test-results"
       - "--exclude=HANDOFF_PROMPT.md"

@@ -42,6 +42,8 @@
 #      4244  rent-a-sandbox
 #      4245  webmail
 #      4247  letters
+#      4249  platform
+#      4252  company
 #
 #    Grafana & ops UIs:                          4300–4399
 #      4300  Grafana
@@ -141,6 +143,9 @@ services:
   platform:
     host: "127.0.0.1"
     port: 4249
+  company:
+    host: "127.0.0.1"
+    port: 4252
   firecracker_host_service:
     host: "10.255.0.1"
     http_port: 18080

@@ -1,0 +1,51 @@
+{
+  "name": "@forge-metal/company",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "scripts": {
+    "dev": "vp dev",
+    "build": "vp build",
+    "preview": "vp preview",
+    "start": "node --import ./instrumentation.mts .output/server/index.mjs",
+    "typecheck": "vp exec tsc -p tsconfig.json",
+    "lint:voice": "node --experimental-strip-types --no-warnings ./scripts/lint-voice.ts",
+    "test:e2e": "vp exec playwright test",
+    "test:e2e:headed": "vp exec playwright test --headed"
+  },
+  "dependencies": {
+    "@forge-metal/brand": "workspace:*",
+    "@forge-metal/nitro-plugins": "workspace:*",
+    "@forge-metal/ui": "workspace:*",
+    "@forge-metal/web-env": "workspace:*",
+    "@opentelemetry/api": "catalog:",
+    "@opentelemetry/context-zone": "catalog:",
+    "@opentelemetry/core": "catalog:",
+    "@opentelemetry/exporter-trace-otlp-http": "catalog:",
+    "@opentelemetry/resources": "catalog:",
+    "@opentelemetry/sdk-trace-base": "catalog:",
+    "@opentelemetry/sdk-trace-web": "catalog:",
+    "@opentelemetry/semantic-conventions": "catalog:",
+    "@tanstack/react-router": "catalog:",
+    "@tanstack/react-start": "catalog:",
+    "lucide-react": "catalog:",
+    "nitro": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "valibot": "catalog:",
+    "web-vitals": "catalog:"
+  },
+  "devDependencies": {
+    "@playwright/test": "catalog:",
+    "@tailwindcss/vite": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

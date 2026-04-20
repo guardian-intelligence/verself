@@ -1,0 +1,101 @@
+@import "tailwindcss";
+
+/*
+ * Tailwind v4 auto-detects source files in this app's directory tree but
+ * does not follow the module graph into sibling workspace packages. Any
+ * utility class referenced only inside @forge-metal/ui or @forge-metal/brand
+ * primitives must be registered here or it never reaches the final stylesheet.
+ * https://tailwindcss.com/docs/detecting-classes-in-source-files
+ */
+@source "../../../../packages/ui/src";
+@source "../../../../packages/brand/src";
+
+/* Self-hosted Guardian typography. CSP `font-src 'self' data:` makes Google
+   Fonts CDN unreachable from the browser, so the variable WOFF2 files ship
+   from /fonts/ alongside the app. SIL OFL — see public/fonts/OFL-*.txt. */
+@font-face {
+  font-family: "Fraunces";
+  src: url("/fonts/Fraunces-Variable.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Fraunces";
+  src: url("/fonts/Fraunces-Italic-Variable.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist";
+  src: url("/fonts/Geist-Variable.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist";
+  src: url("/fonts/Geist-Italic-Variable.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist Mono";
+  src: url("/fonts/GeistMono-Variable.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist Mono";
+  src: url("/fonts/GeistMono-Italic-Variable.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-style: italic;
+  font-display: swap;
+}
+
+@theme {
+  --color-background: oklch(1 0 0);
+  --color-foreground: oklch(0.145 0 0);
+  --color-border: oklch(0.922 0 0);
+
+  /* Guardian Intelligence brand. Hex per src/viteplus-monorepo/packages/brand/src/tokens.ts;
+     keep both in sync. Wings are always `--color-argent` regardless of ground.
+     Fork-friendly hook: this file is `brand/tokens.css` for the forker; if you
+     rewrite these values, the rest of the site inherits without touching
+     components or routes. */
+  --color-iron: #0e0e0e;
+  --color-flare: #ccff00;
+  --color-paper: #f6f4ed;
+  --color-argent: #ffffff;
+  --color-ink: #0b0b0b;
+  --color-bordeaux: #5c1f1e;
+  --color-type-iron: #f5f5f5;
+
+  --font-display: "Fraunces", Georgia, serif;
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  :root {
+    /* Header geometry — single source of truth. */
+    --header-h: 3.5rem;
+    --header-scroll-offset: calc(var(--header-h) + 1.5rem);
+    /* The mark's external clear-space unit. */
+    --wing-unit: calc(52px * 0.45);
+  }
+  html {
+    scroll-padding-top: var(--header-scroll-offset);
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    overflow-x: clip;
+    font-family: "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  }
+}

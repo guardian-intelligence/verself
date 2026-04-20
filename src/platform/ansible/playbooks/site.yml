@@ -189,6 +189,8 @@
       tags: [electric_mail, mailbox_service]
     - role: platform
       tags: [platform]
+    - role: company
+      tags: [company]
     - role: grafana
       tags: [grafana]
     - role: verdaccio
