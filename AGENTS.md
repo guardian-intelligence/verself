@@ -113,6 +113,8 @@ See `docs/architecture/operator-workflows.md`. The repo started as a CI orchestr
 - When in doubt, use the industry-standard pattern. Pagination, idempotency, rate limiting, OpenAPI, OpenTelemetry, state machines — these are all solved problems with boring, battle-tested solutions. Don't reinvent the wheel. The one piece of genuinely novel technology in this repo is ZFS + Firecracker for customer workloads. Everything else is tried-and-tested FOSS.
 - `Makefile`, `README.md`, `AGENTS.md`, schema migration files, and OpenAPI 3.1 YAML files are high signal per token. Read them directly; avoid summarizing them with a subagent as important detail may be lost.
 - Do not provide time estimates.
+- The goal is enterprise-grade architecture and implementation. We accomplish this by establishing proper systems to make improper behavior impossible by construction. E.g. to prevent bearer tokens from appearing in logs, we use a mixture of strategies: configure Otel HTTP instrumentation to sanitize it, harden read access to logs, structure our logging abstractions to avoid it, and (aspirational) execute a canary that asserts safety systems omit the token even if one system fails.
+- 
 </assistant_contract>
 
 <tool_use_contract>
