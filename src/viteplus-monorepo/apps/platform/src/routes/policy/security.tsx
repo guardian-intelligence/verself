@@ -181,9 +181,9 @@ function Personnel() {
       <SectionHeading id="personnel">Personnel and access</SectionHeading>
       <Prose>
         <p>
-          Access to the host and to production data is restricted to named founders,
-          authenticating with hardware security keys. Administrative actions taken on the host are
-          audit-logged and fed into the same observability pipeline as service traces.
+          Access to the host and to production data is restricted to named founders, authenticating
+          with hardware security keys. Administrative actions taken on the host are audit-logged and
+          fed into the same observability pipeline as service traces.
         </p>
       </Prose>
     </section>

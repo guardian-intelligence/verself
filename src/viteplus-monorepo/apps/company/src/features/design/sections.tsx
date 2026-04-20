@@ -1143,9 +1143,9 @@ function SectionLetters() {
       meta={meta}
       lede={
         <>
-          <i>Letters</i> — Guardian's essay surface. Paper ground, Fraunces masthead, Fraunces
-          body for flowing prose, Geist for bylines and metadata. The mark travels to Paper inside
-          its iron chip — the wings never change colour.{" "}
+          <i>Letters</i> — Guardian's essay surface. Paper ground, Fraunces masthead, Fraunces body
+          for flowing prose, Geist for bylines and metadata. The mark travels to Paper inside its
+          iron chip — the wings never change colour.{" "}
           <b style={{ color: "var(--color-bordeaux)" }}>Bordeaux</b> (#5C1F1E) marks pull-quotes,
           active links, and drop-cap ornaments — the one editorial-only accent, reserved for Paper
           surfaces. Flare does not appear on editorial; it is too loud for reading.
