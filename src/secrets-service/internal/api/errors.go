@@ -21,6 +21,7 @@ func problem(ctx context.Context, status int, code, detail string, cause error) 
 	}
 	return &huma.ErrorModel{
 		Status:   status,
+		Type:     "urn:forge-metal:problem:" + code,
 		Title:    http.StatusText(status),
 		Detail:   detail,
 		Instance: instance,

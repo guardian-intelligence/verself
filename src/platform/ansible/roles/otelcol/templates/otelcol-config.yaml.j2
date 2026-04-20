@@ -40,9 +40,6 @@ receivers:
       - type: move
         from: attributes.duration
         to: attributes.duration_s
-      - type: move
-        from: attributes.request.headers.User-Agent
-        to: attributes.user_agent
       - type: remove
         field: attributes.request
       - type: remove
