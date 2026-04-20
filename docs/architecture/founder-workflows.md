@@ -61,12 +61,21 @@ make observe WHAT=service SERVICE=billing-service MINUTES=15
 make observe WHAT=http STATUS_MIN=400 MINUTES=15
 make observe WHAT=deploy RUN_KEY=<deploy-run-key>
 make observe WHAT=trace TRACE_ID=<trace-id>
+make observe WHAT=workload-identity
 ```
 
 Every ClickHouse-backed observe query emits an `observe` trace and a
 `clickhouse.query` span with `observe.query_id`,
 `observe.query_family`, `clickhouse.query_id`, and
 `clickhouse.query_sha256` attributes.
+
+**Target state.** `WHAT=workload-identity` is the operator surface for the
+SPIFFE/SPIRE control loop: SPIRE server, agent, and OIDC Discovery state;
+Workload API reachability; desired-vs-live registrations; SVID TTLs; mTLS
+edges; JWT-SVID OpenBao login results; and governance rows grouped by
+`actor_spiffe_id`. The contract is declared in
+[`docs/architecture/workload-identity.md`](workload-identity.md).
+Implementation follows the in-flight SPIRE deploy commit.
 
 The current database layout is:
 
@@ -203,4 +212,3 @@ All remote orchestration runs via Ansible playbooks from `src/platform/ansible/`
 | `playbooks/seed-system.yml` | Seed the platform tenant plus Acme tenant, billing, mailboxes, and auth verify (supports `--tags identity,billing,stalwart,verify,dev-oidc`). |
 
 All deploy playbooks support `--tags` for targeting individual roles (e.g. `--tags caddy`, `--tags clickhouse`). Preflight checks run regardless of tag selection.
-

@@ -62,7 +62,7 @@ export FORGE_METAL_OTLP_ENDPOINT="127.0.0.1:${port}"
 
 # Derive deploy identity + OTel env. Sourcing sets FORGE_METAL_DEPLOY_ID,
 # TRACEPARENT, OTEL_RESOURCE_ATTRIBUTES, OTEL_EXPORTER_OTLP_ENDPOINT, etc.
-# shellcheck source=./deploy_identity.sh
+# shellcheck source=src/platform/scripts/deploy_identity.sh
 source "${SCRIPT_DIR}/deploy_identity.sh"
 
 cd ansible

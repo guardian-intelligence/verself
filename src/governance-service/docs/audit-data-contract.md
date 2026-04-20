@@ -73,16 +73,28 @@ The actor is the exact entity that authenticated and performed the operation.
 It can be a human user, API credential, workload, internal service, or operator
 break-glass subject. The organization is tenant scope, not the actor.
 
-For API keys and API credentials, the actor is the credential/service account
-itself. The human or automation that created the credential is recorded as
-owner metadata:
+For API keys and API credentials, the actor is the credential/customer
+service account itself. The human or automation that created the credential is
+recorded as owner metadata:
 
 - `actor_type = 'api_credential'`
-- `actor_id = <Zitadel service-account subject or Forge Metal credential id>`
+- `actor_id = <Zitadel customer/API credential subject or Forge Metal credential id>`
 - `credential_id`, `credential_name`, and `credential_fingerprint` identify the
   credential without storing secret material.
 - `actor_owner_id` and `actor_owner_display` identify the user or system that
   owns the credential when known.
+
+For repo-owned workload actors, SPIFFE is the workload identity source of
+truth:
+
+- `actor_type = 'service'`
+- `actor_id = <service-name>`
+- `actor_spiffe_id = spiffe://<trust-domain>/svc/<service-name>`
+- `auth_method = 'spiffe'`
+
+Repo-owned service-to-service calls use SPIFFE/SPIRE, not Zitadel
+service-account client credentials. `actor_spiffe_id` is the forensic join key
+between app-layer audit rows, mTLS spans, and OpenBao JWT-SVID login evidence.
 
 Human actors use the Zitadel subject as `actor_id`. Email and display names are
 display metadata; they may be redacted or tombstoned later without changing the

@@ -42,6 +42,7 @@ var families = []family{
 	{Name: "logs", Purpose: "Discover or query structured log attributes."},
 	{Name: "http", Purpose: "Query normalized HTTP access events."},
 	{Name: "deploy", Purpose: "Inspect Ansible deploy traces and deploy_run_key-correlated tasks."},
+	{Name: "workload-identity", Purpose: "Inspect SPIFFE mTLS, JWT-SVID, OpenBao relying-party auth, and SPIRE system logs."},
 	{Name: "errors", Purpose: "Query normalized recent error signals when actively debugging."},
 }
 
@@ -469,6 +470,42 @@ var queryDocs = []queryDoc{
 			"make observe WHAT=service SERVICE=stalwart",
 		},
 	},
+	{
+		ID:      "workload_identity.spans",
+		Family:  "workload-identity",
+		Title:   "Workload Identity Spans",
+		Purpose: "Show recent SPIFFE mTLS, JWT-SVID, and OpenBao relying-party auth spans.",
+		Optional: []string{
+			"MINUTES=<lookback>",
+			"LIMIT=<rows>",
+			"FORMAT=table|json|markdown",
+		},
+		Examples: []string{
+			"make observe WHAT=workload-identity",
+		},
+		Next: []string{
+			"make observe WHAT=describe SPAN=auth.spiffe.mtls.client",
+			"make observe WHAT=describe SPAN=secrets.bao.jwt_svid.login",
+		},
+	},
+	{
+		ID:      "workload_identity.spire_logs",
+		Family:  "workload-identity",
+		Title:   "SPIRE Logs",
+		Purpose: "Show recent SPIRE server, agent, and OIDC discovery provider logs.",
+		Optional: []string{
+			"MINUTES=<lookback>",
+			"LIMIT=<rows>",
+			"FORMAT=table|json|markdown",
+		},
+		Examples: []string{
+			"make observe WHAT=workload-identity",
+		},
+		Next: []string{
+			"make observe WHAT=logs SERVICE=spire-agent",
+			"make observe WHAT=service SERVICE=spire-oidc-discovery-provider",
+		},
+	},
 }
 
 func handleStatic(cfg config) (bool, error) {
@@ -508,6 +545,7 @@ func printIndex(cfg config) error {
 			"make observe WHAT=logs SERVICE=<service>",
 			"make observe WHAT=service SERVICE=<service>",
 			"make observe WHAT=http STATUS_MIN=400",
+			"make observe WHAT=workload-identity",
 			"make observe WHAT=deploy RUN_KEY=<deploy-run-key>",
 		},
 	}
@@ -707,6 +745,8 @@ func canonicalDocID(id string) string {
 		return "service.activity"
 	case id == "mail.metrics":
 		return "mail.events"
+	case id == "workload_identity.spire_logs":
+		return "workload_identity.spans"
 	case id == "deploy.run":
 		return "deploy.tasks"
 	default:

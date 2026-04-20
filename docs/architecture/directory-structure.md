@@ -17,7 +17,7 @@ Monorepo rooted at the repo top level. All Go services share one `go.work`; the 
 - `billing-service/` — Reserve/Settle/Void on TigerBeetle + PostgreSQL.
 - `identity-service/`, `mailbox-service/`, `workload/` — service-owned databases, migrations, and Huma APIs.
 - `apiwire/` — shared Huma DTOs and wire-language types.
-- `auth-middleware/` — local JWT validation against Zitadel JWKS.
+- `auth-middleware/` — local JWT validation against Zitadel JWKS plus shared SPIFFE workload identity helpers.
 - `otel/` — shared OpenTelemetry wiring.
 
 ## Frontend (`src/viteplus-monorepo/`)

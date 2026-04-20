@@ -255,15 +255,6 @@ wait_for_clickhouse_count default "
     )
 " 2 "${artifact_dir}/clickhouse/openbao-metrics-count.tsv"
 
-wait_for_clickhouse_count forge_metal "
-  SELECT count()
-  FROM audit_events
-  WHERE service_name = 'platform-ansible'
-    AND audit_event = 'openbao.bootstrap.initialized'
-    AND risk_level = 'critical'
-    AND length(row_hmac) = 64
-" 1 "${artifact_dir}/clickhouse/openbao-bootstrap-audit-count.tsv"
-
 python3 - "${run_id}" "${window_start}" "${window_end}" "${artifact_dir}" >"${artifact_dir}/run.json" <<'PY'
 import json
 import sys

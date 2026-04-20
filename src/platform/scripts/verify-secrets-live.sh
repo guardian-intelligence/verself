@@ -22,7 +22,6 @@ trap cleanup EXIT
 # shellcheck disable=SC1090
 source <("${script_dir}/assume-persona.sh" acme-admin --print)
 admin_secrets_token="${SECRETS_SERVICE_ACCESS_TOKEN}"
-admin_sandbox_token="${SANDBOX_RENTAL_ACCESS_TOKEN}"
 admin_identity_token="${IDENTITY_SERVICE_ACCESS_TOKEN}"
 sandbox_rental_project_id="${SANDBOX_RENTAL_AUTH_PROJECT_ID}"
 secrets_service_project_id="${SECRETS_SERVICE_AUTH_PROJECT_ID}"
@@ -835,16 +834,16 @@ wait_for_clickhouse_count default "
   FROM otel_traces
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
     AND ServiceName = 'sandbox-rental-service'
-    AND SpanName IN ('secrets.injection.grant.issue', 'secrets.injection.grant.verify', 'auth.spiffe.mtls.client')
-" 3 "${artifact_dir}/clickhouse/sandbox-spiffe-injection-spans-count.tsv"
+    AND SpanName IN ('secrets.injection.reference.verify', 'auth.spiffe.mtls.client')
+" 2 "${artifact_dir}/clickhouse/sandbox-spiffe-injection-spans-count.tsv"
 
 wait_for_clickhouse_count default "
   SELECT count()
   FROM otel_traces
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
     AND ServiceName = 'secrets-service'
-    AND SpanName IN ('auth.spiffe.mtls.server', 'secrets.injection.resolve', 'secrets.injection.grant.verify')
-" 3 "${artifact_dir}/clickhouse/secrets-spiffe-injection-spans-count.tsv"
+    AND SpanName IN ('auth.spiffe.mtls.server', 'secrets.injection.resolve', 'secrets.injection.service_token.exchange', 'auth.spiffe.jwt_svid.fetch', 'secrets.bao.jwt_svid.login')
+" 5 "${artifact_dir}/clickhouse/secrets-spiffe-injection-spans-count.tsv"
 
 wait_for_clickhouse_count default "
   SELECT count()

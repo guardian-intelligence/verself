@@ -17,7 +17,12 @@ flowchart TB
   identity["identity-service<br/>org + product IAM control plane"]
   sandbox["sandbox-rental-service<br/>compute product control plane"]
   billing["billing-service<br/>Reserve / Settle / Void"]
-  authmw["auth-middleware<br/>local JWT validation"]
+  governance["governance-service<br/>audit ledger"]
+  secrets["secrets-service<br/>Secrets + KMS product API"]
+  mailbox["mailbox-service<br/>inbound mail + JMAP"]
+  authmw["auth-middleware<br/>JWT + SPIFFE workload helpers"]
+  spire["SPIRE<br/>workload identity"]
+  openbao["OpenBao<br/>KV + Transit resource plane"]
 
   actions["Actions runner product<br/>Blacksmith-like clean-room"]
   workloads["Arbitrary workload execution<br/>manual now, schedulable later"]
@@ -59,18 +64,39 @@ flowchart TB
   longvms --> sandbox
 
   sandbox --> billing
+  sandbox --> governance
+  sandbox --> secrets
   sandbox --> pg
   sandbox --> clickhouse
   sandbox --> vmorch
   billing --> pg
   billing --> tigerbeetle
   billing --> clickhouse
+  billing --> governance
   identity --> pg
+  identity --> governance
+  secrets --> openbao
+  secrets --> governance
+
+  spire -. X.509-SVID / JWT-SVID .-> sandbox
+  spire -. X.509-SVID / JWT-SVID .-> billing
+  spire -. X.509-SVID / JWT-SVID .-> identity
+  spire -. X.509-SVID / JWT-SVID .-> governance
+  spire -. X.509-SVID / JWT-SVID .-> secrets
+  spire -. X.509-SVID / JWT-SVID .-> mailbox
+  authmw -. SPIFFE workload helpers .-> spire
+
+  stalwart --> mailbox
+  mailbox --> governance
+  mailbox --> pg
 
   authmw --> zitadel
   sandbox -. validates bearer JWTs .-> authmw
   billing -. validates bearer JWTs .-> authmw
   identity -. validates bearer JWTs .-> authmw
+  secrets -. validates bearer JWTs .-> authmw
+  governance -. validates bearer JWTs .-> authmw
+  mailbox -. validates bearer JWTs .-> authmw
 
   vmorch --> zfs
   vmorch --> fc
@@ -99,11 +125,15 @@ and ZFS operations. Guest checkpoint requests are untrusted input; the guest may
 name only service-authorized checkpoint refs, and it must never provide org IDs,
 ZFS paths, dataset names, or checkpoint version paths.
 
-The next architecture gaps are customer secret management and block-layer
-composition. Secret handling needs a first-class product service rather than
-ad hoc execution env vars. zvol restore/composition belongs behind the
-`sandbox-rental-service` checkpoint policy model and the `vm-orchestrator`
-privileged restore API, not in customer-visible ZFS paths.
+Secret material is fronted by `secrets-service` backed by OpenBao; ad hoc
+execution env vars are not a supported path. Repo-owned service-to-service
+identity is SPIFFE/SPIRE; shared bearer tokens, Zitadel machine users, and
+OpenBao as an identity source are not supported paths. zvol restore and
+composition live behind the `sandbox-rental-service` checkpoint policy model
+and the `vm-orchestrator` privileged restore API; customer-visible ZFS paths
+are excluded by construction. See
+[workload-identity.md](workload-identity.md) for the workload identity
+contract.
 
 ## Wire Contracts
 
@@ -111,7 +141,7 @@ See [wire-contracts.md](../../src/apiwire/docs/wire-contracts.md). `src/apiwire`
 
 ## Identity And IAM
 
-See [identity-and-iam.md](../../src/platform/docs/identity-and-iam.md). Zitadel owns identity and role assignments. Forge Metal pins three role keys per project (`owner`, `admin`, `member`), exposes a fixed switchboard of code-owned member-capability bundles in the org console, and each Go service owns the operation catalog it enforces. Members can never receive a permission whose operation is not tagged `member_eligible: true`; the boundary is enforced at catalog `init()` and at credential issuance.
+See [identity-and-iam.md](../../src/platform/docs/identity-and-iam.md). Zitadel owns human, organization, and customer/API credential identity and role assignments. SPIRE owns repo-owned workload identity; see [workload-identity.md](workload-identity.md). Forge Metal pins three role keys per project (`owner`, `admin`, `member`), exposes a fixed switchboard of code-owned member-capability bundles in the org console, and each Go service owns the operation catalog it enforces. Members can never receive a permission whose operation is not tagged `member_eligible: true`; the boundary is enforced at catalog `init()` and at credential issuance.
 
 ## Authorization Direction (Future)
 
@@ -129,13 +159,13 @@ Two layers, cleanly separated:
 - **Operation-level authz** — "is this principal allowed to invoke this operation at all?" — becomes OPA's job.
 - **Resource-level authz** — "once allowed, can this specific path or record be read/written?" — stays in the resource plane that owns the data (for example, OpenBao policies in the secrets plane once OpenBao is stood up).
 
-This mirrors AWS's split: Zitadel is the IdP (equivalent to IAM Identity Center), OPA is the identity-based policy engine (equivalent to IAM), per-resource authz is resource-based policy, and `governance-service` is the CloudTrail-equivalent outside the authz path.
+This mirrors AWS's split: Zitadel is the human/customer IdP (equivalent to IAM Identity Center), SPIRE is the workload identity authority, OPA is the identity-based policy engine (equivalent to IAM), per-resource authz is resource-based policy, and `governance-service` is the CloudTrail-equivalent outside the authz path.
 
 Until the PDP migration lands, current `policy.go` files are the reference implementation that future OPA policies must match. Keep role matrices declarative and avoid control-flow creep so the translation is mechanical.
 
 ## Secrets Plane
 
-See [secrets-service.md](../../src/platform/docs/secrets-service.md). `secrets-service` is the customer-facing control plane for secrets, variables, dynamic credentials, and crypto operations across org, source, environment, and branch scopes; SPIFFE/SPIRE attests sandbox workloads; the service runs an OIDC provider so Forge Metal compute can federate to customer clouds without bootstrap API keys. OpenBao is the backend implementation, not the product contract.
+See [secrets-service.md](../../src/platform/docs/secrets-service.md). `secrets-service` is the customer-facing control plane for secrets, variables, dynamic credentials, and crypto operations across org, source, environment, and branch scopes. SPIFFE/SPIRE attests repo-owned workloads; see [workload-identity.md](workload-identity.md). OpenBao is the backend resource plane and policy enforcement point for secrets/KMS material, not the product contract and not the workload identity source of truth.
 
 ## Deploy Trace Correlation
 

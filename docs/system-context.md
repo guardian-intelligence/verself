@@ -6,7 +6,7 @@ How the platform is currently wired together. Direction and target state are in 
 
 High-level topology lives in `docs/architecture/service-architecture.md`. Port assignments are declared in `src/platform/ansible/group_vars/all/services.yml`; run `make services-doctor` to cross-check the declared map against live listeners on the box (supports `FORMAT=json|nftables`).
 
-Secrets are SOPS-encrypted in `group_vars/all/secrets.sops.yml`, written by each service's Ansible role to `/etc/credstore/{service}/` (root-owned, service-group-readable), and loaded at runtime via systemd `LoadCredential=` into `$CREDENTIALS_DIRECTORY`.
+Bootstrap and operator-recovery secrets are SOPS-encrypted in `group_vars/all/secrets.sops.yml` and loaded at service start via systemd `LoadCredential=` into `$CREDENTIALS_DIRECTORY`. Repo-owned service-to-service authentication is SPIFFE/SPIRE; runtime third-party provider credentials are fetched from OpenBao by SPIFFE-authenticated services. See [`docs/architecture/workload-identity.md`](architecture/workload-identity.md).
 
 Go services are written with the Huma v2 framework (<https://pkg.go.dev/github.com/danielgtaylor/huma/v2>). Do not write custom clients for Go services; generate them from an OpenAPI specification. Each service commits both an OpenAPI 3.0 spec (Go client generation via `oapi-codegen`) and a 3.1 spec (TypeScript client + Valibot validator generation via `@hey-api/openapi-ts`). Shared cross-service DTO wire language lives in `src/apiwire`; use it for Huma boundary DTOs and generated-client contracts instead of service-local 64-bit JSON encodings.
 
@@ -32,13 +32,13 @@ Hard product requirement: everything self-hosted. Exceptions:
 
 ## Auth and IAM
 
-Zitadel is the sole IdP. All Go services import `src/auth-middleware/`, which validates JWTs against Zitadel's JWKS endpoint (cached, local crypto after first fetch). Identity (subject, org ID, roles, email) is extracted from token claims and attached to request context.
+Zitadel is the sole IdP for humans, organizations, and customer/API credentials. All public Go service APIs import `src/auth-middleware/`, which validates JWTs against Zitadel's JWKS endpoint (cached, local crypto after first fetch). Identity (subject, org ID, roles, email) is extracted from token claims and attached to request context. Repo-owned workload identity is SPIFFE/SPIRE (see [workload-identity.md](architecture/workload-identity.md)); Zitadel machine users are not used for repo-owned service-to-service calls.
 
 Auth at the web application level is treated only as a UX concern. Authentication and authorization happen in services validating JWTs and calling out to Zitadel, and sometimes at the DB level. Any violation of this principle is a critical security concern.
 
 Full model — organization boundary, three-role IAM (`owner`/`admin`/`member`), capability catalog, API credentials, SCIM, TanStack Start server-owned OAuth sessions, browser CSP bearer isolation, and the single-node JWKS loopback path — lives in `src/platform/docs/identity-and-iam.md`.
 
-We use OpenBao Transit for KMS and OpenBao KV for Secrets Management.
+We use OpenBao Transit for KMS and OpenBao KV for Secrets Management. OpenBao is a relying party for workload identity and the resource plane for secrets/KMS material: it accepts SPIRE-issued JWT-SVIDs and maps SPIFFE subjects to OpenBao policies. OpenBao is not the source of truth for repo-owned workload identity.
 
 ## Dual-Write Pattern
 

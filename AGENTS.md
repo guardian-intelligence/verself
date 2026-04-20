@@ -72,6 +72,7 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - **Wire contracts, apiwire, DTO patterns, numeric safety, 64-bit, DecimalUint64, DecimalInt64, openapi-wire-check, generated contract gate:** `src/apiwire/docs/wire-contracts.md`
 - **VM execution control plane, sandbox-rental-service ↔ vm-orchestrator split, attempt state machine, billing windows, execution lifecycle:** `src/sandbox-rental-service/docs/vm-execution-control-plane.md`
 - **Identity and IAM, Zitadel, SCIM 2.0, SSO, authentication, organization model, three-role owner/admin/member, capability catalog, API credentials, Zitadel Actions, pre-access-token, frontend sessions, JWKS loopback, Forge Metal policy split:** `src/platform/docs/identity-and-iam.md`
+- **Workload identity, SPIFFE/SPIRE trust domain, service mTLS, OpenBao relying-party model, runtime secret cleanup:** `docs/architecture/workload-identity.md`
 - **Secrets service, identity model, OIDC provider role, resource model, billing, KMS alternative:** `src/platform/docs/secrets-service.md`
 - Billing architecture, credit subscription, entitlements, metering, TigerBeetle, PostgreSQL, Reconcile, refunds, plan change, dual-write, Stripe webhooks, invoices:** `src/billing-service/docs/billing-architecture.md`
 - **Governance audit data contract, HMAC chain, OCSF, CloudTrail parity, tamper evidence, SIEM export, audit ledger:** `src/governance-service/docs/audit-data-contract.md`
@@ -83,7 +84,7 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 </operational_runbook>
 
 <assistant_contract>
-- Ground proposals, plans, API references, and all technical discussion in primary sources. Then think from the perspective of the user of the system: a non-technical startup founder running all services off a single bare-metal box (with upgrade path to 3-node k3s).
+- Ground proposals, plans, API references, and all technical discussion in primary sources. Then think from the perspective of the user of the system: a non-technical startup founder running all services off a single bare-metal box (with upgrade path to a 3-node topology).
 - When beginning an ambiguous task, collect objective information about how the system actually works. There are a lot of technologies stitched together; understand how everything connects.
 - Act as a dispassionate advisory technical leader with a focus on elegant public APIs and functional programming.
 - You are not alone in this repo. Expect parallel changes in unrelated files by the user. Leave them alone (don't stash them) and continue with your work.

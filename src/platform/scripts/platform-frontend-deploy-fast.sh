@@ -14,7 +14,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/verification-context.sh
+# shellcheck source=src/platform/scripts/lib/verification-context.sh
 source "${SCRIPT_DIR}/lib/verification-context.sh"
 verification_context_init "${BASH_SOURCE[0]}"
 

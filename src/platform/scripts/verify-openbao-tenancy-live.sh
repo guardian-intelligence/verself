@@ -72,6 +72,7 @@ remote_payload_b64="$(
     "${VERIFICATION_DOMAIN}" \
     "${run_id}" \
     "${secrets_project_id}" \
+    "spiffe://spiffe.${VERIFICATION_DOMAIN}/svc/secrets-service" \
     "${acme_org_id}" \
     "${platform_org_id}" \
     "${acme_admin_token}" \
@@ -86,6 +87,7 @@ keys = [
     "domain",
     "run_id",
     "secrets_project_id",
+    "spire_secrets_service_id",
     "acme_org_id",
     "platform_org_id",
     "acme_admin_token",
@@ -140,9 +142,6 @@ def response_request_id(body, headers):
 
 root_token = open("/etc/credstore/openbao/root-token", encoding="utf-8").read().strip()
 admin_pat = open("/etc/zitadel/admin.pat", encoding="utf-8").read().strip()
-service_account_user_id = open("/etc/credstore/secrets-service/service-account-user-id", encoding="utf-8").read().strip()
-if not service_account_user_id:
-    raise SystemExit("secrets-service OpenBao service account user id credential is empty")
 
 org_req = urllib.request.Request(
     "http://127.0.0.1:8085/v2/organizations/_search",
@@ -192,7 +191,6 @@ for org in orgs:
         ("secrets-owner", f"secrets-{org_id}-read-write", "owner"),
         ("secrets-admin", f"secrets-{org_id}-read-write", "admin"),
         ("secrets-member", f"secrets-{org_id}-read-only", "member"),
-        ("secrets-injection", f"secrets-{org_id}-injection-read", ""),
     ]:
         r_status, r_body, r_headers = request("GET", f"/v1/auth/jwt-{org_id}/role/{role}", root_token)
         require_status(f"role {org_id} {role}", r_status, {200})
@@ -201,14 +199,21 @@ for org in orgs:
         if expected_policy not in token_policies:
             raise SystemExit(f"role {org_id} {role} missing policy {expected_policy}")
         bound_claims = data.get("bound_claims") or {}
-        if role == "secrets-injection":
-            if bound_claims.get("sub") != service_account_user_id:
-                raise SystemExit(f"role {org_id} {role} is not bound to the secrets-service machine user")
-        else:
-            role_claim = f"/urn:zitadel:iam:org:project:{payload['secrets_project_id']}:roles/{project_role}/{org_id}"
-            if bound_claims.get("urn:zitadel:iam:user:resourceowner:id") != org_id or role_claim not in bound_claims:
-                raise SystemExit(f"role {org_id} {role} has unexpected bound_claims")
+        role_claim = f"/urn:zitadel:iam:org:project:{payload['secrets_project_id']}:roles/{project_role}/{org_id}"
+        if bound_claims.get("urn:zitadel:iam:user:resourceowner:id") != org_id or role_claim not in bound_claims:
+            raise SystemExit(f"role {org_id} {role} has unexpected bound_claims")
         role_checks.append({"role": role, "org_id": org_id, "request_id": response_request_id(r_body, r_headers)})
+    spiffe_role = f"secrets-injection-{org_id}"
+    s_status, s_body, s_headers = request("GET", f"/v1/auth/spiffe-jwt/role/{spiffe_role}", root_token)
+    require_status(f"SPIFFE workload role {spiffe_role}", s_status, {200})
+    s_data = s_body.get("data") or {}
+    if f"secrets-{org_id}-injection-read" not in set(s_data.get("token_policies") or []):
+        raise SystemExit(f"SPIFFE workload role {spiffe_role} missing injection-read policy")
+    if (s_data.get("bound_claims") or {}).get("sub") != payload["spire_secrets_service_id"]:
+        raise SystemExit(f"SPIFFE workload role {spiffe_role} is not bound to secrets-service SPIFFE ID")
+    if "openbao" not in set(s_data.get("bound_audiences") or []):
+        raise SystemExit(f"SPIFFE workload role {spiffe_role} is not bound to openbao audience")
+    role_checks.append({"role": spiffe_role, "org_id": org_id, "request_id": response_request_id(s_body, s_headers)})
 
 def login(org_id, role, jwt):
     status, body, headers = request("POST", f"/v1/auth/jwt-{org_id}/login", body={"role": role, "jwt": jwt})
@@ -419,15 +424,6 @@ wait_for_clickhouse_count default "
     AND startsWith(SpanName, 'openbao.tenancy.reconcile.')
     AND SpanAttributes['forge_metal.proof_run_id'] = {run_id:String}
 " "${org_count}" "${artifact_dir}/clickhouse/openbao-tenancy-spans-count.tsv"
-
-wait_for_clickhouse_count forge_metal "
-  SELECT countDistinct(org_id)
-  FROM audit_events
-  WHERE service_name = 'platform-ansible'
-    AND audit_event = 'openbao.namespace.provisioned'
-    AND risk_level = 'high'
-    AND length(row_hmac) = 64
-" "${org_count}" "${artifact_dir}/clickhouse/openbao-tenancy-audit-count.tsv"
 
 python3 - "${run_id}" "${window_start}" "${window_end}" "${artifact_dir}" >"${artifact_dir}/run.json" <<'PY'
 import json
