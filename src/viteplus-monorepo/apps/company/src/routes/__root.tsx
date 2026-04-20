@@ -93,9 +93,10 @@ function TopBar() {
   );
 }
 
-// Company-site footer. Four columns mirror the IA. The full legal tree for
-// Metal lives on the platform app at platform.anveio.com/policy and is linked
-// from /legal and /trust rather than duplicated here.
+// Company-site footer. Three columns mirror the public IA. Terms, privacy,
+// SLA, security disclosures, and every legal surface that binds a customer
+// live with Metal Platform — the product that actually processes the data —
+// and are not duplicated here.
 function SiteFooter() {
   return (
     <footer
@@ -106,30 +107,22 @@ function SiteFooter() {
         borderTop: "1px solid rgba(245,245,245,0.08)",
       }}
     >
-      <div className="mx-auto grid w-full max-w-7xl gap-8 px-4 py-10 md:grid-cols-4 md:px-6">
+      <div className="mx-auto grid w-full max-w-7xl gap-8 px-4 py-10 md:grid-cols-3 md:px-6">
         <FooterColumn heading="Company">
           <FooterLink to="/company">About</FooterLink>
           <FooterLink to="/careers">Careers</FooterLink>
           <FooterLink to="/changelog">Changelog</FooterLink>
           <FooterLink to="/contact">Contact</FooterLink>
         </FooterColumn>
-        <FooterColumn heading="Products">
-          <FooterLink to="/products">Overview</FooterLink>
-          <FooterExternal href="https://platform.anveio.com">Metal</FooterExternal>
-          <FooterExternal href="https://platform.anveio.com">Console</FooterExternal>
-          <FooterExternal href="https://letters.anveio.com">Letters</FooterExternal>
+        <FooterColumn heading="Solutions">
+          <FooterLink to="/solutions">Overview</FooterLink>
+          <FooterExternal href="https://platform.anveio.com">Metal Platform</FooterExternal>
         </FooterColumn>
         <FooterColumn heading="Read">
           <FooterLink to="/dispatch">Dispatch</FooterLink>
           <FooterExternal href="/dispatch/rss">RSS</FooterExternal>
           <FooterLink to="/design">Design system</FooterLink>
           <FooterLink to="/press">Press kit</FooterLink>
-        </FooterColumn>
-        <FooterColumn heading="Trust">
-          <FooterLink to="/trust">Commitments</FooterLink>
-          <FooterLink to="/legal">Legal</FooterLink>
-          <FooterExternal href="https://platform.anveio.com/policy">Policy tree</FooterExternal>
-          <FooterExternal href="/.well-known/security.txt">Security.txt</FooterExternal>
         </FooterColumn>
       </div>
       <div

@@ -20,7 +20,7 @@ export const contact = {
     {
       name: "Sales",
       email: "sales@guardianintelligence.org",
-      note: "You want to use Metal, Console, or Letters for real work.",
+      note: "You want to run real work on Metal Platform.",
     },
     {
       name: "Press",
@@ -29,8 +29,8 @@ export const contact = {
     },
     {
       name: "Security",
-      email: "security@anveio.com",
-      note: "Disclosure path described in /.well-known/security.txt.",
+      email: "security@guardianintelligence.org",
+      note: "Anything that concerns customer data or platform safety is handled with Metal; this address is the marketing-site backstop and we route from here.",
     },
     {
       name: "Careers",

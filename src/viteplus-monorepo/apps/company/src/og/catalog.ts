@@ -26,18 +26,11 @@ export const OG_CATALOG: Record<string, OGSpec> = {
     footerLeft: "anveio.com/dispatch",
     footerRight: "Seattle · 2026",
   },
-  products: {
-    slug: "products",
-    title: "One house. Three products.",
-    flare: "Three",
-    footerLeft: "anveio.com/products",
-    footerRight: "Seattle · 2026",
-  },
-  trust: {
-    slug: "trust",
-    title: "We tell you what we do with your data.",
-    flare: "data",
-    footerLeft: "anveio.com/trust",
+  solutions: {
+    slug: "solutions",
+    title: "One house, one platform.",
+    flare: "one platform",
+    footerLeft: "anveio.com/solutions",
     footerRight: "Seattle · 2026",
   },
 };
