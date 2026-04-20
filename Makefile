@@ -1,4 +1,4 @@
-.PHONY: help test lint lint-scripts lint-conversions lint-ansible fmt vet tidy openapi openapi-check openapi-wire-check \
+.PHONY: help test lint lint-scripts lint-conversions lint-ansible lint-voice fmt vet tidy openapi openapi-check openapi-wire-check \
        hooks-install doctor inventory-check setup-dev setup-sops provision deprovision deploy site guest-rootfs security-patch identity-reset seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member \
        set-user-state billing-clock billing-wall-clock billing-state billing-documents billing-finalizations billing-events billing-pg-shell billing-pg-query billing-proof billing-reset verification-reset \
        secrets-proof secrets-leak-proof openbao-proof openbao-tenancy-proof \
@@ -45,6 +45,9 @@ lint-conversions:
 
 lint-ansible:
 	cd $(FM)/ansible && ansible-lint playbooks roles
+
+lint-voice: ## Scan apps/company content for banned words and BuzzFeed hooks (Guardian voice spec)
+	cd src/viteplus-monorepo && corepack pnpm --filter "@forge-metal/company" run lint:voice
 
 hooks-install:
 	@hooks_path=$$(git config --get core.hooksPath || true); \
