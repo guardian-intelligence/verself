@@ -393,7 +393,7 @@ func (s *Service) RunVolumeMeterTick(ctx context.Context, tickID uuid.UUID) (err
 		return fmt.Errorf("mark volume meter tick reserving: %w", err)
 	}
 
-	reservation, err := s.Billing.Reserve(ctx, billingJobIDForAttempt(tick.MeterTickID), tick.OrgID, tick.ProductID, tick.ActorID, 1, tick.SourceType, tick.SourceRef, tick.WindowSeq, tick.WindowMillis, tick.Allocation)
+	reservation, err := s.Billing.Reserve(ctx, billingJobIDForAttempt(tick.MeterTickID), tick.OrgID, tick.ProductID, tick.ActorID, 1, tick.SourceType, tick.SourceRef, tick.WindowSeq, billingclient.ReservationShapeTime, tick.WindowMillis, tick.Allocation)
 	if err != nil {
 		if errors.Is(err, billingclient.ErrPaymentRequired) || errors.Is(err, billingclient.ErrForbidden) {
 			return s.failVolumeMeterTick(ctx, tick, volume, err)

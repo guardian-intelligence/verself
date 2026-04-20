@@ -8,6 +8,7 @@ import (
 	"math"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -132,11 +133,15 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 	if len(req.Allocation) == 0 {
 		return WindowReservation{}, fmt.Errorf("reserve allocation is required")
 	}
-	if err := validateReserveWindowMillis(req.WindowMillis); err != nil {
+	shape, err := normalizeReservationShape(req.ReservationShape)
+	if err != nil {
 		return WindowReservation{}, err
 	}
-	quantity := reserveWindowQuantity(req)
-	sourceFingerprint := reserveSourceFingerprint(req, quantity)
+	quantity, err := reserveWindowQuantity(shape, req.ReservedQuantity)
+	if err != nil {
+		return WindowReservation{}, err
+	}
+	sourceFingerprint := reserveSourceFingerprint(req, shape, quantity)
 	if existing, ok, err := c.loadWindowBySource(ctx, req.OrgID, req.ProductID, req.SourceType, req.SourceRef, req.WindowSeq); err != nil {
 		return WindowReservation{}, err
 	} else if ok {
@@ -157,7 +162,7 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 	}
 
 	var reserved persistedWindow
-	err := c.WithTx(ctx, "billing.window.reserve", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
+	err = c.WithTx(ctx, "billing.window.reserve", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
 		now, err := c.BusinessNow(ctx, q, req.OrgID, req.ProductID)
 		if err != nil {
 			return err
@@ -220,29 +225,29 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 		}
 		windowID := billingWindowID(req.OrgID, req.ProductID, req.SourceType, req.SourceRef, req.WindowSeq)
 		ledgerCorrelationID := ledger.NewID()
-		expiresAt, renewBy := reserveWindowTiming(now, quantity)
+		expiresAt, renewBy := reserveWindowTiming(shape, now, quantity)
 		billingJobID := ""
 		if req.BillingJobID > 0 {
 			billingJobID = strconv.FormatInt(req.BillingJobID, 10)
 		}
 		_, commitSpan := tracer.Start(ctx, "billing.authorization.commit_pg")
 		defer commitSpan.End()
-		commitSpan.SetAttributes(attribute.String("billing.window_id", windowID), attribute.String("billing.org_id", orgIDText(req.OrgID)), attribute.String("billing.product_id", req.ProductID), attribute.Int64("billing.window_millis", int64(quantity)), attribute.String("billing.charge_units", strconv.FormatUint(chargeUnits, 10)))
+		commitSpan.SetAttributes(attribute.String("billing.window_id", windowID), attribute.String("billing.org_id", orgIDText(req.OrgID)), attribute.String("billing.product_id", req.ProductID), attribute.String("billing.reservation_shape", shape), attribute.Int64("billing.reserved_quantity", int64(quantity)), attribute.String("billing.charge_units", strconv.FormatUint(chargeUnits, 10)))
 		_, err = tx.Exec(ctx, `
 			INSERT INTO billing_windows (
 				window_id, cycle_id, org_id, actor_id, product_id, pricing_contract_id, pricing_phase_id, pricing_plan_id,
 				source_type, source_ref, source_fingerprint, billing_job_id, window_seq, state, reservation_shape, reserved_quantity,
 				reserved_charge_units, pricing_phase, allocation, rate_context, funding_legs, ledger_correlation_id, window_start, expires_at, renew_by
-			) VALUES ($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),$9,$10,$11,NULLIF($12,''),$13,'reserved','time',$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
-		`, windowID, cycle.CycleID, orgIDText(req.OrgID), req.ActorID, req.ProductID, pricing.ContractID, pricing.PhaseID, pricing.PlanID, req.SourceType, req.SourceRef, sourceFingerprint, billingJobID, int64(req.WindowSeq), int64(quantity), int64(chargeUnits), pricingPhaseIncluded, allocationJSON, rateJSON, fundingJSON, ledgerCorrelationID.Bytes(), now, expiresAt, renewBy)
+			) VALUES ($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),$9,$10,$11,NULLIF($12,''),$13,'reserved',$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
+		`, windowID, cycle.CycleID, orgIDText(req.OrgID), req.ActorID, req.ProductID, pricing.ContractID, pricing.PhaseID, pricing.PlanID, req.SourceType, req.SourceRef, sourceFingerprint, billingJobID, int64(req.WindowSeq), shape, int64(quantity), int64(chargeUnits), pricingPhaseIncluded, allocationJSON, rateJSON, fundingJSON, ledgerCorrelationID.Bytes(), now, expiresAt, renewBy)
 		if err != nil {
 			return fmt.Errorf("insert billing window: %w", err)
 		}
 		if err := c.insertWindowLedgerLegsTx(ctx, tx, windowID, legs); err != nil {
 			return err
 		}
-		reserved = persistedWindow{WindowID: windowID, CycleID: cycle.CycleID, OrgID: req.OrgID, ActorID: req.ActorID, ProductID: req.ProductID, PricingContractID: pricing.ContractID, PricingPhaseID: pricing.PhaseID, PricingPlanID: pricing.PlanID, SourceType: req.SourceType, SourceRef: req.SourceRef, SourceFingerprint: sourceFingerprint, WindowSeq: req.WindowSeq, State: "reserved", ReservationShape: "time", ReservedQuantity: quantity, ReservedChargeUnits: chargeUnits, PricingPhase: pricingPhaseIncluded, Allocation: cloneFloatMap(req.Allocation), RateContext: pricing, FundingLegs: legs, WindowStart: now, ExpiresAt: expiresAt, RenewBy: &renewBy}
-		if err := appendEvent(ctx, tx, q, eventFact{EventType: "billing_window_reserve_requested", AggregateType: "billing_window", AggregateID: windowID, OrgID: req.OrgID, ProductID: req.ProductID, OccurredAt: now, Payload: map[string]any{"window_id": windowID, "cycle_id": cycle.CycleID, "pricing_plan_id": pricing.PlanID, "pricing_phase_id": pricing.PhaseID, "pricing_contract_id": pricing.ContractID, "source_type": req.SourceType, "source_ref": req.SourceRef, "source_fingerprint": sourceFingerprint, "window_seq": req.WindowSeq, "reserved_quantity": quantity, "charge_units": chargeUnits, "component_charge_units": componentCharges, "bucket_charge_units": bucketCharges}}); err != nil {
+		reserved = persistedWindow{WindowID: windowID, CycleID: cycle.CycleID, OrgID: req.OrgID, ActorID: req.ActorID, ProductID: req.ProductID, PricingContractID: pricing.ContractID, PricingPhaseID: pricing.PhaseID, PricingPlanID: pricing.PlanID, SourceType: req.SourceType, SourceRef: req.SourceRef, SourceFingerprint: sourceFingerprint, WindowSeq: req.WindowSeq, State: "reserved", ReservationShape: shape, ReservedQuantity: quantity, ReservedChargeUnits: chargeUnits, PricingPhase: pricingPhaseIncluded, Allocation: cloneFloatMap(req.Allocation), RateContext: pricing, FundingLegs: legs, WindowStart: now, ExpiresAt: expiresAt, RenewBy: &renewBy}
+		if err := appendEvent(ctx, tx, q, eventFact{EventType: "billing_window_reserve_requested", AggregateType: "billing_window", AggregateID: windowID, OrgID: req.OrgID, ProductID: req.ProductID, OccurredAt: now, Payload: map[string]any{"window_id": windowID, "cycle_id": cycle.CycleID, "pricing_plan_id": pricing.PlanID, "pricing_phase_id": pricing.PhaseID, "pricing_contract_id": pricing.ContractID, "source_type": req.SourceType, "source_ref": req.SourceRef, "source_fingerprint": sourceFingerprint, "window_seq": req.WindowSeq, "reservation_shape": shape, "reserved_quantity": quantity, "charge_units": chargeUnits, "component_charge_units": componentCharges, "bucket_charge_units": bucketCharges}}); err != nil {
 			return err
 		}
 		return appendEvent(ctx, tx, q, eventFact{
@@ -262,6 +267,7 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 				"source_ref":              req.SourceRef,
 				"source_fingerprint":      sourceFingerprint,
 				"window_seq":              req.WindowSeq,
+				"reservation_shape":       shape,
 				"reserved_quantity":       quantity,
 				"charge_units":            chargeUnits,
 				"component_charge_units":  componentCharges,
@@ -276,14 +282,40 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 	return reserved.reservation(), nil
 }
 
-func reserveWindowQuantity(req ReserveRequest) uint32 {
-	if req.WindowMillis != 0 {
-		return req.WindowMillis
+func normalizeReservationShape(shape string) (string, error) {
+	switch strings.TrimSpace(shape) {
+	case ReservationShapeTime:
+		return ReservationShapeTime, nil
+	case ReservationShapeCount:
+		return ReservationShapeCount, nil
+	case "":
+		return "", fmt.Errorf("reserve reservation_shape is required")
+	default:
+		return "", fmt.Errorf("reserve reservation_shape must be %q or %q", ReservationShapeTime, ReservationShapeCount)
 	}
-	return defaultWindowMillis
 }
 
-func reserveSourceFingerprint(req ReserveRequest, quantity uint32) string {
+func reserveWindowQuantity(shape string, requested uint32) (uint32, error) {
+	switch shape {
+	case ReservationShapeTime:
+		if requested == 0 {
+			return defaultWindowMillis, nil
+		}
+		if requested < minCustomWindowMillis {
+			return 0, fmt.Errorf("reserve time reserved_quantity must be 0 or at least %d", minCustomWindowMillis)
+		}
+		return requested, nil
+	case ReservationShapeCount:
+		if requested == 0 {
+			return 0, fmt.Errorf("reserve count reserved_quantity must be greater than 0")
+		}
+		return requested, nil
+	default:
+		return 0, fmt.Errorf("reserve reservation_shape must be %q or %q", ReservationShapeTime, ReservationShapeCount)
+	}
+}
+
+func reserveSourceFingerprint(req ReserveRequest, shape string, quantity uint32) string {
 	parts := []string{
 		orgIDText(req.OrgID),
 		req.ProductID,
@@ -291,6 +323,7 @@ func reserveSourceFingerprint(req ReserveRequest, quantity uint32) string {
 		req.SourceType,
 		req.SourceRef,
 		strconv.FormatUint(uint64(req.WindowSeq), 10),
+		shape,
 		strconv.FormatUint(uint64(quantity), 10),
 		strconv.FormatUint(req.ConcurrentCount, 10),
 		strconv.FormatInt(req.BillingJobID, 10),
@@ -306,16 +339,13 @@ func reserveSourceFingerprint(req ReserveRequest, quantity uint32) string {
 	return textID("winfp", parts...)
 }
 
-func validateReserveWindowMillis(windowMillis uint32) error {
-	if windowMillis != 0 && windowMillis < minCustomWindowMillis {
-		return fmt.Errorf("reserve window_millis must be 0 or at least %d", minCustomWindowMillis)
+func reserveWindowTiming(shape string, now time.Time, quantity uint32) (time.Time, time.Time) {
+	authorizationMillis := quantity
+	if shape == ReservationShapeCount {
+		authorizationMillis = defaultWindowMillis
 	}
-	return nil
-}
-
-func reserveWindowTiming(now time.Time, quantity uint32) (time.Time, time.Time) {
-	expiresAt := now.Add(time.Duration(quantity) * time.Millisecond)
-	renewBy := expiresAt.Add(-time.Duration(windowRenewBeforeMillis(quantity)) * time.Millisecond)
+	expiresAt := now.Add(time.Duration(authorizationMillis) * time.Millisecond)
+	renewBy := expiresAt.Add(-time.Duration(windowRenewBeforeMillis(authorizationMillis)) * time.Millisecond)
 	if !renewBy.After(now) {
 		renewBy = expiresAt
 	}
@@ -364,16 +394,16 @@ func (c *Client) ActivateWindow(ctx context.Context, windowID string, activatedA
 	if activatedAt.After(window.ExpiresAt) {
 		return WindowReservation{}, fmt.Errorf("%w: reservation expired", ErrWindowNotReserved)
 	}
-	renewBy := activatedAt.Add(time.Duration(window.ReservedQuantity-windowRenewBeforeMillis(window.ReservedQuantity)) * time.Millisecond)
+	expiresAt, renewBy := reserveWindowTiming(window.ReservationShape, activatedAt, window.ReservedQuantity)
 	if !renewBy.After(activatedAt) {
-		renewBy = activatedAt.Add(time.Duration(window.ReservedQuantity) * time.Millisecond)
+		renewBy = expiresAt
 	}
 	err = c.WithTx(ctx, "billing.window.activate", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
 		ct, err := tx.Exec(ctx, `
 			UPDATE billing_windows
 			SET state = 'active', window_start = $2, activated_at = $2, expires_at = $3, renew_by = $4
 			WHERE window_id = $1 AND state = 'reserved' AND activated_at IS NULL
-		`, windowID, activatedAt, activatedAt.Add(time.Duration(window.ReservedQuantity)*time.Millisecond), renewBy)
+		`, windowID, activatedAt, expiresAt, renewBy)
 		if err != nil {
 			return fmt.Errorf("activate billing window: %w", err)
 		}
@@ -1286,7 +1316,10 @@ func meteringRowForWindow(w persistedWindow, recordedAt time.Time) (meteringRow,
 		}
 	}
 	endedAt := w.WindowStart.Add(time.Duration(w.ActualQuantity) * time.Millisecond)
-	if w.SettledAt != nil && w.ActualQuantity == 0 {
+	if w.ReservationShape == ReservationShapeCount {
+		endedAt = w.WindowStart
+	}
+	if w.SettledAt != nil && (w.ActualQuantity == 0 || w.ReservationShape == ReservationShapeCount) {
 		endedAt = *w.SettledAt
 	}
 	return meteringRow{WindowID: w.WindowID, OrgID: orgIDText(w.OrgID), ActorID: w.ActorID, ProductID: w.ProductID, SourceType: w.SourceType, SourceRef: w.SourceRef, WindowSeq: w.WindowSeq, ReservationShape: w.ReservationShape, StartedAt: w.WindowStart, EndedAt: endedAt, ReservedQuantity: uint64(w.ReservedQuantity), ActualQuantity: uint64(w.ActualQuantity), BillableQuantity: uint64(w.BillableQuantity), WriteoffQuantity: uint64(w.WriteoffQuantity), CycleID: w.CycleID, PricingContractID: w.PricingContractID, PricingPhaseID: w.PricingPhaseID, PricingPlanID: w.PricingPlanID, PricingPhase: w.PricingPhase, Dimensions: cloneFloatMap(w.Allocation), ComponentQuantities: componentQuantities, ComponentChargeUnits: componentCharges, BucketChargeUnits: bucketCharges, ChargeUnits: w.BilledChargeUnits, WriteoffChargeUnits: w.WriteoffChargeUnits, FreeTierUnits: bySource["free_tier"], ContractUnits: bySource["contract"], PurchaseUnits: bySource["purchase"], PromoUnits: bySource["promo"], RefundUnits: bySource["refund"], ReceivableUnits: bySource["receivable"], AdjustmentUnits: bySource["adjustment"], ComponentFreeTierUnits: componentBySource["free_tier"], ComponentContractUnits: componentBySource["contract"], ComponentPurchaseUnits: componentBySource["purchase"], ComponentPromoUnits: componentBySource["promo"], ComponentRefundUnits: componentBySource["refund"], ComponentReceivableUnits: componentBySource["receivable"], ComponentAdjustmentUnits: componentBySource["adjustment"], UsageEvidence: usageEvidence(w.UsageSummary), CostPerUnit: w.RateContext.CostPerUnit, RecordedAt: recordedAt}, nil

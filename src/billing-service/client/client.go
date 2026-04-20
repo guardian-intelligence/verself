@@ -218,18 +218,19 @@ func (c *ServiceClient) CreatePortalSession(ctx context.Context, orgID uint64, r
 	return out.URL, nil
 }
 
-func (c *ServiceClient) Reserve(ctx context.Context, jobID int64, orgID uint64, productID string, actorID string, concurrentCount uint64, sourceType string, sourceRef string, windowSeq uint32, windowMillis uint32, allocation map[string]float64, reqEditors ...RequestEditorFn) (Reservation, error) {
+func (c *ServiceClient) Reserve(ctx context.Context, jobID int64, orgID uint64, productID string, actorID string, concurrentCount uint64, sourceType string, sourceRef string, windowSeq uint32, reservationShape string, reservedQuantity uint32, allocation map[string]float64, reqEditors ...RequestEditorFn) (Reservation, error) {
 	body := apiwire.BillingReserveWindowRequest{
-		OrgID:           apiwire.Uint64(orgID),
-		ProductID:       productID,
-		ActorID:         actorID,
-		ConcurrentCount: concurrentCount,
-		SourceType:      sourceType,
-		SourceRef:       sourceRef,
-		WindowSeq:       windowSeq,
-		WindowMillis:    windowMillis,
-		BillingJobID:    jobID,
-		Allocation:      allocation,
+		OrgID:            apiwire.Uint64(orgID),
+		ProductID:        productID,
+		ActorID:          actorID,
+		ConcurrentCount:  concurrentCount,
+		SourceType:       sourceType,
+		SourceRef:        sourceRef,
+		WindowSeq:        windowSeq,
+		ReservationShape: reservationShape,
+		ReservedQuantity: reservedQuantity,
+		BillingJobID:     jobID,
+		Allocation:       allocation,
 	}
 	var out apiwire.BillingReserveWindowResult
 	if err := c.postJSON(ctx, "/internal/billing/v1/reserve", body, &out, "reserve", ErrPaymentRequired, reqEditors...); err != nil {
@@ -286,8 +287,8 @@ func parseReservation(in apiwire.BillingWindowReservation) (Reservation, error) 
 		}
 		skuRates[key] = int64(parsed)
 	}
-	costPerMillis := in.CostPerUnit.Uint64()
-	if costPerMillis > math.MaxInt64 {
+	costPerUnit := in.CostPerUnit.Uint64()
+	if costPerUnit > math.MaxInt64 {
 		return Reservation{}, fmt.Errorf("billing-client: reservation cost_per_unit exceeds int64")
 	}
 	reservation := Reservation{
@@ -300,11 +301,11 @@ func parseReservation(in apiwire.BillingWindowReservation) (Reservation, error) 
 		SourceRef:        in.SourceRef,
 		WindowSeq:        in.WindowSeq,
 		ReservationShape: in.ReservationShape,
-		WindowMillis:     in.ReservedQuantity,
+		ReservedQuantity: in.ReservedQuantity,
 		PricingPhase:     in.PricingPhase,
 		Allocation:       in.Allocation,
 		SKURates:         skuRates,
-		CostPerMillis:    int64(costPerMillis),
+		CostPerUnit:      int64(costPerUnit),
 		WindowStart:      in.WindowStart.UTC(),
 		ExpiresAt:        in.ExpiresAt.UTC(),
 	}

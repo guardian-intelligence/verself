@@ -681,6 +681,16 @@ components:
           maxLength: 255
           minLength: 1
           type: string
+        reservation_shape:
+          enum:
+            - time
+            - count
+          type: string
+        reserved_quantity:
+          format: int32
+          maximum: 4294967295
+          minimum: 0
+          type: integer
         source_ref:
           maxLength: 255
           minLength: 1
@@ -689,11 +699,6 @@ components:
           maxLength: 255
           minLength: 1
           type: string
-        window_millis:
-          format: int32
-          maximum: 4294967295
-          minimum: 0
-          type: integer
         window_seq:
           format: int32
           maximum: 2147483647
@@ -707,6 +712,8 @@ components:
         - source_type
         - source_ref
         - window_seq
+        - reservation_shape
+        - reserved_quantity
         - allocation
       type: object
     BillingReserveWindowResult:

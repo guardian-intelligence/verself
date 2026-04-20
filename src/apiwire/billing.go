@@ -267,16 +267,17 @@ type BillingURLResponse struct {
 }
 
 type BillingReserveWindowRequest struct {
-	OrgID           OrgID              `json:"org_id"`
-	ProductID       string             `json:"product_id" minLength:"1" maxLength:"255"`
-	ActorID         string             `json:"actor_id" minLength:"1" maxLength:"255"`
-	ConcurrentCount uint64             `json:"concurrent_count" minimum:"0" maximum:"9007199254740991"`
-	SourceType      string             `json:"source_type" minLength:"1" maxLength:"255"`
-	SourceRef       string             `json:"source_ref" minLength:"1" maxLength:"255"`
-	WindowSeq       uint32             `json:"window_seq" minimum:"0" maximum:"2147483647"`
-	WindowMillis    uint32             `json:"window_millis,omitempty" minimum:"0" maximum:"4294967295"`
-	BillingJobID    int64              `json:"billing_job_id,omitempty" minimum:"0" maximum:"9007199254740991"`
-	Allocation      map[string]float64 `json:"allocation" minProperties:"1"`
+	OrgID            OrgID              `json:"org_id"`
+	ProductID        string             `json:"product_id" minLength:"1" maxLength:"255"`
+	ActorID          string             `json:"actor_id" minLength:"1" maxLength:"255"`
+	ConcurrentCount  uint64             `json:"concurrent_count" minimum:"0" maximum:"9007199254740991"`
+	SourceType       string             `json:"source_type" minLength:"1" maxLength:"255"`
+	SourceRef        string             `json:"source_ref" minLength:"1" maxLength:"255"`
+	WindowSeq        uint32             `json:"window_seq" minimum:"0" maximum:"2147483647"`
+	ReservationShape string             `json:"reservation_shape" enum:"time,count"`
+	ReservedQuantity uint32             `json:"reserved_quantity" minimum:"0" maximum:"4294967295"`
+	BillingJobID     int64              `json:"billing_job_id,omitempty" minimum:"0" maximum:"9007199254740991"`
+	Allocation       map[string]float64 `json:"allocation" minProperties:"1"`
 }
 
 type BillingReserveWindowResult struct {

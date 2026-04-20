@@ -48,6 +48,11 @@ var (
 	ErrWindowAlreadyVoided  = errors.New("billing: window already voided")
 )
 
+const (
+	ReservationShapeTime  = "time"
+	ReservationShapeCount = "count"
+)
+
 type CheckoutParams struct {
 	AmountCents int64
 	SuccessURL  string
@@ -122,16 +127,17 @@ type WindowReservation struct {
 }
 
 type ReserveRequest struct {
-	OrgID           OrgID
-	ProductID       string
-	ActorID         string
-	ConcurrentCount uint64
-	SourceType      string
-	SourceRef       string
-	WindowSeq       uint32
-	WindowMillis    uint32
-	Allocation      map[string]float64
-	BillingJobID    int64
+	OrgID            OrgID
+	ProductID        string
+	ActorID          string
+	ConcurrentCount  uint64
+	SourceType       string
+	SourceRef        string
+	WindowSeq        uint32
+	ReservationShape string
+	ReservedQuantity uint32
+	Allocation       map[string]float64
+	BillingJobID     int64
 }
 
 type SettleResult struct {

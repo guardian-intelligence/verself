@@ -25,6 +25,9 @@ const (
 	sandboxExecutionRootStorageSKU  = "sandbox_execution_root_storage_premium_nvme_gib_ms"
 	sandboxDurableVolumeLiveSKU     = "sandbox_durable_volume_live_storage_gib_ms"
 	sandboxDurableVolumeRetainedSKU = "sandbox_durable_volume_retained_snapshot_gib_ms"
+	secretsProductID                = "secrets"
+	secretsKVOperationSKU           = "secrets_kv_operation"
+	secretsTransitOperationSKU      = "secrets_transit_operation"
 )
 
 type config struct {
@@ -82,6 +85,12 @@ type skuSeed struct {
 	DisplayName  string
 	QuantityUnit string
 	UnitRate     uint64
+}
+
+type productSeed struct {
+	Buckets       []bucketSeed
+	SKUs          []skuSeed
+	ReservePolicy string
 }
 
 func main() {
@@ -218,8 +227,8 @@ func parseFlags() (config, error) {
 	if cfg.orgName == "" {
 		cfg.orgName = fmt.Sprintf("org-%d", cfg.orgID)
 	}
-	if cfg.productID != sandboxProductID {
-		return config{}, fmt.Errorf("billing seed owns product %q", sandboxProductID)
+	if _, err := productSeedFor(cfg.productID); err != nil {
+		return config{}, err
 	}
 	return cfg, nil
 }
@@ -239,17 +248,25 @@ func resolvePGDSN(cfg config) (string, error) {
 }
 
 func upsertProduct(ctx context.Context, pg *pgxpool.Pool, cfg config) (bool, error) {
-	_, err := pg.Exec(ctx, `INSERT INTO products (product_id, display_name, meter_unit, billing_model, reserve_policy) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (product_id) DO UPDATE SET display_name = EXCLUDED.display_name, meter_unit = EXCLUDED.meter_unit, billing_model = EXCLUDED.billing_model, reserve_policy = EXCLUDED.reserve_policy`, cfg.productID, cfg.productDisplayName, cfg.meterUnit, cfg.billingModel, []byte(`{"shape":"time","target_quantity":300000}`))
+	seed, err := productSeedFor(cfg.productID)
+	if err != nil {
+		return false, err
+	}
+	_, err = pg.Exec(ctx, `INSERT INTO products (product_id, display_name, meter_unit, billing_model, reserve_policy) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (product_id) DO UPDATE SET display_name = EXCLUDED.display_name, meter_unit = EXCLUDED.meter_unit, billing_model = EXCLUDED.billing_model, reserve_policy = EXCLUDED.reserve_policy`, cfg.productID, cfg.productDisplayName, cfg.meterUnit, cfg.billingModel, []byte(seed.ReservePolicy))
 	return true, err
 }
 
 func upsertCatalog(ctx context.Context, pg *pgxpool.Pool, cfg config) (bool, error) {
-	for _, bucket := range sandboxBuckets() {
+	seed, err := productSeedFor(cfg.productID)
+	if err != nil {
+		return false, err
+	}
+	for _, bucket := range seed.Buckets {
 		if _, err := pg.Exec(ctx, `INSERT INTO credit_buckets (bucket_id, display_name, sort_order) VALUES ($1,$2,$3) ON CONFLICT (bucket_id) DO UPDATE SET display_name = EXCLUDED.display_name, sort_order = EXCLUDED.sort_order`, bucket.BucketID, bucket.DisplayName, bucket.SortOrder); err != nil {
 			return false, err
 		}
 	}
-	for _, sku := range sandboxSKUs() {
+	for _, sku := range seed.SKUs {
 		if _, err := pg.Exec(ctx, `INSERT INTO skus (sku_id, product_id, bucket_id, display_name, quantity_unit, active) VALUES ($1,$2,$3,$4,$5,true) ON CONFLICT (sku_id) DO UPDATE SET product_id = EXCLUDED.product_id, bucket_id = EXCLUDED.bucket_id, display_name = EXCLUDED.display_name, quantity_unit = EXCLUDED.quantity_unit, active = true`, sku.SKUID, cfg.productID, sku.BucketID, sku.DisplayName, sku.QuantityUnit); err != nil {
 			return false, err
 		}
@@ -258,11 +275,15 @@ func upsertCatalog(ctx context.Context, pg *pgxpool.Pool, cfg config) (bool, err
 }
 
 func upsertDefaultPlan(ctx context.Context, pg *pgxpool.Pool, cfg config) (bool, error) {
+	seed, err := productSeedFor(cfg.productID)
+	if err != nil {
+		return false, err
+	}
 	if _, err := pg.Exec(ctx, `INSERT INTO plans (plan_id, product_id, display_name, billing_mode, tier, is_default, active, monthly_amount_cents, currency) VALUES ($1,$2,$3,'prepaid','default',true,true,0,'usd') ON CONFLICT (plan_id) DO UPDATE SET product_id = EXCLUDED.product_id, display_name = EXCLUDED.display_name, billing_mode = EXCLUDED.billing_mode, tier = EXCLUDED.tier, is_default = true, active = true`, cfg.planID, cfg.productID, cfg.planDisplayName); err != nil {
 		return false, err
 	}
 	now := time.Now().UTC()
-	for _, sku := range sandboxSKUs() {
+	for _, sku := range seed.SKUs {
 		rateID := "rate:" + cfg.planID + ":" + sku.SKUID
 		if _, err := pg.Exec(ctx, `INSERT INTO plan_sku_rates (rate_id, plan_id, sku_id, unit_rate, active, active_from) VALUES ($1,$2,$3,$4,true,$5) ON CONFLICT (rate_id) DO UPDATE SET unit_rate = EXCLUDED.unit_rate, active = true`, rateID, cfg.planID, sku.SKUID, int64(sku.UnitRate), now); err != nil {
 			return false, err
@@ -367,21 +388,37 @@ func sortedMapKeys(in map[string]uint64) []string {
 	return keys
 }
 
-func sandboxBuckets() []bucketSeed {
-	return []bucketSeed{
-		{"compute", "Compute", 10},
-		{"memory", "Memory", 20},
-		{"execution_root_storage", "Execution Root Storage", 30},
-		{"durable_volume_storage", "Durable Volume Storage", 40},
-	}
-}
-
-func sandboxSKUs() []skuSeed {
-	return []skuSeed{
-		{sandboxComputeSKU, "compute", "AMD EPYC 4484PX", "vCPU-ms", 325},
-		{sandboxMemorySKU, "memory", "DDR5-5200", "GiB-ms", 40},
-		{sandboxExecutionRootStorageSKU, "execution_root_storage", "Premium NVMe root disk", "GiB-ms", 10},
-		{sandboxDurableVolumeLiveSKU, "durable_volume_storage", "Durable volume live bytes", "GiB-ms", 10},
-		{sandboxDurableVolumeRetainedSKU, "durable_volume_storage", "Durable volume retained snapshots", "GiB-ms", 5},
+func productSeedFor(productID string) (productSeed, error) {
+	switch productID {
+	case sandboxProductID:
+		return productSeed{
+			ReservePolicy: `{"shape":"time","target_quantity":300000}`,
+			Buckets: []bucketSeed{
+				{"compute", "Compute", 10},
+				{"memory", "Memory", 20},
+				{"execution_root_storage", "Execution Root Storage", 30},
+				{"durable_volume_storage", "Durable Volume Storage", 40},
+			},
+			SKUs: []skuSeed{
+				{sandboxComputeSKU, "compute", "AMD EPYC 4484PX", "vCPU-ms", 325},
+				{sandboxMemorySKU, "memory", "DDR5-5200", "GiB-ms", 40},
+				{sandboxExecutionRootStorageSKU, "execution_root_storage", "Premium NVMe root disk", "GiB-ms", 10},
+				{sandboxDurableVolumeLiveSKU, "durable_volume_storage", "Durable volume live bytes", "GiB-ms", 10},
+				{sandboxDurableVolumeRetainedSKU, "durable_volume_storage", "Durable volume retained snapshots", "GiB-ms", 5},
+			},
+		}, nil
+	case secretsProductID:
+		return productSeed{
+			ReservePolicy: `{"shape":"count","target_quantity":1}`,
+			Buckets: []bucketSeed{
+				{"secrets_operations", "Secrets Operations", 50},
+			},
+			SKUs: []skuSeed{
+				{secretsKVOperationSKU, "secrets_operations", "KV operation", "operation", 0},
+				{secretsTransitOperationSKU, "secrets_operations", "Transit operation", "operation", 0},
+			},
+		}, nil
+	default:
+		return productSeed{}, fmt.Errorf("billing seed does not know product %q", productID)
 	}
 }

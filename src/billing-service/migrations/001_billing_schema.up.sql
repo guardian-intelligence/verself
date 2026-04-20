@@ -587,7 +587,7 @@ CREATE TABLE billing_windows (
     billing_job_id          TEXT,
     window_seq              BIGINT      NOT NULL CHECK (window_seq >= 0),
     state                   TEXT        NOT NULL CHECK (state IN ('reserved', 'active', 'settling', 'settled', 'voided')),
-    reservation_shape       TEXT        NOT NULL CHECK (reservation_shape = 'time'),
+    reservation_shape       TEXT        NOT NULL CHECK (reservation_shape IN ('time', 'count')),
     reserved_quantity       BIGINT      NOT NULL CHECK (reserved_quantity >= 0),
     actual_quantity         BIGINT      NOT NULL DEFAULT 0 CHECK (actual_quantity >= 0),
     billable_quantity       BIGINT      NOT NULL DEFAULT 0 CHECK (billable_quantity >= 0),
