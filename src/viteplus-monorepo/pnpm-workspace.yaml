@@ -7,9 +7,13 @@ catalog:
   "@hey-api/openapi-ts": 0.95.0
   "@opentelemetry/api": ^1.9.1
   "@opentelemetry/auto-instrumentations-node": ^0.72.0
+  "@opentelemetry/context-zone": ^2.6.1
+  "@opentelemetry/core": ^2.6.1
   "@opentelemetry/exporter-trace-otlp-http": ^0.214.0
   "@opentelemetry/resources": ^2.6.1
   "@opentelemetry/sdk-node": ^0.214.0
+  "@opentelemetry/sdk-trace-base": ^2.6.1
+  "@opentelemetry/sdk-trace-web": ^2.6.1
   "@opentelemetry/semantic-conventions": ^1.40.0
   "@playwright/test": ^1.59.1
   "@tailwindcss/typography": ^0.5.16
@@ -50,6 +54,7 @@ catalog:
   vite: npm:@voidzero-dev/vite-plus-core@latest
   vite-plus: ^0.1.16
   vitest: npm:@voidzero-dev/vite-plus-test@latest
+  web-vitals: ^4.2.4
   zod: ^4.3.6
 
 catalogMode: prefer

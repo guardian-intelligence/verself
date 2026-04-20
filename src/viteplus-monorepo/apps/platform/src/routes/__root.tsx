@@ -1,5 +1,7 @@
 import { createRootRoute, HeadContent, Link, Outlet, Scripts } from "@tanstack/react-router";
 import { type ReactNode } from "react";
+import { TelemetryProbe } from "~/lib/telemetry/page-view";
+import { deployMetaTags } from "~/lib/telemetry/server-deploy-meta";
 import "~/styles/app.css";
 
 export const Route = createRootRoute({
@@ -10,6 +12,11 @@ export const Route = createRootRoute({
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { name: "theme-color", content: "#ffffff" },
       { property: "og:site_name", content: "Forge Metal Platform" },
+      // Surface the deploy correlation server-baked into /etc/platform/env so
+      // browser.ts can attach forge_metal.deploy_run_key / deploy_id / commit_sha
+      // resource attributes to every span. Joins server-side spans (service.name=platform)
+      // and browser spans (service.name=platform-web) on the same deploy in ClickHouse.
+      ...deployMetaTags(),
     ],
   }),
 });
@@ -36,6 +43,7 @@ function RootDocument({ children }: { children: ReactNode }) {
           </main>
           <SiteFooter />
         </div>
+        <TelemetryProbe />
         <Scripts />
       </body>
     </html>
