@@ -80,6 +80,40 @@
     remote_src: true
     mode: "0755"
 
+# ── OpenBao ─────────────────────────────────────────────────────────────────
+
+- name: Download OpenBao package
+  ansible.builtin.get_url:
+    url: "{{ deploy_profile_server_tools_pins.openbao.url }}"
+    dest: "{{ deploy_profile_staging_dir }}/openbao-{{ deploy_profile_server_tools_pins.openbao.version }}.deb"
+    checksum: "sha256:{{ deploy_profile_server_tools_pins.openbao.sha256 }}"
+    mode: "0644"
+
+- name: Create OpenBao package extraction directory
+  ansible.builtin.file:
+    path: "{{ deploy_profile_staging_dir }}/openbao-{{ deploy_profile_server_tools_pins.openbao.version }}"
+    state: directory
+    mode: "0755"
+
+- name: Extract OpenBao package
+  vars:
+    openbao_extract_dir: "{{ deploy_profile_staging_dir }}/openbao-{{ deploy_profile_server_tools_pins.openbao.version }}"
+  ansible.builtin.command:
+    cmd: >-
+      dpkg-deb -x
+      {{ deploy_profile_staging_dir }}/openbao-{{ deploy_profile_server_tools_pins.openbao.version }}.deb
+      {{ deploy_profile_staging_dir }}/openbao-{{ deploy_profile_server_tools_pins.openbao.version }}
+    creates: "{{ openbao_extract_dir }}/{{ deploy_profile_server_tools_pins.openbao.extract_binary }}"
+
+- name: Install OpenBao binary
+  vars:
+    openbao_extract_dir: "{{ deploy_profile_staging_dir }}/openbao-{{ deploy_profile_server_tools_pins.openbao.version }}"
+  ansible.builtin.copy:
+    src: "{{ openbao_extract_dir }}/{{ deploy_profile_server_tools_pins.openbao.extract_binary }}"
+    dest: "{{ fm_bin }}/bao"
+    remote_src: true
+    mode: "0755"
+
 # ── Forgejo ──────────────────────────────────────────────────────────────────
 
 - name: Download Forgejo binary

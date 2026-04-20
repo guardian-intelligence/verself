@@ -1,0 +1,377 @@
+---
+# OpenBao single-node Raft bootstrap. OpenBao configuration references the
+# historic Vault env/header names (`VAULT_*`, `X-Vault-*`) for compatibility.
+
+- name: Verify OpenBao binary exists in profile
+  ansible.builtin.stat:
+    path: "{{ fm_bin }}/bao"
+  register: openbao_binary
+  failed_when: not openbao_binary.stat.exists
+
+- name: Capture OpenBao version
+  ansible.builtin.command:
+    cmd: "{{ fm_bin }}/bao version"
+  register: openbao_version_output
+  changed_when: false
+
+- name: Assert OpenBao version matches server-tools pin
+  ansible.builtin.assert:
+    that: "'OpenBao v2.5.2' in openbao_version_output.stdout"
+    fail_msg: "Expected OpenBao v2.5.2, got: {{ openbao_version_output.stdout }}"
+
+- name: Create openbao system group
+  ansible.builtin.group:
+    name: openbao
+    system: true
+
+- name: Create openbao system user
+  ansible.builtin.user:
+    name: openbao
+    group: openbao
+    system: true
+    home: "{{ openbao_data_dir }}"
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Create OpenBao directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ openbao_config_dir }}", owner: root, group: openbao, mode: "0750" }
+    - { path: "{{ openbao_tls_dir }}", owner: root, group: openbao, mode: "0750" }
+    - { path: "{{ openbao_data_dir }}", owner: openbao, group: openbao, mode: "0700" }
+    - { path: "{{ openbao_raft_dir }}", owner: openbao, group: openbao, mode: "0700" }
+    - { path: "{{ openbao_log_dir }}", owner: openbao, group: openbao, mode: "0700" }
+    - { path: "{{ openbao_credstore_dir }}", owner: root, group: openbao, mode: "0750" }
+
+- name: Check if OpenBao TLS cert already exists
+  ansible.builtin.stat:
+    path: "{{ openbao_tls_dir }}/cert.pem"
+  register: openbao_cert_check
+
+- name: Generate OpenBao loopback TLS certificate
+  ansible.builtin.command:
+    cmd: >-
+      openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1
+      -days 3650 -nodes
+      -keyout {{ openbao_tls_dir }}/key.pem
+      -out {{ openbao_tls_dir }}/cert.pem
+      -subj "/CN=127.0.0.1"
+      -addext "subjectAltName=IP:127.0.0.1,DNS:localhost"
+    creates: "{{ openbao_tls_dir }}/cert.pem"
+  when: not openbao_cert_check.stat.exists
+  changed_when: true
+
+- name: Set OpenBao TLS certificate ownership
+  ansible.builtin.file:
+    path: "{{ openbao_tls_dir }}/{{ item.name }}"
+    owner: root
+    group: openbao
+    mode: "{{ item.mode }}"
+  loop:
+    - { name: cert.pem, mode: "0640" }
+    - { name: key.pem, mode: "0640" }
+
+- name: Deploy OpenBao nftables ruleset
+  ansible.builtin.template:
+    src: openbao.nft.j2
+    dest: /etc/nftables.d/openbao.nft
+    mode: "0644"
+  notify: reload nftables
+
+- name: Apply OpenBao nftables before proceeding
+  ansible.builtin.meta: flush_handlers
+
+- name: Deploy OpenBao configuration
+  ansible.builtin.template:
+    src: openbao.hcl.j2
+    dest: "{{ openbao_config_dir }}/openbao.hcl"
+    owner: root
+    group: openbao
+    mode: "0640"
+  notify: restart openbao
+
+- name: Deploy OpenBao systemd unit
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=OpenBao
+      After=forge-metal-firewall.target network.target
+      Requires=forge-metal-firewall.target
+
+      [Service]
+      Type=simple
+      User=openbao
+      Group=openbao
+      Environment=BAO_ADDR=https://{{ services.openbao.host }}:{{ services.openbao.port }}
+      Environment=BAO_CACERT={{ openbao_tls_dir }}/cert.pem
+      Environment=VAULT_ADDR=https://{{ services.openbao.host }}:{{ services.openbao.port }}
+      Environment=VAULT_CACERT={{ openbao_tls_dir }}/cert.pem
+      ExecStart={{ fm_bin }}/bao server -config={{ openbao_config_dir }}/openbao.hcl
+      ExecReload=/bin/kill -HUP $MAINPID
+      Restart=on-failure
+      RestartSec=5
+      AmbientCapabilities=CAP_IPC_LOCK
+      CapabilityBoundingSet=CAP_IPC_LOCK
+      LimitMEMLOCK=infinity
+      ProtectHome=true
+      ProtectSystem=strict
+      PrivateDevices=true
+      PrivateTmp=true
+      ProtectClock=true
+      ProtectControlGroups=true
+      ProtectKernelLogs=true
+      ProtectKernelModules=true
+      ProtectKernelTunables=true
+      LockPersonality=true
+      NoNewPrivileges=true
+      RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+      RestrictNamespaces=true
+      RestrictRealtime=true
+      RestrictSUIDSGID=true
+      SystemCallArchitectures=native
+      UMask=0077
+      ReadOnlyPaths={{ openbao_config_dir }}
+      ReadWritePaths={{ openbao_data_dir }} {{ openbao_log_dir }}
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/openbao.service
+    mode: "0644"
+  notify: restart openbao
+
+- name: Apply OpenBao unit and config changes before proceeding
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start OpenBao
+  ansible.builtin.systemd:
+    name: openbao
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for OpenBao listener
+  ansible.builtin.wait_for:
+    host: "{{ services.openbao.host }}"
+    port: "{{ services.openbao.port }}"
+    timeout: 45
+
+- name: Check OpenBao status
+  ansible.builtin.command:
+    cmd: "{{ fm_bin }}/bao status -format=json"
+  environment:
+    BAO_ADDR: "https://{{ services.openbao.host }}:{{ services.openbao.port }}"
+    BAO_CACERT: "{{ openbao_tls_dir }}/cert.pem"
+  register: openbao_status_raw
+  changed_when: false
+  failed_when: false
+
+- name: Parse OpenBao status
+  ansible.builtin.set_fact:
+    openbao_status: "{{ openbao_status_raw.stdout | default('{}', true) | from_json }}"
+
+- name: Record whether this run owns OpenBao initialization
+  ansible.builtin.set_fact:
+    openbao_bootstrap_initialized: "{{ not (openbao_status.initialized | default(false) | bool) }}"
+
+- name: Initialize OpenBao when needed
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/bao operator init
+      -key-shares={{ openbao_key_shares }}
+      -key-threshold={{ openbao_key_threshold }}
+      -format=json
+  environment:
+    BAO_ADDR: "https://{{ services.openbao.host }}:{{ services.openbao.port }}"
+    BAO_CACERT: "{{ openbao_tls_dir }}/cert.pem"
+  register: openbao_init_raw
+  changed_when: true
+  when: openbao_bootstrap_initialized | bool
+  no_log: true
+
+- name: Persist OpenBao initial root token
+  ansible.builtin.copy:
+    content: "{{ (openbao_init_raw.stdout | from_json).root_token }}"
+    dest: "{{ openbao_credstore_dir }}/root-token"
+    owner: root
+    group: openbao
+    mode: "0640"
+  when: openbao_bootstrap_initialized | bool
+  no_log: true
+
+- name: Persist OpenBao unseal keys
+  vars:
+    openbao_init_payload: "{{ openbao_init_raw.stdout | from_json }}"
+    openbao_unseal_keys: "{{ openbao_init_payload.unseal_keys_b64 | default(openbao_init_payload.keys_base64) }}"
+  ansible.builtin.copy:
+    content: "{{ item }}"
+    dest: "{{ openbao_credstore_dir }}/unseal-key-{{ openbao_unseal_key_index + 1 }}"
+    owner: root
+    group: openbao
+    mode: "0640"
+  loop: "{{ openbao_unseal_keys }}"
+  loop_control:
+    index_var: openbao_unseal_key_index
+    label: "unseal-key-{{ openbao_unseal_key_index + 1 }}"
+  when: openbao_bootstrap_initialized | bool
+  no_log: true
+
+- name: Check persisted OpenBao credentials
+  ansible.builtin.stat:
+    path: "{{ openbao_credstore_dir }}/{{ item }}"
+  loop:
+    - root-token
+    - unseal-key-1
+    - unseal-key-2
+    - unseal-key-3
+  register: openbao_credential_files
+  no_log: true
+
+- name: Assert OpenBao credentials exist
+  ansible.builtin.assert:
+    that:
+      - openbao_credential_files.results | selectattr('stat.exists', 'equalto', true) | list | length == 4
+    fail_msg: >-
+      OpenBao is initialized but required root/unseal credstore files are missing.
+      Restore them from the operator secret backup before continuing.
+  no_log: true
+
+- name: Converge OpenBao credential permissions
+  ansible.builtin.file:
+    path: "{{ openbao_credstore_dir }}/{{ item }}"
+    owner: root
+    group: openbao
+    mode: "0640"
+  loop:
+    - root-token
+    - unseal-key-1
+    - unseal-key-2
+    - unseal-key-3
+  no_log: true
+
+- name: Re-check OpenBao status after initialization
+  ansible.builtin.command:
+    cmd: "{{ fm_bin }}/bao status -format=json"
+  environment:
+    BAO_ADDR: "https://{{ services.openbao.host }}:{{ services.openbao.port }}"
+    BAO_CACERT: "{{ openbao_tls_dir }}/cert.pem"
+  register: openbao_status_after_init_raw
+  changed_when: false
+  failed_when: false
+
+- name: Parse OpenBao post-init status
+  ansible.builtin.set_fact:
+    openbao_status: "{{ openbao_status_after_init_raw.stdout | default('{}', true) | from_json }}"
+
+- name: Read OpenBao unseal keys for sealed node
+  ansible.builtin.slurp:
+    src: "{{ openbao_credstore_dir }}/unseal-key-{{ item }}"
+  loop: "{{ range(1, openbao_key_threshold + 1) | list }}"
+  register: openbao_unseal_key_reads
+  when: openbao_status.sealed | default(true) | bool
+  no_log: true
+
+- name: Submit OpenBao unseal keys
+  ansible.builtin.uri:
+    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/sys/unseal"
+    method: POST
+    body_format: json
+    body:
+      key: "{{ item.content | b64decode | trim }}"
+    validate_certs: false
+    status_code: 200
+    return_content: true
+  loop: "{{ openbao_unseal_key_reads.results | default([]) }}"
+  loop_control:
+    label: "unseal-key"
+  when: openbao_status.sealed | default(true) | bool
+  no_log: true
+
+- name: Read OpenBao root token
+  ansible.builtin.slurp:
+    src: "{{ openbao_credstore_dir }}/root-token"
+  register: openbao_root_token_raw
+  no_log: true
+
+- name: Verify OpenBao health
+  ansible.builtin.uri:
+    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/sys/health"
+    method: GET
+    validate_certs: false
+    status_code: 200
+    return_content: true
+  register: openbao_health
+
+- name: Probe OpenBao authenticated sys/mounts to exercise audit device
+  ansible.builtin.uri:
+    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/sys/mounts"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+    validate_certs: false
+    status_code: 200
+    return_content: true
+  no_log: true
+
+- name: Wait for OpenBao audit log
+  ansible.builtin.wait_for:
+    path: "{{ openbao_audit_log }}"
+    state: present
+    timeout: 15
+
+- name: Set OpenBao audit log permissions
+  ansible.builtin.file:
+    path: "{{ openbao_audit_log }}"
+    owner: openbao
+    group: openbao
+    mode: "0600"
+
+- name: Read governance internal audit token for OpenBao bootstrap event
+  ansible.builtin.slurp:
+    src: /etc/credstore/governance-service/internal-audit-token
+  register: openbao_governance_audit_token_raw
+  no_log: true
+
+- name: Emit OpenBao bootstrap governance audit event
+  ansible.builtin.uri:
+    url: "http://{{ services.governance_service.host }}:{{ services.governance_service.port }}/internal/v1/audit/events"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ openbao_governance_audit_token_raw.content | b64decode | trim }}"
+    body_format: json
+    body:
+      org_id: platform
+      source_product_area: Platform
+      service_name: platform-ansible
+      service_version: "1.0.0"
+      actor_type: system
+      actor_id: platform-ansible
+      actor_display: platform-ansible
+      operation_id: openbao.bootstrap.initialized
+      audit_event: openbao.bootstrap.initialized
+      operation_display: OpenBao bootstrap initialized
+      operation_type: write
+      event_category: secrets
+      risk_level: critical
+      data_classification: restricted
+      target_kind: openbao_cluster
+      target_id: "{{ openbao_node_id }}"
+      target_display: "{{ openbao_node_id }}"
+      target_scope: platform
+      permission: platform:openbao:bootstrap
+      action: initialize
+      org_scope: platform
+      decision: allow
+      result: allowed
+      trust_class: operator
+      payload:
+        initialized: "{{ openbao_health.json.initialized | default(true) }}"
+        sealed: "{{ openbao_health.json.sealed | default(false) }}"
+        version: "{{ openbao_health.json.version | default('') }}"
+    status_code: 202
+  when: openbao_bootstrap_initialized | bool
+  no_log: true

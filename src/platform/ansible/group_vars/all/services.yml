@@ -25,6 +25,7 @@
 #      4317 / 4318   OTel collector gRPC / HTTP
 #      5432          PostgreSQL
 #      8085          Zitadel
+#      8200 / 8201   OpenBao API / cluster
 #      8123 / 9000   ClickHouse HTTP / native
 #      8125          StatsD UDP (otelcol receiver; TigerBeetle is the sender)
 #      9181          ClickHouse Keeper (reserved, not allocated on single-node)
@@ -117,6 +118,10 @@ services:
   zitadel:
     host: "127.0.0.1"
     port: 8085
+  openbao:
+    host: "127.0.0.1"
+    port: 8200
+    cluster_port: 8201
   stalwart:
     host: "127.0.0.1"
     smtp_port: 25

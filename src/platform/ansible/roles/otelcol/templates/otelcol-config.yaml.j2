@@ -142,6 +142,14 @@ receivers:
       - type: remove
         field: attributes.source
         if: attributes.source != nil
+  journald/openbao:
+    units: [openbao]
+    resource:
+      service.name: openbao
+    operators:
+      - type: move
+        from: body.MESSAGE
+        to: body
   # App logs for billing-service and sandbox-rental flow through OTLP (via
   # otelslog bridge), not journald. These receivers capture only systemd
   # lifecycle messages (start/stop/crash) and pre-init fatal errors.
@@ -345,7 +353,7 @@ receivers:
       process:
         include:
           match_type: regexp
-          names: ["billing-service", "sandbox-rental.*", "caddy", "clickhouse.*", "ClickHouse.*", "forgejo.*", "grafana.*", "otelcol.*", "node", "forge-metal", "verdaccio", "next-server.*", "npm", "vm-orchestrator.*", "tigerbeetle", "zitadel", "postgres"]
+          names: ["billing-service", "sandbox-rental.*", "caddy", "clickhouse.*", "ClickHouse.*", "forgejo.*", "grafana.*", "otelcol.*", "node", "forge-metal", "verdaccio", "next-server.*", "npm", "vm-orchestrator.*", "tigerbeetle", "zitadel", "bao", "postgres"]
         mute_process_exe_error: true
         mute_process_io_error: true
       cpu: {}
@@ -360,6 +368,19 @@ receivers:
   statsd:
     endpoint: "{{ services.otelcol.host }}:{{ services.otelcol.statsd_port }}"
     aggregation_interval: 10s
+  prometheus/openbao:
+    config:
+      scrape_configs:
+        - job_name: openbao
+          scrape_interval: 10s
+          scheme: https
+          metrics_path: /v1/sys/metrics
+          params:
+            format: [prometheus]
+          tls_config:
+            insecure_skip_verify: true
+          static_configs:
+            - targets: ["{{ services.openbao.host }}:{{ services.openbao.port }}"]
 
 processors:
   batch:
@@ -408,7 +429,7 @@ service:
   extensions: [health_check, file_storage]
   pipelines:
     logs:
-      receivers: [otlp, filelog/caddy, journald/caddy, journald/billing-service, journald/sandbox-rental, journald/rent-a-sandbox, journald/webmail, journald/letters, journald/zitadel, journald/vm-orchestrator, journald/forgejo, journald/grafana, filelog/postgresql]
+      receivers: [otlp, filelog/caddy, journald/caddy, journald/billing-service, journald/sandbox-rental, journald/rent-a-sandbox, journald/webmail, journald/letters, journald/zitadel, journald/openbao, journald/vm-orchestrator, journald/forgejo, journald/grafana, filelog/postgresql]
       processors: [batch]
       exporters: [clickhouse]
     traces:
@@ -416,6 +437,6 @@ service:
       processors: [transform/ansible_spans, batch]
       exporters: [clickhouse]
     metrics:
-      receivers: [otlp, hostmetrics, postgresql, statsd]
+      receivers: [otlp, hostmetrics, postgresql, statsd, prometheus/openbao]
       processors: [batch]
       exporters: [clickhouse]
