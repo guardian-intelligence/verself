@@ -40,6 +40,16 @@ argument_specs:
       openbao_oidc_loopback_hosts:
         type: list
         elements: str
+      openbao_audit_request_headers:
+        type: list
+        elements: dict
+        options:
+          name:
+            type: str
+            required: true
+          hmac:
+            type: bool
+            required: true
       fm_bin:
         type: path
         required: true

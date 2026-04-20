@@ -78,6 +78,7 @@ func RegisterInternalRoutes(mux *http.ServeMux, svc *secrets.Service, token stri
 }
 
 func resolveInjection(ctx context.Context, svc *secrets.Service, request injectionResolveRequest) (injectionResolveResponse, error) {
+	ctx = secrets.ContextWithOpenBaoAuditInfo(ctx)
 	request.OrgID = strings.TrimSpace(request.OrgID)
 	request.ActorID = strings.TrimSpace(request.ActorID)
 	request.ExecutionID = strings.TrimSpace(request.ExecutionID)
@@ -144,38 +145,49 @@ func auditInjection(ctx context.Context, request injectionResolveRequest, reques
 			scope = value.Record.Scope
 		}
 	}
+	baoInfo, _ := secrets.OpenBaoAuditInfoFromContext(ctx)
+	secretMount := "openbao"
+	openBaoRequestID := ""
+	openBaoAccessorHash := ""
+	if baoInfo != nil {
+		secretMount = firstNonEmpty(baoInfo.Mount, secretMount)
+		openBaoRequestID = baoInfo.RequestID
+		openBaoAccessorHash = baoInfo.AccessorHash
+	}
 	record := governanceAuditRecord{
-		OrgID:              request.OrgID,
-		SourceProductArea:  "Secrets",
-		ServiceName:        "secrets-service",
-		OperationID:        "resolve-sandbox-secret-injection",
-		AuditEvent:         "secrets.secret.inject",
-		OperationDisplay:   "inject secret into sandbox execution",
-		OperationType:      "read",
-		EventCategory:      "data_access",
-		RiskLevel:          "critical",
-		DataClassification: "secret",
-		ActorType:          "sandbox_execution",
-		ActorID:            request.ActorID,
-		CredentialID:       "sandbox-rental-service",
-		CredentialName:     "sandbox-rental-service",
-		AuthMethod:         "internal_token",
-		Permission:         "secrets:secret:read",
-		TargetKind:         "secret",
-		TargetScope:        scope.Level,
-		TargetPathHash:     secrets.SecretPathHash(request.OrgID, kind, requested.SecretName, scope),
-		Action:             "inject",
-		OrgScope:           "sandbox_execution_org_id",
-		RateLimitClass:     "internal",
-		Decision:           "allow",
-		Result:             "allowed",
-		TrustClass:         "service_internal",
-		SecretMount:        "sandbox-env",
-		SecretPathHash:     secrets.SecretPathHash(request.OrgID, kind, requested.SecretName, scope),
-		SecretVersion:      version,
-		SecretOperation:    "inject",
-		RequestID:          request.AttemptID,
-		ContentSHA256:      hashTextForAudit(request.ExecutionID + "\x00" + request.AttemptID + "\x00" + requested.EnvName),
+		OrgID:               request.OrgID,
+		SourceProductArea:   "Secrets",
+		ServiceName:         "secrets-service",
+		OperationID:         "resolve-sandbox-secret-injection",
+		AuditEvent:          "secrets.secret.inject",
+		OperationDisplay:    "inject secret into sandbox execution",
+		OperationType:       "read",
+		EventCategory:       "data_access",
+		RiskLevel:           "critical",
+		DataClassification:  "secret",
+		ActorType:           "sandbox_execution",
+		ActorID:             request.ActorID,
+		CredentialID:        "sandbox-rental-service",
+		CredentialName:      "sandbox-rental-service",
+		AuthMethod:          "internal_token",
+		Permission:          "secrets:secret:read",
+		TargetKind:          "secret",
+		TargetScope:         scope.Level,
+		TargetPathHash:      secrets.SecretPathHash(request.OrgID, kind, requested.SecretName, scope),
+		Action:              "inject",
+		OrgScope:            "sandbox_execution_org_id",
+		RateLimitClass:      "internal",
+		Decision:            "allow",
+		Result:              "allowed",
+		TrustClass:          "service_internal",
+		SecretMount:         secretMount,
+		SecretPathHash:      secrets.SecretPathHash(request.OrgID, kind, requested.SecretName, scope),
+		SecretVersion:       version,
+		SecretOperation:     "inject",
+		OpenBaoRequestID:    openBaoRequestID,
+		OpenBaoAccessorHash: openBaoAccessorHash,
+		RequestID:           request.AttemptID,
+		ContentSHA256:       hashTextForAudit(request.ExecutionID + "\x00" + request.AttemptID + "\x00" + requested.EnvName),
 	}
 	if err != nil {
 		record.Decision = "deny"

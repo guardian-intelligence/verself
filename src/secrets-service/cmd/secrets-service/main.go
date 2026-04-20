@@ -7,12 +7,10 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	auth "github.com/forge-metal/auth-middleware"
@@ -49,19 +47,9 @@ func run() error {
 		}
 	}()
 
-	pgDSN := requireCredential("pg-dsn")
-	envelopeKeyText := requireCredential("envelope-key")
 	internalInjectionToken := requireCredential("internal-injection-token")
 	governanceAuditToken := credentialOr("governance-internal-audit-token", "")
-
-	envelopeKey, err := secrets.DecodeEnvelopeKey(envelopeKeyText)
-	if err != nil {
-		return err
-	}
-	codec, err := secrets.NewEnvelopeCodec(envelopeKey)
-	if err != nil {
-		return err
-	}
+	serviceAccountSecret := requireCredential("service-account-client-secret")
 
 	listenAddr := envOr("SECRETS_LISTEN_ADDR", "127.0.0.1:4251")
 	governanceAuditURL := envOr("SECRETS_GOVERNANCE_AUDIT_URL", "")
@@ -69,16 +57,32 @@ func run() error {
 	authAudience := requireEnv("SECRETS_AUTH_AUDIENCE")
 	authProjectID := requireEnv("SECRETS_AUTH_PROJECT_ID")
 	authJWKSURL := envOr("SECRETS_AUTH_JWKS_URL", "")
+	openBaoAddr := requireEnv("SECRETS_OPENBAO_ADDR")
+	openBaoCACert := credentialPath("openbao-ca-cert")
+	serviceAccountClientID := requireEnv("SECRETS_SERVICE_ACCOUNT_CLIENT_ID")
+	serviceAccountTokenURL := requireEnv("SECRETS_SERVICE_ACCOUNT_TOKEN_URL")
+	serviceAccountTokenHost := envOr("SECRETS_SERVICE_ACCOUNT_TOKEN_HOST", "")
 
-	pg, err := openPool(ctx, pgDSN, envInt("SECRETS_PG_MAX_CONNS", 8))
+	store, err := secrets.NewBaoStore(ctx, secrets.BaoStoreConfig{
+		Address:       openBaoAddr,
+		CACertPath:    openBaoCACert,
+		KVMountPrefix: envOr("SECRETS_OPENBAO_KV_PREFIX", "kv"),
+		TransitPrefix: envOr("SECRETS_OPENBAO_TRANSIT_PREFIX", "transit"),
+		JWTAuthPrefix: envOr("SECRETS_OPENBAO_JWT_PREFIX", "jwt"),
+		ServiceAccount: secrets.ServiceAccountConfig{
+			ClientID:  serviceAccountClientID,
+			Secret:    serviceAccountSecret,
+			TokenURL:  serviceAccountTokenURL,
+			TokenHost: serviceAccountTokenHost,
+			ProjectID: authProjectID,
+		},
+	}, logger)
 	if err != nil {
-		return fmt.Errorf("open postgres: %w", err)
+		return fmt.Errorf("openbao store: %w", err)
 	}
-	defer pg.Close()
 
 	svc := &secrets.Service{
-		PG:             pg,
-		Codec:          codec,
+		Store:          store,
 		Logger:         logger,
 		ServiceVersion: serviceVersion,
 		Environment:    envOr("SECRETS_ENVIRONMENT", "single-node"),
@@ -141,28 +145,6 @@ func run() error {
 	return nil
 }
 
-func openPool(ctx context.Context, dsn string, maxConns int) (*pgxpool.Pool, error) {
-	config, err := pgxpool.ParseConfig(dsn)
-	if err != nil {
-		return nil, err
-	}
-	config.MaxConns = int32(maxConns)
-	config.MinConns = 1
-	config.MaxConnLifetime = 30 * time.Minute
-	config.MaxConnIdleTime = 5 * time.Minute
-	pool, err := pgxpool.NewWithConfig(ctx, config)
-	if err != nil {
-		return nil, err
-	}
-	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	if err := pool.Ping(pingCtx); err != nil {
-		pool.Close()
-		return nil, err
-	}
-	return pool, nil
-}
-
 func limitRequestBodies(next http.Handler, maxBytes int64) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if requestMayHaveBody(r) {
@@ -201,24 +183,24 @@ func envOr(name, fallback string) string {
 	return value
 }
 
-func envInt(name string, fallback int) int {
-	value := strings.TrimSpace(os.Getenv(name))
-	if value == "" {
-		return fallback
-	}
-	parsed, err := strconv.Atoi(value)
-	if err != nil {
-		panic("invalid integer env " + name + ": " + err.Error())
-	}
-	return parsed
-}
-
 func requireCredential(name string) string {
 	value := credentialOr(name, "")
 	if value == "" {
 		panic("missing required credential " + name)
 	}
 	return value
+}
+
+func credentialPath(name string) string {
+	base := os.Getenv("CREDENTIALS_DIRECTORY")
+	if base == "" {
+		panic("missing CREDENTIALS_DIRECTORY for credential " + name)
+	}
+	path := filepath.Join(base, name)
+	if _, err := os.Stat(path); err != nil {
+		panic("missing required credential " + name)
+	}
+	return path
 }
 
 func credentialOr(name, fallback string) string {

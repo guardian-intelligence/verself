@@ -59,7 +59,7 @@ wireguard_network: "10.0.0.0/16"
 # Observed steady-state connection counts (2026-04-15) for reference:
 #   billing ~22, sandbox_rental ~18, electric ~21 (pool 20 + slot 1),
 #   electric_mail ~21, zitadel ~4, grafana ~4, stalwart ~3, identity_service ~2,
-#   governance_service ~10, secrets_service ~2, mailbox_service ~2. Current budget sums to 200, leaving ~90 under max after
+#   governance_service ~10, mailbox_service ~2. Current budget sums to 190, leaving ~100 under max after
 #   superuser reserve.
 postgresql_max_connections: 300
 postgresql_superuser_reserved_connections: 10
@@ -74,5 +74,4 @@ postgresql_role_connection_limits:
   stalwart: 10
   identity_service: 10
   governance_service: 15
-  secrets_service: 10
   mailbox_service: 10

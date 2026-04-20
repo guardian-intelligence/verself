@@ -93,6 +93,8 @@ type governanceAuditRecord struct {
 	SecretVersion         uint64 `json:"secret_version,omitempty"`
 	SecretOperation       string `json:"secret_operation,omitempty"`
 	KeyID                 string `json:"key_id,omitempty"`
+	OpenBaoRequestID      string `json:"openbao_request_id,omitempty"`
+	OpenBaoAccessorHash   string `json:"openbao_accessor_hash,omitempty"`
 }
 
 func sendGovernanceAudit(ctx context.Context, record governanceAuditRecord) {

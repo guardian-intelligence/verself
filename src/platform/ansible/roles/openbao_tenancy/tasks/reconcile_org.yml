@@ -9,6 +9,7 @@
     openbao_tenancy_jwt_mount: "{{ openbao_tenancy_jwt_mount_prefix }}-{{ openbao_tenancy_org.id }}"
     openbao_tenancy_read_only_policy: "secrets-{{ openbao_tenancy_org.id }}-read-only"
     openbao_tenancy_read_write_policy: "secrets-{{ openbao_tenancy_org.id }}-read-write"
+    openbao_tenancy_injection_policy: "secrets-{{ openbao_tenancy_org.id }}-injection-read"
 
 - name: Render OpenBao tenancy policy documents
   ansible.builtin.set_fact:
@@ -17,6 +18,8 @@
         document: "{{ lookup('ansible.builtin.template', 'read-only.hcl.j2') }}"
       - name: "{{ openbao_tenancy_read_write_policy }}"
         document: "{{ lookup('ansible.builtin.template', 'read-write.hcl.j2') }}"
+      - name: "{{ openbao_tenancy_injection_policy }}"
+        document: "{{ lookup('ansible.builtin.template', 'injection-read.hcl.j2') }}"
 
 - name: Check OpenBao tenancy audit marker for organization
   ansible.builtin.stat:
@@ -162,6 +165,10 @@
         project_role: member
         token_policies:
           - "{{ openbao_tenancy_read_only_policy }}"
+      - name: secrets-injection
+        service_account: true
+        token_policies:
+          - "{{ openbao_tenancy_injection_policy }}"
 
 - name: Read OpenBao JWT roles for organization
   ansible.builtin.uri:
@@ -194,7 +201,9 @@
       bound_claims_type: glob
       bound_claims: >-
         {{
-          {
+          {'sub': openbao_tenancy_service_account_user_id}
+          if (item.item.service_account | default(false))
+          else {
             'urn:zitadel:iam:user:resourceowner:id': openbao_tenancy_org_id,
             ('/urn:zitadel:iam:org:project:' ~ openbao_tenancy_secrets_project_id ~ ':roles/' ~ item.item.project_role ~ '/' ~ openbao_tenancy_org_id): '*'
           }
@@ -216,8 +225,15 @@
   changed_when: true
   when: >-
     item.status == 404
-    or ('/urn:zitadel:iam:org:project:' ~ openbao_tenancy_secrets_project_id ~ ':roles/' ~ item.item.project_role ~ '/' ~ openbao_tenancy_org_id)
-      not in ((item.json.data | default({})).bound_claims | default({})).keys()
+    or (
+      (item.item.service_account | default(false))
+      and ((item.json.data | default({})).bound_claims | default({})).sub | default('') != openbao_tenancy_service_account_user_id
+    )
+    or (
+      not (item.item.service_account | default(false))
+      and ('/urn:zitadel:iam:org:project:' ~ openbao_tenancy_secrets_project_id ~ ':roles/' ~ item.item.project_role ~ '/' ~ openbao_tenancy_org_id)
+        not in ((item.json.data | default({})).bound_claims | default({})).keys()
+    )
   no_log: true
 
 - name: Record whether OpenBao organization tenancy changed

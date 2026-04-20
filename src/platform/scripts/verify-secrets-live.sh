@@ -21,6 +21,12 @@ trap cleanup EXIT
 
 # shellcheck disable=SC1090
 source <("${script_dir}/assume-persona.sh" acme-admin --print)
+admin_secrets_token="${SECRETS_SERVICE_ACCESS_TOKEN}"
+admin_sandbox_token="${SANDBOX_RENTAL_ACCESS_TOKEN}"
+
+# shellcheck disable=SC1090
+source <("${script_dir}/assume-persona.sh" acme-member --print)
+member_secrets_token="${SECRETS_SERVICE_ACCESS_TOKEN}"
 
 billing_fixture_path="${artifact_dir}/billing-fixture.json"
 "${script_dir}/set-user-state.sh" \
@@ -78,7 +84,9 @@ if payload.get(\"idempotency_key\"):
 if body:
     cmd += [\"--data-binary\", \"@-\"]
 cmd.append(\"http://127.0.0.1:4251\" + payload[\"path\"])
-subprocess.run(cmd, input=body if body else None, check=True)
+result = subprocess.run(cmd, input=body if body else None, check=False)
+if result.returncode != 0:
+    raise SystemExit(\"curl failed for {} {}\".format(payload[\"method\"], payload[\"path\"]))
 '" >"${output_path}"
 }
 
@@ -99,11 +107,11 @@ import json
 import os
 print(json.dumps({"kind": "secret", "value": os.environ["SECRET_VALUE"]}))
 PY
-remote_secrets_api PUT "/api/v1/secrets/${secret_name}" "${SECRETS_SERVICE_ACCESS_TOKEN}" "${put_body}" "${artifact_dir}/responses/secret-put.json" "${run_id}-put"
+remote_secrets_api PUT "/api/v1/secrets/${secret_name}" "${admin_secrets_token}" "${put_body}" "${artifact_dir}/responses/secret-put.json" "${run_id}-put"
 
 read_response="$(mktemp)"
 tmp_files+=("${read_response}")
-remote_secrets_api GET "/api/v1/secrets/${secret_name}?kind=secret" "${SECRETS_SERVICE_ACCESS_TOKEN}" "" "${read_response}"
+remote_secrets_api GET "/api/v1/secrets/${secret_name}?kind=secret" "${member_secrets_token}" "" "${read_response}"
 SECRET_VALUE="${secret_value}" python3 - "${read_response}" >"${artifact_dir}/responses/secret-read-redacted.json" <<'PY'
 import json
 import os
@@ -116,6 +124,16 @@ json.dump(payload, sys.stdout, indent=2, sort_keys=True)
 print()
 PY
 
+remote_secrets_api GET "/api/v1/secrets?kind=secret&limit=50" "${admin_secrets_token}" "" "${artifact_dir}/responses/secret-list.json"
+python3 - "${secret_name}" "${artifact_dir}/responses/secret-list.json" <<'PY'
+import json
+import sys
+name, path = sys.argv[1:3]
+payload = json.load(open(path, encoding="utf-8"))
+if name not in {item.get("name") for item in payload.get("secrets", [])}:
+    raise SystemExit("secret list did not include proof secret")
+PY
+
 transit_create="$(mktemp)"
 tmp_files+=("${transit_create}")
 python3 - "${transit_key_name}" >"${transit_create}" <<'PY'
@@ -123,7 +141,15 @@ import json
 import sys
 print(json.dumps({"name": sys.argv[1]}))
 PY
-remote_secrets_api POST "/api/v1/transit/keys" "${SECRETS_SERVICE_ACCESS_TOKEN}" "${transit_create}" "${artifact_dir}/responses/transit-create.json" "${run_id}-transit-create"
+remote_secrets_api POST "/api/v1/transit/keys" "${admin_secrets_token}" "${transit_create}" "${artifact_dir}/responses/transit-create.json" "${run_id}-transit-create"
+
+python3 - "${artifact_dir}/responses/transit-create.json" <<'PY'
+import json
+import sys
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+if not payload.get("public_key"):
+    raise SystemExit("transit create did not return an ed25519 public key")
+PY
 
 transit_plaintext_b64="$(printf 'forge-metal transit proof %s' "${run_id}" | base64 -w0)"
 transit_encrypt="$(mktemp)"
@@ -133,7 +159,7 @@ import json
 import sys
 print(json.dumps({"plaintext_base64": sys.argv[1]}))
 PY
-remote_secrets_api POST "/api/v1/transit/keys/${transit_key_name}/encrypt" "${SECRETS_SERVICE_ACCESS_TOKEN}" "${transit_encrypt}" "${artifact_dir}/responses/transit-encrypt.json"
+remote_secrets_api POST "/api/v1/transit/keys/${transit_key_name}/encrypt" "${admin_secrets_token}" "${transit_encrypt}" "${artifact_dir}/responses/transit-encrypt.json"
 
 ciphertext="$(
   python3 - "${artifact_dir}/responses/transit-encrypt.json" <<'PY'
@@ -149,7 +175,7 @@ import json
 import sys
 print(json.dumps({"ciphertext": sys.argv[1]}))
 PY
-remote_secrets_api POST "/api/v1/transit/keys/${transit_key_name}/decrypt" "${SECRETS_SERVICE_ACCESS_TOKEN}" "${transit_decrypt}" "${artifact_dir}/responses/transit-decrypt.json"
+remote_secrets_api POST "/api/v1/transit/keys/${transit_key_name}/decrypt" "${admin_secrets_token}" "${transit_decrypt}" "${artifact_dir}/responses/transit-decrypt.json"
 
 python3 - "${transit_plaintext_b64}" "${artifact_dir}/responses/transit-decrypt.json" <<'PY'
 import json
@@ -158,6 +184,51 @@ expected = sys.argv[1]
 actual = json.load(open(sys.argv[2], encoding="utf-8"))["plaintext_base64"]
 if actual != expected:
     raise SystemExit("transit decrypt returned wrong plaintext")
+PY
+
+transit_message_b64="$(printf 'forge-metal signature proof %s' "${run_id}" | base64 -w0)"
+transit_sign="$(mktemp)"
+tmp_files+=("${transit_sign}")
+python3 - "${transit_message_b64}" >"${transit_sign}" <<'PY'
+import json
+import sys
+print(json.dumps({"message_base64": sys.argv[1]}))
+PY
+remote_secrets_api POST "/api/v1/transit/keys/${transit_key_name}/sign" "${admin_secrets_token}" "${transit_sign}" "${artifact_dir}/responses/transit-sign.json"
+
+signature="$(
+  python3 - "${artifact_dir}/responses/transit-sign.json" <<'PY'
+import json
+import sys
+print(json.load(open(sys.argv[1], encoding="utf-8"))["signature"])
+PY
+)"
+transit_verify="$(mktemp)"
+tmp_files+=("${transit_verify}")
+python3 - "${transit_message_b64}" "${signature}" >"${transit_verify}" <<'PY'
+import json
+import sys
+print(json.dumps({"message_base64": sys.argv[1], "signature": sys.argv[2]}))
+PY
+remote_secrets_api POST "/api/v1/transit/keys/${transit_key_name}/verify" "${member_secrets_token}" "${transit_verify}" "${artifact_dir}/responses/transit-verify.json"
+
+python3 - "${artifact_dir}/responses/transit-verify.json" <<'PY'
+import json
+import sys
+if json.load(open(sys.argv[1], encoding="utf-8")).get("valid") is not True:
+    raise SystemExit("transit verify did not accept the signature")
+PY
+
+remote_secrets_api POST "/api/v1/transit/keys/${transit_key_name}/rotate" "${admin_secrets_token}" "" "${artifact_dir}/responses/transit-rotate.json" "${run_id}-transit-rotate"
+
+python3 - "${artifact_dir}/responses/transit-rotate.json" <<'PY'
+import json
+import sys
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+if payload.get("current_version") != "2":
+    raise SystemExit(f"transit rotate returned current_version={payload.get('current_version')}, expected 2")
+if not payload.get("public_key"):
+    raise SystemExit("transit rotate did not return an ed25519 public key")
 PY
 
 api_base_url="${BASE_URL:-https://rentasandbox.${VERIFICATION_DOMAIN}}"
@@ -186,7 +257,7 @@ PY
 
 submit_response="${artifact_dir}/responses/sandbox-submit.json"
 curl -fsS \
-  -H "Authorization: Bearer ${SANDBOX_RENTAL_ACCESS_TOKEN}" \
+  -H "Authorization: Bearer ${admin_sandbox_token}" \
   -H "Content-Type: application/json" \
   --data-binary "@${submit_payload}" \
   "${api_base_url%/}/api/v1/executions" >"${submit_response}"
@@ -202,7 +273,7 @@ PY
 status="queued"
 for _ in $(seq 1 180); do
   curl -fsS \
-    -H "Authorization: Bearer ${SANDBOX_RENTAL_ACCESS_TOKEN}" \
+    -H "Authorization: Bearer ${admin_sandbox_token}" \
     "${api_base_url%/}/api/v1/executions/${execution_id}" >"${artifact_dir}/responses/sandbox-execution.json"
   status="$(
     python3 - "${artifact_dir}/responses/sandbox-execution.json" <<'PY'
@@ -225,7 +296,7 @@ if [[ "${status}" != "succeeded" ]]; then
 fi
 
 curl -fsS \
-  -H "Authorization: Bearer ${SANDBOX_RENTAL_ACCESS_TOKEN}" \
+  -H "Authorization: Bearer ${admin_sandbox_token}" \
   "${api_base_url%/}/api/v1/executions/${execution_id}/logs" >"${artifact_dir}/responses/sandbox-logs.json"
 
 python3 - "${secret_hash}" "${artifact_dir}/responses/sandbox-logs.json" <<'PY'
@@ -238,19 +309,9 @@ if needle not in logs:
     raise SystemExit("sandbox logs did not contain expected secret hash proof")
 PY
 
-window_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+remote_secrets_api DELETE "/api/v1/secrets/${secret_name}?kind=secret&scope_level=org" "${admin_secrets_token}" "" "${artifact_dir}/responses/secret-delete.json" "${run_id}-delete"
 
-(
-  cd "${VERIFICATION_PLATFORM_ROOT}"
-  ./scripts/pg.sh secrets_service --query "
-    COPY (
-      SELECT kind, name, scope_level, current_version, deleted_at IS NULL AS active
-      FROM secret_resources
-      WHERE org_id = '${org_id}' AND name = '${secret_name}'
-      ORDER BY updated_at DESC
-    ) TO STDOUT WITH CSV HEADER;
-  "
-) >"${artifact_dir}/postgres/secrets.csv"
+window_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 (
   cd "${VERIFICATION_PLATFORM_ROOT}"
@@ -263,6 +324,15 @@ window_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     ) TO STDOUT WITH CSV HEADER;
   "
 ) >"${artifact_dir}/postgres/sandbox-secret-env.csv"
+
+(
+  cd "${VERIFICATION_REPO_ROOT}"
+  make pg-list
+) >"${artifact_dir}/postgres/pg-list.txt"
+if grep -Eq '(^|[[:space:]|])secrets_service([[:space:]|])' "${artifact_dir}/postgres/pg-list.txt"; then
+  echo "secrets_service PostgreSQL database is still visible in make pg-list" >&2
+  exit 1
+fi
 
 wait_for_clickhouse_count() {
   local database="$1"
@@ -295,8 +365,28 @@ wait_for_clickhouse_count default "
   FROM otel_traces
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
     AND ServiceName = 'secrets-service'
-    AND SpanName IN ('secrets.secret.put', 'secrets.secret.read', 'secrets.transit.encrypt', 'secrets.transit.decrypt')
-" 4 "${artifact_dir}/clickhouse/secrets-spans-count.tsv"
+    AND SpanName IN (
+      'secrets.secret.put',
+      'secrets.secret.read',
+      'secrets.secret.list',
+      'secrets.secret.delete',
+      'secrets.transit.key.create',
+      'secrets.transit.key.rotate',
+      'secrets.transit.encrypt',
+      'secrets.transit.decrypt',
+      'secrets.transit.sign',
+      'secrets.transit.verify'
+    )
+" 10 "${artifact_dir}/clickhouse/secrets-spans-count.tsv"
+
+wait_for_clickhouse_count default "
+  SELECT count()
+  FROM otel_traces
+  WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
+    AND ServiceName = 'secrets-service'
+    AND startsWith(SpanName, 'secrets.bao.')
+    AND arrayElement(SpanAttributes, 'bao.request_id') != ''
+" 10 "${artifact_dir}/clickhouse/secrets-bao-spans-count.tsv"
 
 wait_for_clickhouse_count default "
   SELECT count()
@@ -311,8 +401,23 @@ wait_for_clickhouse_count forge_metal "
   FROM audit_events
   WHERE recorded_at BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
     AND org_id = {org_id:String}
-    AND audit_event IN ('secrets.secret.write', 'secrets.secret.read', 'secrets.secret.inject', 'secrets.transit_key.create', 'secrets.transit_key.encrypt', 'secrets.transit_key.decrypt')
-" 6 "${artifact_dir}/clickhouse/secrets-audit-count.tsv"
+    AND audit_event IN (
+      'secrets.secret.write',
+      'secrets.secret.read',
+      'secrets.secret.list',
+      'secrets.secret.delete',
+      'secrets.secret.inject',
+      'secrets.transit_key.create',
+      'secrets.transit_key.rotate',
+      'secrets.transit_key.encrypt',
+      'secrets.transit_key.decrypt',
+      'secrets.transit_key.sign',
+      'secrets.transit_key.verify'
+    )
+    AND (startsWith(secret_mount, 'kv-') OR startsWith(secret_mount, 'transit-'))
+    AND openbao_request_id != ''
+    AND openbao_accessor_hash != ''
+" 11 "${artifact_dir}/clickhouse/secrets-audit-count.tsv"
 
 (
   cd "${VERIFICATION_PLATFORM_ROOT}"
@@ -339,6 +444,7 @@ wait_for_clickhouse_count forge_metal "
     --param_org_id="${org_id}" \
     --query "
       SELECT recorded_at, audit_event, result, target_id, target_path_hash, secret_version, key_id
+        , secret_mount, openbao_request_id, openbao_accessor_hash
       FROM audit_events
       WHERE recorded_at BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
         AND org_id = {org_id:String}
@@ -358,15 +464,31 @@ events = {row["audit_event"]: row for row in rows}
 required = {
     "secrets.secret.write",
     "secrets.secret.read",
+    "secrets.secret.list",
+    "secrets.secret.delete",
     "secrets.secret.inject",
     "secrets.transit_key.create",
+    "secrets.transit_key.rotate",
     "secrets.transit_key.encrypt",
     "secrets.transit_key.decrypt",
+    "secrets.transit_key.sign",
+    "secrets.transit_key.verify",
 }
 missing = sorted(required.difference(events))
 if missing:
     raise SystemExit(f"missing secrets audit events: {', '.join(missing)}")
-for event in ("secrets.secret.write", "secrets.secret.read", "secrets.secret.inject"):
+
+for event, row in events.items():
+    if event not in required:
+        continue
+    if not (row["secret_mount"].startswith("kv-") or row["secret_mount"].startswith("transit-")):
+        raise SystemExit(f"{event} secret_mount={row['secret_mount']!r} was not an OpenBao mount")
+    if not row["openbao_request_id"]:
+        raise SystemExit(f"{event} missing openbao_request_id")
+    if not row["openbao_accessor_hash"]:
+        raise SystemExit(f"{event} missing openbao_accessor_hash")
+
+for event in ("secrets.secret.write", "secrets.secret.read", "secrets.secret.delete", "secrets.secret.inject"):
     row = events[event]
     if not row["target_path_hash"]:
         raise SystemExit(f"{event} missing target_path_hash")
@@ -374,13 +496,21 @@ for event in ("secrets.secret.write", "secrets.secret.read", "secrets.secret.inj
         raise SystemExit(f"{event} secret_version={row['secret_version']}, expected 1")
     if row["key_id"]:
         raise SystemExit(f"{event} unexpectedly has key_id")
+list_row = events["secrets.secret.list"]
+if list_row["target_path_hash"] or list_row["secret_version"] != "0" or list_row["key_id"]:
+    raise SystemExit("secret list audit target should describe the collection, not one secret")
 create = events["secrets.transit_key.create"]
-if create["target_path_hash"] or create["secret_version"] != "0" or not create["key_id"]:
+if create["target_path_hash"] or create["secret_version"] != "1" or not create["key_id"]:
     raise SystemExit("transit key create audit target was not keyed by key_id")
-for event in ("secrets.transit_key.encrypt", "secrets.transit_key.decrypt"):
+rotate = events["secrets.transit_key.rotate"]
+if rotate["target_path_hash"] or rotate["secret_version"] != "2" or not rotate["key_id"]:
+    raise SystemExit("transit key rotate audit target was not keyed by the rotated key")
+for event in ("secrets.transit_key.encrypt", "secrets.transit_key.decrypt", "secrets.transit_key.sign", "secrets.transit_key.verify"):
     row = events[event]
-    if row["target_path_hash"] or row["secret_version"] != "0" or row["target_id"] != transit_key_name:
+    if row["target_path_hash"] or row["target_id"] != transit_key_name:
         raise SystemExit(f"{event} audit target mismatch")
+    if row["secret_version"] != "1":
+        raise SystemExit(f"{event} secret_version={row['secret_version']}, expected 1")
 PY
 
 cat >"${artifact_dir}/run.json" <<EOF

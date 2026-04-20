@@ -27,12 +27,24 @@
   register: openbao_tenancy_governance_audit_token_raw
   no_log: true
 
+- name: Read secrets-service OpenBao service account user id
+  ansible.builtin.slurp:
+    src: "{{ openbao_tenancy_service_account_user_id_path }}"
+  register: openbao_tenancy_service_account_user_id_raw
+  no_log: true
+
 - name: Set OpenBao tenancy credential facts
   ansible.builtin.set_fact:
     openbao_tenancy_root_token: "{{ openbao_tenancy_root_token_raw.content | b64decode | trim }}"
     openbao_tenancy_zitadel_admin_pat: "{{ openbao_tenancy_zitadel_admin_pat_raw.content | b64decode | trim }}"
     openbao_tenancy_governance_audit_token: "{{ openbao_tenancy_governance_audit_token_raw.content | b64decode | trim }}"
+    openbao_tenancy_service_account_user_id: "{{ openbao_tenancy_service_account_user_id_raw.content | b64decode | trim }}"
   no_log: true
+
+- name: Assert secrets-service OpenBao service account user id is set
+  ansible.builtin.assert:
+    that: openbao_tenancy_service_account_user_id | default('', true) | length > 0
+    fail_msg: OpenBao tenancy requires the secrets-service OpenBao service account user id.
 
 - name: Create OpenBao tenancy audit marker directory
   ansible.builtin.file:

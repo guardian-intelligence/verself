@@ -28,14 +28,38 @@
 - name: Apply secrets-service nftables before proceeding
   ansible.builtin.meta: flush_handlers
 
+- name: Stop legacy secrets-service before dropping PostgreSQL state
+  ansible.builtin.systemd:
+    name: secrets-service
+    state: stopped
+  failed_when: false
+
 - name: Include secrets-service generated credential tasks
   ansible.builtin.include_tasks: credentials.yml
 
-- name: Include secrets-service PostgreSQL database tasks
-  ansible.builtin.include_tasks: database.yml
+- name: Drop legacy secrets_service PostgreSQL database
+  community.postgresql.postgresql_db:
+    name: secrets_service
+    state: absent
+    force: true
+    login_host: "{{ services.postgresql.host }}"
+    login_port: "{{ services.postgresql.port }}"
+    login_user: postgres
+    login_password: "{{ postgresql_admin_password }}"
+    maintenance_db: postgres
+    trust_input: false
+  no_log: true
 
-- name: Include secrets-service PostgreSQL migration tasks
-  ansible.builtin.include_tasks: migrations.yml
+- name: Drop legacy secrets_service PostgreSQL role
+  community.postgresql.postgresql_user:
+    name: secrets_service
+    state: absent
+    login_host: "{{ services.postgresql.host }}"
+    login_port: "{{ services.postgresql.port }}"
+    login_user: postgres
+    login_password: "{{ postgresql_admin_password }}"
+    trust_input: false
+  no_log: true
 
 - name: Wait for Zitadel before configuring secrets-service auth
   ansible.builtin.wait_for:
@@ -138,30 +162,159 @@
         group: secrets
   when: secrets_service_auth_audience | default('', true) | length > 0
 
+- name: Check secrets-service OpenBao service account client secret
+  ansible.builtin.stat:
+    path: /etc/credstore/secrets-service/service-account-client-secret
+  register: secrets_service_openbao_client_secret_file
+  no_log: true
+
+- name: List Zitadel users for secrets-service OpenBao service account
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/v2/users"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ secrets_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body: {}
+    return_content: true
+    status_code: 200
+  register: secrets_service_zitadel_users
+  no_log: true
+
+- name: Find secrets-service OpenBao service account
+  ansible.builtin.set_fact:
+    secrets_service_openbao_machine_user: >-
+      {{
+        (
+          secrets_service_zitadel_users.json.result | default([])
+          | selectattr('username', 'equalto', secrets_service_service_account_client_id)
+          | list
+          | first
+        ) | default({})
+      }}
+
+- name: Create secrets-service OpenBao service account if missing
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/users/machine"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ secrets_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      userName: "{{ secrets_service_service_account_client_id }}"
+      name: "secrets-service openbao {{ inventory_hostname }}"
+      accessTokenType: ACCESS_TOKEN_TYPE_JWT
+    return_content: true
+    status_code: [200, 201]
+  register: secrets_service_openbao_machine_user_created
+  when: secrets_service_openbao_machine_user == {}
+  no_log: true
+
+- name: Set secrets-service OpenBao service account user id
+  ansible.builtin.set_fact:
+    secrets_service_openbao_machine_user_id: >-
+      {{
+        secrets_service_openbao_machine_user.userId
+        | default(secrets_service_openbao_machine_user_created.json.userId, true)
+        | default(secrets_service_openbao_machine_user_created.json.id, true)
+      }}
+
+- name: Assert secrets-service OpenBao service account user id is set
+  ansible.builtin.assert:
+    that:
+      - secrets_service_openbao_machine_user_id | default('', true) | length > 0
+    fail_msg: secrets-service OpenBao service account user ID could not be resolved.
+
+- name: Create secrets-service OpenBao service account secret when needed
+  ansible.builtin.uri:
+    url: >-
+      http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/v2/users/{{
+      secrets_service_openbao_machine_user_id }}/secret
+    method: POST
+    headers:
+      Authorization: "Bearer {{ secrets_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    status_code: 200
+    return_content: true
+  register: secrets_service_openbao_machine_user_secret
+  when:
+    - secrets_service_openbao_machine_user_created is not skipped
+      or not secrets_service_openbao_client_secret_file.stat.exists
+  no_log: true
+
+- name: Store secrets-service OpenBao service account client secret
+  ansible.builtin.copy:
+    content: "{{ secrets_service_openbao_machine_user_secret.json.clientSecret }}"
+    dest: /etc/credstore/secrets-service/service-account-client-secret
+    owner: root
+    group: secrets_service
+    mode: "0640"
+  when:
+    - secrets_service_openbao_machine_user_secret is defined
+    - not (secrets_service_openbao_machine_user_secret.skipped | default(false))
+  no_log: true
+  notify: restart secrets-service
+
+- name: Store secrets-service OpenBao service account user id
+  ansible.builtin.copy:
+    content: "{{ secrets_service_openbao_machine_user_id }}"
+    dest: /etc/credstore/secrets-service/service-account-user-id
+    owner: root
+    group: secrets_service
+    mode: "0640"
+  notify: restart secrets-service
+
+- name: Grant secrets-service OpenBao service account access to secrets-service project
+  ansible.builtin.uri:
+    url: >-
+      http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/users/{{
+      secrets_service_openbao_machine_user_id }}/grants
+    method: POST
+    headers:
+      Authorization: "Bearer {{ secrets_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      projectId: "{{ secrets_service_auth_audience }}"
+      roleKeys:
+        - member
+    status_code: [200, 409]
+  register: secrets_service_openbao_machine_user_grant
+  changed_when: secrets_service_openbao_machine_user_grant.status == 200
+  no_log: true
+
 - name: Deploy secrets-service systemd unit
   ansible.builtin.copy:
     content: |
       [Unit]
       Description=Secrets Service
-      After=forge-metal-firewall.target network.target postgresql.service zitadel.service governance-service.service
+      After=forge-metal-firewall.target network.target openbao.service zitadel.service governance-service.service
       Requires=forge-metal-firewall.target
-      Wants=postgresql.service zitadel.service governance-service.service
+      Wants=openbao.service zitadel.service governance-service.service
 
       [Service]
       Type=simple
       User=secrets_service
       Group=secrets_service
-      LoadCredential=pg-dsn:/etc/credstore/secrets-service/pg-dsn
-      LoadCredential=envelope-key:/etc/credstore/secrets-service/envelope-key
       LoadCredential=internal-injection-token:/etc/credstore/secrets-service/internal-injection-token
       LoadCredential=governance-internal-audit-token:/etc/credstore/governance-service/internal-audit-token
+      LoadCredential=openbao-ca-cert:/etc/openbao/tls/cert.pem
+      LoadCredential=service-account-client-secret:/etc/credstore/secrets-service/service-account-client-secret
       Environment=SECRETS_LISTEN_ADDR={{ services.secrets_service.host }}:{{ services.secrets_service.port }}
       Environment=SECRETS_GOVERNANCE_AUDIT_URL=http://{{ services.governance_service.host }}:{{ services.governance_service.port }}/internal/v1/audit/events
       Environment=SECRETS_AUTH_ISSUER_URL={{ secrets_service_auth_issuer_url }}
       Environment=SECRETS_AUTH_JWKS_URL={{ secrets_service_auth_jwks_url }}
       Environment=SECRETS_AUTH_AUDIENCE={{ secrets_service_auth_audience }}
       Environment=SECRETS_AUTH_PROJECT_ID={{ secrets_service_auth_audience }}
-      Environment=SECRETS_PG_MAX_CONNS={{ secrets_service_pg_max_conns }}
+      Environment=SECRETS_OPENBAO_ADDR={{ secrets_service_openbao_addr }}
+      Environment=SECRETS_OPENBAO_KV_PREFIX={{ secrets_service_openbao_kv_prefix }}
+      Environment=SECRETS_OPENBAO_TRANSIT_PREFIX={{ secrets_service_openbao_transit_prefix }}
+      Environment=SECRETS_OPENBAO_JWT_PREFIX={{ secrets_service_openbao_jwt_prefix }}
+      Environment=SECRETS_SERVICE_ACCOUNT_CLIENT_ID={{ secrets_service_service_account_client_id }}
+      Environment=SECRETS_SERVICE_ACCOUNT_TOKEN_URL={{ secrets_service_service_account_token_url }}
+      Environment=SECRETS_SERVICE_ACCOUNT_TOKEN_HOST={{ secrets_service_service_account_token_host }}
       Environment=OTEL_SERVICE_NAME=secrets-service
       Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}
       ExecStart={{ fm_bin }}/secrets-service
