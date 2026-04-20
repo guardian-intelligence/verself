@@ -10,13 +10,68 @@
     name: secrets_service
     system: true
 
+- name: Ensure spire workload socket group exists
+  ansible.builtin.group:
+    name: "{{ spire_workload_group }}"
+    system: true
+
 - name: Create secrets_service system user
   ansible.builtin.user:
     name: secrets_service
     group: secrets_service
+    groups:
+      - "{{ spire_workload_group }}"
+    append: false
     system: true
     shell: /usr/sbin/nologin
     create_home: false
+
+- name: Resolve secrets-service uid for SPIRE registration
+  ansible.builtin.command:
+    cmd: id -u secrets_service
+  register: secrets_service_uid
+  changed_when: false
+
+- name: Read secrets-service SPIRE registration
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry show
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-secrets-service
+      -output json
+  register: secrets_service_spire_entry
+  failed_when: false
+  changed_when: false
+
+- name: Register secrets-service SPIFFE workload
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry create
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-secrets-service
+      -parentID {{ spire_agent_id }}
+      -spiffeID {{ spire_secrets_service_id }}
+      -selector unix:uid:{{ secrets_service_uid.stdout | trim }}
+      -x509SVIDTTL 3600
+  when: secrets_service_spire_entry.rc != 0 or 'forge-metal-secrets-service' not in secrets_service_spire_entry.stdout
+  changed_when: true
+  notify: restart secrets-service
+
+- name: Update secrets-service SPIRE workload selector drift
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry update
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-secrets-service
+      -parentID {{ spire_agent_id }}
+      -spiffeID {{ spire_secrets_service_id }}
+      -selector unix:uid:{{ secrets_service_uid.stdout | trim }}
+      -x509SVIDTTL 3600
+  when:
+    - secrets_service_spire_entry.rc == 0
+    - "'uid:' ~ (secrets_service_uid.stdout | trim) not in secrets_service_spire_entry.stdout"
+  changed_when: true
+  notify: restart secrets-service
 
 - name: Deploy secrets-service nftables ruleset
   ansible.builtin.template:
@@ -412,20 +467,24 @@
     content: |
       [Unit]
       Description=Secrets Service
-      After=forge-metal-firewall.target network.target openbao.service zitadel.service governance-service.service
+      After=forge-metal-firewall.target network.target openbao.service zitadel.service governance-service.service spire-agent.service
       Requires=forge-metal-firewall.target
-      Wants=openbao.service zitadel.service governance-service.service
+      Wants=openbao.service zitadel.service governance-service.service spire-agent.service
 
       [Service]
       Type=simple
       User=secrets_service
       Group=secrets_service
-      LoadCredential=internal-injection-token:/etc/credstore/secrets-service/internal-injection-token
+      SupplementaryGroups={{ spire_workload_group }}
       LoadCredential=governance-internal-audit-token:/etc/credstore/governance-service/internal-audit-token
       LoadCredential=openbao-ca-cert:/etc/openbao/tls/cert.pem
       LoadCredential=service-account-client-secret:/etc/credstore/secrets-service/service-account-client-secret
       LoadCredential=billing-client-secret:/etc/credstore/secrets-service/billing-client-secret
+      LoadCredential=sandbox-injection-grant-ed25519.pub.pem:/etc/credstore/secrets-service/sandbox-injection-grant-ed25519.pub.pem
       Environment=SECRETS_LISTEN_ADDR={{ services.secrets_service.host }}:{{ services.secrets_service.port }}
+      Environment=SECRETS_INTERNAL_LISTEN_ADDR={{ services.secrets_service.host }}:{{ services.secrets_service.internal_port }}
+      Environment=SECRETS_SPIFFE_ID={{ spire_secrets_service_id }}
+      Environment=SECRETS_SANDBOX_SPIFFE_ID={{ spire_sandbox_rental_id }}
       Environment=SECRETS_GOVERNANCE_AUDIT_URL=http://{{ services.governance_service.host }}:{{ services.governance_service.port }}/internal/v1/audit/events
       Environment=SECRETS_AUTH_ISSUER_URL={{ secrets_service_auth_issuer_url }}
       Environment=SECRETS_AUTH_JWKS_URL={{ secrets_service_auth_jwks_url }}
@@ -442,6 +501,7 @@
       Environment=SECRETS_BILLING_CLIENT_ID={{ secrets_service_billing_client_id }}
       Environment=SECRETS_BILLING_TOKEN_URL={{ secrets_service_billing_token_url }}
       Environment=SECRETS_BILLING_AUTH_AUDIENCE={{ secrets_service_billing_auth_audience }}
+      Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}
       Environment=OTEL_SERVICE_NAME=secrets-service
       Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}
       ExecStart={{ fm_bin }}/secrets-service

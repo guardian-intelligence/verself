@@ -3,20 +3,22 @@ package jobs
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/forge-metal/auth-middleware/delegation"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 )
 
 const maxSecretEnvVars = 64
+const secretInjectionGrantTTL = 6 * time.Hour
 
 type SecretEnvVar struct {
 	EnvName    string
@@ -26,6 +28,8 @@ type SecretEnvVar struct {
 	SourceID   string
 	EnvID      string
 	Branch     string
+	GrantID    string
+	GrantToken string
 }
 
 type SecretResolveRequest struct {
@@ -42,34 +46,25 @@ type SecretResolver interface {
 
 type SecretsHTTPResolver struct {
 	URL    string
-	Token  string
 	Client *http.Client
 }
 
-func NewSecretsHTTPResolver(url, token string) *SecretsHTTPResolver {
+func NewSecretsHTTPResolver(url string, client *http.Client) *SecretsHTTPResolver {
 	url = strings.TrimRight(strings.TrimSpace(url), "/")
-	token = strings.TrimSpace(token)
-	if url == "" || token == "" {
+	if url == "" || client == nil {
 		return nil
 	}
 	return &SecretsHTTPResolver{
-		URL:   url,
-		Token: token,
-		Client: &http.Client{
-			Transport: otelhttp.NewTransport(http.DefaultTransport),
-			Timeout:   3 * time.Second,
-		},
+		URL:    url,
+		Client: client,
 	}
 }
 
 func (r *SecretsHTTPResolver) ResolveSandboxSecrets(ctx context.Context, request SecretResolveRequest) (map[string]string, error) {
 	ctx, span := tracer.Start(ctx, "sandbox-rental.secrets.resolve")
 	defer span.End()
-	if r == nil || r.URL == "" || r.Token == "" {
+	if r == nil || r.URL == "" || r.Client == nil {
 		return nil, ErrSecretInjectionUnavailable
-	}
-	if r.Client == nil {
-		r.Client = &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport), Timeout: 3 * time.Second}
 	}
 	body := secretsResolveRequest{
 		OrgID:       fmt.Sprintf("%d", request.OrgID),
@@ -87,6 +82,8 @@ func (r *SecretsHTTPResolver) ResolveSandboxSecrets(ctx context.Context, request
 			SourceID:   secret.SourceID,
 			EnvID:      secret.EnvID,
 			Branch:     secret.Branch,
+			GrantID:    secret.GrantID,
+			GrantToken: secret.GrantToken,
 		})
 	}
 	payload, err := json.Marshal(body)
@@ -97,7 +94,6 @@ func (r *SecretsHTTPResolver) ResolveSandboxSecrets(ctx context.Context, request
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+r.Token)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := r.Client.Do(req)
 	if err != nil {
@@ -142,6 +138,8 @@ type secretsResolveItem struct {
 	SourceID   string `json:"source_id,omitempty"`
 	EnvID      string `json:"env_id,omitempty"`
 	Branch     string `json:"branch,omitempty"`
+	GrantID    string `json:"grant_id"`
+	GrantToken string `json:"grant_token"`
 }
 
 type secretsResolveResponse struct {
@@ -168,6 +166,8 @@ func normalizeSecretEnvVars(vars []SecretEnvVar) ([]SecretEnvVar, error) {
 		item.SourceID = strings.TrimSpace(item.SourceID)
 		item.EnvID = strings.TrimSpace(item.EnvID)
 		item.Branch = strings.TrimSpace(item.Branch)
+		item.GrantID = strings.TrimSpace(item.GrantID)
+		item.GrantToken = strings.TrimSpace(item.GrantToken)
 		if item.Kind == "" {
 			item.Kind = "secret"
 		}
@@ -240,12 +240,123 @@ func validateSecretScope(item SecretEnvVar) error {
 	return nil
 }
 
+func assignSecretEnvGrantIDs(vars []SecretEnvVar) []SecretEnvVar {
+	if len(vars) == 0 {
+		return vars
+	}
+	out := make([]SecretEnvVar, len(vars))
+	copy(out, vars)
+	for idx := range out {
+		if strings.TrimSpace(out[idx].GrantID) == "" {
+			out[idx].GrantID = uuid.NewString()
+		}
+		out[idx].GrantToken = ""
+	}
+	return out
+}
+
+func (s *Service) issueSecretEnvGrants(ctx context.Context, orgID uint64, actorID string, executionID, attemptID uuid.UUID, vars []SecretEnvVar) ([]SecretEnvVar, error) {
+	ctx, span := tracer.Start(ctx, "secrets.injection.grant.issue")
+	defer span.End()
+	span.SetAttributes(
+		attribute.Int("forge_metal.secret_env_count", len(vars)),
+		attribute.String("forge_metal.org_id", fmt.Sprintf("%d", orgID)),
+		attribute.String("forge_metal.actor_id", actorID),
+		attribute.String("forge_metal.execution_id", executionID.String()),
+		attribute.String("forge_metal.attempt_id", attemptID.String()),
+	)
+	if len(vars) == 0 {
+		return vars, nil
+	}
+	if len(s.SecretGrantPrivateKey) != ed25519.PrivateKeySize || s.SecretGrantIssuerSPIFFEID == "" || s.SecretGrantAudienceSPIFFEID == "" {
+		err := fmt.Errorf("%w: secret injection grant signer is not configured", ErrSecretInjectionUnavailable)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
+	}
+	out := make([]SecretEnvVar, len(vars))
+	copy(out, vars)
+	expiresAt := time.Now().UTC().Add(secretInjectionGrantTTL)
+	for idx := range out {
+		if strings.TrimSpace(out[idx].GrantID) == "" {
+			out[idx].GrantID = uuid.NewString()
+		}
+		token, err := delegation.SignInjectionGrant(s.SecretGrantPrivateKey, delegation.InjectionGrant{
+			Version:          delegation.InjectionGrantVersion,
+			GrantID:          out[idx].GrantID,
+			IssuerSPIFFEID:   s.SecretGrantIssuerSPIFFEID,
+			AudienceSPIFFEID: s.SecretGrantAudienceSPIFFEID,
+			OrgID:            fmt.Sprintf("%d", orgID),
+			ActorID:          actorID,
+			ExecutionID:      executionID.String(),
+			AttemptID:        attemptID.String(),
+			EnvName:          out[idx].EnvName,
+			Kind:             out[idx].Kind,
+			SecretName:       out[idx].SecretName,
+			ScopeLevel:       out[idx].ScopeLevel,
+			SourceID:         out[idx].SourceID,
+			EnvID:            out[idx].EnvID,
+			Branch:           out[idx].Branch,
+			ExpiresAtUnix:    expiresAt.Unix(),
+		})
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return nil, err
+		}
+		out[idx].GrantToken = token
+	}
+	return out, nil
+}
+
+func verifySecretEnvGrants(ctx context.Context, item executionWorkItem) error {
+	_, span := tracer.Start(ctx, "secrets.injection.grant.verify")
+	defer span.End()
+	span.SetAttributes(
+		attribute.Int("forge_metal.secret_env_count", len(item.SecretEnv)),
+		attribute.String("forge_metal.org_id", fmt.Sprintf("%d", item.OrgID)),
+		attribute.String("forge_metal.actor_id", item.ActorID),
+		attribute.String("forge_metal.execution_id", item.ExecutionID.String()),
+		attribute.String("forge_metal.attempt_id", item.AttemptID.String()),
+	)
+	seen := map[string]struct{}{}
+	for _, secret := range item.SecretEnv {
+		grantID := strings.TrimSpace(secret.GrantID)
+		if grantID == "" {
+			err := fmt.Errorf("%w: missing secret injection grant", ErrInvalidSecretInjection)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+		if _, err := uuid.Parse(grantID); err != nil {
+			err := fmt.Errorf("%w: malformed secret injection grant", ErrInvalidSecretInjection)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+		if _, exists := seen[grantID]; exists {
+			err := fmt.Errorf("%w: duplicate secret injection grant", ErrInvalidSecretInjection)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+		seen[grantID] = struct{}{}
+		if strings.TrimSpace(secret.GrantToken) == "" {
+			err := fmt.Errorf("%w: missing secret injection grant token", ErrInvalidSecretInjection)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *Service) insertExecutionSecretEnv(ctx context.Context, tx pgx.Tx, executionID uuid.UUID, vars []SecretEnvVar) error {
 	for idx, item := range vars {
 		if _, err := tx.Exec(ctx, `INSERT INTO execution_secret_env (
-			execution_id, env_name, kind, secret_name, scope_level, source_id, env_id, branch, sort_order, created_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-			executionID, item.EnvName, item.Kind, item.SecretName, item.ScopeLevel, item.SourceID, item.EnvID, item.Branch, idx, time.Now().UTC()); err != nil {
+			execution_id, env_name, kind, secret_name, scope_level, source_id, env_id, branch, grant_id, sort_order, created_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+			executionID, item.EnvName, item.Kind, item.SecretName, item.ScopeLevel, item.SourceID, item.EnvID, item.Branch, item.GrantID, idx, time.Now().UTC()); err != nil {
 			return fmt.Errorf("insert execution secret env %s: %w", item.EnvName, err)
 		}
 	}
@@ -253,7 +364,7 @@ func (s *Service) insertExecutionSecretEnv(ctx context.Context, tx pgx.Tx, execu
 }
 
 func (s *Service) loadExecutionSecretEnv(ctx context.Context, executionID uuid.UUID) ([]SecretEnvVar, error) {
-	rows, err := s.PGX.Query(ctx, `SELECT env_name, kind, secret_name, scope_level, source_id, env_id, branch
+	rows, err := s.PGX.Query(ctx, `SELECT env_name, kind, secret_name, scope_level, source_id, env_id, branch, grant_id
 		FROM execution_secret_env
 		WHERE execution_id = $1
 		ORDER BY sort_order, env_name`, executionID)
@@ -264,7 +375,7 @@ func (s *Service) loadExecutionSecretEnv(ctx context.Context, executionID uuid.U
 	out := []SecretEnvVar{}
 	for rows.Next() {
 		var item SecretEnvVar
-		if err := rows.Scan(&item.EnvName, &item.Kind, &item.SecretName, &item.ScopeLevel, &item.SourceID, &item.EnvID, &item.Branch); err != nil {
+		if err := rows.Scan(&item.EnvName, &item.Kind, &item.SecretName, &item.ScopeLevel, &item.SourceID, &item.EnvID, &item.Branch, &item.GrantID); err != nil {
 			return nil, fmt.Errorf("scan execution secret env: %w", err)
 		}
 		out = append(out, item)
@@ -281,6 +392,14 @@ func (s *Service) resolveExecutionSecretEnv(ctx context.Context, item executionW
 	}
 	if s.Secrets == nil {
 		return nil, ErrSecretInjectionUnavailable
+	}
+	secretEnv, err := s.issueSecretEnvGrants(ctx, item.OrgID, item.ActorID, item.ExecutionID, item.AttemptID, item.SecretEnv)
+	if err != nil {
+		return nil, err
+	}
+	item.SecretEnv = secretEnv
+	if err := verifySecretEnvGrants(ctx, item); err != nil {
+		return nil, err
 	}
 	return s.Secrets.ResolveSandboxSecrets(ctx, SecretResolveRequest{
 		OrgID:       item.OrgID,

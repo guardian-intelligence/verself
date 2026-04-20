@@ -14,6 +14,8 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	auth "github.com/forge-metal/auth-middleware"
+	"github.com/forge-metal/auth-middleware/delegation"
+	workloadauth "github.com/forge-metal/auth-middleware/workload"
 	billingclient "github.com/forge-metal/billing-service/client"
 	fmotel "github.com/forge-metal/otel"
 	secretsapi "github.com/forge-metal/secrets-service/internal/api"
@@ -49,12 +51,13 @@ func run() error {
 		}
 	}()
 
-	internalInjectionToken := requireCredential("internal-injection-token")
 	governanceAuditToken := credentialOr("governance-internal-audit-token", "")
 	serviceAccountSecret := requireCredential("service-account-client-secret")
 	billingClientSecret := requireCredential("billing-client-secret")
+	sandboxInjectionGrantPublicKeyPEM := requireCredential("sandbox-injection-grant-ed25519.pub.pem")
 
 	listenAddr := envOr("SECRETS_LISTEN_ADDR", "127.0.0.1:4251")
+	internalListenAddr := envOr("SECRETS_INTERNAL_LISTEN_ADDR", "127.0.0.1:4253")
 	governanceAuditURL := envOr("SECRETS_GOVERNANCE_AUDIT_URL", "")
 	authIssuerURL := requireEnv("SECRETS_AUTH_ISSUER_URL")
 	authAudience := requireEnv("SECRETS_AUTH_AUDIENCE")
@@ -69,6 +72,18 @@ func run() error {
 	billingClientID := requireEnv("SECRETS_BILLING_CLIENT_ID")
 	billingTokenURL := requireEnv("SECRETS_BILLING_TOKEN_URL")
 	billingAudience := requireEnv("SECRETS_BILLING_AUTH_AUDIENCE")
+	secretsSPIFFEID, err := workloadauth.ParseID(requireEnv("SECRETS_SPIFFE_ID"))
+	if err != nil {
+		return err
+	}
+	sandboxSPIFFEID, err := workloadauth.ParseID(requireEnv("SECRETS_SANDBOX_SPIFFE_ID"))
+	if err != nil {
+		return err
+	}
+	sandboxInjectionGrantPublicKey, err := delegation.ParseEd25519PublicKeyPEM([]byte(sandboxInjectionGrantPublicKeyPEM))
+	if err != nil {
+		return fmt.Errorf("sandbox injection grant public key: %w", err)
+	}
 
 	store, err := secrets.NewBaoStore(ctx, secrets.BaoStoreConfig{
 		Address:       openBaoAddr,
@@ -119,6 +134,19 @@ func run() error {
 		return fmt.Errorf("secrets readiness: %w", err)
 	}
 	secretsapi.ConfigureAuditSink(governanceAuditURL, governanceAuditToken)
+	spiffeSource, err := workloadauth.Source(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
+	if err != nil {
+		return fmt.Errorf("spiffe workload source: %w", err)
+	}
+	defer func() {
+		if err := spiffeSource.Close(); err != nil {
+			logger.ErrorContext(context.Background(), "secrets-service spiffe source close", "error", err)
+		}
+	}()
+	internalTLSConfig, err := workloadauth.MTLSServerConfig(spiffeSource, sandboxSPIFFEID)
+	if err != nil {
+		return fmt.Errorf("spiffe internal tls: %w", err)
+	}
 
 	rootMux := http.NewServeMux()
 	rootMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -135,8 +163,6 @@ func run() error {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ready\n"))
 	})
-	secretsapi.RegisterInternalRoutes(rootMux, svc, internalInjectionToken)
-
 	privateMux := http.NewServeMux()
 	secretsapi.NewAPI(privateMux, serviceVersion, "http://"+listenAddr, svc)
 	authenticated := auth.Middleware(auth.Config{
@@ -147,6 +173,12 @@ func run() error {
 	})(privateMux)
 	protected := secretsapi.CaptureRawBearerToken(authenticated)
 	rootMux.Handle("/", protected)
+	internalMux := http.NewServeMux()
+	secretsapi.RegisterInternalRoutes(internalMux, svc, secretsapi.InternalRouteConfig{
+		GrantPublicKey:           sandboxInjectionGrantPublicKey,
+		ExpectedIssuerSPIFFEID:   sandboxSPIFFEID.String(),
+		ExpectedAudienceSPIFFEID: secretsSPIFFEID.String(),
+	})
 
 	server := &http.Server{
 		Addr:              listenAddr,
@@ -157,18 +189,56 @@ func run() error {
 		IdleTimeout:       30 * time.Second,
 		MaxHeaderBytes:    maxHeaderBytes,
 	}
+	internalServer := &http.Server{
+		Addr:              internalListenAddr,
+		Handler:           otelhttp.NewHandler(limitRequestBodies(workloadauth.ServerPeerMiddleware(sandboxSPIFFEID, internalMux), requestBodyLimit), serviceName+"-internal"),
+		TLSConfig:         internalTLSConfig,
+		ReadHeaderTimeout: 2 * time.Second,
+		ReadTimeout:       5 * time.Second,
+		WriteTimeout:      5 * time.Second,
+		IdleTimeout:       30 * time.Second,
+		MaxHeaderBytes:    maxHeaderBytes,
+	}
+	runCtx, cancelRun := context.WithCancel(ctx)
+	defer cancelRun()
 	go func() {
-		<-ctx.Done()
+		<-runCtx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			logger.ErrorContext(context.Background(), "secrets-service shutdown", "error", err)
 		}
+		if err := internalServer.Shutdown(shutdownCtx); err != nil {
+			logger.ErrorContext(context.Background(), "secrets-service internal shutdown", "error", err)
+		}
 	}()
 
 	logger.InfoContext(ctx, "secrets-service listening", "addr", listenAddr)
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		return fmt.Errorf("secrets-service listen: %w", err)
+	logger.InfoContext(ctx, "secrets-service internal listening", "addr", internalListenAddr)
+	errCh := make(chan error, 2)
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			errCh <- fmt.Errorf("secrets-service listen: %w", err)
+			return
+		}
+		errCh <- nil
+	}()
+	go func() {
+		if err := internalServer.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+			errCh <- fmt.Errorf("secrets-service internal listen: %w", err)
+			return
+		}
+		errCh <- nil
+	}()
+	var firstErr error
+	for range 2 {
+		if err := <-errCh; err != nil && firstErr == nil {
+			firstErr = err
+			cancelRun()
+		}
+	}
+	if firstErr != nil {
+		return firstErr
 	}
 	return nil
 }
@@ -189,7 +259,7 @@ func limitRequestBodies(next http.Handler, maxBytes int64) http.Handler {
 func requestMayHaveBody(r *http.Request) bool {
 	switch r.Method {
 	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
-		return strings.HasPrefix(r.URL.Path, "/api/")
+		return strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/internal/")
 	default:
 		return false
 	}

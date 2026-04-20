@@ -37,6 +37,7 @@
 #      4248  identity-service
 #      4250  governance-service
 #      4251  secrets-service
+#      4253  secrets-service internal SPIFFE mTLS
 #
 #    TanStack frontends (Nitro SSR):             4240–4259 (shared block)
 #      4244  rent-a-sandbox
@@ -110,6 +111,7 @@ services:
   secrets_service:
     host: "127.0.0.1"
     port: 4251
+    internal_port: 4253
   rent_a_sandbox:
     host: "127.0.0.1"
     port: 4244

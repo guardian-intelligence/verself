@@ -18,3 +18,17 @@
   ansible.builtin.systemd:
     name: nftables
     state: reloaded
+
+- name: Check if secrets-service unit exists for secret injection grant restart
+  listen: restart secrets-service
+  ansible.builtin.stat:
+    path: /etc/systemd/system/secrets-service.service
+  register: sandbox_rental_service_secrets_unit_file
+
+- name: Restart secrets-service after secret injection grant verifier update
+  listen: restart secrets-service
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: secrets-service
+    state: restarted
+  when: sandbox_rental_service_secrets_unit_file.stat.exists

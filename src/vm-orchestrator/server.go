@@ -424,7 +424,8 @@ func (s *APIServer) StartExec(ctx context.Context, req *vmrpc.StartExecRequest) 
 	if err := validateExecSpec(spec); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	if err := s.state.createExec(ctx, execSnapshot{LeaseID: leaseID, ExecID: execID, Spec: spec}); err != nil {
+	persistedSpec := redactExecSpecForPersistence(ctx, spec)
+	if err := s.state.createExec(ctx, execSnapshot{LeaseID: leaseID, ExecID: execID, Spec: persistedSpec}); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	reply := make(chan startExecReply, 1)
@@ -437,6 +438,24 @@ func (s *APIServer) StartExec(ctx context.Context, req *vmrpc.StartExecRequest) 
 	data, _ := json.Marshal(resp)
 	_ = s.state.putIdempotency(context.Background(), scope, key, string(data))
 	return resp, nil
+}
+
+func redactExecSpecForPersistence(ctx context.Context, spec ExecSpec) ExecSpec {
+	_, span := tracer.Start(ctx, "vmorchestrator.exec.spec.redact")
+	defer span.End()
+	redacted := spec
+	redacted.Env = nil
+	if len(spec.Env) > 0 {
+		redacted.Env = make(map[string]string, len(spec.Env))
+		for key := range spec.Env {
+			redacted.Env[key] = "[redacted]"
+		}
+	}
+	span.SetAttributes(
+		attribute.Int("vmorchestrator.exec.env_key_count", len(spec.Env)),
+		attribute.Bool("vmorchestrator.exec.env_values_redacted", true),
+	)
+	return redacted
 }
 
 func (s *APIServer) CancelExec(ctx context.Context, req *vmrpc.CancelExecRequest) (*vmrpc.CancelExecResponse, error) {

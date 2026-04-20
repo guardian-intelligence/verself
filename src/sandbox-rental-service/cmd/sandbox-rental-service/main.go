@@ -26,6 +26,8 @@ import (
 
 	"github.com/forge-metal/apiwire"
 	auth "github.com/forge-metal/auth-middleware"
+	"github.com/forge-metal/auth-middleware/delegation"
+	workloadauth "github.com/forge-metal/auth-middleware/workload"
 	billingclient "github.com/forge-metal/billing-service/client"
 	fmotel "github.com/forge-metal/otel"
 	vmorchestrator "github.com/forge-metal/vm-orchestrator"
@@ -66,8 +68,8 @@ func run() error {
 	pgDSN := requireCredential("pg-dsn")
 	chPassword := credentialOr("ch-password", "")
 	billingClientSecret := requireCredential("billing-client-secret")
+	secretInjectionGrantPrivateKeyPEM := requireCredential("secret-injection-grant-ed25519.pem")
 	governanceAuditToken := credentialOr("governance-internal-audit-token", "")
-	secretsInternalToken := requireCredential("secrets-internal-token")
 	githubAppPrivateKey := credentialOr("github-app-private-key", "")
 	githubAppWebhookSecret := credentialOr("github-app-webhook-secret", "")
 	githubAppClientSecret := credentialOr("github-app-client-secret", "")
@@ -77,7 +79,7 @@ func run() error {
 	chAddress := envOr("SANDBOX_CH_ADDRESS", "127.0.0.1:9000")
 	billingURL := envOr("SANDBOX_BILLING_URL", "http://127.0.0.1:4242")
 	governanceAuditURL := envOr("SANDBOX_GOVERNANCE_AUDIT_URL", "")
-	secretsURL := envOr("SANDBOX_SECRETS_URL", "http://127.0.0.1:4251")
+	secretsURL := envOr("SANDBOX_SECRETS_URL", "https://127.0.0.1:4253")
 	billingClientID := requireEnv("SANDBOX_BILLING_CLIENT_ID")
 	billingTokenURL := requireEnv("SANDBOX_BILLING_TOKEN_URL")
 	billingAuthAudience := requireEnv("SANDBOX_BILLING_AUTH_AUDIENCE")
@@ -92,6 +94,18 @@ func run() error {
 	authIssuerURL := requireEnv("SANDBOX_AUTH_ISSUER_URL")
 	authAudience := requireEnv("SANDBOX_AUTH_AUDIENCE")
 	authJWKSURL := envOr("SANDBOX_AUTH_JWKS_URL", "")
+	sandboxSPIFFEID, err := workloadauth.ParseID(requireEnv("SANDBOX_SPIFFE_ID"))
+	if err != nil {
+		return err
+	}
+	secretsSPIFFEID, err := workloadauth.ParseID(requireEnv("SANDBOX_SECRETS_SPIFFE_ID"))
+	if err != nil {
+		return err
+	}
+	secretInjectionGrantPrivateKey, err := delegation.ParseEd25519PrivateKeyPEM([]byte(secretInjectionGrantPrivateKeyPEM))
+	if err != nil {
+		return fmt.Errorf("secret injection grant private key: %w", err)
+	}
 	vmOrchestratorSocket := envOr("SANDBOX_VM_ORCHESTRATOR_SOCKET", vmorchestrator.DefaultSocketPath)
 	githubAppEnabled := envBool("SANDBOX_GITHUB_APP_ENABLED", false)
 	githubAppID := envInt64("SANDBOX_GITHUB_APP_ID", 0)
@@ -205,6 +219,19 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("create billing client: %w", err)
 	}
+	spiffeSource, err := workloadauth.Source(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
+	if err != nil {
+		return fmt.Errorf("spiffe workload source: %w", err)
+	}
+	defer func() {
+		if err := spiffeSource.Close(); err != nil {
+			logger.ErrorContext(context.Background(), "sandbox-rental: spiffe source close", "error", err)
+		}
+	}()
+	secretsHTTPClient, err := workloadauth.MTLSClient(spiffeSource, secretsSPIFFEID, http.DefaultTransport)
+	if err != nil {
+		return fmt.Errorf("secrets spiffe client: %w", err)
+	}
 
 	// --- job service ---
 
@@ -219,7 +246,11 @@ func run() error {
 		Logger:           logger,
 		WorkloadTimeout:  time.Duration(envInt("SANDBOX_WORKLOAD_TIMEOUT_SECONDS", 7200)) * time.Second,
 		CheckoutCacheDir: checkoutCacheDir,
-		Secrets:          jobs.NewSecretsHTTPResolver(secretsURL, secretsInternalToken),
+		Secrets:          jobs.NewSecretsHTTPResolver(secretsURL, secretsHTTPClient),
+
+		SecretGrantPrivateKey:       secretInjectionGrantPrivateKey,
+		SecretGrantIssuerSPIFFEID:   sandboxSPIFFEID.String(),
+		SecretGrantAudienceSPIFFEID: secretsSPIFFEID.String(),
 	}
 	githubRunner, err := jobs.NewGitHubRunner(jobService, jobs.GitHubRunnerConfig{
 		AppID:         githubAppID,
