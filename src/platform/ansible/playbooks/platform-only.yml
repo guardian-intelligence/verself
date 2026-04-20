@@ -1,0 +1,29 @@
+---
+# Scoped deploy: just the platform docs frontend role + the deploy_profile role
+# it depends on for `fm_bin`. Useful when sibling work in dev-single-node.yml is
+# parse-broken (eg. references a role under construction); ship a platform-only
+# change without coupling to that workstream.
+#
+# Usage: scripts/ansible-with-tunnel.sh playbooks/platform-only.yml
+
+- name: "Preflight: remote prerequisites"
+  hosts: all
+  gather_facts: false
+  become: true
+  tags: [always]
+  tasks:
+    - name: Require forge_metal_domain
+      ansible.builtin.assert:
+        that: forge_metal_domain | default('', true) | length > 0
+        fail_msg: forge_metal_domain is required. Set it in group_vars before deploying.
+        success_msg: forge_metal_domain is set.
+
+- name: Deploy platform docs frontend
+  hosts: all
+  become: true
+  force_handlers: true
+  roles:
+    - role: deploy_profile
+      tags: [deploy_profile]
+    - role: platform
+      tags: [platform]

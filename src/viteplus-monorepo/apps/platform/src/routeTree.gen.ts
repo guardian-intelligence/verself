@@ -26,6 +26,7 @@ import { Route as PolicyChangelogRouteImport } from './routes/policy/changelog'
 import { Route as PolicyAcceptableUseRouteImport } from './routes/policy/acceptable-use'
 import { Route as DocsSecretsRouteImport } from './routes/docs/secrets'
 import { Route as DocsReferenceRouteImport } from './routes/docs/reference'
+import { Route as ApiOtelV1TracesRouteImport } from './routes/api/otel/v1/traces'
 
 const PolicyRouteRoute = PolicyRouteRouteImport.update({
   id: '/policy',
@@ -112,6 +113,11 @@ const DocsReferenceRoute = DocsReferenceRouteImport.update({
   path: '/reference',
   getParentRoute: () => DocsRouteRoute,
 } as any)
+const ApiOtelV1TracesRoute = ApiOtelV1TracesRouteImport.update({
+  id: '/api/otel/v1/traces',
+  path: '/api/otel/v1/traces',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -131,6 +137,7 @@ export interface FileRoutesByFullPath {
   '/policy/terms': typeof PolicyTermsRoute
   '/docs/': typeof DocsIndexRoute
   '/policy/': typeof PolicyIndexRoute
+  '/api/otel/v1/traces': typeof ApiOtelV1TracesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -148,6 +155,7 @@ export interface FileRoutesByTo {
   '/policy/terms': typeof PolicyTermsRoute
   '/docs': typeof DocsIndexRoute
   '/policy': typeof PolicyIndexRoute
+  '/api/otel/v1/traces': typeof ApiOtelV1TracesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -168,6 +176,7 @@ export interface FileRoutesById {
   '/policy/terms': typeof PolicyTermsRoute
   '/docs/': typeof DocsIndexRoute
   '/policy/': typeof PolicyIndexRoute
+  '/api/otel/v1/traces': typeof ApiOtelV1TracesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -189,6 +198,7 @@ export interface FileRouteTypes {
     | '/policy/terms'
     | '/docs/'
     | '/policy/'
+    | '/api/otel/v1/traces'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -206,6 +216,7 @@ export interface FileRouteTypes {
     | '/policy/terms'
     | '/docs'
     | '/policy'
+    | '/api/otel/v1/traces'
   id:
     | '__root__'
     | '/'
@@ -225,12 +236,14 @@ export interface FileRouteTypes {
     | '/policy/terms'
     | '/docs/'
     | '/policy/'
+    | '/api/otel/v1/traces'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DocsRouteRoute: typeof DocsRouteRouteWithChildren
   PolicyRouteRoute: typeof PolicyRouteRouteWithChildren
+  ApiOtelV1TracesRoute: typeof ApiOtelV1TracesRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -354,6 +367,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DocsReferenceRouteImport
       parentRoute: typeof DocsRouteRoute
     }
+    '/api/otel/v1/traces': {
+      id: '/api/otel/v1/traces'
+      path: '/api/otel/v1/traces'
+      fullPath: '/api/otel/v1/traces'
+      preLoaderRoute: typeof ApiOtelV1TracesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -409,6 +429,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DocsRouteRoute: DocsRouteRouteWithChildren,
   PolicyRouteRoute: PolicyRouteRouteWithChildren,
+  ApiOtelV1TracesRoute: ApiOtelV1TracesRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
