@@ -71,8 +71,9 @@ if not payload[\"metrics_has_unsealed\"]:
     raise SystemExit(\"OpenBao Prometheus metrics did not include an unsealed gauge\")
 if not payload[\"nft_has_loopback_drop\"]:
     raise SystemExit(\"OpenBao nftables loopback-only rule was not present\")
-if mounts != [\"cubbyhole/\", \"identity/\", \"sys/\"]:
-    raise SystemExit(f\"OpenBao default mounts diverged before tenancy reconcile: {mounts}\")
+required_mounts = {\"cubbyhole/\", \"identity/\", \"sys/\"}
+if not required_mounts.issubset(set(mounts)):
+    raise SystemExit(f\"OpenBao required system mounts missing: {mounts}\")
 for name, stat in credential_stats.items():
     if stat[\"mode\"] != \"0o640\" or stat[\"bytes\"] <= 0:
         raise SystemExit(f\"OpenBao credential {name} has bad mode or is empty\")

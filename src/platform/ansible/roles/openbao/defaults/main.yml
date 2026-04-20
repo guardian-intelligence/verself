@@ -9,3 +9,5 @@ openbao_credstore_dir: /etc/credstore/openbao
 openbao_node_id: forge-metal-single-node
 openbao_key_shares: 3
 openbao_key_threshold: 2
+openbao_oidc_loopback_hosts:
+  - "auth.{{ forge_metal_domain }}"

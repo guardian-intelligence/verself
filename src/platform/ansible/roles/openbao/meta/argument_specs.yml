@@ -37,6 +37,9 @@ argument_specs:
       openbao_key_threshold:
         type: int
         default: 2
+      openbao_oidc_loopback_hosts:
+        type: list
+        elements: str
       fm_bin:
         type: path
         required: true

@@ -1,0 +1,286 @@
+---
+- name: Set OpenBao tenancy organization facts
+  ansible.builtin.set_fact:
+    openbao_tenancy_org_id: "{{ openbao_tenancy_org.id }}"
+    openbao_tenancy_org_name: "{{ openbao_tenancy_org.name }}"
+    openbao_tenancy_org_domain: "{{ openbao_tenancy_org.primaryDomain | default('') }}"
+    openbao_tenancy_kv_mount: "{{ openbao_tenancy_kv_mount_prefix }}-{{ openbao_tenancy_org.id }}"
+    openbao_tenancy_transit_mount: "{{ openbao_tenancy_transit_mount_prefix }}-{{ openbao_tenancy_org.id }}"
+    openbao_tenancy_jwt_mount: "{{ openbao_tenancy_jwt_mount_prefix }}-{{ openbao_tenancy_org.id }}"
+    openbao_tenancy_read_only_policy: "secrets-{{ openbao_tenancy_org.id }}-read-only"
+    openbao_tenancy_read_write_policy: "secrets-{{ openbao_tenancy_org.id }}-read-write"
+
+- name: Render OpenBao tenancy policy documents
+  ansible.builtin.set_fact:
+    openbao_tenancy_policies:
+      - name: "{{ openbao_tenancy_read_only_policy }}"
+        document: "{{ lookup('ansible.builtin.template', 'read-only.hcl.j2') }}"
+      - name: "{{ openbao_tenancy_read_write_policy }}"
+        document: "{{ lookup('ansible.builtin.template', 'read-write.hcl.j2') }}"
+
+- name: Check OpenBao tenancy audit marker for organization
+  ansible.builtin.stat:
+    path: "{{ openbao_tenancy_audit_marker_dir }}/{{ openbao_tenancy_org_id }}"
+  register: openbao_tenancy_audit_marker
+
+- name: Enable OpenBao KV v2 mount for organization
+  ansible.builtin.uri:
+    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/sys/mounts/{{ openbao_tenancy_kv_mount }}"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_tenancy_root_token }}"
+    body_format: json
+    body:
+      type: kv
+      description: "Forge Metal secrets KV for Zitadel org {{ openbao_tenancy_org_id }}"
+      options:
+        version: "2"
+    validate_certs: false
+    status_code: 204
+  register: openbao_tenancy_kv_enable
+  changed_when: true
+  when: (openbao_tenancy_kv_mount ~ '/') not in openbao_tenancy_existing_mounts
+  no_log: true
+
+- name: Enable OpenBao Transit mount for organization
+  ansible.builtin.uri:
+    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/sys/mounts/{{ openbao_tenancy_transit_mount }}"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_tenancy_root_token }}"
+    body_format: json
+    body:
+      type: transit
+      description: "Forge Metal transit keys for Zitadel org {{ openbao_tenancy_org_id }}"
+    validate_certs: false
+    status_code: 204
+  register: openbao_tenancy_transit_enable
+  changed_when: true
+  when: (openbao_tenancy_transit_mount ~ '/') not in openbao_tenancy_existing_mounts
+  no_log: true
+
+- name: Enable OpenBao JWT auth mount for organization
+  ansible.builtin.uri:
+    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/sys/auth/{{ openbao_tenancy_jwt_mount }}"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_tenancy_root_token }}"
+    body_format: json
+    body:
+      type: jwt
+      description: "Forge Metal Zitadel JWT auth for org {{ openbao_tenancy_org_id }}"
+    validate_certs: false
+    status_code: 204
+  register: openbao_tenancy_auth_enable
+  changed_when: true
+  when: (openbao_tenancy_jwt_mount ~ '/') not in openbao_tenancy_existing_auth_mounts
+  no_log: true
+
+- name: Read OpenBao JWT auth config for organization
+  ansible.builtin.uri:
+    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/auth/{{ openbao_tenancy_jwt_mount }}/config"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ openbao_tenancy_root_token }}"
+    validate_certs: false
+    status_code: [200, 404]
+    return_content: true
+  register: openbao_tenancy_auth_config_response
+  changed_when: false
+  no_log: true
+
+- name: Configure OpenBao JWT discovery for organization
+  ansible.builtin.uri:
+    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/auth/{{ openbao_tenancy_jwt_mount }}/config"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_tenancy_root_token }}"
+    body_format: json
+    body:
+      oidc_discovery_url: "{{ openbao_tenancy_oidc_discovery_url }}"
+      bound_issuer: "{{ openbao_tenancy_bound_issuer }}"
+      skip_jwks_validation: "{{ openbao_tenancy_skip_jwks_validation | bool }}"
+    validate_certs: false
+    status_code: 204
+  register: openbao_tenancy_auth_config_write
+  changed_when: true
+  when: >-
+    openbao_tenancy_auth_config_response.status == 404
+    or (openbao_tenancy_auth_config_response.json.data | default({})).oidc_discovery_url | default('') != openbao_tenancy_oidc_discovery_url
+    or (openbao_tenancy_auth_config_response.json.data | default({})).bound_issuer | default('') != openbao_tenancy_bound_issuer
+  no_log: true
+
+- name: Read OpenBao tenancy policies
+  ansible.builtin.uri:
+    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/sys/policies/acl/{{ item.name }}"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ openbao_tenancy_root_token }}"
+    validate_certs: false
+    status_code: [200, 404]
+    return_content: true
+  loop: "{{ openbao_tenancy_policies }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: openbao_tenancy_policy_reads
+  changed_when: false
+  no_log: true
+
+- name: Write changed OpenBao tenancy policies
+  ansible.builtin.uri:
+    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/sys/policies/acl/{{ item.item.name }}"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_tenancy_root_token }}"
+    body_format: json
+    body:
+      policy: "{{ item.item.document }}"
+    validate_certs: false
+    status_code: 204
+  loop: "{{ openbao_tenancy_policy_reads.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  register: openbao_tenancy_policy_writes
+  changed_when: true
+  when: >-
+    item.status == 404
+    or (((item.json.data | default({})).policy | default(item.json.policy | default(''))) | trim) != (item.item.document | trim)
+  no_log: true
+
+- name: Set OpenBao JWT role definitions for organization
+  ansible.builtin.set_fact:
+    openbao_tenancy_jwt_roles:
+      - name: secrets-owner
+        project_role: owner
+        token_policies:
+          - "{{ openbao_tenancy_read_write_policy }}"
+      - name: secrets-admin
+        project_role: admin
+        token_policies:
+          - "{{ openbao_tenancy_read_write_policy }}"
+      - name: secrets-member
+        project_role: member
+        token_policies:
+          - "{{ openbao_tenancy_read_only_policy }}"
+
+- name: Read OpenBao JWT roles for organization
+  ansible.builtin.uri:
+    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/auth/{{ openbao_tenancy_jwt_mount }}/role/{{ item.name }}"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ openbao_tenancy_root_token }}"
+    validate_certs: false
+    status_code: [200, 404]
+    return_content: true
+  loop: "{{ openbao_tenancy_jwt_roles }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: openbao_tenancy_role_reads
+  changed_when: false
+  no_log: true
+
+- name: Write missing OpenBao JWT roles for organization
+  ansible.builtin.uri:
+    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/auth/{{ openbao_tenancy_jwt_mount }}/role/{{ item.item.name }}"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_tenancy_root_token }}"
+    body_format: json
+    body:
+      role_type: jwt
+      bound_audiences:
+        - "{{ openbao_tenancy_secrets_project_id }}"
+      user_claim: sub
+      bound_claims_type: glob
+      bound_claims: >-
+        {{
+          {
+            'urn:zitadel:iam:user:resourceowner:id': openbao_tenancy_org_id,
+            ('/urn:zitadel:iam:org:project:' ~ openbao_tenancy_secrets_project_id ~ ':roles/' ~ item.item.project_role ~ '/' ~ openbao_tenancy_org_id): '*'
+          }
+        }}
+      claim_mappings:
+        "urn:zitadel:iam:user:resourceowner:id": forge_metal_org_id
+        "urn:zitadel:iam:user:resourceowner:name": forge_metal_org_name
+      token_policies: "{{ item.item.token_policies }}"
+      token_ttl: "{{ openbao_tenancy_token_ttl }}"
+      token_max_ttl: "{{ openbao_tenancy_token_max_ttl }}"
+      token_no_default_policy: false
+      token_num_uses: 0
+    validate_certs: false
+    status_code: 204
+  loop: "{{ openbao_tenancy_role_reads.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  register: openbao_tenancy_role_writes
+  changed_when: true
+  when: >-
+    item.status == 404
+    or ('/urn:zitadel:iam:org:project:' ~ openbao_tenancy_secrets_project_id ~ ':roles/' ~ item.item.project_role ~ '/' ~ openbao_tenancy_org_id)
+      not in ((item.json.data | default({})).bound_claims | default({})).keys()
+  no_log: true
+
+- name: Record whether OpenBao organization tenancy changed
+  ansible.builtin.set_fact:
+    openbao_tenancy_org_changed: >-
+      {{
+        openbao_tenancy_kv_enable.changed | default(false)
+        or openbao_tenancy_transit_enable.changed | default(false)
+        or openbao_tenancy_auth_enable.changed | default(false)
+        or openbao_tenancy_auth_config_write.changed | default(false)
+        or (openbao_tenancy_policy_writes.results | default([]) | selectattr('changed', 'equalto', true) | list | length > 0)
+        or (openbao_tenancy_role_writes.results | default([]) | selectattr('changed', 'equalto', true) | list | length > 0)
+        or not (openbao_tenancy_audit_marker.stat.exists | default(false))
+      }}
+
+- name: Emit OpenBao tenancy governance audit event
+  ansible.builtin.uri:
+    url: "http://{{ services.governance_service.host }}:{{ services.governance_service.port }}/internal/v1/audit/events"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ openbao_tenancy_governance_audit_token }}"
+    body_format: json
+    body:
+      org_id: "{{ openbao_tenancy_org_id }}"
+      source_product_area: Platform
+      service_name: platform-ansible
+      service_version: "1.0.0"
+      actor_type: system
+      actor_id: platform-ansible
+      actor_display: platform-ansible
+      operation_id: openbao.namespace.provisioned
+      audit_event: openbao.namespace.provisioned
+      operation_display: OpenBao tenant provisioned
+      operation_type: write
+      event_category: secrets
+      risk_level: high
+      data_classification: restricted
+      target_kind: openbao_tenant
+      target_id: "{{ openbao_tenancy_org_id }}"
+      target_display: "{{ openbao_tenancy_org_name }}"
+      target_scope: org
+      permission: platform:openbao:tenancy
+      action: reconcile
+      org_scope: org
+      decision: allow
+      result: allowed
+      trust_class: operator
+      payload:
+        layout: "{{ openbao_tenancy_resolved_layout }}"
+        kv_mount: "{{ openbao_tenancy_kv_mount }}"
+        transit_mount: "{{ openbao_tenancy_transit_mount }}"
+        jwt_mount: "{{ openbao_tenancy_jwt_mount }}"
+        primary_domain: "{{ openbao_tenancy_org_domain }}"
+    status_code: 202
+  when: openbao_tenancy_org_changed | bool
+  changed_when: true
+  no_log: true
+
+- name: Mark OpenBao tenancy audit emitted for organization
+  ansible.builtin.file:
+    path: "{{ openbao_tenancy_audit_marker_dir }}/{{ openbao_tenancy_org_id }}"
+    state: touch
+    owner: root
+    group: openbao
+    mode: "0640"
+  when: openbao_tenancy_org_changed | bool
