@@ -8,6 +8,12 @@ export const Route = createFileRoute("/trust")({
     meta: [
       { title: TRUST_META.title },
       { name: "description", content: TRUST_META.description },
+      { property: "og:image", content: "/og/trust" },
+      { property: "og:image:type", content: "image/svg+xml" },
+      { property: "og:image:width", content: "1200" },
+      { property: "og:image:height", content: "630" },
+      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:image", content: "/og/trust" },
     ],
   }),
 });
