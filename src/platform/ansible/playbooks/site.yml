@@ -117,7 +117,7 @@
     - role: resend
       tags: [resend]
     - role: spire
-      tags: [spire, secrets_service, sandbox_rental_service]
+      tags: [spire, billing_service, identity_service, governance_service, secrets_service, sandbox_rental_service, mailbox_service]
     - role: clickhouse
       tags: [clickhouse, billing_service, sandbox_rental_service, governance_service, openbao, openbao_tenancy]
     - role: tigerbeetle

@@ -12,7 +12,6 @@ billing_service_pg_database: billing
 billing_service_auth_issuer_url: "https://auth.{{ forge_metal_domain }}"
 billing_service_auth_jwks_url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/oauth/v2/keys"
 billing_service_auth_project_name: billing
-billing_service_internal_role: billing_internal
 
 # billing-service uses one pgxpool for HTTP requests and River workers. pgxpool's
 # CPU-derived default is too large for our deploy-together single-node topology.

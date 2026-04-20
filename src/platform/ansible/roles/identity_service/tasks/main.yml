@@ -10,13 +10,68 @@
     name: identity_service
     system: true
 
+- name: Ensure spire workload socket group exists
+  ansible.builtin.group:
+    name: "{{ spire_workload_group }}"
+    system: true
+
 - name: Create identity_service system user
   ansible.builtin.user:
     name: identity_service
     group: identity_service
+    groups:
+      - "{{ spire_workload_group }}"
+    append: false
     system: true
     shell: /usr/sbin/nologin
     create_home: false
+
+- name: Resolve identity-service uid for SPIRE registration
+  ansible.builtin.command:
+    cmd: id -u identity_service
+  register: identity_service_uid
+  changed_when: false
+
+- name: Read identity-service SPIRE registration
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry show
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-identity-service
+      -output json
+  register: identity_service_spire_entry
+  failed_when: false
+  changed_when: false
+
+- name: Register identity-service SPIFFE workload
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry create
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-identity-service
+      -parentID {{ spire_agent_id }}
+      -spiffeID {{ spire_identity_service_id }}
+      -selector unix:uid:{{ identity_service_uid.stdout | trim }}
+      -x509SVIDTTL 3600
+  when: identity_service_spire_entry.rc != 0 or 'forge-metal-identity-service' not in identity_service_spire_entry.stdout
+  changed_when: true
+  notify: restart identity-service
+
+- name: Update identity-service SPIRE workload selector drift
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry update
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-identity-service
+      -parentID {{ spire_agent_id }}
+      -spiffeID {{ spire_identity_service_id }}
+      -selector unix:uid:{{ identity_service_uid.stdout | trim }}
+      -x509SVIDTTL 3600
+  when:
+    - identity_service_spire_entry.rc == 0
+    - "'uid:' ~ (identity_service_uid.stdout | trim) not in identity_service_spire_entry.stdout"
+  changed_when: true
+  notify: restart identity-service
 
 - name: Deploy identity-service nftables ruleset
   ansible.builtin.template:
@@ -236,26 +291,28 @@
     content: |
       [Unit]
       Description=Identity Service
-      After=forge-metal-firewall.target network.target postgresql.service zitadel.service
+      After=forge-metal-firewall.target network.target postgresql.service zitadel.service spire-agent.service
       Requires=forge-metal-firewall.target
-      Wants=postgresql.service zitadel.service
+      Wants=postgresql.service zitadel.service spire-agent.service
 
       [Service]
       Type=simple
       User=identity_service
       Group=identity_service
-      LoadCredential=pg-dsn:/etc/credstore/identity-service/pg-dsn
+      SupplementaryGroups={{ spire_workload_group }}
       LoadCredential=zitadel-admin-token:/etc/credstore/identity-service/zitadel-admin-token
       LoadCredential=zitadel-action-signing-key:/etc/credstore/identity-service/zitadel-action-signing-key
-      LoadCredential=governance-internal-audit-token:/etc/credstore/governance-service/internal-audit-token
       Environment=IDENTITY_LISTEN_ADDR={{ services.identity_service.host }}:{{ services.identity_service.port }}
-      Environment=IDENTITY_GOVERNANCE_AUDIT_URL=http://{{ services.governance_service.host }}:{{ services.governance_service.port }}/internal/v1/audit/events
+      Environment=IDENTITY_PG_DSN=postgres://identity_service@/identity_service?host=/var/run/postgresql&sslmode=disable
+      Environment=IDENTITY_GOVERNANCE_AUDIT_URL={{ identity_service_governance_audit_url }}
+      Environment=IDENTITY_GOVERNANCE_SPIFFE_ID={{ spire_governance_service_id }}
       Environment=IDENTITY_AUTH_ISSUER_URL={{ identity_service_auth_issuer_url }}
       Environment=IDENTITY_AUTH_JWKS_URL={{ identity_service_auth_jwks_url }}
       Environment=IDENTITY_AUTH_AUDIENCE={{ identity_service_auth_audience }}
       Environment=IDENTITY_AUTH_PROJECT_ID={{ identity_service_auth_audience }}
       Environment=IDENTITY_ZITADEL_BASE_URL={{ identity_service_zitadel_base_url }}
       Environment=IDENTITY_ZITADEL_HOST={{ identity_service_zitadel_host }}
+      Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}
       Environment=OTEL_SERVICE_NAME=identity-service
       Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}
       ExecStart={{ fm_bin }}/identity-service
@@ -283,6 +340,9 @@
       WantedBy=multi-user.target
     dest: /etc/systemd/system/identity-service.service
     mode: "0644"
+  vars:
+    identity_service_governance_audit_url: >-
+      https://{{ services.governance_service.host }}:{{ services.governance_service.internal_port }}/internal/v1/audit/events
   notify: restart identity-service
 
 - name: Apply identity-service unit changes before proceeding

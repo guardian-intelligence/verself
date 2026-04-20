@@ -1,10 +1,17 @@
 ---
-spire_trust_domain: forge-metal.local
+spire_trust_domain: "spiffe.{{ forge_metal_domain }}"
 spire_server_bind_address: 127.0.0.1
 spire_server_bind_port: 8081
 spire_server_socket_path: /run/spire-server/private/api.sock
 spire_agent_socket_path: /run/spire-agent/sockets/agent.sock
 spire_workload_group: spire_workload
 spire_agent_id: "spiffe://{{ spire_trust_domain }}/node/single-node"
+spire_identity_service_id: "spiffe://{{ spire_trust_domain }}/svc/identity-service"
+spire_governance_service_id: "spiffe://{{ spire_trust_domain }}/svc/governance-service"
+spire_billing_service_id: "spiffe://{{ spire_trust_domain }}/svc/billing-service"
 spire_sandbox_rental_id: "spiffe://{{ spire_trust_domain }}/svc/sandbox-rental-service"
 spire_secrets_service_id: "spiffe://{{ spire_trust_domain }}/svc/secrets-service"
+spire_mailbox_service_id: "spiffe://{{ spire_trust_domain }}/svc/mailbox-service"
+spire_oidc_bind_address: 127.0.0.1
+spire_oidc_bind_port: 8082
+spire_oidc_issuer_url: "https://{{ spire_oidc_bind_address }}:{{ spire_oidc_bind_port }}"

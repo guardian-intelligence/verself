@@ -4,10 +4,6 @@ sandbox_rental_service_domain: "{{ sandbox_rental_service_subdomain }}.{{ forge_
 sandbox_rental_service_auth_issuer_url: "https://auth.{{ forge_metal_domain }}"
 sandbox_rental_service_auth_jwks_url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/oauth/v2/keys"
 sandbox_rental_service_auth_project_name: sandbox-rental
-sandbox_rental_service_billing_auth_project_name: "{{ billing_service_auth_project_name | default('billing', true) }}"
-sandbox_rental_service_billing_internal_role: "{{ billing_service_internal_role | default('billing_internal', true) }}"
-sandbox_rental_service_billing_client_id: "sandbox-rental-billing-{{ inventory_hostname }}"
-sandbox_rental_service_billing_token_url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/oauth/v2/token"
 sandbox_rental_service_vm_orchestrator_socket: "{{ firecracker_vm_orchestrator_api_socket | default('/run/vm-orchestrator/api.sock', true) }}"
 sandbox_rental_service_vm_orchestrator_socket_group: "{{ firecracker_vm_orchestrator_socket_group | default('vm-clients', true) }}"
 sandbox_rental_service_vm_orchestrator_allowed_socket_users:

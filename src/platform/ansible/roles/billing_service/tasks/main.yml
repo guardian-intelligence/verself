@@ -14,13 +14,68 @@
     name: billing
     system: true
 
+- name: Ensure spire workload socket group exists
+  ansible.builtin.group:
+    name: "{{ spire_workload_group }}"
+    system: true
+
 - name: Create billing system user
   ansible.builtin.user:
     name: billing
     group: billing
+    groups:
+      - "{{ spire_workload_group }}"
+    append: false
     system: true
     shell: /usr/sbin/nologin
     create_home: false
+
+- name: Resolve billing-service uid for SPIRE registration
+  ansible.builtin.command:
+    cmd: id -u billing
+  register: billing_service_uid
+  changed_when: false
+
+- name: Read billing-service SPIRE registration
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry show
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-billing-service
+      -output json
+  register: billing_service_spire_entry
+  failed_when: false
+  changed_when: false
+
+- name: Register billing-service SPIFFE workload
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry create
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-billing-service
+      -parentID {{ spire_agent_id }}
+      -spiffeID {{ spire_billing_service_id }}
+      -selector unix:uid:{{ billing_service_uid.stdout | trim }}
+      -x509SVIDTTL 3600
+  when: billing_service_spire_entry.rc != 0 or 'forge-metal-billing-service' not in billing_service_spire_entry.stdout
+  changed_when: true
+  notify: restart billing-service
+
+- name: Update billing-service SPIRE workload selector drift
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry update
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-billing-service
+      -parentID {{ spire_agent_id }}
+      -spiffeID {{ spire_billing_service_id }}
+      -selector unix:uid:{{ billing_service_uid.stdout | trim }}
+      -x509SVIDTTL 3600
+  when:
+    - billing_service_spire_entry.rc == 0
+    - "'uid:' ~ (billing_service_uid.stdout | trim) not in billing_service_spire_entry.stdout"
+  changed_when: true
+  notify: restart billing-service
 
 - name: Assert billing PostgreSQL database name is safe
   ansible.builtin.assert:
@@ -99,8 +154,8 @@
     body_format: json
     body:
       name: "{{ billing_service_auth_project_name }}"
-      projectRoleAssertion: true
-      projectRoleCheck: true
+      projectRoleAssertion: false
+      projectRoleCheck: false
     return_content: true
   register: billing_service_auth_project_created
   when: billing_service_auth_project == {}
@@ -119,7 +174,7 @@
     that: billing_service_auth_audience | default('', true) | length > 0
     fail_msg: billing_service_auth_audience could not be resolved from Zitadel.
 
-- name: Ensure billing project has role assertion enabled
+- name: Ensure billing project does not require stale internal roles
   ansible.builtin.uri:
     url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/{{ billing_service_auth_audience }}"
     method: PUT
@@ -129,23 +184,11 @@
     body_format: json
     body:
       name: "{{ billing_service_auth_project_name }}"
-      projectRoleAssertion: true
-      projectRoleCheck: true
+      projectRoleAssertion: false
+      projectRoleCheck: false
     status_code: 200
   when: billing_service_auth_project != {}
   no_log: true
-
-- name: Ensure billing project roles exist
-  ansible.builtin.include_role:
-    name: zitadel_project_roles
-  vars:
-    zitadel_project_roles_admin_pat: "{{ billing_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
-    zitadel_project_roles_project_id: "{{ billing_service_auth_audience }}"
-    zitadel_project_roles_definitions:
-      - key: "{{ billing_service_internal_role }}"
-        display_name: Billing Internal
-        group: billing
-  when: billing_service_auth_audience | default('', true) | length > 0
 
 # --- systemd unit ---
 
@@ -154,22 +197,25 @@
     content: |
       [Unit]
       Description=Billing Service
-      After=forge-metal-firewall.target network.target postgresql.service
+      After=forge-metal-firewall.target network.target postgresql.service spire-agent.service
       Requires=forge-metal-firewall.target
-      Wants=postgresql.service
+      Wants=postgresql.service spire-agent.service
 
       [Service]
       Type=simple
       User=billing
       Group=billing
-      LoadCredential=pg-dsn:/etc/credstore/billing/pg-dsn
+      SupplementaryGroups={{ spire_workload_group }}
       LoadCredential=stripe-secret-key:/etc/credstore/billing/stripe-secret-key
       LoadCredential=stripe-webhook-secret:/etc/credstore/billing/stripe-webhook-secret
       LoadCredential=ch-password:/etc/credstore/billing/ch-password
       Environment=BILLING_CH_ADDRESS={{ services.clickhouse.host }}:{{ services.clickhouse.native_port }}
       Environment=BILLING_TB_ADDRESS={{ services.tigerbeetle.host }}:{{ services.tigerbeetle.port }}
       Environment=BILLING_TB_CLUSTER_ID={{ billing_service_tigerbeetle_cluster_id }}
+      Environment=BILLING_PG_DSN=postgres://billing@/{{ billing_service_pg_database }}?host=/var/run/postgresql&sslmode=disable
       Environment=BILLING_LISTEN_ADDR={{ services.billing.host }}:{{ services.billing.port }}
+      Environment=BILLING_INTERNAL_LISTEN_ADDR={{ services.billing.host }}:{{ services.billing.internal_port }}
+      Environment=BILLING_INTERNAL_CLIENT_SPIFFE_IDS={{ spire_sandbox_rental_id }},{{ spire_secrets_service_id }}
       Environment=BILLING_AUTH_ISSUER_URL={{ billing_service_auth_issuer_url }}
       Environment=BILLING_AUTH_JWKS_URL={{ billing_service_auth_jwks_url }}
       Environment=BILLING_AUTH_AUDIENCE={{ billing_service_auth_audience }}
@@ -177,6 +223,7 @@
       Environment=BILLING_PG_MIN_CONNS={{ billing_service_pg_min_conns }}
       Environment=BILLING_PG_CONN_MAX_LIFETIME_SECONDS={{ billing_service_pg_conn_max_lifetime_seconds }}
       Environment=BILLING_PG_CONN_MAX_IDLE_SECONDS={{ billing_service_pg_conn_max_idle_seconds }}
+      Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}
       ExecStart={{ fm_bin }}/billing-service
       Restart=on-failure
       RestartSec=5

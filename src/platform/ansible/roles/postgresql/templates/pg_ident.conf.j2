@@ -1,0 +1,16 @@
+# PostgreSQL user name maps.
+# Managed by Ansible — do not edit manually.
+#
+# MAPNAME                 SYSTEM-USERNAME     PG-USERNAME
+
+forge_metal_services      postgres            postgres
+forge_metal_services      billing             billing
+forge_metal_services      sandbox_rental      sandbox_rental
+forge_metal_services      identity_service    identity_service
+forge_metal_services      governance_service  governance_service
+forge_metal_services      mailbox_service     mailbox_service
+
+# governance-service performs forensic exports across service-owned databases.
+forge_metal_services      governance_service  identity_service
+forge_metal_services      governance_service  billing
+forge_metal_services      governance_service  sandbox_rental

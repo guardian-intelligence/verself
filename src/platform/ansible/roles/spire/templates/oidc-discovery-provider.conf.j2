@@ -1,0 +1,14 @@
+log_level = "info"
+domains = ["127.0.0.1", "localhost"]
+jwt_issuer = "{{ spire_oidc_issuer_url }}"
+jwks_uri = "{{ spire_oidc_issuer_url }}/keys"
+
+serving_cert_file {
+    cert_file_path = "/etc/spire/oidc/server-cert.pem"
+    key_file_path = "/etc/spire/oidc/server-key.pem"
+    addr = "{{ spire_oidc_bind_address }}:{{ spire_oidc_bind_port }}"
+}
+
+server_api {
+    address = "unix://{{ spire_server_socket_path }}"
+}

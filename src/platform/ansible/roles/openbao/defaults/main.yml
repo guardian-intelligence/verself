@@ -12,6 +12,9 @@ openbao_key_shares: 3
 openbao_key_threshold: 2
 openbao_oidc_loopback_hosts:
   - "auth.{{ forge_metal_domain }}"
+openbao_spiffe_jwt_mount: spiffe-jwt
+openbao_spiffe_jwt_discovery_url: "{{ spire_oidc_issuer_url }}"
+openbao_spiffe_jwt_discovery_ca_pem_path: /etc/spire/oidc/ca.pem
 openbao_audit_request_headers:
   - name: X-Forge-Metal-Request-Id
     hmac: false

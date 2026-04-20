@@ -11,6 +11,22 @@
   register: spire_agent_binary
   failed_when: not spire_agent_binary.stat.exists
 
+- name: Verify SPIRE OIDC Discovery Provider binary exists in profile
+  ansible.builtin.stat:
+    path: "{{ fm_bin }}/oidc-discovery-provider"
+  register: spire_oidc_binary
+  failed_when: not spire_oidc_binary.stat.exists
+
+- name: Assert SPIRE OIDC Discovery Provider remains loopback-only
+  ansible.builtin.assert:
+    that:
+      - spire_oidc_bind_address == '127.0.0.1'
+      - spire_oidc_issuer_url == 'https://127.0.0.1:' ~ (spire_oidc_bind_port | string)
+    fail_msg: >-
+      SPIRE OIDC Discovery Provider is an internal OpenBao JWKS endpoint in this
+      topology. Use a public TLS reverse proxy and a different threat model
+      before changing its bind address or issuer URL.
+
 - name: Create spire system group
   ansible.builtin.group:
     name: spire
@@ -39,22 +55,216 @@
   loop:
     - { path: /etc/spire/server, owner: root, group: spire, mode: "0750" }
     - { path: /etc/spire/agent, owner: root, group: spire, mode: "0750" }
+    - { path: /etc/spire/oidc, owner: root, group: spire, mode: "0750" }
     - { path: /var/lib/spire, owner: root, group: spire, mode: "0750" }
     - { path: /var/lib/spire/server, owner: spire, group: spire, mode: "0700" }
-    - { path: /var/lib/spire/agent, owner: spire, group: spire, mode: "0700" }
-    - { path: /etc/credstore/spire, owner: root, group: spire, mode: "0750" }
+    - { path: /var/lib/spire/agent, owner: spire, group: "{{ spire_workload_group }}", mode: "0700" }
     - { path: /run/spire-server/private, owner: spire, group: spire, mode: "0750" }
     - { path: /run/spire-agent/sockets, owner: spire, group: "{{ spire_workload_group }}", mode: "0750" }
+
+- name: Generate SPIRE OIDC local CA private key
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - genrsa
+      - -out
+      - /etc/spire/oidc/ca-key.pem
+      - "4096"
+    creates: /etc/spire/oidc/ca-key.pem
+
+- name: Generate SPIRE OIDC local CA certificate
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - req
+      - -x509
+      - -new
+      - -nodes
+      - -key
+      - /etc/spire/oidc/ca-key.pem
+      - -sha256
+      - -days
+      - "3650"
+      - -out
+      - /etc/spire/oidc/ca.pem
+      - -subj
+      - /CN=Forge Metal SPIRE OIDC local CA
+    creates: /etc/spire/oidc/ca.pem
+
+- name: Deploy SPIRE OIDC server certificate extensions
+  ansible.builtin.copy:
+    dest: /etc/spire/oidc/server-cert.ext
+    owner: root
+    group: spire
+    mode: "0644"
+    content: |
+      basicConstraints=CA:FALSE
+      keyUsage=digitalSignature,keyEncipherment
+      extendedKeyUsage=serverAuth
+      subjectAltName=IP:127.0.0.1,DNS:localhost
+
+- name: Generate SPIRE OIDC server private key and CSR
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - req
+      - -new
+      - -newkey
+      - rsa:2048
+      - -nodes
+      - -keyout
+      - /etc/spire/oidc/server-key.pem
+      - -out
+      - /etc/spire/oidc/server.csr
+      - -subj
+      - /CN=127.0.0.1
+    creates: /etc/spire/oidc/server-key.pem
+
+- name: Sign SPIRE OIDC server certificate
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - x509
+      - -req
+      - -in
+      - /etc/spire/oidc/server.csr
+      - -CA
+      - /etc/spire/oidc/ca.pem
+      - -CAkey
+      - /etc/spire/oidc/ca-key.pem
+      - -CAcreateserial
+      - -out
+      - /etc/spire/oidc/server-cert.pem
+      - -days
+      - "3650"
+      - -sha256
+      - -extfile
+      - /etc/spire/oidc/server-cert.ext
+    creates: /etc/spire/oidc/server-cert.pem
+
+- name: Set SPIRE OIDC TLS material ownership
+  ansible.builtin.file:
+    path: "/etc/spire/oidc/{{ item.name }}"
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { name: ca.pem, owner: root, group: spire, mode: "0644" }
+    - { name: ca-key.pem, owner: root, group: root, mode: "0600" }
+    - { name: server-cert.pem, owner: root, group: spire, mode: "0644" }
+    - { name: server-key.pem, owner: root, group: spire, mode: "0640" }
+    - { name: server.csr, owner: root, group: spire, mode: "0644" }
+    - { name: server-cert.ext, owner: root, group: spire, mode: "0644" }
+
+- name: Check SPIRE OIDC CA serial file
+  ansible.builtin.stat:
+    path: /etc/spire/oidc/ca.srl
+  register: spire_oidc_ca_serial
+
+- name: Set SPIRE OIDC CA serial ownership
+  ansible.builtin.file:
+    path: /etc/spire/oidc/ca.srl
+    owner: root
+    group: root
+    mode: "0600"
+  when: spire_oidc_ca_serial.stat.exists
+
+- name: Check recorded SPIRE trust domain
+  ansible.builtin.stat:
+    path: /var/lib/spire/server/trust-domain
+  register: spire_trust_domain_marker
+
+- name: Read recorded SPIRE trust domain
+  ansible.builtin.slurp:
+    src: /var/lib/spire/server/trust-domain
+  register: spire_trust_domain_marker_content
+  when: spire_trust_domain_marker.stat.exists
+
+- name: Check existing SPIRE server datastore
+  ansible.builtin.stat:
+    path: /var/lib/spire/server/datastore.sqlite3
+  register: spire_server_datastore
+
+- name: Decide whether SPIRE local state must be reset for trust-domain cutover
+  ansible.builtin.set_fact:
+    spire_reset_for_trust_domain_cutover: >-
+      {{
+        (
+          spire_trust_domain_marker.stat.exists
+          and (
+            spire_trust_domain_marker_content.content
+            | b64decode
+            | trim
+          ) != spire_trust_domain
+        )
+        or (
+          (not spire_trust_domain_marker.stat.exists)
+          and spire_server_datastore.stat.exists
+        )
+      }}
+
+- name: Stop SPIRE units before trust-domain state reset
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    daemon_reload: true
+  loop:
+    - spire-oidc-discovery-provider
+    - spire-agent
+    - spire-server
+  failed_when: false
+  when: spire_reset_for_trust_domain_cutover | bool
+
+- name: Remove SPIRE server state for trust-domain cutover
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /var/lib/spire/server/datastore.sqlite3
+    - /var/lib/spire/server/datastore.sqlite3-shm
+    - /var/lib/spire/server/datastore.sqlite3-wal
+    - /var/lib/spire/server/keys.json
+    - /var/lib/spire/server/trust-domain
+  when: spire_reset_for_trust_domain_cutover | bool
+
+- name: Remove SPIRE agent state for trust-domain cutover
+  ansible.builtin.file:
+    path: /var/lib/spire/agent
+    state: absent
+  when: spire_reset_for_trust_domain_cutover | bool
+
+- name: Recreate SPIRE agent state directory after trust-domain cutover
+  ansible.builtin.file:
+    path: /var/lib/spire/agent
+    state: directory
+    owner: spire
+    group: "{{ spire_workload_group }}"
+    mode: "0700"
+  when: spire_reset_for_trust_domain_cutover | bool
 
 - name: Converge SPIRE agent state ownership
   ansible.builtin.file:
     path: /var/lib/spire/agent
     state: directory
     owner: spire
-    group: spire
+    group: "{{ spire_workload_group }}"
     mode: "0700"
-    recurse: true
-  notify: restart spire-agent
+
+- name: Discover SPIRE agent state files
+  ansible.builtin.find:
+    paths: /var/lib/spire/agent
+    file_type: file
+    recurse: false
+  register: spire_agent_state_files
+
+- name: Converge SPIRE agent state file permissions
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: file
+    owner: spire
+    group: "{{ spire_workload_group }}"
+    mode: "0600"
+  loop: "{{ spire_agent_state_files.files }}"
 
 - name: Deploy SPIRE server config
   ansible.builtin.template:
@@ -72,7 +282,6 @@
     owner: root
     group: spire
     mode: "0640"
-  notify: restart spire-agent
 
 - name: Validate SPIRE server config
   ansible.builtin.command:
@@ -136,40 +345,116 @@
     state: started
     daemon_reload: true
 
+- name: Deploy SPIRE OIDC Discovery Provider config
+  ansible.builtin.template:
+    src: oidc-discovery-provider.conf.j2
+    dest: /etc/spire/oidc/oidc-discovery-provider.conf
+    owner: root
+    group: spire
+    mode: "0640"
+  notify: restart spire-oidc-discovery-provider
+
+- name: Deploy SPIRE OIDC Discovery Provider systemd unit
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=SPIRE OIDC Discovery Provider
+      After=forge-metal-firewall.target network.target spire-server.service
+      Requires=forge-metal-firewall.target spire-server.service
+
+      [Service]
+      Type=simple
+      User=spire
+      Group=spire
+      ExecStart={{ fm_bin }}/oidc-discovery-provider -config /etc/spire/oidc/oidc-discovery-provider.conf
+      Restart=on-failure
+      RestartSec=5
+      CapabilityBoundingSet=
+      ProtectHome=true
+      ProtectSystem=strict
+      ReadWritePaths=/run/spire-server/private
+      PrivateDevices=true
+      PrivateTmp=true
+      ProtectClock=true
+      ProtectControlGroups=true
+      ProtectKernelLogs=true
+      ProtectKernelModules=true
+      ProtectKernelTunables=true
+      LockPersonality=true
+      NoNewPrivileges=true
+      RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+      RestrictRealtime=true
+      RestrictSUIDSGID=true
+      SystemCallArchitectures=native
+      UMask=0077
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/spire-oidc-discovery-provider.service
+    mode: "0644"
+  notify: restart spire-oidc-discovery-provider
+
+- name: Apply SPIRE OIDC unit changes before proceeding
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start SPIRE OIDC Discovery Provider
+  ansible.builtin.systemd:
+    name: spire-oidc-discovery-provider
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for SPIRE OIDC Discovery Provider listener
+  ansible.builtin.wait_for:
+    host: "{{ spire_oidc_bind_address }}"
+    port: "{{ spire_oidc_bind_port }}"
+    timeout: 30
+
 - name: Wait for SPIRE server API socket
   ansible.builtin.wait_for:
     path: "{{ spire_server_socket_path }}"
     timeout: 30
 
-- name: Check SPIRE single-node join token
-  ansible.builtin.stat:
-    path: /etc/credstore/spire/join-token
-  register: spire_join_token_file
-  no_log: true
-
-- name: Generate SPIRE single-node join token
-  ansible.builtin.command:
-    cmd: >-
-      {{ fm_bin }}/spire-server token generate
-      -socketPath {{ spire_server_socket_path }}
-      -spiffeID {{ spire_agent_id }}
-      -ttl 600
-      -output json
-  register: spire_join_token
-  changed_when: true
-  when: not spire_join_token_file.stat.exists
-  no_log: true
-
-- name: Store SPIRE single-node join token
+- name: Record active SPIRE trust domain
   ansible.builtin.copy:
-    content: "{{ (spire_join_token.stdout | from_json).value }}"
-    dest: /etc/credstore/spire/join-token
-    owner: root
+    content: "{{ spire_trust_domain }}\n"
+    dest: /var/lib/spire/server/trust-domain
+    owner: spire
     group: spire
-    mode: "0640"
-  when: spire_join_token is defined and not (spire_join_token.skipped | default(false))
-  no_log: true
-  notify: restart spire-agent
+    mode: "0600"
+
+- name: Remove legacy stored SPIRE join token
+  ansible.builtin.file:
+    path: /etc/credstore/spire/join-token
+    state: absent
+
+- name: Check SPIRE agent attestation state
+  ansible.builtin.stat:
+    path: /var/lib/spire/agent/agent-data.json
+  register: spire_agent_attestation_state
+
+- name: Stop SPIRE agent before single-node re-attestation
+  ansible.builtin.systemd:
+    name: spire-agent
+    state: stopped
+    daemon_reload: true
+  failed_when: false
+  when: not spire_agent_attestation_state.stat.exists
+
+- name: Remove SPIRE agent state before single-node re-attestation
+  ansible.builtin.file:
+    path: /var/lib/spire/agent
+    state: absent
+  when: not spire_agent_attestation_state.stat.exists
+
+- name: Recreate SPIRE agent state directory before single-node re-attestation
+  ansible.builtin.file:
+    path: /var/lib/spire/agent
+    state: directory
+    owner: spire
+    group: "{{ spire_workload_group }}"
+    mode: "0700"
+  when: not spire_agent_attestation_state.stat.exists
 
 - name: Deploy spire-agent systemd unit
   ansible.builtin.copy:
@@ -184,15 +469,17 @@
       User=spire
       Group={{ spire_workload_group }}
       SupplementaryGroups=spire
-      RuntimeDirectory=spire-agent/sockets
+      RuntimeDirectory=spire-agent/private spire-agent/sockets
       RuntimeDirectoryMode=0750
-      ExecStart={{ fm_bin }}/spire-agent run -config /etc/spire/agent/agent.conf -joinTokenFile /etc/credstore/spire/join-token
+      ExecStartPre=/bin/sh -c {{ spire_agent_join_token_exec | quote }}
+      ExecStart={{ fm_bin }}/spire-agent run -config /etc/spire/agent/agent.conf -joinTokenFile /run/spire-agent/private/join-token
+      ExecStartPost=/bin/sh -c 'sleep 2; rm -f /run/spire-agent/private/join-token'
       Restart=on-failure
       RestartSec=5
       CapabilityBoundingSet=
       ProtectHome=true
       ProtectSystem=strict
-      ReadWritePaths=/var/lib/spire/agent /run/spire-agent/sockets
+      ReadWritePaths=/var/lib/spire/agent /run/spire-agent/private /run/spire-agent/sockets
       PrivateDevices=true
       PrivateTmp=true
       ProtectClock=true
@@ -212,6 +499,16 @@
       WantedBy=multi-user.target
     dest: /etc/systemd/system/spire-agent.service
     mode: "0644"
+  vars:
+    spire_agent_join_token_exec: >-
+      umask 077;
+      {{ fm_bin }}/spire-server token generate
+      -socketPath {{ spire_server_socket_path }}
+      -spiffeID {{ spire_agent_id }}
+      -ttl 600
+      -output json
+      | jq -r .value
+      > /run/spire-agent/private/join-token
   notify: restart spire-agent
 
 - name: Apply SPIRE unit changes before proceeding

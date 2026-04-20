@@ -29,9 +29,9 @@ table inet forge_metal_sandbox_rental {
         # Allow loopback traffic to local services.
         oifname "lo" tcp dport {{ services.postgresql.port }} accept
         oifname "lo" tcp dport {{ services.clickhouse.native_port }} accept
-        oifname "lo" tcp dport {{ services.billing.port }} accept
+        oifname "lo" tcp dport {{ services.billing.internal_port }} accept
         oifname "lo" tcp dport {{ services.zitadel.port }} accept
-        oifname "lo" tcp dport {{ services.governance_service.port }} accept
+        oifname "lo" tcp dport {{ services.governance_service.internal_port }} accept
         oifname "lo" tcp dport {{ services.secrets_service.internal_port }} accept
         oifname "lo" tcp dport {{ services.forgejo.port }} accept
         oifname "lo" tcp dport {{ services.otelcol.grpc_port }} accept

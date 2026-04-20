@@ -28,7 +28,3 @@ argument_specs:
         type: str
       openbao_tenancy_jwt_mount_prefix:
         type: str
-      openbao_tenancy_audit_marker_dir:
-        type: path
-      openbao_tenancy_service_account_user_id_path:
-        type: path

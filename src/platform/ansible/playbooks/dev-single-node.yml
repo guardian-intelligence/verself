@@ -88,7 +88,7 @@
     - role: nftables
       tags: [nftables]
     - role: spire
-      tags: [spire, secrets_service, sandbox_rental_service]
+      tags: [spire, billing_service, identity_service, governance_service, secrets_service, sandbox_rental_service, mailbox_service]
     - role: cloudflare_dns
       tags: [cloudflare_dns]
     - role: clickhouse

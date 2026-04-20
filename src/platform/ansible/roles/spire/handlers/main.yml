@@ -1,12 +1,21 @@
 ---
-- name: restart spire-server
+- name: Restart spire-server
+  listen: restart spire-server
   ansible.builtin.systemd:
     name: spire-server
     state: restarted
     daemon_reload: true
 
-- name: restart spire-agent
+- name: Restart spire-agent
+  listen: restart spire-agent
   ansible.builtin.systemd:
     name: spire-agent
+    state: restarted
+    daemon_reload: true
+
+- name: Restart spire-oidc-discovery-provider
+  listen: restart spire-oidc-discovery-provider
+  ansible.builtin.systemd:
+    name: spire-oidc-discovery-provider
     state: restarted
     daemon_reload: true

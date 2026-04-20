@@ -10,6 +10,7 @@ superuser_reserved_connections = {{ postgresql_superuser_reserved_connections }}
 # Paths
 data_directory = '{{ postgresql_data_dir }}'
 hba_file = '{{ postgresql_config_dir }}/pg_hba.conf'
+ident_file = '{{ postgresql_config_dir }}/pg_ident.conf'
 
 # Logging
 logging_collector = on

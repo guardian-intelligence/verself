@@ -217,251 +217,6 @@
         group: secrets
   when: secrets_service_auth_audience | default('', true) | length > 0
 
-- name: Find billing auth project for secrets-service billing client
-  ansible.builtin.set_fact:
-    secrets_service_billing_auth_project: >-
-      {{
-        (
-          secrets_service_zitadel_projects.json.result
-          | selectattr('name', 'equalto', secrets_service_billing_auth_project_name)
-          | list
-          | first
-        ) | default({})
-      }}
-
-- name: Assert billing auth project exists for secrets-service billing client
-  ansible.builtin.assert:
-    that: secrets_service_billing_auth_project != {}
-    fail_msg: >-
-      billing auth project {{ secrets_service_billing_auth_project_name }} is missing.
-
-- name: Set secrets-service billing auth audience
-  ansible.builtin.set_fact:
-    secrets_service_billing_auth_audience: "{{ secrets_service_billing_auth_project.id }}"
-
-- name: Check secrets-service OpenBao service account client secret
-  ansible.builtin.stat:
-    path: /etc/credstore/secrets-service/service-account-client-secret
-  register: secrets_service_openbao_client_secret_file
-  no_log: true
-
-- name: List Zitadel users for secrets-service OpenBao service account
-  ansible.builtin.uri:
-    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/v2/users"
-    method: POST
-    headers:
-      Authorization: "Bearer {{ secrets_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
-      Host: "auth.{{ forge_metal_domain }}"
-    body_format: json
-    body: {}
-    return_content: true
-    status_code: 200
-  register: secrets_service_zitadel_users
-  no_log: true
-
-- name: Find secrets-service OpenBao service account
-  ansible.builtin.set_fact:
-    secrets_service_openbao_machine_user: >-
-      {{
-        (
-          secrets_service_zitadel_users.json.result | default([])
-          | selectattr('username', 'equalto', secrets_service_service_account_client_id)
-          | list
-          | first
-        ) | default({})
-      }}
-
-- name: Create secrets-service OpenBao service account if missing
-  ansible.builtin.uri:
-    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/users/machine"
-    method: POST
-    headers:
-      Authorization: "Bearer {{ secrets_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
-      Host: "auth.{{ forge_metal_domain }}"
-    body_format: json
-    body:
-      userName: "{{ secrets_service_service_account_client_id }}"
-      name: "secrets-service openbao {{ inventory_hostname }}"
-      accessTokenType: ACCESS_TOKEN_TYPE_JWT
-    return_content: true
-    status_code: [200, 201]
-  register: secrets_service_openbao_machine_user_created
-  when: secrets_service_openbao_machine_user == {}
-  no_log: true
-
-- name: Set secrets-service OpenBao service account user id
-  ansible.builtin.set_fact:
-    secrets_service_openbao_machine_user_id: >-
-      {{
-        secrets_service_openbao_machine_user.userId
-        | default(secrets_service_openbao_machine_user_created.json.userId, true)
-        | default(secrets_service_openbao_machine_user_created.json.id, true)
-      }}
-
-- name: Assert secrets-service OpenBao service account user id is set
-  ansible.builtin.assert:
-    that:
-      - secrets_service_openbao_machine_user_id | default('', true) | length > 0
-    fail_msg: secrets-service OpenBao service account user ID could not be resolved.
-
-- name: Create secrets-service OpenBao service account secret when needed
-  ansible.builtin.uri:
-    url: >-
-      http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/v2/users/{{
-      secrets_service_openbao_machine_user_id }}/secret
-    method: POST
-    headers:
-      Authorization: "Bearer {{ secrets_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
-      Host: "auth.{{ forge_metal_domain }}"
-    status_code: 200
-    return_content: true
-  register: secrets_service_openbao_machine_user_secret
-  when:
-    - secrets_service_openbao_machine_user_created is not skipped
-      or not secrets_service_openbao_client_secret_file.stat.exists
-  no_log: true
-
-- name: Store secrets-service OpenBao service account client secret
-  ansible.builtin.copy:
-    content: "{{ secrets_service_openbao_machine_user_secret.json.clientSecret }}"
-    dest: /etc/credstore/secrets-service/service-account-client-secret
-    owner: root
-    group: secrets_service
-    mode: "0640"
-  when:
-    - secrets_service_openbao_machine_user_secret is defined
-    - not (secrets_service_openbao_machine_user_secret.skipped | default(false))
-  no_log: true
-  notify: restart secrets-service
-
-- name: Store secrets-service OpenBao service account user id
-  ansible.builtin.copy:
-    content: "{{ secrets_service_openbao_machine_user_id }}"
-    dest: /etc/credstore/secrets-service/service-account-user-id
-    owner: root
-    group: secrets_service
-    mode: "0640"
-  notify: restart secrets-service
-
-- name: Grant secrets-service OpenBao service account access to secrets-service project
-  ansible.builtin.uri:
-    url: >-
-      http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/users/{{
-      secrets_service_openbao_machine_user_id }}/grants
-    method: POST
-    headers:
-      Authorization: "Bearer {{ secrets_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
-      Host: "auth.{{ forge_metal_domain }}"
-    body_format: json
-    body:
-      projectId: "{{ secrets_service_auth_audience }}"
-      roleKeys:
-        - member
-    status_code: [200, 409]
-  register: secrets_service_openbao_machine_user_grant
-  changed_when: secrets_service_openbao_machine_user_grant.status == 200
-  no_log: true
-
-- name: Check secrets-service billing client secret
-  ansible.builtin.stat:
-    path: /etc/credstore/secrets-service/billing-client-secret
-  register: secrets_service_billing_client_secret_file
-  no_log: true
-
-- name: Find secrets-service billing machine user
-  ansible.builtin.set_fact:
-    secrets_service_billing_machine_user: >-
-      {{
-        (
-          secrets_service_zitadel_users.json.result | default([])
-          | selectattr('username', 'equalto', secrets_service_billing_client_id)
-          | list
-          | first
-        ) | default({})
-      }}
-
-- name: Create secrets-service billing machine user if missing
-  ansible.builtin.uri:
-    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/users/machine"
-    method: POST
-    headers:
-      Authorization: "Bearer {{ secrets_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
-      Host: "auth.{{ forge_metal_domain }}"
-    body_format: json
-    body:
-      userName: "{{ secrets_service_billing_client_id }}"
-      name: "secrets service billing {{ inventory_hostname }}"
-      accessTokenType: ACCESS_TOKEN_TYPE_JWT
-    return_content: true
-    status_code: [200, 201]
-  register: secrets_service_billing_machine_user_created
-  when: secrets_service_billing_machine_user == {}
-  no_log: true
-
-- name: Set secrets-service billing machine user id
-  ansible.builtin.set_fact:
-    secrets_service_billing_machine_user_id: >-
-      {{
-        secrets_service_billing_machine_user.userId
-        | default(secrets_service_billing_machine_user_created.json.userId, true)
-        | default(secrets_service_billing_machine_user_created.json.id, true)
-      }}
-
-- name: Assert secrets-service billing machine user id is set
-  ansible.builtin.assert:
-    that:
-      - secrets_service_billing_machine_user_id | default('', true) | length > 0
-    fail_msg: secrets-service billing machine user ID could not be resolved.
-
-- name: Create secrets-service billing machine user secret when needed
-  ansible.builtin.uri:
-    url: >-
-      http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/v2/users/{{
-      secrets_service_billing_machine_user_id }}/secret
-    method: POST
-    headers:
-      Authorization: "Bearer {{ secrets_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
-      Host: "auth.{{ forge_metal_domain }}"
-    status_code: 200
-    return_content: true
-  register: secrets_service_billing_machine_user_secret
-  when:
-    - secrets_service_billing_machine_user_created is not skipped
-      or not secrets_service_billing_client_secret_file.stat.exists
-  no_log: true
-
-- name: Store secrets-service billing client secret
-  ansible.builtin.copy:
-    content: "{{ secrets_service_billing_machine_user_secret.json.clientSecret }}"
-    dest: /etc/credstore/secrets-service/billing-client-secret
-    owner: root
-    group: secrets_service
-    mode: "0640"
-  when:
-    - secrets_service_billing_machine_user_secret is defined
-    - not (secrets_service_billing_machine_user_secret.skipped | default(false))
-  no_log: true
-  notify: restart secrets-service
-
-- name: Grant secrets-service billing machine user access to billing project
-  ansible.builtin.uri:
-    url: >-
-      http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/users/{{
-      secrets_service_billing_machine_user_id }}/grants
-    method: POST
-    headers:
-      Authorization: "Bearer {{ secrets_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
-      Host: "auth.{{ forge_metal_domain }}"
-    body_format: json
-    body:
-      projectId: "{{ secrets_service_billing_auth_audience }}"
-      roleKeys:
-        - "{{ secrets_service_billing_internal_role }}"
-    status_code: [200, 409]
-  register: secrets_service_billing_machine_user_grant
-  changed_when: secrets_service_billing_machine_user_grant.status == 200
-  no_log: true
-
 - name: Deploy secrets-service systemd unit
   ansible.builtin.copy:
     content: |
@@ -476,16 +231,14 @@
       User=secrets_service
       Group=secrets_service
       SupplementaryGroups={{ spire_workload_group }}
-      LoadCredential=governance-internal-audit-token:/etc/credstore/governance-service/internal-audit-token
       LoadCredential=openbao-ca-cert:/etc/openbao/tls/cert.pem
-      LoadCredential=service-account-client-secret:/etc/credstore/secrets-service/service-account-client-secret
-      LoadCredential=billing-client-secret:/etc/credstore/secrets-service/billing-client-secret
-      LoadCredential=sandbox-injection-grant-ed25519.pub.pem:/etc/credstore/secrets-service/sandbox-injection-grant-ed25519.pub.pem
       Environment=SECRETS_LISTEN_ADDR={{ services.secrets_service.host }}:{{ services.secrets_service.port }}
       Environment=SECRETS_INTERNAL_LISTEN_ADDR={{ services.secrets_service.host }}:{{ services.secrets_service.internal_port }}
       Environment=SECRETS_SPIFFE_ID={{ spire_secrets_service_id }}
       Environment=SECRETS_SANDBOX_SPIFFE_ID={{ spire_sandbox_rental_id }}
-      Environment=SECRETS_GOVERNANCE_AUDIT_URL=http://{{ services.governance_service.host }}:{{ services.governance_service.port }}/internal/v1/audit/events
+      Environment=SECRETS_BILLING_SPIFFE_ID={{ spire_billing_service_id }}
+      Environment=SECRETS_GOVERNANCE_SPIFFE_ID={{ spire_governance_service_id }}
+      Environment=SECRETS_GOVERNANCE_AUDIT_URL={{ secrets_service_governance_audit_url }}
       Environment=SECRETS_AUTH_ISSUER_URL={{ secrets_service_auth_issuer_url }}
       Environment=SECRETS_AUTH_JWKS_URL={{ secrets_service_auth_jwks_url }}
       Environment=SECRETS_AUTH_AUDIENCE={{ secrets_service_auth_audience }}
@@ -494,13 +247,9 @@
       Environment=SECRETS_OPENBAO_KV_PREFIX={{ secrets_service_openbao_kv_prefix }}
       Environment=SECRETS_OPENBAO_TRANSIT_PREFIX={{ secrets_service_openbao_transit_prefix }}
       Environment=SECRETS_OPENBAO_JWT_PREFIX={{ secrets_service_openbao_jwt_prefix }}
-      Environment=SECRETS_SERVICE_ACCOUNT_CLIENT_ID={{ secrets_service_service_account_client_id }}
-      Environment=SECRETS_SERVICE_ACCOUNT_TOKEN_URL={{ secrets_service_service_account_token_url }}
-      Environment=SECRETS_SERVICE_ACCOUNT_TOKEN_HOST={{ secrets_service_service_account_token_host }}
+      Environment=SECRETS_OPENBAO_SPIFFE_JWT_PREFIX=spiffe-jwt
+      Environment=SECRETS_OPENBAO_WORKLOAD_AUDIENCE=openbao
       Environment=SECRETS_BILLING_URL={{ secrets_service_billing_url }}
-      Environment=SECRETS_BILLING_CLIENT_ID={{ secrets_service_billing_client_id }}
-      Environment=SECRETS_BILLING_TOKEN_URL={{ secrets_service_billing_token_url }}
-      Environment=SECRETS_BILLING_AUTH_AUDIENCE={{ secrets_service_billing_auth_audience }}
       Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}
       Environment=OTEL_SERVICE_NAME=secrets-service
       Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}
@@ -529,6 +278,9 @@
       WantedBy=multi-user.target
     dest: /etc/systemd/system/secrets-service.service
     mode: "0644"
+  vars:
+    secrets_service_governance_audit_url: >-
+      https://{{ services.governance_service.host }}:{{ services.governance_service.internal_port }}/internal/v1/audit/events
   notify: restart secrets-service
 
 - name: Enable and start secrets-service
