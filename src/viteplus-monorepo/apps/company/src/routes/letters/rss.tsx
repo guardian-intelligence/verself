@@ -1,10 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { DISPATCH_META, sortedPosts } from "~/content/dispatch";
+import { LETTERS_META, sortedLetters } from "~/content/letters";
 
 // RSS 2.0. Industry-standard XML surface that any reader can fetch. Generated
-// from src/content/dispatch.ts so adding a post = editing the content file.
-// The route emits a company.rss.fetch span with the item count so operators
-// can see whether readers are actually pulling the feed.
+// from src/content/letters.ts so adding a letter = editing the content file.
 
 function escapeXml(s: string): string {
   return s
@@ -21,20 +19,20 @@ function toRFC822(isoDate: string): string {
 }
 
 function buildFeed(): string {
-  const posts = sortedPosts();
-  const latest = posts[0];
+  const letters = sortedLetters();
+  const latest = letters[0];
   const lastBuildDate = latest ? toRFC822(latest.publishedAt) : new Date().toUTCString();
 
-  const items = posts
-    .map((post) => {
-      const link = `${DISPATCH_META.siteURL}/dispatch/${post.slug}`;
-      const description = post.body.map(escapeXml).join("&#10;&#10;");
+  const items = letters
+    .map((letter) => {
+      const link = `${LETTERS_META.siteURL}/letters/${letter.slug}`;
+      const description = letter.body.map(escapeXml).join("&#10;&#10;");
       return `    <item>
-      <title>${escapeXml(post.title)}</title>
+      <title>${escapeXml(letter.title)}</title>
       <link>${link}</link>
       <guid isPermaLink="true">${link}</guid>
-      <pubDate>${toRFC822(post.publishedAt)}</pubDate>
-      <author>${escapeXml(post.author)}</author>
+      <pubDate>${toRFC822(letter.publishedAt)}</pubDate>
+      <author>${escapeXml(letter.author)}</author>
       <description>${description}</description>
     </item>`;
     })
@@ -43,12 +41,12 @@ function buildFeed(): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
-    <title>${escapeXml(DISPATCH_META.title)}</title>
-    <link>${DISPATCH_META.siteURL}/dispatch</link>
-    <atom:link href="${DISPATCH_META.siteURL}/dispatch/rss" rel="self" type="application/rss+xml" />
-    <description>${escapeXml(DISPATCH_META.description)}</description>
+    <title>${escapeXml(LETTERS_META.title)}</title>
+    <link>${LETTERS_META.siteURL}/letters</link>
+    <atom:link href="${LETTERS_META.siteURL}/letters/rss" rel="self" type="application/rss+xml" />
+    <description>${escapeXml(LETTERS_META.description)}</description>
     <language>en-US</language>
-    <managingEditor>${escapeXml(DISPATCH_META.editor)}</managingEditor>
+    <managingEditor>${escapeXml(LETTERS_META.editor)}</managingEditor>
     <lastBuildDate>${lastBuildDate}</lastBuildDate>
 ${items}
   </channel>
@@ -56,7 +54,7 @@ ${items}
 `;
 }
 
-export const Route = createFileRoute("/dispatch/rss")({
+export const Route = createFileRoute("/letters/rss")({
   server: {
     handlers: {
       GET: () => {

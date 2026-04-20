@@ -83,18 +83,16 @@ cd ../../../platform
 expected_routes=(
   "/"
   "/design"
-  "/dispatch"
-  "/products"
+  "/letters"
+  "/solutions"
   "/company"
   "/careers"
   "/press"
-  "/trust"
   "/changelog"
   "/contact"
-  "/legal"
-  "/dispatch/ship-the-reference-architecture"
+  "/letters/ship-the-reference-architecture"
 )
-expected_og_slugs=(home design dispatch products trust)
+expected_og_slugs=(home design letters solutions)
 
 poll_clickhouse() {
   local query="$1"

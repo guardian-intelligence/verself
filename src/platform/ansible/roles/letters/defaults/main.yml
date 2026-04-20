@@ -1,9 +1,0 @@
----
-letters_subdomain: letters
-letters_domain: "{{ letters_subdomain }}.{{ forge_metal_domain }}"
-letters_install_dir: /opt/letters
-letters_app_dir: "{{ letters_install_dir }}/apps/letters"
-letters_dependencies_fingerprint_path: "{{ letters_install_dir }}/.pnpm-install-fingerprint"
-letters_runtime_user: letters
-letters_runtime_group: letters
-letters_state_dir: /var/lib/letters

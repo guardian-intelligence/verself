@@ -12,7 +12,7 @@ export const careers = {
   hero: "We hire slowly.",
   paragraphs: [
     "Guardian Intelligence is small on purpose. The thesis of the company is that a small number of people, paired with modern tooling, can ship what used to require a floor of engineers. We staff to that thesis.",
-    "When we hire, we hire for work that compounds. Authors of services, not authors of tickets. Writers of the Dispatch, not attendees of standups. Operators who would rather run a thing well than manage a team running a thing.",
+    "When we hire, we hire for work that compounds. Authors of services, not authors of tickets. Writers of Letters, not attendees of standups. Founders who would rather run a thing well than manage a team running a thing.",
     "We post openings as they open. There is no talent pool, no pipeline, no recruiter cadence. If the page below is empty, we are not hiring right now.",
   ],
   openings: [] as readonly { title: string; description: string }[],

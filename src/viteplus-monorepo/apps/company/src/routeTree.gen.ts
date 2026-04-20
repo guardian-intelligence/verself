@@ -17,10 +17,10 @@ import { Route as CompanyRouteImport } from './routes/company'
 import { Route as ChangelogRouteImport } from './routes/changelog'
 import { Route as CareersRouteImport } from './routes/careers'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as DispatchIndexRouteImport } from './routes/dispatch/index'
+import { Route as LettersIndexRouteImport } from './routes/letters/index'
 import { Route as OgSlugRouteImport } from './routes/og/$slug'
-import { Route as DispatchRssRouteImport } from './routes/dispatch/rss'
-import { Route as DispatchSlugRouteImport } from './routes/dispatch/$slug'
+import { Route as LettersRssRouteImport } from './routes/letters/rss'
+import { Route as LettersSlugRouteImport } from './routes/letters/$slug'
 import { Route as ApiOtelV1TracesRouteImport } from './routes/api/otel/v1/traces'
 
 const SolutionsRoute = SolutionsRouteImport.update({
@@ -63,9 +63,9 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DispatchIndexRoute = DispatchIndexRouteImport.update({
-  id: '/dispatch/',
-  path: '/dispatch/',
+const LettersIndexRoute = LettersIndexRouteImport.update({
+  id: '/letters/',
+  path: '/letters/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OgSlugRoute = OgSlugRouteImport.update({
@@ -73,14 +73,14 @@ const OgSlugRoute = OgSlugRouteImport.update({
   path: '/og/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DispatchRssRoute = DispatchRssRouteImport.update({
-  id: '/dispatch/rss',
-  path: '/dispatch/rss',
+const LettersRssRoute = LettersRssRouteImport.update({
+  id: '/letters/rss',
+  path: '/letters/rss',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DispatchSlugRoute = DispatchSlugRouteImport.update({
-  id: '/dispatch/$slug',
-  path: '/dispatch/$slug',
+const LettersSlugRoute = LettersSlugRouteImport.update({
+  id: '/letters/$slug',
+  path: '/letters/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiOtelV1TracesRoute = ApiOtelV1TracesRouteImport.update({
@@ -98,10 +98,10 @@ export interface FileRoutesByFullPath {
   '/design': typeof DesignRoute
   '/press': typeof PressRoute
   '/solutions': typeof SolutionsRoute
-  '/dispatch/$slug': typeof DispatchSlugRoute
-  '/dispatch/rss': typeof DispatchRssRoute
+  '/letters/$slug': typeof LettersSlugRoute
+  '/letters/rss': typeof LettersRssRoute
   '/og/$slug': typeof OgSlugRoute
-  '/dispatch/': typeof DispatchIndexRoute
+  '/letters/': typeof LettersIndexRoute
   '/api/otel/v1/traces': typeof ApiOtelV1TracesRoute
 }
 export interface FileRoutesByTo {
@@ -113,10 +113,10 @@ export interface FileRoutesByTo {
   '/design': typeof DesignRoute
   '/press': typeof PressRoute
   '/solutions': typeof SolutionsRoute
-  '/dispatch/$slug': typeof DispatchSlugRoute
-  '/dispatch/rss': typeof DispatchRssRoute
+  '/letters/$slug': typeof LettersSlugRoute
+  '/letters/rss': typeof LettersRssRoute
   '/og/$slug': typeof OgSlugRoute
-  '/dispatch': typeof DispatchIndexRoute
+  '/letters': typeof LettersIndexRoute
   '/api/otel/v1/traces': typeof ApiOtelV1TracesRoute
 }
 export interface FileRoutesById {
@@ -129,10 +129,10 @@ export interface FileRoutesById {
   '/design': typeof DesignRoute
   '/press': typeof PressRoute
   '/solutions': typeof SolutionsRoute
-  '/dispatch/$slug': typeof DispatchSlugRoute
-  '/dispatch/rss': typeof DispatchRssRoute
+  '/letters/$slug': typeof LettersSlugRoute
+  '/letters/rss': typeof LettersRssRoute
   '/og/$slug': typeof OgSlugRoute
-  '/dispatch/': typeof DispatchIndexRoute
+  '/letters/': typeof LettersIndexRoute
   '/api/otel/v1/traces': typeof ApiOtelV1TracesRoute
 }
 export interface FileRouteTypes {
@@ -146,10 +146,10 @@ export interface FileRouteTypes {
     | '/design'
     | '/press'
     | '/solutions'
-    | '/dispatch/$slug'
-    | '/dispatch/rss'
+    | '/letters/$slug'
+    | '/letters/rss'
     | '/og/$slug'
-    | '/dispatch/'
+    | '/letters/'
     | '/api/otel/v1/traces'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -161,10 +161,10 @@ export interface FileRouteTypes {
     | '/design'
     | '/press'
     | '/solutions'
-    | '/dispatch/$slug'
-    | '/dispatch/rss'
+    | '/letters/$slug'
+    | '/letters/rss'
     | '/og/$slug'
-    | '/dispatch'
+    | '/letters'
     | '/api/otel/v1/traces'
   id:
     | '__root__'
@@ -176,10 +176,10 @@ export interface FileRouteTypes {
     | '/design'
     | '/press'
     | '/solutions'
-    | '/dispatch/$slug'
-    | '/dispatch/rss'
+    | '/letters/$slug'
+    | '/letters/rss'
     | '/og/$slug'
-    | '/dispatch/'
+    | '/letters/'
     | '/api/otel/v1/traces'
   fileRoutesById: FileRoutesById
 }
@@ -192,10 +192,10 @@ export interface RootRouteChildren {
   DesignRoute: typeof DesignRoute
   PressRoute: typeof PressRoute
   SolutionsRoute: typeof SolutionsRoute
-  DispatchSlugRoute: typeof DispatchSlugRoute
-  DispatchRssRoute: typeof DispatchRssRoute
+  LettersSlugRoute: typeof LettersSlugRoute
+  LettersRssRoute: typeof LettersRssRoute
   OgSlugRoute: typeof OgSlugRoute
-  DispatchIndexRoute: typeof DispatchIndexRoute
+  LettersIndexRoute: typeof LettersIndexRoute
   ApiOtelV1TracesRoute: typeof ApiOtelV1TracesRoute
 }
 
@@ -257,11 +257,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/dispatch/': {
-      id: '/dispatch/'
-      path: '/dispatch'
-      fullPath: '/dispatch/'
-      preLoaderRoute: typeof DispatchIndexRouteImport
+    '/letters/': {
+      id: '/letters/'
+      path: '/letters'
+      fullPath: '/letters/'
+      preLoaderRoute: typeof LettersIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/og/$slug': {
@@ -271,18 +271,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OgSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/dispatch/rss': {
-      id: '/dispatch/rss'
-      path: '/dispatch/rss'
-      fullPath: '/dispatch/rss'
-      preLoaderRoute: typeof DispatchRssRouteImport
+    '/letters/rss': {
+      id: '/letters/rss'
+      path: '/letters/rss'
+      fullPath: '/letters/rss'
+      preLoaderRoute: typeof LettersRssRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/dispatch/$slug': {
-      id: '/dispatch/$slug'
-      path: '/dispatch/$slug'
-      fullPath: '/dispatch/$slug'
-      preLoaderRoute: typeof DispatchSlugRouteImport
+    '/letters/$slug': {
+      id: '/letters/$slug'
+      path: '/letters/$slug'
+      fullPath: '/letters/$slug'
+      preLoaderRoute: typeof LettersSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/otel/v1/traces': {
@@ -304,10 +304,10 @@ const rootRouteChildren: RootRouteChildren = {
   DesignRoute: DesignRoute,
   PressRoute: PressRoute,
   SolutionsRoute: SolutionsRoute,
-  DispatchSlugRoute: DispatchSlugRoute,
-  DispatchRssRoute: DispatchRssRoute,
+  LettersSlugRoute: LettersSlugRoute,
+  LettersRssRoute: LettersRssRoute,
   OgSlugRoute: OgSlugRoute,
-  DispatchIndexRoute: DispatchIndexRoute,
+  LettersIndexRoute: LettersIndexRoute,
   ApiOtelV1TracesRoute: ApiOtelV1TracesRoute,
 }
 export const routeTree = rootRouteImport

@@ -312,16 +312,6 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 	}
 }
 
-{{ letters_domain }} {
-	import access_log
-	import waf_detection
-
-	handle {
-		import frontend_security_headers
-		reverse_proxy {{ services.letters.host }}:{{ services.letters.port }}
-	}
-}
-
 {{ platform_domain }} {
 	import access_log
 	import waf_detection

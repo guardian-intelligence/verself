@@ -87,7 +87,6 @@ For each frontend, create a dev OIDC app in the same Zitadel project as the prod
 | -------------- | --------------- | -------------- | ----------------------------- |
 | rent-a-sandbox | sandbox-rental  | 4244           | `http://127.0.0.1:*/callback` |
 | webmail        | mailbox-service | 4245           | `http://127.0.0.1:*/callback` |
-| letters        | letters         | 4247           | `http://127.0.0.1:*/callback` |
 
 The dev app must have:
 
@@ -198,7 +197,7 @@ Each Electric instance also needs its own publication (`CREATE PUBLICATION ... F
 
 **Frontend SSR footgun:** browser-visible time formatting is hydration-sensitive. `toLocaleString()` / `toLocaleDateString()` / `toLocaleTimeString()` without an explicit timezone will drift between server and browser and can cause React to throw away SSR output during hydration. Do not introduce app-local date formatting helpers for SSR-visible timestamps.
 
-**Shared frontend time abstraction:** use `formatUTCDateTime()` from `src/viteplus-monorepo/packages/web-env/src/time.ts` for SSR-visible timestamps in the web apps. It centralizes `Intl.DateTimeFormat` with `timeZone: "UTC"` and caches formatters so `letters`, `mail`, and `rent-a-sandbox` render the same text on the server and client.
+**Shared frontend time abstraction:** use `formatUTCDateTime()` from `src/viteplus-monorepo/packages/web-env/src/time.ts` for SSR-visible timestamps in the web apps. It centralizes `Intl.DateTimeFormat` with `timeZone: "UTC"` and caches formatters so `mail` and `rent-a-sandbox` render the same text on the server and client.
 
 ### UI primitives
 

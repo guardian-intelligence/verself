@@ -3,7 +3,7 @@
  *
  * Apps that want vanilla shadcn defaults can `@import "@forge-metal/ui/globals.css"`
  * at the top of their own app.css. Apps that already define their own brand
- * tokens (mail's primary blue, letters' typography, etc.) keep those locally;
+ * tokens (mail's primary blue, company's Paper editorial tokens, etc.) keep those locally;
  * the file is intentionally limited to the shadcn baseline so per-app
  * extensions don't fight a centralized definition.
  */

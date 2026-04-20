@@ -137,8 +137,6 @@
       - "--exclude=.tanstack"
       - "--exclude=apps/mail"
       - "--exclude=apps/mail/**"
-      - "--exclude=apps/letters"
-      - "--exclude=apps/letters/**"
       - "--exclude=apps/company"
       - "--exclude=apps/company/**"
       - "--exclude=playwright-report"
