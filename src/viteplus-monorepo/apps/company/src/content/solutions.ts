@@ -39,22 +39,26 @@ export const SOLUTIONS: readonly SolutionCard[] = [
       {
         kind: "service",
         name: "Compute services",
-        blurb: "Sandbox rental, billing, identity, mailbox, governance — the services a founder uses to run real customer workloads.",
+        blurb:
+          "Sandbox rental, billing, identity, mailbox, governance — the services a founder uses to run real customer workloads.",
       },
       {
         kind: "web-app",
         name: "Console",
-        blurb: "The web app where a founder looks when they want to know what is happening. Workloads, bills, identity, mail, one pane.",
+        blurb:
+          "The web app where a founder looks when they want to know what is happening. Workloads, bills, identity, mail, one pane.",
       },
       {
         kind: "cli",
         name: "metal CLI",
-        blurb: "The command-line surface to the same APIs Console calls. Every action Console can take, the CLI can script.",
+        blurb:
+          "The command-line surface to the same APIs Console calls. Every action Console can take, the CLI can script.",
       },
       {
         kind: "sdk",
         name: "Language SDKs",
-        blurb: "Typed clients generated from the same OpenAPI definitions Console and the CLI share. One source of truth per service.",
+        blurb:
+          "Typed clients generated from the same OpenAPI definitions Console and the CLI share. One source of truth per service.",
       },
     ],
     href: "https://platform.anveio.com",
