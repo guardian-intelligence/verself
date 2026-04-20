@@ -243,7 +243,7 @@ function InternationalTransfers() {
       <Prose>
         <p>
           The primary Forge Metal deployment runs on bare-metal hardware in the region chosen by the
-          operator. Some subprocessors process data in the United States and other regions as listed
+          founder. Some subprocessors process data in the United States and other regions as listed
           on <a href="/policy/subprocessors">/policy/subprocessors</a>.
         </p>
         <p>
@@ -282,8 +282,8 @@ function RegionalSupplements() {
         </p>
         <p>
           <strong>Brazil (LGPD), Canada (PIPEDA).</strong> Rights under these statutes are honored
-          on the same DSR pipeline. Where the statute requires a local representative, the operator
-          entity named on your invoice serves that role or designates one in writing.
+          on the same DSR pipeline. Where the statute requires a local representative, the Forge
+          Metal entity named on your invoice serves that role or designates one in writing.
         </p>
       </Prose>
     </section>

@@ -88,7 +88,7 @@ function CurrentTier() {
           three-node tier described below or bring their own redundancy.
         </p>
         <p>
-          The operator monitors the node with the same observability stack described in the{" "}
+          The founder monitors the node with the same observability stack described in the{" "}
           <a href="/policy/security#logging">Security Overview</a>. Material incidents are posted on
           the <a href="/policy/changelog">changelog</a> and mirrored into each affected
           organization's audit trail.

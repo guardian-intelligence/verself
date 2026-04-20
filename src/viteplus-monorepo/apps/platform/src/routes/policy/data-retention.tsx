@@ -93,7 +93,7 @@ function Summary() {
         <p>
           Our own organizations — the platform tenant and its parent-company tenant — are subject to
           this policy on the same terms as any other customer. See{" "}
-          <a href="#operator">Operator handling</a>.
+          <a href="#operator">Founder handling</a>.
         </p>
       </Prose>
     </section>
@@ -220,7 +220,7 @@ function RetentionWindows() {
       <Prose>
         <p>
           Windows are measured from the state-transition timestamp recorded on your billing page. An{" "}
-          <a href="#extensions">extension</a> granted by the operator supersedes the default window.
+          <a href="#extensions">extension</a> granted by Forge Metal supersedes the default window.
         </p>
       </Prose>
       <div className="overflow-x-auto rounded-lg border border-border bg-card">
@@ -369,7 +369,7 @@ function Extensions() {
       <Prose>
         <p>
           If you need more time to resolve a billing issue or complete an export, you can request an
-          extension. Extensions are granted by Forge Metal operator staff and recorded with the{" "}
+          extension. Extensions are granted by Forge Metal staff and recorded with the{" "}
           {extensions.audited_fields.join(", ")} on the extension record.
         </p>
         <p>{extensions.clock_behavior}</p>
@@ -406,8 +406,8 @@ function FinalDeletion() {
           When the retention window closes, your durable data is deleted from our storage.
           {deletion.soft_delete ? "" : " This is not a soft delete."}{" "}
           {deletion.recoverable_after_execution
-            ? "Deletion is recoverable by operator intervention."
-            : "Once deletion has executed, Forge Metal cannot recover the data, even with operator intervention."}
+            ? "Deletion is recoverable by founder intervention."
+            : "Once deletion has executed, Forge Metal cannot recover the data, even with founder intervention."}
         </p>
         <p>Deletion is implemented using:</p>
         <ul>
@@ -457,7 +457,7 @@ function IncidentData() {
 function OperatorHandling() {
   return (
     <section className="flex flex-col gap-4">
-      <SectionHeading id="operator">Operator handling</SectionHeading>
+      <SectionHeading id="operator">Founder handling</SectionHeading>
       <Prose>
         <p>
           Forge Metal's own organizations — the platform tenant and its parent-company tenant — are

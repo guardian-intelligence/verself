@@ -166,7 +166,7 @@ function Logging() {
           post-incident inspection reads as a single narrative.
         </p>
         <p>
-          Detection thresholds and alert routes run on the operator dashboard. Security-incident
+          Detection thresholds and alert routes run on the founder dashboard. Security-incident
           artifacts are retained separately from normal operational TTLs — see the{" "}
           <a href="/policy/data-retention#incident">Data Retention policy</a>.
         </p>
@@ -181,7 +181,7 @@ function Personnel() {
       <SectionHeading id="personnel">Personnel and access</SectionHeading>
       <Prose>
         <p>
-          Access to the host and to production data is restricted to a named set of operators,
+          Access to the host and to production data is restricted to named founders,
           authenticating with hardware security keys. Administrative actions taken on the host are
           audit-logged and fed into the same observability pipeline as service traces.
         </p>

@@ -212,7 +212,7 @@ function Transfers() {
           issued by the ICO under Section 119A of the Data Protection Act 2018) applies. For
           transfers out of Switzerland, the Swiss FDPIC's SCC adaptation applies. The parties select
           the supervisory authority, governing law, and courts specified in Annex I.C and Clause 17
-          as the jurisdiction of the Forge Metal operator entity unless an order form specifies
+          as the jurisdiction of the Forge Metal entity unless an order form specifies
           otherwise.
         </p>
       </Prose>
