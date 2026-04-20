@@ -1,4 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://anveio.com/</loc></url>
+  <url><loc>https://anveio.com/design</loc></url>
+  <url><loc>https://anveio.com/dispatch</loc></url>
+  <url><loc>https://anveio.com/products</loc></url>
+  <url><loc>https://anveio.com/company</loc></url>
+  <url><loc>https://anveio.com/careers</loc></url>
+  <url><loc>https://anveio.com/press</loc></url>
+  <url><loc>https://anveio.com/trust</loc></url>
+  <url><loc>https://anveio.com/changelog</loc></url>
+  <url><loc>https://anveio.com/contact</loc></url>
+  <url><loc>https://anveio.com/legal</loc></url>
 </urlset>

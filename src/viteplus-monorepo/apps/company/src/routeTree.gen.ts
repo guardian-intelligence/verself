@@ -9,18 +9,84 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TrustRouteImport } from './routes/trust'
+import { Route as ProductsRouteImport } from './routes/products'
+import { Route as PressRouteImport } from './routes/press'
+import { Route as LegalRouteImport } from './routes/legal'
 import { Route as DesignRouteImport } from './routes/design'
+import { Route as ContactRouteImport } from './routes/contact'
+import { Route as CompanyRouteImport } from './routes/company'
+import { Route as ChangelogRouteImport } from './routes/changelog'
+import { Route as CareersRouteImport } from './routes/careers'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as DispatchIndexRouteImport } from './routes/dispatch/index'
+import { Route as DispatchRssRouteImport } from './routes/dispatch/rss'
+import { Route as DispatchSlugRouteImport } from './routes/dispatch/$slug'
 import { Route as ApiOtelV1TracesRouteImport } from './routes/api/otel/v1/traces'
 
+const TrustRoute = TrustRouteImport.update({
+  id: '/trust',
+  path: '/trust',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProductsRoute = ProductsRouteImport.update({
+  id: '/products',
+  path: '/products',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PressRoute = PressRouteImport.update({
+  id: '/press',
+  path: '/press',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LegalRoute = LegalRouteImport.update({
+  id: '/legal',
+  path: '/legal',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DesignRoute = DesignRouteImport.update({
   id: '/design',
   path: '/design',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ContactRoute = ContactRouteImport.update({
+  id: '/contact',
+  path: '/contact',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CompanyRoute = CompanyRouteImport.update({
+  id: '/company',
+  path: '/company',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ChangelogRoute = ChangelogRouteImport.update({
+  id: '/changelog',
+  path: '/changelog',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CareersRoute = CareersRouteImport.update({
+  id: '/careers',
+  path: '/careers',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DispatchIndexRoute = DispatchIndexRouteImport.update({
+  id: '/dispatch/',
+  path: '/dispatch/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DispatchRssRoute = DispatchRssRouteImport.update({
+  id: '/dispatch/rss',
+  path: '/dispatch/rss',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DispatchSlugRoute = DispatchSlugRouteImport.update({
+  id: '/dispatch/$slug',
+  path: '/dispatch/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiOtelV1TracesRoute = ApiOtelV1TracesRouteImport.update({
@@ -31,36 +97,151 @@ const ApiOtelV1TracesRoute = ApiOtelV1TracesRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/careers': typeof CareersRoute
+  '/changelog': typeof ChangelogRoute
+  '/company': typeof CompanyRoute
+  '/contact': typeof ContactRoute
   '/design': typeof DesignRoute
+  '/legal': typeof LegalRoute
+  '/press': typeof PressRoute
+  '/products': typeof ProductsRoute
+  '/trust': typeof TrustRoute
+  '/dispatch/$slug': typeof DispatchSlugRoute
+  '/dispatch/rss': typeof DispatchRssRoute
+  '/dispatch/': typeof DispatchIndexRoute
   '/api/otel/v1/traces': typeof ApiOtelV1TracesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/careers': typeof CareersRoute
+  '/changelog': typeof ChangelogRoute
+  '/company': typeof CompanyRoute
+  '/contact': typeof ContactRoute
   '/design': typeof DesignRoute
+  '/legal': typeof LegalRoute
+  '/press': typeof PressRoute
+  '/products': typeof ProductsRoute
+  '/trust': typeof TrustRoute
+  '/dispatch/$slug': typeof DispatchSlugRoute
+  '/dispatch/rss': typeof DispatchRssRoute
+  '/dispatch': typeof DispatchIndexRoute
   '/api/otel/v1/traces': typeof ApiOtelV1TracesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/careers': typeof CareersRoute
+  '/changelog': typeof ChangelogRoute
+  '/company': typeof CompanyRoute
+  '/contact': typeof ContactRoute
   '/design': typeof DesignRoute
+  '/legal': typeof LegalRoute
+  '/press': typeof PressRoute
+  '/products': typeof ProductsRoute
+  '/trust': typeof TrustRoute
+  '/dispatch/$slug': typeof DispatchSlugRoute
+  '/dispatch/rss': typeof DispatchRssRoute
+  '/dispatch/': typeof DispatchIndexRoute
   '/api/otel/v1/traces': typeof ApiOtelV1TracesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/design' | '/api/otel/v1/traces'
+  fullPaths:
+    | '/'
+    | '/careers'
+    | '/changelog'
+    | '/company'
+    | '/contact'
+    | '/design'
+    | '/legal'
+    | '/press'
+    | '/products'
+    | '/trust'
+    | '/dispatch/$slug'
+    | '/dispatch/rss'
+    | '/dispatch/'
+    | '/api/otel/v1/traces'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/design' | '/api/otel/v1/traces'
-  id: '__root__' | '/' | '/design' | '/api/otel/v1/traces'
+  to:
+    | '/'
+    | '/careers'
+    | '/changelog'
+    | '/company'
+    | '/contact'
+    | '/design'
+    | '/legal'
+    | '/press'
+    | '/products'
+    | '/trust'
+    | '/dispatch/$slug'
+    | '/dispatch/rss'
+    | '/dispatch'
+    | '/api/otel/v1/traces'
+  id:
+    | '__root__'
+    | '/'
+    | '/careers'
+    | '/changelog'
+    | '/company'
+    | '/contact'
+    | '/design'
+    | '/legal'
+    | '/press'
+    | '/products'
+    | '/trust'
+    | '/dispatch/$slug'
+    | '/dispatch/rss'
+    | '/dispatch/'
+    | '/api/otel/v1/traces'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CareersRoute: typeof CareersRoute
+  ChangelogRoute: typeof ChangelogRoute
+  CompanyRoute: typeof CompanyRoute
+  ContactRoute: typeof ContactRoute
   DesignRoute: typeof DesignRoute
+  LegalRoute: typeof LegalRoute
+  PressRoute: typeof PressRoute
+  ProductsRoute: typeof ProductsRoute
+  TrustRoute: typeof TrustRoute
+  DispatchSlugRoute: typeof DispatchSlugRoute
+  DispatchRssRoute: typeof DispatchRssRoute
+  DispatchIndexRoute: typeof DispatchIndexRoute
   ApiOtelV1TracesRoute: typeof ApiOtelV1TracesRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/trust': {
+      id: '/trust'
+      path: '/trust'
+      fullPath: '/trust'
+      preLoaderRoute: typeof TrustRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/products': {
+      id: '/products'
+      path: '/products'
+      fullPath: '/products'
+      preLoaderRoute: typeof ProductsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/press': {
+      id: '/press'
+      path: '/press'
+      fullPath: '/press'
+      preLoaderRoute: typeof PressRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/legal': {
+      id: '/legal'
+      path: '/legal'
+      fullPath: '/legal'
+      preLoaderRoute: typeof LegalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/design': {
       id: '/design'
       path: '/design'
@@ -68,11 +249,60 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DesignRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/contact': {
+      id: '/contact'
+      path: '/contact'
+      fullPath: '/contact'
+      preLoaderRoute: typeof ContactRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/company': {
+      id: '/company'
+      path: '/company'
+      fullPath: '/company'
+      preLoaderRoute: typeof CompanyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/changelog': {
+      id: '/changelog'
+      path: '/changelog'
+      fullPath: '/changelog'
+      preLoaderRoute: typeof ChangelogRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/careers': {
+      id: '/careers'
+      path: '/careers'
+      fullPath: '/careers'
+      preLoaderRoute: typeof CareersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dispatch/': {
+      id: '/dispatch/'
+      path: '/dispatch'
+      fullPath: '/dispatch/'
+      preLoaderRoute: typeof DispatchIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dispatch/rss': {
+      id: '/dispatch/rss'
+      path: '/dispatch/rss'
+      fullPath: '/dispatch/rss'
+      preLoaderRoute: typeof DispatchRssRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dispatch/$slug': {
+      id: '/dispatch/$slug'
+      path: '/dispatch/$slug'
+      fullPath: '/dispatch/$slug'
+      preLoaderRoute: typeof DispatchSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/otel/v1/traces': {
@@ -87,7 +317,18 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CareersRoute: CareersRoute,
+  ChangelogRoute: ChangelogRoute,
+  CompanyRoute: CompanyRoute,
+  ContactRoute: ContactRoute,
   DesignRoute: DesignRoute,
+  LegalRoute: LegalRoute,
+  PressRoute: PressRoute,
+  ProductsRoute: ProductsRoute,
+  TrustRoute: TrustRoute,
+  DispatchSlugRoute: DispatchSlugRoute,
+  DispatchRssRoute: DispatchRssRoute,
+  DispatchIndexRoute: DispatchIndexRoute,
   ApiOtelV1TracesRoute: ApiOtelV1TracesRoute,
 }
 export const routeTree = rootRouteImport
