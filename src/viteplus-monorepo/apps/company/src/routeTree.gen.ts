@@ -20,6 +20,7 @@ import { Route as ChangelogRouteImport } from './routes/changelog'
 import { Route as CareersRouteImport } from './routes/careers'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DispatchIndexRouteImport } from './routes/dispatch/index'
+import { Route as OgSlugRouteImport } from './routes/og/$slug'
 import { Route as DispatchRssRouteImport } from './routes/dispatch/rss'
 import { Route as DispatchSlugRouteImport } from './routes/dispatch/$slug'
 import { Route as ApiOtelV1TracesRouteImport } from './routes/api/otel/v1/traces'
@@ -79,6 +80,11 @@ const DispatchIndexRoute = DispatchIndexRouteImport.update({
   path: '/dispatch/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OgSlugRoute = OgSlugRouteImport.update({
+  id: '/og/$slug',
+  path: '/og/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DispatchRssRoute = DispatchRssRouteImport.update({
   id: '/dispatch/rss',
   path: '/dispatch/rss',
@@ -108,6 +114,7 @@ export interface FileRoutesByFullPath {
   '/trust': typeof TrustRoute
   '/dispatch/$slug': typeof DispatchSlugRoute
   '/dispatch/rss': typeof DispatchRssRoute
+  '/og/$slug': typeof OgSlugRoute
   '/dispatch/': typeof DispatchIndexRoute
   '/api/otel/v1/traces': typeof ApiOtelV1TracesRoute
 }
@@ -124,6 +131,7 @@ export interface FileRoutesByTo {
   '/trust': typeof TrustRoute
   '/dispatch/$slug': typeof DispatchSlugRoute
   '/dispatch/rss': typeof DispatchRssRoute
+  '/og/$slug': typeof OgSlugRoute
   '/dispatch': typeof DispatchIndexRoute
   '/api/otel/v1/traces': typeof ApiOtelV1TracesRoute
 }
@@ -141,6 +149,7 @@ export interface FileRoutesById {
   '/trust': typeof TrustRoute
   '/dispatch/$slug': typeof DispatchSlugRoute
   '/dispatch/rss': typeof DispatchRssRoute
+  '/og/$slug': typeof OgSlugRoute
   '/dispatch/': typeof DispatchIndexRoute
   '/api/otel/v1/traces': typeof ApiOtelV1TracesRoute
 }
@@ -159,6 +168,7 @@ export interface FileRouteTypes {
     | '/trust'
     | '/dispatch/$slug'
     | '/dispatch/rss'
+    | '/og/$slug'
     | '/dispatch/'
     | '/api/otel/v1/traces'
   fileRoutesByTo: FileRoutesByTo
@@ -175,6 +185,7 @@ export interface FileRouteTypes {
     | '/trust'
     | '/dispatch/$slug'
     | '/dispatch/rss'
+    | '/og/$slug'
     | '/dispatch'
     | '/api/otel/v1/traces'
   id:
@@ -191,6 +202,7 @@ export interface FileRouteTypes {
     | '/trust'
     | '/dispatch/$slug'
     | '/dispatch/rss'
+    | '/og/$slug'
     | '/dispatch/'
     | '/api/otel/v1/traces'
   fileRoutesById: FileRoutesById
@@ -208,6 +220,7 @@ export interface RootRouteChildren {
   TrustRoute: typeof TrustRoute
   DispatchSlugRoute: typeof DispatchSlugRoute
   DispatchRssRoute: typeof DispatchRssRoute
+  OgSlugRoute: typeof OgSlugRoute
   DispatchIndexRoute: typeof DispatchIndexRoute
   ApiOtelV1TracesRoute: typeof ApiOtelV1TracesRoute
 }
@@ -291,6 +304,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DispatchIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/og/$slug': {
+      id: '/og/$slug'
+      path: '/og/$slug'
+      fullPath: '/og/$slug'
+      preLoaderRoute: typeof OgSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dispatch/rss': {
       id: '/dispatch/rss'
       path: '/dispatch/rss'
@@ -328,6 +348,7 @@ const rootRouteChildren: RootRouteChildren = {
   TrustRoute: TrustRoute,
   DispatchSlugRoute: DispatchSlugRoute,
   DispatchRssRoute: DispatchRssRoute,
+  OgSlugRoute: OgSlugRoute,
   DispatchIndexRoute: DispatchIndexRoute,
   ApiOtelV1TracesRoute: ApiOtelV1TracesRoute,
 }

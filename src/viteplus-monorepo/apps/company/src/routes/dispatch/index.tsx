@@ -8,6 +8,12 @@ export const Route = createFileRoute("/dispatch/")({
     meta: [
       { title: DISPATCH_META.title },
       { name: "description", content: DISPATCH_META.description },
+      { property: "og:image", content: "/og/dispatch" },
+      { property: "og:image:type", content: "image/svg+xml" },
+      { property: "og:image:width", content: "1200" },
+      { property: "og:image:height", content: "630" },
+      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:image", content: "/og/dispatch" },
     ],
     links: [
       {

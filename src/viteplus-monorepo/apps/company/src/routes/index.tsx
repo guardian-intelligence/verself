@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { WingsArgent } from "@forge-metal/brand";
+import { FilmGrain } from "~/components/film-grain";
 import { RevealSpan } from "~/components/reveal-span";
 import { landing } from "~/content/landing";
 
@@ -22,21 +23,33 @@ export const Route = createFileRoute("/")({
         content:
           "We build the reference architecture for the systems every founder has to build before they can build what matters.",
       },
+      { property: "og:image", content: "/og/home" },
+      { property: "og:image:type", content: "image/svg+xml" },
+      { property: "og:image:width", content: "1200" },
+      { property: "og:image:height", content: "630" },
+      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:image", content: "/og/home" },
     ],
   }),
 });
 
 function LandingPage() {
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-16 md:px-6 md:py-24">
+    <div className="relative mx-auto w-full max-w-5xl px-4 py-16 md:px-6 md:py-24">
+      {/* FilmGrain wraps the container in a warm vintage overlay blended with
+          the Iron ground beneath. The hero wings + text sit above it because
+          <FilmGrain> is position:absolute and does not capture pointer events.
+          Intensity 0.22 is pitched quiet enough that text remains legible at
+          every ground density. */}
+      <FilmGrain intensity={0.22} />
+
       <RevealSpan
         spanName="company.landing.hero_view"
         attrs={{ "hero.variant": "iron" }}
       >
         {/* Argent wings at hero scale, on the fold. Honors /design §09 Iron
-            spec. Phase 5 adds the photography treatment layer behind the
-            hero; the wings sit on top of it. */}
-        <div style={{ marginBottom: "40px" }}>
+            spec. */}
+        <div style={{ marginBottom: "40px", position: "relative" }}>
           <WingsArgent
             style={{ width: "clamp(96px, 14vw, 160px)", height: "auto", display: "block" }}
           />
