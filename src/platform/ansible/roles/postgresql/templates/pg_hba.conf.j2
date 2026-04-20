@@ -3,8 +3,9 @@
 #
 # TYPE  DATABASE  USER  ADDRESS      METHOD
 
-# Unix socket (local admin)
-local   all       all                peer
+# Unix socket local services. pg_ident.conf defines the deliberately narrow
+# cross-database reader mappings used by governance-service.
+local   all       all                peer map=forge_metal_services
 
 # TCP from localhost — password auth for application services.
 host    all       all   127.0.0.1/32 scram-sha-256

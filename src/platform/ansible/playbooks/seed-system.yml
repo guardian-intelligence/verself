@@ -803,8 +803,8 @@
       ansible.builtin.command:
         argv:
           - "{{ seed_system_helper_remote_path }}"
-          - --pg-dsn-file
-          - /etc/credstore/billing/pg-dsn
+          - --pg-dsn
+          - "postgres://billing@/billing?host=/var/run/postgresql&sslmode=disable"
           - --org-id
           - "{{ item.org_id }}"
           - --org-name
@@ -835,6 +835,8 @@
           - "{{ seed_system_expires_after }}"
           - --sku-scoped-grants-json
           - "{{ item.sku_scoped_grants | default([]) | to_json }}"
+      become: true
+      become_user: billing
       loop:
         - key: platform
           org_id: "{{ seed_system_orgs.platform.organization_id }}"
@@ -862,8 +864,8 @@
       ansible.builtin.command:
         argv:
           - "{{ seed_system_helper_remote_path }}"
-          - --pg-dsn-file
-          - /etc/credstore/billing/pg-dsn
+          - --pg-dsn
+          - "postgres://billing@/billing?host=/var/run/postgresql&sslmode=disable"
           - --org-id
           - "{{ item.org_id }}"
           - --org-name
@@ -894,6 +896,8 @@
           - "{{ seed_system_expires_after }}"
           - --sku-scoped-grants-json
           - "[]"
+      become: true
+      become_user: billing
       loop:
         - key: platform
           org_id: "{{ seed_system_orgs.platform.organization_id }}"
@@ -962,8 +966,8 @@
       ansible.builtin.command:
         argv:
           - "{{ seed_system_stripe_catalog_helper_remote_path }}"
-          - --pg-dsn-file
-          - /etc/credstore/billing/pg-dsn
+          - --pg-dsn
+          - "postgres://billing@/billing?host=/var/run/postgresql&sslmode=disable"
           - --stripe-secret-key-file
           - /etc/credstore/billing/stripe-secret-key
           - --product-id
@@ -974,6 +978,8 @@
           - "{{ seed_system_plan_id }}"
           - --tiers-json
           - "{{ seed_system_contract_tiers | to_json }}"
+      become: true
+      become_user: billing
       register: seed_system_stripe_catalog_raw
       changed_when: false
       tags: [billing]

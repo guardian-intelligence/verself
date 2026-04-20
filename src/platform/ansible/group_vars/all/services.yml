@@ -99,6 +99,7 @@ services:
   billing:
     host: "127.0.0.1"
     port: 4242
+    internal_port: 4255
   sandbox_rental:
     host: "127.0.0.1"
     port: 4243
@@ -108,6 +109,7 @@ services:
   governance_service:
     host: "127.0.0.1"
     port: 4250
+    internal_port: 4254
   secrets_service:
     host: "127.0.0.1"
     port: 4251

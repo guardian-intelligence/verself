@@ -322,6 +322,75 @@
   register: openbao_root_token_raw
   no_log: true
 
+- name: List OpenBao auth mounts for SPIFFE JWT auth
+  ansible.builtin.uri:
+    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/sys/auth"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+    validate_certs: false
+    status_code: 200
+    return_content: true
+  register: openbao_auth_mounts_response
+  changed_when: false
+  no_log: true
+
+- name: Enable OpenBao SPIFFE JWT auth mount
+  ansible.builtin.uri:
+    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/sys/auth/{{ openbao_spiffe_jwt_mount }}"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+    body_format: json
+    body:
+      type: jwt
+      description: Forge Metal SPIRE JWT-SVID workload auth
+    validate_certs: false
+    status_code: 204
+  when: (openbao_spiffe_jwt_mount ~ '/') not in (openbao_auth_mounts_response.json.data.keys() | list)
+  changed_when: true
+  no_log: true
+
+- name: Read OpenBao SPIFFE JWT auth config
+  ansible.builtin.uri:
+    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/auth/{{ openbao_spiffe_jwt_mount }}/config"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+    validate_certs: false
+    status_code: [200, 404]
+    return_content: true
+  register: openbao_spiffe_jwt_config_response
+  changed_when: false
+  no_log: true
+
+- name: Read SPIRE OIDC discovery CA for OpenBao JWT auth
+  ansible.builtin.slurp:
+    src: "{{ openbao_spiffe_jwt_discovery_ca_pem_path }}"
+  register: openbao_spiffe_jwt_discovery_ca
+  no_log: true
+
+- name: Configure OpenBao SPIFFE JWT auth discovery
+  ansible.builtin.uri:
+    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/auth/{{ openbao_spiffe_jwt_mount }}/config"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+    body_format: json
+    body:
+      oidc_discovery_url: "{{ openbao_spiffe_jwt_discovery_url }}"
+      oidc_discovery_ca_pem: "{{ openbao_spiffe_jwt_discovery_ca.content | b64decode }}"
+      bound_issuer: "{{ spire_oidc_issuer_url }}"
+    validate_certs: false
+    status_code: 204
+  when: >-
+    openbao_spiffe_jwt_config_response.status == 404
+    or (openbao_spiffe_jwt_config_response.json.data | default({})).oidc_discovery_url | default('') != openbao_spiffe_jwt_discovery_url
+    or (openbao_spiffe_jwt_config_response.json.data | default({})).bound_issuer | default('') != spire_oidc_issuer_url
+    or (openbao_spiffe_jwt_config_response.json.data | default({})).oidc_discovery_ca_pem | default([]) | length == 0
+  changed_when: true
+  no_log: true
+
 - name: Soft-delete legacy unsafe OpenBao platform-internal credentials
   ansible.builtin.uri:
     url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/platform-internal/data/{{ item }}"
@@ -400,49 +469,3 @@
     owner: openbao
     group: openbao
     mode: "0600"
-
-- name: Read governance internal audit token for OpenBao bootstrap event
-  ansible.builtin.slurp:
-    src: /etc/credstore/governance-service/internal-audit-token
-  register: openbao_governance_audit_token_raw
-  no_log: true
-
-- name: Emit OpenBao bootstrap governance audit event
-  ansible.builtin.uri:
-    url: "http://{{ services.governance_service.host }}:{{ services.governance_service.port }}/internal/v1/audit/events"
-    method: POST
-    headers:
-      Authorization: "Bearer {{ openbao_governance_audit_token_raw.content | b64decode | trim }}"
-    body_format: json
-    body:
-      org_id: platform
-      source_product_area: Platform
-      service_name: platform-ansible
-      service_version: "1.0.0"
-      actor_type: system
-      actor_id: platform-ansible
-      actor_display: platform-ansible
-      operation_id: openbao.bootstrap.initialized
-      audit_event: openbao.bootstrap.initialized
-      operation_display: OpenBao bootstrap initialized
-      operation_type: write
-      event_category: secrets
-      risk_level: critical
-      data_classification: restricted
-      target_kind: openbao_cluster
-      target_id: "{{ openbao_node_id }}"
-      target_display: "{{ openbao_node_id }}"
-      target_scope: platform
-      permission: platform:openbao:bootstrap
-      action: initialize
-      org_scope: platform
-      decision: allow
-      result: allowed
-      trust_class: operator
-      payload:
-        initialized: "{{ openbao_health.json.initialized | default(true) }}"
-        sealed: "{{ openbao_health.json.sealed | default(false) }}"
-        version: "{{ openbao_health.json.version | default('') }}"
-    status_code: 202
-  when: openbao_bootstrap_initialized | bool
-  no_log: true

@@ -10,13 +10,68 @@
     name: mailbox_service
     system: true
 
+- name: Ensure spire workload socket group exists
+  ansible.builtin.group:
+    name: "{{ spire_workload_group }}"
+    system: true
+
 - name: Create mailbox_service system user
   ansible.builtin.user:
     name: mailbox_service
     group: mailbox_service
+    groups:
+      - "{{ spire_workload_group }}"
+    append: false
     system: true
     shell: /usr/sbin/nologin
     create_home: false
+
+- name: Resolve mailbox-service uid for SPIRE registration
+  ansible.builtin.command:
+    cmd: id -u mailbox_service
+  register: mailbox_service_uid
+  changed_when: false
+
+- name: Read mailbox-service SPIRE registration
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry show
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-mailbox-service
+      -output json
+  register: mailbox_service_spire_entry
+  failed_when: false
+  changed_when: false
+
+- name: Register mailbox-service SPIFFE workload
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry create
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-mailbox-service
+      -parentID {{ spire_agent_id }}
+      -spiffeID {{ spire_mailbox_service_id }}
+      -selector unix:uid:{{ mailbox_service_uid.stdout | trim }}
+      -x509SVIDTTL 3600
+  when: mailbox_service_spire_entry.rc != 0 or 'forge-metal-mailbox-service' not in mailbox_service_spire_entry.stdout
+  changed_when: true
+  notify: restart mailbox-service
+
+- name: Update mailbox-service SPIRE workload selector drift
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry update
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-mailbox-service
+      -parentID {{ spire_agent_id }}
+      -spiffeID {{ spire_mailbox_service_id }}
+      -selector unix:uid:{{ mailbox_service_uid.stdout | trim }}
+      -x509SVIDTTL 3600
+  when:
+    - mailbox_service_spire_entry.rc == 0
+    - "'uid:' ~ (mailbox_service_uid.stdout | trim) not in mailbox_service_spire_entry.stdout"
+  changed_when: true
+  notify: restart mailbox-service
 
 - name: Deploy mailbox-service nftables ruleset
   ansible.builtin.template:
@@ -150,21 +205,22 @@
     content: |
       [Unit]
       Description=Mailbox Service
-      After=forge-metal-firewall.target network.target postgresql.service stalwart.service zitadel.service
+      After=forge-metal-firewall.target network.target postgresql.service stalwart.service zitadel.service spire-agent.service
       Requires=forge-metal-firewall.target
-      Wants=postgresql.service stalwart.service zitadel.service
+      Wants=postgresql.service stalwart.service zitadel.service spire-agent.service
 
       [Service]
       Type=simple
       User=mailbox_service
       Group=mailbox_service
-      LoadCredential=pg-dsn:/etc/credstore/mailbox-service/pg-dsn
+      SupplementaryGroups={{ spire_workload_group }}
       LoadCredential=stalwart-ceo-password:/etc/credstore/mailbox-service/stalwart-ceo-password
       LoadCredential=stalwart-agents-password:/etc/credstore/mailbox-service/stalwart-agents-password
       LoadCredential=forward-to:/etc/credstore/mailbox-service/forward-to
       LoadCredential=resend-api-key:/etc/credstore/mailbox-service/resend-api-key
       LoadCredential=stalwart-admin-password:/etc/credstore/mailbox-service/stalwart-admin-password
       Environment=MAILBOX_SERVICE_LISTEN_ADDR={{ services.mailbox_service.host }}:{{ services.mailbox_service.port }}
+      Environment=MAILBOX_SERVICE_PG_DSN=postgres://mailbox_service@/mailbox_service?host=/var/run/postgresql&sslmode=disable
       Environment=MAILBOX_SERVICE_STALWART_BASE_URL=http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}
       Environment=MAILBOX_SERVICE_STALWART_PUBLIC_BASE_URL=https://{{ stalwart_domain }}
       Environment=MAILBOX_SERVICE_STALWART_MAILBOX=ceo

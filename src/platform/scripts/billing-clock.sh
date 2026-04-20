@@ -109,8 +109,8 @@ cleanup_remote() {
 trap cleanup_remote EXIT
 
 remote_args=(
-  sudo "${remote_path}"
-  --pg-dsn-file /etc/credstore/billing/pg-dsn
+  sudo -u billing "${remote_path}"
+  --pg-dsn "postgres://billing@/billing?host=/var/run/postgresql&sslmode=disable"
   --product-id "${product_id}"
   --reason "${reason}"
 )

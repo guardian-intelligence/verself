@@ -324,9 +324,15 @@
 - name: Fail if guest artifacts are missing
   ansible.builtin.fail:
     msg: >
-      Guest artifacts not found at {{ firecracker_kernel_path }}, {{ firecracker_rootfs_path }}, {{ firecracker_viteplus_image_path }}, and/or {{ firecracker_guest_artifact_manifest_path }}.
+      Guest artifacts not found at {{ firecracker_kernel_path }},
+      {{ firecracker_rootfs_path }}, {{ firecracker_viteplus_image_path }},
+      and/or {{ firecracker_guest_artifact_manifest_path }}.
       Stage them with: cd ansible && ansible-playbook playbooks/guest-rootfs.yml
-  when: not firecracker_guest_kernel.stat.exists or not firecracker_guest_rootfs.stat.exists or not firecracker_viteplus_image.stat.exists or not firecracker_guest_artifacts.stat.exists
+  when: >-
+    not firecracker_guest_kernel.stat.exists
+    or not firecracker_guest_rootfs.stat.exists
+    or not firecracker_viteplus_image.stat.exists
+    or not firecracker_guest_artifacts.stat.exists
 
 # --- Composable image zvols ---
 
