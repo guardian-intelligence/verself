@@ -9,10 +9,8 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as TrustRouteImport } from './routes/trust'
-import { Route as ProductsRouteImport } from './routes/products'
+import { Route as SolutionsRouteImport } from './routes/solutions'
 import { Route as PressRouteImport } from './routes/press'
-import { Route as LegalRouteImport } from './routes/legal'
 import { Route as DesignRouteImport } from './routes/design'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as CompanyRouteImport } from './routes/company'
@@ -25,24 +23,14 @@ import { Route as DispatchRssRouteImport } from './routes/dispatch/rss'
 import { Route as DispatchSlugRouteImport } from './routes/dispatch/$slug'
 import { Route as ApiOtelV1TracesRouteImport } from './routes/api/otel/v1/traces'
 
-const TrustRoute = TrustRouteImport.update({
-  id: '/trust',
-  path: '/trust',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProductsRoute = ProductsRouteImport.update({
-  id: '/products',
-  path: '/products',
+const SolutionsRoute = SolutionsRouteImport.update({
+  id: '/solutions',
+  path: '/solutions',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PressRoute = PressRouteImport.update({
   id: '/press',
   path: '/press',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LegalRoute = LegalRouteImport.update({
-  id: '/legal',
-  path: '/legal',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DesignRoute = DesignRouteImport.update({
@@ -108,10 +96,8 @@ export interface FileRoutesByFullPath {
   '/company': typeof CompanyRoute
   '/contact': typeof ContactRoute
   '/design': typeof DesignRoute
-  '/legal': typeof LegalRoute
   '/press': typeof PressRoute
-  '/products': typeof ProductsRoute
-  '/trust': typeof TrustRoute
+  '/solutions': typeof SolutionsRoute
   '/dispatch/$slug': typeof DispatchSlugRoute
   '/dispatch/rss': typeof DispatchRssRoute
   '/og/$slug': typeof OgSlugRoute
@@ -125,10 +111,8 @@ export interface FileRoutesByTo {
   '/company': typeof CompanyRoute
   '/contact': typeof ContactRoute
   '/design': typeof DesignRoute
-  '/legal': typeof LegalRoute
   '/press': typeof PressRoute
-  '/products': typeof ProductsRoute
-  '/trust': typeof TrustRoute
+  '/solutions': typeof SolutionsRoute
   '/dispatch/$slug': typeof DispatchSlugRoute
   '/dispatch/rss': typeof DispatchRssRoute
   '/og/$slug': typeof OgSlugRoute
@@ -143,10 +127,8 @@ export interface FileRoutesById {
   '/company': typeof CompanyRoute
   '/contact': typeof ContactRoute
   '/design': typeof DesignRoute
-  '/legal': typeof LegalRoute
   '/press': typeof PressRoute
-  '/products': typeof ProductsRoute
-  '/trust': typeof TrustRoute
+  '/solutions': typeof SolutionsRoute
   '/dispatch/$slug': typeof DispatchSlugRoute
   '/dispatch/rss': typeof DispatchRssRoute
   '/og/$slug': typeof OgSlugRoute
@@ -162,10 +144,8 @@ export interface FileRouteTypes {
     | '/company'
     | '/contact'
     | '/design'
-    | '/legal'
     | '/press'
-    | '/products'
-    | '/trust'
+    | '/solutions'
     | '/dispatch/$slug'
     | '/dispatch/rss'
     | '/og/$slug'
@@ -179,10 +159,8 @@ export interface FileRouteTypes {
     | '/company'
     | '/contact'
     | '/design'
-    | '/legal'
     | '/press'
-    | '/products'
-    | '/trust'
+    | '/solutions'
     | '/dispatch/$slug'
     | '/dispatch/rss'
     | '/og/$slug'
@@ -196,10 +174,8 @@ export interface FileRouteTypes {
     | '/company'
     | '/contact'
     | '/design'
-    | '/legal'
     | '/press'
-    | '/products'
-    | '/trust'
+    | '/solutions'
     | '/dispatch/$slug'
     | '/dispatch/rss'
     | '/og/$slug'
@@ -214,10 +190,8 @@ export interface RootRouteChildren {
   CompanyRoute: typeof CompanyRoute
   ContactRoute: typeof ContactRoute
   DesignRoute: typeof DesignRoute
-  LegalRoute: typeof LegalRoute
   PressRoute: typeof PressRoute
-  ProductsRoute: typeof ProductsRoute
-  TrustRoute: typeof TrustRoute
+  SolutionsRoute: typeof SolutionsRoute
   DispatchSlugRoute: typeof DispatchSlugRoute
   DispatchRssRoute: typeof DispatchRssRoute
   OgSlugRoute: typeof OgSlugRoute
@@ -227,18 +201,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/trust': {
-      id: '/trust'
-      path: '/trust'
-      fullPath: '/trust'
-      preLoaderRoute: typeof TrustRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/products': {
-      id: '/products'
-      path: '/products'
-      fullPath: '/products'
-      preLoaderRoute: typeof ProductsRouteImport
+    '/solutions': {
+      id: '/solutions'
+      path: '/solutions'
+      fullPath: '/solutions'
+      preLoaderRoute: typeof SolutionsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/press': {
@@ -246,13 +213,6 @@ declare module '@tanstack/react-router' {
       path: '/press'
       fullPath: '/press'
       preLoaderRoute: typeof PressRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/legal': {
-      id: '/legal'
-      path: '/legal'
-      fullPath: '/legal'
-      preLoaderRoute: typeof LegalRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/design': {
@@ -342,10 +302,8 @@ const rootRouteChildren: RootRouteChildren = {
   CompanyRoute: CompanyRoute,
   ContactRoute: ContactRoute,
   DesignRoute: DesignRoute,
-  LegalRoute: LegalRoute,
   PressRoute: PressRoute,
-  ProductsRoute: ProductsRoute,
-  TrustRoute: TrustRoute,
+  SolutionsRoute: SolutionsRoute,
   DispatchSlugRoute: DispatchSlugRoute,
   DispatchRssRoute: DispatchRssRoute,
   OgSlugRoute: OgSlugRoute,

@@ -17,8 +17,13 @@ export const CHANGELOG_META = {
 
 export const changelog: readonly ChangelogEntry[] = [
   {
+    date: "2026-04-20",
+    title: "Solutions replace Products. Trust and Legal move to Metal.",
+    body: "The public IA collapses to a single Solution — Metal Platform — and the /products route is retired. Metal Platform is the bundle a customer buys; services, the web console, CLIs, and SDKs are its products and are described on Metal's own surfaces. The /trust and /legal routes are retired on anveio.com; terms, privacy, the SLA, subprocessors, data retention, and security disclosures live with Metal at platform.anveio.com/policy where the data is actually processed. The marketing site keeps its company-level surfaces: Dispatch, Design, Press, Careers, Changelog, Contact.",
+  },
+  {
     date: "2026-04-19",
     title: "anveio.com moves to apps/company",
-    body: "The Guardian Intelligence company site gets its own TanStack Start app, separate from the Metal platform console. Landing, /design, /dispatch, /products, /company, /careers, /press, /trust, /changelog, /contact, and /legal all live at anveio.com. The Metal console moves to platform.anveio.com and will eventually resolve at console.<domain>.",
+    body: "The Guardian Intelligence company site gets its own TanStack Start app, separate from the Metal platform console. The Metal console moves to platform.anveio.com and will eventually resolve at console.<domain>.",
   },
 ];

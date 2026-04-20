@@ -564,13 +564,11 @@ function SectionProductMarque() {
       meta={meta}
       lede={
         <>
-          <b>Guardian</b> is the house. Products ride under it. The wings and the Fraunces masthead
-          belong to <i>Guardian Intelligence</i> alone — they do not lock up with a product name.
-          Products take the Geist sans, set alongside the Guardian masthead when they need to be
-          introduced, and stand on their own after first reference. <b>Metal</b> is the compute
-          product — sandboxes, Firecracker, ZFS. <b>Console</b> is the customer application where
-          the work happens; mailbox is a feature inside it, not a separate marque. <b>Letters</b> is
-          an editorial surface and carries the Dispatch treatment in §11; it has no product lockup.
+          <b>Guardian</b> is the house. A Solution rides under it. The wings and the Fraunces
+          masthead belong to <i>Guardian Intelligence</i> alone — they do not lock up with a
+          Solution or product name. Today there is one Solution: <b>Metal Platform</b>, the compute
+          stack. Its constituent products — services, the web console, CLIs, SDKs — live under
+          Metal's own sign and never carry the wings.
         </>
       }
     >
@@ -582,34 +580,12 @@ function SectionProductMarque() {
           overflow: "hidden",
         }}
       >
-        <div style={rowStyle}>
-          <WingsArgent style={{ width: "32px", height: "32px", flex: "0 0 32px" }} />
-          <span style={houseStyle}>Guardian</span>
-          <span style={divider} aria-hidden="true" />
-          <span style={productStyle}>Metal</span>
-          <span style={jobStyle}>Compute · sandboxes</span>
-        </div>
-        <div style={rowStyle}>
-          <WingsArgent style={{ width: "32px", height: "32px", flex: "0 0 32px" }} />
-          <span style={houseStyle}>Guardian</span>
-          <span style={divider} aria-hidden="true" />
-          <span style={productStyle}>Console</span>
-          <span style={jobStyle}>The customer app · work happens here</span>
-        </div>
         <div style={lastRowStyle}>
           <WingsArgent style={{ width: "32px", height: "32px", flex: "0 0 32px" }} />
           <span style={houseStyle}>Guardian</span>
           <span style={divider} aria-hidden="true" />
-          <span
-            style={{
-              ...productStyle,
-              fontFamily: "'Fraunces', Georgia, serif",
-              fontStyle: "italic",
-            }}
-          >
-            Letters
-          </span>
-          <span style={jobStyle}>Editorial · see Dispatch §11</span>
+          <span style={productStyle}>Metal Platform</span>
+          <span style={jobStyle}>Compute · services, console, CLIs, SDKs</span>
         </div>
       </div>
       <div
@@ -628,11 +604,11 @@ function SectionProductMarque() {
       >
         <div>
           <b style={{ color: "var(--color-type-iron)" }}>Rule.</b> The wings lock up with
-          &ldquo;Guardian Intelligence&rdquo; only. Never with a product name.
+          &ldquo;Guardian Intelligence&rdquo; only. Never with a Solution or product name.
         </div>
         <div>
           <b style={{ color: "var(--color-type-iron)" }}>On first reference.</b>{" "}
-          <i>&ldquo;Guardian Metal&rdquo;</i> in prose;{" "}
+          <i>&ldquo;Guardian Metal Platform&rdquo;</i> in prose;{" "}
           <code
             style={{
               fontFamily: "'Geist Mono', ui-monospace, monospace",
@@ -647,8 +623,8 @@ function SectionProductMarque() {
           in URLs.
         </div>
         <div>
-          <b style={{ color: "var(--color-type-iron)" }}>After first reference.</b> Products go it
-          alone: &ldquo;Metal&rdquo;, &ldquo;Console&rdquo;.
+          <b style={{ color: "var(--color-type-iron)" }}>After first reference.</b> The Solution
+          stands alone: &ldquo;Metal Platform,&rdquo; or &ldquo;Metal&rdquo; once context is set.
         </div>
       </div>
     </Section>

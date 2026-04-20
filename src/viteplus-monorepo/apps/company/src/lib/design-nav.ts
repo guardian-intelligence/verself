@@ -61,8 +61,8 @@ export const DESIGN_SECTIONS: readonly DesignSection[] = [
     id: "product-marque",
     number: "06",
     group: "Identity",
-    label: "Product marque",
-    title: "One house. Many products.",
+    label: "Platform marque",
+    title: "One house, one platform.",
   },
   {
     id: "colour",

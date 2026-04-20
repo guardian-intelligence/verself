@@ -10,18 +10,16 @@ const IA_ROUTES: readonly string[] = [
   "/",
   "/design",
   "/dispatch",
-  "/products",
+  "/solutions",
   "/company",
   "/careers",
   "/press",
-  "/trust",
   "/changelog",
   "/contact",
-  "/legal",
   "/dispatch/ship-the-reference-architecture",
 ];
 
-const OG_SLUGS: readonly string[] = ["home", "design", "dispatch", "products", "trust"];
+const OG_SLUGS: readonly string[] = ["home", "design", "dispatch", "solutions"];
 
 test("company canary — walk IA + exercise OG + brand kit", async ({ page, request }) => {
   // 1. Walk every IA node. Each triggers a company.route_view browser span.
