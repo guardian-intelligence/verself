@@ -14,9 +14,11 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	auth "github.com/forge-metal/auth-middleware"
+	billingclient "github.com/forge-metal/billing-service/client"
 	fmotel "github.com/forge-metal/otel"
 	secretsapi "github.com/forge-metal/secrets-service/internal/api"
 	"github.com/forge-metal/secrets-service/internal/secrets"
+	"github.com/forge-metal/secrets-service/internal/serviceauth"
 )
 
 const (
@@ -50,6 +52,7 @@ func run() error {
 	internalInjectionToken := requireCredential("internal-injection-token")
 	governanceAuditToken := credentialOr("governance-internal-audit-token", "")
 	serviceAccountSecret := requireCredential("service-account-client-secret")
+	billingClientSecret := requireCredential("billing-client-secret")
 
 	listenAddr := envOr("SECRETS_LISTEN_ADDR", "127.0.0.1:4251")
 	governanceAuditURL := envOr("SECRETS_GOVERNANCE_AUDIT_URL", "")
@@ -62,6 +65,10 @@ func run() error {
 	serviceAccountClientID := requireEnv("SECRETS_SERVICE_ACCOUNT_CLIENT_ID")
 	serviceAccountTokenURL := requireEnv("SECRETS_SERVICE_ACCOUNT_TOKEN_URL")
 	serviceAccountTokenHost := envOr("SECRETS_SERVICE_ACCOUNT_TOKEN_HOST", "")
+	billingURL := requireEnv("SECRETS_BILLING_URL")
+	billingClientID := requireEnv("SECRETS_BILLING_CLIENT_ID")
+	billingTokenURL := requireEnv("SECRETS_BILLING_TOKEN_URL")
+	billingAudience := requireEnv("SECRETS_BILLING_AUTH_AUDIENCE")
 
 	store, err := secrets.NewBaoStore(ctx, secrets.BaoStoreConfig{
 		Address:       openBaoAddr,
@@ -80,9 +87,30 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("openbao store: %w", err)
 	}
+	billingAuthEditor, err := serviceauth.NewBearerTokenRequestEditor(serviceauth.ClientCredentialsConfig{
+		IssuerURL:    authIssuerURL,
+		TokenURL:     billingTokenURL,
+		ClientID:     billingClientID,
+		ClientSecret: billingClientSecret,
+		Audience:     billingAudience,
+		Transport:    otelhttp.NewTransport(http.DefaultTransport),
+		Timeout:      5 * time.Second,
+	})
+	if err != nil {
+		return fmt.Errorf("billing auth: %w", err)
+	}
+	billingClient, err := billingclient.New(
+		billingURL,
+		billingclient.WithHTTPClient(&http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport), Timeout: 5 * time.Second}),
+		billingclient.WithRequestEditorFn(billingAuthEditor),
+	)
+	if err != nil {
+		return fmt.Errorf("billing client: %w", err)
+	}
 
 	svc := &secrets.Service{
 		Store:          store,
+		Billing:        billingClient,
 		Logger:         logger,
 		ServiceVersion: serviceVersion,
 		Environment:    envOr("SECRETS_ENVIRONMENT", "single-node"),

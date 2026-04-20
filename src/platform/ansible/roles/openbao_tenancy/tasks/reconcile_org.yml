@@ -10,6 +10,16 @@
     openbao_tenancy_read_only_policy: "secrets-{{ openbao_tenancy_org.id }}-read-only"
     openbao_tenancy_read_write_policy: "secrets-{{ openbao_tenancy_org.id }}-read-write"
     openbao_tenancy_injection_policy: "secrets-{{ openbao_tenancy_org.id }}-injection-read"
+    openbao_tenancy_secret_write_policy: "secrets-{{ openbao_tenancy_org.id }}-secret-write"
+    openbao_tenancy_secret_read_policy: "secrets-{{ openbao_tenancy_org.id }}-secret-read"
+    openbao_tenancy_secret_list_policy: "secrets-{{ openbao_tenancy_org.id }}-secret-list"
+    openbao_tenancy_secret_delete_policy: "secrets-{{ openbao_tenancy_org.id }}-secret-delete"
+    openbao_tenancy_transit_key_create_policy: "secrets-{{ openbao_tenancy_org.id }}-transit-key-create"
+    openbao_tenancy_transit_key_rotate_policy: "secrets-{{ openbao_tenancy_org.id }}-transit-key-rotate"
+    openbao_tenancy_transit_encrypt_policy: "secrets-{{ openbao_tenancy_org.id }}-transit-encrypt"
+    openbao_tenancy_transit_decrypt_policy: "secrets-{{ openbao_tenancy_org.id }}-transit-decrypt"
+    openbao_tenancy_transit_sign_policy: "secrets-{{ openbao_tenancy_org.id }}-transit-sign"
+    openbao_tenancy_transit_verify_policy: "secrets-{{ openbao_tenancy_org.id }}-transit-verify"
 
 - name: Render OpenBao tenancy policy documents
   ansible.builtin.set_fact:
@@ -20,6 +30,26 @@
         document: "{{ lookup('ansible.builtin.template', 'read-write.hcl.j2') }}"
       - name: "{{ openbao_tenancy_injection_policy }}"
         document: "{{ lookup('ansible.builtin.template', 'injection-read.hcl.j2') }}"
+      - name: "{{ openbao_tenancy_secret_write_policy }}"
+        document: "{{ lookup('ansible.builtin.template', 'secret-write.hcl.j2') }}"
+      - name: "{{ openbao_tenancy_secret_read_policy }}"
+        document: "{{ lookup('ansible.builtin.template', 'secret-read.hcl.j2') }}"
+      - name: "{{ openbao_tenancy_secret_list_policy }}"
+        document: "{{ lookup('ansible.builtin.template', 'secret-list.hcl.j2') }}"
+      - name: "{{ openbao_tenancy_secret_delete_policy }}"
+        document: "{{ lookup('ansible.builtin.template', 'secret-delete.hcl.j2') }}"
+      - name: "{{ openbao_tenancy_transit_key_create_policy }}"
+        document: "{{ lookup('ansible.builtin.template', 'transit-key-create.hcl.j2') }}"
+      - name: "{{ openbao_tenancy_transit_key_rotate_policy }}"
+        document: "{{ lookup('ansible.builtin.template', 'transit-key-rotate.hcl.j2') }}"
+      - name: "{{ openbao_tenancy_transit_encrypt_policy }}"
+        document: "{{ lookup('ansible.builtin.template', 'transit-encrypt.hcl.j2') }}"
+      - name: "{{ openbao_tenancy_transit_decrypt_policy }}"
+        document: "{{ lookup('ansible.builtin.template', 'transit-decrypt.hcl.j2') }}"
+      - name: "{{ openbao_tenancy_transit_sign_policy }}"
+        document: "{{ lookup('ansible.builtin.template', 'transit-sign.hcl.j2') }}"
+      - name: "{{ openbao_tenancy_transit_verify_policy }}"
+        document: "{{ lookup('ansible.builtin.template', 'transit-verify.hcl.j2') }}"
 
 - name: Check OpenBao tenancy audit marker for organization
   ansible.builtin.stat:
@@ -169,6 +199,56 @@
         service_account: true
         token_policies:
           - "{{ openbao_tenancy_injection_policy }}"
+      - name: secrets-direct-put-secret
+        direct_claim_role: secrets-direct-put-secret
+        permission: "secrets:secret:write"
+        token_policies:
+          - "{{ openbao_tenancy_secret_write_policy }}"
+      - name: secrets-direct-read-secret
+        direct_claim_role: secrets-direct-read-secret
+        permission: "secrets:secret:read"
+        token_policies:
+          - "{{ openbao_tenancy_secret_read_policy }}"
+      - name: secrets-direct-list-secrets
+        direct_claim_role: secrets-direct-list-secrets
+        permission: "secrets:secret:list"
+        token_policies:
+          - "{{ openbao_tenancy_secret_list_policy }}"
+      - name: secrets-direct-delete-secret
+        direct_claim_role: secrets-direct-delete-secret
+        permission: "secrets:secret:delete"
+        token_policies:
+          - "{{ openbao_tenancy_secret_delete_policy }}"
+      - name: secrets-direct-create-transit-key
+        direct_claim_role: secrets-direct-create-transit-key
+        permission: "secrets:transit_key:create"
+        token_policies:
+          - "{{ openbao_tenancy_transit_key_create_policy }}"
+      - name: secrets-direct-rotate-transit-key
+        direct_claim_role: secrets-direct-rotate-transit-key
+        permission: "secrets:transit_key:rotate"
+        token_policies:
+          - "{{ openbao_tenancy_transit_key_rotate_policy }}"
+      - name: secrets-direct-encrypt-with-transit-key
+        direct_claim_role: secrets-direct-encrypt-with-transit-key
+        permission: "secrets:transit:encrypt"
+        token_policies:
+          - "{{ openbao_tenancy_transit_encrypt_policy }}"
+      - name: secrets-direct-decrypt-with-transit-key
+        direct_claim_role: secrets-direct-decrypt-with-transit-key
+        permission: "secrets:transit:decrypt"
+        token_policies:
+          - "{{ openbao_tenancy_transit_decrypt_policy }}"
+      - name: secrets-direct-sign-with-transit-key
+        direct_claim_role: secrets-direct-sign-with-transit-key
+        permission: "secrets:transit:sign"
+        token_policies:
+          - "{{ openbao_tenancy_transit_sign_policy }}"
+      - name: secrets-direct-verify-with-transit-key
+        direct_claim_role: secrets-direct-verify-with-transit-key
+        permission: "secrets:transit:verify"
+        token_policies:
+          - "{{ openbao_tenancy_transit_verify_policy }}"
 
 - name: Read OpenBao JWT roles for organization
   ansible.builtin.uri:
@@ -204,6 +284,13 @@
           {'sub': openbao_tenancy_service_account_user_id}
           if (item.item.service_account | default(false))
           else {
+            'org_id': openbao_tenancy_org_id,
+            'forge_metal:credential_id': '*',
+            'forge_metal:openbao_roles': item.item.direct_claim_role,
+            'permissions': item.item.permission
+          }
+          if (item.item.direct_claim_role | default('') | length > 0)
+          else {
             'urn:zitadel:iam:user:resourceowner:id': openbao_tenancy_org_id,
             ('/urn:zitadel:iam:org:project:' ~ openbao_tenancy_secrets_project_id ~ ':roles/' ~ item.item.project_role ~ '/' ~ openbao_tenancy_org_id): '*'
           }
@@ -225,14 +312,25 @@
   changed_when: true
   when: >-
     item.status == 404
+    or (((item.json.data | default({})).token_policies | default([]) | sort) != (item.item.token_policies | sort))
     or (
       (item.item.service_account | default(false))
       and ((item.json.data | default({})).bound_claims | default({})).sub | default('') != openbao_tenancy_service_account_user_id
     )
     or (
       not (item.item.service_account | default(false))
+      and (item.item.direct_claim_role | default('') | length == 0)
       and ('/urn:zitadel:iam:org:project:' ~ openbao_tenancy_secrets_project_id ~ ':roles/' ~ item.item.project_role ~ '/' ~ openbao_tenancy_org_id)
         not in ((item.json.data | default({})).bound_claims | default({})).keys()
+    )
+    or (
+      (item.item.direct_claim_role | default('') | length > 0)
+      and (
+        ((item.json.data | default({})).bound_claims | default({})).get('forge_metal:openbao_roles', '') != item.item.direct_claim_role
+        or ((item.json.data | default({})).bound_claims | default({})).get('permissions', '') != item.item.permission
+        or ((item.json.data | default({})).bound_claims | default({})).get('forge_metal:credential_id', '') != '*'
+        or ((item.json.data | default({})).bound_claims | default({})).get('org_id', '') != openbao_tenancy_org_id
+      )
     )
   no_log: true
 

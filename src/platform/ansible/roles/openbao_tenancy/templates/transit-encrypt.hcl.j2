@@ -1,0 +1,11 @@
+path "{{ openbao_tenancy_kv_mount }}/data/_platform/transit/*" {
+  capabilities = ["read"]
+}
+
+path "{{ openbao_tenancy_transit_mount }}/keys/*" {
+  capabilities = ["read"]
+}
+
+path "{{ openbao_tenancy_transit_mount }}/encrypt/*" {
+  capabilities = ["update"]
+}

@@ -313,6 +313,7 @@ WHERE c.subject_id = $1
 		return ResolveAPICredentialClaimsResult{}, err
 	}
 	result.Permissions = permissions
+	result.OpenBaoRoles = OpenBaoRolesForPermissions(permissions)
 	if _, err := s.DB.ExecContext(ctx, `
 UPDATE identity_api_credentials
 SET last_used_at = $2, updated_at = $2

@@ -9,3 +9,8 @@ secrets_service_openbao_jwt_prefix: jwt
 secrets_service_service_account_client_id: secrets-service-openbao
 secrets_service_service_account_token_url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/oauth/v2/token"
 secrets_service_service_account_token_host: "auth.{{ forge_metal_domain }}"
+secrets_service_billing_url: "http://{{ services.billing.host }}:{{ services.billing.port }}"
+secrets_service_billing_auth_project_name: "{{ billing_service_auth_project_name | default('billing', true) }}"
+secrets_service_billing_internal_role: "{{ billing_service_internal_role | default('billing_internal', true) }}"
+secrets_service_billing_client_id: "secrets-service-billing-{{ inventory_hostname }}"
+secrets_service_billing_token_url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/oauth/v2/token"

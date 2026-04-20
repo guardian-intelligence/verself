@@ -8,6 +8,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"go.opentelemetry.io/otel/trace"
 
+	billingclient "github.com/forge-metal/billing-service/client"
 	"github.com/forge-metal/secrets-service/internal/secrets"
 )
 
@@ -47,6 +48,10 @@ func mapError(ctx context.Context, err error) error {
 		return problem(ctx, http.StatusConflict, "conflict", err.Error(), err)
 	case errors.Is(err, secrets.ErrCrypto):
 		return problem(ctx, http.StatusInternalServerError, "crypto-error", "cryptographic operation failed", err)
+	case errors.Is(err, billingclient.ErrPaymentRequired):
+		return problem(ctx, http.StatusPaymentRequired, "payment-required", "payment required", err)
+	case errors.Is(err, billingclient.ErrForbidden):
+		return problem(ctx, http.StatusForbidden, "billing-forbidden", "billing authorization denied", err)
 	default:
 		return problem(ctx, http.StatusInternalServerError, "internal-error", "internal error", err)
 	}

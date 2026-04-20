@@ -44,12 +44,15 @@ paths:
             x-forge-metal-iam:
                 action: list
                 audit_event: secrets.secret.list
+                billing_product_id: secrets
+                billing_sku_id: secrets_kv_operation
                 data_classification: secret
                 event_category: secrets
+                openbao_role: secrets-direct-list-secrets
                 operation_display: list secrets
                 operation_type: read
                 org_scope: token_org_id
-                permission: secrets:secret:read
+                permission: secrets:secret:list
                 rate_limit_class: read
                 resource: secret
                 risk_level: high
@@ -84,8 +87,11 @@ paths:
             x-forge-metal-iam:
                 action: read
                 audit_event: secrets.secret.read
+                billing_product_id: secrets
+                billing_sku_id: secrets_kv_operation
                 data_classification: secret
                 event_category: secrets
+                openbao_role: secrets-direct-read-secret
                 operation_display: read secret
                 operation_type: read
                 org_scope: token_org_id
@@ -137,8 +143,11 @@ paths:
             x-forge-metal-iam:
                 action: write
                 audit_event: secrets.secret.write
+                billing_product_id: secrets
+                billing_sku_id: secrets_kv_operation
                 data_classification: secret
                 event_category: secrets
+                openbao_role: secrets-direct-put-secret
                 operation_display: put secret
                 operation_type: write
                 org_scope: token_org_id
@@ -225,8 +234,11 @@ paths:
             x-forge-metal-iam:
                 action: delete
                 audit_event: secrets.secret.delete
+                billing_product_id: secrets
+                billing_sku_id: secrets_kv_operation
                 data_classification: secret
                 event_category: secrets
+                openbao_role: secrets-direct-delete-secret
                 operation_display: delete secret
                 operation_type: delete
                 org_scope: token_org_id
@@ -272,12 +284,15 @@ paths:
             x-forge-metal-iam:
                 action: create
                 audit_event: secrets.transit_key.create
+                billing_product_id: secrets
+                billing_sku_id: secrets_transit_operation
                 data_classification: secret
                 event_category: secrets
+                openbao_role: secrets-direct-create-transit-key
                 operation_display: create transit key
                 operation_type: write
                 org_scope: token_org_id
-                permission: secrets:transit:write
+                permission: secrets:transit_key:create
                 rate_limit_class: key_mutation
                 resource: transit_key
                 risk_level: high
@@ -318,12 +333,15 @@ paths:
             x-forge-metal-iam:
                 action: decrypt
                 audit_event: secrets.transit_key.decrypt
+                billing_product_id: secrets
+                billing_sku_id: secrets_transit_operation
                 data_classification: secret
                 event_category: secrets
+                openbao_role: secrets-direct-decrypt-with-transit-key
                 operation_display: decrypt with transit key
                 operation_type: write
                 org_scope: token_org_id
-                permission: secrets:transit:use
+                permission: secrets:transit:decrypt
                 rate_limit_class: crypto
                 resource: transit_key
                 risk_level: critical
@@ -364,12 +382,15 @@ paths:
             x-forge-metal-iam:
                 action: encrypt
                 audit_event: secrets.transit_key.encrypt
+                billing_product_id: secrets
+                billing_sku_id: secrets_transit_operation
                 data_classification: secret
                 event_category: secrets
+                openbao_role: secrets-direct-encrypt-with-transit-key
                 operation_display: encrypt with transit key
                 operation_type: write
                 org_scope: token_org_id
-                permission: secrets:transit:use
+                permission: secrets:transit:encrypt
                 rate_limit_class: crypto
                 resource: transit_key
                 risk_level: high
@@ -412,12 +433,15 @@ paths:
             x-forge-metal-iam:
                 action: rotate
                 audit_event: secrets.transit_key.rotate
+                billing_product_id: secrets
+                billing_sku_id: secrets_transit_operation
                 data_classification: secret
                 event_category: secrets
+                openbao_role: secrets-direct-rotate-transit-key
                 operation_display: rotate transit key
                 operation_type: write
                 org_scope: token_org_id
-                permission: secrets:transit:rotate
+                permission: secrets:transit_key:rotate
                 rate_limit_class: key_mutation
                 resource: transit_key
                 risk_level: high
@@ -458,12 +482,15 @@ paths:
             x-forge-metal-iam:
                 action: sign
                 audit_event: secrets.transit_key.sign
+                billing_product_id: secrets
+                billing_sku_id: secrets_transit_operation
                 data_classification: secret
                 event_category: secrets
+                openbao_role: secrets-direct-sign-with-transit-key
                 operation_display: sign with transit key
                 operation_type: write
                 org_scope: token_org_id
-                permission: secrets:transit:use
+                permission: secrets:transit:sign
                 rate_limit_class: crypto
                 resource: transit_key
                 risk_level: high
@@ -504,12 +531,15 @@ paths:
             x-forge-metal-iam:
                 action: verify
                 audit_event: secrets.transit_key.verify
+                billing_product_id: secrets
+                billing_sku_id: secrets_transit_operation
                 data_classification: secret
                 event_category: secrets
+                openbao_role: secrets-direct-verify-with-transit-key
                 operation_display: verify with transit key
                 operation_type: write
                 org_scope: token_org_id
-                permission: secrets:transit:use
+                permission: secrets:transit:verify
                 rate_limit_class: crypto
                 resource: transit_key
                 risk_level: high

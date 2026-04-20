@@ -190,6 +190,7 @@ type ResolveAPICredentialClaimsResult struct {
 	OwnerID      string
 	OwnerDisplay string
 	Permissions  []string
+	OpenBaoRoles []string
 }
 
 func SecretHash(secret string) (fingerprint string, raw []byte) {

@@ -76,17 +76,29 @@
     - { name: cert.pem, mode: "0640" }
     - { name: key.pem, mode: "0640" }
 
-- name: Route OpenBao OIDC issuer lookups through local Caddy
+- name: Remove legacy global OpenBao OIDC hosts override
   ansible.builtin.blockinfile:
     path: /etc/hosts
     marker: "# {mark} forge-metal-openbao-oidc"
-    block: |-
-      {% for host in openbao_oidc_loopback_hosts %}
-      127.0.0.1 {{ host }}
-      {% endfor %}
+    state: absent
     owner: root
     group: root
     mode: "0644"
+
+- name: Deploy OpenBao private hosts file
+  ansible.builtin.copy:
+    dest: "{{ openbao_hosts_file }}"
+    owner: root
+    group: openbao
+    mode: "0640"
+    content: |
+      127.0.0.1 localhost
+      ::1 localhost ip6-localhost ip6-loopback
+      # OpenBao needs Zitadel's issuer URL to match tokens while staying local.
+      {% for host in openbao_oidc_loopback_hosts %}
+      127.0.0.1 {{ host }}
+      {% endfor %}
+  notify: restart openbao
 
 - name: Deploy OpenBao nftables ruleset
   ansible.builtin.template:
@@ -119,6 +131,7 @@
       Type=simple
       User=openbao
       Group=openbao
+      BindReadOnlyPaths={{ openbao_hosts_file }}:/etc/hosts
       Environment=BAO_ADDR=https://{{ services.openbao.host }}:{{ services.openbao.port }}
       Environment=BAO_CACERT={{ openbao_tls_dir }}/cert.pem
       Environment=VAULT_ADDR=https://{{ services.openbao.host }}:{{ services.openbao.port }}

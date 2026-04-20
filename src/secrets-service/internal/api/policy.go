@@ -15,21 +15,34 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	auth "github.com/forge-metal/auth-middleware"
+	billingclient "github.com/forge-metal/billing-service/client"
 	"github.com/forge-metal/secrets-service/internal/secrets"
 )
 
 type permission string
 
 const (
-	permissionSecretRead    permission = "secrets:secret:read"
-	permissionSecretWrite   permission = "secrets:secret:write"
-	permissionSecretDelete  permission = "secrets:secret:delete"
-	permissionTransitRead   permission = "secrets:transit:read"
-	permissionTransitWrite  permission = "secrets:transit:write"
-	permissionTransitUse    permission = "secrets:transit:use"
-	permissionTransitRotate permission = "secrets:transit:rotate"
+	permissionSecretWrite      permission = "secrets:secret:write"
+	permissionSecretRead       permission = "secrets:secret:read"
+	permissionSecretList       permission = "secrets:secret:list"
+	permissionSecretDelete     permission = "secrets:secret:delete"
+	permissionTransitKeyCreate permission = "secrets:transit_key:create"
+	permissionTransitKeyRotate permission = "secrets:transit_key:rotate"
+	permissionTransitEncrypt   permission = "secrets:transit:encrypt"
+	permissionTransitDecrypt   permission = "secrets:transit:decrypt"
+	permissionTransitSign      permission = "secrets:transit:sign"
+	permissionTransitVerify    permission = "secrets:transit:verify"
+
+	billingProductSecrets         = "secrets"
+	billingSKUSecretsKV           = "secrets_kv_operation"
+	billingSKUSecretsTransit      = "secrets_transit_operation"
+	billingSourceTypeAPIOperation = "secrets_api_operation"
 
 	idempotencyHeaderKey              = "idempotency_key_header"
 	maxIdempotencyKeyLength           = 128
@@ -37,6 +50,8 @@ const (
 	bodyLimitSmallJSON          int64 = 64 << 10
 	bodyLimitCryptoJSON         int64 = 256 << 10
 )
+
+var apiTracer = otel.Tracer("secrets-service/internal/api")
 
 type operationPolicy struct {
 	Permission         permission
@@ -53,6 +68,8 @@ type operationPolicy struct {
 	DataClassification string
 	BodyLimitBytes     int64
 	SecretOperation    string
+	OpenBaoRole        string
+	BillingSKU         string
 }
 
 type securedOperation struct {
@@ -82,10 +99,22 @@ func registerSecured[I, O any](api huma.API, svc *secrets.Service, securedOp sec
 			auditOperation(ctx, op.OperationID, policy, identity, input, nil, "denied", err)
 			return nil, err
 		}
-		output, err := handler(ctx, principal, input)
+		reservation, err := reserveBillingForOperation(ctx, svc, op.OperationID, policy, identity, input)
 		if err != nil {
 			mapped := mapError(ctx, err)
 			auditOperation(ctx, op.OperationID, policy, identity, input, nil, "error", mapped)
+			return nil, mapped
+		}
+		output, err := handler(ctx, principal, input)
+		if err != nil {
+			voidBillingReservation(ctx, svc, reservation)
+			mapped := mapError(ctx, err)
+			auditOperation(ctx, op.OperationID, policy, identity, input, nil, "error", mapped)
+			return nil, mapped
+		}
+		if err := settleBillingReservation(ctx, svc, reservation, op.OperationID, policy, identity, input, output); err != nil {
+			mapped := mapError(ctx, err)
+			auditOperation(ctx, op.OperationID, policy, identity, input, output, "error", mapped)
 			return nil, mapped
 		}
 		auditOperation(ctx, op.OperationID, policy, identity, input, output, "allowed", nil)
@@ -97,6 +126,12 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 	if policy.Permission == "" || policy.TargetKind == "" || policy.Action == "" || policy.OrgScope == "" || policy.RateLimitClass == "" || policy.AuditEvent == "" ||
 		policy.OperationDisplay == "" || policy.OperationType == "" || policy.EventCategory == "" || policy.RiskLevel == "" {
 		panic("incomplete IAM policy for operation: " + op.OperationID)
+	}
+	if policy.OpenBaoRole == "" {
+		panic("missing OpenBao role for operation: " + op.OperationID)
+	}
+	if policy.BillingSKU == "" {
+		panic("missing billing SKU for operation: " + op.OperationID)
 	}
 	if operationRequiresBodyBudget(op) && policy.BodyLimitBytes <= 0 {
 		panic("empty request body limit for mutating operation: " + op.OperationID)
@@ -125,6 +160,9 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 		"event_category":      policy.EventCategory,
 		"risk_level":          policy.RiskLevel,
 		"data_classification": policy.DataClassification,
+		"openbao_role":        policy.OpenBaoRole,
+		"billing_product_id":  billingProductSecrets,
+		"billing_sku_id":      policy.BillingSKU,
 	}
 	op.Security = []map[string][]string{{"bearerAuth": {}}}
 	return op
@@ -166,9 +204,12 @@ func enforceOperationPolicy(ctx context.Context, policy operationPolicy) (secret
 	if err != nil {
 		return secrets.Principal{}, nil, err
 	}
-	principal := principalFromIdentity(identity)
+	principal := principalFromIdentity(identity, policy)
 	if !identityHasPermission(identity, policy.Permission) {
 		return principal, identity, forbidden(ctx, "permission-denied", fmt.Sprintf("missing required permission %q", policy.Permission))
+	}
+	if principal.OpenBaoRole == "" {
+		return principal, identity, forbidden(ctx, "openbao-role-denied", "authenticated identity is not bound to an OpenBao role for this operation")
 	}
 	if err := requireOperationIdempotency(ctx, policy); err != nil {
 		return principal, identity, err
@@ -190,7 +231,7 @@ func requireIdentity(ctx context.Context) (*auth.Identity, error) {
 	return identity, nil
 }
 
-func principalFromIdentity(identity *auth.Identity) secrets.Principal {
+func principalFromIdentity(identity *auth.Identity, policy operationPolicy) secrets.Principal {
 	principalType := "user"
 	credentialID := claimString(identity.Raw, "forge_metal:credential_id")
 	if credentialID != "" {
@@ -207,14 +248,25 @@ func principalFromIdentity(identity *auth.Identity) secrets.Principal {
 		ActorOwnerID:          claimString(identity.Raw, "forge_metal:credential_owner_id"),
 		ActorOwnerDisplay:     claimString(identity.Raw, "forge_metal:credential_owner_display"),
 		AuthMethod:            claimString(identity.Raw, "forge_metal:credential_auth_method"),
-		OpenBaoRole:           openBaoRoleForIdentity(identity),
+		OpenBaoRole:           openBaoRoleForIdentity(identity, policy),
 		JWTID:                 claimString(identity.Raw, "jti"),
 		TokenExpiresAt:        claimNumericDate(identity.Raw, "exp"),
 	}
 }
 
-func openBaoRoleForIdentity(identity *auth.Identity) string {
+func openBaoRoleForIdentity(identity *auth.Identity, policy operationPolicy) string {
 	if identity == nil {
+		return ""
+	}
+	if claimString(identity.Raw, "forge_metal:credential_id") != "" {
+		if policy.OpenBaoRole == "" || !identityHasDirectPermission(identity, policy.Permission) {
+			return ""
+		}
+		for _, role := range stringClaimList(identity.Raw["forge_metal:openbao_roles"]) {
+			if role == policy.OpenBaoRole {
+				return role
+			}
+		}
 		return ""
 	}
 	for _, assignment := range identity.RoleAssignments {
@@ -251,7 +303,7 @@ func identityHasPermission(identity *auth.Identity, required permission) bool {
 		case "owner", "admin":
 			return true
 		case "member":
-			if required == permissionSecretRead || required == permissionTransitRead || required == permissionTransitUse {
+			if required == permissionSecretRead || required == permissionSecretList || required == permissionTransitEncrypt || required == permissionTransitDecrypt || required == permissionTransitSign || required == permissionTransitVerify {
 				return true
 			}
 		}
@@ -273,6 +325,108 @@ func identityHasDirectPermission(identity *auth.Identity, required permission) b
 		}
 	}
 	return false
+}
+
+func reserveBillingForOperation(ctx context.Context, svc *secrets.Service, operationID string, policy operationPolicy, identity *auth.Identity, input any) (*billingclient.Reservation, error) {
+	if policy.BillingSKU == "" {
+		return nil, nil
+	}
+	if svc == nil || svc.Billing == nil {
+		return nil, fmt.Errorf("%w: billing client is required for public secrets operations", secrets.ErrStore)
+	}
+	orgID, err := strconv.ParseUint(strings.TrimSpace(identity.OrgID), 10, 64)
+	if err != nil || orgID == 0 {
+		return nil, fmt.Errorf("%w: numeric org_id is required for billing", secrets.ErrInvalidArgument)
+	}
+	sourceRef := billingSourceRef(ctx, operationID)
+	allocation := map[string]float64{policy.BillingSKU: 1}
+	billingCtx, span := apiTracer.Start(ctx, "secrets.billing.reserve")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("forge_metal.org_id", identity.OrgID),
+		attribute.String("forge_metal.credential_id", claimString(identity.Raw, "forge_metal:credential_id")),
+		attribute.String("secrets.operation_id", operationID),
+		attribute.String("billing.product_id", billingProductSecrets),
+		attribute.String("billing.sku_id", policy.BillingSKU),
+		attribute.String("billing.source_ref", sourceRef),
+	)
+	reservation, err := svc.Billing.Reserve(billingCtx, 0, orgID, billingProductSecrets, billingActorID(identity), 1, billingSourceTypeAPIOperation, sourceRef, 1, billingclient.ReservationShapeCount, 1, allocation)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
+	}
+	span.SetAttributes(attribute.String("billing.window_id", reservation.WindowId), attribute.String("billing.reservation_shape", reservation.ReservationShape))
+	return &reservation, nil
+}
+
+func settleBillingReservation(ctx context.Context, svc *secrets.Service, reservation *billingclient.Reservation, operationID string, policy operationPolicy, identity *auth.Identity, input any, output any) error {
+	if reservation == nil {
+		return nil
+	}
+	targetID, targetScope, targetPathHash, secretVersion, keyID := auditTarget(identity.OrgID, input, output)
+	usageSummary := map[string]any{
+		"operation_id":     operationID,
+		"permission":       string(policy.Permission),
+		"credential_id":    claimString(identity.Raw, "forge_metal:credential_id"),
+		"actor_subject":    identity.Subject,
+		"target_kind":      policy.TargetKind,
+		"target_id":        targetID,
+		"target_scope":     targetScope,
+		"target_path_hash": targetPathHash,
+		"secret_version":   secretVersion,
+		"key_id":           keyID,
+	}
+	billingCtx, span := apiTracer.Start(ctx, "secrets.billing.settle")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("forge_metal.org_id", identity.OrgID),
+		attribute.String("forge_metal.credential_id", claimString(identity.Raw, "forge_metal:credential_id")),
+		attribute.String("secrets.operation_id", operationID),
+		attribute.String("billing.window_id", reservation.WindowId),
+		attribute.String("billing.product_id", reservation.ProductId),
+		attribute.String("billing.sku_id", policy.BillingSKU),
+	)
+	if _, err := svc.Billing.SettleResult(billingCtx, *reservation, 1, usageSummary); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	return nil
+}
+
+func voidBillingReservation(ctx context.Context, svc *secrets.Service, reservation *billingclient.Reservation) {
+	if reservation == nil || svc == nil || svc.Billing == nil {
+		return
+	}
+	billingCtx, span := apiTracer.Start(ctx, "secrets.billing.void")
+	defer span.End()
+	span.SetAttributes(attribute.String("billing.window_id", reservation.WindowId))
+	if err := svc.Billing.Void(billingCtx, *reservation); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		if svc.Logger != nil {
+			svc.Logger.WarnContext(ctx, "void secrets billing reservation failed", "window_id", reservation.WindowId, "error", err)
+		}
+	}
+}
+
+func billingSourceRef(ctx context.Context, operationID string) string {
+	info := operationRequestInfoFromContext(ctx)
+	if info.IdempotencyKey != "" {
+		return operationID + ":idem:" + hashTextForAudit(info.IdempotencyKey)
+	}
+	if sc := trace.SpanContextFromContext(ctx); sc.HasTraceID() {
+		return operationID + ":trace:" + sc.TraceID().String() + ":" + sc.SpanID().String()
+	}
+	return operationID + ":instant:" + strconv.FormatInt(time.Now().UnixNano(), 10)
+}
+
+func billingActorID(identity *auth.Identity) string {
+	if credentialID := claimString(identity.Raw, "forge_metal:credential_id"); credentialID != "" {
+		return credentialID
+	}
+	return strings.TrimSpace(identity.Subject)
 }
 
 type operationRequestInfoKey struct{}
@@ -374,7 +528,7 @@ func auditOperation(ctx context.Context, operationID string, policy operationPol
 		EventCategory:         policy.EventCategory,
 		RiskLevel:             policy.RiskLevel,
 		DataClassification:    policy.DataClassification,
-		ActorType:             principalFromIdentity(identity).Type,
+		ActorType:             principalFromIdentity(identity, policy).Type,
 		ActorID:               identity.Subject,
 		ActorDisplay:          identity.Email,
 		ActorOwnerID:          claimString(identity.Raw, "forge_metal:credential_owner_id"),

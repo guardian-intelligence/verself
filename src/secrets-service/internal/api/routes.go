@@ -29,6 +29,8 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		AuditEvent:      "secrets.secret.write",
 		BodyLimitBytes:  bodyLimitSmallJSON,
 		SecretOperation: "write",
+		OpenBaoRole:     "secrets-direct-put-secret",
+		BillingSKU:      billingSKUSecretsKV,
 	}), putSecret(svc))
 
 	registerSecured(api, svc, secured(huma.Operation{
@@ -45,6 +47,8 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		AuditEvent:      "secrets.secret.read",
 		RiskLevel:       "critical",
 		SecretOperation: "read",
+		OpenBaoRole:     "secrets-direct-read-secret",
+		BillingSKU:      billingSKUSecretsKV,
 	}), readSecret(svc))
 
 	registerSecured(api, svc, secured(huma.Operation{
@@ -53,7 +57,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		Path:        "/api/v1/secrets",
 		Summary:     "List secret or variable metadata",
 	}, operationPolicy{
-		Permission:      permissionSecretRead,
+		Permission:      permissionSecretList,
 		TargetKind:      "secret",
 		Action:          "list",
 		OrgScope:        "token_org_id",
@@ -61,6 +65,8 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		AuditEvent:      "secrets.secret.list",
 		RiskLevel:       "high",
 		SecretOperation: "list",
+		OpenBaoRole:     "secrets-direct-list-secrets",
+		BillingSKU:      billingSKUSecretsKV,
 	}), listSecrets(svc))
 
 	registerSecured(api, svc, secured(huma.Operation{
@@ -78,6 +84,8 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		AuditEvent:      "secrets.secret.delete",
 		BodyLimitBytes:  bodyLimitSmallJSON,
 		SecretOperation: "delete",
+		OpenBaoRole:     "secrets-direct-delete-secret",
+		BillingSKU:      billingSKUSecretsKV,
 	}), deleteSecret(svc))
 
 	registerSecured(api, svc, secured(huma.Operation{
@@ -87,7 +95,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		Summary:       "Create a transit key",
 		DefaultStatus: 201,
 	}, operationPolicy{
-		Permission:      permissionTransitWrite,
+		Permission:      permissionTransitKeyCreate,
 		TargetKind:      "transit_key",
 		Action:          "create",
 		OrgScope:        "token_org_id",
@@ -96,6 +104,8 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		AuditEvent:      "secrets.transit_key.create",
 		BodyLimitBytes:  bodyLimitSmallJSON,
 		SecretOperation: "key_create",
+		OpenBaoRole:     "secrets-direct-create-transit-key",
+		BillingSKU:      billingSKUSecretsTransit,
 	}), createTransitKey(svc))
 
 	registerSecured(api, svc, secured(huma.Operation{
@@ -104,7 +114,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		Path:        "/api/v1/transit/keys/{key_name}/rotate",
 		Summary:     "Rotate a transit key",
 	}, operationPolicy{
-		Permission:      permissionTransitRotate,
+		Permission:      permissionTransitKeyRotate,
 		TargetKind:      "transit_key",
 		Action:          "rotate",
 		OrgScope:        "token_org_id",
@@ -113,6 +123,8 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		AuditEvent:      "secrets.transit_key.rotate",
 		BodyLimitBytes:  bodyLimitSmallJSON,
 		SecretOperation: "key_rotate",
+		OpenBaoRole:     "secrets-direct-rotate-transit-key",
+		BillingSKU:      billingSKUSecretsTransit,
 	}), rotateTransitKey(svc))
 
 	registerSecured(api, svc, secured(huma.Operation{
@@ -121,7 +133,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		Path:        "/api/v1/transit/keys/{key_name}/encrypt",
 		Summary:     "Encrypt with a transit key",
 	}, operationPolicy{
-		Permission:      permissionTransitUse,
+		Permission:      permissionTransitEncrypt,
 		TargetKind:      "transit_key",
 		Action:          "encrypt",
 		OrgScope:        "token_org_id",
@@ -129,6 +141,8 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		AuditEvent:      "secrets.transit_key.encrypt",
 		BodyLimitBytes:  bodyLimitCryptoJSON,
 		SecretOperation: "encrypt",
+		OpenBaoRole:     "secrets-direct-encrypt-with-transit-key",
+		BillingSKU:      billingSKUSecretsTransit,
 	}), encryptTransit(svc))
 
 	registerSecured(api, svc, secured(huma.Operation{
@@ -137,7 +151,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		Path:        "/api/v1/transit/keys/{key_name}/decrypt",
 		Summary:     "Decrypt with a transit key",
 	}, operationPolicy{
-		Permission:      permissionTransitUse,
+		Permission:      permissionTransitDecrypt,
 		TargetKind:      "transit_key",
 		Action:          "decrypt",
 		OrgScope:        "token_org_id",
@@ -146,6 +160,8 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		RiskLevel:       "critical",
 		BodyLimitBytes:  bodyLimitCryptoJSON,
 		SecretOperation: "decrypt",
+		OpenBaoRole:     "secrets-direct-decrypt-with-transit-key",
+		BillingSKU:      billingSKUSecretsTransit,
 	}), decryptTransit(svc))
 
 	registerSecured(api, svc, secured(huma.Operation{
@@ -154,7 +170,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		Path:        "/api/v1/transit/keys/{key_name}/sign",
 		Summary:     "Sign with a transit key",
 	}, operationPolicy{
-		Permission:      permissionTransitUse,
+		Permission:      permissionTransitSign,
 		TargetKind:      "transit_key",
 		Action:          "sign",
 		OrgScope:        "token_org_id",
@@ -162,6 +178,8 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		AuditEvent:      "secrets.transit_key.sign",
 		BodyLimitBytes:  bodyLimitCryptoJSON,
 		SecretOperation: "sign",
+		OpenBaoRole:     "secrets-direct-sign-with-transit-key",
+		BillingSKU:      billingSKUSecretsTransit,
 	}), signTransit(svc))
 
 	registerSecured(api, svc, secured(huma.Operation{
@@ -170,7 +188,7 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		Path:        "/api/v1/transit/keys/{key_name}/verify",
 		Summary:     "Verify with a transit key",
 	}, operationPolicy{
-		Permission:      permissionTransitUse,
+		Permission:      permissionTransitVerify,
 		TargetKind:      "transit_key",
 		Action:          "verify",
 		OrgScope:        "token_org_id",
@@ -179,6 +197,8 @@ func RegisterRoutes(api huma.API, svc *secrets.Service) {
 		RiskLevel:       "high",
 		BodyLimitBytes:  bodyLimitCryptoJSON,
 		SecretOperation: "verify",
+		OpenBaoRole:     "secrets-direct-verify-with-transit-key",
+		BillingSKU:      billingSKUSecretsTransit,
 	}), verifyTransit(svc))
 }
 
