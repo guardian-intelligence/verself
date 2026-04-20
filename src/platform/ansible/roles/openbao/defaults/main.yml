@@ -1,0 +1,11 @@
+---
+openbao_config_dir: /etc/openbao
+openbao_tls_dir: /etc/openbao/tls
+openbao_data_dir: /var/lib/openbao
+openbao_raft_dir: /var/lib/openbao/raft
+openbao_log_dir: /var/log/openbao
+openbao_audit_log: /var/log/openbao/audit.log
+openbao_credstore_dir: /etc/credstore/openbao
+openbao_node_id: forge-metal-single-node
+openbao_key_shares: 3
+openbao_key_threshold: 2

@@ -1,0 +1,24 @@
+#!/usr/sbin/nft -f
+# OpenBao is a loopback-only KMS and secrets backend. External access must traverse secrets-service.
+
+table inet forge_metal_openbao
+delete table inet forge_metal_openbao
+
+table inet forge_metal_openbao {
+    chain input {
+        type filter hook input priority filter; policy accept;
+
+        tcp dport { {{ services.openbao.port }}, {{ services.openbao.cluster_port }} } iifname != "lo" drop
+    }
+
+    chain output {
+        type filter hook output priority filter; policy accept;
+
+        ct state established,related accept
+        meta skuid != openbao accept
+
+        meta l4proto != tcp meta l4proto != udp accept
+
+        drop
+    }
+}

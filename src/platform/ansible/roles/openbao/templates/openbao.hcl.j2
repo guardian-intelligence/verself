@@ -1,0 +1,34 @@
+ui = false
+
+api_addr = "https://{{ services.openbao.host }}:{{ services.openbao.port }}"
+cluster_addr = "https://{{ services.openbao.host }}:{{ services.openbao.cluster_port }}"
+
+storage "raft" {
+  path = "{{ openbao_raft_dir }}"
+  node_id = "{{ openbao_node_id }}"
+}
+
+listener "tcp" {
+  address = "{{ services.openbao.host }}:{{ services.openbao.port }}"
+  cluster_address = "{{ services.openbao.host }}:{{ services.openbao.cluster_port }}"
+  tls_cert_file = "{{ openbao_tls_dir }}/cert.pem"
+  tls_key_file = "{{ openbao_tls_dir }}/key.pem"
+  tls_min_version = "tls13"
+
+  telemetry {
+    unauthenticated_metrics_access = true
+  }
+}
+
+telemetry {
+  prometheus_retention_time = "1m"
+  disable_hostname = true
+}
+
+audit "file" "forge-metal" {
+  description = "Forge Metal forensic backstop audit log"
+  options {
+    file_path = "{{ openbao_audit_log }}"
+    mode = "0600"
+  }
+}

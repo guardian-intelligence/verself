@@ -90,19 +90,21 @@
     - role: cloudflare_dns
       tags: [cloudflare_dns]
     - role: clickhouse
-      tags: [clickhouse, billing_service, sandbox_rental_service, governance_service]
+      tags: [clickhouse, billing_service, sandbox_rental_service, governance_service, openbao]
     - role: tigerbeetle
       tags: [tigerbeetle]
     - role: postgresql
-      tags: [postgresql]
+      tags: [postgresql, openbao]
     - role: zitadel
-      tags: [zitadel]
+      tags: [zitadel, openbao]
     - role: billing_service
       tags: [billing_service]
     - role: identity_service
       tags: [identity_service]
     - role: governance_service
-      tags: [governance_service]
+      tags: [governance_service, openbao]
+    - role: openbao
+      tags: [openbao]
     - role: secrets_service
       tags: [secrets_service]
     - role: sandbox_rental_service

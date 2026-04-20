@@ -21,6 +21,13 @@
     "sha256": "fe1f5231e5dcbdca63ae77adab0d2241daafeb9712e7d6cded3713e9ef50f1cb",
     "extract_binary": "zitadel-linux-amd64/zitadel"
   },
+  "openbao": {
+    "version": "2.5.2",
+    "format": "deb",
+    "url": "https://github.com/openbao/openbao/releases/download/v2.5.2/openbao_2.5.2_linux_amd64.deb",
+    "sha256": "5b915011ba8fa8137bd3309830aded0250b8fce42706bd6dcd2b91ac5560cde7",
+    "extract_binary": "usr/bin/bao"
+  },
   "forgejo": {
     "version": "14.0.3",
     "format": "binary",

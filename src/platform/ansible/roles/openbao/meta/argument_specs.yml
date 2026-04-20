@@ -1,0 +1,42 @@
+---
+argument_specs:
+  main:
+    short_description: "OpenBao single-node Raft KMS and secrets backend"
+    description:
+      - "Deploys OpenBao with a loopback TLS listener, integrated Raft storage,"
+      - "declarative file audit device, manual Shamir unseal keys in credstore,"
+      - "and nftables confinement. Service ports come from group_vars/all/services.yml."
+    options:
+      openbao_config_dir:
+        type: path
+        default: /etc/openbao
+      openbao_tls_dir:
+        type: path
+        default: /etc/openbao/tls
+      openbao_data_dir:
+        type: path
+        default: /var/lib/openbao
+      openbao_raft_dir:
+        type: path
+        default: /var/lib/openbao/raft
+      openbao_log_dir:
+        type: path
+        default: /var/log/openbao
+      openbao_audit_log:
+        type: path
+        default: /var/log/openbao/audit.log
+      openbao_credstore_dir:
+        type: path
+        default: /etc/credstore/openbao
+      openbao_node_id:
+        type: str
+        default: forge-metal-single-node
+      openbao_key_shares:
+        type: int
+        default: 3
+      openbao_key_threshold:
+        type: int
+        default: 2
+      fm_bin:
+        type: path
+        required: true
