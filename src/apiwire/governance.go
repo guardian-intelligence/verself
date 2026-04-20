@@ -65,6 +65,7 @@ type GovernanceAuditEvents struct {
 type GovernanceAuditFilters struct {
 	ActorID           string `json:"actor_id,omitempty"`
 	AuditEvent        string `json:"audit_event,omitempty"`
+	CredentialID      string `json:"credential_id,omitempty"`
 	HighRisk          bool   `json:"high_risk,omitempty"`
 	OperationID       string `json:"operation_id,omitempty"`
 	OperationType     string `json:"operation_type,omitempty"`

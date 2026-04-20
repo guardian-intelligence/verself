@@ -38,6 +38,12 @@ paths:
                   schema:
                     type: string
                     maxLength: 255
+                - name: credential_id
+                  in: query
+                  explode: false
+                  schema:
+                    type: string
+                    maxLength: 255
                 - name: high_risk
                   in: query
                   description: Return events that are high or critical risk, write/delete/export operations, denials, or errors.
@@ -575,6 +581,8 @@ components:
                 actor_id:
                     type: string
                 audit_event:
+                    type: string
+                credential_id:
                     type: string
                 high_risk:
                     type: boolean

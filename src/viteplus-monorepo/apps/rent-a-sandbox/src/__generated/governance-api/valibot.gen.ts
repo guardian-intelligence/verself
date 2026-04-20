@@ -86,6 +86,7 @@ export const vGovernanceAuditEvent = v.strictObject({
 export const vGovernanceAuditFilters = v.strictObject({
   actor_id: v.optional(v.string()),
   audit_event: v.optional(v.string()),
+  credential_id: v.optional(v.string()),
   high_risk: v.optional(v.boolean()),
   operation_id: v.optional(v.string()),
   operation_type: v.optional(v.string()),
@@ -211,6 +212,7 @@ export const vListAuditEventsQuery = v.object({
   cursor: v.optional(v.pipe(v.string(), v.maxLength(1024))),
   actor_id: v.optional(v.pipe(v.string(), v.maxLength(255))),
   audit_event: v.optional(v.pipe(v.string(), v.maxLength(255))),
+  credential_id: v.optional(v.pipe(v.string(), v.maxLength(255))),
   high_risk: v.optional(v.boolean()),
   operation_id: v.optional(v.pipe(v.string(), v.maxLength(128))),
   operation_type: v.optional(

@@ -242,6 +242,7 @@ type AuditListFilters struct {
 	Cursor            string
 	ActorID           string
 	AuditEvent        string
+	CredentialID      string
 	HighRisk          bool
 	OperationID       string
 	OperationType     string
@@ -716,11 +717,12 @@ func (s *Service) ListAuditEvents(ctx context.Context, principal Principal, filt
 		  AND ($9 = '' OR risk_level = $9)
 		  AND ($10 = '' OR source_product_area = $10)
 		  AND ($11 = '' OR audit_event = $11)
-		  AND ($12 = 0 OR risk_level IN ('high', 'critical') OR operation_type IN ('write', 'delete', 'export') OR result IN ('denied', 'error'))
-		  AND ($13 = 0 OR (recorded_at, sequence) < ($14, $15))
+		  AND ($12 = '' OR credential_id = $12)
+		  AND ($13 = 0 OR risk_level IN ('high', 'critical') OR operation_type IN ('write', 'delete', 'export') OR result IN ('denied', 'error'))
+		  AND ($14 = 0 OR (recorded_at, sequence) < ($15, $16))
 		ORDER BY recorded_at DESC, sequence DESC
-		LIMIT $16
-	`, orgID, filters.ServiceName, filters.OperationID, filters.Result, filters.ActorID, filters.TargetID, filters.TargetKind, filters.OperationType, filters.RiskLevel, filters.SourceProductArea, filters.AuditEvent, highRisk, cursorEnabled, cursor.RecordedAt, cursor.Sequence, limit+1)
+		LIMIT $17
+	`, orgID, filters.ServiceName, filters.OperationID, filters.Result, filters.ActorID, filters.TargetID, filters.TargetKind, filters.OperationType, filters.RiskLevel, filters.SourceProductArea, filters.AuditEvent, filters.CredentialID, highRisk, cursorEnabled, cursor.RecordedAt, cursor.Sequence, limit+1)
 	if err != nil {
 		return AuditListPage{}, fmt.Errorf("%w: list audit events: %v", ErrStore, err)
 	}
