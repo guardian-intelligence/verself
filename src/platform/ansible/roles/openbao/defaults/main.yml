@@ -1,5 +1,6 @@
 ---
 openbao_config_dir: /etc/openbao
+openbao_hosts_file: "{{ openbao_config_dir }}/hosts"
 openbao_tls_dir: /etc/openbao/tls
 openbao_data_dir: /var/lib/openbao
 openbao_raft_dir: /var/lib/openbao/raft

@@ -72,6 +72,20 @@ var defaultCapabilities = []Capability{
 			PermissionBillingRead,
 		},
 	},
+	{
+		Key:            "use_secrets",
+		Label:          "Use secrets",
+		Description:    "Read and list secrets, and use Transit keys for encrypt, decrypt, sign, and verify operations.",
+		DefaultEnabled: false,
+		Permissions: []string{
+			PermissionSecretRead,
+			PermissionSecretList,
+			PermissionTransitEncrypt,
+			PermissionTransitDecrypt,
+			PermissionTransitSign,
+			PermissionTransitVerify,
+		},
+	},
 }
 
 // init validates the capability catalog at process start. Any drift between

@@ -12,6 +12,8 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+
+	billingclient "github.com/forge-metal/billing-service/client"
 )
 
 const (
@@ -37,6 +39,7 @@ var tracer = otel.Tracer("secrets-service/internal/secrets")
 
 type Service struct {
 	Store          *BaoStore
+	Billing        *billingclient.ServiceClient
 	Logger         *slog.Logger
 	ServiceVersion string
 	Environment    string

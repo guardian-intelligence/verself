@@ -20,7 +20,30 @@ const (
 	PermissionSandboxVolumeWrite      = "sandbox:volume:write"
 	PermissionBillingRead             = "billing:read"
 	PermissionBillingCheckout         = "billing:checkout"
+	PermissionSecretWrite             = "secrets:secret:write"
+	PermissionSecretRead              = "secrets:secret:read"
+	PermissionSecretList              = "secrets:secret:list"
+	PermissionSecretDelete            = "secrets:secret:delete"
+	PermissionTransitKeyCreate        = "secrets:transit_key:create"
+	PermissionTransitKeyRotate        = "secrets:transit_key:rotate"
+	PermissionTransitEncrypt          = "secrets:transit:encrypt"
+	PermissionTransitDecrypt          = "secrets:transit:decrypt"
+	PermissionTransitSign             = "secrets:transit:sign"
+	PermissionTransitVerify           = "secrets:transit:verify"
 )
+
+var openBaoRolesByPermission = map[string]string{
+	PermissionSecretWrite:      "secrets-direct-put-secret",
+	PermissionSecretRead:       "secrets-direct-read-secret",
+	PermissionSecretList:       "secrets-direct-list-secrets",
+	PermissionSecretDelete:     "secrets-direct-delete-secret",
+	PermissionTransitKeyCreate: "secrets-direct-create-transit-key",
+	PermissionTransitKeyRotate: "secrets-direct-rotate-transit-key",
+	PermissionTransitEncrypt:   "secrets-direct-encrypt-with-transit-key",
+	PermissionTransitDecrypt:   "secrets-direct-decrypt-with-transit-key",
+	PermissionTransitSign:      "secrets-direct-sign-with-transit-key",
+	PermissionTransitVerify:    "secrets-direct-verify-with-transit-key",
+}
 
 // member_eligible: true marks a permission as one that can ever appear in a
 // member-role caller's effective set, either as a baseline or via a Capability
@@ -68,6 +91,21 @@ var defaultOperations = Operations{
 				{OperationID: "create-billing-portal", Permission: PermissionBillingCheckout, Resource: "billing_portal", Action: "create", OrgScope: "token_org_id"},
 			},
 		},
+		{
+			Service: "secrets-service",
+			Operations: []Operation{
+				{OperationID: "put-secret", Permission: PermissionSecretWrite, Resource: "secret", Action: "write", OrgScope: "token_org_id"},
+				{OperationID: "read-secret", Permission: PermissionSecretRead, Resource: "secret", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "list-secrets", Permission: PermissionSecretList, Resource: "secret", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "delete-secret", Permission: PermissionSecretDelete, Resource: "secret", Action: "delete", OrgScope: "token_org_id"},
+				{OperationID: "create-transit-key", Permission: PermissionTransitKeyCreate, Resource: "transit_key", Action: "create", OrgScope: "token_org_id"},
+				{OperationID: "rotate-transit-key", Permission: PermissionTransitKeyRotate, Resource: "transit_key", Action: "rotate", OrgScope: "token_org_id"},
+				{OperationID: "encrypt-with-transit-key", Permission: PermissionTransitEncrypt, Resource: "transit_key", Action: "encrypt", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "decrypt-with-transit-key", Permission: PermissionTransitDecrypt, Resource: "transit_key", Action: "decrypt", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "sign-with-transit-key", Permission: PermissionTransitSign, Resource: "transit_key", Action: "sign", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "verify-with-transit-key", Permission: PermissionTransitVerify, Resource: "transit_key", Action: "verify", OrgScope: "token_org_id", MemberEligible: true},
+			},
+		},
 	},
 }
 
@@ -87,6 +125,16 @@ func KnownPermissions() map[string]struct{} {
 		}
 	}
 	return known
+}
+
+func OpenBaoRolesForPermissions(permissions []string) []string {
+	roles := map[string]struct{}{}
+	for _, permission := range permissions {
+		if role, ok := openBaoRolesByPermission[permission]; ok {
+			roles[role] = struct{}{}
+		}
+	}
+	return sortedKeys(roles)
 }
 
 func memberEligiblePermissions() map[string]struct{} {

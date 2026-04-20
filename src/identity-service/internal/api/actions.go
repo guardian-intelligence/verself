@@ -76,7 +76,7 @@ func zitadelActionHandler(svc *identity.Service, signingKey string) http.Handler
 			writeActionResponse(w, zitadelActionResponse{})
 			return
 		}
-		writeActionResponse(w, zitadelActionResponse{AppendClaims: []zitadelActionClaim{
+		appendClaims := []zitadelActionClaim{
 			{Key: "forge_metal:credential_id", Value: claims.CredentialID},
 			{Key: "forge_metal:credential_name", Value: claims.DisplayName},
 			{Key: "forge_metal:credential_fingerprint", Value: claims.Fingerprint},
@@ -85,7 +85,11 @@ func zitadelActionHandler(svc *identity.Service, signingKey string) http.Handler
 			{Key: "forge_metal:credential_auth_method", Value: string(claims.AuthMethod)},
 			{Key: "org_id", Value: claims.OrgID},
 			{Key: "permissions", Value: claims.Permissions},
-		}})
+		}
+		if len(claims.OpenBaoRoles) > 0 {
+			appendClaims = append(appendClaims, zitadelActionClaim{Key: "forge_metal:openbao_roles", Value: claims.OpenBaoRoles})
+		}
+		writeActionResponse(w, zitadelActionResponse{AppendClaims: appendClaims})
 	})
 }
 
