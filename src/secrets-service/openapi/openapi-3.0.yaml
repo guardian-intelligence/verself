@@ -809,6 +809,8 @@ components:
                     type: string
                 name:
                     type: string
+                public_key:
+                    type: string
                 updated_at:
                     type: string
                     format: date-time
@@ -816,6 +818,7 @@ components:
                 - key_id
                 - name
                 - current_version
+                - public_key
                 - created_at
                 - updated_at
         TransitPayloadInputBody:

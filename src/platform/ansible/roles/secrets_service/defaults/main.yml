@@ -2,5 +2,10 @@
 secrets_service_auth_issuer_url: "https://auth.{{ forge_metal_domain }}"
 secrets_service_auth_jwks_url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/oauth/v2/keys"
 secrets_service_auth_project_name: secrets-service
-secrets_service_force_schema_reset: false
-secrets_service_pg_max_conns: 8
+secrets_service_openbao_addr: "https://{{ services.openbao.host }}:{{ services.openbao.port }}"
+secrets_service_openbao_kv_prefix: kv
+secrets_service_openbao_transit_prefix: transit
+secrets_service_openbao_jwt_prefix: jwt
+secrets_service_service_account_client_id: secrets-service-openbao
+secrets_service_service_account_token_url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/oauth/v2/token"
+secrets_service_service_account_token_host: "auth.{{ forge_metal_domain }}"

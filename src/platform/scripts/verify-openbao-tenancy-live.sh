@@ -140,6 +140,9 @@ def response_request_id(body, headers):
 
 root_token = open("/etc/credstore/openbao/root-token", encoding="utf-8").read().strip()
 admin_pat = open("/etc/zitadel/admin.pat", encoding="utf-8").read().strip()
+service_account_user_id = open("/etc/credstore/secrets-service/service-account-user-id", encoding="utf-8").read().strip()
+if not service_account_user_id:
+    raise SystemExit("secrets-service OpenBao service account user id credential is empty")
 
 org_req = urllib.request.Request(
     "http://127.0.0.1:8085/v2/organizations/_search",
@@ -171,6 +174,7 @@ mounts = set((mounts_body.get("data") or {}).keys())
 auth_mounts = set((auth_body.get("data") or {}).keys())
 
 policy_checks = []
+role_checks = []
 for org in orgs:
     org_id = org["id"]
     expected_mounts = {f"kv-{org_id}/", f"transit-{org_id}/"}
@@ -180,10 +184,31 @@ for org in orgs:
         raise SystemExit(f"missing OpenBao mounts for org {org_id}: {missing_mounts}")
     if expected_auth not in auth_mounts:
         raise SystemExit(f"missing OpenBao JWT auth mount for org {org_id}: {expected_auth}")
-    for policy in [f"secrets-{org_id}-read-only", f"secrets-{org_id}-read-write"]:
+    for policy in [f"secrets-{org_id}-read-only", f"secrets-{org_id}-read-write", f"secrets-{org_id}-injection-read"]:
         p_status, p_body, p_headers = request("GET", f"/v1/sys/policies/acl/{policy}", root_token)
         require_status(f"policy {policy}", p_status, {200})
         policy_checks.append({"policy": policy, "request_id": response_request_id(p_body, p_headers)})
+    for role, expected_policy, project_role in [
+        ("secrets-owner", f"secrets-{org_id}-read-write", "owner"),
+        ("secrets-admin", f"secrets-{org_id}-read-write", "admin"),
+        ("secrets-member", f"secrets-{org_id}-read-only", "member"),
+        ("secrets-injection", f"secrets-{org_id}-injection-read", ""),
+    ]:
+        r_status, r_body, r_headers = request("GET", f"/v1/auth/jwt-{org_id}/role/{role}", root_token)
+        require_status(f"role {org_id} {role}", r_status, {200})
+        data = r_body.get("data") or {}
+        token_policies = set(data.get("token_policies") or [])
+        if expected_policy not in token_policies:
+            raise SystemExit(f"role {org_id} {role} missing policy {expected_policy}")
+        bound_claims = data.get("bound_claims") or {}
+        if role == "secrets-injection":
+            if bound_claims.get("sub") != service_account_user_id:
+                raise SystemExit(f"role {org_id} {role} is not bound to the secrets-service machine user")
+        else:
+            role_claim = f"/urn:zitadel:iam:org:project:{payload['secrets_project_id']}:roles/{project_role}/{org_id}"
+            if bound_claims.get("urn:zitadel:iam:user:resourceowner:id") != org_id or role_claim not in bound_claims:
+                raise SystemExit(f"role {org_id} {role} has unexpected bound_claims")
+        role_checks.append({"role": role, "org_id": org_id, "request_id": response_request_id(r_body, r_headers)})
 
 def login(org_id, role, jwt):
     status, body, headers = request("POST", f"/v1/auth/jwt-{org_id}/login", body={"role": role, "jwt": jwt})
@@ -213,7 +238,7 @@ bad_status, bad_body, bad_headers = request(
 )
 require_status("cross-org jwt login", bad_status, {400, 403})
 
-secret_path = f"/v1/kv-{payload['acme_org_id']}/data/secret/openbao-tenancy-proof"
+secret_path = f"/v1/kv-{payload['acme_org_id']}/data/_proof/openbao-tenancy-proof"
 status, put_body, put_headers = request("POST", secret_path, acme_admin["token"], {"data": {"value": payload["proof_value"]}})
 require_status("admin kv put", status, {200, 204})
 status, get_body, get_headers = request("GET", secret_path, acme_member["token"])
@@ -230,10 +255,12 @@ member_write_status, member_write_body, member_write_headers = request(
 require_status("member kv put", member_write_status, {403})
 cross_read_status, cross_read_body, cross_read_headers = request(
     "GET",
-    f"/v1/kv-{payload['platform_org_id']}/data/secret/openbao-tenancy-proof",
+    f"/v1/kv-{payload['platform_org_id']}/data/_proof/openbao-tenancy-proof",
     acme_admin["token"],
 )
 require_status("cross-org kv get", cross_read_status, {403})
+for org_id in [payload["acme_org_id"], payload["platform_org_id"]]:
+    request("DELETE", f"/v1/kv-{org_id}/metadata/secret/openbao-tenancy-proof", root_token)
 
 result = {
     "layout": "root_mounts",
@@ -250,6 +277,7 @@ result = {
         "mounts": sorted(mounts),
         "auth_mounts": sorted(auth_mounts),
         "policy_checks": policy_checks,
+        "role_checks": role_checks,
         "login": {
             "admin_lease_duration": acme_admin["lease_duration"],
             "member_lease_duration": acme_member["lease_duration"],

@@ -238,7 +238,7 @@ verification-reset: inventory-check ## Exhaustively wipe verification state (bil
 	$(FM)/scripts/ansible-with-tunnel.sh playbooks/verification-reset.yml
 
 wipe-pg-db: inventory-check ## Wipe one managed PostgreSQL service DB: make wipe-pg-db DB=sandbox_rental
-	@test -n "$(DB)" || { echo "ERROR: DB is required (billing|sandbox_rental|mailbox_service|identity_service|secrets_service)"; exit 1; }
+	@test -n "$(DB)" || { echo "ERROR: DB is required (billing|sandbox_rental|mailbox_service|identity_service)"; exit 1; }
 	$(FM)/scripts/ansible-with-tunnel.sh playbooks/wipe-pg-db.yml -e "wipe_pg_db_name=$(DB)"
 
 vm-orchestrator-proof: inventory-check ## Live proof for vm-orchestrator lease/exec spans through the public sandbox API

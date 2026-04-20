@@ -19,13 +19,15 @@ import os
 import ssl
 import subprocess
 import sys
+import time
+import uuid
 import urllib.request
 
 base = \"https://127.0.0.1:8200\"
 ctx = ssl._create_unverified_context()
 
-def get_json(path, token=None):
-    headers = {}
+def get_json(path, token=None, headers=None):
+    headers = dict(headers or {})
     if token:
         headers[\"X-Vault-Token\"] = token
     request = urllib.request.Request(base + path, headers=headers)
@@ -40,7 +42,10 @@ def get_text(path):
 token = open(\"/etc/credstore/openbao/root-token\", encoding=\"utf-8\").read().strip()
 health = get_json(\"/v1/sys/health\")
 metrics = get_text(\"/v1/sys/metrics?format=prometheus\")
-mounts_response = get_json(\"/v1/sys/mounts\", token)
+audited_headers = get_json(\"/v1/sys/config/auditing/request-headers\", token).get(\"headers\", {})
+audited_headers_lower = {key.lower(): value for key, value in audited_headers.items()}
+correlation_header = \"openbao-proof:\" + str(uuid.uuid4())
+mounts_response = get_json(\"/v1/sys/mounts\", token, {\"X-Forge-Metal-Request-Id\": correlation_header})
 mounts = sorted(mounts_response.get(\"data\", mounts_response).keys())
 systemd_state = subprocess.check_output([\"systemctl\", \"is-active\", \"openbao\"], text=True).strip()
 nft_ruleset = subprocess.check_output([\"nft\", \"list\", \"ruleset\"], text=True)
@@ -54,6 +59,16 @@ for name in [\"root-token\", \"unseal-key-1\", \"unseal-key-2\", \"unseal-key-3\
         \"bytes\": stat.st_size,
     }
 audit_stat = os.stat(\"/var/log/openbao/audit.log\")
+for _ in range(10):
+    audit_grep = subprocess.run(
+        [\"grep\", \"-F\", correlation_header, \"/var/log/openbao/audit.log\"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if audit_grep.returncode == 0:
+        break
+    time.sleep(0.2)
 payload = {
     \"health\": health,
     \"metrics_has_unsealed\": \"vault_core_unsealed\" in metrics or \"vault.core.unsealed\" in metrics,
@@ -62,6 +77,8 @@ payload = {
     \"nft_has_loopback_drop\": \"tcp dport { 8200, 8201 } iifname != \\\"lo\\\" drop\" in nft_ruleset,
     \"credential_stats\": credential_stats,
     \"audit_log_bytes\": audit_stat.st_size,
+    \"audit_request_header\": audited_headers_lower.get(\"x-forge-metal-request-id\", {}),
+    \"audit_header_correlation\": correlation_header,
 }
 if not health.get(\"initialized\") or health.get(\"sealed\") or health.get(\"standby\"):
     raise SystemExit(\"OpenBao health is not initialized, unsealed, active\")
@@ -79,6 +96,10 @@ for name, stat in credential_stats.items():
         raise SystemExit(f\"OpenBao credential {name} has bad mode or is empty\")
 if audit_stat.st_size <= 0:
     raise SystemExit(\"OpenBao audit log is empty\")
+if payload[\"audit_request_header\"].get(\"hmac\") is not False:
+    raise SystemExit(\"OpenBao is not auditing X-Forge-Metal-Request-Id in plaintext\")
+if audit_grep.returncode != 0:
+    raise SystemExit(\"OpenBao audit log did not contain the proof request correlation header\")
 json.dump(payload, sys.stdout, indent=2, sort_keys=True)
 print()
 '" >"${artifact_dir}/openbao-remote-state.json"

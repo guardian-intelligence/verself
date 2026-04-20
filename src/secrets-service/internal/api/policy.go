@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -75,6 +76,7 @@ func registerSecured[I, O any](api huma.API, svc *secrets.Service, securedOp sec
 	op = withOperationPolicy(op, policy)
 	op.Middlewares = append(op.Middlewares, operationRequestMiddleware)
 	huma.Register(api, op, func(ctx context.Context, input *I) (*O, error) {
+		ctx = secrets.ContextWithOpenBaoAuditInfo(ctx)
 		principal, identity, err := enforceOperationPolicy(ctx, policy)
 		if err != nil {
 			auditOperation(ctx, op.OperationID, policy, identity, input, nil, "denied", err)
@@ -205,7 +207,30 @@ func principalFromIdentity(identity *auth.Identity) secrets.Principal {
 		ActorOwnerID:          claimString(identity.Raw, "forge_metal:credential_owner_id"),
 		ActorOwnerDisplay:     claimString(identity.Raw, "forge_metal:credential_owner_display"),
 		AuthMethod:            claimString(identity.Raw, "forge_metal:credential_auth_method"),
+		OpenBaoRole:           openBaoRoleForIdentity(identity),
+		JWTID:                 claimString(identity.Raw, "jti"),
+		TokenExpiresAt:        claimNumericDate(identity.Raw, "exp"),
 	}
+}
+
+func openBaoRoleForIdentity(identity *auth.Identity) string {
+	if identity == nil {
+		return ""
+	}
+	for _, assignment := range identity.RoleAssignments {
+		if assignment.ProjectID != identity.ProjectID || assignment.OrganizationID != identity.OrgID {
+			continue
+		}
+		switch assignment.Role {
+		case "owner":
+			return "secrets-owner"
+		case "admin":
+			return "secrets-admin"
+		case "member":
+			return "secrets-member"
+		}
+	}
+	return ""
 }
 
 func identityHasPermission(identity *auth.Identity, required permission) bool {
@@ -326,6 +351,18 @@ func auditOperation(ctx context.Context, operationID string, policy operationPol
 	}
 	info := operationRequestInfoFromContext(ctx)
 	targetID, targetScope, targetPathHash, secretVersion, keyID := auditTarget(identity.OrgID, input, output)
+	baoInfo, _ := secrets.OpenBaoAuditInfoFromContext(ctx)
+	secretMount := "openbao"
+	openBaoRequestID := ""
+	openBaoAccessorHash := ""
+	if baoInfo != nil {
+		secretMount = firstNonEmpty(baoInfo.Mount, secretMount)
+		openBaoRequestID = baoInfo.RequestID
+		openBaoAccessorHash = baoInfo.AccessorHash
+		if secretVersion == 0 && baoInfo.KeyVersion > 0 {
+			secretVersion = baoInfo.KeyVersion
+		}
+	}
 	record := governanceAuditRecord{
 		OrgID:                 identity.OrgID,
 		SourceProductArea:     "Secrets",
@@ -363,11 +400,13 @@ func auditOperation(ctx context.Context, operationID string, policy operationPol
 		UserAgentRaw:          info.UserAgent,
 		IdempotencyKeyHash:    hashTextForAudit(info.IdempotencyKey),
 		TrustClass:            "standard",
-		SecretMount:           "local-envelope",
+		SecretMount:           secretMount,
 		SecretPathHash:        targetPathHash,
 		SecretVersion:         secretVersion,
 		SecretOperation:       policy.SecretOperation,
 		KeyID:                 keyID,
+		OpenBaoRequestID:      openBaoRequestID,
+		OpenBaoAccessorHash:   openBaoAccessorHash,
 		ContentSHA256:         contentHashFromBoundary(input),
 	}
 	if err != nil {
@@ -400,7 +439,11 @@ func auditTargetFromValue(orgID string, input any) (string, string, string, uint
 		keyID = stringField(value, "KeyID")
 	}
 	if keyName != "" || keyID != "" {
-		return firstNonEmpty(keyID, keyName), "org", "", 0, keyID
+		version := uint64Field(body, "CurrentVersion")
+		if version == 0 {
+			version = uint64Field(value, "CurrentVersion")
+		}
+		return firstNonEmpty(keyID, keyName), "org", "", version, keyID
 	}
 	name := stringField(body, "Name")
 	if name == "" {
@@ -519,6 +562,38 @@ func claimString(claims map[string]any, key string) string {
 	}
 	value, _ := claims[key].(string)
 	return strings.TrimSpace(value)
+}
+
+func claimNumericDate(claims map[string]any, key string) time.Time {
+	if claims == nil {
+		return time.Time{}
+	}
+	switch value := claims[key].(type) {
+	case float64:
+		if value <= 0 {
+			return time.Time{}
+		}
+		return time.Unix(int64(value), 0).UTC()
+	case int64:
+		if value <= 0 {
+			return time.Time{}
+		}
+		return time.Unix(value, 0).UTC()
+	case json.Number:
+		parsed, err := strconv.ParseInt(value.String(), 10, 64)
+		if err != nil || parsed <= 0 {
+			return time.Time{}
+		}
+		return time.Unix(parsed, 0).UTC()
+	case string:
+		parsed, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+		if err != nil || parsed <= 0 {
+			return time.Time{}
+		}
+		return time.Unix(parsed, 0).UTC()
+	default:
+		return time.Time{}
+	}
 }
 
 func stringClaimList(value any) []string {

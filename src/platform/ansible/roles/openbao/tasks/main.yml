@@ -318,12 +318,28 @@
     return_content: true
   register: openbao_health
 
+- name: Configure OpenBao audited request headers
+  ansible.builtin.uri:
+    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/sys/config/auditing/request-headers/{{ item.name }}"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+    body_format: json
+    body: "{{ {'hmac': (item.hmac | bool)} }}"
+    validate_certs: false
+    status_code: [200, 204]
+  loop: "{{ openbao_audit_request_headers }}"
+  loop_control:
+    label: "{{ item.name }}"
+  no_log: true
+
 - name: Probe OpenBao authenticated sys/mounts to exercise audit device
   ansible.builtin.uri:
     url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/sys/mounts"
     method: GET
     headers:
       X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+      X-Forge-Metal-Request-Id: "openbao-bootstrap-probe"
     validate_certs: false
     status_code: 200
     return_content: true

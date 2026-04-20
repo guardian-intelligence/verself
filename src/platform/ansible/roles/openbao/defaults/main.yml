@@ -11,3 +11,6 @@ openbao_key_shares: 3
 openbao_key_threshold: 2
 openbao_oidc_loopback_hosts:
   - "auth.{{ forge_metal_domain }}"
+openbao_audit_request_headers:
+  - name: X-Forge-Metal-Request-Id
+    hmac: false

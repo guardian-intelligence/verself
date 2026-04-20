@@ -337,6 +337,7 @@ type TransitKeyDTO struct {
 	KeyID          string `json:"key_id"`
 	Name           string `json:"name"`
 	CurrentVersion string `json:"current_version"`
+	PublicKey      string `json:"public_key"`
 	CreatedAt      string `json:"created_at" format:"date-time"`
 	UpdatedAt      string `json:"updated_at" format:"date-time"`
 }
@@ -481,6 +482,7 @@ func transitKeyDTO(key secrets.TransitKey) TransitKeyDTO {
 		KeyID:          key.KeyID,
 		Name:           key.Name,
 		CurrentVersion: strconv.FormatUint(key.CurrentVersion, 10),
+		PublicKey:      key.PublicKey,
 		CreatedAt:      key.CreatedAt.UTC().Format(time.RFC3339Nano),
 		UpdatedAt:      key.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}

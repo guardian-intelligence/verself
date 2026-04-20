@@ -10,3 +10,4 @@ openbao_tenancy_kv_mount_prefix: kv
 openbao_tenancy_transit_mount_prefix: transit
 openbao_tenancy_jwt_mount_prefix: jwt
 openbao_tenancy_audit_marker_dir: /var/lib/openbao/tenancy-audit
+openbao_tenancy_service_account_user_id_path: /etc/credstore/secrets-service/service-account-user-id
