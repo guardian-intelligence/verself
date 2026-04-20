@@ -55,7 +55,7 @@
         electric_db_pool_size: 15
       tags: [electric]
     - role: frontend_auth_sessions
-      tags: [frontend_auth_sessions, rent_a_sandbox]
+      tags: [frontend_auth_sessions, rent_a_sandbox, governance_service]
     - role: rent_a_sandbox
       tags: [rent_a_sandbox, governance_service]
     - role: otelcol

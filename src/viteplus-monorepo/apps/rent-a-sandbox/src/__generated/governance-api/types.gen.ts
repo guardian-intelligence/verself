@@ -275,6 +275,7 @@ export type GovernanceAuditEvents = {
 export type GovernanceAuditFilters = {
   actor_id?: string;
   audit_event?: string;
+  credential_id?: string;
   high_risk?: boolean;
   operation_id?: string;
   operation_type?: string;
@@ -445,6 +446,7 @@ export type ListAuditEventsData = {
     cursor?: string;
     actor_id?: string;
     audit_event?: string;
+    credential_id?: string;
     /**
      * Return events that are high or critical risk, write/delete/export operations, denials, or errors.
      */

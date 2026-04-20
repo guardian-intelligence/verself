@@ -136,6 +136,7 @@ type listAuditEventsInput struct {
 	Cursor            string `query:"cursor,omitempty" maxLength:"1024"`
 	ActorID           string `query:"actor_id,omitempty" maxLength:"255"`
 	AuditEvent        string `query:"audit_event,omitempty" maxLength:"255"`
+	CredentialID      string `query:"credential_id,omitempty" maxLength:"255"`
 	HighRisk          bool   `query:"high_risk,omitempty" doc:"Return events that are high or critical risk, write/delete/export operations, denials, or errors."`
 	OperationID       string `query:"operation_id,omitempty" maxLength:"128"`
 	OperationType     string `query:"operation_type,omitempty" enum:"read,write,delete,authn,authz,billing,export,system,unknown"`
@@ -158,6 +159,7 @@ func listAuditEvents(svc *governance.Service) func(context.Context, governance.P
 			Cursor:            input.Cursor,
 			ActorID:           input.ActorID,
 			AuditEvent:        input.AuditEvent,
+			CredentialID:      input.CredentialID,
 			HighRisk:          input.HighRisk,
 			OperationID:       input.OperationID,
 			OperationType:     input.OperationType,
@@ -178,6 +180,7 @@ func listAuditEvents(svc *governance.Service) func(context.Context, governance.P
 			Filters: apiwire.GovernanceAuditFilters{
 				ActorID:           input.ActorID,
 				AuditEvent:        input.AuditEvent,
+				CredentialID:      input.CredentialID,
 				HighRisk:          input.HighRisk,
 				OperationID:       input.OperationID,
 				OperationType:     input.OperationType,
