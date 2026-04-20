@@ -130,7 +130,10 @@ poll_clickhouse "
     AND Timestamp > now() - INTERVAL 10 MINUTE
 " "route_view.distinct_paths" "${#expected_routes[@]}"
 
-# 2. Every OG card seen with voice_pass=true.
+# 2. Every OG card seen with voice_pass=true. The OG route emits its span via
+# the Nitro server-side tracer (ServiceName='company'), distinct from the
+# browser spans above (ServiceName='company-web'). Both belong to the same
+# deploy, so union them here.
 og_filter=""
 for slug in "${expected_og_slugs[@]}"; do
   og_filter+="'${slug}',"
@@ -140,7 +143,7 @@ og_filter="${og_filter%,}"
 poll_clickhouse "
   SELECT count(DISTINCT SpanAttributes['og.slug']) AS seen
   FROM default.otel_traces
-  WHERE ServiceName = 'company-web'
+  WHERE ServiceName IN ('company','company-web')
     AND SpanName = 'company.og.render'
     AND SpanAttributes['og.voice_pass'] = 'true'
     AND SpanAttributes['og.slug'] IN (${og_filter})

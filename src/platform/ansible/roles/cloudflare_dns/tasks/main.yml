@@ -20,3 +20,23 @@
   loop: "{{ cloudflare_dns_records }}"
   delegate_to: localhost
   become: false
+
+# Apex record for the company site (anveio.com today). community.general
+# .cloudflare_dns accepts the bare zone as `record:` for apex entries;
+# `solo: true` replaces any pre-existing A/AAAA at the apex so a stale Vercel
+# or redirect-rule target gets overwritten with the Caddy box. A Cloudflare
+# Page Rule or Bulk Redirect at the apex (anveio.com -> www.anveio.com)
+# survives separately — it must be deleted in the Cloudflare dashboard for
+# the A record to take effect. The module cannot manage redirect rules.
+- name: Create or update apex DNS record for the company site
+  community.general.cloudflare_dns:
+    zone: "{{ forge_metal_domain }}"
+    record: "{{ forge_metal_domain }}"
+    type: "{{ cloudflare_dns_record_type }}"
+    value: "{{ ansible_host }}"
+    ttl: "{{ cloudflare_dns_ttl }}"
+    proxied: "{{ cloudflare_proxied | default(false) }}"
+    solo: true
+    api_token: "{{ cloudflare_api_token }}"
+  delegate_to: localhost
+  become: false
