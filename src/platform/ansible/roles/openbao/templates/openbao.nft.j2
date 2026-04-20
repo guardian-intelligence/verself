@@ -18,6 +18,7 @@ table inet forge_metal_openbao {
         meta skuid != openbao accept
 
         meta l4proto != tcp meta l4proto != udp accept
+        oifname "lo" tcp dport 443 accept
 
         drop
     }

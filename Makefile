@@ -1,7 +1,7 @@
 .PHONY: help test lint lint-scripts lint-conversions lint-ansible fmt vet tidy openapi openapi-check openapi-wire-check \
        hooks-install doctor inventory-check setup-dev setup-sops provision deprovision deploy site guest-rootfs security-patch identity-reset seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member \
        set-user-state billing-clock billing-wall-clock billing-state billing-documents billing-finalizations billing-events billing-pg-shell billing-pg-query billing-proof billing-reset verification-reset \
-       secrets-proof secrets-leak-proof openbao-proof \
+       secrets-proof secrets-leak-proof openbao-proof openbao-tenancy-proof \
        vm-guest-telemetry-build observe telemetry-proof telemetry-proof-fail clickhouse-query clickhouse-schemas pg-shell pg-query pg-list tb-shell tb-command mail mail-accounts mail-mailboxes \
        mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets \
        wipe-pg-db wipe-server vm-orchestrator-proof stress sandbox-inner sandbox-middle sandbox-proof rent-ui-smoke rent-ui-local rent-local-dev scheduler-proof verify-scheduler grafana-proof observability-smoke services-doctor
@@ -227,6 +227,9 @@ secrets-leak-proof: inventory-check ## Prove bearer/JWT material is absent from 
 
 openbao-proof: inventory-check ## Prove OpenBao process, health, metrics, audit log, nftables, and ClickHouse evidence
 	cd $(FM) && ./scripts/verify-openbao-live.sh
+
+openbao-tenancy-proof: inventory-check ## Prove OpenBao per-org mounts, JWT roles, policies, audit rows, and ClickHouse spans
+	cd $(FM) && ./scripts/verify-openbao-tenancy-live.sh
 
 billing-reset: inventory-check ## Exhaustively wipe billing state (TigerBeetle + billing PostgreSQL schema) and restart billing callers
 	$(FM)/scripts/ansible-with-tunnel.sh playbooks/billing-reset.yml

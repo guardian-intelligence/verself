@@ -1,0 +1,27 @@
+path "{{ openbao_tenancy_kv_mount }}/data/*" {
+  capabilities = ["read"]
+}
+
+path "{{ openbao_tenancy_kv_mount }}/metadata/*" {
+  capabilities = ["read", "list"]
+}
+
+path "{{ openbao_tenancy_transit_mount }}/keys/*" {
+  capabilities = ["read", "list"]
+}
+
+path "{{ openbao_tenancy_transit_mount }}/encrypt/*" {
+  capabilities = ["update"]
+}
+
+path "{{ openbao_tenancy_transit_mount }}/decrypt/*" {
+  capabilities = ["update"]
+}
+
+path "{{ openbao_tenancy_transit_mount }}/sign/*" {
+  capabilities = ["update"]
+}
+
+path "{{ openbao_tenancy_transit_mount }}/verify/*" {
+  capabilities = ["update"]
+}
