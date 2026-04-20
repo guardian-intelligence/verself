@@ -1,0 +1,29 @@
+server {
+    bind_address = "{{ spire_server_bind_address }}"
+    bind_port = "{{ spire_server_bind_port }}"
+    socket_path = "{{ spire_server_socket_path }}"
+    trust_domain = "{{ spire_trust_domain }}"
+    data_dir = "/var/lib/spire/server"
+    log_level = "INFO"
+    ca_ttl = "168h"
+    default_x509_svid_ttl = "1h"
+}
+
+plugins {
+    DataStore "sql" {
+        plugin_data {
+            database_type = "sqlite3"
+            connection_string = "/var/lib/spire/server/datastore.sqlite3"
+        }
+    }
+
+    KeyManager "disk" {
+        plugin_data {
+            keys_path = "/var/lib/spire/server/keys.json"
+        }
+    }
+
+    NodeAttestor "join_token" {
+        plugin_data {}
+    }
+}
