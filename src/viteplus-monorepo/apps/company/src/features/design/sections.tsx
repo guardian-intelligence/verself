@@ -876,7 +876,7 @@ function SectionTypography() {
                 letterSpacing: "-0.018em",
               }}
             >
-              Compute, integrations, and operator tooling.
+              Compute, integrations, and founder tooling.
             </td>
             <td style={role}>h2 · section</td>
             <td style={spec}>Fraunces / 32 / 1.1 / -18 · opsz 72</td>
@@ -908,7 +908,7 @@ function SectionTypography() {
               }}
             >
               Guardian Intelligence is an American applied intelligence firm. We build the compute,
-              the integrations, and the operator tooling that make a one-person billion-ARR company
+              the integrations, and the founder tooling that make a one-person billion-ARR company
               an engineering target rather than a slogan.
             </td>
             <td style={role}>body</td>
@@ -1009,15 +1009,14 @@ function SectionHeroIron() {
             analytics, email, infrastructure, security, the thousand edges where a real company
             touches the real world. None of it is what you started the company to build. We build
             the reference architecture for all of it — open-source, documented, and clean enough
-            that one operator with <b>Claude Code</b> can run a billion-dollar company.
+            that one founder with <b>Claude Code</b> can run a billion-dollar company.
           </p>
           <p>
-            Value created per capita is the ultimate metric. Value is more than a transaction. It
-            is a painting. A novel. An API in front of a physical service. A quiet service that
-            sends a calendar invite to the neighborhood when the dog park is going to be 72 and
-            sunny with 80% confidence. Humanity's golden age is the one where every person gets
-            to contribute unprecedented value to the world, and software and AI finally supply the
-            leverage to make that possible for everyone.
+            Value created per capita is the ultimate metric. A painting. A novel. An API in front
+            of a physical service. A quiet service that sends a calendar invite to the neighborhood
+            when the dog park is going to be 72 and sunny with 80% confidence. Humanity's golden
+            age is the one where every person contributes unprecedented value to the world, and
+            software and AI finally make that possible for everyone.
           </p>
           <p className="mission-closer">
             If you want to do something good for the world, we want to make it easy.
@@ -1052,14 +1051,14 @@ function SectionHeroFlare() {
           <Lockup size="md" variant="emboss" wordmarkColor="var(--color-ink)" />
         </div>
         <div className="hero-kicker" style={{ color: "rgba(11,11,11,0.7)" }}>
-          Applied since day one
+          Seattle · Est. 2026
         </div>
         <h1 className="hero-h1" style={{ color: "var(--color-ink)" }}>
-          A company is the smallest possible unit of applied intelligence.
+          We build where software meets the real world.
         </h1>
         <p className="hero-lede" style={{ color: "rgba(11,11,11,0.78)" }}>
-          When one person can run a billion-dollar company, the scarcity in the economy is no
-          longer labour. It is judgment. We design the tools that make judgment compound.
+          Identity, billing, infrastructure, email, and the thousand edges. Open-source per
+          subdirectory. Documented end-to-end. Run by the people who built it.
         </p>
         <div className="hero-cta-row">
           <button
@@ -1070,7 +1069,7 @@ function SectionHeroFlare() {
               borderColor: "var(--color-iron)",
             }}
           >
-            Join the waitlist
+            Read the Dispatch
           </button>
           <button className="hero-btn ghost" style={{ color: "rgba(11,11,11,0.75)" }}>
             Contact
@@ -1242,7 +1241,7 @@ function SectionDispatch() {
             alignItems: "center",
           }}
         >
-          <span>By the operator</span>
+          <span>By the founder</span>
           <span
             style={{ width: "4px", height: "4px", background: "#5d5a52", borderRadius: "2px" }}
           />
@@ -1313,11 +1312,11 @@ function SectionDispatch() {
             margin: "0 0 20px",
           }}
         >
-          The argument has three parts. The first is compute: that a single operator with the right
+          The argument has three parts. The first is compute: that a single founder with the right
           infrastructure can stand up, scale, and shut down services that previously required a
           platform team. The second is integration: that the economic work of a company is mostly
           the work of moving structured information between counterparties, and that most of this
-          work is mechanically obvious once named. The third is tooling for the operator themselves
+          work is mechanically obvious once named. The third is tooling for the founder themselves
           — the judgment-amplification layer, which is the hardest to build and the easiest to
           recognise once you've used one that works.
         </p>
@@ -1386,7 +1385,7 @@ function SectionProduct() {
             <span style={{ color: "var(--color-type-iron)" }}>Overview</span>
             <span style={{ color: MUTED }}>Compute</span>
             <span style={{ color: MUTED }}>Integrations</span>
-            <span style={{ color: MUTED }}>Operators</span>
+            <span style={{ color: MUTED }}>Founders</span>
             <span style={{ color: MUTED }}>Dispatches</span>
           </nav>
           <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
@@ -1491,7 +1490,7 @@ function SectionProduct() {
                 margin: "20px 8px 8px",
               }}
             >
-              Operator
+              Founder
             </div>
             {["Dispatches", "Integrations", "Billing"].map((label) => (
               <span
@@ -1571,7 +1570,7 @@ function SectionProduct() {
                     "warn",
                   ],
                   [
-                    "solo-operator",
+                    "solo-founder",
                     "us-west-2",
                     "editor · agent-vm",
                     "0x41e9f2d",
@@ -1629,7 +1628,7 @@ function SectionProduct() {
               }}
             >
               <span style={{ color: "#5d5a52", fontStyle: "italic" }}>
-                {"// Deploy a Guardian sandbox from the operator CLI."}
+                {"// Deploy a Guardian sandbox from the founder CLI."}
               </span>
               {"\n"}
               <span style={{ color: "#C0C0F2" }}>import</span>
@@ -1888,8 +1887,8 @@ function SectionOgCard() {
             maxWidth: "22ch",
           }}
         >
-          Toward the first million solo-founded{" "}
-          <span style={{ color: "var(--color-flare)" }}>billion-ARR</span> startups.
+          We ship the reference{" "}
+          <span style={{ color: "var(--color-flare)" }}>architecture</span> every founder needs.
         </div>
         <div
           style={{
@@ -1901,7 +1900,7 @@ function SectionOgCard() {
           }}
         >
           <span>guardianintelligence.org</span>
-          <span style={{ color: "var(--color-flare)" }}>Applied, not promised.</span>
+          <span>Seattle · 2026</span>
         </div>
       </div>
     </Section>
@@ -1984,7 +1983,7 @@ function BizCard({ ground }: { ground: "iron" | "flare" }) {
       </div>
       <div style={{ alignSelf: "end" }}>
         <div style={{ fontFamily: "'Geist', sans-serif", fontWeight: 600, fontSize: "16px" }}>
-          Operator Name
+          Founder Name
         </div>
         <div
           style={{
@@ -2007,7 +2006,7 @@ function BizCard({ ground }: { ground: "iron" | "flare" }) {
           justifyContent: "space-between",
         }}
       >
-        <span>operator@guardianintelligence.org</span>
+        <span>founder@guardianintelligence.org</span>
         <span>+1 (302) XXX XXXX</span>
       </div>
     </div>
@@ -2063,7 +2062,7 @@ function SectionEmailSignature() {
             Guardian Intelligence
           </span>
         </div>
-        <div style={{ fontWeight: 600, fontSize: "15px" }}>Operator Name</div>
+        <div style={{ fontWeight: 600, fontSize: "15px" }}>Founder Name</div>
         <div style={{ color: "#5d5a52", marginBottom: "12px" }}>Founder · Applied Intelligence</div>
         {/* Hairline in Bordeaux, not Flare. The signature lands on Paper/white
             client grounds — the editorial palette is the honest palette here. */}
@@ -2076,7 +2075,7 @@ function SectionEmailSignature() {
           }}
         />
         <div style={{ display: "flex", gap: "12px", color: "#5d5a52", fontSize: "12px" }}>
-          <span>operator@guardianintelligence.org</span>
+          <span>founder@guardianintelligence.org</span>
           <span>·</span>
           <span>guardianintelligence.org</span>
           <span>·</span>

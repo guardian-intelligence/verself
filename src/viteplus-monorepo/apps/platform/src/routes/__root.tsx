@@ -120,9 +120,6 @@ function SiteFooter() {
           <FooterLink to="/docs">Docs</FooterLink>
           <FooterLink to="/docs/reference">API Reference</FooterLink>
         </FooterColumn>
-        <FooterColumn heading="Brand">
-          <FooterLink to="/design">Design system</FooterLink>
-        </FooterColumn>
         <FooterColumn heading="Policy">
           <FooterLink to="/policy">Overview</FooterLink>
           <FooterLink to="/policy/terms">Terms of Service</FooterLink>
