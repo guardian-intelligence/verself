@@ -58,7 +58,7 @@ function Summary() {
       <SectionHeading id="summary">Summary</SectionHeading>
       <SummaryPanel>
         <SummaryItem term="Contracting party">
-          The Forge Metal operator entity identified on your invoice.
+          The Forge Metal entity identified on your invoice.
         </SummaryItem>
         <SummaryItem term="Agreement stack">
           These Terms, the <a href="/policy/acceptable-use">AUP</a>, the{" "}
@@ -86,7 +86,7 @@ function Agreement() {
       <Prose>
         <p>
           These Terms of Service form a binding agreement between the customer organization
-          identified on the account (<strong>you</strong>) and the Forge Metal operator entity
+          identified on the account (<strong>you</strong>) and the Forge Metal entity
           identified on your invoice (<strong>we</strong>, <strong>us</strong>,{" "}
           <strong>Forge Metal</strong>). By creating an account, placing an order, or using the
           service you accept these Terms on behalf of the organization and confirm you have
@@ -274,8 +274,8 @@ function LawAndDisputes() {
       <SectionHeading id="law">Governing law and disputes</SectionHeading>
       <Prose>
         <p>
-          These Terms are governed by the laws of the jurisdiction in which the Forge Metal operator
-          entity is incorporated, excluding its conflict-of-laws provisions. Each party irrevocably
+          These Terms are governed by the laws of the jurisdiction in which the Forge Metal entity
+          is incorporated, excluding its conflict-of-laws provisions. Each party irrevocably
           submits to the exclusive jurisdiction of the competent courts of that jurisdiction for any
           dispute arising under these Terms.
         </p>
