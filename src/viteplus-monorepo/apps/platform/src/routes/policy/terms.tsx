@@ -86,11 +86,10 @@ function Agreement() {
       <Prose>
         <p>
           These Terms of Service form a binding agreement between the customer organization
-          identified on the account (<strong>you</strong>) and the Forge Metal entity
-          identified on your invoice (<strong>we</strong>, <strong>us</strong>,{" "}
-          <strong>Forge Metal</strong>). By creating an account, placing an order, or using the
-          service you accept these Terms on behalf of the organization and confirm you have
-          authority to bind it.
+          identified on the account (<strong>you</strong>) and the Forge Metal entity identified on
+          your invoice (<strong>we</strong>, <strong>us</strong>, <strong>Forge Metal</strong>). By
+          creating an account, placing an order, or using the service you accept these Terms on
+          behalf of the organization and confirm you have authority to bind it.
         </p>
         <p>
           These Terms incorporate the <a href="/policy/acceptable-use">Acceptable Use Policy</a>,
@@ -275,9 +274,9 @@ function LawAndDisputes() {
       <Prose>
         <p>
           These Terms are governed by the laws of the jurisdiction in which the Forge Metal entity
-          is incorporated, excluding its conflict-of-laws provisions. Each party irrevocably
-          submits to the exclusive jurisdiction of the competent courts of that jurisdiction for any
-          dispute arising under these Terms.
+          is incorporated, excluding its conflict-of-laws provisions. Each party irrevocably submits
+          to the exclusive jurisdiction of the competent courts of that jurisdiction for any dispute
+          arising under these Terms.
         </p>
         <p>
           Where an order form specifies a different governing law or disputes forum, that order form
