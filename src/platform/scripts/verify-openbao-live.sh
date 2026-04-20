@@ -14,6 +14,7 @@ mkdir -p "${artifact_dir}/clickhouse"
 window_start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 verification_ssh "sudo python3 -c '
+import hashlib
 import json
 import os
 import ssl
@@ -21,6 +22,7 @@ import subprocess
 import sys
 import time
 import uuid
+import urllib.error
 import urllib.request
 
 base = \"https://127.0.0.1:8200\"
@@ -33,6 +35,17 @@ def get_json(path, token=None, headers=None):
     request = urllib.request.Request(base + path, headers=headers)
     with urllib.request.urlopen(request, context=ctx, timeout=5) as response:
         return json.loads(response.read().decode())
+
+def get_json_status(path, token=None):
+    headers = {}
+    if token:
+        headers[\"X-Vault-Token\"] = token
+    request = urllib.request.Request(base + path, headers=headers)
+    try:
+        with urllib.request.urlopen(request, context=ctx, timeout=5) as response:
+            return response.status, json.loads(response.read().decode())
+    except urllib.error.HTTPError as exc:
+        return exc.code, {}
 
 def get_text(path):
     request = urllib.request.Request(base + path)
@@ -47,6 +60,13 @@ audited_headers_lower = {key.lower(): value for key, value in audited_headers.it
 correlation_header = \"openbao-proof:\" + str(uuid.uuid4())
 mounts_response = get_json(\"/v1/sys/mounts\", token, {\"X-Forge-Metal-Request-Id\": correlation_header})
 mounts = sorted(mounts_response.get(\"data\", mounts_response).keys())
+internal_token_status, internal_token_doc = get_json_status(\"/v1/platform-internal/data/service-credentials/secrets-service/internal-injection-token\", token)
+internal_token_value = internal_token_doc.get(\"data\", {}).get(\"data\", {}).get(\"value\", \"\") if internal_token_status == 200 else \"\"
+unsafe_bootstrap_statuses = {
+    \"openbao-root-token\": get_json_status(\"/v1/platform-internal/data/openbao/root-token\", token)[0],
+    \"openbao-unseal-key-1\": get_json_status(\"/v1/platform-internal/data/openbao/unseal-key-1\", token)[0],
+    \"zitadel-masterkey\": get_json_status(\"/v1/platform-internal/data/zitadel/masterkey\", token)[0],
+}
 systemd_state = subprocess.check_output([\"systemctl\", \"is-active\", \"openbao\"], text=True).strip()
 nft_ruleset = subprocess.check_output([\"nft\", \"list\", \"ruleset\"], text=True)
 credential_stats = {}
@@ -73,6 +93,12 @@ payload = {
     \"health\": health,
     \"metrics_has_unsealed\": \"vault_core_unsealed\" in metrics or \"vault.core.unsealed\" in metrics,
     \"mounts\": mounts,
+    \"internal_service_credentials\": {
+        \"mount_present\": \"platform-internal/\" in mounts,
+        \"injection_token_present\": internal_token_status == 200,
+        \"injection_token_sha256\": hashlib.sha256(internal_token_value.encode()).hexdigest() if internal_token_value else \"\",
+        \"unsafe_bootstrap_statuses\": unsafe_bootstrap_statuses,
+    },
     \"systemd_state\": systemd_state,
     \"nft_has_loopback_drop\": \"tcp dport { 8200, 8201 } iifname != \\\"lo\\\" drop\" in nft_ruleset,
     \"credential_stats\": credential_stats,
@@ -91,6 +117,12 @@ if not payload[\"nft_has_loopback_drop\"]:
 required_mounts = {\"cubbyhole/\", \"identity/\", \"sys/\"}
 if not required_mounts.issubset(set(mounts)):
     raise SystemExit(f\"OpenBao required system mounts missing: {mounts}\")
+if \"platform-internal/\" in mounts:
+    if internal_token_status != 200 or not internal_token_value:
+        raise SystemExit(\"OpenBao internal injection token document missing\")
+    for name, status in unsafe_bootstrap_statuses.items():
+        if status != 404:
+            raise SystemExit(f\"unsafe bootstrap credential {name} was unexpectedly present in OpenBao\")
 for name, stat in credential_stats.items():
     if stat[\"mode\"] != \"0o640\" or stat[\"bytes\"] <= 0:
         raise SystemExit(f\"OpenBao credential {name} has bad mode or is empty\")
