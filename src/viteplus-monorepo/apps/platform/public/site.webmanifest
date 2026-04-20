@@ -1,6 +1,6 @@
 {
-  "name": "Forge Metal Platform",
-  "short_name": "Forge Metal",
+  "name": "Guardian Intelligence · Platform",
+  "short_name": "Guardian",
   "icons": [
     { "src": "/favicon.svg", "type": "image/svg+xml", "sizes": "any" },
     { "src": "/maskable-icon.png", "type": "image/png", "sizes": "512x512", "purpose": "maskable" },

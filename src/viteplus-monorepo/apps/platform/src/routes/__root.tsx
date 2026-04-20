@@ -12,7 +12,7 @@ export const Route = createRootRoute({
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { name: "theme-color", content: "#ffffff" },
-      { property: "og:site_name", content: "Forge Metal Platform" },
+      { property: "og:site_name", content: "Guardian Intelligence" },
       ...deployMetaTags(),
     ],
     links: [
@@ -55,7 +55,10 @@ function RootDocument({ children }: { children: ReactNode }) {
       <head>
         <HeadContent />
       </head>
-      <body className="bg-background text-foreground font-sans antialiased">
+      <body
+        className="text-foreground font-sans antialiased"
+        style={{ background: "var(--color-iron)", color: "var(--color-type-iron)" }}
+      >
         <div className="flex min-h-svh flex-col">
           <TopBar />
           <main id="main" className="flex-1">
@@ -76,15 +79,21 @@ function RootDocument({ children }: { children: ReactNode }) {
 // the hierarchy.
 function TopBar() {
   return (
-    <header className="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <header
+      className="sticky top-0 z-30"
+      style={{
+        background: "var(--color-iron)",
+        borderBottom: "1px solid rgba(245,245,245,0.08)",
+      }}
+    >
       <div className="mx-auto flex h-[var(--header-h)] w-full max-w-7xl items-center px-4 md:px-6">
         <Link
           to="/"
-          aria-label="Forge Metal Platform — home"
+          aria-label="Guardian Intelligence — home"
           className="inline-flex items-center"
-          style={{ color: "currentColor" }}
+          style={{ color: "var(--color-type-iron)" }}
         >
-          <Lockup size="sm" wordmark="Forge Metal" variant="chip" title="Forge Metal Platform" />
+          <Lockup size="sm" wordmark="Guardian Intelligence" title="Guardian Intelligence" />
         </Link>
       </div>
     </header>
@@ -94,9 +103,18 @@ function TopBar() {
 // Site footer — the discoverability surface for policy + design surfaces. Living
 // in the root layout so every page (docs, reference, policy, marketing, design)
 // shows the same set of legal and reference links without each page wiring them.
+// Iron ground: the whole platform sits on Guardian's default canvas, so the
+// footer no longer has to negotiate with an upstream /design dark section.
 function SiteFooter() {
   return (
-    <footer className="mt-16 border-t border-border bg-background/60">
+    <footer
+      className="mt-16"
+      style={{
+        background: "var(--color-iron)",
+        color: "var(--color-type-iron)",
+        borderTop: "1px solid rgba(245,245,245,0.08)",
+      }}
+    >
       <div className="mx-auto grid w-full max-w-7xl gap-8 px-4 py-10 md:grid-cols-4 md:px-6">
         <FooterColumn heading="Platform">
           <FooterLink to="/docs">Docs</FooterLink>
@@ -121,6 +139,18 @@ function SiteFooter() {
           <FooterLink to="/policy/changelog">Policy changelog</FooterLink>
         </FooterColumn>
       </div>
+      <div
+        className="mx-auto w-full max-w-7xl px-4 pb-10 md:px-6"
+        style={{
+          fontFamily: "'Geist Mono', ui-monospace, monospace",
+          fontSize: "11px",
+          letterSpacing: "0.12em",
+          textTransform: "uppercase",
+          color: "rgba(245,245,245,0.4)",
+        }}
+      >
+        © 2026 Guardian Intelligence · Seattle, Washington
+      </div>
     </footer>
   );
 }
@@ -128,7 +158,12 @@ function SiteFooter() {
 function FooterColumn({ heading, children }: { heading: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{heading}</p>
+      <p
+        className="font-mono text-[10px] font-medium uppercase tracking-[0.18em]"
+        style={{ color: "rgba(245,245,245,0.4)" }}
+      >
+        {heading}
+      </p>
       <ul className="flex flex-col gap-2 text-sm">{children}</ul>
     </div>
   );
@@ -139,7 +174,8 @@ function FooterLink({ to, children }: { to: string; children: ReactNode }) {
     <li>
       <Link
         to={to}
-        className="text-muted-foreground transition-colors hover:text-foreground hover:underline hover:underline-offset-4"
+        className="transition-colors hover:underline hover:underline-offset-4"
+        style={{ color: "rgba(245,245,245,0.72)" }}
       >
         {children}
       </Link>

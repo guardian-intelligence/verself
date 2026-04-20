@@ -11,7 +11,7 @@ export const grounds = {
 export const accents = {
   argent: "#FFFFFF",
   ink: "#0B0B0B",
-  oxblood: "#5C1F1E",
+  bordeaux: "#5C1F1E",
   typeIron: "#F5F5F5",
 } as const;
 

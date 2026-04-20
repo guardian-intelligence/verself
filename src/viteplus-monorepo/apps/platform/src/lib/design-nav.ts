@@ -7,6 +7,7 @@ export type DesignSectionId =
   | "clear-space"
   | "size-ladder"
   | "lockups"
+  | "product-marque"
   | "colour"
   | "typography"
   | "hero-iron"
@@ -57,71 +58,78 @@ export const DESIGN_SECTIONS: readonly DesignSection[] = [
     title: "The wordmark, four ways.",
   },
   {
-    id: "colour",
+    id: "product-marque",
     number: "06",
+    group: "Identity",
+    label: "Product marque",
+    title: "One house. Many products.",
+  },
+  {
+    id: "colour",
+    number: "07",
     group: "System",
     label: "Colour",
     title: "Three grounds. Two accents.",
   },
   {
     id: "typography",
-    number: "07",
+    number: "08",
     group: "System",
     label: "Typography",
     title: "Three families. Three roles. Zero licences.",
   },
   {
     id: "hero-iron",
-    number: "08",
+    number: "09",
     group: "Applied",
     label: "Hero · Iron",
     title: "Customer-facing surface.",
   },
   {
     id: "hero-flare",
-    number: "09",
+    number: "10",
     group: "Applied",
     label: "Hero · Flare",
     title: "World-facing surface.",
   },
   {
     id: "dispatch",
-    number: "10",
+    number: "11",
     group: "Applied",
     label: "Dispatch",
-    title: "Where the serif does its real work.",
+    title: "The Dispatch, on Paper.",
   },
   {
     id: "product",
-    number: "11",
+    number: "12",
     group: "Applied",
     label: "Product chrome",
     title: "The serif stays. The rest is work.",
   },
   {
     id: "photography",
-    number: "12",
+    number: "13",
     group: "Applied",
     label: "Photography · scrim",
     title: "Argent needs a floor.",
   },
   {
     id: "og-card",
-    number: "13",
+    number: "14",
     group: "Applied",
     label: "OG card",
     title: "1200 × 630.",
   },
   {
     id: "business-cards",
-    number: "14",
+    number: "15",
     group: "Applied",
     label: "Business cards",
     title: "3.5 × 2 inches.",
   },
   {
     id: "email-signature",
-    number: "15",
+    number: "16",
     group: "Applied",
     label: "Email signature",
     title: "Inline, in other people's inboxes.",
