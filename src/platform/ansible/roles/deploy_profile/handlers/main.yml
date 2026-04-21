@@ -82,3 +82,31 @@
     name: sandbox-rental-service
     state: restarted
   when: deploy_profile_sandbox_rental_service_unit_file.stat.exists
+
+- name: Check if temporal-server unit exists for deploy profile restart
+  listen: deploy-profile restart temporal-server
+  ansible.builtin.stat:
+    path: /etc/systemd/system/temporal-server.service
+  register: deploy_profile_temporal_server_unit_file
+
+- name: Restart temporal-server from deploy profile
+  listen: deploy-profile restart temporal-server
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: temporal-server
+    state: restarted
+  when: deploy_profile_temporal_server_unit_file.stat.exists
+
+- name: Check if temporal-proof-worker unit exists for deploy profile restart
+  listen: deploy-profile restart temporal-proof-worker
+  ansible.builtin.stat:
+    path: /etc/systemd/system/temporal-proof-worker.service
+  register: deploy_profile_temporal_proof_worker_unit_file
+
+- name: Restart temporal-proof-worker from deploy profile
+  listen: deploy-profile restart temporal-proof-worker
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: temporal-proof-worker
+    state: restarted
+  when: deploy_profile_temporal_proof_worker_unit_file.stat.exists

@@ -193,6 +193,30 @@
     remote_src: true
     mode: "0755"
 
+# ── Temporal SQL/Debug Binaries ─────────────────────────────────────────────
+
+- name: Download Temporal archive
+  ansible.builtin.get_url:
+    url: "{{ deploy_profile_server_tools_pins.temporal.url }}"
+    dest: "{{ deploy_profile_staging_dir }}/temporal-{{ deploy_profile_server_tools_pins.temporal.version }}.tar.gz"
+    checksum: "sha256:{{ deploy_profile_server_tools_pins.temporal.sha256 }}"
+    mode: "0644"
+
+- name: Extract Temporal distribution
+  ansible.builtin.unarchive:
+    src: "{{ deploy_profile_staging_dir }}/temporal-{{ deploy_profile_server_tools_pins.temporal.version }}.tar.gz"
+    dest: "{{ deploy_profile_staging_dir }}"
+    remote_src: true
+    creates: "{{ deploy_profile_staging_dir }}/temporal-sql-tool"
+
+- name: Install Temporal support binaries
+  ansible.builtin.copy:
+    src: "{{ deploy_profile_staging_dir }}/{{ item }}"
+    dest: "{{ fm_bin }}/{{ item }}"
+    remote_src: true
+    mode: "0755"
+  loop: "{{ deploy_profile_server_tools_pins.temporal.binaries }}"
+
 # ── Grafana ──────────────────────────────────────────────────────────────────
 
 - name: Download Grafana archive

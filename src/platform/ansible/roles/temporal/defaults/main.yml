@@ -1,0 +1,25 @@
+---
+temporal_system_user: temporal_server
+temporal_system_group: temporal_server
+temporal_proof_user: temporal_proof
+temporal_proof_group: temporal_proof
+
+temporal_config_dir: /etc/temporal
+temporal_state_dir: /var/lib/temporal
+temporal_proof_state_dir: /var/lib/temporal-proof
+temporal_config_path: "{{ temporal_config_dir }}/config.yaml"
+temporal_dynamic_config_path: "{{ temporal_config_dir }}/dynamicconfig.yaml"
+
+temporal_postgresql_user: temporal
+temporal_postgresql_database: temporal
+temporal_visibility_database: temporal_visibility
+temporal_postgresql_socket_dir: /var/run/postgresql
+temporal_sql_plugin: postgres12
+temporal_num_history_shards: 4
+temporal_force_schema_reset: false
+temporal_schema_name: postgresql/v12/temporal
+temporal_visibility_schema_name: postgresql/v12/visibility
+
+temporal_proof_namespace: temporal-proof
+temporal_denied_namespace: temporal-denied
+temporal_proof_governance_url: "https://{{ services.governance_service.host }}:{{ services.governance_service.internal_port }}/internal/v1/audit/events"

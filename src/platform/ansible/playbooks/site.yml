@@ -117,13 +117,13 @@
     - role: resend
       tags: [resend]
     - role: spire
-      tags: [spire, clickhouse, otelcol, billing_service, identity_service, governance_service, secrets_service, sandbox_rental_service, mailbox_service, grafana]
+      tags: [spire, clickhouse, otelcol, billing_service, identity_service, governance_service, secrets_service, sandbox_rental_service, mailbox_service, temporal, grafana]
     - role: clickhouse
-      tags: [clickhouse, otelcol, billing_service, sandbox_rental_service, governance_service, openbao, openbao_tenancy, grafana]
+      tags: [clickhouse, otelcol, billing_service, sandbox_rental_service, governance_service, openbao, openbao_tenancy, temporal, grafana]
     - role: tigerbeetle
       tags: [tigerbeetle]
     - role: postgresql
-      tags: [postgresql, openbao, openbao_tenancy]
+      tags: [postgresql, openbao, openbao_tenancy, temporal]
     - role: zitadel
       tags: [zitadel, openbao, openbao_tenancy]
     - role: openbao
@@ -133,7 +133,7 @@
     - role: identity_service
       tags: [identity_service]
     - role: governance_service
-      tags: [governance_service, openbao, openbao_tenancy]
+      tags: [governance_service, openbao, openbao_tenancy, temporal]
     - role: secrets_service
       tags: [secrets_service, openbao_tenancy]
     - role: sandbox_rental_service
@@ -162,9 +162,11 @@
     - role: stalwart
       tags: [stalwart]
     - role: otelcol
-      tags: [otelcol]
+      tags: [otelcol, temporal]
     - role: mailbox_service
       tags: [mailbox_service]
+    - role: temporal
+      tags: [temporal]
     - role: electric
       vars:
         electric_instance: mail
@@ -194,7 +196,7 @@
     - role: company
       tags: [company]
     - role: grafana
-      tags: [grafana]
+      tags: [grafana, temporal]
     - role: verdaccio
       tags: [verdaccio]
     - role: forgejo

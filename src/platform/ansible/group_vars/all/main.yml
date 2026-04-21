@@ -80,3 +80,4 @@ postgresql_role_connection_limits:
   identity_service: 10
   governance_service: 15
   mailbox_service: 10
+  temporal: 80

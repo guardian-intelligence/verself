@@ -12,6 +12,8 @@ spire_billing_service_id: "spiffe://{{ spire_trust_domain }}/svc/billing-service
 spire_sandbox_rental_id: "spiffe://{{ spire_trust_domain }}/svc/sandbox-rental-service"
 spire_secrets_service_id: "spiffe://{{ spire_trust_domain }}/svc/secrets-service"
 spire_mailbox_service_id: "spiffe://{{ spire_trust_domain }}/svc/mailbox-service"
+spire_temporal_server_id: "spiffe://{{ spire_trust_domain }}/svc/temporal-server"
+spire_temporal_proof_id: "spiffe://{{ spire_trust_domain }}/svc/temporal-proof"
 spire_grafana_id: "spiffe://{{ spire_trust_domain }}/svc/grafana"
 spire_otelcol_id: "spiffe://{{ spire_trust_domain }}/svc/otelcol"
 spire_clickhouse_operator_id: "spiffe://{{ spire_trust_domain }}/svc/clickhouse-operator"

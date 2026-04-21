@@ -1,0 +1,114 @@
+log:
+  stdout: true
+  level: info
+  format: json
+
+persistence:
+  defaultStore: postgres-default
+  visibilityStore: postgres-visibility
+  numHistoryShards: {{ temporal_num_history_shards }}
+  datastores:
+    postgres-default:
+      sql:
+        pluginName: "{{ temporal_sql_plugin }}"
+        databaseName: "{{ temporal_postgresql_database }}"
+        connectAddr: "{{ temporal_postgresql_socket_dir }}"
+        connectProtocol: unix
+        user: "{{ temporal_postgresql_user }}"
+        maxConns: 20
+        maxIdleConns: 20
+        maxConnLifetime: 1h
+        connectAttributes:
+          sslmode: disable
+          application_name: temporal-server
+          connect_timeout: "5"
+    postgres-visibility:
+      sql:
+        pluginName: "{{ temporal_sql_plugin }}"
+        databaseName: "{{ temporal_visibility_database }}"
+        connectAddr: "{{ temporal_postgresql_socket_dir }}"
+        connectProtocol: unix
+        user: "{{ temporal_postgresql_user }}"
+        maxConns: 10
+        maxIdleConns: 10
+        maxConnLifetime: 1h
+        connectAttributes:
+          sslmode: disable
+          application_name: temporal-server
+          connect_timeout: "5"
+
+global:
+  membership:
+    maxJoinDuration: 30s
+    broadcastAddress: "{{ services.temporal.host }}"
+  pprof:
+    port: {{ services.temporal.pprof_port }}
+  metrics:
+    prometheus:
+      framework: opentelemetry
+      timerType: histogram
+      listenAddress: "{{ services.temporal.host }}:{{ services.temporal.metrics_port }}"
+
+services:
+  frontend:
+    rpc:
+      grpcPort: {{ services.temporal.grpc_port }}
+      membershipPort: {{ services.temporal.frontend_membership_port }}
+      bindOnIP: "{{ services.temporal.host }}"
+      httpPort: {{ services.temporal.http_port }}
+  internal-frontend:
+    rpc:
+      grpcPort: {{ services.temporal.internal_frontend_grpc_port }}
+      membershipPort: {{ services.temporal.internal_frontend_membership_port }}
+      bindOnIP: "{{ services.temporal.host }}"
+      httpPort: {{ services.temporal.internal_frontend_http_port }}
+  history:
+    rpc:
+      grpcPort: {{ services.temporal.history_grpc_port }}
+      membershipPort: {{ services.temporal.history_membership_port }}
+      bindOnIP: "{{ services.temporal.host }}"
+  matching:
+    rpc:
+      grpcPort: {{ services.temporal.matching_grpc_port }}
+      membershipPort: {{ services.temporal.matching_membership_port }}
+      bindOnIP: "{{ services.temporal.host }}"
+  worker:
+    rpc:
+      grpcPort: {{ services.temporal.worker_grpc_port }}
+      membershipPort: {{ services.temporal.worker_membership_port }}
+      bindOnIP: "{{ services.temporal.host }}"
+
+clusterMetadata:
+  enableGlobalNamespace: false
+  failoverVersionIncrement: 10
+  masterClusterName: active
+  currentClusterName: active
+  clusterInformation:
+    active:
+      enabled: true
+      initialFailoverVersion: 1
+      rpcName: frontend
+      rpcAddress: "{{ services.temporal.host }}:{{ services.temporal.grpc_port }}"
+      httpAddress: "{{ services.temporal.host }}:{{ services.temporal.http_port }}"
+
+dcRedirectionPolicy:
+  policy: noop
+
+archival:
+  history:
+    state: disabled
+    enableRead: false
+  visibility:
+    state: disabled
+    enableRead: false
+
+namespaceDefaults:
+  archival:
+    history:
+      state: disabled
+    visibility:
+      state: disabled
+
+dynamicConfigClient:
+  filepath: "{{ temporal_dynamic_config_path }}"
+  pollInterval: 60s

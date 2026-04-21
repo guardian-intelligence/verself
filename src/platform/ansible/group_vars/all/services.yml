@@ -21,9 +21,12 @@
 #      25            Stalwart SMTP
 #      2222          Forgejo SSH
 #      3000          Forgejo HTTP
+#      6933-6939     Temporal membership
 #      3320          TigerBeetle
 #      4317 / 4318   OTel collector gRPC / HTTP
 #      5432          PostgreSQL
+#      7233-7246     Temporal frontend/history/matching/worker gRPC + HTTP
+#      7936          Temporal pprof
 #      8085          Zitadel
 #      8200 / 8201   OpenBao API / cluster
 #      9440          ClickHouse secure native
@@ -59,8 +62,8 @@
 #
 #    Reserved for future use:
 #      metrics / pprof / health      9000–9099 / 9100–9199 — adopt when we
-#                                    add per-service scrape endpoints. Today
-#                                    metrics share the main HTTP port.
+#                                    add per-service scrape endpoints.
+#      9001                          Temporal Prometheus metrics
 #
 # 4. Every allocation in this file must be unique. There is no CI check for
 #    this yet — adding one under src/platform/test/ that loads this file and
@@ -95,6 +98,22 @@ services:
   postgresql:
     host: "127.0.0.1"
     port: 5432
+  temporal:
+    host: "127.0.0.1"
+    grpc_port: 7233
+    http_port: 7243
+    internal_frontend_grpc_port: 7236
+    internal_frontend_http_port: 7246
+    history_grpc_port: 7234
+    matching_grpc_port: 7235
+    worker_grpc_port: 7239
+    frontend_membership_port: 6933
+    internal_frontend_membership_port: 6936
+    history_membership_port: 6934
+    matching_membership_port: 6935
+    worker_membership_port: 6939
+    metrics_port: 9001
+    pprof_port: 7936
   billing:
     host: "127.0.0.1"
     port: 4242

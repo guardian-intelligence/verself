@@ -8,6 +8,9 @@ src/mailbox-service/mailbox-service
 src/identity-service/identity-service
 src/governance-service/governance-service
 src/secrets-service/secrets-service
+src/temporal-platform/forge-temporal-server
+src/temporal-platform/temporal-proof
+src/temporal-platform/temporal-schema
 
 # Config (contains credentials)
 forge-metal.toml

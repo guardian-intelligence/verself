@@ -19,12 +19,13 @@
     sandbox_rental_service_force_schema_reset: true
     governance_service_force_schema_reset: true
     secrets_service_force_schema_reset: true
+    temporal_force_schema_reset: true
     clickhouse_force_schema_reset: true
   roles:
     - role: deploy_profile
       tags: [deploy_profile]
     - role: clickhouse
-      tags: [clickhouse, billing_service, sandbox_rental_service, governance_service]
+      tags: [clickhouse, billing_service, sandbox_rental_service, governance_service, temporal]
     - role: tigerbeetle
       tags: [tigerbeetle]
     - role: postgresql
@@ -33,6 +34,8 @@
       tags: [billing_service]
     - role: governance_service
       tags: [governance_service]
+    - role: temporal
+      tags: [temporal]
     - role: secrets_service
       tags: [secrets_service]
     - role: sandbox_rental_service
@@ -59,9 +62,9 @@
     - role: rent_a_sandbox
       tags: [rent_a_sandbox, governance_service]
     - role: otelcol
-      tags: [otelcol]
+      tags: [otelcol, temporal]
     - role: grafana
-      tags: [grafana]
+      tags: [grafana, temporal]
   handlers:
     - name: Ignore mailbox-service restart during verification reset
       listen: restart mailbox-service

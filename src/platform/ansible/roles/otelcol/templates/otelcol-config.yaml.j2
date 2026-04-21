@@ -283,6 +283,43 @@ receivers:
       - type: move
         from: body.MESSAGE
         to: body
+  journald/temporal-server:
+    units: [temporal-server]
+    resource:
+      service.name: temporal-server
+    operators:
+      - type: move
+        from: body.MESSAGE
+        to: body
+      - type: json_parser
+        parse_from: body
+        if: 'body != nil and IsMatch(body, "^\\{")'
+      - type: severity_parser
+        parse_from: attributes.level
+        if: attributes.level != nil
+        mapping:
+          info: INFO
+          warn: WARN
+          error: ERROR
+          debug: DEBUG
+      - type: move
+        from: attributes.msg
+        to: body
+        if: attributes.msg != nil
+      - type: remove
+        field: attributes.ts
+        if: attributes.ts != nil
+      - type: remove
+        field: attributes.level
+        if: attributes.level != nil
+  journald/temporal-proof-worker:
+    units: [temporal-proof-worker]
+    resource:
+      service.name: temporal-proof-worker
+    operators:
+      - type: move
+        from: body.MESSAGE
+        to: body
   postgresql:
     endpoint: "{{ services.postgresql.host }}:{{ services.postgresql.port }}"
     username: postgres
@@ -327,7 +364,7 @@ receivers:
       process:
         include:
           match_type: regexp
-          names: ["billing-service", "sandbox-rental.*", "caddy", "clickhouse.*", "ClickHouse.*", "forgejo.*", "grafana.*", "otelcol.*", "node", "forge-metal", "verdaccio", "next-server.*", "npm", "vm-orchestrator.*", "tigerbeetle", "zitadel", "bao", "postgres", "spire-server", "spire-agent"]
+          names: ["billing-service", "sandbox-rental.*", "caddy", "clickhouse.*", "ClickHouse.*", "forgejo.*", "grafana.*", "otelcol.*", "node", "forge-metal", "verdaccio", "next-server.*", "npm", "vm-orchestrator.*", "tigerbeetle", "zitadel", "bao", "postgres", "spire-server", "spire-agent", "forge-temporal-server", "temporal-proof"]
         mute_process_exe_error: true
         mute_process_io_error: true
       cpu: {}
@@ -355,6 +392,13 @@ receivers:
             insecure_skip_verify: true
           static_configs:
             - targets: ["{{ services.openbao.host }}:{{ services.openbao.port }}"]
+  prometheus/temporal:
+    config:
+      scrape_configs:
+        - job_name: temporal
+          scrape_interval: 10s
+          static_configs:
+            - targets: ["{{ services.temporal.host }}:{{ services.temporal.metrics_port }}"]
 
 processors:
   batch:
@@ -414,7 +458,7 @@ service:
   extensions: [health_check, file_storage]
   pipelines:
     logs:
-      receivers: [otlp, filelog/caddy, journald/caddy, journald/billing-service, journald/sandbox-rental, journald/rent-a-sandbox, journald/webmail, journald/zitadel, journald/openbao, journald/spire-server, journald/spire-agent, journald/vm-orchestrator, journald/forgejo, journald/grafana, filelog/postgresql]
+      receivers: [otlp, filelog/caddy, journald/caddy, journald/billing-service, journald/sandbox-rental, journald/rent-a-sandbox, journald/webmail, journald/zitadel, journald/openbao, journald/spire-server, journald/spire-agent, journald/vm-orchestrator, journald/forgejo, journald/grafana, journald/temporal-server, journald/temporal-proof-worker, filelog/postgresql]
       processors: [batch]
       exporters: [clickhouse]
     traces:
@@ -422,6 +466,6 @@ service:
       processors: [transform/ansible_spans, batch]
       exporters: [clickhouse]
     metrics:
-      receivers: [otlp, hostmetrics, postgresql, statsd, prometheus/openbao]
+      receivers: [otlp, hostmetrics, postgresql, statsd, prometheus/openbao, prometheus/temporal]
       processors: [batch]
       exporters: [clickhouse]
