@@ -15,6 +15,12 @@ func buildQueries(cfg config) ([]query, error) {
 		return buildCatalogQueries(cfg, params)
 	case "describe":
 		return buildDescribeQueries(cfg, params)
+	case "overview":
+		return []query{
+			newQuery("overview.services", overviewServicesSQL, params),
+			newQuery("overview.deploys", overviewDeploysSQL, params),
+			newQuery("overview.errors", overviewErrorsSQL, params),
+		}, nil
 	case "metric":
 		if cfg.metric == "" {
 			return nil, errors.New("WHAT=metric requires METRIC=<metric_name>")
@@ -611,6 +617,86 @@ WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
   AND Status >= {status_min:UInt16}
   AND ({search:String} = '' OR positionCaseInsensitive(Path, {search:String}) > 0)
 ORDER BY Timestamp DESC
+LIMIT {row_limit:UInt32}`
+
+const overviewServicesSQL = `
+SELECT
+  if(service = '', '<resource-only>', service) AS service,
+  sum(metric_samples) AS metric_samples,
+  sum(trace_samples) AS trace_samples,
+  sum(log_samples) AS log_samples,
+  sum(http_samples) AS http_samples
+FROM
+(
+  SELECT ServiceName AS service,
+         count() AS metric_samples,
+         toUInt64(0) AS trace_samples,
+         toUInt64(0) AS log_samples,
+         toUInt64(0) AS http_samples
+  FROM default.otel_metric_scalar
+  WHERE TimeUnix > now() - toIntervalHour(24)
+  GROUP BY service
+  UNION ALL
+  SELECT ServiceName AS service,
+         toUInt64(0),
+         count(),
+         toUInt64(0),
+         toUInt64(0)
+  FROM default.otel_traces
+  WHERE Timestamp > now() - toIntervalHour(24)
+  GROUP BY service
+  UNION ALL
+  SELECT ServiceName AS service,
+         toUInt64(0),
+         toUInt64(0),
+         count(),
+         toUInt64(0)
+  FROM default.otel_logs
+  WHERE Timestamp > now() - toIntervalHour(24)
+  GROUP BY service
+  UNION ALL
+  SELECT ServiceName AS service,
+         toUInt64(0),
+         toUInt64(0),
+         toUInt64(0),
+         count()
+  FROM default.http_access_logs
+  WHERE Timestamp > now() - toIntervalHour(24)
+  GROUP BY service
+)
+GROUP BY service
+ORDER BY metric_samples + trace_samples + log_samples + http_samples DESC
+LIMIT {row_limit:UInt32}`
+
+const overviewDeploysSQL = `
+SELECT
+  SpanAttributes['forge_metal.deploy_run_key'] AS deploy_run_key,
+  countDistinct(extract(SpanAttributes['ansible.task.name'], ': ([A-Za-z0-9_-]+) :')) AS roles,
+  count() AS tasks,
+  countIf(StatusCode IN ('Error', 'STATUS_CODE_ERROR')) AS errors,
+  min(Timestamp) AS first_seen,
+  max(Timestamp) AS last_seen,
+  dateDiff('second', min(Timestamp), max(Timestamp)) AS duration_seconds
+FROM default.otel_traces
+WHERE ServiceName = 'ansible'
+  AND SpanName = 'ansible.task'
+  AND Timestamp > now() - toIntervalDay(7)
+GROUP BY deploy_run_key
+ORDER BY last_seen DESC
+LIMIT {row_limit:UInt32}`
+
+const overviewErrorsSQL = `
+SELECT
+  ServiceName AS service,
+  countIf(SignalKind = 'trace') AS trace_errors,
+  countIf(SignalKind = 'log') AS log_errors,
+  countIf(SignalKind = 'http_access') AS http_errors,
+  count() AS total_errors,
+  max(Timestamp) AS last_seen
+FROM default.otel_signal_errors
+WHERE Timestamp > now() - toIntervalHour(24)
+GROUP BY service
+ORDER BY total_errors DESC
 LIMIT {row_limit:UInt32}`
 
 const logsRecentSQL = `
