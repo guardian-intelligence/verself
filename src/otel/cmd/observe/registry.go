@@ -485,6 +485,7 @@ var queryDocs = []queryDoc{
 		},
 		Next: []string{
 			"make observe WHAT=describe SPAN=auth.spiffe.mtls.client",
+			"make observe WHAT=describe SPAN=workload.openbao.kv.get",
 			"make observe WHAT=describe SPAN=secrets.bao.jwt_svid.login",
 		},
 	},

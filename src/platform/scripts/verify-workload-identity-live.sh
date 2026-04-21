@@ -60,13 +60,22 @@ stale_credentials = [
     "/etc/credstore/spire/join-token",
     "/run/spire-agent/private/join-token",
     "/etc/credstore/billing/pg-dsn",
+    "/etc/credstore/billing/stripe-secret-key",
+    "/etc/credstore/billing/stripe-webhook-secret",
+    "/etc/credstore/billing/ch-password",
     "/etc/credstore/identity-service/pg-dsn",
     "/etc/credstore/governance-service/pg-dsn",
     "/etc/credstore/governance-service/identity-pg-dsn",
     "/etc/credstore/governance-service/billing-pg-dsn",
     "/etc/credstore/governance-service/sandbox-pg-dsn",
+    "/etc/credstore/governance-service/ch-password",
     "/etc/credstore/sandbox-rental/pg-dsn",
+    "/etc/credstore/sandbox-rental/ch-password",
+    "/etc/credstore/sandbox-rental/github-app-private-key",
+    "/etc/credstore/sandbox-rental/github-app-webhook-secret",
+    "/etc/credstore/sandbox-rental/github-app-client-secret",
     "/etc/credstore/mailbox-service/pg-dsn",
+    "/etc/credstore/mailbox-service/resend-api-key",
     "/etc/credstore/governance-service/internal-audit-token",
     "/etc/credstore/sandbox-rental/billing-client-secret",
     "/etc/credstore/sandbox-rental/secret-injection-grant-ed25519.pem",
@@ -89,14 +98,31 @@ stale_loadcredential_terms = [
     "secret-injection-grant",
     "sandbox-injection-grant",
     "pg-dsn",
+    "stripe-secret-key",
+    "stripe-webhook-secret",
+    "ch-password",
+    "github-app-private-key",
+    "github-app-webhook-secret",
+    "github-app-client-secret",
+    "resend-api-key",
 ]
 load_credentials = {}
-for unit in ["identity-service", "governance-service", "billing-service", "sandbox-rental-service", "secrets-service"]:
+for unit in ["identity-service", "governance-service", "billing-service", "sandbox-rental-service", "secrets-service", "mailbox-service"]:
     value = subprocess.check_output(["systemctl", "show", unit, "--property=LoadCredential", "--value"], text=True)
     load_credentials[unit] = value.strip()
     stale_terms = [term for term in stale_loadcredential_terms if term in value]
     if stale_terms:
         raise SystemExit(f"{unit} still loads stale credentials: {', '.join(stale_terms)}")
+
+for unit in ["governance-service", "billing-service", "sandbox-rental-service", "mailbox-service"]:
+    subprocess.run(["systemctl", "restart", unit], check=True)
+    for _ in range(30):
+        state = subprocess.run(["systemctl", "is-active", "--quiet", unit], check=False)
+        if state.returncode == 0:
+            break
+        subprocess.run(["sleep", "1"], check=True)
+    else:
+        raise SystemExit(f"{unit} did not become active after restart")
 
 socket_path = "/run/spire-agent/sockets/agent.sock"
 socket_stat = os.stat(socket_path)
@@ -181,6 +207,8 @@ wait_for_clickhouse_count() {
   local query="$2"
   local min_count="$3"
   local output_path="$4"
+  shift 4
+  local extra_args=("$@")
   local count="0"
   for _ in $(seq 1 60); do
     (
@@ -189,6 +217,7 @@ wait_for_clickhouse_count() {
         --database "${database}" \
         --param_window_start="${window_start}" \
         --param_window_end="${window_end}" \
+        "${extra_args[@]}" \
         --query "${query}"
     ) >"${output_path}"
     count="$(tail -n 1 "${output_path}" | tr -d '[:space:]')"
@@ -226,6 +255,31 @@ wait_for_clickhouse_count default "
     AND ServiceName = 'secrets-service'
     AND SpanName IN ('auth.spiffe.jwt_svid.fetch', 'secrets.bao.jwt_svid.login')
 " 2 "${artifact_dir}/clickhouse/spiffe-jwt-svid-spans-count.tsv"
+
+for service in billing-service governance-service sandbox-rental-service mailbox-service; do
+  service_slug="${service//-/_}"
+  wait_for_clickhouse_count default "
+    SELECT count()
+    FROM otel_traces
+    WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
+      AND ServiceName = {service:String}
+      AND SpanName = 'workload.openbao.jwt_svid.login'
+      AND SpanAttributes['bao.auth_method'] = 'jwt_svid'
+      AND SpanAttributes['bao.request_id'] != ''
+      AND startsWith(SpanAttributes['bao.role'], 'platform-')
+  " 1 "${artifact_dir}/clickhouse/${service_slug}-openbao-jwt-login-count.tsv" --param_service="${service}"
+
+  wait_for_clickhouse_count default "
+    SELECT count()
+    FROM otel_traces
+    WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
+      AND ServiceName = {service:String}
+      AND SpanName = 'workload.openbao.kv.get'
+      AND SpanAttributes['bao.mount'] = 'platform'
+      AND SpanAttributes['bao.request_id'] != ''
+      AND startsWith(SpanAttributes['bao.role'], 'platform-')
+  " 1 "${artifact_dir}/clickhouse/${service_slug}-openbao-kv-get-count.tsv" --param_service="${service}"
+done
 
 wait_for_clickhouse_count forge_metal "
   SELECT count()
