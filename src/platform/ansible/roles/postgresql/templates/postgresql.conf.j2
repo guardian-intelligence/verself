@@ -16,6 +16,7 @@ ident_file = '{{ postgresql_config_dir }}/pg_ident.conf'
 logging_collector = on
 log_directory = '{{ postgresql_log_dir }}'
 log_filename = 'postgresql-%Y-%m-%d.log'
+log_file_mode = 0640
 log_rotation_age = 1d
 log_rotation_size = 100MB
 log_min_messages = warning

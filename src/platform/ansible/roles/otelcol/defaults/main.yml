@@ -1,0 +1,10 @@
+---
+otelcol_system_user: otelcol
+otelcol_system_group: otelcol
+otelcol_log_reader_groups:
+  - adm
+  - systemd-journal
+otelcol_clickhouse_user: otelcol
+otelcol_clickhouse_spiffe_dir: /var/lib/otelcol/clickhouse-spiffe
+otelcol_clickhouse_server_ca_path: /etc/otelcol/clickhouse-server-ca.pem
+otelcol_clickhouse_helper_config_path: /etc/otelcol/clickhouse-spiffe-helper.conf

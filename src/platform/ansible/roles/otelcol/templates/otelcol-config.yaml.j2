@@ -395,11 +395,18 @@ processors:
 
 exporters:
   clickhouse:
-    endpoint: tcp://{{ services.clickhouse.host }}:{{ services.clickhouse.native_port }}?dial_timeout=10s&username=default&password={{ clickhouse_password | urlencode }}
+    endpoint: tcp://{{ services.clickhouse.host }}:{{ services.clickhouse.secure_native_port }}?secure=true&dial_timeout=10s
+    username: {{ otelcol_clickhouse_user }}
     database: default
     logs_table_name: otel_logs
     traces_table_name: otel_traces
     create_schema: false
+    # The collector only wires its TLS client when cert/key are set; keep the
+    # full mTLS tuple here so ClickHouse never silently falls back to plaintext auth.
+    tls:
+      ca_file: {{ otelcol_clickhouse_server_ca_path }}
+      cert_file: {{ otelcol_clickhouse_spiffe_dir }}/svid.pem
+      key_file: {{ otelcol_clickhouse_spiffe_dir }}/svid_key.pem
 
 extensions:
   health_check:

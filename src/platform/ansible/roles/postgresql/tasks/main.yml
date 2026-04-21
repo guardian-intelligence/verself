@@ -54,11 +54,30 @@
 
 - name: Create PostgreSQL log directory
   ansible.builtin.file:
+    # The setgid bit keeps new collector-readable log files in group adm even
+    # though postgres runs with primary group postgres.
     path: "{{ postgresql_log_dir }}"
     state: directory
     owner: postgres
-    group: postgres
-    mode: "0755"
+    group: adm
+    mode: "2755"
+
+- name: Discover PostgreSQL log files
+  ansible.builtin.find:
+    paths: "{{ postgresql_log_dir }}"
+    patterns: "postgresql-*.log"
+    file_type: file
+  register: postgresql_log_files
+
+- name: Repair PostgreSQL log file permissions for OTel ingestion
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    owner: postgres
+    group: adm
+    mode: "0640"
+  loop: "{{ postgresql_log_files.files }}"
+  loop_control:
+    label: "{{ item.path }}"
 
 - name: Create PostgreSQL run directory
   ansible.builtin.file:

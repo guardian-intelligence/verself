@@ -1,0 +1,20 @@
+[Unit]
+Description=OTel Collector ClickHouse SPIFFE helper
+After=network.target spire-agent.service
+Wants=spire-agent.service
+
+[Service]
+Type=simple
+User={{ otelcol_system_user }}
+Group={{ otelcol_system_group }}
+SupplementaryGroups={{ spire_workload_group }}
+ExecStart={{ fm_bin }}/spiffe-helper -config {{ otelcol_clickhouse_helper_config_path }}
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths={{ otelcol_clickhouse_spiffe_dir }}
+
+[Install]
+WantedBy=multi-user.target
