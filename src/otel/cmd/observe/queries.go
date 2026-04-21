@@ -76,6 +76,8 @@ func buildQueries(cfg config) ([]query, error) {
 
 func buildCatalogQueries(cfg config, params map[string]string) ([]query, error) {
 	switch cfg.signal {
+	case "":
+		return []query{newQuery("catalog.inventory", catalogInventorySQL, params)}, nil
 	case "metrics":
 		return []query{
 			newQuery("catalog.metrics.namespaces", metricNamespaceCatalogSQL, params),
@@ -200,6 +202,62 @@ func emptyHintFor(id string) string {
 		return ""
 	}
 }
+
+const catalogInventorySQL = `
+SELECT signal,
+       services,
+       vocabulary,
+       rows_7d,
+       drill_in
+FROM
+(
+  SELECT 'metrics' AS signal,
+         countDistinct(if(ServiceName = '', '<resource-only>', ServiceName)) AS services,
+         countDistinct(MetricName) AS vocabulary,
+         toUInt64(sum(Samples)) AS rows_7d,
+         'make observe WHAT=catalog SIGNAL=metrics' AS drill_in,
+         1 AS sort_key
+  FROM default.otel_metric_catalog_live
+  UNION ALL
+  SELECT 'traces',
+         countDistinct(ServiceName),
+         countDistinct(SpanName),
+         count(),
+         'make observe WHAT=catalog SIGNAL=traces',
+         2
+  FROM default.otel_traces
+  WHERE Timestamp > now() - toIntervalDay(7)
+  UNION ALL
+  SELECT 'logs',
+         countDistinct(ServiceName),
+         countDistinct(SeverityText),
+         count(),
+         'make observe WHAT=catalog SIGNAL=logs',
+         3
+  FROM default.otel_logs
+  WHERE Timestamp > now() - toIntervalDay(7)
+  UNION ALL
+  SELECT 'http',
+         countDistinct(ServiceName),
+         countDistinct(Host),
+         count(),
+         'make observe WHAT=catalog SIGNAL=http',
+         4
+  FROM default.http_access_logs
+  WHERE Timestamp > now() - toIntervalDay(7)
+  UNION ALL
+  SELECT 'deploys',
+         toUInt64(1),
+         countDistinct(SpanAttributes['forge_metal.deploy_run_key']),
+         count(),
+         'make observe WHAT=catalog SIGNAL=deploys',
+         5
+  FROM default.otel_traces
+  WHERE ServiceName = 'ansible'
+    AND SpanName = 'ansible.task'
+    AND Timestamp > now() - toIntervalDay(7)
+)
+ORDER BY sort_key`
 
 const metricNamespaceCatalogSQL = `
 SELECT
