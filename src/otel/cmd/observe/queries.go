@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 func buildQueries(cfg config) ([]query, error) {
@@ -157,14 +158,40 @@ func baseParams(cfg config) map[string]string {
 
 func newQuery(id, sql string, params map[string]string) query {
 	return query{
-		id:       id,
-		title:    queryTitle(id),
-		family:   queryFamily(id),
-		purpose:  queryPurpose(id),
-		database: "default",
-		sql:      sql,
-		params:   params,
-		next:     queryDocNext(id),
+		id:        id,
+		title:     queryTitle(id),
+		family:    queryFamily(id),
+		purpose:   queryPurpose(id),
+		database:  "default",
+		sql:       sql,
+		params:    params,
+		next:      queryDocNext(id),
+		windowed:  strings.Contains(sql, "toIntervalMinute({minutes:"),
+		emptyHint: emptyHintFor(id),
+	}
+}
+
+// emptyHintFor returns a one-line reason that a specific query id might be
+// empty even across a wide window, so the hint beats "try MINUTES=..." when
+// widening the lookback won't help.
+func emptyHintFor(id string) string {
+	switch id {
+	case "describe.metric.attributes":
+		return "This metric has no attributes — it is identified only by its service resource."
+	case "describe.span.attributes":
+		return "This span has no attributes — unusual for server/client spans, expected for internal no-op spans."
+	case "describe.service.metrics":
+		return "This service has emitted no metrics — it likely only ships traces and logs."
+	case "describe.field.logs":
+		return "No LogAttribute map key with this name. Try WHAT=describe FIELD=<key> on a different key, or check span/resource attributes below."
+	case "describe.field.span_attributes":
+		return "No SpanAttribute map key with this name across any service."
+	case "describe.field.resource_attributes":
+		return "No ResourceAttribute map key with this name across traces, logs, or metrics."
+	case "catalog.deploys":
+		return "No ansible.task spans have been recorded. Run `make deploy` to populate deploy traces."
+	default:
+		return ""
 	}
 }
 

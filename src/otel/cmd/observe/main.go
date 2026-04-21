@@ -61,14 +61,16 @@ type config struct {
 }
 
 type query struct {
-	id       string
-	title    string
-	family   string
-	purpose  string
-	database string
-	sql      string
-	params   map[string]string
-	next     []string
+	id        string
+	title     string
+	family    string
+	purpose   string
+	database  string
+	sql       string
+	params    map[string]string
+	next      []string
+	windowed  bool
+	emptyHint string
 }
 
 type jsonQueryResult struct {
@@ -322,14 +324,17 @@ func runQuery(ctx context.Context, logger *slog.Logger, cfg config, runID string
 		"database", q.database,
 	)
 
+	stderr := &bytes.Buffer{}
+	cmd.Stderr = stderr
+	output, err := cmd.Output()
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		_, _ = os.Stderr.Write(stderr.Bytes())
+		return nil, fmt.Errorf("%s: %w", q.title, err)
+	}
+
 	if cfg.format == formatJSON {
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			_, _ = os.Stderr.Write(output)
-			return nil, fmt.Errorf("%s: %w", q.title, err)
-		}
 		result, err := buildJSONQueryResult(q, sql, clickhouseQueryID, output)
 		if err != nil {
 			span.RecordError(err)
@@ -337,30 +342,106 @@ func runQuery(ctx context.Context, logger *slog.Logger, cfg config, runID string
 			return nil, err
 		}
 		span.SetStatus(codes.Ok, "")
+		span.SetAttributes(attribute.Int("observe.rows", len(result.Rows)))
 		logger.InfoContext(ctx, "observe query completed",
 			"query_id", q.id,
 			"surface", cfg.what,
 			"database", q.database,
+			"rows", len(result.Rows),
 		)
 		return &result, nil
-	} else {
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			return nil, fmt.Errorf("%s: %w", q.title, err)
-		}
-		printNext(q.next, cfg.format)
 	}
 
+	rowCount := countRows(output, cfg.format)
+	if rowCount == 0 {
+		printEmptyHint(cfg, q)
+	} else {
+		_, _ = os.Stdout.Write(output)
+	}
+	printNext(q.next, cfg.format)
+
+	span.SetAttributes(attribute.Int("observe.rows", rowCount))
 	span.SetStatus(codes.Ok, "")
 	logger.InfoContext(ctx, "observe query completed",
 		"query_id", q.id,
 		"surface", cfg.what,
 		"database", q.database,
+		"rows", rowCount,
 	)
 	return nil, nil
+}
+
+func countRows(output []byte, format outputFormat) int {
+	switch format {
+	case formatMarkdown:
+		lines := 0
+		for _, line := range bytes.Split(output, []byte("\n")) {
+			if len(bytes.TrimSpace(line)) > 0 {
+				lines++
+			}
+		}
+		// Markdown emits a header row and a separator even when the result set
+		// is empty; anything beyond those two lines is actual data.
+		if lines <= 2 {
+			return 0
+		}
+		return lines - 2
+	default:
+		// PrettyCompact prints nothing at all when a query returns zero rows.
+		if len(bytes.TrimSpace(output)) == 0 {
+			return 0
+		}
+		// The visible row count isn't easily extracted from the rendered table,
+		// so we return a sentinel "non-zero" value; callers only branch on zero.
+		return 1
+	}
+}
+
+func printEmptyHint(cfg config, q query) {
+	var message string
+	if q.windowed {
+		message = fmt.Sprintf("0 rows in the last %d minute(s).", cfg.minutes)
+	} else {
+		message = "0 rows."
+	}
+	hints := []string{}
+	if q.windowed {
+		suggested := nextWindowSuggestion(cfg.minutes)
+		if suggested > 0 {
+			hints = append(hints, fmt.Sprintf("Widen the window: re-run with MINUTES=%d.", suggested))
+		}
+	}
+	if strings.TrimSpace(q.emptyHint) != "" {
+		hints = append(hints, strings.TrimSpace(q.emptyHint))
+	}
+
+	switch cfg.format {
+	case formatMarkdown:
+		fmt.Printf("_%s_\n", message)
+		for _, hint := range hints {
+			fmt.Printf("- %s\n", hint)
+		}
+	default:
+		fmt.Println(message)
+		for _, hint := range hints {
+			fmt.Printf("  %s\n", hint)
+		}
+	}
+}
+
+// nextWindowSuggestion returns a wider lookback in minutes, or 0 if the caller
+// is already looking at a month-plus window and widening further is unlikely to help.
+func nextWindowSuggestion(current uint) uint {
+	switch {
+	case current < 1440:
+		return 1440
+	case current < 10080:
+		return 10080
+	case current < 43200:
+		return 43200
+	default:
+		return 0
+	}
 }
 
 func buildJSONQueryResult(q query, sql, clickhouseQueryID string, raw []byte) (jsonQueryResult, error) {
