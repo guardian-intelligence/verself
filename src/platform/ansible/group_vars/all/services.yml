@@ -71,7 +71,9 @@ services:
   clickhouse:
     host: "127.0.0.1"
     http_port: 8123
+    secure_http_port: 8443
     native_port: 9000
+    secure_native_port: 9440
     # keeper_port: 9181 — re-add when 3-node replication lands and <keeper_server>
     # is configured in clickhouse-config.xml.j2. Single-node runs without Keeper.
   otelcol:

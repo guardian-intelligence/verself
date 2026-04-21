@@ -105,6 +105,24 @@
 - name: Include billing credential tasks
   ansible.builtin.include_tasks: credentials.yml
 
+# --- ClickHouse auth ---
+
+- name: Ensure billing-service ClickHouse user exists with write grants
+  ansible.builtin.shell: |
+    set -euo pipefail
+    {{ fm_bin }}/clickhouse-client --user default --password "$CLICKHOUSE_PASSWORD" --multiquery <<'SQL'
+    CREATE USER IF NOT EXISTS billing_service IDENTIFIED WITH ssl_certificate SAN 'URI:{{ spire_billing_service_id }}' HOST LOCAL;
+    ALTER USER billing_service IDENTIFIED WITH ssl_certificate SAN 'URI:{{ spire_billing_service_id }}' HOST LOCAL;
+    GRANT INSERT ON forge_metal.billing_events TO billing_service;
+    GRANT INSERT ON forge_metal.metering TO billing_service;
+    SQL
+  args:
+    executable: /bin/bash
+  environment:
+    CLICKHOUSE_PASSWORD: "{{ clickhouse_password }}"
+  changed_when: false
+  no_log: true
+
 # --- Auth configuration ---
 
 - name: Wait for Zitadel before configuring billing auth
@@ -197,17 +215,19 @@
     content: |
       [Unit]
       Description=Billing Service
-      After=forge-metal-firewall.target network.target postgresql.service spire-agent.service openbao.service
+      After=forge-metal-firewall.target network.target postgresql.service clickhouse-server.service spire-agent.service openbao.service
       Requires=forge-metal-firewall.target
-      Wants=postgresql.service spire-agent.service openbao.service
+      Wants=postgresql.service clickhouse-server.service spire-agent.service openbao.service
 
       [Service]
       Type=simple
       User=billing
       Group=billing
       SupplementaryGroups={{ spire_workload_group }}
+      LoadCredential=clickhouse-ca-cert:/etc/clickhouse-server/tls/server-ca.pem
       LoadCredential=openbao-ca-cert:/etc/openbao/tls/cert.pem
-      Environment=BILLING_CH_ADDRESS={{ services.clickhouse.host }}:{{ services.clickhouse.native_port }}
+      Environment=BILLING_CH_ADDRESS={{ services.clickhouse.host }}:{{ services.clickhouse.secure_native_port }}
+      Environment=BILLING_CH_USER=billing_service
       Environment=BILLING_TB_ADDRESS={{ services.tigerbeetle.host }}:{{ services.tigerbeetle.port }}
       Environment=BILLING_TB_CLUSTER_ID={{ billing_service_tigerbeetle_cluster_id }}
       Environment=BILLING_PG_DSN=postgres://billing@/{{ billing_service_pg_database }}?host=/var/run/postgresql&sslmode=disable

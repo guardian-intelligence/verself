@@ -5,3 +5,10 @@
     daemon_reload: true
     name: grafana
     state: restarted
+
+- name: Restart grafana-clickhouse-spiffe-helper
+  listen: restart grafana-clickhouse-spiffe-helper
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: grafana-clickhouse-spiffe-helper
+    state: restarted

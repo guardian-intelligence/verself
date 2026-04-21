@@ -51,7 +51,8 @@ func run() error {
 
 	listenAddr := envOr("GOVERNANCE_LISTEN_ADDR", "127.0.0.1:4250")
 	internalListenAddr := envOr("GOVERNANCE_INTERNAL_LISTEN_ADDR", "127.0.0.1:4254")
-	chAddress := envOr("GOVERNANCE_CH_ADDRESS", "127.0.0.1:9000")
+	chAddress := envOr("GOVERNANCE_CH_ADDRESS", "127.0.0.1:9440")
+	chUser := envOr("GOVERNANCE_CH_USER", "governance_service")
 	authIssuerURL := requireEnv("GOVERNANCE_AUTH_ISSUER_URL")
 	authAudience := requireEnv("GOVERNANCE_AUTH_AUDIENCE")
 	authJWKSURL := envOr("GOVERNANCE_AUTH_JWKS_URL", "")
@@ -59,10 +60,6 @@ func run() error {
 	publicBaseURL := envOr("GOVERNANCE_PUBLIC_BASE_URL", "")
 	writerInstanceID := envOr("GOVERNANCE_WRITER_INSTANCE_ID", hostname())
 
-	governanceSPIFFEID, err := workloadauth.ParseID(requireEnv("GOVERNANCE_SPIFFE_ID"))
-	if err != nil {
-		return err
-	}
 	spiffeSource, err := workloadauth.Source(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
 	if err != nil {
 		return fmt.Errorf("governance spiffe workload source: %w", err)
@@ -72,33 +69,6 @@ func run() error {
 			logger.ErrorContext(context.Background(), "governance-service spiffe source close", "error", err)
 		}
 	}()
-	workloadJWTSource, err := workloadauth.JWTSource(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
-	if err != nil {
-		return fmt.Errorf("governance spiffe jwt source: %w", err)
-	}
-	defer func() {
-		if err := workloadJWTSource.Close(); err != nil {
-			logger.ErrorContext(context.Background(), "governance-service spiffe jwt source close", "error", err)
-		}
-	}()
-	openBaoClient, err := workloadauth.NewOpenBaoClient(workloadJWTSource, workloadauth.OpenBaoClientConfig{
-		Address:  requireEnv("GOVERNANCE_OPENBAO_ADDR"),
-		CACert:   credentialPath("openbao-ca-cert"),
-		AuthPath: envOr("GOVERNANCE_OPENBAO_SPIFFE_JWT_MOUNT", "spiffe-jwt"),
-		Role:     envOr("GOVERNANCE_OPENBAO_ROLE", "platform-governance-service"),
-		Audience: envOr("GOVERNANCE_OPENBAO_WORKLOAD_AUDIENCE", "openbao"),
-		Subject:  governanceSPIFFEID,
-		Mount:    envOr("GOVERNANCE_OPENBAO_PLATFORM_MOUNT", "platform"),
-	})
-	if err != nil {
-		return fmt.Errorf("governance openbao client: %w", err)
-	}
-	chSecrets, err := openBaoClient.ReadKVV2(ctx, "providers/clickhouse/governance-service")
-	if err != nil {
-		return fmt.Errorf("governance clickhouse provider secret: %w", err)
-	}
-	chPassword := requireSecretField(chSecrets, "password", "governance clickhouse provider secret")
-
 	pg, err := openPool(ctx, pgDSN, envInt("GOVERNANCE_PG_MAX_CONNS", 8))
 	if err != nil {
 		return fmt.Errorf("open governance postgres: %w", err)
@@ -120,13 +90,17 @@ func run() error {
 	}
 	defer sandboxPG.Close()
 
+	chTLSConfig, err := workloadauth.TLSConfigWithX509SourceAndCABundle(ctx, spiffeSource, credentialPath("clickhouse-ca-cert"))
+	if err != nil {
+		return fmt.Errorf("governance clickhouse tls: %w", err)
+	}
 	chConn, err := clickhouse.Open(&clickhouse.Options{
 		Addr: []string{chAddress},
 		Auth: clickhouse.Auth{
 			Database: "forge_metal",
-			Username: "default",
-			Password: chPassword,
+			Username: chUser,
 		},
+		TLS: chTLSConfig,
 	})
 	if err != nil {
 		return fmt.Errorf("open clickhouse: %w", err)

@@ -12,6 +12,7 @@ spire_billing_service_id: "spiffe://{{ spire_trust_domain }}/svc/billing-service
 spire_sandbox_rental_id: "spiffe://{{ spire_trust_domain }}/svc/sandbox-rental-service"
 spire_secrets_service_id: "spiffe://{{ spire_trust_domain }}/svc/secrets-service"
 spire_mailbox_service_id: "spiffe://{{ spire_trust_domain }}/svc/mailbox-service"
+spire_grafana_id: "spiffe://{{ spire_trust_domain }}/svc/grafana"
 spire_oidc_bind_address: 127.0.0.1
 spire_oidc_bind_port: 8082
 spire_oidc_issuer_url: "https://{{ spire_oidc_bind_address }}:{{ spire_oidc_bind_port }}"

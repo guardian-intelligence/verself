@@ -68,7 +68,8 @@ func run() error {
 
 	// Non-secret config via Environment=.
 	listenAddr := envOr("SANDBOX_LISTEN_ADDR", "127.0.0.1:4243")
-	chAddress := envOr("SANDBOX_CH_ADDRESS", "127.0.0.1:9000")
+	chAddress := envOr("SANDBOX_CH_ADDRESS", "127.0.0.1:9440")
+	chUser := envOr("SANDBOX_CH_USER", "sandbox_rental")
 	billingURL := envOr("SANDBOX_BILLING_URL", "http://127.0.0.1:4242")
 	governanceAuditURL := envOr("SANDBOX_GOVERNANCE_AUDIT_URL", "")
 	secretsURL := envOr("SANDBOX_SECRETS_URL", "https://127.0.0.1:4253")
@@ -139,12 +140,6 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("sandbox-rental openbao client: %w", err)
 	}
-	chSecrets, err := openBaoClient.ReadKVV2(ctx, "providers/clickhouse/sandbox-rental-service")
-	if err != nil {
-		return fmt.Errorf("sandbox-rental clickhouse provider secret: %w", err)
-	}
-	chPassword := requireSecretField(chSecrets, "password", "sandbox-rental clickhouse provider secret")
-
 	var githubAppPrivateKey string
 	var githubAppWebhookSecret string
 	var githubAppClientSecret string
@@ -194,13 +189,17 @@ func run() error {
 		return fmt.Errorf("ping scheduler postgres pool: %w", err)
 	}
 
+	chTLSConfig, err := workloadauth.TLSConfigWithX509SourceAndCABundle(ctx, spiffeSource, credentialPath("clickhouse-ca-cert"))
+	if err != nil {
+		return fmt.Errorf("sandbox-rental clickhouse tls: %w", err)
+	}
 	chConn, err := clickhouse.Open(&clickhouse.Options{
 		Addr: []string{chAddress},
 		Auth: clickhouse.Auth{
 			Database: "forge_metal",
-			Username: "default",
-			Password: chPassword,
+			Username: chUser,
 		},
+		TLS: chTLSConfig,
 	})
 	if err != nil {
 		return fmt.Errorf("open clickhouse: %w", err)

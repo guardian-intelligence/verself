@@ -88,11 +88,11 @@
     - role: nftables
       tags: [nftables]
     - role: spire
-      tags: [spire, billing_service, identity_service, governance_service, secrets_service, sandbox_rental_service, mailbox_service]
+      tags: [spire, billing_service, identity_service, governance_service, secrets_service, sandbox_rental_service, mailbox_service, grafana]
     - role: cloudflare_dns
       tags: [cloudflare_dns]
     - role: clickhouse
-      tags: [clickhouse, billing_service, sandbox_rental_service, governance_service, openbao, openbao_tenancy]
+      tags: [clickhouse, billing_service, sandbox_rental_service, governance_service, openbao, openbao_tenancy, grafana]
     - role: tigerbeetle
       tags: [tigerbeetle]
     - role: postgresql
