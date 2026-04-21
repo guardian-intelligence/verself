@@ -209,8 +209,10 @@
         password: "{{ postgresql_sandbox_rental_password }}"
         role_attr_flags: LOGIN
         conn_limit: "{{ postgresql_role_connection_limits.sandbox_rental }}"
+      # Stalwart authenticates via Unix-socket peer auth (pg_ident: stalwart ->
+      # stalwart). The role is deliberately password-less so TCP/SCRAM auth
+      # cannot reach it even from the loopback interface.
       - name: stalwart
-        password: "{{ stalwart_db_password }}"
         role_attr_flags: LOGIN
         conn_limit: "{{ postgresql_role_connection_limits.stalwart }}"
     postgresql_managed_databases:
@@ -249,17 +251,36 @@
       login_user: postgres
       login_password: "{{ postgresql_admin_password }}"
       login_db: postgres
+    community.postgresql.postgresql_query:
+      login_host: "{{ services.postgresql.host }}"
+      login_port: "{{ services.postgresql.port }}"
+      login_user: postgres
+      login_password: "{{ postgresql_admin_password }}"
+      login_db: postgres
+      trust_input: false
   block:
     - name: Ensure application PostgreSQL roles exist
       community.postgresql.postgresql_user:
         name: "{{ item.name }}"
-        password: "{{ item.password }}"
+        password: "{{ item.password | default(omit) }}"
         role_attr_flags: "{{ item.role_attr_flags }}"
         conn_limit: "{{ item.conn_limit }}"
       loop: "{{ postgresql_managed_roles }}"
       loop_control:
         label: "{{ item.name }}"
       no_log: true
+
+    # Peer-auth-only roles must have no password at all — otherwise the 127.0.0.1
+    # SCRAM rule in pg_hba.conf would still accept a historical password from a
+    # previous cutover. postgresql_user won't clear a password by omission, so
+    # we clear it explicitly on every converge.
+    - name: Clear password on peer-auth-only PostgreSQL roles
+      community.postgresql.postgresql_query:
+        query: "ALTER ROLE {{ item }} PASSWORD NULL"
+      loop:
+        - stalwart
+      loop_control:
+        label: "{{ item }}"
 
     - name: Ensure application PostgreSQL databases exist
       community.postgresql.postgresql_db:

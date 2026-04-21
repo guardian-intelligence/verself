@@ -68,15 +68,13 @@ resource = "file://{{ stalwart_spam_filter_local_path }}"
 
 [store."postgresql"]
 type = "postgresql"
-host = "{{ services.postgresql.host }}"
-port = {{ services.postgresql.port }}
+# Unix-socket peer auth. Stalwart runs as the `stalwart` OS user; pg_ident.conf
+# maps that to the `stalwart` PG role. No password is sent; the role has no
+# password set, so TCP/SCRAM auth against this role is rejected by PostgreSQL.
+host = "/var/run/postgresql"
 database = "stalwart"
 user = "stalwart"
-password = "%{file:/run/credentials/stalwart.service/pg-password}%"
 timeout = "15s"
-
-[store."postgresql".tls]
-enable = false
 
 [store."postgresql".pool]
 max-connections = 10
