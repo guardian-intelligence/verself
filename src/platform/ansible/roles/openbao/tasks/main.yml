@@ -395,36 +395,6 @@
 - name: Reconcile OpenBao platform runtime provider secrets
   ansible.builtin.include_tasks: platform_secrets.yml
 
-- name: Soft-delete legacy unsafe OpenBao platform-internal credentials
-  ansible.builtin.uri:
-    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/platform-internal/data/{{ item }}"
-    method: DELETE
-    headers:
-      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
-    validate_certs: false
-    status_code: [200, 204, 404]
-  loop:
-    - service-credentials/secrets-service/internal-injection-token
-    - openbao/root-token
-    - openbao/unseal-key-1
-    - zitadel/masterkey
-  no_log: true
-
-- name: Destroy legacy unsafe OpenBao platform-internal credential metadata
-  ansible.builtin.uri:
-    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/platform-internal/metadata/{{ item }}"
-    method: DELETE
-    headers:
-      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
-    validate_certs: false
-    status_code: [200, 204, 404]
-  loop:
-    - service-credentials/secrets-service/internal-injection-token
-    - openbao/root-token
-    - openbao/unseal-key-1
-    - zitadel/masterkey
-  no_log: true
-
 - name: Verify OpenBao health
   ansible.builtin.uri:
     url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/sys/health"
