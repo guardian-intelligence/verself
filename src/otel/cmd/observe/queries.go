@@ -809,6 +809,7 @@ FROM default.otel_traces
 WHERE ServiceName = 'ansible'
   AND SpanName = 'ansible.task'
   AND Timestamp > now() - toIntervalDay(7)
+  AND SpanAttributes['forge_metal.deploy_run_key'] != ''
 GROUP BY deploy_run_key
 ORDER BY last_seen DESC
 LIMIT {row_limit:UInt32}`

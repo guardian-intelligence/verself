@@ -327,10 +327,15 @@ func runQuery(ctx context.Context, logger *slog.Logger, cfg config, runID string
 	stderr := &bytes.Buffer{}
 	cmd.Stderr = stderr
 	output, err := cmd.Output()
+	// Surface ClickHouse stderr (progress notices, warnings, errors) whether
+	// the command succeeded or not — buffering it was only needed to keep
+	// stdout clean for row counting, not to swallow diagnostics.
+	if stderr.Len() > 0 {
+		_, _ = os.Stderr.Write(stderr.Bytes())
+	}
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		_, _ = os.Stderr.Write(stderr.Bytes())
 		return nil, fmt.Errorf("%s: %w", q.title, err)
 	}
 
@@ -410,7 +415,11 @@ func evaluateRows(output []byte, format outputFormat) (hasRows bool, exactCount 
 func printEmptyHint(cfg config, q query) {
 	var message string
 	if q.windowed {
-		message = fmt.Sprintf("0 rows in the last %d minute(s).", cfg.minutes)
+		unit := "minutes"
+		if cfg.minutes == 1 {
+			unit = "minute"
+		}
+		message = fmt.Sprintf("0 rows in the last %d %s.", cfg.minutes, unit)
 	} else {
 		message = "0 rows."
 	}
