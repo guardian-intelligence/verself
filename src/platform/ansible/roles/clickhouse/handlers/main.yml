@@ -5,3 +5,10 @@
     daemon_reload: true
     name: clickhouse-server
     state: restarted
+
+- name: Restart ClickHouse operator SPIFFE helper
+  listen: restart clickhouse-operator-spiffe-helper
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: clickhouse-operator-spiffe-helper
+    state: restarted

@@ -46,11 +46,16 @@ expected_ids = [
     f"spiffe://{trust_domain}/svc/secrets-service",
     f"spiffe://{trust_domain}/svc/mailbox-service",
     f"spiffe://{trust_domain}/svc/grafana",
+    f"spiffe://{trust_domain}/svc/otelcol",
+    f"spiffe://{trust_domain}/svc/clickhouse-operator",
 ]
 systemd_units = [
     "spire-server",
     "spire-agent",
     "spire-oidc-discovery-provider",
+    "clickhouse-operator-spiffe-helper",
+    "otelcol-clickhouse-spiffe-helper",
+    "otelcol",
     "identity-service",
     "governance-service",
     "billing-service",
@@ -135,7 +140,18 @@ for unit in ["identity-service", "governance-service", "billing-service", "sandb
     if stale_terms:
         raise SystemExit(f"{unit} still loads stale credentials: {', '.join(stale_terms)}")
 
-for unit in ["governance-service", "billing-service", "sandbox-rental-service", "mailbox-service", "grafana-clickhouse-spiffe-helper", "grafana", "stalwart"]:
+for unit in [
+    "clickhouse-operator-spiffe-helper",
+    "otelcol-clickhouse-spiffe-helper",
+    "otelcol",
+    "governance-service",
+    "billing-service",
+    "sandbox-rental-service",
+    "mailbox-service",
+    "grafana-clickhouse-spiffe-helper",
+    "grafana",
+    "stalwart",
+]:
     subprocess.run(["systemctl", "restart", unit], check=True)
     for _ in range(30):
         state = subprocess.run(["systemctl", "is-active", "--quiet", unit], check=False)
@@ -296,17 +312,17 @@ window_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 ) >"${artifact_dir}/clickhouse/flush-logs.tsv"
 
 # ClickHouse does not publish its listener ports through the system tables we
-# query elsewhere, so we assert the secure sockets directly from the host.
-verification_ssh "sudo ss -ltnH '( sport = :8443 or sport = :9440 )'" \
+# query elsewhere, so we assert the live socket set directly from the host.
+verification_ssh "sudo ss -ltnH '( sport = :8123 or sport = :8443 or sport = :9000 or sport = :9440 )'" \
   >"${artifact_dir}/clickhouse/clickhouse-secure-listeners.tsv"
-
-if ! grep -q ':8443' "${artifact_dir}/clickhouse/clickhouse-secure-listeners.tsv"; then
-  echo "ClickHouse is not listening on 8443" >&2
-  exit 1
-fi
 
 if ! grep -q ':9440' "${artifact_dir}/clickhouse/clickhouse-secure-listeners.tsv"; then
   echo "ClickHouse is not listening on 9440" >&2
+  exit 1
+fi
+
+if grep -Eq ':(8123|8443|9000)' "${artifact_dir}/clickhouse/clickhouse-secure-listeners.tsv"; then
+  echo "ClickHouse still exposes stale listeners on 8123/8443/9000" >&2
   exit 1
 fi
 
@@ -425,11 +441,22 @@ wait_for_clickhouse_count default "
 wait_for_clickhouse_count default "
   SELECT count()
   FROM system.users
-  WHERE name IN ('billing_service', 'governance_service', 'sandbox_rental', 'grafana_observer')
+  WHERE name IN ('clickhouse_operator', 'otelcol', 'billing_service', 'governance_service', 'sandbox_rental', 'grafana_observer')
     AND has(auth_type, 'ssl_certificate')
-" 4 "${artifact_dir}/clickhouse/clickhouse-cert-auth-users-count.tsv"
+" 6 "${artifact_dir}/clickhouse/clickhouse-cert-auth-users-count.tsv"
 
-for clickhouse_user in billing_service governance_service sandbox_rental grafana_observer; do
+default_user_count="$(
+  (
+    cd "${VERIFICATION_PLATFORM_ROOT}"
+    ./scripts/clickhouse.sh --query "SELECT count() FROM system.users WHERE name = 'default' FORMAT TabSeparated"
+  ) | tr -d '[:space:]'
+)"
+if [[ "${default_user_count}" != "0" ]]; then
+  echo "ClickHouse default user still exists" >&2
+  exit 1
+fi
+
+for clickhouse_user in clickhouse_operator otelcol billing_service governance_service sandbox_rental grafana_observer; do
   wait_for_clickhouse_count default "
     SELECT count()
     FROM system.query_log

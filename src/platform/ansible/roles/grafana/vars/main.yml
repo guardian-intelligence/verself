@@ -378,11 +378,14 @@ grafana_dashboards:
         unit: "short"
         raw_sql:
           >-
-            SELECT toStartOfInterval(created_at, INTERVAL 1 hour) as time, state, count() as cnt FROM forge_metal.billing_windows_pg WHERE
-            created_at >= now() - INTERVAL 7 DAY GROUP BY time, state ORDER BY time
+            SELECT toStartOfInterval(recorded_at, INTERVAL 1 hour) AS time, multiIf(event_type = 'billing_window_reserved', 'reserved',
+            event_type = 'billing_window_activated', 'active', event_type = 'billing_window_settled', 'settled', event_type =
+            'billing_window_voided', 'voided', event_type) AS state, count() AS cnt FROM forge_metal.billing_events WHERE event_type IN
+            ('billing_window_reserved', 'billing_window_activated', 'billing_window_settled', 'billing_window_voided') AND recorded_at >= now()
+            - INTERVAL 7 DAY GROUP BY time, state ORDER BY time
       - id: 8
         uid: "recent-billing-windows"
-        title: "Recent Billing Windows"
+        title: "Recent Billing Window Events"
         type: "table"
         x: 8
         y: 18
@@ -393,9 +396,15 @@ grafana_dashboards:
         unit: "short"
         raw_sql:
           >-
-            SELECT created_at, window_id, org_id, product_id, cycle_id, pricing_contract_id, pricing_phase_id, pricing_plan_id, source_type,
-            source_ref, window_seq, state, reserved_quantity, actual_quantity, billable_quantity, writeoff_quantity, billed_charge_units,
-            writeoff_reason, metering_projected_at FROM forge_metal.billing_windows_pg ORDER BY created_at DESC LIMIT 20
+            SELECT recorded_at, aggregate_id AS window_id, org_id, product_id, cycle_id, pricing_contract_id, pricing_phase_id, pricing_plan_id,
+            JSONExtractString(payload, 'source_type') AS source_type, JSONExtractString(payload, 'source_ref') AS source_ref,
+            JSONExtractInt(payload, 'window_seq') AS window_seq, multiIf(event_type = 'billing_window_reserved', 'reserved', event_type =
+            'billing_window_activated', 'active', event_type = 'billing_window_settled', 'settled', event_type = 'billing_window_voided',
+            'voided', event_type) AS state, JSONExtractInt(payload, 'reserved_quantity') AS reserved_quantity, JSONExtractInt(payload,
+            'actual_quantity') AS actual_quantity, JSONExtractInt(payload, 'billable_quantity') AS billable_quantity, JSONExtractInt(payload,
+            'writeoff_quantity') AS writeoff_quantity, JSONExtractInt(payload, 'billed_charge_units') AS billed_charge_units,
+            JSONExtractString(payload, 'writeoff_reason') AS writeoff_reason, '' AS metering_projected_at FROM forge_metal.billing_events
+            WHERE aggregate_type = 'billing_window' ORDER BY recorded_at DESC LIMIT 20
       - id: 9
         uid: "worker-task-queue-depth"
         title: "Worker Task Queue Depth"
@@ -484,8 +493,11 @@ grafana_dashboards:
         unit: "short"
         raw_sql:
           >-
-            SELECT toStartOfHour(created_at) AS time, state AS series, toFloat64(count()) AS windows FROM forge_metal.billing_windows_pg WHERE
-            created_at >= now() - INTERVAL 7 DAY GROUP BY time, series ORDER BY time
+            SELECT toStartOfHour(recorded_at) AS time, multiIf(event_type = 'billing_window_reserved', 'reserved', event_type =
+            'billing_window_activated', 'active', event_type = 'billing_window_settled', 'settled', event_type = 'billing_window_voided',
+            'voided', event_type) AS series, toFloat64(count()) AS windows FROM forge_metal.billing_events WHERE event_type IN
+            ('billing_window_reserved', 'billing_window_activated', 'billing_window_settled', 'billing_window_voided') AND recorded_at >= now()
+            - INTERVAL 7 DAY GROUP BY time, series ORDER BY time
       - id: 5
         uid: "operator-writeoffs"
         title: "Adjustment Units"
@@ -504,7 +516,7 @@ grafana_dashboards:
             series ORDER BY time
       - id: 6
         uid: "projection-lag"
-        title: "Projection Lag"
+        title: "Projection Errors"
         type: "timeseries"
         x: 16
         y: 9
@@ -515,9 +527,9 @@ grafana_dashboards:
         unit: "short"
         raw_sql:
           >-
-            SELECT toStartOfHour(created_at) AS time, 'unprojected_settled_windows' AS series, toFloat64(count()) AS windows FROM
-            forge_metal.billing_windows_pg WHERE state = 'settled' AND isNull(metering_projected_at) AND created_at >= now() - INTERVAL 7 DAY
-            GROUP BY time ORDER BY time
+            SELECT $__timeInterval(Timestamp) AS time, 'billing_metering_projection_failed' AS series, toFloat64(count()) AS windows FROM
+            default.otel_logs WHERE $__timeFilter(Timestamp) AND ServiceName = 'billing-service' AND Body LIKE '%billing metering projection
+            failed%' GROUP BY time ORDER BY time
   - uid: "forge-metal-billing-metering"
     title: "Billing Metering"
     tags:

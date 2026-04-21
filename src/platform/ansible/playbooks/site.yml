@@ -117,9 +117,9 @@
     - role: resend
       tags: [resend]
     - role: spire
-      tags: [spire, billing_service, identity_service, governance_service, secrets_service, sandbox_rental_service, mailbox_service]
+      tags: [spire, clickhouse, otelcol, billing_service, identity_service, governance_service, secrets_service, sandbox_rental_service, mailbox_service, grafana]
     - role: clickhouse
-      tags: [clickhouse, billing_service, sandbox_rental_service, governance_service, openbao, openbao_tenancy]
+      tags: [clickhouse, otelcol, billing_service, sandbox_rental_service, governance_service, openbao, openbao_tenancy, grafana]
     - role: tigerbeetle
       tags: [tigerbeetle]
     - role: postgresql

@@ -107,7 +107,7 @@
 - name: Ensure governance-service ClickHouse user exists with audit grants
   ansible.builtin.shell: |
     set -euo pipefail
-    {{ fm_bin }}/clickhouse-client --user default --password "$CLICKHOUSE_PASSWORD" --multiquery <<'SQL'
+    {{ clickhouse_operator_client_command }} --multiquery <<'SQL'
     CREATE USER IF NOT EXISTS governance_service IDENTIFIED WITH ssl_certificate SAN 'URI:{{ spire_governance_service_id }}' HOST LOCAL;
     ALTER USER governance_service IDENTIFIED WITH ssl_certificate SAN 'URI:{{ spire_governance_service_id }}' HOST LOCAL;
     GRANT INSERT ON forge_metal.audit_events TO governance_service;
@@ -115,8 +115,6 @@
     SQL
   args:
     executable: /bin/bash
-  environment:
-    CLICKHOUSE_PASSWORD: "{{ clickhouse_password }}"
   changed_when: false
   no_log: true
 

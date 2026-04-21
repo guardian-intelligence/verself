@@ -1,0 +1,18 @@
+<config>
+    <secure>1</secure>
+    <host>{{ services.clickhouse.host }}</host>
+    <port>{{ services.clickhouse.secure_native_port }}</port>
+    <openSSL>
+        <client>
+            <certificateFile>{{ clickhouse_operator_spiffe_dir }}/svid.pem</certificateFile>
+            <privateKeyFile>{{ clickhouse_operator_spiffe_dir }}/svid_key.pem</privateKeyFile>
+            <caConfig>{{ clickhouse_operator_ca_path }}</caConfig>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+            <invalidCertificateHandler>
+                <name>RejectCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+</config>

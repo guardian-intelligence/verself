@@ -42,7 +42,7 @@ Read the top-level `Makefile` for other common automation wrappers.
 
 ## Query ClickHouse
 
-Use the Makefile wrappers instead of hand-typing the SSH + password prefix. They `cd` into `src/platform/` and invoke `scripts/clickhouse.sh`, which resolves the worker from `ansible/inventory/hosts.ini` and reads the ClickHouse password from SOPS.
+Use the Makefile wrappers instead of hand-typing the SSH + client-cert prefix. They `cd` into `src/platform/` and invoke `scripts/clickhouse.sh`, which resolves the worker from `ansible/inventory/hosts.ini` and runs `clickhouse-client` on the worker as the SPIFFE-authenticated `clickhouse_operator` user.
 
 ```bash
 make inventory-check

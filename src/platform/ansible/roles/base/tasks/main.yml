@@ -27,13 +27,10 @@
     group: root
     mode: "0700"
 
-- name: Deploy forge-metal system config
-  ansible.builtin.template:
-    src: forge-metal-config.toml.j2
-    dest: /etc/forge-metal/config.toml
-    owner: root
-    group: root
-    mode: "0600"
+- name: Remove stale forge-metal system config
+  ansible.builtin.file:
+    path: /etc/forge-metal/config.toml
+    state: absent
 
 - name: Disable unsupported GSSAPIAuthentication in ssh_config
   ansible.builtin.lineinfile:
