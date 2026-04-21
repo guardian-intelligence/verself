@@ -395,10 +395,14 @@ exporters:
     create_schema: false
     # The collector only wires its TLS client when cert/key are set; keep the
     # full mTLS tuple here so ClickHouse never silently falls back to plaintext auth.
+    # spiffe-helper rotates the SVID on disk every ~30 minutes; reload_interval
+    # makes the exporter re-read cert/key/ca so the in-memory TLS material never
+    # outlives the SVID lifetime and connections don't fail with expired cert.
     tls:
       ca_file: {{ otelcol_clickhouse_server_ca_path }}
       cert_file: {{ otelcol_clickhouse_spiffe_dir }}/svid.pem
       key_file: {{ otelcol_clickhouse_spiffe_dir }}/svid_key.pem
+      reload_interval: 60s
 
 extensions:
   health_check:
