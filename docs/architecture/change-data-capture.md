@@ -6,7 +6,8 @@ described in [`docs/system-context.md`](../system-context.md).
 
 CDC is one of three async-infrastructure planes being added alongside
 [durable execution](durable-execution.md) and the
-[service event bus](event-bus.md). This document covers CDC only.
+[domain event stream](domain-event-stream.md). This document covers CDC
+only.
 
 [PeerDB]: https://docs.peerdb.io/
 
@@ -48,8 +49,8 @@ other service that grows a reconciler.
 
 ## What PeerDB does not replace
 
-- It is not an event bus. Domain events for other services to consume go
-  through JetStream, not through a PeerDB mirror.
+- It is not the domain-event plane. Domain events for other services to
+  consume go through JetStream, not through a PeerDB mirror.
 - It is not a Temporal replacement. PeerDB uses Temporal; it does not
   expose workflow primitives to callers.
 - It is not a general ETL tool. Its scope is Postgres logical replication
@@ -158,7 +159,7 @@ laid:
 - Workload identity contract: [`workload-identity.md`](workload-identity.md).
 - Related planes:
   [`durable-execution.md`](durable-execution.md),
-  [`event-bus.md`](event-bus.md).
+  [`domain-event-stream.md`](domain-event-stream.md).
 - System context on the dual-write pattern and its planned retirement:
   [`../system-context.md`](../system-context.md).
 - Billing dual-write and reconciliation pattern:

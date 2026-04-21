@@ -16,6 +16,7 @@ import {
 } from "~/lib/identity-api";
 import {
   GovernanceApiError,
+  auditEventsQuerySchema,
   createDataExport as createDataExportRequest,
   createExportRequestSchema,
   isGovernanceApiError,
@@ -221,10 +222,11 @@ export const putMemberCapabilities = createServerFn({ method: "POST" })
 
 export const listGovernanceAuditEvents = createServerFn({ method: "GET" })
   .middleware([rentASandboxAuthMiddleware])
-  .handler(async ({ context }) => {
+  .inputValidator(auditEventsQuerySchema)
+  .handler(async ({ context, data }) => {
     return listAuditEventsRequest({
       ...(await governanceClientOptions(context)),
-      query: { high_risk: true, limit: 50 },
+      query: data,
     });
   });
 
