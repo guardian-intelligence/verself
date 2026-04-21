@@ -13,6 +13,7 @@ import (
 	"time"
 
 	auth "github.com/forge-metal/auth-middleware"
+	workloadauth "github.com/forge-metal/auth-middleware/workload"
 	fmotel "github.com/forge-metal/otel"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -74,6 +75,32 @@ func run() error {
 	defer otelShutdown(context.Background())
 	slog.SetDefault(logger)
 
+	mailboxSPIFFEID, err := workloadauth.ParseID(requireEnvValue("MAILBOX_SERVICE_SPIFFE_ID"))
+	if err != nil {
+		return err
+	}
+	workloadJWTSource, err := workloadauth.JWTSource(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
+	if err != nil {
+		return fmt.Errorf("mailbox-service spiffe jwt source: %w", err)
+	}
+	defer func() {
+		if err := workloadJWTSource.Close(); err != nil {
+			logger.ErrorContext(context.Background(), "mailbox-service spiffe jwt source close", "error", err)
+		}
+	}()
+	openBaoClient, err := workloadauth.NewOpenBaoClient(workloadJWTSource, workloadauth.OpenBaoClientConfig{
+		Address:  requireEnvValue("MAILBOX_SERVICE_OPENBAO_ADDR"),
+		CACert:   credentialPath("openbao-ca-cert"),
+		AuthPath: envOr("MAILBOX_SERVICE_OPENBAO_SPIFFE_JWT_MOUNT", "spiffe-jwt"),
+		Role:     envOr("MAILBOX_SERVICE_OPENBAO_ROLE", "platform-mailbox-service"),
+		Audience: envOr("MAILBOX_SERVICE_OPENBAO_WORKLOAD_AUDIENCE", "openbao"),
+		Subject:  mailboxSPIFFEID,
+		Mount:    envOr("MAILBOX_SERVICE_OPENBAO_PLATFORM_MOUNT", "platform"),
+	})
+	if err != nil {
+		return fmt.Errorf("mailbox-service openbao client: %w", err)
+	}
+
 	transport := otelhttp.NewTransport(
 		http.DefaultTransport,
 		otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
@@ -116,10 +143,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	resendAPIKey, err := credentialOr("resend-api-key", "")
+	resendSecrets, err := openBaoClient.ReadKVV2(ctx, "providers/resend/mailbox-service")
 	if err != nil {
-		return err
+		return fmt.Errorf("mailbox-service resend provider secret: %w", err)
 	}
+	resendAPIKey := requireSecretField(resendSecrets, "api_key", "mailbox-service resend provider secret")
 
 	pgConfig, err := pgxpool.ParseConfig(cfg.PGDSN)
 	if err != nil {
@@ -283,6 +311,24 @@ func loadCredential(name string) (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
+func credentialPath(name string) string {
+	dir := os.Getenv("CREDENTIALS_DIRECTORY")
+	if dir == "" {
+		fmt.Fprintf(os.Stderr, "CREDENTIALS_DIRECTORY not set for credential %s\n", name)
+		os.Exit(1)
+	}
+	return filepath.Join(dir, name)
+}
+
+func requireSecretField(values map[string]string, field string, label string) string {
+	value := strings.TrimSpace(values[field])
+	if value == "" {
+		fmt.Fprintf(os.Stderr, "%s missing required field %s\n", label, field)
+		os.Exit(1)
+	}
+	return value
+}
+
 func credentialOr(name, fallback string) (string, error) {
 	value, err := loadCredential(name)
 	if err != nil {
@@ -300,6 +346,15 @@ func requireEnv(key string) (string, error) {
 		return "", fmt.Errorf("required env %s is empty", key)
 	}
 	return value, nil
+}
+
+func requireEnvValue(key string) string {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		fmt.Fprintf(os.Stderr, "required env %s is empty\n", key)
+		os.Exit(1)
+	}
+	return value
 }
 
 func envOr(key, fallback string) string {

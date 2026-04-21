@@ -962,6 +962,45 @@
         mode: "0755"
       tags: [billing]
 
+    - name: Read OpenBao root token for Stripe catalog seed
+      ansible.builtin.slurp:
+        src: /etc/credstore/openbao/root-token
+      register: seed_system_openbao_root_token_raw
+      no_log: true
+      tags: [billing]
+
+    - name: Read billing Stripe provider secret from OpenBao
+      ansible.builtin.uri:
+        url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/{{ openbao_platform_kv_mount }}/data/providers/stripe/billing-service"
+        method: GET
+        headers:
+          X-Vault-Token: "{{ seed_system_openbao_root_token_raw.content | b64decode | trim }}"
+        validate_certs: false
+        status_code: 200
+        return_content: true
+      register: seed_system_stripe_provider_secret
+      no_log: true
+      tags: [billing]
+
+    - name: Create billing seed runtime secret directory
+      ansible.builtin.file:
+        path: /run/forge-metal/seed-system
+        state: directory
+        owner: root
+        group: billing
+        mode: "0750"
+      tags: [billing]
+
+    - name: Materialize transient Stripe catalog seed secret
+      ansible.builtin.copy:
+        content: "{{ seed_system_stripe_provider_secret.json.data.data.secret_key }}"
+        dest: /run/forge-metal/seed-system/stripe-secret-key
+        owner: root
+        group: billing
+        mode: "0640"
+      no_log: true
+      tags: [billing]
+
     - name: Ensure Stripe contract catalog is reconciled
       ansible.builtin.command:
         argv:
@@ -969,7 +1008,7 @@
           - --pg-dsn
           - "postgres://billing@/billing?host=/var/run/postgresql&sslmode=disable"
           - --stripe-secret-key-file
-          - /etc/credstore/billing/stripe-secret-key
+          - /run/forge-metal/seed-system/stripe-secret-key
           - --product-id
           - "{{ seed_system_product_id }}"
           - --product-display-name
@@ -982,6 +1021,12 @@
       become_user: billing
       register: seed_system_stripe_catalog_raw
       changed_when: false
+      tags: [billing]
+
+    - name: Remove transient Stripe catalog seed secret
+      ansible.builtin.file:
+        path: /run/forge-metal/seed-system/stripe-secret-key
+        state: absent
       tags: [billing]
 
     - name: Parse Stripe contract catalog result

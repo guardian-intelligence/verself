@@ -39,9 +39,6 @@ func main() {
 
 func run() error {
 	pgDSN := requireEnv("BILLING_PG_DSN")
-	stripeKey := credentialOr("stripe-secret-key", "")
-	webhookSecret := credentialOr("stripe-webhook-secret", "")
-	chPassword := credentialOr("ch-password", "")
 
 	listenAddr := envOr("BILLING_LISTEN_ADDR", "127.0.0.1:4242")
 	internalListenAddr := envOr("BILLING_INTERNAL_LISTEN_ADDR", "127.0.0.1:4255")
@@ -61,6 +58,55 @@ func run() error {
 	}
 	defer otelShutdown(context.Background())
 	slog.SetDefault(logger)
+
+	billingSPIFFEID, err := workloadauth.ParseID(requireEnv("BILLING_SPIFFE_ID"))
+	if err != nil {
+		return err
+	}
+	spiffeSource, err := workloadauth.Source(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
+	if err != nil {
+		return fmt.Errorf("billing spiffe workload source: %w", err)
+	}
+	defer func() {
+		if err := spiffeSource.Close(); err != nil {
+			logger.ErrorContext(context.Background(), "billing-service spiffe source close", "error", err)
+		}
+	}()
+	workloadJWTSource, err := workloadauth.JWTSource(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
+	if err != nil {
+		return fmt.Errorf("billing spiffe jwt source: %w", err)
+	}
+	defer func() {
+		if err := workloadJWTSource.Close(); err != nil {
+			logger.ErrorContext(context.Background(), "billing-service spiffe jwt source close", "error", err)
+		}
+	}()
+	openBaoClient, err := workloadauth.NewOpenBaoClient(workloadJWTSource, workloadauth.OpenBaoClientConfig{
+		Address:  requireEnv("BILLING_OPENBAO_ADDR"),
+		CACert:   credentialPath("openbao-ca-cert"),
+		AuthPath: envOr("BILLING_OPENBAO_SPIFFE_JWT_MOUNT", "spiffe-jwt"),
+		Role:     envOr("BILLING_OPENBAO_ROLE", "platform-billing-service"),
+		Audience: envOr("BILLING_OPENBAO_WORKLOAD_AUDIENCE", "openbao"),
+		Subject:  billingSPIFFEID,
+		Mount:    envOr("BILLING_OPENBAO_PLATFORM_MOUNT", "platform"),
+	})
+	if err != nil {
+		return fmt.Errorf("billing openbao client: %w", err)
+	}
+	stripeSecrets, err := openBaoClient.ReadKVV2(ctx, "providers/stripe/billing-service")
+	if err != nil {
+		return fmt.Errorf("billing stripe provider secret: %w", err)
+	}
+	stripeKey := strings.TrimSpace(stripeSecrets["secret_key"])
+	webhookSecret := strings.TrimSpace(stripeSecrets["webhook_secret"])
+	if stripeKey != "" && webhookSecret == "" {
+		return fmt.Errorf("billing stripe provider secret missing required field webhook_secret")
+	}
+	chSecrets, err := openBaoClient.ReadKVV2(ctx, "providers/clickhouse/billing-service")
+	if err != nil {
+		return fmt.Errorf("billing clickhouse provider secret: %w", err)
+	}
+	chPassword := requireSecretField(chSecrets, "password", "billing clickhouse provider secret")
 
 	pgConfig, err := pgxpool.ParseConfig(pgDSN)
 	if err != nil {
@@ -127,15 +173,6 @@ func run() error {
 	defer bgCancel()
 	go runBackgroundLoop(bgCtx, logger, billingRuntime, cfg)
 
-	spiffeSource, err := workloadauth.Source(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
-	if err != nil {
-		return fmt.Errorf("billing spiffe workload source: %w", err)
-	}
-	defer func() {
-		if err := spiffeSource.Close(); err != nil {
-			logger.ErrorContext(context.Background(), "billing-service spiffe source close", "error", err)
-		}
-	}()
 	internalPeerIDs, err := parseSPIFFEIDsFromEnv("BILLING_INTERNAL_CLIENT_SPIFFE_IDS")
 	if err != nil {
 		return err
@@ -248,31 +285,20 @@ func isUnauthenticatedBillingPath(path string) bool {
 	}
 }
 
-func loadCredential(name string) (string, error) {
+func credentialPath(name string) string {
 	dir := os.Getenv("CREDENTIALS_DIRECTORY")
 	if dir == "" {
-		return "", fmt.Errorf("CREDENTIALS_DIRECTORY not set")
-	}
-	data, err := os.ReadFile(filepath.Join(dir, name))
-	if err != nil {
-		return "", fmt.Errorf("load credential %s: %w", name, err)
-	}
-	return strings.TrimSpace(string(data)), nil
-}
-
-func requireCredential(name string) string {
-	value, err := loadCredential(name)
-	if err != nil || value == "" {
-		fmt.Fprintf(os.Stderr, "required credential %s: %v\n", name, err)
+		fmt.Fprintf(os.Stderr, "CREDENTIALS_DIRECTORY not set for credential %s\n", name)
 		os.Exit(1)
 	}
-	return value
+	return filepath.Join(dir, name)
 }
 
-func credentialOr(name, fallback string) string {
-	value, err := loadCredential(name)
-	if err != nil || value == "" {
-		return fallback
+func requireSecretField(values map[string]string, field string, label string) string {
+	value := strings.TrimSpace(values[field])
+	if value == "" {
+		fmt.Fprintf(os.Stderr, "%s missing required field %s\n", label, field)
+		os.Exit(1)
 	}
 	return value
 }

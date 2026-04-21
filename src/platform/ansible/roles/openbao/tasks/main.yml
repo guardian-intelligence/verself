@@ -391,6 +391,9 @@
   changed_when: true
   no_log: true
 
+- name: Reconcile OpenBao platform runtime provider secrets
+  ansible.builtin.include_tasks: platform_secrets.yml
+
 - name: Soft-delete legacy unsafe OpenBao platform-internal credentials
   ansible.builtin.uri:
     url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/platform-internal/data/{{ item }}"
