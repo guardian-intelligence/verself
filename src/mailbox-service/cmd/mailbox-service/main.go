@@ -123,10 +123,11 @@ func run() error {
 		return fmt.Errorf("create session proxy: %w", err)
 	}
 
-	adminPassword, err := loadCredential("stalwart-admin-password")
-	if err != nil {
-		return err
-	}
+	// ceo/agents passwords are mail-protocol credentials for human mailboxes
+	// and stay as bootstrap material per docs/architecture/workload-identity.md
+	// § Persistent bootstrap material. The Stalwart Management API admin
+	// password is a workload secret and rides through OpenBao like other
+	// provider secrets.
 	ceoPassword, err := loadCredential("stalwart-ceo-password")
 	if err != nil {
 		return err
@@ -148,6 +149,11 @@ func run() error {
 		return fmt.Errorf("mailbox-service resend provider secret: %w", err)
 	}
 	resendAPIKey := requireSecretField(resendSecrets, "api_key", "mailbox-service resend provider secret")
+	stalwartSecrets, err := openBaoClient.ReadKVV2(ctx, "providers/stalwart/mailbox-service")
+	if err != nil {
+		return fmt.Errorf("mailbox-service stalwart provider secret: %w", err)
+	}
+	adminPassword := requireSecretField(stalwartSecrets, "admin_password", "mailbox-service stalwart provider secret")
 
 	pgConfig, err := pgxpool.ParseConfig(cfg.PGDSN)
 	if err != nil {
