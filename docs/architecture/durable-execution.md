@@ -6,8 +6,8 @@ and need introspection after the fact.
 
 Temporal is one of three async-infrastructure planes being added alongside
 [change data capture](change-data-capture.md) and the
-[service event bus](event-bus.md). This document covers durable execution
-only.
+[domain event stream](domain-event-stream.md). This document covers
+durable execution only.
 
 [Temporal]: https://docs.temporal.io/
 
@@ -57,8 +57,8 @@ them more than once.
 - **Hot-path request handling.** Workflow overhead is milliseconds-scale.
   If it fits in a single HTTP request and doesn't need to survive a crash,
   do it inline.
-- **Pub/sub fan-out.** That is what the [event bus](event-bus.md) is for.
-  Temporal is not a broker.
+- **Pub/sub fan-out.** That is what the [domain event
+  stream](domain-event-stream.md) is for. Temporal is not a broker.
 - **Streaming or continuous transformation.** That is what
   [change data capture](change-data-capture.md) and ClickHouse
   materialized views are for.
@@ -130,6 +130,59 @@ The standard SVID TTL and fail-closed startup semantics from
 [`workload-identity.md`](workload-identity.md) apply: 1h X.509 rotation,
 30s startup timeout, readiness flip at `TTL − 2m` if refresh stalls.
 
+## Capacity
+
+Temporal's honest unit is **state transitions per second** — one write to
+the persistence backend — not workflows per second. A workflow with a
+signal, three activities, and completion runs roughly eight to ten state
+transitions, so transitions/sec divided by a workflow's transition count
+gives a usable workflow/sec estimate. Workflow counts alone are
+misleading; workflow shape varies tenfold between use cases.
+
+Published numbers on a Postgres persistence backend:
+
+| Source | Hardware | State transitions/sec |
+| --- | --- | --- |
+| Temporal's own scaling blog, after tuning | k8s test cluster | 150 → 1,350 |
+| Community benchmark, 2vCore / 8 GB RDS Postgres | — | ~80–100 (DB CPU 100%) |
+| Community benchmark, 4vCore / 16 GB RDS Postgres | — | ~110–160 (DB CPU 80%) |
+| Vymo Engineering production workload, tuned Postgres | — | ~1,200 |
+
+A well-sized dedicated platform Postgres (8 vCore / 32 GB, NVMe) on bare
+metal sustains roughly 1,500–2,500 state transitions/sec before
+persistence CPU becomes the bottleneck. Temporal's own documentation
+notes that PostgreSQL is not ideal for medium-to-large-scale systems;
+beyond that ceiling, the documented escape path is to move persistence
+to Cassandra while keeping Postgres for visibility.
+
+Against the use cases this plane is being adopted for — sandbox
+provisioning, billing `Reconcile()`, Stripe webhook handling, welcome
+sequences, saga-style recovery — peak workflow starts are bounded by
+external factors (Firecracker boot, customer signup rate, Stripe
+delivery cadence) and sit in the single-digit to low-tens-per-second
+range with plausible spikes to 50/sec. The platform Postgres handles
+this with an order of magnitude of headroom. The ceiling will not be
+felt at forge-metal's current or near-term scale.
+
+### Configuration knobs that matter
+
+- **`numHistoryShards`** is immutable after cluster creation. Temporal
+  recommends 512 for small production clusters; it is rare for even
+  large clusters to exceed 4,096. Too few causes shard-lock contention
+  that dominates at load; too many wastes history-pod memory and
+  fragments DB queues. **Default: 512.**
+- **Postgres `max_connections`** defaults to 100 and is a tripwire under
+  Temporal. Frontend, history, and matching each hold their own pools;
+  the `temporal` CLI and workers add more. **Plan for 600.**
+- **Per-role SQL pool sizes** (`sql.maxConns`, `sql.maxIdleConns`,
+  `sql.maxConnLifetime`) are the first tuning knobs; expect to iterate
+  against observed persistence latency.
+
+One anti-pattern documented in the community benchmark: partitioning
+`history_node` by `shard_id` on Postgres made throughput 20–30% *worse*.
+Temporal's default schema is tuned for its query patterns; leave it
+alone.
+
 ## Observability
 
 `make observe WHAT=temporal` surfaces:
@@ -165,7 +218,7 @@ PeerDB (which uses Temporal for its own workflow orchestration) and is
 the hardest of the three: two independent TLS configs, stateful across
 restarts, multi-role, and a custom authorizer plugin. Establishing the
 SPIFFE-wrapped stateful-infrastructure pattern on Temporal makes the
-event bus and CDC ports trivial.
+domain-event stream and CDC ports trivial.
 
 Temporal also carries its own standalone value. Scheduled work,
 saga-pattern retries, and the billing `Reconcile()` orchestration unlock
@@ -195,9 +248,17 @@ laid:
 - Workload identity contract: [`workload-identity.md`](workload-identity.md).
 - Related planes:
   [`change-data-capture.md`](change-data-capture.md),
-  [`event-bus.md`](event-bus.md).
+  [`domain-event-stream.md`](domain-event-stream.md).
 - Temporal self-hosted security and mTLS configuration:
   <https://docs.temporal.io/self-hosted-guide/security>.
 - Temporal platform documentation: <https://docs.temporal.io/>.
+- Temporal persistence backends and version support:
+  <https://docs.temporal.io/temporal-service/persistence>.
+- Shard count, scaling bottlenecks, and tuning progression:
+  <https://temporal.io/blog/scaling-temporal-the-basics>.
+- Postgres throughput numbers and DB-CPU ceiling (community benchmark):
+  <https://community.temporal.io/t/running-temporal-postgres-benchmark/836>.
+- Production scaling writeup, Postgres→Cassandra persistence split:
+  <https://medium.com/vymo-engineering/scaling-temporal-load-testing-with-postgres-cassandra-elasticsearch-monitoring-alerting-1176b7a4968b>.
 - Existing spiffe-helper integration pattern:
   `src/platform/ansible/roles/clickhouse/templates/clickhouse-operator-spiffe-helper.*`.
