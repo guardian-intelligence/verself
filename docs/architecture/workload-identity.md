@@ -28,9 +28,10 @@ SPIRE holds initialized data:
 ```yaml
 forge_metal_domain: guardianintelligence.org
 spire_trust_domain: "spiffe.{{ forge_metal_domain }}"
-spire_oidc_bind_address: 127.0.0.1
-spire_oidc_bind_port: 8082
-spire_oidc_issuer_url: "https://{{ spire_oidc_bind_address }}:{{ spire_oidc_bind_port }}"
+spire_bundle_endpoint_bind_address: 127.0.0.1
+spire_bundle_endpoint_bind_port: 8082
+spire_jwt_bundle_endpoint_url: "https://{{ spire_bundle_endpoint_bind_address }}:{{ spire_bundle_endpoint_bind_port }}"
+spire_jwt_issuer_url: "{{ spire_jwt_bundle_endpoint_url }}"
 ```
 
 If `spire_trust_domain` changes while SPIRE holds initialized data, deploy
@@ -165,12 +166,12 @@ subject:  spiffe://spiffe.guardianintelligence.org/svc/<service-name>
 mount:    auth/spiffe-jwt
 ```
 
-SPIRE OIDC Discovery Provider exposes the OIDC discovery document and JWKS
-for OpenBao JWT validation on a loopback-only TLS listener. The listener uses
-a private local CA pinned in OpenBao's JWT auth config; it is not a public
-federation endpoint. A service fetches a JWT-SVID for audience `openbao`, logs
-in to OpenBao, and receives an OpenBao token constrained by the policies bound
-to its SPIFFE subject.
+SPIRE server exposes a loopback-only HTTPS bundle endpoint for OpenBao JWT
+validation. The endpoint serves the trust bundle in SPIFFE/JWKS-compatible
+JSON at `/`, uses a private local CA pinned in OpenBao's JWT auth config, and
+is not a public federation endpoint. A service fetches a JWT-SVID for
+audience `openbao`, logs in to OpenBao, and receives an OpenBao token
+constrained by the policies bound to its SPIFFE subject.
 
 OpenBao role bindings are generated from the same repo-owned inventory that
 produces SPIRE registrations. Drift is tagged
@@ -275,7 +276,7 @@ credentials, not as SPIFFE peers.
 Workload identity is operator-visible through
 `make observe WHAT=workload-identity`. The surface exposes:
 
-- SPIRE server, agent, and OIDC Discovery Provider systemd state.
+- SPIRE server and bundle endpoint state, plus SPIRE agent systemd state.
 - Workload API socket ownership and reachability.
 - Desired vs live SPIRE registration entries.
 - Per-service SVID status: SPIFFE ID, issuer, expiration, and TTL remaining.
@@ -345,10 +346,12 @@ Proof queries assert:
   [`src/vm-orchestrator/AGENTS.md`](../../src/vm-orchestrator/AGENTS.md).
 - SPIRE trust domains and attestation:
   <https://spiffe.io/docs/latest/deploying/configuring/>.
+- SPIRE server federation bundle endpoint:
+  <https://spiffe.io/docs/latest/deploying/spire_server/>.
 - SPIFFE Workload API, X.509-SVID, and JWT-SVID:
   <https://spiffe.io/docs/latest/spiffe-specs/spiffe_workload_api/>.
-- SPIRE OIDC Discovery Provider:
-  <https://pkg.go.dev/github.com/spiffe/spire/support/oidc-discovery-provider>.
+- SPIFFE federation bundle endpoint semantics:
+  <https://spiffe.io/docs/latest/spiffe-specs/spiffe_federation/>.
 - OpenBao JWT/OIDC auth:
   <https://openbao.org/docs/2.4.x/auth/jwt/>.
 - PostgreSQL peer authentication:

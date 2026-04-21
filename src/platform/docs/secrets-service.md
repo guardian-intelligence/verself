@@ -224,7 +224,7 @@ The Ansible role creates:
 - `secrets_service` Unix user with SPIRE workload socket group access.
 - loopback-only public and internal listeners; the internal listener requires
   SPIFFE mTLS.
-- loopback-only nftables rules for Zitadel, OpenBao, SPIRE OIDC Discovery,
+- loopback-only nftables rules for Zitadel, OpenBao, SPIRE JWT bundle endpoint,
   billing, governance audit, and OTLP egress.
 - a Zitadel project named `secrets-service` with `owner`, `admin`, and
   `member` roles.

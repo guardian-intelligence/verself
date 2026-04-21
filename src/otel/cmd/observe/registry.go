@@ -493,7 +493,7 @@ var queryDocs = []queryDoc{
 		ID:      "workload_identity.spire_logs",
 		Family:  "workload-identity",
 		Title:   "SPIRE Logs",
-		Purpose: "Show recent SPIRE server, agent, and OIDC discovery provider logs.",
+		Purpose: "Show recent SPIRE server and agent logs.",
 		Optional: []string{
 			"MINUTES=<lookback>",
 			"LIMIT=<rows>",
@@ -504,7 +504,7 @@ var queryDocs = []queryDoc{
 		},
 		Next: []string{
 			"make observe WHAT=logs SERVICE=spire-agent",
-			"make observe WHAT=service SERVICE=spire-oidc-discovery-provider",
+			"make observe WHAT=service SERVICE=spire-server",
 		},
 	},
 }

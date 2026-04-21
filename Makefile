@@ -237,7 +237,7 @@ openbao-proof: inventory-check ## Prove OpenBao process, health, metrics, audit 
 openbao-tenancy-proof: inventory-check ## Prove OpenBao per-org mounts, JWT roles, SPIFFE workload roles, policies, and ClickHouse spans
 	cd $(FM) && ./scripts/verify-openbao-tenancy-live.sh
 
-workload-identity-proof: inventory-check ## Prove SPIFFE mTLS/JWT-SVID boundaries, SPIRE OIDC, stale credential deletion, and ClickHouse evidence
+workload-identity-proof: inventory-check ## Prove SPIFFE mTLS/JWT-SVID boundaries, SPIRE bundle JWKS, stale credential deletion, and ClickHouse evidence
 	cd $(FM) && ./scripts/verify-workload-identity-live.sh
 
 billing-reset: inventory-check ## Exhaustively wipe billing state (TigerBeetle + billing PostgreSQL schema) and restart billing callers

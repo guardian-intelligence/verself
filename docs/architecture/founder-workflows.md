@@ -70,7 +70,7 @@ Every ClickHouse-backed observe query emits an `observe` trace and a
 `clickhouse.query_sha256` attributes.
 
 **Target state.** `WHAT=workload-identity` is the operator surface for the
-SPIFFE/SPIRE control loop: SPIRE server, agent, and OIDC Discovery state;
+SPIFFE/SPIRE control loop: SPIRE server and bundle endpoint state, agent;
 Workload API reachability; desired-vs-live registrations; SVID TTLs; mTLS
 edges; JWT-SVID OpenBao login results; and governance rows grouped by
 `actor_spiffe_id`. The contract is declared in
