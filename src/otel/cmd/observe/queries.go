@@ -207,17 +207,23 @@ func emptyHintFor(id string) string {
 	}
 }
 
+// catalog.inventory emits one row per signal. `names` counts the vocabulary
+// a caller can drill into with `SIGNAL=...`, and `names_of` labels what those
+// names are — otherwise the number is ambiguous (13 severity levels vs ~170
+// log attribute keys, for example).
 const catalogInventorySQL = `
 SELECT signal,
        services,
-       vocabulary,
+       names,
+       names_of,
        rows_7d,
        drill_in
 FROM
 (
   SELECT 'metrics' AS signal,
          countDistinct(if(ServiceName = '', '<resource-only>', ServiceName)) AS services,
-         countDistinct(MetricName) AS vocabulary,
+         countDistinct(MetricName) AS names,
+         'metric names' AS names_of,
          toUInt64(sum(Samples)) AS rows_7d,
          'make observe WHAT=catalog SIGNAL=metrics' AS drill_in,
          1 AS sort_key
@@ -226,6 +232,7 @@ FROM
   SELECT 'traces',
          countDistinct(ServiceName),
          countDistinct(SpanName),
+         'span names',
          count(),
          'make observe WHAT=catalog SIGNAL=traces',
          2
@@ -234,7 +241,10 @@ FROM
   UNION ALL
   SELECT 'logs',
          countDistinct(ServiceName),
-         countDistinct(SeverityText),
+         -- arrayFlatten+arrayDistinct avoids the row explosion arrayJoin
+         -- would cause, which would corrupt the count() sibling column.
+         length(arrayDistinct(arrayFlatten(groupArray(mapKeys(LogAttributes))))),
+         'log attribute keys',
          count(),
          'make observe WHAT=catalog SIGNAL=logs',
          3
@@ -244,6 +254,7 @@ FROM
   SELECT 'http',
          countDistinct(ServiceName),
          countDistinct(Host),
+         'hosts',
          count(),
          'make observe WHAT=catalog SIGNAL=http',
          4
@@ -253,6 +264,7 @@ FROM
   SELECT 'deploys',
          toUInt64(1),
          countDistinct(SpanAttributes['forge_metal.deploy_run_key']),
+         'deploy run keys',
          count(),
          'make observe WHAT=catalog SIGNAL=deploys',
          5

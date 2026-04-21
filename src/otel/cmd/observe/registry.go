@@ -121,7 +121,7 @@ var queryDocs = []queryDoc{
 		ID:      "catalog.inventory",
 		Family:  "catalog",
 		Title:   "Catalog Inventory",
-		Purpose: "One row per signal with service count, vocabulary size, and 7-day row count. Entry point before drilling into a specific signal.",
+		Purpose: "One row per signal with service count, distinct-names count (labeled by what kind of names), and 7-day row count. Entry point before drilling into a specific signal.",
 		Optional: []string{
 			"FORMAT=table|json|markdown",
 		},
