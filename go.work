@@ -10,5 +10,6 @@ use (
 	./src/otel
 	./src/sandbox-rental-service
 	./src/secrets-service
+	./src/temporal-platform
 	./src/vm-orchestrator
 )

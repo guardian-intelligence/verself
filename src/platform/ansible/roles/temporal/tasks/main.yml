@@ -1,0 +1,346 @@
+---
+- name: Verify forge-temporal-server binary exists in profile
+  ansible.builtin.stat:
+    path: "{{ fm_bin }}/forge-temporal-server"
+  register: temporal_server_binary
+  failed_when: not temporal_server_binary.stat.exists
+
+- name: Verify temporal-proof binary exists in profile
+  ansible.builtin.stat:
+    path: "{{ fm_bin }}/temporal-proof"
+  register: temporal_proof_binary
+  failed_when: not temporal_proof_binary.stat.exists
+
+- name: Verify temporal-schema binary exists in profile
+  ansible.builtin.stat:
+    path: "{{ fm_bin }}/temporal-schema"
+  register: temporal_schema_binary
+  failed_when: not temporal_schema_binary.stat.exists
+
+- name: Ensure spire workload socket group exists
+  ansible.builtin.group:
+    name: "{{ spire_workload_group }}"
+    system: true
+
+- name: Create Temporal system groups
+  ansible.builtin.group:
+    name: "{{ item }}"
+    system: true
+  loop:
+    - "{{ temporal_system_group }}"
+    - "{{ temporal_proof_group }}"
+
+- name: Create Temporal system users
+  ansible.builtin.user:
+    name: "{{ item.name }}"
+    group: "{{ item.group }}"
+    groups:
+      - "{{ spire_workload_group }}"
+    append: false
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ item.home }}"
+    create_home: false
+  loop:
+    - { name: "{{ temporal_system_user }}", group: "{{ temporal_system_group }}", home: "{{ temporal_state_dir }}" }
+    - { name: "{{ temporal_proof_user }}", group: "{{ temporal_proof_group }}", home: "{{ temporal_proof_state_dir }}" }
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Resolve Temporal service uid for SPIRE registration
+  ansible.builtin.command:
+    cmd: id -u {{ temporal_system_user }}
+  register: temporal_server_uid
+  changed_when: false
+
+- name: Resolve Temporal proof uid for SPIRE registration
+  ansible.builtin.command:
+    cmd: id -u {{ temporal_proof_user }}
+  register: temporal_proof_uid
+  changed_when: false
+
+- name: Read Temporal server SPIRE registration
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry show
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-temporal-server
+      -output json
+  register: temporal_server_spire_entry
+  failed_when: false
+  changed_when: false
+
+- name: Register Temporal server SPIFFE workload
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry create
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-temporal-server
+      -parentID {{ spire_agent_id }}
+      -spiffeID {{ spire_temporal_server_id }}
+      -selector unix:uid:{{ temporal_server_uid.stdout | trim }}
+      -x509SVIDTTL 3600
+  when: temporal_server_spire_entry.rc != 0 or 'forge-metal-temporal-server' not in temporal_server_spire_entry.stdout
+  changed_when: true
+  notify: restart temporal-server
+
+- name: Update Temporal server SPIRE workload selector drift
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry update
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-temporal-server
+      -parentID {{ spire_agent_id }}
+      -spiffeID {{ spire_temporal_server_id }}
+      -selector unix:uid:{{ temporal_server_uid.stdout | trim }}
+      -x509SVIDTTL 3600
+  when:
+    - temporal_server_spire_entry.rc == 0
+    - "'uid:' ~ (temporal_server_uid.stdout | trim) not in temporal_server_spire_entry.stdout"
+  changed_when: true
+  notify: restart temporal-server
+
+- name: Read Temporal proof SPIRE registration
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry show
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-temporal-proof
+      -output json
+  register: temporal_proof_spire_entry
+  failed_when: false
+  changed_when: false
+
+- name: Register Temporal proof SPIFFE workload
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry create
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-temporal-proof
+      -parentID {{ spire_agent_id }}
+      -spiffeID {{ spire_temporal_proof_id }}
+      -selector unix:uid:{{ temporal_proof_uid.stdout | trim }}
+      -x509SVIDTTL 3600
+  when: temporal_proof_spire_entry.rc != 0 or 'forge-metal-temporal-proof' not in temporal_proof_spire_entry.stdout
+  changed_when: true
+  notify: restart temporal-proof-worker
+
+- name: Update Temporal proof SPIRE workload selector drift
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry update
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-temporal-proof
+      -parentID {{ spire_agent_id }}
+      -spiffeID {{ spire_temporal_proof_id }}
+      -selector unix:uid:{{ temporal_proof_uid.stdout | trim }}
+      -x509SVIDTTL 3600
+  when:
+    - temporal_proof_spire_entry.rc == 0
+    - "'uid:' ~ (temporal_proof_uid.stdout | trim) not in temporal_proof_spire_entry.stdout"
+  changed_when: true
+  notify: restart temporal-proof-worker
+
+- name: Create Temporal state directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ temporal_config_dir }}", owner: root, group: "{{ temporal_system_group }}", mode: "0750" }
+    - { path: "{{ temporal_state_dir }}", owner: "{{ temporal_system_user }}", group: "{{ temporal_system_group }}", mode: "0750" }
+    - { path: "{{ temporal_state_dir }}/.ansible/tmp", owner: "{{ temporal_system_user }}", group: "{{ temporal_system_group }}", mode: "0700" }
+    - { path: "{{ temporal_proof_state_dir }}", owner: "{{ temporal_proof_user }}", group: "{{ temporal_proof_group }}", mode: "0750" }
+    - { path: "{{ temporal_proof_state_dir }}/.ansible/tmp", owner: "{{ temporal_proof_user }}", group: "{{ temporal_proof_group }}", mode: "0700" }
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Reset Temporal persistence database when requested
+  ansible.builtin.include_role:
+    name: postgresql_db_reset
+  vars:
+    postgresql_db_reset_name: "{{ temporal_postgresql_database }}"
+    postgresql_db_reset_owner: "{{ temporal_postgresql_user }}"
+    postgresql_db_reset_stop_units:
+      - temporal-server.service
+      - temporal-proof-worker.service
+  when: temporal_force_schema_reset | bool
+
+- name: Reset Temporal visibility database when requested
+  ansible.builtin.include_role:
+    name: postgresql_db_reset
+  vars:
+    postgresql_db_reset_name: "{{ temporal_visibility_database }}"
+    postgresql_db_reset_owner: "{{ temporal_postgresql_user }}"
+    postgresql_db_reset_stop_units:
+      - temporal-server.service
+      - temporal-proof-worker.service
+  when: temporal_force_schema_reset | bool
+
+- name: Deploy Temporal dynamic config
+  ansible.builtin.template:
+    src: temporal-dynamicconfig.yaml.j2
+    dest: "{{ temporal_dynamic_config_path }}"
+    owner: root
+    group: "{{ temporal_system_group }}"
+    mode: "0640"
+  notify: restart temporal-server
+
+- name: Deploy Temporal server config
+  ansible.builtin.template:
+    src: temporal-config.yaml.j2
+    dest: "{{ temporal_config_path }}"
+    owner: root
+    group: "{{ temporal_system_group }}"
+    mode: "0640"
+  notify: restart temporal-server
+
+- name: Setup Temporal schema version tables and base schema
+  become: true
+  become_user: "{{ temporal_system_user }}"
+  vars:
+    ansible_remote_tmp: "{{ temporal_state_dir }}/.ansible/tmp"
+  ansible.builtin.command:
+    argv:
+      - "{{ fm_bin }}/temporal-schema"
+      - setup
+      - --config
+      - "{{ temporal_config_path }}"
+      - --store
+      - postgres-default
+      - --version
+      - "0.0"
+  environment:
+    HOME: /tmp
+    OTEL_EXPORTER_OTLP_ENDPOINT: "http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}"
+  changed_when: false
+
+- name: Update Temporal schema to latest embedded version
+  become: true
+  become_user: "{{ temporal_system_user }}"
+  vars:
+    ansible_remote_tmp: "{{ temporal_state_dir }}/.ansible/tmp"
+  ansible.builtin.command:
+    argv:
+      - "{{ fm_bin }}/temporal-schema"
+      - update
+      - --config
+      - "{{ temporal_config_path }}"
+      - --store
+      - postgres-default
+      - --schema-name
+      - "{{ temporal_schema_name }}"
+  environment:
+    HOME: /tmp
+    OTEL_EXPORTER_OTLP_ENDPOINT: "http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}"
+  changed_when: false
+
+- name: Setup Temporal visibility schema version tables and base schema
+  become: true
+  become_user: "{{ temporal_system_user }}"
+  vars:
+    ansible_remote_tmp: "{{ temporal_state_dir }}/.ansible/tmp"
+  ansible.builtin.command:
+    argv:
+      - "{{ fm_bin }}/temporal-schema"
+      - setup
+      - --config
+      - "{{ temporal_config_path }}"
+      - --store
+      - postgres-visibility
+      - --version
+      - "0.0"
+  environment:
+    HOME: /tmp
+    OTEL_EXPORTER_OTLP_ENDPOINT: "http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}"
+  changed_when: false
+
+- name: Update Temporal visibility schema to latest embedded version
+  become: true
+  become_user: "{{ temporal_system_user }}"
+  vars:
+    ansible_remote_tmp: "{{ temporal_state_dir }}/.ansible/tmp"
+  ansible.builtin.command:
+    argv:
+      - "{{ fm_bin }}/temporal-schema"
+      - update
+      - --config
+      - "{{ temporal_config_path }}"
+      - --store
+      - postgres-visibility
+      - --schema-name
+      - "{{ temporal_visibility_schema_name }}"
+  environment:
+    HOME: /tmp
+    OTEL_EXPORTER_OTLP_ENDPOINT: "http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}"
+  changed_when: false
+
+- name: Deploy temporal-server systemd unit
+  ansible.builtin.template:
+    src: temporal-server.service.j2
+    dest: /etc/systemd/system/temporal-server.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart temporal-server
+
+- name: Deploy temporal-proof-worker systemd unit
+  ansible.builtin.template:
+    src: temporal-proof-worker.service.j2
+    dest: /etc/systemd/system/temporal-proof-worker.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart temporal-proof-worker
+
+- name: Apply Temporal unit and config changes before readiness
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start temporal-server
+  ansible.builtin.systemd:
+    name: temporal-server
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for Temporal frontend gRPC listener
+  ansible.builtin.wait_for:
+    host: "{{ services.temporal.host }}"
+    port: "{{ services.temporal.grpc_port }}"
+    timeout: 30
+
+- name: Wait for Temporal metrics listener
+  ansible.builtin.wait_for:
+    host: "{{ services.temporal.host }}"
+    port: "{{ services.temporal.metrics_port }}"
+    timeout: 30
+
+- name: Bootstrap Temporal proof namespaces with server identity
+  become: true
+  become_user: "{{ temporal_system_user }}"
+  vars:
+    ansible_remote_tmp: "{{ temporal_state_dir }}/.ansible/tmp"
+  ansible.builtin.command:
+    argv:
+      - "{{ fm_bin }}/temporal-proof"
+      - bootstrap
+  environment:
+    HOME: /tmp
+    SPIFFE_ENDPOINT_SOCKET: "unix://{{ spire_agent_socket_path }}"
+    OTEL_EXPORTER_OTLP_ENDPOINT: "http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}"
+    FM_TEMPORAL_FRONTEND_ADDRESS: "{{ services.temporal.host }}:{{ services.temporal.grpc_port }}"
+    FM_TEMPORAL_PROOF_NAMESPACE: "{{ temporal_proof_namespace }}"
+    FM_TEMPORAL_SERVER_SPIFFE_ID: "{{ spire_temporal_server_id }}"
+    FM_TEMPORAL_PROOF_GOVERNANCE_URL: "{{ temporal_proof_governance_url }}"
+    FM_TEMPORAL_PROOF_GOVERNANCE_SPIFFE_ID: "{{ spire_governance_service_id }}"
+    FM_TEMPORAL_PROOF_SERVICE_VERSION: "{{ forge_metal_version }}"
+  changed_when: false
+
+- name: Enable and start temporal-proof-worker
+  ansible.builtin.systemd:
+    name: temporal-proof-worker
+    enabled: true
+    state: started
+    daemon_reload: true

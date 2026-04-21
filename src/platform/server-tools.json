@@ -57,6 +57,13 @@
     "sha256": "4acb57355e9388f257b28de8c18422ff43e52eb329052bd54ebecde000dcbb47",
     "extract_binary": "otelcol-contrib"
   },
+  "temporal": {
+    "version": "1.30.4",
+    "format": "tarball",
+    "url": "https://github.com/temporalio/temporal/releases/download/v1.30.4/temporal_1.30.4_linux_amd64.tar.gz",
+    "sha256": "83f900fe8f9fd23c0e6369041355d2edbd768a91667dd6bc22a98d8316632177",
+    "binaries": ["temporal-server", "temporal-sql-tool", "tdbg"]
+  },
   "grafana": {
     "version": "12.4.2",
     "format": "tarball",
