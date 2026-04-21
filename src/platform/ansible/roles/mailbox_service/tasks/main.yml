@@ -217,7 +217,6 @@
       LoadCredential=stalwart-ceo-password:/etc/credstore/mailbox-service/stalwart-ceo-password
       LoadCredential=stalwart-agents-password:/etc/credstore/mailbox-service/stalwart-agents-password
       LoadCredential=forward-to:/etc/credstore/mailbox-service/forward-to
-      LoadCredential=stalwart-admin-password:/etc/credstore/mailbox-service/stalwart-admin-password
       LoadCredential=openbao-ca-cert:/etc/openbao/tls/cert.pem
       Environment=MAILBOX_SERVICE_LISTEN_ADDR={{ services.mailbox_service.host }}:{{ services.mailbox_service.port }}
       Environment=MAILBOX_SERVICE_PG_DSN=postgres://mailbox_service@/mailbox_service?host=/var/run/postgresql&sslmode=disable

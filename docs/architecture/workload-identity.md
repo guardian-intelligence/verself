@@ -208,11 +208,19 @@ SPIFFE-authenticated services. OpenBao paths:
 ```text
 platform/providers/stripe/billing-service
 platform/providers/resend/mailbox-service
+platform/providers/stalwart/mailbox-service
 platform/providers/github/sandbox-rental-service
 platform/providers/clickhouse/billing-service
 platform/providers/clickhouse/governance-service
 platform/providers/clickhouse/sandbox-rental-service
 ```
+
+`platform/providers/stalwart/mailbox-service` holds only the Stalwart
+Management API admin password (`admin_password`). Stalwart's internal
+mailbox-user credentials (ceo/agents) remain SOPS-sealed bootstrap material
+under "human mailbox protocol passwords" below, because mail clients
+authenticate to Stalwart over SMTP/IMAP/JMAP and those protocols do not
+speak SPIFFE.
 
 **Persistent bootstrap material.** The following remain outside SPIFFE and
 OpenBao runtime reads and are managed through SOPS and systemd
