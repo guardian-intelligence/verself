@@ -34,11 +34,7 @@
     "url": "https://github.com/spiffe/spire/releases/download/v1.14.5/spire-1.14.5-linux-amd64-musl.tar.gz",
     "sha256": "cacab9ff32b7a24714edcf4328c4ce27bddd38496b443e8750395883c72a3bfb",
     "extract_dir": "spire-1.14.5",
-    "binaries": ["spire-server", "spire-agent"],
-    "extras_url": "https://github.com/spiffe/spire/releases/download/v1.14.5/spire-extras-1.14.5-linux-amd64-musl.tar.gz",
-    "extras_sha256": "79a996864864d3ab7a7649105a81a6a85cc833bbaa5bacae17ad56c54224cd6c",
-    "extras_extract_dir": "spire-extras-1.14.5",
-    "extras_binaries": ["oidc-discovery-provider"]
+    "binaries": ["spire-server", "spire-agent"]
   },
   "spiffe_helper": {
     "version": "0.11.0",

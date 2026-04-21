@@ -138,28 +138,6 @@
     mode: "0755"
   loop: "{{ deploy_profile_server_tools_pins.spire.binaries }}"
 
-- name: Download SPIRE extras archive
-  ansible.builtin.get_url:
-    url: "{{ deploy_profile_server_tools_pins.spire.extras_url }}"
-    dest: "{{ deploy_profile_staging_dir }}/spire-extras-{{ deploy_profile_server_tools_pins.spire.version }}.tar.gz"
-    checksum: "sha256:{{ deploy_profile_server_tools_pins.spire.extras_sha256 }}"
-    mode: "0644"
-
-- name: Extract SPIRE extras distribution
-  ansible.builtin.unarchive:
-    src: "{{ deploy_profile_staging_dir }}/spire-extras-{{ deploy_profile_server_tools_pins.spire.version }}.tar.gz"
-    dest: "{{ deploy_profile_staging_dir }}"
-    remote_src: true
-    creates: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.spire.extras_extract_dir }}/bin/oidc-discovery-provider"
-
-- name: Install SPIRE extras binaries
-  ansible.builtin.copy:
-    src: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.spire.extras_extract_dir }}/bin/{{ item }}"
-    dest: "{{ fm_bin }}/{{ item }}"
-    remote_src: true
-    mode: "0755"
-  loop: "{{ deploy_profile_server_tools_pins.spire.extras_binaries }}"
-
 # ── SPIFFE Helper ────────────────────────────────────────────────────────────
 
 - name: Download SPIFFE Helper archive

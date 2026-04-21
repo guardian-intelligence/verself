@@ -13,8 +13,8 @@ openbao_key_threshold: 2
 openbao_oidc_loopback_hosts:
   - "auth.{{ forge_metal_domain }}"
 openbao_spiffe_jwt_mount: spiffe-jwt
-openbao_spiffe_jwt_discovery_url: "{{ spire_oidc_issuer_url }}"
-openbao_spiffe_jwt_discovery_ca_pem_path: /etc/spire/oidc/ca.pem
+openbao_spiffe_jwt_jwks_url: "{{ spire_jwt_bundle_endpoint_url }}"
+openbao_spiffe_jwt_jwks_ca_pem_path: /etc/spire/bundle-endpoint/ca.pem
 openbao_platform_kv_mount: platform
 openbao_workload_audience: openbao
 openbao_workload_token_ttl: 15m
