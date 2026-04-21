@@ -5,10 +5,25 @@ server {
     trust_domain = "{{ spire_trust_domain }}"
     data_dir = "/var/lib/spire/server"
     log_level = "INFO"
-    jwt_issuer = "{{ spire_oidc_issuer_url }}"
+    jwt_issuer = "{{ spire_jwt_issuer_url }}"
     ca_ttl = "168h"
     default_x509_svid_ttl = "1h"
     default_jwt_svid_ttl = "5m"
+    federation {
+        bundle_endpoint {
+            address = "{{ spire_bundle_endpoint_bind_address }}"
+            port = {{ spire_bundle_endpoint_bind_port }}
+            refresh_hint = "5m"
+            profile "https_web" {
+                serving_cert_file {
+                    # SPIRE 1.14.5 parses an empty file_sync_interval before applying its default.
+                    cert_file_path = "/etc/spire/bundle-endpoint/server-cert.pem"
+                    key_file_path = "/etc/spire/bundle-endpoint/server-key.pem"
+                    file_sync_interval = "1h"
+                }
+            }
+        }
+    }
 }
 
 plugins {

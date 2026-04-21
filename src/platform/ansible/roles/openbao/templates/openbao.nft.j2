@@ -19,7 +19,7 @@ table inet forge_metal_openbao {
 
         meta l4proto != tcp meta l4proto != udp accept
         oifname "lo" tcp dport 443 accept
-        oifname "lo" tcp dport {{ spire_oidc_bind_port }} accept
+        oifname "lo" tcp dport {{ spire_bundle_endpoint_bind_port }} accept
 
         drop
     }

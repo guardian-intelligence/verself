@@ -15,6 +15,7 @@ spire_mailbox_service_id: "spiffe://{{ spire_trust_domain }}/svc/mailbox-service
 spire_grafana_id: "spiffe://{{ spire_trust_domain }}/svc/grafana"
 spire_otelcol_id: "spiffe://{{ spire_trust_domain }}/svc/otelcol"
 spire_clickhouse_operator_id: "spiffe://{{ spire_trust_domain }}/svc/clickhouse-operator"
-spire_oidc_bind_address: 127.0.0.1
-spire_oidc_bind_port: 8082
-spire_oidc_issuer_url: "https://{{ spire_oidc_bind_address }}:{{ spire_oidc_bind_port }}"
+spire_bundle_endpoint_bind_address: 127.0.0.1
+spire_bundle_endpoint_bind_port: 8082
+spire_jwt_bundle_endpoint_url: "https://{{ spire_bundle_endpoint_bind_address }}:{{ spire_bundle_endpoint_bind_port }}"
+spire_jwt_issuer_url: "{{ spire_jwt_bundle_endpoint_url }}"

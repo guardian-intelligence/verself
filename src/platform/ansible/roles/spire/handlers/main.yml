@@ -12,10 +12,3 @@
     name: spire-agent
     state: restarted
     daemon_reload: true
-
-- name: Restart spire-oidc-discovery-provider
-  listen: restart spire-oidc-discovery-provider
-  ansible.builtin.systemd:
-    name: spire-oidc-discovery-provider
-    state: restarted
-    daemon_reload: true

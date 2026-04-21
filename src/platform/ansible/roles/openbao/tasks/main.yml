@@ -364,13 +364,13 @@
   changed_when: false
   no_log: true
 
-- name: Read SPIRE OIDC discovery CA for OpenBao JWT auth
+- name: Read SPIRE bundle endpoint CA for OpenBao JWT auth
   ansible.builtin.slurp:
-    src: "{{ openbao_spiffe_jwt_discovery_ca_pem_path }}"
-  register: openbao_spiffe_jwt_discovery_ca
+    src: "{{ openbao_spiffe_jwt_jwks_ca_pem_path }}"
+  register: openbao_spiffe_jwt_jwks_ca
   no_log: true
 
-- name: Configure OpenBao SPIFFE JWT auth discovery
+- name: Configure OpenBao SPIFFE JWT auth JWKS validation
   ansible.builtin.uri:
     url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/auth/{{ openbao_spiffe_jwt_mount }}/config"
     method: POST
@@ -378,16 +378,17 @@
       X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
     body_format: json
     body:
-      oidc_discovery_url: "{{ openbao_spiffe_jwt_discovery_url }}"
-      oidc_discovery_ca_pem: "{{ openbao_spiffe_jwt_discovery_ca.content | b64decode }}"
-      bound_issuer: "{{ spire_oidc_issuer_url }}"
+      jwks_url: "{{ openbao_spiffe_jwt_jwks_url }}"
+      jwks_ca_pem: "{{ openbao_spiffe_jwt_jwks_ca.content | b64decode }}"
+      bound_issuer: "{{ spire_jwt_issuer_url }}"
     validate_certs: false
     status_code: 204
   when: >-
     openbao_spiffe_jwt_config_response.status == 404
-    or (openbao_spiffe_jwt_config_response.json.data | default({})).oidc_discovery_url | default('') != openbao_spiffe_jwt_discovery_url
-    or (openbao_spiffe_jwt_config_response.json.data | default({})).bound_issuer | default('') != spire_oidc_issuer_url
-    or (openbao_spiffe_jwt_config_response.json.data | default({})).oidc_discovery_ca_pem | default([]) | length == 0
+    or (openbao_spiffe_jwt_config_response.json.data | default({})).jwks_url | default('') != openbao_spiffe_jwt_jwks_url
+    or (openbao_spiffe_jwt_config_response.json.data | default({})).bound_issuer | default('') != spire_jwt_issuer_url
+    or (openbao_spiffe_jwt_config_response.json.data | default({})).jwks_ca_pem | default([]) | length == 0
+    or (openbao_spiffe_jwt_config_response.json.data | default({})).oidc_discovery_url | default('') != ''
   changed_when: true
   no_log: true
 
