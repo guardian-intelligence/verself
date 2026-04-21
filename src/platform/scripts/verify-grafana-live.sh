@@ -181,6 +181,20 @@ if ! jq -e '
   exit 1
 fi
 
+ch_query "
+SELECT
+  name,
+  auth_type
+FROM system.users
+WHERE name = 'grafana_observer'
+FORMAT TSVWithNames
+" >"${artifact_dir}/clickhouse-user-auth.tsv"
+
+# ClickHouse does not surface listener ports in system.settings/server_settings,
+# so the live socket table is the only reliable proof that 8443/9440 are bound.
+verification_ssh "sudo ss -ltnH '( sport = :8443 or sport = :9440 )'" \
+  >"${artifact_dir}/clickhouse-secure-listeners.tsv"
+
 grafana_api_get "/api/search?type=dash-db" >"${artifact_dir}/grafana-dashboard-search.json"
 
 jq -r '.[] | select(.uid | startswith("forge-metal-")) | .uid' \
@@ -378,6 +392,21 @@ fi
 
 if ! grep -q $'QueryFinish\tgrafana_observer\t0' "${artifact_dir}/clickhouse-query-log.tsv"; then
   echo "Grafana datasource did not produce a successful grafana_observer QueryFinish" >&2
+  exit 1
+fi
+
+if ! grep -q 'ssl_certificate' "${artifact_dir}/clickhouse-user-auth.tsv"; then
+  echo "Grafana ClickHouse user is not certificate-authenticated" >&2
+  exit 1
+fi
+
+if ! grep -q ':8443' "${artifact_dir}/clickhouse-secure-listeners.tsv"; then
+  echo "Grafana verification expected ClickHouse listener on 8443" >&2
+  exit 1
+fi
+
+if ! grep -q ':9440' "${artifact_dir}/clickhouse-secure-listeners.tsv"; then
+  echo "Grafana verification expected ClickHouse listener on 9440" >&2
   exit 1
 fi
 

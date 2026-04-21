@@ -842,7 +842,9 @@ wait_for_clickhouse_count default "
   FROM otel_traces
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
     AND ServiceName = 'secrets-service'
-    AND SpanName IN ('auth.spiffe.mtls.server', 'secrets.injection.resolve', 'secrets.injection.service_token.exchange', 'auth.spiffe.jwt_svid.fetch', 'secrets.bao.jwt_svid.login')
+    -- A warm OpenBao token cache suppresses a fresh jwt_svid.login, so the
+    -- injection proof accepts either the login span or the cache span.
+    AND SpanName IN ('auth.spiffe.mtls.server', 'secrets.injection.resolve', 'secrets.injection.service_token.exchange', 'auth.spiffe.jwt_svid.fetch', 'secrets.bao.jwt_svid.login', 'secrets.bao.token.cache')
 " 5 "${artifact_dir}/clickhouse/secrets-spiffe-injection-spans-count.tsv"
 
 wait_for_clickhouse_count default "

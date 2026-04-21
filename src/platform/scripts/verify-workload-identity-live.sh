@@ -19,6 +19,12 @@ if [[ "${WORKLOAD_IDENTITY_PROOF_EXERCISE_SECRETS:-1}" != "0" ]]; then
     "${script_dir}/verify-secrets-live.sh"
 fi
 
+if [[ "${WORKLOAD_IDENTITY_PROOF_EXERCISE_GRAFANA:-1}" != "0" ]]; then
+  VERIFICATION_RUN_ID="${run_id}-grafana" \
+  VERIFICATION_ARTIFACT_ROOT="${artifact_dir}/dependencies/grafana-proof" \
+    "${script_dir}/verify-grafana-live.sh"
+fi
+
 verification_ssh "sudo python3 - $(printf '%q' "${VERIFICATION_DOMAIN}")" >"${artifact_dir}/workload-identity-state.json" <<'PY'
 import json
 import os
@@ -39,6 +45,7 @@ expected_ids = [
     f"spiffe://{trust_domain}/svc/sandbox-rental-service",
     f"spiffe://{trust_domain}/svc/secrets-service",
     f"spiffe://{trust_domain}/svc/mailbox-service",
+    f"spiffe://{trust_domain}/svc/grafana",
 ]
 systemd_units = [
     "spire-server",
@@ -50,6 +57,8 @@ systemd_units = [
     "sandbox-rental-service",
     "secrets-service",
     "mailbox-service",
+    "grafana-clickhouse-spiffe-helper",
+    "grafana",
     "stalwart",
 ]
 for unit in systemd_units:
@@ -77,6 +86,7 @@ stale_credentials = [
     "/etc/credstore/sandbox-rental/github-app-client-secret",
     "/etc/credstore/mailbox-service/pg-dsn",
     "/etc/credstore/mailbox-service/resend-api-key",
+    "/etc/credstore/grafana/clickhouse-password",
     "/etc/credstore/mailbox-service/stalwart-admin-password",
     "/etc/credstore/stalwart/pg-password",
     "/etc/credstore/governance-service/internal-audit-token",
@@ -125,7 +135,7 @@ for unit in ["identity-service", "governance-service", "billing-service", "sandb
     if stale_terms:
         raise SystemExit(f"{unit} still loads stale credentials: {', '.join(stale_terms)}")
 
-for unit in ["governance-service", "billing-service", "sandbox-rental-service", "mailbox-service", "stalwart"]:
+for unit in ["governance-service", "billing-service", "sandbox-rental-service", "mailbox-service", "grafana-clickhouse-spiffe-helper", "grafana", "stalwart"]:
     subprocess.run(["systemctl", "restart", unit], check=True)
     for _ in range(30):
         state = subprocess.run(["systemctl", "is-active", "--quiet", unit], check=False)
@@ -280,6 +290,26 @@ PY
 
 window_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
+(
+  cd "${VERIFICATION_PLATFORM_ROOT}"
+  ./scripts/clickhouse.sh --query "SYSTEM FLUSH LOGS"
+) >"${artifact_dir}/clickhouse/flush-logs.tsv"
+
+# ClickHouse does not publish its listener ports through the system tables we
+# query elsewhere, so we assert the secure sockets directly from the host.
+verification_ssh "sudo ss -ltnH '( sport = :8443 or sport = :9440 )'" \
+  >"${artifact_dir}/clickhouse/clickhouse-secure-listeners.tsv"
+
+if ! grep -q ':8443' "${artifact_dir}/clickhouse/clickhouse-secure-listeners.tsv"; then
+  echo "ClickHouse is not listening on 8443" >&2
+  exit 1
+fi
+
+if ! grep -q ':9440' "${artifact_dir}/clickhouse/clickhouse-secure-listeners.tsv"; then
+  echo "ClickHouse is not listening on 9440" >&2
+  exit 1
+fi
+
 wait_for_clickhouse_count() {
   local database="$1"
   local query="$2"
@@ -334,7 +364,7 @@ wait_for_clickhouse_count default "
     AND SpanName IN ('auth.spiffe.jwt_svid.fetch', 'secrets.bao.jwt_svid.login')
 " 2 "${artifact_dir}/clickhouse/spiffe-jwt-svid-spans-count.tsv"
 
-for service in billing-service governance-service sandbox-rental-service mailbox-service; do
+for service in billing-service sandbox-rental-service mailbox-service; do
   service_slug="${service//-/_}"
   wait_for_clickhouse_count default "
     SELECT count()
@@ -391,6 +421,24 @@ wait_for_clickhouse_count default "
     AND SpanAttributes['bao.path_hash'] = {resend_hash:String}
     AND SpanAttributes['bao.request_id'] != ''
 " 1 "${artifact_dir}/clickhouse/mailbox-service-openbao-resend-kv-get-count.tsv" --param_resend_hash="${resend_path_hash}"
+
+wait_for_clickhouse_count default "
+  SELECT count()
+  FROM system.users
+  WHERE name IN ('billing_service', 'governance_service', 'sandbox_rental', 'grafana_observer')
+    AND has(auth_type, 'ssl_certificate')
+" 4 "${artifact_dir}/clickhouse/clickhouse-cert-auth-users-count.tsv"
+
+for clickhouse_user in billing_service governance_service sandbox_rental grafana_observer; do
+  wait_for_clickhouse_count default "
+    SELECT count()
+    FROM system.query_log
+    WHERE event_time BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
+      AND type = 'QueryFinish'
+      AND exception_code = 0
+      AND initial_user = {clickhouse_user:String}
+  " 1 "${artifact_dir}/clickhouse/${clickhouse_user}-query-log-count.tsv" --param_clickhouse_user="${clickhouse_user}"
+done
 
 wait_for_clickhouse_count forge_metal "
   SELECT count()
