@@ -931,7 +931,7 @@ function SectionTypography() {
                     textTransform: "uppercase",
                   }}
                 >
-                  Letters № 3 · 19 Apr 2026
+                  Dispatch № 3 · 19 Apr 2026
                 </span>
               </td>
               <td style={role}>badge / eyebrow</td>
@@ -971,7 +971,7 @@ function SectionHeroIron() {
         </h1>
         <div className="hero-cta-row">
           <button className="hero-btn primary">Request access</button>
-          <button className="hero-btn ghost">Read Letters →</button>
+          <button className="hero-btn ghost">Read the dispatch →</button>
         </div>
         {/* Mission block lives directly beneath the hero on the same Iron
             canvas. Hero claims; mission cashes. Paragraphs stay in Geist (the
@@ -1042,7 +1042,7 @@ function SectionHeroFlare() {
               borderColor: "var(--color-iron)",
             }}
           >
-            Read Letters
+            Read the Dispatch
           </button>
           <button className="hero-btn ghost" style={{ color: "rgba(11,11,11,0.75)" }}>
             Contact
@@ -1134,18 +1134,18 @@ const heroStyle = `
 `;
 
 // ============================================================================
-// 10 — Applied · Letters
+// 10 — Applied · Dispatch
 // ============================================================================
-function SectionLetters() {
-  const meta = sectionByID("letters");
+function SectionDispatch() {
+  const meta = sectionByID("dispatch");
   return (
     <Section
       meta={meta}
       lede={
         <>
-          <i>Letters</i> — Guardian's essay surface. Paper ground, Fraunces masthead, Fraunces body
-          for flowing prose, Geist for bylines and metadata. The mark travels to Paper inside its
-          iron chip — the wings never change colour.{" "}
+          The <i>Dispatch</i> — Guardian's essay surface. Paper ground, Fraunces masthead, Fraunces
+          body for flowing prose, Geist for bylines and metadata. The mark travels to Paper inside
+          its iron chip — the wings never change colour.{" "}
           <b style={{ color: "var(--color-bordeaux)" }}>Bordeaux</b> (#5C1F1E) marks pull-quotes,
           active links, and drop-cap ornaments — the one editorial-only accent, reserved for Paper
           surfaces. Flare does not appear on editorial; it is too loud for reading.
@@ -1167,7 +1167,7 @@ function SectionLetters() {
               color: "var(--color-ink)",
             }}
           >
-            Guardian · Letters
+            Guardian · Dispatch
           </span>
         </div>
         <div
@@ -1359,7 +1359,7 @@ function SectionProduct() {
             <span style={{ color: MUTED }}>Compute</span>
             <span style={{ color: MUTED }}>Integrations</span>
             <span style={{ color: MUTED }}>Founders</span>
-            <span style={{ color: MUTED }}>Letters</span>
+            <span style={{ color: MUTED }}>Dispatches</span>
           </nav>
           <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
             {/* Status pill is Argent/quiet, not Flare. Flare is reserved for the
@@ -1462,7 +1462,7 @@ function SectionProduct() {
             >
               Founder
             </div>
-            {["Letters", "Integrations", "Billing"].map((label) => (
+            {["Dispatches", "Integrations", "Billing"].map((label) => (
               <span
                 key={label}
                 style={{ display: "block", padding: "8px 10px", borderRadius: "6px", color: MUTED }}
@@ -2056,7 +2056,7 @@ function SectionEmailSignature() {
           <span>·</span>
           <span>guardianintelligence.org</span>
           <span>·</span>
-          <span>/letters</span>
+          <span>/dispatch</span>
         </div>
       </div>
     </Section>
@@ -2079,7 +2079,7 @@ export function DesignSections() {
       <SectionTypography />
       <SectionHeroIron />
       <SectionHeroFlare />
-      <SectionLetters />
+      <SectionDispatch />
       <SectionProduct />
       <SectionPhotography />
       <SectionOgCard />
