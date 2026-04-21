@@ -12,7 +12,7 @@ export type DesignSectionId =
   | "typography"
   | "hero-iron"
   | "hero-flare"
-  | "letters"
+  | "dispatch"
   | "product"
   | "photography"
   | "og-card"
@@ -93,11 +93,11 @@ export const DESIGN_SECTIONS: readonly DesignSection[] = [
     title: "World-facing surface.",
   },
   {
-    id: "letters",
+    id: "dispatch",
     number: "11",
     group: "Applied",
-    label: "Letters",
-    title: "Letters, on Paper.",
+    label: "Dispatch",
+    title: "The Dispatch, on Paper.",
   },
   {
     id: "product",
