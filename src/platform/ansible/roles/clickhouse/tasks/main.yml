@@ -16,8 +16,134 @@
     mode: "0755"
   loop:
     - /etc/clickhouse-server/config.d
+    - /etc/clickhouse-server/tls
     - "{{ clickhouse_data_path }}"
     - /var/log/clickhouse-server
+
+- name: Deploy ClickHouse server certificate extensions
+  ansible.builtin.copy:
+    dest: /etc/clickhouse-server/tls/server-cert.ext
+    owner: root
+    group: clickhouse
+    mode: "0640"
+    content: |
+      basicConstraints=CA:FALSE
+      keyUsage=digitalSignature,keyEncipherment
+      extendedKeyUsage=serverAuth
+      subjectAltName=IP:127.0.0.1,DNS:localhost
+
+- name: Generate ClickHouse local CA private key
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - genrsa
+      - -out
+      - /etc/clickhouse-server/tls/server-ca-key.pem
+      - "4096"
+    creates: /etc/clickhouse-server/tls/server-ca-key.pem
+
+- name: Generate ClickHouse local CA certificate
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - req
+      - -x509
+      - -new
+      - -nodes
+      - -key
+      - /etc/clickhouse-server/tls/server-ca-key.pem
+      - -sha256
+      - -days
+      - "3650"
+      - -out
+      - /etc/clickhouse-server/tls/server-ca.pem
+      - -subj
+      - /CN=Forge Metal ClickHouse local CA
+    creates: /etc/clickhouse-server/tls/server-ca.pem
+
+- name: Generate ClickHouse server private key and CSR
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - req
+      - -new
+      - -newkey
+      - rsa:2048
+      - -nodes
+      - -keyout
+      - /etc/clickhouse-server/tls/server-key.pem
+      - -out
+      - /etc/clickhouse-server/tls/server.csr
+      - -subj
+      - /CN=127.0.0.1
+    creates: /etc/clickhouse-server/tls/server-key.pem
+
+- name: Sign ClickHouse server certificate
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - x509
+      - -req
+      - -in
+      - /etc/clickhouse-server/tls/server.csr
+      - -CA
+      - /etc/clickhouse-server/tls/server-ca.pem
+      - -CAkey
+      - /etc/clickhouse-server/tls/server-ca-key.pem
+      - -CAcreateserial
+      - -out
+      - /etc/clickhouse-server/tls/server-cert.pem
+      - -days
+      - "3650"
+      - -sha256
+      - -extfile
+      - /etc/clickhouse-server/tls/server-cert.ext
+    creates: /etc/clickhouse-server/tls/server-cert.pem
+
+- name: Export SPIRE trust bundle for ClickHouse client certificate verification
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server bundle show
+      -socketPath {{ spire_server_socket_path }}
+      -format pem
+  register: clickhouse_spire_bundle
+  changed_when: false
+
+- name: Deploy ClickHouse client CA bundle
+  ansible.builtin.copy:
+    content: "{{ clickhouse_spire_bundle.stdout | trim }}\n"
+    dest: /etc/clickhouse-server/tls/client-ca.pem
+    owner: root
+    group: clickhouse
+    mode: "0640"
+  notify: restart clickhouse
+
+- name: Converge ClickHouse TLS material ownership
+  ansible.builtin.file:
+    path: "/etc/clickhouse-server/tls/{{ item.name }}"
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { name: server-ca.pem, owner: root, group: clickhouse, mode: "0640" }
+    - { name: server-ca-key.pem, owner: root, group: root, mode: "0600" }
+    - { name: server-cert.pem, owner: root, group: clickhouse, mode: "0640" }
+    - { name: server-key.pem, owner: root, group: clickhouse, mode: "0640" }
+    - { name: server.csr, owner: root, group: clickhouse, mode: "0640" }
+    - { name: server-cert.ext, owner: root, group: clickhouse, mode: "0640" }
+
+- name: Check ClickHouse local CA serial file
+  ansible.builtin.stat:
+    path: /etc/clickhouse-server/tls/server-ca.srl
+  register: clickhouse_server_ca_serial
+
+- name: Set ClickHouse local CA serial ownership
+  ansible.builtin.file:
+    path: /etc/clickhouse-server/tls/server-ca.srl
+    owner: root
+    group: root
+    mode: "0600"
+  when: clickhouse_server_ca_serial.stat.exists
 
 - name: Deploy ClickHouse systemd unit
   ansible.builtin.copy:

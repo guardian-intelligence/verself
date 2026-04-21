@@ -1,0 +1,20 @@
+[Unit]
+Description=Grafana ClickHouse SPIFFE helper
+After=network.target spire-agent.service
+Wants=spire-agent.service
+
+[Service]
+Type=simple
+User=grafana
+Group=grafana
+SupplementaryGroups={{ spire_workload_group }}
+ExecStart={{ fm_bin }}/spiffe-helper -config {{ grafana_clickhouse_helper_config_path }}
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths={{ grafana_clickhouse_spiffe_dir }} {{ grafana_provisioning_dir }}/datasources
+
+[Install]
+WantedBy=multi-user.target

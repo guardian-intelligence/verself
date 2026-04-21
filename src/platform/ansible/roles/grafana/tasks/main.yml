@@ -16,14 +16,73 @@
     name: grafana
     system: true
 
+- name: Ensure SPIRE workload socket group exists
+  ansible.builtin.group:
+    name: "{{ spire_workload_group }}"
+    system: true
+
 - name: Create Grafana system user
   ansible.builtin.user:
     name: grafana
     group: grafana
+    groups:
+      - "{{ spire_workload_group }}"
+    append: false
     system: true
     home: "{{ grafana_data_dir }}"
     shell: /usr/sbin/nologin
     create_home: false
+
+- name: Resolve Grafana uid for SPIRE registration
+  ansible.builtin.command:
+    cmd: id -u grafana
+  register: grafana_uid
+  changed_when: false
+
+- name: Read Grafana SPIRE registration
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry show
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-grafana
+      -output json
+  register: grafana_spire_entry
+  failed_when: false
+  changed_when: false
+
+- name: Register Grafana SPIFFE workload
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry create
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-grafana
+      -parentID {{ spire_agent_id }}
+      -spiffeID {{ spire_grafana_id }}
+      -selector unix:uid:{{ grafana_uid.stdout | trim }}
+      -x509SVIDTTL 3600
+  when: grafana_spire_entry.rc != 0 or 'forge-metal-grafana' not in grafana_spire_entry.stdout
+  changed_when: true
+  notify:
+    - restart grafana-clickhouse-spiffe-helper
+    - restart grafana
+
+- name: Update Grafana SPIRE workload selector drift
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry update
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-grafana
+      -parentID {{ spire_agent_id }}
+      -spiffeID {{ spire_grafana_id }}
+      -selector unix:uid:{{ grafana_uid.stdout | trim }}
+      -x509SVIDTTL 3600
+  when:
+    - grafana_spire_entry.rc == 0
+    - "'uid:' ~ (grafana_uid.stdout | trim) not in grafana_spire_entry.stdout"
+  changed_when: true
+  notify:
+    - restart grafana-clickhouse-spiffe-helper
+    - restart grafana
 
 - name: Create Grafana directories
   ansible.builtin.file:
@@ -42,7 +101,7 @@
       group: grafana
       mode: "0750"
     - path: "{{ grafana_provisioning_dir }}/datasources"
-      owner: root
+      owner: grafana
       group: grafana
       mode: "0750"
     - path: "{{ grafana_provisioning_dir }}/dashboards"
@@ -55,6 +114,8 @@
       mode: "0750"
     - path: "{{ grafana_data_dir }}"
       mode: "0750"
+    - path: "{{ grafana_clickhouse_spiffe_dir }}"
+      mode: "0700"
     - path: "{{ grafana_plugin_dir }}"
       mode: "0750"
     - path: "{{ grafana_log_dir }}"
@@ -77,13 +138,16 @@
       value: "{{ lookup('community.general.random_string', length=32, upper=true, lower=true, numbers=true, special=false) }}"
     - name: db-password
       value: "{{ lookup('community.general.random_string', length=32, upper=true, lower=true, numbers=true, special=false) }}"
-    - name: clickhouse-password
-      value: "{{ lookup('community.general.random_string', length=32, upper=true, lower=true, numbers=true, special=false) }}"
     - name: secret-key
       value: "{{ lookup('community.general.random_string', length=64, upper=true, lower=true, numbers=true, special=false) }}"
   loop_control:
     label: "{{ item.name }}"
   no_log: true
+
+- name: Remove stale Grafana ClickHouse password credential
+  ansible.builtin.file:
+    path: "{{ grafana_credstore_dir }}/clickhouse-password"
+    state: absent
 
 - name: Read Grafana generated secrets
   ansible.builtin.slurp:
@@ -91,7 +155,6 @@
   loop:
     - admin-password
     - db-password
-    - clickhouse-password
     - secret-key
   register: grafana_secret_files
   no_log: true
@@ -100,8 +163,6 @@
   ansible.builtin.set_fact:
     grafana_admin_password: "{{ (grafana_secret_files.results | selectattr('item', 'equalto', 'admin-password') | first).content | b64decode | trim }}"
     grafana_db_password: "{{ (grafana_secret_files.results | selectattr('item', 'equalto', 'db-password') | first).content | b64decode | trim }}"
-    grafana_clickhouse_password: >-
-      {{ (grafana_secret_files.results | selectattr('item', 'equalto', 'clickhouse-password') | first).content | b64decode | trim }}
     grafana_secret_key: "{{ (grafana_secret_files.results | selectattr('item', 'equalto', 'secret-key') | first).content | b64decode | trim }}"
   no_log: true
 
@@ -185,15 +246,28 @@
         new_owner: "{{ grafana_db_user }}"
       no_log: true
 
-- name: Ensure Grafana ClickHouse user exists with read-only grants
+- name: Copy ClickHouse server CA into Grafana credstore
+  ansible.builtin.copy:
+    src: /etc/clickhouse-server/tls/server-ca.pem
+    dest: "{{ grafana_clickhouse_server_ca_cred }}"
+    remote_src: true
+    owner: root
+    group: grafana
+    mode: "0640"
+  notify:
+    - restart grafana-clickhouse-spiffe-helper
+    - restart grafana
+
+- name: Ensure Grafana ClickHouse user exists with read-only certificate grants
   ansible.builtin.shell: |
     set -euo pipefail
     {{ fm_bin }}/clickhouse-client --user default --password "$CLICKHOUSE_PASSWORD" --multiquery <<'SQL'
-    CREATE USER IF NOT EXISTS {{ grafana_clickhouse_user }} IDENTIFIED WITH sha256_password BY '{{ grafana_clickhouse_password }}' HOST LOCAL;
-    ALTER USER {{ grafana_clickhouse_user }} IDENTIFIED WITH sha256_password BY '{{ grafana_clickhouse_password }}' HOST LOCAL;
+    CREATE USER IF NOT EXISTS {{ grafana_clickhouse_user }} IDENTIFIED WITH ssl_certificate SAN 'URI:{{ spire_grafana_id }}' HOST LOCAL;
+    ALTER USER {{ grafana_clickhouse_user }} IDENTIFIED WITH ssl_certificate SAN 'URI:{{ spire_grafana_id }}' HOST LOCAL;
     GRANT SELECT ON default.* TO {{ grafana_clickhouse_user }};
     GRANT SELECT ON forge_metal.* TO {{ grafana_clickhouse_user }};
     GRANT SELECT ON system.query_log TO {{ grafana_clickhouse_user }};
+    GRANT SELECT ON system.settings TO {{ grafana_clickhouse_user }};
     GRANT SELECT ON system.tables TO {{ grafana_clickhouse_user }};
     GRANT SELECT ON system.columns TO {{ grafana_clickhouse_user }};
     GRANT SELECT ON system.databases TO {{ grafana_clickhouse_user }};
@@ -286,14 +360,25 @@
   notify: restart grafana
   no_log: true
 
-- name: Deploy Grafana ClickHouse datasource provisioning
+- name: Deploy Grafana ClickHouse datasource refresh script
   ansible.builtin.template:
-    src: clickhouse-datasource.yml.j2
-    dest: "{{ grafana_provisioning_dir }}/datasources/clickhouse.yml"
+    src: grafana-clickhouse-refresh.sh.j2
+    dest: "{{ grafana_clickhouse_refresh_script_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  notify:
+    - restart grafana-clickhouse-spiffe-helper
+    - restart grafana
+
+- name: Deploy Grafana ClickHouse SPIFFE helper config
+  ansible.builtin.template:
+    src: grafana-clickhouse-spiffe-helper.conf.j2
+    dest: "{{ grafana_clickhouse_helper_config_path }}"
     owner: root
     group: grafana
     mode: "0640"
-  notify: restart grafana
+  notify: restart grafana-clickhouse-spiffe-helper
 
 - name: Deploy Grafana dashboard provider
   ansible.builtin.template:
@@ -346,8 +431,22 @@
     mode: "0644"
   notify: restart grafana
 
+- name: Deploy Grafana ClickHouse SPIFFE helper systemd unit
+  ansible.builtin.template:
+    src: grafana-clickhouse-spiffe-helper.service.j2
+    dest: /etc/systemd/system/grafana-clickhouse-spiffe-helper.service
+    mode: "0644"
+  notify: restart grafana-clickhouse-spiffe-helper
+
 - name: Apply Grafana unit and config changes before readiness
   ansible.builtin.meta: flush_handlers
+
+- name: Enable and start Grafana ClickHouse SPIFFE helper
+  ansible.builtin.systemd:
+    name: grafana-clickhouse-spiffe-helper
+    enabled: true
+    state: started
+    daemon_reload: true
 
 - name: Enable and start Grafana
   ansible.builtin.systemd:

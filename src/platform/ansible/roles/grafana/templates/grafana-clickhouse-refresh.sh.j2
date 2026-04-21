@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+datasource_path="{{ grafana_clickhouse_datasource_path }}"
+ca_path="{{ grafana_clickhouse_server_ca_cred }}"
+cert_path="{{ grafana_clickhouse_spiffe_dir }}/svid.pem"
+key_path="{{ grafana_clickhouse_spiffe_dir }}/svid_key.pem"
+admin_password_path="{{ grafana_credstore_dir }}/admin-password"
+grafana_local_url="http://{{ services.grafana.host }}:{{ services.grafana.port }}"
+tmp_path="$(mktemp "${datasource_path}.tmp.XXXXXX")"
+
+cleanup() {
+  rm -f "${tmp_path}"
+}
+trap cleanup EXIT
+
+for required_path in "${ca_path}" "${cert_path}" "${key_path}" "${admin_password_path}"; do
+  if [[ ! -s "${required_path}" ]]; then
+    echo "missing required Grafana ClickHouse credential: ${required_path}" >&2
+    exit 1
+  fi
+done
+
+{
+  cat <<'YAML'
+apiVersion: 1
+
+datasources:
+  - name: {{ grafana_datasource_name }}
+    uid: {{ grafana_datasource_uid }}
+    type: grafana-clickhouse-datasource
+    access: proxy
+    isDefault: true
+    editable: false
+    jsonData:
+      defaultDatabase: default
+      host: {{ services.clickhouse.host }}
+      port: {{ services.clickhouse.secure_native_port }}
+      protocol: native
+      secure: true
+      username: {{ grafana_clickhouse_user }}
+      tlsAuth: true
+      tlsAuthWithCACert: true
+      tlsSkipVerify: false
+      logs:
+        defaultDatabase: default
+        defaultTable: otel_logs
+        otelEnabled: true
+        otelVersion: latest
+        timeColumn: Timestamp
+        levelColumn: SeverityText
+        messageColumn: Body
+      traces:
+        defaultDatabase: default
+        defaultTable: otel_traces
+        otelEnabled: true
+        otelVersion: latest
+        durationUnit: nanoseconds
+        traceIdColumn: TraceId
+        spanIdColumn: SpanId
+        parentSpanIdColumn: ParentSpanId
+        operationNameColumn: SpanName
+        serviceNameColumn: ServiceName
+        startTimeColumn: Timestamp
+        durationColumn: Duration
+    secureJsonData:
+      tlsCACert: |
+YAML
+  sed 's/^/        /' "${ca_path}"
+  cat <<'YAML'
+      tlsClientCert: |
+YAML
+  sed 's/^/        /' "${cert_path}"
+  cat <<'YAML'
+      tlsClientKey: |
+YAML
+  sed 's/^/        /' "${key_path}"
+} >"${tmp_path}"
+
+chmod 0640 "${tmp_path}"
+if ! cmp -s "${tmp_path}" "${datasource_path}" 2>/dev/null; then
+  mv "${tmp_path}" "${datasource_path}"
+else
+  rm -f "${tmp_path}"
+fi
+
+if curl -fsS --max-time 2 "${grafana_local_url}/api/health" >/dev/null 2>&1; then
+  auth_b64="$(printf 'admin:%s' "$(tr -d '\n' <"${admin_password_path}")" | base64 -w0)"
+  curl --config - >/dev/null <<EOF
+url = "${grafana_local_url}/api/admin/provisioning/datasources/reload"
+request = "POST"
+header = "Authorization: Basic ${auth_b64}"
+header = "Content-Type: application/json"
+connect-timeout = 2
+max-time = 5
+silent
+show-error
+fail
+EOF
+fi

@@ -1,7 +1,9 @@
 <clickhouse>
     <listen_host>{{ services.clickhouse.host }}</listen_host>
     <http_port>{{ services.clickhouse.http_port }}</http_port>
+    <https_port>{{ services.clickhouse.secure_http_port }}</https_port>
     <tcp_port>{{ services.clickhouse.native_port }}</tcp_port>
+    <tcp_port_secure>{{ services.clickhouse.secure_native_port }}</tcp_port_secure>
 
     <path>{{ clickhouse_data_path }}/</path>
     <tmp_path>{{ clickhouse_data_path }}/tmp/</tmp_path>
@@ -16,6 +18,19 @@
         <size>100M</size>
         <count>3</count>
     </logger>
+
+    <openSSL>
+        <server>
+            <certificateFile>/etc/clickhouse-server/tls/server-cert.pem</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/tls/server-key.pem</privateKeyFile>
+            <!-- strict is required for certificate-authenticated users; relaxed only works for testing. -->
+            <verificationMode>strict</verificationMode>
+            <caConfig>/etc/clickhouse-server/tls/client-ca.pem</caConfig>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+        </server>
+    </openSSL>
 
     <!-- Default profiles and users (required when running standalone without /etc/clickhouse-server/users.xml) -->
     <profiles>

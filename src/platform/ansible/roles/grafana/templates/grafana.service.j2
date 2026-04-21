@@ -1,14 +1,18 @@
 [Unit]
 Description=Grafana
-After=forge-metal-firewall.target network.target postgresql.service clickhouse-server.service
+After=forge-metal-firewall.target network.target postgresql.service clickhouse-server.service spire-agent.service grafana-clickhouse-spiffe-helper.service
 Requires=forge-metal-firewall.target postgresql.service clickhouse-server.service
+Wants=spire-agent.service grafana-clickhouse-spiffe-helper.service
 
 [Service]
 Type=simple
 User=grafana
 Group=grafana
+SupplementaryGroups={{ spire_workload_group }}
 EnvironmentFile={{ grafana_credstore_dir }}/grafana.env
 WorkingDirectory={{ grafana_install_dir }}
+ExecStartPre={{ fm_bin }}/spiffe-helper -daemon-mode=false -config {{ grafana_clickhouse_helper_config_path }}
+ExecStartPre={{ grafana_clickhouse_refresh_script_path }}
 ExecStart={{ fm_bin }}/grafana server --homepath {{ grafana_install_dir }} --config {{ grafana_config_dir }}/grafana.ini
 Restart=on-failure
 RestartSec=5
@@ -16,4 +20,3 @@ LimitNOFILE=65536
 
 [Install]
 WantedBy=multi-user.target
-

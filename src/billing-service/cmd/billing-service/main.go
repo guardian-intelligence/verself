@@ -42,7 +42,8 @@ func run() error {
 
 	listenAddr := envOr("BILLING_LISTEN_ADDR", "127.0.0.1:4242")
 	internalListenAddr := envOr("BILLING_INTERNAL_LISTEN_ADDR", "127.0.0.1:4255")
-	chAddress := envOr("BILLING_CH_ADDRESS", "127.0.0.1:9000")
+	chAddress := envOr("BILLING_CH_ADDRESS", "127.0.0.1:9440")
+	chUser := envOr("BILLING_CH_USER", "billing_service")
 	tbAddress := envOr("BILLING_TB_ADDRESS", "127.0.0.1:3320")
 	tbClusterID := envUint64Or("BILLING_TB_CLUSTER_ID", 0)
 	authIssuerURL := requireEnv("BILLING_AUTH_ISSUER_URL")
@@ -102,12 +103,6 @@ func run() error {
 	if stripeKey != "" && webhookSecret == "" {
 		return fmt.Errorf("billing stripe provider secret missing required field webhook_secret")
 	}
-	chSecrets, err := openBaoClient.ReadKVV2(ctx, "providers/clickhouse/billing-service")
-	if err != nil {
-		return fmt.Errorf("billing clickhouse provider secret: %w", err)
-	}
-	chPassword := requireSecretField(chSecrets, "password", "billing clickhouse provider secret")
-
 	pgConfig, err := pgxpool.ParseConfig(pgDSN)
 	if err != nil {
 		return fmt.Errorf("parse postgres dsn: %w", err)
@@ -125,7 +120,18 @@ func run() error {
 		return fmt.Errorf("ping postgres: %w", err)
 	}
 
-	chConn, err := clickhouse.Open(&clickhouse.Options{Addr: []string{chAddress}, Auth: clickhouse.Auth{Database: "forge_metal", Username: "default", Password: chPassword}})
+	chTLSConfig, err := workloadauth.TLSConfigWithX509SourceAndCABundle(ctx, spiffeSource, credentialPath("clickhouse-ca-cert"))
+	if err != nil {
+		return fmt.Errorf("billing clickhouse tls: %w", err)
+	}
+	chConn, err := clickhouse.Open(&clickhouse.Options{
+		Addr: []string{chAddress},
+		Auth: clickhouse.Auth{
+			Database: "forge_metal",
+			Username: chUser,
+		},
+		TLS: chTLSConfig,
+	})
 	if err != nil {
 		return fmt.Errorf("open clickhouse: %w", err)
 	}
