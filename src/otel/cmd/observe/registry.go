@@ -45,6 +45,7 @@ var families = []family{
 	{Name: "deploy", Purpose: "Inspect Ansible deploy traces and deploy_run_key-correlated tasks."},
 	{Name: "mail", Purpose: "Inspect inbound and outbound mail events and current mail metrics."},
 	{Name: "workload-identity", Purpose: "Inspect SPIFFE mTLS, JWT-SVID, OpenBao relying-party auth, and SPIRE system logs."},
+	{Name: "temporal", Purpose: "Inspect Temporal auth decisions, proof workflow activity, proof/governance logs, and live Temporal metric inventory."},
 	{Name: "errors", Purpose: "Query normalized recent error signals when actively debugging."},
 }
 
@@ -580,6 +581,25 @@ var queryDocs = []queryDoc{
 			"make observe WHAT=service SERVICE=spire-server",
 		},
 	},
+	{
+		ID:      "temporal.activity",
+		Family:  "temporal",
+		Title:   "Temporal Activity",
+		Purpose: "Show recent Temporal auth spans, proof workflow spans, service logs, and metric catalog rows.",
+		Optional: []string{
+			"MINUTES=<lookback>",
+			"LIMIT=<rows>",
+			"FORMAT=table|json|markdown",
+		},
+		Examples: []string{
+			"make observe WHAT=temporal",
+		},
+		Next: []string{
+			"make observe WHAT=describe SERVICE=temporal-server",
+			"make observe WHAT=describe SPAN=temporal.auth.authorize",
+			"make observe WHAT=logs SERVICE=temporal-proof",
+		},
+	},
 }
 
 func handleStatic(cfg config) (bool, error) {
@@ -616,6 +636,7 @@ func printIndex(cfg config) error {
 			"make observe WHAT=service SERVICE=<service>",
 			"make observe WHAT=http STATUS_MIN=400",
 			"make observe WHAT=workload-identity",
+			"make observe WHAT=temporal",
 			"make observe WHAT=deploy RUN_KEY=<deploy-run-key>",
 		},
 	}
@@ -819,6 +840,8 @@ func canonicalDocID(id string) string {
 		return "mail.events"
 	case id == "workload_identity.spire_logs":
 		return "workload_identity.spans"
+	case strings.HasPrefix(id, "temporal."):
+		return "temporal.activity"
 	case id == "deploy.run":
 		return "deploy.tasks"
 	default:

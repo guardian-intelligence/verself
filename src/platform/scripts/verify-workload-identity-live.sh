@@ -25,6 +25,12 @@ if [[ "${WORKLOAD_IDENTITY_PROOF_EXERCISE_GRAFANA:-1}" != "0" ]]; then
     "${script_dir}/verify-grafana-live.sh"
 fi
 
+if [[ "${WORKLOAD_IDENTITY_PROOF_EXERCISE_TEMPORAL:-1}" != "0" ]]; then
+  VERIFICATION_RUN_ID="${run_id}-temporal" \
+  VERIFICATION_ARTIFACT_ROOT="${artifact_dir}/dependencies/temporal-proof" \
+    "${script_dir}/verify-temporal-live.sh"
+fi
+
 verification_ssh "sudo python3 - $(printf '%q' "${VERIFICATION_DOMAIN}")" >"${artifact_dir}/workload-identity-state.json" <<'PY'
 import json
 import os
@@ -48,6 +54,8 @@ expected_ids = [
     f"spiffe://{trust_domain}/svc/grafana",
     f"spiffe://{trust_domain}/svc/otelcol",
     f"spiffe://{trust_domain}/svc/clickhouse-operator",
+    f"spiffe://{trust_domain}/svc/temporal-server",
+    f"spiffe://{trust_domain}/svc/temporal-proof",
 ]
 systemd_units = [
     "spire-server",
@@ -63,6 +71,8 @@ systemd_units = [
     "mailbox-service",
     "grafana-clickhouse-spiffe-helper",
     "grafana",
+    "temporal-server",
+    "temporal-proof-worker",
     "stalwart",
 ]
 for unit in systemd_units:
@@ -149,6 +159,8 @@ for unit in [
     "mailbox-service",
     "grafana-clickhouse-spiffe-helper",
     "grafana",
+    "temporal-server",
+    "temporal-proof-worker",
     "stalwart",
 ]:
     subprocess.run(["systemctl", "restart", unit], check=True)
@@ -178,6 +190,8 @@ for system_user, db_user, database in [
     ("governance_service", "sandbox_rental", "sandbox_rental"),
     ("sandbox_rental", "sandbox_rental", "sandbox_rental"),
     ("mailbox_service", "mailbox_service", "mailbox_service"),
+    ("temporal_server", "temporal", "temporal"),
+    ("temporal_server", "temporal", "temporal_visibility"),
     ("stalwart", "stalwart", "stalwart"),
 ]:
     dsn = f"postgres://{db_user}@/{database}?host=/var/run/postgresql&sslmode=disable"
@@ -391,7 +405,7 @@ wait_for_clickhouse_count default "
   FROM otel_traces
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
     AND SpanName = 'auth.spiffe.mtls.client'
-    AND ServiceName IN ('identity-service', 'sandbox-rental-service', 'secrets-service')
+    AND ServiceName IN ('identity-service', 'sandbox-rental-service', 'secrets-service', 'temporal-proof', 'temporal-proof-worker')
     AND SpanAttributes['spiffe.expected_server_id'] != ''
 " 3 "${artifact_dir}/clickhouse/spiffe-mtls-client-spans-count.tsv"
 
@@ -400,7 +414,7 @@ wait_for_clickhouse_count default "
   FROM otel_traces
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
     AND SpanName = 'auth.spiffe.mtls.server'
-    AND ServiceName IN ('billing-service', 'governance-service', 'secrets-service')
+    AND ServiceName IN ('billing-service', 'governance-service', 'secrets-service', 'temporal-server')
     AND SpanAttributes['spiffe.peer_id'] != ''
 " 3 "${artifact_dir}/clickhouse/spiffe-mtls-server-spans-count.tsv"
 
@@ -504,7 +518,7 @@ wait_for_clickhouse_count forge_metal "
   FROM audit_events
   WHERE recorded_at BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
     AND actor_spiffe_id != ''
-    AND service_name IN ('identity-service', 'sandbox-rental-service', 'secrets-service')
+    AND service_name IN ('identity-service', 'sandbox-rental-service', 'secrets-service', 'temporal-proof')
 " 1 "${artifact_dir}/clickhouse/spiffe-audit-actor-count.tsv"
 
 python3 - "${run_id}" "${window_start}" "${window_end}" "${artifact_dir}" >"${artifact_dir}/run.json" <<'PY'
