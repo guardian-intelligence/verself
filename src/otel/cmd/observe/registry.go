@@ -35,6 +35,7 @@ type family struct {
 }
 
 var families = []family{
+	{Name: "overview", Purpose: "Show services emitting telemetry, recent deploy_run_keys, and 24h error counts in one view."},
 	{Name: "catalog", Purpose: "Discover telemetry vocabulary without turning the landing page into a recency dashboard."},
 	{Name: "describe", Purpose: "Explain one query, metric, service, span, or log field and show valid next commands."},
 	{Name: "metric", Purpose: "Query metric latest values or explicit rate windows."},
@@ -42,11 +43,63 @@ var families = []family{
 	{Name: "logs", Purpose: "Discover or query structured log attributes."},
 	{Name: "http", Purpose: "Query normalized HTTP access events."},
 	{Name: "deploy", Purpose: "Inspect Ansible deploy traces and deploy_run_key-correlated tasks."},
+	{Name: "mail", Purpose: "Inspect inbound and outbound mail events and current mail metrics."},
 	{Name: "workload-identity", Purpose: "Inspect SPIFFE mTLS, JWT-SVID, OpenBao relying-party auth, and SPIRE system logs."},
 	{Name: "errors", Purpose: "Query normalized recent error signals when actively debugging."},
 }
 
 var queryDocs = []queryDoc{
+	{
+		ID:      "overview.services",
+		Family:  "overview",
+		Title:   "Overview: Services",
+		Purpose: "Services that have emitted telemetry in the last 24h, ranked by total samples across metrics, traces, logs, and HTTP access.",
+		Optional: []string{
+			"LIMIT=<rows>",
+			"FORMAT=table|json|markdown",
+		},
+		Examples: []string{
+			"make observe WHAT=overview",
+		},
+		Next: []string{
+			"make observe WHAT=describe SERVICE=<service>",
+			"make observe WHAT=service SERVICE=<service>",
+		},
+	},
+	{
+		ID:      "overview.deploys",
+		Family:  "overview",
+		Title:   "Overview: Recent Deploys",
+		Purpose: "Deploy_run_keys observed in the last 7 days with their role count, task count, error count, and elapsed time.",
+		Optional: []string{
+			"LIMIT=<rows>",
+			"FORMAT=table|json|markdown",
+		},
+		Examples: []string{
+			"make observe WHAT=overview",
+		},
+		Next: []string{
+			"make observe WHAT=deploy RUN_KEY=<deploy-run-key>",
+			"make observe WHAT=catalog SIGNAL=deploys",
+		},
+	},
+	{
+		ID:      "overview.errors",
+		Family:  "overview",
+		Title:   "Overview: 24h Error Counts",
+		Purpose: "Top services by error count across trace, log, and HTTP access signals in the last 24h.",
+		Optional: []string{
+			"LIMIT=<rows>",
+			"FORMAT=table|json|markdown",
+		},
+		Examples: []string{
+			"make observe WHAT=overview",
+		},
+		Next: []string{
+			"make observe WHAT=errors SERVICE=<service>",
+			"make observe WHAT=service SERVICE=<service> ERRORS=1",
+		},
+	},
 	{
 		ID:      "catalog.index",
 		Family:  "catalog",
@@ -536,10 +589,10 @@ func printIndex(cfg config) error {
 		Purpose:  "Discover the telemetry vocabulary before running operational queries.",
 		Families: sortedFamilies(),
 		StartHere: []string{
+			"make observe WHAT=overview",
 			"make observe WHAT=queries",
 			"make observe WHAT=catalog SIGNAL=metrics",
-			"make observe WHAT=catalog SIGNAL=traces",
-			"make observe WHAT=describe QUERY=metric.latest",
+			"make observe WHAT=describe SERVICE=<service>",
 		},
 		Operational: []string{
 			"make observe WHAT=errors",
