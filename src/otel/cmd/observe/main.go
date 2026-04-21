@@ -342,36 +342,50 @@ func runQuery(ctx context.Context, logger *slog.Logger, cfg config, runID string
 			return nil, err
 		}
 		span.SetStatus(codes.Ok, "")
-		span.SetAttributes(attribute.Int("observe.rows", len(result.Rows)))
+		rows := len(result.Rows)
+		span.SetAttributes(
+			attribute.Bool("observe.has_rows", rows > 0),
+			attribute.Int("observe.rows", rows),
+		)
 		logger.InfoContext(ctx, "observe query completed",
 			"query_id", q.id,
 			"surface", cfg.what,
 			"database", q.database,
-			"rows", len(result.Rows),
+			"rows", rows,
 		)
 		return &result, nil
 	}
 
-	rowCount := countRows(output, cfg.format)
-	if rowCount == 0 {
+	hasRows, exactCount, exactKnown := evaluateRows(output, cfg.format)
+	if !hasRows {
 		printEmptyHint(cfg, q)
 	} else {
 		_, _ = os.Stdout.Write(output)
 	}
 	printNext(q.next, cfg.format)
 
-	span.SetAttributes(attribute.Int("observe.rows", rowCount))
-	span.SetStatus(codes.Ok, "")
-	logger.InfoContext(ctx, "observe query completed",
+	span.SetAttributes(attribute.Bool("observe.has_rows", hasRows))
+	logAttrs := []any{
 		"query_id", q.id,
 		"surface", cfg.what,
 		"database", q.database,
-		"rows", rowCount,
-	)
+		"has_rows", hasRows,
+	}
+	if exactKnown {
+		span.SetAttributes(attribute.Int("observe.rows", exactCount))
+		logAttrs = append(logAttrs, "rows", exactCount)
+	}
+	span.SetStatus(codes.Ok, "")
+	logger.InfoContext(ctx, "observe query completed", logAttrs...)
 	return nil, nil
 }
 
-func countRows(output []byte, format outputFormat) int {
+// evaluateRows reports whether the rendered output contains any data rows,
+// and — when it can — the exact count. PrettyCompact (the default table
+// format) draws a Unicode frame we don't parse, so for that format the exact
+// count is not known; the caller uses hasRows for branching and omits the
+// observe.rows span attribute rather than reporting a misleading sentinel.
+func evaluateRows(output []byte, format outputFormat) (hasRows bool, exactCount int, exactKnown bool) {
 	switch format {
 	case formatMarkdown:
 		lines := 0
@@ -380,20 +394,16 @@ func countRows(output []byte, format outputFormat) int {
 				lines++
 			}
 		}
-		// Markdown emits a header row and a separator even when the result set
-		// is empty; anything beyond those two lines is actual data.
+		// Markdown always emits a header row and a separator; data starts at line 3.
 		if lines <= 2 {
-			return 0
+			return false, 0, true
 		}
-		return lines - 2
+		return true, lines - 2, true
 	default:
-		// PrettyCompact prints nothing at all when a query returns zero rows.
 		if len(bytes.TrimSpace(output)) == 0 {
-			return 0
+			return false, 0, true
 		}
-		// The visible row count isn't easily extracted from the rendered table,
-		// so we return a sentinel "non-zero" value; callers only branch on zero.
-		return 1
+		return true, 0, false
 	}
 }
 
