@@ -110,12 +110,30 @@ var queryDocs = []queryDoc{
 		},
 		Examples: []string{
 			"make observe",
+		},
+		Next: []string{
+			"make observe WHAT=overview",
+			"make observe WHAT=queries",
+			"make observe WHAT=catalog",
+		},
+	},
+	{
+		ID:      "catalog.inventory",
+		Family:  "catalog",
+		Title:   "Catalog Inventory",
+		Purpose: "One row per signal with service count, vocabulary size, and 7-day row count. Entry point before drilling into a specific signal.",
+		Optional: []string{
+			"FORMAT=table|json|markdown",
+		},
+		Examples: []string{
 			"make observe WHAT=catalog",
 		},
 		Next: []string{
-			"make observe WHAT=queries",
 			"make observe WHAT=catalog SIGNAL=metrics",
 			"make observe WHAT=catalog SIGNAL=traces",
+			"make observe WHAT=catalog SIGNAL=logs",
+			"make observe WHAT=catalog SIGNAL=http",
+			"make observe WHAT=catalog SIGNAL=deploys",
 		},
 	},
 	{
@@ -566,10 +584,6 @@ func handleStatic(cfg config) (bool, error) {
 	switch cfg.what {
 	case "", "help":
 		return true, printIndex(cfg)
-	case "catalog":
-		if cfg.signal == "" {
-			return true, printIndex(cfg)
-		}
 	case "queries":
 		return true, printQueries(cfg)
 	case "describe":
