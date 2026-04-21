@@ -519,7 +519,7 @@ SELECT
   toString(LogAttributes) AS attributes
 FROM default.otel_logs
 WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
-  AND ServiceName IN ('spire-server', 'spire-agent', 'spire-oidc-discovery-provider')
+  AND ServiceName IN ('spire-server', 'spire-agent')
 ORDER BY Timestamp DESC
 LIMIT {row_limit:UInt32}`
 

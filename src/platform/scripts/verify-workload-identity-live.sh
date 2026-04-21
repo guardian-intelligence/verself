@@ -52,7 +52,6 @@ expected_ids = [
 systemd_units = [
     "spire-server",
     "spire-agent",
-    "spire-oidc-discovery-provider",
     "clickhouse-operator-spiffe-helper",
     "otelcol-clickhouse-spiffe-helper",
     "otelcol",
@@ -269,16 +268,42 @@ for line in ss_out.splitlines():
 if stalwart_tcp_pg:
     raise SystemExit("stalwart holds TCP connections to PostgreSQL: " + "; ".join(stalwart_tcp_pg))
 
-oidc_issuer = "https://127.0.0.1:8082"
-oidc_context = ssl.create_default_context(cafile="/etc/spire/oidc/ca.pem")
-oidc_request = urllib.request.Request(oidc_issuer + "/.well-known/openid-configuration")
-oidc = json.loads(urllib.request.urlopen(oidc_request, context=oidc_context, timeout=5).read().decode())
-if oidc.get("issuer") != oidc_issuer:
-    raise SystemExit(f"unexpected SPIRE OIDC issuer: {oidc.get('issuer')}")
-jwks_request = urllib.request.Request(oidc_issuer + "/keys")
-jwks = json.loads(urllib.request.urlopen(jwks_request, context=oidc_context, timeout=5).read().decode())
-if not jwks.get("keys"):
-    raise SystemExit("SPIRE OIDC JWKS endpoint returned no keys")
+bundle_endpoint_url = "https://127.0.0.1:8082"
+bundle_context = ssl.create_default_context(cafile="/etc/spire/bundle-endpoint/ca.pem")
+# SPIRE's built-in bundle endpoint serves the JWKS-compatible SPIFFE bundle at
+# `/`; there is no discovery document or secondary `/keys` path in this topology.
+bundle_request = urllib.request.Request(bundle_endpoint_url)
+bundle = json.loads(
+    urllib.request.urlopen(bundle_request, context=bundle_context, timeout=5).read().decode()
+)
+if not bundle.get("keys"):
+    raise SystemExit("SPIRE bundle endpoint returned no keys")
+
+openbao_root_token = open("/etc/credstore/openbao/root-token", "r", encoding="utf-8").read().strip()
+openbao_context = ssl._create_unverified_context()
+openbao_config_request = urllib.request.Request(
+    "https://127.0.0.1:8200/v1/auth/spiffe-jwt/config",
+    headers={"X-Vault-Token": openbao_root_token},
+)
+openbao_config = json.loads(
+    urllib.request.urlopen(openbao_config_request, context=openbao_context, timeout=5).read().decode()
+)
+openbao_auth_config = openbao_config.get("data") or {}
+if openbao_auth_config.get("jwks_url") != bundle_endpoint_url:
+    raise SystemExit(
+        f"unexpected OpenBao JWKS URL: {openbao_auth_config.get('jwks_url')}"
+    )
+if openbao_auth_config.get("bound_issuer") != bundle_endpoint_url:
+    raise SystemExit(
+        f"unexpected OpenBao bound_issuer: {openbao_auth_config.get('bound_issuer')}"
+    )
+if openbao_auth_config.get("oidc_discovery_url"):
+    raise SystemExit(
+        "OpenBao SPIFFE auth still advertises oidc_discovery_url="
+        + openbao_auth_config.get("oidc_discovery_url", "")
+    )
+if not openbao_auth_config.get("jwks_ca_pem"):
+    raise SystemExit("OpenBao SPIFFE auth jwks_ca_pem is empty")
 
 payload = {
     "domain": domain,
@@ -295,10 +320,17 @@ payload = {
     "stalwart_postgres_store": stalwart_pg_block,
     "stalwart_rolpassword_empty": stalwart_rolpassword == "",
     "stalwart_tcp_pg_connections": stalwart_tcp_pg,
-    "oidc": {
-        "issuer": oidc.get("issuer", ""),
-        "jwks_uri": oidc.get("jwks_uri", ""),
-        "key_count": len(jwks.get("keys") or []),
+    "bundle_endpoint": {
+        "url": bundle_endpoint_url,
+        "issuer": bundle_endpoint_url,
+        "key_count": len(bundle.get("keys") or []),
+        "refresh_hint": bundle.get("spiffe_refresh_hint", 0),
+        "sequence": bundle.get("spiffe_sequence", 0),
+    },
+    "openbao_spiffe_auth": {
+        "jwks_url": openbao_auth_config.get("jwks_url", ""),
+        "bound_issuer": openbao_auth_config.get("bound_issuer", ""),
+        "has_jwks_ca_pem": bool(openbao_auth_config.get("jwks_ca_pem")),
     },
 }
 print(json.dumps(payload, indent=2, sort_keys=True))
