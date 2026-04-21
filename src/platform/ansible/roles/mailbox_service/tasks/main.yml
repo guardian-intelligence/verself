@@ -205,9 +205,9 @@
     content: |
       [Unit]
       Description=Mailbox Service
-      After=forge-metal-firewall.target network.target postgresql.service stalwart.service zitadel.service spire-agent.service
+      After=forge-metal-firewall.target network.target postgresql.service stalwart.service zitadel.service spire-agent.service openbao.service
       Requires=forge-metal-firewall.target
-      Wants=postgresql.service stalwart.service zitadel.service spire-agent.service
+      Wants=postgresql.service stalwart.service zitadel.service spire-agent.service openbao.service
 
       [Service]
       Type=simple
@@ -217,14 +217,20 @@
       LoadCredential=stalwart-ceo-password:/etc/credstore/mailbox-service/stalwart-ceo-password
       LoadCredential=stalwart-agents-password:/etc/credstore/mailbox-service/stalwart-agents-password
       LoadCredential=forward-to:/etc/credstore/mailbox-service/forward-to
-      LoadCredential=resend-api-key:/etc/credstore/mailbox-service/resend-api-key
       LoadCredential=stalwart-admin-password:/etc/credstore/mailbox-service/stalwart-admin-password
+      LoadCredential=openbao-ca-cert:/etc/openbao/tls/cert.pem
       Environment=MAILBOX_SERVICE_LISTEN_ADDR={{ services.mailbox_service.host }}:{{ services.mailbox_service.port }}
       Environment=MAILBOX_SERVICE_PG_DSN=postgres://mailbox_service@/mailbox_service?host=/var/run/postgresql&sslmode=disable
       Environment=MAILBOX_SERVICE_STALWART_BASE_URL=http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}
       Environment=MAILBOX_SERVICE_STALWART_PUBLIC_BASE_URL=https://{{ stalwart_domain }}
       Environment=MAILBOX_SERVICE_STALWART_MAILBOX=ceo
       Environment=MAILBOX_SERVICE_STALWART_LOCAL_DOMAIN={{ forge_metal_domain }}
+      Environment=MAILBOX_SERVICE_SPIFFE_ID={{ spire_mailbox_service_id }}
+      Environment=MAILBOX_SERVICE_OPENBAO_ADDR=https://{{ services.openbao.host }}:{{ services.openbao.port }}
+      Environment=MAILBOX_SERVICE_OPENBAO_PLATFORM_MOUNT={{ openbao_platform_kv_mount }}
+      Environment=MAILBOX_SERVICE_OPENBAO_SPIFFE_JWT_MOUNT={{ openbao_spiffe_jwt_mount }}
+      Environment=MAILBOX_SERVICE_OPENBAO_WORKLOAD_AUDIENCE={{ openbao_workload_audience }}
+      Environment=MAILBOX_SERVICE_OPENBAO_ROLE=platform-mailbox-service
       Environment=MAILBOX_SERVICE_SYNC_DISCOVERY_INTERVAL=2m
       Environment=MAILBOX_SERVICE_SYNC_RECONCILE_INTERVAL=10m
       Environment=MAILBOX_SERVICE_AUTH_ISSUER_URL={{ mailbox_service_auth_issuer_url }}
@@ -234,6 +240,7 @@
       Environment=MAILBOX_SERVICE_FORWARDER_FROM_NAME={{ resend_sender_name }}
       Environment=MAILBOX_SERVICE_FORWARDER_POLL_INTERVAL=5s
       Environment=MAILBOX_SERVICE_FORWARDER_STATE_PATH=/var/lib/mailbox-service/forwarder-state.json
+      Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}
       Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}
       ExecStart={{ fm_bin }}/mailbox-service
       Restart=always

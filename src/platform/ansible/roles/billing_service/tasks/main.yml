@@ -197,25 +197,29 @@
     content: |
       [Unit]
       Description=Billing Service
-      After=forge-metal-firewall.target network.target postgresql.service spire-agent.service
+      After=forge-metal-firewall.target network.target postgresql.service spire-agent.service openbao.service
       Requires=forge-metal-firewall.target
-      Wants=postgresql.service spire-agent.service
+      Wants=postgresql.service spire-agent.service openbao.service
 
       [Service]
       Type=simple
       User=billing
       Group=billing
       SupplementaryGroups={{ spire_workload_group }}
-      LoadCredential=stripe-secret-key:/etc/credstore/billing/stripe-secret-key
-      LoadCredential=stripe-webhook-secret:/etc/credstore/billing/stripe-webhook-secret
-      LoadCredential=ch-password:/etc/credstore/billing/ch-password
+      LoadCredential=openbao-ca-cert:/etc/openbao/tls/cert.pem
       Environment=BILLING_CH_ADDRESS={{ services.clickhouse.host }}:{{ services.clickhouse.native_port }}
       Environment=BILLING_TB_ADDRESS={{ services.tigerbeetle.host }}:{{ services.tigerbeetle.port }}
       Environment=BILLING_TB_CLUSTER_ID={{ billing_service_tigerbeetle_cluster_id }}
       Environment=BILLING_PG_DSN=postgres://billing@/{{ billing_service_pg_database }}?host=/var/run/postgresql&sslmode=disable
       Environment=BILLING_LISTEN_ADDR={{ services.billing.host }}:{{ services.billing.port }}
       Environment=BILLING_INTERNAL_LISTEN_ADDR={{ services.billing.host }}:{{ services.billing.internal_port }}
+      Environment=BILLING_SPIFFE_ID={{ spire_billing_service_id }}
       Environment=BILLING_INTERNAL_CLIENT_SPIFFE_IDS={{ spire_sandbox_rental_id }},{{ spire_secrets_service_id }}
+      Environment=BILLING_OPENBAO_ADDR=https://{{ services.openbao.host }}:{{ services.openbao.port }}
+      Environment=BILLING_OPENBAO_PLATFORM_MOUNT={{ openbao_platform_kv_mount }}
+      Environment=BILLING_OPENBAO_SPIFFE_JWT_MOUNT={{ openbao_spiffe_jwt_mount }}
+      Environment=BILLING_OPENBAO_WORKLOAD_AUDIENCE={{ openbao_workload_audience }}
+      Environment=BILLING_OPENBAO_ROLE=platform-billing-service
       Environment=BILLING_AUTH_ISSUER_URL={{ billing_service_auth_issuer_url }}
       Environment=BILLING_AUTH_JWKS_URL={{ billing_service_auth_jwks_url }}
       Environment=BILLING_AUTH_AUDIENCE={{ billing_service_auth_audience }}

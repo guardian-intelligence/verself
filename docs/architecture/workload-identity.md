@@ -209,6 +209,9 @@ SPIFFE-authenticated services. OpenBao paths:
 platform/providers/stripe/billing-service
 platform/providers/resend/mailbox-service
 platform/providers/github/sandbox-rental-service
+platform/providers/clickhouse/billing-service
+platform/providers/clickhouse/governance-service
+platform/providers/clickhouse/sandbox-rental-service
 ```
 
 **Persistent bootstrap material.** The following remain outside SPIFFE and

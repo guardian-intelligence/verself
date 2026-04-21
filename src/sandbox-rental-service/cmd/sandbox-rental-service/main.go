@@ -62,13 +62,9 @@ func run() error {
 	defer otelShutdown(context.Background())
 	slog.SetDefault(logger)
 
-	// Secret material still arrives through systemd LoadCredential=; PostgreSQL
-	// runtime auth is local peer over the Unix socket.
+	// PostgreSQL runtime auth is local peer over the Unix socket. Runtime
+	// provider credentials are fetched from OpenBao with a SPIRE JWT-SVID.
 	pgDSN := requireEnv("SANDBOX_PG_DSN")
-	chPassword := credentialOr("ch-password", "")
-	githubAppPrivateKey := credentialOr("github-app-private-key", "")
-	githubAppWebhookSecret := credentialOr("github-app-webhook-secret", "")
-	githubAppClientSecret := credentialOr("github-app-client-secret", "")
 
 	// Non-secret config via Environment=.
 	listenAddr := envOr("SANDBOX_LISTEN_ADDR", "127.0.0.1:4243")
@@ -83,6 +79,10 @@ func run() error {
 	publicBaseURL := requireEnv("SANDBOX_PUBLIC_BASE_URL")
 	if err := validatePublicBaseURL(publicBaseURL); err != nil {
 		return fmt.Errorf("SANDBOX_PUBLIC_BASE_URL: %w", err)
+	}
+	sandboxSPIFFEID, err := workloadauth.ParseID(requireEnv("SANDBOX_SPIFFE_ID"))
+	if err != nil {
+		return err
 	}
 	authIssuerURL := requireEnv("SANDBOX_AUTH_ISSUER_URL")
 	authAudience := requireEnv("SANDBOX_AUTH_AUDIENCE")
@@ -108,10 +108,54 @@ func run() error {
 	githubWebBaseURL := envOr("SANDBOX_GITHUB_WEB_BASE_URL", "https://github.com")
 	githubRunnerGroupID := envInt64("SANDBOX_GITHUB_RUNNER_GROUP_ID", 1)
 	checkoutCacheDir := envOr("SANDBOX_GITHUB_CHECKOUT_CACHE_DIR", "/var/lib/forge-metal/sandbox-rental/github-checkout")
-	if !githubAppEnabled && githubAppID == 0 && githubAppSlug == "" && githubAppClientID == "" {
-		githubAppPrivateKey = ""
-		githubAppWebhookSecret = ""
-		githubAppClientSecret = ""
+
+	spiffeSource, err := workloadauth.Source(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
+	if err != nil {
+		return fmt.Errorf("spiffe workload source: %w", err)
+	}
+	defer func() {
+		if err := spiffeSource.Close(); err != nil {
+			logger.ErrorContext(context.Background(), "sandbox-rental: spiffe source close", "error", err)
+		}
+	}()
+	workloadJWTSource, err := workloadauth.JWTSource(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
+	if err != nil {
+		return fmt.Errorf("sandbox-rental spiffe jwt source: %w", err)
+	}
+	defer func() {
+		if err := workloadJWTSource.Close(); err != nil {
+			logger.ErrorContext(context.Background(), "sandbox-rental: spiffe jwt source close", "error", err)
+		}
+	}()
+	openBaoClient, err := workloadauth.NewOpenBaoClient(workloadJWTSource, workloadauth.OpenBaoClientConfig{
+		Address:  requireEnv("SANDBOX_OPENBAO_ADDR"),
+		CACert:   credentialPath("openbao-ca-cert"),
+		AuthPath: envOr("SANDBOX_OPENBAO_SPIFFE_JWT_MOUNT", "spiffe-jwt"),
+		Role:     envOr("SANDBOX_OPENBAO_ROLE", "platform-sandbox-rental-service"),
+		Audience: envOr("SANDBOX_OPENBAO_WORKLOAD_AUDIENCE", "openbao"),
+		Subject:  sandboxSPIFFEID,
+		Mount:    envOr("SANDBOX_OPENBAO_PLATFORM_MOUNT", "platform"),
+	})
+	if err != nil {
+		return fmt.Errorf("sandbox-rental openbao client: %w", err)
+	}
+	chSecrets, err := openBaoClient.ReadKVV2(ctx, "providers/clickhouse/sandbox-rental-service")
+	if err != nil {
+		return fmt.Errorf("sandbox-rental clickhouse provider secret: %w", err)
+	}
+	chPassword := requireSecretField(chSecrets, "password", "sandbox-rental clickhouse provider secret")
+
+	var githubAppPrivateKey string
+	var githubAppWebhookSecret string
+	var githubAppClientSecret string
+	if githubAppEnabled || githubAppID > 0 || githubAppSlug != "" || githubAppClientID != "" {
+		githubSecrets, err := openBaoClient.ReadKVV2(ctx, "providers/github/sandbox-rental-service")
+		if err != nil {
+			return fmt.Errorf("sandbox-rental github provider secret: %w", err)
+		}
+		githubAppPrivateKey = requireSecretField(githubSecrets, "private_key", "sandbox-rental github provider secret")
+		githubAppWebhookSecret = requireSecretField(githubSecrets, "webhook_secret", "sandbox-rental github provider secret")
+		githubAppClientSecret = requireSecretField(githubSecrets, "client_secret", "sandbox-rental github provider secret")
 	}
 
 	// --- open connections ---
@@ -194,15 +238,6 @@ func run() error {
 
 	// --- billing client ---
 
-	spiffeSource, err := workloadauth.Source(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
-	if err != nil {
-		return fmt.Errorf("spiffe workload source: %w", err)
-	}
-	defer func() {
-		if err := spiffeSource.Close(); err != nil {
-			logger.ErrorContext(context.Background(), "sandbox-rental: spiffe source close", "error", err)
-		}
-	}()
 	billingHTTPClient, err := workloadauth.MTLSClient(spiffeSource, billingSPIFFEID, http.DefaultTransport)
 	if err != nil {
 		return fmt.Errorf("billing spiffe client: %w", err)
@@ -368,37 +403,22 @@ func run() error {
 
 // --- credential helpers (systemd LoadCredential=) ---
 
-func loadCredential(name string) (string, error) {
+func credentialPath(name string) string {
 	dir := os.Getenv("CREDENTIALS_DIRECTORY")
 	if dir == "" {
-		return "", fmt.Errorf("CREDENTIALS_DIRECTORY not set")
-	}
-	data, err := os.ReadFile(filepath.Join(dir, name))
-	if err != nil {
-		return "", fmt.Errorf("load credential %s: %w", name, err)
-	}
-	return strings.TrimSpace(string(data)), nil
-}
-
-func requireCredential(name string) string {
-	v, err := loadCredential(name)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "required credential %s: %v\n", name, err)
+		fmt.Fprintf(os.Stderr, "CREDENTIALS_DIRECTORY not set for credential %s\n", name)
 		os.Exit(1)
 	}
-	if v == "" {
-		fmt.Fprintf(os.Stderr, "required credential %s is empty\n", name)
-		os.Exit(1)
-	}
-	return v
+	return filepath.Join(dir, name)
 }
 
-func credentialOr(name, fallback string) string {
-	v, err := loadCredential(name)
-	if err != nil || v == "" {
-		return fallback
+func requireSecretField(values map[string]string, field string, label string) string {
+	value := strings.TrimSpace(values[field])
+	if value == "" {
+		fmt.Fprintf(os.Stderr, "%s missing required field %s\n", label, field)
+		os.Exit(1)
 	}
-	return v
+	return value
 }
 
 // --- env helpers ---

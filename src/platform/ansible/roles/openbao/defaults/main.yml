@@ -15,6 +15,10 @@ openbao_oidc_loopback_hosts:
 openbao_spiffe_jwt_mount: spiffe-jwt
 openbao_spiffe_jwt_discovery_url: "{{ spire_oidc_issuer_url }}"
 openbao_spiffe_jwt_discovery_ca_pem_path: /etc/spire/oidc/ca.pem
+openbao_platform_kv_mount: platform
+openbao_workload_audience: openbao
+openbao_workload_token_ttl: 15m
+openbao_workload_token_max_ttl: 1h
 openbao_audit_request_headers:
   - name: X-Forge-Metal-Request-Id
     hmac: false

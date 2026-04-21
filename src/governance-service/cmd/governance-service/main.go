@@ -47,7 +47,6 @@ func run() error {
 	identityPGDSN := requireEnv("GOVERNANCE_IDENTITY_PG_DSN")
 	billingPGDSN := requireEnv("GOVERNANCE_BILLING_PG_DSN")
 	sandboxPGDSN := requireEnv("GOVERNANCE_SANDBOX_PG_DSN")
-	chPassword := credentialOr("ch-password", "")
 	auditHMACKey := []byte(requireCredential("audit-hmac-key"))
 
 	listenAddr := envOr("GOVERNANCE_LISTEN_ADDR", "127.0.0.1:4250")
@@ -59,6 +58,46 @@ func run() error {
 	exportDir := envOr("GOVERNANCE_EXPORT_DIR", "/var/lib/governance-service/exports")
 	publicBaseURL := envOr("GOVERNANCE_PUBLIC_BASE_URL", "")
 	writerInstanceID := envOr("GOVERNANCE_WRITER_INSTANCE_ID", hostname())
+
+	governanceSPIFFEID, err := workloadauth.ParseID(requireEnv("GOVERNANCE_SPIFFE_ID"))
+	if err != nil {
+		return err
+	}
+	spiffeSource, err := workloadauth.Source(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
+	if err != nil {
+		return fmt.Errorf("governance spiffe workload source: %w", err)
+	}
+	defer func() {
+		if err := spiffeSource.Close(); err != nil {
+			logger.ErrorContext(context.Background(), "governance-service spiffe source close", "error", err)
+		}
+	}()
+	workloadJWTSource, err := workloadauth.JWTSource(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
+	if err != nil {
+		return fmt.Errorf("governance spiffe jwt source: %w", err)
+	}
+	defer func() {
+		if err := workloadJWTSource.Close(); err != nil {
+			logger.ErrorContext(context.Background(), "governance-service spiffe jwt source close", "error", err)
+		}
+	}()
+	openBaoClient, err := workloadauth.NewOpenBaoClient(workloadJWTSource, workloadauth.OpenBaoClientConfig{
+		Address:  requireEnv("GOVERNANCE_OPENBAO_ADDR"),
+		CACert:   credentialPath("openbao-ca-cert"),
+		AuthPath: envOr("GOVERNANCE_OPENBAO_SPIFFE_JWT_MOUNT", "spiffe-jwt"),
+		Role:     envOr("GOVERNANCE_OPENBAO_ROLE", "platform-governance-service"),
+		Audience: envOr("GOVERNANCE_OPENBAO_WORKLOAD_AUDIENCE", "openbao"),
+		Subject:  governanceSPIFFEID,
+		Mount:    envOr("GOVERNANCE_OPENBAO_PLATFORM_MOUNT", "platform"),
+	})
+	if err != nil {
+		return fmt.Errorf("governance openbao client: %w", err)
+	}
+	chSecrets, err := openBaoClient.ReadKVV2(ctx, "providers/clickhouse/governance-service")
+	if err != nil {
+		return fmt.Errorf("governance clickhouse provider secret: %w", err)
+	}
+	chPassword := requireSecretField(chSecrets, "password", "governance clickhouse provider secret")
 
 	pg, err := openPool(ctx, pgDSN, envInt("GOVERNANCE_PG_MAX_CONNS", 8))
 	if err != nil {
@@ -115,15 +154,6 @@ func run() error {
 	}
 	go runAuditProjector(ctx, logger, svc)
 
-	spiffeSource, err := workloadauth.Source(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
-	if err != nil {
-		return fmt.Errorf("governance spiffe workload source: %w", err)
-	}
-	defer func() {
-		if err := spiffeSource.Close(); err != nil {
-			logger.ErrorContext(context.Background(), "governance-service spiffe source close", "error", err)
-		}
-	}()
 	auditClientIDs, err := parseSPIFFEIDsFromEnv("GOVERNANCE_INTERNAL_CLIENT_SPIFFE_IDS")
 	if err != nil {
 		return err
@@ -338,6 +368,22 @@ func envInt(name string, fallback int) int {
 		panic("invalid integer env " + name + ": " + err.Error())
 	}
 	return parsed
+}
+
+func credentialPath(name string) string {
+	base := os.Getenv("CREDENTIALS_DIRECTORY")
+	if base == "" {
+		panic("CREDENTIALS_DIRECTORY not set for credential " + name)
+	}
+	return filepath.Join(base, name)
+}
+
+func requireSecretField(values map[string]string, field string, label string) string {
+	value := strings.TrimSpace(values[field])
+	if value == "" {
+		panic(label + " missing required field " + field)
+	}
+	return value
 }
 
 func requireCredential(name string) string {

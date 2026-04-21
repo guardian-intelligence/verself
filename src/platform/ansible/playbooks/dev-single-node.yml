@@ -99,14 +99,14 @@
       tags: [postgresql, openbao, openbao_tenancy]
     - role: zitadel
       tags: [zitadel, openbao, openbao_tenancy]
+    - role: openbao
+      tags: [openbao, openbao_tenancy, billing_service, governance_service, sandbox_rental_service, mailbox_service]
     - role: billing_service
       tags: [billing_service]
     - role: identity_service
       tags: [identity_service]
     - role: governance_service
       tags: [governance_service, openbao, openbao_tenancy]
-    - role: openbao
-      tags: [openbao, openbao_tenancy]
     - role: secrets_service
       tags: [secrets_service, openbao_tenancy]
     - role: sandbox_rental_service

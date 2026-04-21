@@ -55,13 +55,24 @@ Webhook events:
 ## Install Secrets
 
 The app's public identifiers live in Ansible vars. The secret material must be
-installed on the node:
+present in OpenBao under the platform runtime provider path:
 
 ```text
-/etc/credstore/sandbox-rental/github-app-private-key
-/etc/credstore/sandbox-rental/github-app-webhook-secret
-/etc/credstore/sandbox-rental/github-app-client-secret
+platform/providers/github/sandbox-rental-service
 ```
+
+Required fields:
+
+```text
+private_key
+webhook_secret
+client_secret
+```
+
+The first cutover deploy can migrate an existing
+`/etc/credstore/sandbox-rental/github-app-*` set into OpenBao. After the
+cutover, the service reads only from OpenBao via SPIFFE-authenticated startup
+code.
 
 Then redeploy:
 
@@ -71,7 +82,9 @@ ansible-playbook playbooks/dev-single-node.yml --tags sandbox_rental_service,cad
 ```
 
 The sandbox-rental-service role fails before restarting the service when any
-required GitHub App public setting or credential file is missing.
+required GitHub App public setting is missing, or when the deploy cannot find a
+complete GitHub provider secret in OpenBao or a complete legacy credstore set
+to migrate.
 
 ## Connect a GitHub Organization
 
