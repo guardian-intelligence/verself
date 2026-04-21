@@ -504,6 +504,7 @@ FROM default.otel_traces
 WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
   AND (
     startsWith(SpanName, 'auth.spiffe.')
+    OR startsWith(SpanName, 'workload.openbao.')
     OR SpanName IN ('secrets.bao.jwt_svid.login', 'secrets.injection.service_token.exchange')
   )
 ORDER BY Timestamp DESC
