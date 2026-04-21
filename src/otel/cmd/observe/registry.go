@@ -317,10 +317,10 @@ var queryDocs = []queryDoc{
 	{
 		ID:      "describe.field",
 		Family:  "describe",
-		Title:   "Describe Log Field",
-		Purpose: "Explain one structured log attribute key and show services and sample values that emit it.",
+		Title:   "Describe Field",
+		Purpose: "Find one attribute across log, span, and resource attribute maps; show services, row counts, and sample values per surface.",
 		Required: []string{
-			"FIELD=<log-attribute-key>",
+			"FIELD=<attribute-key>",
 		},
 		Optional: []string{
 			"SERVICE=<service-name>",
@@ -328,9 +328,11 @@ var queryDocs = []queryDoc{
 		},
 		Examples: []string{
 			"make observe WHAT=describe FIELD=http_status",
+			"make observe WHAT=describe FIELD=deploy_run_key",
 		},
 		Next: []string{
 			"make observe WHAT=catalog SIGNAL=logs SERVICE=<service>",
+			"make observe WHAT=describe SPAN=<span>",
 		},
 	},
 	{
@@ -809,6 +811,8 @@ func canonicalDocID(id string) string {
 		return "describe.service"
 	case strings.HasPrefix(id, "describe.span."):
 		return "describe.span"
+	case strings.HasPrefix(id, "describe.field."):
+		return "describe.field"
 	case id == "service.http_spans" || id == "service.logs":
 		return "service.activity"
 	case id == "mail.metrics":

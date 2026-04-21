@@ -133,7 +133,11 @@ func buildDescribeQueries(cfg config, params map[string]string) ([]query, error)
 			newQuery("describe.span.attributes", describeSpanAttributesSQL, params),
 		}, nil
 	case cfg.field != "":
-		return []query{newQuery("describe.field", describeLogFieldSQL, params)}, nil
+		return []query{
+			newQuery("describe.field.logs", describeLogFieldSQL, params),
+			newQuery("describe.field.span_attributes", describeSpanFieldSQL, params),
+			newQuery("describe.field.resource_attributes", describeResourceFieldSQL, params),
+		}, nil
 	case cfg.service != "":
 		return []query{
 			newQuery("describe.service.signals", describeServiceSignalsSQL, params),
@@ -191,11 +195,11 @@ func emptyHintFor(id string) string {
 	case "describe.service.metrics":
 		return "This service has emitted no metrics — it likely only ships traces and logs."
 	case "describe.field.logs":
-		return "No LogAttribute map key with this name. Try WHAT=describe FIELD=<key> on a different key, or check span/resource attributes below."
+		return "No LogAttribute with this name. If this field is a top-level column (for example ServiceName or TraceId), it won't appear in any attribute map."
 	case "describe.field.span_attributes":
-		return "No SpanAttribute map key with this name across any service."
+		return "No SpanAttribute with this name across any service."
 	case "describe.field.resource_attributes":
-		return "No ResourceAttribute map key with this name across traces, logs, or metrics."
+		return "No ResourceAttribute with this name across traces or logs."
 	case "catalog.deploys":
 		return "No ansible.task spans have been recorded. Run `make deploy` to populate deploy traces."
 	default:
@@ -469,17 +473,71 @@ GROUP BY attribute
 ORDER BY attribute
 LIMIT {row_limit:UInt32}`
 
+// describe.field.* queries match FIELD as a case-insensitive substring on the
+// attribute map key. That lets callers pass an intuitive fragment
+// (deploy_run_key) and still discover namespaced keys
+// (forge_metal.deploy_run_key) without guessing the namespace.
 const describeLogFieldSQL = `
 SELECT
+  attr_key,
   ServiceName AS service,
-  {field:String} AS field,
-  uniqExact(arrayElement(LogAttributes, {field:String})) AS distinct_values,
-  arrayStringConcat(arraySlice(arraySort(groupUniqArray(left(arrayElement(LogAttributes, {field:String}), 160))), 1, 12), ', ') AS sample_values
+  count() AS rows,
+  uniqExact(attr_value) AS distinct_values,
+  arrayStringConcat(arraySlice(arraySort(groupUniqArray(left(attr_value, 160))), 1, 6), ', ') AS sample_values
 FROM default.otel_logs
-WHERE arrayElement(LogAttributes, {field:String}) != ''
+ARRAY JOIN mapKeys(LogAttributes) AS attr_key, mapValues(LogAttributes) AS attr_value
+WHERE positionCaseInsensitive(attr_key, {field:String}) > 0
   AND ({service:String} = '' OR ServiceName = {service:String})
-GROUP BY service
-ORDER BY service
+GROUP BY attr_key, service
+ORDER BY attr_key, service
+LIMIT {row_limit:UInt32}`
+
+const describeSpanFieldSQL = `
+SELECT
+  attr_key,
+  ServiceName AS service,
+  count() AS spans,
+  uniqExact(attr_value) AS distinct_values,
+  arrayStringConcat(arraySlice(arraySort(groupUniqArray(left(attr_value, 160))), 1, 6), ', ') AS sample_values
+FROM default.otel_traces
+ARRAY JOIN mapKeys(SpanAttributes) AS attr_key, mapValues(SpanAttributes) AS attr_value
+WHERE positionCaseInsensitive(attr_key, {field:String}) > 0
+  AND ({service:String} = '' OR ServiceName = {service:String})
+GROUP BY attr_key, service
+ORDER BY attr_key, service
+LIMIT {row_limit:UInt32}`
+
+const describeResourceFieldSQL = `
+SELECT source, attr_key, service, rows, distinct_values, sample_values
+FROM
+(
+  SELECT
+    'traces' AS source,
+    attr_key,
+    ServiceName AS service,
+    count() AS rows,
+    uniqExact(attr_value) AS distinct_values,
+    arrayStringConcat(arraySlice(arraySort(groupUniqArray(left(attr_value, 160))), 1, 6), ', ') AS sample_values
+  FROM default.otel_traces
+  ARRAY JOIN mapKeys(ResourceAttributes) AS attr_key, mapValues(ResourceAttributes) AS attr_value
+  WHERE positionCaseInsensitive(attr_key, {field:String}) > 0
+    AND ({service:String} = '' OR ServiceName = {service:String})
+  GROUP BY attr_key, service
+  UNION ALL
+  SELECT
+    'logs' AS source,
+    attr_key,
+    ServiceName AS service,
+    count() AS rows,
+    uniqExact(attr_value) AS distinct_values,
+    arrayStringConcat(arraySlice(arraySort(groupUniqArray(left(attr_value, 160))), 1, 6), ', ') AS sample_values
+  FROM default.otel_logs
+  ARRAY JOIN mapKeys(ResourceAttributes) AS attr_key, mapValues(ResourceAttributes) AS attr_value
+  WHERE positionCaseInsensitive(attr_key, {field:String}) > 0
+    AND ({service:String} = '' OR ServiceName = {service:String})
+  GROUP BY attr_key, service
+)
+ORDER BY source, attr_key, service
 LIMIT {row_limit:UInt32}`
 
 const metricLatestSQL = `
