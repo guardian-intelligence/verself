@@ -35,7 +35,7 @@ type family struct {
 }
 
 var families = []family{
-	{Name: "overview", Purpose: "Show services emitting telemetry, recent deploy_run_keys, and 24h error counts in one view."},
+	{Name: "overview", Purpose: "Show services emitting telemetry, recent deploy_run_keys, and error counts in one view. Windows are fixed (24h for services and errors, 7d for deploys); MINUTES is ignored."},
 	{Name: "catalog", Purpose: "Discover telemetry vocabulary without turning the landing page into a recency dashboard."},
 	{Name: "describe", Purpose: "Explain one query, metric, service, span, or log field and show valid next commands."},
 	{Name: "metric", Purpose: "Query metric latest values or explicit rate windows."},
