@@ -13,7 +13,16 @@
     path: /var/log/caddy
     state: directory
     owner: root
+    group: adm
     mode: "0755"
+
+- name: Create Caddy access log with otelcol-readable permissions
+  ansible.builtin.file:
+    path: /var/log/caddy/access.log
+    state: touch
+    owner: root
+    group: adm
+    mode: "0640"
 
 - name: Read Electric API secret for shape proxy auth
   ansible.builtin.slurp:
@@ -67,6 +76,8 @@
 
       [Service]
       Type=simple
+      User=root
+      Group=adm
       ExecStart={{ fm_bin }}/caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
       ExecReload={{ fm_bin }}/caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
       Restart=on-failure

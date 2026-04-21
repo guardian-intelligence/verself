@@ -32,7 +32,7 @@
 	log_append <user_agent {http.request.header.User-Agent}
 	log {
 		output file /var/log/caddy/access.log {
-			mode 0600
+			mode 0640
 			roll_size 100MiB
 			roll_keep 3
 		}
