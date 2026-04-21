@@ -55,6 +55,13 @@ func buildQueries(cfg config) ([]query, error) {
 			newQuery("workload_identity.spans", workloadIdentitySpansSQL, params),
 			newQuery("workload_identity.spire_logs", workloadIdentitySpireLogsSQL, params),
 		}, nil
+	case "temporal":
+		return []query{
+			newQuery("temporal.authz", temporalAuthzSQL, params),
+			newQuery("temporal.proof_runs", temporalProofRunsSQL, params),
+			newQuery("temporal.logs", temporalLogsSQL, params),
+			newQuery("temporal.metrics", temporalMetricsSQL, params),
+		}, nil
 	case "deploy":
 		if cfg.runKey != "" {
 			return []query{newQuery("deploy.run", deployRunSQL, params)}, nil
@@ -682,6 +689,78 @@ FROM default.otel_logs
 WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
   AND ServiceName IN ('spire-server', 'spire-agent')
 ORDER BY Timestamp DESC
+LIMIT {row_limit:UInt32}`
+
+const temporalAuthzSQL = `
+SELECT
+  formatDateTime(Timestamp, '%H:%i:%S') AS time,
+  ServiceName AS service,
+  SpanName AS span,
+  nullIf(SpanAttributes['spiffe.peer_id'], '') AS peer_id,
+  nullIf(SpanAttributes['spiffe.expected_server_id'], '') AS expected_server_id,
+  nullIf(SpanAttributes['temporal.namespace'], '') AS namespace,
+  nullIf(SpanAttributes['rpc.method'], '') AS rpc_method,
+  nullIf(SpanAttributes['temporal.authz.decision'], '') AS decision,
+  nullIf(SpanAttributes['temporal.authz.reason'], '') AS reason,
+  StatusCode AS status,
+  TraceId AS trace_id
+FROM default.otel_traces
+WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+  AND ServiceName IN ('temporal-server', 'temporal-proof', 'temporal-proof-worker')
+  AND SpanName IN ('auth.spiffe.mtls.server', 'auth.spiffe.mtls.client', 'temporal.auth.authorize')
+ORDER BY Timestamp DESC
+LIMIT {row_limit:UInt32}`
+
+const temporalProofRunsSQL = `
+SELECT
+  formatDateTime(Timestamp, '%H:%i:%S') AS time,
+  ServiceName AS service,
+  SpanName AS span,
+  StatusCode AS status,
+  nullIf(SpanAttributes['temporal.namespace'], '') AS namespace,
+  nullIf(SpanAttributes['temporal.workflow_id'], '') AS workflow_id,
+  nullIf(SpanAttributes['temporal.run_id'], '') AS run_id,
+  intDiv(Duration, 1000000) AS ms,
+  TraceId AS trace_id
+FROM default.otel_traces
+WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+  AND ServiceName IN ('temporal-server', 'temporal-server.frontend', 'temporal-server.history', 'temporal-server.matching', 'temporal-server.worker', 'temporal-proof', 'temporal-proof-worker')
+  AND (
+    startsWith(SpanName, 'temporal.proof.')
+    OR SpanAttributes['temporal.workflow_id'] != ''
+  )
+ORDER BY Timestamp DESC
+LIMIT {row_limit:UInt32}`
+
+const temporalLogsSQL = `
+SELECT
+  formatDateTime(Timestamp, '%H:%i:%S') AS time,
+  ServiceName AS service,
+  SeverityText AS level,
+  Body AS message,
+  TraceId AS trace_id
+FROM default.otel_logs
+WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+  AND ServiceName IN ('temporal-server', 'temporal-proof', 'temporal-proof-worker')
+ORDER BY Timestamp DESC
+LIMIT {row_limit:UInt32}`
+
+const temporalMetricsSQL = `
+SELECT
+  if(ServiceName = '', '<resource-only>', ServiceName) AS service,
+  MetricName AS metric,
+  arrayStringConcat(arraySort(groupUniqArray(MetricKind)), ', ') AS kinds,
+  any(MetricUnit) AS unit,
+  max(LastSeenAt) AS last_seen_at,
+  sum(Samples) AS samples
+FROM default.otel_metric_catalog_live
+WHERE LastSeenAt > now() - toIntervalMinute({minutes:UInt32})
+  AND (
+    startsWith(ServiceName, 'temporal-server')
+    OR ServiceName IN ('temporal-proof', 'temporal-proof-worker')
+  )
+GROUP BY service, metric
+ORDER BY service, metric
 LIMIT {row_limit:UInt32}`
 
 const deployTasksSQL = `
