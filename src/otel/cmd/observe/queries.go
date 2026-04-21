@@ -815,6 +815,10 @@ GROUP BY service
 ORDER BY total_errors DESC
 LIMIT {row_limit:UInt32}`
 
+// FIELD= filters logs on either LogAttributes or ResourceAttributes. Resource
+// attributes (forge_metal.deploy_run_key, host.name, ...) are discoverable via
+// `WHAT=describe FIELD=...` — the filter must accept the same keys or the
+// describe → filter flow silently drops every row.
 const logsRecentSQL = `
 SELECT
   formatDateTime(Timestamp, '%H:%i:%S') AS time,
@@ -826,7 +830,9 @@ SELECT
 FROM default.otel_logs
 WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
   AND ({service:String} = '' OR ServiceName = {service:String})
-  AND ({field:String} = '' OR arrayElement(LogAttributes, {field:String}) != '')
+  AND ({field:String} = ''
+       OR arrayElement(LogAttributes, {field:String}) != ''
+       OR arrayElement(ResourceAttributes, {field:String}) != '')
   AND ({search:String} = '' OR positionCaseInsensitive(Body, {search:String}) > 0 OR positionCaseInsensitive(toString(LogAttributes), {search:String}) > 0)
 ORDER BY Timestamp DESC
 LIMIT {row_limit:UInt32}`
