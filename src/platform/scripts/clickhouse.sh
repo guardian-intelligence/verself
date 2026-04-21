@@ -2,8 +2,10 @@
 set -euo pipefail
 
 inventory="${INVENTORY:-ansible/inventory/hosts.ini}"
-secrets_file="${SOPS_SECRETS_FILE:-ansible/group_vars/all/secrets.sops.yml}"
 remote_path="${CLICKHOUSE_CLIENT_PATH:-/opt/forge-metal/profile/bin/clickhouse-client}"
+remote_config_path="${CLICKHOUSE_CLIENT_CONFIG_PATH:-/etc/clickhouse-client/operator.xml}"
+remote_run_as_user="${CLICKHOUSE_RUN_AS_USER:-clickhouse_operator}"
+remote_db_user="${CLICKHOUSE_DB_USER:-clickhouse_operator}"
 ssh_opts=(-o IPQoS=none -o StrictHostKeyChecking=no)
 
 if [[ -n "${SSH_OPTS:-}" ]]; then
@@ -12,11 +14,6 @@ fi
 
 if [[ ! -f "$inventory" ]]; then
   echo "ERROR: $inventory not found. Run 'cd ansible && ansible-playbook playbooks/provision.yml' first." >&2
-  exit 1
-fi
-
-if [[ ! -f "$secrets_file" ]]; then
-  echo "ERROR: $secrets_file not found. Run 'cd ansible && ansible-playbook playbooks/setup-sops.yml' first." >&2
   exit 1
 fi
 
@@ -33,9 +30,10 @@ if [[ -z "$remote_user" ]]; then
   exit 1
 fi
 
-clickhouse_password="$(sops -d --extract '["clickhouse_password"]' "$secrets_file")"
-remote_password_q="$(printf '%q' "$clickhouse_password")"
 remote_path_q="$(printf '%q' "$remote_path")"
+remote_config_path_q="$(printf '%q' "$remote_config_path")"
+remote_run_as_user_q="$(printf '%q' "$remote_run_as_user")"
+remote_db_user_q="$(printf '%q' "$remote_db_user")"
 
 if [[ $# -eq 0 ]]; then
   echo "ERROR: interactive ClickHouse shells are not supported. Use: make clickhouse-query QUERY='SELECT 1'" >&2
@@ -48,4 +46,4 @@ for arg in "$@"; do
 done
 
 exec ssh "${ssh_opts[@]}" "${remote_user}@${remote_host}" \
-  "sudo env CLICKHOUSE_PASSWORD=${remote_password_q} bash -lc 'exec \"\$1\" --user default --password \"\$CLICKHOUSE_PASSWORD\" \"\${@:2}\"' _ ${remote_path_q}${remote_args:+ ${remote_args[*]}}"
+  "sudo -u ${remote_run_as_user_q} bash -lc 'exec \"\$1\" --config-file \"\$2\" --user \"\$3\" \"\${@:4}\"' _ ${remote_path_q} ${remote_config_path_q} ${remote_db_user_q}${remote_args:+ ${remote_args[*]}}"

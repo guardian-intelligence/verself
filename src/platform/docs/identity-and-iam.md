@@ -455,9 +455,9 @@ Current access coverage:
 | `billing-service` direct API | service-to-service only | service-to-service only | service-to-service only | customer-facing billing access goes through `sandbox-rental-service` |
 
 The platform admin persona intentionally does not export the Zitadel admin PAT,
-ClickHouse password, or Forgejo automation token. ClickHouse access remains the
-founder Make wrapper (`make clickhouse-query`) because it is not a Zitadel
-resource yet. Forgejo API automation remains provider-native
+any ClickHouse password, or Forgejo automation token. ClickHouse access
+remains the founder Make wrapper (`make clickhouse-query`) because it is not a
+Zitadel resource yet. Forgejo API automation remains provider-native
 `forgejo-automation` until Forgejo OIDC group/role claims are proven for the
 interactive UI path and a separate provider API credential model is introduced.
 

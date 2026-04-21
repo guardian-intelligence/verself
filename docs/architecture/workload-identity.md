@@ -191,10 +191,10 @@ boundary.
 PostgreSQL `trust` authentication is prohibited. Service PostgreSQL password
 DSNs are prohibited where peer auth covers the service.
 
-**Current state.** The following clients remain password-backed because peer
-auth does not cover them: ClickHouse driver connections and TigerBeetle client
-connections. Passwords are stored in OpenBao and fetched by
-SPIFFE-authenticated startup code.
+**Current state.** ClickHouse client authentication is certificate-backed via
+SPIFFE X.509-SVIDs on the secure native protocol. TigerBeetle client
+connections remain outside peer auth and still require their own credential
+model.
 
 **Target state.** Password-backed clients are eliminated by wrapping them in
 SPIFFE-authenticated connection brokers or by moving to drivers that accept
@@ -210,9 +210,6 @@ platform/providers/stripe/billing-service
 platform/providers/resend/mailbox-service
 platform/providers/stalwart/mailbox-service
 platform/providers/github/sandbox-rental-service
-platform/providers/clickhouse/billing-service
-platform/providers/clickhouse/governance-service
-platform/providers/clickhouse/sandbox-rental-service
 ```
 
 `platform/providers/stalwart/mailbox-service` holds only the Stalwart

@@ -43,8 +43,8 @@ PRODUCT_PORT_RANGES = [
     (3300, 3399),    # TigerBeetle
     (4200, 4399),    # Go services, frontends, Grafana
     (4800, 4899),    # Verdaccio
-    (8080, 8199),    # Stalwart HTTP, Zitadel, ClickHouse HTTP, StatsD
-    (9000, 9199),    # ClickHouse native + Keeper
+    (8080, 8199),    # Stalwart HTTP, Zitadel, StatsD
+    (9000, 9499),    # ClickHouse secure native + Keeper
     (18000, 18099),  # vm-orchestrator host services
 ]
 

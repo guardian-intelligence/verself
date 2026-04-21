@@ -191,8 +191,8 @@ FORMAT TSVWithNames
 " >"${artifact_dir}/clickhouse-user-auth.tsv"
 
 # ClickHouse does not surface listener ports in system.settings/server_settings,
-# so the live socket table is the only reliable proof that 8443/9440 are bound.
-verification_ssh "sudo ss -ltnH '( sport = :8443 or sport = :9440 )'" \
+# so the live socket table is the only reliable proof that only 9440 is bound.
+verification_ssh "sudo ss -ltnH '( sport = :8123 or sport = :8443 or sport = :9000 or sport = :9440 )'" \
   >"${artifact_dir}/clickhouse-secure-listeners.tsv"
 
 grafana_api_get "/api/search?type=dash-db" >"${artifact_dir}/grafana-dashboard-search.json"
@@ -400,13 +400,13 @@ if ! grep -q 'ssl_certificate' "${artifact_dir}/clickhouse-user-auth.tsv"; then
   exit 1
 fi
 
-if ! grep -q ':8443' "${artifact_dir}/clickhouse-secure-listeners.tsv"; then
-  echo "Grafana verification expected ClickHouse listener on 8443" >&2
+if ! grep -q ':9440' "${artifact_dir}/clickhouse-secure-listeners.tsv"; then
+  echo "Grafana verification expected ClickHouse listener on 9440" >&2
   exit 1
 fi
 
-if ! grep -q ':9440' "${artifact_dir}/clickhouse-secure-listeners.tsv"; then
-  echo "Grafana verification expected ClickHouse listener on 9440" >&2
+if grep -Eq ':(8123|8443|9000)' "${artifact_dir}/clickhouse-secure-listeners.tsv"; then
+  echo "Grafana verification found stale ClickHouse listeners on 8123/8443/9000" >&2
   exit 1
 fi
 

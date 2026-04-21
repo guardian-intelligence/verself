@@ -26,7 +26,7 @@
 #      5432          PostgreSQL
 #      8085          Zitadel
 #      8200 / 8201   OpenBao API / cluster
-#      8123 / 9000   ClickHouse HTTP / native
+#      9440          ClickHouse secure native
 #      8125          StatsD UDP (otelcol receiver; TigerBeetle is the sender)
 #      9181          ClickHouse Keeper (reserved, not allocated on single-node)
 #
@@ -70,9 +70,6 @@
 services:
   clickhouse:
     host: "127.0.0.1"
-    http_port: 8123
-    secure_http_port: 8443
-    native_port: 9000
     secure_native_port: 9440
     # keeper_port: 9181 — re-add when 3-node replication lands and <keeper_server>
     # is configured in clickhouse-config.xml.j2. Single-node runs without Keeper.

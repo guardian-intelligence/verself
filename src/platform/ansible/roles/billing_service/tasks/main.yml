@@ -110,7 +110,7 @@
 - name: Ensure billing-service ClickHouse user exists with write grants
   ansible.builtin.shell: |
     set -euo pipefail
-    {{ fm_bin }}/clickhouse-client --user default --password "$CLICKHOUSE_PASSWORD" --multiquery <<'SQL'
+    {{ clickhouse_operator_client_command }} --multiquery <<'SQL'
     CREATE USER IF NOT EXISTS billing_service IDENTIFIED WITH ssl_certificate SAN 'URI:{{ spire_billing_service_id }}' HOST LOCAL;
     ALTER USER billing_service IDENTIFIED WITH ssl_certificate SAN 'URI:{{ spire_billing_service_id }}' HOST LOCAL;
     GRANT INSERT ON forge_metal.billing_events TO billing_service;
@@ -118,8 +118,6 @@
     SQL
   args:
     executable: /bin/bash
-  environment:
-    CLICKHOUSE_PASSWORD: "{{ clickhouse_password }}"
   changed_when: false
   no_log: true
 

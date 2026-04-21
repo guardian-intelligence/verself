@@ -7,6 +7,82 @@
     name: clickhouse
     system: true
 
+- name: Ensure SPIRE workload socket group exists
+  ansible.builtin.group:
+    name: "{{ spire_workload_group }}"
+    system: true
+
+- name: Create ClickHouse operator system group
+  ansible.builtin.group:
+    name: "{{ clickhouse_operator_system_group }}"
+    system: true
+
+- name: Create ClickHouse operator system user
+  ansible.builtin.user:
+    name: "{{ clickhouse_operator_system_user }}"
+    group: "{{ clickhouse_operator_system_group }}"
+    groups:
+      - "{{ spire_workload_group }}"
+    append: false
+    system: true
+    home: /var/lib/clickhouse-operator
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Resolve ClickHouse operator uid for SPIRE registration
+  ansible.builtin.command:
+    cmd: "id -u {{ clickhouse_operator_system_user }}"
+  register: clickhouse_operator_uid
+  changed_when: false
+
+- name: Read ClickHouse operator SPIRE registration
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry show
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-clickhouse-operator
+      -output json
+  register: clickhouse_operator_spire_entry
+  failed_when: false
+  changed_when: false
+
+- name: Register ClickHouse operator SPIFFE workload
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry create
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-clickhouse-operator
+      -parentID {{ spire_agent_id }}
+      -spiffeID {{ spire_clickhouse_operator_id }}
+      -selector unix:uid:{{ clickhouse_operator_uid.stdout | trim }}
+      -x509SVIDTTL 3600
+  when: clickhouse_operator_spire_entry.rc != 0 or 'forge-metal-clickhouse-operator' not in clickhouse_operator_spire_entry.stdout
+  changed_when: true
+  notify: restart clickhouse-operator-spiffe-helper
+
+- name: Update ClickHouse operator SPIRE workload selector drift
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry update
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-clickhouse-operator
+      -parentID {{ spire_agent_id }}
+      -spiffeID {{ spire_clickhouse_operator_id }}
+      -selector unix:uid:{{ clickhouse_operator_uid.stdout | trim }}
+      -x509SVIDTTL 3600
+  when:
+    - clickhouse_operator_spire_entry.rc == 0
+    - "'uid:' ~ (clickhouse_operator_uid.stdout | trim) not in clickhouse_operator_spire_entry.stdout"
+  changed_when: true
+  notify: restart clickhouse-operator-spiffe-helper
+
+- name: Set ClickHouse operator client command fact
+  ansible.builtin.set_fact:
+    clickhouse_operator_client_command: >-
+      sudo -u {{ clickhouse_operator_system_user }} {{ fm_bin }}/clickhouse-client
+      --config-file {{ clickhouse_operator_client_config_path }}
+      --user {{ clickhouse_operator_db_user }}
+
 - name: Create ClickHouse directories
   ansible.builtin.file:
     path: "{{ item }}"
@@ -19,6 +95,54 @@
     - /etc/clickhouse-server/tls
     - "{{ clickhouse_data_path }}"
     - /var/log/clickhouse-server
+
+- name: Create ClickHouse operator directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "{{ clickhouse_operator_client_dir }}"
+      owner: root
+      group: "{{ clickhouse_operator_system_group }}"
+      mode: "0750"
+    - path: /var/lib/clickhouse-operator
+      owner: "{{ clickhouse_operator_system_user }}"
+      group: "{{ clickhouse_operator_system_group }}"
+      mode: "0750"
+    - path: "{{ clickhouse_operator_spiffe_dir }}"
+      owner: "{{ clickhouse_operator_system_user }}"
+      group: "{{ clickhouse_operator_system_group }}"
+      mode: "0700"
+
+- name: Discover legacy billing bridge metadata files
+  ansible.builtin.find:
+    paths: "{{ clickhouse_data_path }}/store"
+    recurse: true
+    file_type: file
+    patterns: "billing_windows_pg.sql*"
+  register: clickhouse_legacy_billing_bridge_metadata
+  failed_when: false
+  changed_when: false
+
+- name: Stop ClickHouse before removing legacy billing bridge metadata
+  ansible.builtin.systemd:
+    name: clickhouse-server
+    state: stopped
+  when: (clickhouse_legacy_billing_bridge_metadata.matched | default(0) | int) > 0
+
+- name: Remove legacy billing bridge metadata files
+  # Atomic databases keep table definitions in /var/lib/clickhouse/store; remove
+  # the obsolete billing_windows_pg metadata before startup or every query fails.
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ clickhouse_legacy_billing_bridge_metadata.files | default([]) }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when: (clickhouse_legacy_billing_bridge_metadata.matched | default(0) | int) > 0
 
 - name: Deploy ClickHouse server certificate extensions
   ansible.builtin.copy:
@@ -145,6 +269,42 @@
     mode: "0600"
   when: clickhouse_server_ca_serial.stat.exists
 
+- name: Copy ClickHouse server CA into operator client config
+  ansible.builtin.copy:
+    src: /etc/clickhouse-server/tls/server-ca.pem
+    dest: "{{ clickhouse_operator_ca_path }}"
+    remote_src: true
+    owner: root
+    group: "{{ clickhouse_operator_system_group }}"
+    mode: "0640"
+
+- name: Deploy ClickHouse operator client config
+  ansible.builtin.template:
+    src: clickhouse-operator-client.xml.j2
+    dest: "{{ clickhouse_operator_client_config_path }}"
+    owner: root
+    group: "{{ clickhouse_operator_system_group }}"
+    mode: "0640"
+  notify: restart clickhouse-operator-spiffe-helper
+
+- name: Deploy ClickHouse operator SPIFFE helper config
+  ansible.builtin.template:
+    src: clickhouse-operator-spiffe-helper.conf.j2
+    dest: "{{ clickhouse_operator_helper_config_path }}"
+    owner: root
+    group: "{{ clickhouse_operator_system_group }}"
+    mode: "0640"
+  notify: restart clickhouse-operator-spiffe-helper
+
+- name: Deploy ClickHouse operator SPIFFE helper systemd unit
+  ansible.builtin.template:
+    src: clickhouse-operator-spiffe-helper.service.j2
+    dest: /etc/systemd/system/clickhouse-operator-spiffe-helper.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart clickhouse-operator-spiffe-helper
+
 - name: Deploy ClickHouse systemd unit
   ansible.builtin.copy:
     content: |
@@ -180,6 +340,13 @@
 - name: Apply ClickHouse config changes before proceeding
   ansible.builtin.meta: flush_handlers
 
+- name: Enable and start ClickHouse operator SPIFFE helper
+  ansible.builtin.systemd:
+    name: clickhouse-operator-spiffe-helper
+    enabled: true
+    state: started
+    daemon_reload: true
+
 - name: Enable and start ClickHouse
   ansible.builtin.systemd:
     name: clickhouse-server
@@ -189,27 +356,19 @@
 
 - name: Wait for ClickHouse
   ansible.builtin.shell: >
-    {{ fm_bin }}/clickhouse-client
-    --user default
-    --password "$CLICKHOUSE_PASSWORD"
+    {{ clickhouse_operator_client_command }}
     --query 'SELECT 1'
   register: clickhouse_ready
   retries: 10
   delay: 3
   until: clickhouse_ready.rc == 0
   changed_when: false
-  environment:
-    CLICKHOUSE_PASSWORD: "{{ clickhouse_password }}"
 
 - name: Flush system logs (creates query_log table if query logging just enabled)
   ansible.builtin.shell: >
-    {{ fm_bin }}/clickhouse-client
-    --user default
-    --password "$CLICKHOUSE_PASSWORD"
+    {{ clickhouse_operator_client_command }}
     --query 'SYSTEM FLUSH LOGS'
   changed_when: false
-  environment:
-    CLICKHOUSE_PASSWORD: "{{ clickhouse_password }}"
 
 - name: Compute local migrations fingerprint
   delegate_to: localhost
@@ -230,14 +389,12 @@
 
 - name: Probe for expected tables (fingerprint can survive a wipe if /opt/forge-metal is recreated before deploy)
   ansible.builtin.shell: >
-    {{ fm_bin }}/clickhouse-client --user default --password "$CLICKHOUSE_PASSWORD"
+    {{ clickhouse_operator_client_command }}
     --query "SELECT count() FROM system.tables
              WHERE (database = 'default' AND name = 'otel_metrics_sum')
-                OR (database = 'forge_metal' AND name IN ('metering', 'billing_windows_pg', 'billing_events', 'audit_events'))"
+                OR (database = 'forge_metal' AND name IN ('metering', 'billing_events', 'audit_events'))"
   register: clickhouse_expected_table_probe
   changed_when: false
-  environment:
-    CLICKHOUSE_PASSWORD: "{{ clickhouse_password }}"
 
 - name: Determine whether ClickHouse schema reset is required
   ansible.builtin.set_fact:
@@ -247,7 +404,7 @@
         or (clickhouse_migrations_remote_hash is failed)
         or ((clickhouse_migrations_remote_hash.content | default('') | b64decode | trim)
            != (clickhouse_migrations_local_hash.stdout.split()[0] | trim))
-        or ((clickhouse_expected_table_probe.stdout | trim) != '5')
+        or ((clickhouse_expected_table_probe.stdout | trim) != '4')
       }}
 
 - name: Apply ClickHouse migrations
@@ -290,16 +447,14 @@
 
     - name: Drop forge_metal database before force schema reset
       ansible.builtin.shell: >
-        {{ fm_bin }}/clickhouse-client --user default --password "$CLICKHOUSE_PASSWORD"
+        {{ clickhouse_operator_client_command }}
         --query 'DROP DATABASE IF EXISTS forge_metal SYNC'
       changed_when: false
-      environment:
-        CLICKHOUSE_PASSWORD: "{{ clickhouse_password }}"
       when: clickhouse_force_schema_reset
 
     - name: Discover default ClickHouse telemetry tables to truncate
       ansible.builtin.shell: >
-        {{ fm_bin }}/clickhouse-client --user default --password "$CLICKHOUSE_PASSWORD"
+        {{ clickhouse_operator_client_command }}
         --query "
           SELECT concat(database, '.', name)
           FROM system.tables
@@ -311,33 +466,27 @@
         "
       register: clickhouse_force_reset_tables
       changed_when: false
-      environment:
-        CLICKHOUSE_PASSWORD: "{{ clickhouse_password }}"
       when: clickhouse_force_schema_reset
 
     - name: Truncate default ClickHouse telemetry tables during force schema reset
       ansible.builtin.shell: >
-        {{ fm_bin }}/clickhouse-client --user default --password "$CLICKHOUSE_PASSWORD"
+        {{ clickhouse_operator_client_command }}
         --query 'TRUNCATE TABLE {{ item }}'
       loop: "{{ clickhouse_force_reset_tables.stdout_lines | default([]) }}"
       loop_control:
         label: "{{ item }}"
       changed_when: false
-      environment:
-        CLICKHOUSE_PASSWORD: "{{ clickhouse_password }}"
       when: clickhouse_force_schema_reset
 
     - name: Create forge_metal database
       ansible.builtin.shell: >
-        {{ fm_bin }}/clickhouse-client --user default --password "$CLICKHOUSE_PASSWORD"
+        {{ clickhouse_operator_client_command }}
         --query 'CREATE DATABASE IF NOT EXISTS forge_metal'
       changed_when: false
-      environment:
-        CLICKHOUSE_PASSWORD: "{{ clickhouse_password }}"
 
     - name: Apply migration files
       ansible.builtin.shell: >
-        {{ fm_bin }}/clickhouse-client --user default --password "$CLICKHOUSE_PASSWORD"
+        {{ clickhouse_operator_client_command }}
         --database forge_metal --multiquery
         --queries-file /opt/forge-metal/migrations/{{ item }}
       loop: >-
@@ -349,8 +498,6 @@
       loop_control:
         label: "{{ item }}"
       changed_when: false
-      environment:
-        CLICKHOUSE_PASSWORD: "{{ clickhouse_password }}"
 
     - name: Record migrations fingerprint
       ansible.builtin.copy:

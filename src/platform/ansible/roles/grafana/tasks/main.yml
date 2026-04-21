@@ -261,7 +261,7 @@
 - name: Ensure Grafana ClickHouse user exists with read-only certificate grants
   ansible.builtin.shell: |
     set -euo pipefail
-    {{ fm_bin }}/clickhouse-client --user default --password "$CLICKHOUSE_PASSWORD" --multiquery <<'SQL'
+    {{ clickhouse_operator_client_command }} --multiquery <<'SQL'
     CREATE USER IF NOT EXISTS {{ grafana_clickhouse_user }} IDENTIFIED WITH ssl_certificate SAN 'URI:{{ spire_grafana_id }}' HOST LOCAL;
     ALTER USER {{ grafana_clickhouse_user }} IDENTIFIED WITH ssl_certificate SAN 'URI:{{ spire_grafana_id }}' HOST LOCAL;
     GRANT SELECT ON default.* TO {{ grafana_clickhouse_user }};
@@ -274,8 +274,6 @@
     SQL
   args:
     executable: /bin/bash
-  environment:
-    CLICKHOUSE_PASSWORD: "{{ clickhouse_password }}"
   changed_when: false
   no_log: true
 - name: Read installed ClickHouse datasource plugin marker

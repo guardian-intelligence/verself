@@ -2,3 +2,11 @@
 # ClickHouse defaults.
 clickhouse_data_path: /var/lib/clickhouse
 clickhouse_force_schema_reset: false
+clickhouse_operator_system_user: clickhouse_operator
+clickhouse_operator_system_group: clickhouse_operator
+clickhouse_operator_db_user: clickhouse_operator
+clickhouse_operator_client_dir: /etc/clickhouse-client
+clickhouse_operator_client_config_path: /etc/clickhouse-client/operator.xml
+clickhouse_operator_ca_path: /etc/clickhouse-client/server-ca.pem
+clickhouse_operator_spiffe_dir: /var/lib/clickhouse-operator/spiffe
+clickhouse_operator_helper_config_path: /etc/clickhouse-client/operator-spiffe-helper.conf

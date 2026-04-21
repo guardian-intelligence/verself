@@ -22,9 +22,9 @@ ORDER BY event_time;
 
 ## ClickHouse Access
 
-ClickHouse is not exposed for unauthenticated remote access. Use the repo wrapper so you do not have to manually prefix SSH, the password file, or the stable worker client path each time.
+ClickHouse is not exposed for unauthenticated remote access. Use the repo wrapper so you do not have to manually prefix SSH, the remote client-certificate config, or the stable worker client path each time.
 
-The wrapper resolves the worker from `ansible/inventory/hosts.ini`, decrypts the ClickHouse password from `ansible/group_vars/all/secrets.sops.yml` via SOPS, and invokes `/opt/forge-metal/profile/bin/clickhouse-client` on the worker. Do not hardcode a `/nix/store/...` path.
+The wrapper resolves the worker from `ansible/inventory/hosts.ini` and invokes `/opt/forge-metal/profile/bin/clickhouse-client` on the worker as the SPIFFE-authenticated `clickhouse_operator` user. Do not hardcode a `/nix/store/...` path.
 
 Use it from the repo root:
 
