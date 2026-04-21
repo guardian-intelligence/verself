@@ -747,6 +747,10 @@ WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
 ORDER BY Timestamp DESC
 LIMIT {row_limit:UInt32}`
 
+// Overview queries use fixed windows (24h for services and errors, 7d for
+// deploys) rather than honoring MINUTES — the bird's-eye view should be
+// predictable regardless of whatever lookback a caller defaulted elsewhere
+// in their session. The registry family description calls this out.
 const overviewServicesSQL = `
 SELECT
   if(service = '', '<resource-only>', service) AS service,
