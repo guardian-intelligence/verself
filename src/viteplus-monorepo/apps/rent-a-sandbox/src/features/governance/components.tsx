@@ -16,9 +16,9 @@ import { Button } from "@forge-metal/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@forge-metal/ui/components/ui/dropdown-menu";
 import { Input } from "@forge-metal/ui/components/ui/input";
@@ -92,7 +92,6 @@ const routeApi = getRouteApi("/_shell/_authenticated/settings/governance");
 // should show timestamps in the recipient's zone, not the sender's.
 const TZ_STORAGE_KEY = "forge-metal:governance.audit.timezone";
 type TimezoneMode = "local" | "utc";
-const TIMEZONE_MODES: ReadonlyArray<TimezoneMode> = ["local", "utc"];
 
 interface GovernanceSettingsProps {
   auditEvents: Array<GovernanceAuditEvent>;
@@ -757,6 +756,14 @@ function TimezoneMenu({
   timezone: TimezoneMode;
   onChange: (next: TimezoneMode) => void;
 }) {
+  // Base UI's Menu.RadioGroup / RadioItem crashed with #31 ("RadioGroup must
+  // be inside a Menu") in this pinned version when combined with our
+  // Popover/Tooltip mount tree. Using plain MenuItems with a trailing
+  // checkmark renders identically and stays inside supported Menu contracts.
+  const items: ReadonlyArray<{ value: TimezoneMode; label: string }> = [
+    { value: "local", label: "Local time" },
+    { value: "utc", label: "UTC" },
+  ];
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -768,18 +775,22 @@ function TimezoneMenu({
         }
       />
       <DropdownMenuContent align="start">
-        <DropdownMenuLabel>Display timestamps in</DropdownMenuLabel>
-        <DropdownMenuRadioGroup
-          value={timezone}
-          onValueChange={(next) => {
-            if (TIMEZONE_MODES.includes(next as TimezoneMode)) {
-              onChange(next as TimezoneMode);
-            }
-          }}
-        >
-          <DropdownMenuRadioItem value="local">Local time</DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="utc">UTC</DropdownMenuRadioItem>
-        </DropdownMenuRadioGroup>
+        <DropdownMenuGroup>
+          {/* GroupLabel/Item from Base UI require a Group ancestor — otherwise
+              runtime throws #31 (MenuGroupContext missing). */}
+          <DropdownMenuLabel>Display timestamps in</DropdownMenuLabel>
+          {items.map((item) => (
+            <DropdownMenuItem
+              key={item.value}
+              onClick={() => onChange(item.value)}
+              data-testid={`audit-timezone-${item.value}`}
+              className="justify-between"
+            >
+              <span>{item.label}</span>
+              {timezone === item.value ? <Check aria-hidden="true" className="size-3.5" /> : null}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );
