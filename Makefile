@@ -1,7 +1,7 @@
 .PHONY: help test lint lint-scripts lint-conversions lint-ansible lint-voice company-proof fmt vet tidy openapi openapi-check openapi-wire-check \
        hooks-install doctor inventory-check setup-dev setup-sops provision deprovision deploy site guest-rootfs security-patch identity-reset seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member \
        set-user-state billing-clock billing-wall-clock billing-state billing-documents billing-finalizations billing-events billing-pg-shell billing-pg-query billing-proof billing-reset verification-reset \
-       secrets-proof secrets-leak-proof openbao-proof openbao-tenancy-proof workload-identity-proof temporal-proof temporal-web-proof recurring-schedule-proof \
+       secrets-proof secrets-leak-proof openbao-proof openbao-tenancy-proof workload-identity-proof object-storage-proof temporal-proof temporal-web-proof recurring-schedule-proof \
        vm-guest-telemetry-build observe telemetry-proof telemetry-proof-fail clickhouse-query clickhouse-schemas pg-shell pg-query pg-list tb-shell tb-command mail mail-accounts mail-mailboxes \
        mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets \
        wipe-pg-db wipe-server vm-orchestrator-proof stress sandbox-inner sandbox-middle sandbox-proof rent-ui-smoke rent-ui-local rent-local-dev scheduler-proof verify-scheduler grafana-proof observability-smoke services-doctor
@@ -16,10 +16,11 @@ SS       := src/secrets-service
 AM       := src/auth-middleware
 SR       := src/sandbox-rental-service
 MS       := src/mailbox-service
+OSS      := src/object-storage-service
 OT       := src/otel
 TP       := src/temporal-platform
 INVENTORY := $(FM)/ansible/inventory/hosts.ini
-GO_DIRS  := $(AW) $(VMO) $(BS) $(GS) $(IS) $(SS) $(AM) $(SR) $(MS) $(OT) $(TP)
+GO_DIRS  := $(AW) $(VMO) $(BS) $(GS) $(IS) $(SS) $(AM) $(SR) $(MS) $(OSS) $(OT) $(TP)
 GO_PKGS  := $(addsuffix /...,$(addprefix ./,$(GO_DIRS)))
 BILLING_PRODUCT_ID ?= sandbox
 ASSUME_PERSONA_OUTPUT_FLAG := $(if $(OUTPUT),--output "$(OUTPUT)",)
@@ -76,6 +77,7 @@ tidy:
 	cd $(AM) && go mod tidy
 	cd $(SR) && go mod tidy
 	cd $(MS) && go mod tidy
+	cd $(OSS) && go mod tidy
 	cd $(OT) && go mod tidy
 	cd $(TP) && go mod tidy
 	cd src/viteplus-monorepo && vp fmt . --write
@@ -94,6 +96,9 @@ openapi: ## Regenerate committed OpenAPI 3.0 and 3.1 specs for Go services
 	go run ./$(SS)/cmd/secrets-openapi --format 3.1 > $(SS)/openapi/openapi-3.1.yaml
 	go run ./$(MS)/cmd/mailbox-openapi --format 3.0 > $(MS)/openapi/openapi-3.0.yaml
 	go run ./$(MS)/cmd/mailbox-openapi --format 3.1 > $(MS)/openapi/openapi-3.1.yaml
+	mkdir -p $(OSS)/openapi
+	go run ./$(OSS)/cmd/object-storage-openapi --format 3.0 > $(OSS)/openapi/openapi-3.0.yaml
+	go run ./$(OSS)/cmd/object-storage-openapi --format 3.1 > $(OSS)/openapi/openapi-3.1.yaml
 	mkdir -p $(SR)/openapi
 	go run ./$(SR)/cmd/sandbox-rental-openapi --format 3.0 > $(SR)/openapi/openapi-3.0.yaml
 	go run ./$(SR)/cmd/sandbox-rental-openapi --format 3.1 > $(SR)/openapi/openapi-3.1.yaml
@@ -109,6 +114,8 @@ openapi-check: ## Verify committed OpenAPI specs are up to date
 	cd $(SS) && go run ./cmd/secrets-openapi --format 3.1 --check
 	cd $(MS) && go run ./cmd/mailbox-openapi --format 3.0 --check
 	cd $(MS) && go run ./cmd/mailbox-openapi --format 3.1 --check
+	cd $(OSS) && go run ./cmd/object-storage-openapi --format 3.0 --check
+	cd $(OSS) && go run ./cmd/object-storage-openapi --format 3.1 --check
 	cd $(SR) && go run ./cmd/sandbox-rental-openapi --format 3.0 --check
 	cd $(SR) && go run ./cmd/sandbox-rental-openapi --format 3.1 --check
 	$(MAKE) openapi-wire-check
@@ -120,6 +127,7 @@ openapi-wire-check: ## Verify frontend-consumed OpenAPI 3.1 specs are JS wire-sa
 		$(IS)/openapi/openapi-3.1.yaml \
 		$(SS)/openapi/openapi-3.1.yaml \
 		$(MS)/openapi/openapi-3.1.yaml \
+		$(OSS)/openapi/openapi-3.1.yaml \
 		$(SR)/openapi/openapi-3.1.yaml
 
 inventory-check: ## Validate that the generated Ansible inventory exists
@@ -238,6 +246,9 @@ openbao-proof: inventory-check ## Prove OpenBao process, health, metrics, audit 
 
 openbao-tenancy-proof: inventory-check ## Prove OpenBao per-org mounts, JWT roles, SPIFFE workload roles, policies, and ClickHouse spans
 	cd $(FM) && ./scripts/verify-openbao-tenancy-live.sh
+
+object-storage-proof: inventory-check ## Run the Garage-backed object-storage admin/S3 proof and assert ClickHouse evidence
+	cd $(FM) && ./scripts/verify-object-storage-live.sh
 
 workload-identity-proof: inventory-check ## Prove SPIFFE mTLS/JWT-SVID boundaries, SPIRE bundle JWKS, stale credential deletion, and ClickHouse evidence
 	cd $(FM) && ./scripts/verify-workload-identity-live.sh
