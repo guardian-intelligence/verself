@@ -116,27 +116,25 @@ test.describe("/design — treatment-first structure", () => {
     expect(fonts, "Workshop body fonts").not.toMatch(/Fraunces/i);
   });
 
-  test("Newsroom signature carries a Flare dot + NEWSROOM label, no hairline", async ({ page }) => {
+  test("Newsroom signature is a Flare-ground card with black emboss mark", async ({ page }) => {
     await page.goto("/design");
     const newsroom = page.locator("#newsroom");
 
     await expect(newsroom).toContainText("Press Officer Name");
-    // The accent label sets in uppercase via text-transform; the DOM text is
-    // "Newsroom", which getByText resolves regardless of CSS casing.
-    await expect(newsroom.getByText("Newsroom", { exact: false }).first()).toBeVisible();
 
-    // Flare (#CCFF00) appears on >= 2 distinct elements in Newsroom: the
-    // Ground swatch in the palette, the mark carrier ground, the hero
-    // surface, and the signature accent dot. Query spans + divs both.
+    // The signature card itself is Flare (#CCFF00) — the ground carries
+    // the treatment identity, no dot or hairline needed. Flare appears
+    // on ≥ 3 distinct backgrounds in Newsroom: palette ground swatch,
+    // mark carrier ground, hero surface, and now the signature card.
     const flareCount = await newsroom.evaluate((root) => {
-      return Array.from(root.querySelectorAll("span, div")).filter(
+      return Array.from(root.querySelectorAll("div")).filter(
         (el) => getComputedStyle(el).backgroundColor === "rgb(204, 255, 0)",
       ).length;
     });
-    expect(flareCount, "Flare-backed elements in Newsroom").toBeGreaterThanOrEqual(2);
+    expect(flareCount, "Flare-backed elements in Newsroom").toBeGreaterThanOrEqual(3);
   });
 
-  test("Letters signature identifies by NAME · ROLE, not a valediction, and has a 3 px Bordeaux hairline", async ({
+  test("Letters signature identifies by NAME · ROLE, no Seattle restatement, Bordeaux rule on left edge", async ({
     page,
   }) => {
     await page.goto("/design");
@@ -151,19 +149,28 @@ test.describe("/design — treatment-first structure", () => {
     // The valediction moved into the article body specimen, above the sig.
     await expect(letters).toContainText(/— the founder/);
 
-    // Bordeaux accent hairline in the signature card resolves to rgb(92, 31, 30)
-    // at height 3px.
-    const bordeauxHairline = await letters.evaluate((root) => {
+    // The signature intentionally does NOT restate "Filed from Seattle" or
+    // the letter number — the article body carries both. The signature is
+    // identity + reply route only.
+    const sigCard = letters.locator('div[style*="max-width: 540"]').last();
+    await expect(sigCard).not.toContainText("Filed from Seattle");
+    await expect(sigCard).not.toContainText("Letter №");
+
+    // Bordeaux editorial rule now lives on the card's left border (mirroring
+    // the pull-quote rule in the article body above) instead of as a
+    // standalone 3×44 hairline below the name. The card must compute with
+    // a 3 px left border in Bordeaux on the Paper ground.
+    const bordeauxRule = await letters.evaluate((root) => {
       return Array.from(root.querySelectorAll("div")).some((el) => {
         const cs = getComputedStyle(el);
         return (
-          cs.backgroundColor === "rgb(92, 31, 30)" &&
-          parseInt(cs.height, 10) === 3 &&
-          parseInt(cs.width, 10) === 44
+          cs.borderLeftColor === "rgb(92, 31, 30)" &&
+          parseInt(cs.borderLeftWidth, 10) >= 3 &&
+          cs.backgroundColor === "rgb(246, 244, 237)"
         );
       });
     });
-    expect(bordeauxHairline, "3px × 44px Bordeaux hairline").toBe(true);
+    expect(bordeauxRule, "Bordeaux left rule on Paper-ground card").toBe(true);
   });
 
   test("Letters palette collapses to 4 role cells; no duplicate Stone chip", async ({ page }) => {
