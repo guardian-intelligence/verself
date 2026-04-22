@@ -182,7 +182,7 @@
       LoadCredential=clickhouse-ca-cert:/etc/clickhouse-server/tls/server-ca.pem
       Environment=GOVERNANCE_LISTEN_ADDR={{ services.governance_service.host }}:{{ services.governance_service.port }}
       Environment=GOVERNANCE_INTERNAL_LISTEN_ADDR={{ services.governance_service.host }}:{{ services.governance_service.internal_port }}
-      Environment=GOVERNANCE_INTERNAL_CLIENT_SPIFFE_IDS={{ spire_identity_service_id }},{{ spire_sandbox_rental_id }},{{ spire_secrets_service_id }},{{ spire_temporal_proof_id }},{{ spire_object_storage_admin_id }}
+      Environment=GOVERNANCE_INTERNAL_CLIENT_SPIFFE_IDS={{ spire_identity_service_id }},{{ spire_sandbox_rental_id }},{{ spire_secrets_service_id }},{{ spire_object_storage_admin_id }}
       Environment=GOVERNANCE_PG_DSN=postgres://governance_service@/governance_service?host=/var/run/postgresql&sslmode=disable
       Environment=GOVERNANCE_IDENTITY_PG_DSN=postgres://identity_service@/identity_service?host=/var/run/postgresql&sslmode=disable
       Environment=GOVERNANCE_BILLING_PG_DSN=postgres://billing@/billing?host=/var/run/postgresql&sslmode=disable

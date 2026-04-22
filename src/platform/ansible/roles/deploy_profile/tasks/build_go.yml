@@ -116,25 +116,6 @@
     GOARCH: amd64
   changed_when: false
 
-- name: Build object-storage-proof binary
-  delegate_to: localhost
-  become: false
-  run_once: true
-  ansible.builtin.command:
-    argv:
-      - go
-      - build
-      - -ldflags=-s -w -X main.version={{ forge_metal_version | default('dev') }}
-      - -o
-      - "{{ deploy_profile_repo_root }}/src/object-storage-service/object-storage-proof"
-      - ./src/object-storage-service/cmd/object-storage-proof
-    chdir: "{{ deploy_profile_repo_root }}"
-  environment:
-    CGO_ENABLED: "0"
-    GOOS: linux
-    GOARCH: amd64
-  changed_when: false
-
 - name: Build object-storage-secret-sync binary
   delegate_to: localhost
   become: false
@@ -249,25 +230,6 @@
     GOARCH: amd64
   changed_when: false
 
-- name: Build temporal-proof binary
-  delegate_to: localhost
-  become: false
-  run_once: true
-  ansible.builtin.command:
-    argv:
-      - go
-      - build
-      - -ldflags=-s -w -X main.version={{ forge_metal_version | default('dev') }}
-      - -o
-      - "{{ deploy_profile_repo_root }}/src/temporal-platform/temporal-proof"
-      - ./src/temporal-platform/cmd/temporal-proof
-    chdir: "{{ deploy_profile_repo_root }}"
-  environment:
-    CGO_ENABLED: "0"
-    GOOS: linux
-    GOARCH: amd64
-  changed_when: false
-
 - name: Build temporal-bootstrap binary
   delegate_to: localhost
   become: false
@@ -322,13 +284,19 @@
     - { src: "{{ deploy_profile_repo_root }}/src/governance-service/governance-service", name: governance-service }
     - { src: "{{ deploy_profile_repo_root }}/src/secrets-service/secrets-service", name: secrets-service }
     - { src: "{{ deploy_profile_repo_root }}/src/object-storage-service/object-storage-service", name: object-storage-service }
-    - { src: "{{ deploy_profile_repo_root }}/src/object-storage-service/object-storage-proof", name: object-storage-proof }
     - { src: "{{ deploy_profile_repo_root }}/src/object-storage-service/object-storage-secret-sync", name: object-storage-secret-sync }
     - { src: "{{ deploy_profile_repo_root }}/src/temporal-platform/forge-temporal-server", name: forge-temporal-server }
     - { src: "{{ deploy_profile_repo_root }}/src/temporal-platform/forge-temporal-web", name: forge-temporal-web }
-    - { src: "{{ deploy_profile_repo_root }}/src/temporal-platform/temporal-proof", name: temporal-proof }
     - { src: "{{ deploy_profile_repo_root }}/src/temporal-platform/temporal-bootstrap", name: temporal-bootstrap }
     - { src: "{{ deploy_profile_repo_root }}/src/temporal-platform/temporal-schema", name: temporal-schema }
+
+- name: Remove retired proof binaries from server profile
+  ansible.builtin.file:
+    path: "{{ fm_bin }}/{{ item }}"
+    state: absent
+  loop:
+    - object-storage-proof
+    - temporal-proof
 
 - name: Set billing-service binary copy fact
   ansible.builtin.set_fact:

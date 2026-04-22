@@ -204,7 +204,7 @@ func runS3(
 	stop context.CancelFunc,
 	logger *slog.Logger,
 	spiffeSource *workloadapi.X509Source,
-	runtimeSecretsClient *secretsclient.RuntimeSecretClient,
+	runtimeSecretsClient *secretsclient.ClientWithResponses,
 	pg *sql.DB,
 	secretBox *objectstorage.SecretBox,
 	cfg objectstorage.Config,
@@ -407,12 +407,12 @@ func parseRuntimeRole(raw string) (runtimeRole, error) {
 	}
 }
 
-func newRuntimeSecretsClient(ctx context.Context, spiffeSource *workloadapi.X509Source, secretsURL string, secretsSPIFFEID spiffeid.ID) (*secretsclient.RuntimeSecretClient, error) {
+func newRuntimeSecretsClient(ctx context.Context, spiffeSource *workloadapi.X509Source, secretsURL string, secretsSPIFFEID spiffeid.ID) (*secretsclient.ClientWithResponses, error) {
 	secretsHTTPClient, err := workloadauth.MTLSClient(spiffeSource, secretsSPIFFEID, http.DefaultTransport)
 	if err != nil {
 		return nil, fmt.Errorf("object-storage secrets client: %w", err)
 	}
-	runtimeSecretsClient, err := secretsclient.New(
+	runtimeSecretsClient, err := secretsclient.NewClientWithResponses(
 		secretsURL,
 		secretsclient.WithHTTPClient(secretsHTTPClient),
 	)
@@ -491,7 +491,7 @@ func credentialPath(name string) string {
 	return filepath.Join(base, name)
 }
 
-func fetchObjectStorageRuntimeSecrets(ctx context.Context, client *secretsclient.RuntimeSecretClient, secretNames ...string) (map[string]string, error) {
+func fetchObjectStorageRuntimeSecrets(ctx context.Context, client *secretsclient.ClientWithResponses, secretNames ...string) (map[string]string, error) {
 	if client == nil {
 		return nil, fmt.Errorf("object-storage runtime secret client is required")
 	}
@@ -500,9 +500,16 @@ func fetchObjectStorageRuntimeSecrets(ctx context.Context, client *secretsclient
 	}
 	secretCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	values, err := client.ResolvePlatformRuntimeSecrets(secretCtx, secretNames)
-	if err != nil {
-		return nil, fmt.Errorf("resolve object-storage runtime secrets: %w", err)
+	values := make(map[string]string, len(secretNames))
+	for _, secretName := range secretNames {
+		resp, err := client.ReadSecretWithResponse(secretCtx, secretName)
+		if err != nil {
+			return nil, fmt.Errorf("resolve object-storage runtime secret %s: %w", secretName, err)
+		}
+		if resp.JSON200 == nil {
+			return nil, fmt.Errorf("resolve object-storage runtime secret %s: unexpected status %d: %s", secretName, resp.StatusCode(), strings.TrimSpace(string(resp.Body)))
+		}
+		values[secretName] = resp.JSON200.Value
 	}
 	for _, name := range secretNames {
 		if strings.TrimSpace(values[name]) == "" {

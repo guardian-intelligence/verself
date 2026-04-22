@@ -1344,8 +1344,8 @@ grafana_dashboards:
             $__timeFilter(Timestamp) AND ServiceName = 'temporal-server' AND SpanName = 'temporal.auth.authorize' GROUP BY time, series ORDER
             BY time, series
       - id: 2
-        uid: "temporal-proof-operations"
-        title: "Web + Proof Operations"
+        uid: "temporal-bootstrap-operations"
+        title: "Web + Bootstrap Operations"
         type: "timeseries"
         x: 8
         y: 0
@@ -1358,8 +1358,7 @@ grafana_dashboards:
           >-
             SELECT $__timeInterval(Timestamp) AS time, concat(ServiceName, ': ', SpanName) AS series, toFloat64(count()) AS calls FROM
             default.otel_traces WHERE $__timeFilter(Timestamp) AND ((ServiceName = 'temporal-web' AND (SpanAttributes['http.request.method']
-            != '' OR SpanAttributes['http.method'] != '')) OR (ServiceName IN ('temporal-proof', 'temporal-proof-worker') AND
-            (startsWith(SpanName, 'temporal.proof.') OR SpanAttributes['temporal.workflow_id'] != ''))) GROUP BY time, series ORDER BY time,
+            != '' OR SpanAttributes['http.method'] != '')) OR (ServiceName = 'temporal-bootstrap')) GROUP BY time, series ORDER BY time,
             series
       - id: 3
         uid: "temporal-process-memory"
@@ -1376,8 +1375,8 @@ grafana_dashboards:
           >-
             SELECT $__timeInterval(TimeUnix) AS time, ResourceAttributes['process.executable.name'] AS series, avg(Value) AS bytes FROM
             default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND MetricName = 'process.memory.usage' AND
-            ResourceAttributes['process.executable.name'] IN ('forge-temporal-server', 'forge-temporal-web', 'temporal-proof') GROUP BY time,
-            series ORDER BY time, series
+            ResourceAttributes['process.executable.name'] IN ('forge-temporal-server', 'forge-temporal-web') GROUP BY time, series ORDER BY
+            time, series
       - id: 4
         uid: "temporal-process-cpu"
         title: "Process CPU (cores)"
@@ -1395,8 +1394,8 @@ grafana_dashboards:
             $__timeInterval(TimeUnix) AS ts, ResourceAttributes['process.executable.name'] AS process, ResourceAttributes['process.pid'] AS
             pid, Attributes['state'] AS state, max(Value) - min(Value) AS delta, dateDiff('second', min(TimeUnix), max(TimeUnix)) AS span FROM
             default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND MetricName = 'process.cpu.time' AND
-            ResourceAttributes['process.executable.name'] IN ('forge-temporal-server', 'forge-temporal-web', 'temporal-proof') GROUP BY ts,
-            process, pid, state) GROUP BY ts, process ORDER BY time, series
+            ResourceAttributes['process.executable.name'] IN ('forge-temporal-server', 'forge-temporal-web') GROUP BY ts, process, pid, state)
+            GROUP BY ts, process ORDER BY time, series
       - id: 5
         uid: "temporal-recent-authz"
         title: "Recent Authz"
@@ -1413,12 +1412,11 @@ grafana_dashboards:
             SELECT Timestamp, ServiceName AS service, SpanName AS span, SpanAttributes['spiffe.peer_id'] AS peer_id,
             SpanAttributes['temporal.namespace'] AS namespace, SpanAttributes['rpc.method'] AS rpc_method,
             SpanAttributes['temporal.authz.decision'] AS decision, SpanAttributes['temporal.authz.reason'] AS reason, StatusCode, TraceId FROM
-            default.otel_traces WHERE $__timeFilter(Timestamp) AND ServiceName IN ('temporal-server', 'temporal-proof',
-            'temporal-proof-worker') AND SpanName IN ('auth.spiffe.mtls.server', 'auth.spiffe.mtls.client', 'temporal.auth.authorize') ORDER
-            BY Timestamp DESC LIMIT 100
+            default.otel_traces WHERE $__timeFilter(Timestamp) AND ServiceName IN ('temporal-server', 'temporal-bootstrap') AND SpanName IN
+            ('auth.spiffe.mtls.server', 'auth.spiffe.mtls.client', 'temporal.auth.authorize') ORDER BY Timestamp DESC LIMIT 100
       - id: 6
-        uid: "temporal-proof-runs"
-        title: "Recent Proof Runs"
+        uid: "temporal-bootstrap-runs"
+        title: "Recent Bootstrap Runs"
         type: "table"
         x: 16
         y: 9
@@ -1429,12 +1427,10 @@ grafana_dashboards:
         unit: "short"
         raw_sql:
           >-
-            SELECT Timestamp, ServiceName AS service, SpanName AS span, StatusCode,
-            SpanAttributes['temporal.namespace'] AS namespace, SpanAttributes['temporal.workflow_id'] AS workflow_id,
-            SpanAttributes['temporal.run_id'] AS run_id, round(Duration / 1000000, 2) AS ms, TraceId FROM default.otel_traces WHERE
-            $__timeFilter(Timestamp) AND ServiceName IN ('temporal-server', 'temporal-server.frontend', 'temporal-server.history',
-            'temporal-server.matching', 'temporal-server.worker', 'temporal-proof', 'temporal-proof-worker') AND (startsWith(SpanName,
-            'temporal.proof.') OR SpanAttributes['temporal.workflow_id'] != '') ORDER BY Timestamp DESC LIMIT 100
+            SELECT Timestamp, ServiceName AS service, SpanName AS span, StatusCode, SpanAttributes['temporal.namespace'] AS namespace,
+            SpanAttributes['rpc.method'] AS rpc_method, round(Duration / 1000000, 2) AS ms, TraceId FROM default.otel_traces WHERE
+            $__timeFilter(Timestamp) AND (ServiceName = 'temporal-bootstrap' OR (ServiceName = 'temporal-server' AND
+            SpanAttributes['temporal.namespace'] != '')) ORDER BY Timestamp DESC LIMIT 100
       - id: 7
         uid: "temporal-logs"
         title: "Recent Logs"
@@ -1449,8 +1445,8 @@ grafana_dashboards:
         raw_sql:
           >-
             SELECT Timestamp, ServiceName AS service, SeverityText AS level, Body AS message, TraceId FROM default.otel_logs WHERE
-            $__timeFilter(Timestamp) AND ServiceName IN ('temporal-server', 'temporal-web', 'temporal-proof', 'temporal-proof-worker') ORDER
-            BY Timestamp DESC LIMIT 100
+            $__timeFilter(Timestamp) AND ServiceName IN ('temporal-server', 'temporal-web', 'temporal-bootstrap') ORDER BY Timestamp DESC
+            LIMIT 100
       - id: 8
         uid: "temporal-metric-latest"
         title: "Latest Temporal Metrics"
@@ -1466,7 +1462,7 @@ grafana_dashboards:
           >-
             SELECT ServiceName AS service, MetricName AS metric, MetricKind AS kind, MetricUnit AS unit, round(CurrentValue, 4) AS value,
             SampledAt FROM default.otel_metric_latest WHERE $__timeFilter(SampledAt) AND (startsWith(ServiceName, 'temporal-server') OR
-            ServiceName IN ('temporal-web', 'temporal-proof', 'temporal-proof-worker')) ORDER BY SampledAt DESC, service, metric LIMIT 100
+            ServiceName = 'temporal-web') ORDER BY SampledAt DESC, service, metric LIMIT 100
   - uid: "forge-metal-observability-query-model"
     title: "Observability Query Vocabulary"
     tags:

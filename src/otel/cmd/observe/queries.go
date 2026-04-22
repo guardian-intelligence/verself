@@ -59,7 +59,7 @@ func buildQueries(cfg config) ([]query, error) {
 		return []query{
 			newQuery("temporal.authz", temporalAuthzSQL, params),
 			newQuery("temporal.web_requests", temporalWebRequestsSQL, params),
-			newQuery("temporal.proof_runs", temporalProofRunsSQL, params),
+			newQuery("temporal.bootstrap", temporalBootstrapSQL, params),
 			newQuery("temporal.logs", temporalLogsSQL, params),
 			newQuery("temporal.metrics", temporalMetricsSQL, params),
 		}, nil
@@ -707,7 +707,7 @@ SELECT
   TraceId AS trace_id
 FROM default.otel_traces
 WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
-  AND ServiceName IN ('temporal-server', 'temporal-proof', 'temporal-proof-worker')
+  AND ServiceName IN ('temporal-server', 'temporal-bootstrap')
   AND SpanName IN ('auth.spiffe.mtls.server', 'auth.spiffe.mtls.client', 'temporal.auth.authorize')
 ORDER BY Timestamp DESC
 LIMIT {row_limit:UInt32}`
@@ -728,23 +728,21 @@ WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
 ORDER BY Timestamp DESC
 LIMIT {row_limit:UInt32}`
 
-const temporalProofRunsSQL = `
+const temporalBootstrapSQL = `
 SELECT
   formatDateTime(Timestamp, '%H:%i:%S') AS time,
   ServiceName AS service,
   SpanName AS span,
   StatusCode AS status,
   nullIf(SpanAttributes['temporal.namespace'], '') AS namespace,
-  nullIf(SpanAttributes['temporal.workflow_id'], '') AS workflow_id,
-  nullIf(SpanAttributes['temporal.run_id'], '') AS run_id,
+  nullIf(SpanAttributes['rpc.method'], '') AS rpc_method,
   intDiv(Duration, 1000000) AS ms,
   TraceId AS trace_id
 FROM default.otel_traces
 WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
-  AND ServiceName IN ('temporal-server', 'temporal-server.frontend', 'temporal-server.history', 'temporal-server.matching', 'temporal-server.worker', 'temporal-proof', 'temporal-proof-worker')
   AND (
-    startsWith(SpanName, 'temporal.proof.')
-    OR SpanAttributes['temporal.workflow_id'] != ''
+    ServiceName = 'temporal-bootstrap'
+    OR (ServiceName = 'temporal-server' AND SpanAttributes['temporal.namespace'] != '')
   )
 ORDER BY Timestamp DESC
 LIMIT {row_limit:UInt32}`
@@ -758,7 +756,7 @@ SELECT
   TraceId AS trace_id
 FROM default.otel_logs
 WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
-  AND ServiceName IN ('temporal-server', 'temporal-web', 'temporal-proof', 'temporal-proof-worker')
+  AND ServiceName IN ('temporal-server', 'temporal-web', 'temporal-bootstrap')
 ORDER BY Timestamp DESC
 LIMIT {row_limit:UInt32}`
 
@@ -774,7 +772,7 @@ FROM default.otel_metric_catalog_live
 WHERE LastSeenAt > now() - toIntervalMinute({minutes:UInt32})
   AND (
     startsWith(ServiceName, 'temporal-server')
-    OR ServiceName IN ('temporal-web', 'temporal-proof', 'temporal-proof-worker')
+    OR ServiceName = 'temporal-web'
   )
 GROUP BY service, metric
 ORDER BY service, metric
