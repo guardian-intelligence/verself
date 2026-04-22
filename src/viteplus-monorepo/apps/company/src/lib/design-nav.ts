@@ -1,139 +1,83 @@
-// /design is a single long page (mirrors logo-playground.html). Each entry below
-// becomes both the rail label and the section anchor inside the page DOM.
-// Section numbering matches the playground so cross-references stay stable.
+// /design is a single long page. Each entry below becomes both the rail label
+// and the section anchor inside the page DOM.
+//
+// The page has one idea per section: The Mark carries the brand (including
+// carriers, size ladder, and lockup behavior); each Treatment is a mode the
+// brand operates in and documents its own palette inline; Applied shows the
+// few surfaces where the marks escape the product chrome.
 export type DesignSectionId =
   | "mark"
-  | "audience"
-  | "clear-space"
-  | "size-ladder"
-  | "lockups"
-  | "product-marque"
-  | "colour"
   | "typography"
-  | "hero-iron"
-  | "hero-flare"
-  | "dispatch"
-  | "product"
+  | "company"
+  | "newsroom"
+  | "letters"
+  | "workshop"
   | "photography"
-  | "og-card"
-  | "business-cards"
-  | "email-signature";
+  | "business-cards";
 
 export type DesignSection = {
   readonly id: DesignSectionId;
   readonly number: string;
-  readonly group: "Identity" | "System" | "Applied";
+  readonly group: "System" | "Treatments" | "Applied";
   readonly label: string;
   readonly title: string;
 };
 
 export const DESIGN_SECTIONS: readonly DesignSection[] = [
-  { id: "mark", number: "01", group: "Identity", label: "The mark", title: "Two wings." },
-  {
-    id: "audience",
-    number: "02",
-    group: "Identity",
-    label: "Audience split",
-    title: "Two marks. Two jobs.",
-  },
-  {
-    id: "clear-space",
-    number: "03",
-    group: "Identity",
-    label: "Clear space",
-    title: "Clear space is one wing.",
-  },
-  {
-    id: "size-ladder",
-    number: "04",
-    group: "Identity",
-    label: "Size ladder",
-    title: "From favicon to signage.",
-  },
-  {
-    id: "lockups",
-    number: "05",
-    group: "Identity",
-    label: "Lockups",
-    title: "The wordmark, four ways.",
-  },
-  {
-    id: "product-marque",
-    number: "06",
-    group: "Identity",
-    label: "Platform marque",
-    title: "One house, one platform.",
-  },
-  {
-    id: "colour",
-    number: "07",
-    group: "System",
-    label: "Colour",
-    title: "Three grounds. Three accents.",
-  },
+  { id: "mark", number: "01", group: "System", label: "The mark", title: "Two wings, four treatments." },
   {
     id: "typography",
-    number: "08",
+    number: "02",
     group: "System",
     label: "Typography",
     title: "Three families. Three roles. Zero licences.",
   },
   {
-    id: "hero-iron",
-    number: "09",
-    group: "Applied",
-    label: "Hero · Iron",
-    title: "Customer-facing surface.",
+    id: "company",
+    number: "03",
+    group: "Treatments",
+    label: "Company",
+    title: "Company — the record.",
   },
   {
-    id: "hero-flare",
-    number: "10",
-    group: "Applied",
-    label: "Hero · Flare",
-    title: "World-facing surface.",
+    id: "workshop",
+    number: "04",
+    group: "Treatments",
+    label: "Workshop",
+    title: "Workshop — where the work happens.",
   },
   {
-    id: "dispatch",
-    number: "11",
-    group: "Applied",
-    label: "Dispatch",
-    title: "The Dispatch, on Paper.",
+    id: "newsroom",
+    number: "05",
+    group: "Treatments",
+    label: "Newsroom",
+    title: "Newsroom — the broadcast.",
   },
   {
-    id: "product",
-    number: "12",
-    group: "Applied",
-    label: "Product chrome",
-    title: "The serif stays. The rest is work.",
+    id: "letters",
+    number: "06",
+    group: "Treatments",
+    label: "Letters",
+    title: "Letters — the long form.",
   },
   {
     id: "photography",
-    number: "13",
+    number: "07",
     group: "Applied",
     label: "Photography · scrim",
     title: "Argent needs a floor.",
   },
   {
-    id: "og-card",
-    number: "14",
-    group: "Applied",
-    label: "OG card",
-    title: "1200 × 630.",
-  },
-  {
     id: "business-cards",
-    number: "15",
+    number: "08",
     group: "Applied",
     label: "Business cards",
     title: "3.5 × 2 inches.",
   },
-  {
-    id: "email-signature",
-    number: "16",
-    group: "Applied",
-    label: "Email signature",
-    title: "Inline, in other people's inboxes.",
-  },
 ];
 
-export const DESIGN_GROUPS: readonly DesignSection["group"][] = ["Identity", "System", "Applied"];
+export const DESIGN_GROUPS: readonly DesignSection["group"][] = [
+  "System",
+  "Treatments",
+  "Applied",
+];
