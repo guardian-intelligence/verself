@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -240,6 +241,7 @@ type AuditEvent struct {
 type AuditListFilters struct {
 	Limit             int
 	Cursor            string
+	Order             string // "desc" (default) or "asc"; controls (recorded_at, sequence) ordering.
 	ActorID           string
 	AuditEvent        string
 	CredentialID      string
@@ -704,7 +706,33 @@ func (s *Service) ListAuditEvents(ctx context.Context, principal Principal, filt
 	if filters.HighRisk {
 		highRisk = 1
 	}
-	rows, err := s.CH.Query(ctx, auditEventSelectSQL()+`
+	ascending := strings.EqualFold(strings.TrimSpace(filters.Order), "asc")
+	// Cursor direction + ORDER BY flip together so forward pagination walks
+	// the same direction the user is reading. Composing DESC with '<' walks
+	// newest→oldest; ASC with '>' walks oldest→newest.
+	var query string
+	if ascending {
+		query = auditEventSelectSQL() + `
+		FROM forge_metal.audit_events
+		WHERE org_id = $1
+		  AND ($2 = '' OR service_name = $2)
+		  AND ($3 = '' OR operation_id = $3)
+		  AND ($4 = '' OR result = $4)
+		  AND ($5 = '' OR actor_id = $5)
+		  AND ($6 = '' OR target_id = $6)
+		  AND ($7 = '' OR target_kind = $7)
+		  AND ($8 = '' OR operation_type = $8)
+		  AND ($9 = '' OR risk_level = $9)
+		  AND ($10 = '' OR source_product_area = $10)
+		  AND ($11 = '' OR audit_event = $11)
+		  AND ($12 = '' OR credential_id = $12)
+		  AND ($13 = 0 OR risk_level IN ('high', 'critical') OR operation_type IN ('write', 'delete', 'export') OR result IN ('denied', 'error'))
+		  AND ($14 = 0 OR (recorded_at, sequence) > ($15, $16))
+		ORDER BY recorded_at ASC, sequence ASC
+		LIMIT $17
+	`
+	} else {
+		query = auditEventSelectSQL() + `
 		FROM forge_metal.audit_events
 		WHERE org_id = $1
 		  AND ($2 = '' OR service_name = $2)
@@ -722,7 +750,9 @@ func (s *Service) ListAuditEvents(ctx context.Context, principal Principal, filt
 		  AND ($14 = 0 OR (recorded_at, sequence) < ($15, $16))
 		ORDER BY recorded_at DESC, sequence DESC
 		LIMIT $17
-	`, orgID, filters.ServiceName, filters.OperationID, filters.Result, filters.ActorID, filters.TargetID, filters.TargetKind, filters.OperationType, filters.RiskLevel, filters.SourceProductArea, filters.AuditEvent, filters.CredentialID, highRisk, cursorEnabled, cursor.RecordedAt, cursor.Sequence, limit+1)
+	`
+	}
+	rows, err := s.CH.Query(ctx, query, orgID, filters.ServiceName, filters.OperationID, filters.Result, filters.ActorID, filters.TargetID, filters.TargetKind, filters.OperationType, filters.RiskLevel, filters.SourceProductArea, filters.AuditEvent, filters.CredentialID, highRisk, cursorEnabled, cursor.RecordedAt, cursor.Sequence, limit+1)
 	if err != nil {
 		return AuditListPage{}, fmt.Errorf("%w: list audit events: %v", ErrStore, err)
 	}
@@ -869,26 +899,32 @@ func firstNonEmpty(values ...string) string {
 }
 
 type auditCursor struct {
-	RecordedAt time.Time `json:"recorded_at"`
-	Sequence   uint64    `json:"sequence"`
+	RecordedAt time.Time
+	Sequence   uint64
 }
 
+// Cursor wire format is "<rfc3339nano>.<sequence>" — URL-safe ASCII with no
+// extra encoding. Pre-release hard cutover from the previous hex(json) shape;
+// stored cursors from older pages are rejected as invalid on next click.
 func makeCursor(recordedAt time.Time, sequence uint64) string {
-	raw, _ := json.Marshal(auditCursor{RecordedAt: recordedAt.UTC(), Sequence: sequence})
-	return hex.EncodeToString(raw)
+	return recordedAt.UTC().Format(time.RFC3339Nano) + "." + strconv.FormatUint(sequence, 10)
 }
 
 func parseCursor(value string) (auditCursor, error) {
-	raw, err := hex.DecodeString(value)
+	sep := strings.LastIndex(value, ".")
+	if sep <= 0 || sep == len(value)-1 {
+		return auditCursor{}, fmt.Errorf("%w: invalid cursor", ErrInvalidArgument)
+	}
+	recordedAt, err := time.Parse(time.RFC3339Nano, value[:sep])
 	if err != nil {
 		return auditCursor{}, fmt.Errorf("%w: invalid cursor", ErrInvalidArgument)
 	}
-	var cursor auditCursor
-	if err := json.Unmarshal(raw, &cursor); err != nil {
+	sequence, err := strconv.ParseUint(value[sep+1:], 10, 64)
+	if err != nil {
 		return auditCursor{}, fmt.Errorf("%w: invalid cursor", ErrInvalidArgument)
 	}
-	if cursor.RecordedAt.IsZero() {
+	if recordedAt.IsZero() {
 		return auditCursor{}, fmt.Errorf("%w: invalid cursor", ErrInvalidArgument)
 	}
-	return cursor, nil
+	return auditCursor{RecordedAt: recordedAt.UTC(), Sequence: sequence}, nil
 }

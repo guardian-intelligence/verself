@@ -22,10 +22,22 @@ paths:
                     maximum: 200
                 - name: cursor
                   in: query
+                  description: Opaque pagination cursor returned by the previous page.
                   explode: false
                   schema:
                     type: string
-                    maxLength: 1024
+                    description: Opaque pagination cursor returned by the previous page.
+                    maxLength: 64
+                - name: order
+                  in: query
+                  description: Time ordering of results; defaults to 'desc' (newest first).
+                  explode: false
+                  schema:
+                    type: string
+                    description: Time ordering of results; defaults to 'desc' (newest first).
+                    enum:
+                        - asc
+                        - desc
                 - name: actor_id
                   in: query
                   explode: false

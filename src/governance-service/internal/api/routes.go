@@ -133,7 +133,8 @@ func RegisterRoutes(api huma.API, svc *governance.Service) {
 
 type listAuditEventsInput struct {
 	Limit             int    `query:"limit,omitempty" minimum:"1" maximum:"200" doc:"Maximum events to return."`
-	Cursor            string `query:"cursor,omitempty" maxLength:"1024"`
+	Cursor            string `query:"cursor,omitempty" maxLength:"64" doc:"Opaque pagination cursor returned by the previous page."`
+	Order             string `query:"order,omitempty" enum:"asc,desc" doc:"Time ordering of results; defaults to 'desc' (newest first)."`
 	ActorID           string `query:"actor_id,omitempty" maxLength:"255"`
 	AuditEvent        string `query:"audit_event,omitempty" maxLength:"255"`
 	CredentialID      string `query:"credential_id,omitempty" maxLength:"255"`
@@ -157,6 +158,7 @@ func listAuditEvents(svc *governance.Service) func(context.Context, governance.P
 		page, err := svc.ListAuditEvents(ctx, principal, governance.AuditListFilters{
 			Limit:             input.Limit,
 			Cursor:            input.Cursor,
+			Order:             input.Order,
 			ActorID:           input.ActorID,
 			AuditEvent:        input.AuditEvent,
 			CredentialID:      input.CredentialID,
