@@ -1,4 +1,4 @@
-.PHONY: help test lint lint-scripts lint-conversions lint-ansible lint-voice company-proof fmt vet tidy openapi openapi-check openapi-wire-check \
+.PHONY: help test lint lint-scripts lint-conversions lint-ansible lint-voice company-proof fmt vet tidy openapi openapi-check openapi-clients openapi-clients-check openapi-wire-check \
        hooks-install doctor inventory-check setup-dev setup-sops provision deprovision deploy site guest-rootfs security-patch identity-reset seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member \
        set-user-state billing-clock billing-wall-clock billing-state billing-documents billing-finalizations billing-events billing-pg-shell billing-pg-query billing-proof billing-reset verification-reset \
        secrets-proof secrets-leak-proof openbao-proof openbao-tenancy-proof workload-identity-proof object-storage-verify temporal-verify temporal-web-proof recurring-schedule-proof \
@@ -22,6 +22,8 @@ TP       := src/temporal-platform
 INVENTORY := $(FM)/ansible/inventory/hosts.ini
 GO_DIRS  := $(AW) $(VMO) $(BS) $(GS) $(IS) $(SS) $(AM) $(SR) $(MS) $(OSS) $(OT) $(TP)
 GO_PKGS  := $(addsuffix /...,$(addprefix ./,$(GO_DIRS)))
+GO_CLIENT_DIRS := $(BS)/client $(GS)/client $(GS)/internalclient $(IS)/client $(SS)/client $(SS)/internalclient $(SR)/client $(MS)/client $(OSS)/client
+GO_CLIENT_FILES := $(addsuffix /client.gen.go,$(GO_CLIENT_DIRS))
 BILLING_PRODUCT_ID ?= sandbox
 ASSUME_PERSONA_OUTPUT_FLAG := $(if $(OUTPUT),--output "$(OUTPUT)",)
 ASSUME_PERSONA_PRINT_FLAG := $(if $(filter 1 true yes,$(PRINT)),--print,)
@@ -88,12 +90,16 @@ openapi: ## Regenerate committed OpenAPI 3.0 and 3.1 specs for Go services
 	mkdir -p $(GS)/openapi
 	go run ./$(GS)/cmd/governance-openapi --format 3.0 > $(GS)/openapi/openapi-3.0.yaml
 	go run ./$(GS)/cmd/governance-openapi --format 3.1 > $(GS)/openapi/openapi-3.1.yaml
+	go run ./$(GS)/cmd/governance-internal-openapi --format 3.0 > $(GS)/openapi/internal-openapi-3.0.yaml
+	go run ./$(GS)/cmd/governance-internal-openapi --format 3.1 > $(GS)/openapi/internal-openapi-3.1.yaml
 	mkdir -p $(IS)/openapi
 	go run ./$(IS)/cmd/identity-openapi --format 3.0 > $(IS)/openapi/openapi-3.0.yaml
 	go run ./$(IS)/cmd/identity-openapi --format 3.1 > $(IS)/openapi/openapi-3.1.yaml
 	mkdir -p $(SS)/openapi
 	go run ./$(SS)/cmd/secrets-openapi --format 3.0 > $(SS)/openapi/openapi-3.0.yaml
 	go run ./$(SS)/cmd/secrets-openapi --format 3.1 > $(SS)/openapi/openapi-3.1.yaml
+	go run ./$(SS)/cmd/secrets-internal-openapi --format 3.0 > $(SS)/openapi/internal-openapi-3.0.yaml
+	go run ./$(SS)/cmd/secrets-internal-openapi --format 3.1 > $(SS)/openapi/internal-openapi-3.1.yaml
 	go run ./$(MS)/cmd/mailbox-openapi --format 3.0 > $(MS)/openapi/openapi-3.0.yaml
 	go run ./$(MS)/cmd/mailbox-openapi --format 3.1 > $(MS)/openapi/openapi-3.1.yaml
 	mkdir -p $(OSS)/openapi
@@ -102,23 +108,45 @@ openapi: ## Regenerate committed OpenAPI 3.0 and 3.1 specs for Go services
 	mkdir -p $(SR)/openapi
 	go run ./$(SR)/cmd/sandbox-rental-openapi --format 3.0 > $(SR)/openapi/openapi-3.0.yaml
 	go run ./$(SR)/cmd/sandbox-rental-openapi --format 3.1 > $(SR)/openapi/openapi-3.1.yaml
+	$(MAKE) openapi-clients
+
+openapi-clients: ## Regenerate committed generated Go clients from OpenAPI 3.0 specs
+	cd $(BS)/client && go generate ./...
+	cd $(GS)/client && go generate ./...
+	cd $(GS)/internalclient && go generate ./...
+	cd $(IS)/client && go generate ./...
+	cd $(SS)/client && go generate ./...
+	cd $(SS)/internalclient && go generate ./...
+	cd $(SR)/client && go generate ./...
+	cd $(MS)/client && go generate ./...
+	cd $(OSS)/client && go generate ./...
 
 openapi-check: ## Verify committed OpenAPI specs are up to date
 	cd $(BS) && go run ./cmd/billing-openapi --format 3.0 --check
 	cd $(BS) && go run ./cmd/billing-openapi --format 3.1 --check
 	cd $(GS) && go run ./cmd/governance-openapi --format 3.0 --check
 	cd $(GS) && go run ./cmd/governance-openapi --format 3.1 --check
+	cd $(GS) && go run ./cmd/governance-internal-openapi --format 3.0 --check
+	cd $(GS) && go run ./cmd/governance-internal-openapi --format 3.1 --check
 	cd $(IS) && go run ./cmd/identity-openapi --format 3.0 --check
 	cd $(IS) && go run ./cmd/identity-openapi --format 3.1 --check
 	cd $(SS) && go run ./cmd/secrets-openapi --format 3.0 --check
 	cd $(SS) && go run ./cmd/secrets-openapi --format 3.1 --check
+	cd $(SS) && go run ./cmd/secrets-internal-openapi --format 3.0 --check
+	cd $(SS) && go run ./cmd/secrets-internal-openapi --format 3.1 --check
 	cd $(MS) && go run ./cmd/mailbox-openapi --format 3.0 --check
 	cd $(MS) && go run ./cmd/mailbox-openapi --format 3.1 --check
 	cd $(OSS) && go run ./cmd/object-storage-openapi --format 3.0 --check
 	cd $(OSS) && go run ./cmd/object-storage-openapi --format 3.1 --check
 	cd $(SR) && go run ./cmd/sandbox-rental-openapi --format 3.0 --check
 	cd $(SR) && go run ./cmd/sandbox-rental-openapi --format 3.1 --check
+	$(MAKE) openapi-clients-check
 	$(MAKE) openapi-wire-check
+
+openapi-clients-check: ## Verify committed generated Go clients are up to date
+	$(MAKE) openapi-clients
+	git diff --exit-code -- $(GO_CLIENT_FILES)
+	! rg -n "http\\.NewRequestWithContext\\(|\\.Do\\(req\\)|json\\.NewDecoder\\(|json\\.Marshal\\(" $(GO_CLIENT_DIRS) --glob '!**/client.gen.go' --glob '!**/generate.go'
 
 openapi-wire-check: ## Verify frontend-consumed OpenAPI 3.1 specs are JS wire-safe
 	go run ./$(AW)/cmd/openapi-wire-check \

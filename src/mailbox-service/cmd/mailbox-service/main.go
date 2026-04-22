@@ -93,7 +93,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("mailbox-service secrets spiffe client: %w", err)
 	}
-	secretsClient, err := secretsclient.New(requireEnvValue("MAILBOX_SERVICE_SECRETS_URL"), secretsclient.WithHTTPClient(secretsHTTPClient))
+	secretsClient, err := secretsclient.NewClientWithResponses(requireEnvValue("MAILBOX_SERVICE_SECRETS_URL"), secretsclient.WithHTTPClient(secretsHTTPClient))
 	if err != nil {
 		return fmt.Errorf("mailbox-service secrets client: %w", err)
 	}
@@ -141,10 +141,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	runtimeSecrets, err := secretsClient.ResolvePlatformRuntimeSecrets(ctx, []string{
+	runtimeSecrets, err := readRuntimeSecrets(ctx, secretsClient,
 		secretsclient.MailboxResendAPIKeyName,
 		secretsclient.MailboxStalwartAdminPasswordName,
-	})
+	)
 	if err != nil {
 		return fmt.Errorf("mailbox-service runtime provider secret: %w", err)
 	}
@@ -319,6 +319,26 @@ func requireSecretField(values map[string]string, field string, label string) st
 		os.Exit(1)
 	}
 	return value
+}
+
+func readRuntimeSecrets(ctx context.Context, client *secretsclient.ClientWithResponses, secretNames ...string) (map[string]string, error) {
+	if client == nil {
+		return nil, fmt.Errorf("runtime secrets client is required")
+	}
+	secretCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	values := make(map[string]string, len(secretNames))
+	for _, secretName := range secretNames {
+		resp, err := client.ReadSecretWithResponse(secretCtx, secretName)
+		if err != nil {
+			return nil, fmt.Errorf("read runtime secret %s: %w", secretName, err)
+		}
+		if resp.JSON200 == nil {
+			return nil, fmt.Errorf("read runtime secret %s: unexpected status %d: %s", secretName, resp.StatusCode(), strings.TrimSpace(string(resp.Body)))
+		}
+		values[secretName] = resp.JSON200.Value
+	}
+	return values, nil
 }
 
 func credentialOr(name, fallback string) (string, error) {

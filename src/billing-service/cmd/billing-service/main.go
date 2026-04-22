@@ -79,14 +79,14 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("billing secrets spiffe client: %w", err)
 	}
-	secretsClient, err := secretsclient.New(secretsURL, secretsclient.WithHTTPClient(secretsHTTPClient))
+	secretsClient, err := secretsclient.NewClientWithResponses(secretsURL, secretsclient.WithHTTPClient(secretsHTTPClient))
 	if err != nil {
 		return fmt.Errorf("billing secrets client: %w", err)
 	}
-	stripeSecrets, err := secretsClient.ResolvePlatformRuntimeSecrets(ctx, []string{
+	stripeSecrets, err := readRuntimeSecrets(ctx, secretsClient,
 		secretsclient.BillingStripeSecretKeyName,
 		secretsclient.BillingStripeWebhookSecretName,
-	})
+	)
 	if err != nil {
 		return fmt.Errorf("billing stripe provider secret: %w", err)
 	}
@@ -299,6 +299,26 @@ func requireSecretField(values map[string]string, field string, label string) st
 		os.Exit(1)
 	}
 	return value
+}
+
+func readRuntimeSecrets(ctx context.Context, client *secretsclient.ClientWithResponses, secretNames ...string) (map[string]string, error) {
+	if client == nil {
+		return nil, fmt.Errorf("runtime secrets client is required")
+	}
+	secretCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	values := make(map[string]string, len(secretNames))
+	for _, secretName := range secretNames {
+		resp, err := client.ReadSecretWithResponse(secretCtx, secretName)
+		if err != nil {
+			return nil, fmt.Errorf("read runtime secret %s: %w", secretName, err)
+		}
+		if resp.JSON200 == nil {
+			return nil, fmt.Errorf("read runtime secret %s: unexpected status %d: %s", secretName, resp.StatusCode(), strings.TrimSpace(string(resp.Body)))
+		}
+		values[secretName] = resp.JSON200.Value
+	}
+	return values, nil
 }
 
 func requireEnv(key string) string {

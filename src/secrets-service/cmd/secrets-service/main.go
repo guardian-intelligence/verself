@@ -128,7 +128,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("billing spiffe client: %w", err)
 	}
-	billingClient, err := billingclient.New(
+	billingClient, err := billingclient.NewClientWithResponses(
 		billingURL,
 		billingclient.WithHTTPClient(billingHTTPClient),
 	)

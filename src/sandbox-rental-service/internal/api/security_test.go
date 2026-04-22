@@ -13,11 +13,10 @@ import (
 
 	"github.com/forge-metal/apiwire"
 	auth "github.com/forge-metal/auth-middleware"
-	billingclient "github.com/forge-metal/billing-service/client"
 )
 
 func TestOpenAPIPublicAPIOperationsDeclareIAMPolicy(t *testing.T) {
-	api := NewAPI(http.NewServeMux(), "1.0.0", "127.0.0.1:0", nil, nil, PublicAPIConfig{})
+	api := NewAPI(http.NewServeMux(), "1.0.0", "127.0.0.1:0", nil, nil, nil, PublicAPIConfig{})
 	openAPI := api.OpenAPI()
 
 	var checked int
@@ -92,7 +91,7 @@ func TestBillingProxyErrorRedactsUpstreamDetails(t *testing.T) {
 }
 
 func TestBillingProxyErrorMapsNoStripeCustomer(t *testing.T) {
-	err := billingProxyError(context.Background(), billingclient.ErrNoStripeCustomer)
+	err := billingPortalProxyResponseError(context.Background(), http.StatusUnprocessableEntity, []byte(`{"type":"urn:forge-metal:problem:billing:no-stripe-customer","detail":"no stripe customer linked to this org","status":422}`))
 
 	var statusErr huma.StatusError
 	if !errors.As(err, &statusErr) {

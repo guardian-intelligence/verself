@@ -17,7 +17,7 @@ type PublicAPIConfig struct {
 	PublicBaseURL        string
 }
 
-func NewAPI(mux *http.ServeMux, version, listenAddr string, svc *jobs.Service, recurringSvc *recurring.Service, billing *billingclient.ServiceClient, publicConfig PublicAPIConfig) huma.API {
+func NewAPI(mux *http.ServeMux, version, listenAddr string, svc *jobs.Service, recurringSvc *recurring.Service, billing *billingclient.ClientWithResponses, publicConfig PublicAPIConfig) huma.API {
 	config := huma.DefaultConfig("Sandbox Rental Service", version)
 	config.OpenAPI.Servers = []*huma.Server{{URL: "http://" + listenAddr}}
 	api := humago.New(mux, config)

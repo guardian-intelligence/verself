@@ -1,52 +1,66 @@
 package api
 
 import (
-	"encoding/json"
+	"context"
 	"net/http"
+	"strconv"
+	"strings"
+
+	"github.com/danielgtaylor/huma/v2"
 
 	workloadauth "github.com/forge-metal/auth-middleware/workload"
 	"github.com/forge-metal/governance-service/internal/governance"
 )
 
-func RegisterInternalRoutes(mux *http.ServeMux, svc *governance.Service) {
-	mux.HandleFunc("/internal/v1/audit/events", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		peerID, ok := workloadauth.PeerIDFromContext(r.Context())
+type appendAuditEventInput struct {
+	Body governance.AuditRecord
+}
+
+type appendAuditEventOutput struct {
+	Body appendAuditEventAccepted
+}
+
+type appendAuditEventAccepted struct {
+	EventID  string `json:"event_id"`
+	Sequence string `json:"sequence"`
+	RowHMAC  string `json:"row_hmac"`
+}
+
+func RegisterInternalRoutes(api huma.API, svc *governance.Service) {
+	huma.Register(api, huma.Operation{
+		OperationID: "append-audit-event",
+		Method:      http.MethodPost,
+		Path:        "/internal/v1/audit/events",
+		Summary:     "Append governance audit event",
+		Description: "SPIFFE-mTLS internal endpoint for repo-owned services to append governance audit events.",
+		Security:    []map[string][]string{{"mutualTLS": {}}},
+	}, appendAuditEvent(svc))
+}
+
+func appendAuditEvent(svc *governance.Service) func(context.Context, *appendAuditEventInput) (*appendAuditEventOutput, error) {
+	return func(ctx context.Context, input *appendAuditEventInput) (*appendAuditEventOutput, error) {
+		peerID, ok := workloadauth.PeerIDFromContext(ctx)
 		if !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
+			return nil, unauthorized(ctx, "missing-workload-identity", "missing SPIFFE peer identity")
 		}
-		defer r.Body.Close()
-		var record governance.AuditRecord
-		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32<<10))
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&record); err != nil {
-			http.Error(w, "invalid audit event", http.StatusBadRequest)
-			return
-		}
-		if record.ActorSPIFFEID == "" {
+		record := input.Body
+		if strings.TrimSpace(record.ActorSPIFFEID) == "" {
 			record.ActorSPIFFEID = peerID.String()
 		}
-		if record.CredentialID == "" {
+		if strings.TrimSpace(record.CredentialID) == "" {
 			record.CredentialID = peerID.String()
 		}
-		if record.AuthMethod == "" {
+		if strings.TrimSpace(record.AuthMethod) == "" {
 			record.AuthMethod = "spiffe"
 		}
-		event, err := svc.RecordAuditEvent(r.Context(), record)
+		event, err := svc.RecordAuditEvent(ctx, record)
 		if err != nil {
-			http.Error(w, "audit write failed", http.StatusInternalServerError)
-			return
+			return nil, mapError(ctx, err)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusAccepted)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"event_id": event.EventID.String(),
-			"sequence": event.Sequence,
-			"row_hmac": event.RowHMAC,
-		})
-	})
+		return &appendAuditEventOutput{Body: appendAuditEventAccepted{
+			EventID:  event.EventID.String(),
+			Sequence: strconv.FormatUint(event.Sequence, 10),
+			RowHMAC:  event.RowHMAC,
+		}}, nil
+	}
 }

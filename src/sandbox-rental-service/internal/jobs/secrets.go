@@ -1,11 +1,8 @@
 package jobs
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 
@@ -13,6 +10,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+
+	secretsinternalclient "github.com/forge-metal/secrets-service/internalclient"
 )
 
 const maxSecretEnvVars = 64
@@ -40,107 +39,71 @@ type SecretResolver interface {
 	ResolveSandboxSecrets(ctx context.Context, request SecretResolveRequest) (map[string]string, error)
 }
 
-type SecretsHTTPResolver struct {
-	URL    string
-	Client *http.Client
+type SecretsResolver struct {
+	Client *secretsinternalclient.ClientWithResponses
 }
 
-func NewSecretsHTTPResolver(url string, client *http.Client) *SecretsHTTPResolver {
-	url = strings.TrimRight(strings.TrimSpace(url), "/")
-	if url == "" || client == nil {
+func NewSecretsResolver(client *secretsinternalclient.ClientWithResponses) *SecretsResolver {
+	if client == nil {
 		return nil
 	}
-	return &SecretsHTTPResolver{
-		URL:    url,
-		Client: client,
-	}
+	return &SecretsResolver{Client: client}
 }
 
-func (r *SecretsHTTPResolver) ResolveSandboxSecrets(ctx context.Context, request SecretResolveRequest) (map[string]string, error) {
+func (r *SecretsResolver) ResolveSandboxSecrets(ctx context.Context, request SecretResolveRequest) (map[string]string, error) {
 	ctx, span := tracer.Start(ctx, "sandbox-rental.secrets.resolve")
 	defer span.End()
-	if r == nil || r.URL == "" || r.Client == nil {
+	if r == nil || r.Client == nil {
 		return nil, ErrSecretInjectionUnavailable
 	}
-	body := secretsResolveRequest{
-		OrgID:       fmt.Sprintf("%d", request.OrgID),
-		ActorID:     request.ActorID,
-		ExecutionID: request.ExecutionID.String(),
-		AttemptID:   request.AttemptID.String(),
-		Secrets:     make([]secretsResolveItem, 0, len(request.Secrets)),
+	body := secretsinternalclient.InjectionResolveRequest{
+		OrgId:       fmt.Sprintf("%d", request.OrgID),
+		ActorId:     request.ActorID,
+		ExecutionId: request.ExecutionID.String(),
+		AttemptId:   request.AttemptID.String(),
+		Secrets:     make([]secretsinternalclient.InjectionSecretRequest, 0, len(request.Secrets)),
 	}
 	for _, secret := range request.Secrets {
-		body.Secrets = append(body.Secrets, secretsResolveItem{
+		item := secretsinternalclient.InjectionSecretRequest{
 			EnvName:    secret.EnvName,
-			Kind:       secret.Kind,
 			SecretName: secret.SecretName,
-			ScopeLevel: secret.ScopeLevel,
-			SourceID:   secret.SourceID,
-			EnvID:      secret.EnvID,
-			Branch:     secret.Branch,
-			GrantID:    secret.GrantID,
-		})
+			GrantId:    secret.GrantID,
+		}
+		if secret.Kind != "" {
+			item.Kind = stringPtr(secret.Kind)
+		}
+		if secret.ScopeLevel != "" {
+			item.ScopeLevel = stringPtr(secret.ScopeLevel)
+		}
+		if secret.SourceID != "" {
+			item.SourceId = stringPtr(secret.SourceID)
+		}
+		if secret.EnvID != "" {
+			item.EnvId = stringPtr(secret.EnvID)
+		}
+		if secret.Branch != "" {
+			item.Branch = stringPtr(secret.Branch)
+		}
+		body.Secrets = append(body.Secrets, item)
 	}
-	payload, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.URL+"/internal/v1/injections/resolve", bytes.NewReader(payload))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := r.Client.Do(req)
+	resp, err := r.Client.ResolveInjectionWithResponse(ctx, body)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return nil, fmt.Errorf("%w: %v", ErrSecretInjectionUnavailable, err)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		err := fmt.Errorf("%w: secrets-service returned HTTP %d", ErrSecretInjectionUnavailable, resp.StatusCode)
+	if resp.JSON200 == nil {
+		err := fmt.Errorf("%w: secrets-service returned HTTP %d", ErrSecretInjectionUnavailable, resp.StatusCode())
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
-	var decoded secretsResolveResponse
-	decoder := json.NewDecoder(resp.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&decoded); err != nil {
-		return nil, fmt.Errorf("%w: decode injection response: %v", ErrSecretInjectionUnavailable, err)
-	}
-	out := make(map[string]string, len(decoded.Env))
-	for _, item := range decoded.Env {
+	out := make(map[string]string, len(resp.JSON200.Env))
+	for _, item := range resp.JSON200.Env {
 		out[item.Name] = item.Value
 	}
 	span.SetAttributes(attribute.Int("forge_metal.secret_env_count", len(out)))
 	return out, nil
-}
-
-type secretsResolveRequest struct {
-	OrgID       string               `json:"org_id"`
-	ActorID     string               `json:"actor_id"`
-	ExecutionID string               `json:"execution_id"`
-	AttemptID   string               `json:"attempt_id"`
-	Secrets     []secretsResolveItem `json:"secrets"`
-}
-
-type secretsResolveItem struct {
-	EnvName    string `json:"env_name"`
-	Kind       string `json:"kind,omitempty"`
-	SecretName string `json:"secret_name"`
-	ScopeLevel string `json:"scope_level,omitempty"`
-	SourceID   string `json:"source_id,omitempty"`
-	EnvID      string `json:"env_id,omitempty"`
-	Branch     string `json:"branch,omitempty"`
-	GrantID    string `json:"grant_id"`
-}
-
-type secretsResolveResponse struct {
-	Env []struct {
-		Name  string `json:"name"`
-		Value string `json:"value"`
-	} `json:"env"`
 }
 
 func normalizeSecretEnvVars(vars []SecretEnvVar) ([]SecretEnvVar, error) {
@@ -245,6 +208,14 @@ func assignSecretEnvGrantIDs(vars []SecretEnvVar) []SecretEnvVar {
 		}
 	}
 	return out
+}
+
+func stringPtr(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 func verifySecretEnvGrants(ctx context.Context, item executionWorkItem) error {

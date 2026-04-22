@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"net/http"
 	"strings"
 	"time"
 
@@ -69,6 +70,8 @@ var (
 	ErrRunnerClassMissing         = errors.New("sandbox-rental: runner class missing")
 	ErrInvalidSecretInjection     = errors.New("sandbox-rental: invalid secret injection")
 	ErrSecretInjectionUnavailable = errors.New("sandbox-rental: secret injection unavailable")
+	ErrBillingPaymentRequired     = errors.New("sandbox-rental: billing payment required")
+	ErrBillingForbidden           = errors.New("sandbox-rental: billing forbidden")
 )
 
 var tracer = otel.Tracer("sandbox-rental-service/jobs")
@@ -179,7 +182,7 @@ type Service struct {
 	CH               driver.Conn
 	CHDatabase       string
 	Orchestrator     Runner
-	Billing          *billingclient.ServiceClient
+	Billing          *billingclient.ClientWithResponses
 	Bounds           apiwire.VMResourceBounds
 	GitHubRunner     *GitHubRunner
 	Scheduler        SchedulerRuntime
@@ -251,6 +254,34 @@ type jobLogRow struct {
 	Stream      string    `ch:"stream"`
 	Chunk       string    `ch:"chunk"`
 	CreatedAt   time.Time `ch:"created_at"`
+}
+
+type billingStatusError struct {
+	Operation  string
+	StatusCode int
+	Detail     string
+	Cause      error
+}
+
+func (e *billingStatusError) Error() string {
+	if e == nil {
+		return "sandbox-rental: billing error"
+	}
+	switch {
+	case e.Detail != "":
+		return e.Operation + ": " + e.Detail
+	case e.Cause != nil:
+		return e.Operation + ": " + e.Cause.Error()
+	default:
+		return e.Operation
+	}
+}
+
+func (e *billingStatusError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Cause
 }
 
 func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req SubmitRequest) (executionID uuid.UUID, attemptID uuid.UUID, err error) {
@@ -500,8 +531,8 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	if err != nil {
 		cleanupCtx, cancel := context.WithTimeout(detachedContext(ctx), 5*time.Second)
 		defer cancel()
-		_ = s.Billing.Void(cleanupCtx, reservation)
-		_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowId, "voided", 0)
+		_ = s.voidBillingWindow(cleanupCtx, reservation)
+		_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "voided", 0)
 		return s.failAttempt(ctx, item, "lease_acquire_failed", err)
 	}
 	item.LeaseID = lease.LeaseID
@@ -524,7 +555,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	}
 	item.ExecID = execRecord.ExecID
 	_ = s.setAttemptLeaseExec(ctx, item.AttemptID, lease.LeaseID, execRecord.ExecID)
-	activated, err := s.Billing.Activate(ctx, reservation, execRecord.StartedAt)
+	activated, err := s.activateBillingWindow(ctx, reservation, execRecord.StartedAt)
 	if err != nil {
 		_, _ = s.Orchestrator.CancelExec(detachedContext(ctx), lease.LeaseID, execRecord.ExecID, item.AttemptID.String()+":cancel", "billing_activate_failed")
 		s.cleanupLeaseAndReservation(ctx, lease.LeaseID, reservation)
@@ -548,7 +579,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		terminalCtx := detachedContext(ctx)
 		_, _ = s.Orchestrator.CancelExec(terminalCtx, lease.LeaseID, execRecord.ExecID, item.AttemptID.String()+":timeout", "execution_wait_failed")
 		s.cleanupLeaseAndReservation(terminalCtx, lease.LeaseID, reservation)
-		_ = s.markBillingWindow(terminalCtx, item.AttemptID, reservation.WindowId, "voided", 0)
+		_ = s.markBillingWindow(terminalCtx, item.AttemptID, reservation.WindowID, "voided", 0)
 		return s.failAttempt(terminalCtx, item, "exec_wait_failed", waitErr)
 	}
 	if item.WorkloadKind == WorkloadKindGitHubRunner && s.GitHubRunner != nil {
@@ -569,10 +600,10 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	if durationMs < 1 {
 		durationMs = 1
 	}
-	if err := s.Billing.Settle(ctx, reservation, uint32(clampUint32(durationMs)), usageSummary(finalExec)); err != nil {
+	if _, err := s.settleBillingWindow(ctx, reservation, uint32(clampUint32(durationMs)), usageSummary(finalExec)); err != nil {
 		return s.failAttempt(ctx, item, "billing_settle_failed", err)
 	}
-	_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowId, "settled", int(durationMs))
+	_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "settled", int(durationMs))
 	state := StateSucceeded
 	reason := ""
 	if finalExec.ExitCode != 0 || finalExec.State == vmorchestrator.ExecStateFailed {
@@ -669,7 +700,7 @@ func billingJobIDForAttempt(attemptID uuid.UUID) int64 {
 	return int64(raw)
 }
 
-func (s *Service) reserveBilling(ctx context.Context, item executionWorkItem, billingJobID int64) (billingclient.Reservation, error) {
+func (s *Service) reserveBilling(ctx context.Context, item executionWorkItem, billingJobID int64) (apiwire.BillingWindowReservation, error) {
 	// Billing rates are SKU-ms rates; the customer's requested shape is
 	// what we charge for — not the host capacity headroom. Each SKU's
 	// advertised unit translates directly from VMResources: vCPUs into
@@ -682,16 +713,28 @@ func (s *Service) reserveBilling(ctx context.Context, item executionWorkItem, bi
 		billingSKUMemoryGiBMs:               float64(res.MemoryMiB) / billingMiBPerGiB,
 		billingSKUExecutionRootStorageGiBMs: float64(res.RootDiskGiB),
 	}
-	return s.Billing.Reserve(ctx, billingJobID, item.OrgID, item.ProductID, item.ActorID, 1, item.SourceKind, item.ExecutionID.String(), 1, billingclient.ReservationShapeTime, 0, allocation)
+	return s.reserveBillingWindow(ctx, apiwire.BillingReserveWindowRequest{
+		OrgID:            apiwire.Uint64(item.OrgID),
+		ProductID:        item.ProductID,
+		ActorID:          item.ActorID,
+		ConcurrentCount:  1,
+		SourceType:       item.SourceKind,
+		SourceRef:        item.ExecutionID.String(),
+		WindowSeq:        1,
+		ReservationShape: string(billingclient.Time),
+		ReservedQuantity: 0,
+		BillingJobID:     billingJobID,
+		Allocation:       allocation,
+	})
 }
 
-func (s *Service) insertBillingWindow(ctx context.Context, attemptID uuid.UUID, reservation billingclient.Reservation) error {
+func (s *Service) insertBillingWindow(ctx context.Context, attemptID uuid.UUID, reservation apiwire.BillingWindowReservation) error {
 	payload, _ := json.Marshal(reservation)
 	_, err := s.PGX.Exec(ctx, `INSERT INTO execution_billing_windows (
 		attempt_id, window_seq, billing_window_id, reservation_shape, reserved_quantity, actual_quantity,
 		pricing_phase, state, window_start, created_at, reservation_jsonb
 	) VALUES ($1,$2,$3,$4,$5,0,$6,'reserved',$7,$8,$9)`,
-		attemptID, reservation.WindowSeq, reservation.WindowId, reservation.ReservationShape, reservation.ReservedQuantity, reservation.PricingPhase, reservation.WindowStart, time.Now().UTC(), payload)
+		attemptID, reservation.WindowSeq, reservation.WindowID, reservation.ReservationShape, reservation.ReservedQuantity, reservation.PricingPhase, reservation.WindowStart, time.Now().UTC(), payload)
 	if err != nil {
 		return fmt.Errorf("insert billing window: %w", err)
 	}
@@ -808,13 +851,13 @@ func (s *Service) failAttempt(ctx context.Context, item executionWorkItem, reaso
 	return err
 }
 
-func (s *Service) cleanupLeaseAndReservation(ctx context.Context, leaseID string, reservation billingclient.Reservation) {
+func (s *Service) cleanupLeaseAndReservation(ctx context.Context, leaseID string, reservation apiwire.BillingWindowReservation) {
 	cleanupCtx, cancel := context.WithTimeout(detachedContext(ctx), 5*time.Second)
 	defer cancel()
 	if leaseID != "" {
-		_ = s.Orchestrator.ReleaseLease(cleanupCtx, leaseID, reservation.WindowId+":release")
+		_ = s.Orchestrator.ReleaseLease(cleanupCtx, leaseID, reservation.WindowID+":release")
 	}
-	_ = s.Billing.Void(cleanupCtx, reservation)
+	_ = s.voidBillingWindow(cleanupCtx, reservation)
 }
 
 func (s *Service) renewLeaseLoop(ctx context.Context, leaseID, keyPrefix string) {
@@ -1080,4 +1123,148 @@ func traceParent(ctx context.Context) string {
 
 func detachedContext(ctx context.Context) context.Context {
 	return trace.ContextWithSpanContext(context.Background(), trace.SpanContextFromContext(ctx))
+}
+
+func (s *Service) reserveBillingWindow(ctx context.Context, request apiwire.BillingReserveWindowRequest) (apiwire.BillingWindowReservation, error) {
+	windowSeq, err := billingInt32("window_seq", request.WindowSeq)
+	if err != nil {
+		return apiwire.BillingWindowReservation{}, err
+	}
+	reservedQuantity, err := billingInt32("reserved_quantity", request.ReservedQuantity)
+	if err != nil {
+		return apiwire.BillingWindowReservation{}, err
+	}
+	concurrentCount, err := int64FromUint64("concurrent_count", request.ConcurrentCount)
+	if err != nil {
+		return apiwire.BillingWindowReservation{}, err
+	}
+	billingJobID := request.BillingJobID
+	resp, err := s.Billing.ReserveWindowWithResponse(ctx, billingclient.BillingReserveWindowRequest{
+		ActorId:          request.ActorID,
+		Allocation:       request.Allocation,
+		BillingJobId:     &billingJobID,
+		ConcurrentCount:  concurrentCount,
+		OrgId:            request.OrgID.String(),
+		ProductId:        request.ProductID,
+		ReservationShape: billingclient.BillingReserveWindowRequestReservationShape(request.ReservationShape),
+		ReservedQuantity: reservedQuantity,
+		SourceRef:        request.SourceRef,
+		SourceType:       request.SourceType,
+		WindowSeq:        windowSeq,
+	})
+	if err != nil {
+		return apiwire.BillingWindowReservation{}, fmt.Errorf("reserve billing window: %w", err)
+	}
+	switch resp.StatusCode() {
+	case http.StatusOK:
+		out, err := decodeBillingResponseBody[apiwire.BillingReserveWindowResult]("decode reserve billing window response", resp.Body)
+		if err != nil {
+			return apiwire.BillingWindowReservation{}, err
+		}
+		return out.Reservation, nil
+	case http.StatusPaymentRequired:
+		return apiwire.BillingWindowReservation{}, newBillingStatusError("reserve billing window", resp.StatusCode(), resp.ApplicationproblemJSON402, ErrBillingPaymentRequired)
+	case http.StatusForbidden:
+		return apiwire.BillingWindowReservation{}, newBillingStatusError("reserve billing window", resp.StatusCode(), resp.ApplicationproblemJSON403, ErrBillingForbidden)
+	default:
+		return apiwire.BillingWindowReservation{}, newBillingStatusError("reserve billing window", resp.StatusCode(), firstBillingProblem(resp.ApplicationproblemJSON422, resp.ApplicationproblemJSON500), nil)
+	}
+}
+
+func (s *Service) activateBillingWindow(ctx context.Context, reservation apiwire.BillingWindowReservation, activatedAt time.Time) (apiwire.BillingWindowReservation, error) {
+	resp, err := s.Billing.ActivateWindowWithResponse(ctx, billingclient.BillingActivateWindowRequest{
+		ActivatedAt: activatedAt.UTC(),
+		WindowId:    reservation.WindowID,
+	})
+	if err != nil {
+		return apiwire.BillingWindowReservation{}, fmt.Errorf("activate billing window: %w", err)
+	}
+	switch resp.StatusCode() {
+	case http.StatusOK:
+		out, err := decodeBillingResponseBody[apiwire.BillingActivateWindowResult]("decode activate billing window response", resp.Body)
+		if err != nil {
+			return apiwire.BillingWindowReservation{}, err
+		}
+		return out.Reservation, nil
+	default:
+		return apiwire.BillingWindowReservation{}, newBillingStatusError("activate billing window", resp.StatusCode(), firstBillingProblem(resp.ApplicationproblemJSON404, resp.ApplicationproblemJSON422, resp.ApplicationproblemJSON500), nil)
+	}
+}
+
+func (s *Service) settleBillingWindow(ctx context.Context, reservation apiwire.BillingWindowReservation, actualQuantity uint32, usageSummary map[string]any) (apiwire.BillingSettleResult, error) {
+	actualQuantityInt, err := billingInt32("actual_quantity", actualQuantity)
+	if err != nil {
+		return apiwire.BillingSettleResult{}, err
+	}
+	req := billingclient.BillingSettleWindowRequest{
+		ActualQuantity: actualQuantityInt,
+		WindowId:       reservation.WindowID,
+	}
+	if usageSummary != nil {
+		req.UsageSummary = &usageSummary
+	}
+	resp, err := s.Billing.SettleWindowWithResponse(ctx, req)
+	if err != nil {
+		return apiwire.BillingSettleResult{}, fmt.Errorf("settle billing window: %w", err)
+	}
+	switch resp.StatusCode() {
+	case http.StatusOK:
+		return decodeBillingResponseBody[apiwire.BillingSettleResult]("decode settle billing window response", resp.Body)
+	default:
+		return apiwire.BillingSettleResult{}, newBillingStatusError("settle billing window", resp.StatusCode(), firstBillingProblem(resp.ApplicationproblemJSON404, resp.ApplicationproblemJSON422, resp.ApplicationproblemJSON500), nil)
+	}
+}
+
+func (s *Service) voidBillingWindow(ctx context.Context, reservation apiwire.BillingWindowReservation) error {
+	resp, err := s.Billing.VoidWindowWithResponse(ctx, billingclient.BillingVoidWindowRequest{
+		WindowId: reservation.WindowID,
+	})
+	if err != nil {
+		return fmt.Errorf("void billing window: %w", err)
+	}
+	switch resp.StatusCode() {
+	case http.StatusOK:
+		return nil
+	default:
+		return newBillingStatusError("void billing window", resp.StatusCode(), firstBillingProblem(resp.ApplicationproblemJSON404, resp.ApplicationproblemJSON422, resp.ApplicationproblemJSON500), nil)
+	}
+}
+
+func decodeBillingResponseBody[T any](operation string, body []byte) (T, error) {
+	var out T
+	if err := json.Unmarshal(body, &out); err != nil {
+		return out, fmt.Errorf("%s: %w", operation, err)
+	}
+	return out, nil
+}
+
+func newBillingStatusError(operation string, statusCode int, problem *billingclient.ErrorModel, cause error) error {
+	detail := http.StatusText(statusCode)
+	if problem != nil && problem.Detail != nil && *problem.Detail != "" {
+		detail = *problem.Detail
+	}
+	return &billingStatusError{
+		Operation:  operation,
+		StatusCode: statusCode,
+		Detail:     detail,
+		Cause:      cause,
+	}
+}
+
+func firstBillingProblem(problems ...*billingclient.ErrorModel) *billingclient.ErrorModel {
+	for _, problem := range problems {
+		if problem != nil {
+			return problem
+		}
+	}
+	return nil
+}
+
+func billingInt32(field string, value uint32) (int32, error) {
+	// The generated client renders these wire fields as int32, so fail loudly
+	// if a wider sandbox quantity would otherwise wrap during JSON encoding.
+	if value > math.MaxInt32 {
+		return 0, fmt.Errorf("%s exceeds int32 range", field)
+	}
+	return int32(value), nil
 }

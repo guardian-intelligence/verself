@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/forge-metal/apiwire"
 	billingclient "github.com/forge-metal/billing-service/client"
 	"github.com/forge-metal/sandbox-rental-service/internal/scheduler"
 	"github.com/google/uuid"
@@ -393,22 +394,34 @@ func (s *Service) RunVolumeMeterTick(ctx context.Context, tickID uuid.UUID) (err
 		return fmt.Errorf("mark volume meter tick reserving: %w", err)
 	}
 
-	reservation, err := s.Billing.Reserve(ctx, billingJobIDForAttempt(tick.MeterTickID), tick.OrgID, tick.ProductID, tick.ActorID, 1, tick.SourceType, tick.SourceRef, tick.WindowSeq, billingclient.ReservationShapeTime, tick.WindowMillis, tick.Allocation)
+	reservation, err := s.reserveBillingWindow(ctx, apiwire.BillingReserveWindowRequest{
+		OrgID:            apiwire.Uint64(tick.OrgID),
+		ProductID:        tick.ProductID,
+		ActorID:          tick.ActorID,
+		ConcurrentCount:  1,
+		SourceType:       tick.SourceType,
+		SourceRef:        tick.SourceRef,
+		WindowSeq:        tick.WindowSeq,
+		ReservationShape: string(billingclient.Time),
+		ReservedQuantity: tick.WindowMillis,
+		BillingJobID:     billingJobIDForAttempt(tick.MeterTickID),
+		Allocation:       tick.Allocation,
+	})
 	if err != nil {
-		if errors.Is(err, billingclient.ErrPaymentRequired) || errors.Is(err, billingclient.ErrForbidden) {
+		if errors.Is(err, ErrBillingPaymentRequired) || errors.Is(err, ErrBillingForbidden) {
 			return s.failVolumeMeterTick(ctx, tick, volume, err)
 		}
 		return err
 	}
-	result, err := s.Billing.SettleResult(ctx, reservation, tick.WindowMillis, volumeUsageSummary(tick))
+	result, err := s.settleBillingWindow(ctx, reservation, tick.WindowMillis, volumeUsageSummary(tick))
 	if err != nil {
-		if errors.Is(err, billingclient.ErrPaymentRequired) || errors.Is(err, billingclient.ErrForbidden) {
+		if errors.Is(err, ErrBillingPaymentRequired) || errors.Is(err, ErrBillingForbidden) {
 			return s.failVolumeMeterTick(ctx, tick, volume, err)
 		}
 		return err
 	}
 	tick.State = VolumeMeterStateBillingSettled
-	tick.BillingWindowID = reservation.WindowId
+	tick.BillingWindowID = reservation.WindowID
 	tick.BilledChargeUnits = result.BilledChargeUnits.Uint64()
 	tick.BillingFailureReason = ""
 	billedChargeUnits, err := int64FromUint64("billed_charge_units", tick.BilledChargeUnits)
