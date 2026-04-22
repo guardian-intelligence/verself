@@ -15,9 +15,29 @@ import { buildOGCard, formatOGError } from "~/og/template";
 
 const TRACER = trace.getTracer("forge-metal/company-og", "0.1.0");
 
+// Some social crawlers (and Slack's debugger) issue HEAD before GET to sniff
+// content-type before unfurling. Return the same headers as GET would, with
+// an empty body — otherwise the framework default is text/html and the card
+// is silently refused by strict validators.
+function headHandler({ params }: { params: { slug: string } }): Response {
+  const slug = params.slug.replace(/\.svg$|\.png$/, "");
+  const spec = ogSpecFor(slug);
+  if (!spec) {
+    return new Response(null, { status: 404, headers: { "content-type": "text/plain" } });
+  }
+  return new Response(null, {
+    status: 200,
+    headers: {
+      "content-type": "image/svg+xml; charset=utf-8",
+      "cache-control": "public, max-age=600, s-maxage=600",
+    },
+  });
+}
+
 export const Route = createFileRoute("/og/$slug")({
   server: {
     handlers: {
+      HEAD: headHandler,
       GET: ({ params }) => {
         const slug = params.slug.replace(/\.svg$|\.png$/, "");
         const spec = ogSpecFor(slug);

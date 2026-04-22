@@ -1,14 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { CAREERS_META, careers } from "~/content/careers";
 import { BodyParagraph, PageShell } from "~/components/page-shell";
+import { ogMeta } from "~/lib/head";
 
 export const Route = createFileRoute("/careers")({
   component: CareersPage,
   head: () => ({
-    meta: [
-      { title: CAREERS_META.title },
-      { name: "description", content: CAREERS_META.description },
-    ],
+    meta: ogMeta({
+      slug: "careers",
+      title: CAREERS_META.title,
+      description: CAREERS_META.description,
+    }),
   }),
 });
 
@@ -23,15 +25,15 @@ function CareersPage() {
         <p
           className="mt-8 rounded-md p-5"
           style={{
-            border: "1px dashed rgba(245,245,245,0.15)",
-            color: "rgba(245,245,245,0.72)",
+            border: "1px dashed var(--shell-surface-border)",
+            color: "var(--shell-muted)",
             fontFamily: "'Geist', sans-serif",
             fontSize: "15px",
             lineHeight: 1.55,
           }}
         >
           {careers.emptyState}{" "}
-          <a href={`mailto:${careers.contactEmail}`} style={{ color: "var(--color-flare)" }}>
+          <a href={`mailto:${careers.contactEmail}`} style={{ color: "var(--shell-accent)" }}>
             {careers.contactEmail}
           </a>
         </p>
@@ -42,12 +44,12 @@ function CareersPage() {
               key={opening.title}
               className="flex flex-col gap-1 rounded-md p-5"
               style={{
-                border: "1px solid rgba(245,245,245,0.12)",
-                background: "rgba(245,245,245,0.02)",
+                border: "1px solid var(--shell-surface-border)",
+                background: "var(--shell-surface-subtle)",
               }}
             >
               <span style={{ fontWeight: 600 }}>{opening.title}</span>
-              <span style={{ color: "rgba(245,245,245,0.7)" }}>{opening.description}</span>
+              <span style={{ color: "var(--shell-muted)" }}>{opening.description}</span>
             </li>
           ))}
         </ul>

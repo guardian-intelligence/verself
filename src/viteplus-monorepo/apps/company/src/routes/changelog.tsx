@@ -1,14 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { CHANGELOG_META, changelog } from "~/content/changelog";
 import { PageShell } from "~/components/page-shell";
+import { ogMeta } from "~/lib/head";
 
 export const Route = createFileRoute("/changelog")({
   component: ChangelogPage,
   head: () => ({
-    meta: [
-      { title: CHANGELOG_META.title },
-      { name: "description", content: CHANGELOG_META.description },
-    ],
+    meta: ogMeta({
+      slug: "changelog",
+      title: CHANGELOG_META.title,
+      description: CHANGELOG_META.description,
+    }),
   }),
 });
 
@@ -20,7 +22,7 @@ function ChangelogPage() {
           <li key={entry.date} className="flex flex-col gap-2">
             <span
               className="font-mono text-[10px] uppercase tracking-[0.18em]"
-              style={{ color: "rgba(245,245,245,0.45)" }}
+              style={{ color: "var(--shell-muted-faint)" }}
             >
               {entry.date}
             </span>
@@ -41,7 +43,7 @@ function ChangelogPage() {
                 fontFamily: "'Geist', sans-serif",
                 fontSize: "15px",
                 lineHeight: 1.55,
-                color: "rgba(245,245,245,0.75)",
+                color: "var(--shell-muted)",
                 margin: 0,
               }}
             >
