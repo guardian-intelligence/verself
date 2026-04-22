@@ -294,7 +294,7 @@
       Environment=OBJECT_STORAGE_PG_DSN=postgres://object_storage_service@/object_storage_service?host=/var/run/postgresql&sslmode=disable
       Environment=OBJECT_STORAGE_GARAGE_ADMIN_URLS={{ object_storage_garage_admin_urls }}
       Environment=OBJECT_STORAGE_GARAGE_REGION=garage
-      Environment=OBJECT_STORAGE_GOVERNANCE_AUDIT_URL=https://{{ services.governance_service.host }}:{{ services.governance_service.internal_port }}/internal/v1/audit/events
+      Environment=OBJECT_STORAGE_GOVERNANCE_AUDIT_URL=https://{{ services.governance_service.host }}:{{ services.governance_service.internal_port }}
       Environment=OBJECT_STORAGE_GOVERNANCE_SPIFFE_ID={{ spire_governance_service_id }}
       Environment=OBJECT_STORAGE_ADMIN_CLIENT_SPIFFE_IDS={{ spire_object_storage_admin_id }}
       Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}

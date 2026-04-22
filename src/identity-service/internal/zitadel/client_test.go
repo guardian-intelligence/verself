@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/forge-metal/identity-service/internal/identity"
 )
@@ -145,7 +146,7 @@ func TestCreateServiceAccountCredentialRequestShape(t *testing.T) {
 	if createBody["organizationId"] != "42" || createBody["username"] != "client-1" || machine["accessTokenType"] != "ACCESS_TOKEN_TYPE_JWT" {
 		t.Fatalf("unexpected create body %#v", createBody)
 	}
-	if len(keyBody) != 0 {
+	if got := keyBody["expirationDate"]; got != zitadelMaxKeyExpiration.Format(time.RFC3339Nano) {
 		t.Fatalf("unexpected key body %#v", keyBody)
 	}
 }

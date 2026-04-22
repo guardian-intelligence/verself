@@ -317,7 +317,7 @@
     mode: "0644"
   vars:
     secrets_service_governance_audit_url: >-
-      https://{{ services.governance_service.host }}:{{ services.governance_service.internal_port }}/internal/v1/audit/events
+      https://{{ services.governance_service.host }}:{{ services.governance_service.internal_port }}
   notify: restart secrets-service
 
 - name: Enable and start secrets-service
