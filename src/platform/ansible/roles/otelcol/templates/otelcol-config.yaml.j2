@@ -287,9 +287,81 @@ receivers:
     resource:
       service.name: verdaccio
     operators:
+      # Verdaccio writes pino JSON to stdout with log.format: json. Parse
+      # into attributes, map pino numeric levels to OTel severity, and
+      # drop the full req/request objects so auth headers can never reach
+      # ClickHouse even if Verdaccio's own pino-redact misses them.
       - type: move
         from: body.MESSAGE
         to: body
+      # log.format: json is set in verdaccio's config, so every verdaccio.service
+      # line on journald is pino JSON. on_error: send_quiet keeps the entry
+      # flowing if a future pre-pino line ever sneaks through.
+      - type: json_parser
+        parse_from: body
+        on_error: send_quiet
+        timestamp:
+          parse_from: attributes.time
+          layout_type: epoch
+          layout: ms
+      # pino levels: trace=10 debug=20 info=30 warn=40 error=50 fatal=60.
+      # Verdaccio adds http=25 for per-request access logs; map it to INFO.
+      # stanza's severity_parser ignores dash-range syntax (N-M) for numeric
+      # input — list form is the only shape that matches int attributes.
+      - type: severity_parser
+        parse_from: attributes.level
+        if: attributes.level != nil
+        mapping:
+          debug: [10, 20]
+          info: [25, 30]
+          warn: 40
+          error: 50
+          fatal: 60
+      - type: move
+        from: attributes.msg
+        to: body
+        if: attributes.msg != nil
+      - type: move
+        from: attributes.request.method
+        to: attributes.http_method
+        if: attributes.request != nil
+      - type: move
+        from: attributes.request.url
+        to: attributes.http_url
+        if: attributes.request != nil
+      - type: move
+        from: attributes.status
+        to: attributes.http_status
+        if: attributes.status != nil
+      - type: move
+        from: attributes.bytes.out
+        to: attributes.http_response_bytes
+        if: attributes.bytes != nil
+      - type: move
+        from: attributes.remoteIP
+        to: attributes.client_ip
+        if: attributes.remoteIP != nil
+      - type: remove
+        field: attributes.time
+        if: attributes.time != nil
+      - type: remove
+        field: attributes.level
+        if: attributes.level != nil
+      - type: remove
+        field: attributes.pid
+        if: attributes.pid != nil
+      - type: remove
+        field: attributes.hostname
+        if: attributes.hostname != nil
+      - type: remove
+        field: attributes.req
+        if: attributes.req != nil
+      - type: remove
+        field: attributes.request
+        if: attributes.request != nil
+      - type: remove
+        field: attributes.bytes
+        if: attributes.bytes != nil
   postgresql:
     endpoint: "{{ services.postgresql.host }}:{{ services.postgresql.port }}"
     username: postgres
