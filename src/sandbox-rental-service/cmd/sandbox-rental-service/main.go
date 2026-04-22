@@ -88,22 +88,6 @@ func run() error {
 	authIssuerURL := requireEnv("SANDBOX_AUTH_ISSUER_URL")
 	authAudience := requireEnv("SANDBOX_AUTH_AUDIENCE")
 	authJWKSURL := envOr("SANDBOX_AUTH_JWKS_URL", "")
-	secretsSPIFFEID, err := workloadauth.ParseID(requireEnv("SANDBOX_SECRETS_SPIFFE_ID"))
-	if err != nil {
-		return err
-	}
-	billingSPIFFEID, err := workloadauth.ParseID(requireEnv("SANDBOX_BILLING_SPIFFE_ID"))
-	if err != nil {
-		return err
-	}
-	governanceSPIFFEID, err := workloadauth.ParseID(requireEnv("SANDBOX_GOVERNANCE_SPIFFE_ID"))
-	if err != nil {
-		return err
-	}
-	temporalServerSPIFFEID, err := workloadauth.ParseID(requireEnv("SANDBOX_TEMPORAL_SERVER_SPIFFE_ID"))
-	if err != nil {
-		return err
-	}
 	temporalFrontendAddress := envOr("SANDBOX_TEMPORAL_FRONTEND_ADDRESS", sdkclient.DefaultFrontendAddress)
 	temporalNamespace := envOr("SANDBOX_TEMPORAL_NAMESPACE", recurring.DefaultNamespace)
 	temporalRecurringTaskQueue := envOr("SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING", recurring.DefaultTaskQueue)
@@ -208,19 +192,19 @@ func run() error {
 		hostBounds.MaxRootDiskGiB = capacity.MaxRootDiskGiBPerLease
 	}
 
-	// --- billing client ---
+	// --- peer clients ---
 
-	billingHTTPClient, err := workloadauth.MTLSClient(spiffeSource, billingSPIFFEID, http.DefaultTransport)
+	billingHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceBilling, nil)
 	if err != nil {
-		return fmt.Errorf("billing spiffe client: %w", err)
+		return fmt.Errorf("sandbox billing mtls: %w", err)
 	}
 	billingClient, err := billingclient.NewClientWithResponses(billingURL, billingclient.WithHTTPClient(billingHTTPClient))
 	if err != nil {
 		return fmt.Errorf("create billing client: %w", err)
 	}
-	secretsHTTPClient, err := workloadauth.MTLSClient(spiffeSource, secretsSPIFFEID, http.DefaultTransport)
+	secretsHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceSecrets, nil)
 	if err != nil {
-		return fmt.Errorf("secrets spiffe client: %w", err)
+		return fmt.Errorf("sandbox secrets mtls: %w", err)
 	}
 	secretsClient, err := secretsclient.NewClientWithResponses(secretsURL, secretsclient.WithHTTPClient(secretsHTTPClient))
 	if err != nil {
@@ -230,13 +214,8 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("create internal secrets client: %w", err)
 	}
-	governanceAuditClient, err := workloadauth.MTLSClient(spiffeSource, governanceSPIFFEID, http.DefaultTransport)
-	if err != nil {
-		return fmt.Errorf("governance spiffe client: %w", err)
-	}
 	temporalClient, err := sdkclient.NewWorkflowClient(sdkclient.Config{
 		HostPort: temporalFrontendAddress,
-		ServerID: temporalServerSPIFFEID,
 	}, temporalNamespace, spiffeSource, "sandbox-rental-service-temporal-sdk")
 	if err != nil {
 		return fmt.Errorf("sandbox-rental temporal client: %w", err)
@@ -293,7 +272,7 @@ func run() error {
 		return fmt.Errorf("create github runner adapter: %w", err)
 	}
 	jobService.GitHubRunner = githubRunner
-	sandboxapi.ConfigureAuditSink(governanceAuditURL, governanceAuditClient)
+	sandboxapi.ConfigureAuditSink(governanceAuditURL, spiffeSource)
 	recurringService, err := recurring.NewService(recurring.Config{
 		PGX:            pgxPool,
 		TemporalClient: temporalClient,

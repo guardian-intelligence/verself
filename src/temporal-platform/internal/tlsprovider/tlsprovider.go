@@ -5,11 +5,10 @@ import (
 	"crypto/md5"
 	"crypto/tls"
 	"crypto/x509"
-	"errors"
 	"fmt"
-	"strings"
 	"time"
 
+	workloadauth "github.com/forge-metal/auth-middleware/workload"
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
@@ -37,25 +36,26 @@ type Provider struct {
 
 var _ encryption.TLSConfigProvider = (*Provider)(nil)
 
-func New(ctx context.Context, socketPath string, serverIDRaw string, frontendClientIDRaws []string) (*Provider, error) {
-	serverID, err := parseID(serverIDRaw)
-	if err != nil {
-		return nil, fmt.Errorf("parse temporal server spiffe id: %w", err)
-	}
-	frontendClientIDs, err := parseIDs(frontendClientIDRaws)
-	if err != nil {
-		return nil, fmt.Errorf("parse temporal frontend client spiffe ids: %w", err)
-	}
-	if len(frontendClientIDs) == 0 {
-		return nil, errors.New("at least one temporal frontend client spiffe id is required")
-	}
-
-	source, err := workloadapi.NewX509Source(
-		ctx,
-		workloadapi.WithClientOptions(workloadapi.WithAddr(strings.TrimSpace(socketPath))),
-	)
+func New(ctx context.Context, socketPath string) (*Provider, error) {
+	source, err := workloadauth.Source(ctx, socketPath)
 	if err != nil {
 		return nil, fmt.Errorf("open spiffe x509 source: %w", err)
+	}
+	serverID, err := workloadauth.CurrentIDForService(source, workloadauth.ServiceTemporalServer)
+	if err != nil {
+		_ = source.Close()
+		return nil, err
+	}
+	frontendClientIDs, err := workloadauth.PeerIDsForSource(
+		source,
+		workloadauth.ServiceTemporalServer,
+		workloadauth.ServiceTemporalWeb,
+		workloadauth.ServiceSandboxRental,
+		workloadauth.ServiceBilling,
+	)
+	if err != nil {
+		_ = source.Close()
+		return nil, err
 	}
 
 	return &Provider{
@@ -227,33 +227,4 @@ func addExpiringCerts(
 			expiring[thumbprint] = data
 		}
 	}
-}
-
-func parseIDs(values []string) ([]spiffeid.ID, error) {
-	ids := make([]spiffeid.ID, 0, len(values))
-	seen := map[string]struct{}{}
-	for _, raw := range values {
-		raw = strings.TrimSpace(raw)
-		if raw == "" {
-			continue
-		}
-		id, err := parseID(raw)
-		if err != nil {
-			return nil, err
-		}
-		if _, ok := seen[id.String()]; ok {
-			continue
-		}
-		seen[id.String()] = struct{}{}
-		ids = append(ids, id)
-	}
-	return ids, nil
-}
-
-func parseID(raw string) (spiffeid.ID, error) {
-	id, err := spiffeid.FromString(strings.TrimSpace(raw))
-	if err != nil {
-		return spiffeid.ID{}, err
-	}
-	return id, nil
 }

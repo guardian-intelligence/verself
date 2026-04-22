@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
-	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -74,6 +73,9 @@ func run() error {
 			logger.ErrorContext(context.Background(), role.serviceName()+" spiffe source close", "error", err)
 		}
 	}()
+	if _, err := workloadauth.CurrentIDForService(spiffeSource, role.serviceName()); err != nil {
+		return err
+	}
 	pg, err := newPostgres(ctx, pgDSN)
 	if err != nil {
 		return err
@@ -99,11 +101,7 @@ func run() error {
 		return runAdmin(ctx, stop, logger, spiffeSource, pg, secretBox, baseConfig)
 	case runtimeRoleS3:
 		secretsURL := requireEnv("OBJECT_STORAGE_SECRETS_URL")
-		secretsSPIFFEID, err := workloadauth.ParseID(requireEnv("OBJECT_STORAGE_SECRETS_SPIFFE_ID"))
-		if err != nil {
-			return err
-		}
-		runtimeSecretsClient, err := newRuntimeSecretsClient(ctx, spiffeSource, secretsURL, secretsSPIFFEID)
+		runtimeSecretsClient, err := newRuntimeSecretsClient(spiffeSource, secretsURL)
 		if err != nil {
 			return err
 		}
@@ -124,11 +122,7 @@ func runAdmin(
 ) error {
 	adminListenAddr := envOr("OBJECT_STORAGE_ADMIN_LISTEN_ADDR", "127.0.0.1:4257")
 	governanceAuditURL := requireEnv("OBJECT_STORAGE_GOVERNANCE_AUDIT_URL")
-	governanceSPIFFEID, err := workloadauth.ParseID(requireEnv("OBJECT_STORAGE_GOVERNANCE_SPIFFE_ID"))
-	if err != nil {
-		return err
-	}
-	adminClientIDs, err := parseSPIFFEIDs(strings.Split(requireEnv("OBJECT_STORAGE_ADMIN_CLIENT_SPIFFE_IDS"), ","))
+	adminClientIDs, err := workloadauth.PeerIDsForSource(spiffeSource, workloadauth.ServiceObjectStorageAdmin)
 	if err != nil {
 		return err
 	}
@@ -146,11 +140,7 @@ func runAdmin(
 	}
 	cfg.ProxyAccessKeyID = requireCredential("garage-proxy-access-key-id")
 
-	governanceClient, err := workloadauth.MTLSClient(spiffeSource, governanceSPIFFEID, http.DefaultTransport)
-	if err != nil {
-		return fmt.Errorf("object-storage governance client: %w", err)
-	}
-	objectstorageapi.ConfigureAuditSink(governanceAuditURL, governanceClient)
+	objectstorageapi.ConfigureAuditSink(governanceAuditURL, spiffeSource)
 	svc := &objectstorage.Service{
 		PG:      pg,
 		Store:   &objectstorage.Store{DB: pg},
@@ -185,9 +175,13 @@ func runAdmin(
 		ListenAddr: adminListenAddr,
 		Service:    svc,
 	})
+	adminAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(adminClientIDs, adminMux)
+	if err != nil {
+		return fmt.Errorf("object-storage admin allowlist: %w", err)
+	}
 	adminServer := &http.Server{
 		Addr:              adminListenAddr,
-		Handler:           otelhttp.NewHandler(workloadauth.ServerPeerAllowlistMiddleware(adminClientIDs, adminMux), "object-storage-admin"),
+		Handler:           otelhttp.NewHandler(adminAllowlist, "object-storage-admin"),
 		TLSConfig:         adminTLSConfig,
 		ReadHeaderTimeout: 2 * time.Second,
 		ReadTimeout:       5 * time.Second,
@@ -344,25 +338,6 @@ func s3PeerMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func parseSPIFFEIDs(raw []string) ([]spiffeid.ID, error) {
-	out := make([]spiffeid.ID, 0, len(raw))
-	for _, item := range raw {
-		item = strings.TrimSpace(item)
-		if item == "" {
-			continue
-		}
-		id, err := workloadauth.ParseID(item)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, id)
-	}
-	if len(out) == 0 {
-		return nil, fmt.Errorf("at least one SPIFFE ID is required")
-	}
-	return out, nil
-}
-
 func decodeHex32(raw string) ([]byte, error) {
 	decoded, err := hex.DecodeString(strings.TrimSpace(raw))
 	if err != nil {
@@ -407,19 +382,16 @@ func parseRuntimeRole(raw string) (runtimeRole, error) {
 	}
 }
 
-func newRuntimeSecretsClient(ctx context.Context, spiffeSource *workloadapi.X509Source, secretsURL string, secretsSPIFFEID spiffeid.ID) (*secretsclient.ClientWithResponses, error) {
-	secretsHTTPClient, err := workloadauth.MTLSClient(spiffeSource, secretsSPIFFEID, http.DefaultTransport)
+func newRuntimeSecretsClient(spiffeSource *workloadapi.X509Source, secretsURL string) (*secretsclient.ClientWithResponses, error) {
+	httpClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceSecrets, nil)
 	if err != nil {
-		return nil, fmt.Errorf("object-storage secrets client: %w", err)
+		return nil, fmt.Errorf("object-storage secrets runtime mtls: %w", err)
 	}
-	runtimeSecretsClient, err := secretsclient.NewClientWithResponses(
-		secretsURL,
-		secretsclient.WithHTTPClient(secretsHTTPClient),
-	)
+	client, err := secretsclient.NewClientWithResponses(secretsURL, secretsclient.WithHTTPClient(httpClient))
 	if err != nil {
 		return nil, fmt.Errorf("object-storage secrets runtime client: %w", err)
 	}
-	return runtimeSecretsClient, nil
+	return client, nil
 }
 
 func newPostgres(ctx context.Context, pgDSN string) (*sql.DB, error) {

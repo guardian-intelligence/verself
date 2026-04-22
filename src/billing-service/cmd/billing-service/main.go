@@ -16,7 +16,6 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"github.com/stripe/stripe-go/v85"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
@@ -71,13 +70,9 @@ func run() error {
 			logger.ErrorContext(context.Background(), "billing-service spiffe source close", "error", err)
 		}
 	}()
-	secretsSPIFFEID, err := workloadauth.ParseID(requireEnv("BILLING_SECRETS_SPIFFE_ID"))
+	secretsHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceSecrets, nil)
 	if err != nil {
-		return err
-	}
-	secretsHTTPClient, err := workloadauth.MTLSClient(spiffeSource, secretsSPIFFEID, http.DefaultTransport)
-	if err != nil {
-		return fmt.Errorf("billing secrets spiffe client: %w", err)
+		return fmt.Errorf("billing secrets mtls: %w", err)
 	}
 	secretsClient, err := secretsclient.NewClientWithResponses(secretsURL, secretsclient.WithHTTPClient(secretsHTTPClient))
 	if err != nil {
@@ -171,7 +166,11 @@ func run() error {
 	defer bgCancel()
 	go runBackgroundLoop(bgCtx, logger, billingRuntime, cfg)
 
-	internalPeerIDs, err := parseSPIFFEIDsFromEnv("BILLING_INTERNAL_CLIENT_SPIFFE_IDS")
+	internalPeerIDs, err := workloadauth.PeerIDsForSource(
+		spiffeSource,
+		workloadauth.ServiceSandboxRental,
+		workloadauth.ServiceSecrets,
+	)
 	if err != nil {
 		return err
 	}
@@ -188,10 +187,14 @@ func run() error {
 	protected := auth.Middleware(auth.Config{IssuerURL: authIssuerURL, Audience: authAudience, JWKSURL: authJWKSURL})(privateMux)
 	rootMux.Handle("/", billingHandler(privateMux, protected))
 
+	internalAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(internalPeerIDs, privateMux)
+	if err != nil {
+		return fmt.Errorf("billing internal allowlist: %w", err)
+	}
 	srv := &http.Server{Addr: listenAddr, Handler: otelhttp.NewHandler(rootMux, "billing-service"), ReadHeaderTimeout: 10 * time.Second}
 	internalSrv := &http.Server{
 		Addr:              internalListenAddr,
-		Handler:           otelhttp.NewHandler(workloadauth.ServerPeerAllowlistMiddleware(internalPeerIDs, privateMux), "billing-service-internal"),
+		Handler:           otelhttp.NewHandler(internalAllowlist, "billing-service-internal"),
 		TLSConfig:         internalTLSConfig,
 		ReadHeaderTimeout: 2 * time.Second,
 		ReadTimeout:       5 * time.Second,
@@ -335,23 +338,6 @@ func envOr(key, fallback string) string {
 		return value
 	}
 	return fallback
-}
-
-func parseSPIFFEIDsFromEnv(name string) ([]spiffeid.ID, error) {
-	raw := strings.TrimSpace(os.Getenv(name))
-	if raw == "" {
-		return nil, fmt.Errorf("required env %s is empty", name)
-	}
-	parts := strings.Split(raw, ",")
-	ids := make([]spiffeid.ID, 0, len(parts))
-	for _, part := range parts {
-		id, err := workloadauth.ParseID(part)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", name, err)
-		}
-		ids = append(ids, id)
-	}
-	return ids, nil
 }
 
 func envInt(key string, fallback int) int {

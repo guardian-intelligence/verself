@@ -16,7 +16,6 @@ import (
 	workloadauth "github.com/forge-metal/auth-middleware/workload"
 	fmotel "github.com/forge-metal/otel"
 	secretsclient "github.com/forge-metal/secrets-service/client"
-	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -53,19 +52,15 @@ func run() error {
 	defer func() { _ = otelShutdown(context.Background()) }()
 
 	secretsURL := requireEnv("OBJECT_STORAGE_SECRET_SYNC_SECRETS_URL")
-	secretsSPIFFEID, err := parseSPIFFEID(requireEnv("OBJECT_STORAGE_SECRET_SYNC_SECRETS_SPIFFE_ID"))
-	if err != nil {
-		return err
-	}
 	source, err := workloadauth.Source(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
 	if err != nil {
 		return fmt.Errorf("spiffe source: %w", err)
 	}
 	defer func() { _ = source.Close() }()
 
-	httpClient, err := workloadauth.MTLSClient(source, secretsSPIFFEID, http.DefaultTransport)
+	httpClient, err := workloadauth.MTLSClientForService(source, workloadauth.ServiceSecrets, nil)
 	if err != nil {
-		return fmt.Errorf("secrets mTLS client: %w", err)
+		return fmt.Errorf("secrets mtls: %w", err)
 	}
 	runtimeClient, err := secretsclient.NewClientWithResponses(secretsURL, secretsclient.WithHTTPClient(httpClient))
 	if err != nil {
@@ -148,10 +143,6 @@ func syncRuntimeSecrets(ctx context.Context, client *secretsclient.ClientWithRes
 func runtimeSecretUpsertKey(name string, value string) string {
 	sum := sha256.Sum256([]byte(name + "\x00" + value))
 	return fmt.Sprintf("object-storage-runtime-upsert-%x", sum)
-}
-
-func parseSPIFFEID(raw string) (spiffeid.ID, error) {
-	return workloadauth.ParseID(strings.TrimSpace(raw))
 }
 
 func requireEnv(name string) string {

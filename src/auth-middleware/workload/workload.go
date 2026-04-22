@@ -117,24 +117,69 @@ func FetchJWTSVID(ctx context.Context, source *workloadapi.JWTSource, audience s
 	return svid.Marshal(), svid.Expiry, svid.ID, nil
 }
 
-func ParseID(raw string) (spiffeid.ID, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return spiffeid.ID{}, errors.New("spiffe id is required")
-	}
-	id, err := spiffeid.FromString(raw)
+// PeerIDForSource derives the SPIFFE ID for a peer service inside the caller's
+// trust domain. The trust domain is read from the caller's own SVID so no env
+// var is required.
+func PeerIDForSource(source *workloadapi.X509Source, service string) (spiffeid.ID, error) {
+	td, err := currentTrustDomain(source)
 	if err != nil {
-		return spiffeid.ID{}, fmt.Errorf("parse spiffe id %q: %w", raw, err)
+		return spiffeid.ID{}, err
+	}
+	return peerIDForService(td, service)
+}
+
+// PeerIDsForSource resolves a list of peer services, de-duplicating on the
+// way. Useful for constructing mTLS allowlists that must stay in sync across
+// a server TLS config and a runtime authorization middleware.
+func PeerIDsForSource(source *workloadapi.X509Source, services ...string) ([]spiffeid.ID, error) {
+	if len(services) == 0 {
+		return nil, errors.New("at least one peer service is required")
+	}
+	td, err := currentTrustDomain(source)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]spiffeid.ID, 0, len(services))
+	seen := make(map[spiffeid.ID]struct{}, len(services))
+	for _, service := range services {
+		id, err := peerIDForService(td, service)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+// CurrentIDForService asserts that the caller's own SVID matches the expected
+// service identity. Call once at startup to fail loud if a workload has been
+// launched under the wrong SPIRE registration entry.
+func CurrentIDForService(source *workloadapi.X509Source, service string) (spiffeid.ID, error) {
+	id, err := currentID(source)
+	if err != nil {
+		return spiffeid.ID{}, err
+	}
+	expected, err := peerIDForService(id.TrustDomain(), service)
+	if err != nil {
+		return spiffeid.ID{}, err
+	}
+	if id != expected {
+		return spiffeid.ID{}, fmt.Errorf("current spiffe id %s does not match expected service id %s", id, expected)
 	}
 	return id, nil
 }
 
-func MTLSClient(source *workloadapi.X509Source, expectedServerID spiffeid.ID, base http.RoundTripper) (*http.Client, error) {
-	if source == nil {
-		return nil, errors.New("spiffe x509 source is required")
-	}
-	if expectedServerID.IsZero() {
-		return nil, errors.New("expected server spiffe id is required")
+// MTLSClientForService returns an HTTP client that presents the caller's SVID
+// and authorizes the peer by expected SPIFFE ID. Pass a nil base transport to
+// start from http.DefaultTransport.
+func MTLSClientForService(source *workloadapi.X509Source, service string, base http.RoundTripper) (*http.Client, error) {
+	id, err := PeerIDForSource(source, service)
+	if err != nil {
+		return nil, err
 	}
 	if base == nil {
 		base = http.DefaultTransport
@@ -143,29 +188,22 @@ func MTLSClient(source *workloadapi.X509Source, expectedServerID spiffeid.ID, ba
 	if err != nil {
 		return nil, err
 	}
-	transport.TLSClientConfig = tlsconfig.MTLSClientConfig(source, source, tlsconfig.AuthorizeID(expectedServerID))
+	transport.TLSClientConfig = tlsconfig.MTLSClientConfig(source, source, tlsconfig.AuthorizeID(id))
 	return &http.Client{
 		// otelhttp injects trace context on the repo-wide SPIFFE mTLS path so
 		// downstream service spans and audit rows stay joinable in ClickHouse.
 		Transport: otelhttp.NewTransport(&clientSpanTransport{
 			next:             transport,
-			expectedServerID: expectedServerID.String(),
+			expectedServerID: id.String(),
 			source:           source,
 		}),
 		Timeout: 3 * time.Second,
 	}, nil
 }
 
-func MTLSServerConfig(source *workloadapi.X509Source, expectedClientID spiffeid.ID) (*tls.Config, error) {
-	if source == nil {
-		return nil, errors.New("spiffe x509 source is required")
-	}
-	if expectedClientID.IsZero() {
-		return nil, errors.New("expected client spiffe id is required")
-	}
-	return tlsconfig.MTLSServerConfig(source, source, tlsconfig.AuthorizeID(expectedClientID)), nil
-}
-
+// MTLSServerConfigForAny builds a server TLS config that authorizes any peer
+// in the provided allowlist. Use together with ServerPeerAllowlistMiddleware so
+// the TLS handshake allowlist and the per-request authorization stay aligned.
 func MTLSServerConfigForAny(source *workloadapi.X509Source, expectedClientIDs ...spiffeid.ID) (*tls.Config, error) {
 	if source == nil {
 		return nil, errors.New("spiffe x509 source is required")
@@ -175,6 +213,47 @@ func MTLSServerConfigForAny(source *workloadapi.X509Source, expectedClientIDs ..
 		return nil, err
 	}
 	return tlsconfig.MTLSServerConfig(source, source, tlsconfig.AuthorizeOneOf(ids...)), nil
+}
+
+// ServerPeerAllowlistMiddleware authorizes each request against the allowlist
+// and stashes the peer identity on the request context. Returns an error at
+// construction if the allowlist is empty or contains a zero ID, so a
+// misconfigured server refuses to start rather than silently rejecting every
+// request with 401.
+func ServerPeerAllowlistMiddleware(expectedClientIDs []spiffeid.ID, next http.Handler) (http.Handler, error) {
+	ids, err := nonZeroIDs(expectedClientIDs)
+	if err != nil {
+		return nil, err
+	}
+	expected := make(map[spiffeid.ID]struct{}, len(ids))
+	expectedStrings := make([]string, 0, len(ids))
+	for _, id := range ids {
+		expected[id] = struct{}{}
+		expectedStrings = append(expectedStrings, id.String())
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, span := tracer.Start(r.Context(), "auth.spiffe.mtls.server")
+		defer span.End()
+		span.SetAttributes(attribute.StringSlice("spiffe.expected_client_ids", expectedStrings))
+		peerID, ok := PeerIDFromRequest(r)
+		if !ok {
+			err := errors.New("missing SPIFFE peer certificate")
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		span.SetAttributes(attribute.String("spiffe.peer_id", peerID.String()))
+		if _, ok := expected[peerID]; !ok {
+			err := fmt.Errorf("unexpected SPIFFE peer %s", peerID.String())
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		r = r.WithContext(ContextWithPeerID(ctx, peerID))
+		next.ServeHTTP(w, r)
+	}), nil
 }
 
 func PeerIDFromRequest(r *http.Request) (spiffeid.ID, bool) {
@@ -200,69 +279,41 @@ func PeerIDFromContext(ctx context.Context) (spiffeid.ID, bool) {
 	return id, ok && !id.IsZero()
 }
 
-func ServerPeerMiddleware(expectedClientID spiffeid.ID, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx, span := tracer.Start(r.Context(), "auth.spiffe.mtls.server")
-		defer span.End()
-		span.SetAttributes(attribute.String("spiffe.expected_client_id", expectedClientID.String()))
-		peerID, ok := PeerIDFromRequest(r)
-		if !ok {
-			err := errors.New("missing SPIFFE peer certificate")
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		span.SetAttributes(attribute.String("spiffe.peer_id", peerID.String()))
-		if peerID != expectedClientID {
-			err := fmt.Errorf("unexpected SPIFFE peer %s", peerID.String())
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
-		}
-		r = r.WithContext(ContextWithPeerID(ctx, peerID))
-		next.ServeHTTP(w, r)
-	})
+func peerIDForService(td spiffeid.TrustDomain, service string) (spiffeid.ID, error) {
+	if td.IsZero() {
+		return spiffeid.ID{}, errors.New("spiffe trust domain is required")
+	}
+	service = strings.TrimSpace(service)
+	if service == "" {
+		return spiffeid.ID{}, errors.New("spiffe service name is required")
+	}
+	id, err := spiffeid.FromSegments(td, "svc", service)
+	if err != nil {
+		return spiffeid.ID{}, fmt.Errorf("derive spiffe id for service %q: %w", service, err)
+	}
+	return id, nil
 }
 
-func ServerPeerAllowlistMiddleware(expectedClientIDs []spiffeid.ID, next http.Handler) http.Handler {
-	ids, err := nonZeroIDs(expectedClientIDs)
-	expected := make(map[spiffeid.ID]struct{}, len(ids))
-	expectedStrings := make([]string, 0, len(ids))
-	for _, id := range ids {
-		expected[id] = struct{}{}
-		expectedStrings = append(expectedStrings, id.String())
+func currentID(source *workloadapi.X509Source) (spiffeid.ID, error) {
+	if source == nil {
+		return spiffeid.ID{}, errors.New("spiffe x509 source is required")
 	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx, span := tracer.Start(r.Context(), "auth.spiffe.mtls.server")
-		defer span.End()
-		span.SetAttributes(attribute.StringSlice("spiffe.expected_client_ids", expectedStrings))
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		peerID, ok := PeerIDFromRequest(r)
-		if !ok {
-			err := errors.New("missing SPIFFE peer certificate")
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		span.SetAttributes(attribute.String("spiffe.peer_id", peerID.String()))
-		if _, ok := expected[peerID]; !ok {
-			err := fmt.Errorf("unexpected SPIFFE peer %s", peerID.String())
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
-		}
-		r = r.WithContext(ContextWithPeerID(ctx, peerID))
-		next.ServeHTTP(w, r)
-	})
+	svid, err := source.GetX509SVID()
+	if err != nil {
+		return spiffeid.ID{}, fmt.Errorf("load current x509-svid: %w", err)
+	}
+	if svid == nil || svid.ID.IsZero() {
+		return spiffeid.ID{}, errors.New("current x509-svid is required")
+	}
+	return svid.ID, nil
+}
+
+func currentTrustDomain(source *workloadapi.X509Source) (spiffeid.TrustDomain, error) {
+	id, err := currentID(source)
+	if err != nil {
+		return spiffeid.TrustDomain{}, err
+	}
+	return id.TrustDomain(), nil
 }
 
 type clientSpanTransport struct {

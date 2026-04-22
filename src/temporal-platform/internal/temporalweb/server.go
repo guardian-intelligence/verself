@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
+	workloadauth "github.com/forge-metal/auth-middleware/workload"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
 	"github.com/temporalio/ui-server/v2/plugins/fs_config_provider"
@@ -39,8 +39,6 @@ type Config struct {
 	Environment      string
 	FrontendAddress  string
 	SPIFFESocketAddr string
-	ServerID         spiffeid.ID
-	ExpectedClientID spiffeid.ID
 }
 
 func Run(ctx context.Context, cfg Config) error {
@@ -58,10 +56,7 @@ func Run(ctx context.Context, cfg Config) error {
 		return fmt.Errorf("validate temporal web config: %w", err)
 	}
 
-	source, err := workloadapi.NewX509Source(
-		ctx,
-		workloadapi.WithClientOptions(workloadapi.WithAddr(strings.TrimSpace(cfg.SPIFFESocketAddr))),
-	)
+	source, err := workloadauth.Source(ctx, strings.TrimSpace(cfg.SPIFFESocketAddr))
 	if err != nil {
 		return fmt.Errorf("open SPIFFE X509 source: %w", err)
 	}
@@ -71,11 +66,11 @@ func Run(ctx context.Context, cfg Config) error {
 		}
 	}()
 
-	if err := assertExpectedSVID(source, cfg.ExpectedClientID); err != nil {
+	if _, err := workloadauth.CurrentIDForService(source, workloadauth.ServiceTemporalWeb); err != nil {
 		return err
 	}
 
-	grpcConn, err := dialTemporalFrontend(ctx, strings.TrimSpace(cfg.FrontendAddress), source, cfg.ServerID)
+	grpcConn, err := dialTemporalFrontend(ctx, strings.TrimSpace(cfg.FrontendAddress), source)
 	if err != nil {
 		return err
 	}
@@ -132,25 +127,17 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 }
 
-func assertExpectedSVID(source *workloadapi.X509Source, expected spiffeid.ID) error {
-	currentSVID, err := source.GetX509SVID()
-	if err != nil {
-		return fmt.Errorf("load temporal web x509-svid: %w", err)
-	}
-	if currentSVID.ID != expected {
-		return fmt.Errorf("temporal web started with unexpected SPIFFE ID %s (expected %s)", currentSVID.ID, expected)
-	}
-	return nil
-}
-
 func dialTemporalFrontend(
 	ctx context.Context,
 	address string,
 	source *workloadapi.X509Source,
-	serverID spiffeid.ID,
 ) (*grpc.ClientConn, error) {
 	dialCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
+	serverID, err := workloadauth.PeerIDForSource(source, workloadauth.ServiceTemporalServer)
+	if err != nil {
+		return nil, err
+	}
 
 	conn, err := grpc.DialContext(
 		dialCtx,

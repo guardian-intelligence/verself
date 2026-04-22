@@ -8,6 +8,7 @@ require (
 	github.com/forge-metal/apiwire v0.0.0
 	github.com/forge-metal/auth-middleware v0.0.0
 	github.com/forge-metal/billing-service v0.0.0
+	github.com/forge-metal/governance-service v0.0.0
 	github.com/forge-metal/otel v0.0.0
 	github.com/forge-metal/secrets-service v0.0.0
 	github.com/forge-metal/temporal-platform v0.0.0
@@ -21,6 +22,7 @@ require (
 	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.34.0
 	github.com/riverqueue/river/rivertype v0.34.0
 	github.com/riverqueue/rivercontrib/otelriver v0.7.0
+	github.com/spiffe/go-spiffe/v2 v2.6.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
@@ -69,7 +71,6 @@ require (
 	github.com/robfig/cron v1.2.0 // indirect
 	github.com/segmentio/asm v1.2.0 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
-	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
@@ -111,6 +112,7 @@ replace (
 	github.com/forge-metal/apiwire => ../apiwire
 	github.com/forge-metal/auth-middleware => ../auth-middleware
 	github.com/forge-metal/billing-service => ../billing-service
+	github.com/forge-metal/governance-service => ../governance-service
 	github.com/forge-metal/otel => ../otel
 	github.com/forge-metal/secrets-service => ../secrets-service
 	github.com/forge-metal/temporal-platform => ../temporal-platform

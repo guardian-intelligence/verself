@@ -29,11 +29,6 @@ temporal_namespace_retention: 24h
 temporal_bootstrap_namespaces:
   - "{{ temporal_sandbox_namespace }}"
   - "{{ temporal_billing_namespace }}"
-temporal_frontend_client_spiffe_ids:
-  - "{{ spire_temporal_server_id }}"
-  - "{{ spire_temporal_web_id }}"
-  - "{{ spire_sandbox_rental_id }}"
-  - "{{ spire_billing_service_id }}"
 temporal_namespace_role_bindings:
   - spiffe_id: "{{ spire_sandbox_rental_id }}"
     namespace: "{{ temporal_sandbox_namespace }}"

@@ -73,8 +73,6 @@ func run() error {
 	tlsConfigProvider, err := tlsprovider.New(
 		ctx,
 		strings.TrimSpace(os.Getenv("SPIFFE_ENDPOINT_SOCKET")),
-		strings.TrimSpace(os.Getenv("FM_TEMPORAL_SERVER_SPIFFE_ID")),
-		strings.Split(strings.TrimSpace(os.Getenv("FM_TEMPORAL_FRONTEND_CLIENT_IDS")), ","),
 	)
 	if err != nil {
 		return fmt.Errorf("build temporal tls provider: %w", err)

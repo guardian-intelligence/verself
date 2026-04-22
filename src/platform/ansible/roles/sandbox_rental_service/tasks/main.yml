@@ -297,10 +297,6 @@
       Environment=SANDBOX_PG_DSN=postgres://sandbox_rental@/sandbox_rental?host=/var/run/postgresql&sslmode=disable
       Environment=SANDBOX_GOVERNANCE_AUDIT_URL={{ sandbox_rental_governance_audit_url }}
       Environment=SANDBOX_SECRETS_URL=https://{{ services.secrets_service.host }}:{{ services.secrets_service.internal_port }}
-      Environment=SANDBOX_SECRETS_SPIFFE_ID={{ spire_secrets_service_id }}
-      Environment=SANDBOX_BILLING_SPIFFE_ID={{ spire_billing_service_id }}
-      Environment=SANDBOX_GOVERNANCE_SPIFFE_ID={{ spire_governance_service_id }}
-      Environment=SANDBOX_TEMPORAL_SERVER_SPIFFE_ID={{ spire_temporal_server_id }}
       Environment=SANDBOX_TEMPORAL_FRONTEND_ADDRESS={{ services.temporal.host }}:{{ services.temporal.grpc_port }}
       Environment=SANDBOX_TEMPORAL_NAMESPACE={{ sandbox_rental_service_temporal_namespace }}
       Environment=SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING={{ sandbox_rental_service_temporal_task_queue_recurring }}
@@ -389,7 +385,6 @@
       Environment=SANDBOX_RIVER_PG_MIN_CONNS={{ sandbox_rental_service_river_pg_min_conns }}
       Environment=SANDBOX_RIVER_PG_CONN_MAX_LIFETIME_SECONDS={{ sandbox_rental_service_river_pg_conn_max_lifetime_seconds }}
       Environment=SANDBOX_RIVER_PG_CONN_MAX_IDLE_SECONDS={{ sandbox_rental_service_river_pg_conn_max_idle_seconds }}
-      Environment=SANDBOX_TEMPORAL_SERVER_SPIFFE_ID={{ spire_temporal_server_id }}
       Environment=SANDBOX_TEMPORAL_FRONTEND_ADDRESS={{ services.temporal.host }}:{{ services.temporal.grpc_port }}
       Environment=SANDBOX_TEMPORAL_NAMESPACE={{ sandbox_rental_service_temporal_namespace }}
       Environment=SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING={{ sandbox_rental_service_temporal_task_queue_recurring }}

@@ -34,7 +34,6 @@ remote_temporal_bootstrap() {
     "SPIFFE_ENDPOINT_SOCKET=${spire_socket}"
     "OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317"
     "FM_TEMPORAL_FRONTEND_ADDRESS=${temporal_frontend_address}"
-    "FM_TEMPORAL_SERVER_SPIFFE_ID=${temporal_server_spiffe_id}"
     "FM_TEMPORAL_BOOTSTRAP_NAMESPACES=${temporal_sandbox_namespace},${temporal_billing_namespace}"
     "FM_TEMPORAL_BOOTSTRAP_NAMESPACE_RETENTION=24h"
     "${temporal_bootstrap_bin}"

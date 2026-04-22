@@ -224,7 +224,6 @@
       Environment=MAILBOX_SERVICE_STALWART_MAILBOX=ceo
       Environment=MAILBOX_SERVICE_STALWART_LOCAL_DOMAIN={{ forge_metal_domain }}
       Environment=MAILBOX_SERVICE_SECRETS_URL=https://{{ services.secrets_service.host }}:{{ services.secrets_service.internal_port }}
-      Environment=MAILBOX_SERVICE_SECRETS_SPIFFE_ID={{ spire_secrets_service_id }}
       Environment=MAILBOX_SERVICE_SYNC_DISCOVERY_INTERVAL=2m
       Environment=MAILBOX_SERVICE_SYNC_RECONCILE_INTERVAL=10m
       Environment=MAILBOX_SERVICE_AUTH_ISSUER_URL={{ mailbox_service_auth_issuer_url }}
