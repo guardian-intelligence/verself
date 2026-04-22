@@ -12,7 +12,11 @@ src/temporal-platform/forge-temporal-server
 src/temporal-platform/temporal-proof
 src/temporal-platform/temporal-schema
 src/temporal-platform/forge-temporal-web
-
+src/sandbox-rental-service/sandbox-rental-recurring-worker
+src/object-storage-service/object-storage-secret-sync
+src/temporal-platform/temporal-bootstrap
+src/object-storage-service/object-storage-proof
+src/object-storage-service/object-storage-service
 # Config (contains credentials)
 forge-metal.toml
 
