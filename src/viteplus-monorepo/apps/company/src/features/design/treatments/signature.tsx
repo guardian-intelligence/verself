@@ -192,7 +192,13 @@ function SignatureAside({ children }: { readonly children: ReactNode }) {
 // Status badge helper — amber dot plus uppercase mono label. Used by the
 // Workshop signature as the treatment's distinctive "live / pageable"
 // indicator. Exported so treatments can compose it into the meta slot.
-export function SignatureStatusBadge({ accentHex, children }: { readonly accentHex: string; readonly children: ReactNode }) {
+export function SignatureStatusBadge({
+  accentHex,
+  children,
+}: {
+  readonly accentHex: string;
+  readonly children: ReactNode;
+}) {
   return (
     <span
       style={{

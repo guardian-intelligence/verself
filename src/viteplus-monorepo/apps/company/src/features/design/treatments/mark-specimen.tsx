@@ -1,5 +1,11 @@
 import type { ReactNode } from "react";
-import { Lockup, WingsArgent, WingsChip, type LockupSize, type LockupVariant } from "@forge-metal/brand";
+import {
+  Lockup,
+  WingsArgent,
+  WingsChip,
+  type LockupSize,
+  type LockupVariant,
+} from "@forge-metal/brand";
 
 // Mark specimen block. One big carrier cell on the treatment's ground, an
 // info strip below with the hexes that make the carrier up, and optional

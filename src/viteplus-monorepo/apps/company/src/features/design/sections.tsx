@@ -60,7 +60,6 @@ function Surface({
   );
 }
 
-
 // ============================================================================
 // 03 — Treatments · Company
 // ============================================================================
@@ -131,9 +130,7 @@ function SectionCompany() {
           footer={
             <>
               Clear space · 1 × wing-unit outside the lockup ·{" "}
-              <span style={{ color: "var(--muted)" }}>
-                gap clamp(8, 0.28 · mark-h, 18) inside
-              </span>
+              <span style={{ color: "var(--muted)" }}>gap clamp(8, 0.28 · mark-h, 18) inside</span>
             </>
           }
         />
@@ -324,9 +321,9 @@ function SectionWorkshop() {
         rule={
           <>
             Amber reads as <i>work is happening here</i> — a nod to Bloomberg Terminal's amber
-            phosphor. <b>Flare is banned from Workshop</b> and <b>Amber never ships outside
-            Workshop</b>; the two accents trade places at the chrome boundary so an operator always
-            knows which context they are inside.
+            phosphor. <b>Flare is banned from Workshop</b> and{" "}
+            <b>Amber never ships outside Workshop</b>; the two accents trade places at the chrome
+            boundary so an operator always knows which context they are inside.
           </>
         }
       />
@@ -349,9 +346,9 @@ function SectionWorkshop() {
         <TreatmentWingsOnlyLadder
           note={
             <>
-              22 px is the size the live console chrome ships. Below 22 px the glyph starts to
-              lose its lower-wing tip at typical display DPI; above 64 px the wings feel like a
-              logo looking for a sentence.
+              22 px is the size the live console chrome ships. Below 22 px the glyph starts to lose
+              its lower-wing tip at typical display DPI; above 64 px the wings feel like a logo
+              looking for a sentence.
             </>
           }
         />
@@ -621,7 +618,12 @@ function SectionWorkshop() {
             {["Integrations", "Billing", "Settings"].map((label) => (
               <span
                 key={label}
-                style={{ display: "block", padding: "8px 10px", borderRadius: "6px", color: "var(--muted)" }}
+                style={{
+                  display: "block",
+                  padding: "8px 10px",
+                  borderRadius: "6px",
+                  color: "var(--muted)",
+                }}
               >
                 {label}
               </span>
@@ -687,10 +689,31 @@ function SectionWorkshop() {
                 </thead>
                 <tbody>
                   {[
-                    ["acme-corp", "us-east-1", "inference · h100×8", "0x41e9f2a", "● attested", "ok"],
+                    [
+                      "acme-corp",
+                      "us-east-1",
+                      "inference · h100×8",
+                      "0x41e9f2a",
+                      "● attested",
+                      "ok",
+                    ],
                     ["hex-labs", "us-east-1", "ci · runner-pool", "0x41e9f2b", "● attested", "ok"],
-                    ["lumen-mail", "eu-west-1", "stateful · zfs-pool", "0x41e9f2c", "○ draining", "warn"],
-                    ["solo-founder", "us-west-2", "editor · agent-vm", "0x41e9f2d", "● attested", "ok"],
+                    [
+                      "lumen-mail",
+                      "eu-west-1",
+                      "stateful · zfs-pool",
+                      "0x41e9f2c",
+                      "○ draining",
+                      "warn",
+                    ],
+                    [
+                      "solo-founder",
+                      "us-west-2",
+                      "editor · agent-vm",
+                      "0x41e9f2d",
+                      "● attested",
+                      "ok",
+                    ],
                   ].map((row) => (
                     <tr key={row[0]}>
                       <td style={{ padding: "12px 14px", borderBottom: `1px solid ${LINE}` }}>
@@ -799,8 +822,11 @@ function SectionNewsroom() {
           Flare ground, wings in a circular ink emboss, Fraunces at display weight. The Newsroom
           treatment is the moment the brand chooses to be noticed — investor deck covers,
           billboards, social hero images, recruiting posters, conference backdrops, merch.{" "}
-          <b>OG cards, press hero imagery, and every share preview ride under this treatment by
-          default</b> — acid green is how Guardian appears in someone else's feed.
+          <b>
+            OG cards, press hero imagery, and every share preview ride under this treatment by
+            default
+          </b>{" "}
+          — acid green is how Guardian appears in someone else's feed.
         </>
       }
     >
@@ -887,8 +913,8 @@ function SectionNewsroom() {
           ]}
           footer={
             <>
-              On Flare the wordmark sets in Ink, never Argent. The medallion carries the wings
-              so the argent never reads directly against the ground.
+              On Flare the wordmark sets in Ink, never Argent. The medallion carries the wings so
+              the argent never reads directly against the ground.
             </>
           }
         />
@@ -947,8 +973,8 @@ function SectionNewsroom() {
         ]}
         caption={
           <>
-            Newsroom type stops at display and its kicker. If a surface needs body prose, it
-            belongs under Letters or Company; Flare is too loud a ground to read paragraphs on.
+            Newsroom type stops at display and its kicker. If a surface needs body prose, it belongs
+            under Letters or Company; Flare is too loud a ground to read paragraphs on.
           </>
         }
       />
@@ -1021,10 +1047,9 @@ function SectionLetters() {
         <>
           <i>Letters</i> is Guardian's long-form surface, where individual voices show their work.
           Paper ground, Fraunces masthead, Fraunces body for flowing prose, Geist for bylines and
-          metadata.{" "}
-          <b style={{ color: "var(--color-bordeaux)" }}>Bordeaux</b> marks pull-quotes, active
-          links, and drop-cap ornaments — the single editorial accent, reserved for this treatment.
-          Flare does not appear on Letters; it is too loud for reading.
+          metadata. <b style={{ color: "var(--color-bordeaux)" }}>Bordeaux</b> marks pull-quotes,
+          active links, and drop-cap ornaments — the single editorial accent, reserved for this
+          treatment. Flare does not appear on Letters; it is too loud for reading.
         </>
       }
     >
@@ -1057,8 +1082,8 @@ function SectionLetters() {
         rule={
           <>
             Bordeaux never ships outside Letters. Flare and Amber never ship <i>into</i> Letters.
-            The muted register on Paper is Ink at 0.7 / 0.6 / 0.55 opacity — the warm counterpart
-            to Ash on Iron grounds, historically called "Stone".
+            The muted register on Paper is Ink at 0.7 / 0.6 / 0.55 opacity — the warm counterpart to
+            Ash on Iron grounds, historically called "Stone".
           </>
         }
       />
@@ -1175,8 +1200,8 @@ function SectionLetters() {
         ]}
         caption={
           <>
-            Letters is the only treatment where Fraunces sets body prose. If a surface wants to
-            use Fraunces for body outside Letters, it probably wants to be a Letter.
+            Letters is the only treatment where Fraunces sets body prose. If a surface wants to use
+            Fraunces for body outside Letters, it probably wants to be a Letter.
           </>
         }
       />
@@ -1237,7 +1262,9 @@ function SectionLetters() {
           }}
         >
           <span>By the founder</span>
-          <span style={{ width: "4px", height: "4px", background: "#5d5a52", borderRadius: "2px" }} />
+          <span
+            style={{ width: "4px", height: "4px", background: "#5d5a52", borderRadius: "2px" }}
+          />
           <span>Filed from Seattle, WA</span>
         </div>
         <p
