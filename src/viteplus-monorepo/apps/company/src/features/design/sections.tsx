@@ -3,9 +3,11 @@ import { Lockup, WingsArgent, WingsChip, WingsEmboss } from "@forge-metal/brand"
 import { DESIGN_SECTIONS } from "~/lib/design-nav";
 import { Section } from "./section-shell";
 import {
+  Nameplate,
   SignatureStatusBadge,
   TreatmentLockupLadder,
   TreatmentMarkCard,
+  TreatmentMastheadLadder,
   TreatmentPalette,
   TreatmentSignature,
   TreatmentSizeLadder,
@@ -129,121 +131,6 @@ function Surface({
       }}
     >
       {children}
-    </div>
-  );
-}
-
-// ============================================================================
-// TreatmentPalette — every colour the treatment uses, one row, as chips with
-// hex / Pantone / role underneath. Lives immediately under each treatment's
-// lede so a reader can copy tokens without hunting for them.
-// ============================================================================
-type Swatch = {
-  readonly name: string;
-  readonly hex: string;
-  readonly role: string;
-  readonly pantone?: string;
-  readonly chipStyle?: CSSProperties;
-};
-
-// Temporary: the legacy palette helper used by treatments still on the old
-// layout. Each treatment migration (Workshop → Newsroom → Letters) removes its
-// caller; when the last caller is gone the helper goes with it.
-function LegacyPalette({
-  swatches,
-  rule,
-}: {
-  readonly swatches: readonly Swatch[];
-  readonly rule?: ReactNode;
-}) {
-  return (
-    <div
-      style={{
-        marginBottom: "16px",
-        padding: "18px 20px",
-        border: `1px solid ${LINE}`,
-        borderRadius: "10px",
-        background: PANEL_2_BG,
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "18px 28px",
-          alignItems: "flex-start",
-        }}
-      >
-        {swatches.map((s) => (
-          <div key={s.name} style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <div
-              style={{
-                width: "40px",
-                height: "40px",
-                borderRadius: "6px",
-                flex: "0 0 40px",
-                background: s.hex,
-                // Inset 1px hairline so dark chips (Iron, Ink) separate from
-                // the dark panel, and light chips (Paper, Argent) get a
-                // visible edge. Neutral rgba works on both.
-                boxShadow: "inset 0 0 0 1px rgba(128,128,128,0.25)",
-                ...s.chipStyle,
-              }}
-            />
-            <div style={{ minWidth: 0 }}>
-              <div
-                style={{
-                  fontFamily: "'Geist', sans-serif",
-                  fontWeight: 600,
-                  fontSize: "13px",
-                  color: "var(--color-type-iron)",
-                  lineHeight: 1.2,
-                }}
-              >
-                {s.name}
-              </div>
-              <div
-                style={{
-                  font: '600 10px/1.35 "Geist Mono", ui-monospace, monospace',
-                  fontVariationSettings: '"wght" 600',
-                  color: "var(--muted-faint)",
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  marginTop: "2px",
-                }}
-              >
-                {s.hex}
-                {s.pantone ? ` · ${s.pantone}` : ""}
-              </div>
-              <div
-                style={{
-                  fontFamily: "'Geist', sans-serif",
-                  fontSize: "11px",
-                  color: "var(--muted)",
-                  marginTop: "2px",
-                }}
-              >
-                {s.role}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-      {rule ? (
-        <div
-          style={{
-            marginTop: "14px",
-            paddingTop: "14px",
-            borderTop: `1px solid ${LINE}`,
-            fontFamily: "'Geist', sans-serif",
-            fontSize: "12px",
-            color: "var(--muted)",
-            lineHeight: 1.5,
-          }}
-        >
-          {rule}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -618,81 +505,6 @@ function SectionTypography() {
         </table>
       </div>
     </Section>
-  );
-}
-
-// ============================================================================
-// Signature primitives — one per treatment, inlined into the treatment's
-// section so the signature reads as part of the same language as the hero.
-// ============================================================================
-
-const SIG_CARD: CSSProperties = {
-  background: "#fff",
-  color: "var(--color-ink)",
-  padding: "20px 22px",
-  borderRadius: "8px",
-  fontFamily: "'Geist', sans-serif",
-  fontSize: "13px",
-  maxWidth: "540px",
-  border: "1px solid #e5e3dc",
-};
-
-const SIG_EYEBROW: CSSProperties = {
-  font: '600 10px/1 "Geist Mono", ui-monospace, monospace',
-  fontVariationSettings: '"wght" 600',
-  letterSpacing: "0.16em",
-  textTransform: "uppercase",
-  color: "var(--muted-faint)",
-  marginBottom: "10px",
-};
-
-function LettersSignature() {
-  return (
-    <div>
-      <div style={SIG_EYEBROW}>Email signature · Letters</div>
-      <div style={{ ...SIG_CARD, background: "var(--color-paper)" }}>
-        <div style={{ marginBottom: "14px" }}>
-          <Lockup size="sm" variant="chip" wordmarkColor="var(--color-ink)" />
-        </div>
-        <div
-          style={{
-            fontFamily: "'Fraunces', Georgia, serif",
-            fontVariationSettings: '"opsz" 72, "SOFT" 30',
-            fontStyle: "italic",
-            fontSize: "18px",
-            lineHeight: 1.3,
-            color: "var(--color-ink)",
-          }}
-        >
-          — the founder
-        </div>
-        <div
-          style={{
-            fontFamily: "'Geist', sans-serif",
-            fontSize: "12px",
-            color: "#5d5a52",
-            marginTop: "4px",
-            marginBottom: "10px",
-          }}
-        >
-          Filed from Seattle, WA · Letter № 3
-        </div>
-        {/* Bordeaux hairline — the Letters-only accent. */}
-        <div
-          style={{
-            height: "1px",
-            width: "44px",
-            background: "var(--color-bordeaux)",
-            margin: "8px 0 12px",
-          }}
-        />
-        <div style={{ display: "flex", gap: "12px", color: "#5d5a52", fontSize: "12px", flexWrap: "wrap" }}>
-          <span>letters@guardianintelligence.org</span>
-          <span aria-hidden>·</span>
-          <span>guardianintelligence.org/letters</span>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -1663,27 +1475,169 @@ function SectionLetters() {
         </>
       }
     >
-      <LegacyPalette
-        swatches={[
-          { name: "Paper", hex: "#F6F4ED", role: "Ground", chipStyle: { boxShadow: `inset 0 0 0 1px ${LINE}` } },
-          { name: "Bordeaux", hex: "#5C1F1E", pantone: "Pantone 504 C", role: "Letters-only accent · pull-quote rules, drop-caps, links" },
-          { name: "Ink", hex: "#0B0B0B", role: "Body prose · Fraunces" },
-          { name: "Stone", hex: "#0B0B0B", role: "Muted ink · bylines, metadata, captions", chipStyle: { background: "rgba(11,11,11,0.7)" } },
-          { name: "Argent", hex: "#FFFFFF", role: "Wings (inside iron chip)" },
-        ]}
+      <TreatmentPalette
+        roles={{
+          ground: {
+            name: "Paper",
+            hex: "#F6F4ED",
+            note: "Long-form reading canvas.",
+            chipStyle: { boxShadow: `inset 0 0 0 1px ${LINE}` },
+          },
+          accent: {
+            name: "Bordeaux",
+            hex: "#5C1F1E",
+            pantone: "Pantone 504 C",
+            note: "Pull-quote rules, drop-caps, active links. Letters only.",
+          },
+          mark: {
+            name: "Argent",
+            hex: "#FFFFFF",
+            note: "Wings, always — inside the iron chip on paper.",
+          },
+          muted: {
+            name: "Ink",
+            hex: "#0B0B0B",
+            note: "Bylines, metadata, captions set in Ink @ 0.7 / 0.6 / 0.55 (Stone).",
+            chipStyle: { background: "rgba(11,11,11,0.7)" },
+          },
+        }}
         rule={
           <>
             Bordeaux never ships outside Letters. Flare and Amber never ship <i>into</i> Letters.
-            Stone is Paper's muted-ink family — the warm counterpart to Ash on Iron grounds.
+            The muted register on Paper is Ink at 0.7 / 0.6 / 0.55 opacity — the warm counterpart
+            to Ash on Iron grounds, historically called "Stone".
           </>
         }
       />
+
+      {/* Mark specimen — Paper carrier with the iron chip, plus a masthead
+          ladder that demonstrates the thin-ruled nameplate at three card
+          widths. The nameplate replaces the old size="md" Lockup masthead
+          that was competing with the article H1 below. */}
+      <div style={{ display: "grid", gap: "16px", marginBottom: "16px" }}>
+        <TreatmentMarkCard
+          groundVar="var(--color-paper)"
+          rows={[
+            { label: "Argent · Paper · chip", value: "Letters", emphasise: "name" },
+            { label: "ground", value: "#F6F4ED", emphasise: "hex" },
+            { label: "chip", value: "#0E0E0E", emphasise: "hex" },
+            { label: "wings", value: "#FFFFFF", emphasise: "hex" },
+          ]}
+        >
+          <WingsChip style={{ width: "58%", height: "auto" }} />
+        </TreatmentMarkCard>
+        <TreatmentMastheadLadder
+          rows={[
+            { widthPx: 720, issue: "№ 3", date: "19 Apr 2026", label: "ceiling" },
+            { widthPx: 480, issue: "№ 3", date: "19 Apr 2026", label: "proportional" },
+            { widthPx: 320, issue: "№ 3", date: "19 Apr 2026", label: "floor" },
+          ]}
+          footer={
+            <>
+              The nameplate is a volume masthead, not a wordmark lockup. Wings + tracked uppercase
+              Geist + Bordeaux rule. The article H1 below it does the heading work; the nameplate
+              identifies the publication, not the article.
+            </>
+          }
+        />
+      </div>
+
+      {/* Type ladder — Letters' flavour. Fraunces carries both the H1 and
+          the body (this is the one treatment where Fraunces sets body prose,
+          because Letters is for reading). Geist only handles bylines and
+          metadata. */}
+      <TreatmentTypeLadder
+        rows={[
+          {
+            sample: "Applied intelligence is not an adjective.",
+            role: "article · h1",
+            spec: "Fraunces / 64 / 1.02 / -25 · opsz 144 · SOFT 50",
+            sampleSizePx: 48,
+            sampleStyle: {
+              fontFamily: "'Fraunces', Georgia, serif",
+              fontVariationSettings: '"opsz" 144, "SOFT" 50',
+              fontWeight: 400,
+              fontSize: "48px",
+              lineHeight: 1.02,
+              letterSpacing: "-0.025em",
+            },
+          },
+          {
+            sample:
+              "There is a tradition in the software industry of taking a good word and pointing it at something that has not yet earned it.",
+            role: "body prose · fraunces",
+            spec: "Fraunces / 19 / 1.55 · opsz 18 · Regular",
+            sampleSizePx: 19,
+            sampleStyle: {
+              fontFamily: "'Fraunces', Georgia, serif",
+              fontVariationSettings: '"opsz" 18, "SOFT" 0',
+              fontWeight: 400,
+              fontSize: "19px",
+              lineHeight: 1.55,
+            },
+          },
+          {
+            sample: "— the founder",
+            role: "valediction · italic",
+            spec: "Fraunces / 22 / italic · opsz 72 · SOFT 60",
+            sampleSizePx: 22,
+            sampleStyle: {
+              fontFamily: "'Fraunces', Georgia, serif",
+              fontVariationSettings: '"opsz" 72, "SOFT" 60',
+              fontStyle: "italic",
+              fontWeight: 400,
+              fontSize: "22px",
+              lineHeight: 1.3,
+              color: "var(--muted-strong)",
+            },
+          },
+          {
+            sample: "By the founder · Filed from Seattle, WA",
+            role: "byline · meta",
+            spec: "Geist / 13 / 1.5 · Stone 0.7",
+            sampleSizePx: 13,
+            sampleStyle: {
+              fontFamily: "'Geist', sans-serif",
+              fontWeight: 400,
+              fontSize: "13px",
+              lineHeight: 1.5,
+              color: "var(--muted)",
+            },
+          },
+          {
+            sample: "Letters № 3 · 19 Apr 2026 · 8 min read",
+            role: "eyebrow · upper",
+            spec: "Geist / 11 / 1 / +240 · 500 · UPPER",
+            sampleSizePx: 11,
+            sampleStyle: {
+              fontFamily: "'Geist', sans-serif",
+              fontWeight: 500,
+              fontSize: "11px",
+              lineHeight: 1,
+              letterSpacing: "0.24em",
+              textTransform: "uppercase",
+              color: "var(--muted)",
+            },
+          },
+        ]}
+        caption={
+          <>
+            Letters is the only treatment where Fraunces sets body prose. If a surface wants to
+            use Fraunces for body outside Letters, it probably wants to be a Letter.
+          </>
+        }
+      />
+
       <Surface
         ground="paper"
+        className="shell-paper"
         style={{ padding: "clamp(32px, 5vw, 64px) clamp(20px, 4vw, 56px)", borderRadius: "16px" }}
       >
-        <div style={{ margin: "0 0 32px" }}>
-          <Lockup size="md" variant="chip" wordmark="Guardian · Letters" wordmarkColor="var(--color-ink)" />
+        {/* Thin-ruled nameplate — replaces the old size="md" chip Lockup that
+            was visually competing with the article H1 below. Wings + tracked
+            uppercase Geist "Guardian · Letters" + Bordeaux rule. */}
+        <div style={{ margin: "0 0 28px" }}>
+          <Nameplate />
         </div>
         <div
           style={{
@@ -1786,9 +1740,54 @@ function SectionLetters() {
           &ldquo;A 10,000× increase in value-generation per capita is not a slogan. It is an
           engineering target.&rdquo;
         </blockquote>
+        {/* Valediction — this is where the italic "— the founder" belongs,
+            inside the article body above the sign-off, not where the author's
+            name should be in the signature card. Moved from the old
+            LettersSignature. */}
+        <p
+          style={{
+            fontFamily: "'Fraunces', Georgia, serif",
+            fontVariationSettings: '"opsz" 72, "SOFT" 60',
+            fontStyle: "italic",
+            fontWeight: 400,
+            fontSize: "clamp(20px, 2.6vw, 26px)",
+            lineHeight: 1.3,
+            letterSpacing: "-0.01em",
+            margin: "40px 0 0",
+            color: "var(--color-ink)",
+          }}
+        >
+          — the founder
+        </p>
       </Surface>
       <div style={{ marginTop: "24px" }}>
-        <LettersSignature />
+        <TreatmentSignature
+          eyebrow="Email signature · Letters"
+          markVariant="chip"
+          identity={{
+            name: "Founder Name",
+            role: "Founder · Guardian Intelligence",
+          }}
+          accent={{ hex: "#5C1F1E", style: "hairline", heightPx: 3 }}
+          meta={
+            <span
+              style={{
+                fontFamily: "'Geist', sans-serif",
+                fontSize: "12px",
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+                color: "rgba(11,11,11,0.6)",
+              }}
+            >
+              Filed from Seattle, WA · Letter № 3
+            </span>
+          }
+          paperGround
+          contact={{
+            email: "letters@guardianintelligence.org",
+            secondary: "guardianintelligence.org/letters",
+          }}
+        />
       </div>
     </Section>
   );
