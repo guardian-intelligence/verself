@@ -1,69 +1,169 @@
 import type { CSSProperties, ReactNode } from "react";
 import { Lockup, WingsChip, type LockupVariant } from "@forge-metal/brand";
 
-// One signature skeleton. All four treatments render:
+// The Guardian email signature, four voices.
 //
-//   ┌────────────────────────────────────────────┐
-//   │ [mark row]         — per-treatment variant │
-//   │ [identity row]     Name  ·  Role           │
-//   │ [accent row]       hairline or dot         │
-//   │ [meta row]         optional slot           │
-//   │ [contact row]      email  ·  secondary     │
-//   └────────────────────────────────────────────┘
+// Every outgoing Guardian email carries a signature from one of four
+// treatments. Until this pass the signature was a single white card with a
+// coloured dot per treatment — the colour token changed, the grammar did
+// not, so a Workshop engineer's signature and a Newsroom press officer's
+// signature sat on the same chassis and said "I am a Guardian card". That
+// underminded the point of the four treatments.
 //
-// Per-treatment knobs:
-//   • markVariant    — "argent" | "chip" | "emboss" | "wings-only"
-//   • accent         — { hex, style: "hairline" | "dot" | "none" }
-//   • identity       — { name, role } — never a valediction. Letters moved
-//                      its "— the founder" line into the article body.
-//   • meta           — ReactNode slot for per-treatment extras (Workshop's
-//                      amber status dot, Letters' "Filed from Seattle · № 3").
-//   • paperGround    — flip the card to Paper (Letters only); otherwise white.
+// Now each variant is a miniature of its treatment:
+//
+//   company  — Iron-ink on white (the corporate record). Flare hairline
+//              under the name. Mark locks up with the Guardian wordmark.
+//   workshop — Argent on Iron (the production console). No Fraunces. Geist
+//              Mono throughout — name, role, contact. Amber LIVE dot marker
+//              is the treatment's signature status glyph. Wings-only mark
+//              (no wordmark, matching the live console chrome).
+//   newsroom — Ink-on-Flare acid broadcast. No rule — the ground carries
+//              the signpost. Emboss-variant mark (black circular medallion)
+//              because Argent-on-Flare contrast is thin for the wings.
+//   letters  — Ink-on-Paper editorial. Fraunces sets the author's name;
+//              Geist handles role / contact. Bordeaux vertical rule left
+//              of the identity mirrors the pull-quote treatment from the
+//              article body — the editorial rule is the treatment's
+//              hallmark and the signature is where it comes to rest.
+
+export type SignatureVariant = "company" | "workshop" | "newsroom" | "letters";
 
 export type SignatureMarkVariant = LockupVariant | "wings-only";
 
 export type SignatureAccent = {
   readonly hex: string;
-  readonly style: "hairline" | "dot" | "none";
-  // Optional thickness for hairline style. Default 2 px. Newsroom bumps to
-  // 3 px so the Flare bar reads on a white signature card (low luminance
-  // contrast makes 2 px disappear on paper).
+  readonly style: "hairline" | "dot" | "rule-left" | "none";
   readonly heightPx?: number;
-  // Optional label next to a dot. Newsroom uses this for a short "NEWSROOM"
-  // badge the dot sits next to, so acid green carries identity rather than
-  // just decoration.
   readonly label?: string;
 };
 
+type VariantTokens = {
+  readonly background: string;
+  readonly border: string;
+  readonly textColor: string;
+  readonly mutedStrong: string;
+  readonly mutedDefault: string;
+  readonly eyebrowColor: string;
+  readonly nameFont: string;
+  readonly nameSizePx: number;
+  readonly nameWeight: number;
+  readonly nameFontVariationSettings?: string;
+  readonly roleFont: string;
+  readonly contactFont: string;
+  readonly defaultMarkColor: string;
+};
+
+// Treatment-scoped typographic + surface tokens. Kept co-located with the
+// signature (rather than pulled into @forge-metal/brand) while the API
+// stabilises; promote to brand once a second consumer shows up.
+const VARIANT_TOKENS: Record<SignatureVariant, VariantTokens> = {
+  company: {
+    background: "#ffffff",
+    border: "1px solid rgba(11,11,11,0.12)",
+    textColor: "var(--color-ink)",
+    mutedStrong: "rgba(11,11,11,0.78)",
+    mutedDefault: "rgba(11,11,11,0.60)",
+    eyebrowColor: "var(--muted-faint)",
+    nameFont: "'Geist', sans-serif",
+    nameSizePx: 15,
+    nameWeight: 600,
+    roleFont: "'Geist', sans-serif",
+    contactFont: "'Geist', sans-serif",
+    defaultMarkColor: "var(--color-ink)",
+  },
+  workshop: {
+    // Iron ground mirrors the live console chrome. The signature reads as
+    // a terminal row rather than a business-card; everything sets in Geist
+    // Mono so the operator's last touchpoint to Guardian inherits the
+    // tenant-console vocabulary.
+    background: "#0e0e0e",
+    border: "1px solid rgba(245,245,245,0.10)",
+    textColor: "var(--color-type-iron)",
+    mutedStrong: "rgba(245,245,245,0.82)",
+    mutedDefault: "rgba(245,245,245,0.60)",
+    eyebrowColor: "var(--muted-faint)",
+    nameFont: "'Geist Mono', ui-monospace, SFMono-Regular, monospace",
+    nameSizePx: 14,
+    nameWeight: 600,
+    nameFontVariationSettings: '"wght" 600',
+    roleFont: "'Geist Mono', ui-monospace, SFMono-Regular, monospace",
+    contactFont: "'Geist Mono', ui-monospace, SFMono-Regular, monospace",
+    defaultMarkColor: "var(--color-type-iron)",
+  },
+  newsroom: {
+    // Flare ground is the signpost. No rule needed — the acid green IS the
+    // accent. Black emboss mark keeps the wings legible over Flare (where
+    // Argent's 1.05:1 contrast would fail WCAG).
+    background: "var(--color-flare)",
+    border: "1px solid rgba(11,11,11,0.22)",
+    textColor: "var(--color-ink)",
+    mutedStrong: "rgba(11,11,11,0.82)",
+    mutedDefault: "rgba(11,11,11,0.70)",
+    eyebrowColor: "var(--muted-faint)",
+    nameFont: "'Geist', sans-serif",
+    nameSizePx: 15,
+    nameWeight: 600,
+    roleFont: "'Geist', sans-serif",
+    contactFont: "'Geist', sans-serif",
+    defaultMarkColor: "var(--color-ink)",
+  },
+  letters: {
+    // Paper ground with Fraunces for the author name. The Bordeaux rule
+    // moves to the card's left edge (`rule-left` accent style below), which
+    // mirrors the pull-quote rule in the article body above. Reading the
+    // signature after reading the pull-quote should feel like the same
+    // editorial grammar re-applied.
+    background: "var(--color-paper)",
+    border: "1px solid rgba(11,11,11,0.14)",
+    textColor: "var(--color-ink)",
+    mutedStrong: "rgba(11,11,11,0.78)",
+    mutedDefault: "rgba(11,11,11,0.60)",
+    eyebrowColor: "var(--muted-faint)",
+    nameFont: "'Fraunces', Georgia, serif",
+    nameSizePx: 20,
+    nameWeight: 400,
+    nameFontVariationSettings: '"opsz" 72, "SOFT" 50',
+    roleFont: "'Geist', sans-serif",
+    contactFont: "'Geist', sans-serif",
+    defaultMarkColor: "var(--color-ink)",
+  },
+};
+
 export type TreatmentSignatureProps = {
+  readonly variant: SignatureVariant;
   readonly eyebrow: ReactNode;
   readonly markVariant: SignatureMarkVariant;
   readonly markColor?: string;
-  // Optional aside label next to the mark. Workshop uses this for the team
-  // badge ("PLATFORM · ENGINEERING") because the Workshop signature never
-  // carries the Guardian wordmark — wings + team becomes the identity anchor.
   readonly markAside?: ReactNode;
   readonly identity: { readonly name: string; readonly role: string };
   readonly accent: SignatureAccent;
   readonly meta?: ReactNode;
   readonly contact: { readonly email: string; readonly secondary?: string };
-  readonly paperGround?: boolean;
 };
 
-const LINE_DARK = "#2a2a2f";
-
 export function TreatmentSignature(props: TreatmentSignatureProps) {
-  const { eyebrow, markVariant, identity, accent, meta, contact, paperGround } = props;
+  const { variant, eyebrow, markVariant, identity, accent, meta, contact } = props;
+  const t = VARIANT_TOKENS[variant];
 
   const cardStyle: CSSProperties = {
-    background: paperGround ? "var(--color-paper)" : "#fff",
-    color: "var(--color-ink)",
-    padding: "20px 22px",
+    background: t.background,
+    color: t.textColor,
+    padding: "22px 24px",
     borderRadius: "8px",
-    fontFamily: "'Geist', sans-serif",
+    fontFamily: t.contactFont,
     fontSize: "13px",
     maxWidth: "540px",
-    border: "1px solid rgba(11,11,11,0.12)",
+    border: t.border,
+    // The Letters variant lives its Bordeaux rule on the card's left edge
+    // (the same gesture the pull-quote makes in the article body). Other
+    // variants leave this slot untouched.
+    ...(accent.style === "rule-left"
+      ? {
+          borderLeft: `${accent.heightPx ?? 3}px solid ${accent.hex}`,
+          paddingLeft: `${Math.max(18, 24 - (accent.heightPx ?? 3))}px`,
+        }
+      : {}),
   };
 
   return (
@@ -74,7 +174,7 @@ export function TreatmentSignature(props: TreatmentSignatureProps) {
           fontVariationSettings: '"wght" 600',
           letterSpacing: "0.16em",
           textTransform: "uppercase",
-          color: "var(--muted-faint)",
+          color: t.eyebrowColor,
           marginBottom: "10px",
         }}
       >
@@ -83,22 +183,26 @@ export function TreatmentSignature(props: TreatmentSignatureProps) {
       <div style={cardStyle}>
         <SignatureMarkRow
           variant={markVariant}
+          tokens={t}
           {...(props.markColor ? { color: props.markColor } : {})}
           {...(props.markAside ? { aside: props.markAside } : {})}
         />
         <div
           style={{
-            fontFamily: "'Geist', sans-serif",
-            fontWeight: 600,
-            fontSize: "15px",
-            color: "var(--color-ink)",
+            fontFamily: t.nameFont,
+            fontWeight: t.nameWeight,
+            fontSize: `${t.nameSizePx}px`,
+            fontVariationSettings: t.nameFontVariationSettings,
+            color: t.textColor,
+            lineHeight: 1.15,
           }}
         >
           {identity.name}
         </div>
         <div
           style={{
-            color: "rgba(11,11,11,0.65)",
+            fontFamily: t.roleFont,
+            color: t.mutedDefault,
             fontSize: "13px",
             marginTop: "2px",
             marginBottom: "12px",
@@ -113,7 +217,7 @@ export function TreatmentSignature(props: TreatmentSignatureProps) {
               marginTop: "10px",
               marginBottom: "4px",
               fontSize: "12px",
-              color: "rgba(11,11,11,0.65)",
+              color: t.mutedDefault,
             }}
           >
             {meta}
@@ -124,8 +228,9 @@ export function TreatmentSignature(props: TreatmentSignatureProps) {
             marginTop: "12px",
             display: "flex",
             gap: "12px",
-            color: "rgba(11,11,11,0.65)",
+            color: t.mutedDefault,
             fontSize: "12px",
+            fontFamily: t.contactFont,
             flexWrap: "wrap",
           }}
         >
@@ -144,34 +249,40 @@ export function TreatmentSignature(props: TreatmentSignatureProps) {
 
 function SignatureMarkRow({
   variant,
+  tokens,
   color,
   aside,
 }: {
   readonly variant: SignatureMarkVariant;
+  readonly tokens: VariantTokens;
   readonly color?: string;
   readonly aside?: ReactNode;
 }) {
   if (variant === "wings-only") {
-    // Workshop-style: no wordmark. Wings persist at 22 px as the identity
-    // anchor (matches the live console chrome). Optional aside renders a
-    // team badge next to the wings in Geist Mono upper.
     return (
       <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "14px" }}>
-        {/* Dark chip so the argent wings carry their own ground on a white signature card. */}
+        {/* Wings carried inside their own dark chip so they remain Argent
+            regardless of the card's ground colour. */}
         <WingsChip style={{ width: "22px", height: "22px", flex: "0 0 22px" }} />
-        {aside ? <SignatureAside>{aside}</SignatureAside> : null}
+        {aside ? <SignatureAside color={tokens.mutedDefault}>{aside}</SignatureAside> : null}
       </div>
     );
   }
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "14px" }}>
-      <Lockup size="sm" variant={variant} wordmarkColor={color ?? "var(--color-ink)"} />
-      {aside ? <SignatureAside>{aside}</SignatureAside> : null}
+      <Lockup size="sm" variant={variant} wordmarkColor={color ?? tokens.defaultMarkColor} />
+      {aside ? <SignatureAside color={tokens.mutedDefault}>{aside}</SignatureAside> : null}
     </div>
   );
 }
 
-function SignatureAside({ children }: { readonly children: ReactNode }) {
+function SignatureAside({
+  color,
+  children,
+}: {
+  readonly color: string;
+  readonly children: ReactNode;
+}) {
   return (
     <span
       style={{
@@ -181,7 +292,7 @@ function SignatureAside({ children }: { readonly children: ReactNode }) {
         fontVariationSettings: '"wght" 600',
         letterSpacing: "0.14em",
         textTransform: "uppercase",
-        color: "rgba(11,11,11,0.55)",
+        color,
       }}
     >
       {children}
@@ -189,15 +300,17 @@ function SignatureAside({ children }: { readonly children: ReactNode }) {
   );
 }
 
-// Status badge helper — amber dot plus uppercase mono label. Used by the
-// Workshop signature as the treatment's distinctive "live / pageable"
-// indicator. Exported so treatments can compose it into the meta slot.
+// Status badge helper — Amber dot plus uppercase mono label. Used by the
+// Workshop signature meta slot as the treatment's "live / pageable" glyph.
+// Exported for treatments to compose in via the `meta` prop.
 export function SignatureStatusBadge({
   accentHex,
   children,
+  onDark,
 }: {
   readonly accentHex: string;
   readonly children: ReactNode;
+  readonly onDark?: boolean;
 }) {
   return (
     <span
@@ -209,7 +322,7 @@ export function SignatureStatusBadge({
         fontFamily: "'Geist Mono', ui-monospace, monospace",
         letterSpacing: "0.12em",
         textTransform: "uppercase",
-        color: "rgba(11,11,11,0.6)",
+        color: onDark ? "rgba(245,245,245,0.72)" : "rgba(11,11,11,0.6)",
       }}
     >
       <span
@@ -228,7 +341,7 @@ export function SignatureStatusBadge({
 }
 
 function SignatureAccentMarker({ accent }: { readonly accent: SignatureAccent }) {
-  if (accent.style === "none") return null;
+  if (accent.style === "none" || accent.style === "rule-left") return null;
   if (accent.style === "dot") {
     return (
       <div
@@ -273,7 +386,3 @@ function SignatureAccentMarker({ accent }: { readonly accent: SignatureAccent })
     />
   );
 }
-
-// Export to let e2e tests query by data-testid without having to walk the
-// whole DOM. Unused for now; we'll wire it up when the first spec lands.
-export const SIGNATURE_DARK_LINE = LINE_DARK;
