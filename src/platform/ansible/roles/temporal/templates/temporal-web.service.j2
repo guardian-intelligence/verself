@@ -1,28 +1,27 @@
 [Unit]
-Description=Temporal Server
-After=forge-metal-firewall.target network.target postgresql.service spire-agent.service otelcol.service
+Description=Temporal Web
+After=forge-metal-firewall.target network.target temporal-server.service zitadel.service caddy.service spire-agent.service otelcol.service
 Requires=forge-metal-firewall.target
-Wants=postgresql.service spire-agent.service otelcol.service
+Wants=temporal-server.service zitadel.service caddy.service spire-agent.service otelcol.service
 
 [Service]
 Type=simple
-User={{ temporal_system_user }}
-Group={{ temporal_system_group }}
+User={{ temporal_web_user }}
+Group={{ temporal_web_group }}
 SupplementaryGroups={{ spire_workload_group }}
 Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}
-Environment=OTEL_SERVICE_NAME=temporal-server
+Environment=OTEL_SERVICE_NAME=temporal-web
 Environment=OTEL_TRACES_EXPORTER=otlp
 Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}
 Environment=OTEL_EXPORTER_OTLP_INSECURE=true
 Environment=OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=grpc
-Environment=FM_TEMPORAL_CONFIG_PATH={{ temporal_config_path }}
+Environment=FM_TEMPORAL_WEB_CONFIG_DIR={{ temporal_web_config_dir }}
+Environment=FM_TEMPORAL_WEB_CONFIG_ENV=production
+Environment=FM_TEMPORAL_FRONTEND_ADDRESS={{ services.temporal.host }}:{{ services.temporal.grpc_port }}
 Environment=FM_TEMPORAL_SERVER_SPIFFE_ID={{ spire_temporal_server_id }}
-Environment=FM_TEMPORAL_FRONTEND_CLIENT_IDS={{ spire_temporal_server_id }},{{ spire_temporal_web_id }},{{ spire_temporal_proof_id }}
-Environment=FM_TEMPORAL_SYSTEM_ADMIN_IDS={{ spire_temporal_server_id }}
-Environment=FM_TEMPORAL_SYSTEM_READER_IDS={{ spire_temporal_web_id }}
-Environment=FM_TEMPORAL_NAMESPACE_ROLES={{ spire_temporal_proof_id }}|{{ temporal_proof_namespace }}|admin
-WorkingDirectory={{ temporal_state_dir }}
-ExecStart={{ fm_bin }}/forge-temporal-server
+Environment=FM_TEMPORAL_WEB_SPIFFE_ID={{ spire_temporal_web_id }}
+WorkingDirectory={{ temporal_web_state_dir }}
+ExecStart={{ fm_bin }}/forge-temporal-web
 Restart=on-failure
 RestartSec=5
 CapabilityBoundingSet=
@@ -37,7 +36,7 @@ ProtectKernelModules=true
 ProtectKernelTunables=true
 ProtectSystem=strict
 LockPersonality=true
-ReadWritePaths={{ temporal_state_dir }}
+ReadWritePaths={{ temporal_web_state_dir }}
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 RestrictRealtime=true
 RestrictSUIDSGID=true

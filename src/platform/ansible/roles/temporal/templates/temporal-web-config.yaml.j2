@@ -1,0 +1,50 @@
+temporalGrpcAddress: "{{ services.temporal.host }}:{{ services.temporal.grpc_port }}"
+host: "{{ services.temporal_web.host }}"
+port: {{ services.temporal_web.port }}
+publicPath: ""
+enableUi: true
+cloudUi: false
+defaultNamespace: "{{ temporal_web_default_namespace }}"
+feedbackUrl: ""
+refreshInterval: 0s
+showTemporalSystemNamespace: false
+disableWriteActions: {{ temporal_web_disable_write_actions | to_json }}
+workflowTerminateDisabled: true
+workflowCancelDisabled: true
+workflowSignalDisabled: true
+workflowUpdateDisabled: true
+workflowResetDisabled: true
+workflowPauseDisabled: true
+batchActionsDisabled: true
+startWorkflowDisabled: true
+activityCommandsDisabled: true
+hideWorkflowQueryErrors: false
+refreshWorkflowCountsDisabled: false
+hideLogs: false
+
+cors:
+  allowOrigins:
+    - "https://{{ temporal_web_domain }}"
+  unsafeAllowAllOrigins: false
+  cookieInsecure: false
+
+auth:
+  enabled: true
+  maxSessionDuration: {{ temporal_web_oidc_max_session_duration }}
+  providers:
+    - label: zitadel
+      type: oidc
+      # Zitadel resolves the tenant instance from the request host, so loopback
+      # discovery fails even on-box; use the real public issuer URL here.
+      providerUrl: "https://auth.{{ forge_metal_domain }}"
+      issuerUrl: "https://auth.{{ forge_metal_domain }}"
+      clientId: "{{ temporal_web_oidc_client_id }}"
+      clientSecret: "{{ temporal_web_oidc_client_secret }}"
+      callbackUrl: "{{ temporal_web_oidc_redirect_uri }}"
+      useIdTokenAsBearer: false
+      scopes:
+{% for scope in temporal_web_oidc_scopes %}
+        - "{{ scope }}"
+{% endfor %}
+
+forwardHeaders: []

@@ -8,6 +8,7 @@
 # This list is the union of all subdomains that need DNS records.
 cloudflare_dns_records:
   - "{{ grafana_subdomain | default('dashboard') }}"
+  - "{{ temporal_web_subdomain | default('temporal') }}"
   - "{{ forgejo_subdomain | default('git') }}"
   - "{{ zitadel_subdomain | default('auth') }}"
   - "{{ billing_service_subdomain | default('billing') }}"

@@ -312,6 +312,14 @@ receivers:
       - type: remove
         field: attributes.level
         if: attributes.level != nil
+  journald/temporal-web:
+    units: [temporal-web]
+    resource:
+      service.name: temporal-web
+    operators:
+      - type: move
+        from: body.MESSAGE
+        to: body
   journald/temporal-proof-worker:
     units: [temporal-proof-worker]
     resource:
@@ -364,7 +372,7 @@ receivers:
       process:
         include:
           match_type: regexp
-          names: ["billing-service", "sandbox-rental.*", "caddy", "clickhouse.*", "ClickHouse.*", "forgejo.*", "grafana.*", "otelcol.*", "node", "forge-metal", "verdaccio", "next-server.*", "npm", "vm-orchestrator.*", "tigerbeetle", "zitadel", "bao", "postgres", "spire-server", "spire-agent", "forge-temporal-server", "temporal-proof"]
+          names: ["billing-service", "sandbox-rental.*", "caddy", "clickhouse.*", "ClickHouse.*", "forgejo.*", "grafana.*", "otelcol.*", "node", "forge-metal", "verdaccio", "next-server.*", "npm", "vm-orchestrator.*", "tigerbeetle", "zitadel", "bao", "postgres", "spire-server", "spire-agent", "forge-temporal-server", "forge-temporal-web", "temporal-proof"]
         mute_process_exe_error: true
         mute_process_io_error: true
       cpu: {}
@@ -458,7 +466,7 @@ service:
   extensions: [health_check, file_storage]
   pipelines:
     logs:
-      receivers: [otlp, filelog/caddy, journald/caddy, journald/billing-service, journald/sandbox-rental, journald/rent-a-sandbox, journald/webmail, journald/zitadel, journald/openbao, journald/spire-server, journald/spire-agent, journald/vm-orchestrator, journald/forgejo, journald/grafana, journald/temporal-server, journald/temporal-proof-worker, filelog/postgresql]
+      receivers: [otlp, filelog/caddy, journald/caddy, journald/billing-service, journald/sandbox-rental, journald/rent-a-sandbox, journald/webmail, journald/zitadel, journald/openbao, journald/spire-server, journald/spire-agent, journald/vm-orchestrator, journald/forgejo, journald/grafana, journald/temporal-server, journald/temporal-web, journald/temporal-proof-worker, filelog/postgresql]
       processors: [batch]
       exporters: [clickhouse]
     traces:

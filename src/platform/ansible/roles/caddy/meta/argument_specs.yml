@@ -1,10 +1,10 @@
 ---
 argument_specs:
   main:
-    short_description: "Caddy edge proxy for Billing Service, Grafana, Forgejo, and Zitadel"
+    short_description: "Caddy edge proxy for Billing Service, Grafana, Temporal Web, Forgejo, and Zitadel"
     description:
       - "Configures Caddy and renders the edge config that fronts Billing Service,"
-      - "Grafana, Forgejo, and Zitadel with site-specific WAF policies and access logging."
+      - "Grafana, Temporal Web, Forgejo, and Zitadel with site-specific WAF policies and access logging."
       - "Billing Service exposes only /webhooks/stripe publicly; all other paths return 404."
       - "The billing webhook route is allowlisted to Stripe's published source IPs."
       - "Zitadel uses h2c (HTTP/2 cleartext) for gRPC on the same port."
@@ -25,6 +25,11 @@ argument_specs:
         type: str
         required: true
         description: "Public domain for the Grafana dashboard."
+
+      temporal_web_domain:
+        type: str
+        required: true
+        description: "Public domain for the Temporal operator web UI."
 
       forgejo_domain:
         type: str
