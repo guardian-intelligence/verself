@@ -11,7 +11,7 @@ test.describe("browser telemetry baseline", () => {
     // search param to the URL gives us an unambiguous filter without
     // fabricating telemetry plumbing for tests only.
     await page.goto(`/?probe=${witness}`);
-    await expect(page).toHaveTitle(/Guardian Intelligence/);
+    await expect(page).toHaveTitle(/Guardian/);
 
     // The BSP flushes on visibilitychange:hidden. Closing the page triggers it.
     // We close after a short wait so the export round-trips before assert.

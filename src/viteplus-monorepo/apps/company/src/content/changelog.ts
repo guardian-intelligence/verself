@@ -11,7 +11,7 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG_META = {
-  title: "Changelog — Guardian Intelligence",
+  title: "Changelog — Guardian",
   description: "What shipped on anveio.com and when.",
 } as const;
 
@@ -24,6 +24,6 @@ export const changelog: readonly ChangelogEntry[] = [
   {
     date: "2026-04-19",
     title: "anveio.com moves to apps/company",
-    body: "The Guardian Intelligence company site gets its own TanStack Start app, separate from the Metal platform console. The Metal console moves to platform.anveio.com and will eventually resolve at console.<domain>.",
+    body: "The Guardian company site gets its own TanStack Start app, separate from the Metal platform console. The Metal console moves to platform.anveio.com and will eventually resolve at console.<domain>.",
   },
 ];

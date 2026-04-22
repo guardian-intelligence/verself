@@ -101,7 +101,7 @@ export function buildOGCard(spec: OGSpec): OGBuildResult {
     <svg width="56" height="56" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
       <path d="${WINGS_PATH_D}" fill="${ARGENT}" fill-rule="evenodd"/>
     </svg>
-    <text x="72" y="40" font-family="'Fraunces', Georgia, serif" font-size="28" fill="${ARGENT}" letter-spacing="-0.01em">Guardian Intelligence</text>
+    <text x="72" y="40" font-family="'Fraunces', Georgia, serif" font-size="28" fill="${ARGENT}" letter-spacing="-0.01em">Guardian</text>
   </g>
   <g transform="translate(56, 260)">
     <text font-family="'Fraunces', Georgia, serif" font-size="72" font-weight="400" fill="${ARGENT}" letter-spacing="-0.025em">

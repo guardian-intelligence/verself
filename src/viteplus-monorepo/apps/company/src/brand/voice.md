@@ -1,4 +1,4 @@
-# Guardian Intelligence — voice
+# Guardian — voice
 
 One line: **Confident without ceremony.**
 
@@ -30,7 +30,7 @@ We say the thing.
 
 - **Argent only.** The mark is always Argent. On non-Iron grounds the mark carries its own dark ground (iron chip on Paper, circular emboss on Flare).
 - **Audience split.** Iron for customers. Flare for the world. Paper for editorial.
-- **Wings belong to Guardian.** The only lockup is _Guardian Intelligence_. Solutions — today there is one, **Metal Platform** — set their name in Geist under the house. Products inside a Solution (services, the web console, CLIs, SDKs) never lock up with the wings.
+- **Wings belong to Guardian.** The only lockup is _Guardian_ — the brand, not the legal entity. "Guardian Intelligence" is reserved for contracts, invoices, and the mailing address. Solutions — today there is one, **Metal Platform** — set their name in Geist under the house. Products inside a Solution (services, the web console, CLIs, SDKs) never lock up with the wings.
 - **One loud word per page.** The page can have one Flare-colored word. Not two. Not zero if the page is earning a loud moment.
 - **One italic line per page.** Fraunces italic is reserved for the mission line.
 

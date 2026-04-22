@@ -22,9 +22,9 @@ export interface SolutionCard {
 }
 
 export const SOLUTIONS_META = {
-  title: "Solutions — Guardian Intelligence",
+  title: "Solutions — Guardian",
   description:
-    "Metal Platform is the Guardian Intelligence compute stack. Services, a web console, CLIs, and SDKs, under one sign.",
+    "Metal Platform is the Guardian compute stack. Services, a web console, CLIs, and SDKs, under one sign.",
 } as const;
 
 export const SOLUTIONS: readonly SolutionCard[] = [

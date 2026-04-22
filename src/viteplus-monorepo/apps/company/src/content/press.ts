@@ -4,16 +4,15 @@
 // real PR asset kit replaces the stub when we ship printable material.
 
 export const PRESS_META = {
-  title: "Press — Guardian Intelligence",
-  description:
-    "Brand kit downloads, press contact, and guidance for writing about Guardian Intelligence.",
+  title: "Press — Guardian",
+  description: "Brand kit downloads, press contact, and guidance for writing about Guardian.",
 } as const;
 
 export const press = {
   kicker: "For journalists and editors.",
   hero: "The Guardian brand, on the record.",
   intro:
-    "Everything a reporter needs to write about Guardian Intelligence accurately. The kit is downloadable; the contact is a person, not a form.",
+    "Everything a reporter needs to write about Guardian accurately. The kit is downloadable; the contact is a person, not a form.",
   kitHref: "/brand-kit/guardian-intelligence.zip",
   kitLabel: "Download the brand kit (.zip)",
   kitContents: [
@@ -27,7 +26,7 @@ export const press = {
   contactNote:
     "Please include the outlet, the angle, and the deadline. We answer by end of day Seattle time.",
   writingGuide: [
-    'On first reference, write "Guardian Intelligence." On subsequent reference, "Guardian."',
+    'Write "Guardian" at all references. Reserve "Guardian Intelligence" for legal-entity contexts: contracts, invoices, the mailing address.',
     "The company is an American applied intelligence firm based in Seattle.",
     'Never write "founder" as "Founder" (capital F) outside of a title slot. It is a role, not a rank.',
   ],
