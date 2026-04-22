@@ -116,6 +116,11 @@ function PaletteFilled({ swatch }: { readonly swatch: PaletteSwatch }) {
         >
           {swatch.name}
         </div>
+        {/* Hex and pantone set on independent lines so "PANTONE 715 C" never
+           spills across the cell boundary. The pantone slot is reserved even
+           when absent so every palette cell across every treatment shares the
+           same three-line rhythm (name / code / note) — removes a class of
+           grid-column-width regressions when a new pantone gets added. */}
         <div
           style={{
             font: '600 10px/1.35 "Geist Mono", ui-monospace, monospace',
@@ -127,7 +132,19 @@ function PaletteFilled({ swatch }: { readonly swatch: PaletteSwatch }) {
           }}
         >
           {swatch.hex}
-          {swatch.pantone ? ` · ${swatch.pantone}` : ""}
+        </div>
+        <div
+          style={{
+            font: '500 10px/1.35 "Geist Mono", ui-monospace, monospace',
+            fontVariationSettings: '"wght" 500',
+            color: "var(--muted-faint)",
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            marginTop: "1px",
+            minHeight: "13px",
+          }}
+        >
+          {swatch.pantone ?? " "}
         </div>
         {swatch.note ? (
           <div
@@ -135,7 +152,7 @@ function PaletteFilled({ swatch }: { readonly swatch: PaletteSwatch }) {
               fontFamily: "'Geist', sans-serif",
               fontSize: "11px",
               color: "var(--muted)",
-              marginTop: "2px",
+              marginTop: "4px",
               lineHeight: 1.35,
             }}
           >
@@ -148,8 +165,12 @@ function PaletteFilled({ swatch }: { readonly swatch: PaletteSwatch }) {
 }
 
 function PaletteEmpty({ roleLabel }: { readonly roleLabel: string }) {
+  // Matches PaletteFilled's three-line rhythm: name ("not used"), code
+  // (reserved empty slot the pantone line occupies in filled cells), note
+  // ("This treatment declines <role>.") — so an absent role doesn't push the
+  // grid row taller than adjacent filled cells.
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}>
       <div
         aria-hidden="true"
         style={{
@@ -157,32 +178,46 @@ function PaletteEmpty({ roleLabel }: { readonly roleLabel: string }) {
           height: "40px",
           borderRadius: "6px",
           flex: "0 0 40px",
-          // Diagonal hatch communicates "explicitly not used" — a plain empty
-          // cell reads like a layout mistake.
           background:
             "repeating-linear-gradient(135deg, rgba(245,245,245,0.04) 0 6px, transparent 6px 12px)",
           border: "1px dashed rgba(245,245,245,0.18)",
         }}
       />
-      <div
-        style={{
-          fontFamily: "'Geist Mono', ui-monospace, monospace",
-          fontSize: "10px",
-          color: "var(--muted-faint)",
-          letterSpacing: "0.12em",
-          textTransform: "uppercase",
-          lineHeight: 1.35,
-        }}
-      >
-        not used
+      <div style={{ minWidth: 0 }}>
         <div
           style={{
-            textTransform: "none",
-            letterSpacing: 0,
+            fontFamily: "'Geist Mono', ui-monospace, monospace",
+            fontSize: "10px",
+            fontWeight: 600,
+            fontVariationSettings: '"wght" 600',
+            color: "var(--muted-faint)",
+            letterSpacing: "0.12em",
+            textTransform: "uppercase",
+            lineHeight: 1.2,
+          }}
+        >
+          not used
+        </div>
+        <div
+          style={{
+            font: '500 10px/1.35 "Geist Mono", ui-monospace, monospace',
+            fontVariationSettings: '"wght" 500',
+            color: "var(--muted-faint)",
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            marginTop: "1px",
+            minHeight: "13px",
+          }}
+        >
+          {" "}
+        </div>
+        <div
+          style={{
             fontFamily: "'Geist', sans-serif",
             fontSize: "11px",
             color: "var(--muted)",
-            marginTop: "3px",
+            marginTop: "4px",
+            lineHeight: 1.35,
           }}
         >
           This treatment declines {roleLabel.toLowerCase()}.
