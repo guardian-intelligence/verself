@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -19,8 +17,10 @@ import (
 
 	auth "github.com/forge-metal/auth-middleware"
 	workloadauth "github.com/forge-metal/auth-middleware/workload"
+	"github.com/forge-metal/envconfig"
 	governanceapi "github.com/forge-metal/governance-service/internal/api"
 	"github.com/forge-metal/governance-service/internal/governance"
+	"github.com/forge-metal/httpserver"
 	fmotel "github.com/forge-metal/otel"
 )
 
@@ -42,24 +42,36 @@ func run() error {
 	defer otelShutdown(context.Background())
 	slog.SetDefault(logger)
 
-	pgDSN := requireEnv("GOVERNANCE_PG_DSN")
-	identityPGDSN := requireEnv("GOVERNANCE_IDENTITY_PG_DSN")
-	billingPGDSN := requireEnv("GOVERNANCE_BILLING_PG_DSN")
-	sandboxPGDSN := requireEnv("GOVERNANCE_SANDBOX_PG_DSN")
-	auditHMACKey := []byte(requireCredential("audit-hmac-key"))
+	cfg := envconfig.New()
+	pgDSN := cfg.RequireString("GOVERNANCE_PG_DSN")
+	identityPGDSN := cfg.RequireString("GOVERNANCE_IDENTITY_PG_DSN")
+	billingPGDSN := cfg.RequireString("GOVERNANCE_BILLING_PG_DSN")
+	sandboxPGDSN := cfg.RequireString("GOVERNANCE_SANDBOX_PG_DSN")
+	auditHMACKey := cfg.RequireCredential("audit-hmac-key")
+	listenAddr := cfg.String("GOVERNANCE_LISTEN_ADDR", "127.0.0.1:4250")
+	internalListenAddr := cfg.String("GOVERNANCE_INTERNAL_LISTEN_ADDR", "127.0.0.1:4254")
+	chAddress := cfg.String("GOVERNANCE_CH_ADDRESS", "127.0.0.1:9440")
+	chUser := cfg.String("GOVERNANCE_CH_USER", "governance_service")
+	authIssuerURL := cfg.RequireURL("GOVERNANCE_AUTH_ISSUER_URL")
+	authAudience := cfg.RequireString("GOVERNANCE_AUTH_AUDIENCE")
+	authJWKSURL := cfg.String("GOVERNANCE_AUTH_JWKS_URL", "")
+	exportDir := cfg.String("GOVERNANCE_EXPORT_DIR", "/var/lib/governance-service/exports")
+	publicBaseURL := cfg.String("GOVERNANCE_PUBLIC_BASE_URL", "")
+	writerInstanceID := cfg.String("GOVERNANCE_WRITER_INSTANCE_ID", hostname())
+	hmacKeyID := cfg.String("GOVERNANCE_AUDIT_HMAC_KEY_ID", "governance-service.v1")
+	exportTTLHours := cfg.Int("GOVERNANCE_EXPORT_TTL_HOURS", 168)
+	environment := cfg.String("GOVERNANCE_ENVIRONMENT", "single-node")
+	pgMaxConns := cfg.Int("GOVERNANCE_PG_MAX_CONNS", 8)
+	identityPGMaxConns := cfg.Int("GOVERNANCE_IDENTITY_PG_MAX_CONNS", 4)
+	billingPGMaxConns := cfg.Int("GOVERNANCE_BILLING_PG_MAX_CONNS", 4)
+	sandboxPGMaxConns := cfg.Int("GOVERNANCE_SANDBOX_PG_MAX_CONNS", 4)
+	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
+	chCACertPath := cfg.RequireCredentialPath("clickhouse-ca-cert")
+	if err := cfg.Err(); err != nil {
+		return err
+	}
 
-	listenAddr := envOr("GOVERNANCE_LISTEN_ADDR", "127.0.0.1:4250")
-	internalListenAddr := envOr("GOVERNANCE_INTERNAL_LISTEN_ADDR", "127.0.0.1:4254")
-	chAddress := envOr("GOVERNANCE_CH_ADDRESS", "127.0.0.1:9440")
-	chUser := envOr("GOVERNANCE_CH_USER", "governance_service")
-	authIssuerURL := requireEnv("GOVERNANCE_AUTH_ISSUER_URL")
-	authAudience := requireEnv("GOVERNANCE_AUTH_AUDIENCE")
-	authJWKSURL := envOr("GOVERNANCE_AUTH_JWKS_URL", "")
-	exportDir := envOr("GOVERNANCE_EXPORT_DIR", "/var/lib/governance-service/exports")
-	publicBaseURL := envOr("GOVERNANCE_PUBLIC_BASE_URL", "")
-	writerInstanceID := envOr("GOVERNANCE_WRITER_INSTANCE_ID", hostname())
-
-	spiffeSource, err := workloadauth.Source(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
+	spiffeSource, err := workloadauth.Source(ctx, spiffeEndpoint)
 	if err != nil {
 		return fmt.Errorf("governance spiffe workload source: %w", err)
 	}
@@ -68,28 +80,28 @@ func run() error {
 			logger.ErrorContext(context.Background(), "governance-service spiffe source close", "error", err)
 		}
 	}()
-	pg, err := openPool(ctx, pgDSN, envInt("GOVERNANCE_PG_MAX_CONNS", 8))
+	pg, err := openPool(ctx, pgDSN, pgMaxConns)
 	if err != nil {
 		return fmt.Errorf("open governance postgres: %w", err)
 	}
 	defer pg.Close()
-	identityPG, err := openPool(ctx, identityPGDSN, envInt("GOVERNANCE_IDENTITY_PG_MAX_CONNS", 4))
+	identityPG, err := openPool(ctx, identityPGDSN, identityPGMaxConns)
 	if err != nil {
 		return fmt.Errorf("open identity postgres: %w", err)
 	}
 	defer identityPG.Close()
-	billingPG, err := openPool(ctx, billingPGDSN, envInt("GOVERNANCE_BILLING_PG_MAX_CONNS", 4))
+	billingPG, err := openPool(ctx, billingPGDSN, billingPGMaxConns)
 	if err != nil {
 		return fmt.Errorf("open billing postgres: %w", err)
 	}
 	defer billingPG.Close()
-	sandboxPG, err := openPool(ctx, sandboxPGDSN, envInt("GOVERNANCE_SANDBOX_PG_MAX_CONNS", 4))
+	sandboxPG, err := openPool(ctx, sandboxPGDSN, sandboxPGMaxConns)
 	if err != nil {
 		return fmt.Errorf("open sandbox postgres: %w", err)
 	}
 	defer sandboxPG.Close()
 
-	chTLSConfig, err := workloadauth.TLSConfigWithX509SourceAndCABundle(ctx, spiffeSource, credentialPath("clickhouse-ca-cert"))
+	chTLSConfig, err := workloadauth.TLSConfigWithX509SourceAndCABundle(ctx, spiffeSource, chCACertPath)
 	if err != nil {
 		return fmt.Errorf("governance clickhouse tls: %w", err)
 	}
@@ -113,12 +125,12 @@ func run() error {
 		SandboxPG:        sandboxPG,
 		CH:               chConn,
 		Logger:           logger,
-		HMACKey:          auditHMACKey,
-		HMACKeyID:        envOr("GOVERNANCE_AUDIT_HMAC_KEY_ID", "governance-service.v1"),
+		HMACKey:          []byte(auditHMACKey),
+		HMACKeyID:        hmacKeyID,
 		ExportDir:        exportDir,
-		ExportTTL:        time.Duration(envInt("GOVERNANCE_EXPORT_TTL_HOURS", 168)) * time.Hour,
+		ExportTTL:        time.Duration(exportTTLHours) * time.Hour,
 		PublicBaseURL:    publicBaseURL,
-		Environment:      envOr("GOVERNANCE_ENVIRONMENT", "single-node"),
+		Environment:      environment,
 		ServiceVersion:   "1.0.0",
 		WriterInstanceID: writerInstanceID,
 	}
@@ -174,68 +186,11 @@ func run() error {
 		return fmt.Errorf("governance internal allowlist: %w", err)
 	}
 
-	handler := http.Handler(rootMux)
-	handler = maxBody(handler, 1<<20)
-	server := &http.Server{
-		Addr:              listenAddr,
-		Handler:           otelhttp.NewHandler(handler, "governance-service"),
-		ReadHeaderTimeout: 2 * time.Second,
-		ReadTimeout:       5 * time.Second,
-		WriteTimeout:      5 * time.Second,
-		IdleTimeout:       30 * time.Second,
-		MaxHeaderBytes:    16 << 10,
-	}
-	internalServer := &http.Server{
-		Addr:              internalListenAddr,
-		Handler:           otelhttp.NewHandler(maxBody(internalAllowlist, 1<<20), "governance-service-internal"),
-		TLSConfig:         internalTLSConfig,
-		ReadHeaderTimeout: 2 * time.Second,
-		ReadTimeout:       5 * time.Second,
-		WriteTimeout:      5 * time.Second,
-		IdleTimeout:       30 * time.Second,
-		MaxHeaderBytes:    16 << 10,
-	}
+	public := httpserver.New(listenAddr, otelhttp.NewHandler(maxBody(rootMux, 1<<20), "governance-service"))
+	internal := httpserver.New(internalListenAddr, otelhttp.NewHandler(maxBody(internalAllowlist, 1<<20), "governance-service-internal"))
+	internal.TLSConfig = internalTLSConfig
 
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := server.Shutdown(shutdownCtx); err != nil {
-			logger.ErrorContext(context.Background(), "governance: shutdown", "error", err)
-		}
-		if err := internalServer.Shutdown(shutdownCtx); err != nil {
-			logger.ErrorContext(context.Background(), "governance: internal shutdown", "error", err)
-		}
-	}()
-
-	logger.InfoContext(ctx, "governance-service listening", "addr", listenAddr)
-	logger.InfoContext(ctx, "governance-service internal listening", "addr", internalListenAddr)
-	errCh := make(chan error, 2)
-	go func() {
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			errCh <- fmt.Errorf("serve governance-service: %w", err)
-			return
-		}
-		errCh <- nil
-	}()
-	go func() {
-		if err := internalServer.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
-			errCh <- fmt.Errorf("serve governance-service internal: %w", err)
-			return
-		}
-		errCh <- nil
-	}()
-	var firstErr error
-	for range 2 {
-		if err := <-errCh; err != nil && firstErr == nil {
-			firstErr = err
-			stop()
-		}
-	}
-	if firstErr != nil {
-		return firstErr
-	}
-	return nil
+	return httpserver.RunPair(ctx, logger, public, internal)
 }
 
 func runAuditProjector(ctx context.Context, logger *slog.Logger, svc *governance.Service) {
@@ -295,22 +250,6 @@ func maxBody(next http.Handler, limit int64) http.Handler {
 	})
 }
 
-func requireEnv(name string) string {
-	value := strings.TrimSpace(os.Getenv(name))
-	if value == "" {
-		panic("missing required env " + name)
-	}
-	return value
-}
-
-func envOr(name, fallback string) string {
-	value := strings.TrimSpace(os.Getenv(name))
-	if value == "" {
-		return fallback
-	}
-	return value
-}
-
 func hostname() string {
 	name, err := os.Hostname()
 	if err != nil {
@@ -321,52 +260,4 @@ func hostname() string {
 		return "unknown"
 	}
 	return name
-}
-
-func envInt(name string, fallback int) int {
-	value := strings.TrimSpace(os.Getenv(name))
-	if value == "" {
-		return fallback
-	}
-	parsed, err := strconv.Atoi(value)
-	if err != nil {
-		panic("invalid integer env " + name + ": " + err.Error())
-	}
-	return parsed
-}
-
-func credentialPath(name string) string {
-	base := os.Getenv("CREDENTIALS_DIRECTORY")
-	if base == "" {
-		panic("CREDENTIALS_DIRECTORY not set for credential " + name)
-	}
-	return filepath.Join(base, name)
-}
-
-func requireSecretField(values map[string]string, field string, label string) string {
-	value := strings.TrimSpace(values[field])
-	if value == "" {
-		panic(label + " missing required field " + field)
-	}
-	return value
-}
-
-func requireCredential(name string) string {
-	value := credentialOr(name, "")
-	if value == "" {
-		panic("missing required credential " + name)
-	}
-	return value
-}
-
-func credentialOr(name, fallback string) string {
-	base := os.Getenv("CREDENTIALS_DIRECTORY")
-	if base == "" {
-		return fallback
-	}
-	data, err := os.ReadFile(filepath.Join(base, name))
-	if err != nil {
-		return fallback
-	}
-	return strings.TrimSpace(string(data))
 }

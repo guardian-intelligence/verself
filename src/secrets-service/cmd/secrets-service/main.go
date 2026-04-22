@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -16,6 +15,8 @@ import (
 	auth "github.com/forge-metal/auth-middleware"
 	workloadauth "github.com/forge-metal/auth-middleware/workload"
 	billingclient "github.com/forge-metal/billing-service/client"
+	"github.com/forge-metal/envconfig"
+	"github.com/forge-metal/httpserver"
 	fmotel "github.com/forge-metal/otel"
 	secretsclient "github.com/forge-metal/secrets-service/client"
 	secretsapi "github.com/forge-metal/secrets-service/internal/api"
@@ -25,7 +26,6 @@ import (
 const (
 	serviceName      = "secrets-service"
 	serviceVersion   = "1.0.0"
-	maxHeaderBytes   = 16 << 10
 	requestBodyLimit = 1 << 20
 )
 
@@ -50,17 +50,29 @@ func run() error {
 		}
 	}()
 
-	listenAddr := envOr("SECRETS_LISTEN_ADDR", "127.0.0.1:4251")
-	internalListenAddr := envOr("SECRETS_INTERNAL_LISTEN_ADDR", "127.0.0.1:4253")
-	governanceAuditURL := envOr("SECRETS_GOVERNANCE_AUDIT_URL", "")
-	authIssuerURL := requireEnv("SECRETS_AUTH_ISSUER_URL")
-	authAudience := requireEnv("SECRETS_AUTH_AUDIENCE")
-	authJWKSURL := envOr("SECRETS_AUTH_JWKS_URL", "")
-	openBaoAddr := requireEnv("SECRETS_OPENBAO_ADDR")
-	openBaoCACert := credentialPath("openbao-ca-cert")
-	billingURL := requireEnv("SECRETS_BILLING_URL")
-	platformOrgID := requireEnv("SECRETS_PLATFORM_ORG_ID")
-	spiffeSource, err := workloadauth.Source(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
+	cfg := envconfig.New()
+	listenAddr := cfg.String("SECRETS_LISTEN_ADDR", "127.0.0.1:4251")
+	internalListenAddr := cfg.String("SECRETS_INTERNAL_LISTEN_ADDR", "127.0.0.1:4253")
+	governanceAuditURL := cfg.String("SECRETS_GOVERNANCE_AUDIT_URL", "")
+	authIssuerURL := cfg.RequireURL("SECRETS_AUTH_ISSUER_URL")
+	authAudience := cfg.RequireString("SECRETS_AUTH_AUDIENCE")
+	authJWKSURL := cfg.String("SECRETS_AUTH_JWKS_URL", "")
+	openBaoAddr := cfg.RequireString("SECRETS_OPENBAO_ADDR")
+	openBaoCACert := cfg.RequireCredentialPath("openbao-ca-cert")
+	billingURL := cfg.RequireURL("SECRETS_BILLING_URL")
+	platformOrgID := cfg.RequireString("SECRETS_PLATFORM_ORG_ID")
+	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
+	environment := cfg.String("SECRETS_ENVIRONMENT", "single-node")
+	kvPrefix := cfg.String("SECRETS_OPENBAO_KV_PREFIX", "kv")
+	transitPrefix := cfg.String("SECRETS_OPENBAO_TRANSIT_PREFIX", "transit")
+	jwtPrefix := cfg.String("SECRETS_OPENBAO_JWT_PREFIX", "jwt")
+	workloadAudience := cfg.String("SECRETS_OPENBAO_WORKLOAD_AUDIENCE", "openbao")
+	spiffeJWTPrefix := cfg.String("SECRETS_OPENBAO_SPIFFE_JWT_PREFIX", "spiffe-jwt")
+	if err := cfg.Err(); err != nil {
+		return err
+	}
+
+	spiffeSource, err := workloadauth.Source(ctx, spiffeEndpoint)
 	if err != nil {
 		return fmt.Errorf("spiffe workload source: %w", err)
 	}
@@ -69,7 +81,7 @@ func run() error {
 			logger.ErrorContext(context.Background(), "secrets-service spiffe source close", "error", err)
 		}
 	}()
-	workloadJWTSource, err := workloadauth.JWTSource(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
+	workloadJWTSource, err := workloadauth.JWTSource(ctx, spiffeEndpoint)
 	if err != nil {
 		return fmt.Errorf("spiffe jwt source: %w", err)
 	}
@@ -86,14 +98,14 @@ func run() error {
 	store, err := secrets.NewBaoStore(ctx, secrets.BaoStoreConfig{
 		Address:       openBaoAddr,
 		CACertPath:    openBaoCACert,
-		KVMountPrefix: envOr("SECRETS_OPENBAO_KV_PREFIX", "kv"),
-		TransitPrefix: envOr("SECRETS_OPENBAO_TRANSIT_PREFIX", "transit"),
-		JWTAuthPrefix: envOr("SECRETS_OPENBAO_JWT_PREFIX", "jwt"),
+		KVMountPrefix: kvPrefix,
+		TransitPrefix: transitPrefix,
+		JWTAuthPrefix: jwtPrefix,
 		WorkloadJWT: secrets.WorkloadJWTConfig{
 			Source:     workloadJWTSource,
-			Audience:   envOr("SECRETS_OPENBAO_WORKLOAD_AUDIENCE", "openbao"),
+			Audience:   workloadAudience,
 			Subject:    secretsSPIFFEID,
-			AuthPrefix: envOr("SECRETS_OPENBAO_SPIFFE_JWT_PREFIX", "spiffe-jwt"),
+			AuthPrefix: spiffeJWTPrefix,
 		},
 	}, logger)
 	if err != nil {
@@ -113,7 +125,7 @@ func run() error {
 		Billing:        billingClient,
 		Logger:         logger,
 		ServiceVersion: serviceVersion,
-		Environment:    envOr("SECRETS_ENVIRONMENT", "single-node"),
+		Environment:    environment,
 	}
 	if err := svc.Ready(ctx); err != nil {
 		return fmt.Errorf("secrets readiness: %w", err)
@@ -190,67 +202,11 @@ func run() error {
 		return fmt.Errorf("secrets internal allowlist: %w", err)
 	}
 
-	server := &http.Server{
-		Addr:              listenAddr,
-		Handler:           otelhttp.NewHandler(limitRequestBodies(rootMux, requestBodyLimit), serviceName),
-		ReadHeaderTimeout: 2 * time.Second,
-		ReadTimeout:       5 * time.Second,
-		WriteTimeout:      5 * time.Second,
-		IdleTimeout:       30 * time.Second,
-		MaxHeaderBytes:    maxHeaderBytes,
-	}
-	internalServer := &http.Server{
-		Addr:              internalListenAddr,
-		Handler:           otelhttp.NewHandler(limitRequestBodies(internalAllowlist, requestBodyLimit), serviceName+"-internal"),
-		TLSConfig:         internalTLSConfig,
-		ReadHeaderTimeout: 2 * time.Second,
-		ReadTimeout:       5 * time.Second,
-		WriteTimeout:      5 * time.Second,
-		IdleTimeout:       30 * time.Second,
-		MaxHeaderBytes:    maxHeaderBytes,
-	}
-	runCtx, cancelRun := context.WithCancel(ctx)
-	defer cancelRun()
-	go func() {
-		<-runCtx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := server.Shutdown(shutdownCtx); err != nil {
-			logger.ErrorContext(context.Background(), "secrets-service shutdown", "error", err)
-		}
-		if err := internalServer.Shutdown(shutdownCtx); err != nil {
-			logger.ErrorContext(context.Background(), "secrets-service internal shutdown", "error", err)
-		}
-	}()
+	public := httpserver.New(listenAddr, otelhttp.NewHandler(limitRequestBodies(rootMux, requestBodyLimit), serviceName))
+	internal := httpserver.New(internalListenAddr, otelhttp.NewHandler(limitRequestBodies(internalAllowlist, requestBodyLimit), serviceName+"-internal"))
+	internal.TLSConfig = internalTLSConfig
 
-	logger.InfoContext(ctx, "secrets-service listening", "addr", listenAddr)
-	logger.InfoContext(ctx, "secrets-service internal listening", "addr", internalListenAddr)
-	errCh := make(chan error, 2)
-	go func() {
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			errCh <- fmt.Errorf("secrets-service listen: %w", err)
-			return
-		}
-		errCh <- nil
-	}()
-	go func() {
-		if err := internalServer.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
-			errCh <- fmt.Errorf("secrets-service internal listen: %w", err)
-			return
-		}
-		errCh <- nil
-	}()
-	var firstErr error
-	for range 2 {
-		if err := <-errCh; err != nil && firstErr == nil {
-			firstErr = err
-			cancelRun()
-		}
-	}
-	if firstErr != nil {
-		return firstErr
-	}
-	return nil
+	return httpserver.RunPair(ctx, logger, public, internal)
 }
 
 func limitRequestBodies(next http.Handler, maxBytes int64) http.Handler {
@@ -273,32 +229,4 @@ func requestMayHaveBody(r *http.Request) bool {
 	default:
 		return false
 	}
-}
-
-func requireEnv(name string) string {
-	value := strings.TrimSpace(os.Getenv(name))
-	if value == "" {
-		panic("missing required env " + name)
-	}
-	return value
-}
-
-func envOr(name, fallback string) string {
-	value := strings.TrimSpace(os.Getenv(name))
-	if value == "" {
-		return fallback
-	}
-	return value
-}
-
-func credentialPath(name string) string {
-	base := os.Getenv("CREDENTIALS_DIRECTORY")
-	if base == "" {
-		panic("missing CREDENTIALS_DIRECTORY for credential " + name)
-	}
-	path := filepath.Join(base, name)
-	if _, err := os.Stat(path); err != nil {
-		panic("missing required credential " + name)
-	}
-	return path
 }

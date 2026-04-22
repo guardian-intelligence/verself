@@ -2,14 +2,11 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -24,6 +21,8 @@ import (
 	"github.com/forge-metal/billing-service/internal/billing"
 	"github.com/forge-metal/billing-service/internal/billing/ledger"
 	"github.com/forge-metal/billing-service/internal/billingapi"
+	"github.com/forge-metal/envconfig"
+	"github.com/forge-metal/httpserver"
 	fmotel "github.com/forge-metal/otel"
 	secretsclient "github.com/forge-metal/secrets-service/client"
 )
@@ -38,18 +37,27 @@ func main() {
 }
 
 func run() error {
-	pgDSN := requireEnv("BILLING_PG_DSN")
-
-	listenAddr := envOr("BILLING_LISTEN_ADDR", "127.0.0.1:4242")
-	internalListenAddr := envOr("BILLING_INTERNAL_LISTEN_ADDR", "127.0.0.1:4255")
-	chAddress := envOr("BILLING_CH_ADDRESS", "127.0.0.1:9440")
-	chUser := envOr("BILLING_CH_USER", "billing_service")
-	tbAddress := envOr("BILLING_TB_ADDRESS", "127.0.0.1:3320")
-	tbClusterID := envUint64Or("BILLING_TB_CLUSTER_ID", 0)
-	secretsURL := requireEnv("BILLING_SECRETS_URL")
-	authIssuerURL := requireEnv("BILLING_AUTH_ISSUER_URL")
-	authAudience := requireEnv("BILLING_AUTH_AUDIENCE")
-	authJWKSURL := envOr("BILLING_AUTH_JWKS_URL", "")
+	cfg := envconfig.New()
+	pgDSN := cfg.RequireString("BILLING_PG_DSN")
+	listenAddr := cfg.String("BILLING_LISTEN_ADDR", "127.0.0.1:4242")
+	internalListenAddr := cfg.String("BILLING_INTERNAL_LISTEN_ADDR", "127.0.0.1:4255")
+	chAddress := cfg.String("BILLING_CH_ADDRESS", "127.0.0.1:9440")
+	chUser := cfg.String("BILLING_CH_USER", "billing_service")
+	tbAddress := cfg.String("BILLING_TB_ADDRESS", "127.0.0.1:3320")
+	tbClusterID := cfg.Uint64("BILLING_TB_CLUSTER_ID", 0)
+	secretsURL := cfg.RequireURL("BILLING_SECRETS_URL")
+	authIssuerURL := cfg.RequireURL("BILLING_AUTH_ISSUER_URL")
+	authAudience := cfg.RequireString("BILLING_AUTH_AUDIENCE")
+	authJWKSURL := cfg.String("BILLING_AUTH_JWKS_URL", "")
+	pgMaxConns := cfg.Int("BILLING_PG_MAX_CONNS", 12)
+	pgMinConns := cfg.Int("BILLING_PG_MIN_CONNS", 1)
+	pgMaxLifetime := cfg.Int("BILLING_PG_CONN_MAX_LIFETIME_SECONDS", 1800)
+	pgMaxIdle := cfg.Int("BILLING_PG_CONN_MAX_IDLE_SECONDS", 300)
+	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
+	chCACertPath := cfg.RequireCredentialPath("clickhouse-ca-cert")
+	if err := cfg.Err(); err != nil {
+		return err
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -61,7 +69,7 @@ func run() error {
 	defer otelShutdown(context.Background())
 	slog.SetDefault(logger)
 
-	spiffeSource, err := workloadauth.Source(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
+	spiffeSource, err := workloadauth.Source(ctx, spiffeEndpoint)
 	if err != nil {
 		return fmt.Errorf("billing spiffe workload source: %w", err)
 	}
@@ -94,10 +102,10 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("parse postgres dsn: %w", err)
 	}
-	pgConfig.MaxConns = int32(envInt("BILLING_PG_MAX_CONNS", 12))
-	pgConfig.MinConns = int32(envInt("BILLING_PG_MIN_CONNS", 1))
-	pgConfig.MaxConnLifetime = time.Duration(envInt("BILLING_PG_CONN_MAX_LIFETIME_SECONDS", 1800)) * time.Second
-	pgConfig.MaxConnIdleTime = time.Duration(envInt("BILLING_PG_CONN_MAX_IDLE_SECONDS", 300)) * time.Second
+	pgConfig.MaxConns = int32(pgMaxConns)
+	pgConfig.MinConns = int32(pgMinConns)
+	pgConfig.MaxConnLifetime = time.Duration(pgMaxLifetime) * time.Second
+	pgConfig.MaxConnIdleTime = time.Duration(pgMaxIdle) * time.Second
 	pgPool, err := pgxpool.NewWithConfig(ctx, pgConfig)
 	if err != nil {
 		return fmt.Errorf("open postgres pool: %w", err)
@@ -107,7 +115,7 @@ func run() error {
 		return fmt.Errorf("ping postgres: %w", err)
 	}
 
-	chTLSConfig, err := workloadauth.TLSConfigWithX509SourceAndCABundle(ctx, spiffeSource, credentialPath("clickhouse-ca-cert"))
+	chTLSConfig, err := workloadauth.TLSConfigWithX509SourceAndCABundle(ctx, spiffeSource, chCACertPath)
 	if err != nil {
 		return fmt.Errorf("billing clickhouse tls: %w", err)
 	}
@@ -124,9 +132,9 @@ func run() error {
 	}
 	defer func() { _ = chConn.Close() }()
 
-	cfg := billing.DefaultConfig()
-	cfg.StripeSecretKey = stripeKey
-	cfg.UseStripe = stripeKey != ""
+	billingCfg := billing.DefaultConfig()
+	billingCfg.StripeSecretKey = stripeKey
+	billingCfg.UseStripe = stripeKey != ""
 	var stripeClient *stripe.Client
 	if stripeKey != "" {
 		stripeClient = stripe.NewClient(stripeKey)
@@ -136,7 +144,7 @@ func run() error {
 		return fmt.Errorf("create tigerbeetle client: %w", err)
 	}
 	defer ledgerClient.Close()
-	billingClient, err := billing.NewClient(pgPool, stripeClient, chConn, cfg, logger, ledgerClient)
+	billingClient, err := billing.NewClient(pgPool, stripeClient, chConn, billingCfg, logger, ledgerClient)
 	if err != nil {
 		return fmt.Errorf("create billing client: %w", err)
 	}
@@ -151,7 +159,7 @@ func run() error {
 	if err := billingRuntime.Start(ctx); err != nil {
 		return err
 	}
-	if err := billingRuntime.EnqueueMaintenance(ctx, cfg.EventDeliveryProjectEvery); err != nil {
+	if err := billingRuntime.EnqueueMaintenance(ctx, billingCfg.EventDeliveryProjectEvery); err != nil {
 		return fmt.Errorf("enqueue initial billing maintenance: %w", err)
 	}
 	defer func() {
@@ -164,7 +172,7 @@ func run() error {
 
 	bgCtx, bgCancel := context.WithCancel(ctx)
 	defer bgCancel()
-	go runBackgroundLoop(bgCtx, logger, billingRuntime, cfg)
+	go runBackgroundLoop(bgCtx, logger, billingRuntime, billingCfg)
 
 	internalPeerIDs, err := workloadauth.PeerIDsForSource(
 		spiffeSource,
@@ -191,56 +199,12 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("billing internal allowlist: %w", err)
 	}
-	srv := &http.Server{Addr: listenAddr, Handler: otelhttp.NewHandler(rootMux, "billing-service"), ReadHeaderTimeout: 10 * time.Second}
-	internalSrv := &http.Server{
-		Addr:              internalListenAddr,
-		Handler:           otelhttp.NewHandler(internalAllowlist, "billing-service-internal"),
-		TLSConfig:         internalTLSConfig,
-		ReadHeaderTimeout: 2 * time.Second,
-		ReadTimeout:       5 * time.Second,
-		WriteTimeout:      5 * time.Second,
-		IdleTimeout:       30 * time.Second,
-		MaxHeaderBytes:    16 << 10,
-	}
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			logger.ErrorContext(context.Background(), "billing shutdown", "error", err)
-		}
-		if err := internalSrv.Shutdown(shutdownCtx); err != nil {
-			logger.ErrorContext(context.Background(), "billing internal shutdown", "error", err)
-		}
-	}()
-	logger.Info("billing-service listening", "addr", listenAddr)
-	logger.Info("billing-service internal listening", "addr", internalListenAddr)
-	errCh := make(chan error, 2)
-	go func() {
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errCh <- fmt.Errorf("listen billing-service: %w", err)
-			return
-		}
-		errCh <- nil
-	}()
-	go func() {
-		if err := internalSrv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errCh <- fmt.Errorf("listen billing-service internal: %w", err)
-			return
-		}
-		errCh <- nil
-	}()
-	var firstErr error
-	for range 2 {
-		if err := <-errCh; err != nil && firstErr == nil {
-			firstErr = err
-			stop()
-		}
-	}
-	if firstErr != nil {
-		return firstErr
-	}
-	return nil
+
+	public := httpserver.New(listenAddr, otelhttp.NewHandler(rootMux, "billing-service"))
+	internal := httpserver.New(internalListenAddr, otelhttp.NewHandler(internalAllowlist, "billing-service-internal"))
+	internal.TLSConfig = internalTLSConfig
+
+	return httpserver.RunPair(ctx, logger, public, internal)
 }
 
 func runBackgroundLoop(ctx context.Context, logger *slog.Logger, runtime *billing.Runtime, cfg billing.Config) {
@@ -286,24 +250,6 @@ func isUnauthenticatedBillingPath(path string) bool {
 	}
 }
 
-func credentialPath(name string) string {
-	dir := os.Getenv("CREDENTIALS_DIRECTORY")
-	if dir == "" {
-		fmt.Fprintf(os.Stderr, "CREDENTIALS_DIRECTORY not set for credential %s\n", name)
-		os.Exit(1)
-	}
-	return filepath.Join(dir, name)
-}
-
-func requireSecretField(values map[string]string, field string, label string) string {
-	value := strings.TrimSpace(values[field])
-	if value == "" {
-		fmt.Fprintf(os.Stderr, "%s missing required field %s\n", label, field)
-		os.Exit(1)
-	}
-	return value
-}
-
 func readRuntimeSecrets(ctx context.Context, client *secretsclient.ClientWithResponses, secretNames ...string) (map[string]string, error) {
 	if client == nil {
 		return nil, fmt.Errorf("runtime secrets client is required")
@@ -322,59 +268,4 @@ func readRuntimeSecrets(ctx context.Context, client *secretsclient.ClientWithRes
 		values[secretName] = resp.JSON200.Value
 	}
 	return values, nil
-}
-
-func requireEnv(key string) string {
-	value := os.Getenv(key)
-	if value == "" {
-		fmt.Fprintf(os.Stderr, "required env %s is empty\n", key)
-		os.Exit(1)
-	}
-	return value
-}
-
-func envOr(key, fallback string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return fallback
-}
-
-func envInt(key string, fallback int) int {
-	value := os.Getenv(key)
-	if value == "" {
-		return fallback
-	}
-	parsed, err := strconv.Atoi(value)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "invalid %s=%q: %v\n", key, value, err)
-		os.Exit(1)
-	}
-	return parsed
-}
-
-func envUint64Or(key string, fallback uint64) uint64 {
-	value := os.Getenv(key)
-	if value == "" {
-		return fallback
-	}
-	parsed, err := strconv.ParseUint(value, 10, 64)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "invalid %s=%q: %v\n", key, value, err)
-		os.Exit(1)
-	}
-	return parsed
-}
-
-func envUint64(key string, fallback uint64) uint64 {
-	value := os.Getenv(key)
-	if value == "" {
-		return fallback
-	}
-	parsed, err := strconv.ParseUint(value, 10, 64)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "invalid %s: %v\n", key, err)
-		os.Exit(1)
-	}
-	return parsed
 }
