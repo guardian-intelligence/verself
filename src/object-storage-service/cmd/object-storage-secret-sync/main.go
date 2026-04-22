@@ -14,6 +14,7 @@ import (
 	"time"
 
 	workloadauth "github.com/forge-metal/auth-middleware/workload"
+	"github.com/forge-metal/envconfig"
 	fmotel "github.com/forge-metal/otel"
 	secretsclient "github.com/forge-metal/secrets-service/client"
 	"go.opentelemetry.io/otel"
@@ -51,8 +52,18 @@ func run() error {
 	}
 	defer func() { _ = otelShutdown(context.Background()) }()
 
-	secretsURL := requireEnv("OBJECT_STORAGE_SECRET_SYNC_SECRETS_URL")
-	source, err := workloadauth.Source(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
+	cfg := envconfig.New()
+	secretsURL := cfg.RequireURL("OBJECT_STORAGE_SECRET_SYNC_SECRETS_URL")
+	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
+	accessKeyIDPath := cfg.String("OBJECT_STORAGE_SECRET_SYNC_PROXY_ACCESS_KEY_ID_PATH", "/etc/credstore/object-storage-service/garage-proxy-access-key-id")
+	secretAccessKeyPath := cfg.String("OBJECT_STORAGE_SECRET_SYNC_PROXY_SECRET_ACCESS_KEY_PATH", "/etc/credstore/object-storage-service/garage-proxy-secret-access-key")
+	accessKeyID := cfg.RequireFile(accessKeyIDPath)
+	secretAccessKey := cfg.RequireFile(secretAccessKeyPath)
+	if err := cfg.Err(); err != nil {
+		return err
+	}
+
+	source, err := workloadauth.Source(ctx, spiffeEndpoint)
 	if err != nil {
 		return fmt.Errorf("spiffe source: %w", err)
 	}
@@ -68,8 +79,8 @@ func run() error {
 	}
 
 	values := map[string]string{
-		secretsclient.ObjectStorageGarageProxyAccessKeyIDName:     requireFile(envOr("OBJECT_STORAGE_SECRET_SYNC_PROXY_ACCESS_KEY_ID_PATH", "/etc/credstore/object-storage-service/garage-proxy-access-key-id")),
-		secretsclient.ObjectStorageGarageProxySecretAccessKeyName: requireFile(envOr("OBJECT_STORAGE_SECRET_SYNC_PROXY_SECRET_ACCESS_KEY_PATH", "/etc/credstore/object-storage-service/garage-proxy-secret-access-key")),
+		secretsclient.ObjectStorageGarageProxyAccessKeyIDName:     accessKeyID,
+		secretsclient.ObjectStorageGarageProxySecretAccessKeyName: secretAccessKey,
 	}
 
 	result, err := syncRuntimeSecrets(ctx, runtimeClient, values)
@@ -143,28 +154,4 @@ func syncRuntimeSecrets(ctx context.Context, client *secretsclient.ClientWithRes
 func runtimeSecretUpsertKey(name string, value string) string {
 	sum := sha256.Sum256([]byte(name + "\x00" + value))
 	return fmt.Sprintf("object-storage-runtime-upsert-%x", sum)
-}
-
-func requireEnv(name string) string {
-	value := strings.TrimSpace(os.Getenv(name))
-	if value == "" {
-		panic(name + " is required")
-	}
-	return value
-}
-
-func envOr(name, fallback string) string {
-	value := strings.TrimSpace(os.Getenv(name))
-	if value == "" {
-		return fallback
-	}
-	return value
-}
-
-func requireFile(path string) string {
-	data, err := os.ReadFile(strings.TrimSpace(path))
-	if err != nil {
-		panic(fmt.Sprintf("read %s: %v", path, err))
-	}
-	return strings.TrimSpace(string(data))
 }

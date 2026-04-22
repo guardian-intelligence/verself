@@ -8,7 +8,9 @@ require (
 	github.com/danielgtaylor/huma/v2 v2.37.3
 	github.com/forge-metal/apiwire v0.0.0
 	github.com/forge-metal/auth-middleware v0.0.0
+	github.com/forge-metal/envconfig v0.0.0
 	github.com/forge-metal/governance-service v0.0.0
+	github.com/forge-metal/httpserver v0.0.0
 	github.com/forge-metal/otel v0.0.0
 	github.com/forge-metal/secrets-service v0.0.0
 	github.com/google/uuid v1.6.0
@@ -64,7 +66,9 @@ require (
 replace (
 	github.com/forge-metal/apiwire => ../apiwire
 	github.com/forge-metal/auth-middleware => ../auth-middleware
+	github.com/forge-metal/envconfig => ../envconfig
 	github.com/forge-metal/governance-service => ../governance-service
+	github.com/forge-metal/httpserver => ../httpserver
 	github.com/forge-metal/otel => ../otel
 	github.com/forge-metal/secrets-service => ../secrets-service
 )

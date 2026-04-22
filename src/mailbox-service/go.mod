@@ -6,6 +6,8 @@ require (
 	github.com/danielgtaylor/huma/v2 v2.37.3
 	github.com/forge-metal/apiwire v0.0.0
 	github.com/forge-metal/auth-middleware v0.0.0
+	github.com/forge-metal/envconfig v0.0.0
+	github.com/forge-metal/httpserver v0.0.0
 	github.com/forge-metal/otel v0.0.0
 	github.com/forge-metal/secrets-service v0.0.0
 	github.com/jackc/pgx/v5 v5.7.6
@@ -59,5 +61,9 @@ replace github.com/forge-metal/apiwire => ../apiwire
 replace github.com/forge-metal/otel => ../otel
 
 replace github.com/forge-metal/auth-middleware => ../auth-middleware
+
+replace github.com/forge-metal/envconfig => ../envconfig
+
+replace github.com/forge-metal/httpserver => ../httpserver
 
 replace github.com/forge-metal/secrets-service => ../secrets-service

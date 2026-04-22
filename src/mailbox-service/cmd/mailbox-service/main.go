@@ -7,13 +7,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
 	auth "github.com/forge-metal/auth-middleware"
 	workloadauth "github.com/forge-metal/auth-middleware/workload"
+	"github.com/forge-metal/envconfig"
+	"github.com/forge-metal/httpserver"
 	fmotel "github.com/forge-metal/otel"
 	secretsclient "github.com/forge-metal/secrets-service/client"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -48,6 +49,11 @@ type config struct {
 	AuthIssuerURL         string
 	AuthAudience          string
 	AuthJWKSURL           string
+	SecretsURL            string
+	CEOPassword           string
+	AgentsPassword        string
+	ForwardTo             string
+	SPIFFEEndpoint        string
 }
 
 func main() {
@@ -76,7 +82,7 @@ func run() error {
 	defer otelShutdown(context.Background())
 	slog.SetDefault(logger)
 
-	spiffeSource, err := workloadauth.Source(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
+	spiffeSource, err := workloadauth.Source(ctx, cfg.SPIFFEEndpoint)
 	if err != nil {
 		return fmt.Errorf("mailbox-service spiffe source: %w", err)
 	}
@@ -89,7 +95,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("mailbox-service secrets mtls: %w", err)
 	}
-	secretsClient, err := secretsclient.NewClientWithResponses(requireEnvValue("MAILBOX_SERVICE_SECRETS_URL"), secretsclient.WithHTTPClient(secretsHTTPClient))
+	secretsClient, err := secretsclient.NewClientWithResponses(cfg.SecretsURL, secretsclient.WithHTTPClient(secretsHTTPClient))
 	if err != nil {
 		return fmt.Errorf("mailbox-service secrets client: %w", err)
 	}
@@ -121,21 +127,9 @@ func run() error {
 	// § Persistent bootstrap material. The Stalwart Management API admin
 	// password is a workload secret and rides through secrets-service like
 	// other provider secrets.
-	ceoPassword, err := loadCredential("stalwart-ceo-password")
-	if err != nil {
-		return err
-	}
-	agentsPassword, err := loadCredential("stalwart-agents-password")
-	if err != nil {
-		return err
-	}
 	mailboxPasswords := map[string]string{
-		"ceo":    ceoPassword,
-		"agents": agentsPassword,
-	}
-	forwardTo, err := credentialOr("forward-to", "")
-	if err != nil {
-		return err
+		"ceo":    cfg.CEOPassword,
+		"agents": cfg.AgentsPassword,
 	}
 	runtimeSecrets, err := readRuntimeSecrets(ctx, secretsClient,
 		secretsclient.MailboxResendAPIKeyName,
@@ -171,8 +165,8 @@ func run() error {
 		SeenLimit:       cfg.ForwarderSeenLimit,
 		BootstrapWindow: cfg.ForwarderBootstrapMax,
 	}, forwarder.Credentials{
-		MailboxPassword: ceoPassword,
-		ForwardTo:       forwardTo,
+		MailboxPassword: cfg.CEOPassword,
+		ForwardTo:       cfg.ForwardTo,
 		ResendAPIKey:    resendAPIKey,
 	}, logger, httpClient)
 
@@ -196,116 +190,42 @@ func run() error {
 	mux.Handle("/api/v1/mail/", authHandler)
 	service.RegisterRoutes(mux)
 
-	server := &http.Server{
-		Addr:              cfg.ListenAddr,
-		Handler:           otelhttp.NewHandler(mux, "mailbox-service"),
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-
+	server := httpserver.New(cfg.ListenAddr, otelhttp.NewHandler(mux, "mailbox-service"))
 	service.StartBackground(ctx)
-
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = server.Shutdown(shutdownCtx)
-	}()
-
-	logger.InfoContext(ctx, "mailbox-service: started",
-		"listen_addr", cfg.ListenAddr,
-		"stalwart_base_url", cfg.StalwartBaseURL,
-		"public_base_url", cfg.PublicBaseURL,
-	)
-
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		return fmt.Errorf("listen: %w", err)
-	}
-	return nil
+	return httpserver.Run(ctx, logger, server)
 }
 
 func loadConfig() (config, error) {
-	publicBaseURL, err := requireEnv("MAILBOX_SERVICE_STALWART_PUBLIC_BASE_URL")
-	if err != nil {
-		return config{}, err
-	}
-	localDomain, err := requireEnv("MAILBOX_SERVICE_STALWART_LOCAL_DOMAIN")
-	if err != nil {
-		return config{}, err
-	}
-	forwarderFromAddress, err := requireEnv("MAILBOX_SERVICE_FORWARDER_FROM_ADDRESS")
-	if err != nil {
-		return config{}, err
-	}
-
-	pollInterval := 5 * time.Second
-	if raw := os.Getenv("MAILBOX_SERVICE_FORWARDER_POLL_INTERVAL"); raw != "" {
-		value, err := time.ParseDuration(raw)
-		if err != nil {
-			return config{}, fmt.Errorf("parse MAILBOX_SERVICE_FORWARDER_POLL_INTERVAL: %w", err)
-		}
-		pollInterval = value
-	}
-	discoveryInterval := 2 * time.Minute
-	if raw := os.Getenv("MAILBOX_SERVICE_SYNC_DISCOVERY_INTERVAL"); raw != "" {
-		value, err := time.ParseDuration(raw)
-		if err != nil {
-			return config{}, fmt.Errorf("parse MAILBOX_SERVICE_SYNC_DISCOVERY_INTERVAL: %w", err)
-		}
-		discoveryInterval = value
-	}
-	reconcileInterval := 10 * time.Minute
-	if raw := os.Getenv("MAILBOX_SERVICE_SYNC_RECONCILE_INTERVAL"); raw != "" {
-		value, err := time.ParseDuration(raw)
-		if err != nil {
-			return config{}, fmt.Errorf("parse MAILBOX_SERVICE_SYNC_RECONCILE_INTERVAL: %w", err)
-		}
-		reconcileInterval = value
-	}
-	authIssuerURL, err := requireEnv("MAILBOX_SERVICE_AUTH_ISSUER_URL")
-	if err != nil {
-		return config{}, err
-	}
-	authAudience, err := requireEnv("MAILBOX_SERVICE_AUTH_AUDIENCE")
-	if err != nil {
-		return config{}, err
-	}
-	authJWKSURL, err := requireEnv("MAILBOX_SERVICE_AUTH_JWKS_URL")
-	if err != nil {
-		return config{}, err
-	}
-
-	return config{
-		ListenAddr:            envOr("MAILBOX_SERVICE_LISTEN_ADDR", "127.0.0.1:4246"),
-		PGDSN:                 envOr("MAILBOX_SERVICE_PG_DSN", "postgres://mailbox_service@/mailbox_service?host=/var/run/postgresql&sslmode=disable"),
-		StalwartBaseURL:       envOr("MAILBOX_SERVICE_STALWART_BASE_URL", "http://127.0.0.1:8090"),
-		PublicBaseURL:         publicBaseURL,
-		MailboxUser:           envOr("MAILBOX_SERVICE_STALWART_MAILBOX", "ceo"),
-		LocalDomain:           localDomain,
-		ForwarderFromAddress:  forwarderFromAddress,
-		ForwarderFromName:     envOr("MAILBOX_SERVICE_FORWARDER_FROM_NAME", "forge-metal"),
-		ForwarderStatePath:    envOr("MAILBOX_SERVICE_FORWARDER_STATE_PATH", "/var/lib/mailbox-service/forwarder-state.json"),
-		ForwarderPollInterval: pollInterval,
+	l := envconfig.New()
+	cfg := config{
+		ListenAddr:            l.String("MAILBOX_SERVICE_LISTEN_ADDR", "127.0.0.1:4246"),
+		PGDSN:                 l.String("MAILBOX_SERVICE_PG_DSN", "postgres://mailbox_service@/mailbox_service?host=/var/run/postgresql&sslmode=disable"),
+		StalwartBaseURL:       l.String("MAILBOX_SERVICE_STALWART_BASE_URL", "http://127.0.0.1:8090"),
+		PublicBaseURL:         l.RequireURL("MAILBOX_SERVICE_STALWART_PUBLIC_BASE_URL"),
+		MailboxUser:           l.String("MAILBOX_SERVICE_STALWART_MAILBOX", "ceo"),
+		LocalDomain:           l.RequireString("MAILBOX_SERVICE_STALWART_LOCAL_DOMAIN"),
+		ForwarderFromAddress:  l.RequireString("MAILBOX_SERVICE_FORWARDER_FROM_ADDRESS"),
+		ForwarderFromName:     l.String("MAILBOX_SERVICE_FORWARDER_FROM_NAME", "forge-metal"),
+		ForwarderStatePath:    l.String("MAILBOX_SERVICE_FORWARDER_STATE_PATH", "/var/lib/mailbox-service/forwarder-state.json"),
+		ForwarderPollInterval: l.Duration("MAILBOX_SERVICE_FORWARDER_POLL_INTERVAL", 5*time.Second),
 		ForwarderQueryLimit:   100,
 		ForwarderSeenLimit:    1024,
 		ForwarderBootstrapMax: 100,
-		SyncDiscoveryInterval: discoveryInterval,
-		SyncReconcileInterval: reconcileInterval,
-		AuthIssuerURL:         authIssuerURL,
-		AuthAudience:          authAudience,
-		AuthJWKSURL:           authJWKSURL,
-	}, nil
-}
-
-func loadCredential(name string) (string, error) {
-	dir := os.Getenv("CREDENTIALS_DIRECTORY")
-	if dir == "" {
-		return "", fmt.Errorf("CREDENTIALS_DIRECTORY not set")
+		SyncDiscoveryInterval: l.Duration("MAILBOX_SERVICE_SYNC_DISCOVERY_INTERVAL", 2*time.Minute),
+		SyncReconcileInterval: l.Duration("MAILBOX_SERVICE_SYNC_RECONCILE_INTERVAL", 10*time.Minute),
+		AuthIssuerURL:         l.RequireURL("MAILBOX_SERVICE_AUTH_ISSUER_URL"),
+		AuthAudience:          l.RequireString("MAILBOX_SERVICE_AUTH_AUDIENCE"),
+		AuthJWKSURL:           l.RequireURL("MAILBOX_SERVICE_AUTH_JWKS_URL"),
+		SecretsURL:            l.RequireURL("MAILBOX_SERVICE_SECRETS_URL"),
+		CEOPassword:           l.RequireCredential("stalwart-ceo-password"),
+		AgentsPassword:        l.RequireCredential("stalwart-agents-password"),
+		ForwardTo:             l.CredentialOr("forward-to", ""),
+		SPIFFEEndpoint:        l.String(workloadauth.EndpointSocketEnv, ""),
 	}
-	data, err := os.ReadFile(filepath.Join(dir, name))
-	if err != nil {
-		return "", fmt.Errorf("load credential %s: %w", name, err)
+	if err := l.Err(); err != nil {
+		return config{}, err
 	}
-	return strings.TrimSpace(string(data)), nil
+	return cfg, nil
 }
 
 func requireSecretField(values map[string]string, field string, label string) string {
@@ -335,39 +255,4 @@ func readRuntimeSecrets(ctx context.Context, client *secretsclient.ClientWithRes
 		values[secretName] = resp.JSON200.Value
 	}
 	return values, nil
-}
-
-func credentialOr(name, fallback string) (string, error) {
-	value, err := loadCredential(name)
-	if err != nil {
-		return "", err
-	}
-	if value == "" {
-		return fallback, nil
-	}
-	return value, nil
-}
-
-func requireEnv(key string) (string, error) {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return "", fmt.Errorf("required env %s is empty", key)
-	}
-	return value, nil
-}
-
-func requireEnvValue(key string) string {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		fmt.Fprintf(os.Stderr, "required env %s is empty\n", key)
-		os.Exit(1)
-	}
-	return value
-}
-
-func envOr(key, fallback string) string {
-	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-		return value
-	}
-	return fallback
 }
