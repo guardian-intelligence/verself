@@ -328,20 +328,3 @@
   ansible.builtin.command: /bin/true
   changed_when: deploy_profile_temporal_server_binary_copy.changed | default(false)
   notify: deploy-profile restart temporal-server
-
-- name: Set temporal proof binary copy fact
-  ansible.builtin.set_fact:
-    deploy_profile_temporal_proof_binary_copy: >-
-      {{
-        (
-          deploy_profile_go_binary_copy_results.results
-          | selectattr('item.name', 'equalto', 'temporal-proof')
-          | list
-          | first
-        ) | default({})
-      }}
-
-- name: Trigger temporal-proof-worker restart when binary changed
-  ansible.builtin.command: /bin/true
-  changed_when: deploy_profile_temporal_proof_binary_copy.changed | default(false)
-  notify: deploy-profile restart temporal-proof-worker

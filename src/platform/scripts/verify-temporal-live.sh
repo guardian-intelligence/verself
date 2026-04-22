@@ -23,6 +23,7 @@ temporal_frontend_address="127.0.0.1:7233"
 temporal_metrics_address="127.0.0.1:9001"
 governance_internal_url="https://127.0.0.1:4254/internal/v1/audit/events"
 temporal_proof_bin="/opt/forge-metal/profile/bin/temporal-proof"
+temporal_proof_worker_started=0
 
 remote_psql() {
   local db="$1"
@@ -104,14 +105,48 @@ wait_for_clickhouse_count() {
   return 1
 }
 
+cleanup_temporal_proof_worker() {
+  local status="$1"
+  trap - EXIT
+  if [[ "${temporal_proof_worker_started}" == "1" ]]; then
+    verification_ssh "sudo systemctl stop temporal-proof-worker"
+    verification_ssh "sudo systemctl is-active temporal-proof-worker || true" \
+      >"${artifact_dir}/temporal-proof-worker-post-stop.txt"
+  fi
+  exit "${status}"
+}
+
+trap 'cleanup_temporal_proof_worker "$?"' EXIT
+
 wait_for_remote_tcp "Temporal frontend" "127.0.0.1" "7233"
 wait_for_remote_tcp "Temporal metrics" "127.0.0.1" "9001"
 verification_wait_for_loopback_api "governance-service" "http://127.0.0.1:4250/readyz" "200"
 
-verification_ssh "sudo systemctl is-active temporal-server temporal-proof-worker governance-service" \
+verification_ssh "sudo systemctl is-active temporal-server governance-service" \
   >"${artifact_dir}/systemd-active.txt"
+# `systemctl is-enabled`/`is-active` return non-zero for the desired
+# disabled/inactive states, so capture the rendered state rather than the rc.
+verification_ssh "sudo systemctl is-enabled temporal-proof-worker || true" \
+  >"${artifact_dir}/temporal-proof-worker-enabled.txt"
+verification_ssh "sudo systemctl is-active temporal-proof-worker || true" \
+  >"${artifact_dir}/temporal-proof-worker-pre-start.txt"
 verification_ssh "sudo ss -ltnH '( sport = :7233 or sport = :9001 )'" \
   >"${artifact_dir}/temporal-listeners.tsv"
+
+if [[ "$(tr -d '[:space:]' <"${artifact_dir}/temporal-proof-worker-enabled.txt")" != "disabled" ]]; then
+  echo "expected temporal-proof-worker to remain disabled outside live verification" >&2
+  exit 1
+fi
+
+if [[ "$(tr -d '[:space:]' <"${artifact_dir}/temporal-proof-worker-pre-start.txt")" != "inactive" ]]; then
+  echo "expected temporal-proof-worker to be inactive before live verification" >&2
+  exit 1
+fi
+
+verification_ssh "sudo systemctl start temporal-proof-worker"
+temporal_proof_worker_started=1
+verification_ssh "sudo systemctl is-active temporal-proof-worker" \
+  >"${artifact_dir}/temporal-proof-worker-started.txt"
 
 remote_temporal_proof temporal_server bootstrap
 remote_temporal_proof temporal_proof denied --run-id "${denied_run_id}" \
@@ -316,6 +351,16 @@ audit_count="$(
 )"
 if [[ "${audit_count}" != "1" ]]; then
   echo "expected exactly one completed audit row, got ${audit_count}" >&2
+  exit 1
+fi
+
+verification_ssh "sudo systemctl stop temporal-proof-worker"
+verification_ssh "sudo systemctl is-active temporal-proof-worker || true" \
+  >"${artifact_dir}/temporal-proof-worker-post-stop.txt"
+temporal_proof_worker_started=0
+
+if [[ "$(tr -d '[:space:]' <"${artifact_dir}/temporal-proof-worker-post-stop.txt")" != "inactive" ]]; then
+  echo "expected temporal-proof-worker to return to inactive after live verification" >&2
   exit 1
 fi
 

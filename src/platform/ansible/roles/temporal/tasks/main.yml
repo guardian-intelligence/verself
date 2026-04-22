@@ -123,7 +123,6 @@
       -x509SVIDTTL 3600
   when: temporal_proof_spire_entry.rc != 0 or 'forge-metal-temporal-proof' not in temporal_proof_spire_entry.stdout
   changed_when: true
-  notify: restart temporal-proof-worker
 
 - name: Update Temporal proof SPIRE workload selector drift
   ansible.builtin.command:
@@ -139,7 +138,6 @@
     - temporal_proof_spire_entry.rc == 0
     - "'uid:' ~ (temporal_proof_uid.stdout | trim) not in temporal_proof_spire_entry.stdout"
   changed_when: true
-  notify: restart temporal-proof-worker
 
 - name: Create Temporal state directories
   ansible.builtin.file:
@@ -293,7 +291,6 @@
     owner: root
     group: root
     mode: "0644"
-  notify: restart temporal-proof-worker
 
 - name: Apply Temporal unit and config changes before readiness
   ansible.builtin.meta: flush_handlers
@@ -338,9 +335,9 @@
     FM_TEMPORAL_PROOF_SERVICE_VERSION: "{{ forge_metal_version }}"
   changed_when: false
 
-- name: Enable and start temporal-proof-worker
+- name: Keep temporal-proof-worker disabled until live verification
   ansible.builtin.systemd:
     name: temporal-proof-worker
-    enabled: true
-    state: started
+    enabled: false
+    state: stopped
     daemon_reload: true

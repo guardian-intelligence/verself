@@ -6,11 +6,3 @@
     state: restarted
     daemon_reload: true
   failed_when: false
-
-- name: Restart temporal-proof-worker
-  listen: restart temporal-proof-worker
-  ansible.builtin.systemd:
-    name: temporal-proof-worker
-    state: restarted
-    daemon_reload: true
-  failed_when: false

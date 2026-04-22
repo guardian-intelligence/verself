@@ -100,8 +100,9 @@ The current deployment is intentionally narrow:
 - One loopback-only Temporal cluster on the single-node host.
 - One repo-owned `temporal-server` systemd unit running Temporal in
   combined mode.
-- One repo-owned `temporal-proof-worker` systemd unit used only for the
-  deployment gate and workload-identity rehearsal.
+- One repo-owned `temporal-proof-worker` systemd unit kept installed but
+  stopped by default; `make temporal-proof` starts it on demand and stops
+  it again before returning.
 - Frontend gRPC on `127.0.0.1:7233`, metrics on `127.0.0.1:9001`,
   private membership ports reserved in `services.yml` for a later split
   into dedicated roles.
@@ -245,12 +246,14 @@ This is enough to answer the practical operator questions:
 `make temporal-proof` is the deployment gate. It does four concrete
 things:
 
-1. Bootstraps namespaces with the server identity.
+1. Asserts `temporal-proof-worker` is disabled and inactive, then starts
+   it on demand.
 2. Confirms a denied namespace call fails.
 3. Starts `ProofHeartbeat`, restarts `temporal-server` mid-flight, and
    waits for completion.
-4. Asserts ClickHouse traces/logs/metrics, a governance audit row, and a
-   matching visibility row in `temporal_visibility.executions_visibility`.
+4. Asserts ClickHouse traces/logs/metrics, a governance audit row, a
+   matching visibility row in `temporal_visibility.executions_visibility`,
+   and a return to the cold worker state after the proof finishes.
 
 `make grafana-proof` and `make workload-identity-proof` are the two
 supporting gates. Together they prove that Temporal is visible from the
