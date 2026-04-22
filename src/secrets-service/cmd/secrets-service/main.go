@@ -20,8 +20,6 @@ import (
 	secretsclient "github.com/forge-metal/secrets-service/client"
 	secretsapi "github.com/forge-metal/secrets-service/internal/api"
 	"github.com/forge-metal/secrets-service/internal/secrets"
-	"github.com/spiffe/go-spiffe/v2/spiffeid"
-	"github.com/spiffe/go-spiffe/v2/workloadapi"
 )
 
 const (
@@ -84,46 +82,6 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	sandboxSPIFFEID, err := workloadauth.PeerIDForSource(spiffeSource, workloadauth.ServiceSandboxRental)
-	if err != nil {
-		return err
-	}
-	runtimeSecretPolicies, err := buildRuntimeSecretPolicies(spiffeSource, []runtimeSecretPolicySpec{
-		{Service: workloadauth.ServiceBilling, SecretNames: []string{
-			secretsclient.BillingStripeSecretKeyName,
-			secretsclient.BillingStripeWebhookSecretName,
-		}},
-		{Service: workloadauth.ServiceSandboxRental, SecretNames: []string{
-			secretsclient.SandboxGitHubPrivateKeyName,
-			secretsclient.SandboxGitHubWebhookSecretName,
-			secretsclient.SandboxGitHubClientSecretName,
-		}},
-		{Service: workloadauth.ServiceMailbox, SecretNames: []string{
-			secretsclient.MailboxResendAPIKeyName,
-			secretsclient.MailboxStalwartAdminPasswordName,
-		}},
-		{Service: workloadauth.ServiceObjectStorage, SecretNames: []string{
-			secretsclient.ObjectStorageGarageProxyAccessKeyIDName,
-			secretsclient.ObjectStorageGarageProxySecretAccessKeyName,
-		}},
-		{Service: workloadauth.ServiceObjectStorageAdmin, SecretNames: []string{
-			secretsclient.ObjectStorageGarageProxyAccessKeyIDName,
-			secretsclient.ObjectStorageGarageProxySecretAccessKeyName,
-		}},
-	})
-	if err != nil {
-		return err
-	}
-	runtimeSecretWritePolicies, err := buildRuntimeSecretPolicies(spiffeSource, []runtimeSecretPolicySpec{
-		{Service: workloadauth.ServiceObjectStorageAdmin, SecretNames: []string{
-			secretsclient.ObjectStorageGarageProxyAccessKeyIDName,
-			secretsclient.ObjectStorageGarageProxySecretAccessKeyName,
-		}},
-	})
-	if err != nil {
-		return err
-	}
-	internalPeerIDs := runtimeSecretPeerIDs(sandboxSPIFFEID, runtimeSecretPolicies, runtimeSecretWritePolicies)
 
 	store, err := secrets.NewBaoStore(ctx, secrets.BaoStoreConfig{
 		Address:       openBaoAddr,
@@ -187,12 +145,40 @@ func run() error {
 	protected := secretsapi.CaptureRawBearerToken(authenticated)
 	rootMux.Handle("/", protected)
 	internalMux := http.NewServeMux()
-	if err := secretsapi.RegisterInternalRoutes(internalMux, svc, secretsapi.InternalRoutesConfig{
-		SandboxPeerID:              sandboxSPIFFEID,
-		PlatformOrgID:              platformOrgID,
-		RuntimeSecretPolicies:      runtimeSecretPolicies,
-		RuntimeSecretWritePolicies: runtimeSecretWritePolicies,
-	}); err != nil {
+	internalPeerIDs, err := secretsapi.RegisterInternalRoutes(internalMux, svc, spiffeSource, secretsapi.InternalRoutesConfig{
+		PlatformOrgID:  platformOrgID,
+		SandboxService: workloadauth.ServiceSandboxRental,
+		RuntimeSecretReadPolicies: []secretsapi.RuntimeSecretPolicy{
+			{Service: workloadauth.ServiceBilling, SecretNames: []string{
+				secretsclient.BillingStripeSecretKeyName,
+				secretsclient.BillingStripeWebhookSecretName,
+			}},
+			{Service: workloadauth.ServiceSandboxRental, SecretNames: []string{
+				secretsclient.SandboxGitHubPrivateKeyName,
+				secretsclient.SandboxGitHubWebhookSecretName,
+				secretsclient.SandboxGitHubClientSecretName,
+			}},
+			{Service: workloadauth.ServiceMailbox, SecretNames: []string{
+				secretsclient.MailboxResendAPIKeyName,
+				secretsclient.MailboxStalwartAdminPasswordName,
+			}},
+			{Service: workloadauth.ServiceObjectStorage, SecretNames: []string{
+				secretsclient.ObjectStorageGarageProxyAccessKeyIDName,
+				secretsclient.ObjectStorageGarageProxySecretAccessKeyName,
+			}},
+			{Service: workloadauth.ServiceObjectStorageAdmin, SecretNames: []string{
+				secretsclient.ObjectStorageGarageProxyAccessKeyIDName,
+				secretsclient.ObjectStorageGarageProxySecretAccessKeyName,
+			}},
+		},
+		RuntimeSecretWritePolicies: []secretsapi.RuntimeSecretPolicy{
+			{Service: workloadauth.ServiceObjectStorageAdmin, SecretNames: []string{
+				secretsclient.ObjectStorageGarageProxyAccessKeyIDName,
+				secretsclient.ObjectStorageGarageProxySecretAccessKeyName,
+			}},
+		},
+	})
+	if err != nil {
 		return fmt.Errorf("register secrets internal routes: %w", err)
 	}
 	internalTLSConfig, err := workloadauth.MTLSServerConfigForAny(spiffeSource, internalPeerIDs...)
@@ -315,47 +301,4 @@ func credentialPath(name string) string {
 		panic("missing required credential " + name)
 	}
 	return path
-}
-
-type runtimeSecretPolicySpec struct {
-	Service     string
-	SecretNames []string
-}
-
-func buildRuntimeSecretPolicies(source *workloadapi.X509Source, specs []runtimeSecretPolicySpec) ([]secretsapi.RuntimeSecretPolicy, error) {
-	policies := make([]secretsapi.RuntimeSecretPolicy, 0, len(specs))
-	for _, spec := range specs {
-		peerID, err := workloadauth.PeerIDForSource(source, spec.Service)
-		if err != nil {
-			return nil, err
-		}
-		policies = append(policies, secretsapi.RuntimeSecretPolicy{
-			PeerID:         peerID,
-			CredentialName: spec.Service,
-			SecretNames:    append([]string(nil), spec.SecretNames...),
-		})
-	}
-	return policies, nil
-}
-
-func runtimeSecretPeerIDs(sandbox spiffeid.ID, policySets ...[]secretsapi.RuntimeSecretPolicy) []spiffeid.ID {
-	ids := make([]spiffeid.ID, 0)
-	seen := map[spiffeid.ID]struct{}{}
-	if !sandbox.IsZero() {
-		ids = append(ids, sandbox)
-		seen[sandbox] = struct{}{}
-	}
-	for _, policySet := range policySets {
-		for _, policy := range policySet {
-			if policy.PeerID.IsZero() {
-				continue
-			}
-			if _, ok := seen[policy.PeerID]; ok {
-				continue
-			}
-			seen[policy.PeerID] = struct{}{}
-			ids = append(ids, policy.PeerID)
-		}
-	}
-	return ids
 }

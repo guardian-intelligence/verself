@@ -12,23 +12,26 @@ import (
 	"github.com/forge-metal/secrets-service/internal/secrets"
 	"github.com/google/uuid"
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
+	"github.com/spiffe/go-spiffe/v2/workloadapi"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 )
 
 const injectionRequestMaxBytes = 128 << 10
 
+// InternalRoutesConfig names peers by catalog service name (workloadauth.Service*).
+// RegisterInternalRoutes resolves them against the caller's trust domain, so
+// there is a single source of truth for which peers reach the internal plane.
 type InternalRoutesConfig struct {
-	SandboxPeerID              spiffeid.ID
 	PlatformOrgID              string
-	RuntimeSecretPolicies      []RuntimeSecretPolicy
+	SandboxService             string
+	RuntimeSecretReadPolicies  []RuntimeSecretPolicy
 	RuntimeSecretWritePolicies []RuntimeSecretPolicy
 }
 
 type RuntimeSecretPolicy struct {
-	PeerID         spiffeid.ID
-	CredentialName string
-	SecretNames    []string
+	Service     string
+	SecretNames []string
 }
 
 type runtimeSecretPolicy struct {
@@ -64,24 +67,38 @@ type injectionEnvValue struct {
 	Value string `json:"value"`
 }
 
-func RegisterInternalRoutes(mux *http.ServeMux, svc *secrets.Service, cfg InternalRoutesConfig) error {
+// RegisterInternalRoutes installs every internal handler on mux and returns
+// the deduplicated peer allowlist that must be enforced at the mTLS
+// handshake and per-request authorization layers. Returning the allowlist
+// here guarantees the TLS layer and the authz layer derive their accepted
+// identities from the same data, closing the parallel-list drift hazard that
+// bit the original design.
+func RegisterInternalRoutes(mux *http.ServeMux, svc *secrets.Service, source *workloadapi.X509Source, cfg InternalRoutesConfig) ([]spiffeid.ID, error) {
 	if mux == nil {
-		return fmt.Errorf("internal routes mux is required")
+		return nil, fmt.Errorf("internal routes mux is required")
 	}
-	resolvePolicies, err := normalizeRuntimeSecretPolicies(cfg.RuntimeSecretPolicies)
-	if err != nil {
-		return err
-	}
-	writePolicies, err := normalizeRuntimeSecretPolicies(cfg.RuntimeSecretWritePolicies)
-	if err != nil {
-		return err
-	}
-	if cfg.SandboxPeerID.IsZero() {
-		return fmt.Errorf("sandbox SPIFFE ID is required")
+	if source == nil {
+		return nil, fmt.Errorf("spiffe x509 source is required")
 	}
 	cfg.PlatformOrgID = strings.TrimSpace(cfg.PlatformOrgID)
 	if cfg.PlatformOrgID == "" {
-		return fmt.Errorf("platform org id is required")
+		return nil, fmt.Errorf("platform org id is required")
+	}
+	cfg.SandboxService = strings.TrimSpace(cfg.SandboxService)
+	if cfg.SandboxService == "" {
+		return nil, fmt.Errorf("sandbox service is required")
+	}
+	sandboxPeerID, err := workloadauth.PeerIDForSource(source, cfg.SandboxService)
+	if err != nil {
+		return nil, fmt.Errorf("resolve sandbox peer id: %w", err)
+	}
+	resolvePolicies, err := normalizeRuntimeSecretPolicies(source, cfg.RuntimeSecretReadPolicies)
+	if err != nil {
+		return nil, fmt.Errorf("resolve runtime read policies: %w", err)
+	}
+	writePolicies, err := normalizeRuntimeSecretPolicies(source, cfg.RuntimeSecretWritePolicies)
+	if err != nil {
+		return nil, fmt.Errorf("resolve runtime write policies: %w", err)
 	}
 	mux.HandleFunc("/internal/v1/injections/resolve", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -93,7 +110,7 @@ func RegisterInternalRoutes(mux *http.ServeMux, svc *secrets.Service, cfg Intern
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		if peerID != cfg.SandboxPeerID {
+		if peerID != sandboxPeerID {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -193,7 +210,24 @@ func RegisterInternalRoutes(mux *http.ServeMux, svc *secrets.Service, cfg Intern
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
-	return nil
+	allowlist := make([]spiffeid.ID, 0, 1+len(resolvePolicies)+len(writePolicies))
+	seen := map[spiffeid.ID]struct{}{sandboxPeerID: {}}
+	allowlist = append(allowlist, sandboxPeerID)
+	for peerID := range resolvePolicies {
+		if _, ok := seen[peerID]; ok {
+			continue
+		}
+		seen[peerID] = struct{}{}
+		allowlist = append(allowlist, peerID)
+	}
+	for peerID := range writePolicies {
+		if _, ok := seen[peerID]; ok {
+			continue
+		}
+		seen[peerID] = struct{}{}
+		allowlist = append(allowlist, peerID)
+	}
+	return allowlist, nil
 }
 
 func runtimeSecretNameFromPath(path string) (string, error) {
@@ -552,21 +586,19 @@ func runtimeSecretWriteOpenBaoRole(orgID string) string {
 	return "secrets-runtime-write-" + strings.TrimSpace(orgID)
 }
 
-func normalizeRuntimeSecretPolicies(items []RuntimeSecretPolicy) (map[spiffeid.ID]runtimeSecretPolicy, error) {
-	if len(items) == 0 {
-		return nil, fmt.Errorf("at least one runtime secret policy is required")
-	}
+func normalizeRuntimeSecretPolicies(source *workloadapi.X509Source, items []RuntimeSecretPolicy) (map[spiffeid.ID]runtimeSecretPolicy, error) {
 	out := make(map[spiffeid.ID]runtimeSecretPolicy, len(items))
 	for _, item := range items {
-		if item.PeerID.IsZero() {
-			return nil, fmt.Errorf("runtime secret peer ID is required")
+		service := strings.TrimSpace(item.Service)
+		if service == "" {
+			return nil, fmt.Errorf("runtime secret policy service is required")
 		}
-		if _, exists := out[item.PeerID]; exists {
-			return nil, fmt.Errorf("duplicate runtime secret policy for %s", item.PeerID.String())
+		peerID, err := workloadauth.PeerIDForSource(source, service)
+		if err != nil {
+			return nil, fmt.Errorf("resolve runtime secret peer %q: %w", service, err)
 		}
-		name := strings.TrimSpace(item.CredentialName)
-		if name == "" {
-			return nil, fmt.Errorf("runtime secret credential name is required for %s", item.PeerID.String())
+		if _, exists := out[peerID]; exists {
+			return nil, fmt.Errorf("duplicate runtime secret policy for %s", peerID.String())
 		}
 		secretNames, err := normalizeRuntimeSecretNames(item.SecretNames)
 		if err != nil {
@@ -576,8 +608,8 @@ func normalizeRuntimeSecretPolicies(items []RuntimeSecretPolicy) (map[spiffeid.I
 		for _, secretName := range secretNames {
 			allowed[secretName] = struct{}{}
 		}
-		out[item.PeerID] = runtimeSecretPolicy{
-			credentialName: name,
+		out[peerID] = runtimeSecretPolicy{
+			credentialName: service,
 			secretNames:    allowed,
 		}
 	}
