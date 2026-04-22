@@ -9,8 +9,13 @@ const sectionByID = (id: (typeof DESIGN_SECTIONS)[number]["id"]) =>
 const PANEL_BG = "#17171a";
 const PANEL_2_BG = "#111113";
 const LINE = "#2a2a2f";
-const MUTED = "rgba(245,245,245,0.6)";
-const MUTED_2 = "rgba(245,245,245,0.4)";
+// Design-spec card primitives. Opacities are kept tuned against #17171A
+// (PANEL_BG) rather than #0E0E0E (iron); labels inside the cards must still
+// pass AA for small mono text against the panel. MUTED_2 moved from 0.4 →
+// 0.55 to hit that floor. Other in-file rgba values live in decorative
+// specimen surfaces and are unchanged.
+const MUTED = "rgba(245,245,245,0.68)";
+const MUTED_2 = "rgba(245,245,245,0.55)";
 
 // ============================================================================
 // Card primitive — matches the playground's `.card { panel + frame + label }`
@@ -644,9 +649,11 @@ function SectionColour() {
           <b>Iron</b> is the stage — the default canvas for everything the company actually ships.{" "}
           <b>Flare</b> is the action — Pantone 389 C — used sparingly, 99% of the time reserved for
           the single primary action in view. <b>Paper</b> is the editorial ground, for long-form
-          prose. Two accents travel between them: <b>Argent</b> is the wings' colour — never a
-          ground — and <b>Bordeaux</b> is the editorial mark, appearing only on Paper to rule
-          pull-quotes and underline the links worth following.
+          prose. Three accents travel between them: <b>Argent</b> is the wings' colour — never a
+          ground; <b>Bordeaux</b> is the editorial mark, appearing only on Paper to rule pull-quotes
+          and underline the links worth following; and{" "}
+          <b style={{ color: "var(--color-amber)" }}>Amber</b> is the Workshop accent, carried on
+          Iron for product actions, positive states, and live indicators.
         </>
       }
     >
@@ -685,6 +692,12 @@ function SectionColour() {
             d: "Editorial accent. Paper-only. Pull-quote rules, active links, drop-cap ornaments.",
             k: "HEX #5C1F1E · RGB 92 · 31 · 30 · Pantone 504 C",
             chip: "var(--color-bordeaux)",
+          },
+          {
+            n: "Amber · Pantone 715 C",
+            d: "Workshop accent. Iron-only. Product actions, positive states, live indicators.",
+            k: "HEX #F79326 · RGB 247 · 147 · 38 · CMYK 0 · 48 · 85 · 0",
+            chip: "var(--color-amber)",
           },
         ].map((s) => (
           <div

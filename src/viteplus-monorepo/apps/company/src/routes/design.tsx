@@ -5,32 +5,17 @@ import { cn } from "@forge-metal/ui/lib/utils";
 import { DESIGN_GROUPS, DESIGN_SECTIONS, type DesignSection } from "~/lib/design-nav";
 import { emitSpan } from "~/lib/telemetry/browser";
 import { DesignSections } from "~/features/design/sections";
+import { ogMeta } from "~/lib/head";
 
 export const Route = createFileRoute("/design")({
   component: DesignPage,
   head: () => ({
-    meta: [
-      { title: "Guardian Intelligence — Brand System" },
-      {
-        name: "description",
-        content:
-          "The Guardian Intelligence brand system: the mark, the lockups, the type, the colour, and how they appear in the surfaces the company actually ships.",
-      },
-      { name: "theme-color", content: "#0E0E0E" },
-      { property: "og:type", content: "website" },
-      { property: "og:title", content: "Guardian Intelligence — Brand System" },
-      {
-        property: "og:description",
-        content:
-          "Two wings. Three grounds. Three families. The brand system that runs from favicon to signage.",
-      },
-      { property: "og:image", content: "/og/design" },
-      { property: "og:image:type", content: "image/svg+xml" },
-      { property: "og:image:width", content: "1200" },
-      { property: "og:image:height", content: "630" },
-      { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:image", content: "/og/design" },
-    ],
+    meta: ogMeta({
+      slug: "design",
+      title: "Guardian Intelligence — Brand System",
+      description:
+        "The Guardian Intelligence brand system: the mark, the lockups, the type, the colour, and how they appear in the surfaces the firm actually ships.",
+    }),
     links: [{ rel: "canonical", href: "/design" }],
   }),
 });
@@ -48,7 +33,7 @@ function DesignPage() {
       }}
     >
       <div className="mx-auto w-full max-w-7xl px-4 py-10 md:px-6 md:py-14">
-        <div className="flex flex-col gap-10 md:flex-row md:items-start md:gap-12">
+        <div className="flex flex-col gap-6 md:flex-row md:items-start md:gap-12">
           <DesignRail />
           <div className="min-w-0 flex-1">
             <DesignHeader />
@@ -65,9 +50,9 @@ function DesignHeader() {
     <header className="mb-16 flex flex-col gap-4">
       <p
         className="font-mono text-[11px] font-medium uppercase tracking-[0.16em]"
-        style={{ color: "rgba(245,245,245,0.55)" }}
+        style={{ color: "var(--muted-faint)" }}
       >
-        Guardian Intelligence · Brand System v0.1
+        Guardian Intelligence · Brand System
       </p>
       <h1
         className="font-display text-4xl leading-tight md:text-6xl"
@@ -82,17 +67,19 @@ function DesignHeader() {
       </h1>
       <p
         className="max-w-3xl text-base leading-relaxed"
-        style={{ color: "rgba(245,245,245,0.72)" }}
+        style={{ color: "var(--muted-strong)" }}
       >
-        Guardian Intelligence is an American applied intelligence company, based in Seattle.
+        Guardian Intelligence is an American applied intelligence firm, based in Seattle.
         Fraunces carries the voice. Geist carries the work. Geist Mono carries the machine — three
         families, all under the SIL Open Font License, no commercial fee, ever. The system runs on
         three grounds — <b>Iron</b>, <b>Flare</b>, and <b>Paper</b> — one invariant —{" "}
         <b>the wings are always Argent</b> — and two carrier forms that let the wings travel: an
         iron chip on Paper, and a circular ink emboss on Flare. Only Guardian carries the wings;
-        products — <b>Metal</b>, <b>Console</b> — inherit the house and set their own name in Geist.
-        This page specifies the mark, the type, the colour, and how they appear in the surfaces the
-        company actually ships: marketing, editorial, product, and external.
+        Solutions — today there is one, <b>Metal Platform</b> — set their name in Geist under the
+        house. Products inside a Solution — <b>Console</b>, the <b>metal CLI</b>, language{" "}
+        <b>SDKs</b> — never lock up with the wings. This page specifies the mark, the type, the
+        colour, and how they appear in the surfaces the firm actually ships: marketing, editorial,
+        product, and external.
       </p>
     </header>
   );
@@ -115,21 +102,46 @@ function DesignRail() {
     });
   }, [active]);
 
+  const groups = DESIGN_GROUPS.map((group) => (
+    <DesignRailGroup
+      key={group}
+      group={group}
+      sections={DESIGN_SECTIONS.filter((s) => s.group === group)}
+      active={active}
+    />
+  ));
+
   return (
     <nav
       aria-label="Design system sections"
       className="md:sticky md:top-[var(--header-scroll-offset)] md:w-60 md:shrink-0"
     >
-      <div className="flex flex-col gap-1">
-        {DESIGN_GROUPS.map((group) => (
-          <DesignRailGroup
-            key={group}
-            group={group}
-            sections={DESIGN_SECTIONS.filter((s) => s.group === group)}
-            active={active}
-          />
-        ))}
-      </div>
+      {/* On <md the 16-section rail swallows the whole first screen if
+          rendered flat. Collapse into a <details> disclosure (closed by
+          default) so mobile readers see the header + hero immediately and
+          can opt into the rail. The desktop rail is a separate flat render
+          — simpler than forcing open state via CSS at the md: breakpoint. */}
+      <details className="md:hidden">
+        <summary
+          className="mb-4 flex cursor-pointer select-none items-center justify-between rounded-md px-3 py-2"
+          style={{
+            border: "1px solid rgba(245,245,245,0.12)",
+            background: "rgba(245,245,245,0.04)",
+          }}
+        >
+          <span
+            className="font-mono text-[11px] font-medium uppercase tracking-[0.18em]"
+            style={{ color: "var(--muted-faint)" }}
+          >
+            Jump to section
+          </span>
+          <span aria-hidden style={{ color: "var(--muted-faint)" }}>
+            ▾
+          </span>
+        </summary>
+        <div className="flex flex-col gap-1">{groups}</div>
+      </details>
+      <div className="hidden flex-col gap-1 md:flex">{groups}</div>
     </nav>
   );
 }
@@ -147,7 +159,7 @@ function DesignRailGroup({
     <div className="mb-4 flex flex-col">
       <p
         className="mb-1 px-2 font-mono text-[10px] font-medium uppercase tracking-[0.18em]"
-        style={{ color: "rgba(245,245,245,0.4)" }}
+        style={{ color: "var(--muted-faint)" }}
       >
         {group}
       </p>
@@ -181,13 +193,13 @@ function DesignRailLink({ section, isActive }: { section: DesignSection; isActiv
         "data-[active=false]:hover:bg-white/5",
       )}
       style={{
-        color: isActive ? "rgba(245,245,245,0.95)" : "rgba(245,245,245,0.55)",
+        color: isActive ? "rgba(245,245,245,0.95)" : "var(--muted-faint)",
         fontWeight: isActive ? 500 : 400,
       }}
     >
       <span
         className="font-mono text-[10px]"
-        style={{ color: isActive ? "var(--color-flare)" : "rgba(245,245,245,0.35)" }}
+        style={{ color: isActive ? "var(--color-flare)" : "var(--muted-faint)" }}
       >
         {section.number}
       </span>
