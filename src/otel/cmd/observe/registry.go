@@ -45,7 +45,7 @@ var families = []family{
 	{Name: "deploy", Purpose: "Inspect Ansible deploy traces and deploy_run_key-correlated tasks."},
 	{Name: "mail", Purpose: "Inspect inbound and outbound mail events and current mail metrics."},
 	{Name: "workload-identity", Purpose: "Inspect SPIFFE mTLS, JWT-SVID, OpenBao relying-party auth, and SPIRE system logs."},
-	{Name: "temporal", Purpose: "Inspect Temporal auth decisions, proof workflow activity, proof/governance logs, and live Temporal metric inventory."},
+	{Name: "temporal", Purpose: "Inspect Temporal Web requests, Temporal auth decisions, proof workflow activity, service logs, and live Temporal metric inventory."},
 	{Name: "errors", Purpose: "Query normalized recent error signals when actively debugging."},
 }
 
@@ -585,7 +585,7 @@ var queryDocs = []queryDoc{
 		ID:      "temporal.activity",
 		Family:  "temporal",
 		Title:   "Temporal Activity",
-		Purpose: "Show recent Temporal auth spans, proof workflow spans, service logs, and metric catalog rows.",
+		Purpose: "Show recent Temporal Web requests, Temporal auth spans, proof workflow spans, service logs, and metric catalog rows.",
 		Optional: []string{
 			"MINUTES=<lookback>",
 			"LIMIT=<rows>",
@@ -595,6 +595,7 @@ var queryDocs = []queryDoc{
 			"make observe WHAT=temporal",
 		},
 		Next: []string{
+			"make observe WHAT=service SERVICE=temporal-web",
 			"make observe WHAT=describe SERVICE=temporal-server",
 			"make observe WHAT=describe SPAN=temporal.auth.authorize",
 			"make observe WHAT=logs SERVICE=temporal-proof",
