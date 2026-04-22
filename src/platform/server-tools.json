@@ -43,6 +43,13 @@
     "sha256": "7fba909574320d6a656e2e7d7f0657890fefad08a2abecd86c7bafe62d6d9134",
     "extract_binary": "spiffe-helper"
   },
+  "garage": {
+    "version": "v2.3.0",
+    "format": "binary",
+    "url": "https://garagehq.deuxfleurs.fr/_releases/v2.3.0/x86_64-unknown-linux-musl/garage",
+    "sha256": "f98d317942bb341151a2775162016bb50cf86b865d0108de03eb5db16e2120cd",
+    "binary_name": "garage"
+  },
   "forgejo": {
     "version": "14.0.3",
     "format": "binary",

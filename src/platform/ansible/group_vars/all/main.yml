@@ -79,4 +79,10 @@ postgresql_role_connection_limits:
   identity_service: 10
   governance_service: 15
   mailbox_service: 10
+  object_storage_service: 10
   temporal: 80
+
+# Object-storage identities must use fixed UIDs because Garage's nftables
+# rules load before the object-storage role creates the users.
+object_storage_service_uid: 960
+object_storage_admin_uid: 961

@@ -738,7 +738,9 @@ func (s *BaoStore) token(ctx context.Context, principal Principal) (baoTokenEntr
 		if principal.OrgID == "" {
 			return baoTokenEntry{}, fmt.Errorf("%w: org id is required for workload OpenBao login", ErrForbidden)
 		}
-		role = openBaoRoleInjection + "-" + principal.OrgID
+		if role == "" {
+			role = openBaoRoleInjection + "-" + principal.OrgID
+		}
 		if s.workloadJWT == nil || s.workloadJWTAudience == "" {
 			return baoTokenEntry{}, fmt.Errorf("%w: workload JWT-SVID source is not configured", ErrStore)
 		}

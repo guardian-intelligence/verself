@@ -161,6 +161,15 @@
     remote_src: true
     mode: "0755"
 
+# ── Garage ──────────────────────────────────────────────────────────────────
+
+- name: Download Garage binary
+  ansible.builtin.get_url:
+    url: "{{ deploy_profile_server_tools_pins.garage.url }}"
+    dest: "{{ fm_bin }}/garage"
+    checksum: "sha256:{{ deploy_profile_server_tools_pins.garage.sha256 }}"
+    mode: "0755"
+
 # ── Forgejo ──────────────────────────────────────────────────────────────────
 
 - name: Download Forgejo binary

@@ -41,6 +41,8 @@
 #      4250  governance-service
 #      4251  secrets-service
 #      4253  secrets-service internal SPIFFE mTLS
+#      4256  object-storage-service S3 facade
+#      4257  object-storage-service admin
 #
 #    TanStack frontends (Nitro SSR):             4240–4259 (shared block)
 #      4244  rent-a-sandbox
@@ -53,6 +55,10 @@
 #      4301  Temporal Web
 #
 #    Verdaccio (npm mirror):                     4873 (upstream convention)
+#    Garage private endpoints:                   3900–3923
+#      3900/3910/3920  Garage S3
+#      3901/3911/3921  Garage RPC
+#      3903/3913/3923  Garage admin
 #
 #    Electric SQL replicators:                   3010–3019
 #      3010  electric (primary)
@@ -156,6 +162,25 @@ services:
   mailbox_service:
     host: "127.0.0.1"
     port: 4246
+  object_storage_service:
+    host: "127.0.0.1"
+    port: 4256
+    admin_port: 4257
+  garage:
+    host: "127.0.0.1"
+    nodes:
+      - instance: 0
+        s3_port: 3900
+        rpc_port: 3901
+        admin_port: 3903
+      - instance: 1
+        s3_port: 3910
+        rpc_port: 3911
+        admin_port: 3913
+      - instance: 2
+        s3_port: 3920
+        rpc_port: 3921
+        admin_port: 3923
   electric_mail:
     host: "127.0.0.1"
     port: 3011

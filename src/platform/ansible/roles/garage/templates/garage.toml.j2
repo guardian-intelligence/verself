@@ -1,0 +1,28 @@
+replication_factor = 3
+consistency_mode = "consistent"
+
+metadata_dir = "/var/lib/garage-{{ garage_node.instance }}/meta"
+data_dir = "/var/lib/garage-{{ garage_node.instance }}/data"
+metadata_snapshots_dir = "/var/lib/garage-{{ garage_node.instance }}/snapshots"
+metadata_fsync = true
+data_fsync = true
+db_engine = "lmdb"
+block_size = "1M"
+block_ram_buffer_max = "64MiB"
+lmdb_map_size = "10G"
+compression_level = 1
+
+rpc_secret = "{{ garage_rpc_secret }}"
+rpc_bind_addr = "{{ services.garage.host }}:{{ garage_node.rpc_port }}"
+rpc_public_addr = "{{ services.garage.host }}:{{ garage_node.rpc_port }}"
+allow_world_readable_secrets = false
+
+[s3_api]
+api_bind_addr = "{{ services.garage.host }}:{{ garage_node.s3_port }}"
+s3_region = "garage"
+
+[admin]
+api_bind_addr = "{{ services.garage.host }}:{{ garage_node.admin_port }}"
+metrics_token = "{{ garage_metrics_token }}"
+metrics_require_token = true
+admin_token = "{{ garage_admin_token }}"

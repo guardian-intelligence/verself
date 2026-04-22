@@ -1,0 +1,34 @@
+---
+- name: Check if object-storage-service unit exists
+  listen: restart object-storage-service
+  ansible.builtin.stat:
+    path: /etc/systemd/system/object-storage-service.service
+  register: object_storage_service_unit_file
+
+- name: Check if object-storage-admin unit exists
+  listen: restart object-storage-admin
+  ansible.builtin.stat:
+    path: /etc/systemd/system/object-storage-admin.service
+  register: object_storage_admin_unit_file
+
+- name: Restart object-storage-service
+  listen: restart object-storage-service
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: object-storage-service
+    state: restarted
+  when: object_storage_service_unit_file.stat.exists
+
+- name: Restart object-storage-admin
+  listen: restart object-storage-admin
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: object-storage-admin
+    state: restarted
+  when: object_storage_admin_unit_file.stat.exists
+
+- name: Reload nftables for object-storage-service
+  listen: reload nftables
+  ansible.builtin.systemd:
+    name: nftables
+    state: reloaded
