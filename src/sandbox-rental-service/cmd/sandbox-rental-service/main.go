@@ -30,6 +30,7 @@ import (
 	billingclient "github.com/forge-metal/billing-service/client"
 	fmotel "github.com/forge-metal/otel"
 	secretsclient "github.com/forge-metal/secrets-service/client"
+	secretsinternalclient "github.com/forge-metal/secrets-service/internalclient"
 	vmorchestrator "github.com/forge-metal/vm-orchestrator"
 
 	sandboxapi "github.com/forge-metal/sandbox-rental-service/internal/api"
@@ -213,7 +214,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("billing spiffe client: %w", err)
 	}
-	billingClient, err := billingclient.New(billingURL, billingclient.WithHTTPClient(billingHTTPClient))
+	billingClient, err := billingclient.NewClientWithResponses(billingURL, billingclient.WithHTTPClient(billingHTTPClient))
 	if err != nil {
 		return fmt.Errorf("create billing client: %w", err)
 	}
@@ -221,9 +222,13 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("secrets spiffe client: %w", err)
 	}
-	secretsClient, err := secretsclient.New(secretsURL, secretsclient.WithHTTPClient(secretsHTTPClient))
+	secretsClient, err := secretsclient.NewClientWithResponses(secretsURL, secretsclient.WithHTTPClient(secretsHTTPClient))
 	if err != nil {
 		return fmt.Errorf("create secrets client: %w", err)
+	}
+	secretsInternalClient, err := secretsinternalclient.NewClientWithResponses(secretsURL, secretsinternalclient.WithHTTPClient(secretsHTTPClient))
+	if err != nil {
+		return fmt.Errorf("create internal secrets client: %w", err)
 	}
 	governanceAuditClient, err := workloadauth.MTLSClient(spiffeSource, governanceSPIFFEID, http.DefaultTransport)
 	if err != nil {
@@ -242,11 +247,11 @@ func run() error {
 	var githubAppWebhookSecret string
 	var githubAppClientSecret string
 	if githubAppEnabled || githubAppID > 0 || githubAppSlug != "" || githubAppClientID != "" {
-		githubSecrets, err := secretsClient.ResolvePlatformRuntimeSecrets(ctx, []string{
+		githubSecrets, err := readRuntimeSecrets(ctx, secretsClient,
 			secretsclient.SandboxGitHubPrivateKeyName,
 			secretsclient.SandboxGitHubWebhookSecretName,
 			secretsclient.SandboxGitHubClientSecretName,
-		})
+		)
 		if err != nil {
 			return fmt.Errorf("sandbox-rental github provider secret: %w", err)
 		}
@@ -268,7 +273,7 @@ func run() error {
 		Logger:           logger,
 		WorkloadTimeout:  time.Duration(envInt("SANDBOX_WORKLOAD_TIMEOUT_SECONDS", 7200)) * time.Second,
 		CheckoutCacheDir: checkoutCacheDir,
-		Secrets:          jobs.NewSecretsHTTPResolver(secretsURL, secretsHTTPClient),
+		Secrets:          jobs.NewSecretsResolver(secretsInternalClient),
 	}
 	githubRunner, err := jobs.NewGitHubRunner(jobService, jobs.GitHubRunnerConfig{
 		AppID:         githubAppID,
@@ -428,6 +433,26 @@ func requireSecretField(values map[string]string, field string, label string) st
 		os.Exit(1)
 	}
 	return value
+}
+
+func readRuntimeSecrets(ctx context.Context, client *secretsclient.ClientWithResponses, secretNames ...string) (map[string]string, error) {
+	if client == nil {
+		return nil, fmt.Errorf("runtime secrets client is required")
+	}
+	secretCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	values := make(map[string]string, len(secretNames))
+	for _, secretName := range secretNames {
+		resp, err := client.ReadSecretWithResponse(secretCtx, secretName)
+		if err != nil {
+			return nil, fmt.Errorf("read runtime secret %s: %w", secretName, err)
+		}
+		if resp.JSON200 == nil {
+			return nil, fmt.Errorf("read runtime secret %s: unexpected status %d: %s", secretName, resp.StatusCode(), strings.TrimSpace(string(resp.Body)))
+		}
+		values[secretName] = resp.JSON200.Value
+	}
+	return values, nil
 }
 
 // --- env helpers ---

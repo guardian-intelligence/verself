@@ -602,5 +602,29 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Post API v1 buckets by bucket ID mtls principals
+  /api/v1/buckets/{bucket_id}/mtls-principals/{credential_id}:
+    delete:
+      operationId: delete-api-v1-buckets-by-bucket-id-mtls-principals-by-credential-id
+      parameters:
+        - in: path
+          name: bucket_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: credential_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete API v1 buckets by bucket ID mtls principals by credential ID
 servers:
   - url: https://127.0.0.1:4257

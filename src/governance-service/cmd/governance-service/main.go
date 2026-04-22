@@ -163,7 +163,7 @@ func run() error {
 	rootMux.Handle("/", authHandler)
 
 	internalMux := http.NewServeMux()
-	governanceapi.RegisterInternalRoutes(internalMux, svc)
+	governanceapi.NewInternalAPI(internalMux, "1.0.0", "https://"+internalListenAddr, svc)
 
 	handler := http.Handler(rootMux)
 	handler = maxBody(handler, 1<<20)

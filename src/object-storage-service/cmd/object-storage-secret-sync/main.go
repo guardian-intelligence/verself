@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -66,7 +67,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("secrets mTLS client: %w", err)
 	}
-	runtimeClient, err := secretsclient.New(secretsURL, secretsclient.WithHTTPClient(httpClient))
+	runtimeClient, err := secretsclient.NewClientWithResponses(secretsURL, secretsclient.WithHTTPClient(httpClient))
 	if err != nil {
 		return fmt.Errorf("secrets client: %w", err)
 	}
@@ -85,7 +86,7 @@ func run() error {
 	return encoder.Encode(result)
 }
 
-func syncRuntimeSecrets(ctx context.Context, client *secretsclient.RuntimeSecretClient, secretValues map[string]string) (syncResult, error) {
+func syncRuntimeSecrets(ctx context.Context, client *secretsclient.ClientWithResponses, secretValues map[string]string) (syncResult, error) {
 	ctx, span := tracer.Start(ctx, "object_storage.runtime_secret.sync", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
 
@@ -98,10 +99,43 @@ func syncRuntimeSecrets(ctx context.Context, client *secretsclient.RuntimeSecret
 
 	syncCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if err := client.UpsertPlatformRuntimeSecrets(syncCtx, secretValues); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return syncResult{}, fmt.Errorf("sync object-storage runtime secrets: %w", err)
+	scopeLevel := secretsclient.PutSecretBodyScopeLevelOrg
+	kind := secretsclient.PutSecretBodyKindSecret
+	for _, name := range names {
+		desired := secretValues[name]
+		readResp, err := client.ReadSecretWithResponse(syncCtx, name)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return syncResult{}, fmt.Errorf("read runtime secret %s: %w", name, err)
+		}
+		if readResp.JSON200 != nil && readResp.JSON200.Value == desired {
+			continue
+		}
+		if readResp.StatusCode() != http.StatusOK && readResp.StatusCode() != http.StatusNotFound {
+			err := fmt.Errorf("read runtime secret %s: unexpected status %d: %s", name, readResp.StatusCode(), strings.TrimSpace(string(readResp.Body)))
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return syncResult{}, err
+		}
+		putResp, err := client.PutSecretWithResponse(syncCtx, name, &secretsclient.PutSecretParams{
+			IdempotencyKey: runtimeSecretUpsertKey(name, desired),
+		}, secretsclient.PutSecretJSONRequestBody{
+			Kind:       &kind,
+			ScopeLevel: &scopeLevel,
+			Value:      desired,
+		})
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return syncResult{}, fmt.Errorf("write runtime secret %s: %w", name, err)
+		}
+		if putResp.JSON200 == nil {
+			err := fmt.Errorf("write runtime secret %s: unexpected status %d: %s", name, putResp.StatusCode(), strings.TrimSpace(string(putResp.Body)))
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return syncResult{}, err
+		}
 	}
 
 	traceID := ""
@@ -109,6 +143,11 @@ func syncRuntimeSecrets(ctx context.Context, client *secretsclient.RuntimeSecret
 		traceID = sc.TraceID().String()
 	}
 	return syncResult{TraceID: traceID, SecretNames: names}, nil
+}
+
+func runtimeSecretUpsertKey(name string, value string) string {
+	sum := sha256.Sum256([]byte(name + "\x00" + value))
+	return fmt.Sprintf("object-storage-runtime-upsert-%x", sum)
 }
 
 func parseSPIFFEID(raw string) (spiffeid.ID, error) {

@@ -1,0 +1,360 @@
+openapi: 3.0.3
+info:
+    title: Forge Metal Governance Service Internal API
+    version: dev
+servers:
+    - url: https://127.0.0.1:4254
+paths:
+    /internal/v1/audit/events:
+        post:
+            summary: Append governance audit event
+            description: SPIFFE-mTLS internal endpoint for repo-owned services to append governance audit events.
+            operationId: append-audit-event
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AuditRecord'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AppendAuditEventAccepted'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+            security:
+                - mutualTLS: []
+components:
+    schemas:
+        AppendAuditEventAccepted:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - https://127.0.0.1:4254/schemas/AppendAuditEventAccepted.json
+                    readOnly: true
+                event_id:
+                    type: string
+                row_hmac:
+                    type: string
+                sequence:
+                    type: string
+            required:
+                - event_id
+                - sequence
+                - row_hmac
+        AuditRecord:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - https://127.0.0.1:4254/schemas/AuditRecord.json
+                    readOnly: true
+                action:
+                    type: string
+                actor_display:
+                    type: string
+                actor_id:
+                    type: string
+                actor_org_id:
+                    type: string
+                actor_owner_display:
+                    type: string
+                actor_owner_id:
+                    type: string
+                actor_spiffe_id:
+                    type: string
+                actor_type:
+                    type: string
+                after_hash:
+                    type: string
+                artifact_bytes:
+                    type: integer
+                    format: int64
+                    minimum: 0
+                artifact_sha256:
+                    type: string
+                asn:
+                    type: integer
+                    format: int32
+                    minimum: 0
+                asn_org:
+                    type: string
+                audit_event:
+                    type: string
+                auth_assurance_level:
+                    type: string
+                auth_method:
+                    type: string
+                before_hash:
+                    type: string
+                changed_fields:
+                    type: string
+                client_ip:
+                    type: string
+                client_ip_hash:
+                    type: string
+                client_ip_version:
+                    type: string
+                content_sha256:
+                    type: string
+                credential_fingerprint:
+                    type: string
+                credential_id:
+                    type: string
+                credential_name:
+                    type: string
+                data_classification:
+                    type: string
+                decision:
+                    type: string
+                delegation_chain:
+                    type: string
+                denial_reason:
+                    type: string
+                duration_ms:
+                    type: number
+                    format: double
+                environment:
+                    type: string
+                error_class:
+                    type: string
+                error_code:
+                    type: string
+                error_message:
+                    type: string
+                event_category:
+                    type: string
+                geo_city:
+                    type: string
+                geo_country:
+                    type: string
+                geo_region:
+                    type: string
+                geo_source:
+                    type: string
+                geo_source_version:
+                    type: string
+                hmac_key_id:
+                    type: string
+                host:
+                    type: string
+                http_method:
+                    type: string
+                http_status:
+                    type: integer
+                    format: int32
+                    minimum: 0
+                idempotency_key_hash:
+                    type: string
+                ip_chain:
+                    type: string
+                ip_chain_trusted_hops:
+                    type: integer
+                    format: int32
+                    minimum: 0
+                key_id:
+                    type: string
+                lease_id_hash:
+                    type: string
+                lease_ttl_seconds:
+                    type: integer
+                    format: int64
+                    minimum: 0
+                legal_hold:
+                    type: boolean
+                matched_rule:
+                    type: string
+                mfa_present:
+                    type: boolean
+                mtls_subject_hash:
+                    type: string
+                network_type:
+                    type: string
+                openbao_accessor_hash:
+                    type: string
+                openbao_request_id:
+                    type: string
+                operation_display:
+                    type: string
+                operation_id:
+                    type: string
+                operation_type:
+                    type: string
+                org_id:
+                    type: string
+                org_scope:
+                    type: string
+                origin:
+                    type: string
+                parent_span_id:
+                    type: string
+                payload:
+                    type: object
+                    additionalProperties: {}
+                permission:
+                    type: string
+                policy_hash:
+                    type: string
+                policy_id:
+                    type: string
+                policy_version:
+                    type: string
+                rate_limit_class:
+                    type: string
+                recorded_at:
+                    type: string
+                    format: date-time
+                referer_origin:
+                    type: string
+                request_id:
+                    type: string
+                resource_owner_org_id:
+                    type: string
+                resource_region:
+                    type: string
+                result:
+                    type: string
+                retention_class:
+                    type: string
+                risk_level:
+                    type: string
+                route_template:
+                    type: string
+                schema_version:
+                    type: string
+                secret_mount:
+                    type: string
+                secret_operation:
+                    type: string
+                secret_path_hash:
+                    type: string
+                secret_version:
+                    type: integer
+                    format: int64
+                    minimum: 0
+                service_name:
+                    type: string
+                service_version:
+                    type: string
+                session_id_hash:
+                    type: string
+                source_product_area:
+                    type: string
+                span_id:
+                    type: string
+                target_display:
+                    type: string
+                target_id:
+                    type: string
+                target_kind:
+                    type: string
+                target_path_hash:
+                    type: string
+                target_scope:
+                    type: string
+                tls_subject_hash:
+                    type: string
+                trace_id:
+                    type: string
+                trust_class:
+                    type: string
+                user_agent_hash:
+                    type: string
+                user_agent_raw:
+                    type: string
+                writer_instance_id:
+                    type: string
+            required:
+                - org_id
+                - source_product_area
+                - service_name
+                - actor_type
+                - actor_id
+                - operation_id
+                - audit_event
+                - operation_type
+                - event_category
+                - risk_level
+                - target_kind
+                - permission
+                - action
+                - org_scope
+                - result
+        ErrorDetail:
+            type: object
+            additionalProperties: false
+            properties:
+                location:
+                    type: string
+                    description: Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'
+                message:
+                    type: string
+                    description: Error message text
+                value:
+                    description: The value at the given location
+        ErrorModel:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - https://127.0.0.1:4254/schemas/ErrorModel.json
+                    readOnly: true
+                detail:
+                    type: string
+                    description: A human-readable explanation specific to this occurrence of the problem.
+                    examples:
+                        - Property foo is required but is missing.
+                errors:
+                    type: array
+                    description: Optional list of individual error details
+                    items:
+                        $ref: '#/components/schemas/ErrorDetail'
+                instance:
+                    type: string
+                    description: A URI reference that identifies the specific occurrence of the problem.
+                    format: uri
+                    examples:
+                        - https://example.com/error-log/abc123
+                status:
+                    type: integer
+                    description: HTTP status code
+                    format: int64
+                    examples:
+                        - 400
+                    maximum: 599
+                title:
+                    type: string
+                    description: A short, human-readable summary of the problem type. This value should not change between occurrences of the error.
+                    examples:
+                        - Bad Request
+                type:
+                    type: string
+                    description: A URI reference to human-readable documentation for the error.
+                    format: uri
+                    default: about:blank
+                    examples:
+                        - https://example.com/errors/example
+    securitySchemes:
+        mutualTLS:
+            type: mutualTLS
+            description: SPIFFE X.509-SVID mutual TLS on the governance-service internal listener.

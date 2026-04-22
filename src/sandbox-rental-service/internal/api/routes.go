@@ -3,7 +3,9 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -18,8 +20,10 @@ import (
 	"github.com/forge-metal/sandbox-rental-service/internal/recurring"
 )
 
+const billingNoStripeCustomerProblemType = "urn:forge-metal:problem:billing:no-stripe-customer"
+
 // RegisterRoutes wires all sandbox-rental-service endpoints onto the Huma API.
-func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Service, billing *billingclient.ServiceClient, publicConfig PublicAPIConfig) {
+func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Service, billing *billingclient.ClientWithResponses, publicConfig PublicAPIConfig) {
 	registerSecured(api, secured(huma.Operation{
 		OperationID:   "begin-github-installation",
 		Method:        http.MethodPost,
@@ -591,7 +595,7 @@ func submitExecution(svc *jobs.Service) func(context.Context, *SubmitExecutionIn
 				return nil, badRequest(ctx, "runner-class-unavailable", "runner class is not available", err)
 			case errors.Is(err, jobs.ErrInvalidSecretInjection):
 				return nil, badRequest(ctx, "invalid-secret-injection", err.Error(), err)
-			case errors.Is(err, billingclient.ErrPaymentRequired):
+			case errors.Is(err, jobs.ErrBillingPaymentRequired):
 				return nil, paymentRequired(ctx, "insufficient balance")
 			default:
 				return nil, internalFailure(ctx, "submit-execution-failed", "submit execution failed", err)
@@ -916,62 +920,90 @@ func resumeExecutionSchedule(recurringSvc *recurring.Service) func(context.Conte
 	}
 }
 
-func getBillingEntitlements(billing *billingclient.ServiceClient) func(context.Context, *EmptyInput) (*EntitlementsOutput, error) {
+func getBillingEntitlements(billing *billingclient.ClientWithResponses) func(context.Context, *EmptyInput) (*EntitlementsOutput, error) {
 	return func(ctx context.Context, _ *EmptyInput) (*EntitlementsOutput, error) {
 		orgID, err := requireOrgID(ctx)
 		if err != nil {
 			return nil, err
 		}
-		view, err := billing.GetEntitlements(ctx, orgID)
+		resp, err := billing.GetEntitlementsWithResponse(ctx, strconv.FormatUint(orgID, 10))
 		if err != nil {
 			return nil, billingProxyError(ctx, err)
+		}
+		if resp.StatusCode() != http.StatusOK {
+			return nil, billingProxyResponseError(ctx, resp.StatusCode(), resp.Body)
+		}
+		view, err := decodeBillingProxyResponse[apiwire.BillingEntitlementsView](ctx, "decode billing entitlements", resp.Body)
+		if err != nil {
+			return nil, err
 		}
 		return &EntitlementsOutput{Body: view}, nil
 	}
 }
 
-func listBillingContracts(billing *billingclient.ServiceClient) func(context.Context, *EmptyInput) (*ContractsOutput, error) {
+func listBillingContracts(billing *billingclient.ClientWithResponses) func(context.Context, *EmptyInput) (*ContractsOutput, error) {
 	return func(ctx context.Context, _ *EmptyInput) (*ContractsOutput, error) {
 		orgID, err := requireOrgID(ctx)
 		if err != nil {
 			return nil, err
 		}
-		contracts, err := billing.ListContracts(ctx, orgID)
+		resp, err := billing.ListContractsWithResponse(ctx, strconv.FormatUint(orgID, 10))
 		if err != nil {
 			return nil, billingProxyError(ctx, err)
+		}
+		if resp.StatusCode() != http.StatusOK {
+			return nil, billingProxyResponseError(ctx, resp.StatusCode(), resp.Body)
+		}
+		contracts, err := decodeBillingProxyResponse[apiwire.BillingContracts](ctx, "decode billing contracts", resp.Body)
+		if err != nil {
+			return nil, err
 		}
 		return &ContractsOutput{Body: contracts}, nil
 	}
 }
 
-func listBillingPlans(billing *billingclient.ServiceClient) func(context.Context, *EmptyInput) (*PlansOutput, error) {
+func listBillingPlans(billing *billingclient.ClientWithResponses) func(context.Context, *EmptyInput) (*PlansOutput, error) {
 	return func(ctx context.Context, _ *EmptyInput) (*PlansOutput, error) {
 		if _, err := requireOrgID(ctx); err != nil {
 			return nil, err
 		}
-		plans, err := billing.ListPlans(ctx, "sandbox")
+		resp, err := billing.ListPlansWithResponse(ctx, "sandbox")
 		if err != nil {
 			return nil, billingProxyError(ctx, err)
+		}
+		if resp.StatusCode() != http.StatusOK {
+			return nil, billingProxyResponseError(ctx, resp.StatusCode(), resp.Body)
+		}
+		plans, err := decodeBillingProxyResponse[apiwire.BillingPlans](ctx, "decode billing plans", resp.Body)
+		if err != nil {
+			return nil, err
 		}
 		return &PlansOutput{Body: plans}, nil
 	}
 }
 
-func getBillingStatement(billing *billingclient.ServiceClient) func(context.Context, *StatementInput) (*StatementOutput, error) {
+func getBillingStatement(billing *billingclient.ClientWithResponses) func(context.Context, *StatementInput) (*StatementOutput, error) {
 	return func(ctx context.Context, input *StatementInput) (*StatementOutput, error) {
 		orgID, err := requireOrgID(ctx)
 		if err != nil {
 			return nil, err
 		}
-		statement, err := billing.GetStatement(ctx, orgID, input.ProductID)
+		resp, err := billing.GetStatementWithResponse(ctx, strconv.FormatUint(orgID, 10), &billingclient.GetStatementParams{ProductId: input.ProductID})
 		if err != nil {
 			return nil, billingProxyError(ctx, err)
+		}
+		if resp.StatusCode() != http.StatusOK {
+			return nil, billingProxyResponseError(ctx, resp.StatusCode(), resp.Body)
+		}
+		statement, err := decodeBillingProxyResponse[apiwire.BillingStatement](ctx, "decode billing statement", resp.Body)
+		if err != nil {
+			return nil, err
 		}
 		return &StatementOutput{Body: statement}, nil
 	}
 }
 
-func createBillingCheckout(billing *billingclient.ServiceClient, billingReturnOrigins []string) func(context.Context, *CheckoutInput) (*URLOutput, error) {
+func createBillingCheckout(billing *billingclient.ClientWithResponses, billingReturnOrigins []string) func(context.Context, *CheckoutInput) (*URLOutput, error) {
 	return func(ctx context.Context, input *CheckoutInput) (*URLOutput, error) {
 		orgID, err := requireOrgID(ctx)
 		if err != nil {
@@ -983,17 +1015,30 @@ func createBillingCheckout(billing *billingclient.ServiceClient, billingReturnOr
 		); err != nil {
 			return nil, err
 		}
-		url, err := billing.CreateCheckout(ctx, orgID, input.Body.ProductID, input.Body.AmountCents, input.Body.SuccessURL, input.Body.CancelURL)
+		resp, err := billing.CreateCheckoutWithResponse(ctx, billingclient.BillingCreateCheckoutRequest{
+			AmountCents: input.Body.AmountCents,
+			CancelUrl:   input.Body.CancelURL,
+			OrgId:       strconv.FormatUint(orgID, 10),
+			ProductId:   input.Body.ProductID,
+			SuccessUrl:  input.Body.SuccessURL,
+		})
 		if err != nil {
 			return nil, billingProxyError(ctx, err)
 		}
+		if resp.StatusCode() != http.StatusOK {
+			return nil, billingProxyResponseError(ctx, resp.StatusCode(), resp.Body)
+		}
+		url, err := decodeBillingProxyResponse[apiwire.BillingURLResponse](ctx, "decode billing checkout response", resp.Body)
+		if err != nil {
+			return nil, err
+		}
 		out := &URLOutput{}
-		out.Body = apiwire.BillingURLResponse{URL: url}
+		out.Body = url
 		return out, nil
 	}
 }
 
-func createBillingContract(billing *billingclient.ServiceClient, billingReturnOrigins []string) func(context.Context, *ContractInput) (*URLOutput, error) {
+func createBillingContract(billing *billingclient.ClientWithResponses, billingReturnOrigins []string) func(context.Context, *ContractInput) (*URLOutput, error) {
 	return func(ctx context.Context, input *ContractInput) (*URLOutput, error) {
 		orgID, err := requireOrgID(ctx)
 		if err != nil {
@@ -1005,17 +1050,34 @@ func createBillingContract(billing *billingclient.ServiceClient, billingReturnOr
 		); err != nil {
 			return nil, err
 		}
-		url, err := billing.CreateContract(ctx, orgID, input.Body.PlanID, input.Body.Cadence, input.Body.SuccessURL, input.Body.CancelURL)
+		req := billingclient.BillingCreateContractRequest{
+			CancelUrl:  input.Body.CancelURL,
+			OrgId:      strconv.FormatUint(orgID, 10),
+			PlanId:     input.Body.PlanID,
+			SuccessUrl: input.Body.SuccessURL,
+		}
+		if input.Body.Cadence != "" {
+			cadence := billingclient.BillingCreateContractRequestCadence(input.Body.Cadence)
+			req.Cadence = &cadence
+		}
+		resp, err := billing.CreateContractWithResponse(ctx, req)
 		if err != nil {
 			return nil, billingProxyError(ctx, err)
 		}
+		if resp.StatusCode() != http.StatusOK {
+			return nil, billingProxyResponseError(ctx, resp.StatusCode(), resp.Body)
+		}
+		url, err := decodeBillingProxyResponse[apiwire.BillingURLResponse](ctx, "decode billing contract response", resp.Body)
+		if err != nil {
+			return nil, err
+		}
 		out := &URLOutput{}
-		out.Body = apiwire.BillingURLResponse{URL: url}
+		out.Body = url
 		return out, nil
 	}
 }
 
-func createBillingContractChange(billing *billingclient.ServiceClient, billingReturnOrigins []string) func(context.Context, *ContractChangeInput) (*URLOutput, error) {
+func createBillingContractChange(billing *billingclient.ClientWithResponses, billingReturnOrigins []string) func(context.Context, *ContractChangeInput) (*URLOutput, error) {
 	return func(ctx context.Context, input *ContractChangeInput) (*URLOutput, error) {
 		orgID, err := requireOrgID(ctx)
 		if err != nil {
@@ -1030,9 +1092,21 @@ func createBillingContractChange(billing *billingclient.ServiceClient, billingRe
 		); err != nil {
 			return nil, err
 		}
-		result, err := billing.CreateContractChange(ctx, orgID, input.ContractID, input.Body.TargetPlanID, input.Body.SuccessURL, input.Body.CancelURL)
+		resp, err := billing.CreateContractChangeWithResponse(ctx, input.ContractID, billingclient.BillingCreateContractChangeRequest{
+			CancelUrl:    input.Body.CancelURL,
+			OrgId:        strconv.FormatUint(orgID, 10),
+			SuccessUrl:   input.Body.SuccessURL,
+			TargetPlanId: input.Body.TargetPlanID,
+		})
 		if err != nil {
 			return nil, billingProxyError(ctx, err)
+		}
+		if resp.StatusCode() != http.StatusOK {
+			return nil, billingContractProxyResponseError(ctx, resp.StatusCode(), resp.Body)
+		}
+		result, err := decodeBillingProxyResponse[apiwire.BillingContractChangeResponse](ctx, "decode billing contract change response", resp.Body)
+		if err != nil {
+			return nil, err
 		}
 		out := &URLOutput{}
 		out.Body = apiwire.BillingURLResponse{URL: result.URL}
@@ -1040,7 +1114,7 @@ func createBillingContractChange(billing *billingclient.ServiceClient, billingRe
 	}
 }
 
-func cancelBillingContract(billing *billingclient.ServiceClient) func(context.Context, *ContractIDPath) (*CancelContractOutput, error) {
+func cancelBillingContract(billing *billingclient.ClientWithResponses) func(context.Context, *ContractIDPath) (*CancelContractOutput, error) {
 	return func(ctx context.Context, input *ContractIDPath) (*CancelContractOutput, error) {
 		orgID, err := requireOrgID(ctx)
 		if err != nil {
@@ -1049,15 +1123,24 @@ func cancelBillingContract(billing *billingclient.ServiceClient) func(context.Co
 		if input.ContractID == "" {
 			return nil, badRequest(ctx, "invalid-contract-id", "contract_id is required", nil)
 		}
-		contract, err := billing.CancelContract(ctx, orgID, input.ContractID)
+		resp, err := billing.CancelContractWithResponse(ctx, input.ContractID, billingclient.BillingCancelContractRequest{
+			OrgId: strconv.FormatUint(orgID, 10),
+		})
 		if err != nil {
 			return nil, billingProxyError(ctx, err)
+		}
+		if resp.StatusCode() != http.StatusOK {
+			return nil, billingContractProxyResponseError(ctx, resp.StatusCode(), resp.Body)
+		}
+		contract, err := decodeBillingProxyResponse[apiwire.BillingCancelContractResponse](ctx, "decode billing cancel response", resp.Body)
+		if err != nil {
+			return nil, err
 		}
 		return &CancelContractOutput{Body: contract}, nil
 	}
 }
 
-func createBillingPortal(billing *billingclient.ServiceClient, billingReturnOrigins []string) func(context.Context, *PortalInput) (*URLOutput, error) {
+func createBillingPortal(billing *billingclient.ClientWithResponses, billingReturnOrigins []string) func(context.Context, *PortalInput) (*URLOutput, error) {
 	return func(ctx context.Context, input *PortalInput) (*URLOutput, error) {
 		orgID, err := requireOrgID(ctx)
 		if err != nil {
@@ -1068,22 +1151,74 @@ func createBillingPortal(billing *billingclient.ServiceClient, billingReturnOrig
 		); err != nil {
 			return nil, err
 		}
-		url, err := billing.CreatePortalSession(ctx, orgID, input.Body.ReturnURL)
+		resp, err := billing.CreatePortalWithResponse(ctx, billingclient.BillingCreatePortalSessionRequest{
+			OrgId:     strconv.FormatUint(orgID, 10),
+			ReturnUrl: input.Body.ReturnURL,
+		})
 		if err != nil {
 			return nil, billingProxyError(ctx, err)
 		}
+		if resp.StatusCode() != http.StatusOK {
+			return nil, billingPortalProxyResponseError(ctx, resp.StatusCode(), resp.Body)
+		}
+		url, err := decodeBillingProxyResponse[apiwire.BillingURLResponse](ctx, "decode billing portal response", resp.Body)
+		if err != nil {
+			return nil, err
+		}
 		out := &URLOutput{}
-		out.Body = apiwire.BillingURLResponse{URL: url}
+		out.Body = url
 		return out, nil
 	}
 }
 
 func billingProxyError(ctx context.Context, err error) error {
-	if errors.Is(err, billingclient.ErrNoStripeCustomer) {
-		return unprocessableEntity(ctx, "billing-no-stripe-customer", "billing portal requires an existing Stripe customer", err)
-	}
-	if errors.Is(err, billingclient.ErrContractNotFound) {
+	return upstreamFailure(ctx, "billing-service-unavailable", "billing service unavailable", err)
+}
+
+func billingProxyResponseError(ctx context.Context, statusCode int, body []byte) error {
+	return upstreamFailure(ctx, "billing-service-unavailable", "billing service unavailable", billingUnexpectedStatusError(statusCode, body))
+}
+
+func billingContractProxyResponseError(ctx context.Context, statusCode int, body []byte) error {
+	if statusCode == http.StatusNotFound {
 		return notFound(ctx, "billing-contract-not-found", "billing contract not found")
 	}
-	return upstreamFailure(ctx, "billing-service-unavailable", "billing service unavailable", err)
+	return billingProxyResponseError(ctx, statusCode, body)
+}
+
+func billingPortalProxyResponseError(ctx context.Context, statusCode int, body []byte) error {
+	if statusCode == http.StatusUnprocessableEntity {
+		problem := decodeBillingProblem(body)
+		if problem != nil && problem.Type != nil && *problem.Type == billingNoStripeCustomerProblemType {
+			return unprocessableEntity(ctx, "billing-no-stripe-customer", "billing portal requires an existing Stripe customer", nil)
+		}
+	}
+	return billingProxyResponseError(ctx, statusCode, body)
+}
+
+func decodeBillingProxyResponse[T any](ctx context.Context, op string, body []byte) (T, error) {
+	var out T
+	if err := json.Unmarshal(body, &out); err != nil {
+		return out, upstreamFailure(ctx, "billing-service-unavailable", "billing service unavailable", fmt.Errorf("%s: %w", op, err))
+	}
+	return out, nil
+}
+
+func decodeBillingProblem(body []byte) *billingclient.ErrorModel {
+	if len(body) == 0 {
+		return nil
+	}
+	var problem billingclient.ErrorModel
+	if err := json.Unmarshal(body, &problem); err != nil {
+		return nil
+	}
+	return &problem
+}
+
+func billingUnexpectedStatusError(statusCode int, body []byte) error {
+	problem := decodeBillingProblem(body)
+	if problem != nil && problem.Detail != nil && *problem.Detail != "" {
+		return errors.New(*problem.Detail)
+	}
+	return errors.New(http.StatusText(statusCode))
 }

@@ -11,11 +11,12 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	governanceinternalclient "github.com/forge-metal/governance-service/internalclient"
 )
 
 type auditSinkConfig struct {
-	URL    string
-	Client *http.Client
+	Client *governanceinternalclient.ClientWithResponses
 }
 
 var configuredAuditSink atomic.Pointer[auditSinkConfig]
@@ -25,9 +26,13 @@ func ConfigureAuditSink(url string, client *http.Client) {
 	if url == "" || client == nil {
 		return
 	}
+	sinkClient, err := governanceinternalclient.NewClientWithResponses(url, governanceinternalclient.WithHTTPClient(client))
+	if err != nil {
+		slog.Default().Error("sandbox governance audit client init failed", "error", err)
+		return
+	}
 	configuredAuditSink.Store(&auditSinkConfig{
-		URL:    url,
-		Client: client,
+		Client: sinkClient,
 	})
 }
 
@@ -91,20 +96,13 @@ func sendGovernanceAudit(ctx context.Context, record governanceAuditRecord) {
 	}
 	reqCtx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, sink.URL, bytes.NewReader(body))
-	if err != nil {
-		slog.Default().ErrorContext(ctx, "sandbox governance audit request failed", "error", err)
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := sink.Client.Do(req)
+	resp, err := sink.Client.AppendAuditEventWithBodyWithResponse(reqCtx, "application/json", bytes.NewReader(body))
 	if err != nil {
 		slog.Default().ErrorContext(ctx, "sandbox governance audit send failed", "error", err)
 		return
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		slog.Default().ErrorContext(ctx, "sandbox governance audit rejected", "status", resp.StatusCode)
+	if resp.StatusCode() < 200 || resp.StatusCode() >= 300 {
+		slog.Default().ErrorContext(ctx, "sandbox governance audit rejected", "status", resp.StatusCode())
 	}
 }
 

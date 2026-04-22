@@ -10,7 +10,7 @@ require (
 	github.com/forge-metal/secrets-service v0.0.0
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/oapi-codegen/runtime v1.4.0
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.60.0
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
 )

@@ -10,6 +10,7 @@ require (
 	github.com/forge-metal/otel v0.0.0
 	github.com/forge-metal/secrets-service v0.0.0
 	github.com/jackc/pgx/v5 v5.9.1
+	github.com/oapi-codegen/runtime v1.4.0
 	github.com/riverqueue/river v0.34.0
 	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.34.0
 	github.com/riverqueue/river/rivertype v0.34.0
@@ -17,7 +18,7 @@ require (
 	github.com/spiffe/go-spiffe/v2 v2.6.0
 	github.com/stripe/stripe-go/v85 v85.0.0
 	github.com/tigerbeetle/tigerbeetle-go v0.16.78
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.60.0
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
 )
@@ -26,6 +27,7 @@ require (
 	github.com/ClickHouse/ch-go v0.63.1 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/andybalholm/brotli v1.2.0 // indirect
+	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
