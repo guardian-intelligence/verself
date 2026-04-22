@@ -1,0 +1,16 @@
+---
+- name: Restart garage instances
+  listen: restart garage instances
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: "garage@{{ item.instance }}"
+    state: restarted
+  loop: "{{ services.garage.nodes }}"
+  loop_control:
+    label: "garage@{{ item.instance }}"
+
+- name: Reload nftables for garage
+  listen: reload nftables
+  ansible.builtin.systemd:
+    name: nftables
+    state: reloaded

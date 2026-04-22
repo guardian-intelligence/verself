@@ -97,6 +97,63 @@
     GOARCH: amd64
   changed_when: false
 
+- name: Build object-storage-service binary
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.command:
+    argv:
+      - go
+      - build
+      - -ldflags=-s -w -X main.version={{ forge_metal_version | default('dev') }}
+      - -o
+      - "{{ deploy_profile_repo_root }}/src/object-storage-service/object-storage-service"
+      - ./src/object-storage-service/cmd/object-storage-service
+    chdir: "{{ deploy_profile_repo_root }}"
+  environment:
+    CGO_ENABLED: "0"
+    GOOS: linux
+    GOARCH: amd64
+  changed_when: false
+
+- name: Build object-storage-proof binary
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.command:
+    argv:
+      - go
+      - build
+      - -ldflags=-s -w -X main.version={{ forge_metal_version | default('dev') }}
+      - -o
+      - "{{ deploy_profile_repo_root }}/src/object-storage-service/object-storage-proof"
+      - ./src/object-storage-service/cmd/object-storage-proof
+    chdir: "{{ deploy_profile_repo_root }}"
+  environment:
+    CGO_ENABLED: "0"
+    GOOS: linux
+    GOARCH: amd64
+  changed_when: false
+
+- name: Build object-storage-secret-sync binary
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.command:
+    argv:
+      - go
+      - build
+      - -ldflags=-s -w -X main.version={{ forge_metal_version | default('dev') }}
+      - -o
+      - "{{ deploy_profile_repo_root }}/src/object-storage-service/object-storage-secret-sync"
+      - ./src/object-storage-service/cmd/object-storage-secret-sync
+    chdir: "{{ deploy_profile_repo_root }}"
+  environment:
+    CGO_ENABLED: "0"
+    GOOS: linux
+    GOARCH: amd64
+  changed_when: false
+
 - name: Build identity-service binary
   delegate_to: localhost
   become: false
@@ -264,6 +321,9 @@
     - { src: "{{ deploy_profile_repo_root }}/src/identity-service/identity-service", name: identity-service }
     - { src: "{{ deploy_profile_repo_root }}/src/governance-service/governance-service", name: governance-service }
     - { src: "{{ deploy_profile_repo_root }}/src/secrets-service/secrets-service", name: secrets-service }
+    - { src: "{{ deploy_profile_repo_root }}/src/object-storage-service/object-storage-service", name: object-storage-service }
+    - { src: "{{ deploy_profile_repo_root }}/src/object-storage-service/object-storage-proof", name: object-storage-proof }
+    - { src: "{{ deploy_profile_repo_root }}/src/object-storage-service/object-storage-secret-sync", name: object-storage-secret-sync }
     - { src: "{{ deploy_profile_repo_root }}/src/temporal-platform/forge-temporal-server", name: forge-temporal-server }
     - { src: "{{ deploy_profile_repo_root }}/src/temporal-platform/forge-temporal-web", name: forge-temporal-web }
     - { src: "{{ deploy_profile_repo_root }}/src/temporal-platform/temporal-proof", name: temporal-proof }
@@ -337,6 +397,25 @@
   ansible.builtin.command: /bin/true
   changed_when: deploy_profile_mailbox_service_binary_copy.changed | default(false)
   notify: deploy-profile restart mailbox-service
+
+- name: Set object-storage-service binary copy fact
+  ansible.builtin.set_fact:
+    deploy_profile_object_storage_service_binary_copy: >-
+      {{
+        (
+          deploy_profile_go_binary_copy_results.results
+          | selectattr('item.name', 'equalto', 'object-storage-service')
+          | list
+          | first
+        ) | default({})
+      }}
+
+- name: Trigger object-storage-service restart when binary changed
+  ansible.builtin.command: /bin/true
+  changed_when: deploy_profile_object_storage_service_binary_copy.changed | default(false)
+  notify:
+    - deploy-profile restart object-storage-admin
+    - deploy-profile restart object-storage-service
 
 - name: Set identity-service binary copy fact
   ansible.builtin.set_fact:

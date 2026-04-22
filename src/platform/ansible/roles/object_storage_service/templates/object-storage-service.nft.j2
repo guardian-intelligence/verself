@@ -1,0 +1,29 @@
+#!/usr/sbin/nft -f
+
+table inet forge_metal_object_storage_service
+delete table inet forge_metal_object_storage_service
+
+table inet forge_metal_object_storage_service {
+    chain input {
+        type filter hook input priority filter; policy accept;
+
+        tcp dport {{ services.object_storage_service.port }} iifname != "lo" drop
+    }
+
+    chain output {
+        type filter hook output priority filter; policy accept;
+
+        ct state established,related accept
+        meta skuid != object_storage_service accept
+
+        oifname "lo" tcp dport {{ services.object_storage_service.port }} accept
+        oifname "lo" tcp dport {{ services.postgresql.port }} accept
+        oifname "lo" tcp dport {{ services.clickhouse.secure_native_port }} accept
+        oifname "lo" tcp dport {{ services.secrets_service.internal_port }} accept
+        oifname "lo" tcp dport {{ services.otelcol.grpc_port }} accept
+        oifname "lo" tcp dport { {% for node in services.garage.nodes %}{{ node.s3_port }}{% if not loop.last %}, {% endif %}{% endfor %} } accept
+        meta l4proto != tcp meta l4proto != udp accept
+
+        drop
+    }
+}

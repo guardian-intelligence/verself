@@ -1,0 +1,358 @@
+---
+- name: Verify garage binary exists in profile
+  ansible.builtin.stat:
+    path: "{{ fm_bin }}/garage"
+  register: garage_binary
+  failed_when: not garage_binary.stat.exists
+
+- name: Create garage system group
+  ansible.builtin.group:
+    name: garage
+    system: true
+
+- name: Create garage system user
+  ansible.builtin.user:
+    name: garage
+    group: garage
+    append: false
+    system: true
+    shell: /usr/sbin/nologin
+    home: /var/lib/garage-0
+    create_home: false
+
+- name: Create garage configuration directory
+  ansible.builtin.file:
+    path: /etc/garage
+    state: directory
+    owner: root
+    group: garage
+    mode: "0750"
+
+- name: Create garage instance directories
+  ansible.builtin.file:
+    path: "{{ item.0 }}"
+    state: directory
+    owner: garage
+    group: garage
+    mode: "{{ item.1 }}"
+  loop: >-
+    {{
+      [
+        ['/var/lib/garage-0', '0750'],
+        ['/var/lib/garage-0/data', '0750'],
+        ['/var/lib/garage-0/meta', '0750'],
+        ['/var/lib/garage-0/snapshots', '0750'],
+        ['/var/lib/garage-1', '0750'],
+        ['/var/lib/garage-1/data', '0750'],
+        ['/var/lib/garage-1/meta', '0750'],
+        ['/var/lib/garage-1/snapshots', '0750'],
+        ['/var/lib/garage-2', '0750'],
+        ['/var/lib/garage-2/data', '0750'],
+        ['/var/lib/garage-2/meta', '0750'],
+        ['/var/lib/garage-2/snapshots', '0750']
+      ]
+    }}
+
+- name: Check garage secret files
+  ansible.builtin.stat:
+    path: "/etc/garage/{{ item }}"
+  loop:
+    - rpc-secret
+    - admin-token
+    - metrics-token
+  register: garage_secret_files
+  no_log: true
+
+- name: Generate missing garage secret files
+  ansible.builtin.copy:
+    content: >-
+      {{
+        lookup(
+          'password',
+          '/dev/null length=64 chars=' ~
+          (item.item == 'rpc-secret' | ternary('hexdigits', 'ascii_letters,digits'))
+        ) | trim | lower
+      }}
+    dest: "/etc/garage/{{ item.item }}"
+    owner: root
+    group: garage
+    mode: "0640"
+  loop: "{{ garage_secret_files.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: not item.stat.exists
+  no_log: true
+
+- name: Converge garage secret ownership
+  ansible.builtin.file:
+    path: "/etc/garage/{{ item }}"
+    owner: root
+    group: garage
+    mode: "0640"
+  loop:
+    - rpc-secret
+    - admin-token
+    - metrics-token
+
+- name: Read garage RPC secret
+  ansible.builtin.slurp:
+    src: /etc/garage/rpc-secret
+  register: garage_rpc_secret_raw
+  no_log: true
+
+- name: Regenerate invalid garage RPC secret format
+  ansible.builtin.copy:
+    content: "{{ lookup('password', '/dev/null length=64 chars=hexdigits') | trim | lower }}"
+    dest: /etc/garage/rpc-secret
+    owner: root
+    group: garage
+    mode: "0640"
+  when: not ((garage_rpc_secret_raw.content | b64decode | trim) is match('^[0-9a-f]{64}$'))
+  no_log: true
+
+- name: Re-read garage RPC secret after format repair
+  ansible.builtin.slurp:
+    src: /etc/garage/rpc-secret
+  register: garage_rpc_secret_raw
+  no_log: true
+
+- name: Read garage admin token
+  ansible.builtin.slurp:
+    src: /etc/garage/admin-token
+  register: garage_admin_token_raw
+  no_log: true
+
+- name: Read garage metrics token
+  ansible.builtin.slurp:
+    src: /etc/garage/metrics-token
+  register: garage_metrics_token_raw
+  no_log: true
+
+- name: Set garage secret facts
+  ansible.builtin.set_fact:
+    garage_rpc_secret: "{{ garage_rpc_secret_raw.content | b64decode | trim }}"
+    garage_admin_token: "{{ garage_admin_token_raw.content | b64decode | trim }}"
+    garage_metrics_token: "{{ garage_metrics_token_raw.content | b64decode | trim }}"
+  no_log: true
+
+- name: Deploy garage nftables ruleset
+  ansible.builtin.template:
+    src: garage.nft.j2
+    dest: /etc/nftables.d/garage.nft
+    mode: "0644"
+  notify: reload nftables
+
+- name: Apply garage nftables before proceeding
+  ansible.builtin.meta: flush_handlers
+
+- name: Deploy garage instance configs
+  ansible.builtin.template:
+    src: garage.toml.j2
+    dest: "/etc/garage/garage-{{ garage_node.instance }}.toml"
+    owner: root
+    group: garage
+    mode: "0640"
+  loop: "{{ services.garage.nodes }}"
+  loop_control:
+    loop_var: garage_node
+    label: "garage-{{ garage_node.instance }}"
+  notify: restart garage instances
+
+- name: Deploy garage systemd template
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/garage@.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Garage instance %i
+      After=forge-metal-firewall.target network.target
+      Requires=forge-metal-firewall.target
+
+      [Service]
+      Type=simple
+      User=garage
+      Group=garage
+      ExecStart={{ fm_bin }}/garage -c /etc/garage/garage-%i.toml server
+      Restart=on-failure
+      RestartSec=5
+      LimitNOFILE=65536
+      ProtectSystem=strict
+      ProtectHome=true
+      ProtectKernelTunables=true
+      ProtectKernelModules=true
+      ProtectControlGroups=true
+      LockPersonality=true
+      NoNewPrivileges=true
+      RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+      RestrictNamespaces=true
+      PrivateTmp=true
+      ReadWritePaths=/var/lib/garage-%i
+      UMask=0077
+
+      [Install]
+      WantedBy=multi-user.target
+  notify: restart garage instances
+
+- name: Apply garage unit changes before proceeding
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start garage instances
+  ansible.builtin.systemd:
+    name: "garage@{{ item.instance }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop: "{{ services.garage.nodes }}"
+  loop_control:
+    label: "garage@{{ item.instance }}"
+
+- name: Wait for garage admin ports
+  ansible.builtin.wait_for:
+    host: "{{ services.garage.host }}"
+    port: "{{ item.admin_port }}"
+    timeout: 30
+  loop: "{{ services.garage.nodes }}"
+  loop_control:
+    label: "{{ services.garage.host }}:{{ item.admin_port }}"
+
+- name: Bootstrap garage cluster and layout
+  ansible.builtin.command:
+    cmd: python3 -
+    stdin: |
+      import json
+      import pathlib
+      import os
+      import subprocess
+      import sys
+      import time
+      import urllib.request
+
+      host = os.environ["GARAGE_HOST"]
+      garage_bin = os.environ["GARAGE_BIN"]
+      nodes = json.loads(os.environ["GARAGE_NODES"])
+      capacity = int(os.environ["GARAGE_CAPACITY_BYTES"])
+      zone_redundancy = int(os.environ["GARAGE_ZONE_REDUNDANCY"])
+      admin_port = int(nodes[0]["admin_port"])
+      rpc_secret_path = pathlib.Path("/etc/garage/rpc-secret")
+      admin_token = pathlib.Path("/etc/garage/admin-token").read_text(encoding="utf-8").strip()
+      changed = False
+
+      def request(path):
+          data = None
+          headers = {"Authorization": "Bearer " + admin_token}
+          req = urllib.request.Request(f"http://{host}:{admin_port}{path}", data=data, headers=headers, method="GET")
+          with urllib.request.urlopen(req, timeout=5) as response:
+              payload = response.read()
+              if not payload:
+                  return None
+              return json.loads(payload.decode())
+
+      def cli(*args):
+          cmd = ["sudo", "-u", "garage", garage_bin, *args]
+          completed = subprocess.run(cmd, check=True, text=True, capture_output=True)
+          return completed.stdout.strip()
+
+      def garage_node_id(node):
+          completed = subprocess.run(
+              [garage_bin, "-c", f"/etc/garage/garage-{node['instance']}.toml", "node", "id", "-q"],
+              check=True,
+              text=True,
+              capture_output=True,
+          )
+          full_id = completed.stdout.strip()
+          node_id, node_addr = full_id.split("@", 1)
+          return {"id": node_id, "addr": node_addr, "full": full_id}
+
+      node_info = [garage_node_id(node) for node in nodes]
+      rpc_host = node_info[0]["full"]
+      desired_roles = sorted(
+          [
+              {
+                  "capacity": capacity,
+                  "id": info["id"],
+                  "tags": sorted([f"garage-{node['instance']}", "single-node"]),
+                  "zone": f"garage-{node['instance']}",
+              }
+              for info, node in zip(node_info, nodes)
+          ],
+          key=lambda item: item["id"],
+      )
+      desired_parameters = {"zoneRedundancy": {"atLeast": zone_redundancy}}
+
+      status = request("/v2/GetClusterStatus")
+      by_addr = {entry.get("addr"): entry for entry in status["nodes"]}
+      for info in node_info[1:]:
+          if info["addr"] not in by_addr:
+              cli("-h", rpc_host, "--rpc-secret-file", str(rpc_secret_path), "node", "connect", info["full"])
+              changed = True
+
+      deadline = time.time() + 30
+      while True:
+          status = request("/v2/GetClusterStatus")
+          by_addr = {entry.get("addr"): entry for entry in status["nodes"]}
+          if all(by_addr.get(info["addr"], {}).get("isUp") for info in node_info):
+              break
+          if time.time() >= deadline:
+              raise SystemExit(f"garage cluster did not converge: {status}")
+          time.sleep(1)
+
+      layout = request("/v2/GetClusterLayout")
+      current_roles = sorted(
+          [{"id": role["id"], "zone": role["zone"], "capacity": role.get("capacity"), "tags": sorted(role.get("tags", []))} for role in layout["roles"]],
+          key=lambda item: item["id"],
+      )
+      if current_roles == desired_roles and layout.get("parameters") == desired_parameters and not layout.get("stagedRoleChanges") and not layout.get("stagedParameters"):
+          print(json.dumps({"changed": False, "version": layout["version"], "roles": current_roles}))
+          raise SystemExit(0)
+
+      cli("-h", rpc_host, "--rpc-secret-file", str(rpc_secret_path), "layout", "revert")
+      changed = True
+
+      desired_ids = {role["id"] for role in desired_roles}
+      for role in current_roles:
+          if role["id"] not in desired_ids:
+              cli("-h", rpc_host, "--rpc-secret-file", str(rpc_secret_path), "layout", "remove", role["id"])
+
+      cli("-h", rpc_host, "--rpc-secret-file", str(rpc_secret_path), "layout", "config", "--redundancy", str(zone_redundancy))
+      for role in desired_roles:
+          args = [
+              "-h",
+              rpc_host,
+              "--rpc-secret-file",
+              str(rpc_secret_path),
+              "layout",
+              "assign",
+              role["id"],
+              "--zone",
+              role["zone"],
+              "--capacity",
+              str(role["capacity"]),
+          ]
+          for tag in role["tags"]:
+              args.extend(["--tag", tag])
+          cli(*args)
+
+      layout = request("/v2/GetClusterLayout")
+      cli("-h", rpc_host, "--rpc-secret-file", str(rpc_secret_path), "layout", "apply", "--version", str(layout["version"] + 1))
+
+      deadline = time.time() + 30
+      while True:
+          current = request("/v2/GetClusterLayout")
+          current_roles = sorted(
+              [{"id": role["id"], "zone": role["zone"], "capacity": role.get("capacity"), "tags": sorted(role.get("tags", []))} for role in current["roles"]],
+              key=lambda item: item["id"],
+          )
+          if current_roles == desired_roles and current.get("parameters") == desired_parameters and not current.get("stagedRoleChanges") and not current.get("stagedParameters"):
+              print(json.dumps({"changed": changed, "version": current["version"], "roles": current_roles}))
+              break
+          if time.time() >= deadline:
+              raise SystemExit(f"garage layout did not settle: {current}")
+          time.sleep(1)
+  environment:
+    GARAGE_HOST: "{{ services.garage.host }}"
+    GARAGE_BIN: "{{ fm_bin }}/garage"
+    GARAGE_NODES: "{{ services.garage.nodes | to_json }}"
+    GARAGE_CAPACITY_BYTES: "{{ garage_capacity_bytes | string }}"
+    GARAGE_ZONE_REDUNDANCY: "{{ garage_zone_redundancy | string }}"
+  register: garage_bootstrap
+  changed_when: "(garage_bootstrap.stdout | from_json).changed"

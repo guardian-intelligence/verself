@@ -77,6 +77,14 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	objectStorageSPIFFEID, err := workloadauth.ParseID(requireEnv("SECRETS_OBJECT_STORAGE_SPIFFE_ID"))
+	if err != nil {
+		return err
+	}
+	objectStorageAdminSPIFFEID, err := workloadauth.ParseID(requireEnv("SECRETS_OBJECT_STORAGE_ADMIN_SPIFFE_ID"))
+	if err != nil {
+		return err
+	}
 	governanceSPIFFEID, err := workloadauth.ParseID(requireEnv("SECRETS_GOVERNANCE_SPIFFE_ID"))
 	if err != nil {
 		return err
@@ -144,7 +152,7 @@ func run() error {
 		return fmt.Errorf("governance spiffe client: %w", err)
 	}
 	secretsapi.ConfigureAuditSink(governanceAuditURL, governanceAuditClient)
-	internalPeerIDs := []spiffeid.ID{sandboxSPIFFEID, billingSPIFFEID, mailboxSPIFFEID}
+	internalPeerIDs := []spiffeid.ID{sandboxSPIFFEID, billingSPIFFEID, mailboxSPIFFEID, objectStorageSPIFFEID, objectStorageAdminSPIFFEID}
 	internalTLSConfig, err := workloadauth.MTLSServerConfigForAny(spiffeSource, internalPeerIDs...)
 	if err != nil {
 		return fmt.Errorf("spiffe internal tls: %w", err)
@@ -203,6 +211,32 @@ func run() error {
 				SecretNames: []string{
 					secretsclient.MailboxResendAPIKeyName,
 					secretsclient.MailboxStalwartAdminPasswordName,
+				},
+			},
+			{
+				PeerID:         objectStorageSPIFFEID,
+				CredentialName: "object-storage-service",
+				SecretNames: []string{
+					secretsclient.ObjectStorageGarageProxyAccessKeyIDName,
+					secretsclient.ObjectStorageGarageProxySecretAccessKeyName,
+				},
+			},
+			{
+				PeerID:         objectStorageAdminSPIFFEID,
+				CredentialName: "object-storage-admin",
+				SecretNames: []string{
+					secretsclient.ObjectStorageGarageProxyAccessKeyIDName,
+					secretsclient.ObjectStorageGarageProxySecretAccessKeyName,
+				},
+			},
+		},
+		RuntimeSecretWritePolicies: []secretsapi.RuntimeSecretPolicy{
+			{
+				PeerID:         objectStorageAdminSPIFFEID,
+				CredentialName: "object-storage-admin",
+				SecretNames: []string{
+					secretsclient.ObjectStorageGarageProxyAccessKeyIDName,
+					secretsclient.ObjectStorageGarageProxySecretAccessKeyName,
 				},
 			},
 		},

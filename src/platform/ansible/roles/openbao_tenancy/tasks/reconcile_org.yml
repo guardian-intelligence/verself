@@ -23,6 +23,9 @@
     openbao_tenancy_spiffe_injection_role_url: >-
       https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/auth/{{
       openbao_spiffe_jwt_mount }}/role/secrets-injection-{{ openbao_tenancy_org.id }}
+    openbao_tenancy_spiffe_runtime_write_role_url: >-
+      https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/auth/{{
+      openbao_spiffe_jwt_mount }}/role/secrets-runtime-write-{{ openbao_tenancy_org.id }}
 
 - name: Render OpenBao tenancy policy documents
   ansible.builtin.set_fact:
@@ -306,6 +309,56 @@
     or (
       ((openbao_tenancy_spiffe_injection_role_read.json.data | default({})).token_policies | default([]) | sort)
       != ([openbao_tenancy_injection_policy] | sort)
+    )
+  no_log: true
+
+- name: Read OpenBao SPIFFE workload runtime-write role for organization
+  ansible.builtin.uri:
+    url: "{{ openbao_tenancy_spiffe_runtime_write_role_url }}"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ openbao_tenancy_root_token }}"
+    validate_certs: false
+    status_code: [200, 404]
+    return_content: true
+  register: openbao_tenancy_spiffe_runtime_write_role_read
+  changed_when: false
+  no_log: true
+
+- name: Write OpenBao SPIFFE workload runtime-write role for organization
+  ansible.builtin.uri:
+    url: "{{ openbao_tenancy_spiffe_runtime_write_role_url }}"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_tenancy_root_token }}"
+    body_format: json
+    body:
+      role_type: jwt
+      bound_audiences:
+        - openbao
+      user_claim: sub
+      bound_claims:
+        sub: "{{ spire_secrets_service_id }}"
+      token_policies:
+        - "{{ openbao_tenancy_secret_read_policy }}"
+        - "{{ openbao_tenancy_secret_write_policy }}"
+      token_ttl: "{{ openbao_tenancy_token_ttl }}"
+      token_max_ttl: "{{ openbao_tenancy_token_max_ttl }}"
+      token_no_default_policy: true
+      token_num_uses: 0
+    validate_certs: false
+    status_code: 204
+  register: openbao_tenancy_spiffe_runtime_write_role_write
+  changed_when: true
+  when: >-
+    openbao_tenancy_spiffe_runtime_write_role_read.status == 404
+    or (
+      ((openbao_tenancy_spiffe_runtime_write_role_read.json.data | default({})).bound_claims | default({})).sub
+      | default('')
+    ) != spire_secrets_service_id
+    or (
+      ((openbao_tenancy_spiffe_runtime_write_role_read.json.data | default({})).token_policies | default([]) | sort)
+      != ([openbao_tenancy_secret_read_policy, openbao_tenancy_secret_write_policy] | sort)
     )
   no_log: true
 

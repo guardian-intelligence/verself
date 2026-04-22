@@ -82,21 +82,23 @@
   force_handlers: true
   roles:
     - role: deploy_profile
-      tags: [deploy_profile]
+      tags: [deploy_profile, object_storage_service]
     - role: base
       tags: [base]
     - role: nftables
       tags: [nftables]
     - role: spire
-      tags: [spire, clickhouse, otelcol, billing_service, identity_service, governance_service, secrets_service, sandbox_rental_service, mailbox_service, temporal, grafana]
+      tags: [spire, clickhouse, otelcol, billing_service, identity_service, governance_service, secrets_service, sandbox_rental_service, mailbox_service, object_storage_service, temporal, grafana]
+    - role: garage
+      tags: [garage, object_storage_service]
     - role: cloudflare_dns
       tags: [cloudflare_dns]
     - role: clickhouse
-      tags: [clickhouse, otelcol, billing_service, sandbox_rental_service, governance_service, openbao, openbao_tenancy, temporal, grafana]
+      tags: [clickhouse, otelcol, billing_service, sandbox_rental_service, governance_service, object_storage_service, openbao, openbao_tenancy, temporal, grafana]
     - role: tigerbeetle
       tags: [tigerbeetle]
     - role: postgresql
-      tags: [postgresql, openbao, openbao_tenancy, temporal]
+      tags: [postgresql, object_storage_service, openbao, openbao_tenancy, temporal]
     - role: zitadel
       tags: [zitadel, openbao, openbao_tenancy]
     - role: openbao
@@ -104,11 +106,13 @@
     - role: identity_service
       tags: [identity_service]
     - role: governance_service
-      tags: [governance_service, openbao, openbao_tenancy, temporal]
+      tags: [governance_service, object_storage_service, openbao, openbao_tenancy, temporal]
     - role: secrets_service
-      tags: [secrets_service, openbao_tenancy]
+      tags: [secrets_service, object_storage_service, openbao_tenancy]
     - role: openbao_tenancy
-      tags: [openbao_tenancy]
+      tags: [openbao_tenancy, object_storage_service]
+    - role: object_storage_service
+      tags: [object_storage_service]
     - role: billing_service
       tags: [billing_service]
     # sandbox-rental-service now owns a Temporal namespace and recurring worker,

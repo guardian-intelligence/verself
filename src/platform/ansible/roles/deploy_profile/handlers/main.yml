@@ -69,6 +69,34 @@
     state: restarted
   when: deploy_profile_mailbox_service_unit_file.stat.exists
 
+- name: Check if object-storage-service unit exists for deploy profile restart
+  listen: deploy-profile restart object-storage-service
+  ansible.builtin.stat:
+    path: /etc/systemd/system/object-storage-service.service
+  register: deploy_profile_object_storage_service_unit_file
+
+- name: Check if object-storage-admin unit exists for deploy profile restart
+  listen: deploy-profile restart object-storage-admin
+  ansible.builtin.stat:
+    path: /etc/systemd/system/object-storage-admin.service
+  register: deploy_profile_object_storage_admin_unit_file
+
+- name: Restart object-storage-service from deploy profile
+  listen: deploy-profile restart object-storage-service
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: object-storage-service
+    state: restarted
+  when: deploy_profile_object_storage_service_unit_file.stat.exists
+
+- name: Restart object-storage-admin from deploy profile
+  listen: deploy-profile restart object-storage-admin
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: object-storage-admin
+    state: restarted
+  when: deploy_profile_object_storage_admin_unit_file.stat.exists
+
 - name: Check if sandbox-rental-service unit exists for deploy profile restart
   listen: deploy-profile restart sandbox-rental-service
   ansible.builtin.stat:
