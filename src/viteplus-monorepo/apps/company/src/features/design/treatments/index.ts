@@ -15,4 +15,9 @@ export {
 export type { MarkCarrierRow, LockupLadderRow, MastheadLadderRow } from "./mark-specimen";
 
 export { TreatmentSignature, SignatureStatusBadge } from "./signature";
-export type { TreatmentSignatureProps, SignatureAccent, SignatureMarkVariant } from "./signature";
+export type {
+  TreatmentSignatureProps,
+  SignatureAccent,
+  SignatureMarkVariant,
+  SignatureVariant,
+} from "./signature";
