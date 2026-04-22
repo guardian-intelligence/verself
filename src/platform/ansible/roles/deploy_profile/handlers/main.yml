@@ -96,3 +96,17 @@
     name: temporal-server
     state: restarted
   when: deploy_profile_temporal_server_unit_file.stat.exists
+
+- name: Check if temporal-web unit exists for deploy profile restart
+  listen: deploy-profile restart temporal-web
+  ansible.builtin.stat:
+    path: /etc/systemd/system/temporal-web.service
+  register: deploy_profile_temporal_web_unit_file
+
+- name: Restart temporal-web from deploy profile
+  listen: deploy-profile restart temporal-web
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: temporal-web
+    state: restarted
+  when: deploy_profile_temporal_web_unit_file.stat.exists

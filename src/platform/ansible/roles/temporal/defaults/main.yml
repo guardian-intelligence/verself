@@ -1,14 +1,20 @@
 ---
 temporal_system_user: temporal_server
 temporal_system_group: temporal_server
+temporal_web_user: temporal_web
+temporal_web_group: temporal_web
 temporal_proof_user: temporal_proof
 temporal_proof_group: temporal_proof
 
 temporal_config_dir: /etc/temporal
 temporal_state_dir: /var/lib/temporal
+temporal_web_config_dir: /etc/temporal-web
+temporal_web_state_dir: /var/lib/temporal-web
 temporal_proof_state_dir: /var/lib/temporal-proof
 temporal_config_path: "{{ temporal_config_dir }}/config.yaml"
 temporal_dynamic_config_path: "{{ temporal_config_dir }}/dynamicconfig.yaml"
+temporal_web_config_path: "{{ temporal_web_config_dir }}/base.yaml"
+temporal_web_credstore_dir: /etc/credstore/temporal-web
 
 temporal_postgresql_user: temporal
 temporal_postgresql_database: temporal
@@ -23,3 +29,18 @@ temporal_visibility_schema_name: postgresql/v12/visibility
 temporal_proof_namespace: temporal-proof
 temporal_denied_namespace: temporal-denied
 temporal_proof_governance_url: "https://{{ services.governance_service.host }}:{{ services.governance_service.internal_port }}/internal/v1/audit/events"
+
+temporal_web_subdomain: temporal
+temporal_web_domain: "{{ temporal_web_subdomain }}.{{ forge_metal_domain }}"
+temporal_web_default_namespace: "{{ temporal_proof_namespace }}"
+temporal_web_disable_write_actions: true
+temporal_web_oidc_scopes:
+  - openid
+  - profile
+  - email
+  - offline_access
+temporal_web_oidc_max_session_duration: 8h
+temporal_web_auth_project_name: temporal-web
+temporal_web_auth_app_name: temporal-web
+temporal_web_oidc_redirect_uri: "https://{{ temporal_web_domain }}/auth/sso/callback"
+temporal_web_oidc_post_logout_redirect_uri: "https://{{ temporal_web_domain }}/"

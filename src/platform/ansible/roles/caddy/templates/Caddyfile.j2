@@ -97,6 +97,12 @@
 	reverse_proxy {{ services.grafana.host }}:{{ services.grafana.port }}
 }
 
+{{ temporal_web_domain }} {
+	import access_log
+	import waf_detection
+	reverse_proxy {{ services.temporal_web.host }}:{{ services.temporal_web.port }}
+}
+
 {{ forgejo_domain }} {
 	import access_log
 	import waf_detection

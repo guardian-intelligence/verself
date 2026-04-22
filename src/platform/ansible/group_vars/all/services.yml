@@ -50,6 +50,7 @@
 #
 #    Grafana & ops UIs:                          4300–4399
 #      4300  Grafana
+#      4301  Temporal Web
 #
 #    Verdaccio (npm mirror):                     4873 (upstream convention)
 #
@@ -88,6 +89,9 @@ services:
   grafana:
     host: "127.0.0.1"
     port: 4300
+  temporal_web:
+    host: "127.0.0.1"
+    port: 4301
   verdaccio:
     host: "127.0.0.1"
     listen_host: "0.0.0.0"

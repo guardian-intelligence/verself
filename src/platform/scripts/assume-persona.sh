@@ -341,6 +341,11 @@ else
   printf 'source %q\n' "${output_path}" >&2
   verification_wait_for_loopback_api "identity-service" "http://127.0.0.1:4248/readyz" 200
   identity_access_json="$(identity_api_get "/api/v1/organization" "${project_tokens[identity-service]}")"
-  identity_operations_json="$(identity_api_get "/api/v1/organization/operations" "${project_tokens[identity-service]}")"
+  if ! identity_operations_json="$(
+    identity_api_get "/api/v1/organization/operations" "${project_tokens[identity-service]}" 2>/dev/null
+  )"; then
+    printf 'WARNING: identity-service operation catalog endpoint unavailable; continuing with empty operations metadata\n' >&2
+    identity_operations_json='{"services":[]}'
+  fi
   identity_metadata_json "${persona}" "${identity_access_json}" "${identity_operations_json}"
 fi
