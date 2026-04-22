@@ -268,13 +268,6 @@
       LoadCredential=openbao-ca-cert:/etc/openbao/tls/cert.pem
       Environment=SECRETS_LISTEN_ADDR={{ services.secrets_service.host }}:{{ services.secrets_service.port }}
       Environment=SECRETS_INTERNAL_LISTEN_ADDR={{ services.secrets_service.host }}:{{ services.secrets_service.internal_port }}
-      Environment=SECRETS_SPIFFE_ID={{ spire_secrets_service_id }}
-      Environment=SECRETS_SANDBOX_SPIFFE_ID={{ spire_sandbox_rental_id }}
-      Environment=SECRETS_BILLING_SPIFFE_ID={{ spire_billing_service_id }}
-      Environment=SECRETS_MAILBOX_SPIFFE_ID={{ spire_mailbox_service_id }}
-      Environment=SECRETS_OBJECT_STORAGE_ADMIN_SPIFFE_ID={{ spire_object_storage_admin_id }}
-      Environment=SECRETS_OBJECT_STORAGE_SPIFFE_ID={{ spire_object_storage_service_id }}
-      Environment=SECRETS_GOVERNANCE_SPIFFE_ID={{ spire_governance_service_id }}
       Environment=SECRETS_PLATFORM_ORG_ID={{ secrets_service_platform_org_id }}
       Environment=SECRETS_GOVERNANCE_AUDIT_URL={{ secrets_service_governance_audit_url }}
       Environment=SECRETS_AUTH_ISSUER_URL={{ secrets_service_auth_issuer_url }}

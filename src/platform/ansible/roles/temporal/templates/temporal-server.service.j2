@@ -21,8 +21,6 @@ Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ services.otelcol.host }}:{{ se
 Environment=OTEL_EXPORTER_OTLP_INSECURE=true
 Environment=OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=grpc
 Environment=FM_TEMPORAL_CONFIG_PATH={{ temporal_config_path }}
-Environment=FM_TEMPORAL_SERVER_SPIFFE_ID={{ spire_temporal_server_id }}
-Environment=FM_TEMPORAL_FRONTEND_CLIENT_IDS={{ temporal_frontend_client_spiffe_ids | join(',') }}
 Environment=FM_TEMPORAL_SYSTEM_ADMIN_IDS={{ spire_temporal_server_id }}
 Environment=FM_TEMPORAL_SYSTEM_READER_IDS={{ spire_temporal_web_id }}
 Environment=FM_TEMPORAL_NAMESPACE_ROLES={{ namespace_roles_env }}

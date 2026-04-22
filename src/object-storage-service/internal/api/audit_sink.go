@@ -6,13 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"strings"
 	"sync/atomic"
 	"time"
 
+	workloadauth "github.com/forge-metal/auth-middleware/workload"
 	governanceinternalclient "github.com/forge-metal/governance-service/internalclient"
 	"github.com/forge-metal/object-storage-service/internal/objectstorage"
+	"github.com/spiffe/go-spiffe/v2/workloadapi"
 )
 
 type auditSinkConfig struct {
@@ -21,12 +22,17 @@ type auditSinkConfig struct {
 
 var configuredAuditSink atomic.Pointer[auditSinkConfig]
 
-func ConfigureAuditSink(url string, client *http.Client) {
+func ConfigureAuditSink(url string, source *workloadapi.X509Source) {
 	url = strings.TrimSpace(url)
-	if url == "" || client == nil {
+	if url == "" || source == nil {
 		return
 	}
-	sinkClient, err := governanceinternalclient.NewClientWithResponses(url, governanceinternalclient.WithHTTPClient(client))
+	httpClient, err := workloadauth.MTLSClientForService(source, workloadauth.ServiceGovernance, nil)
+	if err != nil {
+		slog.Default().Error("object-storage governance audit mtls client init failed", "error", err)
+		return
+	}
+	sinkClient, err := governanceinternalclient.NewClientWithResponses(url, governanceinternalclient.WithHTTPClient(httpClient))
 	if err != nil {
 		slog.Default().Error("object-storage governance audit client init failed", "error", err)
 		return

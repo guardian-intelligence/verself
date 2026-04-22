@@ -7,6 +7,7 @@ require (
 	github.com/forge-metal/apiwire v0.0.0
 	github.com/forge-metal/auth-middleware v0.0.0
 	github.com/forge-metal/billing-service v0.0.0
+	github.com/forge-metal/governance-service v0.0.0
 	github.com/forge-metal/otel v0.0.0
 	github.com/google/uuid v1.6.0
 	github.com/oapi-codegen/runtime v1.4.0
@@ -54,5 +55,7 @@ replace github.com/forge-metal/apiwire => ../apiwire
 replace github.com/forge-metal/auth-middleware => ../auth-middleware
 
 replace github.com/forge-metal/billing-service => ../billing-service
+
+replace github.com/forge-metal/governance-service => ../governance-service
 
 replace github.com/forge-metal/otel => ../otel

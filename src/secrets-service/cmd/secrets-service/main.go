@@ -21,6 +21,7 @@ import (
 	secretsapi "github.com/forge-metal/secrets-service/internal/api"
 	"github.com/forge-metal/secrets-service/internal/secrets"
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
+	"github.com/spiffe/go-spiffe/v2/workloadapi"
 )
 
 const (
@@ -60,34 +61,6 @@ func run() error {
 	openBaoAddr := requireEnv("SECRETS_OPENBAO_ADDR")
 	openBaoCACert := credentialPath("openbao-ca-cert")
 	billingURL := requireEnv("SECRETS_BILLING_URL")
-	secretsSPIFFEID, err := workloadauth.ParseID(requireEnv("SECRETS_SPIFFE_ID"))
-	if err != nil {
-		return err
-	}
-	sandboxSPIFFEID, err := workloadauth.ParseID(requireEnv("SECRETS_SANDBOX_SPIFFE_ID"))
-	if err != nil {
-		return err
-	}
-	billingSPIFFEID, err := workloadauth.ParseID(requireEnv("SECRETS_BILLING_SPIFFE_ID"))
-	if err != nil {
-		return err
-	}
-	mailboxSPIFFEID, err := workloadauth.ParseID(requireEnv("SECRETS_MAILBOX_SPIFFE_ID"))
-	if err != nil {
-		return err
-	}
-	objectStorageSPIFFEID, err := workloadauth.ParseID(requireEnv("SECRETS_OBJECT_STORAGE_SPIFFE_ID"))
-	if err != nil {
-		return err
-	}
-	objectStorageAdminSPIFFEID, err := workloadauth.ParseID(requireEnv("SECRETS_OBJECT_STORAGE_ADMIN_SPIFFE_ID"))
-	if err != nil {
-		return err
-	}
-	governanceSPIFFEID, err := workloadauth.ParseID(requireEnv("SECRETS_GOVERNANCE_SPIFFE_ID"))
-	if err != nil {
-		return err
-	}
 	platformOrgID := requireEnv("SECRETS_PLATFORM_ORG_ID")
 	spiffeSource, err := workloadauth.Source(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
 	if err != nil {
@@ -107,6 +80,50 @@ func run() error {
 			logger.ErrorContext(context.Background(), "secrets-service spiffe jwt source close", "error", err)
 		}
 	}()
+	secretsSPIFFEID, err := workloadauth.CurrentIDForService(spiffeSource, workloadauth.ServiceSecrets)
+	if err != nil {
+		return err
+	}
+	sandboxSPIFFEID, err := workloadauth.PeerIDForSource(spiffeSource, workloadauth.ServiceSandboxRental)
+	if err != nil {
+		return err
+	}
+	runtimeSecretPolicies, err := buildRuntimeSecretPolicies(spiffeSource, []runtimeSecretPolicySpec{
+		{Service: workloadauth.ServiceBilling, SecretNames: []string{
+			secretsclient.BillingStripeSecretKeyName,
+			secretsclient.BillingStripeWebhookSecretName,
+		}},
+		{Service: workloadauth.ServiceSandboxRental, SecretNames: []string{
+			secretsclient.SandboxGitHubPrivateKeyName,
+			secretsclient.SandboxGitHubWebhookSecretName,
+			secretsclient.SandboxGitHubClientSecretName,
+		}},
+		{Service: workloadauth.ServiceMailbox, SecretNames: []string{
+			secretsclient.MailboxResendAPIKeyName,
+			secretsclient.MailboxStalwartAdminPasswordName,
+		}},
+		{Service: workloadauth.ServiceObjectStorage, SecretNames: []string{
+			secretsclient.ObjectStorageGarageProxyAccessKeyIDName,
+			secretsclient.ObjectStorageGarageProxySecretAccessKeyName,
+		}},
+		{Service: workloadauth.ServiceObjectStorageAdmin, SecretNames: []string{
+			secretsclient.ObjectStorageGarageProxyAccessKeyIDName,
+			secretsclient.ObjectStorageGarageProxySecretAccessKeyName,
+		}},
+	})
+	if err != nil {
+		return err
+	}
+	runtimeSecretWritePolicies, err := buildRuntimeSecretPolicies(spiffeSource, []runtimeSecretPolicySpec{
+		{Service: workloadauth.ServiceObjectStorageAdmin, SecretNames: []string{
+			secretsclient.ObjectStorageGarageProxyAccessKeyIDName,
+			secretsclient.ObjectStorageGarageProxySecretAccessKeyName,
+		}},
+	})
+	if err != nil {
+		return err
+	}
+	internalPeerIDs := runtimeSecretPeerIDs(sandboxSPIFFEID, runtimeSecretPolicies, runtimeSecretWritePolicies)
 
 	store, err := secrets.NewBaoStore(ctx, secrets.BaoStoreConfig{
 		Address:       openBaoAddr,
@@ -124,14 +141,11 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("openbao store: %w", err)
 	}
-	billingHTTPClient, err := workloadauth.MTLSClient(spiffeSource, billingSPIFFEID, http.DefaultTransport)
+	billingHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceBilling, nil)
 	if err != nil {
-		return fmt.Errorf("billing spiffe client: %w", err)
+		return fmt.Errorf("secrets billing mtls: %w", err)
 	}
-	billingClient, err := billingclient.NewClientWithResponses(
-		billingURL,
-		billingclient.WithHTTPClient(billingHTTPClient),
-	)
+	billingClient, err := billingclient.NewClientWithResponses(billingURL, billingclient.WithHTTPClient(billingHTTPClient))
 	if err != nil {
 		return fmt.Errorf("billing client: %w", err)
 	}
@@ -146,16 +160,7 @@ func run() error {
 	if err := svc.Ready(ctx); err != nil {
 		return fmt.Errorf("secrets readiness: %w", err)
 	}
-	governanceAuditClient, err := workloadauth.MTLSClient(spiffeSource, governanceSPIFFEID, http.DefaultTransport)
-	if err != nil {
-		return fmt.Errorf("governance spiffe client: %w", err)
-	}
-	secretsapi.ConfigureAuditSink(governanceAuditURL, governanceAuditClient)
-	internalPeerIDs := []spiffeid.ID{sandboxSPIFFEID, billingSPIFFEID, mailboxSPIFFEID, objectStorageSPIFFEID, objectStorageAdminSPIFFEID}
-	internalTLSConfig, err := workloadauth.MTLSServerConfigForAny(spiffeSource, internalPeerIDs...)
-	if err != nil {
-		return fmt.Errorf("spiffe internal tls: %w", err)
-	}
+	secretsapi.ConfigureAuditSink(governanceAuditURL, spiffeSource)
 
 	rootMux := http.NewServeMux()
 	rootMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -183,63 +188,20 @@ func run() error {
 	rootMux.Handle("/", protected)
 	internalMux := http.NewServeMux()
 	if err := secretsapi.RegisterInternalRoutes(internalMux, svc, secretsapi.InternalRoutesConfig{
-		SandboxPeerID: sandboxSPIFFEID,
-		PlatformOrgID: platformOrgID,
-		RuntimeSecretPolicies: []secretsapi.RuntimeSecretPolicy{
-			{
-				PeerID:         billingSPIFFEID,
-				CredentialName: "billing-service",
-				SecretNames: []string{
-					secretsclient.BillingStripeSecretKeyName,
-					secretsclient.BillingStripeWebhookSecretName,
-				},
-			},
-			{
-				PeerID:         sandboxSPIFFEID,
-				CredentialName: "sandbox-rental-service",
-				SecretNames: []string{
-					secretsclient.SandboxGitHubPrivateKeyName,
-					secretsclient.SandboxGitHubWebhookSecretName,
-					secretsclient.SandboxGitHubClientSecretName,
-				},
-			},
-			{
-				PeerID:         mailboxSPIFFEID,
-				CredentialName: "mailbox-service",
-				SecretNames: []string{
-					secretsclient.MailboxResendAPIKeyName,
-					secretsclient.MailboxStalwartAdminPasswordName,
-				},
-			},
-			{
-				PeerID:         objectStorageSPIFFEID,
-				CredentialName: "object-storage-service",
-				SecretNames: []string{
-					secretsclient.ObjectStorageGarageProxyAccessKeyIDName,
-					secretsclient.ObjectStorageGarageProxySecretAccessKeyName,
-				},
-			},
-			{
-				PeerID:         objectStorageAdminSPIFFEID,
-				CredentialName: "object-storage-admin",
-				SecretNames: []string{
-					secretsclient.ObjectStorageGarageProxyAccessKeyIDName,
-					secretsclient.ObjectStorageGarageProxySecretAccessKeyName,
-				},
-			},
-		},
-		RuntimeSecretWritePolicies: []secretsapi.RuntimeSecretPolicy{
-			{
-				PeerID:         objectStorageAdminSPIFFEID,
-				CredentialName: "object-storage-admin",
-				SecretNames: []string{
-					secretsclient.ObjectStorageGarageProxyAccessKeyIDName,
-					secretsclient.ObjectStorageGarageProxySecretAccessKeyName,
-				},
-			},
-		},
+		SandboxPeerID:              sandboxSPIFFEID,
+		PlatformOrgID:              platformOrgID,
+		RuntimeSecretPolicies:      runtimeSecretPolicies,
+		RuntimeSecretWritePolicies: runtimeSecretWritePolicies,
 	}); err != nil {
 		return fmt.Errorf("register secrets internal routes: %w", err)
+	}
+	internalTLSConfig, err := workloadauth.MTLSServerConfigForAny(spiffeSource, internalPeerIDs...)
+	if err != nil {
+		return fmt.Errorf("spiffe internal tls: %w", err)
+	}
+	internalAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(internalPeerIDs, internalMux)
+	if err != nil {
+		return fmt.Errorf("secrets internal allowlist: %w", err)
 	}
 
 	server := &http.Server{
@@ -253,7 +215,7 @@ func run() error {
 	}
 	internalServer := &http.Server{
 		Addr:              internalListenAddr,
-		Handler:           otelhttp.NewHandler(limitRequestBodies(workloadauth.ServerPeerAllowlistMiddleware(internalPeerIDs, internalMux), requestBodyLimit), serviceName+"-internal"),
+		Handler:           otelhttp.NewHandler(limitRequestBodies(internalAllowlist, requestBodyLimit), serviceName+"-internal"),
 		TLSConfig:         internalTLSConfig,
 		ReadHeaderTimeout: 2 * time.Second,
 		ReadTimeout:       5 * time.Second,
@@ -343,14 +305,6 @@ func envOr(name, fallback string) string {
 	return value
 }
 
-func requireCredential(name string) string {
-	value := credentialOr(name, "")
-	if value == "" {
-		panic("missing required credential " + name)
-	}
-	return value
-}
-
 func credentialPath(name string) string {
 	base := os.Getenv("CREDENTIALS_DIRECTORY")
 	if base == "" {
@@ -363,14 +317,45 @@ func credentialPath(name string) string {
 	return path
 }
 
-func credentialOr(name, fallback string) string {
-	base := os.Getenv("CREDENTIALS_DIRECTORY")
-	if base == "" {
-		return fallback
+type runtimeSecretPolicySpec struct {
+	Service     string
+	SecretNames []string
+}
+
+func buildRuntimeSecretPolicies(source *workloadapi.X509Source, specs []runtimeSecretPolicySpec) ([]secretsapi.RuntimeSecretPolicy, error) {
+	policies := make([]secretsapi.RuntimeSecretPolicy, 0, len(specs))
+	for _, spec := range specs {
+		peerID, err := workloadauth.PeerIDForSource(source, spec.Service)
+		if err != nil {
+			return nil, err
+		}
+		policies = append(policies, secretsapi.RuntimeSecretPolicy{
+			PeerID:         peerID,
+			CredentialName: spec.Service,
+			SecretNames:    append([]string(nil), spec.SecretNames...),
+		})
 	}
-	data, err := os.ReadFile(filepath.Join(base, name))
-	if err != nil {
-		return fallback
+	return policies, nil
+}
+
+func runtimeSecretPeerIDs(sandbox spiffeid.ID, policySets ...[]secretsapi.RuntimeSecretPolicy) []spiffeid.ID {
+	ids := make([]spiffeid.ID, 0)
+	seen := map[spiffeid.ID]struct{}{}
+	if !sandbox.IsZero() {
+		ids = append(ids, sandbox)
+		seen[sandbox] = struct{}{}
 	}
-	return strings.TrimSpace(string(data))
+	for _, policySet := range policySets {
+		for _, policy := range policySet {
+			if policy.PeerID.IsZero() {
+				continue
+			}
+			if _, ok := seen[policy.PeerID]; ok {
+				continue
+			}
+			seen[policy.PeerID] = struct{}{}
+			ids = append(ids, policy.PeerID)
+		}
+	}
+	return ids
 }

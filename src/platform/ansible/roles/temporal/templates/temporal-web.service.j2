@@ -18,8 +18,6 @@ Environment=OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=grpc
 Environment=FM_TEMPORAL_WEB_CONFIG_DIR={{ temporal_web_config_dir }}
 Environment=FM_TEMPORAL_WEB_CONFIG_ENV=production
 Environment=FM_TEMPORAL_FRONTEND_ADDRESS={{ services.temporal.host }}:{{ services.temporal.grpc_port }}
-Environment=FM_TEMPORAL_SERVER_SPIFFE_ID={{ spire_temporal_server_id }}
-Environment=FM_TEMPORAL_WEB_SPIFFE_ID={{ spire_temporal_web_id }}
 WorkingDirectory={{ temporal_web_state_dir }}
 ExecStart={{ fm_bin }}/forge-temporal-web
 Restart=on-failure

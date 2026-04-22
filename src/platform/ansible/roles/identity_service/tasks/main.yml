@@ -305,7 +305,6 @@
       Environment=IDENTITY_LISTEN_ADDR={{ services.identity_service.host }}:{{ services.identity_service.port }}
       Environment=IDENTITY_PG_DSN=postgres://identity_service@/identity_service?host=/var/run/postgresql&sslmode=disable
       Environment=IDENTITY_GOVERNANCE_AUDIT_URL={{ identity_service_governance_audit_url }}
-      Environment=IDENTITY_GOVERNANCE_SPIFFE_ID={{ spire_governance_service_id }}
       Environment=IDENTITY_AUTH_ISSUER_URL={{ identity_service_auth_issuer_url }}
       Environment=IDENTITY_AUTH_JWKS_URL={{ identity_service_auth_jwks_url }}
       Environment=IDENTITY_AUTH_AUDIENCE={{ identity_service_auth_audience }}

@@ -245,7 +245,6 @@
       Environment=OBJECT_STORAGE_CH_ADDRESS={{ services.clickhouse.host }}:{{ services.clickhouse.secure_native_port }}
       Environment=OBJECT_STORAGE_CH_USER=object_storage_service
       Environment=OBJECT_STORAGE_SECRETS_URL=https://{{ services.secrets_service.host }}:{{ services.secrets_service.internal_port }}
-      Environment=OBJECT_STORAGE_SECRETS_SPIFFE_ID={{ spire_secrets_service_id }}
       Environment=OBJECT_STORAGE_GARAGE_S3_URLS={{ object_storage_garage_s3_urls }}
       Environment=OBJECT_STORAGE_GARAGE_REGION=garage
       Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}
@@ -295,8 +294,6 @@
       Environment=OBJECT_STORAGE_GARAGE_ADMIN_URLS={{ object_storage_garage_admin_urls }}
       Environment=OBJECT_STORAGE_GARAGE_REGION=garage
       Environment=OBJECT_STORAGE_GOVERNANCE_AUDIT_URL=https://{{ services.governance_service.host }}:{{ services.governance_service.internal_port }}
-      Environment=OBJECT_STORAGE_GOVERNANCE_SPIFFE_ID={{ spire_governance_service_id }}
-      Environment=OBJECT_STORAGE_ADMIN_CLIENT_SPIFFE_IDS={{ spire_object_storage_admin_id }}
       Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}
       Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}
       ExecStart={{ fm_bin }}/object-storage-service

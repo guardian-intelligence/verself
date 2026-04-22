@@ -7,11 +7,9 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	fmotel "github.com/forge-metal/otel"
-	"github.com/spiffe/go-spiffe/v2/spiffeid"
 
 	"github.com/forge-metal/temporal-platform/internal/temporalweb"
 )
@@ -54,42 +52,19 @@ func run() error {
 		return errors.New("SPIFFE_ENDPOINT_SOCKET is required")
 	}
 
-	cfg.ExpectedClientID, err = parseSPIFFEIDEnv("FM_TEMPORAL_WEB_SPIFFE_ID")
-	if err != nil {
-		return err
-	}
-	cfg.ServerID, err = parseSPIFFEIDEnv("FM_TEMPORAL_SERVER_SPIFFE_ID")
-	if err != nil {
-		return err
-	}
-
 	slog.InfoContext(
 		ctx,
 		"starting temporal web",
 		"config_dir", cfg.ConfigDir,
 		"config_env", cfg.Environment,
 		"frontend_address", cfg.FrontendAddress,
-		"temporal_server_spiffe_id", cfg.ServerID.String(),
-		"temporal_web_spiffe_id", cfg.ExpectedClientID.String(),
 	)
 
 	return temporalweb.Run(ctx, cfg)
 }
 
-func parseSPIFFEIDEnv(name string) (spiffeid.ID, error) {
-	raw := strings.TrimSpace(os.Getenv(name))
-	if raw == "" {
-		return spiffeid.ID{}, fmt.Errorf("%s is required", name)
-	}
-	id, err := spiffeid.FromString(raw)
-	if err != nil {
-		return spiffeid.ID{}, fmt.Errorf("parse %s: %w", name, err)
-	}
-	return id, nil
-}
-
 func envOr(name, fallback string) string {
-	raw := strings.TrimSpace(os.Getenv(name))
+	raw := os.Getenv(name)
 	if raw == "" {
 		return fallback
 	}

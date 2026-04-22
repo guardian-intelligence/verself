@@ -11,7 +11,6 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.1
 	github.com/oapi-codegen/runtime v1.4.0
-	github.com/spiffe/go-spiffe/v2 v2.6.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
@@ -43,6 +42,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/segmentio/asm v1.2.0 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
+	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.17.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.19.0 // indirect

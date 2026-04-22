@@ -49,10 +49,6 @@ func run() error {
 	slog.SetDefault(logger)
 
 	pgDSN := requireEnv("SANDBOX_PG_DSN")
-	temporalServerSPIFFEID, err := workloadauth.ParseID(requireEnv("SANDBOX_TEMPORAL_SERVER_SPIFFE_ID"))
-	if err != nil {
-		return err
-	}
 	temporalFrontendAddress := envOr("SANDBOX_TEMPORAL_FRONTEND_ADDRESS", sdkclient.DefaultFrontendAddress)
 	temporalNamespace := envOr("SANDBOX_TEMPORAL_NAMESPACE", recurring.DefaultNamespace)
 	temporalRecurringTaskQueue := envOr("SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING", recurring.DefaultTaskQueue)
@@ -106,7 +102,6 @@ func run() error {
 
 	temporalClient, err := sdkclient.NewWorkflowClient(sdkclient.Config{
 		HostPort: temporalFrontendAddress,
-		ServerID: temporalServerSPIFFEID,
 	}, temporalNamespace, spiffeSource, "sandbox-rental-recurring-worker-sdk")
 	if err != nil {
 		return fmt.Errorf("sandbox-rental recurring temporal client: %w", err)

@@ -85,13 +85,9 @@ func run() error {
 			logger.ErrorContext(context.Background(), "mailbox-service spiffe source close", "error", err)
 		}
 	}()
-	secretsSPIFFEID, err := workloadauth.ParseID(requireEnvValue("MAILBOX_SERVICE_SECRETS_SPIFFE_ID"))
+	secretsHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceSecrets, nil)
 	if err != nil {
-		return err
-	}
-	secretsHTTPClient, err := workloadauth.MTLSClient(spiffeSource, secretsSPIFFEID, http.DefaultTransport)
-	if err != nil {
-		return fmt.Errorf("mailbox-service secrets spiffe client: %w", err)
+		return fmt.Errorf("mailbox-service secrets mtls: %w", err)
 	}
 	secretsClient, err := secretsclient.NewClientWithResponses(requireEnvValue("MAILBOX_SERVICE_SECRETS_URL"), secretsclient.WithHTTPClient(secretsHTTPClient))
 	if err != nil {

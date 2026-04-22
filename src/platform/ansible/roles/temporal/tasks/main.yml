@@ -432,7 +432,6 @@
     SPIFFE_ENDPOINT_SOCKET: "unix://{{ spire_agent_socket_path }}"
     OTEL_EXPORTER_OTLP_ENDPOINT: "http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}"
     FM_TEMPORAL_FRONTEND_ADDRESS: "{{ services.temporal.host }}:{{ services.temporal.grpc_port }}"
-    FM_TEMPORAL_SERVER_SPIFFE_ID: "{{ spire_temporal_server_id }}"
     FM_TEMPORAL_BOOTSTRAP_NAMESPACES: "{{ temporal_bootstrap_namespaces | join(',') }}"
     FM_TEMPORAL_BOOTSTRAP_NAMESPACE_RETENTION: "{{ temporal_namespace_retention }}"
   changed_when: false

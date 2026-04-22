@@ -15,7 +15,6 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	auth "github.com/forge-metal/auth-middleware"
@@ -128,7 +127,13 @@ func run() error {
 	}
 	go runAuditProjector(ctx, logger, svc)
 
-	auditClientIDs, err := parseSPIFFEIDsFromEnv("GOVERNANCE_INTERNAL_CLIENT_SPIFFE_IDS")
+	auditClientIDs, err := workloadauth.PeerIDsForSource(
+		spiffeSource,
+		workloadauth.ServiceIdentity,
+		workloadauth.ServiceSandboxRental,
+		workloadauth.ServiceSecrets,
+		workloadauth.ServiceObjectStorageAdmin,
+	)
 	if err != nil {
 		return err
 	}
@@ -164,6 +169,10 @@ func run() error {
 
 	internalMux := http.NewServeMux()
 	governanceapi.NewInternalAPI(internalMux, "1.0.0", "https://"+internalListenAddr, svc)
+	internalAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(auditClientIDs, internalMux)
+	if err != nil {
+		return fmt.Errorf("governance internal allowlist: %w", err)
+	}
 
 	handler := http.Handler(rootMux)
 	handler = maxBody(handler, 1<<20)
@@ -178,7 +187,7 @@ func run() error {
 	}
 	internalServer := &http.Server{
 		Addr:              internalListenAddr,
-		Handler:           otelhttp.NewHandler(maxBody(workloadauth.ServerPeerAllowlistMiddleware(auditClientIDs, internalMux), 1<<20), "governance-service-internal"),
+		Handler:           otelhttp.NewHandler(maxBody(internalAllowlist, 1<<20), "governance-service-internal"),
 		TLSConfig:         internalTLSConfig,
 		ReadHeaderTimeout: 2 * time.Second,
 		ReadTimeout:       5 * time.Second,
@@ -292,23 +301,6 @@ func requireEnv(name string) string {
 		panic("missing required env " + name)
 	}
 	return value
-}
-
-func parseSPIFFEIDsFromEnv(name string) ([]spiffeid.ID, error) {
-	raw := strings.TrimSpace(os.Getenv(name))
-	if raw == "" {
-		return nil, fmt.Errorf("missing required env %s", name)
-	}
-	parts := strings.Split(raw, ",")
-	ids := make([]spiffeid.ID, 0, len(parts))
-	for _, part := range parts {
-		id, err := workloadauth.ParseID(part)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", name, err)
-		}
-		ids = append(ids, id)
-	}
-	return ids, nil
 }
 
 func envOr(name, fallback string) string {
