@@ -43,9 +43,6 @@ argument_specs:
       openbao_spiffe_jwt_mount:
         type: str
         default: spiffe-jwt
-      openbao_platform_kv_mount:
-        type: str
-        default: platform
       openbao_workload_audience:
         type: str
         default: openbao

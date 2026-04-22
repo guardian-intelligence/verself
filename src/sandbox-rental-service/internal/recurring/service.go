@@ -15,8 +15,8 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	enumspb "go.temporal.io/api/enums/v1"
-	tclient "go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/activity"
+	tclient "go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
@@ -75,12 +75,12 @@ type Service struct {
 }
 
 type CreateRequest struct {
-	DisplayName    string
-	IdempotencyKey string
-	RunCommand     string
+	DisplayName     string
+	IdempotencyKey  string
+	RunCommand      string
 	IntervalSeconds uint32
-	MaxWallSeconds uint64
-	Paused         bool
+	MaxWallSeconds  uint64
+	Paused          bool
 }
 
 type ScheduleRecord struct {
@@ -102,26 +102,26 @@ type ScheduleRecord struct {
 }
 
 type DispatchRecord struct {
-	DispatchID          uuid.UUID
-	ScheduleID          uuid.UUID
-	TemporalWorkflowID  string
-	TemporalRunID       string
-	ExecutionID         *uuid.UUID
-	AttemptID           *uuid.UUID
-	State               string
-	FailureReason       string
-	ScheduledAt         time.Time
-	SubmittedAt         *time.Time
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
+	DispatchID         uuid.UUID
+	ScheduleID         uuid.UUID
+	TemporalWorkflowID string
+	TemporalRunID      string
+	ExecutionID        *uuid.UUID
+	AttemptID          *uuid.UUID
+	State              string
+	FailureReason      string
+	ScheduledAt        time.Time
+	SubmittedAt        *time.Time
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 type WorkflowInput struct {
-	ScheduleID      string
-	OrgID           uint64
-	ActorID         string
-	RunCommand      string
-	MaxWallSeconds  uint64
+	ScheduleID         string
+	OrgID              uint64
+	ActorID            string
+	RunCommand         string
+	MaxWallSeconds     uint64
 	TemporalScheduleID string
 }
 
@@ -623,7 +623,8 @@ func normalizeCreateRequest(req CreateRequest) (CreateRequest, error) {
 
 func scanScheduleRecord(scanner interface {
 	Scan(dest ...any) error
-}) (ScheduleRecord, error) {
+},
+) (ScheduleRecord, error) {
 	var record ScheduleRecord
 	var intervalSeconds int
 	var maxWallSeconds int64
@@ -655,7 +656,8 @@ func scanScheduleRecord(scanner interface {
 
 func scanDispatchRecord(scanner interface {
 	Scan(dest ...any) error
-}) (DispatchRecord, error) {
+},
+) (DispatchRecord, error) {
 	var record DispatchRecord
 	if err := scanner.Scan(
 		&record.DispatchID,

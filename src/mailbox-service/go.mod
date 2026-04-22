@@ -7,6 +7,7 @@ require (
 	github.com/forge-metal/apiwire v0.0.0
 	github.com/forge-metal/auth-middleware v0.0.0
 	github.com/forge-metal/otel v0.0.0
+	github.com/forge-metal/secrets-service v0.0.0
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/oapi-codegen/runtime v1.4.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.60.0
@@ -58,3 +59,5 @@ replace github.com/forge-metal/apiwire => ../apiwire
 replace github.com/forge-metal/otel => ../otel
 
 replace github.com/forge-metal/auth-middleware => ../auth-middleware
+
+replace github.com/forge-metal/secrets-service => ../secrets-service

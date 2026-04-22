@@ -29,6 +29,7 @@ import (
 	workloadauth "github.com/forge-metal/auth-middleware/workload"
 	billingclient "github.com/forge-metal/billing-service/client"
 	fmotel "github.com/forge-metal/otel"
+	secretsclient "github.com/forge-metal/secrets-service/client"
 	vmorchestrator "github.com/forge-metal/vm-orchestrator"
 
 	sandboxapi "github.com/forge-metal/sandbox-rental-service/internal/api"
@@ -65,7 +66,7 @@ func run() error {
 	slog.SetDefault(logger)
 
 	// PostgreSQL runtime auth is local peer over the Unix socket. Runtime
-	// provider credentials are fetched from OpenBao with a SPIRE JWT-SVID.
+	// provider credentials are fetched from secrets-service over SPIFFE mTLS.
 	pgDSN := requireEnv("SANDBOX_PG_DSN")
 
 	// Non-secret config via Environment=.
@@ -82,10 +83,6 @@ func run() error {
 	publicBaseURL := requireEnv("SANDBOX_PUBLIC_BASE_URL")
 	if err := validatePublicBaseURL(publicBaseURL); err != nil {
 		return fmt.Errorf("SANDBOX_PUBLIC_BASE_URL: %w", err)
-	}
-	sandboxSPIFFEID, err := workloadauth.ParseID(requireEnv("SANDBOX_SPIFFE_ID"))
-	if err != nil {
-		return err
 	}
 	authIssuerURL := requireEnv("SANDBOX_AUTH_ISSUER_URL")
 	authAudience := requireEnv("SANDBOX_AUTH_AUDIENCE")
@@ -128,40 +125,6 @@ func run() error {
 			logger.ErrorContext(context.Background(), "sandbox-rental: spiffe source close", "error", err)
 		}
 	}()
-	workloadJWTSource, err := workloadauth.JWTSource(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
-	if err != nil {
-		return fmt.Errorf("sandbox-rental spiffe jwt source: %w", err)
-	}
-	defer func() {
-		if err := workloadJWTSource.Close(); err != nil {
-			logger.ErrorContext(context.Background(), "sandbox-rental: spiffe jwt source close", "error", err)
-		}
-	}()
-	openBaoClient, err := workloadauth.NewOpenBaoClient(workloadJWTSource, workloadauth.OpenBaoClientConfig{
-		Address:  requireEnv("SANDBOX_OPENBAO_ADDR"),
-		CACert:   credentialPath("openbao-ca-cert"),
-		AuthPath: envOr("SANDBOX_OPENBAO_SPIFFE_JWT_MOUNT", "spiffe-jwt"),
-		Role:     envOr("SANDBOX_OPENBAO_ROLE", "platform-sandbox-rental-service"),
-		Audience: envOr("SANDBOX_OPENBAO_WORKLOAD_AUDIENCE", "openbao"),
-		Subject:  sandboxSPIFFEID,
-		Mount:    envOr("SANDBOX_OPENBAO_PLATFORM_MOUNT", "platform"),
-	})
-	if err != nil {
-		return fmt.Errorf("sandbox-rental openbao client: %w", err)
-	}
-	var githubAppPrivateKey string
-	var githubAppWebhookSecret string
-	var githubAppClientSecret string
-	if githubAppEnabled || githubAppID > 0 || githubAppSlug != "" || githubAppClientID != "" {
-		githubSecrets, err := openBaoClient.ReadKVV2(ctx, "providers/github/sandbox-rental-service")
-		if err != nil {
-			return fmt.Errorf("sandbox-rental github provider secret: %w", err)
-		}
-		githubAppPrivateKey = requireSecretField(githubSecrets, "private_key", "sandbox-rental github provider secret")
-		githubAppWebhookSecret = requireSecretField(githubSecrets, "webhook_secret", "sandbox-rental github provider secret")
-		githubAppClientSecret = requireSecretField(githubSecrets, "client_secret", "sandbox-rental github provider secret")
-	}
-
 	// --- open connections ---
 
 	pg, err := sql.Open("postgres", pgDSN)
@@ -258,6 +221,10 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("secrets spiffe client: %w", err)
 	}
+	secretsClient, err := secretsclient.New(secretsURL, secretsclient.WithHTTPClient(secretsHTTPClient))
+	if err != nil {
+		return fmt.Errorf("create secrets client: %w", err)
+	}
 	governanceAuditClient, err := workloadauth.MTLSClient(spiffeSource, governanceSPIFFEID, http.DefaultTransport)
 	if err != nil {
 		return fmt.Errorf("governance spiffe client: %w", err)
@@ -270,6 +237,23 @@ func run() error {
 		return fmt.Errorf("sandbox-rental temporal client: %w", err)
 	}
 	defer temporalClient.Close()
+
+	var githubAppPrivateKey string
+	var githubAppWebhookSecret string
+	var githubAppClientSecret string
+	if githubAppEnabled || githubAppID > 0 || githubAppSlug != "" || githubAppClientID != "" {
+		githubSecrets, err := secretsClient.ResolvePlatformRuntimeSecrets(ctx, []string{
+			secretsclient.SandboxGitHubPrivateKeyName,
+			secretsclient.SandboxGitHubWebhookSecretName,
+			secretsclient.SandboxGitHubClientSecretName,
+		})
+		if err != nil {
+			return fmt.Errorf("sandbox-rental github provider secret: %w", err)
+		}
+		githubAppPrivateKey = requireSecretField(githubSecrets, secretsclient.SandboxGitHubPrivateKeyName, "sandbox-rental github provider secret")
+		githubAppWebhookSecret = requireSecretField(githubSecrets, secretsclient.SandboxGitHubWebhookSecretName, "sandbox-rental github provider secret")
+		githubAppClientSecret = requireSecretField(githubSecrets, secretsclient.SandboxGitHubClientSecretName, "sandbox-rental github provider secret")
+	}
 
 	// --- job service ---
 

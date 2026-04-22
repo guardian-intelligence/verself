@@ -17,8 +17,10 @@ import (
 	workloadauth "github.com/forge-metal/auth-middleware/workload"
 	billingclient "github.com/forge-metal/billing-service/client"
 	fmotel "github.com/forge-metal/otel"
+	secretsclient "github.com/forge-metal/secrets-service/client"
 	secretsapi "github.com/forge-metal/secrets-service/internal/api"
 	"github.com/forge-metal/secrets-service/internal/secrets"
+	"github.com/spiffe/go-spiffe/v2/spiffeid"
 )
 
 const (
@@ -71,10 +73,15 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	mailboxSPIFFEID, err := workloadauth.ParseID(requireEnv("SECRETS_MAILBOX_SPIFFE_ID"))
+	if err != nil {
+		return err
+	}
 	governanceSPIFFEID, err := workloadauth.ParseID(requireEnv("SECRETS_GOVERNANCE_SPIFFE_ID"))
 	if err != nil {
 		return err
 	}
+	platformOrgID := requireEnv("SECRETS_PLATFORM_ORG_ID")
 	spiffeSource, err := workloadauth.Source(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
 	if err != nil {
 		return fmt.Errorf("spiffe workload source: %w", err)
@@ -137,7 +144,8 @@ func run() error {
 		return fmt.Errorf("governance spiffe client: %w", err)
 	}
 	secretsapi.ConfigureAuditSink(governanceAuditURL, governanceAuditClient)
-	internalTLSConfig, err := workloadauth.MTLSServerConfig(spiffeSource, sandboxSPIFFEID)
+	internalPeerIDs := []spiffeid.ID{sandboxSPIFFEID, billingSPIFFEID, mailboxSPIFFEID}
+	internalTLSConfig, err := workloadauth.MTLSServerConfigForAny(spiffeSource, internalPeerIDs...)
 	if err != nil {
 		return fmt.Errorf("spiffe internal tls: %w", err)
 	}
@@ -168,7 +176,39 @@ func run() error {
 	protected := secretsapi.CaptureRawBearerToken(authenticated)
 	rootMux.Handle("/", protected)
 	internalMux := http.NewServeMux()
-	secretsapi.RegisterInternalRoutes(internalMux, svc)
+	if err := secretsapi.RegisterInternalRoutes(internalMux, svc, secretsapi.InternalRoutesConfig{
+		SandboxPeerID: sandboxSPIFFEID,
+		PlatformOrgID: platformOrgID,
+		RuntimeSecretPolicies: []secretsapi.RuntimeSecretPolicy{
+			{
+				PeerID:         billingSPIFFEID,
+				CredentialName: "billing-service",
+				SecretNames: []string{
+					secretsclient.BillingStripeSecretKeyName,
+					secretsclient.BillingStripeWebhookSecretName,
+				},
+			},
+			{
+				PeerID:         sandboxSPIFFEID,
+				CredentialName: "sandbox-rental-service",
+				SecretNames: []string{
+					secretsclient.SandboxGitHubPrivateKeyName,
+					secretsclient.SandboxGitHubWebhookSecretName,
+					secretsclient.SandboxGitHubClientSecretName,
+				},
+			},
+			{
+				PeerID:         mailboxSPIFFEID,
+				CredentialName: "mailbox-service",
+				SecretNames: []string{
+					secretsclient.MailboxResendAPIKeyName,
+					secretsclient.MailboxStalwartAdminPasswordName,
+				},
+			},
+		},
+	}); err != nil {
+		return fmt.Errorf("register secrets internal routes: %w", err)
+	}
 
 	server := &http.Server{
 		Addr:              listenAddr,
@@ -181,7 +221,7 @@ func run() error {
 	}
 	internalServer := &http.Server{
 		Addr:              internalListenAddr,
-		Handler:           otelhttp.NewHandler(limitRequestBodies(workloadauth.ServerPeerMiddleware(sandboxSPIFFEID, internalMux), requestBodyLimit), serviceName+"-internal"),
+		Handler:           otelhttp.NewHandler(limitRequestBodies(workloadauth.ServerPeerAllowlistMiddleware(internalPeerIDs, internalMux), requestBodyLimit), serviceName+"-internal"),
 		TLSConfig:         internalTLSConfig,
 		ReadHeaderTimeout: 2 * time.Second,
 		ReadTimeout:       5 * time.Second,

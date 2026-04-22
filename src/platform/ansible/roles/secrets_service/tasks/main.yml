@@ -217,6 +217,40 @@
         group: secrets
   when: secrets_service_auth_audience | default('', true) | length > 0
 
+- name: List Zitadel organizations for secrets-service internal runtime routing
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/v2/organizations/_search"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ secrets_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body: {}
+    return_content: true
+  register: secrets_service_zitadel_orgs
+  no_log: true
+
+- name: Resolve platform organization ID for secrets-service runtime routing
+  ansible.builtin.set_fact:
+    secrets_service_platform_org_id: >-
+      {{
+        (
+          secrets_service_zitadel_orgs.json.result
+          | default([])
+          | selectattr('name', 'equalto', secrets_service_platform_org_name)
+          | map(attribute='id')
+          | list
+          | first
+        ) | default('')
+      }}
+
+- name: Assert platform organization exists for secrets-service runtime routing
+  ansible.builtin.assert:
+    that: secrets_service_platform_org_id | default('', true) | length > 0
+    fail_msg: >-
+      Platform organization {{ secrets_service_platform_org_name }} was not
+      found in Zitadel. Re-run the full deploy or restore Zitadel bootstrap.
+
 - name: Deploy secrets-service systemd unit
   ansible.builtin.copy:
     content: |
@@ -237,7 +271,9 @@
       Environment=SECRETS_SPIFFE_ID={{ spire_secrets_service_id }}
       Environment=SECRETS_SANDBOX_SPIFFE_ID={{ spire_sandbox_rental_id }}
       Environment=SECRETS_BILLING_SPIFFE_ID={{ spire_billing_service_id }}
+      Environment=SECRETS_MAILBOX_SPIFFE_ID={{ spire_mailbox_service_id }}
       Environment=SECRETS_GOVERNANCE_SPIFFE_ID={{ spire_governance_service_id }}
+      Environment=SECRETS_PLATFORM_ORG_ID={{ secrets_service_platform_org_id }}
       Environment=SECRETS_GOVERNANCE_AUDIT_URL={{ secrets_service_governance_audit_url }}
       Environment=SECRETS_AUTH_ISSUER_URL={{ secrets_service_auth_issuer_url }}
       Environment=SECRETS_AUTH_JWKS_URL={{ secrets_service_auth_jwks_url }}

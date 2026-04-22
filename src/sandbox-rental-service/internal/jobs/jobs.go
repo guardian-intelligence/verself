@@ -29,15 +29,15 @@ import (
 )
 
 const (
-	KindDirect               = "direct"
-	KindVMSession            = "vm_session"
-	SourceKindAPI            = "api"
+	KindDirect                  = "direct"
+	KindVMSession               = "vm_session"
+	SourceKindAPI               = "api"
 	SourceKindExecutionSchedule = "execution_schedule"
-	SourceKindGitHubAction   = "github_actions"
-	SourceKindCanary         = "canary"
-	SourceKindVMSession      = "vm_session"
-	WorkloadKindDirect       = "direct"
-	WorkloadKindGitHubRunner = "github_runner"
+	SourceKindGitHubAction      = "github_actions"
+	SourceKindCanary            = "canary"
+	SourceKindVMSession         = "vm_session"
+	WorkloadKindDirect          = "direct"
+	WorkloadKindGitHubRunner    = "github_runner"
 
 	DefaultRunnerClassLabel = "metal-4vcpu-ubuntu-2404"
 	defaultProductID        = "sandbox"

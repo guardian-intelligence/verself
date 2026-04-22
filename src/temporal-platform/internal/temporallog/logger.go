@@ -7,9 +7,11 @@ import (
 	sdklog "go.temporal.io/sdk/log"
 )
 
-var _ sdklog.Logger = (*Logger)(nil)
-var _ sdklog.WithLogger = (*Logger)(nil)
-var _ sdklog.WithSkipCallers = (*Logger)(nil)
+var (
+	_ sdklog.Logger          = (*Logger)(nil)
+	_ sdklog.WithLogger      = (*Logger)(nil)
+	_ sdklog.WithSkipCallers = (*Logger)(nil)
+)
 
 // Logger adapts slog to Temporal's logger interface so SDK logs flow through
 // the repo-wide OTel log pipeline instead of contaminating stdout/stderr.

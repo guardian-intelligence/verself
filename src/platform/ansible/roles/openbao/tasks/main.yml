@@ -392,9 +392,6 @@
   changed_when: true
   no_log: true
 
-- name: Reconcile OpenBao platform runtime provider secrets
-  ansible.builtin.include_tasks: platform_secrets.yml
-
 - name: Verify OpenBao health
   ansible.builtin.uri:
     url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/sys/health"

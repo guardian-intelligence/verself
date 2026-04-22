@@ -807,7 +807,8 @@ func (r *GitHubRunner) loadJobForBinding(ctx context.Context, githubJobID int64)
 	runnerID   int64
 	runnerName string
 	status     string
-}, error) {
+}, error,
+) {
 	var out struct {
 		runnerID   int64
 		runnerName string

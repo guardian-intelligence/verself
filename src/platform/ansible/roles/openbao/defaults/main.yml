@@ -15,7 +15,6 @@ openbao_oidc_loopback_hosts:
 openbao_spiffe_jwt_mount: spiffe-jwt
 openbao_spiffe_jwt_jwks_url: "{{ spire_jwt_bundle_endpoint_url }}"
 openbao_spiffe_jwt_jwks_ca_pem_path: /etc/spire/bundle-endpoint/ca.pem
-openbao_platform_kv_mount: platform
 openbao_workload_audience: openbao
 openbao_workload_token_ttl: 15m
 openbao_workload_token_max_ttl: 1h

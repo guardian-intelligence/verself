@@ -58,7 +58,7 @@ type OpenBaoClient struct {
 
 type openBaoLoginResponse struct {
 	RequestID string `json:"request_id"`
-	Auth struct {
+	Auth      struct {
 		ClientToken   string `json:"client_token"`
 		Accessor      string `json:"accessor"`
 		LeaseDuration int64  `json:"lease_duration"`
@@ -67,7 +67,7 @@ type openBaoLoginResponse struct {
 
 type openBaoKVResponse struct {
 	RequestID string `json:"request_id"`
-	Data struct {
+	Data      struct {
 		Data map[string]any `json:"data"`
 	} `json:"data"`
 }

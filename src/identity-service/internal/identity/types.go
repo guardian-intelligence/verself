@@ -31,8 +31,10 @@ type Principal struct {
 	Email             string
 }
 
-type APICredentialAuthMethod string
-type APICredentialStatus string
+type (
+	APICredentialAuthMethod string
+	APICredentialStatus     string
+)
 
 type Organization struct {
 	OrgID              string

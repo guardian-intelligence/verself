@@ -9,3 +9,4 @@ openbao_tenancy_skip_jwks_validation: false
 openbao_tenancy_kv_mount_prefix: kv
 openbao_tenancy_transit_mount_prefix: transit
 openbao_tenancy_jwt_mount_prefix: jwt
+openbao_tenancy_platform_org_name: forge-metal

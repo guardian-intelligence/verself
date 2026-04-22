@@ -1,5 +1,0 @@
-{% for secret_path in item.paths %}
-path "{{ openbao_platform_kv_mount }}/data/{{ secret_path }}" {
-  capabilities = ["read"]
-}
-{% endfor %}

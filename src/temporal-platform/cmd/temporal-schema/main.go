@@ -17,10 +17,10 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.temporal.io/server/common/config"
-	_ "go.temporal.io/server/common/persistence/sql/sqlplugin/postgresql"
 	tlog "go.temporal.io/server/common/log"
-	toolsql "go.temporal.io/server/tools/sql"
+	_ "go.temporal.io/server/common/persistence/sql/sqlplugin/postgresql"
 	"go.temporal.io/server/tools/common/schema"
+	toolsql "go.temporal.io/server/tools/sql"
 )
 
 var (

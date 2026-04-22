@@ -128,14 +128,16 @@
       tags: [zitadel, openbao, openbao_tenancy]
     - role: openbao
       tags: [openbao, openbao_tenancy, billing_service, governance_service, sandbox_rental_service, mailbox_service]
-    - role: billing_service
-      tags: [billing_service]
     - role: identity_service
       tags: [identity_service]
     - role: governance_service
       tags: [governance_service, openbao, openbao_tenancy, temporal]
     - role: secrets_service
       tags: [secrets_service, openbao_tenancy]
+    - role: openbao_tenancy
+      tags: [openbao_tenancy]
+    - role: billing_service
+      tags: [billing_service]
     # sandbox-rental-service now owns a Temporal namespace and recurring worker,
     # so Temporal must be configured before the service is started.
     - role: temporal
@@ -205,5 +207,3 @@
       tags: [forgejo]
     - role: caddy
       tags: [caddy, openbao_tenancy]
-    - role: openbao_tenancy
-      tags: [openbao_tenancy]

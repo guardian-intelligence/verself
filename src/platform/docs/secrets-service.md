@@ -112,6 +112,8 @@ The customer-facing surface is `secrets-service`:
 - Resolution order `branch > environment > source > org`.
 - Transit keys for encrypt, decrypt, sign, verify, and key rotation.
 - Internal execution-time injection for `sandbox-rental-service`.
+- Internal runtime provider-secret resolution for repo-owned services from the
+  platform org over SPIFFE mTLS.
 
 `sandbox-rental-service` stores only secret references on execution rows. At
 worker time it calls the loopback-only internal injection endpoint over SPIFFE
@@ -138,6 +140,13 @@ OpenAPI, is loopback-only by nftables, and requires SPIFFE mTLS with the exact
 `sandbox-rental-service` workload ID. `secrets-service` verifies the SPIFFE
 peer and the persisted attempt/grant context before reading from OpenBao with a
 SPIRE JWT-SVID-authenticated OpenBao token.
+
+Platform-owned runtime provider secrets follow the same service boundary:
+`billing-service`, `sandbox-rental-service`, and `mailbox-service` call
+`/internal/v1/platform-secrets/resolve` over SPIFFE mTLS, `secrets-service`
+maps the caller's exact SPIFFE ID to an allowlist of platform-org secret names,
+and only then reads OpenBao. Those services do not authenticate directly to
+OpenBao.
 
 SPIFFE/SPIRE is the service-to-service workload identity primitive. In-VM
 per-request secret access is still deferred; injection remains launch-time
@@ -187,11 +196,11 @@ operation catalog and generated clients can treat permissions as data.
 
 ## Audit
 
-Every public operation and every sandbox injection read sends a structured
-governance audit record. Governance persists the HMAC chain and the full event
-row to PostgreSQL first, then projects to ClickHouse. A background projector
-retries pending rows so a transient ClickHouse outage does not lose a
-high-risk secrets audit event.
+Every public operation, every sandbox injection read, and every internal
+platform runtime secret read sends a structured governance audit record.
+Governance persists the HMAC chain and the full event row to PostgreSQL first,
+then projects to ClickHouse. A background projector retries pending rows so a
+transient ClickHouse outage does not lose a high-risk secrets audit event.
 
 Expected evidence for a successful injection path:
 
@@ -211,6 +220,10 @@ secrets-service: secrets.secret.put
 secrets-service: secrets.secret.read
 secrets-service: secrets.transit.encrypt
 secrets-service: secrets.transit.decrypt
+sandbox-rental-service: secrets.runtime.resolve
+billing-service: secrets.runtime.resolve
+mailbox-service: secrets.runtime.resolve
+secrets-service: secrets.platform.resolve
 sandbox-rental-service: sandbox-rental.execution.submit
 sandbox-rental-service: sandbox-rental.execution.run
 sandbox-rental-service: sandbox-rental.secrets.resolve

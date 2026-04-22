@@ -144,7 +144,8 @@ type reconcileWorkItem struct {
 
 func (s *Service) scanReconcileWorkItem(ctx context.Context, scanner interface {
 	Scan(dest ...any) error
-}) (reconcileWorkItem, error) {
+},
+) (reconcileWorkItem, error) {
 	var (
 		executionID uuid.UUID
 		attemptID   uuid.UUID

@@ -28,17 +28,16 @@ stalwart_operator_forward_to: ""
 
 # GitHub Actions runner integration. Create/update the customer-facing app at
 # https://github.com/settings/apps/new or the org-owned app settings URL below.
-# The private key, webhook secret, and client secret live in the sandbox-rental
-# OpenBao platform KV mount and are not committed.
+# The private key, webhook secret, and client secret are stored as platform-org
+# secrets and are not committed.
 sandbox_rental_service_github_app_enabled: true
 sandbox_rental_service_github_app_id: 3370540
 sandbox_rental_service_github_app_slug: forge-metal-ci
 sandbox_rental_service_github_app_client_id: "Iv23liDpxGOmBSQwSJ5i"
 sandbox_rental_service_github_app_settings_url: "https://github.com/organizations/guardian-intelligence/settings/apps/forge-metal-ci"
 
-# OpenBao relying-party settings for repo-owned workload runtime secret reads.
+# OpenBao relying-party settings for secrets-service workload auth.
 openbao_spiffe_jwt_mount: spiffe-jwt
-openbao_platform_kv_mount: platform
 openbao_workload_audience: openbao
 
 # WireGuard
