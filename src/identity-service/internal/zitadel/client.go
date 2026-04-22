@@ -22,6 +22,8 @@ const (
 	authorizationPageLimit = 1000
 )
 
+var zitadelMaxKeyExpiration = time.Date(9999, time.December, 31, 23, 59, 59, 0, time.UTC)
+
 type Config struct {
 	BaseURL    string
 	HostHeader string
@@ -574,7 +576,9 @@ func (c *Client) CreateServiceAccountCredential(ctx context.Context, orgID strin
 		ExpiresAt:  input.ExpiresAt,
 	})
 	if err != nil {
-		return "", identity.APICredentialIssuedMaterial{}, err
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+		defer cancel()
+		return "", identity.APICredentialIssuedMaterial{}, errors.Join(err, c.DeactivateServiceAccount(cleanupCtx, subjectID))
 	}
 	return subjectID, material, nil
 }
@@ -638,9 +642,9 @@ func (c *Client) DeactivateServiceAccount(ctx context.Context, subjectID string)
 }
 
 func (c *Client) addServiceAccountKey(ctx context.Context, input identity.AddServiceAccountCredentialInput) (identity.APICredentialIssuedMaterial, error) {
-	body := map[string]any{}
-	if input.ExpiresAt != nil {
-		body["expirationDate"] = input.ExpiresAt.Format(time.RFC3339Nano)
+	// ZITADEL v4.13.1 requires expirationDate on machine keys; product-level nil still means "no expiry".
+	body := map[string]any{
+		"expirationDate": effectiveKeyExpiration(input.ExpiresAt).Format(time.RFC3339Nano),
 	}
 	var out serviceAccountKeyResponse
 	if err := c.doJSON(ctx, http.MethodPost, "/v2/users/"+url.PathEscape(input.SubjectID)+"/keys", body, &out, false); err != nil {
@@ -659,6 +663,13 @@ func (c *Client) addServiceAccountKey(ctx context.Context, input identity.AddSer
 		KeyContent:  out.KeyContent,
 		Fingerprint: fingerprint,
 	}, nil
+}
+
+func effectiveKeyExpiration(expiresAt *time.Time) time.Time {
+	if expiresAt == nil {
+		return zitadelMaxKeyExpiration
+	}
+	return expiresAt.UTC()
 }
 
 func (c *Client) addServiceAccountSecret(ctx context.Context, input identity.AddServiceAccountCredentialInput) (identity.APICredentialIssuedMaterial, error) {

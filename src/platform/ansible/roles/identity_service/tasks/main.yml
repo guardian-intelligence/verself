@@ -341,7 +341,7 @@
     mode: "0644"
   vars:
     identity_service_governance_audit_url: >-
-      https://{{ services.governance_service.host }}:{{ services.governance_service.internal_port }}/internal/v1/audit/events
+      https://{{ services.governance_service.host }}:{{ services.governance_service.internal_port }}
   notify: restart identity-service
 
 - name: Apply identity-service unit changes before proceeding
