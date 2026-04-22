@@ -12,7 +12,7 @@ export const Route = createRootRoute({
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { name: "theme-color", content: "#ffffff" },
-      { property: "og:site_name", content: "Guardian Intelligence" },
+      { property: "og:site_name", content: "Guardian" },
       ...deployMetaTags(),
     ],
     links: [
@@ -89,11 +89,11 @@ function TopBar() {
       <div className="mx-auto flex h-[var(--header-h)] w-full max-w-7xl items-center px-4 md:px-6">
         <Link
           to="/"
-          aria-label="Guardian Intelligence — home"
+          aria-label="Guardian — home"
           className="inline-flex items-center"
           style={{ color: "var(--color-type-iron)" }}
         >
-          <Lockup size="sm" wordmark="Guardian Intelligence" title="Guardian Intelligence" />
+          <Lockup size="sm" title="Guardian" />
         </Link>
       </div>
     </header>

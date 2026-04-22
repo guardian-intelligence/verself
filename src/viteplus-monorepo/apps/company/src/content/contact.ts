@@ -1,14 +1,14 @@
 // Contact. No form. Email addresses that go to real humans.
 
 export const CONTACT_META = {
-  title: "Contact — Guardian Intelligence",
+  title: "Contact — Guardian",
   description:
     "Email addresses for sales, press, security, and careers. No form. We answer every note.",
 } as const;
 
 export const contact = {
   kicker: "We answer every note.",
-  hero: "Contact Guardian Intelligence.",
+  hero: "Contact Guardian.",
   intro:
     "There is no form. Every address below goes to a person. We try to answer within one working day.",
   channels: [

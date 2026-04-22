@@ -5,15 +5,15 @@ export const Route = createFileRoute("/")({
   component: LandingPage,
   head: () => ({
     meta: [
-      { title: "Guardian Intelligence" },
+      { title: "Guardian" },
       {
         name: "description",
         content:
-          "The world needs your business to succeed, and we're here to help. Guardian Intelligence is an American applied intelligence company.",
+          "The world needs your business to succeed, and we're here to help. Guardian is an American applied intelligence company.",
       },
       {
         property: "og:title",
-        content: "Guardian Intelligence — The world needs your business to succeed.",
+        content: "Guardian — The world needs your business to succeed.",
       },
       {
         property: "og:description",
@@ -31,7 +31,7 @@ function LandingPage() {
         className="font-mono text-[11px] font-medium uppercase tracking-[0.16em]"
         style={{ color: "rgba(245,245,245,0.55)" }}
       >
-        Guardian Intelligence · An American applied intelligence company · Seattle, Washington
+        Guardian · An American applied intelligence company · Seattle, Washington
       </p>
       <h1
         className="mt-5 font-display"

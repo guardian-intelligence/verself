@@ -53,7 +53,7 @@ test("company canary — walk IA + exercise OG + brand kit", async ({ page, requ
   expect(rssContentType).toContain("application/rss+xml");
   const rssBody = await rss.text();
   expect(rssBody).toMatch(/<rss[^>]*>/);
-  expect(rssBody).toContain("Guardian Intelligence");
+  expect(rssBody).toContain("Guardian");
 
   // 4. Every catalogued OG slug renders as a 1200×630 SVG with Argent wings
   // and no voice violations (the route returns 500 on voice failure — if any
@@ -66,7 +66,7 @@ test("company canary — walk IA + exercise OG + brand kit", async ({ page, requ
     const ogBody = await og.text();
     expect(ogBody).toContain('width="1200"');
     expect(ogBody).toContain('height="630"');
-    expect(ogBody).toContain("Guardian Intelligence");
+    expect(ogBody).toContain("Guardian");
   }
 
   // 5. Retired routes must return 404. Asserts the Dispatch → Letters rename
