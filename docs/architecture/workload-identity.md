@@ -157,7 +157,8 @@ independent and both required on internal calls. A row with a populated
 
 ## OpenBao Workload Auth
 
-OpenBao authenticates repo-owned services through SPIRE JWT-SVIDs:
+Repo-owned workloads that authenticate directly to OpenBao do so by
+exchanging a SPIRE JWT-SVID for a short-lived OpenBao token:
 
 ```text
 issuer:   https://127.0.0.1:8082
@@ -169,9 +170,12 @@ mount:    auth/spiffe-jwt
 SPIRE server exposes a loopback-only HTTPS bundle endpoint for OpenBao JWT
 validation. The endpoint serves the trust bundle in SPIFFE/JWKS-compatible
 JSON at `/`, uses a private local CA pinned in OpenBao's JWT auth config, and
-is not a public federation endpoint. A service fetches a JWT-SVID for
+is not a public federation endpoint. A workload fetches a JWT-SVID for
 audience `openbao`, logs in to OpenBao, and receives an OpenBao token
-constrained by the policies bound to its SPIFFE subject.
+constrained by the policies bound to its SPIFFE subject. The JWT-SVID is used
+for the login exchange; subsequent KV and Transit requests use the returned
+OpenBao token. Repo-owned service-to-service calls remain on SPIFFE
+X.509-SVID mTLS.
 
 OpenBao role bindings are generated from the same repo-owned inventory that
 produces SPIRE registrations. Drift is tagged

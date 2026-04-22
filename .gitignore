@@ -11,6 +11,7 @@ src/secrets-service/secrets-service
 src/temporal-platform/forge-temporal-server
 src/temporal-platform/temporal-proof
 src/temporal-platform/temporal-schema
+src/temporal-platform/forge-temporal-web
 
 # Config (contains credentials)
 forge-metal.toml

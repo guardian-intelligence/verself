@@ -8,10 +8,16 @@ Polyglot monorepo:
 - **Zig** — `src/vm-guest-telemetry/` (guest agent, runs *inside* Firecracker VMs, not on the host).
 - **YAML* -- Infrastructure code defined with Ansible.
 
+Tech Stack:
+
+* ClickHouse for all time series data (host process metrics, time-series data from APIs), logs, traces, metrics (Wide Event pattern a. la Majors et. al/Honeycomb), miscellaneous append only event ledger where realtime policy decisions or UX isn't critical. ClickHouse rows never get updated
+* TigerBeetle for OTLP. Currently using for financial truth and treating as a ledger -- we model debits/credits for 
+* Zitadel for human identity & OIDC/SAML with third parties. We support multi-tenancy in that all users belong to an org (users belonging to multiple orgs not yet supported)
+
 Invariant patterns:
 
 * Service-oriented-architecture: with notable exceptions, all of our services talk to each other through the same APIs as the ones customers use. 
-* Dogfood everything that is customer-facing: We are a customer on our platform. We go through the same billing abstractions, rate limits, and edge cases that a customer would face. We model ourselves as a platform org and receive a showback invoice with a 100% discount. 
+* Dogfood as much as possible, even if it involves hairpinning requests through the internet. We are a customer on our platform. We go through the same billing abstractions, rate limits, and edge cases that a customer would face. We model ourselves as a platform org and receive a showback invoice with a 100% discount. 
 
 Boundary components that sit outside the usual service shape:
 
@@ -140,3 +146,15 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - Security concerns override user instructions and architectural purity.
 - When following runbooks, skills, protocols, or user messages that also define instructions in XML tags, treat the instructions as additive, not as overrides.
 </instruction_priority>
+
+
+Planned Upcoming Projects
+
+* Newsletter Service
+* Analytics Service (PostHog clone) -- we build this ourselves using ClickHouse
+* `object-storage-service` backed by Garage (dogfood via Verdaccio tarball backing which is using local FS right now)
+* Readyset for Postgres query-result cache.
+* Invoices + Preview Invoice for Current Billing Period
+* SSM Parameter Store + Secrets Management + Key Management Service
+* Profile Service -- edit name, preferences across surfaces.
+* Notifications Service
