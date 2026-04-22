@@ -46,10 +46,12 @@
 #
 #    TanStack frontends (Nitro SSR):             4240–4259 (shared block)
 #      4244  rent-a-sandbox
-#      4245  webmail
 #      4249  platform
 #      4252  company
 #
+# Port 4245 was webmail; the app was retired and its surfaces will be folded
+# into rent-a-sandbox. The port is reserved — do not re-assign until that
+# absorption lands.
 #    Grafana & ops UIs:                          4300–4399
 #      4300  Grafana
 #      4301  Temporal Web
@@ -184,9 +186,6 @@ services:
   electric_mail:
     host: "127.0.0.1"
     port: 3011
-  webmail:
-    host: "127.0.0.1"
-    port: 4245
   platform:
     host: "127.0.0.1"
     port: 4249

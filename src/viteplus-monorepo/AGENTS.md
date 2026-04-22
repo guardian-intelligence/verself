@@ -70,7 +70,9 @@ Only frontends need OIDC apps. Go backend services (mailbox-service, billing-ser
 | Zitadel Project   | OIDC Apps (frontends) | JWT Validators (backends)               |
 | ----------------- | --------------------- | --------------------------------------- |
 | `sandbox-rental`  | rent-a-sandbox        | sandbox-rental-service, billing-service |
-| `mailbox-service` | webmail               | mailbox-service                         |
+| `mailbox-service` | (pending)             | mailbox-service                         |
+
+The `mailbox-service` project previously had a `webmail` OIDC app; that frontend was retired and its surfaces will be folded into `rent-a-sandbox`. The project stays because `mailbox-service` backend JWT validation still targets it.
 
 ### Dev Mode OIDC Apps
 
@@ -86,7 +88,8 @@ For each frontend, create a dev OIDC app in the same Zitadel project as the prod
 | Frontend       | Zitadel Project | Preferred Port | Dev Redirect URI              |
 | -------------- | --------------- | -------------- | ----------------------------- |
 | rent-a-sandbox | sandbox-rental  | 4244           | `http://127.0.0.1:*/callback` |
-| webmail        | mailbox-service | 4245           | `http://127.0.0.1:*/callback` |
+
+Port 4245 (previously webmail) is reserved; webmail's surfaces will be folded into rent-a-sandbox.
 
 The dev app must have:
 

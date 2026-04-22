@@ -179,7 +179,7 @@ Services get subdomains configured via Cloudflare:
 | `dashboard.<domain>` | Grafana |
 | `git.<domain>` | Forgejo |
 | `auth.<domain>` | Zitadel |
-| `mail.<domain>` | Stalwart (JMAP API + webmail) |
+| `mail.<domain>` | Stalwart (JMAP API + mailbox-service) — webmail frontend retired; surfaces will be folded into rent-a-sandbox |
 
 ## Server Profile
 

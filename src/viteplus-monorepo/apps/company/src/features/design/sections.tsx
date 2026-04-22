@@ -344,83 +344,84 @@ function SectionWorkshop() {
           <WingsArgent style={{ width: "56%", height: "auto" }} cropped />
         </TreatmentMarkCard>
         <TreatmentTypeLadder
-        rows={[
-          {
-            sample: "Sandbox execution",
-            role: "h3 · ui · workshop",
-            spec: "Geist / 20 / 1.3 / -10 · SemiBold",
-            sampleSizePx: 20,
-            sampleStyle: {
-              fontFamily: "'Geist', sans-serif",
-              fontWeight: 600,
-              fontSize: "20px",
-              lineHeight: 1.3,
-              letterSpacing: "-0.01em",
+          rows={[
+            {
+              sample: "Sandbox execution",
+              role: "h3 · ui · workshop",
+              spec: "Geist / 20 / 1.3 / -10 · SemiBold",
+              sampleSizePx: 20,
+              sampleStyle: {
+                fontFamily: "'Geist', sans-serif",
+                fontWeight: 600,
+                fontSize: "20px",
+                lineHeight: 1.3,
+                letterSpacing: "-0.01em",
+              },
             },
-          },
-          {
-            sample: "14 active across 4 tenants · 3 h 22 m median lease · 99.98% attestation rate.",
-            role: "body",
-            spec: "Geist / 14 / 1.5 · Regular",
-            sampleSizePx: 14,
-            sampleStyle: {
-              fontFamily: "'Geist', sans-serif",
-              fontWeight: 400,
-              fontSize: "14px",
-              lineHeight: 1.5,
+            {
+              sample:
+                "14 active across 4 tenants · 3 h 22 m median lease · 99.98% attestation rate.",
+              role: "body",
+              spec: "Geist / 14 / 1.5 · Regular",
+              sampleSizePx: 14,
+              sampleStyle: {
+                fontFamily: "'Geist', sans-serif",
+                fontWeight: 400,
+                fontSize: "14px",
+                lineHeight: 1.5,
+              },
             },
-          },
-          {
-            sample: "tenant · region · workload · status",
-            role: "small · ash",
-            spec: "Geist / 12 / 1.5 · Regular · Ash",
-            sampleSizePx: 12,
-            sampleStyle: {
-              fontFamily: "'Geist', sans-serif",
-              fontWeight: 400,
-              fontSize: "12px",
-              lineHeight: 1.5,
-              color: "var(--muted)",
+            {
+              sample: "tenant · region · workload · status",
+              role: "small · ash",
+              spec: "Geist / 12 / 1.5 · Regular · Ash",
+              sampleSizePx: 12,
+              sampleStyle: {
+                fontFamily: "'Geist', sans-serif",
+                fontWeight: 400,
+                fontSize: "12px",
+                lineHeight: 1.5,
+                color: "var(--muted)",
+              },
             },
-          },
-          {
-            sample: "0x41e9f2a  attest=true  lease=3h22m  region=us-east-1",
-            role: "mono",
-            spec: "Geist Mono / 12 / 1.5 · Regular",
-            sampleSizePx: 12,
-            sampleStyle: {
-              fontFamily: "'Geist Mono', ui-monospace, monospace",
-              fontWeight: 400,
-              fontSize: "12px",
-              lineHeight: 1.5,
-              color: "var(--muted)",
+            {
+              sample: "0x41e9f2a  attest=true  lease=3h22m  region=us-east-1",
+              role: "mono",
+              spec: "Geist Mono / 12 / 1.5 · Regular",
+              sampleSizePx: 12,
+              sampleStyle: {
+                fontFamily: "'Geist Mono', ui-monospace, monospace",
+                fontWeight: 400,
+                fontSize: "12px",
+                lineHeight: 1.5,
+                color: "var(--muted)",
+              },
             },
-          },
-          {
-            sample: "LIVE · PAGEABLE · US-EAST-1",
-            role: "badge · pageable",
-            spec: "Geist Mono / 10 / 1 / +180 · 600 · UPPER",
-            sampleSizePx: 10,
-            sampleStyle: {
-              fontFamily: "'Geist Mono', ui-monospace, monospace",
-              fontWeight: 600,
-              fontVariationSettings: '"wght" 600',
-              fontSize: "10px",
-              lineHeight: 1,
-              letterSpacing: "0.18em",
-              textTransform: "uppercase",
-              color: "var(--color-amber)",
+            {
+              sample: "LIVE · PAGEABLE · US-EAST-1",
+              role: "badge · pageable",
+              spec: "Geist Mono / 10 / 1 / +180 · 600 · UPPER",
+              sampleSizePx: 10,
+              sampleStyle: {
+                fontFamily: "'Geist Mono', ui-monospace, monospace",
+                fontWeight: 600,
+                fontVariationSettings: '"wght" 600',
+                fontSize: "10px",
+                lineHeight: 1,
+                letterSpacing: "0.18em",
+                textTransform: "uppercase",
+                color: "var(--color-amber)",
+              },
             },
-          },
-        ]}
-        caption={
-          <>
-            Workshop declines Fraunces entirely. If an editor ever asks for a serif inside the
-            product, that's a smell: the surface probably belongs under Letters or Newsroom, not
-            Workshop.
-          </>
-        }
-      />
+          ]}
+          caption={
+            <>
+              Workshop declines Fraunces entirely. If an editor ever asks for a serif inside the
+              product, that's a smell: the surface probably belongs under Letters or Newsroom, not
+              Workshop.
+            </>
+          }
+        />
       </RulesRow>
       <div style={{ marginBottom: "16px" }}>
         <TreatmentWingsOnlyLadder
@@ -1109,79 +1110,79 @@ function SectionLetters() {
         {/* Letters is the only treatment where Fraunces sets body prose;
             Geist only handles bylines and metadata. */}
         <TreatmentTypeLadder
-        rows={[
-          {
-            sample: "Applied intelligence is not an adjective.",
-            role: "article · h1",
-            spec: "Fraunces / 64 / 1.02 / -25 · opsz 144 · SOFT 50",
-            sampleSizePx: 48,
-            sampleStyle: {
-              fontFamily: "'Fraunces', Georgia, serif",
-              fontVariationSettings: '"opsz" 144, "SOFT" 50',
-              fontWeight: 400,
-              fontSize: "48px",
-              lineHeight: 1.02,
-              letterSpacing: "-0.025em",
+          rows={[
+            {
+              sample: "Applied intelligence is not an adjective.",
+              role: "article · h1",
+              spec: "Fraunces / 64 / 1.02 / -25 · opsz 144 · SOFT 50",
+              sampleSizePx: 48,
+              sampleStyle: {
+                fontFamily: "'Fraunces', Georgia, serif",
+                fontVariationSettings: '"opsz" 144, "SOFT" 50',
+                fontWeight: 400,
+                fontSize: "48px",
+                lineHeight: 1.02,
+                letterSpacing: "-0.025em",
+              },
             },
-          },
-          {
-            sample:
-              "There is a tradition in the software industry of taking a good word and pointing it at something that has not yet earned it.",
-            role: "body prose · fraunces",
-            spec: "Fraunces / 19 / 1.55 · opsz 18 · Regular",
-            sampleSizePx: 19,
-            sampleStyle: {
-              fontFamily: "'Fraunces', Georgia, serif",
-              fontVariationSettings: '"opsz" 18, "SOFT" 0',
-              fontWeight: 400,
-              fontSize: "19px",
-              lineHeight: 1.55,
+            {
+              sample:
+                "There is a tradition in the software industry of taking a good word and pointing it at something that has not yet earned it.",
+              role: "body prose · fraunces",
+              spec: "Fraunces / 19 / 1.55 · opsz 18 · Regular",
+              sampleSizePx: 19,
+              sampleStyle: {
+                fontFamily: "'Fraunces', Georgia, serif",
+                fontVariationSettings: '"opsz" 18, "SOFT" 0',
+                fontWeight: 400,
+                fontSize: "19px",
+                lineHeight: 1.55,
+              },
             },
-          },
-          {
-            sample: "— the founder",
-            role: "valediction · italic",
-            spec: "Fraunces / 22 / italic · opsz 72 · SOFT 60",
-            sampleSizePx: 22,
-            sampleStyle: {
-              fontFamily: "'Fraunces', Georgia, serif",
-              fontVariationSettings: '"opsz" 72, "SOFT" 60',
-              fontStyle: "italic",
-              fontWeight: 400,
-              fontSize: "22px",
-              lineHeight: 1.3,
-              color: "var(--muted-strong)",
+            {
+              sample: "— the founder",
+              role: "valediction · italic",
+              spec: "Fraunces / 22 / italic · opsz 72 · SOFT 60",
+              sampleSizePx: 22,
+              sampleStyle: {
+                fontFamily: "'Fraunces', Georgia, serif",
+                fontVariationSettings: '"opsz" 72, "SOFT" 60',
+                fontStyle: "italic",
+                fontWeight: 400,
+                fontSize: "22px",
+                lineHeight: 1.3,
+                color: "var(--muted-strong)",
+              },
             },
-          },
-          {
-            sample: "By the founder · Filed from Seattle, WA",
-            role: "byline · meta",
-            spec: "Geist / 13 / 1.5 · Stone 0.7",
-            sampleSizePx: 13,
-            sampleStyle: {
-              fontFamily: "'Geist', sans-serif",
-              fontWeight: 400,
-              fontSize: "13px",
-              lineHeight: 1.5,
-              color: "var(--muted)",
+            {
+              sample: "By the founder · Filed from Seattle, WA",
+              role: "byline · meta",
+              spec: "Geist / 13 / 1.5 · Stone 0.7",
+              sampleSizePx: 13,
+              sampleStyle: {
+                fontFamily: "'Geist', sans-serif",
+                fontWeight: 400,
+                fontSize: "13px",
+                lineHeight: 1.5,
+                color: "var(--muted)",
+              },
             },
-          },
-          {
-            sample: "Letters № 3 · 19 Apr 2026 · 8 min read",
-            role: "eyebrow · upper",
-            spec: "Geist / 11 / 1 / +240 · 500 · UPPER",
-            sampleSizePx: 11,
-            sampleStyle: {
-              fontFamily: "'Geist', sans-serif",
-              fontWeight: 500,
-              fontSize: "11px",
-              lineHeight: 1,
-              letterSpacing: "0.24em",
-              textTransform: "uppercase",
-              color: "var(--muted)",
+            {
+              sample: "Letters № 3 · 19 Apr 2026 · 8 min read",
+              role: "eyebrow · upper",
+              spec: "Geist / 11 / 1 / +240 · 500 · UPPER",
+              sampleSizePx: 11,
+              sampleStyle: {
+                fontFamily: "'Geist', sans-serif",
+                fontWeight: 500,
+                fontSize: "11px",
+                lineHeight: 1,
+                letterSpacing: "0.24em",
+                textTransform: "uppercase",
+                color: "var(--muted)",
+              },
             },
-          },
-        ]}
+          ]}
           caption={
             <>
               Letters is the only treatment where Fraunces sets body prose. If a surface wants to

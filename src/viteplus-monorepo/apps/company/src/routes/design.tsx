@@ -77,9 +77,9 @@ function DesignHeader() {
       <p className="max-w-3xl text-base leading-relaxed" style={{ color: "var(--muted-strong)" }}>
         The wings are always <b>Argent</b> (#FFFFFF); three SIL-Open-Font-Licensed families —
         Fraunces for voice, Geist for work, Geist Mono for the machine — carry the type. Every
-        section below is one of four treatments the firm ships in — <b>Company</b>,{" "}
-        <b>Workshop</b>, <b>Newsroom</b>, <b>Letters</b> — each declaring its own palette,
-        typography, and mark usage, plus the two cross-treatment rules in <i>Applied</i>.
+        section below is one of four treatments the firm ships in — <b>Company</b>, <b>Workshop</b>,{" "}
+        <b>Newsroom</b>, <b>Letters</b> — each declaring its own palette, typography, and mark
+        usage, plus the two cross-treatment rules in <i>Applied</i>.
       </p>
     </header>
   );

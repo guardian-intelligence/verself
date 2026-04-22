@@ -330,10 +330,9 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 		reverse_proxy {{ services.stalwart.host }}:{{ services.stalwart.http_port }}
 	}
 
-	handle {
-		import frontend_security_headers
-		reverse_proxy {{ services.webmail.host }}:{{ services.webmail.port }}
-	}
+	# Webmail frontend is being retired; its surfaces will be folded into the
+	# rent-a-sandbox console. `mail.anveio.com` continues to terminate JMAP /
+	# mailbox-service protocol endpoints above; anything else 404s.
 }
 
 {{ platform_domain }} {

@@ -135,8 +135,6 @@
       - "--exclude=.output"
       - "--exclude=dist"
       - "--exclude=.tanstack"
-      - "--exclude=apps/mail"
-      - "--exclude=apps/mail/**"
       - "--exclude=apps/company"
       - "--exclude=apps/company/**"
       - "--exclude=playwright-report"
