@@ -6,13 +6,13 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/forge-metal/billing-service/internal/billing/ledger"
+	"github.com/forge-metal/envconfig"
 )
 
 type accountRow struct {
@@ -43,12 +43,19 @@ func main() {
 }
 
 func run() error {
+	defaults := envconfig.New()
+	defaultTBAddress := defaults.String("BILLING_TB_ADDRESS", "127.0.0.1:3320")
+	defaultClusterID := defaults.Uint64("BILLING_TB_CLUSTER_ID", 0)
+	if err := defaults.Err(); err != nil {
+		return err
+	}
+
 	var pgDSN, pgDSNFile, tbAddress, orgID, grantID string
 	var clusterID uint64
 	flag.StringVar(&pgDSN, "pg-dsn", "", "billing PostgreSQL DSN")
 	flag.StringVar(&pgDSNFile, "pg-dsn-file", "", "file containing billing PostgreSQL DSN")
-	flag.StringVar(&tbAddress, "tb-address", envOr("BILLING_TB_ADDRESS", "127.0.0.1:3320"), "comma-separated TigerBeetle addresses")
-	flag.Uint64Var(&clusterID, "tb-cluster-id", envUint64Or("BILLING_TB_CLUSTER_ID", 0), "TigerBeetle cluster ID")
+	flag.StringVar(&tbAddress, "tb-address", defaultTBAddress, "comma-separated TigerBeetle addresses")
+	flag.Uint64Var(&clusterID, "tb-cluster-id", defaultClusterID, "TigerBeetle cluster ID")
 	flag.StringVar(&orgID, "org-id", "", "optional org ID; defaults to operator accounts")
 	flag.StringVar(&grantID, "grant-id", "", "optional credit grant ID")
 	flag.Parse()
@@ -179,23 +186,4 @@ func resolvePGDSN(value, file string) (string, error) {
 		return "", fmt.Errorf("pg dsn file is empty")
 	}
 	return dsn, nil
-}
-
-func envOr(key, fallback string) string {
-	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-		return value
-	}
-	return fallback
-}
-
-func envUint64Or(key string, fallback uint64) uint64 {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return fallback
-	}
-	parsed, err := strconv.ParseUint(value, 10, 64)
-	if err != nil {
-		return fallback
-	}
-	return parsed
 }

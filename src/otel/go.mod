@@ -3,6 +3,7 @@ module github.com/forge-metal/otel
 go 1.25.0
 
 require (
+	github.com/forge-metal/envconfig v0.0.0
 	go.opentelemetry.io/contrib/bridges/otelslog v0.17.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.19.0
@@ -11,6 +12,8 @@ require (
 	go.opentelemetry.io/otel/sdk/log v0.19.0
 	go.opentelemetry.io/otel/trace v1.43.0
 )
+
+replace github.com/forge-metal/envconfig => ../envconfig
 
 require (
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect

@@ -2,13 +2,13 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/forge-metal/envconfig"
 	fmotel "github.com/forge-metal/otel"
 
 	"github.com/forge-metal/temporal-platform/internal/temporalweb"
@@ -39,17 +39,15 @@ func run() error {
 	}()
 	slog.SetDefault(logger)
 
+	l := envconfig.New()
 	cfg := temporalweb.Config{
-		ConfigDir:        envOr("FM_TEMPORAL_WEB_CONFIG_DIR", "/etc/temporal-web"),
-		Environment:      envOr("FM_TEMPORAL_WEB_CONFIG_ENV", "production"),
-		FrontendAddress:  envOr("FM_TEMPORAL_FRONTEND_ADDRESS", ""),
-		SPIFFESocketAddr: envOr("SPIFFE_ENDPOINT_SOCKET", ""),
+		ConfigDir:        l.String("FM_TEMPORAL_WEB_CONFIG_DIR", "/etc/temporal-web"),
+		Environment:      l.String("FM_TEMPORAL_WEB_CONFIG_ENV", "production"),
+		FrontendAddress:  l.RequireString("FM_TEMPORAL_FRONTEND_ADDRESS"),
+		SPIFFESocketAddr: l.RequireString("SPIFFE_ENDPOINT_SOCKET"),
 	}
-	if cfg.FrontendAddress == "" {
-		return errors.New("FM_TEMPORAL_FRONTEND_ADDRESS is required")
-	}
-	if cfg.SPIFFESocketAddr == "" {
-		return errors.New("SPIFFE_ENDPOINT_SOCKET is required")
+	if err := l.Err(); err != nil {
+		return err
 	}
 
 	slog.InfoContext(
@@ -61,12 +59,4 @@ func run() error {
 	)
 
 	return temporalweb.Run(ctx, cfg)
-}
-
-func envOr(name, fallback string) string {
-	raw := os.Getenv(name)
-	if raw == "" {
-		return fallback
-	}
-	return raw
 }
