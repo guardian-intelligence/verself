@@ -69,7 +69,7 @@ export const DESIGN_SECTIONS: readonly DesignSection[] = [
     number: "07",
     group: "System",
     label: "Colour",
-    title: "Three grounds. Two accents.",
+    title: "Three grounds. Three accents.",
   },
   {
     id: "typography",

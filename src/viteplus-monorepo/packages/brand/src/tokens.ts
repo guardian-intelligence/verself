@@ -12,11 +12,13 @@ export const accents = {
   argent: "#FFFFFF",
   ink: "#0B0B0B",
   bordeaux: "#5C1F1E",
+  amber: "#F79326",
   typeIron: "#F5F5F5",
 } as const;
 
 export const pantone = {
   flare: "Pantone 389 C",
+  amber: "Pantone 715 C",
 } as const;
 
 export type GroundName = keyof typeof grounds;
