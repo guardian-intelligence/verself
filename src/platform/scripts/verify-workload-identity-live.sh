@@ -72,7 +72,6 @@ systemd_units = [
     "grafana-clickhouse-spiffe-helper",
     "grafana",
     "temporal-server",
-    "temporal-proof-worker",
     "stalwart",
 ]
 for unit in systemd_units:
@@ -160,7 +159,6 @@ for unit in [
     "grafana-clickhouse-spiffe-helper",
     "grafana",
     "temporal-server",
-    "temporal-proof-worker",
     "stalwart",
 ]:
     subprocess.run(["systemctl", "restart", unit], check=True)
