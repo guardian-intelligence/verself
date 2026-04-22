@@ -15,6 +15,7 @@ import (
 	"github.com/spiffe/go-spiffe/v2/svid/jwtsvid"
 	"github.com/spiffe/go-spiffe/v2/svid/x509svid"
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -144,11 +145,13 @@ func MTLSClient(source *workloadapi.X509Source, expectedServerID spiffeid.ID, ba
 	}
 	transport.TLSClientConfig = tlsconfig.MTLSClientConfig(source, source, tlsconfig.AuthorizeID(expectedServerID))
 	return &http.Client{
-		Transport: &clientSpanTransport{
+		// otelhttp injects trace context on the repo-wide SPIFFE mTLS path so
+		// downstream service spans and audit rows stay joinable in ClickHouse.
+		Transport: otelhttp.NewTransport(&clientSpanTransport{
 			next:             transport,
 			expectedServerID: expectedServerID.String(),
 			source:           source,
-		},
+		}),
 		Timeout: 3 * time.Second,
 	}, nil
 }
