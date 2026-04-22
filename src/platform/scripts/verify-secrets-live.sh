@@ -23,8 +23,8 @@ trap cleanup EXIT
 source <("${script_dir}/assume-persona.sh" acme-admin --print)
 admin_secrets_token="${SECRETS_SERVICE_ACCESS_TOKEN}"
 admin_identity_token="${IDENTITY_SERVICE_ACCESS_TOKEN}"
-sandbox_rental_project_id="${SANDBOX_RENTAL_AUTH_PROJECT_ID}"
-secrets_service_project_id="${SECRETS_SERVICE_AUTH_PROJECT_ID}"
+sandbox_rental_project_id="${SANDBOX_RENTAL_AUTH_AUDIENCE}"
+secrets_service_project_id="${SECRETS_SERVICE_AUTH_AUDIENCE}"
 
 # shellcheck disable=SC1090
 source <("${script_dir}/assume-persona.sh" acme-member --print)

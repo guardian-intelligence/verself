@@ -280,7 +280,6 @@
       Environment=SECRETS_AUTH_ISSUER_URL={{ secrets_service_auth_issuer_url }}
       Environment=SECRETS_AUTH_JWKS_URL={{ secrets_service_auth_jwks_url }}
       Environment=SECRETS_AUTH_AUDIENCE={{ secrets_service_auth_audience }}
-      Environment=SECRETS_AUTH_PROJECT_ID={{ secrets_service_auth_audience }}
       Environment=SECRETS_OPENBAO_ADDR={{ secrets_service_openbao_addr }}
       Environment=SECRETS_OPENBAO_KV_PREFIX={{ secrets_service_openbao_kv_prefix }}
       Environment=SECRETS_OPENBAO_TRANSIT_PREFIX={{ secrets_service_openbao_transit_prefix }}

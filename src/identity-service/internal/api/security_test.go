@@ -69,18 +69,18 @@ func TestIdentityPermissionChecksCurrentOrgRoleBundlesAndDirectScopes(t *testing
 		Store:     store,
 		ProjectID: "identity-project",
 	}
-	admin := identityServiceToken("identity-project", "42", identity.RoleAdmin)
+	admin := identityServiceToken("42", identity.RoleAdmin)
 	if allowed, err := identityHasPermission(ctx, svc, admin, permissionMemberCapabilitiesWrite); err != nil || !allowed {
 		t.Fatal("org admin should be allowed to write member capabilities")
 	}
 
-	wrongOrg := identityServiceToken("identity-project", "99", identity.RoleAdmin)
+	wrongOrg := identityServiceToken("99", identity.RoleAdmin)
 	wrongOrg.OrgID = "42"
 	if allowed, err := identityHasPermission(ctx, svc, wrongOrg, permissionMemberCapabilitiesWrite); err != nil || allowed {
 		t.Fatal("role assignment for another org must not grant current org")
 	}
 
-	member := identityServiceToken("identity-project", "42", identity.RoleMember)
+	member := identityServiceToken("42", identity.RoleMember)
 	if allowed, err := identityHasPermission(ctx, svc, member, permissionMemberRead); err != nil || !allowed {
 		t.Fatal("member should be allowed to read members")
 	}
@@ -88,17 +88,7 @@ func TestIdentityPermissionChecksCurrentOrgRoleBundlesAndDirectScopes(t *testing
 		t.Fatal("member should not be allowed to write member capabilities")
 	}
 
-	crossProject := identityServiceToken("sandbox-project", "42", "sandbox_org_admin")
-	svcWithDirectory := &identity.Service{
-		Store:     store,
-		Directory: &staticDirectory{},
-		ProjectID: "identity-project",
-	}
-	if allowed, err := identityHasPermission(ctx, svcWithDirectory, crossProject, permissionMemberCapabilitiesWrite); err != nil || allowed {
-		t.Fatalf("cross-project web token must fail closed without a target project role claim, allowed=%v err=%v", allowed, err)
-	}
-
-	owner := identityServiceToken("identity-project", "42", identity.RoleOwner)
+	owner := identityServiceToken("42", identity.RoleOwner)
 	if allowed, err := identityHasPermission(ctx, svc, owner, permissionMemberCapabilitiesWrite); err != nil || !allowed {
 		t.Fatal("owner should grant all identity-service permissions")
 	}
@@ -121,11 +111,10 @@ func TestIdentityPermissionChecksCurrentOrgRoleBundlesAndDirectScopes(t *testing
 	}
 }
 
-func identityServiceToken(projectID, orgID string, roles ...string) *auth.Identity {
+func identityServiceToken(orgID string, roles ...string) *auth.Identity {
 	assignments := make([]auth.RoleAssignment, 0, len(roles))
 	for _, role := range roles {
 		assignments = append(assignments, auth.RoleAssignment{
-			ProjectID:      projectID,
 			OrganizationID: orgID,
 			Role:           role,
 		})
@@ -133,7 +122,6 @@ func identityServiceToken(projectID, orgID string, roles ...string) *auth.Identi
 	return &auth.Identity{
 		Subject:         "user-1",
 		OrgID:           orgID,
-		ProjectID:       projectID,
 		RoleAssignments: assignments,
 	}
 }
@@ -176,36 +164,6 @@ func (s staticIdentityStore) RevokeAPICredential(context.Context, string, string
 
 func (s staticIdentityStore) ResolveAPICredentialClaims(context.Context, string, time.Time) (identity.ResolveAPICredentialClaimsResult, error) {
 	return identity.ResolveAPICredentialClaimsResult{}, identity.ErrAPICredentialMissing
-}
-
-type staticDirectory struct{}
-
-func (s *staticDirectory) ListMembers(context.Context, string, string) ([]identity.Member, error) {
-	return []identity.Member{}, nil
-}
-
-func (s *staticDirectory) InviteMember(context.Context, string, string, identity.InviteMemberRequest) (identity.InviteMemberResult, error) {
-	return identity.InviteMemberResult{}, nil
-}
-
-func (s *staticDirectory) UpdateMemberRoles(context.Context, string, string, string, []string) (identity.Member, error) {
-	return identity.Member{}, nil
-}
-
-func (s *staticDirectory) CreateServiceAccountCredential(context.Context, string, identity.ServiceAccountCredentialInput) (string, identity.APICredentialIssuedMaterial, error) {
-	return "subject-1", identity.APICredentialIssuedMaterial{}, nil
-}
-
-func (s *staticDirectory) AddServiceAccountCredential(context.Context, identity.AddServiceAccountCredentialInput) (identity.APICredentialIssuedMaterial, error) {
-	return identity.APICredentialIssuedMaterial{}, nil
-}
-
-func (s *staticDirectory) RemoveServiceAccountCredential(context.Context, string, identity.APICredentialSecret) error {
-	return nil
-}
-
-func (s *staticDirectory) DeactivateServiceAccount(context.Context, string) error {
-	return nil
 }
 
 func TestOperationPolicyRequiresIdempotencyHeader(t *testing.T) {

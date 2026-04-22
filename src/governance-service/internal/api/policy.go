@@ -591,12 +591,12 @@ func rateLimitExceeded(ctx context.Context, retryAfter time.Duration) error {
 }
 
 func identityRolesForCurrentOrg(identity *auth.Identity) []string {
-	if identity == nil || len(identity.RoleAssignments) == 0 || identity.OrgID == "" || identity.ProjectID == "" {
+	if identity == nil || len(identity.RoleAssignments) == 0 || identity.OrgID == "" {
 		return nil
 	}
 	roles := make([]string, 0, len(identity.RoleAssignments))
 	for _, assignment := range identity.RoleAssignments {
-		if assignment.ProjectID == identity.ProjectID && assignment.OrganizationID == identity.OrgID && assignment.Role != "" {
+		if assignment.OrganizationID == identity.OrgID && assignment.Role != "" {
 			roles = append(roles, assignment.Role)
 		}
 	}

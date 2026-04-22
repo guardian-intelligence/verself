@@ -133,9 +133,9 @@ if [[ -z "${auth_project_id}" ]]; then
   echo "failed to resolve AUTH_PROJECT_ID from ${remote_env_path}" >&2
   exit 1
 fi
-identity_service_auth_project_id="${IDENTITY_SERVICE_AUTH_PROJECT_ID:-$(read_remote_env_value IDENTITY_SERVICE_AUTH_PROJECT_ID)}"
-if [[ -z "${identity_service_auth_project_id}" ]]; then
-  echo "failed to resolve IDENTITY_SERVICE_AUTH_PROJECT_ID from ${remote_env_path}" >&2
+identity_service_auth_audience="${IDENTITY_SERVICE_AUTH_AUDIENCE:-$(read_remote_env_value IDENTITY_SERVICE_AUTH_AUDIENCE)}"
+if [[ -z "${identity_service_auth_audience}" ]]; then
+  echo "failed to resolve IDENTITY_SERVICE_AUTH_AUDIENCE from ${remote_env_path}" >&2
   exit 1
 fi
 
@@ -177,7 +177,7 @@ export FORGE_METAL_DOMAIN="${FORGE_METAL_DOMAIN:-${VERIFICATION_DOMAIN}}"
 export AUTH_SUBDOMAIN="${AUTH_SUBDOMAIN:-auth}"
 export AUTH_CLIENT_ID="${AUTH_CLIENT_ID:-${auth_client_id}}"
 export AUTH_PROJECT_ID="${AUTH_PROJECT_ID:-${auth_project_id}}"
-export IDENTITY_SERVICE_AUTH_PROJECT_ID="${IDENTITY_SERVICE_AUTH_PROJECT_ID:-${identity_service_auth_project_id}}"
+export IDENTITY_SERVICE_AUTH_AUDIENCE="${IDENTITY_SERVICE_AUTH_AUDIENCE:-${identity_service_auth_audience}}"
 export AUTH_DATABASE_URL="${AUTH_DATABASE_URL:-postgresql://frontend_auth:${frontend_auth_password}@127.0.0.1:${local_pg_port}/frontend_auth?sslmode=disable}"
 export AUTH_SESSION_SECRET="${AUTH_SESSION_SECRET:-$(python3 - <<'PY'
 import secrets
@@ -197,7 +197,7 @@ export FORGE_METAL_DOMAIN=${FORGE_METAL_DOMAIN}
 export AUTH_SUBDOMAIN=${AUTH_SUBDOMAIN}
 export AUTH_CLIENT_ID=${AUTH_CLIENT_ID}
 export AUTH_PROJECT_ID=${AUTH_PROJECT_ID}
-export IDENTITY_SERVICE_AUTH_PROJECT_ID=${IDENTITY_SERVICE_AUTH_PROJECT_ID}
+export IDENTITY_SERVICE_AUTH_AUDIENCE=${IDENTITY_SERVICE_AUTH_AUDIENCE}
 export AUTH_DATABASE_URL=${AUTH_DATABASE_URL}
 export AUTH_SESSION_SECRET=${AUTH_SESSION_SECRET}
 export SANDBOX_RENTAL_SERVICE_BASE_URL=${SANDBOX_RENTAL_SERVICE_BASE_URL}

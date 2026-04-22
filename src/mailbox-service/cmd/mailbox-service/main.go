@@ -195,7 +195,6 @@ func run() error {
 	authHandler := auth.Middleware(auth.Config{
 		IssuerURL: cfg.AuthIssuerURL,
 		Audience:  cfg.AuthAudience,
-		ProjectID: cfg.AuthAudience,
 		JWKSURL:   cfg.AuthJWKSURL,
 	})(protectedAPI)
 	mux.Handle("/api/v1/mail/", authHandler)

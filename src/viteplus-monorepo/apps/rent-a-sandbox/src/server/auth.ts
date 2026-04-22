@@ -3,7 +3,7 @@ import { deriveAuthIssuerURL, requireEnv, requireURLFromEnv } from "@forge-metal
 
 export function getAuthConfig() {
   const authProjectID = requireEnv("AUTH_PROJECT_ID");
-  const identityProjectID = process.env.IDENTITY_SERVICE_AUTH_PROJECT_ID?.trim();
+  const identityAudience = process.env.IDENTITY_SERVICE_AUTH_AUDIENCE?.trim();
   return createAuthConfig({
     appName: "rent-a-sandbox",
     issuerURL: deriveAuthIssuerURL(),
@@ -18,7 +18,7 @@ export function getAuthConfig() {
       "offline_access",
       "urn:zitadel:iam:user:resourceowner",
       `urn:zitadel:iam:org:project:id:${authProjectID}:aud`,
-      ...(identityProjectID ? [`urn:zitadel:iam:org:project:id:${identityProjectID}:aud`] : []),
+      ...(identityAudience ? [`urn:zitadel:iam:org:project:id:${identityAudience}:aud`] : []),
       "urn:zitadel:iam:org:projects:roles",
     ],
     callbackPath: "/callback",

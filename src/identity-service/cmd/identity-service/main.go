@@ -64,7 +64,6 @@ func run() error {
 	authIssuerURL := requireEnv("IDENTITY_AUTH_ISSUER_URL")
 	authAudience := requireEnv("IDENTITY_AUTH_AUDIENCE")
 	authJWKSURL := envOr("IDENTITY_AUTH_JWKS_URL", "")
-	projectID := requireEnv("IDENTITY_AUTH_PROJECT_ID")
 	zitadelBaseURL := requireEnv("IDENTITY_ZITADEL_BASE_URL")
 	zitadelHostHeader := requireEnv("IDENTITY_ZITADEL_HOST")
 
@@ -96,7 +95,7 @@ func run() error {
 	identityService := &identity.Service{
 		Store:     identity.SQLStore{DB: pg},
 		Directory: zitadelClient,
-		ProjectID: projectID,
+		ProjectID: authAudience,
 	}
 	spiffeSource, err := workloadauth.Source(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
 	if err != nil {
@@ -133,7 +132,6 @@ func run() error {
 	protected := auth.Middleware(auth.Config{
 		IssuerURL: authIssuerURL,
 		Audience:  authAudience,
-		ProjectID: projectID,
 		JWKSURL:   authJWKSURL,
 	})(privateMux)
 	rootMux.Handle("/", protected)

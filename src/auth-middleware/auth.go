@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const verifierInitTimeout = 5 * time.Second
@@ -25,7 +27,6 @@ var identityKey contextKey
 type Identity struct {
 	Subject         string           // Zitadel user or service account ID.
 	OrgID           string           // Organization/resource owner ID when present.
-	ProjectID       string           // Target service project whose role claims were accepted.
 	Roles           []string         // Roles from the target service project claim.
 	RoleAssignments []RoleAssignment // Structured target-project role assignments.
 	Email           string           // Email, if present in the token.
@@ -33,7 +34,6 @@ type Identity struct {
 }
 
 type RoleAssignment struct {
-	ProjectID        string
 	Role             string
 	OrganizationID   string
 	OrganizationName string
@@ -43,7 +43,6 @@ type RoleAssignment struct {
 type Config struct {
 	IssuerURL string // Expected issuer URL from the token's iss claim.
 	Audience  string // Expected audience value from the token's aud claim.
-	ProjectID string // Zitadel project whose project-scoped roles this service accepts. Defaults to Audience.
 	JWKSURL   string // Optional: fetch keys from this URL instead of OIDC discovery.
 }
 
@@ -102,16 +101,19 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 				return
 			}
 
-			roleAssignments := extractRoleAssignments(rawClaims, cache.cfg.ProjectID)
+			roleAssignments := extractRoleAssignments(rawClaims, cache.cfg.Audience)
 			identity := &Identity{
 				Subject:         idToken.Subject,
 				OrgID:           extractOrgID(rawClaims),
-				ProjectID:       cache.cfg.ProjectID,
 				Roles:           rolesFromAssignments(roleAssignments),
 				RoleAssignments: roleAssignments,
 				Email:           stringClaim(rawClaims, "email"),
 				Raw:             rawClaims,
 			}
+			trace.SpanFromContext(r.Context()).SetAttributes(
+				attribute.String("auth.audience", cache.cfg.Audience),
+				attribute.Int("auth.role_assignment_count", len(roleAssignments)),
+			)
 
 			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), identityKey, identity)))
 		})
@@ -121,10 +123,6 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 func normalizeConfig(cfg Config) Config {
 	cfg.IssuerURL = strings.TrimSpace(cfg.IssuerURL)
 	cfg.Audience = strings.TrimSpace(cfg.Audience)
-	cfg.ProjectID = strings.TrimSpace(cfg.ProjectID)
-	if cfg.ProjectID == "" {
-		cfg.ProjectID = cfg.Audience
-	}
 	cfg.JWKSURL = strings.TrimSpace(cfg.JWKSURL)
 	return cfg
 }
@@ -221,8 +219,6 @@ func (c Config) validate() error {
 		return errors.New("issuer URL is required")
 	case c.Audience == "":
 		return errors.New("audience is required")
-	case c.ProjectID == "":
-		return errors.New("project ID is required")
 	default:
 		return nil
 	}
@@ -301,7 +297,7 @@ func extractRoleAssignments(claims map[string]any, projectID string) []RoleAssig
 	if projectID == "" {
 		return nil
 	}
-	assignments := collectRoleAssignments(projectID, claims["urn:zitadel:iam:org:project:"+projectID+":roles"])
+	assignments := collectRoleAssignments(claims["urn:zitadel:iam:org:project:"+projectID+":roles"])
 
 	if len(assignments) == 0 {
 		return nil
@@ -310,19 +306,15 @@ func extractRoleAssignments(claims map[string]any, projectID string) []RoleAssig
 	sort.Slice(assignments, func(i, j int) bool {
 		left := assignments[i]
 		right := assignments[j]
-		switch {
-		case left.ProjectID != right.ProjectID:
-			return left.ProjectID < right.ProjectID
-		case left.OrganizationID != right.OrganizationID:
+		if left.OrganizationID != right.OrganizationID {
 			return left.OrganizationID < right.OrganizationID
-		default:
-			return left.Role < right.Role
 		}
+		return left.Role < right.Role
 	})
 	return assignments
 }
 
-func collectRoleAssignments(projectID string, value any) []RoleAssignment {
+func collectRoleAssignments(value any) []RoleAssignment {
 	roleMap, ok := value.(map[string]any)
 	if !ok {
 		return nil
@@ -337,7 +329,6 @@ func collectRoleAssignments(projectID string, value any) []RoleAssignment {
 		for organizationID, organizationNameValue := range organizations {
 			organizationName, _ := organizationNameValue.(string)
 			assignments = append(assignments, RoleAssignment{
-				ProjectID:        projectID,
 				Role:             role,
 				OrganizationID:   organizationID,
 				OrganizationName: organizationName,
