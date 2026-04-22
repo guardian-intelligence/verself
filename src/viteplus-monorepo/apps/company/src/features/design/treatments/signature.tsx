@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import { Lockup, WingsArgent, type LockupVariant } from "@forge-metal/brand";
+import { Lockup, WingsChip, type LockupVariant } from "@forge-metal/brand";
 
 // One signature skeleton. All four treatments render:
 //
@@ -31,6 +31,10 @@ export type TreatmentSignatureProps = {
   readonly eyebrow: ReactNode;
   readonly markVariant: SignatureMarkVariant;
   readonly markColor?: string;
+  // Optional aside label next to the mark. Workshop uses this for the team
+  // badge ("PLATFORM · ENGINEERING") because the Workshop signature never
+  // carries the Guardian wordmark — wings + team becomes the identity anchor.
+  readonly markAside?: ReactNode;
   readonly identity: { readonly name: string; readonly role: string };
   readonly accent: SignatureAccent;
   readonly meta?: ReactNode;
@@ -72,6 +76,7 @@ export function TreatmentSignature(props: TreatmentSignatureProps) {
         <SignatureMarkRow
           variant={markVariant}
           {...(props.markColor ? { color: props.markColor } : {})}
+          {...(props.markAside ? { aside: props.markAside } : {})}
         />
         <div
           style={{
@@ -129,20 +134,82 @@ export function TreatmentSignature(props: TreatmentSignatureProps) {
   );
 }
 
-function SignatureMarkRow({ variant, color }: { readonly variant: SignatureMarkVariant; readonly color?: string }) {
+function SignatureMarkRow({
+  variant,
+  color,
+  aside,
+}: {
+  readonly variant: SignatureMarkVariant;
+  readonly color?: string;
+  readonly aside?: ReactNode;
+}) {
   if (variant === "wings-only") {
     // Workshop-style: no wordmark. Wings persist at 22 px as the identity
-    // anchor (matches the live console chrome).
+    // anchor (matches the live console chrome). Optional aside renders a
+    // team badge next to the wings in Geist Mono upper.
     return (
       <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "14px" }}>
-        <WingsArgent style={{ width: "22px", height: "22px", flex: "0 0 22px" }} />
+        {/* Dark chip so the argent wings carry their own ground on a white signature card. */}
+        <WingsChip style={{ width: "22px", height: "22px", flex: "0 0 22px" }} />
+        {aside ? <SignatureAside>{aside}</SignatureAside> : null}
       </div>
     );
   }
   return (
-    <div style={{ marginBottom: "14px" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "14px" }}>
       <Lockup size="sm" variant={variant} wordmarkColor={color ?? "var(--color-ink)"} />
+      {aside ? <SignatureAside>{aside}</SignatureAside> : null}
     </div>
+  );
+}
+
+function SignatureAside({ children }: { readonly children: ReactNode }) {
+  return (
+    <span
+      style={{
+        fontFamily: "'Geist Mono', ui-monospace, monospace",
+        fontSize: "11px",
+        fontWeight: 600,
+        fontVariationSettings: '"wght" 600',
+        letterSpacing: "0.14em",
+        textTransform: "uppercase",
+        color: "rgba(11,11,11,0.55)",
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+// Status badge helper — amber dot plus uppercase mono label. Used by the
+// Workshop signature as the treatment's distinctive "live / pageable"
+// indicator. Exported so treatments can compose it into the meta slot.
+export function SignatureStatusBadge({ accentHex, children }: { readonly accentHex: string; readonly children: ReactNode }) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "8px",
+        fontSize: "11px",
+        fontFamily: "'Geist Mono', ui-monospace, monospace",
+        letterSpacing: "0.12em",
+        textTransform: "uppercase",
+        color: "rgba(11,11,11,0.6)",
+      }}
+    >
+      <span
+        aria-hidden="true"
+        style={{
+          width: "8px",
+          height: "8px",
+          borderRadius: "50%",
+          background: accentHex,
+          boxShadow: `0 0 0 2px ${accentHex}38`,
+        }}
+      />
+      {children}
+    </span>
   );
 }
 
