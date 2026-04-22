@@ -64,7 +64,7 @@ Self-hosted inbound via Stalwart. Boundary, auth, storage, and the mailbox-servi
 - **Secure by default.** Above and beyond most SaaS options. Security is regularly audited and verified (work in progress).
 - **Cheap.** The founder pays only for compute and object storage at commodity prices, not for DataDog operating margin.
 - **Solve hard problems faced by new businesses** (aspirational, not yet fully implemented). Lowering a price for a metered product should propagate seamlessly: customer billing pages, marketing pricing sections, customer emails, end-of-month invoices reflecting usage at both old and new prices at a specified `effective_at`, metering updates, and customer support agents (not yet implemented) answering questions from safe tables. Achieved via a robust system of record + deterministic workflows.
-- **Observable — o11y 2.0.** Logs, traces, metrics are one thing: the Wide Event. ClickHouse handles millions of writes per second; instrument aggressively. Easier to reduce noisy instrumentation than to backfill gaps.
+- **Observable — o11y 2.0.** Logs, traces, metrics are one thing: the Wide Event. ClickHouse handles millions of writes per second; instrument aggressively. Easier to reduce noisy instrumentation than to backfill gaps. HyperDX was trialled as the unified UI over this substrate; it wasn't quite the right fit, and Grafana took its place.
 
 ## Arch at a High Level
 

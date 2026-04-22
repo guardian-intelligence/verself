@@ -13,6 +13,9 @@ Tech Stack:
 * ClickHouse for all time series data (host process metrics, time-series data from APIs), logs, traces, metrics (Wide Event pattern a. la Majors et. al/Honeycomb), miscellaneous append only event ledger where realtime policy decisions or UX isn't critical. ClickHouse rows never get updated
 * TigerBeetle for OTLP. Currently using for financial truth and treating as a ledger -- we model debits/credits for 
 * Zitadel for human identity & OIDC/SAML with third parties. We support multi-tenancy in that all users belong to an org (users belonging to multiple orgs not yet supported)
+* Verdaccio to mirror NPM within our system to avoid north/south traffic being routine and to enforce minimum dependency age
+* Caddy for ingress with Coraza WAF in alert-only mode, using nftables config with Jinja2 templates
+* SPIRE for our SPIFFE implementation, everything speaks x509-SVIDs to eachother except for services that don't support SPIFFE, then we use short-lived JWT-SVIDs.
 
 Invariant patterns:
 
@@ -118,7 +121,7 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 
 <output_contract>
 - When providing a recommendation, consider different plausible options and provide a differentiated recommendation leaning toward the simplest solution that best sets this project up for the *long term* in terms of functionality, elegance of architecture, security, performance, and best-practices.
-- Unit tests and successful builds are low signal and are not to be trusted. Real observability traces in ClickHouse that exercise the modified code are the only admitted proof of task completion. ClickHouse exists for producing verifiable completion artifacts. If a new schema is needed, create one.
+- Unit tests and successful builds are low signal and are not to be trusted. Real observability traces in ClickHouse that exercise the modified code are the only admissable proof of task completion. ClickHouse exists for producing verifiable completion artifacts. If a new schema is needed, create one.
 - Do not speculate without evidence. Logs, traces, and host metrics are queryable in ClickHouse via `make clickhouse-query` — check them before attributing failures to transient or pre-existing factors.
 - Do not stop work short of verifying changes with a live rehearsal of a playbook to execute fresh rebuild and redeploy. You have full authority to wipe databases and recreate them. Prefer that over time-consuming, tricky migrations during this early phase.
 - The repo has a fixture flow that seeds Forgejo repos, submits direct VM executions through `sandbox-rental-service`, and verifies ClickHouse evidence.
@@ -128,12 +131,12 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 
 <coding_contract>
 - When you run into a footgun, leave a comment around the code (no more than a sentence) explaining the footgun and how the code works around it.
-- Prefer Ansible over shell scripts.
+- Prefer Ansible over shell scripts when configuring infrastructure.
 - Ansible playbook files must have a newline at the end (caught by `ansible-lint`).
 - Treat errors as data. Use tagged and structured errors to aid control flow.
 - Avoid fallbacks and defaults in Ansible code. Ansible should fail fast with useful logging.
-- 1 e2e test of the website is worth 1000 unit tests. Avoid checking in unit tests; they provide some benefit in some cases, but a comprehensive suite of e2e tests running as periodic canaries is preferred.
-- Don't resolve failures through silent no-ops and imperative checks. Failures should be loud; signals should be followed to address root causes.
+- 1 e2e test of the website is worth 1000 unit tests. Avoid checking in unit tests; they provide some benefit in a tiny set of niche cases, but a comprehensive suite of e2e tests is preferred.
+- Don't resolve failures through silent no-ops and imperative checks. Failures should be loud; signals should be followed to address root causes. Failures are useful data!
 - PostgreSQL migrations live with the service that owns the schema (e.g. `src/billing-service/migrations/`), one database per service. The platform provisions databases and roles; the service's Ansible role applies its migrations.
 - ClickHouse inserts must use `batch.AppendStruct` with `ch:"column_name"` struct tags. Never use positional `batch.Append` — it silently corrupts data when columns are added or reordered.
 - ClickHouse queries must pass dynamic values (including `Map` keys) through driver parameter binding (`$1`, `$2`, ...); never interpolate values into query strings with `fmt.Sprintf`. Use `arrayElement(map_col, $N)` instead of `map_col['{interpolated}']`.
