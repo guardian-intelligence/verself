@@ -76,6 +76,33 @@ test.describe("Rent-a-Sandbox Shell", () => {
     }
   });
 
+  test("authenticated shell navigates to schedules via the rail", async ({ app }) => {
+    const run = app.createRun();
+
+    try {
+      await app.ensureLoggedIn();
+      app.resetBrowserSignals();
+      await app.goto("/executions");
+      run.detail_url = "/executions";
+
+      await app.page.getByTestId("nav-schedules").click();
+      await expect(app.page).toHaveURL(/\/schedules$/);
+      await expect(app.page.getByRole("heading", { name: "Schedules", exact: true })).toBeVisible();
+      await expect(
+        app.page.getByText("Recurring direct VM executions backed by Temporal schedules."),
+      ).toBeVisible();
+
+      run.status = "succeeded";
+      run.terminal_observed_at = new Date().toISOString();
+    } catch (error) {
+      run.status = "failed";
+      run.error = error instanceof Error ? error.message : String(error);
+      throw error;
+    } finally {
+      await app.persistRun(run);
+    }
+  });
+
   test("command palette opens with Cmd+K and jumps to Billing", async ({ app }) => {
     const run = app.createRun();
 

@@ -7,6 +7,12 @@
   register: sandbox_rental_service_binary
   failed_when: not sandbox_rental_service_binary.stat.exists
 
+- name: Verify sandbox-rental-recurring-worker binary exists in profile
+  ansible.builtin.stat:
+    path: "{{ fm_bin }}/sandbox-rental-recurring-worker"
+  register: sandbox_rental_recurring_worker_binary
+  failed_when: not sandbox_rental_recurring_worker_binary.stat.exists
+
 # --- System user ---
 
 - name: Create sandbox_rental system group
@@ -296,6 +302,10 @@
       Environment=SANDBOX_SECRETS_SPIFFE_ID={{ spire_secrets_service_id }}
       Environment=SANDBOX_BILLING_SPIFFE_ID={{ spire_billing_service_id }}
       Environment=SANDBOX_GOVERNANCE_SPIFFE_ID={{ spire_governance_service_id }}
+      Environment=SANDBOX_TEMPORAL_SERVER_SPIFFE_ID={{ spire_temporal_server_id }}
+      Environment=SANDBOX_TEMPORAL_FRONTEND_ADDRESS={{ services.temporal.host }}:{{ services.temporal.grpc_port }}
+      Environment=SANDBOX_TEMPORAL_NAMESPACE={{ sandbox_rental_service_temporal_namespace }}
+      Environment=SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING={{ sandbox_rental_service_temporal_task_queue_recurring }}
       Environment=SANDBOX_OPENBAO_ADDR=https://{{ services.openbao.host }}:{{ services.openbao.port }}
       Environment=SANDBOX_OPENBAO_PLATFORM_MOUNT={{ openbao_platform_kv_mount }}
       Environment=SANDBOX_OPENBAO_SPIFFE_JWT_MOUNT={{ openbao_spiffe_jwt_mount }}
@@ -358,6 +368,7 @@
       https://{{ services.governance_service.host }}:{{ services.governance_service.internal_port }}/internal/v1/audit/events
   notify:
     - restart sandbox-rental-service
+    - restart sandbox-rental-recurring-worker
 
 - name: Remove stale sandbox-rental-service systemd override
   ansible.builtin.file:
@@ -365,6 +376,58 @@
     state: absent
   notify:
     - restart sandbox-rental-service
+
+- name: Deploy sandbox-rental recurring worker systemd unit
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=Sandbox Rental Recurring Worker
+      After=forge-metal-firewall.target network.target postgresql.service temporal-server.service spire-agent.service otelcol.service
+      Requires=forge-metal-firewall.target
+      Wants=postgresql.service temporal-server.service spire-agent.service otelcol.service
+
+      [Service]
+      Type=simple
+      User=sandbox_rental
+      Group=sandbox_rental
+      SupplementaryGroups={{ spire_workload_group }}
+      Environment=SANDBOX_PG_DSN=postgres://sandbox_rental@/sandbox_rental?host=/var/run/postgresql&sslmode=disable
+      Environment=SANDBOX_RIVER_PG_MAX_CONNS={{ sandbox_rental_service_river_pg_max_conns }}
+      Environment=SANDBOX_RIVER_PG_MIN_CONNS={{ sandbox_rental_service_river_pg_min_conns }}
+      Environment=SANDBOX_RIVER_PG_CONN_MAX_LIFETIME_SECONDS={{ sandbox_rental_service_river_pg_conn_max_lifetime_seconds }}
+      Environment=SANDBOX_RIVER_PG_CONN_MAX_IDLE_SECONDS={{ sandbox_rental_service_river_pg_conn_max_idle_seconds }}
+      Environment=SANDBOX_TEMPORAL_SERVER_SPIFFE_ID={{ spire_temporal_server_id }}
+      Environment=SANDBOX_TEMPORAL_FRONTEND_ADDRESS={{ services.temporal.host }}:{{ services.temporal.grpc_port }}
+      Environment=SANDBOX_TEMPORAL_NAMESPACE={{ sandbox_rental_service_temporal_namespace }}
+      Environment=SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING={{ sandbox_rental_service_temporal_task_queue_recurring }}
+      Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}
+      ExecStart={{ fm_bin }}/sandbox-rental-recurring-worker
+      Restart=on-failure
+      RestartSec=5
+      CapabilityBoundingSet=
+      ProtectHome=true
+      ProtectSystem=full
+      PrivateDevices=true
+      PrivateTmp=true
+      ProtectClock=true
+      ProtectControlGroups=true
+      ProtectKernelLogs=true
+      ProtectKernelModules=true
+      ProtectKernelTunables=true
+      LockPersonality=true
+      NoNewPrivileges=true
+      RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+      RestrictRealtime=true
+      RestrictSUIDSGID=true
+      SystemCallArchitectures=native
+      UMask=0077
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/sandbox-rental-recurring-worker.service
+    mode: "0644"
+  notify:
+    - restart sandbox-rental-recurring-worker
 
 - name: Apply sandbox-rental-service unit changes before proceeding
   ansible.builtin.meta: flush_handlers
@@ -374,6 +437,13 @@
 - name: Enable and start sandbox-rental-service
   ansible.builtin.systemd:
     name: sandbox-rental-service
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Enable and start sandbox-rental-recurring-worker
+  ansible.builtin.systemd:
+    name: sandbox-rental-recurring-worker
     enabled: true
     state: started
     daemon_reload: true
@@ -392,3 +462,12 @@
   retries: 30
   delay: 1
   until: sandbox_rental_service_listener.stdout is search(':' ~ (sandbox_rental_service_listen_port | string))
+
+- name: Wait for sandbox-rental-recurring-worker to be active
+  ansible.builtin.command:
+    cmd: systemctl is-active sandbox-rental-recurring-worker
+  register: sandbox_rental_recurring_worker_status
+  changed_when: false
+  retries: 30
+  delay: 1
+  until: sandbox_rental_recurring_worker_status.stdout is search('active')

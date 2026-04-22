@@ -43,16 +43,23 @@ import type {
 import {
   cancelContract as cancelContractRequest,
   cancelContractRequestSchema,
+  createExecutionSchedule as createExecutionScheduleRequest,
   createCheckoutSession as createCheckoutSessionRequest,
   createContractChangeSession as createContractChangeSessionRequest,
   createContractSession as createContractSessionRequest,
   createPortalSession as createPortalSessionRequest,
   executionIdInputSchema,
+  executionScheduleIdInputSchema,
+  executionScheduleRequestSchema,
   getEntitlements as getEntitlementsRequest,
   getExecution as getExecutionRequest,
+  getExecutionSchedule as getExecutionScheduleRequest,
   getPlans as getPlansRequest,
   getStatement as getStatementRequest,
   getContracts as getContractsRequest,
+  listExecutionSchedules as listExecutionSchedulesRequest,
+  pauseSchedule as pauseScheduleRequest,
+  resumeSchedule as resumeScheduleRequest,
   statementQuerySchema,
   isSandboxRentalApiError,
   isSandboxRentalNotFound,
@@ -74,6 +81,10 @@ import type {
   EntitlementSourceTotal,
   EntitlementsView,
   Execution,
+  ExecutionSchedule,
+  ExecutionScheduleIdInput,
+  ExecutionScheduleRequest,
+  ExecutionSchedules,
   PlansResponse,
   Statement,
   StatementQuery,
@@ -111,6 +122,10 @@ export type {
   EntitlementsView,
   Execution,
   ExecutionRequest,
+  ExecutionSchedule,
+  ExecutionScheduleIdInput,
+  ExecutionScheduleRequest,
+  ExecutionSchedules,
   Statement,
   StatementQuery,
   PortalRequest,
@@ -378,5 +393,51 @@ export const getExecution = createServerFn({ method: "GET" })
     return getExecutionRequest({
       ...(await sandboxRentalClientOptions(context)),
       executionId: data.executionId,
+    });
+  });
+
+export const listExecutionSchedules = createServerFn({ method: "GET" })
+  .middleware([rentASandboxAuthMiddleware])
+  .handler(async ({ context }) => {
+    return listExecutionSchedulesRequest(await sandboxRentalClientOptions(context));
+  });
+
+export const createExecutionSchedule = createServerFn({ method: "POST" })
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(executionScheduleRequestSchema)
+  .handler(async ({ context, data }) => {
+    return createExecutionScheduleRequest({
+      ...(await sandboxRentalClientOptions(context)),
+      body: data,
+    });
+  });
+
+export const getExecutionSchedule = createServerFn({ method: "GET" })
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(executionScheduleIdInputSchema)
+  .handler(async ({ context, data }) => {
+    return getExecutionScheduleRequest({
+      ...(await sandboxRentalClientOptions(context)),
+      scheduleId: data.scheduleId,
+    });
+  });
+
+export const pauseExecutionSchedule = createServerFn({ method: "POST" })
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(executionScheduleIdInputSchema)
+  .handler(async ({ context, data }) => {
+    return pauseScheduleRequest({
+      ...(await sandboxRentalClientOptions(context)),
+      scheduleId: data.scheduleId,
+    });
+  });
+
+export const resumeExecutionSchedule = createServerFn({ method: "POST" })
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(executionScheduleIdInputSchema)
+  .handler(async ({ context, data }) => {
+    return resumeScheduleRequest({
+      ...(await sandboxRentalClientOptions(context)),
+      scheduleId: data.scheduleId,
     });
   });

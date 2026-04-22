@@ -109,6 +109,10 @@
       tags: [governance_service, openbao, openbao_tenancy, temporal]
     - role: secrets_service
       tags: [secrets_service, openbao_tenancy]
+    # sandbox-rental-service now owns a Temporal namespace and recurring worker,
+    # so Temporal must be configured before the service is started.
+    - role: temporal
+      tags: [temporal]
     - role: sandbox_rental_service
       tags: [sandbox_rental_service]
     # sandbox_rental_service's migration path drops and recreates its database
@@ -144,8 +148,6 @@
       tags: [otelcol, temporal]
     - role: mailbox_service
       tags: [mailbox_service]
-    - role: temporal
-      tags: [temporal]
     - role: electric
       vars:
         electric_instance: mail

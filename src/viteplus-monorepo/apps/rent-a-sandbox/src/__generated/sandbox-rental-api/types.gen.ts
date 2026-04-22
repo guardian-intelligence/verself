@@ -351,6 +351,56 @@ export type SandboxExecutionRecord = {
   workload_kind?: string;
 };
 
+export type SandboxExecutionScheduleCreateRequest = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  display_name?: string;
+  idempotency_key: string;
+  interval_seconds: number;
+  max_wall_seconds?: number;
+  paused?: boolean;
+  run_command: string;
+};
+
+export type SandboxExecutionScheduleDispatchRecord = {
+  attempt_id?: string;
+  created_at: string;
+  dispatch_id: string;
+  execution_id?: string;
+  failure_reason?: string;
+  schedule_id: string;
+  scheduled_at: string;
+  state: string;
+  submitted_at?: string;
+  temporal_run_id: string;
+  temporal_workflow_id: string;
+  updated_at: string;
+};
+
+export type SandboxExecutionScheduleRecord = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  actor_id: string;
+  created_at: string;
+  dispatches?: Array<SandboxExecutionScheduleDispatchRecord> | null;
+  display_name?: string;
+  idempotency_key?: string;
+  interval_seconds: number;
+  max_wall_seconds?: number;
+  org_id: string;
+  run_command: string;
+  schedule_id: string;
+  state: string;
+  task_queue: string;
+  temporal_namespace: string;
+  temporal_schedule_id: string;
+  updated_at: string;
+};
+
 export type SandboxGitHubInstallationConnectResponse = {
   /**
    * A URL to the JSON Schema for this object.
@@ -693,6 +743,33 @@ export type SandboxExecutionRecordWritable = {
   status: string;
   updated_at: string;
   workload_kind?: string;
+};
+
+export type SandboxExecutionScheduleCreateRequestWritable = {
+  display_name?: string;
+  idempotency_key: string;
+  interval_seconds: number;
+  max_wall_seconds?: number;
+  paused?: boolean;
+  run_command: string;
+};
+
+export type SandboxExecutionScheduleRecordWritable = {
+  actor_id: string;
+  created_at: string;
+  dispatches?: Array<SandboxExecutionScheduleDispatchRecord> | null;
+  display_name?: string;
+  idempotency_key?: string;
+  interval_seconds: number;
+  max_wall_seconds?: number;
+  org_id: string;
+  run_command: string;
+  schedule_id: string;
+  state: string;
+  task_queue: string;
+  temporal_namespace: string;
+  temporal_schedule_id: string;
+  updated_at: string;
 };
 
 export type SandboxGitHubInstallationConnectResponseWritable = {
@@ -1042,6 +1119,168 @@ export type GetBillingStatementResponses = {
 
 export type GetBillingStatementResponse =
   GetBillingStatementResponses[keyof GetBillingStatementResponses];
+
+export type ListExecutionSchedulesData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/api/v1/execution-schedules";
+};
+
+export type ListExecutionSchedulesErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type ListExecutionSchedulesError =
+  ListExecutionSchedulesErrors[keyof ListExecutionSchedulesErrors];
+
+export type ListExecutionSchedulesResponses = {
+  /**
+   * OK
+   */
+  200: Array<SandboxExecutionScheduleRecord> | null;
+};
+
+export type ListExecutionSchedulesResponse =
+  ListExecutionSchedulesResponses[keyof ListExecutionSchedulesResponses];
+
+export type CreateExecutionScheduleData = {
+  body: SandboxExecutionScheduleCreateRequestWritable;
+  path?: never;
+  query?: never;
+  url: "/api/v1/execution-schedules";
+};
+
+export type CreateExecutionScheduleErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type CreateExecutionScheduleError =
+  CreateExecutionScheduleErrors[keyof CreateExecutionScheduleErrors];
+
+export type CreateExecutionScheduleResponses = {
+  /**
+   * Created
+   */
+  201: SandboxExecutionScheduleRecord;
+};
+
+export type CreateExecutionScheduleResponse =
+  CreateExecutionScheduleResponses[keyof CreateExecutionScheduleResponses];
+
+export type GetExecutionScheduleData = {
+  body?: never;
+  path: {
+    /**
+     * Execution schedule UUID
+     */
+    schedule_id: string;
+  };
+  query?: never;
+  url: "/api/v1/execution-schedules/{schedule_id}";
+};
+
+export type GetExecutionScheduleErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type GetExecutionScheduleError =
+  GetExecutionScheduleErrors[keyof GetExecutionScheduleErrors];
+
+export type GetExecutionScheduleResponses = {
+  /**
+   * OK
+   */
+  200: SandboxExecutionScheduleRecord;
+};
+
+export type GetExecutionScheduleResponse =
+  GetExecutionScheduleResponses[keyof GetExecutionScheduleResponses];
+
+export type PauseExecutionScheduleData = {
+  body?: never;
+  headers: {
+    /**
+     * Stable caller-provided key used to make this mutation retry-safe.
+     */
+    "Idempotency-Key": string;
+  };
+  path: {
+    /**
+     * Execution schedule UUID
+     */
+    schedule_id: string;
+  };
+  query?: never;
+  url: "/api/v1/execution-schedules/{schedule_id}/pause";
+};
+
+export type PauseExecutionScheduleErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type PauseExecutionScheduleError =
+  PauseExecutionScheduleErrors[keyof PauseExecutionScheduleErrors];
+
+export type PauseExecutionScheduleResponses = {
+  /**
+   * OK
+   */
+  200: SandboxExecutionScheduleRecord;
+};
+
+export type PauseExecutionScheduleResponse =
+  PauseExecutionScheduleResponses[keyof PauseExecutionScheduleResponses];
+
+export type ResumeExecutionScheduleData = {
+  body?: never;
+  headers: {
+    /**
+     * Stable caller-provided key used to make this mutation retry-safe.
+     */
+    "Idempotency-Key": string;
+  };
+  path: {
+    /**
+     * Execution schedule UUID
+     */
+    schedule_id: string;
+  };
+  query?: never;
+  url: "/api/v1/execution-schedules/{schedule_id}/resume";
+};
+
+export type ResumeExecutionScheduleErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type ResumeExecutionScheduleError =
+  ResumeExecutionScheduleErrors[keyof ResumeExecutionScheduleErrors];
+
+export type ResumeExecutionScheduleResponses = {
+  /**
+   * OK
+   */
+  200: SandboxExecutionScheduleRecord;
+};
+
+export type ResumeExecutionScheduleResponse =
+  ResumeExecutionScheduleResponses[keyof ResumeExecutionScheduleResponses];
 
 export type SubmitExecutionData = {
   body: SandboxSubmitRequestWritable;

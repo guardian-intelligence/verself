@@ -107,6 +107,12 @@
         IF to_regclass('public.github_runner_jit_configs') IS NOT NULL THEN
           EXECUTE 'ALTER TABLE public.github_runner_jit_configs OWNER TO sandbox_rental';
         END IF;
+        IF to_regclass('public.execution_schedules') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.execution_schedules OWNER TO sandbox_rental';
+        END IF;
+        IF to_regclass('public.execution_schedule_dispatches') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.execution_schedule_dispatches OWNER TO sandbox_rental';
+        END IF;
       END
       $$;
       GRANT USAGE, CREATE ON SCHEMA public TO sandbox_rental;
@@ -127,7 +133,9 @@
         public.github_workflow_jobs,
         public.github_runner_allocations,
         public.github_runner_jit_configs,
-        public.github_runner_job_bindings
+        public.github_runner_job_bindings,
+        public.execution_schedules,
+        public.execution_schedule_dispatches
       TO sandbox_rental;
   environment:
     PGPASSWORD: "{{ postgresql_admin_password }}"

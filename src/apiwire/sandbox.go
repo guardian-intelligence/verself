@@ -79,6 +79,48 @@ type SandboxExecutionLogs struct {
 	Logs        string `json:"logs"`
 }
 
+type SandboxExecutionScheduleCreateRequest struct {
+	IdempotencyKey  string `json:"idempotency_key" required:"true" maxLength:"128"`
+	DisplayName     string `json:"display_name,omitempty" maxLength:"255"`
+	RunCommand      string `json:"run_command" required:"true" minLength:"1" maxLength:"8192"`
+	IntervalSeconds uint32 `json:"interval_seconds" required:"true" minimum:"15" maximum:"4294967295"`
+	MaxWallSeconds  uint64 `json:"max_wall_seconds,omitempty" minimum:"1" maximum:"9007199254740991"`
+	Paused          bool   `json:"paused,omitempty"`
+}
+
+type SandboxExecutionScheduleRecord struct {
+	ScheduleID         uuid.UUID                              `json:"schedule_id"`
+	OrgID              OrgID                                  `json:"org_id"`
+	ActorID            string                                 `json:"actor_id"`
+	DisplayName        string                                 `json:"display_name,omitempty"`
+	IdempotencyKey     string                                 `json:"idempotency_key,omitempty"`
+	TemporalScheduleID string                                 `json:"temporal_schedule_id"`
+	TemporalNamespace  string                                 `json:"temporal_namespace"`
+	TaskQueue          string                                 `json:"task_queue"`
+	State              string                                 `json:"state"`
+	IntervalSeconds    uint32                                 `json:"interval_seconds" minimum:"15" maximum:"4294967295"`
+	RunCommand         string                                 `json:"run_command"`
+	MaxWallSeconds     uint64                                 `json:"max_wall_seconds,omitempty" minimum:"0" maximum:"9007199254740991"`
+	CreatedAt          time.Time                              `json:"created_at"`
+	UpdatedAt          time.Time                              `json:"updated_at"`
+	Dispatches         []SandboxExecutionScheduleDispatchRecord `json:"dispatches,omitempty"`
+}
+
+type SandboxExecutionScheduleDispatchRecord struct {
+	DispatchID         uuid.UUID  `json:"dispatch_id"`
+	ScheduleID         uuid.UUID  `json:"schedule_id"`
+	TemporalWorkflowID string     `json:"temporal_workflow_id"`
+	TemporalRunID      string     `json:"temporal_run_id"`
+	ExecutionID        *uuid.UUID `json:"execution_id,omitempty"`
+	AttemptID          *uuid.UUID `json:"attempt_id,omitempty"`
+	State              string     `json:"state"`
+	FailureReason      string     `json:"failure_reason,omitempty"`
+	ScheduledAt        time.Time  `json:"scheduled_at"`
+	SubmittedAt        *time.Time `json:"submitted_at,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
+}
+
 type SandboxBillingCheckoutRequest struct {
 	ProductID   string `json:"product_id" required:"true" maxLength:"255" doc:"Product context for checkout display and metadata; purchased top-ups are account-scoped"`
 	AmountCents int64  `json:"amount_cents" required:"true" minimum:"1" maximum:"9007199254740991" doc:"Amount in cents"`

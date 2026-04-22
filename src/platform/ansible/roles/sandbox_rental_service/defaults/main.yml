@@ -43,3 +43,5 @@ sandbox_rental_service_github_app_settings_url: ""
 sandbox_rental_service_github_api_base_url: "https://api.github.com"
 sandbox_rental_service_github_web_base_url: "https://github.com"
 sandbox_rental_service_github_runner_group_id: 1
+sandbox_rental_service_temporal_namespace: sandbox-rental-service
+sandbox_rental_service_temporal_task_queue_recurring: sandbox-rental-service.recurring-vm

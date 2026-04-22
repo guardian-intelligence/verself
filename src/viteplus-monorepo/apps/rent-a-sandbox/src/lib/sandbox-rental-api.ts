@@ -6,11 +6,16 @@ import {
   createBillingContract,
   createBillingContractChange,
   createBillingPortal,
+  createExecutionSchedule as createGeneratedExecutionSchedule,
   getBillingEntitlements,
   getBillingStatement,
   getExecution as getGeneratedExecution,
+  getExecutionSchedule as getGeneratedExecutionSchedule,
   listBillingPlans,
   listBillingContracts,
+  listExecutionSchedules as listGeneratedExecutionSchedules,
+  pauseExecutionSchedule as pauseGeneratedExecutionSchedule,
+  resumeExecutionSchedule as resumeGeneratedExecutionSchedule,
   submitExecution,
 } from "../__generated/sandbox-rental-api/index.js";
 import {
@@ -33,13 +38,26 @@ import {
   vCreateBillingPortalResponse,
   vCreateBillingContractBody,
   vCreateBillingContractResponse,
+  vCreateExecutionScheduleBody,
+  vCreateExecutionScheduleResponse,
   vGetBillingStatementQuery,
   vGetExecutionPath,
+  vGetExecutionSchedulePath,
+  vGetExecutionScheduleResponse,
   vListBillingPlansResponse,
   vListBillingContractsResponse,
+  vListExecutionSchedulesResponse,
+  vPauseExecutionScheduleHeaders,
+  vPauseExecutionSchedulePath,
+  vPauseExecutionScheduleResponse,
+  vResumeExecutionScheduleHeaders,
+  vResumeExecutionSchedulePath,
+  vResumeExecutionScheduleResponse,
   vSandboxAttemptRecord,
   vSandboxBillingWindow,
   vSandboxExecutionRecord,
+  vSandboxExecutionScheduleDispatchRecord,
+  vSandboxExecutionScheduleRecord,
   vSubmitExecutionBody,
   vSubmitExecutionResponse,
 } from "../__generated/sandbox-rental-api/valibot.gen.js";
@@ -376,6 +394,15 @@ type DirectExecutionRequestBody = {
   run_command: string;
 };
 
+type ExecutionScheduleRequestBody = {
+  idempotency_key: string;
+  display_name?: string;
+  interval_seconds: number;
+  max_wall_seconds?: number;
+  paused?: boolean;
+  run_command: string;
+};
+
 export const executionRequestSchema = v.pipe(
   v.strictObject({
     idempotency_key: v.optional(v.string()),
@@ -396,6 +423,32 @@ export const executionRequestSchema = v.pipe(
 
 export type ExecutionRequest = v.InferInput<typeof executionRequestSchema>;
 
+export const executionScheduleRequestSchema = v.pipe(
+  v.strictObject({
+    display_name: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(255))),
+    idempotency_key: v.optional(v.string()),
+    interval_seconds: v.pipe(v.number(), v.integer(), v.minValue(15)),
+    max_wall_seconds: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+    paused: v.optional(v.boolean()),
+    run_command: v.pipe(v.string(), v.trim(), v.minLength(1)),
+  }),
+  v.transform((body) => {
+    const providedIdempotencyKey = body.idempotency_key?.trim();
+    const requestBody: ExecutionScheduleRequestBody = {
+      idempotency_key: providedIdempotencyKey || createIdempotencyKey("execution-schedule"),
+      interval_seconds: body.interval_seconds,
+      run_command: body.run_command,
+      ...(body.display_name ? { display_name: body.display_name } : {}),
+      ...(body.max_wall_seconds ? { max_wall_seconds: body.max_wall_seconds } : {}),
+      ...(body.paused !== undefined ? { paused: body.paused } : {}),
+    };
+    v.parse(vCreateExecutionScheduleBody, requestBody);
+    return requestBody;
+  }),
+);
+
+export type ExecutionScheduleRequest = v.InferInput<typeof executionScheduleRequestSchema>;
+
 export const executionIdInputSchema = v.pipe(
   v.strictObject({
     executionId: v.string(),
@@ -407,11 +460,57 @@ export const executionIdInputSchema = v.pipe(
 
 export type ExecutionIdInput = v.InferOutput<typeof executionIdInputSchema>;
 
+export const executionScheduleIdInputSchema = v.pipe(
+  v.strictObject({
+    scheduleId: v.string(),
+  }),
+  v.transform(({ scheduleId }) => ({
+    scheduleId: v.parse(vGetExecutionSchedulePath, { schedule_id: scheduleId }).schedule_id,
+  })),
+);
+
+export type ExecutionScheduleIdInput = v.InferOutput<typeof executionScheduleIdInputSchema>;
+
 export type SubmitExecutionResponse = v.InferOutput<typeof vSubmitExecutionResponse>;
 export type CheckoutSession = v.InferOutput<typeof vCreateBillingCheckoutResponse>;
 export type ContractSession = v.InferOutput<typeof vCreateBillingContractResponse>;
 export type ContractChangeSession = v.InferOutput<typeof vCreateBillingContractChangeResponse>;
 export type PortalSession = v.InferOutput<typeof vCreateBillingPortalResponse>;
+
+function parseExecutionScheduleDispatch(
+  input: v.InferOutput<typeof vSandboxExecutionScheduleDispatchRecord>,
+) {
+  return {
+    ...input,
+    attempt_id: input.attempt_id ?? null,
+    execution_id: input.execution_id ?? null,
+    failure_reason: input.failure_reason ?? null,
+    submitted_at: input.submitted_at ?? null,
+  };
+}
+
+export type ExecutionScheduleDispatch = ReturnType<typeof parseExecutionScheduleDispatch>;
+
+function parseExecutionSchedule(input: unknown) {
+  const parsed = v.parse(vSandboxExecutionScheduleRecord, input);
+  return {
+    ...parsed,
+    display_name: parsed.display_name ?? "",
+    dispatches:
+      parsed.dispatches?.map((dispatch) => parseExecutionScheduleDispatch(dispatch)) ?? [],
+    idempotency_key: parsed.idempotency_key ?? "",
+    max_wall_seconds: toOptionalSafeNumber(parsed.max_wall_seconds, "max_wall_seconds") ?? 0,
+  };
+}
+
+export type ExecutionSchedule = ReturnType<typeof parseExecutionSchedule>;
+
+function parseExecutionSchedules(input: unknown) {
+  const parsed = v.parse(vListExecutionSchedulesResponse, input);
+  return (parsed ?? []).map((schedule) => parseExecutionSchedule(schedule));
+}
+
+export type ExecutionSchedules = ReturnType<typeof parseExecutionSchedules>;
 
 export async function getEntitlements(
   options: SandboxRentalClientOptions,
@@ -652,4 +751,118 @@ export async function getExecution(
   }
 
   return parseExecution(result.data);
+}
+
+export async function listExecutionSchedules(
+  options: SandboxRentalClientOptions,
+): Promise<ExecutionSchedules> {
+  const client = createSandboxRentalClient(options);
+  const path = "/api/v1/execution-schedules";
+  const result = await listGeneratedExecutionSchedules({
+    client,
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+
+  if (result.error !== undefined) {
+    throwSandboxRentalError(path, result.response, result.error);
+  }
+
+  return parseExecutionSchedules(result.data);
+}
+
+export async function createExecutionSchedule(
+  options: SandboxRentalClientOptions & { body: ExecutionScheduleRequest },
+): Promise<ExecutionSchedule> {
+  const client = createSandboxRentalClient(options);
+  const body = v.parse(executionScheduleRequestSchema, options.body);
+  const path = "/api/v1/execution-schedules";
+  const result = await createGeneratedExecutionSchedule({
+    body,
+    client,
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+
+  if (result.error !== undefined) {
+    throwSandboxRentalError(path, result.response, result.error);
+  }
+
+  return parseExecutionSchedule(v.parse(vCreateExecutionScheduleResponse, result.data));
+}
+
+export async function getExecutionSchedule(
+  options: SandboxRentalClientOptions & { scheduleId: string },
+): Promise<ExecutionSchedule> {
+  const client = createSandboxRentalClient(options);
+  const { scheduleId } = v.parse(executionScheduleIdInputSchema, {
+    scheduleId: options.scheduleId,
+  });
+  const path = `/api/v1/execution-schedules/${scheduleId}`;
+  const result = await getGeneratedExecutionSchedule({
+    client,
+    path: { schedule_id: scheduleId },
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+
+  if (result.error !== undefined) {
+    throwSandboxRentalError(path, result.response, result.error);
+  }
+
+  return parseExecutionSchedule(v.parse(vGetExecutionScheduleResponse, result.data));
+}
+
+export async function pauseSchedule(
+  options: SandboxRentalClientOptions & { scheduleId: string },
+): Promise<ExecutionSchedule> {
+  const client = createSandboxRentalClient(options);
+  const { scheduleId } = v.parse(executionScheduleIdInputSchema, {
+    scheduleId: options.scheduleId,
+  });
+  const headers = v.parse(
+    vPauseExecutionScheduleHeaders,
+    idempotencyHeaders("execution-schedule-pause"),
+  );
+  const path = `/api/v1/execution-schedules/${scheduleId}/pause`;
+  const result = await pauseGeneratedExecutionSchedule({
+    client,
+    headers,
+    path: v.parse(vPauseExecutionSchedulePath, { schedule_id: scheduleId }),
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+
+  if (result.error !== undefined) {
+    throwSandboxRentalError(path, result.response, result.error);
+  }
+
+  return parseExecutionSchedule(v.parse(vPauseExecutionScheduleResponse, result.data));
+}
+
+export async function resumeSchedule(
+  options: SandboxRentalClientOptions & { scheduleId: string },
+): Promise<ExecutionSchedule> {
+  const client = createSandboxRentalClient(options);
+  const { scheduleId } = v.parse(executionScheduleIdInputSchema, {
+    scheduleId: options.scheduleId,
+  });
+  const headers = v.parse(
+    vResumeExecutionScheduleHeaders,
+    idempotencyHeaders("execution-schedule-resume"),
+  );
+  const path = `/api/v1/execution-schedules/${scheduleId}/resume`;
+  const result = await resumeGeneratedExecutionSchedule({
+    client,
+    headers,
+    path: v.parse(vResumeExecutionSchedulePath, { schedule_id: scheduleId }),
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+
+  if (result.error !== undefined) {
+    throwSandboxRentalError(path, result.response, result.error);
+  }
+
+  return parseExecutionSchedule(v.parse(vResumeExecutionScheduleResponse, result.data));
 }

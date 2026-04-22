@@ -44,7 +44,7 @@ env \
     cd "$1"
     vp exec playwright test e2e/shell.live.spec.ts \
       --project=chromium \
-      --grep "authenticated shell lands on executions and navigates via the rail" \
+      --grep "authenticated shell .* via the rail" \
       --output "$2"
   ' bash "${VERIFICATION_REPO_ROOT}/src/viteplus-monorepo/apps/rent-a-sandbox" "${artifact_dir}/playwright-results" \
   >"${smoke_log_path}" 2>&1

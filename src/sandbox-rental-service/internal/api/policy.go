@@ -30,6 +30,8 @@ const (
 	permissionGitHubWrite     permission = "sandbox:github_installation:write"
 	permissionExecutionSubmit permission = "sandbox:execution:submit"
 	permissionExecutionRead   permission = "sandbox:execution:read"
+	permissionScheduleRead    permission = "sandbox:execution_schedule:read"
+	permissionScheduleWrite   permission = "sandbox:execution_schedule:write"
 	permissionLogsRead        permission = "sandbox:logs:read"
 	permissionSecretRead      permission = "secrets:secret:read"
 	permissionVolumeRead      permission = "sandbox:volume:read"
@@ -82,6 +84,8 @@ var rolePermissionBundles = map[string][]permission{
 		permissionGitHubWrite,
 		permissionExecutionSubmit,
 		permissionExecutionRead,
+		permissionScheduleRead,
+		permissionScheduleWrite,
 		permissionLogsRead,
 		permissionVolumeRead,
 		permissionVolumeWrite,
@@ -91,6 +95,8 @@ var rolePermissionBundles = map[string][]permission{
 	roleSandboxOrgMember: {
 		permissionExecutionSubmit,
 		permissionExecutionRead,
+		permissionScheduleRead,
+		permissionScheduleWrite,
 		permissionLogsRead,
 		permissionVolumeRead,
 	},

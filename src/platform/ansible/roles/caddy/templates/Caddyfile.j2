@@ -260,6 +260,24 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 		}
 	}
 
+	@sandbox_api_execution_schedule_create {
+		method POST
+		path /api/v1/execution-schedules
+	}
+	handle @sandbox_api_execution_schedule_create {
+		request_body {
+			max_size 65536
+		}
+		# Schedule creation persists the same run_command payload used by direct
+		# executions; keep CRS telemetry, but do not block valid sandbox jobs.
+		import waf_detection
+		import sandbox_api_cors_headers
+		import api_security_headers
+		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }} {
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
 	handle /api/* {
 		request_body {
 			max_size 1048576
