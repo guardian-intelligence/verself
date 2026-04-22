@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -22,6 +21,8 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	workloadauth "github.com/forge-metal/auth-middleware/workload"
+	"github.com/forge-metal/envconfig"
+	"github.com/forge-metal/httpserver"
 	objectstorageapi "github.com/forge-metal/object-storage-service/internal/api"
 	"github.com/forge-metal/object-storage-service/internal/objectstorage"
 	fmotel "github.com/forge-metal/otel"
@@ -50,7 +51,12 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	role, err := parseRuntimeRole(requireEnv("OBJECT_STORAGE_ROLE"))
+	roleCfg := envconfig.New()
+	roleRaw := roleCfg.RequireString("OBJECT_STORAGE_ROLE")
+	if err := roleCfg.Err(); err != nil {
+		return err
+	}
+	role, err := parseRuntimeRole(roleRaw)
 	if err != nil {
 		return err
 	}
@@ -61,10 +67,18 @@ func run() error {
 	defer otelShutdown(context.Background())
 	slog.SetDefault(logger)
 
-	pgDSN := requireEnv("OBJECT_STORAGE_PG_DSN")
-	secretKeyHex := strings.TrimSpace(requireCredential("credential-kek"))
+	shared := envconfig.New()
+	pgDSN := shared.RequireString("OBJECT_STORAGE_PG_DSN")
+	secretKeyHex := shared.RequireCredential("credential-kek")
+	spiffeEndpoint := shared.String(workloadauth.EndpointSocketEnv, "")
+	environment := shared.String("OBJECT_STORAGE_ENVIRONMENT", "single-node")
+	writerInstanceID := shared.String("OBJECT_STORAGE_WRITER_INSTANCE_ID", hostname())
+	proxyRegion := shared.String("OBJECT_STORAGE_GARAGE_REGION", "garage")
+	if err := shared.Err(); err != nil {
+		return err
+	}
 
-	spiffeSource, err := workloadauth.Source(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
+	spiffeSource, err := workloadauth.Source(ctx, spiffeEndpoint)
 	if err != nil {
 		return fmt.Errorf("object-storage spiffe source: %w", err)
 	}
@@ -91,21 +105,16 @@ func run() error {
 	}
 	baseConfig := objectstorage.Config{
 		ServiceName:      role.serviceName(),
-		Environment:      envOr("OBJECT_STORAGE_ENVIRONMENT", "single-node"),
+		Environment:      environment,
 		ServiceVersion:   serviceVersion,
-		WriterInstanceID: envOr("OBJECT_STORAGE_WRITER_INSTANCE_ID", hostname()),
-		ProxyRegion:      envOr("OBJECT_STORAGE_GARAGE_REGION", "garage"),
+		WriterInstanceID: writerInstanceID,
+		ProxyRegion:      proxyRegion,
 	}
 	switch role {
 	case runtimeRoleAdmin:
-		return runAdmin(ctx, stop, logger, spiffeSource, pg, secretBox, baseConfig)
+		return runAdmin(ctx, logger, spiffeSource, pg, secretBox, baseConfig)
 	case runtimeRoleS3:
-		secretsURL := requireEnv("OBJECT_STORAGE_SECRETS_URL")
-		runtimeSecretsClient, err := newRuntimeSecretsClient(spiffeSource, secretsURL)
-		if err != nil {
-			return err
-		}
-		return runS3(ctx, stop, logger, spiffeSource, runtimeSecretsClient, pg, secretBox, baseConfig)
+		return runS3(ctx, logger, spiffeSource, pg, secretBox, baseConfig)
 	default:
 		return fmt.Errorf("unsupported object-storage role %q", role)
 	}
@@ -113,15 +122,22 @@ func run() error {
 
 func runAdmin(
 	ctx context.Context,
-	stop context.CancelFunc,
 	logger *slog.Logger,
 	spiffeSource *workloadapi.X509Source,
 	pg *sql.DB,
 	secretBox *objectstorage.SecretBox,
 	cfg objectstorage.Config,
 ) error {
-	adminListenAddr := envOr("OBJECT_STORAGE_ADMIN_LISTEN_ADDR", "127.0.0.1:4257")
-	governanceAuditURL := requireEnv("OBJECT_STORAGE_GOVERNANCE_AUDIT_URL")
+	l := envconfig.New()
+	adminListenAddr := l.String("OBJECT_STORAGE_ADMIN_LISTEN_ADDR", "127.0.0.1:4257")
+	governanceAuditURL := l.RequireURL("OBJECT_STORAGE_GOVERNANCE_AUDIT_URL")
+	garageAdminURLs := splitEnvList(l.RequireString("OBJECT_STORAGE_GARAGE_ADMIN_URLS"))
+	garageAdminToken := l.RequireCredential("garage-admin-token")
+	proxyAccessKeyID := l.RequireCredential("garage-proxy-access-key-id")
+	if err := l.Err(); err != nil {
+		return err
+	}
+
 	adminClientIDs, err := workloadauth.PeerIDsForSource(spiffeSource, workloadauth.ServiceObjectStorageAdmin)
 	if err != nil {
 		return err
@@ -130,15 +146,11 @@ func runAdmin(
 		Transport: otelhttp.NewTransport(http.DefaultTransport),
 		Timeout:   3 * time.Second,
 	}
-	garageClient, err := objectstorage.NewGarageAdminClient(
-		splitEnvList(requireEnv("OBJECT_STORAGE_GARAGE_ADMIN_URLS")),
-		requireCredential("garage-admin-token"),
-		garageAdminHTTPClient,
-	)
+	garageClient, err := objectstorage.NewGarageAdminClient(garageAdminURLs, garageAdminToken, garageAdminHTTPClient)
 	if err != nil {
 		return err
 	}
-	cfg.ProxyAccessKeyID = requireCredential("garage-proxy-access-key-id")
+	cfg.ProxyAccessKeyID = proxyAccessKeyID
 
 	objectstorageapi.ConfigureAuditSink(governanceAuditURL, spiffeSource)
 	svc := &objectstorage.Service{
@@ -179,33 +191,37 @@ func runAdmin(
 	if err != nil {
 		return fmt.Errorf("object-storage admin allowlist: %w", err)
 	}
-	adminServer := &http.Server{
-		Addr:              adminListenAddr,
-		Handler:           otelhttp.NewHandler(adminAllowlist, "object-storage-admin"),
-		TLSConfig:         adminTLSConfig,
-		ReadHeaderTimeout: 2 * time.Second,
-		ReadTimeout:       5 * time.Second,
-		WriteTimeout:      5 * time.Second,
-		IdleTimeout:       30 * time.Second,
-		MaxHeaderBytes:    16 << 10,
-	}
-	logger.InfoContext(ctx, "object-storage-admin listening", "addr", adminListenAddr)
-	return serveSingleServer(ctx, stop, logger, adminServer, "object-storage admin")
+	adminServer := httpserver.New(adminListenAddr, otelhttp.NewHandler(adminAllowlist, "object-storage-admin"))
+	adminServer.TLSConfig = adminTLSConfig
+	return httpserver.Run(ctx, logger, adminServer)
 }
 
 func runS3(
 	ctx context.Context,
-	stop context.CancelFunc,
 	logger *slog.Logger,
 	spiffeSource *workloadapi.X509Source,
-	runtimeSecretsClient *secretsclient.ClientWithResponses,
 	pg *sql.DB,
 	secretBox *objectstorage.SecretBox,
 	cfg objectstorage.Config,
 ) error {
-	s3ListenAddr := envOr("OBJECT_STORAGE_S3_LISTEN_ADDR", "127.0.0.1:4256")
-	chAddress := envOr("OBJECT_STORAGE_CH_ADDRESS", "127.0.0.1:9440")
-	chUser := envOr("OBJECT_STORAGE_CH_USER", "object_storage_service")
+	l := envconfig.New()
+	s3ListenAddr := l.String("OBJECT_STORAGE_S3_LISTEN_ADDR", "127.0.0.1:4256")
+	chAddress := l.String("OBJECT_STORAGE_CH_ADDRESS", "127.0.0.1:9440")
+	chUser := l.String("OBJECT_STORAGE_CH_USER", "object_storage_service")
+	garageS3URLs := splitEnvList(l.RequireString("OBJECT_STORAGE_GARAGE_S3_URLS"))
+	secretsURL := l.RequireURL("OBJECT_STORAGE_SECRETS_URL")
+	s3TLSCertPath := l.RequireCredentialPath("s3-tls-cert")
+	s3TLSKeyPath := l.RequireCredentialPath("s3-tls-key")
+	chCACertPath := l.RequireCredentialPath("clickhouse-ca-cert")
+	spiffeEndpoint := l.String(workloadauth.EndpointSocketEnv, "")
+	if err := l.Err(); err != nil {
+		return err
+	}
+
+	runtimeSecretsClient, err := newRuntimeSecretsClient(spiffeSource, secretsURL)
+	if err != nil {
+		return err
+	}
 	runtimeSecrets, err := fetchObjectStorageRuntimeSecrets(ctx, runtimeSecretsClient,
 		secretsclient.ObjectStorageGarageProxyAccessKeyIDName,
 		secretsclient.ObjectStorageGarageProxySecretAccessKeyName,
@@ -215,7 +231,7 @@ func runS3(
 	}
 	cfg.ProxyAccessKeyID = runtimeSecrets[secretsclient.ObjectStorageGarageProxyAccessKeyIDName]
 
-	chConn, err := newClickHouseConn(ctx, spiffeSource, chAddress, chUser)
+	chConn, err := newClickHouseConn(ctx, spiffeSource, chAddress, chUser, chCACertPath)
 	if err != nil {
 		return err
 	}
@@ -242,7 +258,7 @@ func runS3(
 	}
 	s3Handler, err := objectstorage.NewS3Handler(
 		svc,
-		splitEnvList(requireEnv("OBJECT_STORAGE_GARAGE_S3_URLS")),
+		garageS3URLs,
 		garageS3HTTPClient,
 		runtimeSecrets[secretsclient.ObjectStorageGarageProxyAccessKeyIDName],
 		runtimeSecrets[secretsclient.ObjectStorageGarageProxySecretAccessKeyName],
@@ -252,12 +268,12 @@ func runS3(
 	if err != nil {
 		return fmt.Errorf("object-storage s3 handler: %w", err)
 	}
-	bundleSource, err := workloadapi.NewBundleSource(ctx, workloadapi.WithClientOptions(workloadapi.WithAddr(envOr(workloadauth.EndpointSocketEnv, ""))))
+	bundleSource, err := workloadapi.NewBundleSource(ctx, workloadapi.WithClientOptions(workloadapi.WithAddr(spiffeEndpoint)))
 	if err != nil {
 		return fmt.Errorf("object-storage spiffe bundle source: %w", err)
 	}
 	defer bundleSource.Close()
-	s3TLSConfig, err := newS3TLSConfig(bundleSource)
+	s3TLSConfig, err := newS3TLSConfig(bundleSource, s3TLSCertPath, s3TLSKeyPath)
 	if err != nil {
 		return fmt.Errorf("object-storage s3 tls: %w", err)
 	}
@@ -273,44 +289,16 @@ func runS3(
 		_, _ = w.Write([]byte("ready\n"))
 	})
 	s3Mux.Handle("/", s3Handler)
-	s3Server := &http.Server{
-		Addr:              s3ListenAddr,
-		Handler:           otelhttp.NewHandler(s3PeerMiddleware(s3Mux), "object-storage-s3"),
-		TLSConfig:         s3TLSConfig,
-		ReadHeaderTimeout: 2 * time.Second,
-		IdleTimeout:       30 * time.Second,
-		MaxHeaderBytes:    16 << 10,
-	}
-	logger.InfoContext(ctx, "object-storage-service listening", "addr", s3ListenAddr)
-	return serveSingleServer(ctx, stop, logger, s3Server, "object-storage s3")
+	s3Server := httpserver.New(s3ListenAddr, otelhttp.NewHandler(s3PeerMiddleware(s3Mux), "object-storage-s3"))
+	s3Server.TLSConfig = s3TLSConfig
+	// S3 requests stream large bodies; drop the standard Read/Write timeouts.
+	s3Server.ReadTimeout = 0
+	s3Server.WriteTimeout = 0
+	return httpserver.Run(ctx, logger, s3Server)
 }
 
-func serveSingleServer(ctx context.Context, stop context.CancelFunc, logger *slog.Logger, server *http.Server, description string) error {
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := server.Shutdown(shutdownCtx); err != nil {
-			logger.ErrorContext(context.Background(), description+" shutdown", "error", err)
-		}
-	}()
-	errCh := make(chan error, 1)
-	go func() {
-		if err := server.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
-			errCh <- err
-			return
-		}
-		errCh <- nil
-	}()
-	if err := <-errCh; err != nil {
-		stop()
-		return fmt.Errorf("serve %s: %w", description, err)
-	}
-	return nil
-}
-
-func newS3TLSConfig(bundleSource *workloadapi.BundleSource) (*tls.Config, error) {
-	cert, err := tls.LoadX509KeyPair(credentialPath("s3-tls-cert"), credentialPath("s3-tls-key"))
+func newS3TLSConfig(bundleSource *workloadapi.BundleSource, certPath, keyPath string) (*tls.Config, error) {
+	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
 	if err != nil {
 		return nil, err
 	}
@@ -412,8 +400,8 @@ func newPostgres(ctx context.Context, pgDSN string) (*sql.DB, error) {
 	return pg, nil
 }
 
-func newClickHouseConn(ctx context.Context, spiffeSource *workloadapi.X509Source, chAddress, chUser string) (clickhouse.Conn, error) {
-	chTLSConfig, err := workloadauth.TLSConfigWithX509SourceAndCABundle(ctx, spiffeSource, credentialPath("clickhouse-ca-cert"))
+func newClickHouseConn(ctx context.Context, spiffeSource *workloadapi.X509Source, chAddress, chUser, caCertPath string) (clickhouse.Conn, error) {
+	chTLSConfig, err := workloadauth.TLSConfigWithX509SourceAndCABundle(ctx, spiffeSource, caCertPath)
 	if err != nil {
 		return nil, fmt.Errorf("object-storage clickhouse tls: %w", err)
 	}
@@ -429,38 +417,6 @@ func newClickHouseConn(ctx context.Context, spiffeSource *workloadapi.X509Source
 		return nil, fmt.Errorf("open clickhouse: %w", err)
 	}
 	return chConn, nil
-}
-
-func requireEnv(name string) string {
-	value := strings.TrimSpace(os.Getenv(name))
-	if value == "" {
-		panic(fmt.Sprintf("%s is required", name))
-	}
-	return value
-}
-
-func envOr(name, fallback string) string {
-	value := strings.TrimSpace(os.Getenv(name))
-	if value == "" {
-		return fallback
-	}
-	return value
-}
-
-func requireCredential(name string) string {
-	data, err := os.ReadFile(credentialPath(name))
-	if err != nil {
-		panic(fmt.Sprintf("read credential %s: %v", name, err))
-	}
-	return strings.TrimSpace(string(data))
-}
-
-func credentialPath(name string) string {
-	base := strings.TrimSpace(os.Getenv("CREDENTIALS_DIRECTORY"))
-	if base == "" {
-		panic("missing CREDENTIALS_DIRECTORY for credential " + name)
-	}
-	return filepath.Join(base, name)
 }
 
 func fetchObjectStorageRuntimeSecrets(ctx context.Context, client *secretsclient.ClientWithResponses, secretNames ...string) (map[string]string, error) {

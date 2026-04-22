@@ -6,8 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -16,6 +14,7 @@ import (
 	"go.temporal.io/sdk/worker"
 
 	workloadauth "github.com/forge-metal/auth-middleware/workload"
+	"github.com/forge-metal/envconfig"
 	fmotel "github.com/forge-metal/otel"
 	"github.com/forge-metal/sandbox-rental-service/internal/jobs"
 	"github.com/forge-metal/sandbox-rental-service/internal/recurring"
@@ -48,12 +47,21 @@ func run() error {
 	}()
 	slog.SetDefault(logger)
 
-	pgDSN := requireEnv("SANDBOX_PG_DSN")
-	temporalFrontendAddress := envOr("SANDBOX_TEMPORAL_FRONTEND_ADDRESS", sdkclient.DefaultFrontendAddress)
-	temporalNamespace := envOr("SANDBOX_TEMPORAL_NAMESPACE", recurring.DefaultNamespace)
-	temporalRecurringTaskQueue := envOr("SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING", recurring.DefaultTaskQueue)
+	cfg := envconfig.New()
+	pgDSN := cfg.RequireString("SANDBOX_PG_DSN")
+	temporalFrontendAddress := cfg.String("SANDBOX_TEMPORAL_FRONTEND_ADDRESS", sdkclient.DefaultFrontendAddress)
+	temporalNamespace := cfg.String("SANDBOX_TEMPORAL_NAMESPACE", recurring.DefaultNamespace)
+	temporalRecurringTaskQueue := cfg.String("SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING", recurring.DefaultTaskQueue)
+	riverPGMaxConns := cfg.Int("SANDBOX_RIVER_PG_MAX_CONNS", 8)
+	riverPGMinConns := cfg.Int("SANDBOX_RIVER_PG_MIN_CONNS", 1)
+	riverPGConnMaxLifetime := cfg.Int("SANDBOX_RIVER_PG_CONN_MAX_LIFETIME_SECONDS", 1800)
+	riverPGConnMaxIdle := cfg.Int("SANDBOX_RIVER_PG_CONN_MAX_IDLE_SECONDS", 300)
+	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
+	if err := cfg.Err(); err != nil {
+		return err
+	}
 
-	spiffeSource, err := sdkclient.NewSource(ctx, strings.TrimSpace(os.Getenv(workloadauth.EndpointSocketEnv)))
+	spiffeSource, err := sdkclient.NewSource(ctx, spiffeEndpoint)
 	if err != nil {
 		return fmt.Errorf("sandbox-rental recurring spiffe source: %w", err)
 	}
@@ -67,10 +75,10 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("parse scheduler postgres dsn: %w", err)
 	}
-	pgxConfig.MaxConns = int32(envInt("SANDBOX_RIVER_PG_MAX_CONNS", 8))
-	pgxConfig.MinConns = int32(envInt("SANDBOX_RIVER_PG_MIN_CONNS", 1))
-	pgxConfig.MaxConnLifetime = time.Duration(envInt("SANDBOX_RIVER_PG_CONN_MAX_LIFETIME_SECONDS", 1800)) * time.Second
-	pgxConfig.MaxConnIdleTime = time.Duration(envInt("SANDBOX_RIVER_PG_CONN_MAX_IDLE_SECONDS", 300)) * time.Second
+	pgxConfig.MaxConns = int32(riverPGMaxConns)
+	pgxConfig.MinConns = int32(riverPGMinConns)
+	pgxConfig.MaxConnLifetime = time.Duration(riverPGConnMaxLifetime) * time.Second
+	pgxConfig.MaxConnIdleTime = time.Duration(riverPGConnMaxIdle) * time.Second
 	pgxPool, err := pgxpool.NewWithConfig(ctx, pgxConfig)
 	if err != nil {
 		return fmt.Errorf("open scheduler postgres pool: %w", err)
@@ -130,33 +138,4 @@ func run() error {
 	logger.Info("sandbox-rental recurring worker started", "namespace", temporalNamespace, "task_queue", temporalRecurringTaskQueue)
 	<-ctx.Done()
 	return nil
-}
-
-func requireEnv(key string) string {
-	value := os.Getenv(key)
-	if value == "" {
-		fmt.Fprintf(os.Stderr, "required env %s is empty\n", key)
-		os.Exit(1)
-	}
-	return value
-}
-
-func envOr(key, fallback string) string {
-	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-		return v
-	}
-	return fallback
-}
-
-func envInt(key string, fallback int) int {
-	raw := strings.TrimSpace(os.Getenv(key))
-	if raw == "" {
-		return fallback
-	}
-	value, err := strconv.Atoi(raw)
-	if err != nil || value <= 0 {
-		fmt.Fprintf(os.Stderr, "env %s must be a positive integer\n", key)
-		os.Exit(1)
-	}
-	return value
 }

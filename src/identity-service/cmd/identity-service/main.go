@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -17,6 +16,8 @@ import (
 
 	auth "github.com/forge-metal/auth-middleware"
 	workloadauth "github.com/forge-metal/auth-middleware/workload"
+	"github.com/forge-metal/envconfig"
+	"github.com/forge-metal/httpserver"
 	"github.com/forge-metal/identity-service/internal/api"
 	"github.com/forge-metal/identity-service/internal/identity"
 	"github.com/forge-metal/identity-service/internal/zitadel"
@@ -26,7 +27,6 @@ import (
 const (
 	serviceName      = "identity-service"
 	serviceVersion   = "1.0.0"
-	maxHeaderBytes   = 16 << 10
 	requestBodyLimit = 1 << 20
 )
 
@@ -51,17 +51,21 @@ func run() error {
 		}
 	}()
 
-	pgDSN := requireEnv("IDENTITY_PG_DSN")
-	zitadelAdminToken := requireCredential("zitadel-admin-token")
-	zitadelActionSigningKey := requireCredential("zitadel-action-signing-key")
-
-	listenAddr := envOr("IDENTITY_LISTEN_ADDR", "127.0.0.1:4248")
-	governanceAuditURL := envOr("IDENTITY_GOVERNANCE_AUDIT_URL", "")
-	authIssuerURL := requireEnv("IDENTITY_AUTH_ISSUER_URL")
-	authAudience := requireEnv("IDENTITY_AUTH_AUDIENCE")
-	authJWKSURL := envOr("IDENTITY_AUTH_JWKS_URL", "")
-	zitadelBaseURL := requireEnv("IDENTITY_ZITADEL_BASE_URL")
-	zitadelHostHeader := requireEnv("IDENTITY_ZITADEL_HOST")
+	cfg := envconfig.New()
+	pgDSN := cfg.RequireString("IDENTITY_PG_DSN")
+	zitadelAdminToken := cfg.RequireCredential("zitadel-admin-token")
+	zitadelActionSigningKey := cfg.RequireCredential("zitadel-action-signing-key")
+	listenAddr := cfg.String("IDENTITY_LISTEN_ADDR", "127.0.0.1:4248")
+	governanceAuditURL := cfg.String("IDENTITY_GOVERNANCE_AUDIT_URL", "")
+	authIssuerURL := cfg.RequireURL("IDENTITY_AUTH_ISSUER_URL")
+	authAudience := cfg.RequireString("IDENTITY_AUTH_AUDIENCE")
+	authJWKSURL := cfg.String("IDENTITY_AUTH_JWKS_URL", "")
+	zitadelBaseURL := cfg.RequireURL("IDENTITY_ZITADEL_BASE_URL")
+	zitadelHostHeader := cfg.RequireString("IDENTITY_ZITADEL_HOST")
+	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
+	if err := cfg.Err(); err != nil {
+		return err
+	}
 
 	pg, err := sql.Open("postgres", pgDSN)
 	if err != nil {
@@ -93,7 +97,7 @@ func run() error {
 		Directory: zitadelClient,
 		ProjectID: authAudience,
 	}
-	spiffeSource, err := workloadauth.Source(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
+	spiffeSource, err := workloadauth.Source(ctx, spiffeEndpoint)
 	if err != nil {
 		return fmt.Errorf("identity spiffe workload source: %w", err)
 	}
@@ -128,80 +132,8 @@ func run() error {
 	})(privateMux)
 	rootMux.Handle("/", protected)
 
-	rootHandler := limitRequestBodies(rootMux, requestBodyLimit)
-	srv := &http.Server{
-		Addr:              listenAddr,
-		Handler:           otelhttp.NewHandler(rootHandler, serviceName),
-		ReadHeaderTimeout: 2 * time.Second,
-		ReadTimeout:       5 * time.Second,
-		WriteTimeout:      5 * time.Second,
-		IdleTimeout:       30 * time.Second,
-		MaxHeaderBytes:    maxHeaderBytes,
-	}
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			logger.ErrorContext(context.Background(), "identity-service shutdown", "error", err)
-		}
-	}()
-
-	logger.Info("identity-service: listening", "addr", listenAddr)
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		return fmt.Errorf("identity-service listen: %w", err)
-	}
-	return nil
-}
-
-func loadCredential(name string) (string, error) {
-	dir := os.Getenv("CREDENTIALS_DIRECTORY")
-	if dir == "" {
-		return "", fmt.Errorf("CREDENTIALS_DIRECTORY not set")
-	}
-	data, err := os.ReadFile(filepath.Join(dir, name))
-	if err != nil {
-		return "", fmt.Errorf("load credential %s: %w", name, err)
-	}
-	return strings.TrimSpace(string(data)), nil
-}
-
-func requireCredential(name string) string {
-	value, err := loadCredential(name)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "required credential %s: %v\n", name, err)
-		os.Exit(1)
-	}
-	if value == "" {
-		fmt.Fprintf(os.Stderr, "required credential %s is empty\n", name)
-		os.Exit(1)
-	}
-	return value
-}
-
-func credentialOr(name, fallback string) string {
-	value, err := loadCredential(name)
-	if err != nil || value == "" {
-		return fallback
-	}
-	return value
-}
-
-func requireEnv(key string) string {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		fmt.Fprintf(os.Stderr, "required env %s is empty\n", key)
-		os.Exit(1)
-	}
-	return value
-}
-
-func envOr(key, fallback string) string {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return fallback
-	}
-	return value
+	srv := httpserver.New(listenAddr, otelhttp.NewHandler(limitRequestBodies(rootMux, requestBodyLimit), serviceName))
+	return httpserver.Run(ctx, logger, srv)
 }
 
 func limitRequestBodies(next http.Handler, maxBytes int64) http.Handler {

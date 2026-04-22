@@ -9,8 +9,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -28,6 +26,8 @@ import (
 	auth "github.com/forge-metal/auth-middleware"
 	workloadauth "github.com/forge-metal/auth-middleware/workload"
 	billingclient "github.com/forge-metal/billing-service/client"
+	"github.com/forge-metal/envconfig"
+	"github.com/forge-metal/httpserver"
 	fmotel "github.com/forge-metal/otel"
 	secretsclient "github.com/forge-metal/secrets-service/client"
 	secretsinternalclient "github.com/forge-metal/secrets-service/internalclient"
@@ -45,7 +45,6 @@ const (
 	correlationCookie = "fm_correlation_id"
 
 	sandboxAPIRequestBodyLimit = 1 << 20
-	sandboxMaxHeaderBytes      = 16 << 10
 )
 
 func main() {
@@ -66,42 +65,57 @@ func run() error {
 	defer otelShutdown(context.Background())
 	slog.SetDefault(logger)
 
+	cfg := envconfig.New()
 	// PostgreSQL runtime auth is local peer over the Unix socket. Runtime
 	// provider credentials are fetched from secrets-service over SPIFFE mTLS.
-	pgDSN := requireEnv("SANDBOX_PG_DSN")
-
-	// Non-secret config via Environment=.
-	listenAddr := envOr("SANDBOX_LISTEN_ADDR", "127.0.0.1:4243")
-	chAddress := envOr("SANDBOX_CH_ADDRESS", "127.0.0.1:9440")
-	chUser := envOr("SANDBOX_CH_USER", "sandbox_rental")
-	billingURL := envOr("SANDBOX_BILLING_URL", "http://127.0.0.1:4242")
-	governanceAuditURL := envOr("SANDBOX_GOVERNANCE_AUDIT_URL", "")
-	secretsURL := envOr("SANDBOX_SECRETS_URL", "https://127.0.0.1:4253")
-	billingReturnOrigins, err := sandboxapi.ParseBillingReturnOrigins(requireEnv("SANDBOX_BILLING_RETURN_ORIGINS"))
+	pgDSN := cfg.RequireString("SANDBOX_PG_DSN")
+	listenAddr := cfg.String("SANDBOX_LISTEN_ADDR", "127.0.0.1:4243")
+	chAddress := cfg.String("SANDBOX_CH_ADDRESS", "127.0.0.1:9440")
+	chUser := cfg.String("SANDBOX_CH_USER", "sandbox_rental")
+	billingURL := cfg.URL("SANDBOX_BILLING_URL", "http://127.0.0.1:4242")
+	governanceAuditURL := cfg.String("SANDBOX_GOVERNANCE_AUDIT_URL", "")
+	secretsURL := cfg.URL("SANDBOX_SECRETS_URL", "https://127.0.0.1:4253")
+	billingReturnOriginsRaw := cfg.RequireString("SANDBOX_BILLING_RETURN_ORIGINS")
+	publicBaseURL := cfg.RequireString("SANDBOX_PUBLIC_BASE_URL")
+	authIssuerURL := cfg.RequireURL("SANDBOX_AUTH_ISSUER_URL")
+	authAudience := cfg.RequireString("SANDBOX_AUTH_AUDIENCE")
+	authJWKSURL := cfg.String("SANDBOX_AUTH_JWKS_URL", "")
+	temporalFrontendAddress := cfg.String("SANDBOX_TEMPORAL_FRONTEND_ADDRESS", sdkclient.DefaultFrontendAddress)
+	temporalNamespace := cfg.String("SANDBOX_TEMPORAL_NAMESPACE", recurring.DefaultNamespace)
+	temporalRecurringTaskQueue := cfg.String("SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING", recurring.DefaultTaskQueue)
+	vmOrchestratorSocket := cfg.String("SANDBOX_VM_ORCHESTRATOR_SOCKET", vmorchestrator.DefaultSocketPath)
+	githubAppEnabled := cfg.Bool("SANDBOX_GITHUB_APP_ENABLED", false)
+	githubAppID := cfg.Int64("SANDBOX_GITHUB_APP_ID", 0)
+	githubAppSlug := cfg.String("SANDBOX_GITHUB_APP_SLUG", "")
+	githubAppClientID := cfg.String("SANDBOX_GITHUB_APP_CLIENT_ID", "")
+	githubAPIBaseURL := cfg.URL("SANDBOX_GITHUB_API_BASE_URL", "https://api.github.com")
+	githubWebBaseURL := cfg.URL("SANDBOX_GITHUB_WEB_BASE_URL", "https://github.com")
+	githubRunnerGroupID := cfg.Int64("SANDBOX_GITHUB_RUNNER_GROUP_ID", 1)
+	checkoutCacheDir := cfg.String("SANDBOX_GITHUB_CHECKOUT_CACHE_DIR", "/var/lib/forge-metal/sandbox-rental/github-checkout")
+	pgMaxOpenConns := cfg.Int("SANDBOX_PG_MAX_OPEN_CONNS", 16)
+	pgMaxIdleConns := cfg.Int("SANDBOX_PG_MAX_IDLE_CONNS", 8)
+	pgConnMaxLifetime := cfg.Int("SANDBOX_PG_CONN_MAX_LIFETIME_SECONDS", 1800)
+	pgConnMaxIdle := cfg.Int("SANDBOX_PG_CONN_MAX_IDLE_SECONDS", 300)
+	riverPGMaxConns := cfg.Int("SANDBOX_RIVER_PG_MAX_CONNS", 8)
+	riverPGMinConns := cfg.Int("SANDBOX_RIVER_PG_MIN_CONNS", 1)
+	riverPGConnMaxLifetime := cfg.Int("SANDBOX_RIVER_PG_CONN_MAX_LIFETIME_SECONDS", 1800)
+	riverPGConnMaxIdle := cfg.Int("SANDBOX_RIVER_PG_CONN_MAX_IDLE_SECONDS", 300)
+	workloadTimeout := cfg.Int("SANDBOX_WORKLOAD_TIMEOUT_SECONDS", 7200)
+	executionMaxWorkers := cfg.Int("SANDBOX_EXECUTION_MAX_WORKERS", scheduler.DefaultExecutionMaxWorkers)
+	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
+	chCACertPath := cfg.RequireCredentialPath("clickhouse-ca-cert")
+	if err := cfg.Err(); err != nil {
+		return err
+	}
+	billingReturnOrigins, err := sandboxapi.ParseBillingReturnOrigins(billingReturnOriginsRaw)
 	if err != nil {
 		return fmt.Errorf("SANDBOX_BILLING_RETURN_ORIGINS: %w", err)
 	}
-	publicBaseURL := requireEnv("SANDBOX_PUBLIC_BASE_URL")
 	if err := validatePublicBaseURL(publicBaseURL); err != nil {
 		return fmt.Errorf("SANDBOX_PUBLIC_BASE_URL: %w", err)
 	}
-	authIssuerURL := requireEnv("SANDBOX_AUTH_ISSUER_URL")
-	authAudience := requireEnv("SANDBOX_AUTH_AUDIENCE")
-	authJWKSURL := envOr("SANDBOX_AUTH_JWKS_URL", "")
-	temporalFrontendAddress := envOr("SANDBOX_TEMPORAL_FRONTEND_ADDRESS", sdkclient.DefaultFrontendAddress)
-	temporalNamespace := envOr("SANDBOX_TEMPORAL_NAMESPACE", recurring.DefaultNamespace)
-	temporalRecurringTaskQueue := envOr("SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING", recurring.DefaultTaskQueue)
-	vmOrchestratorSocket := envOr("SANDBOX_VM_ORCHESTRATOR_SOCKET", vmorchestrator.DefaultSocketPath)
-	githubAppEnabled := envBool("SANDBOX_GITHUB_APP_ENABLED", false)
-	githubAppID := envInt64("SANDBOX_GITHUB_APP_ID", 0)
-	githubAppSlug := envOr("SANDBOX_GITHUB_APP_SLUG", "")
-	githubAppClientID := envOr("SANDBOX_GITHUB_APP_CLIENT_ID", "")
-	githubAPIBaseURL := envOr("SANDBOX_GITHUB_API_BASE_URL", "https://api.github.com")
-	githubWebBaseURL := envOr("SANDBOX_GITHUB_WEB_BASE_URL", "https://github.com")
-	githubRunnerGroupID := envInt64("SANDBOX_GITHUB_RUNNER_GROUP_ID", 1)
-	checkoutCacheDir := envOr("SANDBOX_GITHUB_CHECKOUT_CACHE_DIR", "/var/lib/forge-metal/sandbox-rental/github-checkout")
 
-	spiffeSource, err := workloadauth.Source(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
+	spiffeSource, err := workloadauth.Source(ctx, spiffeEndpoint)
 	if err != nil {
 		return fmt.Errorf("spiffe workload source: %w", err)
 	}
@@ -117,10 +131,10 @@ func run() error {
 		return fmt.Errorf("open postgres: %w", err)
 	}
 	defer pg.Close()
-	pg.SetMaxOpenConns(envInt("SANDBOX_PG_MAX_OPEN_CONNS", 16))
-	pg.SetMaxIdleConns(envInt("SANDBOX_PG_MAX_IDLE_CONNS", 8))
-	pg.SetConnMaxLifetime(time.Duration(envInt("SANDBOX_PG_CONN_MAX_LIFETIME_SECONDS", 1800)) * time.Second)
-	pg.SetConnMaxIdleTime(time.Duration(envInt("SANDBOX_PG_CONN_MAX_IDLE_SECONDS", 300)) * time.Second)
+	pg.SetMaxOpenConns(pgMaxOpenConns)
+	pg.SetMaxIdleConns(pgMaxIdleConns)
+	pg.SetConnMaxLifetime(time.Duration(pgConnMaxLifetime) * time.Second)
+	pg.SetConnMaxIdleTime(time.Duration(pgConnMaxIdle) * time.Second)
 	pingCtx, cancelPing := context.WithTimeout(ctx, 5*time.Second)
 	defer cancelPing()
 	if err := pg.PingContext(pingCtx); err != nil {
@@ -131,10 +145,10 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("parse scheduler postgres dsn: %w", err)
 	}
-	pgxConfig.MaxConns = int32(envInt("SANDBOX_RIVER_PG_MAX_CONNS", 8))
-	pgxConfig.MinConns = int32(envInt("SANDBOX_RIVER_PG_MIN_CONNS", 1))
-	pgxConfig.MaxConnLifetime = time.Duration(envInt("SANDBOX_RIVER_PG_CONN_MAX_LIFETIME_SECONDS", 1800)) * time.Second
-	pgxConfig.MaxConnIdleTime = time.Duration(envInt("SANDBOX_RIVER_PG_CONN_MAX_IDLE_SECONDS", 300)) * time.Second
+	pgxConfig.MaxConns = int32(riverPGMaxConns)
+	pgxConfig.MinConns = int32(riverPGMinConns)
+	pgxConfig.MaxConnLifetime = time.Duration(riverPGConnMaxLifetime) * time.Second
+	pgxConfig.MaxConnIdleTime = time.Duration(riverPGConnMaxIdle) * time.Second
 	pgxPool, err := pgxpool.NewWithConfig(ctx, pgxConfig)
 	if err != nil {
 		return fmt.Errorf("open scheduler postgres pool: %w", err)
@@ -146,7 +160,7 @@ func run() error {
 		return fmt.Errorf("ping scheduler postgres pool: %w", err)
 	}
 
-	chTLSConfig, err := workloadauth.TLSConfigWithX509SourceAndCABundle(ctx, spiffeSource, credentialPath("clickhouse-ca-cert"))
+	chTLSConfig, err := workloadauth.TLSConfigWithX509SourceAndCABundle(ctx, spiffeSource, chCACertPath)
 	if err != nil {
 		return fmt.Errorf("sandbox-rental clickhouse tls: %w", err)
 	}
@@ -250,7 +264,7 @@ func run() error {
 		Billing:          billingClient,
 		Bounds:           hostBounds,
 		Logger:           logger,
-		WorkloadTimeout:  time.Duration(envInt("SANDBOX_WORKLOAD_TIMEOUT_SECONDS", 7200)) * time.Second,
+		WorkloadTimeout:  time.Duration(workloadTimeout) * time.Second,
 		CheckoutCacheDir: checkoutCacheDir,
 		Secrets:          jobs.NewSecretsResolver(secretsInternalClient),
 	}
@@ -286,7 +300,7 @@ func run() error {
 
 	schedulerRuntime, err := scheduler.NewRuntime(pgxPool, scheduler.Config{
 		Logger:              logger,
-		ExecutionMaxWorkers: envInt("SANDBOX_EXECUTION_MAX_WORKERS", scheduler.DefaultExecutionMaxWorkers),
+		ExecutionMaxWorkers: executionMaxWorkers,
 		RegisterWorkers: func(workers *river.Workers) error {
 			return jobs.RegisterSchedulerWorkers(workers, jobService)
 		},
@@ -346,28 +360,8 @@ func run() error {
 		authHandler.ServeHTTP(w, r)
 	})
 	rootMux.Handle("/", correlationForwarder)
-	rootHandler := http.Handler(rootMux)
-	rootHandler = limitPublicAPIRequestBodies(rootHandler, sandboxAPIRequestBodyLimit)
-	srv := &http.Server{
-		Addr:              listenAddr,
-		Handler:           otelhttp.NewHandler(rootHandler, "sandbox-rental-service"),
-		ReadHeaderTimeout: 2 * time.Second,
-		ReadTimeout:       5 * time.Second,
-		WriteTimeout:      5 * time.Second,
-		IdleTimeout:       30 * time.Second,
-		MaxHeaderBytes:    sandboxMaxHeaderBytes,
-	}
-
-	// --- server lifecycle ---
-
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			logger.ErrorContext(context.Background(), "sandbox-rental: shutdown", "error", err)
-		}
-	}()
+	rootHandler := limitPublicAPIRequestBodies(rootMux, sandboxAPIRequestBodyLimit)
+	srv := httpserver.New(listenAddr, otelhttp.NewHandler(rootHandler, "sandbox-rental-service"))
 
 	go func() {
 		ticker := time.NewTicker(15 * time.Second)
@@ -386,23 +380,7 @@ func run() error {
 		}
 	}()
 
-	logger.Info("sandbox-rental: listening", "addr", listenAddr)
-	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-		return fmt.Errorf("sandbox-rental: listen: %w", err)
-	}
-
-	return nil
-}
-
-// --- credential helpers (systemd LoadCredential=) ---
-
-func credentialPath(name string) string {
-	dir := os.Getenv("CREDENTIALS_DIRECTORY")
-	if dir == "" {
-		fmt.Fprintf(os.Stderr, "CREDENTIALS_DIRECTORY not set for credential %s\n", name)
-		os.Exit(1)
-	}
-	return filepath.Join(dir, name)
+	return httpserver.Run(ctx, logger, srv)
 }
 
 func requireSecretField(values map[string]string, field string, label string) string {
@@ -432,63 +410,6 @@ func readRuntimeSecrets(ctx context.Context, client *secretsclient.ClientWithRes
 		values[secretName] = resp.JSON200.Value
 	}
 	return values, nil
-}
-
-// --- env helpers ---
-
-func requireEnv(key string) string {
-	value := os.Getenv(key)
-	if value == "" {
-		fmt.Fprintf(os.Stderr, "required env %s is empty\n", key)
-		os.Exit(1)
-	}
-	return value
-}
-
-func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
-}
-
-func envInt(key string, fallback int) int {
-	raw := os.Getenv(key)
-	if raw == "" {
-		return fallback
-	}
-	value, err := strconv.Atoi(raw)
-	if err != nil || value <= 0 {
-		fmt.Fprintf(os.Stderr, "env %s must be a positive integer\n", key)
-		os.Exit(1)
-	}
-	return value
-}
-
-func envInt64(key string, fallback int64) int64 {
-	raw := os.Getenv(key)
-	if raw == "" {
-		return fallback
-	}
-	value, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil || value < 0 {
-		fmt.Fprintf(os.Stderr, "env %s must be a non-negative integer\n", key)
-		os.Exit(1)
-	}
-	return value
-}
-
-func envBool(key string, fallback bool) bool {
-	raw := strings.TrimSpace(os.Getenv(key))
-	if raw == "" {
-		return fallback
-	}
-	value, err := strconv.ParseBool(raw)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "env %s must be a boolean\n", key)
-		os.Exit(1)
-	}
-	return value
 }
 
 func validatePublicBaseURL(raw string) error {

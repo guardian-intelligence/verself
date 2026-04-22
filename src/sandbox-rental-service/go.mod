@@ -8,7 +8,9 @@ require (
 	github.com/forge-metal/apiwire v0.0.0
 	github.com/forge-metal/auth-middleware v0.0.0
 	github.com/forge-metal/billing-service v0.0.0
+	github.com/forge-metal/envconfig v0.0.0
 	github.com/forge-metal/governance-service v0.0.0
+	github.com/forge-metal/httpserver v0.0.0
 	github.com/forge-metal/otel v0.0.0
 	github.com/forge-metal/secrets-service v0.0.0
 	github.com/forge-metal/temporal-platform v0.0.0
@@ -112,7 +114,9 @@ replace (
 	github.com/forge-metal/apiwire => ../apiwire
 	github.com/forge-metal/auth-middleware => ../auth-middleware
 	github.com/forge-metal/billing-service => ../billing-service
+	github.com/forge-metal/envconfig => ../envconfig
 	github.com/forge-metal/governance-service => ../governance-service
+	github.com/forge-metal/httpserver => ../httpserver
 	github.com/forge-metal/otel => ../otel
 	github.com/forge-metal/secrets-service => ../secrets-service
 	github.com/forge-metal/temporal-platform => ../temporal-platform
