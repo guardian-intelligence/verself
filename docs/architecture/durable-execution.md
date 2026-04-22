@@ -93,155 +93,197 @@ itself enqueue a River job inside that service — River is how the service
 does its local transactional work; Temporal is how the process crosses the
 service boundary.
 
+## Current deployment
+
+The current deployment is intentionally narrow:
+
+- One loopback-only Temporal cluster on the single-node host.
+- One repo-owned `temporal-server` systemd unit running Temporal in
+  combined mode.
+- One repo-owned `temporal-proof-worker` systemd unit used only for the
+  deployment gate and workload-identity rehearsal.
+- Frontend gRPC on `127.0.0.1:7233`, metrics on `127.0.0.1:9001`,
+  private membership ports reserved in `services.yml` for a later split
+  into dedicated roles.
+
+There is no Temporal Web deployment yet. The current operator surface is
+Grafana, `make observe WHAT=temporal`, `tdbg`, and SQL against the
+visibility database.
+
 ## SPIFFE posture
 
-Temporal does not speak SPIFFE natively. It accepts file-backed X.509
-certificates for both its internode mTLS (between the frontend, history,
-matching, and worker roles) and its frontend mTLS (for clients). The
-platform wraps it with the `spiffe-helper` pattern already in production
-use for ClickHouse: the helper fetches X.509-SVIDs from the SPIRE
-Workload API, writes them to disk, and signals the Temporal process on
-rotation.
+Temporal 1.30.4 does not provide a repo-grade SPIFFE integration out of
+the box. Static file-backed TLS is enough for encrypted transport, but it
+does not give Workload API-driven certificate management or SPIFFE-based
+authorization decisions in the shape the platform needs.
 
-Identity shape:
+The platform therefore ships a repo-owned wrapper binary,
+`forge-temporal-server`, around the upstream server library. It injects:
+
+- Workload API-backed TLS configs via `WithTLSConfigFactory`.
+- A claim mapper that extracts the peer SPIFFE URI-SAN into Temporal
+  claims.
+- A tracing authorizer that maps SPIFFE identities to Temporal system and
+  namespace roles.
+- Frontend gRPC interceptors that emit explicit mTLS/auth spans into
+  ClickHouse.
+- A PostgreSQL unix-socket DSN override so Temporal uses the same
+  peer-auth posture as the rest of the repo.
+
+Current identities:
 
 ```
-spiffe://<td>/svc/temporal-frontend
-spiffe://<td>/svc/temporal-history
-spiffe://<td>/svc/temporal-matching
-spiffe://<td>/svc/temporal-worker
+spiffe://<td>/svc/temporal-server
+spiffe://<td>/svc/temporal-proof
 ```
 
-For the single-node topology these collapse to a single `svc/temporal`
-systemd unit running `temporal-server` in combined mode. Identities are
-declared separately so the three-node split does not require an identity
-migration.
+Single-node combined mode deliberately collapses frontend, history,
+matching, and worker into `svc/temporal-server`. That keeps the first
+brick small and avoids inventing an internal multi-identity story on one
+box before the three-node split exists.
 
-A custom authorizer plugin maps the peer's SPIFFE URI-SAN to a Temporal
-namespace. Without this, any workload with a cert from the trust bundle
-could hit any namespace; with it, `sandbox-rental-service` may only write
-to the `sandbox` namespace, `billing-service` only to `billing`, etc.
+One observability wrinkle matters: combined-mode Temporal performs local
+startup polls and task-queue work that do not cross the frontend mTLS
+boundary. Those authorization spans can appear with an empty
+`spiffe.peer_id`. External callers must not. The deployment gate asserts
+the external path, not the local bootstrap path.
 
-Persistence is on the platform Postgres via local Unix socket peer auth
-with `pg_ident.conf` mapping — same invariant as every other
-repo-owned service. Password DSNs are prohibited.
+## Persistence and schema
 
-The standard SVID TTL and fail-closed startup semantics from
-[`workload-identity.md`](workload-identity.md) apply: 1h X.509 rotation,
-30s startup timeout, readiness flip at `TTL − 2m` if refresh stalls.
+Temporal persists into two platform-owned PostgreSQL databases:
 
-## Capacity
+- `temporal` — core execution history, namespaces, task queues, shards.
+- `temporal_visibility` — operator-facing visibility rows.
 
-Temporal's honest unit is **state transitions per second** — one write to
-the persistence backend — not workflows per second. A workflow with a
-signal, three activities, and completion runs roughly eight to ten state
-transitions, so transitions/sec divided by a workflow's transition count
-gives a usable workflow/sec estimate. Workflow counts alone are
-misleading; workflow shape varies tenfold between use cases.
+Both connect over `/var/run/postgresql` with peer auth as role
+`temporal`. Password DSNs are prohibited.
 
-Published numbers on a Postgres persistence backend:
+The repo also ships a small `temporal-schema` wrapper instead of calling
+the upstream schema tool directly. The wrapper reuses the unix-socket DSN
+override, emits OTel spans/logs, and keeps schema bootstrap under the
+same execution model as the rest of the platform.
 
-| Source | Hardware | State transitions/sec |
-| --- | --- | --- |
-| Temporal's own scaling blog, after tuning | k8s test cluster | 150 → 1,350 |
-| Community benchmark, 2vCore / 8 GB RDS Postgres | — | ~80–100 (DB CPU 100%) |
-| Community benchmark, 4vCore / 16 GB RDS Postgres | — | ~110–160 (DB CPU 80%) |
-| Vymo Engineering production workload, tuned Postgres | — | ~1,200 |
+Relevant PostgreSQL tables:
 
-A well-sized dedicated platform Postgres (8 vCore / 32 GB, NVMe) on bare
-metal sustains roughly 1,500–2,500 state transitions/sec before
-persistence CPU becomes the bottleneck. Temporal's own documentation
-notes that PostgreSQL is not ideal for medium-to-large-scale systems;
-beyond that ceiling, the documented escape path is to move persistence
-to Cassandra while keeping Postgres for visibility.
+- `temporal.namespaces` — namespace registry and IDs. Useful to confirm
+  bootstrap and namespace ownership.
+- `temporal_visibility.executions_visibility` — the stable operator
+  query surface for workflow ID, run ID, workflow type name, task queue,
+  status, start time, and close time.
 
-Against the use cases this plane is being adopted for — sandbox
-provisioning, billing `Reconcile()`, Stripe webhook handling, welcome
-sequences, saga-style recovery — peak workflow starts are bounded by
-external factors (Firecracker boot, customer signup rate, Stripe
-delivery cadence) and sit in the single-digit to low-tens-per-second
-range with plausible spikes to 50/sec. The platform Postgres handles
-this with an order of magnitude of headroom. The ceiling will not be
-felt at forge-metal's current or near-term scale.
+Treat the rest of Temporal's persistence schema as Temporal internals.
+Tables such as `history_node`, task queues, and shard state are not a
+stable product-facing contract and should not be used for application
+logic or long-lived operator dashboards.
 
-### Configuration knobs that matter
+## Current 1.30.4 learnings
 
-- **`numHistoryShards`** is immutable after cluster creation. Temporal
-  recommends 512 for small production clusters; it is rare for even
-  large clusters to exceed 4,096. Too few causes shard-lock contention
-  that dominates at load; too many wastes history-pod memory and
-  fragments DB queues. **Default: 512.**
-- **Postgres `max_connections`** defaults to 100 and is a tripwire under
-  Temporal. Frontend, history, and matching each hold their own pools;
-  the `temporal` CLI and workers add more. **Plan for 600.**
-- **Per-role SQL pool sizes** (`sql.maxConns`, `sql.maxIdleConns`,
-  `sql.maxConnLifetime`) are the first tuning knobs; expect to iterate
-  against observed persistence latency.
+- SPIFFE works, but not by configuration alone. Owning the wrapper
+  binary is the pragmatic path today.
+- Server-side mTLS needed explicit `ClientCAs` population. In live
+  testing, `VerifyPeerCertificate` alone was not sufficient for a
+  fail-closed frontend listener.
+- The stock PostgreSQL connection path is not enough for this repo's
+  unix-socket peer-auth posture. The DSN builder had to be overridden
+  centrally.
+- Combined mode opens more idle PostgreSQL connections than a naive
+  "single service on one box" reading suggests. SQL pool sizing and role
+  connection limits must be tuned together.
+- Temporal SDK clients should always set an explicit logger in repo-owned
+  tools. The default SDK logger writes to stdout/stderr and can corrupt
+  machine-readable command output.
+- Workflow type names in visibility depend on the registered name used at
+  execution start. Use explicit stable names for operator-facing
+  workflows.
 
-One anti-pattern documented in the community benchmark: partitioning
-`history_node` by `shard_id` on Postgres made throughput 20–30% *worse*.
-Temporal's default schema is tuned for its query patterns; leave it
-alone.
+## Capacity and current tuning
+
+Temporal's honest unit is **state transitions per second**, not
+workflows/sec. Workflow volume alone is misleading; workflow shape varies
+substantially.
+
+The current single-node deployment is tuned conservatively:
+
+- `numHistoryShards = 4`
+- default persistence pool `maxConns = 20`, `maxIdleConns = 20`
+- visibility persistence pool `maxConns = 10`, `maxIdleConns = 10`
+- PostgreSQL role connection limit for `temporal` = `80`
+
+Two implications matter for the next stage:
+
+- `numHistoryShards` is immutable after bootstrap. The current value is
+  intentionally small because the cluster is still pre-release and can be
+  recreated. Revisit it before higher-volume real workflows land.
+- PostgreSQL is acceptable for this phase but is still the first scaling
+  bottleneck. If durable workflow volume moves materially beyond the
+  current use cases, persistence is the first thing to revisit.
 
 ## Observability
 
-`make observe WHAT=temporal` surfaces:
+The current operator surface is ClickHouse-first:
 
-- Frontend, history, and matching systemd state; per-role SVID TTL.
-- Active task queue backlog, workflow success/failure counts per
-  namespace, bucketed by caller SPIFFE ID.
-- mTLS edge table rows for `temporal-*` peers.
+- `make observe WHAT=temporal` for recent auth spans, proof workflow
+  spans, logs, and live metric inventory.
+- Grafana dashboard `forge-metal-temporal`.
+- `default.otel_traces`, `default.otel_logs`, and
+  `default.otel_metric_catalog_live` for Temporal traffic and health.
+- `forge_metal.audit_events` for cross-service effects emitted from
+  Temporal activities.
+- `temporal_visibility.executions_visibility` for workflow status and
+  timing.
 
-Grafana receives one dashboard under
-`src/platform/ansible/roles/grafana/dashboards/temporal.json`. Panels:
-frontend gRPC p99 latency, active workflows by namespace, SVID TTL
-remaining per role, internode mTLS errors.
+This is enough to answer the practical operator questions:
 
-## Proof artifact
+- Is the cluster up?
+- Who is calling it?
+- Which namespace is active?
+- Did a workflow survive restart?
+- Did the activity produce the expected external side effect?
 
-Per the repo's output contract, the brick is not laid until a ClickHouse
-trace query returns green. Temporal ships with a `ProofHeartbeat`
-workflow registered as `spiffe://<td>/svc/temporal-proof`, invoked by
-`make telemetry-proof-temporal`. The proof query asserts:
+## Verification
 
-- An `auth.spiffe.mtls.server` span exists with
-  `spiffe.peer_id = svc/temporal-proof`.
-- All internal hops in the workflow's span tree carry `spiffe.peer_id`.
-- A `governance.audit.append` row exists with
-  `actor_spiffe_id = svc/temporal-proof`.
-- The span tree resolves end-to-end without a missing parent.
+`make temporal-proof` is the deployment gate. It does four concrete
+things:
 
-## First brick rationale
+1. Bootstraps namespaces with the server identity.
+2. Confirms a denied namespace call fails.
+3. Starts `ProofHeartbeat`, restarts `temporal-server` mid-flight, and
+   waits for completion.
+4. Asserts ClickHouse traces/logs/metrics, a governance audit row, and a
+   matching visibility row in `temporal_visibility.executions_visibility`.
 
-Temporal is built and validated before the other two planes. It gates
-PeerDB (which uses Temporal for its own workflow orchestration) and is
-the hardest of the three: two independent TLS configs, stateful across
-restarts, multi-role, and a custom authorizer plugin. Establishing the
-SPIFFE-wrapped stateful-infrastructure pattern on Temporal makes the
-domain-event stream and CDC ports trivial.
+`make grafana-proof` and `make workload-identity-proof` are the two
+supporting gates. Together they prove that Temporal is visible from the
+standard operator surface and participates correctly in the repo's SPIFFE
+boundary model.
 
-Temporal also carries its own standalone value. Scheduled work,
-saga-pattern retries, and the billing `Reconcile()` orchestration unlock
-the day Temporal is healthy, whether or not PeerDB and NATS ever land.
+## Current drawbacks and tailwinds
 
-## Known unknowns
+Drawbacks:
 
-The implementing agent must answer these before the brick is considered
-laid:
+- The wrapper binary is now part of the platform contract. Temporal minor
+  upgrades need live validation against the custom TLS/authz hooks.
+- There is no Temporal Web yet. That keeps the attack surface smaller,
+  but it also means Grafana/ClickHouse are the only first-class operator
+  UI today.
+- Combined mode makes startup noisy. Internal authorize spans with empty
+  `spiffe.peer_id` are expected and need to be filtered mentally when
+  reading auth traces.
+- The current shard count is intentionally disposable. If the cluster
+  becomes durable customer infrastructure before that is revisited, the
+  repo will have painted itself into a needless migration.
 
-1. Does `temporal-server` hot-reload TLS material on signal, or only on
-   restart? Determines whether 1h SVID rotation is seamless or incurs a
-   short window of unavailability per cycle.
-2. Can `temporal-server` be run directly on bare metal under systemd
-   with `spiffe-helper` sidecars, or does the custom authorizer plugin
-   force us to build our own binary embedding the upstream server?
-   `server-tools.json` and `go.work` need a concrete answer.
-3. Temporal's `WithAuthorizer` plugin API stability — pin a minor and
-   maintain the shim.
-4. Namespace-per-caller vs shared-namespace authorization. Lean toward
-   per-caller for cleaner SPIFFE-to-namespace mapping.
-5. Operator CLI access — `/ops/admin-cli` reuse for `temporal` CLI, or a
-   dedicated `/ops/temporal-cli` identity.
+Tailwinds:
+
+- The hard part is solved. Any repo-owned workload can now become a
+  Temporal client with the same SPIFFE X.509 client pattern.
+- PeerDB can reuse the Temporal frontend authz path instead of inventing
+  a separate trust model for workflow orchestration.
+- Governance audit append from inside a Temporal activity is already
+  proven, so future workflow workers inherit a working cross-service side
+  effect pattern.
+- Grafana and `make observe` already expose the relevant traces, logs,
+  metrics, and visibility rows in one place.
 
 ## Source notes
 
@@ -249,6 +291,12 @@ laid:
 - Related planes:
   [`change-data-capture.md`](change-data-capture.md),
   [`domain-event-stream.md`](domain-event-stream.md).
+- Implementation references:
+  `src/temporal-platform/cmd/forge-temporal-server/main.go`,
+  `src/temporal-platform/internal/tlsprovider/tlsprovider.go`,
+  `src/temporal-platform/internal/spiffeauth/spiffeauth.go`,
+  `src/platform/ansible/roles/temporal/*`,
+  `src/platform/scripts/verify-temporal-live.sh`.
 - Temporal self-hosted security and mTLS configuration:
   <https://docs.temporal.io/self-hosted-guide/security>.
 - Temporal platform documentation: <https://docs.temporal.io/>.
@@ -258,7 +306,3 @@ laid:
   <https://temporal.io/blog/scaling-temporal-the-basics>.
 - Postgres throughput numbers and DB-CPU ceiling (community benchmark):
   <https://community.temporal.io/t/running-temporal-postgres-benchmark/836>.
-- Production scaling writeup, Postgres→Cassandra persistence split:
-  <https://medium.com/vymo-engineering/scaling-temporal-load-testing-with-postgres-cassandra-elasticsearch-monitoring-alerting-1176b7a4968b>.
-- Existing spiffe-helper integration pattern:
-  `src/platform/ansible/roles/clickhouse/templates/clickhouse-operator-spiffe-helper.*`.
