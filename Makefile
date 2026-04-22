@@ -19,8 +19,10 @@ MS       := src/mailbox-service
 OSS      := src/object-storage-service
 OT       := src/otel
 TP       := src/temporal-platform
+EC       := src/envconfig
+HS       := src/httpserver
 INVENTORY := $(FM)/ansible/inventory/hosts.ini
-GO_DIRS  := $(AW) $(VMO) $(BS) $(GS) $(IS) $(SS) $(AM) $(SR) $(MS) $(OSS) $(OT) $(TP)
+GO_DIRS  := $(AW) $(VMO) $(BS) $(GS) $(IS) $(SS) $(AM) $(SR) $(MS) $(OSS) $(OT) $(TP) $(EC) $(HS)
 GO_PKGS  := $(addsuffix /...,$(addprefix ./,$(GO_DIRS)))
 GO_CLIENT_DIRS := $(BS)/client $(GS)/client $(GS)/internalclient $(IS)/client $(SS)/client $(SS)/internalclient $(SR)/client $(MS)/client $(OSS)/client
 GO_CLIENT_FILES := $(addsuffix /client.gen.go,$(GO_CLIENT_DIRS))
@@ -70,6 +72,8 @@ vet:
 	go vet $(GO_PKGS)
 
 tidy:
+	cd $(EC) && go mod tidy
+	cd $(HS) && go mod tidy
 	cd $(AW) && go mod tidy
 	cd $(VMO) && go mod tidy
 	cd $(BS) && go mod tidy

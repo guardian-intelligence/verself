@@ -4,7 +4,9 @@ use (
 	./src/apiwire
 	./src/auth-middleware
 	./src/billing-service
+	./src/envconfig
 	./src/governance-service
+	./src/httpserver
 	./src/identity-service
 	./src/mailbox-service
 	./src/object-storage-service
