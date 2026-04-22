@@ -191,6 +191,12 @@ func run() error {
 	service.RegisterRoutes(mux)
 
 	server := httpserver.New(cfg.ListenAddr, otelhttp.NewHandler(mux, "mailbox-service"))
+	// The /jmap/* proxy streams arbitrarily large attachments from clients
+	// into Stalwart; the standard 5s ReadTimeout/WriteTimeout would cut off
+	// attachment uploads mid-stream. Keep slowloris protection via
+	// ReadHeaderTimeout and let the body run uncapped.
+	server.ReadTimeout = 0
+	server.WriteTimeout = 0
 	service.StartBackground(ctx)
 	return httpserver.Run(ctx, logger, server)
 }
