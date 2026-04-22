@@ -270,7 +270,7 @@ func openBaoRoleForIdentity(identity *auth.Identity, policy operationPolicy) str
 		return ""
 	}
 	for _, assignment := range identity.RoleAssignments {
-		if assignment.ProjectID != identity.ProjectID || assignment.OrganizationID != identity.OrgID {
+		if assignment.OrganizationID != identity.OrgID {
 			continue
 		}
 		switch assignment.Role {
@@ -296,7 +296,7 @@ func identityHasPermission(identity *auth.Identity, required permission) bool {
 		return false
 	}
 	for _, assignment := range identity.RoleAssignments {
-		if assignment.ProjectID != identity.ProjectID || assignment.OrganizationID != identity.OrgID {
+		if assignment.OrganizationID != identity.OrgID {
 			continue
 		}
 		switch assignment.Role {

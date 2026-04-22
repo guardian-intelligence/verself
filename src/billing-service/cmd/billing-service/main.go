@@ -185,7 +185,7 @@ func run() error {
 	rootMux := http.NewServeMux()
 	rootMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
 	rootMux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
-	protected := auth.Middleware(auth.Config{IssuerURL: authIssuerURL, Audience: authAudience, ProjectID: authAudience, JWKSURL: authJWKSURL})(privateMux)
+	protected := auth.Middleware(auth.Config{IssuerURL: authIssuerURL, Audience: authAudience, JWKSURL: authJWKSURL})(privateMux)
 	rootMux.Handle("/", billingHandler(privateMux, protected))
 
 	srv := &http.Server{Addr: listenAddr, Handler: otelhttp.NewHandler(rootMux, "billing-service"), ReadHeaderTimeout: 10 * time.Second}

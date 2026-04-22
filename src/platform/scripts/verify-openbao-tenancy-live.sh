@@ -29,7 +29,7 @@ set +u
 # shellcheck source=/dev/null
 source "${acme_admin_env}"
 acme_admin_token="${SECRETS_SERVICE_ACCESS_TOKEN}"
-secrets_project_id="${SECRETS_SERVICE_AUTH_PROJECT_ID}"
+secrets_project_id="${SECRETS_SERVICE_AUTH_AUDIENCE}"
 # shellcheck source=/dev/null
 source "${acme_member_env}"
 acme_member_token="${SECRETS_SERVICE_ACCESS_TOKEN}"

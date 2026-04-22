@@ -300,27 +300,27 @@ write_export WEBMAIL_URL "https://mail.${VERIFICATION_DOMAIN}"
 write_export FORGEJO_URL "https://git.${VERIFICATION_DOMAIN}"
 
 if [[ -n "${project_tokens[sandbox-rental]:-}" ]]; then
-  write_export SANDBOX_RENTAL_AUTH_PROJECT_ID "${project_ids[sandbox-rental]}"
+  write_export SANDBOX_RENTAL_AUTH_AUDIENCE "${project_ids[sandbox-rental]}"
   write_export SANDBOX_RENTAL_ACCESS_TOKEN "${project_tokens[sandbox-rental]}"
   write_export SANDBOX_RENTAL_TOKEN "${project_tokens[sandbox-rental]}"
 fi
 if [[ -n "${project_tokens[identity-service]:-}" ]]; then
-  write_export IDENTITY_SERVICE_AUTH_PROJECT_ID "${project_ids[identity-service]}"
+  write_export IDENTITY_SERVICE_AUTH_AUDIENCE "${project_ids[identity-service]}"
   write_export IDENTITY_SERVICE_ACCESS_TOKEN "${project_tokens[identity-service]}"
   write_export IDENTITY_SERVICE_TOKEN "${project_tokens[identity-service]}"
 fi
 if [[ -n "${project_tokens[secrets-service]:-}" ]]; then
-  write_export SECRETS_SERVICE_AUTH_PROJECT_ID "${project_ids[secrets-service]}"
+  write_export SECRETS_SERVICE_AUTH_AUDIENCE "${project_ids[secrets-service]}"
   write_export SECRETS_SERVICE_ACCESS_TOKEN "${project_tokens[secrets-service]}"
   write_export SECRETS_SERVICE_TOKEN "${project_tokens[secrets-service]}"
 fi
 if [[ -n "${project_tokens[mailbox-service]:-}" ]]; then
-  write_export MAILBOX_SERVICE_AUTH_PROJECT_ID "${project_ids[mailbox-service]}"
+  write_export MAILBOX_SERVICE_AUTH_AUDIENCE "${project_ids[mailbox-service]}"
   write_export MAILBOX_SERVICE_ACCESS_TOKEN "${project_tokens[mailbox-service]}"
   write_export MAILBOX_SERVICE_TOKEN "${project_tokens[mailbox-service]}"
 fi
 if [[ -n "${project_tokens[forgejo]:-}" ]]; then
-  write_export FORGEJO_AUTH_PROJECT_ID "${project_ids[forgejo]}"
+  write_export FORGEJO_AUTH_AUDIENCE "${project_ids[forgejo]}"
   write_export FORGEJO_OIDC_ACCESS_TOKEN "${project_tokens[forgejo]}"
   write_export FORGEJO_OIDC_TOKEN "${project_tokens[forgejo]}"
 fi

@@ -69,7 +69,6 @@ func TestMiddlewareAttachesIdentity(t *testing.T) {
 	handler := Middleware(Config{
 		IssuerURL: provider.URL,
 		Audience:  "billing-project",
-		ProjectID: "billing-project",
 	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		identity := FromContext(r.Context())
 		if identity == nil {
@@ -84,9 +83,6 @@ func TestMiddlewareAttachesIdentity(t *testing.T) {
 		if identity.Email != "alice@example.com" {
 			t.Fatalf("unexpected email: %q", identity.Email)
 		}
-		if identity.ProjectID != "billing-project" {
-			t.Fatalf("unexpected project id: %q", identity.ProjectID)
-		}
 		expectedRoles := []string{"admin", "viewer"}
 		if len(identity.Roles) != len(expectedRoles) {
 			t.Fatalf("unexpected roles length: got %v want %v", identity.Roles, expectedRoles)
@@ -100,13 +96,11 @@ func TestMiddlewareAttachesIdentity(t *testing.T) {
 			{
 				OrganizationID:   "org-456",
 				OrganizationName: "billing",
-				ProjectID:        "billing-project",
 				Role:             "admin",
 			},
 			{
 				OrganizationID:   "org-456",
 				OrganizationName: "billing",
-				ProjectID:        "billing-project",
 				Role:             "viewer",
 			},
 		}
@@ -157,7 +151,6 @@ func TestMiddlewareMissingTargetProjectRoleClaimAttachesNoRoles(t *testing.T) {
 	handler := Middleware(Config{
 		IssuerURL: provider.URL,
 		Audience:  "identity-project",
-		ProjectID: "identity-project",
 	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		identity := FromContext(r.Context())
 		if identity == nil {
@@ -214,9 +207,6 @@ func compareRoleAssignment(a, b RoleAssignment) int {
 		return diff
 	}
 	if diff := cmp.Compare(a.OrganizationName, b.OrganizationName); diff != 0 {
-		return diff
-	}
-	if diff := cmp.Compare(a.ProjectID, b.ProjectID); diff != 0 {
 		return diff
 	}
 	return cmp.Compare(a.Role, b.Role)

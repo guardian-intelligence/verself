@@ -101,7 +101,7 @@ import { rentASandboxAuthMiddleware } from "./auth";
 const IDENTITY_SERVICE_BASE_URL = requireURLFromEnv("IDENTITY_SERVICE_BASE_URL");
 const GOVERNANCE_SERVICE_BASE_URL = requireURLFromEnv("GOVERNANCE_SERVICE_BASE_URL");
 const SANDBOX_RENTAL_SERVICE_BASE_URL = requireURLFromEnv("SANDBOX_RENTAL_SERVICE_BASE_URL");
-const IDENTITY_SERVICE_AUTH_PROJECT_ID = process.env.IDENTITY_SERVICE_AUTH_PROJECT_ID?.trim();
+const IDENTITY_SERVICE_AUTH_AUDIENCE = process.env.IDENTITY_SERVICE_AUTH_AUDIENCE?.trim();
 
 export { IdentityApiError, isIdentityApiError };
 export { GovernanceApiError, isGovernanceApiError };
@@ -170,8 +170,8 @@ async function sandboxRentalClientOptions(context: { auth?: AuthSession } | unde
 
 async function identityClientOptions(context: { auth?: AuthSession } | undefined) {
   const auth = await resolveAuthContext(context);
-  const accessToken = IDENTITY_SERVICE_AUTH_PROJECT_ID
-    ? await getAccessTokenForAudience(getAuthConfig(), auth, IDENTITY_SERVICE_AUTH_PROJECT_ID)
+  const accessToken = IDENTITY_SERVICE_AUTH_AUDIENCE
+    ? await getAccessTokenForAudience(getAuthConfig(), auth, IDENTITY_SERVICE_AUTH_AUDIENCE)
     : auth.accessToken;
   return {
     accessToken,

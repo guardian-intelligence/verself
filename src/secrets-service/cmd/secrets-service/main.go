@@ -56,7 +56,6 @@ func run() error {
 	governanceAuditURL := envOr("SECRETS_GOVERNANCE_AUDIT_URL", "")
 	authIssuerURL := requireEnv("SECRETS_AUTH_ISSUER_URL")
 	authAudience := requireEnv("SECRETS_AUTH_AUDIENCE")
-	authProjectID := requireEnv("SECRETS_AUTH_PROJECT_ID")
 	authJWKSURL := envOr("SECRETS_AUTH_JWKS_URL", "")
 	openBaoAddr := requireEnv("SECRETS_OPENBAO_ADDR")
 	openBaoCACert := credentialPath("openbao-ca-cert")
@@ -178,7 +177,6 @@ func run() error {
 	authenticated := auth.Middleware(auth.Config{
 		IssuerURL: authIssuerURL,
 		Audience:  authAudience,
-		ProjectID: authProjectID,
 		JWKSURL:   authJWKSURL,
 	})(privateMux)
 	protected := secretsapi.CaptureRawBearerToken(authenticated)

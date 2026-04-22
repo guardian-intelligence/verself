@@ -309,7 +309,6 @@
       Environment=IDENTITY_AUTH_ISSUER_URL={{ identity_service_auth_issuer_url }}
       Environment=IDENTITY_AUTH_JWKS_URL={{ identity_service_auth_jwks_url }}
       Environment=IDENTITY_AUTH_AUDIENCE={{ identity_service_auth_audience }}
-      Environment=IDENTITY_AUTH_PROJECT_ID={{ identity_service_auth_audience }}
       Environment=IDENTITY_ZITADEL_BASE_URL={{ identity_service_zitadel_base_url }}
       Environment=IDENTITY_ZITADEL_HOST={{ identity_service_zitadel_host }}
       Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}

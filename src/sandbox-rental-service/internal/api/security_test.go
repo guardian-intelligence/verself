@@ -116,23 +116,17 @@ func TestBillingProxyErrorMapsNoStripeCustomer(t *testing.T) {
 }
 
 func TestIdentityPermissionChecksRoleBundlesAndDirectScopes(t *testing.T) {
-	admin := sandboxServiceToken("sandbox-project", "42", roleSandboxOrgAdmin)
+	admin := sandboxServiceToken("42", roleSandboxOrgAdmin)
 	if !identityHasPermission(admin, permissionBillingCheckout) {
 		t.Fatal("sandbox org admin should be allowed to create billing checkout")
 	}
 
-	member := sandboxServiceToken("sandbox-project", "42", roleSandboxOrgMember)
+	member := sandboxServiceToken("42", roleSandboxOrgMember)
 	if !identityHasPermission(member, permissionExecutionSubmit) {
 		t.Fatal("sandbox org member should be allowed to submit executions")
 	}
 	if identityHasPermission(member, permissionBillingCheckout) {
 		t.Fatal("sandbox org member should not be allowed to create billing checkout")
-	}
-
-	crossProject := sandboxServiceToken("identity-project", "42", roleSandboxOrgAdmin)
-	crossProject.ProjectID = "sandbox-project"
-	if identityHasPermission(crossProject, permissionBillingCheckout) {
-		t.Fatal("role assignment for another project must not grant sandbox-rental permissions")
 	}
 
 	unmarkedScope := &auth.Identity{
@@ -161,11 +155,10 @@ func TestIdentityPermissionChecksRoleBundlesAndDirectScopes(t *testing.T) {
 	}
 }
 
-func sandboxServiceToken(projectID, orgID string, roles ...string) *auth.Identity {
+func sandboxServiceToken(orgID string, roles ...string) *auth.Identity {
 	assignments := make([]auth.RoleAssignment, 0, len(roles))
 	for _, role := range roles {
 		assignments = append(assignments, auth.RoleAssignment{
-			ProjectID:      projectID,
 			OrganizationID: orgID,
 			Role:           role,
 		})
@@ -173,18 +166,15 @@ func sandboxServiceToken(projectID, orgID string, roles ...string) *auth.Identit
 	return &auth.Identity{
 		Subject:         "user-1",
 		OrgID:           orgID,
-		ProjectID:       projectID,
 		RoleAssignments: assignments,
 	}
 }
 
 func TestEnforceOperationPolicyDeniesMissingPermission(t *testing.T) {
 	ctx := auth.WithIdentity(context.Background(), &auth.Identity{
-		Subject:   "user-123",
-		OrgID:     "42",
-		ProjectID: "sandbox-project",
+		Subject: "user-123",
+		OrgID:   "42",
 		RoleAssignments: []auth.RoleAssignment{{
-			ProjectID:      "sandbox-project",
 			OrganizationID: "42",
 			Role:           roleSandboxOrgMember,
 		}},

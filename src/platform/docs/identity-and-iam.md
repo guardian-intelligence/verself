@@ -116,15 +116,22 @@ checks the token issuer and audience, verifies the signature from Zitadel JWKS,
 extracts identity fields into request context, and leaves operation-specific
 authorization to the service.
 
+In Forge Metal's Zitadel configuration, each service's bearer-token audience *is*
+its Zitadel project ID — the two values are not independently configurable — so
+`auth-middleware` takes only `Audience` and derives the
+`urn:zitadel:iam:org:project:<audience>:roles` claim path from it. Role
+assignments carried by `Identity` are keyed to that audience by construction;
+tokens issued for other projects fail the OIDC `aud` check before reaching role
+extraction.
+
 The runtime identity object for Zitadel-authenticated public/customer APIs is:
 
 - `Subject`: Zitadel user or customer/API credential service-account ID from
   `sub`.
 - `OrgID`: active organization/resource-owner ID when present.
-- `ProjectID`: target service project ID whose role claim was accepted.
-- `Roles`: role keys extracted only from that target service project claim.
-- `RoleAssignments`: structured target-project role assignments, including project ID,
-  organization ID, role key, and organization display name.
+- `Roles`: role keys extracted from the configured-audience project claim.
+- `RoleAssignments`: structured role assignments (role key, organization ID,
+  organization display name) for the configured-audience project.
 - `Email`: email claim when present.
 - `Raw`: the full claim map for service-specific extraction.
 

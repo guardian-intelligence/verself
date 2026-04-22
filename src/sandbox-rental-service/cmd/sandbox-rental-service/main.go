@@ -336,7 +336,6 @@ func run() error {
 	authHandler := auth.Middleware(auth.Config{
 		IssuerURL: authIssuerURL,
 		Audience:  authAudience,
-		ProjectID: authAudience,
 		JWKSURL:   authJWKSURL,
 	})(privateMux)
 	correlationForwarder := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
