@@ -4,6 +4,7 @@ go 1.25.8
 
 require (
 	github.com/forge-metal/auth-middleware v0.0.0
+	github.com/forge-metal/envconfig v0.0.0
 	github.com/forge-metal/otel v0.0.0
 	github.com/iancoleman/strcase v0.3.0
 	github.com/jmoiron/sqlx v1.4.0
@@ -170,6 +171,8 @@ require (
 )
 
 replace github.com/forge-metal/auth-middleware => ../auth-middleware
+
+replace github.com/forge-metal/envconfig => ../envconfig
 
 replace github.com/forge-metal/otel => ../otel
 

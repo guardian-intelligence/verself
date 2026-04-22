@@ -2,14 +2,13 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
+	"github.com/forge-metal/envconfig"
 	fmotel "github.com/forge-metal/otel"
 	"go.temporal.io/server/common/authorization"
 	"go.temporal.io/server/common/config"
@@ -53,9 +52,11 @@ func run() error {
 	}()
 	slog.SetDefault(logger)
 
-	cfgPath := strings.TrimSpace(os.Getenv("FM_TEMPORAL_CONFIG_PATH"))
-	if cfgPath == "" {
-		return errors.New("FM_TEMPORAL_CONFIG_PATH is required")
+	l := envconfig.New()
+	cfgPath := l.RequireString("FM_TEMPORAL_CONFIG_PATH")
+	spiffeSocket := l.String("SPIFFE_ENDPOINT_SOCKET", "")
+	if err := l.Err(); err != nil {
+		return err
 	}
 	cfg, err := config.Load(config.WithConfigFile(cfgPath))
 	if err != nil {
@@ -70,10 +71,7 @@ func run() error {
 		return fmt.Errorf("load temporal spiffe authorization config: %w", err)
 	}
 
-	tlsConfigProvider, err := tlsprovider.New(
-		ctx,
-		strings.TrimSpace(os.Getenv("SPIFFE_ENDPOINT_SOCKET")),
-	)
+	tlsConfigProvider, err := tlsprovider.New(ctx, spiffeSocket)
 	if err != nil {
 		return fmt.Errorf("build temporal tls provider: %w", err)
 	}

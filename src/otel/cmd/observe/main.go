@@ -14,10 +14,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/forge-metal/envconfig"
 	fmotel "github.com/forge-metal/otel"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -202,10 +202,11 @@ func parseConfig(args []string) (config, error) {
 	flags.StringVar(&cfg.traceID, "trace-id", strings.TrimSpace(os.Getenv("TRACE_ID")), "trace id to inspect")
 	flags.StringVar(&cfg.runKey, "run-key", strings.TrimSpace(os.Getenv("RUN_KEY")), "deploy_run_key to inspect")
 	flags.StringVar(&cfg.host, "host", strings.TrimSpace(os.Getenv("HOST")), "HTTP host filter")
-	flags.UintVar(&cfg.statusMin, "status-min", envUint("STATUS_MIN", 0), "minimum HTTP status")
-	flags.UintVar(&cfg.minutes, "minutes", envUint("MINUTES", 15), "lookback window for explicit operational queries")
-	flags.UintVar(&cfg.limit, "limit", envUint("LIMIT", 25), "maximum rows to print")
-	flags.BoolVar(&cfg.errorsOnly, "errors", envBool("ERRORS"), "only show errors where supported")
+	defaults := envconfig.New()
+	flags.UintVar(&cfg.statusMin, "status-min", defaults.Uint("STATUS_MIN", 0), "minimum HTTP status")
+	flags.UintVar(&cfg.minutes, "minutes", defaults.Uint("MINUTES", 15), "lookback window for explicit operational queries")
+	flags.UintVar(&cfg.limit, "limit", defaults.Uint("LIMIT", 25), "maximum rows to print")
+	flags.BoolVar(&cfg.errorsOnly, "errors", defaults.Bool("ERRORS", false), "only show errors where supported")
 	flags.StringVar(&format, "format", strings.TrimSpace(os.Getenv("FORMAT")), "output format: table, json, markdown")
 
 	if err := flags.Parse(args); err != nil {
@@ -524,30 +525,6 @@ func observeRunID() string {
 		}
 	}
 	return "observe-" + time.Now().UTC().Format("20060102T150405Z")
-}
-
-func envUint(key string, fallback uint) uint {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return fallback
-	}
-	parsed, err := strconv.ParseUint(value, 10, 32)
-	if err != nil || parsed == 0 {
-		return fallback
-	}
-	return uint(parsed)
-}
-
-func envBool(key string) bool {
-	if strings.TrimSpace(key) == "" {
-		return false
-	}
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
-	case "1", "true", "yes", "y":
-		return true
-	default:
-		return false
-	}
 }
 
 func queryHash(sql string) string {

@@ -15,6 +15,7 @@ import (
 
 	"github.com/forge-metal/billing-service/internal/billing"
 	"github.com/forge-metal/billing-service/internal/billing/ledger"
+	"github.com/forge-metal/envconfig"
 )
 
 type output struct {
@@ -205,17 +206,11 @@ func resolveOrgID(ctx context.Context, pg *pgxpool.Pool, orgID uint64, org strin
 }
 
 func openLedgerClient() (*ledger.Client, error) {
-	address := strings.TrimSpace(os.Getenv("BILLING_TB_ADDRESS"))
-	if address == "" {
-		address = "127.0.0.1:3320"
-	}
-	clusterID := uint64(0)
-	if raw := strings.TrimSpace(os.Getenv("BILLING_TB_CLUSTER_ID")); raw != "" {
-		parsed, err := strconv.ParseUint(raw, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("parse BILLING_TB_CLUSTER_ID: %w", err)
-		}
-		clusterID = parsed
+	l := envconfig.New()
+	address := l.String("BILLING_TB_ADDRESS", "127.0.0.1:3320")
+	clusterID := l.Uint64("BILLING_TB_CLUSTER_ID", 0)
+	if err := l.Err(); err != nil {
+		return nil, err
 	}
 	return ledger.NewClient(clusterID, strings.Split(address, ","))
 }

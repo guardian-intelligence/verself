@@ -4,10 +4,10 @@ import (
 	"context"
 	"crypto/tls"
 	"log/slog"
-	"os"
 	"strings"
 
 	workloadauth "github.com/forge-metal/auth-middleware/workload"
+	"github.com/forge-metal/envconfig"
 	"github.com/forge-metal/temporal-platform/internal/temporallog"
 	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
@@ -27,9 +27,14 @@ type Config struct {
 }
 
 func LoadConfigFromEnv() (Config, error) {
-	return Config{
-		HostPort: envOr("FM_TEMPORAL_FRONTEND_ADDRESS", DefaultFrontendAddress),
-	}, nil
+	l := envconfig.New()
+	cfg := Config{
+		HostPort: l.String("FM_TEMPORAL_FRONTEND_ADDRESS", DefaultFrontendAddress),
+	}
+	if err := l.Err(); err != nil {
+		return Config{}, err
+	}
+	return cfg, nil
 }
 
 func NewSource(ctx context.Context, socket string) (*workloadapi.X509Source, error) {
@@ -102,10 +107,3 @@ func mustTracingInterceptor(tracerName string) sdkinterceptor.Interceptor {
 	return interceptor
 }
 
-func envOr(name, fallback string) string {
-	raw := strings.TrimSpace(os.Getenv(name))
-	if raw == "" {
-		return fallback
-	}
-	return raw
-}
