@@ -233,8 +233,10 @@ func mapKeys(values map[string]struct{}) []string {
 	return out
 }
 
-const stateReadTimeout = 3 * time.Second
-const stateReadBackoff = 150 * time.Millisecond
+const (
+	stateReadTimeout = 3 * time.Second
+	stateReadBackoff = 150 * time.Millisecond
+)
 
 type stateReadMismatchError struct {
 	Expected string

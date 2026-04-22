@@ -207,22 +207,26 @@ local socket peer auth.
 
 ## Runtime Provider Secrets
 
-Runtime third-party provider credentials are fetched from OpenBao by
-SPIFFE-authenticated services. OpenBao paths:
+Runtime third-party provider credentials live as org-scoped secrets in the
+platform organization and are resolved through `secrets-service` over SPIFFE
+mTLS. Repo-owned services do not read provider credentials from OpenBao
+directly. The current platform-org secret names are:
 
 ```text
-platform/providers/stripe/billing-service
-platform/providers/resend/mailbox-service
-platform/providers/stalwart/mailbox-service
-platform/providers/github/sandbox-rental-service
+billing-service.stripe.secret_key
+billing-service.stripe.webhook_secret
+mailbox-service.resend.api_key
+mailbox-service.stalwart.admin_password
+sandbox-rental-service.github.private_key
+sandbox-rental-service.github.webhook_secret
+sandbox-rental-service.github.client_secret
 ```
 
-`platform/providers/stalwart/mailbox-service` holds only the Stalwart
-Management API admin password (`admin_password`). Stalwart's internal
-mailbox-user credentials (ceo/agents) remain SOPS-sealed bootstrap material
-under "human mailbox protocol passwords" below, because mail clients
-authenticate to Stalwart over SMTP/IMAP/JMAP and those protocols do not
-speak SPIFFE.
+`mailbox-service.stalwart.admin_password` holds only the Stalwart Management
+API admin password. Stalwart's internal mailbox-user credentials (ceo/agents)
+remain SOPS-sealed bootstrap material under "human mailbox protocol passwords"
+below, because mail clients authenticate to Stalwart over SMTP/IMAP/JMAP and
+those protocols do not speak SPIFFE.
 
 **Persistent bootstrap material.** The following remain outside SPIFFE and
 OpenBao runtime reads and are managed through SOPS and systemd

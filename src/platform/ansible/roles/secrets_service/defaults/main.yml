@@ -7,3 +7,4 @@ secrets_service_openbao_kv_prefix: kv
 secrets_service_openbao_transit_prefix: transit
 secrets_service_openbao_jwt_prefix: jwt
 secrets_service_billing_url: "https://{{ services.billing.host }}:{{ services.billing.internal_port }}"
+secrets_service_platform_org_name: forge-metal

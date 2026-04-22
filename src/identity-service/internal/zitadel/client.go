@@ -17,8 +17,10 @@ import (
 	"github.com/forge-metal/identity-service/internal/identity"
 )
 
-const defaultTimeout = 5 * time.Second
-const authorizationPageLimit = 1000
+const (
+	defaultTimeout         = 5 * time.Second
+	authorizationPageLimit = 1000
+)
 
 type Config struct {
 	BaseURL    string

@@ -15,6 +15,7 @@ import (
 	auth "github.com/forge-metal/auth-middleware"
 	workloadauth "github.com/forge-metal/auth-middleware/workload"
 	fmotel "github.com/forge-metal/otel"
+	secretsclient "github.com/forge-metal/secrets-service/client"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
@@ -75,30 +76,26 @@ func run() error {
 	defer otelShutdown(context.Background())
 	slog.SetDefault(logger)
 
-	mailboxSPIFFEID, err := workloadauth.ParseID(requireEnvValue("MAILBOX_SERVICE_SPIFFE_ID"))
+	spiffeSource, err := workloadauth.Source(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
+	if err != nil {
+		return fmt.Errorf("mailbox-service spiffe source: %w", err)
+	}
+	defer func() {
+		if err := spiffeSource.Close(); err != nil {
+			logger.ErrorContext(context.Background(), "mailbox-service spiffe source close", "error", err)
+		}
+	}()
+	secretsSPIFFEID, err := workloadauth.ParseID(requireEnvValue("MAILBOX_SERVICE_SECRETS_SPIFFE_ID"))
 	if err != nil {
 		return err
 	}
-	workloadJWTSource, err := workloadauth.JWTSource(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
+	secretsHTTPClient, err := workloadauth.MTLSClient(spiffeSource, secretsSPIFFEID, http.DefaultTransport)
 	if err != nil {
-		return fmt.Errorf("mailbox-service spiffe jwt source: %w", err)
+		return fmt.Errorf("mailbox-service secrets spiffe client: %w", err)
 	}
-	defer func() {
-		if err := workloadJWTSource.Close(); err != nil {
-			logger.ErrorContext(context.Background(), "mailbox-service spiffe jwt source close", "error", err)
-		}
-	}()
-	openBaoClient, err := workloadauth.NewOpenBaoClient(workloadJWTSource, workloadauth.OpenBaoClientConfig{
-		Address:  requireEnvValue("MAILBOX_SERVICE_OPENBAO_ADDR"),
-		CACert:   credentialPath("openbao-ca-cert"),
-		AuthPath: envOr("MAILBOX_SERVICE_OPENBAO_SPIFFE_JWT_MOUNT", "spiffe-jwt"),
-		Role:     envOr("MAILBOX_SERVICE_OPENBAO_ROLE", "platform-mailbox-service"),
-		Audience: envOr("MAILBOX_SERVICE_OPENBAO_WORKLOAD_AUDIENCE", "openbao"),
-		Subject:  mailboxSPIFFEID,
-		Mount:    envOr("MAILBOX_SERVICE_OPENBAO_PLATFORM_MOUNT", "platform"),
-	})
+	secretsClient, err := secretsclient.New(requireEnvValue("MAILBOX_SERVICE_SECRETS_URL"), secretsclient.WithHTTPClient(secretsHTTPClient))
 	if err != nil {
-		return fmt.Errorf("mailbox-service openbao client: %w", err)
+		return fmt.Errorf("mailbox-service secrets client: %w", err)
 	}
 
 	transport := otelhttp.NewTransport(
@@ -126,8 +123,8 @@ func run() error {
 	// ceo/agents passwords are mail-protocol credentials for human mailboxes
 	// and stay as bootstrap material per docs/architecture/workload-identity.md
 	// § Persistent bootstrap material. The Stalwart Management API admin
-	// password is a workload secret and rides through OpenBao like other
-	// provider secrets.
+	// password is a workload secret and rides through secrets-service like
+	// other provider secrets.
 	ceoPassword, err := loadCredential("stalwart-ceo-password")
 	if err != nil {
 		return err
@@ -144,16 +141,15 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	resendSecrets, err := openBaoClient.ReadKVV2(ctx, "providers/resend/mailbox-service")
+	runtimeSecrets, err := secretsClient.ResolvePlatformRuntimeSecrets(ctx, []string{
+		secretsclient.MailboxResendAPIKeyName,
+		secretsclient.MailboxStalwartAdminPasswordName,
+	})
 	if err != nil {
-		return fmt.Errorf("mailbox-service resend provider secret: %w", err)
+		return fmt.Errorf("mailbox-service runtime provider secret: %w", err)
 	}
-	resendAPIKey := requireSecretField(resendSecrets, "api_key", "mailbox-service resend provider secret")
-	stalwartSecrets, err := openBaoClient.ReadKVV2(ctx, "providers/stalwart/mailbox-service")
-	if err != nil {
-		return fmt.Errorf("mailbox-service stalwart provider secret: %w", err)
-	}
-	adminPassword := requireSecretField(stalwartSecrets, "admin_password", "mailbox-service stalwart provider secret")
+	resendAPIKey := requireSecretField(runtimeSecrets, secretsclient.MailboxResendAPIKeyName, "mailbox-service resend provider secret")
+	adminPassword := requireSecretField(runtimeSecrets, secretsclient.MailboxStalwartAdminPasswordName, "mailbox-service stalwart provider secret")
 
 	pgConfig, err := pgxpool.ParseConfig(cfg.PGDSN)
 	if err != nil {
@@ -315,15 +311,6 @@ func loadCredential(name string) (string, error) {
 		return "", fmt.Errorf("load credential %s: %w", name, err)
 	}
 	return strings.TrimSpace(string(data)), nil
-}
-
-func credentialPath(name string) string {
-	dir := os.Getenv("CREDENTIALS_DIRECTORY")
-	if dir == "" {
-		fmt.Fprintf(os.Stderr, "CREDENTIALS_DIRECTORY not set for credential %s\n", name)
-		os.Exit(1)
-	}
-	return filepath.Join(dir, name)
 }
 
 func requireSecretField(values map[string]string, field string, label string) string {

@@ -8,6 +8,7 @@ require (
 	github.com/forge-metal/apiwire v0.0.0
 	github.com/forge-metal/auth-middleware v0.0.0
 	github.com/forge-metal/otel v0.0.0
+	github.com/forge-metal/secrets-service v0.0.0
 	github.com/jackc/pgx/v5 v5.9.1
 	github.com/riverqueue/river v0.34.0
 	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.34.0
@@ -83,3 +84,5 @@ replace github.com/forge-metal/apiwire => ../apiwire
 replace github.com/forge-metal/auth-middleware => ../auth-middleware
 
 replace github.com/forge-metal/otel => ../otel
+
+replace github.com/forge-metal/secrets-service => ../secrets-service

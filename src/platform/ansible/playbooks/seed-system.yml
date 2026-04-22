@@ -971,7 +971,9 @@
 
     - name: Read billing Stripe provider secret from OpenBao
       ansible.builtin.uri:
-        url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/{{ openbao_platform_kv_mount }}/data/providers/stripe/billing-service"
+        url: >-
+          https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/kv-{{
+          seed_system_orgs.platform.organization_id }}/data/secret/org/billing-service.stripe.secret_key
         method: GET
         headers:
           X-Vault-Token: "{{ seed_system_openbao_root_token_raw.content | b64decode | trim }}"
@@ -993,7 +995,7 @@
 
     - name: Materialize transient Stripe catalog seed secret
       ansible.builtin.copy:
-        content: "{{ seed_system_stripe_provider_secret.json.data.data.secret_key }}"
+        content: "{{ seed_system_stripe_provider_secret.json.data.data.value }}"
         dest: /run/forge-metal/seed-system/stripe-secret-key
         owner: root
         group: billing

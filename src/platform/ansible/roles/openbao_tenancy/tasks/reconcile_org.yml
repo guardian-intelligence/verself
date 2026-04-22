@@ -382,3 +382,7 @@
         or (openbao_tenancy_role_writes.results | default([]) | selectattr('changed', 'equalto', true) | list | length > 0)
         or (openbao_tenancy_spiffe_injection_role_write.changed | default(false))
       }}
+
+- name: Reconcile platform runtime provider secrets for the platform organization
+  ansible.builtin.include_tasks: platform_runtime_secrets.yml
+  when: openbao_tenancy_org_name == openbao_tenancy_platform_org_name

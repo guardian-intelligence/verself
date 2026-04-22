@@ -26,6 +26,7 @@ import (
 	"github.com/forge-metal/billing-service/internal/billing/ledger"
 	"github.com/forge-metal/billing-service/internal/billingapi"
 	fmotel "github.com/forge-metal/otel"
+	secretsclient "github.com/forge-metal/secrets-service/client"
 )
 
 const serviceVersion = "2.0.0"
@@ -46,6 +47,7 @@ func run() error {
 	chUser := envOr("BILLING_CH_USER", "billing_service")
 	tbAddress := envOr("BILLING_TB_ADDRESS", "127.0.0.1:3320")
 	tbClusterID := envUint64Or("BILLING_TB_CLUSTER_ID", 0)
+	secretsURL := requireEnv("BILLING_SECRETS_URL")
 	authIssuerURL := requireEnv("BILLING_AUTH_ISSUER_URL")
 	authAudience := requireEnv("BILLING_AUTH_AUDIENCE")
 	authJWKSURL := envOr("BILLING_AUTH_JWKS_URL", "")
@@ -60,10 +62,6 @@ func run() error {
 	defer otelShutdown(context.Background())
 	slog.SetDefault(logger)
 
-	billingSPIFFEID, err := workloadauth.ParseID(requireEnv("BILLING_SPIFFE_ID"))
-	if err != nil {
-		return err
-	}
 	spiffeSource, err := workloadauth.Source(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
 	if err != nil {
 		return fmt.Errorf("billing spiffe workload source: %w", err)
@@ -73,33 +71,27 @@ func run() error {
 			logger.ErrorContext(context.Background(), "billing-service spiffe source close", "error", err)
 		}
 	}()
-	workloadJWTSource, err := workloadauth.JWTSource(ctx, envOr(workloadauth.EndpointSocketEnv, ""))
+	secretsSPIFFEID, err := workloadauth.ParseID(requireEnv("BILLING_SECRETS_SPIFFE_ID"))
 	if err != nil {
-		return fmt.Errorf("billing spiffe jwt source: %w", err)
+		return err
 	}
-	defer func() {
-		if err := workloadJWTSource.Close(); err != nil {
-			logger.ErrorContext(context.Background(), "billing-service spiffe jwt source close", "error", err)
-		}
-	}()
-	openBaoClient, err := workloadauth.NewOpenBaoClient(workloadJWTSource, workloadauth.OpenBaoClientConfig{
-		Address:  requireEnv("BILLING_OPENBAO_ADDR"),
-		CACert:   credentialPath("openbao-ca-cert"),
-		AuthPath: envOr("BILLING_OPENBAO_SPIFFE_JWT_MOUNT", "spiffe-jwt"),
-		Role:     envOr("BILLING_OPENBAO_ROLE", "platform-billing-service"),
-		Audience: envOr("BILLING_OPENBAO_WORKLOAD_AUDIENCE", "openbao"),
-		Subject:  billingSPIFFEID,
-		Mount:    envOr("BILLING_OPENBAO_PLATFORM_MOUNT", "platform"),
+	secretsHTTPClient, err := workloadauth.MTLSClient(spiffeSource, secretsSPIFFEID, http.DefaultTransport)
+	if err != nil {
+		return fmt.Errorf("billing secrets spiffe client: %w", err)
+	}
+	secretsClient, err := secretsclient.New(secretsURL, secretsclient.WithHTTPClient(secretsHTTPClient))
+	if err != nil {
+		return fmt.Errorf("billing secrets client: %w", err)
+	}
+	stripeSecrets, err := secretsClient.ResolvePlatformRuntimeSecrets(ctx, []string{
+		secretsclient.BillingStripeSecretKeyName,
+		secretsclient.BillingStripeWebhookSecretName,
 	})
-	if err != nil {
-		return fmt.Errorf("billing openbao client: %w", err)
-	}
-	stripeSecrets, err := openBaoClient.ReadKVV2(ctx, "providers/stripe/billing-service")
 	if err != nil {
 		return fmt.Errorf("billing stripe provider secret: %w", err)
 	}
-	stripeKey := strings.TrimSpace(stripeSecrets["secret_key"])
-	webhookSecret := strings.TrimSpace(stripeSecrets["webhook_secret"])
+	stripeKey := strings.TrimSpace(stripeSecrets[secretsclient.BillingStripeSecretKeyName])
+	webhookSecret := strings.TrimSpace(stripeSecrets[secretsclient.BillingStripeWebhookSecretName])
 	if stripeKey != "" && webhookSecret == "" {
 		return fmt.Errorf("billing stripe provider secret missing required field webhook_secret")
 	}

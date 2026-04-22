@@ -135,18 +135,33 @@ stale_loadcredential_terms = [
     "stalwart-admin-password",
 ]
 load_credentials = {}
+unit_texts = {}
 # systemd 256+ renders LoadCredential= via `systemctl show --value` as the
 # opaque sentinel "[unprintable]", so the raw `systemctl cat` output is the
 # only reliable surface for the stale-term scan. We concatenate every
 # LoadCredential= line (there are typically several per unit).
 for unit in ["identity-service", "governance-service", "billing-service", "sandbox-rental-service", "secrets-service", "mailbox-service", "stalwart"]:
     unit_text = subprocess.check_output(["systemctl", "cat", unit], text=True)
+    unit_texts[unit] = unit_text
     load_credential_lines = [l.strip() for l in unit_text.splitlines() if l.strip().startswith("LoadCredential=")]
     value = "\n".join(load_credential_lines)
     load_credentials[unit] = value
     stale_terms = [term for term in stale_loadcredential_terms if term in value]
     if stale_terms:
         raise SystemExit(f"{unit} still loads stale credentials: {', '.join(stale_terms)}")
+
+stale_environment_terms = [
+    "_OPENBAO_ADDR=",
+    "_OPENBAO_PLATFORM_MOUNT=",
+    "_OPENBAO_SPIFFE_JWT_MOUNT=",
+    "_OPENBAO_WORKLOAD_AUDIENCE=",
+    "_OPENBAO_ROLE=",
+]
+for unit in ["billing-service", "sandbox-rental-service", "mailbox-service"]:
+    env_lines = [l.strip() for l in unit_texts[unit].splitlines() if l.strip().startswith("Environment=")]
+    stale_terms = [term for term in stale_environment_terms if any(term in line for line in env_lines)]
+    if stale_terms:
+        raise SystemExit(f"{unit} still carries legacy OpenBao env wiring: {', '.join(stale_terms)}")
 
 for unit in [
     "clickhouse-operator-spiffe-helper",
@@ -398,6 +413,29 @@ wait_for_clickhouse_count() {
   return 1
 }
 
+assert_clickhouse_zero() {
+  local database="$1"
+  local query="$2"
+  local output_path="$3"
+  shift 3
+  local extra_args=("$@")
+  (
+    cd "${VERIFICATION_PLATFORM_ROOT}"
+    ./scripts/clickhouse.sh \
+      --database "${database}" \
+      --param_window_start="${window_start}" \
+      --param_window_end="${window_end}" \
+      "${extra_args[@]}" \
+      --query "${query}"
+  ) >"${output_path}"
+  local count
+  count="$(tail -n 1 "${output_path}" | tr -d '[:space:]')"
+  if [[ ! "${count}" =~ ^[0-9]+$ ]] || (( count != 0 )); then
+    echo "ClickHouse zero assertion failed for ${output_path}: got ${count}, expected 0" >&2
+    return 1
+  fi
+}
+
 wait_for_clickhouse_count default "
   SELECT count()
   FROM otel_traces
@@ -431,56 +469,26 @@ for service in billing-service sandbox-rental-service mailbox-service; do
     FROM otel_traces
     WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
       AND ServiceName = {service:String}
-      AND SpanName = 'workload.openbao.jwt_svid.login'
-      AND SpanAttributes['bao.auth_method'] = 'jwt_svid'
-      AND SpanAttributes['bao.request_id'] != ''
-      AND startsWith(SpanAttributes['bao.role'], 'platform-')
-  " 1 "${artifact_dir}/clickhouse/${service_slug}-openbao-jwt-login-count.tsv" --param_service="${service}"
+      AND SpanName = 'secrets.runtime.resolve'
+  " 1 "${artifact_dir}/clickhouse/${service_slug}-runtime-secret-resolve-count.tsv" --param_service="${service}"
 
   wait_for_clickhouse_count default "
     SELECT count()
     FROM otel_traces
     WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
+      AND ServiceName = 'secrets-service'
+      AND SpanName = 'secrets.platform.resolve'
+      AND SpanAttributes['forge_metal.runtime_secret_consumer'] = {service:String}
+  " 1 "${artifact_dir}/clickhouse/${service_slug}-secrets-service-runtime-secret-resolve-count.tsv" --param_service="${service}"
+
+  assert_clickhouse_zero default "
+    SELECT count()
+    FROM otel_traces
+    WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
       AND ServiceName = {service:String}
-      AND SpanName = 'workload.openbao.kv.get'
-      AND SpanAttributes['bao.mount'] = 'platform'
-      AND SpanAttributes['bao.request_id'] != ''
-      AND startsWith(SpanAttributes['bao.role'], 'platform-')
-  " 1 "${artifact_dir}/clickhouse/${service_slug}-openbao-kv-get-count.tsv" --param_service="${service}"
+      AND SpanName IN ('workload.openbao.jwt_svid.login', 'workload.openbao.kv.get')
+  " "${artifact_dir}/clickhouse/${service_slug}-direct-openbao-span-count.tsv" --param_service="${service}"
 done
-
-# Assert mailbox-service fetched BOTH platform provider paths from OpenBao at
-# startup: providers/resend/mailbox-service AND providers/stalwart/mailbox-service.
-# The Stalwart fetch is the one that replaces the credstore admin password; a
-# missing span here means mailbox-service is still reading the password from
-# disk or has regressed to a non-OpenBao path. Spans carry bao.path_hash
-# (SHA-256 of the path) rather than the raw path for leak-safety.
-stalwart_path_hash="$(printf '%s' 'providers/stalwart/mailbox-service' | sha256sum | awk '{print $1}')"
-resend_path_hash="$(printf '%s' 'providers/resend/mailbox-service' | sha256sum | awk '{print $1}')"
-
-wait_for_clickhouse_count default "
-  SELECT count()
-  FROM otel_traces
-  WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
-    AND ServiceName = 'mailbox-service'
-    AND SpanName = 'workload.openbao.kv.get'
-    AND SpanAttributes['bao.mount'] = 'platform'
-    AND SpanAttributes['bao.role'] = 'platform-mailbox-service'
-    AND SpanAttributes['bao.path_hash'] = {stalwart_hash:String}
-    AND SpanAttributes['bao.request_id'] != ''
-" 1 "${artifact_dir}/clickhouse/mailbox-service-openbao-stalwart-kv-get-count.tsv" --param_stalwart_hash="${stalwart_path_hash}"
-
-wait_for_clickhouse_count default "
-  SELECT count()
-  FROM otel_traces
-  WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
-    AND ServiceName = 'mailbox-service'
-    AND SpanName = 'workload.openbao.kv.get'
-    AND SpanAttributes['bao.mount'] = 'platform'
-    AND SpanAttributes['bao.role'] = 'platform-mailbox-service'
-    AND SpanAttributes['bao.path_hash'] = {resend_hash:String}
-    AND SpanAttributes['bao.request_id'] != ''
-" 1 "${artifact_dir}/clickhouse/mailbox-service-openbao-resend-kv-get-count.tsv" --param_resend_hash="${resend_path_hash}"
 
 wait_for_clickhouse_count default "
   SELECT count()

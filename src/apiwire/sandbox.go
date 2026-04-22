@@ -89,20 +89,20 @@ type SandboxExecutionScheduleCreateRequest struct {
 }
 
 type SandboxExecutionScheduleRecord struct {
-	ScheduleID         uuid.UUID                              `json:"schedule_id"`
-	OrgID              OrgID                                  `json:"org_id"`
-	ActorID            string                                 `json:"actor_id"`
-	DisplayName        string                                 `json:"display_name,omitempty"`
-	IdempotencyKey     string                                 `json:"idempotency_key,omitempty"`
-	TemporalScheduleID string                                 `json:"temporal_schedule_id"`
-	TemporalNamespace  string                                 `json:"temporal_namespace"`
-	TaskQueue          string                                 `json:"task_queue"`
-	State              string                                 `json:"state"`
-	IntervalSeconds    uint32                                 `json:"interval_seconds" minimum:"15" maximum:"4294967295"`
-	RunCommand         string                                 `json:"run_command"`
-	MaxWallSeconds     uint64                                 `json:"max_wall_seconds,omitempty" minimum:"0" maximum:"9007199254740991"`
-	CreatedAt          time.Time                              `json:"created_at"`
-	UpdatedAt          time.Time                              `json:"updated_at"`
+	ScheduleID         uuid.UUID                                `json:"schedule_id"`
+	OrgID              OrgID                                    `json:"org_id"`
+	ActorID            string                                   `json:"actor_id"`
+	DisplayName        string                                   `json:"display_name,omitempty"`
+	IdempotencyKey     string                                   `json:"idempotency_key,omitempty"`
+	TemporalScheduleID string                                   `json:"temporal_schedule_id"`
+	TemporalNamespace  string                                   `json:"temporal_namespace"`
+	TaskQueue          string                                   `json:"task_queue"`
+	State              string                                   `json:"state"`
+	IntervalSeconds    uint32                                   `json:"interval_seconds" minimum:"15" maximum:"4294967295"`
+	RunCommand         string                                   `json:"run_command"`
+	MaxWallSeconds     uint64                                   `json:"max_wall_seconds,omitempty" minimum:"0" maximum:"9007199254740991"`
+	CreatedAt          time.Time                                `json:"created_at"`
+	UpdatedAt          time.Time                                `json:"updated_at"`
 	Dispatches         []SandboxExecutionScheduleDispatchRecord `json:"dispatches,omitempty"`
 }
 
