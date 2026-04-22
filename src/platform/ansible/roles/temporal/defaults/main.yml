@@ -26,13 +26,37 @@ temporal_force_schema_reset: false
 temporal_schema_name: postgresql/v12/temporal
 temporal_visibility_schema_name: postgresql/v12/visibility
 
+temporal_sandbox_namespace: sandbox-rental-service
+temporal_billing_namespace: billing-service
 temporal_proof_namespace: temporal-proof
 temporal_denied_namespace: temporal-denied
 temporal_proof_governance_url: "https://{{ services.governance_service.host }}:{{ services.governance_service.internal_port }}/internal/v1/audit/events"
+temporal_namespace_retention: 24h
+temporal_bootstrap_namespaces:
+  - "{{ temporal_sandbox_namespace }}"
+  - "{{ temporal_billing_namespace }}"
+  - "{{ temporal_proof_namespace }}"
+  - "{{ temporal_denied_namespace }}"
+temporal_frontend_client_spiffe_ids:
+  - "{{ spire_temporal_server_id }}"
+  - "{{ spire_temporal_web_id }}"
+  - "{{ spire_temporal_proof_id }}"
+  - "{{ spire_sandbox_rental_id }}"
+  - "{{ spire_billing_service_id }}"
+temporal_namespace_role_bindings:
+  - spiffe_id: "{{ spire_temporal_proof_id }}"
+    namespace: "{{ temporal_proof_namespace }}"
+    role: admin
+  - spiffe_id: "{{ spire_sandbox_rental_id }}"
+    namespace: "{{ temporal_sandbox_namespace }}"
+    role: admin
+  - spiffe_id: "{{ spire_billing_service_id }}"
+    namespace: "{{ temporal_billing_namespace }}"
+    role: admin
 
 temporal_web_subdomain: temporal
 temporal_web_domain: "{{ temporal_web_subdomain }}.{{ forge_metal_domain }}"
-temporal_web_default_namespace: "{{ temporal_proof_namespace }}"
+temporal_web_default_namespace: "{{ temporal_sandbox_namespace }}"
 temporal_web_disable_write_actions: true
 temporal_web_oidc_scopes:
   - openid

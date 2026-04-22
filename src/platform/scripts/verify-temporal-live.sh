@@ -23,6 +23,11 @@ temporal_frontend_address="127.0.0.1:7233"
 temporal_metrics_address="127.0.0.1:9001"
 governance_internal_url="https://127.0.0.1:4254/internal/v1/audit/events"
 temporal_proof_bin="/opt/forge-metal/profile/bin/temporal-proof"
+temporal_bootstrap_bin="/opt/forge-metal/profile/bin/temporal-bootstrap"
+temporal_sandbox_namespace="sandbox-rental-service"
+temporal_billing_namespace="billing-service"
+temporal_proof_namespace="temporal-proof"
+temporal_denied_namespace="temporal-denied"
 temporal_proof_worker_started=0
 
 remote_psql() {
@@ -48,6 +53,26 @@ remote_temporal_proof() {
     "${temporal_proof_bin}"
   )
   argv+=("$@")
+  local remote_cmd=""
+  local arg
+  for arg in "${argv[@]}"; do
+    remote_cmd+=" $(printf '%q' "${arg}")"
+  done
+  verification_ssh "bash -lc 'exec${remote_cmd}'"
+}
+
+remote_temporal_bootstrap() {
+  local argv=(
+    sudo -u temporal_server
+    env
+    "SPIFFE_ENDPOINT_SOCKET=${spire_socket}"
+    "OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317"
+    "FM_TEMPORAL_FRONTEND_ADDRESS=${temporal_frontend_address}"
+    "FM_TEMPORAL_SERVER_SPIFFE_ID=${temporal_server_spiffe_id}"
+    "FM_TEMPORAL_BOOTSTRAP_NAMESPACES=${temporal_sandbox_namespace},${temporal_billing_namespace},${temporal_proof_namespace},${temporal_denied_namespace}"
+    "FM_TEMPORAL_BOOTSTRAP_NAMESPACE_RETENTION=24h"
+    "${temporal_bootstrap_bin}"
+  )
   local remote_cmd=""
   local arg
   for arg in "${argv[@]}"; do
@@ -148,7 +173,7 @@ temporal_proof_worker_started=1
 verification_ssh "sudo systemctl is-active temporal-proof-worker" \
   >"${artifact_dir}/temporal-proof-worker-started.txt"
 
-remote_temporal_proof temporal_server bootstrap
+remote_temporal_bootstrap
 remote_temporal_proof temporal_proof denied --run-id "${denied_run_id}" \
   >"${artifact_dir}/denied-check.txt"
 remote_temporal_proof temporal_proof start --run-id "${proof_run_id}" --sleep 20s \
@@ -200,7 +225,7 @@ PY
 remote_psql temporal "
 SELECT name, id
 FROM namespaces
-WHERE name IN ('temporal-proof', 'temporal-denied')
+WHERE name IN ('sandbox-rental-service', 'billing-service', 'temporal-proof', 'temporal-denied')
 ORDER BY name;
 " >"${artifact_dir}/postgres/namespaces.tsv"
 
@@ -231,7 +256,7 @@ wait_for_clickhouse_count default "
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
     AND ServiceName = 'temporal-server'
     AND SpanName = 'temporal.auth.authorize'
-    AND SpanAttributes['temporal.namespace'] = 'temporal-proof'
+    AND SpanAttributes['temporal.namespace'] = '${temporal_proof_namespace}'
     AND SpanAttributes['temporal.authz.decision'] = 'allow'
 " 1 "${artifact_dir}/clickhouse/temporal-authz-allow-count.tsv"
 
@@ -241,7 +266,7 @@ wait_for_clickhouse_count default "
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
     AND ServiceName = 'temporal-server'
     AND SpanName = 'temporal.auth.authorize'
-    AND SpanAttributes['temporal.namespace'] = 'temporal-denied'
+    AND SpanAttributes['temporal.namespace'] = '${temporal_denied_namespace}'
     AND SpanAttributes['temporal.authz.decision'] = 'deny'
 " 1 "${artifact_dir}/clickhouse/temporal-authz-deny-count.tsv"
 

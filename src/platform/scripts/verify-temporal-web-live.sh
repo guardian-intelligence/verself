@@ -19,6 +19,8 @@ auth_host="auth.${VERIFICATION_DOMAIN}"
 temporal_base_url="https://${temporal_host}"
 trust_domain="spiffe.${VERIFICATION_DOMAIN}"
 temporal_web_spiffe_id="spiffe://${trust_domain}/svc/temporal-web"
+temporal_sandbox_namespace="sandbox-rental-service"
+temporal_billing_namespace="billing-service"
 persona_env="${artifact_dir}/platform-admin.env"
 persona_metadata_path="${artifact_dir}/platform-admin.json"
 browser_script_path="$(mktemp "${platform_app_dir}/.temporal-web-proof-XXXXXX.mjs")"
@@ -157,14 +159,18 @@ page.on("response", async (response) => {
     return;
   }
 
+  let body = "";
   let bodyExcerpt = "";
   try {
-    bodyExcerpt = (await response.text()).slice(0, 4096);
+    body = await response.text();
+    bodyExcerpt = body.slice(0, 4096);
   } catch (error) {
+    body = "";
     bodyExcerpt = `<response body unavailable: ${error instanceof Error ? error.message : String(error)}>`;
   }
 
   apiResponses.push({
+    body,
     bodyExcerpt,
     status: response.status(),
     url,
@@ -325,9 +331,12 @@ try {
       response.url.startsWith(`${baseURL}/api/v1/namespaces`) && response.status === 200,
     shortTimeoutMS,
   );
-  if (!namespacesResponse.bodyExcerpt.includes("temporal-proof")) {
+  if (
+    !namespacesResponse.body.includes(process.env.TEMPORAL_SANDBOX_NAMESPACE ?? "") ||
+    !namespacesResponse.body.includes(process.env.TEMPORAL_BILLING_NAMESPACE ?? "")
+  ) {
     throw new Error(
-      `Temporal Web namespaces payload did not include temporal-proof: ${namespacesResponse.bodyExcerpt}`,
+      `Temporal Web namespaces payload did not include the service-owned namespaces: ${namespacesResponse.bodyExcerpt}`,
     );
   }
 
@@ -366,6 +375,8 @@ env \
   ARTIFACT_DIR="${artifact_dir}" \
   BROWSER_EMAIL="${BROWSER_EMAIL}" \
   BROWSER_PASSWORD="${BROWSER_PASSWORD}" \
+  TEMPORAL_SANDBOX_NAMESPACE="${temporal_sandbox_namespace}" \
+  TEMPORAL_BILLING_NAMESPACE="${temporal_billing_namespace}" \
   TEMPORAL_BROWSER_SCRIPT="${browser_script_path}" \
   bash -lc '
     cd "$1"

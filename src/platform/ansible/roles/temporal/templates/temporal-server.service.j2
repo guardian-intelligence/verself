@@ -1,3 +1,8 @@
+{% set namespace_roles_env -%}
+{%- for binding in temporal_namespace_role_bindings -%}
+{{ binding.spiffe_id }}|{{ binding.namespace }}|{{ binding.role }}{% if not loop.last %},{% endif %}
+{%- endfor -%}
+{%- endset %}
 [Unit]
 Description=Temporal Server
 After=forge-metal-firewall.target network.target postgresql.service spire-agent.service otelcol.service
@@ -17,10 +22,10 @@ Environment=OTEL_EXPORTER_OTLP_INSECURE=true
 Environment=OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=grpc
 Environment=FM_TEMPORAL_CONFIG_PATH={{ temporal_config_path }}
 Environment=FM_TEMPORAL_SERVER_SPIFFE_ID={{ spire_temporal_server_id }}
-Environment=FM_TEMPORAL_FRONTEND_CLIENT_IDS={{ spire_temporal_server_id }},{{ spire_temporal_web_id }},{{ spire_temporal_proof_id }}
+Environment=FM_TEMPORAL_FRONTEND_CLIENT_IDS={{ temporal_frontend_client_spiffe_ids | join(',') }}
 Environment=FM_TEMPORAL_SYSTEM_ADMIN_IDS={{ spire_temporal_server_id }}
 Environment=FM_TEMPORAL_SYSTEM_READER_IDS={{ spire_temporal_web_id }}
-Environment=FM_TEMPORAL_NAMESPACE_ROLES={{ spire_temporal_proof_id }}|{{ temporal_proof_namespace }}|admin
+Environment=FM_TEMPORAL_NAMESPACE_ROLES={{ namespace_roles_env }}
 WorkingDirectory={{ temporal_state_dir }}
 ExecStart={{ fm_bin }}/forge-temporal-server
 Restart=on-failure

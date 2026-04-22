@@ -3,37 +3,27 @@ package proof
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 
 	workloadauth "github.com/forge-metal/auth-middleware/workload"
-	"github.com/forge-metal/temporal-platform/internal/temporallog"
+	"github.com/forge-metal/temporal-platform/sdkclient"
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
-	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	otelpropagation "go.opentelemetry.io/otel/propagation"
 	"go.temporal.io/api/serviceerror"
-	workflowservice "go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
-	sdkotel "go.temporal.io/sdk/contrib/opentelemetry"
-	sdkinterceptor "go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
-	"google.golang.org/grpc"
-	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 const (
@@ -46,13 +36,11 @@ const (
 var tracer = otel.Tracer("github.com/forge-metal/temporal-platform/internal/proof")
 
 type Config struct {
-	HostPort            string
+	SDK                 sdkclient.Config
 	Namespace           string
-	ServerID            spiffeid.ID
 	GovernanceURL       string
 	GovernanceServerID  spiffeid.ID
 	ServiceVersion      string
-	NamespaceRetention  time.Duration
 	WorkflowRunTimeout  time.Duration
 	WorkflowTaskTimeout time.Duration
 }
@@ -130,19 +118,17 @@ type Activities struct {
 }
 
 func LoadConfigFromEnv() (Config, error) {
+	sdkCfg, err := sdkclient.LoadConfigFromEnv()
+	if err != nil {
+		return Config{}, err
+	}
 	cfg := Config{
-		HostPort:            envOr("FM_TEMPORAL_FRONTEND_ADDRESS", "127.0.0.1:7233"),
+		SDK:                 sdkCfg,
 		Namespace:           envOr("FM_TEMPORAL_PROOF_NAMESPACE", NamespaceName),
 		GovernanceURL:       envOr("FM_TEMPORAL_PROOF_GOVERNANCE_URL", "https://127.0.0.1:4254/internal/v1/audit/events"),
 		ServiceVersion:      envOr("FM_TEMPORAL_PROOF_SERVICE_VERSION", "dev"),
-		NamespaceRetention:  envDuration("FM_TEMPORAL_PROOF_NAMESPACE_RETENTION", 24*time.Hour),
 		WorkflowRunTimeout:  envDuration("FM_TEMPORAL_PROOF_WORKFLOW_RUN_TIMEOUT", 2*time.Minute),
 		WorkflowTaskTimeout: envDuration("FM_TEMPORAL_PROOF_WORKFLOW_TASK_TIMEOUT", 10*time.Second),
-	}
-	var err error
-	cfg.ServerID, err = parseSPIFFEIDEnv("FM_TEMPORAL_SERVER_SPIFFE_ID")
-	if err != nil {
-		return Config{}, err
 	}
 	cfg.GovernanceServerID, err = parseSPIFFEIDEnv("FM_TEMPORAL_PROOF_GOVERNANCE_SPIFFE_ID")
 	if err != nil {
@@ -151,31 +137,12 @@ func LoadConfigFromEnv() (Config, error) {
 	return cfg, nil
 }
 
-func NewSource(ctx context.Context, socket string) (*workloadapi.X509Source, error) {
-	return workloadauth.Source(ctx, socket)
-}
-
-func BootstrapNamespaces(ctx context.Context, cfg Config, source *workloadapi.X509Source) error {
-	namespaceClient, err := client.NewNamespaceClient(namespaceClientOptions(cfg, source))
-	if err != nil {
-		return fmt.Errorf("dial namespace client: %w", err)
-	}
-	defer namespaceClient.Close()
-
-	for _, namespace := range []string{NamespaceName, DeniedNamespaceName} {
-		if err := ensureNamespace(ctx, namespaceClient, namespace, cfg.NamespaceRetention); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func ExpectDeniedNamespaceStart(ctx context.Context, cfg Config, source *workloadapi.X509Source, runID string) error {
 	ctx, span := tracer.Start(ctx, "temporal.proof.denied_namespace_check")
 	defer span.End()
 	span.SetAttributes(attribute.String("forge_metal.proof_run_id", runID))
 
-	proofClient, err := client.Dial(workflowClientOptions(cfg, DeniedNamespaceName, source))
+	proofClient, err := sdkclient.NewWorkflowClient(cfg.SDK, DeniedNamespaceName, source, "temporal-proof-sdk")
 	if err != nil {
 		return fmt.Errorf("dial denied namespace client: %w", err)
 	}
@@ -212,7 +179,7 @@ func StartWorkflow(ctx context.Context, cfg Config, source *workloadapi.X509Sour
 	defer span.End()
 	span.SetAttributes(attribute.String("forge_metal.proof_run_id", runID))
 
-	proofClient, err := client.Dial(workflowClientOptions(cfg, cfg.Namespace, source))
+	proofClient, err := sdkclient.NewWorkflowClient(cfg.SDK, cfg.Namespace, source, "temporal-proof-sdk")
 	if err != nil {
 		return nil, fmt.Errorf("dial proof client: %w", err)
 	}
@@ -263,7 +230,7 @@ func AwaitWorkflow(ctx context.Context, cfg Config, source *workloadapi.X509Sour
 		attribute.String("temporal.run_id", runID),
 	)
 
-	proofClient, err := client.Dial(workflowClientOptions(cfg, cfg.Namespace, source))
+	proofClient, err := sdkclient.NewWorkflowClient(cfg.SDK, cfg.Namespace, source, "temporal-proof-sdk")
 	if err != nil {
 		return nil, fmt.Errorf("dial proof client: %w", err)
 	}
@@ -279,7 +246,7 @@ func AwaitWorkflow(ctx context.Context, cfg Config, source *workloadapi.X509Sour
 }
 
 func RunWorker(ctx context.Context, cfg Config, source *workloadapi.X509Source) error {
-	proofClient, err := client.Dial(workflowClientOptions(cfg, cfg.Namespace, source))
+	proofClient, err := sdkclient.NewWorkflowClient(cfg.SDK, cfg.Namespace, source, "temporal-proof-sdk")
 	if err != nil {
 		return fmt.Errorf("dial proof worker client: %w", err)
 	}
@@ -410,67 +377,6 @@ func (a *Activities) RecordAuditEvent(ctx context.Context, input AuditActivityIn
 
 func MarshalJSON(value any) ([]byte, error) {
 	return json.MarshalIndent(value, "", "  ")
-}
-
-func ensureNamespace(ctx context.Context, namespaceClient client.NamespaceClient, name string, retention time.Duration) error {
-	_, err := namespaceClient.Describe(ctx, name)
-	if err == nil {
-		return nil
-	}
-	var notFound *serviceerror.NamespaceNotFound
-	if !errors.As(err, &notFound) {
-		return fmt.Errorf("describe namespace %s: %w", name, err)
-	}
-	if err := namespaceClient.Register(ctx, &workflowservice.RegisterNamespaceRequest{
-		Namespace:                        name,
-		WorkflowExecutionRetentionPeriod: durationpb.New(retention),
-	}); err != nil {
-		var alreadyExists *serviceerror.NamespaceAlreadyExists
-		if errors.As(err, &alreadyExists) {
-			return nil
-		}
-		return fmt.Errorf("register namespace %s: %w", name, err)
-	}
-	return nil
-}
-
-func namespaceClientOptions(cfg Config, source *workloadapi.X509Source) client.Options {
-	return baseClientOptions(cfg, "", source)
-}
-
-func workflowClientOptions(cfg Config, namespace string, source *workloadapi.X509Source) client.Options {
-	return baseClientOptions(cfg, namespace, source)
-}
-
-func baseClientOptions(cfg Config, namespace string, source *workloadapi.X509Source) client.Options {
-	interceptor := mustTracingInterceptor()
-	return client.Options{
-		HostPort:  cfg.HostPort,
-		Namespace: namespace,
-		Logger:    temporallog.New(slog.Default()),
-		ConnectionOptions: client.ConnectionOptions{
-			TLS: temporalTLSConfig(source, cfg.ServerID),
-			DialOptions: []grpc.DialOption{
-				grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
-			},
-		},
-		Interceptors: []sdkinterceptor.ClientInterceptor{interceptor},
-	}
-}
-
-func temporalTLSConfig(source *workloadapi.X509Source, serverID spiffeid.ID) *tls.Config {
-	return tlsconfig.MTLSClientConfig(source, source, tlsconfig.AuthorizeID(serverID))
-}
-
-func mustTracingInterceptor() sdkinterceptor.Interceptor {
-	interceptor, err := sdkotel.NewTracingInterceptor(sdkotel.TracerOptions{
-		Tracer:            otel.GetTracerProvider().Tracer("temporal-proof-sdk"),
-		TextMapPropagator: otelpropagation.NewCompositeTextMapPropagator(otelpropagation.TraceContext{}, otelpropagation.Baggage{}),
-	})
-	if err != nil {
-		panic(err)
-	}
-	return interceptor
 }
 
 func parseSPIFFEIDEnv(name string) (spiffeid.ID, error) {

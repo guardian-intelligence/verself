@@ -16,6 +16,7 @@ import (
 	workloadauth "github.com/forge-metal/auth-middleware/workload"
 	fmotel "github.com/forge-metal/otel"
 	"github.com/forge-metal/temporal-platform/internal/proof"
+	"github.com/forge-metal/temporal-platform/sdkclient"
 )
 
 var version = "dev"
@@ -29,7 +30,7 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: temporal-proof <bootstrap|denied|start|await|worker>")
+		return errors.New("usage: temporal-proof <denied|start|await|worker>")
 	}
 
 	command := strings.TrimSpace(args[0])
@@ -58,7 +59,7 @@ func run(args []string) error {
 	}
 	cfg.ServiceVersion = version
 
-	source, err := proof.NewSource(ctx, strings.TrimSpace(os.Getenv(workloadauth.EndpointSocketEnv)))
+	source, err := sdkclient.NewSource(ctx, strings.TrimSpace(os.Getenv(workloadauth.EndpointSocketEnv)))
 	if err != nil {
 		return fmt.Errorf("open proof spiffe source: %w", err)
 	}
@@ -69,8 +70,6 @@ func run(args []string) error {
 	}()
 
 	switch command {
-	case "bootstrap":
-		return proof.BootstrapNamespaces(ctx, cfg, source)
 	case "denied":
 		flags := flag.NewFlagSet("denied", flag.ContinueOnError)
 		flags.SetOutput(os.Stderr)
