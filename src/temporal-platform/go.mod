@@ -12,7 +12,7 @@ require (
 	github.com/spiffe/go-spiffe/v2 v2.6.0
 	github.com/temporalio/ui-server/v2 v2.48.4
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.59.0
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.59.0
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
 	go.opentelemetry.io/otel v1.43.0
 	go.temporal.io/api v1.62.8
 	go.temporal.io/sdk v1.38.0

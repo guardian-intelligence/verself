@@ -114,7 +114,7 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 
 <tool_use_contract>
 - When executing long-running tasks, run them in the background and check in every 30–60 seconds.
-- Dev tools are system-installed via `ansible-playbook playbooks/setup-dev.yml`. No `nix develop` prefix needed.
+- Dev tools are system-installed via `ansible-playbook playbooks/setup-dev.yml`.
 - Apply the scientific method: create a bar-raising verification protocol for the planned task *prior* to implementing changes. The verification protocol should fail, and only then begin implementing until green.
 - Avoid one-off, non-syntax-aware scripts for large parallel changes or refactors. Use subagents for that class of task — unexpected edge cases are likely and judgement is often required.
 - use `make tidy` to format Go and TypeScript code.
@@ -132,7 +132,7 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 
 <coding_contract>
 - When you run into a footgun, leave a comment around the code (no more than a sentence) explaining the footgun and how the code works around it.
-- Prefer Ansible over shell scripts when configuring infrastructure.
+- Prefer Ansible over shell scripts when configuring infrastructure. All logic to execute deployments or regular tasks on the provisioned node should be done thorugh Ansible, not through golang binaries.
 - Ansible playbook files must have a newline at the end (caught by `ansible-lint`).
 - Treat errors as data. Use tagged and structured errors to aid control flow.
 - Avoid fallbacks and defaults in Ansible code. Ansible should fail fast with useful logging.
