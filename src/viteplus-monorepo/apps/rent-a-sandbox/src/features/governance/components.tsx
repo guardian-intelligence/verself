@@ -1,16 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { getRouteApi, Link, useRouter } from "@tanstack/react-router";
-import {
-  ArrowDown,
-  ArrowUp,
-  Check,
-  Clock,
-  Columns3,
-  Copy,
-  ListFilter,
-  X,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Clock, Columns3, Copy, ListFilter, X } from "lucide-react";
 import { Badge } from "@forge-metal/ui/components/ui/badge";
 import { Button } from "@forge-metal/ui/components/ui/button";
 import {
@@ -158,8 +149,7 @@ export function GovernanceSettings({
             <SectionHeaderContent>
               <SectionTitle>Data export</SectionTitle>
               <SectionDescription>
-                Download organization data, billing records, sandbox metadata, and audit
-                evidence.
+                Download organization data, billing records, sandbox metadata, and audit evidence.
               </SectionDescription>
             </SectionHeaderContent>
             <SectionActions>
@@ -245,9 +235,7 @@ function ExportsTable({
             <TableCell>
               <StatusBadge status={job.state} />
             </TableCell>
-            <TableCell className="text-xs text-muted-foreground">
-              {job.scopes.join(", ")}
-            </TableCell>
+            <TableCell className="text-xs text-muted-foreground">{job.scopes.join(", ")}</TableCell>
             <TableCell className="text-right tabular-nums">{job.files.length}</TableCell>
             <TableCell className="text-right tabular-nums">
               {formatBytes(job.artifact_bytes)}
@@ -292,9 +280,7 @@ function ExpiryCell({ expiresAt }: { expiresAt: string }) {
   // formatRelative for "future" dates returns negative-prefixed strings
   // (e.g. "-3h ago"); strip the leading dash and trailing " ago" so the
   // cell reads "in 3h".
-  const relative = formatRelative(expires, now)
-    .replace(/^-/, "")
-    .replace(" ago", "");
+  const relative = formatRelative(expires, now).replace(/^-/, "").replace(" ago", "");
   return (
     <Tooltip>
       <TooltipTrigger render={<span className={className}>{`in ${relative}`}</span>} />
@@ -357,10 +343,7 @@ function AuditTrail({
           </TableHeader>
           <TableBody>
             {events.length === 0 ? (
-              <EmptyRow
-                visibleColumns={visibleColumns}
-                hasFilters={activeKeys.length > 0}
-              />
+              <EmptyRow visibleColumns={visibleColumns} hasFilters={activeKeys.length > 0} />
             ) : (
               events.map((event) => (
                 <AuditRow
@@ -561,11 +544,7 @@ function AuditToolbar({
               // Functional form so retainSearchParams sees prev=this and
               // returns {}, otherwise a static search={} is merged by the
               // router and the retained params survive the reset.
-              <Link
-                to={GOVERNANCE_ROUTE}
-                search={() => ({})}
-                data-testid="audit-reset-defaults"
-              />
+              <Link to={GOVERNANCE_ROUTE} search={() => ({})} data-testid="audit-reset-defaults" />
             }
           >
             Reset to defaults
@@ -673,11 +652,7 @@ function FilterControl({
   );
 }
 
-function ColumnsPopover({
-  visibleColumns,
-}: {
-  visibleColumns: ReadonlyArray<AuditColumnId>;
-}) {
+function ColumnsPopover({ visibleColumns }: { visibleColumns: ReadonlyArray<AuditColumnId> }) {
   const navigate = routeApi.useNavigate();
 
   const toggle = (id: AuditColumnId, visible: boolean) => {
@@ -729,9 +704,7 @@ function ColumnsPopover({
                 <span
                   className={cn(
                     "flex size-4 items-center justify-center rounded-sm border",
-                    checked
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border",
+                    checked ? "border-primary bg-primary text-primary-foreground" : "border-border",
                   )}
                   aria-hidden="true"
                 >
@@ -879,13 +852,7 @@ function AuditFooter({
       >
         Previous
       </Button>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={onNext}
-        data-testid="audit-next"
-      >
+      <Button type="button" variant="outline" size="sm" onClick={onNext} data-testid="audit-next">
         Next
       </Button>
     </div>
@@ -1216,11 +1183,7 @@ function ResultCell({ event }: { event: GovernanceAuditEvent }) {
     );
   }
   const variant =
-    event.result === "error"
-      ? "destructive"
-      : event.result === "denied"
-        ? "warning"
-        : "secondary";
+    event.result === "error" ? "destructive" : event.result === "denied" ? "warning" : "secondary";
   return (
     <Link
       to={GOVERNANCE_ROUTE}
@@ -1302,11 +1265,7 @@ function columnLabel(id: AuditColumnId): string {
 
 function RiskBadge({ risk }: { risk: string }) {
   const variant =
-    risk === "critical" || risk === "high"
-      ? "warning"
-      : risk === "low"
-        ? "outline"
-        : "secondary";
+    risk === "critical" || risk === "high" ? "warning" : risk === "low" ? "outline" : "secondary";
   return <Badge variant={variant}>{risk}</Badge>;
 }
 
