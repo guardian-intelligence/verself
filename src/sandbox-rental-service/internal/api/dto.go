@@ -6,6 +6,7 @@ import (
 
 	"github.com/forge-metal/apiwire"
 	"github.com/forge-metal/sandbox-rental-service/internal/jobs"
+	"github.com/forge-metal/sandbox-rental-service/internal/recurring"
 )
 
 func submitRequest(request apiwire.SandboxSubmitRequest) jobs.SubmitRequest {
@@ -234,4 +235,63 @@ func billingWindows(records []jobs.BillingWindow) []apiwire.SandboxBillingWindow
 		out = append(out, billingWindow(record))
 	}
 	return out
+}
+
+func executionScheduleCreateRequest(request apiwire.SandboxExecutionScheduleCreateRequest) recurring.CreateRequest {
+	return recurring.CreateRequest{
+		DisplayName:     request.DisplayName,
+		IdempotencyKey:  request.IdempotencyKey,
+		RunCommand:      request.RunCommand,
+		IntervalSeconds: request.IntervalSeconds,
+		MaxWallSeconds:  request.MaxWallSeconds,
+		Paused:          request.Paused,
+	}
+}
+
+func executionScheduleRecord(record recurring.ScheduleRecord) apiwire.SandboxExecutionScheduleRecord {
+	return apiwire.SandboxExecutionScheduleRecord{
+		ScheduleID:         record.ScheduleID,
+		OrgID:              apiwire.Uint64(record.OrgID),
+		ActorID:            record.ActorID,
+		DisplayName:        record.DisplayName,
+		IdempotencyKey:     record.IdempotencyKey,
+		TemporalScheduleID: record.TemporalScheduleID,
+		TemporalNamespace:  record.TemporalNamespace,
+		TaskQueue:          record.TaskQueue,
+		State:              record.State,
+		IntervalSeconds:    record.IntervalSeconds,
+		RunCommand:         record.RunCommand,
+		MaxWallSeconds:     record.MaxWallSeconds,
+		CreatedAt:          record.CreatedAt,
+		UpdatedAt:          record.UpdatedAt,
+		Dispatches:         executionScheduleDispatches(record.Dispatches),
+	}
+}
+
+func executionScheduleDispatches(records []recurring.DispatchRecord) []apiwire.SandboxExecutionScheduleDispatchRecord {
+	if len(records) == 0 {
+		return nil
+	}
+	out := make([]apiwire.SandboxExecutionScheduleDispatchRecord, 0, len(records))
+	for _, record := range records {
+		out = append(out, executionScheduleDispatchRecord(record))
+	}
+	return out
+}
+
+func executionScheduleDispatchRecord(record recurring.DispatchRecord) apiwire.SandboxExecutionScheduleDispatchRecord {
+	return apiwire.SandboxExecutionScheduleDispatchRecord{
+		DispatchID:         record.DispatchID,
+		ScheduleID:         record.ScheduleID,
+		TemporalWorkflowID: record.TemporalWorkflowID,
+		TemporalRunID:      record.TemporalRunID,
+		ExecutionID:        record.ExecutionID,
+		AttemptID:          record.AttemptID,
+		State:              record.State,
+		FailureReason:      record.FailureReason,
+		ScheduledAt:        record.ScheduledAt,
+		SubmittedAt:        record.SubmittedAt,
+		CreatedAt:          record.CreatedAt,
+		UpdatedAt:          record.UpdatedAt,
+	}
 }

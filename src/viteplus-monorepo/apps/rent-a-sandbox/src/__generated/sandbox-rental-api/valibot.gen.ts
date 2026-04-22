@@ -347,6 +347,64 @@ export const vSandboxExecutionRecord = v.strictObject({
   workload_kind: v.optional(v.string()),
 });
 
+export const vSandboxExecutionScheduleCreateRequest = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  display_name: v.optional(v.pipe(v.string(), v.maxLength(255))),
+  idempotency_key: v.pipe(v.string(), v.maxLength(128)),
+  interval_seconds: v.pipe(v.number(), v.integer(), v.minValue(15), v.maxValue(4294967295)),
+  max_wall_seconds: v.optional(
+    v.pipe(
+      v.union([v.number(), v.string(), v.bigint()]),
+      v.transform((x) => BigInt(x)),
+      v.minValue(BigInt(1)),
+      v.maxValue(BigInt(9007199254740991)),
+    ),
+  ),
+  paused: v.optional(v.boolean()),
+  run_command: v.pipe(v.string(), v.minLength(1), v.maxLength(8192)),
+});
+
+export const vSandboxExecutionScheduleDispatchRecord = v.strictObject({
+  attempt_id: v.optional(v.string()),
+  created_at: v.pipe(v.string(), v.isoTimestamp()),
+  dispatch_id: v.string(),
+  execution_id: v.optional(v.string()),
+  failure_reason: v.optional(v.string()),
+  schedule_id: v.string(),
+  scheduled_at: v.pipe(v.string(), v.isoTimestamp()),
+  state: v.string(),
+  submitted_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  temporal_run_id: v.string(),
+  temporal_workflow_id: v.string(),
+  updated_at: v.pipe(v.string(), v.isoTimestamp()),
+});
+
+export const vSandboxExecutionScheduleRecord = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  actor_id: v.string(),
+  created_at: v.pipe(v.string(), v.isoTimestamp()),
+  dispatches: v.nullish(v.array(vSandboxExecutionScheduleDispatchRecord)),
+  display_name: v.optional(v.string()),
+  idempotency_key: v.optional(v.string()),
+  interval_seconds: v.pipe(v.number(), v.integer(), v.minValue(15), v.maxValue(4294967295)),
+  max_wall_seconds: v.optional(
+    v.pipe(
+      v.union([v.number(), v.string(), v.bigint()]),
+      v.transform((x) => BigInt(x)),
+      v.minValue(BigInt(0)),
+      v.maxValue(BigInt(9007199254740991)),
+    ),
+  ),
+  org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  run_command: v.string(),
+  schedule_id: v.string(),
+  state: v.string(),
+  task_queue: v.string(),
+  temporal_namespace: v.string(),
+  temporal_schedule_id: v.string(),
+  updated_at: v.pipe(v.string(), v.isoTimestamp()),
+});
+
 export const vSandboxGitHubInstallationConnectResponse = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   expires_at: v.pipe(v.string(), v.isoTimestamp()),
@@ -611,6 +669,47 @@ export const vSandboxExecutionRecordWritable = v.strictObject({
   workload_kind: v.optional(v.string()),
 });
 
+export const vSandboxExecutionScheduleCreateRequestWritable = v.strictObject({
+  display_name: v.optional(v.pipe(v.string(), v.maxLength(255))),
+  idempotency_key: v.pipe(v.string(), v.maxLength(128)),
+  interval_seconds: v.pipe(v.number(), v.integer(), v.minValue(15), v.maxValue(4294967295)),
+  max_wall_seconds: v.optional(
+    v.pipe(
+      v.union([v.number(), v.string(), v.bigint()]),
+      v.transform((x) => BigInt(x)),
+      v.minValue(BigInt(1)),
+      v.maxValue(BigInt(9007199254740991)),
+    ),
+  ),
+  paused: v.optional(v.boolean()),
+  run_command: v.pipe(v.string(), v.minLength(1), v.maxLength(8192)),
+});
+
+export const vSandboxExecutionScheduleRecordWritable = v.strictObject({
+  actor_id: v.string(),
+  created_at: v.pipe(v.string(), v.isoTimestamp()),
+  dispatches: v.nullish(v.array(vSandboxExecutionScheduleDispatchRecord)),
+  display_name: v.optional(v.string()),
+  idempotency_key: v.optional(v.string()),
+  interval_seconds: v.pipe(v.number(), v.integer(), v.minValue(15), v.maxValue(4294967295)),
+  max_wall_seconds: v.optional(
+    v.pipe(
+      v.union([v.number(), v.string(), v.bigint()]),
+      v.transform((x) => BigInt(x)),
+      v.minValue(BigInt(0)),
+      v.maxValue(BigInt(9007199254740991)),
+    ),
+  ),
+  org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  run_command: v.string(),
+  schedule_id: v.string(),
+  state: v.string(),
+  task_queue: v.string(),
+  temporal_namespace: v.string(),
+  temporal_schedule_id: v.string(),
+  updated_at: v.pipe(v.string(), v.isoTimestamp()),
+});
+
 export const vSandboxGitHubInstallationConnectResponseWritable = v.strictObject({
   expires_at: v.pipe(v.string(), v.isoTimestamp()),
   setup_url: v.string(),
@@ -754,6 +853,53 @@ export const vGetBillingStatementQuery = v.object({
  * OK
  */
 export const vGetBillingStatementResponse = vBillingStatement;
+
+/**
+ * OK
+ */
+export const vListExecutionSchedulesResponse = v.nullable(v.array(vSandboxExecutionScheduleRecord));
+
+export const vCreateExecutionScheduleBody = vSandboxExecutionScheduleCreateRequestWritable;
+
+/**
+ * Created
+ */
+export const vCreateExecutionScheduleResponse = vSandboxExecutionScheduleRecord;
+
+export const vGetExecutionSchedulePath = v.object({
+  schedule_id: v.string(),
+});
+
+/**
+ * OK
+ */
+export const vGetExecutionScheduleResponse = vSandboxExecutionScheduleRecord;
+
+export const vPauseExecutionScheduleHeaders = v.object({
+  "Idempotency-Key": v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+});
+
+export const vPauseExecutionSchedulePath = v.object({
+  schedule_id: v.string(),
+});
+
+/**
+ * OK
+ */
+export const vPauseExecutionScheduleResponse = vSandboxExecutionScheduleRecord;
+
+export const vResumeExecutionScheduleHeaders = v.object({
+  "Idempotency-Key": v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+});
+
+export const vResumeExecutionSchedulePath = v.object({
+  schedule_id: v.string(),
+});
+
+/**
+ * OK
+ */
+export const vResumeExecutionScheduleResponse = vSandboxExecutionScheduleRecord;
 
 export const vSubmitExecutionBody = vSandboxSubmitRequestWritable;
 

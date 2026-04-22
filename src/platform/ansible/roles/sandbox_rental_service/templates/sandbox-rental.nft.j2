@@ -35,6 +35,7 @@ table inet forge_metal_sandbox_rental {
         oifname "lo" tcp dport {{ services.governance_service.internal_port }} accept
         oifname "lo" tcp dport {{ services.secrets_service.internal_port }} accept
         oifname "lo" tcp dport {{ services.forgejo.port }} accept
+        oifname "lo" tcp dport {{ services.temporal.grpc_port }} accept
         oifname "lo" tcp dport {{ services.otelcol.grpc_port }} accept
         oifname "lo" tcp dport 53 accept
         oifname "lo" udp dport 53 accept

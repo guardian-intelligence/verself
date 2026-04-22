@@ -15,10 +15,11 @@ import (
 	billingclient "github.com/forge-metal/billing-service/client"
 
 	"github.com/forge-metal/sandbox-rental-service/internal/jobs"
+	"github.com/forge-metal/sandbox-rental-service/internal/recurring"
 )
 
 // RegisterRoutes wires all sandbox-rental-service endpoints onto the Huma API.
-func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.ServiceClient, publicConfig PublicAPIConfig) {
+func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Service, billing *billingclient.ServiceClient, publicConfig PublicAPIConfig) {
 	registerSecured(api, secured(huma.Operation{
 		OperationID:   "begin-github-installation",
 		Method:        http.MethodPost,
@@ -94,6 +95,85 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.Serv
 		RateLimitClass: "logs_read",
 		AuditEvent:     "sandbox.execution.logs.read",
 	}), getExecutionLogs(svc))
+
+	registerSecured(api, secured(huma.Operation{
+		OperationID:   "create-execution-schedule",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/execution-schedules",
+		Summary:       "Create a recurring execution schedule",
+		DefaultStatus: 201,
+	}, operationPolicy{
+		Permission:     permissionScheduleWrite,
+		Resource:       "execution_schedule",
+		Action:         "create",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "execution_schedule_mutation",
+		Idempotency:    idempotencyRequestBodyKey,
+		AuditEvent:     "sandbox.execution_schedule.create",
+		BodyLimitBytes: bodyLimitSmallJSON,
+	}), createExecutionSchedule(recurringSvc))
+
+	registerSecured(api, secured(huma.Operation{
+		OperationID: "list-execution-schedules",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/execution-schedules",
+		Summary:     "List recurring execution schedules",
+	}, operationPolicy{
+		Permission:     permissionScheduleRead,
+		Resource:       "execution_schedule",
+		Action:         "list",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "read",
+		AuditEvent:     "sandbox.execution_schedule.list",
+	}), listExecutionSchedules(recurringSvc))
+
+	registerSecured(api, secured(huma.Operation{
+		OperationID: "get-execution-schedule",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/execution-schedules/{schedule_id}",
+		Summary:     "Get a recurring execution schedule",
+	}, operationPolicy{
+		Permission:     permissionScheduleRead,
+		Resource:       "execution_schedule",
+		Action:         "read",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "read",
+		AuditEvent:     "sandbox.execution_schedule.read",
+	}), getExecutionSchedule(recurringSvc))
+
+	registerSecured(api, secured(huma.Operation{
+		OperationID:   "pause-execution-schedule",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/execution-schedules/{schedule_id}/pause",
+		Summary:       "Pause a recurring execution schedule",
+		DefaultStatus: 200,
+	}, operationPolicy{
+		Permission:     permissionScheduleWrite,
+		Resource:       "execution_schedule",
+		Action:         "pause",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "execution_schedule_mutation",
+		Idempotency:    idempotencyHeaderKey,
+		AuditEvent:     "sandbox.execution_schedule.pause",
+		BodyLimitBytes: bodyLimitNoBody,
+	}), pauseExecutionSchedule(recurringSvc))
+
+	registerSecured(api, secured(huma.Operation{
+		OperationID:   "resume-execution-schedule",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/execution-schedules/{schedule_id}/resume",
+		Summary:       "Resume a recurring execution schedule",
+		DefaultStatus: 200,
+	}, operationPolicy{
+		Permission:     permissionScheduleWrite,
+		Resource:       "execution_schedule",
+		Action:         "resume",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "execution_schedule_mutation",
+		Idempotency:    idempotencyHeaderKey,
+		AuditEvent:     "sandbox.execution_schedule.resume",
+		BodyLimitBytes: bodyLimitNoBody,
+	}), resumeExecutionSchedule(recurringSvc))
 
 	registerSecured(api, secured(huma.Operation{
 		OperationID:   "create-scheduler-probe",
@@ -345,6 +425,22 @@ type GetExecutionOutput struct {
 
 type GetExecutionLogsOutput struct {
 	Body apiwire.SandboxExecutionLogs
+}
+
+type ExecutionScheduleIDPath struct {
+	ScheduleID string `path:"schedule_id" doc:"Execution schedule UUID"`
+}
+
+type CreateExecutionScheduleInput struct {
+	Body apiwire.SandboxExecutionScheduleCreateRequest
+}
+
+type ExecutionScheduleOutput struct {
+	Body apiwire.SandboxExecutionScheduleRecord
+}
+
+type ListExecutionSchedulesOutput struct {
+	Body []apiwire.SandboxExecutionScheduleRecord
 }
 
 type EmptyInput struct{}
@@ -718,6 +814,105 @@ func getExecutionLogs(svc *jobs.Service) func(context.Context, *ExecutionIDPath)
 			Logs:        logs,
 		}
 		return out, nil
+	}
+}
+
+func createExecutionSchedule(recurringSvc *recurring.Service) func(context.Context, *CreateExecutionScheduleInput) (*ExecutionScheduleOutput, error) {
+	return func(ctx context.Context, input *CreateExecutionScheduleInput) (*ExecutionScheduleOutput, error) {
+		identity, err := requireIdentity(ctx)
+		if err != nil {
+			return nil, err
+		}
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		record, err := recurringSvc.CreateSchedule(ctx, orgID, identity.Subject, executionScheduleCreateRequest(input.Body))
+		if err != nil {
+			return nil, internalFailure(ctx, "create-execution-schedule-failed", "create execution schedule failed", err)
+		}
+		return &ExecutionScheduleOutput{Body: executionScheduleRecord(record)}, nil
+	}
+}
+
+func listExecutionSchedules(recurringSvc *recurring.Service) func(context.Context, *EmptyInput) (*ListExecutionSchedulesOutput, error) {
+	return func(ctx context.Context, _ *EmptyInput) (*ListExecutionSchedulesOutput, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		records, err := recurringSvc.ListSchedules(ctx, orgID)
+		if err != nil {
+			return nil, internalFailure(ctx, "list-execution-schedules-failed", "list execution schedules failed", err)
+		}
+		out := make([]apiwire.SandboxExecutionScheduleRecord, 0, len(records))
+		for _, record := range records {
+			out = append(out, executionScheduleRecord(record))
+		}
+		return &ListExecutionSchedulesOutput{Body: out}, nil
+	}
+}
+
+func getExecutionSchedule(recurringSvc *recurring.Service) func(context.Context, *ExecutionScheduleIDPath) (*ExecutionScheduleOutput, error) {
+	return func(ctx context.Context, input *ExecutionScheduleIDPath) (*ExecutionScheduleOutput, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		scheduleID, err := uuid.Parse(input.ScheduleID)
+		if err != nil {
+			return nil, badRequest(ctx, "invalid-schedule-id", "schedule_id must be a UUID", err)
+		}
+		record, err := recurringSvc.GetSchedule(ctx, orgID, scheduleID)
+		if err != nil {
+			if errors.Is(err, recurring.ErrScheduleMissing) {
+				return nil, notFound(ctx, "execution-schedule-not-found", "execution schedule not found")
+			}
+			return nil, internalFailure(ctx, "get-execution-schedule-failed", "get execution schedule failed", err)
+		}
+		return &ExecutionScheduleOutput{Body: executionScheduleRecord(*record)}, nil
+	}
+}
+
+func pauseExecutionSchedule(recurringSvc *recurring.Service) func(context.Context, *ExecutionScheduleIDPath) (*ExecutionScheduleOutput, error) {
+	return func(ctx context.Context, input *ExecutionScheduleIDPath) (*ExecutionScheduleOutput, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		scheduleID, err := uuid.Parse(input.ScheduleID)
+		if err != nil {
+			return nil, badRequest(ctx, "invalid-schedule-id", "schedule_id must be a UUID", err)
+		}
+		record, err := recurringSvc.PauseSchedule(ctx, orgID, scheduleID)
+		if err != nil {
+			if errors.Is(err, recurring.ErrScheduleMissing) {
+				return nil, notFound(ctx, "execution-schedule-not-found", "execution schedule not found")
+			}
+			return nil, internalFailure(ctx, "pause-execution-schedule-failed", "pause execution schedule failed", err)
+		}
+		return &ExecutionScheduleOutput{Body: executionScheduleRecord(*record)}, nil
+	}
+}
+
+func resumeExecutionSchedule(recurringSvc *recurring.Service) func(context.Context, *ExecutionScheduleIDPath) (*ExecutionScheduleOutput, error) {
+	return func(ctx context.Context, input *ExecutionScheduleIDPath) (*ExecutionScheduleOutput, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		scheduleID, err := uuid.Parse(input.ScheduleID)
+		if err != nil {
+			return nil, badRequest(ctx, "invalid-schedule-id", "schedule_id must be a UUID", err)
+		}
+		record, err := recurringSvc.ResumeSchedule(ctx, orgID, scheduleID)
+		if err != nil {
+			if errors.Is(err, recurring.ErrScheduleMissing) {
+				return nil, notFound(ctx, "execution-schedule-not-found", "execution schedule not found")
+			}
+			return nil, internalFailure(ctx, "resume-execution-schedule-failed", "resume execution schedule failed", err)
+		}
+		return &ExecutionScheduleOutput{Body: executionScheduleRecord(*record)}, nil
 	}
 }
 

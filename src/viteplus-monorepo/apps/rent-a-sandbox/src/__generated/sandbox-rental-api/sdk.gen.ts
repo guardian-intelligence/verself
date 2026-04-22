@@ -22,6 +22,9 @@ import type {
   CreateBillingPortalData,
   CreateBillingPortalErrors,
   CreateBillingPortalResponses,
+  CreateExecutionScheduleData,
+  CreateExecutionScheduleErrors,
+  CreateExecutionScheduleResponses,
   CreateVolumeData,
   CreateVolumeErrors,
   CreateVolumeResponses,
@@ -37,6 +40,9 @@ import type {
   GetExecutionLogsErrors,
   GetExecutionLogsResponses,
   GetExecutionResponses,
+  GetExecutionScheduleData,
+  GetExecutionScheduleErrors,
+  GetExecutionScheduleResponses,
   GetVolumeData,
   GetVolumeErrors,
   GetVolumeResponses,
@@ -46,12 +52,21 @@ import type {
   ListBillingPlansData,
   ListBillingPlansErrors,
   ListBillingPlansResponses,
+  ListExecutionSchedulesData,
+  ListExecutionSchedulesErrors,
+  ListExecutionSchedulesResponses,
   ListGithubInstallationsData,
   ListGithubInstallationsErrors,
   ListGithubInstallationsResponses,
   ListVolumesData,
   ListVolumesErrors,
   ListVolumesResponses,
+  PauseExecutionScheduleData,
+  PauseExecutionScheduleErrors,
+  PauseExecutionScheduleResponses,
+  ResumeExecutionScheduleData,
+  ResumeExecutionScheduleErrors,
+  ResumeExecutionScheduleResponses,
   SubmitExecutionData,
   SubmitExecutionErrors,
   SubmitExecutionResponses,
@@ -228,6 +243,90 @@ export const getBillingStatement = <ThrowOnError extends boolean = false>(
   >({
     security: [{ scheme: "bearer", type: "http" }],
     url: "/api/v1/billing/statement",
+    ...options,
+  });
+
+/**
+ * List recurring execution schedules
+ */
+export const listExecutionSchedules = <ThrowOnError extends boolean = false>(
+  options?: Options<ListExecutionSchedulesData, ThrowOnError>,
+) =>
+  (options?.client ?? client).get<
+    ListExecutionSchedulesResponses,
+    ListExecutionSchedulesErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/execution-schedules",
+    ...options,
+  });
+
+/**
+ * Create a recurring execution schedule
+ */
+export const createExecutionSchedule = <ThrowOnError extends boolean = false>(
+  options: Options<CreateExecutionScheduleData, ThrowOnError>,
+) =>
+  (options.client ?? client).post<
+    CreateExecutionScheduleResponses,
+    CreateExecutionScheduleErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/execution-schedules",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
+
+/**
+ * Get a recurring execution schedule
+ */
+export const getExecutionSchedule = <ThrowOnError extends boolean = false>(
+  options: Options<GetExecutionScheduleData, ThrowOnError>,
+) =>
+  (options.client ?? client).get<
+    GetExecutionScheduleResponses,
+    GetExecutionScheduleErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/execution-schedules/{schedule_id}",
+    ...options,
+  });
+
+/**
+ * Pause a recurring execution schedule
+ */
+export const pauseExecutionSchedule = <ThrowOnError extends boolean = false>(
+  options: Options<PauseExecutionScheduleData, ThrowOnError>,
+) =>
+  (options.client ?? client).post<
+    PauseExecutionScheduleResponses,
+    PauseExecutionScheduleErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/execution-schedules/{schedule_id}/pause",
+    ...options,
+  });
+
+/**
+ * Resume a recurring execution schedule
+ */
+export const resumeExecutionSchedule = <ThrowOnError extends boolean = false>(
+  options: Options<ResumeExecutionScheduleData, ThrowOnError>,
+) =>
+  (options.client ?? client).post<
+    ResumeExecutionScheduleResponses,
+    ResumeExecutionScheduleErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/execution-schedules/{schedule_id}/resume",
     ...options,
   });
 

@@ -1,7 +1,7 @@
 .PHONY: help test lint lint-scripts lint-conversions lint-ansible lint-voice company-proof fmt vet tidy openapi openapi-check openapi-wire-check \
        hooks-install doctor inventory-check setup-dev setup-sops provision deprovision deploy site guest-rootfs security-patch identity-reset seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member \
        set-user-state billing-clock billing-wall-clock billing-state billing-documents billing-finalizations billing-events billing-pg-shell billing-pg-query billing-proof billing-reset verification-reset \
-       secrets-proof secrets-leak-proof openbao-proof openbao-tenancy-proof workload-identity-proof temporal-proof temporal-web-proof \
+       secrets-proof secrets-leak-proof openbao-proof openbao-tenancy-proof workload-identity-proof temporal-proof temporal-web-proof recurring-schedule-proof \
        vm-guest-telemetry-build observe telemetry-proof telemetry-proof-fail clickhouse-query clickhouse-schemas pg-shell pg-query pg-list tb-shell tb-command mail mail-accounts mail-mailboxes \
        mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets \
        wipe-pg-db wipe-server vm-orchestrator-proof stress sandbox-inner sandbox-middle sandbox-proof rent-ui-smoke rent-ui-local rent-local-dev scheduler-proof verify-scheduler grafana-proof observability-smoke services-doctor
@@ -247,6 +247,9 @@ temporal-proof: inventory-check ## Run the Temporal durability/authz proof and a
 
 temporal-web-proof: inventory-check ## Verify Temporal Web login, operator routing, and ClickHouse evidence
 	cd $(FM) && ./scripts/verify-temporal-web-live.sh
+
+recurring-schedule-proof: inventory-check ## Create a paused Temporal-backed recurring schedule, resume it, and assert PostgreSQL + ClickHouse evidence
+	cd $(FM) && ./scripts/verify-recurring-schedule-live.sh
 
 billing-reset: inventory-check ## Exhaustively wipe billing state (TigerBeetle + billing PostgreSQL schema) and restart billing callers
 	$(FM)/scripts/ansible-with-tunnel.sh playbooks/billing-reset.yml

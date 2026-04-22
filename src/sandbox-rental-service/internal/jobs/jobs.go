@@ -32,6 +32,7 @@ const (
 	KindDirect               = "direct"
 	KindVMSession            = "vm_session"
 	SourceKindAPI            = "api"
+	SourceKindExecutionSchedule = "execution_schedule"
 	SourceKindGitHubAction   = "github_actions"
 	SourceKindCanary         = "canary"
 	SourceKindVMSession      = "vm_session"
@@ -261,7 +262,7 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req 
 		}
 		span.End()
 	}()
-	if s.PGX == nil || s.Orchestrator == nil || s.Billing == nil {
+	if s.PGX == nil || s.Scheduler == nil {
 		return uuid.Nil, uuid.Nil, ErrRunnerUnavailable
 	}
 	req, err = s.normalizeSubmitRequest(ctx, req)

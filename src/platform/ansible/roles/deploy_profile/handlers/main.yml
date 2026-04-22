@@ -83,6 +83,20 @@
     state: restarted
   when: deploy_profile_sandbox_rental_service_unit_file.stat.exists
 
+- name: Check if sandbox-rental-recurring-worker unit exists for deploy profile restart
+  listen: deploy-profile restart sandbox-rental-recurring-worker
+  ansible.builtin.stat:
+    path: /etc/systemd/system/sandbox-rental-recurring-worker.service
+  register: deploy_profile_sandbox_rental_recurring_worker_unit_file
+
+- name: Restart sandbox-rental-recurring-worker from deploy profile
+  listen: deploy-profile restart sandbox-rental-recurring-worker
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: sandbox-rental-recurring-worker
+    state: restarted
+  when: deploy_profile_sandbox_rental_recurring_worker_unit_file.stat.exists
+
 - name: Check if temporal-server unit exists for deploy profile restart
   listen: deploy-profile restart temporal-server
   ansible.builtin.stat:

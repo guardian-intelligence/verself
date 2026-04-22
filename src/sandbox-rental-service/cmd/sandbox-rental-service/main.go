@@ -33,7 +33,9 @@ import (
 
 	sandboxapi "github.com/forge-metal/sandbox-rental-service/internal/api"
 	"github.com/forge-metal/sandbox-rental-service/internal/jobs"
+	"github.com/forge-metal/sandbox-rental-service/internal/recurring"
 	"github.com/forge-metal/sandbox-rental-service/internal/scheduler"
+	"github.com/forge-metal/temporal-platform/sdkclient"
 )
 
 const (
@@ -100,6 +102,13 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	temporalServerSPIFFEID, err := workloadauth.ParseID(requireEnv("SANDBOX_TEMPORAL_SERVER_SPIFFE_ID"))
+	if err != nil {
+		return err
+	}
+	temporalFrontendAddress := envOr("SANDBOX_TEMPORAL_FRONTEND_ADDRESS", sdkclient.DefaultFrontendAddress)
+	temporalNamespace := envOr("SANDBOX_TEMPORAL_NAMESPACE", recurring.DefaultNamespace)
+	temporalRecurringTaskQueue := envOr("SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING", recurring.DefaultTaskQueue)
 	vmOrchestratorSocket := envOr("SANDBOX_VM_ORCHESTRATOR_SOCKET", vmorchestrator.DefaultSocketPath)
 	githubAppEnabled := envBool("SANDBOX_GITHUB_APP_ENABLED", false)
 	githubAppID := envInt64("SANDBOX_GITHUB_APP_ID", 0)
@@ -253,6 +262,14 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("governance spiffe client: %w", err)
 	}
+	temporalClient, err := sdkclient.NewWorkflowClient(sdkclient.Config{
+		HostPort: temporalFrontendAddress,
+		ServerID: temporalServerSPIFFEID,
+	}, temporalNamespace, spiffeSource, "sandbox-rental-service-temporal-sdk")
+	if err != nil {
+		return fmt.Errorf("sandbox-rental temporal client: %w", err)
+	}
+	defer temporalClient.Close()
 
 	// --- job service ---
 
@@ -288,6 +305,16 @@ func run() error {
 	}
 	jobService.GitHubRunner = githubRunner
 	sandboxapi.ConfigureAuditSink(governanceAuditURL, governanceAuditClient)
+	recurringService, err := recurring.NewService(recurring.Config{
+		PGX:            pgxPool,
+		TemporalClient: temporalClient,
+		Namespace:      temporalNamespace,
+		TaskQueue:      temporalRecurringTaskQueue,
+		Logger:         logger,
+	})
+	if err != nil {
+		return fmt.Errorf("create recurring service: %w", err)
+	}
 
 	schedulerRuntime, err := scheduler.NewRuntime(pgxPool, scheduler.Config{
 		Logger:              logger,
@@ -316,7 +343,7 @@ func run() error {
 
 	rootMux := http.NewServeMux()
 	privateMux := http.NewServeMux()
-	sandboxapi.NewAPI(privateMux, "1.0.0", listenAddr, jobService, billingClient, sandboxapi.PublicAPIConfig{
+	sandboxapi.NewAPI(privateMux, "1.0.0", listenAddr, jobService, recurringService, billingClient, sandboxapi.PublicAPIConfig{
 		BillingReturnOrigins: billingReturnOrigins,
 		PublicBaseURL:        publicBaseURL,
 	})

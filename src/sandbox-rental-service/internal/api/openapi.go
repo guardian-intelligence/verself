@@ -9,6 +9,7 @@ import (
 	"github.com/forge-metal/apiwire"
 	billingclient "github.com/forge-metal/billing-service/client"
 	"github.com/forge-metal/sandbox-rental-service/internal/jobs"
+	"github.com/forge-metal/sandbox-rental-service/internal/recurring"
 )
 
 type PublicAPIConfig struct {
@@ -16,22 +17,22 @@ type PublicAPIConfig struct {
 	PublicBaseURL        string
 }
 
-func NewAPI(mux *http.ServeMux, version, listenAddr string, svc *jobs.Service, billing *billingclient.ServiceClient, publicConfig PublicAPIConfig) huma.API {
+func NewAPI(mux *http.ServeMux, version, listenAddr string, svc *jobs.Service, recurringSvc *recurring.Service, billing *billingclient.ServiceClient, publicConfig PublicAPIConfig) huma.API {
 	config := huma.DefaultConfig("Sandbox Rental Service", version)
 	config.OpenAPI.Servers = []*huma.Server{{URL: "http://" + listenAddr}}
 	api := humago.New(mux, config)
 	applyPublicAPISecurityScheme(api)
-	RegisterRoutes(api, svc, billing, publicConfig)
+	RegisterRoutes(api, svc, recurringSvc, billing, publicConfig)
 	apiwire.ApplyOpenAPIWireDefaults(api)
 	return api
 }
 
 func OpenAPIDowngradeYAML(version, listenAddr string) ([]byte, error) {
-	api := NewAPI(http.NewServeMux(), version, listenAddr, nil, nil, PublicAPIConfig{})
+	api := NewAPI(http.NewServeMux(), version, listenAddr, nil, nil, nil, PublicAPIConfig{})
 	return api.OpenAPI().DowngradeYAML()
 }
 
 func OpenAPIYAML(version, listenAddr string) ([]byte, error) {
-	api := NewAPI(http.NewServeMux(), version, listenAddr, nil, nil, PublicAPIConfig{})
+	api := NewAPI(http.NewServeMux(), version, listenAddr, nil, nil, nil, PublicAPIConfig{})
 	return api.OpenAPI().YAML()
 }
