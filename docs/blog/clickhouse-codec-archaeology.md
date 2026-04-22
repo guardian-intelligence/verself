@@ -83,7 +83,7 @@ The real surprise was this: switching from `DateTime64(9)` (nanosecond) to `Date
 
 At nanosecond precision, the 1-second deltas are ~1,000,000,000 — a 30-bit value. After Delta(8), each Int64 still has meaningful data in 4 of 8 bytes. At millisecond precision, the deltas are ~1,000 — a 10-bit value. Six of every eight bytes are zeros. ZSTD compresses zero runs for free.
 
-Our hostmetrics scraper runs at 1-second intervals. There is exactly zero information content in the nanosecond digits. We truncated to milliseconds and nothing broke — the OTel exporter is write-only, HyperDX dashboards aggregate at second granularity, and different scrape cycles are always distinguishable at millisecond resolution.
+Our hostmetrics scraper runs at 1-second intervals. There is exactly zero information content in the nanosecond digits. We truncated to milliseconds and nothing broke — the OTel exporter is write-only, dashboards aggregate at second granularity, and different scrape cycles are always distinguishable at millisecond resolution.
 
 ## The Final Numbers
 
