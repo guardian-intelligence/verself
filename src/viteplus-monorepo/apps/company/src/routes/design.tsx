@@ -32,7 +32,16 @@ function DesignPage() {
         minHeight: "100vh",
       }}
     >
-      <div className="mx-auto w-full max-w-7xl px-4 py-10 md:px-6 md:py-14">
+      {/*
+       * /design gets its own max-width envelope — wider than the rest of the
+       * site's `max-w-7xl` (1280 px) so the per-treatment rules row can
+       * actually deploy its two-column grammar at very wide viewports
+       * (≥ 1520 px). The company-site marketing routes stay at 7xl; this
+       * expanded container is scoped to the brand-system page because the
+       * mark specimen + type ladder pair is the only place we benefit from
+       * the extra horizontal real estate.
+       */}
+      <div className="mx-auto w-full max-w-[96rem] px-4 py-10 md:px-6 md:py-14">
         <div className="flex flex-col gap-6 md:flex-row md:items-start md:gap-12">
           <DesignRail />
           <div className="min-w-0 flex-1">
@@ -68,9 +77,9 @@ function DesignHeader() {
       <p className="max-w-3xl text-base leading-relaxed" style={{ color: "var(--muted-strong)" }}>
         The wings are always <b>Argent</b> (#FFFFFF); three SIL-Open-Font-Licensed families —
         Fraunces for voice, Geist for work, Geist Mono for the machine — carry the type. Every
-        section below is one of four treatments the firm ships in — <b>Company</b>, <b>Workshop</b>,
-        <b>Newsroom</b>, <b>Letters</b> — each declaring its own palette, typography, and mark
-        usage, plus the two cross-treatment rules in <i>Applied</i>.
+        section below is one of four treatments the firm ships in — <b>Company</b>,{" "}
+        <b>Workshop</b>, <b>Newsroom</b>, <b>Letters</b> — each declaring its own palette,
+        typography, and mark usage, plus the two cross-treatment rules in <i>Applied</i>.
       </p>
     </header>
   );
