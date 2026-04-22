@@ -12,7 +12,7 @@ export const Route = createRootRoute({
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { name: "theme-color", content: "#0E0E0E" },
-      { property: "og:site_name", content: "Guardian Intelligence" },
+      { property: "og:site_name", content: "Guardian" },
       ...deployMetaTags(),
     ],
     links: [
@@ -20,6 +20,7 @@ export const Route = createRootRoute({
       { rel: "alternate icon", type: "image/x-icon", href: "/favicon.ico" },
       { rel: "apple-touch-icon", sizes: "180x180", href: "/apple-touch-icon.png" },
       { rel: "manifest", href: "/site.webmanifest" },
+      { rel: "sitemap", type: "application/xml", href: "/sitemap.xml" },
       {
         rel: "preload",
         href: "/fonts/Fraunces-Variable.woff2",
@@ -56,6 +57,25 @@ function RootDocument({ children }: { children: ReactNode }) {
         className="text-foreground font-sans antialiased"
         style={{ background: "var(--color-iron)", color: "var(--color-type-iron)" }}
       >
+        <a
+          href="#main"
+          className="sr-only-focusable"
+          style={{
+            position: "fixed",
+            top: "0.75rem",
+            left: "0.75rem",
+            zIndex: 50,
+            padding: "0.5rem 0.75rem",
+            background: "var(--color-flare)",
+            color: "var(--color-ink)",
+            fontFamily: "'Geist', sans-serif",
+            fontWeight: 500,
+            fontSize: "13px",
+            borderRadius: "4px",
+          }}
+        >
+          Skip to main content
+        </a>
         <div className="flex min-h-svh flex-col">
           <TopBar />
           <main id="main" className="flex-1">
@@ -82,11 +102,11 @@ function TopBar() {
       <div className="mx-auto flex h-[var(--header-h)] w-full max-w-7xl items-center px-4 md:px-6">
         <Link
           to="/"
-          aria-label="Guardian Intelligence — home"
+          aria-label="Guardian — home"
           className="inline-flex items-center"
           style={{ color: "var(--color-type-iron)" }}
         >
-          <Lockup size="sm" wordmark="Guardian Intelligence" title="Guardian Intelligence" />
+          <Lockup size="sm" title="Guardian" />
         </Link>
       </div>
     </header>
@@ -132,7 +152,7 @@ function SiteFooter() {
           fontSize: "11px",
           letterSpacing: "0.12em",
           textTransform: "uppercase",
-          color: "rgba(245,245,245,0.4)",
+          color: "var(--muted-faint)",
         }}
       >
         © 2026 Guardian Intelligence · Seattle, Washington
@@ -146,7 +166,7 @@ function FooterColumn({ heading, children }: { heading: string; children: ReactN
     <div className="flex flex-col gap-3">
       <p
         className="font-mono text-[10px] font-medium uppercase tracking-[0.18em]"
-        style={{ color: "rgba(245,245,245,0.4)" }}
+        style={{ color: "var(--muted-faint)" }}
       >
         {heading}
       </p>
@@ -161,7 +181,7 @@ function FooterLink({ to, children }: { to: string; children: ReactNode }) {
       <Link
         to={to}
         className="transition-colors hover:underline hover:underline-offset-4"
-        style={{ color: "rgba(245,245,245,0.72)" }}
+        style={{ color: "var(--muted)" }}
       >
         {children}
       </Link>
@@ -175,7 +195,7 @@ function FooterExternal({ href, children }: { href: string; children: ReactNode 
       <a
         href={href}
         className="transition-colors hover:underline hover:underline-offset-4"
-        style={{ color: "rgba(245,245,245,0.72)" }}
+        style={{ color: "var(--muted)" }}
       >
         {children}
       </a>

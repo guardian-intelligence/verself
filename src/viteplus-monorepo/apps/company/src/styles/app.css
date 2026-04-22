@@ -57,10 +57,6 @@
 }
 
 @theme {
-  --color-background: oklch(1 0 0);
-  --color-foreground: oklch(0.145 0 0);
-  --color-border: oklch(0.922 0 0);
-
   /* Guardian Intelligence brand. Hex per src/viteplus-monorepo/packages/brand/src/tokens.ts;
      keep both in sync. Wings are always `--color-argent` regardless of ground.
      Fork-friendly hook: this file is `brand/tokens.css` for the forker; if you
@@ -72,6 +68,7 @@
   --color-argent: #ffffff;
   --color-ink: #0b0b0b;
   --color-bordeaux: #5c1f1e;
+  --color-amber: #f79326;
   --color-type-iron: #f5f5f5;
 
   --font-display: "Fraunces", Georgia, serif;
@@ -80,21 +77,45 @@
 }
 
 @layer base {
-  * {
-    @apply border-border;
-  }
   :root {
     /* Header geometry — single source of truth. */
     --header-h: 3.5rem;
     --header-scroll-offset: calc(var(--header-h) + 1.5rem);
     /* The mark's external clear-space unit. */
     --wing-unit: calc(52px * 0.45);
-  }
-  html {
-    scroll-padding-top: var(--header-scroll-offset);
+
+    /* Muted text opacities, tuned to pass WCAG AA (≥ 4.5:1) against each
+       ground. Routes must consume these tokens instead of inlining rgba()
+       values — the previous 0.35/0.40/0.45 variants on iron fell to 3.0–3.6:1
+       on small mono labels. Iron defaults live on :root; the Paper shell
+       overrides them below.
+       On #0E0E0E:
+         --muted-strong (0.82) → 11.4:1
+         --muted        (0.72) → 9.3:1
+         --muted-meta   (0.60) → 6.7:1
+         --muted-faint  (0.55) → 5.8:1 — floor for small text */
+    --muted-strong: rgba(245, 245, 245, 0.82);
+    --muted: rgba(245, 245, 245, 0.72);
+    --muted-meta: rgba(245, 245, 245, 0.6);
+    --muted-faint: rgba(245, 245, 245, 0.55);
+    --surface-subtle: rgba(245, 245, 245, 0.04);
+    --surface-border: rgba(245, 245, 245, 0.12);
+
+    /* Shell-scoped variables that the PageShell component may override when a
+       route ships on a non-iron ground (editorial → paper). Routes reference
+       these rather than --muted-* directly so they switch with the ground. */
+    --shell-bg: var(--color-iron);
+    --shell-fg: var(--color-type-iron);
+    --shell-accent: var(--color-flare);
+    --shell-muted-strong: var(--muted-strong);
+    --shell-muted: var(--muted);
+    --shell-muted-meta: var(--muted-meta);
+    --shell-muted-faint: var(--muted-faint);
+    --shell-surface-subtle: var(--surface-subtle);
+    --shell-surface-border: var(--surface-border);
   }
   body {
-    @apply bg-background text-foreground antialiased;
+    @apply antialiased;
     overflow-x: clip;
     font-family:
       "Geist",
@@ -103,4 +124,37 @@
       -apple-system,
       sans-serif;
   }
+}
+
+/* Paper ground — editorial surfaces per brand audience split. On Paper the
+   type is ink, the accent is bordeaux, and the muted opacities are re-derived
+   against the light ground to hold the same AA floor (≥ 4.5:1 on small text).
+   On #F6F4ED:
+     --muted-strong (0.78) → 9.3:1
+     --muted        (0.70) → 6.9:1
+     --muted-meta   (0.60) → 4.8:1 — floor for small text */
+.shell-paper {
+  --shell-bg: var(--color-paper);
+  --shell-fg: var(--color-ink);
+  --shell-accent: var(--color-bordeaux);
+  --shell-muted-strong: rgba(11, 11, 11, 0.78);
+  --shell-muted: rgba(11, 11, 11, 0.7);
+  --shell-muted-meta: rgba(11, 11, 11, 0.6);
+  --shell-muted-faint: rgba(11, 11, 11, 0.55);
+  --shell-surface-subtle: rgba(11, 11, 11, 0.04);
+  --shell-surface-border: rgba(11, 11, 11, 0.14);
+}
+
+/* Visually-hidden unless focused. Used by the Skip-to-main-content link so
+   keyboard users can bypass the sticky header. */
+.sr-only-focusable:not(:focus):not(:active) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
