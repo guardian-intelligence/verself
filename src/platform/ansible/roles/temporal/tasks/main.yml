@@ -17,6 +17,12 @@
   register: temporal_proof_binary
   failed_when: not temporal_proof_binary.stat.exists
 
+- name: Verify temporal-bootstrap binary exists in profile
+  ansible.builtin.stat:
+    path: "{{ fm_bin }}/temporal-bootstrap"
+  register: temporal_bootstrap_binary
+  failed_when: not temporal_bootstrap_binary.stat.exists
+
 - name: Verify temporal-schema binary exists in profile
   ansible.builtin.stat:
     path: "{{ fm_bin }}/temporal-schema"
@@ -426,25 +432,22 @@
     port: "{{ services.temporal.metrics_port }}"
     timeout: 30
 
-- name: Bootstrap Temporal proof namespaces with server identity
+- name: Bootstrap Temporal namespaces with server identity
   become: true
   become_user: "{{ temporal_system_user }}"
   vars:
     ansible_remote_tmp: "{{ temporal_state_dir }}/.ansible/tmp"
   ansible.builtin.command:
     argv:
-      - "{{ fm_bin }}/temporal-proof"
-      - bootstrap
+      - "{{ fm_bin }}/temporal-bootstrap"
   environment:
     HOME: /tmp
     SPIFFE_ENDPOINT_SOCKET: "unix://{{ spire_agent_socket_path }}"
     OTEL_EXPORTER_OTLP_ENDPOINT: "http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}"
     FM_TEMPORAL_FRONTEND_ADDRESS: "{{ services.temporal.host }}:{{ services.temporal.grpc_port }}"
-    FM_TEMPORAL_PROOF_NAMESPACE: "{{ temporal_proof_namespace }}"
     FM_TEMPORAL_SERVER_SPIFFE_ID: "{{ spire_temporal_server_id }}"
-    FM_TEMPORAL_PROOF_GOVERNANCE_URL: "{{ temporal_proof_governance_url }}"
-    FM_TEMPORAL_PROOF_GOVERNANCE_SPIFFE_ID: "{{ spire_governance_service_id }}"
-    FM_TEMPORAL_PROOF_SERVICE_VERSION: "{{ forge_metal_version }}"
+    FM_TEMPORAL_BOOTSTRAP_NAMESPACES: "{{ temporal_bootstrap_namespaces | join(',') }}"
+    FM_TEMPORAL_BOOTSTRAP_NAMESPACE_RETENTION: "{{ temporal_namespace_retention }}"
   changed_when: false
 
 - name: Enable and start temporal-web
