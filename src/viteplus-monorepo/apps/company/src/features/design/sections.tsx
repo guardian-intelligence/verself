@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { Lockup, WingsArgent, WingsChip, WingsEmboss } from "@forge-metal/brand";
 import { DESIGN_SECTIONS } from "~/lib/design-nav";
-import { Section } from "./section-shell";
+import { RulesRow, Section } from "./section-shell";
 import {
   Nameplate,
   SignatureStatusBadge,
@@ -103,13 +103,11 @@ function SectionCompany() {
         }
       />
 
-      {/* Mark specimen. Company is the canonical record treatment, so it
-          hosts the universal size and lockup ladders that all treatments
-          share. The single Iron carrier card here is the Company-specific
-          piece; the size ladder shows how wings hold form from favicon to
-          signage; the lockup ladder governs every pairing of wings +
-          wordmark on the page. */}
-      <div style={{ display: "grid", gap: "16px", marginBottom: "16px" }}>
+      {/* Mark specimen + Type ladder — the "rules" exhibit. At ≥ lg the mark
+          carrier sits left (narrow), the type ladder right (wide). The size
+          and lockup ladders below are supplementary and keep full width so
+          the Guardian lockup can breathe at 96 px. */}
+      <RulesRow>
         <TreatmentMarkCard
           groundVar="var(--color-iron)"
           rows={[
@@ -120,6 +118,99 @@ function SectionCompany() {
         >
           <WingsArgent style={{ width: "64%", height: "auto" }} cropped />
         </TreatmentMarkCard>
+        {/* Type ladder — Company's flavour: the full set from display to
+            badge, because Company is where every typographic register of
+            the firm shows up (landing → mission → body copy → legal meta).
+            Other treatments ship leaner ladders (Workshop drops Fraunces;
+            Newsroom is display-only; Letters rebalances Fraunces as body). */}
+        <TreatmentTypeLadder
+          rows={[
+            {
+              sample: "The application layer is the product.",
+              role: "display · hero",
+              spec: "Fraunces / 64 / 1.02 / -25 · opsz 144 · SOFT 30",
+              sampleSizePx: 64,
+              sampleStyle: {
+                fontFamily: "'Fraunces', Georgia, serif",
+                fontVariationSettings: '"opsz" 144, "SOFT" 30',
+                fontWeight: 400,
+                fontSize: "64px",
+                lineHeight: 1.02,
+                letterSpacing: "-0.025em",
+              },
+            },
+            {
+              sample: "Toward a million solo-founded companies.",
+              role: "h1 · page",
+              spec: "Fraunces / 48 / 1.05 / -20 · opsz 96 · SOFT 20",
+              sampleSizePx: 48,
+              sampleStyle: {
+                fontFamily: "'Fraunces', Georgia, serif",
+                fontVariationSettings: '"opsz" 96, "SOFT" 20',
+                fontWeight: 400,
+                fontSize: "48px",
+                lineHeight: 1.05,
+                letterSpacing: "-0.02em",
+              },
+            },
+            {
+              sample: "Compute, integrations, and founder tooling.",
+              role: "h2 · section",
+              spec: "Fraunces / 32 / 1.1 / -18 · opsz 72",
+              sampleSizePx: 32,
+              sampleStyle: {
+                fontFamily: "'Fraunces', Georgia, serif",
+                fontVariationSettings: '"opsz" 72',
+                fontWeight: 400,
+                fontSize: "32px",
+                lineHeight: 1.1,
+                letterSpacing: "-0.018em",
+              },
+            },
+            {
+              sample:
+                "Guardian Intelligence is an American applied intelligence firm. We build the compute, the integrations, and the founder tooling that make a one-person billion-ARR company an engineering target rather than a slogan.",
+              role: "body",
+              spec: "Geist / 16 / 1.55 · Regular",
+              sampleSizePx: 16,
+              sampleStyle: {
+                fontFamily: "'Geist', sans-serif",
+                fontWeight: 400,
+                fontSize: "16px",
+                lineHeight: 1.55,
+              },
+            },
+            {
+              sample: "Secondary copy, metadata, form help text, caption.",
+              role: "small · ash",
+              spec: "Geist / 13 / 1.5 · Regular · Ash default",
+              sampleSizePx: 13,
+              sampleStyle: {
+                fontFamily: "'Geist', sans-serif",
+                fontWeight: 400,
+                fontSize: "13px",
+                lineHeight: 1.5,
+                color: "var(--muted)",
+              },
+            },
+            {
+              sample: "Release № 0.4.1 · Shipped 19 Apr 2026",
+              role: "badge / eyebrow",
+              spec: "Geist / 10 / 1 / +180 · Medium · UPPER",
+              sampleSizePx: 10,
+              sampleStyle: {
+                fontFamily: "'Geist', sans-serif",
+                fontWeight: 500,
+                fontSize: "10px",
+                lineHeight: 1,
+                letterSpacing: "0.18em",
+                textTransform: "uppercase",
+              },
+            },
+          ]}
+        />
+      </RulesRow>
+      <div style={{ display: "grid", gap: "16px", marginBottom: "16px" }}>
         <TreatmentSizeLadder />
         <TreatmentLockupLadder
           rows={[
@@ -135,98 +226,6 @@ function SectionCompany() {
           }
         />
       </div>
-
-      {/* Type ladder — Company's flavour: the full set from display to badge,
-          because Company is where every typographic register of the firm shows
-          up (landing → mission → body copy → legal meta). Other treatments
-          ship leaner ladders (Workshop drops Fraunces; Newsroom is display-only;
-          Letters rebalances Fraunces as the body family). */}
-      <TreatmentTypeLadder
-        rows={[
-          {
-            sample: "The application layer is the product.",
-            role: "display · hero",
-            spec: "Fraunces / 64 / 1.02 / -25 · opsz 144 · SOFT 30",
-            sampleSizePx: 64,
-            sampleStyle: {
-              fontFamily: "'Fraunces', Georgia, serif",
-              fontVariationSettings: '"opsz" 144, "SOFT" 30',
-              fontWeight: 400,
-              fontSize: "64px",
-              lineHeight: 1.02,
-              letterSpacing: "-0.025em",
-            },
-          },
-          {
-            sample: "Toward a million solo-founded companies.",
-            role: "h1 · page",
-            spec: "Fraunces / 48 / 1.05 / -20 · opsz 96 · SOFT 20",
-            sampleSizePx: 48,
-            sampleStyle: {
-              fontFamily: "'Fraunces', Georgia, serif",
-              fontVariationSettings: '"opsz" 96, "SOFT" 20',
-              fontWeight: 400,
-              fontSize: "48px",
-              lineHeight: 1.05,
-              letterSpacing: "-0.02em",
-            },
-          },
-          {
-            sample: "Compute, integrations, and founder tooling.",
-            role: "h2 · section",
-            spec: "Fraunces / 32 / 1.1 / -18 · opsz 72",
-            sampleSizePx: 32,
-            sampleStyle: {
-              fontFamily: "'Fraunces', Georgia, serif",
-              fontVariationSettings: '"opsz" 72',
-              fontWeight: 400,
-              fontSize: "32px",
-              lineHeight: 1.1,
-              letterSpacing: "-0.018em",
-            },
-          },
-          {
-            sample:
-              "Guardian Intelligence is an American applied intelligence firm. We build the compute, the integrations, and the founder tooling that make a one-person billion-ARR company an engineering target rather than a slogan.",
-            role: "body",
-            spec: "Geist / 16 / 1.55 · Regular",
-            sampleSizePx: 16,
-            sampleStyle: {
-              fontFamily: "'Geist', sans-serif",
-              fontWeight: 400,
-              fontSize: "16px",
-              lineHeight: 1.55,
-            },
-          },
-          {
-            sample: "Secondary copy, metadata, form help text, caption.",
-            role: "small · ash",
-            spec: "Geist / 13 / 1.5 · Regular · Ash default",
-            sampleSizePx: 13,
-            sampleStyle: {
-              fontFamily: "'Geist', sans-serif",
-              fontWeight: 400,
-              fontSize: "13px",
-              lineHeight: 1.5,
-              color: "var(--muted)",
-            },
-          },
-          {
-            sample: "Release № 0.4.1 · Shipped 19 Apr 2026",
-            role: "badge / eyebrow",
-            spec: "Geist / 10 / 1 / +180 · Medium · UPPER",
-            sampleSizePx: 10,
-            sampleStyle: {
-              fontFamily: "'Geist', sans-serif",
-              fontWeight: 500,
-              fontSize: "10px",
-              lineHeight: 1,
-              letterSpacing: "0.18em",
-              textTransform: "uppercase",
-            },
-          },
-        ]}
-      />
 
       <Surface
         ground="iron"
@@ -260,6 +259,7 @@ function SectionCompany() {
       </Surface>
       <div style={{ marginTop: "24px" }}>
         <TreatmentSignature
+          variant="company"
           eyebrow="Email signature · Company"
           markVariant="chip"
           identity={{ name: "Founder Name", role: "Founder · Guardian Intelligence" }}
@@ -328,11 +328,11 @@ function SectionWorkshop() {
         }
       />
 
-      {/* Mark specimen — Iron carrier with wings only (no wordmark ever on
-          Workshop surfaces) and a wings-only size ladder culminating at the
-          22 px chrome anchor. Workshop has no lockup ladder because Workshop
-          never locks up with a wordmark. */}
-      <div style={{ display: "grid", gap: "16px", marginBottom: "16px" }}>
+      {/* Mark specimen + Type ladder — Workshop's "rules" pair. Mark carrier
+          left (wings only — no wordmark ever), type ladder right. The
+          wings-only size ladder stays full-width below so it can show the
+          full 64 → 16 descent without cramping. */}
+      <RulesRow>
         <TreatmentMarkCard
           groundVar="var(--color-iron)"
           rows={[
@@ -343,23 +343,7 @@ function SectionWorkshop() {
         >
           <WingsArgent style={{ width: "56%", height: "auto" }} cropped />
         </TreatmentMarkCard>
-        <TreatmentWingsOnlyLadder
-          note={
-            <>
-              22 px is the size the live console chrome ships. Below 22 px the glyph starts to lose
-              its lower-wing tip at typical display DPI; above 64 px the wings feel like a logo
-              looking for a sentence.
-            </>
-          }
-        />
-      </div>
-
-      {/* Type ladder — Workshop's flavour: no Fraunces anywhere. H3 is the
-          biggest type a console ever sets; body + small + mono carry the rest.
-          The spec column notes Geist & Geist Mono against their weights so an
-          operator porting styles into a new workshop surface has the recipe
-          immediately. */}
-      <TreatmentTypeLadder
+        <TreatmentTypeLadder
         rows={[
           {
             sample: "Sandbox execution",
@@ -437,6 +421,18 @@ function SectionWorkshop() {
           </>
         }
       />
+      </RulesRow>
+      <div style={{ marginBottom: "16px" }}>
+        <TreatmentWingsOnlyLadder
+          note={
+            <>
+              22 px is the size the live console chrome ships. Below 22 px the glyph starts to lose
+              its lower-wing tip at typical display DPI; above 64 px the wings feel like a logo
+              looking for a sentence.
+            </>
+          }
+        />
+      </div>
       <div
         style={{
           background: "var(--color-iron)",
@@ -789,6 +785,7 @@ function SectionWorkshop() {
       </div>
       <div style={{ marginTop: "24px" }}>
         <TreatmentSignature
+          variant="workshop"
           eyebrow="Email signature · Workshop"
           markVariant="wings-only"
           markAside="Platform · Engineering"
@@ -798,7 +795,7 @@ function SectionWorkshop() {
           }}
           accent={{ hex: "#F79326", style: "none" }}
           meta={
-            <SignatureStatusBadge accentHex="#F79326">
+            <SignatureStatusBadge accentHex="#F79326" onDark>
               incident response · pageable
             </SignatureStatusBadge>
           }
@@ -860,11 +857,12 @@ function SectionNewsroom() {
         }
       />
 
-      {/* Mark specimen — Flare carrier with the circular ink emboss (the only
-          variant that works over Flare without a legibility fight), plus a
-          lockup ladder in the emboss variant. Newsroom never ships wings
-          alone over Flare; the ink medallion is the treatment's signature. */}
-      <div style={{ display: "grid", gap: "16px", marginBottom: "16px" }}>
+      {/* Mark specimen + Type ladder — Newsroom's "rules" pair. The emboss
+          mark (wings-in-ink-medallion) is the only variant that reads over
+          Flare without a legibility fight; the display-only type ladder
+          sits right. The full lockup ladder renders full-width below so
+          the 96 px emboss mark can breathe. */}
+      <RulesRow>
         <TreatmentMarkCard
           groundVar="var(--color-flare)"
           rows={[
@@ -876,11 +874,73 @@ function SectionNewsroom() {
         >
           <WingsEmboss style={{ width: "58%", height: "auto" }} />
         </TreatmentMarkCard>
+        {/* Newsroom type is display-only. No body copy — Flare is too loud
+            a ground to read paragraphs on. */}
+        <TreatmentTypeLadder
+          rows={[
+            {
+              sample: "We build where software meets the real world.",
+              role: "display · hero",
+              spec: "Fraunces / 64 / 1.00 / -28 · opsz 144 · SOFT 30",
+              sampleSizePx: 64,
+              sampleStyle: {
+                fontFamily: "'Fraunces', Georgia, serif",
+                fontVariationSettings: '"opsz" 144, "SOFT" 30',
+                fontWeight: 400,
+                fontSize: "64px",
+                lineHeight: 1.0,
+                letterSpacing: "-0.028em",
+                color: "var(--color-type-iron)",
+              },
+            },
+            {
+              sample: "Applied intelligence, built in Seattle.",
+              role: "h1 · poster",
+              spec: "Fraunces / 40 / 1.05 / -20 · opsz 96",
+              sampleSizePx: 40,
+              sampleStyle: {
+                fontFamily: "'Fraunces', Georgia, serif",
+                fontVariationSettings: '"opsz" 96, "SOFT" 20',
+                fontWeight: 400,
+                fontSize: "40px",
+                lineHeight: 1.05,
+                letterSpacing: "-0.02em",
+              },
+            },
+            {
+              sample: "SEATTLE · EST. 2026",
+              role: "kicker · upper",
+              spec: "Geist Mono / 11 / 1 / +180 · 600 · UPPER",
+              sampleSizePx: 11,
+              sampleStyle: {
+                fontFamily: "'Geist Mono', ui-monospace, monospace",
+                fontWeight: 600,
+                fontVariationSettings: '"wght" 600',
+                fontSize: "11px",
+                lineHeight: 1,
+                letterSpacing: "0.18em",
+                textTransform: "uppercase",
+                color: "var(--muted)",
+              },
+            },
+          ]}
+          caption={
+            <>
+              Newsroom type stops at display and its kicker. If a surface needs body prose, it
+              belongs under Letters or Company; Flare is too loud a ground to read paragraphs on.
+            </>
+          }
+        />
+      </RulesRow>
+      <div style={{ marginBottom: "16px" }}>
+        {/* Lockup ladder at full width — the 96 px emboss mark needs the
+            horizontal room and meta column readability on Flare is best
+            when the card spans the full content width. */}
         <TreatmentLockupLadder
           groundVar="var(--color-flare)"
-          // Meta column has to fight Flare's high luminance; switch to ink-muted
-          // (Stone) for meta/footer and iron for the gap accent so "14.6 px"
-          // doesn't go Flare-on-Flare.
+          // Meta column has to fight Flare's high luminance; switch to
+          // ink-muted (Stone) for meta/footer and iron for the gap accent
+          // so "14.6 px" doesn't go Flare-on-Flare.
           accentColor="var(--color-iron)"
           metaColor="rgba(11,11,11,0.72)"
           footerColor="rgba(11,11,11,0.55)"
@@ -920,65 +980,6 @@ function SectionNewsroom() {
         />
       </div>
 
-      {/* Type ladder — Newsroom's flavour: display only. There is no body
-          copy on a Newsroom surface; if a reader needs paragraphs, the
-          surface belongs under Letters, not Newsroom. */}
-      <TreatmentTypeLadder
-        rows={[
-          {
-            sample: "We build where software meets the real world.",
-            role: "display · hero",
-            spec: "Fraunces / 64 / 1.00 / -28 · opsz 144 · SOFT 30",
-            sampleSizePx: 64,
-            sampleStyle: {
-              fontFamily: "'Fraunces', Georgia, serif",
-              fontVariationSettings: '"opsz" 144, "SOFT" 30',
-              fontWeight: 400,
-              fontSize: "64px",
-              lineHeight: 1.0,
-              letterSpacing: "-0.028em",
-              color: "var(--color-type-iron)",
-            },
-          },
-          {
-            sample: "Applied intelligence, built in Seattle.",
-            role: "h1 · poster",
-            spec: "Fraunces / 40 / 1.05 / -20 · opsz 96",
-            sampleSizePx: 40,
-            sampleStyle: {
-              fontFamily: "'Fraunces', Georgia, serif",
-              fontVariationSettings: '"opsz" 96, "SOFT" 20',
-              fontWeight: 400,
-              fontSize: "40px",
-              lineHeight: 1.05,
-              letterSpacing: "-0.02em",
-            },
-          },
-          {
-            sample: "SEATTLE · EST. 2026",
-            role: "kicker · upper",
-            spec: "Geist Mono / 11 / 1 / +180 · 600 · UPPER",
-            sampleSizePx: 11,
-            sampleStyle: {
-              fontFamily: "'Geist Mono', ui-monospace, monospace",
-              fontWeight: 600,
-              fontVariationSettings: '"wght" 600',
-              fontSize: "11px",
-              lineHeight: 1,
-              letterSpacing: "0.18em",
-              textTransform: "uppercase",
-              color: "var(--muted)",
-            },
-          },
-        ]}
-        caption={
-          <>
-            Newsroom type stops at display and its kicker. If a surface needs body prose, it belongs
-            under Letters or Company; Flare is too loud a ground to read paragraphs on.
-          </>
-        }
-      />
-
       <Surface
         ground="flare"
         style={{ padding: "clamp(32px, 5vw, 72px) clamp(20px, 4vw, 56px)", borderRadius: "16px" }}
@@ -1013,18 +1014,19 @@ function SectionNewsroom() {
         </div>
       </Surface>
       <div style={{ marginTop: "24px" }}>
+        {/* Newsroom's card ground is Flare. The treatment's identity is in
+            the ground, so the accent marker is dropped — no dot, no rule.
+            Mark switches to the black emboss variant (wings-on-ink medallion)
+            because Argent-on-Flare fails luminance contrast. */}
         <TreatmentSignature
+          variant="newsroom"
           eyebrow="Email signature · Newsroom"
-          markVariant="chip"
+          markVariant="emboss"
           identity={{
             name: "Press Officer Name",
             role: "Communications · Guardian Intelligence",
           }}
-          // Flare as a 2 px hairline on a white signature card carries almost
-          // no luminance contrast (see prior review); a Flare dot with a
-          // short NEWSROOM label reads louder and keeps the "acid green
-          // belongs to Newsroom" rule visible on paper.
-          accent={{ hex: "#CCFF00", style: "dot", label: "Newsroom" }}
+          accent={{ hex: "#0b0b0b", style: "none" }}
           contact={{
             email: "press@guardianintelligence.org",
             secondary: "guardianintelligence.org/press",
@@ -1088,11 +1090,11 @@ function SectionLetters() {
         }
       />
 
-      {/* Mark specimen — Paper carrier with the iron chip, plus a masthead
-          ladder that demonstrates the thin-ruled nameplate at three card
-          widths. The nameplate replaces the old size="md" Lockup masthead
-          that was competing with the article H1 below. */}
-      <div style={{ display: "grid", gap: "16px", marginBottom: "16px" }}>
+      {/* Mark specimen + Type ladder — Letters' "rules" pair. The Paper
+          carrier with iron chip sits left; the Fraunces-heavy type ladder
+          sits right. The masthead ladder rides full width below — the
+          720 px nameplate specimen needs the horizontal room. */}
+      <RulesRow>
         <TreatmentMarkCard
           groundVar="var(--color-paper)"
           rows={[
@@ -1104,27 +1106,9 @@ function SectionLetters() {
         >
           <WingsChip style={{ width: "58%", height: "auto" }} />
         </TreatmentMarkCard>
-        <TreatmentMastheadLadder
-          rows={[
-            { widthPx: 720, issue: "№ 3", date: "19 Apr 2026", label: "ceiling" },
-            { widthPx: 480, issue: "№ 3", date: "19 Apr 2026", label: "proportional" },
-            { widthPx: 320, issue: "№ 3", date: "19 Apr 2026", label: "floor" },
-          ]}
-          footer={
-            <>
-              The nameplate is a volume masthead, not a wordmark lockup. Wings + tracked uppercase
-              Geist + Bordeaux rule. The article H1 below it does the heading work; the nameplate
-              identifies the publication, not the article.
-            </>
-          }
-        />
-      </div>
-
-      {/* Type ladder — Letters' flavour. Fraunces carries both the H1 and
-          the body (this is the one treatment where Fraunces sets body prose,
-          because Letters is for reading). Geist only handles bylines and
-          metadata. */}
-      <TreatmentTypeLadder
+        {/* Letters is the only treatment where Fraunces sets body prose;
+            Geist only handles bylines and metadata. */}
+        <TreatmentTypeLadder
         rows={[
           {
             sample: "Applied intelligence is not an adjective.",
@@ -1198,13 +1182,32 @@ function SectionLetters() {
             },
           },
         ]}
-        caption={
-          <>
-            Letters is the only treatment where Fraunces sets body prose. If a surface wants to use
-            Fraunces for body outside Letters, it probably wants to be a Letter.
-          </>
-        }
-      />
+          caption={
+            <>
+              Letters is the only treatment where Fraunces sets body prose. If a surface wants to
+              use Fraunces for body outside Letters, it probably wants to be a Letter.
+            </>
+          }
+        />
+      </RulesRow>
+      <div style={{ marginBottom: "16px" }}>
+        {/* Masthead ladder at full width — the 720 px nameplate specimen
+            needs the horizontal room to demonstrate the ceiling variant. */}
+        <TreatmentMastheadLadder
+          rows={[
+            { widthPx: 720, issue: "№ 3", date: "19 Apr 2026", label: "ceiling" },
+            { widthPx: 480, issue: "№ 3", date: "19 Apr 2026", label: "proportional" },
+            { widthPx: 320, issue: "№ 3", date: "19 Apr 2026", label: "floor" },
+          ]}
+          footer={
+            <>
+              The nameplate is a volume masthead, not a wordmark lockup. Wings + tracked uppercase
+              Geist + Bordeaux rule. The article H1 below it does the heading work; the nameplate
+              identifies the publication, not the article.
+            </>
+          }
+        />
+      </div>
 
       <Surface
         ground="paper"
@@ -1217,21 +1220,33 @@ function SectionLetters() {
         <div style={{ margin: "0 0 28px" }}>
           <Nameplate />
         </div>
+        {/* Article metadata whispers above the headline. Earlier iterations
+            set this at 12 px / 500 with a 24 px flex gap between three spans —
+            without explicit separators the three tokens read as one long
+            clump ("№ 3  19 APRIL 2026  8 MIN READ"), and the size competed
+            with the H1 below for visual weight. 11 px Geist / 0.16 em
+            tracking / Stone 0.55 pushes the row below the H1's perceptual
+            threshold so the reader's eye starts at the headline, not the
+            meta. Middot separators make the tripartite reading semantically
+            legible. */}
         <div
           style={{
             fontFamily: "'Geist', sans-serif",
-            fontSize: "12px",
-            letterSpacing: "0.24em",
+            fontSize: "11px",
+            fontWeight: 500,
+            letterSpacing: "0.16em",
             textTransform: "uppercase",
-            color: "var(--color-ink)",
-            opacity: 0.6,
-            margin: "0 0 20px",
+            color: "rgba(11,11,11,0.55)",
+            margin: "0 0 18px",
             display: "flex",
-            gap: "24px",
+            gap: "10px",
+            alignItems: "center",
           }}
         >
-          <span>№ 3</span>
+          <span>№&nbsp;3</span>
+          <span aria-hidden="true">·</span>
           <span>19 April 2026</span>
+          <span aria-hidden="true">·</span>
           <span>8 min read</span>
         </div>
         <h1
@@ -1341,28 +1356,24 @@ function SectionLetters() {
         </p>
       </Surface>
       <div style={{ marginTop: "24px" }}>
+        {/* The Letters signature drops the "Filed from Seattle, WA · Letter № 3"
+            meta row. Both facts already appear in the article body above it —
+            the byline carries the city and the eyebrow carries the issue
+            number. Restating them on the signature reads as paper-journal
+            affectation on an email sign-off; the signature's job is just
+            identity + reply route. */}
         <TreatmentSignature
+          variant="letters"
           eyebrow="Email signature · Letters"
           markVariant="chip"
           identity={{
             name: "Founder Name",
             role: "Founder · Guardian Intelligence",
           }}
-          accent={{ hex: "#5C1F1E", style: "hairline", heightPx: 3 }}
-          meta={
-            <span
-              style={{
-                fontFamily: "'Geist', sans-serif",
-                fontSize: "12px",
-                letterSpacing: "0.14em",
-                textTransform: "uppercase",
-                color: "rgba(11,11,11,0.6)",
-              }}
-            >
-              Filed from Seattle, WA · Letter № 3
-            </span>
-          }
-          paperGround
+          // Bordeaux rule on the card's left edge — the same editorial gesture
+          // the pull-quote above the signature uses. Signature inherits the
+          // grammar of the article it accompanies.
+          accent={{ hex: "var(--color-bordeaux)", style: "rule-left", heightPx: 3 }}
           contact={{
             email: "letters@guardianintelligence.org",
             secondary: "guardianintelligence.org/letters",
@@ -1642,7 +1653,19 @@ const heroStyle = `
     color: var(--color-ink);
     border-color: var(--color-flare);
   }
-  .hero-btn.ghost { border-color: transparent; opacity: 0.8; }
+  /* Ghost (secondary) actions keep the 1 px hairline on the treatment's
+     ink — this is the unified secondary grammar across Company/Workshop/
+     Newsroom heros. Earlier the ghost variant set border-color to
+     transparent, which collapsed the button into unstyled padded text and
+     read as unclickable. The hairline at full opacity makes the control
+     obviously interactive while the transparent fill keeps weight below
+     the primary. */
+  .hero-btn.ghost {
+    background: transparent;
+    border-color: currentColor;
+    opacity: 0.75;
+  }
+  .hero-btn.ghost:hover { opacity: 1; }
 `;
 
 // ============================================================================
