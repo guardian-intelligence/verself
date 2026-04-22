@@ -646,38 +646,6 @@ const SIG_EYEBROW: CSSProperties = {
   marginBottom: "10px",
 };
 
-function NewsroomSignature() {
-  return (
-    <div>
-      <div style={SIG_EYEBROW}>Email signature · Newsroom</div>
-      <div style={SIG_CARD}>
-        <div style={{ marginBottom: "14px" }}>
-          <Lockup size="sm" variant="chip" wordmarkColor="var(--color-ink)" />
-        </div>
-        <div style={{ fontWeight: 600, fontSize: "15px" }}>Press Officer Name</div>
-        <div style={{ color: "#5d5a52", marginBottom: "12px" }}>
-          Communications · Guardian Intelligence
-        </div>
-        {/* Flare hairline — the Newsroom's own colour, on the paper canvas an
-            external recipient actually sees. */}
-        <div
-          style={{
-            height: "2px",
-            width: "44px",
-            background: "var(--color-flare)",
-            margin: "8px 0 12px",
-          }}
-        />
-        <div style={{ display: "flex", gap: "12px", color: "#5d5a52", fontSize: "12px", flexWrap: "wrap" }}>
-          <span>press@guardianintelligence.org</span>
-          <span aria-hidden>·</span>
-          <span>guardianintelligence.org/press</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function LettersSignature() {
   return (
     <div>
@@ -1471,13 +1439,28 @@ function SectionNewsroom() {
         </>
       }
     >
-      <LegacyPalette
-        swatches={[
-          { name: "Flare", hex: "#CCFF00", pantone: "Pantone 389 C", role: "Ground" },
-          { name: "Ink", hex: "#0B0B0B", role: "Type on Flare · ink emboss behind wings" },
-          { name: "Argent", hex: "#FFFFFF", role: "Wings (inside circular ink emboss)" },
-          { name: "Iron", hex: "#0E0E0E", role: "Inverted primary action · ink-dark button" },
-        ]}
+      <TreatmentPalette
+        roles={{
+          ground: {
+            name: "Flare",
+            hex: "#CCFF00",
+            pantone: "Pantone 389 C",
+            note: "The broadcast canvas.",
+          },
+          accent: {
+            name: "Iron",
+            hex: "#0E0E0E",
+            note: "Inverted primary action · ink-dark button.",
+          },
+          mark: {
+            name: "Argent",
+            hex: "#FFFFFF",
+            note: "Wings inside a circular ink emboss.",
+          },
+          // Newsroom genuinely has no muted register — it is broadcast, not
+          // reading. The palette's fourth column renders a "not used" cell
+          // so the absence is visible.
+        }}
         rule={
           <>
             One action, loud and single; everything else reads in ink so the ground does the
@@ -1485,6 +1468,126 @@ function SectionNewsroom() {
           </>
         }
       />
+
+      {/* Mark specimen — Flare carrier with the circular ink emboss (the only
+          variant that works over Flare without a legibility fight), plus a
+          lockup ladder in the emboss variant. Newsroom never ships wings
+          alone over Flare; the ink medallion is the treatment's signature. */}
+      <div style={{ display: "grid", gap: "16px", marginBottom: "16px" }}>
+        <TreatmentMarkCard
+          groundVar="var(--color-flare)"
+          rows={[
+            { label: "Argent · Flare · emboss", value: "Newsroom", emphasise: "name" },
+            { label: "ground", value: "#CCFF00", emphasise: "hex" },
+            { label: "emboss", value: "#0B0B0B", emphasise: "hex" },
+            { label: "wings", value: "#FFFFFF", emphasise: "hex" },
+          ]}
+        >
+          <WingsEmboss style={{ width: "58%", height: "auto" }} />
+        </TreatmentMarkCard>
+        <TreatmentLockupLadder
+          groundVar="var(--color-flare)"
+          // Meta column has to fight Flare's high luminance; switch to ink-muted
+          // (Stone) for meta/footer and iron for the gap accent so "14.6 px"
+          // doesn't go Flare-on-Flare.
+          accentColor="var(--color-iron)"
+          metaColor="rgba(11,11,11,0.72)"
+          footerColor="rgba(11,11,11,0.55)"
+          borderColor="rgba(11,11,11,0.18)"
+          rows={[
+            {
+              size: "lg",
+              variant: "emboss",
+              wordmarkColor: "var(--color-ink)",
+              markPx: 96,
+              gap: "18 px",
+              role: "ceiling",
+            },
+            {
+              size: "md",
+              variant: "emboss",
+              wordmarkColor: "var(--color-ink)",
+              markPx: 52,
+              gap: "14.6 px",
+              role: "proportional",
+            },
+            {
+              size: "sm",
+              variant: "emboss",
+              wordmarkColor: "var(--color-ink)",
+              markPx: 28,
+              gap: "8 px",
+              role: "floor",
+            },
+          ]}
+          footer={
+            <>
+              On Flare the wordmark sets in Ink, never Argent. The medallion carries the wings
+              so the argent never reads directly against the ground.
+            </>
+          }
+        />
+      </div>
+
+      {/* Type ladder — Newsroom's flavour: display only. There is no body
+          copy on a Newsroom surface; if a reader needs paragraphs, the
+          surface belongs under Letters, not Newsroom. */}
+      <TreatmentTypeLadder
+        rows={[
+          {
+            sample: "We build where software meets the real world.",
+            role: "display · hero",
+            spec: "Fraunces / 64 / 1.00 / -28 · opsz 144 · SOFT 30",
+            sampleSizePx: 64,
+            sampleStyle: {
+              fontFamily: "'Fraunces', Georgia, serif",
+              fontVariationSettings: '"opsz" 144, "SOFT" 30',
+              fontWeight: 400,
+              fontSize: "64px",
+              lineHeight: 1.0,
+              letterSpacing: "-0.028em",
+              color: "var(--color-type-iron)",
+            },
+          },
+          {
+            sample: "Applied intelligence, built in Seattle.",
+            role: "h1 · poster",
+            spec: "Fraunces / 40 / 1.05 / -20 · opsz 96",
+            sampleSizePx: 40,
+            sampleStyle: {
+              fontFamily: "'Fraunces', Georgia, serif",
+              fontVariationSettings: '"opsz" 96, "SOFT" 20',
+              fontWeight: 400,
+              fontSize: "40px",
+              lineHeight: 1.05,
+              letterSpacing: "-0.02em",
+            },
+          },
+          {
+            sample: "SEATTLE · EST. 2026",
+            role: "kicker · upper",
+            spec: "Geist Mono / 11 / 1 / +180 · 600 · UPPER",
+            sampleSizePx: 11,
+            sampleStyle: {
+              fontFamily: "'Geist Mono', ui-monospace, monospace",
+              fontWeight: 600,
+              fontVariationSettings: '"wght" 600',
+              fontSize: "11px",
+              lineHeight: 1,
+              letterSpacing: "0.18em",
+              textTransform: "uppercase",
+              color: "var(--muted)",
+            },
+          },
+        ]}
+        caption={
+          <>
+            Newsroom type stops at display and its kicker. If a surface needs body prose, it
+            belongs under Letters or Company; Flare is too loud a ground to read paragraphs on.
+          </>
+        }
+      />
+
       <Surface
         ground="flare"
         style={{ padding: "clamp(32px, 5vw, 72px) clamp(20px, 4vw, 56px)", borderRadius: "16px" }}
@@ -1519,7 +1622,23 @@ function SectionNewsroom() {
         </div>
       </Surface>
       <div style={{ marginTop: "24px" }}>
-        <NewsroomSignature />
+        <TreatmentSignature
+          eyebrow="Email signature · Newsroom"
+          markVariant="chip"
+          identity={{
+            name: "Press Officer Name",
+            role: "Communications · Guardian Intelligence",
+          }}
+          // Flare as a 2 px hairline on a white signature card carries almost
+          // no luminance contrast (see prior review); a Flare dot with a
+          // short NEWSROOM label reads louder and keeps the "acid green
+          // belongs to Newsroom" rule visible on paper.
+          accent={{ hex: "#CCFF00", style: "dot", label: "Newsroom" }}
+          contact={{
+            email: "press@guardianintelligence.org",
+            secondary: "guardianintelligence.org/press",
+          }}
+        />
       </div>
     </Section>
   );

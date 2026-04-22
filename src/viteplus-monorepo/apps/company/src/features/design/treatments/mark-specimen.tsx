@@ -158,16 +158,28 @@ export function TreatmentLockupLadder({
   groundVar = "var(--color-iron)",
   rows,
   footer,
+  accentColor = "var(--color-flare)",
+  metaColor = "var(--muted)",
+  footerColor = "var(--muted-faint)",
+  borderColor = "#2a2a2f",
 }: {
   readonly groundVar?: string;
   readonly rows: readonly LockupLadderRow[];
   readonly footer?: ReactNode;
+  // The metadata column at the right of each row ("mark 96 px · gap 18 px ·
+  // ceiling") has to read against whatever ground the ladder is rendered on.
+  // On Iron we use Ash-muted + Flare for the gap; on Flare we switch to
+  // Ink-muted + Iron for the gap (because Flare-on-Flare is invisible).
+  readonly accentColor?: string;
+  readonly metaColor?: string;
+  readonly footerColor?: string;
+  readonly borderColor?: string;
 }) {
   return (
     <div
       style={{
         padding: "28px 32px",
-        border: `1px solid ${LINE}`,
+        border: `1px solid ${borderColor}`,
         borderRadius: "12px",
         background: groundVar,
         display: "grid",
@@ -200,14 +212,14 @@ export function TreatmentLockupLadder({
               fontVariationSettings: '"wght" 600',
               letterSpacing: "0.12em",
               textTransform: "uppercase",
-              color: "var(--muted)",
+              color: metaColor,
               textAlign: "right",
             }}
           >
             <span>mark {row.markPx} px</span>
             <span>
               gap{" "}
-              <b style={{ color: "var(--color-flare)", fontWeight: 600, letterSpacing: "0.08em" }}>
+              <b style={{ color: accentColor, fontWeight: 600, letterSpacing: "0.08em" }}>
                 {row.gap}
               </b>{" "}
               · {row.role}
@@ -218,13 +230,13 @@ export function TreatmentLockupLadder({
       {footer ? (
         <div
           style={{
-            borderTop: `1px solid ${LINE}`,
+            borderTop: `1px solid ${borderColor}`,
             paddingTop: "16px",
             font: '600 10px/1.4 "Geist Mono", ui-monospace, monospace',
             fontVariationSettings: '"wght" 600',
             letterSpacing: "0.14em",
             textTransform: "uppercase",
-            color: "var(--muted-faint)",
+            color: footerColor,
           }}
         >
           {footer}
