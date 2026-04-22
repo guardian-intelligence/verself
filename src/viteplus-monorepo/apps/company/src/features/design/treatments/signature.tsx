@@ -25,6 +25,14 @@ export type SignatureMarkVariant = LockupVariant | "wings-only";
 export type SignatureAccent = {
   readonly hex: string;
   readonly style: "hairline" | "dot" | "none";
+  // Optional thickness for hairline style. Default 2 px. Newsroom bumps to
+  // 3 px so the Flare bar reads on a white signature card (low luminance
+  // contrast makes 2 px disappear on paper).
+  readonly heightPx?: number;
+  // Optional label next to a dot. Newsroom uses this for a short "NEWSROOM"
+  // badge the dot sits next to, so acid green carries identity rather than
+  // just decoration.
+  readonly label?: string;
 };
 
 export type TreatmentSignatureProps = {
@@ -224,21 +232,24 @@ function SignatureAccentMarker({ accent }: { readonly accent: SignatureAccent })
           gap: "8px",
           fontSize: "11px",
           fontFamily: "'Geist Mono', ui-monospace, monospace",
-          letterSpacing: "0.12em",
+          fontWeight: 600,
+          fontVariationSettings: '"wght" 600',
+          letterSpacing: "0.18em",
           textTransform: "uppercase",
-          color: "rgba(11,11,11,0.65)",
+          color: "rgba(11,11,11,0.72)",
         }}
       >
         <span
           aria-hidden="true"
           style={{
-            width: "8px",
-            height: "8px",
+            width: "9px",
+            height: "9px",
             borderRadius: "50%",
             background: accent.hex,
-            boxShadow: `0 0 0 2px ${accent.hex}33`,
+            boxShadow: `0 0 0 2px ${accent.hex}44`,
           }}
         />
+        {accent.label ? <span>{accent.label}</span> : null}
       </div>
     );
   }
@@ -247,7 +258,7 @@ function SignatureAccentMarker({ accent }: { readonly accent: SignatureAccent })
     <div
       aria-hidden="true"
       style={{
-        height: "2px",
+        height: `${accent.heightPx ?? 2}px`,
         width: "44px",
         background: accent.hex,
         margin: "4px 0 0",
