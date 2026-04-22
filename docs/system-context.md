@@ -38,7 +38,7 @@ Auth at the web application level is treated only as a UX concern. Authenticatio
 
 Full model — organization boundary, three-role IAM (`owner`/`admin`/`member`), capability catalog, API credentials, SCIM, TanStack Start server-owned OAuth sessions, browser CSP bearer isolation, and the single-node JWKS loopback path — lives in `src/platform/docs/identity-and-iam.md`.
 
-We use OpenBao Transit for KMS and OpenBao KV for Secrets Management. OpenBao is a relying party for workload identity and the resource plane for secrets/KMS material: it accepts SPIRE-issued JWT-SVIDs and maps SPIFFE subjects to OpenBao policies. OpenBao is not the source of truth for repo-owned workload identity.
+We use OpenBao Transit for KMS and OpenBao KV for Secrets Management. OpenBao is a relying party for workload identity and the resource plane for secrets/KMS material: it accepts SPIRE-issued JWT-SVID login assertions, exchanges them for short-lived OpenBao tokens, and maps SPIFFE subjects to OpenBao policies. OpenBao is not the source of truth for repo-owned workload identity.
 
 ## Dual-Write Pattern
 

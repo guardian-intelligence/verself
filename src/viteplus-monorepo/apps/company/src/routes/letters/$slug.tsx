@@ -45,7 +45,11 @@ function LetterPost() {
   }, [letter.slug, letter.publishedAt]);
 
   return (
-    <PageShell ground="paper" kicker={`${letter.publishedAt} · ${letter.kicker}`} heading={letter.title}>
+    <PageShell
+      ground="paper"
+      kicker={`${letter.publishedAt} · ${letter.kicker}`}
+      heading={letter.title}
+    >
       {letter.body.map((paragraph, idx) => (
         <BodyParagraph key={idx}>{paragraph}</BodyParagraph>
       ))}

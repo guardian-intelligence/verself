@@ -1,8 +1,4 @@
-import {
-  createFileRoute,
-  retainSearchParams,
-  stripSearchParams,
-} from "@tanstack/react-router";
+import { createFileRoute, retainSearchParams, stripSearchParams } from "@tanstack/react-router";
 import {
   auditSearchToQuery,
   DEFAULT_AUDIT_LIMIT,

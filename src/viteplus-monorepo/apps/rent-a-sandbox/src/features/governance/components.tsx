@@ -227,11 +227,7 @@ function AuditTrail({
 
   return (
     <div className="flex flex-col gap-3">
-      <AuditToolbar
-        search={search}
-        visibleColumns={visibleColumns}
-        anyNonDefault={anyNonDefault}
-      />
+      <AuditToolbar search={search} visibleColumns={visibleColumns} anyNonDefault={anyNonDefault} />
 
       <ActiveFilterChips search={search} activeKeys={activeKeys} />
 
@@ -449,11 +445,7 @@ function FilterControl({
   );
 }
 
-function ColumnsPopover({
-  visibleColumns,
-}: {
-  visibleColumns: ReadonlyArray<AuditColumnId>;
-}) {
+function ColumnsPopover({ visibleColumns }: { visibleColumns: ReadonlyArray<AuditColumnId> }) {
   const navigate = routeApi.useNavigate();
 
   const toggle = (id: AuditColumnId, visible: boolean) => {
@@ -533,9 +525,7 @@ function ActiveFilterChips({
         const definition = AUDIT_FILTER_DEFINITIONS[key];
         const raw = search[key];
         const label =
-          definition.kind === "boolean"
-            ? definition.label
-            : `${definition.label}: ${String(raw)}`;
+          definition.kind === "boolean" ? definition.label : `${definition.label}: ${String(raw)}`;
         return (
           <Link
             key={key}
@@ -599,10 +589,7 @@ function AuditFooter({
           data-testid="audit-next"
           render={
             nextCursor ? (
-              <Link
-                to={GOVERNANCE_ROUTE}
-                search={(prev) => ({ ...prev, cursor: nextCursor })}
-              />
+              <Link to={GOVERNANCE_ROUTE} search={(prev) => ({ ...prev, cursor: nextCursor })} />
             ) : undefined
           }
         >
@@ -688,9 +675,7 @@ function renderCell(id: AuditColumnId, event: GovernanceAuditEvent) {
     case "location":
       return <span className="text-xs text-muted-foreground">{locationLabel(event)}</span>;
     case "source":
-      return (
-        <span className="text-xs">{event.source_product_area || event.service_name}</span>
-      );
+      return <span className="text-xs">{event.source_product_area || event.service_name}</span>;
     case "sequence":
       return <span className="font-mono text-xs">{event.sequence}</span>;
     case "trace":
@@ -800,4 +785,3 @@ function downloadBase64Artifact(dataBase64: string, contentType: string, fileNam
   link.remove();
   URL.revokeObjectURL(url);
 }
-
