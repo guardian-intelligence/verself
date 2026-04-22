@@ -40,15 +40,15 @@ test.describe("/design — treatment-first structure", () => {
     await expect(page.locator("#typography")).toHaveCount(0);
 
     // Photography sub-label is gone; Business Cards is Title Case.
-    await expect(
-      page.locator('[data-testid="design-nav-photography"]').first(),
-    ).toContainText(/Photography/);
-    await expect(
-      page.locator('[data-testid="design-nav-photography"]').first(),
-    ).not.toContainText("scrim");
-    await expect(
-      page.locator('[data-testid="design-nav-business-cards"]').first(),
-    ).toContainText("Business Cards");
+    await expect(page.locator('[data-testid="design-nav-photography"]').first()).toContainText(
+      /Photography/,
+    );
+    await expect(page.locator('[data-testid="design-nav-photography"]').first()).not.toContainText(
+      "scrim",
+    );
+    await expect(page.locator('[data-testid="design-nav-business-cards"]').first()).toContainText(
+      "Business Cards",
+    );
 
     // Active-state number colour: deep-link via hash so useActiveAnchor's
     // hash-prime path picks Company immediately (the IntersectionObserver
@@ -81,8 +81,7 @@ test.describe("/design — treatment-first structure", () => {
 
     // Newsroom's Muted column renders the "not used" placeholder because
     // Newsroom is broadcast, not reading. All other cells render swatches.
-    const newsroomCells = page
-      .locator("#newsroom .treatment-palette-grid .treatment-palette-cell");
+    const newsroomCells = page.locator("#newsroom .treatment-palette-grid .treatment-palette-cell");
     await expect(newsroomCells.nth(3)).toContainText("not used");
   });
 
@@ -117,9 +116,7 @@ test.describe("/design — treatment-first structure", () => {
     expect(fonts, "Workshop body fonts").not.toMatch(/Fraunces/i);
   });
 
-  test("Newsroom signature carries a Flare dot + NEWSROOM label, no hairline", async ({
-    page,
-  }) => {
+  test("Newsroom signature carries a Flare dot + NEWSROOM label, no hairline", async ({ page }) => {
     await page.goto("/design");
     const newsroom = page.locator("#newsroom");
 
@@ -204,7 +201,7 @@ test.describe("/design — mobile responsive", () => {
 
   test("rail collapses to <details> disclosure on mobile, closed by default", async ({ page }) => {
     await page.goto("/design");
-    const disclosure = page.locator('nav details[open]');
+    const disclosure = page.locator("nav details[open]");
     await expect(disclosure).toHaveCount(0);
     const summary = page.locator("nav details > summary");
     await expect(summary).toBeVisible();
