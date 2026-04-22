@@ -16,10 +16,36 @@ export const accents = {
   typeIron: "#F5F5F5",
 } as const;
 
+// Muted-type families. Each is an opacity ramp (strong / default / meta /
+// faint) tuned to hold WCAG AA (≥ 4.5:1) on its ground for small text. The
+// base rgb is derived from the ground's type colour — argent on Iron, ink on
+// Paper. These live as --muted-* / --shell-muted-* in app.css; this export is
+// the canonical name for the family.
+export const mutedFamilies = {
+  // Iron-muted type. Argent with opacity, reading as cool grey on dark.
+  ash: {
+    base: "245, 245, 245",
+    strong: 0.82,
+    default: 0.72,
+    meta: 0.6,
+    faint: 0.55,
+  },
+  // Paper-muted ink. Ink with opacity, reading as warm grey on paper.
+  stone: {
+    base: "11, 11, 11",
+    strong: 0.78,
+    default: 0.7,
+    meta: 0.6,
+    faint: 0.55,
+  },
+} as const;
+
 export const pantone = {
   flare: "Pantone 389 C",
+  bordeaux: "Pantone 504 C",
   amber: "Pantone 715 C",
 } as const;
 
 export type GroundName = keyof typeof grounds;
 export type AccentName = keyof typeof accents;
+export type MutedFamilyName = keyof typeof mutedFamilies;

@@ -49,8 +49,8 @@ function DesignHeader() {
   return (
     <header className="mb-16 flex flex-col gap-4">
       <p
-        className="font-mono text-[11px] font-medium uppercase tracking-[0.16em]"
-        style={{ color: "var(--muted-faint)" }}
+        className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em]"
+        style={{ color: "var(--muted)", fontVariationSettings: '"wght" 600' }}
       >
         Guardian Intelligence · Brand System
       </p>
@@ -65,14 +65,11 @@ function DesignHeader() {
       >
         Applied — the brand, in operation.
       </h1>
-      <p
-        className="max-w-3xl text-base leading-relaxed"
-        style={{ color: "var(--muted-strong)" }}
-      >
-        Guardian Intelligence is an American applied intelligence firm, based in Seattle.
-        Fraunces carries the voice. Geist carries the work. Geist Mono carries the machine — three
-        families, all under the SIL Open Font License, no commercial fee, ever. The system runs on
-        three grounds — <b>Iron</b>, <b>Flare</b>, and <b>Paper</b> — one invariant —{" "}
+      <p className="max-w-3xl text-base leading-relaxed" style={{ color: "var(--muted-strong)" }}>
+        Guardian Intelligence is an American applied intelligence firm, based in Seattle. Fraunces
+        carries the voice. Geist carries the work. Geist Mono carries the machine — three families,
+        all under the SIL Open Font License, no commercial fee, ever. The system runs on three
+        grounds — <b>Iron</b>, <b>Flare</b>, and <b>Paper</b> — one invariant —{" "}
         <b>the wings are always Argent</b> — and two carrier forms that let the wings travel: an
         iron chip on Paper, and a circular ink emboss on Flare. Only Guardian carries the wings;
         Solutions — today there is one, <b>Metal Platform</b> — set their name in Geist under the
@@ -130,8 +127,8 @@ function DesignRail() {
           }}
         >
           <span
-            className="font-mono text-[11px] font-medium uppercase tracking-[0.18em]"
-            style={{ color: "var(--muted-faint)" }}
+            className="font-mono text-[11px] font-semibold uppercase tracking-[0.18em]"
+            style={{ color: "var(--muted)", fontVariationSettings: '"wght" 600' }}
           >
             Jump to section
           </span>
@@ -158,8 +155,8 @@ function DesignRailGroup({
   return (
     <div className="mb-4 flex flex-col">
       <p
-        className="mb-1 px-2 font-mono text-[10px] font-medium uppercase tracking-[0.18em]"
-        style={{ color: "var(--muted-faint)" }}
+        className="mb-1 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.18em]"
+        style={{ color: "var(--muted)", fontVariationSettings: '"wght" 600' }}
       >
         {group}
       </p>
@@ -198,8 +195,11 @@ function DesignRailLink({ section, isActive }: { section: DesignSection; isActiv
       }}
     >
       <span
-        className="font-mono text-[10px]"
-        style={{ color: isActive ? "var(--color-flare)" : "var(--muted-faint)" }}
+        className="font-mono text-[10px] font-semibold"
+        style={{
+          color: isActive ? "var(--color-flare)" : "var(--muted-meta)",
+          fontVariationSettings: '"wght" 600',
+        }}
       >
         {section.number}
       </span>

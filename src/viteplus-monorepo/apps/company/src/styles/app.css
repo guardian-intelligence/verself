@@ -84,16 +84,17 @@
     /* The mark's external clear-space unit. */
     --wing-unit: calc(52px * 0.45);
 
-    /* Muted text opacities, tuned to pass WCAG AA (≥ 4.5:1) against each
-       ground. Routes must consume these tokens instead of inlining rgba()
-       values — the previous 0.35/0.40/0.45 variants on iron fell to 3.0–3.6:1
-       on small mono labels. Iron defaults live on :root; the Paper shell
-       overrides them below.
+    /* Ash — the Iron-muted type family. Argent with opacity, reading as cool
+       grey on dark. Four rungs on an opacity ramp, tuned to pass WCAG AA
+       (≥ 4.5:1) on #0E0E0E. Routes must consume these tokens instead of
+       inlining rgba() values — the previous 0.35/0.40/0.45 variants fell to
+       3.0–3.6:1 on small mono labels. Iron defaults live on :root; the Paper
+       shell overrides them below with Stone.
        On #0E0E0E:
-         --muted-strong (0.82) → 11.4:1
-         --muted        (0.72) → 9.3:1
-         --muted-meta   (0.60) → 6.7:1
-         --muted-faint  (0.55) → 5.8:1 — floor for small text */
+         --muted-strong (0.82) → 11.4:1   [Ash · strong]
+         --muted        (0.72) → 9.3:1    [Ash · default]
+         --muted-meta   (0.60) → 6.7:1    [Ash · meta]
+         --muted-faint  (0.55) → 5.8:1    [Ash · faint — floor for small text] */
     --muted-strong: rgba(245, 245, 245, 0.82);
     --muted: rgba(245, 245, 245, 0.72);
     --muted-meta: rgba(245, 245, 245, 0.6);
@@ -126,13 +127,14 @@
   }
 }
 
-/* Paper ground — editorial surfaces per brand audience split. On Paper the
-   type is ink, the accent is bordeaux, and the muted opacities are re-derived
-   against the light ground to hold the same AA floor (≥ 4.5:1 on small text).
+/* Stone — the Paper-muted ink family. Ink with opacity, reading as warm grey
+   on paper. Same four-rung ramp as Ash, re-derived against the light ground
+   to hold AA (≥ 4.5:1 on small text).
    On #F6F4ED:
-     --muted-strong (0.78) → 9.3:1
-     --muted        (0.70) → 6.9:1
-     --muted-meta   (0.60) → 4.8:1 — floor for small text */
+     --shell-muted-strong (0.78) → 9.3:1   [Stone · strong]
+     --shell-muted        (0.70) → 6.9:1   [Stone · default]
+     --shell-muted-meta   (0.60) → 4.8:1   [Stone · meta — floor for small text]
+     --shell-muted-faint  (0.55) → ~4.4:1  [Stone · faint — decorative only] */
 .shell-paper {
   --shell-bg: var(--color-paper);
   --shell-fg: var(--color-ink);
