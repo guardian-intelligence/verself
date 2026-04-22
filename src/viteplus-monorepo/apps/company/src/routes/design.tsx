@@ -66,17 +66,11 @@ function DesignHeader() {
         Applied — the brand, in operation.
       </h1>
       <p className="max-w-3xl text-base leading-relaxed" style={{ color: "var(--muted-strong)" }}>
-        Guardian Intelligence is an American applied intelligence firm, based in Seattle. Fraunces
-        carries the voice. Geist carries the work. Geist Mono carries the machine — three families,
-        all under the SIL Open Font License, no commercial fee, ever. The system runs on three
-        grounds — <b>Iron</b>, <b>Flare</b>, and <b>Paper</b> — one invariant —{" "}
-        <b>the wings are always Argent</b> — and two carrier forms that let the wings travel: an
-        iron chip on Paper, and a circular ink emboss on Flare. Only Guardian carries the wings;
-        Solutions — today there is one, <b>Metal Platform</b> — set their name in Geist under the
-        house. Products inside a Solution — <b>Console</b>, the <b>metal CLI</b>, language{" "}
-        <b>SDKs</b> — never lock up with the wings. This page specifies the mark, the type, the
-        colour, and how they appear in the surfaces the firm actually ships: marketing, editorial,
-        product, and external.
+        The wings are always <b>Argent</b> (#FFFFFF); three SIL-Open-Font-Licensed families —
+        Fraunces for voice, Geist for work, Geist Mono for the machine — carry the type. Every
+        section below is one of four treatments the firm ships in — <b>Company</b>, <b>Workshop</b>,
+        <b>Newsroom</b>, <b>Letters</b> — each declaring its own palette, typography, and mark
+        usage, plus the two cross-treatment rules in <i>Applied</i>.
       </p>
     </header>
   );
@@ -113,11 +107,11 @@ function DesignRail() {
       aria-label="Design system sections"
       className="md:sticky md:top-[var(--header-scroll-offset)] md:w-60 md:shrink-0"
     >
-      {/* On <md the 16-section rail swallows the whole first screen if
-          rendered flat. Collapse into a <details> disclosure (closed by
-          default) so mobile readers see the header + hero immediately and
-          can opt into the rail. The desktop rail is a separate flat render
-          — simpler than forcing open state via CSS at the md: breakpoint. */}
+      {/* On <md the rail swallows the whole first screen if rendered flat.
+          Collapse into a <details> disclosure (closed by default) so mobile
+          readers see the header + hero immediately and can opt into the rail.
+          The desktop rail is a separate flat render — simpler than forcing
+          open state via CSS at the md: breakpoint. */}
       <details className="md:hidden">
         <summary
           className="mb-4 flex cursor-pointer select-none items-center justify-between rounded-md px-3 py-2"
@@ -197,7 +191,10 @@ function DesignRailLink({ section, isActive }: { section: DesignSection; isActiv
       <span
         className="font-mono text-[10px] font-semibold"
         style={{
-          color: isActive ? "var(--color-flare)" : "var(--muted-meta)",
+          // Active number sets in Argent, not Flare. Flare is the Company
+          // accent — burning it on chrome muddies the "Flare only on Company
+          // ground" rule the page declares two scrolls below.
+          color: isActive ? "var(--color-argent)" : "var(--muted-meta)",
           fontVariationSettings: '"wght" 600',
         }}
       >
