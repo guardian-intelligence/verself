@@ -1,20 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { SOLUTIONS, SOLUTIONS_META } from "~/content/solutions";
 import { PageShell } from "~/components/page-shell";
+import { ogMeta } from "~/lib/head";
 
 export const Route = createFileRoute("/solutions")({
   component: SolutionsPage,
   head: () => ({
-    meta: [
-      { title: SOLUTIONS_META.title },
-      { name: "description", content: SOLUTIONS_META.description },
-      { property: "og:image", content: "/og/solutions" },
-      { property: "og:image:type", content: "image/svg+xml" },
-      { property: "og:image:width", content: "1200" },
-      { property: "og:image:height", content: "630" },
-      { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:image", content: "/og/solutions" },
-    ],
+    meta: ogMeta({
+      slug: "solutions",
+      title: SOLUTIONS_META.title,
+      description: SOLUTIONS_META.description,
+    }),
   }),
 });
 
@@ -26,7 +22,7 @@ function SolutionsPage() {
           fontFamily: "'Geist', sans-serif",
           fontSize: "16px",
           lineHeight: 1.55,
-          color: "rgba(245,245,245,0.72)",
+          color: "var(--shell-muted)",
           margin: 0,
         }}
       >
@@ -39,14 +35,14 @@ function SolutionsPage() {
               href={solution.href}
               className="group flex flex-col gap-3 rounded-lg border p-5 transition-colors"
               style={{
-                borderColor: "rgba(245,245,245,0.12)",
-                background: "rgba(245,245,245,0.02)",
-                color: "var(--color-type-iron)",
+                borderColor: "var(--shell-surface-border)",
+                background: "var(--shell-surface-subtle)",
+                color: "var(--shell-fg)",
               }}
             >
               <span
                 className="font-mono text-[10px] uppercase tracking-[0.18em]"
-                style={{ color: "rgba(245,245,245,0.45)" }}
+                style={{ color: "var(--shell-muted-faint)" }}
               >
                 {solution.kicker}
               </span>
@@ -67,7 +63,7 @@ function SolutionsPage() {
                   fontFamily: "'Geist', sans-serif",
                   fontSize: "16px",
                   lineHeight: 1.5,
-                  color: "rgba(245,245,245,0.82)",
+                  color: "var(--shell-muted-strong)",
                 }}
               >
                 {solution.oneLiner}
@@ -77,14 +73,14 @@ function SolutionsPage() {
                   fontFamily: "'Geist', sans-serif",
                   fontSize: "14px",
                   lineHeight: 1.55,
-                  color: "rgba(245,245,245,0.6)",
+                  color: "var(--shell-muted-meta)",
                 }}
               >
                 {solution.description}
               </span>
               <ul
                 className="mt-2 flex flex-col gap-2 border-t pt-3"
-                style={{ borderColor: "rgba(245,245,245,0.08)" }}
+                style={{ borderColor: "var(--shell-surface-border)" }}
               >
                 {solution.products.map((product) => (
                   <li
@@ -93,7 +89,7 @@ function SolutionsPage() {
                   >
                     <span
                       className="font-mono text-[10px] uppercase tracking-[0.16em] md:w-24 md:shrink-0"
-                      style={{ color: "rgba(245,245,245,0.4)" }}
+                      style={{ color: "var(--shell-muted-faint)" }}
                     >
                       {labelFor(product.kind)}
                     </span>
@@ -103,7 +99,7 @@ function SolutionsPage() {
                           fontFamily: "'Geist', sans-serif",
                           fontWeight: 500,
                           fontSize: "14px",
-                          color: "var(--color-type-iron)",
+                          color: "var(--shell-fg)",
                         }}
                       >
                         {product.name}
@@ -113,7 +109,7 @@ function SolutionsPage() {
                           fontFamily: "'Geist', sans-serif",
                           fontSize: "13px",
                           lineHeight: 1.55,
-                          color: "rgba(245,245,245,0.6)",
+                          color: "var(--shell-muted-meta)",
                         }}
                       >
                         {product.blurb}

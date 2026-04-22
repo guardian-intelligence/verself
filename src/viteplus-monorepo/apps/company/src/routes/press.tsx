@@ -2,11 +2,16 @@ import { createFileRoute } from "@tanstack/react-router";
 import { PRESS_META, press } from "~/content/press";
 import { BodyParagraph, PageShell } from "~/components/page-shell";
 import { emitSpan } from "~/lib/telemetry/browser";
+import { ogMeta } from "~/lib/head";
 
 export const Route = createFileRoute("/press")({
   component: PressPage,
   head: () => ({
-    meta: [{ title: PRESS_META.title }, { name: "description", content: PRESS_META.description }],
+    meta: ogMeta({
+      slug: "press",
+      title: PRESS_META.title,
+      description: PRESS_META.description,
+    }),
   }),
 });
 
@@ -18,8 +23,8 @@ function PressPage() {
       <div
         className="mt-6 flex flex-col gap-4 rounded-lg p-5"
         style={{
-          border: "1px solid rgba(245,245,245,0.12)",
-          background: "rgba(245,245,245,0.02)",
+          border: "1px solid var(--shell-surface-border)",
+          background: "var(--shell-surface-subtle)",
         }}
       >
         <a
@@ -34,7 +39,7 @@ function PressPage() {
             fontFamily: "'Geist', sans-serif",
             fontSize: "15px",
             fontWeight: 500,
-            color: "var(--color-flare)",
+            color: "var(--shell-accent)",
           }}
         >
           {press.kitLabel}
@@ -42,7 +47,7 @@ function PressPage() {
         <ul
           className="list-disc pl-5"
           style={{
-            color: "rgba(245,245,245,0.72)",
+            color: "var(--shell-muted)",
             fontSize: "14px",
             lineHeight: 1.55,
           }}
@@ -56,13 +61,13 @@ function PressPage() {
       <div className="mt-4 flex flex-col gap-2">
         <span
           className="font-mono text-[10px] uppercase tracking-[0.18em]"
-          style={{ color: "rgba(245,245,245,0.45)" }}
+          style={{ color: "var(--shell-muted-faint)" }}
         >
           {press.contactLabel}
         </span>
         <a
           href={`mailto:${press.contactEmail}`}
-          style={{ color: "var(--color-flare)", fontSize: "16px" }}
+          style={{ color: "var(--shell-accent)", fontSize: "16px" }}
         >
           {press.contactEmail}
         </a>
@@ -71,7 +76,7 @@ function PressPage() {
             fontFamily: "'Geist', sans-serif",
             fontSize: "14px",
             lineHeight: 1.55,
-            color: "rgba(245,245,245,0.68)",
+            color: "var(--shell-muted)",
             margin: 0,
           }}
         >
@@ -82,14 +87,14 @@ function PressPage() {
       <div className="mt-8 flex flex-col gap-2">
         <span
           className="font-mono text-[10px] uppercase tracking-[0.18em]"
-          style={{ color: "rgba(245,245,245,0.45)" }}
+          style={{ color: "var(--shell-muted-faint)" }}
         >
           Writing guide
         </span>
         <ul
           className="list-disc pl-5"
           style={{
-            color: "rgba(245,245,245,0.7)",
+            color: "var(--shell-muted)",
             fontSize: "14px",
             lineHeight: 1.55,
           }}

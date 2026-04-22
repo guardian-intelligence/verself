@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SolutionsRouteImport } from './routes/solutions'
+import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as PressRouteImport } from './routes/press'
 import { Route as DesignRouteImport } from './routes/design'
 import { Route as ContactRouteImport } from './routes/contact'
@@ -26,6 +27,11 @@ import { Route as ApiOtelV1TracesRouteImport } from './routes/api/otel/v1/traces
 const SolutionsRoute = SolutionsRouteImport.update({
   id: '/solutions',
   path: '/solutions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
+  id: '/sitemap.xml',
+  path: '/sitemap.xml',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PressRoute = PressRouteImport.update({
@@ -97,6 +103,7 @@ export interface FileRoutesByFullPath {
   '/contact': typeof ContactRoute
   '/design': typeof DesignRoute
   '/press': typeof PressRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/solutions': typeof SolutionsRoute
   '/letters/$slug': typeof LettersSlugRoute
   '/letters/rss': typeof LettersRssRoute
@@ -112,6 +119,7 @@ export interface FileRoutesByTo {
   '/contact': typeof ContactRoute
   '/design': typeof DesignRoute
   '/press': typeof PressRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/solutions': typeof SolutionsRoute
   '/letters/$slug': typeof LettersSlugRoute
   '/letters/rss': typeof LettersRssRoute
@@ -128,6 +136,7 @@ export interface FileRoutesById {
   '/contact': typeof ContactRoute
   '/design': typeof DesignRoute
   '/press': typeof PressRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/solutions': typeof SolutionsRoute
   '/letters/$slug': typeof LettersSlugRoute
   '/letters/rss': typeof LettersRssRoute
@@ -145,6 +154,7 @@ export interface FileRouteTypes {
     | '/contact'
     | '/design'
     | '/press'
+    | '/sitemap.xml'
     | '/solutions'
     | '/letters/$slug'
     | '/letters/rss'
@@ -160,6 +170,7 @@ export interface FileRouteTypes {
     | '/contact'
     | '/design'
     | '/press'
+    | '/sitemap.xml'
     | '/solutions'
     | '/letters/$slug'
     | '/letters/rss'
@@ -175,6 +186,7 @@ export interface FileRouteTypes {
     | '/contact'
     | '/design'
     | '/press'
+    | '/sitemap.xml'
     | '/solutions'
     | '/letters/$slug'
     | '/letters/rss'
@@ -191,6 +203,7 @@ export interface RootRouteChildren {
   ContactRoute: typeof ContactRoute
   DesignRoute: typeof DesignRoute
   PressRoute: typeof PressRoute
+  SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   SolutionsRoute: typeof SolutionsRoute
   LettersSlugRoute: typeof LettersSlugRoute
   LettersRssRoute: typeof LettersRssRoute
@@ -206,6 +219,13 @@ declare module '@tanstack/react-router' {
       path: '/solutions'
       fullPath: '/solutions'
       preLoaderRoute: typeof SolutionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sitemap.xml': {
+      id: '/sitemap.xml'
+      path: '/sitemap.xml'
+      fullPath: '/sitemap.xml'
+      preLoaderRoute: typeof SitemapDotxmlRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/press': {
@@ -303,6 +323,7 @@ const rootRouteChildren: RootRouteChildren = {
   ContactRoute: ContactRoute,
   DesignRoute: DesignRoute,
   PressRoute: PressRoute,
+  SitemapDotxmlRoute: SitemapDotxmlRoute,
   SolutionsRoute: SolutionsRoute,
   LettersSlugRoute: LettersSlugRoute,
   LettersRssRoute: LettersRssRoute,

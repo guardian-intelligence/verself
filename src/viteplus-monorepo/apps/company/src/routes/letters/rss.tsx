@@ -54,18 +54,18 @@ ${items}
 `;
 }
 
+const RSS_HEADERS = {
+  "content-type": "application/rss+xml; charset=utf-8",
+  "cache-control": "public, max-age=600, s-maxage=600",
+} as const;
+
 export const Route = createFileRoute("/letters/rss")({
   server: {
     handlers: {
+      HEAD: () => new Response(null, { status: 200, headers: RSS_HEADERS }),
       GET: () => {
         const xml = buildFeed();
-        return new Response(xml, {
-          status: 200,
-          headers: {
-            "content-type": "application/rss+xml; charset=utf-8",
-            "cache-control": "public, max-age=600, s-maxage=600",
-          },
-        });
+        return new Response(xml, { status: 200, headers: RSS_HEADERS });
       },
     },
   },

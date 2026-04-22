@@ -1,14 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { COMPANY_META, company } from "~/content/company";
 import { BodyParagraph, PageShell } from "~/components/page-shell";
+import { ogMeta } from "~/lib/head";
 
 export const Route = createFileRoute("/company")({
   component: CompanyPage,
   head: () => ({
-    meta: [
-      { title: COMPANY_META.title },
-      { name: "description", content: COMPANY_META.description },
-    ],
+    meta: ogMeta({
+      slug: "company",
+      title: COMPANY_META.title,
+      description: COMPANY_META.description,
+    }),
   }),
 });
 
@@ -25,13 +27,13 @@ function CompanyPage() {
             key={value.name}
             className="flex flex-col gap-2 rounded-lg p-5"
             style={{
-              border: "1px solid rgba(245,245,245,0.12)",
-              background: "rgba(245,245,245,0.02)",
+              border: "1px solid var(--shell-surface-border)",
+              background: "var(--shell-surface-subtle)",
             }}
           >
             <span
               className="font-mono text-[10px] uppercase tracking-[0.18em]"
-              style={{ color: "rgba(245,245,245,0.45)" }}
+              style={{ color: "var(--shell-muted-faint)" }}
             >
               {value.name}
             </span>
@@ -40,7 +42,7 @@ function CompanyPage() {
                 fontFamily: "'Geist', sans-serif",
                 fontSize: "14px",
                 lineHeight: 1.55,
-                color: "rgba(245,245,245,0.75)",
+                color: "var(--shell-muted)",
                 margin: 0,
               }}
             >
