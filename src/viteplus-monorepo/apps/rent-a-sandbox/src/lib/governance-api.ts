@@ -113,6 +113,7 @@ export const auditEventsQuerySchema = v.strictObject({
       "unknown",
     ]),
   ),
+  order: v.optional(v.picklist(["asc", "desc"])),
   result: v.optional(v.picklist(["allowed", "denied", "error"])),
   risk_level: v.optional(v.picklist(["low", "medium", "high", "critical"])),
   service_name: v.optional(v.string()),
@@ -141,6 +142,7 @@ export async function listAuditEvents(
     ...(parsedQuery.operation_type !== undefined
       ? { operation_type: parsedQuery.operation_type }
       : {}),
+    ...(parsedQuery.order !== undefined ? { order: parsedQuery.order } : {}),
     ...(parsedQuery.result !== undefined ? { result: parsedQuery.result } : {}),
     ...(parsedQuery.risk_level !== undefined ? { risk_level: parsedQuery.risk_level } : {}),
     ...(parsedQuery.service_name !== undefined ? { service_name: parsedQuery.service_name } : {}),

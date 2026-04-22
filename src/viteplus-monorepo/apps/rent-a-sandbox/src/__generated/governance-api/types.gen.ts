@@ -443,7 +443,14 @@ export type ListAuditEventsData = {
      * Maximum events to return.
      */
     limit?: number;
+    /**
+     * Opaque pagination cursor returned by the previous page.
+     */
     cursor?: string;
+    /**
+     * Time ordering of results; defaults to 'desc' (newest first).
+     */
+    order?: "asc" | "desc";
     actor_id?: string;
     audit_event?: string;
     credential_id?: string;
