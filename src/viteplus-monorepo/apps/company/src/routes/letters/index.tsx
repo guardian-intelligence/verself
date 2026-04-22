@@ -1,20 +1,21 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { LETTERS_META, sortedLetters } from "~/content/letters";
 import { PageShell } from "~/components/page-shell";
+import { ogMeta } from "~/lib/head";
+
+// Letters is the editorial surface. Per brand/voice.md audience split:
+// "Iron for customers. Flare for the world. Paper for editorial." — Letters
+// must ship on Paper. The PageShell ground prop flips the shell tokens to
+// ink-on-paper with a bordeaux accent.
 
 export const Route = createFileRoute("/letters/")({
   component: LettersIndex,
   head: () => ({
-    meta: [
-      { title: LETTERS_META.title },
-      { name: "description", content: LETTERS_META.description },
-      { property: "og:image", content: "/og/letters" },
-      { property: "og:image:type", content: "image/svg+xml" },
-      { property: "og:image:width", content: "1200" },
-      { property: "og:image:height", content: "630" },
-      { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:image", content: "/og/letters" },
-    ],
+    meta: ogMeta({
+      slug: "letters",
+      title: LETTERS_META.title,
+      description: LETTERS_META.description,
+    }),
     links: [
       {
         rel: "alternate",
@@ -29,13 +30,13 @@ export const Route = createFileRoute("/letters/")({
 function LettersIndex() {
   const letters = sortedLetters();
   return (
-    <PageShell kicker="Letters" heading="Long-form from Guardian Intelligence.">
+    <PageShell ground="paper" kicker="Letters" heading="Long-form from Guardian.">
       <p
         style={{
           fontFamily: "'Geist', sans-serif",
           fontSize: "16px",
           lineHeight: 1.55,
-          color: "rgba(245,245,245,0.72)",
+          color: "var(--shell-muted-strong)",
           margin: 0,
         }}
       >
@@ -48,11 +49,11 @@ function LettersIndex() {
               to="/letters/$slug"
               params={{ slug: letter.slug }}
               className="group flex flex-col gap-1.5 rounded-md px-1 py-2 transition-colors"
-              style={{ color: "var(--color-type-iron)" }}
+              style={{ color: "var(--shell-fg)" }}
             >
               <span
                 className="font-mono text-[10px] uppercase tracking-[0.18em]"
-                style={{ color: "rgba(245,245,245,0.45)" }}
+                style={{ color: "var(--shell-muted-meta)" }}
               >
                 {letter.publishedAt} · {letter.kicker}
               </span>
@@ -73,7 +74,7 @@ function LettersIndex() {
                   fontFamily: "'Geist', sans-serif",
                   fontSize: "15px",
                   lineHeight: 1.55,
-                  color: "rgba(245,245,245,0.68)",
+                  color: "var(--shell-muted)",
                 }}
               >
                 {letter.summary}
@@ -84,9 +85,9 @@ function LettersIndex() {
       </ul>
       <p
         className="mt-6 font-mono text-[10px] uppercase tracking-[0.18em]"
-        style={{ color: "rgba(245,245,245,0.45)" }}
+        style={{ color: "var(--shell-muted-meta)" }}
       >
-        <a href="/letters/rss" style={{ color: "var(--color-flare)" }}>
+        <a href="/letters/rss" style={{ color: "var(--shell-accent)" }}>
           RSS →
         </a>
       </p>
