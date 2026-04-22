@@ -3,12 +3,14 @@ import { Lockup, WingsArgent, WingsChip, WingsEmboss } from "@forge-metal/brand"
 import { DESIGN_SECTIONS } from "~/lib/design-nav";
 import { Section } from "./section-shell";
 import {
+  SignatureStatusBadge,
   TreatmentLockupLadder,
   TreatmentMarkCard,
   TreatmentPalette,
   TreatmentSignature,
   TreatmentSizeLadder,
   TreatmentTypeLadder,
+  TreatmentWingsOnlyLadder,
 } from "./treatments";
 
 const sectionByID = (id: (typeof DESIGN_SECTIONS)[number]["id"]) =>
@@ -644,72 +646,6 @@ const SIG_EYEBROW: CSSProperties = {
   marginBottom: "10px",
 };
 
-function WorkshopSignature() {
-  // Workshop signature rules:
-  //   1. No Guardian wordmark anywhere. The operator's customer is thinking
-  //      about the tenant, not about Guardian. Wings persist as a 22 px anchor.
-  //   2. No Fraunces. Body in Geist, meta in Geist Mono — the two families
-  //      the recipient sees every time they touch a console.
-  //   3. Amber is the one accent. Flare is banned here.
-  return (
-    <div>
-      <div style={SIG_EYEBROW}>Email signature · Workshop</div>
-      <div style={SIG_CARD}>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "14px" }}>
-          <WingsChip style={{ width: "22px", height: "22px", flex: "0 0 22px" }} />
-          <span
-            style={{
-              fontFamily: "'Geist Mono', ui-monospace, monospace",
-              fontSize: "11px",
-              fontWeight: 600,
-              fontVariationSettings: '"wght" 600',
-              letterSpacing: "0.14em",
-              textTransform: "uppercase",
-              color: "#5d5a52",
-            }}
-          >
-            Platform · Engineering
-          </span>
-        </div>
-        <div style={{ fontFamily: "'Geist', sans-serif", fontWeight: 600, fontSize: "15px" }}>
-          Engineer Name
-        </div>
-        <div style={{ color: "#5d5a52", marginBottom: "12px" }}>
-          Platform Engineering · On-call, us-east-1
-        </div>
-        <div
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "6px",
-            fontSize: "11px",
-            fontFamily: "'Geist Mono', ui-monospace, monospace",
-            letterSpacing: "0.12em",
-            textTransform: "uppercase",
-            color: "#5d5a52",
-            margin: "4px 0 12px",
-          }}
-        >
-          <span
-            aria-hidden
-            style={{
-              width: "6px",
-              height: "6px",
-              borderRadius: "50%",
-              background: "var(--color-amber)",
-              boxShadow: "0 0 0 2px rgba(247,147,38,0.22)",
-            }}
-          />
-          incident response · pageable
-        </div>
-        <div style={{ display: "flex", gap: "12px", color: "#5d5a52", fontSize: "12px", fontFamily: "'Geist Mono', ui-monospace, monospace", flexWrap: "wrap" }}>
-          <span>engineer@guardianintelligence.org</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function NewsroomSignature() {
   return (
     <div>
@@ -1035,19 +971,139 @@ function SectionWorkshop() {
         </>
       }
     >
-      <LegacyPalette
-        swatches={[
-          { name: "Iron", hex: "#0E0E0E", role: "Ground" },
-          { name: "Amber", hex: "#F79326", pantone: "Pantone 715 C", role: "Workshop-only accent · primary actions, live state" },
-          { name: "Argent", hex: "#FFFFFF", role: "Wings · 22 px in chrome" },
-          { name: "Ash", hex: "#F5F5F5", role: "Muted type · Geist + Geist Mono", chipStyle: { background: "rgba(245,245,245,0.72)" } },
-        ]}
+      <TreatmentPalette
+        roles={{
+          ground: { name: "Iron", hex: "#0E0E0E", note: "The workshop floor." },
+          accent: {
+            name: "Amber",
+            hex: "#F79326",
+            pantone: "Pantone 715 C",
+            note: "Primary actions, live state, positive signals.",
+          },
+          mark: { name: "Argent", hex: "#FFFFFF", note: "Wings only · 22 px in chrome." },
+          muted: {
+            name: "Ash",
+            hex: "#F5F5F5",
+            note: "Body & meta · Geist + Geist Mono.",
+            chipStyle: { background: "rgba(245,245,245,0.72)" },
+          },
+        }}
         rule={
           <>
             Amber reads as <i>work is happening here</i> — a nod to Bloomberg Terminal's amber
             phosphor. <b>Flare is banned from Workshop</b> and <b>Amber never ships outside
             Workshop</b>; the two accents trade places at the chrome boundary so an operator always
             knows which context they are inside.
+          </>
+        }
+      />
+
+      {/* Mark specimen — Iron carrier with wings only (no wordmark ever on
+          Workshop surfaces) and a wings-only size ladder culminating at the
+          22 px chrome anchor. Workshop has no lockup ladder because Workshop
+          never locks up with a wordmark. */}
+      <div style={{ display: "grid", gap: "16px", marginBottom: "16px" }}>
+        <TreatmentMarkCard
+          groundVar="var(--color-iron)"
+          rows={[
+            { label: "Argent · Iron · wings only", value: "Workshop", emphasise: "name" },
+            { label: "ground", value: "#0E0E0E", emphasise: "hex" },
+            { label: "wings", value: "#FFFFFF", emphasise: "hex" },
+          ]}
+        >
+          <WingsArgent style={{ width: "56%", height: "auto" }} cropped />
+        </TreatmentMarkCard>
+        <TreatmentWingsOnlyLadder
+          note={
+            <>
+              22 px is the size the live console chrome ships. Below 22 px the glyph starts to
+              lose its lower-wing tip at typical display DPI; above 64 px the wings feel like a
+              logo looking for a sentence.
+            </>
+          }
+        />
+      </div>
+
+      {/* Type ladder — Workshop's flavour: no Fraunces anywhere. H3 is the
+          biggest type a console ever sets; body + small + mono carry the rest.
+          The spec column notes Geist & Geist Mono against their weights so an
+          operator porting styles into a new workshop surface has the recipe
+          immediately. */}
+      <TreatmentTypeLadder
+        rows={[
+          {
+            sample: "Sandbox execution",
+            role: "h3 · ui · workshop",
+            spec: "Geist / 20 / 1.3 / -10 · SemiBold",
+            sampleSizePx: 20,
+            sampleStyle: {
+              fontFamily: "'Geist', sans-serif",
+              fontWeight: 600,
+              fontSize: "20px",
+              lineHeight: 1.3,
+              letterSpacing: "-0.01em",
+            },
+          },
+          {
+            sample: "14 active across 4 tenants · 3 h 22 m median lease · 99.98% attestation rate.",
+            role: "body",
+            spec: "Geist / 14 / 1.5 · Regular",
+            sampleSizePx: 14,
+            sampleStyle: {
+              fontFamily: "'Geist', sans-serif",
+              fontWeight: 400,
+              fontSize: "14px",
+              lineHeight: 1.5,
+            },
+          },
+          {
+            sample: "tenant · region · workload · status",
+            role: "small · ash",
+            spec: "Geist / 12 / 1.5 · Regular · Ash",
+            sampleSizePx: 12,
+            sampleStyle: {
+              fontFamily: "'Geist', sans-serif",
+              fontWeight: 400,
+              fontSize: "12px",
+              lineHeight: 1.5,
+              color: "var(--muted)",
+            },
+          },
+          {
+            sample: "0x41e9f2a  attest=true  lease=3h22m  region=us-east-1",
+            role: "mono",
+            spec: "Geist Mono / 12 / 1.5 · Regular",
+            sampleSizePx: 12,
+            sampleStyle: {
+              fontFamily: "'Geist Mono', ui-monospace, monospace",
+              fontWeight: 400,
+              fontSize: "12px",
+              lineHeight: 1.5,
+              color: "var(--muted)",
+            },
+          },
+          {
+            sample: "LIVE · PAGEABLE · US-EAST-1",
+            role: "badge · pageable",
+            spec: "Geist Mono / 10 / 1 / +180 · 600 · UPPER",
+            sampleSizePx: 10,
+            sampleStyle: {
+              fontFamily: "'Geist Mono', ui-monospace, monospace",
+              fontWeight: 600,
+              fontVariationSettings: '"wght" 600',
+              fontSize: "10px",
+              lineHeight: 1,
+              letterSpacing: "0.18em",
+              textTransform: "uppercase",
+              color: "var(--color-amber)",
+            },
+          },
+        ]}
+        caption={
+          <>
+            Workshop declines Fraunces entirely. If an editor ever asks for a serif inside the
+            product, that's a smell: the surface probably belongs under Letters or Newsroom, not
+            Workshop.
           </>
         }
       />
@@ -1376,7 +1432,22 @@ function SectionWorkshop() {
         </div>
       </div>
       <div style={{ marginTop: "24px" }}>
-        <WorkshopSignature />
+        <TreatmentSignature
+          eyebrow="Email signature · Workshop"
+          markVariant="wings-only"
+          markAside="Platform · Engineering"
+          identity={{
+            name: "Engineer Name",
+            role: "Platform Engineering · On-call, us-east-1",
+          }}
+          accent={{ hex: "#F79326", style: "none" }}
+          meta={
+            <SignatureStatusBadge accentHex="#F79326">
+              incident response · pageable
+            </SignatureStatusBadge>
+          }
+          contact={{ email: "engineer@guardianintelligence.org" }}
+        />
       </div>
     </Section>
   );
