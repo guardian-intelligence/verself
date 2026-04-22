@@ -76,7 +76,7 @@ See `docs/architecture/founder-workflows.md` for more. The repo started as a CI 
 
 Recommended that you read relevant ones directly. You can have a subagent summarize the ones that are not related to your task.
 
-- **Inbound mail, Stalwart, mailbox-service, JMAP, SMTP, inbound routing, tenant isolation, webmail:** `src/mailbox-service/docs/inbound-mail.md`
+- **Inbound mail, Stalwart, mailbox-service, JMAP, SMTP, inbound routing, tenant isolation:** `src/mailbox-service/docs/inbound-mail.md`
 - **vm-orchestrator privilege boundary, Firecracker VM networking, TAP allocator, host service plane, nftables, guest CIDR, lease/exec model, vm-bridge control:** `src/vm-orchestrator/AGENTS.md`
 - **ZFS volume lifecycle, zvol, clone, snapshot, checkpoint, restore:** `src/vm-orchestrator/docs/zfs-volume-lifecycle.md`
 - **Wire contracts, apiwire, DTO patterns, numeric safety, 64-bit, DecimalUint64, DecimalInt64, openapi-wire-check, generated contract gate:** `src/apiwire/docs/wire-contracts.md`

@@ -145,7 +145,7 @@
         electric_db_pool_size: 15
       tags: [electric, sandbox_rental_service]
     - role: frontend_auth_sessions
-      tags: [frontend_auth_sessions, rent_a_sandbox, governance_service, webmail]
+      tags: [frontend_auth_sessions, rent_a_sandbox, governance_service]
     - role: rent_a_sandbox
       tags: [rent_a_sandbox, governance_service]
     - role: stalwart
@@ -178,8 +178,6 @@
         electric_db_pool_size: 10
         electric_extra_systemd_after: [mailbox-service.service]
       tags: [electric_mail, mailbox_service]
-    - role: webmail
-      tags: [webmail]
     - role: platform
       tags: [platform]
     - role: company

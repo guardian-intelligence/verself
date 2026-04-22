@@ -454,11 +454,11 @@ Current access coverage:
 |---|---|---|---|---|
 | rent-a-sandbox / `sandbox-rental-service` | platform `sandbox_org_admin` | Acme `sandbox_org_admin` | Acme `sandbox_org_member` | Zitadel browser login and `SANDBOX_RENTAL_ACCESS_TOKEN` |
 | rent-a-sandbox organization surface / `identity-service` | browser and machine `owner` | browser `owner`, machine `admin` | Acme `member` | BFF token exchange and `IDENTITY_SERVICE_ACCESS_TOKEN` |
-| webmail / `mailbox-service` | `mailbox_user`, bound to `agents` | none | none | Zitadel browser login and `MAILBOX_SERVICE_ACCESS_TOKEN` |
+| `mailbox-service` (webmail folded into rent-a-sandbox; frontend path TBD) | `mailbox_user`, bound to `agents` | none | none | Zitadel browser login and `MAILBOX_SERVICE_ACCESS_TOKEN` |
 | Forgejo OIDC login | `forgejo_admin` | none | none | Zitadel browser login and `FORGEJO_OIDC_ACCESS_TOKEN` |
 | ClickHouse | founder access only | none | none | `CLICKHOUSE_OPERATOR_COMMAND`, currently `make clickhouse-query` |
 | Forgejo provider API automation | founder access only | none | none | `FORGEJO_OPERATOR_CREDENTIAL`, currently the remote `forgejo-automation` token |
-| Stalwart direct JMAP/IMAP/SMTP | not a persona grant | not a persona grant | not a persona grant | use `mailbox-service`/webmail or explicit founder mail tooling |
+| Stalwart direct JMAP/IMAP/SMTP | not a persona grant | not a persona grant | not a persona grant | use `mailbox-service` (webmail UI pending rent-a-sandbox absorption) or explicit founder mail tooling |
 | `billing-service` direct API | service-to-service only | service-to-service only | service-to-service only | customer-facing billing access goes through `sandbox-rental-service` |
 
 The platform admin persona intentionally does not export the Zitadel admin PAT,

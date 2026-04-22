@@ -223,48 +223,6 @@ receivers:
       - type: remove
         field: attributes.span_id
         if: attributes.span_id != nil
-  journald/webmail:
-    units: [webmail]
-    resource:
-      service.name: webmail
-    operators:
-      - type: move
-        from: body.MESSAGE
-        to: body
-      - type: json_parser
-        parse_from: body
-        timestamp:
-          parse_from: attributes.time
-          layout_type: gotime
-          layout: "2006-01-02T15:04:05.999999999Z07:00"
-      - type: trace_parser
-        trace_id:
-          parse_from: attributes.trace_id
-        span_id:
-          parse_from: attributes.span_id
-        if: attributes.trace_id != nil
-      - type: severity_parser
-        parse_from: attributes.level
-        mapping:
-          info: INFO
-          warn: WARN
-          error: ERROR
-          debug: DEBUG
-      - type: move
-        from: attributes.msg
-        to: body
-      - type: remove
-        field: attributes.time
-        if: attributes.time != nil
-      - type: remove
-        field: attributes.level
-        if: attributes.level != nil
-      - type: remove
-        field: attributes.trace_id
-        if: attributes.trace_id != nil
-      - type: remove
-        field: attributes.span_id
-        if: attributes.span_id != nil
   journald/vm-orchestrator:
     units: [vm-orchestrator]
     resource:
@@ -462,7 +420,7 @@ service:
   extensions: [health_check, file_storage]
   pipelines:
     logs:
-      receivers: [otlp, filelog/caddy, journald/caddy, journald/billing-service, journald/sandbox-rental, journald/sandbox-rental-recurring-worker, journald/rent-a-sandbox, journald/webmail, journald/zitadel, journald/openbao, journald/spire-server, journald/spire-agent, journald/vm-orchestrator, journald/forgejo, journald/grafana, journald/temporal-server, journald/temporal-web, filelog/postgresql]
+      receivers: [otlp, filelog/caddy, journald/caddy, journald/billing-service, journald/sandbox-rental, journald/sandbox-rental-recurring-worker, journald/rent-a-sandbox, journald/zitadel, journald/openbao, journald/spire-server, journald/spire-agent, journald/vm-orchestrator, journald/forgejo, journald/grafana, journald/temporal-server, journald/temporal-web, filelog/postgresql]
       processors: [batch]
       exporters: [clickhouse]
     traces:

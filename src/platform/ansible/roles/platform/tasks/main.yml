@@ -61,8 +61,6 @@
       - "--exclude=.tanstack"
       - "--exclude=apps/rent-a-sandbox"
       - "--exclude=apps/rent-a-sandbox/**"
-      - "--exclude=apps/mail"
-      - "--exclude=apps/mail/**"
       - "--exclude=apps/company"
       - "--exclude=apps/company/**"
       - "--exclude=playwright-report"

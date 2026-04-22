@@ -103,7 +103,7 @@ inside the wall.
 | Building           | Service                                   | Notes                                                         |
 | ------------------ | ----------------------------------------- | ------------------------------------------------------------- |
 | The Gate           | Caddy + Coraza WAF + nftables ingress     | Animated guards; "under attack" posture on WAF spikes         |
-| Herald's Stage × N | Frontend apps (TanStack Start)            | One per public app (this console, rent-a-sandbox, webmail, …) |
+| Herald's Stage × N | Frontend apps (TanStack Start)            | One per public app (this console, rent-a-sandbox, …). Webmail surfaces are being folded into rent-a-sandbox. |
 | Customs House      | sandbox-rental-service public API         | Packages and crates in the yard scale with active rentals     |
 | Letter Slot        | Stalwart SMTP/JMAP + mailbox-service hook | Mail sacks pile up with queue depth                           |
 | Tollbooth          | billing-service Stripe webhook            | A visible coin-chute; clinks on charge                        |
