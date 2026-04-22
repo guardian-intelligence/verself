@@ -585,7 +585,7 @@ var queryDocs = []queryDoc{
 		ID:      "temporal.activity",
 		Family:  "temporal",
 		Title:   "Temporal Activity",
-		Purpose: "Show recent Temporal Web requests, Temporal auth spans, proof workflow spans, service logs, and metric catalog rows.",
+		Purpose: "Show recent Temporal Web requests, Temporal auth spans, bootstrap runs, service logs, and metric catalog rows.",
 		Optional: []string{
 			"MINUTES=<lookback>",
 			"LIMIT=<rows>",
@@ -598,7 +598,7 @@ var queryDocs = []queryDoc{
 			"make observe WHAT=service SERVICE=temporal-web",
 			"make observe WHAT=describe SERVICE=temporal-server",
 			"make observe WHAT=describe SPAN=temporal.auth.authorize",
-			"make observe WHAT=logs SERVICE=temporal-proof",
+			"make observe WHAT=logs SERVICE=temporal-bootstrap",
 		},
 	},
 }

@@ -11,12 +11,6 @@
   register: temporal_web_binary
   failed_when: not temporal_web_binary.stat.exists
 
-- name: Verify temporal-proof binary exists in profile
-  ansible.builtin.stat:
-    path: "{{ fm_bin }}/temporal-proof"
-  register: temporal_proof_binary
-  failed_when: not temporal_proof_binary.stat.exists
-
 - name: Verify temporal-bootstrap binary exists in profile
   ansible.builtin.stat:
     path: "{{ fm_bin }}/temporal-bootstrap"
@@ -41,7 +35,6 @@
   loop:
     - "{{ temporal_system_group }}"
     - "{{ temporal_web_group }}"
-    - "{{ temporal_proof_group }}"
 
 - name: Create Temporal system users
   ansible.builtin.user:
@@ -57,7 +50,6 @@
   loop:
     - { name: "{{ temporal_system_user }}", group: "{{ temporal_system_group }}", home: "{{ temporal_state_dir }}" }
     - { name: "{{ temporal_web_user }}", group: "{{ temporal_web_group }}", home: "{{ temporal_web_state_dir }}" }
-    - { name: "{{ temporal_proof_user }}", group: "{{ temporal_proof_group }}", home: "{{ temporal_proof_state_dir }}" }
   loop_control:
     label: "{{ item.name }}"
 
@@ -71,12 +63,6 @@
   ansible.builtin.command:
     cmd: id -u {{ temporal_web_user }}
   register: temporal_web_uid
-  changed_when: false
-
-- name: Resolve Temporal proof uid for SPIRE registration
-  ansible.builtin.command:
-    cmd: id -u {{ temporal_proof_user }}
-  register: temporal_proof_uid
   changed_when: false
 
 - name: Read Temporal server SPIRE registration
@@ -172,32 +158,13 @@
   failed_when: false
   changed_when: false
 
-- name: Register Temporal proof SPIFFE workload
+- name: Remove retired Temporal proof SPIRE registration
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry create
+      {{ fm_bin }}/spire-server entry delete
       -socketPath {{ spire_server_socket_path }}
       -entryID forge-metal-temporal-proof
-      -parentID {{ spire_agent_id }}
-      -spiffeID {{ spire_temporal_proof_id }}
-      -selector unix:uid:{{ temporal_proof_uid.stdout | trim }}
-      -x509SVIDTTL 3600
-  when: temporal_proof_spire_entry.rc != 0 or 'forge-metal-temporal-proof' not in temporal_proof_spire_entry.stdout
-  changed_when: true
-
-- name: Update Temporal proof SPIRE workload selector drift
-  ansible.builtin.command:
-    cmd: >-
-      {{ fm_bin }}/spire-server entry update
-      -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-temporal-proof
-      -parentID {{ spire_agent_id }}
-      -spiffeID {{ spire_temporal_proof_id }}
-      -selector unix:uid:{{ temporal_proof_uid.stdout | trim }}
-      -x509SVIDTTL 3600
-  when:
-    - temporal_proof_spire_entry.rc == 0
-    - "'uid:' ~ (temporal_proof_uid.stdout | trim) not in temporal_proof_spire_entry.stdout"
+  when: temporal_proof_spire_entry.rc == 0 and 'forge-metal-temporal-proof' in temporal_proof_spire_entry.stdout
   changed_when: true
 
 - name: Create Temporal state directories
@@ -215,10 +182,40 @@
     - { path: "{{ temporal_web_state_dir }}", owner: "{{ temporal_web_user }}", group: "{{ temporal_web_group }}", mode: "0750" }
     - { path: "{{ temporal_web_state_dir }}/.ansible/tmp", owner: "{{ temporal_web_user }}", group: "{{ temporal_web_group }}", mode: "0700" }
     - { path: "{{ temporal_web_credstore_dir }}", owner: root, group: "{{ temporal_web_group }}", mode: "0750" }
-    - { path: "{{ temporal_proof_state_dir }}", owner: "{{ temporal_proof_user }}", group: "{{ temporal_proof_group }}", mode: "0750" }
-    - { path: "{{ temporal_proof_state_dir }}/.ansible/tmp", owner: "{{ temporal_proof_user }}", group: "{{ temporal_proof_group }}", mode: "0700" }
   loop_control:
     label: "{{ item.path }}"
+
+- name: Stop retired temporal-proof-worker if present
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - disable
+      - --now
+      - temporal-proof-worker
+  failed_when: false
+  changed_when: false
+  register: temporal_proof_worker_disable
+
+- name: Remove retired temporal-proof-worker systemd unit
+  ansible.builtin.file:
+    path: /etc/systemd/system/temporal-proof-worker.service
+    state: absent
+
+- name: Remove retired Temporal proof state directory
+  ansible.builtin.file:
+    path: /var/lib/temporal-proof
+    state: absent
+
+- name: Remove retired Temporal proof user
+  ansible.builtin.user:
+    name: temporal_proof
+    state: absent
+    remove: true
+
+- name: Remove retired Temporal proof group
+  ansible.builtin.group:
+    name: temporal_proof
+    state: absent
 
 - name: Reset Temporal persistence database when requested
   ansible.builtin.include_role:
@@ -229,7 +226,6 @@
     postgresql_db_reset_stop_units:
       - temporal-server.service
       - temporal-web.service
-      - temporal-proof-worker.service
   when: temporal_force_schema_reset | bool
 
 - name: Reset Temporal visibility database when requested
@@ -241,7 +237,6 @@
     postgresql_db_reset_stop_units:
       - temporal-server.service
       - temporal-web.service
-      - temporal-proof-worker.service
   when: temporal_force_schema_reset | bool
 
 - name: Ensure Temporal web OAuth application exists
@@ -402,14 +397,6 @@
     mode: "0644"
   notify: restart temporal-web
 
-- name: Deploy temporal-proof-worker systemd unit
-  ansible.builtin.template:
-    src: temporal-proof-worker.service.j2
-    dest: /etc/systemd/system/temporal-proof-worker.service
-    owner: root
-    group: root
-    mode: "0644"
-
 - name: Apply Temporal unit and config changes before readiness
   ansible.builtin.meta: flush_handlers
 
@@ -471,10 +458,3 @@
   until: temporal_web_health.status == 200
   retries: 15
   delay: 2
-
-- name: Keep temporal-proof-worker disabled until live verification
-  ansible.builtin.systemd:
-    name: temporal-proof-worker
-    enabled: false
-    state: stopped
-    daemon_reload: true

@@ -16,7 +16,6 @@ spire_object_storage_admin_id: "spiffe://{{ spire_trust_domain }}/svc/object-sto
 spire_object_storage_service_id: "spiffe://{{ spire_trust_domain }}/svc/object-storage-service"
 spire_temporal_server_id: "spiffe://{{ spire_trust_domain }}/svc/temporal-server"
 spire_temporal_web_id: "spiffe://{{ spire_trust_domain }}/svc/temporal-web"
-spire_temporal_proof_id: "spiffe://{{ spire_trust_domain }}/svc/temporal-proof"
 spire_grafana_id: "spiffe://{{ spire_trust_domain }}/svc/grafana"
 spire_otelcol_id: "spiffe://{{ spire_trust_domain }}/svc/otelcol"
 spire_clickhouse_operator_id: "spiffe://{{ spire_trust_domain }}/svc/clickhouse-operator"

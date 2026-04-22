@@ -100,16 +100,16 @@ The current deployment is intentionally narrow:
 - One loopback-only Temporal cluster on the single-node host.
 - One repo-owned `temporal-server` systemd unit running Temporal in
   combined mode.
-- One repo-owned `temporal-proof-worker` systemd unit kept installed but
-  stopped by default; `make temporal-proof` starts it on demand and stops
-  it again before returning.
+- One repo-owned `temporal-web` systemd unit for operator access.
+- One repo-owned `temporal-bootstrap` command used during deploys and
+  live verification to ensure the sandbox and billing namespaces exist.
 - Frontend gRPC on `127.0.0.1:7233`, metrics on `127.0.0.1:9001`,
   private membership ports reserved in `services.yml` for a later split
   into dedicated roles.
 
-There is no Temporal Web deployment yet. The current operator surface is
-Grafana, `make observe WHAT=temporal`, `tdbg`, and SQL against the
-visibility database.
+The current operator surface is Grafana, Temporal Web,
+`make observe WHAT=temporal`, `tdbg`, and SQL against the visibility
+database.
 
 ## SPIFFE posture
 
@@ -135,7 +135,7 @@ Current identities:
 
 ```
 spiffe://<td>/svc/temporal-server
-spiffe://<td>/svc/temporal-proof
+spiffe://<td>/svc/temporal-web
 ```
 
 Single-node combined mode deliberately collapses frontend, history,
@@ -223,13 +223,11 @@ Two implications matter for the next stage:
 
 The current operator surface is ClickHouse-first:
 
-- `make observe WHAT=temporal` for recent auth spans, proof workflow
-  spans, logs, and live metric inventory.
+- `make observe WHAT=temporal` for recent auth spans, bootstrap runs,
+  logs, and live metric inventory.
 - Grafana dashboard `forge-metal-temporal`.
 - `default.otel_traces`, `default.otel_logs`, and
   `default.otel_metric_catalog_live` for Temporal traffic and health.
-- `forge_metal.audit_events` for cross-service effects emitted from
-  Temporal activities.
 - `temporal_visibility.executions_visibility` for workflow status and
   timing.
 
@@ -238,22 +236,20 @@ This is enough to answer the practical operator questions:
 - Is the cluster up?
 - Who is calling it?
 - Which namespace is active?
-- Did a workflow survive restart?
-- Did the activity produce the expected external side effect?
+- Did namespace bootstrap succeed after restart?
 
 ## Verification
 
-`make temporal-proof` is the deployment gate. It does four concrete
-things:
+`make temporal-verify` is the Temporal deployment gate. It does three
+concrete things:
 
-1. Asserts `temporal-proof-worker` is disabled and inactive, then starts
-   it on demand.
-2. Confirms a denied namespace call fails.
-3. Starts `ProofHeartbeat`, restarts `temporal-server` mid-flight, and
-   waits for completion.
-4. Asserts ClickHouse traces/logs/metrics, a governance audit row, a
-   matching visibility row in `temporal_visibility.executions_visibility`,
-   and a return to the cold worker state after the proof finishes.
+1. Asserts the retired `temporal-proof` binary, `temporal-proof-worker`
+   unit, and `forge-metal-temporal-proof` SPIRE entry are absent.
+2. Runs `temporal-bootstrap`, restarts `temporal-server`, and runs
+   `temporal-bootstrap` again to prove the supported namespace-admin path
+   is healthy after restart.
+3. Asserts ClickHouse traces/logs/metrics and PostgreSQL namespace rows
+   for the supported bootstrap surface.
 
 `make grafana-proof` and `make workload-identity-proof` are the two
 supporting gates. Together they prove that Temporal is visible from the
@@ -282,9 +278,9 @@ Tailwinds:
   Temporal client with the same SPIFFE X.509 client pattern.
 - PeerDB can reuse the Temporal frontend authz path instead of inventing
   a separate trust model for workflow orchestration.
-- Governance audit append from inside a Temporal activity is already
-  proven, so future workflow workers inherit a working cross-service side
-  effect pattern.
+- Namespace bootstrap is already instrumented, so deploy-time
+  administrative traffic shows up on the same auth/authz and transport
+  surfaces as future repo-owned clients.
 - Grafana and `make observe` already expose the relevant traces, logs,
   metrics, and visibility rows in one place.
 

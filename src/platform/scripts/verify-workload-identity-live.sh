@@ -27,7 +27,7 @@ fi
 
 if [[ "${WORKLOAD_IDENTITY_PROOF_EXERCISE_TEMPORAL:-1}" != "0" ]]; then
   VERIFICATION_RUN_ID="${run_id}-temporal" \
-  VERIFICATION_ARTIFACT_ROOT="${artifact_dir}/dependencies/temporal-proof" \
+  VERIFICATION_ARTIFACT_ROOT="${artifact_dir}/dependencies/temporal-verify" \
     "${script_dir}/verify-temporal-live.sh"
 fi
 
@@ -55,7 +55,6 @@ expected_ids = [
     f"spiffe://{trust_domain}/svc/otelcol",
     f"spiffe://{trust_domain}/svc/clickhouse-operator",
     f"spiffe://{trust_domain}/svc/temporal-server",
-    f"spiffe://{trust_domain}/svc/temporal-proof",
 ]
 systemd_units = [
     "spire-server",
@@ -441,7 +440,7 @@ wait_for_clickhouse_count default "
   FROM otel_traces
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
     AND SpanName = 'auth.spiffe.mtls.client'
-    AND ServiceName IN ('identity-service', 'sandbox-rental-service', 'secrets-service', 'temporal-proof', 'temporal-proof-worker')
+    AND ServiceName IN ('identity-service', 'sandbox-rental-service', 'secrets-service', 'temporal-bootstrap')
     AND SpanAttributes['spiffe.expected_server_id'] != ''
 " 3 "${artifact_dir}/clickhouse/spiffe-mtls-client-spans-count.tsv"
 
@@ -524,7 +523,7 @@ wait_for_clickhouse_count forge_metal "
   FROM audit_events
   WHERE recorded_at BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
     AND actor_spiffe_id != ''
-    AND service_name IN ('identity-service', 'sandbox-rental-service', 'secrets-service', 'temporal-proof')
+    AND service_name IN ('identity-service', 'sandbox-rental-service', 'secrets-service')
 " 1 "${artifact_dir}/clickhouse/spiffe-audit-actor-count.tsv"
 
 python3 - "${run_id}" "${window_start}" "${window_end}" "${artifact_dir}" >"${artifact_dir}/run.json" <<'PY'
