@@ -9,20 +9,31 @@ export const WINGS_PATH_D =
 
 export const WINGS_TIGHT_VIEWBOX = "105 106 140 140";
 export const WINGS_PADDED_VIEWBOX = "30 31 292 292";
+// Glyph-hugging viewBox: the smallest box that contains the wings path exactly.
+// Derived from the extrema of WINGS_PATH_D (minX 124.497, minY 116.237, width
+// 102.174, height 120.823). Used by the Lockup so the SVG bottom coincides
+// with the lower wing's visual tip — wordmarks bottom-align against it without
+// the ~6% trim the canonical tight viewBox carries. Favicons, OG cards, email
+// signatures still use WINGS_TIGHT_VIEWBOX so the mark keeps its breathing
+// room on standalone surfaces.
+export const WINGS_CROPPED_VIEWBOX = "124.497 116.237 102.174 120.823";
 
 type SvgBase = Omit<SVGProps<SVGSVGElement>, "viewBox" | "xmlns" | "children">;
 
 export interface WingsArgentProps extends SvgBase {
   readonly title?: string | undefined;
+  readonly cropped?: boolean;
 }
 
 // Argent on Iron — the canonical mark when the canvas is already the wings'
 // ground (Iron, photography behind a scrim, in-product chrome). Tight viewBox
-// because the surrounding canvas does the work of giving the wings air.
-export function WingsArgent({ title, ...rest }: WingsArgentProps) {
+// because the surrounding canvas does the work of giving the wings air. Pass
+// `cropped` when the consumer needs the bounding box to hug the glyph exactly
+// (e.g. horizontal lockups where the wordmark aligns to the wing tip).
+export function WingsArgent({ title, cropped, ...rest }: WingsArgentProps) {
   return (
     <svg
-      viewBox={WINGS_TIGHT_VIEWBOX}
+      viewBox={cropped ? WINGS_CROPPED_VIEWBOX : WINGS_TIGHT_VIEWBOX}
       xmlns="http://www.w3.org/2000/svg"
       role={title ? "img" : "presentation"}
       aria-label={title}

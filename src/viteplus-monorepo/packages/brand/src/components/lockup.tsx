@@ -3,20 +3,27 @@ import { WingsArgent, WingsChip, WingsEmboss } from "./wings";
 
 export type LockupSize = "sm" | "md" | "lg";
 
+// MARK_HEIGHT_PX is the Lockup's primary sizing number. With the canonical
+// tight viewBox (140×140), mark-h is both width and height. With the cropped
+// viewBox (≈102×121) used by the Argent variant below, mark-h sets the SVG
+// width; the height follows the glyph aspect ratio (≈ mark-h × 1.182).
 const MARK_HEIGHT_PX: Record<LockupSize, number> = {
   sm: 32,
   md: 52,
   lg: 96,
 };
 
+// Lab-tuned at lg in the alignment playground: wordmark 90% of mark-h across
+// the size ladder. Same ratio at every size keeps the lockup visually coherent
+// whether it appears as a 32px topbar mark or a 96px hero lockup.
 const WORDMARK_RATIO: Record<LockupSize, number> = {
-  // Letter-spacing & ratio match the playground's per-size tuning so the
-  // small lockup retains optical pairing and the large one doesn't go airy.
-  sm: 0.75,
-  md: 0.72,
-  lg: 0.78,
+  sm: 0.9,
+  md: 0.9,
+  lg: 0.9,
 };
 
+// Optical tracking per size. Tighter at display sizes, opener at small so the
+// wordmark stays readable when "Guardian" is only a few tens of pixels tall.
 const WORDMARK_TRACKING: Record<LockupSize, string> = {
   sm: "-0.008em",
   md: "-0.015em",
@@ -35,13 +42,16 @@ export interface LockupProps {
   readonly title?: string;
 }
 
-// Lockup — mark + wordmark, sharing the playground's single sizing rule.
-// Internal gap clamps to clamp(8px, 0.28·mark-h, 18px) so small surfaces
-// still pair, large ones don't fly apart, and middle sizes follow geometry.
+// Lockup — mark + wordmark, tuned in the alignment playground so the wordmark
+// bottom-aligns with the lower-wing tip. Argent uses the glyph-cropped viewBox
+// so the SVG bottom coincides with the visible wing; chip/emboss keep their
+// padded viewBox because the background shape is the visible edge there. Gap
+// is clamp(8px, 0.28·mark-h, 18px) — mostly proportional, with an 8px floor so
+// sm lockups still read as a pair and an 18px ceiling so lg doesn't fly apart.
 export function Lockup({
   size = "md",
   variant = "argent",
-  wordmark = "Guardian Intelligence",
+  wordmark = "Guardian",
   wordmarkColor,
   className,
   style,
@@ -50,6 +60,7 @@ export function Lockup({
   const markH = MARK_HEIGHT_PX[size];
   const ratio = WORDMARK_RATIO[size];
   const tracking = WORDMARK_TRACKING[size];
+  const useCropped = variant === "argent";
   const Mark = variant === "chip" ? WingsChip : variant === "emboss" ? WingsEmboss : WingsArgent;
 
   const lockupStyle: CSSProperties = {
@@ -61,12 +72,19 @@ export function Lockup({
     ...style,
   };
 
+  // When cropped, the SVG is wider-than-square (markH × ~markH·1.18) and the
+  // height must be auto so the aspect ratio holds.
+  const markStyle: CSSProperties = useCropped
+    ? { width: `${markH}px`, height: "auto", flex: `0 0 ${markH}px` }
+    : { width: `${markH}px`, height: `${markH}px`, flex: `0 0 ${markH}px` };
+
   return (
     <span className={className} style={lockupStyle}>
-      <Mark
-        title={title}
-        style={{ width: `${markH}px`, height: `${markH}px`, flex: `0 0 ${markH}px` }}
-      />
+      {useCropped ? (
+        <WingsArgent title={title} cropped style={markStyle} />
+      ) : (
+        <Mark title={title} style={markStyle} />
+      )}
       <span
         style={{
           fontFamily: "'Fraunces', Georgia, serif",
@@ -75,6 +93,10 @@ export function Lockup({
           fontSize: `${markH * ratio}px`,
           lineHeight: 1,
           letterSpacing: tracking,
+          // 1px optical nudge: flex-end aligns the text-box bottom, but the
+          // Fraunces baseline sits a hair above the box bottom, leaving the
+          // wordmark floating a touch high against the wing tip.
+          transform: "translateY(1px)",
         }}
       >
         {wordmark}
@@ -97,7 +119,7 @@ export interface StackedLockupProps {
 // centred, derived from --wing-unit so it tracks any mark-size override.
 export function StackedLockup({
   markHeight = 88,
-  wordmark = "Guardian Intelligence",
+  wordmark = "Guardian",
   tagline,
   variant = "argent",
   className,
