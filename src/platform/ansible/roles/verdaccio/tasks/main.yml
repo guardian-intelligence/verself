@@ -44,19 +44,6 @@
     HOME: /root
   notify: restart verdaccio
 
-- name: Install verdaccio-security-filter plugin
-  ansible.builtin.command: >
-    {{ fm_bin }}/npm install --global
-    --prefix {{ verdaccio_install_prefix }}
-    verdaccio-security-filter@{{ verdaccio_security_filter_version }}
-    --registry https://registry.npmjs.org
-  args:
-    creates: "{{ verdaccio_install_prefix }}/lib/node_modules/verdaccio-security-filter"
-  environment:
-    PATH: "{{ fm_bin }}:{{ ansible_facts['env']['PATH'] }}"
-    HOME: /root
-  notify: restart verdaccio
-
 - name: Create Verdaccio config directory
   ansible.builtin.file:
     path: /etc/verdaccio
