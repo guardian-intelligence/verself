@@ -29,32 +29,28 @@ packages:
 max_body_size: 100mb
 listen: {{ services.verdaccio.listen_host }}:{{ services.verdaccio.port }}
 
-# verdaccio-security-filter: supply chain security gate.
+# Supply-chain gating via @verdaccio/package-filter (bundled with Verdaccio
+# >= 6.4.0). The plugin rewrites uplink manifests before they reach clients:
+# filtered versions disappear from `npm install` / `npm view` resolution.
 #
-# On Verdaccio 6.x, filter_metadata is broken (verdaccio#5372, fix in 7.x).
-# Only the middleware layer loads — it blocks tarball downloads for blocked
-# packages/scopes. The filters section is pre-configured so age/CVE/license
-# checks activate automatically when we upgrade to 7.x+.
+# Supported rules: age quarantine (minAgeDays), date freeze (dateThreshold),
+# and block/allow lists keyed by scope, package, or semver range. License
+# blocklists and CVE severity gating are NOT supported by this plugin — those
+# live in separate tooling (Socket, Snyk, Dependabot, a NodeSecure scanner
+# gate in CI). Don't add dead config here claiming otherwise.
+#
+# Plugin ships on a prerelease track (13.0.0-next-*), per Verdaccio's 6.4.0
+# notes asking for testing. Config keys below (block/allow/minAgeDays/
+# dateThreshold) are the only keys the plugin recognises — pin
+# verdaccio_version in group_vars when upgrading so grammar drift is caught
+# in review, not at runtime.
+#
+# Failure-mode posture: misconfiguration throws at plugin construction and
+# Verdaccio refuses to start (fail-closed on config). Runtime filter errors
+# are caught by Verdaccio core (storage.js _applyFilters) and the unfiltered
+# manifest is served (fail-open at runtime). There is no knob to invert
+# either posture; we accept it because the plugin is pure in-memory manifest
+# transformation with no IO that could legitimately fail.
 filters:
-  security-filter:
-    enabled: true
-    packageAge:
-      enabled: true
-      minVersionAgeDays: 3
-    cveCheck:
-      enabled: true
-      severity: critical
-      autoBlock: true
-    licenses:
-      enabled: true
-      blocked:
-        - UNLICENSED
-
-middlewares:
-  security-filter:
-    enabled: true
-    mode: blacklist
-    blockedPatterns: []
-    blockedScopes: []
-    errorHandling:
-      onFilterError: fail-closed
+  '@verdaccio/package-filter':
+    minAgeDays: 3
