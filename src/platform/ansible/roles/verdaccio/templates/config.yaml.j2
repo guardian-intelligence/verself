@@ -54,3 +54,26 @@ listen: {{ services.verdaccio.listen_host }}:{{ services.verdaccio.port }}
 filters:
   '@verdaccio/package-filter':
     minAgeDays: 3
+
+# Structured JSON logs over stdout → journald → otelcol → ClickHouse.
+# Verdaccio uses pino under the hood; format: json produces the native
+# pino shape ({level,time,msg,sub,request,status,bytes,...}) which the
+# otelcol journald/verdaccio receiver parses into LogAttributes + maps
+# pino numeric levels (http=25, info=30, warn=40, error=50, fatal=60) to
+# OTel SeverityText. Level http keeps per-request access logs; dropping
+# to info would silence them.
+#
+# redact: paths come from Verdaccio's own default-config example. Pino
+# redact runs before the JSON hits stdout, so credentials never land in
+# journald or ClickHouse even if an upstream uplink reflects them back.
+# The otelcol pipeline drops the entire `req` object post-parse for
+# defense-in-depth; redact here is the primary line.
+log:
+  type: stdout
+  format: json
+  level: http
+  redact:
+    paths:
+      - req.header.authorization
+      - req.header.cookie
+    censor: '<redacted>'
