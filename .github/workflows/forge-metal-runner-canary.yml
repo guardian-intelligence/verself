@@ -24,14 +24,20 @@ jobs:
           cache: true
           node-modules: true
 
-      - name: Install JS dependencies with Vite+
+      - name: Prime cached pnpm paths
         working-directory: src/viteplus-monorepo
         run: |
           set -euo pipefail
-          vp install --frozen-lockfile --prefer-offline
+          store_dir="$(pnpm store path)"
+          mkdir -p "${store_dir}/forge-metal-canary" "node_modules/.forge-metal-canary"
+          printf 'run=%s\nsha=%s\n' "${GITHUB_RUN_ID}" "${GITHUB_SHA}" >"${store_dir}/forge-metal-canary/marker.txt"
+          printf 'run=%s\nsha=%s\n' "${GITHUB_RUN_ID}" "${GITHUB_SHA}" >"node_modules/.forge-metal-canary/marker.txt"
+          printf 'store=%s\n' "${store_dir}"
 
-      - name: Build rent-a-sandbox with Vite+
+      - name: Read cached markers
         working-directory: src/viteplus-monorepo
         run: |
           set -euo pipefail
-          vp run @forge-metal/rent-a-sandbox#build
+          store_dir="$(pnpm store path)"
+          cat "${store_dir}/forge-metal-canary/marker.txt"
+          cat "node_modules/.forge-metal-canary/marker.txt"
