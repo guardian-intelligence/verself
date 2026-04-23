@@ -37,13 +37,12 @@ function DesignNewsroom() {
 
   return (
     <>
-      {/* The Newsroom specimen renders on Paper — the treatment's broadcast
-          voice is loud, but the *teaching surface* for Newsroom is editorial.
-          Flare appears only in the bounded hero band + OG-card + billboard
-          specimens nested inside the section; everything else sits on Paper
-          so the visitor can read the rules without swimming in acid green. */}
+      {/* Newsroom's own treatment scope now binds --treatment-ground to Paper
+          (see packages/brand/src/tokens.css), so the specimen body renders on
+          Paper without faking a Letters scope. Flare appears only inside the
+          bounded hero band the section demonstrates. */}
       <div
-        data-treatment="letters"
+        data-treatment="newsroom"
         style={{
           background: "var(--treatment-ground)",
           color: "var(--treatment-ink)",

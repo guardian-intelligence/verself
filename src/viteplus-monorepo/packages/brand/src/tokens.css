@@ -118,23 +118,25 @@
 }
 
 [data-treatment="newsroom"] {
-  /* Flare ground flips every inherited default: wordmark and accent both sit
-     in Ink because Argent cannot hold contrast on acid green, and the muted
-     ramp switches to Stone (ink-on-light) so body and hairlines stay legible.
-     The wordmark variant swap to emboss (wings-in-black-medallion) is a
-     React concern — AppChrome renders it via TREATMENT_WORDMARK_VARIANT. */
-  --treatment-ground: var(--color-flare);
+  /* Newsroom — a Letters body with a Flare hero band. The TREATMENT GROUND is
+     Paper so Newsroom pages read like an editorial surface; Flare appears only
+     where the page chooses to broadcast: the bounded hero band carrying the
+     bulletin, the 1200×630 OG card, the 16:9 billboard. Accent resolves to
+     Flare so CTAs and hero-band backgrounds paint it via --treatment-accent;
+     the ground itself does not. AppChrome's wordmark variant is emboss
+     (wings-in-ink-medallion), which reads against Paper as a black bookplate. */
+  --treatment-ground: var(--color-paper);
   --treatment-ink: var(--color-ink);
-  --treatment-accent: var(--color-ink);
+  --treatment-accent: var(--color-flare);
   --treatment-wordmark: var(--color-ink);
   --treatment-display-font: var(--font-display);
-  --treatment-muted-strong: rgba(11, 11, 11, 0.82);
-  --treatment-muted: rgba(11, 11, 11, 0.72);
-  --treatment-muted-meta: rgba(11, 11, 11, 0.6);
-  --treatment-muted-faint: rgba(11, 11, 11, 0.55);
-  --treatment-surface-subtle: rgba(11, 11, 11, 0.06);
-  --treatment-surface-border: rgba(11, 11, 11, 0.18);
-  --treatment-hairline: rgba(11, 11, 11, 0.18);
+  --treatment-muted-strong: var(--color-stone-strong);
+  --treatment-muted: var(--color-stone);
+  --treatment-muted-meta: var(--color-stone-meta);
+  --treatment-muted-faint: var(--color-stone-faint);
+  --treatment-surface-subtle: rgba(11, 11, 11, 0.04);
+  --treatment-surface-border: rgba(11, 11, 11, 0.14);
+  --treatment-hairline: rgba(11, 11, 11, 0.14);
 }
 
 [data-treatment="letters"] {

@@ -1,7 +1,7 @@
 import { Lockup, WingsEmboss } from "@forge-metal/brand";
 import { RulesRow, Section } from "../section-shell";
 import { Colophon } from "../colophon";
-import { sectionMeta, Surface } from "../shared";
+import { LINE, sectionMeta, Surface } from "../shared";
 import {
   TreatmentLockupLadder,
   TreatmentMarkCard,
@@ -11,7 +11,13 @@ import {
 } from "../treatments";
 
 // ============================================================================
-// 05 — Treatments · Newsroom
+// 02 — Treatments · Newsroom
+//
+// Newsroom is a Paper reading ground plus a bounded Flare hero band — the
+// "Letters body + broadcast band" formula. Every demonstrative block below
+// paints on Paper; Flare appears once, inside the hero-band Surface. This
+// keeps the teaching honest: a reader experiences the treatment exactly the
+// way a real Newsroom page ships, not as a sea of acid green.
 // ============================================================================
 export function SectionNewsroom() {
   const meta = sectionMeta("newsroom");
@@ -20,66 +26,73 @@ export function SectionNewsroom() {
       meta={meta}
       lede={
         <>
-          Flare ground, wings in a circular ink emboss, Fraunces at display weight. The Newsroom
-          treatment is the moment the brand chooses to be noticed — investor deck covers,
-          billboards, social hero images, recruiting posters, conference backdrops, merch.{" "}
+          Paper ground under the reading text; a single bounded Flare band carries the broadcast.
+          The moment Guardian chooses to be noticed — investor deck covers, billboards, social hero
+          images, recruiting posters, conference backdrops, merch — appears inside that band.{" "}
           <b>
             OG cards, press hero imagery, and every share preview ride under this treatment by
             default
-          </b>{" "}
-          — acid green is how Guardian appears in someone else's feed.
+          </b>
+          ; acid green is how Guardian appears in someone else&apos;s feed, never the ground they
+          read on.
         </>
       }
     >
       <TreatmentPalette
         roles={{
           ground: {
+            name: "Paper",
+            hex: "#F6F4ED",
+            note: "Reading canvas, same as Letters.",
+            chipStyle: { boxShadow: `inset 0 0 0 1px ${LINE}` },
+          },
+          accent: {
             name: "Flare",
             hex: "#CCFF00",
             pantone: "Pantone 389 C",
-            note: "The broadcast canvas.",
-          },
-          accent: {
-            name: "Iron",
-            hex: "#0E0E0E",
-            note: "Inverted primary action · ink-dark button.",
+            note: "Hero band · OG card · billboard. Never the ground.",
           },
           mark: {
             name: "Argent",
             hex: "#FFFFFF",
-            note: "Wings inside a circular ink emboss.",
+            note: "Wings inside an ink emboss medallion.",
+            chipStyle: { boxShadow: "inset 0 0 0 1px rgba(11,11,11,0.18)" },
           },
-          // Newsroom genuinely has no muted register — it is broadcast, not
-          // reading. The palette's fourth column renders a "not used" cell
-          // so the absence is visible.
+          muted: {
+            name: "Stone",
+            hex: "#0B0B0B",
+            note: "Bylines, kickers, and meta · Ink at 0.7 / 0.6 / 0.55 opacity.",
+            chipStyle: { background: "rgba(11,11,11,0.7)" },
+          },
         }}
         rule={
           <>
-            One action, loud and single; everything else reads in ink so the ground does the
-            shouting. Bordeaux and Amber never appear here — Newsroom is Flare's surface alone.
+            One Flare surface per composition, and it has to be pulling weight — the lead bulletin,
+            the share preview, the billboard. Anything quieter belongs on Paper.{" "}
+            <b>Bordeaux never appears on Newsroom</b> and{" "}
+            <b>Flare never appears outside Newsroom surfaces</b>: the two accents never trade
+            places.
           </>
         }
       />
 
-      {/* Mark specimen + Type ladder — Newsroom's "rules" pair. The emboss
-          mark (wings-in-ink-medallion) is the only variant that reads over
-          Flare without a legibility fight; the display-only type ladder
-          sits right. The full lockup ladder renders full-width below so
-          the 96 px emboss mark can breathe. */}
+      {/* Mark specimen + Type ladder — Newsroom's "rules" pair. The mark card
+          shows the emboss medallion against Paper (the Newsroom page ground),
+          matching what the reader actually sees in the AppChrome. The type
+          ladder sits right — still display-weight Fraunces because Newsroom
+          copy never descends into body prose. */}
       <RulesRow>
         <TreatmentMarkCard
-          groundVar="var(--color-flare)"
+          groundVar="var(--color-paper)"
           rows={[
-            { label: "Argent · Flare · emboss", value: "Newsroom", emphasise: "name" },
-            { label: "ground", value: "#CCFF00", emphasise: "hex" },
+            { label: "Argent · Paper · emboss", value: "Newsroom", emphasise: "name" },
+            { label: "ground", value: "#F6F4ED", emphasise: "hex" },
             { label: "emboss", value: "#0B0B0B", emphasise: "hex" },
             { label: "wings", value: "#FFFFFF", emphasise: "hex" },
           ]}
         >
           <WingsEmboss style={{ width: "58%", height: "auto" }} />
         </TreatmentMarkCard>
-        {/* Newsroom type is display-only. No body copy — Flare is too loud
-            a ground to read paragraphs on. */}
         <TreatmentTypeLadder
           rows={[
             {
@@ -94,7 +107,7 @@ export function SectionNewsroom() {
                 fontSize: "64px",
                 lineHeight: 1.0,
                 letterSpacing: "-0.028em",
-                color: "var(--color-type-iron)",
+                color: "var(--color-ink)",
               },
             },
             {
@@ -109,6 +122,7 @@ export function SectionNewsroom() {
                 fontSize: "40px",
                 lineHeight: 1.05,
                 letterSpacing: "-0.02em",
+                color: "var(--color-ink)",
               },
             },
             {
@@ -131,24 +145,21 @@ export function SectionNewsroom() {
           caption={
             <>
               Newsroom type stops at display and its kicker. If a surface needs body prose, it
-              belongs under Letters or Company; Flare is too loud a ground to read paragraphs on.
+              belongs under Letters — Newsroom is broadcast, not reading.
             </>
           }
         />
       </RulesRow>
       <div style={{ marginBottom: "16px" }}>
-        {/* Lockup ladder at full width — the 96 px emboss mark needs the
-            horizontal room and meta column readability on Flare is best
-            when the card spans the full content width. */}
+        {/* Lockup ladder — the emboss medallion against Paper. The reader
+            inspects the wordmark proportions here without Flare fighting for
+            attention; Flare is reserved for the band below. */}
         <TreatmentLockupLadder
-          groundVar="var(--color-flare)"
-          // Meta column has to fight Flare's high luminance; switch to
-          // ink-muted (Stone) for meta/footer and iron for the gap accent
-          // so "14.6 px" doesn't go Flare-on-Flare.
-          accentColor="var(--color-iron)"
+          groundVar="var(--color-paper)"
+          accentColor="var(--color-bordeaux)"
           metaColor="rgba(11,11,11,0.72)"
           footerColor="rgba(11,11,11,0.55)"
-          borderColor="rgba(11,11,11,0.18)"
+          borderColor="rgba(11,11,11,0.14)"
           rows={[
             {
               size: "lg",
@@ -177,17 +188,18 @@ export function SectionNewsroom() {
           ]}
           footer={
             <>
-              On Flare the wordmark sets in Ink, never Argent. The medallion carries the wings so
-              the argent never reads directly against the ground.
+              The wordmark sets in Ink on Paper; the emboss medallion carries the wings so the
+              argent never reads directly against the ground. The same medallion is what the band
+              below holds against Flare.
             </>
           }
         />
       </div>
 
-      {/* Hero-band specimen. Bounded (max 480 px) so the demonstration stays a
-          BAND on the Paper page, not an environment. The teaching point is how
-          Newsroom composes — ground, mark, display type, one CTA — not how much
-          Flare can fit on one screen. */}
+      {/* The hero band — the one Flare specimen on the page. Bounded to 480 px
+          and clipped, because the teaching point is how Newsroom COMPOSES
+          (Paper around, Flare inside) not how much Flare can fit on one
+          screen. */}
       <Surface
         ground="flare"
         style={{
@@ -230,27 +242,28 @@ export function SectionNewsroom() {
         <Colophon
           heading="Newsroom · Specifications"
           rows={[
-            { label: "Ground", value: "#CCFF00", note: "Pantone 389 C · Flare" },
-            { label: "Type", value: "#0B0B0B", note: "Ink · ink-on-flare" },
+            { label: "Ground", value: "#F6F4ED", note: "Paper · body" },
+            { label: "Accent", value: "#CCFF00", note: "Pantone 389 C · Flare · band only" },
+            { label: "Type", value: "#0B0B0B", note: "Ink on Paper" },
             { label: "Mark", value: "WingsEmboss", note: "Argent wings in ink medallion" },
-            { label: "Display", value: "Fraunces", note: 'opsz 144 · SOFT 30 · -0.028em' },
+            { label: "Display", value: "Fraunces", note: "opsz 144 · SOFT 30 · -0.028em" },
             { label: "Kicker", value: "Geist Mono", note: "11 / 1 / +180 · 600 · UPPER" },
-            { label: "Surfaces", value: "OG cards · billboards · hero bands" },
+            { label: "Surfaces", value: "Bulletin band · OG card · billboard" },
           ]}
           footer={
             <>
               Flare is allowed on exactly three Newsroom surfaces: a bounded hero band, a 1200×630
-              OG card, and a 16:9 billboard. Any Newsroom body copy sets in Ink on Paper — Flare
-              is the ground a reader glances at, not the ground they read on.
+              OG card, and a 16:9 billboard. Everything else on a Newsroom page reads as Ink on
+              Paper — Flare is the ground a reader glances at, not the ground they read on.
             </>
           }
         />
       </div>
       <div style={{ marginTop: "24px" }}>
-        {/* Newsroom's card ground is Flare. The treatment's identity is in
-            the ground, so the accent marker is dropped — no dot, no rule.
-            Mark switches to the black emboss variant (wings-on-ink medallion)
-            because Argent-on-Flare fails luminance contrast. */}
+        {/* Email signature specimen — the one place Flare returns, because
+            an emailed signature IS a small broadcast card. Bounded card, small
+            surface; does not violate the "one Flare band" rule for the page
+            body because it sits as a peer demonstration, not a page layout. */}
         <TreatmentSignature
           variant="newsroom"
           eyebrow="Email signature · Newsroom"

@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import { WingsArgent, WingsChip, WingsEmboss } from "./wings";
+import { WingsArgent, WingsChip, WingsEmboss, WingsWorkshopChip } from "./wings";
 
 export type LockupSize = "sm" | "md" | "lg";
 
@@ -30,7 +30,7 @@ const WORDMARK_TRACKING: Record<LockupSize, string> = {
   lg: "-0.025em",
 };
 
-export type LockupVariant = "argent" | "chip" | "emboss";
+export type LockupVariant = "argent" | "chip" | "emboss" | "workshop-chip";
 
 export interface LockupProps {
   readonly size?: LockupSize;
@@ -61,7 +61,14 @@ export function Lockup({
   const ratio = WORDMARK_RATIO[size];
   const tracking = WORDMARK_TRACKING[size];
   const useCropped = variant === "argent";
-  const Mark = variant === "chip" ? WingsChip : variant === "emboss" ? WingsEmboss : WingsArgent;
+  const Mark =
+    variant === "chip"
+      ? WingsChip
+      : variant === "emboss"
+        ? WingsEmboss
+        : variant === "workshop-chip"
+          ? WingsWorkshopChip
+          : WingsArgent;
 
   const lockupStyle: CSSProperties = {
     display: "inline-flex",
@@ -87,7 +94,13 @@ export function Lockup({
       )}
       <span
         style={{
-          fontFamily: "'Fraunces', Georgia, serif",
+          // Wordmark typeface resolves from the ambient treatment scope —
+          // Workshop binds --treatment-display-font to Geist, Newsroom and
+          // Letters bind it to Fraunces. The old hardcoded Fraunces shipped
+          // "Guardian" in serif inside Workshop chrome, which contradicted
+          // the Workshop memory ("Geist-only"). By binding here, every
+          // Lockup repaints correctly when its ancestor flips treatment.
+          fontFamily: "var(--treatment-display-font, 'Fraunces', Georgia, serif)",
           fontVariationSettings: '"opsz" 144, "SOFT" 30',
           fontWeight: 400,
           fontSize: `${markH * ratio}px`,
@@ -125,7 +138,14 @@ export function StackedLockup({
   className,
   style,
 }: StackedLockupProps) {
-  const Mark = variant === "chip" ? WingsChip : variant === "emboss" ? WingsEmboss : WingsArgent;
+  const Mark =
+    variant === "chip"
+      ? WingsChip
+      : variant === "emboss"
+        ? WingsEmboss
+        : variant === "workshop-chip"
+          ? WingsWorkshopChip
+          : WingsArgent;
   const wingUnit = markHeight * 0.45;
   return (
     <span
@@ -142,7 +162,10 @@ export function StackedLockup({
       <Mark style={{ width: `${markHeight}px`, height: `${markHeight}px` }} />
       <span
         style={{
-          fontFamily: "'Fraunces', Georgia, serif",
+          // See Lockup above for the rationale; StackedLockup inherits the
+          // same treatment-driven display font so it renders in Geist under
+          // Workshop and Fraunces under Newsroom/Letters.
+          fontFamily: "var(--treatment-display-font, 'Fraunces', Georgia, serif)",
           fontVariationSettings: '"opsz" 144, "SOFT" 30',
           fontWeight: 400,
           fontSize: "28px",

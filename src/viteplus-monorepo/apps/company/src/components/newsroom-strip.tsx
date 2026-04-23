@@ -3,17 +3,19 @@ import { useEffect } from "react";
 import { currentNewsroomItem } from "~/content/newsroom";
 import { emitSpan } from "~/lib/telemetry/browser";
 
-// NewsroomStrip — a full-bleed Flare band that appears on the homepage (and
+// NewsroomStrip — a bounded Flare broadcast band shown on the homepage (and
 // anywhere else Guardian wants to speak in the public register) whenever a
 // current newsroom item exists. Renders nothing when there is no content —
-// the component is conditional by construction so Flare on the homepage
-// always carries news, never decoration.
+// the band is conditional by construction so Flare on the homepage always
+// carries news, never decoration.
 //
-// Shape: ~140px tall, full-bleed-at-viewport width (max-w-none, horizontal
-// padding only), ink text on acid-green ground, black CTA button. Reads
-// --treatment-* in the "newsroom" scope so every colour decision is token-
-// driven; the band could move to any Flare surface (OG cards, press pages)
-// without re-authoring its internals.
+// Shape: ~140px tall, full-bleed width, ink text on Flare, inverted black
+// CTA. The strip intentionally does NOT flip data-treatment — under the
+// three-room model, the Newsroom SCOPE is a Paper register, not a Flare
+// one. Flare appears here as an explicit broadcast band layered on top of
+// the host chrome, not as a treatment ground. That invariant lets the band
+// embed cleanly inside any host (Workshop homepage today, Letters footer
+// tomorrow) without dragging the wrong token ramp with it.
 
 export function NewsroomStrip() {
   const item = currentNewsroomItem();
@@ -31,13 +33,12 @@ export function NewsroomStrip() {
 
   return (
     <aside
-      data-treatment="newsroom"
       aria-label="From the Newsroom"
       style={{
-        background: "var(--treatment-ground)",
-        color: "var(--treatment-ink)",
-        borderTop: "1px solid var(--treatment-hairline)",
-        borderBottom: "1px solid var(--treatment-hairline)",
+        background: "var(--color-flare)",
+        color: "var(--color-ink)",
+        borderTop: "1px solid rgba(11, 11, 11, 0.14)",
+        borderBottom: "1px solid rgba(11, 11, 11, 0.14)",
       }}
     >
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-8 md:flex-row md:items-center md:justify-between md:gap-8 md:px-6 md:py-10">
@@ -45,7 +46,7 @@ export function NewsroomStrip() {
           <p
             className="font-mono text-[10px] font-semibold uppercase tracking-[0.2em]"
             style={{
-              color: "var(--treatment-muted)",
+              color: "rgba(11, 11, 11, 0.72)",
               fontVariationSettings: '"wght" 600',
               margin: 0,
             }}
@@ -53,15 +54,15 @@ export function NewsroomStrip() {
             From the Newsroom · {item.kicker} · {item.date}
           </p>
           <p
-            className="font-display"
             style={{
+              fontFamily: "'Fraunces', Georgia, serif",
               fontVariationSettings: '"opsz" 96, "SOFT" 20',
               fontWeight: 400,
               fontSize: "clamp(22px, 2.8vw, 32px)",
               lineHeight: 1.1,
               letterSpacing: "-0.02em",
               margin: 0,
-              color: "var(--treatment-ink)",
+              color: "var(--color-ink)",
               maxWidth: "28ch",
             }}
           >
