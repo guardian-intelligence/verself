@@ -5,9 +5,12 @@ import { SectionWorkshop } from "~/features/design/sections/workshop";
 import { AppliedFooter } from "~/features/design/sections/applied-footer";
 import { ogMeta } from "~/lib/head";
 
-export const Route = createFileRoute("/design/workshop")({
+// /design/workshop — the canonical Workshop specimen. The page chrome is
+// already Workshop (inherited from the _workshop layout), so the body just
+// needs content: the section, then the Applied cross-treatment footer.
+
+export const Route = createFileRoute("/_workshop/design/workshop")({
   component: DesignWorkshop,
-  staticData: { treatment: "workshop" as const },
   head: () => ({
     meta: ogMeta({
       slug: "design",
@@ -23,23 +26,14 @@ function DesignWorkshop() {
     if (typeof window === "undefined") return;
     emitSpan("design.treatment.view", {
       treatment: "workshop",
-      referrer_treatment: "",
       referrer_route: document.referrer ?? "",
     });
   }, []);
 
   return (
-    <div
-      style={{
-        background: "var(--treatment-ground)",
-        color: "var(--treatment-ink)",
-        minHeight: "100vh",
-      }}
-    >
-      <div className="mx-auto w-full max-w-[96rem] px-4 py-10 md:px-6 md:py-14">
-        <SectionWorkshop />
-        <AppliedFooter />
-      </div>
+    <div className="mx-auto w-full max-w-[96rem] px-4 py-10 md:px-6 md:py-14">
+      <SectionWorkshop />
+      <AppliedFooter />
     </div>
   );
 }

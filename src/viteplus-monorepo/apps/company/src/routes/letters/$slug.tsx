@@ -46,7 +46,6 @@ function LetterPost() {
 
   return (
     <PageShell
-      treatment="letters"
       kicker={`${letter.publishedAt} · ${letter.kicker}`}
       heading={letter.title}
     >

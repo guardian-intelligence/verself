@@ -3,7 +3,7 @@ import { CHANGELOG_META, changelog } from "~/content/changelog";
 import { PageShell } from "~/components/page-shell";
 import { ogMeta } from "~/lib/head";
 
-export const Route = createFileRoute("/changelog")({
+export const Route = createFileRoute("/_workshop/changelog")({
   component: ChangelogPage,
   head: () => ({
     meta: ogMeta({

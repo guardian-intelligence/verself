@@ -2,7 +2,6 @@ import { createRootRoute, HeadContent, Link, Outlet, Scripts } from "@tanstack/r
 import { type ReactNode } from "react";
 import { AppChrome, BrandTelemetryProvider } from "@forge-metal/brand";
 import { emitSpan } from "~/lib/telemetry/browser";
-import { useCurrentTreatment } from "~/lib/treatment";
 import { TelemetryProbe } from "~/lib/telemetry/page-view";
 import { deployMetaTags } from "~/lib/telemetry/server-deploy-meta";
 import "~/styles/app.css";
@@ -51,8 +50,11 @@ function RootComponent() {
   );
 }
 
+// Platform is a single-treatment app — Workshop chrome end-to-end. Docs,
+// reference, and policy all share the same engineer-facing register. Routes
+// do not override treatment; keeping it a literal eliminates a path-matching
+// hook and makes the chrome static at SSR.
 function RootDocument({ children }: { children: ReactNode }) {
-  const treatment = useCurrentTreatment();
   return (
     <html lang="en">
       <head>
@@ -61,14 +63,14 @@ function RootDocument({ children }: { children: ReactNode }) {
       <body className="text-foreground font-sans antialiased">
         <BrandTelemetryProvider emitSpan={emitSpan}>
           <div
-            data-treatment={treatment}
-            className="flex min-h-svh flex-col transition-colors duration-300 ease-out"
+            data-treatment="workshop"
+            className="flex min-h-svh flex-col"
             style={{
               background: "var(--treatment-ground)",
               color: "var(--treatment-ink)",
             }}
           >
-            <AppChrome treatment={treatment} LinkComponent={LinkAdapter} />
+            <AppChrome treatment="workshop" LinkComponent={LinkAdapter} />
             <main id="main" className="flex-1">
               {children}
             </main>

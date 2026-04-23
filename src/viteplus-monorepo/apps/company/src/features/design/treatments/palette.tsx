@@ -43,7 +43,7 @@ export function TreatmentPalette({
 }) {
   return (
     <div
-      data-treatment="company"
+      data-treatment="workshop"
       style={{
         marginBottom: "16px",
         padding: "18px 20px",

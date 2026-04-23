@@ -3,7 +3,7 @@ import { CAREERS_META, careers } from "~/content/careers";
 import { BodyParagraph, PageShell } from "~/components/page-shell";
 import { ogMeta } from "~/lib/head";
 
-export const Route = createFileRoute("/careers")({
+export const Route = createFileRoute("/_workshop/careers")({
   component: CareersPage,
   head: () => ({
     meta: ogMeta({

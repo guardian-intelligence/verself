@@ -7,7 +7,6 @@ import { Lockup } from "@forge-metal/brand";
 export const LINE = "#2a2a2f";
 
 export type DesignSectionId =
-  | "company"
   | "workshop"
   | "newsroom"
   | "letters"
@@ -23,44 +22,37 @@ export type DesignSection = {
 };
 
 const SECTION_META: Record<DesignSectionId, DesignSection> = {
-  company: {
-    id: "company",
-    number: "01",
-    group: "Treatments",
-    label: "Company",
-    title: "Company — the record.",
-  },
   workshop: {
     id: "workshop",
-    number: "02",
+    number: "01",
     group: "Treatments",
     label: "Workshop",
     title: "Workshop — where the work happens.",
   },
   newsroom: {
     id: "newsroom",
-    number: "03",
+    number: "02",
     group: "Treatments",
     label: "Newsroom",
     title: "Newsroom — the broadcast.",
   },
   letters: {
     id: "letters",
-    number: "04",
+    number: "03",
     group: "Treatments",
     label: "Letters",
     title: "Letters — the long form.",
   },
   photography: {
     id: "photography",
-    number: "05",
+    number: "04",
     group: "Applied",
     label: "Photography",
     title: "Argent needs a floor.",
   },
   "business-cards": {
     id: "business-cards",
-    number: "06",
+    number: "05",
     group: "Applied",
     label: "Business Cards",
     title: "3.5 × 2 inches.",
@@ -76,11 +68,8 @@ export function sectionMeta(id: DesignSectionId): DesignSection {
 //
 // Surface sets data-treatment so nested text that reads var(--treatment-*)
 // stays self-consistent inside the card regardless of the parent page's
-// treatment. Previously the Surface hardcoded background + color but let
-// its descendants inherit the ambient treatment scope — that caused
-// Newsroom's palette card (rendered on Iron ground while the parent page
-// is Newsroom=Flare) to put Ink-on-Iron text, illegible. Each ground maps
-// to a canonical treatment: Iron→company, Flare→newsroom, Paper→letters.
+// treatment. Each ground maps to a canonical treatment:
+// Iron→workshop, Flare→newsroom, Paper→letters.
 // ============================================================================
 export function Surface({
   ground,
@@ -94,7 +83,7 @@ export function Surface({
   readonly style?: CSSProperties;
 }) {
   const groundTreatment =
-    ground === "iron" ? "company" : ground === "flare" ? "newsroom" : "letters";
+    ground === "iron" ? "workshop" : ground === "flare" ? "newsroom" : "letters";
   return (
     <div
       className={className}
@@ -190,7 +179,7 @@ export function BizCard({ ground }: { ground: "iron" | "flare" }) {
             marginTop: "2px",
           }}
         >
-          Founder · Applied Intelligence
+          Founder · Guardian Intelligence
         </div>
       </div>
       <div

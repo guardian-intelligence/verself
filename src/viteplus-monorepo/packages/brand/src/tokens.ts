@@ -6,6 +6,10 @@ export const grounds = {
   iron: "#0E0E0E",
   flare: "#CCFF00",
   paper: "#F6F4ED",
+  // Vellum is a same-family inset of Paper — a slightly darker, warmer
+  // parchment used for Letters colophons and spec blocks so they read as a
+  // quiet recess rather than a slab of contrast.
+  vellum: "#E8E2D2",
 } as const;
 
 export const accents = {

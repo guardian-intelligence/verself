@@ -4,7 +4,7 @@ import { BodyParagraph, PageShell } from "~/components/page-shell";
 import { emitSpan } from "~/lib/telemetry/browser";
 import { ogMeta } from "~/lib/head";
 
-export const Route = createFileRoute("/press")({
+export const Route = createFileRoute("/_workshop/press")({
   component: PressPage,
   head: () => ({
     meta: ogMeta({

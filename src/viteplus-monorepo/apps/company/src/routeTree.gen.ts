@@ -9,80 +9,62 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SolutionsRouteImport } from './routes/solutions'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
-import { Route as PressRouteImport } from './routes/press'
-import { Route as ContactRouteImport } from './routes/contact'
-import { Route as CompanyRouteImport } from './routes/company'
-import { Route as ChangelogRouteImport } from './routes/changelog'
-import { Route as CareersRouteImport } from './routes/careers'
-import { Route as DesignRouteRouteImport } from './routes/design/route'
-import { Route as IndexRouteImport } from './routes/index'
+import { Route as NewsroomRouteRouteImport } from './routes/newsroom/route'
+import { Route as LettersRouteRouteImport } from './routes/letters/route'
+import { Route as WorkshopRouteRouteImport } from './routes/_workshop/route'
+import { Route as NewsroomIndexRouteImport } from './routes/newsroom/index'
 import { Route as LettersIndexRouteImport } from './routes/letters/index'
-import { Route as DesignIndexRouteImport } from './routes/design/index'
+import { Route as WorkshopIndexRouteImport } from './routes/_workshop/index'
 import { Route as OgSlugRouteImport } from './routes/og/$slug'
 import { Route as LettersRssRouteImport } from './routes/letters/rss'
 import { Route as LettersSlugRouteImport } from './routes/letters/$slug'
-import { Route as DesignWorkshopRouteImport } from './routes/design/workshop'
-import { Route as DesignNewsroomRouteImport } from './routes/design/newsroom'
-import { Route as DesignLettersRouteImport } from './routes/design/letters'
-import { Route as DesignCompanyRouteImport } from './routes/design/company'
+import { Route as WorkshopSolutionsRouteImport } from './routes/_workshop/solutions'
+import { Route as WorkshopPressRouteImport } from './routes/_workshop/press'
+import { Route as WorkshopContactRouteImport } from './routes/_workshop/contact'
+import { Route as WorkshopCompanyRouteImport } from './routes/_workshop/company'
+import { Route as WorkshopChangelogRouteImport } from './routes/_workshop/changelog'
+import { Route as WorkshopCareersRouteImport } from './routes/_workshop/careers'
+import { Route as WorkshopDesignRouteRouteImport } from './routes/_workshop/design/route'
+import { Route as WorkshopDesignIndexRouteImport } from './routes/_workshop/design/index'
+import { Route as WorkshopDesignWorkshopRouteImport } from './routes/_workshop/design/workshop'
+import { Route as WorkshopDesignNewsroomRouteImport } from './routes/_workshop/design/newsroom'
+import { Route as WorkshopDesignLettersRouteImport } from './routes/_workshop/design/letters'
 import { Route as ApiOtelV1TracesRouteImport } from './routes/api/otel/v1/traces'
 
-const SolutionsRoute = SolutionsRouteImport.update({
-  id: '/solutions',
-  path: '/solutions',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PressRoute = PressRouteImport.update({
-  id: '/press',
-  path: '/press',
+const NewsroomRouteRoute = NewsroomRouteRouteImport.update({
+  id: '/newsroom',
+  path: '/newsroom',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ContactRoute = ContactRouteImport.update({
-  id: '/contact',
-  path: '/contact',
+const LettersRouteRoute = LettersRouteRouteImport.update({
+  id: '/letters',
+  path: '/letters',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CompanyRoute = CompanyRouteImport.update({
-  id: '/company',
-  path: '/company',
+const WorkshopRouteRoute = WorkshopRouteRouteImport.update({
+  id: '/_workshop',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ChangelogRoute = ChangelogRouteImport.update({
-  id: '/changelog',
-  path: '/changelog',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CareersRoute = CareersRouteImport.update({
-  id: '/careers',
-  path: '/careers',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DesignRouteRoute = DesignRouteRouteImport.update({
-  id: '/design',
-  path: '/design',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const IndexRoute = IndexRouteImport.update({
+const NewsroomIndexRoute = NewsroomIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => NewsroomRouteRoute,
 } as any)
 const LettersIndexRoute = LettersIndexRouteImport.update({
-  id: '/letters/',
-  path: '/letters/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DesignIndexRoute = DesignIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => DesignRouteRoute,
+  getParentRoute: () => LettersRouteRoute,
+} as any)
+const WorkshopIndexRoute = WorkshopIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => WorkshopRouteRoute,
 } as any)
 const OgSlugRoute = OgSlugRouteImport.update({
   id: '/og/$slug',
@@ -90,34 +72,69 @@ const OgSlugRoute = OgSlugRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const LettersRssRoute = LettersRssRouteImport.update({
-  id: '/letters/rss',
-  path: '/letters/rss',
-  getParentRoute: () => rootRouteImport,
+  id: '/rss',
+  path: '/rss',
+  getParentRoute: () => LettersRouteRoute,
 } as any)
 const LettersSlugRoute = LettersSlugRouteImport.update({
-  id: '/letters/$slug',
-  path: '/letters/$slug',
-  getParentRoute: () => rootRouteImport,
+  id: '/$slug',
+  path: '/$slug',
+  getParentRoute: () => LettersRouteRoute,
 } as any)
-const DesignWorkshopRoute = DesignWorkshopRouteImport.update({
-  id: '/workshop',
-  path: '/workshop',
-  getParentRoute: () => DesignRouteRoute,
+const WorkshopSolutionsRoute = WorkshopSolutionsRouteImport.update({
+  id: '/solutions',
+  path: '/solutions',
+  getParentRoute: () => WorkshopRouteRoute,
 } as any)
-const DesignNewsroomRoute = DesignNewsroomRouteImport.update({
-  id: '/newsroom',
-  path: '/newsroom',
-  getParentRoute: () => DesignRouteRoute,
+const WorkshopPressRoute = WorkshopPressRouteImport.update({
+  id: '/press',
+  path: '/press',
+  getParentRoute: () => WorkshopRouteRoute,
 } as any)
-const DesignLettersRoute = DesignLettersRouteImport.update({
-  id: '/letters',
-  path: '/letters',
-  getParentRoute: () => DesignRouteRoute,
+const WorkshopContactRoute = WorkshopContactRouteImport.update({
+  id: '/contact',
+  path: '/contact',
+  getParentRoute: () => WorkshopRouteRoute,
 } as any)
-const DesignCompanyRoute = DesignCompanyRouteImport.update({
+const WorkshopCompanyRoute = WorkshopCompanyRouteImport.update({
   id: '/company',
   path: '/company',
-  getParentRoute: () => DesignRouteRoute,
+  getParentRoute: () => WorkshopRouteRoute,
+} as any)
+const WorkshopChangelogRoute = WorkshopChangelogRouteImport.update({
+  id: '/changelog',
+  path: '/changelog',
+  getParentRoute: () => WorkshopRouteRoute,
+} as any)
+const WorkshopCareersRoute = WorkshopCareersRouteImport.update({
+  id: '/careers',
+  path: '/careers',
+  getParentRoute: () => WorkshopRouteRoute,
+} as any)
+const WorkshopDesignRouteRoute = WorkshopDesignRouteRouteImport.update({
+  id: '/design',
+  path: '/design',
+  getParentRoute: () => WorkshopRouteRoute,
+} as any)
+const WorkshopDesignIndexRoute = WorkshopDesignIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => WorkshopDesignRouteRoute,
+} as any)
+const WorkshopDesignWorkshopRoute = WorkshopDesignWorkshopRouteImport.update({
+  id: '/workshop',
+  path: '/workshop',
+  getParentRoute: () => WorkshopDesignRouteRoute,
+} as any)
+const WorkshopDesignNewsroomRoute = WorkshopDesignNewsroomRouteImport.update({
+  id: '/newsroom',
+  path: '/newsroom',
+  getParentRoute: () => WorkshopDesignRouteRoute,
+} as any)
+const WorkshopDesignLettersRoute = WorkshopDesignLettersRouteImport.update({
+  id: '/letters',
+  path: '/letters',
+  getParentRoute: () => WorkshopDesignRouteRoute,
 } as any)
 const ApiOtelV1TracesRoute = ApiOtelV1TracesRouteImport.update({
   id: '/api/otel/v1/traces',
@@ -126,159 +143,154 @@ const ApiOtelV1TracesRoute = ApiOtelV1TracesRouteImport.update({
 } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
-  '/design': typeof DesignRouteRouteWithChildren
-  '/careers': typeof CareersRoute
-  '/changelog': typeof ChangelogRoute
-  '/company': typeof CompanyRoute
-  '/contact': typeof ContactRoute
-  '/press': typeof PressRoute
+  '/': typeof WorkshopIndexRoute
+  '/letters': typeof LettersRouteRouteWithChildren
+  '/newsroom': typeof NewsroomRouteRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/solutions': typeof SolutionsRoute
-  '/design/company': typeof DesignCompanyRoute
-  '/design/letters': typeof DesignLettersRoute
-  '/design/newsroom': typeof DesignNewsroomRoute
-  '/design/workshop': typeof DesignWorkshopRoute
+  '/design': typeof WorkshopDesignRouteRouteWithChildren
+  '/careers': typeof WorkshopCareersRoute
+  '/changelog': typeof WorkshopChangelogRoute
+  '/company': typeof WorkshopCompanyRoute
+  '/contact': typeof WorkshopContactRoute
+  '/press': typeof WorkshopPressRoute
+  '/solutions': typeof WorkshopSolutionsRoute
   '/letters/$slug': typeof LettersSlugRoute
   '/letters/rss': typeof LettersRssRoute
   '/og/$slug': typeof OgSlugRoute
-  '/design/': typeof DesignIndexRoute
   '/letters/': typeof LettersIndexRoute
+  '/newsroom/': typeof NewsroomIndexRoute
+  '/design/letters': typeof WorkshopDesignLettersRoute
+  '/design/newsroom': typeof WorkshopDesignNewsroomRoute
+  '/design/workshop': typeof WorkshopDesignWorkshopRoute
+  '/design/': typeof WorkshopDesignIndexRoute
   '/api/otel/v1/traces': typeof ApiOtelV1TracesRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '/careers': typeof CareersRoute
-  '/changelog': typeof ChangelogRoute
-  '/company': typeof CompanyRoute
-  '/contact': typeof ContactRoute
-  '/press': typeof PressRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/solutions': typeof SolutionsRoute
-  '/design/company': typeof DesignCompanyRoute
-  '/design/letters': typeof DesignLettersRoute
-  '/design/newsroom': typeof DesignNewsroomRoute
-  '/design/workshop': typeof DesignWorkshopRoute
+  '/careers': typeof WorkshopCareersRoute
+  '/changelog': typeof WorkshopChangelogRoute
+  '/company': typeof WorkshopCompanyRoute
+  '/contact': typeof WorkshopContactRoute
+  '/press': typeof WorkshopPressRoute
+  '/solutions': typeof WorkshopSolutionsRoute
   '/letters/$slug': typeof LettersSlugRoute
   '/letters/rss': typeof LettersRssRoute
   '/og/$slug': typeof OgSlugRoute
-  '/design': typeof DesignIndexRoute
+  '/': typeof WorkshopIndexRoute
   '/letters': typeof LettersIndexRoute
+  '/newsroom': typeof NewsroomIndexRoute
+  '/design/letters': typeof WorkshopDesignLettersRoute
+  '/design/newsroom': typeof WorkshopDesignNewsroomRoute
+  '/design/workshop': typeof WorkshopDesignWorkshopRoute
+  '/design': typeof WorkshopDesignIndexRoute
   '/api/otel/v1/traces': typeof ApiOtelV1TracesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
-  '/design': typeof DesignRouteRouteWithChildren
-  '/careers': typeof CareersRoute
-  '/changelog': typeof ChangelogRoute
-  '/company': typeof CompanyRoute
-  '/contact': typeof ContactRoute
-  '/press': typeof PressRoute
+  '/_workshop': typeof WorkshopRouteRouteWithChildren
+  '/letters': typeof LettersRouteRouteWithChildren
+  '/newsroom': typeof NewsroomRouteRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/solutions': typeof SolutionsRoute
-  '/design/company': typeof DesignCompanyRoute
-  '/design/letters': typeof DesignLettersRoute
-  '/design/newsroom': typeof DesignNewsroomRoute
-  '/design/workshop': typeof DesignWorkshopRoute
+  '/_workshop/design': typeof WorkshopDesignRouteRouteWithChildren
+  '/_workshop/careers': typeof WorkshopCareersRoute
+  '/_workshop/changelog': typeof WorkshopChangelogRoute
+  '/_workshop/company': typeof WorkshopCompanyRoute
+  '/_workshop/contact': typeof WorkshopContactRoute
+  '/_workshop/press': typeof WorkshopPressRoute
+  '/_workshop/solutions': typeof WorkshopSolutionsRoute
   '/letters/$slug': typeof LettersSlugRoute
   '/letters/rss': typeof LettersRssRoute
   '/og/$slug': typeof OgSlugRoute
-  '/design/': typeof DesignIndexRoute
+  '/_workshop/': typeof WorkshopIndexRoute
   '/letters/': typeof LettersIndexRoute
+  '/newsroom/': typeof NewsroomIndexRoute
+  '/_workshop/design/letters': typeof WorkshopDesignLettersRoute
+  '/_workshop/design/newsroom': typeof WorkshopDesignNewsroomRoute
+  '/_workshop/design/workshop': typeof WorkshopDesignWorkshopRoute
+  '/_workshop/design/': typeof WorkshopDesignIndexRoute
   '/api/otel/v1/traces': typeof ApiOtelV1TracesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/letters'
+    | '/newsroom'
+    | '/sitemap.xml'
     | '/design'
     | '/careers'
     | '/changelog'
     | '/company'
     | '/contact'
     | '/press'
-    | '/sitemap.xml'
     | '/solutions'
-    | '/design/company'
-    | '/design/letters'
-    | '/design/newsroom'
-    | '/design/workshop'
     | '/letters/$slug'
     | '/letters/rss'
     | '/og/$slug'
-    | '/design/'
     | '/letters/'
+    | '/newsroom/'
+    | '/design/letters'
+    | '/design/newsroom'
+    | '/design/workshop'
+    | '/design/'
     | '/api/otel/v1/traces'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/'
+    | '/sitemap.xml'
     | '/careers'
     | '/changelog'
     | '/company'
     | '/contact'
     | '/press'
-    | '/sitemap.xml'
     | '/solutions'
-    | '/design/company'
-    | '/design/letters'
-    | '/design/newsroom'
-    | '/design/workshop'
     | '/letters/$slug'
     | '/letters/rss'
     | '/og/$slug'
-    | '/design'
+    | '/'
     | '/letters'
+    | '/newsroom'
+    | '/design/letters'
+    | '/design/newsroom'
+    | '/design/workshop'
+    | '/design'
     | '/api/otel/v1/traces'
   id:
     | '__root__'
-    | '/'
-    | '/design'
-    | '/careers'
-    | '/changelog'
-    | '/company'
-    | '/contact'
-    | '/press'
+    | '/_workshop'
+    | '/letters'
+    | '/newsroom'
     | '/sitemap.xml'
-    | '/solutions'
-    | '/design/company'
-    | '/design/letters'
-    | '/design/newsroom'
-    | '/design/workshop'
+    | '/_workshop/design'
+    | '/_workshop/careers'
+    | '/_workshop/changelog'
+    | '/_workshop/company'
+    | '/_workshop/contact'
+    | '/_workshop/press'
+    | '/_workshop/solutions'
     | '/letters/$slug'
     | '/letters/rss'
     | '/og/$slug'
-    | '/design/'
+    | '/_workshop/'
     | '/letters/'
+    | '/newsroom/'
+    | '/_workshop/design/letters'
+    | '/_workshop/design/newsroom'
+    | '/_workshop/design/workshop'
+    | '/_workshop/design/'
     | '/api/otel/v1/traces'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  DesignRouteRoute: typeof DesignRouteRouteWithChildren
-  CareersRoute: typeof CareersRoute
-  ChangelogRoute: typeof ChangelogRoute
-  CompanyRoute: typeof CompanyRoute
-  ContactRoute: typeof ContactRoute
-  PressRoute: typeof PressRoute
+  WorkshopRouteRoute: typeof WorkshopRouteRouteWithChildren
+  LettersRouteRoute: typeof LettersRouteRouteWithChildren
+  NewsroomRouteRoute: typeof NewsroomRouteRouteWithChildren
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
-  SolutionsRoute: typeof SolutionsRoute
-  LettersSlugRoute: typeof LettersSlugRoute
-  LettersRssRoute: typeof LettersRssRoute
   OgSlugRoute: typeof OgSlugRoute
-  LettersIndexRoute: typeof LettersIndexRoute
   ApiOtelV1TracesRoute: typeof ApiOtelV1TracesRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/solutions': {
-      id: '/solutions'
-      path: '/solutions'
-      fullPath: '/solutions'
-      preLoaderRoute: typeof SolutionsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/sitemap.xml': {
       id: '/sitemap.xml'
       path: '/sitemap.xml'
@@ -286,68 +298,47 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SitemapDotxmlRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/press': {
-      id: '/press'
-      path: '/press'
-      fullPath: '/press'
-      preLoaderRoute: typeof PressRouteImport
+    '/newsroom': {
+      id: '/newsroom'
+      path: '/newsroom'
+      fullPath: '/newsroom'
+      preLoaderRoute: typeof NewsroomRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/contact': {
-      id: '/contact'
-      path: '/contact'
-      fullPath: '/contact'
-      preLoaderRoute: typeof ContactRouteImport
+    '/letters': {
+      id: '/letters'
+      path: '/letters'
+      fullPath: '/letters'
+      preLoaderRoute: typeof LettersRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/company': {
-      id: '/company'
-      path: '/company'
-      fullPath: '/company'
-      preLoaderRoute: typeof CompanyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/changelog': {
-      id: '/changelog'
-      path: '/changelog'
-      fullPath: '/changelog'
-      preLoaderRoute: typeof ChangelogRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/careers': {
-      id: '/careers'
-      path: '/careers'
-      fullPath: '/careers'
-      preLoaderRoute: typeof CareersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/design': {
-      id: '/design'
-      path: '/design'
-      fullPath: '/design'
-      preLoaderRoute: typeof DesignRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/': {
-      id: '/'
-      path: '/'
+    '/_workshop': {
+      id: '/_workshop'
+      path: ''
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+      preLoaderRoute: typeof WorkshopRouteRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/newsroom/': {
+      id: '/newsroom/'
+      path: '/'
+      fullPath: '/newsroom/'
+      preLoaderRoute: typeof NewsroomIndexRouteImport
+      parentRoute: typeof NewsroomRouteRoute
     }
     '/letters/': {
       id: '/letters/'
-      path: '/letters'
+      path: '/'
       fullPath: '/letters/'
       preLoaderRoute: typeof LettersIndexRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof LettersRouteRoute
     }
-    '/design/': {
-      id: '/design/'
+    '/_workshop/': {
+      id: '/_workshop/'
       path: '/'
-      fullPath: '/design/'
-      preLoaderRoute: typeof DesignIndexRouteImport
-      parentRoute: typeof DesignRouteRoute
+      fullPath: '/'
+      preLoaderRoute: typeof WorkshopIndexRouteImport
+      parentRoute: typeof WorkshopRouteRoute
     }
     '/og/$slug': {
       id: '/og/$slug'
@@ -358,45 +349,94 @@ declare module '@tanstack/react-router' {
     }
     '/letters/rss': {
       id: '/letters/rss'
-      path: '/letters/rss'
+      path: '/rss'
       fullPath: '/letters/rss'
       preLoaderRoute: typeof LettersRssRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof LettersRouteRoute
     }
     '/letters/$slug': {
       id: '/letters/$slug'
-      path: '/letters/$slug'
+      path: '/$slug'
       fullPath: '/letters/$slug'
       preLoaderRoute: typeof LettersSlugRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof LettersRouteRoute
     }
-    '/design/workshop': {
-      id: '/design/workshop'
+    '/_workshop/solutions': {
+      id: '/_workshop/solutions'
+      path: '/solutions'
+      fullPath: '/solutions'
+      preLoaderRoute: typeof WorkshopSolutionsRouteImport
+      parentRoute: typeof WorkshopRouteRoute
+    }
+    '/_workshop/press': {
+      id: '/_workshop/press'
+      path: '/press'
+      fullPath: '/press'
+      preLoaderRoute: typeof WorkshopPressRouteImport
+      parentRoute: typeof WorkshopRouteRoute
+    }
+    '/_workshop/contact': {
+      id: '/_workshop/contact'
+      path: '/contact'
+      fullPath: '/contact'
+      preLoaderRoute: typeof WorkshopContactRouteImport
+      parentRoute: typeof WorkshopRouteRoute
+    }
+    '/_workshop/company': {
+      id: '/_workshop/company'
+      path: '/company'
+      fullPath: '/company'
+      preLoaderRoute: typeof WorkshopCompanyRouteImport
+      parentRoute: typeof WorkshopRouteRoute
+    }
+    '/_workshop/changelog': {
+      id: '/_workshop/changelog'
+      path: '/changelog'
+      fullPath: '/changelog'
+      preLoaderRoute: typeof WorkshopChangelogRouteImport
+      parentRoute: typeof WorkshopRouteRoute
+    }
+    '/_workshop/careers': {
+      id: '/_workshop/careers'
+      path: '/careers'
+      fullPath: '/careers'
+      preLoaderRoute: typeof WorkshopCareersRouteImport
+      parentRoute: typeof WorkshopRouteRoute
+    }
+    '/_workshop/design': {
+      id: '/_workshop/design'
+      path: '/design'
+      fullPath: '/design'
+      preLoaderRoute: typeof WorkshopDesignRouteRouteImport
+      parentRoute: typeof WorkshopRouteRoute
+    }
+    '/_workshop/design/': {
+      id: '/_workshop/design/'
+      path: '/'
+      fullPath: '/design/'
+      preLoaderRoute: typeof WorkshopDesignIndexRouteImport
+      parentRoute: typeof WorkshopDesignRouteRoute
+    }
+    '/_workshop/design/workshop': {
+      id: '/_workshop/design/workshop'
       path: '/workshop'
       fullPath: '/design/workshop'
-      preLoaderRoute: typeof DesignWorkshopRouteImport
-      parentRoute: typeof DesignRouteRoute
+      preLoaderRoute: typeof WorkshopDesignWorkshopRouteImport
+      parentRoute: typeof WorkshopDesignRouteRoute
     }
-    '/design/newsroom': {
-      id: '/design/newsroom'
+    '/_workshop/design/newsroom': {
+      id: '/_workshop/design/newsroom'
       path: '/newsroom'
       fullPath: '/design/newsroom'
-      preLoaderRoute: typeof DesignNewsroomRouteImport
-      parentRoute: typeof DesignRouteRoute
+      preLoaderRoute: typeof WorkshopDesignNewsroomRouteImport
+      parentRoute: typeof WorkshopDesignRouteRoute
     }
-    '/design/letters': {
-      id: '/design/letters'
+    '/_workshop/design/letters': {
+      id: '/_workshop/design/letters'
       path: '/letters'
       fullPath: '/design/letters'
-      preLoaderRoute: typeof DesignLettersRouteImport
-      parentRoute: typeof DesignRouteRoute
-    }
-    '/design/company': {
-      id: '/design/company'
-      path: '/company'
-      fullPath: '/design/company'
-      preLoaderRoute: typeof DesignCompanyRouteImport
-      parentRoute: typeof DesignRouteRoute
+      preLoaderRoute: typeof WorkshopDesignLettersRouteImport
+      parentRoute: typeof WorkshopDesignRouteRoute
     }
     '/api/otel/v1/traces': {
       id: '/api/otel/v1/traces'
@@ -408,40 +448,83 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface DesignRouteRouteChildren {
-  DesignCompanyRoute: typeof DesignCompanyRoute
-  DesignLettersRoute: typeof DesignLettersRoute
-  DesignNewsroomRoute: typeof DesignNewsroomRoute
-  DesignWorkshopRoute: typeof DesignWorkshopRoute
-  DesignIndexRoute: typeof DesignIndexRoute
+interface WorkshopDesignRouteRouteChildren {
+  WorkshopDesignLettersRoute: typeof WorkshopDesignLettersRoute
+  WorkshopDesignNewsroomRoute: typeof WorkshopDesignNewsroomRoute
+  WorkshopDesignWorkshopRoute: typeof WorkshopDesignWorkshopRoute
+  WorkshopDesignIndexRoute: typeof WorkshopDesignIndexRoute
 }
 
-const DesignRouteRouteChildren: DesignRouteRouteChildren = {
-  DesignCompanyRoute: DesignCompanyRoute,
-  DesignLettersRoute: DesignLettersRoute,
-  DesignNewsroomRoute: DesignNewsroomRoute,
-  DesignWorkshopRoute: DesignWorkshopRoute,
-  DesignIndexRoute: DesignIndexRoute,
+const WorkshopDesignRouteRouteChildren: WorkshopDesignRouteRouteChildren = {
+  WorkshopDesignLettersRoute: WorkshopDesignLettersRoute,
+  WorkshopDesignNewsroomRoute: WorkshopDesignNewsroomRoute,
+  WorkshopDesignWorkshopRoute: WorkshopDesignWorkshopRoute,
+  WorkshopDesignIndexRoute: WorkshopDesignIndexRoute,
 }
 
-const DesignRouteRouteWithChildren = DesignRouteRoute._addFileChildren(
-  DesignRouteRouteChildren,
+const WorkshopDesignRouteRouteWithChildren =
+  WorkshopDesignRouteRoute._addFileChildren(WorkshopDesignRouteRouteChildren)
+
+interface WorkshopRouteRouteChildren {
+  WorkshopDesignRouteRoute: typeof WorkshopDesignRouteRouteWithChildren
+  WorkshopCareersRoute: typeof WorkshopCareersRoute
+  WorkshopChangelogRoute: typeof WorkshopChangelogRoute
+  WorkshopCompanyRoute: typeof WorkshopCompanyRoute
+  WorkshopContactRoute: typeof WorkshopContactRoute
+  WorkshopPressRoute: typeof WorkshopPressRoute
+  WorkshopSolutionsRoute: typeof WorkshopSolutionsRoute
+  WorkshopIndexRoute: typeof WorkshopIndexRoute
+}
+
+const WorkshopRouteRouteChildren: WorkshopRouteRouteChildren = {
+  WorkshopDesignRouteRoute: WorkshopDesignRouteRouteWithChildren,
+  WorkshopCareersRoute: WorkshopCareersRoute,
+  WorkshopChangelogRoute: WorkshopChangelogRoute,
+  WorkshopCompanyRoute: WorkshopCompanyRoute,
+  WorkshopContactRoute: WorkshopContactRoute,
+  WorkshopPressRoute: WorkshopPressRoute,
+  WorkshopSolutionsRoute: WorkshopSolutionsRoute,
+  WorkshopIndexRoute: WorkshopIndexRoute,
+}
+
+const WorkshopRouteRouteWithChildren = WorkshopRouteRoute._addFileChildren(
+  WorkshopRouteRouteChildren,
+)
+
+interface LettersRouteRouteChildren {
+  LettersSlugRoute: typeof LettersSlugRoute
+  LettersRssRoute: typeof LettersRssRoute
+  LettersIndexRoute: typeof LettersIndexRoute
+}
+
+const LettersRouteRouteChildren: LettersRouteRouteChildren = {
+  LettersSlugRoute: LettersSlugRoute,
+  LettersRssRoute: LettersRssRoute,
+  LettersIndexRoute: LettersIndexRoute,
+}
+
+const LettersRouteRouteWithChildren = LettersRouteRoute._addFileChildren(
+  LettersRouteRouteChildren,
+)
+
+interface NewsroomRouteRouteChildren {
+  NewsroomIndexRoute: typeof NewsroomIndexRoute
+}
+
+const NewsroomRouteRouteChildren: NewsroomRouteRouteChildren = {
+  NewsroomIndexRoute: NewsroomIndexRoute,
+}
+
+const NewsroomRouteRouteWithChildren = NewsroomRouteRoute._addFileChildren(
+  NewsroomRouteRouteChildren,
 )
 
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
-  DesignRouteRoute: DesignRouteRouteWithChildren,
-  CareersRoute: CareersRoute,
-  ChangelogRoute: ChangelogRoute,
-  CompanyRoute: CompanyRoute,
-  ContactRoute: ContactRoute,
-  PressRoute: PressRoute,
+  WorkshopRouteRoute: WorkshopRouteRouteWithChildren,
+  LettersRouteRoute: LettersRouteRouteWithChildren,
+  NewsroomRouteRoute: NewsroomRouteRouteWithChildren,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
-  SolutionsRoute: SolutionsRoute,
-  LettersSlugRoute: LettersSlugRoute,
-  LettersRssRoute: LettersRssRoute,
   OgSlugRoute: OgSlugRoute,
-  LettersIndexRoute: LettersIndexRoute,
   ApiOtelV1TracesRoute: ApiOtelV1TracesRoute,
 }
 export const routeTree = rootRouteImport

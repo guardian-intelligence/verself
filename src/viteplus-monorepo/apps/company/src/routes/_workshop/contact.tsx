@@ -3,7 +3,7 @@ import { CONTACT_META, contact } from "~/content/contact";
 import { BodyParagraph, PageShell } from "~/components/page-shell";
 import { ogMeta } from "~/lib/head";
 
-export const Route = createFileRoute("/contact")({
+export const Route = createFileRoute("/_workshop/contact")({
   component: ContactPage,
   head: () => ({
     meta: ogMeta({
