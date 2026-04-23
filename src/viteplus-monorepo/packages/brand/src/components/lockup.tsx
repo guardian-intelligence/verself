@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import { WingsArgent, WingsChip, WingsEmboss, WingsWorkshopChip } from "./wings";
+import { WingsArgent, WingsChip, WingsEmboss } from "./wings";
 
 export type LockupSize = "sm" | "md" | "lg";
 
@@ -30,7 +30,15 @@ const WORDMARK_TRACKING: Record<LockupSize, string> = {
   lg: "-0.025em",
 };
 
-export type LockupVariant = "argent" | "chip" | "emboss" | "workshop-chip";
+// Three variants, one per treatment:
+//   argent  — bare cropped wings (Workshop, on Ink, and any photography/scrim
+//             ground where the canvas itself carries the clearspace).
+//   chip    — argent wings inside an iron rounded tile (Letters, on Paper).
+//   emboss  — argent wings inside a dark circular medallion (Newsroom, on
+//             Flare and Argent).
+// A chip whose tile colour matches its ground is just padded bare wings; in a
+// lockup the wordmark supplies the clearspace, so we never ship one.
+export type LockupVariant = "argent" | "chip" | "emboss";
 
 export interface LockupProps {
   readonly size?: LockupSize;
@@ -44,10 +52,14 @@ export interface LockupProps {
 
 // Lockup — mark + wordmark, tuned in the alignment playground so the wordmark
 // bottom-aligns with the lower-wing tip. Argent uses the glyph-cropped viewBox
-// so the SVG bottom coincides with the visible wing; chip/emboss keep their
-// padded viewBox because the background shape is the visible edge there. Gap
-// is clamp(8px, 0.28·mark-h, 18px) — mostly proportional, with an 8px floor so
-// sm lockups still read as a pair and an 18px ceiling so lg doesn't fly apart.
+// so the SVG bounding box equals the visible ink; chip/emboss keep their
+// padded viewBox because the tile/medallion is itself visible on its ground
+// and IS the edge the eye reads. Gap is clamp(8px, 0.28·mark-h, 18px) —
+// proportional to the visible mark, with an 8px floor so sm lockups still
+// read as a pair and an 18px ceiling so lg doesn't fly apart. This formula
+// only produces consistent optical spacing because every shipped variant has
+// its visible ink filling the SVG box; don't introduce a variant that pads
+// the bounding box with invisible-on-ground fill or the gap drifts larger.
 export function Lockup({
   size = "md",
   variant = "argent",
@@ -61,14 +73,7 @@ export function Lockup({
   const ratio = WORDMARK_RATIO[size];
   const tracking = WORDMARK_TRACKING[size];
   const useCropped = variant === "argent";
-  const Mark =
-    variant === "chip"
-      ? WingsChip
-      : variant === "emboss"
-        ? WingsEmboss
-        : variant === "workshop-chip"
-          ? WingsWorkshopChip
-          : WingsArgent;
+  const Mark = variant === "chip" ? WingsChip : variant === "emboss" ? WingsEmboss : WingsArgent;
 
   const lockupStyle: CSSProperties = {
     display: "inline-flex",
@@ -135,14 +140,7 @@ export function StackedLockup({
   className,
   style,
 }: StackedLockupProps) {
-  const Mark =
-    variant === "chip"
-      ? WingsChip
-      : variant === "emboss"
-        ? WingsEmboss
-        : variant === "workshop-chip"
-          ? WingsWorkshopChip
-          : WingsArgent;
+  const Mark = variant === "chip" ? WingsChip : variant === "emboss" ? WingsEmboss : WingsArgent;
   const wingUnit = markHeight * 0.45;
   return (
     <span

@@ -142,13 +142,15 @@
 }
 
 [data-treatment="letters"] {
-  /* Paper ground, Ink type, Bordeaux accent. The single editorial accent
-     reserved for pull-quotes, drop-caps, and active links — never appears
-     outside Letters. Muted ramp is Stone (ink-on-light). Vellum is the
+  /* Paper ground, Ink type. Ink is also the editorial accent: CTAs, the
+     drop-cap initial, nameplate/masthead rule, tab underline, active link
+     underline. Bordeaux is RESERVED for the blockquote left-rule and
+     appears nowhere else — the single editorial accent is the pull-quote,
+     not the whole page. Muted ramp is Stone (ink-on-light). Vellum is the
      same-family inset used for colophons. */
   --treatment-ground: var(--color-paper);
   --treatment-ink: var(--color-ink);
-  --treatment-accent: var(--color-bordeaux);
+  --treatment-accent: var(--color-ink);
   --treatment-wordmark: var(--color-ink);
   --treatment-display-font: var(--font-display);
   --treatment-muted-strong: var(--color-stone-strong);

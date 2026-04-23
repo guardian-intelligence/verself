@@ -7,17 +7,17 @@ import type { LockupVariant } from "../components/lockup";
 // but with Bordeaux" is not a valid surface.
 export type Treatment = "workshop" | "newsroom" | "letters";
 
-// Per-treatment lockup variant. The chip choices are the load-bearing brand
+// Per-treatment lockup variant. The mark treatment is the load-bearing brand
 // signal on each ground:
-//   workshop → workshop-chip  (iron tile · 1 px argent border · argent wings)
-//   newsroom → emboss         (argent wings inside an ink medallion)
-//   letters  → chip           (argent wings inside an iron editorial chip)
-// Workshop's workshop-chip separates the productivity chrome from the earlier
-// unframed Argent mark so that, visually, "you are inside product" is obvious
-// at a glance. Emboss carries wings across Paper-on-Paper surfaces without
-// fighting for contrast; chip carries them through editorial bookplates.
+//   workshop → argent  (bare cropped wings on Ink — the dark canvas is itself
+//                       the clearspace, so the mark needs no carrier tile)
+//   newsroom → emboss  (argent wings inside a dark circular medallion, on Flare)
+//   letters  → chip    (argent wings inside a dark rounded tile, on Paper)
+// Emboss carries wings across loud Flare fields without fighting for contrast;
+// chip carries them through editorial bookplates. Workshop stays bare because
+// a tile the colour of the ground is just invisible padding beside a wordmark.
 export const TREATMENT_WORDMARK_VARIANT: Record<Treatment, LockupVariant> = {
-  workshop: "workshop-chip",
+  workshop: "argent",
   newsroom: "emboss",
   letters: "chip",
 };

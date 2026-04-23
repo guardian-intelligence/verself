@@ -42,7 +42,10 @@ const TABS: readonly Tab[] = [
 const TREATMENT_ACCENT: Record<TabTreatment, string> = {
   workshop: "var(--color-amber)",
   newsroom: "var(--color-flare)",
-  letters: "var(--color-bordeaux)",
+  // Letters: Ink underline, not Bordeaux. Bordeaux has retreated to the
+  // blockquote left-rule only (2026-04-23); every other editorial accent
+  // — tab underline, drop cap, nameplate rule, CTA — paints Ink.
+  letters: "var(--color-ink)",
 };
 
 export interface DesignTabStripProps {
