@@ -16,7 +16,6 @@ import {
   listExecutionSchedules as listGeneratedExecutionSchedules,
   pauseExecutionSchedule as pauseGeneratedExecutionSchedule,
   resumeExecutionSchedule as resumeGeneratedExecutionSchedule,
-  submitExecution,
 } from "../__generated/sandbox-rental-api/index.js";
 import {
   vBillingCancelContractResponse,
@@ -58,8 +57,6 @@ import {
   vSandboxExecutionRecord,
   vSandboxExecutionScheduleDispatchRecord,
   vSandboxExecutionScheduleRecord,
-  vSubmitExecutionBody,
-  vSubmitExecutionResponse,
 } from "../__generated/sandbox-rental-api/valibot.gen.js";
 import {
   type BearerClientOptions,
@@ -388,12 +385,6 @@ export const cancelContractRequestSchema = v.strictObject({
 
 export type CancelContractRequest = v.InferInput<typeof cancelContractRequestSchema>;
 
-type DirectExecutionRequestBody = {
-  idempotency_key: string;
-  kind: "direct";
-  run_command: string;
-};
-
 type ExecutionScheduleRequestBody = {
   idempotency_key: string;
   display_name?: string;
@@ -402,26 +393,6 @@ type ExecutionScheduleRequestBody = {
   paused?: boolean;
   run_command: string;
 };
-
-export const executionRequestSchema = v.pipe(
-  v.strictObject({
-    idempotency_key: v.optional(v.string()),
-    kind: v.optional(v.literal("direct")),
-    run_command: v.pipe(v.string(), v.trim(), v.minLength(1)),
-  }),
-  v.transform((body) => {
-    const providedIdempotencyKey = body.idempotency_key?.trim();
-    const requestBody: DirectExecutionRequestBody = {
-      kind: "direct",
-      idempotency_key: providedIdempotencyKey || createIdempotencyKey("execution"),
-      run_command: body.run_command,
-    };
-    v.parse(vSubmitExecutionBody, requestBody);
-    return requestBody;
-  }),
-);
-
-export type ExecutionRequest = v.InferInput<typeof executionRequestSchema>;
 
 export const executionScheduleRequestSchema = v.pipe(
   v.strictObject({
@@ -471,7 +442,6 @@ export const executionScheduleIdInputSchema = v.pipe(
 
 export type ExecutionScheduleIdInput = v.InferOutput<typeof executionScheduleIdInputSchema>;
 
-export type SubmitExecutionResponse = v.InferOutput<typeof vSubmitExecutionResponse>;
 export type CheckoutSession = v.InferOutput<typeof vCreateBillingCheckoutResponse>;
 export type ContractSession = v.InferOutput<typeof vCreateBillingContractResponse>;
 export type ContractChangeSession = v.InferOutput<typeof vCreateBillingContractChangeResponse>;
@@ -706,31 +676,6 @@ export async function cancelContract(
 
   const parsed = v.parse(vBillingCancelContractResponse, result.data);
   return { contract: parseContract(parsed.contract) };
-}
-
-export async function submitDirectExecution(
-  options: SandboxRentalClientOptions & { body: ExecutionRequest },
-): Promise<SubmitExecutionResponse> {
-  const client = createSandboxRentalClient(options);
-  const body = v.parse(executionRequestSchema, options.body);
-  const requestBody = {
-    kind: "direct" as const,
-    idempotency_key: body.idempotency_key,
-    run_command: body.run_command,
-  };
-  const path = "/api/v1/executions";
-  const result = await submitExecution({
-    body: requestBody,
-    client,
-    responseStyle: "fields",
-    throwOnError: false,
-  });
-
-  if (result.error !== undefined) {
-    throwSandboxRentalError(path, result.response, result.error);
-  }
-
-  return v.parse(vSubmitExecutionResponse, result.data);
 }
 
 export async function getExecution(

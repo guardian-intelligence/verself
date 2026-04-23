@@ -14,10 +14,9 @@ case "${mode}" in
     export TEST_BASE_URL="${TEST_BASE_URL:-https://rentasandbox.${VERIFICATION_DOMAIN}}"
     "${script_dir}/verify-rent-ui-smoke.sh"
     ;;
-  execute)
-    export VERIFICATION_KIND="${VERIFICATION_KIND:-sandbox-execute}"
-    export SANDBOX_PROOF_SUBMISSIONS="${SANDBOX_PROOF_SUBMISSIONS:-1}"
-    "${script_dir}/verify-sandbox-public-api.sh"
+  schedule)
+    export VERIFICATION_KIND="${VERIFICATION_KIND:-sandbox-schedule}"
+    "${script_dir}/verify-recurring-schedule-live.sh"
     ;;
   billing)
     export VERIFICATION_KIND="${VERIFICATION_KIND:-sandbox-billing}"
@@ -25,7 +24,7 @@ case "${mode}" in
     "${script_dir}/verify-rent-billing-flow.sh"
     ;;
   *)
-    echo "usage: $0 [admin|execute|billing]" >&2
+    echo "usage: $0 [admin|schedule|billing]" >&2
     exit 1
     ;;
 esac

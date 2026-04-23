@@ -28,14 +28,10 @@ func (p permission) LogValue() slog.Value { return slog.StringValue(string(p)) }
 const (
 	permissionGitHubRead      permission = "sandbox:github_installation:read"
 	permissionGitHubWrite     permission = "sandbox:github_installation:write"
-	permissionExecutionSubmit permission = "sandbox:execution:submit"
 	permissionExecutionRead   permission = "sandbox:execution:read"
 	permissionScheduleRead    permission = "sandbox:execution_schedule:read"
 	permissionScheduleWrite   permission = "sandbox:execution_schedule:write"
 	permissionLogsRead        permission = "sandbox:logs:read"
-	permissionSecretRead      permission = "secrets:secret:read"
-	permissionVolumeRead      permission = "sandbox:volume:read"
-	permissionVolumeWrite     permission = "sandbox:volume:write"
 	permissionBillingRead     permission = "billing:read"
 	permissionBillingCheckout permission = "billing:checkout"
 
@@ -47,9 +43,8 @@ const (
 	maxIdempotencyKeyLength     = 128
 	rateLimiterMaxWindowEntries = 10000
 
-	bodyLimitNoBody        int64 = 1024
-	bodyLimitSmallJSON     int64 = 8 << 10
-	bodyLimitExecutionPost int64 = 64 << 10
+	bodyLimitNoBody    int64 = 1024
+	bodyLimitSmallJSON int64 = 8 << 10
 )
 
 type operationPolicy struct {
@@ -82,23 +77,18 @@ var rolePermissionBundles = map[string][]permission{
 	roleSandboxOrgAdmin: {
 		permissionGitHubRead,
 		permissionGitHubWrite,
-		permissionExecutionSubmit,
 		permissionExecutionRead,
 		permissionScheduleRead,
 		permissionScheduleWrite,
 		permissionLogsRead,
-		permissionVolumeRead,
-		permissionVolumeWrite,
 		permissionBillingRead,
 		permissionBillingCheckout,
 	},
 	roleSandboxOrgMember: {
-		permissionExecutionSubmit,
 		permissionExecutionRead,
 		permissionScheduleRead,
 		permissionScheduleWrite,
 		permissionLogsRead,
-		permissionVolumeRead,
 	},
 }
 
@@ -239,9 +229,6 @@ func enforceOperationPolicy(ctx context.Context, policy operationPolicy, input a
 	if !identityHasPermission(identity, policy.Permission) {
 		return identity, forbidden(ctx, "permission-denied", fmt.Sprintf("missing required permission %q", policy.Permission))
 	}
-	if submitRequestsSecretEnv(input) && !identityHasDirectPermission(identity, permissionSecretRead) {
-		return identity, forbidden(ctx, "permission-denied", fmt.Sprintf("secret_env requires direct permission %q", permissionSecretRead))
-	}
 	if err := requireOperationIdempotency(ctx, policy, input); err != nil {
 		return identity, err
 	}
@@ -249,11 +236,6 @@ func enforceOperationPolicy(ctx context.Context, policy operationPolicy, input a
 		return identity, rateLimitExceeded(ctx, decision.RetryAfter)
 	}
 	return identity, nil
-}
-
-func submitRequestsSecretEnv(input any) bool {
-	submit, ok := input.(*SubmitExecutionInput)
-	return ok && len(submit.Body.SecretEnv) > 0
 }
 
 func identityHasPermission(identity *auth.Identity, required permission) bool {
@@ -555,7 +537,7 @@ func sourceProductArea(policy operationPolicy) string {
 
 func riskLevel(policy operationPolicy) string {
 	switch {
-	case strings.Contains(policy.AuditEvent, "execution.submit") || strings.Contains(policy.AuditEvent, "github_installation.connect") || strings.Contains(policy.AuditEvent, "volume.create"):
+	case strings.Contains(policy.AuditEvent, "execution_schedule.create") || strings.Contains(policy.AuditEvent, "github_installation.connect"):
 		return "high"
 	case strings.HasPrefix(policy.AuditEvent, "billing.") && policy.Action != "read" && policy.Action != "list":
 		return "high"
@@ -625,11 +607,9 @@ type fixedWindowOperationRateLimiter struct {
 var apiOperationRateLimiter = newFixedWindowOperationRateLimiter(map[string]rateLimitRule{
 	"read":                         {Limit: 600, Window: time.Minute},
 	"logs_read":                    {Limit: 120, Window: time.Minute},
-	"execution_submit":             {Limit: 600, Window: time.Minute},
+	"execution_schedule_mutation":  {Limit: 120, Window: time.Minute},
 	"github_installation_mutation": {Limit: 30, Window: time.Minute},
 	"billing_mutation":             {Limit: 60, Window: time.Minute},
-	"scheduler_probe":              {Limit: 30, Window: time.Minute},
-	"volume_mutation":              {Limit: 120, Window: time.Minute},
 })
 
 func newFixedWindowOperationRateLimiter(rules map[string]rateLimitRule) *fixedWindowOperationRateLimiter {

@@ -34,7 +34,7 @@ func TestCreateAPICredentialValidatesRequestedPermissions(t *testing.T) {
 		Roles:   []string{RoleOwner},
 	}, CreateAPICredentialRequest{
 		DisplayName: "sandbox automation",
-		Permissions: []string{PermissionSandboxExecutionSubmit, PermissionSandboxLogsRead},
+		Permissions: []string{PermissionSandboxExecutionScheduleWrite, PermissionSandboxLogsRead},
 	})
 	if err != nil {
 		t.Fatalf("owner should mint sandbox permissions: %v", err)
@@ -69,7 +69,7 @@ func TestCreateAPICredentialCleansUpServiceAccountWhenStoreFails(t *testing.T) {
 		Roles:   []string{RoleOwner},
 	}, CreateAPICredentialRequest{
 		DisplayName: "sandbox automation",
-		Permissions: []string{PermissionSandboxExecutionSubmit},
+		Permissions: []string{PermissionSandboxExecutionScheduleWrite},
 	})
 	if !errors.Is(err, storeErr) {
 		t.Fatalf("expected store error, got %v", err)

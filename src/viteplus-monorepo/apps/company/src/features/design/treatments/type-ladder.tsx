@@ -37,7 +37,7 @@ export type TypeLadderRow = {
 const LINE = "#2a2a2f";
 
 const SPEC_CELL_STYLE: CSSProperties = {
-  color: "var(--muted)",
+  color: "var(--treatment-muted)",
   fontFamily: "'Geist Mono', ui-monospace, monospace",
   fontSize: "11px",
   whiteSpace: "nowrap",
@@ -64,6 +64,7 @@ export function TreatmentTypeLadder({
 }) {
   return (
     <div
+      data-treatment="company"
       style={{
         marginBottom: "16px",
         padding: "8px 4px 4px",
@@ -71,6 +72,7 @@ export function TreatmentTypeLadder({
         borderRadius: "12px",
         background: "#17171a",
         overflowX: "auto",
+        color: "var(--treatment-ink)",
       }}
     >
       <table
@@ -136,7 +138,7 @@ export function TreatmentTypeLadder({
                 <td
                   style={{
                     ...base,
-                    color: "var(--muted)",
+                    color: "var(--treatment-muted)",
                     fontFamily: "'Geist Mono', ui-monospace, monospace",
                     fontSize: "11px",
                     whiteSpace: "nowrap",
@@ -149,7 +151,7 @@ export function TreatmentTypeLadder({
                   style={{
                     ...base,
                     ...SPEC_CELL_STYLE,
-                    color: "var(--muted-faint)",
+                    color: "var(--treatment-muted-faint)",
                   }}
                 >
                   {style}
@@ -167,7 +169,7 @@ export function TreatmentTypeLadder({
             borderTop: `1px solid ${LINE}`,
             fontFamily: "'Geist', sans-serif",
             fontSize: "12px",
-            color: "var(--muted)",
+            color: "var(--treatment-muted)",
             lineHeight: 1.5,
           }}
         >
@@ -188,6 +190,6 @@ function headCell(): CSSProperties {
     fontVariationSettings: '"wght" 600',
     letterSpacing: "0.12em",
     textTransform: "uppercase",
-    color: "var(--muted-faint)",
+    color: "var(--treatment-muted-faint)",
   };
 }

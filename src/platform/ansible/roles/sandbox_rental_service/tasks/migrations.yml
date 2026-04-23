@@ -86,9 +86,6 @@
         IF to_regclass('public.execution_sticky_disk_mounts') IS NOT NULL THEN
           EXECUTE 'ALTER TABLE public.execution_sticky_disk_mounts OWNER TO sandbox_rental';
         END IF;
-        IF to_regclass('public.execution_secret_env') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.execution_secret_env OWNER TO sandbox_rental';
-        END IF;
         IF to_regclass('public.github_workflow_jobs') IS NOT NULL THEN
           EXECUTE 'ALTER TABLE public.github_workflow_jobs OWNER TO sandbox_rental';
         END IF;
@@ -125,7 +122,6 @@
         public.execution_filesystem_mounts,
         public.github_sticky_disk_generations,
         public.execution_sticky_disk_mounts,
-        public.execution_secret_env,
         public.runner_classes,
         public.runner_class_filesystem_mounts,
         public.github_installations,

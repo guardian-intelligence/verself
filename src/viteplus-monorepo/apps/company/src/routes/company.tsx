@@ -27,13 +27,13 @@ function CompanyPage() {
             key={value.name}
             className="flex flex-col gap-2 rounded-lg p-5"
             style={{
-              border: "1px solid var(--shell-surface-border)",
-              background: "var(--shell-surface-subtle)",
+              border: "1px solid var(--treatment-surface-border)",
+              background: "var(--treatment-surface-subtle)",
             }}
           >
             <span
               className="font-mono text-[10px] uppercase tracking-[0.18em]"
-              style={{ color: "var(--shell-muted-faint)" }}
+              style={{ color: "var(--treatment-muted-faint)" }}
             >
               {value.name}
             </span>
@@ -42,7 +42,7 @@ function CompanyPage() {
                 fontFamily: "'Geist', sans-serif",
                 fontSize: "14px",
                 lineHeight: 1.55,
-                color: "var(--shell-muted)",
+                color: "var(--treatment-muted)",
                 margin: 0,
               }}
             >

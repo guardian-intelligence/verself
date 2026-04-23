@@ -49,7 +49,7 @@ export function ExecutionSchedulesPanel() {
     return (
       <EmptyState
         title="No schedules yet"
-        body="Recurring schedules trigger the same direct VM execution flow on an interval."
+        body="Recurring schedules dispatch VM canaries on an interval."
         action={<Button render={<Link to="/schedules/new" />}>New schedule</Button>}
       />
     );

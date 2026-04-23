@@ -18,8 +18,6 @@ import (
 	"github.com/riverqueue/river/rivertype"
 	"github.com/riverqueue/rivercontrib/otelriver"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
 )
 
@@ -27,18 +25,14 @@ const (
 	QueueExecution    = "execution"
 	QueueOrchestrator = "orchestrator"
 	QueueRunner       = "runner"
-	QueueScheduler    = "scheduler"
 	QueueReconcile    = "reconcile"
 	QueueWebhook      = "webhook"
-	QueueVolume       = "volume"
 
-	ProbeKind                   = "scheduler.probe"
 	ExecutionAdvanceKind        = "execution.advance"
 	GitHubCapacityReconcileKind = "github.capacity.reconcile"
 	GitHubRunnerAllocateKind    = "github.runner.allocate"
 	GitHubJobBindKind           = "github.job.bind"
 	GitHubRunnerCleanupKind     = "github.runner.cleanup"
-	VolumeMeterTickKind         = "volume.meter_tick"
 
 	DefaultExecutionMaxWorkers = 4
 )
@@ -54,13 +48,6 @@ type Config struct {
 type Runtime struct {
 	client *river.Client[pgx.Tx]
 	logger *slog.Logger
-}
-
-type ProbeRequest struct {
-	Message       string
-	OrgID         uint64
-	ActorID       string
-	CorrelationID string
 }
 
 type ProbeResult struct {
@@ -110,30 +97,6 @@ type GitHubRunnerCleanupRequest struct {
 	AllocationID  string
 	CorrelationID string
 	TraceParent   string
-}
-
-type VolumeMeterTickRequest struct {
-	MeterTickID   string
-	CorrelationID string
-	TraceParent   string
-}
-
-type ProbeArgs struct {
-	Message       string `json:"message,omitempty"`
-	OrgID         uint64 `json:"org_id,omitempty"`
-	ActorID       string `json:"actor_id,omitempty"`
-	CorrelationID string `json:"correlation_id,omitempty"`
-	SubmittedAt   string `json:"submitted_at"`
-}
-
-func (ProbeArgs) Kind() string { return ProbeKind }
-
-func (ProbeArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{
-		MaxAttempts: 3,
-		Queue:       QueueScheduler,
-		Tags:        []string{"scheduler-probe"},
-	}
 }
 
 type ExecutionAdvanceArgs struct {
@@ -226,47 +189,6 @@ func (GitHubRunnerCleanupArgs) InsertOpts() river.InsertOpts {
 	}
 }
 
-type VolumeMeterTickArgs struct {
-	MeterTickID   string `json:"meter_tick_id"`
-	CorrelationID string `json:"correlation_id,omitempty"`
-	TraceParent   string `json:"trace_parent,omitempty"`
-	SubmittedAt   string `json:"submitted_at"`
-}
-
-func (VolumeMeterTickArgs) Kind() string { return VolumeMeterTickKind }
-
-func (VolumeMeterTickArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{
-		MaxAttempts: 5,
-		Queue:       QueueVolume,
-		Tags:        []string{"volume", "meter"},
-	}
-}
-
-type ProbeWorker struct {
-	river.WorkerDefaults[ProbeArgs]
-	logger *slog.Logger
-}
-
-func (w *ProbeWorker) Work(ctx context.Context, job *river.Job[ProbeArgs]) error {
-	ctx, span := tracer.Start(ctx, "sandbox-rental.scheduler.probe.complete")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int64("river.job_id", job.ID),
-		attribute.String("river.job_kind", ProbeKind),
-		attribute.String("river.queue", QueueScheduler),
-		attribute.String("fm.correlation_id", job.Args.CorrelationID),
-	)
-	w.logger.InfoContext(ctx, "scheduler probe completed",
-		"river_job_id", job.ID,
-		"river_job_kind", ProbeKind,
-		"river_queue", QueueScheduler,
-		"fm_correlation_id", job.Args.CorrelationID,
-	)
-	return nil
-}
-
 func NewRuntime(pool *pgxpool.Pool, cfg Config) (*Runtime, error) {
 	if pool == nil {
 		return nil, fmt.Errorf("scheduler runtime requires pgx pool")
@@ -277,7 +199,6 @@ func NewRuntime(pool *pgxpool.Pool, cfg Config) (*Runtime, error) {
 	}
 
 	workers := river.NewWorkers()
-	river.AddWorker(workers, &ProbeWorker{logger: logger})
 	if cfg.RegisterWorkers != nil {
 		if err := cfg.RegisterWorkers(workers); err != nil {
 			return nil, fmt.Errorf("register scheduler workers: %w", err)
@@ -406,21 +327,6 @@ func (r *Runtime) EnqueueGitHubRunnerCleanup(ctx context.Context, req GitHubRunn
 	return ProbeResult{JobID: job.ID, Kind: job.Kind, Queue: job.Queue, Status: string(job.State)}, nil
 }
 
-func (r *Runtime) EnqueueVolumeMeterTickTx(ctx context.Context, tx pgx.Tx, req VolumeMeterTickRequest) (ProbeResult, error) {
-	args := VolumeMeterTickArgs{
-		MeterTickID:   strings.TrimSpace(req.MeterTickID),
-		CorrelationID: strings.TrimSpace(req.CorrelationID),
-		TraceParent:   strings.TrimSpace(req.TraceParent),
-		SubmittedAt:   time.Now().UTC().Format(time.RFC3339Nano),
-	}
-	result, err := r.client.InsertTx(ctx, tx, args, nil)
-	if err != nil {
-		return ProbeResult{}, fmt.Errorf("enqueue volume meter tick: %w", err)
-	}
-	job := result.Job
-	return ProbeResult{JobID: job.ID, Kind: job.Kind, Queue: job.Queue, Status: string(job.State)}, nil
-}
-
 func (r *Runtime) Start(ctx context.Context) error {
 	if err := r.client.Start(ctx); err != nil {
 		return fmt.Errorf("start river client: %w", err)
@@ -437,54 +343,13 @@ func (r *Runtime) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (r *Runtime) EnqueueProbe(ctx context.Context, req ProbeRequest) (ProbeResult, error) {
-	ctx, span := tracer.Start(ctx, "sandbox-rental.scheduler.probe.submit")
-	defer span.End()
-
-	args := ProbeArgs{
-		Message:       strings.TrimSpace(req.Message),
-		OrgID:         req.OrgID,
-		ActorID:       strings.TrimSpace(req.ActorID),
-		CorrelationID: strings.TrimSpace(req.CorrelationID),
-		SubmittedAt:   time.Now().UTC().Format(time.RFC3339Nano),
-	}
-	result, err := r.client.Insert(ctx, args, nil)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return ProbeResult{}, fmt.Errorf("enqueue scheduler probe: %w", err)
-	}
-
-	job := result.Job
-	span.SetAttributes(
-		attribute.Int64("river.job_id", job.ID),
-		attribute.String("river.job_kind", job.Kind),
-		attribute.String("river.queue", job.Queue),
-		attribute.String("fm.correlation_id", args.CorrelationID),
-	)
-	r.logger.InfoContext(ctx, "scheduler probe enqueued",
-		"river_job_id", job.ID,
-		"river_job_kind", job.Kind,
-		"river_queue", job.Queue,
-		"fm_correlation_id", args.CorrelationID,
-	)
-	return ProbeResult{
-		JobID:  job.ID,
-		Kind:   job.Kind,
-		Queue:  job.Queue,
-		Status: string(job.State),
-	}, nil
-}
-
 func queueConfig(cfg Config) map[string]river.QueueConfig {
 	return map[string]river.QueueConfig{
 		QueueExecution:    {MaxWorkers: normalizeMaxWorkers(cfg.ExecutionMaxWorkers, DefaultExecutionMaxWorkers)},
 		QueueOrchestrator: {MaxWorkers: 2},
 		QueueRunner:       {MaxWorkers: 4},
-		QueueScheduler:    {MaxWorkers: 1},
 		QueueReconcile:    {MaxWorkers: 1},
 		QueueWebhook:      {MaxWorkers: 2},
-		QueueVolume:       {MaxWorkers: 2},
 	}
 }
 
@@ -500,9 +365,7 @@ func queueNames() []string {
 		QueueExecution,
 		QueueOrchestrator,
 		QueueRunner,
-		QueueScheduler,
 		QueueReconcile,
 		QueueWebhook,
-		QueueVolume,
 	}
 }

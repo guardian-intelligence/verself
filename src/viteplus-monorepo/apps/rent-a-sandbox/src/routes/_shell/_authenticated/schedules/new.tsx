@@ -27,7 +27,7 @@ function NewSchedulePage() {
           </PageEyebrow>
           <PageTitle>New schedule</PageTitle>
           <PageDescription>
-            Temporal triggers a recurring direct execution on the interval you configure here.
+            Temporal triggers a recurring VM canary on the interval you configure here.
           </PageDescription>
         </PageHeaderContent>
       </PageHeader>

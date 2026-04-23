@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { WingsArgent } from "@forge-metal/brand";
 import { FilmGrain } from "~/components/film-grain";
+import { NewsroomStrip } from "~/components/newsroom-strip";
 import { RevealSpan } from "~/components/reveal-span";
 import { landing } from "~/content/landing";
 import { ogMeta } from "~/lib/head";
@@ -18,6 +19,15 @@ export const Route = createFileRoute("/")({
 });
 
 function LandingPage() {
+  return (
+    <>
+      <LandingHero />
+      <NewsroomStrip />
+    </>
+  );
+}
+
+function LandingHero() {
   return (
     <div className="relative mx-auto w-full max-w-5xl px-4 py-16 md:px-6 md:py-24">
       {/* FilmGrain wraps the container in a warm vintage overlay blended with
@@ -38,7 +48,7 @@ function LandingPage() {
 
         <p
           className="font-mono text-[11px] font-medium uppercase tracking-[0.16em]"
-          style={{ color: "var(--muted-faint)" }}
+          style={{ color: "var(--treatment-muted-faint)" }}
         >
           {landing.kicker}
         </p>
@@ -72,7 +82,7 @@ function LandingPage() {
               fontWeight: 400,
               fontSize: "clamp(16px, 1.7vw, 18px)",
               lineHeight: 1.55,
-              color: "var(--muted-strong)",
+              color: "var(--treatment-muted-strong)",
               margin: 0,
             }}
           >

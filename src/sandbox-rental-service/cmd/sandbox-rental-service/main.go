@@ -30,7 +30,6 @@ import (
 	"github.com/forge-metal/httpserver"
 	fmotel "github.com/forge-metal/otel"
 	secretsclient "github.com/forge-metal/secrets-service/client"
-	secretsinternalclient "github.com/forge-metal/secrets-service/internalclient"
 	vmorchestrator "github.com/forge-metal/vm-orchestrator"
 
 	sandboxapi "github.com/forge-metal/sandbox-rental-service/internal/api"
@@ -224,10 +223,6 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("create secrets client: %w", err)
 	}
-	secretsInternalClient, err := secretsinternalclient.NewClientWithResponses(secretsURL, secretsinternalclient.WithHTTPClient(secretsHTTPClient))
-	if err != nil {
-		return fmt.Errorf("create internal secrets client: %w", err)
-	}
 	temporalClient, err := sdkclient.NewWorkflowClient(sdkclient.Config{
 		HostPort: temporalFrontendAddress,
 	}, temporalNamespace, spiffeSource, "sandbox-rental-service-temporal-sdk")
@@ -266,7 +261,6 @@ func run() error {
 		Logger:           logger,
 		WorkloadTimeout:  time.Duration(workloadTimeout) * time.Second,
 		CheckoutCacheDir: checkoutCacheDir,
-		Secrets:          jobs.NewSecretsResolver(secretsInternalClient),
 	}
 	githubRunner, err := jobs.NewGitHubRunner(jobService, jobs.GitHubRunnerConfig{
 		AppID:         githubAppID,
@@ -293,6 +287,7 @@ func run() error {
 		Namespace:      temporalNamespace,
 		TaskQueue:      temporalRecurringTaskQueue,
 		Logger:         logger,
+		Submitter:      jobService,
 	})
 	if err != nil {
 		return fmt.Errorf("create recurring service: %w", err)

@@ -24,9 +24,7 @@ function SchedulesPage() {
       <PageHeader>
         <PageHeaderContent>
           <PageTitle>Schedules</PageTitle>
-          <PageDescription>
-            Recurring direct VM executions backed by Temporal schedules.
-          </PageDescription>
+          <PageDescription>Recurring VM canaries backed by Temporal schedules.</PageDescription>
         </PageHeaderContent>
         <PageActions>
           <Button render={<Link to="/schedules/new" />}>New schedule</Button>

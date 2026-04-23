@@ -2,7 +2,7 @@ version: "2"
 sql:
   - engine: postgresql
     schema:
-      - migrations/001_billing_schema.up.sql
+      - migrations/001_initial_schema.up.sql
     queries:
       - internal/store/queries
     gen:

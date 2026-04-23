@@ -44,7 +44,7 @@ We use OpenBao Transit for KMS and OpenBao KV for Secrets Management. OpenBao is
 
 Services that produce data for both real-time UX and long-term analytics use **application-level dual write**: the service writes to PostgreSQL (for live sync via ElectricSQL → TanStack DB in the browser) and to ClickHouse (for dashboards, metering, historical queries) in the same request path. Consistency is verified by periodic reconciliation, same pattern as billing's 6-check `Reconcile()`.
 
-ClickHouse's `MaterializedPostgreSQL` engine was evaluated as a CDC alternative and rejected — experimental, with replication-slot coupling risks on a single node. The planned replacement for application-level dual write is WAL-based CDC into ClickHouse; [`docs/architecture/change-data-capture.md`](architecture/change-data-capture.md) records the current PeerDB-based direction.
+ClickHouse's `MaterializedPostgreSQL` engine was evaluated as a CDC alternative and rejected — experimental, with replication-slot coupling risks on a single node. The near-term replacement for request-path dual write is service-owned transactional projection delivery, not a shared third-party CDC appliance. [`docs/architecture/change-data-capture.md`](architecture/change-data-capture.md) records the current redesign direction for eventual WAL-based CDC.
 
 ## Billing
 

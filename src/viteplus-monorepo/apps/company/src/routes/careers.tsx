@@ -25,15 +25,15 @@ function CareersPage() {
         <p
           className="mt-8 rounded-md p-5"
           style={{
-            border: "1px dashed var(--shell-surface-border)",
-            color: "var(--shell-muted)",
+            border: "1px dashed var(--treatment-surface-border)",
+            color: "var(--treatment-muted)",
             fontFamily: "'Geist', sans-serif",
             fontSize: "15px",
             lineHeight: 1.55,
           }}
         >
           {careers.emptyState}{" "}
-          <a href={`mailto:${careers.contactEmail}`} style={{ color: "var(--shell-accent)" }}>
+          <a href={`mailto:${careers.contactEmail}`} style={{ color: "var(--treatment-accent)" }}>
             {careers.contactEmail}
           </a>
         </p>
@@ -44,12 +44,12 @@ function CareersPage() {
               key={opening.title}
               className="flex flex-col gap-1 rounded-md p-5"
               style={{
-                border: "1px solid var(--shell-surface-border)",
-                background: "var(--shell-surface-subtle)",
+                border: "1px solid var(--treatment-surface-border)",
+                background: "var(--treatment-surface-subtle)",
               }}
             >
               <span style={{ fontWeight: 600 }}>{opening.title}</span>
-              <span style={{ color: "var(--shell-muted)" }}>{opening.description}</span>
+              <span style={{ color: "var(--treatment-muted)" }}>{opening.description}</span>
             </li>
           ))}
         </ul>

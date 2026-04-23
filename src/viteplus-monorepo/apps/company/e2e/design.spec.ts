@@ -1,217 +1,117 @@
 import { expect, test } from "@playwright/test";
 
-// Structural canary for the restructured /design page. Asserts the 6-entry
-// rail, the per-treatment role-grammar palette grid, and each treatment's
-// distinctive marker (Flare hairline on Company signature; wings-only +
-// team badge on Workshop; Flare dot + Newsroom label; Bordeaux hairline +
-// "Founder" identity on Letters paper card). These are DOM truths rather
-// than visual pixel checks, so they survive font/color tweaks but still
-// fail loudly on a structural regression.
+// Structural canary for the /design route tree. After Phase 3 the monolithic
+// /design page split into /design, /design/company, /design/workshop,
+// /design/newsroom, /design/letters. Each route renders on its own treatment
+// ground and AppChrome repaints accordingly.
 //
-// Desktop viewport is the Playwright default (1280×720, close enough to
-// the 1440×900 design target for structural assertions). Mobile variant
-// at the bottom of the file confirms the palette grid collapses from four
-// columns to two.
+// These assertions are DOM-truth (computed styles, visible text, tab
+// navigation), not pixel checks — they survive copy edits and font tweaks
+// but still fail loudly on a structural regression.
 
-test.describe("/design — treatment-first structure", () => {
-  test("rail has 6 entries in Treatments + Applied groups, active state sets in Argent", async ({
-    page,
-  }) => {
+test.describe("/design — route tree", () => {
+  test("overview renders four treatment cards + Applied footer", async ({ page }) => {
     await page.goto("/design");
 
-    // Desktop rail duplicates in DOM with the mobile <details> version, so
-    // the total count is 12 (6 × 2). Each id resolves to one desktop + one
-    // mobile link.
-    const allEntries = page.locator('[data-testid^="design-nav-"]');
-    await expect(allEntries).toHaveCount(12);
-    for (const id of [
-      "company",
-      "workshop",
-      "newsroom",
-      "letters",
-      "photography",
-      "business-cards",
-    ]) {
-      await expect(page.locator(`[data-testid="design-nav-${id}"]`)).toHaveCount(2);
+    // One H1 per route. The overview carries the brand-system thesis.
+    const h1 = page.locator("main h1").first();
+    await expect(h1).toBeVisible();
+
+    // Four treatment cards, each linking to its sub-route.
+    for (const treatment of ["company", "workshop", "newsroom", "letters"] as const) {
+      const card = page.locator(`a[data-treatment="${treatment}"]`).first();
+      await expect(card).toBeVisible();
+      await expect(card).toHaveAttribute("href", `/design/${treatment}`);
     }
 
-    // Old System ids must not resolve to DOM sections.
-    await expect(page.locator("#mark")).toHaveCount(0);
-    await expect(page.locator("#typography")).toHaveCount(0);
-
-    // Photography sub-label is gone; Business Cards is Title Case.
-    await expect(page.locator('[data-testid="design-nav-photography"]').first()).toContainText(
-      /Photography/,
-    );
-    await expect(page.locator('[data-testid="design-nav-photography"]').first()).not.toContainText(
-      "scrim",
-    );
-    await expect(page.locator('[data-testid="design-nav-business-cards"]').first()).toContainText(
-      "Business Cards",
-    );
-
-    // Active-state number colour: deep-link via hash so useActiveAnchor's
-    // hash-prime path picks Company immediately (the IntersectionObserver
-    // path is flakey to time, so we exercise the deterministic code path).
-    // The 01 number must render in Argent (rgb(255,255,255)) — not Flare.
-    await page.goto("/design#company");
-    await page.waitForTimeout(300);
-    const companyLink = page.locator('[data-testid="design-nav-company"]').last();
-    const numberSpan = companyLink.locator("span").first();
-    const color = await numberSpan.evaluate((el) => getComputedStyle(el).color);
-    expect(color, "active rail number").toBe("rgb(255, 255, 255)");
+    // Applied footer carries photography + business cards.
+    await expect(page.locator("main")).toContainText(/photography/i);
+    await expect(page.locator("main")).toContainText(/business cards/i);
   });
 
-  test("palette grammar is Ground · Accent · Mark · Muted across every treatment", async ({
-    page,
-  }) => {
-    await page.goto("/design");
-
-    // Exactly four palette grids, one per treatment.
-    const grids = page.locator(".treatment-palette-grid");
-    await expect(grids).toHaveCount(4);
-
-    // Each grid declares the four role labels, in order.
-    for (let i = 0; i < 4; i++) {
-      const roleLabels = grids.nth(i).locator(".treatment-palette-role");
-      await expect(roleLabels).toHaveText(["GROUND", "ACCENT", "MARK", "MUTED"], {
-        useInnerText: true,
+  test("each treatment route renders on its own ground and carries its H2", async ({ page }) => {
+    const cases: Array<{
+      route: string;
+      ground: string;
+      heading: RegExp;
+    }> = [
+      { route: "/design/company", ground: "rgb(14, 14, 14)", heading: /Company/i },
+      { route: "/design/workshop", ground: "rgb(14, 14, 14)", heading: /Workshop/i },
+      { route: "/design/newsroom", ground: "rgb(204, 255, 0)", heading: /Newsroom/i },
+      { route: "/design/letters", ground: "rgb(246, 244, 237)", heading: /Letters/i },
+    ];
+    for (const { route, ground, heading } of cases) {
+      await page.goto(route);
+      const main = page.locator("main");
+      const bg = await main.evaluate((el) => {
+        const firstChild = el.firstElementChild as HTMLElement | null;
+        return firstChild ? getComputedStyle(firstChild).backgroundColor : "";
       });
+      expect(bg, `${route} ground`).toBe(ground);
+      await expect(page.locator("main").getByRole("heading").first()).toContainText(heading);
     }
-
-    // Newsroom's Muted column renders the "not used" placeholder because
-    // Newsroom is broadcast, not reading. All other cells render swatches.
-    const newsroomCells = page.locator("#newsroom .treatment-palette-grid .treatment-palette-cell");
-    await expect(newsroomCells.nth(3)).toContainText("not used");
   });
 
-  test("Workshop treatment content declines Fraunces", async ({ page }) => {
+  test("tab strip navigates between treatments", async ({ page }) => {
     await page.goto("/design");
-    const workshop = page.locator("#workshop");
 
-    // Workshop signature must carry a team badge ("PLATFORM · ENGINEERING")
-    // next to wings, and no Fraunces-set wordmark inside the card.
-    await expect(workshop).toContainText("Platform · Engineering");
-    await expect(workshop).toContainText("Engineer Name");
+    // Click each tab and verify the URL changes + the active tab gets the
+    // treatment accent underline.
+    await page.getByRole("link", { name: "Company", exact: true }).click();
+    await expect(page).toHaveURL(/\/design\/company$/);
 
-    // Amber status dot + "INCIDENT RESPONSE · PAGEABLE" badge present.
-    await expect(workshop).toContainText("incident response · pageable");
+    await page.getByRole("link", { name: "Workshop", exact: true }).click();
+    await expect(page).toHaveURL(/\/design\/workshop$/);
 
-    // No Fraunces inside the treatment body — scoped to elements WITHIN the
-    // palette, type ladder, UI specimen, and signature. The page's section
-    // H2 (rendered by section-shell, outside the treatment body) is
-    // deliberately Fraunces across every section and not asserted here.
-    const fonts = await workshop.evaluate((root) => {
-      const tables = Array.from(root.querySelectorAll("table"));
-      const paletteRoles = Array.from(root.querySelectorAll(".treatment-palette-role"));
-      const signatureCards = Array.from(
-        root.querySelectorAll("div[style*='background: rgb(255, 255, 255)']"),
-      );
-      const walk = (nodes: Element[]) =>
-        nodes.flatMap((n) =>
-          Array.from(n.querySelectorAll("*")).map((el) => getComputedStyle(el).fontFamily),
-        );
-      return [...walk(tables), ...walk(paletteRoles), ...walk(signatureCards)].join(" | ");
-    });
-    expect(fonts, "Workshop body fonts").not.toMatch(/Fraunces/i);
+    await page.getByRole("link", { name: "Newsroom", exact: true }).click();
+    await expect(page).toHaveURL(/\/design\/newsroom$/);
+
+    await page.getByRole("link", { name: "Letters", exact: true }).click();
+    await expect(page).toHaveURL(/\/design\/letters$/);
+
+    await page.getByRole("link", { name: "Overview", exact: true }).click();
+    await expect(page).toHaveURL(/\/design$/);
   });
 
-  test("Newsroom signature is a Flare-ground card with black emboss mark", async ({ page }) => {
-    await page.goto("/design");
-    const newsroom = page.locator("#newsroom");
+  test("Letters route renders Bordeaux accent in the article specimen", async ({ page }) => {
+    await page.goto("/design/letters");
+    // Paper ground end-to-end — the AppChrome (sticky header) inherits
+    // treatment=letters so the TopBar sits on Paper, not Iron.
+    const header = page.locator("header").first();
+    const headerBg = await header.evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(headerBg, "letters header ground").toBe("rgb(246, 244, 237)");
 
-    await expect(newsroom).toContainText("Press Officer Name");
-
-    // The signature card itself is Flare (#CCFF00) — the ground carries
-    // the treatment identity, no dot or hairline needed. Flare appears
-    // on ≥ 3 distinct backgrounds in Newsroom: palette ground swatch,
-    // mark carrier ground, hero surface, and now the signature card.
-    const flareCount = await newsroom.evaluate((root) => {
-      return Array.from(root.querySelectorAll("div")).filter(
-        (el) => getComputedStyle(el).backgroundColor === "rgb(204, 255, 0)",
-      ).length;
-    });
-    expect(flareCount, "Flare-backed elements in Newsroom").toBeGreaterThanOrEqual(3);
-  });
-
-  test("Letters signature identifies by NAME · ROLE, no Seattle restatement, Bordeaux rule on left edge", async ({
-    page,
-  }) => {
-    await page.goto("/design");
-    const letters = page.locator("#letters");
-
-    // Signature identity line is a name — not the "— the founder" valediction
-    // the baseline put here.
-    const sigName = letters.getByText("Founder Name", { exact: true });
-    await expect(sigName).toBeVisible();
-    await expect(letters).toContainText("Founder · Guardian Intelligence");
-
-    // The valediction moved into the article body specimen, above the sig.
-    await expect(letters).toContainText(/— the founder/);
-
-    // The signature intentionally does NOT restate "Filed from Seattle" or
-    // the letter number — the article body carries both. The signature is
-    // identity + reply route only.
-    const sigCard = letters.locator('div[style*="max-width: 540"]').last();
-    await expect(sigCard).not.toContainText("Filed from Seattle");
-    await expect(sigCard).not.toContainText("Letter №");
-
-    // Bordeaux editorial rule now lives on the card's left border (mirroring
-    // the pull-quote rule in the article body above) instead of as a
-    // standalone 3×44 hairline below the name. The card must compute with
-    // a 3 px left border in Bordeaux on the Paper ground.
-    const bordeauxRule = await letters.evaluate((root) => {
-      return Array.from(root.querySelectorAll("div")).some((el) => {
+    // Bordeaux ornaments somewhere on page.
+    const bordeaux = await page.evaluate(() => {
+      return Array.from(document.querySelectorAll("*")).some((el) => {
         const cs = getComputedStyle(el);
-        return (
-          cs.borderLeftColor === "rgb(92, 31, 30)" &&
-          parseInt(cs.borderLeftWidth, 10) >= 3 &&
-          cs.backgroundColor === "rgb(246, 244, 237)"
-        );
+        return cs.borderLeftColor === "rgb(92, 31, 30)" || cs.color === "rgb(92, 31, 30)";
       });
     });
-    expect(bordeauxRule, "Bordeaux left rule on Paper-ground card").toBe(true);
+    expect(bordeaux, "Bordeaux ornament present").toBe(true);
   });
 
-  test("Letters palette collapses to 4 role cells; no duplicate Stone chip", async ({ page }) => {
-    await page.goto("/design");
-    const cells = page.locator("#letters .treatment-palette-grid .treatment-palette-cell");
-    // Four cells (Ground · Accent · Mark · Muted) — not the old 5 (Stone as a
-    // fake fifth).
-    await expect(cells).toHaveCount(4);
-    // "Stone" appears in the muted role's opacity-ramp note, but NOT as a
-    // swatch name.
-    const swatchNames = await page
-      .locator("#letters .treatment-palette-cell div:nth-of-type(2) > div:first-child")
-      .allInnerTexts();
-    expect(swatchNames).toEqual(expect.arrayContaining(["Paper", "Bordeaux", "Argent", "Ink"]));
-    expect(swatchNames).not.toContain("Stone");
+  test("Newsroom route puts AppChrome on Flare ground with ink wordmark", async ({ page }) => {
+    await page.goto("/design/newsroom");
+    const header = page.locator("header").first();
+    const headerBg = await header.evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(headerBg, "newsroom header ground").toBe("rgb(204, 255, 0)");
   });
 });
 
 test.describe("/design — mobile responsive", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test("palette grid collapses to 2 columns at 390 px", async ({ page }) => {
-    await page.goto("/design");
-    const grid = page.locator("#company .treatment-palette-grid");
-    await grid.scrollIntoViewIfNeeded();
-
-    const cols = await grid.evaluate((el) => {
-      const raw = getComputedStyle(el).gridTemplateColumns;
-      // Rough count of columns in the computed template string — each track
-      // renders as a pixel value separated by spaces.
-      return raw.trim().split(/\s+/).length;
+  test("tab strip is horizontally scrollable on mobile, not a Sheet", async ({ page }) => {
+    await page.goto("/design/company");
+    const nav = page.locator("nav").filter({ hasText: "Workshop" }).first();
+    await expect(nav).toBeVisible();
+    const overflowX = await nav.evaluate((el) => {
+      const inner = el.querySelector("div");
+      return inner ? getComputedStyle(inner).overflowX : "";
     });
-    expect(cols).toBe(2);
-  });
-
-  test("rail collapses to <details> disclosure on mobile, closed by default", async ({ page }) => {
-    await page.goto("/design");
-    const disclosure = page.locator("nav details[open]");
-    await expect(disclosure).toHaveCount(0);
-    const summary = page.locator("nav details > summary");
-    await expect(summary).toBeVisible();
-    await expect(summary).toContainText("Jump to section");
+    expect(overflowX).toBe("auto");
+    // No <details>/<summary> drawer — no mobile Sheet.
+    await expect(page.locator("nav details")).toHaveCount(0);
   });
 });

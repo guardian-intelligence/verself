@@ -43,12 +43,14 @@ export function TreatmentPalette({
 }) {
   return (
     <div
+      data-treatment="company"
       style={{
         marginBottom: "16px",
         padding: "18px 20px",
         border: `1px solid ${LINE}`,
         borderRadius: "10px",
         background: PANEL_BG,
+        color: "var(--treatment-ink)",
       }}
     >
       <div className="treatment-palette-grid">
@@ -74,7 +76,7 @@ export function TreatmentPalette({
             borderTop: `1px solid ${LINE}`,
             fontFamily: "'Geist', sans-serif",
             fontSize: "12px",
-            color: "var(--muted)",
+            color: "var(--treatment-muted)",
             lineHeight: 1.5,
           }}
         >
@@ -125,7 +127,7 @@ function PaletteFilled({ swatch }: { readonly swatch: PaletteSwatch }) {
           style={{
             font: '600 10px/1.35 "Geist Mono", ui-monospace, monospace',
             fontVariationSettings: '"wght" 600',
-            color: "var(--muted-faint)",
+            color: "var(--treatment-muted-faint)",
             letterSpacing: "0.08em",
             textTransform: "uppercase",
             marginTop: "2px",
@@ -137,7 +139,7 @@ function PaletteFilled({ swatch }: { readonly swatch: PaletteSwatch }) {
           style={{
             font: '500 10px/1.35 "Geist Mono", ui-monospace, monospace',
             fontVariationSettings: '"wght" 500',
-            color: "var(--muted-faint)",
+            color: "var(--treatment-muted-faint)",
             letterSpacing: "0.08em",
             textTransform: "uppercase",
             marginTop: "1px",
@@ -151,7 +153,7 @@ function PaletteFilled({ swatch }: { readonly swatch: PaletteSwatch }) {
             style={{
               fontFamily: "'Geist', sans-serif",
               fontSize: "11px",
-              color: "var(--muted)",
+              color: "var(--treatment-muted)",
               marginTop: "4px",
               lineHeight: 1.35,
             }}
@@ -190,7 +192,7 @@ function PaletteEmpty({ roleLabel }: { readonly roleLabel: string }) {
             fontSize: "10px",
             fontWeight: 600,
             fontVariationSettings: '"wght" 600',
-            color: "var(--muted-faint)",
+            color: "var(--treatment-muted-faint)",
             letterSpacing: "0.12em",
             textTransform: "uppercase",
             lineHeight: 1.2,
@@ -202,7 +204,7 @@ function PaletteEmpty({ roleLabel }: { readonly roleLabel: string }) {
           style={{
             font: '500 10px/1.35 "Geist Mono", ui-monospace, monospace',
             fontVariationSettings: '"wght" 500',
-            color: "var(--muted-faint)",
+            color: "var(--treatment-muted-faint)",
             letterSpacing: "0.08em",
             textTransform: "uppercase",
             marginTop: "1px",
@@ -215,7 +217,7 @@ function PaletteEmpty({ roleLabel }: { readonly roleLabel: string }) {
           style={{
             fontFamily: "'Geist', sans-serif",
             fontSize: "11px",
-            color: "var(--muted)",
+            color: "var(--treatment-muted)",
             marginTop: "4px",
             lineHeight: 1.35,
           }}
@@ -247,6 +249,6 @@ const PALETTE_CSS = `
     font-variation-settings: "wght" 600;
     letter-spacing: 0.16em;
     text-transform: uppercase;
-    color: var(--muted-faint);
+    color: var(--treatment-muted-faint);
   }
 `;

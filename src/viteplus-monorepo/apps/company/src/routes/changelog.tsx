@@ -22,7 +22,7 @@ function ChangelogPage() {
           <li key={entry.date} className="flex flex-col gap-2">
             <span
               className="font-mono text-[10px] uppercase tracking-[0.18em]"
-              style={{ color: "var(--shell-muted-faint)" }}
+              style={{ color: "var(--treatment-muted-faint)" }}
             >
               {entry.date}
             </span>
@@ -43,7 +43,7 @@ function ChangelogPage() {
                 fontFamily: "'Geist', sans-serif",
                 fontSize: "15px",
                 lineHeight: 1.55,
-                color: "var(--shell-muted)",
+                color: "var(--treatment-muted)",
                 margin: 0,
               }}
             >

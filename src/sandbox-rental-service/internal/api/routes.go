@@ -56,23 +56,6 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 	}), listGitHubInstallations(svc))
 
 	registerSecured(api, secured(huma.Operation{
-		OperationID:   "submit-execution",
-		Method:        http.MethodPost,
-		Path:          "/api/v1/executions",
-		Summary:       "Submit a new execution",
-		DefaultStatus: 201,
-	}, operationPolicy{
-		Permission:     permissionExecutionSubmit,
-		Resource:       "execution",
-		Action:         "submit",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "execution_submit",
-		Idempotency:    idempotencyRequestBodyKey,
-		AuditEvent:     "sandbox.execution.submit",
-		BodyLimitBytes: bodyLimitExecutionPost,
-	}), submitExecution(svc))
-
-	registerSecured(api, secured(huma.Operation{
 		OperationID: "get-execution",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/executions/{execution_id}",
@@ -178,86 +161,6 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		AuditEvent:     "sandbox.execution_schedule.resume",
 		BodyLimitBytes: bodyLimitNoBody,
 	}), resumeExecutionSchedule(recurringSvc))
-
-	registerSecured(api, secured(huma.Operation{
-		OperationID:   "create-scheduler-probe",
-		Method:        http.MethodPost,
-		Path:          "/api/v1/scheduler/probes",
-		Summary:       "Enqueue a scheduler runtime probe",
-		DefaultStatus: 202,
-		Hidden:        true,
-	}, operationPolicy{
-		Permission:     permissionExecutionSubmit,
-		Resource:       "scheduler_probe",
-		Action:         "create",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "scheduler_probe",
-		AuditEvent:     "sandbox.scheduler.probe.create",
-		BodyLimitBytes: bodyLimitSmallJSON,
-	}), createSchedulerProbe(svc))
-
-	registerSecured(api, secured(huma.Operation{
-		OperationID:   "create-volume",
-		Method:        http.MethodPost,
-		Path:          "/api/v1/volumes",
-		Summary:       "Create a durable volume",
-		DefaultStatus: 201,
-	}, operationPolicy{
-		Permission:     permissionVolumeWrite,
-		Resource:       "volume",
-		Action:         "create",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "volume_mutation",
-		Idempotency:    idempotencyRequestBodyKey,
-		AuditEvent:     "sandbox.volume.create",
-		BodyLimitBytes: bodyLimitSmallJSON,
-	}), createVolume(svc))
-
-	registerSecured(api, secured(huma.Operation{
-		OperationID: "list-volumes",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/volumes",
-		Summary:     "List durable volumes",
-	}, operationPolicy{
-		Permission:     permissionVolumeRead,
-		Resource:       "volume",
-		Action:         "list",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "sandbox.volume.list",
-	}), listVolumes(svc))
-
-	registerSecured(api, secured(huma.Operation{
-		OperationID: "get-volume",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/volumes/{volume_id}",
-		Summary:     "Get durable volume current state",
-	}, operationPolicy{
-		Permission:     permissionVolumeRead,
-		Resource:       "volume",
-		Action:         "read",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "sandbox.volume.read",
-	}), getVolume(svc))
-
-	registerSecured(api, secured(huma.Operation{
-		OperationID:   "create-volume-meter-tick",
-		Method:        http.MethodPost,
-		Path:          "/api/v1/volumes/{volume_id}/meter-ticks",
-		Summary:       "Queue a durable volume meter tick",
-		DefaultStatus: 202,
-		Hidden:        true,
-	}, operationPolicy{
-		Permission:     permissionVolumeWrite,
-		Resource:       "volume_meter_tick",
-		Action:         "create",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "volume_mutation",
-		Idempotency:    idempotencyRequestBodyKey,
-		AuditEvent:     "sandbox.volume.meter_tick.create",
-		BodyLimitBytes: bodyLimitSmallJSON,
-	}), createVolumeMeterTick(svc))
 
 	// Billing proxy — frontend calls these; we enforce org_id from JWT
 	// and forward to the billing-service on loopback.
@@ -403,14 +306,6 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 	}), createBillingPortal(billing, publicConfig.BillingReturnOrigins))
 }
 
-type SubmitExecutionInput struct {
-	Body apiwire.SandboxSubmitRequest
-}
-
-type SubmitExecutionOutput struct {
-	Body apiwire.SandboxSubmitExecutionResult
-}
-
 type GitHubInstallationConnectOutput struct {
 	Body apiwire.SandboxGitHubInstallationConnectResponse
 }
@@ -448,50 +343,6 @@ type ListExecutionSchedulesOutput struct {
 }
 
 type EmptyInput struct{}
-
-type SchedulerProbeInput struct {
-	Body SchedulerProbeRequest
-}
-
-type SchedulerProbeRequest struct {
-	Message string `json:"message,omitempty" maxLength:"512" doc:"Optional probe marker for verification runs."`
-}
-
-type SchedulerProbeOutput struct {
-	Body SchedulerProbeResponse
-}
-
-type SchedulerProbeResponse struct {
-	JobID  string `json:"job_id" doc:"River job ID encoded as a decimal string for JavaScript-safe transport."`
-	Kind   string `json:"kind"`
-	Queue  string `json:"queue"`
-	Status string `json:"status"`
-}
-
-type CreateVolumeInput struct {
-	Body apiwire.SandboxVolumeCreateRequest
-}
-
-type VolumeIDPath struct {
-	VolumeID string `path:"volume_id" doc:"Volume UUID"`
-}
-
-type VolumeOutput struct {
-	Body apiwire.SandboxVolumeRecord
-}
-
-type ListVolumesOutput struct {
-	Body []apiwire.SandboxVolumeRecord
-}
-
-type VolumeMeterTickInput struct {
-	VolumeID string `path:"volume_id" doc:"Volume UUID"`
-	Body     apiwire.SandboxVolumeMeterTickRequest
-}
-
-type VolumeMeterTickOutput struct {
-	Body apiwire.SandboxVolumeMeterTickResult
-}
 
 type EntitlementsOutput struct {
 	Body apiwire.BillingEntitlementsView
@@ -571,47 +422,6 @@ func requireOrgID(ctx context.Context) (uint64, error) {
 	return orgID, nil
 }
 
-func submitExecution(svc *jobs.Service) func(context.Context, *SubmitExecutionInput) (*SubmitExecutionOutput, error) {
-	return func(ctx context.Context, input *SubmitExecutionInput) (*SubmitExecutionOutput, error) {
-		identity, err := requireIdentity(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		orgID, err := requireOrgID(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		executionID, attemptID, err := svc.Submit(ctx, orgID, identity.Subject, submitRequest(input.Body))
-		if err != nil {
-			var vmErr *apiwire.ValidationError
-			switch {
-			case errors.As(err, &vmErr):
-				return nil, badRequest(ctx, "vmresources-"+vmErr.Field+"-out-of-bounds", vmErr.Reason, err)
-			case errors.Is(err, jobs.ErrQuotaExceeded):
-				return nil, tooManyRequests(ctx, "quota-exceeded", "quota exceeded")
-			case errors.Is(err, jobs.ErrRunnerClassMissing):
-				return nil, badRequest(ctx, "runner-class-unavailable", "runner class is not available", err)
-			case errors.Is(err, jobs.ErrInvalidSecretInjection):
-				return nil, badRequest(ctx, "invalid-secret-injection", err.Error(), err)
-			case errors.Is(err, jobs.ErrBillingPaymentRequired):
-				return nil, paymentRequired(ctx, "insufficient balance")
-			default:
-				return nil, internalFailure(ctx, "submit-execution-failed", "submit execution failed", err)
-			}
-		}
-
-		out := &SubmitExecutionOutput{}
-		out.Body = apiwire.SandboxSubmitExecutionResult{
-			ExecutionID: executionID.String(),
-			AttemptID:   attemptID.String(),
-			Status:      jobs.StateQueued,
-		}
-		return out, nil
-	}
-}
-
 func beginGitHubInstallation(svc *jobs.Service) func(context.Context, *EmptyInput) (*GitHubInstallationConnectOutput, error) {
 	return func(ctx context.Context, _ *EmptyInput) (*GitHubInstallationConnectOutput, error) {
 		identity, err := requireIdentity(ctx)
@@ -653,117 +463,6 @@ func listGitHubInstallations(svc *jobs.Service) func(context.Context, *EmptyInpu
 			return nil, internalFailure(ctx, "github-installation-list-failed", "list github installations failed", err)
 		}
 		return &ListGitHubInstallationsOutput{Body: githubInstallationRecords(records)}, nil
-	}
-}
-
-func createSchedulerProbe(svc *jobs.Service) func(context.Context, *SchedulerProbeInput) (*SchedulerProbeOutput, error) {
-	return func(ctx context.Context, input *SchedulerProbeInput) (*SchedulerProbeOutput, error) {
-		identity, err := requireIdentity(ctx)
-		if err != nil {
-			return nil, err
-		}
-		orgID, err := requireOrgID(ctx)
-		if err != nil {
-			return nil, err
-		}
-		result, err := svc.EnqueueSchedulerProbe(ctx, jobs.SchedulerProbeRequest{
-			Message: input.Body.Message,
-			OrgID:   orgID,
-			ActorID: identity.Subject,
-		})
-		if err != nil {
-			return nil, internalFailure(ctx, "scheduler-probe-enqueue-failed", "scheduler probe enqueue failed", err)
-		}
-		return &SchedulerProbeOutput{Body: SchedulerProbeResponse{
-			JobID:  strconv.FormatInt(result.JobID, 10),
-			Kind:   result.Kind,
-			Queue:  result.Queue,
-			Status: result.Status,
-		}}, nil
-	}
-}
-
-func createVolume(svc *jobs.Service) func(context.Context, *CreateVolumeInput) (*VolumeOutput, error) {
-	return func(ctx context.Context, input *CreateVolumeInput) (*VolumeOutput, error) {
-		identity, err := requireIdentity(ctx)
-		if err != nil {
-			return nil, err
-		}
-		orgID, err := requireOrgID(ctx)
-		if err != nil {
-			return nil, err
-		}
-		record, err := svc.CreateVolume(ctx, orgID, identity.Subject, volumeCreateRequest(input.Body))
-		if err != nil {
-			return nil, internalFailure(ctx, "create-volume-failed", "create volume failed", err)
-		}
-		return &VolumeOutput{Body: volumeRecord(record)}, nil
-	}
-}
-
-func listVolumes(svc *jobs.Service) func(context.Context, *EmptyInput) (*ListVolumesOutput, error) {
-	return func(ctx context.Context, _ *EmptyInput) (*ListVolumesOutput, error) {
-		orgID, err := requireOrgID(ctx)
-		if err != nil {
-			return nil, err
-		}
-		records, err := svc.ListVolumes(ctx, orgID)
-		if err != nil {
-			return nil, internalFailure(ctx, "list-volumes-failed", "list volumes failed", err)
-		}
-		return &ListVolumesOutput{Body: volumeRecords(records)}, nil
-	}
-}
-
-func getVolume(svc *jobs.Service) func(context.Context, *VolumeIDPath) (*VolumeOutput, error) {
-	return func(ctx context.Context, input *VolumeIDPath) (*VolumeOutput, error) {
-		orgID, err := requireOrgID(ctx)
-		if err != nil {
-			return nil, err
-		}
-		volumeID, err := uuid.Parse(input.VolumeID)
-		if err != nil {
-			return nil, badRequest(ctx, "invalid-volume-id", "volume_id must be a UUID", err)
-		}
-		record, err := svc.GetVolume(ctx, orgID, volumeID)
-		if err != nil {
-			if errors.Is(err, jobs.ErrVolumeMissing) {
-				return nil, notFound(ctx, "volume-not-found", "volume not found")
-			}
-			return nil, internalFailure(ctx, "get-volume-failed", "get volume failed", err)
-		}
-		return &VolumeOutput{Body: volumeRecord(record)}, nil
-	}
-}
-
-func createVolumeMeterTick(svc *jobs.Service) func(context.Context, *VolumeMeterTickInput) (*VolumeMeterTickOutput, error) {
-	return func(ctx context.Context, input *VolumeMeterTickInput) (*VolumeMeterTickOutput, error) {
-		identity, err := requireIdentity(ctx)
-		if err != nil {
-			return nil, err
-		}
-		orgID, err := requireOrgID(ctx)
-		if err != nil {
-			return nil, err
-		}
-		volumeID, err := uuid.Parse(input.VolumeID)
-		if err != nil {
-			return nil, badRequest(ctx, "invalid-volume-id", "volume_id must be a UUID", err)
-		}
-		tick, job, err := svc.EnqueueVolumeMeterTick(ctx, orgID, identity.Subject, volumeID, volumeMeterTickRequest(input.Body))
-		if err != nil {
-			if errors.Is(err, jobs.ErrVolumeMissing) {
-				return nil, notFound(ctx, "volume-not-found", "volume not found")
-			}
-			return nil, internalFailure(ctx, "create-volume-meter-tick-failed", "create volume meter tick failed", err)
-		}
-		return &VolumeMeterTickOutput{Body: apiwire.SandboxVolumeMeterTickResult{
-			MeterTick: volumeMeterTickRecord(tick),
-			JobID:     strconv.FormatInt(job.JobID, 10),
-			Kind:      job.Kind,
-			Queue:     job.Queue,
-			Status:    job.Status,
-		}}, nil
 	}
 }
 

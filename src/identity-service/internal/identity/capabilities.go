@@ -33,21 +33,13 @@ var defaultCapabilities = []Capability{
 	{
 		Key:            "deploy_executions",
 		Label:          "Deploy executions",
-		Description:    "Submit sandbox executions, read their status, and stream their logs.",
+		Description:    "Read execution history, stream logs, and manage recurring canary schedules.",
 		DefaultEnabled: true,
 		Permissions: []string{
-			PermissionSandboxExecutionSubmit,
 			PermissionSandboxExecutionRead,
+			PermissionSandboxExecutionScheduleRead,
+			PermissionSandboxExecutionScheduleWrite,
 			PermissionSandboxLogsRead,
-		},
-	},
-	{
-		Key:            "view_volumes",
-		Label:          "View volumes",
-		Description:    "List durable volumes and read their current state.",
-		DefaultEnabled: true,
-		Permissions: []string{
-			PermissionSandboxVolumeRead,
 		},
 	},
 	{

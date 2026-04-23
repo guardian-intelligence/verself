@@ -25,20 +25,20 @@ function ContactPage() {
             key={channel.email}
             className="flex flex-col gap-1 rounded-lg p-5"
             style={{
-              border: "1px solid var(--shell-surface-border)",
-              background: "var(--shell-surface-subtle)",
+              border: "1px solid var(--treatment-surface-border)",
+              background: "var(--treatment-surface-subtle)",
             }}
           >
             <span
               className="font-mono text-[10px] uppercase tracking-[0.18em]"
-              style={{ color: "var(--shell-muted-faint)" }}
+              style={{ color: "var(--treatment-muted-faint)" }}
             >
               {channel.name}
             </span>
             <a
               href={`mailto:${channel.email}`}
               style={{
-                color: "var(--shell-accent)",
+                color: "var(--treatment-accent)",
                 fontSize: "16px",
               }}
             >
@@ -49,7 +49,7 @@ function ContactPage() {
                 fontFamily: "'Geist', sans-serif",
                 fontSize: "13px",
                 lineHeight: 1.55,
-                color: "var(--shell-muted)",
+                color: "var(--treatment-muted)",
               }}
             >
               {channel.note}
@@ -60,7 +60,7 @@ function ContactPage() {
 
       <p
         className="mt-6 font-mono text-[11px] uppercase tracking-[0.16em]"
-        style={{ color: "var(--shell-muted-faint)" }}
+        style={{ color: "var(--treatment-muted-faint)" }}
       >
         {contact.mailingAddress}
       </p>

@@ -196,21 +196,24 @@ operation catalog and generated clients can treat permissions as data.
 
 ## Audit
 
-Every public operation, every sandbox injection read, and every internal
-platform runtime secret read sends a structured governance audit record.
+Every public operation and every internal platform runtime secret read sends a
+structured governance audit record.
 Governance persists the HMAC chain and the full event row to PostgreSQL first,
 then projects to ClickHouse. A background projector retries pending rows so a
 transient ClickHouse outage does not lose a high-risk secrets audit event.
 
-Expected evidence for a successful injection path:
+Expected evidence for a successful proof path:
 
 ```text
 secrets.secret.write
 secrets.secret.read
+secrets.secret.list
+secrets.secret.delete
 secrets.transit_key.create
 secrets.transit_key.encrypt
 secrets.transit_key.decrypt
-secrets.secret.inject
+secrets.transit_key.sign
+secrets.transit_key.verify
 ```
 
 The corresponding trace path in `default.otel_traces` includes:
@@ -218,16 +221,14 @@ The corresponding trace path in `default.otel_traces` includes:
 ```text
 secrets-service: secrets.secret.put
 secrets-service: secrets.secret.read
+secrets-service: secrets.secret.list
+secrets-service: secrets.secret.delete
 secrets-service: secrets.transit.encrypt
 secrets-service: secrets.transit.decrypt
-sandbox-rental-service: secrets.runtime.resolve
-billing-service: secrets.runtime.resolve
-mailbox-service: secrets.runtime.resolve
-secrets-service: secrets.platform.resolve
-sandbox-rental-service: sandbox-rental.execution.submit
-sandbox-rental-service: sandbox-rental.execution.run
-sandbox-rental-service: sandbox-rental.secrets.resolve
-vm-orchestrator: rpc.StartExec
+secrets-service: secrets.transit.sign
+secrets-service: secrets.transit.verify
+secrets-service: secrets.bao.*
+secrets-service: secrets.billing.*
 ```
 
 ## Deployment
@@ -257,23 +258,17 @@ make secrets-proof
 ```
 
 `make secrets-proof` creates a secret, reads it back, creates and uses a
-transit key, submits a sandbox execution with `secret_env`, verifies the guest
-only prints the secret hash, and asserts:
+transit key, exercises API-credential access, and asserts:
 
 - `secret_resources` has the expected versioned row.
-- `sandbox_rental.execution_secret_env` stores only references.
-- `default.otel_traces` contains secrets-service and sandbox resolver spans.
+- `default.otel_traces` contains the expected secrets-service spans.
 - `forge_metal.audit_events` contains the expected secrets audit sequence.
 
 ## Invariants
 
 - Secret values are never written to ClickHouse, sandbox PostgreSQL, audit
-  records, command strings, or proof artifacts.
-- Sandbox execution commands may reference injected environment variables but
-  must not embed secret values.
-- Runtime product services never receive host privilege. Secret injection is an
-  HTTP boundary from sandbox-rental-service to secrets-service; VM launch still
-  goes through vm-orchestrator.
+  records, or proof artifacts.
+- Secrets-service never receives host privilege or vm-orchestrator access.
 - The historical local envelope key is stop-gap deployment secret material; it
   is removed when the OpenBao backend is the only executable path.
 - Secret names should not encode sensitive facts; audit still treats path names

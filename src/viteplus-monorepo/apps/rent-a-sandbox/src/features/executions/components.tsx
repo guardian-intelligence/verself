@@ -1,11 +1,9 @@
-import { useForm } from "@tanstack/react-form";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { ClientOnly, Link } from "@tanstack/react-router";
 import { useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useStickToBottom } from "use-stick-to-bottom";
 import { useSignedInAuth } from "@forge-metal/auth-web/react";
 import { Button } from "@forge-metal/ui/components/ui/button";
-import { Field, FieldError, FieldLabel } from "@forge-metal/ui/components/ui/field";
 import {
   Page,
   PageEyebrow,
@@ -18,7 +16,6 @@ import {
   SectionHeaderContent,
   SectionTitle,
 } from "@forge-metal/ui/components/ui/page";
-import { Textarea } from "@forge-metal/ui/components/ui/textarea";
 import {
   Table,
   TableBody,
@@ -44,8 +41,6 @@ import { formatDateTimeUTC } from "~/lib/format";
 import { useExecutionLogs, useExecutionRows } from "./live";
 import { executionQuery } from "./queries";
 import { ExecutionStatusBadge, isExecutionActiveStatus } from "./status";
-import { DEFAULT_RUN_COMMAND, validateRunCommand } from "./validation";
-import { useCreateExecutionMutation, type CreateExecutionResult } from "./mutations";
 
 export function ExecutionListPanel({ orgId }: { orgId: string }) {
   return (
@@ -149,72 +144,6 @@ function ExecutionDetailLoading({ executionId }: { executionId: string }) {
         </PageSection>
       </PageSections>
     </Page>
-  );
-}
-
-export function ExecutionSubmissionForm({
-  onSuccess,
-}: {
-  onSuccess: (execution: CreateExecutionResult) => void | Promise<void>;
-}) {
-  const mutation = useCreateExecutionMutation({ onSuccess });
-  const form = useForm({
-    defaultValues: {
-      runCommand: DEFAULT_RUN_COMMAND,
-    },
-    onSubmit: async ({ value }) => {
-      mutation.reset();
-      await mutation.mutateAsync({
-        run_command: value.runCommand,
-      });
-    },
-  });
-
-  return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        void form.handleSubmit();
-      }}
-      className="space-y-4"
-    >
-      <form.Field
-        name="runCommand"
-        validators={{
-          onChange: ({ value }) => validateRunCommand(value),
-        }}
-      >
-        {(field) => (
-          <Field>
-            <FieldLabel htmlFor={field.name}>Run command</FieldLabel>
-            <Textarea
-              id={field.name}
-              value={field.state.value}
-              onBlur={field.handleBlur}
-              onChange={(e) => field.handleChange(e.target.value)}
-              rows={4}
-              className="font-mono"
-            />
-            {field.state.meta.isTouched && field.state.meta.errors.length > 0 ? (
-              <FieldError>{field.state.meta.errors[0]}</FieldError>
-            ) : null}
-          </Field>
-        )}
-      </form.Field>
-
-      {mutation.error ? (
-        <ErrorCallout title="Execution submission failed" error={mutation.error} />
-      ) : null}
-
-      <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
-        {([canSubmit, isSubmitting]) => (
-          <Button type="submit" disabled={!canSubmit || isSubmitting || mutation.isPending}>
-            {mutation.isPending || isSubmitting ? "Submitting…" : "Submit execution"}
-          </Button>
-        )}
-      </form.Subscribe>
-    </form>
   );
 }
 
@@ -402,10 +331,10 @@ function ExecutionListEmpty() {
   return (
     <EmptyState
       title="No executions yet"
-      body="Launch a manual execution to get started."
+      body="Executions appear here after a GitHub workflow or a scheduled canary runs."
       action={
-        <Button variant="default" render={<Link to="/executions/new" />}>
-          New execution
+        <Button variant="default" render={<Link to="/schedules/new" />}>
+          Create schedule
         </Button>
       }
     />

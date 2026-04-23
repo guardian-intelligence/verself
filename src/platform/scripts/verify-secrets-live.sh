@@ -23,7 +23,6 @@ trap cleanup EXIT
 source <("${script_dir}/assume-persona.sh" acme-admin --print)
 admin_secrets_token="${SECRETS_SERVICE_ACCESS_TOKEN}"
 admin_identity_token="${IDENTITY_SERVICE_ACCESS_TOKEN}"
-sandbox_rental_project_id="${SANDBOX_RENTAL_AUTH_AUDIENCE}"
 secrets_service_project_id="${SECRETS_SERVICE_AUTH_AUDIENCE}"
 
 # shellcheck disable=SC1090
@@ -317,9 +316,6 @@ print(json.dumps({
         "secrets:secret:read",
         "secrets:secret:list",
         "secrets:transit:verify",
-        "sandbox:execution:submit",
-        "sandbox:execution:read",
-        "sandbox:logs:read",
     ],
 }))
 PY
@@ -340,7 +336,6 @@ json.dump(redacted, open(redacted_path, "w", encoding="utf-8"), indent=2, sort_k
 PY
 )
 api_credential_secrets_token="$(mint_api_credential_token "${api_credential_client_id}" "${api_credential_client_secret}" "${secrets_service_project_id}")"
-api_credential_sandbox_token="$(mint_api_credential_token "${api_credential_client_id}" "${api_credential_client_secret}" "${sandbox_rental_project_id}")"
 
 read_response="$(mktemp)"
 tmp_files+=("${read_response}")
@@ -546,163 +541,9 @@ if not payload.get("public_key"):
     raise SystemExit("transit rotate did not return an ed25519 public key")
 PY
 
-api_base_url="${BASE_URL:-https://rentasandbox.${VERIFICATION_DOMAIN}}"
-submit_payload="${artifact_dir}/payloads/sandbox-secret-injection.json"
-python3 - "${run_id}" "${secret_name}" >"${submit_payload}" <<'PY'
-import json
-import shlex
-import sys
-run_id, secret_name = sys.argv[1:3]
-command = "set -eu; hash=$(printf '%s' \"$PROOF_SECRET\" | sha256sum | awk '{print $1}'); printf 'secret-injection-ok hash=%s\\n' \"$hash\""
-print(json.dumps({
-    "kind": "direct",
-    "idempotency_key": f"{run_id}-sandbox-injection",
-    "run_command": command,
-    "max_wall_seconds": 120,
-    "secret_env": [
-        {
-            "env_name": "PROOF_SECRET",
-            "kind": "secret",
-            "secret_name": secret_name,
-            "scope_level": "org",
-        }
-    ],
-}))
-PY
-
-submit_response="${artifact_dir}/responses/sandbox-submit.json"
-curl -fsS \
-  -H "Authorization: Bearer ${api_credential_sandbox_token}" \
-  -H "Content-Type: application/json" \
-  --data-binary "@${submit_payload}" \
-  "${api_base_url%/}/api/v1/executions" >"${submit_response}"
-
-execution_id="$(
-  python3 - "${submit_response}" <<'PY'
-import json
-import sys
-print(json.load(open(sys.argv[1], encoding="utf-8"))["execution_id"])
-PY
-)"
-
-status="queued"
-for _ in $(seq 1 180); do
-  curl -fsS \
-    -H "Authorization: Bearer ${api_credential_sandbox_token}" \
-    "${api_base_url%/}/api/v1/executions/${execution_id}" >"${artifact_dir}/responses/sandbox-execution.json"
-  status="$(
-    python3 - "${artifact_dir}/responses/sandbox-execution.json" <<'PY'
-import json
-import sys
-print(json.load(open(sys.argv[1], encoding="utf-8"))["status"])
-PY
-  )"
-  case "${status}" in
-    succeeded|failed|canceled|lost)
-      break
-      ;;
-  esac
-  sleep 2
-done
-
-if [[ "${status}" != "succeeded" ]]; then
-  echo "sandbox execution did not succeed: ${status}" >&2
-  exit 1
-fi
-
-curl -fsS \
-  -H "Authorization: Bearer ${api_credential_sandbox_token}" \
-  "${api_base_url%/}/api/v1/executions/${execution_id}/logs" >"${artifact_dir}/responses/sandbox-logs.json"
-
-python3 - "${secret_hash}" "${artifact_dir}/responses/sandbox-logs.json" <<'PY'
-import json
-import sys
-expected_hash, path = sys.argv[1:3]
-logs = json.load(open(path, encoding="utf-8")).get("logs", "")
-needle = f"secret-injection-ok hash={expected_hash}"
-if needle not in logs:
-    raise SystemExit("sandbox logs did not contain expected secret hash proof")
-PY
-
-printf '%s' "${secret_value}" | verification_ssh "sudo python3 -c '
-import json
-import os
-import sqlite3
-import sys
-
-secret = sys.stdin.read().encode()
-db_path = \"/var/lib/forge-metal/vm-orchestrator/state.db\"
-paths = [db_path, db_path + \"-wal\", db_path + \"-shm\"]
-hits = []
-checked = []
-for path in paths:
-    if not os.path.exists(path):
-        continue
-    checked.append(path)
-    with open(path, \"rb\") as handle:
-        if secret and secret in handle.read():
-            hits.append(path)
-if os.path.exists(db_path):
-    conn = sqlite3.connect(db_path)
-    try:
-        for rowid, spec_json in conn.execute(\"SELECT rowid, spec_json FROM execs\"):
-            if secret.decode() in (spec_json or \"\"):
-                hits.append(f\"execs.spec_json:{rowid}\")
-    finally:
-        conn.close()
-if hits:
-    raise SystemExit(\"vm-orchestrator persisted secret material: \" + \", \".join(hits))
-json.dump({\"checked_paths\": checked, \"secret_hits\": 0}, sys.stdout, indent=2, sort_keys=True)
-print()
-'" >"${artifact_dir}/responses/vm-orchestrator-secret-persistence.json"
-
 remote_secrets_api DELETE "/api/v1/secrets/${secret_name}?kind=secret&scope_level=org" "${admin_secrets_token}" "" "${artifact_dir}/responses/secret-delete.json" "${run_id}-delete"
 
 window_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-
-(
-  cd "${VERIFICATION_PLATFORM_ROOT}"
-  ./scripts/pg.sh sandbox_rental --query "
-    COPY (
-      SELECT env_name, kind, secret_name, scope_level, grant_id
-      FROM execution_secret_env
-      WHERE execution_id = '${execution_id}'
-      ORDER BY sort_order
-    ) TO STDOUT WITH CSV HEADER;
-  "
-) >"${artifact_dir}/postgres/sandbox-secret-env.csv"
-
-python3 - "${artifact_dir}/postgres/sandbox-secret-env.csv" <<'PY'
-import csv
-import sys
-rows = list(csv.DictReader(open(sys.argv[1], encoding="utf-8")))
-if not rows:
-    raise SystemExit("sandbox execution_secret_env did not persist secret refs")
-missing = [row.get("env_name", "") for row in rows if not row.get("grant_id")]
-if missing:
-    raise SystemExit(f"sandbox execution_secret_env rows missing grant_id: {missing}")
-for row in rows:
-    for column in ("env_name", "kind", "secret_name", "scope_level"):
-        if not row.get(column):
-            raise SystemExit(f"sandbox execution_secret_env row missing {column}")
-PY
-
-(
-  cd "${VERIFICATION_PLATFORM_ROOT}"
-  ./scripts/pg.sh sandbox_rental --query "
-    COPY (
-      SELECT count(*)
-      FROM information_schema.columns
-      WHERE table_schema = 'public'
-        AND table_name = 'execution_secret_env'
-        AND column_name = 'grant_token'
-    ) TO STDOUT;
-  "
-) >"${artifact_dir}/postgres/sandbox-secret-env-grant-token-column-count.tsv"
-if [[ "$(tr -d '[:space:]' <"${artifact_dir}/postgres/sandbox-secret-env-grant-token-column-count.tsv")" != "0" ]]; then
-  echo "sandbox execution_secret_env still persists grant_token" >&2
-  exit 1
-fi
 
 (
   cd "${VERIFICATION_REPO_ROOT}"
@@ -821,41 +662,6 @@ wait_for_clickhouse_count default "
     AND arrayElement(SpanAttributes, 'billing.sku_id') IN ('secrets_kv_operation', 'secrets_transit_operation')
 " 26 "${artifact_dir}/clickhouse/secrets-billing-spans-count.tsv"
 
-wait_for_clickhouse_count default "
-  SELECT count()
-  FROM otel_traces
-  WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
-    AND ServiceName = 'sandbox-rental-service'
-    AND SpanName = 'sandbox-rental.secrets.resolve'
-" 1 "${artifact_dir}/clickhouse/sandbox-secret-resolve-spans-count.tsv"
-
-wait_for_clickhouse_count default "
-  SELECT count()
-  FROM otel_traces
-  WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
-    AND ServiceName = 'sandbox-rental-service'
-    AND SpanName IN ('secrets.injection.reference.verify', 'auth.spiffe.mtls.client')
-" 2 "${artifact_dir}/clickhouse/sandbox-spiffe-injection-spans-count.tsv"
-
-wait_for_clickhouse_count default "
-  SELECT count()
-  FROM otel_traces
-  WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
-    AND ServiceName = 'secrets-service'
-    -- A warm OpenBao token cache suppresses a fresh jwt_svid.login, so the
-    -- injection proof accepts either the login span or the cache span.
-    AND SpanName IN ('auth.spiffe.mtls.server', 'secrets.injection.resolve', 'secrets.injection.service_token.exchange', 'auth.spiffe.jwt_svid.fetch', 'secrets.bao.jwt_svid.login', 'secrets.bao.token.cache')
-" 5 "${artifact_dir}/clickhouse/secrets-spiffe-injection-spans-count.tsv"
-
-wait_for_clickhouse_count default "
-  SELECT count()
-  FROM otel_traces
-  WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
-    AND ServiceName = 'vm-orchestrator'
-    AND SpanName = 'vmorchestrator.exec.spec.redact'
-    AND arrayElement(SpanAttributes, 'vmorchestrator.exec.env_values_redacted') = 'true'
-" 1 "${artifact_dir}/clickhouse/vmorchestrator-redaction-spans-count.tsv"
-
 wait_for_clickhouse_count forge_metal "
   SELECT count()
   FROM audit_events
@@ -866,7 +672,6 @@ wait_for_clickhouse_count forge_metal "
       'secrets.secret.read',
       'secrets.secret.list',
       'secrets.secret.delete',
-      'secrets.secret.inject',
       'secrets.transit_key.create',
       'secrets.transit_key.rotate',
       'secrets.transit_key.encrypt',
@@ -935,7 +740,7 @@ PY
       SELECT Timestamp, ServiceName, SpanName, StatusCode, intDiv(Duration, 1000000) AS duration_ms
       FROM otel_traces
       WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
-        AND ServiceName IN ('secrets-service', 'sandbox-rental-service', 'vm-orchestrator')
+        AND ServiceName = 'secrets-service'
       ORDER BY Timestamp
       FORMAT TSVWithNames
     "
@@ -972,7 +777,6 @@ required = {
     "secrets.secret.read",
     "secrets.secret.list",
     "secrets.secret.delete",
-    "secrets.secret.inject",
     "secrets.transit_key.create",
     "secrets.transit_key.rotate",
     "secrets.transit_key.encrypt",
@@ -994,7 +798,7 @@ for event, row in events.items():
     if not row["openbao_accessor_hash"]:
         raise SystemExit(f"{event} missing openbao_accessor_hash")
 
-for event in ("secrets.secret.write", "secrets.secret.read", "secrets.secret.delete", "secrets.secret.inject"):
+for event in ("secrets.secret.write", "secrets.secret.read", "secrets.secret.delete"):
     row = events[event]
     if not row["target_path_hash"]:
         raise SystemExit(f"{event} missing target_path_hash")
@@ -1028,7 +832,6 @@ cat >"${artifact_dir}/run.json" <<EOF
   "secret_name": "${secret_name}",
   "secret_sha256": "${secret_hash}",
   "transit_key_name": "${transit_key_name}",
-  "sandbox_execution_id": "${execution_id}",
   "window_start": "${window_start}",
   "window_end": "${window_end}",
   "artifact_dir": "${artifact_dir}"
