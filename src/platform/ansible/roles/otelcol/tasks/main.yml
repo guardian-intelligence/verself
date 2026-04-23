@@ -82,6 +82,7 @@
     ALTER USER {{ otelcol_clickhouse_user }} IDENTIFIED WITH ssl_certificate SAN 'URI:{{ spire_otelcol_id }}' HOST LOCAL;
     GRANT INSERT ON default.* TO {{ otelcol_clickhouse_user }};
     GRANT SELECT ON default.otel_logs TO {{ otelcol_clickhouse_user }};
+    GRANT SELECT (Timestamp, SpanAttributes, SpanName, TraceId, SpanId, ServiceName) ON default.otel_traces TO {{ otelcol_clickhouse_user }};
     SQL
   args:
     executable: /bin/bash

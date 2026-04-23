@@ -184,6 +184,129 @@ verification_collect_window_evidence() {
 
   (
     cd "${VERIFICATION_PLATFORM_ROOT}" || return
+    ./scripts/clickhouse.sh \
+      --database forge_metal \
+      --param_window_start="${window_start}" \
+      --param_window_end="${window_end}" \
+      --query "
+        SELECT
+          execution_id,
+          attempt_id,
+          org_id,
+          source_kind,
+          workload_kind,
+          runner_class,
+          repository_full_name,
+          workflow_name,
+          job_name,
+          head_branch,
+          schedule_id,
+          status,
+          duration_ms,
+          reserved_charge_units,
+          billed_charge_units,
+          writeoff_charge_units,
+          rootfs_provisioned_bytes,
+          boot_time_us,
+          block_write_bytes,
+          net_tx_bytes,
+          trace_id,
+          created_at
+        FROM job_events
+        WHERE created_at BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String})
+        ORDER BY created_at, execution_id
+        FORMAT TSVWithNames
+      "
+  ) >"${output_dir}/clickhouse/job_events.tsv"
+
+  (
+    cd "${VERIFICATION_PLATFORM_ROOT}" || return
+    ./scripts/clickhouse.sh \
+      --database forge_metal \
+      --param_window_start="${window_start}" \
+      --param_window_end="${window_end}" \
+      --query "
+        SELECT
+          execution_id,
+          attempt_id,
+          org_id,
+          source_kind,
+          runner_class,
+          repository_full_name,
+          workflow_name,
+          job_name,
+          head_branch,
+          schedule_id,
+          seq,
+          stream,
+          chunk,
+          created_at
+        FROM job_logs
+        WHERE created_at BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String})
+        ORDER BY created_at, execution_id, attempt_id, seq
+        FORMAT TSVWithNames
+      "
+  ) >"${output_dir}/clickhouse/job_logs.tsv"
+
+  (
+    cd "${VERIFICATION_PLATFORM_ROOT}" || return
+    ./scripts/clickhouse.sh \
+      --database forge_metal \
+      --param_window_start="${window_start}" \
+      --param_window_end="${window_end}" \
+      --query "
+        SELECT
+          org_id,
+          product_id,
+          source_type,
+          source_ref,
+          reservation_shape,
+          reserved_quantity,
+          actual_quantity,
+          billable_quantity,
+          charge_units,
+          writeoff_charge_units,
+          cost_per_unit,
+          trace_id,
+          started_at,
+          ended_at,
+          recorded_at
+        FROM metering
+        WHERE recorded_at BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String})
+        ORDER BY recorded_at
+        FORMAT TSVWithNames
+      "
+  ) >"${output_dir}/clickhouse/metering.tsv"
+
+  (
+    cd "${VERIFICATION_PLATFORM_ROOT}" || return
+    ./scripts/clickhouse.sh \
+      --database forge_metal \
+      --param_window_start="${window_start}" \
+      --param_window_end="${window_end}" \
+      --query "
+        SELECT
+          lease_id,
+          exec_id,
+          trace_id,
+          service_name,
+          evidence_type,
+          diagnostic_kind,
+          reason_code,
+          reason,
+          expected_seq,
+          observed_seq,
+          missing_samples,
+          evidence_time
+        FROM vm_lease_evidence
+        WHERE evidence_time BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String})
+        ORDER BY evidence_time, lease_id, exec_id
+        FORMAT TSVWithNames
+      "
+  ) >"${output_dir}/clickhouse/vm_lease_evidence.tsv"
+
+  (
+    cd "${VERIFICATION_PLATFORM_ROOT}" || return
     ./scripts/pg.sh "${billing_db}" --query "
       COPY (
         SELECT

@@ -526,6 +526,89 @@ wait_for_clickhouse_count forge_metal "
     AND position(chunk, {proof_log_line:String}) > 0
 " 1 "${artifact_dir}/clickhouse/job_log_marker_count.tsv" --param_execution_id="${execution_id}" --param_proof_log_line="${proof_log_line}"
 
+api_request "GET" "/api/v1/runs?limit=20&source_kind=execution_schedule" "${artifact_dir}/responses/runs-list.json"
+api_request "GET" "/api/v1/runs/${execution_id}" "${artifact_dir}/responses/run-detail.json"
+api_request "GET" "/api/v1/run-logs/search?run_id=${execution_id}&query=${proof_log_marker}&limit=20" "${artifact_dir}/responses/run-logs-search.json"
+api_request "GET" "/api/v1/run-analytics/jobs?start=${window_start}" "${artifact_dir}/responses/jobs-analytics.json"
+api_request "GET" "/api/v1/run-analytics/costs?start=${window_start}" "${artifact_dir}/responses/costs-analytics.json"
+api_request "GET" "/api/v1/run-analytics/caches?start=${window_start}" "${artifact_dir}/responses/caches-analytics.json"
+api_request "GET" "/api/v1/run-analytics/runner-sizing?start=${window_start}" "${artifact_dir}/responses/runner-sizing-analytics.json"
+api_request "GET" "/api/v1/sticky-disks?limit=20" "${artifact_dir}/responses/sticky-disks.json"
+
+python3 - \
+  "${artifact_dir}/responses/runs-list.json" \
+  "${artifact_dir}/responses/run-detail.json" \
+  "${artifact_dir}/responses/run-logs-search.json" \
+  "${artifact_dir}/responses/jobs-analytics.json" \
+  "${artifact_dir}/responses/costs-analytics.json" \
+  "${artifact_dir}/responses/caches-analytics.json" \
+  "${artifact_dir}/responses/runner-sizing-analytics.json" \
+  "${artifact_dir}/responses/sticky-disks.json" \
+  "${execution_id}" \
+  "${attempt_id}" \
+  "${schedule_id}" \
+  "${proof_log_line}" <<'PY'
+import json
+import sys
+
+runs_list = json.load(open(sys.argv[1], encoding="utf-8"))
+run_detail = json.load(open(sys.argv[2], encoding="utf-8"))
+log_search = json.load(open(sys.argv[3], encoding="utf-8"))
+jobs_analytics = json.load(open(sys.argv[4], encoding="utf-8"))
+costs_analytics = json.load(open(sys.argv[5], encoding="utf-8"))
+caches_analytics = json.load(open(sys.argv[6], encoding="utf-8"))
+runner_sizing = json.load(open(sys.argv[7], encoding="utf-8"))
+sticky_inventory = json.load(open(sys.argv[8], encoding="utf-8"))
+execution_id = sys.argv[9]
+attempt_id = sys.argv[10]
+schedule_id = sys.argv[11]
+proof_log_line = sys.argv[12]
+
+matching = [item for item in (runs_list.get("runs") or []) if item.get("execution_id") == execution_id]
+if not matching:
+    raise SystemExit("runs list did not include recurring execution")
+if runs_list.get("filters", {}).get("source_kind") != "execution_schedule":
+    raise SystemExit("runs list filters.source_kind mismatch")
+
+if run_detail.get("execution_id") != execution_id:
+    raise SystemExit("run detail execution_id mismatch")
+if run_detail.get("run_id") != execution_id:
+    raise SystemExit("run detail run_id mismatch")
+if (run_detail.get("schedule") or {}).get("schedule_id") != schedule_id:
+    raise SystemExit("run detail schedule metadata mismatch")
+summary = run_detail.get("billing_summary") or {}
+if int(summary.get("window_count") or 0) < 1:
+    raise SystemExit("expected billing_summary.window_count >= 1")
+
+results = log_search.get("results") or []
+if not results:
+    raise SystemExit("run log search returned no results")
+if not any(item.get("attempt_id") == attempt_id and proof_log_line in (item.get("chunk") or "") for item in results):
+    raise SystemExit("run log search did not include the recurring proof marker")
+
+def bucket_count(payload, key):
+    for bucket in payload:
+        if bucket.get("key") == key:
+            return int(bucket.get("count") or "0")
+    return 0
+
+if bucket_count(jobs_analytics.get("by_source") or [], "execution_schedule") < 1:
+    raise SystemExit("jobs analytics missing execution_schedule bucket")
+if bucket_count(costs_analytics.get("by_source") or [], "execution_schedule") < 1:
+    raise SystemExit("costs analytics missing execution_schedule bucket")
+if int(caches_analytics.get("checkout_requests") or "0") != 0:
+    raise SystemExit("expected recurring proof checkout_requests == 0")
+if sticky_inventory.get("disks") is None:
+    raise SystemExit("sticky disk inventory response missing disks array")
+if runner_sizing.get("by_runner_class") is None:
+    raise SystemExit("runner sizing analytics response missing by_runner_class")
+PY
+
+(
+  cd "${VERIFICATION_PLATFORM_ROOT}"
+  ./scripts/clickhouse.sh --query "SYSTEM FLUSH LOGS"
+) >"${artifact_dir}/clickhouse/flush-read-path-logs.tsv"
+
 wait_for_clickhouse_count default "
   SELECT count()
   FROM otel_traces
@@ -581,6 +664,45 @@ wait_for_clickhouse_count default "
     AND SpanName = 'sandbox-rental.execution.run'
     AND SpanAttributes['execution.id'] = {execution_id:String}
 " 1 "${artifact_dir}/clickhouse/run-span-count.tsv" --param_execution_id="${execution_id}"
+
+wait_for_clickhouse_count default "
+  SELECT count()
+  FROM otel_traces
+  WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
+    AND ServiceName = 'sandbox-rental-service'
+    AND SpanName = 'sandbox-rental.runs.list'
+" 1 "${artifact_dir}/clickhouse/runs-list-span-count.tsv"
+
+wait_for_clickhouse_count default "
+  SELECT count()
+  FROM otel_traces
+  WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
+    AND ServiceName = 'sandbox-rental-service'
+    AND SpanName = 'sandbox-rental.runs.get'
+    AND SpanAttributes['execution.id'] = {execution_id:String}
+" 1 "${artifact_dir}/clickhouse/runs-get-span-count.tsv" --param_execution_id="${execution_id}"
+
+wait_for_clickhouse_count default "
+  SELECT count()
+  FROM otel_traces
+  WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
+    AND ServiceName = 'sandbox-rental-service'
+    AND SpanName = 'sandbox-rental.logs.search'
+" 1 "${artifact_dir}/clickhouse/log-search-span-count.tsv"
+
+wait_for_clickhouse_count default "
+  SELECT count()
+  FROM otel_traces
+  WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
+    AND ServiceName = 'sandbox-rental-service'
+    AND SpanName IN (
+      'sandbox-rental.analytics.jobs',
+      'sandbox-rental.analytics.costs',
+      'sandbox-rental.analytics.caches',
+      'sandbox-rental.analytics.runner_sizing',
+      'sandbox-rental.stickydisks.list'
+    )
+" 5 "${artifact_dir}/clickhouse/read-api-span-count.tsv"
 
 (
   cd "${VERIFICATION_PLATFORM_ROOT}"
