@@ -1,19 +1,11 @@
 import type { CSSProperties, ReactNode } from "react";
 import { Lockup, WingsChip, type LockupVariant } from "@forge-metal/brand";
 
-// The Guardian email signature, four voices.
+// The Guardian email signature, three voices.
 //
-// Every outgoing Guardian email carries a signature from one of four
-// treatments. Until this pass the signature was a single white card with a
-// coloured dot per treatment — the colour token changed, the grammar did
-// not, so a Workshop engineer's signature and a Newsroom press officer's
-// signature sat on the same chassis and said "I am a Guardian card". That
-// underminded the point of the four treatments.
+// Every outgoing Guardian email carries a signature from one of three
+// treatments. Each variant is a miniature of its treatment:
 //
-// Now each variant is a miniature of its treatment:
-//
-//   company  — Iron-ink on white (the corporate record). Flare hairline
-//              under the name. Mark locks up with the Guardian wordmark.
 //   workshop — Argent on Iron (the production console). No Fraunces. Geist
 //              Mono throughout — name, role, contact. Amber LIVE dot marker
 //              is the treatment's signature status glyph. Wings-only mark
@@ -24,10 +16,9 @@ import { Lockup, WingsChip, type LockupVariant } from "@forge-metal/brand";
 //   letters  — Ink-on-Paper editorial. Fraunces sets the author's name;
 //              Geist handles role / contact. Bordeaux vertical rule left
 //              of the identity mirrors the pull-quote treatment from the
-//              article body — the editorial rule is the treatment's
-//              hallmark and the signature is where it comes to rest.
+//              article body.
 
-export type SignatureVariant = "company" | "workshop" | "newsroom" | "letters";
+export type SignatureVariant = "workshop" | "newsroom" | "letters";
 
 export type SignatureMarkVariant = LockupVariant | "wings-only";
 
@@ -58,20 +49,6 @@ type VariantTokens = {
 // signature (rather than pulled into @forge-metal/brand) while the API
 // stabilises; promote to brand once a second consumer shows up.
 const VARIANT_TOKENS: Record<SignatureVariant, VariantTokens> = {
-  company: {
-    background: "#ffffff",
-    border: "1px solid rgba(11,11,11,0.12)",
-    textColor: "var(--color-ink)",
-    mutedStrong: "rgba(11,11,11,0.78)",
-    mutedDefault: "rgba(11,11,11,0.60)",
-    eyebrowColor: "var(--treatment-muted-faint)",
-    nameFont: "'Geist', sans-serif",
-    nameSizePx: 15,
-    nameWeight: 600,
-    roleFont: "'Geist', sans-serif",
-    contactFont: "'Geist', sans-serif",
-    defaultMarkColor: "var(--color-ink)",
-  },
   workshop: {
     // Iron ground mirrors the live console chrome. The signature reads as
     // a terminal row rather than a business-card; everything sets in Geist

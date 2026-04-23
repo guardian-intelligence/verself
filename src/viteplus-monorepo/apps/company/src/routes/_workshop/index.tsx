@@ -6,7 +6,7 @@ import { RevealSpan } from "~/components/reveal-span";
 import { landing } from "~/content/landing";
 import { ogMeta } from "~/lib/head";
 
-export const Route = createFileRoute("/")({
+export const Route = createFileRoute("/_workshop/")({
   component: LandingPage,
   head: () => ({
     meta: ogMeta({

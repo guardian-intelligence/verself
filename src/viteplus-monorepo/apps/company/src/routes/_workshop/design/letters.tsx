@@ -5,9 +5,16 @@ import { SectionLetters } from "~/features/design/sections/letters";
 import { AppliedFooter } from "~/features/design/sections/applied-footer";
 import { ogMeta } from "~/lib/head";
 
-export const Route = createFileRoute("/design/letters")({
+// /design/letters — the Letters specimen, rendered inside Workshop chrome.
+// The SectionLetters component wraps its body in data-treatment="letters"
+// so the editorial register (Paper ground, Fraunces body, Vellum colophon)
+// applies to the specimen without flipping the page chrome.
+//
+// The Applied footer is cross-treatment teaching material — it renders on
+// the inherited Workshop (iron) chrome below the Letters section.
+
+export const Route = createFileRoute("/_workshop/design/letters")({
   component: DesignLetters,
-  staticData: { treatment: "letters" as const },
   head: () => ({
     meta: ogMeta({
       slug: "design",
@@ -23,36 +30,16 @@ function DesignLetters() {
     if (typeof window === "undefined") return;
     emitSpan("design.treatment.view", {
       treatment: "letters",
-      referrer_treatment: "",
       referrer_route: document.referrer ?? "",
     });
   }, []);
 
   return (
-    <div
-      style={{
-        background: "var(--treatment-ground)",
-        color: "var(--treatment-ink)",
-        minHeight: "100vh",
-      }}
-    >
+    <>
+      <SectionLetters />
       <div className="mx-auto w-full max-w-[96rem] px-4 py-10 md:px-6 md:py-14">
-        <SectionLetters />
+        <AppliedFooter />
       </div>
-      {/* AppliedFooter is cross-treatment teaching material; render it on
-          Iron (Company) ground so the reader leaves the editorial surface
-          cleanly when the rules discussion begins. */}
-      <div
-        data-treatment="company"
-        style={{
-          background: "var(--treatment-ground)",
-          color: "var(--treatment-ink)",
-        }}
-      >
-        <div className="mx-auto w-full max-w-[96rem] px-4 py-10 md:px-6 md:py-14">
-          <AppliedFooter />
-        </div>
-      </div>
-    </div>
+    </>
   );
 }

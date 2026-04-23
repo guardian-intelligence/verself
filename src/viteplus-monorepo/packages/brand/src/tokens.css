@@ -2,9 +2,7 @@
  * Guardian Intelligence brand tokens — single source of truth.
  *
  * Apps that carry Guardian brand chrome (company, platform, future letters)
- * import this file once in their app.css. Rent-a-sandbox runs on shadcn's
- * neutral oklch palette and deliberately does not import this — its chrome
- * belongs to the tenant, not to Guardian.
+ * import this file once in their app.css.
  *
  * Hex values mirror packages/brand/src/tokens.ts; keep both in sync when
  * palettes change.
@@ -13,9 +11,9 @@
  *   @theme       — Tailwind v4 token registration (palette + fonts + muted ramps).
  *                  These generate utilities like `text-ash`, `bg-flare`, etc.
  *   :root        — runtime vars the utilities cannot express (header geometry,
- *                  wing-unit, and the default [data-treatment] scope).
+ *                  wing-unit, and the default [data-treatment] scope = Workshop).
  *   [data-treatment="..."]
- *                — per-treatment override scopes. The four treatments each
+ *                — per-treatment override scopes. The three treatments each
  *                  override the full --treatment-* ramp. Consumers render a
  *                  wrapper with data-treatment=<name> and descendants read
  *                  var(--treatment-*); repaints are pure CSS transitions, no
@@ -28,6 +26,7 @@
   --color-iron: #0e0e0e;
   --color-flare: #ccff00;
   --color-paper: #f6f4ed;
+  --color-vellum: #e8e2d2;
   --color-argent: #ffffff;
   --color-ink: #0b0b0b;
   --color-bordeaux: #5c1f1e;
@@ -78,12 +77,14 @@
        /design specimens derive their padding from this value. */
     --wing-unit: calc(52px * 0.45);
 
-    /* Default treatment scope — Company. Every downstream [data-treatment]
-       override redeclares the full ramp, so a partial override can't leak
-       one treatment's accent into another's body text. */
+    /* Default treatment scope — Workshop. Iron ground with Amber as the
+       single accent. Any route that does not declare a treatment inherits
+       this scope; each [data-treatment] override below redeclares the full
+       ramp so partial overrides can't leak one treatment's accent into
+       another's body text. */
     --treatment-ground: var(--color-iron);
     --treatment-ink: var(--color-type-iron);
-    --treatment-accent: var(--color-flare);
+    --treatment-accent: var(--color-amber);
     --treatment-wordmark: var(--color-argent);
     --treatment-muted-strong: var(--color-ash-strong);
     --treatment-muted: var(--color-ash);
@@ -95,26 +96,9 @@
   }
 }
 
-[data-treatment="company"] {
-  --treatment-ground: var(--color-iron);
-  --treatment-ink: var(--color-type-iron);
-  --treatment-accent: var(--color-flare);
-  --treatment-wordmark: var(--color-argent);
-  --treatment-muted-strong: var(--color-ash-strong);
-  --treatment-muted: var(--color-ash);
-  --treatment-muted-meta: var(--color-ash-meta);
-  --treatment-muted-faint: var(--color-ash-faint);
-  --treatment-surface-subtle: rgba(245, 245, 245, 0.04);
-  --treatment-surface-border: rgba(245, 245, 245, 0.12);
-  --treatment-hairline: rgba(245, 245, 245, 0.08);
-}
-
 [data-treatment="workshop"] {
-  /* Workshop runs on Iron like Company, but swaps the accent to Amber and
-     bans Fraunces in the chrome. The ground/ink/wordmark are Company's; only
-     the accent and hairline change so a mixed-mode engineer operator can
-     still read Guardian chrome the same way while the single accent signals
-     "work is happening here." */
+  /* Workshop — Guardian's default chrome. Iron ground, Amber accent, Argent
+     wordmark. Geist-only typography (Fraunces is reserved for Letters). */
   --treatment-ground: var(--color-iron);
   --treatment-ink: var(--color-type-iron);
   --treatment-accent: var(--color-amber);
@@ -150,7 +134,8 @@
 [data-treatment="letters"] {
   /* Paper ground, Ink type, Bordeaux accent. The single editorial accent
      reserved for pull-quotes, drop-caps, and active links — never appears
-     outside Letters. Muted ramp is Stone (ink-on-light). */
+     outside Letters. Muted ramp is Stone (ink-on-light). Vellum is the
+     same-family inset used for colophons. */
   --treatment-ground: var(--color-paper);
   --treatment-ink: var(--color-ink);
   --treatment-accent: var(--color-bordeaux);

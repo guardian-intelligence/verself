@@ -5,9 +5,17 @@ import { SectionNewsroom } from "~/features/design/sections/newsroom";
 import { AppliedFooter } from "~/features/design/sections/applied-footer";
 import { ogMeta } from "~/lib/head";
 
-export const Route = createFileRoute("/design/newsroom")({
+// /design/newsroom — the Newsroom specimen, rendered inside Workshop chrome.
+// The SectionNewsroom component handles its own internal scoping: a Paper
+// body with a bounded Flare hero band, plus OG-card and billboard specimens
+// in full Flare canvases. See features/design/sections/newsroom.tsx for the
+// band-on-Paper composition.
+//
+// The Applied footer is cross-treatment teaching material — it renders on
+// the inherited Workshop (iron) chrome below the Newsroom section.
+
+export const Route = createFileRoute("/_workshop/design/newsroom")({
   component: DesignNewsroom,
-  staticData: { treatment: "newsroom" as const },
   head: () => ({
     meta: ogMeta({
       slug: "design",
@@ -23,37 +31,16 @@ function DesignNewsroom() {
     if (typeof window === "undefined") return;
     emitSpan("design.treatment.view", {
       treatment: "newsroom",
-      referrer_treatment: "",
       referrer_route: document.referrer ?? "",
     });
   }, []);
 
   return (
-    <div
-      style={{
-        background: "var(--treatment-ground)",
-        color: "var(--treatment-ink)",
-        minHeight: "100vh",
-      }}
-    >
+    <>
+      <SectionNewsroom />
       <div className="mx-auto w-full max-w-[96rem] px-4 py-10 md:px-6 md:py-14">
-        <SectionNewsroom />
+        <AppliedFooter />
       </div>
-      {/* AppliedFooter is rendered on Iron ground — it's teaching material
-          about cross-treatment rules, not a Newsroom artifact. Wrapping it
-          in a data-treatment="company" scope so the reader leaves Newsroom
-          when the rules discussion begins. */}
-      <div
-        data-treatment="company"
-        style={{
-          background: "var(--treatment-ground)",
-          color: "var(--treatment-ink)",
-        }}
-      >
-        <div className="mx-auto w-full max-w-[96rem] px-4 py-10 md:px-6 md:py-14">
-          <AppliedFooter />
-        </div>
-      </div>
-    </div>
+    </>
   );
 }

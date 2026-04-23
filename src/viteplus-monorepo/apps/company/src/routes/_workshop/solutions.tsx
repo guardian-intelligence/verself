@@ -3,7 +3,7 @@ import { SOLUTIONS, SOLUTIONS_META } from "~/content/solutions";
 import { PageShell } from "~/components/page-shell";
 import { ogMeta } from "~/lib/head";
 
-export const Route = createFileRoute("/solutions")({
+export const Route = createFileRoute("/_workshop/solutions")({
   component: SolutionsPage,
   head: () => ({
     meta: ogMeta({

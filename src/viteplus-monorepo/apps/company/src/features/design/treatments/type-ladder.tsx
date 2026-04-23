@@ -64,7 +64,7 @@ export function TreatmentTypeLadder({
 }) {
   return (
     <div
-      data-treatment="company"
+      data-treatment="workshop"
       style={{
         marginBottom: "16px",
         padding: "8px 4px 4px",

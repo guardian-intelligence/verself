@@ -10,7 +10,6 @@ import { ogMeta } from "~/lib/head";
 
 export const Route = createFileRoute("/letters/")({
   component: LettersIndex,
-  staticData: { treatment: "letters" as const },
   head: () => ({
     meta: ogMeta({
       slug: "letters",
@@ -31,7 +30,7 @@ export const Route = createFileRoute("/letters/")({
 function LettersIndex() {
   const letters = sortedLetters();
   return (
-    <PageShell treatment="letters" kicker="Letters" heading="Long-form from Guardian.">
+    <PageShell kicker="Letters" heading="Long-form from Guardian.">
       <p
         style={{
           fontFamily: "'Geist', sans-serif",

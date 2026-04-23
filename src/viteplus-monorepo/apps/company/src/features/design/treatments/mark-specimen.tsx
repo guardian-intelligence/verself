@@ -40,7 +40,7 @@ export function TreatmentMarkCard({
 }) {
   return (
     <div
-      data-treatment="company"
+      data-treatment="workshop"
       style={{
         background: PANEL_BG,
         border: `1px solid ${LINE}`,
@@ -117,7 +117,7 @@ export function TreatmentSizeLadder({
 }) {
   return (
     <div
-      data-treatment="company"
+      data-treatment="workshop"
       style={{
         display: "flex",
         gap: "16px",

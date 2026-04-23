@@ -6,24 +6,22 @@ import { emitSpan } from "~/lib/telemetry/browser";
 import { AppliedFooter } from "~/features/design/sections/applied-footer";
 import { ogMeta } from "~/lib/head";
 
-// /design overview. The landing surface for the brand system: four
-// treatment cards — each rendered in its own palette with a placeholder
-// letterbox (a real photograph slot the founder will fill later) — plus
-// the Applied cross-treatment rules at the bottom as a footer section.
-//
-// Default staticData.treatment is "company" so __root renders Iron chrome
-// at this page. The treatment cards each navigate into their own surface
-// where the chrome repaints.
+// /design overview. Three treatment cards — Workshop, Newsroom, Letters —
+// plus the Applied cross-treatment rules at the foot. Each card renders a
+// short letterbox in the treatment's own ground so the visitor sees the
+// room's palette before clicking in; the chip/emboss/argent lockup in the
+// corner previews the wordmark variant. The page itself is rendered inside
+// the Workshop layout (iron chrome) — this is a Workshop view of the three
+// rooms, not a chrome flip.
 
-export const Route = createFileRoute("/design/")({
+export const Route = createFileRoute("/_workshop/design/")({
   component: DesignOverview,
-  staticData: { treatment: "company" as const },
   head: () => ({
     meta: ogMeta({
       slug: "design",
       title: "Guardian — Brand system",
       description:
-        "The Guardian brand system: four treatments — Company, Workshop, Newsroom, Letters — each a room with its own palette, type, and mark usage.",
+        "The Guardian brand system: three treatments — Workshop, Newsroom, Letters — each a room with its own palette, type, and mark usage.",
     }),
     links: [{ rel: "canonical", href: "/design" }],
   }),
@@ -31,38 +29,27 @@ export const Route = createFileRoute("/design/")({
 
 interface TreatmentCard {
   readonly treatment: Treatment;
-  readonly to: "/design/company" | "/design/workshop" | "/design/newsroom" | "/design/letters";
+  readonly to: "/design/workshop" | "/design/newsroom" | "/design/letters";
   readonly number: string;
   readonly title: string;
   readonly subtitle: string;
   readonly description: string;
 }
 
-// Brand system — one H1 per route. The overview title is deliberately
-// plain; voice pass will upgrade it.
 const CARDS: readonly TreatmentCard[] = [
-  {
-    treatment: "company",
-    to: "/design/company",
-    number: "01",
-    title: "Company",
-    subtitle: "The record.",
-    description:
-      "Iron ground, Fraunces masthead, Flare as the single action. This is how Guardian appears when it is speaking for itself — the landing, the mission, the press contact.",
-  },
   {
     treatment: "workshop",
     to: "/design/workshop",
-    number: "02",
+    number: "01",
     title: "Workshop",
     subtitle: "Where the work happens.",
     description:
-      "Iron ground, Geist throughout, Amber as the sole accent. Fraunces is absent; the chrome carries the tenant's name, not ours. A quiet identity anchor for people who are trying to get something done.",
+      "Iron ground, Geist throughout, Amber as the sole accent. The productivity chrome — marketing, docs, console, the everyday register. Fraunces is absent here.",
   },
   {
     treatment: "newsroom",
     to: "/design/newsroom",
-    number: "03",
+    number: "02",
     title: "Newsroom",
     subtitle: "The broadcast.",
     description:
@@ -71,7 +58,7 @@ const CARDS: readonly TreatmentCard[] = [
   {
     treatment: "letters",
     to: "/design/letters",
-    number: "04",
+    number: "03",
     title: "Letters",
     subtitle: "The long form.",
     description:
@@ -89,59 +76,51 @@ function DesignOverview() {
   }, []);
 
   return (
-    <div
-      style={{
-        background: "var(--treatment-ground)",
-        color: "var(--treatment-ink)",
-        minHeight: "100vh",
-      }}
-    >
-      <div className="mx-auto w-full max-w-7xl px-4 py-14 md:px-6 md:py-20">
-        <header className="mb-14 flex flex-col gap-4">
-          <p
-            className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em]"
-            style={{ color: "var(--treatment-muted)", fontVariationSettings: '"wght" 600' }}
-          >
-            Guardian · Brand system
-          </p>
-          <h1
-            className="font-display"
-            style={{
-              fontVariationSettings: '"opsz" 144, "SOFT" 30',
-              fontWeight: 400,
-              fontSize: "clamp(36px, 5vw, 56px)",
-              lineHeight: 1.02,
-              letterSpacing: "-0.026em",
-              margin: 0,
-              maxWidth: "20ch",
-            }}
-          >
-            Four rooms, one house.
-          </h1>
-          <p
-            className="max-w-3xl"
-            style={{
-              color: "var(--treatment-muted-strong)",
-              fontSize: "17px",
-              lineHeight: 1.55,
-              margin: 0,
-            }}
-          >
-            The wings stay Argent on every ground. Every other decision — palette, typography, mark
-            variant, lockup — belongs to the treatment. Walk into each room to see it inhabited, not
-            described.
-          </p>
-        </header>
+    <div className="mx-auto w-full max-w-7xl px-4 py-14 md:px-6 md:py-20">
+      <header className="mb-14 flex flex-col gap-4">
+        <p
+          className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em]"
+          style={{ color: "var(--treatment-muted)", fontVariationSettings: '"wght" 600' }}
+        >
+          Guardian · Brand system
+        </p>
+        <h1
+          style={{
+            fontFamily: "'Geist', sans-serif",
+            fontWeight: 500,
+            fontSize: "clamp(32px, 4.4vw, 48px)",
+            lineHeight: 1.05,
+            letterSpacing: "-0.022em",
+            margin: 0,
+            maxWidth: "22ch",
+          }}
+        >
+          Three rooms, one house.
+        </h1>
+        <p
+          className="max-w-3xl"
+          style={{
+            color: "var(--treatment-muted-strong)",
+            fontFamily: "'Geist', sans-serif",
+            fontSize: "17px",
+            lineHeight: 1.55,
+            margin: 0,
+          }}
+        >
+          The wings stay Argent on every ground. Every other decision — palette, typography, mark
+          variant, lockup — belongs to the treatment. Walk into each room to see it inhabited, not
+          described.
+        </p>
+      </header>
 
-        <div className="grid gap-6 md:grid-cols-2">
-          {CARDS.map((card) => (
-            <OverviewCard key={card.treatment} card={card} />
-          ))}
-        </div>
+      <div className="grid gap-6 md:grid-cols-3">
+        {CARDS.map((card) => (
+          <OverviewCard key={card.treatment} card={card} />
+        ))}
+      </div>
 
-        <div className="mt-20">
-          <AppliedFooter />
-        </div>
+      <div className="mt-20">
+        <AppliedFooter />
       </div>
     </div>
   );
@@ -152,16 +131,12 @@ function OverviewCard({ card }: { card: TreatmentCard }) {
     <Link
       to={card.to}
       data-treatment={card.treatment}
-      className="group block overflow-hidden rounded-xl transition-colors"
+      className="group block overflow-hidden rounded-xl"
       style={{
         background: "var(--treatment-ground)",
         border: "1px solid var(--treatment-hairline)",
       }}
     >
-      {/* Letterbox placeholder — the slot a photograph will occupy. Today
-          it's a solid-ground band so the reader can see the treatment
-          colour before clicking in. No lorem, no gradient, no decoration;
-          the ground IS the signal. */}
       <OverviewCardHero card={card} />
 
       <div
@@ -175,13 +150,12 @@ function OverviewCard({ card }: { card: TreatmentCard }) {
           {card.number} · Treatment
         </p>
         <h2
-          className="font-display"
           style={{
-            fontVariationSettings: '"opsz" 72, "SOFT" 20',
-            fontWeight: 400,
-            fontSize: "28px",
+            fontFamily: "'Geist', sans-serif",
+            fontWeight: 600,
+            fontSize: "24px",
             lineHeight: 1.1,
-            letterSpacing: "-0.02em",
+            letterSpacing: "-0.018em",
             margin: "0 0 4px",
             color: "var(--color-type-iron)",
           }}
@@ -189,13 +163,11 @@ function OverviewCard({ card }: { card: TreatmentCard }) {
           {card.title}
         </h2>
         <p
-          className="font-display italic"
           style={{
-            fontVariationSettings: '"opsz" 72, "SOFT" 30',
-            fontWeight: 400,
-            fontSize: "18px",
-            lineHeight: 1.2,
-            letterSpacing: "-0.01em",
+            fontFamily: "'Geist', sans-serif",
+            fontSize: "14px",
+            lineHeight: 1.45,
+            letterSpacing: "-0.005em",
             margin: "0 0 14px",
             color: "rgba(245,245,245,0.72)",
           }}
@@ -218,11 +190,6 @@ function OverviewCard({ card }: { card: TreatmentCard }) {
   );
 }
 
-// OverviewCardHero — the ~200px letterbox slot at the top of each treatment
-// card. Rendered in the card's own data-treatment scope so it paints its
-// own ground, and carries a treatment-appropriate lockup in the corner so
-// the wordmark variant (argent / chip / emboss) reads at a glance without
-// the reader having to click in.
 function OverviewCardHero({ card }: { card: TreatmentCard }) {
   return (
     <div
@@ -243,10 +210,6 @@ function OverviewCardHero({ card }: { card: TreatmentCard }) {
           <Lockup size="sm" variant="argent" wordmarkColor="var(--color-argent)" />
         )}
       </div>
-      {/* Treatment-specific glyph at right — a quiet echo of the mark,
-          large, low-opacity, rendered in the treatment's wordmark colour.
-          Workshop omits this (wings-only chrome rule) and instead shows
-          nothing — the empty ground IS the signal. */}
       {card.treatment === "newsroom" && (
         <WingsEmboss
           style={{
