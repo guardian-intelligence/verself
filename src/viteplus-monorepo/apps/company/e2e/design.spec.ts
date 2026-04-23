@@ -14,12 +14,15 @@ test.describe("/design — route tree", () => {
 
     await expect(page.locator("main h1").first()).toBeVisible();
 
+    // The treatment cards link to their specimen sub-route. Matching by href
+    // avoids ambiguity with the tab-strip anchors (which also carry a
+    // data-treatment attribute for accent scoping).
     for (const treatment of ["workshop", "newsroom", "letters"] as const) {
-      const card = page.locator(`a[data-treatment="${treatment}"]`).first();
-      await expect(card).toHaveAttribute("href", `/design/${treatment}`);
+      await expect(page.locator(`a[href="/design/${treatment}"]`).first()).toBeVisible();
     }
 
-    await expect(page.locator('a[data-treatment="company"]')).toHaveCount(0);
+    // No retired Company route.
+    await expect(page.locator('a[href="/design/company"]')).toHaveCount(0);
   });
 
   test("/design/company is retired and returns 404", async ({ request }) => {
