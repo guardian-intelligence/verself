@@ -1,6 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { currentNewsroomItem } from "~/content/newsroom";
+import {
+  currentNewsroomItem,
+  newsroomCtaHref,
+  newsroomCtaLabel,
+} from "~/content/newsroom";
 import { NewsroomCard } from "~/features/design/newsroom-card";
 import { emitSpan } from "~/lib/telemetry/browser";
 import { ogMeta } from "~/lib/head";
@@ -46,12 +50,12 @@ function NewsroomIndex() {
             kicker={`${item.kicker} · ${item.date}`}
             title={item.title}
             cta={{
-              label: item.ctaLabel,
-              href: item.ctaHref,
+              label: newsroomCtaLabel(item),
+              href: newsroomCtaHref(item),
               onClick: () =>
                 emitSpan("newsroom.index.cta_click", {
                   slug: item.slug,
-                  destination: item.ctaHref,
+                  destination: newsroomCtaHref(item),
                 }),
             }}
           />

@@ -1,6 +1,10 @@
 import { Link } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { currentNewsroomItem } from "~/content/newsroom";
+import {
+  currentNewsroomItem,
+  newsroomCtaHref,
+  newsroomCtaLabel,
+} from "~/content/newsroom";
 import { emitSpan } from "~/lib/telemetry/browser";
 
 // NewsroomStrip — a bounded Flare broadcast band shown on the homepage (and
@@ -74,11 +78,11 @@ export function NewsroomStrip() {
         </div>
         <div className="shrink-0">
           <Link
-            to={item.ctaHref}
+            to={newsroomCtaHref(item)}
             onClick={() =>
               emitSpan("newsroom.strip.cta_click", {
                 slug: item.slug,
-                destination: item.ctaHref,
+                destination: newsroomCtaHref(item),
               })
             }
             style={{
@@ -95,7 +99,7 @@ export function NewsroomStrip() {
               border: "1px solid var(--color-iron)",
             }}
           >
-            {item.ctaLabel} →
+            {newsroomCtaLabel(item)} →
           </Link>
         </div>
       </div>
