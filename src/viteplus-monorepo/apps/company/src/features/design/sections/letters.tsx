@@ -351,22 +351,103 @@ export function SectionLetters() {
           }}
         />
       </div>
+
+      {/* CTA specimen — the rule in living form. Bordeaux is the editorial
+          ORNAMENT color (pull-quote rule, drop-cap, active link underline),
+          not the control color. Every primary CTA on Letters paints Ink
+          (black) with Paper text and a `rounded-md` corner — the same shape
+          the rest of the product uses, so the reading register inherits the
+          product's control grammar instead of inventing its own. */}
+      <div
+        style={{
+          padding: "clamp(28px, 4vw, 48px) clamp(20px, 4vw, 48px)",
+          border: "1px solid rgba(11,11,11,0.14)",
+          borderRadius: "12px",
+          background: "var(--color-paper)",
+          color: "var(--color-ink)",
+          marginTop: "16px",
+          marginBottom: "16px",
+        }}
+      >
+        <p
+          className="font-mono text-[11px] font-semibold uppercase tracking-[0.18em]"
+          style={{
+            color: "rgba(11,11,11,0.55)",
+            fontVariationSettings: '"wght" 600',
+            margin: "0 0 14px",
+          }}
+        >
+          Controls · Letters
+        </p>
+        <h3
+          style={{
+            fontFamily: "'Fraunces', Georgia, serif",
+            fontVariationSettings: '"opsz" 144, "SOFT" 30',
+            fontWeight: 400,
+            fontSize: "clamp(28px, 3.6vw, 40px)",
+            lineHeight: 1.05,
+            letterSpacing: "-0.022em",
+            color: "var(--color-ink)",
+            margin: "0 0 20px",
+            maxWidth: "24ch",
+          }}
+        >
+          CTAs on Letters are Ink.
+        </h3>
+        <p
+          style={{
+            fontFamily: "'Geist', sans-serif",
+            fontSize: "15px",
+            lineHeight: 1.55,
+            color: "rgba(11,11,11,0.7)",
+            margin: "0 0 24px",
+            maxWidth: "56ch",
+          }}
+        >
+          Bordeaux is the editorial ornament — pull-quote rule, drop-cap, active link underline
+          — not the control color. Primary buttons paint Ink (black) with Paper text and a{" "}
+          <code>rounded-md</code> corner, same as the rest of the product. A Bordeaux button
+          would read as a pull-quote escaped from the article body.
+        </p>
+        <span
+          className="rounded-md"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "10px",
+            fontFamily: "'Geist', sans-serif",
+            fontWeight: 500,
+            fontSize: "14px",
+            padding: "10px 18px",
+            background: "var(--color-ink)",
+            color: "var(--color-paper)",
+            border: "1px solid var(--color-ink)",
+          }}
+        >
+          Read the letter
+          <span aria-hidden="true">→</span>
+        </span>
+      </div>
+
       <div style={{ marginTop: "24px" }}>
         <Colophon
           heading="Letters · Specifications"
           rows={[
             { label: "Ground", value: "#F6F4ED", note: "Paper" },
-            { label: "Accent", value: "#5C1F1E", note: "Pantone 504 C · Bordeaux" },
+            { label: "Editorial accent", value: "#5C1F1E", note: "Pantone 504 C · Bordeaux · ornaments only" },
+            { label: "CTA", value: "Ink button · Paper text", note: "Never Bordeaux-on-Paper" },
             { label: "Mark", value: "WingsChip", note: "Argent wings in iron chip" },
             { label: "Masthead", value: "Geist 11 / +260 / UPPER", note: "Bordeaux 1 px rule" },
             { label: "Body", value: "Fraunces", note: "opsz 18 · SOFT 0 · 19 / 1.55" },
             { label: "Byline", value: "Geist 13", note: "Stone at 0.7 opacity" },
             { label: "Drop cap", value: "Fraunces 88 px", note: "Bordeaux · display opsz" },
+            { label: "Button radius", value: "rounded-md", note: "0.375rem · shadcn base" },
           ]}
           footer={
             <>
               Letters is the only treatment where Fraunces sets body prose, and the only treatment
-              where Bordeaux ships as an accent. Flare and Amber do not appear here.
+              where Bordeaux ships at all — as an ornament, never as a control. Flare and Amber do
+              not appear here.
             </>
           }
         />

@@ -1,18 +1,18 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect } from "react";
 import type { Treatment } from "@forge-metal/brand";
-import { Lockup, WingsChip, WingsEmboss } from "@forge-metal/brand";
+import { Lockup } from "@forge-metal/brand";
 import { emitSpan } from "~/lib/telemetry/browser";
 import { AppliedFooter } from "~/features/design/sections/applied-footer";
 import { ogMeta } from "~/lib/head";
 
-// /design overview. Three treatment cards — Workshop, Newsroom, Letters —
-// plus the Applied cross-treatment rules at the foot. Each card renders a
-// short letterbox in the treatment's own ground so the visitor sees the
-// room's palette before clicking in; the chip/emboss/argent lockup in the
-// corner previews the wordmark variant. The page itself is rendered inside
-// the Workshop layout (iron chrome) — this is a Workshop view of the three
-// rooms, not a chrome flip.
+// /design overview. Three full-width treatment cards — Workshop, Newsroom,
+// Letters — stacked so each room's "soul" (ground, mark, accent CTA) reads
+// as its own composition rather than a thumbnail in a 3-up grid. The cards
+// are linked blocks; the visitor clicks into the treatment from the ground
+// they are already looking at. The /design route sits inside the Workshop
+// layout (iron chrome); the cards paint their own treatment ground locally
+// without flipping the page chrome.
 
 export const Route = createFileRoute("/_workshop/design/")({
   component: DesignOverview,
@@ -27,13 +27,16 @@ export const Route = createFileRoute("/_workshop/design/")({
   }),
 });
 
+type TreatmentRoute = "/design/workshop" | "/design/newsroom" | "/design/letters";
+
 interface TreatmentCard {
   readonly treatment: Treatment;
-  readonly to: "/design/workshop" | "/design/newsroom" | "/design/letters";
+  readonly to: TreatmentRoute;
   readonly number: string;
   readonly title: string;
   readonly subtitle: string;
   readonly description: string;
+  readonly ctaLabel: string;
 }
 
 const CARDS: readonly TreatmentCard[] = [
@@ -44,7 +47,8 @@ const CARDS: readonly TreatmentCard[] = [
     title: "Workshop",
     subtitle: "Where the work happens.",
     description:
-      "Iron ground, Geist throughout, Amber as the sole accent. The productivity chrome — marketing, docs, console, the everyday register. Fraunces is absent here.",
+      "Iron ground, Geist throughout, Amber as the sole accent. The productivity chrome — marketing, docs, console, the everyday register. Fraunces is absent here; only the Guardian wordmark stays serif.",
+    ctaLabel: "Enter the Workshop",
   },
   {
     treatment: "newsroom",
@@ -53,7 +57,8 @@ const CARDS: readonly TreatmentCard[] = [
     title: "Newsroom",
     subtitle: "The broadcast.",
     description:
-      "Flare ground, wings inside a circular ink emboss, Fraunces at display weight. Guardian when it needs to be seen in someone else's feed — OG cards, share previews, conference backdrops.",
+      "Argent ground, Flare hero bands, Flare CTAs. Modeled as a press-room blog index: the single loud field carries the bulletin; the rest of the page stays crisp so the acid green can speak.",
+    ctaLabel: "Enter the Newsroom",
   },
   {
     treatment: "letters",
@@ -63,6 +68,7 @@ const CARDS: readonly TreatmentCard[] = [
     subtitle: "The long form.",
     description:
       "Paper ground, Fraunces body, Bordeaux as the editorial accent. Where individual voices inside Guardian show their work — an engineer's postmortem, the founder's note, a milestone retold in full.",
+    ctaLabel: "Read the Letters",
   },
 ];
 
@@ -77,7 +83,7 @@ function DesignOverview() {
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-14 md:px-6 md:py-20">
-      <header className="mb-14 flex flex-col gap-4">
+      <header className="mb-12 flex flex-col gap-4">
         <p
           className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em]"
           style={{ color: "var(--treatment-muted)", fontVariationSettings: '"wght" 600' }}
@@ -107,13 +113,13 @@ function DesignOverview() {
             margin: 0,
           }}
         >
-          The wings stay Argent on every ground. Every other decision — palette, typography, mark
-          variant, lockup — belongs to the treatment. Walk into each room to see it inhabited, not
-          described.
+          The wings stay Argent and the wordmark stays Fraunces on every ground. Every other
+          decision — palette, body type, mark variant, accent — belongs to the treatment. Each card
+          below paints in its own ground; step into the room to see it inhabited.
         </p>
       </header>
 
-      <div className="grid gap-6 md:grid-cols-3">
+      <div className="flex flex-col gap-6">
         {CARDS.map((card) => (
           <OverviewCard key={card.treatment} card={card} />
         ))}
@@ -131,111 +137,136 @@ function OverviewCard({ card }: { card: TreatmentCard }) {
     <Link
       to={card.to}
       data-treatment={card.treatment}
-      className="group block overflow-hidden rounded-xl"
+      onClick={() =>
+        emitSpan("design.overview.card_click", {
+          treatment: card.treatment,
+          destination: card.to,
+        })
+      }
+      className="group block overflow-hidden rounded-2xl"
       style={{
         background: "var(--treatment-ground)",
+        color: "var(--treatment-ink)",
         border: "1px solid var(--treatment-hairline)",
       }}
     >
-      <OverviewCardHero card={card} />
-
       <div
-        className="p-6 md:p-8"
-        style={{ background: "var(--color-iron)", color: "var(--color-type-iron)" }}
+        className="relative grid gap-8 px-6 py-10 md:grid-cols-[minmax(0,1fr)_auto] md:items-end md:px-12 md:py-14"
+        style={{ minHeight: "clamp(260px, 36vw, 360px)" }}
       >
-        <p
-          className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.18em]"
-          style={{ color: "rgba(245,245,245,0.55)", fontVariationSettings: '"wght" 600' }}
-        >
-          {card.number} · Treatment
-        </p>
-        <h2
-          style={{
-            fontFamily: "'Geist', sans-serif",
-            fontWeight: 600,
-            fontSize: "24px",
-            lineHeight: 1.1,
-            letterSpacing: "-0.018em",
-            margin: "0 0 4px",
-            color: "var(--color-type-iron)",
-          }}
-        >
-          {card.title}
-        </h2>
-        <p
-          style={{
-            fontFamily: "'Geist', sans-serif",
-            fontSize: "14px",
-            lineHeight: 1.45,
-            letterSpacing: "-0.005em",
-            margin: "0 0 14px",
-            color: "rgba(245,245,245,0.72)",
-          }}
-        >
-          {card.subtitle}
-        </p>
-        <p
-          style={{
-            fontFamily: "'Geist', sans-serif",
-            fontSize: "14px",
-            lineHeight: 1.55,
-            margin: 0,
-            color: "rgba(245,245,245,0.72)",
-          }}
-        >
-          {card.description}
-        </p>
+        <div className="flex flex-col gap-5">
+          <div style={{ opacity: 0.92 }}>
+            <TreatmentMark treatment={card.treatment} />
+          </div>
+          <p
+            className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em]"
+            style={{
+              color: "var(--treatment-muted-meta)",
+              fontVariationSettings: '"wght" 600',
+              margin: 0,
+            }}
+          >
+            {card.number} · Treatment
+          </p>
+          <h2
+            style={{
+              fontFamily: "'Fraunces', Georgia, serif",
+              fontVariationSettings: '"opsz" 144, "SOFT" 30',
+              fontWeight: 400,
+              fontSize: "clamp(36px, 5.2vw, 60px)",
+              lineHeight: 1.02,
+              letterSpacing: "-0.025em",
+              margin: 0,
+              color: "var(--treatment-ink)",
+            }}
+          >
+            {card.title}
+          </h2>
+          <p
+            style={{
+              fontFamily: "'Geist', sans-serif",
+              fontWeight: 500,
+              fontSize: "clamp(15px, 1.6vw, 17px)",
+              lineHeight: 1.45,
+              letterSpacing: "-0.005em",
+              margin: 0,
+              color: "var(--treatment-muted-strong)",
+            }}
+          >
+            {card.subtitle}
+          </p>
+          <p
+            className="max-w-[56ch]"
+            style={{
+              fontFamily: "'Geist', sans-serif",
+              fontSize: "15px",
+              lineHeight: 1.55,
+              margin: 0,
+              color: "var(--treatment-muted)",
+            }}
+          >
+            {card.description}
+          </p>
+        </div>
+
+        <div className="flex items-end justify-start md:justify-end">
+          <TreatmentCTA treatment={card.treatment} label={card.ctaLabel} />
+        </div>
       </div>
     </Link>
   );
 }
 
-function OverviewCardHero({ card }: { card: TreatmentCard }) {
+// TreatmentMark — the Lockup variant that belongs to each room. Sized just
+// below "sm" on Workshop/Letters (the chip backgrounds were reading a hair
+// too chunky at 32px; 28px lands the wordmark at a comfortable weight for
+// the full-width card), and slightly larger on Newsroom where the emboss
+// medallion carries the composition.
+function TreatmentMark({ treatment }: { treatment: Treatment }) {
+  if (treatment === "workshop") {
+    return (
+      <Lockup size="sm" variant="workshop-chip" wordmarkColor="var(--color-argent)" />
+    );
+  }
+  if (treatment === "newsroom") {
+    return <Lockup size="sm" variant="emboss" wordmarkColor="var(--color-ink)" />;
+  }
+  return <Lockup size="sm" variant="chip" wordmarkColor="var(--color-ink)" />;
+}
+
+// TreatmentCTA — accent button per room. Workshop keeps its Amber primary
+// (the one place Amber ships as a CTA). Newsroom and Letters both paint Ink
+// (black) with Flare/Paper text respectively — Bordeaux is reserved for
+// Letters' editorial ornaments (pull-quotes, drop-caps, rules), never for
+// calls to action. Border radius matches shadcn's `rounded-md` token so the
+// buttons read as boxy controls, not marketing pills.
+//
+// The CTA is a visual affordance; the whole card is a <Link>, so it renders
+// as <span> not <button> to avoid a nested interactive element.
+function TreatmentCTA({ treatment, label }: { treatment: Treatment; label: string }) {
+  const style =
+    treatment === "workshop"
+      ? { bg: "var(--color-amber)", fg: "var(--color-ink)" }
+      : treatment === "newsroom"
+        ? { bg: "var(--color-flare)", fg: "var(--color-ink)" }
+        : { bg: "var(--color-ink)", fg: "var(--color-paper)" };
   return (
-    <div
-      data-treatment={card.treatment}
-      className="relative"
+    <span
+      className="inline-flex items-center gap-2 rounded-md transition-transform group-hover:translate-x-0.5"
       style={{
-        aspectRatio: "16 / 7",
-        background: "var(--treatment-ground)",
-        color: "var(--treatment-ink)",
+        fontFamily: "'Geist', sans-serif",
+        fontWeight: 500,
+        fontSize: "14px",
+        padding: "10px 18px",
+        background: style.bg,
+        color: style.fg,
+        border: "none",
+        whiteSpace: "nowrap",
       }}
     >
-      <div className="absolute bottom-4 left-4 md:bottom-6 md:left-6">
-        {card.treatment === "newsroom" ? (
-          <Lockup size="sm" variant="emboss" wordmarkColor="var(--color-ink)" />
-        ) : card.treatment === "letters" ? (
-          <Lockup size="sm" variant="chip" wordmarkColor="var(--color-ink)" />
-        ) : (
-          <Lockup size="sm" variant="workshop-chip" wordmarkColor="var(--color-argent)" />
-        )}
-      </div>
-      {card.treatment === "newsroom" && (
-        <WingsEmboss
-          style={{
-            position: "absolute",
-            right: "-20px",
-            top: "50%",
-            transform: "translateY(-50%)",
-            width: "45%",
-            height: "auto",
-            opacity: 0.24,
-          }}
-        />
-      )}
-      {card.treatment === "letters" && (
-        <WingsChip
-          style={{
-            position: "absolute",
-            right: "24px",
-            top: "50%",
-            transform: "translateY(-50%)",
-            width: "28%",
-            height: "auto",
-            opacity: 0.32,
-          }}
-        />
-      )}
-    </div>
+      {label}
+      <span aria-hidden="true">→</span>
+    </span>
   );
 }
+

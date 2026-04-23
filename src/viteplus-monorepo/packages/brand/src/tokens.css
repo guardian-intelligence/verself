@@ -118,16 +118,18 @@
 }
 
 [data-treatment="newsroom"] {
-  /* Newsroom — a Letters body with a Flare hero band. The TREATMENT GROUND is
-     Paper so Newsroom pages read like an editorial surface; Flare appears only
-     where the page chooses to broadcast: the bounded hero band carrying the
-     bulletin, the 1200×630 OG card, the 16:9 billboard. Accent resolves to
-     Flare so CTAs and hero-band backgrounds paint it via --treatment-accent;
-     the ground itself does not. AppChrome's wordmark variant is emboss
-     (wings-in-ink-medallion), which reads against Paper as a black bookplate. */
-  --treatment-ground: var(--color-paper);
+  /* Newsroom — a calm Argent (white) body with Flare confined to bounded
+     cards and CTAs. Ramp's press blog is the reference: the page scans like
+     a reading room; acid green appears once per page as a hero card or a
+     Newsroom-specific piece of stationery. Flare is an *event*, not an
+     environment — painting everything green teaches the eye to stop seeing
+     green. Paper is reserved for Letters; Newsroom reads on Argent.
+     CTAs paint Ink (black) so the control reads as a dark affordance on
+     both Argent body surfaces and Flare hero cards. Bordeaux never appears
+     on Newsroom; Amber never appears on Newsroom. */
+  --treatment-ground: var(--color-argent);
   --treatment-ink: var(--color-ink);
-  --treatment-accent: var(--color-flare);
+  --treatment-accent: var(--color-ink);
   --treatment-wordmark: var(--color-ink);
   --treatment-display-font: var(--font-display);
   --treatment-muted-strong: var(--color-stone-strong);
@@ -135,8 +137,8 @@
   --treatment-muted-meta: var(--color-stone-meta);
   --treatment-muted-faint: var(--color-stone-faint);
   --treatment-surface-subtle: rgba(11, 11, 11, 0.04);
-  --treatment-surface-border: rgba(11, 11, 11, 0.14);
-  --treatment-hairline: rgba(11, 11, 11, 0.14);
+  --treatment-surface-border: rgba(11, 11, 11, 0.12);
+  --treatment-hairline: rgba(11, 11, 11, 0.12);
 }
 
 [data-treatment="letters"] {

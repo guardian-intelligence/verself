@@ -99,13 +99,12 @@ export interface WingsWorkshopChipProps extends SvgBase {
   readonly title?: string | undefined;
 }
 
-// The Workshop chip — iron fill, square corners, 1 px argent border, argent
-// wings. Separate from WingsChip (which carries the rounded editorial chip
-// used on favicons and Letters surfaces) because Workshop's chrome wants the
-// hard-edged industrial read: a square black tile on Iron ground, framed by a
-// hairline of argent that signals "this is product chrome, not an editorial
-// mark." The border uses vector-effect="non-scaling-stroke" so the 1 px
-// weight holds at any render size without thickening at lg or vanishing at sm.
+// The Workshop chip — iron fill, slight corner rounding, argent wings. On
+// the Workshop Iron ground (#0E0E0E) the chip reads as a silent padded
+// carrier that's the same colour as the canvas, so the wings float with
+// proper clearspace without the chip outline drawing attention to itself.
+// (The previous 1 px argent stroke was axed 2026-04-23 — it read as chrome
+// and fought with the wordmark set in Fraunces next to it.)
 export function WingsWorkshopChip({ title, ...rest }: WingsWorkshopChipProps) {
   return (
     <svg
@@ -117,10 +116,6 @@ export function WingsWorkshopChip({ title, ...rest }: WingsWorkshopChipProps) {
       focusable="false"
       {...rest}
     >
-      {/* Stroke weight is 2 in SVG units with vector-effect="non-scaling-stroke",
-          so it renders at 2 device px regardless of the displayed size. Corner
-          radius sits at 8/291 ≈ 2.75% — enough to soften the corners against
-          Iron without reading as the editorial chip's 11% roundness. */}
       <rect
         x="30.01"
         y="31.08"
@@ -129,9 +124,6 @@ export function WingsWorkshopChip({ title, ...rest }: WingsWorkshopChipProps) {
         rx="8"
         ry="8"
         fill="#0E0E0E"
-        stroke="#FFFFFF"
-        strokeWidth="2"
-        vectorEffect="non-scaling-stroke"
       />
       <path fill="#FFFFFF" d={WINGS_PATH_D} />
     </svg>
