@@ -28,6 +28,13 @@ export const OG_CATALOG: Record<string, OGSpec> = {
     footerLeft: "anveio.com/letters",
     footerRight: "Seattle · 2026",
   },
+  newsroom: {
+    slug: "newsroom",
+    title: "Bulletins from Guardian.",
+    flare: "Bulletins",
+    footerLeft: "anveio.com/newsroom",
+    footerRight: "Seattle · 2026",
+  },
   solutions: {
     slug: "solutions",
     title: "One house, one platform.",
