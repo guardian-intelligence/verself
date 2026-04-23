@@ -225,10 +225,21 @@ export type ErrorModel = {
   type?: string;
 };
 
+export type SandboxAnalyticsBucket = {
+  billed_charge_units?: string;
+  count: string;
+  key: string;
+  reserved_charge_units?: string;
+  writeoff_charge_units?: string;
+};
+
 export type SandboxAttemptRecord = {
   attempt_id: string;
   attempt_seq: number;
   billing_job_id?: number;
+  block_read_bytes?: number;
+  block_write_bytes?: number;
+  boot_time_us?: number;
   completed_at?: string;
   created_at: string;
   duration_ms?: number;
@@ -236,12 +247,16 @@ export type SandboxAttemptRecord = {
   exit_code?: number;
   failure_reason?: string;
   lease_id?: string;
+  net_rx_bytes?: number;
+  net_tx_bytes?: number;
+  rootfs_provisioned_bytes?: number;
   started_at?: string;
   state: string;
   stderr_bytes?: number;
   stdout_bytes?: number;
   trace_id?: string;
   updated_at: string;
+  vcpu_exit_count?: number;
   zfs_written?: number;
 };
 
@@ -303,15 +318,51 @@ export type SandboxBillingPortalRequest = {
 export type SandboxBillingWindow = {
   actual_quantity?: number;
   attempt_id: string;
+  billed_charge_units: string;
   billing_window_id: string;
+  cost_per_unit: string;
   created_at: string;
   pricing_phase?: string;
   reservation_shape: string;
+  reserved_charge_units: string;
   reserved_quantity: number;
   settled_at?: string;
   state: string;
   window_seq: number;
   window_start: string;
+  writeoff_charge_units: string;
+};
+
+export type SandboxCachesAnalytics = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  by_repository: Array<SandboxAnalyticsBucket> | null;
+  checkout_hits: string;
+  checkout_misses: string;
+  checkout_requests: string;
+  sticky_commits: string;
+  sticky_restore_hits: string;
+  sticky_restore_misses: string;
+  sticky_save_requests: string;
+  window_end: string;
+  window_start: string;
+};
+
+export type SandboxCostsAnalytics = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  billed_charge_units: string;
+  by_repository: Array<SandboxAnalyticsBucket> | null;
+  by_runner_class: Array<SandboxAnalyticsBucket> | null;
+  by_source: Array<SandboxAnalyticsBucket> | null;
+  reserved_charge_units: string;
+  window_end: string;
+  window_start: string;
+  writeoff_charge_units: string;
 };
 
 export type SandboxExecutionLogs = {
@@ -330,12 +381,14 @@ export type SandboxExecutionRecord = {
    */
   readonly $schema?: string;
   actor_id: string;
+  billing_summary?: SandboxRunBillingSummary;
   billing_windows?: Array<SandboxBillingWindow> | null;
   correlation_id?: string;
   created_at: string;
   execution_id: string;
   external_provider?: string;
   external_task_id?: string;
+  github?: SandboxGitHubRunMetadata;
   idempotency_key?: string;
   kind: string;
   latest_attempt: SandboxAttemptRecord;
@@ -343,10 +396,13 @@ export type SandboxExecutionRecord = {
   product_id: string;
   provider?: string;
   run_command?: string;
+  run_id: string;
   runner_class?: string;
+  schedule?: SandboxScheduleRunMetadata;
   source_kind?: string;
   source_ref?: string;
   status: string;
+  sticky_disk_mounts?: Array<SandboxExecutionStickyDiskMount> | null;
   updated_at: string;
   workload_kind?: string;
 };
@@ -401,6 +457,20 @@ export type SandboxExecutionScheduleRecord = {
   updated_at: string;
 };
 
+export type SandboxExecutionStickyDiskMount = {
+  base_generation: string;
+  committed_generation: string;
+  completed_at?: string;
+  failure_reason?: string;
+  key_hash: string;
+  mount_id: string;
+  mount_name: string;
+  mount_path: string;
+  requested_at?: string;
+  save_requested: boolean;
+  save_state: string;
+};
+
 export type SandboxGitHubInstallationConnectResponse = {
   /**
    * A URL to the JSON Schema for this object.
@@ -431,6 +501,206 @@ export type SandboxGitHubInstallationRecord = {
   installation_id: string;
   org_id: string;
   updated_at: string;
+};
+
+export type SandboxGitHubRunMetadata = {
+  head_branch?: string;
+  head_sha?: string;
+  installation_id?: string;
+  job_id?: string;
+  job_name?: string;
+  repository_full_name?: string;
+  run_id?: string;
+  workflow_name?: string;
+};
+
+export type SandboxJobsAnalytics = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  by_runner_class: Array<SandboxAnalyticsBucket> | null;
+  by_source: Array<SandboxAnalyticsBucket> | null;
+  failed_runs: string;
+  p50_duration_ms: string;
+  p95_duration_ms: string;
+  p99_duration_ms: string;
+  slowest_runs: Array<SandboxRunDurationSample> | null;
+  succeeded_runs: string;
+  total_runs: string;
+  window_end: string;
+  window_start: string;
+};
+
+export type SandboxRunBillingSummary = {
+  billed_charge_units: string;
+  cost_per_unit: string;
+  pricing_phase?: string;
+  reserved_charge_units: string;
+  window_count: number;
+  writeoff_charge_units: string;
+};
+
+export type SandboxRunDurationSample = {
+  completed_at: string;
+  duration_ms: number;
+  execution_id: string;
+  job_name?: string;
+  repository_full_name?: string;
+  runner_class?: string;
+  status: string;
+  workflow_name?: string;
+};
+
+export type SandboxRunLogSearchFilters = {
+  attempt_id?: string;
+  branch?: string;
+  query?: string;
+  repository?: string;
+  run_id?: string;
+  runner_class?: string;
+  source_kind?: string;
+  workflow?: string;
+};
+
+export type SandboxRunLogSearchPage = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  filters: SandboxRunLogSearchFilters;
+  limit: number;
+  next_cursor?: string;
+  results: Array<SandboxRunLogSearchResult> | null;
+};
+
+export type SandboxRunLogSearchResult = {
+  attempt_id: string;
+  chunk: string;
+  created_at: string;
+  execution_id: string;
+  head_branch?: string;
+  job_name?: string;
+  repository_full_name?: string;
+  runner_class?: string;
+  schedule_id?: string;
+  seq: number;
+  source_kind?: string;
+  stream: string;
+  workflow_name?: string;
+  workload_kind?: string;
+};
+
+export type SandboxRunnerSizingAnalytics = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  by_runner_class: Array<SandboxRunnerSizingSample> | null;
+  window_end: string;
+  window_start: string;
+};
+
+export type SandboxRunnerSizingSample = {
+  avg_block_write_bytes: string;
+  avg_boot_time_us: string;
+  avg_net_tx_bytes: string;
+  avg_rootfs_provisioned_bytes: string;
+  p95_duration_ms: string;
+  run_count: string;
+  runner_class: string;
+};
+
+export type SandboxRunsFilters = {
+  branch?: string;
+  repository?: string;
+  runner_class?: string;
+  source_kind?: string;
+  status?: string;
+  workflow?: string;
+};
+
+export type SandboxRunsPage = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  filters: SandboxRunsFilters;
+  limit: number;
+  next_cursor?: string;
+  runs: Array<SandboxExecutionRecord> | null;
+};
+
+export type SandboxScheduleRunMetadata = {
+  display_name?: string;
+  schedule_id?: string;
+  temporal_run_id?: string;
+  temporal_workflow_id?: string;
+};
+
+export type SandboxStickyDiskFilters = {
+  repository?: string;
+};
+
+export type SandboxStickyDiskRecord = {
+  current_generation: string;
+  current_source_ref: string;
+  installation_id: string;
+  key: string;
+  key_hash: string;
+  last_attempt_id?: string;
+  last_completed_at?: string;
+  last_execution_id?: string;
+  last_job_name?: string;
+  last_mount_path?: string;
+  last_runner_class?: string;
+  last_save_state?: string;
+  last_used_at?: string;
+  last_workflow_name?: string;
+  repository_full_name?: string;
+  repository_id: string;
+};
+
+export type SandboxStickyDiskResetResult = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  deleted_source_ref?: string;
+  installation_id: string;
+  key_hash: string;
+  repository_id: string;
+  reset_at: string;
+};
+
+export type SandboxStickyDisksPage = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  disks: Array<SandboxStickyDiskRecord> | null;
+  filters: SandboxStickyDiskFilters;
+  limit: number;
+  next_cursor?: string;
+};
+
+export type StickyDiskResetRequest = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  /**
+   * GitHub installation ID encoded as a decimal string.
+   */
+  installation_id: string;
+  /**
+   * Sticky disk key hash to reset.
+   */
+  key_hash: string;
+  /**
+   * GitHub repository ID encoded as a decimal string.
+   */
+  repository_id: string;
 };
 
 export type BillingCancelContractResponseWritable = {
@@ -535,6 +805,30 @@ export type SandboxBillingPortalRequestWritable = {
   return_url: string;
 };
 
+export type SandboxCachesAnalyticsWritable = {
+  by_repository: Array<SandboxAnalyticsBucket> | null;
+  checkout_hits: string;
+  checkout_misses: string;
+  checkout_requests: string;
+  sticky_commits: string;
+  sticky_restore_hits: string;
+  sticky_restore_misses: string;
+  sticky_save_requests: string;
+  window_end: string;
+  window_start: string;
+};
+
+export type SandboxCostsAnalyticsWritable = {
+  billed_charge_units: string;
+  by_repository: Array<SandboxAnalyticsBucket> | null;
+  by_runner_class: Array<SandboxAnalyticsBucket> | null;
+  by_source: Array<SandboxAnalyticsBucket> | null;
+  reserved_charge_units: string;
+  window_end: string;
+  window_start: string;
+  writeoff_charge_units: string;
+};
+
 export type SandboxExecutionLogsWritable = {
   attempt_id: string;
   execution_id: string;
@@ -543,12 +837,14 @@ export type SandboxExecutionLogsWritable = {
 
 export type SandboxExecutionRecordWritable = {
   actor_id: string;
+  billing_summary?: SandboxRunBillingSummary;
   billing_windows?: Array<SandboxBillingWindow> | null;
   correlation_id?: string;
   created_at: string;
   execution_id: string;
   external_provider?: string;
   external_task_id?: string;
+  github?: SandboxGitHubRunMetadata;
   idempotency_key?: string;
   kind: string;
   latest_attempt: SandboxAttemptRecord;
@@ -556,10 +852,13 @@ export type SandboxExecutionRecordWritable = {
   product_id: string;
   provider?: string;
   run_command?: string;
+  run_id: string;
   runner_class?: string;
+  schedule?: SandboxScheduleRunMetadata;
   source_kind?: string;
   source_ref?: string;
   status: string;
+  sticky_disk_mounts?: Array<SandboxExecutionStickyDiskMount> | null;
   updated_at: string;
   workload_kind?: string;
 };
@@ -604,6 +903,70 @@ export type SandboxGitHubInstallationConnectResponseWritable = {
    * Opaque installation state token embedded in the GitHub App setup URL.
    */
   state: string;
+};
+
+export type SandboxJobsAnalyticsWritable = {
+  by_runner_class: Array<SandboxAnalyticsBucket> | null;
+  by_source: Array<SandboxAnalyticsBucket> | null;
+  failed_runs: string;
+  p50_duration_ms: string;
+  p95_duration_ms: string;
+  p99_duration_ms: string;
+  slowest_runs: Array<SandboxRunDurationSample> | null;
+  succeeded_runs: string;
+  total_runs: string;
+  window_end: string;
+  window_start: string;
+};
+
+export type SandboxRunLogSearchPageWritable = {
+  filters: SandboxRunLogSearchFilters;
+  limit: number;
+  next_cursor?: string;
+  results: Array<SandboxRunLogSearchResult> | null;
+};
+
+export type SandboxRunnerSizingAnalyticsWritable = {
+  by_runner_class: Array<SandboxRunnerSizingSample> | null;
+  window_end: string;
+  window_start: string;
+};
+
+export type SandboxRunsPageWritable = {
+  filters: SandboxRunsFilters;
+  limit: number;
+  next_cursor?: string;
+  runs: Array<SandboxExecutionRecordWritable> | null;
+};
+
+export type SandboxStickyDiskResetResultWritable = {
+  deleted_source_ref?: string;
+  installation_id: string;
+  key_hash: string;
+  repository_id: string;
+  reset_at: string;
+};
+
+export type SandboxStickyDisksPageWritable = {
+  disks: Array<SandboxStickyDiskRecord> | null;
+  filters: SandboxStickyDiskFilters;
+  limit: number;
+  next_cursor?: string;
+};
+
+export type StickyDiskResetRequestWritable = {
+  /**
+   * GitHub installation ID encoded as a decimal string.
+   */
+  installation_id: string;
+  /**
+   * Sticky disk key hash to reset.
+   */
+  key_hash: string;
+  /**
+   * GitHub repository ID encoded as a decimal string.
+   */
+  repository_id: string;
 };
 
 export type CreateBillingCheckoutData = {
@@ -1165,3 +1528,330 @@ export type BeginGithubInstallationResponses = {
 
 export type BeginGithubInstallationResponse =
   BeginGithubInstallationResponses[keyof BeginGithubInstallationResponses];
+
+export type GetCachesAnalyticsData = {
+  body?: never;
+  path?: never;
+  query?: {
+    /**
+     * Inclusive RFC3339 window start.
+     */
+    start?: string;
+    /**
+     * Inclusive RFC3339 window end.
+     */
+    end?: string;
+  };
+  url: "/api/v1/run-analytics/caches";
+};
+
+export type GetCachesAnalyticsErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type GetCachesAnalyticsError = GetCachesAnalyticsErrors[keyof GetCachesAnalyticsErrors];
+
+export type GetCachesAnalyticsResponses = {
+  /**
+   * OK
+   */
+  200: SandboxCachesAnalytics;
+};
+
+export type GetCachesAnalyticsResponse =
+  GetCachesAnalyticsResponses[keyof GetCachesAnalyticsResponses];
+
+export type GetCostsAnalyticsData = {
+  body?: never;
+  path?: never;
+  query?: {
+    /**
+     * Inclusive RFC3339 window start.
+     */
+    start?: string;
+    /**
+     * Inclusive RFC3339 window end.
+     */
+    end?: string;
+  };
+  url: "/api/v1/run-analytics/costs";
+};
+
+export type GetCostsAnalyticsErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type GetCostsAnalyticsError = GetCostsAnalyticsErrors[keyof GetCostsAnalyticsErrors];
+
+export type GetCostsAnalyticsResponses = {
+  /**
+   * OK
+   */
+  200: SandboxCostsAnalytics;
+};
+
+export type GetCostsAnalyticsResponse =
+  GetCostsAnalyticsResponses[keyof GetCostsAnalyticsResponses];
+
+export type GetJobsAnalyticsData = {
+  body?: never;
+  path?: never;
+  query?: {
+    /**
+     * Inclusive RFC3339 window start.
+     */
+    start?: string;
+    /**
+     * Inclusive RFC3339 window end.
+     */
+    end?: string;
+  };
+  url: "/api/v1/run-analytics/jobs";
+};
+
+export type GetJobsAnalyticsErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type GetJobsAnalyticsError = GetJobsAnalyticsErrors[keyof GetJobsAnalyticsErrors];
+
+export type GetJobsAnalyticsResponses = {
+  /**
+   * OK
+   */
+  200: SandboxJobsAnalytics;
+};
+
+export type GetJobsAnalyticsResponse = GetJobsAnalyticsResponses[keyof GetJobsAnalyticsResponses];
+
+export type GetRunnerSizingAnalyticsData = {
+  body?: never;
+  path?: never;
+  query?: {
+    /**
+     * Inclusive RFC3339 window start.
+     */
+    start?: string;
+    /**
+     * Inclusive RFC3339 window end.
+     */
+    end?: string;
+  };
+  url: "/api/v1/run-analytics/runner-sizing";
+};
+
+export type GetRunnerSizingAnalyticsErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type GetRunnerSizingAnalyticsError =
+  GetRunnerSizingAnalyticsErrors[keyof GetRunnerSizingAnalyticsErrors];
+
+export type GetRunnerSizingAnalyticsResponses = {
+  /**
+   * OK
+   */
+  200: SandboxRunnerSizingAnalytics;
+};
+
+export type GetRunnerSizingAnalyticsResponse =
+  GetRunnerSizingAnalyticsResponses[keyof GetRunnerSizingAnalyticsResponses];
+
+export type SearchRunLogsData = {
+  body?: never;
+  path?: never;
+  query?: {
+    /**
+     * Maximum log matches to return.
+     */
+    limit?: number;
+    /**
+     * Opaque pagination cursor returned by the previous page.
+     */
+    cursor?: string;
+    /**
+     * Case-insensitive substring to search for.
+     */
+    query?: string;
+    /**
+     * Filter to a specific run UUID.
+     */
+    run_id?: string;
+    /**
+     * Filter to a specific attempt UUID.
+     */
+    attempt_id?: string;
+    source_kind?: string;
+    repository?: string;
+    workflow?: string;
+    branch?: string;
+    runner_class?: string;
+  };
+  url: "/api/v1/run-logs/search";
+};
+
+export type SearchRunLogsErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type SearchRunLogsError = SearchRunLogsErrors[keyof SearchRunLogsErrors];
+
+export type SearchRunLogsResponses = {
+  /**
+   * OK
+   */
+  200: SandboxRunLogSearchPage;
+};
+
+export type SearchRunLogsResponse = SearchRunLogsResponses[keyof SearchRunLogsResponses];
+
+export type ListRunsData = {
+  body?: never;
+  path?: never;
+  query?: {
+    /**
+     * Maximum runs to return.
+     */
+    limit?: number;
+    /**
+     * Opaque pagination cursor returned by the previous page.
+     */
+    cursor?: string;
+    source_kind?: string;
+    status?: string;
+    repository?: string;
+    workflow?: string;
+    branch?: string;
+    runner_class?: string;
+  };
+  url: "/api/v1/runs";
+};
+
+export type ListRunsErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type ListRunsError = ListRunsErrors[keyof ListRunsErrors];
+
+export type ListRunsResponses = {
+  /**
+   * OK
+   */
+  200: SandboxRunsPage;
+};
+
+export type ListRunsResponse = ListRunsResponses[keyof ListRunsResponses];
+
+export type GetRunData = {
+  body?: never;
+  path: {
+    /**
+     * Run UUID
+     */
+    run_id: string;
+  };
+  query?: never;
+  url: "/api/v1/runs/{run_id}";
+};
+
+export type GetRunErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type GetRunError = GetRunErrors[keyof GetRunErrors];
+
+export type GetRunResponses = {
+  /**
+   * OK
+   */
+  200: SandboxExecutionRecord;
+};
+
+export type GetRunResponse = GetRunResponses[keyof GetRunResponses];
+
+export type ListStickyDisksData = {
+  body?: never;
+  path?: never;
+  query?: {
+    /**
+     * Maximum sticky disks to return.
+     */
+    limit?: number;
+    /**
+     * Opaque pagination cursor returned by the previous page.
+     */
+    cursor?: string;
+    repository?: string;
+  };
+  url: "/api/v1/sticky-disks";
+};
+
+export type ListStickyDisksErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type ListStickyDisksError = ListStickyDisksErrors[keyof ListStickyDisksErrors];
+
+export type ListStickyDisksResponses = {
+  /**
+   * OK
+   */
+  200: SandboxStickyDisksPage;
+};
+
+export type ListStickyDisksResponse = ListStickyDisksResponses[keyof ListStickyDisksResponses];
+
+export type ResetStickyDiskData = {
+  body: StickyDiskResetRequestWritable;
+  headers: {
+    /**
+     * Stable caller-provided key used to make this mutation retry-safe.
+     */
+    "Idempotency-Key": string;
+  };
+  path?: never;
+  query?: never;
+  url: "/api/v1/sticky-disks/reset";
+};
+
+export type ResetStickyDiskErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type ResetStickyDiskError = ResetStickyDiskErrors[keyof ResetStickyDiskErrors];
+
+export type ResetStickyDiskResponses = {
+  /**
+   * OK
+   */
+  200: SandboxStickyDiskResetResult;
+};
+
+export type ResetStickyDiskResponse = ResetStickyDiskResponses[keyof ResetStickyDiskResponses];

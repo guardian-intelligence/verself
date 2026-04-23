@@ -114,17 +114,22 @@ func TestBillingProxyErrorMapsNoStripeCustomer(t *testing.T) {
 }
 
 func TestIdentityPermissionChecksRoleBundlesAndDirectScopes(t *testing.T) {
-	admin := sandboxServiceToken("42", roleSandboxOrgAdmin)
-	if !identityHasPermission(admin, permissionBillingCheckout) {
-		t.Fatal("sandbox org admin should be allowed to create billing checkout")
+	owner := sandboxServiceToken("42", roleOwner)
+	if !identityHasPermission(owner, permissionBillingCheckout) {
+		t.Fatal("owner should be allowed to create billing checkout")
 	}
 
-	member := sandboxServiceToken("42", roleSandboxOrgMember)
+	admin := sandboxServiceToken("42", roleAdmin)
+	if !identityHasPermission(admin, permissionBillingCheckout) {
+		t.Fatal("admin should be allowed to create billing checkout")
+	}
+
+	member := sandboxServiceToken("42", roleMember)
 	if !identityHasPermission(member, permissionScheduleWrite) {
-		t.Fatal("sandbox org member should be allowed to manage execution schedules")
+		t.Fatal("member should be allowed to manage execution schedules")
 	}
 	if identityHasPermission(member, permissionBillingCheckout) {
-		t.Fatal("sandbox org member should not be allowed to create billing checkout")
+		t.Fatal("member should not be allowed to create billing checkout")
 	}
 
 	unmarkedScope := &auth.Identity{
@@ -174,7 +179,7 @@ func TestEnforceOperationPolicyDeniesMissingPermission(t *testing.T) {
 		OrgID:   "42",
 		RoleAssignments: []auth.RoleAssignment{{
 			OrganizationID: "42",
-			Role:           roleSandboxOrgMember,
+			Role:           roleMember,
 		}},
 	})
 

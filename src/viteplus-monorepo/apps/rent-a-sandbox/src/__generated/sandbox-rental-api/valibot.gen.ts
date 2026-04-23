@@ -185,6 +185,14 @@ export const vErrorModel = v.strictObject({
   type: v.optional(v.pipe(v.string(), v.url()), "about:blank"),
 });
 
+export const vSandboxAnalyticsBucket = v.strictObject({
+  billed_charge_units: v.optional(v.pipe(v.string(), v.regex(/^[0-9]+$/))),
+  count: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  key: v.string(),
+  reserved_charge_units: v.optional(v.pipe(v.string(), v.regex(/^[0-9]+$/))),
+  writeoff_charge_units: v.optional(v.pipe(v.string(), v.regex(/^[0-9]+$/))),
+});
+
 export const vSandboxAttemptRecord = v.strictObject({
   attempt_id: v.string(),
   attempt_seq: v.pipe(
@@ -194,6 +202,30 @@ export const vSandboxAttemptRecord = v.strictObject({
     v.maxValue(BigInt(9007199254740991)),
   ),
   billing_job_id: v.optional(
+    v.pipe(
+      v.union([v.number(), v.string(), v.bigint()]),
+      v.transform((x) => BigInt(x)),
+      v.minValue(BigInt(0)),
+      v.maxValue(BigInt(9007199254740991)),
+    ),
+  ),
+  block_read_bytes: v.optional(
+    v.pipe(
+      v.union([v.number(), v.string(), v.bigint()]),
+      v.transform((x) => BigInt(x)),
+      v.minValue(BigInt(0)),
+      v.maxValue(BigInt(9007199254740991)),
+    ),
+  ),
+  block_write_bytes: v.optional(
+    v.pipe(
+      v.union([v.number(), v.string(), v.bigint()]),
+      v.transform((x) => BigInt(x)),
+      v.minValue(BigInt(0)),
+      v.maxValue(BigInt(9007199254740991)),
+    ),
+  ),
+  boot_time_us: v.optional(
     v.pipe(
       v.union([v.number(), v.string(), v.bigint()]),
       v.transform((x) => BigInt(x)),
@@ -222,6 +254,30 @@ export const vSandboxAttemptRecord = v.strictObject({
   ),
   failure_reason: v.optional(v.string()),
   lease_id: v.optional(v.string()),
+  net_rx_bytes: v.optional(
+    v.pipe(
+      v.union([v.number(), v.string(), v.bigint()]),
+      v.transform((x) => BigInt(x)),
+      v.minValue(BigInt(0)),
+      v.maxValue(BigInt(9007199254740991)),
+    ),
+  ),
+  net_tx_bytes: v.optional(
+    v.pipe(
+      v.union([v.number(), v.string(), v.bigint()]),
+      v.transform((x) => BigInt(x)),
+      v.minValue(BigInt(0)),
+      v.maxValue(BigInt(9007199254740991)),
+    ),
+  ),
+  rootfs_provisioned_bytes: v.optional(
+    v.pipe(
+      v.union([v.number(), v.string(), v.bigint()]),
+      v.transform((x) => BigInt(x)),
+      v.minValue(BigInt(0)),
+      v.maxValue(BigInt(9007199254740991)),
+    ),
+  ),
   started_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
   state: v.string(),
   stderr_bytes: v.optional(
@@ -242,6 +298,14 @@ export const vSandboxAttemptRecord = v.strictObject({
   ),
   trace_id: v.optional(v.string()),
   updated_at: v.pipe(v.string(), v.isoTimestamp()),
+  vcpu_exit_count: v.optional(
+    v.pipe(
+      v.union([v.number(), v.string(), v.bigint()]),
+      v.transform((x) => BigInt(x)),
+      v.minValue(BigInt(0)),
+      v.maxValue(BigInt(9007199254740991)),
+    ),
+  ),
   zfs_written: v.optional(
     v.pipe(
       v.union([v.number(), v.string(), v.bigint()]),
@@ -295,10 +359,13 @@ export const vSandboxBillingWindow = v.strictObject({
     ),
   ),
   attempt_id: v.string(),
+  billed_charge_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   billing_window_id: v.string(),
+  cost_per_unit: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   created_at: v.pipe(v.string(), v.isoTimestamp()),
   pricing_phase: v.optional(v.string()),
   reservation_shape: v.string(),
+  reserved_charge_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   reserved_quantity: v.pipe(
     v.union([v.number(), v.string(), v.bigint()]),
     v.transform((x) => BigInt(x)),
@@ -314,6 +381,33 @@ export const vSandboxBillingWindow = v.strictObject({
     v.maxValue(BigInt(9007199254740991)),
   ),
   window_start: v.pipe(v.string(), v.isoTimestamp()),
+  writeoff_charge_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+});
+
+export const vSandboxCachesAnalytics = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  by_repository: v.nullable(v.array(vSandboxAnalyticsBucket)),
+  checkout_hits: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  checkout_misses: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  checkout_requests: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  sticky_commits: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  sticky_restore_hits: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  sticky_restore_misses: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  sticky_save_requests: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  window_end: v.pipe(v.string(), v.isoTimestamp()),
+  window_start: v.pipe(v.string(), v.isoTimestamp()),
+});
+
+export const vSandboxCostsAnalytics = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  billed_charge_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  by_repository: v.nullable(v.array(vSandboxAnalyticsBucket)),
+  by_runner_class: v.nullable(v.array(vSandboxAnalyticsBucket)),
+  by_source: v.nullable(v.array(vSandboxAnalyticsBucket)),
+  reserved_charge_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  window_end: v.pipe(v.string(), v.isoTimestamp()),
+  window_start: v.pipe(v.string(), v.isoTimestamp()),
+  writeoff_charge_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
 });
 
 export const vSandboxExecutionLogs = v.strictObject({
@@ -321,30 +415,6 @@ export const vSandboxExecutionLogs = v.strictObject({
   attempt_id: v.string(),
   execution_id: v.string(),
   logs: v.string(),
-});
-
-export const vSandboxExecutionRecord = v.strictObject({
-  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  actor_id: v.string(),
-  billing_windows: v.nullish(v.array(vSandboxBillingWindow)),
-  correlation_id: v.optional(v.string()),
-  created_at: v.pipe(v.string(), v.isoTimestamp()),
-  execution_id: v.string(),
-  external_provider: v.optional(v.string()),
-  external_task_id: v.optional(v.string()),
-  idempotency_key: v.optional(v.string()),
-  kind: v.string(),
-  latest_attempt: vSandboxAttemptRecord,
-  org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  product_id: v.string(),
-  provider: v.optional(v.string()),
-  run_command: v.optional(v.string()),
-  runner_class: v.optional(v.string()),
-  source_kind: v.optional(v.string()),
-  source_ref: v.optional(v.string()),
-  status: v.string(),
-  updated_at: v.pipe(v.string(), v.isoTimestamp()),
-  workload_kind: v.optional(v.string()),
 });
 
 export const vSandboxExecutionScheduleCreateRequest = v.strictObject({
@@ -405,6 +475,20 @@ export const vSandboxExecutionScheduleRecord = v.strictObject({
   updated_at: v.pipe(v.string(), v.isoTimestamp()),
 });
 
+export const vSandboxExecutionStickyDiskMount = v.strictObject({
+  base_generation: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  committed_generation: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  completed_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  failure_reason: v.optional(v.string()),
+  key_hash: v.string(),
+  mount_id: v.string(),
+  mount_name: v.string(),
+  mount_path: v.string(),
+  requested_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  save_requested: v.boolean(),
+  save_state: v.string(),
+});
+
 export const vSandboxGitHubInstallationConnectResponse = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   expires_at: v.pipe(v.string(), v.isoTimestamp()),
@@ -420,6 +504,235 @@ export const vSandboxGitHubInstallationRecord = v.strictObject({
   installation_id: v.string(),
   org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   updated_at: v.pipe(v.string(), v.isoTimestamp()),
+});
+
+export const vSandboxGitHubRunMetadata = v.strictObject({
+  head_branch: v.optional(v.string()),
+  head_sha: v.optional(v.string()),
+  installation_id: v.optional(v.string()),
+  job_id: v.optional(v.string()),
+  job_name: v.optional(v.string()),
+  repository_full_name: v.optional(v.string()),
+  run_id: v.optional(v.string()),
+  workflow_name: v.optional(v.string()),
+});
+
+export const vSandboxRunBillingSummary = v.strictObject({
+  billed_charge_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  cost_per_unit: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  pricing_phase: v.optional(v.string()),
+  reserved_charge_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  window_count: v.pipe(
+    v.number(),
+    v.integer(),
+    v.minValue(-2147483648, "Invalid value: Expected int32 to be >= -2147483648"),
+    v.maxValue(2147483647, "Invalid value: Expected int32 to be <= 2147483647"),
+  ),
+  writeoff_charge_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+});
+
+export const vSandboxRunDurationSample = v.strictObject({
+  completed_at: v.pipe(v.string(), v.isoTimestamp()),
+  duration_ms: v.pipe(
+    v.union([v.number(), v.string(), v.bigint()]),
+    v.transform((x) => BigInt(x)),
+    v.minValue(BigInt(0)),
+    v.maxValue(BigInt(9007199254740991)),
+  ),
+  execution_id: v.string(),
+  job_name: v.optional(v.string()),
+  repository_full_name: v.optional(v.string()),
+  runner_class: v.optional(v.string()),
+  status: v.string(),
+  workflow_name: v.optional(v.string()),
+});
+
+export const vSandboxJobsAnalytics = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  by_runner_class: v.nullable(v.array(vSandboxAnalyticsBucket)),
+  by_source: v.nullable(v.array(vSandboxAnalyticsBucket)),
+  failed_runs: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  p50_duration_ms: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  p95_duration_ms: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  p99_duration_ms: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  slowest_runs: v.nullable(v.array(vSandboxRunDurationSample)),
+  succeeded_runs: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  total_runs: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  window_end: v.pipe(v.string(), v.isoTimestamp()),
+  window_start: v.pipe(v.string(), v.isoTimestamp()),
+});
+
+export const vSandboxRunLogSearchFilters = v.strictObject({
+  attempt_id: v.optional(v.string()),
+  branch: v.optional(v.string()),
+  query: v.optional(v.string()),
+  repository: v.optional(v.string()),
+  run_id: v.optional(v.string()),
+  runner_class: v.optional(v.string()),
+  source_kind: v.optional(v.string()),
+  workflow: v.optional(v.string()),
+});
+
+export const vSandboxRunLogSearchResult = v.strictObject({
+  attempt_id: v.string(),
+  chunk: v.string(),
+  created_at: v.pipe(v.string(), v.isoTimestamp()),
+  execution_id: v.string(),
+  head_branch: v.optional(v.string()),
+  job_name: v.optional(v.string()),
+  repository_full_name: v.optional(v.string()),
+  runner_class: v.optional(v.string()),
+  schedule_id: v.optional(v.string()),
+  seq: v.pipe(
+    v.number(),
+    v.integer(),
+    v.minValue(0),
+    v.maxValue(2147483647, "Invalid value: Expected int32 to be <= 2147483647"),
+  ),
+  source_kind: v.optional(v.string()),
+  stream: v.string(),
+  workflow_name: v.optional(v.string()),
+  workload_kind: v.optional(v.string()),
+});
+
+export const vSandboxRunLogSearchPage = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  filters: vSandboxRunLogSearchFilters,
+  limit: v.pipe(
+    v.number(),
+    v.integer(),
+    v.minValue(-2147483648, "Invalid value: Expected int32 to be >= -2147483648"),
+    v.maxValue(2147483647, "Invalid value: Expected int32 to be <= 2147483647"),
+  ),
+  next_cursor: v.optional(v.string()),
+  results: v.nullable(v.array(vSandboxRunLogSearchResult)),
+});
+
+export const vSandboxRunnerSizingSample = v.strictObject({
+  avg_block_write_bytes: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  avg_boot_time_us: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  avg_net_tx_bytes: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  avg_rootfs_provisioned_bytes: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  p95_duration_ms: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  run_count: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  runner_class: v.string(),
+});
+
+export const vSandboxRunnerSizingAnalytics = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  by_runner_class: v.nullable(v.array(vSandboxRunnerSizingSample)),
+  window_end: v.pipe(v.string(), v.isoTimestamp()),
+  window_start: v.pipe(v.string(), v.isoTimestamp()),
+});
+
+export const vSandboxRunsFilters = v.strictObject({
+  branch: v.optional(v.string()),
+  repository: v.optional(v.string()),
+  runner_class: v.optional(v.string()),
+  source_kind: v.optional(v.string()),
+  status: v.optional(v.string()),
+  workflow: v.optional(v.string()),
+});
+
+export const vSandboxScheduleRunMetadata = v.strictObject({
+  display_name: v.optional(v.string()),
+  schedule_id: v.optional(v.string()),
+  temporal_run_id: v.optional(v.string()),
+  temporal_workflow_id: v.optional(v.string()),
+});
+
+export const vSandboxExecutionRecord = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  actor_id: v.string(),
+  billing_summary: v.optional(vSandboxRunBillingSummary),
+  billing_windows: v.nullish(v.array(vSandboxBillingWindow)),
+  correlation_id: v.optional(v.string()),
+  created_at: v.pipe(v.string(), v.isoTimestamp()),
+  execution_id: v.string(),
+  external_provider: v.optional(v.string()),
+  external_task_id: v.optional(v.string()),
+  github: v.optional(vSandboxGitHubRunMetadata),
+  idempotency_key: v.optional(v.string()),
+  kind: v.string(),
+  latest_attempt: vSandboxAttemptRecord,
+  org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  product_id: v.string(),
+  provider: v.optional(v.string()),
+  run_command: v.optional(v.string()),
+  run_id: v.string(),
+  runner_class: v.optional(v.string()),
+  schedule: v.optional(vSandboxScheduleRunMetadata),
+  source_kind: v.optional(v.string()),
+  source_ref: v.optional(v.string()),
+  status: v.string(),
+  sticky_disk_mounts: v.nullish(v.array(vSandboxExecutionStickyDiskMount)),
+  updated_at: v.pipe(v.string(), v.isoTimestamp()),
+  workload_kind: v.optional(v.string()),
+});
+
+export const vSandboxRunsPage = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  filters: vSandboxRunsFilters,
+  limit: v.pipe(
+    v.number(),
+    v.integer(),
+    v.minValue(-2147483648, "Invalid value: Expected int32 to be >= -2147483648"),
+    v.maxValue(2147483647, "Invalid value: Expected int32 to be <= 2147483647"),
+  ),
+  next_cursor: v.optional(v.string()),
+  runs: v.nullable(v.array(vSandboxExecutionRecord)),
+});
+
+export const vSandboxStickyDiskFilters = v.strictObject({
+  repository: v.optional(v.string()),
+});
+
+export const vSandboxStickyDiskRecord = v.strictObject({
+  current_generation: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  current_source_ref: v.string(),
+  installation_id: v.string(),
+  key: v.string(),
+  key_hash: v.string(),
+  last_attempt_id: v.optional(v.string()),
+  last_completed_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  last_execution_id: v.optional(v.string()),
+  last_job_name: v.optional(v.string()),
+  last_mount_path: v.optional(v.string()),
+  last_runner_class: v.optional(v.string()),
+  last_save_state: v.optional(v.string()),
+  last_used_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  last_workflow_name: v.optional(v.string()),
+  repository_full_name: v.optional(v.string()),
+  repository_id: v.string(),
+});
+
+export const vSandboxStickyDiskResetResult = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  deleted_source_ref: v.optional(v.string()),
+  installation_id: v.string(),
+  key_hash: v.string(),
+  repository_id: v.string(),
+  reset_at: v.pipe(v.string(), v.isoTimestamp()),
+});
+
+export const vSandboxStickyDisksPage = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  disks: v.nullable(v.array(vSandboxStickyDiskRecord)),
+  filters: vSandboxStickyDiskFilters,
+  limit: v.pipe(
+    v.number(),
+    v.integer(),
+    v.minValue(-2147483648, "Invalid value: Expected int32 to be >= -2147483648"),
+    v.maxValue(2147483647, "Invalid value: Expected int32 to be <= 2147483647"),
+  ),
+  next_cursor: v.optional(v.string()),
+});
+
+export const vStickyDiskResetRequest = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  installation_id: v.string(),
+  key_hash: v.pipe(v.string(), v.minLength(1), v.maxLength(64)),
+  repository_id: v.string(),
 });
 
 export const vBillingCancelContractResponseWritable = v.strictObject({
@@ -506,6 +819,30 @@ export const vSandboxBillingPortalRequestWritable = v.strictObject({
   return_url: v.pipe(v.string(), v.maxLength(2048)),
 });
 
+export const vSandboxCachesAnalyticsWritable = v.strictObject({
+  by_repository: v.nullable(v.array(vSandboxAnalyticsBucket)),
+  checkout_hits: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  checkout_misses: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  checkout_requests: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  sticky_commits: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  sticky_restore_hits: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  sticky_restore_misses: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  sticky_save_requests: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  window_end: v.pipe(v.string(), v.isoTimestamp()),
+  window_start: v.pipe(v.string(), v.isoTimestamp()),
+});
+
+export const vSandboxCostsAnalyticsWritable = v.strictObject({
+  billed_charge_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  by_repository: v.nullable(v.array(vSandboxAnalyticsBucket)),
+  by_runner_class: v.nullable(v.array(vSandboxAnalyticsBucket)),
+  by_source: v.nullable(v.array(vSandboxAnalyticsBucket)),
+  reserved_charge_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  window_end: v.pipe(v.string(), v.isoTimestamp()),
+  window_start: v.pipe(v.string(), v.isoTimestamp()),
+  writeoff_charge_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+});
+
 export const vSandboxExecutionLogsWritable = v.strictObject({
   attempt_id: v.string(),
   execution_id: v.string(),
@@ -514,12 +851,14 @@ export const vSandboxExecutionLogsWritable = v.strictObject({
 
 export const vSandboxExecutionRecordWritable = v.strictObject({
   actor_id: v.string(),
+  billing_summary: v.optional(vSandboxRunBillingSummary),
   billing_windows: v.nullish(v.array(vSandboxBillingWindow)),
   correlation_id: v.optional(v.string()),
   created_at: v.pipe(v.string(), v.isoTimestamp()),
   execution_id: v.string(),
   external_provider: v.optional(v.string()),
   external_task_id: v.optional(v.string()),
+  github: v.optional(vSandboxGitHubRunMetadata),
   idempotency_key: v.optional(v.string()),
   kind: v.string(),
   latest_attempt: vSandboxAttemptRecord,
@@ -527,10 +866,13 @@ export const vSandboxExecutionRecordWritable = v.strictObject({
   product_id: v.string(),
   provider: v.optional(v.string()),
   run_command: v.optional(v.string()),
+  run_id: v.string(),
   runner_class: v.optional(v.string()),
+  schedule: v.optional(vSandboxScheduleRunMetadata),
   source_kind: v.optional(v.string()),
   source_ref: v.optional(v.string()),
   status: v.string(),
+  sticky_disk_mounts: v.nullish(v.array(vSandboxExecutionStickyDiskMount)),
   updated_at: v.pipe(v.string(), v.isoTimestamp()),
   workload_kind: v.optional(v.string()),
 });
@@ -580,6 +922,76 @@ export const vSandboxGitHubInstallationConnectResponseWritable = v.strictObject(
   expires_at: v.pipe(v.string(), v.isoTimestamp()),
   setup_url: v.string(),
   state: v.string(),
+});
+
+export const vSandboxJobsAnalyticsWritable = v.strictObject({
+  by_runner_class: v.nullable(v.array(vSandboxAnalyticsBucket)),
+  by_source: v.nullable(v.array(vSandboxAnalyticsBucket)),
+  failed_runs: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  p50_duration_ms: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  p95_duration_ms: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  p99_duration_ms: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  slowest_runs: v.nullable(v.array(vSandboxRunDurationSample)),
+  succeeded_runs: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  total_runs: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  window_end: v.pipe(v.string(), v.isoTimestamp()),
+  window_start: v.pipe(v.string(), v.isoTimestamp()),
+});
+
+export const vSandboxRunLogSearchPageWritable = v.strictObject({
+  filters: vSandboxRunLogSearchFilters,
+  limit: v.pipe(
+    v.number(),
+    v.integer(),
+    v.minValue(-2147483648, "Invalid value: Expected int32 to be >= -2147483648"),
+    v.maxValue(2147483647, "Invalid value: Expected int32 to be <= 2147483647"),
+  ),
+  next_cursor: v.optional(v.string()),
+  results: v.nullable(v.array(vSandboxRunLogSearchResult)),
+});
+
+export const vSandboxRunnerSizingAnalyticsWritable = v.strictObject({
+  by_runner_class: v.nullable(v.array(vSandboxRunnerSizingSample)),
+  window_end: v.pipe(v.string(), v.isoTimestamp()),
+  window_start: v.pipe(v.string(), v.isoTimestamp()),
+});
+
+export const vSandboxRunsPageWritable = v.strictObject({
+  filters: vSandboxRunsFilters,
+  limit: v.pipe(
+    v.number(),
+    v.integer(),
+    v.minValue(-2147483648, "Invalid value: Expected int32 to be >= -2147483648"),
+    v.maxValue(2147483647, "Invalid value: Expected int32 to be <= 2147483647"),
+  ),
+  next_cursor: v.optional(v.string()),
+  runs: v.nullable(v.array(vSandboxExecutionRecordWritable)),
+});
+
+export const vSandboxStickyDiskResetResultWritable = v.strictObject({
+  deleted_source_ref: v.optional(v.string()),
+  installation_id: v.string(),
+  key_hash: v.string(),
+  repository_id: v.string(),
+  reset_at: v.pipe(v.string(), v.isoTimestamp()),
+});
+
+export const vSandboxStickyDisksPageWritable = v.strictObject({
+  disks: v.nullable(v.array(vSandboxStickyDiskRecord)),
+  filters: vSandboxStickyDiskFilters,
+  limit: v.pipe(
+    v.number(),
+    v.integer(),
+    v.minValue(-2147483648, "Invalid value: Expected int32 to be >= -2147483648"),
+    v.maxValue(2147483647, "Invalid value: Expected int32 to be <= 2147483647"),
+  ),
+  next_cursor: v.optional(v.string()),
+});
+
+export const vStickyDiskResetRequestWritable = v.strictObject({
+  installation_id: v.string(),
+  key_hash: v.pipe(v.string(), v.minLength(1), v.maxLength(64)),
+  repository_id: v.string(),
 });
 
 export const vCreateBillingCheckoutBody = vSandboxBillingCheckoutRequestWritable;
@@ -747,3 +1159,129 @@ export const vBeginGithubInstallationHeaders = v.object({
  * Created
  */
 export const vBeginGithubInstallationResponse = vSandboxGitHubInstallationConnectResponse;
+
+export const vGetCachesAnalyticsQuery = v.object({
+  start: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  end: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+});
+
+/**
+ * OK
+ */
+export const vGetCachesAnalyticsResponse = vSandboxCachesAnalytics;
+
+export const vGetCostsAnalyticsQuery = v.object({
+  start: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  end: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+});
+
+/**
+ * OK
+ */
+export const vGetCostsAnalyticsResponse = vSandboxCostsAnalytics;
+
+export const vGetJobsAnalyticsQuery = v.object({
+  start: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  end: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+});
+
+/**
+ * OK
+ */
+export const vGetJobsAnalyticsResponse = vSandboxJobsAnalytics;
+
+export const vGetRunnerSizingAnalyticsQuery = v.object({
+  start: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  end: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+});
+
+/**
+ * OK
+ */
+export const vGetRunnerSizingAnalyticsResponse = vSandboxRunnerSizingAnalytics;
+
+export const vSearchRunLogsQuery = v.object({
+  limit: v.optional(
+    v.pipe(
+      v.union([v.number(), v.string(), v.bigint()]),
+      v.transform((x) => BigInt(x)),
+      v.minValue(BigInt(1)),
+      v.maxValue(BigInt(500)),
+    ),
+  ),
+  cursor: v.optional(v.pipe(v.string(), v.maxLength(160))),
+  query: v.optional(v.pipe(v.string(), v.maxLength(2048))),
+  run_id: v.optional(v.string()),
+  attempt_id: v.optional(v.string()),
+  source_kind: v.optional(v.pipe(v.string(), v.maxLength(64))),
+  repository: v.optional(v.pipe(v.string(), v.maxLength(255))),
+  workflow: v.optional(v.pipe(v.string(), v.maxLength(255))),
+  branch: v.optional(v.pipe(v.string(), v.maxLength(255))),
+  runner_class: v.optional(v.pipe(v.string(), v.maxLength(255))),
+});
+
+/**
+ * OK
+ */
+export const vSearchRunLogsResponse = vSandboxRunLogSearchPage;
+
+export const vListRunsQuery = v.object({
+  limit: v.optional(
+    v.pipe(
+      v.union([v.number(), v.string(), v.bigint()]),
+      v.transform((x) => BigInt(x)),
+      v.minValue(BigInt(1)),
+      v.maxValue(BigInt(200)),
+    ),
+  ),
+  cursor: v.optional(v.pipe(v.string(), v.maxLength(128))),
+  source_kind: v.optional(v.pipe(v.string(), v.maxLength(64))),
+  status: v.optional(v.pipe(v.string(), v.maxLength(64))),
+  repository: v.optional(v.pipe(v.string(), v.maxLength(255))),
+  workflow: v.optional(v.pipe(v.string(), v.maxLength(255))),
+  branch: v.optional(v.pipe(v.string(), v.maxLength(255))),
+  runner_class: v.optional(v.pipe(v.string(), v.maxLength(255))),
+});
+
+/**
+ * OK
+ */
+export const vListRunsResponse = vSandboxRunsPage;
+
+export const vGetRunPath = v.object({
+  run_id: v.string(),
+});
+
+/**
+ * OK
+ */
+export const vGetRunResponse = vSandboxExecutionRecord;
+
+export const vListStickyDisksQuery = v.object({
+  limit: v.optional(
+    v.pipe(
+      v.union([v.number(), v.string(), v.bigint()]),
+      v.transform((x) => BigInt(x)),
+      v.minValue(BigInt(1)),
+      v.maxValue(BigInt(500)),
+    ),
+  ),
+  cursor: v.optional(v.pipe(v.string(), v.maxLength(160))),
+  repository: v.optional(v.pipe(v.string(), v.maxLength(255))),
+});
+
+/**
+ * OK
+ */
+export const vListStickyDisksResponse = vSandboxStickyDisksPage;
+
+export const vResetStickyDiskBody = vStickyDiskResetRequestWritable;
+
+export const vResetStickyDiskHeaders = v.object({
+  "Idempotency-Key": v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+});
+
+/**
+ * OK
+ */
+export const vResetStickyDiskResponse = vSandboxStickyDiskResetResult;

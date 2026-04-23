@@ -587,8 +587,9 @@
           - project_id: "{{ seed_system_sandbox_project_id }}"
             granted_organization_id: "{{ seed_system_orgs.acme.organization_id }}"
             role_keys:
-              - sandbox_org_admin
-              - sandbox_org_member
+              - owner
+              - admin
+              - member
             existing_grants: "{{ seed_system_sandbox_project_grants }}"
           - project_id: "{{ seed_system_identity_project_id }}"
             granted_organization_id: "{{ seed_system_orgs.acme.organization_id }}"
@@ -629,7 +630,7 @@
           - user_id: "{{ seed_system_users_state.ceo.user_id }}"
             organization_id: "{{ seed_system_orgs.platform.organization_id }}"
             project_id: "{{ seed_system_sandbox_project_id }}"
-            role_keys: [sandbox_org_admin]
+            role_keys: [owner]
           - user_id: "{{ seed_system_users_state.ceo.user_id }}"
             organization_id: "{{ seed_system_orgs.platform.organization_id }}"
             project_id: "{{ seed_system_identity_project_id }}"
@@ -649,7 +650,7 @@
           - user_id: "{{ seed_system_users_state.platform_agent.user_id }}"
             organization_id: "{{ seed_system_orgs.platform.organization_id }}"
             project_id: "{{ seed_system_sandbox_project_id }}"
-            role_keys: [sandbox_org_admin]
+            role_keys: [admin]
           - user_id: "{{ seed_system_users_state.platform_agent.user_id }}"
             organization_id: "{{ seed_system_orgs.platform.organization_id }}"
             project_id: "{{ seed_system_identity_project_id }}"
@@ -669,7 +670,7 @@
           - user_id: "{{ seed_system_users_state.acme_admin.user_id }}"
             organization_id: "{{ seed_system_orgs.acme.organization_id }}"
             project_id: "{{ seed_system_sandbox_project_id }}"
-            role_keys: [sandbox_org_admin]
+            role_keys: [owner]
           - user_id: "{{ seed_system_users_state.acme_admin.user_id }}"
             organization_id: "{{ seed_system_orgs.acme.organization_id }}"
             project_id: "{{ seed_system_identity_project_id }}"
@@ -681,7 +682,7 @@
           - user_id: "{{ seed_system_users_state.acme_user.user_id }}"
             organization_id: "{{ seed_system_orgs.acme.organization_id }}"
             project_id: "{{ seed_system_sandbox_project_id }}"
-            role_keys: [sandbox_org_member]
+            role_keys: [member]
           - user_id: "{{ seed_system_users_state.acme_user.user_id }}"
             organization_id: "{{ seed_system_orgs.acme.organization_id }}"
             project_id: "{{ seed_system_identity_project_id }}"
@@ -693,7 +694,7 @@
           - user_id: "{{ seed_system_machine_users_state.platform_admin.user_id }}"
             organization_id: "{{ seed_system_orgs.platform.organization_id }}"
             project_id: "{{ seed_system_sandbox_project_id }}"
-            role_keys: [sandbox_org_admin]
+            role_keys: [owner]
           - user_id: "{{ seed_system_machine_users_state.platform_admin.user_id }}"
             organization_id: "{{ seed_system_orgs.platform.organization_id }}"
             project_id: "{{ seed_system_identity_project_id }}"
@@ -713,7 +714,7 @@
           - user_id: "{{ seed_system_machine_users_state.acme_admin.user_id }}"
             organization_id: "{{ seed_system_orgs.acme.organization_id }}"
             project_id: "{{ seed_system_sandbox_project_id }}"
-            role_keys: [sandbox_org_admin]
+            role_keys: [admin]
           - user_id: "{{ seed_system_machine_users_state.acme_admin.user_id }}"
             organization_id: "{{ seed_system_orgs.acme.organization_id }}"
             project_id: "{{ seed_system_identity_project_id }}"
@@ -725,7 +726,7 @@
           - user_id: "{{ seed_system_machine_users_state.acme_member.user_id }}"
             organization_id: "{{ seed_system_orgs.acme.organization_id }}"
             project_id: "{{ seed_system_sandbox_project_id }}"
-            role_keys: [sandbox_org_member]
+            role_keys: [member]
           - user_id: "{{ seed_system_machine_users_state.acme_member.user_id }}"
             organization_id: "{{ seed_system_orgs.acme.organization_id }}"
             project_id: "{{ seed_system_identity_project_id }}"
@@ -1534,7 +1535,7 @@
             body:
               projectId: "{{ seed_system_sandbox_project_id }}"
               roleKeys:
-                - sandbox_org_admin
+                - admin
             status_code: [200, 409]
           no_log: true
 

@@ -159,13 +159,13 @@ poll_clickhouse "
     AND Timestamp > now() - INTERVAL 10 MINUTE
 " "landing.hero_view.fired" "1"
 
-# 4. Newsroom index emits the full span family the canary tab/card/subscribe
-#    interactions exercise. Four distinct SpanNames must land:
-#    newsroom.index.view, newsroom.index.tab_change,
-#    newsroom.index.card_click, newsroom.index.subscribe_submit.
+# 4. Newsroom index emits the full span family the canary exercises. Two
+#    distinct SpanNames must land: newsroom.index.view (mount-time) and
+#    newsroom.index.bulletin_click (the one Flare giant bulletin on the
+#    page, clicked through to the article route).
 #
-#    The canary spec (apps/company/e2e/newsroom.spec.ts) drives each of these
-#    interactions. If any SpanName is absent, either the instrumentation
+#    The canary spec (apps/company/e2e/canary.spec.ts, step #8) drives the
+#    bulletin click. If either SpanName is absent, either the instrumentation
 #    regressed or the BatchSpanProcessor missed its flush window — both
 #    treated as a hard failure, per the output contract's "real ClickHouse
 #    traces are the only admissable proof of task completion" rule.
@@ -175,12 +175,10 @@ poll_clickhouse "
   WHERE ServiceName = 'company-web'
     AND SpanName IN (
       'newsroom.index.view',
-      'newsroom.index.tab_change',
-      'newsroom.index.card_click',
-      'newsroom.index.subscribe_submit'
+      'newsroom.index.bulletin_click'
     )
     AND Timestamp > now() - INTERVAL 10 MINUTE
-" "newsroom.index.span_families" "4"
+" "newsroom.index.span_families" "2"
 
 # 5. Newsroom article view for the seeded canonical slug. Asserts both that
 #    the route was visited and that the article-level attributes landed,

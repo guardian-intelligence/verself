@@ -94,4 +94,3 @@ export function WingsChip({ title, ...rest }: WingsChipProps) {
     </svg>
   );
 }
-

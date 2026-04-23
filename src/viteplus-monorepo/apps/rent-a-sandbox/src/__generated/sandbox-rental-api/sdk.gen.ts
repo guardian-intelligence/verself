@@ -31,6 +31,12 @@ import type {
   GetBillingStatementData,
   GetBillingStatementErrors,
   GetBillingStatementResponses,
+  GetCachesAnalyticsData,
+  GetCachesAnalyticsErrors,
+  GetCachesAnalyticsResponses,
+  GetCostsAnalyticsData,
+  GetCostsAnalyticsErrors,
+  GetCostsAnalyticsResponses,
   GetExecutionData,
   GetExecutionErrors,
   GetExecutionLogsData,
@@ -40,6 +46,15 @@ import type {
   GetExecutionScheduleData,
   GetExecutionScheduleErrors,
   GetExecutionScheduleResponses,
+  GetJobsAnalyticsData,
+  GetJobsAnalyticsErrors,
+  GetJobsAnalyticsResponses,
+  GetRunData,
+  GetRunErrors,
+  GetRunnerSizingAnalyticsData,
+  GetRunnerSizingAnalyticsErrors,
+  GetRunnerSizingAnalyticsResponses,
+  GetRunResponses,
   ListBillingContractsData,
   ListBillingContractsErrors,
   ListBillingContractsResponses,
@@ -52,12 +67,24 @@ import type {
   ListGithubInstallationsData,
   ListGithubInstallationsErrors,
   ListGithubInstallationsResponses,
+  ListRunsData,
+  ListRunsErrors,
+  ListRunsResponses,
+  ListStickyDisksData,
+  ListStickyDisksErrors,
+  ListStickyDisksResponses,
   PauseExecutionScheduleData,
   PauseExecutionScheduleErrors,
   PauseExecutionScheduleResponses,
+  ResetStickyDiskData,
+  ResetStickyDiskErrors,
+  ResetStickyDiskResponses,
   ResumeExecutionScheduleData,
   ResumeExecutionScheduleErrors,
   ResumeExecutionScheduleResponses,
+  SearchRunLogsData,
+  SearchRunLogsErrors,
+  SearchRunLogsResponses,
 } from "./types.gen.js";
 
 export type Options<
@@ -372,4 +399,128 @@ export const beginGithubInstallation = <ThrowOnError extends boolean = false>(
     security: [{ scheme: "bearer", type: "http" }],
     url: "/api/v1/github/installations/connect",
     ...options,
+  });
+
+/**
+ * Get checkout and sticky disk cache analytics
+ */
+export const getCachesAnalytics = <ThrowOnError extends boolean = false>(
+  options?: Options<GetCachesAnalyticsData, ThrowOnError>,
+) =>
+  (options?.client ?? client).get<
+    GetCachesAnalyticsResponses,
+    GetCachesAnalyticsErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/run-analytics/caches",
+    ...options,
+  });
+
+/**
+ * Get run cost analytics
+ */
+export const getCostsAnalytics = <ThrowOnError extends boolean = false>(
+  options?: Options<GetCostsAnalyticsData, ThrowOnError>,
+) =>
+  (options?.client ?? client).get<
+    GetCostsAnalyticsResponses,
+    GetCostsAnalyticsErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/run-analytics/costs",
+    ...options,
+  });
+
+/**
+ * Get run duration and success analytics
+ */
+export const getJobsAnalytics = <ThrowOnError extends boolean = false>(
+  options?: Options<GetJobsAnalyticsData, ThrowOnError>,
+) =>
+  (options?.client ?? client).get<GetJobsAnalyticsResponses, GetJobsAnalyticsErrors, ThrowOnError>({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/run-analytics/jobs",
+    ...options,
+  });
+
+/**
+ * Get runner sizing analytics
+ */
+export const getRunnerSizingAnalytics = <ThrowOnError extends boolean = false>(
+  options?: Options<GetRunnerSizingAnalyticsData, ThrowOnError>,
+) =>
+  (options?.client ?? client).get<
+    GetRunnerSizingAnalyticsResponses,
+    GetRunnerSizingAnalyticsErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/run-analytics/runner-sizing",
+    ...options,
+  });
+
+/**
+ * Search logs across CI and scheduled runs
+ */
+export const searchRunLogs = <ThrowOnError extends boolean = false>(
+  options?: Options<SearchRunLogsData, ThrowOnError>,
+) =>
+  (options?.client ?? client).get<SearchRunLogsResponses, SearchRunLogsErrors, ThrowOnError>({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/run-logs/search",
+    ...options,
+  });
+
+/**
+ * List CI and scheduled runs for the current org
+ */
+export const listRuns = <ThrowOnError extends boolean = false>(
+  options?: Options<ListRunsData, ThrowOnError>,
+) =>
+  (options?.client ?? client).get<ListRunsResponses, ListRunsErrors, ThrowOnError>({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/runs",
+    ...options,
+  });
+
+/**
+ * Get a CI or scheduled run
+ */
+export const getRun = <ThrowOnError extends boolean = false>(
+  options: Options<GetRunData, ThrowOnError>,
+) =>
+  (options.client ?? client).get<GetRunResponses, GetRunErrors, ThrowOnError>({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/runs/{run_id}",
+    ...options,
+  });
+
+/**
+ * List sticky disk inventory for the current org
+ */
+export const listStickyDisks = <ThrowOnError extends boolean = false>(
+  options?: Options<ListStickyDisksData, ThrowOnError>,
+) =>
+  (options?.client ?? client).get<ListStickyDisksResponses, ListStickyDisksErrors, ThrowOnError>({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/sticky-disks",
+    ...options,
+  });
+
+/**
+ * Reset a sticky disk generation so future runs cold-start
+ */
+export const resetStickyDisk = <ThrowOnError extends boolean = false>(
+  options: Options<ResetStickyDiskData, ThrowOnError>,
+) =>
+  (options.client ?? client).post<ResetStickyDiskResponses, ResetStickyDiskErrors, ThrowOnError>({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/sticky-disks/reset",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
   });

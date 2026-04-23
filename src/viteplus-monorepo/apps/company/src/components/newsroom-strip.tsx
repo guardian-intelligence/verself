@@ -1,10 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { useEffect } from "react";
-import {
-  currentNewsroomItem,
-  newsroomCtaHref,
-  newsroomCtaLabel,
-} from "~/content/newsroom";
+import { currentNewsroomItem, newsroomCtaHref, newsroomCtaLabel } from "~/content/newsroom";
 import { emitSpan } from "~/lib/telemetry/browser";
 
 // NewsroomStrip — a bounded Flare broadcast band shown on the homepage (and

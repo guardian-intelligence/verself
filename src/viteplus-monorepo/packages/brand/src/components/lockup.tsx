@@ -3,10 +3,13 @@ import { WingsArgent, WingsChip, WingsEmboss } from "./wings";
 
 export type LockupSize = "sm" | "md" | "lg";
 
-// MARK_HEIGHT_PX is the Lockup's primary sizing number. With the canonical
-// tight viewBox (140×140), mark-h is both width and height. With the cropped
-// viewBox (≈102×121) used by the Argent variant below, mark-h sets the SVG
-// width; the height follows the glyph aspect ratio (≈ mark-h × 1.182).
+// MARK_HEIGHT_PX is the Lockup's primary sizing number. It is the visible-ink
+// height of the mark — the wings silhouette on argent, the iron tile on chip,
+// the medallion disc on emboss — not the SVG bounding box. Every variant
+// rescales its SVG so the visible ink lands at exactly this height, which is
+// the only way to keep Workshop / Newsroom / Letters vertically consistent
+// against the same wordmark. The VARIANT_BOX table below declares what each
+// viewBox contains and the component computes the SVG render box from there.
 const MARK_HEIGHT_PX: Record<LockupSize, number> = {
   sm: 32,
   md: 52,
@@ -30,6 +33,20 @@ const WORDMARK_TRACKING: Record<LockupSize, string> = {
   lg: "-0.025em",
 };
 
+// Fraunces at opsz 144 — cap-height ÷ em-square. Measured once from the font
+// metrics; used to derive optical gap from cap-height without measuring the
+// rendered glyph at runtime. Any change to the display face needs this
+// updated to match.
+const FRAUNCES_144_CAP_RATIO = 0.72;
+
+// Optical gap between mark-ink-right-edge and wordmark-ink-left-edge, as a
+// fraction of wordmark cap-height. The classic logotype rule: the gap reads
+// like the counter of the lead capital — close enough to lock the mark and
+// word into one unit, far enough to resolve as two. 0.42 lands on the
+// loose-end of that range so the mark has air to breathe against a serif
+// wordmark; tighten toward 0.35 if we ever ship a sans wordmark.
+const GAP_TO_CAP_RATIO = 0.42;
+
 // Three variants, one per treatment:
 //   argent  — bare cropped wings (Workshop, on Ink, and any photography/scrim
 //             ground where the canvas itself carries the clearspace).
@@ -39,6 +56,64 @@ const WORDMARK_TRACKING: Record<LockupSize, string> = {
 // A chip whose tile colour matches its ground is just padded bare wings; in a
 // lockup the wordmark supplies the clearspace, so we never ship one.
 export type LockupVariant = "argent" | "chip" | "emboss";
+
+// Per-variant SVG geometry, declared in units of markH.
+//
+//   inkScale     — visible-ink height as a fraction of markH. Contained
+//                  variants (chip, emboss) use markH as their container
+//                  footprint: inkScale 1. Naked variants (argent) must live
+//                  inside the wordmark's cap-height — a container absorbs
+//                  optical mass, bare ink does not — so they downscale.
+//   svgH         — rendered SVG height as a fraction of inkHeight. > 1 when
+//                  the viewBox carries vertical padding past the visible ink
+//                  (emboss's disc inside a square box). 1 when the visible
+//                  ink fills the box.
+//   svgW         — rendered SVG width as a fraction of inkHeight. Glyph-tight
+//                  cropped wings are taller than they are wide, so argent
+//                  renders narrower; chip/emboss are square.
+//   rightBleed   — invisible horizontal padding between the visible ink's
+//                  right edge and the SVG bounding box's right edge, as a
+//                  fraction of inkHeight. The flex gap is measured against
+//                  the SVG box edge, so we subtract this so the optical
+//                  ink-to-wordmark gap stays constant across variants.
+//   markNudgeY   — absolute pixels to translate the mark vertically. Line-box
+//                  centering drifts above the cap-midline on wordmarks with
+//                  no descenders; this is the per-variant residual after the
+//                  wordmark's own translateY correction.
+//
+// Contained and bare variants no longer share a visible-ink vertical footprint
+// at a given markH — the bare variant is smaller, because 32px of ink weighs
+// more than 32px of tile-around-ink. They share *optical weight* instead,
+// which is the honest thing for a lockup family to share.
+const VARIANT_BOX: Record<
+  LockupVariant,
+  { inkScale: number; svgH: number; svgW: number; rightBleed: number; markNudgeY: number }
+> = {
+  // Glyph-tight cropped viewBox: 102.174 × 120.823. The visible wings are the
+  // SVG box. inkScale 0.68 lands the wing ink at Fraunces cap-height with a
+  // small optical overshoot, given WORDMARK_RATIO 0.9 and
+  // FRAUNCES_144_CAP_RATIO 0.72 (0.9 × 0.72 ≈ 0.648; +~5% so the wing does
+  // not visually sink beneath the cap line). Revisit if either ratio changes
+  // or the display face is swapped.
+  argent: { inkScale: 0.68, svgH: 1, svgW: 102.174 / 120.823, rightBleed: 0, markNudgeY: 0 },
+  // Iron rounded rect fills the 292 viewBox to the pixel (the 291.14 × 291.14
+  // rect nested in a 292 × 292 viewBox rounds to a zero bleed in practice).
+  chip: { inkScale: 1, svgH: 1, svgW: 1, rightBleed: 0, markNudgeY: 0 },
+  // Circular medallion: r=126 inside a 292 viewBox, leaves (292-252)/2 = 20
+  // units of invisible padding on each side. We render the SVG box 292/252
+  // larger than markH so the disc itself is markH across; the remaining
+  // padding flows out as rightBleed. markNudgeY 1 corrects the residual
+  // above-cap-midline float that line-box centering leaves behind — the
+  // medallion's size amplifies any offset, so it is the variant that needs
+  // the correction most.
+  emboss: {
+    inkScale: 1,
+    svgH: 292 / 252,
+    svgW: 292 / 252,
+    rightBleed: (292 - 252) / 2 / 252,
+    markNudgeY: 1,
+  },
+};
 
 export interface LockupProps {
   readonly size?: LockupSize;
@@ -50,16 +125,20 @@ export interface LockupProps {
   readonly title?: string;
 }
 
-// Lockup — mark + wordmark, tuned in the alignment playground so the wordmark
-// bottom-aligns with the lower-wing tip. Argent uses the glyph-cropped viewBox
-// so the SVG bounding box equals the visible ink; chip/emboss keep their
-// padded viewBox because the tile/medallion is itself visible on its ground
-// and IS the edge the eye reads. Gap is clamp(8px, 0.28·mark-h, 18px) —
-// proportional to the visible mark, with an 8px floor so sm lockups still
-// read as a pair and an 18px ceiling so lg doesn't fly apart. This formula
-// only produces consistent optical spacing because every shipped variant has
-// its visible ink filling the SVG box; don't introduce a variant that pads
-// the bounding box with invisible-on-ground fill or the gap drifts larger.
+// Lockup — mark + wordmark, sized so the three variants share optical weight
+// against the wordmark. Contained variants (chip, emboss) land their container
+// at markH; bare variants (argent) land their ink at cap-height, because ink
+// without a container weighs more than the same pixel count of container
+// around ink. markH is the nominal unit; each variant's inkScale resolves it
+// to the variant's actual visible-ink height.
+//
+// Both axes of the layout are typographic, not geometric:
+//   • markH is the nominal unit. inkHeight = markH × inkScale is the visible
+//     ink; the SVG box is derived from there.
+//   • The flex gap is derived from the wordmark's cap-height minus each
+//     variant's right-side invisible bleed. Changing the mark SVG container
+//     (tight viewBox, padded viewBox, different padding ratio) never silently
+//     widens or lengthens the lockup — the gap stays constant.
 export function Lockup({
   size = "md",
   variant = "argent",
@@ -72,27 +151,40 @@ export function Lockup({
   const markH = MARK_HEIGHT_PX[size];
   const ratio = WORDMARK_RATIO[size];
   const tracking = WORDMARK_TRACKING[size];
-  const useCropped = variant === "argent";
   const Mark = variant === "chip" ? WingsChip : variant === "emboss" ? WingsEmboss : WingsArgent;
+  const box = VARIANT_BOX[variant];
+
+  const inkHeight = markH * box.inkScale;
+  const svgHeightPx = inkHeight * box.svgH;
+  const svgWidthPx = inkHeight * box.svgW;
+  const rightBleedPx = inkHeight * box.rightBleed;
+
+  const wordmarkFontSize = markH * ratio;
+  const capHeight = wordmarkFontSize * FRAUNCES_144_CAP_RATIO;
+  const opticalGap = capHeight * GAP_TO_CAP_RATIO;
+  // 6px floor keeps the pair locked at the smallest sizes where rounding
+  // error and coarse-pixel rasterization would otherwise fuse the glyphs.
+  const gapPx = Math.max(6, opticalGap - rightBleedPx);
 
   const lockupStyle: CSSProperties = {
     display: "inline-flex",
     alignItems: "center",
-    gap: `clamp(8px, calc(${markH}px * 0.28), 18px)`,
+    gap: `${gapPx}px`,
     padding: "8px 0",
     color: wordmarkColor,
     ...style,
   };
 
-  // When cropped, the SVG is wider-than-square (markH × ~markH·1.18) and the
-  // height must be auto so the aspect ratio holds.
-  const markStyle: CSSProperties = useCropped
-    ? { width: `${markH}px`, height: "auto", flex: `0 0 ${markH}px` }
-    : { width: `${markH}px`, height: `${markH}px`, flex: `0 0 ${markH}px` };
+  const markStyle: CSSProperties = {
+    width: `${svgWidthPx}px`,
+    height: `${svgHeightPx}px`,
+    flex: `0 0 ${svgWidthPx}px`,
+    ...(box.markNudgeY ? { transform: `translateY(${box.markNudgeY}px)` } : {}),
+  };
 
   return (
     <span className={className} style={lockupStyle} data-variant={variant}>
-      {useCropped ? (
+      {variant === "argent" ? (
         <WingsArgent title={title} cropped style={markStyle} />
       ) : (
         <Mark title={title} style={markStyle} />
@@ -105,7 +197,7 @@ export function Lockup({
           fontFamily: "'Fraunces', Georgia, serif",
           fontVariationSettings: '"opsz" 144, "SOFT" 30',
           fontWeight: 400,
-          fontSize: `${markH * ratio}px`,
+          fontSize: `${wordmarkFontSize}px`,
           lineHeight: 1,
           letterSpacing: tracking,
           // 1px optical nudge: flex-end aligns the text-box bottom, but the

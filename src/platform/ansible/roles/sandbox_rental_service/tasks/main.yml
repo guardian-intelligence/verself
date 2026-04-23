@@ -270,11 +270,14 @@
     zitadel_project_roles_admin_pat: "{{ sandbox_rental_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
     zitadel_project_roles_project_id: "{{ sandbox_rental_service_auth_audience }}"
     zitadel_project_roles_definitions:
-      - key: sandbox_org_admin
-        display_name: Sandbox Org Admin
+      - key: owner
+        display_name: Owner
         group: sandbox
-      - key: sandbox_org_member
-        display_name: Sandbox Org Member
+      - key: admin
+        display_name: Admin
+        group: sandbox
+      - key: member
+        display_name: Member
         group: sandbox
   when: sandbox_rental_service_auth_audience | default('', true) | length > 0
 

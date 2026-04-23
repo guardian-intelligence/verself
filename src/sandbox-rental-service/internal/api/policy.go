@@ -38,8 +38,9 @@ const (
 	permissionBillingRead     permission = "billing:read"
 	permissionBillingCheckout permission = "billing:checkout"
 
-	roleSandboxOrgAdmin  = "sandbox_org_admin"
-	roleSandboxOrgMember = "sandbox_org_member"
+	roleOwner  = "owner"
+	roleAdmin  = "admin"
+	roleMember = "member"
 
 	idempotencyRequestBodyKey   = "request_body_idempotency_key"
 	idempotencyHeaderKey        = "idempotency_key_header"
@@ -76,21 +77,24 @@ func secured(op huma.Operation, policy operationPolicy) securedOperation {
 	return securedOperation{Operation: op, Policy: policy}
 }
 
+var fullRolePermissions = []permission{
+	permissionGitHubRead,
+	permissionGitHubWrite,
+	permissionExecutionRead,
+	permissionScheduleRead,
+	permissionScheduleWrite,
+	permissionLogsRead,
+	permissionAnalyticsRead,
+	permissionStickyDiskRead,
+	permissionStickyDiskWrite,
+	permissionBillingRead,
+	permissionBillingCheckout,
+}
+
 var rolePermissionBundles = map[string][]permission{
-	roleSandboxOrgAdmin: {
-		permissionGitHubRead,
-		permissionGitHubWrite,
-		permissionExecutionRead,
-		permissionScheduleRead,
-		permissionScheduleWrite,
-		permissionLogsRead,
-		permissionAnalyticsRead,
-		permissionStickyDiskRead,
-		permissionStickyDiskWrite,
-		permissionBillingRead,
-		permissionBillingCheckout,
-	},
-	roleSandboxOrgMember: {
+	roleOwner: fullRolePermissions,
+	roleAdmin: fullRolePermissions,
+	roleMember: {
 		permissionExecutionRead,
 		permissionScheduleRead,
 		permissionScheduleWrite,

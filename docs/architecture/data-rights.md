@@ -1,0 +1,249 @@
+# Data Rights
+
+Forge Metal treats enterprise export and data-subject rights as product
+capabilities, not support scripts. Every service that stores customer,
+organization, user, or actor data implements the same service-owned data-rights
+contract; `governance-service` coordinates requests and records evidence.
+
+## Boundary
+
+`governance-service` owns request intake, authority checks, case state,
+artifact assembly, manifest signing, customer-visible request status, and the
+immutable audit trail.
+
+Each product service owns its own data-rights handlers:
+
+- organization export for enterprise/customer account export;
+- subject export for data-subject access and portability;
+- subject erasure/tombstone for "delete my data" requests;
+- a service-local manifest declaring the tables, fields, retention references,
+  export files, erasure behavior, and known exemptions.
+
+The owner service decides what can be exported, deleted, tombstoned, retained,
+or denied because only the owner service understands its schema, retention
+policy, business semantics, and security constraints.
+
+## Request Types
+
+Organization export:
+
+```text
+export everything this organization is entitled to receive
+```
+
+The output is an async `tar.gz` artifact with `manifest.json`, JSON Lines for
+machine-readable records, CSV where business users expect spreadsheets, PDFs
+where source systems produce canonical documents, and hashes for every file.
+
+Subject export:
+
+```text
+export personal data about this natural person
+```
+
+The output is organized by service and purpose. It must avoid disclosing other
+people's data, trade secrets, security-sensitive internals, or customer-owned
+processor data that belongs to a different controller.
+
+Subject erasure:
+
+```text
+delete or tombstone personal data about this natural person when no stronger
+retention basis applies
+```
+
+Erasure is not a global `DELETE FROM`. Billing records, tax documents,
+governance audit, legal holds, fraud/security evidence, signed document
+evidence, and processor data controlled by a customer may be retained under a
+separate basis. Retained records must be reported in the completion manifest
+with the retention reason.
+
+## Service Contract
+
+Each service exposes internal SPIFFE mTLS routes. Bodies include
+`request_id`, `requested_at`, `requested_by`, trace context, and the target
+`org_id` or `subject_id`.
+
+```text
+POST /internal/v1/data-rights/org-export
+POST /internal/v1/data-rights/subject-export
+POST /internal/v1/data-rights/subject-erasure
+GET  /internal/v1/data-rights/requests/{request_id}
+```
+
+Responses are service-local result manifests:
+
+```json
+{
+  "request_id": "uuid",
+  "service": "profile-service",
+  "status": "completed",
+  "artifacts": [
+    {
+      "path": "profile/preferences.jsonl",
+      "sha256": "sha256:...",
+      "record_count": 1
+    }
+  ],
+  "erasure": [
+    {
+      "resource": "profile_preferences",
+      "action": "deleted",
+      "record_count": 1
+    },
+    {
+      "resource": "profile_subjects",
+      "action": "tombstoned",
+      "record_count": 1
+    }
+  ],
+  "retained": [
+    {
+      "resource": "governance_audit",
+      "reason": "security_audit_retention"
+    }
+  ]
+}
+```
+
+Services must be idempotent by `request_id`. A retry returns the same result or
+continues a previously started request. Partial completion is explicit; silent
+skips are bugs.
+
+## Service Manifest
+
+Every service that stores user, organization, credential, address, billing,
+network, document, or actor data owns a manifest:
+
+```text
+src/<service>/data-rights.yml
+```
+
+Minimum shape:
+
+```yaml
+service: profile-service
+version: 1
+subject_keys:
+  - subject_id
+org_keys:
+  - org_id
+processing_activities:
+  - profile-preferences
+exports:
+  org:
+    - path: profile/subjects.jsonl
+      source: profile_subjects
+    - path: profile/preferences.jsonl
+      source: profile_preferences
+    - path: profile/notification_preferences.jsonl
+      source: profile_notification_preferences
+  subject:
+    - path: profile/subject.json
+      source: profile_subjects
+    - path: profile/preferences.jsonl
+      source: profile_preferences
+erasure:
+  subject:
+    - source: profile_preferences
+      action: delete
+    - source: profile_notification_preferences
+      action: delete
+    - source: profile_subjects
+      action: tombstone
+retention_refs:
+  - profile_preferences
+governance_events:
+  - profile.data_rights.export
+  - profile.data_rights.erasure
+```
+
+CI should fail when a migration introduces likely personal-data columns such as
+`subject_id`, `user_id`, `email`, `display_name`, `name`, `ip`, `user_agent`,
+`credential`, `signature`, or `document` without updating the service manifest.
+This keeps rapid service development from bypassing export and erasure design.
+
+## Artifact Manifest
+
+The top-level export artifact contains a root `manifest.json` generated by
+`governance-service`:
+
+```json
+{
+  "request_id": "uuid",
+  "request_type": "organization_export",
+  "org_id": "zitadel-org-id",
+  "created_at": "2026-04-23T18:00:00Z",
+  "services": [
+    {
+      "service": "profile-service",
+      "status": "completed",
+      "manifest_sha256": "sha256:..."
+    }
+  ],
+  "files": [
+    {
+      "path": "profile/preferences.jsonl",
+      "sha256": "sha256:...",
+      "bytes": 512,
+      "record_count": 1
+    }
+  ],
+  "retained_or_omitted": [
+    {
+      "service": "governance-service",
+      "category": "audit_events",
+      "reason": "security_audit_retention"
+    }
+  ]
+}
+```
+
+The manifest is the customer-facing explanation and the machine-verifiable
+checksum ledger. It is not a database dump.
+
+## Erasure Semantics
+
+Use four verbs consistently:
+
+```text
+delete      physically remove service-owned rows
+tombstone   retain the stable identifier and minimal non-personal lifecycle state
+restrict    keep the record but remove it from normal product processing
+retain      keep unchanged because a stronger legal/security/contract basis applies
+```
+
+Profile data usually deletes or tombstones. Governance audit usually retains.
+Billing records often retain. Signed document evidence retains or restricts
+according to the document contract and legal basis. Customer processor data is
+handled through the customer's organization deletion/export path, not through a
+random end user's direct request unless that customer instructs Forge Metal to
+act.
+
+## Observability And Proof
+
+The proof target is `make data-rights-proof`. It should:
+
+1. seed a user with data in at least identity, profile, billing, governance, and
+   one product service;
+2. run an organization export and verify `manifest.json` file hashes and record
+   counts;
+3. run a subject export and verify other users' data is absent;
+4. run a subject erasure and verify deletable profile rows are removed or
+   tombstoned while retained audit/billing evidence is reported;
+5. query ClickHouse for one trace chain spanning governance orchestration and
+   each service handler;
+6. assert no exported artifact, log, trace, or governance row contains bearer
+   tokens, refresh tokens, session cookies, credential secrets, or raw provider
+   payloads.
+
+## Source Notes
+
+- GDPR access, erasure, and portability rights:
+  [EUR-Lex Regulation 2016/679](https://eur-lex.europa.eu/legal-content/EN/TXT/?qid=1674485543249&uri=CELEX%3A02016R0679-20160504).
+- California CCPA/CPRA consumer rights summary:
+  [California DOJ CCPA](https://www.oag.ca.gov/privacy/ccpa).
+- Governance audit retention and immutable records:
+  [`src/governance-service/docs/audit-data-contract.md`](../../src/governance-service/docs/audit-data-contract.md).
+- Published retention commitments:
+  [`src/platform/policies/retention.yml`](../../src/platform/policies/retention.yml).

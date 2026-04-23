@@ -96,8 +96,7 @@ export function Surface({
     flare: { bg: "var(--color-flare)", fg: "var(--color-ink)" },
     paper: { bg: "var(--color-paper)", fg: "var(--color-ink)" },
   }[ground];
-  const border =
-    ground === "iron" ? "rgba(245, 245, 245, 0.12)" : "rgba(11, 11, 11, 0.14)";
+  const border = ground === "iron" ? "rgba(245, 245, 245, 0.12)" : "rgba(11, 11, 11, 0.14)";
   return (
     <div
       className={className}

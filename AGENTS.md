@@ -118,6 +118,8 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - Apply the scientific method: create a bar-raising verification protocol for the planned task *prior* to implementing changes. The verification protocol should fail, and only then begin implementing until green.
 - Avoid one-off, non-syntax-aware scripts for large parallel changes or refactors. Use subagents for that class of task — unexpected edge cases are likely and judgement is often required.
 - use `make tidy` to format Go and TypeScript code.
+- When using agent-browser, don't use the sandbox (`--no-sandbox`)
+- Deploy frontend changes to prod fearlessly (e.g. `make deploy TAGS=company` to deploy the company marketing website) -- I can't see your dev server.
 </tool_use_contract>
 
 <output_contract>
