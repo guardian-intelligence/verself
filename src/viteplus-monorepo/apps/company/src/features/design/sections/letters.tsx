@@ -359,7 +359,7 @@ export function SectionLetters() {
             { label: "Accent", value: "#5C1F1E", note: "Pantone 504 C · Bordeaux" },
             { label: "Mark", value: "WingsChip", note: "Argent wings in iron chip" },
             { label: "Masthead", value: "Geist 11 / +260 / UPPER", note: "Bordeaux 1 px rule" },
-            { label: "Body", value: "Fraunces", note: 'opsz 18 · SOFT 0 · 19 / 1.55' },
+            { label: "Body", value: "Fraunces", note: "opsz 18 · SOFT 0 · 19 / 1.55" },
             { label: "Byline", value: "Geist 13", note: "Stone at 0.7 opacity" },
             { label: "Drop cap", value: "Fraunces 88 px", note: "Bordeaux · display opsz" },
           ]}

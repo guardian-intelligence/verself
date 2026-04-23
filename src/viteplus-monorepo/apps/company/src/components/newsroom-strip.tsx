@@ -55,7 +55,10 @@ export function NewsroomStrip() {
           </p>
           <p
             style={{
-              fontFamily: "'Fraunces', Georgia, serif",
+              // Fraunces inside the Newsroom band — read via the treatment
+              // display token so the strip stays consistent if it's ever
+              // embedded under a scope that binds Geist to this var.
+              fontFamily: "var(--treatment-display-font, 'Fraunces', Georgia, serif)",
               fontVariationSettings: '"opsz" 96, "SOFT" 20',
               fontWeight: 400,
               fontSize: "clamp(22px, 2.8vw, 32px)",

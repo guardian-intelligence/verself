@@ -19,10 +19,15 @@ export function Section({
         {meta.number} · {meta.group} — {meta.label}
       </Eyebrow>
       <h2
-        className="font-display"
         style={{
+          // Treatment-scoped display font: Workshop resolves to Geist
+          // (brand memory bans Fraunces in Workshop), Newsroom and Letters
+          // resolve to Fraunces. Inline fontFamily is required because the
+          // Tailwind `font-display` utility reads the global @theme token,
+          // not the per-scope one.
+          fontFamily: "var(--treatment-display-font)",
           fontVariationSettings: '"opsz" 144, "SOFT" 30',
-          fontWeight: 400,
+          fontWeight: 500,
           fontSize: "32px",
           lineHeight: 1.1,
           letterSpacing: "-0.02em",

@@ -64,13 +64,12 @@ export function TreatmentTypeLadder({
 }) {
   return (
     <div
-      data-treatment="workshop"
       style={{
         marginBottom: "16px",
         padding: "8px 4px 4px",
-        border: `1px solid ${LINE}`,
+        border: "1px solid var(--treatment-surface-border)",
         borderRadius: "12px",
-        background: "#17171a",
+        background: "var(--treatment-surface-subtle)",
         overflowX: "auto",
         color: "var(--treatment-ink)",
       }}

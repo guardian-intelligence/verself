@@ -117,14 +117,20 @@ export function WingsWorkshopChip({ title, ...rest }: WingsWorkshopChipProps) {
       focusable="false"
       {...rest}
     >
+      {/* Stroke weight is 2 in SVG units with vector-effect="non-scaling-stroke",
+          so it renders at 2 device px regardless of the displayed size. Corner
+          radius sits at 8/291 ≈ 2.75% — enough to soften the corners against
+          Iron without reading as the editorial chip's 11% roundness. */}
       <rect
         x="30.01"
         y="31.08"
         width="291.14"
         height="291.14"
+        rx="8"
+        ry="8"
         fill="#0E0E0E"
         stroke="#FFFFFF"
-        strokeWidth="1"
+        strokeWidth="2"
         vectorEffect="non-scaling-stroke"
       />
       <path fill="#FFFFFF" d={WINGS_PATH_D} />
