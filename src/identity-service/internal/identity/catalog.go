@@ -17,6 +17,9 @@ const (
 	PermissionSandboxExecutionScheduleRead  = "sandbox:execution_schedule:read"
 	PermissionSandboxExecutionScheduleWrite = "sandbox:execution_schedule:write"
 	PermissionSandboxLogsRead         = "sandbox:logs:read"
+	PermissionSandboxAnalyticsRead    = "sandbox:analytics:read"
+	PermissionSandboxStickyDiskRead   = "sandbox:sticky_disk:read"
+	PermissionSandboxStickyDiskWrite  = "sandbox:sticky_disk:write"
 	PermissionBillingRead             = "billing:read"
 	PermissionBillingCheckout         = "billing:checkout"
 	PermissionSecretWrite             = "secrets:secret:write"
@@ -73,6 +76,15 @@ var defaultOperations = Operations{
 				{OperationID: "list-github-installations", Permission: PermissionSandboxGitHubRead, Resource: "github_installation", Action: "list", OrgScope: "token_org_id"},
 				{OperationID: "get-execution", Permission: PermissionSandboxExecutionRead, Resource: "execution", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "get-execution-logs", Permission: PermissionSandboxLogsRead, Resource: "execution_logs", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "list-runs", Permission: PermissionSandboxExecutionRead, Resource: "run", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "get-run", Permission: PermissionSandboxExecutionRead, Resource: "run", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "search-run-logs", Permission: PermissionSandboxLogsRead, Resource: "run_logs", Action: "search", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "get-jobs-analytics", Permission: PermissionSandboxAnalyticsRead, Resource: "run_analytics_jobs", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "get-costs-analytics", Permission: PermissionSandboxAnalyticsRead, Resource: "run_analytics_costs", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "get-caches-analytics", Permission: PermissionSandboxAnalyticsRead, Resource: "run_analytics_caches", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "get-runner-sizing-analytics", Permission: PermissionSandboxAnalyticsRead, Resource: "run_analytics_runner_sizing", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "list-sticky-disks", Permission: PermissionSandboxStickyDiskRead, Resource: "sticky_disk", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "reset-sticky-disk", Permission: PermissionSandboxStickyDiskWrite, Resource: "sticky_disk", Action: "reset", OrgScope: "token_org_id"},
 				{OperationID: "create-execution-schedule", Permission: PermissionSandboxExecutionScheduleWrite, Resource: "execution_schedule", Action: "create", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "list-execution-schedules", Permission: PermissionSandboxExecutionScheduleRead, Resource: "execution_schedule", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "get-execution-schedule", Permission: PermissionSandboxExecutionScheduleRead, Resource: "execution_schedule", Action: "read", OrgScope: "token_org_id", MemberEligible: true},

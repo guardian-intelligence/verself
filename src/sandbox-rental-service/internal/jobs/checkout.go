@@ -353,6 +353,7 @@ func normalizeCheckoutRef(ref string) (string, error) {
 
 func checkoutAttributes(identity StickyDiskIdentity, repository, ref, sha string) []attribute.KeyValue {
 	return []attribute.KeyValue{
+		traceOrgID(identity.OrgID),
 		attribute.String("execution.id", identity.ExecutionID.String()),
 		attribute.String("attempt.id", identity.AttemptID.String()),
 		attribute.String("github.allocation_id", identity.AllocationID.String()),

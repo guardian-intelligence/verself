@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -82,6 +83,135 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 		RateLimitClass: "logs_read",
 		AuditEvent:     "sandbox.execution.logs.read",
 	}), getExecutionLogs(svc))
+
+	registerSecured(api, secured(huma.Operation{
+		OperationID: "list-runs",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/runs",
+		Summary:     "List CI and scheduled runs for the current org",
+	}, operationPolicy{
+		Permission:     permissionExecutionRead,
+		Resource:       "run",
+		Action:         "list",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "read",
+		AuditEvent:     "sandbox.run.list",
+	}), listRuns(svc))
+
+	registerSecured(api, secured(huma.Operation{
+		OperationID: "get-run",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/runs/{run_id}",
+		Summary:     "Get a CI or scheduled run",
+	}, operationPolicy{
+		Permission:     permissionExecutionRead,
+		Resource:       "run",
+		Action:         "read",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "read",
+		AuditEvent:     "sandbox.run.read",
+	}), getRun(svc))
+
+	registerSecured(api, secured(huma.Operation{
+		OperationID: "search-run-logs",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/run-logs/search",
+		Summary:     "Search logs across CI and scheduled runs",
+	}, operationPolicy{
+		Permission:     permissionLogsRead,
+		Resource:       "run_logs",
+		Action:         "search",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "logs_read",
+		AuditEvent:     "sandbox.run_logs.search",
+	}), searchRunLogs(svc))
+
+	registerSecured(api, secured(huma.Operation{
+		OperationID: "get-jobs-analytics",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/run-analytics/jobs",
+		Summary:     "Get run duration and success analytics",
+	}, operationPolicy{
+		Permission:     permissionAnalyticsRead,
+		Resource:       "run_analytics_jobs",
+		Action:         "read",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "read",
+		AuditEvent:     "sandbox.run_analytics.jobs.read",
+	}), getJobsAnalytics(svc))
+
+	registerSecured(api, secured(huma.Operation{
+		OperationID: "get-costs-analytics",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/run-analytics/costs",
+		Summary:     "Get run cost analytics",
+	}, operationPolicy{
+		Permission:     permissionAnalyticsRead,
+		Resource:       "run_analytics_costs",
+		Action:         "read",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "read",
+		AuditEvent:     "sandbox.run_analytics.costs.read",
+	}), getCostsAnalytics(svc))
+
+	registerSecured(api, secured(huma.Operation{
+		OperationID: "get-caches-analytics",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/run-analytics/caches",
+		Summary:     "Get checkout and sticky disk cache analytics",
+	}, operationPolicy{
+		Permission:     permissionAnalyticsRead,
+		Resource:       "run_analytics_caches",
+		Action:         "read",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "read",
+		AuditEvent:     "sandbox.run_analytics.caches.read",
+	}), getCachesAnalytics(svc))
+
+	registerSecured(api, secured(huma.Operation{
+		OperationID: "get-runner-sizing-analytics",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/run-analytics/runner-sizing",
+		Summary:     "Get runner sizing analytics",
+	}, operationPolicy{
+		Permission:     permissionAnalyticsRead,
+		Resource:       "run_analytics_runner_sizing",
+		Action:         "read",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "read",
+		AuditEvent:     "sandbox.run_analytics.runner_sizing.read",
+	}), getRunnerSizingAnalytics(svc))
+
+	registerSecured(api, secured(huma.Operation{
+		OperationID: "list-sticky-disks",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/sticky-disks",
+		Summary:     "List sticky disk inventory for the current org",
+	}, operationPolicy{
+		Permission:     permissionStickyDiskRead,
+		Resource:       "sticky_disk",
+		Action:         "list",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "read",
+		AuditEvent:     "sandbox.sticky_disk.list",
+	}), listStickyDisks(svc))
+
+	registerSecured(api, secured(huma.Operation{
+		OperationID:   "reset-sticky-disk",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/sticky-disks/reset",
+		Summary:       "Reset a sticky disk generation so future runs cold-start",
+		DefaultStatus: 200,
+	}, operationPolicy{
+		Permission:     permissionStickyDiskWrite,
+		Resource:       "sticky_disk",
+		Action:         "reset",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "sticky_disk_mutation",
+		Idempotency:    idempotencyHeaderKey,
+		AuditEvent:     "sandbox.sticky_disk.reset",
+		BodyLimitBytes: bodyLimitSmallJSON,
+	}), resetStickyDisk(svc))
 
 	registerSecured(api, secured(huma.Operation{
 		OperationID:   "create-execution-schedule",
@@ -326,6 +456,91 @@ type GetExecutionLogsOutput struct {
 	Body apiwire.SandboxExecutionLogs
 }
 
+type RunIDPath struct {
+	RunID string `path:"run_id" doc:"Run UUID"`
+}
+
+type RunsInput struct {
+	Limit       int    `query:"limit,omitempty" minimum:"1" maximum:"200" doc:"Maximum runs to return."`
+	Cursor      string `query:"cursor,omitempty" maxLength:"128" doc:"Opaque pagination cursor returned by the previous page."`
+	SourceKind  string `query:"source_kind,omitempty" maxLength:"64"`
+	Status      string `query:"status,omitempty" maxLength:"64"`
+	Repository  string `query:"repository,omitempty" maxLength:"255"`
+	Workflow    string `query:"workflow,omitempty" maxLength:"255"`
+	Branch      string `query:"branch,omitempty" maxLength:"255"`
+	RunnerClass string `query:"runner_class,omitempty" maxLength:"255"`
+}
+
+type RunsOutput struct {
+	Body apiwire.SandboxRunsPage
+}
+
+type RunOutput struct {
+	Body apiwire.SandboxExecutionRecord
+}
+
+type RunLogSearchInput struct {
+	Limit       int    `query:"limit,omitempty" minimum:"1" maximum:"500" doc:"Maximum log matches to return."`
+	Cursor      string `query:"cursor,omitempty" maxLength:"160" doc:"Opaque pagination cursor returned by the previous page."`
+	Query       string `query:"query,omitempty" maxLength:"2048" doc:"Case-insensitive substring to search for."`
+	RunID       string `query:"run_id,omitempty" doc:"Filter to a specific run UUID."`
+	AttemptID   string `query:"attempt_id,omitempty" doc:"Filter to a specific attempt UUID."`
+	SourceKind  string `query:"source_kind,omitempty" maxLength:"64"`
+	Repository  string `query:"repository,omitempty" maxLength:"255"`
+	Workflow    string `query:"workflow,omitempty" maxLength:"255"`
+	Branch      string `query:"branch,omitempty" maxLength:"255"`
+	RunnerClass string `query:"runner_class,omitempty" maxLength:"255"`
+}
+
+type RunLogSearchOutput struct {
+	Body apiwire.SandboxRunLogSearchPage
+}
+
+type AnalyticsWindowInput struct {
+	Start string `query:"start,omitempty" format:"date-time" doc:"Inclusive RFC3339 window start."`
+	End   string `query:"end,omitempty" format:"date-time" doc:"Inclusive RFC3339 window end."`
+}
+
+type JobsAnalyticsOutput struct {
+	Body apiwire.SandboxJobsAnalytics
+}
+
+type CostsAnalyticsOutput struct {
+	Body apiwire.SandboxCostsAnalytics
+}
+
+type CachesAnalyticsOutput struct {
+	Body apiwire.SandboxCachesAnalytics
+}
+
+type RunnerSizingAnalyticsOutput struct {
+	Body apiwire.SandboxRunnerSizingAnalytics
+}
+
+type StickyDisksInput struct {
+	Limit      int    `query:"limit,omitempty" minimum:"1" maximum:"500" doc:"Maximum sticky disks to return."`
+	Cursor     string `query:"cursor,omitempty" maxLength:"160" doc:"Opaque pagination cursor returned by the previous page."`
+	Repository string `query:"repository,omitempty" maxLength:"255"`
+}
+
+type StickyDisksOutput struct {
+	Body apiwire.SandboxStickyDisksPage
+}
+
+type StickyDiskResetRequest struct {
+	InstallationID string `json:"installation_id" required:"true" doc:"GitHub installation ID encoded as a decimal string."`
+	RepositoryID   string `json:"repository_id" required:"true" doc:"GitHub repository ID encoded as a decimal string."`
+	KeyHash        string `json:"key_hash" required:"true" minLength:"1" maxLength:"64" doc:"Sticky disk key hash to reset."`
+}
+
+type ResetStickyDiskInput struct {
+	Body StickyDiskResetRequest
+}
+
+type ResetStickyDiskOutput struct {
+	Body apiwire.SandboxStickyDiskResetResult
+}
+
 type ExecutionScheduleIDPath struct {
 	ScheduleID string `path:"schedule_id" doc:"Execution schedule UUID"`
 }
@@ -517,6 +732,216 @@ func getExecutionLogs(svc *jobs.Service) func(context.Context, *ExecutionIDPath)
 			Logs:        logs,
 		}
 		return out, nil
+	}
+}
+
+func listRuns(svc *jobs.Service) func(context.Context, *RunsInput) (*RunsOutput, error) {
+	return func(ctx context.Context, input *RunsInput) (*RunsOutput, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		filters := jobs.RunListFilters{
+			Limit:       input.Limit,
+			Cursor:      input.Cursor,
+			SourceKind:  input.SourceKind,
+			Status:      input.Status,
+			Repository:  input.Repository,
+			Workflow:    input.Workflow,
+			Branch:      input.Branch,
+			RunnerClass: input.RunnerClass,
+		}
+		page, err := svc.ListRuns(ctx, orgID, filters)
+		if err != nil {
+			if errors.Is(err, jobs.ErrRunCursorInvalid) {
+				return nil, badRequest(ctx, "invalid-run-cursor", "cursor must be a valid run pagination cursor", err)
+			}
+			return nil, internalFailure(ctx, "list-runs-failed", "list runs failed", err)
+		}
+		return &RunsOutput{Body: runPage(page, filters)}, nil
+	}
+}
+
+func getRun(svc *jobs.Service) func(context.Context, *RunIDPath) (*RunOutput, error) {
+	return func(ctx context.Context, input *RunIDPath) (*RunOutput, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		runID, err := uuid.Parse(input.RunID)
+		if err != nil {
+			return nil, badRequest(ctx, "invalid-run-id", "run_id must be a UUID", err)
+		}
+		run, err := svc.GetRun(ctx, orgID, runID)
+		if err != nil {
+			if errors.Is(err, jobs.ErrExecutionMissing) {
+				return nil, notFound(ctx, "run-not-found", "run not found")
+			}
+			return nil, internalFailure(ctx, "get-run-failed", "get run failed", err)
+		}
+		return &RunOutput{Body: executionRecord(*run)}, nil
+	}
+}
+
+func searchRunLogs(svc *jobs.Service) func(context.Context, *RunLogSearchInput) (*RunLogSearchOutput, error) {
+	return func(ctx context.Context, input *RunLogSearchInput) (*RunLogSearchOutput, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		filters := jobs.RunLogSearchFilters{
+			Limit:       input.Limit,
+			Cursor:      input.Cursor,
+			Query:       input.Query,
+			SourceKind:  input.SourceKind,
+			Repository:  input.Repository,
+			Workflow:    input.Workflow,
+			Branch:      input.Branch,
+			RunnerClass: input.RunnerClass,
+		}
+		if input.RunID != "" {
+			filters.ExecutionID, err = uuid.Parse(input.RunID)
+			if err != nil {
+				return nil, badRequest(ctx, "invalid-run-id", "run_id must be a UUID", err)
+			}
+		}
+		if input.AttemptID != "" {
+			filters.AttemptID, err = uuid.Parse(input.AttemptID)
+			if err != nil {
+				return nil, badRequest(ctx, "invalid-attempt-id", "attempt_id must be a UUID", err)
+			}
+		}
+		page, err := svc.SearchRunLogs(ctx, orgID, filters)
+		if err != nil {
+			if errors.Is(err, jobs.ErrRunLogCursorInvalid) {
+				return nil, badRequest(ctx, "invalid-run-log-cursor", "cursor must be a valid run log pagination cursor", err)
+			}
+			return nil, internalFailure(ctx, "search-run-logs-failed", "search run logs failed", err)
+		}
+		return &RunLogSearchOutput{Body: runLogSearchPage(page, filters)}, nil
+	}
+}
+
+func getJobsAnalytics(svc *jobs.Service) func(context.Context, *AnalyticsWindowInput) (*JobsAnalyticsOutput, error) {
+	return func(ctx context.Context, input *AnalyticsWindowInput) (*JobsAnalyticsOutput, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		window, err := analyticsWindowInput(ctx, input)
+		if err != nil {
+			return nil, err
+		}
+		analytics, err := svc.GetJobsAnalytics(ctx, orgID, window)
+		if err != nil {
+			return nil, internalFailure(ctx, "get-jobs-analytics-failed", "get jobs analytics failed", err)
+		}
+		return &JobsAnalyticsOutput{Body: jobsAnalytics(analytics)}, nil
+	}
+}
+
+func getCostsAnalytics(svc *jobs.Service) func(context.Context, *AnalyticsWindowInput) (*CostsAnalyticsOutput, error) {
+	return func(ctx context.Context, input *AnalyticsWindowInput) (*CostsAnalyticsOutput, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		window, err := analyticsWindowInput(ctx, input)
+		if err != nil {
+			return nil, err
+		}
+		analytics, err := svc.GetCostsAnalytics(ctx, orgID, window)
+		if err != nil {
+			return nil, internalFailure(ctx, "get-costs-analytics-failed", "get costs analytics failed", err)
+		}
+		return &CostsAnalyticsOutput{Body: costsAnalytics(analytics)}, nil
+	}
+}
+
+func getCachesAnalytics(svc *jobs.Service) func(context.Context, *AnalyticsWindowInput) (*CachesAnalyticsOutput, error) {
+	return func(ctx context.Context, input *AnalyticsWindowInput) (*CachesAnalyticsOutput, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		window, err := analyticsWindowInput(ctx, input)
+		if err != nil {
+			return nil, err
+		}
+		analytics, err := svc.GetCachesAnalytics(ctx, orgID, window)
+		if err != nil {
+			return nil, internalFailure(ctx, "get-caches-analytics-failed", "get caches analytics failed", err)
+		}
+		return &CachesAnalyticsOutput{Body: cachesAnalytics(analytics)}, nil
+	}
+}
+
+func getRunnerSizingAnalytics(svc *jobs.Service) func(context.Context, *AnalyticsWindowInput) (*RunnerSizingAnalyticsOutput, error) {
+	return func(ctx context.Context, input *AnalyticsWindowInput) (*RunnerSizingAnalyticsOutput, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		window, err := analyticsWindowInput(ctx, input)
+		if err != nil {
+			return nil, err
+		}
+		analytics, err := svc.GetRunnerSizingAnalytics(ctx, orgID, window)
+		if err != nil {
+			return nil, internalFailure(ctx, "get-runner-sizing-analytics-failed", "get runner sizing analytics failed", err)
+		}
+		return &RunnerSizingAnalyticsOutput{Body: runnerSizingAnalytics(analytics)}, nil
+	}
+}
+
+func listStickyDisks(svc *jobs.Service) func(context.Context, *StickyDisksInput) (*StickyDisksOutput, error) {
+	return func(ctx context.Context, input *StickyDisksInput) (*StickyDisksOutput, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		filters := jobs.StickyDiskListFilters{
+			Limit:      input.Limit,
+			Cursor:     input.Cursor,
+			Repository: input.Repository,
+		}
+		page, err := svc.ListStickyDisks(ctx, orgID, filters)
+		if err != nil {
+			if errors.Is(err, jobs.ErrStickyDiskCursorInvalid) {
+				return nil, badRequest(ctx, "invalid-sticky-disk-cursor", "cursor must be a valid sticky disk pagination cursor", err)
+			}
+			return nil, internalFailure(ctx, "list-sticky-disks-failed", "list sticky disks failed", err)
+		}
+		return &StickyDisksOutput{Body: stickyDisksPage(page, filters)}, nil
+	}
+}
+
+func resetStickyDisk(svc *jobs.Service) func(context.Context, *ResetStickyDiskInput) (*ResetStickyDiskOutput, error) {
+	return func(ctx context.Context, input *ResetStickyDiskInput) (*ResetStickyDiskOutput, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		installationID, err := apiwire.ParseInt64(input.Body.InstallationID)
+		if err != nil || installationID <= 0 {
+			return nil, badRequest(ctx, "invalid-installation-id", "installation_id must be a positive decimal string", err)
+		}
+		repositoryID, err := apiwire.ParseInt64(input.Body.RepositoryID)
+		if err != nil || repositoryID <= 0 {
+			return nil, badRequest(ctx, "invalid-repository-id", "repository_id must be a positive decimal string", err)
+		}
+		result, err := svc.ResetStickyDisk(ctx, orgID, installationID, repositoryID, input.Body.KeyHash)
+		if err != nil {
+			switch {
+			case errors.Is(err, jobs.ErrStickyDiskMissing):
+				return nil, notFound(ctx, "sticky-disk-not-found", "sticky disk not found")
+			case errors.Is(err, jobs.ErrStickyDiskInvalid):
+				return nil, badRequest(ctx, "invalid-sticky-disk", "sticky disk request is invalid", err)
+			default:
+				return nil, internalFailure(ctx, "reset-sticky-disk-failed", "reset sticky disk failed", err)
+			}
+		}
+		return &ResetStickyDiskOutput{Body: stickyDiskResetResult(result)}, nil
 	}
 }
 
@@ -872,6 +1297,30 @@ func createBillingPortal(billing *billingclient.ClientWithResponses, billingRetu
 
 func billingProxyError(ctx context.Context, err error) error {
 	return upstreamFailure(ctx, "billing-service-unavailable", "billing service unavailable", err)
+}
+
+func analyticsWindowInput(ctx context.Context, input *AnalyticsWindowInput) (jobs.AnalyticsWindow, error) {
+	var window jobs.AnalyticsWindow
+	if input == nil {
+		return window, nil
+	}
+	var err error
+	if input.Start != "" {
+		window.Start, err = time.Parse(time.RFC3339, input.Start)
+		if err != nil {
+			return jobs.AnalyticsWindow{}, badRequest(ctx, "invalid-window-start", "start must be an RFC3339 timestamp", err)
+		}
+	}
+	if input.End != "" {
+		window.End, err = time.Parse(time.RFC3339, input.End)
+		if err != nil {
+			return jobs.AnalyticsWindow{}, badRequest(ctx, "invalid-window-end", "end must be an RFC3339 timestamp", err)
+		}
+	}
+	if !window.Start.IsZero() && !window.End.IsZero() && window.End.Before(window.Start) {
+		return jobs.AnalyticsWindow{}, badRequest(ctx, "invalid-window-range", "end must be greater than or equal to start", nil)
+	}
+	return window, nil
 }
 
 func billingProxyResponseError(ctx context.Context, statusCode int, body []byte) error {

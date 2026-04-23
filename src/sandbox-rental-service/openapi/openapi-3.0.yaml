@@ -546,6 +546,27 @@ components:
           format: uri
           type: string
       type: object
+    SandboxAnalyticsBucket:
+      additionalProperties: false
+      properties:
+        billed_charge_units:
+          pattern: ^[0-9]+$
+          type: string
+        count:
+          pattern: ^[0-9]+$
+          type: string
+        key:
+          type: string
+        reserved_charge_units:
+          pattern: ^[0-9]+$
+          type: string
+        writeoff_charge_units:
+          pattern: ^[0-9]+$
+          type: string
+      required:
+        - key
+        - count
+      type: object
     SandboxAttemptRecord:
       additionalProperties: false
       properties:
@@ -557,6 +578,21 @@ components:
           minimum: 0
           type: integer
         billing_job_id:
+          format: int64
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+        block_read_bytes:
+          format: int64
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+        block_write_bytes:
+          format: int64
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+        boot_time_us:
           format: int64
           maximum: 9007199254740991
           minimum: 0
@@ -583,6 +619,21 @@ components:
           type: string
         lease_id:
           type: string
+        net_rx_bytes:
+          format: int64
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+        net_tx_bytes:
+          format: int64
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+        rootfs_provisioned_bytes:
+          format: int64
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
         started_at:
           format: date-time
           type: string
@@ -603,6 +654,11 @@ components:
         updated_at:
           format: date-time
           type: string
+        vcpu_exit_count:
+          format: int64
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
         zfs_written:
           format: int64
           maximum: 9007199254740991
@@ -724,7 +780,13 @@ components:
           type: integer
         attempt_id:
           type: string
+        billed_charge_units:
+          pattern: ^[0-9]+$
+          type: string
         billing_window_id:
+          type: string
+        cost_per_unit:
+          pattern: ^[0-9]+$
           type: string
         created_at:
           format: date-time
@@ -732,6 +794,9 @@ components:
         pricing_phase:
           type: string
         reservation_shape:
+          type: string
+        reserved_charge_units:
+          pattern: ^[0-9]+$
           type: string
         reserved_quantity:
           format: int64
@@ -751,15 +816,124 @@ components:
         window_start:
           format: date-time
           type: string
+        writeoff_charge_units:
+          pattern: ^[0-9]+$
+          type: string
       required:
         - attempt_id
         - billing_window_id
         - window_seq
         - reservation_shape
         - reserved_quantity
+        - reserved_charge_units
+        - billed_charge_units
+        - writeoff_charge_units
+        - cost_per_unit
         - state
         - window_start
         - created_at
+      type: object
+    SandboxCachesAnalytics:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4243/schemas/SandboxCachesAnalytics.json
+          format: uri
+          readOnly: true
+          type: string
+        by_repository:
+          items:
+            $ref: "#/components/schemas/SandboxAnalyticsBucket"
+          nullable: true
+          type: array
+        checkout_hits:
+          pattern: ^[0-9]+$
+          type: string
+        checkout_misses:
+          pattern: ^[0-9]+$
+          type: string
+        checkout_requests:
+          pattern: ^[0-9]+$
+          type: string
+        sticky_commits:
+          pattern: ^[0-9]+$
+          type: string
+        sticky_restore_hits:
+          pattern: ^[0-9]+$
+          type: string
+        sticky_restore_misses:
+          pattern: ^[0-9]+$
+          type: string
+        sticky_save_requests:
+          pattern: ^[0-9]+$
+          type: string
+        window_end:
+          format: date-time
+          type: string
+        window_start:
+          format: date-time
+          type: string
+      required:
+        - window_start
+        - window_end
+        - checkout_requests
+        - checkout_hits
+        - checkout_misses
+        - sticky_restore_hits
+        - sticky_restore_misses
+        - sticky_save_requests
+        - sticky_commits
+        - by_repository
+      type: object
+    SandboxCostsAnalytics:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4243/schemas/SandboxCostsAnalytics.json
+          format: uri
+          readOnly: true
+          type: string
+        billed_charge_units:
+          pattern: ^[0-9]+$
+          type: string
+        by_repository:
+          items:
+            $ref: "#/components/schemas/SandboxAnalyticsBucket"
+          nullable: true
+          type: array
+        by_runner_class:
+          items:
+            $ref: "#/components/schemas/SandboxAnalyticsBucket"
+          nullable: true
+          type: array
+        by_source:
+          items:
+            $ref: "#/components/schemas/SandboxAnalyticsBucket"
+          nullable: true
+          type: array
+        reserved_charge_units:
+          pattern: ^[0-9]+$
+          type: string
+        window_end:
+          format: date-time
+          type: string
+        window_start:
+          format: date-time
+          type: string
+        writeoff_charge_units:
+          pattern: ^[0-9]+$
+          type: string
+      required:
+        - window_start
+        - window_end
+        - reserved_charge_units
+        - billed_charge_units
+        - writeoff_charge_units
+        - by_source
+        - by_runner_class
+        - by_repository
       type: object
     SandboxExecutionLogs:
       additionalProperties: false
@@ -792,6 +966,8 @@ components:
           type: string
         actor_id:
           type: string
+        billing_summary:
+          $ref: "#/components/schemas/SandboxRunBillingSummary"
         billing_windows:
           items:
             $ref: "#/components/schemas/SandboxBillingWindow"
@@ -808,6 +984,8 @@ components:
           type: string
         external_task_id:
           type: string
+        github:
+          $ref: "#/components/schemas/SandboxGitHubRunMetadata"
         idempotency_key:
           type: string
         kind:
@@ -823,20 +1001,30 @@ components:
           type: string
         run_command:
           type: string
+        run_id:
+          type: string
         runner_class:
           type: string
+        schedule:
+          $ref: "#/components/schemas/SandboxScheduleRunMetadata"
         source_kind:
           type: string
         source_ref:
           type: string
         status:
           type: string
+        sticky_disk_mounts:
+          items:
+            $ref: "#/components/schemas/SandboxExecutionStickyDiskMount"
+          nullable: true
+          type: array
         updated_at:
           format: date-time
           type: string
         workload_kind:
           type: string
       required:
+        - run_id
         - execution_id
         - org_id
         - actor_id
@@ -988,6 +1176,45 @@ components:
         - created_at
         - updated_at
       type: object
+    SandboxExecutionStickyDiskMount:
+      additionalProperties: false
+      properties:
+        base_generation:
+          pattern: ^[0-9]+$
+          type: string
+        committed_generation:
+          pattern: ^[0-9]+$
+          type: string
+        completed_at:
+          format: date-time
+          type: string
+        failure_reason:
+          type: string
+        key_hash:
+          type: string
+        mount_id:
+          type: string
+        mount_name:
+          type: string
+        mount_path:
+          type: string
+        requested_at:
+          format: date-time
+          type: string
+        save_requested:
+          type: boolean
+        save_state:
+          type: string
+      required:
+        - mount_id
+        - mount_name
+        - key_hash
+        - mount_path
+        - base_generation
+        - committed_generation
+        - save_requested
+        - save_state
+      type: object
     SandboxGitHubInstallationConnectResponse:
       additionalProperties: false
       properties:
@@ -1041,6 +1268,471 @@ components:
         - active
         - created_at
         - updated_at
+      type: object
+    SandboxGitHubRunMetadata:
+      additionalProperties: false
+      properties:
+        head_branch:
+          type: string
+        head_sha:
+          type: string
+        installation_id:
+          type: string
+        job_id:
+          type: string
+        job_name:
+          type: string
+        repository_full_name:
+          type: string
+        run_id:
+          type: string
+        workflow_name:
+          type: string
+      type: object
+    SandboxJobsAnalytics:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4243/schemas/SandboxJobsAnalytics.json
+          format: uri
+          readOnly: true
+          type: string
+        by_runner_class:
+          items:
+            $ref: "#/components/schemas/SandboxAnalyticsBucket"
+          nullable: true
+          type: array
+        by_source:
+          items:
+            $ref: "#/components/schemas/SandboxAnalyticsBucket"
+          nullable: true
+          type: array
+        failed_runs:
+          pattern: ^[0-9]+$
+          type: string
+        p50_duration_ms:
+          pattern: ^[0-9]+$
+          type: string
+        p95_duration_ms:
+          pattern: ^[0-9]+$
+          type: string
+        p99_duration_ms:
+          pattern: ^[0-9]+$
+          type: string
+        slowest_runs:
+          items:
+            $ref: "#/components/schemas/SandboxRunDurationSample"
+          nullable: true
+          type: array
+        succeeded_runs:
+          pattern: ^[0-9]+$
+          type: string
+        total_runs:
+          pattern: ^[0-9]+$
+          type: string
+        window_end:
+          format: date-time
+          type: string
+        window_start:
+          format: date-time
+          type: string
+      required:
+        - window_start
+        - window_end
+        - total_runs
+        - succeeded_runs
+        - failed_runs
+        - p50_duration_ms
+        - p95_duration_ms
+        - p99_duration_ms
+        - by_source
+        - by_runner_class
+        - slowest_runs
+      type: object
+    SandboxRunBillingSummary:
+      additionalProperties: false
+      properties:
+        billed_charge_units:
+          pattern: ^[0-9]+$
+          type: string
+        cost_per_unit:
+          pattern: ^[0-9]+$
+          type: string
+        pricing_phase:
+          type: string
+        reserved_charge_units:
+          pattern: ^[0-9]+$
+          type: string
+        window_count:
+          format: int32
+          type: integer
+        writeoff_charge_units:
+          pattern: ^[0-9]+$
+          type: string
+      required:
+        - window_count
+        - reserved_charge_units
+        - billed_charge_units
+        - writeoff_charge_units
+        - cost_per_unit
+      type: object
+    SandboxRunDurationSample:
+      additionalProperties: false
+      properties:
+        completed_at:
+          format: date-time
+          type: string
+        duration_ms:
+          format: int64
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+        execution_id:
+          type: string
+        job_name:
+          type: string
+        repository_full_name:
+          type: string
+        runner_class:
+          type: string
+        status:
+          type: string
+        workflow_name:
+          type: string
+      required:
+        - execution_id
+        - status
+        - duration_ms
+        - completed_at
+      type: object
+    SandboxRunLogSearchFilters:
+      additionalProperties: false
+      properties:
+        attempt_id:
+          type: string
+        branch:
+          type: string
+        query:
+          type: string
+        repository:
+          type: string
+        run_id:
+          type: string
+        runner_class:
+          type: string
+        source_kind:
+          type: string
+        workflow:
+          type: string
+      type: object
+    SandboxRunLogSearchPage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4243/schemas/SandboxRunLogSearchPage.json
+          format: uri
+          readOnly: true
+          type: string
+        filters:
+          $ref: "#/components/schemas/SandboxRunLogSearchFilters"
+        limit:
+          format: int32
+          type: integer
+        next_cursor:
+          type: string
+        results:
+          items:
+            $ref: "#/components/schemas/SandboxRunLogSearchResult"
+          nullable: true
+          type: array
+      required:
+        - results
+        - limit
+        - filters
+      type: object
+    SandboxRunLogSearchResult:
+      additionalProperties: false
+      properties:
+        attempt_id:
+          type: string
+        chunk:
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        execution_id:
+          type: string
+        head_branch:
+          type: string
+        job_name:
+          type: string
+        repository_full_name:
+          type: string
+        runner_class:
+          type: string
+        schedule_id:
+          type: string
+        seq:
+          format: int32
+          minimum: 0
+          type: integer
+        source_kind:
+          type: string
+        stream:
+          type: string
+        workflow_name:
+          type: string
+        workload_kind:
+          type: string
+      required:
+        - execution_id
+        - attempt_id
+        - seq
+        - stream
+        - chunk
+        - created_at
+      type: object
+    SandboxRunnerSizingAnalytics:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4243/schemas/SandboxRunnerSizingAnalytics.json
+          format: uri
+          readOnly: true
+          type: string
+        by_runner_class:
+          items:
+            $ref: "#/components/schemas/SandboxRunnerSizingSample"
+          nullable: true
+          type: array
+        window_end:
+          format: date-time
+          type: string
+        window_start:
+          format: date-time
+          type: string
+      required:
+        - window_start
+        - window_end
+        - by_runner_class
+      type: object
+    SandboxRunnerSizingSample:
+      additionalProperties: false
+      properties:
+        avg_block_write_bytes:
+          pattern: ^[0-9]+$
+          type: string
+        avg_boot_time_us:
+          pattern: ^[0-9]+$
+          type: string
+        avg_net_tx_bytes:
+          pattern: ^[0-9]+$
+          type: string
+        avg_rootfs_provisioned_bytes:
+          pattern: ^[0-9]+$
+          type: string
+        p95_duration_ms:
+          pattern: ^[0-9]+$
+          type: string
+        run_count:
+          pattern: ^[0-9]+$
+          type: string
+        runner_class:
+          type: string
+      required:
+        - runner_class
+        - run_count
+        - p95_duration_ms
+        - avg_rootfs_provisioned_bytes
+        - avg_boot_time_us
+        - avg_block_write_bytes
+        - avg_net_tx_bytes
+      type: object
+    SandboxRunsFilters:
+      additionalProperties: false
+      properties:
+        branch:
+          type: string
+        repository:
+          type: string
+        runner_class:
+          type: string
+        source_kind:
+          type: string
+        status:
+          type: string
+        workflow:
+          type: string
+      type: object
+    SandboxRunsPage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4243/schemas/SandboxRunsPage.json
+          format: uri
+          readOnly: true
+          type: string
+        filters:
+          $ref: "#/components/schemas/SandboxRunsFilters"
+        limit:
+          format: int32
+          type: integer
+        next_cursor:
+          type: string
+        runs:
+          items:
+            $ref: "#/components/schemas/SandboxExecutionRecord"
+          nullable: true
+          type: array
+      required:
+        - runs
+        - limit
+        - filters
+      type: object
+    SandboxScheduleRunMetadata:
+      additionalProperties: false
+      properties:
+        display_name:
+          type: string
+        schedule_id:
+          type: string
+        temporal_run_id:
+          type: string
+        temporal_workflow_id:
+          type: string
+      type: object
+    SandboxStickyDiskFilters:
+      additionalProperties: false
+      properties:
+        repository:
+          type: string
+      type: object
+    SandboxStickyDiskRecord:
+      additionalProperties: false
+      properties:
+        current_generation:
+          pattern: ^[0-9]+$
+          type: string
+        current_source_ref:
+          type: string
+        installation_id:
+          type: string
+        key:
+          type: string
+        key_hash:
+          type: string
+        last_attempt_id:
+          type: string
+        last_completed_at:
+          format: date-time
+          type: string
+        last_execution_id:
+          type: string
+        last_job_name:
+          type: string
+        last_mount_path:
+          type: string
+        last_runner_class:
+          type: string
+        last_save_state:
+          type: string
+        last_used_at:
+          format: date-time
+          type: string
+        last_workflow_name:
+          type: string
+        repository_full_name:
+          type: string
+        repository_id:
+          type: string
+      required:
+        - installation_id
+        - repository_id
+        - key_hash
+        - key
+        - current_generation
+        - current_source_ref
+      type: object
+    SandboxStickyDiskResetResult:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4243/schemas/SandboxStickyDiskResetResult.json
+          format: uri
+          readOnly: true
+          type: string
+        deleted_source_ref:
+          type: string
+        installation_id:
+          type: string
+        key_hash:
+          type: string
+        repository_id:
+          type: string
+        reset_at:
+          format: date-time
+          type: string
+      required:
+        - installation_id
+        - repository_id
+        - key_hash
+        - reset_at
+      type: object
+    SandboxStickyDisksPage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4243/schemas/SandboxStickyDisksPage.json
+          format: uri
+          readOnly: true
+          type: string
+        disks:
+          items:
+            $ref: "#/components/schemas/SandboxStickyDiskRecord"
+          nullable: true
+          type: array
+        filters:
+          $ref: "#/components/schemas/SandboxStickyDiskFilters"
+        limit:
+          format: int32
+          type: integer
+        next_cursor:
+          type: string
+      required:
+        - disks
+        - limit
+        - filters
+      type: object
+    StickyDiskResetRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4243/schemas/StickyDiskResetRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        installation_id:
+          description: GitHub installation ID encoded as a decimal string.
+          type: string
+        key_hash:
+          description: Sticky disk key hash to reset.
+          maxLength: 64
+          minLength: 1
+          type: string
+        repository_id:
+          description: GitHub repository ID encoded as a decimal string.
+          type: string
+      required:
+        - installation_id
+        - repository_id
+        - key_hash
       type: object
   securitySchemes:
     bearerAuth:
@@ -1815,6 +2507,538 @@ paths:
         request_body_max_bytes: 1024
         resource: github_installation
         risk_level: high
+        source_product_area: Sandbox
+  /api/v1/run-analytics/caches:
+    get:
+      operationId: get-caches-analytics
+      parameters:
+        - description: Inclusive RFC3339 window start.
+          explode: false
+          in: query
+          name: start
+          schema:
+            description: Inclusive RFC3339 window start.
+            format: date-time
+            type: string
+        - description: Inclusive RFC3339 window end.
+          explode: false
+          in: query
+          name: end
+          schema:
+            description: Inclusive RFC3339 window end.
+            format: date-time
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SandboxCachesAnalytics"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Get checkout and sticky disk cache analytics
+      x-forge-metal-iam:
+        action: read
+        audit_event: sandbox.run_analytics.caches.read
+        data_classification: restricted
+        event_category: sandbox
+        operation_display: get caches analytics
+        operation_type: read
+        org_scope: token_org_id
+        permission: sandbox:analytics:read
+        rate_limit_class: read
+        resource: run_analytics_caches
+        risk_level: low
+        source_product_area: Sandbox
+  /api/v1/run-analytics/costs:
+    get:
+      operationId: get-costs-analytics
+      parameters:
+        - description: Inclusive RFC3339 window start.
+          explode: false
+          in: query
+          name: start
+          schema:
+            description: Inclusive RFC3339 window start.
+            format: date-time
+            type: string
+        - description: Inclusive RFC3339 window end.
+          explode: false
+          in: query
+          name: end
+          schema:
+            description: Inclusive RFC3339 window end.
+            format: date-time
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SandboxCostsAnalytics"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Get run cost analytics
+      x-forge-metal-iam:
+        action: read
+        audit_event: sandbox.run_analytics.costs.read
+        data_classification: restricted
+        event_category: sandbox
+        operation_display: get costs analytics
+        operation_type: read
+        org_scope: token_org_id
+        permission: sandbox:analytics:read
+        rate_limit_class: read
+        resource: run_analytics_costs
+        risk_level: low
+        source_product_area: Sandbox
+  /api/v1/run-analytics/jobs:
+    get:
+      operationId: get-jobs-analytics
+      parameters:
+        - description: Inclusive RFC3339 window start.
+          explode: false
+          in: query
+          name: start
+          schema:
+            description: Inclusive RFC3339 window start.
+            format: date-time
+            type: string
+        - description: Inclusive RFC3339 window end.
+          explode: false
+          in: query
+          name: end
+          schema:
+            description: Inclusive RFC3339 window end.
+            format: date-time
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SandboxJobsAnalytics"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Get run duration and success analytics
+      x-forge-metal-iam:
+        action: read
+        audit_event: sandbox.run_analytics.jobs.read
+        data_classification: restricted
+        event_category: sandbox
+        operation_display: get jobs analytics
+        operation_type: read
+        org_scope: token_org_id
+        permission: sandbox:analytics:read
+        rate_limit_class: read
+        resource: run_analytics_jobs
+        risk_level: low
+        source_product_area: Sandbox
+  /api/v1/run-analytics/runner-sizing:
+    get:
+      operationId: get-runner-sizing-analytics
+      parameters:
+        - description: Inclusive RFC3339 window start.
+          explode: false
+          in: query
+          name: start
+          schema:
+            description: Inclusive RFC3339 window start.
+            format: date-time
+            type: string
+        - description: Inclusive RFC3339 window end.
+          explode: false
+          in: query
+          name: end
+          schema:
+            description: Inclusive RFC3339 window end.
+            format: date-time
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SandboxRunnerSizingAnalytics"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Get runner sizing analytics
+      x-forge-metal-iam:
+        action: read
+        audit_event: sandbox.run_analytics.runner_sizing.read
+        data_classification: restricted
+        event_category: sandbox
+        operation_display: get runner sizing analytics
+        operation_type: read
+        org_scope: token_org_id
+        permission: sandbox:analytics:read
+        rate_limit_class: read
+        resource: run_analytics_runner_sizing
+        risk_level: low
+        source_product_area: Sandbox
+  /api/v1/run-logs/search:
+    get:
+      operationId: search-run-logs
+      parameters:
+        - description: Maximum log matches to return.
+          explode: false
+          in: query
+          name: limit
+          schema:
+            description: Maximum log matches to return.
+            format: int64
+            maximum: 500
+            minimum: 1
+            type: integer
+        - description: Opaque pagination cursor returned by the previous page.
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque pagination cursor returned by the previous page.
+            maxLength: 160
+            type: string
+        - description: Case-insensitive substring to search for.
+          explode: false
+          in: query
+          name: query
+          schema:
+            description: Case-insensitive substring to search for.
+            maxLength: 2048
+            type: string
+        - description: Filter to a specific run UUID.
+          explode: false
+          in: query
+          name: run_id
+          schema:
+            description: Filter to a specific run UUID.
+            type: string
+        - description: Filter to a specific attempt UUID.
+          explode: false
+          in: query
+          name: attempt_id
+          schema:
+            description: Filter to a specific attempt UUID.
+            type: string
+        - explode: false
+          in: query
+          name: source_kind
+          schema:
+            maxLength: 64
+            type: string
+        - explode: false
+          in: query
+          name: repository
+          schema:
+            maxLength: 255
+            type: string
+        - explode: false
+          in: query
+          name: workflow
+          schema:
+            maxLength: 255
+            type: string
+        - explode: false
+          in: query
+          name: branch
+          schema:
+            maxLength: 255
+            type: string
+        - explode: false
+          in: query
+          name: runner_class
+          schema:
+            maxLength: 255
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SandboxRunLogSearchPage"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Search logs across CI and scheduled runs
+      x-forge-metal-iam:
+        action: search
+        audit_event: sandbox.run_logs.search
+        data_classification: restricted
+        event_category: sandbox
+        operation_display: search run logs
+        operation_type: write
+        org_scope: token_org_id
+        permission: sandbox:logs:read
+        rate_limit_class: logs_read
+        resource: run_logs
+        risk_level: medium
+        source_product_area: Sandbox
+  /api/v1/runs:
+    get:
+      operationId: list-runs
+      parameters:
+        - description: Maximum runs to return.
+          explode: false
+          in: query
+          name: limit
+          schema:
+            description: Maximum runs to return.
+            format: int64
+            maximum: 200
+            minimum: 1
+            type: integer
+        - description: Opaque pagination cursor returned by the previous page.
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque pagination cursor returned by the previous page.
+            maxLength: 128
+            type: string
+        - explode: false
+          in: query
+          name: source_kind
+          schema:
+            maxLength: 64
+            type: string
+        - explode: false
+          in: query
+          name: status
+          schema:
+            maxLength: 64
+            type: string
+        - explode: false
+          in: query
+          name: repository
+          schema:
+            maxLength: 255
+            type: string
+        - explode: false
+          in: query
+          name: workflow
+          schema:
+            maxLength: 255
+            type: string
+        - explode: false
+          in: query
+          name: branch
+          schema:
+            maxLength: 255
+            type: string
+        - explode: false
+          in: query
+          name: runner_class
+          schema:
+            maxLength: 255
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SandboxRunsPage"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: List CI and scheduled runs for the current org
+      x-forge-metal-iam:
+        action: list
+        audit_event: sandbox.run.list
+        data_classification: restricted
+        event_category: sandbox
+        operation_display: list runs
+        operation_type: read
+        org_scope: token_org_id
+        permission: sandbox:execution:read
+        rate_limit_class: read
+        resource: run
+        risk_level: low
+        source_product_area: Sandbox
+  /api/v1/runs/{run_id}:
+    get:
+      operationId: get-run
+      parameters:
+        - description: Run UUID
+          in: path
+          name: run_id
+          required: true
+          schema:
+            description: Run UUID
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SandboxExecutionRecord"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Get a CI or scheduled run
+      x-forge-metal-iam:
+        action: read
+        audit_event: sandbox.run.read
+        data_classification: restricted
+        event_category: sandbox
+        operation_display: get run
+        operation_type: read
+        org_scope: token_org_id
+        permission: sandbox:execution:read
+        rate_limit_class: read
+        resource: run
+        risk_level: low
+        source_product_area: Sandbox
+  /api/v1/sticky-disks:
+    get:
+      operationId: list-sticky-disks
+      parameters:
+        - description: Maximum sticky disks to return.
+          explode: false
+          in: query
+          name: limit
+          schema:
+            description: Maximum sticky disks to return.
+            format: int64
+            maximum: 500
+            minimum: 1
+            type: integer
+        - description: Opaque pagination cursor returned by the previous page.
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque pagination cursor returned by the previous page.
+            maxLength: 160
+            type: string
+        - explode: false
+          in: query
+          name: repository
+          schema:
+            maxLength: 255
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SandboxStickyDisksPage"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: List sticky disk inventory for the current org
+      x-forge-metal-iam:
+        action: list
+        audit_event: sandbox.sticky_disk.list
+        data_classification: restricted
+        event_category: sandbox
+        operation_display: list sticky disks
+        operation_type: read
+        org_scope: token_org_id
+        permission: sandbox:sticky_disk:read
+        rate_limit_class: read
+        resource: sticky_disk
+        risk_level: low
+        source_product_area: Sandbox
+  /api/v1/sticky-disks/reset:
+    post:
+      operationId: reset-sticky-disk
+      parameters:
+        - description: Stable caller-provided key used to make this mutation retry-safe.
+          in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StickyDiskResetRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SandboxStickyDiskResetResult"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Reset a sticky disk generation so future runs cold-start
+      x-forge-metal-iam:
+        action: reset
+        audit_event: sandbox.sticky_disk.reset
+        data_classification: restricted
+        event_category: sandbox
+        idempotency: idempotency_key_header
+        operation_display: reset sticky disk
+        operation_type: write
+        org_scope: token_org_id
+        permission: sandbox:sticky_disk:write
+        rate_limit_class: sticky_disk_mutation
+        request_body_max_bytes: 8192
+        resource: sticky_disk
+        risk_level: medium
         source_product_area: Sandbox
 servers:
   - url: http://127.0.0.1:4243

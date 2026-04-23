@@ -32,6 +32,9 @@ const (
 	permissionScheduleRead    permission = "sandbox:execution_schedule:read"
 	permissionScheduleWrite   permission = "sandbox:execution_schedule:write"
 	permissionLogsRead        permission = "sandbox:logs:read"
+	permissionAnalyticsRead   permission = "sandbox:analytics:read"
+	permissionStickyDiskRead  permission = "sandbox:sticky_disk:read"
+	permissionStickyDiskWrite permission = "sandbox:sticky_disk:write"
 	permissionBillingRead     permission = "billing:read"
 	permissionBillingCheckout permission = "billing:checkout"
 
@@ -81,6 +84,9 @@ var rolePermissionBundles = map[string][]permission{
 		permissionScheduleRead,
 		permissionScheduleWrite,
 		permissionLogsRead,
+		permissionAnalyticsRead,
+		permissionStickyDiskRead,
+		permissionStickyDiskWrite,
 		permissionBillingRead,
 		permissionBillingCheckout,
 	},
@@ -89,6 +95,8 @@ var rolePermissionBundles = map[string][]permission{
 		permissionScheduleRead,
 		permissionScheduleWrite,
 		permissionLogsRead,
+		permissionAnalyticsRead,
+		permissionStickyDiskRead,
 	},
 }
 

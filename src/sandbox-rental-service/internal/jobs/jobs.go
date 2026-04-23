@@ -113,6 +113,7 @@ type SubmitRequest struct {
 }
 
 type ExecutionRecord struct {
+	RunID            uuid.UUID
 	ExecutionID      uuid.UUID
 	OrgID            uint64
 	ActorID          string
@@ -133,6 +134,10 @@ type ExecutionRecord struct {
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	BillingWindows   []BillingWindow
+	BillingSummary   RunBillingSummary
+	GitHub           GitHubRunMetadata
+	Schedule         ScheduleRunMetadata
+	StickyDiskMounts []StickyDiskMountRecord
 }
 
 type AttemptRecord struct {
@@ -148,6 +153,13 @@ type AttemptRecord struct {
 	ZFSWritten    int64
 	StdoutBytes   int64
 	StderrBytes   int64
+	RootfsProvisionedBytes int64
+	BootTimeUs             int64
+	BlockReadBytes         int64
+	BlockWriteBytes        int64
+	NetRXBytes             int64
+	NetTXBytes             int64
+	VCPUExitCount          int64
 	TraceID       string
 	StartedAt     *time.Time
 	CompletedAt   *time.Time
@@ -162,6 +174,10 @@ type BillingWindow struct {
 	ReservationShape string
 	ReservedQuantity int
 	ActualQuantity   int
+	ReservedChargeUnits uint64
+	BilledChargeUnits   uint64
+	WriteoffChargeUnits uint64
+	CostPerUnit         uint64
 	PricingPhase     string
 	State            string
 	WindowStart      time.Time
@@ -215,11 +231,26 @@ type jobEventRow struct {
 	Kind             string    `ch:"kind"`
 	SourceKind       string    `ch:"source_kind"`
 	WorkloadKind     string    `ch:"workload_kind"`
+	SourceRef        string    `ch:"source_ref"`
 	RunnerClass      string    `ch:"runner_class"`
 	ExternalProvider string    `ch:"external_provider"`
 	ExternalTaskID   string    `ch:"external_task_id"`
 	Provider         string    `ch:"provider"`
 	ProductID        string    `ch:"product_id"`
+	LeaseID          string    `ch:"lease_id"`
+	ExecID           string    `ch:"exec_id"`
+	RepositoryFullName string  `ch:"repository_full_name"`
+	WorkflowName       string  `ch:"workflow_name"`
+	JobName            string  `ch:"job_name"`
+	HeadBranch         string  `ch:"head_branch"`
+	HeadSHA            string  `ch:"head_sha"`
+	GitHubInstallationID uint64 `ch:"github_installation_id"`
+	GitHubRunID          uint64 `ch:"github_run_id"`
+	GitHubJobID          uint64 `ch:"github_job_id"`
+	ScheduleID           string `ch:"schedule_id"`
+	ScheduleDisplayName  string `ch:"schedule_display_name"`
+	TemporalWorkflowID   string `ch:"temporal_workflow_id"`
+	TemporalRunID        string `ch:"temporal_run_id"`
 	RunCommand       string    `ch:"run_command"`
 	Status           string    `ch:"status"`
 	ExitCode         int32     `ch:"exit_code"`
@@ -228,8 +259,18 @@ type jobEventRow struct {
 	StdoutBytes      uint64    `ch:"stdout_bytes"`
 	StderrBytes      uint64    `ch:"stderr_bytes"`
 	BillingJobID     int64     `ch:"billing_job_id"`
-	ChargeUnits      uint64    `ch:"charge_units"`
+	ReservedChargeUnits uint64 `ch:"reserved_charge_units"`
+	BilledChargeUnits   uint64 `ch:"billed_charge_units"`
+	WriteoffChargeUnits uint64 `ch:"writeoff_charge_units"`
+	CostPerUnit         uint64 `ch:"cost_per_unit"`
 	PricingPhase     string    `ch:"pricing_phase"`
+	RootfsProvisionedBytes uint64 `ch:"rootfs_provisioned_bytes"`
+	BootTimeUs            uint64 `ch:"boot_time_us"`
+	BlockReadBytes        uint64 `ch:"block_read_bytes"`
+	BlockWriteBytes       uint64 `ch:"block_write_bytes"`
+	NetRXBytes            uint64 `ch:"net_rx_bytes"`
+	NetTXBytes            uint64 `ch:"net_tx_bytes"`
+	VCPUExitCount         uint64 `ch:"vcpu_exit_count"`
 	CorrelationID    string    `ch:"correlation_id"`
 	StartedAt        time.Time `ch:"started_at"`
 	CompletedAt      time.Time `ch:"completed_at"`
@@ -238,12 +279,24 @@ type jobEventRow struct {
 }
 
 type jobLogRow struct {
-	ExecutionID uuid.UUID `ch:"execution_id"`
-	AttemptID   uuid.UUID `ch:"attempt_id"`
-	Seq         uint32    `ch:"seq"`
-	Stream      string    `ch:"stream"`
-	Chunk       string    `ch:"chunk"`
-	CreatedAt   time.Time `ch:"created_at"`
+	ExecutionID        uuid.UUID `ch:"execution_id"`
+	AttemptID          uuid.UUID `ch:"attempt_id"`
+	OrgID              uint64    `ch:"org_id"`
+	SourceKind         string    `ch:"source_kind"`
+	WorkloadKind       string    `ch:"workload_kind"`
+	RunnerClass        string    `ch:"runner_class"`
+	ExternalProvider   string    `ch:"external_provider"`
+	ProductID          string    `ch:"product_id"`
+	CorrelationID      string    `ch:"correlation_id"`
+	RepositoryFullName string    `ch:"repository_full_name"`
+	WorkflowName       string    `ch:"workflow_name"`
+	JobName            string    `ch:"job_name"`
+	HeadBranch         string    `ch:"head_branch"`
+	ScheduleID         string    `ch:"schedule_id"`
+	Seq                uint32    `ch:"seq"`
+	Stream             string    `ch:"stream"`
+	Chunk              string    `ch:"chunk"`
+	CreatedAt          time.Time `ch:"created_at"`
 }
 
 type billingStatusError struct {
@@ -510,7 +563,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		cleanupCtx, cancel := context.WithTimeout(detachedContext(ctx), 5*time.Second)
 		defer cancel()
 		_ = s.voidBillingWindow(cleanupCtx, reservation)
-		_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "voided", 0)
+		_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "voided", 0, apiwire.BillingSettleResult{})
 		return s.failAttempt(ctx, item, "lease_acquire_failed", err)
 	}
 	item.LeaseID = lease.LeaseID
@@ -557,7 +610,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		terminalCtx := detachedContext(ctx)
 		_, _ = s.Orchestrator.CancelExec(terminalCtx, lease.LeaseID, execRecord.ExecID, item.AttemptID.String()+":timeout", "execution_wait_failed")
 		s.cleanupLeaseAndReservation(terminalCtx, lease.LeaseID, reservation)
-		_ = s.markBillingWindow(terminalCtx, item.AttemptID, reservation.WindowID, "voided", 0)
+		_ = s.markBillingWindow(terminalCtx, item.AttemptID, reservation.WindowID, "voided", 0, apiwire.BillingSettleResult{})
 		return s.failAttempt(terminalCtx, item, "exec_wait_failed", waitErr)
 	}
 	if item.WorkloadKind == WorkloadKindGitHubRunner && s.GitHubRunner != nil {
@@ -578,10 +631,11 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	if durationMs < 1 {
 		durationMs = 1
 	}
-	if _, err := s.settleBillingWindow(ctx, reservation, uint32(clampUint32(durationMs)), usageSummary(finalExec)); err != nil {
+	settleResult, err := s.settleBillingWindow(ctx, reservation, uint32(clampUint32(durationMs)), usageSummary(finalExec))
+	if err != nil {
 		return s.failAttempt(ctx, item, "billing_settle_failed", err)
 	}
-	_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "settled", int(durationMs))
+	_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "settled", int(durationMs), settleResult)
 	state := StateSucceeded
 	reason := ""
 	if finalExec.ExitCode != 0 || finalExec.State == vmorchestrator.ExecStateFailed {
@@ -591,16 +645,15 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	if err := s.completeAttempt(ctx, item, state, reason, finalExec, durationMs, completedAt); err != nil {
 		return err
 	}
-	_ = s.writeExecutionLogs(context.Background(), item.ExecutionID, item.AttemptID, finalExec.Output)
-	_ = s.writeJobEvent(context.Background(), jobEventRow{
-		ExecutionID: item.ExecutionID, AttemptID: item.AttemptID, OrgID: item.OrgID, ActorID: item.ActorID,
-		Kind: item.Kind, SourceKind: item.SourceKind, WorkloadKind: item.WorkloadKind, RunnerClass: item.RunnerClass,
-		ExternalProvider: item.ExternalProvider, ExternalTaskID: item.ExternalTaskID, Provider: item.Provider, ProductID: item.ProductID,
-		RunCommand: item.RunCommand, Status: state, ExitCode: int32(finalExec.ExitCode), DurationMs: durationMs,
-		ZFSWritten: finalExec.ZFSWritten, StdoutBytes: finalExec.StdoutBytes, StderrBytes: finalExec.StderrBytes,
-		BillingJobID: billingJobID, PricingPhase: reservation.PricingPhase, CorrelationID: item.CorrelationID,
-		StartedAt: execRecord.StartedAt, CompletedAt: completedAt, CreatedAt: time.Now().UTC(), TraceID: span.SpanContext().TraceID().String(),
-	})
+	runRecord, err := s.loadRun(ctx, item.OrgID, item.ExecutionID, false, false)
+	if err == nil {
+		runRecord.Status = state
+		runRecord.LatestAttempt.TraceID = span.SpanContext().TraceID().String()
+		_ = s.writeExecutionLogs(context.Background(), *runRecord, finalExec.Output)
+		_ = s.writeJobEvent(context.Background(), jobEventRowForRun(*runRecord))
+	} else if s.Logger != nil {
+		s.Logger.WarnContext(ctx, "load run projection after execution failed", "execution_id", item.ExecutionID, "attempt_id", item.AttemptID, "error", err)
+	}
 	if item.WorkloadKind == WorkloadKindGitHubRunner && s.GitHubRunner != nil {
 		s.GitHubRunner.MarkExecutionExited(detachedContext(ctx), item.ExecutionID)
 	}
@@ -705,17 +758,44 @@ func (s *Service) insertBillingWindow(ctx context.Context, attemptID uuid.UUID, 
 	payload, _ := json.Marshal(reservation)
 	_, err := s.PGX.Exec(ctx, `INSERT INTO execution_billing_windows (
 		attempt_id, window_seq, billing_window_id, reservation_shape, reserved_quantity, actual_quantity,
+		reserved_charge_units, billed_charge_units, writeoff_charge_units, cost_per_unit,
 		pricing_phase, state, window_start, created_at, reservation_jsonb
-	) VALUES ($1,$2,$3,$4,$5,0,$6,'reserved',$7,$8,$9)`,
-		attemptID, reservation.WindowSeq, reservation.WindowID, reservation.ReservationShape, reservation.ReservedQuantity, reservation.PricingPhase, reservation.WindowStart, time.Now().UTC(), payload)
+	) VALUES ($1,$2,$3,$4,$5,0,$6,0,0,$7,$8,'reserved',$9,$10,$11)`,
+		attemptID,
+		reservation.WindowSeq,
+		reservation.WindowID,
+		reservation.ReservationShape,
+		reservation.ReservedQuantity,
+		reservation.ReservedChargeUnits.Uint64(),
+		reservation.CostPerUnit.Uint64(),
+		reservation.PricingPhase,
+		reservation.WindowStart,
+		time.Now().UTC(),
+		payload,
+	)
 	if err != nil {
 		return fmt.Errorf("insert billing window: %w", err)
 	}
 	return nil
 }
 
-func (s *Service) markBillingWindow(ctx context.Context, attemptID uuid.UUID, windowID, state string, actual int) error {
-	_, err := s.PGX.Exec(ctx, `UPDATE execution_billing_windows SET state = $1, actual_quantity = $2, settled_at = $3 WHERE attempt_id = $4 AND billing_window_id = $5`, state, actual, time.Now().UTC(), attemptID, windowID)
+func (s *Service) markBillingWindow(ctx context.Context, attemptID uuid.UUID, windowID, state string, actual int, settled apiwire.BillingSettleResult) error {
+	_, err := s.PGX.Exec(ctx, `UPDATE execution_billing_windows
+		SET state = $1,
+		    actual_quantity = $2,
+		    billed_charge_units = $3,
+		    writeoff_charge_units = $4,
+		    settled_at = $5
+		WHERE attempt_id = $6
+		  AND billing_window_id = $7`,
+		state,
+		actual,
+		settled.BilledChargeUnits.Uint64(),
+		settled.WriteoffChargeUnits.Uint64(),
+		time.Now().UTC(),
+		attemptID,
+		windowID,
+	)
 	return err
 }
 
@@ -776,6 +856,8 @@ func (s *Service) setAttemptLeaseExec(ctx context.Context, attemptID uuid.UUID, 
 
 func (s *Service) completeAttempt(ctx context.Context, item executionWorkItem, state, reason string, exec vmorchestrator.ExecRecord, durationMs int64, completedAt time.Time) error {
 	now := time.Now().UTC()
+	metrics := exec.Metrics
+	traceID := trace.SpanContextFromContext(ctx).TraceID().String()
 	tx, err := s.PGX.Begin(ctx)
 	if err != nil {
 		return err
@@ -784,8 +866,46 @@ func (s *Service) completeAttempt(ctx context.Context, item executionWorkItem, s
 	if _, err := tx.Exec(ctx, `UPDATE executions SET state = $1, updated_at = $2 WHERE execution_id = $3`, state, now, item.ExecutionID); err != nil {
 		return err
 	}
-	tag, err := tx.Exec(ctx, `UPDATE execution_attempts SET state = $1, failure_reason = $2, exit_code = $3, duration_ms = $4, zfs_written = $5, stdout_bytes = $6, stderr_bytes = $7, completed_at = $8, updated_at = $9 WHERE attempt_id = $10 AND state = $11`,
-		state, reason, exec.ExitCode, durationMs, int64(exec.ZFSWritten), int64(exec.StdoutBytes), int64(exec.StderrBytes), completedAt, now, item.AttemptID, StateRunning)
+	tag, err := tx.Exec(ctx, `UPDATE execution_attempts
+		SET state = $1,
+		    failure_reason = $2,
+		    exit_code = $3,
+		    duration_ms = $4,
+		    zfs_written = $5,
+		    stdout_bytes = $6,
+		    stderr_bytes = $7,
+		    rootfs_provisioned_bytes = $8,
+		    boot_time_us = $9,
+		    block_read_bytes = $10,
+		    block_write_bytes = $11,
+		    net_rx_bytes = $12,
+		    net_tx_bytes = $13,
+		    vcpu_exit_count = $14,
+		    trace_id = $15,
+		    completed_at = $16,
+		    updated_at = $17
+		WHERE attempt_id = $18
+		  AND state = $19`,
+		state,
+		reason,
+		exec.ExitCode,
+		durationMs,
+		int64(exec.ZFSWritten),
+		int64(exec.StdoutBytes),
+		int64(exec.StderrBytes),
+		int64(exec.RootfsProvisionedBytes),
+		vmMetricUint64(metrics, func(m *vmorchestrator.VMMetrics) uint64 { return m.BootTimeUs }),
+		vmMetricUint64(metrics, func(m *vmorchestrator.VMMetrics) uint64 { return m.BlockReadBytes }),
+		vmMetricUint64(metrics, func(m *vmorchestrator.VMMetrics) uint64 { return m.BlockWriteBytes }),
+		vmMetricUint64(metrics, func(m *vmorchestrator.VMMetrics) uint64 { return m.NetRxBytes }),
+		vmMetricUint64(metrics, func(m *vmorchestrator.VMMetrics) uint64 { return m.NetTxBytes }),
+		vmMetricUint64(metrics, func(m *vmorchestrator.VMMetrics) uint64 { return m.VCPUExitCount }),
+		traceID,
+		completedAt,
+		now,
+		item.AttemptID,
+		StateRunning,
+	)
 	if err != nil {
 		return err
 	}
@@ -803,6 +923,7 @@ func (s *Service) completeAttempt(ctx context.Context, item executionWorkItem, s
 
 func (s *Service) failAttempt(ctx context.Context, item executionWorkItem, reason string, cause error) error {
 	now := time.Now().UTC()
+	traceID := trace.SpanContextFromContext(ctx).TraceID().String()
 	tx, err := s.PGX.Begin(ctx)
 	if err != nil {
 		return err
@@ -811,7 +932,7 @@ func (s *Service) failAttempt(ctx context.Context, item executionWorkItem, reaso
 	if _, err := tx.Exec(ctx, `UPDATE executions SET state = $1, updated_at = $2 WHERE execution_id = $3`, StateFailed, now, item.ExecutionID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE execution_attempts SET state = $1, failure_reason = $2, completed_at = $3, updated_at = $3 WHERE attempt_id = $4`, StateFailed, reason, now, item.AttemptID); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE execution_attempts SET state = $1, failure_reason = $2, trace_id = $3, completed_at = $4, updated_at = $4 WHERE attempt_id = $5`, StateFailed, reason, traceID, now, item.AttemptID); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO execution_events (execution_id, attempt_id, from_state, to_state, reason, created_at) VALUES ($1,$2,'',$3,$4,$5)`, item.ExecutionID, item.AttemptID, StateFailed, reason, now); err != nil {
@@ -852,23 +973,7 @@ func (s *Service) renewLeaseLoop(ctx context.Context, leaseID, keyPrefix string)
 }
 
 func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uuid.UUID) (*ExecutionRecord, error) {
-	row := s.PGX.QueryRow(ctx, `SELECT e.execution_id, e.org_id, e.actor_id, e.kind, e.source_kind, e.workload_kind, e.source_ref, e.runner_class, e.external_provider, e.external_task_id, e.provider, e.product_id, e.state, e.correlation_id, e.idempotency_key, e.run_command, e.created_at, e.updated_at,
-		a.attempt_id, a.attempt_seq, a.state, COALESCE(a.lease_id,''), COALESCE(a.exec_id,''), COALESCE(a.billing_job_id, 0), a.failure_reason, a.exit_code, a.duration_ms, a.zfs_written, a.stdout_bytes, a.stderr_bytes, a.trace_id, a.started_at, a.completed_at, a.created_at, a.updated_at
-		FROM executions e JOIN execution_attempts a ON a.execution_id = e.execution_id
-		WHERE e.org_id = $1 AND e.execution_id = $2 ORDER BY a.attempt_seq DESC LIMIT 1`, orgID, executionID)
-	var record ExecutionRecord
-	var attempt AttemptRecord
-	if err := row.Scan(&record.ExecutionID, &record.OrgID, &record.ActorID, &record.Kind, &record.SourceKind, &record.WorkloadKind, &record.SourceRef, &record.RunnerClass, &record.ExternalProvider, &record.ExternalTaskID, &record.Provider, &record.ProductID, &record.Status, &record.CorrelationID, &record.IdempotencyKey, &record.RunCommand, &record.CreatedAt, &record.UpdatedAt,
-		&attempt.AttemptID, &attempt.AttemptSeq, &attempt.State, &attempt.LeaseID, &attempt.ExecID, &attempt.BillingJobID, &attempt.FailureReason, &attempt.ExitCode, &attempt.DurationMs, &attempt.ZFSWritten, &attempt.StdoutBytes, &attempt.StderrBytes, &attempt.TraceID, &attempt.StartedAt, &attempt.CompletedAt, &attempt.CreatedAt, &attempt.UpdatedAt); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrExecutionMissing
-		}
-		return nil, err
-	}
-	record.LatestAttempt = attempt
-	windows, _ := s.listBillingWindows(ctx, attempt.AttemptID)
-	record.BillingWindows = windows
-	return &record, nil
+	return s.GetRun(ctx, orgID, executionID)
 }
 
 func (s *Service) GetExecutionLogs(ctx context.Context, orgID uint64, executionID uuid.UUID) (uuid.UUID, string, error) {
@@ -893,7 +998,25 @@ func (s *Service) GetExecutionLogs(ctx context.Context, orgID uint64, executionI
 }
 
 func (s *Service) listBillingWindows(ctx context.Context, attemptID uuid.UUID) ([]BillingWindow, error) {
-	rows, err := s.PGX.Query(ctx, `SELECT attempt_id, billing_window_id, window_seq, reservation_shape, reserved_quantity, actual_quantity, pricing_phase, state, window_start, created_at, settled_at FROM execution_billing_windows WHERE attempt_id = $1 ORDER BY window_seq`, attemptID)
+	rows, err := s.PGX.Query(ctx, `SELECT
+			attempt_id,
+			billing_window_id,
+			window_seq,
+			reservation_shape,
+			reserved_quantity,
+			actual_quantity,
+			reserved_charge_units,
+			billed_charge_units,
+			writeoff_charge_units,
+			cost_per_unit,
+			pricing_phase,
+			state,
+			window_start,
+			created_at,
+			settled_at
+		FROM execution_billing_windows
+		WHERE attempt_id = $1
+		ORDER BY window_seq`, attemptID)
 	if err != nil {
 		return nil, err
 	}
@@ -901,7 +1024,7 @@ func (s *Service) listBillingWindows(ctx context.Context, attemptID uuid.UUID) (
 	out := []BillingWindow{}
 	for rows.Next() {
 		var window BillingWindow
-		if err := rows.Scan(&window.AttemptID, &window.BillingWindowID, &window.WindowSeq, &window.ReservationShape, &window.ReservedQuantity, &window.ActualQuantity, &window.PricingPhase, &window.State, &window.WindowStart, &window.CreatedAt, &window.SettledAt); err != nil {
+		if err := rows.Scan(&window.AttemptID, &window.BillingWindowID, &window.WindowSeq, &window.ReservationShape, &window.ReservedQuantity, &window.ActualQuantity, &window.ReservedChargeUnits, &window.BilledChargeUnits, &window.WriteoffChargeUnits, &window.CostPerUnit, &window.PricingPhase, &window.State, &window.WindowStart, &window.CreatedAt, &window.SettledAt); err != nil {
 			return nil, err
 		}
 		out = append(out, window)
@@ -909,11 +1032,11 @@ func (s *Service) listBillingWindows(ctx context.Context, attemptID uuid.UUID) (
 	return out, rows.Err()
 }
 
-func (s *Service) writeExecutionLogs(ctx context.Context, executionID, attemptID uuid.UUID, logs string) error {
+func (s *Service) writeExecutionLogs(ctx context.Context, record ExecutionRecord, logs string) error {
 	if logs == "" {
 		return nil
 	}
-	_, err := s.PGX.Exec(ctx, `INSERT INTO execution_logs (execution_id, attempt_id, seq, stream, chunk, created_at) VALUES ($1,$2,1,'combined',$3,$4)`, executionID, attemptID, logs, time.Now().UTC())
+	_, err := s.PGX.Exec(ctx, `INSERT INTO execution_logs (execution_id, attempt_id, seq, stream, chunk, created_at) VALUES ($1,$2,1,'combined',$3,$4)`, record.ExecutionID, record.LatestAttempt.AttemptID, logs, time.Now().UTC())
 	if err != nil {
 		return err
 	}
@@ -924,7 +1047,26 @@ func (s *Service) writeExecutionLogs(ctx context.Context, executionID, attemptID
 	if err != nil {
 		return err
 	}
-	if err := batch.AppendStruct(&jobLogRow{ExecutionID: executionID, AttemptID: attemptID, Seq: 1, Stream: "combined", Chunk: logs, CreatedAt: time.Now().UTC()}); err != nil {
+	if err := batch.AppendStruct(&jobLogRow{
+		ExecutionID:        record.ExecutionID,
+		AttemptID:          record.LatestAttempt.AttemptID,
+		OrgID:              record.OrgID,
+		SourceKind:         record.SourceKind,
+		WorkloadKind:       record.WorkloadKind,
+		RunnerClass:        record.RunnerClass,
+		ExternalProvider:   record.ExternalProvider,
+		ProductID:          record.ProductID,
+		CorrelationID:      record.CorrelationID,
+		RepositoryFullName: record.GitHub.RepositoryFullName,
+		WorkflowName:       record.GitHub.WorkflowName,
+		JobName:            record.GitHub.JobName,
+		HeadBranch:         record.GitHub.HeadBranch,
+		ScheduleID:         zeroUUIDString(record.Schedule.ScheduleID),
+		Seq:                1,
+		Stream:             "combined",
+		Chunk:              logs,
+		CreatedAt:          time.Now().UTC(),
+	}); err != nil {
 		return err
 	}
 	return batch.Send()
@@ -951,6 +1093,84 @@ func (s *Service) writeJobEvent(ctx context.Context, row jobEventRow) error {
 		return err
 	}
 	return batch.Send()
+}
+
+func jobEventRowForRun(record ExecutionRecord) jobEventRow {
+	return jobEventRow{
+		ExecutionID:           record.ExecutionID,
+		AttemptID:             record.LatestAttempt.AttemptID,
+		OrgID:                 record.OrgID,
+		ActorID:               record.ActorID,
+		Kind:                  record.Kind,
+		SourceKind:            record.SourceKind,
+		WorkloadKind:          record.WorkloadKind,
+		SourceRef:             record.SourceRef,
+		RunnerClass:           record.RunnerClass,
+		ExternalProvider:      record.ExternalProvider,
+		ExternalTaskID:        record.ExternalTaskID,
+		Provider:              record.Provider,
+		ProductID:             record.ProductID,
+		LeaseID:               record.LatestAttempt.LeaseID,
+		ExecID:                record.LatestAttempt.ExecID,
+		RepositoryFullName:    record.GitHub.RepositoryFullName,
+		WorkflowName:          record.GitHub.WorkflowName,
+		JobName:               record.GitHub.JobName,
+		HeadBranch:            record.GitHub.HeadBranch,
+		HeadSHA:               record.GitHub.HeadSHA,
+		GitHubInstallationID:  int64ToUint64(record.GitHub.InstallationID),
+		GitHubRunID:           int64ToUint64(record.GitHub.RunID),
+		GitHubJobID:           int64ToUint64(record.GitHub.JobID),
+		ScheduleID:            zeroUUIDString(record.Schedule.ScheduleID),
+		ScheduleDisplayName:   record.Schedule.DisplayName,
+		TemporalWorkflowID:    record.Schedule.TemporalWorkflowID,
+		TemporalRunID:         record.Schedule.TemporalRunID,
+		RunCommand:            record.RunCommand,
+		Status:                record.Status,
+		ExitCode:              int32(record.LatestAttempt.ExitCode),
+		DurationMs:            record.LatestAttempt.DurationMs,
+		ZFSWritten:            int64ToUint64(record.LatestAttempt.ZFSWritten),
+		StdoutBytes:           int64ToUint64(record.LatestAttempt.StdoutBytes),
+		StderrBytes:           int64ToUint64(record.LatestAttempt.StderrBytes),
+		BillingJobID:          record.LatestAttempt.BillingJobID,
+		ReservedChargeUnits:   record.BillingSummary.ReservedChargeUnits,
+		BilledChargeUnits:     record.BillingSummary.BilledChargeUnits,
+		WriteoffChargeUnits:   record.BillingSummary.WriteoffChargeUnits,
+		CostPerUnit:           record.BillingSummary.CostPerUnit,
+		PricingPhase:          record.BillingSummary.PricingPhase,
+		RootfsProvisionedBytes: int64ToUint64(record.LatestAttempt.RootfsProvisionedBytes),
+		BootTimeUs:             int64ToUint64(record.LatestAttempt.BootTimeUs),
+		BlockReadBytes:         int64ToUint64(record.LatestAttempt.BlockReadBytes),
+		BlockWriteBytes:        int64ToUint64(record.LatestAttempt.BlockWriteBytes),
+		NetRXBytes:             int64ToUint64(record.LatestAttempt.NetRXBytes),
+		NetTXBytes:             int64ToUint64(record.LatestAttempt.NetTXBytes),
+		VCPUExitCount:          int64ToUint64(record.LatestAttempt.VCPUExitCount),
+		CorrelationID:          record.CorrelationID,
+		StartedAt:              derefTime(record.LatestAttempt.StartedAt),
+		CompletedAt:            derefTime(record.LatestAttempt.CompletedAt),
+		CreatedAt:              time.Now().UTC(),
+		TraceID:                record.LatestAttempt.TraceID,
+	}
+}
+
+func int64ToUint64(value int64) uint64 {
+	if value <= 0 {
+		return 0
+	}
+	return uint64(value)
+}
+
+func zeroUUIDString(value uuid.UUID) string {
+	if value == uuid.Nil {
+		return ""
+	}
+	return value.String()
+}
+
+func derefTime(value *time.Time) time.Time {
+	if value == nil {
+		return time.Time{}
+	}
+	return value.UTC()
 }
 
 func (s *Service) normalizeSubmitRequest(ctx context.Context, req SubmitRequest) (SubmitRequest, error) {
@@ -1040,6 +1260,13 @@ func usageSummary(exec vmorchestrator.ExecRecord) map[string]any {
 		"zfs_written":              exec.ZFSWritten,
 		"rootfs_provisioned_bytes": exec.RootfsProvisionedBytes,
 	}
+}
+
+func vmMetricUint64(metrics *vmorchestrator.VMMetrics, pick func(*vmorchestrator.VMMetrics) uint64) int64 {
+	if metrics == nil || pick == nil {
+		return 0
+	}
+	return int64(pick(metrics))
 }
 
 func workloadTimeout(item executionWorkItem, configured time.Duration) time.Duration {
