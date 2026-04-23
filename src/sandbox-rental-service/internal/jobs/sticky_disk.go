@@ -44,6 +44,7 @@ type StickyDiskIdentity struct {
 	ExecutionID        uuid.UUID
 	AttemptID          uuid.UUID
 	AllocationID       uuid.UUID
+	OrgID              uint64
 	Installation       int64
 	RepositoryID       int64
 	RepositoryFullName string
@@ -123,16 +124,18 @@ func (r *GitHubRunner) authenticateGitHubExecution(ctx context.Context, executio
 	var identity StickyDiskIdentity
 	err := r.service.PGX.QueryRow(ctx, `SELECT
 			a.allocation_id,
+			i.org_id,
 			a.installation_id,
 			a.repository_id,
 			COALESCE(j.repository_full_name, ''),
 			COALESCE(b.github_job_id, a.requested_for_github_job_id),
 			a.runner_name
 			FROM github_runner_allocations a
+			JOIN github_installations i ON i.installation_id = a.installation_id
 			LEFT JOIN github_runner_job_bindings b ON b.allocation_id = a.allocation_id
 			LEFT JOIN github_workflow_jobs j ON j.github_job_id = COALESCE(b.github_job_id, a.requested_for_github_job_id)
 			WHERE a.execution_id = $1 AND a.attempt_id = $2`,
-		executionID, attemptID).Scan(&identity.AllocationID, &identity.Installation, &identity.RepositoryID, &identity.RepositoryFullName, &identity.GitHubJobID, &identity.RunnerName)
+		executionID, attemptID).Scan(&identity.AllocationID, &identity.OrgID, &identity.Installation, &identity.RepositoryID, &identity.RepositoryFullName, &identity.GitHubJobID, &identity.RunnerName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return StickyDiskIdentity{}, unauthorizedErr
 	}
@@ -223,10 +226,12 @@ func (r *GitHubRunner) pendingStickyDiskCommits(ctx context.Context, attemptID u
 	rows, err := r.service.PGX.Query(ctx, `SELECT
 		m.mount_id, m.mount_name, m.key, m.key_hash, m.mount_path, m.base_generation, m.target_source_ref,
 		m.execution_id, m.attempt_id, m.allocation_id,
+		i.org_id,
 		a.installation_id, a.repository_id, COALESCE(j.repository_full_name, ''),
 		COALESCE(b.github_job_id, a.requested_for_github_job_id), a.runner_name
 		FROM execution_sticky_disk_mounts m
 		JOIN github_runner_allocations a ON a.allocation_id = m.allocation_id
+		JOIN github_installations i ON i.installation_id = a.installation_id
 		LEFT JOIN github_runner_job_bindings b ON b.allocation_id = a.allocation_id
 		LEFT JOIN github_workflow_jobs j ON j.github_job_id = COALESCE(b.github_job_id, a.requested_for_github_job_id)
 		WHERE m.attempt_id = $1 AND m.save_requested AND m.save_state = $2
@@ -240,6 +245,7 @@ func (r *GitHubRunner) pendingStickyDiskCommits(ctx context.Context, attemptID u
 		var commit stickyDiskPendingCommit
 		if err := rows.Scan(&commit.MountID, &commit.MountName, &commit.Key, &commit.KeyHash, &commit.MountPath, &commit.BaseGeneration, &commit.TargetSourceRef,
 			&commit.Identity.ExecutionID, &commit.Identity.AttemptID, &commit.Identity.AllocationID,
+			&commit.Identity.OrgID,
 			&commit.Identity.Installation, &commit.Identity.RepositoryID, &commit.Identity.RepositoryFullName,
 			&commit.Identity.GitHubJobID, &commit.Identity.RunnerName); err != nil {
 			return nil, err
@@ -252,14 +258,14 @@ func (r *GitHubRunner) pendingStickyDiskCommits(ctx context.Context, attemptID u
 func (r *GitHubRunner) commitStickyDiskMount(ctx context.Context, item executionWorkItem, leaseID string, commit stickyDiskPendingCommit) error {
 	ctx, span := tracer.Start(ctx, "github.stickydisk.commit_zfs")
 	defer span.End()
-	span.SetAttributes(
+	attrs := append(stickyDiskAttributes(commit.Identity, commit.Key),
 		attribute.String("github.stickydisk.mount_id", commit.MountID.String()),
-		attribute.String("github.stickydisk.key_hash", commit.KeyHash),
 		attribute.String("github.stickydisk.mount_name", commit.MountName),
 		attribute.String("github.stickydisk.mount_path", commit.MountPath),
 		attribute.String("github.stickydisk.target_source_ref", commit.TargetSourceRef),
 		attribute.String("lease.id", leaseID),
 	)
+	span.SetAttributes(attrs...)
 	if started, err := r.markStickyDiskCommitRunning(ctx, commit.MountID); err != nil || !started {
 		if err != nil {
 			span.RecordError(err)
@@ -481,12 +487,14 @@ func githubActionsWorkspaceRoot(repositoryFullName string) (string, error) {
 
 func stickyDiskAttributes(identity StickyDiskIdentity, key string) []attribute.KeyValue {
 	return []attribute.KeyValue{
+		traceOrgID(identity.OrgID),
 		attribute.String("github.stickydisk.key_hash", stickyDiskKeyHash(key)),
 		attribute.String("github.allocation_id", identity.AllocationID.String()),
 		attribute.String("execution.id", identity.ExecutionID.String()),
 		attribute.String("attempt.id", identity.AttemptID.String()),
 		attribute.Int64("github.installation_id", identity.Installation),
 		attribute.Int64("github.repository_id", identity.RepositoryID),
+		attribute.String("github.repository", identity.RepositoryFullName),
 		attribute.Int64("github.job_id", identity.GitHubJobID),
 		attribute.String("github.runner_name", identity.RunnerName),
 	}

@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
 	"gopkg.in/yaml.v3"
 )
 
@@ -77,6 +78,8 @@ func (r *GitHubRunner) prepareStickyDiskMounts(ctx context.Context, allocation g
 		return nil, err
 	}
 	mounts := make([]StickyDiskMountSpec, 0, len(decls))
+	restoreHits := 0
+	restoreMisses := 0
 	seenPaths := map[string]struct{}{}
 	for idx, decl := range decls {
 		key, err := normalizeStickyDiskKey(decl.Key)
@@ -96,9 +99,22 @@ func (r *GitHubRunner) prepareStickyDiskMounts(ctx context.Context, allocation g
 		if err != nil {
 			return nil, err
 		}
+		if generation > 0 && sourceRef != stickyDiskEmptySourceRef {
+			restoreHits++
+		} else {
+			restoreMisses++
+		}
 		mounts = append(mounts, stickyDiskMountSpec(allocation.AllocationID, attemptID, idx, allocation.InstallationID, allocation.RepositoryID, key, mountPath, generation, sourceRef))
 	}
-	span.SetAttributes(traceInt64("github.run_id", allocation.RunID), traceInt64("github.job_id", allocation.RequestedJobID))
+	span.SetAttributes(
+		traceOrgID(allocation.OrgID),
+		traceInt64("github.run_id", allocation.RunID),
+		traceInt64("github.job_id", allocation.RequestedJobID),
+		attribute.String("github.repository", allocation.RepositoryFullName),
+		attribute.String("github.runner_class", allocation.RunnerClass),
+		attribute.Int("github.stickydisk.restore_hit_count", restoreHits),
+		attribute.Int("github.stickydisk.restore_miss_count", restoreMisses),
+	)
 	return mounts, nil
 }
 

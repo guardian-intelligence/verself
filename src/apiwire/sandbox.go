@@ -23,6 +23,7 @@ type SandboxGitHubInstallationRecord struct {
 }
 
 type SandboxExecutionRecord struct {
+	RunID            uuid.UUID              `json:"run_id"`
 	ExecutionID      uuid.UUID              `json:"execution_id"`
 	OrgID            OrgID                  `json:"org_id"`
 	ActorID          string                 `json:"actor_id"`
@@ -43,12 +44,219 @@ type SandboxExecutionRecord struct {
 	CreatedAt        time.Time              `json:"created_at"`
 	UpdatedAt        time.Time              `json:"updated_at"`
 	BillingWindows   []SandboxBillingWindow `json:"billing_windows,omitempty"`
+	BillingSummary   *SandboxRunBillingSummary `json:"billing_summary,omitempty"`
+	GitHub           *SandboxGitHubRunMetadata `json:"github,omitempty"`
+	Schedule         *SandboxScheduleRunMetadata `json:"schedule,omitempty"`
+	StickyDiskMounts []SandboxExecutionStickyDiskMount `json:"sticky_disk_mounts,omitempty"`
 }
 
 type SandboxExecutionLogs struct {
 	ExecutionID string `json:"execution_id"`
 	AttemptID   string `json:"attempt_id"`
 	Logs        string `json:"logs"`
+}
+
+type SandboxGitHubRunMetadata struct {
+	InstallationID    string `json:"installation_id,omitempty"`
+	RunID             string `json:"run_id,omitempty"`
+	JobID             string `json:"job_id,omitempty"`
+	RepositoryFullName string `json:"repository_full_name,omitempty"`
+	WorkflowName      string `json:"workflow_name,omitempty"`
+	JobName           string `json:"job_name,omitempty"`
+	HeadBranch        string `json:"head_branch,omitempty"`
+	HeadSHA           string `json:"head_sha,omitempty"`
+}
+
+type SandboxScheduleRunMetadata struct {
+	ScheduleID         *uuid.UUID `json:"schedule_id,omitempty"`
+	DisplayName        string     `json:"display_name,omitempty"`
+	TemporalWorkflowID string     `json:"temporal_workflow_id,omitempty"`
+	TemporalRunID      string     `json:"temporal_run_id,omitempty"`
+}
+
+type SandboxRunBillingSummary struct {
+	WindowCount         int32         `json:"window_count"`
+	ReservedChargeUnits DecimalUint64 `json:"reserved_charge_units"`
+	BilledChargeUnits   DecimalUint64 `json:"billed_charge_units"`
+	WriteoffChargeUnits DecimalUint64 `json:"writeoff_charge_units"`
+	CostPerUnit         DecimalUint64 `json:"cost_per_unit"`
+	PricingPhase        string        `json:"pricing_phase,omitempty"`
+}
+
+type SandboxExecutionStickyDiskMount struct {
+	MountID             uuid.UUID  `json:"mount_id"`
+	MountName           string     `json:"mount_name"`
+	KeyHash             string     `json:"key_hash"`
+	MountPath           string     `json:"mount_path"`
+	BaseGeneration      DecimalUint64 `json:"base_generation"`
+	CommittedGeneration DecimalUint64 `json:"committed_generation"`
+	SaveRequested       bool       `json:"save_requested"`
+	SaveState           string     `json:"save_state"`
+	FailureReason       string     `json:"failure_reason,omitempty"`
+	RequestedAt         *time.Time `json:"requested_at,omitempty"`
+	CompletedAt         *time.Time `json:"completed_at,omitempty"`
+}
+
+type SandboxRunsPage struct {
+	Runs       []SandboxExecutionRecord `json:"runs"`
+	NextCursor string                   `json:"next_cursor,omitempty"`
+	Limit      int32                    `json:"limit"`
+	Filters    SandboxRunsFilters       `json:"filters"`
+}
+
+type SandboxRunsFilters struct {
+	SourceKind  string `json:"source_kind,omitempty"`
+	Status      string `json:"status,omitempty"`
+	Repository  string `json:"repository,omitempty"`
+	Workflow    string `json:"workflow,omitempty"`
+	Branch      string `json:"branch,omitempty"`
+	RunnerClass string `json:"runner_class,omitempty"`
+}
+
+type SandboxRunLogSearchResult struct {
+	ExecutionID        uuid.UUID `json:"execution_id"`
+	AttemptID          uuid.UUID `json:"attempt_id"`
+	SourceKind         string    `json:"source_kind,omitempty"`
+	WorkloadKind       string    `json:"workload_kind,omitempty"`
+	RunnerClass        string    `json:"runner_class,omitempty"`
+	RepositoryFullName string    `json:"repository_full_name,omitempty"`
+	WorkflowName       string    `json:"workflow_name,omitempty"`
+	JobName            string    `json:"job_name,omitempty"`
+	HeadBranch         string    `json:"head_branch,omitempty"`
+	ScheduleID         string    `json:"schedule_id,omitempty"`
+	Seq                uint32    `json:"seq"`
+	Stream             string    `json:"stream"`
+	Chunk              string    `json:"chunk"`
+	CreatedAt          time.Time `json:"created_at"`
+}
+
+type SandboxRunLogSearchPage struct {
+	Results    []SandboxRunLogSearchResult `json:"results"`
+	NextCursor string                      `json:"next_cursor,omitempty"`
+	Limit      int32                       `json:"limit"`
+	Filters    SandboxRunLogSearchFilters  `json:"filters"`
+}
+
+type SandboxRunLogSearchFilters struct {
+	Query       string `json:"query,omitempty"`
+	RunID       string `json:"run_id,omitempty"`
+	AttemptID   string `json:"attempt_id,omitempty"`
+	SourceKind  string `json:"source_kind,omitempty"`
+	Repository  string `json:"repository,omitempty"`
+	Workflow    string `json:"workflow,omitempty"`
+	Branch      string `json:"branch,omitempty"`
+	RunnerClass string `json:"runner_class,omitempty"`
+}
+
+type SandboxAnalyticsBucket struct {
+	Key               string        `json:"key"`
+	Count             DecimalUint64 `json:"count"`
+	ReservedChargeUnits DecimalUint64 `json:"reserved_charge_units,omitempty"`
+	BilledChargeUnits DecimalUint64 `json:"billed_charge_units,omitempty"`
+	WriteoffChargeUnits DecimalUint64 `json:"writeoff_charge_units,omitempty"`
+}
+
+type SandboxRunDurationSample struct {
+	ExecutionID        uuid.UUID `json:"execution_id"`
+	Status             string    `json:"status"`
+	RunnerClass        string    `json:"runner_class,omitempty"`
+	RepositoryFullName string    `json:"repository_full_name,omitempty"`
+	WorkflowName       string    `json:"workflow_name,omitempty"`
+	JobName            string    `json:"job_name,omitempty"`
+	DurationMs         int64     `json:"duration_ms" minimum:"0" maximum:"9007199254740991"`
+	CompletedAt        time.Time `json:"completed_at"`
+}
+
+type SandboxJobsAnalytics struct {
+	WindowStart      time.Time               `json:"window_start"`
+	WindowEnd        time.Time               `json:"window_end"`
+	TotalRuns        DecimalUint64           `json:"total_runs"`
+	SucceededRuns    DecimalUint64           `json:"succeeded_runs"`
+	FailedRuns       DecimalUint64           `json:"failed_runs"`
+	P50DurationMs    DecimalUint64           `json:"p50_duration_ms"`
+	P95DurationMs    DecimalUint64           `json:"p95_duration_ms"`
+	P99DurationMs    DecimalUint64           `json:"p99_duration_ms"`
+	BySource         []SandboxAnalyticsBucket `json:"by_source"`
+	ByRunnerClass    []SandboxAnalyticsBucket `json:"by_runner_class"`
+	SlowestRuns      []SandboxRunDurationSample `json:"slowest_runs"`
+}
+
+type SandboxCostsAnalytics struct {
+	WindowStart         time.Time               `json:"window_start"`
+	WindowEnd           time.Time               `json:"window_end"`
+	ReservedChargeUnits DecimalUint64           `json:"reserved_charge_units"`
+	BilledChargeUnits   DecimalUint64           `json:"billed_charge_units"`
+	WriteoffChargeUnits DecimalUint64           `json:"writeoff_charge_units"`
+	BySource            []SandboxAnalyticsBucket `json:"by_source"`
+	ByRunnerClass       []SandboxAnalyticsBucket `json:"by_runner_class"`
+	ByRepository        []SandboxAnalyticsBucket `json:"by_repository"`
+}
+
+type SandboxCachesAnalytics struct {
+	WindowStart         time.Time               `json:"window_start"`
+	WindowEnd           time.Time               `json:"window_end"`
+	CheckoutRequests    DecimalUint64           `json:"checkout_requests"`
+	CheckoutHits        DecimalUint64           `json:"checkout_hits"`
+	CheckoutMisses      DecimalUint64           `json:"checkout_misses"`
+	StickyRestoreHits   DecimalUint64           `json:"sticky_restore_hits"`
+	StickyRestoreMisses DecimalUint64           `json:"sticky_restore_misses"`
+	StickySaveRequests  DecimalUint64           `json:"sticky_save_requests"`
+	StickyCommits       DecimalUint64           `json:"sticky_commits"`
+	ByRepository        []SandboxAnalyticsBucket `json:"by_repository"`
+}
+
+type SandboxRunnerSizingSample struct {
+	RunnerClass             string        `json:"runner_class"`
+	RunCount                DecimalUint64 `json:"run_count"`
+	P95DurationMs           DecimalUint64 `json:"p95_duration_ms"`
+	AvgRootfsProvisionedBytes DecimalUint64 `json:"avg_rootfs_provisioned_bytes"`
+	AvgBootTimeUs           DecimalUint64 `json:"avg_boot_time_us"`
+	AvgBlockWriteBytes      DecimalUint64 `json:"avg_block_write_bytes"`
+	AvgNetTxBytes           DecimalUint64 `json:"avg_net_tx_bytes"`
+}
+
+type SandboxRunnerSizingAnalytics struct {
+	WindowStart   time.Time                  `json:"window_start"`
+	WindowEnd     time.Time                  `json:"window_end"`
+	ByRunnerClass []SandboxRunnerSizingSample `json:"by_runner_class"`
+}
+
+type SandboxStickyDiskRecord struct {
+	InstallationID     string     `json:"installation_id"`
+	RepositoryID       string     `json:"repository_id"`
+	RepositoryFullName string     `json:"repository_full_name,omitempty"`
+	KeyHash            string     `json:"key_hash"`
+	Key                string     `json:"key"`
+	CurrentGeneration  DecimalUint64 `json:"current_generation"`
+	CurrentSourceRef   string     `json:"current_source_ref"`
+	LastUsedAt         *time.Time `json:"last_used_at,omitempty"`
+	LastCompletedAt    *time.Time `json:"last_completed_at,omitempty"`
+	LastSaveState      string     `json:"last_save_state,omitempty"`
+	LastExecutionID    *uuid.UUID `json:"last_execution_id,omitempty"`
+	LastAttemptID      *uuid.UUID `json:"last_attempt_id,omitempty"`
+	LastRunnerClass    string     `json:"last_runner_class,omitempty"`
+	LastWorkflowName   string     `json:"last_workflow_name,omitempty"`
+	LastJobName        string     `json:"last_job_name,omitempty"`
+	LastMountPath      string     `json:"last_mount_path,omitempty"`
+}
+
+type SandboxStickyDisksPage struct {
+	Disks      []SandboxStickyDiskRecord `json:"disks"`
+	NextCursor string                    `json:"next_cursor,omitempty"`
+	Limit      int32                     `json:"limit"`
+	Filters    SandboxStickyDiskFilters  `json:"filters"`
+}
+
+type SandboxStickyDiskFilters struct {
+	Repository string `json:"repository,omitempty"`
+}
+
+type SandboxStickyDiskResetResult struct {
+	InstallationID   string    `json:"installation_id"`
+	RepositoryID     string    `json:"repository_id"`
+	KeyHash          string    `json:"key_hash"`
+	DeletedSourceRef string    `json:"deleted_source_ref,omitempty"`
+	ResetAt          time.Time `json:"reset_at"`
 }
 
 type SandboxExecutionScheduleCreateRequest struct {
@@ -130,6 +338,13 @@ type SandboxAttemptRecord struct {
 	ZFSWritten    int64      `json:"zfs_written,omitempty" minimum:"0" maximum:"9007199254740991"`
 	StdoutBytes   int64      `json:"stdout_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
 	StderrBytes   int64      `json:"stderr_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
+	RootfsProvisionedBytes int64 `json:"rootfs_provisioned_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
+	BootTimeUs             int64 `json:"boot_time_us,omitempty" minimum:"0" maximum:"9007199254740991"`
+	BlockReadBytes         int64 `json:"block_read_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
+	BlockWriteBytes        int64 `json:"block_write_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
+	NetRXBytes             int64 `json:"net_rx_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
+	NetTXBytes             int64 `json:"net_tx_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
+	VCPUExitCount          int64 `json:"vcpu_exit_count,omitempty" minimum:"0" maximum:"9007199254740991"`
 	TraceID       string     `json:"trace_id,omitempty"`
 	StartedAt     *time.Time `json:"started_at,omitempty"`
 	CompletedAt   *time.Time `json:"completed_at,omitempty"`
@@ -144,6 +359,10 @@ type SandboxBillingWindow struct {
 	ReservationShape string     `json:"reservation_shape"`
 	ReservedQuantity int        `json:"reserved_quantity" minimum:"0" maximum:"9007199254740991"`
 	ActualQuantity   int        `json:"actual_quantity,omitempty" minimum:"0" maximum:"9007199254740991"`
+	ReservedChargeUnits DecimalUint64 `json:"reserved_charge_units"`
+	BilledChargeUnits   DecimalUint64 `json:"billed_charge_units"`
+	WriteoffChargeUnits DecimalUint64 `json:"writeoff_charge_units"`
+	CostPerUnit         DecimalUint64 `json:"cost_per_unit"`
 	PricingPhase     string     `json:"pricing_phase,omitempty"`
 	State            string     `json:"state"`
 	WindowStart      time.Time  `json:"window_start"`

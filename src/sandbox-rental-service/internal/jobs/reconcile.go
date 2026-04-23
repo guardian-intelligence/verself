@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/forge-metal/apiwire"
 	"github.com/google/uuid"
 )
 
@@ -48,7 +49,7 @@ func (s *Service) reconcileReservedAttempts(ctx context.Context) error {
 			return err
 		}
 		if item.windowID != "" {
-			_ = s.markBillingWindow(ctx, item.AttemptID, item.windowID, "voided", 0)
+			_ = s.markBillingWindow(ctx, item.AttemptID, item.windowID, "voided", 0, apiwire.BillingSettleResult{})
 		}
 		if err := s.failAttempt(ctx, item.executionWorkItem, "reconciled_reserved_timeout", nil); err != nil {
 			return fmt.Errorf("fail stale reserved attempt %s: %w", item.AttemptID, err)
@@ -87,7 +88,7 @@ func (s *Service) reconcileLaunchingAttempts(ctx context.Context) error {
 			_ = s.Orchestrator.ReleaseLease(detachedContext(ctx), item.LeaseID, item.AttemptID.String()+":reconcile-release")
 		}
 		if item.windowID != "" {
-			_ = s.markBillingWindow(ctx, item.AttemptID, item.windowID, "voided", 0)
+			_ = s.markBillingWindow(ctx, item.AttemptID, item.windowID, "voided", 0, apiwire.BillingSettleResult{})
 		}
 		if err := s.failAttempt(ctx, item.executionWorkItem, "reconciled_launch_timeout", nil); err != nil {
 			return fmt.Errorf("fail stale launching attempt %s: %w", item.AttemptID, err)
@@ -128,7 +129,7 @@ func (s *Service) reconcileCleanedGitHubRunnerAttempts(ctx context.Context) erro
 			_ = s.Orchestrator.ReleaseLease(detachedContext(ctx), item.LeaseID, item.AttemptID.String()+":reconcile-cleaned-release")
 		}
 		if item.windowID != "" {
-			_ = s.markBillingWindow(ctx, item.AttemptID, item.windowID, "voided", 0)
+			_ = s.markBillingWindow(ctx, item.AttemptID, item.windowID, "voided", 0, apiwire.BillingSettleResult{})
 		}
 		if err := s.failAttempt(ctx, item.executionWorkItem, "reconciled_cleaned_github_runner", nil); err != nil {
 			return fmt.Errorf("fail cleaned github runner attempt %s: %w", item.AttemptID, err)

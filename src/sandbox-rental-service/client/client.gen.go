@@ -309,25 +309,41 @@ type ErrorModel struct {
 	Type *string `json:"type,omitempty"`
 }
 
+// SandboxAnalyticsBucket defines model for SandboxAnalyticsBucket.
+type SandboxAnalyticsBucket struct {
+	BilledChargeUnits   *string `json:"billed_charge_units,omitempty"`
+	Count               string  `json:"count"`
+	Key                 string  `json:"key"`
+	ReservedChargeUnits *string `json:"reserved_charge_units,omitempty"`
+	WriteoffChargeUnits *string `json:"writeoff_charge_units,omitempty"`
+}
+
 // SandboxAttemptRecord defines model for SandboxAttemptRecord.
 type SandboxAttemptRecord struct {
-	AttemptId     string     `json:"attempt_id"`
-	AttemptSeq    int64      `json:"attempt_seq"`
-	BillingJobId  *int64     `json:"billing_job_id,omitempty"`
-	CompletedAt   *time.Time `json:"completed_at,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	DurationMs    *int64     `json:"duration_ms,omitempty"`
-	ExecId        *string    `json:"exec_id,omitempty"`
-	ExitCode      *int64     `json:"exit_code,omitempty"`
-	FailureReason *string    `json:"failure_reason,omitempty"`
-	LeaseId       *string    `json:"lease_id,omitempty"`
-	StartedAt     *time.Time `json:"started_at,omitempty"`
-	State         string     `json:"state"`
-	StderrBytes   *int64     `json:"stderr_bytes,omitempty"`
-	StdoutBytes   *int64     `json:"stdout_bytes,omitempty"`
-	TraceId       *string    `json:"trace_id,omitempty"`
-	UpdatedAt     time.Time  `json:"updated_at"`
-	ZfsWritten    *int64     `json:"zfs_written,omitempty"`
+	AttemptId              string     `json:"attempt_id"`
+	AttemptSeq             int64      `json:"attempt_seq"`
+	BillingJobId           *int64     `json:"billing_job_id,omitempty"`
+	BlockReadBytes         *int64     `json:"block_read_bytes,omitempty"`
+	BlockWriteBytes        *int64     `json:"block_write_bytes,omitempty"`
+	BootTimeUs             *int64     `json:"boot_time_us,omitempty"`
+	CompletedAt            *time.Time `json:"completed_at,omitempty"`
+	CreatedAt              time.Time  `json:"created_at"`
+	DurationMs             *int64     `json:"duration_ms,omitempty"`
+	ExecId                 *string    `json:"exec_id,omitempty"`
+	ExitCode               *int64     `json:"exit_code,omitempty"`
+	FailureReason          *string    `json:"failure_reason,omitempty"`
+	LeaseId                *string    `json:"lease_id,omitempty"`
+	NetRxBytes             *int64     `json:"net_rx_bytes,omitempty"`
+	NetTxBytes             *int64     `json:"net_tx_bytes,omitempty"`
+	RootfsProvisionedBytes *int64     `json:"rootfs_provisioned_bytes,omitempty"`
+	StartedAt              *time.Time `json:"started_at,omitempty"`
+	State                  string     `json:"state"`
+	StderrBytes            *int64     `json:"stderr_bytes,omitempty"`
+	StdoutBytes            *int64     `json:"stdout_bytes,omitempty"`
+	TraceId                *string    `json:"trace_id,omitempty"`
+	UpdatedAt              time.Time  `json:"updated_at"`
+	VcpuExitCount          *int64     `json:"vcpu_exit_count,omitempty"`
+	ZfsWritten             *int64     `json:"zfs_written,omitempty"`
 }
 
 // SandboxBillingCheckoutRequest defines model for SandboxBillingCheckoutRequest.
@@ -381,17 +397,51 @@ type SandboxBillingPortalRequest struct {
 
 // SandboxBillingWindow defines model for SandboxBillingWindow.
 type SandboxBillingWindow struct {
-	ActualQuantity   *int64     `json:"actual_quantity,omitempty"`
-	AttemptId        string     `json:"attempt_id"`
-	BillingWindowId  string     `json:"billing_window_id"`
-	CreatedAt        time.Time  `json:"created_at"`
-	PricingPhase     *string    `json:"pricing_phase,omitempty"`
-	ReservationShape string     `json:"reservation_shape"`
-	ReservedQuantity int64      `json:"reserved_quantity"`
-	SettledAt        *time.Time `json:"settled_at,omitempty"`
-	State            string     `json:"state"`
-	WindowSeq        int64      `json:"window_seq"`
-	WindowStart      time.Time  `json:"window_start"`
+	ActualQuantity      *int64     `json:"actual_quantity,omitempty"`
+	AttemptId           string     `json:"attempt_id"`
+	BilledChargeUnits   string     `json:"billed_charge_units"`
+	BillingWindowId     string     `json:"billing_window_id"`
+	CostPerUnit         string     `json:"cost_per_unit"`
+	CreatedAt           time.Time  `json:"created_at"`
+	PricingPhase        *string    `json:"pricing_phase,omitempty"`
+	ReservationShape    string     `json:"reservation_shape"`
+	ReservedChargeUnits string     `json:"reserved_charge_units"`
+	ReservedQuantity    int64      `json:"reserved_quantity"`
+	SettledAt           *time.Time `json:"settled_at,omitempty"`
+	State               string     `json:"state"`
+	WindowSeq           int64      `json:"window_seq"`
+	WindowStart         time.Time  `json:"window_start"`
+	WriteoffChargeUnits string     `json:"writeoff_charge_units"`
+}
+
+// SandboxCachesAnalytics defines model for SandboxCachesAnalytics.
+type SandboxCachesAnalytics struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema              *string                   `json:"$schema,omitempty"`
+	ByRepository        *[]SandboxAnalyticsBucket `json:"by_repository"`
+	CheckoutHits        string                    `json:"checkout_hits"`
+	CheckoutMisses      string                    `json:"checkout_misses"`
+	CheckoutRequests    string                    `json:"checkout_requests"`
+	StickyCommits       string                    `json:"sticky_commits"`
+	StickyRestoreHits   string                    `json:"sticky_restore_hits"`
+	StickyRestoreMisses string                    `json:"sticky_restore_misses"`
+	StickySaveRequests  string                    `json:"sticky_save_requests"`
+	WindowEnd           time.Time                 `json:"window_end"`
+	WindowStart         time.Time                 `json:"window_start"`
+}
+
+// SandboxCostsAnalytics defines model for SandboxCostsAnalytics.
+type SandboxCostsAnalytics struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema              *string                   `json:"$schema,omitempty"`
+	BilledChargeUnits   string                    `json:"billed_charge_units"`
+	ByRepository        *[]SandboxAnalyticsBucket `json:"by_repository"`
+	ByRunnerClass       *[]SandboxAnalyticsBucket `json:"by_runner_class"`
+	BySource            *[]SandboxAnalyticsBucket `json:"by_source"`
+	ReservedChargeUnits string                    `json:"reserved_charge_units"`
+	WindowEnd           time.Time                 `json:"window_end"`
+	WindowStart         time.Time                 `json:"window_start"`
+	WriteoffChargeUnits string                    `json:"writeoff_charge_units"`
 }
 
 // SandboxExecutionLogs defines model for SandboxExecutionLogs.
@@ -406,27 +456,32 @@ type SandboxExecutionLogs struct {
 // SandboxExecutionRecord defines model for SandboxExecutionRecord.
 type SandboxExecutionRecord struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema           *string                 `json:"$schema,omitempty"`
-	ActorId          string                  `json:"actor_id"`
-	BillingWindows   *[]SandboxBillingWindow `json:"billing_windows,omitempty"`
-	CorrelationId    *string                 `json:"correlation_id,omitempty"`
-	CreatedAt        time.Time               `json:"created_at"`
-	ExecutionId      string                  `json:"execution_id"`
-	ExternalProvider *string                 `json:"external_provider,omitempty"`
-	ExternalTaskId   *string                 `json:"external_task_id,omitempty"`
-	IdempotencyKey   *string                 `json:"idempotency_key,omitempty"`
-	Kind             string                  `json:"kind"`
-	LatestAttempt    SandboxAttemptRecord    `json:"latest_attempt"`
-	OrgId            string                  `json:"org_id"`
-	ProductId        string                  `json:"product_id"`
-	Provider         *string                 `json:"provider,omitempty"`
-	RunCommand       *string                 `json:"run_command,omitempty"`
-	RunnerClass      *string                 `json:"runner_class,omitempty"`
-	SourceKind       *string                 `json:"source_kind,omitempty"`
-	SourceRef        *string                 `json:"source_ref,omitempty"`
-	Status           string                  `json:"status"`
-	UpdatedAt        time.Time               `json:"updated_at"`
-	WorkloadKind     *string                 `json:"workload_kind,omitempty"`
+	Schema           *string                            `json:"$schema,omitempty"`
+	ActorId          string                             `json:"actor_id"`
+	BillingSummary   *SandboxRunBillingSummary          `json:"billing_summary,omitempty"`
+	BillingWindows   *[]SandboxBillingWindow            `json:"billing_windows,omitempty"`
+	CorrelationId    *string                            `json:"correlation_id,omitempty"`
+	CreatedAt        time.Time                          `json:"created_at"`
+	ExecutionId      string                             `json:"execution_id"`
+	ExternalProvider *string                            `json:"external_provider,omitempty"`
+	ExternalTaskId   *string                            `json:"external_task_id,omitempty"`
+	Github           *SandboxGitHubRunMetadata          `json:"github,omitempty"`
+	IdempotencyKey   *string                            `json:"idempotency_key,omitempty"`
+	Kind             string                             `json:"kind"`
+	LatestAttempt    SandboxAttemptRecord               `json:"latest_attempt"`
+	OrgId            string                             `json:"org_id"`
+	ProductId        string                             `json:"product_id"`
+	Provider         *string                            `json:"provider,omitempty"`
+	RunCommand       *string                            `json:"run_command,omitempty"`
+	RunId            string                             `json:"run_id"`
+	RunnerClass      *string                            `json:"runner_class,omitempty"`
+	Schedule         *SandboxScheduleRunMetadata        `json:"schedule,omitempty"`
+	SourceKind       *string                            `json:"source_kind,omitempty"`
+	SourceRef        *string                            `json:"source_ref,omitempty"`
+	Status           string                             `json:"status"`
+	StickyDiskMounts *[]SandboxExecutionStickyDiskMount `json:"sticky_disk_mounts,omitempty"`
+	UpdatedAt        time.Time                          `json:"updated_at"`
+	WorkloadKind     *string                            `json:"workload_kind,omitempty"`
 }
 
 // SandboxExecutionScheduleCreateRequest defines model for SandboxExecutionScheduleCreateRequest.
@@ -478,6 +533,21 @@ type SandboxExecutionScheduleRecord struct {
 	UpdatedAt          time.Time                                 `json:"updated_at"`
 }
 
+// SandboxExecutionStickyDiskMount defines model for SandboxExecutionStickyDiskMount.
+type SandboxExecutionStickyDiskMount struct {
+	BaseGeneration      string     `json:"base_generation"`
+	CommittedGeneration string     `json:"committed_generation"`
+	CompletedAt         *time.Time `json:"completed_at,omitempty"`
+	FailureReason       *string    `json:"failure_reason,omitempty"`
+	KeyHash             string     `json:"key_hash"`
+	MountId             string     `json:"mount_id"`
+	MountName           string     `json:"mount_name"`
+	MountPath           string     `json:"mount_path"`
+	RequestedAt         *time.Time `json:"requested_at,omitempty"`
+	SaveRequested       bool       `json:"save_requested"`
+	SaveState           string     `json:"save_state"`
+}
+
 // SandboxGitHubInstallationConnectResponse defines model for SandboxGitHubInstallationConnectResponse.
 type SandboxGitHubInstallationConnectResponse struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -504,6 +574,206 @@ type SandboxGitHubInstallationRecord struct {
 	InstallationId string    `json:"installation_id"`
 	OrgId          string    `json:"org_id"`
 	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+// SandboxGitHubRunMetadata defines model for SandboxGitHubRunMetadata.
+type SandboxGitHubRunMetadata struct {
+	HeadBranch         *string `json:"head_branch,omitempty"`
+	HeadSha            *string `json:"head_sha,omitempty"`
+	InstallationId     *string `json:"installation_id,omitempty"`
+	JobId              *string `json:"job_id,omitempty"`
+	JobName            *string `json:"job_name,omitempty"`
+	RepositoryFullName *string `json:"repository_full_name,omitempty"`
+	RunId              *string `json:"run_id,omitempty"`
+	WorkflowName       *string `json:"workflow_name,omitempty"`
+}
+
+// SandboxJobsAnalytics defines model for SandboxJobsAnalytics.
+type SandboxJobsAnalytics struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema        *string                     `json:"$schema,omitempty"`
+	ByRunnerClass *[]SandboxAnalyticsBucket   `json:"by_runner_class"`
+	BySource      *[]SandboxAnalyticsBucket   `json:"by_source"`
+	FailedRuns    string                      `json:"failed_runs"`
+	P50DurationMs string                      `json:"p50_duration_ms"`
+	P95DurationMs string                      `json:"p95_duration_ms"`
+	P99DurationMs string                      `json:"p99_duration_ms"`
+	SlowestRuns   *[]SandboxRunDurationSample `json:"slowest_runs"`
+	SucceededRuns string                      `json:"succeeded_runs"`
+	TotalRuns     string                      `json:"total_runs"`
+	WindowEnd     time.Time                   `json:"window_end"`
+	WindowStart   time.Time                   `json:"window_start"`
+}
+
+// SandboxRunBillingSummary defines model for SandboxRunBillingSummary.
+type SandboxRunBillingSummary struct {
+	BilledChargeUnits   string  `json:"billed_charge_units"`
+	CostPerUnit         string  `json:"cost_per_unit"`
+	PricingPhase        *string `json:"pricing_phase,omitempty"`
+	ReservedChargeUnits string  `json:"reserved_charge_units"`
+	WindowCount         int32   `json:"window_count"`
+	WriteoffChargeUnits string  `json:"writeoff_charge_units"`
+}
+
+// SandboxRunDurationSample defines model for SandboxRunDurationSample.
+type SandboxRunDurationSample struct {
+	CompletedAt        time.Time `json:"completed_at"`
+	DurationMs         int64     `json:"duration_ms"`
+	ExecutionId        string    `json:"execution_id"`
+	JobName            *string   `json:"job_name,omitempty"`
+	RepositoryFullName *string   `json:"repository_full_name,omitempty"`
+	RunnerClass        *string   `json:"runner_class,omitempty"`
+	Status             string    `json:"status"`
+	WorkflowName       *string   `json:"workflow_name,omitempty"`
+}
+
+// SandboxRunLogSearchFilters defines model for SandboxRunLogSearchFilters.
+type SandboxRunLogSearchFilters struct {
+	AttemptId   *string `json:"attempt_id,omitempty"`
+	Branch      *string `json:"branch,omitempty"`
+	Query       *string `json:"query,omitempty"`
+	Repository  *string `json:"repository,omitempty"`
+	RunId       *string `json:"run_id,omitempty"`
+	RunnerClass *string `json:"runner_class,omitempty"`
+	SourceKind  *string `json:"source_kind,omitempty"`
+	Workflow    *string `json:"workflow,omitempty"`
+}
+
+// SandboxRunLogSearchPage defines model for SandboxRunLogSearchPage.
+type SandboxRunLogSearchPage struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema     *string                      `json:"$schema,omitempty"`
+	Filters    SandboxRunLogSearchFilters   `json:"filters"`
+	Limit      int32                        `json:"limit"`
+	NextCursor *string                      `json:"next_cursor,omitempty"`
+	Results    *[]SandboxRunLogSearchResult `json:"results"`
+}
+
+// SandboxRunLogSearchResult defines model for SandboxRunLogSearchResult.
+type SandboxRunLogSearchResult struct {
+	AttemptId          string    `json:"attempt_id"`
+	Chunk              string    `json:"chunk"`
+	CreatedAt          time.Time `json:"created_at"`
+	ExecutionId        string    `json:"execution_id"`
+	HeadBranch         *string   `json:"head_branch,omitempty"`
+	JobName            *string   `json:"job_name,omitempty"`
+	RepositoryFullName *string   `json:"repository_full_name,omitempty"`
+	RunnerClass        *string   `json:"runner_class,omitempty"`
+	ScheduleId         *string   `json:"schedule_id,omitempty"`
+	Seq                int32     `json:"seq"`
+	SourceKind         *string   `json:"source_kind,omitempty"`
+	Stream             string    `json:"stream"`
+	WorkflowName       *string   `json:"workflow_name,omitempty"`
+	WorkloadKind       *string   `json:"workload_kind,omitempty"`
+}
+
+// SandboxRunnerSizingAnalytics defines model for SandboxRunnerSizingAnalytics.
+type SandboxRunnerSizingAnalytics struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema        *string                      `json:"$schema,omitempty"`
+	ByRunnerClass *[]SandboxRunnerSizingSample `json:"by_runner_class"`
+	WindowEnd     time.Time                    `json:"window_end"`
+	WindowStart   time.Time                    `json:"window_start"`
+}
+
+// SandboxRunnerSizingSample defines model for SandboxRunnerSizingSample.
+type SandboxRunnerSizingSample struct {
+	AvgBlockWriteBytes        string `json:"avg_block_write_bytes"`
+	AvgBootTimeUs             string `json:"avg_boot_time_us"`
+	AvgNetTxBytes             string `json:"avg_net_tx_bytes"`
+	AvgRootfsProvisionedBytes string `json:"avg_rootfs_provisioned_bytes"`
+	P95DurationMs             string `json:"p95_duration_ms"`
+	RunCount                  string `json:"run_count"`
+	RunnerClass               string `json:"runner_class"`
+}
+
+// SandboxRunsFilters defines model for SandboxRunsFilters.
+type SandboxRunsFilters struct {
+	Branch      *string `json:"branch,omitempty"`
+	Repository  *string `json:"repository,omitempty"`
+	RunnerClass *string `json:"runner_class,omitempty"`
+	SourceKind  *string `json:"source_kind,omitempty"`
+	Status      *string `json:"status,omitempty"`
+	Workflow    *string `json:"workflow,omitempty"`
+}
+
+// SandboxRunsPage defines model for SandboxRunsPage.
+type SandboxRunsPage struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema     *string                   `json:"$schema,omitempty"`
+	Filters    SandboxRunsFilters        `json:"filters"`
+	Limit      int32                     `json:"limit"`
+	NextCursor *string                   `json:"next_cursor,omitempty"`
+	Runs       *[]SandboxExecutionRecord `json:"runs"`
+}
+
+// SandboxScheduleRunMetadata defines model for SandboxScheduleRunMetadata.
+type SandboxScheduleRunMetadata struct {
+	DisplayName        *string `json:"display_name,omitempty"`
+	ScheduleId         *string `json:"schedule_id,omitempty"`
+	TemporalRunId      *string `json:"temporal_run_id,omitempty"`
+	TemporalWorkflowId *string `json:"temporal_workflow_id,omitempty"`
+}
+
+// SandboxStickyDiskFilters defines model for SandboxStickyDiskFilters.
+type SandboxStickyDiskFilters struct {
+	Repository *string `json:"repository,omitempty"`
+}
+
+// SandboxStickyDiskRecord defines model for SandboxStickyDiskRecord.
+type SandboxStickyDiskRecord struct {
+	CurrentGeneration  string     `json:"current_generation"`
+	CurrentSourceRef   string     `json:"current_source_ref"`
+	InstallationId     string     `json:"installation_id"`
+	Key                string     `json:"key"`
+	KeyHash            string     `json:"key_hash"`
+	LastAttemptId      *string    `json:"last_attempt_id,omitempty"`
+	LastCompletedAt    *time.Time `json:"last_completed_at,omitempty"`
+	LastExecutionId    *string    `json:"last_execution_id,omitempty"`
+	LastJobName        *string    `json:"last_job_name,omitempty"`
+	LastMountPath      *string    `json:"last_mount_path,omitempty"`
+	LastRunnerClass    *string    `json:"last_runner_class,omitempty"`
+	LastSaveState      *string    `json:"last_save_state,omitempty"`
+	LastUsedAt         *time.Time `json:"last_used_at,omitempty"`
+	LastWorkflowName   *string    `json:"last_workflow_name,omitempty"`
+	RepositoryFullName *string    `json:"repository_full_name,omitempty"`
+	RepositoryId       string     `json:"repository_id"`
+}
+
+// SandboxStickyDiskResetResult defines model for SandboxStickyDiskResetResult.
+type SandboxStickyDiskResetResult struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema           *string   `json:"$schema,omitempty"`
+	DeletedSourceRef *string   `json:"deleted_source_ref,omitempty"`
+	InstallationId   string    `json:"installation_id"`
+	KeyHash          string    `json:"key_hash"`
+	RepositoryId     string    `json:"repository_id"`
+	ResetAt          time.Time `json:"reset_at"`
+}
+
+// SandboxStickyDisksPage defines model for SandboxStickyDisksPage.
+type SandboxStickyDisksPage struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema     *string                    `json:"$schema,omitempty"`
+	Disks      *[]SandboxStickyDiskRecord `json:"disks"`
+	Filters    SandboxStickyDiskFilters   `json:"filters"`
+	Limit      int32                      `json:"limit"`
+	NextCursor *string                    `json:"next_cursor,omitempty"`
+}
+
+// StickyDiskResetRequest defines model for StickyDiskResetRequest.
+type StickyDiskResetRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+
+	// InstallationId GitHub installation ID encoded as a decimal string.
+	InstallationId string `json:"installation_id"`
+
+	// KeyHash Sticky disk key hash to reset.
+	KeyHash string `json:"key_hash"`
+
+	// RepositoryId GitHub repository ID encoded as a decimal string.
+	RepositoryId string `json:"repository_id"`
 }
 
 // CreateBillingCheckoutParams defines parameters for CreateBillingCheckout.
@@ -560,6 +830,96 @@ type BeginGithubInstallationParams struct {
 	IdempotencyKey string `json:"Idempotency-Key"`
 }
 
+// GetCachesAnalyticsParams defines parameters for GetCachesAnalytics.
+type GetCachesAnalyticsParams struct {
+	// Start Inclusive RFC3339 window start.
+	Start *time.Time `form:"start,omitempty" json:"start,omitempty"`
+
+	// End Inclusive RFC3339 window end.
+	End *time.Time `form:"end,omitempty" json:"end,omitempty"`
+}
+
+// GetCostsAnalyticsParams defines parameters for GetCostsAnalytics.
+type GetCostsAnalyticsParams struct {
+	// Start Inclusive RFC3339 window start.
+	Start *time.Time `form:"start,omitempty" json:"start,omitempty"`
+
+	// End Inclusive RFC3339 window end.
+	End *time.Time `form:"end,omitempty" json:"end,omitempty"`
+}
+
+// GetJobsAnalyticsParams defines parameters for GetJobsAnalytics.
+type GetJobsAnalyticsParams struct {
+	// Start Inclusive RFC3339 window start.
+	Start *time.Time `form:"start,omitempty" json:"start,omitempty"`
+
+	// End Inclusive RFC3339 window end.
+	End *time.Time `form:"end,omitempty" json:"end,omitempty"`
+}
+
+// GetRunnerSizingAnalyticsParams defines parameters for GetRunnerSizingAnalytics.
+type GetRunnerSizingAnalyticsParams struct {
+	// Start Inclusive RFC3339 window start.
+	Start *time.Time `form:"start,omitempty" json:"start,omitempty"`
+
+	// End Inclusive RFC3339 window end.
+	End *time.Time `form:"end,omitempty" json:"end,omitempty"`
+}
+
+// SearchRunLogsParams defines parameters for SearchRunLogs.
+type SearchRunLogsParams struct {
+	// Limit Maximum log matches to return.
+	Limit *int64 `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor Opaque pagination cursor returned by the previous page.
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// Query Case-insensitive substring to search for.
+	Query *string `form:"query,omitempty" json:"query,omitempty"`
+
+	// RunId Filter to a specific run UUID.
+	RunId *string `form:"run_id,omitempty" json:"run_id,omitempty"`
+
+	// AttemptId Filter to a specific attempt UUID.
+	AttemptId   *string `form:"attempt_id,omitempty" json:"attempt_id,omitempty"`
+	SourceKind  *string `form:"source_kind,omitempty" json:"source_kind,omitempty"`
+	Repository  *string `form:"repository,omitempty" json:"repository,omitempty"`
+	Workflow    *string `form:"workflow,omitempty" json:"workflow,omitempty"`
+	Branch      *string `form:"branch,omitempty" json:"branch,omitempty"`
+	RunnerClass *string `form:"runner_class,omitempty" json:"runner_class,omitempty"`
+}
+
+// ListRunsParams defines parameters for ListRuns.
+type ListRunsParams struct {
+	// Limit Maximum runs to return.
+	Limit *int64 `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor Opaque pagination cursor returned by the previous page.
+	Cursor      *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	SourceKind  *string `form:"source_kind,omitempty" json:"source_kind,omitempty"`
+	Status      *string `form:"status,omitempty" json:"status,omitempty"`
+	Repository  *string `form:"repository,omitempty" json:"repository,omitempty"`
+	Workflow    *string `form:"workflow,omitempty" json:"workflow,omitempty"`
+	Branch      *string `form:"branch,omitempty" json:"branch,omitempty"`
+	RunnerClass *string `form:"runner_class,omitempty" json:"runner_class,omitempty"`
+}
+
+// ListStickyDisksParams defines parameters for ListStickyDisks.
+type ListStickyDisksParams struct {
+	// Limit Maximum sticky disks to return.
+	Limit *int64 `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor Opaque pagination cursor returned by the previous page.
+	Cursor     *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Repository *string `form:"repository,omitempty" json:"repository,omitempty"`
+}
+
+// ResetStickyDiskParams defines parameters for ResetStickyDisk.
+type ResetStickyDiskParams struct {
+	// IdempotencyKey Stable caller-provided key used to make this mutation retry-safe.
+	IdempotencyKey string `json:"Idempotency-Key"`
+}
+
 // CreateBillingCheckoutJSONRequestBody defines body for CreateBillingCheckout for application/json ContentType.
 type CreateBillingCheckoutJSONRequestBody = SandboxBillingCheckoutRequest
 
@@ -574,6 +934,9 @@ type CreateBillingPortalJSONRequestBody = SandboxBillingPortalRequest
 
 // CreateExecutionScheduleJSONRequestBody defines body for CreateExecutionSchedule for application/json ContentType.
 type CreateExecutionScheduleJSONRequestBody = SandboxExecutionScheduleCreateRequest
+
+// ResetStickyDiskJSONRequestBody defines body for ResetStickyDisk for application/json ContentType.
+type ResetStickyDiskJSONRequestBody = StickyDiskResetRequest
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -711,6 +1074,35 @@ type ClientInterface interface {
 
 	// BeginGithubInstallation request
 	BeginGithubInstallation(ctx context.Context, params *BeginGithubInstallationParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetCachesAnalytics request
+	GetCachesAnalytics(ctx context.Context, params *GetCachesAnalyticsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetCostsAnalytics request
+	GetCostsAnalytics(ctx context.Context, params *GetCostsAnalyticsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetJobsAnalytics request
+	GetJobsAnalytics(ctx context.Context, params *GetJobsAnalyticsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetRunnerSizingAnalytics request
+	GetRunnerSizingAnalytics(ctx context.Context, params *GetRunnerSizingAnalyticsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SearchRunLogs request
+	SearchRunLogs(ctx context.Context, params *SearchRunLogsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListRuns request
+	ListRuns(ctx context.Context, params *ListRunsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetRun request
+	GetRun(ctx context.Context, runId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListStickyDisks request
+	ListStickyDisks(ctx context.Context, params *ListStickyDisksParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ResetStickyDiskWithBody request with any body
+	ResetStickyDiskWithBody(ctx context.Context, params *ResetStickyDiskParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	ResetStickyDisk(ctx context.Context, params *ResetStickyDiskParams, body ResetStickyDiskJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) CreateBillingCheckoutWithBody(ctx context.Context, params *CreateBillingCheckoutParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -979,6 +1371,126 @@ func (c *Client) ListGithubInstallations(ctx context.Context, reqEditors ...Requ
 
 func (c *Client) BeginGithubInstallation(ctx context.Context, params *BeginGithubInstallationParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewBeginGithubInstallationRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetCachesAnalytics(ctx context.Context, params *GetCachesAnalyticsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetCachesAnalyticsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetCostsAnalytics(ctx context.Context, params *GetCostsAnalyticsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetCostsAnalyticsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetJobsAnalytics(ctx context.Context, params *GetJobsAnalyticsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetJobsAnalyticsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetRunnerSizingAnalytics(ctx context.Context, params *GetRunnerSizingAnalyticsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetRunnerSizingAnalyticsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SearchRunLogs(ctx context.Context, params *SearchRunLogsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSearchRunLogsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListRuns(ctx context.Context, params *ListRunsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListRunsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetRun(ctx context.Context, runId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetRunRequest(c.Server, runId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListStickyDisks(ctx context.Context, params *ListStickyDisksParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListStickyDisksRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ResetStickyDiskWithBody(ctx context.Context, params *ResetStickyDiskParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewResetStickyDiskRequestWithBody(c.Server, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ResetStickyDisk(ctx context.Context, params *ResetStickyDiskParams, body ResetStickyDiskJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewResetStickyDiskRequest(c.Server, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1711,6 +2223,788 @@ func NewBeginGithubInstallationRequest(server string, params *BeginGithubInstall
 	return req, nil
 }
 
+// NewGetCachesAnalyticsRequest generates requests for GetCachesAnalytics
+func NewGetCachesAnalyticsRequest(server string, params *GetCachesAnalyticsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/run-analytics/caches")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Start != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "start", *params.Start, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.End != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "end", *params.End, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetCostsAnalyticsRequest generates requests for GetCostsAnalytics
+func NewGetCostsAnalyticsRequest(server string, params *GetCostsAnalyticsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/run-analytics/costs")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Start != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "start", *params.Start, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.End != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "end", *params.End, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetJobsAnalyticsRequest generates requests for GetJobsAnalytics
+func NewGetJobsAnalyticsRequest(server string, params *GetJobsAnalyticsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/run-analytics/jobs")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Start != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "start", *params.Start, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.End != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "end", *params.End, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetRunnerSizingAnalyticsRequest generates requests for GetRunnerSizingAnalytics
+func NewGetRunnerSizingAnalyticsRequest(server string, params *GetRunnerSizingAnalyticsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/run-analytics/runner-sizing")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Start != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "start", *params.Start, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.End != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "end", *params.End, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSearchRunLogsRequest generates requests for SearchRunLogs
+func NewSearchRunLogsRequest(server string, params *SearchRunLogsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/run-logs/search")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Query != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "query", *params.Query, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.RunId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "run_id", *params.RunId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.AttemptId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "attempt_id", *params.AttemptId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.SourceKind != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "source_kind", *params.SourceKind, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Repository != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "repository", *params.Repository, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Workflow != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "workflow", *params.Workflow, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Branch != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "branch", *params.Branch, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.RunnerClass != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "runner_class", *params.RunnerClass, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListRunsRequest generates requests for ListRuns
+func NewListRunsRequest(server string, params *ListRunsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/runs")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.SourceKind != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "source_kind", *params.SourceKind, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Status != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "status", *params.Status, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Repository != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "repository", *params.Repository, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Workflow != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "workflow", *params.Workflow, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Branch != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "branch", *params.Branch, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.RunnerClass != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "runner_class", *params.RunnerClass, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetRunRequest generates requests for GetRun
+func NewGetRunRequest(server string, runId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "run_id", runId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/runs/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListStickyDisksRequest generates requests for ListStickyDisks
+func NewListStickyDisksRequest(server string, params *ListStickyDisksParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/sticky-disks")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Repository != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "repository", *params.Repository, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewResetStickyDiskRequest calls the generic ResetStickyDisk builder with application/json body
+func NewResetStickyDiskRequest(server string, params *ResetStickyDiskParams, body ResetStickyDiskJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewResetStickyDiskRequestWithBody(server, params, "application/json", bodyReader)
+}
+
+// NewResetStickyDiskRequestWithBody generates requests for ResetStickyDisk with any type of body
+func NewResetStickyDiskRequestWithBody(server string, params *ResetStickyDiskParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/sticky-disks/reset")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -1817,6 +3111,35 @@ type ClientWithResponsesInterface interface {
 
 	// BeginGithubInstallationWithResponse request
 	BeginGithubInstallationWithResponse(ctx context.Context, params *BeginGithubInstallationParams, reqEditors ...RequestEditorFn) (*BeginGithubInstallationResponse, error)
+
+	// GetCachesAnalyticsWithResponse request
+	GetCachesAnalyticsWithResponse(ctx context.Context, params *GetCachesAnalyticsParams, reqEditors ...RequestEditorFn) (*GetCachesAnalyticsResponse, error)
+
+	// GetCostsAnalyticsWithResponse request
+	GetCostsAnalyticsWithResponse(ctx context.Context, params *GetCostsAnalyticsParams, reqEditors ...RequestEditorFn) (*GetCostsAnalyticsResponse, error)
+
+	// GetJobsAnalyticsWithResponse request
+	GetJobsAnalyticsWithResponse(ctx context.Context, params *GetJobsAnalyticsParams, reqEditors ...RequestEditorFn) (*GetJobsAnalyticsResponse, error)
+
+	// GetRunnerSizingAnalyticsWithResponse request
+	GetRunnerSizingAnalyticsWithResponse(ctx context.Context, params *GetRunnerSizingAnalyticsParams, reqEditors ...RequestEditorFn) (*GetRunnerSizingAnalyticsResponse, error)
+
+	// SearchRunLogsWithResponse request
+	SearchRunLogsWithResponse(ctx context.Context, params *SearchRunLogsParams, reqEditors ...RequestEditorFn) (*SearchRunLogsResponse, error)
+
+	// ListRunsWithResponse request
+	ListRunsWithResponse(ctx context.Context, params *ListRunsParams, reqEditors ...RequestEditorFn) (*ListRunsResponse, error)
+
+	// GetRunWithResponse request
+	GetRunWithResponse(ctx context.Context, runId string, reqEditors ...RequestEditorFn) (*GetRunResponse, error)
+
+	// ListStickyDisksWithResponse request
+	ListStickyDisksWithResponse(ctx context.Context, params *ListStickyDisksParams, reqEditors ...RequestEditorFn) (*ListStickyDisksResponse, error)
+
+	// ResetStickyDiskWithBodyWithResponse request with any body
+	ResetStickyDiskWithBodyWithResponse(ctx context.Context, params *ResetStickyDiskParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResetStickyDiskResponse, error)
+
+	ResetStickyDiskWithResponse(ctx context.Context, params *ResetStickyDiskParams, body ResetStickyDiskJSONRequestBody, reqEditors ...RequestEditorFn) (*ResetStickyDiskResponse, error)
 }
 
 type CreateBillingCheckoutResponse struct {
@@ -2233,6 +3556,213 @@ func (r BeginGithubInstallationResponse) StatusCode() int {
 	return 0
 }
 
+type GetCachesAnalyticsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *SandboxCachesAnalytics
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetCachesAnalyticsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetCachesAnalyticsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetCostsAnalyticsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *SandboxCostsAnalytics
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetCostsAnalyticsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetCostsAnalyticsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetJobsAnalyticsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *SandboxJobsAnalytics
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetJobsAnalyticsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetJobsAnalyticsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetRunnerSizingAnalyticsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *SandboxRunnerSizingAnalytics
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetRunnerSizingAnalyticsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetRunnerSizingAnalyticsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SearchRunLogsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *SandboxRunLogSearchPage
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r SearchRunLogsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SearchRunLogsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListRunsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *SandboxRunsPage
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r ListRunsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListRunsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetRunResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *SandboxExecutionRecord
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetRunResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetRunResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListStickyDisksResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *SandboxStickyDisksPage
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r ListStickyDisksResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListStickyDisksResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ResetStickyDiskResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *SandboxStickyDiskResetResult
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r ResetStickyDiskResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ResetStickyDiskResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 // CreateBillingCheckoutWithBodyWithResponse request with arbitrary body returning *CreateBillingCheckoutResponse
 func (c *ClientWithResponses) CreateBillingCheckoutWithBodyWithResponse(ctx context.Context, params *CreateBillingCheckoutParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateBillingCheckoutResponse, error) {
 	rsp, err := c.CreateBillingCheckoutWithBody(ctx, params, contentType, body, reqEditors...)
@@ -2433,6 +3963,95 @@ func (c *ClientWithResponses) BeginGithubInstallationWithResponse(ctx context.Co
 		return nil, err
 	}
 	return ParseBeginGithubInstallationResponse(rsp)
+}
+
+// GetCachesAnalyticsWithResponse request returning *GetCachesAnalyticsResponse
+func (c *ClientWithResponses) GetCachesAnalyticsWithResponse(ctx context.Context, params *GetCachesAnalyticsParams, reqEditors ...RequestEditorFn) (*GetCachesAnalyticsResponse, error) {
+	rsp, err := c.GetCachesAnalytics(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetCachesAnalyticsResponse(rsp)
+}
+
+// GetCostsAnalyticsWithResponse request returning *GetCostsAnalyticsResponse
+func (c *ClientWithResponses) GetCostsAnalyticsWithResponse(ctx context.Context, params *GetCostsAnalyticsParams, reqEditors ...RequestEditorFn) (*GetCostsAnalyticsResponse, error) {
+	rsp, err := c.GetCostsAnalytics(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetCostsAnalyticsResponse(rsp)
+}
+
+// GetJobsAnalyticsWithResponse request returning *GetJobsAnalyticsResponse
+func (c *ClientWithResponses) GetJobsAnalyticsWithResponse(ctx context.Context, params *GetJobsAnalyticsParams, reqEditors ...RequestEditorFn) (*GetJobsAnalyticsResponse, error) {
+	rsp, err := c.GetJobsAnalytics(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetJobsAnalyticsResponse(rsp)
+}
+
+// GetRunnerSizingAnalyticsWithResponse request returning *GetRunnerSizingAnalyticsResponse
+func (c *ClientWithResponses) GetRunnerSizingAnalyticsWithResponse(ctx context.Context, params *GetRunnerSizingAnalyticsParams, reqEditors ...RequestEditorFn) (*GetRunnerSizingAnalyticsResponse, error) {
+	rsp, err := c.GetRunnerSizingAnalytics(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetRunnerSizingAnalyticsResponse(rsp)
+}
+
+// SearchRunLogsWithResponse request returning *SearchRunLogsResponse
+func (c *ClientWithResponses) SearchRunLogsWithResponse(ctx context.Context, params *SearchRunLogsParams, reqEditors ...RequestEditorFn) (*SearchRunLogsResponse, error) {
+	rsp, err := c.SearchRunLogs(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSearchRunLogsResponse(rsp)
+}
+
+// ListRunsWithResponse request returning *ListRunsResponse
+func (c *ClientWithResponses) ListRunsWithResponse(ctx context.Context, params *ListRunsParams, reqEditors ...RequestEditorFn) (*ListRunsResponse, error) {
+	rsp, err := c.ListRuns(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListRunsResponse(rsp)
+}
+
+// GetRunWithResponse request returning *GetRunResponse
+func (c *ClientWithResponses) GetRunWithResponse(ctx context.Context, runId string, reqEditors ...RequestEditorFn) (*GetRunResponse, error) {
+	rsp, err := c.GetRun(ctx, runId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetRunResponse(rsp)
+}
+
+// ListStickyDisksWithResponse request returning *ListStickyDisksResponse
+func (c *ClientWithResponses) ListStickyDisksWithResponse(ctx context.Context, params *ListStickyDisksParams, reqEditors ...RequestEditorFn) (*ListStickyDisksResponse, error) {
+	rsp, err := c.ListStickyDisks(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListStickyDisksResponse(rsp)
+}
+
+// ResetStickyDiskWithBodyWithResponse request with arbitrary body returning *ResetStickyDiskResponse
+func (c *ClientWithResponses) ResetStickyDiskWithBodyWithResponse(ctx context.Context, params *ResetStickyDiskParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResetStickyDiskResponse, error) {
+	rsp, err := c.ResetStickyDiskWithBody(ctx, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseResetStickyDiskResponse(rsp)
+}
+
+func (c *ClientWithResponses) ResetStickyDiskWithResponse(ctx context.Context, params *ResetStickyDiskParams, body ResetStickyDiskJSONRequestBody, reqEditors ...RequestEditorFn) (*ResetStickyDiskResponse, error) {
+	rsp, err := c.ResetStickyDisk(ctx, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseResetStickyDiskResponse(rsp)
 }
 
 // ParseCreateBillingCheckoutResponse parses an HTTP response from a CreateBillingCheckoutWithResponse call
@@ -3016,6 +4635,303 @@ func ParseBeginGithubInstallationResponse(rsp *http.Response) (*BeginGithubInsta
 			return nil, err
 		}
 		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetCachesAnalyticsResponse parses an HTTP response from a GetCachesAnalyticsWithResponse call
+func ParseGetCachesAnalyticsResponse(rsp *http.Response) (*GetCachesAnalyticsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetCachesAnalyticsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SandboxCachesAnalytics
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetCostsAnalyticsResponse parses an HTTP response from a GetCostsAnalyticsWithResponse call
+func ParseGetCostsAnalyticsResponse(rsp *http.Response) (*GetCostsAnalyticsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetCostsAnalyticsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SandboxCostsAnalytics
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetJobsAnalyticsResponse parses an HTTP response from a GetJobsAnalyticsWithResponse call
+func ParseGetJobsAnalyticsResponse(rsp *http.Response) (*GetJobsAnalyticsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetJobsAnalyticsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SandboxJobsAnalytics
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetRunnerSizingAnalyticsResponse parses an HTTP response from a GetRunnerSizingAnalyticsWithResponse call
+func ParseGetRunnerSizingAnalyticsResponse(rsp *http.Response) (*GetRunnerSizingAnalyticsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetRunnerSizingAnalyticsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SandboxRunnerSizingAnalytics
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSearchRunLogsResponse parses an HTTP response from a SearchRunLogsWithResponse call
+func ParseSearchRunLogsResponse(rsp *http.Response) (*SearchRunLogsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SearchRunLogsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SandboxRunLogSearchPage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListRunsResponse parses an HTTP response from a ListRunsWithResponse call
+func ParseListRunsResponse(rsp *http.Response) (*ListRunsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListRunsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SandboxRunsPage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetRunResponse parses an HTTP response from a GetRunWithResponse call
+func ParseGetRunResponse(rsp *http.Response) (*GetRunResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetRunResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SandboxExecutionRecord
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListStickyDisksResponse parses an HTTP response from a ListStickyDisksWithResponse call
+func ParseListStickyDisksResponse(rsp *http.Response) (*ListStickyDisksResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListStickyDisksResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SandboxStickyDisksPage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseResetStickyDiskResponse parses an HTTP response from a ResetStickyDiskWithResponse call
+func ParseResetStickyDiskResponse(rsp *http.Response) (*ResetStickyDiskResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ResetStickyDiskResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SandboxStickyDiskResetResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorModel
