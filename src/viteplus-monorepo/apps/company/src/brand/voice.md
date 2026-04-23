@@ -28,13 +28,13 @@ We say the thing.
 
 ## Invariants alongside voice
 
-- **Argent only.** The mark is always Argent. On non-Iron grounds the mark carries its own dark ground (iron chip on Paper, circular emboss on Flare).
-- **Audience split.** Iron for customers. Flare for the world. Paper for editorial.
-- **Four treatments.** _Company_ (legal/meta — the anveio.com site), _Newsroom_ (broadcast — Flare ground, ink emboss wings), _Letters_ (long-form editorial — Paper ground, Fraunces throughout, Bordeaux accent), and _Workshop_ (console and productivity surfaces — Geist only, no Fraunces, no Guardian wordmark in the chrome, Amber accent). Every surface picks exactly one.
+- **Argent only.** The mark is always Argent. On non-Iron grounds the mark carries its own dark ground (iron chip on Paper, circular emboss on Flare, iron tile with argent hairline inside Workshop chrome).
+- **Audience split.** Workshop for customers and public. Letters for editorial. Newsroom for broadcast — the one moment Guardian speaks to be noticed.
+- **Three treatments.** _Workshop_ (Guardian's default — Iron ground, Amber accent, Geist throughout, no Fraunces; hosts `/`, marketing, docs, console), _Newsroom_ (Paper ground with a single bounded Flare hero band carrying the current bulletin — OG cards, billboards, share previews, conference backdrops all ride this treatment), and _Letters_ (Paper ground, Fraunces throughout, Bordeaux accent — long-form editorial). Every surface picks exactly one. The retired _Company_ treatment has been folded into Workshop; `/design/company` returns 404.
 - **Wings belong to Guardian.** The only lockup is _Guardian_ — the brand, not the legal entity. "Guardian Intelligence" is reserved for contracts, invoices, and the mailing address. Solutions — today there is one, **Metal Platform** — set their name in Geist under the house. Products inside a Solution (services, the web console, CLIs, SDKs) never lock up with the wings.
-- **One loud word per page.** The page can have one Flare-coloured word. Not two. Not zero if the page is earning a loud moment.
-- **One italic line per page.** Fraunces italic is reserved for the mission line.
-- **Flare and Amber trade places at the Workshop boundary.** Flare is Guardian's primary emphasis everywhere the company identity matters — Company, Newsroom, Letters. Amber is the Workshop accent (a nod to Bloomberg Terminal's amber phosphor) and appears only inside Workshop — console actions, live states, positive signals. Flare is banned inside Workshop; Amber is banned outside it.
+- **One loud word per page.** The page can have one Flare-coloured word inside a Newsroom band. Not two. Not zero if the page is earning a loud moment.
+- **One italic line per page.** Fraunces italic is reserved for the mission line inside Letters surfaces.
+- **Flare is only for Newsroom; Amber is only for Workshop; Bordeaux is only for Letters.** The three accents never trade places. Flare on a Workshop page is a bug. Amber on a Letters page is a bug. Bordeaux on a Newsroom page is a bug.
 
 ## Tone anchors
 

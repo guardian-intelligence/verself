@@ -94,3 +94,40 @@ export function WingsChip({ title, ...rest }: WingsChipProps) {
     </svg>
   );
 }
+
+export interface WingsWorkshopChipProps extends SvgBase {
+  readonly title?: string | undefined;
+}
+
+// The Workshop chip — iron fill, square corners, 1 px argent border, argent
+// wings. Separate from WingsChip (which carries the rounded editorial chip
+// used on favicons and Letters surfaces) because Workshop's chrome wants the
+// hard-edged industrial read: a square black tile on Iron ground, framed by a
+// hairline of argent that signals "this is product chrome, not an editorial
+// mark." The border uses vector-effect="non-scaling-stroke" so the 1 px
+// weight holds at any render size without thickening at lg or vanishing at sm.
+export function WingsWorkshopChip({ title, ...rest }: WingsWorkshopChipProps) {
+  return (
+    <svg
+      viewBox={WINGS_PADDED_VIEWBOX}
+      xmlns="http://www.w3.org/2000/svg"
+      role={title ? "img" : "presentation"}
+      aria-label={title}
+      aria-hidden={title ? undefined : true}
+      focusable="false"
+      {...rest}
+    >
+      <rect
+        x="30.01"
+        y="31.08"
+        width="291.14"
+        height="291.14"
+        fill="#0E0E0E"
+        stroke="#FFFFFF"
+        strokeWidth="1"
+        vectorEffect="non-scaling-stroke"
+      />
+      <path fill="#FFFFFF" d={WINGS_PATH_D} />
+    </svg>
+  );
+}

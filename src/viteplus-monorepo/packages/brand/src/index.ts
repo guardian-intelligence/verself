@@ -1,5 +1,16 @@
-export { WingsArgent, WingsChip, WingsEmboss, WINGS_PATH_D } from "./components/wings";
-export type { WingsArgentProps, WingsChipProps, WingsEmbossProps } from "./components/wings";
+export {
+  WingsArgent,
+  WingsChip,
+  WingsEmboss,
+  WingsWorkshopChip,
+  WINGS_PATH_D,
+} from "./components/wings";
+export type {
+  WingsArgentProps,
+  WingsChipProps,
+  WingsEmbossProps,
+  WingsWorkshopChipProps,
+} from "./components/wings";
 export { Lockup, StackedLockup } from "./components/lockup";
 export type {
   LockupProps,
