@@ -9,7 +9,11 @@ import { expect, test } from "@playwright/test";
 const IA_ROUTES: readonly string[] = [
   "/",
   "/design",
+  "/design/workshop",
+  "/design/newsroom",
+  "/design/letters",
   "/letters",
+  "/newsroom",
   "/solutions",
   "/company",
   "/careers",
@@ -19,9 +23,11 @@ const IA_ROUTES: readonly string[] = [
   "/letters/ship-the-reference-architecture",
 ];
 
-// Retired routes that must not resurrect after the Dispatch → Letters rename
-// or the apps/letters retirement. The canary asserts each returns 404.
+// Retired routes that must not resurrect. /design/company retired with the
+// three-treatment cutover (Company treatment is no longer part of the brand
+// model); Dispatch retired with the Letters rename.
 const RETIRED_ROUTES: readonly string[] = [
+  "/design/company",
   "/dispatch",
   "/dispatch/rss",
   "/dispatch/ship-the-reference-architecture",

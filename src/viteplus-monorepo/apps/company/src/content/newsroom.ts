@@ -23,7 +23,7 @@ const ITEMS: readonly NewsroomItem[] = [
   {
     slug: "brand-system-2026-04",
     kicker: "Brand system",
-    title: "Four treatments, one house.",
+    title: "Three rooms, one house.",
     date: "19 April 2026",
     ctaLabel: "See the rooms",
     ctaHref: "/design",
