@@ -150,7 +150,7 @@ service project:
 ```json
 {
   "urn:zitadel:iam:org:project:<project_id>:roles": {
-    "sandbox_org_admin": {
+    "admin": {
       "<org_id>": "<org_name>"
     }
   }
@@ -423,9 +423,9 @@ repo-owned service-to-service identity model:
 
 | Persona | Human login | Machine user | Organization | Built-in roles |
 |---|---|---|---|---|
-| `platform-admin` | `agent@<domain>` | `assume-platform-admin` | platform | identity-service `owner`; `sandbox_org_admin`, `forgejo_admin`, `mailbox_user` |
-| `acme-admin` | `acme-admin@<domain>` | `assume-acme-admin` | Acme Corp | human/browser identity-service `owner`; machine identity-service `admin`; `sandbox_org_admin` |
-| `acme-member` | `acme-user@<domain>` | `assume-acme-member` | Acme Corp | `sandbox_org_member`, identity-service `member` |
+| `platform-admin` | `agent@<domain>` | `assume-platform-admin` | platform | sandbox-rental `owner`; identity-service `owner`; `forgejo_admin`, `mailbox_user` |
+| `acme-admin` | `acme-admin@<domain>` | `assume-acme-admin` | Acme Corp | human/browser sandbox-rental `owner`; machine sandbox-rental `admin`; human/browser identity-service `owner`; machine identity-service `admin` |
+| `acme-member` | `acme-user@<domain>` | `assume-acme-member` | Acme Corp | sandbox-rental `member`; identity-service `member` |
 
 Use the Make wrappers to mint short-lived token files from the deployed
 credential store. These are extremely useful utility scripts for operators and
@@ -452,7 +452,7 @@ Current access coverage:
 
 | Surface | `platform-admin` | `acme-admin` | `acme-member` | Credential path |
 |---|---|---|---|---|
-| rent-a-sandbox / `sandbox-rental-service` | platform `sandbox_org_admin` | Acme `sandbox_org_admin` | Acme `sandbox_org_member` | Zitadel browser login and `SANDBOX_RENTAL_ACCESS_TOKEN` |
+| rent-a-sandbox / `sandbox-rental-service` | platform `owner` | Acme browser `owner`, machine `admin` | Acme `member` | Zitadel browser login and `SANDBOX_RENTAL_ACCESS_TOKEN` |
 | rent-a-sandbox organization surface / `identity-service` | browser and machine `owner` | browser `owner`, machine `admin` | Acme `member` | BFF token exchange and `IDENTITY_SERVICE_ACCESS_TOKEN` |
 | `mailbox-service` (webmail folded into rent-a-sandbox; frontend path TBD) | `mailbox_user`, bound to `agents` | none | none | Zitadel browser login and `MAILBOX_SERVICE_ACCESS_TOKEN` |
 | Forgejo OIDC login | `forgejo_admin` | none | none | Zitadel browser login and `FORGEJO_OIDC_ACCESS_TOKEN` |

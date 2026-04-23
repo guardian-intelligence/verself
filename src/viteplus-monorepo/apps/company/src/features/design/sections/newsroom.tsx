@@ -24,9 +24,9 @@ export function SectionNewsroom() {
       lede={
         <>
           Ultra simple: Argent body, NewsroomCards with a Flare top stripe for the logo and
-          wordmark, Argent body for reading, Flare CTAs. Flare appears three times per card
-          (stripe, CTA, stationery) — never as the room itself. Bordeaux never appears on
-          Newsroom (Letters-only); Amber never appears on Newsroom (Workshop-only).
+          wordmark, Argent body for reading, Flare CTAs. Flare appears three times per card (stripe,
+          CTA, stationery) — never as the room itself. Bordeaux never appears on Newsroom
+          (Letters-only); Amber never appears on Newsroom (Workshop-only).
         </>
       }
     >
@@ -62,7 +62,11 @@ export function SectionNewsroom() {
               note: "Pantone 389 C · Flare · card stripe + CTA + stationery",
             },
             { label: "Type", value: "#0B0B0B", note: "Ink on Argent and on Flare" },
-            { label: "Mark", value: "WingsEmboss", note: "Argent wings in ink medallion, on Flare" },
+            {
+              label: "Mark",
+              value: "WingsEmboss",
+              note: "Argent wings in ink medallion, on Flare",
+            },
             { label: "Hero title", value: "Fraunces", note: "opsz 144 · SOFT 30 · -0.026em" },
             { label: "Kicker", value: "Geist Mono", note: "11 / 1 / +180 · 600 · UPPER" },
             { label: "CTA", value: "Flare button · Ink text", note: "Rhymes with the card stripe" },
@@ -70,8 +74,8 @@ export function SectionNewsroom() {
           ]}
           footer={
             <>
-              Flare appears on three Newsroom surfaces per card: the top stripe carrying the
-              logo + wordmark, the CTA button, and (where scoped) stationery. Body reading, kickers,
+              Flare appears on three Newsroom surfaces per card: the top stripe carrying the logo +
+              wordmark, the CTA button, and (where scoped) stationery. Body reading, kickers,
               bylines, and archive meta all set as Ink on Argent. If a page wants Flare in a fourth
               place, it probably wants Workshop (Amber) or Letters (Bordeaux) instead.
             </>

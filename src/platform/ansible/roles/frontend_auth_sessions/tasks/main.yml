@@ -98,3 +98,22 @@
     PGPASSWORD: "{{ frontend_auth_sessions_pg_password }}"
   changed_when: false
   no_log: true
+
+- name: Remove rent-a-sandbox sessions carrying retired sandbox role keys
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/psql
+      -h {{ services.postgresql.host }}
+      -p {{ services.postgresql.port }}
+      -U {{ frontend_auth_sessions_db_user }}
+      -d {{ frontend_auth_sessions_db_name }}
+      -v ON_ERROR_STOP=1
+    stdin: |
+      DELETE FROM auth_sessions
+      WHERE app_name = 'rent-a-sandbox'
+        AND roles ?| ARRAY['sandbox_org_admin', 'sandbox_org_member'];
+  environment:
+    PGPASSWORD: "{{ frontend_auth_sessions_pg_password }}"
+  register: frontend_auth_sessions_retired_sandbox_role_delete
+  changed_when: "'DELETE 0' not in frontend_auth_sessions_retired_sandbox_role_delete.stdout"
+  no_log: true

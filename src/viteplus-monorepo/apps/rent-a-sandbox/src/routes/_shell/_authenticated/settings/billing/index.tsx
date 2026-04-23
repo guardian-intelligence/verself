@@ -87,13 +87,18 @@ function BillingPage() {
             <Button
               type="button"
               variant="outline"
+              className="w-full sm:w-auto"
               onClick={() => portalMutation.mutate()}
               disabled={portalMutation.isPending}
             >
               {portalMutation.isPending ? "Opening…" : "Manage billing"}
             </Button>
           ) : null}
-          <Button variant="default" render={<Link to="/settings/billing/credits" />}>
+          <Button
+            variant="default"
+            className="w-full sm:w-auto"
+            render={<Link to="/settings/billing/credits" />}
+          >
             Buy credits
           </Button>
         </div>
@@ -126,7 +131,7 @@ function PlanHero({ account }: { account: BillingAccount }) {
   if (account.kind === "no_contract") {
     return (
       <section
-        className="flex items-start gap-4 rounded-lg border p-5"
+        className="flex flex-col gap-4 rounded-lg border p-5 sm:flex-row sm:items-start"
         data-testid="plan-hero"
         data-account-kind="no_contract"
       >
@@ -142,7 +147,11 @@ function PlanHero({ account }: { account: BillingAccount }) {
             <FreeFeature>Upgrade for monthly credit grants and priority lanes</FreeFeature>
           </ul>
         </div>
-        <Button data-testid="plan-hero-cta" render={<Link to="/settings/billing/subscribe" />}>
+        <Button
+          data-testid="plan-hero-cta"
+          className="w-full sm:w-auto"
+          render={<Link to="/settings/billing/subscribe" />}
+        >
           Upgrade plan
         </Button>
       </section>
@@ -151,7 +160,7 @@ function PlanHero({ account }: { account: BillingAccount }) {
 
   return (
     <section
-      className="flex items-start gap-4 rounded-lg border p-5"
+      className="flex flex-col gap-4 rounded-lg border p-5 sm:flex-row sm:items-start"
       data-testid="plan-hero"
       data-account-kind={account.kind}
       data-plan-id={account.plan.plan_id}
@@ -169,6 +178,7 @@ function PlanHero({ account }: { account: BillingAccount }) {
       <Button
         variant="outline"
         data-testid="plan-hero-cta"
+        className="w-full sm:w-auto"
         render={<Link to="/settings/billing/subscribe" />}
       >
         Adjust plan
@@ -244,33 +254,35 @@ function StatementPreview({
           drains, and the grand total line up across rows. Chrome
           around it (borders, heading) stays default shadcn. */}
       <div className="overflow-hidden rounded-md border text-sm" data-testid="statement-usage">
-        <div className="flex items-baseline justify-between border-b bg-muted/50 px-4 py-2 text-xs font-medium">
-          <span>SKU</span>
-          <span>Usage</span>
-        </div>
         {lineItems.length > 0 ? (
-          // Single CSS grid across every line item so that the quantity column
-          // (col 2), the "=" / "−" column (col 4), and the amount column (col 5)
-          // all align across rows. Col 3 is a 1fr spacer that absorbs slack to
-          // the LEFT of the equal sign.
-          <div className="grid grid-cols-[auto_auto_minmax(1rem,1fr)_auto_auto] items-baseline">
-            {lineItems.map((line) => (
-              <UsageLineRow
-                key={`${line.product_id}:${line.plan_id}:${line.bucket_id}:${line.sku_id}:${line.pricing_phase}:${line.unit_rate}`}
-                line={line}
-                sandboxCredits={sandboxCredits}
-              />
-            ))}
-            <div
-              className="col-span-5 mx-4 mt-2 mb-4 border-t-2 border-foreground/80 pt-2 flex items-baseline justify-between text-base font-bold"
-              data-testid="statement-grand-total"
-            >
-              <span>Amount Owed</span>
-              <span className="font-mono tabular-nums">
-                {formatLedgerAmountPrecise(grandTotal)}
-              </span>
+          <Fragment>
+            <div className="hidden items-baseline justify-between border-b bg-muted/50 px-4 py-2 text-xs font-medium xl:flex">
+              <span>SKU</span>
+              <span>Usage</span>
             </div>
-          </div>
+            {/* Single CSS grid across every wide line item so that the quantity column
+                (col 2), the "=" / "−" column (col 4), and the amount column (col 5)
+                all align across rows. Narrower settings columns switch to receipt
+                rows; otherwise the rate and charge columns collide. */}
+            <div className="xl:grid xl:grid-cols-[minmax(14rem,1fr)_auto_minmax(1rem,0.5fr)_auto_auto] xl:items-baseline">
+              {lineItems.map((line) => (
+                <UsageLineRow
+                  key={`${line.product_id}:${line.plan_id}:${line.bucket_id}:${line.sku_id}:${line.pricing_phase}:${line.unit_rate}`}
+                  line={line}
+                  sandboxCredits={sandboxCredits}
+                />
+              ))}
+              <div
+                className="mx-4 mt-2 mb-4 flex items-baseline justify-between border-t-2 border-foreground/80 pt-2 text-base font-bold xl:col-span-5"
+                data-testid="statement-grand-total"
+              >
+                <span>Amount Owed</span>
+                <span className="font-mono tabular-nums">
+                  {formatLedgerAmountPrecise(grandTotal)}
+                </span>
+              </div>
+            </div>
+          </Fragment>
         ) : (
           <div className="px-4 py-6 text-center text-muted-foreground">
             <div className="font-medium">No usage yet</div>
@@ -289,6 +301,43 @@ function UsageLineRow({
   line: StatementLineItem;
   sandboxCredits: CreditsProductState | undefined;
 }) {
+  const view = buildUsageLineView(line, sandboxCredits);
+
+  return (
+    <Fragment>
+      <CompactUsageLineRow view={view} />
+      <WideUsageLineRow view={view} />
+    </Fragment>
+  );
+}
+
+interface UsageLineView {
+  readonly line: StatementLineItem;
+  readonly skuTitle: string;
+  readonly totalRows: number;
+  readonly quantityText: string;
+  readonly rateText: string;
+  readonly chargeText: string;
+  readonly reservedText: string;
+  readonly hasReserved: boolean;
+  readonly drains: readonly UsageDrainView[];
+}
+
+interface UsageDrainView {
+  readonly key: LineItemDrainKey;
+  readonly source: DrainSourceKind;
+  readonly amount: number;
+  readonly amountText: string;
+  readonly label: string;
+  readonly planId: string | undefined;
+  readonly remainingUnits: number;
+  readonly remainingText: string;
+}
+
+function buildUsageLineView(
+  line: StatementLineItem,
+  sandboxCredits: CreditsProductState | undefined,
+): UsageLineView {
   const availableSources = sandboxCredits?.bySKU.get(line.sku_id) ?? [];
   const drains = DRAIN_SOURCES.map((source) => {
     const amount = line[source.key];
@@ -301,6 +350,8 @@ function UsageLineRow({
       label: match ? match.label : source.fallbackLabel,
       planId: match ? match.plan_id : undefined,
       remainingUnits: match ? match.available_units : 0,
+      amountText: formatLedgerAmountPrecise(amount),
+      remainingText: formatLedgerAmount(match ? match.available_units : 0),
     };
   }).filter((row) => row.amount > 0 || row.remainingUnits > 0);
   const hasReserved = line.reserved_units > 0;
@@ -311,26 +362,99 @@ function UsageLineRow({
   const rateText = formatLedgerRate(line.unit_rate, line.quantity_unit);
   const chargeText = formatLedgerAmountPrecise(line.charge_units);
 
-  const lastDrainIdx = hasReserved ? -1 : drains.length - 1;
+  return {
+    line,
+    skuTitle,
+    totalRows,
+    quantityText,
+    rateText,
+    chargeText,
+    reservedText: formatLedgerAmountPrecise(line.reserved_units),
+    hasReserved,
+    drains,
+  };
+}
 
+function CompactUsageLineRow({ view }: { view: UsageLineView }) {
   return (
-    <Fragment>
-      <div
-        className="self-start break-words px-4 pt-4 pb-4 font-medium"
-        style={{ gridRow: `span ${totalRows}`, gridColumn: 1 }}
-        data-testid={`usage-line-${line.bucket_id}:${line.sku_id}`}
-        data-bucket-id={line.bucket_id}
-        data-sku-id={line.sku_id}
-      >
-        {skuTitle}
+    <div
+      className="border-b px-4 py-4 xl:hidden"
+      data-usage-layout="compact"
+      data-bucket-id={view.line.bucket_id}
+      data-sku-id={view.line.sku_id}
+    >
+      <div className="font-medium">{view.skuTitle}</div>
+      <div className="mt-3 grid gap-x-3 gap-y-1 font-mono tabular-nums sm:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="min-w-0 break-words">
+          {view.quantityText} @ {view.rateText}
+        </div>
+        <div className="whitespace-nowrap text-right">= {view.chargeText}</div>
       </div>
 
-      <div className="pt-4 font-mono tabular-nums">{quantityText}</div>
-      <div className="pt-4 pl-2 font-mono tabular-nums whitespace-nowrap">@ {rateText}</div>
-      <div className="pt-4 pl-2 font-mono tabular-nums">+</div>
-      <div className="pt-4 pl-2 pr-4 font-mono tabular-nums">{chargeText}</div>
+      {view.drains.length > 0 || view.hasReserved ? (
+        <div className="mt-2 space-y-1.5">
+          {view.drains.map((drain) => {
+            const showRemaining = drain.source !== "purchase";
+            return (
+              <div
+                key={drain.key}
+                className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-3"
+                data-drain-source={drain.key}
+              >
+                <div className="min-w-0 text-muted-foreground">
+                  {drain.label}
+                  {showRemaining ? (
+                    <span
+                      className="ml-1 text-xs"
+                      data-source={drain.source}
+                      data-plan-id={drain.planId}
+                    >
+                      ({drain.remainingText} remaining)
+                    </span>
+                  ) : null}
+                </div>
+                <div className="whitespace-nowrap font-mono tabular-nums text-foreground">
+                  − {drain.amountText}
+                </div>
+              </div>
+            );
+          })}
 
-      {drains.map((drain, idx) => {
+          {view.hasReserved ? (
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-3 italic text-muted-foreground">
+              <div className="min-w-0">Reserved (in-flight)</div>
+              <div className="whitespace-nowrap font-mono tabular-nums">− {view.reservedText}</div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function WideUsageLineRow({ view }: { view: UsageLineView }) {
+  const lastDrainIdx = view.hasReserved ? -1 : view.drains.length - 1;
+
+  return (
+    <div className="hidden xl:contents" data-usage-layout="wide">
+      <div
+        className="self-start break-words px-4 pt-4 pb-4 font-medium"
+        style={{ gridRow: `span ${view.totalRows}`, gridColumn: 1 }}
+        data-testid={`usage-line-${view.line.bucket_id}:${view.line.sku_id}`}
+        data-bucket-id={view.line.bucket_id}
+        data-sku-id={view.line.sku_id}
+      >
+        {view.skuTitle}
+      </div>
+
+      <div className="pt-4 font-mono whitespace-nowrap tabular-nums">{view.quantityText}</div>
+      <div className="pt-4 pl-2 font-mono whitespace-nowrap tabular-nums">@ {view.rateText}</div>
+      <div className="pt-4 pl-2 font-mono tabular-nums">=</div>
+      <div className="pt-4 pl-2 pr-4 font-mono whitespace-nowrap tabular-nums">
+        {view.chargeText}
+      </div>
+
+      {view.drains.map((drain, idx) => {
         const pb = idx === lastDrainIdx ? "pb-4" : "";
         const showRemaining = drain.source !== "purchase";
         return (
@@ -343,20 +467,20 @@ function UsageLineRow({
                   data-source={drain.source}
                   data-plan-id={drain.planId}
                 >
-                  ({formatLedgerAmount(drain.remainingUnits)} remaining)
+                  ({drain.remainingText} remaining)
                 </span>
               ) : null}
             </div>
             <div className={`pt-1 ${pb}`} />
             <div className={`pt-1 ${pb} pl-2 font-mono tabular-nums text-foreground`}>−</div>
             <div className={`pt-1 ${pb} pl-2 pr-4 font-mono tabular-nums text-foreground`}>
-              {formatLedgerAmountPrecise(drain.amount)}
+              {drain.amountText}
             </div>
           </Fragment>
         );
       })}
 
-      {hasReserved ? (
+      {view.hasReserved ? (
         <Fragment>
           <div className="pt-1 pb-4 italic text-muted-foreground">Reserved (in-flight)</div>
           <div className="pt-1 pb-4" />
@@ -364,11 +488,11 @@ function UsageLineRow({
             −
           </div>
           <div className="pt-1 pb-4 pl-2 pr-4 font-mono tabular-nums italic text-muted-foreground">
-            {formatLedgerAmountPrecise(line.reserved_units)}
+            {view.reservedText}
           </div>
         </Fragment>
       ) : null}
-    </Fragment>
+    </div>
   );
 }
 

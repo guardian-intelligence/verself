@@ -107,27 +107,15 @@ test("company canary — walk IA + exercise OG + brand kit", async ({ page, requ
   await page.waitForTimeout(500);
 
   // 8. /newsroom interaction surface. The mount-time newsroom.index.view span
-  // already fires when the IA walk above hits /newsroom, but the three
-  // interaction spans (tab_change, card_click, subscribe_submit) only fire
-  // on user gestures. Exercise each so every canary run lands the full
-  // newsroom.index.* span family in ClickHouse, which is what the live
-  // verification script at src/platform/scripts/verify-company-live.sh
-  // asserts via `newsroom.index.span_families = 4`.
+  // already fires when the IA walk above hits /newsroom. The bulletin_click
+  // span only fires on a user gesture, so drive the giant bulletin click
+  // here — that also navigates to /newsroom/<slug>, which fires
+  // company.newsroom_article.view on the destination route (asserted
+  // independently in poll #5 of verify-company-live.sh).
   await page.goto("/newsroom");
-  const tablist = page.locator("[data-newsroom-tabstrip]");
-  await tablist.getByRole("tab", { name: "Milestones", exact: true }).click();
-  await page.waitForTimeout(100);
-  // Submit the noop_stub subscribe form (the span fires; the form resets).
-  const subscribe = page.locator("[data-newsroom-subscribe]");
-  await subscribe.getByLabel("Email address").fill("canary@example.com");
-  await subscribe.getByRole("button", { name: /Subscribe/i }).click();
-  await page.waitForTimeout(100);
-  // Card click. Navigates to /newsroom/<slug>; that nav also fires the
-  // company.newsroom_article.view span on the destination route, which the
-  // live script asserts independently in poll #5.
-  await page.goto("/newsroom");
-  const firstCard = page.locator("[data-newsroom-archive-card]").first();
-  await firstCard.click();
+  const bulletin = page.locator("[data-newsroom-bulletin]");
+  await expect(bulletin).toBeVisible();
+  await bulletin.click();
   await expect(page).toHaveURL(/\/newsroom\/[a-z0-9-]+$/);
   await page.waitForTimeout(300);
 });

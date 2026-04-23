@@ -78,9 +78,7 @@ export function TreatmentMarkCard({
               letterSpacing: row.emphasise === "name" ? "0.08em" : undefined,
             }}
           >
-            <span
-              style={{ color: row.emphasise === "name" ? "var(--treatment-ink)" : undefined }}
-            >
+            <span style={{ color: row.emphasise === "name" ? "var(--treatment-ink)" : undefined }}>
               {row.label}
             </span>
             <span

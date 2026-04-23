@@ -144,7 +144,7 @@ func TestMiddlewareMissingTargetProjectRoleClaimAttachesNoRoles(t *testing.T) {
 		"exp":                                   time.Now().Add(time.Hour).Unix(),
 		"urn:zitadel:iam:user:resourceowner:id": "org-456",
 		"urn:zitadel:iam:org:project:sandbox-project:roles": map[string]any{
-			"sandbox_org_admin": map[string]any{"org-456": "billing"},
+			"admin": map[string]any{"org-456": "billing"},
 		},
 	})
 

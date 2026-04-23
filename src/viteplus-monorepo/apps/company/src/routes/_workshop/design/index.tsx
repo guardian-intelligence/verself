@@ -224,9 +224,7 @@ function OverviewCard({ card }: { card: TreatmentCard }) {
 // medallion carries the composition.
 function TreatmentMark({ treatment }: { treatment: Treatment }) {
   if (treatment === "workshop") {
-    return (
-      <Lockup size="sm" variant="argent" wordmarkColor="var(--color-argent)" />
-    );
+    return <Lockup size="sm" variant="argent" wordmarkColor="var(--color-argent)" />;
   }
   if (treatment === "newsroom") {
     return <Lockup size="sm" variant="emboss" wordmarkColor="var(--color-ink)" />;
@@ -269,4 +267,3 @@ function TreatmentCTA({ treatment, label }: { treatment: Treatment; label: strin
     </span>
   );
 }
-

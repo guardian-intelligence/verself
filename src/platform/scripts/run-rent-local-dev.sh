@@ -124,6 +124,7 @@ PY
 local_pg_port="$(choose_local_port "${RENT_DEV_LOCAL_PG_PORT:-}" 15432 25432 35432 45432 55432)"
 local_sandbox_port="$(choose_local_port "${RENT_DEV_LOCAL_SANDBOX_PORT:-}" 14243 24243 34243 44243 54243)"
 local_identity_port="$(choose_local_port "${RENT_DEV_LOCAL_IDENTITY_PORT:-}" 14248 24248 34248 44248 54248)"
+local_governance_port="$(choose_local_port "${RENT_DEV_LOCAL_GOVERNANCE_PORT:-}" 14250 24250 34250 44250 54250)"
 local_electric_port="$(choose_local_port "${RENT_DEV_LOCAL_ELECTRIC_PORT:-}" 13010 23010 33010 43010 53010)"
 local_otel_http_port="$(choose_local_port "${RENT_DEV_LOCAL_OTEL_HTTP_PORT:-}" 14318 24318 34318 44318 54318)"
 local_app_port="$(choose_local_port "${RENT_DEV_LOCAL_APP_PORT:-}" 4244 5244 6244 7244 8244)"
@@ -162,6 +163,7 @@ if [[ "${print_env_only}" != "1" ]]; then
     -L "${local_pg_port}:127.0.0.1:5432" \
     -L "${local_sandbox_port}:127.0.0.1:4243" \
     -L "${local_identity_port}:127.0.0.1:4248" \
+    -L "${local_governance_port}:127.0.0.1:4250" \
     -L "${local_electric_port}:127.0.0.1:3010" \
     -L "${local_otel_http_port}:127.0.0.1:4318" \
     "${VERIFICATION_REMOTE_USER}@${VERIFICATION_REMOTE_HOST}"
@@ -169,6 +171,7 @@ if [[ "${print_env_only}" != "1" ]]; then
   wait_for_local_tcp_port "frontend_auth PostgreSQL" "${local_pg_port}"
   wait_for_local_tcp_port "sandbox-rental-service" "${local_sandbox_port}"
   wait_for_local_tcp_port "identity-service" "${local_identity_port}"
+  wait_for_local_tcp_port "governance-service" "${local_governance_port}"
   wait_for_local_tcp_port "Electric" "${local_electric_port}"
   wait_for_local_tcp_port "OTLP HTTP" "${local_otel_http_port}"
 fi
@@ -186,6 +189,7 @@ PY
 )}"
 export SANDBOX_RENTAL_SERVICE_BASE_URL="${SANDBOX_RENTAL_SERVICE_BASE_URL:-http://127.0.0.1:${local_sandbox_port}}"
 export IDENTITY_SERVICE_BASE_URL="${IDENTITY_SERVICE_BASE_URL:-http://127.0.0.1:${local_identity_port}}"
+export GOVERNANCE_SERVICE_BASE_URL="${GOVERNANCE_SERVICE_BASE_URL:-http://127.0.0.1:${local_governance_port}}"
 export ELECTRIC_URL="${ELECTRIC_URL:-http://127.0.0.1:${local_electric_port}}"
 export OTEL_EXPORTER_OTLP_ENDPOINT="${OTEL_EXPORTER_OTLP_ENDPOINT:-http://127.0.0.1:${local_otel_http_port}}"
 export OTEL_SERVICE_NAME="${OTEL_SERVICE_NAME:-rent-a-sandbox}"
@@ -202,6 +206,7 @@ export AUTH_DATABASE_URL=${AUTH_DATABASE_URL}
 export AUTH_SESSION_SECRET=${AUTH_SESSION_SECRET}
 export SANDBOX_RENTAL_SERVICE_BASE_URL=${SANDBOX_RENTAL_SERVICE_BASE_URL}
 export IDENTITY_SERVICE_BASE_URL=${IDENTITY_SERVICE_BASE_URL}
+export GOVERNANCE_SERVICE_BASE_URL=${GOVERNANCE_SERVICE_BASE_URL}
 export ELECTRIC_URL=${ELECTRIC_URL}
 export OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT}
 export OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME}
@@ -222,6 +227,7 @@ rent-a-sandbox local dev
   pg tunnel: 127.0.0.1:${local_pg_port}
   api:       ${SANDBOX_RENTAL_SERVICE_BASE_URL}
   identity:  ${IDENTITY_SERVICE_BASE_URL}
+  governance: ${GOVERNANCE_SERVICE_BASE_URL}
   electric:  ${ELECTRIC_URL}
   otlp:      ${OTEL_EXPORTER_OTLP_ENDPOINT}
   state:     ${state_file}

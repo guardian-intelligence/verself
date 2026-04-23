@@ -63,11 +63,11 @@ export function SectionLetters() {
         }}
         rule={
           <>
-            Bordeaux never ships outside the blockquote rule. CTAs, drop caps, nameplate rules,
-            tab underlines, and active link underlines all paint Ink — the editorial register
-            gets its voice from Fraunces and from Paper's warmth, not from ornament. The muted
-            register on Paper is Ink at 0.7 / 0.6 / 0.55 opacity (Stone), tuned to hold WCAG AA
-            on small text against #F6F4ED.
+            Bordeaux never ships outside the blockquote rule. CTAs, drop caps, nameplate rules, tab
+            underlines, and active link underlines all paint Ink — the editorial register gets its
+            voice from Fraunces and from Paper's warmth, not from ornament. The muted register on
+            Paper is Ink at 0.7 / 0.6 / 0.55 opacity (Stone), tuned to hold WCAG AA on small text
+            against #F6F4ED.
           </>
         }
       />
@@ -412,8 +412,8 @@ export function SectionLetters() {
         >
           Bordeaux is reserved for the blockquote left-rule. Everything else that wants to carry
           editorial weight — the initial drop cap, the nameplate hairline, the primary CTA, the
-          active link underline — paints Ink. A Letters page earns its voice from Fraunces on
-          warm Paper, not from wine-coloured ornament scattered across every accent slot.
+          active link underline — paints Ink. A Letters page earns its voice from Fraunces on warm
+          Paper, not from wine-coloured ornament scattered across every accent slot.
         </p>
         <span
           className="rounded-md"
@@ -440,13 +440,29 @@ export function SectionLetters() {
           heading="Letters · Specifications"
           rows={[
             { label: "Ground", value: "#F6F4ED", note: "Paper · warm stone-paper canvas" },
-            { label: "Body type", value: "#0B0B0B", note: "Ink on Paper — optimised for legibility" },
-            { label: "Blockquote rule", value: "#5C1F1E", note: "Pantone 504 C · Bordeaux · the ONLY Bordeaux on the page" },
+            {
+              label: "Body type",
+              value: "#0B0B0B",
+              note: "Ink on Paper — optimised for legibility",
+            },
+            {
+              label: "Blockquote rule",
+              value: "#5C1F1E",
+              note: "Pantone 504 C · Bordeaux · the ONLY Bordeaux on the page",
+            },
             { label: "CTA", value: "Ink button · Paper text", note: "Never Bordeaux" },
-            { label: "Drop cap", value: "Fraunces 88 px · Ink", note: "Display opsz, initial letter of the article" },
+            {
+              label: "Drop cap",
+              value: "Fraunces 88 px · Ink",
+              note: "Display opsz, initial letter of the article",
+            },
             { label: "Nameplate rule", value: "Ink 1 px", note: "Under GUARDIAN LETTERS masthead" },
             { label: "Mark", value: "WingsChip", note: "Argent wings in iron chip" },
-            { label: "Masthead", value: "Geist 11 / +260 / UPPER", note: "Tracked uppercase volume line" },
+            {
+              label: "Masthead",
+              value: "Geist 11 / +260 / UPPER",
+              note: "Tracked uppercase volume line",
+            },
             { label: "Body face", value: "Fraunces", note: "opsz 18 · SOFT 0 · 19 / 1.55" },
             { label: "Byline", value: "Geist 13", note: "Stone at 0.7 opacity" },
             { label: "Button radius", value: "rounded-md", note: "0.375rem · shadcn base" },
@@ -454,9 +470,9 @@ export function SectionLetters() {
           footer={
             <>
               Letters is the only treatment where Fraunces sets body prose. Bordeaux ships in
-              exactly one place — the blockquote left-rule — because a Letter reads as a page
-              of Ink on warm Paper with a single wine-coloured interruption where another voice
-              breaks in. Flare and Amber do not appear here.
+              exactly one place — the blockquote left-rule — because a Letter reads as a page of Ink
+              on warm Paper with a single wine-coloured interruption where another voice breaks in.
+              Flare and Amber do not appear here.
             </>
           }
         />

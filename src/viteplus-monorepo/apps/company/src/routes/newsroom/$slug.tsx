@@ -9,14 +9,14 @@ import {
 import { emitSpan } from "~/lib/telemetry/browser";
 import { ogMeta } from "~/lib/head";
 
-// /newsroom/$slug — one bulletin, on Argent.
+// /newsroom/$slug — one bulletin.
 //
-// Structurally a press article: breadcrumb, kicker (category + date),
-// Fraunces headline, Geist deck, author byline, Geist body paragraphs, a
-// read-next hand-off back into the Newsroom index and across to Letters.
-// The treatment comes from the /newsroom layout (data-treatment="newsroom"
-// via route.tsx), so every token — display font, muted ramp, hairline —
-// resolves to the Newsroom scope without this file knowing.
+// Structure: a Flare hero band carrying the kicker, the display-serif
+// headline, and the deck — this is the article's one Flare moment, matching
+// the "one Flare giant bulletin per page" rule. Below the band, the body
+// paragraphs set on the Newsroom Argent ground (Geist, 64ch measure) in
+// the Letters register. Brand-model memory: Newsroom = Letters body + Flare
+// hero band.
 //
 // One article = one route. The slug maps to a single NewsroomItem by
 // identity; unknown slugs throw notFound() so retired bulletins return 404
@@ -60,16 +60,77 @@ function NewsroomArticle() {
   }, [item.slug, item.publishedAt, item.category]);
 
   return (
-    <article
-      className="mx-auto w-full max-w-3xl px-4 py-10 md:px-6 md:py-16"
-      data-newsroom-article
-      data-slug={item.slug}
-    >
-      <Breadcrumb title={item.title} />
-      <ArticleHeader item={item} />
-      <ArticleBody item={item} />
-      <ReadNext slug={item.slug} />
+    <article data-newsroom-article data-slug={item.slug}>
+      <FlareHeroBand item={item} />
+      <div className="mx-auto w-full max-w-3xl px-4 pb-16 md:px-6 md:pb-24">
+        <Breadcrumb title={item.title} />
+        <Byline item={item} />
+        <ArticleBody item={item} />
+        <ReadNext slug={item.slug} />
+      </div>
     </article>
+  );
+}
+
+// FlareHeroBand — the article's single Flare moment. Full-bleed Flare
+// ground with the kicker, display-serif headline, and deck centered. The
+// dimensions mirror the index bulletin card (1312:689 aspect at desktop
+// widths) so the band reads as a continuation of the broadcast, not a
+// second Flare event competing with the first.
+function FlareHeroBand({ item }: { item: NewsroomItem }) {
+  return (
+    <div
+      data-newsroom-article-hero
+      style={{
+        background: "var(--color-flare)",
+        color: "var(--color-ink)",
+        borderBottom: "1px solid rgba(11, 11, 11, 0.12)",
+      }}
+    >
+      <div
+        className="mx-auto flex w-full max-w-5xl flex-col items-center justify-center gap-5 px-4 py-16 text-center md:gap-6 md:px-6 md:py-24"
+        style={{ minHeight: "clamp(360px, 36vw, 520px)" }}
+      >
+        <p
+          className="font-mono text-[11px] font-semibold uppercase"
+          style={{
+            color: "rgba(11, 11, 11, 0.72)",
+            letterSpacing: "0.22em",
+            fontVariationSettings: '"wght" 600',
+            margin: 0,
+          }}
+        >
+          {CATEGORY_LABELS[item.category]} · {item.date}
+        </p>
+        <h1
+          style={{
+            fontFamily: "'Fraunces', Georgia, serif",
+            fontVariationSettings: '"opsz" 144, "SOFT" 30',
+            fontWeight: 400,
+            fontSize: "clamp(40px, 6.4vw, 88px)",
+            lineHeight: 1.0,
+            letterSpacing: "-0.03em",
+            color: "var(--color-ink)",
+            margin: 0,
+            maxWidth: "22ch",
+          }}
+        >
+          {item.title}
+        </h1>
+        <p
+          style={{
+            fontFamily: "'Geist', sans-serif",
+            fontSize: "clamp(16px, 1.6vw, 20px)",
+            lineHeight: 1.5,
+            color: "rgba(11, 11, 11, 0.72)",
+            margin: 0,
+            maxWidth: "56ch",
+          }}
+        >
+          {item.deck}
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -77,7 +138,7 @@ function Breadcrumb({ title }: { title: string }) {
   return (
     <nav
       aria-label="Breadcrumb"
-      className="font-mono text-[11px] uppercase"
+      className="mt-10 font-mono text-[11px] uppercase md:mt-14"
       style={{
         color: "var(--treatment-muted-meta)",
         letterSpacing: "0.16em",
@@ -113,80 +174,39 @@ function Breadcrumb({ title }: { title: string }) {
   );
 }
 
-function ArticleHeader({ item }: { item: NewsroomItem }) {
+function Byline({ item }: { item: NewsroomItem }) {
   return (
-    <header className="mt-8 flex flex-col gap-6">
-      <p
-        className="font-mono text-[11px] font-semibold uppercase"
+    <div
+      className="mt-8 flex items-baseline gap-3 pt-6"
+      style={{ borderTop: "1px solid var(--treatment-hairline)" }}
+    >
+      <span
         style={{
-          color: "var(--treatment-muted-meta)",
-          letterSpacing: "0.2em",
-          fontVariationSettings: '"wght" 600',
-          margin: 0,
-        }}
-      >
-        {CATEGORY_LABELS[item.category]} · {item.date}
-      </p>
-      <h1
-        style={{
-          fontFamily: "var(--treatment-display-font)",
-          fontVariationSettings: '"opsz" 144, "SOFT" 30',
+          fontFamily: "'Fraunces', Georgia, serif",
+          fontVariationSettings: '"opsz" 72, "SOFT" 20',
           fontWeight: 400,
-          fontSize: "clamp(36px, 5.6vw, 60px)",
-          lineHeight: 1.03,
-          letterSpacing: "-0.026em",
+          fontSize: "18px",
           color: "var(--treatment-ink)",
-          margin: 0,
-          maxWidth: "20ch",
         }}
       >
-        {item.title}
-      </h1>
-      <p
+        {item.author.name}
+      </span>
+      <span
+        className="font-mono text-[10px] uppercase"
         style={{
-          fontFamily: "'Geist', sans-serif",
-          fontSize: "clamp(17px, 1.6vw, 20px)",
-          lineHeight: 1.5,
-          color: "var(--treatment-muted-strong)",
-          margin: 0,
-          maxWidth: "54ch",
+          letterSpacing: "0.18em",
+          color: "var(--treatment-muted-meta)",
         }}
       >
-        {item.deck}
-      </p>
-      <div
-        className="flex items-baseline gap-3 pt-2"
-        style={{ borderTop: "1px solid var(--treatment-hairline)" }}
-      >
-        <span
-          style={{
-            fontFamily: "'Fraunces', Georgia, serif",
-            fontVariationSettings: '"opsz" 72, "SOFT" 20',
-            fontWeight: 400,
-            fontSize: "18px",
-            color: "var(--treatment-ink)",
-            paddingTop: "14px",
-          }}
-        >
-          {item.author.name}
-        </span>
-        <span
-          className="font-mono text-[10px] uppercase"
-          style={{
-            letterSpacing: "0.18em",
-            color: "var(--treatment-muted-meta)",
-          }}
-        >
-          {item.author.role}
-        </span>
-      </div>
-    </header>
+        {item.author.role}
+      </span>
+    </div>
   );
 }
 
 function ArticleBody({ item }: { item: NewsroomItem }) {
   return (
-    <div className="mt-10 flex flex-col gap-5" style={{ maxWidth: "64ch" }}>
+    <div className="mt-8 flex flex-col gap-5" style={{ maxWidth: "64ch" }}>
       {item.body.map((paragraph, idx) => (
         <p
           key={idx}

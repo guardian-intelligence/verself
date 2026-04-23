@@ -59,13 +59,7 @@ export function NewsroomCard({
       }}
     >
       {isHero ? <NewsroomCardStripe /> : null}
-      <NewsroomCardBody
-        size={size}
-        kicker={kicker}
-        title={title}
-        blurb={blurb}
-        cta={cta}
-      />
+      <NewsroomCardBody size={size} kicker={kicker} title={title} blurb={blurb} cta={cta} />
     </article>
   );
 }
@@ -104,9 +98,7 @@ function NewsroomCardBody({
         flex: 1,
         display: "grid",
         gap: isHero ? "clamp(20px, 2.4vw, 28px)" : "10px",
-        padding: isHero
-          ? "clamp(24px, 3vw, 36px) clamp(22px, 3vw, 36px)"
-          : "18px 18px 20px",
+        padding: isHero ? "clamp(24px, 3vw, 36px) clamp(22px, 3vw, 36px)" : "18px 18px 20px",
         gridTemplateColumns: isHero ? "minmax(0, 1fr) auto" : "minmax(0, 1fr)",
         alignItems: isHero ? "end" : "start",
       }}
@@ -127,13 +119,9 @@ function NewsroomCardBody({
         <h3
           style={{
             fontFamily: "'Fraunces', Georgia, serif",
-            fontVariationSettings: isHero
-              ? '"opsz" 144, "SOFT" 30'
-              : '"opsz" 72, "SOFT" 20',
+            fontVariationSettings: isHero ? '"opsz" 144, "SOFT" 30' : '"opsz" 72, "SOFT" 20',
             fontWeight: 400,
-            fontSize: isHero
-              ? "clamp(32px, 4.8vw, 56px)"
-              : "20px",
+            fontSize: isHero ? "clamp(32px, 4.8vw, 56px)" : "20px",
             lineHeight: isHero ? 1.0 : 1.15,
             letterSpacing: isHero ? "-0.026em" : "-0.015em",
             color: "var(--color-ink)",
