@@ -90,48 +90,6 @@ func (e SandboxBillingContractRequestCadence) Valid() bool {
 	}
 }
 
-// Defines values for SandboxSecretEnvVarKind.
-const (
-	Secret   SandboxSecretEnvVarKind = "secret"
-	Variable SandboxSecretEnvVarKind = "variable"
-)
-
-// Valid indicates whether the value is a known member of the SandboxSecretEnvVarKind enum.
-func (e SandboxSecretEnvVarKind) Valid() bool {
-	switch e {
-	case Secret:
-		return true
-	case Variable:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for SandboxSecretEnvVarScopeLevel.
-const (
-	Branch      SandboxSecretEnvVarScopeLevel = "branch"
-	Environment SandboxSecretEnvVarScopeLevel = "environment"
-	Org         SandboxSecretEnvVarScopeLevel = "org"
-	Source      SandboxSecretEnvVarScopeLevel = "source"
-)
-
-// Valid indicates whether the value is a known member of the SandboxSecretEnvVarScopeLevel enum.
-func (e SandboxSecretEnvVarScopeLevel) Valid() bool {
-	switch e {
-	case Branch:
-		return true
-	case Environment:
-		return true
-	case Org:
-		return true
-	case Source:
-		return true
-	default:
-		return false
-	}
-}
-
 // BillingCancelContractResponse defines model for BillingCancelContractResponse.
 type BillingCancelContractResponse struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -548,108 +506,6 @@ type SandboxGitHubInstallationRecord struct {
 	UpdatedAt      time.Time `json:"updated_at"`
 }
 
-// SandboxSecretEnvVar defines model for SandboxSecretEnvVar.
-type SandboxSecretEnvVar struct {
-	Branch *string `json:"branch,omitempty"`
-	EnvId  *string `json:"env_id,omitempty"`
-
-	// EnvName Environment variable name to inject into the sandbox process.
-	EnvName string `json:"env_name"`
-
-	// Kind Resource kind. Defaults to secret.
-	Kind *SandboxSecretEnvVarKind `json:"kind,omitempty"`
-
-	// ScopeLevel Resolution scope. Defaults to org.
-	ScopeLevel *SandboxSecretEnvVarScopeLevel `json:"scope_level,omitempty"`
-
-	// SecretName Secrets-service resource name to resolve.
-	SecretName string  `json:"secret_name"`
-	SourceId   *string `json:"source_id,omitempty"`
-}
-
-// SandboxSecretEnvVarKind Resource kind. Defaults to secret.
-type SandboxSecretEnvVarKind string
-
-// SandboxSecretEnvVarScopeLevel Resolution scope. Defaults to org.
-type SandboxSecretEnvVarScopeLevel string
-
-// SandboxSubmitExecutionResult defines model for SandboxSubmitExecutionResult.
-type SandboxSubmitExecutionResult struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema      *string `json:"$schema,omitempty"`
-	AttemptId   string  `json:"attempt_id"`
-	ExecutionId string  `json:"execution_id"`
-	Status      string  `json:"status"`
-}
-
-// SandboxSubmitRequest defines model for SandboxSubmitRequest.
-type SandboxSubmitRequest struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema         *string      `json:"$schema,omitempty"`
-	IdempotencyKey string       `json:"idempotency_key"`
-	Kind           string       `json:"kind"`
-	MaxWallSeconds *int64       `json:"max_wall_seconds,omitempty"`
-	ProductId      *string      `json:"product_id,omitempty"`
-	Provider       *string      `json:"provider,omitempty"`
-	Resources      *VMResources `json:"resources,omitempty"`
-	RunCommand     *string      `json:"run_command,omitempty"`
-
-	// RunnerClass Runner class label, for example metal-4vcpu-ubuntu-2404.
-	RunnerClass *string `json:"runner_class,omitempty"`
-
-	// SecretEnv Secret references resolved by secrets-service immediately before VM exec and injected as environment variables. Values are never stored in sandbox-rental-service.
-	SecretEnv *[]SandboxSecretEnvVar `json:"secret_env,omitempty"`
-}
-
-// SandboxVolumeCreateRequest defines model for SandboxVolumeCreateRequest.
-type SandboxVolumeCreateRequest struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema         *string `json:"$schema,omitempty"`
-	DisplayName    *string `json:"display_name,omitempty"`
-	IdempotencyKey string  `json:"idempotency_key"`
-	ProductId      *string `json:"product_id,omitempty"`
-}
-
-// SandboxVolumeRecord defines model for SandboxVolumeRecord.
-type SandboxVolumeRecord struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema                *string    `json:"$schema,omitempty"`
-	ActorId               *string    `json:"actor_id,omitempty"`
-	BillableLiveBytes     string     `json:"billable_live_bytes"`
-	BillableRetainedBytes string     `json:"billable_retained_bytes"`
-	CreatedAt             time.Time  `json:"created_at"`
-	CurrentGenerationId   *string    `json:"current_generation_id,omitempty"`
-	DatasetRef            string     `json:"dataset_ref"`
-	DisplayName           *string    `json:"display_name,omitempty"`
-	LastMeteredAt         *time.Time `json:"last_metered_at,omitempty"`
-	OrgId                 string     `json:"org_id"`
-	PoolId                string     `json:"pool_id"`
-	ProductId             string     `json:"product_id"`
-	ProvisionedBytes      string     `json:"provisioned_bytes"`
-	State                 string     `json:"state"`
-	StorageNodeId         string     `json:"storage_node_id"`
-	UpdatedAt             time.Time  `json:"updated_at"`
-	UsedBytes             string     `json:"used_bytes"`
-	UsedbysnapshotsBytes  string     `json:"usedbysnapshots_bytes"`
-	VolumeId              string     `json:"volume_id"`
-	WrittenBytes          string     `json:"written_bytes"`
-}
-
-// VMResources defines model for VMResources.
-type VMResources struct {
-	// KernelImage Named guest kernel image. Defaults to "default".
-	KernelImage *string `json:"kernel_image,omitempty"`
-
-	// MemoryMib Guest RAM in MiB.
-	MemoryMib int32 `json:"memory_mib"`
-
-	// RootDiskGib Root disk quota in GiB; enforced on the per-lease ZFS clone via refquota/refreservation.
-	RootDiskGib int32 `json:"root_disk_gib"`
-
-	// Vcpus Number of vCPUs exposed to the guest.
-	Vcpus int32 `json:"vcpus"`
-}
-
 // CreateBillingCheckoutParams defines parameters for CreateBillingCheckout.
 type CreateBillingCheckoutParams struct {
 	// IdempotencyKey Stable caller-provided key used to make this mutation retry-safe.
@@ -718,12 +574,6 @@ type CreateBillingPortalJSONRequestBody = SandboxBillingPortalRequest
 
 // CreateExecutionScheduleJSONRequestBody defines body for CreateExecutionSchedule for application/json ContentType.
 type CreateExecutionScheduleJSONRequestBody = SandboxExecutionScheduleCreateRequest
-
-// SubmitExecutionJSONRequestBody defines body for SubmitExecution for application/json ContentType.
-type SubmitExecutionJSONRequestBody = SandboxSubmitRequest
-
-// CreateVolumeJSONRequestBody defines body for CreateVolume for application/json ContentType.
-type CreateVolumeJSONRequestBody = SandboxVolumeCreateRequest
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -850,11 +700,6 @@ type ClientInterface interface {
 	// ResumeExecutionSchedule request
 	ResumeExecutionSchedule(ctx context.Context, scheduleId string, params *ResumeExecutionScheduleParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// SubmitExecutionWithBody request with any body
-	SubmitExecutionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	SubmitExecution(ctx context.Context, body SubmitExecutionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
 	// GetExecution request
 	GetExecution(ctx context.Context, executionId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -866,17 +711,6 @@ type ClientInterface interface {
 
 	// BeginGithubInstallation request
 	BeginGithubInstallation(ctx context.Context, params *BeginGithubInstallationParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// ListVolumes request
-	ListVolumes(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// CreateVolumeWithBody request with any body
-	CreateVolumeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	CreateVolume(ctx context.Context, body CreateVolumeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetVolume request
-	GetVolume(ctx context.Context, volumeId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) CreateBillingCheckoutWithBody(ctx context.Context, params *CreateBillingCheckoutParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -1107,30 +941,6 @@ func (c *Client) ResumeExecutionSchedule(ctx context.Context, scheduleId string,
 	return c.Client.Do(req)
 }
 
-func (c *Client) SubmitExecutionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSubmitExecutionRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) SubmitExecution(ctx context.Context, body SubmitExecutionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSubmitExecutionRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
 func (c *Client) GetExecution(ctx context.Context, executionId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetExecutionRequest(c.Server, executionId)
 	if err != nil {
@@ -1169,54 +979,6 @@ func (c *Client) ListGithubInstallations(ctx context.Context, reqEditors ...Requ
 
 func (c *Client) BeginGithubInstallation(ctx context.Context, params *BeginGithubInstallationParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewBeginGithubInstallationRequest(c.Server, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) ListVolumes(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListVolumesRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) CreateVolumeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCreateVolumeRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) CreateVolume(ctx context.Context, body CreateVolumeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCreateVolumeRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetVolume(ctx context.Context, volumeId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetVolumeRequest(c.Server, volumeId)
 	if err != nil {
 		return nil, err
 	}
@@ -1814,46 +1576,6 @@ func NewResumeExecutionScheduleRequest(server string, scheduleId string, params 
 	return req, nil
 }
 
-// NewSubmitExecutionRequest calls the generic SubmitExecution builder with application/json body
-func NewSubmitExecutionRequest(server string, body SubmitExecutionJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewSubmitExecutionRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewSubmitExecutionRequestWithBody generates requests for SubmitExecution with any type of body
-func NewSubmitExecutionRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/executions")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
 // NewGetExecutionRequest generates requests for GetExecution
 func NewGetExecutionRequest(server string, executionId string) (*http.Request, error) {
 	var err error
@@ -1989,107 +1711,6 @@ func NewBeginGithubInstallationRequest(server string, params *BeginGithubInstall
 	return req, nil
 }
 
-// NewListVolumesRequest generates requests for ListVolumes
-func NewListVolumesRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/volumes")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewCreateVolumeRequest calls the generic CreateVolume builder with application/json body
-func NewCreateVolumeRequest(server string, body CreateVolumeJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewCreateVolumeRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewCreateVolumeRequestWithBody generates requests for CreateVolume with any type of body
-func NewCreateVolumeRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/volumes")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewGetVolumeRequest generates requests for GetVolume
-func NewGetVolumeRequest(server string, volumeId string) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "volume_id", volumeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/volumes/%s", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -2185,11 +1806,6 @@ type ClientWithResponsesInterface interface {
 	// ResumeExecutionScheduleWithResponse request
 	ResumeExecutionScheduleWithResponse(ctx context.Context, scheduleId string, params *ResumeExecutionScheduleParams, reqEditors ...RequestEditorFn) (*ResumeExecutionScheduleResponse, error)
 
-	// SubmitExecutionWithBodyWithResponse request with any body
-	SubmitExecutionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SubmitExecutionResponse, error)
-
-	SubmitExecutionWithResponse(ctx context.Context, body SubmitExecutionJSONRequestBody, reqEditors ...RequestEditorFn) (*SubmitExecutionResponse, error)
-
 	// GetExecutionWithResponse request
 	GetExecutionWithResponse(ctx context.Context, executionId string, reqEditors ...RequestEditorFn) (*GetExecutionResponse, error)
 
@@ -2201,17 +1817,6 @@ type ClientWithResponsesInterface interface {
 
 	// BeginGithubInstallationWithResponse request
 	BeginGithubInstallationWithResponse(ctx context.Context, params *BeginGithubInstallationParams, reqEditors ...RequestEditorFn) (*BeginGithubInstallationResponse, error)
-
-	// ListVolumesWithResponse request
-	ListVolumesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListVolumesResponse, error)
-
-	// CreateVolumeWithBodyWithResponse request with any body
-	CreateVolumeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateVolumeResponse, error)
-
-	CreateVolumeWithResponse(ctx context.Context, body CreateVolumeJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateVolumeResponse, error)
-
-	// GetVolumeWithResponse request
-	GetVolumeWithResponse(ctx context.Context, volumeId string, reqEditors ...RequestEditorFn) (*GetVolumeResponse, error)
 }
 
 type CreateBillingCheckoutResponse struct {
@@ -2536,29 +2141,6 @@ func (r ResumeExecutionScheduleResponse) StatusCode() int {
 	return 0
 }
 
-type SubmitExecutionResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON201                       *SandboxSubmitExecutionResult
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r SubmitExecutionResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r SubmitExecutionResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
 type GetExecutionResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -2645,75 +2227,6 @@ func (r BeginGithubInstallationResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r BeginGithubInstallationResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type ListVolumesResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *[]SandboxVolumeRecord
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r ListVolumesResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r ListVolumesResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type CreateVolumeResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON201                       *SandboxVolumeRecord
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r CreateVolumeResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r CreateVolumeResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type GetVolumeResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *SandboxVolumeRecord
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r GetVolumeResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetVolumeResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -2886,23 +2399,6 @@ func (c *ClientWithResponses) ResumeExecutionScheduleWithResponse(ctx context.Co
 	return ParseResumeExecutionScheduleResponse(rsp)
 }
 
-// SubmitExecutionWithBodyWithResponse request with arbitrary body returning *SubmitExecutionResponse
-func (c *ClientWithResponses) SubmitExecutionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SubmitExecutionResponse, error) {
-	rsp, err := c.SubmitExecutionWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseSubmitExecutionResponse(rsp)
-}
-
-func (c *ClientWithResponses) SubmitExecutionWithResponse(ctx context.Context, body SubmitExecutionJSONRequestBody, reqEditors ...RequestEditorFn) (*SubmitExecutionResponse, error) {
-	rsp, err := c.SubmitExecution(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseSubmitExecutionResponse(rsp)
-}
-
 // GetExecutionWithResponse request returning *GetExecutionResponse
 func (c *ClientWithResponses) GetExecutionWithResponse(ctx context.Context, executionId string, reqEditors ...RequestEditorFn) (*GetExecutionResponse, error) {
 	rsp, err := c.GetExecution(ctx, executionId, reqEditors...)
@@ -2937,41 +2433,6 @@ func (c *ClientWithResponses) BeginGithubInstallationWithResponse(ctx context.Co
 		return nil, err
 	}
 	return ParseBeginGithubInstallationResponse(rsp)
-}
-
-// ListVolumesWithResponse request returning *ListVolumesResponse
-func (c *ClientWithResponses) ListVolumesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListVolumesResponse, error) {
-	rsp, err := c.ListVolumes(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseListVolumesResponse(rsp)
-}
-
-// CreateVolumeWithBodyWithResponse request with arbitrary body returning *CreateVolumeResponse
-func (c *ClientWithResponses) CreateVolumeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateVolumeResponse, error) {
-	rsp, err := c.CreateVolumeWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseCreateVolumeResponse(rsp)
-}
-
-func (c *ClientWithResponses) CreateVolumeWithResponse(ctx context.Context, body CreateVolumeJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateVolumeResponse, error) {
-	rsp, err := c.CreateVolume(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseCreateVolumeResponse(rsp)
-}
-
-// GetVolumeWithResponse request returning *GetVolumeResponse
-func (c *ClientWithResponses) GetVolumeWithResponse(ctx context.Context, volumeId string, reqEditors ...RequestEditorFn) (*GetVolumeResponse, error) {
-	rsp, err := c.GetVolume(ctx, volumeId, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetVolumeResponse(rsp)
 }
 
 // ParseCreateBillingCheckoutResponse parses an HTTP response from a CreateBillingCheckoutWithResponse call
@@ -3436,39 +2897,6 @@ func ParseResumeExecutionScheduleResponse(rsp *http.Response) (*ResumeExecutionS
 	return response, nil
 }
 
-// ParseSubmitExecutionResponse parses an HTTP response from a SubmitExecutionWithResponse call
-func ParseSubmitExecutionResponse(rsp *http.Response) (*SubmitExecutionResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &SubmitExecutionResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
-		var dest SandboxSubmitExecutionResult
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON201 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
 // ParseGetExecutionResponse parses an HTTP response from a GetExecutionWithResponse call
 func ParseGetExecutionResponse(rsp *http.Response) (*GetExecutionResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -3588,105 +3016,6 @@ func ParseBeginGithubInstallationResponse(rsp *http.Response) (*BeginGithubInsta
 			return nil, err
 		}
 		response.JSON201 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseListVolumesResponse parses an HTTP response from a ListVolumesWithResponse call
-func ParseListVolumesResponse(rsp *http.Response) (*ListVolumesResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &ListVolumesResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []SandboxVolumeRecord
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseCreateVolumeResponse parses an HTTP response from a CreateVolumeWithResponse call
-func ParseCreateVolumeResponse(rsp *http.Response) (*CreateVolumeResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &CreateVolumeResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
-		var dest SandboxVolumeRecord
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON201 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetVolumeResponse parses an HTTP response from a GetVolumeWithResponse call
-func ParseGetVolumeResponse(rsp *http.Response) (*GetVolumeResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetVolumeResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SandboxVolumeRecord
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorModel

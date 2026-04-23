@@ -43,11 +43,6 @@ type GitHubRunnerCleanupWorker struct {
 	service *Service
 }
 
-type VolumeMeterTickWorker struct {
-	river.WorkerDefaults[scheduler.VolumeMeterTickArgs]
-	service *Service
-}
-
 func RegisterSchedulerWorkers(workers *river.Workers, service *Service) error {
 	if service == nil {
 		return fmt.Errorf("register scheduler workers: nil jobs service")
@@ -57,7 +52,6 @@ func RegisterSchedulerWorkers(workers *river.Workers, service *Service) error {
 	river.AddWorker(workers, &GitHubRunnerAllocateWorker{service: service})
 	river.AddWorker(workers, &GitHubJobBindWorker{service: service})
 	river.AddWorker(workers, &GitHubRunnerCleanupWorker{service: service})
-	river.AddWorker(workers, &VolumeMeterTickWorker{service: service})
 	return nil
 }
 
@@ -183,29 +177,6 @@ func (w *GitHubRunnerCleanupWorker) Work(ctx context.Context, job *river.Job[sch
 		return ErrGitHubRunnerNotConfigured
 	}
 	if err := w.service.GitHubRunner.CleanupRunner(ctx, allocationID); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return err
-	}
-	return nil
-}
-
-func (w *VolumeMeterTickWorker) Work(ctx context.Context, job *river.Job[scheduler.VolumeMeterTickArgs]) error {
-	args := job.Args
-	ctx = WithCorrelationID(ctx, args.CorrelationID)
-	meterTickID, err := uuid.Parse(args.MeterTickID)
-	if err != nil {
-		return fmt.Errorf("parse meter_tick_id: %w", err)
-	}
-	span := trace.SpanFromContext(ctx)
-	span.SetAttributes(
-		attribute.String("volume.meter_tick_id", meterTickID.String()),
-		attribute.Int64("river.job_id", job.ID),
-		attribute.String("river.job_kind", scheduler.VolumeMeterTickKind),
-		attribute.String("river.queue", scheduler.QueueVolume),
-		attribute.String("fm.correlation_id", args.CorrelationID),
-	)
-	if err := w.service.RunVolumeMeterTick(ctx, meterTickID); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err

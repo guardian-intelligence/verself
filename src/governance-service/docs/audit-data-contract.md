@@ -8,7 +8,7 @@ provider, while Forge Metal owns product policy and API credential metadata as
 described in [identity-and-iam.md](../../platform/docs/identity-and-iam.md).
 
 The canonical implementation writes the schema in
-[019_governance_audit_events.up.sql](../../platform/migrations/019_governance_audit_events.up.sql)
+[001_initial_schema.up.sql](../migrations/001_initial_schema.up.sql)
 from [audit.go](../internal/governance/audit.go). Customer-facing surfaces call
 the caller an `Actor`, not a `Principal`; tenant scope is captured separately as
 `org_id`.
@@ -147,7 +147,7 @@ checksums, and source-specific canonical files. It excludes secrets, raw tokens,
 credential hashes when they can be abused, provider webhook payloads, payment
 method details, River internals, and short-lived runner bootstrap material. The
 current export storage schema is in
-[001_governance_schema.up.sql](../migrations/001_governance_schema.up.sql), and
+[001_initial_schema.up.sql](../migrations/001_initial_schema.up.sql), and
 the first-pass artifact builder is in
 [export.go](../internal/governance/export.go).
 

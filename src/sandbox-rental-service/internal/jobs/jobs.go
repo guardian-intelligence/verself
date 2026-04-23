@@ -47,8 +47,6 @@ const (
 	billingSKUComputeVCPUMs              = "sandbox_compute_amd_epyc_4484px_vcpu_ms"
 	billingSKUMemoryGiBMs                = "sandbox_memory_standard_gib_ms"
 	billingSKUExecutionRootStorageGiBMs  = "sandbox_execution_root_storage_premium_nvme_gib_ms"
-	billingSKUDurableVolumeLiveGiBMs     = "sandbox_durable_volume_live_storage_gib_ms"
-	billingSKUDurableVolumeRetainedGiBMs = "sandbox_durable_volume_retained_snapshot_gib_ms"
 	billingMiBPerGiB                     = 1024
 	billingBytesPerGiB                   = 1024 * 1024 * 1024
 
@@ -68,8 +66,6 @@ var (
 	ErrExecutionMissing           = errors.New("sandbox-rental: execution missing")
 	ErrRunnerUnavailable          = errors.New("sandbox-rental: runner unavailable")
 	ErrRunnerClassMissing         = errors.New("sandbox-rental: runner class missing")
-	ErrInvalidSecretInjection     = errors.New("sandbox-rental: invalid secret injection")
-	ErrSecretInjectionUnavailable = errors.New("sandbox-rental: secret injection unavailable")
 	ErrBillingPaymentRequired     = errors.New("sandbox-rental: billing payment required")
 	ErrBillingForbidden           = errors.New("sandbox-rental: billing forbidden")
 )
@@ -93,8 +89,6 @@ type SchedulerRuntime interface {
 	EnqueueGitHubRunnerAllocateTx(ctx context.Context, tx pgx.Tx, req scheduler.GitHubRunnerAllocateRequest) (scheduler.ProbeResult, error)
 	EnqueueGitHubJobBindTx(ctx context.Context, tx pgx.Tx, req scheduler.GitHubJobBindRequest) (scheduler.ProbeResult, error)
 	EnqueueGitHubRunnerCleanup(ctx context.Context, req scheduler.GitHubRunnerCleanupRequest) (scheduler.ProbeResult, error)
-	EnqueueVolumeMeterTickTx(ctx context.Context, tx pgx.Tx, req scheduler.VolumeMeterTickRequest) (scheduler.ProbeResult, error)
-	EnqueueProbe(ctx context.Context, req scheduler.ProbeRequest) (scheduler.ProbeResult, error)
 }
 
 type SubmitRequest struct {
@@ -111,7 +105,6 @@ type SubmitRequest struct {
 	RunCommand         string                           `json:"run_command,omitempty"`
 	MaxWallSeconds     uint64                           `json:"max_wall_seconds,omitempty"`
 	Resources          apiwire.VMResources              `json:"resources"`
-	SecretEnv          []SecretEnvVar                   `json:"secret_env,omitempty"`
 	FilesystemMounts   []vmorchestrator.FilesystemMount `json:"-"`
 	StickyDiskMounts   []StickyDiskMountSpec            `json:"-"`
 	AttemptID          uuid.UUID                        `json:"-"`
@@ -189,7 +182,6 @@ type Service struct {
 	Logger           *slog.Logger
 	WorkloadTimeout  time.Duration
 	CheckoutCacheDir string
-	Secrets          SecretResolver
 }
 
 type executionWorkItem struct {
@@ -213,8 +205,6 @@ type executionWorkItem struct {
 	CorrelationID     string
 	Resources         apiwire.VMResources
 	FilesystemMounts  []vmorchestrator.FilesystemMount
-	SecretEnv         []SecretEnvVar
-	ResolvedSecretEnv map[string]string
 }
 
 type jobEventRow struct {
@@ -306,7 +296,6 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req 
 	if attemptID == uuid.Nil {
 		attemptID = uuid.New()
 	}
-	req.SecretEnv = assignSecretEnvGrantIDs(req.SecretEnv)
 	now := time.Now().UTC()
 	tx, err := s.PGX.Begin(ctx)
 	if err != nil {
@@ -353,9 +342,6 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req 
 		return uuid.Nil, uuid.Nil, err
 	}
 	if err := s.insertExecutionStickyDiskMounts(ctx, tx, executionID, attemptID, req.StickyDiskMounts); err != nil {
-		return uuid.Nil, uuid.Nil, err
-	}
-	if err := s.insertExecutionSecretEnv(ctx, tx, executionID, req.SecretEnv); err != nil {
 		return uuid.Nil, uuid.Nil, err
 	}
 	if req.WorkloadKind == WorkloadKindGitHubRunner && req.GitHubAllocationID != uuid.Nil {
@@ -497,14 +483,6 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		return err
 	}
 	ctx = WithCorrelationID(ctx, item.CorrelationID)
-	resolvedSecretEnv, err := s.resolveExecutionSecretEnv(ctx, item)
-	if err != nil {
-		_ = s.failAttempt(context.Background(), item, "secret_injection_failed", err)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return err
-	}
-	item.ResolvedSecretEnv = resolvedSecretEnv
 	billingJobID := billingJobIDForAttempt(item.AttemptID)
 	if err := s.transition(ctx, item, StateQueued, StateReserved, "reserved", map[string]any{"billing_job_id": billingJobID}); err != nil {
 		return err
@@ -658,11 +636,6 @@ func (s *Service) loadWorkItem(ctx context.Context, executionID, attemptID uuid.
 		return executionWorkItem{}, err
 	}
 	item.FilesystemMounts = mounts
-	secretEnv, err := s.loadExecutionSecretEnv(ctx, executionID)
-	if err != nil {
-		return executionWorkItem{}, err
-	}
-	item.SecretEnv = secretEnv
 	return item, nil
 }
 
@@ -1023,10 +996,6 @@ func (s *Service) normalizeSubmitRequest(ctx context.Context, req SubmitRequest)
 	if err := req.Resources.Validate(bounds); err != nil {
 		return SubmitRequest{}, err
 	}
-	req.SecretEnv, err = normalizeSecretEnvVars(req.SecretEnv)
-	if err != nil {
-		return SubmitRequest{}, err
-	}
 	return req, nil
 }
 
@@ -1057,9 +1026,6 @@ func (s *Service) executionEnv(ctx context.Context, item executionWorkItem) map[
 		for key, value := range s.GitHubRunner.execEnv(ctx, item.ExecutionID, item.AttemptID) {
 			env[key] = value
 		}
-	}
-	for key, value := range item.ResolvedSecretEnv {
-		env[key] = value
 	}
 	return env
 }
@@ -1267,4 +1233,11 @@ func billingInt32(field string, value uint32) (int32, error) {
 		return 0, fmt.Errorf("%s exceeds int32 range", field)
 	}
 	return int32(value), nil
+}
+
+func int64FromUint64(field string, value uint64) (int64, error) {
+	if value > math.MaxInt64 {
+		return 0, fmt.Errorf("%s exceeds int64 range", field)
+	}
+	return int64(value), nil
 }

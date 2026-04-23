@@ -10,6 +10,7 @@ import { ogMeta } from "~/lib/head";
 
 export const Route = createFileRoute("/letters/")({
   component: LettersIndex,
+  staticData: { treatment: "letters" as const },
   head: () => ({
     meta: ogMeta({
       slug: "letters",
@@ -30,13 +31,13 @@ export const Route = createFileRoute("/letters/")({
 function LettersIndex() {
   const letters = sortedLetters();
   return (
-    <PageShell ground="paper" kicker="Letters" heading="Long-form from Guardian.">
+    <PageShell treatment="letters" kicker="Letters" heading="Long-form from Guardian.">
       <p
         style={{
           fontFamily: "'Geist', sans-serif",
           fontSize: "16px",
           lineHeight: 1.55,
-          color: "var(--shell-muted-strong)",
+          color: "var(--treatment-muted-strong)",
           margin: 0,
         }}
       >
@@ -49,11 +50,11 @@ function LettersIndex() {
               to="/letters/$slug"
               params={{ slug: letter.slug }}
               className="group flex flex-col gap-1.5 rounded-md px-1 py-2 transition-colors"
-              style={{ color: "var(--shell-fg)" }}
+              style={{ color: "var(--treatment-ink)" }}
             >
               <span
                 className="font-mono text-[10px] uppercase tracking-[0.18em]"
-                style={{ color: "var(--shell-muted-meta)" }}
+                style={{ color: "var(--treatment-muted-meta)" }}
               >
                 {letter.publishedAt} · {letter.kicker}
               </span>
@@ -74,7 +75,7 @@ function LettersIndex() {
                   fontFamily: "'Geist', sans-serif",
                   fontSize: "15px",
                   lineHeight: 1.55,
-                  color: "var(--shell-muted)",
+                  color: "var(--treatment-muted)",
                 }}
               >
                 {letter.summary}
@@ -85,9 +86,9 @@ function LettersIndex() {
       </ul>
       <p
         className="mt-6 font-mono text-[10px] uppercase tracking-[0.18em]"
-        style={{ color: "var(--shell-muted-meta)" }}
+        style={{ color: "var(--treatment-muted-meta)" }}
       >
-        <a href="/letters/rss" style={{ color: "var(--shell-accent)" }}>
+        <a href="/letters/rss" style={{ color: "var(--treatment-accent)" }}>
           RSS →
         </a>
       </p>

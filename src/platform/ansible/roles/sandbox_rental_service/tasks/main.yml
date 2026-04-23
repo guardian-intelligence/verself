@@ -167,7 +167,6 @@
     ALTER USER sandbox_rental IDENTIFIED WITH ssl_certificate SAN 'URI:{{ spire_sandbox_rental_id }}' HOST LOCAL;
     GRANT INSERT ON forge_metal.job_logs TO sandbox_rental;
     GRANT INSERT ON forge_metal.job_events TO sandbox_rental;
-    GRANT INSERT ON forge_metal.volume_meter_ticks TO sandbox_rental;
     SQL
   args:
     executable: /bin/bash

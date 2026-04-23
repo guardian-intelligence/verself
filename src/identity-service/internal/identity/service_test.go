@@ -49,14 +49,14 @@ func TestMemberPermissionsAreCapabilityDerived(t *testing.T) {
 			t.Fatalf("baseline member permissions missing %q (got %v)", expected, baseline)
 		}
 	}
-	if contains(baseline, PermissionSandboxExecutionSubmit) {
-		t.Fatal("member without deploy_executions capability must not hold sandbox:execution:submit")
+	if contains(baseline, PermissionSandboxExecutionScheduleWrite) {
+		t.Fatal("member without deploy_executions capability must not hold sandbox:execution_schedule:write")
 	}
 
 	doc.EnabledKeys = []string{"deploy_executions"}
 	enabled := PermissionsForRoles(doc, []string{RoleMember})
-	if !contains(enabled, PermissionSandboxExecutionSubmit) {
-		t.Fatalf("deploy_executions should grant sandbox:execution:submit, got %v", enabled)
+	if !contains(enabled, PermissionSandboxExecutionScheduleWrite) {
+		t.Fatalf("deploy_executions should grant sandbox:execution_schedule:write, got %v", enabled)
 	}
 }
 

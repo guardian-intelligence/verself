@@ -40,12 +40,14 @@ export function TreatmentMarkCard({
 }) {
   return (
     <div
+      data-treatment="company"
       style={{
         background: PANEL_BG,
         border: `1px solid ${LINE}`,
         borderRadius: "12px",
         overflow: "hidden",
         maxWidth: `${maxWidthPx}px`,
+        color: "var(--treatment-ink)",
       }}
     >
       <div
@@ -65,7 +67,7 @@ export function TreatmentMarkCard({
           font: '600 10px/1.4 "Geist Mono", ui-monospace, monospace',
           fontVariationSettings: '"wght" 600',
           padding: "12px 14px",
-          color: "var(--muted)",
+          color: "var(--treatment-muted)",
           background: PANEL_2_BG,
           borderTop: `1px solid ${LINE}`,
         }}
@@ -92,7 +94,7 @@ export function TreatmentMarkCard({
                   row.emphasise === "hex"
                     ? "var(--color-type-iron)"
                     : row.emphasise === "name"
-                      ? "var(--muted-faint)"
+                      ? "var(--treatment-muted-faint)"
                       : undefined,
               }}
             >
@@ -115,6 +117,7 @@ export function TreatmentSizeLadder({
 }) {
   return (
     <div
+      data-treatment="company"
       style={{
         display: "flex",
         gap: "16px",
@@ -124,6 +127,7 @@ export function TreatmentSizeLadder({
         borderRadius: "12px",
         background: PANEL_BG,
         flexWrap: "wrap",
+        color: "var(--treatment-ink)",
       }}
     >
       {sizes.map((px) => (
@@ -138,7 +142,7 @@ export function TreatmentSizeLadder({
             style={{
               font: '600 10px/1 "Geist Mono", ui-monospace, monospace',
               fontVariationSettings: '"wght" 600',
-              color: "var(--muted-faint)",
+              color: "var(--treatment-muted-faint)",
               letterSpacing: "0.1em",
             }}
           >
@@ -165,8 +169,8 @@ export function TreatmentLockupLadder({
   rows,
   footer,
   accentColor = "var(--color-flare)",
-  metaColor = "var(--muted)",
-  footerColor = "var(--muted-faint)",
+  metaColor = "var(--treatment-muted)",
+  footerColor = "var(--treatment-muted-faint)",
   borderColor = "#2a2a2f",
 }: {
   readonly groundVar?: string;
@@ -285,7 +289,7 @@ export function TreatmentWingsOnlyLadder({
             style={{
               font: '600 10px/1 "Geist Mono", ui-monospace, monospace',
               fontVariationSettings: '"wght" 600',
-              color: "var(--muted-faint)",
+              color: "var(--treatment-muted-faint)",
               letterSpacing: "0.1em",
             }}
           >
@@ -300,7 +304,7 @@ export function TreatmentWingsOnlyLadder({
             maxWidth: "260px",
             fontFamily: "'Geist', sans-serif",
             fontSize: "12px",
-            color: "var(--muted)",
+            color: "var(--treatment-muted)",
             lineHeight: 1.5,
           }}
         >
@@ -360,7 +364,7 @@ export function TreatmentMastheadLadder({
               paddingTop: "6px",
               fontFamily: "'Geist Mono', ui-monospace, monospace",
               fontSize: "10px",
-              color: "var(--shell-muted-meta, rgba(11,11,11,0.6))",
+              color: "var(--treatment-muted-meta, rgba(11,11,11,0.6))",
               letterSpacing: "0.14em",
               textTransform: "uppercase",
             }}

@@ -141,7 +141,7 @@ Expected control-plane order:
    `github_runner` execution.
 4. GitHub assignment is recorded only when webhook or polling evidence proves
    the runner identity that accepted the job.
-5. The execution path emits the same lease/exec evidence as direct execution:
+5. The execution path emits the same lease/exec evidence as scheduled canaries:
    `rpc.AcquireLease`, `rpc.StartExec`, `rpc.WaitExec`, `rpc.ReleaseLease`, and
    `forge_metal.vm_lease_evidence`.
 

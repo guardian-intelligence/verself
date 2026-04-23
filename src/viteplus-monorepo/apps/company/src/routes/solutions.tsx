@@ -22,7 +22,7 @@ function SolutionsPage() {
           fontFamily: "'Geist', sans-serif",
           fontSize: "16px",
           lineHeight: 1.55,
-          color: "var(--shell-muted)",
+          color: "var(--treatment-muted)",
           margin: 0,
         }}
       >
@@ -35,14 +35,14 @@ function SolutionsPage() {
               href={solution.href}
               className="group flex flex-col gap-3 rounded-lg border p-5 transition-colors"
               style={{
-                borderColor: "var(--shell-surface-border)",
-                background: "var(--shell-surface-subtle)",
-                color: "var(--shell-fg)",
+                borderColor: "var(--treatment-surface-border)",
+                background: "var(--treatment-surface-subtle)",
+                color: "var(--treatment-ink)",
               }}
             >
               <span
                 className="font-mono text-[10px] uppercase tracking-[0.18em]"
-                style={{ color: "var(--shell-muted-faint)" }}
+                style={{ color: "var(--treatment-muted-faint)" }}
               >
                 {solution.kicker}
               </span>
@@ -63,7 +63,7 @@ function SolutionsPage() {
                   fontFamily: "'Geist', sans-serif",
                   fontSize: "16px",
                   lineHeight: 1.5,
-                  color: "var(--shell-muted-strong)",
+                  color: "var(--treatment-muted-strong)",
                 }}
               >
                 {solution.oneLiner}
@@ -73,14 +73,14 @@ function SolutionsPage() {
                   fontFamily: "'Geist', sans-serif",
                   fontSize: "14px",
                   lineHeight: 1.55,
-                  color: "var(--shell-muted-meta)",
+                  color: "var(--treatment-muted-meta)",
                 }}
               >
                 {solution.description}
               </span>
               <ul
                 className="mt-2 flex flex-col gap-2 border-t pt-3"
-                style={{ borderColor: "var(--shell-surface-border)" }}
+                style={{ borderColor: "var(--treatment-surface-border)" }}
               >
                 {solution.products.map((product) => (
                   <li
@@ -89,7 +89,7 @@ function SolutionsPage() {
                   >
                     <span
                       className="font-mono text-[10px] uppercase tracking-[0.16em] md:w-24 md:shrink-0"
-                      style={{ color: "var(--shell-muted-faint)" }}
+                      style={{ color: "var(--treatment-muted-faint)" }}
                     >
                       {labelFor(product.kind)}
                     </span>
@@ -99,7 +99,7 @@ function SolutionsPage() {
                           fontFamily: "'Geist', sans-serif",
                           fontWeight: 500,
                           fontSize: "14px",
-                          color: "var(--shell-fg)",
+                          color: "var(--treatment-ink)",
                         }}
                       >
                         {product.name}
@@ -109,7 +109,7 @@ function SolutionsPage() {
                           fontFamily: "'Geist', sans-serif",
                           fontSize: "13px",
                           lineHeight: 1.55,
-                          color: "var(--shell-muted-meta)",
+                          color: "var(--treatment-muted-meta)",
                         }}
                       >
                         {product.blurb}

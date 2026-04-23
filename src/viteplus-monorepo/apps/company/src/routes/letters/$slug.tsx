@@ -46,7 +46,7 @@ function LetterPost() {
 
   return (
     <PageShell
-      ground="paper"
+      treatment="letters"
       kicker={`${letter.publishedAt} · ${letter.kicker}`}
       heading={letter.title}
     >
@@ -55,7 +55,7 @@ function LetterPost() {
       ))}
       <p
         className="mt-8 font-mono text-[10px] uppercase tracking-[0.18em]"
-        style={{ color: "var(--shell-muted-meta)" }}
+        style={{ color: "var(--treatment-muted-meta)" }}
       >
         Signed · {letter.author} · Seattle, Washington
       </p>

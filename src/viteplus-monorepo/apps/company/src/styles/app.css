@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "@forge-metal/brand/tokens.css";
 
 /*
  * Tailwind v4 auto-detects source files in this app's directory tree but
@@ -56,65 +57,7 @@
   font-display: swap;
 }
 
-@theme {
-  /* Guardian Intelligence brand. Hex per src/viteplus-monorepo/packages/brand/src/tokens.ts;
-     keep both in sync. Wings are always `--color-argent` regardless of ground.
-     Fork-friendly hook: this file is `brand/tokens.css` for the forker; if you
-     rewrite these values, the rest of the site inherits without touching
-     components or routes. */
-  --color-iron: #0e0e0e;
-  --color-flare: #ccff00;
-  --color-paper: #f6f4ed;
-  --color-argent: #ffffff;
-  --color-ink: #0b0b0b;
-  --color-bordeaux: #5c1f1e;
-  --color-amber: #f79326;
-  --color-type-iron: #f5f5f5;
-
-  --font-display: "Fraunces", Georgia, serif;
-  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, monospace;
-}
-
 @layer base {
-  :root {
-    /* Header geometry — single source of truth. */
-    --header-h: 3.5rem;
-    --header-scroll-offset: calc(var(--header-h) + 1.5rem);
-    /* The mark's external clear-space unit. */
-    --wing-unit: calc(52px * 0.45);
-
-    /* Ash — the Iron-muted type family. Argent with opacity, reading as cool
-       grey on dark. Four rungs on an opacity ramp, tuned to pass WCAG AA
-       (≥ 4.5:1) on #0E0E0E. Routes must consume these tokens instead of
-       inlining rgba() values — the previous 0.35/0.40/0.45 variants fell to
-       3.0–3.6:1 on small mono labels. Iron defaults live on :root; the Paper
-       shell overrides them below with Stone.
-       On #0E0E0E:
-         --muted-strong (0.82) → 11.4:1   [Ash · strong]
-         --muted        (0.72) → 9.3:1    [Ash · default]
-         --muted-meta   (0.60) → 6.7:1    [Ash · meta]
-         --muted-faint  (0.55) → 5.8:1    [Ash · faint — floor for small text] */
-    --muted-strong: rgba(245, 245, 245, 0.82);
-    --muted: rgba(245, 245, 245, 0.72);
-    --muted-meta: rgba(245, 245, 245, 0.6);
-    --muted-faint: rgba(245, 245, 245, 0.55);
-    --surface-subtle: rgba(245, 245, 245, 0.04);
-    --surface-border: rgba(245, 245, 245, 0.12);
-
-    /* Shell-scoped variables that the PageShell component may override when a
-       route ships on a non-iron ground (editorial → paper). Routes reference
-       these rather than --muted-* directly so they switch with the ground. */
-    --shell-bg: var(--color-iron);
-    --shell-fg: var(--color-type-iron);
-    --shell-accent: var(--color-flare);
-    --shell-muted-strong: var(--muted-strong);
-    --shell-muted: var(--muted);
-    --shell-muted-meta: var(--muted-meta);
-    --shell-muted-faint: var(--muted-faint);
-    --shell-surface-subtle: var(--surface-subtle);
-    --shell-surface-border: var(--surface-border);
-  }
   body {
     @apply antialiased;
     overflow-x: clip;
@@ -125,26 +68,9 @@
       -apple-system,
       sans-serif;
   }
-}
-
-/* Stone — the Paper-muted ink family. Ink with opacity, reading as warm grey
-   on paper. Same four-rung ramp as Ash, re-derived against the light ground
-   to hold AA (≥ 4.5:1 on small text).
-   On #F6F4ED:
-     --shell-muted-strong (0.78) → 9.3:1   [Stone · strong]
-     --shell-muted        (0.70) → 6.9:1   [Stone · default]
-     --shell-muted-meta   (0.60) → 4.8:1   [Stone · meta — floor for small text]
-     --shell-muted-faint  (0.55) → ~4.4:1  [Stone · faint — decorative only] */
-.shell-paper {
-  --shell-bg: var(--color-paper);
-  --shell-fg: var(--color-ink);
-  --shell-accent: var(--color-bordeaux);
-  --shell-muted-strong: rgba(11, 11, 11, 0.78);
-  --shell-muted: rgba(11, 11, 11, 0.7);
-  --shell-muted-meta: rgba(11, 11, 11, 0.6);
-  --shell-muted-faint: rgba(11, 11, 11, 0.55);
-  --shell-surface-subtle: rgba(11, 11, 11, 0.04);
-  --shell-surface-border: rgba(11, 11, 11, 0.14);
+  html {
+    scroll-padding-top: var(--header-scroll-offset);
+  }
 }
 
 /* Visually-hidden unless focused. Used by the Skip-to-main-content link so

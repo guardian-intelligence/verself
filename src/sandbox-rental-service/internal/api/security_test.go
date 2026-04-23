@@ -11,7 +11,6 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/forge-metal/apiwire"
 	auth "github.com/forge-metal/auth-middleware"
 )
 
@@ -121,8 +120,8 @@ func TestIdentityPermissionChecksRoleBundlesAndDirectScopes(t *testing.T) {
 	}
 
 	member := sandboxServiceToken("42", roleSandboxOrgMember)
-	if !identityHasPermission(member, permissionExecutionSubmit) {
-		t.Fatal("sandbox org member should be allowed to submit executions")
+	if !identityHasPermission(member, permissionScheduleWrite) {
+		t.Fatal("sandbox org member should be allowed to manage execution schedules")
 	}
 	if identityHasPermission(member, permissionBillingCheckout) {
 		t.Fatal("sandbox org member should not be allowed to create billing checkout")
@@ -149,7 +148,7 @@ func TestIdentityPermissionChecksRoleBundlesAndDirectScopes(t *testing.T) {
 	if !identityHasPermission(scopedClient, permissionLogsRead) {
 		t.Fatal("API credential permissions claim should grant matching operation permission")
 	}
-	if identityHasPermission(scopedClient, permissionExecutionSubmit) {
+	if identityHasPermission(scopedClient, permissionScheduleWrite) {
 		t.Fatal("API credential permissions claim should not grant unrelated permissions")
 	}
 }
@@ -227,9 +226,9 @@ func TestOperationPolicyRequiresDeclaredIdempotency(t *testing.T) {
 		ctx    context.Context
 	}{
 		{
-			name:   "execution body key",
+			name:   "schedule body key",
 			policy: operationPolicy{Idempotency: idempotencyRequestBodyKey},
-			input:  &SubmitExecutionInput{Body: apiwire.SandboxSubmitRequest{}},
+			input:  &CreateExecutionScheduleInput{},
 			ctx:    context.Background(),
 		},
 		{
@@ -253,19 +252,19 @@ func TestOperationPolicyRequiresDeclaredIdempotency(t *testing.T) {
 
 func TestFixedWindowOperationRateLimiter(t *testing.T) {
 	limiter := newFixedWindowOperationRateLimiter(map[string]rateLimitRule{
-		"execution_submit": {Limit: 2, Window: time.Minute},
+		"execution_schedule_mutation": {Limit: 2, Window: time.Minute},
 	})
 	now := time.Unix(1700000000, 0)
-	if decision := limiter.allow("execution_submit", "org:subject:ip", now); !decision.Allowed {
+	if decision := limiter.allow("execution_schedule_mutation", "org:subject:ip", now); !decision.Allowed {
 		t.Fatalf("first request should be allowed: %#v", decision)
 	}
-	if decision := limiter.allow("execution_submit", "org:subject:ip", now.Add(time.Second)); !decision.Allowed {
+	if decision := limiter.allow("execution_schedule_mutation", "org:subject:ip", now.Add(time.Second)); !decision.Allowed {
 		t.Fatalf("second request should be allowed: %#v", decision)
 	}
-	if decision := limiter.allow("execution_submit", "org:subject:ip", now.Add(2*time.Second)); decision.Allowed || decision.RetryAfter <= 0 {
+	if decision := limiter.allow("execution_schedule_mutation", "org:subject:ip", now.Add(2*time.Second)); decision.Allowed || decision.RetryAfter <= 0 {
 		t.Fatalf("third request should be throttled with retry_after: %#v", decision)
 	}
-	if decision := limiter.allow("execution_submit", "org:subject:ip", now.Add(time.Minute)); !decision.Allowed {
+	if decision := limiter.allow("execution_schedule_mutation", "org:subject:ip", now.Add(time.Minute)); !decision.Allowed {
 		t.Fatalf("next window should be allowed: %#v", decision)
 	}
 }

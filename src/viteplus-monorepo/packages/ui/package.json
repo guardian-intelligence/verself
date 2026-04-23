@@ -38,7 +38,7 @@
     "class-variance-authority": "catalog:",
     "clsx": "catalog:",
     "lucide-react": "catalog:",
-    "sonner": "^1.7.0",
+    "sonner": "catalog:",
     "tailwind-merge": "catalog:"
   },
   "devDependencies": {

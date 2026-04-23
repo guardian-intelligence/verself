@@ -1,158 +1,194 @@
 # Change Data Capture
 
-The platform adopts [PeerDB] as its Postgres→ClickHouse CDC plane. PeerDB
-replaces the application-level dual-write pattern currently in use and
-described in [`docs/system-context.md`](../system-context.md).
+The platform does not adopt a third-party CDC appliance as a committed
+infrastructure plane.
 
-CDC is one of three async-infrastructure planes being added alongside
+This document records the replacement direction:
+
+- **Current state:** some services still dual-write PostgreSQL and
+  ClickHouse in the request path.
+- **Near-term correction:** retire request-path dual writes by moving to
+  service-owned transactional projection delivery queues.
+- **Future shared CDC plane:** if a repo-wide WAL reader is still
+  justified after the transactional outbox work lands, build a
+  repo-owned Postgres logical-replication bridge into ClickHouse rather
+  than introducing a separate vendor control plane.
+
+CDC remains one of three async-infrastructure concerns alongside
 [durable execution](durable-execution.md) and the
-[domain event stream](domain-event-stream.md). This document covers CDC
-only.
+[domain event stream](domain-event-stream.md). The difference is that
+the repo no longer commits to a specific external CDC product.
 
-[PeerDB]: https://docs.peerdb.io/
+## What exists today
 
-## What PeerDB is
+The current pattern is **application-level projection delivery**:
 
-PeerDB is a purpose-built Postgres-to-data-warehouse replication engine.
-It connects directly to a Postgres logical replication slot and streams
-WAL changes to a destination — in our case, ClickHouse. It was
-[acquired by ClickHouse Inc. in 2024][cha] and is the upstream of
-ClickPipes, the managed CDC path in ClickHouse Cloud. Licensed AGPL-3.0.
+- PostgreSQL remains the source of truth for product and billing state.
+- ClickHouse remains the proof, analytics, and operator-read-model
+  store.
+- Some services still write both in the same request path.
+- The safer target shape, already reflected in billing, is a
+  transactional queue row in PostgreSQL plus at-least-once delivery to
+  ClickHouse by a worker. The service transaction commits authoritative
+  state and the delivery record together; ClickHouse projection happens
+  after.
 
-The PeerDB stack itself consists of:
+This is not full WAL-based CDC, but it removes the main architectural
+problem: request-path dependence on ClickHouse availability and latency.
 
-- **Flow API** — control plane (Go).
-- **Flow Workers** — the replication workers, horizontally scalable (Go).
-- **Nexus** — a Postgres-wire query layer (Rust) for ad-hoc source/sink
-  querying. Optional; not on the CDC hot path.
-- **Catalog** — a Postgres database for PeerDB's own configuration and
-  mirror state.
-- **Temporal** — PeerDB uses Temporal for workflow orchestration of
-  mirror lifecycles (snapshot, initial sync, ongoing CDC). This is the
-  hard dependency that makes durable execution the first brick.
+## What the platform should do next
 
-[cha]: https://clickhouse.com/blog/clickhouse-welcomes-peerdb-adding-the-fastest-postgres-cdc-to-the-fastest-olap-database
+The next brick is not a shared CDC product. It is to make every service
+that currently dual-writes adopt the same transactional projection
+discipline used elsewhere in the repo:
 
-## What PeerDB replaces
+1. PostgreSQL transaction writes authoritative state.
+2. The same transaction writes immutable fact rows and projection-delivery
+   rows.
+3. A worker re-reads PostgreSQL truth, inserts deterministic ClickHouse
+   rows, and marks delivery succeeded.
+4. Reconciliation proves the projection against PostgreSQL ground truth.
 
-The dual-write pattern — services writing to PostgreSQL and ClickHouse in
-the same request path — is retired per-service as PeerDB mirrors are
-validated. The first cutover target is `billing-service → ClickHouse`:
-it is the most instrumented dual-write path, and `Reconcile()` already
-provides a correctness backstop that lets us compare CDC-derived rows to
-the ground truth.
+`billing-service` is the reference shape for this today. The first
+cutovers should continue to be per-service elimination of request-path
+dual writes, not introduction of a new shared CDC subsystem.
 
-Reconciliation is **not** retired. `billing-service`'s `Reconcile()` and
-analogous patterns remain as the integrity check; PeerDB is a faster,
-cleaner transport, not a correctness guarantee. The same applies to any
-other service that grows a reconciler.
+## When a shared CDC plane becomes justified
 
-## What PeerDB does not replace
+A shared WAL-based CDC plane becomes worth building only when at least one
+of these is true:
 
-- It is not the domain-event plane. Domain events for other services to
-  consume go through JetStream, not through a PeerDB mirror.
-- It is not a Temporal replacement. PeerDB uses Temporal; it does not
-  expose workflow primitives to callers.
-- It is not a general ETL tool. Its scope is Postgres logical replication
-  → ClickHouse. Other sink types exist upstream but are out of scope for
-  the repo.
+- multiple services need the same low-shape-loss Postgres change stream;
+- projection workers are duplicating too much schema-tracking logic;
+- replaying full service-owned projection queues is materially more
+  expensive than tailing WAL once;
+- ETL work benefits from raw row-change capture instead of
+  service-authored immutable facts.
 
-## Why not Debezium + Kafka
+Until then, the transactional outbox path is simpler, more service-local,
+and already matches the repo's correctness model.
 
-PeerDB's own positioning:
-*"PeerDB removes the need to deploy and manage a complex, multi-component
-CDC stack like Debezium and Kafka."* The operational delta is substantial:
-a single Go process stack (Flow API + workers) reading the replication
-slot and writing to ClickHouse, versus a Kafka cluster + Kafka Connect
-workers + Debezium connectors + schema registry. For a repo whose
-destination is already ClickHouse and whose source is already Postgres,
-the direct path is the boring path.
+## Target shared CDC shape
+
+If the repo still needs a shared CDC plane after the projection-outbox
+work lands, the preferred design is a **repo-owned logical replication
+service** with a deliberately narrow scope:
+
+- **Source:** PostgreSQL logical replication publications.
+- **Transport:** `pgoutput`, one publication per service schema or
+  another explicitly bounded ownership unit.
+- **Sink:** ClickHouse only.
+- **Output:** append-only raw change tables in ClickHouse plus
+  service-owned downstream projections or materialized views.
+- **Boundary:** one repo-owned Go service, deployed and observed like
+  the rest of the platform.
+
+This keeps the stack aligned with repo invariants:
+
+- one self-hosted trust domain;
+- SPIFFE on repo-owned service boundaries;
+- ClickHouse as the only analytics sink we actually operate;
+- no extra SQL/UI/control plane that platform services have to route
+  around;
+- no second product-specific catalog database.
+
+## What this plane does not replace
+
+- It is not the [domain event stream](domain-event-stream.md). Domain
+  events are service-authored facts for other services to consume.
+- It is not [durable execution](durable-execution.md). Multi-step
+  orchestration stays on Temporal or River depending on the boundary.
+- It does not replace reconciliation. WAL transport is not a correctness
+  proof.
+- It is not a general connector marketplace. The scope is Postgres
+  logical replication into ClickHouse.
+
+## Why not Kafka + Debezium today
+
+Kafka + Debezium remains the most credible off-the-shelf reevaluation
+point once the platform actually has a 3-node topology and real CDC
+pressure.
+
+It is not the default direction for the current single-node deployment
+because:
+
+- it adds multiple new distributed components to solve one narrow path;
+- the repo only needs Postgres → ClickHouse, not a broad connector zoo;
+- it does not improve the immediate problem, which is request-path
+  dual-write elimination;
+- a repo-owned service is easier to integrate with the current SPIFFE,
+  governance, and observability contracts.
+
+The 3-node evolution should re-evaluate this tradeoff with live data. If
+the repo reaches the point where connector breadth, replay semantics, or
+throughput justify Kafka + Debezium, that is the place to pay the
+operational cost.
 
 ## SPIFFE posture
 
-PeerDB does not speak SPIFFE natively. It is wrapped by the
-`spiffe-helper` pattern already in production use for ClickHouse.
+For the current outbox-based projection path:
 
-Identity shape:
+- the owning service speaks SPIFFE on its repo-owned boundaries;
+- PostgreSQL auth stays in the existing local peer-auth model where the
+  service already owns the database boundary;
+- ClickHouse projection uses the existing certificate-backed client path.
 
-```
-spiffe://<td>/svc/peerdb-flow-api
-spiffe://<td>/svc/peerdb-flow-worker
-spiffe://<td>/svc/peerdb-nexus   (only if Nexus is deployed)
-```
+For a future shared CDC service:
 
-Credential endpoints:
-
-| Endpoint | Auth |
-| --- | --- |
-| PeerDB catalog Postgres | Local Unix socket peer auth via `pg_ident.conf` |
-| Source Postgres (logical replication slot) | Local Unix socket peer auth; the replication role is granted `REPLICATION` on the target DB |
-| ClickHouse sink | Existing SPIFFE-wrapped ClickHouse client path |
-| Temporal (workflow orchestration) | SPIFFE X.509 client cert via `spiffe-helper` |
-
-No shared bearer tokens. No static passwords in PeerDB configuration for
-repo-owned databases. The only password that exists in PeerDB config is
-for the source-side replication user *when* the source is outside the
-peer-auth boundary (e.g. a future customer Postgres); that stays sealed
-in OpenBao and fetched via JWT-SVID at process start.
+- the CDC service itself is a repo-owned SPIFFE workload;
+- PostgreSQL replication auth should stay repo-owned and local when the
+  source database is on the same host;
+- ClickHouse sink auth should stay on the existing certificate-backed
+  path;
+- no shared bearer tokens or unmanaged static credentials are added just
+  to make CDC work.
 
 ## Observability
 
-`make observe WHAT=peerdb` surfaces:
+`make observe WHAT=cdc` should exist only when a shared CDC service
+exists.
 
-- Flow API and Flow Worker systemd state; per-role SVID TTL.
-- Per-mirror replication slot lag (bytes and time).
-- Rows replicated per mirror over time.
-- ClickHouse sink write rate and per-table lag.
-- Temporal workflow state for mirror lifecycles (snapshot, CDC, paused,
-  failed).
+Until then, observability lives on the owning service's existing proof
+surface:
 
-Grafana receives one dashboard under
-`src/platform/ansible/roles/grafana/dashboards/peerdb.json`.
+- PostgreSQL authoritative rows;
+- River or service worker state;
+- ClickHouse projected rows;
+- OTel traces spanning the authoritative write and projection delivery;
+- service-specific reconciliation output.
 
-## Proof artifact
+The proof artifact for any dual-write retirement remains the same:
 
-PeerDB ships with a synthetic mirror between a seed Postgres table
-(`peerdb_proof.source`) and a ClickHouse test table
-(`peerdb_proof.sink`). The proof workflow inserts a row tagged with a
-fresh trace ID and asserts via ClickHouse query that:
-
-- The row appears in the sink within the target latency budget.
-- Slot lag at quiesce is bounded.
-- The mirror's Temporal workflow carries `spiffe.peer_id` on every
-  internal hop.
-
-The brick is not laid until the query returns green.
+- write one authoritative fact into PostgreSQL;
+- observe the corresponding ClickHouse row under a fresh trace ID;
+- prove replay/idempotency and reconciliation against source truth.
 
 ## Cutover order
 
-1. `billing-service → ClickHouse` — the first dual-write removal.
-   Reconcile validates CDC correctness against the existing path for at
-   least one reconciliation cycle before the dual-write is deleted.
-2. Additional dual-writers follow, one service at a time, each gated on
-   its own reconciliation or synthetic validation.
+1. Retire request-path dual writes service by service using transactional
+   projection delivery.
+2. Keep reconciliation as the correctness gate for each service cutover.
+3. Re-evaluate whether a shared WAL-based CDC plane is still needed after
+   those cutovers.
+4. If yes, introduce one repo-owned logical replication service and
+   cut over only the projections that benefit from raw CDC.
 
-No service retires its dual-write in a single commit. Every cutover is
-three commits: add the PeerDB mirror, run both paths and compare, delete
-the dual-write.
+No service should change both its correctness model and its transport
+model in one step.
 
 ## Known unknowns
 
-The implementing agent must answer these before the brick is considered
-laid:
+The implementing agent for the future shared CDC service must answer:
 
-1. PeerDB's enterprise Helm chart is public, but bare-metal / systemd
-   packaging will need to be derived. Whether the Go binaries from that
-   chart can be run directly under systemd with `spiffe-helper` sidecars
-   needs live validation.
-2. Logical replication slot sizing on the single-node platform Postgres —
-   both the max concurrent slots and the `wal_keep_size` required to
-   tolerate a PeerDB worker being down for a realistic outage window.
-3. Whether PeerDB's ClickHouse sink can be pointed at the existing
-   SPIFFE-authenticated ClickHouse path without code changes.
-4. Publication strategy — one publication for all mirrored tables, or
-   one per service schema. Per-service gives tighter SPIRE selector
-   granularity but costs more replication slots.
+1. Publication granularity: one publication per service schema, per
+   database, or per projection family.
+2. Replication slot budgeting and WAL retention on the single-node
+   platform Postgres.
+3. ClickHouse table shape for raw row changes: whether service-local
+   projected tables should derive from raw CDC tables, service-authored
+   immutable facts, or both.
+4. Delete/update semantics, ordering guarantees, and replay windows for
+   append-only ClickHouse projections.
 
 ## Source notes
 
@@ -160,11 +196,11 @@ laid:
 - Related planes:
   [`durable-execution.md`](durable-execution.md),
   [`domain-event-stream.md`](domain-event-stream.md).
-- System context on the dual-write pattern and its planned retirement:
+- System context on the current dual-write pattern:
   [`../system-context.md`](../system-context.md).
-- Billing dual-write and reconciliation pattern:
+- Billing's transactional projection and reconciliation shape:
   [`../../src/billing-service/docs/billing-architecture.md`](../../src/billing-service/docs/billing-architecture.md).
-- PeerDB architecture: <https://docs.peerdb.io/architecture>.
-- PeerDB Enterprise Helm charts: <https://github.com/PeerDB-io/peerdb-enterprise>.
-- ClickHouse × PeerDB acquisition announcement:
-  <https://clickhouse.com/blog/clickhouse-welcomes-peerdb-adding-the-fastest-postgres-cdc-to-the-fastest-olap-database>.
+- PostgreSQL logical replication:
+  <https://www.postgresql.org/docs/current/logical-replication.html>.
+- Debezium architecture and operational model:
+  <https://debezium.io/documentation/reference/stable/architecture.html>.

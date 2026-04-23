@@ -13,11 +13,10 @@ const (
 	PermissionAPICredentialsRevoke    = "identity:api_credentials:revoke"
 	PermissionSandboxGitHubRead       = "sandbox:github_installation:read"
 	PermissionSandboxGitHubWrite      = "sandbox:github_installation:write"
-	PermissionSandboxExecutionSubmit  = "sandbox:execution:submit"
 	PermissionSandboxExecutionRead    = "sandbox:execution:read"
+	PermissionSandboxExecutionScheduleRead  = "sandbox:execution_schedule:read"
+	PermissionSandboxExecutionScheduleWrite = "sandbox:execution_schedule:write"
 	PermissionSandboxLogsRead         = "sandbox:logs:read"
-	PermissionSandboxVolumeRead       = "sandbox:volume:read"
-	PermissionSandboxVolumeWrite      = "sandbox:volume:write"
 	PermissionBillingRead             = "billing:read"
 	PermissionBillingCheckout         = "billing:checkout"
 	PermissionSecretWrite             = "secrets:secret:write"
@@ -72,14 +71,13 @@ var defaultOperations = Operations{
 			Operations: []Operation{
 				{OperationID: "begin-github-installation", Permission: PermissionSandboxGitHubWrite, Resource: "github_installation", Action: "connect", OrgScope: "token_org_id"},
 				{OperationID: "list-github-installations", Permission: PermissionSandboxGitHubRead, Resource: "github_installation", Action: "list", OrgScope: "token_org_id"},
-				{OperationID: "submit-execution", Permission: PermissionSandboxExecutionSubmit, Resource: "execution", Action: "submit", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "get-execution", Permission: PermissionSandboxExecutionRead, Resource: "execution", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "get-execution-logs", Permission: PermissionSandboxLogsRead, Resource: "execution_logs", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "create-scheduler-probe", Permission: PermissionSandboxExecutionSubmit, Resource: "scheduler_probe", Action: "create", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "create-volume", Permission: PermissionSandboxVolumeWrite, Resource: "volume", Action: "create", OrgScope: "token_org_id"},
-				{OperationID: "list-volumes", Permission: PermissionSandboxVolumeRead, Resource: "volume", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "get-volume", Permission: PermissionSandboxVolumeRead, Resource: "volume", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "create-volume-meter-tick", Permission: PermissionSandboxVolumeWrite, Resource: "volume_meter_tick", Action: "create", OrgScope: "token_org_id"},
+				{OperationID: "create-execution-schedule", Permission: PermissionSandboxExecutionScheduleWrite, Resource: "execution_schedule", Action: "create", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "list-execution-schedules", Permission: PermissionSandboxExecutionScheduleRead, Resource: "execution_schedule", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "get-execution-schedule", Permission: PermissionSandboxExecutionScheduleRead, Resource: "execution_schedule", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "pause-execution-schedule", Permission: PermissionSandboxExecutionScheduleWrite, Resource: "execution_schedule", Action: "pause", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "resume-execution-schedule", Permission: PermissionSandboxExecutionScheduleWrite, Resource: "execution_schedule", Action: "resume", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "get-billing-entitlements", Permission: PermissionBillingRead, Resource: "billing_entitlements", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "list-billing-contracts", Permission: PermissionBillingRead, Resource: "billing_contract", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "list-billing-plans", Permission: PermissionBillingRead, Resource: "billing_plan", Action: "list", OrgScope: "token_org_id", MemberEligible: true},

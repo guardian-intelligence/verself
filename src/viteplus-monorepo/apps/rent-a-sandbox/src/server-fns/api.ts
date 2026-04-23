@@ -64,8 +64,6 @@ import {
   isSandboxRentalApiError,
   isSandboxRentalNotFound,
   SandboxRentalApiError,
-  submitDirectExecution as submitDirectExecutionRequest,
-  executionRequestSchema,
   portalRequestSchema,
   contractChangeRequestSchema,
   contractRequestSchema,
@@ -89,7 +87,6 @@ import type {
   Statement,
   StatementQuery,
   PortalRequest,
-  ExecutionRequest,
   ContractRequest,
   ContractsResponse,
 } from "~/lib/sandbox-rental-api";
@@ -121,7 +118,6 @@ export type {
   EntitlementSourceTotal,
   EntitlementsView,
   Execution,
-  ExecutionRequest,
   ExecutionSchedule,
   ExecutionScheduleIdInput,
   ExecutionScheduleRequest,
@@ -371,16 +367,6 @@ export const cancelContract = createServerFn({ method: "POST" })
   .inputValidator(cancelContractRequestSchema)
   .handler(async ({ context, data }) => {
     return cancelContractRequest({
-      ...(await sandboxRentalClientOptions(context)),
-      body: data,
-    });
-  });
-
-export const submitDirectExecution = createServerFn({ method: "POST" })
-  .middleware([rentASandboxAuthMiddleware])
-  .inputValidator(executionRequestSchema)
-  .handler(async ({ context, data }) => {
-    return submitDirectExecutionRequest({
       ...(await sandboxRentalClientOptions(context)),
       body: data,
     });

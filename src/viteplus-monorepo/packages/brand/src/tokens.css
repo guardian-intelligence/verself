@@ -1,0 +1,165 @@
+/*
+ * Guardian Intelligence brand tokens — single source of truth.
+ *
+ * Apps that carry Guardian brand chrome (company, platform, future letters)
+ * import this file once in their app.css. Rent-a-sandbox runs on shadcn's
+ * neutral oklch palette and deliberately does not import this — its chrome
+ * belongs to the tenant, not to Guardian.
+ *
+ * Hex values mirror packages/brand/src/tokens.ts; keep both in sync when
+ * palettes change.
+ *
+ * Structure:
+ *   @theme       — Tailwind v4 token registration (palette + fonts + muted ramps).
+ *                  These generate utilities like `text-ash`, `bg-flare`, etc.
+ *   :root        — runtime vars the utilities cannot express (header geometry,
+ *                  wing-unit, and the default [data-treatment] scope).
+ *   [data-treatment="..."]
+ *                — per-treatment override scopes. The four treatments each
+ *                  override the full --treatment-* ramp. Consumers render a
+ *                  wrapper with data-treatment=<name> and descendants read
+ *                  var(--treatment-*); repaints are pure CSS transitions, no
+ *                  React re-render needed. Precedent: Radix Themes' nested
+ *                  <Theme>, without the ambient provider.
+ */
+
+@theme {
+  /* Palette */
+  --color-iron: #0e0e0e;
+  --color-flare: #ccff00;
+  --color-paper: #f6f4ed;
+  --color-argent: #ffffff;
+  --color-ink: #0b0b0b;
+  --color-bordeaux: #5c1f1e;
+  --color-amber: #f79326;
+  --color-type-iron: #f5f5f5;
+
+  /* Fonts */
+  --font-display: "Fraunces", Georgia, serif;
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* Ash — Iron-muted type family (Argent at opacity). Tuned to pass WCAG AA
+     on #0E0E0E. Registered under @theme so `text-ash`, `text-ash-strong`,
+     etc., become reachable Tailwind utilities.
+     On #0E0E0E:
+       ash-strong (0.82) → 11.4:1
+       ash        (0.72) → 9.3:1
+       ash-meta   (0.60) → 6.7:1
+       ash-faint  (0.55) → 5.8:1  [floor for small text] */
+  --color-ash-strong: rgba(245, 245, 245, 0.82);
+  --color-ash: rgba(245, 245, 245, 0.72);
+  --color-ash-meta: rgba(245, 245, 245, 0.6);
+  --color-ash-faint: rgba(245, 245, 245, 0.55);
+
+  /* Stone — Paper-muted ink family (Ink at opacity). Four-rung ramp derived
+     against the light ground to hold AA on small text.
+     On #F6F4ED:
+       stone-strong (0.78) → 9.3:1
+       stone        (0.70) → 6.9:1
+       stone-meta   (0.60) → 4.8:1
+       stone-faint  (0.55) → ~4.4:1 [decorative only] */
+  --color-stone-strong: rgba(11, 11, 11, 0.78);
+  --color-stone: rgba(11, 11, 11, 0.7);
+  --color-stone-meta: rgba(11, 11, 11, 0.6);
+  --color-stone-faint: rgba(11, 11, 11, 0.55);
+}
+
+@layer base {
+  :root {
+    /* Header geometry — single source of truth. Both the <header> block and
+       everything that needs to clear it (scroll-padding, sticky sibling
+       offsets, scroll-spy rootMargin) reference these vars, so raising the
+       bar to, say, 4rem on a breakpoint only needs one edit here. */
+    --header-h: 3.5rem;
+    --header-scroll-offset: calc(var(--header-h) + 1.5rem);
+    /* The mark's external clear-space unit, in px. Equals the height of the
+       upper wing's tip on a 52px mark per logo-playground.html. Lockups and
+       /design specimens derive their padding from this value. */
+    --wing-unit: calc(52px * 0.45);
+
+    /* Default treatment scope — Company. Every downstream [data-treatment]
+       override redeclares the full ramp, so a partial override can't leak
+       one treatment's accent into another's body text. */
+    --treatment-ground: var(--color-iron);
+    --treatment-ink: var(--color-type-iron);
+    --treatment-accent: var(--color-flare);
+    --treatment-wordmark: var(--color-argent);
+    --treatment-muted-strong: var(--color-ash-strong);
+    --treatment-muted: var(--color-ash);
+    --treatment-muted-meta: var(--color-ash-meta);
+    --treatment-muted-faint: var(--color-ash-faint);
+    --treatment-surface-subtle: rgba(245, 245, 245, 0.04);
+    --treatment-surface-border: rgba(245, 245, 245, 0.12);
+    --treatment-hairline: rgba(245, 245, 245, 0.08);
+  }
+}
+
+[data-treatment="company"] {
+  --treatment-ground: var(--color-iron);
+  --treatment-ink: var(--color-type-iron);
+  --treatment-accent: var(--color-flare);
+  --treatment-wordmark: var(--color-argent);
+  --treatment-muted-strong: var(--color-ash-strong);
+  --treatment-muted: var(--color-ash);
+  --treatment-muted-meta: var(--color-ash-meta);
+  --treatment-muted-faint: var(--color-ash-faint);
+  --treatment-surface-subtle: rgba(245, 245, 245, 0.04);
+  --treatment-surface-border: rgba(245, 245, 245, 0.12);
+  --treatment-hairline: rgba(245, 245, 245, 0.08);
+}
+
+[data-treatment="workshop"] {
+  /* Workshop runs on Iron like Company, but swaps the accent to Amber and
+     bans Fraunces in the chrome. The ground/ink/wordmark are Company's; only
+     the accent and hairline change so a mixed-mode engineer operator can
+     still read Guardian chrome the same way while the single accent signals
+     "work is happening here." */
+  --treatment-ground: var(--color-iron);
+  --treatment-ink: var(--color-type-iron);
+  --treatment-accent: var(--color-amber);
+  --treatment-wordmark: var(--color-argent);
+  --treatment-muted-strong: var(--color-ash-strong);
+  --treatment-muted: var(--color-ash);
+  --treatment-muted-meta: var(--color-ash-meta);
+  --treatment-muted-faint: var(--color-ash-faint);
+  --treatment-surface-subtle: rgba(245, 245, 245, 0.04);
+  --treatment-surface-border: rgba(245, 245, 245, 0.12);
+  --treatment-hairline: rgba(245, 245, 245, 0.08);
+}
+
+[data-treatment="newsroom"] {
+  /* Flare ground flips every inherited default: wordmark and accent both sit
+     in Ink because Argent cannot hold contrast on acid green, and the muted
+     ramp switches to Stone (ink-on-light) so body and hairlines stay legible.
+     The wordmark variant swap to emboss (wings-in-black-medallion) is a
+     React concern — AppChrome renders it via TREATMENT_WORDMARK_VARIANT. */
+  --treatment-ground: var(--color-flare);
+  --treatment-ink: var(--color-ink);
+  --treatment-accent: var(--color-ink);
+  --treatment-wordmark: var(--color-ink);
+  --treatment-muted-strong: rgba(11, 11, 11, 0.82);
+  --treatment-muted: rgba(11, 11, 11, 0.72);
+  --treatment-muted-meta: rgba(11, 11, 11, 0.6);
+  --treatment-muted-faint: rgba(11, 11, 11, 0.55);
+  --treatment-surface-subtle: rgba(11, 11, 11, 0.06);
+  --treatment-surface-border: rgba(11, 11, 11, 0.18);
+  --treatment-hairline: rgba(11, 11, 11, 0.18);
+}
+
+[data-treatment="letters"] {
+  /* Paper ground, Ink type, Bordeaux accent. The single editorial accent
+     reserved for pull-quotes, drop-caps, and active links — never appears
+     outside Letters. Muted ramp is Stone (ink-on-light). */
+  --treatment-ground: var(--color-paper);
+  --treatment-ink: var(--color-ink);
+  --treatment-accent: var(--color-bordeaux);
+  --treatment-wordmark: var(--color-ink);
+  --treatment-muted-strong: var(--color-stone-strong);
+  --treatment-muted: var(--color-stone);
+  --treatment-muted-meta: var(--color-stone-meta);
+  --treatment-muted-faint: var(--color-stone-faint);
+  --treatment-surface-subtle: rgba(11, 11, 11, 0.04);
+  --treatment-surface-border: rgba(11, 11, 11, 0.14);
+  --treatment-hairline: rgba(11, 11, 11, 0.14);
+}

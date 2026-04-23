@@ -1,6 +1,8 @@
 import { createRootRoute, HeadContent, Link, Outlet, Scripts } from "@tanstack/react-router";
 import { type ReactNode } from "react";
-import { Lockup } from "@forge-metal/brand";
+import { AppChrome, BrandTelemetryProvider } from "@forge-metal/brand";
+import { emitSpan } from "~/lib/telemetry/browser";
+import { useCurrentTreatment } from "~/lib/treatment";
 import { TelemetryProbe } from "~/lib/telemetry/page-view";
 import { deployMetaTags } from "~/lib/telemetry/server-deploy-meta";
 import "~/styles/app.css";
@@ -50,22 +52,29 @@ function RootComponent() {
 }
 
 function RootDocument({ children }: { children: ReactNode }) {
+  const treatment = useCurrentTreatment();
   return (
     <html lang="en">
       <head>
         <HeadContent />
       </head>
-      <body
-        className="text-foreground font-sans antialiased"
-        style={{ background: "var(--color-iron)", color: "var(--color-type-iron)" }}
-      >
-        <div className="flex min-h-svh flex-col">
-          <TopBar />
-          <main id="main" className="flex-1">
-            {children}
-          </main>
-          <SiteFooter />
-        </div>
+      <body className="text-foreground font-sans antialiased">
+        <BrandTelemetryProvider emitSpan={emitSpan}>
+          <div
+            data-treatment={treatment}
+            className="flex min-h-svh flex-col transition-colors duration-300 ease-out"
+            style={{
+              background: "var(--treatment-ground)",
+              color: "var(--treatment-ink)",
+            }}
+          >
+            <AppChrome treatment={treatment} LinkComponent={LinkAdapter} />
+            <main id="main" className="flex-1">
+              {children}
+            </main>
+            <SiteFooter />
+          </div>
+        </BrandTelemetryProvider>
         <TelemetryProbe />
         <Scripts />
       </body>
@@ -73,46 +82,29 @@ function RootDocument({ children }: { children: ReactNode }) {
   );
 }
 
-// Minimal top bar — Guardian wordmark only. Section navigation belongs to the
-// page it applies to: /docs owns its own left rail for docs sections, /policy
-// and /design own their own. Duplicating those links up here would just confuse
-// the hierarchy.
-function TopBar() {
-  return (
-    <header
-      className="sticky top-0 z-30"
-      style={{
-        background: "var(--color-iron)",
-        borderBottom: "1px solid rgba(245,245,245,0.08)",
-      }}
-    >
-      <div className="mx-auto flex h-[var(--header-h)] w-full max-w-7xl items-center px-4 md:px-6">
-        <Link
-          to="/"
-          aria-label="Guardian — home"
-          className="inline-flex items-center"
-          style={{ color: "var(--color-type-iron)" }}
-        >
-          <Lockup size="sm" title="Guardian" />
-        </Link>
-      </div>
-    </header>
-  );
+function LinkAdapter(props: {
+  to: string;
+  className?: string;
+  style?: React.CSSProperties;
+  "aria-label"?: string;
+  onClick?: React.MouseEventHandler;
+  children?: ReactNode;
+}) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return <Link {...(props as any)} />;
 }
 
 // Site footer — the discoverability surface for policy + design surfaces. Living
 // in the root layout so every page (docs, reference, policy, marketing, design)
 // shows the same set of legal and reference links without each page wiring them.
-// Iron ground: the whole platform sits on Guardian's default canvas, so the
-// footer no longer has to negotiate with an upstream /design dark section.
 function SiteFooter() {
   return (
     <footer
-      className="mt-16"
+      className="mt-16 transition-colors duration-300 ease-out"
       style={{
-        background: "var(--color-iron)",
-        color: "var(--color-type-iron)",
-        borderTop: "1px solid rgba(245,245,245,0.08)",
+        background: "var(--treatment-ground)",
+        color: "var(--treatment-ink)",
+        borderTop: "1px solid var(--treatment-hairline)",
       }}
     >
       <div className="mx-auto grid w-full max-w-7xl gap-8 px-4 py-10 md:grid-cols-4 md:px-6">
@@ -143,10 +135,10 @@ function SiteFooter() {
           fontSize: "11px",
           letterSpacing: "0.12em",
           textTransform: "uppercase",
-          color: "rgba(245,245,245,0.4)",
+          color: "var(--treatment-muted-faint)",
         }}
       >
-        © 2026 Guardian Intelligence · Seattle, Washington
+        © 2026 Guardian Intelligence LLC · Seattle, Washington
       </div>
     </footer>
   );
@@ -157,7 +149,7 @@ function FooterColumn({ heading, children }: { heading: string; children: ReactN
     <div className="flex flex-col gap-3">
       <p
         className="font-mono text-[10px] font-medium uppercase tracking-[0.18em]"
-        style={{ color: "rgba(245,245,245,0.4)" }}
+        style={{ color: "var(--treatment-muted-faint)" }}
       >
         {heading}
       </p>
@@ -172,7 +164,7 @@ function FooterLink({ to, children }: { to: string; children: ReactNode }) {
       <Link
         to={to}
         className="transition-colors hover:underline hover:underline-offset-4"
-        style={{ color: "rgba(245,245,245,0.72)" }}
+        style={{ color: "var(--treatment-muted)" }}
       >
         {children}
       </Link>

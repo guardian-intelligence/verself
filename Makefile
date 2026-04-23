@@ -4,7 +4,7 @@
        secrets-proof secrets-leak-proof openbao-proof openbao-tenancy-proof workload-identity-proof object-storage-verify temporal-verify temporal-web-proof recurring-schedule-proof \
        vm-guest-telemetry-build observe telemetry-proof telemetry-proof-fail clickhouse-query clickhouse-schemas pg-shell pg-query pg-list tb-shell tb-command mail mail-accounts mail-mailboxes \
        mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets \
-       wipe-pg-db wipe-server vm-orchestrator-proof stress sandbox-inner sandbox-middle sandbox-proof rent-ui-smoke rent-ui-local rent-local-dev scheduler-proof verify-scheduler grafana-proof observability-smoke services-doctor
+       wipe-pg-db wipe-server vm-orchestrator-proof sandbox-inner sandbox-middle sandbox-proof rent-ui-smoke rent-ui-local rent-local-dev grafana-proof observability-smoke services-doctor
 
 FM       := src/platform
 AW       := src/apiwire
@@ -267,7 +267,7 @@ billing-pg-query: inventory-check ## Run a PostgreSQL query against billing: mak
 billing-proof: inventory-check ## Run live billing browser proof and collect evidence
 	cd $(FM) && ./scripts/verify-rent-billing-flow.sh
 
-secrets-proof: inventory-check ## Run live secrets API and sandbox injection proof
+secrets-proof: inventory-check ## Run live secrets API proof and collect audit/trace evidence
 	cd $(FM) && ./scripts/verify-secrets-live.sh
 
 secrets-leak-proof: inventory-check ## Prove bearer/JWT material is absent from traces, logs, audit rows, and proof artifacts
@@ -304,21 +304,13 @@ wipe-pg-db: inventory-check ## Wipe one managed PostgreSQL service DB: make wipe
 	@test -n "$(DB)" || { echo "ERROR: DB is required (billing|sandbox_rental|mailbox_service|identity_service)"; exit 1; }
 	$(FM)/scripts/ansible-with-tunnel.sh playbooks/wipe-pg-db.yml -e "wipe_pg_db_name=$(DB)"
 
-vm-orchestrator-proof: inventory-check ## Live proof for vm-orchestrator lease/exec spans through the public sandbox API
+vm-orchestrator-proof: inventory-check ## Live proof for vm-orchestrator lease/exec spans through recurring sandbox executions
 	cd $(FM) && ./scripts/verify-vm-orchestrator-live.sh
-
-stress: inventory-check ## Burst N parallel sandbox submissions to produce a real p50/p99/p100 distribution. Bypasses the full reseed. Usage: make stress [SUBMISSIONS=200] [PARALLEL=8] [PROFILE=echo|cpu-mem|disk|mixed] [TIMEOUT=1800]
-	cd $(FM) && \
-	  SANDBOX_PROOF_SUBMISSIONS="$(if $(SUBMISSIONS),$(SUBMISSIONS),200)" \
-	  SANDBOX_PROOF_SUBMIT_PARALLEL="$(if $(PARALLEL),$(PARALLEL),8)" \
-	  SANDBOX_PROOF_WORKLOAD_PROFILE="$(if $(PROFILE),$(PROFILE),echo)" \
-	  SANDBOX_PROOF_TIMEOUT_SECONDS="$(if $(TIMEOUT),$(TIMEOUT),1800)" \
-	  ./scripts/verify-sandbox-public-api.sh
 
 sandbox-inner: inventory-check ## Inner loop: default starts local HMR; use SANDBOX_INNER_MODE=verify for local smoke evidence
 	cd $(FM) && ./scripts/sandbox-inner.sh
 
-sandbox-middle: inventory-check ## Middle loop: default deploys UI and runs admin smoke; use SANDBOX_DEPLOY_TARGET=ui|service|both|none SANDBOX_VERIFY_TARGET=admin|execute|billing|none SANDBOX_SEED_VERIFY=1
+sandbox-middle: inventory-check ## Middle loop: default deploys UI and runs admin smoke; use SANDBOX_DEPLOY_TARGET=ui|service|both|none SANDBOX_VERIFY_TARGET=admin|schedule|billing|none SANDBOX_SEED_VERIFY=1
 	cd $(FM) && ./scripts/sandbox-middle.sh
 
 sandbox-proof: inventory-check ## Proof loop: full reset, redeploy, reseed, and live full-lifecycle sandbox verification
@@ -341,11 +333,6 @@ platform-frontend-deploy-fast: inventory-check ## Ship UI-only changes to platfo
 
 platform-local-dev: ## Start local platform docs HMR dev server (no tunnels; no service deps)
 	cd src/viteplus-monorepo/apps/platform && FORGE_METAL_DOMAIN=$$(awk -F'"' '/^forge_metal_domain:/{print $$2}' $(FM)/ansible/group_vars/all/main.yml) vp dev
-
-scheduler-proof: inventory-check ## Proof loop: enqueue a River scheduler probe and assert PG + ClickHouse evidence
-	cd $(FM) && ./scripts/verify-scheduler-runtime.sh
-
-verify-scheduler: scheduler-proof
 
 grafana-proof: inventory-check ## Verify Grafana health, datasource execution, PostgreSQL state, and ClickHouse evidence
 	cd $(FM) && ./scripts/verify-grafana-live.sh

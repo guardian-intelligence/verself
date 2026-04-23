@@ -77,10 +77,10 @@ they hold. The Forge Metal capability state is org-scoped and stored in
 service boundary and is not embedded into Zitadel tokens.
 
 Operation catalogs are code-defined service contracts. A service operation such
-as `sandbox:execution:submit` is declared and enforced by the owning service and
-documented through OpenAPI. Adding a capability or moving an operation between
-member-eligible and admin-only is a code change in `identity-service`, gated by
-the `init()` invariant check.
+as `sandbox:execution:read` or `sandbox:execution_schedule:write` is declared
+and enforced by the owning service and documented through OpenAPI. Adding a
+capability or moving an operation between member-eligible and admin-only is a
+code change in `identity-service`, gated by the `init()` invariant check.
 
 The members table is human-non-owner only. `Service.Members` filters Zitadel
 machine users (they hold project authorizations as service accounts but live

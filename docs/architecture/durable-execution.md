@@ -276,8 +276,9 @@ Tailwinds:
 
 - The hard part is solved. Any repo-owned workload can now become a
   Temporal client with the same SPIFFE X.509 client pattern.
-- PeerDB can reuse the Temporal frontend authz path instead of inventing
-  a separate trust model for workflow orchestration.
+- Additional repo-owned clients can reuse the Temporal frontend authz
+  path instead of inventing separate trust models for workflow
+  orchestration.
 - Namespace bootstrap is already instrumented, so deploy-time
   administrative traffic shows up on the same auth/authz and transport
   surfaces as future repo-owned clients.

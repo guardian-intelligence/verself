@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Live vm-orchestrator verification uses the public sandbox execution API and
+# Live vm-orchestrator verification uses recurring sandbox executions and
 # asserts the host lease/exec spans and vm_lease_evidence projection.
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -12,8 +12,6 @@ verification_context_init "${BASH_SOURCE[0]}"
 export VERIFICATION_KIND="${VERIFICATION_KIND:-vm-orchestrator-proof}"
 base_run_id="${VERIFICATION_RUN_ID:-${VERIFICATION_KIND}-$(date -u +%Y%m%dT%H%M%SZ)}"
 artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_REPO_ROOT}/artifacts/${VERIFICATION_KIND}}"
-normal_submission_count="${SANDBOX_PROOF_SUBMISSIONS:-1}"
-telemetry_fault_submission_count="${SANDBOX_PROOF_TELEMETRY_SUBMISSIONS:-1}"
 
 set_telemetry_fault_profile() {
   local profile="$1"
@@ -55,8 +53,7 @@ clear_telemetry_fault_profile
 
 VERIFICATION_RUN_ID="${base_run_id}-normal" \
 VERIFICATION_ARTIFACT_ROOT="${artifact_root}" \
-SANDBOX_PROOF_SUBMISSIONS="${normal_submission_count}" \
-  "${script_dir}/verify-sandbox-public-api.sh"
+  "${script_dir}/verify-recurring-schedule-live.sh"
 
 run_telemetry_fault_proof() {
   local label="$1"
@@ -65,9 +62,8 @@ run_telemetry_fault_proof() {
   set_telemetry_fault_profile "${profile}"
   VERIFICATION_RUN_ID="${base_run_id}-${label}" \
   VERIFICATION_ARTIFACT_ROOT="${artifact_root}" \
-  SANDBOX_PROOF_SUBMISSIONS="${telemetry_fault_submission_count}" \
   SANDBOX_PROOF_TELEMETRY_FAULT_PROFILE="${profile}" \
-    "${script_dir}/verify-sandbox-public-api.sh"
+    "${script_dir}/verify-recurring-schedule-live.sh"
 }
 
 run_telemetry_fault_proof "telemetry-gap" "gap_once@3"

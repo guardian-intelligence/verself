@@ -10,7 +10,7 @@ set -euo pipefail
 #
 # Two-layer architecture:
 #   Layer 1 (this script): base OS + runner toolchain -> rootfs.ext4
-#   Layer 2 (vm-orchestrator): ZFS clone per direct execution
+#   Layer 2 (vm-orchestrator): ZFS clone per runner or canary execution
 #
 # Requires: root, internet access, jq, curl, tar, mount, e2fsprogs. go only if no
 # pre-built vm-bridge exists.

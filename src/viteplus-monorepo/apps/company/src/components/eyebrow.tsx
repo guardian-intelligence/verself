@@ -17,8 +17,8 @@ import type { CSSProperties, ElementType, ReactNode } from "react";
 type EyebrowTone = "default" | "faint" | "ink";
 
 const TONE_VAR: Record<EyebrowTone, string> = {
-  default: "var(--muted)",
-  faint: "var(--muted-faint)",
+  default: "var(--treatment-muted)",
+  faint: "var(--treatment-muted-faint)",
   ink: "rgba(11,11,11,0.72)",
 };
 

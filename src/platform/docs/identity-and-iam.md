@@ -17,7 +17,7 @@ source. The workload identity contract lives in
 `docs/architecture/workload-identity.md`.
 
 Forge Metal services own their operation catalogs. A service operation is a
-code-defined contract such as `sandbox:execution:submit`; it is not a
+code-defined contract such as `sandbox:execution:read`; it is not a
 customer-defined resource. Huma services attach operation metadata to OpenAPI
 with `x-forge-metal-iam` and enforce the required permission in the service
 process. Frontend route guards and widgets are UX only.
@@ -386,9 +386,9 @@ Issuance and roll must validate every requested permission against the current
 service-declared operation catalog and against the creating principal's
 effective permissions. A caller cannot mint a credential with permissions they
 do not currently hold. Credential scopes are exact operation permissions such as
-`sandbox:execution:submit`, `sandbox:github_installation:write`,
-`sandbox:logs:read`, `sandbox:volume:read`, `billing:read`, and future CI
-operations such as `ci:workflow:dispatch`.
+`sandbox:execution:read`, `sandbox:execution_schedule:write`,
+`sandbox:github_installation:write`, `sandbox:logs:read`, `billing:read`, and
+future CI operations such as `ci:workflow:dispatch`.
 
 Token minting uses a Zitadel pre-access-token Action. The signed Action
 callback is exposed through Caddy on `auth.<domain>` because Zitadel rejects

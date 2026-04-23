@@ -79,7 +79,7 @@ export function Lockup({
     : { width: `${markH}px`, height: `${markH}px`, flex: `0 0 ${markH}px` };
 
   return (
-    <span className={className} style={lockupStyle}>
+    <span className={className} style={lockupStyle} data-variant={variant}>
       {useCropped ? (
         <WingsArgent title={title} cropped style={markStyle} />
       ) : (

@@ -29,4 +29,4 @@ mkdir -p "${artifact_dir}"
 
 VERIFICATION_RUN_ID="${run_id}" \
 VERIFICATION_ARTIFACT_ROOT="${artifact_root}" \
-  "${script_dir}/verify-sandbox-public-api.sh"
+  "${script_dir}/verify-recurring-schedule-live.sh"

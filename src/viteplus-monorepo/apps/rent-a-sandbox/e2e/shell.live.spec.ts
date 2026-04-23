@@ -89,7 +89,7 @@ test.describe("Rent-a-Sandbox Shell", () => {
       await expect(app.page).toHaveURL(/\/schedules$/);
       await expect(app.page.getByRole("heading", { name: "Schedules", exact: true })).toBeVisible();
       await expect(
-        app.page.getByText("Recurring direct VM executions backed by Temporal schedules."),
+        app.page.getByText("Recurring VM canaries backed by Temporal schedules."),
       ).toBeVisible();
 
       run.status = "succeeded";

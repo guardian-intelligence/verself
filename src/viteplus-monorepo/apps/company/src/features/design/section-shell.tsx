@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import { Eyebrow } from "~/components/eyebrow";
-import type { DesignSection } from "~/lib/design-nav";
+import type { DesignSection } from "./shared";
 
 export function Section({
   meta,
@@ -27,7 +27,7 @@ export function Section({
           lineHeight: 1.1,
           letterSpacing: "-0.02em",
           margin: "0 0 8px",
-          color: "var(--color-type-iron)",
+          color: "var(--treatment-ink)",
           textTransform: "none",
         }}
       >
@@ -36,7 +36,7 @@ export function Section({
       <p
         className="font-sans"
         style={{
-          color: "var(--muted-meta)",
+          color: "var(--treatment-muted-meta)",
           maxWidth: "760px",
           margin: "0 0 24px",
           fontSize: "14px",

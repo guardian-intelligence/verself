@@ -19,7 +19,6 @@ test.describe("Rent-a-Sandbox Organization", () => {
         "Members",
         "Member capabilities",
         "Deploy executions",
-        "View volumes",
         "Invite members",
         "View billing",
       ]);
@@ -31,13 +30,12 @@ test.describe("Rent-a-Sandbox Organization", () => {
           "Members",
           "Member capabilities",
           "Deploy executions",
-          "View volumes",
           "Owner",
         ],
       });
 
       await expect(app.page.getByRole("button", { name: "Invite" })).toBeEnabled();
-      await expect(app.page.getByRole("switch", { name: "View volumes" })).toBeChecked();
+      await expect(app.page.getByRole("switch", { name: "Deploy executions" })).toBeChecked();
 
       run.detail_url = "/settings/organization";
       run.status = "succeeded";
