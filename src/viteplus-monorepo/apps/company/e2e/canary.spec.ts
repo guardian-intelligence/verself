@@ -14,6 +14,7 @@ const IA_ROUTES: readonly string[] = [
   "/design/letters",
   "/letters",
   "/newsroom",
+  "/newsroom/we-opened-the-newsroom",
   "/solutions",
   "/company",
   "/careers",
@@ -33,7 +34,7 @@ const RETIRED_ROUTES: readonly string[] = [
   "/dispatch/ship-the-reference-architecture",
 ];
 
-const OG_SLUGS: readonly string[] = ["home", "design", "letters", "solutions"];
+const OG_SLUGS: readonly string[] = ["home", "design", "letters", "newsroom", "solutions"];
 
 test("company canary — walk IA + exercise OG + brand kit", async ({ page, request }) => {
   // 1. Walk every IA node. Each triggers a company.route_view browser span.
@@ -104,4 +105,29 @@ test("company canary — walk IA + exercise OG + brand kit", async ({ page, requ
   // has a chance to export before the BSP flushes on visibilitychange.
   await kitLink.click({ modifiers: ["Alt"] });
   await page.waitForTimeout(500);
+
+  // 8. /newsroom interaction surface. The mount-time newsroom.index.view span
+  // already fires when the IA walk above hits /newsroom, but the three
+  // interaction spans (tab_change, card_click, subscribe_submit) only fire
+  // on user gestures. Exercise each so every canary run lands the full
+  // newsroom.index.* span family in ClickHouse, which is what the live
+  // verification script at src/platform/scripts/verify-company-live.sh
+  // asserts via `newsroom.index.span_families = 4`.
+  await page.goto("/newsroom");
+  const tablist = page.locator("[data-newsroom-tabstrip]");
+  await tablist.getByRole("tab", { name: "Milestones", exact: true }).click();
+  await page.waitForTimeout(100);
+  // Submit the noop_stub subscribe form (the span fires; the form resets).
+  const subscribe = page.locator("[data-newsroom-subscribe]");
+  await subscribe.getByLabel("Email address").fill("canary@example.com");
+  await subscribe.getByRole("button", { name: /Subscribe/i }).click();
+  await page.waitForTimeout(100);
+  // Card click. Navigates to /newsroom/<slug>; that nav also fires the
+  // company.newsroom_article.view span on the destination route, which the
+  // live script asserts independently in poll #5.
+  await page.goto("/newsroom");
+  const firstCard = page.locator("[data-newsroom-archive-card]").first();
+  await firstCard.click();
+  await expect(page).toHaveURL(/\/newsroom\/[a-z0-9-]+$/);
+  await page.waitForTimeout(300);
 });

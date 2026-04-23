@@ -84,6 +84,8 @@ expected_routes=(
   "/"
   "/design"
   "/letters"
+  "/newsroom"
+  "/newsroom/we-opened-the-newsroom"
   "/solutions"
   "/company"
   "/careers"
@@ -92,7 +94,7 @@ expected_routes=(
   "/contact"
   "/letters/ship-the-reference-architecture"
 )
-expected_og_slugs=(home design letters solutions)
+expected_og_slugs=(home design letters newsroom solutions)
 
 poll_clickhouse() {
   local query="$1"
@@ -156,5 +158,40 @@ poll_clickhouse "
     AND SpanName = 'company.landing.hero_view'
     AND Timestamp > now() - INTERVAL 10 MINUTE
 " "landing.hero_view.fired" "1"
+
+# 4. Newsroom index emits the full span family the canary tab/card/subscribe
+#    interactions exercise. Four distinct SpanNames must land:
+#    newsroom.index.view, newsroom.index.tab_change,
+#    newsroom.index.card_click, newsroom.index.subscribe_submit.
+#
+#    The canary spec (apps/company/e2e/newsroom.spec.ts) drives each of these
+#    interactions. If any SpanName is absent, either the instrumentation
+#    regressed or the BatchSpanProcessor missed its flush window — both
+#    treated as a hard failure, per the output contract's "real ClickHouse
+#    traces are the only admissable proof of task completion" rule.
+poll_clickhouse "
+  SELECT count(DISTINCT SpanName) AS seen
+  FROM default.otel_traces
+  WHERE ServiceName = 'company-web'
+    AND SpanName IN (
+      'newsroom.index.view',
+      'newsroom.index.tab_change',
+      'newsroom.index.card_click',
+      'newsroom.index.subscribe_submit'
+    )
+    AND Timestamp > now() - INTERVAL 10 MINUTE
+" "newsroom.index.span_families" "4"
+
+# 5. Newsroom article view for the seeded canonical slug. Asserts both that
+#    the route was visited and that the article-level attributes landed,
+#    since the span also carries article.published_at / article.category.
+poll_clickhouse "
+  SELECT count() >= 1 ? 1 : 0 AS ok
+  FROM default.otel_traces
+  WHERE ServiceName = 'company-web'
+    AND SpanName = 'company.newsroom_article.view'
+    AND SpanAttributes['article.slug'] = 'we-opened-the-newsroom'
+    AND Timestamp > now() - INTERVAL 10 MINUTE
+" "newsroom_article.view.seeded_slug" "1"
 
 echo "company-proof: verified deploy_id=${deploy_id} deploy_run_key=${deploy_run_key}"
