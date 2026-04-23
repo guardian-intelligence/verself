@@ -429,54 +429,138 @@ WHERE mapContains(LogAttributes, 'http_method');
 
 CREATE TABLE IF NOT EXISTS forge_metal.job_logs
 (
-    execution_id UUID,
-    attempt_id   UUID,
-    seq          UInt32,
-    stream       LowCardinality(String),
-    chunk        String               CODEC(ZSTD(3)),
-    created_at   DateTime64(6, 'UTC') CODEC(DoubleDelta, ZSTD(3))
+    execution_id        UUID,
+    attempt_id          UUID,
+    org_id              UInt64,
+    source_kind         LowCardinality(String) DEFAULT '',
+    workload_kind       LowCardinality(String) DEFAULT '',
+    runner_class        LowCardinality(String) DEFAULT '',
+    external_provider   LowCardinality(String) DEFAULT '',
+    product_id          LowCardinality(String) DEFAULT '',
+    correlation_id      String DEFAULT ''       CODEC(ZSTD(3)),
+    repository_full_name LowCardinality(String) DEFAULT '',
+    workflow_name       LowCardinality(String) DEFAULT '',
+    job_name            LowCardinality(String) DEFAULT '',
+    head_branch         LowCardinality(String) DEFAULT '',
+    schedule_id         String DEFAULT ''       CODEC(ZSTD(3)),
+    seq                 UInt32,
+    stream              LowCardinality(String),
+    chunk               String                  CODEC(ZSTD(3)),
+    created_at          DateTime64(6, 'UTC')   CODEC(DoubleDelta, ZSTD(3))
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(created_at)
-ORDER BY (attempt_id, seq)
+ORDER BY (org_id, source_kind, runner_class, created_at, execution_id, attempt_id, seq)
 TTL toDateTime(created_at) + INTERVAL 90 DAY
 SETTINGS index_granularity = 8192;
 
 CREATE TABLE IF NOT EXISTS forge_metal.job_events
 (
-    execution_id      UUID,
-    attempt_id        UUID,
-    org_id            UInt64,
-    actor_id          LowCardinality(String),
-    kind              LowCardinality(String),
-    source_kind       LowCardinality(String) DEFAULT '',
-    workload_kind     LowCardinality(String) DEFAULT '',
-    runner_class      LowCardinality(String) DEFAULT '',
-    external_provider LowCardinality(String) DEFAULT '',
-    external_task_id  String DEFAULT ''       CODEC(ZSTD(3)),
-    provider          LowCardinality(String),
-    product_id        LowCardinality(String),
-    run_command       String                  CODEC(ZSTD(3)),
-    status            LowCardinality(String),
-    exit_code         Int32                   CODEC(ZSTD(3)),
-    duration_ms       Int64                   CODEC(Delta(8), ZSTD(3)),
-    zfs_written       UInt64                  CODEC(T64, ZSTD(3)),
-    stdout_bytes      UInt64                  CODEC(T64, ZSTD(3)),
-    stderr_bytes      UInt64                  CODEC(T64, ZSTD(3)),
-    billing_job_id    Int64 DEFAULT 0         CODEC(ZSTD(3)),
-    charge_units      UInt64 DEFAULT 0        CODEC(T64, ZSTD(3)),
-    pricing_phase     LowCardinality(String) DEFAULT '',
-    correlation_id    String DEFAULT ''       CODEC(ZSTD(3)),
-    started_at        DateTime64(6, 'UTC')    CODEC(DoubleDelta, ZSTD(3)),
-    completed_at      DateTime64(6, 'UTC')    CODEC(DoubleDelta, ZSTD(3)),
-    created_at        DateTime64(6, 'UTC')    CODEC(DoubleDelta, ZSTD(3)),
-    trace_id          String DEFAULT ''       CODEC(ZSTD(3))
+    execution_id            UUID,
+    attempt_id              UUID,
+    org_id                  UInt64,
+    actor_id                LowCardinality(String),
+    kind                    LowCardinality(String),
+    source_kind             LowCardinality(String) DEFAULT '',
+    workload_kind           LowCardinality(String) DEFAULT '',
+    source_ref              String DEFAULT ''       CODEC(ZSTD(3)),
+    runner_class            LowCardinality(String) DEFAULT '',
+    external_provider       LowCardinality(String) DEFAULT '',
+    external_task_id        String DEFAULT ''       CODEC(ZSTD(3)),
+    provider                LowCardinality(String),
+    product_id              LowCardinality(String),
+    lease_id                String DEFAULT ''       CODEC(ZSTD(3)),
+    exec_id                 String DEFAULT ''       CODEC(ZSTD(3)),
+    repository_full_name    LowCardinality(String) DEFAULT '',
+    workflow_name           LowCardinality(String) DEFAULT '',
+    job_name                LowCardinality(String) DEFAULT '',
+    head_branch             LowCardinality(String) DEFAULT '',
+    head_sha                String DEFAULT ''       CODEC(ZSTD(3)),
+    github_installation_id  UInt64 DEFAULT 0        CODEC(T64, ZSTD(3)),
+    github_run_id           UInt64 DEFAULT 0        CODEC(T64, ZSTD(3)),
+    github_job_id           UInt64 DEFAULT 0        CODEC(T64, ZSTD(3)),
+    schedule_id             String DEFAULT ''       CODEC(ZSTD(3)),
+    schedule_display_name   LowCardinality(String) DEFAULT '',
+    temporal_workflow_id    String DEFAULT ''       CODEC(ZSTD(3)),
+    temporal_run_id         String DEFAULT ''       CODEC(ZSTD(3)),
+    run_command             String                  CODEC(ZSTD(3)),
+    status                  LowCardinality(String),
+    exit_code               Int32                   CODEC(ZSTD(3)),
+    duration_ms             Int64                   CODEC(Delta(8), ZSTD(3)),
+    zfs_written             UInt64                  CODEC(T64, ZSTD(3)),
+    stdout_bytes            UInt64                  CODEC(T64, ZSTD(3)),
+    stderr_bytes            UInt64                  CODEC(T64, ZSTD(3)),
+    billing_job_id          Int64 DEFAULT 0         CODEC(ZSTD(3)),
+    reserved_charge_units   UInt64 DEFAULT 0        CODEC(T64, ZSTD(3)),
+    billed_charge_units     UInt64 DEFAULT 0        CODEC(T64, ZSTD(3)),
+    writeoff_charge_units   UInt64 DEFAULT 0        CODEC(T64, ZSTD(3)),
+    cost_per_unit           UInt64 DEFAULT 0        CODEC(T64, ZSTD(3)),
+    pricing_phase           LowCardinality(String) DEFAULT '',
+    rootfs_provisioned_bytes UInt64 DEFAULT 0       CODEC(T64, ZSTD(3)),
+    boot_time_us            UInt64 DEFAULT 0        CODEC(T64, ZSTD(3)),
+    block_read_bytes        UInt64 DEFAULT 0        CODEC(T64, ZSTD(3)),
+    block_write_bytes       UInt64 DEFAULT 0        CODEC(T64, ZSTD(3)),
+    net_rx_bytes            UInt64 DEFAULT 0        CODEC(T64, ZSTD(3)),
+    net_tx_bytes            UInt64 DEFAULT 0        CODEC(T64, ZSTD(3)),
+    vcpu_exit_count         UInt64 DEFAULT 0        CODEC(T64, ZSTD(3)),
+    correlation_id          String DEFAULT ''       CODEC(ZSTD(3)),
+    started_at              DateTime64(6, 'UTC')    CODEC(DoubleDelta, ZSTD(3)),
+    completed_at            DateTime64(6, 'UTC')    CODEC(DoubleDelta, ZSTD(3)),
+    created_at              DateTime64(6, 'UTC')    CODEC(DoubleDelta, ZSTD(3)),
+    trace_id                String DEFAULT ''       CODEC(ZSTD(3))
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(created_at)
-ORDER BY (org_id, source_kind, workload_kind, runner_class, created_at, execution_id)
+ORDER BY (org_id, source_kind, runner_class, repository_full_name, created_at, execution_id)
 TTL toDateTime(created_at) + INTERVAL 1 YEAR
 SETTINGS index_granularity = 8192;
+
+CREATE TABLE IF NOT EXISTS forge_metal.job_cache_events
+(
+    event_time                 DateTime64(9, 'UTC')    CODEC(Delta(8), ZSTD(3)),
+    org_id                     UInt64,
+    event_name                 LowCardinality(String),
+    repository_full_name       LowCardinality(String) DEFAULT '',
+    runner_class               LowCardinality(String) DEFAULT '',
+    checkout_cache_hit         UInt8 DEFAULT 0         CODEC(T64, ZSTD(3)),
+    sticky_restore_hit_count   UInt32 DEFAULT 0        CODEC(T64, ZSTD(3)),
+    sticky_restore_miss_count  UInt32 DEFAULT 0        CODEC(T64, ZSTD(3)),
+    sticky_state               LowCardinality(String) DEFAULT '',
+    trace_id                   String DEFAULT ''       CODEC(ZSTD(3)),
+    span_id                    String DEFAULT ''       CODEC(ZSTD(3))
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(event_time)
+ORDER BY (org_id, event_name, repository_full_name, runner_class, event_time, trace_id)
+TTL toDateTime(event_time) + INTERVAL 1 YEAR
+SETTINGS index_granularity = 8192;
+
+DROP VIEW IF EXISTS forge_metal.job_cache_events_mv;
+
+CREATE MATERIALIZED VIEW forge_metal.job_cache_events_mv
+TO forge_metal.job_cache_events
+AS
+SELECT
+    Timestamp AS event_time,
+    toUInt64OrZero(SpanAttributes['forge_metal.org_id']) AS org_id,
+    SpanName AS event_name,
+    SpanAttributes['github.repository'] AS repository_full_name,
+    SpanAttributes['github.runner_class'] AS runner_class,
+    toUInt8(SpanAttributes['github.checkout.cache_hit'] = 'true') AS checkout_cache_hit,
+    toUInt32OrZero(SpanAttributes['github.stickydisk.restore_hit_count']) AS sticky_restore_hit_count,
+    toUInt32OrZero(SpanAttributes['github.stickydisk.restore_miss_count']) AS sticky_restore_miss_count,
+    SpanAttributes['github.stickydisk.state'] AS sticky_state,
+    TraceId AS trace_id,
+    SpanId AS span_id
+FROM default.otel_traces
+WHERE ServiceName = 'sandbox-rental-service'
+  AND SpanName IN (
+    'github.checkout.bundle',
+    'github.stickydisk.compile',
+    'github.stickydisk.save_request',
+    'github.stickydisk.commit_zfs'
+  )
+  AND SpanAttributes['forge_metal.org_id'] != '';
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- forge_metal: billing ledger and windowed metering
