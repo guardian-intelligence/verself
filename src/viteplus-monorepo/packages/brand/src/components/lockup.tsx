@@ -94,13 +94,10 @@ export function Lockup({
       )}
       <span
         style={{
-          // Wordmark typeface resolves from the ambient treatment scope —
-          // Workshop binds --treatment-display-font to Geist, Newsroom and
-          // Letters bind it to Fraunces. The old hardcoded Fraunces shipped
-          // "Guardian" in serif inside Workshop chrome, which contradicted
-          // the Workshop memory ("Geist-only"). By binding here, every
-          // Lockup repaints correctly when its ancestor flips treatment.
-          fontFamily: "var(--treatment-display-font, 'Fraunces', Georgia, serif)",
+          // "Guardian" is a serif wordmark on every ground, including Workshop.
+          // The treatment system flips palette, mark variant, and body type,
+          // but the name of the house is the one constant — Fraunces, always.
+          fontFamily: "'Fraunces', Georgia, serif",
           fontVariationSettings: '"opsz" 144, "SOFT" 30',
           fontWeight: 400,
           fontSize: `${markH * ratio}px`,
@@ -162,10 +159,8 @@ export function StackedLockup({
       <Mark style={{ width: `${markHeight}px`, height: `${markHeight}px` }} />
       <span
         style={{
-          // See Lockup above for the rationale; StackedLockup inherits the
-          // same treatment-driven display font so it renders in Geist under
-          // Workshop and Fraunces under Newsroom/Letters.
-          fontFamily: "var(--treatment-display-font, 'Fraunces', Georgia, serif)",
+          // See Lockup above — "Guardian" is Fraunces on every ground.
+          fontFamily: "'Fraunces', Georgia, serif",
           fontVariationSettings: '"opsz" 144, "SOFT" 30',
           fontWeight: 400,
           fontSize: "28px",

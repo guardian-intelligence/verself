@@ -37,10 +37,11 @@ function DesignNewsroom() {
 
   return (
     <>
-      {/* Newsroom's own treatment scope now binds --treatment-ground to Paper
-          (see packages/brand/src/tokens.css), so the specimen body renders on
-          Paper without faking a Letters scope. Flare appears only inside the
-          bounded hero band the section demonstrates. */}
+      {/* Newsroom's treatment scope binds --treatment-ground to Argent (see
+          packages/brand/src/tokens.css); the spec page renders as a working
+          Newsroom bulletin surface (small Newsroom label, one Flare hero
+          card, "Latest" archive grid) with trailing Controls and Stationery
+          specimens. Flare is a bounded event, not the page. */}
       <div
         data-treatment="newsroom"
         style={{
