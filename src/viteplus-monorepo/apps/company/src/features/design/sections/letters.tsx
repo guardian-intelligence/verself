@@ -1,5 +1,6 @@
 import { WingsChip } from "@forge-metal/brand";
 import { RulesRow, Section } from "../section-shell";
+import { Colophon } from "../colophon";
 import { LINE, sectionMeta, Surface } from "../shared";
 import {
   Nameplate,
@@ -46,6 +47,10 @@ export function SectionLetters() {
             name: "Argent",
             hex: "#FFFFFF",
             note: "Wings, always — inside the iron chip on paper.",
+            // Argent-on-Paper would otherwise lose its edge (1.05:1 contrast);
+            // a 1 px Stone hairline makes the swatch read as a card on the
+            // Paper ground so the reader can locate it.
+            chipStyle: { boxShadow: "inset 0 0 0 1px rgba(11,11,11,0.18)" },
           },
           muted: {
             name: "Ink",
@@ -330,11 +335,7 @@ export function SectionLetters() {
       </Surface>
       <div style={{ marginTop: "24px" }}>
         {/* The Letters signature drops the "Filed from Seattle, WA · Letter № 3"
-            meta row. Both facts already appear in the article body above it —
-            the byline carries the city and the eyebrow carries the issue
-            number. Restating them on the signature reads as paper-journal
-            affectation on an email sign-off; the signature's job is just
-            identity + reply route. */}
+            meta row. Both facts already appear in the article body above it. */}
         <TreatmentSignature
           variant="letters"
           eyebrow="Email signature · Letters"
@@ -343,14 +344,31 @@ export function SectionLetters() {
             name: "Founder Name",
             role: "Founder · Guardian Intelligence",
           }}
-          // Bordeaux rule on the card's left edge — the same editorial gesture
-          // the pull-quote above the signature uses. Signature inherits the
-          // grammar of the article it accompanies.
           accent={{ hex: "var(--color-bordeaux)", style: "rule-left", heightPx: 3 }}
           contact={{
             email: "letters@guardianintelligence.org",
             secondary: "guardianintelligence.org/letters",
           }}
+        />
+      </div>
+      <div style={{ marginTop: "24px" }}>
+        <Colophon
+          heading="Letters · Specifications"
+          rows={[
+            { label: "Ground", value: "#F6F4ED", note: "Paper" },
+            { label: "Accent", value: "#5C1F1E", note: "Pantone 504 C · Bordeaux" },
+            { label: "Mark", value: "WingsChip", note: "Argent wings in iron chip" },
+            { label: "Masthead", value: "Geist 11 / +260 / UPPER", note: "Bordeaux 1 px rule" },
+            { label: "Body", value: "Fraunces", note: 'opsz 18 · SOFT 0 · 19 / 1.55' },
+            { label: "Byline", value: "Geist 13", note: "Stone at 0.7 opacity" },
+            { label: "Drop cap", value: "Fraunces 88 px", note: "Bordeaux · display opsz" },
+          ]}
+          footer={
+            <>
+              Letters is the only treatment where Fraunces sets body prose, and the only treatment
+              where Bordeaux ships as an accent. Flare and Amber do not appear here.
+            </>
+          }
         />
       </div>
     </Section>

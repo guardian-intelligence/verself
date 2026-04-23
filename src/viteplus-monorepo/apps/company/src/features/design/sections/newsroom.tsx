@@ -1,5 +1,6 @@
 import { Lockup, WingsEmboss } from "@forge-metal/brand";
 import { RulesRow, Section } from "../section-shell";
+import { Colophon } from "../colophon";
 import { sectionMeta, Surface } from "../shared";
 import {
   TreatmentLockupLadder,
@@ -183,23 +184,35 @@ export function SectionNewsroom() {
         />
       </div>
 
+      {/* Hero-band specimen. Bounded (max 480 px) so the demonstration stays a
+          BAND on the Paper page, not an environment. The teaching point is how
+          Newsroom composes — ground, mark, display type, one CTA — not how much
+          Flare can fit on one screen. */}
       <Surface
         ground="flare"
-        style={{ padding: "clamp(32px, 5vw, 72px) clamp(20px, 4vw, 56px)", borderRadius: "16px" }}
+        style={{
+          padding: "clamp(32px, 4.5vw, 56px) clamp(20px, 4vw, 56px)",
+          borderRadius: "16px",
+          maxHeight: "480px",
+          overflow: "hidden",
+        }}
       >
-        <div style={{ marginBottom: "28px" }}>
+        <div style={{ marginBottom: "22px" }}>
           <Lockup size="md" variant="emboss" wordmarkColor="var(--color-ink)" />
         </div>
         <div className="hero-kicker" style={{ color: "rgba(11,11,11,0.7)" }}>
           Seattle · Est. 2026
         </div>
-        <h1 className="hero-h1" style={{ color: "var(--color-ink)" }}>
+        <h1
+          className="hero-h1"
+          style={{
+            color: "var(--color-ink)",
+            fontSize: "clamp(32px, 5vw, 52px)",
+            margin: "0 0 20px",
+          }}
+        >
           We build where software meets the real world.
         </h1>
-        <p className="hero-lede" style={{ color: "rgba(11,11,11,0.78)" }}>
-          Identity, billing, infrastructure, email, and the thousand edges. Open-source per
-          subdirectory. Documented end-to-end. Run by the people who built it.
-        </p>
         <div className="hero-cta-row">
           <button
             className="hero-btn primary"
@@ -211,11 +224,28 @@ export function SectionNewsroom() {
           >
             Read the letters
           </button>
-          <button className="hero-btn ghost" style={{ color: "rgba(11,11,11,0.75)" }}>
-            Contact
-          </button>
         </div>
       </Surface>
+      <div style={{ marginTop: "24px" }}>
+        <Colophon
+          heading="Newsroom · Specifications"
+          rows={[
+            { label: "Ground", value: "#CCFF00", note: "Pantone 389 C · Flare" },
+            { label: "Type", value: "#0B0B0B", note: "Ink · ink-on-flare" },
+            { label: "Mark", value: "WingsEmboss", note: "Argent wings in ink medallion" },
+            { label: "Display", value: "Fraunces", note: 'opsz 144 · SOFT 30 · -0.028em' },
+            { label: "Kicker", value: "Geist Mono", note: "11 / 1 / +180 · 600 · UPPER" },
+            { label: "Surfaces", value: "OG cards · billboards · hero bands" },
+          ]}
+          footer={
+            <>
+              Flare is allowed on exactly three Newsroom surfaces: a bounded hero band, a 1200×630
+              OG card, and a 16:9 billboard. Any Newsroom body copy sets in Ink on Paper — Flare
+              is the ground a reader glances at, not the ground they read on.
+            </>
+          }
+        />
+      </div>
       <div style={{ marginTop: "24px" }}>
         {/* Newsroom's card ground is Flare. The treatment's identity is in
             the ground, so the accent marker is dropped — no dot, no rule.

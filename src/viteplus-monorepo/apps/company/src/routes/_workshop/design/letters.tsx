@@ -36,7 +36,22 @@ function DesignLetters() {
 
   return (
     <>
-      <SectionLetters />
+      {/* The Letters specimen page renders on Paper end-to-end so the
+          editorial register holds across the whole reading. The Workshop
+          layout's iron chrome remains around the main — that's intentional:
+          the specimen is a demonstration of Letters *seen from Workshop*,
+          not a cutover into Letters chrome. */}
+      <div
+        data-treatment="letters"
+        style={{
+          background: "var(--treatment-ground)",
+          color: "var(--treatment-ink)",
+        }}
+      >
+        <div className="mx-auto w-full max-w-[96rem] px-4 py-10 md:px-6 md:py-14">
+          <SectionLetters />
+        </div>
+      </div>
       <div className="mx-auto w-full max-w-[96rem] px-4 py-10 md:px-6 md:py-14">
         <AppliedFooter />
       </div>

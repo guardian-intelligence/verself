@@ -37,10 +37,15 @@ export function PageShell({ kicker, heading, children, route }: PageShellProps) 
         {kicker}
       </p>
       <h1
-        className="mt-5 font-display"
+        className="mt-5"
         style={{
+          // Treatment-driven display font — Geist under Workshop (where the
+          // memory bans Fraunces), Fraunces under Letters. The opsz/SOFT axes
+          // are a no-op on Geist and a refinement on Fraunces, so specifying
+          // both is safe.
+          fontFamily: "var(--treatment-display-font)",
           fontVariationSettings: '"opsz" 96, "SOFT" 30',
-          fontWeight: 400,
+          fontWeight: 500,
           fontSize: "clamp(32px, 5vw, 52px)",
           lineHeight: 1.05,
           letterSpacing: "-0.022em",

@@ -28,12 +28,11 @@ function ChangelogPage() {
             </span>
             <span
               style={{
-                fontFamily: "'Fraunces', Georgia, serif",
-                fontVariationSettings: '"opsz" 72, "SOFT" 30',
-                fontWeight: 400,
-                fontSize: "22px",
+                fontFamily: "'Geist', sans-serif",
+                fontWeight: 600,
+                fontSize: "20px",
                 lineHeight: 1.2,
-                letterSpacing: "-0.015em",
+                letterSpacing: "-0.012em",
               }}
             >
               {entry.title}

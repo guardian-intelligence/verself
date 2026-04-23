@@ -48,12 +48,11 @@ function SolutionsPage() {
               </span>
               <span
                 style={{
-                  fontFamily: "'Fraunces', Georgia, serif",
-                  fontVariationSettings: '"opsz" 72, "SOFT" 30',
-                  fontWeight: 400,
-                  fontSize: "32px",
+                  fontFamily: "'Geist', sans-serif",
+                  fontWeight: 600,
+                  fontSize: "28px",
                   lineHeight: 1.1,
-                  letterSpacing: "-0.02em",
+                  letterSpacing: "-0.018em",
                 }}
               >
                 {solution.name}
