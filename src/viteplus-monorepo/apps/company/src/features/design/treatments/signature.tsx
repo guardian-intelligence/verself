@@ -14,9 +14,10 @@ import { Lockup, WingsChip, type LockupVariant } from "@forge-metal/brand";
 //              the signpost. Emboss-variant mark (black circular medallion)
 //              because Argent-on-Flare contrast is thin for the wings.
 //   letters  — Ink-on-Paper editorial. Fraunces sets the author's name;
-//              Geist handles role / contact. Bordeaux vertical rule left
-//              of the identity mirrors the pull-quote treatment from the
-//              article body.
+//              Geist handles role / contact. An Ink vertical rule on the
+//              left edge mirrors a blockquote gesture from the article
+//              body. (Previously Bordeaux; retreated to Ink 2026-04-23 so
+//              the wine accent stays reserved for actual blockquotes.)
 
 export type SignatureVariant = "workshop" | "newsroom" | "letters";
 
@@ -86,11 +87,11 @@ const VARIANT_TOKENS: Record<SignatureVariant, VariantTokens> = {
     defaultMarkColor: "var(--color-ink)",
   },
   letters: {
-    // Paper ground with Fraunces for the author name. The Bordeaux rule
-    // moves to the card's left edge (`rule-left` accent style below), which
-    // mirrors the pull-quote rule in the article body above. Reading the
-    // signature after reading the pull-quote should feel like the same
-    // editorial grammar re-applied.
+    // Paper ground with Fraunces for the author name. The left-edge rule
+    // (`rule-left` accent style below) paints Ink — the signature echoes a
+    // blockquote in shape, but the colour stays Ink so Bordeaux remains the
+    // article body's unique ornament (the real pull-quote the reader just
+    // finished reading, not a sign-off card).
     background: "var(--color-paper)",
     border: "1px solid rgba(11,11,11,0.14)",
     textColor: "var(--color-ink)",

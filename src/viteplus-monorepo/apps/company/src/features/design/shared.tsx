@@ -178,7 +178,7 @@ export function BizCard({ ground }: { ground: "iron" | "flare" }) {
     >
       <Lockup
         size="sm"
-        variant={ground === "flare" ? "emboss" : "workshop-chip"}
+        variant={ground === "flare" ? "emboss" : "argent"}
         wordmarkColor={colors.fg}
       />
       <div style={{ alignSelf: "end" }}>

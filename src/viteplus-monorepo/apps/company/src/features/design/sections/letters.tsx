@@ -23,9 +23,11 @@ export function SectionLetters() {
         <>
           <i>Letters</i> is Guardian's long-form surface, where individual voices show their work.
           Paper ground, Fraunces masthead, Fraunces body for flowing prose, Geist for bylines and
-          metadata. <b style={{ color: "var(--color-bordeaux)" }}>Bordeaux</b> marks pull-quotes,
-          active links, and drop-cap ornaments — the single editorial accent, reserved for this
-          treatment. Flare does not appear on Letters; it is too loud for reading.
+          metadata. The page optimises for legibility on warm stone-paper: Ink sets the body, the
+          drop-cap initial, the nameplate rule, and every CTA.{" "}
+          <b style={{ color: "var(--color-bordeaux)" }}>Bordeaux</b> is reserved for one thing only
+          — the blockquote left-rule, where an editor has chosen to slow the reader and let another
+          voice speak. Flare does not appear on Letters; it is too loud for reading.
         </>
       }
     >
@@ -34,14 +36,14 @@ export function SectionLetters() {
           ground: {
             name: "Paper",
             hex: "#F6F4ED",
-            note: "Long-form reading canvas.",
+            note: "Long-form reading canvas · warm stone-paper.",
             chipStyle: { boxShadow: `inset 0 0 0 1px ${LINE}` },
           },
           accent: {
             name: "Bordeaux",
             hex: "#5C1F1E",
             pantone: "Pantone 504 C",
-            note: "Pull-quote rules, drop-caps, active links. Letters only.",
+            note: "Blockquote left-rule — the ONLY place Bordeaux ships.",
           },
           mark: {
             name: "Argent",
@@ -55,15 +57,17 @@ export function SectionLetters() {
           muted: {
             name: "Ink",
             hex: "#0B0B0B",
-            note: "Bylines, metadata, captions set in Ink @ 0.7 / 0.6 / 0.55 (Stone).",
+            note: "Body, drop cap, nameplate, CTA; meta at 0.7 / 0.6 / 0.55 (Stone).",
             chipStyle: { background: "rgba(11,11,11,0.7)" },
           },
         }}
         rule={
           <>
-            Bordeaux never ships outside Letters. Flare and Amber never ship <i>into</i> Letters.
-            The muted register on Paper is Ink at 0.7 / 0.6 / 0.55 opacity — the warm counterpart to
-            Ash on Iron grounds, historically called "Stone".
+            Bordeaux never ships outside the blockquote rule. CTAs, drop caps, nameplate rules,
+            tab underlines, and active link underlines all paint Ink — the editorial register
+            gets its voice from Fraunces and from Paper's warmth, not from ornament. The muted
+            register on Paper is Ink at 0.7 / 0.6 / 0.55 opacity (Stone), tuned to hold WCAG AA
+            on small text against #F6F4ED.
           </>
         }
       />
@@ -180,7 +184,7 @@ export function SectionLetters() {
           footer={
             <>
               The nameplate is a volume masthead, not a wordmark lockup. Wings + tracked uppercase
-              Geist + Bordeaux rule. The article H1 below it does the heading work; the nameplate
+              Geist + 1 px Ink rule. The article H1 below it does the heading work; the nameplate
               identifies the publication, not the article.
             </>
           }
@@ -194,7 +198,7 @@ export function SectionLetters() {
       >
         {/* Thin-ruled nameplate — replaces the old size="md" chip Lockup that
             was visually competing with the article H1 below. Wings + tracked
-            uppercase Geist "Guardian · Letters" + Bordeaux rule. */}
+            uppercase Geist "Guardian · Letters" + 1 px Ink rule. */}
         <div style={{ margin: "0 0 28px" }}>
           <Nameplate />
         </div>
@@ -282,7 +286,10 @@ export function SectionLetters() {
               lineHeight: 0.9,
               float: "left",
               margin: "6px 14px 0 0",
-              color: "var(--color-bordeaux)",
+              // Drop cap paints Ink — the initial letter is the article's
+              // flare (flourish), set in the display weight of the body face.
+              // Bordeaux is reserved for the blockquote left-rule only.
+              color: "var(--color-ink)",
             }}
           >
             T
@@ -344,7 +351,7 @@ export function SectionLetters() {
             name: "Founder Name",
             role: "Founder · Guardian Intelligence",
           }}
-          accent={{ hex: "var(--color-bordeaux)", style: "rule-left", heightPx: 3 }}
+          accent={{ hex: "var(--color-ink)", style: "rule-left", heightPx: 3 }}
           contact={{
             email: "letters@guardianintelligence.org",
             secondary: "guardianintelligence.org/letters",
@@ -352,12 +359,11 @@ export function SectionLetters() {
         />
       </div>
 
-      {/* CTA specimen — the rule in living form. Bordeaux is the editorial
-          ORNAMENT color (pull-quote rule, drop-cap, active link underline),
-          not the control color. Every primary CTA on Letters paints Ink
-          (black) with Paper text and a `rounded-md` corner — the same shape
-          the rest of the product uses, so the reading register inherits the
-          product's control grammar instead of inventing its own. */}
+      {/* CTA specimen — the rule in living form. Bordeaux has retreated to
+          the blockquote left-rule ONLY; CTAs, drop caps, nameplate rules,
+          and link underlines all paint Ink. A Bordeaux button would read as
+          a pull-quote that escaped the article body; a Bordeaux drop cap
+          would signal "accent" where the page already has one. */}
       <div
         style={{
           padding: "clamp(28px, 4vw, 48px) clamp(20px, 4vw, 48px)",
@@ -392,7 +398,7 @@ export function SectionLetters() {
             maxWidth: "24ch",
           }}
         >
-          CTAs on Letters are Ink.
+          Ink for controls. Ink for the drop cap.
         </h3>
         <p
           style={{
@@ -404,10 +410,10 @@ export function SectionLetters() {
             maxWidth: "56ch",
           }}
         >
-          Bordeaux is the editorial ornament — pull-quote rule, drop-cap, active link underline
-          — not the control color. Primary buttons paint Ink (black) with Paper text and a{" "}
-          <code>rounded-md</code> corner, same as the rest of the product. A Bordeaux button
-          would read as a pull-quote escaped from the article body.
+          Bordeaux is reserved for the blockquote left-rule. Everything else that wants to carry
+          editorial weight — the initial drop cap, the nameplate hairline, the primary CTA, the
+          active link underline — paints Ink. A Letters page earns its voice from Fraunces on
+          warm Paper, not from wine-coloured ornament scattered across every accent slot.
         </p>
         <span
           className="rounded-md"
@@ -433,21 +439,24 @@ export function SectionLetters() {
         <Colophon
           heading="Letters · Specifications"
           rows={[
-            { label: "Ground", value: "#F6F4ED", note: "Paper" },
-            { label: "Editorial accent", value: "#5C1F1E", note: "Pantone 504 C · Bordeaux · ornaments only" },
-            { label: "CTA", value: "Ink button · Paper text", note: "Never Bordeaux-on-Paper" },
+            { label: "Ground", value: "#F6F4ED", note: "Paper · warm stone-paper canvas" },
+            { label: "Body type", value: "#0B0B0B", note: "Ink on Paper — optimised for legibility" },
+            { label: "Blockquote rule", value: "#5C1F1E", note: "Pantone 504 C · Bordeaux · the ONLY Bordeaux on the page" },
+            { label: "CTA", value: "Ink button · Paper text", note: "Never Bordeaux" },
+            { label: "Drop cap", value: "Fraunces 88 px · Ink", note: "Display opsz, initial letter of the article" },
+            { label: "Nameplate rule", value: "Ink 1 px", note: "Under GUARDIAN LETTERS masthead" },
             { label: "Mark", value: "WingsChip", note: "Argent wings in iron chip" },
-            { label: "Masthead", value: "Geist 11 / +260 / UPPER", note: "Bordeaux 1 px rule" },
-            { label: "Body", value: "Fraunces", note: "opsz 18 · SOFT 0 · 19 / 1.55" },
+            { label: "Masthead", value: "Geist 11 / +260 / UPPER", note: "Tracked uppercase volume line" },
+            { label: "Body face", value: "Fraunces", note: "opsz 18 · SOFT 0 · 19 / 1.55" },
             { label: "Byline", value: "Geist 13", note: "Stone at 0.7 opacity" },
-            { label: "Drop cap", value: "Fraunces 88 px", note: "Bordeaux · display opsz" },
             { label: "Button radius", value: "rounded-md", note: "0.375rem · shadcn base" },
           ]}
           footer={
             <>
-              Letters is the only treatment where Fraunces sets body prose, and the only treatment
-              where Bordeaux ships at all — as an ornament, never as a control. Flare and Amber do
-              not appear here.
+              Letters is the only treatment where Fraunces sets body prose. Bordeaux ships in
+              exactly one place — the blockquote left-rule — because a Letter reads as a page
+              of Ink on warm Paper with a single wine-coloured interruption where another voice
+              breaks in. Flare and Amber do not appear here.
             </>
           }
         />

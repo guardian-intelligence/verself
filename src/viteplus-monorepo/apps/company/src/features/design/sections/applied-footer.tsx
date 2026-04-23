@@ -79,7 +79,7 @@ function SectionPhotography() {
 // 08 — Applied · business cards
 //
 // Under the three-room model there is a single working card, carried by
-// everyone: iron ground, workshop-chip lockup. The previous companion Flare
+// everyone: iron ground, argent lockup (bare cropped wings). The companion Flare
 // card retired with the Company treatment — Flare cards appeared on every
 // treatment's Applied footer (including Letters), violating the "Flare never
 // appears outside Newsroom surfaces" rule. Newsroom-specific stationery is a
@@ -93,8 +93,8 @@ function SectionBusinessCards() {
       meta={meta}
       lede={
         <>
-          The working card, carried by everyone. Iron ground with the Workshop chip lockup — the
-          same mark the live console wears, handed across a table.
+          The working card, carried by everyone. Iron ground, argent wings cropped tight to the
+          glyph — the same mark the live console wears, handed across a table.
         </>
       }
     >

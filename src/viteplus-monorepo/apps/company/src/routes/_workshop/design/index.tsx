@@ -225,7 +225,7 @@ function OverviewCard({ card }: { card: TreatmentCard }) {
 function TreatmentMark({ treatment }: { treatment: Treatment }) {
   if (treatment === "workshop") {
     return (
-      <Lockup size="sm" variant="workshop-chip" wordmarkColor="var(--color-argent)" />
+      <Lockup size="sm" variant="argent" wordmarkColor="var(--color-argent)" />
     );
   }
   if (treatment === "newsroom") {

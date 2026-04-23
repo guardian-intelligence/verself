@@ -390,11 +390,12 @@ export function TreatmentMastheadLadder({
 }
 
 // Shared Letters nameplate. Wings (via the iron chip, since the nameplate
-// lives on Paper) + "GUARDIAN LETTERS" tracked uppercase Geist + 1 px
-// Bordeaux rule below. Explicitly NOT a Lockup: we do not want Fraunces at
-// masthead scale competing with the article H1. The nameplate reads as a
-// volume masthead (Paris Review / The Baffler / Harper's) so the H1 does the
-// heading work.
+// lives on Paper) + "GUARDIAN LETTERS" tracked uppercase Geist + 1 px Ink
+// rule below. Explicitly NOT a Lockup: we do not want Fraunces at masthead
+// scale competing with the article H1. The nameplate reads as a volume
+// masthead (Paris Review / The Baffler / Harper's) so the H1 does the
+// heading work. (Rule was previously Bordeaux; retreated to Ink 2026-04-23
+// so Bordeaux stays reserved for the blockquote left-rule.)
 export function Nameplate() {
   return (
     <div>
@@ -405,7 +406,7 @@ export function Nameplate() {
           justifyContent: "space-between",
           gap: "14px",
           paddingBottom: "10px",
-          borderBottom: "1px solid var(--color-bordeaux)",
+          borderBottom: "1px solid var(--color-ink)",
           color: "var(--color-ink)",
         }}
       >

@@ -118,7 +118,12 @@ export function TreatmentTypeLadder({
                 <td
                   style={{
                     ...base,
-                    color: "var(--color-type-iron)",
+                    // Sample cell inherits the treatment's ink color —
+                    // argent on Iron (Workshop), ink on Paper (Letters), ink
+                    // on Argent (Newsroom). Hardcoding `--color-type-iron`
+                    // rendered Letters samples as near-white on warm Paper,
+                    // which WCAG-failed and read as a near-blank ladder.
+                    color: "var(--treatment-ink)",
                     // `break-word` lets long Display samples wrap at word
                     // boundaries first and only breaks mid-word as a last
                     // resort. `anywhere` (previous value) was too eager —
