@@ -54,13 +54,18 @@ function LandingHero() {
         </p>
 
         <h1
-          className="mt-5 font-display"
+          className="mt-5"
           style={{
-            fontVariationSettings: '"opsz" 144, "SOFT" 30',
-            fontWeight: 400,
+            // Workshop voice is Geist-only — Fraunces is reserved for Letters.
+            // The landing sits under Workshop chrome so the hero sets in Geist
+            // at display scale; letterspacing tightens to -0.028em to hold the
+            // display-type rhythm without the optical-size axis Fraunces would
+            // otherwise provide.
+            fontFamily: "'Geist', ui-sans-serif, system-ui, sans-serif",
+            fontWeight: 500,
             fontSize: "clamp(38px, 6.8vw, 72px)",
-            lineHeight: 1.0,
-            letterSpacing: "-0.026em",
+            lineHeight: 1.02,
+            letterSpacing: "-0.028em",
             color: "var(--color-type-iron)",
             maxWidth: "22ch",
             margin: 0,
@@ -95,13 +100,15 @@ function LandingHero() {
           spanName="company.landing.section_view"
           attrs={{ "section.id": "closer", "section.index": String(landing.mission.length) }}
           style={{
-            fontFamily: "'Fraunces', Georgia, serif",
-            fontVariationSettings: '"opsz" 72, "SOFT" 30',
-            fontWeight: 400,
+            // Workshop declines Fraunces — the closer still gets to sit at
+            // larger-than-body scale to signal it's the landing's closing beat,
+            // but it sets in Geist at semibold italic rather than Fraunces.
+            fontFamily: "'Geist', ui-sans-serif, system-ui, sans-serif",
+            fontWeight: 500,
             fontStyle: "italic",
             fontSize: "clamp(20px, 2.4vw, 26px)",
             lineHeight: 1.3,
-            letterSpacing: "-0.01em",
+            letterSpacing: "-0.012em",
             color: "var(--color-type-iron)",
             maxWidth: "34ch",
             margin: "4px 0 0",

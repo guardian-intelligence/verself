@@ -37,7 +37,22 @@ function DesignNewsroom() {
 
   return (
     <>
-      <SectionNewsroom />
+      {/* The Newsroom specimen renders on Paper — the treatment's broadcast
+          voice is loud, but the *teaching surface* for Newsroom is editorial.
+          Flare appears only in the bounded hero band + OG-card + billboard
+          specimens nested inside the section; everything else sits on Paper
+          so the visitor can read the rules without swimming in acid green. */}
+      <div
+        data-treatment="letters"
+        style={{
+          background: "var(--treatment-ground)",
+          color: "var(--treatment-ink)",
+        }}
+      >
+        <div className="mx-auto w-full max-w-[96rem] px-4 py-10 md:px-6 md:py-14">
+          <SectionNewsroom />
+        </div>
+      </div>
       <div className="mx-auto w-full max-w-[96rem] px-4 py-10 md:px-6 md:py-14">
         <AppliedFooter />
       </div>
