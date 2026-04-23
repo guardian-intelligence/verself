@@ -17,10 +17,6 @@ import {
 //     a thin-ruled nameplate instead — those treatments use a different
 //     ladder (TreatmentMastheadLadder for Letters, size-only for Workshop).
 
-const LINE = "#2a2a2f";
-const PANEL_BG = "#17171a";
-const PANEL_2_BG = "#111113";
-
 export type MarkCarrierRow = {
   readonly label: string;
   readonly value: string;
@@ -40,10 +36,9 @@ export function TreatmentMarkCard({
 }) {
   return (
     <div
-      data-treatment="workshop"
       style={{
-        background: PANEL_BG,
-        border: `1px solid ${LINE}`,
+        background: "var(--treatment-surface-subtle)",
+        border: "1px solid var(--treatment-surface-border)",
         borderRadius: "12px",
         overflow: "hidden",
         maxWidth: `${maxWidthPx}px`,
@@ -68,8 +63,8 @@ export function TreatmentMarkCard({
           fontVariationSettings: '"wght" 600',
           padding: "12px 14px",
           color: "var(--treatment-muted)",
-          background: PANEL_2_BG,
-          borderTop: `1px solid ${LINE}`,
+          background: "var(--treatment-surface-subtle)",
+          borderTop: "1px solid var(--treatment-surface-border)",
         }}
       >
         {rows.map((row, idx) => (
@@ -84,7 +79,7 @@ export function TreatmentMarkCard({
             }}
           >
             <span
-              style={{ color: row.emphasise === "name" ? "var(--color-type-iron)" : undefined }}
+              style={{ color: row.emphasise === "name" ? "var(--treatment-ink)" : undefined }}
             >
               {row.label}
             </span>
@@ -92,7 +87,7 @@ export function TreatmentMarkCard({
               style={{
                 color:
                   row.emphasise === "hex"
-                    ? "var(--color-type-iron)"
+                    ? "var(--treatment-ink)"
                     : row.emphasise === "name"
                       ? "var(--treatment-muted-faint)"
                       : undefined,
@@ -117,15 +112,14 @@ export function TreatmentSizeLadder({
 }) {
   return (
     <div
-      data-treatment="workshop"
       style={{
         display: "flex",
         gap: "16px",
         alignItems: "flex-end",
         padding: "28px 24px",
-        border: `1px solid ${LINE}`,
+        border: "1px solid var(--treatment-surface-border)",
         borderRadius: "12px",
-        background: PANEL_BG,
+        background: "var(--treatment-surface-subtle)",
         flexWrap: "wrap",
         color: "var(--treatment-ink)",
       }}
@@ -270,7 +264,7 @@ export function TreatmentWingsOnlyLadder({
     <div
       style={{
         padding: "28px 32px",
-        border: `1px solid ${LINE}`,
+        border: "1px solid #2a2a2f",
         borderRadius: "12px",
         background: "var(--color-iron)",
         display: "flex",
@@ -338,7 +332,7 @@ export function TreatmentMastheadLadder({
     <div
       style={{
         padding: "28px 32px",
-        border: `1px solid ${LINE}`,
+        border: "1px solid rgba(11,11,11,0.14)",
         borderRadius: "12px",
         background: "var(--color-paper)",
         display: "grid",

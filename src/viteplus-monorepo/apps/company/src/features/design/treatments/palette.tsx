@@ -31,9 +31,6 @@ export type PaletteSwatch = {
 // whichever roles they fill; a missing role renders the "not used" cell.
 export type TreatmentPaletteRoles = Partial<Record<PaletteRoleId, PaletteSwatch>>;
 
-const PANEL_BG = "#111113";
-const LINE = "#2a2a2f";
-
 export function TreatmentPalette({
   roles,
   rule,
@@ -43,13 +40,12 @@ export function TreatmentPalette({
 }) {
   return (
     <div
-      data-treatment="workshop"
       style={{
         marginBottom: "16px",
         padding: "18px 20px",
-        border: `1px solid ${LINE}`,
+        border: "1px solid var(--treatment-surface-border)",
         borderRadius: "10px",
-        background: PANEL_BG,
+        background: "var(--treatment-surface-subtle)",
         color: "var(--treatment-ink)",
       }}
     >
@@ -73,7 +69,7 @@ export function TreatmentPalette({
           style={{
             marginTop: "14px",
             paddingTop: "14px",
-            borderTop: `1px solid ${LINE}`,
+            borderTop: "1px solid var(--treatment-surface-border)",
             fontFamily: "'Geist', sans-serif",
             fontSize: "12px",
             color: "var(--treatment-muted)",
@@ -99,7 +95,7 @@ function PaletteFilled({ swatch }: { readonly swatch: PaletteSwatch }) {
           borderRadius: "6px",
           flex: "0 0 40px",
           background: swatch.hex,
-          // Inset 1px hairline so dark chips separate from the dark panel and
+          // Inset 1px hairline so dark chips separate from a dark panel and
           // light chips (Paper, Argent) get a visible edge. Neutral rgba works
           // for both ends of the ramp.
           boxShadow: "inset 0 0 0 1px rgba(128,128,128,0.25)",
@@ -112,7 +108,7 @@ function PaletteFilled({ swatch }: { readonly swatch: PaletteSwatch }) {
             fontFamily: "'Geist', sans-serif",
             fontWeight: 600,
             fontSize: "13px",
-            color: "var(--color-type-iron)",
+            color: "var(--treatment-ink)",
             lineHeight: 1.2,
           }}
         >

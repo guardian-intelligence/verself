@@ -77,6 +77,14 @@ function SectionPhotography() {
 
 // ============================================================================
 // 08 — Applied · business cards
+//
+// Under the three-room model there is a single working card, carried by
+// everyone: iron ground, workshop-chip lockup. The previous companion Flare
+// card retired with the Company treatment — Flare cards appeared on every
+// treatment's Applied footer (including Letters), violating the "Flare never
+// appears outside Newsroom surfaces" rule. Newsroom-specific stationery is a
+// separate future specimen and will live in its own Newsroom-scoped block
+// when it does.
 // ============================================================================
 function SectionBusinessCards() {
   const meta = sectionMeta("business-cards");
@@ -85,14 +93,13 @@ function SectionBusinessCards() {
       meta={meta}
       lede={
         <>
-          Iron default — the working card, carried by everyone. Flare reserved for principals and
-          outbound-heavy roles, where the card itself <i>is</i> the action.
+          The working card, carried by everyone. Iron ground with the Workshop chip lockup — the
+          same mark the live console wears, handed across a table.
         </>
       }
     >
       <div className="grid gap-4 md:grid-cols-2">
         <BizCard ground="iron" />
-        <BizCard ground="flare" />
       </div>
     </Section>
   );

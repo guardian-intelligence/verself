@@ -207,7 +207,7 @@ function OverviewCardHero({ card }: { card: TreatmentCard }) {
         ) : card.treatment === "letters" ? (
           <Lockup size="sm" variant="chip" wordmarkColor="var(--color-ink)" />
         ) : (
-          <Lockup size="sm" variant="argent" wordmarkColor="var(--color-argent)" />
+          <Lockup size="sm" variant="workshop-chip" wordmarkColor="var(--color-argent)" />
         )}
       </div>
       {card.treatment === "newsroom" && (

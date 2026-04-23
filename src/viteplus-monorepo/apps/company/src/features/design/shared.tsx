@@ -64,12 +64,21 @@ export function sectionMeta(id: DesignSectionId): DesignSection {
 }
 
 // ============================================================================
-// Surface — a flat treatment canvas (Iron / Flare / Paper).
+// Surface — a flat canvas in one of the three palette grounds.
 //
-// Surface sets data-treatment so nested text that reads var(--treatment-*)
-// stays self-consistent inside the card regardless of the parent page's
-// treatment. Each ground maps to a canonical treatment:
-// Iron→workshop, Flare→newsroom, Paper→letters.
+// Paint and scope are orthogonal axes, so Surface sets only the paint: the
+// `ground` prop selects a literal background colour (iron / flare / paper)
+// and a matching foreground (type-iron / ink / ink). The treatment SCOPE —
+// which muted ramp, which accent, which display font resolves for children
+// reading var(--treatment-*) — is inherited from the ancestor data-treatment
+// wrapper. That lets a specimen compose "Flare canvas with Newsroom muted
+// ramp" or "Iron canvas with Workshop muted ramp" without a new scope-switch
+// hiding the paint decision.
+//
+// Prior versions muxed paint and scope through one data-treatment attribute,
+// so `<Surface ground="flare">` set data-treatment="newsroom" and then read
+// background from var(--treatment-ground). When the Newsroom scope rebound
+// its ground to Paper, every Flare specimen silently rendered Paper-on-Paper.
 // ============================================================================
 export function Surface({
   ground,
@@ -82,19 +91,24 @@ export function Surface({
   readonly className?: string;
   readonly style?: CSSProperties;
 }) {
-  const groundTreatment =
-    ground === "iron" ? "workshop" : ground === "flare" ? "newsroom" : "letters";
+  const paint = {
+    iron: { bg: "var(--color-iron)", fg: "var(--color-type-iron)" },
+    flare: { bg: "var(--color-flare)", fg: "var(--color-ink)" },
+    paper: { bg: "var(--color-paper)", fg: "var(--color-ink)" },
+  }[ground];
+  const border =
+    ground === "iron" ? "rgba(245, 245, 245, 0.12)" : "rgba(11, 11, 11, 0.14)";
   return (
     <div
       className={className}
-      data-treatment={groundTreatment}
+      data-surface={ground}
       style={{
         padding: "48px 40px",
-        border: `1px solid var(--treatment-hairline)`,
+        border: `1px solid ${border}`,
         borderRadius: "12px",
         marginBottom: "16px",
-        background: "var(--treatment-ground)",
-        color: "var(--treatment-ink)",
+        background: paint.bg,
+        color: paint.fg,
         ...style,
       }}
     >
@@ -164,7 +178,7 @@ export function BizCard({ ground }: { ground: "iron" | "flare" }) {
     >
       <Lockup
         size="sm"
-        variant={ground === "flare" ? "emboss" : "argent"}
+        variant={ground === "flare" ? "emboss" : "workshop-chip"}
         wordmarkColor={colors.fg}
       />
       <div style={{ alignSelf: "end" }}>
