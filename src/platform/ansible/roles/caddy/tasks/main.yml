@@ -2,25 +2,80 @@
 # Caddy reverse proxy with automatic TLS.
 # Binary provided by deploy_profile role (xcaddy build on controller).
 
+- name: Create Caddy system group
+  ansible.builtin.group:
+    name: caddy
+    system: true
+
+- name: Create Caddy system user
+  ansible.builtin.user:
+    name: caddy
+    group: caddy
+    groups: adm
+    append: true
+    system: true
+    home: /var/lib/caddy
+    shell: /usr/sbin/nologin
+    create_home: false
+
 - name: Create Caddy config directory
   ansible.builtin.file:
     path: /etc/caddy
     state: directory
-    mode: "0755"
+    owner: root
+    group: caddy
+    mode: "0750"
+
+- name: Create Caddy state directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: caddy
+    group: caddy
+    mode: "0750"
+  loop:
+    - /var/lib/caddy
+    - /var/cache/caddy
+
+- name: Check for legacy root-owned Caddy TLS storage
+  ansible.builtin.stat:
+    path: /root/.local/share/caddy
+  register: caddy_legacy_root_storage
+
+- name: Migrate legacy root-owned Caddy TLS storage
+  ansible.builtin.copy:
+    src: /root/.local/share/caddy/
+    dest: /var/lib/caddy/
+    remote_src: true
+    owner: caddy
+    group: caddy
+    mode: preserve
+    directory_mode: "0750"
+  when: caddy_legacy_root_storage.stat.exists
+  no_log: true
+
+- name: Converge Caddy state ownership after TLS storage migration
+  ansible.builtin.file:
+    path: /var/lib/caddy
+    state: directory
+    owner: caddy
+    group: caddy
+    mode: "0750"
+    recurse: true
 
 - name: Create Caddy log directory
   ansible.builtin.file:
     path: /var/log/caddy
     state: directory
-    owner: root
+    owner: caddy
     group: adm
-    mode: "0755"
+    mode: "2750"
 
 - name: Create Caddy access log with otelcol-readable permissions
   ansible.builtin.file:
     path: /var/log/caddy/access.log
     state: touch
-    owner: root
+    owner: caddy
     group: adm
     mode: "0640"
 
@@ -28,28 +83,34 @@
   ansible.builtin.slurp:
     src: /etc/credstore/electric/api-secret
   register: caddy_electric_secret_raw
+  no_log: true
 
 - name: Set Electric secret fact
   ansible.builtin.set_fact:
     caddy_electric_api_secret: "{{ caddy_electric_secret_raw.content | b64decode | trim }}"
+  no_log: true
 
 - name: Read Electric Mail API secret for shape proxy auth
   ansible.builtin.slurp:
     src: /etc/credstore/electric-mail/api-secret
   register: caddy_electric_mail_secret_raw
+  no_log: true
 
 - name: Set Electric Mail secret fact
   ansible.builtin.set_fact:
     caddy_electric_mail_api_secret: "{{ caddy_electric_mail_secret_raw.content | b64decode | trim }}"
+  no_log: true
 
 - name: Read Electric Notifications API secret for shape proxy auth
   ansible.builtin.slurp:
     src: /etc/credstore/electric-notifications/api-secret
   register: caddy_electric_notifications_secret_raw
+  no_log: true
 
 - name: Set Electric Notifications secret fact
   ansible.builtin.set_fact:
     caddy_electric_notifications_api_secret: "{{ caddy_electric_notifications_secret_raw.content | b64decode | trim }}"
+  no_log: true
 
 - name: Require billing webhook DNS to remain DNS-only
   ansible.builtin.assert:
@@ -71,7 +132,10 @@
   ansible.builtin.template:
     src: Caddyfile.j2
     dest: /etc/caddy/Caddyfile
-    mode: "0644"
+    owner: root
+    group: caddy
+    mode: "0640"
+  no_log: true
   notify: restart caddy
 
 - name: Deploy Caddy systemd unit
@@ -85,8 +149,13 @@
 
       [Service]
       Type=simple
-      User=root
-      Group=adm
+      User=caddy
+      Group=caddy
+      SupplementaryGroups=adm
+      Environment=HOME=/var/lib/caddy
+      Environment=XDG_CONFIG_HOME=/etc/caddy
+      Environment=XDG_DATA_HOME=/var/lib/caddy
+      Environment=XDG_CACHE_HOME=/var/cache/caddy
       ExecStart={{ fm_bin }}/caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
       ExecReload={{ fm_bin }}/caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
       Restart=on-failure
@@ -94,6 +163,19 @@
       AmbientCapabilities=CAP_NET_BIND_SERVICE
       CapabilityBoundingSet=CAP_NET_BIND_SERVICE
       LimitNOFILE=1048576
+      NoNewPrivileges=true
+      ProtectSystem=strict
+      ProtectHome=true
+      PrivateTmp=true
+      ProtectKernelTunables=true
+      ProtectKernelModules=true
+      ProtectKernelLogs=true
+      ProtectControlGroups=true
+      RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+      LockPersonality=true
+      RestrictSUIDSGID=true
+      SystemCallArchitectures=native
+      ReadWritePaths=/var/lib/caddy /var/cache/caddy /var/log/caddy
 
       [Install]
       WantedBy=multi-user.target
