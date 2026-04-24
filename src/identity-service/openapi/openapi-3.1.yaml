@@ -428,6 +428,11 @@ components:
           $ref: "#/components/schemas/IdentityMemberCapabilitiesDocument"
         name:
           type: string
+        org_acl_version:
+          format: int32
+          maximum: 2147483647
+          minimum: 0
+          type: integer
         org_id:
           pattern: ^[0-9]+$
           type: string
@@ -440,6 +445,7 @@ components:
       required:
         - org_id
         - name
+        - org_acl_version
         - caller
         - member_capabilities
         - permissions
@@ -515,6 +521,19 @@ components:
           format: uri
           readOnly: true
           type: string
+        expected_org_acl_version:
+          format: int32
+          maximum: 2147483647
+          minimum: 0
+          type: integer
+        expected_role_keys:
+          items:
+            type: string
+          maxItems: 16
+          minItems: 1
+          type:
+            - array
+            - "null"
         role_keys:
           items:
             type: string
@@ -525,6 +544,8 @@ components:
             - "null"
       required:
         - role_keys
+        - expected_role_keys
+        - expected_org_acl_version
       type: object
   securitySchemes:
     bearerAuth:

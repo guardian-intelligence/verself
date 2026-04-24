@@ -110,6 +110,14 @@ func (s *apiCredentialTestStore) PutMemberCapabilities(context.Context, MemberCa
 	return MemberCapabilitiesDocument{}, nil
 }
 
+func (s *apiCredentialTestStore) GetOrgACLState(context.Context, string, string) (OrgACLState, error) {
+	return OrgACLState{Version: 1}, nil
+}
+
+func (s *apiCredentialTestStore) UpdateMemberRolesCommand(context.Context, UpdateMemberRolesCommand, Directory, string) (UpdateMemberRolesResult, error) {
+	return UpdateMemberRolesResult{}, nil
+}
+
 func (s *apiCredentialTestStore) CreateAPICredential(_ context.Context, credential APICredential, secret APICredentialSecret) (APICredential, error) {
 	if s.createErr != nil {
 		return APICredential{}, s.createErr

@@ -138,6 +138,14 @@ func (s staticIdentityStore) PutMemberCapabilities(context.Context, identity.Mem
 	return s.capabilities, nil
 }
 
+func (s staticIdentityStore) GetOrgACLState(context.Context, string, string) (identity.OrgACLState, error) {
+	return identity.OrgACLState{Version: 1}, nil
+}
+
+func (s staticIdentityStore) UpdateMemberRolesCommand(context.Context, identity.UpdateMemberRolesCommand, identity.Directory, string) (identity.UpdateMemberRolesResult, error) {
+	return identity.UpdateMemberRolesResult{}, nil
+}
+
 func (s staticIdentityStore) CreateAPICredential(context.Context, identity.APICredential, identity.APICredentialSecret) (identity.APICredential, error) {
 	return identity.APICredential{}, nil
 }

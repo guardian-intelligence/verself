@@ -681,6 +681,49 @@ ORDER BY (event_type, org_id, kind, status, recipient_subject_id, occurred_at, l
 SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1;
 
 -- ═══════════════════════════════════════════════════════════════════════════
+-- forge_metal: domain update ledger
+-- ═══════════════════════════════════════════════════════════════════════════
+
+DROP TABLE IF EXISTS forge_metal.domain_update_ledger;
+
+CREATE TABLE forge_metal.domain_update_ledger
+(
+    recorded_at DateTime64(9, 'UTC') CODEC(Delta(8), ZSTD(3)),
+    occurred_at DateTime64(9, 'UTC') CODEC(Delta(8), ZSTD(3)),
+    schema_version LowCardinality(String) CODEC(ZSTD(3)),
+    event_id UUID,
+    event_type LowCardinality(String) CODEC(ZSTD(3)),
+    service_name LowCardinality(String) CODEC(ZSTD(3)),
+    org_id LowCardinality(String) CODEC(ZSTD(3)),
+    actor_id String CODEC(ZSTD(3)),
+    operation_id LowCardinality(String) CODEC(ZSTD(3)),
+    command_id UUID,
+    idempotency_key_hash FixedString(64) CODEC(ZSTD(3)),
+    aggregate_kind LowCardinality(String) CODEC(ZSTD(3)),
+    aggregate_id String CODEC(ZSTD(3)),
+    aggregate_version UInt32 CODEC(T64, ZSTD(3)),
+    target_kind LowCardinality(String) CODEC(ZSTD(3)),
+    target_id String CODEC(ZSTD(3)),
+    result LowCardinality(String) CODEC(ZSTD(3)),
+    reason LowCardinality(String) CODEC(ZSTD(3)),
+    conflict_policy LowCardinality(String) CODEC(ZSTD(3)),
+    expected_version UInt32 CODEC(T64, ZSTD(3)),
+    actual_version UInt32 CODEC(T64, ZSTD(3)),
+    expected_hash FixedString(64) CODEC(ZSTD(3)),
+    actual_hash FixedString(64) CODEC(ZSTD(3)),
+    requested_hash FixedString(64) CODEC(ZSTD(3)),
+    changed_fields Array(LowCardinality(String)) CODEC(ZSTD(3)),
+    payload_json String CODEC(ZSTD(3)),
+    trace_id String CODEC(ZSTD(3)),
+    span_id String CODEC(ZSTD(3)),
+    traceparent String CODEC(ZSTD(3))
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(toDate(recorded_at))
+ORDER BY (service_name, event_type, org_id, aggregate_kind, result, occurred_at, event_id)
+SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1;
+
+-- ═══════════════════════════════════════════════════════════════════════════
 -- forge_metal: vm-orchestrator lease evidence projection
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Typed projection of lease lifecycle, exec starts, and telemetry diagnostics.

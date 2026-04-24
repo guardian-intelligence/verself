@@ -1,6 +1,6 @@
 #!/usr/sbin/nft -f
 # Identity service is a loopback-only API. It needs PostgreSQL, Zitadel,
-# governance's SPIFFE mTLS audit intake, and OTLP egress.
+# governance's SPIFFE mTLS audit intake, ClickHouse ledger projection, and OTLP egress.
 
 table inet forge_metal_identity_service
 delete table inet forge_metal_identity_service
@@ -20,6 +20,7 @@ table inet forge_metal_identity_service {
         meta skuid != identity_service accept
 
         oifname "lo" tcp dport {{ services.postgresql.port }} accept
+        oifname "lo" tcp dport {{ services.clickhouse.secure_native_port }} accept
         oifname "lo" tcp dport {{ services.zitadel.port }} accept
         oifname "lo" tcp dport {{ services.governance_service.internal_port }} accept
         oifname "lo" tcp dport {{ services.otelcol.grpc_port }} accept

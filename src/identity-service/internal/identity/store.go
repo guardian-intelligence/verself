@@ -8,11 +8,13 @@ import (
 	"strings"
 	"time"
 
+	chdriver "github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/lib/pq"
 )
 
 type SQLStore struct {
 	DB *sql.DB
+	CH chdriver.Conn
 }
 
 func (s SQLStore) GetMemberCapabilities(ctx context.Context, orgID, actor string) (MemberCapabilitiesDocument, error) {

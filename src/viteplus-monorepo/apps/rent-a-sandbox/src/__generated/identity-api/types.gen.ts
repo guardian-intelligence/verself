@@ -189,6 +189,7 @@ export type IdentityOrganization = {
   caller: IdentityMember;
   member_capabilities: IdentityMemberCapabilitiesDocument;
   name: string;
+  org_acl_version: number;
   org_id: string;
   permissions: Array<string> | null;
 };
@@ -224,6 +225,8 @@ export type IdentityUpdateMemberRolesRequest = {
    * A URL to the JSON Schema for this object.
    */
   readonly $schema?: string;
+  expected_org_acl_version: number;
+  expected_role_keys: Array<string> | null;
   role_keys: Array<string> | null;
 };
 
@@ -326,6 +329,7 @@ export type IdentityOrganizationWritable = {
   caller: IdentityMemberWritable;
   member_capabilities: IdentityMemberCapabilitiesDocument;
   name: string;
+  org_acl_version: number;
   org_id: string;
   permissions: Array<string> | null;
 };
@@ -345,6 +349,8 @@ export type IdentityRollApiCredentialResponseWritable = {
 };
 
 export type IdentityUpdateMemberRolesRequestWritable = {
+  expected_org_acl_version: number;
+  expected_role_keys: Array<string> | null;
   role_keys: Array<string> | null;
 };
 

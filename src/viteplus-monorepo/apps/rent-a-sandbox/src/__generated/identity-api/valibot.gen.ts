@@ -137,6 +137,7 @@ export const vIdentityOrganization = v.strictObject({
   caller: vIdentityMember,
   member_capabilities: vIdentityMemberCapabilitiesDocument,
   name: v.string(),
+  org_acl_version: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(2147483647)),
   org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   permissions: v.nullable(v.array(v.string())),
 });
@@ -160,6 +161,8 @@ export const vIdentityRollApiCredentialResponse = v.strictObject({
 
 export const vIdentityUpdateMemberRolesRequest = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  expected_org_acl_version: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(2147483647)),
+  expected_role_keys: v.nullable(v.pipe(v.array(v.string()), v.minLength(1), v.maxLength(16))),
   role_keys: v.nullable(v.pipe(v.array(v.string()), v.minLength(1), v.maxLength(16))),
 });
 
@@ -254,6 +257,7 @@ export const vIdentityOrganizationWritable = v.strictObject({
   caller: vIdentityMemberWritable,
   member_capabilities: vIdentityMemberCapabilitiesDocument,
   name: v.string(),
+  org_acl_version: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(2147483647)),
   org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   permissions: v.nullable(v.array(v.string())),
 });
@@ -273,6 +277,8 @@ export const vIdentityRollApiCredentialResponseWritable = v.strictObject({
 });
 
 export const vIdentityUpdateMemberRolesRequestWritable = v.strictObject({
+  expected_org_acl_version: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(2147483647)),
+  expected_role_keys: v.nullable(v.pipe(v.array(v.string()), v.minLength(1), v.maxLength(16))),
   role_keys: v.nullable(v.pipe(v.array(v.string()), v.minLength(1), v.maxLength(16))),
 });
 

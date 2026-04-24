@@ -5,6 +5,7 @@ import "time"
 type IdentityOrganization struct {
 	OrgID              OrgID                              `json:"org_id"`
 	Name               string                             `json:"name"`
+	OrgACLVersion      int32                              `json:"org_acl_version" minimum:"0" maximum:"2147483647"`
 	Caller             IdentityMember                     `json:"caller"`
 	MemberCapabilities IdentityMemberCapabilitiesDocument `json:"member_capabilities"`
 	Permissions        []string                           `json:"permissions"`
@@ -38,7 +39,9 @@ type IdentityInviteMemberResponse struct {
 }
 
 type IdentityUpdateMemberRolesRequest struct {
-	RoleKeys []string `json:"role_keys" required:"true" minItems:"1" maxItems:"16"`
+	RoleKeys              []string `json:"role_keys" required:"true" minItems:"1" maxItems:"16"`
+	ExpectedRoleKeys      []string `json:"expected_role_keys" required:"true" minItems:"1" maxItems:"16"`
+	ExpectedOrgACLVersion int32    `json:"expected_org_acl_version" required:"true" minimum:"0" maximum:"2147483647"`
 }
 
 type IdentityMemberCapabilitiesDocument struct {

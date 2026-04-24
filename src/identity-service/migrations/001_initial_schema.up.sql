@@ -9,6 +9,103 @@ CREATE TABLE IF NOT EXISTS identity_member_capabilities (
     CHECK (version >= 0)
 );
 
+CREATE TABLE IF NOT EXISTS identity_org_acl_state (
+    org_id TEXT PRIMARY KEY,
+    version INTEGER NOT NULL DEFAULT 1,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_by TEXT NOT NULL,
+    CHECK (length(btrim(org_id)) > 0),
+    CHECK (length(btrim(updated_by)) > 0),
+    CHECK (version > 0)
+);
+
+CREATE TABLE IF NOT EXISTS identity_command_results (
+    command_id UUID PRIMARY KEY,
+    org_id TEXT NOT NULL,
+    actor_id TEXT NOT NULL,
+    operation_id TEXT NOT NULL,
+    idempotency_key_hash TEXT NOT NULL,
+    request_hash TEXT NOT NULL,
+    result TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    aggregate_kind TEXT NOT NULL,
+    aggregate_id TEXT NOT NULL,
+    aggregate_version INTEGER NOT NULL,
+    target_user_id TEXT NOT NULL,
+    requested_role_keys TEXT[] NOT NULL DEFAULT '{}',
+    expected_role_keys TEXT[] NOT NULL DEFAULT '{}',
+    actual_role_keys TEXT[] NOT NULL DEFAULT '{}',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (length(btrim(org_id)) > 0),
+    CHECK (length(btrim(actor_id)) > 0),
+    CHECK (length(btrim(operation_id)) > 0),
+    CHECK (length(btrim(idempotency_key_hash)) = 64),
+    CHECK (length(btrim(request_hash)) = 64),
+    CHECK (result IN ('accepted', 'rejected')),
+    CHECK (length(btrim(reason)) > 0),
+    CHECK (length(btrim(aggregate_kind)) > 0),
+    CHECK (length(btrim(aggregate_id)) > 0),
+    CHECK (aggregate_version > 0),
+    CHECK (length(btrim(target_user_id)) > 0)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS identity_command_results_idempotency_idx
+    ON identity_command_results (org_id, actor_id, operation_id, idempotency_key_hash);
+
+CREATE TABLE IF NOT EXISTS identity_domain_event_outbox (
+    event_id UUID PRIMARY KEY,
+    command_id UUID NOT NULL REFERENCES identity_command_results (command_id) ON DELETE CASCADE,
+    event_type TEXT NOT NULL,
+    org_id TEXT NOT NULL,
+    actor_id TEXT NOT NULL,
+    operation_id TEXT NOT NULL,
+    idempotency_key_hash TEXT NOT NULL,
+    aggregate_kind TEXT NOT NULL,
+    aggregate_id TEXT NOT NULL,
+    aggregate_version INTEGER NOT NULL,
+    target_kind TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    result TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    conflict_policy TEXT NOT NULL,
+    expected_version INTEGER NOT NULL,
+    actual_version INTEGER NOT NULL,
+    expected_hash TEXT NOT NULL,
+    actual_hash TEXT NOT NULL,
+    requested_hash TEXT NOT NULL,
+    changed_fields TEXT[] NOT NULL DEFAULT '{}',
+    payload JSONB NOT NULL DEFAULT '{}',
+    traceparent TEXT NOT NULL DEFAULT '',
+    occurred_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    projected_at TIMESTAMPTZ,
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT NOT NULL DEFAULT '',
+    CHECK (length(btrim(event_type)) > 0),
+    CHECK (length(btrim(org_id)) > 0),
+    CHECK (length(btrim(actor_id)) > 0),
+    CHECK (length(btrim(operation_id)) > 0),
+    CHECK (length(btrim(idempotency_key_hash)) = 64),
+    CHECK (length(btrim(aggregate_kind)) > 0),
+    CHECK (length(btrim(aggregate_id)) > 0),
+    CHECK (aggregate_version > 0),
+    CHECK (length(btrim(target_kind)) > 0),
+    CHECK (length(btrim(target_id)) > 0),
+    CHECK (result IN ('accepted', 'rejected')),
+    CHECK (length(btrim(reason)) > 0),
+    CHECK (length(btrim(conflict_policy)) > 0),
+    CHECK (expected_version >= 0),
+    CHECK (actual_version >= 0),
+    CHECK (length(btrim(expected_hash)) = 64),
+    CHECK (length(btrim(actual_hash)) = 64),
+    CHECK (length(btrim(requested_hash)) = 64),
+    CHECK (attempts >= 0)
+);
+
+CREATE INDEX IF NOT EXISTS identity_domain_event_outbox_pending_idx
+    ON identity_domain_event_outbox (next_attempt_at, occurred_at, event_id)
+    WHERE projected_at IS NULL;
+
 CREATE TABLE IF NOT EXISTS identity_api_credentials (
     credential_id TEXT PRIMARY KEY,
     org_id TEXT NOT NULL,

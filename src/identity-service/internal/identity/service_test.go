@@ -160,6 +160,14 @@ func (fakeMembersStore) PutMemberCapabilities(context.Context, MemberCapabilitie
 	return MemberCapabilitiesDocument{}, nil
 }
 
+func (fakeMembersStore) GetOrgACLState(context.Context, string, string) (OrgACLState, error) {
+	return OrgACLState{Version: 1}, nil
+}
+
+func (fakeMembersStore) UpdateMemberRolesCommand(context.Context, UpdateMemberRolesCommand, Directory, string) (UpdateMemberRolesResult, error) {
+	return UpdateMemberRolesResult{}, nil
+}
+
 func (fakeMembersStore) CreateAPICredential(context.Context, APICredential, APICredentialSecret) (APICredential, error) {
 	return APICredential{}, nil
 }

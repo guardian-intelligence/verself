@@ -227,6 +227,7 @@ type IdentityOrganization struct {
 	Caller             IdentityMember                     `json:"caller"`
 	MemberCapabilities IdentityMemberCapabilitiesDocument `json:"member_capabilities"`
 	Name               string                             `json:"name"`
+	OrgAclVersion      int32                              `json:"org_acl_version"`
 	OrgId              string                             `json:"org_id"`
 	Permissions        *[]string                          `json:"permissions"`
 }
@@ -260,8 +261,10 @@ type IdentityRollAPICredentialResponse struct {
 // IdentityUpdateMemberRolesRequest defines model for IdentityUpdateMemberRolesRequest.
 type IdentityUpdateMemberRolesRequest struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema   *string   `json:"$schema,omitempty"`
-	RoleKeys *[]string `json:"role_keys"`
+	Schema                *string   `json:"$schema,omitempty"`
+	ExpectedOrgAclVersion int32     `json:"expected_org_acl_version"`
+	ExpectedRoleKeys      *[]string `json:"expected_role_keys"`
+	RoleKeys              *[]string `json:"role_keys"`
 }
 
 // CreateApiCredentialParams defines parameters for CreateApiCredential.

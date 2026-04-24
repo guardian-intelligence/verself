@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -11,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2"
 	_ "github.com/lib/pq"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
@@ -55,6 +58,9 @@ func run() error {
 	pgDSN := cfg.RequireString("IDENTITY_PG_DSN")
 	zitadelAdminToken := cfg.RequireCredential("zitadel-admin-token")
 	zitadelActionSigningKey := cfg.RequireCredential("zitadel-action-signing-key")
+	chAddress := cfg.String("IDENTITY_CH_ADDRESS", "127.0.0.1:9440")
+	chUser := cfg.String("IDENTITY_CH_USER", "identity_service")
+	chCACertPath := cfg.RequireCredentialPath("clickhouse-ca-cert")
 	listenAddr := cfg.String("IDENTITY_LISTEN_ADDR", "127.0.0.1:4248")
 	internalListenAddr := cfg.String("IDENTITY_INTERNAL_LISTEN_ADDR", "127.0.0.1:4241")
 	governanceAuditURL := cfg.String("IDENTITY_GOVERNANCE_AUDIT_URL", "")
@@ -93,11 +99,6 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	identityService := &identity.Service{
-		Store:     identity.SQLStore{DB: pg},
-		Directory: zitadelClient,
-		ProjectID: authAudience,
-	}
 	spiffeSource, err := workloadauth.Source(ctx, spiffeEndpoint)
 	if err != nil {
 		return fmt.Errorf("identity spiffe workload source: %w", err)
@@ -107,7 +108,38 @@ func run() error {
 			logger.ErrorContext(context.Background(), "identity-service spiffe source close", "error", err)
 		}
 	}()
+	chTLSConfig, err := workloadauth.TLSConfigWithX509SourceAndCABundle(ctx, spiffeSource, chCACertPath)
+	if err != nil {
+		return fmt.Errorf("identity clickhouse tls: %w", err)
+	}
+	chConn, err := clickhouse.Open(&clickhouse.Options{
+		Addr: []string{chAddress},
+		Auth: clickhouse.Auth{
+			Database: "forge_metal",
+			Username: chUser,
+		},
+		TLS: chTLSConfig,
+	})
+	if err != nil {
+		return fmt.Errorf("open identity clickhouse: %w", err)
+	}
+	defer func() { _ = chConn.Close() }()
+	chPingCtx, chPingCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer chPingCancel()
+	if err := chConn.Ping(chPingCtx); err != nil {
+		return fmt.Errorf("ping identity clickhouse: %w", err)
+	}
+	store := identity.SQLStore{DB: pg, CH: chConn}
+	identityService := &identity.Service{
+		Store:     store,
+		Directory: zitadelClient,
+		ProjectID: authAudience,
+	}
 	api.ConfigureAuditSink(governanceAuditURL, spiffeSource)
+
+	bgCtx, bgCancel := context.WithCancel(ctx)
+	defer bgCancel()
+	go runDomainLedgerProjectionLoop(bgCtx, logger, store)
 
 	rootMux := http.NewServeMux()
 	rootMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -116,6 +148,10 @@ func run() error {
 	})
 	rootMux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		if err := pg.PingContext(r.Context()); err != nil {
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+			return
+		}
+		if err := chConn.Ping(r.Context()); err != nil {
 			http.Error(w, "not ready", http.StatusServiceUnavailable)
 			return
 		}
@@ -154,6 +190,28 @@ func run() error {
 	internal := httpserver.New(internalListenAddr, otelhttp.NewHandler(limitRequestBodies(internalAllowlist, requestBodyLimit), serviceName+"-internal"))
 	internal.TLSConfig = internalTLSConfig
 	return httpserver.RunPair(ctx, logger, srv, internal)
+}
+
+func runDomainLedgerProjectionLoop(ctx context.Context, logger *slog.Logger, store identity.SQLStore) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			projectCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			projected, err := store.ProjectPendingDomainLedger(projectCtx, 100)
+			cancel()
+			if err != nil && !errors.Is(err, context.Canceled) {
+				logger.WarnContext(ctx, "identity domain ledger projection", "error", err)
+				continue
+			}
+			if projected > 0 {
+				logger.InfoContext(ctx, "identity domain ledger projected", "count", projected)
+			}
+		}
+	}
 }
 
 func limitRequestBodies(next http.Handler, maxBytes int64) http.Handler {
