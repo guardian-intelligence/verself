@@ -59,6 +59,9 @@ test.describe("Rent-a-Sandbox Notifications", () => {
       }
       expect(currentFirstID).not.toBe(previousFirstID);
       await expect(firstRow).toContainText("Notification test", { timeout: shortTimeoutMS });
+      await expect(firstRow.getByTestId("notification-created-at")).toContainText("Just now", {
+        timeout: shortTimeoutMS,
+      });
 
       await app.page.getByTestId("notifications-mark-read").click();
       await expect(app.page.getByTestId("notifications-unread-count")).toHaveCount(0, {
