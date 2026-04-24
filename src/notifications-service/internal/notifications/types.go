@@ -32,6 +32,7 @@ const (
 	LedgerInboxCreated       = "notification.inbox.created"
 	LedgerInboxPruned        = "notification.inbox.pruned"
 	LedgerInboxDismissed     = "notification.inbox.dismissed"
+	LedgerInboxRead          = "notification.inbox.read"
 	LedgerReadCursorAdvanced = "notification.read_cursor_advanced"
 	LedgerDeliverySuppressed = "notification.delivery.suppressed"
 	LedgerPreferencesUpdated = "notification.preferences.updated"
@@ -96,6 +97,7 @@ type Notification struct {
 	ResourceID         string
 	CreatedAt          time.Time
 	ExpiresAt          *time.Time
+	ReadAt             *time.Time
 	DismissedAt        *time.Time
 }
 
@@ -113,6 +115,10 @@ type ListRequest struct {
 }
 
 type DismissRequest struct {
+	NotificationID uuid.UUID
+}
+
+type ReadNotificationRequest struct {
 	NotificationID uuid.UUID
 }
 

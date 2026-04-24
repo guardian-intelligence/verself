@@ -80,6 +80,7 @@ CREATE TABLE user_notifications (
     content_sha256 TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
     expires_at TIMESTAMPTZ,
+    read_at TIMESTAMPTZ,
     dismissed_at TIMESTAMPTZ,
     CHECK (length(btrim(org_id)) > 0),
     CHECK (length(btrim(recipient_subject_id)) > 0),
@@ -91,6 +92,8 @@ CREATE TABLE user_notifications (
 );
 
 CREATE INDEX user_notifications_inbox_idx ON user_notifications (org_id, recipient_subject_id, recipient_sequence DESC);
+CREATE INDEX user_notifications_unread_idx ON user_notifications (org_id, recipient_subject_id, recipient_sequence DESC)
+    WHERE dismissed_at IS NULL AND read_at IS NULL;
 CREATE INDEX user_notifications_event_idx ON user_notifications (event_source, event_id);
 
 CREATE TABLE notification_projection_queue (

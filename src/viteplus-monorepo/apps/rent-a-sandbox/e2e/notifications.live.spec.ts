@@ -83,6 +83,33 @@ test.describe("Rent-a-Sandbox Notifications", () => {
         unreadBadgeBeforeHover,
         { timeout: shortTimeoutMS },
       );
+      const rowCountBeforeSingleRead = await rows.count();
+      await firstRow.getByTestId("notification-mark-read").click();
+      await expect(
+        app.page.locator(
+          `[data-testid="notification-row"][data-notification-id="${currentFirstID}"]`,
+        ),
+      ).toHaveCount(0, { timeout: shortTimeoutMS });
+      await expect
+        .poll(async () => rows.count(), { timeout: shortTimeoutMS })
+        .toBe(rowCountBeforeSingleRead - 1);
+      await expect.poll(async () => rows.count(), { timeout: shortTimeoutMS }).toBeGreaterThan(0);
+      const remainingAfterSingleRead = await rows.count();
+      await app.page.getByTestId("notifications-test").click();
+      await expect
+        .poll(async () => rows.count(), { timeout: shortTimeoutMS })
+        .toBe(remainingAfterSingleRead + 1);
+      const dismissedID =
+        (await firstRow.getAttribute("data-notification-id").catch(() => "")) ?? "";
+      const rowCountBeforeDismiss = await rows.count();
+      await firstRow.getByLabel("Dismiss notification").click();
+      await expect(
+        app.page.locator(`[data-testid="notification-row"][data-notification-id="${dismissedID}"]`),
+      ).toHaveCount(0, { timeout: shortTimeoutMS });
+      await expect
+        .poll(async () => rows.count(), { timeout: shortTimeoutMS })
+        .toBe(rowCountBeforeDismiss - 1);
+      await expect.poll(async () => rows.count(), { timeout: shortTimeoutMS }).toBeGreaterThan(0);
 
       await app.page.getByTestId("notifications-mark-read").click();
       await expect(app.page.getByTestId("notifications-unread-count")).toHaveCount(0, {

@@ -39,6 +39,7 @@ export const vNotification = v.strictObject({
   notification_id: v.string(),
   org_id: v.string(),
   priority: v.picklist(["low", "normal", "high"]),
+  read_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
   recipient_sequence: v.string(),
   recipient_subject_id: v.string(),
   resource_id: v.optional(v.string()),
@@ -224,3 +225,16 @@ export const vDismissNotificationPath = v.object({
  * OK
  */
 export const vDismissNotificationResponse = vNotificationSummary;
+
+export const vMarkNotificationReadHeaders = v.object({
+  "Idempotency-Key": v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+});
+
+export const vMarkNotificationReadPath = v.object({
+  notification_id: v.pipe(v.string(), v.uuid()),
+});
+
+/**
+ * OK
+ */
+export const vMarkNotificationReadResponse = vNotificationSummary;

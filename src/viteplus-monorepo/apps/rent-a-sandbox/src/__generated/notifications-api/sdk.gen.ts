@@ -19,6 +19,9 @@ import type {
   ListNotificationsData,
   ListNotificationsErrors,
   ListNotificationsResponses,
+  MarkNotificationReadData,
+  MarkNotificationReadErrors,
+  MarkNotificationReadResponses,
   PublishTestNotificationData,
   PublishTestNotificationErrors,
   PublishTestNotificationResponses,
@@ -166,5 +169,21 @@ export const dismissNotification = <ThrowOnError extends boolean = false>(
   >({
     security: [{ scheme: "bearer", type: "http" }],
     url: "/api/v1/notifications/{notification_id}/dismiss",
+    ...options,
+  });
+
+/**
+ * Mark one current human notification read
+ */
+export const markNotificationRead = <ThrowOnError extends boolean = false>(
+  options: Options<MarkNotificationReadData, ThrowOnError>,
+) =>
+  (options.client ?? client).post<
+    MarkNotificationReadResponses,
+    MarkNotificationReadErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/notifications/{notification_id}/read",
     ...options,
   });

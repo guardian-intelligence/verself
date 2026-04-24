@@ -92,6 +92,7 @@ type Notification struct {
 	NotificationId string               `json:"notification_id"`
 	OrgId          string               `json:"org_id"`
 	Priority       NotificationPriority `json:"priority"`
+	ReadAt         *time.Time           `json:"read_at,omitempty"`
 
 	// RecipientSequence Per-recipient sequence, decimal-encoded for JavaScript safety.
 	RecipientSequence  string  `json:"recipient_sequence"`
@@ -203,6 +204,11 @@ type DismissNotificationParams struct {
 	IdempotencyKey string `json:"Idempotency-Key"`
 }
 
+// MarkNotificationReadParams defines parameters for MarkNotificationRead.
+type MarkNotificationReadParams struct {
+	IdempotencyKey string `json:"Idempotency-Key"`
+}
+
 // PutNotificationPreferencesJSONRequestBody defines body for PutNotificationPreferences for application/json ContentType.
 type PutNotificationPreferencesJSONRequestBody = NotificationPutPreferencesRequest
 
@@ -311,6 +317,9 @@ type ClientInterface interface {
 
 	// DismissNotification request
 	DismissNotification(ctx context.Context, notificationId openapi_types.UUID, params *DismissNotificationParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// MarkNotificationRead request
+	MarkNotificationRead(ctx context.Context, notificationId openapi_types.UUID, params *MarkNotificationReadParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) ListNotifications(ctx context.Context, params *ListNotificationsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -423,6 +432,18 @@ func (c *Client) PublishTestNotification(ctx context.Context, params *PublishTes
 
 func (c *Client) DismissNotification(ctx context.Context, notificationId openapi_types.UUID, params *DismissNotificationParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewDismissNotificationRequest(c.Server, notificationId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) MarkNotificationRead(ctx context.Context, notificationId openapi_types.UUID, params *MarkNotificationReadParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewMarkNotificationReadRequest(c.Server, notificationId, params)
 	if err != nil {
 		return nil, err
 	}
@@ -755,6 +776,53 @@ func NewDismissNotificationRequest(server string, notificationId openapi_types.U
 	return req, nil
 }
 
+// NewMarkNotificationReadRequest generates requests for MarkNotificationRead
+func NewMarkNotificationReadRequest(server string, notificationId openapi_types.UUID, params *MarkNotificationReadParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "notification_id", notificationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/notifications/%s/read", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -824,6 +892,9 @@ type ClientWithResponsesInterface interface {
 
 	// DismissNotificationWithResponse request
 	DismissNotificationWithResponse(ctx context.Context, notificationId openapi_types.UUID, params *DismissNotificationParams, reqEditors ...RequestEditorFn) (*DismissNotificationResponse, error)
+
+	// MarkNotificationReadWithResponse request
+	MarkNotificationReadWithResponse(ctx context.Context, notificationId openapi_types.UUID, params *MarkNotificationReadParams, reqEditors ...RequestEditorFn) (*MarkNotificationReadResponse, error)
 }
 
 type ListNotificationsResponse struct {
@@ -987,6 +1058,29 @@ func (r DismissNotificationResponse) StatusCode() int {
 	return 0
 }
 
+type MarkNotificationReadResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *NotificationSummary
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r MarkNotificationReadResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r MarkNotificationReadResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 // ListNotificationsWithResponse request returning *ListNotificationsResponse
 func (c *ClientWithResponses) ListNotificationsWithResponse(ctx context.Context, params *ListNotificationsParams, reqEditors ...RequestEditorFn) (*ListNotificationsResponse, error) {
 	rsp, err := c.ListNotifications(ctx, params, reqEditors...)
@@ -1072,6 +1166,15 @@ func (c *ClientWithResponses) DismissNotificationWithResponse(ctx context.Contex
 		return nil, err
 	}
 	return ParseDismissNotificationResponse(rsp)
+}
+
+// MarkNotificationReadWithResponse request returning *MarkNotificationReadResponse
+func (c *ClientWithResponses) MarkNotificationReadWithResponse(ctx context.Context, notificationId openapi_types.UUID, params *MarkNotificationReadParams, reqEditors ...RequestEditorFn) (*MarkNotificationReadResponse, error) {
+	rsp, err := c.MarkNotificationRead(ctx, notificationId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseMarkNotificationReadResponse(rsp)
 }
 
 // ParseListNotificationsResponse parses an HTTP response from a ListNotificationsWithResponse call
@@ -1281,6 +1384,39 @@ func ParseDismissNotificationResponse(rsp *http.Response) (*DismissNotificationR
 	}
 
 	response := &DismissNotificationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest NotificationSummary
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseMarkNotificationReadResponse parses an HTTP response from a MarkNotificationReadWithResponse call
+func ParseMarkNotificationReadResponse(rsp *http.Response) (*MarkNotificationReadResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &MarkNotificationReadResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}

@@ -6,6 +6,7 @@ import {
   dismissNotification as dismissGeneratedNotification,
   getNotificationSummary as getGeneratedNotificationSummary,
   listNotifications as listGeneratedNotifications,
+  markNotificationRead as markGeneratedNotificationRead,
   publishTestNotification as publishGeneratedTestNotification,
   putNotificationPreferences as putGeneratedNotificationPreferences,
 } from "../__generated/notifications-api/index.js";
@@ -211,6 +212,27 @@ export async function dismissNotification(
   const result = await dismissGeneratedNotification({
     client,
     headers: idempotencyHeaders("notification-dismiss"),
+    path: { notification_id: input.notification_id },
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+
+  if (result.error !== undefined) {
+    throwNotificationsError(path, result.response, result.error);
+  }
+
+  return parseNotificationSummary(result.data);
+}
+
+export async function markNotificationReadByID(
+  options: NotificationsClientOptions & { body: DismissNotificationRequest },
+): Promise<NotificationSummary> {
+  const client = createNotificationsClient(options);
+  const input = v.parse(dismissNotificationRequestSchema, options.body);
+  const path = "/api/v1/notifications/{notification_id}/read";
+  const result = await markGeneratedNotificationRead({
+    client,
+    headers: idempotencyHeaders("notification-read"),
     path: { notification_id: input.notification_id },
     responseStyle: "fields",
     throwOnError: false,

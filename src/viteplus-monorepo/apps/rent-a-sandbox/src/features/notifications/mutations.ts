@@ -4,6 +4,7 @@ import {
   clearNotifications,
   dismissNotification,
   markNotificationRead,
+  markNotificationReadByID,
   publishTestNotification,
   type DismissNotificationRequest,
   type MarkNotificationReadRequest,
@@ -31,6 +32,20 @@ export function useDismissNotificationMutation() {
 
   return useMutation({
     mutationFn: (body: DismissNotificationRequest) => dismissNotification({ data: body }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: notificationsQueryKey(auth),
+      });
+    },
+  });
+}
+
+export function useMarkSingleNotificationReadMutation() {
+  const auth = useSignedInAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (body: DismissNotificationRequest) => markNotificationReadByID({ data: body }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: notificationsQueryKey(auth),

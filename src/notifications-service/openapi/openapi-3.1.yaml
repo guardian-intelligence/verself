@@ -89,6 +89,9 @@ components:
             - normal
             - high
           type: string
+        read_at:
+          format: date-time
+          type: string
         recipient_sequence:
           description: Per-recipient sequence, decimal-encoded for JavaScript safety.
           type: string
@@ -569,6 +572,52 @@ paths:
         data_classification: controller_personal_data
         event_category: notifications
         operation_display: Dismiss a current human notification
+        operation_type: write
+        org_scope: token_subject
+        permission: notifications:self:write
+        rate_limit_class: notification_mutation
+        resource: notification_subject
+        risk_level: medium
+        source_product_area: Notifications
+  /api/v1/notifications/{notification_id}/read:
+    post:
+      operationId: mark-notification-read
+      parameters:
+        - in: path
+          name: notification_id
+          required: true
+          schema:
+            format: uuid
+            type: string
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationSummary"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Mark one current human notification read
+      x-forge-metal-iam:
+        action: write
+        audit_event: notification.mark.notification.read
+        data_classification: controller_personal_data
+        event_category: notifications
+        operation_display: Mark one current human notification read
         operation_type: write
         org_scope: token_subject
         permission: notifications:self:write
