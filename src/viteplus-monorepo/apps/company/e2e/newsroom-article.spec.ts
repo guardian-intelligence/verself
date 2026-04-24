@@ -54,17 +54,20 @@ test.describe("/newsroom/$slug — article", () => {
   test("index → article → back to index round-trip", async ({ page }) => {
     await page.goto("/newsroom");
 
-    // Click into the featured hero CTA.
-    const hero = page.locator('[aria-label^="Bulletin: "]');
-    await hero.getByRole("link", { name: /Read the bulletin/ }).click();
+    // Click into the Flare giant bulletin. The bulletin is an <a> carrying
+    // data-newsroom-bulletin and an aria-label of the form
+    // "Read bulletin: <title>", so selecting by the data-attribute keeps the
+    // assertion stable against future copy tweaks to the label.
+    const bulletin = page.locator("[data-newsroom-bulletin]");
+    await bulletin.click();
     await expect(page).toHaveURL(new RegExp(`/newsroom/${CANONICAL_SLUG}$`));
 
     // Back out via the Read next footer.
     await page.locator("[data-newsroom-back]").click();
     await expect(page).toHaveURL(/\/newsroom\/?$/);
 
-    // Landing back on the index still shows the hero (i.e., the index route
-    // actually remounted, not a half-hydrated stale frame).
-    await expect(page.locator('[aria-label^="Bulletin: "]').first()).toBeVisible();
+    // Landing back on the index still shows the bulletin (i.e., the index
+    // route actually remounted, not a half-hydrated stale frame).
+    await expect(page.locator("[data-newsroom-bulletin]").first()).toBeVisible();
   });
 });
