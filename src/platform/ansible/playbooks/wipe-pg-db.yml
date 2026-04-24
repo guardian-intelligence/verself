@@ -10,6 +10,7 @@
 # - mailbox_service
 # - identity_service
 # - secrets_service
+# - notifications_service
 
 - name: Wipe one managed PostgreSQL database
   hosts: all
@@ -22,6 +23,7 @@
       - mailbox_service
       - identity_service
       - secrets_service
+      - notifications_service
   pre_tasks:
     - name: Assert supported PostgreSQL wipe target
       ansible.builtin.assert:
@@ -134,3 +136,34 @@
       vars:
         secrets_service_force_schema_reset: true
       when: wipe_pg_db_name == 'secrets_service'
+
+    - name: Include notifications-service for notifications_service PostgreSQL wipe
+      ansible.builtin.include_role:
+        name: notifications_service
+      tags: [notifications_service]
+      vars:
+        notifications_service_force_schema_reset: true
+      when: wipe_pg_db_name == 'notifications_service'
+
+    - name: Include Electric Notifications after notifications_service PostgreSQL wipe
+      ansible.builtin.include_role:
+        name: electric
+      tags: [electric_notifications]
+      vars:
+        electric_instance: notifications
+        electric_service_name: electric-notifications
+        electric_service_port: "{{ services.electric_notifications.port }}"
+        electric_pg_role: electric_notifications
+        electric_pg_conn_limit: "{{ postgresql_role_connection_limits.electric_notifications }}"
+        electric_db: notifications_service
+        electric_writer_role: notifications_service
+        electric_publication_name: electric_publication_notifications
+        electric_publication_tables:
+          - notification_inbox_state
+        electric_storage_dir: /var/lib/electric-notifications
+        electric_credstore_dir: /etc/credstore/electric-notifications
+        electric_nftables_table: forge_metal_electric_notifications
+        electric_nftables_file: /etc/nftables.d/electric-notifications.nft
+        electric_db_pool_size: 8
+        electric_extra_systemd_after: [notifications-service.service]
+      when: wipe_pg_db_name == 'notifications_service'

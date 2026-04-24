@@ -1,0 +1,172 @@
+---
+- name: Verify nats-server binary exists in profile
+  ansible.builtin.stat:
+    path: "{{ fm_bin }}/nats-server"
+  register: nats_binary
+  failed_when: not nats_binary.stat.exists
+
+- name: Create NATS system group
+  ansible.builtin.group:
+    name: nats
+    system: true
+
+- name: Ensure spire workload socket group exists
+  ansible.builtin.group:
+    name: "{{ spire_workload_group }}"
+    system: true
+
+- name: Create NATS system user
+  ansible.builtin.user:
+    name: nats
+    group: nats
+    groups:
+      - "{{ spire_workload_group }}"
+    append: false
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ nats_data_dir }}"
+    create_home: false
+
+- name: Resolve NATS uid for SPIRE registration
+  ansible.builtin.command:
+    cmd: id -u nats
+  register: nats_uid
+  changed_when: false
+
+- name: Read NATS SPIRE registration
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry show
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-nats
+      -output json
+  register: nats_spire_entry
+  failed_when: false
+  changed_when: false
+
+- name: Register NATS SPIFFE workload
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry create
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-nats
+      -parentID {{ spire_agent_id }}
+      -spiffeID {{ spire_nats_id }}
+      -selector unix:uid:{{ nats_uid.stdout | trim }}
+      -x509SVIDTTL 3600
+  when: nats_spire_entry.rc != 0 or 'forge-metal-nats' not in nats_spire_entry.stdout
+  changed_when: true
+  notify:
+    - restart nats-spiffe-helper
+    - restart nats
+
+- name: Update NATS SPIRE workload selector drift
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry update
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-nats
+      -parentID {{ spire_agent_id }}
+      -spiffeID {{ spire_nats_id }}
+      -selector unix:uid:{{ nats_uid.stdout | trim }}
+      -x509SVIDTTL 3600
+  when:
+    - nats_spire_entry.rc == 0
+    - "'uid:' ~ (nats_uid.stdout | trim) not in nats_spire_entry.stdout"
+  changed_when: true
+  notify:
+    - restart nats-spiffe-helper
+    - restart nats
+
+- name: Create NATS directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ nats_config_dir }}", owner: root, group: nats, mode: "0750" }
+    - { path: "{{ nats_data_dir }}", owner: nats, group: nats, mode: "0750" }
+    - { path: "{{ nats_jetstream_dir }}", owner: nats, group: nats, mode: "0750" }
+    - { path: "{{ nats_spiffe_dir }}", owner: nats, group: nats, mode: "0700" }
+
+- name: Deploy NATS nftables ruleset
+  ansible.builtin.template:
+    src: nats.nft.j2
+    dest: /etc/nftables.d/nats.nft
+    mode: "0644"
+  notify: reload nftables
+
+- name: Apply NATS nftables before proceeding
+  ansible.builtin.meta: flush_handlers
+
+- name: Deploy NATS SPIFFE helper config
+  ansible.builtin.template:
+    src: nats-spiffe-helper.conf.j2
+    dest: "{{ nats_helper_config_path }}"
+    owner: root
+    group: nats
+    mode: "0640"
+  notify: restart nats-spiffe-helper
+
+- name: Deploy NATS SPIFFE helper unit
+  ansible.builtin.template:
+    src: nats-spiffe-helper.service.j2
+    dest: /etc/systemd/system/nats-spiffe-helper.service
+    mode: "0644"
+  notify: restart nats-spiffe-helper
+
+- name: Enable and start NATS SPIFFE helper
+  ansible.builtin.systemd:
+    name: nats-spiffe-helper
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for NATS SPIFFE certificate
+  ansible.builtin.wait_for:
+    path: "{{ nats_spiffe_dir }}/svid.pem"
+    timeout: 30
+
+- name: Deploy NATS config
+  ansible.builtin.template:
+    src: nats-server.conf.j2
+    dest: "{{ nats_config_dir }}/nats-server.conf"
+    owner: root
+    group: nats
+    mode: "0640"
+  notify: restart nats
+
+- name: Deploy NATS systemd unit
+  ansible.builtin.template:
+    src: nats.service.j2
+    dest: /etc/systemd/system/nats.service
+    mode: "0644"
+  notify: restart nats
+
+- name: Apply NATS unit changes before proceeding
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start NATS
+  ansible.builtin.systemd:
+    name: nats
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for NATS listener
+  ansible.builtin.wait_for:
+    host: "{{ services.nats.host }}"
+    port: "{{ services.nats.port }}"
+    timeout: 30
+
+- name: Wait for NATS health endpoint
+  ansible.builtin.uri:
+    url: "http://{{ services.nats.host }}:{{ services.nats.monitoring_port }}/healthz"
+    method: GET
+    status_code: 200
+  register: nats_healthz
+  retries: 30
+  delay: 1
+  until: nats_healthz.status == 200

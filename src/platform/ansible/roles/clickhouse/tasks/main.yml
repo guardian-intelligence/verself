@@ -392,7 +392,7 @@
     {{ clickhouse_operator_client_command }}
     --query "SELECT count() FROM system.tables
              WHERE (database = 'default' AND name = 'otel_metrics_sum')
-                OR (database = 'forge_metal' AND name IN ('metering', 'billing_events', 'audit_events'))"
+                OR (database = 'forge_metal' AND name IN ('metering', 'billing_events', 'audit_events', 'notification_events'))"
   register: clickhouse_expected_table_probe
   changed_when: false
 
@@ -404,7 +404,7 @@
         or (clickhouse_migrations_remote_hash is failed)
         or ((clickhouse_migrations_remote_hash.content | default('') | b64decode | trim)
            != (clickhouse_migrations_local_hash.stdout.split()[0] | trim))
-        or ((clickhouse_expected_table_probe.stdout | trim) != '4')
+        or ((clickhouse_expected_table_probe.stdout | trim) != '5')
       }}
 
 - name: Apply ClickHouse migrations
@@ -436,6 +436,7 @@
       loop:
         - otelcol
         - billing-service
+        - notifications-service
         - sandbox-rental-service
         - governance-service
       register: clickhouse_writers_stop_result
@@ -512,6 +513,7 @@
       loop:
         - otelcol
         - billing-service
+        - notifications-service
         - sandbox-rental-service
         - governance-service
       register: clickhouse_writers_start_result

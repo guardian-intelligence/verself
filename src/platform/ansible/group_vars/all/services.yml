@@ -23,6 +23,7 @@
 #      3000          Forgejo HTTP
 #      6933-6939     Temporal membership
 #      3320          TigerBeetle
+#      4222 / 8222   NATS client / monitoring
 #      4317 / 4318   OTel collector gRPC / HTTP
 #      5432          PostgreSQL
 #      7233-7246     Temporal frontend/history/matching/worker gRPC + HTTP
@@ -33,7 +34,7 @@
 #      8125          StatsD UDP (otelcol receiver; TigerBeetle is the sender)
 #      9181          ClickHouse Keeper (reserved, not allocated on single-node)
 #
-#    Forge Metal Go services (control plane):   4240–4259
+#    Forge Metal Go services (control plane):   4240–4269
 #      4241  identity-service internal SPIFFE mTLS
 #      4242  billing-service
 #      4243  sandbox-rental-service
@@ -46,8 +47,9 @@
 #      4257  object-storage-service admin
 #      4258  profile-service
 #      4259  profile-service internal SPIFFE mTLS
+#      4260  notifications-service
 #
-#    TanStack frontends (Nitro SSR):             4240–4259 (shared block)
+#    TanStack frontends (Nitro SSR):             4240–4269 (shared block)
 #      4244  rent-a-sandbox
 #      4249  platform
 #      4252  company
@@ -68,6 +70,7 @@
 #    Electric SQL replicators:                   3010–3019
 #      3010  electric (primary)
 #      3011  electric_mail
+#      3012  electric_notifications
 #
 #    vm-orchestrator host services (VM subnet):  18080+ on 10.255.0.1
 #      18080 firecracker_host_service
@@ -113,6 +116,10 @@ services:
   postgresql:
     host: "127.0.0.1"
     port: 5432
+  nats:
+    host: "127.0.0.1"
+    port: 4222
+    monitoring_port: 8222
   temporal:
     host: "127.0.0.1"
     grpc_port: 7233
@@ -152,6 +159,9 @@ services:
     host: "127.0.0.1"
     port: 4258
     internal_port: 4259
+  notifications_service:
+    host: "127.0.0.1"
+    port: 4260
   rent_a_sandbox:
     host: "127.0.0.1"
     port: 4244
@@ -194,6 +204,9 @@ services:
   electric_mail:
     host: "127.0.0.1"
     port: 3011
+  electric_notifications:
+    host: "127.0.0.1"
+    port: 3012
   platform:
     host: "127.0.0.1"
     port: 4249

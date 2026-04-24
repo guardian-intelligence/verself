@@ -1,8 +1,8 @@
 [Unit]
 Description=Rent-a-Sandbox Frontend (TanStack Start)
-After=forge-metal-firewall.target network.target sandbox-rental-service.service identity-service.service electric.service
+After=forge-metal-firewall.target network.target sandbox-rental-service.service identity-service.service notifications-service.service electric.service electric-notifications.service
 Requires=forge-metal-firewall.target
-Wants=sandbox-rental-service.service identity-service.service electric.service
+Wants=sandbox-rental-service.service identity-service.service notifications-service.service electric.service electric-notifications.service
 
 [Service]
 Type=simple

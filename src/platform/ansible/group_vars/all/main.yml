@@ -79,6 +79,8 @@ postgresql_role_connection_limits:
   identity_service: 10
   governance_service: 15
   profile_service: 10
+  notifications_service: 10
+  electric_notifications: 15
   mailbox_service: 10
   object_storage_service: 10
   temporal: 80

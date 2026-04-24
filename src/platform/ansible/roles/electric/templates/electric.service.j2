@@ -18,6 +18,7 @@ ExecStart=/usr/bin/podman run --rm --replace \
   -e ELECTRIC_DB_POOL_SIZE={{ electric_db_pool_size }} \
   -e ELECTRIC_INSTANCE_ID={{ electric_service_name }} \
   -e ELECTRIC_REPLICATION_STREAM_ID={{ electric_replication_stream_id }} \
+  -e RELEASE_NAME={{ electric_service_name }}@127.0.0.1 \
   -e RELEASE_DISTRIBUTION=none \
   -v {{ electric_storage_dir }}:/data \
   {{ electric_image }}

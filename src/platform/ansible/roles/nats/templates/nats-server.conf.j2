@@ -1,0 +1,35 @@
+server_name: forge-metal-nats
+host: {{ services.nats.host }}
+port: {{ services.nats.port }}
+http: {{ services.nats.monitoring_port }}
+
+jetstream {
+  store_dir: "{{ nats_jetstream_dir }}"
+  max_mem_store: 256Mb
+  max_file_store: 4Gb
+}
+
+tls {
+  cert_file: "{{ nats_spiffe_dir }}/svid.pem"
+  key_file: "{{ nats_spiffe_dir }}/svid_key.pem"
+  ca_file: "{{ nats_spiffe_dir }}/bundle.pem"
+  verify: true
+  verify_and_map: true
+  timeout: 2
+}
+
+authorization {
+  users = [
+    {
+      user: "{{ spire_notifications_service_id }}"
+      permissions: {
+        publish: {
+          allow: ["events.>", "$JS.API.>", "$JS.ACK.>"]
+        }
+        subscribe: {
+          allow: ["_INBOX.>"]
+        }
+      }
+    }
+  ]
+}

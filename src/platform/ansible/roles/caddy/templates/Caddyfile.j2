@@ -100,6 +100,15 @@
 	}
 }
 
+(notifications_api_proxy) {
+	import waf_blocking
+	import sandbox_api_cors_headers
+	import api_security_headers
+	reverse_proxy {{ services.notifications_service.host }}:{{ services.notifications_service.port }} {
+		header_up X-Real-IP {remote_host}
+	}
+}
+
 {{ grafana_domain }} {
 	import access_log
 	import waf_detection
@@ -251,6 +260,17 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 		import profile_api_proxy
 	}
 
+	@notifications_api {
+		method GET POST PUT
+		path /api/v1/notifications*
+	}
+	handle @notifications_api {
+		request_body {
+			max_size 16384
+		}
+		import notifications_api_proxy
+	}
+
 	@sandbox_api_small_json_mutation {
 		method POST
 		path /api/v1/billing/checkout /api/v1/billing/contracts
@@ -310,6 +330,13 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 		uri query -secret
 		uri query +secret {{ caddy_electric_api_secret }}
 		reverse_proxy {{ services.electric.host }}:{{ services.electric.port }}
+	}
+
+	handle_path /notifications/* {
+		import waf_detection
+		uri query -secret
+		uri query +secret {{ caddy_electric_notifications_api_secret }}
+		reverse_proxy {{ services.electric_notifications.host }}:{{ services.electric_notifications.port }}
 	}
 
 	handle {

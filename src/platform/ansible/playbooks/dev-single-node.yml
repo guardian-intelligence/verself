@@ -82,23 +82,23 @@
   force_handlers: true
   roles:
     - role: deploy_profile
-      tags: [deploy_profile, object_storage_service, profile_service]
+      tags: [deploy_profile, object_storage_service, profile_service, notifications_service, nats]
     - role: base
       tags: [base]
     - role: nftables
       tags: [nftables]
     - role: spire
-      tags: [spire, clickhouse, otelcol, billing_service, identity_service, governance_service, profile_service, secrets_service, sandbox_rental_service, mailbox_service, object_storage_service, temporal, grafana]
+      tags: [spire, clickhouse, otelcol, billing_service, identity_service, governance_service, profile_service, notifications_service, nats, secrets_service, sandbox_rental_service, mailbox_service, object_storage_service, temporal, grafana]
     - role: garage
       tags: [garage, object_storage_service]
     - role: cloudflare_dns
       tags: [cloudflare_dns]
     - role: clickhouse
-      tags: [clickhouse, otelcol, billing_service, sandbox_rental_service, governance_service, profile_service, object_storage_service, openbao, openbao_tenancy, temporal, grafana]
+      tags: [clickhouse, otelcol, billing_service, sandbox_rental_service, governance_service, profile_service, notifications_service, object_storage_service, openbao, openbao_tenancy, temporal, grafana]
     - role: tigerbeetle
       tags: [tigerbeetle]
     - role: postgresql
-      tags: [postgresql, object_storage_service, profile_service, openbao, openbao_tenancy, temporal]
+      tags: [postgresql, object_storage_service, profile_service, notifications_service, openbao, openbao_tenancy, temporal]
     - role: zitadel
       tags: [zitadel, openbao, openbao_tenancy]
     - role: openbao
@@ -109,6 +109,10 @@
       tags: [governance_service, profile_service, object_storage_service, openbao, openbao_tenancy, temporal]
     - role: profile_service
       tags: [profile_service]
+    - role: nats
+      tags: [nats, notifications_service]
+    - role: notifications_service
+      tags: [notifications_service]
     - role: secrets_service
       tags: [secrets_service, object_storage_service, openbao_tenancy]
     - role: openbao_tenancy
@@ -117,6 +121,25 @@
       tags: [object_storage_service]
     - role: billing_service
       tags: [billing_service]
+    - role: electric
+      vars:
+        electric_instance: notifications
+        electric_service_name: electric-notifications
+        electric_service_port: "{{ services.electric_notifications.port }}"
+        electric_pg_role: electric_notifications
+        electric_pg_conn_limit: "{{ postgresql_role_connection_limits.electric_notifications }}"
+        electric_db: notifications_service
+        electric_writer_role: notifications_service
+        electric_publication_name: electric_publication_notifications
+        electric_publication_tables:
+          - notification_inbox_state
+        electric_storage_dir: /var/lib/electric-notifications
+        electric_credstore_dir: /etc/credstore/electric-notifications
+        electric_nftables_table: forge_metal_electric_notifications
+        electric_nftables_file: /etc/nftables.d/electric-notifications.nft
+        electric_db_pool_size: 8
+        electric_extra_systemd_after: [notifications-service.service]
+      tags: [electric_notifications, notifications_service]
     # sandbox-rental-service now owns a Temporal namespace and recurring worker,
     # so Temporal must be configured before the service is started.
     - role: temporal
@@ -193,4 +216,4 @@
     - role: firecracker
       tags: [firecracker]
     - role: caddy
-      tags: [caddy, profile_service, openbao_tenancy]
+      tags: [caddy, profile_service, notifications_service, openbao_tenancy]

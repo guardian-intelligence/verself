@@ -13,7 +13,7 @@ argument_specs:
       electric_instance:
         type: str
         required: true
-        choices: [default, mail]
+        choices: [default, mail, notifications]
       electric_service_name:
         type: str
         required: true
