@@ -1,10 +1,12 @@
 import * as v from "valibot";
 import { authCollectionId, type AuthenticatedAuth } from "@forge-metal/auth-web/isomorphic";
 import {
+  electricAndWhere,
   createElectricShapeCollection,
   electricEqualsWhere,
   electricStringifiedIntegerSchema,
   requireDecimalID,
+  requireElectricOpaqueID,
   requireUUID,
 } from "@forge-metal/web-env";
 
@@ -100,6 +102,44 @@ export function createExecutionLogsCollection(auth: AuthenticatedAuth, attemptId
       table: "execution_logs",
       where: electricEqualsWhere("attempt_id", validatedAttemptID),
       getKey: (item) => `${item.attempt_id}:${item.seq}`,
+    }),
+  );
+}
+
+// --- Notification inbox state (real-time badge signal via Electric) ---
+
+const electricNotificationInboxStateSchema = v.object({
+  org_id: v.string(),
+  recipient_subject_id: v.string(),
+  next_sequence: electricStringifiedIntegerSchema,
+  read_up_to_sequence: electricStringifiedIntegerSchema,
+  created_at: v.string(),
+  updated_at: v.string(),
+});
+
+export type ElectricNotificationInboxState = v.InferOutput<
+  typeof electricNotificationInboxStateSchema
+>;
+
+export function createNotificationInboxStateCollection(
+  auth: AuthenticatedAuth,
+  orgId: string,
+  subjectId: string,
+) {
+  const validatedOrgID = requireElectricOpaqueID(orgId, "org_id");
+  const validatedSubjectID = requireElectricOpaqueID(subjectId, "recipient_subject_id");
+  const id = authCollectionId(auth, `sync-notification-inbox-state-${orgId}-${subjectId}`);
+  return cachedElectricCollection(id, () =>
+    createElectricShapeCollection({
+      id,
+      schema: electricNotificationInboxStateSchema,
+      table: "notification_inbox_state",
+      where: electricAndWhere([
+        { column: "org_id", value: validatedOrgID },
+        { column: "recipient_subject_id", value: validatedSubjectID },
+      ]),
+      shapePath: "/notifications/v1/shape",
+      getKey: (item) => `${item.org_id}:${item.recipient_subject_id}`,
     }),
   );
 }
