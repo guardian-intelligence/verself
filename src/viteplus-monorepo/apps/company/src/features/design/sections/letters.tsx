@@ -22,9 +22,9 @@ export function SectionLetters() {
       lede={
         <>
           <i>Letters</i> is Guardian's long-form surface, where individual voices show their work.
-          Paper ground, Fraunces masthead, Fraunces body for flowing prose, Geist for bylines and
-          metadata. The page optimises for legibility on warm stone-paper: Ink sets the body, the
-          drop-cap initial, the nameplate rule, and every CTA.{" "}
+          Paper ground, tracked-Geist GUARDIAN · LETTERS masthead, Fraunces body for flowing prose,
+          Geist for bylines and metadata. The page optimises for legibility on warm stone-paper: Ink
+          sets the body, the drop-cap initial, the nameplate rule, and every CTA.{" "}
           <b style={{ color: "var(--color-bordeaux)" }}>Bordeaux</b> is reserved for one thing only
           — the blockquote left-rule, where an editor has chosen to slow the reader and let another
           voice speak. Flare does not appear on Letters; it is too loud for reading.

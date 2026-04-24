@@ -47,7 +47,7 @@ const CARDS: readonly TreatmentCard[] = [
     title: "Workshop",
     subtitle: "Where the work happens.",
     description:
-      "Iron ground, Geist throughout, Amber as the sole accent. The productivity chrome — marketing, docs, console, the everyday register. Fraunces is absent here; only the Guardian wordmark stays serif.",
+      "Iron ground, Geist throughout, Amber as the sole accent. The productivity chrome — marketing, docs, console, the everyday register. Fraunces is reserved for editorial body copy in the other rooms.",
     ctaLabel: "Enter the Workshop",
   },
   {
@@ -113,9 +113,11 @@ function DesignOverview() {
             margin: 0,
           }}
         >
-          The wings stay Argent and the wordmark stays Fraunces on every ground. Every other
-          decision — palette, body type, mark variant, accent — belongs to the treatment. Each card
-          below paints in its own ground; step into the room to see it inhabited.
+          The mark varies with ground — argent wings on Iron, the dark chip on Paper, the emboss
+          medallion on Argent — but the wordmark does not. Guardian sets in tracked uppercase Geist
+          on every ground, because the sign over the door is the name of the house, not the voice of
+          the room. Every other decision — palette, body type, accent, section name — belongs to the
+          treatment.
         </p>
       </header>
 
@@ -217,19 +219,21 @@ function OverviewCard({ card }: { card: TreatmentCard }) {
   );
 }
 
-// TreatmentMark — the Lockup variant that belongs to each room. Sized just
-// below "sm" on Workshop/Letters (the chip backgrounds were reading a hair
-// too chunky at 32px; 28px lands the wordmark at a comfortable weight for
-// the full-width card), and slightly larger on Newsroom where the emboss
-// medallion carries the composition.
+// TreatmentMark — the Lockup as it ships in each room's masthead. Workshop
+// renders bare (GUARDIAN, no suffix, because Workshop is the house root);
+// Newsroom and Letters render with their section suffix so the /design cards
+// preview the exact GUARDIAN · LETTERS / GUARDIAN · NEWSROOM lockups the
+// visitor will see when they step into the room.
 function TreatmentMark({ treatment }: { treatment: Treatment }) {
   if (treatment === "workshop") {
     return <Lockup size="sm" variant="argent" wordmarkColor="var(--color-argent)" />;
   }
   if (treatment === "newsroom") {
-    return <Lockup size="sm" variant="emboss" wordmarkColor="var(--color-ink)" />;
+    return (
+      <Lockup size="sm" variant="emboss" wordmarkColor="var(--color-ink)" section="Newsroom" />
+    );
   }
-  return <Lockup size="sm" variant="chip" wordmarkColor="var(--color-ink)" />;
+  return <Lockup size="sm" variant="chip" wordmarkColor="var(--color-ink)" section="Letters" />;
 }
 
 // TreatmentCTA — accent button per room. Workshop keeps its Amber primary

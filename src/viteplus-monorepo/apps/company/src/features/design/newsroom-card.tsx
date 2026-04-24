@@ -73,7 +73,7 @@ function NewsroomCardStripe() {
         padding: "clamp(18px, 2.4vw, 26px) clamp(22px, 3vw, 36px)",
       }}
     >
-      <Lockup size="sm" variant="emboss" wordmarkColor="var(--color-ink)" />
+      <Lockup size="sm" variant="emboss" wordmarkColor="var(--color-ink)" section="Newsroom" />
     </div>
   );
 }
