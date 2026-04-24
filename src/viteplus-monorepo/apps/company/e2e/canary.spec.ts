@@ -53,6 +53,48 @@ test("company canary — walk IA + exercise OG + brand kit", async ({ page, requ
   const wings = page.locator("svg").first();
   await expect(wings).toBeVisible();
 
+  // 2a. Masthead cutover — every chrome-bearing layout renders the wordmark
+  //     in tracked uppercase Geist. The Fraunces masthead retired 2026-04-24;
+  //     the canary fails loudly if a layout regresses to the old face. Also
+  //     asserts the section suffix: root bears no suffix, /letters carries
+  //     "Letters", /newsroom carries "Newsroom" (accent-quoted case-
+  //     insensitively; CSS does the uppercasing, source keeps the mixed
+  //     form).
+  const mastheadCases: ReadonlyArray<{ readonly path: string; readonly section: string | null }> = [
+    { path: "/", section: null },
+    { path: "/letters", section: "Letters" },
+    { path: "/newsroom", section: "Newsroom" },
+  ];
+  for (const { path, section } of mastheadCases) {
+    await page.goto(path, { waitUntil: "domcontentloaded" });
+    const wordmark = page.locator("header [data-lockup-wordmark]");
+    await expect(wordmark, `masthead wordmark on ${path}`).toBeVisible();
+    const styles = await wordmark.evaluate((el) => {
+      const s = window.getComputedStyle(el);
+      return {
+        fontFamily: s.fontFamily,
+        textTransform: s.textTransform,
+        fontWeight: s.fontWeight,
+      };
+    });
+    expect(styles.fontFamily, `wordmark face on ${path} — must be Geist`).toMatch(/Geist/i);
+    expect(styles.fontFamily, `wordmark must not regress to Fraunces on ${path}`).not.toMatch(
+      /Fraunces/i,
+    );
+    expect(styles.textTransform, `wordmark must be uppercase on ${path}`).toBe("uppercase");
+    expect(Number(styles.fontWeight), `wordmark weight on ${path}`).toBeGreaterThanOrEqual(500);
+
+    const text = (await wordmark.textContent()) ?? "";
+    expect(text, `wordmark must say "Guardian" on ${path}`).toMatch(/guardian/i);
+    if (section === null) {
+      expect(text, `root masthead must NOT carry a section suffix`).not.toMatch(/·/);
+    } else {
+      expect(text, `${path} masthead must carry the section suffix`).toMatch(
+        new RegExp(`·\\s*${section}`, "i"),
+      );
+    }
+  }
+
   // 3. Letters RSS must parse as well-formed XML.
   const rss = await request.get("/letters/rss");
   expect(rss.status(), "GET /letters/rss").toBe(200);
@@ -73,7 +115,9 @@ test("company canary — walk IA + exercise OG + brand kit", async ({ page, requ
     const ogBody = await og.text();
     expect(ogBody).toContain('width="1200"');
     expect(ogBody).toContain('height="630"');
-    expect(ogBody).toContain("Guardian");
+    // Masthead wordmark ships in uppercase Geist — match case-insensitively
+    // so the assertion survives any future case flip without drifting.
+    expect(ogBody).toMatch(/guardian/i);
   }
 
   // 5. Retired routes must return 404. Asserts the Dispatch → Letters rename
