@@ -13,6 +13,7 @@ import {
 } from "@forge-metal/ui/components/ui/popover";
 import { Skeleton } from "@forge-metal/ui/components/ui/skeleton";
 import { cn } from "@forge-metal/ui";
+import { ErrorCallout } from "~/components/error-callout";
 import { formatDateTimeUTC } from "~/lib/format";
 import type { Notification } from "~/server-fns/api";
 import { useNotificationInboxState } from "./live";
@@ -43,6 +44,7 @@ export function NotificationBell() {
   const dismiss = useDismissNotificationMutation(latestSequence);
   const test = usePublishTestNotificationMutation(latestSequence);
   const busy = query.isFetching || markRead.isPending || dismiss.isPending || test.isPending;
+  const canMarkRead = latestSequence > readUpToSequence;
 
   return (
     <Popover>
@@ -101,17 +103,22 @@ export function NotificationBell() {
               aria-label="Mark notifications read"
               title="Mark notifications read"
               data-testid="notifications-mark-read"
-              disabled={latestSequence <= readUpToSequence}
-              onClick={() =>
-                markRead.mutate({ read_up_to_sequence: String(Math.max(latestSequence, 0)) })
-              }
+              aria-busy={markRead.isPending}
+              onClick={() => {
+                if (!canMarkRead) return;
+                markRead.mutate({ read_up_to_sequence: String(Math.max(latestSequence, 0)) });
+              }}
             >
               <CheckCheck />
             </Button>
           </div>
         </PopoverHeader>
         <div className="max-h-96 overflow-y-auto">
-          {query.isPending ? (
+          {query.isError ? (
+            <div className="p-3" data-testid="notifications-error">
+              <ErrorCallout title="Notifications unavailable" error={query.error} />
+            </div>
+          ) : query.isPending ? (
             <LoadingRows />
           ) : notifications.length === 0 ? (
             <div className="px-3 py-8 text-center text-sm text-muted-foreground">
@@ -144,7 +151,7 @@ export function NotificationBellFallback() {
       variant="ghost"
       size="icon-sm"
       aria-label="Notifications"
-      disabled
+      aria-busy="true"
       data-testid="notifications-bell-fallback"
     >
       <Bell />

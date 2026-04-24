@@ -58,7 +58,7 @@ as first-class signals.
 NATS does not speak SPIFFE natively. [Upstream integration is
 tracked][issue1928] but has not landed. It is wrapped by the
 `spiffe-helper` pattern already in production use for ClickHouse: certs
-and trust bundle rendered to disk, `nats-server` reloaded on rotation.
+and trust bundle rendered to disk, `nats-server` restarted on rotation.
 
 Identity shape:
 
@@ -108,8 +108,9 @@ laid until the query returns green.
 The implementing agent must answer these before the brick is considered
 laid:
 
-1. Does `nats-server --signal reload` re-read TLS material in-process, or
-   does rotation require a full restart?
+1. Whether `nats-server --signal reload` can replace the current restart
+   hook after live proof shows it re-reads server certs, keys, and CA bundles
+   atomically under active mTLS clients.
 2. Stream retention and storage sizing for the single-node deployment.
    Default disk budget per stream, default `max_age`, cleanup policy per
    subject hierarchy.

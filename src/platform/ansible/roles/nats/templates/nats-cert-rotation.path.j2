@@ -1,0 +1,13 @@
+[Unit]
+Description=Watch NATS SPIFFE certificate rotation
+After=nats-spiffe-helper.service
+Wants=nats-spiffe-helper.service
+
+[Path]
+PathChanged={{ nats_spiffe_dir }}/svid.pem
+PathChanged={{ nats_spiffe_dir }}/svid_key.pem
+PathChanged={{ nats_spiffe_dir }}/bundle.pem
+Unit=nats-cert-rotation.service
+
+[Install]
+WantedBy=multi-user.target
