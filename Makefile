@@ -1,7 +1,7 @@
 .PHONY: help test lint lint-scripts lint-conversions lint-ansible lint-voice company-proof fmt vet tidy openapi openapi-check openapi-clients openapi-clients-check openapi-wire-check \
        hooks-install doctor inventory-check setup-dev setup-sops provision deprovision deploy site guest-rootfs security-patch identity-reset seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member \
        set-user-state billing-clock billing-wall-clock billing-state billing-documents billing-finalizations billing-events billing-pg-shell billing-pg-query billing-proof billing-reset verification-reset \
-       profile-proof notifications-proof secrets-proof secrets-leak-proof openbao-proof openbao-tenancy-proof workload-identity-proof object-storage-verify temporal-verify temporal-web-proof recurring-schedule-proof \
+       profile-proof organization-sync-proof notifications-proof secrets-proof secrets-leak-proof openbao-proof openbao-tenancy-proof workload-identity-proof object-storage-verify temporal-verify temporal-web-proof recurring-schedule-proof \
        vm-guest-telemetry-build observe telemetry-proof telemetry-proof-fail clickhouse-query clickhouse-schemas pg-shell pg-query pg-list tb-shell tb-command mail mail-accounts mail-mailboxes \
        mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets \
        wipe-pg-db wipe-server vm-orchestrator-proof sandbox-inner sandbox-middle sandbox-proof rent-ui-smoke rent-ui-local rent-local-dev grafana-proof observability-smoke services-doctor
@@ -299,6 +299,9 @@ billing-proof: inventory-check ## Run live billing browser proof and collect evi
 
 profile-proof: inventory-check ## Run live profile API/UI proof and assert PostgreSQL plus ClickHouse evidence
 	cd $(FM) && ./scripts/verify-profile-live.sh
+
+organization-sync-proof: inventory-check ## Run live organization auto-sync/OCC proof and assert PostgreSQL plus ClickHouse evidence
+	cd $(FM) && ./scripts/verify-organization-sync-live.sh
 
 notifications-proof: inventory-check ## Run live notifications bell proof and assert PostgreSQL plus ClickHouse traces
 	cd $(FM) && ./scripts/verify-notifications-live.sh

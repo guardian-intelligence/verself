@@ -15,6 +15,8 @@ import (
 type Store interface {
 	GetMemberCapabilities(ctx context.Context, orgID, actor string) (MemberCapabilitiesDocument, error)
 	PutMemberCapabilities(ctx context.Context, doc MemberCapabilitiesDocument) (MemberCapabilitiesDocument, error)
+	GetOrgACLState(ctx context.Context, orgID, actor string) (OrgACLState, error)
+	UpdateMemberRolesCommand(ctx context.Context, command UpdateMemberRolesCommand, directory Directory, projectID string) (UpdateMemberRolesResult, error)
 	CreateAPICredential(ctx context.Context, credential APICredential, secret APICredentialSecret) (APICredential, error)
 	ListAPICredentials(ctx context.Context, orgID string) ([]APICredential, error)
 	GetAPICredential(ctx context.Context, orgID, credentialID string) (APICredential, error)
@@ -54,10 +56,19 @@ func (s *Service) Organization(ctx context.Context, principal Principal) (Organi
 	if err != nil {
 		return Organization{}, err
 	}
+	store, err := s.store()
+	if err != nil {
+		return Organization{}, err
+	}
+	orgACL, err := store.GetOrgACLState(ctx, principal.OrgID, principal.Subject)
+	if err != nil {
+		return Organization{}, err
+	}
 	caller := callerMember(principal, members)
 	return Organization{
 		OrgID:              principal.OrgID,
 		Name:               organizationName(principal),
+		OrgACLVersion:      orgACL.Version,
 		Caller:             caller,
 		MemberCapabilities: capabilities,
 		Permissions:        PermissionsForRoles(capabilities, caller.RoleKeys),
@@ -130,26 +141,50 @@ func (s *Service) InviteMember(ctx context.Context, principal Principal, input I
 	return directory.InviteMember(ctx, principal.OrgID, s.ProjectID, normalizeInvite(input))
 }
 
-func (s *Service) UpdateMemberRoles(ctx context.Context, principal Principal, userID string, roleKeys []string) (Member, error) {
+func (s *Service) UpdateMemberRoles(ctx context.Context, principal Principal, command UpdateMemberRolesCommand) (UpdateMemberRolesResult, error) {
 	if err := principal.validate(); err != nil {
-		return Member{}, err
+		return UpdateMemberRolesResult{}, err
 	}
-	userID = strings.TrimSpace(userID)
-	if userID == "" {
-		return Member{}, fmt.Errorf("%w: user_id is required", ErrInvalidInput)
+	command.OrgID = principal.OrgID
+	command.ActorID = principal.Subject
+	command.UserID = strings.TrimSpace(command.UserID)
+	command.OperationID = strings.TrimSpace(command.OperationID)
+	command.IdempotencyKey = strings.TrimSpace(command.IdempotencyKey)
+	if command.UserID == "" {
+		return UpdateMemberRolesResult{}, fmt.Errorf("%w: user_id is required", ErrInvalidInput)
 	}
-	roleKeys = normalizeRoleKeys(roleKeys)
-	if len(roleKeys) == 0 {
-		return Member{}, fmt.Errorf("%w: role_keys is required", ErrInvalidInput)
+	command.RoleKeys = normalizeRoleKeys(command.RoleKeys)
+	command.ExpectedRoleKeys = normalizeRoleKeys(command.ExpectedRoleKeys)
+	if len(command.RoleKeys) == 0 {
+		return UpdateMemberRolesResult{}, fmt.Errorf("%w: role_keys is required", ErrInvalidInput)
 	}
-	if err := s.validateRoleKeys(roleKeys); err != nil {
-		return Member{}, err
+	if len(command.ExpectedRoleKeys) == 0 {
+		return UpdateMemberRolesResult{}, fmt.Errorf("%w: expected_role_keys is required", ErrInvalidInput)
+	}
+	if command.ExpectedOrgACLVersion <= 0 {
+		return UpdateMemberRolesResult{}, fmt.Errorf("%w: expected_org_acl_version must be positive", ErrInvalidInput)
+	}
+	if command.OperationID == "" {
+		return UpdateMemberRolesResult{}, fmt.Errorf("%w: operation_id is required", ErrInvalidInput)
+	}
+	if command.IdempotencyKey == "" {
+		return UpdateMemberRolesResult{}, fmt.Errorf("%w: idempotency key is required", ErrInvalidInput)
+	}
+	if err := s.validateRoleKeys(command.RoleKeys); err != nil {
+		return UpdateMemberRolesResult{}, err
+	}
+	if err := s.validateRoleKeys(command.ExpectedRoleKeys); err != nil {
+		return UpdateMemberRolesResult{}, err
 	}
 	directory, err := s.directory()
 	if err != nil {
-		return Member{}, err
+		return UpdateMemberRolesResult{}, err
 	}
-	return directory.UpdateMemberRoles(ctx, principal.OrgID, s.ProjectID, userID, roleKeys)
+	store, err := s.store()
+	if err != nil {
+		return UpdateMemberRolesResult{}, err
+	}
+	return store.UpdateMemberRolesCommand(ctx, command, directory, s.ProjectID)
 }
 
 func (s *Service) UpdateHumanProfile(ctx context.Context, subjectID string, input HumanProfileUpdate) (HumanProfile, error) {

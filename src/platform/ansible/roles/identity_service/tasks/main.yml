@@ -89,6 +89,20 @@
 - name: Include identity-service PostgreSQL migration tasks
   ansible.builtin.include_tasks: migrations.yml
 
+- name: Ensure identity-service ClickHouse user exists with domain ledger grants
+  ansible.builtin.shell: |
+    set -euo pipefail
+    {{ clickhouse_operator_client_command }} --multiquery <<'SQL'
+    CREATE USER IF NOT EXISTS identity_service IDENTIFIED WITH ssl_certificate SAN 'URI:{{ spire_identity_service_id }}' HOST LOCAL;
+    ALTER USER identity_service IDENTIFIED WITH ssl_certificate SAN 'URI:{{ spire_identity_service_id }}' HOST LOCAL;
+    GRANT INSERT ON forge_metal.domain_update_ledger TO identity_service;
+    GRANT SELECT ON forge_metal.domain_update_ledger TO identity_service;
+    SQL
+  args:
+    executable: /bin/bash
+  changed_when: false
+  no_log: true
+
 - name: Wait for Zitadel before configuring identity-service auth
   ansible.builtin.wait_for:
     host: "{{ services.zitadel.host }}"
@@ -291,9 +305,9 @@
     content: |
       [Unit]
       Description=Identity Service
-      After=forge-metal-firewall.target network.target postgresql.service zitadel.service spire-agent.service
+      After=forge-metal-firewall.target network.target postgresql.service clickhouse-server.service zitadel.service spire-agent.service
       Requires=forge-metal-firewall.target
-      Wants=postgresql.service zitadel.service spire-agent.service
+      Wants=postgresql.service clickhouse-server.service zitadel.service spire-agent.service
 
       [Service]
       Type=simple
@@ -302,9 +316,12 @@
       SupplementaryGroups={{ spire_workload_group }}
       LoadCredential=zitadel-admin-token:/etc/credstore/identity-service/zitadel-admin-token
       LoadCredential=zitadel-action-signing-key:/etc/credstore/identity-service/zitadel-action-signing-key
+      LoadCredential=clickhouse-ca-cert:/etc/clickhouse-server/tls/server-ca.pem
       Environment=IDENTITY_LISTEN_ADDR={{ services.identity_service.host }}:{{ services.identity_service.port }}
       Environment=IDENTITY_INTERNAL_LISTEN_ADDR={{ services.identity_service.host }}:{{ services.identity_service.internal_port }}
       Environment=IDENTITY_PG_DSN=postgres://identity_service@/identity_service?host=/var/run/postgresql&sslmode=disable
+      Environment=IDENTITY_CH_ADDRESS={{ services.clickhouse.host }}:{{ services.clickhouse.secure_native_port }}
+      Environment=IDENTITY_CH_USER=identity_service
       Environment=IDENTITY_GOVERNANCE_AUDIT_URL={{ identity_service_governance_audit_url }}
       Environment=IDENTITY_AUTH_ISSUER_URL={{ identity_service_auth_issuer_url }}
       Environment=IDENTITY_AUTH_JWKS_URL={{ identity_service_auth_jwks_url }}

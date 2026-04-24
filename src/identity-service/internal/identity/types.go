@@ -39,6 +39,7 @@ type (
 type Organization struct {
 	OrgID              string
 	Name               string
+	OrgACLVersion      int32
 	Caller             Member
 	MemberCapabilities MemberCapabilitiesDocument
 	Permissions        []string
@@ -89,6 +90,29 @@ type MemberCapabilitiesDocument struct {
 	EnabledKeys []string
 	UpdatedAt   time.Time
 	UpdatedBy   string
+}
+
+type OrgACLState struct {
+	OrgID     string
+	Version   int32
+	UpdatedAt time.Time
+	UpdatedBy string
+}
+
+type UpdateMemberRolesCommand struct {
+	OrgID                 string
+	ActorID               string
+	UserID                string
+	RoleKeys              []string
+	ExpectedRoleKeys      []string
+	ExpectedOrgACLVersion int32
+	OperationID           string
+	IdempotencyKey         string
+}
+
+type UpdateMemberRolesResult struct {
+	Member      Member
+	OrgACLState OrgACLState
 }
 
 type Operations struct {

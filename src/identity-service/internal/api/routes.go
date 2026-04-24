@@ -341,11 +341,18 @@ func updateMemberRoles(svc *identity.Service) func(context.Context, *memberRoles
 		if err != nil {
 			return nil, err
 		}
-		member, err := svc.UpdateMemberRoles(ctx, principal, input.UserID, input.Body.RoleKeys)
+		result, err := svc.UpdateMemberRoles(ctx, principal, identity.UpdateMemberRolesCommand{
+			UserID:                input.UserID,
+			RoleKeys:              input.Body.RoleKeys,
+			ExpectedRoleKeys:      input.Body.ExpectedRoleKeys,
+			ExpectedOrgACLVersion: input.Body.ExpectedOrgACLVersion,
+			OperationID:           "update-organization-member-roles",
+			IdempotencyKey:         operationRequestInfoFromContext(ctx).IdempotencyKey,
+		})
 		if err != nil {
 			return nil, identityError(ctx, err)
 		}
-		return &memberOutput{Body: memberDTO(member)}, nil
+		return &memberOutput{Body: memberDTO(result.Member)}, nil
 	}
 }
 
@@ -467,6 +474,7 @@ func organizationDTO(org identity.Organization) apiwire.IdentityOrganization {
 	return apiwire.IdentityOrganization{
 		OrgID:              orgID(org.OrgID),
 		Name:               org.Name,
+		OrgACLVersion:      org.OrgACLVersion,
 		Caller:             memberDTO(org.Caller),
 		MemberCapabilities: memberCapabilitiesDocumentDTO(org.MemberCapabilities),
 		Permissions:        append([]string(nil), org.Permissions...),

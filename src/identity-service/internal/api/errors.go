@@ -66,6 +66,8 @@ func identityError(ctx context.Context, err error) error {
 		return notFound(ctx, "member-not-found", "organization member not found")
 	case errors.Is(err, identity.ErrCapabilitiesConflict):
 		return conflict(ctx, "member-capabilities-version-conflict", "organization member capabilities version conflict", err)
+	case errors.Is(err, identity.ErrOrgACLConflict):
+		return conflict(ctx, "organization-acl-version-conflict", "organization ACL changed before this update was applied", err)
 	case errors.Is(err, identity.ErrAPICredentialMissing):
 		return notFound(ctx, "api-credential-not-found", "API credential not found")
 	case errors.Is(err, identity.ErrZitadelUnavailable):

@@ -34,6 +34,7 @@ export interface Member {
 export interface Organization {
   readonly org_id: string;
   readonly name: string;
+  readonly org_acl_version: number;
   readonly caller: Member;
   readonly permissions: ReadonlyArray<string>;
   readonly member_capabilities: MemberCapabilitiesDocument;
@@ -57,6 +58,8 @@ export interface InviteMemberResponse {
 export interface UpdateMemberRolesRequest {
   userId: string;
   roleKeys: Array<string>;
+  expectedRoleKeys: Array<string>;
+  expectedOrgAclVersion: number;
 }
 
 export interface PutMemberCapabilitiesRequest {
