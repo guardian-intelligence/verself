@@ -23,8 +23,8 @@ import { useBillingTierLabel } from "~/features/billing/use-billing-account";
 import { profileQuery } from "~/features/profile/queries";
 import {
   type AccountChrome,
-  accountChromeFromAuthUser,
   accountChromeFromProfile,
+  pendingAccountChrome,
 } from "./account-chrome";
 
 export function SidebarAccountSlot() {
@@ -55,6 +55,7 @@ function SidebarAccountMenu() {
               size="lg"
               variant="outline"
               data-testid="shell-account-trigger"
+              data-account-source={account.source}
               disabled
               aria-busy="true"
             >
@@ -69,6 +70,8 @@ function SidebarAccountMenu() {
                   size="lg"
                   variant="outline"
                   data-testid="shell-account-trigger"
+                  data-account-source={account.source}
+                  aria-busy={account.source === "pending"}
                   className="data-popup-open:bg-sidebar-accent"
                 >
                   {triggerContent}
@@ -114,14 +117,17 @@ function useAccountChrome(): AccountChrome {
   const auth = useSignedInAuth();
   const hydrated = useHydrated();
   const { user } = useUser();
-  const fallback = accountChromeFromAuthUser(user);
   const { data: account } = useQuery({
     ...profileQuery(auth),
     enabled: hydrated,
     select: (profile) => accountChromeFromProfile(profile, user),
   });
 
-  return hydrated ? (account ?? fallback) : fallback;
+  if (!hydrated) {
+    return pendingAccountChrome;
+  }
+
+  return account ?? pendingAccountChrome;
 }
 
 function AccountTriggerContent({
@@ -139,6 +145,7 @@ function AccountTriggerContent({
       <span
         className="min-w-0 flex-1 truncate text-left text-sm font-medium"
         data-testid="shell-account-display-name"
+        data-account-source={account.source}
       >
         {account.displayName}
       </span>

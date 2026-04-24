@@ -1,4 +1,4 @@
-import type { Locator } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { ensureTestUserExists, expect, shortTimeoutMS, test } from "./harness";
 
 test.describe("Rent-a-Sandbox Profile", () => {
@@ -59,6 +59,25 @@ test.describe("Rent-a-Sandbox Profile", () => {
       await expect(app.page.getByTestId("profile-sync-status")).not.toContainText("UTC");
       await expect(app.page.getByTestId("shell-account-display-name")).toContainText(displayName);
 
+      const releaseServerFunctions = await holdServerFunctions(app.page);
+      await app.goto("/executions");
+      await expect(app.page.getByTestId("shell-account-trigger")).toBeVisible({
+        timeout: shortTimeoutMS,
+      });
+      const accountLabel = app.page.getByTestId("shell-account-display-name");
+      try {
+        await expect(accountLabel).toHaveAttribute("data-account-source", "pending");
+        await expect(accountLabel).toHaveText("");
+      } finally {
+        await releaseServerFunctions();
+      }
+      await expect(accountLabel).toHaveAttribute("data-account-source", "profile");
+      await expect(accountLabel).toContainText(displayName);
+      await app.goto("/settings/profile");
+      await expect(app.page.getByRole("heading", { name: "Identity" })).toBeVisible({
+        timeout: shortTimeoutMS,
+      });
+
       await app.page.getByLabel("Locale").selectOption(target.locale);
       await app.page.getByLabel("Time zone").selectOption(target.timezone);
       await app.page.getByLabel("Time display").selectOption(target.timeDisplay);
@@ -88,6 +107,24 @@ test.describe("Rent-a-Sandbox Profile", () => {
     }
   });
 });
+
+async function holdServerFunctions(page: Page): Promise<() => Promise<void>> {
+  let release: (() => void) | undefined;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const handler: Parameters<Page["route"]>[1] = async (route) => {
+    await released;
+    await route.fallback();
+  };
+
+  await page.route("**/_serverFn/**", handler);
+
+  return async () => {
+    release?.();
+    await page.unroute("**/_serverFn/**", handler);
+  };
+}
 
 async function waitForProfileSync(
   syncStatus: Locator,

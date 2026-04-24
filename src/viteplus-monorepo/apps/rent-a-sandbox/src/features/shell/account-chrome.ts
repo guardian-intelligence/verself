@@ -5,14 +5,14 @@ export type AccountChrome = {
   readonly displayName: string;
   readonly email: string;
   readonly initials: string;
-  readonly source: "auth" | "profile" | "signed-out";
+  readonly source: "pending" | "profile";
 };
 
-export const signedOutAccountChrome: AccountChrome = {
-  displayName: "Signed out",
+export const pendingAccountChrome: AccountChrome = {
+  displayName: "",
   email: "",
-  initials: "?",
-  source: "signed-out",
+  initials: "",
+  source: "pending",
 };
 
 export function accountChromeFromProfile(
@@ -32,23 +32,6 @@ export function accountChromeFromProfile(
     email,
     initials: initialsFor(displayName),
     source: "profile",
-  };
-}
-
-export function accountChromeFromAuthUser(user: ClientUser | null): AccountChrome {
-  if (!user) {
-    return signedOutAccountChrome;
-  }
-
-  const email = nonEmpty(user.email) ?? "";
-  const displayName =
-    nonEmpty(user.name) ?? nonEmpty(user.preferredUsername) ?? nonEmpty(email) ?? "Signed in";
-
-  return {
-    displayName,
-    email,
-    initials: initialsFor(displayName),
-    source: "auth",
   };
 }
 
