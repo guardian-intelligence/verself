@@ -152,7 +152,7 @@ export function NotificationBellFallback() {
 
 function LoadingRows() {
   return (
-    <div className="space-y-3 p-3">
+    <div className="space-y-3 p-3" data-testid="notifications-loading">
       <Skeleton className="h-12 w-full" />
       <Skeleton className="h-12 w-full" />
       <Skeleton className="h-12 w-full" />
@@ -171,9 +171,13 @@ function NotificationRow({
 }) {
   return (
     <article
-      className={cn("grid grid-cols-[1fr_auto] gap-2 px-3 py-2.5", !read && "bg-muted/40")}
+      className={cn(
+        "grid grid-cols-[1fr_auto] gap-2 px-3 py-2.5 transition-colors duration-200 data-[new=true]:animate-in data-[new=true]:fade-in-0 data-[new=true]:slide-in-from-top-1",
+        !read && "bg-muted/40",
+      )}
       data-testid="notification-row"
       data-notification-id={notification.notification_id}
+      data-new={!read}
     >
       <div className="min-w-0 space-y-1">
         <div className="flex min-w-0 items-center gap-2">

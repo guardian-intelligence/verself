@@ -1,4 +1,4 @@
-import { ensureTestUserExists, expect, shortTimeoutMS, test } from "./harness";
+import { ensureTestUserExists, expect, pollIntervalMS, shortTimeoutMS, test } from "./harness";
 
 test.describe("Rent-a-Sandbox Notifications", () => {
   test.beforeAll(async () => {
@@ -23,17 +23,41 @@ test.describe("Rent-a-Sandbox Notifications", () => {
         timeout: shortTimeoutMS,
       });
 
-      const firstRow = app.page.getByTestId("notification-row").first();
+      const rows = app.page.getByTestId("notification-row");
+      const firstRow = rows.first();
+      const loadingRows = app.page.getByTestId("notifications-loading");
+      if ((await rows.count()) === 0) {
+        await app.page.getByTestId("notifications-test").click();
+        await expect.poll(async () => rows.count(), { timeout: shortTimeoutMS }).toBeGreaterThan(0);
+        await expect(firstRow).toContainText("Notification test", { timeout: shortTimeoutMS });
+      }
+
+      await expect(loadingRows).toHaveCount(0, { timeout: shortTimeoutMS });
+      const previousRowCount = await rows.count();
       const previousFirstID =
         (await firstRow.getAttribute("data-notification-id").catch(() => "")) ?? "";
 
       await app.page.getByTestId("notifications-test").click();
-      await expect
-        .poll(
-          async () => (await firstRow.getAttribute("data-notification-id").catch(() => "")) ?? "",
-          { timeout: shortTimeoutMS },
-        )
-        .not.toBe(previousFirstID);
+
+      let currentFirstID = previousFirstID;
+      const deadline = Date.now() + shortTimeoutMS;
+      while (Date.now() < deadline) {
+        const loadingCount = await loadingRows.count();
+        if (loadingCount > 0) {
+          throw new Error("notifications list showed a loading state while sending");
+        }
+        const currentRowCount = await rows.count();
+        if (currentRowCount < previousRowCount) {
+          throw new Error("notifications list dropped existing rows while sending");
+        }
+        currentFirstID =
+          (await firstRow.getAttribute("data-notification-id").catch(() => "")) ?? "";
+        if (currentFirstID && currentFirstID !== previousFirstID) {
+          break;
+        }
+        await app.page.waitForTimeout(pollIntervalMS);
+      }
+      expect(currentFirstID).not.toBe(previousFirstID);
       await expect(firstRow).toContainText("Notification test", { timeout: shortTimeoutMS });
 
       await app.page.getByTestId("notifications-mark-read").click();
