@@ -34,6 +34,7 @@
 #      9181          ClickHouse Keeper (reserved, not allocated on single-node)
 #
 #    Forge Metal Go services (control plane):   4240–4259
+#      4241  identity-service internal SPIFFE mTLS
 #      4242  billing-service
 #      4243  sandbox-rental-service
 #      4246  mailbox-service
@@ -43,6 +44,8 @@
 #      4253  secrets-service internal SPIFFE mTLS
 #      4256  object-storage-service S3 facade
 #      4257  object-storage-service admin
+#      4258  profile-service
+#      4259  profile-service internal SPIFFE mTLS
 #
 #    TanStack frontends (Nitro SSR):             4240–4259 (shared block)
 #      4244  rent-a-sandbox
@@ -136,6 +139,7 @@ services:
   identity_service:
     host: "127.0.0.1"
     port: 4248
+    internal_port: 4241
   governance_service:
     host: "127.0.0.1"
     port: 4250
@@ -144,6 +148,10 @@ services:
     host: "127.0.0.1"
     port: 4251
     internal_port: 4253
+  profile_service:
+    host: "127.0.0.1"
+    port: 4258
+    internal_port: 4259
   rent_a_sandbox:
     host: "127.0.0.1"
     port: 4244

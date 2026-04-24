@@ -78,6 +78,7 @@ postgresql_role_connection_limits:
   stalwart: 10
   identity_service: 10
   governance_service: 15
+  profile_service: 10
   mailbox_service: 10
   object_storage_service: 10
   temporal: 80
