@@ -18,8 +18,10 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/riverqueue/river"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/forge-metal/apiwire"
@@ -175,6 +177,12 @@ func run() error {
 		return fmt.Errorf("open clickhouse: %w", err)
 	}
 	defer func() { _ = chConn.Close() }()
+	chPingCtx, cancelCHPing := context.WithTimeout(ctx, 5*time.Second)
+	defer cancelCHPing()
+	var chProbe uint8
+	if err := chConn.QueryRow(chPingCtx, "SELECT 1").Scan(&chProbe); err != nil {
+		return fmt.Errorf("probe clickhouse: %w", err)
+	}
 
 	// --- vm-orchestrator client ---
 
@@ -388,8 +396,15 @@ func requireSecretField(values map[string]string, field string, label string) st
 }
 
 func readRuntimeSecrets(ctx context.Context, client *secretsclient.ClientWithResponses, secretNames ...string) (map[string]string, error) {
+	ctx, span := otel.Tracer("runtime-secrets").Start(ctx, "secrets.runtime.resolve")
+	defer span.End()
+	span.SetAttributes(attribute.Int("forge_metal.secret_count", len(secretNames)))
+
 	if client == nil {
-		return nil, fmt.Errorf("runtime secrets client is required")
+		err := fmt.Errorf("runtime secrets client is required")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
 	}
 	secretCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -397,10 +412,16 @@ func readRuntimeSecrets(ctx context.Context, client *secretsclient.ClientWithRes
 	for _, secretName := range secretNames {
 		resp, err := client.ReadSecretWithResponse(secretCtx, secretName)
 		if err != nil {
-			return nil, fmt.Errorf("read runtime secret %s: %w", secretName, err)
+			err = fmt.Errorf("read runtime secret %s: %w", secretName, err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return nil, err
 		}
 		if resp.JSON200 == nil {
-			return nil, fmt.Errorf("read runtime secret %s: unexpected status %d: %s", secretName, resp.StatusCode(), strings.TrimSpace(string(resp.Body)))
+			err := fmt.Errorf("read runtime secret %s: unexpected status %d: %s", secretName, resp.StatusCode(), strings.TrimSpace(string(resp.Body)))
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return nil, err
 		}
 		values[secretName] = resp.JSON200.Value
 	}
