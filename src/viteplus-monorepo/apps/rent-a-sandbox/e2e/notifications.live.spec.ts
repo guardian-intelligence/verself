@@ -62,6 +62,11 @@ test.describe("Rent-a-Sandbox Notifications", () => {
       await expect(firstRow.getByTestId("notification-created-at")).toContainText("Just now", {
         timeout: shortTimeoutMS,
       });
+      await expect
+        .poll(async () => firstRow.getByTestId("notification-created-at").innerText(), {
+          timeout: shortTimeoutMS,
+        })
+        .toBe("Less than a minute ago");
 
       await app.page.getByTestId("notifications-mark-read").click();
       await expect(app.page.getByTestId("notifications-unread-count")).toHaveCount(0, {

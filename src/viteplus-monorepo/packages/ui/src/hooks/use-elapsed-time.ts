@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { pluralize } from "../lib/text";
 
 export type ElapsedTimeInput = Date | number | string;
 
@@ -107,7 +108,6 @@ export function defaultElapsedTimeFormatter({
   elapsedMs,
   invalidLabel,
   justNowThresholdSeconds,
-  locale,
   nowMs,
   pendingLabel,
   targetMs,
@@ -120,13 +120,15 @@ export function defaultElapsedTimeFormatter({
   }
 
   const elapsedSeconds = Math.floor(elapsedMs / 1_000);
-  if (elapsedSeconds <= Math.max(0, justNowThresholdSeconds)) {
+  if (elapsedSeconds < Math.max(0, justNowThresholdSeconds)) {
     return "Just now";
+  }
+  if (elapsedSeconds < 60) {
+    return direction === "past" ? "Less than a minute ago" : "Less than a minute from now";
   }
 
   const { unit, value } = elapsedTimeUnit(elapsedSeconds);
-  const relativeValue = direction === "past" ? -value : value;
-  return getRelativeTimeFormatter(locale).format(relativeValue, unit);
+  return formatElapsedUnit(value, unit, direction);
 }
 
 type ClockStore = {
@@ -136,8 +138,6 @@ type ClockStore = {
 };
 
 const clockStores = new Map<number, ClockStore>();
-const relativeTimeFormatters = new Map<string, Intl.RelativeTimeFormat>();
-
 function resolveConfig(
   context: ElapsedTimeConfig,
   options: UseElapsedTimeOptions,
@@ -217,13 +217,9 @@ function parseElapsedTimeInput(value: ElapsedTimeInput): number {
 }
 
 function elapsedTimeUnit(seconds: number): {
-  readonly unit: Intl.RelativeTimeFormatUnit;
+  readonly unit: "day" | "hour" | "minute" | "month" | "year";
   readonly value: number;
 } {
-  if (seconds < 60) {
-    return { unit: "second", value: Math.max(1, seconds) };
-  }
-
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) {
     return { unit: "minute", value: minutes };
@@ -247,15 +243,13 @@ function elapsedTimeUnit(seconds: number): {
   return { unit: "year", value: Math.floor(months / 12) };
 }
 
-function getRelativeTimeFormatter(locale: string): Intl.RelativeTimeFormat {
-  const cached = relativeTimeFormatters.get(locale);
-  if (cached) {
-    return cached;
-  }
-
-  const formatter = new Intl.RelativeTimeFormat(locale, { numeric: "always" });
-  relativeTimeFormatters.set(locale, formatter);
-  return formatter;
+function formatElapsedUnit(
+  value: number,
+  unit: "day" | "hour" | "minute" | "month" | "year",
+  direction: "future" | "past",
+): string {
+  const phrase = `${value} ${pluralize(value, unit)}`;
+  return direction === "past" ? `${phrase} ago` : `in ${phrase}`;
 }
 
 function normalizePollIntervalMs(value: number | undefined): number {
