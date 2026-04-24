@@ -52,10 +52,10 @@ test.describe("Rent-a-Sandbox Shell", () => {
         expectedText: ["Executions", "Search or jump to"],
       });
 
-      // Navigate from Executions to Settings → Billing via the evergreen rail.
+      // Navigate from Executions to the self-scoped Settings landing surface via the evergreen rail.
       await app.page.getByTestId("nav-settings").click();
-      await expect(app.page).toHaveURL(/\/settings\/billing$/);
-      await expect(app.page.getByTestId("settings-tab-billing")).toHaveAttribute(
+      await expect(app.page).toHaveURL(/\/settings\/profile$/);
+      await expect(app.page.getByTestId("settings-tab-profile")).toHaveAttribute(
         "data-status",
         "active",
       );
