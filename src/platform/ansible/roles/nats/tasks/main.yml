@@ -145,12 +145,31 @@
     mode: "0644"
   notify: restart nats
 
+- name: Deploy NATS SPIFFE rotation restart unit
+  ansible.builtin.template:
+    src: nats-cert-rotation.service.j2
+    dest: /etc/systemd/system/nats-cert-rotation.service
+    mode: "0644"
+
+- name: Deploy NATS SPIFFE rotation path unit
+  ansible.builtin.template:
+    src: nats-cert-rotation.path.j2
+    dest: /etc/systemd/system/nats-cert-rotation.path
+    mode: "0644"
+
 - name: Apply NATS unit changes before proceeding
   ansible.builtin.meta: flush_handlers
 
 - name: Enable and start NATS
   ansible.builtin.systemd:
     name: nats
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Enable and start NATS SPIFFE rotation watcher
+  ansible.builtin.systemd:
+    name: nats-cert-rotation.path
     enabled: true
     state: started
     daemon_reload: true

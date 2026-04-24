@@ -1,0 +1,10 @@
+[Unit]
+Description=Restart NATS after SPIFFE certificate rotation
+After=nats.service
+
+[Service]
+Type=oneshot
+# spiffe-helper writes the leaf, key, and bundle as separate files; wait for
+# the burst to settle before NATS reopens the trust material.
+ExecStartPre=/usr/bin/sleep 2
+ExecStart=/usr/bin/systemctl restart nats.service

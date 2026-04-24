@@ -22,6 +22,10 @@ test.describe("Rent-a-Sandbox Notifications", () => {
       await expect(app.page.getByTestId("notifications-popover")).toBeVisible({
         timeout: shortTimeoutMS,
       });
+      await expect(
+        app.page.locator('[data-testid="notifications-popover"] button:disabled'),
+      ).toHaveCount(0);
+      await expect(app.page.getByTestId("notifications-error")).toHaveCount(0);
 
       const rows = app.page.getByTestId("notification-row");
       const firstRow = rows.first();
