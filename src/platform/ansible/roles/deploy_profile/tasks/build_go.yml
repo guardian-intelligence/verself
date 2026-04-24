@@ -2,64 +2,58 @@
 # Build Go service binaries on the Ansible controller and copy to the server.
 # Follows the delegate_to: localhost pattern from guest_rootfs.
 
-- name: Build billing-service binary
-  delegate_to: localhost
-  become: false
-  run_once: true
-  ansible.builtin.command:
-    argv:
-      - go
-      - build
-      - -ldflags=-s -w -X main.version={{ forge_metal_version | default('dev') }}
-      - -o
-      - "{{ deploy_profile_repo_root }}/src/billing-service/billing-service"
-      - ./src/billing-service/cmd/billing-service
-    chdir: "{{ deploy_profile_repo_root }}"
-  environment:
-    CGO_ENABLED: "1"
-    GOOS: linux
-    GOARCH: amd64
-  changed_when: false
+- name: Validate Go binary manifest item schema
+  ansible.builtin.assert:
+    that:
+      - item.name is defined
+      - item.name | length > 0
+      - item.package is defined
+      - item.package | length > 0
+      - item.output_path is defined
+      - item.output_path | length > 0
+      - item.cgo_enabled is defined
+      - item.cgo_enabled in ['0', '1']
+      - item.version_ldflags is defined
+      - item.version_ldflags | type_debug == 'bool'
+      - item.restart_handlers is defined
+      - item.restart_handlers | type_debug == 'list'
+    fail_msg: "deploy_profile_go_binaries entries must define name, package, output_path, cgo_enabled, version_ldflags, and restart_handlers"
+  loop: "{{ deploy_profile_go_binaries }}"
+  loop_control:
+    label: "{{ item.name | default('unnamed') }}"
 
-- name: Build tb-inspect binary
-  delegate_to: localhost
-  become: false
-  run_once: true
-  ansible.builtin.command:
-    argv:
-      - go
-      - build
-      - -ldflags=-s -w
-      - -o
-      - "{{ deploy_profile_repo_root }}/src/billing-service/tb-inspect"
-      - ./src/billing-service/cmd/tb-inspect
-    chdir: "{{ deploy_profile_repo_root }}"
-  environment:
-    CGO_ENABLED: "1"
-    GOOS: linux
-    GOARCH: amd64
-  changed_when: false
+- name: Collect Go binary manifest names
+  ansible.builtin.set_fact:
+    deploy_profile_go_binary_names: "{{ deploy_profile_go_binaries | map(attribute='name') | list }}"
+    deploy_profile_go_binary_output_paths: "{{ deploy_profile_go_binaries | map(attribute='output_path') | list }}"
 
-- name: Build sandbox-rental-service binary
-  delegate_to: localhost
-  become: false
-  run_once: true
-  ansible.builtin.command:
-    argv:
-      - go
-      - build
-      - -ldflags=-s -w -X main.version={{ forge_metal_version | default('dev') }}
-      - -o
-      - "{{ deploy_profile_repo_root }}/src/sandbox-rental-service/sandbox-rental-service"
-      - ./src/sandbox-rental-service/cmd/sandbox-rental-service
-    chdir: "{{ deploy_profile_repo_root }}"
-  environment:
-    CGO_ENABLED: "0"
-    GOOS: linux
-    GOARCH: amd64
-  changed_when: false
+- name: Validate Go binary manifest coverage
+  ansible.builtin.assert:
+    that:
+      - deploy_profile_go_binary_names | length == 16
+      - deploy_profile_go_binary_names | unique | list | length == deploy_profile_go_binary_names | length
+      - deploy_profile_go_binary_output_paths | unique | list | length == deploy_profile_go_binary_output_paths | length
+      - deploy_profile_go_binary_names | sort == [
+          'billing-service',
+          'forge-temporal-server',
+          'forge-temporal-web',
+          'governance-service',
+          'identity-service',
+          'mailbox-service',
+          'notifications-service',
+          'object-storage-secret-sync',
+          'object-storage-service',
+          'profile-service',
+          'sandbox-rental-recurring-worker',
+          'sandbox-rental-service',
+          'secrets-service',
+          'tb-inspect',
+          'temporal-bootstrap',
+          'temporal-schema'
+        ]
+    fail_msg: "deploy_profile_go_binaries must include each current Go binary exactly once with a unique output_path"
 
-- name: Build sandbox-rental-recurring-worker binary
+- name: Build Go binaries
   delegate_to: localhost
   become: false
   run_once: true
@@ -67,479 +61,40 @@
     argv:
       - go
       - build
-      - -ldflags=-s -w -X main.version={{ forge_metal_version | default('dev') }}
+      - "{{ '-ldflags=-s -w -X main.version=' ~ (forge_metal_version | default('dev')) if item.version_ldflags else '-ldflags=-s -w' }}"
       - -o
-      - "{{ deploy_profile_repo_root }}/src/sandbox-rental-service/sandbox-rental-recurring-worker"
-      - ./src/sandbox-rental-service/cmd/sandbox-rental-recurring-worker
+      - "{{ deploy_profile_repo_root }}/{{ item.output_path }}"
+      - "{{ item.package }}"
     chdir: "{{ deploy_profile_repo_root }}"
   environment:
-    CGO_ENABLED: "0"
+    CGO_ENABLED: "{{ item.cgo_enabled }}"
     GOOS: linux
     GOARCH: amd64
   changed_when: false
-
-- name: Build mailbox-service binary
-  delegate_to: localhost
-  become: false
-  run_once: true
-  ansible.builtin.command:
-    argv:
-      - go
-      - build
-      - -ldflags=-s -w -X main.version={{ forge_metal_version | default('dev') }}
-      - -o
-      - "{{ deploy_profile_repo_root }}/src/mailbox-service/mailbox-service"
-      - ./src/mailbox-service/cmd/mailbox-service
-    chdir: "{{ deploy_profile_repo_root }}"
-  environment:
-    CGO_ENABLED: "0"
-    GOOS: linux
-    GOARCH: amd64
-  changed_when: false
-
-- name: Build object-storage-service binary
-  delegate_to: localhost
-  become: false
-  run_once: true
-  ansible.builtin.command:
-    argv:
-      - go
-      - build
-      - -ldflags=-s -w -X main.version={{ forge_metal_version | default('dev') }}
-      - -o
-      - "{{ deploy_profile_repo_root }}/src/object-storage-service/object-storage-service"
-      - ./src/object-storage-service/cmd/object-storage-service
-    chdir: "{{ deploy_profile_repo_root }}"
-  environment:
-    CGO_ENABLED: "0"
-    GOOS: linux
-    GOARCH: amd64
-  changed_when: false
-
-- name: Build object-storage-secret-sync binary
-  delegate_to: localhost
-  become: false
-  run_once: true
-  ansible.builtin.command:
-    argv:
-      - go
-      - build
-      - -ldflags=-s -w -X main.version={{ forge_metal_version | default('dev') }}
-      - -o
-      - "{{ deploy_profile_repo_root }}/src/object-storage-service/object-storage-secret-sync"
-      - ./src/object-storage-service/cmd/object-storage-secret-sync
-    chdir: "{{ deploy_profile_repo_root }}"
-  environment:
-    CGO_ENABLED: "0"
-    GOOS: linux
-    GOARCH: amd64
-  changed_when: false
-
-- name: Build identity-service binary
-  delegate_to: localhost
-  become: false
-  run_once: true
-  ansible.builtin.command:
-    argv:
-      - go
-      - build
-      - -ldflags=-s -w -X main.version={{ forge_metal_version | default('dev') }}
-      - -o
-      - "{{ deploy_profile_repo_root }}/src/identity-service/identity-service"
-      - ./src/identity-service/cmd/identity-service
-    chdir: "{{ deploy_profile_repo_root }}"
-  environment:
-    CGO_ENABLED: "0"
-    GOOS: linux
-    GOARCH: amd64
-  changed_when: false
-
-- name: Build governance-service binary
-  delegate_to: localhost
-  become: false
-  run_once: true
-  ansible.builtin.command:
-    argv:
-      - go
-      - build
-      - -ldflags=-s -w -X main.version={{ forge_metal_version | default('dev') }}
-      - -o
-      - "{{ deploy_profile_repo_root }}/src/governance-service/governance-service"
-      - ./src/governance-service/cmd/governance-service
-    chdir: "{{ deploy_profile_repo_root }}"
-  environment:
-    CGO_ENABLED: "0"
-    GOOS: linux
-    GOARCH: amd64
-  changed_when: false
-
-- name: Build profile-service binary
-  delegate_to: localhost
-  become: false
-  run_once: true
-  ansible.builtin.command:
-    argv:
-      - go
-      - build
-      - -ldflags=-s -w -X main.version={{ forge_metal_version | default('dev') }}
-      - -o
-      - "{{ deploy_profile_repo_root }}/src/profile-service/profile-service"
-      - ./src/profile-service/cmd/profile-service
-    chdir: "{{ deploy_profile_repo_root }}"
-  environment:
-    CGO_ENABLED: "0"
-    GOOS: linux
-    GOARCH: amd64
-  changed_when: false
-
-- name: Build notifications-service binary
-  delegate_to: localhost
-  become: false
-  run_once: true
-  ansible.builtin.command:
-    argv:
-      - go
-      - build
-      - -ldflags=-s -w -X main.version={{ forge_metal_version | default('dev') }}
-      - -o
-      - "{{ deploy_profile_repo_root }}/src/notifications-service/notifications-service"
-      - ./src/notifications-service/cmd/notifications-service
-    chdir: "{{ deploy_profile_repo_root }}"
-  environment:
-    CGO_ENABLED: "0"
-    GOOS: linux
-    GOARCH: amd64
-  changed_when: false
-
-- name: Build secrets-service binary
-  delegate_to: localhost
-  become: false
-  run_once: true
-  ansible.builtin.command:
-    argv:
-      - go
-      - build
-      - -ldflags=-s -w -X main.version={{ forge_metal_version | default('dev') }}
-      - -o
-      - "{{ deploy_profile_repo_root }}/src/secrets-service/secrets-service"
-      - ./src/secrets-service/cmd/secrets-service
-    chdir: "{{ deploy_profile_repo_root }}"
-  environment:
-    CGO_ENABLED: "0"
-    GOOS: linux
-    GOARCH: amd64
-  changed_when: false
-
-- name: Build forge-temporal-server binary
-  delegate_to: localhost
-  become: false
-  run_once: true
-  ansible.builtin.command:
-    argv:
-      - go
-      - build
-      - -ldflags=-s -w -X main.version={{ forge_metal_version | default('dev') }}
-      - -o
-      - "{{ deploy_profile_repo_root }}/src/temporal-platform/forge-temporal-server"
-      - ./src/temporal-platform/cmd/forge-temporal-server
-    chdir: "{{ deploy_profile_repo_root }}"
-  environment:
-    CGO_ENABLED: "0"
-    GOOS: linux
-    GOARCH: amd64
-  changed_when: false
-
-- name: Build forge-temporal-web binary
-  delegate_to: localhost
-  become: false
-  run_once: true
-  ansible.builtin.command:
-    argv:
-      - go
-      - build
-      - -ldflags=-s -w -X main.version={{ forge_metal_version | default('dev') }}
-      - -o
-      - "{{ deploy_profile_repo_root }}/src/temporal-platform/forge-temporal-web"
-      - ./src/temporal-platform/cmd/forge-temporal-web
-    chdir: "{{ deploy_profile_repo_root }}"
-  environment:
-    CGO_ENABLED: "0"
-    GOOS: linux
-    GOARCH: amd64
-  changed_when: false
-
-- name: Build temporal-bootstrap binary
-  delegate_to: localhost
-  become: false
-  run_once: true
-  ansible.builtin.command:
-    argv:
-      - go
-      - build
-      - -ldflags=-s -w -X main.version={{ forge_metal_version | default('dev') }}
-      - -o
-      - "{{ deploy_profile_repo_root }}/src/temporal-platform/temporal-bootstrap"
-      - ./src/temporal-platform/cmd/temporal-bootstrap
-    chdir: "{{ deploy_profile_repo_root }}"
-  environment:
-    CGO_ENABLED: "0"
-    GOOS: linux
-    GOARCH: amd64
-  changed_when: false
-
-- name: Build temporal-schema binary
-  delegate_to: localhost
-  become: false
-  run_once: true
-  ansible.builtin.command:
-    argv:
-      - go
-      - build
-      - -ldflags=-s -w -X main.version={{ forge_metal_version | default('dev') }}
-      - -o
-      - "{{ deploy_profile_repo_root }}/src/temporal-platform/temporal-schema"
-      - ./src/temporal-platform/cmd/temporal-schema
-    chdir: "{{ deploy_profile_repo_root }}"
-  environment:
-    CGO_ENABLED: "0"
-    GOOS: linux
-    GOARCH: amd64
-  changed_when: false
+  loop: "{{ deploy_profile_go_binaries }}"
+  loop_control:
+    label: "{{ item.name }}"
 
 - name: Copy Go binaries to server
   ansible.builtin.copy:
-    src: "{{ item.src }}"
+    src: "{{ deploy_profile_repo_root }}/{{ item.output_path }}"
     dest: "{{ fm_bin }}/{{ item.name }}"
     mode: "0755"
   register: deploy_profile_go_binary_copy_results
-  loop:
-    - { src: "{{ deploy_profile_repo_root }}/src/mailbox-service/mailbox-service", name: mailbox-service }
-    - { src: "{{ deploy_profile_repo_root }}/src/billing-service/billing-service", name: billing-service }
-    - { src: "{{ deploy_profile_repo_root }}/src/billing-service/tb-inspect", name: tb-inspect }
-    - { src: "{{ deploy_profile_repo_root }}/src/sandbox-rental-service/sandbox-rental-service", name: sandbox-rental-service }
-    - { src: "{{ deploy_profile_repo_root }}/src/sandbox-rental-service/sandbox-rental-recurring-worker", name: sandbox-rental-recurring-worker }
-    - { src: "{{ deploy_profile_repo_root }}/src/identity-service/identity-service", name: identity-service }
-    - { src: "{{ deploy_profile_repo_root }}/src/governance-service/governance-service", name: governance-service }
-    - { src: "{{ deploy_profile_repo_root }}/src/profile-service/profile-service", name: profile-service }
-    - { src: "{{ deploy_profile_repo_root }}/src/notifications-service/notifications-service", name: notifications-service }
-    - { src: "{{ deploy_profile_repo_root }}/src/secrets-service/secrets-service", name: secrets-service }
-    - { src: "{{ deploy_profile_repo_root }}/src/object-storage-service/object-storage-service", name: object-storage-service }
-    - { src: "{{ deploy_profile_repo_root }}/src/object-storage-service/object-storage-secret-sync", name: object-storage-secret-sync }
-    - { src: "{{ deploy_profile_repo_root }}/src/temporal-platform/forge-temporal-server", name: forge-temporal-server }
-    - { src: "{{ deploy_profile_repo_root }}/src/temporal-platform/forge-temporal-web", name: forge-temporal-web }
-    - { src: "{{ deploy_profile_repo_root }}/src/temporal-platform/temporal-bootstrap", name: temporal-bootstrap }
-    - { src: "{{ deploy_profile_repo_root }}/src/temporal-platform/temporal-schema", name: temporal-schema }
+  loop: "{{ deploy_profile_go_binaries }}"
+  loop_control:
+    label: "{{ item.name }}"
 
 - name: Remove retired proof binaries from server profile
   ansible.builtin.file:
     path: "{{ fm_bin }}/{{ item }}"
     state: absent
-  loop:
-    - object-storage-proof
-    - temporal-proof
+  loop: "{{ deploy_profile_retired_go_binaries }}"
 
-- name: Set billing-service binary copy fact
-  ansible.builtin.set_fact:
-    deploy_profile_billing_service_binary_copy: >-
-      {{
-        (
-          deploy_profile_go_binary_copy_results.results
-          | selectattr('item.name', 'equalto', 'billing-service')
-          | list
-          | first
-        ) | default({})
-      }}
-
-- name: Trigger billing-service restart when binary changed
+- name: Trigger restarts when copied Go binaries changed
   ansible.builtin.command: /bin/true
-  changed_when: deploy_profile_billing_service_binary_copy.changed | default(false)
-  notify: deploy-profile restart billing-service
-
-- name: Set sandbox-rental-service binary copy fact
-  ansible.builtin.set_fact:
-    deploy_profile_sandbox_rental_service_binary_copy: >-
-      {{
-        (
-          deploy_profile_go_binary_copy_results.results
-          | selectattr('item.name', 'equalto', 'sandbox-rental-service')
-          | list
-          | first
-        ) | default({})
-      }}
-
-- name: Trigger sandbox-rental-service restart when binary changed
-  ansible.builtin.command: /bin/true
-  changed_when: deploy_profile_sandbox_rental_service_binary_copy.changed | default(false)
-  notify: deploy-profile restart sandbox-rental-service
-
-- name: Set sandbox-rental-recurring-worker binary copy fact
-  ansible.builtin.set_fact:
-    deploy_profile_sandbox_rental_recurring_worker_binary_copy: >-
-      {{
-        (
-          deploy_profile_go_binary_copy_results.results
-          | selectattr('item.name', 'equalto', 'sandbox-rental-recurring-worker')
-          | list
-          | first
-        ) | default({})
-      }}
-
-- name: Trigger sandbox-rental-recurring-worker restart when binary changed
-  ansible.builtin.command: /bin/true
-  changed_when: deploy_profile_sandbox_rental_recurring_worker_binary_copy.changed | default(false)
-  notify: deploy-profile restart sandbox-rental-recurring-worker
-
-- name: Set mailbox-service binary copy fact
-  ansible.builtin.set_fact:
-    deploy_profile_mailbox_service_binary_copy: >-
-      {{
-        (
-          deploy_profile_go_binary_copy_results.results
-          | selectattr('item.name', 'equalto', 'mailbox-service')
-          | list
-          | first
-        ) | default({})
-      }}
-
-- name: Trigger mailbox-service restart when binary changed
-  ansible.builtin.command: /bin/true
-  changed_when: deploy_profile_mailbox_service_binary_copy.changed | default(false)
-  notify: deploy-profile restart mailbox-service
-
-- name: Set object-storage-service binary copy fact
-  ansible.builtin.set_fact:
-    deploy_profile_object_storage_service_binary_copy: >-
-      {{
-        (
-          deploy_profile_go_binary_copy_results.results
-          | selectattr('item.name', 'equalto', 'object-storage-service')
-          | list
-          | first
-        ) | default({})
-      }}
-
-- name: Trigger object-storage-service restart when binary changed
-  ansible.builtin.command: /bin/true
-  changed_when: deploy_profile_object_storage_service_binary_copy.changed | default(false)
-  notify:
-    - deploy-profile restart object-storage-admin
-    - deploy-profile restart object-storage-service
-
-- name: Set identity-service binary copy fact
-  ansible.builtin.set_fact:
-    deploy_profile_identity_service_binary_copy: >-
-      {{
-        (
-          deploy_profile_go_binary_copy_results.results
-          | selectattr('item.name', 'equalto', 'identity-service')
-          | list
-          | first
-        ) | default({})
-      }}
-
-- name: Trigger identity-service restart when binary changed
-  ansible.builtin.command: /bin/true
-  changed_when: deploy_profile_identity_service_binary_copy.changed | default(false)
-  notify: deploy-profile restart identity-service
-
-- name: Set governance-service binary copy fact
-  ansible.builtin.set_fact:
-    deploy_profile_governance_service_binary_copy: >-
-      {{
-        (
-          deploy_profile_go_binary_copy_results.results
-          | selectattr('item.name', 'equalto', 'governance-service')
-          | list
-          | first
-        ) | default({})
-      }}
-
-- name: Trigger governance-service restart when binary changed
-  ansible.builtin.command: /bin/true
-  changed_when: deploy_profile_governance_service_binary_copy.changed | default(false)
-  notify: deploy-profile restart governance-service
-
-- name: Set profile-service binary copy fact
-  ansible.builtin.set_fact:
-    deploy_profile_profile_service_binary_copy: >-
-      {{
-        (
-          deploy_profile_go_binary_copy_results.results
-          | selectattr('item.name', 'equalto', 'profile-service')
-          | list
-          | first
-        ) | default({})
-      }}
-
-- name: Trigger profile-service restart when binary changed
-  ansible.builtin.command: /bin/true
-  changed_when: deploy_profile_profile_service_binary_copy.changed | default(false)
-  notify: deploy-profile restart profile-service
-
-- name: Set notifications-service binary copy fact
-  ansible.builtin.set_fact:
-    deploy_profile_notifications_service_binary_copy: >-
-      {{
-        (
-          deploy_profile_go_binary_copy_results.results
-          | selectattr('item.name', 'equalto', 'notifications-service')
-          | list
-          | first
-        ) | default({})
-      }}
-
-- name: Trigger notifications-service restart when binary changed
-  ansible.builtin.command: /bin/true
-  changed_when: deploy_profile_notifications_service_binary_copy.changed | default(false)
-  notify: deploy-profile restart notifications-service
-
-- name: Set secrets-service binary copy fact
-  ansible.builtin.set_fact:
-    deploy_profile_secrets_service_binary_copy: >-
-      {{
-        (
-          deploy_profile_go_binary_copy_results.results
-          | selectattr('item.name', 'equalto', 'secrets-service')
-          | list
-          | first
-        ) | default({})
-      }}
-
-- name: Trigger secrets-service restart when binary changed
-  ansible.builtin.command: /bin/true
-  changed_when: deploy_profile_secrets_service_binary_copy.changed | default(false)
-  notify: deploy-profile restart secrets-service
-
-- name: Set temporal server binary copy fact
-  ansible.builtin.set_fact:
-    deploy_profile_temporal_server_binary_copy: >-
-      {{
-        (
-          deploy_profile_go_binary_copy_results.results
-          | selectattr('item.name', 'equalto', 'forge-temporal-server')
-          | list
-          | first
-        ) | default({})
-      }}
-
-- name: Trigger temporal-server restart when binary changed
-  ansible.builtin.command: /bin/true
-  changed_when: deploy_profile_temporal_server_binary_copy.changed | default(false)
-  notify: deploy-profile restart temporal-server
-
-- name: Set temporal web binary copy fact
-  ansible.builtin.set_fact:
-    deploy_profile_temporal_web_binary_copy: >-
-      {{
-        (
-          deploy_profile_go_binary_copy_results.results
-          | selectattr('item.name', 'equalto', 'forge-temporal-web')
-          | list
-          | first
-        ) | default({})
-      }}
-
-- name: Trigger temporal-web restart when binary changed
-  ansible.builtin.command: /bin/true
-  changed_when: deploy_profile_temporal_web_binary_copy.changed | default(false)
-  notify: deploy-profile restart temporal-web
+  changed_when: item.changed | default(false)
+  notify: "{{ item.item.restart_handlers }}"
+  loop: "{{ deploy_profile_go_binary_copy_results.results | selectattr('item.restart_handlers') }}"
+  loop_control:
+    label: "{{ item.item.name }}"

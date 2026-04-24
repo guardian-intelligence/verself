@@ -12,3 +12,118 @@ deploy_profile_staging_dir: /opt/forge-metal/staging
 
 # PostgreSQL major version (determines apt package and binary paths)
 deploy_profile_postgresql_version: "16"
+
+deploy_profile_retired_go_binaries:
+  - object-storage-proof
+  - temporal-proof
+
+deploy_profile_go_binaries:
+  - name: billing-service
+    package: ./src/billing-service/cmd/billing-service
+    output_path: src/billing-service/billing-service
+    cgo_enabled: "1"
+    version_ldflags: true
+    restart_handlers:
+      - deploy-profile restart billing-service
+  - name: tb-inspect
+    package: ./src/billing-service/cmd/tb-inspect
+    output_path: src/billing-service/tb-inspect
+    cgo_enabled: "1"
+    version_ldflags: false
+    restart_handlers: []
+  - name: sandbox-rental-service
+    package: ./src/sandbox-rental-service/cmd/sandbox-rental-service
+    output_path: src/sandbox-rental-service/sandbox-rental-service
+    cgo_enabled: "0"
+    version_ldflags: true
+    restart_handlers:
+      - deploy-profile restart sandbox-rental-service
+  - name: sandbox-rental-recurring-worker
+    package: ./src/sandbox-rental-service/cmd/sandbox-rental-recurring-worker
+    output_path: src/sandbox-rental-service/sandbox-rental-recurring-worker
+    cgo_enabled: "0"
+    version_ldflags: true
+    restart_handlers:
+      - deploy-profile restart sandbox-rental-recurring-worker
+  - name: mailbox-service
+    package: ./src/mailbox-service/cmd/mailbox-service
+    output_path: src/mailbox-service/mailbox-service
+    cgo_enabled: "0"
+    version_ldflags: true
+    restart_handlers:
+      - deploy-profile restart mailbox-service
+  - name: object-storage-service
+    package: ./src/object-storage-service/cmd/object-storage-service
+    output_path: src/object-storage-service/object-storage-service
+    cgo_enabled: "0"
+    version_ldflags: true
+    restart_handlers:
+      - deploy-profile restart object-storage-admin
+      - deploy-profile restart object-storage-service
+  - name: object-storage-secret-sync
+    package: ./src/object-storage-service/cmd/object-storage-secret-sync
+    output_path: src/object-storage-service/object-storage-secret-sync
+    cgo_enabled: "0"
+    version_ldflags: true
+    restart_handlers: []
+  - name: identity-service
+    package: ./src/identity-service/cmd/identity-service
+    output_path: src/identity-service/identity-service
+    cgo_enabled: "0"
+    version_ldflags: true
+    restart_handlers:
+      - deploy-profile restart identity-service
+  - name: governance-service
+    package: ./src/governance-service/cmd/governance-service
+    output_path: src/governance-service/governance-service
+    cgo_enabled: "0"
+    version_ldflags: true
+    restart_handlers:
+      - deploy-profile restart governance-service
+  - name: profile-service
+    package: ./src/profile-service/cmd/profile-service
+    output_path: src/profile-service/profile-service
+    cgo_enabled: "0"
+    version_ldflags: true
+    restart_handlers:
+      - deploy-profile restart profile-service
+  - name: notifications-service
+    package: ./src/notifications-service/cmd/notifications-service
+    output_path: src/notifications-service/notifications-service
+    cgo_enabled: "0"
+    version_ldflags: true
+    restart_handlers:
+      - deploy-profile restart notifications-service
+  - name: secrets-service
+    package: ./src/secrets-service/cmd/secrets-service
+    output_path: src/secrets-service/secrets-service
+    cgo_enabled: "0"
+    version_ldflags: true
+    restart_handlers:
+      - deploy-profile restart secrets-service
+  - name: forge-temporal-server
+    package: ./src/temporal-platform/cmd/forge-temporal-server
+    output_path: src/temporal-platform/forge-temporal-server
+    cgo_enabled: "0"
+    version_ldflags: true
+    restart_handlers:
+      - deploy-profile restart temporal-server
+  - name: forge-temporal-web
+    package: ./src/temporal-platform/cmd/forge-temporal-web
+    output_path: src/temporal-platform/forge-temporal-web
+    cgo_enabled: "0"
+    version_ldflags: true
+    restart_handlers:
+      - deploy-profile restart temporal-web
+  - name: temporal-bootstrap
+    package: ./src/temporal-platform/cmd/temporal-bootstrap
+    output_path: src/temporal-platform/temporal-bootstrap
+    cgo_enabled: "0"
+    version_ldflags: true
+    restart_handlers: []
+  - name: temporal-schema
+    package: ./src/temporal-platform/cmd/temporal-schema
+    output_path: src/temporal-platform/temporal-schema
+    cgo_enabled: "0"
+    version_ldflags: true
+    restart_handlers: []
