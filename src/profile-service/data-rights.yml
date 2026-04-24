@@ -1,0 +1,32 @@
+service: profile-service
+database: profile
+processing_activities:
+  - profile-preferences
+exports:
+  organization:
+    endpoint: /internal/v1/data-rights/org-export
+    artifacts:
+      - profile/subjects.jsonl
+      - profile/preferences.jsonl
+  subject:
+    endpoint: /internal/v1/data-rights/subject-export
+    artifacts:
+      - profile/subjects.jsonl
+      - profile/preferences.jsonl
+erasure:
+  subject:
+    endpoint: /internal/v1/data-rights/subject-erasure
+    actions:
+      - delete_profile_preferences
+      - tombstone_profile_subject
+retention:
+  profile_subjects:
+    category: personal_profile_cache
+    erasure_behavior: tombstone_cached_identity_fields
+  profile_preferences:
+    category: personal_preferences
+    erasure_behavior: delete_rows
+retained_categories:
+  - category: governance_audit
+    owner: governance-service
+    reason: immutable audit chain rows are retained and are not rewritten by profile-service

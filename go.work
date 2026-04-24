@@ -11,6 +11,7 @@ use (
 	./src/mailbox-service
 	./src/object-storage-service
 	./src/otel
+	./src/profile-service
 	./src/sandbox-rental-service
 	./src/secrets-service
 	./src/temporal-platform

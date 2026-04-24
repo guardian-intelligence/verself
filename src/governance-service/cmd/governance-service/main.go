@@ -142,6 +142,7 @@ func run() error {
 	auditClientIDs, err := workloadauth.PeerIDsForSource(
 		spiffeSource,
 		workloadauth.ServiceIdentity,
+		workloadauth.ServiceProfile,
 		workloadauth.ServiceSandboxRental,
 		workloadauth.ServiceSecrets,
 		workloadauth.ServiceObjectStorageAdmin,
