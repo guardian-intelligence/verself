@@ -75,6 +75,7 @@ test("company canary — walk IA + exercise OG + brand kit", async ({ page, requ
         fontFamily: s.fontFamily,
         textTransform: s.textTransform,
         fontWeight: s.fontWeight,
+        fontSize: s.fontSize,
       };
     });
     expect(styles.fontFamily, `wordmark face on ${path} — must be Geist`).toMatch(/Geist/i);
@@ -83,6 +84,12 @@ test("company canary — walk IA + exercise OG + brand kit", async ({ page, requ
     );
     expect(styles.textTransform, `wordmark must be uppercase on ${path}`).toBe("uppercase");
     expect(Number(styles.fontWeight), `wordmark weight on ${path}`).toBeGreaterThanOrEqual(500);
+    // Quiet-masthead size gate. Guardian whispers at the top of the page;
+    // anything that doubles the font in a future change has regressed the
+    // whole point. 16 px is a generous ceiling — the sm Lockup currently
+    // ships at 11 px and sub-16 covers any reasonable retune.
+    const fontPx = Number(styles.fontSize.replace("px", ""));
+    expect(fontPx, `masthead font-size on ${path} — must stay quiet`).toBeLessThan(16);
 
     const text = (await wordmark.textContent()) ?? "";
     expect(text, `wordmark must say "Guardian" on ${path}`).toMatch(/guardian/i);
