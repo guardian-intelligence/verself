@@ -11,9 +11,8 @@ Type=simple
 ExecStart=/usr/bin/podman run --rm --replace \
   --name {{ electric_service_name }} \
   --network=host \
-  -e DATABASE_URL=postgresql://{{ electric_pg_role }}:{{ electric_pg_password }}@{{ services.postgresql.host }}:{{ services.postgresql.port }}/{{ electric_db }} \
+  --env-file {{ electric_runtime_env_file }} \
   -e ELECTRIC_PORT={{ electric_service_port }} \
-  -e ELECTRIC_SECRET={{ electric_api_secret }} \
   -e ELECTRIC_STORAGE_DIR=/data \
   -e ELECTRIC_DB_POOL_SIZE={{ electric_db_pool_size }} \
   -e ELECTRIC_INSTANCE_ID={{ electric_service_name }} \

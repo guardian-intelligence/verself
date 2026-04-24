@@ -66,6 +66,22 @@
 - name: "Create PostgreSQL role and publication for {{ electric_service_name }}"
   ansible.builtin.include_tasks: pg_setup.yml
 
+- name: "Deploy runtime credential environment for {{ electric_service_name }}"
+  vars:
+    electric_database_url: >-
+      postgresql://{{ electric_pg_role }}:{{ electric_pg_password }}@{{
+      services.postgresql.host }}:{{ services.postgresql.port }}/{{ electric_db }}
+  ansible.builtin.copy:
+    content: |
+      DATABASE_URL={{ electric_database_url }}
+      ELECTRIC_SECRET={{ electric_api_secret }}
+    dest: "{{ electric_runtime_env_file }}"
+    owner: root
+    group: root
+    mode: "0640"
+  notify: "Restart {{ electric_service_name }}"
+  no_log: true
+
 - name: "Check for local container image for {{ electric_service_name }}"
   ansible.builtin.command:
     cmd: "podman image exists {{ electric_image }}"
