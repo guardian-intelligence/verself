@@ -16,36 +16,45 @@ const MARK_HEIGHT_PX: Record<LockupSize, number> = {
   lg: 96,
 };
 
-// Lab-tuned at lg in the alignment playground: wordmark 90% of mark-h across
-// the size ladder. Same ratio at every size keeps the lockup visually coherent
-// whether it appears as a 32px topbar mark or a 96px hero lockup.
+// Wordmark ratio — wordmark font-size as a fraction of markH. Uppercase sans
+// occupies only its cap-height inside the em-box, so the font-size has to
+// climb above markH-proportional to land the visible caps at the same optical
+// weight the old Fraunces mixed-case set did. Same ratio across the size
+// ladder keeps the lockup coherent from a 32 px topbar mark to a 96 px hero.
 const WORDMARK_RATIO: Record<LockupSize, number> = {
-  sm: 0.9,
-  md: 0.9,
-  lg: 0.9,
+  sm: 0.95,
+  md: 0.95,
+  lg: 0.95,
 };
 
-// Optical tracking per size. Tighter at display sizes, opener at small so the
-// wordmark stays readable when "Guardian" is only a few tens of pixels tall.
+// Optical tracking per size. Uppercase logotypes breathe at display sizes and
+// need a touch more tracking at small sizes so GUARDIAN does not collide with
+// itself when rendered at favicon-adjacent resolutions. These are per-size
+// positive values — the exact opposite of the old Fraunces mixed-case curve,
+// which tightened with size.
 const WORDMARK_TRACKING: Record<LockupSize, string> = {
-  sm: "-0.008em",
-  md: "-0.015em",
-  lg: "-0.025em",
+  sm: "0.18em",
+  md: "0.14em",
+  lg: "0.12em",
 };
 
-// Fraunces at opsz 144 — cap-height ÷ em-square. Measured once from the font
-// metrics; used to derive optical gap from cap-height without measuring the
-// rendered glyph at runtime. Any change to the display face needs this
-// updated to match.
-const FRAUNCES_144_CAP_RATIO = 0.72;
+// Geist Variable — cap-height ÷ em-square. Measured once from the font
+// metrics; used to derive the optical gap from cap-height without measuring
+// the rendered glyph at runtime. Any change to the wordmark face needs this
+// updated to match. (The prior face was Fraunces at opsz 144 with a cap ratio
+// of 0.72 — Geist is a hair shorter, which matters when the gap math is
+// cap-height-relative.)
+const WORDMARK_CAP_RATIO = 0.7;
 
 // Optical gap between mark-ink-right-edge and wordmark-ink-left-edge, as a
 // fraction of wordmark cap-height. The classic logotype rule: the gap reads
 // like the counter of the lead capital — close enough to lock the mark and
-// word into one unit, far enough to resolve as two. 0.42 lands on the
-// loose-end of that range so the mark has air to breathe against a serif
-// wordmark; tighten toward 0.35 if we ever ship a sans wordmark.
-const GAP_TO_CAP_RATIO = 0.42;
+// word into one unit, far enough to resolve as two. 0.35 lands on the tighter
+// end of that range because a sans wordmark holds its ink closer to the mark
+// than a serif, and the uppercase caps do not need the extra air that
+// serif-with-descenders demanded. (The prior constant was 0.42 for Fraunces;
+// the lockup.tsx file you are reading predicted this tightening explicitly.)
+const GAP_TO_CAP_RATIO = 0.35;
 
 // Three variants, one per treatment:
 //   argent  — bare cropped wings (Workshop, on Ink, and any photography/scrim
@@ -76,10 +85,6 @@ export type LockupVariant = "argent" | "chip" | "emboss";
 //                  fraction of inkHeight. The flex gap is measured against
 //                  the SVG box edge, so we subtract this so the optical
 //                  ink-to-wordmark gap stays constant across variants.
-//   markNudgeY   — absolute pixels to translate the mark vertically. Line-box
-//                  centering drifts above the cap-midline on wordmarks with
-//                  no descenders; this is the per-variant residual after the
-//                  wordmark's own translateY correction.
 //
 // Contained and bare variants no longer share a visible-ink vertical footprint
 // at a given markH — the bare variant is smaller, because 32px of ink weighs
@@ -87,31 +92,25 @@ export type LockupVariant = "argent" | "chip" | "emboss";
 // which is the honest thing for a lockup family to share.
 const VARIANT_BOX: Record<
   LockupVariant,
-  { inkScale: number; svgH: number; svgW: number; rightBleed: number; markNudgeY: number }
+  { inkScale: number; svgH: number; svgW: number; rightBleed: number }
 > = {
   // Glyph-tight cropped viewBox: 102.174 × 120.823. The visible wings are the
-  // SVG box. inkScale 0.68 lands the wing ink at Fraunces cap-height with a
-  // small optical overshoot, given WORDMARK_RATIO 0.9 and
-  // FRAUNCES_144_CAP_RATIO 0.72 (0.9 × 0.72 ≈ 0.648; +~5% so the wing does
-  // not visually sink beneath the cap line). Revisit if either ratio changes
-  // or the display face is swapped.
-  argent: { inkScale: 0.68, svgH: 1, svgW: 102.174 / 120.823, rightBleed: 0, markNudgeY: 0 },
+  // SVG box. inkScale 0.66 lands the wing ink at Geist cap-height given
+  // WORDMARK_RATIO 0.95 and WORDMARK_CAP_RATIO 0.70 (0.95 × 0.70 ≈ 0.665).
+  // Revisit if either ratio changes or the wordmark face is swapped.
+  argent: { inkScale: 0.66, svgH: 1, svgW: 102.174 / 120.823, rightBleed: 0 },
   // Iron rounded rect fills the 292 viewBox to the pixel (the 291.14 × 291.14
   // rect nested in a 292 × 292 viewBox rounds to a zero bleed in practice).
-  chip: { inkScale: 1, svgH: 1, svgW: 1, rightBleed: 0, markNudgeY: 0 },
+  chip: { inkScale: 1, svgH: 1, svgW: 1, rightBleed: 0 },
   // Circular medallion: r=126 inside a 292 viewBox, leaves (292-252)/2 = 20
   // units of invisible padding on each side. We render the SVG box 292/252
   // larger than markH so the disc itself is markH across; the remaining
-  // padding flows out as rightBleed. markNudgeY 1 corrects the residual
-  // above-cap-midline float that line-box centering leaves behind — the
-  // medallion's size amplifies any offset, so it is the variant that needs
-  // the correction most.
+  // padding flows out as rightBleed.
   emboss: {
     inkScale: 1,
     svgH: 292 / 252,
     svgW: 292 / 252,
     rightBleed: (292 - 252) / 2 / 252,
-    markNudgeY: 1,
   },
 };
 
@@ -120,17 +119,23 @@ export interface LockupProps {
   readonly variant?: LockupVariant;
   readonly wordmark?: ReactNode;
   readonly wordmarkColor?: string;
+  // Optional section suffix. When present, renders as ` · {section}` in the
+  // same face/weight/tracking as the wordmark, so GUARDIAN · LETTERS reads as
+  // one tracked logotype, not a wordmark plus a tagline. Section is always
+  // uppercased by CSS — pass "Letters" or "LETTERS" and get the same result.
+  // Omit on the house root (`/`); supply on every section surface.
+  readonly section?: string;
   readonly className?: string;
   readonly style?: CSSProperties;
   readonly title?: string;
 }
 
-// Lockup — mark + wordmark, sized so the three variants share optical weight
-// against the wordmark. Contained variants (chip, emboss) land their container
-// at markH; bare variants (argent) land their ink at cap-height, because ink
-// without a container weighs more than the same pixel count of container
-// around ink. markH is the nominal unit; each variant's inkScale resolves it
-// to the variant's actual visible-ink height.
+// Lockup — mark + uppercase-tracked wordmark, sized so the three variants
+// share optical weight against the wordmark. Contained variants (chip,
+// emboss) land their container at markH; bare variants (argent) land their
+// ink at cap-height, because ink without a container weighs more than the
+// same pixel count of container around ink. markH is the nominal unit; each
+// variant's inkScale resolves it to the variant's actual visible-ink height.
 //
 // Both axes of the layout are typographic, not geometric:
 //   • markH is the nominal unit. inkHeight = markH × inkScale is the visible
@@ -144,6 +149,7 @@ export function Lockup({
   variant = "argent",
   wordmark = "Guardian",
   wordmarkColor,
+  section,
   className,
   style,
   title,
@@ -151,7 +157,6 @@ export function Lockup({
   const markH = MARK_HEIGHT_PX[size];
   const ratio = WORDMARK_RATIO[size];
   const tracking = WORDMARK_TRACKING[size];
-  const Mark = variant === "chip" ? WingsChip : variant === "emboss" ? WingsEmboss : WingsArgent;
   const box = VARIANT_BOX[variant];
 
   const inkHeight = markH * box.inkScale;
@@ -160,7 +165,7 @@ export function Lockup({
   const rightBleedPx = inkHeight * box.rightBleed;
 
   const wordmarkFontSize = markH * ratio;
-  const capHeight = wordmarkFontSize * FRAUNCES_144_CAP_RATIO;
+  const capHeight = wordmarkFontSize * WORDMARK_CAP_RATIO;
   const opticalGap = capHeight * GAP_TO_CAP_RATIO;
   // 6px floor keeps the pair locked at the smallest sizes where rounding
   // error and coarse-pixel rasterization would otherwise fuse the glyphs.
@@ -179,34 +184,46 @@ export function Lockup({
     width: `${svgWidthPx}px`,
     height: `${svgHeightPx}px`,
     flex: `0 0 ${svgWidthPx}px`,
-    ...(box.markNudgeY ? { transform: `translateY(${box.markNudgeY}px)` } : {}),
+  };
+
+  // Uppercase sans with no descenders sits in the upper half of the em-box;
+  // flex-centering the em-box drops the caps visually low against a chip or
+  // medallion that is centered by its geometric box. line-height tight to
+  // cap-height collapses the em-box onto the caps so flex-align-items: center
+  // lands visual centers, not em-box centers. No per-variant nudge needed.
+  //
+  // Geist is hard-coded at the top of the stack (rather than read through
+  // var(--font-sans)) so the lockup renders the Guardian wordmark the same
+  // way whether the consumer's host registers the Tailwind @theme token or
+  // not — the brand package is the authority on the wordmark face, not the
+  // host app's CSS token graph.
+  const wordmarkStyle: CSSProperties = {
+    fontFamily: "'Geist', ui-sans-serif, system-ui, sans-serif",
+    fontWeight: 500,
+    fontSize: `${wordmarkFontSize}px`,
+    lineHeight: WORDMARK_CAP_RATIO,
+    letterSpacing: tracking,
+    textTransform: "uppercase",
+    whiteSpace: "nowrap",
   };
 
   return (
-    <span className={className} style={lockupStyle} data-variant={variant}>
+    <span className={className} style={lockupStyle} data-variant={variant} data-lockup="">
       {variant === "argent" ? (
         <WingsArgent title={title} cropped style={markStyle} />
+      ) : variant === "chip" ? (
+        <WingsChip title={title} style={markStyle} />
       ) : (
-        <Mark title={title} style={markStyle} />
+        <WingsEmboss title={title} style={markStyle} />
       )}
-      <span
-        style={{
-          // "Guardian" is a serif wordmark on every ground, including Workshop.
-          // The treatment system flips palette, mark variant, and body type,
-          // but the name of the house is the one constant — Fraunces, always.
-          fontFamily: "'Fraunces', Georgia, serif",
-          fontVariationSettings: '"opsz" 144, "SOFT" 30',
-          fontWeight: 400,
-          fontSize: `${wordmarkFontSize}px`,
-          lineHeight: 1,
-          letterSpacing: tracking,
-          // 1px optical nudge: flex-end aligns the text-box bottom, but the
-          // Fraunces baseline sits a hair above the box bottom, leaving the
-          // wordmark floating a touch high against the wing tip.
-          transform: "translateY(1px)",
-        }}
-      >
+      <span style={wordmarkStyle} data-lockup-wordmark="">
         {wordmark}
+        {section ? (
+          <>
+            <span aria-hidden="true"> · </span>
+            {section}
+          </>
+        ) : null}
       </span>
     </span>
   );
@@ -223,7 +240,9 @@ export interface StackedLockupProps {
 
 // Stacked lockup with optional tagline ruler — the playground's section-05
 // "stacked · centred · with tagline" pattern. The rule is one wing-unit wide,
-// centred, derived from --wing-unit so it tracks any mark-size override.
+// centred, derived from --wing-unit so it tracks any mark-size override. The
+// wordmark itself sets in the same Geist uppercase dress as the horizontal
+// Lockup; the tagline sits a rung below at a smaller size and wider tracking.
 export function StackedLockup({
   markHeight = 88,
   wordmark = "Guardian",
@@ -241,7 +260,7 @@ export function StackedLockup({
         display: "inline-flex",
         flexDirection: "column",
         alignItems: "center",
-        gap: "14px",
+        gap: "18px",
         padding: "24px 0",
         ...style,
       }}
@@ -249,13 +268,12 @@ export function StackedLockup({
       <Mark style={{ width: `${markHeight}px`, height: `${markHeight}px` }} />
       <span
         style={{
-          // See Lockup above — "Guardian" is Fraunces on every ground.
-          fontFamily: "'Fraunces', Georgia, serif",
-          fontVariationSettings: '"opsz" 144, "SOFT" 30',
-          fontWeight: 400,
-          fontSize: "28px",
-          letterSpacing: "-0.01em",
+          fontFamily: "'Geist', ui-sans-serif, system-ui, sans-serif",
+          fontWeight: 500,
+          fontSize: "24px",
+          letterSpacing: "0.16em",
           lineHeight: 1,
+          textTransform: "uppercase",
         }}
       >
         {wordmark}
@@ -266,12 +284,12 @@ export function StackedLockup({
             position: "relative",
             marginTop: "6px",
             paddingTop: "10px",
-            fontFamily: "'Geist', sans-serif",
+            fontFamily: "'Geist', ui-sans-serif, system-ui, sans-serif",
             fontWeight: 500,
-            fontSize: "13px",
-            letterSpacing: "0.2em",
+            fontSize: "12px",
+            letterSpacing: "0.26em",
             textTransform: "uppercase",
-            opacity: 0.85,
+            opacity: 0.75,
           }}
         >
           <span
