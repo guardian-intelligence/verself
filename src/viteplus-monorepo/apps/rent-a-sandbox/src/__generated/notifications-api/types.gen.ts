@@ -64,6 +64,7 @@ export type Notification = {
   notification_id: string;
   org_id: string;
   priority: "low" | "normal" | "high";
+  read_at?: string;
   /**
    * Per-recipient sequence, decimal-encoded for JavaScript safety.
    */
@@ -430,3 +431,35 @@ export type DismissNotificationResponses = {
 
 export type DismissNotificationResponse =
   DismissNotificationResponses[keyof DismissNotificationResponses];
+
+export type MarkNotificationReadData = {
+  body?: never;
+  headers: {
+    "Idempotency-Key": string;
+  };
+  path: {
+    notification_id: string;
+  };
+  query?: never;
+  url: "/api/v1/notifications/{notification_id}/read";
+};
+
+export type MarkNotificationReadErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type MarkNotificationReadError =
+  MarkNotificationReadErrors[keyof MarkNotificationReadErrors];
+
+export type MarkNotificationReadResponses = {
+  /**
+   * OK
+   */
+  200: NotificationSummary;
+};
+
+export type MarkNotificationReadResponse =
+  MarkNotificationReadResponses[keyof MarkNotificationReadResponses];

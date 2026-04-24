@@ -38,6 +38,7 @@ type Notification struct {
 	ResourceID         string     `json:"resource_id,omitempty"`
 	CreatedAt          time.Time  `json:"created_at"`
 	ExpiresAt          *time.Time `json:"expires_at,omitempty"`
+	ReadAt             *time.Time `json:"read_at,omitempty"`
 	DismissedAt        *time.Time `json:"dismissed_at,omitempty"`
 }
 

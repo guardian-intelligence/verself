@@ -53,6 +53,11 @@ type dismissInput struct {
 	IdempotencyKey string `header:"Idempotency-Key" required:"true" minLength:"1" maxLength:"128"`
 }
 
+type markNotificationInput struct {
+	NotificationID string `path:"notification_id" format:"uuid"`
+	IdempotencyKey string `header:"Idempotency-Key" required:"true" minLength:"1" maxLength:"128"`
+}
+
 type clearInput struct {
 	IdempotencyKey string `header:"Idempotency-Key" required:"true" minLength:"1" maxLength:"128"`
 }
@@ -106,6 +111,14 @@ func RegisterRoutes(api huma.API, svc *notifications.Service) {
 		Summary:       "Dismiss a current human notification",
 		DefaultStatus: http.StatusOK,
 	}, "notifications:self:write", dismissNotification(svc))
+
+	register(api, huma.Operation{
+		OperationID:   "mark-notification-read",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/notifications/{notification_id}/read",
+		Summary:       "Mark one current human notification read",
+		DefaultStatus: http.StatusOK,
+	}, "notifications:self:write", markNotificationRead(svc))
 
 	register(api, huma.Operation{
 		OperationID:   "clear-notifications",
@@ -254,6 +267,27 @@ func dismissNotification(svc *notifications.Service) func(context.Context, *dism
 	}
 }
 
+func markNotificationRead(svc *notifications.Service) func(context.Context, *markNotificationInput) (*summaryOutput, error) {
+	return func(ctx context.Context, input *markNotificationInput) (*summaryOutput, error) {
+		if err := validateIdempotencyKey(ctx, input.IdempotencyKey); err != nil {
+			return nil, err
+		}
+		principal, err := principalFromContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+		notificationID, err := uuid.Parse(strings.TrimSpace(input.NotificationID))
+		if err != nil {
+			return nil, badRequest(ctx, "invalid-notification-id", "notification_id must be a UUID", err)
+		}
+		summary, err := svc.MarkNotificationRead(ctx, principal, notifications.ReadNotificationRequest{NotificationID: notificationID})
+		if err != nil {
+			return nil, notificationError(ctx, err)
+		}
+		return &summaryOutput{Body: summaryDTO(summary)}, nil
+	}
+}
+
 func clearNotifications(svc *notifications.Service) func(context.Context, *clearInput) (*summaryOutput, error) {
 	return func(ctx context.Context, input *clearInput) (*summaryOutput, error) {
 		if err := validateIdempotencyKey(ctx, input.IdempotencyKey); err != nil {
@@ -376,6 +410,7 @@ func notificationDTO(notification notifications.Notification) apiwire.Notificati
 		ResourceID:         notification.ResourceID,
 		CreatedAt:          notification.CreatedAt,
 		ExpiresAt:          notification.ExpiresAt,
+		ReadAt:             notification.ReadAt,
 		DismissedAt:        notification.DismissedAt,
 	}
 }

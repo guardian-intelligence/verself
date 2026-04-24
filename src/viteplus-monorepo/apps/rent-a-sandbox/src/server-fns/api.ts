@@ -41,6 +41,7 @@ import {
   isNotificationsApiError,
   listNotifications as listNotificationsRequest,
   markNotificationRead as markNotificationReadRequest,
+  markNotificationReadByID as markNotificationReadByIDRequest,
   markNotificationReadRequestSchema,
   notificationsListQuerySchema,
   publishTestNotification as publishTestNotificationRequest,
@@ -375,6 +376,16 @@ export const markNotificationRead = createServerFn({ method: "POST" })
   .inputValidator(markNotificationReadRequestSchema)
   .handler(async ({ context, data }) => {
     return markNotificationReadRequest({
+      ...(await notificationsClientOptions(context)),
+      body: data,
+    });
+  });
+
+export const markNotificationReadByID = createServerFn({ method: "POST" })
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(dismissNotificationRequestSchema)
+  .handler(async ({ context, data }) => {
+    return markNotificationReadByIDRequest({
       ...(await notificationsClientOptions(context)),
       body: data,
     });

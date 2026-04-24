@@ -119,6 +119,7 @@ LEFT JOIN user_notifications n
   ON n.org_id = state.org_id
  AND n.recipient_subject_id = state.recipient_subject_id
  AND n.recipient_sequence > state.read_up_to_sequence
+ AND n.read_at IS NULL
  AND n.dismissed_at IS NULL
 WHERE state.org_id = $1 AND state.recipient_subject_id = $2
 GROUP BY state.next_sequence, state.read_up_to_sequence`,
@@ -160,7 +161,7 @@ func (s *Service) List(ctx context.Context, principal Principal, input ListReque
 	}
 	rows, err := s.PG.Query(ctx, `
 SELECT notification_id, org_id, recipient_subject_id, recipient_sequence, kind, priority, title, body,
-       action_url, resource_kind, resource_id, created_at, expires_at, dismissed_at
+       action_url, resource_kind, resource_id, created_at, expires_at, read_at, dismissed_at
 FROM user_notifications
 WHERE org_id = $1 AND recipient_subject_id = $2 AND dismissed_at IS NULL
 ORDER BY recipient_sequence DESC
@@ -300,6 +301,88 @@ func (s *Service) MarkRead(ctx context.Context, principal Principal, input MarkR
 	return s.Summary(ctx, principal)
 }
 
+func (s *Service) MarkNotificationRead(ctx context.Context, principal Principal, input ReadNotificationRequest) (Summary, error) {
+	ctx, span := tracer.Start(ctx, "notifications.inbox.read")
+	defer span.End()
+	if err := ValidatePrincipal(principal); err != nil {
+		return Summary{}, err
+	}
+	if input.NotificationID == uuid.Nil {
+		return Summary{}, fmt.Errorf("%w: notification_id is required", ErrInvalidInput)
+	}
+	tx, err := s.PG.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return Summary{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	defer rollback(ctx, tx)
+	if err := s.ensureInboxState(ctx, tx, principal.OrgID, principal.Subject); err != nil {
+		return Summary{}, err
+	}
+	now := s.now()
+	traceparent := traceparentFromContext(ctx)
+	var projected projectionInput
+	err = tx.QueryRow(ctx, `
+UPDATE user_notifications
+SET read_at = $4
+WHERE notification_id = $1
+  AND org_id = $2
+  AND recipient_subject_id = $3
+  AND dismissed_at IS NULL
+  AND read_at IS NULL
+  AND recipient_sequence > (
+      SELECT read_up_to_sequence
+      FROM notification_inbox_state
+      WHERE org_id = $2 AND recipient_subject_id = $3
+  )
+RETURNING org_id, recipient_subject_id, notification_id::text, recipient_sequence, event_source, event_id::text, kind, priority, content_sha256`,
+		input.NotificationID, principal.OrgID, principal.Subject, now).Scan(
+		&projected.OrgID,
+		&projected.RecipientSubjectID,
+		&projected.NotificationIDText,
+		&projected.RecipientSequence,
+		&projected.EventSource,
+		&projected.EventIDText,
+		&projected.Kind,
+		&projected.Priority,
+		&projected.ContentSHA256,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		if exists, err := s.notificationExistsTx(ctx, tx, principal.OrgID, principal.Subject, input.NotificationID); err != nil {
+			return Summary{}, err
+		} else if !exists {
+			return Summary{}, ErrNotFound
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return Summary{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+		}
+		span.SetAttributes(attribute.String("notification.id", input.NotificationID.String()))
+		return s.Summary(ctx, principal)
+	}
+	if err != nil {
+		return Summary{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	projected.EventType = LedgerInboxRead
+	projected.Status = "read"
+	projected.OccurredAt = now
+	projected.Traceparent = traceparent
+	if err := s.enqueueProjectionTx(ctx, tx, projected); err != nil {
+		return Summary{}, err
+	}
+	if err := s.touchInboxStateTx(ctx, tx, principal.OrgID, principal.Subject, now); err != nil {
+		return Summary{}, err
+	}
+	if s.Runtime != nil {
+		if err := s.Runtime.EnqueueProjectionPendingTx(ctx, tx, traceparent); err != nil {
+			return Summary{}, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Summary{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	span.SetAttributes(attribute.String("notification.id", input.NotificationID.String()))
+	return s.Summary(ctx, principal)
+}
+
 func (s *Service) Dismiss(ctx context.Context, principal Principal, input DismissRequest) (Summary, error) {
 	ctx, span := tracer.Start(ctx, "notifications.inbox.dismiss")
 	defer span.End()
@@ -349,20 +432,8 @@ RETURNING org_id, recipient_subject_id, notification_id::text, recipient_sequenc
 	if err := s.enqueueProjectionTx(ctx, tx, projected); err != nil {
 		return Summary{}, err
 	}
-	if _, advanced, err := s.advanceReadCursorTx(
-		ctx,
-		tx,
-		principal.OrgID,
-		principal.Subject,
-		projected.RecipientSequence,
-		now,
-		traceparent,
-	); err != nil {
+	if err := s.touchInboxStateTx(ctx, tx, principal.OrgID, principal.Subject, now); err != nil {
 		return Summary{}, err
-	} else if !advanced {
-		if err := s.touchInboxStateTx(ctx, tx, principal.OrgID, principal.Subject, now); err != nil {
-			return Summary{}, err
-		}
 	}
 	if s.Runtime != nil {
 		if err := s.Runtime.EnqueueProjectionPendingTx(ctx, tx, traceparent); err != nil {
@@ -392,14 +463,6 @@ func (s *Service) DismissAll(ctx context.Context, principal Principal) (Summary,
 	}
 	now := s.now()
 	traceparent := traceparentFromContext(ctx)
-	var latestSequence int64
-	if err := tx.QueryRow(ctx, `
-SELECT GREATEST(next_sequence - 1, 0)
-FROM notification_inbox_state
-WHERE org_id = $1 AND recipient_subject_id = $2`,
-		principal.OrgID, principal.Subject).Scan(&latestSequence); err != nil {
-		return Summary{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
-	}
 	rows, err := tx.Query(ctx, `
 UPDATE user_notifications
 SET dismissed_at = COALESCE(dismissed_at, $3)
@@ -432,16 +495,12 @@ RETURNING org_id, recipient_subject_id, notification_id::text, recipient_sequenc
 		}
 	}
 	dismissed := len(projections)
-	_, advanced, err := s.advanceReadCursorTx(ctx, tx, principal.OrgID, principal.Subject, latestSequence, now, traceparent)
-	if err != nil {
-		return Summary{}, err
-	}
-	if dismissed > 0 && !advanced {
+	if dismissed > 0 {
 		if err := s.touchInboxStateTx(ctx, tx, principal.OrgID, principal.Subject, now); err != nil {
 			return Summary{}, err
 		}
 	}
-	if s.Runtime != nil && (dismissed > 0 || advanced) {
+	if s.Runtime != nil && dismissed > 0 {
 		if err := s.Runtime.EnqueueProjectionPendingTx(ctx, tx, traceparent); err != nil {
 			return Summary{}, err
 		}
@@ -451,7 +510,6 @@ RETURNING org_id, recipient_subject_id, notification_id::text, recipient_sequenc
 	}
 	span.SetAttributes(
 		attribute.Int("notification.dismissed_count", dismissed),
-		attribute.Int64("notification.latest_sequence", latestSequence),
 	)
 	return s.Summary(ctx, principal)
 }
@@ -953,6 +1011,22 @@ WHERE org_id = $1 AND recipient_subject_id = $2`, orgID, subjectID, now)
 	return nil
 }
 
+func (s *Service) notificationExistsTx(ctx context.Context, tx pgx.Tx, orgID string, subjectID string, notificationID uuid.UUID) (bool, error) {
+	var one int
+	err := tx.QueryRow(ctx, `
+SELECT 1
+FROM user_notifications
+WHERE org_id = $1 AND recipient_subject_id = $2 AND notification_id = $3`,
+		orgID, subjectID, notificationID).Scan(&one)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	return true, nil
+}
+
 func (s *Service) preferences(ctx context.Context, q queryer, orgID string, subjectID string) (Preferences, error) {
 	var prefs Preferences
 	err := q.QueryRow(ctx, `
@@ -978,7 +1052,7 @@ WHERE org_id = $1 AND subject_id = $2`, orgID, subjectID).Scan(
 func (s *Service) latestNotification(ctx context.Context, orgID string, subjectID string) (*Notification, error) {
 	rows, err := s.PG.Query(ctx, `
 SELECT notification_id, org_id, recipient_subject_id, recipient_sequence, kind, priority, title, body,
-       action_url, resource_kind, resource_id, created_at, expires_at, dismissed_at
+       action_url, resource_kind, resource_id, created_at, expires_at, read_at, dismissed_at
 FROM user_notifications
 WHERE org_id = $1 AND recipient_subject_id = $2
 ORDER BY recipient_sequence DESC
@@ -1181,6 +1255,7 @@ func scanNotification(rows pgx.Rows) (Notification, error) {
 	var (
 		notification Notification
 		expiresAt    pgtype.Timestamptz
+		readAt       pgtype.Timestamptz
 		dismissedAt  pgtype.Timestamptz
 	)
 	if err := rows.Scan(
@@ -1197,6 +1272,7 @@ func scanNotification(rows pgx.Rows) (Notification, error) {
 		&notification.ResourceID,
 		&notification.CreatedAt,
 		&expiresAt,
+		&readAt,
 		&dismissedAt,
 	); err != nil {
 		return Notification{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
@@ -1205,6 +1281,10 @@ func scanNotification(rows pgx.Rows) (Notification, error) {
 	if expiresAt.Valid {
 		t := expiresAt.Time.UTC()
 		notification.ExpiresAt = &t
+	}
+	if readAt.Valid {
+		t := readAt.Time.UTC()
+		notification.ReadAt = &t
 	}
 	if dismissedAt.Valid {
 		t := dismissedAt.Time.UTC()

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Bell, CheckCheck, Inbox, Loader2, Send, Trash2, X } from "lucide-react";
+import { Bell, Check, CheckCheck, Inbox, Loader2, Send, Trash2, X } from "lucide-react";
 import { useSignedInAuth } from "@forge-metal/auth-web/react";
 import { ElapsedTime } from "@forge-metal/ui/components/elapsed-time";
 import { Badge } from "@forge-metal/ui/components/ui/badge";
@@ -32,6 +32,7 @@ import { useNotificationInboxState } from "./live";
 import {
   useClearNotificationsMutation,
   useDismissNotificationMutation,
+  useMarkSingleNotificationReadMutation,
   useMarkNotificationReadMutation,
   usePublishTestNotificationMutation,
 } from "./mutations";
@@ -269,12 +270,12 @@ function NotificationInboxList({
   readonly mode: InboxMode;
 }) {
   const [filter, setFilter] = useState<NotificationsFilter>("unread");
+  const markRead = useMarkSingleNotificationReadMutation();
   const dismiss = useDismissNotificationMutation();
   const visibleNotifications =
     filter === "unread"
       ? inbox.notifications.filter(
-          (notification) =>
-            numericSequence(notification.recipient_sequence) > inbox.readUpToSequence,
+          (notification) => !isNotificationRead(notification, inbox.readUpToSequence),
         )
       : inbox.notifications;
   const emptyMessage = filter === "unread" ? "No unread notifications" : "No notifications";
@@ -300,12 +301,16 @@ function NotificationInboxList({
       ) : (
         <div className="divide-y">
           {visibleNotifications.map((notification) => {
-            const read = numericSequence(notification.recipient_sequence) <= inbox.readUpToSequence;
+            const read = isNotificationRead(notification, inbox.readUpToSequence);
             return (
               <NotificationRow
                 key={notification.notification_id}
                 notification={notification}
                 read={read}
+                onMarkRead={() => {
+                  if (read || markRead.isPending) return;
+                  markRead.mutate({ notification_id: notification.notification_id });
+                }}
                 onDismiss={() => dismiss.mutate({ notification_id: notification.notification_id })}
               />
             );
@@ -363,10 +368,12 @@ function LoadingRows() {
 function NotificationRow({
   notification,
   onDismiss,
+  onMarkRead,
   read,
 }: {
   readonly notification: Notification;
   readonly onDismiss: () => void;
+  readonly onMarkRead: () => void;
   readonly read: boolean;
 }) {
   return (
@@ -402,20 +409,45 @@ function NotificationRow({
           value={notification.created_at}
         />
       </div>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-xs"
-        aria-label="Dismiss notification"
-        title="Dismiss notification"
-        onClick={(event) => {
-          event.stopPropagation();
-          onDismiss();
-        }}
-      >
-        <X />
-      </Button>
+      <div className="flex items-start gap-1">
+        {!read ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label="Mark notification read"
+            title="Mark notification read"
+            data-testid="notification-mark-read"
+            onClick={(event) => {
+              event.stopPropagation();
+              onMarkRead();
+            }}
+          >
+            <Check />
+          </Button>
+        ) : null}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label="Dismiss notification"
+          title="Dismiss notification"
+          onClick={(event) => {
+            event.stopPropagation();
+            onDismiss();
+          }}
+        >
+          <X />
+        </Button>
+      </div>
     </article>
+  );
+}
+
+function isNotificationRead(notification: Notification, readUpToSequence: number): boolean {
+  return (
+    notification.read_at !== undefined ||
+    numericSequence(notification.recipient_sequence) <= readUpToSequence
   );
 }
 
