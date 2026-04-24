@@ -89,11 +89,12 @@ export function buildOGCard(spec: OGSpec): OGBuildResult {
   const after = spec.title.slice(index + spec.flare.length);
 
   // The wings sit at 56px wide in the top-left, scaled from the shared brand
-  // mark path. Fraunces is embedded only in the HTML canonical template; for
-  // SVG OG cards we fall back to a system serif because social platforms
-  // rasterise server-side and may not ship our WOFF2. The wordmark next to
-  // the wings is intentionally plain — the broadcast usage is one loud line,
-  // not two typefaces competing for attention.
+  // mark path. Fraunces is reserved for the body headline (where the Flare
+  // word takes the acid accent); the masthead wordmark sets in tracked
+  // uppercase Geist to match the same GUARDIAN treatment the HTML chrome
+  // ships. Social platforms rasterise server-side and may not ship our WOFF2
+  // — the face stacks fall through to Inter / Georgia so the card degrades
+  // legibly rather than losing the lockup silhouette.
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}">
   <rect width="${WIDTH}" height="${HEIGHT}" fill="${IRON}"/>
@@ -101,7 +102,7 @@ export function buildOGCard(spec: OGSpec): OGBuildResult {
     <svg width="56" height="56" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
       <path d="${WINGS_PATH_D}" fill="${ARGENT}" fill-rule="evenodd"/>
     </svg>
-    <text x="72" y="40" font-family="'Fraunces', Georgia, serif" font-size="28" fill="${ARGENT}" letter-spacing="-0.01em">Guardian</text>
+    <text x="72" y="38" font-family="'Geist', 'Inter', sans-serif" font-size="22" font-weight="500" fill="${ARGENT}" letter-spacing="2.6">GUARDIAN</text>
   </g>
   <g transform="translate(56, 260)">
     <text font-family="'Fraunces', Georgia, serif" font-size="72" font-weight="400" fill="${ARGENT}" letter-spacing="-0.025em">
