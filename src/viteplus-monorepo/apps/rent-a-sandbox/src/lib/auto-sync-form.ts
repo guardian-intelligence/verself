@@ -1,16 +1,18 @@
 import { useCallback, useReducer, useRef } from "react";
 
-export type AutoSyncFormStatus = "idle" | "syncing" | "failed";
+export type AutoSyncFormStatus = "idle" | "syncing" | "failed" | "conflict";
 
 type AutoSyncFormState<TForm> = {
-  readonly error: unknown | null;
+  readonly error: unknown;
   readonly form: TForm;
   readonly status: AutoSyncFormStatus;
 };
 
 type AutoSyncFormAction<TForm> =
   | { readonly type: "change"; readonly form: TForm }
+  | { readonly type: "conflict"; readonly error: unknown }
   | { readonly type: "failed"; readonly error: unknown }
+  | { readonly type: "rebased"; readonly form: TForm }
   | { readonly type: "synced"; readonly form: TForm }
   | { readonly type: "syncing" };
 
@@ -19,6 +21,7 @@ export function useAutoSyncForm<TForm, TRequest, TResult>({
   formFromResult,
   initialForm,
   initialVersion,
+  isConflictError,
   mutate,
   requestFromForm,
   validate,
@@ -28,6 +31,7 @@ export function useAutoSyncForm<TForm, TRequest, TResult>({
   readonly formFromResult: (result: TResult) => TForm;
   readonly initialForm: TForm;
   readonly initialVersion: number;
+  readonly isConflictError?: (error: unknown) => boolean;
   readonly mutate: (request: TRequest) => Promise<TResult>;
   readonly requestFromForm: (form: TForm, version: number) => TRequest;
   readonly validate?: (form: TForm) => string | null;
@@ -89,10 +93,18 @@ export function useAutoSyncForm<TForm, TRequest, TResult>({
         .catch((error: unknown) => {
           queuedFormRef.current = null;
           inFlightRef.current = false;
-          dispatch({ type: "failed", error });
+          dispatch({ type: isConflictError?.(error) ? "conflict" : "failed", error });
         });
     },
-    [formEqual, formFromResult, mutate, requestFromForm, validate, versionFromResult],
+    [
+      formEqual,
+      formFromResult,
+      isConflictError,
+      mutate,
+      requestFromForm,
+      validate,
+      versionFromResult,
+    ],
   );
 
   const change = useCallback((update: (current: TForm) => TForm) => {
@@ -105,10 +117,34 @@ export function useAutoSyncForm<TForm, TRequest, TResult>({
     return form;
   }, []);
 
+  const fail = useCallback((error: unknown) => {
+    queuedFormRef.current = null;
+    inFlightRef.current = false;
+    dispatch({ type: "failed", error });
+  }, []);
+
+  const rebase = useCallback(
+    (result: TResult) => {
+      const previousBase = baseFormRef.current;
+      const nextBase = formFromResult(result);
+      const draft = currentFormRef.current;
+      const form = formEqual(draft, previousBase) ? nextBase : draft;
+
+      baseFormRef.current = nextBase;
+      currentFormRef.current = form;
+      queuedFormRef.current = null;
+      versionRef.current = versionFromResult(result);
+      dispatch({ type: "rebased", form });
+    },
+    [formEqual, formFromResult, versionFromResult],
+  );
+
   return {
     change,
     error: state.error,
+    fail,
     form: state.form,
+    rebase,
     status: state.status,
     sync,
   };
@@ -120,9 +156,17 @@ function autoSyncFormReducer<TForm>(
 ): AutoSyncFormState<TForm> {
   switch (action.type) {
     case "change":
-      return { error: null, form: action.form, status: state.status };
+      return {
+        error: state.status === "conflict" ? state.error : null,
+        form: action.form,
+        status: state.status,
+      };
+    case "conflict":
+      return { ...state, error: action.error, status: "conflict" };
     case "failed":
       return { ...state, error: action.error, status: "failed" };
+    case "rebased":
+      return { error: null, form: action.form, status: "idle" };
     case "synced":
       return { error: null, form: action.form, status: "idle" };
     case "syncing":

@@ -1,4 +1,4 @@
-import type { Locator, Page } from "@playwright/test";
+import type { BrowserContext, Locator, Page } from "@playwright/test";
 import { ensureTestUserExists, expect, shortTimeoutMS, test } from "./harness";
 
 test.describe("Rent-a-Sandbox Profile", () => {
@@ -14,6 +14,9 @@ test.describe("Rent-a-Sandbox Profile", () => {
     const givenName = `Profile${suffix}`;
     const familyName = "Proof";
     const displayName = `${givenName} ${familyName}`;
+    const initialDisplayName = `${displayName} Initial`;
+    const conflictRemoteDisplayName = `${displayName} Remote`;
+    const conflictLocalDisplayName = displayName;
     const target = {
       defaultSurface: process.env.PROFILE_PROOF_DEFAULT_SURFACE || "schedules",
       locale: process.env.PROFILE_PROOF_LOCALE || "en-GB",
@@ -50,14 +53,16 @@ test.describe("Rent-a-Sandbox Profile", () => {
       const initialSyncedAt = await syncStatus.getAttribute("data-synced-at");
       await app.page.getByLabel("Given name").fill(givenName);
       await app.page.getByLabel("Family name").fill(familyName);
-      await app.page.getByLabel("Display name").fill(displayName);
+      await app.page.getByLabel("Display name").fill(initialDisplayName);
       await app.page.getByLabel("Locale").focus();
       const identitySyncedAt = await waitForProfileSync(syncStatus, initialSyncedAt);
       await expect(app.page.getByTestId("profile-sync-status")).toContainText(
         /Last synced (Just now|Less than a minute ago)/,
       );
       await expect(app.page.getByTestId("profile-sync-status")).not.toContainText("UTC");
-      await expect(app.page.getByTestId("shell-account-display-name")).toContainText(displayName);
+      await expect(app.page.getByTestId("shell-account-display-name")).toContainText(
+        initialDisplayName,
+      );
 
       const releaseServerFunctions = await holdServerFunctions(app.page);
       await app.goto("/executions");
@@ -72,23 +77,43 @@ test.describe("Rent-a-Sandbox Profile", () => {
         await releaseServerFunctions();
       }
       await expect(accountLabel).toHaveAttribute("data-account-source", "profile");
-      await expect(accountLabel).toContainText(displayName);
+      await expect(accountLabel).toContainText(initialDisplayName);
       await app.goto("/settings/profile");
       await expect(app.page.getByRole("heading", { name: "Identity" })).toBeVisible({
         timeout: shortTimeoutMS,
       });
+
+      const releaseProfileReads = await holdServerFunctionReads(app.page);
+      try {
+        await updateDisplayNameInParallel(app.context, conflictRemoteDisplayName);
+        await app.page.getByLabel("Display name").fill(conflictLocalDisplayName);
+        await app.page.getByLabel("Locale").focus();
+        await expect(app.page.getByTestId("profile-identity-sync-error")).toContainText(
+          "Profile changed elsewhere",
+        );
+        await expect(app.page.getByLabel("Display name")).toHaveValue(conflictLocalDisplayName);
+      } finally {
+        await releaseProfileReads();
+      }
+      await app.page.getByTestId("profile-identity-sync-latest").click();
+      const conflictSyncedAt = await waitForProfileSync(syncStatus, identitySyncedAt);
+      await expect(app.page.getByTestId("profile-identity-sync-error")).toHaveCount(0);
+      await expect(app.page.getByLabel("Display name")).toHaveValue(conflictLocalDisplayName);
+      await expect(app.page.getByTestId("shell-account-display-name")).toContainText(
+        conflictLocalDisplayName,
+      );
 
       await app.page.getByLabel("Locale").selectOption(target.locale);
       await app.page.getByLabel("Time zone").selectOption(target.timezone);
       await app.page.getByLabel("Time display").selectOption(target.timeDisplay);
       await app.page.getByLabel("Theme").selectOption(target.theme);
       await app.page.getByLabel("Default surface").selectOption(target.defaultSurface);
-      await waitForProfileSync(syncStatus, identitySyncedAt);
+      await waitForProfileSync(syncStatus, conflictSyncedAt);
 
       await app.page.reload({ waitUntil: "domcontentloaded" });
       await expect(app.page.getByLabel("Given name")).toHaveValue(givenName);
       await expect(app.page.getByLabel("Family name")).toHaveValue(familyName);
-      await expect(app.page.getByLabel("Display name")).toHaveValue(displayName);
+      await expect(app.page.getByLabel("Display name")).toHaveValue(conflictLocalDisplayName);
       await expect(app.page.getByLabel("Locale")).toHaveValue(target.locale);
       await expect(app.page.getByLabel("Time zone")).toHaveValue(target.timezone);
       await expect(app.page.getByLabel("Time display")).toHaveValue(target.timeDisplay);
@@ -108,6 +133,26 @@ test.describe("Rent-a-Sandbox Profile", () => {
   });
 });
 
+async function holdServerFunctionReads(page: Page): Promise<() => Promise<void>> {
+  let release: (() => void) | undefined;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const handler: Parameters<Page["route"]>[1] = async (route) => {
+    if (route.request().method() === "GET") {
+      await released;
+    }
+    await route.fallback();
+  };
+
+  await page.route("**/_serverFn/**", handler);
+
+  return async () => {
+    release?.();
+    await page.unroute("**/_serverFn/**", handler);
+  };
+}
+
 async function holdServerFunctions(page: Page): Promise<() => Promise<void>> {
   let release: (() => void) | undefined;
   const released = new Promise<void>((resolve) => {
@@ -124,6 +169,27 @@ async function holdServerFunctions(page: Page): Promise<() => Promise<void>> {
     release?.();
     await page.unroute("**/_serverFn/**", handler);
   };
+}
+
+async function updateDisplayNameInParallel(
+  context: BrowserContext,
+  displayName: string,
+): Promise<void> {
+  const page = await context.newPage();
+  try {
+    await page.goto("/settings/profile", { waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("heading", { name: "Identity" })).toBeVisible({
+      timeout: shortTimeoutMS,
+    });
+
+    const syncStatus = page.getByTestId("profile-sync-status");
+    const previousSyncedAt = await syncStatus.getAttribute("data-synced-at");
+    await page.getByLabel("Display name").fill(displayName);
+    await page.getByLabel("Locale").focus();
+    await waitForProfileSync(syncStatus, previousSyncedAt);
+  } finally {
+    await page.close();
+  }
 }
 
 async function waitForProfileSync(
