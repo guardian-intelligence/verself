@@ -25,7 +25,7 @@ function SettingsLayout() {
       <PageHeader>
         <PageHeaderContent>
           <PageTitle>Settings</PageTitle>
-          <PageDescription>Manage your plan, credits, and organization.</PageDescription>
+          <PageDescription>Manage your profile, plan, credits, and organization.</PageDescription>
         </PageHeaderContent>
       </PageHeader>
 
