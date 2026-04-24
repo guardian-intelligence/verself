@@ -3,6 +3,7 @@
 
 export {
   advanceNotificationReadCursor,
+  clearNotifications,
   dismissNotification,
   getNotificationSummary,
   listNotifications,
@@ -16,6 +17,11 @@ export type {
   AdvanceNotificationReadCursorErrors,
   AdvanceNotificationReadCursorResponse,
   AdvanceNotificationReadCursorResponses,
+  ClearNotificationsData,
+  ClearNotificationsError,
+  ClearNotificationsErrors,
+  ClearNotificationsResponse,
+  ClearNotificationsResponses,
   ClientOptions,
   DismissNotificationData,
   DismissNotificationError,

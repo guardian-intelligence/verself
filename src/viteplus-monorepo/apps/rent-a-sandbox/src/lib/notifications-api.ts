@@ -2,6 +2,7 @@ import * as v from "valibot";
 import { createClient, type Client } from "../__generated/notifications-api/client/index.js";
 import {
   advanceNotificationReadCursor as advanceGeneratedNotificationReadCursor,
+  clearNotifications as clearGeneratedNotifications,
   dismissNotification as dismissGeneratedNotification,
   getNotificationSummary as getGeneratedNotificationSummary,
   listNotifications as listGeneratedNotifications,
@@ -211,6 +212,25 @@ export async function dismissNotification(
     client,
     headers: idempotencyHeaders("notification-dismiss"),
     path: { notification_id: input.notification_id },
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+
+  if (result.error !== undefined) {
+    throwNotificationsError(path, result.response, result.error);
+  }
+
+  return parseNotificationSummary(result.data);
+}
+
+export async function clearNotifications(
+  options: NotificationsClientOptions,
+): Promise<NotificationSummary> {
+  const client = createNotificationsClient(options);
+  const path = "/api/v1/notifications/clear";
+  const result = await clearGeneratedNotifications({
+    client,
+    headers: idempotencyHeaders("notification-clear"),
     responseStyle: "fields",
     throwOnError: false,
   });

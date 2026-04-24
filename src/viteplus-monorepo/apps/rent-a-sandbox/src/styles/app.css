@@ -66,3 +66,12 @@
       sans-serif;
   }
 }
+
+@keyframes notification-flash {
+  0% {
+    background-color: color-mix(in oklch, var(--color-primary) 10%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
+}

@@ -165,6 +165,15 @@ export const vListNotificationsQuery = v.object({
  */
 export const vListNotificationsResponse = vNotificationList;
 
+export const vClearNotificationsHeaders = v.object({
+  "Idempotency-Key": v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+});
+
+/**
+ * OK
+ */
+export const vClearNotificationsResponse = vNotificationSummary;
+
 export const vPutNotificationPreferencesBody = vNotificationPutPreferencesRequestWritable;
 
 export const vPutNotificationPreferencesHeaders = v.object({

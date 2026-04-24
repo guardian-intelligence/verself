@@ -15,6 +15,7 @@ import { Route as CallbackRouteImport } from './routes/callback'
 import { Route as ShellRouteRouteImport } from './routes/_shell/route'
 import { Route as ShellIndexRouteImport } from './routes/_shell/index'
 import { Route as ShellAuthenticatedRouteRouteImport } from './routes/_shell/_authenticated/route'
+import { Route as ShellAuthenticatedNotificationsRouteImport } from './routes/_shell/_authenticated/notifications'
 import { Route as ShellAuthenticatedSettingsRouteRouteImport } from './routes/_shell/_authenticated/settings/route'
 import { Route as ShellAuthenticatedSettingsIndexRouteImport } from './routes/_shell/_authenticated/settings/index'
 import { Route as ShellAuthenticatedSchedulesIndexRouteImport } from './routes/_shell/_authenticated/schedules/index'
@@ -58,6 +59,12 @@ const ShellAuthenticatedRouteRoute = ShellAuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
   getParentRoute: () => ShellRouteRoute,
 } as any)
+const ShellAuthenticatedNotificationsRoute =
+  ShellAuthenticatedNotificationsRouteImport.update({
+    id: '/notifications',
+    path: '/notifications',
+    getParentRoute: () => ShellAuthenticatedRouteRoute,
+  } as any)
 const ShellAuthenticatedSettingsRouteRoute =
   ShellAuthenticatedSettingsRouteRouteImport.update({
     id: '/settings',
@@ -149,6 +156,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
   '/settings': typeof ShellAuthenticatedSettingsRouteRouteWithChildren
+  '/notifications': typeof ShellAuthenticatedNotificationsRoute
   '/executions/$executionId': typeof ShellAuthenticatedExecutionsExecutionIdRoute
   '/executions/new': typeof ShellAuthenticatedExecutionsNewRoute
   '/schedules/$scheduleId': typeof ShellAuthenticatedSchedulesScheduleIdRoute
@@ -168,6 +176,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
   '/': typeof ShellIndexRoute
+  '/notifications': typeof ShellAuthenticatedNotificationsRoute
   '/executions/$executionId': typeof ShellAuthenticatedExecutionsExecutionIdRoute
   '/executions/new': typeof ShellAuthenticatedExecutionsNewRoute
   '/schedules/$scheduleId': typeof ShellAuthenticatedSchedulesScheduleIdRoute
@@ -191,6 +200,7 @@ export interface FileRoutesById {
   '/_shell/_authenticated': typeof ShellAuthenticatedRouteRouteWithChildren
   '/_shell/': typeof ShellIndexRoute
   '/_shell/_authenticated/settings': typeof ShellAuthenticatedSettingsRouteRouteWithChildren
+  '/_shell/_authenticated/notifications': typeof ShellAuthenticatedNotificationsRoute
   '/_shell/_authenticated/executions/$executionId': typeof ShellAuthenticatedExecutionsExecutionIdRoute
   '/_shell/_authenticated/executions/new': typeof ShellAuthenticatedExecutionsNewRoute
   '/_shell/_authenticated/schedules/$scheduleId': typeof ShellAuthenticatedSchedulesScheduleIdRoute
@@ -213,6 +223,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/logout'
     | '/settings'
+    | '/notifications'
     | '/executions/$executionId'
     | '/executions/new'
     | '/schedules/$scheduleId'
@@ -232,6 +243,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/logout'
     | '/'
+    | '/notifications'
     | '/executions/$executionId'
     | '/executions/new'
     | '/schedules/$scheduleId'
@@ -254,6 +266,7 @@ export interface FileRouteTypes {
     | '/_shell/_authenticated'
     | '/_shell/'
     | '/_shell/_authenticated/settings'
+    | '/_shell/_authenticated/notifications'
     | '/_shell/_authenticated/executions/$executionId'
     | '/_shell/_authenticated/executions/new'
     | '/_shell/_authenticated/schedules/$scheduleId'
@@ -319,6 +332,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof ShellAuthenticatedRouteRouteImport
       parentRoute: typeof ShellRouteRoute
+    }
+    '/_shell/_authenticated/notifications': {
+      id: '/_shell/_authenticated/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof ShellAuthenticatedNotificationsRouteImport
+      parentRoute: typeof ShellAuthenticatedRouteRoute
     }
     '/_shell/_authenticated/settings': {
       id: '/_shell/_authenticated/settings'
@@ -455,6 +475,7 @@ const ShellAuthenticatedSettingsRouteRouteWithChildren =
 
 interface ShellAuthenticatedRouteRouteChildren {
   ShellAuthenticatedSettingsRouteRoute: typeof ShellAuthenticatedSettingsRouteRouteWithChildren
+  ShellAuthenticatedNotificationsRoute: typeof ShellAuthenticatedNotificationsRoute
   ShellAuthenticatedExecutionsExecutionIdRoute: typeof ShellAuthenticatedExecutionsExecutionIdRoute
   ShellAuthenticatedExecutionsNewRoute: typeof ShellAuthenticatedExecutionsNewRoute
   ShellAuthenticatedSchedulesScheduleIdRoute: typeof ShellAuthenticatedSchedulesScheduleIdRoute
@@ -467,6 +488,7 @@ const ShellAuthenticatedRouteRouteChildren: ShellAuthenticatedRouteRouteChildren
   {
     ShellAuthenticatedSettingsRouteRoute:
       ShellAuthenticatedSettingsRouteRouteWithChildren,
+    ShellAuthenticatedNotificationsRoute: ShellAuthenticatedNotificationsRoute,
     ShellAuthenticatedExecutionsExecutionIdRoute:
       ShellAuthenticatedExecutionsExecutionIdRoute,
     ShellAuthenticatedExecutionsNewRoute: ShellAuthenticatedExecutionsNewRoute,
@@ -507,12 +529,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-  }
-}

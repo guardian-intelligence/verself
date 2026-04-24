@@ -178,6 +178,11 @@ type ListNotificationsParams struct {
 	Limit *int64 `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// ClearNotificationsParams defines parameters for ClearNotifications.
+type ClearNotificationsParams struct {
+	IdempotencyKey string `json:"Idempotency-Key"`
+}
+
 // PutNotificationPreferencesParams defines parameters for PutNotificationPreferences.
 type PutNotificationPreferencesParams struct {
 	IdempotencyKey string `json:"Idempotency-Key"`
@@ -283,6 +288,9 @@ type ClientInterface interface {
 	// ListNotifications request
 	ListNotifications(ctx context.Context, params *ListNotificationsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ClearNotifications request
+	ClearNotifications(ctx context.Context, params *ClearNotificationsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// PutNotificationPreferencesWithBody request with any body
 	PutNotificationPreferencesWithBody(ctx context.Context, params *PutNotificationPreferencesParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -307,6 +315,18 @@ type ClientInterface interface {
 
 func (c *Client) ListNotifications(ctx context.Context, params *ListNotificationsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListNotificationsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ClearNotifications(ctx context.Context, params *ClearNotificationsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewClearNotificationsRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -457,6 +477,46 @@ func NewListNotificationsRequest(server string, params *ListNotificationsParams)
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
 	if err != nil {
 		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewClearNotificationsRequest generates requests for ClearNotifications
+func NewClearNotificationsRequest(server string, params *ClearNotificationsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/notifications/clear")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
 	}
 
 	return req, nil
@@ -741,6 +801,9 @@ type ClientWithResponsesInterface interface {
 	// ListNotificationsWithResponse request
 	ListNotificationsWithResponse(ctx context.Context, params *ListNotificationsParams, reqEditors ...RequestEditorFn) (*ListNotificationsResponse, error)
 
+	// ClearNotificationsWithResponse request
+	ClearNotificationsWithResponse(ctx context.Context, params *ClearNotificationsParams, reqEditors ...RequestEditorFn) (*ClearNotificationsResponse, error)
+
 	// PutNotificationPreferencesWithBodyWithResponse request with any body
 	PutNotificationPreferencesWithBodyWithResponse(ctx context.Context, params *PutNotificationPreferencesParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutNotificationPreferencesResponse, error)
 
@@ -780,6 +843,29 @@ func (r ListNotificationsResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r ListNotificationsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ClearNotificationsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *NotificationSummary
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r ClearNotificationsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ClearNotificationsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -910,6 +996,15 @@ func (c *ClientWithResponses) ListNotificationsWithResponse(ctx context.Context,
 	return ParseListNotificationsResponse(rsp)
 }
 
+// ClearNotificationsWithResponse request returning *ClearNotificationsResponse
+func (c *ClientWithResponses) ClearNotificationsWithResponse(ctx context.Context, params *ClearNotificationsParams, reqEditors ...RequestEditorFn) (*ClearNotificationsResponse, error) {
+	rsp, err := c.ClearNotifications(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseClearNotificationsResponse(rsp)
+}
+
 // PutNotificationPreferencesWithBodyWithResponse request with arbitrary body returning *PutNotificationPreferencesResponse
 func (c *ClientWithResponses) PutNotificationPreferencesWithBodyWithResponse(ctx context.Context, params *PutNotificationPreferencesParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutNotificationPreferencesResponse, error) {
 	rsp, err := c.PutNotificationPreferencesWithBody(ctx, params, contentType, body, reqEditors...)
@@ -995,6 +1090,39 @@ func ParseListNotificationsResponse(rsp *http.Response) (*ListNotificationsRespo
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest NotificationList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseClearNotificationsResponse parses an HTTP response from a ClearNotificationsWithResponse call
+func ParseClearNotificationsResponse(rsp *http.Response) (*ClearNotificationsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ClearNotificationsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest NotificationSummary
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

@@ -306,6 +306,46 @@ paths:
         resource: notification_subject
         risk_level: low
         source_product_area: Notifications
+  /api/v1/notifications/clear:
+    post:
+      operationId: clear-notifications
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationSummary"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Dismiss all current human notifications
+      x-forge-metal-iam:
+        action: write
+        audit_event: notification.clear.notifications
+        data_classification: controller_personal_data
+        event_category: notifications
+        operation_display: Dismiss all current human notifications
+        operation_type: write
+        org_scope: token_subject
+        permission: notifications:self:write
+        rate_limit_class: notification_mutation
+        resource: notification_subject
+        risk_level: medium
+        source_product_area: Notifications
   /api/v1/notifications/preferences:
     put:
       operationId: put-notification-preferences

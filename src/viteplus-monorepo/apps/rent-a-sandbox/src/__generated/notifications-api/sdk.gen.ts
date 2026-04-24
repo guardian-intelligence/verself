@@ -7,6 +7,9 @@ import type {
   AdvanceNotificationReadCursorData,
   AdvanceNotificationReadCursorErrors,
   AdvanceNotificationReadCursorResponses,
+  ClearNotificationsData,
+  ClearNotificationsErrors,
+  ClearNotificationsResponses,
   DismissNotificationData,
   DismissNotificationErrors,
   DismissNotificationResponses,
@@ -55,6 +58,22 @@ export const listNotifications = <ThrowOnError extends boolean = false>(
   >({
     security: [{ scheme: "bearer", type: "http" }],
     url: "/api/v1/notifications",
+    ...options,
+  });
+
+/**
+ * Dismiss all current human notifications
+ */
+export const clearNotifications = <ThrowOnError extends boolean = false>(
+  options: Options<ClearNotificationsData, ThrowOnError>,
+) =>
+  (options.client ?? client).post<
+    ClearNotificationsResponses,
+    ClearNotificationsErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/notifications/clear",
     ...options,
   });
 
