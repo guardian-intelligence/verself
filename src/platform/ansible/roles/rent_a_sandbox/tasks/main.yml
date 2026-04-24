@@ -61,10 +61,12 @@
   ansible.builtin.slurp:
     src: /etc/credstore/rent-a-sandbox/auth-session-secret
   register: rent_a_sandbox_auth_session_secret_raw
+  no_log: true
 
 - name: Set rent-a-sandbox auth session secret fact
   ansible.builtin.set_fact:
     rent_a_sandbox_auth_session_secret: "{{ rent_a_sandbox_auth_session_secret_raw.content | b64decode | trim }}"
+  no_log: true
 
 - name: Create rent-a-sandbox install directory
   ansible.builtin.file:
