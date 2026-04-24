@@ -91,6 +91,15 @@
 	}
 }
 
+(profile_api_proxy) {
+	import waf_blocking
+	import sandbox_api_cors_headers
+	import api_security_headers
+	reverse_proxy {{ services.profile_service.host }}:{{ services.profile_service.port }} {
+		header_up X-Real-IP {remote_host}
+	}
+}
+
 {{ grafana_domain }} {
 	import access_log
 	import waf_detection
@@ -225,10 +234,21 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 		import api_security_headers
 		header {
 			Access-Control-Allow-Headers "Authorization, Content-Type, Idempotency-Key, X-Forge-Metal-Correlation-Id, baggage, traceparent"
-			Access-Control-Allow-Methods "GET, POST, DELETE, OPTIONS"
+			Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
 			Access-Control-Max-Age 600
 		}
 		respond 204
+	}
+
+	@profile_api {
+		method GET PUT PATCH
+		path /api/v1/profile*
+	}
+	handle @profile_api {
+		request_body {
+			max_size 16384
+		}
+		import profile_api_proxy
 	}
 
 	@sandbox_api_small_json_mutation {

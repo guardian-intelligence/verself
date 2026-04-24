@@ -10,6 +10,7 @@ table inet forge_metal_identity_service {
         type filter hook input priority filter; policy accept;
 
         tcp dport {{ services.identity_service.port }} iifname != "lo" drop
+        tcp dport {{ services.identity_service.internal_port }} iifname != "lo" drop
     }
 
     chain output {

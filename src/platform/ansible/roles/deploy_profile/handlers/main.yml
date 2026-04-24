@@ -41,6 +41,20 @@
     state: restarted
   when: deploy_profile_governance_service_unit_file.stat.exists
 
+- name: Check if profile-service unit exists for deploy profile restart
+  listen: deploy-profile restart profile-service
+  ansible.builtin.stat:
+    path: /etc/systemd/system/profile-service.service
+  register: deploy_profile_profile_service_unit_file
+
+- name: Restart profile-service from deploy profile
+  listen: deploy-profile restart profile-service
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: profile-service
+    state: restarted
+  when: deploy_profile_profile_service_unit_file.stat.exists
+
 - name: Check if secrets-service unit exists for deploy profile restart
   listen: deploy-profile restart secrets-service
   ansible.builtin.stat:

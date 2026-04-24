@@ -87,7 +87,7 @@
   become: true
   roles:
     - role: deploy_profile
-      tags: [deploy_profile, object_storage_service]
+      tags: [deploy_profile, object_storage_service, profile_service]
     - role: base
       tags: [base]
     - role: nftables
@@ -117,23 +117,25 @@
     - role: resend
       tags: [resend]
     - role: spire
-      tags: [spire, clickhouse, otelcol, billing_service, identity_service, governance_service, secrets_service, sandbox_rental_service, mailbox_service, object_storage_service, temporal, grafana]
+      tags: [spire, clickhouse, otelcol, billing_service, identity_service, governance_service, profile_service, secrets_service, sandbox_rental_service, mailbox_service, object_storage_service, temporal, grafana]
     - role: garage
       tags: [garage, object_storage_service]
     - role: clickhouse
-      tags: [clickhouse, otelcol, billing_service, sandbox_rental_service, governance_service, object_storage_service, openbao, openbao_tenancy, temporal, grafana]
+      tags: [clickhouse, otelcol, billing_service, sandbox_rental_service, governance_service, profile_service, object_storage_service, openbao, openbao_tenancy, temporal, grafana]
     - role: tigerbeetle
       tags: [tigerbeetle]
     - role: postgresql
-      tags: [postgresql, object_storage_service, openbao, openbao_tenancy, temporal]
+      tags: [postgresql, object_storage_service, profile_service, openbao, openbao_tenancy, temporal]
     - role: zitadel
       tags: [zitadel, openbao, openbao_tenancy]
     - role: openbao
       tags: [openbao, openbao_tenancy, billing_service, governance_service, sandbox_rental_service, mailbox_service]
     - role: identity_service
-      tags: [identity_service]
+      tags: [identity_service, profile_service]
     - role: governance_service
-      tags: [governance_service, object_storage_service, openbao, openbao_tenancy, temporal]
+      tags: [governance_service, profile_service, object_storage_service, openbao, openbao_tenancy, temporal]
+    - role: profile_service
+      tags: [profile_service]
     - role: secrets_service
       tags: [secrets_service, object_storage_service, openbao_tenancy]
     - role: openbao_tenancy
@@ -210,4 +212,4 @@
     - role: forgejo
       tags: [forgejo]
     - role: caddy
-      tags: [caddy, openbao_tenancy]
+      tags: [caddy, profile_service, openbao_tenancy]

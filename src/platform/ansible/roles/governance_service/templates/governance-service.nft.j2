@@ -21,6 +21,7 @@ table inet forge_metal_governance_service {
         oifname "lo" tcp dport {{ services.postgresql.port }} accept
         oifname "lo" tcp dport {{ services.clickhouse.secure_native_port }} accept
         oifname "lo" tcp dport {{ services.openbao.port }} accept
+        oifname "lo" tcp dport {{ services.profile_service.internal_port }} accept
         oifname "lo" tcp dport {{ services.zitadel.port }} accept
         oifname "lo" tcp dport {{ services.otelcol.grpc_port }} accept
         meta l4proto != tcp meta l4proto != udp accept

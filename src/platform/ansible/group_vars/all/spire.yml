@@ -7,6 +7,7 @@ spire_agent_socket_path: /run/spire-agent/sockets/agent.sock
 spire_workload_group: spire_workload
 spire_agent_id: "spiffe://{{ spire_trust_domain }}/node/single-node"
 spire_identity_service_id: "spiffe://{{ spire_trust_domain }}/svc/identity-service"
+spire_profile_service_id: "spiffe://{{ spire_trust_domain }}/svc/profile-service"
 spire_governance_service_id: "spiffe://{{ spire_trust_domain }}/svc/governance-service"
 spire_billing_service_id: "spiffe://{{ spire_trust_domain }}/svc/billing-service"
 spire_sandbox_rental_id: "spiffe://{{ spire_trust_domain }}/svc/sandbox-rental-service"
