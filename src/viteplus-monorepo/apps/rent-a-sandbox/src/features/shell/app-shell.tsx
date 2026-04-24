@@ -3,6 +3,7 @@ import { ClientOnly, Link, Outlet, useHydrated, useRouterState } from "@tanstack
 import { LogOut } from "lucide-react";
 import { SignedIn, SignedOut, SignInButton } from "@forge-metal/auth-web/components";
 import { useClerk, useUser } from "@forge-metal/auth-web/react";
+import { ElapsedTimeProvider } from "@forge-metal/ui/hooks/use-elapsed-time";
 import { Avatar, AvatarFallback } from "@forge-metal/ui/components/ui/avatar";
 import { Badge } from "@forge-metal/ui/components/ui/badge";
 import { Toaster } from "@forge-metal/ui/components/ui/sonner";
@@ -50,21 +51,23 @@ export function AppShell({ platformOrigin }: { platformOrigin: string }) {
   }, [path]);
 
   return (
-    <SidebarProvider>
-      <AppSidebar path={path} platformOrigin={platformOrigin} />
-      <SidebarInset>
-        <TopBar onOpenPalette={() => setPaletteOpen(true)} />
-        <main id="main" className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 md:px-8 md:py-8">
-          <Outlet />
-        </main>
-      </SidebarInset>
-      <CommandPalette
-        open={paletteOpen}
-        onOpenChange={setPaletteOpen}
-        platformOrigin={platformOrigin}
-      />
-      <Toaster />
-    </SidebarProvider>
+    <ElapsedTimeProvider pollIntervalMs={1_000} justNowThresholdSeconds={3}>
+      <SidebarProvider>
+        <AppSidebar path={path} platformOrigin={platformOrigin} />
+        <SidebarInset>
+          <TopBar onOpenPalette={() => setPaletteOpen(true)} />
+          <main id="main" className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 md:px-8 md:py-8">
+            <Outlet />
+          </main>
+        </SidebarInset>
+        <CommandPalette
+          open={paletteOpen}
+          onOpenChange={setPaletteOpen}
+          platformOrigin={platformOrigin}
+        />
+        <Toaster />
+      </SidebarProvider>
+    </ElapsedTimeProvider>
   );
 }
 

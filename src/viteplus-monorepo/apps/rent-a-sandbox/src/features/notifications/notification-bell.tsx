@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Bell, CheckCheck, Loader2, Send, X } from "lucide-react";
 import { useSignedInAuth } from "@forge-metal/auth-web/react";
+import { ElapsedTime } from "@forge-metal/ui/components/elapsed-time";
 import { Badge } from "@forge-metal/ui/components/ui/badge";
 import { Button } from "@forge-metal/ui/components/ui/button";
 import {
@@ -191,9 +192,13 @@ function NotificationRow({
         <p className="max-h-10 overflow-hidden text-xs leading-5 text-muted-foreground">
           {notification.body}
         </p>
-        <time className="block text-[11px] text-muted-foreground tabular-nums">
-          {formatDateTimeUTC(notification.created_at)}
-        </time>
+        <ElapsedTime
+          className="block text-[11px] text-muted-foreground tabular-nums"
+          data-testid="notification-created-at"
+          dateTime={notification.created_at}
+          title={formatDateTimeUTC(notification.created_at)}
+          value={notification.created_at}
+        />
       </div>
       <Button
         type="button"
