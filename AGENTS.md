@@ -16,6 +16,7 @@ Tech Stack:
 * Verdaccio to mirror NPM within our system to avoid north/south traffic being routine and to enforce minimum dependency age
 * Caddy for ingress with Coraza WAF in alert-only mode, using nftables config with Jinja2 templates
 * SPIRE for our SPIFFE implementation, everything speaks x509-SVIDs to eachother except for services that don't support SPIFFE, then we use short-lived JWT-SVIDs.
+* Golang's River library for background jobs *within* a service. NATS JetStream for messaging/fan-out batch jobs between services.
 
 Invariant patterns:
 
