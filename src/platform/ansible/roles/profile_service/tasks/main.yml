@@ -143,7 +143,9 @@
     content: |
       [Unit]
       Description=Profile Service
-      After=forge-metal-firewall.target network.target postgresql.service zitadel.service spire-agent.service identity-service.service governance-service.service
+      After=forge-metal-firewall.target network.target
+      After=postgresql.service zitadel.service spire-agent.service
+      After=identity-service.service governance-service.service
       Requires=forge-metal-firewall.target
       Wants=postgresql.service zitadel.service spire-agent.service identity-service.service governance-service.service
 
