@@ -7,6 +7,7 @@ electric_image: "docker.io/electricsql/electric:{{ electric_version }}"
 # Derived defaults — paths live under the caller's electric_credstore_dir.
 electric_pg_password_file: "{{ electric_credstore_dir }}/pg-password"
 electric_api_secret_file: "{{ electric_credstore_dir }}/api-secret"
+electric_runtime_env_file: "{{ electric_credstore_dir }}/runtime.env"
 electric_transient_pgpass_file: "/root/.pgpass-electric-{{ electric_instance }}-reconcile"
 
 # Electric's replication stream id drives the Postgres slot name
