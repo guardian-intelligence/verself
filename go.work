@@ -9,6 +9,7 @@ use (
 	./src/httpserver
 	./src/identity-service
 	./src/mailbox-service
+	./src/notifications-service
 	./src/object-storage-service
 	./src/otel
 	./src/profile-service

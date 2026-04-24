@@ -17,6 +17,8 @@ src/object-storage-service/object-storage-secret-sync
 src/temporal-platform/temporal-bootstrap
 src/object-storage-service/object-storage-proof
 src/object-storage-service/object-storage-service
+src/profile-service/profile-service
+src/notifications-service/notifications-service
 # Config (contains credentials)
 forge-metal.toml
 
