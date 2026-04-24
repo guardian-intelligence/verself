@@ -269,7 +269,6 @@ function NotificationInboxList({
   readonly mode: InboxMode;
 }) {
   const [filter, setFilter] = useState<NotificationsFilter>("unread");
-  const markRead = useMarkNotificationReadMutation();
   const dismiss = useDismissNotificationMutation();
   const visibleNotifications =
     filter === "unread"
@@ -307,12 +306,6 @@ function NotificationInboxList({
                 key={notification.notification_id}
                 notification={notification}
                 read={read}
-                onMarkRead={() => {
-                  if (read || markRead.isPending) return;
-                  markRead.mutate({
-                    read_up_to_sequence: notification.recipient_sequence,
-                  });
-                }}
                 onDismiss={() => dismiss.mutate({ notification_id: notification.notification_id })}
               />
             );
@@ -370,27 +363,21 @@ function LoadingRows() {
 function NotificationRow({
   notification,
   onDismiss,
-  onMarkRead,
   read,
 }: {
   readonly notification: Notification;
   readonly onDismiss: () => void;
-  readonly onMarkRead: () => void;
   readonly read: boolean;
 }) {
   return (
     <article
       className={cn(
-        "grid cursor-default grid-cols-[1fr_auto] gap-2 px-3 py-2.5 transition-colors duration-200 data-[new=true]:animate-[notification-flash_1.8s_ease-out]",
-        !read && "bg-blue-50/70 dark:bg-blue-950/20",
+        "grid grid-cols-[1fr_auto] gap-2 px-3 py-2.5 transition-colors duration-200 data-[new=true]:animate-[notification-flash_1.1s_ease-out]",
+        !read && "bg-muted/35",
       )}
       data-testid="notification-row"
       data-notification-id={notification.notification_id}
       data-new={!read}
-      onClick={onMarkRead}
-      onFocus={onMarkRead}
-      onMouseEnter={onMarkRead}
-      tabIndex={0}
     >
       <div className="min-w-0 space-y-1">
         <div className="flex min-w-0 items-center gap-2">
@@ -398,7 +385,7 @@ function NotificationRow({
           {!read ? (
             <Badge
               variant="secondary"
-              className="h-5 shrink-0 bg-blue-100 px-1.5 text-[10px] text-blue-700 dark:bg-blue-950 dark:text-blue-300"
+              className="h-5 shrink-0 border border-border bg-background px-1.5 text-[10px] font-medium text-muted-foreground"
             >
               Unread
             </Badge>
