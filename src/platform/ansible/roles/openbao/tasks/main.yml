@@ -307,7 +307,7 @@
     body_format: json
     body:
       key: "{{ item.content | b64decode | trim }}"
-    validate_certs: false
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
     status_code: 200
     return_content: true
   loop: "{{ openbao_unseal_key_reads.results | default([]) }}"
@@ -328,7 +328,7 @@
     method: GET
     headers:
       X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
-    validate_certs: false
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
     status_code: 200
     return_content: true
   register: openbao_auth_mounts_response
@@ -345,7 +345,7 @@
     body:
       type: jwt
       description: Forge Metal SPIRE JWT-SVID workload auth
-    validate_certs: false
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
     status_code: 204
   when: (openbao_spiffe_jwt_mount ~ '/') not in (openbao_auth_mounts_response.json.data.keys() | list)
   changed_when: true
@@ -357,7 +357,7 @@
     method: GET
     headers:
       X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
-    validate_certs: false
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
     status_code: [200, 404]
     return_content: true
   register: openbao_spiffe_jwt_config_response
@@ -381,7 +381,7 @@
       jwks_url: "{{ openbao_spiffe_jwt_jwks_url }}"
       jwks_ca_pem: "{{ openbao_spiffe_jwt_jwks_ca.content | b64decode }}"
       bound_issuer: "{{ spire_jwt_issuer_url }}"
-    validate_certs: false
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
     status_code: 204
   when: >-
     openbao_spiffe_jwt_config_response.status == 404
@@ -396,7 +396,7 @@
   ansible.builtin.uri:
     url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/sys/health"
     method: GET
-    validate_certs: false
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
     status_code: 200
     return_content: true
   register: openbao_health
@@ -409,7 +409,7 @@
       X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
     body_format: json
     body: "{{ {'hmac': (item.hmac | bool)} }}"
-    validate_certs: false
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
     status_code: [200, 204]
   loop: "{{ openbao_audit_request_headers }}"
   loop_control:
@@ -423,7 +423,7 @@
     headers:
       X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
       X-Forge-Metal-Request-Id: "openbao-bootstrap-probe"
-    validate_certs: false
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
     status_code: 200
     return_content: true
   no_log: true

@@ -33,7 +33,7 @@
     method: GET
     headers:
       X-Vault-Token: "{{ openbao_tenancy_root_token }}"
-    validate_certs: false
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
     status_code: [200, 405]
     return_content: true
   register: openbao_tenancy_namespace_probe
@@ -151,7 +151,7 @@
     method: GET
     headers:
       X-Vault-Token: "{{ openbao_tenancy_root_token }}"
-    validate_certs: false
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
     status_code: 200
     return_content: true
   register: openbao_tenancy_mounts_response
@@ -164,7 +164,7 @@
     method: GET
     headers:
       X-Vault-Token: "{{ openbao_tenancy_root_token }}"
-    validate_certs: false
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
     status_code: 200
     return_content: true
   register: openbao_tenancy_auth_response
