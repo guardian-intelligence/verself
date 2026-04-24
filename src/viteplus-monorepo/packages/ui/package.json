@@ -20,6 +20,10 @@
       "types": "./src/lib/utils.ts",
       "default": "./src/lib/utils.ts"
     },
+    "./lib/text": {
+      "types": "./src/lib/text.ts",
+      "default": "./src/lib/text.ts"
+    },
     "./hooks/*": {
       "types": "./src/hooks/*.ts",
       "default": "./src/hooks/*.ts"
