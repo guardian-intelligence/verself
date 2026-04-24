@@ -1,7 +1,8 @@
-import { type FocusEvent, type ReactNode } from "react";
-import { useIsMutating, useSuspenseQuery } from "@tanstack/react-query";
+import { type FocusEvent, type ReactNode, useState } from "react";
+import { useIsMutating, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useSignedInAuth } from "@forge-metal/auth-web/react";
+import { Button } from "@forge-metal/ui/components/ui/button";
 import { Input } from "@forge-metal/ui/components/ui/input";
 import { Label } from "@forge-metal/ui/components/ui/label";
 import {
@@ -71,26 +72,32 @@ function ProfileSettings() {
 
   return (
     <div className="flex flex-col gap-6">
-      <AutoSyncStatus
-        data-testid="profile-sync-status"
-        state={activeSyncs > 0 ? "syncing" : "idle"}
-        syncedAt={latestProfileSyncAt(profile)}
-      />
       <PageSections>
         <IdentitySection profile={profile} />
         <PreferencesSection profile={profile} />
       </PageSections>
+      <div className="flex justify-start">
+        <AutoSyncStatus
+          data-testid="profile-sync-status"
+          state={activeSyncs > 0 ? "syncing" : "idle"}
+          syncedAt={latestProfileSyncAt(profile)}
+        />
+      </div>
     </div>
   );
 }
 
 function IdentitySection({ profile }: { profile: ProfileSnapshot }) {
+  const auth = useSignedInAuth();
+  const queryClient = useQueryClient();
   const mutation = useUpdateProfileIdentityMutation();
+  const [refreshingLatest, setRefreshingLatest] = useState(false);
   const autosync = useAutoSyncForm<IdentityForm, UpdateProfileIdentityRequest, ProfileSnapshot>({
     formEqual: identityFormsEqual,
     formFromResult: identityFormFromProfile,
     initialForm: identityFormFromProfile(profile),
     initialVersion: profile.identity.version,
+    isConflictError: isProfileVersionConflict,
     mutate: mutation.mutateAsync,
     requestFromForm: (form, version) => ({
       display_name: form.display_name,
@@ -102,6 +109,19 @@ function IdentitySection({ profile }: { profile: ProfileSnapshot }) {
     versionFromResult: (snapshot) => snapshot.identity.version,
   });
   const form = autosync.form;
+
+  const syncLatestAndKeepDraft = async () => {
+    setRefreshingLatest(true);
+    try {
+      const latest = await queryClient.fetchQuery(profileQuery(auth));
+      autosync.rebase(latest);
+      autosync.sync();
+    } catch (error) {
+      autosync.fail(error);
+    } finally {
+      setRefreshingLatest(false);
+    }
+  };
 
   return (
     <PageSection>
@@ -158,25 +178,34 @@ function IdentitySection({ profile }: { profile: ProfileSnapshot }) {
             />
           </Field>
         </div>
-        {autosync.error ? (
-          <ErrorCallout
-            className="sm:col-span-2"
-            error={autosync.error}
-            title="Identity sync failed"
-          />
-        ) : null}
+        <ProfileFormSyncError
+          actionTestId="profile-identity-sync-latest"
+          className="sm:col-span-2"
+          error={autosync.error}
+          onSyncLatest={() => {
+            void syncLatestAndKeepDraft();
+          }}
+          syncing={refreshingLatest || autosync.status === "syncing"}
+          testId="profile-identity-sync-error"
+          title="Identity sync failed"
+          variant={autosync.status === "conflict" ? "conflict" : "error"}
+        />
       </form>
     </PageSection>
   );
 }
 
 function PreferencesSection({ profile }: { profile: ProfileSnapshot }) {
+  const auth = useSignedInAuth();
+  const queryClient = useQueryClient();
   const mutation = usePutProfilePreferencesMutation();
+  const [refreshingLatest, setRefreshingLatest] = useState(false);
   const autosync = useAutoSyncForm<PreferencesForm, PutProfilePreferencesRequest, ProfileSnapshot>({
     formEqual: preferenceFormsEqual,
     formFromResult: preferencesFormFromProfile,
     initialForm: preferencesFormFromProfile(profile),
     initialVersion: profile.preferences.version,
+    isConflictError: isProfileVersionConflict,
     mutate: mutation.mutateAsync,
     requestFromForm: (form, version) => ({
       default_surface: form.default_surface,
@@ -189,6 +218,19 @@ function PreferencesSection({ profile }: { profile: ProfileSnapshot }) {
     versionFromResult: (snapshot) => snapshot.preferences.version,
   });
   const form = autosync.form;
+
+  const syncLatestAndKeepDraft = async () => {
+    setRefreshingLatest(true);
+    try {
+      const latest = await queryClient.fetchQuery(profileQuery(auth));
+      autosync.rebase(latest);
+      autosync.sync();
+    } catch (error) {
+      autosync.fail(error);
+    } finally {
+      setRefreshingLatest(false);
+    }
+  };
 
   return (
     <PageSection>
@@ -310,15 +352,86 @@ function PreferencesSection({ profile }: { profile: ProfileSnapshot }) {
             </Select>
           </Field>
         </div>
-        {autosync.error ? (
-          <ErrorCallout
-            className="sm:col-span-2"
-            error={autosync.error}
-            title="Preferences sync failed"
-          />
-        ) : null}
+        <ProfileFormSyncError
+          actionTestId="profile-preferences-sync-latest"
+          className="sm:col-span-2"
+          error={autosync.error}
+          onSyncLatest={() => {
+            void syncLatestAndKeepDraft();
+          }}
+          syncing={refreshingLatest || autosync.status === "syncing"}
+          testId="profile-preferences-sync-error"
+          title="Preferences sync failed"
+          variant={autosync.status === "conflict" ? "conflict" : "error"}
+        />
       </form>
     </PageSection>
+  );
+}
+
+function ProfileFormSyncError({
+  actionTestId,
+  className,
+  error,
+  onSyncLatest,
+  syncing,
+  testId,
+  title,
+  variant,
+}: {
+  readonly actionTestId: string;
+  readonly className?: string;
+  readonly error: unknown;
+  readonly onSyncLatest: () => void;
+  readonly syncing: boolean;
+  readonly testId: string;
+  readonly title: string;
+  readonly variant: "conflict" | "error";
+}) {
+  if (!error) {
+    return null;
+  }
+
+  if (variant === "conflict") {
+    return (
+      <div className={className} data-testid={testId}>
+        <ErrorCallout
+          action={
+            <Button
+              data-testid={actionTestId}
+              disabled={syncing}
+              onClick={onSyncLatest}
+              size="sm"
+              type="button"
+              variant="destructive"
+            >
+              Sync latest and keep my changes
+            </Button>
+          }
+          error="Your draft is still in the form. Sync the latest version before saving these fields."
+          title="Profile changed elsewhere"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className={className} data-testid={testId}>
+      <ErrorCallout error={error} title={title} />
+    </div>
+  );
+}
+
+function isProfileVersionConflict(error: unknown): boolean {
+  if (error && typeof error === "object" && "status" in error && error.status === 409) {
+    return true;
+  }
+
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  return (
+    message.includes("Profile API 409") ||
+    message.includes("profile resource version conflict") ||
+    message.includes("profile-version-conflict")
   );
 }
 
