@@ -53,6 +53,11 @@ test.describe("Rent-a-Sandbox Profile", () => {
       await app.page.getByLabel("Display name").fill(displayName);
       await app.page.getByLabel("Locale").focus();
       const identitySyncedAt = await waitForProfileSync(syncStatus, initialSyncedAt);
+      await expect(app.page.getByTestId("profile-sync-status")).toContainText(
+        /Last synced (Just now|Less than a minute ago)/,
+      );
+      await expect(app.page.getByTestId("profile-sync-status")).not.toContainText("UTC");
+      await expect(app.page.getByTestId("shell-account-display-name")).toContainText(displayName);
 
       await app.page.getByLabel("Locale").selectOption(target.locale);
       await app.page.getByLabel("Time zone").selectOption(target.timezone);

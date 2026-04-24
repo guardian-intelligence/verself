@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { ClientOnly, Link, Outlet, useHydrated, useRouterState } from "@tanstack/react-router";
 import { LogOut } from "lucide-react";
 import { SignedIn, SignedOut, SignInButton } from "@forge-metal/auth-web/components";
-import { useClerk, useUser } from "@forge-metal/auth-web/react";
+import { useClerk, useSignedInAuth, useUser } from "@forge-metal/auth-web/react";
 import { ElapsedTimeProvider } from "@forge-metal/ui/hooks/use-elapsed-time";
 import { Avatar, AvatarFallback } from "@forge-metal/ui/components/ui/avatar";
 import { Badge } from "@forge-metal/ui/components/ui/badge";
@@ -37,6 +38,7 @@ import {
   NotificationBell,
   NotificationBellFallback,
 } from "~/features/notifications/notification-bell";
+import { profileQuery } from "~/features/profile/queries";
 
 export function AppShell({ platformOrigin }: { platformOrigin: string }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -185,13 +187,18 @@ function SidebarAccountRow() {
 }
 
 function AccountMenu() {
+  const auth = useSignedInAuth();
+  const hydrated = useHydrated();
   const { user } = useUser();
   const { redirectToSignOut } = useClerk();
   const tierLabel = useBillingTierLabel();
+  const { data: profile } = useQuery({ ...profileQuery(auth), enabled: hydrated });
 
   if (!user) return null;
 
-  const display = user.name ?? user.preferredUsername ?? user.email ?? "Signed in";
+  const profileDisplayName = hydrated ? profile?.identity.display_name.trim() : "";
+  const display =
+    profileDisplayName || user.name || user.preferredUsername || user.email || "Signed in";
   const email = user.email ?? "";
   const initials = initialsFor(display);
 
@@ -280,7 +287,12 @@ function AccountTriggerContent({
       <Avatar className="size-8 shrink-0">
         <AvatarFallback className="text-xs">{initials}</AvatarFallback>
       </Avatar>
-      <span className="min-w-0 flex-1 truncate text-left text-sm font-medium">{display}</span>
+      <span
+        className="min-w-0 flex-1 truncate text-left text-sm font-medium"
+        data-testid="shell-account-display-name"
+      >
+        {display}
+      </span>
       {tierLabel ? (
         <Badge
           variant="secondary"
