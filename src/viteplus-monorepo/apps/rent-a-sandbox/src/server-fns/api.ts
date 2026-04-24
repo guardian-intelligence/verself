@@ -23,6 +23,15 @@ import {
   listAuditEvents as listAuditEventsRequest,
   listDataExports as listDataExportsRequest,
 } from "~/lib/governance-api";
+import {
+  ProfileApiError,
+  getProfile as getProfileRequest,
+  isProfileApiError,
+  putProfilePreferences as putProfilePreferencesRequest,
+  putProfilePreferencesRequestSchema,
+  updateProfileIdentity as updateProfileIdentityRequest,
+  updateProfileIdentityRequestSchema,
+} from "~/lib/profile-api";
 import type {
   InviteMemberRequest,
   InviteMemberResponse,
@@ -40,6 +49,11 @@ import type {
   GovernanceAuditEvents,
   GovernanceExportJob,
 } from "~/lib/governance-api";
+import type {
+  ProfileSnapshot,
+  PutProfilePreferencesRequest,
+  UpdateProfileIdentityRequest,
+} from "~/lib/profile-api";
 import {
   cancelContract as cancelContractRequest,
   cancelContractRequestSchema,
@@ -97,11 +111,15 @@ import { rentASandboxAuthMiddleware } from "./auth";
 
 const IDENTITY_SERVICE_BASE_URL = requireURLFromEnv("IDENTITY_SERVICE_BASE_URL");
 const GOVERNANCE_SERVICE_BASE_URL = requireURLFromEnv("GOVERNANCE_SERVICE_BASE_URL");
+const PROFILE_SERVICE_BASE_URL = requireURLFromEnv("PROFILE_SERVICE_BASE_URL");
 const SANDBOX_RENTAL_SERVICE_BASE_URL = requireURLFromEnv("SANDBOX_RENTAL_SERVICE_BASE_URL");
 const IDENTITY_SERVICE_AUTH_AUDIENCE = process.env.IDENTITY_SERVICE_AUTH_AUDIENCE?.trim();
+const PROFILE_SERVICE_AUTH_AUDIENCE =
+  process.env.PROFILE_SERVICE_AUTH_AUDIENCE?.trim() || IDENTITY_SERVICE_AUTH_AUDIENCE;
 
 export { IdentityApiError, isIdentityApiError };
 export { GovernanceApiError, isGovernanceApiError };
+export { ProfileApiError, isProfileApiError };
 export { SandboxRentalApiError, isSandboxRentalApiError, isSandboxRentalNotFound };
 export type {
   CreateExportRequest,
@@ -109,6 +127,7 @@ export type {
   GovernanceAuditEvents,
   GovernanceExportJob,
 };
+export type { ProfileSnapshot, PutProfilePreferencesRequest, UpdateProfileIdentityRequest };
 export type {
   CheckoutRequest,
   CancelContractRequest,
@@ -183,6 +202,19 @@ async function governanceClientOptions(context: { auth?: AuthSession } | undefin
   };
 }
 
+async function profileClientOptions(context: { auth?: AuthSession } | undefined) {
+  const auth = await resolveAuthContext(context);
+  const accessToken =
+    PROFILE_SERVICE_AUTH_AUDIENCE &&
+    PROFILE_SERVICE_AUTH_AUDIENCE !== IDENTITY_SERVICE_AUTH_AUDIENCE
+      ? await getAccessTokenForAudience(getAuthConfig(), auth, PROFILE_SERVICE_AUTH_AUDIENCE)
+      : auth.accessToken;
+  return {
+    accessToken,
+    baseUrl: PROFILE_SERVICE_BASE_URL,
+  };
+}
+
 export const getOrganization = createServerFn({ method: "GET" })
   .middleware([rentASandboxAuthMiddleware])
   .handler(async ({ context }) => {
@@ -227,6 +259,32 @@ export const putMemberCapabilities = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     return putMemberCapabilitiesRequest({
       ...(await identityClientOptions(context)),
+      body: data,
+    });
+  });
+
+export const getProfile = createServerFn({ method: "GET" })
+  .middleware([rentASandboxAuthMiddleware])
+  .handler(async ({ context }) => {
+    return getProfileRequest(await profileClientOptions(context));
+  });
+
+export const updateProfileIdentity = createServerFn({ method: "POST" })
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(updateProfileIdentityRequestSchema)
+  .handler(async ({ context, data }) => {
+    return updateProfileIdentityRequest({
+      ...(await profileClientOptions(context)),
+      body: data,
+    });
+  });
+
+export const putProfilePreferences = createServerFn({ method: "POST" })
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(putProfilePreferencesRequestSchema)
+  .handler(async ({ context, data }) => {
+    return putProfilePreferencesRequest({
+      ...(await profileClientOptions(context)),
       body: data,
     });
   });

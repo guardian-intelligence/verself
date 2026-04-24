@@ -88,6 +88,12 @@ export const EVERGREEN_NAV: readonly NavEntry[] = [
 // subtree, not as sidebar rows.
 export const SETTINGS_NAV: readonly SettingsNavEntry[] = [
   {
+    id: "profile",
+    label: "Profile",
+    to: "/settings/profile",
+    matchPrefix: "/settings/profile",
+  },
+  {
     id: "billing",
     label: "Billing",
     to: "/settings/billing",
