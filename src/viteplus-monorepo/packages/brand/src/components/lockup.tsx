@@ -10,21 +10,39 @@ export type LockupSize = "sm" | "md" | "lg";
 // the only way to keep Workshop / Newsroom / Letters vertically consistent
 // against the same wordmark. The VARIANT_BOX table below declares what each
 // viewBox contains and the component computes the SVG render box from there.
+//
+// sm (22) is the masthead / chrome / bookplate size. It is deliberately
+// quiet — the house name whispers at the top of the page so the content can
+// speak. The Paris Review nameplate, The Baffler's masthead, the NYT Opinion
+// bug: all of them size the volume identifier smaller than you expect on
+// first draft. This lockup follows that tradition. md/lg are hero-scale
+// specimens (photography, business cards, /design ladders); they do not
+// ship in live chrome.
 const MARK_HEIGHT_PX: Record<LockupSize, number> = {
-  sm: 32,
+  sm: 22,
   md: 52,
   lg: 96,
 };
 
-// Wordmark ratio — wordmark font-size as a fraction of markH. Uppercase sans
-// occupies only its cap-height inside the em-box, so the font-size has to
-// climb above markH-proportional to land the visible caps at the same optical
-// weight the old Fraunces mixed-case set did. Same ratio across the size
-// ladder keeps the lockup coherent from a 32 px topbar mark to a 96 px hero.
+// Wordmark ratio — wordmark font-size as a fraction of markH. At masthead
+// scale (sm) the wordmark runs much smaller than markH so the mark, not the
+// text, carries the visual mass — classic bookplate proportions where the
+// caps read as a label beside the device. md/lg stay near-1:1 so a hero
+// lockup can anchor a photograph or a cover.
 const WORDMARK_RATIO: Record<LockupSize, number> = {
-  sm: 0.95,
+  sm: 0.5,
   md: 0.95,
   lg: 0.95,
+};
+
+// Weight per size. Tracked uppercase caps thin out as they shrink; bumping
+// to 600 at masthead scale keeps the strokes legible against the mark's
+// black ink without making GUARDIAN louder than it should be. At hero
+// scales the strokes already carry weight, so 500 is plenty.
+const WORDMARK_WEIGHT: Record<LockupSize, number> = {
+  sm: 600,
+  md: 500,
+  lg: 500,
 };
 
 // Optical tracking per size. Uppercase logotypes breathe at display sizes and
@@ -33,7 +51,7 @@ const WORDMARK_RATIO: Record<LockupSize, number> = {
 // positive values — the exact opposite of the old Fraunces mixed-case curve,
 // which tightened with size.
 const WORDMARK_TRACKING: Record<LockupSize, string> = {
-  sm: "0.18em",
+  sm: "0.26em",
   md: "0.14em",
   lg: "0.12em",
 };
@@ -95,10 +113,11 @@ const VARIANT_BOX: Record<
   { inkScale: number; svgH: number; svgW: number; rightBleed: number }
 > = {
   // Glyph-tight cropped viewBox: 102.174 × 120.823. The visible wings are the
-  // SVG box. inkScale 0.66 lands the wing ink at Geist cap-height given
-  // WORDMARK_RATIO 0.95 and WORDMARK_CAP_RATIO 0.70 (0.95 × 0.70 ≈ 0.665).
-  // Revisit if either ratio changes or the wordmark face is swapped.
-  argent: { inkScale: 0.66, svgH: 1, svgW: 102.174 / 120.823, rightBleed: 0 },
+  // SVG box. inkScale 0.92 keeps the argent wing close to markH since on a
+  // dark ground (Workshop, photography) the bare mark IS the lockup's
+  // anchor — the wordmark is the whisper beside it, not the cap-line it
+  // must align to.
+  argent: { inkScale: 0.92, svgH: 1, svgW: 102.174 / 120.823, rightBleed: 0 },
   // Iron rounded rect fills the 292 viewBox to the pixel (the 291.14 × 291.14
   // rect nested in a 292 × 292 viewBox rounds to a zero bleed in practice).
   chip: { inkScale: 1, svgH: 1, svgW: 1, rightBleed: 0 },
@@ -156,6 +175,7 @@ export function Lockup({
 }: LockupProps) {
   const markH = MARK_HEIGHT_PX[size];
   const ratio = WORDMARK_RATIO[size];
+  const weight = WORDMARK_WEIGHT[size];
   const tracking = WORDMARK_TRACKING[size];
   const box = VARIANT_BOX[variant];
 
@@ -199,7 +219,7 @@ export function Lockup({
   // host app's CSS token graph.
   const wordmarkStyle: CSSProperties = {
     fontFamily: "'Geist', ui-sans-serif, system-ui, sans-serif",
-    fontWeight: 500,
+    fontWeight: weight,
     fontSize: `${wordmarkFontSize}px`,
     lineHeight: WORDMARK_CAP_RATIO,
     letterSpacing: tracking,

@@ -387,43 +387,29 @@ export function TreatmentMastheadLadder({
   );
 }
 
-// Shared Letters nameplate. Wings (via the iron chip, since the nameplate
-// lives on Paper) + "GUARDIAN LETTERS" tracked uppercase Geist + 1 px Ink
-// rule below. Explicitly NOT a Lockup: we do not want Fraunces at masthead
-// scale competing with the article H1. The nameplate reads as a volume
-// masthead (Paris Review / The Baffler / Harper's) so the H1 does the
-// heading work. (Rule was previously Bordeaux; retreated to Ink 2026-04-23
-// so Bordeaux stays reserved for the blockquote left-rule.)
+// Shared Letters nameplate. The Lockup at size sm — Guardian's canonical
+// masthead — plus a 1 px Ink rule below. Before the Geist cutover this
+// rendered a hand-rolled wings + tracked-uppercase pair because the
+// top-of-page Lockup was Fraunces and competed with the article H1; now
+// that the Lockup IS the quiet volume marker, the nameplate delegates to
+// it so the chrome masthead and the /design/letters specimen stay
+// identical by construction. The 1 px rule is what makes this a nameplate
+// and not just a lockup. (Rule was previously Bordeaux; retreated to Ink
+// 2026-04-23 so Bordeaux stays reserved for the blockquote left-rule.)
 export function Nameplate() {
   return (
-    <div>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "14px",
-          paddingBottom: "10px",
-          borderBottom: "1px solid var(--color-ink)",
-          color: "var(--color-ink)",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <WingsChip style={{ width: "22px", height: "22px", flex: "0 0 22px" }} />
-          <span
-            style={{
-              fontFamily: "'Geist', sans-serif",
-              fontWeight: 600,
-              fontSize: "11px",
-              letterSpacing: "0.26em",
-              textTransform: "uppercase",
-              color: "var(--color-ink)",
-            }}
-          >
-            Guardian · Letters
-          </span>
-        </div>
-      </div>
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "14px",
+        paddingBottom: "10px",
+        borderBottom: "1px solid var(--color-ink)",
+        color: "var(--color-ink)",
+      }}
+    >
+      <Lockup size="sm" variant="chip" section="Letters" wordmarkColor="var(--color-ink)" />
     </div>
   );
 }
