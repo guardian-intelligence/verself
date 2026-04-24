@@ -1,9 +1,7 @@
-import { type ReactNode, useEffect, useMemo, useState } from "react";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { type FocusEvent, type ReactNode } from "react";
+import { useIsMutating, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Save } from "lucide-react";
 import { useSignedInAuth } from "@forge-metal/auth-web/react";
-import { Button } from "@forge-metal/ui/components/ui/button";
 import { Input } from "@forge-metal/ui/components/ui/input";
 import { Label } from "@forge-metal/ui/components/ui/label";
 import {
@@ -15,13 +13,20 @@ import {
   SectionTitle,
 } from "@forge-metal/ui/components/ui/page";
 import { Select } from "@forge-metal/ui/components/ui/select";
+import { AutoSyncStatus } from "~/components/auto-sync-status";
 import { ErrorCallout } from "~/components/error-callout";
 import {
+  profileMutationKeys,
   usePutProfilePreferencesMutation,
   useUpdateProfileIdentityMutation,
 } from "~/features/profile/mutations";
 import { loadProfilePage, profileQuery } from "~/features/profile/queries";
-import type { ProfileSnapshot } from "~/server-fns/api";
+import { useAutoSyncForm } from "~/lib/auto-sync-form";
+import type {
+  ProfileSnapshot,
+  PutProfilePreferencesRequest,
+  UpdateProfileIdentityRequest,
+} from "~/server-fns/api";
 
 const LOCALE_OPTIONS = ["en-US", "en-GB", "de-DE", "fr-FR", "es-US"] as const;
 const TIMEZONE_OPTIONS = [
@@ -34,6 +39,7 @@ const TIMEZONE_OPTIONS = [
   "Europe/Berlin",
   "Asia/Tokyo",
 ] as const;
+const DEFAULT_SURFACE_OPTIONS = ["executions", "schedules", "settings/profile"] as const;
 
 export const Route = createFileRoute("/_shell/_authenticated/settings/profile")({
   loader: ({ context }) => loadProfilePage(context.queryClient, context.auth),
@@ -61,31 +67,41 @@ function ProfileSettings() {
     ...profileQuery(auth),
     initialData: initial,
   });
+  const activeSyncs = useIsMutating({ mutationKey: profileMutationKeys.all(auth) });
 
   return (
-    <PageSections>
-      <IdentitySection profile={profile} />
-      <PreferencesSection profile={profile} />
-    </PageSections>
+    <div className="flex flex-col gap-6">
+      <AutoSyncStatus
+        data-testid="profile-sync-status"
+        state={activeSyncs > 0 ? "syncing" : "idle"}
+        syncedAt={latestProfileSyncAt(profile)}
+      />
+      <PageSections>
+        <IdentitySection profile={profile} />
+        <PreferencesSection profile={profile} />
+      </PageSections>
+    </div>
   );
 }
 
 function IdentitySection({ profile }: { profile: ProfileSnapshot }) {
   const mutation = useUpdateProfileIdentityMutation();
-  const [form, setForm] = useState<IdentityForm>(() => identityFormFromProfile(profile));
-
-  useEffect(() => {
-    setForm(identityFormFromProfile(profile));
-  }, [profile]);
-
-  const hasChanges = useMemo(() => {
-    const next = identityFormFromProfile(profile);
-    return (
-      form.display_name !== next.display_name ||
-      form.family_name !== next.family_name ||
-      form.given_name !== next.given_name
-    );
-  }, [form, profile]);
+  const autosync = useAutoSyncForm<IdentityForm, UpdateProfileIdentityRequest, ProfileSnapshot>({
+    formEqual: identityFormsEqual,
+    formFromResult: identityFormFromProfile,
+    initialForm: identityFormFromProfile(profile),
+    initialVersion: profile.identity.version,
+    mutate: mutation.mutateAsync,
+    requestFromForm: (form, version) => ({
+      display_name: form.display_name,
+      family_name: form.family_name,
+      given_name: form.given_name,
+      version,
+    }),
+    validate: validateIdentityForm,
+    versionFromResult: (snapshot) => snapshot.identity.version,
+  });
+  const form = autosync.form;
 
   return (
     <PageSection>
@@ -97,15 +113,17 @@ function IdentitySection({ profile }: { profile: ProfileSnapshot }) {
       </SectionHeader>
 
       <form
+        aria-busy={autosync.status === "syncing" || undefined}
         className="grid gap-4 sm:grid-cols-2"
+        data-testid="profile-identity-form"
+        onBlur={(event) => {
+          if (focusStayedInside(event)) return;
+          autosync.sync();
+        }}
         onSubmit={(event) => {
           event.preventDefault();
-          mutation.mutate({
-            display_name: form.display_name,
-            family_name: form.family_name,
-            given_name: form.given_name,
-            version: profile.identity.version,
-          });
+          event.stopPropagation();
+          autosync.sync();
         }}
       >
         <Field label="Given name" htmlFor="profile-given-name">
@@ -114,7 +132,7 @@ function IdentitySection({ profile }: { profile: ProfileSnapshot }) {
             autoComplete="given-name"
             value={form.given_name}
             onChange={(event) =>
-              setForm((current) => ({ ...current, given_name: event.target.value }))
+              autosync.change((current) => ({ ...current, given_name: event.target.value }))
             }
           />
         </Field>
@@ -124,7 +142,7 @@ function IdentitySection({ profile }: { profile: ProfileSnapshot }) {
             autoComplete="family-name"
             value={form.family_name}
             onChange={(event) =>
-              setForm((current) => ({ ...current, family_name: event.target.value }))
+              autosync.change((current) => ({ ...current, family_name: event.target.value }))
             }
           />
         </Field>
@@ -135,24 +153,18 @@ function IdentitySection({ profile }: { profile: ProfileSnapshot }) {
               autoComplete="name"
               value={form.display_name}
               onChange={(event) =>
-                setForm((current) => ({ ...current, display_name: event.target.value }))
+                autosync.change((current) => ({ ...current, display_name: event.target.value }))
               }
             />
           </Field>
         </div>
-        <div className="flex flex-col gap-3 sm:col-span-2">
-          {mutation.error ? (
-            <ErrorCallout error={mutation.error} title="Identity update failed" />
-          ) : null}
-          <Button
-            type="submit"
-            className="w-full sm:w-fit"
-            disabled={!hasChanges || mutation.isPending}
-          >
-            <Save className="size-4" />
-            {mutation.isPending ? "Saving…" : "Save identity"}
-          </Button>
-        </div>
+        {autosync.error ? (
+          <ErrorCallout
+            className="sm:col-span-2"
+            error={autosync.error}
+            title="Identity sync failed"
+          />
+        ) : null}
       </form>
     </PageSection>
   );
@@ -160,22 +172,23 @@ function IdentitySection({ profile }: { profile: ProfileSnapshot }) {
 
 function PreferencesSection({ profile }: { profile: ProfileSnapshot }) {
   const mutation = usePutProfilePreferencesMutation();
-  const [form, setForm] = useState<PreferencesForm>(() => preferencesFormFromProfile(profile));
-
-  useEffect(() => {
-    setForm(preferencesFormFromProfile(profile));
-  }, [profile]);
-
-  const hasChanges = useMemo(() => {
-    const next = preferencesFormFromProfile(profile);
-    return (
-      form.default_surface !== next.default_surface ||
-      form.locale !== next.locale ||
-      form.theme !== next.theme ||
-      form.time_display !== next.time_display ||
-      form.timezone !== next.timezone
-    );
-  }, [form, profile]);
+  const autosync = useAutoSyncForm<PreferencesForm, PutProfilePreferencesRequest, ProfileSnapshot>({
+    formEqual: preferenceFormsEqual,
+    formFromResult: preferencesFormFromProfile,
+    initialForm: preferencesFormFromProfile(profile),
+    initialVersion: profile.preferences.version,
+    mutate: mutation.mutateAsync,
+    requestFromForm: (form, version) => ({
+      default_surface: form.default_surface,
+      locale: form.locale,
+      theme: form.theme,
+      time_display: form.time_display,
+      timezone: form.timezone,
+      version,
+    }),
+    versionFromResult: (snapshot) => snapshot.preferences.version,
+  });
+  const form = autosync.form;
 
   return (
     <PageSection>
@@ -183,32 +196,34 @@ function PreferencesSection({ profile }: { profile: ProfileSnapshot }) {
         <SectionHeaderContent>
           <SectionTitle>Preferences</SectionTitle>
           <SectionDescription>
-            {form.locale} · {form.timezone}
+            {form.locale} - {form.timezone}
           </SectionDescription>
         </SectionHeaderContent>
       </SectionHeader>
 
       <form
+        aria-busy={autosync.status === "syncing" || undefined}
         className="grid gap-4 sm:grid-cols-2"
+        data-testid="profile-preferences-form"
         onSubmit={(event) => {
           event.preventDefault();
-          mutation.mutate({
-            default_surface: form.default_surface,
-            locale: form.locale,
-            theme: form.theme,
-            time_display: form.time_display,
-            timezone: form.timezone,
-            version: profile.preferences.version,
-          });
+          event.stopPropagation();
+          autosync.sync();
         }}
       >
         <Field label="Locale" htmlFor="profile-locale">
           <Select
             id="profile-locale"
             value={form.locale}
-            onChange={(event) => setForm((current) => ({ ...current, locale: event.target.value }))}
+            onChange={(event) => {
+              const next = autosync.change((current) => ({
+                ...current,
+                locale: event.target.value,
+              }));
+              autosync.sync(next);
+            }}
           >
-            {LOCALE_OPTIONS.includes(form.locale as (typeof LOCALE_OPTIONS)[number]) ? null : (
+            {includesOption(LOCALE_OPTIONS, form.locale) ? null : (
               <option value={form.locale}>{form.locale}</option>
             )}
             {LOCALE_OPTIONS.map((locale) => (
@@ -222,13 +237,15 @@ function PreferencesSection({ profile }: { profile: ProfileSnapshot }) {
           <Select
             id="profile-timezone"
             value={form.timezone}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, timezone: event.target.value }))
-            }
+            onChange={(event) => {
+              const next = autosync.change((current) => ({
+                ...current,
+                timezone: event.target.value,
+              }));
+              autosync.sync(next);
+            }}
           >
-            {TIMEZONE_OPTIONS.includes(
-              form.timezone as (typeof TIMEZONE_OPTIONS)[number],
-            ) ? null : (
+            {includesOption(TIMEZONE_OPTIONS, form.timezone) ? null : (
               <option value={form.timezone}>{form.timezone}</option>
             )}
             {TIMEZONE_OPTIONS.map((timezone) => (
@@ -242,12 +259,13 @@ function PreferencesSection({ profile }: { profile: ProfileSnapshot }) {
           <Select
             id="profile-time-display"
             value={form.time_display}
-            onChange={(event) =>
-              setForm((current) => ({
+            onChange={(event) => {
+              const next = autosync.change((current) => ({
                 ...current,
-                time_display: event.target.value as PreferencesForm["time_display"],
-              }))
-            }
+                time_display: timeDisplayFromValue(event.target.value),
+              }));
+              autosync.sync(next);
+            }}
           >
             <option value="utc">UTC</option>
             <option value="local">Local</option>
@@ -257,12 +275,13 @@ function PreferencesSection({ profile }: { profile: ProfileSnapshot }) {
           <Select
             id="profile-theme"
             value={form.theme}
-            onChange={(event) =>
-              setForm((current) => ({
+            onChange={(event) => {
+              const next = autosync.change((current) => ({
                 ...current,
-                theme: event.target.value as PreferencesForm["theme"],
-              }))
-            }
+                theme: themeFromValue(event.target.value),
+              }));
+              autosync.sync(next);
+            }}
           >
             <option value="system">System</option>
             <option value="light">Light</option>
@@ -274,13 +293,15 @@ function PreferencesSection({ profile }: { profile: ProfileSnapshot }) {
             <Select
               id="profile-default-surface"
               value={form.default_surface}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, default_surface: event.target.value }))
-              }
+              onChange={(event) => {
+                const next = autosync.change((current) => ({
+                  ...current,
+                  default_surface: event.target.value,
+                }));
+                autosync.sync(next);
+              }}
             >
-              {["executions", "schedules", "settings/profile"].includes(
-                form.default_surface,
-              ) ? null : (
+              {includesOption(DEFAULT_SURFACE_OPTIONS, form.default_surface) ? null : (
                 <option value={form.default_surface}>{form.default_surface}</option>
               )}
               <option value="executions">Executions</option>
@@ -289,19 +310,13 @@ function PreferencesSection({ profile }: { profile: ProfileSnapshot }) {
             </Select>
           </Field>
         </div>
-        <div className="flex flex-col gap-3 sm:col-span-2">
-          {mutation.error ? (
-            <ErrorCallout error={mutation.error} title="Preferences update failed" />
-          ) : null}
-          <Button
-            type="submit"
-            className="w-full sm:w-fit"
-            disabled={!hasChanges || mutation.isPending}
-          >
-            <Save className="size-4" />
-            {mutation.isPending ? "Saving…" : "Save preferences"}
-          </Button>
-        </div>
+        {autosync.error ? (
+          <ErrorCallout
+            className="sm:col-span-2"
+            error={autosync.error}
+            title="Preferences sync failed"
+          />
+        ) : null}
       </form>
     </PageSection>
   );
@@ -340,4 +355,68 @@ function preferencesFormFromProfile(profile: ProfileSnapshot): PreferencesForm {
     time_display: profile.preferences.time_display,
     timezone: profile.preferences.timezone || "UTC",
   };
+}
+
+function identityFormsEqual(left: IdentityForm, right: IdentityForm): boolean {
+  return (
+    left.display_name === right.display_name &&
+    left.family_name === right.family_name &&
+    left.given_name === right.given_name
+  );
+}
+
+function preferenceFormsEqual(left: PreferencesForm, right: PreferencesForm): boolean {
+  return (
+    left.default_surface === right.default_surface &&
+    left.locale === right.locale &&
+    left.theme === right.theme &&
+    left.time_display === right.time_display &&
+    left.timezone === right.timezone
+  );
+}
+
+function validateIdentityForm(form: IdentityForm): string | null {
+  if (!form.given_name.trim()) return "Given name is required.";
+  if (!form.family_name.trim()) return "Family name is required.";
+  return null;
+}
+
+function latestProfileSyncAt(profile: ProfileSnapshot): string | undefined {
+  return latestTimestamp(profile.identity.synced_at, profile.preferences.updated_at);
+}
+
+function latestTimestamp(...values: ReadonlyArray<string | undefined>): string | undefined {
+  let latestValue: string | undefined;
+  let latestTime = Number.NEGATIVE_INFINITY;
+  for (const value of values) {
+    if (!value) continue;
+    const time = new Date(value).getTime();
+    if (Number.isNaN(time) || time <= latestTime) continue;
+    latestTime = time;
+    latestValue = value;
+  }
+  return latestValue;
+}
+
+function includesOption(options: ReadonlyArray<string>, value: string): boolean {
+  return options.includes(value);
+}
+
+function timeDisplayFromValue(value: string): PreferencesForm["time_display"] {
+  if (value === "utc" || value === "local") return value;
+  throw new Error(`unknown profile time display option: ${value}`);
+}
+
+function themeFromValue(value: string): PreferencesForm["theme"] {
+  if (value === "system" || value === "light" || value === "dark") return value;
+  throw new Error(`unknown profile theme option: ${value}`);
+}
+
+function focusStayedInside(event: FocusEvent<HTMLElement>): boolean {
+  const nextFocus = event.relatedTarget;
+  return isNode(nextFocus) && event.currentTarget.contains(nextFocus);
+}
+
+function isNode(value: EventTarget | null): value is Node {
+  return typeof Node !== "undefined" && value instanceof Node;
 }

@@ -150,10 +150,14 @@ export type InviteMemberResponse = v.InferOutput<typeof vIdentityInviteMemberRes
 
 export const updateMemberRolesRequestSchema = v.pipe(
   v.strictObject({
+    expectedOrgAclVersion: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(2147483647)),
+    expectedRoleKeys: roleKeysSchema,
     roleKeys: roleKeysSchema,
     userId: v.pipe(v.string(), v.trim(), v.minLength(1)),
   }),
   v.transform((input) => ({
+    expectedOrgAclVersion: input.expectedOrgAclVersion,
+    expectedRoleKeys: input.expectedRoleKeys,
     roleKeys: input.roleKeys,
     userId: input.userId,
   })),
@@ -251,6 +255,8 @@ export async function updateMemberRoles(
   const client = createIdentityClient(options);
   const input = v.parse(updateMemberRolesRequestSchema, options.body);
   const body = v.parse(vIdentityUpdateMemberRolesRequestWritable, {
+    expected_org_acl_version: input.expectedOrgAclVersion,
+    expected_role_keys: input.expectedRoleKeys,
     role_keys: input.roleKeys,
   });
   const path = `/api/v1/organization/members/${input.userId}/roles`;

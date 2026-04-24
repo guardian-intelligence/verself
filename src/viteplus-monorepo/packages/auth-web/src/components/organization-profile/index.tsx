@@ -1,5 +1,6 @@
 import { useForm } from "@tanstack/react-form";
 import { useSuspenseQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { Button } from "@forge-metal/ui/components/ui/button";
 import { Input } from "@forge-metal/ui/components/ui/input";
 import { Label } from "@forge-metal/ui/components/ui/label";
@@ -87,11 +88,13 @@ export function OrganizationProfile(_props: OrganizationProfileProps = {}) {
   return (
     <PageSections>
       <InviteMemberSection canInvite={canInvite} />
-      <MembersSection canUpdateRoles={canUpdateRoles} members={activeMembers} />
+      <MembersSection
+        canUpdateRoles={canUpdateRoles}
+        members={activeMembers}
+        orgAclVersion={organization.org_acl_version}
+      />
       <CapabilitySection
         canEditCapabilities={canEditCapabilities}
-        // Remount on server version bump so the initial form state is
-        // re-seeded from the authoritative document after save.
         key={memberCapabilities.document.version}
         memberCapabilities={memberCapabilities}
       />
@@ -205,7 +208,6 @@ function InviteMemberSection({ canInvite }: { canInvite: boolean }) {
             <Button
               type="submit"
               aria-busy={isSubmitting || inviteMutation.isPending}
-              aria-disabled={!canInvite || undefined}
               aria-describedby={!canInvite ? inviteDescriptionId : undefined}
               className="sm:shrink-0"
             >
@@ -221,9 +223,11 @@ function InviteMemberSection({ canInvite }: { canInvite: boolean }) {
 function MembersSection({
   canUpdateRoles,
   members,
+  orgAclVersion,
 }: {
   canUpdateRoles: boolean;
   members: ReadonlyArray<Member>;
+  orgAclVersion: number;
 }) {
   return (
     <PageSection>
@@ -244,7 +248,12 @@ function MembersSection({
           <TableBody>
             {members.length > 0 ? (
               members.map((member) => (
-                <MemberRow canUpdateRoles={canUpdateRoles} key={member.user_id} member={member} />
+                <MemberRow
+                  canUpdateRoles={canUpdateRoles}
+                  key={member.user_id}
+                  member={member}
+                  orgAclVersion={orgAclVersion}
+                />
               ))
             ) : (
               <TableRow>
@@ -263,44 +272,51 @@ function MembersSection({
   );
 }
 
-function MemberRow({ canUpdateRoles, member }: { canUpdateRoles: boolean; member: Member }) {
+function MemberRow({
+  canUpdateRoles,
+  member,
+  orgAclVersion,
+}: {
+  canUpdateRoles: boolean;
+  member: Member;
+  orgAclVersion: number;
+}) {
   const mutation = useUpdateMemberRolesMutation();
-  const initialRole = primaryRoleKey(member.role_keys);
-  const isOwner = initialRole === "owner";
-  const form = useForm({
-    defaultValues: { roleKey: initialRole },
-    onSubmit: async ({ value }) => {
-      if (!canUpdateRoles) {
-        toast.error("You don't have permission to change roles.");
-        return;
-      }
-      if (isOwner) {
-        toast.error("The organization owner's role can't be changed here.");
-        return;
-      }
-      if (value.roleKey === initialRole) {
-        toast.info("No role change to save.");
-        return;
-      }
-      if (mutation.isPending) {
-        toast.info("Still saving the last role change…");
-        return;
-      }
-      try {
-        await mutation.mutateAsync({
-          roleKeys: [value.roleKey],
-          userId: member.user_id,
-        });
-        toast.success("Role updated", {
-          description: `${member.email} is now ${value.roleKey}.`,
-        });
-      } catch (error) {
-        toast.error("Role update failed", {
-          description: error instanceof Error ? error.message : String(error),
-        });
-      }
-    },
-  });
+  const currentRole = primaryRoleKey(member.role_keys);
+  const isOwner = currentRole === "owner";
+
+  async function syncRole(nextRole: string) {
+    if (!canUpdateRoles) {
+      toast.error("You don't have permission to change roles.");
+      return;
+    }
+    if (isOwner) {
+      toast.error("The organization owner's role can't be changed here.");
+      return;
+    }
+    if (nextRole === currentRole) {
+      return;
+    }
+    if (mutation.isPending) {
+      toast.info("Still syncing the last role change.");
+      return;
+    }
+    try {
+      await mutation.mutateAsync({
+        expectedOrgAclVersion: orgAclVersion,
+        expectedRoleKeys: [...member.role_keys],
+        roleKeys: [nextRole],
+        userId: member.user_id,
+      });
+      toast.success("Role synced", {
+        description: `${member.email} is now ${nextRole}.`,
+      });
+    } catch (error) {
+      toast.error("Role sync failed", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 
   return (
     <TableRow>
@@ -309,43 +325,21 @@ function MemberRow({ canUpdateRoles, member }: { canUpdateRoles: boolean; member
         <div className="break-all text-xs text-muted-foreground">{member.email}</div>
       </TableCell>
       <TableCell className="align-middle">
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            void form.handleSubmit();
-          }}
-          className="flex items-center gap-2"
+        <Select
+          value={currentRole}
+          onChange={(event) => void syncRole(event.target.value)}
+          aria-busy={mutation.isPending}
+          aria-label={`Role for ${member.email}`}
+          aria-readonly={isOwner || undefined}
+          className="w-full"
         >
-          <form.Field name="roleKey">
-            {(field) => (
-              <Select
-                value={field.state.value}
-                onChange={(event) => field.handleChange(event.target.value)}
-                aria-label={`Role for ${member.email}`}
-                aria-readonly={isOwner || undefined}
-                className="flex-1"
-              >
-                {isOwner ? <option value="owner">Owner</option> : null}
-                {ASSIGNABLE_ROLES.map((role) => (
-                  <option key={role.role_key} value={role.role_key}>
-                    {role.display_name}
-                  </option>
-                ))}
-              </Select>
-            )}
-          </form.Field>
-
-          <form.Subscribe selector={(state) => [state.isDirty, state.isSubmitting]}>
-            {([isDirty, isSubmitting]) =>
-              isDirty ? (
-                <Button type="submit" size="sm" aria-busy={isSubmitting || mutation.isPending}>
-                  {isSubmitting || mutation.isPending ? "Saving…" : "Save"}
-                </Button>
-              ) : null
-            }
-          </form.Subscribe>
-        </form>
+          {isOwner ? <option value="owner">Owner</option> : null}
+          {ASSIGNABLE_ROLES.map((role) => (
+            <option key={role.role_key} value={role.role_key}>
+              {role.display_name}
+            </option>
+          ))}
+        </Select>
       </TableCell>
     </TableRow>
   );
@@ -359,10 +353,6 @@ function CapabilitySection({
   memberCapabilities: MemberCapabilities;
 }) {
   const mutation = usePutMemberCapabilitiesMutation();
-
-  // Capabilities are a set of keys; tanstack form models each key as its own
-  // boolean field so isDirty light-up is per-field and we can submit the
-  // reconstructed set in onSubmit.
   const initialEnabled = new Set(memberCapabilities.document.enabled_keys);
   const defaultValues = Object.fromEntries(
     memberCapabilities.catalog.map((capability) => [
@@ -370,35 +360,37 @@ function CapabilitySection({
       initialEnabled.has(capability.key),
     ]),
   ) as Record<string, boolean>;
+  const [enabledByKey, setEnabledByKey] = useState(defaultValues);
 
-  const form = useForm({
-    defaultValues,
-    onSubmit: async ({ value }) => {
-      if (!canEditCapabilities) {
-        toast.error("You don't have permission to edit member capabilities.");
-        return;
-      }
-      if (mutation.isPending) {
-        toast.info("Still saving capabilities…");
-        return;
-      }
-      const enabledKeys = Object.entries(value)
-        .filter(([, enabled]) => enabled)
-        .map(([key]) => key)
-        .sort();
-      try {
-        await mutation.mutateAsync({
-          enabled_keys: enabledKeys,
-          version: memberCapabilities.document.version,
-        });
-        toast.success("Capabilities updated");
-      } catch (error) {
-        toast.error("Capabilities save failed", {
-          description: error instanceof Error ? error.message : String(error),
-        });
-      }
-    },
-  });
+  async function syncCapability(key: string, next: boolean) {
+    if (!canEditCapabilities) {
+      toast.error("You don't have permission to edit member capabilities.");
+      return;
+    }
+    if (mutation.isPending) {
+      toast.info("Still syncing capabilities.");
+      return;
+    }
+    const previous = enabledByKey;
+    const nextValue = { ...enabledByKey, [key]: next };
+    setEnabledByKey(nextValue);
+    const enabledKeys = Object.entries(nextValue)
+      .filter(([, enabled]) => enabled)
+      .map(([capabilityKey]) => capabilityKey)
+      .sort();
+    try {
+      await mutation.mutateAsync({
+        enabled_keys: enabledKeys,
+        version: memberCapabilities.document.version,
+      });
+      toast.success("Capabilities synced");
+    } catch (error) {
+      setEnabledByKey(previous);
+      toast.error("Capabilities sync failed", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 
   return (
     <PageSection>
@@ -414,63 +406,38 @@ function CapabilitySection({
 
       {!canEditCapabilities ? (
         <PermissionAlert title="Capability edit permission required">
-          Your current role can view member capabilities but cannot save changes.
+          Your current role can view member capabilities but cannot edit them.
         </PermissionAlert>
       ) : null}
 
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          void form.handleSubmit();
-        }}
-        className="space-y-4"
+      <div
+        className="divide-y divide-border rounded-md border border-border"
+        aria-busy={mutation.isPending}
       >
-        <div className="divide-y divide-border rounded-md border border-border">
-          {memberCapabilities.catalog.map((capability) => {
-            const switchId = `capability-${capability.key}`;
-            return (
-              <form.Field key={capability.key} name={capability.key}>
-                {(field) => (
-                  <div className="flex items-start justify-between gap-4 p-4">
-                    <div className="space-y-1">
-                      <Label htmlFor={switchId} className="text-sm font-medium">
-                        {capability.label}
-                      </Label>
-                      <p className="text-sm text-muted-foreground">{capability.description}</p>
-                    </div>
-                    <Switch
-                      id={switchId}
-                      checked={Boolean(field.state.value)}
-                      onCheckedChange={(next) => {
-                        if (!canEditCapabilities) {
-                          toast.error("You don't have permission to edit member capabilities.");
-                          return;
-                        }
-                        field.handleChange(next);
-                      }}
-                      aria-label={capability.label}
-                      aria-readonly={!canEditCapabilities || undefined}
-                    />
-                  </div>
-                )}
-              </form.Field>
-            );
-          })}
-        </div>
-
-        <form.Subscribe selector={(state) => [state.isDirty, state.isSubmitting]}>
-          {([isDirty, isSubmitting]) =>
-            isDirty ? (
-              <div className="flex justify-end">
-                <Button type="submit" aria-busy={isSubmitting || mutation.isPending}>
-                  {isSubmitting || mutation.isPending ? "Saving…" : "Save capabilities"}
-                </Button>
+        {memberCapabilities.catalog.map((capability) => {
+          const switchId = `capability-${capability.key}`;
+          return (
+            <div className="flex items-start justify-between gap-4 p-4" key={capability.key}>
+              <div className="space-y-1">
+                <Label htmlFor={switchId} className="text-sm font-medium">
+                  {capability.label}
+                </Label>
+                <p className="text-sm text-muted-foreground">{capability.description}</p>
               </div>
-            ) : null
-          }
-        </form.Subscribe>
-      </form>
+              <Switch
+                id={switchId}
+                checked={Boolean(enabledByKey[capability.key])}
+                onClick={(event) => {
+                  event.preventDefault();
+                  void syncCapability(capability.key, !enabledByKey[capability.key]);
+                }}
+                aria-label={capability.label}
+                aria-readonly={!canEditCapabilities || undefined}
+              />
+            </div>
+          );
+        })}
+      </div>
     </PageSection>
   );
 }

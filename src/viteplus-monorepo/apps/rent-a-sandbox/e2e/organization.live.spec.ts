@@ -25,16 +25,12 @@ test.describe("Rent-a-Sandbox Organization", () => {
       await app.assertStableRoute({
         path: "/settings/organization",
         ready: app.page.getByRole("heading", { name: "Member capabilities" }),
-        expectedText: [
-          "Invite member",
-          "Members",
-          "Member capabilities",
-          "Deploy executions",
-          "Owner",
-        ],
+        expectedText: ["Invite member", "Members", "Member capabilities", "Deploy executions"],
       });
 
       await expect(app.page.getByRole("button", { name: "Invite" })).toBeEnabled();
+      await expect(app.page.getByRole("button", { name: /^save/i })).toHaveCount(0);
+      await expect(app.page.locator("button:disabled")).toHaveCount(0);
       await expect(app.page.getByRole("switch", { name: "Deploy executions" })).toBeChecked();
 
       run.detail_url = "/settings/organization";
