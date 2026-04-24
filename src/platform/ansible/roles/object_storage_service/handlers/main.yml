@@ -9,7 +9,7 @@
   listen: restart object-storage-admin
   ansible.builtin.stat:
     path: /etc/systemd/system/object-storage-admin.service
-  register: object_storage_admin_unit_file
+  register: object_storage_service_admin_unit_file
 
 - name: Restart object-storage-service
   listen: restart object-storage-service
@@ -25,7 +25,7 @@
     daemon_reload: true
     name: object-storage-admin
     state: restarted
-  when: object_storage_admin_unit_file.stat.exists
+  when: object_storage_service_admin_unit_file.stat.exists
 
 - name: Reload nftables for object-storage-service
   listen: reload nftables
