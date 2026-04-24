@@ -11,7 +11,7 @@ export { grounds, accents, pantone } from "./tokens";
 export type { GroundName, AccentName } from "./tokens";
 export { AppChrome } from "./chrome/app-chrome";
 export type { AppChromeProps, LinkLikeProps } from "./chrome/app-chrome";
-export { TREATMENT_WORDMARK_VARIANT } from "./chrome/types";
+export { TREATMENT_WORDMARK_VARIANT, TREATMENT_DEFAULT_SECTION } from "./chrome/types";
 export type { Treatment } from "./chrome/types";
 export { BrandTelemetryProvider, useBrandTelemetry } from "./chrome/telemetry";
 export type { EmitSpan } from "./chrome/telemetry";
