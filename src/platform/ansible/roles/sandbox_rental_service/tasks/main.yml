@@ -10,8 +10,8 @@
 - name: Verify sandbox-rental-recurring-worker binary exists in profile
   ansible.builtin.stat:
     path: "{{ fm_bin }}/sandbox-rental-recurring-worker"
-  register: sandbox_rental_recurring_worker_binary
-  failed_when: not sandbox_rental_recurring_worker_binary.stat.exists
+  register: sandbox_rental_service_recurring_worker_binary
+  failed_when: not sandbox_rental_service_recurring_worker_binary.stat.exists
 
 # --- System user ---
 
@@ -457,10 +457,9 @@
   until: sandbox_rental_service_listener.stdout is search(':' ~ (sandbox_rental_service_listen_port | string))
 
 - name: Wait for sandbox-rental-recurring-worker to be active
-  ansible.builtin.command:
-    cmd: systemctl is-active sandbox-rental-recurring-worker
-  register: sandbox_rental_recurring_worker_status
-  changed_when: false
+  fm_systemd_status:
+    unit: sandbox-rental-recurring-worker.service
+  register: sandbox_rental_service_recurring_worker_status
   retries: 30
   delay: 1
-  until: sandbox_rental_recurring_worker_status.stdout is search('active')
+  until: sandbox_rental_service_recurring_worker_status.active
