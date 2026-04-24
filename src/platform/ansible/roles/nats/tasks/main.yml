@@ -145,17 +145,24 @@
     mode: "0644"
   notify: restart nats
 
-- name: Deploy NATS SPIFFE rotation restart unit
-  ansible.builtin.template:
-    src: nats-cert-rotation.service.j2
-    dest: /etc/systemd/system/nats-cert-rotation.service
-    mode: "0644"
+- name: Stop and disable legacy NATS SPIFFE rotation watcher
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: false
+    state: stopped
+  loop:
+    - nats-cert-rotation.path
+    - nats-cert-rotation.service
+  failed_when: false
 
-- name: Deploy NATS SPIFFE rotation path unit
-  ansible.builtin.template:
-    src: nats-cert-rotation.path.j2
-    dest: /etc/systemd/system/nats-cert-rotation.path
-    mode: "0644"
+- name: Remove legacy NATS SPIFFE rotation watcher units
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ item }}"
+    state: absent
+  loop:
+    - nats-cert-rotation.path
+    - nats-cert-rotation.service
+  notify: restart nats
 
 - name: Apply NATS unit changes before proceeding
   ansible.builtin.meta: flush_handlers
@@ -163,13 +170,6 @@
 - name: Enable and start NATS
   ansible.builtin.systemd:
     name: nats
-    enabled: true
-    state: started
-    daemon_reload: true
-
-- name: Enable and start NATS SPIFFE rotation watcher
-  ansible.builtin.systemd:
-    name: nats-cert-rotation.path
     enabled: true
     state: started
     daemon_reload: true

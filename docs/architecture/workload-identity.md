@@ -59,7 +59,19 @@ spiffe://spiffe.guardianintelligence.org/svc/billing-service
 spiffe://spiffe.guardianintelligence.org/svc/secrets-service
 spiffe://spiffe.guardianintelligence.org/svc/sandbox-rental-service
 spiffe://spiffe.guardianintelligence.org/svc/mailbox-service
+spiffe://spiffe.guardianintelligence.org/svc/nats
+spiffe://spiffe.guardianintelligence.org/svc/otelcol
+spiffe://spiffe.guardianintelligence.org/svc/grafana
+spiffe://spiffe.guardianintelligence.org/svc/clickhouse-server
+spiffe://spiffe.guardianintelligence.org/svc/clickhouse-operator
+spiffe://spiffe.guardianintelligence.org/svc/temporal-server
 ```
+
+These identities cover both customer-facing product services and
+operator-owned infrastructure services that terminate SPIFFE-authenticated
+traffic. A service may use an in-process Workload API source or
+`spiffe-helper`-rendered files depending on whether its runtime can consume
+SPIFFE natively.
 
 Node identities:
 
@@ -270,6 +282,25 @@ peer-auth-capable services is a security regression.
 SPIRE server rotates the trust bundle on its default cadence. Agents receive
 rotation via the Workload API stream. Services consuming X.509-SVIDs via the
 SPIFFE Workload API pick up bundle rotation without restart.
+
+File-backed consumers use the same operating contract everywhere:
+`spiffe-helper` runs as a systemd-managed sibling process, renders SVID and
+bundle material to a private runtime directory, and wakes the workload using
+the narrowest reload primitive that workload supports. Current consumers:
+
+| Consumer | Rotation contract |
+| --- | --- |
+| NATS | `spiffe-helper` writes server SVID/key/bundle and sends `SIGHUP` via `/run/nats/nats.pid`; `nats-server` reloads in place. |
+| ClickHouse server | `spiffe-helper` writes the SPIRE trust bundle consumed by `<openSSL><server><caConfig>` and sends `SIGHUP` via `/run/clickhouse-server/clickhouse-server.pid`; ClickHouse reloads in place. |
+| ClickHouse operator client | `spiffe-helper` keeps client SVID/key/bundle fresh; each `clickhouse-client` invocation reads current files. |
+| OTel collector | `spiffe-helper` keeps ClickHouse client SVID/key/bundle fresh; exporter TLS uses `reload_interval: 60s`. |
+| Grafana | `spiffe-helper` keeps ClickHouse client SVID/key/bundle fresh and runs the datasource provisioning refresh command on renewal. |
+
+`make spiffe-rotation-proof` verifies the file-backed rotation contract
+without a canary dependency: it reloads NATS and ClickHouse in place,
+asserts stable PIDs and healthy post-reload queries, verifies helper
+configuration for every file-backed consumer, and asserts the proof spans
+and ClickHouse query-log evidence in ClickHouse.
 
 ## Federation Scope
 

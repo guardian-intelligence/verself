@@ -2,6 +2,11 @@
 # ClickHouse defaults.
 clickhouse_data_path: /var/lib/clickhouse
 clickhouse_force_schema_reset: false
+clickhouse_system_user: clickhouse
+clickhouse_system_group: clickhouse
+clickhouse_server_spiffe_dir: /var/lib/clickhouse/spiffe
+clickhouse_server_helper_config_path: /etc/clickhouse-server/server-spiffe-helper.conf
+clickhouse_server_pid_path: /run/clickhouse-server/clickhouse-server.pid
 clickhouse_operator_system_user: clickhouse_operator
 clickhouse_operator_system_group: clickhouse_operator
 clickhouse_operator_db_user: clickhouse_operator

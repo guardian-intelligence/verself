@@ -1,4 +1,5 @@
 server_name: forge-metal-nats
+pid_file: "/run/nats/nats.pid"
 host: {{ services.nats.host }}
 port: {{ services.nats.port }}
 http: {{ services.nats.monitoring_port }}
