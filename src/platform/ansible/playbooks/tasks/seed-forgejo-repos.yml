@@ -15,10 +15,12 @@
   delegate_to: localhost
   become: false
   register: seed_forgejo_ssh_pubkey_raw
+  no_log: true
 
 - name: Set SSH public key fact
   ansible.builtin.set_fact:
     seed_forgejo_ssh_pubkey: "{{ seed_forgejo_ssh_pubkey_raw.content | b64decode | trim }}"
+  no_log: true
 
 # --- SSH key registration (idempotent) ---
 
@@ -30,6 +32,7 @@
       Authorization: "token {{ seed_forgejo_automation_token }}"
     status_code: [200]
   register: seed_forgejo_existing_keys
+  no_log: true
 
 - name: Check if controller key already registered
   ansible.builtin.set_fact:
@@ -55,6 +58,7 @@
     status_code: [201]
   when: not seed_forgejo_key_exists
   register: seed_forgejo_key_created
+  no_log: true
 
 # --- Repository creation (idempotent) ---
 
@@ -66,6 +70,7 @@
       Authorization: "token {{ seed_forgejo_automation_token }}"
     status_code: [200, 404]
   register: seed_forgejo_repo_check
+  no_log: true
 
 - name: Create forge-metal repo under owner
   ansible.builtin.uri:
@@ -83,6 +88,7 @@
       private: false
     status_code: [201]
   when: seed_forgejo_repo_check.status == 404
+  no_log: true
 
 # --- Controller git remote (local) ---
 

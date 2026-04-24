@@ -435,6 +435,7 @@
     status_code: [200, 404]
   register: zitadel_smtp_check
   when: resend_api_key | default('', true) | length > 0
+  no_log: true
 
 - name: Set SMTP existence flag
   ansible.builtin.set_fact:
@@ -479,3 +480,4 @@
   when:
     - resend_api_key | default('', true) | length > 0
     - not zitadel_smtp_exists
+  no_log: true

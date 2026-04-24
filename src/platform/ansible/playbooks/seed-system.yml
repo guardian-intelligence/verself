@@ -978,7 +978,7 @@
         method: GET
         headers:
           X-Vault-Token: "{{ seed_system_openbao_root_token_raw.content | b64decode | trim }}"
-        validate_certs: false
+        ca_path: "{{ openbao_tls_dir }}/cert.pem"
         status_code: 200
         return_content: true
       register: seed_system_stripe_provider_secret
@@ -1410,6 +1410,7 @@
       loop_control:
         label: "{{ item.name }}"
       when: item.project_id | length > 0
+      no_log: true
       tags: [dev-oidc]
 
     - name: Delete existing dev OIDC apps
@@ -1426,6 +1427,7 @@
       when:
         - item is not skipped
         - (item.json.result | default([]) | length) > 0
+      no_log: true
       tags: [dev-oidc]
 
     - name: Create dev OIDC apps
@@ -1458,6 +1460,7 @@
         label: "{{ item.item.name }}"
       when:
         - item is not skipped
+      no_log: true
       tags: [dev-oidc]
 
     - name: Re-query dev OIDC apps for client IDs
@@ -1479,6 +1482,7 @@
       loop_control:
         label: "{{ item.name }}"
       when: item.project_id | length > 0
+      no_log: true
       tags: [dev-oidc]
 
     - name: Print dev OIDC summary
@@ -1609,6 +1613,7 @@
               Host: "{{ seed_system_zitadel_host }}"
             status_code: [200, 404]
           when: seed_system_verify_user is defined and seed_system_verify_user.json.userId is defined
+          no_log: true
 
     # ── Forgejo repo seeding ──────────────────────────────────────────
     - name: Read Forgejo automation token for repo seeding

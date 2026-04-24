@@ -13,6 +13,7 @@
             emailAddress: "{{ seed_system_user.email }}"
     return_content: true
   register: seed_system_user_search
+  no_log: true
   tags: [identity]
 
 - name: Set seeded user fact

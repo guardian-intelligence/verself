@@ -33,11 +33,13 @@
   ansible.builtin.slurp:
     src: "{{ frontend_auth_sessions_credstore_dir }}/pg-password"
   register: frontend_auth_sessions_pg_password_raw
+  no_log: true
 
 - name: Set frontend auth PostgreSQL password fact
   ansible.builtin.set_fact:
     frontend_auth_sessions_pg_password: >-
       {{ frontend_auth_sessions_pg_password_raw.content | b64decode | trim }}
+  no_log: true
 
 - name: Ensure frontend auth PostgreSQL role and database exist
   module_defaults:
