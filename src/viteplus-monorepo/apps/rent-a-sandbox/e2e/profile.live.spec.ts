@@ -1,3 +1,4 @@
+import type { Locator } from "@playwright/test";
 import { ensureTestUserExists, expect, shortTimeoutMS, test } from "./harness";
 
 test.describe("Rent-a-Sandbox Profile", () => {
@@ -39,23 +40,26 @@ test.describe("Rent-a-Sandbox Profile", () => {
         "active",
       );
 
+      const syncStatus = app.page.getByTestId("profile-sync-status");
+      await expect(syncStatus).toContainText("Last synced");
+      await expect(
+        app.page.getByRole("button", { name: /save (identity|preferences)/i }),
+      ).toHaveCount(0);
+      await expect(app.page.locator("form button:disabled")).toHaveCount(0);
+
+      const initialSyncedAt = await syncStatus.getAttribute("data-synced-at");
       await app.page.getByLabel("Given name").fill(givenName);
       await app.page.getByLabel("Family name").fill(familyName);
       await app.page.getByLabel("Display name").fill(displayName);
-      await app.page.getByRole("button", { name: /save identity/i }).click();
-      await expect(app.page.getByRole("button", { name: /save identity/i })).toBeDisabled({
-        timeout: shortTimeoutMS,
-      });
+      await app.page.getByLabel("Locale").focus();
+      const identitySyncedAt = await waitForProfileSync(syncStatus, initialSyncedAt);
 
       await app.page.getByLabel("Locale").selectOption(target.locale);
       await app.page.getByLabel("Time zone").selectOption(target.timezone);
       await app.page.getByLabel("Time display").selectOption(target.timeDisplay);
       await app.page.getByLabel("Theme").selectOption(target.theme);
       await app.page.getByLabel("Default surface").selectOption(target.defaultSurface);
-      await app.page.getByRole("button", { name: /save preferences/i }).click();
-      await expect(app.page.getByRole("button", { name: /save preferences/i })).toBeDisabled({
-        timeout: shortTimeoutMS,
-      });
+      await waitForProfileSync(syncStatus, identitySyncedAt);
 
       await app.page.reload({ waitUntil: "domcontentloaded" });
       await expect(app.page.getByLabel("Given name")).toHaveValue(givenName);
@@ -79,3 +83,19 @@ test.describe("Rent-a-Sandbox Profile", () => {
     }
   });
 });
+
+async function waitForProfileSync(
+  syncStatus: Locator,
+  previousSyncedAt: string | null,
+): Promise<string | null> {
+  await expect
+    .poll(async () => syncStatus.getAttribute("data-synced-at"), {
+      intervals: [100],
+      timeout: shortTimeoutMS,
+    })
+    .not.toBe(previousSyncedAt ?? "");
+  await expect(syncStatus).toHaveAttribute("data-sync-state", "idle", {
+    timeout: shortTimeoutMS,
+  });
+  return syncStatus.getAttribute("data-synced-at");
+}
