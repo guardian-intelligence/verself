@@ -56,6 +56,7 @@ func run() error {
 	zitadelAdminToken := cfg.RequireCredential("zitadel-admin-token")
 	zitadelActionSigningKey := cfg.RequireCredential("zitadel-action-signing-key")
 	listenAddr := cfg.String("IDENTITY_LISTEN_ADDR", "127.0.0.1:4248")
+	internalListenAddr := cfg.String("IDENTITY_INTERNAL_LISTEN_ADDR", "127.0.0.1:4241")
 	governanceAuditURL := cfg.String("IDENTITY_GOVERNANCE_AUDIT_URL", "")
 	authIssuerURL := cfg.RequireURL("IDENTITY_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireString("IDENTITY_AUTH_AUDIENCE")
@@ -125,15 +126,34 @@ func run() error {
 
 	privateMux := http.NewServeMux()
 	api.NewAPI(privateMux, api.Config{Version: serviceVersion, ListenAddr: listenAddr, Service: identityService})
-	protected := auth.Middleware(auth.Config{
+	authConfig := auth.Config{
 		IssuerURL: authIssuerURL,
 		Audience:  authAudience,
 		JWKSURL:   authJWKSURL,
-	})(privateMux)
+	}
+	protected := auth.Middleware(authConfig)(privateMux)
 	rootMux.Handle("/", protected)
 
+	profilePeerIDs, err := workloadauth.PeerIDsForSource(spiffeSource, workloadauth.ServiceProfile)
+	if err != nil {
+		return err
+	}
+	internalTLSConfig, err := workloadauth.MTLSServerConfigForAny(spiffeSource, profilePeerIDs...)
+	if err != nil {
+		return fmt.Errorf("identity spiffe internal tls: %w", err)
+	}
+	internalMux := http.NewServeMux()
+	api.NewInternalAPI(internalMux, serviceVersion, "https://"+internalListenAddr, identityService)
+	internalAuthenticated := auth.Middleware(authConfig)(internalMux)
+	internalAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(profilePeerIDs, internalAuthenticated)
+	if err != nil {
+		return fmt.Errorf("identity internal allowlist: %w", err)
+	}
+
 	srv := httpserver.New(listenAddr, otelhttp.NewHandler(limitRequestBodies(rootMux, requestBodyLimit), serviceName))
-	return httpserver.Run(ctx, logger, srv)
+	internal := httpserver.New(internalListenAddr, otelhttp.NewHandler(limitRequestBodies(internalAllowlist, requestBodyLimit), serviceName+"-internal"))
+	internal.TLSConfig = internalTLSConfig
+	return httpserver.RunPair(ctx, logger, srv, internal)
 }
 
 func limitRequestBodies(next http.Handler, maxBytes int64) http.Handler {
@@ -152,7 +172,7 @@ func limitRequestBodies(next http.Handler, maxBytes int64) http.Handler {
 func requestMayHaveBody(r *http.Request) bool {
 	switch r.Method {
 	case http.MethodPost, http.MethodPut, http.MethodPatch:
-		return strings.HasPrefix(r.URL.Path, "/api/")
+		return strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/internal/")
 	default:
 		return false
 	}

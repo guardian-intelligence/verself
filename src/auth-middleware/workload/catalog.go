@@ -13,6 +13,7 @@ const (
 	ServiceObjectStorage      = "object-storage-service"
 	ServiceObjectStorageAdmin = "object-storage-admin"
 	ServiceOTelCollector      = "otelcol"
+	ServiceProfile            = "profile-service"
 	ServiceSandboxRental      = "sandbox-rental-service"
 	ServiceSecrets            = "secrets-service"
 	ServiceTemporalServer     = "temporal-server"

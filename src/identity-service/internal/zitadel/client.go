@@ -258,6 +258,8 @@ type userSummary struct {
 	Type        identity.MemberType
 	Email       string
 	LoginName   string
+	GivenName   string
+	FamilyName  string
 	DisplayName string
 	State       string
 }
@@ -318,6 +320,8 @@ func (c *Client) listUsers(ctx context.Context, userIDs []string) (map[string]us
 		case item.Human != nil:
 			summary.Type = identity.MemberTypeHuman
 			summary.Email = item.Human.Email.Email
+			summary.GivenName = item.Human.Profile.GivenName
+			summary.FamilyName = item.Human.Profile.FamilyName
 			summary.DisplayName = firstNonEmpty(
 				item.Human.Profile.DisplayName,
 				strings.TrimSpace(item.Human.Profile.GivenName+" "+item.Human.Profile.FamilyName),
@@ -332,6 +336,75 @@ func (c *Client) listUsers(ctx context.Context, userIDs []string) (map[string]us
 		users[item.UserID] = summary
 	}
 	return users, nil
+}
+
+type updateUserResponse struct {
+	ChangeDate time.Time `json:"changeDate"`
+}
+
+type updateUserRequest struct {
+	Human updateHumanUser `json:"human"`
+}
+
+type updateHumanUser struct {
+	Profile setHumanProfile `json:"profile"`
+}
+
+type setHumanProfile struct {
+	GivenName   string  `json:"givenName"`
+	FamilyName  string  `json:"familyName"`
+	DisplayName *string `json:"displayName,omitempty"`
+}
+
+func (c *Client) UpdateHumanProfile(ctx context.Context, subjectID string, input identity.HumanProfileUpdate) (identity.HumanProfile, error) {
+	subjectID = strings.TrimSpace(subjectID)
+	input.GivenName = strings.TrimSpace(input.GivenName)
+	input.FamilyName = strings.TrimSpace(input.FamilyName)
+	if subjectID == "" || input.GivenName == "" || input.FamilyName == "" {
+		return identity.HumanProfile{}, fmt.Errorf("%w: subject_id, given_name, and family_name are required", identity.ErrInvalidInput)
+	}
+	if input.DisplayName != nil {
+		displayName := strings.TrimSpace(*input.DisplayName)
+		input.DisplayName = &displayName
+	}
+	body := updateUserRequest{
+		Human: updateHumanUser{
+			Profile: setHumanProfile{
+				GivenName:   input.GivenName,
+				FamilyName:  input.FamilyName,
+				DisplayName: input.DisplayName,
+			},
+		},
+	}
+	var updated updateUserResponse
+	if err := c.doJSON(ctx, http.MethodPatch, "/v2/users/"+url.PathEscape(subjectID), body, &updated, false); err != nil {
+		if zitadelResourceAlreadyGone(err) {
+			return identity.HumanProfile{}, fmt.Errorf("%w: human profile subject not found", identity.ErrMemberMissing)
+		}
+		return identity.HumanProfile{}, fmt.Errorf("%w: update human profile: %v", identity.ErrZitadelUnavailable, err)
+	}
+	if updated.ChangeDate.IsZero() {
+		return identity.HumanProfile{}, fmt.Errorf("%w: update human profile returned no change date", identity.ErrZitadelUnavailable)
+	}
+	users, err := c.listUsers(ctx, []string{subjectID})
+	if err != nil {
+		return identity.HumanProfile{}, err
+	}
+	user, ok := users[subjectID]
+	if !ok {
+		return identity.HumanProfile{}, fmt.Errorf("%w: human profile subject not found", identity.ErrMemberMissing)
+	}
+	if user.Type != identity.MemberTypeHuman || strings.TrimSpace(user.Email) == "" {
+		return identity.HumanProfile{}, fmt.Errorf("%w: subject is not a human user", identity.ErrInvalidInput)
+	}
+	return identity.HumanProfile{
+		SubjectID:   subjectID,
+		Email:       user.Email,
+		GivenName:   user.GivenName,
+		FamilyName:  user.FamilyName,
+		DisplayName: user.DisplayName,
+		SyncedAt:    updated.ChangeDate.UTC(),
+	}, nil
 }
 
 type createUserResponse struct {

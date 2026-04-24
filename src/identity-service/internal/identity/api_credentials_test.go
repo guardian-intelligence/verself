@@ -161,6 +161,10 @@ func (d *apiCredentialTestDirectory) UpdateMemberRoles(context.Context, string, 
 	return Member{}, nil
 }
 
+func (d *apiCredentialTestDirectory) UpdateHumanProfile(context.Context, string, HumanProfileUpdate) (HumanProfile, error) {
+	return HumanProfile{}, nil
+}
+
 func (d *apiCredentialTestDirectory) CreateServiceAccountCredential(_ context.Context, _ string, input ServiceAccountCredentialInput) (string, APICredentialIssuedMaterial, error) {
 	material := d.material
 	material.ClientID = input.ClientID

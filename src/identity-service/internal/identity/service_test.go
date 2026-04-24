@@ -130,6 +130,10 @@ func (d *fakeMembersDirectory) UpdateMemberRoles(context.Context, string, string
 	return Member{}, nil
 }
 
+func (d *fakeMembersDirectory) UpdateHumanProfile(context.Context, string, HumanProfileUpdate) (HumanProfile, error) {
+	return HumanProfile{}, nil
+}
+
 func (d *fakeMembersDirectory) CreateServiceAccountCredential(context.Context, string, ServiceAccountCredentialInput) (string, APICredentialIssuedMaterial, error) {
 	return "", APICredentialIssuedMaterial{}, nil
 }
