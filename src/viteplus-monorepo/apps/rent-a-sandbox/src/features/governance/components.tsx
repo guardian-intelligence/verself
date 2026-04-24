@@ -581,14 +581,14 @@ function FilterControl({
   // cursor because any filter change invalidates its (recorded_at, sequence)
   // tuple against the new WHERE clause.
   const applyFilter = (next: AuditSearch[AuditFilterKey]) => {
-    navigate({
+    void navigate({
       to: GOVERNANCE_ROUTE,
       search: (prev) => ({
         ...prev,
         [definition.key]: next,
         cursor: undefined,
       }),
-    });
+    }).catch(reportAuditNavigationError);
   };
 
   const [draft, setDraft] = useState(typeof value === "string" ? value : "");
@@ -656,7 +656,7 @@ function ColumnsPopover({ visibleColumns }: { visibleColumns: ReadonlyArray<Audi
   const navigate = routeApi.useNavigate();
 
   const toggle = (id: AuditColumnId, visible: boolean) => {
-    navigate({
+    void navigate({
       to: GOVERNANCE_ROUTE,
       search: (prev) => {
         const current = prev.cols ?? visibleColumns;
@@ -668,7 +668,7 @@ function ColumnsPopover({ visibleColumns }: { visibleColumns: ReadonlyArray<Audi
         const ordered = AUDIT_COLUMN_IDS.filter((col) => nextSet.includes(col));
         return { ...prev, cols: ordered };
       },
-    });
+    }).catch(reportAuditNavigationError);
   };
 
   return (
@@ -834,10 +834,10 @@ function AuditFooter({
       });
       return;
     }
-    navigate({
+    void navigate({
       to: GOVERNANCE_ROUTE,
       search: (prev) => ({ ...prev, cursor: nextCursor }),
-    });
+    }).catch(reportAuditNavigationError);
   };
 
   return (
@@ -867,12 +867,12 @@ function LimitSelect({ value }: { value: number }) {
         value={String(value)}
         onChange={(event) => {
           const next = Number(event.target.value) as AuditLimit;
-          navigate({
+          void navigate({
             to: GOVERNANCE_ROUTE,
             // Page size change resets the cursor — the (recorded_at,
             // sequence) tuple's "page" meaning only holds for the old size.
             search: (prev) => ({ ...prev, limit: next, cursor: undefined }),
-          });
+          }).catch(reportAuditNavigationError);
         }}
         data-testid="audit-limit"
         className="w-20"
@@ -1319,6 +1319,10 @@ function formatBytes(value: string) {
 
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function reportAuditNavigationError(error: unknown) {
+  toast.error("Failed to update audit view", { description: formatError(error) });
 }
 
 function downloadBase64Artifact(dataBase64: string, contentType: string, fileName: string) {
