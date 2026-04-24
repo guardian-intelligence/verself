@@ -71,6 +71,18 @@ test.describe("Rent-a-Sandbox Notifications", () => {
           timeout: shortTimeoutMS,
         })
         .toBe("Less than a minute ago");
+      await expect(firstRow).toContainText("Unread", { timeout: shortTimeoutMS });
+      const unreadBadgeBeforeHover =
+        (await app.page.getByTestId("notifications-unread-count").innerText()) ?? "";
+      await firstRow.hover();
+      await expect(firstRow).toHaveAttribute("data-notification-id", currentFirstID, {
+        timeout: shortTimeoutMS,
+      });
+      await expect(firstRow).toContainText("Unread", { timeout: shortTimeoutMS });
+      await expect(app.page.getByTestId("notifications-unread-count")).toHaveText(
+        unreadBadgeBeforeHover,
+        { timeout: shortTimeoutMS },
+      );
 
       await app.page.getByTestId("notifications-mark-read").click();
       await expect(app.page.getByTestId("notifications-unread-count")).toHaveCount(0, {
