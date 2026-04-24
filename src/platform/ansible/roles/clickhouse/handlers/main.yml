@@ -6,9 +6,30 @@
     name: clickhouse-server
     state: restarted
 
+- name: Check ClickHouse server SPIFFE helper unit
+  listen: restart clickhouse-server-spiffe-helper
+  ansible.builtin.stat:
+    path: /etc/systemd/system/clickhouse-server-spiffe-helper.service
+  register: clickhouse_server_spiffe_helper_unit
+
+- name: Restart ClickHouse server SPIFFE helper
+  listen: restart clickhouse-server-spiffe-helper
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: clickhouse-server-spiffe-helper
+    state: restarted
+  when: clickhouse_server_spiffe_helper_unit.stat.exists
+
+- name: Check ClickHouse operator SPIFFE helper unit
+  listen: restart clickhouse-operator-spiffe-helper
+  ansible.builtin.stat:
+    path: /etc/systemd/system/clickhouse-operator-spiffe-helper.service
+  register: clickhouse_operator_spiffe_helper_unit
+
 - name: Restart ClickHouse operator SPIFFE helper
   listen: restart clickhouse-operator-spiffe-helper
   ansible.builtin.systemd:
     daemon_reload: true
     name: clickhouse-operator-spiffe-helper
     state: restarted
+  when: clickhouse_operator_spiffe_helper_unit.stat.exists

@@ -12,6 +12,65 @@
     name: "{{ spire_workload_group }}"
     system: true
 
+- name: Create ClickHouse system user
+  ansible.builtin.user:
+    name: "{{ clickhouse_system_user }}"
+    group: "{{ clickhouse_system_group }}"
+    groups:
+      - "{{ spire_workload_group }}"
+    append: false
+    system: true
+    home: "{{ clickhouse_data_path }}"
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Resolve ClickHouse server uid for SPIRE registration
+  ansible.builtin.command:
+    cmd: "id -u {{ clickhouse_system_user }}"
+  register: clickhouse_server_uid
+  changed_when: false
+
+- name: Read ClickHouse server SPIRE registration
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry show
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-clickhouse-server
+      -output json
+  register: clickhouse_server_spire_entry
+  failed_when: false
+  changed_when: false
+
+- name: Register ClickHouse server SPIFFE workload
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry create
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-clickhouse-server
+      -parentID {{ spire_agent_id }}
+      -spiffeID {{ spire_clickhouse_server_id }}
+      -selector unix:uid:{{ clickhouse_server_uid.stdout | trim }}
+      -x509SVIDTTL 3600
+  when: clickhouse_server_spire_entry.rc != 0 or 'forge-metal-clickhouse-server' not in clickhouse_server_spire_entry.stdout
+  changed_when: true
+  notify: restart clickhouse-server-spiffe-helper
+
+- name: Update ClickHouse server SPIRE workload selector drift
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry update
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-clickhouse-server
+      -parentID {{ spire_agent_id }}
+      -spiffeID {{ spire_clickhouse_server_id }}
+      -selector unix:uid:{{ clickhouse_server_uid.stdout | trim }}
+      -x509SVIDTTL 3600
+  when:
+    - clickhouse_server_spire_entry.rc == 0
+    - "'uid:' ~ (clickhouse_server_uid.stdout | trim) not in clickhouse_server_spire_entry.stdout"
+  changed_when: true
+  notify: restart clickhouse-server-spiffe-helper
+
 - name: Create ClickHouse operator system group
   ansible.builtin.group:
     name: "{{ clickhouse_operator_system_group }}"
@@ -96,6 +155,42 @@
     - "{{ clickhouse_data_path }}"
     - /var/log/clickhouse-server
 
+- name: Detect ClickHouse runtime paths with stale ownership
+  ansible.builtin.command:
+    cmd: >-
+      find {{ item }}
+      \( ! -user {{ clickhouse_system_user }} -o ! -group {{ clickhouse_system_group }} \)
+      -print -quit
+  register: clickhouse_runtime_ownership_probe
+  changed_when: false
+  loop:
+    - "{{ clickhouse_data_path }}"
+    - /var/log/clickhouse-server
+
+- name: Converge ClickHouse runtime tree ownership
+  ansible.builtin.command:
+    cmd: >-
+      chown -R {{ clickhouse_system_user }}:{{ clickhouse_system_group }}
+      {{ clickhouse_data_path }}
+      /var/log/clickhouse-server
+  when: >-
+    (clickhouse_runtime_ownership_probe.results
+      | selectattr('stdout', 'ne', '')
+      | list
+      | length) > 0
+  changed_when: true
+
+- name: Converge ClickHouse runtime top-level directory modes
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ clickhouse_system_user }}"
+    group: "{{ clickhouse_system_group }}"
+    mode: "0750"
+  loop:
+    - "{{ clickhouse_data_path }}"
+    - /var/log/clickhouse-server
+
 - name: Create ClickHouse operator directories
   ansible.builtin.file:
     path: "{{ item.path }}"
@@ -115,6 +210,10 @@
     - path: "{{ clickhouse_operator_spiffe_dir }}"
       owner: "{{ clickhouse_operator_system_user }}"
       group: "{{ clickhouse_operator_system_group }}"
+      mode: "0700"
+    - path: "{{ clickhouse_server_spiffe_dir }}"
+      owner: "{{ clickhouse_system_user }}"
+      group: "{{ clickhouse_system_group }}"
       mode: "0700"
 
 - name: Discover legacy billing bridge metadata files
@@ -224,23 +323,10 @@
       - /etc/clickhouse-server/tls/server-cert.ext
     creates: /etc/clickhouse-server/tls/server-cert.pem
 
-- name: Export SPIRE trust bundle for ClickHouse client certificate verification
-  ansible.builtin.command:
-    cmd: >-
-      {{ fm_bin }}/spire-server bundle show
-      -socketPath {{ spire_server_socket_path }}
-      -format pem
-  register: clickhouse_spire_bundle
-  changed_when: false
-
-- name: Deploy ClickHouse client CA bundle
-  ansible.builtin.copy:
-    content: "{{ clickhouse_spire_bundle.stdout | trim }}\n"
-    dest: /etc/clickhouse-server/tls/client-ca.pem
-    owner: root
-    group: clickhouse
-    mode: "0640"
-  notify: restart clickhouse
+- name: Remove static ClickHouse SPIRE client CA bundle
+  ansible.builtin.file:
+    path: /etc/clickhouse-server/tls/client-ca.pem
+    state: absent
 
 - name: Converge ClickHouse TLS material ownership
   ansible.builtin.file:
@@ -287,6 +373,39 @@
     mode: "0640"
   notify: restart clickhouse-operator-spiffe-helper
 
+- name: Deploy ClickHouse server SPIFFE helper config
+  ansible.builtin.template:
+    src: clickhouse-server-spiffe-helper.conf.j2
+    dest: "{{ clickhouse_server_helper_config_path }}"
+    owner: root
+    group: "{{ clickhouse_system_group }}"
+    mode: "0640"
+  notify: restart clickhouse-server-spiffe-helper
+
+- name: Deploy ClickHouse server SPIFFE helper systemd unit
+  ansible.builtin.template:
+    src: clickhouse-server-spiffe-helper.service.j2
+    dest: /etc/systemd/system/clickhouse-server-spiffe-helper.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart clickhouse-server-spiffe-helper
+
+- name: Apply ClickHouse server helper changes before proceeding
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start ClickHouse server SPIFFE helper
+  ansible.builtin.systemd:
+    name: clickhouse-server-spiffe-helper
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for ClickHouse server SPIFFE bundle
+  ansible.builtin.wait_for:
+    path: "{{ clickhouse_server_spiffe_dir }}/bundle.pem"
+    timeout: 30
+
 - name: Deploy ClickHouse operator SPIFFE helper config
   ansible.builtin.template:
     src: clickhouse-operator-spiffe-helper.conf.j2
@@ -315,11 +434,15 @@
 
       [Service]
       Type=simple
-      User=root
-      ExecStart={{ fm_bin }}/clickhouse-server --config-file /etc/clickhouse-server/config.d/forge-metal.xml
+      User={{ clickhouse_system_user }}
+      Group={{ clickhouse_system_group }}
+      ExecStart={{ fm_bin }}/clickhouse-server --config-file /etc/clickhouse-server/config.d/forge-metal.xml --pid-file {{ clickhouse_server_pid_path }}
+      ExecReload=/bin/kill -HUP $MAINPID
       Restart=on-failure
       RestartSec=5
       LimitNOFILE=500000
+      RuntimeDirectory=clickhouse-server
+      RuntimeDirectoryMode=0750
 
       [Install]
       WantedBy=multi-user.target
@@ -340,16 +463,16 @@
 - name: Apply ClickHouse config changes before proceeding
   ansible.builtin.meta: flush_handlers
 
-- name: Enable and start ClickHouse operator SPIFFE helper
+- name: Enable and start ClickHouse
   ansible.builtin.systemd:
-    name: clickhouse-operator-spiffe-helper
+    name: clickhouse-server
     enabled: true
     state: started
     daemon_reload: true
 
-- name: Enable and start ClickHouse
+- name: Enable and start ClickHouse operator SPIFFE helper
   ansible.builtin.systemd:
-    name: clickhouse-server
+    name: clickhouse-operator-spiffe-helper
     enabled: true
     state: started
     daemon_reload: true

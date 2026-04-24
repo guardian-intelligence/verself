@@ -22,7 +22,7 @@
             <privateKeyFile>/etc/clickhouse-server/tls/server-key.pem</privateKeyFile>
             <!-- strict is required for certificate-authenticated users; relaxed only works for testing. -->
             <verificationMode>strict</verificationMode>
-            <caConfig>/etc/clickhouse-server/tls/client-ca.pem</caConfig>
+            <caConfig>{{ clickhouse_server_spiffe_dir }}/bundle.pem</caConfig>
             <cacheSessions>true</cacheSessions>
             <disableProtocols>sslv2,sslv3</disableProtocols>
             <preferServerCiphers>true</preferServerCiphers>

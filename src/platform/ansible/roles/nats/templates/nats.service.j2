@@ -10,12 +10,15 @@ User=nats
 Group=nats
 SupplementaryGroups={{ spire_workload_group }}
 ExecStart={{ fm_bin }}/nats-server -c {{ nats_config_dir }}/nats-server.conf
+ExecReload={{ fm_bin }}/nats-server --signal reload=/run/nats/nats.pid
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=131072
+RuntimeDirectory=nats
+RuntimeDirectoryMode=0750
 ProtectHome=true
 ProtectSystem=strict
-ReadWritePaths={{ nats_data_dir }}
+ReadWritePaths={{ nats_data_dir }} /run/nats
 PrivateDevices=true
 PrivateTmp=true
 ProtectClock=true

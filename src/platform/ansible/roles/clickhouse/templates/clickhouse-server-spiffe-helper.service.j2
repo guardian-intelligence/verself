@@ -1,0 +1,20 @@
+[Unit]
+Description=ClickHouse server SPIFFE helper
+After=network.target spire-agent.service
+Wants=spire-agent.service
+
+[Service]
+Type=simple
+User={{ clickhouse_system_user }}
+Group={{ clickhouse_system_group }}
+SupplementaryGroups={{ spire_workload_group }}
+ExecStart={{ fm_bin }}/spiffe-helper -config {{ clickhouse_server_helper_config_path }}
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths={{ clickhouse_server_spiffe_dir }}
+
+[Install]
+WantedBy=multi-user.target

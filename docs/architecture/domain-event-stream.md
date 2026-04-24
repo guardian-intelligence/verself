@@ -57,8 +57,11 @@ as first-class signals.
 
 NATS does not speak SPIFFE natively. [Upstream integration is
 tracked][issue1928] but has not landed. It is wrapped by the
-`spiffe-helper` pattern already in production use for ClickHouse: certs
-and trust bundle rendered to disk, `nats-server` restarted on rotation.
+`spiffe-helper` pattern used for file-backed consumers: certs and trust
+bundle are rendered to disk, and `spiffe-helper` signals `nats-server`
+with `SIGHUP` through the server PID file when material renews. NATS
+reloads configuration on `SIGHUP`, which avoids dropping JetStream state
+or disconnecting clients for routine SVID rotation.
 
 Identity shape:
 
@@ -103,19 +106,12 @@ NATS ships with a publish/subscribe proof that asserts:
 The proof is invoked by `make telemetry-proof-nats`. The brick is not
 laid until the query returns green.
 
-## Known unknowns
-
-The implementing agent must answer these before the brick is considered
-laid:
-
-1. Whether `nats-server --signal reload` can replace the current restart
-   hook after live proof shows it re-reads server certs, keys, and CA bundles
-   atomically under active mTLS clients.
-2. Stream retention and storage sizing for the single-node deployment.
-   Default disk budget per stream, default `max_age`, cleanup policy per
-   subject hierarchy.
-3. Subject taxonomy. Favor a fixed scheme such as
-   `events.<domain>.<aggregate>.<event>` over per-service freedom.
+`make spiffe-rotation-proof` additionally asserts the NATS rotation
+contract: no legacy restart watcher units exist, `spiffe-helper` is
+configured with `pid_file_name` plus `renew_signal = "SIGHUP"`, and
+`systemctl reload nats.service` leaves the broker PID stable while the
+health endpoint remains ready. The proof emits
+`workload_identity.rotation.*` spans and asserts them in ClickHouse.
 
 ## Source notes
 
@@ -124,6 +120,10 @@ laid:
   [`durable-execution.md`](durable-execution.md),
   [`change-data-capture.md`](change-data-capture.md).
 - NATS JetStream documentation: <https://docs.nats.io/nats-concepts/jetstream>.
+- NATS signal handling:
+  <https://docs.nats.io/running-a-nats-service/nats_admin/signals>.
 - JetStream message scheduler: <https://www.synadia.com/blog/delayed-message-scheduling-nats-jetstream>.
 - NATS + SPIRE integration tracking:
   <https://github.com/nats-io/nats-server/issues/1928>.
+- SPIFFE Helper:
+  <https://github.com/spiffe/spiffe-helper/tree/v0.11.0>.

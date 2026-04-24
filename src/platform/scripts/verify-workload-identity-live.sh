@@ -51,17 +51,22 @@ expected_ids = [
     f"spiffe://{trust_domain}/svc/sandbox-rental-service",
     f"spiffe://{trust_domain}/svc/secrets-service",
     f"spiffe://{trust_domain}/svc/mailbox-service",
+    f"spiffe://{trust_domain}/svc/nats",
     f"spiffe://{trust_domain}/svc/grafana",
     f"spiffe://{trust_domain}/svc/otelcol",
+    f"spiffe://{trust_domain}/svc/clickhouse-server",
     f"spiffe://{trust_domain}/svc/clickhouse-operator",
     f"spiffe://{trust_domain}/svc/temporal-server",
 ]
 systemd_units = [
     "spire-server",
     "spire-agent",
+    "clickhouse-server-spiffe-helper",
     "clickhouse-operator-spiffe-helper",
     "otelcol-clickhouse-spiffe-helper",
     "otelcol",
+    "nats-spiffe-helper",
+    "nats",
     "identity-service",
     "governance-service",
     "billing-service",
@@ -163,9 +168,12 @@ for unit in ["billing-service", "sandbox-rental-service", "mailbox-service"]:
         raise SystemExit(f"{unit} still carries legacy OpenBao env wiring: {', '.join(stale_terms)}")
 
 for unit in [
+    "clickhouse-server-spiffe-helper",
     "clickhouse-operator-spiffe-helper",
     "otelcol-clickhouse-spiffe-helper",
     "otelcol",
+    "nats-spiffe-helper",
+    "nats",
     "governance-service",
     "billing-service",
     "sandbox-rental-service",
