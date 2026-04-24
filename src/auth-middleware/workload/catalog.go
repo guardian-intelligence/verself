@@ -10,6 +10,8 @@ const (
 	ServiceGovernance         = "governance-service"
 	ServiceIdentity           = "identity-service"
 	ServiceMailbox            = "mailbox-service"
+	ServiceNATS               = "nats"
+	ServiceNotifications      = "notifications-service"
 	ServiceObjectStorage      = "object-storage-service"
 	ServiceObjectStorageAdmin = "object-storage-admin"
 	ServiceOTelCollector      = "otelcol"

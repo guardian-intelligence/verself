@@ -1,7 +1,7 @@
 .PHONY: help test lint lint-scripts lint-conversions lint-ansible lint-voice company-proof fmt vet tidy openapi openapi-check openapi-clients openapi-clients-check openapi-wire-check \
        hooks-install doctor inventory-check setup-dev setup-sops provision deprovision deploy site guest-rootfs security-patch identity-reset seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member \
        set-user-state billing-clock billing-wall-clock billing-state billing-documents billing-finalizations billing-events billing-pg-shell billing-pg-query billing-proof billing-reset verification-reset \
-       profile-proof secrets-proof secrets-leak-proof openbao-proof openbao-tenancy-proof workload-identity-proof object-storage-verify temporal-verify temporal-web-proof recurring-schedule-proof \
+       profile-proof notifications-proof secrets-proof secrets-leak-proof openbao-proof openbao-tenancy-proof workload-identity-proof object-storage-verify temporal-verify temporal-web-proof recurring-schedule-proof \
        vm-guest-telemetry-build observe telemetry-proof telemetry-proof-fail clickhouse-query clickhouse-schemas pg-shell pg-query pg-list tb-shell tb-command mail mail-accounts mail-mailboxes \
        mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets \
        wipe-pg-db wipe-server vm-orchestrator-proof sandbox-inner sandbox-middle sandbox-proof rent-ui-smoke rent-ui-local rent-local-dev grafana-proof observability-smoke services-doctor
@@ -18,14 +18,15 @@ SR       := src/sandbox-rental-service
 MS       := src/mailbox-service
 OSS      := src/object-storage-service
 PS       := src/profile-service
+NS       := src/notifications-service
 OT       := src/otel
 TP       := src/temporal-platform
 EC       := src/envconfig
 HS       := src/httpserver
 INVENTORY := $(FM)/ansible/inventory/hosts.ini
-GO_DIRS  := $(AW) $(VMO) $(BS) $(GS) $(IS) $(SS) $(AM) $(SR) $(MS) $(OSS) $(PS) $(OT) $(TP) $(EC) $(HS)
+GO_DIRS  := $(AW) $(VMO) $(BS) $(GS) $(IS) $(SS) $(AM) $(SR) $(MS) $(OSS) $(PS) $(NS) $(OT) $(TP) $(EC) $(HS)
 GO_PKGS  := $(addsuffix /...,$(addprefix ./,$(GO_DIRS)))
-GO_CLIENT_DIRS := $(BS)/client $(GS)/client $(GS)/internalclient $(IS)/client $(IS)/internalclient $(SS)/client $(SS)/internalclient $(SR)/client $(MS)/client $(OSS)/client $(PS)/client $(PS)/internalclient
+GO_CLIENT_DIRS := $(BS)/client $(GS)/client $(GS)/internalclient $(IS)/client $(IS)/internalclient $(SS)/client $(SS)/internalclient $(SR)/client $(MS)/client $(OSS)/client $(PS)/client $(PS)/internalclient $(NS)/client
 GO_CLIENT_FILES := $(addsuffix /client.gen.go,$(GO_CLIENT_DIRS))
 BILLING_PRODUCT_ID ?= sandbox
 ASSUME_PERSONA_OUTPUT_FLAG := $(if $(OUTPUT),--output "$(OUTPUT)",)
@@ -86,6 +87,7 @@ tidy:
 	cd $(MS) && go mod tidy
 	cd $(OSS) && go mod tidy
 	cd $(PS) && go mod tidy
+	cd $(NS) && go mod tidy
 	cd $(OT) && go mod tidy
 	cd $(TP) && go mod tidy
 	cd src/viteplus-monorepo && vp fmt . --write
@@ -118,6 +120,9 @@ openapi: ## Regenerate committed OpenAPI 3.0 and 3.1 specs for Go services
 	go run ./$(PS)/cmd/profile-openapi --format 3.1 > $(PS)/openapi/openapi-3.1.yaml
 	go run ./$(PS)/cmd/profile-internal-openapi --format 3.0 > $(PS)/openapi/internal-openapi-3.0.yaml
 	go run ./$(PS)/cmd/profile-internal-openapi --format 3.1 > $(PS)/openapi/internal-openapi-3.1.yaml
+	mkdir -p $(NS)/openapi
+	go run ./$(NS)/cmd/notifications-openapi --format 3.0 > $(NS)/openapi/openapi-3.0.yaml
+	go run ./$(NS)/cmd/notifications-openapi --format 3.1 > $(NS)/openapi/openapi-3.1.yaml
 	mkdir -p $(SR)/openapi
 	go run ./$(SR)/cmd/sandbox-rental-openapi --format 3.0 > $(SR)/openapi/openapi-3.0.yaml
 	go run ./$(SR)/cmd/sandbox-rental-openapi --format 3.1 > $(SR)/openapi/openapi-3.1.yaml
@@ -136,6 +141,7 @@ openapi-clients: ## Regenerate committed generated Go clients from OpenAPI 3.0 s
 	cd $(OSS)/client && go generate ./...
 	cd $(PS)/client && go generate ./...
 	cd $(PS)/internalclient && go generate ./...
+	cd $(NS)/client && go generate ./...
 
 openapi-check: ## Verify committed OpenAPI specs are up to date
 	cd $(BS) && go run ./cmd/billing-openapi --format 3.0 --check
@@ -160,6 +166,8 @@ openapi-check: ## Verify committed OpenAPI specs are up to date
 	cd $(PS) && go run ./cmd/profile-openapi --format 3.1 --check
 	cd $(PS) && go run ./cmd/profile-internal-openapi --format 3.0 --check
 	cd $(PS) && go run ./cmd/profile-internal-openapi --format 3.1 --check
+	cd $(NS) && go run ./cmd/notifications-openapi --format 3.0 --check
+	cd $(NS) && go run ./cmd/notifications-openapi --format 3.1 --check
 	cd $(SR) && go run ./cmd/sandbox-rental-openapi --format 3.0 --check
 	cd $(SR) && go run ./cmd/sandbox-rental-openapi --format 3.1 --check
 	$(MAKE) openapi-clients-check
@@ -181,6 +189,7 @@ openapi-wire-check: ## Verify frontend-consumed OpenAPI 3.1 specs are JS wire-sa
 		$(OSS)/openapi/openapi-3.1.yaml \
 		$(PS)/openapi/openapi-3.1.yaml \
 		$(PS)/openapi/internal-openapi-3.1.yaml \
+		$(NS)/openapi/openapi-3.1.yaml \
 		$(SR)/openapi/openapi-3.1.yaml
 
 inventory-check: ## Validate that the generated Ansible inventory exists
@@ -291,6 +300,9 @@ billing-proof: inventory-check ## Run live billing browser proof and collect evi
 profile-proof: inventory-check ## Run live profile API/UI proof and assert PostgreSQL plus ClickHouse evidence
 	cd $(FM) && ./scripts/verify-profile-live.sh
 
+notifications-proof: inventory-check ## Run live notifications bell proof and assert PostgreSQL plus ClickHouse traces
+	cd $(FM) && ./scripts/verify-notifications-live.sh
+
 secrets-proof: inventory-check ## Run live secrets API proof and collect audit/trace evidence
 	cd $(FM) && ./scripts/verify-secrets-live.sh
 
@@ -325,7 +337,7 @@ verification-reset: inventory-check ## Exhaustively wipe verification state (bil
 	$(FM)/scripts/ansible-with-tunnel.sh playbooks/verification-reset.yml
 
 wipe-pg-db: inventory-check ## Wipe one managed PostgreSQL service DB: make wipe-pg-db DB=sandbox_rental
-	@test -n "$(DB)" || { echo "ERROR: DB is required (billing|sandbox_rental|mailbox_service|identity_service)"; exit 1; }
+	@test -n "$(DB)" || { echo "ERROR: DB is required (billing|sandbox_rental|mailbox_service|identity_service|secrets_service|notifications_service)"; exit 1; }
 	$(FM)/scripts/ansible-with-tunnel.sh playbooks/wipe-pg-db.yml -e "wipe_pg_db_name=$(DB)"
 
 vm-orchestrator-proof: inventory-check ## Live proof for vm-orchestrator lease/exec spans through recurring sandbox executions

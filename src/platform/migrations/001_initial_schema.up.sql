@@ -647,6 +647,40 @@ ENGINE = ReplacingMergeTree(recorded_at)
 ORDER BY (event_id, occurred_at, aggregate_type, aggregate_id);
 
 -- ═══════════════════════════════════════════════════════════════════════════
+-- forge_metal: notification delivery ledger
+-- ═══════════════════════════════════════════════════════════════════════════
+
+DROP TABLE IF EXISTS forge_metal.notification_events;
+
+CREATE TABLE forge_metal.notification_events
+(
+    recorded_at DateTime64(9, 'UTC') CODEC(Delta(8), ZSTD(3)),
+    occurred_at DateTime64(9, 'UTC') CODEC(Delta(8), ZSTD(3)),
+    schema_version LowCardinality(String) CODEC(ZSTD(3)),
+    ledger_event_id UUID,
+    event_type LowCardinality(String) CODEC(ZSTD(3)),
+    org_id LowCardinality(String) CODEC(ZSTD(3)),
+    recipient_subject_id String CODEC(ZSTD(3)),
+    notification_id UUID,
+    recipient_sequence UInt64 CODEC(T64, ZSTD(3)),
+    event_source LowCardinality(String) CODEC(ZSTD(3)),
+    source_subject LowCardinality(String) CODEC(ZSTD(3)),
+    source_event_id UUID,
+    kind LowCardinality(String) CODEC(ZSTD(3)),
+    priority LowCardinality(String) CODEC(ZSTD(3)),
+    status LowCardinality(String) CODEC(ZSTD(3)),
+    reason LowCardinality(String) CODEC(ZSTD(3)),
+    content_sha256 FixedString(64) CODEC(ZSTD(3)),
+    trace_id String CODEC(ZSTD(3)),
+    span_id String CODEC(ZSTD(3)),
+    traceparent String CODEC(ZSTD(3))
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(toDate(recorded_at))
+ORDER BY (event_type, org_id, kind, status, recipient_subject_id, occurred_at, ledger_event_id)
+SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1;
+
+-- ═══════════════════════════════════════════════════════════════════════════
 -- forge_metal: vm-orchestrator lease evidence projection
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Typed projection of lease lifecycle, exec starts, and telemetry diagnostics.
