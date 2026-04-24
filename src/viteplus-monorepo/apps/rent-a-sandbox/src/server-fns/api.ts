@@ -34,6 +34,7 @@ import {
 } from "~/lib/profile-api";
 import {
   NotificationsApiError,
+  clearNotifications as clearNotificationsRequest,
   dismissNotification as dismissNotificationRequest,
   dismissNotificationRequestSchema,
   getNotificationSummary as getNotificationSummaryRequest,
@@ -387,6 +388,12 @@ export const dismissNotification = createServerFn({ method: "POST" })
       ...(await notificationsClientOptions(context)),
       body: data,
     });
+  });
+
+export const clearNotifications = createServerFn({ method: "POST" })
+  .middleware([rentASandboxAuthMiddleware])
+  .handler(async ({ context }) => {
+    return clearNotificationsRequest(await notificationsClientOptions(context));
   });
 
 export const publishTestNotification = createServerFn({ method: "POST" })

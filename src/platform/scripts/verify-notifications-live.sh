@@ -225,6 +225,17 @@ wait_for_clickhouse_count forge_metal "
   --param_recipient_subject_id="${recipient_subject_id}" \
   --param_event_id="${event_id}"
 
+wait_for_clickhouse_count forge_metal "
+  SELECT count()
+  FROM notification_events
+  WHERE recorded_at BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
+    AND org_id = {org_id:String}
+    AND recipient_subject_id = {recipient_subject_id:String}
+    AND event_type = 'notification.inbox.dismissed'
+" 1 "${artifact_dir}/clickhouse/notification-dismissed-count.tsv" \
+  --param_org_id="${org_id}" \
+  --param_recipient_subject_id="${recipient_subject_id}"
+
 wait_for_clickhouse_count default "
   SELECT count()
   FROM otel_traces
@@ -238,9 +249,11 @@ wait_for_clickhouse_count default "
       'notifications.event.persist',
       'notifications.event.fanout',
       'notifications.api.advance-notification-read-cursor',
+      'notifications.api.clear-notifications',
+      'notifications.inbox.clear',
       'notifications.clickhouse.project_pending'
     )
-" 8 "${artifact_dir}/clickhouse/notifications-trace-span-count.tsv"
+" 10 "${artifact_dir}/clickhouse/notifications-trace-span-count.tsv"
 
 wait_for_clickhouse_count default "
   SELECT count()

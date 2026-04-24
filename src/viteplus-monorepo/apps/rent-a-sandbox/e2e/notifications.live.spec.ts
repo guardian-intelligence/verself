@@ -77,6 +77,29 @@ test.describe("Rent-a-Sandbox Notifications", () => {
         timeout: shortTimeoutMS,
       });
 
+      await app.goto("/notifications");
+      await expect(app.page.getByRole("heading", { name: "Notifications" })).toBeVisible({
+        timeout: shortTimeoutMS,
+      });
+      await expect(app.page.getByTestId("notifications-filter-unread")).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      await expect(app.page.locator("main button:disabled")).toHaveCount(0);
+      await app.page.getByTestId("notifications-test").click();
+      await expect
+        .poll(async () => app.page.getByTestId("notification-row").count(), {
+          timeout: shortTimeoutMS,
+        })
+        .toBeGreaterThan(0);
+      await app.page.getByTestId("notifications-clear-all").click();
+      await expect(app.page.getByTestId("notifications-empty")).toHaveText(
+        "No unread notifications",
+        {
+          timeout: shortTimeoutMS,
+        },
+      );
+
       run.status = "succeeded";
       run.terminal_observed_at = new Date().toISOString();
     } catch (error) {
@@ -84,6 +107,48 @@ test.describe("Rent-a-Sandbox Notifications", () => {
       run.error = error instanceof Error ? error.message : String(error);
       throw error;
     } finally {
+      await app.persistRun(run);
+    }
+  });
+
+  test("notification read cursor live-syncs across browser tabs", async ({ app }) => {
+    const run = app.createRun();
+    let secondTab: Awaited<ReturnType<typeof app.context.newPage>> | null = null;
+
+    try {
+      await app.ensureLoggedIn();
+      app.resetBrowserSignals();
+      run.detail_url = "/executions";
+
+      await app.goto("/executions");
+      secondTab = await app.context.newPage();
+      await secondTab.goto("/executions", { waitUntil: "domcontentloaded" });
+      await expect(secondTab.getByTestId("notifications-bell")).toBeVisible({
+        timeout: shortTimeoutMS,
+      });
+
+      await app.page.getByTestId("notifications-bell").click();
+      await app.page.getByTestId("notifications-test").click();
+      await expect(app.page.getByTestId("notifications-unread-count")).toBeVisible({
+        timeout: shortTimeoutMS,
+      });
+      await expect(secondTab.getByTestId("notifications-unread-count")).toBeVisible({
+        timeout: shortTimeoutMS,
+      });
+
+      await app.page.getByTestId("notifications-mark-read").click();
+      await expect(secondTab.getByTestId("notifications-unread-count")).toHaveCount(0, {
+        timeout: shortTimeoutMS,
+      });
+
+      run.status = "succeeded";
+      run.terminal_observed_at = new Date().toISOString();
+    } catch (error) {
+      run.status = "failed";
+      run.error = error instanceof Error ? error.message : String(error);
+      throw error;
+    } finally {
+      await secondTab?.close();
       await app.persistRun(run);
     }
   });

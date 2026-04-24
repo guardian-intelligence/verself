@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSignedInAuth } from "@forge-metal/auth-web/react";
 import {
+  clearNotifications,
   dismissNotification,
   markNotificationRead,
   publishTestNotification,
@@ -8,9 +9,9 @@ import {
   type MarkNotificationReadRequest,
   type PublishTestNotificationRequest,
 } from "~/server-fns/api";
-import { notificationsQuery } from "./queries";
+import { notificationsQueryKey } from "./queries";
 
-export function useMarkNotificationReadMutation(latestSequence: number) {
+export function useMarkNotificationReadMutation() {
   const auth = useSignedInAuth();
   const queryClient = useQueryClient();
 
@@ -18,13 +19,13 @@ export function useMarkNotificationReadMutation(latestSequence: number) {
     mutationFn: (body: MarkNotificationReadRequest) => markNotificationRead({ data: body }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
-        queryKey: notificationsQuery(auth, latestSequence).queryKey,
+        queryKey: notificationsQueryKey(auth),
       });
     },
   });
 }
 
-export function useDismissNotificationMutation(latestSequence: number) {
+export function useDismissNotificationMutation() {
   const auth = useSignedInAuth();
   const queryClient = useQueryClient();
 
@@ -32,13 +33,27 @@ export function useDismissNotificationMutation(latestSequence: number) {
     mutationFn: (body: DismissNotificationRequest) => dismissNotification({ data: body }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
-        queryKey: notificationsQuery(auth, latestSequence).queryKey,
+        queryKey: notificationsQueryKey(auth),
       });
     },
   });
 }
 
-export function usePublishTestNotificationMutation(latestSequence: number) {
+export function useClearNotificationsMutation() {
+  const auth = useSignedInAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => clearNotifications(),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: notificationsQueryKey(auth),
+      });
+    },
+  });
+}
+
+export function usePublishTestNotificationMutation() {
   const auth = useSignedInAuth();
   const queryClient = useQueryClient();
 
@@ -46,7 +61,7 @@ export function usePublishTestNotificationMutation(latestSequence: number) {
     mutationFn: (body: PublishTestNotificationRequest) => publishTestNotification({ data: body }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
-        queryKey: notificationsQuery(auth, latestSequence).queryKey,
+        queryKey: notificationsQueryKey(auth),
       });
     },
   });

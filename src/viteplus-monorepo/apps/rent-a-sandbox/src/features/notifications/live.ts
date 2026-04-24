@@ -21,6 +21,7 @@ export function useNotificationInboxState() {
     ...liveQuery,
     inboxState,
     latestSequence,
+    revision: inboxState?.updated_at ?? "",
     readUpToSequence,
     unreadCount,
   };

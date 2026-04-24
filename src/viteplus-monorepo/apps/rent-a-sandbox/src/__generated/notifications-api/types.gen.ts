@@ -254,6 +254,35 @@ export type ListNotificationsResponses = {
 export type ListNotificationsResponse =
   ListNotificationsResponses[keyof ListNotificationsResponses];
 
+export type ClearNotificationsData = {
+  body?: never;
+  headers: {
+    "Idempotency-Key": string;
+  };
+  path?: never;
+  query?: never;
+  url: "/api/v1/notifications/clear";
+};
+
+export type ClearNotificationsErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type ClearNotificationsError = ClearNotificationsErrors[keyof ClearNotificationsErrors];
+
+export type ClearNotificationsResponses = {
+  /**
+   * OK
+   */
+  200: NotificationSummary;
+};
+
+export type ClearNotificationsResponse =
+  ClearNotificationsResponses[keyof ClearNotificationsResponses];
+
 export type PutNotificationPreferencesData = {
   body: NotificationPutPreferencesRequestWritable;
   headers: {

@@ -53,6 +53,10 @@ type dismissInput struct {
 	IdempotencyKey string `header:"Idempotency-Key" required:"true" minLength:"1" maxLength:"128"`
 }
 
+type clearInput struct {
+	IdempotencyKey string `header:"Idempotency-Key" required:"true" minLength:"1" maxLength:"128"`
+}
+
 type testInput struct {
 	IdempotencyKey string `header:"Idempotency-Key" required:"true" minLength:"1" maxLength:"128"`
 	Body           apiwire.NotificationTestRequest
@@ -102,6 +106,14 @@ func RegisterRoutes(api huma.API, svc *notifications.Service) {
 		Summary:       "Dismiss a current human notification",
 		DefaultStatus: http.StatusOK,
 	}, "notifications:self:write", dismissNotification(svc))
+
+	register(api, huma.Operation{
+		OperationID:   "clear-notifications",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/notifications/clear",
+		Summary:       "Dismiss all current human notifications",
+		DefaultStatus: http.StatusOK,
+	}, "notifications:self:write", clearNotifications(svc))
 
 	register(api, huma.Operation{
 		OperationID:   "publish-test-notification",
@@ -235,6 +247,23 @@ func dismissNotification(svc *notifications.Service) func(context.Context, *dism
 			return nil, badRequest(ctx, "invalid-notification-id", "notification_id must be a UUID", err)
 		}
 		summary, err := svc.Dismiss(ctx, principal, notifications.DismissRequest{NotificationID: notificationID})
+		if err != nil {
+			return nil, notificationError(ctx, err)
+		}
+		return &summaryOutput{Body: summaryDTO(summary)}, nil
+	}
+}
+
+func clearNotifications(svc *notifications.Service) func(context.Context, *clearInput) (*summaryOutput, error) {
+	return func(ctx context.Context, input *clearInput) (*summaryOutput, error) {
+		if err := validateIdempotencyKey(ctx, input.IdempotencyKey); err != nil {
+			return nil, err
+		}
+		principal, err := principalFromContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+		summary, err := svc.DismissAll(ctx, principal)
 		if err != nil {
 			return nil, notificationError(ctx, err)
 		}
