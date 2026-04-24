@@ -1,0 +1,158 @@
+components:
+  schemas:
+    ErrorDetail:
+      additionalProperties: false
+      properties:
+        location:
+          description: Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'
+          type: string
+        message:
+          description: Error message text
+          type: string
+        value:
+          description: The value at the given location
+      type: object
+    ErrorModel:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://127.0.0.1:4241/schemas/ErrorModel.json
+          format: uri
+          readOnly: true
+          type: string
+        detail:
+          description: A human-readable explanation specific to this occurrence of the problem.
+          example: Property foo is required but is missing.
+          type: string
+        errors:
+          description: Optional list of individual error details
+          items:
+            $ref: "#/components/schemas/ErrorDetail"
+          nullable: true
+          type: array
+        instance:
+          description: A URI reference that identifies the specific occurrence of the problem.
+          example: https://example.com/error-log/abc123
+          format: uri
+          type: string
+        status:
+          description: HTTP status code
+          example: 400
+          format: int64
+          maximum: 599
+          type: integer
+        title:
+          description: A short, human-readable summary of the problem type. This value should not change between occurrences of the error.
+          example: Bad Request
+          type: string
+        type:
+          default: about:blank
+          description: A URI reference to human-readable documentation for the error.
+          example: https://example.com/errors/example
+          format: uri
+          type: string
+      type: object
+    IdentityUpdateHumanProfileRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://127.0.0.1:4241/schemas/IdentityUpdateHumanProfileRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        display_name:
+          maxLength: 200
+          type: string
+        family_name:
+          maxLength: 100
+          type: string
+        given_name:
+          maxLength: 100
+          type: string
+      required:
+        - given_name
+        - family_name
+      type: object
+    IdentityUpdateHumanProfileResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://127.0.0.1:4241/schemas/IdentityUpdateHumanProfileResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        display_name:
+          type: string
+        email:
+          type: string
+        family_name:
+          type: string
+        given_name:
+          type: string
+        subject_id:
+          type: string
+        synced_at:
+          format: date-time
+          type: string
+      required:
+        - subject_id
+        - email
+        - given_name
+        - family_name
+        - display_name
+        - synced_at
+      type: object
+  securitySchemes:
+    bearerAuth:
+      bearerFormat: JWT
+      description: Forwarded Zitadel human bearer token scoped to the identity-service API audience.
+      scheme: bearer
+      type: http
+    mutualTLS:
+      description: SPIFFE X.509-SVID mutual TLS on the identity-service internal listener.
+      type: mutualTLS
+info:
+  title: Forge Metal Identity Service Internal API
+  version: 1.0.0
+openapi: 3.0.3
+paths:
+  /internal/v1/subjects/{subject_id}/human-profile:
+    patch:
+      description: SPIFFE-mTLS internal endpoint for profile-service to update the forwarded human subject's Zitadel profile fields.
+      operationId: update-human-profile
+      parameters:
+        - description: Zitadel human subject ID
+          in: path
+          name: subject_id
+          required: true
+          schema:
+            description: Zitadel human subject ID
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IdentityUpdateHumanProfileRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityUpdateHumanProfileResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+          mutualTLS: []
+      summary: Update a human profile
+servers:
+  - url: https://127.0.0.1:4241

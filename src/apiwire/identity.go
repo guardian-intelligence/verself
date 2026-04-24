@@ -123,3 +123,18 @@ type IdentityRollAPICredentialResponse struct {
 	Credential     IdentityAPICredential               `json:"credential"`
 	IssuedMaterial IdentityAPICredentialIssuedMaterial `json:"issued_material"`
 }
+
+type IdentityUpdateHumanProfileRequest struct {
+	GivenName   string  `json:"given_name" required:"true" maxLength:"100"`
+	FamilyName  string  `json:"family_name" required:"true" maxLength:"100"`
+	DisplayName *string `json:"display_name,omitempty" maxLength:"200"`
+}
+
+type IdentityUpdateHumanProfileResponse struct {
+	SubjectID   string    `json:"subject_id"`
+	Email       string    `json:"email"`
+	GivenName   string    `json:"given_name"`
+	FamilyName  string    `json:"family_name"`
+	DisplayName string    `json:"display_name"`
+	SyncedAt    time.Time `json:"synced_at"`
+}

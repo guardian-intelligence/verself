@@ -61,6 +61,21 @@ type InviteMemberRequest struct {
 	RoleKeys   []string
 }
 
+type HumanProfileUpdate struct {
+	GivenName   string
+	FamilyName  string
+	DisplayName *string
+}
+
+type HumanProfile struct {
+	SubjectID   string
+	Email       string
+	GivenName   string
+	FamilyName  string
+	DisplayName string
+	SyncedAt    time.Time
+}
+
 type InviteMemberResult struct {
 	UserID   string
 	Email    string

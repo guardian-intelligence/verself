@@ -28,6 +28,7 @@ type Directory interface {
 	ListMembers(ctx context.Context, orgID, projectID string) ([]Member, error)
 	InviteMember(ctx context.Context, orgID, projectID string, input InviteMemberRequest) (InviteMemberResult, error)
 	UpdateMemberRoles(ctx context.Context, orgID, projectID, userID string, roleKeys []string) (Member, error)
+	UpdateHumanProfile(ctx context.Context, subjectID string, input HumanProfileUpdate) (HumanProfile, error)
 	CreateServiceAccountCredential(ctx context.Context, orgID string, input ServiceAccountCredentialInput) (subjectID string, material APICredentialIssuedMaterial, err error)
 	AddServiceAccountCredential(ctx context.Context, input AddServiceAccountCredentialInput) (APICredentialIssuedMaterial, error)
 	RemoveServiceAccountCredential(ctx context.Context, subjectID string, secret APICredentialSecret) error
@@ -149,6 +150,22 @@ func (s *Service) UpdateMemberRoles(ctx context.Context, principal Principal, us
 		return Member{}, err
 	}
 	return directory.UpdateMemberRoles(ctx, principal.OrgID, s.ProjectID, userID, roleKeys)
+}
+
+func (s *Service) UpdateHumanProfile(ctx context.Context, subjectID string, input HumanProfileUpdate) (HumanProfile, error) {
+	subjectID = strings.TrimSpace(subjectID)
+	if subjectID == "" {
+		return HumanProfile{}, fmt.Errorf("%w: subject_id is required", ErrInvalidInput)
+	}
+	input, err := normalizeHumanProfileUpdate(input)
+	if err != nil {
+		return HumanProfile{}, err
+	}
+	directory, err := s.directoryClient()
+	if err != nil {
+		return HumanProfile{}, err
+	}
+	return directory.UpdateHumanProfile(ctx, subjectID, input)
 }
 
 func (s *Service) MemberCapabilities(ctx context.Context, principal Principal) (MemberCapabilitiesDocument, error) {
@@ -393,7 +410,18 @@ func (s *Service) store() (Store, error) {
 }
 
 func (s *Service) directory() (Directory, error) {
-	if s == nil || s.Directory == nil || strings.TrimSpace(s.ProjectID) == "" {
+	directory, err := s.directoryClient()
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(s.ProjectID) == "" {
+		return nil, ErrZitadelUnavailable
+	}
+	return directory, nil
+}
+
+func (s *Service) directoryClient() (Directory, error) {
+	if s == nil || s.Directory == nil {
 		return nil, ErrZitadelUnavailable
 	}
 	return s.Directory, nil
@@ -463,6 +491,41 @@ func validateInvite(input InviteMemberRequest) error {
 		return fmt.Errorf("%w: role_keys is required", ErrInvalidInput)
 	}
 	return nil
+}
+
+func normalizeHumanProfileUpdate(input HumanProfileUpdate) (HumanProfileUpdate, error) {
+	input.GivenName = strings.TrimSpace(input.GivenName)
+	input.FamilyName = strings.TrimSpace(input.FamilyName)
+	if input.GivenName == "" {
+		return HumanProfileUpdate{}, fmt.Errorf("%w: given_name is required", ErrInvalidInput)
+	}
+	if input.FamilyName == "" {
+		return HumanProfileUpdate{}, fmt.Errorf("%w: family_name is required", ErrInvalidInput)
+	}
+	if len(input.GivenName) > 100 {
+		return HumanProfileUpdate{}, fmt.Errorf("%w: given_name is too long", ErrInvalidInput)
+	}
+	if len(input.FamilyName) > 100 {
+		return HumanProfileUpdate{}, fmt.Errorf("%w: family_name is too long", ErrInvalidInput)
+	}
+	if hasProfileControlCharacter(input.GivenName) || hasProfileControlCharacter(input.FamilyName) {
+		return HumanProfileUpdate{}, fmt.Errorf("%w: profile name contains unsupported control characters", ErrInvalidInput)
+	}
+	if input.DisplayName != nil {
+		displayName := strings.TrimSpace(*input.DisplayName)
+		if len(displayName) > 200 {
+			return HumanProfileUpdate{}, fmt.Errorf("%w: display_name is too long", ErrInvalidInput)
+		}
+		if hasProfileControlCharacter(displayName) {
+			return HumanProfileUpdate{}, fmt.Errorf("%w: display_name contains unsupported control characters", ErrInvalidInput)
+		}
+		input.DisplayName = &displayName
+	}
+	return input, nil
+}
+
+func hasProfileControlCharacter(value string) bool {
+	return strings.ContainsAny(value, "\x00\r\n")
 }
 
 func normalizeInvite(input InviteMemberRequest) InviteMemberRequest {
