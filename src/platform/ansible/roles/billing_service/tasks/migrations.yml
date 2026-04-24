@@ -1,19 +1,13 @@
 ---
 - name: Probe billing callers before potential ledger reset
-  ansible.builtin.command:
-    argv:
-      - systemctl
-      - is-active
-      - "{{ item }}"
+  fm_systemd_status:
+    unit: "{{ item }}"
   loop:
     - sandbox-rental-service
     - billing-service
   loop_control:
     label: "{{ item }}"
   register: billing_service_ledger_reset_caller_states
-  # is-active returns non-zero when the unit is inactive — legitimate signal.
-  failed_when: false
-  changed_when: false
 
 - name: Apply billing PostgreSQL migrations
   ansible.builtin.include_role:

@@ -17,7 +17,7 @@
   listen: restart sandbox-rental-recurring-worker
   ansible.builtin.stat:
     path: /etc/systemd/system/sandbox-rental-recurring-worker.service
-  register: sandbox_rental_recurring_worker_unit_file
+  register: sandbox_rental_service_recurring_worker_unit_file
 
 - name: Restart sandbox-rental-recurring-worker
   listen: restart sandbox-rental-recurring-worker
@@ -25,7 +25,7 @@
     daemon_reload: true
     name: sandbox-rental-recurring-worker
     state: restarted
-  when: sandbox_rental_recurring_worker_unit_file.stat.exists
+  when: sandbox_rental_service_recurring_worker_unit_file.stat.exists
 
 - name: Reload nftables for sandbox-rental-service
   listen: reload nftables

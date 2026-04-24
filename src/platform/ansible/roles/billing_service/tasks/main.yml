@@ -293,7 +293,7 @@
     {{
       billing_service_ledger_reset_caller_states.results
       | default([])
-      | selectattr('rc', 'equalto', 0)
+      | selectattr('active')
       | rejectattr('item', 'equalto', 'billing-service')
       | list
     }}
