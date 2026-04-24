@@ -158,12 +158,12 @@ export function deriveSeededEmail(env: EnvSource = process.env, localPart = "acm
 // Electric requires an absolute shape URL. Keep the real sync path same-origin
 // in the browser, but return a harmless absolute fallback during SSR so the URL
 // parser never sees a bare relative path.
-export function electricShapeURL(): string {
+export function electricShapeURL(path = "/v1/shape"): string {
   const location = (globalThis as { location?: LocationLike }).location;
   if (location?.origin) {
-    return new URL("/v1/shape", location.origin).toString();
+    return new URL(path, location.origin).toString();
   }
-  return "http://127.0.0.1/v1/shape";
+  return `http://127.0.0.1${path}`;
 }
 
 export function requireUUID(value: string, label: string): string {
@@ -197,6 +197,13 @@ function requireSafeElectricInteger(value: number): number {
   return value;
 }
 
+function parseElectricBigInt(value: bigint): number {
+  if (value > maxSafeInteger || value < -maxSafeInteger) {
+    throw new Error("Electric integer exceeds Number.MAX_SAFE_INTEGER");
+  }
+  return Number(value);
+}
+
 function parseElectricInteger(value: string): number {
   const parsed = BigInt(value);
   if (parsed > maxSafeInteger || parsed < -maxSafeInteger) {
@@ -207,6 +214,7 @@ function parseElectricInteger(value: string): number {
 
 // Electric serializes PostgreSQL ints and booleans as strings in payloads.
 export const electricStringifiedIntegerSchema = v.union([
+  v.pipe(v.bigint(), v.transform(parseElectricBigInt)),
   v.pipe(v.number(), v.integer(), v.transform(requireSafeElectricInteger)),
   v.pipe(v.string(), v.regex(electricIntegerPattern), v.transform(parseElectricInteger)),
 ]);
@@ -237,12 +245,14 @@ export function createElectricShapeCollection<
   schema,
   where,
   getKey,
+  shapePath = "/v1/shape",
 }: {
   id: string;
   table: string;
   schema: TSchema;
   where?: string;
   getKey: (item: InferSchemaOutput<TSchema>) => string | number;
+  shapePath?: string;
 }): Collection<
   InferSchemaOutput<TSchema>,
   string | number,
@@ -253,7 +263,7 @@ export function createElectricShapeCollection<
     id,
     schema,
     shapeOptions: {
-      url: electricShapeURL(),
+      url: electricShapeURL(shapePath),
       params: where ? { table, where } : { table },
     },
     getKey,

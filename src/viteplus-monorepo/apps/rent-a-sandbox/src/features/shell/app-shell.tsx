@@ -32,6 +32,10 @@ import {
 } from "@forge-metal/ui/components/ui/sidebar";
 import { EVERGREEN_NAV, isPathActive, PRIMARY_NAV, type NavEntry } from "./nav-config";
 import { CommandPalette, useCommandPaletteHotkey } from "./command-palette";
+import {
+  NotificationBell,
+  NotificationBellFallback,
+} from "~/features/notifications/notification-bell";
 
 export function AppShell({ platformOrigin }: { platformOrigin: string }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -294,8 +298,13 @@ function TopBar({ onOpenPalette }: { onOpenPalette: () => void }) {
   return (
     <header className="sticky top-0 z-20 flex h-12 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:px-6">
       <SidebarTrigger className="-ml-1" data-testid="shell-sidebar-trigger" />
-      <div className="flex flex-1 items-center justify-end">
+      <div className="flex flex-1 items-center justify-end gap-2">
         <OmniBar onOpen={onOpenPalette} />
+        <SignedIn>
+          <ClientOnly fallback={<NotificationBellFallback />}>
+            <NotificationBell />
+          </ClientOnly>
+        </SignedIn>
       </div>
     </header>
   );

@@ -32,6 +32,21 @@ import {
   updateProfileIdentity as updateProfileIdentityRequest,
   updateProfileIdentityRequestSchema,
 } from "~/lib/profile-api";
+import {
+  NotificationsApiError,
+  dismissNotification as dismissNotificationRequest,
+  dismissNotificationRequestSchema,
+  getNotificationSummary as getNotificationSummaryRequest,
+  isNotificationsApiError,
+  listNotifications as listNotificationsRequest,
+  markNotificationRead as markNotificationReadRequest,
+  markNotificationReadRequestSchema,
+  notificationsListQuerySchema,
+  publishTestNotification as publishTestNotificationRequest,
+  publishTestNotificationRequestSchema,
+  putNotificationPreferences as putNotificationPreferencesRequest,
+  putNotificationPreferencesRequestSchema,
+} from "~/lib/notifications-api";
 import type {
   InviteMemberRequest,
   InviteMemberResponse,
@@ -54,6 +69,17 @@ import type {
   PutProfilePreferencesRequest,
   UpdateProfileIdentityRequest,
 } from "~/lib/profile-api";
+import type {
+  DismissNotificationRequest,
+  MarkNotificationReadRequest,
+  Notification,
+  NotificationAccepted,
+  NotificationList,
+  NotificationSummary,
+  NotificationsListQuery,
+  PublishTestNotificationRequest,
+  PutNotificationPreferencesRequest,
+} from "~/lib/notifications-api";
 import {
   cancelContract as cancelContractRequest,
   cancelContractRequestSchema,
@@ -112,14 +138,18 @@ import { rentASandboxAuthMiddleware } from "./auth";
 const IDENTITY_SERVICE_BASE_URL = requireURLFromEnv("IDENTITY_SERVICE_BASE_URL");
 const GOVERNANCE_SERVICE_BASE_URL = requireURLFromEnv("GOVERNANCE_SERVICE_BASE_URL");
 const PROFILE_SERVICE_BASE_URL = requireURLFromEnv("PROFILE_SERVICE_BASE_URL");
+const NOTIFICATIONS_SERVICE_BASE_URL = requireURLFromEnv("NOTIFICATIONS_SERVICE_BASE_URL");
 const SANDBOX_RENTAL_SERVICE_BASE_URL = requireURLFromEnv("SANDBOX_RENTAL_SERVICE_BASE_URL");
 const IDENTITY_SERVICE_AUTH_AUDIENCE = process.env.IDENTITY_SERVICE_AUTH_AUDIENCE?.trim();
 const PROFILE_SERVICE_AUTH_AUDIENCE =
   process.env.PROFILE_SERVICE_AUTH_AUDIENCE?.trim() || IDENTITY_SERVICE_AUTH_AUDIENCE;
+const NOTIFICATIONS_SERVICE_AUTH_AUDIENCE =
+  process.env.NOTIFICATIONS_SERVICE_AUTH_AUDIENCE?.trim() || IDENTITY_SERVICE_AUTH_AUDIENCE;
 
 export { IdentityApiError, isIdentityApiError };
 export { GovernanceApiError, isGovernanceApiError };
 export { ProfileApiError, isProfileApiError };
+export { NotificationsApiError, isNotificationsApiError };
 export { SandboxRentalApiError, isSandboxRentalApiError, isSandboxRentalNotFound };
 export type {
   CreateExportRequest,
@@ -128,6 +158,17 @@ export type {
   GovernanceExportJob,
 };
 export type { ProfileSnapshot, PutProfilePreferencesRequest, UpdateProfileIdentityRequest };
+export type {
+  DismissNotificationRequest,
+  MarkNotificationReadRequest,
+  Notification,
+  NotificationAccepted,
+  NotificationList,
+  NotificationSummary,
+  NotificationsListQuery,
+  PublishTestNotificationRequest,
+  PutNotificationPreferencesRequest,
+};
 export type {
   CheckoutRequest,
   CancelContractRequest,
@@ -215,6 +256,19 @@ async function profileClientOptions(context: { auth?: AuthSession } | undefined)
   };
 }
 
+async function notificationsClientOptions(context: { auth?: AuthSession } | undefined) {
+  const auth = await resolveAuthContext(context);
+  const accessToken =
+    NOTIFICATIONS_SERVICE_AUTH_AUDIENCE &&
+    NOTIFICATIONS_SERVICE_AUTH_AUDIENCE !== IDENTITY_SERVICE_AUTH_AUDIENCE
+      ? await getAccessTokenForAudience(getAuthConfig(), auth, NOTIFICATIONS_SERVICE_AUTH_AUDIENCE)
+      : auth.accessToken;
+  return {
+    accessToken,
+    baseUrl: NOTIFICATIONS_SERVICE_BASE_URL,
+  };
+}
+
 export const getOrganization = createServerFn({ method: "GET" })
   .middleware([rentASandboxAuthMiddleware])
   .handler(async ({ context }) => {
@@ -285,6 +339,62 @@ export const putProfilePreferences = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     return putProfilePreferencesRequest({
       ...(await profileClientOptions(context)),
+      body: data,
+    });
+  });
+
+export const listNotifications = createServerFn({ method: "GET" })
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(notificationsListQuerySchema)
+  .handler(async ({ context, data }) => {
+    return listNotificationsRequest({
+      ...(await notificationsClientOptions(context)),
+      query: data,
+    });
+  });
+
+export const getNotificationSummary = createServerFn({ method: "GET" })
+  .middleware([rentASandboxAuthMiddleware])
+  .handler(async ({ context }) => {
+    return getNotificationSummaryRequest(await notificationsClientOptions(context));
+  });
+
+export const putNotificationPreferences = createServerFn({ method: "POST" })
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(putNotificationPreferencesRequestSchema)
+  .handler(async ({ context, data }) => {
+    return putNotificationPreferencesRequest({
+      ...(await notificationsClientOptions(context)),
+      body: data,
+    });
+  });
+
+export const markNotificationRead = createServerFn({ method: "POST" })
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(markNotificationReadRequestSchema)
+  .handler(async ({ context, data }) => {
+    return markNotificationReadRequest({
+      ...(await notificationsClientOptions(context)),
+      body: data,
+    });
+  });
+
+export const dismissNotification = createServerFn({ method: "POST" })
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(dismissNotificationRequestSchema)
+  .handler(async ({ context, data }) => {
+    return dismissNotificationRequest({
+      ...(await notificationsClientOptions(context)),
+      body: data,
+    });
+  });
+
+export const publishTestNotification = createServerFn({ method: "POST" })
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(publishTestNotificationRequestSchema)
+  .handler(async ({ context, data }) => {
+    return publishTestNotificationRequest({
+      ...(await notificationsClientOptions(context)),
       body: data,
     });
   });
