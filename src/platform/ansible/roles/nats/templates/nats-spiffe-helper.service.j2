@@ -1,0 +1,20 @@
+[Unit]
+Description=NATS SPIFFE helper
+After=network.target spire-agent.service
+Wants=spire-agent.service
+
+[Service]
+Type=simple
+User=nats
+Group=nats
+SupplementaryGroups={{ spire_workload_group }}
+ExecStart={{ fm_bin }}/spiffe-helper -config {{ nats_helper_config_path }}
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths={{ nats_spiffe_dir }}
+
+[Install]
+WantedBy=multi-user.target

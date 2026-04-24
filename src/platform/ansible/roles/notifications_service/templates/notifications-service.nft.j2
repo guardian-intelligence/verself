@@ -1,0 +1,29 @@
+# Notifications service is loopback-only. It needs PostgreSQL, ClickHouse,
+# NATS JetStream, Zitadel JWKS, and OTLP egress.
+
+table inet forge_metal_notifications_service
+delete table inet forge_metal_notifications_service
+
+table inet forge_metal_notifications_service {
+    chain input {
+        type filter hook input priority filter; policy accept;
+
+        tcp dport {{ services.notifications_service.port }} iifname != "lo" drop
+    }
+
+    chain output {
+        type filter hook output priority filter; policy accept;
+
+        ct state established,related accept
+        meta skuid != notifications_service accept
+
+        oifname "lo" tcp dport {{ services.postgresql.port }} accept
+        oifname "lo" tcp dport {{ services.clickhouse.secure_native_port }} accept
+        oifname "lo" tcp dport {{ services.nats.port }} accept
+        oifname "lo" tcp dport {{ services.zitadel.port }} accept
+        oifname "lo" tcp dport {{ services.otelcol.grpc_port }} accept
+        meta l4proto != tcp meta l4proto != udp accept
+
+        drop
+    }
+}

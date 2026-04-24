@@ -192,6 +192,25 @@
     GOARCH: amd64
   changed_when: false
 
+- name: Build notifications-service binary
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.command:
+    argv:
+      - go
+      - build
+      - -ldflags=-s -w -X main.version={{ forge_metal_version | default('dev') }}
+      - -o
+      - "{{ deploy_profile_repo_root }}/src/notifications-service/notifications-service"
+      - ./src/notifications-service/cmd/notifications-service
+    chdir: "{{ deploy_profile_repo_root }}"
+  environment:
+    CGO_ENABLED: "0"
+    GOOS: linux
+    GOARCH: amd64
+  changed_when: false
+
 - name: Build secrets-service binary
   delegate_to: localhost
   become: false
@@ -302,6 +321,7 @@
     - { src: "{{ deploy_profile_repo_root }}/src/identity-service/identity-service", name: identity-service }
     - { src: "{{ deploy_profile_repo_root }}/src/governance-service/governance-service", name: governance-service }
     - { src: "{{ deploy_profile_repo_root }}/src/profile-service/profile-service", name: profile-service }
+    - { src: "{{ deploy_profile_repo_root }}/src/notifications-service/notifications-service", name: notifications-service }
     - { src: "{{ deploy_profile_repo_root }}/src/secrets-service/secrets-service", name: secrets-service }
     - { src: "{{ deploy_profile_repo_root }}/src/object-storage-service/object-storage-service", name: object-storage-service }
     - { src: "{{ deploy_profile_repo_root }}/src/object-storage-service/object-storage-secret-sync", name: object-storage-secret-sync }
@@ -455,6 +475,23 @@
   ansible.builtin.command: /bin/true
   changed_when: deploy_profile_profile_service_binary_copy.changed | default(false)
   notify: deploy-profile restart profile-service
+
+- name: Set notifications-service binary copy fact
+  ansible.builtin.set_fact:
+    deploy_profile_notifications_service_binary_copy: >-
+      {{
+        (
+          deploy_profile_go_binary_copy_results.results
+          | selectattr('item.name', 'equalto', 'notifications-service')
+          | list
+          | first
+        ) | default({})
+      }}
+
+- name: Trigger notifications-service restart when binary changed
+  ansible.builtin.command: /bin/true
+  changed_when: deploy_profile_notifications_service_binary_copy.changed | default(false)
+  notify: deploy-profile restart notifications-service
 
 - name: Set secrets-service binary copy fact
   ansible.builtin.set_fact:

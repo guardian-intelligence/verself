@@ -1,0 +1,22 @@
+# NATS is loopback-only. Clients authenticate with SPIFFE x509-SVIDs and NATS
+# maps URI SANs to per-service authorization users.
+table inet forge_metal_nats
+delete table inet forge_metal_nats
+table inet forge_metal_nats {
+    chain input {
+        type filter hook input priority filter; policy accept;
+
+        tcp dport {{ services.nats.port }} iifname != "lo" drop
+        tcp dport {{ services.nats.monitoring_port }} iifname != "lo" drop
+    }
+
+    chain output {
+        type filter hook output priority filter; policy accept;
+
+        ct state established,related accept
+        meta skuid != nats accept
+        meta l4proto != tcp meta l4proto != udp accept
+
+        drop
+    }
+}

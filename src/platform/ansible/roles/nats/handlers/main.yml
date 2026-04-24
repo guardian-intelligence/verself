@@ -1,0 +1,34 @@
+---
+- name: Restart NATS SPIFFE helper
+  listen: restart nats-spiffe-helper
+  ansible.builtin.stat:
+    path: /etc/systemd/system/nats-spiffe-helper.service
+  register: nats_spiffe_helper_unit_file
+
+- name: Restart NATS SPIFFE helper service
+  listen: restart nats-spiffe-helper
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: nats-spiffe-helper
+    state: restarted
+  when: nats_spiffe_helper_unit_file.stat.exists
+
+- name: Restart NATS
+  listen: restart nats
+  ansible.builtin.stat:
+    path: /etc/systemd/system/nats.service
+  register: nats_unit_file
+
+- name: Restart NATS service
+  listen: restart nats
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: nats
+    state: restarted
+  when: nats_unit_file.stat.exists
+
+- name: Reload nftables for NATS
+  listen: reload nftables
+  ansible.builtin.systemd:
+    name: nftables
+    state: reloaded

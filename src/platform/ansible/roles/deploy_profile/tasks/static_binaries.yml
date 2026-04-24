@@ -161,6 +161,29 @@
     remote_src: true
     mode: "0755"
 
+# ── NATS Server ──────────────────────────────────────────────────────────────
+
+- name: Download NATS Server archive
+  ansible.builtin.get_url:
+    url: "{{ deploy_profile_server_tools_pins.nats_server.url }}"
+    dest: "{{ deploy_profile_staging_dir }}/nats-server-{{ deploy_profile_server_tools_pins.nats_server.version }}.tar.gz"
+    checksum: "sha256:{{ deploy_profile_server_tools_pins.nats_server.sha256 }}"
+    mode: "0644"
+
+- name: Extract NATS Server binary
+  ansible.builtin.unarchive:
+    src: "{{ deploy_profile_staging_dir }}/nats-server-{{ deploy_profile_server_tools_pins.nats_server.version }}.tar.gz"
+    dest: "{{ deploy_profile_staging_dir }}"
+    remote_src: true
+    creates: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.nats_server.extract_binary }}"
+
+- name: Install NATS Server binary
+  ansible.builtin.copy:
+    src: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.nats_server.extract_binary }}"
+    dest: "{{ fm_bin }}/nats-server"
+    remote_src: true
+    mode: "0755"
+
 # ── Garage ──────────────────────────────────────────────────────────────────
 
 - name: Download Garage binary

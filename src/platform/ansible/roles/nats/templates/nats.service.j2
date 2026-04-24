@@ -1,0 +1,35 @@
+[Unit]
+Description=NATS JetStream
+After=forge-metal-firewall.target network.target spire-agent.service nats-spiffe-helper.service
+Requires=forge-metal-firewall.target
+Wants=spire-agent.service nats-spiffe-helper.service
+
+[Service]
+Type=simple
+User=nats
+Group=nats
+SupplementaryGroups={{ spire_workload_group }}
+ExecStart={{ fm_bin }}/nats-server -c {{ nats_config_dir }}/nats-server.conf
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=131072
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths={{ nats_data_dir }}
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+LockPersonality=true
+NoNewPrivileges=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
