@@ -298,10 +298,23 @@
 
       layout = request("/v2/GetClusterLayout")
       current_roles = sorted(
-          [{"id": role["id"], "zone": role["zone"], "capacity": role.get("capacity"), "tags": sorted(role.get("tags", []))} for role in layout["roles"]],
+          [
+              {
+                  "id": role["id"],
+                  "zone": role["zone"],
+                  "capacity": role.get("capacity"),
+                  "tags": sorted(role.get("tags", [])),
+              }
+              for role in layout["roles"]
+          ],
           key=lambda item: item["id"],
       )
-      if current_roles == desired_roles and layout.get("parameters") == desired_parameters and not layout.get("stagedRoleChanges") and not layout.get("stagedParameters"):
+      if (
+          current_roles == desired_roles
+          and layout.get("parameters") == desired_parameters
+          and not layout.get("stagedRoleChanges")
+          and not layout.get("stagedParameters")
+      ):
           print(json.dumps({"changed": False, "version": layout["version"], "roles": current_roles}))
           raise SystemExit(0)
 
@@ -339,10 +352,23 @@
       while True:
           current = request("/v2/GetClusterLayout")
           current_roles = sorted(
-              [{"id": role["id"], "zone": role["zone"], "capacity": role.get("capacity"), "tags": sorted(role.get("tags", []))} for role in current["roles"]],
+              [
+                  {
+                      "id": role["id"],
+                      "zone": role["zone"],
+                      "capacity": role.get("capacity"),
+                      "tags": sorted(role.get("tags", [])),
+                  }
+                  for role in current["roles"]
+              ],
               key=lambda item: item["id"],
           )
-          if current_roles == desired_roles and current.get("parameters") == desired_parameters and not current.get("stagedRoleChanges") and not current.get("stagedParameters"):
+          if (
+              current_roles == desired_roles
+              and current.get("parameters") == desired_parameters
+              and not current.get("stagedRoleChanges")
+              and not current.get("stagedParameters")
+          ):
               print(json.dumps({"changed": changed, "version": current["version"], "roles": current_roles}))
               break
           if time.time() >= deadline:
