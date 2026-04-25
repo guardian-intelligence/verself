@@ -180,7 +180,7 @@ import json
 import sys
 
 payload = json.load(open(sys.argv[1], encoding="utf-8"))
-if payload["project_id"] != sys.argv[2] or payload["version"] != 1:
+if payload["project_id"] != sys.argv[2] or str(payload["version"]) != "1":
     raise SystemExit("project create idempotency retry did not return the original project")
 PY
 
@@ -206,9 +206,9 @@ PY
 
 cat >"${artifact_dir}/payloads/create-environment.json" <<'EOF'
 {
-  "display_name": "Production",
-  "slug": "production",
-  "kind": "production",
+  "display_name": "QA",
+  "slug": "qa",
+  "kind": "custom",
   "protection_policy": {
     "approval": "required"
   }
