@@ -20,6 +20,7 @@ src/object-storage-service/object-storage-proof
 src/object-storage-service/object-storage-service
 src/profile-service/profile-service
 src/notifications-service/notifications-service
+src/projects-service/projects-service
 # Config (contains credentials)
 verself.toml
 

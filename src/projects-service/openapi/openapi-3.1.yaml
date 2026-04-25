@@ -1,0 +1,846 @@
+components:
+  schemas:
+    CreateProjectEnvironmentRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://projects.api.verself.sh/schemas/CreateProjectEnvironmentRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        display_name:
+          maxLength: 120
+          minLength: 1
+          type: string
+        kind:
+          type: string
+        protection_policy:
+          additionalProperties:
+            type: string
+          type: object
+        slug:
+          maxLength: 80
+          minLength: 1
+          type: string
+      required:
+        - slug
+        - display_name
+        - kind
+      type: object
+    CreateProjectRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://projects.api.verself.sh/schemas/CreateProjectRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        description:
+          maxLength: 500
+          type: string
+        display_name:
+          maxLength: 120
+          minLength: 1
+          type: string
+        slug:
+          maxLength: 80
+          minLength: 1
+          type: string
+      required:
+        - display_name
+      type: object
+    ErrorDetail:
+      additionalProperties: false
+      properties:
+        location:
+          description: Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'
+          type: string
+        message:
+          description: Error message text
+          type: string
+        value:
+          description: The value at the given location
+      type: object
+    ErrorModel:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://projects.api.verself.sh/schemas/ErrorModel.json
+          format: uri
+          readOnly: true
+          type: string
+        detail:
+          description: A human-readable explanation specific to this occurrence of the problem.
+          examples:
+            - Property foo is required but is missing.
+          type: string
+        errors:
+          description: Optional list of individual error details
+          items:
+            $ref: "#/components/schemas/ErrorDetail"
+          type:
+            - array
+            - "null"
+        instance:
+          description: A URI reference that identifies the specific occurrence of the problem.
+          examples:
+            - https://example.com/error-log/abc123
+          format: uri
+          type: string
+        status:
+          description: HTTP status code
+          examples:
+            - 400
+          format: int64
+          maximum: 599
+          type: integer
+        title:
+          description: A short, human-readable summary of the problem type. This value should not change between occurrences of the error.
+          examples:
+            - Bad Request
+          type: string
+        type:
+          default: about:blank
+          description: A URI reference to human-readable documentation for the error.
+          examples:
+            - https://example.com/errors/example
+          format: uri
+          type: string
+      type: object
+    Project:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://projects.api.verself.sh/schemas/Project.json
+          format: uri
+          readOnly: true
+          type: string
+        archived_at:
+          format: date-time
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        created_by:
+          type: string
+        description:
+          type: string
+        display_name:
+          type: string
+        org_id:
+          pattern: ^[0-9]+$
+          type: string
+        project_id:
+          format: uuid
+          type: string
+        slug:
+          type: string
+        state:
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+        updated_by:
+          type: string
+        version:
+          pattern: ^-?[0-9]+$
+          type: string
+      required:
+        - project_id
+        - org_id
+        - slug
+        - display_name
+        - description
+        - state
+        - version
+        - created_by
+        - updated_by
+        - created_at
+        - updated_at
+      type: object
+    ProjectEnvironment:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://projects.api.verself.sh/schemas/ProjectEnvironment.json
+          format: uri
+          readOnly: true
+          type: string
+        archived_at:
+          format: date-time
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        created_by:
+          type: string
+        display_name:
+          type: string
+        environment_id:
+          format: uuid
+          type: string
+        kind:
+          type: string
+        org_id:
+          pattern: ^[0-9]+$
+          type: string
+        project_id:
+          format: uuid
+          type: string
+        protection_policy:
+          additionalProperties:
+            type: string
+          type: object
+        slug:
+          type: string
+        state:
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+        updated_by:
+          type: string
+        version:
+          pattern: ^-?[0-9]+$
+          type: string
+      required:
+        - environment_id
+        - project_id
+        - org_id
+        - slug
+        - display_name
+        - kind
+        - state
+        - version
+        - created_by
+        - updated_by
+        - created_at
+        - updated_at
+      type: object
+    ProjectEnvironmentList:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://projects.api.verself.sh/schemas/ProjectEnvironmentList.json
+          format: uri
+          readOnly: true
+          type: string
+        environments:
+          items:
+            $ref: "#/components/schemas/ProjectEnvironment"
+          type:
+            - array
+            - "null"
+        next_cursor:
+          type: string
+      required:
+        - environments
+      type: object
+    ProjectLifecycleRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://projects.api.verself.sh/schemas/ProjectLifecycleRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        version:
+          pattern: ^-?[0-9]+$
+          type: string
+      required:
+        - version
+      type: object
+    ProjectList:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://projects.api.verself.sh/schemas/ProjectList.json
+          format: uri
+          readOnly: true
+          type: string
+        next_cursor:
+          type: string
+        projects:
+          items:
+            $ref: "#/components/schemas/Project"
+          type:
+            - array
+            - "null"
+      required:
+        - projects
+      type: object
+    UpdateProjectEnvironmentRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://projects.api.verself.sh/schemas/UpdateProjectEnvironmentRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        display_name:
+          maxLength: 120
+          type: string
+        protection_policy:
+          additionalProperties:
+            type: string
+          type: object
+        version:
+          pattern: ^-?[0-9]+$
+          type: string
+      required:
+        - version
+      type: object
+    UpdateProjectRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://projects.api.verself.sh/schemas/UpdateProjectRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        description:
+          maxLength: 500
+          type: string
+        display_name:
+          maxLength: 120
+          type: string
+        slug:
+          maxLength: 80
+          minLength: 1
+          type: string
+        version:
+          pattern: ^-?[0-9]+$
+          type: string
+      required:
+        - version
+      type: object
+  securitySchemes:
+    bearerAuth:
+      bearerFormat: JWT
+      description: Zitadel OIDC access token for a human subject or Verself API credential.
+      scheme: bearer
+      type: http
+info:
+  title: Projects Service
+  version: 1.0.0
+openapi: 3.1.0
+paths:
+  /api/v1/projects:
+    get:
+      operationId: list-projects
+      parameters:
+        - explode: false
+          in: query
+          name: state
+          schema:
+            enum:
+              - active
+              - archived
+            type: string
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+        - explode: false
+          in: query
+          name: cursor
+          schema:
+            maxLength: 256
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectList"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: List projects
+      x-verself-iam:
+        action: list
+        audit_event: projects.project.list
+        data_classification: customer_project_metadata
+        event_category: projects
+        operation_display: list projects
+        operation_type: read
+        org_scope: token_org_id
+        permission: projects:project:read
+        rate_limit_class: read
+        resource: project
+        risk_level: low
+    post:
+      operationId: create-project
+      parameters:
+        - description: Stable caller-provided key used to make this mutation retry-safe.
+          in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Create a project
+      x-verself-iam:
+        action: create
+        audit_event: projects.project.create
+        data_classification: customer_project_metadata
+        event_category: projects
+        operation_display: create project
+        operation_type: write
+        org_scope: token_org_id
+        permission: projects:project:write
+        rate_limit_class: projects_mutation
+        resource: project
+        risk_level: medium
+  /api/v1/projects/{project_id}:
+    get:
+      operationId: get-project
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Get a project
+      x-verself-iam:
+        action: read
+        audit_event: projects.project.read
+        data_classification: customer_project_metadata
+        event_category: projects
+        operation_display: read project
+        operation_type: read
+        org_scope: token_org_id
+        permission: projects:project:read
+        rate_limit_class: read
+        resource: project
+        risk_level: low
+    patch:
+      operationId: patch-project
+      parameters:
+        - description: Stable caller-provided key used to make this mutation retry-safe.
+          in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProjectRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Update a project
+      x-verself-iam:
+        action: update
+        audit_event: projects.project.update
+        data_classification: customer_project_metadata
+        event_category: projects
+        operation_display: update project
+        operation_type: write
+        org_scope: token_org_id
+        permission: projects:project:write
+        rate_limit_class: projects_mutation
+        resource: project
+        risk_level: medium
+  /api/v1/projects/{project_id}/archive:
+    post:
+      operationId: archive-project
+      parameters:
+        - description: Stable caller-provided key used to make this mutation retry-safe.
+          in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectLifecycleRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Archive a project
+      x-verself-iam:
+        action: archive
+        audit_event: projects.project.archive
+        data_classification: customer_project_metadata
+        event_category: projects
+        operation_display: archive project
+        operation_type: delete
+        org_scope: token_org_id
+        permission: projects:project:write
+        rate_limit_class: projects_mutation
+        resource: project
+        risk_level: medium
+  /api/v1/projects/{project_id}/environments:
+    get:
+      operationId: list-project-environments
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectEnvironmentList"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: List project environments
+      x-verself-iam:
+        action: list
+        audit_event: projects.environment.list
+        data_classification: customer_project_metadata
+        event_category: projects
+        operation_display: list project environments
+        operation_type: read
+        org_scope: token_org_id
+        permission: projects:environment:read
+        rate_limit_class: read
+        resource: project_environment
+        risk_level: low
+    post:
+      operationId: create-project-environment
+      parameters:
+        - description: Stable caller-provided key used to make this mutation retry-safe.
+          in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectEnvironmentRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectEnvironment"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Create a project environment
+      x-verself-iam:
+        action: create
+        audit_event: projects.environment.create
+        data_classification: customer_project_metadata
+        event_category: projects
+        operation_display: create project environment
+        operation_type: write
+        org_scope: token_org_id
+        permission: projects:environment:write
+        rate_limit_class: projects_mutation
+        resource: project_environment
+        risk_level: medium
+  /api/v1/projects/{project_id}/environments/{environment_id}:
+    patch:
+      operationId: patch-project-environment
+      parameters:
+        - description: Stable caller-provided key used to make this mutation retry-safe.
+          in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            format: uuid
+            type: string
+        - in: path
+          name: environment_id
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProjectEnvironmentRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectEnvironment"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Update a project environment
+      x-verself-iam:
+        action: update
+        audit_event: projects.environment.update
+        data_classification: customer_project_metadata
+        event_category: projects
+        operation_display: update project environment
+        operation_type: write
+        org_scope: token_org_id
+        permission: projects:environment:write
+        rate_limit_class: projects_mutation
+        resource: project_environment
+        risk_level: medium
+  /api/v1/projects/{project_id}/environments/{environment_id}/archive:
+    post:
+      operationId: archive-project-environment
+      parameters:
+        - description: Stable caller-provided key used to make this mutation retry-safe.
+          in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            format: uuid
+            type: string
+        - in: path
+          name: environment_id
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectLifecycleRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectEnvironment"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Archive a project environment
+      x-verself-iam:
+        action: archive
+        audit_event: projects.environment.archive
+        data_classification: customer_project_metadata
+        event_category: projects
+        operation_display: archive project environment
+        operation_type: delete
+        org_scope: token_org_id
+        permission: projects:environment:write
+        rate_limit_class: projects_mutation
+        resource: project_environment
+        risk_level: medium
+  /api/v1/projects/{project_id}/restore:
+    post:
+      operationId: restore-project
+      parameters:
+        - description: Stable caller-provided key used to make this mutation retry-safe.
+          in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+        - in: path
+          name: project_id
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectLifecycleRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Restore a project
+      x-verself-iam:
+        action: restore
+        audit_event: projects.project.restore
+        data_classification: customer_project_metadata
+        event_category: projects
+        operation_display: restore project
+        operation_type: write
+        org_scope: token_org_id
+        permission: projects:project:write
+        rate_limit_class: projects_mutation
+        resource: project
+        risk_level: medium
+servers:
+  - url: https://projects.api.verself.sh

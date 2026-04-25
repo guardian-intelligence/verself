@@ -1,0 +1,30 @@
+#!/usr/sbin/nft -f
+# Projects service is loopback-only. It needs PostgreSQL, Zitadel OIDC
+# discovery via local Caddy, SPIFFE internal API handshakes, and OTLP egress.
+
+table inet verself_projects_service
+delete table inet verself_projects_service
+
+table inet verself_projects_service {
+    chain input {
+        type filter hook input priority filter; policy accept;
+
+        tcp dport {{ services.projects_service.port }} iifname != "lo" drop
+        tcp dport {{ services.projects_service.internal_port }} iifname != "lo" drop
+    }
+
+    chain output {
+        type filter hook output priority filter; policy accept;
+
+        ct state established,related accept
+        meta skuid != projects_service accept
+
+        oifname "lo" tcp dport {{ services.postgresql.port }} accept
+        oifname "lo" tcp dport {{ services.zitadel.port }} accept
+        oifname "lo" tcp dport 443 accept
+        oifname "lo" tcp dport {{ services.otelcol.grpc_port }} accept
+        meta l4proto != tcp meta l4proto != udp accept
+
+        drop
+    }
+}
