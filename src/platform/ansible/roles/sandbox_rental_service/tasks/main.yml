@@ -299,6 +299,7 @@
       User=sandbox_rental
       Group=sandbox_rental
       SupplementaryGroups={{ sandbox_rental_service_vm_orchestrator_socket_group }} {{ spire_workload_group }}
+      BindReadOnlyPaths=/etc/forge-metal/auth-discovery-hosts:/etc/hosts
       LoadCredential=clickhouse-ca-cert:/etc/clickhouse-server/tls/server-ca.pem
       Environment=SANDBOX_LISTEN_ADDR={{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}
       Environment=SANDBOX_INTERNAL_LISTEN_ADDR={{ services.sandbox_rental.host }}:{{ services.sandbox_rental.internal_port }}
@@ -315,7 +316,6 @@
       Environment=SANDBOX_BILLING_RETURN_ORIGINS=https://{{ console_domain }}
       Environment=SANDBOX_PUBLIC_BASE_URL=https://{{ sandbox_rental_service_domain }}
       Environment=SANDBOX_AUTH_ISSUER_URL={{ sandbox_rental_service_auth_issuer_url }}
-      Environment=SANDBOX_AUTH_JWKS_URL={{ sandbox_rental_service_auth_jwks_url }}
       Environment=SANDBOX_AUTH_AUDIENCE={{ sandbox_rental_service_auth_audience }}
       Environment=SANDBOX_VM_ORCHESTRATOR_SOCKET={{ sandbox_rental_service_vm_orchestrator_socket }}
       Environment=SANDBOX_PG_MAX_OPEN_CONNS={{ sandbox_rental_service_pg_max_open_conns }}

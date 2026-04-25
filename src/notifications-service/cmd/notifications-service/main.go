@@ -58,7 +58,6 @@ func run() error {
 	listenAddr := cfg.String("NOTIFICATIONS_LISTEN_ADDR", "127.0.0.1:4260")
 	authIssuerURL := cfg.RequireURL("NOTIFICATIONS_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireString("NOTIFICATIONS_AUTH_AUDIENCE")
-	authJWKSURL := cfg.String("NOTIFICATIONS_AUTH_JWKS_URL", "")
 	natsURL := cfg.String("NOTIFICATIONS_NATS_URL", notifications.NATSDefaultURL)
 	chAddress := cfg.String("NOTIFICATIONS_CH_ADDRESS", "127.0.0.1:9440")
 	chUser := cfg.String("NOTIFICATIONS_CH_USER", "notifications_service")
@@ -176,7 +175,6 @@ func run() error {
 	authenticated := auth.Middleware(auth.Config{
 		IssuerURL: authIssuerURL,
 		Audience:  authAudience,
-		JWKSURL:   authJWKSURL,
 	})(privateMux)
 	rootMux.Handle("/", authenticated)
 

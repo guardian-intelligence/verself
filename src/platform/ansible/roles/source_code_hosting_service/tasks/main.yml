@@ -164,12 +164,12 @@
       User=source_code_hosting_service
       Group=source_code_hosting_service
       SupplementaryGroups={{ spire_workload_group }}
+      BindReadOnlyPaths=/etc/forge-metal/auth-discovery-hosts:/etc/hosts
       Environment=SOURCE_LISTEN_ADDR={{ services.source_code_hosting_service.host }}:{{ services.source_code_hosting_service.port }}
       Environment=SOURCE_INTERNAL_LISTEN_ADDR={{ services.source_code_hosting_service.host }}:{{ services.source_code_hosting_service.internal_port }}
       Environment=SOURCE_PG_DSN=postgres://source_code_hosting_service@/source_code_hosting?host=/var/run/postgresql&sslmode=disable
       Environment=SOURCE_PG_MAX_CONNS=8
       Environment=SOURCE_AUTH_ISSUER_URL={{ source_code_hosting_service_auth_issuer_url }}
-      Environment=SOURCE_AUTH_JWKS_URL={{ source_code_hosting_service_auth_jwks_url }}
       Environment=SOURCE_AUTH_AUDIENCE={{ source_code_hosting_service_auth_audience }}
       Environment=SOURCE_FORGEJO_BASE_URL=http://{{ services.forgejo.host }}:{{ services.forgejo.port }}
       Environment=SOURCE_FORGEJO_OWNER={{ source_code_hosting_service_forgejo_username }}

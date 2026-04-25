@@ -314,6 +314,7 @@
       User=identity_service
       Group=identity_service
       SupplementaryGroups={{ spire_workload_group }}
+      BindReadOnlyPaths=/etc/forge-metal/auth-discovery-hosts:/etc/hosts
       LoadCredential=zitadel-admin-token:/etc/credstore/identity-service/zitadel-admin-token
       LoadCredential=zitadel-action-signing-key:/etc/credstore/identity-service/zitadel-action-signing-key
       LoadCredential=clickhouse-ca-cert:/etc/clickhouse-server/tls/server-ca.pem
@@ -324,7 +325,6 @@
       Environment=IDENTITY_CH_USER=identity_service
       Environment=IDENTITY_GOVERNANCE_AUDIT_URL={{ identity_service_governance_audit_url }}
       Environment=IDENTITY_AUTH_ISSUER_URL={{ identity_service_auth_issuer_url }}
-      Environment=IDENTITY_AUTH_JWKS_URL={{ identity_service_auth_jwks_url }}
       Environment=IDENTITY_AUTH_AUDIENCE={{ identity_service_auth_audience }}
       Environment=IDENTITY_ZITADEL_BASE_URL={{ identity_service_zitadel_base_url }}
       Environment=IDENTITY_ZITADEL_HOST={{ identity_service_zitadel_host }}

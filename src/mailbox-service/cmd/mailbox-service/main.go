@@ -51,7 +51,6 @@ type config struct {
 	SyncReconcileInterval time.Duration
 	AuthIssuerURL         string
 	AuthAudience          string
-	AuthJWKSURL           string
 	SecretsURL            string
 	CEOPassword           string
 	AgentsPassword        string
@@ -188,7 +187,6 @@ func run() error {
 	authHandler := auth.Middleware(auth.Config{
 		IssuerURL: cfg.AuthIssuerURL,
 		Audience:  cfg.AuthAudience,
-		JWKSURL:   cfg.AuthJWKSURL,
 	})(protectedAPI)
 	mux.Handle("/api/v1/mail/", authHandler)
 	service.RegisterRoutes(mux)
@@ -224,7 +222,6 @@ func loadConfig() (config, error) {
 		SyncReconcileInterval: l.Duration("MAILBOX_SERVICE_SYNC_RECONCILE_INTERVAL", 10*time.Minute),
 		AuthIssuerURL:         l.RequireURL("MAILBOX_SERVICE_AUTH_ISSUER_URL"),
 		AuthAudience:          l.RequireString("MAILBOX_SERVICE_AUTH_AUDIENCE"),
-		AuthJWKSURL:           l.RequireURL("MAILBOX_SERVICE_AUTH_JWKS_URL"),
 		SecretsURL:            l.RequireURL("MAILBOX_SERVICE_SECRETS_URL"),
 		CEOPassword:           l.RequireCredential("stalwart-ceo-password"),
 		AgentsPassword:        l.RequireCredential("stalwart-agents-password"),

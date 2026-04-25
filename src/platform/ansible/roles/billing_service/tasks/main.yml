@@ -222,6 +222,7 @@
       User=billing
       Group=billing
       SupplementaryGroups={{ spire_workload_group }}
+      BindReadOnlyPaths=/etc/forge-metal/auth-discovery-hosts:/etc/hosts
       LoadCredential=clickhouse-ca-cert:/etc/clickhouse-server/tls/server-ca.pem
       Environment=BILLING_CH_ADDRESS={{ services.clickhouse.host }}:{{ services.clickhouse.secure_native_port }}
       Environment=BILLING_CH_USER=billing_service
@@ -232,7 +233,6 @@
       Environment=BILLING_INTERNAL_LISTEN_ADDR={{ services.billing.host }}:{{ services.billing.internal_port }}
       Environment=BILLING_SECRETS_URL=https://{{ services.secrets_service.host }}:{{ services.secrets_service.internal_port }}
       Environment=BILLING_AUTH_ISSUER_URL={{ billing_service_auth_issuer_url }}
-      Environment=BILLING_AUTH_JWKS_URL={{ billing_service_auth_jwks_url }}
       Environment=BILLING_AUTH_AUDIENCE={{ billing_service_auth_audience }}
       Environment=BILLING_PG_MAX_CONNS={{ billing_service_pg_max_conns }}
       Environment=BILLING_PG_MIN_CONNS={{ billing_service_pg_min_conns }}

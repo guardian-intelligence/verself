@@ -166,6 +166,7 @@
       User=notifications_service
       Group=notifications_service
       SupplementaryGroups={{ spire_workload_group }}
+      BindReadOnlyPaths=/etc/forge-metal/auth-discovery-hosts:/etc/hosts
       LoadCredential=clickhouse-ca-cert:/etc/clickhouse-server/tls/server-ca.pem
       Environment=NOTIFICATIONS_LISTEN_ADDR={{ services.notifications_service.host }}:{{ services.notifications_service.port }}
       Environment=NOTIFICATIONS_PG_DSN=postgres://notifications_service@/{{ notifications_service_pg_database }}?host=/var/run/postgresql&sslmode=disable
@@ -177,7 +178,6 @@
       Environment=NOTIFICATIONS_CH_USER=notifications_service
       Environment=NOTIFICATIONS_NATS_URL=tls://{{ services.nats.host }}:{{ services.nats.port }}
       Environment=NOTIFICATIONS_AUTH_ISSUER_URL={{ notifications_service_auth_issuer_url }}
-      Environment=NOTIFICATIONS_AUTH_JWKS_URL={{ notifications_service_auth_jwks_url }}
       Environment=NOTIFICATIONS_AUTH_AUDIENCE={{ notifications_service_auth_audience }}
       Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}
       Environment=OTEL_SERVICE_NAME=notifications-service

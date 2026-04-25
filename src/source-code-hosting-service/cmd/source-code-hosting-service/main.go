@@ -57,7 +57,6 @@ func run() error {
 	internalListenAddr := cfg.String("SOURCE_INTERNAL_LISTEN_ADDR", "127.0.0.1:4262")
 	authIssuerURL := cfg.RequireURL("SOURCE_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireString("SOURCE_AUTH_AUDIENCE")
-	authJWKSURL := cfg.String("SOURCE_AUTH_JWKS_URL", "")
 	forgejoBaseURL := cfg.RequireURL("SOURCE_FORGEJO_BASE_URL")
 	forgejoOwner := cfg.RequireString("SOURCE_FORGEJO_OWNER")
 	forgejoToken := cfg.RequireCredential("forgejo-token")
@@ -149,7 +148,6 @@ func run() error {
 	authenticated := auth.Middleware(auth.Config{
 		IssuerURL: authIssuerURL,
 		Audience:  authAudience,
-		JWKSURL:   authJWKSURL,
 	})(privateMux)
 	gitHTTP := sourceapi.GitHTTPHandler(svc)
 	rootMux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

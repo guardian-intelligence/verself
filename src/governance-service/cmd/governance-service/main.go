@@ -54,7 +54,6 @@ func run() error {
 	chUser := cfg.String("GOVERNANCE_CH_USER", "governance_service")
 	authIssuerURL := cfg.RequireURL("GOVERNANCE_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireString("GOVERNANCE_AUTH_AUDIENCE")
-	authJWKSURL := cfg.String("GOVERNANCE_AUTH_JWKS_URL", "")
 	exportDir := cfg.String("GOVERNANCE_EXPORT_DIR", "/var/lib/governance-service/exports")
 	publicBaseURL := cfg.String("GOVERNANCE_PUBLIC_BASE_URL", "")
 	writerInstanceID := cfg.String("GOVERNANCE_WRITER_INSTANCE_ID", hostname())
@@ -176,7 +175,6 @@ func run() error {
 	authHandler := auth.Middleware(auth.Config{
 		IssuerURL: authIssuerURL,
 		Audience:  authAudience,
-		JWKSURL:   authJWKSURL,
 	})(privateMux)
 	rootMux.Handle("/", authHandler)
 

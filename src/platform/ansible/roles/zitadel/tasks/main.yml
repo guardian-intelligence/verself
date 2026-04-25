@@ -92,6 +92,25 @@
     group: zitadel
     mode: "0750"
 
+- name: Create Forge Metal host override directory
+  ansible.builtin.file:
+    path: /etc/forge-metal
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy local OIDC discovery hosts file
+  ansible.builtin.copy:
+    dest: /etc/forge-metal/auth-discovery-hosts
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      127.0.0.1 localhost
+      ::1 localhost ip6-localhost ip6-loopback
+      127.0.0.1 auth.{{ forge_metal_domain }}
+
 - name: Deploy Zitadel masterkey to credstore
   ansible.builtin.copy:
     content: "{{ zitadel_masterkey }}"

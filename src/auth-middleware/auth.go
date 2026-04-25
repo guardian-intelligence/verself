@@ -6,7 +6,6 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -43,7 +42,6 @@ type RoleAssignment struct {
 type Config struct {
 	IssuerURL string // Expected issuer URL from the token's iss claim.
 	Audience  string // Expected audience value from the token's aud claim.
-	JWKSURL   string // Optional: fetch keys from this URL instead of OIDC discovery.
 }
 
 type verifierCache struct {
@@ -123,7 +121,6 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 func normalizeConfig(cfg Config) Config {
 	cfg.IssuerURL = strings.TrimSpace(cfg.IssuerURL)
 	cfg.Audience = strings.TrimSpace(cfg.Audience)
-	cfg.JWKSURL = strings.TrimSpace(cfg.JWKSURL)
 	return cfg
 }
 
@@ -149,68 +146,17 @@ func (c *verifierCache) get(ctx context.Context) (*oidc.IDTokenVerifier, error) 
 	initCtx, cancel := context.WithTimeout(ctx, verifierInitTimeout)
 	defer cancel()
 
-	var provider *oidc.Provider
-	if c.cfg.JWKSURL != "" {
-		// Split-URL path: validate iss claim against IssuerURL, fetch keys
-		// from JWKSURL. Used on single-node deployments where services
-		// reach Zitadel via loopback instead of through Caddy.
-		provCtx, err := c.cfg.jwksContext(initCtx)
-		if err != nil {
-			return nil, err
-		}
-		provider = (&oidc.ProviderConfig{
-			IssuerURL: c.cfg.IssuerURL,
-			JWKSURL:   c.cfg.JWKSURL,
-		}).NewProvider(provCtx)
-		log.Printf("auth: verifier initialized issuer=%s jwks=%s audience=%s",
-			c.cfg.IssuerURL, c.cfg.JWKSURL, c.cfg.Audience)
-	} else {
-		var err error
-		provider, err = oidc.NewProvider(initCtx, c.cfg.IssuerURL)
-		if err != nil {
-			return nil, err
-		}
-		log.Printf("auth: verifier initialized issuer=%s audience=%s",
-			c.cfg.IssuerURL, c.cfg.Audience)
+	provider, err := oidc.NewProvider(initCtx, c.cfg.IssuerURL)
+	if err != nil {
+		return nil, err
 	}
+	log.Printf("auth: verifier initialized issuer=%s audience=%s",
+		c.cfg.IssuerURL, c.cfg.Audience)
 
 	c.verifier = provider.Verifier(&oidc.Config{
 		ClientID: c.cfg.Audience,
 	})
 	return c.verifier, nil
-}
-
-// jwksContext returns a context carrying an HTTP client that overrides the Host
-// header on outgoing requests to match the issuer's hostname. Zitadel uses the
-// Host header for instance routing and rejects requests whose Host doesn't match
-// its configured ExternalDomain.
-func (c Config) jwksContext(ctx context.Context) (context.Context, error) {
-	issuer, err := url.Parse(c.IssuerURL)
-	if err != nil {
-		return nil, errors.New("auth: invalid issuer URL: " + err.Error())
-	}
-
-	client := &http.Client{
-		Transport: &hostOverrideTransport{
-			base: http.DefaultTransport,
-			host: issuer.Host,
-		},
-	}
-	return oidc.ClientContext(ctx, client), nil
-}
-
-// hostOverrideTransport injects a fixed Host header into every request. This
-// lets us connect to Zitadel's loopback address while presenting the external
-// domain it expects.
-type hostOverrideTransport struct {
-	base http.RoundTripper
-	host string
-}
-
-func (t *hostOverrideTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	req = req.Clone(req.Context())
-	req.Host = t.host
-	return t.base.RoundTrip(req)
 }
 
 func (c Config) validate() error {

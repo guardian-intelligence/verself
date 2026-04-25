@@ -1,5 +1,5 @@
 # Notifications service is loopback-only. It needs PostgreSQL, ClickHouse,
-# NATS JetStream, Zitadel JWKS, and OTLP egress.
+# NATS JetStream, Zitadel OIDC discovery via local Caddy, and OTLP egress.
 
 table inet forge_metal_notifications_service
 delete table inet forge_metal_notifications_service
@@ -21,6 +21,7 @@ table inet forge_metal_notifications_service {
         oifname "lo" tcp dport {{ services.clickhouse.secure_native_port }} accept
         oifname "lo" tcp dport {{ services.nats.port }} accept
         oifname "lo" tcp dport {{ services.zitadel.port }} accept
+        oifname "lo" tcp dport 443 accept
         oifname "lo" tcp dport {{ services.otelcol.grpc_port }} accept
         meta l4proto != tcp meta l4proto != udp accept
 

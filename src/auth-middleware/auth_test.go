@@ -212,119 +212,10 @@ func compareRoleAssignment(a, b RoleAssignment) int {
 	return cmp.Compare(a.Role, b.Role)
 }
 
-func TestMiddlewareWithSplitJWKSURL(t *testing.T) {
-	t.Parallel()
-
-	// JWKS server: serves keys only (no OIDC discovery endpoint).
-	provider := newTestProvider(t)
-	defer provider.Close()
-
-	// The issuer URL is a synthetic value that doesn't serve anything.
-	// ProviderConfig validates the iss claim against it without fetching discovery.
-	fakeIssuer := "https://auth.example.com"
-
-	token := provider.signToken(t, jwt.MapClaims{
-		"iss":   fakeIssuer,
-		"sub":   "svc-account-1",
-		"aud":   []string{"sandbox-project"},
-		"exp":   time.Now().Add(time.Hour).Unix(),
-		"email": "svc@example.com",
-	})
-
-	handler := Middleware(Config{
-		IssuerURL: fakeIssuer,
-		JWKSURL:   provider.URL + "/keys",
-		Audience:  "sandbox-project",
-	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		identity := FromContext(r.Context())
-		if identity == nil {
-			t.Fatal("expected identity in context")
-		}
-		if identity.Subject != "svc-account-1" {
-			t.Fatalf("unexpected subject: %q", identity.Subject)
-		}
-		w.WriteHeader(http.StatusNoContent)
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/private", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected 204, got %d body=%s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestMiddlewareWithSplitJWKSURLUsesIssuerHostHeader(t *testing.T) {
-	t.Parallel()
-
-	provider := newTestProvider(t)
-	provider.expectedJWKSHost = "auth.example.com"
-	defer provider.Close()
-
-	token := provider.signToken(t, jwt.MapClaims{
-		"iss": "https://auth.example.com",
-		"sub": "svc-account-1",
-		"aud": []string{"sandbox-project"},
-		"exp": time.Now().Add(time.Hour).Unix(),
-	})
-
-	handler := Middleware(Config{
-		IssuerURL: "https://auth.example.com",
-		JWKSURL:   provider.URL + "/keys",
-		Audience:  "sandbox-project",
-	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/private", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected 204, got %d body=%s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestMiddlewareWithSplitJWKSURLRejectsWrongIssuer(t *testing.T) {
-	t.Parallel()
-
-	provider := newTestProvider(t)
-	defer provider.Close()
-
-	// Token has a different issuer than what middleware expects.
-	token := provider.signToken(t, jwt.MapClaims{
-		"iss": "https://wrong-issuer.example.com",
-		"sub": "user-1",
-		"aud": []string{"sandbox-project"},
-		"exp": time.Now().Add(time.Hour).Unix(),
-	})
-
-	handler := Middleware(Config{
-		IssuerURL: "https://auth.example.com",
-		JWKSURL:   provider.URL + "/keys",
-		Audience:  "sandbox-project",
-	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Fatal("handler should not be called")
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/private", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("expected 401, got %d", rec.Code)
-	}
-}
-
 type testProvider struct {
 	*httptest.Server
-	privateKey       *rsa.PrivateKey
-	keyID            string
-	expectedJWKSHost string
+	privateKey *rsa.PrivateKey
+	keyID      string
 }
 
 func newTestProvider(t *testing.T) *testProvider {
@@ -348,10 +239,6 @@ func newTestProvider(t *testing.T) *testProvider {
 		})
 	})
 	mux.HandleFunc("/keys", func(w http.ResponseWriter, r *http.Request) {
-		if provider.expectedJWKSHost != "" && r.Host != provider.expectedJWKSHost {
-			http.Error(w, "unexpected host "+r.Host, http.StatusBadRequest)
-			return
-		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"keys": []map[string]any{
 				{

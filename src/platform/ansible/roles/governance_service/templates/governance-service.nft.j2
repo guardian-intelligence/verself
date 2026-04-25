@@ -1,6 +1,6 @@
 #!/usr/sbin/nft -f
 # Governance service is loopback-only and needs PostgreSQL, ClickHouse, OpenBao,
-# Zitadel JWKS, and OTLP egress.
+# Zitadel OIDC discovery via local Caddy, and OTLP egress.
 
 table inet forge_metal_governance_service
 delete table inet forge_metal_governance_service
@@ -23,6 +23,7 @@ table inet forge_metal_governance_service {
         oifname "lo" tcp dport {{ services.openbao.port }} accept
         oifname "lo" tcp dport {{ services.profile_service.internal_port }} accept
         oifname "lo" tcp dport {{ services.zitadel.port }} accept
+        oifname "lo" tcp dport 443 accept
         oifname "lo" tcp dport {{ services.otelcol.grpc_port }} accept
         meta l4proto != tcp meta l4proto != udp accept
 

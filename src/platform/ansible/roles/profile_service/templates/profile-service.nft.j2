@@ -1,6 +1,6 @@
 #!/usr/sbin/nft -f
 # Profile service is loopback-only. It needs PostgreSQL, identity-service
-# internal mTLS for name writes, governance-service internal audit, Zitadel JWKS,
+# internal mTLS for name writes, governance-service internal audit, Zitadel OIDC discovery,
 # and OTLP egress.
 
 table inet forge_metal_profile_service
@@ -24,6 +24,7 @@ table inet forge_metal_profile_service {
         oifname "lo" tcp dport {{ services.identity_service.internal_port }} accept
         oifname "lo" tcp dport {{ services.governance_service.internal_port }} accept
         oifname "lo" tcp dport {{ services.zitadel.port }} accept
+        oifname "lo" tcp dport 443 accept
         oifname "lo" tcp dport {{ services.otelcol.grpc_port }} accept
         meta l4proto != tcp meta l4proto != udp accept
 

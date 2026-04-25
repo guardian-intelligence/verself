@@ -265,13 +265,13 @@
       User=secrets_service
       Group=secrets_service
       SupplementaryGroups={{ spire_workload_group }}
+      BindReadOnlyPaths=/etc/forge-metal/auth-discovery-hosts:/etc/hosts
       LoadCredential=openbao-ca-cert:/etc/openbao/tls/cert.pem
       Environment=SECRETS_LISTEN_ADDR={{ services.secrets_service.host }}:{{ services.secrets_service.port }}
       Environment=SECRETS_INTERNAL_LISTEN_ADDR={{ services.secrets_service.host }}:{{ services.secrets_service.internal_port }}
       Environment=SECRETS_PLATFORM_ORG_ID={{ secrets_service_platform_org_id }}
       Environment=SECRETS_GOVERNANCE_AUDIT_URL={{ secrets_service_governance_audit_url }}
       Environment=SECRETS_AUTH_ISSUER_URL={{ secrets_service_auth_issuer_url }}
-      Environment=SECRETS_AUTH_JWKS_URL={{ secrets_service_auth_jwks_url }}
       Environment=SECRETS_AUTH_AUDIENCE={{ secrets_service_auth_audience }}
       Environment=SECRETS_OPENBAO_ADDR={{ secrets_service_openbao_addr }}
       Environment=SECRETS_OPENBAO_KV_PREFIX={{ secrets_service_openbao_kv_prefix }}
