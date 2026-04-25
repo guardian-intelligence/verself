@@ -1,6 +1,6 @@
 # Public Origins
 
-Verself exposes three public origin classes. Origin shape is part of the
+Verself exposes four public origin classes. Origin shape is part of the
 product contract because it controls browser CSP boundaries, public API
 documentation, SDK/CLI base URLs, WAF policy, and incident isolation.
 
@@ -8,12 +8,14 @@ documentation, SDK/CLI base URLs, WAF policy, and incident isolation.
 
 | Origin | Owner | Purpose |
 |---|---|---|
+| `<domain>` | Platform docs frontend | Public product docs, API reference, and legal policy tree. |
 | `console.<domain>` | Console frontend | Authenticated browser product console. |
 | `<service>.api.<domain>` | Owning Go service | Customer, SDK, and CLI HTTP APIs. |
 | Protocol origins | Backing protocol service | Non-HTTP-product or protocol-native surfaces such as Git, JMAP, SMTP, and S3. |
 
-The root `verself_domain` remains the company and marketing site. The
-console is not a marketing surface and does not own public API paths.
+The root `verself_domain` is the product apex. Guardian Intelligence company
+surfaces live on `company_domain`, outside the product origin tree. The console
+is not a marketing surface and does not own public API paths.
 
 ## API Origins
 
@@ -30,7 +32,7 @@ Each public Go service gets a service-owned API origin:
 | `governance.api.<domain>` | `governance-service` |
 | `secrets.api.<domain>` | `secrets-service` |
 | `mail.api.<domain>` | `mailbox-service` HTTP API |
-| `source.api.<domain>` | planned `source-code-hosting-service` |
+| `source.api.<domain>` | `source-code-hosting-service` |
 | `object-storage.api.<domain>` | planned customer object-storage control API |
 
 Service API paths remain under `/api/v1/...`. The service subdomain identifies

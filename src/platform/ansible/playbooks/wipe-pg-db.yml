@@ -12,6 +12,7 @@
 # - secrets_service
 # - notifications_service
 # - projects_service
+# - source_code_hosting
 
 - name: Wipe one managed PostgreSQL database
   hosts: all
@@ -26,6 +27,7 @@
       - secrets_service
       - notifications_service
       - projects_service
+      - source_code_hosting
   pre_tasks:
     - name: Assert supported PostgreSQL wipe target
       ansible.builtin.assert:
@@ -75,6 +77,18 @@
       no_log: true
 
   tasks:
+    - name: Include ClickHouse for PostgreSQL wipe targets that configure ClickHouse users
+      ansible.builtin.include_role:
+        name: clickhouse
+      tags: [clickhouse]
+      when: >-
+        wipe_pg_db_name in [
+          'billing',
+          'sandbox_rental',
+          'identity_service',
+          'notifications_service',
+        ]
+
     - name: Include TigerBeetle for billing PostgreSQL wipe
       ansible.builtin.include_role:
         name: tigerbeetle
@@ -154,6 +168,14 @@
       vars:
         projects_service_force_schema_reset: true
       when: wipe_pg_db_name == 'projects_service'
+
+    - name: Include source-code-hosting-service for source_code_hosting PostgreSQL wipe
+      ansible.builtin.include_role:
+        name: source_code_hosting_service
+      tags: [source_code_hosting_service]
+      vars:
+        source_code_hosting_service_force_schema_reset: true
+      when: wipe_pg_db_name == 'source_code_hosting'
 
     - name: Include Electric Notifications after notifications_service PostgreSQL wipe
       ansible.builtin.include_role:

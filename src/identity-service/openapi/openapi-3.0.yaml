@@ -17,7 +17,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://identity.api.anveio.com/schemas/ErrorModel.json
+          example: https://identity.api.verself.sh/schemas/ErrorModel.json
           format: uri
           readOnly: true
           type: string
@@ -58,7 +58,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://identity.api.anveio.com/schemas/IdentityAPICredential.json
+          example: https://identity.api.verself.sh/schemas/IdentityAPICredential.json
           format: uri
           readOnly: true
           type: string
@@ -151,7 +151,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://identity.api.anveio.com/schemas/IdentityAPICredentials.json
+          example: https://identity.api.verself.sh/schemas/IdentityAPICredentials.json
           format: uri
           readOnly: true
           type: string
@@ -168,7 +168,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://identity.api.anveio.com/schemas/IdentityCreateAPICredentialRequest.json
+          example: https://identity.api.verself.sh/schemas/IdentityCreateAPICredentialRequest.json
           format: uri
           readOnly: true
           type: string
@@ -199,7 +199,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://identity.api.anveio.com/schemas/IdentityCreateAPICredentialResponse.json
+          example: https://identity.api.verself.sh/schemas/IdentityCreateAPICredentialResponse.json
           format: uri
           readOnly: true
           type: string
@@ -216,7 +216,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://identity.api.anveio.com/schemas/IdentityInviteMemberRequest.json
+          example: https://identity.api.verself.sh/schemas/IdentityInviteMemberRequest.json
           format: uri
           readOnly: true
           type: string
@@ -245,7 +245,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://identity.api.anveio.com/schemas/IdentityInviteMemberResponse.json
+          example: https://identity.api.verself.sh/schemas/IdentityInviteMemberResponse.json
           format: uri
           readOnly: true
           type: string
@@ -271,7 +271,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://identity.api.anveio.com/schemas/IdentityMember.json
+          example: https://identity.api.verself.sh/schemas/IdentityMember.json
           format: uri
           readOnly: true
           type: string
@@ -303,7 +303,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://identity.api.anveio.com/schemas/IdentityMemberCapabilities.json
+          example: https://identity.api.verself.sh/schemas/IdentityMemberCapabilities.json
           format: uri
           readOnly: true
           type: string
@@ -374,7 +374,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://identity.api.anveio.com/schemas/IdentityMembers.json
+          example: https://identity.api.verself.sh/schemas/IdentityMembers.json
           format: uri
           readOnly: true
           type: string
@@ -391,7 +391,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://identity.api.anveio.com/schemas/IdentityOrganization.json
+          example: https://identity.api.verself.sh/schemas/IdentityOrganization.json
           format: uri
           readOnly: true
           type: string
@@ -427,7 +427,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://identity.api.anveio.com/schemas/IdentityPutMemberCapabilitiesRequest.json
+          example: https://identity.api.verself.sh/schemas/IdentityPutMemberCapabilitiesRequest.json
           format: uri
           readOnly: true
           type: string
@@ -452,7 +452,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://identity.api.anveio.com/schemas/IdentityRollAPICredentialRequest.json
+          example: https://identity.api.verself.sh/schemas/IdentityRollAPICredentialRequest.json
           format: uri
           readOnly: true
           type: string
@@ -467,7 +467,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://identity.api.anveio.com/schemas/IdentityRollAPICredentialResponse.json
+          example: https://identity.api.verself.sh/schemas/IdentityRollAPICredentialResponse.json
           format: uri
           readOnly: true
           type: string
@@ -484,7 +484,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://identity.api.anveio.com/schemas/IdentityUpdateMemberRolesRequest.json
+          example: https://identity.api.verself.sh/schemas/IdentityUpdateMemberRolesRequest.json
           format: uri
           readOnly: true
           type: string
@@ -997,4 +997,4 @@ paths:
         risk_level: high
         source_product_area: Identity
 servers:
-  - url: https://identity.api.anveio.com
+  - url: https://identity.api.verself.sh

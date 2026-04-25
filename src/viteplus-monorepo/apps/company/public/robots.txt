@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://anveio.com/sitemap.xml
+Sitemap: https://guardianintelligence.org/sitemap.xml

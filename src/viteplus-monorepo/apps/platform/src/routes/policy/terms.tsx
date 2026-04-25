@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { requireOperatorDomain } from "@verself/web-env";
+import { requireProductDomain } from "@verself/web-env";
 
 import {
   ChangesSection,
@@ -13,11 +13,11 @@ import {
   SummaryPanel,
 } from "~/features/policy/policy-primitives";
 
-const getOperatorDomain = createServerFn({ method: "GET" }).handler(() => requireOperatorDomain());
+const getProductDomain = createServerFn({ method: "GET" }).handler(() => requireProductDomain());
 
 export const Route = createFileRoute("/policy/terms")({
   component: TermsPolicy,
-  loader: () => getOperatorDomain(),
+  loader: () => getProductDomain(),
   head: () => ({
     meta: [
       { title: "Terms of Service — Verself Platform" },
@@ -31,7 +31,7 @@ export const Route = createFileRoute("/policy/terms")({
 });
 
 function TermsPolicy() {
-  const operatorDomain = Route.useLoaderData();
+  const productDomain = Route.useLoaderData();
   return (
     <PolicyArticle>
       <PolicyHeader title="Terms of Service" policyId="terms" />
@@ -47,7 +47,7 @@ function TermsPolicy() {
       <Termination />
       <LawAndDisputes />
       <ChangesSection policyId="terms" />
-      <ContactSection operatorDomain={operatorDomain} primary="legal" />
+      <ContactSection productDomain={productDomain} primary="legal" />
     </PolicyArticle>
   );
 }

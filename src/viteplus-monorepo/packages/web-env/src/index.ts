@@ -81,7 +81,7 @@ export function requireURLFromEnv(name: string, env: EnvSource = process.env): s
   return parseAbsoluteURL(requireEnv(name, env), name);
 }
 
-export function parseOperatorDomain(value: string, label: string): string {
+export function parseProductDomain(value: string, label: string): string {
   const trimmed = value.trim();
   if (!trimmed) {
     throw new Error(`${label} is required`);
@@ -110,11 +110,11 @@ export function parseOperatorDomain(value: string, label: string): string {
   return parsed.hostname;
 }
 
-export function requireOperatorDomain(
+export function requireProductDomain(
   envName = "VERSELF_DOMAIN",
   env: EnvSource = process.env,
 ): string {
-  return parseOperatorDomain(requireEnv(envName, env), envName);
+  return parseProductDomain(requireEnv(envName, env), envName);
 }
 
 function parseSubdomain(value: string, label: string): string {
@@ -130,13 +130,21 @@ function parseSubdomain(value: string, label: string): string {
 
 export function deriveHTTPSOrigin(subdomain: string, domain: string): string {
   const normalizedSubdomain = parseSubdomain(subdomain, "subdomain");
-  const normalizedDomain = parseOperatorDomain(domain, "domain");
+  const normalizedDomain = parseProductDomain(domain, "domain");
   return new URL(`https://${normalizedSubdomain}.${normalizedDomain}`).toString();
+}
+
+export function deriveProductBaseURL(env: EnvSource = process.env): string {
+  const explicitBaseURL = readEnv(env, "PRODUCT_BASE_URL");
+  if (explicitBaseURL) {
+    return parseAbsoluteURL(explicitBaseURL, "PRODUCT_BASE_URL");
+  }
+  return new URL(`https://${requireProductDomain("VERSELF_DOMAIN", env)}`).toString();
 }
 
 export function deriveAuthIssuerURL(env: EnvSource = process.env): string {
   const authSubdomain = readEnv(env, "AUTH_SUBDOMAIN") ?? "auth";
-  return deriveHTTPSOrigin(authSubdomain, requireOperatorDomain("VERSELF_DOMAIN", env));
+  return deriveHTTPSOrigin(authSubdomain, requireProductDomain("VERSELF_DOMAIN", env));
 }
 
 export function deriveAppBaseURL(appSubdomain: string, env: EnvSource = process.env): string {
@@ -144,7 +152,7 @@ export function deriveAppBaseURL(appSubdomain: string, env: EnvSource = process.
   if (explicitBaseURL) {
     return parseAbsoluteURL(explicitBaseURL, "BASE_URL");
   }
-  return deriveHTTPSOrigin(appSubdomain, requireOperatorDomain("VERSELF_DOMAIN", env));
+  return deriveHTTPSOrigin(appSubdomain, requireProductDomain("VERSELF_DOMAIN", env));
 }
 
 export function deriveSeededEmail(env: EnvSource = process.env, localPart = "acme-user"): string {
@@ -152,7 +160,7 @@ export function deriveSeededEmail(env: EnvSource = process.env, localPart = "acm
   if (explicitEmail) {
     return explicitEmail;
   }
-  return `${localPart}@${requireOperatorDomain("VERSELF_DOMAIN", env)}`;
+  return `${localPart}@${requireProductDomain("VERSELF_DOMAIN", env)}`;
 }
 
 // Electric requires an absolute shape URL. Keep the real sync path same-origin

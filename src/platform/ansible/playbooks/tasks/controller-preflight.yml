@@ -1,11 +1,7 @@
 ---
-# Controller-side preflight shared by site.yml and dev-single-node.yml.
+# Controller-side preflight for the canonical site deploy.
 # Imported at task-level so gather_facts settings are inherited from the
 # importing play.
-
-- name: Zig must be available (needed by firecracker role)
-  ansible.builtin.command: zig version
-  changed_when: false
 
 - name: Require Ansible collection {{ item }}
   ansible.builtin.command: "ansible-galaxy collection list {{ item }}"

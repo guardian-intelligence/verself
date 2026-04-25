@@ -75,6 +75,14 @@ windows:
     suspended: { kind: ttl_days, days: 90 }
     pending_deletion: { kind: ttl_days, days: 90 }
 
+  - id: profile_preferences
+    label: Profile and preferences
+    description: Human-editable profile cache, locale, time zone, display mode, theme, and first-party settings preferences used to render the product experience.
+    active: { kind: preserved }
+    past_due: { kind: preserved }
+    suspended: { kind: preserved }
+    pending_deletion: { kind: delete_after, days: 90 }
+
   - id: audit_events
     label: Audit events
     description: State transitions and administrative actions recorded on every account. Readable via the billing console's Activity tab and via the audit-events API endpoint.

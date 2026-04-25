@@ -1,6 +1,6 @@
 # apps/company
 
-Guardian Intelligence company site. Deployed to `anveio.com` (root) by the Ansible `company` role (`src/platform/ansible/roles/company/`).
+Guardian Intelligence company site. Deployed to `guardianintelligence.org` (root) by the Ansible `company` role (`src/platform/ansible/roles/company/`).
 
 ## Layout
 

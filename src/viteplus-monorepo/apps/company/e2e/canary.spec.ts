@@ -168,5 +168,7 @@ test("company canary — walk IA + exercise OG + brand kit", async ({ page, requ
   await expect(bulletin).toBeVisible();
   await bulletin.click();
   await expect(page).toHaveURL(/\/newsroom\/[a-z0-9-]+$/);
-  await page.waitForTimeout(300);
+  // The browser tracer batches for 2s; wait one batch interval so the
+  // click-time span lands before verify-company-live.sh polls ClickHouse.
+  await page.waitForTimeout(2_500);
 });

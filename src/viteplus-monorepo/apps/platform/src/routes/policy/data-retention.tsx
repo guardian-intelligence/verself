@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { requireOperatorDomain } from "@verself/web-env";
+import { requireProductDomain } from "@verself/web-env";
 
 import { cn } from "@verself/ui/lib/utils";
 import { RETENTION, formatWindowValue, type Window } from "~/lib/policy-catalog";
@@ -18,11 +18,11 @@ import {
   SummaryPanel,
 } from "~/features/policy/policy-primitives";
 
-const getOperatorDomain = createServerFn({ method: "GET" }).handler(() => requireOperatorDomain());
+const getProductDomain = createServerFn({ method: "GET" }).handler(() => requireProductDomain());
 
 export const Route = createFileRoute("/policy/data-retention")({
   component: DataRetentionPolicy,
-  loader: () => getOperatorDomain(),
+  loader: () => getProductDomain(),
   head: () => ({
     meta: [
       { title: "Data Retention — Verself Platform" },
@@ -36,7 +36,7 @@ export const Route = createFileRoute("/policy/data-retention")({
 });
 
 function DataRetentionPolicy() {
-  const operatorDomain = Route.useLoaderData();
+  const productDomain = Route.useLoaderData();
   return (
     <PolicyArticle>
       <PolicyHeader title="Data Retention" policyId="data-retention" />
@@ -54,7 +54,7 @@ function DataRetentionPolicy() {
       <IncidentData />
       <OperatorHandling />
       <ChangesSection policyId="data-retention" />
-      <ContactSection operatorDomain={operatorDomain} primary="privacy" />
+      <ContactSection productDomain={productDomain} primary="privacy" />
     </PolicyArticle>
   );
 }

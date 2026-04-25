@@ -138,14 +138,14 @@ export function DefinitionCard({ term, definition }: { term: string; definition:
 
 export function ContactSection({
   id = "contact",
-  operatorDomain,
+  productDomain,
   primary = "policy",
 }: {
   id?: string;
-  operatorDomain: string;
+  productDomain: string;
   primary?: keyof Mailboxes;
 }) {
-  const m = deriveMailboxes(operatorDomain);
+  const m = deriveMailboxes(productDomain);
   const primaryAddress = m[primary];
   return (
     <section className="flex flex-col gap-4">

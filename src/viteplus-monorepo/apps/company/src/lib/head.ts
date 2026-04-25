@@ -4,7 +4,7 @@
 // silently drop relative og:image values. The slug must exist in og/catalog.ts;
 // the dynamic /og/$slug endpoint renders the SVG at request time.
 
-const SITE_URL = "https://anveio.com";
+const SITE_URL = "https://guardianintelligence.org";
 
 export interface OGMetaInput {
   readonly slug: string;

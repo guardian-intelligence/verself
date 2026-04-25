@@ -178,4 +178,4 @@
 
             Next steps:
               Edit secrets:  sops ansible/group_vars/all/secrets.sops.yml
-              Deploy:        cd ansible && ansible-playbook playbooks/dev-single-node.yml
+              Deploy:        cd ansible && ansible-playbook playbooks/site.yml

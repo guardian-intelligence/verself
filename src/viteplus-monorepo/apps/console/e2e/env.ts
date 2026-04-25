@@ -30,7 +30,7 @@ export const env = {
   verificationRunJSONPath: process.env.VERIFICATION_RUN_JSON_PATH || "",
   verificationRepoURL:
     process.env.VERIFICATION_REPO_URL ||
-    `https://git.${process.env.VERSELF_DOMAIN || "anveio.com"}/forgejo-automation/sandbox-verification-metadata.git`,
+    `https://git.${process.env.VERSELF_DOMAIN || "verself.sh"}/forgejo-automation/sandbox-verification-metadata.git`,
   verificationRepoRef: process.env.VERIFICATION_REPO_REF || "refs/heads/main",
   verificationLogMarker: process.env.VERIFICATION_LOG_MARKER || "VERSELF_DIRECT_EXECUTION_COMPLETE",
   proofMode: process.env.VERSELF_SANDBOX_PROOF === "1",

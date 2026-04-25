@@ -26,7 +26,7 @@ The hosted trust domain is operator-configurable at install and immutable after
 SPIRE holds initialized data:
 
 ```yaml
-verself_domain: guardianintelligence.org
+verself_domain: verself.sh
 spire_trust_domain: "spiffe.{{ verself_domain }}"
 spire_bundle_endpoint_bind_address: 127.0.0.1
 spire_bundle_endpoint_bind_port: 8082
@@ -43,7 +43,7 @@ live in service attributes, deploy metadata, registration selectors, or node
 IDs. Valid forms:
 
 ```text
-spiffe.guardianintelligence.org
+spiffe.verself.sh
 spiffe.example.com
 workload.example.com
 ```
@@ -53,18 +53,18 @@ workload.example.com
 Service identities:
 
 ```text
-spiffe://spiffe.guardianintelligence.org/svc/identity-service
-spiffe://spiffe.guardianintelligence.org/svc/governance-service
-spiffe://spiffe.guardianintelligence.org/svc/billing-service
-spiffe://spiffe.guardianintelligence.org/svc/secrets-service
-spiffe://spiffe.guardianintelligence.org/svc/sandbox-rental-service
-spiffe://spiffe.guardianintelligence.org/svc/mailbox-service
-spiffe://spiffe.guardianintelligence.org/svc/nats
-spiffe://spiffe.guardianintelligence.org/svc/otelcol
-spiffe://spiffe.guardianintelligence.org/svc/grafana
-spiffe://spiffe.guardianintelligence.org/svc/clickhouse-server
-spiffe://spiffe.guardianintelligence.org/svc/clickhouse-operator
-spiffe://spiffe.guardianintelligence.org/svc/temporal-server
+spiffe://spiffe.verself.sh/svc/identity-service
+spiffe://spiffe.verself.sh/svc/governance-service
+spiffe://spiffe.verself.sh/svc/billing-service
+spiffe://spiffe.verself.sh/svc/secrets-service
+spiffe://spiffe.verself.sh/svc/sandbox-rental-service
+spiffe://spiffe.verself.sh/svc/mailbox-service
+spiffe://spiffe.verself.sh/svc/nats
+spiffe://spiffe.verself.sh/svc/otelcol
+spiffe://spiffe.verself.sh/svc/grafana
+spiffe://spiffe.verself.sh/svc/clickhouse-server
+spiffe://spiffe.verself.sh/svc/clickhouse-operator
+spiffe://spiffe.verself.sh/svc/temporal-server
 ```
 
 These identities cover both customer-facing product services and
@@ -76,13 +76,13 @@ SPIFFE natively.
 Node identities:
 
 ```text
-spiffe://spiffe.guardianintelligence.org/node/<hostname>
+spiffe://spiffe.verself.sh/node/<hostname>
 ```
 
 Operator tooling identities:
 
 ```text
-spiffe://spiffe.guardianintelligence.org/ops/admin-cli
+spiffe://spiffe.verself.sh/ops/admin-cli
 ```
 
 `ops/admin-cli` is the break-glass operator CLI identity used to read from
@@ -179,7 +179,7 @@ exchanging a SPIRE JWT-SVID for a short-lived OpenBao token:
 ```text
 issuer:   https://127.0.0.1:8082
 audience: openbao
-subject:  spiffe://spiffe.guardianintelligence.org/svc/<service-name>
+subject:  spiffe://spiffe.verself.sh/svc/<service-name>
 mount:    auth/spiffe-jwt
 ```
 
@@ -323,7 +323,7 @@ and ClickHouse query-log evidence in ClickHouse.
 
 Cross-trust-domain federation is out of scope for the single-node topology
 and the three-node topology target. Customer SPIRE trust domains are not
-federated into `spiffe.guardianintelligence.org`. Customer workloads
+federated into `spiffe.verself.sh`. Customer workloads
 authenticate to Verself through customer-facing APIs with Zitadel
 credentials, not as SPIFFE peers.
 

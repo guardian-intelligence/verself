@@ -17,19 +17,19 @@ deploy() {
     ui)
       (
         cd "${VERIFICATION_PLATFORM_ROOT}/ansible"
-        ansible-playbook -i inventory/hosts.ini playbooks/dev-single-node.yml --tags console
+        ansible-playbook -i inventory/hosts.ini playbooks/site.yml --tags console
       )
       ;;
     service)
       (
         cd "${VERIFICATION_PLATFORM_ROOT}/ansible"
-        ansible-playbook -i inventory/hosts.ini playbooks/dev-single-node.yml --tags deploy_profile,sandbox_rental_service
+        ansible-playbook -i inventory/hosts.ini playbooks/site.yml --tags deploy_profile,sandbox_rental_service
       )
       ;;
     both)
       (
         cd "${VERIFICATION_PLATFORM_ROOT}/ansible"
-        ansible-playbook -i inventory/hosts.ini playbooks/dev-single-node.yml \
+        ansible-playbook -i inventory/hosts.ini playbooks/site.yml \
           --tags deploy_profile,sandbox_rental_service,console
       )
       ;;

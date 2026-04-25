@@ -17,5 +17,5 @@ export type CreateClientConfig<T extends ClientOptions = ClientOptions2> = (
 ) => Config<Required<ClientOptions> & T>;
 
 export const client = createClient(
-  createConfig<ClientOptions2>({ baseUrl: "https://identity.api.anveio.com" }),
+  createConfig<ClientOptions2>({ baseUrl: "https://identity.api.verself.sh" }),
 );

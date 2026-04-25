@@ -96,13 +96,13 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 
 func OpenAPIYAML() ([]byte, error) {
 	api := NewAPI(http.NewServeMux(), Config{Version: "2.0.0"})
-	api.OpenAPI().Servers = []*huma.Server{{URL: "https://billing.api.anveio.com"}}
+	api.OpenAPI().Servers = []*huma.Server{{URL: "https://billing.api.verself.sh"}}
 	return api.OpenAPI().YAML()
 }
 
 func OpenAPIDowngradeYAML() ([]byte, error) {
 	api := NewAPI(http.NewServeMux(), Config{Version: "2.0.0"})
-	api.OpenAPI().Servers = []*huma.Server{{URL: "https://billing.api.anveio.com"}}
+	api.OpenAPI().Servers = []*huma.Server{{URL: "https://billing.api.verself.sh"}}
 	return api.OpenAPI().DowngradeYAML()
 }
 

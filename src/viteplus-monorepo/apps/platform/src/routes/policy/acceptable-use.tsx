@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { requireOperatorDomain } from "@verself/web-env";
+import { requireProductDomain } from "@verself/web-env";
 
 import {
   ChangesSection,
@@ -13,11 +13,11 @@ import {
   SummaryPanel,
 } from "~/features/policy/policy-primitives";
 
-const getOperatorDomain = createServerFn({ method: "GET" }).handler(() => requireOperatorDomain());
+const getProductDomain = createServerFn({ method: "GET" }).handler(() => requireProductDomain());
 
 export const Route = createFileRoute("/policy/acceptable-use")({
   component: AUP,
-  loader: () => getOperatorDomain(),
+  loader: () => getProductDomain(),
   head: () => ({
     meta: [
       { title: "Acceptable Use Policy — Verself Platform" },
@@ -31,7 +31,7 @@ export const Route = createFileRoute("/policy/acceptable-use")({
 });
 
 function AUP() {
-  const operatorDomain = Route.useLoaderData();
+  const productDomain = Route.useLoaderData();
   return (
     <PolicyArticle>
       <PolicyHeader title="Acceptable Use Policy" policyId="acceptable-use" />
@@ -44,7 +44,7 @@ function AUP() {
       <Reporting />
       <Enforcement />
       <ChangesSection policyId="acceptable-use" />
-      <ContactSection operatorDomain={operatorDomain} primary="abuse" />
+      <ContactSection productDomain={productDomain} primary="abuse" />
     </PolicyArticle>
   );
 }

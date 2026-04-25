@@ -16,7 +16,7 @@ export const Route = createFileRoute("/_workshop/changelog")({
 
 function ChangelogPage() {
   return (
-    <PageShell kicker="What shipped, when" heading="anveio.com changelog.">
+    <PageShell kicker="What shipped, when" heading="guardianintelligence.org changelog.">
       <ul className="flex flex-col gap-6">
         {changelog.map((entry) => (
           <li key={entry.date} className="flex flex-col gap-2">

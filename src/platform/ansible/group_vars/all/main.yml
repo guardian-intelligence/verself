@@ -6,12 +6,18 @@ verself_version: "0.1.0"
 # All binaries here after deploy_profile role.
 verself_bin: "/opt/verself/profile/bin"
 
-# Root domain (required). Services get subdomains automatically:
-#   console.<domain>       → authenticated product console
-#   <service>.api.<domain> → customer, SDK, and CLI APIs
-#   dashboard.<domain>     → Grafana dashboard
-#   git.<domain>           → source-code-hosting-service Git smart HTTP
-verself_domain: "anveio.com"
+# Product base domain (required). Product services get subdomains automatically:
+#   verself.sh             → public product docs, policy, and API reference
+#   console.verself.sh     → authenticated product console
+#   <service>.api.verself.sh → customer, SDK, and CLI APIs
+#   dashboard.verself.sh   → Grafana dashboard
+#   git.verself.sh         → source-code-hosting-service Git smart HTTP
+verself_domain: "verself.sh"
+platform_domain: "{{ verself_domain }}"
+
+# Company base domain. Guardian Intelligence owns the company site, letters,
+# newsroom, company metadata, and company-level social cards.
+company_domain: "guardianintelligence.org"
 
 console_subdomain: console
 console_domain: "{{ console_subdomain }}.{{ verself_domain }}"

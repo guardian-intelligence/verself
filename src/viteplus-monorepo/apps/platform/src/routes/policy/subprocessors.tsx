@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { requireOperatorDomain } from "@verself/web-env";
+import { requireProductDomain } from "@verself/web-env";
 
 import { SUBPROCESSORS } from "~/lib/policy-catalog";
 import {
@@ -14,11 +14,11 @@ import {
   SummaryPanel,
 } from "~/features/policy/policy-primitives";
 
-const getOperatorDomain = createServerFn({ method: "GET" }).handler(() => requireOperatorDomain());
+const getProductDomain = createServerFn({ method: "GET" }).handler(() => requireProductDomain());
 
 export const Route = createFileRoute("/policy/subprocessors")({
   component: SubprocessorsPage,
-  loader: () => getOperatorDomain(),
+  loader: () => getProductDomain(),
   head: () => ({
     meta: [
       { title: "Subprocessors — Verself Platform" },
@@ -32,7 +32,7 @@ export const Route = createFileRoute("/policy/subprocessors")({
 });
 
 function SubprocessorsPage() {
-  const operatorDomain = Route.useLoaderData();
+  const productDomain = Route.useLoaderData();
   return (
     <PolicyArticle>
       <PolicyHeader title="Subprocessors" policyId="subprocessors" />
@@ -40,7 +40,7 @@ function SubprocessorsPage() {
       <Catalog />
       <ChangeNotification />
       <ChangesSection policyId="subprocessors" />
-      <ContactSection operatorDomain={operatorDomain} primary="privacy" />
+      <ContactSection productDomain={productDomain} primary="privacy" />
     </PolicyArticle>
   );
 }

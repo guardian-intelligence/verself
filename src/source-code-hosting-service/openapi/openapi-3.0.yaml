@@ -5,7 +5,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://source.api.anveio.com/schemas/Blob.json
+          example: https://source.api.verself.sh/schemas/Blob.json
           format: uri
           readOnly: true
           type: string
@@ -39,7 +39,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://source.api.anveio.com/schemas/CheckoutGrant.json
+          example: https://source.api.verself.sh/schemas/CheckoutGrant.json
           format: uri
           readOnly: true
           type: string
@@ -66,7 +66,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://source.api.anveio.com/schemas/CreateCheckoutGrantRequest.json
+          example: https://source.api.verself.sh/schemas/CreateCheckoutGrantRequest.json
           format: uri
           readOnly: true
           type: string
@@ -82,7 +82,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://source.api.anveio.com/schemas/CreateGitCredentialRequest.json
+          example: https://source.api.verself.sh/schemas/CreateGitCredentialRequest.json
           format: uri
           readOnly: true
           type: string
@@ -100,7 +100,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://source.api.anveio.com/schemas/CreateRepositoryRequest.json
+          example: https://source.api.verself.sh/schemas/CreateRepositoryRequest.json
           format: uri
           readOnly: true
           type: string
@@ -125,7 +125,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://source.api.anveio.com/schemas/CreateWorkflowRunRequest.json
+          example: https://source.api.verself.sh/schemas/CreateWorkflowRunRequest.json
           format: uri
           readOnly: true
           type: string
@@ -163,7 +163,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://source.api.anveio.com/schemas/ErrorModel.json
+          example: https://source.api.verself.sh/schemas/ErrorModel.json
           format: uri
           readOnly: true
           type: string
@@ -204,7 +204,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://source.api.anveio.com/schemas/GitCredential.json
+          example: https://source.api.verself.sh/schemas/GitCredential.json
           format: uri
           readOnly: true
           type: string
@@ -258,7 +258,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://source.api.anveio.com/schemas/RefList.json
+          example: https://source.api.verself.sh/schemas/RefList.json
           format: uri
           readOnly: true
           type: string
@@ -275,7 +275,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://source.api.anveio.com/schemas/Repository.json
+          example: https://source.api.verself.sh/schemas/Repository.json
           format: uri
           readOnly: true
           type: string
@@ -336,7 +336,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://source.api.anveio.com/schemas/RepositoryList.json
+          example: https://source.api.verself.sh/schemas/RepositoryList.json
           format: uri
           readOnly: true
           type: string
@@ -353,7 +353,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://source.api.anveio.com/schemas/Tree.json
+          example: https://source.api.verself.sh/schemas/Tree.json
           format: uri
           readOnly: true
           type: string
@@ -390,7 +390,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://source.api.anveio.com/schemas/WorkflowRun.json
+          example: https://source.api.verself.sh/schemas/WorkflowRun.json
           format: uri
           readOnly: true
           type: string
@@ -450,7 +450,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://source.api.anveio.com/schemas/WorkflowRunList.json
+          example: https://source.api.verself.sh/schemas/WorkflowRunList.json
           format: uri
           readOnly: true
           type: string
@@ -974,4 +974,4 @@ paths:
         risk_level: low
         source_product_area: Source
 servers:
-  - url: https://source.api.anveio.com
+  - url: https://source.api.verself.sh

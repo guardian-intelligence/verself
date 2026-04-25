@@ -138,8 +138,8 @@
     group: "{{ platform_runtime_group }}"
     mode: "0755"
 
-# Templated against verself_domain so the file always carries the real
-# operator domain without checking a deployment-specific value into git.
+# Templated against the product domain so the file always carries the public
+# Verself policy origin without checking a deployment-specific value into git.
 - name: Template platform security.txt (RFC 9116)
   ansible.builtin.template:
     src: security.txt.j2

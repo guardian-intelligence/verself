@@ -5,5 +5,5 @@
 Contact: mailto:security@{{ verself_domain }}
 Expires: {{ (ansible_date_time.iso8601[:10] ~ 'T00:00:00.000Z') | replace(ansible_date_time.iso8601[:4], (ansible_date_time.iso8601[:4] | int + 1) | string) }}
 Preferred-Languages: en
-Canonical: https://platform.{{ verself_domain }}/.well-known/security.txt
-Policy: https://platform.{{ verself_domain }}/policy/security#disclosure
+Canonical: https://{{ platform_domain }}/.well-known/security.txt
+Policy: https://{{ platform_domain }}/policy/security#disclosure

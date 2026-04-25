@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { requireOperatorDomain } from "@verself/web-env";
+import { requireProductDomain } from "@verself/web-env";
 
 import {
   ChangesSection,
@@ -13,11 +13,11 @@ import {
   SummaryPanel,
 } from "~/features/policy/policy-primitives";
 
-const getOperatorDomain = createServerFn({ method: "GET" }).handler(() => requireOperatorDomain());
+const getProductDomain = createServerFn({ method: "GET" }).handler(() => requireProductDomain());
 
 export const Route = createFileRoute("/policy/security")({
   component: SecurityOverview,
-  loader: () => getOperatorDomain(),
+  loader: () => getProductDomain(),
   head: () => ({
     meta: [
       { title: "Security Overview — Verself Platform" },
@@ -31,7 +31,7 @@ export const Route = createFileRoute("/policy/security")({
 });
 
 function SecurityOverview() {
-  const operatorDomain = Route.useLoaderData();
+  const productDomain = Route.useLoaderData();
   return (
     <PolicyArticle>
       <PolicyHeader title="Security Overview" policyId="security" />
@@ -44,7 +44,7 @@ function SecurityOverview() {
       <Personnel />
       <Disclosure />
       <ChangesSection policyId="security" />
-      <ContactSection operatorDomain={operatorDomain} primary="security" />
+      <ContactSection productDomain={productDomain} primary="security" />
     </PolicyArticle>
   );
 }

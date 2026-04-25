@@ -31,7 +31,9 @@ test.describe("Console Source", () => {
         run.source_state = "no_repository";
       } else {
         await expect(app.page.getByText("Git remote", { exact: true }).first()).toBeVisible();
-        await expect(app.page.getByRole("button", { name: "Create Git credential" }).first()).toBeVisible();
+        await expect(
+          app.page.getByRole("button", { name: "Create Git credential" }).first(),
+        ).toBeVisible();
         await app.page.getByRole("button", { name: "Create Git credential" }).first().click();
         await expect(app.page.getByText("Username", { exact: true })).toBeVisible({
           timeout: shortTimeoutMS,

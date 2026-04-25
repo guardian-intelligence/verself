@@ -463,7 +463,7 @@ processors:
     send_batch_size: 10000
     timeout: 5s
   # Upstream community.general.opentelemetry emits the playbook span named
-  # after the playbook file (e.g. "dev-single-node.yml") and each task span
+  # after the playbook file (e.g. "site.yml") and each task span
   # named after the raw task title. Rename to a stable
   # ansible.playbook/ansible.task schema so downstream queries don't have to
   # special-case per-playbook names, and mirror verself.* resource

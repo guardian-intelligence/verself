@@ -5,20 +5,20 @@ export const Route = createFileRoute("/")({
   component: LandingPage,
   head: () => ({
     meta: [
-      { title: "Guardian" },
+      { title: "Verself" },
       {
         name: "description",
         content:
-          "The world needs your business to succeed, and we're here to help. Guardian is an American applied intelligence company.",
+          "Self-hosted platform infrastructure: console, docs, API reference, and policy for Verself.",
       },
       {
         property: "og:title",
-        content: "Guardian — The world needs your business to succeed.",
+        content: "Verself — self-hosted platform infrastructure.",
       },
       {
         property: "og:description",
         content:
-          "We build the reference architecture for the systems every founder has to build before they can build what matters — so one founder with Claude Code can run a billion-dollar company.",
+          "The self-hosted Vercel joke taken far enough to have Firecracker, billing, identity, source hosting, docs, and policy.",
       },
     ],
   }),
@@ -31,7 +31,7 @@ function LandingPage() {
         className="font-mono text-[11px] font-medium uppercase tracking-[0.16em]"
         style={{ color: "rgba(245,245,245,0.55)" }}
       >
-        Guardian · An American applied intelligence company · Seattle, Washington
+        Verself · self-hosted platform infrastructure · by Guardian Intelligence
       </p>
       <h1
         className="mt-5 font-display"
@@ -46,13 +46,11 @@ function LandingPage() {
           margin: 0,
         }}
       >
-        The world needs your business to succeed, and we&apos;re here to help.
+        Self-hosted Vercel, for people who read their own systemd logs.
       </h1>
 
-      {/* Mission block: three paragraphs of cash-out below the one-sentence
-          hero. Voice: first-person plural, present tense, grandfather-calm.
-          The closer returns to Fraunces italic so the paragraph that opens the
-          page in serif ends the section in the same register. */}
+      {/* Product summary block. Guardian's company narrative lives on
+          guardianintelligence.org; this page explains the product surface. */}
       <div className="mt-12 flex flex-col gap-5" style={{ maxWidth: "62ch" }}>
         <p
           style={{
@@ -64,11 +62,9 @@ function LandingPage() {
             margin: 0,
           }}
         >
-          Every founder spends the first year on the same dozen systems — identity, billing,
-          analytics, email, infrastructure, security, the thousand edges where a real company
-          touches the real world. None of it is what you started the company to build. We build the
-          reference architecture for all of it — open-source, documented, and clean enough that one
-          founder with <b>Claude Code</b> can run a billion-dollar company.
+          Verself is the platform surface Guardian runs for itself: identity, billing, source
+          hosting, CI-style runners, VM workloads, secrets, audit trails, and the console that keeps
+          the whole contraption visible.
         </p>
         <p
           style={{
@@ -80,12 +76,9 @@ function LandingPage() {
             margin: 0,
           }}
         >
-          Value created per capita is the ultimate metric. Value is more than a transaction. It is a
-          painting. A novel. An API in front of a physical service. A quiet service that sends a
-          calendar invite to the neighborhood when the dog park is going to be 72 and sunny with 80%
-          confidence. Humanity&apos;s golden age is the one where every person gets to contribute
-          unprecedented value to the world, and software and AI finally supply the leverage to make
-          that possible for everyone.
+          It is not trying to be mysterious. It is Go services, TanStack apps, PostgreSQL,
+          ClickHouse, Firecracker, Caddy, SPIFFE, and Ansible, wired together so the boring platform
+          work is inspectable instead of outsourced to a dashboard nobody owns.
         </p>
         <p
           style={{
@@ -101,14 +94,14 @@ function LandingPage() {
             margin: "4px 0 0",
           }}
         >
-          If you want to do something good for the world, we want to make it easy.
+          The docs, API reference, and customer policies live here. The authenticated console lives
+          at console.verself.sh.
         </p>
       </div>
 
       {/* Developer entry points — the practical corner of an otherwise
-          brand-forward landing page. Until guardianintelligence.org exists
-          separately, platform.* plays both roles; when it splits, these move
-          to platform-only and the mission block stays at the root. */}
+          brand-forward product landing page. Company narrative lives on
+          guardianintelligence.org; this apex keeps product docs and policy. */}
       <div className="mt-16">
         <p
           className="font-mono text-[11px] font-medium uppercase tracking-[0.16em]"
@@ -126,13 +119,13 @@ function LandingPage() {
           <LandingCard
             to="/docs/reference"
             title="API Reference"
-            description="The HTTP surface of every Guardian service, generated from OpenAPI."
+            description="The HTTP surface of every Verself service, generated from OpenAPI."
             icon={Code2}
           />
           <LandingCard
             to="/policy"
             title="Policy"
-            description="Data retention, account lifecycle, and the commitments Guardian makes about what it stores on your behalf."
+            description="Data retention, account lifecycle, and the commitments Verself makes about what it stores on your behalf."
             icon={ScrollText}
           />
         </div>

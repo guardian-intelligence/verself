@@ -70,4 +70,4 @@ EOF
 
 echo "Server wiped. Next steps:"
 echo "  cd ansible && ansible-playbook playbooks/guest-rootfs.yml"
-echo "  cd ansible && ansible-playbook playbooks/dev-single-node.yml"
+echo "  cd ansible && ansible-playbook playbooks/site.yml"

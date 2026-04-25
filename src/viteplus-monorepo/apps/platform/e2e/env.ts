@@ -1,9 +1,9 @@
-import { deriveAppBaseURL } from "@verself/web-env";
+import { deriveProductBaseURL } from "@verself/web-env";
 
 // Test environment for the platform app. The site is fully public — no Zitadel
 // dance needed — so the env shape stays minimal compared to console/e2e.
 export const env = {
-  baseURL: deriveAppBaseURL("platform"),
+  baseURL: deriveProductBaseURL(),
   // Allows e2e tests to scope ClickHouse assertions to the in-flight deploy
   // when set; defaults to a per-run sentinel so re-running the suite locally
   // doesn't pick up stale spans from prior runs.

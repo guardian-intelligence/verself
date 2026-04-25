@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
-import { deriveAppBaseURL } from "@verself/web-env";
+import { deriveProductBaseURL } from "@verself/web-env";
 
-const BASE_URL = deriveAppBaseURL("platform");
+const BASE_URL = deriveProductBaseURL();
 
 export default defineConfig({
   testDir: "./e2e",

@@ -61,6 +61,16 @@ argument_specs:
         required: true
         description: "Public domain for the authenticated product console."
 
+      platform_domain:
+        type: str
+        required: true
+        description: "Public product apex domain for docs, reference, and policy."
+
+      company_domain:
+        type: str
+        required: true
+        description: "Public Guardian Intelligence company domain."
+
       grafana_domain:
         type: str
         required: true

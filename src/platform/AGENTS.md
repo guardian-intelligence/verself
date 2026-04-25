@@ -21,7 +21,7 @@ Non-vm-orchestrator services must not receive `zfs allow`, `/dev/zvol`, `/dev/kv
 
 ## Ansible playbooks
 
-Run from `src/platform/ansible/`. `--tags` targets individual roles (e.g. `--tags caddy`, `--tags clickhouse`); preflight checks run regardless of tag selection.
+Run from `src/platform/ansible/`. `--tags` targets individual roles (e.g. `--tags caddy`, `--tags clickhouse`). Global preflight checks run regardless of tag selection; Firecracker guest artifact preflight runs with the `firecracker` tag.
 
 | Playbook | Purpose |
 |---|---|
@@ -29,8 +29,7 @@ Run from `src/platform/ansible/`. `--tags` targets individual roles (e.g. `--tag
 | `setup-sops.yml` | Bootstrap SOPS + Age encryption for secrets |
 | `provision.yml` | Provision bare metal via OpenTofu, generate inventory |
 | `deprovision.yml` | Destroy bare metal infrastructure, remove inventory |
-| `dev-single-node.yml` | Idempotent single-node deploy |
-| `site.yml` | Multi-node deploy (workers + infra) |
+| `site.yml` | Canonical idempotent deploy for the current inventory topology |
 | `guest-rootfs.yml` | Build guest rootfs, stage Firecracker guest artifacts |
 | `observability-smoke.yml` | Minimal smoke probe used by `telemetry-proof` (`debug/assert` + `verself_uri`) |
 | `security-patch.yml` | Rolling OS security updates |
@@ -107,8 +106,8 @@ make telemetry-proof-fail      # sad path: assert Error spans are emitted
 
 ```bash
 cd src/platform/ansible
-sops group_vars/all/secrets.sops.yml  # set verself_domain and cloudflare_api_token
-ansible-playbook playbooks/dev-single-node.yml
+sops group_vars/all/secrets.sops.yml  # set verself_domain, company_domain, and cloudflare_api_token
+ansible-playbook playbooks/site.yml
 ```
 
 Services get subdomains automatically:

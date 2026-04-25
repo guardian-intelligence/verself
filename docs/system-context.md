@@ -12,11 +12,12 @@ Go services are written with the Huma v2 framework (<https://pkg.go.dev/github.c
 
 Public origins follow the AWS-style service subdomain model documented in
 [`docs/architecture/public-origins.md`](architecture/public-origins.md):
-`console.<domain>` is the authenticated browser console, while public service
-APIs live at `<service>.api.<domain>` such as `billing.api.<domain>`,
-`sandbox.api.<domain>`, and `identity.api.<domain>`. Browser code does not call
-service API origins directly; TanStack Start server functions preserve the
-same-origin console CSP and attach service credentials server-side.
+the product apex serves docs and policy, `console.<domain>` is the
+authenticated browser console, and public service APIs live at
+`<service>.api.<domain>` such as `billing.api.<domain>`,
+`sandbox.api.<domain>`, and `identity.api.<domain>`. Browser code does not
+call service API origins directly; TanStack Start server functions preserve
+the same-origin console CSP and attach service credentials server-side.
 
 ## Topology and Replication
 

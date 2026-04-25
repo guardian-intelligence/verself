@@ -1,11 +1,14 @@
 ---
 # cloudflare_dns defaults.
 
-# Root domain (required, inherited from group_vars). Also used as the Cloudflare zone.
+# Product and company domains are inherited from group_vars:
+#   verself_domain -> product zone (verself.sh)
+#   company_domain -> Guardian company zone (guardianintelligence.org)
 
-# Service subdomains to create A records for.
+# Product subdomains to create A records for.
 # Each role defines its own subdomain (e.g. grafana_subdomain: dashboard).
-# This list is the union of all subdomains that need DNS records.
+# This list is the union of product subdomains that need DNS records under
+# verself_domain. The product apex is managed separately for platform/docs.
 cloudflare_dns_records:
   - "{{ grafana_subdomain | default('dashboard') }}"
   - "{{ temporal_web_subdomain | default('temporal') }}"
@@ -23,7 +26,6 @@ cloudflare_dns_records:
   - "{{ secrets_service_subdomain | default('secrets.api') }}"
   - "{{ mailbox_service_subdomain | default('mail.api') }}"
   - "{{ stalwart_subdomain | default('mail') }}"
-  - "{{ platform_subdomain | default('platform') }}"
 
 # DNS record type. Override to AAAA for IPv6-only hosts.
 cloudflare_dns_record_type: A

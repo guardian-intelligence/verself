@@ -243,15 +243,15 @@ export type Mailboxes = {
   readonly legal: string;
 };
 
-export function deriveMailboxes(operatorDomain: string): Mailboxes {
+export function deriveMailboxes(productDomain: string): Mailboxes {
   const { mailboxes } = CONTACTS;
   return {
-    policy: `${mailboxes.policy}@${operatorDomain}`,
-    privacy: `${mailboxes.privacy}@${operatorDomain}`,
-    security: `${mailboxes.security}@${operatorDomain}`,
-    dpo: `${mailboxes.dpo}@${operatorDomain}`,
-    abuse: `${mailboxes.abuse}@${operatorDomain}`,
-    legal: `${mailboxes.legal}@${operatorDomain}`,
+    policy: `${mailboxes.policy}@${productDomain}`,
+    privacy: `${mailboxes.privacy}@${productDomain}`,
+    security: `${mailboxes.security}@${productDomain}`,
+    dpo: `${mailboxes.dpo}@${productDomain}`,
+    abuse: `${mailboxes.abuse}@${productDomain}`,
+    legal: `${mailboxes.legal}@${productDomain}`,
   };
 }
 

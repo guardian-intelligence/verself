@@ -111,6 +111,7 @@ flowchart TB
 
 Public HTTP origins are intentionally split by concern:
 
+- `<domain>` is the public product docs, reference, and policy origin.
 - `console.<domain>` is the authenticated browser product console. Browser code
   stays same-origin and reaches services through TanStack Start server
   functions.
