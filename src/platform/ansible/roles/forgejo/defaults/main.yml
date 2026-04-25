@@ -9,6 +9,7 @@ forgejo_domain: "{{ forgejo_subdomain }}.{{ verself_domain }}"
 
 # Zitadel OIDC integration
 forgejo_auth_project_name: forgejo
+forgejo_auth_app_name: forgejo
 forgejo_auth_source_name: Zitadel
 forgejo_auth_issuer_url: "https://auth.{{ verself_domain }}"
 forgejo_auth_group_claim_name: forgejo_groups
