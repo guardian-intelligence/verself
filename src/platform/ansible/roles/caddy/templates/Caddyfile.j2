@@ -99,6 +99,14 @@
 	}
 }
 
+(source_code_hosting_api_proxy) {
+	import waf_blocking
+	import api_security_headers
+	reverse_proxy {{ services.source_code_hosting_service.host }}:{{ services.source_code_hosting_service.port }} {
+		header_up X-Real-IP {remote_host}
+	}
+}
+
 (identity_api_proxy) {
 	import waf_blocking
 	import api_security_headers
@@ -145,8 +153,7 @@
 
 {{ forgejo_domain }} {
 	import access_log
-	import waf_detection
-	reverse_proxy {{ services.forgejo.host }}:{{ services.forgejo.port }}
+	respond 404
 }
 
 http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_service.http_port }} {
@@ -348,6 +355,30 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 		}
 		import notifications_api_proxy
 	}
+	respond 404
+}
+
+{{ source_code_hosting_service_domain }} {
+	import access_log
+
+	handle /webhooks/forgejo {
+		request_body {
+			max_size 1048576
+		}
+		import waf_detection
+		import api_security_headers
+		reverse_proxy {{ services.source_code_hosting_service.host }}:{{ services.source_code_hosting_service.port }} {
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	handle /api/* {
+		request_body {
+			max_size 1048576
+		}
+		import source_code_hosting_api_proxy
+	}
+
 	respond 404
 }
 

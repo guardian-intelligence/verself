@@ -39,6 +39,7 @@ CONTROL_PLANE_SERVICES = {
     "console",
     "sandbox_rental",
     "secrets_service",
+    "source_code_hosting_service",
 }
 
 ALLOWED_WILDCARD_LISTEN_HOSTS = {

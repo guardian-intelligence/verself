@@ -1,0 +1,233 @@
+---
+- name: Verify source-code-hosting-service binary exists in profile
+  ansible.builtin.stat:
+    path: "{{ fm_bin }}/source-code-hosting-service"
+  register: source_code_hosting_service_binary
+  failed_when: not source_code_hosting_service_binary.stat.exists
+
+- name: Create source_code_hosting_service system group
+  ansible.builtin.group:
+    name: source_code_hosting_service
+    system: true
+
+- name: Ensure spire workload socket group exists
+  ansible.builtin.group:
+    name: "{{ spire_workload_group }}"
+    system: true
+
+- name: Create source_code_hosting_service system user
+  ansible.builtin.user:
+    name: source_code_hosting_service
+    group: source_code_hosting_service
+    groups:
+      - "{{ spire_workload_group }}"
+    append: false
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Resolve source-code-hosting-service uid for SPIRE registration
+  ansible.builtin.command:
+    cmd: id -u source_code_hosting_service
+  register: source_code_hosting_service_uid
+  changed_when: false
+
+- name: Read source-code-hosting-service SPIRE registration
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry show
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-source-code-hosting-service
+      -output json
+  register: source_code_hosting_service_spire_entry
+  failed_when: false
+  changed_when: false
+
+- name: Register source-code-hosting-service SPIFFE workload
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry create
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-source-code-hosting-service
+      -parentID {{ spire_agent_id }}
+      -spiffeID {{ spire_source_code_hosting_service_id }}
+      -selector unix:uid:{{ source_code_hosting_service_uid.stdout | trim }}
+      -x509SVIDTTL 3600
+  when: source_code_hosting_service_spire_entry.rc != 0 or 'forge-metal-source-code-hosting-service' not in source_code_hosting_service_spire_entry.stdout
+  changed_when: true
+  notify: restart source-code-hosting-service
+
+- name: Update source-code-hosting-service SPIRE workload selector drift
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/spire-server entry update
+      -socketPath {{ spire_server_socket_path }}
+      -entryID forge-metal-source-code-hosting-service
+      -parentID {{ spire_agent_id }}
+      -spiffeID {{ spire_source_code_hosting_service_id }}
+      -selector unix:uid:{{ source_code_hosting_service_uid.stdout | trim }}
+      -x509SVIDTTL 3600
+  when:
+    - source_code_hosting_service_spire_entry.rc == 0
+    - "'uid:' ~ (source_code_hosting_service_uid.stdout | trim) not in source_code_hosting_service_spire_entry.stdout"
+  changed_when: true
+  notify: restart source-code-hosting-service
+
+- name: Deploy source-code-hosting-service nftables ruleset
+  ansible.builtin.template:
+    src: source-code-hosting-service.nft.j2
+    dest: /etc/nftables.d/source-code-hosting-service.nft
+    mode: "0644"
+  notify: reload nftables
+
+- name: Apply source-code-hosting-service nftables before proceeding
+  ansible.builtin.meta: flush_handlers
+
+- name: Include source-code-hosting-service generated credential tasks
+  ansible.builtin.include_tasks: credentials.yml
+
+- name: Include source-code-hosting-service PostgreSQL database tasks
+  ansible.builtin.include_tasks: database.yml
+
+- name: Include source-code-hosting-service PostgreSQL migration tasks
+  ansible.builtin.include_tasks: migrations.yml
+
+- name: Wait for Zitadel before resolving source-code-hosting-service auth audience
+  ansible.builtin.wait_for:
+    host: "{{ services.zitadel.host }}"
+    port: "{{ services.zitadel.port }}"
+    timeout: 60
+
+- name: Read Zitadel admin PAT for source-code-hosting-service auth setup
+  ansible.builtin.slurp:
+    src: /etc/zitadel/admin.pat
+  register: source_code_hosting_service_zitadel_admin_pat_raw
+  no_log: true
+
+- name: Set source-code-hosting-service Zitadel admin PAT fact
+  ansible.builtin.set_fact:
+    source_code_hosting_service_zitadel_admin_pat: "{{ source_code_hosting_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
+  no_log: true
+
+- name: Find identity-service auth project for source-code-hosting-service bearer validation
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/_search"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ source_code_hosting_service_zitadel_admin_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      queries:
+        - nameQuery:
+            name: "{{ source_code_hosting_service_identity_project_name }}"
+            method: TEXT_QUERY_METHOD_EQUALS
+    status_code: 200
+    return_content: true
+  register: source_code_hosting_service_identity_project_search
+  no_log: true
+
+- name: Assert identity-service auth project exists for source-code-hosting-service
+  ansible.builtin.assert:
+    that: (source_code_hosting_service_identity_project_search.json.result | default([])) | length > 0
+    fail_msg: >-
+      Identity-service Zitadel project '{{ source_code_hosting_service_identity_project_name }}'
+      not found. Run the identity_service role before source_code_hosting_service.
+
+- name: Set source-code-hosting-service auth audience fact
+  ansible.builtin.set_fact:
+    source_code_hosting_service_auth_audience: "{{ source_code_hosting_service_identity_project_search.json.result[0].id }}"
+
+- name: Read Forgejo automation username
+  ansible.builtin.slurp:
+    src: /etc/credstore/forgejo/automation-username
+  register: source_code_hosting_service_forgejo_username_raw
+  no_log: true
+
+- name: Set Forgejo automation username fact
+  ansible.builtin.set_fact:
+    source_code_hosting_service_forgejo_username: "{{ source_code_hosting_service_forgejo_username_raw.content | b64decode | trim }}"
+  no_log: true
+
+- name: Deploy source-code-hosting-service systemd unit
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=Source Code Hosting Service
+      After=forge-metal-firewall.target network.target
+      After=postgresql.service zitadel.service spire-agent.service forgejo.service
+      Requires=forge-metal-firewall.target
+      Wants=postgresql.service zitadel.service spire-agent.service forgejo.service
+
+      [Service]
+      Type=simple
+      User=source_code_hosting_service
+      Group=source_code_hosting_service
+      SupplementaryGroups={{ spire_workload_group }}
+      Environment=SOURCE_LISTEN_ADDR={{ services.source_code_hosting_service.host }}:{{ services.source_code_hosting_service.port }}
+      Environment=SOURCE_INTERNAL_LISTEN_ADDR={{ services.source_code_hosting_service.host }}:{{ services.source_code_hosting_service.internal_port }}
+      Environment=SOURCE_PG_DSN=postgres://source_code_hosting_service@/source_code_hosting?host=/var/run/postgresql&sslmode=disable
+      Environment=SOURCE_PG_MAX_CONNS=8
+      Environment=SOURCE_AUTH_ISSUER_URL={{ source_code_hosting_service_auth_issuer_url }}
+      Environment=SOURCE_AUTH_JWKS_URL={{ source_code_hosting_service_auth_jwks_url }}
+      Environment=SOURCE_AUTH_AUDIENCE={{ source_code_hosting_service_auth_audience }}
+      Environment=SOURCE_FORGEJO_BASE_URL=http://{{ services.forgejo.host }}:{{ services.forgejo.port }}
+      Environment=SOURCE_FORGEJO_OWNER={{ source_code_hosting_service_forgejo_username }}
+      Environment=SOURCE_PUBLIC_BASE_URL=https://{{ source_code_hosting_service_domain }}
+      Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}
+      Environment=OTEL_SERVICE_NAME=source-code-hosting-service
+      Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}
+      LoadCredential=forgejo-token:/etc/credstore/forgejo/automation-token
+      LoadCredential=webhook-secret:/etc/credstore/source-code-hosting-service/webhook-secret
+      ExecStart={{ fm_bin }}/source-code-hosting-service
+      Restart=on-failure
+      RestartSec=5
+      CapabilityBoundingSet=
+      ProtectHome=true
+      ProtectSystem=strict
+      PrivateDevices=true
+      PrivateTmp=true
+      ProtectClock=true
+      ProtectControlGroups=true
+      ProtectKernelLogs=true
+      ProtectKernelModules=true
+      ProtectKernelTunables=true
+      LockPersonality=true
+      NoNewPrivileges=true
+      RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+      RestrictRealtime=true
+      RestrictSUIDSGID=true
+      SystemCallArchitectures=native
+      UMask=0077
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/source-code-hosting-service.service
+    mode: "0644"
+  notify: restart source-code-hosting-service
+
+- name: Apply source-code-hosting-service unit changes before proceeding
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start source-code-hosting-service
+  ansible.builtin.systemd:
+    name: source-code-hosting-service
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for source-code-hosting-service listener to be present
+  ansible.builtin.wait_for:
+    host: "{{ services.source_code_hosting_service.host }}"
+    port: "{{ services.source_code_hosting_service.port }}"
+    timeout: 60
+
+- name: Wait for source-code-hosting-service readiness
+  ansible.builtin.uri:
+    url: "http://{{ services.source_code_hosting_service.host }}:{{ services.source_code_hosting_service.port }}/readyz"
+    method: GET
+    status_code: 200
+  register: source_code_hosting_service_readyz
+  retries: 30
+  delay: 1
+  until: source_code_hosting_service_readyz.status == 200

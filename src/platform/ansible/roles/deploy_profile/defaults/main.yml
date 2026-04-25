@@ -101,6 +101,13 @@ deploy_profile_go_binaries:
     version_ldflags: true
     restart_handlers:
       - deploy-profile restart secrets-service
+  - name: source-code-hosting-service
+    package: ./src/source-code-hosting-service/cmd/source-code-hosting-service
+    output_path: src/source-code-hosting-service/source-code-hosting-service
+    cgo_enabled: "0"
+    version_ldflags: true
+    restart_handlers:
+      - deploy-profile restart source-code-hosting-service
   - name: forge-temporal-server
     package: ./src/temporal-platform/cmd/forge-temporal-server
     output_path: src/temporal-platform/forge-temporal-server
