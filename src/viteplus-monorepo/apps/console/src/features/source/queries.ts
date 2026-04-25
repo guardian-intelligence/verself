@@ -1,26 +1,11 @@
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { authQueryKey, type AuthenticatedAuth } from "@forge-metal/auth-web/isomorphic";
-import {
-  getSourceBlob,
-  getSourceRepository,
-  getSourceTree,
-  listSourceRefs,
-  listSourceRepositories,
-} from "~/server-fns/api";
-import { ensureOrNotFound } from "~/lib/query-loader";
+import { listSourceRefs, listSourceRepositories, listSourceWorkflowRuns } from "~/server-fns/api";
 
 export function sourceRepositoriesQuery(auth: AuthenticatedAuth) {
   return queryOptions({
     queryKey: authQueryKey(auth, "source-repositories"),
     queryFn: () => listSourceRepositories(),
-    staleTime: 10_000,
-  });
-}
-
-export function sourceRepositoryQuery(auth: AuthenticatedAuth, repoId: string) {
-  return queryOptions({
-    queryKey: authQueryKey(auth, "source-repositories", repoId),
-    queryFn: () => getSourceRepository({ data: { repoId } }),
     staleTime: 10_000,
   });
 }
@@ -33,40 +18,10 @@ export function sourceRefsQuery(auth: AuthenticatedAuth, repoId: string) {
   });
 }
 
-export function sourceTreeQuery(
-  auth: AuthenticatedAuth,
-  repoId: string,
-  input: { ref?: string; path?: string },
-) {
+export function sourceWorkflowRunsQuery(auth: AuthenticatedAuth, repoId: string) {
   return queryOptions({
-    queryKey: authQueryKey(
-      auth,
-      "source-repositories",
-      repoId,
-      "tree",
-      input.ref ?? "",
-      input.path ?? "",
-    ),
-    queryFn: () => getSourceTree({ data: { repoId, ...input } }),
-    staleTime: 10_000,
-  });
-}
-
-export function sourceBlobQuery(
-  auth: AuthenticatedAuth,
-  repoId: string,
-  input: { ref?: string; path: string },
-) {
-  return queryOptions({
-    queryKey: authQueryKey(
-      auth,
-      "source-repositories",
-      repoId,
-      "blob",
-      input.ref ?? "",
-      input.path,
-    ),
-    queryFn: () => getSourceBlob({ data: { repoId, ...input } }),
+    queryKey: authQueryKey(auth, "source-repositories", repoId, "workflow-runs"),
+    queryFn: () => listSourceWorkflowRuns({ data: { repoId } }),
     staleTime: 10_000,
   });
 }
@@ -75,11 +30,13 @@ export async function loadSourceRepositories(queryClient: QueryClient, auth: Aut
   return queryClient.ensureQueryData(sourceRepositoriesQuery(auth));
 }
 
-export async function loadSourceRepositoryDetail(
-  queryClient: QueryClient,
-  auth: AuthenticatedAuth,
-  repoId: string,
-) {
-  await ensureOrNotFound(queryClient, sourceRepositoryQuery(auth, repoId));
-  await queryClient.ensureQueryData(sourceRefsQuery(auth, repoId));
+export async function loadSourceDashboard(queryClient: QueryClient, auth: AuthenticatedAuth) {
+  const repositories = await queryClient.ensureQueryData(sourceRepositoriesQuery(auth));
+  await Promise.all(
+    repositories.repositories.flatMap((repo) => [
+      queryClient.ensureQueryData(sourceRefsQuery(auth, repo.repo_id)),
+      queryClient.ensureQueryData(sourceWorkflowRunsQuery(auth, repo.repo_id)),
+    ]),
+  );
+  return repositories;
 }
