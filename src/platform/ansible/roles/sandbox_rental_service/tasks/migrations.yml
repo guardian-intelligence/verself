@@ -80,14 +80,17 @@
         IF to_regclass('public.execution_filesystem_mounts') IS NOT NULL THEN
           EXECUTE 'ALTER TABLE public.execution_filesystem_mounts OWNER TO sandbox_rental';
         END IF;
-        IF to_regclass('public.github_sticky_disk_generations') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.github_sticky_disk_generations OWNER TO sandbox_rental';
+        IF to_regclass('public.runner_sticky_disk_generations') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.runner_sticky_disk_generations OWNER TO sandbox_rental';
         END IF;
         IF to_regclass('public.execution_sticky_disk_mounts') IS NOT NULL THEN
           EXECUTE 'ALTER TABLE public.execution_sticky_disk_mounts OWNER TO sandbox_rental';
         END IF;
-        IF to_regclass('public.github_workflow_jobs') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.github_workflow_jobs OWNER TO sandbox_rental';
+        IF to_regclass('public.runner_provider_repositories') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.runner_provider_repositories OWNER TO sandbox_rental';
+        END IF;
+        IF to_regclass('public.runner_jobs') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.runner_jobs OWNER TO sandbox_rental';
         END IF;
         IF to_regclass('public.github_installations') IS NOT NULL THEN
           EXECUTE 'ALTER TABLE public.github_installations OWNER TO sandbox_rental';
@@ -95,14 +98,14 @@
         IF to_regclass('public.github_installation_states') IS NOT NULL THEN
           EXECUTE 'ALTER TABLE public.github_installation_states OWNER TO sandbox_rental';
         END IF;
-        IF to_regclass('public.github_runner_allocations') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.github_runner_allocations OWNER TO sandbox_rental';
+        IF to_regclass('public.runner_allocations') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.runner_allocations OWNER TO sandbox_rental';
         END IF;
-        IF to_regclass('public.github_runner_job_bindings') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.github_runner_job_bindings OWNER TO sandbox_rental';
+        IF to_regclass('public.runner_job_bindings') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.runner_job_bindings OWNER TO sandbox_rental';
         END IF;
-        IF to_regclass('public.github_runner_jit_configs') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.github_runner_jit_configs OWNER TO sandbox_rental';
+        IF to_regclass('public.runner_bootstrap_configs') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.runner_bootstrap_configs OWNER TO sandbox_rental';
         END IF;
         IF to_regclass('public.execution_schedules') IS NOT NULL THEN
           EXECUTE 'ALTER TABLE public.execution_schedules OWNER TO sandbox_rental';
@@ -120,16 +123,17 @@
         public.execution_logs,
         public.execution_events,
         public.execution_filesystem_mounts,
-        public.github_sticky_disk_generations,
+        public.runner_sticky_disk_generations,
         public.execution_sticky_disk_mounts,
         public.runner_classes,
         public.runner_class_filesystem_mounts,
         public.github_installations,
         public.github_installation_states,
-        public.github_workflow_jobs,
-        public.github_runner_allocations,
-        public.github_runner_jit_configs,
-        public.github_runner_job_bindings,
+        public.runner_provider_repositories,
+        public.runner_jobs,
+        public.runner_allocations,
+        public.runner_bootstrap_configs,
+        public.runner_job_bindings,
         public.execution_schedules,
         public.execution_schedule_dispatches
       TO sandbox_rental;

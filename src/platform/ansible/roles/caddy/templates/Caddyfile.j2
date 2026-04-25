@@ -178,6 +178,24 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 	handle @github_runner_jit_config {
 		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}
 	}
+	@runner_bootstrap_config {
+		method GET
+		path /internal/sandbox/v1/runner-bootstrap
+	}
+	handle @runner_bootstrap_config {
+		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}
+	}
+	@forgejo_actions_runner_rpc {
+		method GET POST
+		path /api/actions /api/actions/*
+	}
+	handle @forgejo_actions_runner_rpc {
+		reverse_proxy {{ services.forgejo.host }}:{{ services.forgejo.port }} {
+			header_up Host {{ forgejo_domain }}
+			header_up X-Forwarded-Host {{ forgejo_domain }}
+			header_up X-Forwarded-Proto http
+		}
+	}
 	@github_sticky_disk {
 		path /internal/sandbox/v1/stickydisk/*
 	}
@@ -251,6 +269,24 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 		}
 	}
 	handle /webhooks/github/actions {
+		respond 405
+	}
+
+	@sandbox_rental_forgejo_actions_webhook {
+		method POST
+		path /webhooks/forgejo/actions
+	}
+	handle @sandbox_rental_forgejo_actions_webhook {
+		import waf_detection
+		request_body {
+			max_size 1048576
+		}
+		import api_security_headers
+		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }} {
+			header_up X-Real-IP {remote_host}
+		}
+	}
+	handle /webhooks/forgejo/actions {
 		respond 405
 	}
 
