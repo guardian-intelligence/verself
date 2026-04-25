@@ -25,7 +25,7 @@ var identityKey contextKey
 // Identity is attached to the request context after successful validation.
 type Identity struct {
 	Subject         string           // Zitadel user or service account ID.
-	OrgID           string           // Organization/resource owner ID when present.
+	OrgID           string           // Selected organization ID for the target service token.
 	Roles           []string         // Roles from the target service project claim.
 	RoleAssignments []RoleAssignment // Structured target-project role assignments.
 	Email           string           // Email, if present in the token.
@@ -100,9 +100,10 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 			}
 
 			roleAssignments := extractRoleAssignments(rawClaims, cache.cfg.Audience)
+			orgID := extractOrgID(rawClaims, roleAssignments)
 			identity := &Identity{
 				Subject:         idToken.Subject,
-				OrgID:           extractOrgID(rawClaims),
+				OrgID:           orgID,
 				Roles:           rolesFromAssignments(roleAssignments),
 				RoleAssignments: roleAssignments,
 				Email:           stringClaim(rawClaims, "email"),
@@ -110,7 +111,9 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 			}
 			trace.SpanFromContext(r.Context()).SetAttributes(
 				attribute.String("auth.audience", cache.cfg.Audience),
+				attribute.String("auth.selected_org_id", orgID),
 				attribute.Int("auth.role_assignment_count", len(roleAssignments)),
+				attribute.Int("auth.role_assignment_org_count", roleAssignmentOrgCount(roleAssignments)),
 			)
 
 			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), identityKey, identity)))
@@ -205,10 +208,17 @@ func stringClaim(claims map[string]any, key string) string {
 	return text
 }
 
-func extractOrgID(claims map[string]any) string {
+func extractOrgID(claims map[string]any, assignments []RoleAssignment) string {
+	if orgID, ok := uniqueAssignmentOrgID(assignments); ok {
+		return orgID
+	}
+	if len(assignments) > 0 {
+		return ""
+	}
+
 	for _, key := range []string{
-		"urn:zitadel:iam:user:resourceowner:id",
 		"urn:zitadel:iam:org:id",
+		"urn:zitadel:iam:user:resourceowner:id",
 		"resource_owner",
 		"org_id",
 	} {
@@ -217,6 +227,33 @@ func extractOrgID(claims map[string]any) string {
 		}
 	}
 	return ""
+}
+
+func uniqueAssignmentOrgID(assignments []RoleAssignment) (string, bool) {
+	var orgID string
+	for _, assignment := range assignments {
+		if assignment.OrganizationID == "" {
+			continue
+		}
+		if orgID == "" {
+			orgID = assignment.OrganizationID
+			continue
+		}
+		if orgID != assignment.OrganizationID {
+			return "", false
+		}
+	}
+	return orgID, orgID != ""
+}
+
+func roleAssignmentOrgCount(assignments []RoleAssignment) int {
+	seen := map[string]struct{}{}
+	for _, assignment := range assignments {
+		if assignment.OrganizationID != "" {
+			seen[assignment.OrganizationID] = struct{}{}
+		}
+	}
+	return len(seen)
 }
 
 func rolesFromAssignments(assignments []RoleAssignment) []string {

@@ -50,7 +50,7 @@ func TestMiddlewareAttachesIdentity(t *testing.T) {
 		"aud":                                   []string{"billing-project"},
 		"exp":                                   time.Now().Add(time.Hour).Unix(),
 		"email":                                 "alice@example.com",
-		"urn:zitadel:iam:user:resourceowner:id": "org-456",
+		"urn:zitadel:iam:user:resourceowner:id": "home-org",
 		"roles":                                 []string{"legacy-admin"},
 		"urn:zitadel:iam:org:project:roles": map[string]any{
 			"legacy-viewer": map[string]any{"org-456": "billing"},
@@ -158,6 +158,49 @@ func TestMiddlewareMissingTargetProjectRoleClaimAttachesNoRoles(t *testing.T) {
 		}
 		if len(identity.Roles) != 0 || len(identity.RoleAssignments) != 0 {
 			t.Fatalf("target project without a role claim must not inherit other project roles: %#v", identity)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/private", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", rec.Code)
+	}
+}
+
+func TestMiddlewareDoesNotSelectOrgFromMultiOrgRoleClaims(t *testing.T) {
+	t.Parallel()
+
+	provider := newTestProvider(t)
+	defer provider.Close()
+
+	token := provider.signToken(t, jwt.MapClaims{
+		"iss": provider.URL,
+		"sub": "user-123",
+		"aud": []string{"billing-project"},
+		"exp": time.Now().Add(time.Hour).Unix(),
+		"urn:zitadel:iam:org:project:billing-project:roles": map[string]any{
+			"admin": map[string]any{
+				"org-456": "billing",
+				"org-789": "billing-alt",
+			},
+		},
+	})
+
+	handler := Middleware(Config{
+		IssuerURL: provider.URL,
+		Audience:  "billing-project",
+	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		identity := FromContext(r.Context())
+		if identity == nil {
+			t.Fatal("expected identity in context")
+		}
+		if identity.OrgID != "" {
+			t.Fatalf("multi-org target role token must not select an org implicitly: %q", identity.OrgID)
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
