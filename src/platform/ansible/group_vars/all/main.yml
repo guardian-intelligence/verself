@@ -25,6 +25,8 @@ profile_service_subdomain: profile.api
 profile_service_domain: "{{ profile_service_subdomain }}.{{ forge_metal_domain }}"
 notifications_service_subdomain: notifications.api
 notifications_service_domain: "{{ notifications_service_subdomain }}.{{ forge_metal_domain }}"
+source_code_hosting_service_subdomain: source.api
+source_code_hosting_service_domain: "{{ source_code_hosting_service_subdomain }}.{{ forge_metal_domain }}"
 governance_service_subdomain: governance.api
 governance_service_domain: "{{ governance_service_subdomain }}.{{ forge_metal_domain }}"
 secrets_service_subdomain: secrets.api
@@ -101,6 +103,7 @@ postgresql_role_connection_limits:
   governance_service: 15
   profile_service: 10
   notifications_service: 10
+  source_code_hosting_service: 10
   electric_notifications: 15
   mailbox_service: 10
   object_storage_service: 10

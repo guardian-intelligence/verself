@@ -30,7 +30,7 @@
 - name: Validate Go binary manifest coverage
   ansible.builtin.assert:
     that:
-      - deploy_profile_go_binary_names | length == 16
+      - deploy_profile_go_binary_names | length == 17
       - deploy_profile_go_binary_names | unique | list | length == deploy_profile_go_binary_names | length
       - deploy_profile_go_binary_output_paths | unique | list | length == deploy_profile_go_binary_output_paths | length
       - deploy_profile_go_binary_names | sort == [
@@ -47,6 +47,7 @@
           'sandbox-rental-recurring-worker',
           'sandbox-rental-service',
           'secrets-service',
+          'source-code-hosting-service',
           'tb-inspect',
           'temporal-bootstrap',
           'temporal-schema'

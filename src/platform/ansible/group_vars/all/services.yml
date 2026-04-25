@@ -48,6 +48,8 @@
 #      4258  profile-service
 #      4259  profile-service internal SPIFFE mTLS
 #      4260  notifications-service
+#      4261  source-code-hosting-service
+#      4262  source-code-hosting-service internal SPIFFE mTLS
 #
 #    TanStack frontends (Nitro SSR):             4240–4269 (shared block)
 #      4244  console
@@ -162,6 +164,10 @@ services:
   notifications_service:
     host: "127.0.0.1"
     port: 4260
+  source_code_hosting_service:
+    host: "127.0.0.1"
+    port: 4261
+    internal_port: 4262
   console:
     host: "127.0.0.1"
     port: 4244

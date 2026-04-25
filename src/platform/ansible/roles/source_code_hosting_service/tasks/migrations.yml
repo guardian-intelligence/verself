@@ -1,0 +1,15 @@
+---
+- name: Apply source-code-hosting-service PostgreSQL migrations
+  ansible.builtin.include_role:
+    name: service_pg_migrations
+  vars:
+    service_pg_migrations_service: source-code-hosting-service
+    service_pg_migrations_db: source_code_hosting
+    service_pg_migrations_db_user: source_code_hosting_service
+    service_pg_migrations_db_owner: source_code_hosting_service
+    service_pg_migrations_db_password: "{{ source_code_hosting_service_pg_password }}"
+    service_pg_migrations_source_dir: "{{ playbook_dir }}/../../../source-code-hosting-service/migrations"
+    service_pg_migrations_probe_table: source_repositories
+    service_pg_migrations_stop_units:
+      - source-code-hosting-service
+    service_pg_migrations_force_reset: "{{ source_code_hosting_service_force_schema_reset | default(false) | bool }}"

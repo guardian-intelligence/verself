@@ -1,0 +1,20 @@
+---
+- name: Check if source-code-hosting-service unit exists
+  listen: restart source-code-hosting-service
+  ansible.builtin.stat:
+    path: /etc/systemd/system/source-code-hosting-service.service
+  register: source_code_hosting_service_unit_file
+
+- name: Restart source-code-hosting-service
+  listen: restart source-code-hosting-service
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: source-code-hosting-service
+    state: restarted
+  when: source_code_hosting_service_unit_file.stat.exists
+
+- name: Reload nftables for source-code-hosting-service
+  listen: reload nftables
+  ansible.builtin.systemd:
+    name: nftables
+    state: reloaded

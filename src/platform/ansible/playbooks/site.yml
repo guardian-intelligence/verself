@@ -87,7 +87,7 @@
   become: true
   roles:
     - role: deploy_profile
-      tags: [deploy_profile, object_storage_service, profile_service, notifications_service, nats]
+      tags: [deploy_profile, object_storage_service, profile_service, notifications_service, source_code_hosting_service, nats]
     - role: base
       tags: [base]
     - role: nftables
@@ -113,7 +113,7 @@
     - role: wireguard
       tags: [wireguard]
     - role: cloudflare_dns
-      tags: [cloudflare_dns]
+      tags: [cloudflare_dns, source_code_hosting_service]
     - role: resend
       tags: [resend]
     - role: spire
@@ -129,6 +129,7 @@
         - nats
         - secrets_service
         - sandbox_rental_service
+        - source_code_hosting_service
         - mailbox_service
         - object_storage_service
         - temporal
@@ -152,13 +153,13 @@
     - role: tigerbeetle
       tags: [tigerbeetle]
     - role: postgresql
-      tags: [postgresql, object_storage_service, profile_service, notifications_service, openbao, openbao_tenancy, temporal]
+      tags: [postgresql, object_storage_service, profile_service, notifications_service, source_code_hosting_service, openbao, openbao_tenancy, temporal]
     - role: zitadel
       tags: [zitadel, openbao, openbao_tenancy]
     - role: openbao
       tags: [openbao, openbao_tenancy, billing_service, governance_service, sandbox_rental_service, mailbox_service]
     - role: identity_service
-      tags: [identity_service, profile_service]
+      tags: [identity_service, profile_service, source_code_hosting_service]
     - role: governance_service
       tags: [governance_service, profile_service, object_storage_service, openbao, openbao_tenancy, temporal]
     - role: profile_service
@@ -224,7 +225,7 @@
     - role: stalwart
       tags: [stalwart]
     - role: otelcol
-      tags: [otelcol, temporal]
+      tags: [otelcol, temporal, source_code_hosting_service]
     - role: mailbox_service
       tags: [mailbox_service]
     - role: electric
@@ -261,5 +262,7 @@
       tags: [verdaccio]
     - role: forgejo
       tags: [forgejo]
+    - role: source_code_hosting_service
+      tags: [source_code_hosting_service]
     - role: caddy
-      tags: [caddy, profile_service, notifications_service, openbao_tenancy]
+      tags: [caddy, profile_service, notifications_service, source_code_hosting_service, openbao_tenancy]

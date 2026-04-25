@@ -1,0 +1,30 @@
+#!/usr/sbin/nft -f
+# Source-code-hosting-service is loopback-only. Public access must arrive via
+# Caddy and internal archive downloads must arrive over SPIFFE mTLS.
+
+table inet forge_metal_source_code_hosting_service
+delete table inet forge_metal_source_code_hosting_service
+
+table inet forge_metal_source_code_hosting_service {
+    chain input {
+        type filter hook input priority filter; policy accept;
+
+        tcp dport {{ services.source_code_hosting_service.port }} iifname != "lo" drop
+        tcp dport {{ services.source_code_hosting_service.internal_port }} iifname != "lo" drop
+    }
+
+    chain output {
+        type filter hook output priority filter; policy accept;
+
+        ct state established,related accept
+        meta skuid != source_code_hosting_service accept
+
+        oifname "lo" tcp dport {{ services.postgresql.port }} accept
+        oifname "lo" tcp dport {{ services.forgejo.port }} accept
+        oifname "lo" tcp dport {{ services.zitadel.port }} accept
+        oifname "lo" tcp dport {{ services.otelcol.grpc_port }} accept
+        meta l4proto != tcp meta l4proto != udp accept
+
+        drop
+    }
+}
