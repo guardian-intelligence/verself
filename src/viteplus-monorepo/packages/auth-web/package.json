@@ -45,6 +45,7 @@
   },
   "dependencies": {
     "@forge-metal/ui": "workspace:*",
+    "@opentelemetry/api": "catalog:",
     "@tanstack/react-form": "catalog:",
     "@tanstack/react-query": "catalog:",
     "@tanstack/react-router": "catalog:",

@@ -28,16 +28,27 @@ const anonymousAuth: Auth = {
   cachePartition: null,
   isAuthenticated: false,
   orgId: null,
+  selectedOrgId: null,
   roleAssignments: [],
   roles: [],
   userId: null,
 };
 
+const authenticatedRoleAssignments = [
+  {
+    orgID: "org-1",
+    orgName: "Acme",
+    projectID: "sandbox-project",
+    role: "sandbox_operator",
+  },
+];
+
 const authenticatedAuth = {
   cachePartition: "partition-123",
   isAuthenticated: true,
   orgId: "org-1",
-  roleAssignments: [],
+  selectedOrgId: "org-1",
+  roleAssignments: authenticatedRoleAssignments,
   roles: ["sandbox_operator"],
   userId: "user-1",
 } satisfies Auth;
@@ -58,11 +69,21 @@ const authenticatedSnapshot: AuthSnapshot = {
   },
   user: {
     email: "user@example.com",
+    homeOrgID: "org-1",
     name: "User Example",
     orgID: "org-1",
     preferredUsername: "user",
-    roleAssignments: [],
+    selectedOrgID: "org-1",
+    roleAssignments: authenticatedRoleAssignments,
     roles: ["sandbox_operator"],
+    availableOrganizations: [
+      {
+        orgID: "org-1",
+        orgName: "Acme",
+        roles: ["sandbox_operator"],
+        roleAssignments: authenticatedRoleAssignments,
+      },
+    ],
     sub: "user-1",
   },
 };
@@ -188,14 +209,15 @@ describe("auth-web helpers", () => {
     expect(authQueryKey(authenticatedAuth, "billing", "balance")).toEqual([
       "auth",
       "partition-123",
+      "org-1",
       "billing",
       "balance",
     ]);
     expect(authCollectionId(authenticatedAuth, "sync-executions-org-1")).toBe(
-      "auth:partition-123:sync-executions-org-1",
+      "auth:partition-123:org-1:sync-executions-org-1",
     );
-    expect(authCacheKey(authenticatedSnapshot)).toBe("auth:partition-123");
-    expect(authCacheKey(anonymousSnapshot)).toBe("auth:anonymous");
+    expect(authCacheKey(authenticatedSnapshot)).toBe("auth:partition-123:org-1");
+    expect(authCacheKey(anonymousSnapshot)).toBe("auth:anonymous:no-org");
   });
 
   it("normalizes serialized client auth snapshot session dates", () => {
