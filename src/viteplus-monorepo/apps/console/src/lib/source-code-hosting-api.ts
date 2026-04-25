@@ -2,35 +2,40 @@ import * as v from "valibot";
 import { createClient, type Client } from "../__generated/source-code-hosting-api/client/index.js";
 import {
   type CreateCheckoutGrantRequestWritable,
-  type CreateIntegrationRequestWritable,
+  type CreateGitCredentialRequestWritable,
   type CreateRepositoryRequestWritable,
   type GetSourceBlobData,
   type GetSourceTreeData,
+  type ListSourceCiRunsData,
   type ListSourceWorkflowRunsData,
   createSourceCheckoutGrant,
-  createSourceIntegration,
+  createSourceGitCredential,
   createSourceRepository,
   getSourceBlob,
   getSourceRepository,
   getSourceTree,
+  listSourceCiRuns,
   listSourceWorkflowRuns,
   listSourceRefs,
   listSourceRepositories,
 } from "../__generated/source-code-hosting-api/index.js";
 import {
   vBlob,
+  vCiRun,
+  vCiRunList,
   vCheckoutGrant,
   vCreateCheckoutGrantRequest,
-  vCreateIntegrationRequest,
+  vCreateGitCredentialRequest,
   vCreateRepositoryRequest,
-  vExternalIntegration,
   vGetSourceBlobQuery,
   vGetSourceBlobPath,
   vGetSourceRepositoryPath,
   vGetSourceTreeQuery,
   vGetSourceTreePath,
+  vListSourceCiRunsPath,
   vListSourceRefsPath,
   vListSourceWorkflowRunsPath,
+  vGitCredential,
   vRefList,
   vRepository,
   vRepositoryList,
@@ -110,6 +115,21 @@ function parseWorkflowRunList(input: unknown) {
 
 export type SourceWorkflowRunList = ReturnType<typeof parseWorkflowRunList>;
 
+function parseCIRun(input: unknown) {
+  return v.parse(vCiRun, input);
+}
+
+export type SourceCIRun = ReturnType<typeof parseCIRun>;
+
+function parseCIRunList(input: unknown) {
+  const parsed = v.parse(vCiRunList, input);
+  return {
+    ci_runs: parsed.ci_runs?.map((run) => parseCIRun(run)) ?? [],
+  };
+}
+
+export type SourceCIRunList = ReturnType<typeof parseCIRunList>;
+
 function parseTree(input: unknown) {
   const parsed = v.parse(vTree, input);
   return {
@@ -131,19 +151,19 @@ function parseCheckoutGrant(input: unknown) {
 
 export type SourceCheckoutGrant = ReturnType<typeof parseCheckoutGrant>;
 
-function parseIntegration(input: unknown) {
-  return v.parse(vExternalIntegration, input);
+function parseGitCredential(input: unknown) {
+  return v.parse(vGitCredential, input);
 }
 
-export type SourceIntegration = ReturnType<typeof parseIntegration>;
+export type SourceGitCredential = ReturnType<typeof parseGitCredential>;
 
 export const createRepositoryRequestSchema = vCreateRepositoryRequest;
 export const createCheckoutGrantRequestSchema = vCreateCheckoutGrantRequest;
-export const createIntegrationRequestSchema = vCreateIntegrationRequest;
+export const createGitCredentialRequestSchema = vCreateGitCredentialRequest;
 
 export type CreateRepositoryRequest = v.InferOutput<typeof createRepositoryRequestSchema>;
 export type CreateCheckoutGrantRequest = v.InferOutput<typeof createCheckoutGrantRequestSchema>;
-export type CreateIntegrationRequest = v.InferOutput<typeof createIntegrationRequestSchema>;
+export type CreateGitCredentialRequest = v.InferOutput<typeof createGitCredentialRequestSchema>;
 
 export async function listRepositories(
   options: SourceCodeHostingClientOptions,
@@ -186,6 +206,27 @@ export async function createRepository(
   return parseRepository(result.data);
 }
 
+export async function createGitCredential(
+  options: SourceCodeHostingClientOptions & { body: CreateGitCredentialRequest },
+): Promise<SourceGitCredential> {
+  const client = createSourceClient(options);
+  const body = removeUndefined(
+    v.parse(vCreateGitCredentialRequest, options.body),
+  ) as CreateGitCredentialRequestWritable;
+  const path = "/api/v1/git-credentials";
+  const result = await createSourceGitCredential({
+    client,
+    body,
+    headers: idempotencyHeaders("source-git-credential"),
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+  if (result.error !== undefined) {
+    throwSourceError(path, result.response, result.error);
+  }
+  return parseGitCredential(result.data);
+}
+
 export async function getRepository(
   options: SourceCodeHostingClientOptions & { repoId: string },
 ): Promise<SourceRepository> {
@@ -202,6 +243,24 @@ export async function getRepository(
     throwSourceError(path, result.response, result.error);
   }
   return parseRepository(result.data);
+}
+
+export async function listCIRuns(
+  options: SourceCodeHostingClientOptions & { repoId: string },
+): Promise<SourceCIRunList> {
+  const client = createSourceClient(options);
+  const pathParams = v.parse(vListSourceCiRunsPath, { repo_id: options.repoId });
+  const path = `/api/v1/repos/${options.repoId}/ci-runs`;
+  const result = await listSourceCiRuns({
+    client,
+    path: pathParams as NonNullable<ListSourceCiRunsData["path"]>,
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+  if (result.error !== undefined) {
+    throwSourceError(path, result.response, result.error);
+  }
+  return parseCIRunList(result.data);
 }
 
 export async function listRefs(
@@ -304,25 +363,4 @@ export async function createCheckoutGrant(
     throwSourceError(path, result.response, result.error);
   }
   return parseCheckoutGrant(result.data);
-}
-
-export async function createIntegration(
-  options: SourceCodeHostingClientOptions & { body: CreateIntegrationRequest },
-): Promise<SourceIntegration> {
-  const client = createSourceClient(options);
-  const body = removeUndefined(
-    v.parse(vCreateIntegrationRequest, options.body),
-  ) as CreateIntegrationRequestWritable;
-  const path = "/api/v1/integrations";
-  const result = await createSourceIntegration({
-    client,
-    body,
-    headers: idempotencyHeaders("source-integration"),
-    responseStyle: "fields",
-    throwOnError: false,
-  });
-  if (result.error !== undefined) {
-    throwSourceError(path, result.response, result.error);
-  }
-  return parseIntegration(result.data);
 }

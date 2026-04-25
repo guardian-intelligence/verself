@@ -1,6 +1,6 @@
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { authQueryKey, type AuthenticatedAuth } from "@forge-metal/auth-web/isomorphic";
-import { listSourceRefs, listSourceRepositories, listSourceWorkflowRuns } from "~/server-fns/api";
+import { listSourceCIRuns, listSourceRefs, listSourceRepositories } from "~/server-fns/api";
 
 export function sourceRepositoriesQuery(auth: AuthenticatedAuth) {
   return queryOptions({
@@ -18,10 +18,10 @@ export function sourceRefsQuery(auth: AuthenticatedAuth, repoId: string) {
   });
 }
 
-export function sourceWorkflowRunsQuery(auth: AuthenticatedAuth, repoId: string) {
+export function sourceCIRunsQuery(auth: AuthenticatedAuth, repoId: string) {
   return queryOptions({
-    queryKey: authQueryKey(auth, "source-repositories", repoId, "workflow-runs"),
-    queryFn: () => listSourceWorkflowRuns({ data: { repoId } }),
+    queryKey: authQueryKey(auth, "source-repositories", repoId, "ci-runs"),
+    queryFn: () => listSourceCIRuns({ data: { repoId } }),
     staleTime: 10_000,
   });
 }
@@ -35,7 +35,7 @@ export async function loadSourceDashboard(queryClient: QueryClient, auth: Authen
   await Promise.all(
     repositories.repositories.flatMap((repo) => [
       queryClient.ensureQueryData(sourceRefsQuery(auth, repo.repo_id)),
-      queryClient.ensureQueryData(sourceWorkflowRunsQuery(auth, repo.repo_id)),
+      queryClient.ensureQueryData(sourceCIRunsQuery(auth, repo.repo_id)),
     ]),
   );
   return repositories;

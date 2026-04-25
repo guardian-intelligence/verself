@@ -14,13 +14,10 @@ source_log_path="${artifact_dir}/source-ui.log"
 source_api_base_url="${SOURCE_CODE_HOSTING_PROOF_BASE_URL:-https://source.api.${VERIFICATION_DOMAIN}}"
 source_api_base_url="${source_api_base_url%/}"
 console_base_url="${TEST_BASE_URL:-https://console.${VERIFICATION_DOMAIN}}"
+git_origin="${SOURCE_CODE_HOSTING_PROOF_GIT_ORIGIN:-https://git.${VERIFICATION_DOMAIN}}"
+git_origin="${git_origin%/}"
 clickhouse_timeout_seconds="${SOURCE_CODE_HOSTING_PROOF_CLICKHOUSE_TIMEOUT_SECONDS:-180}"
 mkdir -p "${artifact_dir}/clickhouse" "${artifact_dir}/payloads" "${artifact_dir}/postgres" "${artifact_dir}/responses"
-
-remote_json_request() {
-  local json="$1"
-  printf '%s' "${json}" | base64 -w0
-}
 
 remote_psql() {
   local db="$1"
@@ -119,24 +116,24 @@ wait_for_clickhouse_count() {
 
 signed_forgejo_webhook() {
   local output_path="$1"
-  local provider_owner="$2"
-  local provider_repo="$3"
-  local provider_repo_id="$4"
+  local backend_owner="$2"
+  local backend_repo="$3"
+  local backend_repo_id="$4"
   local body_b64
   body_b64="$(
-    RUN_ID="${run_id}" PROVIDER_OWNER="${provider_owner}" PROVIDER_REPO="${provider_repo}" PROVIDER_REPO_ID="${provider_repo_id}" python3 - <<'PY'
+    RUN_ID="${run_id}" BACKEND_OWNER="${backend_owner}" BACKEND_REPO="${backend_repo}" BACKEND_REPO_ID="${backend_repo_id}" python3 - <<'PY'
 import base64
 import json
 import os
 
-repo_id = int(os.environ["PROVIDER_REPO_ID"]) if os.environ["PROVIDER_REPO_ID"] else 0
+repo_id = int(os.environ["BACKEND_REPO_ID"]) if os.environ["BACKEND_REPO_ID"] else 0
 body = json.dumps({
     "proof_run_id": os.environ["RUN_ID"],
     "repository": {
         "id": repo_id,
-        "name": os.environ["PROVIDER_REPO"],
-        "full_name": f"{os.environ['PROVIDER_OWNER']}/{os.environ['PROVIDER_REPO']}",
-        "owner": {"username": os.environ["PROVIDER_OWNER"]},
+        "name": os.environ["BACKEND_REPO"],
+        "full_name": f"{os.environ['BACKEND_OWNER']}/{os.environ['BACKEND_REPO']}",
+        "owner": {"username": os.environ["BACKEND_OWNER"]},
     },
 }, sort_keys=True).encode()
 print(base64.b64encode(body).decode())
@@ -185,6 +182,7 @@ print()
 verification_print_artifacts "${artifact_dir}" "${source_log_path}" "${run_json_path}"
 verification_wait_for_loopback_api "source-code-hosting-service" "http://127.0.0.1:4261/readyz" "200"
 verification_wait_for_http "source API auth boundary" "${source_api_base_url}/api/v1/repos" "401"
+verification_wait_for_http "git origin is headless" "${git_origin}/" "404"
 verification_wait_for_http "console UI" "${console_base_url}" "200"
 
 # shellcheck disable=SC1090
@@ -218,23 +216,93 @@ if [[ "${source_status}" -ne 0 ]]; then
   exit "${source_status}"
 fi
 
-repo_id="$(
-  python3 - "${run_json_path}" <<'PY'
+repo_slug="source-proof-$(printf '%s' "${run_id}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/^-+|-+$//g' | cut -c1-48)"
+if [[ -z "${repo_slug}" ]]; then
+  repo_slug="source-proof"
+fi
+
+cat >"${artifact_dir}/payloads/create-git-credential.json" <<EOF
+{
+  "label": "source proof ${run_id}",
+  "expires_in_seconds": 3600
+}
+EOF
+credential_raw_path="$(mktemp)"
+checkout_raw_path="$(mktemp)"
+git_workdir="$(mktemp -d)"
+askpass_path="$(mktemp)"
+trap 'rm -f "${credential_raw_path}" "${checkout_raw_path}" "${askpass_path}"; rm -rf "${git_workdir}"' EXIT
+
+api_request "POST" "/api/v1/git-credentials" "${credential_raw_path}" "${artifact_dir}/payloads/create-git-credential.json" "source-git-credential:${run_id}"
+read -r credential_id org_path git_username git_token <<<"$(
+  python3 - "${credential_raw_path}" "${artifact_dir}/responses/create-git-credential.json" <<'PY'
 import json
-import re
 import sys
 
 payload = json.load(open(sys.argv[1], encoding="utf-8"))
-repo_id = payload.get("repo_id") or ""
-if not re.fullmatch(r"[0-9a-fA-F-]{36}", repo_id):
-    raise SystemExit("source proof run json did not include repo_id")
-print(repo_id)
+token = payload.pop("token", "")
+if not token:
+    raise SystemExit("git credential response did not include token")
+payload["token"] = "[redacted]"
+json.dump(payload, open(sys.argv[2], "w", encoding="utf-8"), indent=2, sort_keys=True)
+print(payload["credential_id"], payload["org_path"], payload["username"], token)
 PY
 )"
 
+git_repo_url="${git_origin}/${org_path}/${repo_slug}.git"
+cat >"${askpass_path}" <<'SH'
+#!/usr/bin/env bash
+case "$1" in
+  *Username*) printf '%s\n' "${SOURCE_GIT_USERNAME}" ;;
+  *Password*) printf '%s\n' "${SOURCE_GIT_TOKEN}" ;;
+  *) printf '\n' ;;
+esac
+SH
+chmod 700 "${askpass_path}"
+
+git -C "${git_workdir}" init -b main >/dev/null
+git -C "${git_workdir}" config user.name "Forge Metal Source Proof"
+git -C "${git_workdir}" config user.email "source-proof@forge-metal.invalid"
+printf '# Source proof\n\nrun: %s\n' "${run_id}" >"${git_workdir}/README.md"
+mkdir -p "${git_workdir}/.forgejo/workflows"
+cat >"${git_workdir}/.forgejo/workflows/proof.yml" <<'EOF'
+name: proof
+on:
+  workflow_dispatch:
+jobs:
+  proof:
+    runs-on: metal-4vcpu-ubuntu-2404
+    steps:
+      - run: echo source proof
+EOF
+git -C "${git_workdir}" add README.md .forgejo/workflows/proof.yml
+git -C "${git_workdir}" commit -m "source proof ${run_id}" >/dev/null
+env \
+  GIT_ASKPASS="${askpass_path}" \
+  GIT_TERMINAL_PROMPT=0 \
+  SOURCE_GIT_USERNAME="${git_username}" \
+  SOURCE_GIT_TOKEN="${git_token}" \
+  git -C "${git_workdir}" push "${git_repo_url}" main:main >"${artifact_dir}/responses/git-push.log" 2>&1
+
 api_request "GET" "/api/v1/repos" "${artifact_dir}/responses/list-repositories.json"
+repo_id="$(
+  python3 - "${artifact_dir}/responses/list-repositories.json" "${repo_slug}" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+slug = sys.argv[2]
+for repo in payload.get("repositories") or []:
+    if repo.get("slug") == slug:
+        print(repo["repo_id"])
+        raise SystemExit(0)
+raise SystemExit(f"source proof repo with slug {slug!r} not found")
+PY
+)"
+
 api_request "GET" "/api/v1/repos/${repo_id}" "${artifact_dir}/responses/get-repository.json"
 api_request "GET" "/api/v1/repos/${repo_id}/refs" "${artifact_dir}/responses/list-refs.json"
+api_request "GET" "/api/v1/repos/${repo_id}/ci-runs" "${artifact_dir}/responses/list-ci-runs.json"
 api_request "GET" "/api/v1/repos/${repo_id}/tree?ref=main" "${artifact_dir}/responses/get-tree.json"
 
 cat >"${artifact_dir}/payloads/create-checkout-grant.json" <<'EOF'
@@ -242,10 +310,8 @@ cat >"${artifact_dir}/payloads/create-checkout-grant.json" <<'EOF'
   "ref": "main"
 }
 EOF
-checkout_raw_path="$(mktemp)"
-trap 'rm -f "${checkout_raw_path}"' EXIT
 api_request "POST" "/api/v1/repos/${repo_id}/checkout-grants" "${checkout_raw_path}" "${artifact_dir}/payloads/create-checkout-grant.json" "source-checkout:${run_id}"
-read -r checkout_grant_id <<<"$(
+checkout_grant_id="$(
   python3 - "${checkout_raw_path}" "${artifact_dir}/responses/create-checkout-grant.json" <<'PY'
 import json
 import sys
@@ -260,29 +326,12 @@ print(payload["grant_id"])
 PY
 )"
 
-cat >"${artifact_dir}/payloads/create-integration.json" <<EOF
-{
-  "provider": "github",
-  "external_repo": "forge-metal/source-proof-${run_id}",
-  "credential_ref": ""
-}
-EOF
-api_request "POST" "/api/v1/integrations" "${artifact_dir}/responses/create-integration.json" "${artifact_dir}/payloads/create-integration.json" "source-integration:${run_id}"
-integration_id="$(
-  python3 - "${artifact_dir}/responses/create-integration.json" <<'PY'
-import json
-import sys
-
-print(json.load(open(sys.argv[1], encoding="utf-8"))["integration_id"])
-PY
-)"
-
 escaped_repo_id="${repo_id//\'/\'\'}"
+escaped_credential_id="${credential_id//\'/\'\'}"
 escaped_grant_id="${checkout_grant_id//\'/\'\'}"
-escaped_integration_id="${integration_id//\'/\'\'}"
 
 remote_psql source_code_hosting "
-SELECT repo_id, org_id, name, slug, default_branch, visibility, state, provider, provider_owner, provider_repo, provider_repo_id
+SELECT repo_id, org_id, org_path, name, slug, default_branch, visibility, state, last_pushed_at IS NOT NULL AS pushed
 FROM source_repositories
 WHERE repo_id = '${escaped_repo_id}'::uuid;
 " "${artifact_dir}/postgres/repository.tsv"
@@ -292,16 +341,55 @@ if [[ -z "${org_id}" ]]; then
   echo "source_repositories did not contain the proof repo" >&2
   exit 1
 fi
-provider="$(cut -f8 "${artifact_dir}/postgres/repository.tsv" | head -n 1)"
-provider_owner="$(cut -f9 "${artifact_dir}/postgres/repository.tsv" | head -n 1)"
-provider_repo="$(cut -f10 "${artifact_dir}/postgres/repository.tsv" | head -n 1)"
-provider_repo_id="$(cut -f11 "${artifact_dir}/postgres/repository.tsv" | head -n 1)"
-if [[ "${provider}" != "forgejo" || -z "${provider_owner}" || -z "${provider_repo}" || -z "${provider_repo_id}" ]]; then
-  echo "source_repositories row did not include provider-neutral Forgejo coordinates" >&2
+
+remote_psql source_code_hosting "
+SELECT backend_id, repo_id, backend, backend_owner, backend_repo, backend_repo_id, state
+FROM source_repository_backends
+WHERE repo_id = '${escaped_repo_id}'::uuid
+  AND backend = 'forgejo'
+  AND state = 'active';
+" "${artifact_dir}/postgres/repository-backend.tsv"
+if [[ ! -s "${artifact_dir}/postgres/repository-backend.tsv" ]]; then
+  echo "source_repository_backends did not contain the proof Forgejo backend" >&2
+  exit 1
+fi
+backend_owner="$(cut -f4 "${artifact_dir}/postgres/repository-backend.tsv" | head -n 1)"
+backend_repo="$(cut -f5 "${artifact_dir}/postgres/repository-backend.tsv" | head -n 1)"
+backend_repo_id="$(cut -f6 "${artifact_dir}/postgres/repository-backend.tsv" | head -n 1)"
+
+remote_psql source_code_hosting "
+SELECT credential_id, org_id, org_path, actor_id, username, token_prefix, state, expires_at > now() AS unexpired, last_used_at IS NOT NULL AS used
+FROM source_git_credentials
+WHERE credential_id = '${escaped_credential_id}'::uuid;
+" "${artifact_dir}/postgres/git-credential.tsv"
+if [[ ! -s "${artifact_dir}/postgres/git-credential.tsv" ]]; then
+  echo "source_git_credentials did not contain the proof credential" >&2
   exit 1
 fi
 
-signed_forgejo_webhook "${artifact_dir}/responses/forgejo-webhook.json" "${provider_owner}" "${provider_repo}" "${provider_repo_id}"
+remote_psql source_code_hosting "
+SELECT ref_name, commit_sha, is_default
+FROM source_ref_heads
+WHERE repo_id = '${escaped_repo_id}'::uuid
+ORDER BY ref_name;
+" "${artifact_dir}/postgres/ref-heads.tsv"
+if ! grep -q $'^main\t' "${artifact_dir}/postgres/ref-heads.tsv"; then
+  echo "source_ref_heads did not contain main" >&2
+  exit 1
+fi
+
+remote_psql source_code_hosting "
+SELECT ci_run_id, ref_name, commit_sha, trigger_event, state
+FROM source_ci_runs
+WHERE repo_id = '${escaped_repo_id}'::uuid
+ORDER BY created_at DESC;
+" "${artifact_dir}/postgres/ci-runs.tsv"
+if ! grep -q $'\tmain\t' "${artifact_dir}/postgres/ci-runs.tsv"; then
+  echo "source_ci_runs did not contain queued main CI run" >&2
+  exit 1
+fi
+
+signed_forgejo_webhook "${artifact_dir}/responses/forgejo-webhook.json" "${backend_owner}" "${backend_repo}" "${backend_repo_id}"
 python3 - "${artifact_dir}/responses/forgejo-webhook.json" <<'PY'
 import json
 import sys
@@ -325,29 +413,15 @@ if [[ ! -s "${artifact_dir}/postgres/checkout-grant.tsv" ]]; then
 fi
 
 remote_psql source_code_hosting "
-SELECT integration_id, org_id, provider, external_repo, state
-FROM source_external_integrations
-WHERE integration_id = '${escaped_integration_id}'::uuid;
-" "${artifact_dir}/postgres/integration.tsv"
-if [[ ! -s "${artifact_dir}/postgres/integration.tsv" ]]; then
-  echo "source_external_integrations did not contain the proof integration" >&2
-  exit 1
-fi
-
-remote_psql source_code_hosting "
 SELECT event_type, result, trace_id
 FROM source_events
 WHERE (
     repo_id = '${escaped_repo_id}'::uuid
-    AND event_type IN ('source.repo.created', 'source.checkout_grant.created')
+    AND event_type IN ('source.repo.created', 'source.git.refs_refreshed', 'source.ci_run.queued', 'source.checkout_grant.created', 'source.webhook.repository')
   )
   OR (
-    event_type = 'source.integration.created'
-    AND details->>'integration_id' = '${escaped_integration_id}'
-  )
-  OR (
-    event_type = 'source.webhook.repository'
-    AND details->>'delivery' = 'source-proof-${run_id}'
+    event_type IN ('source.git_credential.created', 'source.git_credential.used')
+    AND details->>'credential_id' = '${escaped_credential_id}'
   )
 ORDER BY created_at, event_type;
 " "${artifact_dir}/postgres/source-events.tsv"
@@ -358,9 +432,12 @@ import sys
 rows = list(csv.reader(open(sys.argv[1], encoding="utf-8"), delimiter="\t"))
 events = {row[0] for row in rows if row}
 missing = {
+    "source.git_credential.created",
+    "source.git_credential.used",
     "source.repo.created",
+    "source.git.refs_refreshed",
+    "source.ci_run.queued",
     "source.checkout_grant.created",
-    "source.integration.created",
     "source.webhook.repository",
 } - events
 if missing:
@@ -374,24 +451,24 @@ wait_for_clickhouse_count default "
   FROM otel_traces
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
     AND ServiceName = 'source-code-hosting-service'
-    AND SpanName IN ('source.repo.create', 'source.repo.list', 'source.repo.read', 'source.refs.list', 'source.tree.get', 'source.checkout_grant.create', 'source.integration.create')
-" 7 "${artifact_dir}/clickhouse/source-business-spans-count.tsv"
+    AND SpanName IN ('source.git_credential.create', 'source.git.receive', 'source.git.auth', 'source.git.repository.ensure', 'source.git.receive.apply', 'source.repo.list', 'source.repo.read', 'source.refs.list', 'source.ci_runs.list', 'source.tree.get', 'source.checkout_grant.create')
+" 11 "${artifact_dir}/clickhouse/source-business-spans-count.tsv"
 
 wait_for_clickhouse_count default "
   SELECT count()
   FROM otel_traces
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
     AND ServiceName = 'source-code-hosting-service'
-    AND SpanName IN ('source.forgejo.repo.create', 'source.forgejo.refs.list', 'source.forgejo.contents.get')
-" 3 "${artifact_dir}/clickhouse/source-forgejo-spans-count.tsv"
+    AND SpanName IN ('source.forgejo.repo.create', 'source.forgejo.repo.get', 'source.forgejo.git.proxy', 'source.forgejo.refs.list', 'source.forgejo.contents.get')
+" 5 "${artifact_dir}/clickhouse/source-forgejo-spans-count.tsv"
 
 wait_for_clickhouse_count default "
   SELECT count()
   FROM otel_traces
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
     AND ServiceName = 'source-code-hosting-service'
-    AND SpanName IN ('source.pg.repo.create', 'source.pg.repo.list', 'source.pg.repo.get', 'source.pg.checkout_grant.create', 'source.pg.integration.create')
-" 5 "${artifact_dir}/clickhouse/source-postgres-spans-count.tsv"
+    AND SpanName IN ('source.pg.git_credential.create', 'source.pg.git_credential.authenticate', 'source.pg.repo.create_from_git', 'source.pg.repo.list', 'source.pg.repo.get', 'source.pg.repo.get_by_slug', 'source.pg.refs.replace', 'source.pg.refs.list_cached', 'source.pg.ci_run.create_queued', 'source.pg.ci_run.list', 'source.pg.checkout_grant.create')
+" 11 "${artifact_dir}/clickhouse/source-postgres-spans-count.tsv"
 
 wait_for_clickhouse_count default "
   SELECT count()
@@ -424,6 +501,7 @@ wait_for_clickhouse_count default "
           positionCaseInsensitive(toString(SpanAttributes), 'bearer ') > 0
           OR positionCaseInsensitive(toString(SpanAttributes), 'forgejo-token') > 0
           OR positionCaseInsensitive(toString(SpanAttributes), 'checkout-token') > 0
+          OR positionCaseInsensitive(toString(SpanAttributes), 'fmgt_') > 0
         )
     "
 ) >"${artifact_dir}/clickhouse/source-secret-span-leak-count.tsv"
@@ -449,7 +527,8 @@ fi
         arrayElement(SpanAttributes, 'source.operation_id') AS operation_id,
         arrayElement(SpanAttributes, 'source.outcome') AS source_outcome,
         arrayElement(SpanAttributes, 'source.repo_id') AS source_repo_id,
-        arrayElement(SpanAttributes, 'source.forgejo_repo') AS forgejo_repo
+        arrayElement(SpanAttributes, 'source.slug') AS source_slug,
+        arrayElement(SpanAttributes, 'source.git_service') AS git_service
       FROM otel_traces
       WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
         AND ServiceName IN ('source-code-hosting-service', 'console')
@@ -458,19 +537,21 @@ fi
     "
 ) >"${artifact_dir}/clickhouse/otel-traces.tsv"
 
-python3 - "${run_json_path}" "${org_id}" "${checkout_grant_id}" "${integration_id}" "${window_start}" "${window_end}" "${artifact_dir}" <<'PY'
+python3 - "${run_json_path}" "${org_id}" "${repo_id}" "${credential_id}" "${checkout_grant_id}" "${window_start}" "${window_end}" "${artifact_dir}" "${git_repo_url}" <<'PY'
 import json
 import sys
 
-path, org_id, grant_id, integration_id, window_start, window_end, artifact_dir = sys.argv[1:8]
+path, org_id, repo_id, credential_id, grant_id, window_start, window_end, artifact_dir, git_repo_url = sys.argv[1:10]
 payload = json.load(open(path, encoding="utf-8"))
 payload.update({
     "org_id": org_id,
+    "repo_id": repo_id,
+    "git_credential_id": credential_id,
     "checkout_grant_id": grant_id,
-    "integration_id": integration_id,
     "window_start": window_start,
     "window_end": window_end,
     "artifact_dir": artifact_dir,
+    "git_repo_url": git_repo_url,
 })
 json.dump(payload, open(path, "w", encoding="utf-8"), indent=2, sort_keys=True)
 print()

@@ -5,60 +5,42 @@ test.describe("Console Source", () => {
     await ensureTestUserExists();
   });
 
-  test("creates a private source repository and reads Forgejo-backed refs and tree", async ({
-    app,
-  }) => {
+  test("shows the headless source repository card or push-first setup", async ({ app }) => {
     const run = app.createRun();
-    const suffix = app.runID.replace(/[^A-Za-z0-9]/g, "").slice(-10) || "proof";
-    const repoName = `source-proof-${suffix.toLowerCase()}`;
-    const description = `Source proof ${app.runID}`;
 
     try {
       await app.ensureLoggedIn();
       app.resetBrowserSignals();
 
       run.detail_url = "/source";
-      await app.expectSSRHTML("/source", ["Source", "New repository", "Repositories"]);
+      await app.expectSSRHTML("/source", ["Source", "Project repository"]);
       await app.assertStableRoute({
         path: "/source",
         ready: app.page.getByRole("heading", { name: "Source", exact: true }),
         stableContent: app.page.locator("main").last(),
-        expectedText: ["New repository", "Repositories"],
+        expectedText: ["Project repository"],
       });
 
-      await app.page.getByLabel("Name").fill(repoName);
-      await app.page.getByLabel("Default branch").fill("main");
-      await app.page.getByLabel("Description").fill(description);
-      await app.page.getByRole("button", { name: "Create", exact: true }).click();
-
-      await expect(app.page).toHaveURL(/\/source\/[0-9a-f-]{36}$/i, { timeout: shortTimeoutMS });
-      const repoID = new URL(app.page.url()).pathname.split("/").at(-1) ?? "";
-      if (!/^[0-9a-f-]{36}$/i.test(repoID)) {
-        throw new Error(`created source route did not expose a repo UUID: ${app.page.url()}`);
+      const emptyState = app.page.getByRole("heading", { name: "Push the first branch" });
+      if (await emptyState.isVisible({ timeout: shortTimeoutMS }).catch(() => false)) {
+        await expect(app.page.getByText("Git remote", { exact: true })).toBeVisible();
+        await expect(app.page.getByRole("button", { name: "Create Git credential" })).toBeVisible();
+        await app.page.getByRole("button", { name: "Create Git credential" }).click();
+        await expect(app.page.getByText("Username", { exact: true })).toBeVisible({
+          timeout: shortTimeoutMS,
+        });
+        await expect(app.page.getByText("Token", { exact: true })).toBeVisible();
+        run.source_state = "empty";
+      } else {
+        await expect(
+          app.page.getByRole("heading", { name: "Branches", exact: true }),
+        ).toBeVisible();
+        await expect(app.page.getByRole("heading", { name: "CI jobs", exact: true })).toBeVisible();
+        run.source_state = "repositories";
       }
 
-      run.repo_id = repoID;
-      run.detail_url = `/source/${repoID}`;
-
-      await expect(app.page.getByRole("heading", { name: repoName, exact: true })).toBeVisible({
-        timeout: shortTimeoutMS,
-      });
-      await expect(app.page.getByText(description)).toBeVisible({ timeout: shortTimeoutMS });
-      await expect(app.page.getByRole("heading", { name: "Refs", exact: true })).toBeVisible();
-      await expect(app.page.getByRole("heading", { name: "Tree", exact: true })).toBeVisible();
-
-      await expect
-        .poll(async () => app.readText(app.page.locator("main").last()), {
-          timeout: shortTimeoutMS,
-        })
-        .toContain("main");
-      await expect
-        .poll(async () => app.readText(app.page.locator("main").last()), {
-          timeout: shortTimeoutMS,
-        })
-        .toMatch(/README\.md|Empty path/);
       await app.page.screenshot({
-        path: app.testInfo.outputPath("source-created.png"),
+        path: app.testInfo.outputPath("source-headless.png"),
         fullPage: true,
       });
 

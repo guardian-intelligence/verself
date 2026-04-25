@@ -19,6 +19,32 @@ export type Blob = {
   size: number;
 };
 
+export type CiRun = {
+  ci_run_id: string;
+  commit_sha: string;
+  completed_at?: string;
+  created_at: string;
+  failure_reason?: string;
+  org_id: string;
+  ref_name: string;
+  repo_id: string;
+  sandbox_attempt_id?: string;
+  sandbox_execution_id?: string;
+  started_at?: string;
+  state: string;
+  trace_id?: string;
+  trigger_event: string;
+  updated_at: string;
+};
+
+export type CiRunList = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  ci_runs: Array<CiRun> | null;
+};
+
 export type CheckoutGrant = {
   /**
    * A URL to the JSON Schema for this object.
@@ -40,14 +66,13 @@ export type CreateCheckoutGrantRequest = {
   ref?: string;
 };
 
-export type CreateIntegrationRequest = {
+export type CreateGitCredentialRequest = {
   /**
    * A URL to the JSON Schema for this object.
    */
   readonly $schema?: string;
-  credential_ref?: string;
-  external_repo: string;
-  provider: string;
+  expires_in_seconds?: number;
+  label?: string;
 };
 
 export type CreateRepositoryRequest = {
@@ -118,19 +143,20 @@ export type ErrorModel = {
   type?: string;
 };
 
-export type ExternalIntegration = {
+export type GitCredential = {
   /**
    * A URL to the JSON Schema for this object.
    */
   readonly $schema?: string;
   created_at: string;
-  credential_ref?: string;
-  external_repo: string;
-  integration_id: string;
+  credential_id: string;
+  expires_at: string;
   org_id: string;
-  provider: string;
-  state: string;
-  updated_at: string;
+  org_path: string;
+  scopes: Array<string> | null;
+  token: string;
+  token_prefix: string;
+  username: string;
 };
 
 export type Ref = {
@@ -151,12 +177,14 @@ export type Repository = {
    * A URL to the JSON Schema for this object.
    */
   readonly $schema?: string;
+  backend: string;
   created_at: string;
   default_branch: string;
   description: string;
+  last_pushed_at?: string;
   name: string;
   org_id: string;
-  provider: string;
+  org_path: string;
   repo_id: string;
   slug: string;
   state: string;
@@ -194,6 +222,8 @@ export type WorkflowRun = {
    */
   readonly $schema?: string;
   actor_id: string;
+  backend: string;
+  backend_dispatch_id?: string;
   created_at: string;
   dispatched_at?: string;
   failure_reason?: string;
@@ -201,8 +231,6 @@ export type WorkflowRun = {
     [key: string]: string;
   };
   org_id: string;
-  provider: string;
-  provider_dispatch_id?: string;
   ref: string;
   repo_id: string;
   state: string;
@@ -230,6 +258,10 @@ export type BlobWritable = {
   size: number;
 };
 
+export type CiRunListWritable = {
+  ci_runs: Array<CiRun> | null;
+};
+
 export type CheckoutGrantWritable = {
   expires_at: string;
   grant_id: string;
@@ -243,10 +275,9 @@ export type CreateCheckoutGrantRequestWritable = {
   ref?: string;
 };
 
-export type CreateIntegrationRequestWritable = {
-  credential_ref?: string;
-  external_repo: string;
-  provider: string;
+export type CreateGitCredentialRequestWritable = {
+  expires_in_seconds?: number;
+  label?: string;
 };
 
 export type CreateRepositoryRequestWritable = {
@@ -290,15 +321,16 @@ export type ErrorModelWritable = {
   type?: string;
 };
 
-export type ExternalIntegrationWritable = {
+export type GitCredentialWritable = {
   created_at: string;
-  credential_ref?: string;
-  external_repo: string;
-  integration_id: string;
+  credential_id: string;
+  expires_at: string;
   org_id: string;
-  provider: string;
-  state: string;
-  updated_at: string;
+  org_path: string;
+  scopes: Array<string> | null;
+  token: string;
+  token_prefix: string;
+  username: string;
 };
 
 export type RefListWritable = {
@@ -306,12 +338,14 @@ export type RefListWritable = {
 };
 
 export type RepositoryWritable = {
+  backend: string;
   created_at: string;
   default_branch: string;
   description: string;
+  last_pushed_at?: string;
   name: string;
   org_id: string;
-  provider: string;
+  org_path: string;
   repo_id: string;
   slug: string;
   state: string;
@@ -330,6 +364,8 @@ export type TreeWritable = {
 
 export type WorkflowRunWritable = {
   actor_id: string;
+  backend: string;
+  backend_dispatch_id?: string;
   created_at: string;
   dispatched_at?: string;
   failure_reason?: string;
@@ -337,8 +373,6 @@ export type WorkflowRunWritable = {
     [key: string]: string;
   };
   org_id: string;
-  provider: string;
-  provider_dispatch_id?: string;
   ref: string;
   repo_id: string;
   state: string;
@@ -352,8 +386,8 @@ export type WorkflowRunListWritable = {
   workflow_runs: Array<WorkflowRunWritable> | null;
 };
 
-export type CreateSourceIntegrationData = {
-  body: CreateIntegrationRequestWritable;
+export type CreateSourceGitCredentialData = {
+  body: CreateGitCredentialRequestWritable;
   headers: {
     /**
      * Stable caller-provided key used to make this mutation retry-safe.
@@ -362,28 +396,28 @@ export type CreateSourceIntegrationData = {
   };
   path?: never;
   query?: never;
-  url: "/api/v1/integrations";
+  url: "/api/v1/git-credentials";
 };
 
-export type CreateSourceIntegrationErrors = {
+export type CreateSourceGitCredentialErrors = {
   /**
    * Error
    */
   default: ErrorModel;
 };
 
-export type CreateSourceIntegrationError =
-  CreateSourceIntegrationErrors[keyof CreateSourceIntegrationErrors];
+export type CreateSourceGitCredentialError =
+  CreateSourceGitCredentialErrors[keyof CreateSourceGitCredentialErrors];
 
-export type CreateSourceIntegrationResponses = {
+export type CreateSourceGitCredentialResponses = {
   /**
    * Created
    */
-  201: ExternalIntegration;
+  201: GitCredential;
 };
 
-export type CreateSourceIntegrationResponse =
-  CreateSourceIntegrationResponses[keyof CreateSourceIntegrationResponses];
+export type CreateSourceGitCredentialResponse =
+  CreateSourceGitCredentialResponses[keyof CreateSourceGitCredentialResponses];
 
 export type ListSourceRepositoriesData = {
   body?: never;
@@ -537,6 +571,33 @@ export type CreateSourceCheckoutGrantResponses = {
 
 export type CreateSourceCheckoutGrantResponse =
   CreateSourceCheckoutGrantResponses[keyof CreateSourceCheckoutGrantResponses];
+
+export type ListSourceCiRunsData = {
+  body?: never;
+  path: {
+    repo_id: string;
+  };
+  query?: never;
+  url: "/api/v1/repos/{repo_id}/ci-runs";
+};
+
+export type ListSourceCiRunsErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type ListSourceCiRunsError = ListSourceCiRunsErrors[keyof ListSourceCiRunsErrors];
+
+export type ListSourceCiRunsResponses = {
+  /**
+   * OK
+   */
+  200: CiRunList;
+};
+
+export type ListSourceCiRunsResponse = ListSourceCiRunsResponses[keyof ListSourceCiRunsResponses];
 
 export type ListSourceRefsData = {
   body?: never;

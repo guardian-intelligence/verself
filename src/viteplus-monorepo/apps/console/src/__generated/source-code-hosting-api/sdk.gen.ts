@@ -7,9 +7,9 @@ import type {
   CreateSourceCheckoutGrantData,
   CreateSourceCheckoutGrantErrors,
   CreateSourceCheckoutGrantResponses,
-  CreateSourceIntegrationData,
-  CreateSourceIntegrationErrors,
-  CreateSourceIntegrationResponses,
+  CreateSourceGitCredentialData,
+  CreateSourceGitCredentialErrors,
+  CreateSourceGitCredentialResponses,
   CreateSourceRepositoryData,
   CreateSourceRepositoryErrors,
   CreateSourceRepositoryResponses,
@@ -28,6 +28,9 @@ import type {
   GetSourceWorkflowRunData,
   GetSourceWorkflowRunErrors,
   GetSourceWorkflowRunResponses,
+  ListSourceCiRunsData,
+  ListSourceCiRunsErrors,
+  ListSourceCiRunsResponses,
   ListSourceRefsData,
   ListSourceRefsErrors,
   ListSourceRefsResponses,
@@ -58,18 +61,18 @@ export type Options<
 };
 
 /**
- * Register an external source integration
+ * Create a scoped HTTPS Git credential
  */
-export const createSourceIntegration = <ThrowOnError extends boolean = false>(
-  options: Options<CreateSourceIntegrationData, ThrowOnError>,
+export const createSourceGitCredential = <ThrowOnError extends boolean = false>(
+  options: Options<CreateSourceGitCredentialData, ThrowOnError>,
 ) =>
   (options.client ?? client).post<
-    CreateSourceIntegrationResponses,
-    CreateSourceIntegrationErrors,
+    CreateSourceGitCredentialResponses,
+    CreateSourceGitCredentialErrors,
     ThrowOnError
   >({
     security: [{ scheme: "bearer", type: "http" }],
-    url: "/api/v1/integrations",
+    url: "/api/v1/git-credentials",
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -159,6 +162,18 @@ export const createSourceCheckoutGrant = <ThrowOnError extends boolean = false>(
       "Content-Type": "application/json",
       ...options.headers,
     },
+  });
+
+/**
+ * List repository CI runs
+ */
+export const listSourceCiRuns = <ThrowOnError extends boolean = false>(
+  options: Options<ListSourceCiRunsData, ThrowOnError>,
+) =>
+  (options.client ?? client).get<ListSourceCiRunsResponses, ListSourceCiRunsErrors, ThrowOnError>({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/repos/{repo_id}/ci-runs",
+    ...options,
   });
 
 /**
