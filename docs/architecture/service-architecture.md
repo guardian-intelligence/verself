@@ -149,6 +149,15 @@ are excluded by construction. See
 [workload-identity.md](workload-identity.md) for the workload identity
 contract.
 
+Repo-owned service calls still use service APIs, not package-level shortcuts.
+When the operation is safe for customer/human auth it belongs in the public Huma
+API and generated `client` package. When the operation requires workload auth or
+body-scoped attribution from another Forge Metal service, it belongs in a
+SPIFFE-only internal Huma API, a committed `internal-openapi-3.0.yaml`, and a
+generated `internalclient` package. The caller supplies
+`workloadauth.MTLSClientForService`; authorization stays in the callee's mTLS
+listener and request handler.
+
 ## Wire Contracts
 
 See [wire-contracts.md](../../src/apiwire/docs/wire-contracts.md). `src/apiwire` owns shared Huma DTOs, decimal 64-bit JSON/OpenAPI types, and cross-service field language. Service domain packages can keep native Go types, but Huma boundary structs use `apiwire` DTOs when a frontend, generated client, or another service consumes the shape.

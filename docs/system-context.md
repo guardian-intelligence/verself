@@ -8,7 +8,7 @@ High-level topology lives in `docs/architecture/service-architecture.md`. Port a
 
 Bootstrap and operator-recovery secrets are SOPS-encrypted in `group_vars/all/secrets.sops.yml` and loaded at service start via systemd `LoadCredential=` into `$CREDENTIALS_DIRECTORY`. Repo-owned service-to-service authentication is SPIFFE/SPIRE; runtime third-party provider credentials are fetched from OpenBao by SPIFFE-authenticated services. See [`docs/architecture/workload-identity.md`](architecture/workload-identity.md).
 
-Go services are written with the Huma v2 framework (<https://pkg.go.dev/github.com/danielgtaylor/huma/v2>). Do not write custom clients for Go services; generate them from an OpenAPI specification. Each service commits both an OpenAPI 3.0 spec (Go client generation via `oapi-codegen`) and a 3.1 spec (TypeScript client + Valibot validator generation via `@hey-api/openapi-ts`). Shared cross-service DTO wire language lives in `src/apiwire`; use it for Huma boundary DTOs and generated-client contracts instead of service-local 64-bit JSON encodings.
+Go services are written with the Huma v2 framework (<https://pkg.go.dev/github.com/danielgtaylor/huma/v2>). Do not write custom clients for Go services; generate them from an OpenAPI specification. Each service commits both an OpenAPI 3.0 spec (Go client generation via `oapi-codegen`) and a 3.1 spec (TypeScript client + Valibot validator generation via `@hey-api/openapi-ts`). Public specs generate customer/human `client` packages. SPIFFE-only service operations get their own committed internal OpenAPI specs and `internalclient` packages; callers pass a `workloadauth.MTLSClientForService` HTTP client into the generated client so trace propagation and peer authorization stay centralized. Shared cross-service DTO wire language lives in `src/apiwire`; use it for Huma boundary DTOs and generated-client contracts instead of service-local 64-bit JSON encodings.
 
 Public origins follow the AWS-style service subdomain model documented in
 [`docs/architecture/public-origins.md`](architecture/public-origins.md):
@@ -88,5 +88,9 @@ Self-hosted inbound via Stalwart. Boundary, auth, storage, and the mailbox-servi
 - Service-to-service and product integrations use HTTP APIs, not ad hoc CLIs.
   Customer/operator CLIs are a generated-client surface over those same APIs,
   not a private control plane.
+- Repo-owned service-to-service calls use generated Go clients plus SPIFFE mTLS
+  HTTP clients. Public `client` packages are for customer-authenticated API
+  shapes; `internalclient` packages are for SPIFFE-only operations that would
+  otherwise require spoofable body-scoped attribution.
 - Start telemetry investigation with `make observe` — discoverability-first. See `docs/architecture/founder-workflows.md` for the full flow.
 - `make clickhouse-schemas` reads all ClickHouse tables (ground truth). Prefer `make observe` first, fall back to raw `make clickhouse-query` when observe has no named query.
