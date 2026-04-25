@@ -1,12 +1,13 @@
 # Forge Metal
 
-This repo is for a free open-source software product that is a turnkey "software company in a box": fully self-hosted bare-metal platform with Forgejo, Fast CI via Firecracker + deep ZFS optimizations, Grafana + ClickHouse observability (logs + traces + metrics), TigerBeetle for financial OTLP, Stripe integration, Zitadel for enterprise-grade auth, PostgreSQL for general purpose RDBMS. This is not a PaaS -- the user owns what they deploy.
+This repo is for a free open-source software product that is a turnkey "software company in a box": fully self-hosted bare-metal platform with Forgejo, fast CI via Firecracker + deep ZFS optimizations, Grafana + ClickHouse observability (logs + traces + metrics), TigerBeetle for financial OLTP, Stripe integration, Zitadel for enterprise-grade auth, and PostgreSQL for general purpose RDBMS. This is not a PaaS -- the user owns what they deploy.
 
 Features:
 
-Bootstrapping: single command to go from their laptop -> bare metal instance -> all services + 2 deployed frontend apps reading/writing off the same DB.
-Git Hosting + Fast CI through ZFS
-Billing figured out for you, layered on top of Stripe to make it easy to go from "Product Idea" -> Revenue without having to reinvent metering, transactin processing, tax, accounts receivable, dunning, invoicing, etc. 
+- Bootstrapping: single command to go from a laptop to a bare-metal instance with all services and frontends deployed.
+- Git hosting + fast CI through Forgejo, Firecracker, and ZFS.
+- Billing layered on top of Stripe and TigerBeetle so products can move from idea to revenue without rebuilding metering, transaction processing, tax, accounts receivable, dunning, and invoicing.
+- Public surface split: `console.<domain>` for the authenticated browser console, `<service>.api.<domain>` for customer/SDK/CLI APIs, and protocol origins such as `git.<domain>`, `auth.<domain>`, `mail.<domain>`, and `dashboard.<domain>`.
 
 ## Quick Start
 
@@ -125,7 +126,7 @@ make billing-proof
 ```
 
 `billing-proof` runs the deployed billing Playwright flow and writes artifacts
-under `artifacts/sandbox-billing/<run-id>/`. If the browser test exits before
+under `artifacts/console-billing/<run-id>/`. If the browser test exits before
 it writes a structured run JSON, the wrapper still collects a time-windowed
 fallback evidence bundle from ClickHouse and billing PostgreSQL.
 
@@ -173,6 +174,12 @@ Open `https://dashboard.<domain>` for Grafana. Use `https://<ip>` only for
 direct host access when DNS is not configured (self-signed cert for IP
 addresses, auto Let's Encrypt for domains).
 
+The authenticated product console lives at `https://console.<domain>`. Public
+service APIs use service-owned API origins such as
+`https://billing.api.<domain>`, `https://sandbox.api.<domain>`, and
+`https://identity.api.<domain>`. See
+[`docs/architecture/public-origins.md`](docs/architecture/public-origins.md).
+
 ## Snapshot-Backed VM Farm
 
 Forge Metal's runtime direction is a checkpoint-backed Firecracker VM farm. CI,
@@ -197,7 +204,7 @@ Authoritative code entry points:
 - `src/vm-orchestrator/vmproto/` - host/guest vsock protocol.
 - `src/vm-orchestrator/cmd/vm-bridge/` - guest PID 1 and user-facing in-guest snapshot CLI.
 - `src/vm-guest-telemetry/` - guest telemetry sampler.
-- `src/viteplus-monorepo/apps/rent-a-sandbox/` - VM farm UI.
+- `src/viteplus-monorepo/apps/console/` - product console UI.
 
 Hard runtime boundaries:
 

@@ -106,4 +106,3 @@ func mustTracingInterceptor(tracerName string) sdkinterceptor.Interceptor {
 	}
 	return interceptor
 }
-

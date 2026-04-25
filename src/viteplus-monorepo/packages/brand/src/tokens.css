@@ -90,6 +90,11 @@
        in its chrome, so its display font is Geist; Newsroom and Letters
        switch to Fraunces where their treatment scopes override this. */
     --treatment-display-font: var(--font-sans);
+    /* Body font — what flowing prose resolves to. Letters is the only
+       treatment that sets Fraunces as body (the brand model's "Fraunces body,
+       Geist meta" rule for editorial long-form); Workshop and Newsroom keep
+       Geist for running prose and reserve Fraunces for display. */
+    --treatment-body-font: var(--font-sans);
     --treatment-muted-strong: var(--color-ash-strong);
     --treatment-muted: var(--color-ash);
     --treatment-muted-meta: var(--color-ash-meta);
@@ -108,6 +113,7 @@
   --treatment-accent: var(--color-amber);
   --treatment-wordmark: var(--color-argent);
   --treatment-display-font: var(--font-sans);
+  --treatment-body-font: var(--font-sans);
   --treatment-muted-strong: var(--color-ash-strong);
   --treatment-muted: var(--color-ash);
   --treatment-muted-meta: var(--color-ash-meta);
@@ -132,6 +138,7 @@
   --treatment-accent: var(--color-ink);
   --treatment-wordmark: var(--color-ink);
   --treatment-display-font: var(--font-display);
+  --treatment-body-font: var(--font-sans);
   --treatment-muted-strong: var(--color-stone-strong);
   --treatment-muted: var(--color-stone);
   --treatment-muted-meta: var(--color-stone-meta);
@@ -153,6 +160,7 @@
   --treatment-accent: var(--color-ink);
   --treatment-wordmark: var(--color-ink);
   --treatment-display-font: var(--font-display);
+  --treatment-body-font: var(--font-display);
   --treatment-muted-strong: var(--color-stone-strong);
   --treatment-muted: var(--color-stone);
   --treatment-muted-meta: var(--color-stone-meta);

@@ -196,13 +196,13 @@ func TestEnforceOperationPolicyDeniesMissingPermission(t *testing.T) {
 }
 
 func TestBillingReturnURLValidationRequiresAllowedOrigin(t *testing.T) {
-	origins, err := ParseBillingReturnOrigins("https://rentasandbox.example.com, http://127.0.0.1:4244")
+	origins, err := ParseBillingReturnOrigins("https://console.example.com, http://127.0.0.1:4244")
 	if err != nil {
 		t.Fatalf("parse origins: %v", err)
 	}
 
 	if err := validateBillingReturnURLs(context.Background(), origins,
-		billingReturnURLField{Name: "success_url", URL: "https://rentasandbox.example.com/billing?purchased=true"},
+		billingReturnURLField{Name: "success_url", URL: "https://console.example.com/billing?purchased=true"},
 		billingReturnURLField{Name: "cancel_url", URL: "http://127.0.0.1:4244/billing/credits"},
 	); err != nil {
 		t.Fatalf("valid return URLs rejected: %v", err)
@@ -218,7 +218,7 @@ func TestBillingReturnURLValidationRequiresAllowedOrigin(t *testing.T) {
 }
 
 func TestParseBillingReturnOriginsRejectsRedirectURL(t *testing.T) {
-	if _, err := ParseBillingReturnOrigins("https://rentasandbox.example.com/callback"); err == nil {
+	if _, err := ParseBillingReturnOrigins("https://console.example.com/callback"); err == nil {
 		t.Fatal("expected origin parser to reject URL with path")
 	}
 }

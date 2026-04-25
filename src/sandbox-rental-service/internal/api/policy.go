@@ -617,8 +617,10 @@ type fixedWindowOperationRateLimiter struct {
 }
 
 var apiOperationRateLimiter = newFixedWindowOperationRateLimiter(map[string]rateLimitRule{
-	"read":                         {Limit: 600, Window: time.Minute},
-	"logs_read":                    {Limit: 120, Window: time.Minute},
+	// Browser SSR plus TanStack refetches can legitimately issue many read
+	// calls during billing return polling; mutation limits carry abuse control.
+	"read":                         {Limit: 3000, Window: time.Minute},
+	"logs_read":                    {Limit: 600, Window: time.Minute},
 	"execution_schedule_mutation":  {Limit: 120, Window: time.Minute},
 	"github_installation_mutation": {Limit: 30, Window: time.Minute},
 	"billing_mutation":             {Limit: 60, Window: time.Minute},

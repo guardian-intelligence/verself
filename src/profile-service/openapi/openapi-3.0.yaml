@@ -17,7 +17,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4258/schemas/ErrorModel.json
+          example: https://profile.api.anveio.com/schemas/ErrorModel.json
           format: uri
           readOnly: true
           type: string
@@ -123,7 +123,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4258/schemas/ProfilePutPreferencesRequest.json
+          example: https://profile.api.anveio.com/schemas/ProfilePutPreferencesRequest.json
           format: uri
           readOnly: true
           type: string
@@ -164,7 +164,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4258/schemas/ProfileSnapshot.json
+          example: https://profile.api.anveio.com/schemas/ProfileSnapshot.json
           format: uri
           readOnly: true
           type: string
@@ -189,7 +189,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4258/schemas/ProfileUpdateIdentityRequest.json
+          example: https://profile.api.anveio.com/schemas/ProfileUpdateIdentityRequest.json
           format: uri
           readOnly: true
           type: string
@@ -354,4 +354,4 @@ paths:
         risk_level: low
         source_product_area: Profile
 servers:
-  - url: http://127.0.0.1:4258
+  - url: https://profile.api.anveio.com

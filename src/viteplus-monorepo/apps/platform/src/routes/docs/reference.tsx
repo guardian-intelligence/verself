@@ -6,8 +6,8 @@ import { SERVICE_CATALOG } from "~/lib/openapi-catalog";
 import { SchemasSection, ServiceSection } from "~/features/reference/reference-renderer";
 
 // The operator's bare domain (e.g. "anveio.com") comes from server env
-// and is the base of every service subdomain surfaced in the reference
-// ("rentasandbox.<domain>", "mail.<domain>"). Reading it here rather
+// and is the base of every service API subdomain surfaced in the reference
+// ("sandbox.api.<domain>", "billing.api.<domain>"). Reading it here rather
 // than hardcoding keeps platform docs portable across deployments.
 const getOperatorDomain = createServerFn({ method: "GET" }).handler(() => requireOperatorDomain());
 

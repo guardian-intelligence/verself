@@ -197,7 +197,7 @@ func MTLSClientForService(source *workloadapi.X509Source, service string, base h
 			expectedServerID: id.String(),
 			source:           source,
 		}),
-		Timeout: 3 * time.Second,
+		Timeout: 5 * time.Second,
 	}, nil
 }
 

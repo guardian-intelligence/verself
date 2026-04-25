@@ -18,7 +18,7 @@ clickhouse_timeout_seconds="${RECURRING_SCHEDULE_CLICKHOUSE_TIMEOUT_SECONDS:-180
 proof_persona="${RECURRING_SCHEDULE_PERSONA:-platform-admin}"
 proof_log_marker="${RECURRING_SCHEDULE_LOG_MARKER:-forge-metal-recurring-proof}"
 proof_log_line="${proof_log_marker} run_id=${run_id} from=temporal-schedule"
-api_base_url="${BASE_URL:-https://rentasandbox.${VERIFICATION_DOMAIN}}"
+api_base_url="${BASE_URL:-https://sandbox.api.${VERIFICATION_DOMAIN}}"
 api_base_url="${api_base_url%/}"
 window_start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 trust_domain="spiffe.${VERIFICATION_DOMAIN}"

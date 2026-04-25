@@ -17,7 +17,7 @@ deploy() {
     ui)
       (
         cd "${VERIFICATION_PLATFORM_ROOT}/ansible"
-        ansible-playbook -i inventory/hosts.ini playbooks/dev-single-node.yml --tags rent_a_sandbox
+        ansible-playbook -i inventory/hosts.ini playbooks/dev-single-node.yml --tags console
       )
       ;;
     service)
@@ -30,7 +30,7 @@ deploy() {
       (
         cd "${VERIFICATION_PLATFORM_ROOT}/ansible"
         ansible-playbook -i inventory/hosts.ini playbooks/dev-single-node.yml \
-          --tags deploy_profile,sandbox_rental_service,rent_a_sandbox
+          --tags deploy_profile,sandbox_rental_service,console
       )
       ;;
     *)

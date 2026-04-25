@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
@@ -23,13 +24,20 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 	}
 	config := huma.DefaultConfig("Profile Service", version)
 	if cfg.ListenAddr != "" {
-		config.Servers = []*huma.Server{{URL: "http://" + cfg.ListenAddr}}
+		config.Servers = []*huma.Server{{URL: serverURL(cfg.ListenAddr)}}
 	}
 	api := humago.New(mux, config)
 	applyPublicAPISecurityScheme(api)
 	RegisterRoutes(api, cfg.Service)
 	apiwire.ApplyOpenAPIWireDefaults(api)
 	return api
+}
+
+func serverURL(addr string) string {
+	if strings.Contains(addr, "://") {
+		return addr
+	}
+	return "http://" + addr
 }
 
 func OpenAPIYAML(version, listenAddr string) ([]byte, error) {

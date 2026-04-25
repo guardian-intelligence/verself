@@ -126,8 +126,8 @@ export const OPEN_API_METHODS: readonly OpenApiMethod[] = METHODS;
 export type ServiceCatalogEntry = {
   readonly id: string; // kebab-case service identifier, used in anchors (#svc-<id>)
   readonly title: string; // display label
-  readonly subdomain: string | undefined; // rentasandbox.<domain>, etc. — undefined for internal-only services
-  readonly publicSurface: boolean; // false when the service is internal-only (billing), true when customer-reachable
+  readonly subdomain: string | undefined; // billing.api.<domain>, etc. — undefined for internal-only services
+  readonly publicSurface: boolean;
   readonly document: OpenApiDocument;
 };
 
@@ -142,35 +142,34 @@ function parseDocument(yaml: string, label: string): OpenApiDocument {
 
 // Order here is the order sections render on /docs/reference and the
 // order they appear in the docs rail. Keep the customer-facing services
-// first (rentasandbox.*, auth.*, mail.*) so the most-read pages are at
-// the top of the TOC; billing is internal, last.
+// first (*.api.<domain>) so the most-read pages are at the top of the TOC.
 export const SERVICE_CATALOG: readonly ServiceCatalogEntry[] = [
   {
     id: "sandbox-rental",
     title: "Sandbox Rental",
-    subdomain: "rentasandbox",
+    subdomain: "sandbox.api",
     publicSurface: true,
     document: parseDocument(sandboxRentalYaml, "sandbox-rental-service"),
   },
   {
     id: "identity",
     title: "Identity",
-    subdomain: undefined,
+    subdomain: "identity.api",
     publicSurface: true,
     document: parseDocument(identityYaml, "identity-service"),
   },
   {
     id: "mailbox",
     title: "Mailbox",
-    subdomain: "mail",
+    subdomain: "mail.api",
     publicSurface: true,
     document: parseDocument(mailboxYaml, "mailbox-service"),
   },
   {
     id: "billing",
     title: "Billing",
-    subdomain: undefined,
-    publicSurface: false,
+    subdomain: "billing.api",
+    publicSurface: true,
     document: parseDocument(billingYaml, "billing-service"),
   },
 ];

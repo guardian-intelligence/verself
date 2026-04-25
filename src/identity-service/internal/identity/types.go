@@ -107,7 +107,7 @@ type UpdateMemberRolesCommand struct {
 	ExpectedRoleKeys      []string
 	ExpectedOrgACLVersion int32
 	OperationID           string
-	IdempotencyKey         string
+	IdempotencyKey        string
 }
 
 type UpdateMemberRolesResult struct {

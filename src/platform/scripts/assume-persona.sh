@@ -295,7 +295,7 @@ write_export TEST_EMAIL "${human_email}"
 write_export TEST_PASSWORD "${human_password}"
 write_export BROWSER_EMAIL "${human_email}"
 write_export BROWSER_PASSWORD "${human_password}"
-write_export RENT_A_SANDBOX_URL "https://rentasandbox.${VERIFICATION_DOMAIN}"
+write_export CONSOLE_URL "https://console.${VERIFICATION_DOMAIN}"
 write_export WEBMAIL_URL "https://mail.${VERIFICATION_DOMAIN}"
 write_export FORGEJO_URL "https://git.${VERIFICATION_DOMAIN}"
 

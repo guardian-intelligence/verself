@@ -23,30 +23,30 @@ type SandboxGitHubInstallationRecord struct {
 }
 
 type SandboxExecutionRecord struct {
-	RunID            uuid.UUID              `json:"run_id"`
-	ExecutionID      uuid.UUID              `json:"execution_id"`
-	OrgID            OrgID                  `json:"org_id"`
-	ActorID          string                 `json:"actor_id"`
-	Kind             string                 `json:"kind"`
-	SourceKind       string                 `json:"source_kind,omitempty"`
-	WorkloadKind     string                 `json:"workload_kind,omitempty"`
-	SourceRef        string                 `json:"source_ref,omitempty"`
-	RunnerClass      string                 `json:"runner_class,omitempty"`
-	ExternalProvider string                 `json:"external_provider,omitempty"`
-	ExternalTaskID   string                 `json:"external_task_id,omitempty"`
-	Provider         string                 `json:"provider,omitempty"`
-	ProductID        string                 `json:"product_id"`
-	Status           string                 `json:"status"`
-	CorrelationID    string                 `json:"correlation_id,omitempty"`
-	IdempotencyKey   string                 `json:"idempotency_key,omitempty"`
-	RunCommand       string                 `json:"run_command,omitempty"`
-	LatestAttempt    SandboxAttemptRecord   `json:"latest_attempt"`
-	CreatedAt        time.Time              `json:"created_at"`
-	UpdatedAt        time.Time              `json:"updated_at"`
-	BillingWindows   []SandboxBillingWindow `json:"billing_windows,omitempty"`
-	BillingSummary   *SandboxRunBillingSummary `json:"billing_summary,omitempty"`
-	GitHub           *SandboxGitHubRunMetadata `json:"github,omitempty"`
-	Schedule         *SandboxScheduleRunMetadata `json:"schedule,omitempty"`
+	RunID            uuid.UUID                         `json:"run_id"`
+	ExecutionID      uuid.UUID                         `json:"execution_id"`
+	OrgID            OrgID                             `json:"org_id"`
+	ActorID          string                            `json:"actor_id"`
+	Kind             string                            `json:"kind"`
+	SourceKind       string                            `json:"source_kind,omitempty"`
+	WorkloadKind     string                            `json:"workload_kind,omitempty"`
+	SourceRef        string                            `json:"source_ref,omitempty"`
+	RunnerClass      string                            `json:"runner_class,omitempty"`
+	ExternalProvider string                            `json:"external_provider,omitempty"`
+	ExternalTaskID   string                            `json:"external_task_id,omitempty"`
+	Provider         string                            `json:"provider,omitempty"`
+	ProductID        string                            `json:"product_id"`
+	Status           string                            `json:"status"`
+	CorrelationID    string                            `json:"correlation_id,omitempty"`
+	IdempotencyKey   string                            `json:"idempotency_key,omitempty"`
+	RunCommand       string                            `json:"run_command,omitempty"`
+	LatestAttempt    SandboxAttemptRecord              `json:"latest_attempt"`
+	CreatedAt        time.Time                         `json:"created_at"`
+	UpdatedAt        time.Time                         `json:"updated_at"`
+	BillingWindows   []SandboxBillingWindow            `json:"billing_windows,omitempty"`
+	BillingSummary   *SandboxRunBillingSummary         `json:"billing_summary,omitempty"`
+	GitHub           *SandboxGitHubRunMetadata         `json:"github,omitempty"`
+	Schedule         *SandboxScheduleRunMetadata       `json:"schedule,omitempty"`
 	StickyDiskMounts []SandboxExecutionStickyDiskMount `json:"sticky_disk_mounts,omitempty"`
 }
 
@@ -57,14 +57,14 @@ type SandboxExecutionLogs struct {
 }
 
 type SandboxGitHubRunMetadata struct {
-	InstallationID    string `json:"installation_id,omitempty"`
-	RunID             string `json:"run_id,omitempty"`
-	JobID             string `json:"job_id,omitempty"`
+	InstallationID     string `json:"installation_id,omitempty"`
+	RunID              string `json:"run_id,omitempty"`
+	JobID              string `json:"job_id,omitempty"`
 	RepositoryFullName string `json:"repository_full_name,omitempty"`
-	WorkflowName      string `json:"workflow_name,omitempty"`
-	JobName           string `json:"job_name,omitempty"`
-	HeadBranch        string `json:"head_branch,omitempty"`
-	HeadSHA           string `json:"head_sha,omitempty"`
+	WorkflowName       string `json:"workflow_name,omitempty"`
+	JobName            string `json:"job_name,omitempty"`
+	HeadBranch         string `json:"head_branch,omitempty"`
+	HeadSHA            string `json:"head_sha,omitempty"`
 }
 
 type SandboxScheduleRunMetadata struct {
@@ -84,17 +84,17 @@ type SandboxRunBillingSummary struct {
 }
 
 type SandboxExecutionStickyDiskMount struct {
-	MountID             uuid.UUID  `json:"mount_id"`
-	MountName           string     `json:"mount_name"`
-	KeyHash             string     `json:"key_hash"`
-	MountPath           string     `json:"mount_path"`
+	MountID             uuid.UUID     `json:"mount_id"`
+	MountName           string        `json:"mount_name"`
+	KeyHash             string        `json:"key_hash"`
+	MountPath           string        `json:"mount_path"`
 	BaseGeneration      DecimalUint64 `json:"base_generation"`
 	CommittedGeneration DecimalUint64 `json:"committed_generation"`
-	SaveRequested       bool       `json:"save_requested"`
-	SaveState           string     `json:"save_state"`
-	FailureReason       string     `json:"failure_reason,omitempty"`
-	RequestedAt         *time.Time `json:"requested_at,omitempty"`
-	CompletedAt         *time.Time `json:"completed_at,omitempty"`
+	SaveRequested       bool          `json:"save_requested"`
+	SaveState           string        `json:"save_state"`
+	FailureReason       string        `json:"failure_reason,omitempty"`
+	RequestedAt         *time.Time    `json:"requested_at,omitempty"`
+	CompletedAt         *time.Time    `json:"completed_at,omitempty"`
 }
 
 type SandboxRunsPage struct {
@@ -149,10 +149,10 @@ type SandboxRunLogSearchFilters struct {
 }
 
 type SandboxAnalyticsBucket struct {
-	Key               string        `json:"key"`
-	Count             DecimalUint64 `json:"count"`
+	Key                 string        `json:"key"`
+	Count               DecimalUint64 `json:"count"`
 	ReservedChargeUnits DecimalUint64 `json:"reserved_charge_units,omitempty"`
-	BilledChargeUnits DecimalUint64 `json:"billed_charge_units,omitempty"`
+	BilledChargeUnits   DecimalUint64 `json:"billed_charge_units,omitempty"`
 	WriteoffChargeUnits DecimalUint64 `json:"writeoff_charge_units,omitempty"`
 }
 
@@ -168,76 +168,76 @@ type SandboxRunDurationSample struct {
 }
 
 type SandboxJobsAnalytics struct {
-	WindowStart      time.Time               `json:"window_start"`
-	WindowEnd        time.Time               `json:"window_end"`
-	TotalRuns        DecimalUint64           `json:"total_runs"`
-	SucceededRuns    DecimalUint64           `json:"succeeded_runs"`
-	FailedRuns       DecimalUint64           `json:"failed_runs"`
-	P50DurationMs    DecimalUint64           `json:"p50_duration_ms"`
-	P95DurationMs    DecimalUint64           `json:"p95_duration_ms"`
-	P99DurationMs    DecimalUint64           `json:"p99_duration_ms"`
-	BySource         []SandboxAnalyticsBucket `json:"by_source"`
-	ByRunnerClass    []SandboxAnalyticsBucket `json:"by_runner_class"`
-	SlowestRuns      []SandboxRunDurationSample `json:"slowest_runs"`
+	WindowStart   time.Time                  `json:"window_start"`
+	WindowEnd     time.Time                  `json:"window_end"`
+	TotalRuns     DecimalUint64              `json:"total_runs"`
+	SucceededRuns DecimalUint64              `json:"succeeded_runs"`
+	FailedRuns    DecimalUint64              `json:"failed_runs"`
+	P50DurationMs DecimalUint64              `json:"p50_duration_ms"`
+	P95DurationMs DecimalUint64              `json:"p95_duration_ms"`
+	P99DurationMs DecimalUint64              `json:"p99_duration_ms"`
+	BySource      []SandboxAnalyticsBucket   `json:"by_source"`
+	ByRunnerClass []SandboxAnalyticsBucket   `json:"by_runner_class"`
+	SlowestRuns   []SandboxRunDurationSample `json:"slowest_runs"`
 }
 
 type SandboxCostsAnalytics struct {
-	WindowStart         time.Time               `json:"window_start"`
-	WindowEnd           time.Time               `json:"window_end"`
-	ReservedChargeUnits DecimalUint64           `json:"reserved_charge_units"`
-	BilledChargeUnits   DecimalUint64           `json:"billed_charge_units"`
-	WriteoffChargeUnits DecimalUint64           `json:"writeoff_charge_units"`
+	WindowStart         time.Time                `json:"window_start"`
+	WindowEnd           time.Time                `json:"window_end"`
+	ReservedChargeUnits DecimalUint64            `json:"reserved_charge_units"`
+	BilledChargeUnits   DecimalUint64            `json:"billed_charge_units"`
+	WriteoffChargeUnits DecimalUint64            `json:"writeoff_charge_units"`
 	BySource            []SandboxAnalyticsBucket `json:"by_source"`
 	ByRunnerClass       []SandboxAnalyticsBucket `json:"by_runner_class"`
 	ByRepository        []SandboxAnalyticsBucket `json:"by_repository"`
 }
 
 type SandboxCachesAnalytics struct {
-	WindowStart         time.Time               `json:"window_start"`
-	WindowEnd           time.Time               `json:"window_end"`
-	CheckoutRequests    DecimalUint64           `json:"checkout_requests"`
-	CheckoutHits        DecimalUint64           `json:"checkout_hits"`
-	CheckoutMisses      DecimalUint64           `json:"checkout_misses"`
-	StickyRestoreHits   DecimalUint64           `json:"sticky_restore_hits"`
-	StickyRestoreMisses DecimalUint64           `json:"sticky_restore_misses"`
-	StickySaveRequests  DecimalUint64           `json:"sticky_save_requests"`
-	StickyCommits       DecimalUint64           `json:"sticky_commits"`
+	WindowStart         time.Time                `json:"window_start"`
+	WindowEnd           time.Time                `json:"window_end"`
+	CheckoutRequests    DecimalUint64            `json:"checkout_requests"`
+	CheckoutHits        DecimalUint64            `json:"checkout_hits"`
+	CheckoutMisses      DecimalUint64            `json:"checkout_misses"`
+	StickyRestoreHits   DecimalUint64            `json:"sticky_restore_hits"`
+	StickyRestoreMisses DecimalUint64            `json:"sticky_restore_misses"`
+	StickySaveRequests  DecimalUint64            `json:"sticky_save_requests"`
+	StickyCommits       DecimalUint64            `json:"sticky_commits"`
 	ByRepository        []SandboxAnalyticsBucket `json:"by_repository"`
 }
 
 type SandboxRunnerSizingSample struct {
-	RunnerClass             string        `json:"runner_class"`
-	RunCount                DecimalUint64 `json:"run_count"`
-	P95DurationMs           DecimalUint64 `json:"p95_duration_ms"`
+	RunnerClass               string        `json:"runner_class"`
+	RunCount                  DecimalUint64 `json:"run_count"`
+	P95DurationMs             DecimalUint64 `json:"p95_duration_ms"`
 	AvgRootfsProvisionedBytes DecimalUint64 `json:"avg_rootfs_provisioned_bytes"`
-	AvgBootTimeUs           DecimalUint64 `json:"avg_boot_time_us"`
-	AvgBlockWriteBytes      DecimalUint64 `json:"avg_block_write_bytes"`
-	AvgNetTxBytes           DecimalUint64 `json:"avg_net_tx_bytes"`
+	AvgBootTimeUs             DecimalUint64 `json:"avg_boot_time_us"`
+	AvgBlockWriteBytes        DecimalUint64 `json:"avg_block_write_bytes"`
+	AvgNetTxBytes             DecimalUint64 `json:"avg_net_tx_bytes"`
 }
 
 type SandboxRunnerSizingAnalytics struct {
-	WindowStart   time.Time                  `json:"window_start"`
-	WindowEnd     time.Time                  `json:"window_end"`
+	WindowStart   time.Time                   `json:"window_start"`
+	WindowEnd     time.Time                   `json:"window_end"`
 	ByRunnerClass []SandboxRunnerSizingSample `json:"by_runner_class"`
 }
 
 type SandboxStickyDiskRecord struct {
-	InstallationID     string     `json:"installation_id"`
-	RepositoryID       string     `json:"repository_id"`
-	RepositoryFullName string     `json:"repository_full_name,omitempty"`
-	KeyHash            string     `json:"key_hash"`
-	Key                string     `json:"key"`
+	InstallationID     string        `json:"installation_id"`
+	RepositoryID       string        `json:"repository_id"`
+	RepositoryFullName string        `json:"repository_full_name,omitempty"`
+	KeyHash            string        `json:"key_hash"`
+	Key                string        `json:"key"`
 	CurrentGeneration  DecimalUint64 `json:"current_generation"`
-	CurrentSourceRef   string     `json:"current_source_ref"`
-	LastUsedAt         *time.Time `json:"last_used_at,omitempty"`
-	LastCompletedAt    *time.Time `json:"last_completed_at,omitempty"`
-	LastSaveState      string     `json:"last_save_state,omitempty"`
-	LastExecutionID    *uuid.UUID `json:"last_execution_id,omitempty"`
-	LastAttemptID      *uuid.UUID `json:"last_attempt_id,omitempty"`
-	LastRunnerClass    string     `json:"last_runner_class,omitempty"`
-	LastWorkflowName   string     `json:"last_workflow_name,omitempty"`
-	LastJobName        string     `json:"last_job_name,omitempty"`
-	LastMountPath      string     `json:"last_mount_path,omitempty"`
+	CurrentSourceRef   string        `json:"current_source_ref"`
+	LastUsedAt         *time.Time    `json:"last_used_at,omitempty"`
+	LastCompletedAt    *time.Time    `json:"last_completed_at,omitempty"`
+	LastSaveState      string        `json:"last_save_state,omitempty"`
+	LastExecutionID    *uuid.UUID    `json:"last_execution_id,omitempty"`
+	LastAttemptID      *uuid.UUID    `json:"last_attempt_id,omitempty"`
+	LastRunnerClass    string        `json:"last_runner_class,omitempty"`
+	LastWorkflowName   string        `json:"last_workflow_name,omitempty"`
+	LastJobName        string        `json:"last_job_name,omitempty"`
+	LastMountPath      string        `json:"last_mount_path,omitempty"`
 }
 
 type SandboxStickyDisksPage struct {
@@ -326,46 +326,46 @@ type SandboxBillingPortalRequest struct {
 }
 
 type SandboxAttemptRecord struct {
-	AttemptID     uuid.UUID  `json:"attempt_id"`
-	AttemptSeq    int        `json:"attempt_seq" minimum:"0" maximum:"9007199254740991"`
-	State         string     `json:"state"`
-	LeaseID       string     `json:"lease_id,omitempty"`
-	ExecID        string     `json:"exec_id,omitempty"`
-	BillingJobID  int64      `json:"billing_job_id,omitempty" minimum:"0" maximum:"9007199254740991"`
-	FailureReason string     `json:"failure_reason,omitempty"`
-	ExitCode      *int       `json:"exit_code,omitempty" minimum:"0" maximum:"255"`
-	DurationMs    int64      `json:"duration_ms,omitempty" minimum:"0" maximum:"9007199254740991"`
-	ZFSWritten    int64      `json:"zfs_written,omitempty" minimum:"0" maximum:"9007199254740991"`
-	StdoutBytes   int64      `json:"stdout_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
-	StderrBytes   int64      `json:"stderr_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
-	RootfsProvisionedBytes int64 `json:"rootfs_provisioned_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
-	BootTimeUs             int64 `json:"boot_time_us,omitempty" minimum:"0" maximum:"9007199254740991"`
-	BlockReadBytes         int64 `json:"block_read_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
-	BlockWriteBytes        int64 `json:"block_write_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
-	NetRXBytes             int64 `json:"net_rx_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
-	NetTXBytes             int64 `json:"net_tx_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
-	VCPUExitCount          int64 `json:"vcpu_exit_count,omitempty" minimum:"0" maximum:"9007199254740991"`
-	TraceID       string     `json:"trace_id,omitempty"`
-	StartedAt     *time.Time `json:"started_at,omitempty"`
-	CompletedAt   *time.Time `json:"completed_at,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	AttemptID              uuid.UUID  `json:"attempt_id"`
+	AttemptSeq             int        `json:"attempt_seq" minimum:"0" maximum:"9007199254740991"`
+	State                  string     `json:"state"`
+	LeaseID                string     `json:"lease_id,omitempty"`
+	ExecID                 string     `json:"exec_id,omitempty"`
+	BillingJobID           int64      `json:"billing_job_id,omitempty" minimum:"0" maximum:"9007199254740991"`
+	FailureReason          string     `json:"failure_reason,omitempty"`
+	ExitCode               *int       `json:"exit_code,omitempty" minimum:"0" maximum:"255"`
+	DurationMs             int64      `json:"duration_ms,omitempty" minimum:"0" maximum:"9007199254740991"`
+	ZFSWritten             int64      `json:"zfs_written,omitempty" minimum:"0" maximum:"9007199254740991"`
+	StdoutBytes            int64      `json:"stdout_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
+	StderrBytes            int64      `json:"stderr_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
+	RootfsProvisionedBytes int64      `json:"rootfs_provisioned_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
+	BootTimeUs             int64      `json:"boot_time_us,omitempty" minimum:"0" maximum:"9007199254740991"`
+	BlockReadBytes         int64      `json:"block_read_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
+	BlockWriteBytes        int64      `json:"block_write_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
+	NetRXBytes             int64      `json:"net_rx_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
+	NetTXBytes             int64      `json:"net_tx_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
+	VCPUExitCount          int64      `json:"vcpu_exit_count,omitempty" minimum:"0" maximum:"9007199254740991"`
+	TraceID                string     `json:"trace_id,omitempty"`
+	StartedAt              *time.Time `json:"started_at,omitempty"`
+	CompletedAt            *time.Time `json:"completed_at,omitempty"`
+	CreatedAt              time.Time  `json:"created_at"`
+	UpdatedAt              time.Time  `json:"updated_at"`
 }
 
 type SandboxBillingWindow struct {
-	AttemptID        uuid.UUID  `json:"attempt_id"`
-	BillingWindowID  string     `json:"billing_window_id"`
-	WindowSeq        int        `json:"window_seq" minimum:"0" maximum:"9007199254740991"`
-	ReservationShape string     `json:"reservation_shape"`
-	ReservedQuantity int        `json:"reserved_quantity" minimum:"0" maximum:"9007199254740991"`
-	ActualQuantity   int        `json:"actual_quantity,omitempty" minimum:"0" maximum:"9007199254740991"`
+	AttemptID           uuid.UUID     `json:"attempt_id"`
+	BillingWindowID     string        `json:"billing_window_id"`
+	WindowSeq           int           `json:"window_seq" minimum:"0" maximum:"9007199254740991"`
+	ReservationShape    string        `json:"reservation_shape"`
+	ReservedQuantity    int           `json:"reserved_quantity" minimum:"0" maximum:"9007199254740991"`
+	ActualQuantity      int           `json:"actual_quantity,omitempty" minimum:"0" maximum:"9007199254740991"`
 	ReservedChargeUnits DecimalUint64 `json:"reserved_charge_units"`
 	BilledChargeUnits   DecimalUint64 `json:"billed_charge_units"`
 	WriteoffChargeUnits DecimalUint64 `json:"writeoff_charge_units"`
 	CostPerUnit         DecimalUint64 `json:"cost_per_unit"`
-	PricingPhase     string     `json:"pricing_phase,omitempty"`
-	State            string     `json:"state"`
-	WindowStart      time.Time  `json:"window_start"`
-	CreatedAt        time.Time  `json:"created_at"`
-	SettledAt        *time.Time `json:"settled_at,omitempty"`
+	PricingPhase        string        `json:"pricing_phase,omitempty"`
+	State               string        `json:"state"`
+	WindowStart         time.Time     `json:"window_start"`
+	CreatedAt           time.Time     `json:"created_at"`
+	SettledAt           *time.Time    `json:"settled_at,omitempty"`
 }

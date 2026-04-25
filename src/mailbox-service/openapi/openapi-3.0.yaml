@@ -17,7 +17,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4246/schemas/ErrorModel.json
+          example: https://mail.api.anveio.com/schemas/ErrorModel.json
           format: uri
           readOnly: true
           type: string
@@ -58,7 +58,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4246/schemas/MailboxAccount.json
+          example: https://mail.api.anveio.com/schemas/MailboxAccount.json
           format: uri
           readOnly: true
           type: string
@@ -80,7 +80,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4246/schemas/MailboxBody.json
+          example: https://mail.api.anveio.com/schemas/MailboxBody.json
           format: uri
           readOnly: true
           type: string
@@ -133,7 +133,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4246/schemas/MailboxMoveRequest.json
+          example: https://mail.api.anveio.com/schemas/MailboxMoveRequest.json
           format: uri
           readOnly: true
           type: string
@@ -147,7 +147,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4246/schemas/MailboxMutation.json
+          example: https://mail.api.anveio.com/schemas/MailboxMutation.json
           format: uri
           readOnly: true
           type: string
@@ -187,7 +187,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4246/schemas/MailboxOperatorAccounts.json
+          example: https://mail.api.anveio.com/schemas/MailboxOperatorAccounts.json
           format: uri
           readOnly: true
           type: string
@@ -300,7 +300,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4246/schemas/MailboxOperatorEmailDetail.json
+          example: https://mail.api.anveio.com/schemas/MailboxOperatorEmailDetail.json
           format: uri
           readOnly: true
           type: string
@@ -400,7 +400,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4246/schemas/MailboxOperatorEmails.json
+          example: https://mail.api.anveio.com/schemas/MailboxOperatorEmails.json
           format: uri
           readOnly: true
           type: string
@@ -470,7 +470,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4246/schemas/MailboxOperatorMailboxes.json
+          example: https://mail.api.anveio.com/schemas/MailboxOperatorMailboxes.json
           format: uri
           readOnly: true
           type: string
@@ -508,7 +508,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4246/schemas/MailboxServiceStatusResponse.json
+          example: https://mail.api.anveio.com/schemas/MailboxServiceStatusResponse.json
           format: uri
           readOnly: true
           type: string
@@ -870,4 +870,4 @@ paths:
           description: Error
       summary: List synced mailboxes for an account
 servers:
-  - url: http://127.0.0.1:4246
+  - url: https://mail.api.anveio.com

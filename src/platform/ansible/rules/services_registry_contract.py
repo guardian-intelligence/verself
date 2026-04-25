@@ -36,7 +36,7 @@ CONTROL_PLANE_SERVICES = {
     "object_storage_service",
     "platform",
     "profile_service",
-    "rent_a_sandbox",
+    "console",
     "sandbox_rental",
     "secrets_service",
 }

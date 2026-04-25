@@ -67,11 +67,17 @@ export function BodyParagraph({ children }: { children: ReactNode }) {
   return (
     <p
       style={{
-        fontFamily: "'Geist', sans-serif",
+        // Treatment-scoped body face. Workshop and Newsroom resolve to Geist
+        // (Fraunces is display-only on both); Letters resolves to Fraunces so
+        // long-form prose reads like a printed page, not documentation.
+        fontFamily: "var(--treatment-body-font)",
+        // Axes are a no-op on Geist; on Fraunces they tune the body optical
+        // size and open the counters slightly for long-form legibility.
+        fontVariationSettings: '"opsz" 18, "SOFT" 0',
         fontWeight: 400,
-        fontSize: "clamp(16px, 1.6vw, 18px)",
+        fontSize: "clamp(17px, 1.7vw, 19px)",
         lineHeight: 1.55,
-        color: "var(--treatment-muted)",
+        color: "var(--treatment-muted-strong)",
         margin: 0,
       }}
     >

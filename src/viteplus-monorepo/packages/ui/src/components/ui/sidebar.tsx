@@ -470,7 +470,7 @@ const sidebarMenuButtonVariants = cva(
           "bg-sidebar-accent/25 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-active:before:absolute data-active:before:top-1.5 data-active:before:bottom-1.5 data-active:before:left-0 data-active:before:w-[3px] data-active:before:rounded-r-full data-active:before:bg-foreground data-active:before:content-[''] group-data-[collapsible=icon]:data-active:before:hidden",
         // `shadow-[0_0_0_1px_…]` is a 1px ring that doesn't affect layout
         // (unlike `border`). We use --color-border rather than
-        // --sidebar-border because rent-a-sandbox (and future apps) only
+        // --sidebar-border because console (and future apps) only
         // define the Tailwind v4 `--color-*` token set; the legacy
         // `--sidebar-*` variables from shadcn's reference globals.css
         // aren't imported, so hsl(var(--sidebar-border)) resolves to

@@ -347,7 +347,7 @@ func updateMemberRoles(svc *identity.Service) func(context.Context, *memberRoles
 			ExpectedRoleKeys:      input.Body.ExpectedRoleKeys,
 			ExpectedOrgACLVersion: input.Body.ExpectedOrgACLVersion,
 			OperationID:           "update-organization-member-roles",
-			IdempotencyKey:         operationRequestInfoFromContext(ctx).IdempotencyKey,
+			IdempotencyKey:        operationRequestInfoFromContext(ctx).IdempotencyKey,
 		})
 		if err != nil {
 			return nil, identityError(ctx, err)

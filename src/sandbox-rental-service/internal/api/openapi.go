@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
@@ -19,12 +20,19 @@ type PublicAPIConfig struct {
 
 func NewAPI(mux *http.ServeMux, version, listenAddr string, svc *jobs.Service, recurringSvc *recurring.Service, billing *billingclient.ClientWithResponses, publicConfig PublicAPIConfig) huma.API {
 	config := huma.DefaultConfig("Sandbox Rental Service", version)
-	config.OpenAPI.Servers = []*huma.Server{{URL: "http://" + listenAddr}}
+	config.OpenAPI.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
 	api := humago.New(mux, config)
 	applyPublicAPISecurityScheme(api)
 	RegisterRoutes(api, svc, recurringSvc, billing, publicConfig)
 	apiwire.ApplyOpenAPIWireDefaults(api)
 	return api
+}
+
+func serverURL(addr string) string {
+	if strings.Contains(addr, "://") {
+		return addr
+	}
+	return "http://" + addr
 }
 
 func OpenAPIDowngradeYAML(version, listenAddr string) ([]byte, error) {

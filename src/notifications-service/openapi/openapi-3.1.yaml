@@ -18,7 +18,7 @@ components:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - http://127.0.0.1:4260/schemas/ErrorModel.json
+            - https://notifications.api.anveio.com/schemas/ErrorModel.json
           format: uri
           readOnly: true
           type: string
@@ -120,7 +120,7 @@ components:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - http://127.0.0.1:4260/schemas/NotificationAccepted.json
+            - https://notifications.api.anveio.com/schemas/NotificationAccepted.json
           format: uri
           readOnly: true
           type: string
@@ -137,7 +137,7 @@ components:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - http://127.0.0.1:4260/schemas/NotificationList.json
+            - https://notifications.api.anveio.com/schemas/NotificationList.json
           format: uri
           readOnly: true
           type: string
@@ -159,7 +159,7 @@ components:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - http://127.0.0.1:4260/schemas/NotificationMarkReadRequest.json
+            - https://notifications.api.anveio.com/schemas/NotificationMarkReadRequest.json
           format: uri
           readOnly: true
           type: string
@@ -196,7 +196,7 @@ components:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - http://127.0.0.1:4260/schemas/NotificationPutPreferencesRequest.json
+            - https://notifications.api.anveio.com/schemas/NotificationPutPreferencesRequest.json
           format: uri
           readOnly: true
           type: string
@@ -217,7 +217,7 @@ components:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - http://127.0.0.1:4260/schemas/NotificationSummary.json
+            - https://notifications.api.anveio.com/schemas/NotificationSummary.json
           format: uri
           readOnly: true
           type: string
@@ -256,7 +256,7 @@ components:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - http://127.0.0.1:4260/schemas/NotificationTestRequest.json
+            - https://notifications.api.anveio.com/schemas/NotificationTestRequest.json
           format: uri
           readOnly: true
           type: string
@@ -626,4 +626,4 @@ paths:
         risk_level: medium
         source_product_area: Notifications
 servers:
-  - url: http://127.0.0.1:4260
+  - url: https://notifications.api.anveio.com

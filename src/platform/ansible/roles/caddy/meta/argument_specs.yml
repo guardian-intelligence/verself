@@ -1,11 +1,11 @@
 ---
 argument_specs:
   main:
-    short_description: "Caddy edge proxy for Billing Service, Grafana, Temporal Web, Forgejo, and Zitadel"
+    short_description: "Caddy edge proxy for Forge Metal public origins"
     description:
-      - "Configures Caddy and renders the edge config that fronts Billing Service,"
-      - "Grafana, Temporal Web, Forgejo, and Zitadel with site-specific WAF policies and access logging."
-      - "Billing Service exposes only /webhooks/stripe publicly; all other paths return 404."
+      - "Configures Caddy and renders the edge config that fronts console, service API origins,"
+      - "Grafana, Temporal Web, Forgejo, Stalwart, and Zitadel with site-specific WAF policies and access logging."
+      - "Service APIs live on <service>.api.<domain>; console browser traffic stays same-origin."
       - "The billing webhook route is allowlisted to Stripe's published source IPs."
       - "Zitadel uses h2c (HTTP/2 cleartext) for gRPC on the same port."
       - "Service ports come from the services registry (group_vars/all/services.yml)."
@@ -19,7 +19,47 @@ argument_specs:
       billing_service_domain:
         type: str
         required: true
-        description: "Public domain for the Billing Service (only /webhooks/stripe exposed)."
+        description: "Public API domain for Billing Service."
+
+      sandbox_rental_service_domain:
+        type: str
+        required: true
+        description: "Public API domain for sandbox-rental-service."
+
+      identity_service_domain:
+        type: str
+        required: true
+        description: "Public API domain for identity-service."
+
+      profile_service_domain:
+        type: str
+        required: true
+        description: "Public API domain for profile-service."
+
+      notifications_service_domain:
+        type: str
+        required: true
+        description: "Public API domain for notifications-service."
+
+      governance_service_domain:
+        type: str
+        required: true
+        description: "Public API domain for governance-service."
+
+      secrets_service_domain:
+        type: str
+        required: true
+        description: "Public API domain for secrets-service."
+
+      mailbox_service_domain:
+        type: str
+        required: true
+        description: "Public API domain for mailbox-service."
+
+      console_domain:
+        type: str
+        required: true
+        description: "Public domain for the authenticated product console."
 
       grafana_domain:
         type: str

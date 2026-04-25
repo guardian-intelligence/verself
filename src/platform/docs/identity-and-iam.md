@@ -45,7 +45,7 @@ customer IDs supplied by external webhook payloads.
 ## Organization Surface
 
 The product surface is a reusable first-party organization-management React
-component in `src/viteplus-monorepo`, embedded first inside rent-a-sandbox and
+component in `src/viteplus-monorepo`, embedded first inside console and
 then inside the other customer-facing frontend apps. It talks to
 `identity-service` through frontend server functions; browser code does not
 receive Zitadel bearer tokens.
@@ -226,7 +226,7 @@ permissions are not held by the member set under the org's current capability
 configuration.
 
 Embedded organization widgets are a special cross-service web-session path.
-The rent-a-sandbox frontend owns the interactive OIDC application and stores the
+The console frontend owns the interactive OIDC application and stores the
 browser session server-side. Before calling `identity-service`, the BFF exchanges
 the session access token for an identity-service audience token and forwards that
 resource token. `identity-service` validates the JWT locally and reads only
@@ -256,7 +256,7 @@ authorization.
 
 This rule is enforced at the edge by a Content-Security-Policy header with
 `connect-src 'self'` applied to every customer-facing frontend domain
-(`rent_a_sandbox_domain`, `stalwart_domain`). The policy lives
+(`console_domain`, `stalwart_domain`). The policy lives
 in the `frontend_security_headers` snippet in
 `src/platform/ansible/roles/caddy/templates/Caddyfile.j2`. Because `connect-src`
 is restricted to the frontend's own origin, the browser cannot issue `fetch`,
@@ -452,13 +452,13 @@ Current access coverage:
 
 | Surface | `platform-admin` | `acme-admin` | `acme-member` | Credential path |
 |---|---|---|---|---|
-| rent-a-sandbox / `sandbox-rental-service` | platform `owner` | Acme browser `owner`, machine `admin` | Acme `member` | Zitadel browser login and `SANDBOX_RENTAL_ACCESS_TOKEN` |
-| rent-a-sandbox organization surface / `identity-service` | browser and machine `owner` | browser `owner`, machine `admin` | Acme `member` | BFF token exchange and `IDENTITY_SERVICE_ACCESS_TOKEN` |
-| `mailbox-service` (webmail folded into rent-a-sandbox; frontend path TBD) | `mailbox_user`, bound to `agents` | none | none | Zitadel browser login and `MAILBOX_SERVICE_ACCESS_TOKEN` |
+| console / `sandbox-rental-service` | platform `owner` | Acme browser `owner`, machine `admin` | Acme `member` | Zitadel browser login and `SANDBOX_RENTAL_ACCESS_TOKEN` |
+| console organization surface / `identity-service` | browser and machine `owner` | browser `owner`, machine `admin` | Acme `member` | BFF token exchange and `IDENTITY_SERVICE_ACCESS_TOKEN` |
+| `mailbox-service` (webmail folded into console; frontend path TBD) | `mailbox_user`, bound to `agents` | none | none | Zitadel browser login and `MAILBOX_SERVICE_ACCESS_TOKEN` |
 | Forgejo OIDC login | `forgejo_admin` | none | none | Zitadel browser login and `FORGEJO_OIDC_ACCESS_TOKEN` |
 | ClickHouse | founder access only | none | none | `CLICKHOUSE_OPERATOR_COMMAND`, currently `make clickhouse-query` |
 | Forgejo provider API automation | founder access only | none | none | `FORGEJO_OPERATOR_CREDENTIAL`, currently the remote `forgejo-automation` token |
-| Stalwart direct JMAP/IMAP/SMTP | not a persona grant | not a persona grant | not a persona grant | use `mailbox-service` (webmail UI pending rent-a-sandbox absorption) or explicit founder mail tooling |
+| Stalwart direct JMAP/IMAP/SMTP | not a persona grant | not a persona grant | not a persona grant | use `mailbox-service` (webmail UI pending console absorption) or explicit founder mail tooling |
 | `billing-service` direct API | service-to-service only | service-to-service only | service-to-service only | customer-facing billing access goes through `sandbox-rental-service` |
 
 The platform admin persona intentionally does not export the Zitadel admin PAT,

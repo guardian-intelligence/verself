@@ -1,7 +1,7 @@
 import { deriveAppBaseURL } from "@forge-metal/web-env";
 
 // Test environment for the platform app. The site is fully public — no Zitadel
-// dance needed — so the env shape stays minimal compared to rent-a-sandbox/e2e.
+// dance needed — so the env shape stays minimal compared to console/e2e.
 export const env = {
   baseURL: deriveAppBaseURL("platform"),
   // Allows e2e tests to scope ClickHouse assertions to the in-flight deploy

@@ -5,7 +5,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/BillingCancelContractResponse.json
+          example: https://sandbox.api.anveio.com/schemas/BillingCancelContractResponse.json
           format: uri
           readOnly: true
           type: string
@@ -70,7 +70,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/BillingContracts.json
+          example: https://sandbox.api.anveio.com/schemas/BillingContracts.json
           format: uri
           readOnly: true
           type: string
@@ -217,7 +217,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/BillingEntitlementsView.json
+          example: https://sandbox.api.anveio.com/schemas/BillingEntitlementsView.json
           format: uri
           readOnly: true
           type: string
@@ -278,7 +278,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/BillingPlans.json
+          example: https://sandbox.api.anveio.com/schemas/BillingPlans.json
           format: uri
           readOnly: true
           type: string
@@ -295,7 +295,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/BillingStatement.json
+          example: https://sandbox.api.anveio.com/schemas/BillingStatement.json
           format: uri
           readOnly: true
           type: string
@@ -484,7 +484,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/BillingURLResponse.json
+          example: https://sandbox.api.anveio.com/schemas/BillingURLResponse.json
           format: uri
           readOnly: true
           type: string
@@ -510,7 +510,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/ErrorModel.json
+          example: https://sandbox.api.anveio.com/schemas/ErrorModel.json
           format: uri
           readOnly: true
           type: string
@@ -676,7 +676,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/SandboxBillingCheckoutRequest.json
+          example: https://sandbox.api.anveio.com/schemas/SandboxBillingCheckoutRequest.json
           format: uri
           readOnly: true
           type: string
@@ -707,7 +707,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/SandboxBillingContractChangeRequest.json
+          example: https://sandbox.api.anveio.com/schemas/SandboxBillingContractChangeRequest.json
           format: uri
           readOnly: true
           type: string
@@ -731,7 +731,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/SandboxBillingContractRequest.json
+          example: https://sandbox.api.anveio.com/schemas/SandboxBillingContractRequest.json
           format: uri
           readOnly: true
           type: string
@@ -760,7 +760,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/SandboxBillingPortalRequest.json
+          example: https://sandbox.api.anveio.com/schemas/SandboxBillingPortalRequest.json
           format: uri
           readOnly: true
           type: string
@@ -838,7 +838,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/SandboxCachesAnalytics.json
+          example: https://sandbox.api.anveio.com/schemas/SandboxCachesAnalytics.json
           format: uri
           readOnly: true
           type: string
@@ -891,7 +891,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/SandboxCostsAnalytics.json
+          example: https://sandbox.api.anveio.com/schemas/SandboxCostsAnalytics.json
           format: uri
           readOnly: true
           type: string
@@ -940,7 +940,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/SandboxExecutionLogs.json
+          example: https://sandbox.api.anveio.com/schemas/SandboxExecutionLogs.json
           format: uri
           readOnly: true
           type: string
@@ -960,7 +960,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/SandboxExecutionRecord.json
+          example: https://sandbox.api.anveio.com/schemas/SandboxExecutionRecord.json
           format: uri
           readOnly: true
           type: string
@@ -1040,7 +1040,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/SandboxExecutionScheduleCreateRequest.json
+          example: https://sandbox.api.anveio.com/schemas/SandboxExecutionScheduleCreateRequest.json
           format: uri
           readOnly: true
           type: string
@@ -1117,7 +1117,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/SandboxExecutionScheduleRecord.json
+          example: https://sandbox.api.anveio.com/schemas/SandboxExecutionScheduleRecord.json
           format: uri
           readOnly: true
           type: string
@@ -1220,7 +1220,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/SandboxGitHubInstallationConnectResponse.json
+          example: https://sandbox.api.anveio.com/schemas/SandboxGitHubInstallationConnectResponse.json
           format: uri
           readOnly: true
           type: string
@@ -1294,7 +1294,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/SandboxJobsAnalytics.json
+          example: https://sandbox.api.anveio.com/schemas/SandboxJobsAnalytics.json
           format: uri
           readOnly: true
           type: string
@@ -1431,7 +1431,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/SandboxRunLogSearchPage.json
+          example: https://sandbox.api.anveio.com/schemas/SandboxRunLogSearchPage.json
           format: uri
           readOnly: true
           type: string
@@ -1499,7 +1499,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/SandboxRunnerSizingAnalytics.json
+          example: https://sandbox.api.anveio.com/schemas/SandboxRunnerSizingAnalytics.json
           format: uri
           readOnly: true
           type: string
@@ -1572,7 +1572,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/SandboxRunsPage.json
+          example: https://sandbox.api.anveio.com/schemas/SandboxRunsPage.json
           format: uri
           readOnly: true
           type: string
@@ -1662,7 +1662,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/SandboxStickyDiskResetResult.json
+          example: https://sandbox.api.anveio.com/schemas/SandboxStickyDiskResetResult.json
           format: uri
           readOnly: true
           type: string
@@ -1688,7 +1688,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/SandboxStickyDisksPage.json
+          example: https://sandbox.api.anveio.com/schemas/SandboxStickyDisksPage.json
           format: uri
           readOnly: true
           type: string
@@ -1714,7 +1714,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/StickyDiskResetRequest.json
+          example: https://sandbox.api.anveio.com/schemas/StickyDiskResetRequest.json
           format: uri
           readOnly: true
           type: string
@@ -3041,4 +3041,4 @@ paths:
         risk_level: medium
         source_product_area: Sandbox
 servers:
-  - url: http://127.0.0.1:4243
+  - url: https://sandbox.api.anveio.com

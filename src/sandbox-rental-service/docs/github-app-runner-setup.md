@@ -30,11 +30,11 @@ sandbox_rental_service_github_app_settings_url: "https://github.com/organization
 
 Use these GitHub App settings:
 
-- Homepage URL: `https://rentasandbox.<domain>/`
-- Callback URL: `https://rentasandbox.<domain>/github/installations/callback`
+- Homepage URL: `https://console.<domain>/`
+- Callback URL: `https://sandbox.api.<domain>/github/installations/callback`
 - Request user authorization during installation: enabled
 - Webhook: active
-- Webhook URL: `https://rentasandbox.<domain>/webhooks/github/actions`
+- Webhook URL: `https://sandbox.api.<domain>/webhooks/github/actions`
 - Webhook content type: JSON
 - Installable by: any account for the customer-facing app, but install it on a
   GitHub Organization for the current implementation.
@@ -90,7 +90,7 @@ Start the Forge Metal side of the install flow as a sandbox org admin:
 ```bash
 source <(src/platform/scripts/assume-persona.sh platform-admin --print)
 
-curl -sS -X POST "https://rentasandbox.<domain>/api/v1/github/installations/connect" \
+curl -sS -X POST "https://sandbox.api.<domain>/api/v1/github/installations/connect" \
   -H "Authorization: Bearer ${SANDBOX_RENTAL_ACCESS_TOKEN}" \
   -H "Idempotency-Key: github-install-$(date +%s)" \
   | jq .
@@ -103,7 +103,7 @@ adds a polished redirect.
 Verify the mapping:
 
 ```bash
-curl -sS "https://rentasandbox.<domain>/api/v1/github/installations" \
+curl -sS "https://sandbox.api.<domain>/api/v1/github/installations" \
   -H "Authorization: Bearer ${SANDBOX_RENTAL_ACCESS_TOKEN}" \
   | jq .
 ```
