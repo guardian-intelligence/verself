@@ -374,13 +374,6 @@
     - restart sandbox-rental-service
     - restart sandbox-rental-recurring-worker
 
-- name: Remove stale sandbox-rental-service systemd override
-  ansible.builtin.file:
-    path: /etc/systemd/system/sandbox-rental-service.service.d/override.conf
-    state: absent
-  notify:
-    - restart sandbox-rental-service
-
 - name: Deploy sandbox-rental recurring worker systemd unit
   ansible.builtin.copy:
     content: |

@@ -145,28 +145,6 @@
     mode: "0644"
   notify: restart nats
 
-- name: Stop and disable legacy NATS SPIFFE rotation watcher
-  ansible.builtin.systemd:
-    name: "{{ item }}"
-    enabled: false
-    state: stopped
-  loop:
-    - nats-cert-rotation.path
-    - nats-cert-rotation.service
-  failed_when: false
-
-- name: Remove legacy NATS SPIFFE rotation watcher units
-  ansible.builtin.file:
-    path: "/etc/systemd/system/{{ item }}"
-    state: absent
-  loop:
-    - nats-cert-rotation.path
-    - nats-cert-rotation.service
-  notify: restart nats
-
-- name: Apply NATS unit changes before proceeding
-  ansible.builtin.meta: flush_handlers
-
 - name: Enable and start NATS
   ansible.builtin.systemd:
     name: nats

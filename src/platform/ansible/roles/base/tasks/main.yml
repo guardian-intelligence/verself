@@ -27,11 +27,6 @@
     group: root
     mode: "0700"
 
-- name: Remove stale verself system config
-  ansible.builtin.file:
-    path: /etc/verself/config.toml
-    state: absent
-
 - name: Disable unsupported GSSAPIAuthentication in ssh_config
   ansible.builtin.lineinfile:
     path: /etc/ssh/ssh_config

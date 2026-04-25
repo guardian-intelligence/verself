@@ -13,10 +13,6 @@ deploy_profile_staging_dir: /opt/verself/staging
 # PostgreSQL major version (determines apt package and binary paths)
 deploy_profile_postgresql_version: "16"
 
-deploy_profile_retired_go_binaries:
-  - object-storage-proof
-  - temporal-proof
-
 deploy_profile_go_binaries:
   - name: billing-service
     package: ./src/billing-service/cmd/billing-service

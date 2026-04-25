@@ -144,11 +144,6 @@
     label: "{{ item.name }}"
   no_log: true
 
-- name: Remove stale Grafana ClickHouse password credential
-  ansible.builtin.file:
-    path: "{{ grafana_credstore_dir }}/clickhouse-password"
-    state: absent
-
 - name: Read Grafana generated secrets
   ansible.builtin.slurp:
     src: "{{ grafana_credstore_dir }}/{{ item }}"

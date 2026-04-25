@@ -83,38 +83,8 @@
 - name: Apply secrets-service nftables before proceeding
   ansible.builtin.meta: flush_handlers
 
-- name: Stop legacy secrets-service before dropping PostgreSQL state
-  ansible.builtin.systemd:
-    name: secrets-service
-    state: stopped
-  failed_when: false
-
 - name: Include secrets-service generated credential tasks
   ansible.builtin.include_tasks: credentials.yml
-
-- name: Drop legacy secrets_service PostgreSQL database
-  community.postgresql.postgresql_db:
-    name: secrets_service
-    state: absent
-    force: true
-    login_host: "{{ services.postgresql.host }}"
-    login_port: "{{ services.postgresql.port }}"
-    login_user: postgres
-    login_password: "{{ postgresql_admin_password }}"
-    maintenance_db: postgres
-    trust_input: false
-  no_log: true
-
-- name: Drop legacy secrets_service PostgreSQL role
-  community.postgresql.postgresql_user:
-    name: secrets_service
-    state: absent
-    login_host: "{{ services.postgresql.host }}"
-    login_port: "{{ services.postgresql.port }}"
-    login_user: postgres
-    login_password: "{{ postgresql_admin_password }}"
-    trust_input: false
-  no_log: true
 
 - name: Wait for Zitadel before configuring secrets-service auth
   ansible.builtin.wait_for:
