@@ -76,33 +76,6 @@ CREATE TABLE source_ref_heads (
 CREATE INDEX idx_source_ref_heads_org_updated
     ON source_ref_heads (org_id, updated_at DESC, repo_id, ref_name);
 
-CREATE TABLE source_ci_runs (
-    ci_run_id            UUID        PRIMARY KEY,
-    org_id               BIGINT      NOT NULL CHECK (org_id > 0),
-    repo_id              UUID        NOT NULL REFERENCES source_repositories(repo_id) ON DELETE CASCADE,
-    actor_id             TEXT        NOT NULL CHECK (actor_id <> ''),
-    ref_name             TEXT        NOT NULL CHECK (ref_name <> ''),
-    commit_sha           TEXT        NOT NULL DEFAULT '',
-    trigger_event        TEXT        NOT NULL CHECK (trigger_event <> ''),
-    state                TEXT        NOT NULL CHECK (state IN ('queued', 'running', 'succeeded', 'failed', 'canceled', 'skipped')),
-    sandbox_execution_id UUID,
-    sandbox_attempt_id   UUID,
-    failure_reason       TEXT        NOT NULL DEFAULT '',
-    trace_id             TEXT        NOT NULL DEFAULT '',
-    created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
-    started_at           TIMESTAMPTZ,
-    completed_at         TIMESTAMPTZ,
-    UNIQUE (repo_id, ref_name, commit_sha, trigger_event)
-);
-
-CREATE INDEX idx_source_ci_runs_repo_created
-    ON source_ci_runs (repo_id, created_at DESC, ci_run_id DESC);
-
-CREATE INDEX idx_source_ci_runs_trace_id
-    ON source_ci_runs (trace_id)
-    WHERE trace_id <> '';
-
 CREATE TABLE source_checkout_grants (
     grant_id       UUID        PRIMARY KEY,
     repo_id        UUID        NOT NULL REFERENCES source_repositories(repo_id) ON DELETE CASCADE,

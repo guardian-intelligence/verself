@@ -96,10 +96,6 @@ type blobOutput struct {
 	Body Blob
 }
 
-type ciRunListOutput struct {
-	Body CIRunList
-}
-
 type checkoutGrantOutput struct {
 	Body CheckoutGrant
 }
@@ -210,23 +206,6 @@ func RegisterRoutes(api huma.API, cfg Config) {
 		OperationType:    "read",
 		RiskLevel:        "low",
 	}, listRefs(svc))
-
-	registerSourceRoute(api, huma.Operation{
-		OperationID: "list-source-ci-runs",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/repos/{repo_id}/ci-runs",
-		Summary:     "List repository CI runs",
-	}, operationPolicy{
-		Permission:       permissionWorkflowRead,
-		Resource:         "source_ci_run",
-		Action:           "list",
-		OrgScope:         "token_org_id",
-		RateLimitClass:   "read",
-		AuditEvent:       "source.ci_run.list",
-		OperationDisplay: "list source CI runs",
-		OperationType:    "read",
-		RiskLevel:        "low",
-	}, listCIRuns(svc))
 
 	registerSourceRoute(api, huma.Operation{
 		OperationID: "get-source-tree",
@@ -449,20 +428,6 @@ func listRefs(svc *source.Service) func(context.Context, source.Principal, *repo
 			return nil, sourceError(ctx, err)
 		}
 		return &refListOutput{Body: RefList{Refs: refDTOs(refs)}}, nil
-	}
-}
-
-func listCIRuns(svc *source.Service) func(context.Context, source.Principal, *repositoryPath) (*ciRunListOutput, error) {
-	return func(ctx context.Context, principal source.Principal, input *repositoryPath) (*ciRunListOutput, error) {
-		repoID, err := uuid.Parse(input.RepoID)
-		if err != nil {
-			return nil, badRequest(ctx, "invalid-repo-id", "repo_id must be a UUID", err)
-		}
-		runs, err := svc.ListCIRuns(ctx, principal, repoID)
-		if err != nil {
-			return nil, sourceError(ctx, err)
-		}
-		return &ciRunListOutput{Body: CIRunList{CIRuns: ciRunDTOs(runs)}}, nil
 	}
 }
 

@@ -19,30 +19,6 @@ export const vBlob = v.strictObject({
   ),
 });
 
-export const vCiRun = v.strictObject({
-  actor_id: v.string(),
-  ci_run_id: v.string(),
-  commit_sha: v.string(),
-  completed_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
-  created_at: v.pipe(v.string(), v.isoTimestamp()),
-  failure_reason: v.optional(v.string()),
-  org_id: v.string(),
-  ref_name: v.string(),
-  repo_id: v.string(),
-  sandbox_attempt_id: v.optional(v.string()),
-  sandbox_execution_id: v.optional(v.string()),
-  started_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
-  state: v.string(),
-  trace_id: v.optional(v.string()),
-  trigger_event: v.string(),
-  updated_at: v.pipe(v.string(), v.isoTimestamp()),
-});
-
-export const vCiRunList = v.strictObject({
-  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  ci_runs: v.nullable(v.array(vCiRun)),
-});
-
 export const vCheckoutGrant = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   expires_at: v.pipe(v.string(), v.isoTimestamp()),
@@ -211,10 +187,6 @@ export const vBlobWritable = v.strictObject({
     v.minValue(BigInt(0)),
     v.maxValue(BigInt(9007199254740991)),
   ),
-});
-
-export const vCiRunListWritable = v.strictObject({
-  ci_runs: v.nullable(v.array(vCiRun)),
 });
 
 export const vCheckoutGrantWritable = v.strictObject({
@@ -400,15 +372,6 @@ export const vCreateSourceCheckoutGrantPath = v.object({
  * Created
  */
 export const vCreateSourceCheckoutGrantResponse = vCheckoutGrant;
-
-export const vListSourceCiRunsPath = v.object({
-  repo_id: v.pipe(v.string(), v.uuid()),
-});
-
-/**
- * OK
- */
-export const vListSourceCiRunsResponse = vCiRunList;
 
 export const vListSourceRefsPath = v.object({
   repo_id: v.pipe(v.string(), v.uuid()),

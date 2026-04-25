@@ -61,7 +61,6 @@ import {
   getRepository as getSourceRepositoryRequest,
   getTree as getSourceTreeRequest,
   isSourceCodeHostingApiError,
-  listCIRuns as listSourceCIRunsRequest,
   listRefs as listSourceRefsRequest,
   listRepositories as listSourceRepositoriesRequest,
   listWorkflowRuns as listSourceWorkflowRunsRequest,
@@ -104,7 +103,6 @@ import type {
   CreateGitCredentialRequest as CreateSourceGitCredentialRequest,
   CreateRepositoryRequest as CreateSourceRepositoryRequest,
   SourceBlob,
-  SourceCIRunList,
   SourceCheckoutGrant,
   SourceGitCredential,
   SourceRefs,
@@ -213,7 +211,6 @@ export type {
   CreateSourceGitCredentialRequest,
   CreateSourceRepositoryRequest,
   SourceBlob,
-  SourceCIRunList,
   SourceCheckoutGrant,
   SourceGitCredential,
   SourceRefs,
@@ -549,16 +546,6 @@ export const listSourceRefs = createServerFn({ method: "GET" })
   .inputValidator(sourceRepositoryIDInputSchema)
   .handler(async ({ context, data }) => {
     return listSourceRefsRequest({
-      ...(await sourceCodeHostingClientOptions(context)),
-      repoId: data.repoId,
-    });
-  });
-
-export const listSourceCIRuns = createServerFn({ method: "GET" })
-  .middleware([consoleAuthMiddleware])
-  .inputValidator(sourceRepositoryIDInputSchema)
-  .handler(async ({ context, data }) => {
-    return listSourceCIRunsRequest({
       ...(await sourceCodeHostingClientOptions(context)),
       repoId: data.repoId,
     });

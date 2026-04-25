@@ -12,6 +12,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var tracer = otel.Tracer("source-code-hosting-service/source")
@@ -19,8 +20,8 @@ var tracer = otel.Tracer("source-code-hosting-service/source")
 type Service struct {
 	Store         Store
 	Forgejo       ForgejoClient
-	Sandbox       SandboxCISubmitter
 	Credentials   GitCredentialIssuer
+	Runner        RunnerRepositoryRegistrar
 	CheckoutTTL   time.Duration
 	ForgejoPrefix string
 }
@@ -52,8 +53,21 @@ func (s *Service) CreateRepository(ctx context.Context, principal Principal, inp
 	}
 	repo, err := s.Store.CreateRepository(ctx, principal, input, s.Forgejo.Owner, forgejoRepo)
 	if err != nil {
+		if errors.Is(err, ErrConflict) {
+			existing, loadErr := s.Store.GetRepositoryBySlug(ctx, principal.OrgID, NormalizeSlug(input.Name))
+			if loadErr == nil {
+				if registerErr := s.registerRunnerRepository(ctx, span, existing); registerErr != nil {
+					return Repository{}, registerErr
+				}
+				span.SetAttributes(attribute.String("source.repo_id", existing.RepoID.String()))
+				return existing, nil
+			}
+		}
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
+		return Repository{}, err
+	}
+	if err := s.registerRunnerRepository(ctx, span, repo); err != nil {
 		return Repository{}, err
 	}
 	span.SetAttributes(attribute.String("source.repo_id", repo.RepoID.String()))
@@ -130,6 +144,9 @@ func (s *Service) EnsureGitRepository(ctx context.Context, principal GitPrincipa
 	}
 	repo, err := s.Store.GetRepositoryBySlug(ctx, principal.OrgID, slug)
 	if err == nil {
+		if err := s.registerRunnerRepository(ctx, span, repo); err != nil {
+			return Repository{}, false, err
+		}
 		span.SetAttributes(attribute.String("source.repo_id", repo.RepoID.String()), attribute.Bool("source.repo_created", false))
 		return repo, false, nil
 	}
@@ -150,12 +167,18 @@ func (s *Service) EnsureGitRepository(ctx context.Context, principal GitPrincipa
 		if errors.Is(err, ErrConflict) {
 			existing, loadErr := s.Store.GetRepositoryBySlug(ctx, principal.OrgID, slug)
 			if loadErr == nil {
+				if registerErr := s.registerRunnerRepository(ctx, span, existing); registerErr != nil {
+					return Repository{}, false, registerErr
+				}
 				span.SetAttributes(attribute.String("source.repo_id", existing.RepoID.String()), attribute.Bool("source.repo_created", false))
 				return existing, false, nil
 			}
 		}
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
+		return Repository{}, false, err
+	}
+	if err := s.registerRunnerRepository(ctx, span, repo); err != nil {
 		return Repository{}, false, err
 	}
 	span.SetAttributes(attribute.String("source.repo_id", repo.RepoID.String()), attribute.Bool("source.repo_created", true))
@@ -182,6 +205,9 @@ func (s *Service) GetGitRepository(ctx context.Context, principal GitPrincipal, 
 func (s *Service) AfterGitReceive(ctx context.Context, principal GitPrincipal, repo Repository) error {
 	ctx, span := tracer.Start(ctx, "source.git.receive.apply")
 	defer span.End()
+	if err := s.registerRunnerRepository(ctx, span, repo); err != nil {
+		return err
+	}
 	refs, err := s.listRefsAfterReceive(ctx, repo)
 	if err != nil {
 		span.RecordError(err)
@@ -193,51 +219,23 @@ func (s *Service) AfterGitReceive(ctx context.Context, principal GitPrincipal, r
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-	queuedRuns, err := s.Store.CreateQueuedCIRunsForRefs(ctx, principal.ActorID, repo, refs)
-	if err != nil {
+	span.SetAttributes(
+		attribute.String("source.repo_id", repo.RepoID.String()),
+		attribute.Int("source.ref_count", len(refs)),
+	)
+	return nil
+}
+
+func (s *Service) registerRunnerRepository(ctx context.Context, span trace.Span, repo Repository) error {
+	if s.Runner == nil {
+		return nil
+	}
+	if err := s.Runner.RegisterRunnerRepository(ctx, repo); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-	submitted, submitErr := s.submitQueuedCIRuns(ctx, repo, queuedRuns)
-	if submitErr != nil {
-		span.RecordError(submitErr)
-		span.SetStatus(codes.Error, submitErr.Error())
-	}
-	span.SetAttributes(
-		attribute.String("source.repo_id", repo.RepoID.String()),
-		attribute.Int("source.ci_run_count", len(queuedRuns)),
-		attribute.Int("source.ci_run_submitted_count", submitted),
-	)
-	return submitErr
-}
-
-func (s *Service) submitQueuedCIRuns(ctx context.Context, repo Repository, runs []CIRun) (int, error) {
-	if len(runs) == 0 {
-		return 0, nil
-	}
-	if s.Sandbox == nil {
-		return 0, ErrSandbox
-	}
-	submitted := 0
-	var joined error
-	for _, run := range runs {
-		submission, err := s.Sandbox.SubmitSourceCIRun(ctx, repo, run)
-		if err != nil {
-			if markErr := s.Store.MarkCIRunFailed(ctx, run, err.Error()); markErr != nil {
-				joined = errors.Join(joined, err, markErr)
-				continue
-			}
-			joined = errors.Join(joined, err)
-			continue
-		}
-		if _, err := s.Store.MarkCIRunSandboxSubmitted(ctx, run, submission); err != nil {
-			joined = errors.Join(joined, err)
-			continue
-		}
-		submitted++
-	}
-	return submitted, joined
+	return nil
 }
 
 func (s *Service) listRefsAfterReceive(ctx context.Context, repo Repository) ([]Ref, error) {
@@ -331,18 +329,6 @@ func (s *Service) Blob(ctx context.Context, principal Principal, repoID uuid.UUI
 		return Blob{}, ErrInvalid
 	}
 	return *blob, nil
-}
-
-func (s *Service) ListCIRuns(ctx context.Context, principal Principal, repoID uuid.UUID) ([]CIRun, error) {
-	ctx, span := tracer.Start(ctx, "source.ci_runs.list")
-	defer span.End()
-	if err := ValidatePrincipal(principal); err != nil {
-		return nil, err
-	}
-	if _, err := s.GetRepository(ctx, principal, repoID); err != nil {
-		return nil, err
-	}
-	return s.Store.ListCIRuns(ctx, principal.OrgID, repoID)
 }
 
 func (s *Service) CreateCheckoutGrant(ctx context.Context, principal Principal, repoID uuid.UUID, ref, pathPrefix string) (CheckoutGrant, error) {

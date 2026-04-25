@@ -39,7 +39,9 @@ function SourcePage() {
       <PageHeader>
         <PageHeaderContent>
           <PageTitle>Source</PageTitle>
-          <PageDescription>Branches and CI state for the project repository.</PageDescription>
+          <PageDescription>
+            Branches and repository state for the project repository.
+          </PageDescription>
         </PageHeaderContent>
       </PageHeader>
 

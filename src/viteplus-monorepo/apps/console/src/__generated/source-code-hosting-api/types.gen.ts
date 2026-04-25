@@ -19,33 +19,6 @@ export type Blob = {
   size: number;
 };
 
-export type CiRun = {
-  actor_id: string;
-  ci_run_id: string;
-  commit_sha: string;
-  completed_at?: string;
-  created_at: string;
-  failure_reason?: string;
-  org_id: string;
-  ref_name: string;
-  repo_id: string;
-  sandbox_attempt_id?: string;
-  sandbox_execution_id?: string;
-  started_at?: string;
-  state: string;
-  trace_id?: string;
-  trigger_event: string;
-  updated_at: string;
-};
-
-export type CiRunList = {
-  /**
-   * A URL to the JSON Schema for this object.
-   */
-  readonly $schema?: string;
-  ci_runs: Array<CiRun> | null;
-};
-
 export type CheckoutGrant = {
   /**
    * A URL to the JSON Schema for this object.
@@ -257,10 +230,6 @@ export type BlobWritable = {
   path: string;
   sha: string;
   size: number;
-};
-
-export type CiRunListWritable = {
-  ci_runs: Array<CiRun> | null;
 };
 
 export type CheckoutGrantWritable = {
@@ -572,33 +541,6 @@ export type CreateSourceCheckoutGrantResponses = {
 
 export type CreateSourceCheckoutGrantResponse =
   CreateSourceCheckoutGrantResponses[keyof CreateSourceCheckoutGrantResponses];
-
-export type ListSourceCiRunsData = {
-  body?: never;
-  path: {
-    repo_id: string;
-  };
-  query?: never;
-  url: "/api/v1/repos/{repo_id}/ci-runs";
-};
-
-export type ListSourceCiRunsErrors = {
-  /**
-   * Error
-   */
-  default: ErrorModel;
-};
-
-export type ListSourceCiRunsError = ListSourceCiRunsErrors[keyof ListSourceCiRunsErrors];
-
-export type ListSourceCiRunsResponses = {
-  /**
-   * OK
-   */
-  200: CiRunList;
-};
-
-export type ListSourceCiRunsResponse = ListSourceCiRunsResponses[keyof ListSourceCiRunsResponses];
 
 export type ListSourceRefsData = {
   body?: never;

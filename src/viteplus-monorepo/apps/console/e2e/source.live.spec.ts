@@ -33,9 +33,9 @@ test.describe("Console Source", () => {
         run.source_state = "empty";
       } else {
         await expect(
-          app.page.getByRole("heading", { name: "Branches", exact: true }),
+          app.page.getByRole("heading", { name: "Branches", exact: true }).first(),
         ).toBeVisible();
-        await expect(app.page.getByRole("heading", { name: "CI jobs", exact: true })).toBeVisible();
+        await expect(app.page.getByText("active branches").first()).toBeVisible();
         run.source_state = "repositories";
       }
 

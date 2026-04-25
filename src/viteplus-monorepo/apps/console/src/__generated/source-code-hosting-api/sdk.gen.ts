@@ -28,9 +28,6 @@ import type {
   GetSourceWorkflowRunData,
   GetSourceWorkflowRunErrors,
   GetSourceWorkflowRunResponses,
-  ListSourceCiRunsData,
-  ListSourceCiRunsErrors,
-  ListSourceCiRunsResponses,
   ListSourceRefsData,
   ListSourceRefsErrors,
   ListSourceRefsResponses,
@@ -162,18 +159,6 @@ export const createSourceCheckoutGrant = <ThrowOnError extends boolean = false>(
       "Content-Type": "application/json",
       ...options.headers,
     },
-  });
-
-/**
- * List repository CI runs
- */
-export const listSourceCiRuns = <ThrowOnError extends boolean = false>(
-  options: Options<ListSourceCiRunsData, ThrowOnError>,
-) =>
-  (options.client ?? client).get<ListSourceCiRunsResponses, ListSourceCiRunsErrors, ThrowOnError>({
-    security: [{ scheme: "bearer", type: "http" }],
-    url: "/api/v1/repos/{repo_id}/ci-runs",
-    ...options,
   });
 
 /**
