@@ -16,9 +16,9 @@ import (
 
 func main() {
 	ctx := context.Background()
-	spanName := strings.TrimSpace(os.Getenv("PROOF_SPAN_NAME"))
-	if spanName == "" {
-		fmt.Fprintln(os.Stderr, "PROOF_SPAN_NAME is required")
+	spans, err := proofSpans()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
 	serviceName := strings.TrimSpace(os.Getenv("PROOF_SPAN_SERVICE"))
@@ -42,25 +42,74 @@ func main() {
 		}
 	}()
 
-	attrs, err := proofAttrs()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
+	tracer := otel.Tracer(serviceName)
+	for _, spec := range spans {
+		attrs, err := proofAttrs(spec.Attributes)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		_, span := tracer.Start(ctx, spec.Name)
+		span.SetAttributes(attrs...)
+		span.SetStatus(codes.Ok, "")
+		span.End()
 	}
-	_, span := otel.Tracer(serviceName).Start(ctx, spanName)
-	span.SetAttributes(attrs...)
-	span.SetStatus(codes.Ok, "")
-	span.End()
 }
 
-func proofAttrs() ([]attribute.KeyValue, error) {
+type proofSpan struct {
+	Name       string         `json:"name"`
+	Attributes map[string]any `json:"attributes"`
+}
+
+func proofSpans() ([]proofSpan, error) {
+	raw := strings.TrimSpace(os.Getenv("PROOF_SPANS_JSON"))
+	if raw != "" {
+		var spans []proofSpan
+		if err := json.Unmarshal([]byte(raw), &spans); err != nil {
+			return nil, fmt.Errorf("decode PROOF_SPANS_JSON: %w", err)
+		}
+		if len(spans) == 0 {
+			return nil, fmt.Errorf("PROOF_SPANS_JSON must contain at least one span")
+		}
+		for i := range spans {
+			spans[i].Name = strings.TrimSpace(spans[i].Name)
+			if spans[i].Name == "" {
+				return nil, fmt.Errorf("PROOF_SPANS_JSON[%d].name is required", i)
+			}
+			if spans[i].Attributes == nil {
+				spans[i].Attributes = map[string]any{}
+			}
+		}
+		return spans, nil
+	}
+
+	spanName := strings.TrimSpace(os.Getenv("PROOF_SPAN_NAME"))
+	if spanName == "" {
+		return nil, fmt.Errorf("PROOF_SPAN_NAME is required")
+	}
+
+	attrs, err := proofAttrPayload()
+	if err != nil {
+		return nil, err
+	}
+	return []proofSpan{{Name: spanName, Attributes: attrs}}, nil
+}
+
+func proofAttrPayload() (map[string]any, error) {
 	raw := strings.TrimSpace(os.Getenv("PROOF_SPAN_ATTRS_JSON"))
 	if raw == "" {
-		return nil, nil
+		return map[string]any{}, nil
 	}
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
 		return nil, fmt.Errorf("decode PROOF_SPAN_ATTRS_JSON: %w", err)
+	}
+	return payload, nil
+}
+
+func proofAttrs(payload map[string]any) ([]attribute.KeyValue, error) {
+	if payload == nil {
+		return nil, nil
 	}
 	attrs := make([]attribute.KeyValue, 0, len(payload))
 	for key, value := range payload {
