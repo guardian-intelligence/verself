@@ -119,14 +119,26 @@ wait_for_clickhouse_count() {
 
 signed_forgejo_webhook() {
   local output_path="$1"
+  local provider_owner="$2"
+  local provider_repo="$3"
+  local provider_repo_id="$4"
   local body_b64
   body_b64="$(
-    RUN_ID="${run_id}" python3 - <<'PY'
+    RUN_ID="${run_id}" PROVIDER_OWNER="${provider_owner}" PROVIDER_REPO="${provider_repo}" PROVIDER_REPO_ID="${provider_repo_id}" python3 - <<'PY'
 import base64
 import json
 import os
 
-body = json.dumps({"proof_run_id": os.environ["RUN_ID"], "repository": {"name": "source-proof-webhook"}}, sort_keys=True).encode()
+repo_id = int(os.environ["PROVIDER_REPO_ID"]) if os.environ["PROVIDER_REPO_ID"] else 0
+body = json.dumps({
+    "proof_run_id": os.environ["RUN_ID"],
+    "repository": {
+        "id": repo_id,
+        "name": os.environ["PROVIDER_REPO"],
+        "full_name": f"{os.environ['PROVIDER_OWNER']}/{os.environ['PROVIDER_REPO']}",
+        "owner": {"username": os.environ["PROVIDER_OWNER"]},
+    },
+}, sort_keys=True).encode()
 print(base64.b64encode(body).decode())
 PY
   )"
@@ -265,7 +277,31 @@ print(json.load(open(sys.argv[1], encoding="utf-8"))["integration_id"])
 PY
 )"
 
-signed_forgejo_webhook "${artifact_dir}/responses/forgejo-webhook.json"
+escaped_repo_id="${repo_id//\'/\'\'}"
+escaped_grant_id="${checkout_grant_id//\'/\'\'}"
+escaped_integration_id="${integration_id//\'/\'\'}"
+
+remote_psql source_code_hosting "
+SELECT repo_id, org_id, name, slug, default_branch, visibility, state, provider, provider_owner, provider_repo, provider_repo_id
+FROM source_repositories
+WHERE repo_id = '${escaped_repo_id}'::uuid;
+" "${artifact_dir}/postgres/repository.tsv"
+
+org_id="$(cut -f2 "${artifact_dir}/postgres/repository.tsv" | head -n 1)"
+if [[ -z "${org_id}" ]]; then
+  echo "source_repositories did not contain the proof repo" >&2
+  exit 1
+fi
+provider="$(cut -f8 "${artifact_dir}/postgres/repository.tsv" | head -n 1)"
+provider_owner="$(cut -f9 "${artifact_dir}/postgres/repository.tsv" | head -n 1)"
+provider_repo="$(cut -f10 "${artifact_dir}/postgres/repository.tsv" | head -n 1)"
+provider_repo_id="$(cut -f11 "${artifact_dir}/postgres/repository.tsv" | head -n 1)"
+if [[ "${provider}" != "forgejo" || -z "${provider_owner}" || -z "${provider_repo}" || -z "${provider_repo_id}" ]]; then
+  echo "source_repositories row did not include provider-neutral Forgejo coordinates" >&2
+  exit 1
+fi
+
+signed_forgejo_webhook "${artifact_dir}/responses/forgejo-webhook.json" "${provider_owner}" "${provider_repo}" "${provider_repo_id}"
 python3 - "${artifact_dir}/responses/forgejo-webhook.json" <<'PY'
 import json
 import sys
@@ -276,21 +312,6 @@ if status != 202:
 PY
 
 window_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-escaped_repo_id="${repo_id//\'/\'\'}"
-escaped_grant_id="${checkout_grant_id//\'/\'\'}"
-escaped_integration_id="${integration_id//\'/\'\'}"
-
-remote_psql source_code_hosting "
-SELECT repo_id, org_id, name, slug, default_branch, visibility, state, forgejo_owner, forgejo_repo
-FROM source_repositories
-WHERE repo_id = '${escaped_repo_id}'::uuid;
-" "${artifact_dir}/postgres/repository.tsv"
-
-org_id="$(cut -f2 "${artifact_dir}/postgres/repository.tsv" | head -n 1)"
-if [[ -z "${org_id}" ]]; then
-  echo "source_repositories did not contain the proof repo" >&2
-  exit 1
-fi
 
 remote_psql source_code_hosting "
 SELECT grant_id, repo_id, org_id, actor_id, ref, path_prefix, expires_at, consumed_at IS NOT NULL AS consumed
