@@ -89,7 +89,7 @@ test.describe("Console Shell", () => {
       await expect(app.page).toHaveURL(/\/schedules$/);
       await expect(app.page.getByRole("heading", { name: "Schedules", exact: true })).toBeVisible();
       await expect(
-        app.page.getByText("Recurring VM canaries backed by Temporal schedules."),
+        app.page.getByText("Recurring source workflow dispatches backed by Temporal."),
       ).toBeVisible();
 
       run.status = "succeeded";

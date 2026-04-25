@@ -421,32 +421,27 @@ export const vSandboxExecutionScheduleCreateRequest = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   display_name: v.optional(v.pipe(v.string(), v.maxLength(255))),
   idempotency_key: v.pipe(v.string(), v.maxLength(128)),
+  inputs: v.optional(v.record(v.string(), v.string())),
   interval_seconds: v.pipe(v.number(), v.integer(), v.minValue(15), v.maxValue(4294967295)),
-  max_wall_seconds: v.optional(
-    v.pipe(
-      v.union([v.number(), v.string(), v.bigint()]),
-      v.transform((x) => BigInt(x)),
-      v.minValue(BigInt(1)),
-      v.maxValue(BigInt(9007199254740991)),
-    ),
-  ),
   paused: v.optional(v.boolean()),
-  run_command: v.pipe(v.string(), v.minLength(1), v.maxLength(8192)),
+  ref: v.optional(v.pipe(v.string(), v.maxLength(255))),
+  source_repository_id: v.string(),
+  workflow_path: v.pipe(v.string(), v.minLength(1), v.maxLength(512)),
 });
 
 export const vSandboxExecutionScheduleDispatchRecord = v.strictObject({
-  attempt_id: v.optional(v.string()),
   created_at: v.pipe(v.string(), v.isoTimestamp()),
   dispatch_id: v.string(),
-  execution_id: v.optional(v.string()),
   failure_reason: v.optional(v.string()),
   schedule_id: v.string(),
   scheduled_at: v.pipe(v.string(), v.isoTimestamp()),
+  source_workflow_run_id: v.optional(v.string()),
   state: v.string(),
   submitted_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
   temporal_run_id: v.string(),
   temporal_workflow_id: v.string(),
   updated_at: v.pipe(v.string(), v.isoTimestamp()),
+  workflow_state: v.optional(v.string()),
 });
 
 export const vSandboxExecutionScheduleRecord = v.strictObject({
@@ -456,23 +451,18 @@ export const vSandboxExecutionScheduleRecord = v.strictObject({
   dispatches: v.nullish(v.array(vSandboxExecutionScheduleDispatchRecord)),
   display_name: v.optional(v.string()),
   idempotency_key: v.optional(v.string()),
+  inputs: v.optional(v.record(v.string(), v.string())),
   interval_seconds: v.pipe(v.number(), v.integer(), v.minValue(15), v.maxValue(4294967295)),
-  max_wall_seconds: v.optional(
-    v.pipe(
-      v.union([v.number(), v.string(), v.bigint()]),
-      v.transform((x) => BigInt(x)),
-      v.minValue(BigInt(0)),
-      v.maxValue(BigInt(9007199254740991)),
-    ),
-  ),
   org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  run_command: v.string(),
+  ref: v.optional(v.string()),
   schedule_id: v.string(),
+  source_repository_id: v.string(),
   state: v.string(),
   task_queue: v.string(),
   temporal_namespace: v.string(),
   temporal_schedule_id: v.string(),
   updated_at: v.pipe(v.string(), v.isoTimestamp()),
+  workflow_path: v.string(),
 });
 
 export const vSandboxExecutionStickyDiskMount = v.strictObject({
@@ -880,17 +870,12 @@ export const vSandboxExecutionRecordWritable = v.strictObject({
 export const vSandboxExecutionScheduleCreateRequestWritable = v.strictObject({
   display_name: v.optional(v.pipe(v.string(), v.maxLength(255))),
   idempotency_key: v.pipe(v.string(), v.maxLength(128)),
+  inputs: v.optional(v.record(v.string(), v.string())),
   interval_seconds: v.pipe(v.number(), v.integer(), v.minValue(15), v.maxValue(4294967295)),
-  max_wall_seconds: v.optional(
-    v.pipe(
-      v.union([v.number(), v.string(), v.bigint()]),
-      v.transform((x) => BigInt(x)),
-      v.minValue(BigInt(1)),
-      v.maxValue(BigInt(9007199254740991)),
-    ),
-  ),
   paused: v.optional(v.boolean()),
-  run_command: v.pipe(v.string(), v.minLength(1), v.maxLength(8192)),
+  ref: v.optional(v.pipe(v.string(), v.maxLength(255))),
+  source_repository_id: v.string(),
+  workflow_path: v.pipe(v.string(), v.minLength(1), v.maxLength(512)),
 });
 
 export const vSandboxExecutionScheduleRecordWritable = v.strictObject({
@@ -899,23 +884,18 @@ export const vSandboxExecutionScheduleRecordWritable = v.strictObject({
   dispatches: v.nullish(v.array(vSandboxExecutionScheduleDispatchRecord)),
   display_name: v.optional(v.string()),
   idempotency_key: v.optional(v.string()),
+  inputs: v.optional(v.record(v.string(), v.string())),
   interval_seconds: v.pipe(v.number(), v.integer(), v.minValue(15), v.maxValue(4294967295)),
-  max_wall_seconds: v.optional(
-    v.pipe(
-      v.union([v.number(), v.string(), v.bigint()]),
-      v.transform((x) => BigInt(x)),
-      v.minValue(BigInt(0)),
-      v.maxValue(BigInt(9007199254740991)),
-    ),
-  ),
   org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  run_command: v.string(),
+  ref: v.optional(v.string()),
   schedule_id: v.string(),
+  source_repository_id: v.string(),
   state: v.string(),
   task_queue: v.string(),
   temporal_namespace: v.string(),
   temporal_schedule_id: v.string(),
   updated_at: v.pipe(v.string(), v.isoTimestamp()),
+  workflow_path: v.string(),
 });
 
 export const vSandboxGitHubInstallationConnectResponseWritable = v.strictObject({

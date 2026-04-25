@@ -13,6 +13,7 @@ require (
 	github.com/forge-metal/httpserver v0.0.0
 	github.com/forge-metal/otel v0.0.0
 	github.com/forge-metal/secrets-service v0.0.0
+	github.com/forge-metal/source-code-hosting-service v0.0.0
 	github.com/forge-metal/temporal-platform v0.0.0
 	github.com/forge-metal/vm-orchestrator v0.0.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
@@ -119,6 +120,7 @@ replace (
 	github.com/forge-metal/httpserver => ../httpserver
 	github.com/forge-metal/otel => ../otel
 	github.com/forge-metal/secrets-service => ../secrets-service
+	github.com/forge-metal/source-code-hosting-service => ../source-code-hosting-service
 	github.com/forge-metal/temporal-platform => ../temporal-platform
 	github.com/forge-metal/vm-orchestrator => ../vm-orchestrator
 )

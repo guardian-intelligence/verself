@@ -38,6 +38,7 @@ import (
 	"github.com/forge-metal/sandbox-rental-service/internal/jobs"
 	"github.com/forge-metal/sandbox-rental-service/internal/recurring"
 	"github.com/forge-metal/sandbox-rental-service/internal/scheduler"
+	"github.com/forge-metal/sandbox-rental-service/internal/sourceworkflow"
 	"github.com/forge-metal/temporal-platform/sdkclient"
 )
 
@@ -76,6 +77,7 @@ func run() error {
 	billingURL := cfg.URL("SANDBOX_BILLING_URL", "http://127.0.0.1:4242")
 	governanceAuditURL := cfg.String("SANDBOX_GOVERNANCE_AUDIT_URL", "")
 	secretsURL := cfg.URL("SANDBOX_SECRETS_URL", "https://127.0.0.1:4253")
+	sourceInternalURL := cfg.URL("SANDBOX_SOURCE_INTERNAL_URL", "https://127.0.0.1:4262")
 	billingReturnOriginsRaw := cfg.RequireString("SANDBOX_BILLING_RETURN_ORIGINS")
 	publicBaseURL := cfg.RequireString("SANDBOX_PUBLIC_BASE_URL")
 	authIssuerURL := cfg.RequireURL("SANDBOX_AUTH_ISSUER_URL")
@@ -231,6 +233,10 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("create secrets client: %w", err)
 	}
+	sourceHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceSourceCodeHosting, nil)
+	if err != nil {
+		return fmt.Errorf("sandbox source-code-hosting mtls: %w", err)
+	}
 	temporalClient, err := sdkclient.NewWorkflowClient(sdkclient.Config{
 		HostPort: temporalFrontendAddress,
 	}, temporalNamespace, spiffeSource, "sandbox-rental-service-temporal-sdk")
@@ -288,6 +294,10 @@ func run() error {
 		return fmt.Errorf("create github runner adapter: %w", err)
 	}
 	jobService.GitHubRunner = githubRunner
+	sourceDispatcher, err := sourceworkflow.NewDispatcher(sourceInternalURL, sourceHTTPClient)
+	if err != nil {
+		return fmt.Errorf("create source workflow dispatcher: %w", err)
+	}
 	sandboxapi.ConfigureAuditSink(governanceAuditURL, spiffeSource)
 	recurringService, err := recurring.NewService(recurring.Config{
 		PGX:            pgxPool,
@@ -295,7 +305,7 @@ func run() error {
 		Namespace:      temporalNamespace,
 		TaskQueue:      temporalRecurringTaskQueue,
 		Logger:         logger,
-		Submitter:      jobService,
+		Dispatcher:     sourceDispatcher,
 	})
 	if err != nil {
 		return fmt.Errorf("create recurring service: %w", err)

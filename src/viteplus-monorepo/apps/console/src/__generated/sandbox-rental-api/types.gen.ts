@@ -414,25 +414,29 @@ export type SandboxExecutionScheduleCreateRequest = {
   readonly $schema?: string;
   display_name?: string;
   idempotency_key: string;
+  inputs?: {
+    [key: string]: string;
+  };
   interval_seconds: number;
-  max_wall_seconds?: number;
   paused?: boolean;
-  run_command: string;
+  ref?: string;
+  source_repository_id: string;
+  workflow_path: string;
 };
 
 export type SandboxExecutionScheduleDispatchRecord = {
-  attempt_id?: string;
   created_at: string;
   dispatch_id: string;
-  execution_id?: string;
   failure_reason?: string;
   schedule_id: string;
   scheduled_at: string;
+  source_workflow_run_id?: string;
   state: string;
   submitted_at?: string;
   temporal_run_id: string;
   temporal_workflow_id: string;
   updated_at: string;
+  workflow_state?: string;
 };
 
 export type SandboxExecutionScheduleRecord = {
@@ -445,16 +449,20 @@ export type SandboxExecutionScheduleRecord = {
   dispatches?: Array<SandboxExecutionScheduleDispatchRecord> | null;
   display_name?: string;
   idempotency_key?: string;
+  inputs?: {
+    [key: string]: string;
+  };
   interval_seconds: number;
-  max_wall_seconds?: number;
   org_id: string;
-  run_command: string;
+  ref?: string;
   schedule_id: string;
+  source_repository_id: string;
   state: string;
   task_queue: string;
   temporal_namespace: string;
   temporal_schedule_id: string;
   updated_at: string;
+  workflow_path: string;
 };
 
 export type SandboxExecutionStickyDiskMount = {
@@ -866,10 +874,14 @@ export type SandboxExecutionRecordWritable = {
 export type SandboxExecutionScheduleCreateRequestWritable = {
   display_name?: string;
   idempotency_key: string;
+  inputs?: {
+    [key: string]: string;
+  };
   interval_seconds: number;
-  max_wall_seconds?: number;
   paused?: boolean;
-  run_command: string;
+  ref?: string;
+  source_repository_id: string;
+  workflow_path: string;
 };
 
 export type SandboxExecutionScheduleRecordWritable = {
@@ -878,16 +890,20 @@ export type SandboxExecutionScheduleRecordWritable = {
   dispatches?: Array<SandboxExecutionScheduleDispatchRecord> | null;
   display_name?: string;
   idempotency_key?: string;
+  inputs?: {
+    [key: string]: string;
+  };
   interval_seconds: number;
-  max_wall_seconds?: number;
   org_id: string;
-  run_command: string;
+  ref?: string;
   schedule_id: string;
+  source_repository_id: string;
   state: string;
   task_queue: string;
   temporal_namespace: string;
   temporal_schedule_id: string;
   updated_at: string;
+  workflow_path: string;
 };
 
 export type SandboxGitHubInstallationConnectResponseWritable = {

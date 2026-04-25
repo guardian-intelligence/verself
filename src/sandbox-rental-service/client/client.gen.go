@@ -487,29 +487,31 @@ type SandboxExecutionRecord struct {
 // SandboxExecutionScheduleCreateRequest defines model for SandboxExecutionScheduleCreateRequest.
 type SandboxExecutionScheduleCreateRequest struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema          *string `json:"$schema,omitempty"`
-	DisplayName     *string `json:"display_name,omitempty"`
-	IdempotencyKey  string  `json:"idempotency_key"`
-	IntervalSeconds int32   `json:"interval_seconds"`
-	MaxWallSeconds  *int64  `json:"max_wall_seconds,omitempty"`
-	Paused          *bool   `json:"paused,omitempty"`
-	RunCommand      string  `json:"run_command"`
+	Schema             *string            `json:"$schema,omitempty"`
+	DisplayName        *string            `json:"display_name,omitempty"`
+	IdempotencyKey     string             `json:"idempotency_key"`
+	Inputs             *map[string]string `json:"inputs,omitempty"`
+	IntervalSeconds    int32              `json:"interval_seconds"`
+	Paused             *bool              `json:"paused,omitempty"`
+	Ref                *string            `json:"ref,omitempty"`
+	SourceRepositoryId string             `json:"source_repository_id"`
+	WorkflowPath       string             `json:"workflow_path"`
 }
 
 // SandboxExecutionScheduleDispatchRecord defines model for SandboxExecutionScheduleDispatchRecord.
 type SandboxExecutionScheduleDispatchRecord struct {
-	AttemptId          *string    `json:"attempt_id,omitempty"`
-	CreatedAt          time.Time  `json:"created_at"`
-	DispatchId         string     `json:"dispatch_id"`
-	ExecutionId        *string    `json:"execution_id,omitempty"`
-	FailureReason      *string    `json:"failure_reason,omitempty"`
-	ScheduleId         string     `json:"schedule_id"`
-	ScheduledAt        time.Time  `json:"scheduled_at"`
-	State              string     `json:"state"`
-	SubmittedAt        *time.Time `json:"submitted_at,omitempty"`
-	TemporalRunId      string     `json:"temporal_run_id"`
-	TemporalWorkflowId string     `json:"temporal_workflow_id"`
-	UpdatedAt          time.Time  `json:"updated_at"`
+	CreatedAt           time.Time  `json:"created_at"`
+	DispatchId          string     `json:"dispatch_id"`
+	FailureReason       *string    `json:"failure_reason,omitempty"`
+	ScheduleId          string     `json:"schedule_id"`
+	ScheduledAt         time.Time  `json:"scheduled_at"`
+	SourceWorkflowRunId *string    `json:"source_workflow_run_id,omitempty"`
+	State               string     `json:"state"`
+	SubmittedAt         *time.Time `json:"submitted_at,omitempty"`
+	TemporalRunId       string     `json:"temporal_run_id"`
+	TemporalWorkflowId  string     `json:"temporal_workflow_id"`
+	UpdatedAt           time.Time  `json:"updated_at"`
+	WorkflowState       *string    `json:"workflow_state,omitempty"`
 }
 
 // SandboxExecutionScheduleRecord defines model for SandboxExecutionScheduleRecord.
@@ -521,16 +523,18 @@ type SandboxExecutionScheduleRecord struct {
 	Dispatches         *[]SandboxExecutionScheduleDispatchRecord `json:"dispatches,omitempty"`
 	DisplayName        *string                                   `json:"display_name,omitempty"`
 	IdempotencyKey     *string                                   `json:"idempotency_key,omitempty"`
+	Inputs             *map[string]string                        `json:"inputs,omitempty"`
 	IntervalSeconds    int32                                     `json:"interval_seconds"`
-	MaxWallSeconds     *int64                                    `json:"max_wall_seconds,omitempty"`
 	OrgId              string                                    `json:"org_id"`
-	RunCommand         string                                    `json:"run_command"`
+	Ref                *string                                   `json:"ref,omitempty"`
 	ScheduleId         string                                    `json:"schedule_id"`
+	SourceRepositoryId string                                    `json:"source_repository_id"`
 	State              string                                    `json:"state"`
 	TaskQueue          string                                    `json:"task_queue"`
 	TemporalNamespace  string                                    `json:"temporal_namespace"`
 	TemporalScheduleId string                                    `json:"temporal_schedule_id"`
 	UpdatedAt          time.Time                                 `json:"updated_at"`
+	WorkflowPath       string                                    `json:"workflow_path"`
 }
 
 // SandboxExecutionStickyDiskMount defines model for SandboxExecutionStickyDiskMount.

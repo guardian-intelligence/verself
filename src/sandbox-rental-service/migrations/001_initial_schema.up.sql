@@ -442,8 +442,10 @@ CREATE TABLE execution_schedules (
     task_queue            TEXT        NOT NULL CHECK (task_queue <> ''),
     state                 TEXT        NOT NULL CHECK (state IN ('active', 'paused')),
     interval_seconds      INTEGER     NOT NULL CHECK (interval_seconds >= 15),
-    run_command           TEXT        NOT NULL CHECK (run_command <> ''),
-    max_wall_seconds      BIGINT      NOT NULL DEFAULT 0 CHECK (max_wall_seconds >= 0),
+    source_repository_id  UUID        NOT NULL,
+    workflow_path         TEXT        NOT NULL CHECK (workflow_path <> ''),
+    ref                   TEXT        NOT NULL DEFAULT '',
+    inputs_json           JSONB       NOT NULL DEFAULT '{}'::jsonb,
     created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (org_id, idempotency_key),
@@ -461,8 +463,8 @@ CREATE TABLE execution_schedule_dispatches (
     schedule_id           UUID        NOT NULL REFERENCES execution_schedules(schedule_id) ON DELETE CASCADE,
     temporal_workflow_id  TEXT        NOT NULL CHECK (temporal_workflow_id <> ''),
     temporal_run_id       TEXT        NOT NULL CHECK (temporal_run_id <> ''),
-    execution_id          UUID        REFERENCES executions(execution_id) ON DELETE SET NULL,
-    attempt_id            UUID        REFERENCES execution_attempts(attempt_id) ON DELETE SET NULL,
+    source_workflow_run_id UUID,
+    workflow_state        TEXT        NOT NULL DEFAULT '',
     state                 TEXT        NOT NULL CHECK (state IN ('pending', 'submitted', 'failed')),
     failure_reason        TEXT        NOT NULL DEFAULT '',
     scheduled_at          TIMESTAMPTZ NOT NULL,
@@ -475,9 +477,9 @@ CREATE TABLE execution_schedule_dispatches (
 CREATE INDEX idx_execution_schedule_dispatches_schedule_created
     ON execution_schedule_dispatches (schedule_id, created_at DESC, dispatch_id);
 
-CREATE INDEX idx_execution_schedule_dispatches_execution
-    ON execution_schedule_dispatches (execution_id)
-    WHERE execution_id IS NOT NULL;
+CREATE INDEX idx_execution_schedule_dispatches_workflow_run
+    ON execution_schedule_dispatches (source_workflow_run_id)
+    WHERE source_workflow_run_id IS NOT NULL;
 
 -- ─── River queue runtime (v0.34.0 end-state) ───────────────────────────────
 -- SQL derived from River v0.34.0 riverdriver/riverpgxv5/migration/main
