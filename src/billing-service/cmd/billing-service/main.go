@@ -51,7 +51,6 @@ func run() error {
 	secretsURL := cfg.RequireURL("BILLING_SECRETS_URL")
 	authIssuerURL := cfg.RequireURL("BILLING_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireString("BILLING_AUTH_AUDIENCE")
-	authJWKSURL := cfg.String("BILLING_AUTH_JWKS_URL", "")
 	pgMaxConns := cfg.Int("BILLING_PG_MAX_CONNS", 12)
 	pgMinConns := cfg.Int("BILLING_PG_MIN_CONNS", 1)
 	pgMaxLifetime := cfg.Int("BILLING_PG_CONN_MAX_LIFETIME_SECONDS", 1800)
@@ -195,7 +194,7 @@ func run() error {
 	rootMux := http.NewServeMux()
 	rootMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
 	rootMux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
-	protected := auth.Middleware(auth.Config{IssuerURL: authIssuerURL, Audience: authAudience, JWKSURL: authJWKSURL})(privateMux)
+	protected := auth.Middleware(auth.Config{IssuerURL: authIssuerURL, Audience: authAudience})(privateMux)
 	rootMux.Handle("/", billingHandler(privateMux, protected))
 
 	internalAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(internalPeerIDs, privateMux)

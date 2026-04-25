@@ -66,7 +66,6 @@ func run() error {
 	governanceAuditURL := cfg.String("IDENTITY_GOVERNANCE_AUDIT_URL", "")
 	authIssuerURL := cfg.RequireURL("IDENTITY_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireString("IDENTITY_AUTH_AUDIENCE")
-	authJWKSURL := cfg.String("IDENTITY_AUTH_JWKS_URL", "")
 	zitadelBaseURL := cfg.RequireURL("IDENTITY_ZITADEL_BASE_URL")
 	zitadelHostHeader := cfg.RequireString("IDENTITY_ZITADEL_HOST")
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
@@ -165,7 +164,6 @@ func run() error {
 	authConfig := auth.Config{
 		IssuerURL: authIssuerURL,
 		Audience:  authAudience,
-		JWKSURL:   authJWKSURL,
 	}
 	protected := auth.Middleware(authConfig)(privateMux)
 	rootMux.Handle("/", protected)

@@ -58,7 +58,6 @@ func run() error {
 	internalListenAddr := cfg.String("PROFILE_INTERNAL_LISTEN_ADDR", "127.0.0.1:4259")
 	authIssuerURL := cfg.RequireURL("PROFILE_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireString("PROFILE_AUTH_AUDIENCE")
-	authJWKSURL := cfg.String("PROFILE_AUTH_JWKS_URL", "")
 	identityInternalURL := cfg.RequireURL("PROFILE_IDENTITY_INTERNAL_URL")
 	governanceAuditURL := cfg.String("PROFILE_GOVERNANCE_AUDIT_URL", "")
 	pgMaxConns := cfg.Int("PROFILE_PG_MAX_CONNS", 8)
@@ -124,7 +123,6 @@ func run() error {
 	authenticated := auth.Middleware(auth.Config{
 		IssuerURL: authIssuerURL,
 		Audience:  authAudience,
-		JWKSURL:   authJWKSURL,
 	})(privateMux)
 	rootMux.Handle("/", profileapi.CaptureRawBearerToken(authenticated))
 

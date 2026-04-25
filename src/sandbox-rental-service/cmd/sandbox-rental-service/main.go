@@ -83,7 +83,6 @@ func run() error {
 	publicBaseURL := cfg.RequireString("SANDBOX_PUBLIC_BASE_URL")
 	authIssuerURL := cfg.RequireURL("SANDBOX_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireString("SANDBOX_AUTH_AUDIENCE")
-	authJWKSURL := cfg.String("SANDBOX_AUTH_JWKS_URL", "")
 	temporalFrontendAddress := cfg.String("SANDBOX_TEMPORAL_FRONTEND_ADDRESS", sdkclient.DefaultFrontendAddress)
 	temporalNamespace := cfg.String("SANDBOX_TEMPORAL_NAMESPACE", recurring.DefaultNamespace)
 	temporalRecurringTaskQueue := cfg.String("SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING", recurring.DefaultTaskQueue)
@@ -351,7 +350,6 @@ func run() error {
 	authHandler := auth.Middleware(auth.Config{
 		IssuerURL: authIssuerURL,
 		Audience:  authAudience,
-		JWKSURL:   authJWKSURL,
 	})(privateMux)
 	correlationForwarder := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		correlationID := strings.TrimSpace(r.Header.Get(correlationHeader))

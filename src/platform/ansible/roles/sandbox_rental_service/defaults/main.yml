@@ -2,7 +2,6 @@
 sandbox_rental_service_subdomain: sandbox.api
 sandbox_rental_service_domain: "{{ sandbox_rental_service_subdomain }}.{{ forge_metal_domain }}"
 sandbox_rental_service_auth_issuer_url: "https://auth.{{ forge_metal_domain }}"
-sandbox_rental_service_auth_jwks_url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/oauth/v2/keys"
 sandbox_rental_service_auth_project_name: sandbox-rental
 sandbox_rental_service_vm_orchestrator_socket: "{{ firecracker_vm_orchestrator_api_socket | default('/run/vm-orchestrator/api.sock', true) }}"
 sandbox_rental_service_vm_orchestrator_socket_group: "{{ firecracker_vm_orchestrator_socket_group | default('vm-clients', true) }}"

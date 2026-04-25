@@ -214,6 +214,7 @@
       User=mailbox_service
       Group=mailbox_service
       SupplementaryGroups={{ spire_workload_group }}
+      BindReadOnlyPaths=/etc/forge-metal/auth-discovery-hosts:/etc/hosts
       LoadCredential=stalwart-ceo-password:/etc/credstore/mailbox-service/stalwart-ceo-password
       LoadCredential=stalwart-agents-password:/etc/credstore/mailbox-service/stalwart-agents-password
       LoadCredential=forward-to:/etc/credstore/mailbox-service/forward-to
@@ -227,7 +228,6 @@
       Environment=MAILBOX_SERVICE_SYNC_DISCOVERY_INTERVAL=2m
       Environment=MAILBOX_SERVICE_SYNC_RECONCILE_INTERVAL=10m
       Environment=MAILBOX_SERVICE_AUTH_ISSUER_URL={{ mailbox_service_auth_issuer_url }}
-      Environment=MAILBOX_SERVICE_AUTH_JWKS_URL={{ mailbox_service_auth_jwks_url }}
       Environment=MAILBOX_SERVICE_AUTH_AUDIENCE={{ mailbox_service_auth_audience }}
       Environment=MAILBOX_SERVICE_FORWARDER_FROM_ADDRESS={{ resend_sender_address }}
       Environment=MAILBOX_SERVICE_FORWARDER_FROM_NAME={{ resend_sender_name }}

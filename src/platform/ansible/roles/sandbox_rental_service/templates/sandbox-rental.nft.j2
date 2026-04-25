@@ -34,6 +34,7 @@ table inet forge_metal_sandbox_rental {
         oifname "lo" tcp dport {{ services.billing.internal_port }} accept
         oifname "lo" tcp dport {{ services.openbao.port }} accept
         oifname "lo" tcp dport {{ services.zitadel.port }} accept
+        oifname "lo" tcp dport 443 accept
         oifname "lo" tcp dport {{ services.governance_service.internal_port }} accept
         oifname "lo" tcp dport {{ services.secrets_service.internal_port }} accept
         oifname "lo" tcp dport {{ services.source_code_hosting_service.internal_port }} accept
