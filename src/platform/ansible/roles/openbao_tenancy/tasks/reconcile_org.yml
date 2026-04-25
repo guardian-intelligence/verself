@@ -24,16 +24,16 @@
     openbao_tenancy_transit_verify_policy: "secrets-{{ openbao_tenancy_org.id }}-transit-verify"
     openbao_tenancy_spiffe_injection_role_url: >-
       https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/auth/{{
-      openbao_spiffe_jwt_mount }}/role/secrets-injection-{{ openbao_tenancy_org.id }}
+      openbao_tenancy_spiffe_jwt_mount }}/role/secrets-injection-{{ openbao_tenancy_org.id }}
     openbao_tenancy_spiffe_runtime_write_role_url: >-
       https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/auth/{{
-      openbao_spiffe_jwt_mount }}/role/secrets-runtime-write-{{ openbao_tenancy_org.id }}
+      openbao_tenancy_spiffe_jwt_mount }}/role/secrets-runtime-write-{{ openbao_tenancy_org.id }}
     openbao_tenancy_spiffe_credential_manage_role_url: >-
       https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/auth/{{
-      openbao_spiffe_jwt_mount }}/role/secrets-credential-manage-{{ openbao_tenancy_org.id }}
+      openbao_tenancy_spiffe_jwt_mount }}/role/secrets-credential-manage-{{ openbao_tenancy_org.id }}
     openbao_tenancy_spiffe_credential_verify_role_url: >-
       https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/auth/{{
-      openbao_spiffe_jwt_mount }}/role/secrets-credential-verify-{{ openbao_tenancy_org.id }}
+      openbao_tenancy_spiffe_jwt_mount }}/role/secrets-credential-verify-{{ openbao_tenancy_org.id }}
 
 - name: Render OpenBao tenancy policy documents
   ansible.builtin.set_fact:
@@ -81,7 +81,7 @@
       description: "Verself secrets KV for Zitadel org {{ openbao_tenancy_org_id }}"
       options:
         version: "2"
-    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    ca_path: "{{ openbao_tenancy_tls_dir }}/cert.pem"
     status_code: 204
   register: openbao_tenancy_kv_enable
   changed_when: true
@@ -98,7 +98,7 @@
     body:
       type: transit
       description: "Verself transit keys for Zitadel org {{ openbao_tenancy_org_id }}"
-    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    ca_path: "{{ openbao_tenancy_tls_dir }}/cert.pem"
     status_code: 204
   register: openbao_tenancy_transit_enable
   changed_when: true
@@ -115,7 +115,7 @@
     body:
       type: jwt
       description: "Verself Zitadel JWT auth for org {{ openbao_tenancy_org_id }}"
-    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    ca_path: "{{ openbao_tenancy_tls_dir }}/cert.pem"
     status_code: 204
   register: openbao_tenancy_auth_enable
   changed_when: true
@@ -128,7 +128,7 @@
     method: GET
     headers:
       X-Vault-Token: "{{ openbao_tenancy_root_token }}"
-    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    ca_path: "{{ openbao_tenancy_tls_dir }}/cert.pem"
     status_code: [200, 404]
     return_content: true
   register: openbao_tenancy_auth_config_response
@@ -146,7 +146,7 @@
       oidc_discovery_url: "{{ openbao_tenancy_oidc_discovery_url }}"
       bound_issuer: "{{ openbao_tenancy_bound_issuer }}"
       skip_jwks_validation: "{{ openbao_tenancy_skip_jwks_validation | bool }}"
-    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    ca_path: "{{ openbao_tenancy_tls_dir }}/cert.pem"
     status_code: 204
   register: openbao_tenancy_auth_config_write
   changed_when: true
@@ -162,7 +162,7 @@
     method: GET
     headers:
       X-Vault-Token: "{{ openbao_tenancy_root_token }}"
-    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    ca_path: "{{ openbao_tenancy_tls_dir }}/cert.pem"
     status_code: [200, 404]
     return_content: true
   loop: "{{ openbao_tenancy_policies }}"
@@ -181,7 +181,7 @@
     body_format: json
     body:
       policy: "{{ item.item.document }}"
-    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    ca_path: "{{ openbao_tenancy_tls_dir }}/cert.pem"
     status_code: 204
   loop: "{{ openbao_tenancy_policy_reads.results }}"
   loop_control:
@@ -310,7 +310,7 @@
     method: GET
     headers:
       X-Vault-Token: "{{ openbao_tenancy_root_token }}"
-    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    ca_path: "{{ openbao_tenancy_tls_dir }}/cert.pem"
     status_code: [200, 404]
     return_content: true
   loop: "{{ openbao_tenancy_jwt_roles }}"
@@ -326,7 +326,7 @@
     method: GET
     headers:
       X-Vault-Token: "{{ openbao_tenancy_root_token }}"
-    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    ca_path: "{{ openbao_tenancy_tls_dir }}/cert.pem"
     status_code: [200, 404]
     return_content: true
   register: openbao_tenancy_spiffe_injection_role_read
@@ -353,7 +353,7 @@
       token_max_ttl: "{{ openbao_tenancy_token_max_ttl }}"
       token_no_default_policy: true
       token_num_uses: 0
-    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    ca_path: "{{ openbao_tenancy_tls_dir }}/cert.pem"
     status_code: 204
   register: openbao_tenancy_spiffe_injection_role_write
   changed_when: true
@@ -375,7 +375,7 @@
     method: GET
     headers:
       X-Vault-Token: "{{ openbao_tenancy_root_token }}"
-    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    ca_path: "{{ openbao_tenancy_tls_dir }}/cert.pem"
     status_code: [200, 404]
     return_content: true
   register: openbao_tenancy_spiffe_runtime_write_role_read
@@ -403,7 +403,7 @@
       token_max_ttl: "{{ openbao_tenancy_token_max_ttl }}"
       token_no_default_policy: true
       token_num_uses: 0
-    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    ca_path: "{{ openbao_tenancy_tls_dir }}/cert.pem"
     status_code: 204
   register: openbao_tenancy_spiffe_runtime_write_role_write
   changed_when: true
@@ -425,7 +425,7 @@
     method: GET
     headers:
       X-Vault-Token: "{{ openbao_tenancy_root_token }}"
-    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    ca_path: "{{ openbao_tenancy_tls_dir }}/cert.pem"
     status_code: [200, 404]
     return_content: true
   register: openbao_tenancy_spiffe_credential_manage_role_read
@@ -452,7 +452,7 @@
       token_max_ttl: "{{ openbao_tenancy_token_max_ttl }}"
       token_no_default_policy: true
       token_num_uses: 0
-    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    ca_path: "{{ openbao_tenancy_tls_dir }}/cert.pem"
     status_code: 204
   register: openbao_tenancy_spiffe_credential_manage_role_write
   changed_when: true
@@ -474,7 +474,7 @@
     method: GET
     headers:
       X-Vault-Token: "{{ openbao_tenancy_root_token }}"
-    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    ca_path: "{{ openbao_tenancy_tls_dir }}/cert.pem"
     status_code: [200, 404]
     return_content: true
   register: openbao_tenancy_spiffe_credential_verify_role_read
@@ -501,7 +501,7 @@
       token_max_ttl: "{{ openbao_tenancy_token_max_ttl }}"
       token_no_default_policy: true
       token_num_uses: 0
-    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    ca_path: "{{ openbao_tenancy_tls_dir }}/cert.pem"
     status_code: 204
   register: openbao_tenancy_spiffe_credential_verify_role_write
   changed_when: true
@@ -552,7 +552,7 @@
       token_max_ttl: "{{ openbao_tenancy_token_max_ttl }}"
       token_no_default_policy: false
       token_num_uses: 0
-    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    ca_path: "{{ openbao_tenancy_tls_dir }}/cert.pem"
     status_code: 204
   loop: "{{ openbao_tenancy_role_reads.results }}"
   loop_control:

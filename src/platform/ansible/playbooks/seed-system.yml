@@ -784,6 +784,25 @@
           - "  CEO has Platform and Acme project authorizations for org-switch verification."
       tags: [identity]
 
+    - name: Wait for OpenBao before reconciling seeded organizations
+      ansible.builtin.wait_for:
+        host: "{{ services.openbao.host }}"
+        port: "{{ services.openbao.port }}"
+        timeout: 60
+      tags: [identity, openbao_tenancy]
+
+    - name: Reconcile OpenBao tenancy for seeded organizations
+      ansible.builtin.include_role:
+        name: openbao_tenancy
+        apply:
+          tags:
+            - identity
+            - openbao_tenancy
+      vars:
+        openbao_tenancy_platform_org_name: "{{ seed_system_platform_org_name }}"
+        openbao_tenancy_secrets_project_name: "{{ seed_system_secrets_project_name }}"
+      tags: [identity, openbao_tenancy]
+
     - name: Build billing seed helper on controller
       ansible.builtin.command:
         argv:
