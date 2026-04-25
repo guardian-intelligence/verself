@@ -17,9 +17,11 @@ import { Route as ShellIndexRouteImport } from './routes/_shell/index'
 import { Route as ShellAuthenticatedRouteRouteImport } from './routes/_shell/_authenticated/route'
 import { Route as ShellAuthenticatedNotificationsRouteImport } from './routes/_shell/_authenticated/notifications'
 import { Route as ShellAuthenticatedSettingsRouteRouteImport } from './routes/_shell/_authenticated/settings/route'
+import { Route as ShellAuthenticatedSourceIndexRouteImport } from './routes/_shell/_authenticated/source/index'
 import { Route as ShellAuthenticatedSettingsIndexRouteImport } from './routes/_shell/_authenticated/settings/index'
 import { Route as ShellAuthenticatedSchedulesIndexRouteImport } from './routes/_shell/_authenticated/schedules/index'
 import { Route as ShellAuthenticatedExecutionsIndexRouteImport } from './routes/_shell/_authenticated/executions/index'
+import { Route as ShellAuthenticatedSourceRepoIdRouteImport } from './routes/_shell/_authenticated/source/$repoId'
 import { Route as ShellAuthenticatedSettingsProfileRouteImport } from './routes/_shell/_authenticated/settings/profile'
 import { Route as ShellAuthenticatedSettingsOrganizationRouteImport } from './routes/_shell/_authenticated/settings/organization'
 import { Route as ShellAuthenticatedSettingsGovernanceRouteImport } from './routes/_shell/_authenticated/settings/governance'
@@ -71,6 +73,12 @@ const ShellAuthenticatedSettingsRouteRoute =
     path: '/settings',
     getParentRoute: () => ShellAuthenticatedRouteRoute,
   } as any)
+const ShellAuthenticatedSourceIndexRoute =
+  ShellAuthenticatedSourceIndexRouteImport.update({
+    id: '/source/',
+    path: '/source/',
+    getParentRoute: () => ShellAuthenticatedRouteRoute,
+  } as any)
 const ShellAuthenticatedSettingsIndexRoute =
   ShellAuthenticatedSettingsIndexRouteImport.update({
     id: '/',
@@ -87,6 +95,12 @@ const ShellAuthenticatedExecutionsIndexRoute =
   ShellAuthenticatedExecutionsIndexRouteImport.update({
     id: '/executions/',
     path: '/executions/',
+    getParentRoute: () => ShellAuthenticatedRouteRoute,
+  } as any)
+const ShellAuthenticatedSourceRepoIdRoute =
+  ShellAuthenticatedSourceRepoIdRouteImport.update({
+    id: '/source/$repoId',
+    path: '/source/$repoId',
     getParentRoute: () => ShellAuthenticatedRouteRoute,
   } as any)
 const ShellAuthenticatedSettingsProfileRoute =
@@ -164,9 +178,11 @@ export interface FileRoutesByFullPath {
   '/settings/governance': typeof ShellAuthenticatedSettingsGovernanceRoute
   '/settings/organization': typeof ShellAuthenticatedSettingsOrganizationRoute
   '/settings/profile': typeof ShellAuthenticatedSettingsProfileRoute
+  '/source/$repoId': typeof ShellAuthenticatedSourceRepoIdRoute
   '/executions/': typeof ShellAuthenticatedExecutionsIndexRoute
   '/schedules/': typeof ShellAuthenticatedSchedulesIndexRoute
   '/settings/': typeof ShellAuthenticatedSettingsIndexRoute
+  '/source/': typeof ShellAuthenticatedSourceIndexRoute
   '/settings/billing/credits': typeof ShellAuthenticatedSettingsBillingCreditsRoute
   '/settings/billing/subscribe': typeof ShellAuthenticatedSettingsBillingSubscribeRoute
   '/settings/billing/': typeof ShellAuthenticatedSettingsBillingIndexRoute
@@ -184,9 +200,11 @@ export interface FileRoutesByTo {
   '/settings/governance': typeof ShellAuthenticatedSettingsGovernanceRoute
   '/settings/organization': typeof ShellAuthenticatedSettingsOrganizationRoute
   '/settings/profile': typeof ShellAuthenticatedSettingsProfileRoute
+  '/source/$repoId': typeof ShellAuthenticatedSourceRepoIdRoute
   '/executions': typeof ShellAuthenticatedExecutionsIndexRoute
   '/schedules': typeof ShellAuthenticatedSchedulesIndexRoute
   '/settings': typeof ShellAuthenticatedSettingsIndexRoute
+  '/source': typeof ShellAuthenticatedSourceIndexRoute
   '/settings/billing/credits': typeof ShellAuthenticatedSettingsBillingCreditsRoute
   '/settings/billing/subscribe': typeof ShellAuthenticatedSettingsBillingSubscribeRoute
   '/settings/billing': typeof ShellAuthenticatedSettingsBillingIndexRoute
@@ -208,9 +226,11 @@ export interface FileRoutesById {
   '/_shell/_authenticated/settings/governance': typeof ShellAuthenticatedSettingsGovernanceRoute
   '/_shell/_authenticated/settings/organization': typeof ShellAuthenticatedSettingsOrganizationRoute
   '/_shell/_authenticated/settings/profile': typeof ShellAuthenticatedSettingsProfileRoute
+  '/_shell/_authenticated/source/$repoId': typeof ShellAuthenticatedSourceRepoIdRoute
   '/_shell/_authenticated/executions/': typeof ShellAuthenticatedExecutionsIndexRoute
   '/_shell/_authenticated/schedules/': typeof ShellAuthenticatedSchedulesIndexRoute
   '/_shell/_authenticated/settings/': typeof ShellAuthenticatedSettingsIndexRoute
+  '/_shell/_authenticated/source/': typeof ShellAuthenticatedSourceIndexRoute
   '/_shell/_authenticated/settings/billing/credits': typeof ShellAuthenticatedSettingsBillingCreditsRoute
   '/_shell/_authenticated/settings/billing/subscribe': typeof ShellAuthenticatedSettingsBillingSubscribeRoute
   '/_shell/_authenticated/settings/billing/': typeof ShellAuthenticatedSettingsBillingIndexRoute
@@ -231,9 +251,11 @@ export interface FileRouteTypes {
     | '/settings/governance'
     | '/settings/organization'
     | '/settings/profile'
+    | '/source/$repoId'
     | '/executions/'
     | '/schedules/'
     | '/settings/'
+    | '/source/'
     | '/settings/billing/credits'
     | '/settings/billing/subscribe'
     | '/settings/billing/'
@@ -251,9 +273,11 @@ export interface FileRouteTypes {
     | '/settings/governance'
     | '/settings/organization'
     | '/settings/profile'
+    | '/source/$repoId'
     | '/executions'
     | '/schedules'
     | '/settings'
+    | '/source'
     | '/settings/billing/credits'
     | '/settings/billing/subscribe'
     | '/settings/billing'
@@ -274,9 +298,11 @@ export interface FileRouteTypes {
     | '/_shell/_authenticated/settings/governance'
     | '/_shell/_authenticated/settings/organization'
     | '/_shell/_authenticated/settings/profile'
+    | '/_shell/_authenticated/source/$repoId'
     | '/_shell/_authenticated/executions/'
     | '/_shell/_authenticated/schedules/'
     | '/_shell/_authenticated/settings/'
+    | '/_shell/_authenticated/source/'
     | '/_shell/_authenticated/settings/billing/credits'
     | '/_shell/_authenticated/settings/billing/subscribe'
     | '/_shell/_authenticated/settings/billing/'
@@ -347,6 +373,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellAuthenticatedSettingsRouteRouteImport
       parentRoute: typeof ShellAuthenticatedRouteRoute
     }
+    '/_shell/_authenticated/source/': {
+      id: '/_shell/_authenticated/source/'
+      path: '/source'
+      fullPath: '/source/'
+      preLoaderRoute: typeof ShellAuthenticatedSourceIndexRouteImport
+      parentRoute: typeof ShellAuthenticatedRouteRoute
+    }
     '/_shell/_authenticated/settings/': {
       id: '/_shell/_authenticated/settings/'
       path: '/'
@@ -366,6 +399,13 @@ declare module '@tanstack/react-router' {
       path: '/executions'
       fullPath: '/executions/'
       preLoaderRoute: typeof ShellAuthenticatedExecutionsIndexRouteImport
+      parentRoute: typeof ShellAuthenticatedRouteRoute
+    }
+    '/_shell/_authenticated/source/$repoId': {
+      id: '/_shell/_authenticated/source/$repoId'
+      path: '/source/$repoId'
+      fullPath: '/source/$repoId'
+      preLoaderRoute: typeof ShellAuthenticatedSourceRepoIdRouteImport
       parentRoute: typeof ShellAuthenticatedRouteRoute
     }
     '/_shell/_authenticated/settings/profile': {
@@ -480,8 +520,10 @@ interface ShellAuthenticatedRouteRouteChildren {
   ShellAuthenticatedExecutionsNewRoute: typeof ShellAuthenticatedExecutionsNewRoute
   ShellAuthenticatedSchedulesScheduleIdRoute: typeof ShellAuthenticatedSchedulesScheduleIdRoute
   ShellAuthenticatedSchedulesNewRoute: typeof ShellAuthenticatedSchedulesNewRoute
+  ShellAuthenticatedSourceRepoIdRoute: typeof ShellAuthenticatedSourceRepoIdRoute
   ShellAuthenticatedExecutionsIndexRoute: typeof ShellAuthenticatedExecutionsIndexRoute
   ShellAuthenticatedSchedulesIndexRoute: typeof ShellAuthenticatedSchedulesIndexRoute
+  ShellAuthenticatedSourceIndexRoute: typeof ShellAuthenticatedSourceIndexRoute
 }
 
 const ShellAuthenticatedRouteRouteChildren: ShellAuthenticatedRouteRouteChildren =
@@ -495,10 +537,12 @@ const ShellAuthenticatedRouteRouteChildren: ShellAuthenticatedRouteRouteChildren
     ShellAuthenticatedSchedulesScheduleIdRoute:
       ShellAuthenticatedSchedulesScheduleIdRoute,
     ShellAuthenticatedSchedulesNewRoute: ShellAuthenticatedSchedulesNewRoute,
+    ShellAuthenticatedSourceRepoIdRoute: ShellAuthenticatedSourceRepoIdRoute,
     ShellAuthenticatedExecutionsIndexRoute:
       ShellAuthenticatedExecutionsIndexRoute,
     ShellAuthenticatedSchedulesIndexRoute:
       ShellAuthenticatedSchedulesIndexRoute,
+    ShellAuthenticatedSourceIndexRoute: ShellAuthenticatedSourceIndexRoute,
   }
 
 const ShellAuthenticatedRouteRouteWithChildren =
