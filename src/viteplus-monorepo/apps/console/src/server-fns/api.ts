@@ -53,14 +53,15 @@ import {
   SourceCodeHostingApiError,
   createCheckoutGrant as createSourceCheckoutGrantRequest,
   createCheckoutGrantRequestSchema as createSourceCheckoutGrantRequestSchema,
-  createIntegration as createSourceIntegrationRequest,
-  createIntegrationRequestSchema as createSourceIntegrationRequestSchema,
+  createGitCredential as createSourceGitCredentialRequest,
+  createGitCredentialRequestSchema as createSourceGitCredentialRequestSchema,
   createRepository as createSourceRepositoryRequest,
   createRepositoryRequestSchema as createSourceRepositoryRequestSchema,
   getBlob as getSourceBlobRequest,
   getRepository as getSourceRepositoryRequest,
   getTree as getSourceTreeRequest,
   isSourceCodeHostingApiError,
+  listCIRuns as listSourceCIRunsRequest,
   listRefs as listSourceRefsRequest,
   listRepositories as listSourceRepositoriesRequest,
   listWorkflowRuns as listSourceWorkflowRunsRequest,
@@ -100,11 +101,12 @@ import type {
 } from "~/lib/notifications-api";
 import type {
   CreateCheckoutGrantRequest as CreateSourceCheckoutGrantRequest,
-  CreateIntegrationRequest as CreateSourceIntegrationRequest,
+  CreateGitCredentialRequest as CreateSourceGitCredentialRequest,
   CreateRepositoryRequest as CreateSourceRepositoryRequest,
   SourceBlob,
+  SourceCIRunList,
   SourceCheckoutGrant,
-  SourceIntegration,
+  SourceGitCredential,
   SourceRefs,
   SourceRepository,
   SourceRepositoryList,
@@ -208,11 +210,12 @@ export type {
 };
 export type {
   CreateSourceCheckoutGrantRequest,
-  CreateSourceIntegrationRequest,
+  CreateSourceGitCredentialRequest,
   CreateSourceRepositoryRequest,
   SourceBlob,
+  SourceCIRunList,
   SourceCheckoutGrant,
-  SourceIntegration,
+  SourceGitCredential,
   SourceRefs,
   SourceRepository,
   SourceRepositoryList,
@@ -503,6 +506,8 @@ const sourceCheckoutGrantInputSchema = v.strictObject({
   body: createSourceCheckoutGrantRequestSchema,
 });
 
+const sourceGitCredentialInputSchema = createSourceGitCredentialRequestSchema;
+
 export const listSourceRepositories = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .handler(async ({ context }) => {
@@ -514,6 +519,16 @@ export const createSourceRepository = createServerFn({ method: "POST" })
   .inputValidator(createSourceRepositoryRequestSchema)
   .handler(async ({ context, data }) => {
     return createSourceRepositoryRequest({
+      ...(await sourceCodeHostingClientOptions(context)),
+      body: data,
+    });
+  });
+
+export const createSourceGitCredential = createServerFn({ method: "POST" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(sourceGitCredentialInputSchema)
+  .handler(async ({ context, data }) => {
+    return createSourceGitCredentialRequest({
       ...(await sourceCodeHostingClientOptions(context)),
       body: data,
     });
@@ -534,6 +549,16 @@ export const listSourceRefs = createServerFn({ method: "GET" })
   .inputValidator(sourceRepositoryIDInputSchema)
   .handler(async ({ context, data }) => {
     return listSourceRefsRequest({
+      ...(await sourceCodeHostingClientOptions(context)),
+      repoId: data.repoId,
+    });
+  });
+
+export const listSourceCIRuns = createServerFn({ method: "GET" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(sourceRepositoryIDInputSchema)
+  .handler(async ({ context, data }) => {
+    return listSourceCIRunsRequest({
       ...(await sourceCodeHostingClientOptions(context)),
       repoId: data.repoId,
     });
@@ -587,16 +612,6 @@ export const createSourceCheckoutGrant = createServerFn({ method: "POST" })
       ...(await sourceCodeHostingClientOptions(context)),
       repoId: data.repoId,
       body: data.body,
-    });
-  });
-
-export const createSourceIntegration = createServerFn({ method: "POST" })
-  .middleware([consoleAuthMiddleware])
-  .inputValidator(createSourceIntegrationRequestSchema)
-  .handler(async ({ context, data }) => {
-    return createSourceIntegrationRequest({
-      ...(await sourceCodeHostingClientOptions(context)),
-      body: data,
     });
   });
 

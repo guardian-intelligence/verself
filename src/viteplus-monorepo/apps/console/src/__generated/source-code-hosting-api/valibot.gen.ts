@@ -19,6 +19,29 @@ export const vBlob = v.strictObject({
   ),
 });
 
+export const vCiRun = v.strictObject({
+  ci_run_id: v.string(),
+  commit_sha: v.string(),
+  completed_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  created_at: v.pipe(v.string(), v.isoTimestamp()),
+  failure_reason: v.optional(v.string()),
+  org_id: v.string(),
+  ref_name: v.string(),
+  repo_id: v.string(),
+  sandbox_attempt_id: v.optional(v.string()),
+  sandbox_execution_id: v.optional(v.string()),
+  started_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  state: v.string(),
+  trace_id: v.optional(v.string()),
+  trigger_event: v.string(),
+  updated_at: v.pipe(v.string(), v.isoTimestamp()),
+});
+
+export const vCiRunList = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  ci_runs: v.nullable(v.array(vCiRun)),
+});
+
 export const vCheckoutGrant = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   expires_at: v.pipe(v.string(), v.isoTimestamp()),
@@ -34,11 +57,17 @@ export const vCreateCheckoutGrantRequest = v.strictObject({
   ref: v.optional(v.pipe(v.string(), v.maxLength(255))),
 });
 
-export const vCreateIntegrationRequest = v.strictObject({
+export const vCreateGitCredentialRequest = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  credential_ref: v.optional(v.pipe(v.string(), v.maxLength(512))),
-  external_repo: v.pipe(v.string(), v.minLength(1), v.maxLength(512)),
-  provider: v.pipe(v.string(), v.minLength(1), v.maxLength(64)),
+  expires_in_seconds: v.optional(
+    v.pipe(
+      v.union([v.number(), v.string(), v.bigint()]),
+      v.transform((x) => BigInt(x)),
+      v.minValue(BigInt(60)),
+      v.maxValue(BigInt(7776000)),
+    ),
+  ),
+  label: v.optional(v.pipe(v.string(), v.maxLength(128))),
 });
 
 export const vCreateRepositoryRequest = v.strictObject({
@@ -81,16 +110,17 @@ export const vErrorModel = v.strictObject({
   type: v.optional(v.pipe(v.string(), v.url()), "about:blank"),
 });
 
-export const vExternalIntegration = v.strictObject({
+export const vGitCredential = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   created_at: v.pipe(v.string(), v.isoTimestamp()),
-  credential_ref: v.optional(v.string()),
-  external_repo: v.string(),
-  integration_id: v.string(),
+  credential_id: v.string(),
+  expires_at: v.pipe(v.string(), v.isoTimestamp()),
   org_id: v.string(),
-  provider: v.string(),
-  state: v.string(),
-  updated_at: v.pipe(v.string(), v.isoTimestamp()),
+  org_path: v.string(),
+  scopes: v.nullable(v.array(v.string())),
+  token: v.string(),
+  token_prefix: v.string(),
+  username: v.string(),
 });
 
 export const vRef = v.strictObject({
@@ -105,12 +135,14 @@ export const vRefList = v.strictObject({
 
 export const vRepository = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  backend: v.string(),
   created_at: v.pipe(v.string(), v.isoTimestamp()),
   default_branch: v.string(),
   description: v.string(),
+  last_pushed_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
   name: v.string(),
   org_id: v.string(),
-  provider: v.string(),
+  org_path: v.string(),
   repo_id: v.string(),
   slug: v.string(),
   state: v.string(),
@@ -144,13 +176,13 @@ export const vTree = v.strictObject({
 export const vWorkflowRun = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   actor_id: v.string(),
+  backend: v.string(),
+  backend_dispatch_id: v.optional(v.string()),
   created_at: v.pipe(v.string(), v.isoTimestamp()),
   dispatched_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
   failure_reason: v.optional(v.string()),
   inputs: v.record(v.string(), v.string()),
   org_id: v.string(),
-  provider: v.string(),
-  provider_dispatch_id: v.optional(v.string()),
   ref: v.string(),
   repo_id: v.string(),
   state: v.string(),
@@ -180,6 +212,10 @@ export const vBlobWritable = v.strictObject({
   ),
 });
 
+export const vCiRunListWritable = v.strictObject({
+  ci_runs: v.nullable(v.array(vCiRun)),
+});
+
 export const vCheckoutGrantWritable = v.strictObject({
   expires_at: v.pipe(v.string(), v.isoTimestamp()),
   grant_id: v.string(),
@@ -193,10 +229,16 @@ export const vCreateCheckoutGrantRequestWritable = v.strictObject({
   ref: v.optional(v.pipe(v.string(), v.maxLength(255))),
 });
 
-export const vCreateIntegrationRequestWritable = v.strictObject({
-  credential_ref: v.optional(v.pipe(v.string(), v.maxLength(512))),
-  external_repo: v.pipe(v.string(), v.minLength(1), v.maxLength(512)),
-  provider: v.pipe(v.string(), v.minLength(1), v.maxLength(64)),
+export const vCreateGitCredentialRequestWritable = v.strictObject({
+  expires_in_seconds: v.optional(
+    v.pipe(
+      v.union([v.number(), v.string(), v.bigint()]),
+      v.transform((x) => BigInt(x)),
+      v.minValue(BigInt(60)),
+      v.maxValue(BigInt(7776000)),
+    ),
+  ),
+  label: v.optional(v.pipe(v.string(), v.maxLength(128))),
 });
 
 export const vCreateRepositoryRequestWritable = v.strictObject({
@@ -230,15 +272,16 @@ export const vErrorModelWritable = v.strictObject({
   type: v.optional(v.pipe(v.string(), v.url()), "about:blank"),
 });
 
-export const vExternalIntegrationWritable = v.strictObject({
+export const vGitCredentialWritable = v.strictObject({
   created_at: v.pipe(v.string(), v.isoTimestamp()),
-  credential_ref: v.optional(v.string()),
-  external_repo: v.string(),
-  integration_id: v.string(),
+  credential_id: v.string(),
+  expires_at: v.pipe(v.string(), v.isoTimestamp()),
   org_id: v.string(),
-  provider: v.string(),
-  state: v.string(),
-  updated_at: v.pipe(v.string(), v.isoTimestamp()),
+  org_path: v.string(),
+  scopes: v.nullable(v.array(v.string())),
+  token: v.string(),
+  token_prefix: v.string(),
+  username: v.string(),
 });
 
 export const vRefListWritable = v.strictObject({
@@ -246,12 +289,14 @@ export const vRefListWritable = v.strictObject({
 });
 
 export const vRepositoryWritable = v.strictObject({
+  backend: v.string(),
   created_at: v.pipe(v.string(), v.isoTimestamp()),
   default_branch: v.string(),
   description: v.string(),
+  last_pushed_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
   name: v.string(),
   org_id: v.string(),
-  provider: v.string(),
+  org_path: v.string(),
   repo_id: v.string(),
   slug: v.string(),
   state: v.string(),
@@ -270,13 +315,13 @@ export const vTreeWritable = v.strictObject({
 
 export const vWorkflowRunWritable = v.strictObject({
   actor_id: v.string(),
+  backend: v.string(),
+  backend_dispatch_id: v.optional(v.string()),
   created_at: v.pipe(v.string(), v.isoTimestamp()),
   dispatched_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
   failure_reason: v.optional(v.string()),
   inputs: v.record(v.string(), v.string()),
   org_id: v.string(),
-  provider: v.string(),
-  provider_dispatch_id: v.optional(v.string()),
   ref: v.string(),
   repo_id: v.string(),
   state: v.string(),
@@ -290,16 +335,16 @@ export const vWorkflowRunListWritable = v.strictObject({
   workflow_runs: v.nullable(v.array(vWorkflowRunWritable)),
 });
 
-export const vCreateSourceIntegrationBody = vCreateIntegrationRequestWritable;
+export const vCreateSourceGitCredentialBody = vCreateGitCredentialRequestWritable;
 
-export const vCreateSourceIntegrationHeaders = v.object({
+export const vCreateSourceGitCredentialHeaders = v.object({
   "Idempotency-Key": v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
 });
 
 /**
  * Created
  */
-export const vCreateSourceIntegrationResponse = vExternalIntegration;
+export const vCreateSourceGitCredentialResponse = vGitCredential;
 
 /**
  * OK
@@ -354,6 +399,15 @@ export const vCreateSourceCheckoutGrantPath = v.object({
  * Created
  */
 export const vCreateSourceCheckoutGrantResponse = vCheckoutGrant;
+
+export const vListSourceCiRunsPath = v.object({
+  repo_id: v.pipe(v.string(), v.uuid()),
+});
+
+/**
+ * OK
+ */
+export const vListSourceCiRunsResponse = vCiRunList;
 
 export const vListSourceRefsPath = v.object({
   repo_id: v.pipe(v.string(), v.uuid()),
