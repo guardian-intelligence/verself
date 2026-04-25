@@ -298,7 +298,7 @@ tmp_files+=("${put_body}")
 SECRET_VALUE="${secret_value}" python3 - >"${put_body}" <<'PY'
 import json
 import os
-print(json.dumps({"kind": "secret", "value": os.environ["SECRET_VALUE"]}))
+print(json.dumps({"value": os.environ["SECRET_VALUE"]}))
 PY
 remote_secrets_api PUT "/api/v1/secrets/${secret_name}" "${admin_secrets_token}" "${put_body}" "${artifact_dir}/responses/secret-put.json" "${run_id}-put"
 
@@ -339,7 +339,7 @@ api_credential_secrets_token="$(mint_api_credential_token "${api_credential_clie
 
 read_response="$(mktemp)"
 tmp_files+=("${read_response}")
-remote_secrets_api GET "/api/v1/secrets/${secret_name}?kind=secret" "${member_secrets_token}" "" "${read_response}"
+remote_secrets_api GET "/api/v1/secrets/${secret_name}" "${member_secrets_token}" "" "${read_response}"
 SECRET_VALUE="${secret_value}" python3 - "${read_response}" >"${artifact_dir}/responses/secret-read-redacted.json" <<'PY'
 import json
 import os
@@ -354,7 +354,7 @@ PY
 
 api_read_response="$(mktemp)"
 tmp_files+=("${api_read_response}")
-remote_secrets_api GET "/api/v1/secrets/${secret_name}?kind=secret" "${api_credential_secrets_token}" "" "${api_read_response}"
+remote_secrets_api GET "/api/v1/secrets/${secret_name}" "${api_credential_secrets_token}" "" "${api_read_response}"
 SECRET_VALUE="${secret_value}" python3 - "${api_read_response}" >"${artifact_dir}/responses/api-credential-secret-read-redacted.json" <<'PY'
 import json
 import os
@@ -367,7 +367,7 @@ json.dump(payload, sys.stdout, indent=2, sort_keys=True)
 print()
 PY
 
-remote_secrets_api GET "/api/v1/secrets?kind=secret&limit=50" "${admin_secrets_token}" "" "${artifact_dir}/responses/secret-list.json"
+remote_secrets_api GET "/api/v1/secrets?limit=50" "${admin_secrets_token}" "" "${artifact_dir}/responses/secret-list.json"
 python3 - "${secret_name}" "${artifact_dir}/responses/secret-list.json" <<'PY'
 import json
 import sys
@@ -377,7 +377,7 @@ if name not in {item.get("name") for item in payload.get("secrets", [])}:
     raise SystemExit("secret list did not include proof secret")
 PY
 
-remote_secrets_api GET "/api/v1/secrets?kind=secret&limit=50" "${api_credential_secrets_token}" "" "${artifact_dir}/responses/api-credential-secret-list.json"
+remote_secrets_api GET "/api/v1/secrets?limit=50" "${api_credential_secrets_token}" "" "${artifact_dir}/responses/api-credential-secret-list.json"
 python3 - "${secret_name}" "${artifact_dir}/responses/api-credential-secret-list.json" <<'PY'
 import json
 import sys
@@ -541,7 +541,109 @@ if not payload.get("public_key"):
     raise SystemExit("transit rotate did not return an ed25519 public key")
 PY
 
-remote_secrets_api DELETE "/api/v1/secrets/${secret_name}?kind=secret&scope_level=org" "${admin_secrets_token}" "" "${artifact_dir}/responses/secret-delete.json" "${run_id}-delete"
+variable_name="proof-var-${run_id}"
+variable_value="variable-${run_id}"
+variable_body="$(mktemp)"
+tmp_files+=("${variable_body}")
+VARIABLE_VALUE="${variable_value}" python3 - >"${variable_body}" <<'PY'
+import json
+import os
+print(json.dumps({"value": os.environ["VARIABLE_VALUE"]}))
+PY
+remote_secrets_api PUT "/api/v1/variables/${variable_name}" "${admin_secrets_token}" "${variable_body}" "${artifact_dir}/responses/variable-put.json" "${run_id}-variable-put"
+remote_secrets_api GET "/api/v1/variables/${variable_name}" "${member_secrets_token}" "" "${artifact_dir}/responses/variable-read.json"
+python3 - "${artifact_dir}/responses/variable-read.json" "${variable_value}" <<'PY'
+import json
+import sys
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+if payload.get("value") != sys.argv[2]:
+    raise SystemExit("variable read did not return expected value")
+PY
+remote_secrets_api GET "/api/v1/variables?limit=50" "${admin_secrets_token}" "" "${artifact_dir}/responses/variable-list.json"
+python3 - "${variable_name}" "${artifact_dir}/responses/variable-list.json" <<'PY'
+import json
+import sys
+name, path = sys.argv[1:3]
+payload = json.load(open(path, encoding="utf-8"))
+if name not in {item.get("name") for item in payload.get("variables", [])}:
+    raise SystemExit("variable list did not include proof variable")
+PY
+
+credential_body="$(mktemp)"
+credential_roll_body="$(mktemp)"
+credential_response="$(mktemp)"
+credential_roll_response="$(mktemp)"
+tmp_files+=("${credential_body}" "${credential_roll_body}" "${credential_response}" "${credential_roll_response}")
+python3 - "${run_id}" >"${credential_body}" <<'PY'
+import json
+import sys
+run_id = sys.argv[1]
+print(json.dumps({
+    "kind": "proof_cli",
+    "display_name": f"proof credential {run_id}",
+    "scopes": ["proof:read", "proof:write"],
+    "metadata": {"proof_run_id": run_id},
+    "expires_in_seconds": 3600,
+}))
+PY
+printf '{}\n' >"${credential_roll_body}"
+remote_secrets_api POST "/api/v1/credentials" "${admin_secrets_token}" "${credential_body}" "${credential_response}" "${run_id}-credential-create"
+read -r opaque_credential_id opaque_credential_token < <(
+  python3 - "${credential_response}" "${artifact_dir}/responses/credential-create-redacted.json" <<'PY'
+import json
+import sys
+source, redacted_path = sys.argv[1:3]
+payload = json.load(open(source, encoding="utf-8"))
+token = payload.pop("token", "")
+if not token:
+    raise SystemExit("credential create did not return one-time token")
+payload["token"] = "<redacted>"
+json.dump(payload, open(redacted_path, "w", encoding="utf-8"), indent=2, sort_keys=True)
+print(payload["credential"]["credential_id"], token)
+PY
+)
+remote_secrets_api GET "/api/v1/credentials/${opaque_credential_id}" "${admin_secrets_token}" "" "${artifact_dir}/responses/credential-get.json"
+python3 - "${artifact_dir}/responses/credential-get.json" <<'PY'
+import json
+import sys
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+if "token" in payload:
+    raise SystemExit("credential metadata GET exposed token material")
+PY
+remote_secrets_api GET "/api/v1/credentials?kind=proof_cli&limit=50" "${admin_secrets_token}" "" "${artifact_dir}/responses/credential-list.json"
+python3 - "${opaque_credential_id}" "${artifact_dir}/responses/credential-list.json" <<'PY'
+import json
+import sys
+credential_id, path = sys.argv[1:3]
+payload = json.load(open(path, encoding="utf-8"))
+if credential_id not in {item.get("credential_id") for item in payload.get("credentials", [])}:
+    raise SystemExit("credential list did not include proof credential")
+PY
+remote_secrets_api POST "/api/v1/credentials/${opaque_credential_id}/roll" "${admin_secrets_token}" "${credential_roll_body}" "${credential_roll_response}" "${run_id}-credential-roll"
+python3 - "${credential_roll_response}" "${artifact_dir}/responses/credential-roll-redacted.json" "${opaque_credential_token}" <<'PY'
+import json
+import sys
+source, redacted_path, old_token = sys.argv[1:4]
+payload = json.load(open(source, encoding="utf-8"))
+token = payload.pop("token", "")
+if not token or token == old_token:
+    raise SystemExit("credential roll did not return fresh one-time token")
+payload["token"] = "<redacted>"
+json.dump(payload, open(redacted_path, "w", encoding="utf-8"), indent=2, sort_keys=True)
+PY
+remote_secrets_api POST "/api/v1/credentials/${opaque_credential_id}/revoke" "${admin_secrets_token}" "" "${artifact_dir}/responses/credential-revoke.json" "${run_id}-credential-revoke"
+python3 - "${artifact_dir}/responses/credential-revoke.json" <<'PY'
+import json
+import sys
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+if payload.get("status") != "revoked":
+    raise SystemExit("credential revoke did not mark credential revoked")
+if "token" in payload:
+    raise SystemExit("credential revoke exposed token material")
+PY
+
+remote_secrets_api DELETE "/api/v1/variables/${variable_name}?scope_level=org" "${admin_secrets_token}" "" "${artifact_dir}/responses/variable-delete.json" "${run_id}-variable-delete"
+remote_secrets_api DELETE "/api/v1/secrets/${secret_name}?scope_level=org" "${admin_secrets_token}" "" "${artifact_dir}/responses/secret-delete.json" "${run_id}-delete"
 
 window_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
@@ -634,6 +736,15 @@ wait_for_clickhouse_count default "
       'secrets.secret.read',
       'secrets.secret.list',
       'secrets.secret.delete',
+      'secrets.variable.put',
+      'secrets.variable.read',
+      'secrets.variable.list',
+      'secrets.variable.delete',
+      'secrets.credential.create',
+      'secrets.credential.read',
+      'secrets.credential.list',
+      'secrets.credential.roll',
+      'secrets.credential.revoke',
       'secrets.transit.key.create',
       'secrets.transit.key.rotate',
       'secrets.transit.encrypt',
@@ -641,7 +752,7 @@ wait_for_clickhouse_count default "
       'secrets.transit.sign',
       'secrets.transit.verify'
     )
-" 10 "${artifact_dir}/clickhouse/secrets-spans-count.tsv"
+" 19 "${artifact_dir}/clickhouse/secrets-spans-count.tsv"
 
 wait_for_clickhouse_count default "
   SELECT count()
@@ -659,8 +770,8 @@ wait_for_clickhouse_count default "
     AND ServiceName = 'secrets-service'
     AND SpanName IN ('secrets.billing.reserve', 'secrets.billing.settle')
     AND arrayElement(SpanAttributes, 'billing.product_id') = 'secrets'
-    AND arrayElement(SpanAttributes, 'billing.sku_id') IN ('secrets_kv_operation', 'secrets_transit_operation')
-" 26 "${artifact_dir}/clickhouse/secrets-billing-spans-count.tsv"
+    AND arrayElement(SpanAttributes, 'billing.sku_id') IN ('secrets_kv_operation', 'secrets_transit_operation', 'secrets_credential_operation')
+" 44 "${artifact_dir}/clickhouse/secrets-billing-spans-count.tsv"
 
 wait_for_clickhouse_count forge_metal "
   SELECT count()
@@ -672,6 +783,15 @@ wait_for_clickhouse_count forge_metal "
       'secrets.secret.read',
       'secrets.secret.list',
       'secrets.secret.delete',
+      'secrets.variable.write',
+      'secrets.variable.read',
+      'secrets.variable.list',
+      'secrets.variable.delete',
+      'secrets.credential.create',
+      'secrets.credential.read',
+      'secrets.credential.list',
+      'secrets.credential.roll',
+      'secrets.credential.revoke',
       'secrets.transit_key.create',
       'secrets.transit_key.rotate',
       'secrets.transit_key.encrypt',
@@ -682,7 +802,7 @@ wait_for_clickhouse_count forge_metal "
     AND (startsWith(secret_mount, 'kv-') OR startsWith(secret_mount, 'transit-'))
     AND openbao_request_id != ''
     AND openbao_accessor_hash != ''
-" 11 "${artifact_dir}/clickhouse/secrets-audit-count.tsv"
+" 20 "${artifact_dir}/clickhouse/secrets-audit-count.tsv"
 
 wait_for_clickhouse_count forge_metal "
   SELECT count()
@@ -705,7 +825,7 @@ wait_for_clickhouse_count forge_metal "
     AND reservation_shape = 'count'
     AND reserved_quantity = 1
     AND actual_quantity = 1
-" 13 "${artifact_dir}/clickhouse/secrets-metering-count.tsv"
+" 22 "${artifact_dir}/clickhouse/secrets-metering-count.tsv"
 
 remote_governance_api "/api/v1/governance/audit/events?credential_id=${api_credential_id}&service_name=secrets-service&limit=50" "${admin_identity_token}" "${artifact_dir}/responses/governance-api-credential-audit.json"
 python3 - "${artifact_dir}/responses/governance-api-credential-audit.json" "${api_credential_id}" <<'PY'
@@ -777,6 +897,15 @@ required = {
     "secrets.secret.read",
     "secrets.secret.list",
     "secrets.secret.delete",
+    "secrets.variable.write",
+    "secrets.variable.read",
+    "secrets.variable.list",
+    "secrets.variable.delete",
+    "secrets.credential.create",
+    "secrets.credential.read",
+    "secrets.credential.list",
+    "secrets.credential.roll",
+    "secrets.credential.revoke",
     "secrets.transit_key.create",
     "secrets.transit_key.rotate",
     "secrets.transit_key.encrypt",

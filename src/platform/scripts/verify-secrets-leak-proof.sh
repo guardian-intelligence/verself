@@ -393,11 +393,11 @@ python3 - "${run_id}" >"${put_body}" <<'PY'
 import json
 import sys
 
-print(json.dumps({"kind": "secret", "value": "leak-proof-value-" + sys.argv[1]}))
+print(json.dumps({"value": "leak-proof-value-" + sys.argv[1]}))
 PY
 
 remote_secrets_api PUT "/api/v1/secrets/${secret_name}" "${SECRETS_SERVICE_ACCESS_TOKEN}" "${put_body}" "${artifact_dir}/responses/accepted-secret-put.json" "200,201" "${run_id}-put"
-remote_secrets_api GET "/api/v1/secrets/${secret_name}?kind=secret" "${sentinel}" "" "${artifact_dir}/responses/rejected-secrets-sentinel.json" "401,403"
+remote_secrets_api GET "/api/v1/secrets/${secret_name}" "${sentinel}" "" "${artifact_dir}/responses/rejected-secrets-sentinel.json" "401,403"
 public_caddy_rejected_request "${sentinel}" "${artifact_dir}/responses/rejected-public-caddy.json"
 
 window_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"

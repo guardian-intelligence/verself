@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	workloadauth "github.com/forge-metal/auth-middleware/workload"
 	"github.com/forge-metal/secrets-service/internal/secrets"
@@ -25,6 +26,7 @@ const injectionRequestMaxBytes = 128 << 10
 type InternalRoutesConfig struct {
 	PlatformOrgID              string
 	SandboxService             string
+	SourceService              string
 	RuntimeSecretReadPolicies  []RuntimeSecretPolicy
 	RuntimeSecretWritePolicies []RuntimeSecretPolicy
 }
@@ -67,6 +69,52 @@ type injectionEnvValue struct {
 	Value string `json:"value"`
 }
 
+type internalCreateCredentialRequest struct {
+	OrgID       string            `json:"org_id"`
+	ActorID     string            `json:"actor_id"`
+	Kind        string            `json:"kind"`
+	DisplayName string            `json:"display_name,omitempty"`
+	Scopes      []string          `json:"scopes"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
+	ExpiresAt   string            `json:"expires_at,omitempty"`
+}
+
+type internalCreateCredentialResponse struct {
+	Credential opaqueCredentialWire `json:"credential"`
+	Token      string               `json:"token"`
+}
+
+type internalVerifyCredentialRequest struct {
+	OrgID          string   `json:"org_id"`
+	ActorID        string   `json:"actor_id,omitempty"`
+	Kind           string   `json:"kind"`
+	Token          string   `json:"token"`
+	RequiredScopes []string `json:"required_scopes,omitempty"`
+}
+
+type internalVerifyCredentialResponse struct {
+	Active       bool                 `json:"active"`
+	DenialReason string               `json:"denial_reason,omitempty"`
+	Credential   opaqueCredentialWire `json:"credential,omitempty"`
+}
+
+type opaqueCredentialWire struct {
+	CredentialID string            `json:"credential_id,omitempty"`
+	OrgID        string            `json:"org_id,omitempty"`
+	Kind         string            `json:"kind,omitempty"`
+	Subject      string            `json:"subject,omitempty"`
+	DisplayName  string            `json:"display_name,omitempty"`
+	Status       string            `json:"status,omitempty"`
+	TokenPrefix  string            `json:"token_prefix,omitempty"`
+	Scopes       []string          `json:"scopes,omitempty"`
+	Metadata     map[string]string `json:"metadata,omitempty"`
+	ExpiresAt    string            `json:"expires_at,omitempty"`
+	LastUsedAt   string            `json:"last_used_at,omitempty"`
+	CreatedAt    string            `json:"created_at,omitempty"`
+	UpdatedAt    string            `json:"updated_at,omitempty"`
+	RevokedAt    string            `json:"revoked_at,omitempty"`
+}
+
 // RegisterInternalRoutes installs every internal handler on mux and returns
 // the deduplicated peer allowlist that must be enforced at the mTLS
 // handshake and per-request authorization layers. Returning the allowlist
@@ -91,6 +139,14 @@ func RegisterInternalRoutes(mux *http.ServeMux, svc *secrets.Service, source *wo
 	sandboxPeerID, err := workloadauth.PeerIDForSource(source, cfg.SandboxService)
 	if err != nil {
 		return nil, fmt.Errorf("resolve sandbox peer id: %w", err)
+	}
+	cfg.SourceService = strings.TrimSpace(cfg.SourceService)
+	if cfg.SourceService == "" {
+		return nil, fmt.Errorf("source service is required")
+	}
+	sourcePeerID, err := workloadauth.PeerIDForSource(source, cfg.SourceService)
+	if err != nil {
+		return nil, fmt.Errorf("resolve source peer id: %w", err)
 	}
 	resolvePolicies, err := normalizeRuntimeSecretPolicies(source, cfg.RuntimeSecretReadPolicies)
 	if err != nil {
@@ -134,6 +190,68 @@ func RegisterInternalRoutes(mux *http.ServeMux, svc *secrets.Service, source *wo
 			default:
 				http.Error(w, "resolve injection failed", http.StatusInternalServerError)
 			}
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(response)
+	})
+	mux.HandleFunc("/internal/v1/credentials", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		peerID, ok := workloadauth.PeerIDFromContext(r.Context())
+		if !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if peerID != sourcePeerID {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		defer r.Body.Close()
+		var request internalCreateCredentialRequest
+		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, injectionRequestMaxBytes))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&request); err != nil {
+			http.Error(w, "invalid credential request", http.StatusBadRequest)
+			return
+		}
+		response, err := createInternalCredential(r.Context(), svc, request)
+		if err != nil {
+			writeInternalCredentialError(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(response)
+	})
+	mux.HandleFunc("/internal/v1/credentials:verify", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		peerID, ok := workloadauth.PeerIDFromContext(r.Context())
+		if !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if peerID != sourcePeerID {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		defer r.Body.Close()
+		var request internalVerifyCredentialRequest
+		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, injectionRequestMaxBytes))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&request); err != nil {
+			http.Error(w, "invalid credential verification request", http.StatusBadRequest)
+			return
+		}
+		response, err := verifyInternalCredential(r.Context(), svc, request)
+		if err != nil {
+			writeInternalCredentialError(w, err)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -210,9 +328,9 @@ func RegisterInternalRoutes(mux *http.ServeMux, svc *secrets.Service, source *wo
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
-	allowlist := make([]spiffeid.ID, 0, 1+len(resolvePolicies)+len(writePolicies))
-	seen := map[spiffeid.ID]struct{}{sandboxPeerID: {}}
-	allowlist = append(allowlist, sandboxPeerID)
+	allowlist := make([]spiffeid.ID, 0, 2+len(resolvePolicies)+len(writePolicies))
+	seen := map[spiffeid.ID]struct{}{sandboxPeerID: {}, sourcePeerID: {}}
+	allowlist = append(allowlist, sandboxPeerID, sourcePeerID)
 	for peerID := range resolvePolicies {
 		if _, ok := seen[peerID]; ok {
 			continue
@@ -263,9 +381,6 @@ func validateRuntimeSecretReadQuery(r *http.Request) error {
 func validateRuntimeSecretWriteRequest(r *http.Request, body putSecretBody) error {
 	if strings.TrimSpace(r.Header.Get("Idempotency-Key")) == "" {
 		return fmt.Errorf("%w: idempotency key is required", secrets.ErrInvalidArgument)
-	}
-	if body.Kind != "" && body.Kind != secrets.KindSecret {
-		return fmt.Errorf("%w: runtime secrets only support kind=secret", secrets.ErrInvalidArgument)
 	}
 	if body.ScopeLevel != "" && body.ScopeLevel != secrets.ScopeOrg {
 		return fmt.Errorf("%w: runtime secrets only support scope_level=org", secrets.ErrInvalidArgument)
@@ -394,6 +509,240 @@ func writeRuntimeSecret(ctx context.Context, svc *secrets.Service, platformOrgID
 		return secrets.SecretRecord{}, err
 	}
 	return record, nil
+}
+
+func createInternalCredential(ctx context.Context, svc *secrets.Service, request internalCreateCredentialRequest) (internalCreateCredentialResponse, error) {
+	ctx, span := apiTracer.Start(ctx, "secrets.credential.internal_create")
+	defer span.End()
+	ctx = secrets.ContextWithOpenBaoAuditInfo(ctx)
+	request.OrgID = strings.TrimSpace(request.OrgID)
+	request.ActorID = strings.TrimSpace(request.ActorID)
+	request.Kind = strings.TrimSpace(request.Kind)
+	request.DisplayName = strings.TrimSpace(request.DisplayName)
+	expiresAt := time.Time{}
+	if strings.TrimSpace(request.ExpiresAt) != "" {
+		parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(request.ExpiresAt))
+		if err != nil {
+			parsed, err = time.Parse(time.RFC3339, strings.TrimSpace(request.ExpiresAt))
+		}
+		if err != nil {
+			return internalCreateCredentialResponse{}, fmt.Errorf("%w: expires_at must be RFC3339", secrets.ErrInvalidArgument)
+		}
+		expiresAt = parsed.UTC()
+	}
+	peerID, _ := workloadauth.PeerIDFromContext(ctx)
+	span.SetAttributes(
+		attribute.String("forge_metal.org_id", request.OrgID),
+		attribute.String("forge_metal.subject_id", request.ActorID),
+		attribute.String("forge_metal.credential_kind", request.Kind),
+		attribute.String("spiffe.peer_id", peerID.String()),
+	)
+	if request.OrgID == "" || request.ActorID == "" || request.Kind == "" {
+		return internalCreateCredentialResponse{}, fmt.Errorf("%w: org_id, actor_id, and kind are required", secrets.ErrInvalidArgument)
+	}
+	principal := secrets.Principal{
+		OrgID:           request.OrgID,
+		Subject:         request.ActorID,
+		Type:            "delegated_user",
+		AuthMethod:      "spiffe_mtls",
+		CredentialID:    peerID.String(),
+		CredentialName:  workloadauth.ServiceSourceCodeHosting,
+		OpenBaoRole:     credentialManageOpenBaoRole(request.OrgID),
+		UseWorkloadSVID: true,
+	}
+	material, err := svc.CreateOpaqueCredential(ctx, principal, secrets.CreateOpaqueCredentialRequest{
+		Kind:        request.Kind,
+		Subject:     request.ActorID,
+		DisplayName: request.DisplayName,
+		Scopes:      request.Scopes,
+		Metadata:    request.Metadata,
+		ExpiresAt:   expiresAt,
+	})
+	auditInternalCredential(ctx, "create-internal-opaque-credential", "secrets.credential.create", "create opaque credential", "write", "critical", "create", request.OrgID, request.ActorID, request.Kind, material.Credential, err)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return internalCreateCredentialResponse{}, err
+	}
+	return internalCreateCredentialResponse{
+		Credential: opaqueCredentialWireDTO(material.Credential),
+		Token:      material.Token,
+	}, nil
+}
+
+func verifyInternalCredential(ctx context.Context, svc *secrets.Service, request internalVerifyCredentialRequest) (internalVerifyCredentialResponse, error) {
+	ctx, span := apiTracer.Start(ctx, "secrets.credential.internal_verify")
+	defer span.End()
+	ctx = secrets.ContextWithOpenBaoAuditInfo(ctx)
+	request.OrgID = strings.TrimSpace(request.OrgID)
+	request.ActorID = strings.TrimSpace(request.ActorID)
+	request.Kind = strings.TrimSpace(request.Kind)
+	peerID, _ := workloadauth.PeerIDFromContext(ctx)
+	span.SetAttributes(
+		attribute.String("forge_metal.org_id", request.OrgID),
+		attribute.String("forge_metal.subject_id", request.ActorID),
+		attribute.String("forge_metal.credential_kind", request.Kind),
+		attribute.String("spiffe.peer_id", peerID.String()),
+		attribute.Int("forge_metal.required_scope_count", len(request.RequiredScopes)),
+	)
+	if request.OrgID == "" || request.Kind == "" || strings.TrimSpace(request.Token) == "" {
+		return internalVerifyCredentialResponse{}, fmt.Errorf("%w: org_id, kind, and token are required", secrets.ErrInvalidArgument)
+	}
+	subject := request.ActorID
+	if subject == "" {
+		subject = peerID.String()
+	}
+	principal := secrets.Principal{
+		OrgID:           request.OrgID,
+		Subject:         subject,
+		Type:            "service_workload",
+		AuthMethod:      "spiffe_mtls",
+		CredentialID:    peerID.String(),
+		CredentialName:  workloadauth.ServiceSourceCodeHosting,
+		OpenBaoRole:     credentialVerifyOpenBaoRole(request.OrgID),
+		UseWorkloadSVID: true,
+	}
+	result, err := svc.VerifyOpaqueCredential(ctx, principal, secrets.VerifyOpaqueCredentialRequest{
+		Kind:           request.Kind,
+		Token:          request.Token,
+		RequiredScopes: request.RequiredScopes,
+	})
+	auditInternalCredential(ctx, "verify-internal-opaque-credential", "secrets.credential.verify", "verify opaque credential", "authz", "high", "verify", request.OrgID, subject, request.Kind, result.Credential, err)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return internalVerifyCredentialResponse{}, err
+	}
+	span.SetAttributes(attribute.Bool("forge_metal.credential_active", result.Active))
+	return internalVerifyCredentialResponse{
+		Active:       result.Active,
+		DenialReason: result.DenialReason,
+		Credential:   opaqueCredentialWireDTO(result.Credential),
+	}, nil
+}
+
+func writeInternalCredentialError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, secrets.ErrInvalidArgument):
+		http.Error(w, "invalid credential request", http.StatusBadRequest)
+	case errors.Is(err, secrets.ErrForbidden):
+		http.Error(w, "forbidden", http.StatusForbidden)
+	case errors.Is(err, secrets.ErrNotFound):
+		http.Error(w, "credential not found", http.StatusNotFound)
+	case errors.Is(err, secrets.ErrConflict):
+		http.Error(w, "credential conflict", http.StatusConflict)
+	default:
+		http.Error(w, "credential operation failed", http.StatusInternalServerError)
+	}
+}
+
+func credentialManageOpenBaoRole(orgID string) string {
+	return "secrets-credential-manage-" + strings.TrimSpace(orgID)
+}
+
+func credentialVerifyOpenBaoRole(orgID string) string {
+	return "secrets-credential-verify-" + strings.TrimSpace(orgID)
+}
+
+func opaqueCredentialWireDTO(credential secrets.OpaqueCredential) opaqueCredentialWire {
+	return opaqueCredentialWire{
+		CredentialID: credential.CredentialID,
+		OrgID:        credential.OrgID,
+		Kind:         credential.Kind,
+		Subject:      credential.Subject,
+		DisplayName:  credential.DisplayName,
+		Status:       credential.Status,
+		TokenPrefix:  credential.TokenPrefix,
+		Scopes:       append([]string(nil), credential.Scopes...),
+		Metadata:     copyWireMap(credential.Metadata),
+		ExpiresAt:    formatWireTime(credential.ExpiresAt),
+		LastUsedAt:   formatWireTimePtr(credential.LastUsedAt),
+		CreatedAt:    formatWireTime(credential.CreatedAt),
+		UpdatedAt:    formatWireTime(credential.UpdatedAt),
+		RevokedAt:    formatWireTimePtr(credential.RevokedAt),
+	}
+}
+
+func auditInternalCredential(ctx context.Context, operationID, auditEvent, display, operationType, risk, action, orgID, actorID, kind string, credential secrets.OpaqueCredential, err error) {
+	baoInfo, _ := secrets.OpenBaoAuditInfoFromContext(ctx)
+	secretMount := "openbao"
+	openBaoRequestID := ""
+	openBaoAccessorHash := ""
+	if baoInfo != nil {
+		secretMount = firstNonEmpty(baoInfo.Mount, secretMount)
+		openBaoRequestID = baoInfo.RequestID
+		openBaoAccessorHash = baoInfo.AccessorHash
+	}
+	targetID := credential.CredentialID
+	if targetID == "" {
+		targetID = kind
+	}
+	record := governanceAuditRecord{
+		OrgID:               orgID,
+		SourceProductArea:   "Secrets",
+		ServiceName:         "secrets-service",
+		OperationID:         operationID,
+		AuditEvent:          auditEvent,
+		OperationDisplay:    display,
+		OperationType:       operationType,
+		EventCategory:       "secrets",
+		RiskLevel:           risk,
+		DataClassification:  "credential_metadata",
+		ActorType:           "service_delegated",
+		ActorID:             actorID,
+		ActorSPIFFEID:       spiffePeerID(ctx),
+		CredentialID:        spiffePeerID(ctx),
+		CredentialName:      workloadauth.ServiceSourceCodeHosting,
+		AuthMethod:          "spiffe_mtls",
+		Permission:          "secrets:credential:" + action,
+		TargetKind:          "opaque_credential",
+		TargetID:            targetID,
+		TargetDisplay:       targetID,
+		TargetScope:         "org",
+		Action:              action,
+		OrgScope:            "delegated_request_org_id",
+		RateLimitClass:      "internal",
+		Decision:            "allow",
+		Result:              "allowed",
+		TrustClass:          "service_internal",
+		SecretMount:         secretMount,
+		SecretOperation:     "credential_" + action,
+		OpenBaoRequestID:    openBaoRequestID,
+		OpenBaoAccessorHash: openBaoAccessorHash,
+	}
+	if err != nil {
+		record.Decision = "deny"
+		record.Result = "error"
+		record.ErrorCode = "credential-operation-failed"
+		record.ErrorClass = "application"
+		record.ErrorMessage = err.Error()
+	}
+	sendGovernanceAudit(ctx, record)
+}
+
+func copyWireMap(input map[string]string) map[string]string {
+	if len(input) == 0 {
+		return map[string]string{}
+	}
+	out := make(map[string]string, len(input))
+	for key, value := range input {
+		out[key] = value
+	}
+	return out
+}
+
+func formatWireTime(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339Nano)
+}
+
+func formatWireTimePtr(value *time.Time) string {
+	if value == nil {
+		return ""
+	}
+	return formatWireTime(*value)
 }
 
 func resolveInjection(ctx context.Context, svc *secrets.Service, request injectionResolveRequest) (injectionResolveResponse, error) {

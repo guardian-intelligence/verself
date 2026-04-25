@@ -33,6 +33,15 @@ const (
 	permissionSecretRead       permission = "secrets:secret:read"
 	permissionSecretList       permission = "secrets:secret:list"
 	permissionSecretDelete     permission = "secrets:secret:delete"
+	permissionVariableWrite    permission = "secrets:variable:write"
+	permissionVariableRead     permission = "secrets:variable:read"
+	permissionVariableList     permission = "secrets:variable:list"
+	permissionVariableDelete   permission = "secrets:variable:delete"
+	permissionCredentialCreate permission = "secrets:credential:create"
+	permissionCredentialRead   permission = "secrets:credential:read"
+	permissionCredentialList   permission = "secrets:credential:list"
+	permissionCredentialRoll   permission = "secrets:credential:roll"
+	permissionCredentialRevoke permission = "secrets:credential:revoke"
 	permissionTransitKeyCreate permission = "secrets:transit_key:create"
 	permissionTransitKeyRotate permission = "secrets:transit_key:rotate"
 	permissionTransitEncrypt   permission = "secrets:transit:encrypt"
@@ -42,6 +51,7 @@ const (
 
 	billingProductSecrets         = "secrets"
 	billingSKUSecretsKV           = "secrets_kv_operation"
+	billingSKUSecretsCredential   = "secrets_credential_operation"
 	billingSKUSecretsTransit      = "secrets_transit_operation"
 	billingSourceTypeAPIOperation = "secrets_api_operation"
 
@@ -50,6 +60,7 @@ const (
 	rateLimiterMaxWindowEntries       = 10000
 	bodyLimitSmallJSON          int64 = 64 << 10
 	bodyLimitCryptoJSON         int64 = 256 << 10
+	bodyLimitNoBody             int64 = 1
 )
 
 var apiTracer = otel.Tracer("secrets-service/internal/api")
@@ -304,7 +315,10 @@ func identityHasPermission(identity *auth.Identity, required permission) bool {
 		case "owner", "admin":
 			return true
 		case "member":
-			if required == permissionSecretRead || required == permissionSecretList || required == permissionTransitEncrypt || required == permissionTransitDecrypt || required == permissionTransitSign || required == permissionTransitVerify {
+			if required == permissionSecretRead || required == permissionSecretList ||
+				required == permissionVariableRead || required == permissionVariableList ||
+				required == permissionTransitEncrypt || required == permissionTransitDecrypt ||
+				required == permissionTransitSign || required == permissionTransitVerify {
 				return true
 			}
 		}
@@ -680,6 +694,13 @@ func auditTargetFromValue(orgID string, input any) (string, string, string, uint
 		}
 		return firstNonEmpty(keyID, keyName), "org", "", version, keyID
 	}
+	credentialID := stringField(body, "CredentialID")
+	if credentialID == "" {
+		credentialID = stringField(value, "CredentialID")
+	}
+	if credentialID != "" {
+		return credentialID, "org", "", 0, ""
+	}
 	name := stringField(body, "Name")
 	if name == "" {
 		name = stringField(value, "Name")
@@ -953,10 +974,11 @@ type fixedWindowOperationRateLimiter struct {
 }
 
 var apiOperationRateLimiter = newFixedWindowOperationRateLimiter(map[string]rateLimitRule{
-	"read":            {Limit: 600, Window: time.Minute},
-	"secret_mutation": {Limit: 120, Window: time.Minute},
-	"crypto":          {Limit: 1200, Window: time.Minute},
-	"key_mutation":    {Limit: 60, Window: time.Minute},
+	"read":                {Limit: 600, Window: time.Minute},
+	"secret_mutation":     {Limit: 120, Window: time.Minute},
+	"credential_mutation": {Limit: 60, Window: time.Minute},
+	"crypto":              {Limit: 1200, Window: time.Minute},
+	"key_mutation":        {Limit: 60, Window: time.Minute},
 })
 
 func newFixedWindowOperationRateLimiter(rules map[string]rateLimitRule) *fixedWindowOperationRateLimiter {

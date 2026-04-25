@@ -5,6 +5,58 @@ info:
 servers:
     - url: https://127.0.0.1:4253
 paths:
+    /internal/v1/credentials:
+        post:
+            summary: Create an opaque credential for a SPIFFE-authenticated service
+            description: SPIFFE-mTLS internal endpoint for source-code-hosting-service to create one-time Git credential material through secrets-service.
+            operationId: create-internal-opaque-credential
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/InternalCreateCredentialRequest'
+                required: true
+            responses:
+                "201":
+                    description: Created
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/InternalCreateCredentialResponse'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+            security:
+                - mutualTLS: []
+    /internal/v1/credentials:verify:
+        post:
+            summary: Verify an opaque credential for a SPIFFE-authenticated service
+            description: SPIFFE-mTLS internal endpoint for source-code-hosting-service to verify opaque Git credential material without retrieving stored secret material.
+            operationId: verify-internal-opaque-credential
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/InternalVerifyCredentialRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/InternalVerifyCredentialResponse'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+            security:
+                - mutualTLS: []
     /internal/v1/injections/resolve:
         post:
             summary: Resolve sandbox secret injection
@@ -172,6 +224,140 @@ components:
                 - env_name
                 - secret_name
                 - grant_id
+        InternalCreateCredentialRequest:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - https://127.0.0.1:4253/schemas/InternalCreateCredentialRequest.json
+                    readOnly: true
+                actor_id:
+                    type: string
+                display_name:
+                    type: string
+                expires_at:
+                    type: string
+                kind:
+                    type: string
+                metadata:
+                    type: object
+                    additionalProperties:
+                        type: string
+                org_id:
+                    type: string
+                scopes:
+                    type: array
+                    items:
+                        type: string
+            required:
+                - org_id
+                - actor_id
+                - kind
+                - scopes
+        InternalCreateCredentialResponse:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - https://127.0.0.1:4253/schemas/InternalCreateCredentialResponse.json
+                    readOnly: true
+                credential:
+                    $ref: '#/components/schemas/OpaqueCredentialWire'
+                token:
+                    type: string
+            required:
+                - credential
+                - token
+        InternalVerifyCredentialRequest:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - https://127.0.0.1:4253/schemas/InternalVerifyCredentialRequest.json
+                    readOnly: true
+                actor_id:
+                    type: string
+                kind:
+                    type: string
+                org_id:
+                    type: string
+                required_scopes:
+                    type: array
+                    items:
+                        type: string
+                token:
+                    type: string
+            required:
+                - org_id
+                - kind
+                - token
+        InternalVerifyCredentialResponse:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - https://127.0.0.1:4253/schemas/InternalVerifyCredentialResponse.json
+                    readOnly: true
+                active:
+                    type: boolean
+                credential:
+                    $ref: '#/components/schemas/OpaqueCredentialWire'
+                denial_reason:
+                    type: string
+            required:
+                - active
+        OpaqueCredentialWire:
+            type: object
+            additionalProperties: false
+            properties:
+                created_at:
+                    type: string
+                credential_id:
+                    type: string
+                display_name:
+                    type: string
+                expires_at:
+                    type: string
+                kind:
+                    type: string
+                last_used_at:
+                    type: string
+                metadata:
+                    type: object
+                    additionalProperties:
+                        type: string
+                org_id:
+                    type: string
+                revoked_at:
+                    type: string
+                scopes:
+                    type: array
+                    items:
+                        type: string
+                status:
+                    type: string
+                subject:
+                    type: string
+                token_prefix:
+                    type: string
+                updated_at:
+                    type: string
     securitySchemes:
         mutualTLS:
             type: mutualTLS

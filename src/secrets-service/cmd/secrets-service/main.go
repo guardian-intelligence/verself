@@ -56,7 +56,6 @@ func run() error {
 	governanceAuditURL := cfg.String("SECRETS_GOVERNANCE_AUDIT_URL", "")
 	authIssuerURL := cfg.RequireURL("SECRETS_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireString("SECRETS_AUTH_AUDIENCE")
-	authJWKSURL := cfg.String("SECRETS_AUTH_JWKS_URL", "")
 	openBaoAddr := cfg.RequireString("SECRETS_OPENBAO_ADDR")
 	openBaoCACert := cfg.RequireCredentialPath("openbao-ca-cert")
 	billingURL := cfg.RequireURL("SECRETS_BILLING_URL")
@@ -152,7 +151,6 @@ func run() error {
 	authenticated := auth.Middleware(auth.Config{
 		IssuerURL: authIssuerURL,
 		Audience:  authAudience,
-		JWKSURL:   authJWKSURL,
 	})(privateMux)
 	protected := secretsapi.CaptureRawBearerToken(authenticated)
 	rootMux.Handle("/", protected)
@@ -160,6 +158,7 @@ func run() error {
 	internalPeerIDs, err := secretsapi.RegisterInternalRoutes(internalMux, svc, spiffeSource, secretsapi.InternalRoutesConfig{
 		PlatformOrgID:  platformOrgID,
 		SandboxService: workloadauth.ServiceSandboxRental,
+		SourceService:  workloadauth.ServiceSourceCodeHosting,
 		RuntimeSecretReadPolicies: []secretsapi.RuntimeSecretPolicy{
 			{Service: workloadauth.ServiceBilling, SecretNames: []string{
 				secretsclient.BillingStripeSecretKeyName,
