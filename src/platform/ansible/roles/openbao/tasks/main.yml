@@ -48,6 +48,206 @@
     - { path: "{{ openbao_log_dir }}", owner: openbao, group: openbao, mode: "0700" }
     - { path: "{{ openbao_credstore_dir }}", owner: root, group: openbao, mode: "0750" }
 
+- name: Confirm destructive OpenBao rebootstrap request
+  ansible.builtin.assert:
+    that:
+      - openbao_rebootstrap_confirm == 'wipe-openbao'
+    fail_msg: >-
+      openbao_rebootstrap=true requires
+      openbao_rebootstrap_confirm=wipe-openbao because it deletes the Raft
+      datastore and root/unseal credentials before bootstrapping a new node.
+  when: openbao_rebootstrap | bool
+
+- name: Set OpenBao rebootstrap GitHub App preservation state
+  ansible.builtin.set_fact:
+    openbao_rebootstrap_sandbox_github_app_configured: >-
+      {{
+        (sandbox_rental_service_github_app_enabled | default(false, true) | bool)
+        or (sandbox_rental_service_github_app_id | default(0, true) | int > 0)
+        or (sandbox_rental_service_github_app_slug | default('', true) | trim | length > 0)
+        or (sandbox_rental_service_github_app_client_id | default('', true) | trim | length > 0)
+      }}
+  when: openbao_rebootstrap | bool
+
+- name: Read Zitadel admin PAT before OpenBao rebootstrap
+  ansible.builtin.slurp:
+    src: /etc/zitadel/admin.pat
+  register: openbao_rebootstrap_zitadel_admin_pat_raw
+  when:
+    - openbao_rebootstrap | bool
+    - openbao_rebootstrap_sandbox_github_app_configured | bool
+  no_log: true
+
+- name: Resolve platform organization before OpenBao rebootstrap
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/v2/organizations/_search"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ openbao_rebootstrap_zitadel_admin_pat_raw.content | b64decode | trim }}"
+      Host: "auth.{{ verself_domain }}"
+    body_format: json
+    body: {}
+    return_content: true
+    status_code: 200
+  register: openbao_rebootstrap_org_search
+  when:
+    - openbao_rebootstrap | bool
+    - openbao_rebootstrap_sandbox_github_app_configured | bool
+  no_log: true
+
+- name: Set platform organization ID before OpenBao rebootstrap
+  ansible.builtin.set_fact:
+    openbao_rebootstrap_platform_org_id: >-
+      {{
+        (
+          openbao_rebootstrap_org_search.json.result
+          | default([])
+          | selectattr('name', 'equalto', openbao_tenancy_platform_org_name | default('verself', true))
+          | map(attribute='id')
+          | list
+          | first
+        ) | default('')
+      }}
+  when:
+    - openbao_rebootstrap | bool
+    - openbao_rebootstrap_sandbox_github_app_configured | bool
+  no_log: true
+
+- name: Assert platform organization was resolved before OpenBao rebootstrap
+  ansible.builtin.assert:
+    that: openbao_rebootstrap_platform_org_id | default('', true) | length > 0
+    fail_msg: >-
+      OpenBao rebootstrap needs the platform organization ID to preserve
+      sandbox-rental GitHub App runtime secrets before wiping Raft state.
+  when:
+    - openbao_rebootstrap | bool
+    - openbao_rebootstrap_sandbox_github_app_configured | bool
+
+- name: Resolve GitHub App runtime secret source organization before OpenBao rebootstrap
+  ansible.builtin.set_fact:
+    openbao_rebootstrap_github_source_org_id_resolved: >-
+      {{
+        openbao_rebootstrap_github_source_org_id
+        | default(openbao_rebootstrap_platform_org_id, true)
+      }}
+  when:
+    - openbao_rebootstrap | bool
+    - openbao_rebootstrap_sandbox_github_app_configured | bool
+  no_log: true
+
+- name: Read current OpenBao root token before rebootstrap
+  ansible.builtin.slurp:
+    src: "{{ openbao_credstore_dir }}/root-token"
+  register: openbao_rebootstrap_root_token_raw
+  when:
+    - openbao_rebootstrap | bool
+    - openbao_rebootstrap_sandbox_github_app_configured | bool
+  no_log: true
+
+- name: Read current sandbox-rental GitHub App runtime secrets before rebootstrap
+  ansible.builtin.uri:
+    url: >-
+      https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/{{
+      openbao_tenancy_kv_mount_prefix | default('kv', true) }}-{{ openbao_rebootstrap_github_source_org_id_resolved
+      }}/data/secret/org/{{ item.name }}
+    method: GET
+    headers:
+      X-Vault-Token: "{{ openbao_rebootstrap_root_token_raw.content | b64decode | trim }}"
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    status_code: [200, 404]
+    return_content: true
+  loop:
+    - name: sandbox-rental-service.github.private_key
+      stage_path: "{{ openbao_rebootstrap_stage_dir }}/github-app-private-key"
+    - name: sandbox-rental-service.github.webhook_secret
+      stage_path: "{{ openbao_rebootstrap_stage_dir }}/github-app-webhook-secret"
+    - name: sandbox-rental-service.github.client_secret
+      stage_path: "{{ openbao_rebootstrap_stage_dir }}/github-app-client-secret"
+  loop_control:
+    label: "{{ item.name }}"
+  register: openbao_rebootstrap_github_secret_reads
+  when:
+    - openbao_rebootstrap | bool
+    - openbao_rebootstrap_sandbox_github_app_configured | bool
+  changed_when: false
+  no_log: true
+
+- name: Assert GitHub App runtime secrets are preserved before OpenBao rebootstrap
+  ansible.builtin.assert:
+    that:
+      - >-
+        openbao_rebootstrap_github_secret_reads.results
+        | selectattr('status', 'equalto', 200)
+        | list
+        | length == 3
+    fail_msg: >-
+      GitHub runner integration is configured, but the current OpenBao store
+      does not contain the three sandbox-rental GitHub App runtime secrets.
+      Refusing to wipe OpenBao because sandbox would lose a configured external
+      integration. If this is an org-id rebrand cutover, set
+      openbao_rebootstrap_github_source_org_id to the old org id whose
+      kv-<org_id> mount currently contains those three secrets.
+  when:
+    - openbao_rebootstrap | bool
+    - openbao_rebootstrap_sandbox_github_app_configured | bool
+  no_log: true
+
+- name: Create OpenBao rebootstrap credential staging directory
+  ansible.builtin.file:
+    path: "{{ openbao_rebootstrap_stage_dir }}"
+    state: directory
+    owner: root
+    group: openbao
+    mode: "0750"
+  when:
+    - openbao_rebootstrap | bool
+    - openbao_rebootstrap_sandbox_github_app_configured | bool
+
+- name: Stage sandbox-rental GitHub App runtime secrets for post-wipe migration
+  ansible.builtin.copy:
+    content: "{{ item.json.data.data.value }}"
+    dest: "{{ item.item.stage_path }}"
+    owner: root
+    group: openbao
+    mode: "0640"
+  loop: "{{ openbao_rebootstrap_github_secret_reads.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when:
+    - openbao_rebootstrap | bool
+    - openbao_rebootstrap_sandbox_github_app_configured | bool
+    - item.status == 200
+  no_log: true
+
+- name: Stop OpenBao before rebootstrap wipe
+  ansible.builtin.systemd:
+    name: openbao
+    state: stopped
+  failed_when: false
+  when: openbao_rebootstrap | bool
+
+- name: Remove OpenBao bootstrap state
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ openbao_raft_dir }}"
+    - "{{ openbao_credstore_dir }}/root-token"
+    - "{{ openbao_credstore_dir }}/unseal-key-1"
+    - "{{ openbao_credstore_dir }}/unseal-key-2"
+    - "{{ openbao_credstore_dir }}/unseal-key-3"
+    - "{{ openbao_audit_log }}"
+  when: openbao_rebootstrap | bool
+
+- name: Recreate OpenBao Raft directory after rebootstrap wipe
+  ansible.builtin.file:
+    path: "{{ openbao_raft_dir }}"
+    state: directory
+    owner: openbao
+    group: openbao
+    mode: "0700"
+  when: openbao_rebootstrap | bool
+
 - name: Check if OpenBao TLS cert already exists
   ansible.builtin.stat:
     path: "{{ openbao_tls_dir }}/cert.pem"
@@ -75,15 +275,6 @@
   loop:
     - { name: cert.pem, mode: "0640" }
     - { name: key.pem, mode: "0640" }
-
-- name: Remove legacy global OpenBao OIDC hosts override
-  ansible.builtin.blockinfile:
-    path: /etc/hosts
-    marker: "# {mark} verself-openbao-oidc"
-    state: absent
-    owner: root
-    group: root
-    mode: "0644"
 
 - name: Deploy OpenBao private hosts file
   ansible.builtin.copy:

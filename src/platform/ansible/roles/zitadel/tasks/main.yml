@@ -174,16 +174,39 @@
 # Zitadel has a three-phase lifecycle: init (create schemas), setup (run
 # migrations + create first instance), start (run the server).
 # `init` and `setup` are idempotent and exit after completion.
-# We gate on the eventstore schema to skip on subsequent deploys.
-#
-# Caveat: changing ExternalDomain/ExternalPort/ExternalSecure after first
-# deploy requires rerunning `zitadel setup` manually — a restart alone
-# won't apply the migration.
+# We gate on the database schema, not the admin PAT. The PAT lives outside
+# PostgreSQL and can survive a database reset, which would otherwise skip setup
+# and leave Zitadel crash-looping against an empty database.
 
-- name: Check if Zitadel setup has completed (admin PAT exists)
-  ansible.builtin.stat:
+- name: Check if Zitadel database schema exists
+  community.postgresql.postgresql_query:
+    login_host: "{{ services.postgresql.host }}"
+    login_port: "{{ services.postgresql.port }}"
+    login_user: zitadel
+    login_password: "{{ zitadel_db_password }}"
+    login_db: zitadel
+    query: >-
+      SELECT to_regclass('system.encryption_keys') IS NOT NULL AS schema_ready
+  register: zitadel_schema_state
+  changed_when: false
+  no_log: true
+
+- name: Set Zitadel setup required flag
+  ansible.builtin.set_fact:
+    zitadel_setup_required: >-
+      {{ not (zitadel_schema_state.query_result[0].schema_ready | bool) }}
+
+- name: Stop Zitadel before database setup
+  ansible.builtin.systemd:
+    name: zitadel
+    state: stopped
+  when: zitadel_setup_required
+
+- name: Remove stale Zitadel admin PAT before database setup
+  ansible.builtin.file:
     path: "{{ zitadel_config_dir }}/admin.pat"
-  register: zitadel_setup_done
+    state: absent
+  when: zitadel_setup_required
 
 - name: Run Zitadel init (create database schemas)
   ansible.builtin.command:
@@ -192,7 +215,7 @@
       --config {{ zitadel_config_dir }}/config.yaml
   become: true
   become_user: zitadel
-  when: not zitadel_setup_done.stat.exists
+  when: zitadel_setup_required
   changed_when: true
 
 - name: Run Zitadel setup (migrations + first instance)
@@ -204,7 +227,7 @@
       --steps {{ zitadel_config_dir }}/steps.yaml
   become: true
   become_user: zitadel
-  when: not zitadel_setup_done.stat.exists
+  when: zitadel_setup_required
   changed_when: true
 
 # --- Admin PAT ---
@@ -236,6 +259,21 @@
     zitadel_admin_pat: "{{ zitadel_admin_pat_raw.content | b64decode | trim }}"
   no_log: true
 
+- name: Read current Zitadel admin PAT from SOPS secrets
+  ansible.builtin.command:
+    argv:
+      - sops
+      - -d
+      - --extract
+      - '["zitadel_admin_pat"]'
+      - "{{ playbook_dir }}/../group_vars/all/secrets.sops.yml"
+  register: zitadel_admin_pat_sops_current
+  delegate_to: localhost
+  become: false
+  failed_when: false
+  changed_when: false
+  no_log: true
+
 - name: Write admin PAT back to SOPS secrets
   # `sops set --value-stdin` reads the JSON-encoded value from stdin so the
   # secret never lands on the process argv.
@@ -251,6 +289,9 @@
   become: false
   no_log: true
   changed_when: true
+  when: >-
+    zitadel_admin_pat_sops_current.rc != 0
+    or (zitadel_admin_pat_sops_current.stdout | trim) != zitadel_admin_pat
 
 - name: Apply Zitadel unit changes before proceeding
   ansible.builtin.meta: flush_handlers
