@@ -175,6 +175,8 @@ const SOURCE_CODE_HOSTING_SERVICE_BASE_URL = requireURLFromEnv(
 );
 const SANDBOX_RENTAL_SERVICE_BASE_URL = requireURLFromEnv("SANDBOX_RENTAL_SERVICE_BASE_URL");
 const IDENTITY_SERVICE_AUTH_AUDIENCE = process.env.IDENTITY_SERVICE_AUTH_AUDIENCE?.trim();
+const SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE =
+  process.env.SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE?.trim() || process.env.AUTH_PROJECT_ID?.trim();
 const PROFILE_SERVICE_AUTH_AUDIENCE =
   process.env.PROFILE_SERVICE_AUTH_AUDIENCE?.trim() || IDENTITY_SERVICE_AUTH_AUDIENCE;
 const NOTIFICATIONS_SERVICE_AUTH_AUDIENCE =
@@ -268,17 +270,29 @@ async function resolveAuthContext(
 
 async function sandboxRentalClientOptions(context: { auth?: AuthSession } | undefined) {
   const auth = await resolveAuthContext(context);
+  if (!SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE) {
+    throw new Error("SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE or AUTH_PROJECT_ID is required");
+  }
   return {
-    accessToken: auth.accessToken,
+    accessToken: await getAccessTokenForAudience(
+      getAuthConfig(),
+      auth,
+      SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE,
+    ),
     baseUrl: SANDBOX_RENTAL_SERVICE_BASE_URL,
   };
 }
 
 async function identityClientOptions(context: { auth?: AuthSession } | undefined) {
   const auth = await resolveAuthContext(context);
-  const accessToken = IDENTITY_SERVICE_AUTH_AUDIENCE
-    ? await getAccessTokenForAudience(getAuthConfig(), auth, IDENTITY_SERVICE_AUTH_AUDIENCE)
-    : auth.accessToken;
+  if (!IDENTITY_SERVICE_AUTH_AUDIENCE) {
+    throw new Error("IDENTITY_SERVICE_AUTH_AUDIENCE is required");
+  }
+  const accessToken = await getAccessTokenForAudience(
+    getAuthConfig(),
+    auth,
+    IDENTITY_SERVICE_AUTH_AUDIENCE,
+  );
   return {
     accessToken,
     baseUrl: IDENTITY_SERVICE_BASE_URL,
@@ -295,11 +309,14 @@ async function governanceClientOptions(context: { auth?: AuthSession } | undefin
 
 async function profileClientOptions(context: { auth?: AuthSession } | undefined) {
   const auth = await resolveAuthContext(context);
-  const accessToken =
-    PROFILE_SERVICE_AUTH_AUDIENCE &&
-    PROFILE_SERVICE_AUTH_AUDIENCE !== IDENTITY_SERVICE_AUTH_AUDIENCE
-      ? await getAccessTokenForAudience(getAuthConfig(), auth, PROFILE_SERVICE_AUTH_AUDIENCE)
-      : auth.accessToken;
+  if (!PROFILE_SERVICE_AUTH_AUDIENCE) {
+    throw new Error("PROFILE_SERVICE_AUTH_AUDIENCE or IDENTITY_SERVICE_AUTH_AUDIENCE is required");
+  }
+  const accessToken = await getAccessTokenForAudience(
+    getAuthConfig(),
+    auth,
+    PROFILE_SERVICE_AUTH_AUDIENCE,
+  );
   return {
     accessToken,
     baseUrl: PROFILE_SERVICE_BASE_URL,
@@ -308,11 +325,16 @@ async function profileClientOptions(context: { auth?: AuthSession } | undefined)
 
 async function notificationsClientOptions(context: { auth?: AuthSession } | undefined) {
   const auth = await resolveAuthContext(context);
-  const accessToken =
-    NOTIFICATIONS_SERVICE_AUTH_AUDIENCE &&
-    NOTIFICATIONS_SERVICE_AUTH_AUDIENCE !== IDENTITY_SERVICE_AUTH_AUDIENCE
-      ? await getAccessTokenForAudience(getAuthConfig(), auth, NOTIFICATIONS_SERVICE_AUTH_AUDIENCE)
-      : auth.accessToken;
+  if (!NOTIFICATIONS_SERVICE_AUTH_AUDIENCE) {
+    throw new Error(
+      "NOTIFICATIONS_SERVICE_AUTH_AUDIENCE or IDENTITY_SERVICE_AUTH_AUDIENCE is required",
+    );
+  }
+  const accessToken = await getAccessTokenForAudience(
+    getAuthConfig(),
+    auth,
+    NOTIFICATIONS_SERVICE_AUTH_AUDIENCE,
+  );
   return {
     accessToken,
     baseUrl: NOTIFICATIONS_SERVICE_BASE_URL,
@@ -321,15 +343,16 @@ async function notificationsClientOptions(context: { auth?: AuthSession } | unde
 
 async function sourceCodeHostingClientOptions(context: { auth?: AuthSession } | undefined) {
   const auth = await resolveAuthContext(context);
-  const accessToken =
-    SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE &&
-    SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE !== IDENTITY_SERVICE_AUTH_AUDIENCE
-      ? await getAccessTokenForAudience(
-          getAuthConfig(),
-          auth,
-          SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE,
-        )
-      : auth.accessToken;
+  if (!SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE) {
+    throw new Error(
+      "SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE or IDENTITY_SERVICE_AUTH_AUDIENCE is required",
+    );
+  }
+  const accessToken = await getAccessTokenForAudience(
+    getAuthConfig(),
+    auth,
+    SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE,
+  );
   return {
     accessToken,
     baseUrl: SOURCE_CODE_HOSTING_SERVICE_BASE_URL,

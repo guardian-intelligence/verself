@@ -1,5 +1,5 @@
 import { env } from "./env";
-import { ensureTestUserExists, expect, test } from "./harness";
+import { ensureTestUserExists, expect, shortTimeoutMS, test } from "./harness";
 
 test.describe("Console Shell", () => {
   test.beforeAll(async () => {
@@ -129,6 +129,59 @@ test.describe("Console Shell", () => {
         .isVisible({ timeout: 1000 })
         .catch(() => false);
       expect(emptyStateVisible || repositoryCardVisible).toBe(true);
+
+      run.status = "succeeded";
+      run.terminal_observed_at = new Date().toISOString();
+    } catch (error) {
+      run.status = "failed";
+      run.error = error instanceof Error ? error.message : String(error);
+      throw error;
+    } finally {
+      await app.persistRun(run);
+    }
+  });
+
+  test("authenticated shell switches active organization and isolates service scope", async ({
+    app,
+  }) => {
+    const run = app.createRun();
+
+    try {
+      await app.ensureLoggedIn();
+      app.resetBrowserSignals();
+
+      run.detail_url = "/settings/organization";
+      await app.goto("/settings/organization");
+      await expect(app.page.getByTestId("shell-account-trigger")).toBeVisible();
+      run.started_balance = await app.readBalance();
+
+      await app.page.getByTestId("shell-account-trigger").click();
+      const organizationItems = app.page.getByTestId("shell-organization-switch-item");
+      await expect
+        .poll(async () => organizationItems.count(), { timeout: shortTimeoutMS })
+        .toBeGreaterThan(1);
+
+      const initialOrganization = await app.page
+        .getByTestId("shell-active-organization")
+        .innerText();
+      const inactiveOrganization = app.page
+        .locator('[data-testid="shell-organization-switch-item"][data-active="false"]')
+        .first();
+      const targetOrganization = await inactiveOrganization.innerText();
+      await inactiveOrganization.click();
+
+      await expect(app.page.getByTestId("shell-active-organization")).toHaveText(
+        targetOrganization,
+        { timeout: shortTimeoutMS },
+      );
+      expect(targetOrganization).not.toBe(initialOrganization);
+
+      await app.goto("/settings/organization");
+      await expect(app.page.getByTestId("shell-active-organization")).toHaveText(
+        targetOrganization,
+        { timeout: shortTimeoutMS },
+      );
+      run.finished_balance = await app.readBalance();
 
       run.status = "succeeded";
       run.terminal_observed_at = new Date().toISOString();

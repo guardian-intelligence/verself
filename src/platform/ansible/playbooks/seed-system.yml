@@ -648,6 +648,18 @@
             organization_id: "{{ seed_system_orgs.platform.organization_id }}"
             project_id: "{{ seed_system_mailbox_project_id }}"
             role_keys: [mailbox_user]
+          - user_id: "{{ seed_system_users_state.ceo.user_id }}"
+            organization_id: "{{ seed_system_orgs.acme.organization_id }}"
+            project_id: "{{ seed_system_sandbox_project_id }}"
+            role_keys: [owner]
+          - user_id: "{{ seed_system_users_state.ceo.user_id }}"
+            organization_id: "{{ seed_system_orgs.acme.organization_id }}"
+            project_id: "{{ seed_system_identity_project_id }}"
+            role_keys: [owner]
+          - user_id: "{{ seed_system_users_state.ceo.user_id }}"
+            organization_id: "{{ seed_system_orgs.acme.organization_id }}"
+            project_id: "{{ seed_system_secrets_project_id }}"
+            role_keys: [admin]
           - user_id: "{{ seed_system_users_state.platform_agent.user_id }}"
             organization_id: "{{ seed_system_orgs.platform.organization_id }}"
             project_id: "{{ seed_system_sandbox_project_id }}"
@@ -769,7 +781,7 @@
           - "  Acme admin:   {{ seed_system_users_state.acme_admin.email }} ({{ seed_system_users_state.acme_admin.password_credstore_path }})"
           - "  Acme user:    {{ seed_system_users_state.acme_user.email }} ({{ seed_system_users_state.acme_user.password_credstore_path }})"
           - "  Acme API:     {{ seed_system_machine_users_state.acme_admin.username }} / {{ seed_system_machine_users_state.acme_member.username }}"
-          - "  Note: current auth/runtime still assumes one org per user; multi-org membership and org switching are not fully baked yet."
+          - "  CEO has Platform and Acme project authorizations for org-switch verification."
       tags: [identity]
 
     - name: Build billing seed helper on controller
@@ -1448,6 +1460,7 @@
           grantTypes:
             - OIDC_GRANT_TYPE_AUTHORIZATION_CODE
             - OIDC_GRANT_TYPE_REFRESH_TOKEN
+            - OIDC_GRANT_TYPE_TOKEN_EXCHANGE
           appType: OIDC_APP_TYPE_WEB
           authMethodType: OIDC_AUTH_METHOD_TYPE_NONE
           postLogoutRedirectUris:
@@ -1641,5 +1654,5 @@
           - " Platform credits: {{ ((seed_system_billing_results | default({})).platform | default({})).prepaid_after | default('(run with --tags billing)') }}"
           - " Acme credits:     {{ ((seed_system_billing_results | default({})).acme | default({})).prepaid_after | default('(run with --tags billing)') }}"
           - ""
-          - " Note: users still have a single home org in runtime/auth paths today. Multi-org membership and org switching remain future work."
+          - " Note: seeded CEO keeps a single Zitadel home org while the console switches active organization context from project role assignments."
           - "============================================"

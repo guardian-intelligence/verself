@@ -6,12 +6,17 @@ import {
   getAuthSession,
   getClientAuthSnapshot as readClientAuthSnapshot,
   logout,
+  selectOrganization,
   type AuthSession,
 } from "@forge-metal/auth-web/server";
 import { getAuthConfig } from "../server/auth";
 
 const loginRedirectInputSchema = v.object({
   redirectTo: v.optional(v.nullable(v.string())),
+});
+
+const selectOrganizationInputSchema = v.object({
+  orgID: v.pipe(v.string(), v.nonEmpty()),
 });
 
 function getConsoleAuthConfig() {
@@ -54,3 +59,10 @@ export const getSignInCallbackRedirectURL = createServerFn({ method: "GET" }).ha
 export const getSignOutRedirectURL = createServerFn({ method: "GET" }).handler(async () => {
   return logout(getConsoleAuthConfig());
 });
+
+export const selectActiveOrganization = createServerFn({ method: "POST" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(selectOrganizationInputSchema)
+  .handler(async ({ data }) => {
+    return selectOrganization(getConsoleAuthConfig(), data.orgID);
+  });
