@@ -23,13 +23,14 @@ test.describe("Console Source", () => {
 
       const createProject = app.page.getByRole("heading", { name: "Create a project" });
       const createRepository = app.page.getByRole("heading", { name: "Create a repository" });
+      const pushFirstBranch = app.page.getByRole("heading", { name: "Push the first branch" });
       if (await createProject.isVisible({ timeout: shortTimeoutMS }).catch(() => false)) {
         await expect(app.page.getByRole("button", { name: "Create project" })).toBeVisible();
         run.source_state = "no_projects";
       } else if (await createRepository.isVisible({ timeout: shortTimeoutMS }).catch(() => false)) {
         await expect(app.page.getByRole("button", { name: "Create repository" })).toBeVisible();
         run.source_state = "no_repository";
-      } else {
+      } else if (await pushFirstBranch.isVisible({ timeout: shortTimeoutMS }).catch(() => false)) {
         await expect(app.page.getByText("Git remote", { exact: true }).first()).toBeVisible();
         await expect(
           app.page.getByRole("button", { name: "Create Git credential" }).first(),
@@ -39,6 +40,8 @@ test.describe("Console Source", () => {
           timeout: shortTimeoutMS,
         });
         await expect(app.page.getByText("Token", { exact: true })).toBeVisible();
+        run.source_state = "push_empty";
+      } else {
         await expect(
           app.page.getByRole("heading", { name: "Branches", exact: true }).first(),
         ).toBeVisible();
