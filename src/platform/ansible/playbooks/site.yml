@@ -48,7 +48,7 @@
   tags: [firecracker]
   tasks:
     - name: Check ZFS pool exists
-      ansible.builtin.command: "zpool status vspool"
+      ansible.builtin.command: "zpool status {{ firecracker_zfs_pool | default(zfs_pool) }}"
       changed_when: false
       failed_when: false
       register: preflight_zpool
@@ -75,7 +75,7 @@
     - name: Warn if ZFS pool is missing
       ansible.builtin.debug:
         msg: >-
-          WARNING: ZFS pool 'vspool' not found on {{ inventory_hostname }}.
+          WARNING: ZFS pool '{{ firecracker_zfs_pool | default(zfs_pool) }}' not found on {{ inventory_hostname }}.
           The zfs role will create it, but only if a suitable disk is available.
       when: preflight_zpool.rc != 0
 
