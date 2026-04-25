@@ -8,6 +8,7 @@ Polyglot monorepo structured as a modular monolith:
 - **TypeScript** — `src/viteplus-monorepo/` (pnpm, Vite Plus + TanStack Start/DB/Query/Router). Apps: `company` (Guardian Intelligence company site at guardianintelligence.org), `platform` (product docs/policy at verself.sh), `console` (product console at console.verself.sh), `mail`.
 - **Go** — `go.work` at repo root, covers most of `src/*`. Services: `sandbox-rental-service`, `billing-service`, `identity-service`, `mailbox-service`, `governance-service`, `secrets-service`, `platform`, `vm-orchestrator`. Shared libs: `apiwire`, `auth-middleware`, `otel`.
 - **Zig** — `src/vm-guest-telemetry/` (guest agent, runs *inside* Firecracker VMs, not on the host).
+- **CUE** — `src/platform/topology/` is the canonical service topology and constraint layer. `make topology-generate` renders generated Ansible inputs, while `make topology-check` and `make topology-proof` validate freshness and ClickHouse proof spans.
 - **YAML* -- Infrastructure code defined with Ansible.
 
 Layers:
@@ -77,6 +78,8 @@ See `docs/system-context.md`. Auth, identity, IAM, Zitadel, JWT, SCIM, organizat
 Verself Go service clients are generated from committed OpenAPI 3.0 specs with `oapi-codegen`; consumers must use those generated `client` or `internalclient` packages, with SPIFFE carried by the underlying `http.Client` instead of handwritten transport code. If a service API shape is missing, add the Huma route/OpenAPI spec and regenerate instead of bypassing the SDK.
 
 Python package management is done through `uv`.
+
+No need to be frugal with telemetry. We store 10+ million rows for around ~150MB in ClickHouse thanks to optimizations.
 
 </system_context>
 
