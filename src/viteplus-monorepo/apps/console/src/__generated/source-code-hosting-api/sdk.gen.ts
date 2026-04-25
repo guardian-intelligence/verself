@@ -13,6 +13,9 @@ import type {
   CreateSourceRepositoryData,
   CreateSourceRepositoryErrors,
   CreateSourceRepositoryResponses,
+  CreateSourceWorkflowRunData,
+  CreateSourceWorkflowRunErrors,
+  CreateSourceWorkflowRunResponses,
   GetSourceBlobData,
   GetSourceBlobErrors,
   GetSourceBlobResponses,
@@ -22,12 +25,18 @@ import type {
   GetSourceTreeData,
   GetSourceTreeErrors,
   GetSourceTreeResponses,
+  GetSourceWorkflowRunData,
+  GetSourceWorkflowRunErrors,
+  GetSourceWorkflowRunResponses,
   ListSourceRefsData,
   ListSourceRefsErrors,
   ListSourceRefsResponses,
   ListSourceRepositoriesData,
   ListSourceRepositoriesErrors,
   ListSourceRepositoriesResponses,
+  ListSourceWorkflowRunsData,
+  ListSourceWorkflowRunsErrors,
+  ListSourceWorkflowRunsResponses,
 } from "./types.gen.js";
 
 export type Options<
@@ -173,5 +182,57 @@ export const getSourceTree = <ThrowOnError extends boolean = false>(
   (options.client ?? client).get<GetSourceTreeResponses, GetSourceTreeErrors, ThrowOnError>({
     security: [{ scheme: "bearer", type: "http" }],
     url: "/api/v1/repos/{repo_id}/tree",
+    ...options,
+  });
+
+/**
+ * List repository workflow runs
+ */
+export const listSourceWorkflowRuns = <ThrowOnError extends boolean = false>(
+  options: Options<ListSourceWorkflowRunsData, ThrowOnError>,
+) =>
+  (options.client ?? client).get<
+    ListSourceWorkflowRunsResponses,
+    ListSourceWorkflowRunsErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/repos/{repo_id}/workflow-runs",
+    ...options,
+  });
+
+/**
+ * Dispatch a repository workflow
+ */
+export const createSourceWorkflowRun = <ThrowOnError extends boolean = false>(
+  options: Options<CreateSourceWorkflowRunData, ThrowOnError>,
+) =>
+  (options.client ?? client).post<
+    CreateSourceWorkflowRunResponses,
+    CreateSourceWorkflowRunErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/repos/{repo_id}/workflow-runs",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
+
+/**
+ * Get a workflow run
+ */
+export const getSourceWorkflowRun = <ThrowOnError extends boolean = false>(
+  options: Options<GetSourceWorkflowRunData, ThrowOnError>,
+) =>
+  (options.client ?? client).get<
+    GetSourceWorkflowRunResponses,
+    GetSourceWorkflowRunErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/workflow-runs/{workflow_run_id}",
     ...options,
   });

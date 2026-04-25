@@ -27,7 +27,7 @@ HS       := src/httpserver
 INVENTORY := $(FM)/ansible/inventory/hosts.ini
 GO_DIRS  := $(AW) $(VMO) $(BS) $(GS) $(IS) $(SS) $(SCH) $(AM) $(SR) $(MS) $(OSS) $(PS) $(NS) $(OT) $(TP) $(EC) $(HS)
 GO_PKGS  := $(addsuffix /...,$(addprefix ./,$(GO_DIRS)))
-GO_CLIENT_DIRS := $(BS)/client $(GS)/client $(GS)/internalclient $(IS)/client $(IS)/internalclient $(SS)/client $(SS)/internalclient $(SCH)/client $(SR)/client $(MS)/client $(OSS)/client $(PS)/client $(PS)/internalclient $(NS)/client
+GO_CLIENT_DIRS := $(BS)/client $(GS)/client $(GS)/internalclient $(IS)/client $(IS)/internalclient $(SS)/client $(SS)/internalclient $(SCH)/client $(SCH)/internalclient $(SR)/client $(MS)/client $(OSS)/client $(PS)/client $(PS)/internalclient $(NS)/client
 GO_CLIENT_FILES := $(addsuffix /client.gen.go,$(GO_CLIENT_DIRS))
 BILLING_PRODUCT_ID ?= sandbox
 ASSUME_PERSONA_OUTPUT_FLAG := $(if $(OUTPUT),--output "$(OUTPUT)",)
@@ -115,6 +115,8 @@ openapi: ## Regenerate committed OpenAPI 3.0 and 3.1 specs for Go services
 	mkdir -p $(SCH)/openapi
 	go run ./$(SCH)/cmd/source-code-hosting-openapi --format 3.0 > $(SCH)/openapi/openapi-3.0.yaml
 	go run ./$(SCH)/cmd/source-code-hosting-openapi --format 3.1 > $(SCH)/openapi/openapi-3.1.yaml
+	go run ./$(SCH)/cmd/source-code-hosting-internal-openapi --format 3.0 > $(SCH)/openapi/internal-openapi-3.0.yaml
+	go run ./$(SCH)/cmd/source-code-hosting-internal-openapi --format 3.1 > $(SCH)/openapi/internal-openapi-3.1.yaml
 	go run ./$(MS)/cmd/mailbox-openapi --format 3.0 > $(MS)/openapi/openapi-3.0.yaml
 	go run ./$(MS)/cmd/mailbox-openapi --format 3.1 > $(MS)/openapi/openapi-3.1.yaml
 	mkdir -p $(OSS)/openapi
@@ -142,6 +144,7 @@ openapi-clients: ## Regenerate committed generated Go clients from OpenAPI 3.0 s
 	cd $(SS)/client && go generate ./...
 	cd $(SS)/internalclient && go generate ./...
 	cd $(SCH)/client && go generate ./...
+	cd $(SCH)/internalclient && go generate ./...
 	cd $(SR)/client && go generate ./...
 	cd $(MS)/client && go generate ./...
 	cd $(OSS)/client && go generate ./...
@@ -166,6 +169,8 @@ openapi-check: ## Verify committed OpenAPI specs are up to date
 	cd $(SS) && go run ./cmd/secrets-internal-openapi --format 3.1 --check
 	cd $(SCH) && go run ./cmd/source-code-hosting-openapi --format 3.0 --check
 	cd $(SCH) && go run ./cmd/source-code-hosting-openapi --format 3.1 --check
+	cd $(SCH) && go run ./cmd/source-code-hosting-internal-openapi --format 3.0 --check
+	cd $(SCH) && go run ./cmd/source-code-hosting-internal-openapi --format 3.1 --check
 	cd $(MS) && go run ./cmd/mailbox-openapi --format 3.0 --check
 	cd $(MS) && go run ./cmd/mailbox-openapi --format 3.1 --check
 	cd $(OSS) && go run ./cmd/object-storage-openapi --format 3.0 --check
@@ -194,6 +199,7 @@ openapi-wire-check: ## Verify frontend-consumed OpenAPI 3.1 specs are JS wire-sa
 		$(IS)/openapi/internal-openapi-3.1.yaml \
 		$(SS)/openapi/openapi-3.1.yaml \
 		$(SCH)/openapi/openapi-3.1.yaml \
+		$(SCH)/openapi/internal-openapi-3.1.yaml \
 		$(MS)/openapi/openapi-3.1.yaml \
 		$(OSS)/openapi/openapi-3.1.yaml \
 		$(PS)/openapi/openapi-3.1.yaml \

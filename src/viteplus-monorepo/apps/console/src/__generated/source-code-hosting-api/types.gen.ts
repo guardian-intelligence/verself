@@ -60,6 +60,18 @@ export type CreateRepositoryRequest = {
   name: string;
 };
 
+export type CreateWorkflowRunRequest = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  inputs?: {
+    [key: string]: string;
+  };
+  ref?: string;
+  workflow_path: string;
+};
+
 export type ErrorDetail = {
   /**
    * Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'
@@ -144,6 +156,7 @@ export type Repository = {
   description: string;
   name: string;
   org_id: string;
+  provider: string;
   repo_id: string;
   slug: string;
   state: string;
@@ -173,6 +186,38 @@ export type TreeEntry = {
   sha: string;
   size: number;
   type: string;
+};
+
+export type WorkflowRun = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  actor_id: string;
+  created_at: string;
+  dispatched_at?: string;
+  failure_reason?: string;
+  inputs: {
+    [key: string]: string;
+  };
+  org_id: string;
+  provider: string;
+  provider_dispatch_id?: string;
+  ref: string;
+  repo_id: string;
+  state: string;
+  trace_id?: string;
+  updated_at: string;
+  workflow_path: string;
+  workflow_run_id: string;
+};
+
+export type WorkflowRunList = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  workflow_runs: Array<WorkflowRun> | null;
 };
 
 export type BlobWritable = {
@@ -208,6 +253,14 @@ export type CreateRepositoryRequestWritable = {
   default_branch?: string;
   description?: string;
   name: string;
+};
+
+export type CreateWorkflowRunRequestWritable = {
+  inputs?: {
+    [key: string]: string;
+  };
+  ref?: string;
+  workflow_path: string;
 };
 
 export type ErrorModelWritable = {
@@ -258,6 +311,7 @@ export type RepositoryWritable = {
   description: string;
   name: string;
   org_id: string;
+  provider: string;
   repo_id: string;
   slug: string;
   state: string;
@@ -272,6 +326,30 @@ export type RepositoryListWritable = {
 
 export type TreeWritable = {
   entries: Array<TreeEntry> | null;
+};
+
+export type WorkflowRunWritable = {
+  actor_id: string;
+  created_at: string;
+  dispatched_at?: string;
+  failure_reason?: string;
+  inputs: {
+    [key: string]: string;
+  };
+  org_id: string;
+  provider: string;
+  provider_dispatch_id?: string;
+  ref: string;
+  repo_id: string;
+  state: string;
+  trace_id?: string;
+  updated_at: string;
+  workflow_path: string;
+  workflow_run_id: string;
+};
+
+export type WorkflowRunListWritable = {
+  workflow_runs: Array<WorkflowRunWritable> | null;
 };
 
 export type CreateSourceIntegrationData = {
@@ -516,3 +594,96 @@ export type GetSourceTreeResponses = {
 };
 
 export type GetSourceTreeResponse = GetSourceTreeResponses[keyof GetSourceTreeResponses];
+
+export type ListSourceWorkflowRunsData = {
+  body?: never;
+  path: {
+    repo_id: string;
+  };
+  query?: never;
+  url: "/api/v1/repos/{repo_id}/workflow-runs";
+};
+
+export type ListSourceWorkflowRunsErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type ListSourceWorkflowRunsError =
+  ListSourceWorkflowRunsErrors[keyof ListSourceWorkflowRunsErrors];
+
+export type ListSourceWorkflowRunsResponses = {
+  /**
+   * OK
+   */
+  200: WorkflowRunList;
+};
+
+export type ListSourceWorkflowRunsResponse =
+  ListSourceWorkflowRunsResponses[keyof ListSourceWorkflowRunsResponses];
+
+export type CreateSourceWorkflowRunData = {
+  body: CreateWorkflowRunRequestWritable;
+  headers: {
+    /**
+     * Stable caller-provided key used to make this mutation retry-safe.
+     */
+    "Idempotency-Key": string;
+  };
+  path: {
+    repo_id: string;
+  };
+  query?: never;
+  url: "/api/v1/repos/{repo_id}/workflow-runs";
+};
+
+export type CreateSourceWorkflowRunErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type CreateSourceWorkflowRunError =
+  CreateSourceWorkflowRunErrors[keyof CreateSourceWorkflowRunErrors];
+
+export type CreateSourceWorkflowRunResponses = {
+  /**
+   * Created
+   */
+  201: WorkflowRun;
+};
+
+export type CreateSourceWorkflowRunResponse =
+  CreateSourceWorkflowRunResponses[keyof CreateSourceWorkflowRunResponses];
+
+export type GetSourceWorkflowRunData = {
+  body?: never;
+  path: {
+    workflow_run_id: string;
+  };
+  query?: never;
+  url: "/api/v1/workflow-runs/{workflow_run_id}";
+};
+
+export type GetSourceWorkflowRunErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type GetSourceWorkflowRunError =
+  GetSourceWorkflowRunErrors[keyof GetSourceWorkflowRunErrors];
+
+export type GetSourceWorkflowRunResponses = {
+  /**
+   * OK
+   */
+  200: WorkflowRun;
+};
+
+export type GetSourceWorkflowRunResponse =
+  GetSourceWorkflowRunResponses[keyof GetSourceWorkflowRunResponses];

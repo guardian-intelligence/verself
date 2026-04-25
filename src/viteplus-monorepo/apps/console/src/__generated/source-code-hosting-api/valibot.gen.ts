@@ -48,6 +48,13 @@ export const vCreateRepositoryRequest = v.strictObject({
   name: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
 });
 
+export const vCreateWorkflowRunRequest = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  inputs: v.optional(v.record(v.string(), v.string())),
+  ref: v.optional(v.pipe(v.string(), v.maxLength(255))),
+  workflow_path: v.pipe(v.string(), v.minLength(1), v.maxLength(512)),
+});
+
 export const vErrorDetail = v.strictObject({
   location: v.optional(v.string()),
   message: v.optional(v.string()),
@@ -103,6 +110,7 @@ export const vRepository = v.strictObject({
   description: v.string(),
   name: v.string(),
   org_id: v.string(),
+  provider: v.string(),
   repo_id: v.string(),
   slug: v.string(),
   state: v.string(),
@@ -131,6 +139,30 @@ export const vTreeEntry = v.strictObject({
 export const vTree = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   entries: v.nullable(v.array(vTreeEntry)),
+});
+
+export const vWorkflowRun = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  actor_id: v.string(),
+  created_at: v.pipe(v.string(), v.isoTimestamp()),
+  dispatched_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  failure_reason: v.optional(v.string()),
+  inputs: v.record(v.string(), v.string()),
+  org_id: v.string(),
+  provider: v.string(),
+  provider_dispatch_id: v.optional(v.string()),
+  ref: v.string(),
+  repo_id: v.string(),
+  state: v.string(),
+  trace_id: v.optional(v.string()),
+  updated_at: v.pipe(v.string(), v.isoTimestamp()),
+  workflow_path: v.string(),
+  workflow_run_id: v.string(),
+});
+
+export const vWorkflowRunList = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  workflow_runs: v.nullable(v.array(vWorkflowRun)),
 });
 
 export const vBlobWritable = v.strictObject({
@@ -173,6 +205,12 @@ export const vCreateRepositoryRequestWritable = v.strictObject({
   name: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
 });
 
+export const vCreateWorkflowRunRequestWritable = v.strictObject({
+  inputs: v.optional(v.record(v.string(), v.string())),
+  ref: v.optional(v.pipe(v.string(), v.maxLength(255))),
+  workflow_path: v.pipe(v.string(), v.minLength(1), v.maxLength(512)),
+});
+
 export const vErrorModelWritable = v.strictObject({
   detail: v.optional(v.string()),
   errors: v.nullish(v.array(vErrorDetail)),
@@ -213,6 +251,7 @@ export const vRepositoryWritable = v.strictObject({
   description: v.string(),
   name: v.string(),
   org_id: v.string(),
+  provider: v.string(),
   repo_id: v.string(),
   slug: v.string(),
   state: v.string(),
@@ -227,6 +266,28 @@ export const vRepositoryListWritable = v.strictObject({
 
 export const vTreeWritable = v.strictObject({
   entries: v.nullable(v.array(vTreeEntry)),
+});
+
+export const vWorkflowRunWritable = v.strictObject({
+  actor_id: v.string(),
+  created_at: v.pipe(v.string(), v.isoTimestamp()),
+  dispatched_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  failure_reason: v.optional(v.string()),
+  inputs: v.record(v.string(), v.string()),
+  org_id: v.string(),
+  provider: v.string(),
+  provider_dispatch_id: v.optional(v.string()),
+  ref: v.string(),
+  repo_id: v.string(),
+  state: v.string(),
+  trace_id: v.optional(v.string()),
+  updated_at: v.pipe(v.string(), v.isoTimestamp()),
+  workflow_path: v.string(),
+  workflow_run_id: v.string(),
+});
+
+export const vWorkflowRunListWritable = v.strictObject({
+  workflow_runs: v.nullable(v.array(vWorkflowRunWritable)),
 });
 
 export const vCreateSourceIntegrationBody = vCreateIntegrationRequestWritable;
@@ -316,3 +377,36 @@ export const vGetSourceTreeQuery = v.object({
  * OK
  */
 export const vGetSourceTreeResponse = vTree;
+
+export const vListSourceWorkflowRunsPath = v.object({
+  repo_id: v.pipe(v.string(), v.uuid()),
+});
+
+/**
+ * OK
+ */
+export const vListSourceWorkflowRunsResponse = vWorkflowRunList;
+
+export const vCreateSourceWorkflowRunBody = vCreateWorkflowRunRequestWritable;
+
+export const vCreateSourceWorkflowRunHeaders = v.object({
+  "Idempotency-Key": v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+});
+
+export const vCreateSourceWorkflowRunPath = v.object({
+  repo_id: v.pipe(v.string(), v.uuid()),
+});
+
+/**
+ * Created
+ */
+export const vCreateSourceWorkflowRunResponse = vWorkflowRun;
+
+export const vGetSourceWorkflowRunPath = v.object({
+  workflow_run_id: v.pipe(v.string(), v.uuid()),
+});
+
+/**
+ * OK
+ */
+export const vGetSourceWorkflowRunResponse = vWorkflowRun;
