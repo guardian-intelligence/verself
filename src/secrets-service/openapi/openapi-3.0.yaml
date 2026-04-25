@@ -5,19 +5,263 @@ info:
 servers:
     - url: https://secrets.api.anveio.com
 paths:
-    /api/v1/secrets:
+    /api/v1/credentials:
         get:
-            summary: List secret or variable metadata
-            operationId: list-secrets
+            summary: List opaque credential metadata
+            operationId: list-opaque-credentials
             parameters:
                 - name: kind
                   in: query
                   explode: false
                   schema:
                     type: string
-                    enum:
-                        - secret
-                        - variable
+                    maxLength: 128
+                - name: limit
+                  in: query
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                    minimum: 1
+                    maximum: 200
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/OpaqueCredentialsDTO'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+            security:
+                - bearerAuth: []
+            x-forge-metal-iam:
+                action: list
+                audit_event: secrets.credential.list
+                billing_product_id: secrets
+                billing_sku_id: secrets_credential_operation
+                data_classification: credential_metadata
+                event_category: secrets
+                openbao_role: secrets-direct-list-credentials
+                operation_display: list opaque credentials
+                operation_type: read
+                org_scope: token_org_id
+                permission: secrets:credential:list
+                rate_limit_class: read
+                resource: opaque_credential
+                risk_level: high
+                source_product_area: Secrets
+        post:
+            summary: Create an opaque credential
+            operationId: create-opaque-credential
+            parameters:
+                - name: Idempotency-Key
+                  in: header
+                  description: Stable caller-provided key used to make this mutation retry-safe.
+                  required: true
+                  schema:
+                    type: string
+                    minLength: 1
+                    maxLength: 128
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreateOpaqueCredentialBody'
+                required: true
+            responses:
+                "201":
+                    description: Created
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/OpaqueCredentialMaterialDTO'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+            security:
+                - bearerAuth: []
+            x-forge-metal-iam:
+                action: create
+                audit_event: secrets.credential.create
+                billing_product_id: secrets
+                billing_sku_id: secrets_credential_operation
+                data_classification: credential_secret
+                event_category: secrets
+                openbao_role: secrets-direct-create-credential
+                operation_display: create opaque credential
+                operation_type: write
+                org_scope: token_org_id
+                permission: secrets:credential:create
+                rate_limit_class: credential_mutation
+                resource: opaque_credential
+                risk_level: critical
+                source_product_area: Secrets
+    /api/v1/credentials/{credential_id}:
+        get:
+            summary: Read opaque credential metadata
+            operationId: get-opaque-credential
+            parameters:
+                - name: credential_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                    format: uuid
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/OpaqueCredentialDTO'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+            security:
+                - bearerAuth: []
+            x-forge-metal-iam:
+                action: read
+                audit_event: secrets.credential.read
+                billing_product_id: secrets
+                billing_sku_id: secrets_credential_operation
+                data_classification: credential_metadata
+                event_category: secrets
+                openbao_role: secrets-direct-read-credential
+                operation_display: get opaque credential
+                operation_type: read
+                org_scope: token_org_id
+                permission: secrets:credential:read
+                rate_limit_class: read
+                resource: opaque_credential
+                risk_level: high
+                source_product_area: Secrets
+    /api/v1/credentials/{credential_id}/revoke:
+        post:
+            summary: Revoke an opaque credential
+            operationId: revoke-opaque-credential
+            parameters:
+                - name: Idempotency-Key
+                  in: header
+                  description: Stable caller-provided key used to make this mutation retry-safe.
+                  required: true
+                  schema:
+                    type: string
+                    minLength: 1
+                    maxLength: 128
+                - name: credential_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                    format: uuid
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/RevokeOpaqueCredentialInputBody'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/OpaqueCredentialDTO'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+            security:
+                - bearerAuth: []
+            x-forge-metal-iam:
+                action: revoke
+                audit_event: secrets.credential.revoke
+                billing_product_id: secrets
+                billing_sku_id: secrets_credential_operation
+                data_classification: credential_metadata
+                event_category: secrets
+                openbao_role: secrets-direct-revoke-credential
+                operation_display: revoke opaque credential
+                operation_type: delete
+                org_scope: token_org_id
+                permission: secrets:credential:revoke
+                rate_limit_class: credential_mutation
+                resource: opaque_credential
+                risk_level: critical
+                source_product_area: Secrets
+    /api/v1/credentials/{credential_id}/roll:
+        post:
+            summary: Roll an opaque credential
+            operationId: roll-opaque-credential
+            parameters:
+                - name: Idempotency-Key
+                  in: header
+                  description: Stable caller-provided key used to make this mutation retry-safe.
+                  required: true
+                  schema:
+                    type: string
+                    minLength: 1
+                    maxLength: 128
+                - name: credential_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                    format: uuid
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/RollOpaqueCredentialBody'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/OpaqueCredentialMaterialDTO'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+            security:
+                - bearerAuth: []
+            x-forge-metal-iam:
+                action: roll
+                audit_event: secrets.credential.roll
+                billing_product_id: secrets
+                billing_sku_id: secrets_credential_operation
+                data_classification: credential_secret
+                event_category: secrets
+                openbao_role: secrets-direct-roll-credential
+                operation_display: roll opaque credential
+                operation_type: write
+                org_scope: token_org_id
+                permission: secrets:credential:roll
+                rate_limit_class: credential_mutation
+                resource: opaque_credential
+                risk_level: critical
+                source_product_area: Secrets
+    /api/v1/secrets:
+        get:
+            summary: List retrievable secret metadata
+            operationId: list-secrets
+            parameters:
                 - name: limit
                   in: query
                   explode: false
@@ -59,7 +303,7 @@ paths:
                 source_product_area: Secrets
     /api/v1/secrets/{name}:
         get:
-            summary: Resolve and read a secret or variable
+            summary: Resolve and read a retrievable secret
             operationId: read-secret
             parameters:
                 - name: name
@@ -101,7 +345,7 @@ paths:
                 risk_level: critical
                 source_product_area: Secrets
         put:
-            summary: Create or rotate a secret or variable
+            summary: Create or rotate a retrievable secret
             operationId: put-secret
             parameters:
                 - name: Idempotency-Key
@@ -157,7 +401,7 @@ paths:
                 risk_level: high
                 source_product_area: Secrets
         delete:
-            summary: Soft-delete a secret or variable
+            summary: Soft-delete a retrievable secret
             operationId: delete-secret
             parameters:
                 - name: Idempotency-Key
@@ -175,14 +419,6 @@ paths:
                     type: string
                     minLength: 1
                     maxLength: 255
-                - name: kind
-                  in: query
-                  explode: false
-                  schema:
-                    type: string
-                    enum:
-                        - secret
-                        - variable
                 - name: scope_level
                   in: query
                   explode: false
@@ -544,8 +780,273 @@ paths:
                 resource: transit_key
                 risk_level: high
                 source_product_area: Secrets
+    /api/v1/variables:
+        get:
+            summary: List non-secret config variable metadata
+            operationId: list-variables
+            parameters:
+                - name: limit
+                  in: query
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                    minimum: 1
+                    maximum: 200
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/VariablesDTO'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+            security:
+                - bearerAuth: []
+            x-forge-metal-iam:
+                action: list
+                audit_event: secrets.variable.list
+                billing_product_id: secrets
+                billing_sku_id: secrets_kv_operation
+                data_classification: internal_config
+                event_category: secrets
+                openbao_role: secrets-direct-list-variables
+                operation_display: list variables
+                operation_type: read
+                org_scope: token_org_id
+                permission: secrets:variable:list
+                rate_limit_class: read
+                resource: variable
+                risk_level: medium
+                source_product_area: Secrets
+    /api/v1/variables/{name}:
+        get:
+            summary: Resolve and read a non-secret config variable
+            operationId: read-variable
+            parameters:
+                - name: name
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                    minLength: 1
+                    maxLength: 255
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/VariableValueDTO'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+            security:
+                - bearerAuth: []
+            x-forge-metal-iam:
+                action: read
+                audit_event: secrets.variable.read
+                billing_product_id: secrets
+                billing_sku_id: secrets_kv_operation
+                data_classification: internal_config
+                event_category: secrets
+                openbao_role: secrets-direct-read-variable
+                operation_display: read variable
+                operation_type: read
+                org_scope: token_org_id
+                permission: secrets:variable:read
+                rate_limit_class: read
+                resource: variable
+                risk_level: medium
+                source_product_area: Secrets
+        put:
+            summary: Create or rotate a non-secret config variable
+            operationId: put-variable
+            parameters:
+                - name: Idempotency-Key
+                  in: header
+                  description: Stable caller-provided key used to make this mutation retry-safe.
+                  required: true
+                  schema:
+                    type: string
+                    minLength: 1
+                    maxLength: 128
+                - name: name
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                    minLength: 1
+                    maxLength: 255
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/PutSecretBody'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/VariableDTO'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+            security:
+                - bearerAuth: []
+            x-forge-metal-iam:
+                action: write
+                audit_event: secrets.variable.write
+                billing_product_id: secrets
+                billing_sku_id: secrets_kv_operation
+                data_classification: internal_config
+                event_category: secrets
+                openbao_role: secrets-direct-put-variable
+                operation_display: put variable
+                operation_type: write
+                org_scope: token_org_id
+                permission: secrets:variable:write
+                rate_limit_class: secret_mutation
+                resource: variable
+                risk_level: high
+                source_product_area: Secrets
+        delete:
+            summary: Soft-delete a non-secret config variable
+            operationId: delete-variable
+            parameters:
+                - name: Idempotency-Key
+                  in: header
+                  description: Stable caller-provided key used to make this mutation retry-safe.
+                  required: true
+                  schema:
+                    type: string
+                    minLength: 1
+                    maxLength: 128
+                - name: name
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                    minLength: 1
+                    maxLength: 255
+                - name: scope_level
+                  in: query
+                  explode: false
+                  schema:
+                    type: string
+                    enum:
+                        - org
+                        - source
+                        - environment
+                        - branch
+                - name: source_id
+                  in: query
+                  explode: false
+                  schema:
+                    type: string
+                    maxLength: 255
+                - name: env_id
+                  in: query
+                  explode: false
+                  schema:
+                    type: string
+                    maxLength: 255
+                - name: branch
+                  in: query
+                  explode: false
+                  schema:
+                    type: string
+                    maxLength: 255
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/DeleteSecretInputBody'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/VariableDTO'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+            security:
+                - bearerAuth: []
+            x-forge-metal-iam:
+                action: delete
+                audit_event: secrets.variable.delete
+                billing_product_id: secrets
+                billing_sku_id: secrets_kv_operation
+                data_classification: internal_config
+                event_category: secrets
+                openbao_role: secrets-direct-delete-variable
+                operation_display: delete variable
+                operation_type: delete
+                org_scope: token_org_id
+                permission: secrets:variable:delete
+                rate_limit_class: secret_mutation
+                resource: variable
+                risk_level: high
+                source_product_area: Secrets
 components:
     schemas:
+        CreateOpaqueCredentialBody:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - https://secrets.api.anveio.com/schemas/CreateOpaqueCredentialBody.json
+                    readOnly: true
+                display_name:
+                    type: string
+                    maxLength: 128
+                expires_in_seconds:
+                    type: integer
+                    format: int64
+                    minimum: 60
+                    maximum: 7.776e+06
+                kind:
+                    type: string
+                    minLength: 1
+                    maxLength: 128
+                metadata:
+                    type: object
+                    additionalProperties:
+                        type: string
+                scopes:
+                    type: array
+                    items:
+                        type: string
+                    minItems: 1
+                    maxItems: 64
+                subject:
+                    type: string
+                    maxLength: 255
+            required:
+                - kind
+                - scopes
         CreateTransitKeyInputBody:
             type: object
             additionalProperties: false
@@ -665,6 +1166,106 @@ components:
                     default: about:blank
                     examples:
                         - https://example.com/errors/example
+        OpaqueCredentialDTO:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - https://secrets.api.anveio.com/schemas/OpaqueCredentialDTO.json
+                    readOnly: true
+                created_at:
+                    type: string
+                    format: date-time
+                credential_id:
+                    type: string
+                    format: uuid
+                current_version:
+                    type: string
+                display_name:
+                    type: string
+                expires_at:
+                    type: string
+                    format: date-time
+                kind:
+                    type: string
+                last_used_at:
+                    type: string
+                    format: date-time
+                metadata:
+                    type: object
+                    additionalProperties:
+                        type: string
+                org_id:
+                    type: string
+                revoked_at:
+                    type: string
+                    format: date-time
+                scopes:
+                    type: array
+                    items:
+                        type: string
+                status:
+                    type: string
+                subject:
+                    type: string
+                token_prefix:
+                    type: string
+                updated_at:
+                    type: string
+                    format: date-time
+            required:
+                - credential_id
+                - org_id
+                - kind
+                - subject
+                - display_name
+                - status
+                - token_prefix
+                - scopes
+                - metadata
+                - current_version
+                - expires_at
+                - created_at
+                - updated_at
+        OpaqueCredentialMaterialDTO:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - https://secrets.api.anveio.com/schemas/OpaqueCredentialMaterialDTO.json
+                    readOnly: true
+                credential:
+                    $ref: '#/components/schemas/OpaqueCredentialDTO'
+                token:
+                    type: string
+            required:
+                - credential
+                - token
+        OpaqueCredentialsDTO:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - https://secrets.api.anveio.com/schemas/OpaqueCredentialsDTO.json
+                    readOnly: true
+                credentials:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/OpaqueCredentialDTO'
+            required:
+                - credentials
         PutSecretBody:
             type: object
             additionalProperties: false
@@ -682,11 +1283,6 @@ components:
                 env_id:
                     type: string
                     maxLength: 255
-                kind:
-                    type: string
-                    enum:
-                        - secret
-                        - variable
                 scope_level:
                     type: string
                     enum:
@@ -702,6 +1298,33 @@ components:
                     maxLength: 65536
             required:
                 - value
+        RevokeOpaqueCredentialInputBody:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - https://secrets.api.anveio.com/schemas/RevokeOpaqueCredentialInputBody.json
+                    readOnly: true
+        RollOpaqueCredentialBody:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - https://secrets.api.anveio.com/schemas/RollOpaqueCredentialBody.json
+                    readOnly: true
+                expires_in_seconds:
+                    type: integer
+                    format: int64
+                    minimum: 60
+                    maximum: 7.776e+06
         SecretDTO:
             type: object
             additionalProperties: false
@@ -874,6 +1497,108 @@ components:
                 signature:
                     type: string
                     maxLength: 262144
+        VariableDTO:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - https://secrets.api.anveio.com/schemas/VariableDTO.json
+                    readOnly: true
+                branch:
+                    type: string
+                created_at:
+                    type: string
+                    format: date-time
+                current_version:
+                    type: string
+                env_id:
+                    type: string
+                kind:
+                    type: string
+                name:
+                    type: string
+                scope_level:
+                    type: string
+                source_id:
+                    type: string
+                updated_at:
+                    type: string
+                    format: date-time
+                variable_id:
+                    type: string
+            required:
+                - variable_id
+                - kind
+                - name
+                - scope_level
+                - current_version
+                - created_at
+                - updated_at
+        VariableValueDTO:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - https://secrets.api.anveio.com/schemas/VariableValueDTO.json
+                    readOnly: true
+                branch:
+                    type: string
+                created_at:
+                    type: string
+                    format: date-time
+                current_version:
+                    type: string
+                env_id:
+                    type: string
+                kind:
+                    type: string
+                name:
+                    type: string
+                scope_level:
+                    type: string
+                source_id:
+                    type: string
+                updated_at:
+                    type: string
+                    format: date-time
+                value:
+                    type: string
+                variable_id:
+                    type: string
+            required:
+                - value
+                - variable_id
+                - kind
+                - name
+                - scope_level
+                - current_version
+                - created_at
+                - updated_at
+        VariablesDTO:
+            type: object
+            additionalProperties: false
+            properties:
+                $schema:
+                    type: string
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    examples:
+                        - https://secrets.api.anveio.com/schemas/VariablesDTO.json
+                    readOnly: true
+                variables:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/VariableDTO'
+            required:
+                - variables
         VerifyOutputBody:
             type: object
             additionalProperties: false

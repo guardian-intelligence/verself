@@ -14,6 +14,8 @@
     openbao_tenancy_secret_read_policy: "secrets-{{ openbao_tenancy_org.id }}-secret-read"
     openbao_tenancy_secret_list_policy: "secrets-{{ openbao_tenancy_org.id }}-secret-list"
     openbao_tenancy_secret_delete_policy: "secrets-{{ openbao_tenancy_org.id }}-secret-delete"
+    openbao_tenancy_credential_manage_policy: "secrets-{{ openbao_tenancy_org.id }}-credential-manage"
+    openbao_tenancy_credential_verify_policy: "secrets-{{ openbao_tenancy_org.id }}-credential-verify"
     openbao_tenancy_transit_key_create_policy: "secrets-{{ openbao_tenancy_org.id }}-transit-key-create"
     openbao_tenancy_transit_key_rotate_policy: "secrets-{{ openbao_tenancy_org.id }}-transit-key-rotate"
     openbao_tenancy_transit_encrypt_policy: "secrets-{{ openbao_tenancy_org.id }}-transit-encrypt"
@@ -26,6 +28,12 @@
     openbao_tenancy_spiffe_runtime_write_role_url: >-
       https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/auth/{{
       openbao_spiffe_jwt_mount }}/role/secrets-runtime-write-{{ openbao_tenancy_org.id }}
+    openbao_tenancy_spiffe_credential_manage_role_url: >-
+      https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/auth/{{
+      openbao_spiffe_jwt_mount }}/role/secrets-credential-manage-{{ openbao_tenancy_org.id }}
+    openbao_tenancy_spiffe_credential_verify_role_url: >-
+      https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/auth/{{
+      openbao_spiffe_jwt_mount }}/role/secrets-credential-verify-{{ openbao_tenancy_org.id }}
 
 - name: Render OpenBao tenancy policy documents
   ansible.builtin.set_fact:
@@ -44,6 +52,10 @@
         document: "{{ lookup('ansible.builtin.template', 'secret-list.hcl.j2') }}"
       - name: "{{ openbao_tenancy_secret_delete_policy }}"
         document: "{{ lookup('ansible.builtin.template', 'secret-delete.hcl.j2') }}"
+      - name: "{{ openbao_tenancy_credential_manage_policy }}"
+        document: "{{ lookup('ansible.builtin.template', 'credential-manage.hcl.j2') }}"
+      - name: "{{ openbao_tenancy_credential_verify_policy }}"
+        document: "{{ lookup('ansible.builtin.template', 'credential-verify.hcl.j2') }}"
       - name: "{{ openbao_tenancy_transit_key_create_policy }}"
         document: "{{ lookup('ansible.builtin.template', 'transit-key-create.hcl.j2') }}"
       - name: "{{ openbao_tenancy_transit_key_rotate_policy }}"
@@ -216,6 +228,51 @@
         permission: "secrets:secret:delete"
         token_policies:
           - "{{ openbao_tenancy_secret_delete_policy }}"
+      - name: secrets-direct-put-variable
+        direct_claim_role: secrets-direct-put-variable
+        permission: "secrets:variable:write"
+        token_policies:
+          - "{{ openbao_tenancy_secret_write_policy }}"
+      - name: secrets-direct-read-variable
+        direct_claim_role: secrets-direct-read-variable
+        permission: "secrets:variable:read"
+        token_policies:
+          - "{{ openbao_tenancy_secret_read_policy }}"
+      - name: secrets-direct-list-variables
+        direct_claim_role: secrets-direct-list-variables
+        permission: "secrets:variable:list"
+        token_policies:
+          - "{{ openbao_tenancy_secret_list_policy }}"
+      - name: secrets-direct-delete-variable
+        direct_claim_role: secrets-direct-delete-variable
+        permission: "secrets:variable:delete"
+        token_policies:
+          - "{{ openbao_tenancy_secret_delete_policy }}"
+      - name: secrets-direct-create-credential
+        direct_claim_role: secrets-direct-create-credential
+        permission: "secrets:credential:create"
+        token_policies:
+          - "{{ openbao_tenancy_credential_manage_policy }}"
+      - name: secrets-direct-read-credential
+        direct_claim_role: secrets-direct-read-credential
+        permission: "secrets:credential:read"
+        token_policies:
+          - "{{ openbao_tenancy_credential_verify_policy }}"
+      - name: secrets-direct-list-credentials
+        direct_claim_role: secrets-direct-list-credentials
+        permission: "secrets:credential:list"
+        token_policies:
+          - "{{ openbao_tenancy_credential_verify_policy }}"
+      - name: secrets-direct-roll-credential
+        direct_claim_role: secrets-direct-roll-credential
+        permission: "secrets:credential:roll"
+        token_policies:
+          - "{{ openbao_tenancy_credential_manage_policy }}"
+      - name: secrets-direct-revoke-credential
+        direct_claim_role: secrets-direct-revoke-credential
+        permission: "secrets:credential:revoke"
+        token_policies:
+          - "{{ openbao_tenancy_credential_manage_policy }}"
       - name: secrets-direct-create-transit-key
         direct_claim_role: secrets-direct-create-transit-key
         permission: "secrets:transit_key:create"
@@ -362,6 +419,104 @@
     )
   no_log: true
 
+- name: Read OpenBao SPIFFE workload credential-manage role for organization
+  ansible.builtin.uri:
+    url: "{{ openbao_tenancy_spiffe_credential_manage_role_url }}"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ openbao_tenancy_root_token }}"
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    status_code: [200, 404]
+    return_content: true
+  register: openbao_tenancy_spiffe_credential_manage_role_read
+  changed_when: false
+  no_log: true
+
+- name: Write OpenBao SPIFFE workload credential-manage role for organization
+  ansible.builtin.uri:
+    url: "{{ openbao_tenancy_spiffe_credential_manage_role_url }}"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_tenancy_root_token }}"
+    body_format: json
+    body:
+      role_type: jwt
+      bound_audiences:
+        - openbao
+      user_claim: sub
+      bound_claims:
+        sub: "{{ spire_secrets_service_id }}"
+      token_policies:
+        - "{{ openbao_tenancy_credential_manage_policy }}"
+      token_ttl: "{{ openbao_tenancy_token_ttl }}"
+      token_max_ttl: "{{ openbao_tenancy_token_max_ttl }}"
+      token_no_default_policy: true
+      token_num_uses: 0
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    status_code: 204
+  register: openbao_tenancy_spiffe_credential_manage_role_write
+  changed_when: true
+  when: >-
+    openbao_tenancy_spiffe_credential_manage_role_read.status == 404
+    or (
+      ((openbao_tenancy_spiffe_credential_manage_role_read.json.data | default({})).bound_claims | default({})).sub
+      | default('')
+    ) != spire_secrets_service_id
+    or (
+      ((openbao_tenancy_spiffe_credential_manage_role_read.json.data | default({})).token_policies | default([]) | sort)
+      != ([openbao_tenancy_credential_manage_policy] | sort)
+    )
+  no_log: true
+
+- name: Read OpenBao SPIFFE workload credential-verify role for organization
+  ansible.builtin.uri:
+    url: "{{ openbao_tenancy_spiffe_credential_verify_role_url }}"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ openbao_tenancy_root_token }}"
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    status_code: [200, 404]
+    return_content: true
+  register: openbao_tenancy_spiffe_credential_verify_role_read
+  changed_when: false
+  no_log: true
+
+- name: Write OpenBao SPIFFE workload credential-verify role for organization
+  ansible.builtin.uri:
+    url: "{{ openbao_tenancy_spiffe_credential_verify_role_url }}"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_tenancy_root_token }}"
+    body_format: json
+    body:
+      role_type: jwt
+      bound_audiences:
+        - openbao
+      user_claim: sub
+      bound_claims:
+        sub: "{{ spire_secrets_service_id }}"
+      token_policies:
+        - "{{ openbao_tenancy_credential_verify_policy }}"
+      token_ttl: "{{ openbao_tenancy_token_ttl }}"
+      token_max_ttl: "{{ openbao_tenancy_token_max_ttl }}"
+      token_no_default_policy: true
+      token_num_uses: 0
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    status_code: 204
+  register: openbao_tenancy_spiffe_credential_verify_role_write
+  changed_when: true
+  when: >-
+    openbao_tenancy_spiffe_credential_verify_role_read.status == 404
+    or (
+      ((openbao_tenancy_spiffe_credential_verify_role_read.json.data | default({})).bound_claims | default({})).sub
+      | default('')
+    ) != spire_secrets_service_id
+    or (
+      ((openbao_tenancy_spiffe_credential_verify_role_read.json.data | default({})).token_policies | default([]) | sort)
+      != ([openbao_tenancy_credential_verify_policy] | sort)
+    )
+  no_log: true
+
 - name: Write missing OpenBao JWT roles for organization
   ansible.builtin.uri:
     url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/auth/{{ openbao_tenancy_jwt_mount }}/role/{{ item.item.name }}"
@@ -434,6 +589,8 @@
         or (openbao_tenancy_policy_writes.results | default([]) | selectattr('changed', 'equalto', true) | list | length > 0)
         or (openbao_tenancy_role_writes.results | default([]) | selectattr('changed', 'equalto', true) | list | length > 0)
         or (openbao_tenancy_spiffe_injection_role_write.changed | default(false))
+        or (openbao_tenancy_spiffe_credential_manage_role_write.changed | default(false))
+        or (openbao_tenancy_spiffe_credential_verify_role_write.changed | default(false))
       }}
 
 - name: Reconcile platform runtime provider secrets for the platform organization

@@ -106,7 +106,6 @@ func syncRuntimeSecrets(ctx context.Context, client *secretsclient.ClientWithRes
 	syncCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	scopeLevel := secretsclient.PutSecretBodyScopeLevelOrg
-	kind := secretsclient.PutSecretBodyKindSecret
 	for _, name := range names {
 		desired := secretValues[name]
 		readResp, err := client.ReadSecretWithResponse(syncCtx, name)
@@ -127,7 +126,6 @@ func syncRuntimeSecrets(ctx context.Context, client *secretsclient.ClientWithRes
 		putResp, err := client.PutSecretWithResponse(syncCtx, name, &secretsclient.PutSecretParams{
 			IdempotencyKey: runtimeSecretUpsertKey(name, desired),
 		}, secretsclient.PutSecretJSONRequestBody{
-			Kind:       &kind,
 			ScopeLevel: &scopeLevel,
 			Value:      desired,
 		})

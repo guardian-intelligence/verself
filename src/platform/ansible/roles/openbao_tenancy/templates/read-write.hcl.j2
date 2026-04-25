@@ -38,6 +38,10 @@ path "{{ openbao_tenancy_transit_mount }}/sign/*" {
   capabilities = ["update"]
 }
 
+path "{{ openbao_tenancy_transit_mount }}/hmac/*" {
+  capabilities = ["update"]
+}
+
 path "{{ openbao_tenancy_transit_mount }}/verify/*" {
   capabilities = ["update"]
 }

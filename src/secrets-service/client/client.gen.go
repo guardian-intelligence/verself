@@ -15,29 +15,12 @@ import (
 	"time"
 
 	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 const (
 	BearerAuthScopes = "bearerAuth.Scopes"
 )
-
-// Defines values for PutSecretBodyKind.
-const (
-	PutSecretBodyKindSecret   PutSecretBodyKind = "secret"
-	PutSecretBodyKindVariable PutSecretBodyKind = "variable"
-)
-
-// Valid indicates whether the value is a known member of the PutSecretBodyKind enum.
-func (e PutSecretBodyKind) Valid() bool {
-	switch e {
-	case PutSecretBodyKindSecret:
-		return true
-	case PutSecretBodyKindVariable:
-		return true
-	default:
-		return false
-	}
-}
 
 // Defines values for PutSecretBodyScopeLevel.
 const (
@@ -57,42 +40,6 @@ func (e PutSecretBodyScopeLevel) Valid() bool {
 	case PutSecretBodyScopeLevelOrg:
 		return true
 	case PutSecretBodyScopeLevelSource:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for ListSecretsParamsKind.
-const (
-	ListSecretsParamsKindSecret   ListSecretsParamsKind = "secret"
-	ListSecretsParamsKindVariable ListSecretsParamsKind = "variable"
-)
-
-// Valid indicates whether the value is a known member of the ListSecretsParamsKind enum.
-func (e ListSecretsParamsKind) Valid() bool {
-	switch e {
-	case ListSecretsParamsKindSecret:
-		return true
-	case ListSecretsParamsKindVariable:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for DeleteSecretParamsKind.
-const (
-	Secret   DeleteSecretParamsKind = "secret"
-	Variable DeleteSecretParamsKind = "variable"
-)
-
-// Valid indicates whether the value is a known member of the DeleteSecretParamsKind enum.
-func (e DeleteSecretParamsKind) Valid() bool {
-	switch e {
-	case Secret:
-		return true
-	case Variable:
 		return true
 	default:
 		return false
@@ -121,6 +68,42 @@ func (e DeleteSecretParamsScopeLevel) Valid() bool {
 	default:
 		return false
 	}
+}
+
+// Defines values for DeleteVariableParamsScopeLevel.
+const (
+	Branch      DeleteVariableParamsScopeLevel = "branch"
+	Environment DeleteVariableParamsScopeLevel = "environment"
+	Org         DeleteVariableParamsScopeLevel = "org"
+	Source      DeleteVariableParamsScopeLevel = "source"
+)
+
+// Valid indicates whether the value is a known member of the DeleteVariableParamsScopeLevel enum.
+func (e DeleteVariableParamsScopeLevel) Valid() bool {
+	switch e {
+	case Branch:
+		return true
+	case Environment:
+		return true
+	case Org:
+		return true
+	case Source:
+		return true
+	default:
+		return false
+	}
+}
+
+// CreateOpaqueCredentialBody defines model for CreateOpaqueCredentialBody.
+type CreateOpaqueCredentialBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema           *string            `json:"$schema,omitempty"`
+	DisplayName      *string            `json:"display_name,omitempty"`
+	ExpiresInSeconds *int64             `json:"expires_in_seconds,omitempty"`
+	Kind             string             `json:"kind"`
+	Metadata         *map[string]string `json:"metadata,omitempty"`
+	Scopes           []string           `json:"scopes"`
+	Subject          *string            `json:"subject,omitempty"`
 }
 
 // CreateTransitKeyInputBody defines model for CreateTransitKeyInputBody.
@@ -187,23 +170,68 @@ type ErrorModel struct {
 	Type *string `json:"type,omitempty"`
 }
 
+// OpaqueCredentialDTO defines model for OpaqueCredentialDTO.
+type OpaqueCredentialDTO struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema         *string            `json:"$schema,omitempty"`
+	CreatedAt      time.Time          `json:"created_at"`
+	CredentialId   openapi_types.UUID `json:"credential_id"`
+	CurrentVersion string             `json:"current_version"`
+	DisplayName    string             `json:"display_name"`
+	ExpiresAt      time.Time          `json:"expires_at"`
+	Kind           string             `json:"kind"`
+	LastUsedAt     *time.Time         `json:"last_used_at,omitempty"`
+	Metadata       map[string]string  `json:"metadata"`
+	OrgId          string             `json:"org_id"`
+	RevokedAt      *time.Time         `json:"revoked_at,omitempty"`
+	Scopes         []string           `json:"scopes"`
+	Status         string             `json:"status"`
+	Subject        string             `json:"subject"`
+	TokenPrefix    string             `json:"token_prefix"`
+	UpdatedAt      time.Time          `json:"updated_at"`
+}
+
+// OpaqueCredentialMaterialDTO defines model for OpaqueCredentialMaterialDTO.
+type OpaqueCredentialMaterialDTO struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema     *string             `json:"$schema,omitempty"`
+	Credential OpaqueCredentialDTO `json:"credential"`
+	Token      string              `json:"token"`
+}
+
+// OpaqueCredentialsDTO defines model for OpaqueCredentialsDTO.
+type OpaqueCredentialsDTO struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema      *string               `json:"$schema,omitempty"`
+	Credentials []OpaqueCredentialDTO `json:"credentials"`
+}
+
 // PutSecretBody defines model for PutSecretBody.
 type PutSecretBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema     *string                  `json:"$schema,omitempty"`
 	Branch     *string                  `json:"branch,omitempty"`
 	EnvId      *string                  `json:"env_id,omitempty"`
-	Kind       *PutSecretBodyKind       `json:"kind,omitempty"`
 	ScopeLevel *PutSecretBodyScopeLevel `json:"scope_level,omitempty"`
 	SourceId   *string                  `json:"source_id,omitempty"`
 	Value      string                   `json:"value"`
 }
 
-// PutSecretBodyKind defines model for PutSecretBody.Kind.
-type PutSecretBodyKind string
-
 // PutSecretBodyScopeLevel defines model for PutSecretBody.ScopeLevel.
 type PutSecretBodyScopeLevel string
+
+// RevokeOpaqueCredentialInputBody defines model for RevokeOpaqueCredentialInputBody.
+type RevokeOpaqueCredentialInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+}
+
+// RollOpaqueCredentialBody defines model for RollOpaqueCredentialBody.
+type RollOpaqueCredentialBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema           *string `json:"$schema,omitempty"`
+	ExpiresInSeconds *int64  `json:"expires_in_seconds,omitempty"`
+}
 
 // SecretDTO defines model for SecretDTO.
 type SecretDTO struct {
@@ -274,6 +302,46 @@ type TransitPayloadInputBody struct {
 	Signature       *string `json:"signature,omitempty"`
 }
 
+// VariableDTO defines model for VariableDTO.
+type VariableDTO struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema         *string   `json:"$schema,omitempty"`
+	Branch         *string   `json:"branch,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	CurrentVersion string    `json:"current_version"`
+	EnvId          *string   `json:"env_id,omitempty"`
+	Kind           string    `json:"kind"`
+	Name           string    `json:"name"`
+	ScopeLevel     string    `json:"scope_level"`
+	SourceId       *string   `json:"source_id,omitempty"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	VariableId     string    `json:"variable_id"`
+}
+
+// VariableValueDTO defines model for VariableValueDTO.
+type VariableValueDTO struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema         *string   `json:"$schema,omitempty"`
+	Branch         *string   `json:"branch,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	CurrentVersion string    `json:"current_version"`
+	EnvId          *string   `json:"env_id,omitempty"`
+	Kind           string    `json:"kind"`
+	Name           string    `json:"name"`
+	ScopeLevel     string    `json:"scope_level"`
+	SourceId       *string   `json:"source_id,omitempty"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	Value          string    `json:"value"`
+	VariableId     string    `json:"variable_id"`
+}
+
+// VariablesDTO defines model for VariablesDTO.
+type VariablesDTO struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string       `json:"$schema,omitempty"`
+	Variables []VariableDTO `json:"variables"`
+}
+
 // VerifyOutputBody defines model for VerifyOutputBody.
 type VerifyOutputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -281,18 +349,37 @@ type VerifyOutputBody struct {
 	Valid  bool    `json:"valid"`
 }
 
-// ListSecretsParams defines parameters for ListSecrets.
-type ListSecretsParams struct {
-	Kind  *ListSecretsParamsKind `form:"kind,omitempty" json:"kind,omitempty"`
-	Limit *int64                 `form:"limit,omitempty" json:"limit,omitempty"`
+// ListOpaqueCredentialsParams defines parameters for ListOpaqueCredentials.
+type ListOpaqueCredentialsParams struct {
+	Kind  *string `form:"kind,omitempty" json:"kind,omitempty"`
+	Limit *int64  `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
-// ListSecretsParamsKind defines parameters for ListSecrets.
-type ListSecretsParamsKind string
+// CreateOpaqueCredentialParams defines parameters for CreateOpaqueCredential.
+type CreateOpaqueCredentialParams struct {
+	// IdempotencyKey Stable caller-provided key used to make this mutation retry-safe.
+	IdempotencyKey string `json:"Idempotency-Key"`
+}
+
+// RevokeOpaqueCredentialParams defines parameters for RevokeOpaqueCredential.
+type RevokeOpaqueCredentialParams struct {
+	// IdempotencyKey Stable caller-provided key used to make this mutation retry-safe.
+	IdempotencyKey string `json:"Idempotency-Key"`
+}
+
+// RollOpaqueCredentialParams defines parameters for RollOpaqueCredential.
+type RollOpaqueCredentialParams struct {
+	// IdempotencyKey Stable caller-provided key used to make this mutation retry-safe.
+	IdempotencyKey string `json:"Idempotency-Key"`
+}
+
+// ListSecretsParams defines parameters for ListSecrets.
+type ListSecretsParams struct {
+	Limit *int64 `form:"limit,omitempty" json:"limit,omitempty"`
+}
 
 // DeleteSecretParams defines parameters for DeleteSecret.
 type DeleteSecretParams struct {
-	Kind       *DeleteSecretParamsKind       `form:"kind,omitempty" json:"kind,omitempty"`
 	ScopeLevel *DeleteSecretParamsScopeLevel `form:"scope_level,omitempty" json:"scope_level,omitempty"`
 	SourceId   *string                       `form:"source_id,omitempty" json:"source_id,omitempty"`
 	EnvId      *string                       `form:"env_id,omitempty" json:"env_id,omitempty"`
@@ -301,9 +388,6 @@ type DeleteSecretParams struct {
 	// IdempotencyKey Stable caller-provided key used to make this mutation retry-safe.
 	IdempotencyKey string `json:"Idempotency-Key"`
 }
-
-// DeleteSecretParamsKind defines parameters for DeleteSecret.
-type DeleteSecretParamsKind string
 
 // DeleteSecretParamsScopeLevel defines parameters for DeleteSecret.
 type DeleteSecretParamsScopeLevel string
@@ -326,6 +410,40 @@ type RotateTransitKeyParams struct {
 	IdempotencyKey string `json:"Idempotency-Key"`
 }
 
+// ListVariablesParams defines parameters for ListVariables.
+type ListVariablesParams struct {
+	Limit *int64 `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// DeleteVariableParams defines parameters for DeleteVariable.
+type DeleteVariableParams struct {
+	ScopeLevel *DeleteVariableParamsScopeLevel `form:"scope_level,omitempty" json:"scope_level,omitempty"`
+	SourceId   *string                         `form:"source_id,omitempty" json:"source_id,omitempty"`
+	EnvId      *string                         `form:"env_id,omitempty" json:"env_id,omitempty"`
+	Branch     *string                         `form:"branch,omitempty" json:"branch,omitempty"`
+
+	// IdempotencyKey Stable caller-provided key used to make this mutation retry-safe.
+	IdempotencyKey string `json:"Idempotency-Key"`
+}
+
+// DeleteVariableParamsScopeLevel defines parameters for DeleteVariable.
+type DeleteVariableParamsScopeLevel string
+
+// PutVariableParams defines parameters for PutVariable.
+type PutVariableParams struct {
+	// IdempotencyKey Stable caller-provided key used to make this mutation retry-safe.
+	IdempotencyKey string `json:"Idempotency-Key"`
+}
+
+// CreateOpaqueCredentialJSONRequestBody defines body for CreateOpaqueCredential for application/json ContentType.
+type CreateOpaqueCredentialJSONRequestBody = CreateOpaqueCredentialBody
+
+// RevokeOpaqueCredentialJSONRequestBody defines body for RevokeOpaqueCredential for application/json ContentType.
+type RevokeOpaqueCredentialJSONRequestBody = RevokeOpaqueCredentialInputBody
+
+// RollOpaqueCredentialJSONRequestBody defines body for RollOpaqueCredential for application/json ContentType.
+type RollOpaqueCredentialJSONRequestBody = RollOpaqueCredentialBody
+
 // DeleteSecretJSONRequestBody defines body for DeleteSecret for application/json ContentType.
 type DeleteSecretJSONRequestBody = DeleteSecretInputBody
 
@@ -346,6 +464,12 @@ type SignWithTransitKeyJSONRequestBody = TransitPayloadInputBody
 
 // VerifyWithTransitKeyJSONRequestBody defines body for VerifyWithTransitKey for application/json ContentType.
 type VerifyWithTransitKeyJSONRequestBody = TransitPayloadInputBody
+
+// DeleteVariableJSONRequestBody defines body for DeleteVariable for application/json ContentType.
+type DeleteVariableJSONRequestBody = DeleteSecretInputBody
+
+// PutVariableJSONRequestBody defines body for PutVariable for application/json ContentType.
+type PutVariableJSONRequestBody = PutSecretBody
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -420,6 +544,27 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
+	// ListOpaqueCredentials request
+	ListOpaqueCredentials(ctx context.Context, params *ListOpaqueCredentialsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateOpaqueCredentialWithBody request with any body
+	CreateOpaqueCredentialWithBody(ctx context.Context, params *CreateOpaqueCredentialParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateOpaqueCredential(ctx context.Context, params *CreateOpaqueCredentialParams, body CreateOpaqueCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetOpaqueCredential request
+	GetOpaqueCredential(ctx context.Context, credentialId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RevokeOpaqueCredentialWithBody request with any body
+	RevokeOpaqueCredentialWithBody(ctx context.Context, credentialId openapi_types.UUID, params *RevokeOpaqueCredentialParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	RevokeOpaqueCredential(ctx context.Context, credentialId openapi_types.UUID, params *RevokeOpaqueCredentialParams, body RevokeOpaqueCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RollOpaqueCredentialWithBody request with any body
+	RollOpaqueCredentialWithBody(ctx context.Context, credentialId openapi_types.UUID, params *RollOpaqueCredentialParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	RollOpaqueCredential(ctx context.Context, credentialId openapi_types.UUID, params *RollOpaqueCredentialParams, body RollOpaqueCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListSecrets request
 	ListSecrets(ctx context.Context, params *ListSecretsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -463,6 +608,118 @@ type ClientInterface interface {
 	VerifyWithTransitKeyWithBody(ctx context.Context, keyName string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	VerifyWithTransitKey(ctx context.Context, keyName string, body VerifyWithTransitKeyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListVariables request
+	ListVariables(ctx context.Context, params *ListVariablesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteVariableWithBody request with any body
+	DeleteVariableWithBody(ctx context.Context, name string, params *DeleteVariableParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	DeleteVariable(ctx context.Context, name string, params *DeleteVariableParams, body DeleteVariableJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ReadVariable request
+	ReadVariable(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutVariableWithBody request with any body
+	PutVariableWithBody(ctx context.Context, name string, params *PutVariableParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PutVariable(ctx context.Context, name string, params *PutVariableParams, body PutVariableJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+func (c *Client) ListOpaqueCredentials(ctx context.Context, params *ListOpaqueCredentialsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListOpaqueCredentialsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateOpaqueCredentialWithBody(ctx context.Context, params *CreateOpaqueCredentialParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateOpaqueCredentialRequestWithBody(c.Server, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateOpaqueCredential(ctx context.Context, params *CreateOpaqueCredentialParams, body CreateOpaqueCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateOpaqueCredentialRequest(c.Server, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetOpaqueCredential(ctx context.Context, credentialId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetOpaqueCredentialRequest(c.Server, credentialId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RevokeOpaqueCredentialWithBody(ctx context.Context, credentialId openapi_types.UUID, params *RevokeOpaqueCredentialParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRevokeOpaqueCredentialRequestWithBody(c.Server, credentialId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RevokeOpaqueCredential(ctx context.Context, credentialId openapi_types.UUID, params *RevokeOpaqueCredentialParams, body RevokeOpaqueCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRevokeOpaqueCredentialRequest(c.Server, credentialId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RollOpaqueCredentialWithBody(ctx context.Context, credentialId openapi_types.UUID, params *RollOpaqueCredentialParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRollOpaqueCredentialRequestWithBody(c.Server, credentialId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RollOpaqueCredential(ctx context.Context, credentialId openapi_types.UUID, params *RollOpaqueCredentialParams, body RollOpaqueCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRollOpaqueCredentialRequest(c.Server, credentialId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
 }
 
 func (c *Client) ListSecrets(ctx context.Context, params *ListSecretsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -669,8 +926,80 @@ func (c *Client) VerifyWithTransitKey(ctx context.Context, keyName string, body 
 	return c.Client.Do(req)
 }
 
-// NewListSecretsRequest generates requests for ListSecrets
-func NewListSecretsRequest(server string, params *ListSecretsParams) (*http.Request, error) {
+func (c *Client) ListVariables(ctx context.Context, params *ListVariablesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListVariablesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteVariableWithBody(ctx context.Context, name string, params *DeleteVariableParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteVariableRequestWithBody(c.Server, name, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteVariable(ctx context.Context, name string, params *DeleteVariableParams, body DeleteVariableJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteVariableRequest(c.Server, name, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ReadVariable(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReadVariableRequest(c.Server, name)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PutVariableWithBody(ctx context.Context, name string, params *PutVariableParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutVariableRequestWithBody(c.Server, name, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PutVariable(ctx context.Context, name string, params *PutVariableParams, body PutVariableJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutVariableRequest(c.Server, name, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// NewListOpaqueCredentialsRequest generates requests for ListOpaqueCredentials
+func NewListOpaqueCredentialsRequest(server string, params *ListOpaqueCredentialsParams) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -678,7 +1007,7 @@ func NewListSecretsRequest(server string, params *ListSecretsParams) (*http.Requ
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/v1/secrets")
+	operationPath := fmt.Sprintf("/api/v1/credentials")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -706,6 +1035,262 @@ func NewListSecretsRequest(server string, params *ListSecretsParams) (*http.Requ
 			}
 
 		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateOpaqueCredentialRequest calls the generic CreateOpaqueCredential builder with application/json body
+func NewCreateOpaqueCredentialRequest(server string, params *CreateOpaqueCredentialParams, body CreateOpaqueCredentialJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateOpaqueCredentialRequestWithBody(server, params, "application/json", bodyReader)
+}
+
+// NewCreateOpaqueCredentialRequestWithBody generates requests for CreateOpaqueCredential with any type of body
+func NewCreateOpaqueCredentialRequestWithBody(server string, params *CreateOpaqueCredentialParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/credentials")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
+// NewGetOpaqueCredentialRequest generates requests for GetOpaqueCredential
+func NewGetOpaqueCredentialRequest(server string, credentialId openapi_types.UUID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "credential_id", credentialId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/credentials/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRevokeOpaqueCredentialRequest calls the generic RevokeOpaqueCredential builder with application/json body
+func NewRevokeOpaqueCredentialRequest(server string, credentialId openapi_types.UUID, params *RevokeOpaqueCredentialParams, body RevokeOpaqueCredentialJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRevokeOpaqueCredentialRequestWithBody(server, credentialId, params, "application/json", bodyReader)
+}
+
+// NewRevokeOpaqueCredentialRequestWithBody generates requests for RevokeOpaqueCredential with any type of body
+func NewRevokeOpaqueCredentialRequestWithBody(server string, credentialId openapi_types.UUID, params *RevokeOpaqueCredentialParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "credential_id", credentialId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/credentials/%s/revoke", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
+// NewRollOpaqueCredentialRequest calls the generic RollOpaqueCredential builder with application/json body
+func NewRollOpaqueCredentialRequest(server string, credentialId openapi_types.UUID, params *RollOpaqueCredentialParams, body RollOpaqueCredentialJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRollOpaqueCredentialRequestWithBody(server, credentialId, params, "application/json", bodyReader)
+}
+
+// NewRollOpaqueCredentialRequestWithBody generates requests for RollOpaqueCredential with any type of body
+func NewRollOpaqueCredentialRequestWithBody(server string, credentialId openapi_types.UUID, params *RollOpaqueCredentialParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "credential_id", credentialId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/credentials/%s/roll", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
+// NewListSecretsRequest generates requests for ListSecrets
+func NewListSecretsRequest(server string, params *ListSecretsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/secrets")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
 
 		if params.Limit != nil {
 
@@ -773,22 +1358,6 @@ func NewDeleteSecretRequestWithBody(server string, name string, params *DeleteSe
 
 	if params != nil {
 		queryValues := queryURL.Query()
-
-		if params.Kind != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "kind", *params.Kind, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
 
 		if params.ScopeLevel != nil {
 
@@ -1262,6 +1831,279 @@ func NewVerifyWithTransitKeyRequestWithBody(server string, keyName string, conte
 	return req, nil
 }
 
+// NewListVariablesRequest generates requests for ListVariables
+func NewListVariablesRequest(server string, params *ListVariablesParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/variables")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewDeleteVariableRequest calls the generic DeleteVariable builder with application/json body
+func NewDeleteVariableRequest(server string, name string, params *DeleteVariableParams, body DeleteVariableJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewDeleteVariableRequestWithBody(server, name, params, "application/json", bodyReader)
+}
+
+// NewDeleteVariableRequestWithBody generates requests for DeleteVariable with any type of body
+func NewDeleteVariableRequestWithBody(server string, name string, params *DeleteVariableParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/variables/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.ScopeLevel != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "scope_level", *params.ScopeLevel, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.SourceId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "source_id", *params.SourceId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.EnvId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "env_id", *params.EnvId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Branch != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "branch", *params.Branch, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
+// NewReadVariableRequest generates requests for ReadVariable
+func NewReadVariableRequest(server string, name string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/variables/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPutVariableRequest calls the generic PutVariable builder with application/json body
+func NewPutVariableRequest(server string, name string, params *PutVariableParams, body PutVariableJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutVariableRequestWithBody(server, name, params, "application/json", bodyReader)
+}
+
+// NewPutVariableRequestWithBody generates requests for PutVariable with any type of body
+func NewPutVariableRequestWithBody(server string, name string, params *PutVariableParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/variables/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -1305,6 +2147,27 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
+	// ListOpaqueCredentialsWithResponse request
+	ListOpaqueCredentialsWithResponse(ctx context.Context, params *ListOpaqueCredentialsParams, reqEditors ...RequestEditorFn) (*ListOpaqueCredentialsResponse, error)
+
+	// CreateOpaqueCredentialWithBodyWithResponse request with any body
+	CreateOpaqueCredentialWithBodyWithResponse(ctx context.Context, params *CreateOpaqueCredentialParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateOpaqueCredentialResponse, error)
+
+	CreateOpaqueCredentialWithResponse(ctx context.Context, params *CreateOpaqueCredentialParams, body CreateOpaqueCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateOpaqueCredentialResponse, error)
+
+	// GetOpaqueCredentialWithResponse request
+	GetOpaqueCredentialWithResponse(ctx context.Context, credentialId openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetOpaqueCredentialResponse, error)
+
+	// RevokeOpaqueCredentialWithBodyWithResponse request with any body
+	RevokeOpaqueCredentialWithBodyWithResponse(ctx context.Context, credentialId openapi_types.UUID, params *RevokeOpaqueCredentialParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RevokeOpaqueCredentialResponse, error)
+
+	RevokeOpaqueCredentialWithResponse(ctx context.Context, credentialId openapi_types.UUID, params *RevokeOpaqueCredentialParams, body RevokeOpaqueCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*RevokeOpaqueCredentialResponse, error)
+
+	// RollOpaqueCredentialWithBodyWithResponse request with any body
+	RollOpaqueCredentialWithBodyWithResponse(ctx context.Context, credentialId openapi_types.UUID, params *RollOpaqueCredentialParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RollOpaqueCredentialResponse, error)
+
+	RollOpaqueCredentialWithResponse(ctx context.Context, credentialId openapi_types.UUID, params *RollOpaqueCredentialParams, body RollOpaqueCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*RollOpaqueCredentialResponse, error)
+
 	// ListSecretsWithResponse request
 	ListSecretsWithResponse(ctx context.Context, params *ListSecretsParams, reqEditors ...RequestEditorFn) (*ListSecretsResponse, error)
 
@@ -1348,6 +2211,137 @@ type ClientWithResponsesInterface interface {
 	VerifyWithTransitKeyWithBodyWithResponse(ctx context.Context, keyName string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*VerifyWithTransitKeyResponse, error)
 
 	VerifyWithTransitKeyWithResponse(ctx context.Context, keyName string, body VerifyWithTransitKeyJSONRequestBody, reqEditors ...RequestEditorFn) (*VerifyWithTransitKeyResponse, error)
+
+	// ListVariablesWithResponse request
+	ListVariablesWithResponse(ctx context.Context, params *ListVariablesParams, reqEditors ...RequestEditorFn) (*ListVariablesResponse, error)
+
+	// DeleteVariableWithBodyWithResponse request with any body
+	DeleteVariableWithBodyWithResponse(ctx context.Context, name string, params *DeleteVariableParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteVariableResponse, error)
+
+	DeleteVariableWithResponse(ctx context.Context, name string, params *DeleteVariableParams, body DeleteVariableJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteVariableResponse, error)
+
+	// ReadVariableWithResponse request
+	ReadVariableWithResponse(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*ReadVariableResponse, error)
+
+	// PutVariableWithBodyWithResponse request with any body
+	PutVariableWithBodyWithResponse(ctx context.Context, name string, params *PutVariableParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutVariableResponse, error)
+
+	PutVariableWithResponse(ctx context.Context, name string, params *PutVariableParams, body PutVariableJSONRequestBody, reqEditors ...RequestEditorFn) (*PutVariableResponse, error)
+}
+
+type ListOpaqueCredentialsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *OpaqueCredentialsDTO
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r ListOpaqueCredentialsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListOpaqueCredentialsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateOpaqueCredentialResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON201                       *OpaqueCredentialMaterialDTO
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateOpaqueCredentialResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateOpaqueCredentialResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetOpaqueCredentialResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *OpaqueCredentialDTO
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetOpaqueCredentialResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetOpaqueCredentialResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RevokeOpaqueCredentialResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *OpaqueCredentialDTO
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r RevokeOpaqueCredentialResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RevokeOpaqueCredentialResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RollOpaqueCredentialResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *OpaqueCredentialMaterialDTO
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r RollOpaqueCredentialResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RollOpaqueCredentialResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
 }
 
 type ListSecretsResponse struct {
@@ -1580,6 +2574,167 @@ func (r VerifyWithTransitKeyResponse) StatusCode() int {
 	return 0
 }
 
+type ListVariablesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *VariablesDTO
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r ListVariablesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListVariablesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DeleteVariableResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *VariableDTO
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteVariableResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteVariableResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ReadVariableResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *VariableValueDTO
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r ReadVariableResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ReadVariableResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PutVariableResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *VariableDTO
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PutVariableResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutVariableResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ListOpaqueCredentialsWithResponse request returning *ListOpaqueCredentialsResponse
+func (c *ClientWithResponses) ListOpaqueCredentialsWithResponse(ctx context.Context, params *ListOpaqueCredentialsParams, reqEditors ...RequestEditorFn) (*ListOpaqueCredentialsResponse, error) {
+	rsp, err := c.ListOpaqueCredentials(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListOpaqueCredentialsResponse(rsp)
+}
+
+// CreateOpaqueCredentialWithBodyWithResponse request with arbitrary body returning *CreateOpaqueCredentialResponse
+func (c *ClientWithResponses) CreateOpaqueCredentialWithBodyWithResponse(ctx context.Context, params *CreateOpaqueCredentialParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateOpaqueCredentialResponse, error) {
+	rsp, err := c.CreateOpaqueCredentialWithBody(ctx, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateOpaqueCredentialResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateOpaqueCredentialWithResponse(ctx context.Context, params *CreateOpaqueCredentialParams, body CreateOpaqueCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateOpaqueCredentialResponse, error) {
+	rsp, err := c.CreateOpaqueCredential(ctx, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateOpaqueCredentialResponse(rsp)
+}
+
+// GetOpaqueCredentialWithResponse request returning *GetOpaqueCredentialResponse
+func (c *ClientWithResponses) GetOpaqueCredentialWithResponse(ctx context.Context, credentialId openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetOpaqueCredentialResponse, error) {
+	rsp, err := c.GetOpaqueCredential(ctx, credentialId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetOpaqueCredentialResponse(rsp)
+}
+
+// RevokeOpaqueCredentialWithBodyWithResponse request with arbitrary body returning *RevokeOpaqueCredentialResponse
+func (c *ClientWithResponses) RevokeOpaqueCredentialWithBodyWithResponse(ctx context.Context, credentialId openapi_types.UUID, params *RevokeOpaqueCredentialParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RevokeOpaqueCredentialResponse, error) {
+	rsp, err := c.RevokeOpaqueCredentialWithBody(ctx, credentialId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRevokeOpaqueCredentialResponse(rsp)
+}
+
+func (c *ClientWithResponses) RevokeOpaqueCredentialWithResponse(ctx context.Context, credentialId openapi_types.UUID, params *RevokeOpaqueCredentialParams, body RevokeOpaqueCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*RevokeOpaqueCredentialResponse, error) {
+	rsp, err := c.RevokeOpaqueCredential(ctx, credentialId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRevokeOpaqueCredentialResponse(rsp)
+}
+
+// RollOpaqueCredentialWithBodyWithResponse request with arbitrary body returning *RollOpaqueCredentialResponse
+func (c *ClientWithResponses) RollOpaqueCredentialWithBodyWithResponse(ctx context.Context, credentialId openapi_types.UUID, params *RollOpaqueCredentialParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RollOpaqueCredentialResponse, error) {
+	rsp, err := c.RollOpaqueCredentialWithBody(ctx, credentialId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRollOpaqueCredentialResponse(rsp)
+}
+
+func (c *ClientWithResponses) RollOpaqueCredentialWithResponse(ctx context.Context, credentialId openapi_types.UUID, params *RollOpaqueCredentialParams, body RollOpaqueCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*RollOpaqueCredentialResponse, error) {
+	rsp, err := c.RollOpaqueCredential(ctx, credentialId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRollOpaqueCredentialResponse(rsp)
+}
+
 // ListSecretsWithResponse request returning *ListSecretsResponse
 func (c *ClientWithResponses) ListSecretsWithResponse(ctx context.Context, params *ListSecretsParams, reqEditors ...RequestEditorFn) (*ListSecretsResponse, error) {
 	rsp, err := c.ListSecrets(ctx, params, reqEditors...)
@@ -1724,6 +2879,223 @@ func (c *ClientWithResponses) VerifyWithTransitKeyWithResponse(ctx context.Conte
 		return nil, err
 	}
 	return ParseVerifyWithTransitKeyResponse(rsp)
+}
+
+// ListVariablesWithResponse request returning *ListVariablesResponse
+func (c *ClientWithResponses) ListVariablesWithResponse(ctx context.Context, params *ListVariablesParams, reqEditors ...RequestEditorFn) (*ListVariablesResponse, error) {
+	rsp, err := c.ListVariables(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListVariablesResponse(rsp)
+}
+
+// DeleteVariableWithBodyWithResponse request with arbitrary body returning *DeleteVariableResponse
+func (c *ClientWithResponses) DeleteVariableWithBodyWithResponse(ctx context.Context, name string, params *DeleteVariableParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteVariableResponse, error) {
+	rsp, err := c.DeleteVariableWithBody(ctx, name, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteVariableResponse(rsp)
+}
+
+func (c *ClientWithResponses) DeleteVariableWithResponse(ctx context.Context, name string, params *DeleteVariableParams, body DeleteVariableJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteVariableResponse, error) {
+	rsp, err := c.DeleteVariable(ctx, name, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteVariableResponse(rsp)
+}
+
+// ReadVariableWithResponse request returning *ReadVariableResponse
+func (c *ClientWithResponses) ReadVariableWithResponse(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*ReadVariableResponse, error) {
+	rsp, err := c.ReadVariable(ctx, name, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReadVariableResponse(rsp)
+}
+
+// PutVariableWithBodyWithResponse request with arbitrary body returning *PutVariableResponse
+func (c *ClientWithResponses) PutVariableWithBodyWithResponse(ctx context.Context, name string, params *PutVariableParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutVariableResponse, error) {
+	rsp, err := c.PutVariableWithBody(ctx, name, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutVariableResponse(rsp)
+}
+
+func (c *ClientWithResponses) PutVariableWithResponse(ctx context.Context, name string, params *PutVariableParams, body PutVariableJSONRequestBody, reqEditors ...RequestEditorFn) (*PutVariableResponse, error) {
+	rsp, err := c.PutVariable(ctx, name, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutVariableResponse(rsp)
+}
+
+// ParseListOpaqueCredentialsResponse parses an HTTP response from a ListOpaqueCredentialsWithResponse call
+func ParseListOpaqueCredentialsResponse(rsp *http.Response) (*ListOpaqueCredentialsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListOpaqueCredentialsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest OpaqueCredentialsDTO
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateOpaqueCredentialResponse parses an HTTP response from a CreateOpaqueCredentialWithResponse call
+func ParseCreateOpaqueCredentialResponse(rsp *http.Response) (*CreateOpaqueCredentialResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateOpaqueCredentialResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest OpaqueCredentialMaterialDTO
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetOpaqueCredentialResponse parses an HTTP response from a GetOpaqueCredentialWithResponse call
+func ParseGetOpaqueCredentialResponse(rsp *http.Response) (*GetOpaqueCredentialResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetOpaqueCredentialResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest OpaqueCredentialDTO
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRevokeOpaqueCredentialResponse parses an HTTP response from a RevokeOpaqueCredentialWithResponse call
+func ParseRevokeOpaqueCredentialResponse(rsp *http.Response) (*RevokeOpaqueCredentialResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RevokeOpaqueCredentialResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest OpaqueCredentialDTO
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRollOpaqueCredentialResponse parses an HTTP response from a RollOpaqueCredentialWithResponse call
+func ParseRollOpaqueCredentialResponse(rsp *http.Response) (*RollOpaqueCredentialResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RollOpaqueCredentialResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest OpaqueCredentialMaterialDTO
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
 }
 
 // ParseListSecretsResponse parses an HTTP response from a ListSecretsWithResponse call
@@ -2039,6 +3411,138 @@ func ParseVerifyWithTransitKeyResponse(rsp *http.Response) (*VerifyWithTransitKe
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest VerifyOutputBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListVariablesResponse parses an HTTP response from a ListVariablesWithResponse call
+func ParseListVariablesResponse(rsp *http.Response) (*ListVariablesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListVariablesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest VariablesDTO
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteVariableResponse parses an HTTP response from a DeleteVariableWithResponse call
+func ParseDeleteVariableResponse(rsp *http.Response) (*DeleteVariableResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteVariableResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest VariableDTO
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseReadVariableResponse parses an HTTP response from a ReadVariableWithResponse call
+func ParseReadVariableResponse(rsp *http.Response) (*ReadVariableResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ReadVariableResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest VariableValueDTO
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePutVariableResponse parses an HTTP response from a PutVariableWithResponse call
+func ParsePutVariableResponse(rsp *http.Response) (*PutVariableResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutVariableResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest VariableDTO
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

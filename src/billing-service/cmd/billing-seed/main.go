@@ -27,6 +27,7 @@ const (
 	sandboxDurableVolumeRetainedSKU = "sandbox_durable_volume_retained_snapshot_gib_ms"
 	secretsProductID                = "secrets"
 	secretsKVOperationSKU           = "secrets_kv_operation"
+	secretsCredentialOperationSKU   = "secrets_credential_operation"
 	secretsTransitOperationSKU      = "secrets_transit_operation"
 )
 
@@ -409,6 +410,7 @@ func productSeedFor(productID string) (productSeed, error) {
 			},
 			SKUs: []skuSeed{
 				{secretsKVOperationSKU, "secrets_operations", "KV operation", "operation", 0},
+				{secretsCredentialOperationSKU, "secrets_operations", "Credential operation", "operation", 0},
 				{secretsTransitOperationSKU, "secrets_operations", "Transit operation", "operation", 0},
 			},
 		}, nil

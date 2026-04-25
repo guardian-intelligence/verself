@@ -90,6 +90,71 @@ type InjectionSecretRequest struct {
 	SourceId   *string `json:"source_id,omitempty"`
 }
 
+// InternalCreateCredentialRequest defines model for InternalCreateCredentialRequest.
+type InternalCreateCredentialRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema      *string            `json:"$schema,omitempty"`
+	ActorId     string             `json:"actor_id"`
+	DisplayName *string            `json:"display_name,omitempty"`
+	ExpiresAt   *string            `json:"expires_at,omitempty"`
+	Kind        string             `json:"kind"`
+	Metadata    *map[string]string `json:"metadata,omitempty"`
+	OrgId       string             `json:"org_id"`
+	Scopes      []string           `json:"scopes"`
+}
+
+// InternalCreateCredentialResponse defines model for InternalCreateCredentialResponse.
+type InternalCreateCredentialResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema     *string              `json:"$schema,omitempty"`
+	Credential OpaqueCredentialWire `json:"credential"`
+	Token      string               `json:"token"`
+}
+
+// InternalVerifyCredentialRequest defines model for InternalVerifyCredentialRequest.
+type InternalVerifyCredentialRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema         *string   `json:"$schema,omitempty"`
+	ActorId        *string   `json:"actor_id,omitempty"`
+	Kind           string    `json:"kind"`
+	OrgId          string    `json:"org_id"`
+	RequiredScopes *[]string `json:"required_scopes,omitempty"`
+	Token          string    `json:"token"`
+}
+
+// InternalVerifyCredentialResponse defines model for InternalVerifyCredentialResponse.
+type InternalVerifyCredentialResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema       *string               `json:"$schema,omitempty"`
+	Active       bool                  `json:"active"`
+	Credential   *OpaqueCredentialWire `json:"credential,omitempty"`
+	DenialReason *string               `json:"denial_reason,omitempty"`
+}
+
+// OpaqueCredentialWire defines model for OpaqueCredentialWire.
+type OpaqueCredentialWire struct {
+	CreatedAt    *string            `json:"created_at,omitempty"`
+	CredentialId *string            `json:"credential_id,omitempty"`
+	DisplayName  *string            `json:"display_name,omitempty"`
+	ExpiresAt    *string            `json:"expires_at,omitempty"`
+	Kind         *string            `json:"kind,omitempty"`
+	LastUsedAt   *string            `json:"last_used_at,omitempty"`
+	Metadata     *map[string]string `json:"metadata,omitempty"`
+	OrgId        *string            `json:"org_id,omitempty"`
+	RevokedAt    *string            `json:"revoked_at,omitempty"`
+	Scopes       *[]string          `json:"scopes,omitempty"`
+	Status       *string            `json:"status,omitempty"`
+	Subject      *string            `json:"subject,omitempty"`
+	TokenPrefix  *string            `json:"token_prefix,omitempty"`
+	UpdatedAt    *string            `json:"updated_at,omitempty"`
+}
+
+// CreateInternalOpaqueCredentialJSONRequestBody defines body for CreateInternalOpaqueCredential for application/json ContentType.
+type CreateInternalOpaqueCredentialJSONRequestBody = InternalCreateCredentialRequest
+
+// VerifyInternalOpaqueCredentialJSONRequestBody defines body for VerifyInternalOpaqueCredential for application/json ContentType.
+type VerifyInternalOpaqueCredentialJSONRequestBody = InternalVerifyCredentialRequest
+
 // ResolveInjectionJSONRequestBody defines body for ResolveInjection for application/json ContentType.
 type ResolveInjectionJSONRequestBody = InjectionResolveRequest
 
@@ -166,10 +231,68 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
+	// CreateInternalOpaqueCredentialWithBody request with any body
+	CreateInternalOpaqueCredentialWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateInternalOpaqueCredential(ctx context.Context, body CreateInternalOpaqueCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// VerifyInternalOpaqueCredentialWithBody request with any body
+	VerifyInternalOpaqueCredentialWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	VerifyInternalOpaqueCredential(ctx context.Context, body VerifyInternalOpaqueCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ResolveInjectionWithBody request with any body
 	ResolveInjectionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	ResolveInjection(ctx context.Context, body ResolveInjectionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+func (c *Client) CreateInternalOpaqueCredentialWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateInternalOpaqueCredentialRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateInternalOpaqueCredential(ctx context.Context, body CreateInternalOpaqueCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateInternalOpaqueCredentialRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) VerifyInternalOpaqueCredentialWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewVerifyInternalOpaqueCredentialRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) VerifyInternalOpaqueCredential(ctx context.Context, body VerifyInternalOpaqueCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewVerifyInternalOpaqueCredentialRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
 }
 
 func (c *Client) ResolveInjectionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -194,6 +317,86 @@ func (c *Client) ResolveInjection(ctx context.Context, body ResolveInjectionJSON
 		return nil, err
 	}
 	return c.Client.Do(req)
+}
+
+// NewCreateInternalOpaqueCredentialRequest calls the generic CreateInternalOpaqueCredential builder with application/json body
+func NewCreateInternalOpaqueCredentialRequest(server string, body CreateInternalOpaqueCredentialJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateInternalOpaqueCredentialRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateInternalOpaqueCredentialRequestWithBody generates requests for CreateInternalOpaqueCredential with any type of body
+func NewCreateInternalOpaqueCredentialRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/internal/v1/credentials")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewVerifyInternalOpaqueCredentialRequest calls the generic VerifyInternalOpaqueCredential builder with application/json body
+func NewVerifyInternalOpaqueCredentialRequest(server string, body VerifyInternalOpaqueCredentialJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewVerifyInternalOpaqueCredentialRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewVerifyInternalOpaqueCredentialRequestWithBody generates requests for VerifyInternalOpaqueCredential with any type of body
+func NewVerifyInternalOpaqueCredentialRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/internal/v1/credentials:verify")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
 }
 
 // NewResolveInjectionRequest calls the generic ResolveInjection builder with application/json body
@@ -279,10 +482,66 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
+	// CreateInternalOpaqueCredentialWithBodyWithResponse request with any body
+	CreateInternalOpaqueCredentialWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateInternalOpaqueCredentialResponse, error)
+
+	CreateInternalOpaqueCredentialWithResponse(ctx context.Context, body CreateInternalOpaqueCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateInternalOpaqueCredentialResponse, error)
+
+	// VerifyInternalOpaqueCredentialWithBodyWithResponse request with any body
+	VerifyInternalOpaqueCredentialWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*VerifyInternalOpaqueCredentialResponse, error)
+
+	VerifyInternalOpaqueCredentialWithResponse(ctx context.Context, body VerifyInternalOpaqueCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*VerifyInternalOpaqueCredentialResponse, error)
+
 	// ResolveInjectionWithBodyWithResponse request with any body
 	ResolveInjectionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResolveInjectionResponse, error)
 
 	ResolveInjectionWithResponse(ctx context.Context, body ResolveInjectionJSONRequestBody, reqEditors ...RequestEditorFn) (*ResolveInjectionResponse, error)
+}
+
+type CreateInternalOpaqueCredentialResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON201                       *InternalCreateCredentialResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateInternalOpaqueCredentialResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateInternalOpaqueCredentialResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type VerifyInternalOpaqueCredentialResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *InternalVerifyCredentialResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r VerifyInternalOpaqueCredentialResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r VerifyInternalOpaqueCredentialResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
 }
 
 type ResolveInjectionResponse struct {
@@ -308,6 +567,40 @@ func (r ResolveInjectionResponse) StatusCode() int {
 	return 0
 }
 
+// CreateInternalOpaqueCredentialWithBodyWithResponse request with arbitrary body returning *CreateInternalOpaqueCredentialResponse
+func (c *ClientWithResponses) CreateInternalOpaqueCredentialWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateInternalOpaqueCredentialResponse, error) {
+	rsp, err := c.CreateInternalOpaqueCredentialWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateInternalOpaqueCredentialResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateInternalOpaqueCredentialWithResponse(ctx context.Context, body CreateInternalOpaqueCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateInternalOpaqueCredentialResponse, error) {
+	rsp, err := c.CreateInternalOpaqueCredential(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateInternalOpaqueCredentialResponse(rsp)
+}
+
+// VerifyInternalOpaqueCredentialWithBodyWithResponse request with arbitrary body returning *VerifyInternalOpaqueCredentialResponse
+func (c *ClientWithResponses) VerifyInternalOpaqueCredentialWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*VerifyInternalOpaqueCredentialResponse, error) {
+	rsp, err := c.VerifyInternalOpaqueCredentialWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseVerifyInternalOpaqueCredentialResponse(rsp)
+}
+
+func (c *ClientWithResponses) VerifyInternalOpaqueCredentialWithResponse(ctx context.Context, body VerifyInternalOpaqueCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*VerifyInternalOpaqueCredentialResponse, error) {
+	rsp, err := c.VerifyInternalOpaqueCredential(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseVerifyInternalOpaqueCredentialResponse(rsp)
+}
+
 // ResolveInjectionWithBodyWithResponse request with arbitrary body returning *ResolveInjectionResponse
 func (c *ClientWithResponses) ResolveInjectionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResolveInjectionResponse, error) {
 	rsp, err := c.ResolveInjectionWithBody(ctx, contentType, body, reqEditors...)
@@ -323,6 +616,72 @@ func (c *ClientWithResponses) ResolveInjectionWithResponse(ctx context.Context, 
 		return nil, err
 	}
 	return ParseResolveInjectionResponse(rsp)
+}
+
+// ParseCreateInternalOpaqueCredentialResponse parses an HTTP response from a CreateInternalOpaqueCredentialWithResponse call
+func ParseCreateInternalOpaqueCredentialResponse(rsp *http.Response) (*CreateInternalOpaqueCredentialResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateInternalOpaqueCredentialResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest InternalCreateCredentialResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseVerifyInternalOpaqueCredentialResponse parses an HTTP response from a VerifyInternalOpaqueCredentialWithResponse call
+func ParseVerifyInternalOpaqueCredentialResponse(rsp *http.Response) (*VerifyInternalOpaqueCredentialResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &VerifyInternalOpaqueCredentialResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest InternalVerifyCredentialResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
 }
 
 // ParseResolveInjectionResponse parses an HTTP response from a ResolveInjectionWithResponse call

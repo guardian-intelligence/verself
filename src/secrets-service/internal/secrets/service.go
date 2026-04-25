@@ -131,7 +131,7 @@ func (s *Service) Ready(ctx context.Context) error {
 }
 
 func (s *Service) PutSecret(ctx context.Context, principal Principal, req PutSecretRequest) (SecretRecord, error) {
-	ctx, span := tracer.Start(ctx, "secrets.secret.put")
+	ctx, span := tracer.Start(ctx, kvSpanName(req.Kind, "put"))
 	defer span.End()
 	if err := s.Validate(); err != nil {
 		return SecretRecord{}, err
@@ -150,7 +150,7 @@ func (s *Service) PutSecret(ctx context.Context, principal Principal, req PutSec
 }
 
 func (s *Service) ReadSecret(ctx context.Context, principal Principal, kind, name string, scope Scope) (SecretValue, error) {
-	ctx, span := tracer.Start(ctx, "secrets.secret.read")
+	ctx, span := tracer.Start(ctx, kvSpanName(kind, "read"))
 	defer span.End()
 	if err := s.Validate(); err != nil {
 		return SecretValue{}, err
@@ -176,7 +176,7 @@ func (s *Service) GetSecretMetadata(ctx context.Context, principal Principal, ki
 }
 
 func (s *Service) ListSecrets(ctx context.Context, principal Principal, kind string, limit int) ([]SecretRecord, error) {
-	ctx, span := tracer.Start(ctx, "secrets.secret.list")
+	ctx, span := tracer.Start(ctx, kvSpanName(kind, "list"))
 	defer span.End()
 	if err := s.Validate(); err != nil {
 		return nil, err
@@ -190,7 +190,7 @@ func (s *Service) ListSecrets(ctx context.Context, principal Principal, kind str
 }
 
 func (s *Service) DeleteSecret(ctx context.Context, principal Principal, kind, name string, scope Scope) (SecretRecord, error) {
-	ctx, span := tracer.Start(ctx, "secrets.secret.delete")
+	ctx, span := tracer.Start(ctx, kvSpanName(kind, "delete"))
 	defer span.End()
 	if err := s.Validate(); err != nil {
 		return SecretRecord{}, err
@@ -416,4 +416,13 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func kvSpanName(kind string, operation string) string {
+	switch normalizeKind(kind) {
+	case KindVariable:
+		return "secrets.variable." + operation
+	default:
+		return "secrets.secret." + operation
+	}
 }
