@@ -1,4 +1,11 @@
-import { BookOpen, CalendarClock, Settings, Terminal, type LucideIcon } from "lucide-react";
+import {
+  BookOpen,
+  CalendarClock,
+  GitBranch,
+  Settings,
+  Terminal,
+  type LucideIcon,
+} from "lucide-react";
 
 // Single source of truth for everything the app shell advertises.
 // Keep the shell UI, the command palette, and any programmatic route
@@ -55,6 +62,14 @@ export const PRIMARY_NAV: readonly NavEntry[] = [
     to: "/schedules",
     matchPrefix: "/schedules",
     icon: CalendarClock,
+  },
+  {
+    kind: "internal",
+    id: "source",
+    label: "Source",
+    to: "/source",
+    matchPrefix: "/source",
+    icon: GitBranch,
   },
 ];
 

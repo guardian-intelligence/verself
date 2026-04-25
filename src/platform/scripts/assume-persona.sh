@@ -308,6 +308,9 @@ if [[ -n "${project_tokens[identity-service]:-}" ]]; then
   write_export IDENTITY_SERVICE_AUTH_AUDIENCE "${project_ids[identity-service]}"
   write_export IDENTITY_SERVICE_ACCESS_TOKEN "${project_tokens[identity-service]}"
   write_export IDENTITY_SERVICE_TOKEN "${project_tokens[identity-service]}"
+  write_export SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE "${project_ids[identity-service]}"
+  write_export SOURCE_CODE_HOSTING_SERVICE_ACCESS_TOKEN "${project_tokens[identity-service]}"
+  write_export SOURCE_CODE_HOSTING_SERVICE_TOKEN "${project_tokens[identity-service]}"
 fi
 if [[ -n "${project_tokens[secrets-service]:-}" ]]; then
   write_export SECRETS_SERVICE_AUTH_AUDIENCE "${project_ids[secrets-service]}"

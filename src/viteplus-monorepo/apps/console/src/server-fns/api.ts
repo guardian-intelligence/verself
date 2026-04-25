@@ -49,6 +49,21 @@ import {
   putNotificationPreferences as putNotificationPreferencesRequest,
   putNotificationPreferencesRequestSchema,
 } from "~/lib/notifications-api";
+import {
+  SourceCodeHostingApiError,
+  createCheckoutGrant as createSourceCheckoutGrantRequest,
+  createCheckoutGrantRequestSchema as createSourceCheckoutGrantRequestSchema,
+  createIntegration as createSourceIntegrationRequest,
+  createIntegrationRequestSchema as createSourceIntegrationRequestSchema,
+  createRepository as createSourceRepositoryRequest,
+  createRepositoryRequestSchema as createSourceRepositoryRequestSchema,
+  getBlob as getSourceBlobRequest,
+  getRepository as getSourceRepositoryRequest,
+  getTree as getSourceTreeRequest,
+  isSourceCodeHostingApiError,
+  listRefs as listSourceRefsRequest,
+  listRepositories as listSourceRepositoriesRequest,
+} from "~/lib/source-code-hosting-api";
 import type {
   InviteMemberRequest,
   InviteMemberResponse,
@@ -82,6 +97,18 @@ import type {
   PublishTestNotificationRequest,
   PutNotificationPreferencesRequest,
 } from "~/lib/notifications-api";
+import type {
+  CreateCheckoutGrantRequest as CreateSourceCheckoutGrantRequest,
+  CreateIntegrationRequest as CreateSourceIntegrationRequest,
+  CreateRepositoryRequest as CreateSourceRepositoryRequest,
+  SourceBlob,
+  SourceCheckoutGrant,
+  SourceIntegration,
+  SourceRefs,
+  SourceRepository,
+  SourceRepositoryList,
+  SourceTree,
+} from "~/lib/source-code-hosting-api";
 import {
   cancelContract as cancelContractRequest,
   cancelContractRequestSchema,
@@ -141,17 +168,23 @@ const IDENTITY_SERVICE_BASE_URL = requireURLFromEnv("IDENTITY_SERVICE_BASE_URL")
 const GOVERNANCE_SERVICE_BASE_URL = requireURLFromEnv("GOVERNANCE_SERVICE_BASE_URL");
 const PROFILE_SERVICE_BASE_URL = requireURLFromEnv("PROFILE_SERVICE_BASE_URL");
 const NOTIFICATIONS_SERVICE_BASE_URL = requireURLFromEnv("NOTIFICATIONS_SERVICE_BASE_URL");
+const SOURCE_CODE_HOSTING_SERVICE_BASE_URL = requireURLFromEnv(
+  "SOURCE_CODE_HOSTING_SERVICE_BASE_URL",
+);
 const SANDBOX_RENTAL_SERVICE_BASE_URL = requireURLFromEnv("SANDBOX_RENTAL_SERVICE_BASE_URL");
 const IDENTITY_SERVICE_AUTH_AUDIENCE = process.env.IDENTITY_SERVICE_AUTH_AUDIENCE?.trim();
 const PROFILE_SERVICE_AUTH_AUDIENCE =
   process.env.PROFILE_SERVICE_AUTH_AUDIENCE?.trim() || IDENTITY_SERVICE_AUTH_AUDIENCE;
 const NOTIFICATIONS_SERVICE_AUTH_AUDIENCE =
   process.env.NOTIFICATIONS_SERVICE_AUTH_AUDIENCE?.trim() || IDENTITY_SERVICE_AUTH_AUDIENCE;
+const SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE =
+  process.env.SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE?.trim() || IDENTITY_SERVICE_AUTH_AUDIENCE;
 
 export { IdentityApiError, isIdentityApiError };
 export { GovernanceApiError, isGovernanceApiError };
 export { ProfileApiError, isProfileApiError };
 export { NotificationsApiError, isNotificationsApiError };
+export { SourceCodeHostingApiError, isSourceCodeHostingApiError };
 export { SandboxRentalApiError, isSandboxRentalApiError, isSandboxRentalNotFound };
 export type {
   CreateExportRequest,
@@ -170,6 +203,18 @@ export type {
   NotificationsListQuery,
   PublishTestNotificationRequest,
   PutNotificationPreferencesRequest,
+};
+export type {
+  CreateSourceCheckoutGrantRequest,
+  CreateSourceIntegrationRequest,
+  CreateSourceRepositoryRequest,
+  SourceBlob,
+  SourceCheckoutGrant,
+  SourceIntegration,
+  SourceRefs,
+  SourceRepository,
+  SourceRepositoryList,
+  SourceTree,
 };
 export type {
   CheckoutRequest,
@@ -268,6 +313,23 @@ async function notificationsClientOptions(context: { auth?: AuthSession } | unde
   return {
     accessToken,
     baseUrl: NOTIFICATIONS_SERVICE_BASE_URL,
+  };
+}
+
+async function sourceCodeHostingClientOptions(context: { auth?: AuthSession } | undefined) {
+  const auth = await resolveAuthContext(context);
+  const accessToken =
+    SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE &&
+    SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE !== IDENTITY_SERVICE_AUTH_AUDIENCE
+      ? await getAccessTokenForAudience(
+          getAuthConfig(),
+          auth,
+          SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE,
+        )
+      : auth.accessToken;
+  return {
+    accessToken,
+    baseUrl: SOURCE_CODE_HOSTING_SERVICE_BASE_URL,
   };
 }
 
@@ -413,6 +475,114 @@ export const publishTestNotification = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     return publishTestNotificationRequest({
       ...(await notificationsClientOptions(context)),
+      body: data,
+    });
+  });
+
+const sourceRepositoryIDInputSchema = v.strictObject({
+  repoId: v.pipe(v.string(), v.uuid()),
+});
+
+const sourceTreeInputSchema = v.strictObject({
+  repoId: v.pipe(v.string(), v.uuid()),
+  ref: v.optional(v.string()),
+  path: v.optional(v.string()),
+});
+
+const sourceBlobInputSchema = v.strictObject({
+  repoId: v.pipe(v.string(), v.uuid()),
+  ref: v.optional(v.string()),
+  path: v.pipe(v.string(), v.minLength(1)),
+});
+
+const sourceCheckoutGrantInputSchema = v.strictObject({
+  repoId: v.pipe(v.string(), v.uuid()),
+  body: createSourceCheckoutGrantRequestSchema,
+});
+
+export const listSourceRepositories = createServerFn({ method: "GET" })
+  .middleware([consoleAuthMiddleware])
+  .handler(async ({ context }) => {
+    return listSourceRepositoriesRequest(await sourceCodeHostingClientOptions(context));
+  });
+
+export const createSourceRepository = createServerFn({ method: "POST" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(createSourceRepositoryRequestSchema)
+  .handler(async ({ context, data }) => {
+    return createSourceRepositoryRequest({
+      ...(await sourceCodeHostingClientOptions(context)),
+      body: data,
+    });
+  });
+
+export const getSourceRepository = createServerFn({ method: "GET" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(sourceRepositoryIDInputSchema)
+  .handler(async ({ context, data }) => {
+    return getSourceRepositoryRequest({
+      ...(await sourceCodeHostingClientOptions(context)),
+      repoId: data.repoId,
+    });
+  });
+
+export const listSourceRefs = createServerFn({ method: "GET" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(sourceRepositoryIDInputSchema)
+  .handler(async ({ context, data }) => {
+    return listSourceRefsRequest({
+      ...(await sourceCodeHostingClientOptions(context)),
+      repoId: data.repoId,
+    });
+  });
+
+export const getSourceTree = createServerFn({ method: "GET" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(sourceTreeInputSchema)
+  .handler(async ({ context, data }) => {
+    const treeInput = {
+      repoId: data.repoId,
+      ...(data.ref !== undefined ? { ref: data.ref } : {}),
+      ...(data.path !== undefined ? { path: data.path } : {}),
+    };
+    return getSourceTreeRequest({
+      ...(await sourceCodeHostingClientOptions(context)),
+      ...treeInput,
+    });
+  });
+
+export const getSourceBlob = createServerFn({ method: "GET" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(sourceBlobInputSchema)
+  .handler(async ({ context, data }) => {
+    const blobInput = {
+      repoId: data.repoId,
+      path: data.path,
+      ...(data.ref !== undefined ? { ref: data.ref } : {}),
+    };
+    return getSourceBlobRequest({
+      ...(await sourceCodeHostingClientOptions(context)),
+      ...blobInput,
+    });
+  });
+
+export const createSourceCheckoutGrant = createServerFn({ method: "POST" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(sourceCheckoutGrantInputSchema)
+  .handler(async ({ context, data }) => {
+    return createSourceCheckoutGrantRequest({
+      ...(await sourceCodeHostingClientOptions(context)),
+      repoId: data.repoId,
+      body: data.body,
+    });
+  });
+
+export const createSourceIntegration = createServerFn({ method: "POST" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(createSourceIntegrationRequestSchema)
+  .handler(async ({ context, data }) => {
+    return createSourceIntegrationRequest({
+      ...(await sourceCodeHostingClientOptions(context)),
       body: data,
     });
   });
