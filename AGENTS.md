@@ -23,6 +23,7 @@ Tech Stack:
 Invariant patterns:
 
 * Service-oriented-architecture: with notable exceptions, all of our services talk to each other through the same APIs as the ones customers use. 
+* Generated clients are the only supported Go service SDKs. Customer/human routes use the committed public OpenAPI specs and `client` packages; repo-owned SPIFFE routes use committed internal OpenAPI specs and `internalclient` packages. The caller injects a SPIFFE mTLS `http.Client` from `auth-middleware/workload`; do not hand-write `http.NewRequest` service calls or mint Zitadel machine-user bearer tokens for repo-owned service-to-service traffic.
 * Dogfood as much as possible, even if it involves hairpinning requests through the internet. We are a customer on our platform. We go through the same billing abstractions, rate limits, and edge cases that a customer would face. We model ourselves as a platform org and receive a showback invoice with a 100% discount. 
 * Sync-engine pattern: PostgreSQL owns state, ClickHouse records the append-only ledger/traces, Electric/TanStack expose live read projections, and writes go through typed service commands whose conflict behavior matches the domain (strict observed-state rejection for security-critical resources, monotonic/idempotent collapse for notification-style cursors and dismissals).
 
@@ -64,7 +65,7 @@ How the platform is wired today: service topology, three safety rings, self-host
 **Keywords:** Huma v2, OpenAPI 3.0/3.1, oapi-codegen, @hey-api/openapi-ts, apiwire, SOPS, systemd LoadCredential, credstore, nftables, safety rings, Cloudflare, Latitude.sh, Resend, Stripe, Backblaze, PostgreSQL, ClickHouse, TigerBeetle, Zitadel, Stalwart, ElectricSQL, TanStack DB, dual-write, reconciliation, metering, credits, entitlements, Verdaccio NPM mirror, Forgejo, Ubuntu 24.04, Netbird, 3-node topology, self-hosted, vsock 10790.
 
 See `docs/system-context.md`. Auth, identity, IAM, Zitadel, JWT, SCIM, organization model, three-role (owner/admin/member), API credentials, frontend sessions, JWKS loopback — all in `src/platform/docs/identity-and-iam.md`.
-Forge Metal Go service clients are generated from committed OpenAPI 3.0 specs with `oapi-codegen`; consumers must use those generated `client` or `internalclient` packages, with SPIFFE carried by the underlying `http.Client` instead of handwritten transport code.
+Forge Metal Go service clients are generated from committed OpenAPI 3.0 specs with `oapi-codegen`; consumers must use those generated `client` or `internalclient` packages, with SPIFFE carried by the underlying `http.Client` instead of handwritten transport code. If a service API shape is missing, add the Huma route/OpenAPI spec and regenerate instead of bypassing the SDK.
 
 Python package management is done through `uv`.
 
