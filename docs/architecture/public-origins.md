@@ -58,7 +58,7 @@ Protocol origins are not generic API hosts:
 
 | Origin | Backing service | Purpose |
 |---|---|---|
-| `git.<domain>` | Forgejo now, source resource plane later | Git smart HTTP/SSH and temporary Forgejo admin UI. |
+| `git.<domain>` | `source-code-hosting-service` | Git smart HTTP. Forgejo remains a headless backing service behind source-code-hosting-service. |
 | `auth.<domain>` | Zitadel | OIDC, SAML, login, and IdP administration. |
 | `mail.<domain>` | Stalwart | SMTP/JMAP protocol surface. |
 | `dashboard.<domain>` | Grafana | Operator observability UI. |

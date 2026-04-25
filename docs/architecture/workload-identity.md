@@ -131,6 +131,8 @@ authorization. Authorized edges:
 sandbox-rental-service -> billing-service
 sandbox-rental-service -> governance-service
 sandbox-rental-service -> secrets-service
+source-code-hosting-service -> sandbox-rental-service
+source-code-hosting-service -> secrets-service
 secrets-service        -> billing-service
 secrets-service        -> governance-service
 identity-service       -> governance-service
@@ -153,19 +155,21 @@ internal SPIFFE mTLS hop carries two distinct principals:
 
 - **Caller.** The workload making the internal call. Authenticated by the
   mTLS peer ID. Non-forgeable.
-- **On-behalf-of subject.** The end user or API credential the request is
-  being processed for. Carried in-band as the original Zitadel JWT, forwarded
-  verbatim as an `X-Forge-Subject-JWT` header on the internal call.
+- **Origin subject.** The end user, customer API credential, or service
+  workflow actor the request is being processed for.
 
-Downstream services re-validate the forwarded JWT through `auth-middleware`
-against Zitadel JWKS on every hop, exactly as a public boundary would. A
-service MUST NOT trust any subject claim unless it originated from a
-re-validated Zitadel JWT in the same request.
+Internal APIs use generated `internalclient` packages and carry origin context
+as explicit typed fields (`org_id`, `actor_id`, external task IDs, and
+idempotency keys) unless the downstream service must independently re-enforce
+customer IAM from the original token. If the downstream service does need that
+customer IAM decision, the caller forwards the original Zitadel JWT and the
+downstream service re-validates it through `auth-middleware` before using any
+subject claim.
 
-Governance audit rows written by downstream services carry both
-`actor_spiffe_id` (caller) and `subject` (on-behalf-of). The two fields are
-independent and both required on internal calls. A row with a populated
-`subject` and an empty `actor_spiffe_id` is a data-integrity violation.
+Governance audit rows written by downstream services carry both the caller
+SPIFFE ID and the origin subject. The two fields are independent and both are
+required on internal calls. A row with a populated origin subject and an empty
+caller SPIFFE ID is a data-integrity violation.
 
 ## OpenBao Workload Auth
 
@@ -257,6 +261,19 @@ human mailbox protocol passwords (while direct mail protocol auth exists)
 SOPS is bootstrap and disaster-recovery material for operator-owned external
 credentials. SOPS is not the runtime distribution path for repo-owned
 services.
+
+## Product Opaque Credentials
+
+Product-issued bearer material that should not be retrievable after generation
+is modeled as an opaque credential in `secrets-service`, not as a retrievable
+secret. Repo-owned services call secrets-service over SPIFFE mTLS with generated
+internal clients to create, verify, roll, and revoke that material while
+retaining their own product-specific state projections.
+
+The first consumer is `source-code-hosting-service` for Git HTTPS credentials:
+source owns repository UX and PostgreSQL projections; secrets-service owns
+token generation, OpenBao Transit HMAC verifier storage, status, expiry, scope
+verification, and credential audit rows.
 
 ## Failure Semantics
 

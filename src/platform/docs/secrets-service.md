@@ -1,164 +1,122 @@
 # Secrets Service Direction
 
 `secrets-service` is the Forge Metal product boundary for customer-managed
-secrets, variables, transit keys, and execution-time injection into sandboxed
-workloads. The customer-facing surface stays narrow: no AWS/GCP IAM
-integration, no outward OIDC provider, no dynamic database credentials, no
-customer-visible backend identity.
+retrievable secrets, non-secret variables, opaque credentials, transit keys, and
+execution-time injection into sandboxed workloads. The backend is OpenBao. The
+public API does not expose OpenBao mount names, backend paths, namespace names,
+host paths, or privileged runtime details.
 
-The service is a Huma v2 HTTP API. The target backend is OpenBao; the current
-envelope-encrypted PostgreSQL store and the `fmtransit:v1:` / `fmsig:v1:` wire
-formats are stop-gap and will cut over cleanly — no customer-issued material
-exists to preserve, so there is no dual-write window and no compatibility
-layer. The public API must not expose backend paths, OpenBao mount or
-namespace names, host paths, or privileged runtime details.
+## Architecture
 
-## Target Architecture: OpenBao
+Each Forge Metal org gets an OpenBao KV v2 mount, Transit mount, JWT auth roles,
+and ACL policies reconciled by Ansible from identity-service organization
+inventory. Current single-node deployments use mount-per-org tenancy:
 
-All secret storage and transit cryptography move to OpenBao; envelope-wrapped
-PG is dropped at cutover.
+```text
+kv-<org_id>
+transit-<org_id>
+jwt-<org_id>
+```
 
-### Tenancy
+The customer API remains the authority for product semantics. OpenBao enforces
+resource capabilities after the service maps an authenticated Forge Metal
+principal or SPIFFE workload caller to a short-lived OpenBao token.
 
-Namespace-per-org. Each Forge Metal org gets its own OpenBao namespace with
-its own KV v2 and Transit mounts, policies, and JWT auth config. If the
-deployed OpenBao build lacks namespaces, fall back to one KV + one Transit
-mount per org with path-prefixed, policy-scoped access — tenancy stays an
-OpenBao primitive, never application code. Org deletion marks the namespace
-disabled rather than destroying it, deferring retention and legal-hold
-design.
+### KV Layout
 
-### KV layout
+Retrievable secrets and non-secret variables share a KV mount but are separated
+by kind:
 
-`kv/data/<kind>/{org|source|env|branch}/…/<name>`. Resolution walks four
-deterministic subtrees rather than listing-and-filtering metadata. Branch
-names stay SHA256-hashed at the path
-(`.../branch/<source>/<env>/<branch_hash>/<name>`) — data minimization,
-OWASP ASVS V8. Variables share the same KV mount as secrets; `<kind>/`
-distinguishes. Different sensitivity uses different paths, not different
-mounts.
+```text
+secret/{org|source|environment|branch}/.../<name>
+variable/{org|source|environment|branch}/.../<name>
+opaque_credential/org/<credential_id>
+```
 
-### Transit algorithms
+Resolution walks deterministic subtrees in order
+`branch > environment > source > org`; it does not list-and-filter the whole
+mount. Branch names are SHA256-hashed in paths. Audit rows use path hashes so
+names such as `PROD_STRIPE_KEY` do not become analytics data.
 
-- `aes256-gcm96` for encrypt/decrypt. Semantically identical to current behavior.
-- `ed25519` for sign/verify. Asymmetric — verifiers no longer need the key.
+### Opaque Credentials
 
-### Auth to OpenBao
+Opaque credentials are one-time-material resources for product-specific bearer
+tokens such as source Git HTTPS credentials. The API returns token material only
+from create and roll operations. GET, LIST, revoke, audit, ClickHouse traces,
+and PostgreSQL projections expose metadata only.
 
-No long-lived service token. Two identity inputs, explicit boundary:
+Credential token format is:
 
-- User path: the caller's Zitadel JWT is exchanged for a short-lived OpenBao
-  token per request, cached on `(jti, namespace)`.
-- Workload path: `secrets-service` fetches a SPIRE JWT-SVID with audience
-  `openbao`, logs in through OpenBao JWT auth, and receives a short-lived
-  OpenBao token bound to its SPIFFE subject. The loopback internal injection
-  endpoint is authenticated with SPIFFE mTLS and the persisted execution
-  attempt/grant context, not a static service-account client secret.
+```text
+fmoc_<credential_uuid>_<base64url_random_256_bits>
+```
 
-Raw JWT capture lives in a wrapper middleware inside `secrets-service`;
-shared `auth-middleware` stays single-purpose (verify and extract claims).
+OpenBao stores only metadata plus a Transit HMAC verifier. Verification parses
+the credential UUID from the token, reads the metadata document from KV, checks
+status, expiry, kind, and required scopes, then asks Transit
+`/hmac/:name/:algorithm` or `/verify/:name/:algorithm` to validate the HMAC.
+The Transit key is org-local and type `hmac`.
 
-### Policy split
+### Transit
 
-- Zitadel = IdP (authn).
-- SPIRE = repo-owned workload identity.
-- OpenBao = resource-level authz for the secrets plane (KV path + Transit key
-  capabilities, per-namespace HCL). OpenBao is a relying party for workload
-  identity, not the source of truth for it.
-- `policy.go` keeps the coarse has-any-secrets-role check, governance audit
-  emission, rate limits, idempotency, and body limits. The fine-grained
-  role/capability matrix moves into OpenBao policies.
-- OPA = future operation-level PDP. `policy.go` stays declarative so the
-  eventual translation is mechanical.
-- governance-service = audit.
+- `aes256-gcm96` for encrypt/decrypt.
+- `ed25519` for sign/verify.
+- `hmac` for opaque credential verifiers.
 
-Mirrors AWS Identity-Center / IAM / KMS / CloudTrail.
-
-### List semantics
-
-`GET /api/v1/secrets` fans out LIST + per-path metadata read over loopback,
-bounded by the existing `limit<=200`. Preserves the current DTO. Revisit with
-a read-through cache only if telemetry shows contention.
-
-### Namespace provisioning
-
-Idempotent Ansible playbook reconciles Zitadel orgs → OpenBao namespaces,
-mounts, and policies. Declarative, runs after seed and on demand. A Zitadel
-Action webhook for lower-latency creation can land later; the reconciler
-remains source of truth.
-
-### Single-node deployment
-
-Single-node Raft. Manual unseal from credstore shards. 2-node OpenBao and
-auto-unseal deferred until growth past one node. Token-cache TTL bounds,
-cache-key shape, and the manual-unseal runbook go into the updated
-`secrets_service` and new `openbao` Ansible roles alongside this doc.
-
-### Migration sequence
-
-1. OpenBao Ansible role.
-2. Namespace provisioning playbook (driven by identity-service's org inventory).
-3. New `baostore.go` backend behind the current `Service` interface.
-4. `policy.go` rewrite for JWT pass-through.
-5. One-shot PG → OpenBao data migration tool.
-6. Cutover.
-7. Drop PG tables; remove `envelope-key` from credstore/SOPS.
-
-## Product Boundary
-
-The customer-facing surface is `secrets-service`:
-
-- KV secrets and variables scoped to org, source, environment, or branch.
-- Resolution order `branch > environment > source > org`.
-- Transit keys for encrypt, decrypt, sign, verify, and key rotation.
-- Internal execution-time injection for `sandbox-rental-service`.
-- Internal runtime provider-secret resolution for repo-owned services from the
-  platform org over SPIFFE mTLS.
-
-`sandbox-rental-service` stores only secret references on execution rows. At
-worker time it calls the loopback-only internal injection endpoint over SPIFFE
-mTLS with attempt-scoped persisted grant context. Secret values are resolved
-immediately before
-`vm-orchestrator.StartExec` and are passed only in `ExecSpec.Env`; they are not
-persisted by sandbox-rental-service, written to ClickHouse, or included in
-audit payloads.
+Transit key versions remain explicit in API DTOs, audit rows, and ClickHouse
+spans.
 
 ## Identity
 
 User and API credential calls use the standard Forge Metal Zitadel path:
-`auth-middleware` validates the JWT issuer, audience, JWKS, org claim, and
-project roles. `secrets-service` owns its operation catalog and maps roles as:
+`auth-middleware` validates issuer, audience, JWKS, org claim, and project
+roles. `secrets-service` owns its operation catalog and maps roles as:
 
-- `owner` and `admin`: read, write, delete, key create, key rotate, and key use.
+- `owner` and `admin`: full secrets, variables, opaque credential, and transit
+  permissions.
 - `member`: read secrets/variables and use transit keys.
 - API credentials: exact `permissions` claims emitted by identity-service.
 
-Sandbox injection is service-to-service, not user-token forwarding. The sandbox
-worker sends `org_id`, `actor_id`, `execution_id`, `attempt_id`, and a bounded
-set of references to `/internal/v1/injections/resolve`. That endpoint is not in
-OpenAPI, is loopback-only by nftables, and requires SPIFFE mTLS with the exact
-`sandbox-rental-service` workload ID. `secrets-service` verifies the SPIFFE
-peer and the persisted attempt/grant context before reading from OpenBao with a
-SPIRE JWT-SVID-authenticated OpenBao token.
+OpenBao access is per request:
+
+- User/API credential path: the caller's Zitadel JWT is exchanged for a
+  short-lived OpenBao token for the exact direct role required by the operation.
+- Workload path: `secrets-service` fetches a SPIRE JWT-SVID with audience
+  `openbao`, logs in through OpenBao JWT auth, and receives a short-lived
+  OpenBao token bound to its SPIFFE subject and the selected workload role.
+
+Sandbox secret injection is service-to-service, not user-token forwarding. The
+sandbox worker sends `org_id`, `actor_id`, `execution_id`, `attempt_id`, and a
+bounded set of references to `/internal/v1/injections/resolve`. The endpoint is
+not public OpenAPI, requires SPIFFE mTLS with the exact
+`sandbox-rental-service` workload ID, and resolves values immediately before VM
+execution.
+
+Source Git credentials are also service-to-service. `source-code-hosting-service`
+calls the generated secrets-service `internalclient` over SPIFFE mTLS:
+
+```text
+POST /internal/v1/credentials
+POST /internal/v1/credentials:verify
+```
+
+The source service owns its PostgreSQL projection and Git UX. Secrets-service
+owns token generation, verifier storage, rotation, revocation, and scope
+verification. Attribution remains the origin requester: the source service
+sends `org_id`, `actor_id`, `kind`, scopes, and metadata; secrets-service audit
+rows record both the delegated actor and the caller SPIFFE ID.
 
 Platform-owned runtime provider secrets follow the same service boundary:
-`billing-service`, `sandbox-rental-service`, and `mailbox-service` call
-`/internal/v1/platform-secrets/resolve` over SPIFFE mTLS, `secrets-service`
-maps the caller's exact SPIFFE ID to an allowlist of platform-org secret names,
-and only then reads OpenBao. Those services do not authenticate directly to
-OpenBao.
-
-SPIFFE/SPIRE is the service-to-service workload identity primitive. In-VM
-per-request secret access is still deferred; injection remains launch-time
-environment materialization controlled by sandbox-rental-service.
+repo-owned services call secrets-service over SPIFFE mTLS; they do not
+authenticate directly to OpenBao.
 
 ## Resource Model
 
-Secrets and variables share the same metadata model:
+Secrets:
 
 ```text
-org_id
-kind: secret | variable
+secret_id
+kind: secret
 name
 scope_level: org | source | environment | branch
 source_id
@@ -167,22 +125,61 @@ branch_hash + branch_display
 current_version
 ```
 
-Branch names are hashed for lookup. Audit rows use `secret_path_hash` rather
-than plaintext path segments so names like `PROD_STRIPE_KEY` do not become
-analytics data.
+Variables use the same persisted metadata with public DTO names
+`variable_id` and `variables`. They are retrievable non-secret configuration,
+not a subtype of a secret in the API.
 
-Transit keys are org-scoped. Key versions are envelope-wrapped; ciphertexts and
-signatures carry an explicit version prefix so old material remains decryptable
-or verifiable after rotation.
+Opaque credentials:
+
+```text
+credential_id
+org_id
+kind
+subject
+display_name
+status: active | revoked
+token_prefix
+scopes[]
+metadata{}
+current_version
+expires_at
+last_used_at
+created_at
+updated_at
+revoked_at
+```
+
+The verifier material is not retrievable after generation. Roll creates fresh
+material and replaces the stored verifier; revoke marks the metadata inactive.
 
 ## API Surface
 
-Committed OpenAPI specs live in `src/secrets-service/openapi/`:
+Committed OpenAPI specs live in `src/secrets-service/openapi/`.
+
+Secrets:
 
 - `PUT /api/v1/secrets/{name}`
 - `GET /api/v1/secrets/{name}`
 - `GET /api/v1/secrets`
 - `DELETE /api/v1/secrets/{name}`
+
+Variables:
+
+- `PUT /api/v1/variables/{name}`
+- `GET /api/v1/variables/{name}`
+- `GET /api/v1/variables`
+- `DELETE /api/v1/variables/{name}`
+
+Opaque credentials:
+
+- `POST /api/v1/credentials`
+- `GET /api/v1/credentials/{credential_id}`
+- `GET /api/v1/credentials`
+- `POST /api/v1/credentials/{credential_id}/roll`
+- `POST /api/v1/credentials/{credential_id}/revoke`
+
+Transit:
+
 - `POST /api/v1/transit/keys`
 - `POST /api/v1/transit/keys/{key_name}/rotate`
 - `POST /api/v1/transit/keys/{key_name}/encrypt`
@@ -194,54 +191,77 @@ Mutations require `Idempotency-Key`. Request bodies are size-bounded. Public
 routes carry `x-forge-metal-iam` metadata so identity-service can expose the
 operation catalog and generated clients can treat permissions as data.
 
-## Audit
+## Audit And Traces
 
-Every public operation and every internal platform runtime secret read sends a
-structured governance audit record.
+Every public operation and every internal service-to-service credential or
+runtime secret operation sends a structured governance audit record.
 Governance persists the HMAC chain and the full event row to PostgreSQL first,
 then projects to ClickHouse. A background projector retries pending rows so a
 transient ClickHouse outage does not lose a high-risk secrets audit event.
 
-Expected evidence for a successful proof path:
+Expected audit events for the live secrets proof include:
 
 ```text
 secrets.secret.write
 secrets.secret.read
 secrets.secret.list
 secrets.secret.delete
+secrets.variable.write
+secrets.variable.read
+secrets.variable.list
+secrets.variable.delete
+secrets.credential.create
+secrets.credential.read
+secrets.credential.list
+secrets.credential.roll
+secrets.credential.revoke
 secrets.transit_key.create
+secrets.transit_key.rotate
 secrets.transit_key.encrypt
 secrets.transit_key.decrypt
 secrets.transit_key.sign
 secrets.transit_key.verify
 ```
 
-The corresponding trace path in `default.otel_traces` includes:
+Expected trace spans in `default.otel_traces` include:
 
 ```text
-secrets-service: secrets.secret.put
-secrets-service: secrets.secret.read
-secrets-service: secrets.secret.list
-secrets-service: secrets.secret.delete
-secrets-service: secrets.transit.encrypt
-secrets-service: secrets.transit.decrypt
-secrets-service: secrets.transit.sign
-secrets-service: secrets.transit.verify
+secrets-service: secrets.secret.*
+secrets-service: secrets.variable.*
+secrets-service: secrets.credential.*
+secrets-service: secrets.transit.*
 secrets-service: secrets.bao.*
 secrets-service: secrets.billing.*
 ```
 
+The source Git proof additionally asserts this cross-service sequence:
+
+```text
+source-code-hosting-service: source.secrets.git_credential.create
+source-code-hosting-service: auth.spiffe.mtls.client
+secrets-service: auth.spiffe.mtls.server
+secrets-service: secrets.credential.internal_create
+secrets-service: secrets.credential.create
+secrets-service: secrets.bao.transit.hmac
+source-code-hosting-service: source.secrets.git_credential.verify
+secrets-service: secrets.credential.internal_verify
+secrets-service: secrets.credential.verify
+secrets-service: secrets.bao.transit.verify_hmac
+```
+
 ## Deployment
 
-The Ansible role creates:
+The Ansible roles create:
 
 - `secrets_service` Unix user with SPIRE workload socket group access.
 - loopback-only public and internal listeners; the internal listener requires
   SPIFFE mTLS.
 - loopback-only nftables rules for Zitadel, OpenBao, SPIRE JWT bundle endpoint,
-  billing, governance audit, and OTLP egress.
+  billing, governance audit, source-code-hosting-service, and OTLP egress.
 - a Zitadel project named `secrets-service` with `owner`, `admin`, and
   `member` roles.
+- per-org OpenBao KV, Transit, JWT roles, direct API policies, and SPIFFE
+  workload policies.
 
 `seed-system.yml` grants the platform and Acme seed personas matching
 secrets-service roles. `assume-persona.sh` emits
@@ -252,32 +272,36 @@ secrets-service roles. `assume-persona.sh` emits
 Completion requires live ClickHouse evidence, not only unit tests:
 
 ```bash
-make deploy TAGS=deploy_profile,identity_service,governance_service,secrets_service,sandbox_rental_service
+make deploy TAGS=deploy_profile,identity_service,governance_service,billing_service,secrets_service,source_code_hosting_service,sandbox_rental_service
 make seed-system
 make secrets-proof
+make source-code-hosting-proof
 ```
 
-`make secrets-proof` creates a secret, reads it back, creates and uses a
-transit key, exercises API-credential access, and asserts:
+`make secrets-proof` creates and deletes a secret, creates and deletes a
+variable, creates/reads/lists/rolls/revokes an opaque credential, creates and
+uses transit keys, exercises API-credential access, and asserts:
 
-- `secret_resources` has the expected versioned row.
 - `default.otel_traces` contains the expected secrets-service spans.
 - `forge_metal.audit_events` contains the expected secrets audit sequence.
+- `forge_metal.metering` contains settled secrets operation rows.
+- OpenBao does not contain legacy service-token bootstrap material.
+
+`make source-code-hosting-proof` creates a Git credential through
+source-code-hosting-service, pushes to `git.<domain>`, verifies the credential
+through secrets-service over SPIFFE mTLS, asserts source PostgreSQL projections,
+and asserts the source -> secrets -> OpenBao trace sequence in ClickHouse.
 
 ## Invariants
 
-- Secret values are never written to ClickHouse, sandbox PostgreSQL, audit
-  records, or proof artifacts.
+- Secret values and opaque credential tokens are never written to ClickHouse,
+  PostgreSQL projections, audit records, logs, or proof artifacts.
 - Secrets-service never receives host privilege or vm-orchestrator access.
-- The historical local envelope key is stop-gap deployment secret material; it
-  is removed when the OpenBao backend is the only executable path.
-- Secret names should not encode sensitive facts; audit still treats path names
-  as sensitive and records hashes.
+- Secret and variable names should not encode sensitive facts; audit still
+  treats path names as sensitive and records hashes.
 - Cloud IAM integration, outward OIDC federation, and dynamic credentials
   remain future phases outside the current product contract.
-- The OpenBao backend is not customer-visible: mount names, namespace names,
-  and backend paths never appear in API responses, error messages, or
-  customer-facing UI copy.
+- OpenBao is not customer-visible.
 - OpenBao is not the repo-owned workload identity source of truth. It accepts
   SPIRE-issued identity documents and maps trusted SPIFFE subjects to resource
   policies.
@@ -290,7 +314,7 @@ transit key, exercises API-credential access, and asserts:
 - Audit contract: `src/governance-service/docs/audit-data-contract.md`
 - Sandbox control plane: `src/sandbox-rental-service/docs/vm-execution-control-plane.md`
 - Wire contracts: `src/apiwire/docs/wire-contracts.md`
+- OpenBao Transit API: <https://openbao.org/api-docs/secret/transit/>
 - Huma v2 API framework: <https://pkg.go.dev/github.com/danielgtaylor/huma/v2>
 - OpenTelemetry trace API: <https://opentelemetry.io/docs/specs/otel/trace/api/>
-- PostgreSQL partial indexes: <https://www.postgresql.org/docs/current/indexes-partial.html>
 - ClickHouse OpenTelemetry schema usage in this repo: `make clickhouse-schemas`

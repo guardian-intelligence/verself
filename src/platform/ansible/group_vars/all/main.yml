@@ -10,7 +10,7 @@ fm_bin: "/opt/forge-metal/profile/bin"
 #   console.<domain>       → authenticated product console
 #   <service>.api.<domain> → customer, SDK, and CLI APIs
 #   dashboard.<domain>     → Grafana dashboard
-#   git.<domain>           → Forgejo
+#   git.<domain>           → source-code-hosting-service Git smart HTTP
 forge_metal_domain: "anveio.com"
 
 console_subdomain: console
