@@ -55,6 +55,9 @@ export const statementQuery = (auth: AuthenticatedAuth, productId: string) =>
   });
 
 function logBillingPageLoadError(error: unknown) {
+  if (isClientSideLoaderAbort(error)) {
+    return;
+  }
   const spanContext = trace.getActiveSpan()?.spanContext();
   const errorObject = error instanceof Error ? error : undefined;
   console.error(
@@ -67,6 +70,17 @@ function logBillingPageLoadError(error: unknown) {
       error_message: errorObject?.message ?? String(error),
       error_stack: errorObject?.stack ?? "",
     }),
+  );
+}
+
+function isClientSideLoaderAbort(error: unknown): boolean {
+  if (typeof window === "undefined" || !(error instanceof Error)) {
+    return false;
+  }
+  // Auth partition changes can abort in-flight browser server-function fetches.
+  return (
+    error.name === "AbortError" ||
+    (error.name === "TypeError" && error.message === "Failed to fetch")
   );
 }
 
