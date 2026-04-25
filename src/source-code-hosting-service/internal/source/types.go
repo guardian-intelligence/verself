@@ -19,7 +19,7 @@ var (
 	ErrUnauthorized     = errors.New("source: unauthorized")
 	ErrStoreUnavailable = errors.New("source: store unavailable")
 	ErrForgejo          = errors.New("source: forgejo unavailable")
-	ErrSandbox          = errors.New("source: sandbox unavailable")
+	ErrRunner           = errors.New("source: runner registration unavailable")
 )
 
 var slugPattern = regexp.MustCompile(`[^a-z0-9-]+`)
@@ -30,18 +30,9 @@ const (
 	GitCredentialUsername = "fm"
 	GitCredentialKind     = "source_git_https"
 
-	DefaultSourceCIRunCommand = "printf 'forge-metal source ci\\n'"
-
 	WorkflowRunStateDispatching = "dispatching"
 	WorkflowRunStateDispatched  = "dispatched"
 	WorkflowRunStateFailed      = "failed"
-
-	CIRunStateQueued    = "queued"
-	CIRunStateRunning   = "running"
-	CIRunStateSucceeded = "succeeded"
-	CIRunStateFailed    = "failed"
-	CIRunStateCanceled  = "canceled"
-	CIRunStateSkipped   = "skipped"
 )
 
 type Principal struct {
@@ -125,6 +116,10 @@ type GitCredentialIssuer interface {
 	VerifySourceGitCredential(ctx context.Context, orgID uint64, actorID string, token string, requiredScopes []string) (GitCredential, bool, error)
 }
 
+type RunnerRepositoryRegistrar interface {
+	RegisterRunnerRepository(ctx context.Context, repo Repository) error
+}
+
 type GitRepositoryPath struct {
 	OrgPath     string
 	Slug        string
@@ -154,34 +149,6 @@ type Blob struct {
 	Size        int64
 	SHA         string
 	DownloadURL string
-}
-
-type CIRun struct {
-	CIRunID            uuid.UUID
-	OrgID              uint64
-	RepoID             uuid.UUID
-	ActorID            string
-	RefName            string
-	CommitSHA          string
-	TriggerEvent       string
-	State              string
-	SandboxExecutionID uuid.UUID
-	SandboxAttemptID   uuid.UUID
-	FailureReason      string
-	TraceID            string
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
-	StartedAt          *time.Time
-	CompletedAt        *time.Time
-}
-
-type SandboxCISubmitter interface {
-	SubmitSourceCIRun(ctx context.Context, repo Repository, run CIRun) (SandboxCISubmission, error)
-}
-
-type SandboxCISubmission struct {
-	ExecutionID uuid.UUID
-	AttemptID   uuid.UUID
 }
 
 type CheckoutGrant struct {

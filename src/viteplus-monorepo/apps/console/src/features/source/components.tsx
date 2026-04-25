@@ -5,22 +5,12 @@ import { useSignedInAuth } from "@forge-metal/auth-web/react";
 import { Badge } from "@forge-metal/ui/components/ui/badge";
 import { Button } from "@forge-metal/ui/components/ui/button";
 import { toast } from "@forge-metal/ui/components/ui/sonner";
-import {
-  Copy,
-  GitBranch,
-  GitCommit,
-  GitPullRequest,
-  KeyRound,
-  PlayCircle,
-  Terminal,
-} from "lucide-react";
+import { Copy, GitBranch, GitCommit, GitPullRequest, KeyRound, Terminal } from "lucide-react";
 import { EmptyState } from "~/components/empty-state";
 import { formatDateTimeUTC } from "~/lib/format";
 import { createSourceGitCredential } from "~/server-fns/api";
-import type { SourceCIRunList, SourceGitCredential, SourceRepository } from "~/server-fns/api";
-import { sourceCIRunsQuery, sourceRefsQuery, sourceRepositoriesQuery } from "./queries";
-
-const ACTIVE_CI_STATES = new Set(["queued", "running"]);
+import type { SourceGitCredential, SourceRepository } from "~/server-fns/api";
+import { sourceRefsQuery, sourceRepositoriesQuery } from "./queries";
 
 export function SourceRepositoriesPanel({ gitOrigin }: { gitOrigin: string }) {
   const auth = useSignedInAuth();
@@ -42,9 +32,7 @@ export function SourceRepositoriesPanel({ gitOrigin }: { gitOrigin: string }) {
 function SourceRepositoryCard({ repo }: { repo: SourceRepository }) {
   const auth = useSignedInAuth();
   const refs = useSuspenseQuery(sourceRefsQuery(auth, repo.repo_id)).data.refs;
-  const ciRuns = useSuspenseQuery(sourceCIRunsQuery(auth, repo.repo_id)).data;
   const activeBranches = refs.filter((ref) => ref.name !== repo.default_branch);
-  const runningJobs = activeCIRuns(ciRuns);
 
   return (
     <article className="rounded-md border bg-card">
@@ -61,69 +49,34 @@ function SourceRepositoryCard({ repo }: { repo: SourceRepository }) {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Badge variant={runningJobs.length > 0 ? "warning" : "outline"}>
-            {runningJobs.length} active CI
-          </Badge>
           <Badge variant={activeBranches.length > 0 ? "info" : "outline"}>
             {activeBranches.length} active branches
           </Badge>
         </div>
       </div>
 
-      <div className="grid gap-0 md:grid-cols-2">
-        <div className="border-b px-4 py-4 md:border-b-0 md:border-r">
-          <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold">
-            <GitPullRequest className="size-4 text-muted-foreground" aria-hidden="true" />
-            Branches
-          </h3>
-          {activeBranches.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No active PR branches.</p>
-          ) : (
-            <ul className="grid gap-3">
-              {activeBranches.map((branch) => {
-                const branchJob = runningJobs.find((job) => job.ref_name === branch.name);
-                return (
-                  <li key={branch.name} className="flex min-w-0 items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="truncate font-mono text-sm">{branch.name}</div>
-                      <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                        <GitCommit className="size-3" aria-hidden="true" />
-                        <span className="font-mono">{shortCommit(branch.commit)}</span>
-                      </div>
-                    </div>
-                    <Badge variant={branchJob ? ciBadgeVariant(branchJob.state) : "outline"}>
-                      {branchJob ? branchJob.state : "no CI"}
-                    </Badge>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-
-        <div className="px-4 py-4">
-          <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold">
-            <PlayCircle className="size-4 text-muted-foreground" aria-hidden="true" />
-            CI jobs
-          </h3>
-          {runningJobs.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No active CI jobs.</p>
-          ) : (
-            <ul className="grid gap-3">
-              {runningJobs.map((job) => (
-                <li key={job.ci_run_id} className="min-w-0">
-                  <div className="flex min-w-0 items-center justify-between gap-3">
-                    <span className="truncate font-mono text-sm">{job.ref_name}</span>
-                    <Badge variant={ciBadgeVariant(job.state)}>{job.state}</Badge>
+      <div className="px-4 py-4">
+        <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold">
+          <GitPullRequest className="size-4 text-muted-foreground" aria-hidden="true" />
+          Branches
+        </h3>
+        {activeBranches.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No active PR branches.</p>
+        ) : (
+          <ul className="grid gap-3">
+            {activeBranches.map((branch) => (
+              <li key={branch.name} className="flex min-w-0 items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate font-mono text-sm">{branch.name}</div>
+                  <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                    <GitCommit className="size-3" aria-hidden="true" />
+                    <span className="font-mono">{shortCommit(branch.commit)}</span>
                   </div>
-                  <div className="mt-1 truncate text-xs text-muted-foreground">
-                    {shortCommit(job.commit_sha)} · {formatDateTimeUTC(job.updated_at)}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </article>
   );
@@ -224,23 +177,6 @@ function CredentialLine({
       </div>
     </div>
   );
-}
-
-function activeCIRuns(ciRuns: SourceCIRunList) {
-  return ciRuns.ci_runs.filter((run) => ACTIVE_CI_STATES.has(run.state));
-}
-
-function ciBadgeVariant(state: string) {
-  switch (state) {
-    case "running":
-      return "info";
-    case "queued":
-      return "warning";
-    case "failed":
-      return "destructive";
-    default:
-      return "outline";
-  }
 }
 
 function shortCommit(commit: string) {

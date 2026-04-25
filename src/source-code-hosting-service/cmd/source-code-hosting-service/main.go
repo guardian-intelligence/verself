@@ -86,7 +86,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("source sandbox-rental mtls: %w", err)
 	}
-	sandboxClient, err := source.NewSandboxClient(sandboxInternalURL, sandboxHTTPClient)
+	runnerClient, err := source.NewRunnerRepositoryClient(sandboxInternalURL, sandboxHTTPClient)
 	if err != nil {
 		return fmt.Errorf("create sandbox-rental internal client: %w", err)
 	}
@@ -113,7 +113,7 @@ func run() error {
 			Owner:   forgejoOwner,
 			Client:  &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport), Timeout: 5 * time.Second},
 		},
-		Sandbox:       sandboxClient,
+		Runner:        runnerClient,
 		Credentials:   credentialClient,
 		CheckoutTTL:   5 * time.Minute,
 		ForgejoPrefix: "fm",

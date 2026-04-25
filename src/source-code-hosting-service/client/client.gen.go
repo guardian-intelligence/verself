@@ -35,33 +35,6 @@ type Blob struct {
 	Size        int64   `json:"size"`
 }
 
-// CIRun defines model for CIRun.
-type CIRun struct {
-	ActorId            string     `json:"actor_id"`
-	CiRunId            string     `json:"ci_run_id"`
-	CommitSha          string     `json:"commit_sha"`
-	CompletedAt        *time.Time `json:"completed_at,omitempty"`
-	CreatedAt          time.Time  `json:"created_at"`
-	FailureReason      *string    `json:"failure_reason,omitempty"`
-	OrgId              string     `json:"org_id"`
-	RefName            string     `json:"ref_name"`
-	RepoId             string     `json:"repo_id"`
-	SandboxAttemptId   *string    `json:"sandbox_attempt_id,omitempty"`
-	SandboxExecutionId *string    `json:"sandbox_execution_id,omitempty"`
-	StartedAt          *time.Time `json:"started_at,omitempty"`
-	State              string     `json:"state"`
-	TraceId            *string    `json:"trace_id,omitempty"`
-	TriggerEvent       string     `json:"trigger_event"`
-	UpdatedAt          time.Time  `json:"updated_at"`
-}
-
-// CIRunList defines model for CIRunList.
-type CIRunList struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema *string  `json:"$schema,omitempty"`
-	CiRuns *[]CIRun `json:"ci_runs"`
-}
-
 // CheckoutGrant defines model for CheckoutGrant.
 type CheckoutGrant struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -386,9 +359,6 @@ type ClientInterface interface {
 
 	CreateSourceCheckoutGrant(ctx context.Context, repoId openapi_types.UUID, params *CreateSourceCheckoutGrantParams, body CreateSourceCheckoutGrantJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// ListSourceCiRuns request
-	ListSourceCiRuns(ctx context.Context, repoId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
-
 	// ListSourceRefs request
 	ListSourceRefs(ctx context.Context, repoId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -505,18 +475,6 @@ func (c *Client) CreateSourceCheckoutGrantWithBody(ctx context.Context, repoId o
 
 func (c *Client) CreateSourceCheckoutGrant(ctx context.Context, repoId openapi_types.UUID, params *CreateSourceCheckoutGrantParams, body CreateSourceCheckoutGrantJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateSourceCheckoutGrantRequest(c.Server, repoId, params, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) ListSourceCiRuns(ctx context.Context, repoId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListSourceCiRunsRequest(c.Server, repoId)
 	if err != nil {
 		return nil, err
 	}
@@ -894,40 +852,6 @@ func NewCreateSourceCheckoutGrantRequestWithBody(server string, repoId openapi_t
 	return req, nil
 }
 
-// NewListSourceCiRunsRequest generates requests for ListSourceCiRuns
-func NewListSourceCiRunsRequest(server string, repoId openapi_types.UUID) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "repo_id", repoId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/repos/%s/ci-runs", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
 // NewListSourceRefsRequest generates requests for ListSourceRefs
 func NewListSourceRefsRequest(server string, repoId openapi_types.UUID) (*http.Request, error) {
 	var err error
@@ -1229,9 +1153,6 @@ type ClientWithResponsesInterface interface {
 
 	CreateSourceCheckoutGrantWithResponse(ctx context.Context, repoId openapi_types.UUID, params *CreateSourceCheckoutGrantParams, body CreateSourceCheckoutGrantJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateSourceCheckoutGrantResponse, error)
 
-	// ListSourceCiRunsWithResponse request
-	ListSourceCiRunsWithResponse(ctx context.Context, repoId openapi_types.UUID, reqEditors ...RequestEditorFn) (*ListSourceCiRunsResponse, error)
-
 	// ListSourceRefsWithResponse request
 	ListSourceRefsWithResponse(ctx context.Context, repoId openapi_types.UUID, reqEditors ...RequestEditorFn) (*ListSourceRefsResponse, error)
 
@@ -1382,29 +1303,6 @@ func (r CreateSourceCheckoutGrantResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r CreateSourceCheckoutGrantResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type ListSourceCiRunsResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *CIRunList
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r ListSourceCiRunsResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r ListSourceCiRunsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -1602,15 +1500,6 @@ func (c *ClientWithResponses) CreateSourceCheckoutGrantWithResponse(ctx context.
 		return nil, err
 	}
 	return ParseCreateSourceCheckoutGrantResponse(rsp)
-}
-
-// ListSourceCiRunsWithResponse request returning *ListSourceCiRunsResponse
-func (c *ClientWithResponses) ListSourceCiRunsWithResponse(ctx context.Context, repoId openapi_types.UUID, reqEditors ...RequestEditorFn) (*ListSourceCiRunsResponse, error) {
-	rsp, err := c.ListSourceCiRuns(ctx, repoId, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseListSourceCiRunsResponse(rsp)
 }
 
 // ListSourceRefsWithResponse request returning *ListSourceRefsResponse
@@ -1851,39 +1740,6 @@ func ParseCreateSourceCheckoutGrantResponse(rsp *http.Response) (*CreateSourceCh
 			return nil, err
 		}
 		response.JSON201 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseListSourceCiRunsResponse parses an HTTP response from a ListSourceCiRunsWithResponse call
-func ParseListSourceCiRunsResponse(rsp *http.Response) (*ListSourceCiRunsResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &ListSourceCiRunsResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest CIRunList
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorModel

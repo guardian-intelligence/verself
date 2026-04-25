@@ -6,7 +6,6 @@ import {
   type CreateRepositoryRequestWritable,
   type GetSourceBlobData,
   type GetSourceTreeData,
-  type ListSourceCiRunsData,
   type ListSourceWorkflowRunsData,
   createSourceCheckoutGrant,
   createSourceGitCredential,
@@ -14,15 +13,12 @@ import {
   getSourceBlob,
   getSourceRepository,
   getSourceTree,
-  listSourceCiRuns,
   listSourceWorkflowRuns,
   listSourceRefs,
   listSourceRepositories,
 } from "../__generated/source-code-hosting-api/index.js";
 import {
   vBlob,
-  vCiRun,
-  vCiRunList,
   vCheckoutGrant,
   vCreateCheckoutGrantRequest,
   vCreateGitCredentialRequest,
@@ -32,7 +28,6 @@ import {
   vGetSourceRepositoryPath,
   vGetSourceTreeQuery,
   vGetSourceTreePath,
-  vListSourceCiRunsPath,
   vListSourceRefsPath,
   vListSourceWorkflowRunsPath,
   vGitCredential,
@@ -114,21 +109,6 @@ function parseWorkflowRunList(input: unknown) {
 }
 
 export type SourceWorkflowRunList = ReturnType<typeof parseWorkflowRunList>;
-
-function parseCIRun(input: unknown) {
-  return v.parse(vCiRun, input);
-}
-
-export type SourceCIRun = ReturnType<typeof parseCIRun>;
-
-function parseCIRunList(input: unknown) {
-  const parsed = v.parse(vCiRunList, input);
-  return {
-    ci_runs: parsed.ci_runs?.map((run) => parseCIRun(run)) ?? [],
-  };
-}
-
-export type SourceCIRunList = ReturnType<typeof parseCIRunList>;
 
 function parseTree(input: unknown) {
   const parsed = v.parse(vTree, input);
@@ -243,24 +223,6 @@ export async function getRepository(
     throwSourceError(path, result.response, result.error);
   }
   return parseRepository(result.data);
-}
-
-export async function listCIRuns(
-  options: SourceCodeHostingClientOptions & { repoId: string },
-): Promise<SourceCIRunList> {
-  const client = createSourceClient(options);
-  const pathParams = v.parse(vListSourceCiRunsPath, { repo_id: options.repoId });
-  const path = `/api/v1/repos/${options.repoId}/ci-runs`;
-  const result = await listSourceCiRuns({
-    client,
-    path: pathParams as NonNullable<ListSourceCiRunsData["path"]>,
-    responseStyle: "fields",
-    throwOnError: false,
-  });
-  if (result.error !== undefined) {
-    throwSourceError(path, result.response, result.error);
-  }
-  return parseCIRunList(result.data);
 }
 
 export async function listRefs(

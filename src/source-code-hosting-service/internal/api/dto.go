@@ -82,29 +82,6 @@ type Blob struct {
 	DownloadURL string `json:"download_url,omitempty"`
 }
 
-type CIRun struct {
-	CIRunID            uuid.UUID  `json:"ci_run_id"`
-	OrgID              string     `json:"org_id"`
-	RepoID             uuid.UUID  `json:"repo_id"`
-	ActorID            string     `json:"actor_id"`
-	RefName            string     `json:"ref_name"`
-	CommitSHA          string     `json:"commit_sha"`
-	TriggerEvent       string     `json:"trigger_event"`
-	State              string     `json:"state"`
-	SandboxExecutionID *uuid.UUID `json:"sandbox_execution_id,omitempty"`
-	SandboxAttemptID   *uuid.UUID `json:"sandbox_attempt_id,omitempty"`
-	FailureReason      string     `json:"failure_reason,omitempty"`
-	TraceID            string     `json:"trace_id,omitempty"`
-	CreatedAt          time.Time  `json:"created_at"`
-	UpdatedAt          time.Time  `json:"updated_at"`
-	StartedAt          *time.Time `json:"started_at,omitempty"`
-	CompletedAt        *time.Time `json:"completed_at,omitempty"`
-}
-
-type CIRunList struct {
-	CIRuns []CIRun `json:"ci_runs"`
-}
-
 type CreateCheckoutGrantRequest struct {
 	Ref        string `json:"ref,omitempty" maxLength:"255"`
 	PathPrefix string `json:"path_prefix,omitempty" maxLength:"1024"`
@@ -223,40 +200,6 @@ func blobDTO(blob source.Blob) Blob {
 		SHA:         blob.SHA,
 		DownloadURL: blob.DownloadURL,
 	}
-}
-
-func ciRunDTO(run source.CIRun) CIRun {
-	out := CIRun{
-		CIRunID:       run.CIRunID,
-		OrgID:         uintString(run.OrgID),
-		RepoID:        run.RepoID,
-		ActorID:       run.ActorID,
-		RefName:       run.RefName,
-		CommitSHA:     run.CommitSHA,
-		TriggerEvent:  run.TriggerEvent,
-		State:         run.State,
-		FailureReason: run.FailureReason,
-		TraceID:       run.TraceID,
-		CreatedAt:     run.CreatedAt,
-		UpdatedAt:     run.UpdatedAt,
-		StartedAt:     run.StartedAt,
-		CompletedAt:   run.CompletedAt,
-	}
-	if run.SandboxExecutionID != uuid.Nil {
-		out.SandboxExecutionID = &run.SandboxExecutionID
-	}
-	if run.SandboxAttemptID != uuid.Nil {
-		out.SandboxAttemptID = &run.SandboxAttemptID
-	}
-	return out
-}
-
-func ciRunDTOs(runs []source.CIRun) []CIRun {
-	out := make([]CIRun, 0, len(runs))
-	for _, run := range runs {
-		out = append(out, ciRunDTO(run))
-	}
-	return out
 }
 
 func checkoutGrantDTO(grant source.CheckoutGrant) CheckoutGrant {
