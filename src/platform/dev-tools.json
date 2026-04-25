@@ -74,6 +74,16 @@
     "install_dir": "/usr/local",
     "version_cmd": "protoc --version"
   },
+  "cue": {
+    "version": "0.15.4",
+    "strategy": "tarball",
+    "url": "https://github.com/cue-lang/cue/releases/download/v0.15.4/cue_v0.15.4_linux_amd64.tar.gz",
+    "sha256": "4709f0d3e9988b82192a205953fefdbb3637317a1cef63d84fe65b7b92ef95a3",
+    "strip_components": 0,
+    "bin_name": "cue",
+    "install_path": "/usr/local/bin/cue",
+    "version_cmd": "cue version"
+  },
   "buf": {
     "version": "1.66.1",
     "strategy": "binary",

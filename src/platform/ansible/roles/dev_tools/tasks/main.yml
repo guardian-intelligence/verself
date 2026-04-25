@@ -195,6 +195,59 @@
   when: dev_tools_manifest.protoc is defined
 
 # ============================================================================
+# CUE (tarball → single binary)
+# ============================================================================
+
+- name: Check current CUE version
+  ansible.builtin.command: /usr/local/bin/cue version
+  register: dev_tools_cue_current
+  changed_when: false
+  failed_when: false
+  when: dev_tools_manifest.cue is defined
+
+- name: Install CUE {{ dev_tools_manifest.cue.version }}
+  when:
+    - dev_tools_manifest.cue is defined
+    - dev_tools_cue_current.rc != 0 or ("v" ~ dev_tools_manifest.cue.version) not in (dev_tools_cue_current.stdout | default(''))
+  block:
+    - name: Create temp dir for CUE
+      ansible.builtin.tempfile:
+        state: directory
+      register: dev_tools_cue_tmp
+
+    - name: Download CUE tarball
+      ansible.builtin.get_url:
+        url: "{{ dev_tools_manifest.cue.url }}"
+        dest: "{{ dev_tools_cue_tmp.path }}/cue.tar.gz"
+        checksum: "sha256:{{ dev_tools_manifest.cue.sha256 }}"
+        mode: "0644"
+
+    - name: Extract CUE
+      ansible.builtin.unarchive:
+        src: "{{ dev_tools_cue_tmp.path }}/cue.tar.gz"
+        dest: "{{ dev_tools_cue_tmp.path }}"
+        remote_src: true
+
+    - name: Install CUE binary
+      ansible.builtin.copy:
+        src: "{{ dev_tools_cue_tmp.path }}/{{ dev_tools_manifest.cue.bin_name }}"
+        dest: "{{ dev_tools_manifest.cue.install_path }}"
+        remote_src: true
+        mode: "0755"
+
+    - name: Clean up temp dir
+      ansible.builtin.file:
+        path: "{{ dev_tools_cue_tmp.path }}"
+        state: absent
+
+- name: Verify CUE version
+  ansible.builtin.command: /usr/local/bin/cue version
+  register: dev_tools_cue_version_check
+  changed_when: false
+  failed_when: "('v' ~ dev_tools_manifest.cue.version) not in dev_tools_cue_version_check.stdout"
+  when: dev_tools_manifest.cue is defined
+
+# ============================================================================
 # Single-binary downloads: buf, jq, sops
 # get_url without force: skips download when dest exists and checksum matches.
 # ============================================================================
