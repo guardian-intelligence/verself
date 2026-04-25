@@ -30,6 +30,10 @@
       tags: [tigerbeetle]
     - role: postgresql
       tags: [postgresql]
+    # verification-reset can run immediately after PostgreSQL is recreated; keep
+    # Zitadel structurally ready before billing/sandbox roles query auth projects.
+    - role: zitadel
+      tags: [zitadel, postgresql]
     - role: billing_service
       tags: [billing_service]
     - role: governance_service
