@@ -1,4 +1,4 @@
-.PHONY: help test lint lint-scripts lint-conversions lint-ansible lint-voice company-proof fmt vet tidy openapi openapi-check openapi-clients openapi-clients-check openapi-wire-check \
+.PHONY: help test lint lint-scripts lint-conversions lint-ansible lint-voice company-proof fmt vet tidy openapi openapi-check openapi-clients openapi-clients-check openapi-wire-check topology-generate topology-check topology-proof \
        hooks-install doctor inventory-check setup-dev setup-sops provision deprovision deploy site guest-rootfs security-patch identity-reset seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member \
        set-user-state billing-clock billing-wall-clock billing-state billing-documents billing-finalizations billing-events billing-pg-shell billing-pg-query billing-proof billing-reset verification-reset \
        profile-proof organization-sync-proof notifications-proof projects-proof source-code-hosting-proof secrets-proof secrets-leak-proof openbao-proof openbao-tenancy-proof workload-identity-proof spiffe-rotation-proof object-storage-verify temporal-verify temporal-web-proof recurring-schedule-proof \
@@ -227,6 +227,15 @@ openapi-wire-check: ## Verify frontend-consumed OpenAPI 3.1 specs are JS wire-sa
 		$(PJS)/openapi/internal-openapi-3.1.yaml \
 		$(SR)/openapi/openapi-3.1.yaml \
 		$(SR)/openapi/internal-openapi-3.1.yaml
+
+topology-generate: ## Regenerate Ansible deploy inputs from CUE topology
+	cd $(PLATFORM_DIR) && ./scripts/topology.py generate
+
+topology-check: ## Verify generated deploy inputs match CUE topology
+	cd $(PLATFORM_DIR) && ./scripts/topology.py check
+
+topology-proof: inventory-check ## Prove topology compile/check spans and generated registry freshness in ClickHouse
+	cd $(PLATFORM_DIR) && ./scripts/verify-topology-live.sh
 
 inventory-check: ## Validate that the generated Ansible inventory exists
 	@test -f "$(INVENTORY)" || { echo "ERROR: $(INVENTORY) not found. Run: cd $(PLATFORM_DIR)/ansible && ansible-playbook playbooks/provision.yml"; exit 1; }
