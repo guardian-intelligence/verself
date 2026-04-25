@@ -534,7 +534,7 @@ WHERE dispatch_id = '${escaped_dispatch_id}';
 " >"${artifact_dir}/postgres/execution_schedule_dispatch.tsv"
 
 remote_psql source_code_hosting "
-SELECT workflow_run_id, org_id, project_id, repo_id, actor_id, provider, workflow_path, ref, state, failure_reason, trace_id
+SELECT workflow_run_id, org_id, project_id, repo_id, actor_id, backend, workflow_path, ref, state, failure_reason, trace_id
 FROM source_workflow_runs
 WHERE workflow_run_id = '${escaped_source_workflow_run_id}'::uuid;
 " >"${artifact_dir}/postgres/source_workflow_run.tsv"
@@ -598,11 +598,11 @@ if row_source_workflow_run_id != source_workflow_run_id or row_project_id != pro
     raise SystemExit("execution_schedule_dispatches source workflow state mismatch")
 
 workflow_run = one_row(workflow_path_tsv, "source_workflow_runs")
-row_workflow_run_id, row_workflow_org_id, row_project_id, row_repo_id, _actor_id, provider, row_workflow_path, row_ref, row_state, failure_reason, trace_id = workflow_run
+row_workflow_run_id, row_workflow_org_id, row_project_id, row_repo_id, _actor_id, backend, row_workflow_path, row_ref, row_state, failure_reason, trace_id = workflow_run
 if row_workflow_run_id != source_workflow_run_id or row_workflow_org_id != org_id or row_project_id != project_id or row_repo_id != source_repo_id:
     raise SystemExit("source_workflow_runs linkage mismatch")
-if provider != "forgejo" or row_workflow_path != workflow_path or row_ref != "main" or row_state != "dispatched" or failure_reason or not trace_id:
-    raise SystemExit("source_workflow_runs state/provider/trace mismatch")
+if backend != "forgejo" or row_workflow_path != workflow_path or row_ref != "main" or row_state != "dispatched" or failure_reason or not trace_id:
+    raise SystemExit("source_workflow_runs state/backend/trace mismatch")
 
 events = {row[0]: row for row in csv.reader(open(events_path, encoding="utf-8"), delimiter="\t") if row}
 for event_type in ("source.workflow.dispatch.requested", "source.workflow.dispatched"):
