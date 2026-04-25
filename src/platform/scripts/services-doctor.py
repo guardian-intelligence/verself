@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Cross-check declared services (services.yml) against live listeners on the box.
+"""Cross-check declared services against live listeners on the box.
 
-Declared source of truth: src/platform/ansible/group_vars/all/services.yml
+Declared source: src/platform/ansible/group_vars/all/generated/services.yml
 Live source: `sudo ss -Hltnp` on the inventory host (TCP listening sockets).
 
 Output modes (FORMAT env):
     table     - default, human-readable drift report + undeclared listener list
     json      - structured dump of declared, listeners, and drift
-    nftables  - suggested host-firewall rules derived from services.yml (not
+    nftables  - suggested host-firewall rules derived from generated services (not
                 authoritative; real rules live in roles/*/templates/*.nft.j2)
 
 Exit codes:
@@ -32,7 +32,7 @@ from typing import Iterable
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SERVICES_YAML = REPO_ROOT / "src/platform/ansible/group_vars/all/services.yml"
+SERVICES_YAML = REPO_ROOT / "src/platform/ansible/group_vars/all/generated/services.yml"
 INVENTORY = REPO_ROOT / "src/platform/ansible/inventory/hosts.ini"
 
 # Ports in these ranges are "ours" — an undeclared listener here is drift.
@@ -55,7 +55,7 @@ UDP_FIELD_NAMES = {"statsd_port"}
 
 @dataclass(frozen=True)
 class Declared:
-    """One declared (service, port-field) entry from services.yml."""
+    """One declared (service, port-field) entry from the generated service registry."""
 
     service: str
     field: str
@@ -117,23 +117,34 @@ def load_declared(path: Path) -> list[Declared]:
     data = yaml.safe_load(path.read_text())
     services = data.get("services") or {}
     out: list[Declared] = []
+
+    def collect_ports(name: str, host: str, listen_host: str | None, value: object, prefix: str = "") -> None:
+        if isinstance(value, dict):
+            for key, child in value.items():
+                field = f"{prefix}.{key}" if prefix else str(key)
+                if str(key) == "port" or str(key).endswith("_port"):
+                    if isinstance(child, int):
+                        out.append(
+                            Declared(
+                                service=name,
+                                field=field,
+                                host=str(host),
+                                port=child,
+                                listen_host=str(listen_host) if listen_host else None,
+                            )
+                        )
+                    continue
+                collect_ports(name, host, listen_host, child, field)
+        elif isinstance(value, list):
+            for index, child in enumerate(value):
+                collect_ports(name, host, listen_host, child, f"{prefix}[{index}]")
+
     for name, spec in services.items():
         if not isinstance(spec, dict):
             continue
         host = spec.get("host", "127.0.0.1")
         listen_host = spec.get("listen_host")
-        for key, value in spec.items():
-            if key == "port" or key.endswith("_port"):
-                if isinstance(value, int):
-                    out.append(
-                        Declared(
-                            service=name,
-                            field=key,
-                            host=str(host),
-                            port=value,
-                            listen_host=str(listen_host) if listen_host else None,
-                        )
-                    )
+        collect_ports(name, str(host), str(listen_host) if listen_host else None, spec)
     return out
 
 
@@ -314,7 +325,7 @@ def render_table(report: Report) -> str:
 
     if report.undeclared:
         lines.append("")
-        lines.append("UNDECLARED LISTENERS (not in services.yml):")
+        lines.append("UNDECLARED LISTENERS (not in generated services registry):")
         for l in sorted(report.undeclared, key=lambda x: (x.port, x.proto)):
             marker = "  !" if in_product_range(l.port) else "   "
             lines.append(f"{marker} {l.proto:3s} {l.bind}:{l.port}  {l.process}")
@@ -363,7 +374,7 @@ def render_json(report: Report) -> str:
 
 
 def render_nftables(report: Report) -> str:
-    """Suggested rules derived from services.yml — NOT the authoritative ruleset.
+    """Suggested rules derived from the generated service registry.
 
     The real firewall is assembled by src/platform/ansible/roles/nftables and
     per-service roles/*/templates/*.nft.j2. This output is a debugging aid for
@@ -384,7 +395,7 @@ def render_nftables(report: Report) -> str:
 
     lines: list[str] = []
     lines.append("#!/usr/sbin/nft -f")
-    lines.append("# Derived from src/platform/ansible/group_vars/all/services.yml")
+    lines.append("# Derived from src/platform/ansible/group_vars/all/generated/services.yml")
     lines.append("# SUGGESTION ONLY — authoritative rules live in Ansible role templates.")
     lines.append("")
     lines.append("table inet verself_services_suggested")

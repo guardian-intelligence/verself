@@ -6,7 +6,7 @@ argument_specs:
       - "Deploys TigerBeetle. Formats the data file"
       - "(idempotent), configures the systemd unit with CAP_IPC_LOCK,"
       - "and verifies health via a transaction smoke test."
-      - "Service ports come from the services registry (group_vars/all/services.yml)."
+      - "Service ports come from the generated services registry (group_vars/all/generated/services.yml)."
     options:
       tigerbeetle_data_dir:
         type: path

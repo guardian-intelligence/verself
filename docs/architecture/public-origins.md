@@ -72,10 +72,11 @@ When a protocol surface also has a Verself product API, the API lives on
 
 ## Implementation Source Of Truth
 
-`src/platform/ansible/group_vars/all/services.yml` remains the service endpoint
-registry. The next cutover should extend that registry with public origin
-metadata so Caddy, Cloudflare DNS, OpenAPI server URLs, frontend environment,
-and documentation all derive from the same source.
+`src/platform/topology` is the service endpoint registry, rendered to
+`src/platform/ansible/group_vars/all/generated/services.yml` for Ansible. The
+next cutover should extend the CUE topology with public origin metadata so
+Caddy, Cloudflare DNS, OpenAPI server URLs, frontend environment, and
+documentation all derive from the same source.
 
 Required registry fields for public APIs:
 

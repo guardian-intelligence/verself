@@ -20,7 +20,7 @@ except ModuleNotFoundError:
     AnsibleLintRule = object  # type: ignore[assignment,misc]
 
 
-REGISTRY = Path("group_vars/all/services.yml")
+REGISTRY = Path("group_vars/all/generated/services.yml")
 CONTROL_PLANE_PORT_MIN = 4240
 CONTROL_PLANE_PORT_MAX = 4269
 RESERVED_PORTS = {4245}
@@ -36,6 +36,7 @@ CONTROL_PLANE_SERVICES = {
     "object_storage_service",
     "platform",
     "profile_service",
+    "projects_service",
     "console",
     "sandbox_rental",
     "secrets_service",
@@ -240,7 +241,7 @@ if Lintable is not None:
         """The services registry must preserve port and host invariants."""
 
         id = "services-registry-contract"
-        description = "Validate group_vars/all/services.yml port and host invariants."
+        description = "Validate group_vars/all/generated/services.yml port and host invariants."
         severity = "HIGH"
         tags = ["custom", "services"]
         version_changed = "0.1.0"
