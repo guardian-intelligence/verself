@@ -18,6 +18,21 @@ const (
 	MutualTLSScopes = "mutualTLS.Scopes"
 )
 
+// Defines values for InternalRegisterRunnerRepositoryRequestProvider.
+const (
+	Forgejo InternalRegisterRunnerRepositoryRequestProvider = "forgejo"
+)
+
+// Valid indicates whether the value is a known member of the InternalRegisterRunnerRepositoryRequestProvider enum.
+func (e InternalRegisterRunnerRepositoryRequestProvider) Valid() bool {
+	switch e {
+	case Forgejo:
+		return true
+	default:
+		return false
+	}
+}
+
 // ErrorDetail defines model for ErrorDetail.
 type ErrorDetail struct {
 	// Location Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'
@@ -54,32 +69,34 @@ type ErrorModel struct {
 	Type *string `json:"type,omitempty"`
 }
 
-// InternalSourceCIRunSubmission defines model for InternalSourceCIRunSubmission.
-type InternalSourceCIRunSubmission struct {
+// InternalRegisterRunnerRepositoryRequest defines model for InternalRegisterRunnerRepositoryRequest.
+type InternalRegisterRunnerRepositoryRequest struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema      *string `json:"$schema,omitempty"`
-	AttemptId   string  `json:"attempt_id"`
-	ExecutionId string  `json:"execution_id"`
-	State       string  `json:"state"`
+	Schema               *string                                         `json:"$schema,omitempty"`
+	OrgId                string                                          `json:"org_id"`
+	Provider             InternalRegisterRunnerRepositoryRequestProvider `json:"provider"`
+	ProviderOwner        string                                          `json:"provider_owner"`
+	ProviderRepo         string                                          `json:"provider_repo"`
+	ProviderRepositoryId string                                          `json:"provider_repository_id"`
+	RepositoryFullName   *string                                         `json:"repository_full_name,omitempty"`
+	SourceRepositoryId   *string                                         `json:"source_repository_id,omitempty"`
 }
 
-// InternalSubmitSourceCiRunRequest defines model for InternalSubmitSourceCiRunRequest.
-type InternalSubmitSourceCiRunRequest struct {
+// InternalRegisterRunnerRepositoryRequestProvider defines model for InternalRegisterRunnerRepositoryRequest.Provider.
+type InternalRegisterRunnerRepositoryRequestProvider string
+
+// InternalRunnerRepositoryRegistration defines model for InternalRunnerRepositoryRegistration.
+type InternalRunnerRepositoryRegistration struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema         *string `json:"$schema,omitempty"`
-	ActorId        string  `json:"actor_id"`
-	CiRunId        string  `json:"ci_run_id"`
-	CommitSha      string  `json:"commit_sha"`
-	IdempotencyKey string  `json:"idempotency_key"`
-	OrgId          string  `json:"org_id"`
-	RefName        string  `json:"ref_name"`
-	RepoId         string  `json:"repo_id"`
-	RunCommand     *string `json:"run_command,omitempty"`
-	RunnerClass    *string `json:"runner_class,omitempty"`
+	Schema               *string `json:"$schema,omitempty"`
+	Provider             string  `json:"provider"`
+	ProviderRepositoryId string  `json:"provider_repository_id"`
+	SourceRepositoryId   *string `json:"source_repository_id,omitempty"`
+	State                string  `json:"state"`
 }
 
-// InternalSubmitSourceCiRunJSONRequestBody defines body for InternalSubmitSourceCiRun for application/json ContentType.
-type InternalSubmitSourceCiRunJSONRequestBody = InternalSubmitSourceCiRunRequest
+// InternalRegisterRunnerRepositoryJSONRequestBody defines body for InternalRegisterRunnerRepository for application/json ContentType.
+type InternalRegisterRunnerRepositoryJSONRequestBody = InternalRegisterRunnerRepositoryRequest
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -154,14 +171,14 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
-	// InternalSubmitSourceCiRunWithBody request with any body
-	InternalSubmitSourceCiRunWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// InternalRegisterRunnerRepositoryWithBody request with any body
+	InternalRegisterRunnerRepositoryWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	InternalSubmitSourceCiRun(ctx context.Context, body InternalSubmitSourceCiRunJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	InternalRegisterRunnerRepository(ctx context.Context, body InternalRegisterRunnerRepositoryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
-func (c *Client) InternalSubmitSourceCiRunWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewInternalSubmitSourceCiRunRequestWithBody(c.Server, contentType, body)
+func (c *Client) InternalRegisterRunnerRepositoryWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewInternalRegisterRunnerRepositoryRequestWithBody(c.Server, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -172,8 +189,8 @@ func (c *Client) InternalSubmitSourceCiRunWithBody(ctx context.Context, contentT
 	return c.Client.Do(req)
 }
 
-func (c *Client) InternalSubmitSourceCiRun(ctx context.Context, body InternalSubmitSourceCiRunJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewInternalSubmitSourceCiRunRequest(c.Server, body)
+func (c *Client) InternalRegisterRunnerRepository(ctx context.Context, body InternalRegisterRunnerRepositoryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewInternalRegisterRunnerRepositoryRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -184,19 +201,19 @@ func (c *Client) InternalSubmitSourceCiRun(ctx context.Context, body InternalSub
 	return c.Client.Do(req)
 }
 
-// NewInternalSubmitSourceCiRunRequest calls the generic InternalSubmitSourceCiRun builder with application/json body
-func NewInternalSubmitSourceCiRunRequest(server string, body InternalSubmitSourceCiRunJSONRequestBody) (*http.Request, error) {
+// NewInternalRegisterRunnerRepositoryRequest calls the generic InternalRegisterRunnerRepository builder with application/json body
+func NewInternalRegisterRunnerRepositoryRequest(server string, body InternalRegisterRunnerRepositoryJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewInternalSubmitSourceCiRunRequestWithBody(server, "application/json", bodyReader)
+	return NewInternalRegisterRunnerRepositoryRequestWithBody(server, "application/json", bodyReader)
 }
 
-// NewInternalSubmitSourceCiRunRequestWithBody generates requests for InternalSubmitSourceCiRun with any type of body
-func NewInternalSubmitSourceCiRunRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+// NewInternalRegisterRunnerRepositoryRequestWithBody generates requests for InternalRegisterRunnerRepository with any type of body
+func NewInternalRegisterRunnerRepositoryRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -204,7 +221,7 @@ func NewInternalSubmitSourceCiRunRequestWithBody(server string, contentType stri
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/internal/v1/source-ci-runs")
+	operationPath := fmt.Sprintf("/internal/v1/runner/repositories")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -267,21 +284,21 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
-	// InternalSubmitSourceCiRunWithBodyWithResponse request with any body
-	InternalSubmitSourceCiRunWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*InternalSubmitSourceCiRunResponse, error)
+	// InternalRegisterRunnerRepositoryWithBodyWithResponse request with any body
+	InternalRegisterRunnerRepositoryWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*InternalRegisterRunnerRepositoryResponse, error)
 
-	InternalSubmitSourceCiRunWithResponse(ctx context.Context, body InternalSubmitSourceCiRunJSONRequestBody, reqEditors ...RequestEditorFn) (*InternalSubmitSourceCiRunResponse, error)
+	InternalRegisterRunnerRepositoryWithResponse(ctx context.Context, body InternalRegisterRunnerRepositoryJSONRequestBody, reqEditors ...RequestEditorFn) (*InternalRegisterRunnerRepositoryResponse, error)
 }
 
-type InternalSubmitSourceCiRunResponse struct {
+type InternalRegisterRunnerRepositoryResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON201                       *InternalSourceCIRunSubmission
+	JSON201                       *InternalRunnerRepositoryRegistration
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
 // Status returns HTTPResponse.Status
-func (r InternalSubmitSourceCiRunResponse) Status() string {
+func (r InternalRegisterRunnerRepositoryResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -289,46 +306,46 @@ func (r InternalSubmitSourceCiRunResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r InternalSubmitSourceCiRunResponse) StatusCode() int {
+func (r InternalRegisterRunnerRepositoryResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-// InternalSubmitSourceCiRunWithBodyWithResponse request with arbitrary body returning *InternalSubmitSourceCiRunResponse
-func (c *ClientWithResponses) InternalSubmitSourceCiRunWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*InternalSubmitSourceCiRunResponse, error) {
-	rsp, err := c.InternalSubmitSourceCiRunWithBody(ctx, contentType, body, reqEditors...)
+// InternalRegisterRunnerRepositoryWithBodyWithResponse request with arbitrary body returning *InternalRegisterRunnerRepositoryResponse
+func (c *ClientWithResponses) InternalRegisterRunnerRepositoryWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*InternalRegisterRunnerRepositoryResponse, error) {
+	rsp, err := c.InternalRegisterRunnerRepositoryWithBody(ctx, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseInternalSubmitSourceCiRunResponse(rsp)
+	return ParseInternalRegisterRunnerRepositoryResponse(rsp)
 }
 
-func (c *ClientWithResponses) InternalSubmitSourceCiRunWithResponse(ctx context.Context, body InternalSubmitSourceCiRunJSONRequestBody, reqEditors ...RequestEditorFn) (*InternalSubmitSourceCiRunResponse, error) {
-	rsp, err := c.InternalSubmitSourceCiRun(ctx, body, reqEditors...)
+func (c *ClientWithResponses) InternalRegisterRunnerRepositoryWithResponse(ctx context.Context, body InternalRegisterRunnerRepositoryJSONRequestBody, reqEditors ...RequestEditorFn) (*InternalRegisterRunnerRepositoryResponse, error) {
+	rsp, err := c.InternalRegisterRunnerRepository(ctx, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseInternalSubmitSourceCiRunResponse(rsp)
+	return ParseInternalRegisterRunnerRepositoryResponse(rsp)
 }
 
-// ParseInternalSubmitSourceCiRunResponse parses an HTTP response from a InternalSubmitSourceCiRunWithResponse call
-func ParseInternalSubmitSourceCiRunResponse(rsp *http.Response) (*InternalSubmitSourceCiRunResponse, error) {
+// ParseInternalRegisterRunnerRepositoryResponse parses an HTTP response from a InternalRegisterRunnerRepositoryWithResponse call
+func ParseInternalRegisterRunnerRepositoryResponse(rsp *http.Response) (*InternalRegisterRunnerRepositoryResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &InternalSubmitSourceCiRunResponse{
+	response := &InternalRegisterRunnerRepositoryResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
-		var dest InternalSourceCIRunSubmission
+		var dest InternalRunnerRepositoryRegistration
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

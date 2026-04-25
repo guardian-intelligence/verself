@@ -125,16 +125,16 @@ func (r *GitHubRunner) authenticateGitHubExecution(ctx context.Context, executio
 	err := r.service.PGX.QueryRow(ctx, `SELECT
 			a.allocation_id,
 			i.org_id,
-			a.installation_id,
-			a.repository_id,
+			a.provider_installation_id,
+			a.provider_repository_id,
 			COALESCE(j.repository_full_name, ''),
-			COALESCE(b.github_job_id, a.requested_for_github_job_id),
+			COALESCE(b.provider_job_id, a.requested_for_provider_job_id),
 			a.runner_name
-			FROM github_runner_allocations a
-			JOIN github_installations i ON i.installation_id = a.installation_id
-			LEFT JOIN github_runner_job_bindings b ON b.allocation_id = a.allocation_id
-			LEFT JOIN github_workflow_jobs j ON j.github_job_id = COALESCE(b.github_job_id, a.requested_for_github_job_id)
-			WHERE a.execution_id = $1 AND a.attempt_id = $2`,
+			FROM runner_allocations a
+			JOIN github_installations i ON i.installation_id = a.provider_installation_id
+			LEFT JOIN runner_job_bindings b ON b.allocation_id = a.allocation_id
+			LEFT JOIN runner_jobs j ON j.provider = a.provider AND j.provider_job_id = COALESCE(b.provider_job_id, a.requested_for_provider_job_id)
+			WHERE a.provider = 'github' AND a.execution_id = $1 AND a.attempt_id = $2`,
 		executionID, attemptID).Scan(&identity.AllocationID, &identity.OrgID, &identity.Installation, &identity.RepositoryID, &identity.RepositoryFullName, &identity.GitHubJobID, &identity.RunnerName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return StickyDiskIdentity{}, unauthorizedErr
@@ -227,14 +227,15 @@ func (r *GitHubRunner) pendingStickyDiskCommits(ctx context.Context, attemptID u
 		m.mount_id, m.mount_name, m.key, m.key_hash, m.mount_path, m.base_generation, m.target_source_ref,
 		m.execution_id, m.attempt_id, m.allocation_id,
 		i.org_id,
-		a.installation_id, a.repository_id, COALESCE(j.repository_full_name, ''),
-		COALESCE(b.github_job_id, a.requested_for_github_job_id), a.runner_name
+		a.provider_installation_id, a.provider_repository_id, COALESCE(j.repository_full_name, ''),
+		COALESCE(b.provider_job_id, a.requested_for_provider_job_id), a.runner_name
 		FROM execution_sticky_disk_mounts m
-		JOIN github_runner_allocations a ON a.allocation_id = m.allocation_id
-		JOIN github_installations i ON i.installation_id = a.installation_id
-		LEFT JOIN github_runner_job_bindings b ON b.allocation_id = a.allocation_id
-		LEFT JOIN github_workflow_jobs j ON j.github_job_id = COALESCE(b.github_job_id, a.requested_for_github_job_id)
+		JOIN runner_allocations a ON a.allocation_id = m.allocation_id
+		JOIN github_installations i ON i.installation_id = a.provider_installation_id
+		LEFT JOIN runner_job_bindings b ON b.allocation_id = a.allocation_id
+		LEFT JOIN runner_jobs j ON j.provider = a.provider AND j.provider_job_id = COALESCE(b.provider_job_id, a.requested_for_provider_job_id)
 		WHERE m.attempt_id = $1 AND m.save_requested AND m.save_state = $2
+		  AND a.provider = 'github'
 		ORDER BY m.requested_at, m.mount_name`, attemptID, stickyDiskStateRequested)
 	if err != nil {
 		return nil, err
@@ -336,8 +337,8 @@ func (r *GitHubRunner) promoteStickyDiskGeneration(ctx context.Context, commit s
 	defer func() { _ = tx.Rollback(ctx) }()
 	var current int64
 	err = tx.QueryRow(ctx, `SELECT current_generation
-		FROM github_sticky_disk_generations
-		WHERE installation_id = $1 AND repository_id = $2 AND key_hash = $3
+		FROM runner_sticky_disk_generations
+		WHERE provider = 'github' AND provider_installation_id = $1 AND provider_repository_id = $2 AND key_hash = $3
 		FOR UPDATE`, commit.Identity.Installation, commit.Identity.RepositoryID, commit.KeyHash).Scan(&current)
 	if errors.Is(err, pgx.ErrNoRows) {
 		current = 0
@@ -348,10 +349,10 @@ func (r *GitHubRunner) promoteStickyDiskGeneration(ctx context.Context, commit s
 		return fmt.Errorf("sticky disk generation moved from %d to %d while execution was running", commit.BaseGeneration, current)
 	}
 	now := time.Now().UTC()
-	_, err = tx.Exec(ctx, `INSERT INTO github_sticky_disk_generations (
-		installation_id, repository_id, key_hash, key, current_generation, current_source_ref, created_at, updated_at
-	) VALUES ($1,$2,$3,$4,$5,$6,$7,$7)
-	ON CONFLICT (installation_id, repository_id, key_hash) DO UPDATE SET
+	_, err = tx.Exec(ctx, `INSERT INTO runner_sticky_disk_generations (
+		provider, provider_installation_id, provider_repository_id, key_hash, key, current_generation, current_source_ref, created_at, updated_at
+	) VALUES ('github',$1,$2,$3,$4,$5,$6,$7,$7)
+	ON CONFLICT (provider, provider_installation_id, provider_repository_id, key_hash) DO UPDATE SET
 		key = EXCLUDED.key,
 		current_generation = EXCLUDED.current_generation,
 		current_source_ref = EXCLUDED.current_source_ref,
@@ -366,8 +367,8 @@ func (r *GitHubRunner) currentStickyDiskGeneration(ctx context.Context, installa
 	var generation int64
 	var sourceRef string
 	err := r.service.PGX.QueryRow(ctx, `SELECT current_generation, current_source_ref
-		FROM github_sticky_disk_generations
-		WHERE installation_id = $1 AND repository_id = $2 AND key_hash = $3`, installationID, repositoryID, keyHash).Scan(&generation, &sourceRef)
+		FROM runner_sticky_disk_generations
+		WHERE provider = 'github' AND provider_installation_id = $1 AND provider_repository_id = $2 AND key_hash = $3`, installationID, repositoryID, keyHash).Scan(&generation, &sourceRef)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, stickyDiskEmptySourceRef, nil
 	}

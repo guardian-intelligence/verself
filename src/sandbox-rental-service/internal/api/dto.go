@@ -61,7 +61,7 @@ func executionRecord(record jobs.ExecutionRecord) apiwire.SandboxExecutionRecord
 		UpdatedAt:        record.UpdatedAt,
 		BillingWindows:   billingWindows(record.BillingWindows),
 		BillingSummary:   runBillingSummary(record.BillingSummary),
-		GitHub:           githubRunMetadata(record.GitHub),
+		Runner:           runnerRunMetadata(record.Runner),
 		Schedule:         scheduleRunMetadata(record.Schedule),
 		StickyDiskMounts: stickyDiskMounts(record.StickyDiskMounts),
 	}
@@ -147,19 +147,19 @@ func runBillingSummary(summary jobs.RunBillingSummary) *apiwire.SandboxRunBillin
 	}
 }
 
-func githubRunMetadata(metadata jobs.GitHubRunMetadata) *apiwire.SandboxGitHubRunMetadata {
-	if metadata.InstallationID == 0 && metadata.RunID == 0 && metadata.JobID == 0 && metadata.RepositoryFullName == "" && metadata.WorkflowName == "" && metadata.JobName == "" && metadata.HeadBranch == "" && metadata.HeadSHA == "" {
+func runnerRunMetadata(metadata jobs.RunnerRunMetadata) *apiwire.SandboxRunnerRunMetadata {
+	if metadata.ProviderInstallationID == 0 && metadata.ProviderRunID == 0 && metadata.ProviderJobID == 0 && metadata.RepositoryFullName == "" && metadata.WorkflowName == "" && metadata.JobName == "" && metadata.HeadBranch == "" && metadata.HeadSHA == "" {
 		return nil
 	}
-	return &apiwire.SandboxGitHubRunMetadata{
-		InstallationID:     strconv.FormatInt(metadata.InstallationID, 10),
-		RunID:              strconv.FormatInt(metadata.RunID, 10),
-		JobID:              strconv.FormatInt(metadata.JobID, 10),
-		RepositoryFullName: metadata.RepositoryFullName,
-		WorkflowName:       metadata.WorkflowName,
-		JobName:            metadata.JobName,
-		HeadBranch:         metadata.HeadBranch,
-		HeadSHA:            metadata.HeadSHA,
+	return &apiwire.SandboxRunnerRunMetadata{
+		ProviderInstallationID: strconv.FormatInt(metadata.ProviderInstallationID, 10),
+		ProviderRunID:          strconv.FormatInt(metadata.ProviderRunID, 10),
+		ProviderJobID:          strconv.FormatInt(metadata.ProviderJobID, 10),
+		RepositoryFullName:     metadata.RepositoryFullName,
+		WorkflowName:           metadata.WorkflowName,
+		JobName:                metadata.JobName,
+		HeadBranch:             metadata.HeadBranch,
+		HeadSHA:                metadata.HeadSHA,
 	}
 }
 

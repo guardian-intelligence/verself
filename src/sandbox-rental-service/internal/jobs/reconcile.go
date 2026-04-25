@@ -21,7 +21,7 @@ func (s *Service) Reconcile(ctx context.Context) error {
 	if err := s.reconcileLaunchingAttempts(ctx); err != nil {
 		return err
 	}
-	if err := s.reconcileCleanedGitHubRunnerAttempts(ctx); err != nil {
+	if err := s.reconcileCleanedRunnerAttempts(ctx); err != nil {
 		return err
 	}
 	return nil
@@ -97,12 +97,12 @@ func (s *Service) reconcileLaunchingAttempts(ctx context.Context) error {
 	return rows.Err()
 }
 
-func (s *Service) reconcileCleanedGitHubRunnerAttempts(ctx context.Context) error {
+func (s *Service) reconcileCleanedRunnerAttempts(ctx context.Context) error {
 	rows, err := s.PGX.Query(ctx, `
 		SELECT e.execution_id, a.attempt_id, COALESCE(w.billing_window_id, '')
 		FROM executions e
 		JOIN execution_attempts a ON a.execution_id = e.execution_id
-		JOIN github_runner_allocations gha ON gha.execution_id = e.execution_id
+		JOIN runner_allocations ra ON ra.execution_id = e.execution_id
 		LEFT JOIN LATERAL (
 			SELECT billing_window_id
 			FROM execution_billing_windows
@@ -112,11 +112,11 @@ func (s *Service) reconcileCleanedGitHubRunnerAttempts(ctx context.Context) erro
 		) w ON true
 		WHERE e.workload_kind = $1
 		  AND a.state = $2
-		  AND gha.state = 'cleaned'
-		  AND gha.updated_at < (now() - ($3 * interval '1 second'))
-	`, WorkloadKindGitHubRunner, StateRunning, int((2 * time.Minute).Seconds()))
+		  AND ra.state = 'cleaned'
+		  AND ra.updated_at < (now() - ($3 * interval '1 second'))
+	`, WorkloadKindRunner, StateRunning, int((2 * time.Minute).Seconds()))
 	if err != nil {
-		return fmt.Errorf("query cleaned github runner attempts: %w", err)
+		return fmt.Errorf("query cleaned runner attempts: %w", err)
 	}
 	defer rows.Close()
 
@@ -131,8 +131,8 @@ func (s *Service) reconcileCleanedGitHubRunnerAttempts(ctx context.Context) erro
 		if item.windowID != "" {
 			_ = s.markBillingWindow(ctx, item.AttemptID, item.windowID, "voided", 0, apiwire.BillingSettleResult{})
 		}
-		if err := s.failAttempt(ctx, item.executionWorkItem, "reconciled_cleaned_github_runner", nil); err != nil {
-			return fmt.Errorf("fail cleaned github runner attempt %s: %w", item.AttemptID, err)
+		if err := s.failAttempt(ctx, item.executionWorkItem, "reconciled_cleaned_runner", nil); err != nil {
+			return fmt.Errorf("fail cleaned runner attempt %s: %w", item.AttemptID, err)
 		}
 	}
 	return rows.Err()

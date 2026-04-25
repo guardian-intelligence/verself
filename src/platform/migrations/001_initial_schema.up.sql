@@ -476,9 +476,9 @@ CREATE TABLE IF NOT EXISTS forge_metal.job_events
     job_name                LowCardinality(String) DEFAULT '',
     head_branch             LowCardinality(String) DEFAULT '',
     head_sha                String DEFAULT ''       CODEC(ZSTD(3)),
-    github_installation_id  UInt64 DEFAULT 0        CODEC(T64, ZSTD(3)),
-    github_run_id           UInt64 DEFAULT 0        CODEC(T64, ZSTD(3)),
-    github_job_id           UInt64 DEFAULT 0        CODEC(T64, ZSTD(3)),
+    provider_installation_id UInt64 DEFAULT 0       CODEC(T64, ZSTD(3)),
+    provider_run_id         UInt64 DEFAULT 0        CODEC(T64, ZSTD(3)),
+    provider_job_id         UInt64 DEFAULT 0        CODEC(T64, ZSTD(3)),
     schedule_id             String DEFAULT ''       CODEC(ZSTD(3)),
     schedule_display_name   LowCardinality(String) DEFAULT '',
     temporal_workflow_id    String DEFAULT ''       CODEC(ZSTD(3)),
@@ -514,6 +514,19 @@ PARTITION BY toYYYYMM(created_at)
 ORDER BY (org_id, source_kind, runner_class, repository_full_name, created_at, execution_id)
 TTL toDateTime(created_at) + INTERVAL 1 YEAR
 SETTINGS index_granularity = 8192;
+
+ALTER TABLE forge_metal.job_events
+    ADD COLUMN IF NOT EXISTS provider_installation_id UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)) AFTER head_sha;
+ALTER TABLE forge_metal.job_events
+    ADD COLUMN IF NOT EXISTS provider_run_id UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)) AFTER provider_installation_id;
+ALTER TABLE forge_metal.job_events
+    ADD COLUMN IF NOT EXISTS provider_job_id UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)) AFTER provider_run_id;
+ALTER TABLE forge_metal.job_events
+    DROP COLUMN IF EXISTS github_installation_id;
+ALTER TABLE forge_metal.job_events
+    DROP COLUMN IF EXISTS github_run_id;
+ALTER TABLE forge_metal.job_events
+    DROP COLUMN IF EXISTS github_job_id;
 
 CREATE TABLE IF NOT EXISTS forge_metal.job_cache_events
 (

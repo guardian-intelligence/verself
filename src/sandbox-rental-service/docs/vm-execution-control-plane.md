@@ -8,13 +8,13 @@ vm-bridge control, and guest telemetry.
 
 Code pointers:
 
-- `internal/jobs/` - River workers, execution attempts, GitHub demand records,
-  runner allocations, sticky-disk saveback state, and reconciliation.
+- `internal/jobs/` - River workers, execution attempts, runner provider demand
+  records, runner allocations, sticky-disk saveback state, and reconciliation.
 - `internal/api/` - secured Huma routes for GitHub installations, execution
   history/logs, recurring schedules, and billing views.
 - `migrations/` - PostgreSQL tables for executions, attempts, billing windows,
-  logs, GitHub workflow jobs, runner allocations, sticky disks, and schedule
-  dispatch lineage.
+  logs, provider-neutral runner demand/allocation state, sticky disks, and
+  schedule dispatch lineage.
 - `../../vm-orchestrator/proto/v1/` - host lease/exec gRPC API. This is V1 of
   the rewritten orchestrator contract; the old Run API is gone.
 - `../../apiwire/sandbox.go` - shared wire DTOs.
@@ -22,31 +22,36 @@ Code pointers:
 
 State model:
 
-- `executions` are customer-visible workload rows created by the GitHub runner
+- `executions` are customer-visible workload rows created by a runner provider
   path or by a recurring schedule dispatch.
 - `execution_attempts` are durable River/reconciliation units. Attempts store
   host-assigned `lease_id` and `exec_id` only after the host returns them.
 - `execution_billing_windows` are control-plane billing records. The host never
   receives billing, org, customer, attempt, or quota vocabulary.
-- `github_workflow_jobs` are GitHub demand facts from webhooks and polling.
-- `github_runner_allocations` are Forge Metal capacity records for runner VMs.
-- `github_runner_job_bindings` are the authoritative job-to-runner assignment
-  records.
-- `github_sticky_disk_generations` and `execution_sticky_disk_mounts` track the
-  Blacksmith-style sticky-disk restore/saveback lifecycle.
+- `runner_provider_repositories` binds provider repository IDs to Forge Metal
+  org/source repository ownership.
+- `runner_jobs` are provider demand facts from GitHub webhooks or Forgejo action
+  job sync.
+- `runner_allocations` are Forge Metal capacity records for runner VMs.
+- `runner_job_bindings` are the authoritative job-to-runner assignment records.
+- `runner_sticky_disk_generations` and `execution_sticky_disk_mounts` track the
+  Blacksmith-style sticky-disk restore/saveback lifecycle. Sticky disks are
+  currently enabled only for GitHub Actions runs.
 - `execution_schedules` and `execution_schedule_dispatches` are Temporal-backed
   recurring canary state.
 
-GitHub runner flow:
+Runner flow:
 
-1. GitHub webhooks record or refresh `github_workflow_jobs` demand.
-2. Allocation logic creates a `github_runner_allocations` row, obtains the JIT
-   runner config, and internally submits an execution attempt for the selected
-   runner class.
+1. Provider events record or refresh `runner_jobs` demand. GitHub uses the
+   `workflow_job` webhook. Forgejo registers a per-repository webhook and syncs
+   queued jobs from the Forgejo v15 Actions runner jobs API.
+2. Allocation logic creates a `runner_allocations` row, obtains the provider
+   bootstrap material, and internally submits an execution attempt for the
+   selected runner class.
 3. The execution worker reserves billing, acquires a vm-orchestrator lease,
    starts the workload payload, streams logs, and settles billing.
 4. Sticky-disk mounts are restored before the run and committed back to
-   `github_sticky_disk_generations` when saveback succeeds.
+   `runner_sticky_disk_generations` when saveback succeeds.
 
 Recurring schedule flow:
 
@@ -63,7 +68,7 @@ Reconciliation:
 - Reconciliation repairs stale reserved or launching attempts by voiding
   unsettled windows, releasing any recorded lease ID, and terminalizing the
   attempt.
-- GitHub runner reconciliation reclaims stale allocations, expired JIT configs,
+- Runner reconciliation reclaims stale allocations, expired bootstrap configs,
   and orphaned job bindings without granting product services direct host
   privilege.
 
