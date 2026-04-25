@@ -1,4 +1,6 @@
 <repo_overview>
+Set of services + console + marketing page for a software business, almost entirely self-hosted.
+
 Canonical layout in `docs/architecture/directory-structure.md`. Read that file directly if exploring the repo.
 
 Polyglot monorepo:
