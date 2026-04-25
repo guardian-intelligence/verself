@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -90,7 +91,7 @@ func (c ForgejoClient) ListBranches(ctx context.Context, repo Repository) ([]Ref
 	span.SetAttributes(attribute.String("source.repo_id", repo.RepoID.String()))
 
 	var branches []forgejoBranch
-	path := fmt.Sprintf("/api/v1/repos/%s/%s/branches", url.PathEscape(repo.ForgejoOwner), url.PathEscape(repo.ForgejoRepo))
+	path := fmt.Sprintf("/api/v1/repos/%s/%s/branches", url.PathEscape(repo.ProviderOwner), url.PathEscape(repo.ProviderRepo))
 	if err := c.doJSON(ctx, http.MethodGet, path, nil, &branches); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -112,7 +113,7 @@ func (c ForgejoClient) Contents(ctx context.Context, repo Repository, ref, path 
 		attribute.String("source.path", path),
 	)
 
-	endpoint := fmt.Sprintf("/api/v1/repos/%s/%s/contents/%s", url.PathEscape(repo.ForgejoOwner), url.PathEscape(repo.ForgejoRepo), strings.TrimLeft(path, "/"))
+	endpoint := fmt.Sprintf("/api/v1/repos/%s/%s/contents/%s", url.PathEscape(repo.ProviderOwner), url.PathEscape(repo.ProviderRepo), strings.TrimLeft(path, "/"))
 	values := url.Values{}
 	if strings.TrimSpace(ref) != "" {
 		values.Set("ref", ref)
@@ -156,7 +157,7 @@ func (c ForgejoClient) Archive(ctx context.Context, repo Repository, ref string)
 	span.SetAttributes(attribute.String("source.repo_id", repo.RepoID.String()), attribute.String("source.ref", ref))
 
 	archive := url.PathEscape(ref + ".tar.gz")
-	endpoint := fmt.Sprintf("/api/v1/repos/%s/%s/archive/%s", url.PathEscape(repo.ForgejoOwner), url.PathEscape(repo.ForgejoRepo), archive)
+	endpoint := fmt.Sprintf("/api/v1/repos/%s/%s/archive/%s", url.PathEscape(repo.ProviderOwner), url.PathEscape(repo.ProviderRepo), archive)
 	data, err := c.doBytes(ctx, http.MethodGet, endpoint, nil, "application/gzip")
 	if err != nil {
 		span.RecordError(err)
@@ -164,6 +165,29 @@ func (c ForgejoClient) Archive(ctx context.Context, repo Repository, ref string)
 		return nil, "", err
 	}
 	return data, "application/gzip", nil
+}
+
+func (c ForgejoClient) DispatchWorkflow(ctx context.Context, repo Repository, workflowRunID uuid.UUID, workflowPath, ref string, inputs map[string]string) (ProviderWorkflowDispatch, error) {
+	ctx, span := forgejoTracer.Start(ctx, "source.forgejo.workflow.dispatch")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("source.repo_id", repo.RepoID.String()),
+		attribute.String("source.workflow_run_id", workflowRunID.String()),
+		attribute.String("source.workflow_path", workflowPath),
+		attribute.String("source.ref", ref),
+	)
+	body := map[string]any{
+		"ref":    ref,
+		"inputs": inputs,
+	}
+	workflowName := strings.TrimPrefix(strings.TrimPrefix(workflowPath, ".forgejo/workflows/"), ".github/workflows/")
+	endpoint := fmt.Sprintf("/api/v1/repos/%s/%s/actions/workflows/%s/dispatches", url.PathEscape(repo.ProviderOwner), url.PathEscape(repo.ProviderRepo), url.PathEscape(workflowName))
+	if err := c.doStatus(ctx, http.MethodPost, endpoint, body, http.StatusNoContent, http.StatusCreated, http.StatusOK); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return ProviderWorkflowDispatch{}, err
+	}
+	return ProviderWorkflowDispatch{ProviderDispatchID: repo.Provider + ":" + workflowName + ":" + ref}, nil
 }
 
 func (c ForgejoClient) doJSON(ctx context.Context, method, path string, body any, out any) error {
@@ -186,6 +210,43 @@ func (c ForgejoClient) doJSON(ctx context.Context, method, path string, body any
 		return fmt.Errorf("%w: decode forgejo response: %v", ErrForgejo, err)
 	}
 	return nil
+}
+
+func (c ForgejoClient) doStatus(ctx context.Context, method, path string, body any, expected ...int) error {
+	var reader io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		reader = bytes.NewReader(data)
+	}
+	base := strings.TrimRight(c.BaseURL, "/")
+	req, err := http.NewRequestWithContext(ctx, method, base+path, reader)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "token "+c.Token)
+	req.Header.Set("Accept", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	client := c.Client
+	if client == nil {
+		client = &http.Client{Timeout: 5 * time.Second}
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("%w: forgejo %s %s: %v", ErrForgejo, method, path, err)
+	}
+	defer resp.Body.Close()
+	for _, status := range expected {
+		if resp.StatusCode == status {
+			return nil
+		}
+	}
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	return fmt.Errorf("%w: forgejo %s %s status %d: %s", ErrForgejo, method, path, resp.StatusCode, string(data))
 }
 
 func (c ForgejoClient) doBytes(ctx context.Context, method, path string, body io.Reader, accept string) ([]byte, error) {

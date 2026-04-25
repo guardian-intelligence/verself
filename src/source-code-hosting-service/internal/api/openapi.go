@@ -51,6 +51,14 @@ func NewInternalAPI(mux *http.ServeMux, version, listenAddr string, cfg Config) 
 	return api
 }
 
+func NewInternalAPIYAML(version, listenAddr string, downgrade bool) ([]byte, error) {
+	api := NewInternalAPI(http.NewServeMux(), version, listenAddr, Config{})
+	if downgrade {
+		return api.OpenAPI().DowngradeYAML()
+	}
+	return api.OpenAPI().YAML()
+}
+
 func applySecuritySchemes(api huma.API) {
 	openapi := api.OpenAPI()
 	if openapi.Components == nil {

@@ -94,7 +94,7 @@ func run() error {
 			BaseURL: forgejoBaseURL,
 			Token:   forgejoToken,
 			Owner:   forgejoOwner,
-			Client:  &http.Client{Timeout: 5 * time.Second},
+			Client:  &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport), Timeout: 5 * time.Second},
 		},
 		CheckoutTTL:   5 * time.Minute,
 		ForgejoPrefix: "fm",

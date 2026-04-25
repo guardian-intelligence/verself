@@ -128,6 +128,30 @@ components:
       required:
         - name
       type: object
+    CreateWorkflowRunRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://source.api.anveio.com/schemas/CreateWorkflowRunRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        inputs:
+          additionalProperties:
+            type: string
+          type: object
+        ref:
+          maxLength: 255
+          type: string
+        workflow_path:
+          maxLength: 512
+          minLength: 1
+          type: string
+      required:
+        - workflow_path
+      type: object
     ErrorDetail:
       additionalProperties: false
       properties:
@@ -276,6 +300,8 @@ components:
           type: string
         org_id:
           type: string
+        provider:
+          type: string
         repo_id:
           type: string
         slug:
@@ -299,6 +325,7 @@ components:
         - slug
         - description
         - default_branch
+        - provider
         - visibility
         - state
         - version
@@ -362,6 +389,83 @@ components:
         - type
         - size
         - sha
+      type: object
+    WorkflowRun:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://source.api.anveio.com/schemas/WorkflowRun.json
+          format: uri
+          readOnly: true
+          type: string
+        actor_id:
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        dispatched_at:
+          format: date-time
+          type: string
+        failure_reason:
+          type: string
+        inputs:
+          additionalProperties:
+            type: string
+          type: object
+        org_id:
+          type: string
+        provider:
+          type: string
+        provider_dispatch_id:
+          type: string
+        ref:
+          type: string
+        repo_id:
+          type: string
+        state:
+          type: string
+        trace_id:
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+        workflow_path:
+          type: string
+        workflow_run_id:
+          type: string
+      required:
+        - workflow_run_id
+        - org_id
+        - repo_id
+        - actor_id
+        - provider
+        - workflow_path
+        - ref
+        - inputs
+        - state
+        - created_at
+        - updated_at
+      type: object
+    WorkflowRunList:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://source.api.anveio.com/schemas/WorkflowRunList.json
+          format: uri
+          readOnly: true
+          type: string
+        workflow_runs:
+          items:
+            $ref: "#/components/schemas/WorkflowRun"
+          type:
+            - array
+            - "null"
+      required:
+        - workflow_runs
       type: object
   securitySchemes:
     bearerAuth:
@@ -735,6 +839,136 @@ paths:
         permission: source:repo:read
         rate_limit_class: read
         resource: source_tree
+        risk_level: low
+        source_product_area: Source
+  /api/v1/repos/{repo_id}/workflow-runs:
+    get:
+      operationId: list-source-workflow-runs
+      parameters:
+        - in: path
+          name: repo_id
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRunList"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: List repository workflow runs
+      x-forge-metal-iam:
+        action: list
+        audit_event: source.workflow_run.list
+        data_classification: customer_source_metadata
+        event_category: source
+        operation_display: list source workflow runs
+        operation_type: read
+        org_scope: token_org_id
+        permission: source:workflow:read
+        rate_limit_class: read
+        resource: source_workflow_run
+        risk_level: low
+        source_product_area: Source
+    post:
+      operationId: create-source-workflow-run
+      parameters:
+        - description: Stable caller-provided key used to make this mutation retry-safe.
+          in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+        - in: path
+          name: repo_id
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorkflowRunRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRun"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Dispatch a repository workflow
+      x-forge-metal-iam:
+        action: create
+        audit_event: source.workflow.dispatch
+        data_classification: customer_source_metadata
+        event_category: source
+        operation_display: dispatch source workflow
+        operation_type: write
+        org_scope: token_org_id
+        permission: source:workflow:write
+        rate_limit_class: source_mutation
+        resource: source_workflow_run
+        risk_level: high
+        source_product_area: Source
+  /api/v1/workflow-runs/{workflow_run_id}:
+    get:
+      operationId: get-source-workflow-run
+      parameters:
+        - in: path
+          name: workflow_run_id
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRun"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Get a workflow run
+      x-forge-metal-iam:
+        action: read
+        audit_event: source.workflow_run.read
+        data_classification: customer_source_metadata
+        event_category: source
+        operation_display: read source workflow run
+        operation_type: read
+        org_scope: token_org_id
+        permission: source:workflow:read
+        rate_limit_class: read
+        resource: source_workflow_run
         risk_level: low
         source_product_area: Source
 servers:

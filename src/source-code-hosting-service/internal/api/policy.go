@@ -14,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	auth "github.com/forge-metal/auth-middleware"
+	workloadauth "github.com/forge-metal/auth-middleware/workload"
 	"github.com/forge-metal/source-code-hosting-service/internal/source"
 )
 
@@ -24,6 +25,8 @@ const (
 	permissionRepoWrite        permission = "source:repo:write"
 	permissionCheckoutWrite    permission = "source:checkout:write"
 	permissionIntegrationWrite permission = "source:integration:write"
+	permissionWorkflowRead     permission = "source:workflow:read"
+	permissionWorkflowWrite    permission = "source:workflow:write"
 
 	roleOwner  = "owner"
 	roleAdmin  = "admin"
@@ -42,6 +45,8 @@ var fullRolePermissions = []permission{
 	permissionRepoWrite,
 	permissionCheckoutWrite,
 	permissionIntegrationWrite,
+	permissionWorkflowRead,
+	permissionWorkflowWrite,
 }
 
 var rolePermissionBundles = map[string][]permission{
@@ -221,7 +226,11 @@ func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param
 
 func enforceOperationPolicy(ctx context.Context, policy operationPolicy) (source.Principal, error) {
 	if policy.Internal {
-		return source.Principal{Subject: "spiffe-internal", OrgID: 1}, requireOperationIdempotency(ctx, policy)
+		peerID, ok := workloadauth.PeerIDFromContext(ctx)
+		if !ok {
+			return source.Principal{}, unauthorized(ctx)
+		}
+		return source.Principal{Subject: peerID.String()}, requireOperationIdempotency(ctx, policy)
 	}
 	identity := auth.FromContext(ctx)
 	if identity == nil {

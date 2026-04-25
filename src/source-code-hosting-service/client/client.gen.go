@@ -72,6 +72,15 @@ type CreateRepositoryRequest struct {
 	Name          string  `json:"name"`
 }
 
+// CreateWorkflowRunRequest defines model for CreateWorkflowRunRequest.
+type CreateWorkflowRunRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema       *string            `json:"$schema,omitempty"`
+	Inputs       *map[string]string `json:"inputs,omitempty"`
+	Ref          *string            `json:"ref,omitempty"`
+	WorkflowPath string             `json:"workflow_path"`
+}
+
 // ErrorDetail defines model for ErrorDetail.
 type ErrorDetail struct {
 	// Location Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'
@@ -144,6 +153,7 @@ type Repository struct {
 	Description   string    `json:"description"`
 	Name          string    `json:"name"`
 	OrgId         string    `json:"org_id"`
+	Provider      string    `json:"provider"`
 	RepoId        string    `json:"repo_id"`
 	Slug          string    `json:"slug"`
 	State         string    `json:"state"`
@@ -172,6 +182,34 @@ type TreeEntry struct {
 	Sha  string `json:"sha"`
 	Size int64  `json:"size"`
 	Type string `json:"type"`
+}
+
+// WorkflowRun defines model for WorkflowRun.
+type WorkflowRun struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema             *string           `json:"$schema,omitempty"`
+	ActorId            string            `json:"actor_id"`
+	CreatedAt          time.Time         `json:"created_at"`
+	DispatchedAt       *time.Time        `json:"dispatched_at,omitempty"`
+	FailureReason      *string           `json:"failure_reason,omitempty"`
+	Inputs             map[string]string `json:"inputs"`
+	OrgId              string            `json:"org_id"`
+	Provider           string            `json:"provider"`
+	ProviderDispatchId *string           `json:"provider_dispatch_id,omitempty"`
+	Ref                string            `json:"ref"`
+	RepoId             string            `json:"repo_id"`
+	State              string            `json:"state"`
+	TraceId            *string           `json:"trace_id,omitempty"`
+	UpdatedAt          time.Time         `json:"updated_at"`
+	WorkflowPath       string            `json:"workflow_path"`
+	WorkflowRunId      string            `json:"workflow_run_id"`
+}
+
+// WorkflowRunList defines model for WorkflowRunList.
+type WorkflowRunList struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema       *string        `json:"$schema,omitempty"`
+	WorkflowRuns *[]WorkflowRun `json:"workflow_runs"`
 }
 
 // CreateSourceIntegrationParams defines parameters for CreateSourceIntegration.
@@ -204,6 +242,12 @@ type GetSourceTreeParams struct {
 	Path *string `form:"path,omitempty" json:"path,omitempty"`
 }
 
+// CreateSourceWorkflowRunParams defines parameters for CreateSourceWorkflowRun.
+type CreateSourceWorkflowRunParams struct {
+	// IdempotencyKey Stable caller-provided key used to make this mutation retry-safe.
+	IdempotencyKey string `json:"Idempotency-Key"`
+}
+
 // CreateSourceIntegrationJSONRequestBody defines body for CreateSourceIntegration for application/json ContentType.
 type CreateSourceIntegrationJSONRequestBody = CreateIntegrationRequest
 
@@ -212,6 +256,9 @@ type CreateSourceRepositoryJSONRequestBody = CreateRepositoryRequest
 
 // CreateSourceCheckoutGrantJSONRequestBody defines body for CreateSourceCheckoutGrant for application/json ContentType.
 type CreateSourceCheckoutGrantJSONRequestBody = CreateCheckoutGrantRequest
+
+// CreateSourceWorkflowRunJSONRequestBody defines body for CreateSourceWorkflowRun for application/json ContentType.
+type CreateSourceWorkflowRunJSONRequestBody = CreateWorkflowRunRequest
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -315,6 +362,17 @@ type ClientInterface interface {
 
 	// GetSourceTree request
 	GetSourceTree(ctx context.Context, repoId openapi_types.UUID, params *GetSourceTreeParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListSourceWorkflowRuns request
+	ListSourceWorkflowRuns(ctx context.Context, repoId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateSourceWorkflowRunWithBody request with any body
+	CreateSourceWorkflowRunWithBody(ctx context.Context, repoId openapi_types.UUID, params *CreateSourceWorkflowRunParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateSourceWorkflowRun(ctx context.Context, repoId openapi_types.UUID, params *CreateSourceWorkflowRunParams, body CreateSourceWorkflowRunJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetSourceWorkflowRun request
+	GetSourceWorkflowRun(ctx context.Context, workflowRunId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) CreateSourceIntegrationWithBody(ctx context.Context, params *CreateSourceIntegrationParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -439,6 +497,54 @@ func (c *Client) ListSourceRefs(ctx context.Context, repoId openapi_types.UUID, 
 
 func (c *Client) GetSourceTree(ctx context.Context, repoId openapi_types.UUID, params *GetSourceTreeParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetSourceTreeRequest(c.Server, repoId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListSourceWorkflowRuns(ctx context.Context, repoId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListSourceWorkflowRunsRequest(c.Server, repoId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateSourceWorkflowRunWithBody(ctx context.Context, repoId openapi_types.UUID, params *CreateSourceWorkflowRunParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateSourceWorkflowRunRequestWithBody(c.Server, repoId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateSourceWorkflowRun(ctx context.Context, repoId openapi_types.UUID, params *CreateSourceWorkflowRunParams, body CreateSourceWorkflowRunJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateSourceWorkflowRunRequest(c.Server, repoId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetSourceWorkflowRun(ctx context.Context, workflowRunId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSourceWorkflowRunRequest(c.Server, workflowRunId)
 	if err != nil {
 		return nil, err
 	}
@@ -850,6 +956,134 @@ func NewGetSourceTreeRequest(server string, repoId openapi_types.UUID, params *G
 	return req, nil
 }
 
+// NewListSourceWorkflowRunsRequest generates requests for ListSourceWorkflowRuns
+func NewListSourceWorkflowRunsRequest(server string, repoId openapi_types.UUID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "repo_id", repoId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/repos/%s/workflow-runs", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateSourceWorkflowRunRequest calls the generic CreateSourceWorkflowRun builder with application/json body
+func NewCreateSourceWorkflowRunRequest(server string, repoId openapi_types.UUID, params *CreateSourceWorkflowRunParams, body CreateSourceWorkflowRunJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateSourceWorkflowRunRequestWithBody(server, repoId, params, "application/json", bodyReader)
+}
+
+// NewCreateSourceWorkflowRunRequestWithBody generates requests for CreateSourceWorkflowRun with any type of body
+func NewCreateSourceWorkflowRunRequestWithBody(server string, repoId openapi_types.UUID, params *CreateSourceWorkflowRunParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "repo_id", repoId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/repos/%s/workflow-runs", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
+// NewGetSourceWorkflowRunRequest generates requests for GetSourceWorkflowRun
+func NewGetSourceWorkflowRunRequest(server string, workflowRunId openapi_types.UUID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workflow_run_id", workflowRunId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workflow-runs/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -922,6 +1156,17 @@ type ClientWithResponsesInterface interface {
 
 	// GetSourceTreeWithResponse request
 	GetSourceTreeWithResponse(ctx context.Context, repoId openapi_types.UUID, params *GetSourceTreeParams, reqEditors ...RequestEditorFn) (*GetSourceTreeResponse, error)
+
+	// ListSourceWorkflowRunsWithResponse request
+	ListSourceWorkflowRunsWithResponse(ctx context.Context, repoId openapi_types.UUID, reqEditors ...RequestEditorFn) (*ListSourceWorkflowRunsResponse, error)
+
+	// CreateSourceWorkflowRunWithBodyWithResponse request with any body
+	CreateSourceWorkflowRunWithBodyWithResponse(ctx context.Context, repoId openapi_types.UUID, params *CreateSourceWorkflowRunParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateSourceWorkflowRunResponse, error)
+
+	CreateSourceWorkflowRunWithResponse(ctx context.Context, repoId openapi_types.UUID, params *CreateSourceWorkflowRunParams, body CreateSourceWorkflowRunJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateSourceWorkflowRunResponse, error)
+
+	// GetSourceWorkflowRunWithResponse request
+	GetSourceWorkflowRunWithResponse(ctx context.Context, workflowRunId openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetSourceWorkflowRunResponse, error)
 }
 
 type CreateSourceIntegrationResponse struct {
@@ -1108,6 +1353,75 @@ func (r GetSourceTreeResponse) StatusCode() int {
 	return 0
 }
 
+type ListSourceWorkflowRunsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *WorkflowRunList
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r ListSourceWorkflowRunsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListSourceWorkflowRunsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateSourceWorkflowRunResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON201                       *WorkflowRun
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateSourceWorkflowRunResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateSourceWorkflowRunResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetSourceWorkflowRunResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *WorkflowRun
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSourceWorkflowRunResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSourceWorkflowRunResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 // CreateSourceIntegrationWithBodyWithResponse request with arbitrary body returning *CreateSourceIntegrationResponse
 func (c *ClientWithResponses) CreateSourceIntegrationWithBodyWithResponse(ctx context.Context, params *CreateSourceIntegrationParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateSourceIntegrationResponse, error) {
 	rsp, err := c.CreateSourceIntegrationWithBody(ctx, params, contentType, body, reqEditors...)
@@ -1202,6 +1516,41 @@ func (c *ClientWithResponses) GetSourceTreeWithResponse(ctx context.Context, rep
 		return nil, err
 	}
 	return ParseGetSourceTreeResponse(rsp)
+}
+
+// ListSourceWorkflowRunsWithResponse request returning *ListSourceWorkflowRunsResponse
+func (c *ClientWithResponses) ListSourceWorkflowRunsWithResponse(ctx context.Context, repoId openapi_types.UUID, reqEditors ...RequestEditorFn) (*ListSourceWorkflowRunsResponse, error) {
+	rsp, err := c.ListSourceWorkflowRuns(ctx, repoId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListSourceWorkflowRunsResponse(rsp)
+}
+
+// CreateSourceWorkflowRunWithBodyWithResponse request with arbitrary body returning *CreateSourceWorkflowRunResponse
+func (c *ClientWithResponses) CreateSourceWorkflowRunWithBodyWithResponse(ctx context.Context, repoId openapi_types.UUID, params *CreateSourceWorkflowRunParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateSourceWorkflowRunResponse, error) {
+	rsp, err := c.CreateSourceWorkflowRunWithBody(ctx, repoId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateSourceWorkflowRunResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateSourceWorkflowRunWithResponse(ctx context.Context, repoId openapi_types.UUID, params *CreateSourceWorkflowRunParams, body CreateSourceWorkflowRunJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateSourceWorkflowRunResponse, error) {
+	rsp, err := c.CreateSourceWorkflowRun(ctx, repoId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateSourceWorkflowRunResponse(rsp)
+}
+
+// GetSourceWorkflowRunWithResponse request returning *GetSourceWorkflowRunResponse
+func (c *ClientWithResponses) GetSourceWorkflowRunWithResponse(ctx context.Context, workflowRunId openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetSourceWorkflowRunResponse, error) {
+	rsp, err := c.GetSourceWorkflowRun(ctx, workflowRunId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSourceWorkflowRunResponse(rsp)
 }
 
 // ParseCreateSourceIntegrationResponse parses an HTTP response from a CreateSourceIntegrationWithResponse call
@@ -1451,6 +1800,105 @@ func ParseGetSourceTreeResponse(rsp *http.Response) (*GetSourceTreeResponse, err
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest Tree
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListSourceWorkflowRunsResponse parses an HTTP response from a ListSourceWorkflowRunsWithResponse call
+func ParseListSourceWorkflowRunsResponse(rsp *http.Response) (*ListSourceWorkflowRunsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListSourceWorkflowRunsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkflowRunList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateSourceWorkflowRunResponse parses an HTTP response from a CreateSourceWorkflowRunWithResponse call
+func ParseCreateSourceWorkflowRunResponse(rsp *http.Response) (*CreateSourceWorkflowRunResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateSourceWorkflowRunResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest WorkflowRun
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetSourceWorkflowRunResponse parses an HTTP response from a GetSourceWorkflowRunWithResponse call
+func ParseGetSourceWorkflowRunResponse(rsp *http.Response) (*GetSourceWorkflowRunResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSourceWorkflowRunResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkflowRun
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

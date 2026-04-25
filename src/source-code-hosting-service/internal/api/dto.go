@@ -15,6 +15,7 @@ type Repository struct {
 	Slug          string    `json:"slug"`
 	Description   string    `json:"description"`
 	DefaultBranch string    `json:"default_branch"`
+	Provider      string    `json:"provider"`
 	Visibility    string    `json:"visibility"`
 	State         string    `json:"state"`
 	Version       int32     `json:"version" minimum:"0" maximum:"2147483647"`
@@ -75,6 +76,44 @@ type CheckoutGrant struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
+type CreateWorkflowRunRequest struct {
+	WorkflowPath string            `json:"workflow_path" required:"true" minLength:"1" maxLength:"512"`
+	Ref          string            `json:"ref,omitempty" maxLength:"255"`
+	Inputs       map[string]string `json:"inputs,omitempty"`
+}
+
+type InternalCreateWorkflowRunRequest struct {
+	OrgID          string            `json:"org_id" required:"true"`
+	ActorID        string            `json:"actor_id" required:"true" minLength:"1" maxLength:"255"`
+	RepoID         uuid.UUID         `json:"repo_id" required:"true"`
+	WorkflowPath   string            `json:"workflow_path" required:"true" minLength:"1" maxLength:"512"`
+	Ref            string            `json:"ref,omitempty" maxLength:"255"`
+	Inputs         map[string]string `json:"inputs,omitempty"`
+	IdempotencyKey string            `json:"idempotency_key" required:"true" minLength:"1" maxLength:"128"`
+}
+
+type WorkflowRun struct {
+	WorkflowRunID      uuid.UUID         `json:"workflow_run_id"`
+	OrgID              string            `json:"org_id"`
+	RepoID             uuid.UUID         `json:"repo_id"`
+	ActorID            string            `json:"actor_id"`
+	Provider           string            `json:"provider"`
+	WorkflowPath       string            `json:"workflow_path"`
+	Ref                string            `json:"ref"`
+	Inputs             map[string]string `json:"inputs"`
+	State              string            `json:"state"`
+	ProviderDispatchID string            `json:"provider_dispatch_id,omitempty"`
+	FailureReason      string            `json:"failure_reason,omitempty"`
+	TraceID            string            `json:"trace_id,omitempty"`
+	DispatchedAt       *time.Time        `json:"dispatched_at,omitempty"`
+	CreatedAt          time.Time         `json:"created_at"`
+	UpdatedAt          time.Time         `json:"updated_at"`
+}
+
+type WorkflowRunList struct {
+	WorkflowRuns []WorkflowRun `json:"workflow_runs"`
+}
+
 type CreateIntegrationRequest struct {
 	Provider      string `json:"provider" required:"true" minLength:"1" maxLength:"64"`
 	ExternalRepo  string `json:"external_repo" required:"true" minLength:"1" maxLength:"512"`
@@ -100,6 +139,7 @@ func repositoryDTO(repo source.Repository) Repository {
 		Slug:          repo.Slug,
 		Description:   repo.Description,
 		DefaultBranch: repo.DefaultBranch,
+		Provider:      repo.Provider,
 		Visibility:    repo.Visibility,
 		State:         repo.State,
 		Version:       int32(repo.Version),
@@ -152,6 +192,38 @@ func checkoutGrantDTO(grant source.CheckoutGrant) CheckoutGrant {
 		Token:     grant.Token,
 		ExpiresAt: grant.ExpiresAt,
 	}
+}
+
+func workflowRunDTO(run source.WorkflowRun) WorkflowRun {
+	inputs := run.Inputs
+	if inputs == nil {
+		inputs = map[string]string{}
+	}
+	return WorkflowRun{
+		WorkflowRunID:      run.WorkflowRunID,
+		OrgID:              uintString(run.OrgID),
+		RepoID:             run.RepoID,
+		ActorID:            run.ActorID,
+		Provider:           run.Provider,
+		WorkflowPath:       run.WorkflowPath,
+		Ref:                run.Ref,
+		Inputs:             inputs,
+		State:              run.State,
+		ProviderDispatchID: run.ProviderDispatchID,
+		FailureReason:      run.FailureReason,
+		TraceID:            run.TraceID,
+		DispatchedAt:       run.DispatchedAt,
+		CreatedAt:          run.CreatedAt,
+		UpdatedAt:          run.UpdatedAt,
+	}
+}
+
+func workflowRunDTOs(runs []source.WorkflowRun) []WorkflowRun {
+	out := make([]WorkflowRun, 0, len(runs))
+	for _, run := range runs {
+		out = append(out, workflowRunDTO(run))
+	}
+	return out
 }
 
 func integrationDTO(integration source.ExternalIntegration) ExternalIntegration {

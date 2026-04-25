@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -49,6 +50,19 @@ type createCheckoutGrantInput struct {
 	Body   CreateCheckoutGrantRequest
 }
 
+type createWorkflowRunInput struct {
+	RepoID string `path:"repo_id" format:"uuid"`
+	Body   CreateWorkflowRunRequest
+}
+
+type workflowRunPath struct {
+	WorkflowRunID string `path:"workflow_run_id" format:"uuid"`
+}
+
+type internalCreateWorkflowRunInput struct {
+	Body InternalCreateWorkflowRunRequest
+}
+
 type checkoutArchiveInput struct {
 	GrantID string `path:"grant_id" format:"uuid"`
 	Token   string `header:"X-Forge-Metal-Checkout-Token" required:"true"`
@@ -80,6 +94,14 @@ type blobOutput struct {
 
 type checkoutGrantOutput struct {
 	Body CheckoutGrant
+}
+
+type workflowRunOutput struct {
+	Body WorkflowRun
+}
+
+type workflowRunListOutput struct {
+	Body WorkflowRunList
 }
 
 type archiveOutput struct {
@@ -220,6 +242,60 @@ func RegisterRoutes(api huma.API, cfg Config) {
 	}, createCheckoutGrant(svc))
 
 	registerSourceRoute(api, huma.Operation{
+		OperationID:   "create-source-workflow-run",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/repos/{repo_id}/workflow-runs",
+		Summary:       "Dispatch a repository workflow",
+		DefaultStatus: http.StatusCreated,
+	}, operationPolicy{
+		Permission:       permissionWorkflowWrite,
+		Resource:         "source_workflow_run",
+		Action:           "create",
+		OrgScope:         "token_org_id",
+		RateLimitClass:   "source_mutation",
+		Idempotency:      idempotencyHeaderKey,
+		AuditEvent:       "source.workflow.dispatch",
+		OperationDisplay: "dispatch source workflow",
+		OperationType:    "write",
+		RiskLevel:        "high",
+		BodyLimitBytes:   bodyLimitSmallJSON,
+	}, createWorkflowRun(svc))
+
+	registerSourceRoute(api, huma.Operation{
+		OperationID: "list-source-workflow-runs",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/repos/{repo_id}/workflow-runs",
+		Summary:     "List repository workflow runs",
+	}, operationPolicy{
+		Permission:       permissionWorkflowRead,
+		Resource:         "source_workflow_run",
+		Action:           "list",
+		OrgScope:         "token_org_id",
+		RateLimitClass:   "read",
+		AuditEvent:       "source.workflow_run.list",
+		OperationDisplay: "list source workflow runs",
+		OperationType:    "read",
+		RiskLevel:        "low",
+	}, listWorkflowRuns(svc))
+
+	registerSourceRoute(api, huma.Operation{
+		OperationID: "get-source-workflow-run",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/workflow-runs/{workflow_run_id}",
+		Summary:     "Get a workflow run",
+	}, operationPolicy{
+		Permission:       permissionWorkflowRead,
+		Resource:         "source_workflow_run",
+		Action:           "read",
+		OrgScope:         "token_org_id",
+		RateLimitClass:   "read",
+		AuditEvent:       "source.workflow_run.read",
+		OperationDisplay: "read source workflow run",
+		OperationType:    "read",
+		RiskLevel:        "low",
+	}, getWorkflowRun(svc))
+
+	registerSourceRoute(api, huma.Operation{
 		OperationID:   "create-source-integration",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/integrations",
@@ -242,6 +318,26 @@ func RegisterRoutes(api huma.API, cfg Config) {
 
 func RegisterInternalRoutes(api huma.API, cfg Config) {
 	svc := cfg.Service
+	registerSourceRoute(api, huma.Operation{
+		OperationID:   "internal-create-source-workflow-run",
+		Method:        http.MethodPost,
+		Path:          "/internal/v1/workflow-runs",
+		Summary:       "Dispatch a source workflow on behalf of a service-owned schedule",
+		DefaultStatus: http.StatusCreated,
+	}, operationPolicy{
+		Permission:       permissionWorkflowWrite,
+		Resource:         "source_workflow_run",
+		Action:           "create",
+		OrgScope:         "body_org_id",
+		RateLimitClass:   "internal_mutation",
+		AuditEvent:       "source.workflow.dispatch.internal",
+		OperationDisplay: "dispatch source workflow internally",
+		OperationType:    "write",
+		RiskLevel:        "high",
+		BodyLimitBytes:   bodyLimitSmallJSON,
+		Internal:         true,
+	}, internalCreateWorkflowRun(svc))
+
 	registerSourceRoute(api, huma.Operation{
 		OperationID: "download-source-checkout-archive",
 		Method:      http.MethodGet,
@@ -363,6 +459,76 @@ func createCheckoutGrant(svc *source.Service) func(context.Context, source.Princ
 	}
 }
 
+func createWorkflowRun(svc *source.Service) func(context.Context, source.Principal, *createWorkflowRunInput) (*workflowRunOutput, error) {
+	return func(ctx context.Context, principal source.Principal, input *createWorkflowRunInput) (*workflowRunOutput, error) {
+		repoID, err := uuid.Parse(input.RepoID)
+		if err != nil {
+			return nil, badRequest(ctx, "invalid-repo-id", "repo_id must be a UUID", err)
+		}
+		run, err := svc.DispatchWorkflow(ctx, principal, source.WorkflowDispatchRequest{
+			RepoID:         repoID,
+			WorkflowPath:   input.Body.WorkflowPath,
+			Ref:            input.Body.Ref,
+			Inputs:         input.Body.Inputs,
+			IdempotencyKey: operationRequestInfoFromContext(ctx).IdempotencyKey,
+		})
+		if err != nil {
+			return nil, sourceError(ctx, err)
+		}
+		return &workflowRunOutput{Body: workflowRunDTO(run)}, nil
+	}
+}
+
+func listWorkflowRuns(svc *source.Service) func(context.Context, source.Principal, *repositoryPath) (*workflowRunListOutput, error) {
+	return func(ctx context.Context, principal source.Principal, input *repositoryPath) (*workflowRunListOutput, error) {
+		repoID, err := uuid.Parse(input.RepoID)
+		if err != nil {
+			return nil, badRequest(ctx, "invalid-repo-id", "repo_id must be a UUID", err)
+		}
+		runs, err := svc.ListWorkflowRuns(ctx, principal, repoID)
+		if err != nil {
+			return nil, sourceError(ctx, err)
+		}
+		return &workflowRunListOutput{Body: WorkflowRunList{WorkflowRuns: workflowRunDTOs(runs)}}, nil
+	}
+}
+
+func getWorkflowRun(svc *source.Service) func(context.Context, source.Principal, *workflowRunPath) (*workflowRunOutput, error) {
+	return func(ctx context.Context, principal source.Principal, input *workflowRunPath) (*workflowRunOutput, error) {
+		runID, err := uuid.Parse(input.WorkflowRunID)
+		if err != nil {
+			return nil, badRequest(ctx, "invalid-workflow-run-id", "workflow_run_id must be a UUID", err)
+		}
+		run, err := svc.GetWorkflowRun(ctx, principal, runID)
+		if err != nil {
+			return nil, sourceError(ctx, err)
+		}
+		return &workflowRunOutput{Body: workflowRunDTO(run)}, nil
+	}
+}
+
+func internalCreateWorkflowRun(svc *source.Service) func(context.Context, source.Principal, *internalCreateWorkflowRunInput) (*workflowRunOutput, error) {
+	return func(ctx context.Context, _ source.Principal, input *internalCreateWorkflowRunInput) (*workflowRunOutput, error) {
+		orgID, err := strconv.ParseUint(strings.TrimSpace(input.Body.OrgID), 10, 64)
+		if err != nil || orgID == 0 {
+			return nil, badRequest(ctx, "invalid-org-id", "org_id must be a non-zero unsigned integer", err)
+		}
+		run, err := svc.DispatchWorkflowInternal(ctx, source.InternalWorkflowDispatchRequest{
+			OrgID:          orgID,
+			ActorID:        input.Body.ActorID,
+			RepoID:         input.Body.RepoID,
+			WorkflowPath:   input.Body.WorkflowPath,
+			Ref:            input.Body.Ref,
+			Inputs:         input.Body.Inputs,
+			IdempotencyKey: input.Body.IdempotencyKey,
+		})
+		if err != nil {
+			return nil, sourceError(ctx, err)
+		}
+		return &workflowRunOutput{Body: workflowRunDTO(run)}, nil
+	}
+}
+
 func downloadArchive(svc *source.Service) func(context.Context, source.Principal, *checkoutArchiveInput) (*archiveOutput, error) {
 	return func(ctx context.Context, _ source.Principal, input *checkoutArchiveInput) (*archiveOutput, error) {
 		grantID, err := uuid.Parse(input.GrantID)
@@ -406,11 +572,11 @@ func WebhookHandler(svc *source.Service, secret string) http.Handler {
 		span.SetAttributes(attribute.String("source.webhook_event", event), attribute.String("source.webhook_delivery", delivery), attribute.Bool("source.webhook_valid", valid))
 		if !valid {
 			span.SetStatus(codes.Error, "invalid signature")
-			_ = svc.RecordWebhook(ctx, "forgejo", event, delivery, false)
+			_ = svc.RecordWebhook(ctx, "forgejo", event, delivery, false, body)
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		if err := svc.RecordWebhook(ctx, "forgejo", event, delivery, true); err != nil {
+		if err := svc.RecordWebhook(ctx, "forgejo", event, delivery, true, body); err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 			w.WriteHeader(http.StatusInternalServerError)
