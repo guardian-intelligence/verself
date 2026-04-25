@@ -3,7 +3,7 @@ info:
     title: Forge Metal Secrets Service API
     version: dev
 servers:
-    - url: http://127.0.0.1:4251
+    - url: https://secrets.api.anveio.com
 paths:
     /api/v1/secrets:
         get:
@@ -555,7 +555,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - http://127.0.0.1:4251/schemas/CreateTransitKeyInputBody.json
+                        - https://secrets.api.anveio.com/schemas/CreateTransitKeyInputBody.json
                     readOnly: true
                 name:
                     type: string
@@ -572,7 +572,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - http://127.0.0.1:4251/schemas/DecryptOutputBody.json
+                        - https://secrets.api.anveio.com/schemas/DecryptOutputBody.json
                     readOnly: true
                 plaintext_base64:
                     type: string
@@ -587,7 +587,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - http://127.0.0.1:4251/schemas/DeleteSecretInputBody.json
+                        - https://secrets.api.anveio.com/schemas/DeleteSecretInputBody.json
                     readOnly: true
         EncryptOutputBody:
             type: object
@@ -598,7 +598,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - http://127.0.0.1:4251/schemas/EncryptOutputBody.json
+                        - https://secrets.api.anveio.com/schemas/EncryptOutputBody.json
                     readOnly: true
                 ciphertext:
                     type: string
@@ -628,7 +628,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - http://127.0.0.1:4251/schemas/ErrorModel.json
+                        - https://secrets.api.anveio.com/schemas/ErrorModel.json
                     readOnly: true
                 detail:
                     type: string
@@ -674,7 +674,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - http://127.0.0.1:4251/schemas/PutSecretBody.json
+                        - https://secrets.api.anveio.com/schemas/PutSecretBody.json
                     readOnly: true
                 branch:
                     type: string
@@ -711,7 +711,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - http://127.0.0.1:4251/schemas/SecretDTO.json
+                        - https://secrets.api.anveio.com/schemas/SecretDTO.json
                     readOnly: true
                 branch:
                     type: string
@@ -752,7 +752,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - http://127.0.0.1:4251/schemas/SecretValueDTO.json
+                        - https://secrets.api.anveio.com/schemas/SecretValueDTO.json
                     readOnly: true
                 branch:
                     type: string
@@ -796,7 +796,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - http://127.0.0.1:4251/schemas/SecretsDTO.json
+                        - https://secrets.api.anveio.com/schemas/SecretsDTO.json
                     readOnly: true
                 secrets:
                     type: array
@@ -813,7 +813,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - http://127.0.0.1:4251/schemas/SignOutputBody.json
+                        - https://secrets.api.anveio.com/schemas/SignOutputBody.json
                     readOnly: true
                 signature:
                     type: string
@@ -828,7 +828,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - http://127.0.0.1:4251/schemas/TransitKeyDTO.json
+                        - https://secrets.api.anveio.com/schemas/TransitKeyDTO.json
                     readOnly: true
                 created_at:
                     type: string
@@ -860,7 +860,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - http://127.0.0.1:4251/schemas/TransitPayloadInputBody.json
+                        - https://secrets.api.anveio.com/schemas/TransitPayloadInputBody.json
                     readOnly: true
                 ciphertext:
                     type: string
@@ -883,7 +883,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - http://127.0.0.1:4251/schemas/VerifyOutputBody.json
+                        - https://secrets.api.anveio.com/schemas/VerifyOutputBody.json
                     readOnly: true
                 valid:
                     type: boolean

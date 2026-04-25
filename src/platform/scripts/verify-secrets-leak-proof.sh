@@ -133,7 +133,7 @@ if response.status not in expected:
 public_caddy_rejected_request() {
   local token="$1"
   local output_path="$2"
-  local url="${BASE_URL:-https://rentasandbox.${VERIFICATION_DOMAIN}}"
+  local url="${BASE_URL:-https://sandbox.api.${VERIFICATION_DOMAIN}}"
   url="${url%/}/api/v1/executions/00000000-0000-0000-0000-000000000000"
   printf '%s\n' "${token}" | python3 -c '
 import json

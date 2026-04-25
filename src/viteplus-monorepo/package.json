@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vp run @forge-metal/rent-a-sandbox#dev",
+    "dev": "vp run @forge-metal/console#dev",
     "generate": "vp run -r generate",
     "check": "vp check",
     "typecheck": "vp run -r typecheck",

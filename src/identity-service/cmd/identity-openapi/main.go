@@ -9,6 +9,8 @@ import (
 	identityapi "github.com/forge-metal/identity-service/internal/api"
 )
 
+const publicServerURL = "https://identity.api.anveio.com"
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -29,10 +31,10 @@ func run() error {
 	switch *format {
 	case "3.0":
 		path = "openapi/openapi-3.0.yaml"
-		data, err = identityapi.OpenAPIDowngradeYAML("1.0.0", "127.0.0.1:4248")
+		data, err = identityapi.OpenAPIDowngradeYAML("1.0.0", publicServerURL)
 	case "3.1":
 		path = "openapi/openapi-3.1.yaml"
-		data, err = identityapi.OpenAPIYAML("1.0.0", "127.0.0.1:4248")
+		data, err = identityapi.OpenAPIYAML("1.0.0", publicServerURL)
 	default:
 		return fmt.Errorf("unsupported format %q", *format)
 	}

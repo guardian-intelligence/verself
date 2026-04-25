@@ -41,9 +41,9 @@ type RunBillingSummary struct {
 }
 
 type GitHubRunMetadata struct {
-	InstallationID    int64
-	RunID             int64
-	JobID             int64
+	InstallationID     int64
+	RunID              int64
+	JobID              int64
 	RepositoryFullName string
 	WorkflowName       string
 	JobName            string
@@ -330,7 +330,8 @@ func (s *Service) loadRun(ctx context.Context, orgID uint64, executionID uuid.UU
 
 func scanExecutionRecord(rows interface {
 	Scan(dest ...any) error
-}) (ExecutionRecord, error) {
+},
+) (ExecutionRecord, error) {
 	var record ExecutionRecord
 	record.RunID = record.ExecutionID
 	var attempt AttemptRecord

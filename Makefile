@@ -4,7 +4,7 @@
        profile-proof organization-sync-proof notifications-proof secrets-proof secrets-leak-proof openbao-proof openbao-tenancy-proof workload-identity-proof spiffe-rotation-proof object-storage-verify temporal-verify temporal-web-proof recurring-schedule-proof \
        vm-guest-telemetry-build observe telemetry-proof telemetry-proof-fail clickhouse-query clickhouse-schemas pg-shell pg-query pg-list tb-shell tb-command mail mail-accounts mail-mailboxes \
        mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets \
-       wipe-pg-db wipe-server vm-orchestrator-proof sandbox-inner sandbox-middle sandbox-proof rent-ui-smoke rent-ui-local rent-local-dev grafana-proof observability-smoke services-doctor
+       wipe-pg-db wipe-server vm-orchestrator-proof sandbox-inner sandbox-middle sandbox-proof console-ui-smoke console-ui-local console-local-dev console-frontend-deploy-fast grafana-proof observability-smoke services-doctor
 
 FM       := src/platform
 AW       := src/apiwire
@@ -295,7 +295,7 @@ billing-pg-query: inventory-check ## Run a PostgreSQL query against billing: mak
 	cd $(FM) && ./scripts/pg.sh billing --query "$(QUERY)"
 
 billing-proof: inventory-check ## Run live billing browser proof and collect evidence
-	cd $(FM) && ./scripts/verify-rent-billing-flow.sh
+	cd $(FM) && ./scripts/verify-console-billing-flow.sh
 
 profile-proof: inventory-check ## Run live profile API/UI proof and assert PostgreSQL plus ClickHouse evidence
 	cd $(FM) && ./scripts/verify-profile-live.sh
@@ -358,17 +358,17 @@ sandbox-middle: inventory-check ## Middle loop: default deploys UI and runs admi
 sandbox-proof: inventory-check ## Proof loop: full reset, redeploy, reseed, and live full-lifecycle sandbox verification
 	cd $(FM) && ./scripts/verify-sandbox-live.sh
 
-rent-ui-smoke: inventory-check ## Run deployed rent-a-sandbox authenticated shell smoke
-	cd $(FM) && TEST_BASE_URL="$${TEST_BASE_URL:-https://rentasandbox.$$(awk -F'\"' '/^forge_metal_domain:/{print $$2}' ansible/group_vars/all/main.yml)}" ./scripts/verify-rent-ui-smoke.sh
+console-ui-smoke: inventory-check ## Run deployed console authenticated shell smoke
+	cd $(FM) && TEST_BASE_URL="$${TEST_BASE_URL:-https://console.$$(awk -F'\"' '/^forge_metal_domain:/{print $$2}' ansible/group_vars/all/main.yml)}" ./scripts/verify-console-ui-smoke.sh
 
-rent-ui-local: inventory-check ## Run rent-a-sandbox smoke against local HMR dev server
-	cd $(FM) && ./scripts/verify-rent-ui-local.sh
+console-ui-local: inventory-check ## Run console smoke against local HMR dev server
+	cd $(FM) && ./scripts/verify-console-ui-local.sh
 
-rent-local-dev: inventory-check ## Start local rent-a-sandbox dev tunnels and HMR server
-	cd $(FM) && ./scripts/run-rent-local-dev.sh $(if $(PRINT_ENV),--print-env,)
+console-local-dev: inventory-check ## Start local console dev tunnels and HMR server
+	cd $(FM) && ./scripts/run-console-local-dev.sh $(if $(PRINT_ENV),--print-env,)
 
-rentasandbox-frontend-deploy-fast: inventory-check ## Ship UI-only changes to rent-a-sandbox: local build + rsync .output/ + restart (~5-10s). For API/env/systemd/OIDC changes use `ansible-playbook ... --tags rent_a_sandbox`.
-	$(FM)/scripts/rentasandbox-frontend-deploy-fast.sh
+console-frontend-deploy-fast: inventory-check ## Ship UI-only changes to console: local build + rsync .output/ + restart (~5-10s). For API/env/systemd/OIDC changes use `ansible-playbook ... --tags console`.
+	$(FM)/scripts/console-frontend-deploy-fast.sh
 
 platform-frontend-deploy-fast: inventory-check ## Ship UI-only changes to platform docs: local build + rsync .output/ + restart (~5-10s). For env/systemd/nftables/Caddy changes use `ansible-playbook ... --tags platform`.
 	$(FM)/scripts/platform-frontend-deploy-fast.sh

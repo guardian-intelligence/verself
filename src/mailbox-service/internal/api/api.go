@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
@@ -32,7 +33,7 @@ type mailboxServiceEmptyInput struct{}
 
 func NewAPI(mux *http.ServeMux, version, listenAddr string, svc provider) (huma.API, http.Handler) {
 	publicConfig := huma.DefaultConfig("Mailbox Service", version)
-	publicConfig.OpenAPI.Servers = []*huma.Server{{URL: "http://" + listenAddr}}
+	publicConfig.OpenAPI.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
 	publicAPI := humago.New(mux, publicConfig)
 	registerPublicRoutes(publicAPI, svc)
 	registerOperatorRoutes(publicAPI, svc)
@@ -40,7 +41,7 @@ func NewAPI(mux *http.ServeMux, version, listenAddr string, svc provider) (huma.
 
 	privateMux := http.NewServeMux()
 	privateConfig := huma.DefaultConfig("Mailbox Service", version)
-	privateConfig.OpenAPI.Servers = []*huma.Server{{URL: "http://" + listenAddr}}
+	privateConfig.OpenAPI.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
 	privateAPI := humago.New(privateMux, privateConfig)
 	registerMailRoutes(privateAPI, svc)
 	apiwire.ApplyOpenAPIWireDefaults(privateAPI)
@@ -50,7 +51,7 @@ func NewAPI(mux *http.ServeMux, version, listenAddr string, svc provider) (huma.
 
 func OpenAPIDowngradeYAML(version, listenAddr string) ([]byte, error) {
 	privateConfig := huma.DefaultConfig("Mailbox Service", version)
-	privateConfig.OpenAPI.Servers = []*huma.Server{{URL: "http://" + listenAddr}}
+	privateConfig.OpenAPI.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
 	privateAPI := humago.New(http.NewServeMux(), privateConfig)
 	registerMailRoutes(privateAPI, nil)
 	registerOperatorRoutes(privateAPI, nil)
@@ -60,10 +61,17 @@ func OpenAPIDowngradeYAML(version, listenAddr string) ([]byte, error) {
 
 func OpenAPIYAML(version, listenAddr string) ([]byte, error) {
 	privateConfig := huma.DefaultConfig("Mailbox Service", version)
-	privateConfig.OpenAPI.Servers = []*huma.Server{{URL: "http://" + listenAddr}}
+	privateConfig.OpenAPI.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
 	privateAPI := humago.New(http.NewServeMux(), privateConfig)
 	registerMailRoutes(privateAPI, nil)
 	registerOperatorRoutes(privateAPI, nil)
 	apiwire.ApplyOpenAPIWireDefaults(privateAPI)
 	return privateAPI.OpenAPI().YAML()
+}
+
+func serverURL(addr string) string {
+	if strings.Contains(addr, "://") {
+		return addr
+	}
+	return "http://" + addr
 }

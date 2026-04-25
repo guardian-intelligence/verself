@@ -7,10 +7,10 @@ mode="${SANDBOX_INNER_MODE:-dev}"
 
 case "${mode}" in
   dev)
-    "${script_dir}/run-rent-local-dev.sh"
+    "${script_dir}/run-console-local-dev.sh"
     ;;
   verify)
-    "${script_dir}/verify-rent-ui-local.sh"
+    "${script_dir}/verify-console-ui-local.sh"
     ;;
   *)
     echo "usage: SANDBOX_INNER_MODE=dev|verify $0" >&2

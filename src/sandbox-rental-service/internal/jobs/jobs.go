@@ -44,11 +44,11 @@ const (
 	defaultProductID        = "sandbox"
 	defaultRunCommand       = "echo hello"
 
-	billingSKUComputeVCPUMs              = "sandbox_compute_amd_epyc_4484px_vcpu_ms"
-	billingSKUMemoryGiBMs                = "sandbox_memory_standard_gib_ms"
-	billingSKUExecutionRootStorageGiBMs  = "sandbox_execution_root_storage_premium_nvme_gib_ms"
-	billingMiBPerGiB                     = 1024
-	billingBytesPerGiB                   = 1024 * 1024 * 1024
+	billingSKUComputeVCPUMs             = "sandbox_compute_amd_epyc_4484px_vcpu_ms"
+	billingSKUMemoryGiBMs               = "sandbox_memory_standard_gib_ms"
+	billingSKUExecutionRootStorageGiBMs = "sandbox_execution_root_storage_premium_nvme_gib_ms"
+	billingMiBPerGiB                    = 1024
+	billingBytesPerGiB                  = 1024 * 1024 * 1024
 
 	StateQueued     = "queued"
 	StateReserved   = "reserved"
@@ -62,12 +62,12 @@ const (
 )
 
 var (
-	ErrQuotaExceeded              = errors.New("sandbox-rental: quota exceeded")
-	ErrExecutionMissing           = errors.New("sandbox-rental: execution missing")
-	ErrRunnerUnavailable          = errors.New("sandbox-rental: runner unavailable")
-	ErrRunnerClassMissing         = errors.New("sandbox-rental: runner class missing")
-	ErrBillingPaymentRequired     = errors.New("sandbox-rental: billing payment required")
-	ErrBillingForbidden           = errors.New("sandbox-rental: billing forbidden")
+	ErrQuotaExceeded          = errors.New("sandbox-rental: quota exceeded")
+	ErrExecutionMissing       = errors.New("sandbox-rental: execution missing")
+	ErrRunnerUnavailable      = errors.New("sandbox-rental: runner unavailable")
+	ErrRunnerClassMissing     = errors.New("sandbox-rental: runner class missing")
+	ErrBillingPaymentRequired = errors.New("sandbox-rental: billing payment required")
+	ErrBillingForbidden       = errors.New("sandbox-rental: billing forbidden")
 )
 
 var tracer = otel.Tracer("sandbox-rental-service/jobs")
@@ -141,18 +141,18 @@ type ExecutionRecord struct {
 }
 
 type AttemptRecord struct {
-	AttemptID     uuid.UUID
-	AttemptSeq    int
-	State         string
-	LeaseID       string
-	ExecID        string
-	BillingJobID  int64
-	FailureReason string
-	ExitCode      int
-	DurationMs    int64
-	ZFSWritten    int64
-	StdoutBytes   int64
-	StderrBytes   int64
+	AttemptID              uuid.UUID
+	AttemptSeq             int
+	State                  string
+	LeaseID                string
+	ExecID                 string
+	BillingJobID           int64
+	FailureReason          string
+	ExitCode               int
+	DurationMs             int64
+	ZFSWritten             int64
+	StdoutBytes            int64
+	StderrBytes            int64
 	RootfsProvisionedBytes int64
 	BootTimeUs             int64
 	BlockReadBytes         int64
@@ -160,29 +160,29 @@ type AttemptRecord struct {
 	NetRXBytes             int64
 	NetTXBytes             int64
 	VCPUExitCount          int64
-	TraceID       string
-	StartedAt     *time.Time
-	CompletedAt   *time.Time
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	TraceID                string
+	StartedAt              *time.Time
+	CompletedAt            *time.Time
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
 }
 
 type BillingWindow struct {
-	AttemptID        uuid.UUID
-	BillingWindowID  string
-	WindowSeq        int
-	ReservationShape string
-	ReservedQuantity int
-	ActualQuantity   int
+	AttemptID           uuid.UUID
+	BillingWindowID     string
+	WindowSeq           int
+	ReservationShape    string
+	ReservedQuantity    int
+	ActualQuantity      int
 	ReservedChargeUnits uint64
 	BilledChargeUnits   uint64
 	WriteoffChargeUnits uint64
 	CostPerUnit         uint64
-	PricingPhase     string
-	State            string
-	WindowStart      time.Time
-	CreatedAt        time.Time
-	SettledAt        *time.Time
+	PricingPhase        string
+	State               string
+	WindowStart         time.Time
+	CreatedAt           time.Time
+	SettledAt           *time.Time
 }
 
 type Service struct {
@@ -201,81 +201,81 @@ type Service struct {
 }
 
 type executionWorkItem struct {
-	ExecutionID       uuid.UUID
-	AttemptID         uuid.UUID
-	OrgID             uint64
-	ActorID           string
-	Kind              string
-	SourceKind        string
-	WorkloadKind      string
-	SourceRef         string
-	RunnerClass       string
-	ExternalProvider  string
-	ExternalTaskID    string
-	Provider          string
-	ProductID         string
-	RunCommand        string
-	MaxWallSeconds    uint64
-	LeaseID           string
-	ExecID            string
-	CorrelationID     string
-	Resources         apiwire.VMResources
-	FilesystemMounts  []vmorchestrator.FilesystemMount
+	ExecutionID      uuid.UUID
+	AttemptID        uuid.UUID
+	OrgID            uint64
+	ActorID          string
+	Kind             string
+	SourceKind       string
+	WorkloadKind     string
+	SourceRef        string
+	RunnerClass      string
+	ExternalProvider string
+	ExternalTaskID   string
+	Provider         string
+	ProductID        string
+	RunCommand       string
+	MaxWallSeconds   uint64
+	LeaseID          string
+	ExecID           string
+	CorrelationID    string
+	Resources        apiwire.VMResources
+	FilesystemMounts []vmorchestrator.FilesystemMount
 }
 
 type jobEventRow struct {
-	ExecutionID      uuid.UUID `ch:"execution_id"`
-	AttemptID        uuid.UUID `ch:"attempt_id"`
-	OrgID            uint64    `ch:"org_id"`
-	ActorID          string    `ch:"actor_id"`
-	Kind             string    `ch:"kind"`
-	SourceKind       string    `ch:"source_kind"`
-	WorkloadKind     string    `ch:"workload_kind"`
-	SourceRef        string    `ch:"source_ref"`
-	RunnerClass      string    `ch:"runner_class"`
-	ExternalProvider string    `ch:"external_provider"`
-	ExternalTaskID   string    `ch:"external_task_id"`
-	Provider         string    `ch:"provider"`
-	ProductID        string    `ch:"product_id"`
-	LeaseID          string    `ch:"lease_id"`
-	ExecID           string    `ch:"exec_id"`
-	RepositoryFullName string  `ch:"repository_full_name"`
-	WorkflowName       string  `ch:"workflow_name"`
-	JobName            string  `ch:"job_name"`
-	HeadBranch         string  `ch:"head_branch"`
-	HeadSHA            string  `ch:"head_sha"`
-	GitHubInstallationID uint64 `ch:"github_installation_id"`
-	GitHubRunID          uint64 `ch:"github_run_id"`
-	GitHubJobID          uint64 `ch:"github_job_id"`
-	ScheduleID           string `ch:"schedule_id"`
-	ScheduleDisplayName  string `ch:"schedule_display_name"`
-	TemporalWorkflowID   string `ch:"temporal_workflow_id"`
-	TemporalRunID        string `ch:"temporal_run_id"`
-	RunCommand       string    `ch:"run_command"`
-	Status           string    `ch:"status"`
-	ExitCode         int32     `ch:"exit_code"`
-	DurationMs       int64     `ch:"duration_ms"`
-	ZFSWritten       uint64    `ch:"zfs_written"`
-	StdoutBytes      uint64    `ch:"stdout_bytes"`
-	StderrBytes      uint64    `ch:"stderr_bytes"`
-	BillingJobID     int64     `ch:"billing_job_id"`
-	ReservedChargeUnits uint64 `ch:"reserved_charge_units"`
-	BilledChargeUnits   uint64 `ch:"billed_charge_units"`
-	WriteoffChargeUnits uint64 `ch:"writeoff_charge_units"`
-	CostPerUnit         uint64 `ch:"cost_per_unit"`
-	PricingPhase     string    `ch:"pricing_phase"`
-	RootfsProvisionedBytes uint64 `ch:"rootfs_provisioned_bytes"`
-	BootTimeUs            uint64 `ch:"boot_time_us"`
-	BlockReadBytes        uint64 `ch:"block_read_bytes"`
-	BlockWriteBytes       uint64 `ch:"block_write_bytes"`
-	NetRXBytes            uint64 `ch:"net_rx_bytes"`
-	NetTXBytes            uint64 `ch:"net_tx_bytes"`
-	VCPUExitCount         uint64 `ch:"vcpu_exit_count"`
-	CorrelationID    string    `ch:"correlation_id"`
-	StartedAt        time.Time `ch:"started_at"`
-	CompletedAt      time.Time `ch:"completed_at"`
-	CreatedAt        time.Time `ch:"created_at"`
-	TraceID          string    `ch:"trace_id"`
+	ExecutionID            uuid.UUID `ch:"execution_id"`
+	AttemptID              uuid.UUID `ch:"attempt_id"`
+	OrgID                  uint64    `ch:"org_id"`
+	ActorID                string    `ch:"actor_id"`
+	Kind                   string    `ch:"kind"`
+	SourceKind             string    `ch:"source_kind"`
+	WorkloadKind           string    `ch:"workload_kind"`
+	SourceRef              string    `ch:"source_ref"`
+	RunnerClass            string    `ch:"runner_class"`
+	ExternalProvider       string    `ch:"external_provider"`
+	ExternalTaskID         string    `ch:"external_task_id"`
+	Provider               string    `ch:"provider"`
+	ProductID              string    `ch:"product_id"`
+	LeaseID                string    `ch:"lease_id"`
+	ExecID                 string    `ch:"exec_id"`
+	RepositoryFullName     string    `ch:"repository_full_name"`
+	WorkflowName           string    `ch:"workflow_name"`
+	JobName                string    `ch:"job_name"`
+	HeadBranch             string    `ch:"head_branch"`
+	HeadSHA                string    `ch:"head_sha"`
+	GitHubInstallationID   uint64    `ch:"github_installation_id"`
+	GitHubRunID            uint64    `ch:"github_run_id"`
+	GitHubJobID            uint64    `ch:"github_job_id"`
+	ScheduleID             string    `ch:"schedule_id"`
+	ScheduleDisplayName    string    `ch:"schedule_display_name"`
+	TemporalWorkflowID     string    `ch:"temporal_workflow_id"`
+	TemporalRunID          string    `ch:"temporal_run_id"`
+	RunCommand             string    `ch:"run_command"`
+	Status                 string    `ch:"status"`
+	ExitCode               int32     `ch:"exit_code"`
+	DurationMs             int64     `ch:"duration_ms"`
+	ZFSWritten             uint64    `ch:"zfs_written"`
+	StdoutBytes            uint64    `ch:"stdout_bytes"`
+	StderrBytes            uint64    `ch:"stderr_bytes"`
+	BillingJobID           int64     `ch:"billing_job_id"`
+	ReservedChargeUnits    uint64    `ch:"reserved_charge_units"`
+	BilledChargeUnits      uint64    `ch:"billed_charge_units"`
+	WriteoffChargeUnits    uint64    `ch:"writeoff_charge_units"`
+	CostPerUnit            uint64    `ch:"cost_per_unit"`
+	PricingPhase           string    `ch:"pricing_phase"`
+	RootfsProvisionedBytes uint64    `ch:"rootfs_provisioned_bytes"`
+	BootTimeUs             uint64    `ch:"boot_time_us"`
+	BlockReadBytes         uint64    `ch:"block_read_bytes"`
+	BlockWriteBytes        uint64    `ch:"block_write_bytes"`
+	NetRXBytes             uint64    `ch:"net_rx_bytes"`
+	NetTXBytes             uint64    `ch:"net_tx_bytes"`
+	VCPUExitCount          uint64    `ch:"vcpu_exit_count"`
+	CorrelationID          string    `ch:"correlation_id"`
+	StartedAt              time.Time `ch:"started_at"`
+	CompletedAt            time.Time `ch:"completed_at"`
+	CreatedAt              time.Time `ch:"created_at"`
+	TraceID                string    `ch:"trace_id"`
 }
 
 type jobLogRow struct {
@@ -1097,46 +1097,46 @@ func (s *Service) writeJobEvent(ctx context.Context, row jobEventRow) error {
 
 func jobEventRowForRun(record ExecutionRecord) jobEventRow {
 	return jobEventRow{
-		ExecutionID:           record.ExecutionID,
-		AttemptID:             record.LatestAttempt.AttemptID,
-		OrgID:                 record.OrgID,
-		ActorID:               record.ActorID,
-		Kind:                  record.Kind,
-		SourceKind:            record.SourceKind,
-		WorkloadKind:          record.WorkloadKind,
-		SourceRef:             record.SourceRef,
-		RunnerClass:           record.RunnerClass,
-		ExternalProvider:      record.ExternalProvider,
-		ExternalTaskID:        record.ExternalTaskID,
-		Provider:              record.Provider,
-		ProductID:             record.ProductID,
-		LeaseID:               record.LatestAttempt.LeaseID,
-		ExecID:                record.LatestAttempt.ExecID,
-		RepositoryFullName:    record.GitHub.RepositoryFullName,
-		WorkflowName:          record.GitHub.WorkflowName,
-		JobName:               record.GitHub.JobName,
-		HeadBranch:            record.GitHub.HeadBranch,
-		HeadSHA:               record.GitHub.HeadSHA,
-		GitHubInstallationID:  int64ToUint64(record.GitHub.InstallationID),
-		GitHubRunID:           int64ToUint64(record.GitHub.RunID),
-		GitHubJobID:           int64ToUint64(record.GitHub.JobID),
-		ScheduleID:            zeroUUIDString(record.Schedule.ScheduleID),
-		ScheduleDisplayName:   record.Schedule.DisplayName,
-		TemporalWorkflowID:    record.Schedule.TemporalWorkflowID,
-		TemporalRunID:         record.Schedule.TemporalRunID,
-		RunCommand:            record.RunCommand,
-		Status:                record.Status,
-		ExitCode:              int32(record.LatestAttempt.ExitCode),
-		DurationMs:            record.LatestAttempt.DurationMs,
-		ZFSWritten:            int64ToUint64(record.LatestAttempt.ZFSWritten),
-		StdoutBytes:           int64ToUint64(record.LatestAttempt.StdoutBytes),
-		StderrBytes:           int64ToUint64(record.LatestAttempt.StderrBytes),
-		BillingJobID:          record.LatestAttempt.BillingJobID,
-		ReservedChargeUnits:   record.BillingSummary.ReservedChargeUnits,
-		BilledChargeUnits:     record.BillingSummary.BilledChargeUnits,
-		WriteoffChargeUnits:   record.BillingSummary.WriteoffChargeUnits,
-		CostPerUnit:           record.BillingSummary.CostPerUnit,
-		PricingPhase:          record.BillingSummary.PricingPhase,
+		ExecutionID:            record.ExecutionID,
+		AttemptID:              record.LatestAttempt.AttemptID,
+		OrgID:                  record.OrgID,
+		ActorID:                record.ActorID,
+		Kind:                   record.Kind,
+		SourceKind:             record.SourceKind,
+		WorkloadKind:           record.WorkloadKind,
+		SourceRef:              record.SourceRef,
+		RunnerClass:            record.RunnerClass,
+		ExternalProvider:       record.ExternalProvider,
+		ExternalTaskID:         record.ExternalTaskID,
+		Provider:               record.Provider,
+		ProductID:              record.ProductID,
+		LeaseID:                record.LatestAttempt.LeaseID,
+		ExecID:                 record.LatestAttempt.ExecID,
+		RepositoryFullName:     record.GitHub.RepositoryFullName,
+		WorkflowName:           record.GitHub.WorkflowName,
+		JobName:                record.GitHub.JobName,
+		HeadBranch:             record.GitHub.HeadBranch,
+		HeadSHA:                record.GitHub.HeadSHA,
+		GitHubInstallationID:   int64ToUint64(record.GitHub.InstallationID),
+		GitHubRunID:            int64ToUint64(record.GitHub.RunID),
+		GitHubJobID:            int64ToUint64(record.GitHub.JobID),
+		ScheduleID:             zeroUUIDString(record.Schedule.ScheduleID),
+		ScheduleDisplayName:    record.Schedule.DisplayName,
+		TemporalWorkflowID:     record.Schedule.TemporalWorkflowID,
+		TemporalRunID:          record.Schedule.TemporalRunID,
+		RunCommand:             record.RunCommand,
+		Status:                 record.Status,
+		ExitCode:               int32(record.LatestAttempt.ExitCode),
+		DurationMs:             record.LatestAttempt.DurationMs,
+		ZFSWritten:             int64ToUint64(record.LatestAttempt.ZFSWritten),
+		StdoutBytes:            int64ToUint64(record.LatestAttempt.StdoutBytes),
+		StderrBytes:            int64ToUint64(record.LatestAttempt.StderrBytes),
+		BillingJobID:           record.LatestAttempt.BillingJobID,
+		ReservedChargeUnits:    record.BillingSummary.ReservedChargeUnits,
+		BilledChargeUnits:      record.BillingSummary.BilledChargeUnits,
+		WriteoffChargeUnits:    record.BillingSummary.WriteoffChargeUnits,
+		CostPerUnit:            record.BillingSummary.CostPerUnit,
+		PricingPhase:           record.BillingSummary.PricingPhase,
 		RootfsProvisionedBytes: int64ToUint64(record.LatestAttempt.RootfsProvisionedBytes),
 		BootTimeUs:             int64ToUint64(record.LatestAttempt.BootTimeUs),
 		BlockReadBytes:         int64ToUint64(record.LatestAttempt.BlockReadBytes),

@@ -3,7 +3,7 @@ info:
     title: Forge Metal Governance Service API
     version: dev
 servers:
-    - url: http://127.0.0.1:4250
+    - url: https://governance.api.anveio.com
 paths:
     /api/v1/governance/audit/events:
         get:
@@ -344,7 +344,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - http://127.0.0.1:4250/schemas/ErrorModel.json
+                        - https://governance.api.anveio.com/schemas/ErrorModel.json
                     readOnly: true
                 detail:
                     type: string
@@ -623,7 +623,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - http://127.0.0.1:4250/schemas/GovernanceCreateExportRequest.json
+                        - https://governance.api.anveio.com/schemas/GovernanceCreateExportRequest.json
                     readOnly: true
                 include_logs:
                     type: boolean
@@ -667,7 +667,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - http://127.0.0.1:4250/schemas/GovernanceExportJob.json
+                        - https://governance.api.anveio.com/schemas/GovernanceExportJob.json
                     readOnly: true
                 artifact_bytes:
                     type: string

@@ -10,7 +10,10 @@ import (
 	"github.com/forge-metal/sandbox-rental-service/internal/api"
 )
 
-const version = "1.0.0"
+const (
+	version         = "1.0.0"
+	publicServerURL = "https://sandbox.api.anveio.com"
+)
 
 func main() {
 	format := flag.String("format", "3.0", "OpenAPI output format: 3.0 or 3.1")
@@ -23,9 +26,9 @@ func main() {
 	)
 	switch *format {
 	case "3.0":
-		spec, err = api.OpenAPIDowngradeYAML(version, "127.0.0.1:4243")
+		spec, err = api.OpenAPIDowngradeYAML(version, publicServerURL)
 	case "3.1":
-		spec, err = api.OpenAPIYAML(version, "127.0.0.1:4243")
+		spec, err = api.OpenAPIYAML(version, publicServerURL)
 	default:
 		fmt.Fprintln(os.Stderr, "invalid -format value, expected 3.0 or 3.1")
 		os.Exit(1)

@@ -5,7 +5,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingActivateWindowRequest.json
+          example: https://example.com/schemas/BillingActivateWindowRequest.json
           format: uri
           readOnly: true
           type: string
@@ -25,7 +25,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingActivateWindowResult.json
+          example: https://example.com/schemas/BillingActivateWindowResult.json
           format: uri
           readOnly: true
           type: string
@@ -39,7 +39,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingCancelContractRequest.json
+          example: https://example.com/schemas/BillingCancelContractRequest.json
           format: uri
           readOnly: true
           type: string
@@ -54,7 +54,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingCancelContractResponse.json
+          example: https://example.com/schemas/BillingCancelContractResponse.json
           format: uri
           readOnly: true
           type: string
@@ -119,7 +119,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingContractChangeResponse.json
+          example: https://example.com/schemas/BillingContractChangeResponse.json
           format: uri
           readOnly: true
           type: string
@@ -147,7 +147,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingContracts.json
+          example: https://example.com/schemas/BillingContracts.json
           format: uri
           readOnly: true
           type: string
@@ -164,7 +164,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingCreateCheckoutRequest.json
+          example: https://example.com/schemas/BillingCreateCheckoutRequest.json
           format: uri
           readOnly: true
           type: string
@@ -200,7 +200,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingCreateContractChangeRequest.json
+          example: https://example.com/schemas/BillingCreateContractChangeRequest.json
           format: uri
           readOnly: true
           type: string
@@ -230,7 +230,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingCreateContractRequest.json
+          example: https://example.com/schemas/BillingCreateContractRequest.json
           format: uri
           readOnly: true
           type: string
@@ -264,7 +264,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingCreatePortalSessionRequest.json
+          example: https://example.com/schemas/BillingCreatePortalSessionRequest.json
           format: uri
           readOnly: true
           type: string
@@ -355,7 +355,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingDocuments.json
+          example: https://example.com/schemas/BillingDocuments.json
           format: uri
           readOnly: true
           type: string
@@ -502,7 +502,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingEntitlementsView.json
+          example: https://example.com/schemas/BillingEntitlementsView.json
           format: uri
           readOnly: true
           type: string
@@ -579,7 +579,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingGrants.json
+          example: https://example.com/schemas/BillingGrants.json
           format: uri
           readOnly: true
           type: string
@@ -633,7 +633,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingPlans.json
+          example: https://example.com/schemas/BillingPlans.json
           format: uri
           readOnly: true
           type: string
@@ -650,7 +650,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingReserveWindowRequest.json
+          example: https://example.com/schemas/BillingReserveWindowRequest.json
           format: uri
           readOnly: true
           type: string
@@ -721,7 +721,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingReserveWindowResult.json
+          example: https://example.com/schemas/BillingReserveWindowResult.json
           format: uri
           readOnly: true
           type: string
@@ -735,7 +735,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingSettleResult.json
+          example: https://example.com/schemas/BillingSettleResult.json
           format: uri
           readOnly: true
           type: string
@@ -779,7 +779,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingSettleWindowRequest.json
+          example: https://example.com/schemas/BillingSettleWindowRequest.json
           format: uri
           readOnly: true
           type: string
@@ -804,7 +804,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingStatement.json
+          example: https://example.com/schemas/BillingStatement.json
           format: uri
           readOnly: true
           type: string
@@ -993,7 +993,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingURLResponse.json
+          example: https://example.com/schemas/BillingURLResponse.json
           format: uri
           readOnly: true
           type: string
@@ -1007,7 +1007,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingVoidWindowRequest.json
+          example: https://example.com/schemas/BillingVoidWindowRequest.json
           format: uri
           readOnly: true
           type: string
@@ -1023,7 +1023,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingVoidWindowResult.json
+          example: https://example.com/schemas/BillingVoidWindowResult.json
           format: uri
           readOnly: true
           type: string
@@ -1128,7 +1128,7 @@ components:
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/ErrorModel.json
+          example: https://example.com/schemas/ErrorModel.json
           format: uri
           readOnly: true
           type: string
@@ -1617,4 +1617,4 @@ paths:
           description: Internal Server Error
       summary: Void billing window
 servers:
-  - url: http://127.0.0.1:4242
+  - url: https://billing.api.anveio.com

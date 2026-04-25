@@ -176,10 +176,15 @@ Services get subdomains configured via Cloudflare:
 
 | Subdomain | Service |
 |-----------|---------|
+| `console.<domain>` | Authenticated Forge Metal product console |
+| `<service>.api.<domain>` | Public service APIs (`billing.api`, `sandbox.api`, `identity.api`, etc.) |
 | `dashboard.<domain>` | Grafana |
 | `git.<domain>` | Forgejo |
 | `auth.<domain>` | Zitadel |
-| `mail.<domain>` | Stalwart (JMAP API + mailbox-service) — webmail frontend retired; surfaces will be folded into rent-a-sandbox |
+| `mail.<domain>` | Stalwart JMAP/SMTP protocol surface |
+
+See [`public-origins.md`](public-origins.md) for the browser/API/protocol
+origin split.
 
 ## Server Profile
 

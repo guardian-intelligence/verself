@@ -13,7 +13,7 @@ flowchart TB
   zitadel["Zitadel<br/>OIDC, orgs, role assignments"]
   grafana["Grafana<br/>observability UI"]
 
-  rent["rent-a-sandbox<br/>TanStack Start BFF"]
+  console["console<br/>TanStack Start BFF"]
   identity["identity-service<br/>org + product IAM control plane"]
   sandbox["sandbox-rental-service<br/>compute product control plane"]
   billing["billing-service<br/>Reserve / Settle / Void"]
@@ -44,7 +44,7 @@ flowchart TB
   stripe --> caddy
   github --> actions
 
-  caddy --> rent
+  caddy --> console
   caddy --> sandbox
   caddy --> billing
   caddy --> identity
@@ -53,10 +53,10 @@ flowchart TB
   caddy --> grafana
   caddy --> stalwart
 
-  rent --> sandbox
-  rent --> identity
-  rent --> billing
-  pg --> electric --> rent
+  console --> sandbox
+  console --> identity
+  console --> billing
+  pg --> electric --> console
 
   forgejo --> actions
   actions --> sandbox
@@ -108,6 +108,20 @@ flowchart TB
 
   clickhouse --> grafana
 ```
+
+Public HTTP origins are intentionally split by concern:
+
+- `console.<domain>` is the authenticated browser product console. Browser code
+  stays same-origin and reaches services through TanStack Start server
+  functions.
+- `<service>.api.<domain>` origins expose customer, SDK, and CLI APIs for the
+  owning Go service, for example `billing.api.<domain>`,
+  `sandbox.api.<domain>`, and `identity.api.<domain>`.
+- Protocol origins such as `git.<domain>`, `auth.<domain>`, `mail.<domain>`,
+  `dashboard.<domain>`, and `temporal.<domain>` remain protocol/UI-specific
+  surfaces, not generic API gateways.
+
+See [public-origins.md](public-origins.md) for the public origin contract.
 
 `sandbox-rental-service` is the product control plane for three related compute
 products: a Blacksmith-like clean-room Actions runner, arbitrary workload

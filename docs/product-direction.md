@@ -11,6 +11,11 @@ Where the platform is headed. When this doc disagrees with `docs/system-context.
   1. Be designed for use by customers in a multi-tenant, organization-based fashion and integrated into the policy and billing abstractions.
   2. Be designed such that we are the principal customers (dogfooding). We go through the same policy and billing abstractions, except our usage is unlimited and our bill at invoice time nets to zero after applying an adjustment. Not currently upheld for Mail; worth dogfooding there too. This philosophy is direction, not current state; uphold as the codebase is upgraded.
 - Product IAM direction: Zitadel owns identity, organizations, users, OAuth/OIDC, project roles, and role assignments; Forge Metal owns the product policy model; each Go service owns and enforces its operation catalog. The platform ships working default role bundles and policy documents, then exposes customer editing through a constrained Forge Metal organization console rather than requiring founders to hand-author IAM documents. See `src/platform/docs/identity-and-iam.md`.
+- Public surface direction: product workflows converge into `console.<domain>`,
+  while customer, SDK, and CLI APIs live on service-owned
+  `<service>.api.<domain>` origins. Forge Metal does not use a shared
+  `api.<domain>/<service>/...` gateway; service subdomains are the public
+  ownership boundary.
 - Dogfood our own Forgejo and CI: establish `main`, `beta`, `gamma`, and per-branch preview environments of the entire system with automatic promotion. Dev branches merge to `gamma`; `gamma` bakes and runs more expensive automation tests, then promotes to `beta`; `beta` sees private invite-only users and has manual or time-gated promotion to `main`. Dev branches are accessible only by the founder and their agent.
 - Define e2e canaries of our own infrastructure as repeatable, scheduled workloads.
 

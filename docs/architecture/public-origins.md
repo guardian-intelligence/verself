@@ -1,0 +1,93 @@
+# Public Origins
+
+Forge Metal exposes three public origin classes. Origin shape is part of the
+product contract because it controls browser CSP boundaries, public API
+documentation, SDK/CLI base URLs, WAF policy, and incident isolation.
+
+## Origin Classes
+
+| Origin | Owner | Purpose |
+|---|---|---|
+| `console.<domain>` | Console frontend | Authenticated browser product console. |
+| `<service>.api.<domain>` | Owning Go service | Customer, SDK, and CLI HTTP APIs. |
+| Protocol origins | Backing protocol service | Non-HTTP-product or protocol-native surfaces such as Git, JMAP, SMTP, and S3. |
+
+The root `forge_metal_domain` remains the company and marketing site. The
+console is not a marketing surface and does not own public API paths.
+
+## API Origins
+
+Each public Go service gets a service-owned API origin:
+
+| Origin | Service |
+|---|---|
+| `billing.api.<domain>` | `billing-service` |
+| `sandbox.api.<domain>` | `sandbox-rental-service` |
+| `identity.api.<domain>` | `identity-service` |
+| `profile.api.<domain>` | `profile-service` |
+| `notifications.api.<domain>` | `notifications-service` |
+| `governance.api.<domain>` | `governance-service` |
+| `secrets.api.<domain>` | `secrets-service` |
+| `mail.api.<domain>` | `mailbox-service` HTTP API |
+| `source.api.<domain>` | planned `source-code-hosting-service` |
+| `object-storage.api.<domain>` | planned customer object-storage control API |
+
+Service API paths remain under `/api/v1/...`. The service subdomain identifies
+the owning product plane; the path identifies versioned resources inside that
+plane. Do not introduce a shared `api.<domain>/<service>/...` gateway.
+
+OpenAPI `servers` entries must use the canonical API origin for public specs.
+Generated Go, TypeScript, and future CLI clients should accept a base URL, but
+the documented hosted default is the service API origin.
+
+## Console Boundary
+
+Browser code in `console.<domain>` must not call service API origins directly.
+The console uses TanStack Start server functions as the browser-facing boundary:
+browser requests stay same-origin, server functions read the server-owned
+session, attach service bearers, and call the appropriate `<service>.api`
+origin or loopback service URL.
+
+The console CSP should keep `connect-src 'self'` unless a specific browser
+protocol requires a documented exception. This preserves bearer isolation and
+lets API origins use stricter API-only security headers.
+
+## Protocol Origins
+
+Protocol origins are not generic API hosts:
+
+| Origin | Backing service | Purpose |
+|---|---|---|
+| `git.<domain>` | Forgejo now, source resource plane later | Git smart HTTP/SSH and temporary Forgejo admin UI. |
+| `auth.<domain>` | Zitadel | OIDC, SAML, login, and IdP administration. |
+| `mail.<domain>` | Stalwart | SMTP/JMAP protocol surface. |
+| `dashboard.<domain>` | Grafana | Operator observability UI. |
+| `temporal.<domain>` | Temporal Web | Operator workflow UI. |
+
+When a protocol surface also has a Forge Metal product API, the API lives on
+`<service>.api.<domain>` and not on the protocol origin.
+
+## Implementation Source Of Truth
+
+`src/platform/ansible/group_vars/all/services.yml` remains the service endpoint
+registry. The next cutover should extend that registry with public origin
+metadata so Caddy, Cloudflare DNS, OpenAPI server URLs, frontend environment,
+and documentation all derive from the same source.
+
+Required registry fields for public APIs:
+
+```yaml
+services:
+  billing:
+    host: "127.0.0.1"
+    port: 4242
+    public_api:
+      subdomain: billing.api
+      path_prefix: /api/v1
+      browser_cors: none
+      max_body_bytes: 1048576
+```
+
+Exceptions stay explicit. Stripe webhooks, Git smart HTTP, Electric shapes,
+Zitadel login routes, and future S3-compatible endpoints are not normal service
+API origins.

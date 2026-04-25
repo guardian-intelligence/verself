@@ -94,7 +94,7 @@ Stalwart and the Forge Metal app tier do not share an auth system today.
 
 **Why two passwords exist today:** `ceo@<domain>` therefore has:
 
-- a Zitadel password for logging into repo-owned apps such as webmail, Forgejo, Letters, and rent-a-sandbox
+- a Zitadel password for logging into repo-owned apps such as webmail, Forgejo, Letters, and console
 - a Stalwart mailbox password for direct mail-protocol access such as JMAP/IMAP/SMTP auth and for box-local operator tooling
 
 The webmail app never asks the human for the Stalwart password. That mailbox password is currently used by Stalwart itself, `mailbox-service` sync/forwarding code, and direct operator access such as `make mail-passwords`.

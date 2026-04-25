@@ -1,3 +1,3 @@
 # @forge-metal/ui
 
-Shared primitives used by the Vite+ rent-a-sandbox staging workspace.
+Shared primitives used by the Vite+ console staging workspace.

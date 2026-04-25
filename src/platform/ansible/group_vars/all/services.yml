@@ -50,12 +50,12 @@
 #      4260  notifications-service
 #
 #    TanStack frontends (Nitro SSR):             4240–4269 (shared block)
-#      4244  rent-a-sandbox
+#      4244  console
 #      4249  platform
 #      4252  company
 #
 # Port 4245 was webmail; the app was retired and its surfaces will be folded
-# into rent-a-sandbox. The port is reserved — do not re-assign until that
+# into console. The port is reserved — do not re-assign until that
 # absorption lands.
 #    Grafana & ops UIs:                          4300–4399
 #      4300  Grafana
@@ -162,7 +162,7 @@ services:
   notifications_service:
     host: "127.0.0.1"
     port: 4260
-  rent_a_sandbox:
+  console:
     host: "127.0.0.1"
     port: 4244
   electric:

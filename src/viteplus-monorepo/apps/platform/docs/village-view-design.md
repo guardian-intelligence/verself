@@ -100,15 +100,15 @@ subtle haptic and a toast explaining _why_ ("The Smelter must live inside the Ke
 Walled frontage. This is where all external traffic arrives. Buildings sit along or just
 inside the wall.
 
-| Building           | Service                                   | Notes                                                                                                        |
-| ------------------ | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| The Gate           | Caddy + Coraza WAF + nftables ingress     | Animated guards; "under attack" posture on WAF spikes                                                        |
-| Herald's Stage × N | Frontend apps (TanStack Start)            | One per public app (this console, rent-a-sandbox, …). Webmail surfaces are being folded into rent-a-sandbox. |
-| Customs House      | sandbox-rental-service public API         | Packages and crates in the yard scale with active rentals                                                    |
-| Letter Slot        | Stalwart SMTP/JMAP + mailbox-service hook | Mail sacks pile up with queue depth                                                                          |
-| Tollbooth          | billing-service Stripe webhook            | A visible coin-chute; clinks on charge                                                                       |
-| Code Forge         | Forgejo                                   | Anvil sparks on pushes                                                                                       |
-| Watchtower         | Grafana                                   | Deep-link surface for developer mode                                                                         |
+| Building           | Service                                   | Notes                                                                                          |
+| ------------------ | ----------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| The Gate           | Caddy + Coraza WAF + nftables ingress     | Animated guards; "under attack" posture on WAF spikes                                          |
+| Herald's Stage × N | Frontend apps (TanStack Start)            | One per public app (this console, console, …). Webmail surfaces are being folded into console. |
+| Customs House      | sandbox-rental-service public API         | Packages and crates in the yard scale with active rentals                                      |
+| Letter Slot        | Stalwart SMTP/JMAP + mailbox-service hook | Mail sacks pile up with queue depth                                                            |
+| Tollbooth          | billing-service Stripe webhook            | A visible coin-chute; clinks on charge                                                         |
+| Code Forge         | Forgejo                                   | Anvil sparks on pushes                                                                         |
+| Watchtower         | Grafana                                   | Deep-link surface for developer mode                                                           |
 
 ### 5.2 Town Proper (Ring 2, private userspace)
 

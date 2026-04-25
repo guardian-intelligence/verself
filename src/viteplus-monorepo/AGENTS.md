@@ -69,10 +69,10 @@ Only frontends need OIDC apps. Go backend services (mailbox-service, billing-ser
 
 | Zitadel Project   | OIDC Apps (frontends) | JWT Validators (backends)               |
 | ----------------- | --------------------- | --------------------------------------- |
-| `sandbox-rental`  | rent-a-sandbox        | sandbox-rental-service, billing-service |
+| `sandbox-rental`  | console               | sandbox-rental-service, billing-service |
 | `mailbox-service` | (pending)             | mailbox-service                         |
 
-The `mailbox-service` project previously had a `webmail` OIDC app; that frontend was retired and its surfaces will be folded into `rent-a-sandbox`. The project stays because `mailbox-service` backend JWT validation still targets it.
+The `mailbox-service` project previously had a `webmail` OIDC app; that frontend was retired and its surfaces will be folded into `console`. The project stays because `mailbox-service` backend JWT validation still targets it.
 
 ### Dev Mode OIDC Apps
 
@@ -85,11 +85,11 @@ Production OIDC apps are created automatically by each app's Ansible role (`zita
 
 For each frontend, create a dev OIDC app in the same Zitadel project as the production app. Use the Zitadel console at `https://auth.<domain>` or the Management API:
 
-| Frontend       | Zitadel Project | Preferred Port | Dev Redirect URI              |
-| -------------- | --------------- | -------------- | ----------------------------- |
-| rent-a-sandbox | sandbox-rental  | 4244           | `http://127.0.0.1:*/callback` |
+| Frontend | Zitadel Project | Preferred Port | Dev Redirect URI              |
+| -------- | --------------- | -------------- | ----------------------------- |
+| console  | sandbox-rental  | 4244           | `http://127.0.0.1:*/callback` |
 
-Port 4245 (previously webmail) is reserved; webmail's surfaces will be folded into rent-a-sandbox.
+Port 4245 (previously webmail) is reserved; webmail's surfaces will be folded into console.
 
 The dev app must have:
 
@@ -103,7 +103,7 @@ The dev app must have:
 ### Running a frontend locally
 
 ```bash
-# run rent-a-sandbox locally against the deployed services
+# run console locally against the deployed services
 make sandbox-inner
 
 # separate terminal: verify the local dev server and collect ClickHouse evidence
@@ -116,7 +116,7 @@ make sandbox-middle
 make sandbox-proof
 ```
 
-`make sandbox-inner` opens the required SSH tunnels, re-queries the `rent-a-sandbox-dev`
+`make sandbox-inner` opens the required SSH tunnels, re-queries the `console-dev`
 client ID from Zitadel, and exports the current runtime env for the local server:
 
 - `FORGE_METAL_DOMAIN`
@@ -130,13 +130,13 @@ client ID from Zitadel, and exports the current runtime env for the local server
 
 Open the `app:` URL printed by `make sandbox-inner`. The launcher prefers `http://127.0.0.1:4244`
 but will move to a higher local port if that one is busy, then records the chosen
-URL in `/tmp/forge-metal-rent-dev.env` so `make sandbox-inner SANDBOX_INNER_MODE=verify` can target
+URL in `/tmp/forge-metal-console-dev.env` so `make sandbox-inner SANDBOX_INNER_MODE=verify` can target
 the same dev server from another terminal. Vite HMR gives sub-second feedback on
 every file save. API calls, Electric shapes, auth sessions, and OTLP traces all
 flow through the SSH tunnels to the deployed single-node stack.
 
 `make sandbox-middle` is the non-destructive remote loop. By default it deploys
-the `rent_a_sandbox` frontend role and runs the fast admin smoke. Override
+the `console` frontend role and runs the fast admin smoke. Override
 `SANDBOX_DEPLOY_TARGET=ui|service|both|none`, `SANDBOX_VERIFY_TARGET=admin|import|refresh|execute|none`,
 and `SANDBOX_SEED_VERIFY=1` when you need a different targeted rehearsal.
 
@@ -200,7 +200,7 @@ Each Electric instance also needs its own publication (`CREATE PUBLICATION ... F
 
 **Frontend SSR footgun:** browser-visible time formatting is hydration-sensitive. `toLocaleString()` / `toLocaleDateString()` / `toLocaleTimeString()` without an explicit timezone will drift between server and browser and can cause React to throw away SSR output during hydration. Do not introduce app-local date formatting helpers for SSR-visible timestamps.
 
-**Shared frontend time abstraction:** use `formatUTCDateTime()` from `src/viteplus-monorepo/packages/web-env/src/time.ts` for SSR-visible timestamps in the web apps. It centralizes `Intl.DateTimeFormat` with `timeZone: "UTC"` and caches formatters so `mail` and `rent-a-sandbox` render the same text on the server and client.
+**Shared frontend time abstraction:** use `formatUTCDateTime()` from `src/viteplus-monorepo/packages/web-env/src/time.ts` for SSR-visible timestamps in the web apps. It centralizes `Intl.DateTimeFormat` with `timeZone: "UTC"` and caches formatters so `mail` and `console` render the same text on the server and client.
 
 ### UI primitives
 
@@ -213,7 +213,7 @@ Use the shadcn/ui components from `src/viteplus-monorepo/packages/ui/src/compone
 - Use `<DropdownMenuContent side="top" align="end" sideOffset={8}>` and let Base UI's `Menu.Positioner` handle flipping, collision, and anchor offset.
 - **`render` prop composition.** Base UI primitives (Menu.Trigger, Dialog.Trigger, Sidebar's `SidebarMenuButton`) accept a `render` prop that is either a ReactElement (cloned, props merged) or `(props, state) => ReactElement` (function form for conditional rendering). Nesting two layers that both use `useRender` internally works — e.g. `<DropdownMenuTrigger render={<SidebarMenuButton size="lg">…</SidebarMenuButton>} />` composes the trigger's a11y/event props through `SidebarMenuButton`'s own `useRender` without fighting. Pass visual children as children of the outer primitive, not inside the `render` element.
 - **Open-state data attribute is `data-popup-open`, not `data-state=open`.** Style the trigger while the menu is open with `data-popup-open:bg-sidebar-accent`. The Radix-era `data-[state=open]:…` selector no longer matches.
-- **Anything wrapped in `fastComponent` crashes nitro SSR.** Confirmed broken as of `@base-ui/react@1.4.0`: `MenuRoot`, `MenuTrigger`, `TooltipRoot`, `TooltipTrigger` (so: `DropdownMenu*`, `SidebarMenuButton` with the `tooltip` prop, anything else that pulls those in). The chain is `fastComponent` → `use-sync-external-store/shim` → `require("react")`, which Rolldown bundles into a duplicate React module instance whose hook dispatcher is null at SSR time, surfacing as `TypeError: Cannot read properties of null (reading 'useSyncExternalStore')`. Tracked upstream at `vitejs/rolldown-vite#596` and `mui/base-ui#3194` — both closed, no fix shipped. Workaround: gate the offending subtree on hydration. `useHydrated()` for the conditional `tooltip` prop (spread it: `{...(hydrated ? { tooltip: label } : {})}` to satisfy `exactOptionalPropertyTypes`); `<ClientOnly fallback={<StaticTrigger />}>` around `DropdownMenu` / `Tooltip` blocks with a fallback that renders the trigger shape only. Reference: `apps/rent-a-sandbox/src/features/shell/app-shell.tsx`. Safe surfaces (no `fastComponent` in the tree): `Sidebar` block body, `Dialog`, `Sheet`, `Popover`, `Avatar`, `Button`, `Separator`, `Skeleton`, `Switch`, `Tooltip` _as long as you skip the `tooltip` prop on `SidebarMenuButton`_. The hand-rolled `command-palette.tsx` and the previous "overlays are banned" comment predate this diagnosis but happen to land in the right place for the wrong reason.
+- **Anything wrapped in `fastComponent` crashes nitro SSR.** Confirmed broken as of `@base-ui/react@1.4.0`: `MenuRoot`, `MenuTrigger`, `TooltipRoot`, `TooltipTrigger` (so: `DropdownMenu*`, `SidebarMenuButton` with the `tooltip` prop, anything else that pulls those in). The chain is `fastComponent` → `use-sync-external-store/shim` → `require("react")`, which Rolldown bundles into a duplicate React module instance whose hook dispatcher is null at SSR time, surfacing as `TypeError: Cannot read properties of null (reading 'useSyncExternalStore')`. Tracked upstream at `vitejs/rolldown-vite#596` and `mui/base-ui#3194` — both closed, no fix shipped. Workaround: gate the offending subtree on hydration. `useHydrated()` for the conditional `tooltip` prop (spread it: `{...(hydrated ? { tooltip: label } : {})}` to satisfy `exactOptionalPropertyTypes`); `<ClientOnly fallback={<StaticTrigger />}>` around `DropdownMenu` / `Tooltip` blocks with a fallback that renders the trigger shape only. Reference: `apps/console/src/features/shell/app-shell.tsx`. Safe surfaces (no `fastComponent` in the tree): `Sidebar` block body, `Dialog`, `Sheet`, `Popover`, `Avatar`, `Button`, `Separator`, `Skeleton`, `Switch`, `Tooltip` _as long as you skip the `tooltip` prop on `SidebarMenuButton`_. The hand-rolled `command-palette.tsx` and the previous "overlays are banned" comment predate this diagnosis but happen to land in the right place for the wrong reason.
 
 #### Sidebar block patterns
 

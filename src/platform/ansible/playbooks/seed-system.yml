@@ -33,6 +33,7 @@
   vars:
     seed_system_zitadel_base_url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}"
     seed_system_zitadel_host: "auth.{{ forge_metal_domain }}"
+    seed_system_openbao_tls_dir: /etc/openbao/tls
 
     seed_system_password_overrides: {}
     seed_system_credstore_dir: /etc/credstore/seed-system
@@ -141,7 +142,7 @@
     seed_system_expires_after: 8760h
     # Acme demos the SKU branch of the entitlements view by carrying a small
     # promo grant pinned to the execution root-storage SKU. Without it the SKU
-    # row in the rent-a-sandbox /billing screen never renders.
+    # row in the console /billing screen never renders.
     seed_system_acme_sku_scoped_grants:
       - sku_id: sandbox_execution_root_storage_premium_nvme_gib_ms
         units: 50000000
@@ -978,7 +979,7 @@
         method: GET
         headers:
           X-Vault-Token: "{{ seed_system_openbao_root_token_raw.content | b64decode | trim }}"
-        ca_path: "{{ openbao_tls_dir }}/cert.pem"
+        ca_path: "{{ seed_system_openbao_tls_dir }}/cert.pem"
         status_code: 200
         return_content: true
       register: seed_system_stripe_provider_secret
@@ -1386,7 +1387,7 @@
     - name: Set dev OIDC project facts
       ansible.builtin.set_fact:
         seed_system_dev_oidc_apps:
-          - name: rent-a-sandbox-dev
+          - name: console-dev
             project_id: "{{ seed_system_sandbox_project_id }}"
             port: 4244
       tags: [dev-oidc]
@@ -1652,7 +1653,7 @@
           - " Seed system ready"
           - "============================================"
           - ""
-          - " Operator login: https://rentasandbox.{{ forge_metal_domain }}/"
+          - " Operator login: https://console.{{ forge_metal_domain }}/"
           - " CEO:            {{ seed_system_users_state.ceo.email }}"
           - " CEO password:   {{ seed_system_users_state.ceo.password_credstore_path }}"
           - " Agent:          {{ seed_system_users_state.platform_agent.email }}"

@@ -10,6 +10,14 @@ Bootstrap and operator-recovery secrets are SOPS-encrypted in `group_vars/all/se
 
 Go services are written with the Huma v2 framework (<https://pkg.go.dev/github.com/danielgtaylor/huma/v2>). Do not write custom clients for Go services; generate them from an OpenAPI specification. Each service commits both an OpenAPI 3.0 spec (Go client generation via `oapi-codegen`) and a 3.1 spec (TypeScript client + Valibot validator generation via `@hey-api/openapi-ts`). Shared cross-service DTO wire language lives in `src/apiwire`; use it for Huma boundary DTOs and generated-client contracts instead of service-local 64-bit JSON encodings.
 
+Public origins follow the AWS-style service subdomain model documented in
+[`docs/architecture/public-origins.md`](architecture/public-origins.md):
+`console.<domain>` is the authenticated browser console, while public service
+APIs live at `<service>.api.<domain>` such as `billing.api.<domain>`,
+`sandbox.api.<domain>`, and `identity.api.<domain>`. Browser code does not call
+service API origins directly; TanStack Start server functions preserve the
+same-origin console CSP and attach service credentials server-side.
+
 ## Topology and Replication
 
 Single-node is the default deployment — everything runs on one box with no replication. Adding two more nodes (three total) enables TigerBeetle consensus replication, ClickHouse ReplicatedMergeTree, Postgres streaming replication, and cross-node health monitoring with external paging. The single-node path is the current working target; the 3-node topology uses Netbird as the overlay.
@@ -77,6 +85,8 @@ Self-hosted inbound via Stalwart. Boundary, auth, storage, and the mailbox-servi
 
 ## Platform Contracts
 
-- Avoid CLIs. Things talk to each other over HTTP.
+- Service-to-service and product integrations use HTTP APIs, not ad hoc CLIs.
+  Customer/operator CLIs are a generated-client surface over those same APIs,
+  not a private control plane.
 - Start telemetry investigation with `make observe` — discoverability-first. See `docs/architecture/founder-workflows.md` for the full flow.
 - `make clickhouse-schemas` reads all ClickHouse tables (ground truth). Prefer `make observe` first, fall back to raw `make clickhouse-query` when observe has no named query.

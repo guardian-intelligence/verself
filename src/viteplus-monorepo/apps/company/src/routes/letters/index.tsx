@@ -33,8 +33,9 @@ function LettersIndex() {
     <PageShell kicker="Letters" heading="Long-form from Guardian.">
       <p
         style={{
-          fontFamily: "'Geist', sans-serif",
-          fontSize: "16px",
+          fontFamily: "var(--treatment-body-font)",
+          fontVariationSettings: '"opsz" 18, "SOFT" 0',
+          fontSize: "clamp(17px, 1.7vw, 19px)",
           lineHeight: 1.55,
           color: "var(--treatment-muted-strong)",
           margin: 0,
@@ -71,8 +72,9 @@ function LettersIndex() {
               </span>
               <span
                 style={{
-                  fontFamily: "'Geist', sans-serif",
-                  fontSize: "15px",
+                  fontFamily: "var(--treatment-body-font)",
+                  fontVariationSettings: '"opsz" 18, "SOFT" 0',
+                  fontSize: "17px",
                   lineHeight: 1.55,
                   color: "var(--treatment-muted)",
                 }}
