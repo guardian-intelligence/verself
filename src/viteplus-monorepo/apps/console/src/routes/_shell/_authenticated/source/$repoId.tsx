@@ -1,14 +1,12 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { SourceRepositoryDetail } from "~/features/source/components";
-import { loadSourceRepositoryDetail } from "~/features/source/queries";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/_shell/_authenticated/source/$repoId")({
-  loader: ({ context, params }) =>
-    loadSourceRepositoryDetail(context.queryClient, context.auth, params.repoId),
-  component: SourceRepositoryPage,
+  beforeLoad: () => {
+    throw redirect({ to: "/source" });
+  },
+  component: SourceRepositoryRedirect,
 });
 
-function SourceRepositoryPage() {
-  const { repoId } = Route.useParams();
-  return <SourceRepositoryDetail repoId={repoId} />;
+function SourceRepositoryRedirect() {
+  return null;
 }

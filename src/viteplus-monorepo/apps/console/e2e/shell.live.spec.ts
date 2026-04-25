@@ -103,6 +103,44 @@ test.describe("Console Shell", () => {
     }
   });
 
+  test("authenticated shell navigates to source via the rail", async ({ app }) => {
+    const run = app.createRun();
+
+    try {
+      await app.ensureLoggedIn();
+      app.resetBrowserSignals();
+      await app.goto("/executions");
+      run.detail_url = "/executions";
+
+      await app.page.getByTestId("nav-source").click();
+      await expect(app.page).toHaveURL(/\/source$/);
+      await expect(app.page.getByRole("heading", { name: "Source", exact: true })).toBeVisible();
+      await expect(
+        app.page.getByRole("heading", { name: "Project repository", exact: true }),
+      ).toBeVisible();
+
+      const emptyStateVisible = await app.page
+        .getByText("Push the first branch", { exact: true })
+        .isVisible({ timeout: 1000 })
+        .catch(() => false);
+      const repositoryCardVisible = await app.page
+        .getByText(/active branches/)
+        .first()
+        .isVisible({ timeout: 1000 })
+        .catch(() => false);
+      expect(emptyStateVisible || repositoryCardVisible).toBe(true);
+
+      run.status = "succeeded";
+      run.terminal_observed_at = new Date().toISOString();
+    } catch (error) {
+      run.status = "failed";
+      run.error = error instanceof Error ? error.message : String(error);
+      throw error;
+    } finally {
+      await app.persistRun(run);
+    }
+  });
+
   test("command palette opens with Cmd+K and jumps to Billing", async ({ app }) => {
     const run = app.createRun();
 

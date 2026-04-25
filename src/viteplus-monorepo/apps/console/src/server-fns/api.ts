@@ -63,6 +63,7 @@ import {
   isSourceCodeHostingApiError,
   listRefs as listSourceRefsRequest,
   listRepositories as listSourceRepositoriesRequest,
+  listWorkflowRuns as listSourceWorkflowRunsRequest,
 } from "~/lib/source-code-hosting-api";
 import type {
   InviteMemberRequest,
@@ -108,6 +109,7 @@ import type {
   SourceRepository,
   SourceRepositoryList,
   SourceTree,
+  SourceWorkflowRunList,
 } from "~/lib/source-code-hosting-api";
 import {
   cancelContract as cancelContractRequest,
@@ -215,6 +217,7 @@ export type {
   SourceRepository,
   SourceRepositoryList,
   SourceTree,
+  SourceWorkflowRunList,
 };
 export type {
   CheckoutRequest,
@@ -531,6 +534,16 @@ export const listSourceRefs = createServerFn({ method: "GET" })
   .inputValidator(sourceRepositoryIDInputSchema)
   .handler(async ({ context, data }) => {
     return listSourceRefsRequest({
+      ...(await sourceCodeHostingClientOptions(context)),
+      repoId: data.repoId,
+    });
+  });
+
+export const listSourceWorkflowRuns = createServerFn({ method: "GET" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(sourceRepositoryIDInputSchema)
+  .handler(async ({ context, data }) => {
+    return listSourceWorkflowRunsRequest({
       ...(await sourceCodeHostingClientOptions(context)),
       repoId: data.repoId,
     });

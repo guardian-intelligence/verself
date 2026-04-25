@@ -6,12 +6,14 @@ import {
   type CreateRepositoryRequestWritable,
   type GetSourceBlobData,
   type GetSourceTreeData,
+  type ListSourceWorkflowRunsData,
   createSourceCheckoutGrant,
   createSourceIntegration,
   createSourceRepository,
   getSourceBlob,
   getSourceRepository,
   getSourceTree,
+  listSourceWorkflowRuns,
   listSourceRefs,
   listSourceRepositories,
 } from "../__generated/source-code-hosting-api/index.js";
@@ -28,10 +30,13 @@ import {
   vGetSourceTreeQuery,
   vGetSourceTreePath,
   vListSourceRefsPath,
+  vListSourceWorkflowRunsPath,
   vRefList,
   vRepository,
   vRepositoryList,
   vTree,
+  vWorkflowRun,
+  vWorkflowRunList,
 } from "../__generated/source-code-hosting-api/valibot.gen.js";
 import type { BearerClientOptions } from "./service-api";
 import {
@@ -89,6 +94,21 @@ function parseRefs(input: unknown) {
 }
 
 export type SourceRefs = ReturnType<typeof parseRefs>;
+
+function parseWorkflowRun(input: unknown) {
+  return v.parse(vWorkflowRun, input);
+}
+
+export type SourceWorkflowRun = ReturnType<typeof parseWorkflowRun>;
+
+function parseWorkflowRunList(input: unknown) {
+  const parsed = v.parse(vWorkflowRunList, input);
+  return {
+    workflow_runs: parsed.workflow_runs?.map((run) => parseWorkflowRun(run)) ?? [],
+  };
+}
+
+export type SourceWorkflowRunList = ReturnType<typeof parseWorkflowRunList>;
 
 function parseTree(input: unknown) {
   const parsed = v.parse(vTree, input);
@@ -200,6 +220,24 @@ export async function listRefs(
     throwSourceError(path, result.response, result.error);
   }
   return parseRefs(result.data);
+}
+
+export async function listWorkflowRuns(
+  options: SourceCodeHostingClientOptions & { repoId: string },
+): Promise<SourceWorkflowRunList> {
+  const client = createSourceClient(options);
+  const pathParams = v.parse(vListSourceWorkflowRunsPath, { repo_id: options.repoId });
+  const path = `/api/v1/repos/${options.repoId}/workflow-runs`;
+  const result = await listSourceWorkflowRuns({
+    client,
+    path: pathParams as NonNullable<ListSourceWorkflowRunsData["path"]>,
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+  if (result.error !== undefined) {
+    throwSourceError(path, result.response, result.error);
+  }
+  return parseWorkflowRunList(result.data);
 }
 
 export async function getTree(

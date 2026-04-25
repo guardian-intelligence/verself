@@ -1,4 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { createServerFn } from "@tanstack/react-start";
+import { deriveHTTPSOrigin, requireOperatorDomain } from "@forge-metal/web-env";
 import {
   Page,
   PageDescription,
@@ -11,21 +13,33 @@ import {
   SectionHeaderContent,
   SectionTitle,
 } from "@forge-metal/ui/components/ui/page";
-import { SourceRepositoriesPanel, SourceRepositoryForm } from "~/features/source/components";
-import { loadSourceRepositories } from "~/features/source/queries";
+import { SourceRepositoriesPanel } from "~/features/source/components";
+import { loadSourceDashboard } from "~/features/source/queries";
+
+const getGitOrigin = createServerFn({ method: "GET" }).handler(() =>
+  deriveHTTPSOrigin("git", requireOperatorDomain()),
+);
 
 export const Route = createFileRoute("/_shell/_authenticated/source/")({
-  loader: ({ context }) => loadSourceRepositories(context.queryClient, context.auth),
+  loader: async ({ context }) => {
+    const [gitOrigin] = await Promise.all([
+      getGitOrigin(),
+      loadSourceDashboard(context.queryClient, context.auth),
+    ]);
+    return { gitOrigin };
+  },
   component: SourcePage,
 });
 
 function SourcePage() {
+  const { gitOrigin } = Route.useLoaderData();
+
   return (
     <Page>
       <PageHeader>
         <PageHeaderContent>
           <PageTitle>Source</PageTitle>
-          <PageDescription>Private repositories managed through Forge Metal.</PageDescription>
+          <PageDescription>Branches and CI state for the project repository.</PageDescription>
         </PageHeaderContent>
       </PageHeader>
 
@@ -33,19 +47,10 @@ function SourcePage() {
         <PageSection>
           <SectionHeader>
             <SectionHeaderContent>
-              <SectionTitle>New repository</SectionTitle>
+              <SectionTitle>Project repository</SectionTitle>
             </SectionHeaderContent>
           </SectionHeader>
-          <SourceRepositoryForm />
-        </PageSection>
-
-        <PageSection>
-          <SectionHeader>
-            <SectionHeaderContent>
-              <SectionTitle>Repositories</SectionTitle>
-            </SectionHeaderContent>
-          </SectionHeader>
-          <SourceRepositoriesPanel />
+          <SourceRepositoriesPanel gitOrigin={gitOrigin} />
         </PageSection>
       </PageSections>
     </Page>
