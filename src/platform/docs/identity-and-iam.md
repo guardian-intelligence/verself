@@ -186,13 +186,33 @@ Repo-owned service-to-service calls do not use Zitadel client credentials.
 Those callers use SPIFFE mTLS for HTTP and SPIRE JWT-SVIDs for OpenBao
 workload auth.
 
-Single-node deployments use a split issuer/JWKS path. The token `iss` claim is
-validated against the public issuer, for example `https://auth.<domain>`, while
-services can fetch keys from Zitadel over loopback, for example
-`http://127.0.0.1:8085/oauth/v2/keys`. The middleware overrides the JWKS
-request Host header to the issuer host so Zitadel's instance router accepts the
-request. This is a single-node optimization; a three-node topology needs
-topology-aware JWKS URLs and nftables egress rules.
+Services use standard OIDC discovery against the public issuer, for example
+`https://auth.<domain>`. The middleware validates the token `iss` claim against
+that issuer and uses the provider metadata JWKS URI for key fetches. Single-node
+deployments keep this standard issuer path by bind-mounting a service-private
+`/etc/hosts` file that resolves `auth.<domain>` to local Caddy
+(`127.0.0.1:443`). This keeps Zitadel instance routing, TLS termination,
+discovery metadata, and JWT issuer validation on the same origin. A three-node
+topology can route `auth.<domain>` to the remote auth origin without changing Go
+service configuration.
+
+## External Workload Federation Boundary
+
+GitHub Actions OIDC tokens are acceptable as input evidence for an
+identity-service trust-policy match, but they are not Forge Metal access tokens.
+The matched organization, permissions, and target audience must come from an
+active Forge Metal policy, never from request-body claims. The output credential
+must remain a short-lived Zitadel-issued token until the platform intentionally
+cuts over every public API service to a first-party multi-issuer trust model.
+
+Do not implement this by storing Zitadel service-account private keys in
+identity-service or by adding identity-service as a second JWT issuer behind the
+current middleware. Zitadel v4.13 supports RFC 8693 token exchange, including
+JWT access-token output, but the documented JWT subject-token path is not a
+standalone arbitrary external IdP JWT exchange. It requires the supported
+Zitadel actor/JWT-profile flow, so GitHub Actions federation remains blocked
+until Zitadel can issue the resulting Forge Metal token directly or the issuer
+model is redesigned as a full cutover.
 
 ## Service Authorization Flow
 
@@ -533,8 +553,9 @@ a human user's browser session token for background git fetches.
   model. The repo-owned `mailbox-service` HTTP API uses Zitadel bearer tokens
   plus `mailbox_bindings`, but direct mail protocol credentials are still
   Stalwart-owned.
-- The single-node JWKS loopback path is not the three-node design. Remote
-  Zitadel requires topology-aware JWKS discovery and service egress policy.
+- Single-node services use a private `/etc/hosts` bind mount for OIDC discovery
+  through local Caddy. A three-node topology should remove that host override and
+  allow service egress to the remote auth origin.
 - Customer API credential tables exist, and services recognize
   `forge_metal:credential_id`, but the create/list/read/roll/revoke lifecycle
   and Zitadel pre-access-token Action are not implemented yet.
@@ -548,7 +569,7 @@ a human user's browser session token for background git fetches.
 
 Local code anchors:
 
-- `src/auth-middleware/auth.go`: JWT verification, split JWKS, identity claim
+- `src/auth-middleware/auth.go`: JWT verification, OIDC discovery, identity claim
   extraction, role-assignment extraction.
 - `src/identity-service/internal/api/policy.go`: operation policy metadata,
   capability-backed permission enforcement, idempotency and rate-limit hooks
@@ -615,6 +636,18 @@ Forge Metal uses that as the mechanism for `forge_metal:credential_id`,
 non-secret credential audit metadata, and exact API credential permissions, not
 as a place to store full product policy:
 <https://help.zitadel.com/extend-authorization-in-zitadel-with-organization-metadata-preaccesstoken-action->
+
+Zitadel token exchange implements RFC 8693 and can return JWT access tokens, but
+the documented JWT subject-token path is limited to the supported actor/JWT
+profile flow rather than arbitrary external IdP JWTs:
+<https://zitadel.com/docs/guides/integrate/token-exchange>
+
+GitHub Actions OIDC tokens use issuer
+`https://token.actions.githubusercontent.com` and include immutable policy-match
+claims such as `repository_id`, `repository_owner_id`, `jti`, `ref`, and
+`workflow_ref`:
+<https://docs.github.com/en/actions/reference/security/oidc>
+<https://token.actions.githubusercontent.com/.well-known/openid-configuration>
 
 Zitadel SCIM 2.0 server. Preview, User resource only, org-scoped URL, Bulk
 capped at 100 operations, filter vocabulary enumerated. No Groups, no `/Me`,
