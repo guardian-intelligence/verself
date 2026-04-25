@@ -173,6 +173,7 @@
       Environment=SOURCE_AUTH_AUDIENCE={{ source_code_hosting_service_auth_audience }}
       Environment=SOURCE_FORGEJO_BASE_URL=http://{{ services.forgejo.host }}:{{ services.forgejo.port }}
       Environment=SOURCE_FORGEJO_OWNER={{ source_code_hosting_service_forgejo_username }}
+      Environment=SOURCE_SANDBOX_INTERNAL_URL=https://{{ services.sandbox_rental.host }}:{{ services.sandbox_rental.internal_port }}
       Environment=SOURCE_PUBLIC_BASE_URL=https://{{ source_code_hosting_service_domain }}
       Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}
       Environment=OTEL_SERVICE_NAME=source-code-hosting-service

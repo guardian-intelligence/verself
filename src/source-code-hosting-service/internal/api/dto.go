@@ -86,6 +86,7 @@ type CIRun struct {
 	CIRunID            uuid.UUID  `json:"ci_run_id"`
 	OrgID              string     `json:"org_id"`
 	RepoID             uuid.UUID  `json:"repo_id"`
+	ActorID            string     `json:"actor_id"`
 	RefName            string     `json:"ref_name"`
 	CommitSHA          string     `json:"commit_sha"`
 	TriggerEvent       string     `json:"trigger_event"`
@@ -229,6 +230,7 @@ func ciRunDTO(run source.CIRun) CIRun {
 		CIRunID:       run.CIRunID,
 		OrgID:         uintString(run.OrgID),
 		RepoID:        run.RepoID,
+		ActorID:       run.ActorID,
 		RefName:       run.RefName,
 		CommitSHA:     run.CommitSHA,
 		TriggerEvent:  run.TriggerEvent,

@@ -81,6 +81,7 @@ CREATE TABLE source_ci_runs (
     ci_run_id            UUID        PRIMARY KEY,
     org_id               BIGINT      NOT NULL CHECK (org_id > 0),
     repo_id              UUID        NOT NULL REFERENCES source_repositories(repo_id) ON DELETE CASCADE,
+    actor_id             TEXT        NOT NULL CHECK (actor_id <> ''),
     ref_name             TEXT        NOT NULL CHECK (ref_name <> ''),
     commit_sha           TEXT        NOT NULL DEFAULT '',
     trigger_event        TEXT        NOT NULL CHECK (trigger_event <> ''),

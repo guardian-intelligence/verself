@@ -20,6 +20,7 @@ export const vBlob = v.strictObject({
 });
 
 export const vCiRun = v.strictObject({
+  actor_id: v.string(),
   ci_run_id: v.string(),
   commit_sha: v.string(),
   completed_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),

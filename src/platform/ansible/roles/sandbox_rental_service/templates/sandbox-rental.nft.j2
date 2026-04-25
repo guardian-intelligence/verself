@@ -1,6 +1,7 @@
 #!/usr/sbin/nft -f
 # Sandbox rental service network restrictions.
-# Binds 127.0.0.1:4243 (loopback-only). Caddy reverse-proxies to it.
+# Binds loopback-only public and SPIFFE mTLS internal listeners. Caddy
+# reverse-proxies only to the public listener.
 #
 # The service runs as User=sandbox_rental. Egress is restricted by skuid:
 # loopback platform dependencies plus DNS/HTTPS to public git hosts only.
@@ -15,6 +16,7 @@ table inet forge_metal_sandbox_rental {
         # Reject external connections to the sandbox-rental port.
         # Only loopback (Caddy reverse proxy) is allowed.
         tcp dport {{ services.sandbox_rental.port }} iifname != "lo" drop
+        tcp dport {{ services.sandbox_rental.internal_port }} iifname != "lo" drop
     }
 
     chain output {

@@ -19,6 +19,7 @@ var tracer = otel.Tracer("source-code-hosting-service/source")
 type Service struct {
 	Store         Store
 	Forgejo       ForgejoClient
+	Sandbox       SandboxCISubmitter
 	CheckoutTTL   time.Duration
 	ForgejoPrefix string
 }
@@ -159,14 +160,51 @@ func (s *Service) AfterGitReceive(ctx context.Context, principal GitPrincipal, r
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-	queued, err := s.Store.CreateQueuedCIRunsForRefs(ctx, principal.ActorID, repo, refs)
+	queuedRuns, err := s.Store.CreateQueuedCIRunsForRefs(ctx, principal.ActorID, repo, refs)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-	span.SetAttributes(attribute.String("source.repo_id", repo.RepoID.String()), attribute.Int("source.ci_run_count", queued))
-	return nil
+	submitted, submitErr := s.submitQueuedCIRuns(ctx, repo, queuedRuns)
+	if submitErr != nil {
+		span.RecordError(submitErr)
+		span.SetStatus(codes.Error, submitErr.Error())
+	}
+	span.SetAttributes(
+		attribute.String("source.repo_id", repo.RepoID.String()),
+		attribute.Int("source.ci_run_count", len(queuedRuns)),
+		attribute.Int("source.ci_run_submitted_count", submitted),
+	)
+	return submitErr
+}
+
+func (s *Service) submitQueuedCIRuns(ctx context.Context, repo Repository, runs []CIRun) (int, error) {
+	if len(runs) == 0 {
+		return 0, nil
+	}
+	if s.Sandbox == nil {
+		return 0, ErrSandbox
+	}
+	submitted := 0
+	var joined error
+	for _, run := range runs {
+		submission, err := s.Sandbox.SubmitSourceCIRun(ctx, repo, run)
+		if err != nil {
+			if markErr := s.Store.MarkCIRunFailed(ctx, run, err.Error()); markErr != nil {
+				joined = errors.Join(joined, err, markErr)
+				continue
+			}
+			joined = errors.Join(joined, err)
+			continue
+		}
+		if _, err := s.Store.MarkCIRunSandboxSubmitted(ctx, run, submission); err != nil {
+			joined = errors.Join(joined, err)
+			continue
+		}
+		submitted++
+	}
+	return submitted, joined
 }
 
 func (s *Service) listRefsAfterReceive(ctx context.Context, repo Repository) ([]Ref, error) {

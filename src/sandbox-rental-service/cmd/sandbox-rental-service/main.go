@@ -72,6 +72,7 @@ func run() error {
 	// provider credentials are fetched from secrets-service over SPIFFE mTLS.
 	pgDSN := cfg.RequireString("SANDBOX_PG_DSN")
 	listenAddr := cfg.String("SANDBOX_LISTEN_ADDR", "127.0.0.1:4243")
+	internalListenAddr := cfg.String("SANDBOX_INTERNAL_LISTEN_ADDR", "127.0.0.1:4263")
 	chAddress := cfg.String("SANDBOX_CH_ADDRESS", "127.0.0.1:9440")
 	chUser := cfg.String("SANDBOX_CH_USER", "sandbox_rental")
 	billingURL := cfg.URL("SANDBOX_BILLING_URL", "http://127.0.0.1:4242")
@@ -127,6 +128,9 @@ func run() error {
 			logger.ErrorContext(context.Background(), "sandbox-rental: spiffe source close", "error", err)
 		}
 	}()
+	if _, err := workloadauth.CurrentIDForService(spiffeSource, workloadauth.ServiceSandboxRental); err != nil {
+		return err
+	}
 	// --- open connections ---
 
 	pg, err := sql.Open("postgres", pgDSN)
@@ -376,6 +380,24 @@ func run() error {
 	rootHandler := limitPublicAPIRequestBodies(rootMux, sandboxAPIRequestBodyLimit)
 	srv := httpserver.New(listenAddr, otelhttp.NewHandler(rootHandler, "sandbox-rental-service"))
 
+	internalPeerIDs, err := workloadauth.PeerIDsForSource(spiffeSource, workloadauth.ServiceSourceCodeHosting)
+	if err != nil {
+		return err
+	}
+	internalTLSConfig, err := workloadauth.MTLSServerConfigForAny(spiffeSource, internalPeerIDs...)
+	if err != nil {
+		return fmt.Errorf("sandbox-rental spiffe internal tls: %w", err)
+	}
+	internalMux := http.NewServeMux()
+	sandboxapi.NewInternalAPI(internalMux, "1.0.0", "https://"+internalListenAddr, jobService)
+	internalAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(internalPeerIDs, internalMux)
+	if err != nil {
+		return fmt.Errorf("sandbox-rental internal allowlist: %w", err)
+	}
+	internalHandler := limitInternalAPIRequestBodies(internalAllowlist, sandboxAPIRequestBodyLimit)
+	internalSrv := httpserver.New(internalListenAddr, otelhttp.NewHandler(internalHandler, "sandbox-rental-service-internal"))
+	internalSrv.TLSConfig = internalTLSConfig
+
 	go func() {
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
@@ -393,7 +415,7 @@ func run() error {
 		}
 	}()
 
-	return httpserver.Run(ctx, logger, srv)
+	return httpserver.RunPair(ctx, logger, srv, internalSrv)
 }
 
 func requireSecretField(values map[string]string, field string, label string) string {
@@ -473,6 +495,31 @@ func limitPublicAPIRequestBodies(next http.Handler, maxBytes int64) http.Handler
 
 func isPublicAPIRequestWithBody(r *http.Request) bool {
 	if r == nil || !strings.HasPrefix(r.URL.Path, "/api/") {
+		return false
+	}
+	switch r.Method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch:
+		return true
+	default:
+		return false
+	}
+}
+
+func limitInternalAPIRequestBodies(next http.Handler, maxBytes int64) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isInternalAPIRequestWithBody(r) {
+			if r.ContentLength > maxBytes {
+				http.Error(w, http.StatusText(http.StatusRequestEntityTooLarge), http.StatusRequestEntityTooLarge)
+				return
+			}
+			r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func isInternalAPIRequestWithBody(r *http.Request) bool {
+	if r == nil || !strings.HasPrefix(r.URL.Path, "/internal/") {
 		return false
 	}
 	switch r.Method {

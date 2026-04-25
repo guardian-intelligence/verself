@@ -27,7 +27,7 @@ HS       := src/httpserver
 INVENTORY := $(FM)/ansible/inventory/hosts.ini
 GO_DIRS  := $(AW) $(VMO) $(BS) $(GS) $(IS) $(SS) $(SCH) $(AM) $(SR) $(MS) $(OSS) $(PS) $(NS) $(OT) $(TP) $(EC) $(HS)
 GO_PKGS  := $(addsuffix /...,$(addprefix ./,$(GO_DIRS)))
-GO_CLIENT_DIRS := $(BS)/client $(GS)/client $(GS)/internalclient $(IS)/client $(IS)/internalclient $(SS)/client $(SS)/internalclient $(SCH)/client $(SCH)/internalclient $(SR)/client $(MS)/client $(OSS)/client $(PS)/client $(PS)/internalclient $(NS)/client
+GO_CLIENT_DIRS := $(BS)/client $(GS)/client $(GS)/internalclient $(IS)/client $(IS)/internalclient $(SS)/client $(SS)/internalclient $(SCH)/client $(SCH)/internalclient $(SR)/client $(SR)/internalclient $(MS)/client $(OSS)/client $(PS)/client $(PS)/internalclient $(NS)/client
 GO_CLIENT_FILES := $(addsuffix /client.gen.go,$(GO_CLIENT_DIRS))
 BILLING_PRODUCT_ID ?= sandbox
 ASSUME_PERSONA_OUTPUT_FLAG := $(if $(OUTPUT),--output "$(OUTPUT)",)
@@ -133,6 +133,8 @@ openapi: ## Regenerate committed OpenAPI 3.0 and 3.1 specs for Go services
 	mkdir -p $(SR)/openapi
 	go run ./$(SR)/cmd/sandbox-rental-openapi --format 3.0 > $(SR)/openapi/openapi-3.0.yaml
 	go run ./$(SR)/cmd/sandbox-rental-openapi --format 3.1 > $(SR)/openapi/openapi-3.1.yaml
+	go run ./$(SR)/cmd/sandbox-rental-internal-openapi --format 3.0 > $(SR)/openapi/internal-openapi-3.0.yaml
+	go run ./$(SR)/cmd/sandbox-rental-internal-openapi --format 3.1 > $(SR)/openapi/internal-openapi-3.1.yaml
 	$(MAKE) openapi-clients
 
 openapi-clients: ## Regenerate committed generated Go clients from OpenAPI 3.0 specs
@@ -146,6 +148,7 @@ openapi-clients: ## Regenerate committed generated Go clients from OpenAPI 3.0 s
 	cd $(SCH)/client && go generate ./...
 	cd $(SCH)/internalclient && go generate ./...
 	cd $(SR)/client && go generate ./...
+	cd $(SR)/internalclient && go generate ./...
 	cd $(MS)/client && go generate ./...
 	cd $(OSS)/client && go generate ./...
 	cd $(PS)/client && go generate ./...
@@ -183,6 +186,8 @@ openapi-check: ## Verify committed OpenAPI specs are up to date
 	cd $(NS) && go run ./cmd/notifications-openapi --format 3.1 --check
 	cd $(SR) && go run ./cmd/sandbox-rental-openapi --format 3.0 --check
 	cd $(SR) && go run ./cmd/sandbox-rental-openapi --format 3.1 --check
+	cd $(SR) && go run ./cmd/sandbox-rental-internal-openapi --format 3.0 --check
+	cd $(SR) && go run ./cmd/sandbox-rental-internal-openapi --format 3.1 --check
 	$(MAKE) openapi-clients-check
 	$(MAKE) openapi-wire-check
 
@@ -205,7 +210,8 @@ openapi-wire-check: ## Verify frontend-consumed OpenAPI 3.1 specs are JS wire-sa
 		$(PS)/openapi/openapi-3.1.yaml \
 		$(PS)/openapi/internal-openapi-3.1.yaml \
 		$(NS)/openapi/openapi-3.1.yaml \
-		$(SR)/openapi/openapi-3.1.yaml
+		$(SR)/openapi/openapi-3.1.yaml \
+		$(SR)/openapi/internal-openapi-3.1.yaml
 
 inventory-check: ## Validate that the generated Ansible inventory exists
 	@test -f "$(INVENTORY)" || { echo "ERROR: $(INVENTORY) not found. Run: cd $(FM)/ansible && ansible-playbook playbooks/provision.yml"; exit 1; }

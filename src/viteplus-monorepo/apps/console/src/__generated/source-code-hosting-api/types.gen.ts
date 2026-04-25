@@ -20,6 +20,7 @@ export type Blob = {
 };
 
 export type CiRun = {
+  actor_id: string;
   ci_run_id: string;
   commit_sha: string;
   completed_at?: string;
