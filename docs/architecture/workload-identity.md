@@ -397,7 +397,8 @@ Proof queries assert:
 - Audit actor fields:
   [audit-data-contract.md](../../src/governance-service/docs/audit-data-contract.md).
 - Listener and port inventory:
-  [`src/platform/ansible/group_vars/all/services.yml`](../../src/platform/ansible/group_vars/all/services.yml).
+  [`src/platform/topology`](../../src/platform/topology), rendered to
+  [`src/platform/ansible/group_vars/all/generated/services.yml`](../../src/platform/ansible/group_vars/all/generated/services.yml).
 - Trust domain exclusion for the privileged host daemon:
   [`src/vm-orchestrator/AGENTS.md`](../../src/vm-orchestrator/AGENTS.md).
 - SPIRE trust domains and attestation:

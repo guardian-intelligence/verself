@@ -4,7 +4,7 @@ How the platform is currently wired together. Direction and target state are in 
 
 ## Service Architecture
 
-High-level topology lives in `docs/architecture/service-architecture.md`. Port assignments are declared in `src/platform/ansible/group_vars/all/services.yml`; run `make services-doctor` to cross-check the declared map against live listeners on the box (supports `FORMAT=json|nftables`).
+High-level topology lives in `docs/architecture/service-architecture.md`. Port assignments are declared in `src/platform/topology` and rendered to `src/platform/ansible/group_vars/all/generated/services.yml`; run `make services-doctor` to cross-check the declared map against live listeners on the box (supports `FORMAT=json|nftables`).
 
 Bootstrap and operator-recovery secrets are SOPS-encrypted in `group_vars/all/secrets.sops.yml` and loaded at service start via systemd `LoadCredential=` into `$CREDENTIALS_DIRECTORY`. Repo-owned service-to-service authentication is SPIFFE/SPIRE; runtime third-party provider credentials are fetched from OpenBao by SPIFFE-authenticated services. See [`docs/architecture/workload-identity.md`](architecture/workload-identity.md).
 

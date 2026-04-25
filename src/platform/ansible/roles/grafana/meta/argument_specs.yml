@@ -4,7 +4,7 @@ argument_specs:
     short_description: "Grafana observability UI"
     description:
       - "Deploys unmodified Grafana OSS against the existing ClickHouse and PostgreSQL services."
-      - "Service ports come from the services registry (group_vars/all/services.yml)."
+      - "Service ports come from the generated services registry (group_vars/all/generated/services.yml)."
     options:
       grafana_domain:
         type: str

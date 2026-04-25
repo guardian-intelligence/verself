@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 
 // Same-origin OTLP HTTP forwarder. The browser cannot reach the otel collector
 // directly: CSP `connect-src 'self'` blocks cross-origin POSTs and the
-// collector binds to 127.0.0.1:4318 (per src/platform/ansible/group_vars/all/services.yml),
+// collector binds to 127.0.0.1:4318 (per src/platform/topology),
 // so this server route accepts OTLP-JSON POSTs and forwards them upstream.
 //
 // Body cap: 256 KiB. The web SDK's BatchSpanProcessor batches up to 50 spans

@@ -6,7 +6,7 @@ argument_specs:
       - "Deploys ClickHouse, configures the standalone"
       - "service unit, and applies verself migrations to the verself"
       - "database when the local migration fingerprint changes."
-      - "Service ports come from the services registry (group_vars/all/services.yml)."
+      - "Service ports come from the generated services registry (group_vars/all/generated/services.yml)."
     options:
       clickhouse_data_path:
         type: path
