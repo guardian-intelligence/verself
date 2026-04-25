@@ -120,8 +120,8 @@ func (s *Service) ListStickyDisks(ctx context.Context, orgID uint64, filters Sti
 
 	rows, err := s.PGX.Query(ctx, `
 		SELECT
-			g.installation_id,
-			g.repository_id,
+			g.provider_installation_id,
+			g.provider_repository_id,
 			COALESCE(last_mount.repository_full_name, ''),
 			g.key_hash,
 			g.key,
@@ -137,8 +137,8 @@ func (s *Service) ListStickyDisks(ctx context.Context, orgID uint64, filters Sti
 			COALESCE(last_mount.job_name, ''),
 			COALESCE(last_mount.mount_path, ''),
 			g.updated_at
-		FROM github_sticky_disk_generations g
-		JOIN github_installations i ON i.installation_id = g.installation_id
+		FROM runner_sticky_disk_generations g
+		JOIN github_installations i ON i.installation_id = g.provider_installation_id
 		LEFT JOIN LATERAL (
 			SELECT
 				COALESCE(j.repository_full_name, '') AS repository_full_name,
@@ -152,11 +152,12 @@ func (s *Service) ListStickyDisks(ctx context.Context, orgID uint64, filters Sti
 				COALESCE(j.job_name, '') AS job_name,
 				m.mount_path
 			FROM execution_sticky_disk_mounts m
-			JOIN github_runner_allocations a ON a.allocation_id = m.allocation_id
-			LEFT JOIN github_runner_job_bindings b ON b.allocation_id = a.allocation_id
-			LEFT JOIN github_workflow_jobs j ON j.github_job_id = COALESCE(b.github_job_id, a.requested_for_github_job_id)
-			WHERE a.installation_id = g.installation_id
-			  AND a.repository_id = g.repository_id
+			JOIN runner_allocations a ON a.allocation_id = m.allocation_id
+			LEFT JOIN runner_job_bindings b ON b.allocation_id = a.allocation_id
+			LEFT JOIN runner_jobs j ON j.provider = a.provider AND j.provider_job_id = COALESCE(b.provider_job_id, a.requested_for_provider_job_id)
+			WHERE a.provider = 'github'
+			  AND a.provider_installation_id = g.provider_installation_id
+			  AND a.provider_repository_id = g.provider_repository_id
 			  AND m.key_hash = g.key_hash
 			ORDER BY COALESCE(m.completed_at, m.requested_at, m.updated_at, m.created_at) DESC, m.mount_id DESC
 			LIMIT 1
@@ -164,8 +165,9 @@ func (s *Service) ListStickyDisks(ctx context.Context, orgID uint64, filters Sti
 		WHERE i.org_id = $1
 		  AND i.active
 		  AND ($2 = '' OR COALESCE(last_mount.repository_full_name, '') = $2)
-		  AND ($3 = false OR (g.updated_at, g.installation_id, g.repository_id, g.key_hash) < ($4, $5, $6, $7))
-		ORDER BY g.updated_at DESC, g.installation_id DESC, g.repository_id DESC, g.key_hash DESC
+		  AND g.provider = 'github'
+		  AND ($3 = false OR (g.updated_at, g.provider_installation_id, g.provider_repository_id, g.key_hash) < ($4, $5, $6, $7))
+		ORDER BY g.updated_at DESC, g.provider_installation_id DESC, g.provider_repository_id DESC, g.key_hash DESC
 		LIMIT $8
 	`, orgID, strings.TrimSpace(filters.Repository), cursorEnabled, cursor.UpdatedAt, cursor.InstallationID, cursor.RepositoryID, cursor.KeyHash, limit+1)
 	if err != nil {
@@ -223,12 +225,13 @@ func (s *Service) ResetStickyDisk(ctx context.Context, orgID uint64, installatio
 	now := time.Now().UTC()
 	var deletedSourceRef string
 	err := s.PGX.QueryRow(ctx, `
-		DELETE FROM github_sticky_disk_generations g
+		DELETE FROM runner_sticky_disk_generations g
 		USING github_installations i
-		WHERE g.installation_id = $1
-		  AND g.repository_id = $2
+		WHERE g.provider = 'github'
+		  AND g.provider_installation_id = $1
+		  AND g.provider_repository_id = $2
 		  AND g.key_hash = $3
-		  AND i.installation_id = g.installation_id
+		  AND i.installation_id = g.provider_installation_id
 		  AND i.org_id = $4
 		  AND i.active
 		RETURNING g.current_source_ref

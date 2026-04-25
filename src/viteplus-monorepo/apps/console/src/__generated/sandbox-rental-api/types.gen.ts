@@ -388,7 +388,6 @@ export type SandboxExecutionRecord = {
   execution_id: string;
   external_provider?: string;
   external_task_id?: string;
-  github?: SandboxGitHubRunMetadata;
   idempotency_key?: string;
   kind: string;
   latest_attempt: SandboxAttemptRecord;
@@ -397,6 +396,7 @@ export type SandboxExecutionRecord = {
   provider?: string;
   run_command?: string;
   run_id: string;
+  runner?: SandboxRunnerRunMetadata;
   runner_class?: string;
   schedule?: SandboxScheduleRunMetadata;
   source_kind?: string;
@@ -511,17 +511,6 @@ export type SandboxGitHubInstallationRecord = {
   updated_at: string;
 };
 
-export type SandboxGitHubRunMetadata = {
-  head_branch?: string;
-  head_sha?: string;
-  installation_id?: string;
-  job_id?: string;
-  job_name?: string;
-  repository_full_name?: string;
-  run_id?: string;
-  workflow_name?: string;
-};
-
 export type SandboxJobsAnalytics = {
   /**
    * A URL to the JSON Schema for this object.
@@ -597,6 +586,17 @@ export type SandboxRunLogSearchResult = {
   stream: string;
   workflow_name?: string;
   workload_kind?: string;
+};
+
+export type SandboxRunnerRunMetadata = {
+  head_branch?: string;
+  head_sha?: string;
+  job_name?: string;
+  provider_installation_id?: string;
+  provider_job_id?: string;
+  provider_run_id?: string;
+  repository_full_name?: string;
+  workflow_name?: string;
 };
 
 export type SandboxRunnerSizingAnalytics = {
@@ -852,7 +852,6 @@ export type SandboxExecutionRecordWritable = {
   execution_id: string;
   external_provider?: string;
   external_task_id?: string;
-  github?: SandboxGitHubRunMetadata;
   idempotency_key?: string;
   kind: string;
   latest_attempt: SandboxAttemptRecord;
@@ -861,6 +860,7 @@ export type SandboxExecutionRecordWritable = {
   provider?: string;
   run_command?: string;
   run_id: string;
+  runner?: SandboxRunnerRunMetadata;
   runner_class?: string;
   schedule?: SandboxScheduleRunMetadata;
   source_kind?: string;

@@ -45,7 +45,7 @@ type SandboxExecutionRecord struct {
 	UpdatedAt        time.Time                         `json:"updated_at"`
 	BillingWindows   []SandboxBillingWindow            `json:"billing_windows,omitempty"`
 	BillingSummary   *SandboxRunBillingSummary         `json:"billing_summary,omitempty"`
-	GitHub           *SandboxGitHubRunMetadata         `json:"github,omitempty"`
+	Runner           *SandboxRunnerRunMetadata         `json:"runner,omitempty"`
 	Schedule         *SandboxScheduleRunMetadata       `json:"schedule,omitempty"`
 	StickyDiskMounts []SandboxExecutionStickyDiskMount `json:"sticky_disk_mounts,omitempty"`
 }
@@ -56,15 +56,15 @@ type SandboxExecutionLogs struct {
 	Logs        string `json:"logs"`
 }
 
-type SandboxGitHubRunMetadata struct {
-	InstallationID     string `json:"installation_id,omitempty"`
-	RunID              string `json:"run_id,omitempty"`
-	JobID              string `json:"job_id,omitempty"`
-	RepositoryFullName string `json:"repository_full_name,omitempty"`
-	WorkflowName       string `json:"workflow_name,omitempty"`
-	JobName            string `json:"job_name,omitempty"`
-	HeadBranch         string `json:"head_branch,omitempty"`
-	HeadSHA            string `json:"head_sha,omitempty"`
+type SandboxRunnerRunMetadata struct {
+	ProviderInstallationID string `json:"provider_installation_id,omitempty"`
+	ProviderRunID          string `json:"provider_run_id,omitempty"`
+	ProviderJobID          string `json:"provider_job_id,omitempty"`
+	RepositoryFullName     string `json:"repository_full_name,omitempty"`
+	WorkflowName           string `json:"workflow_name,omitempty"`
+	JobName                string `json:"job_name,omitempty"`
+	HeadBranch             string `json:"head_branch,omitempty"`
+	HeadSHA                string `json:"head_sha,omitempty"`
 }
 
 type SandboxScheduleRunMetadata struct {

@@ -29,10 +29,11 @@ const (
 	QueueWebhook      = "webhook"
 
 	ExecutionAdvanceKind        = "execution.advance"
-	GitHubCapacityReconcileKind = "github.capacity.reconcile"
-	GitHubRunnerAllocateKind    = "github.runner.allocate"
-	GitHubJobBindKind           = "github.job.bind"
-	GitHubRunnerCleanupKind     = "github.runner.cleanup"
+	RunnerCapacityReconcileKind = "runner.capacity.reconcile"
+	RunnerAllocateKind          = "runner.allocate"
+	RunnerJobBindKind           = "runner.job.bind"
+	RunnerCleanupKind           = "runner.cleanup"
+	RunnerRepositorySyncKind    = "runner.repository.sync"
 
 	DefaultExecutionMaxWorkers = 4
 )
@@ -73,30 +74,39 @@ type ExecutionAdvanceResult struct {
 	Status string
 }
 
-type GitHubCapacityReconcileRequest struct {
-	InstallationID int64
-	RepositoryID   int64
-	GitHubJobID    int64
-	CorrelationID  string
-	TraceParent    string
+type RunnerCapacityReconcileRequest struct {
+	Provider               string
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+	ProviderJobID          int64
+	CorrelationID          string
+	TraceParent            string
 }
 
-type GitHubRunnerAllocateRequest struct {
+type RunnerAllocateRequest struct {
 	AllocationID  string
 	CorrelationID string
 	TraceParent   string
 }
 
-type GitHubJobBindRequest struct {
-	GitHubJobID   int64
+type RunnerJobBindRequest struct {
+	Provider      string
+	ProviderJobID int64
 	CorrelationID string
 	TraceParent   string
 }
 
-type GitHubRunnerCleanupRequest struct {
+type RunnerCleanupRequest struct {
 	AllocationID  string
 	CorrelationID string
 	TraceParent   string
+}
+
+type RunnerRepositorySyncRequest struct {
+	Provider             string
+	ProviderRepositoryID int64
+	CorrelationID        string
+	TraceParent          string
 }
 
 type ExecutionAdvanceArgs struct {
@@ -119,73 +129,93 @@ func (ExecutionAdvanceArgs) InsertOpts() river.InsertOpts {
 	}
 }
 
-type GitHubCapacityReconcileArgs struct {
-	InstallationID int64  `json:"installation_id"`
-	RepositoryID   int64  `json:"repository_id,omitempty"`
-	GitHubJobID    int64  `json:"github_job_id,omitempty"`
-	CorrelationID  string `json:"correlation_id,omitempty"`
-	TraceParent    string `json:"trace_parent,omitempty"`
-	SubmittedAt    string `json:"submitted_at"`
+type RunnerCapacityReconcileArgs struct {
+	Provider               string `json:"provider"`
+	ProviderInstallationID int64  `json:"provider_installation_id,omitempty"`
+	ProviderRepositoryID   int64  `json:"provider_repository_id,omitempty"`
+	ProviderJobID          int64  `json:"provider_job_id,omitempty"`
+	CorrelationID          string `json:"correlation_id,omitempty"`
+	TraceParent            string `json:"trace_parent,omitempty"`
+	SubmittedAt            string `json:"submitted_at"`
 }
 
-func (GitHubCapacityReconcileArgs) Kind() string { return GitHubCapacityReconcileKind }
+func (RunnerCapacityReconcileArgs) Kind() string { return RunnerCapacityReconcileKind }
 
-func (GitHubCapacityReconcileArgs) InsertOpts() river.InsertOpts {
+func (RunnerCapacityReconcileArgs) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{
 		MaxAttempts: 5,
 		Queue:       QueueRunner,
-		Tags:        []string{"github", "capacity"},
+		Tags:        []string{"runner", "capacity"},
 	}
 }
 
-type GitHubRunnerAllocateArgs struct {
+type RunnerAllocateArgs struct {
 	AllocationID  string `json:"allocation_id"`
 	CorrelationID string `json:"correlation_id,omitempty"`
 	TraceParent   string `json:"trace_parent,omitempty"`
 	SubmittedAt   string `json:"submitted_at"`
 }
 
-func (GitHubRunnerAllocateArgs) Kind() string { return GitHubRunnerAllocateKind }
+func (RunnerAllocateArgs) Kind() string { return RunnerAllocateKind }
 
-func (GitHubRunnerAllocateArgs) InsertOpts() river.InsertOpts {
+func (RunnerAllocateArgs) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{
 		MaxAttempts: 3,
 		Queue:       QueueRunner,
-		Tags:        []string{"github", "runner", "allocate"},
+		Tags:        []string{"runner", "allocate"},
 	}
 }
 
-type GitHubJobBindArgs struct {
-	GitHubJobID   int64  `json:"github_job_id"`
+type RunnerJobBindArgs struct {
+	Provider      string `json:"provider"`
+	ProviderJobID int64  `json:"provider_job_id"`
 	CorrelationID string `json:"correlation_id,omitempty"`
 	TraceParent   string `json:"trace_parent,omitempty"`
 	SubmittedAt   string `json:"submitted_at"`
 }
 
-func (GitHubJobBindArgs) Kind() string { return GitHubJobBindKind }
+func (RunnerJobBindArgs) Kind() string { return RunnerJobBindKind }
 
-func (GitHubJobBindArgs) InsertOpts() river.InsertOpts {
+func (RunnerJobBindArgs) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{
 		MaxAttempts: 5,
 		Queue:       QueueRunner,
-		Tags:        []string{"github", "job", "bind"},
+		Tags:        []string{"runner", "job", "bind"},
 	}
 }
 
-type GitHubRunnerCleanupArgs struct {
+type RunnerCleanupArgs struct {
 	AllocationID  string `json:"allocation_id"`
 	CorrelationID string `json:"correlation_id,omitempty"`
 	TraceParent   string `json:"trace_parent,omitempty"`
 	SubmittedAt   string `json:"submitted_at"`
 }
 
-func (GitHubRunnerCleanupArgs) Kind() string { return GitHubRunnerCleanupKind }
+func (RunnerCleanupArgs) Kind() string { return RunnerCleanupKind }
 
-func (GitHubRunnerCleanupArgs) InsertOpts() river.InsertOpts {
+func (RunnerCleanupArgs) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{
 		MaxAttempts: 5,
 		Queue:       QueueRunner,
-		Tags:        []string{"github", "runner", "cleanup"},
+		Tags:        []string{"runner", "cleanup"},
+	}
+}
+
+type RunnerRepositorySyncArgs struct {
+	Provider             string `json:"provider"`
+	ProviderRepositoryID int64  `json:"provider_repository_id"`
+	CorrelationID        string `json:"correlation_id,omitempty"`
+	TraceParent          string `json:"trace_parent,omitempty"`
+	SubmittedAt          string `json:"submitted_at"`
+}
+
+func (RunnerRepositorySyncArgs) Kind() string { return RunnerRepositorySyncKind }
+
+func (RunnerRepositorySyncArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{
+		MaxAttempts: 5,
+		Queue:       QueueRunner,
+		Tags:        []string{"runner", "repository", "sync"},
 	}
 }
 
@@ -265,25 +295,26 @@ func (r *Runtime) EnqueueExecutionAdvanceTx(ctx context.Context, tx pgx.Tx, req 
 	}, nil
 }
 
-func (r *Runtime) EnqueueGitHubCapacityReconcileTx(ctx context.Context, tx pgx.Tx, req GitHubCapacityReconcileRequest) (ProbeResult, error) {
-	args := GitHubCapacityReconcileArgs{
-		InstallationID: req.InstallationID,
-		RepositoryID:   req.RepositoryID,
-		GitHubJobID:    req.GitHubJobID,
-		CorrelationID:  strings.TrimSpace(req.CorrelationID),
-		TraceParent:    strings.TrimSpace(req.TraceParent),
-		SubmittedAt:    time.Now().UTC().Format(time.RFC3339Nano),
+func (r *Runtime) EnqueueRunnerCapacityReconcileTx(ctx context.Context, tx pgx.Tx, req RunnerCapacityReconcileRequest) (ProbeResult, error) {
+	args := RunnerCapacityReconcileArgs{
+		Provider:               strings.TrimSpace(req.Provider),
+		ProviderInstallationID: req.ProviderInstallationID,
+		ProviderRepositoryID:   req.ProviderRepositoryID,
+		ProviderJobID:          req.ProviderJobID,
+		CorrelationID:          strings.TrimSpace(req.CorrelationID),
+		TraceParent:            strings.TrimSpace(req.TraceParent),
+		SubmittedAt:            time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	result, err := r.client.InsertTx(ctx, tx, args, nil)
 	if err != nil {
-		return ProbeResult{}, fmt.Errorf("enqueue github capacity reconcile: %w", err)
+		return ProbeResult{}, fmt.Errorf("enqueue runner capacity reconcile: %w", err)
 	}
 	job := result.Job
 	return ProbeResult{JobID: job.ID, Kind: job.Kind, Queue: job.Queue, Status: string(job.State)}, nil
 }
 
-func (r *Runtime) EnqueueGitHubRunnerAllocateTx(ctx context.Context, tx pgx.Tx, req GitHubRunnerAllocateRequest) (ProbeResult, error) {
-	args := GitHubRunnerAllocateArgs{
+func (r *Runtime) EnqueueRunnerAllocateTx(ctx context.Context, tx pgx.Tx, req RunnerAllocateRequest) (ProbeResult, error) {
+	args := RunnerAllocateArgs{
 		AllocationID:  strings.TrimSpace(req.AllocationID),
 		CorrelationID: strings.TrimSpace(req.CorrelationID),
 		TraceParent:   strings.TrimSpace(req.TraceParent),
@@ -291,29 +322,30 @@ func (r *Runtime) EnqueueGitHubRunnerAllocateTx(ctx context.Context, tx pgx.Tx, 
 	}
 	result, err := r.client.InsertTx(ctx, tx, args, nil)
 	if err != nil {
-		return ProbeResult{}, fmt.Errorf("enqueue github runner allocate: %w", err)
+		return ProbeResult{}, fmt.Errorf("enqueue runner allocate: %w", err)
 	}
 	job := result.Job
 	return ProbeResult{JobID: job.ID, Kind: job.Kind, Queue: job.Queue, Status: string(job.State)}, nil
 }
 
-func (r *Runtime) EnqueueGitHubJobBindTx(ctx context.Context, tx pgx.Tx, req GitHubJobBindRequest) (ProbeResult, error) {
-	args := GitHubJobBindArgs{
-		GitHubJobID:   req.GitHubJobID,
+func (r *Runtime) EnqueueRunnerJobBindTx(ctx context.Context, tx pgx.Tx, req RunnerJobBindRequest) (ProbeResult, error) {
+	args := RunnerJobBindArgs{
+		Provider:      strings.TrimSpace(req.Provider),
+		ProviderJobID: req.ProviderJobID,
 		CorrelationID: strings.TrimSpace(req.CorrelationID),
 		TraceParent:   strings.TrimSpace(req.TraceParent),
 		SubmittedAt:   time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	result, err := r.client.InsertTx(ctx, tx, args, nil)
 	if err != nil {
-		return ProbeResult{}, fmt.Errorf("enqueue github job bind: %w", err)
+		return ProbeResult{}, fmt.Errorf("enqueue runner job bind: %w", err)
 	}
 	job := result.Job
 	return ProbeResult{JobID: job.ID, Kind: job.Kind, Queue: job.Queue, Status: string(job.State)}, nil
 }
 
-func (r *Runtime) EnqueueGitHubRunnerCleanup(ctx context.Context, req GitHubRunnerCleanupRequest) (ProbeResult, error) {
-	args := GitHubRunnerCleanupArgs{
+func (r *Runtime) EnqueueRunnerCleanup(ctx context.Context, req RunnerCleanupRequest) (ProbeResult, error) {
+	args := RunnerCleanupArgs{
 		AllocationID:  strings.TrimSpace(req.AllocationID),
 		CorrelationID: strings.TrimSpace(req.CorrelationID),
 		TraceParent:   strings.TrimSpace(req.TraceParent),
@@ -321,7 +353,39 @@ func (r *Runtime) EnqueueGitHubRunnerCleanup(ctx context.Context, req GitHubRunn
 	}
 	result, err := r.client.Insert(ctx, args, nil)
 	if err != nil {
-		return ProbeResult{}, fmt.Errorf("enqueue github runner cleanup: %w", err)
+		return ProbeResult{}, fmt.Errorf("enqueue runner cleanup: %w", err)
+	}
+	job := result.Job
+	return ProbeResult{JobID: job.ID, Kind: job.Kind, Queue: job.Queue, Status: string(job.State)}, nil
+}
+
+func (r *Runtime) EnqueueRunnerRepositorySyncTx(ctx context.Context, tx pgx.Tx, req RunnerRepositorySyncRequest) (ProbeResult, error) {
+	args := RunnerRepositorySyncArgs{
+		Provider:             strings.TrimSpace(req.Provider),
+		ProviderRepositoryID: req.ProviderRepositoryID,
+		CorrelationID:        strings.TrimSpace(req.CorrelationID),
+		TraceParent:          strings.TrimSpace(req.TraceParent),
+		SubmittedAt:          time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	result, err := r.client.InsertTx(ctx, tx, args, nil)
+	if err != nil {
+		return ProbeResult{}, fmt.Errorf("enqueue runner repository sync: %w", err)
+	}
+	job := result.Job
+	return ProbeResult{JobID: job.ID, Kind: job.Kind, Queue: job.Queue, Status: string(job.State)}, nil
+}
+
+func (r *Runtime) EnqueueRunnerRepositorySync(ctx context.Context, req RunnerRepositorySyncRequest) (ProbeResult, error) {
+	args := RunnerRepositorySyncArgs{
+		Provider:             strings.TrimSpace(req.Provider),
+		ProviderRepositoryID: req.ProviderRepositoryID,
+		CorrelationID:        strings.TrimSpace(req.CorrelationID),
+		TraceParent:          strings.TrimSpace(req.TraceParent),
+		SubmittedAt:          time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	result, err := r.client.Insert(ctx, args, nil)
+	if err != nil {
+		return ProbeResult{}, fmt.Errorf("enqueue runner repository sync: %w", err)
 	}
 	job := result.Job
 	return ProbeResult{JobID: job.ID, Kind: job.Kind, Queue: job.Queue, Status: string(job.State)}, nil

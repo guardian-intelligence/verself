@@ -40,15 +40,15 @@ type RunBillingSummary struct {
 	PricingPhase        string
 }
 
-type GitHubRunMetadata struct {
-	InstallationID     int64
-	RunID              int64
-	JobID              int64
-	RepositoryFullName string
-	WorkflowName       string
-	JobName            string
-	HeadBranch         string
-	HeadSHA            string
+type RunnerRunMetadata struct {
+	ProviderInstallationID int64
+	ProviderRunID          int64
+	ProviderJobID          int64
+	RepositoryFullName     string
+	WorkflowName           string
+	JobName                string
+	HeadBranch             string
+	HeadSHA                string
 }
 
 type ScheduleRunMetadata struct {
@@ -131,9 +131,9 @@ func (s *Service) ListRuns(ctx context.Context, orgID uint64, filters RunListFil
 			a.failure_reason, a.exit_code, a.duration_ms, a.zfs_written, a.stdout_bytes, a.stderr_bytes,
 			a.rootfs_provisioned_bytes, a.boot_time_us, a.block_read_bytes, a.block_write_bytes, a.net_rx_bytes, a.net_tx_bytes,
 			a.vcpu_exit_count, a.trace_id, a.started_at, a.completed_at, a.created_at, a.updated_at,
-			COALESCE(gh.installation_id, 0), COALESCE(gh.run_id, 0), COALESCE(gh.github_job_id, 0),
-			COALESCE(gh.repository_full_name, ''), COALESCE(gh.workflow_name, ''), COALESCE(gh.job_name, ''),
-			COALESCE(gh.head_branch, ''), COALESCE(gh.head_sha, ''),
+			COALESCE(rr.provider_installation_id, 0), COALESCE(rr.provider_run_id, 0), COALESCE(rr.provider_job_id, 0),
+			COALESCE(rr.repository_full_name, ''), COALESCE(rr.workflow_name, ''), COALESCE(rr.job_name, ''),
+			COALESCE(rr.head_branch, ''), COALESCE(rr.head_sha, ''),
 			COALESCE(sc.schedule_id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(sc.display_name, ''),
 			COALESCE(sc.temporal_workflow_id, ''), COALESCE(sc.temporal_run_id, '')
 		FROM executions e
@@ -149,21 +149,21 @@ func (s *Service) ListRuns(ctx context.Context, orgID uint64, filters RunListFil
 		) a ON true
 		LEFT JOIN LATERAL (
 			SELECT
-				j.installation_id,
-				j.run_id,
-				j.github_job_id,
+				j.provider_installation_id AS provider_installation_id,
+				j.provider_run_id AS provider_run_id,
+				j.provider_job_id AS provider_job_id,
 				j.repository_full_name,
 				j.workflow_name,
 				j.job_name,
 				j.head_branch,
 				j.head_sha
-			FROM github_runner_allocations ga
-			LEFT JOIN github_runner_job_bindings gb ON gb.allocation_id = ga.allocation_id
-			LEFT JOIN github_workflow_jobs j ON j.github_job_id = COALESCE(gb.github_job_id, ga.requested_for_github_job_id)
+			FROM runner_allocations ga
+			LEFT JOIN runner_job_bindings gb ON gb.allocation_id = ga.allocation_id
+			LEFT JOIN runner_jobs j ON j.provider = ga.provider AND j.provider_job_id = COALESCE(gb.provider_job_id, ga.requested_for_provider_job_id)
 			WHERE ga.execution_id = e.execution_id
-			ORDER BY j.updated_at DESC, j.github_job_id DESC
+			ORDER BY j.updated_at DESC, j.provider_job_id DESC
 			LIMIT 1
-		) gh ON true
+		) rr ON true
 		LEFT JOIN LATERAL (
 			SELECT
 				d.schedule_id,
@@ -172,16 +172,16 @@ func (s *Service) ListRuns(ctx context.Context, orgID uint64, filters RunListFil
 				d.temporal_run_id
 			FROM execution_schedule_dispatches d
 			JOIN execution_schedules s ON s.schedule_id = d.schedule_id
-			WHERE d.execution_id = e.execution_id
+			WHERE d.source_workflow_run_id = e.execution_id
 			ORDER BY d.created_at DESC, d.dispatch_id DESC
 			LIMIT 1
 		) sc ON true
 		WHERE e.org_id = $1
 		  AND ($2 = '' OR e.source_kind = $2)
 		  AND ($3 = '' OR e.state = $3)
-		  AND ($4 = '' OR COALESCE(gh.repository_full_name, '') = $4)
-		  AND ($5 = '' OR COALESCE(gh.workflow_name, '') = $5)
-		  AND ($6 = '' OR COALESCE(gh.head_branch, '') = $6)
+		  AND ($4 = '' OR COALESCE(rr.repository_full_name, '') = $4)
+		  AND ($5 = '' OR COALESCE(rr.workflow_name, '') = $5)
+		  AND ($6 = '' OR COALESCE(rr.head_branch, '') = $6)
 		  AND ($7 = '' OR e.runner_class = $7)
 		  AND ($8 = false OR (e.updated_at, e.execution_id) < ($9, $10))
 		ORDER BY e.updated_at DESC, e.execution_id DESC
@@ -244,9 +244,9 @@ func (s *Service) loadRun(ctx context.Context, orgID uint64, executionID uuid.UU
 			a.failure_reason, a.exit_code, a.duration_ms, a.zfs_written, a.stdout_bytes, a.stderr_bytes,
 			a.rootfs_provisioned_bytes, a.boot_time_us, a.block_read_bytes, a.block_write_bytes, a.net_rx_bytes, a.net_tx_bytes,
 			a.vcpu_exit_count, a.trace_id, a.started_at, a.completed_at, a.created_at, a.updated_at,
-			COALESCE(gh.installation_id, 0), COALESCE(gh.run_id, 0), COALESCE(gh.github_job_id, 0),
-			COALESCE(gh.repository_full_name, ''), COALESCE(gh.workflow_name, ''), COALESCE(gh.job_name, ''),
-			COALESCE(gh.head_branch, ''), COALESCE(gh.head_sha, ''),
+			COALESCE(rr.provider_installation_id, 0), COALESCE(rr.provider_run_id, 0), COALESCE(rr.provider_job_id, 0),
+			COALESCE(rr.repository_full_name, ''), COALESCE(rr.workflow_name, ''), COALESCE(rr.job_name, ''),
+			COALESCE(rr.head_branch, ''), COALESCE(rr.head_sha, ''),
 			COALESCE(sc.schedule_id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(sc.display_name, ''),
 			COALESCE(sc.temporal_workflow_id, ''), COALESCE(sc.temporal_run_id, '')
 		FROM executions e
@@ -262,21 +262,21 @@ func (s *Service) loadRun(ctx context.Context, orgID uint64, executionID uuid.UU
 		) a ON true
 		LEFT JOIN LATERAL (
 			SELECT
-				j.installation_id,
-				j.run_id,
-				j.github_job_id,
+				j.provider_installation_id AS provider_installation_id,
+				j.provider_run_id AS provider_run_id,
+				j.provider_job_id AS provider_job_id,
 				j.repository_full_name,
 				j.workflow_name,
 				j.job_name,
 				j.head_branch,
 				j.head_sha
-			FROM github_runner_allocations ga
-			LEFT JOIN github_runner_job_bindings gb ON gb.allocation_id = ga.allocation_id
-			LEFT JOIN github_workflow_jobs j ON j.github_job_id = COALESCE(gb.github_job_id, ga.requested_for_github_job_id)
+			FROM runner_allocations ga
+			LEFT JOIN runner_job_bindings gb ON gb.allocation_id = ga.allocation_id
+			LEFT JOIN runner_jobs j ON j.provider = ga.provider AND j.provider_job_id = COALESCE(gb.provider_job_id, ga.requested_for_provider_job_id)
 			WHERE ga.execution_id = e.execution_id
-			ORDER BY j.updated_at DESC, j.github_job_id DESC
+			ORDER BY j.updated_at DESC, j.provider_job_id DESC
 			LIMIT 1
-		) gh ON true
+		) rr ON true
 		LEFT JOIN LATERAL (
 			SELECT
 				d.schedule_id,
@@ -285,7 +285,7 @@ func (s *Service) loadRun(ctx context.Context, orgID uint64, executionID uuid.UU
 				d.temporal_run_id
 			FROM execution_schedule_dispatches d
 			JOIN execution_schedules s ON s.schedule_id = d.schedule_id
-			WHERE d.execution_id = e.execution_id
+			WHERE d.source_workflow_run_id = e.execution_id
 			ORDER BY d.created_at DESC, d.dispatch_id DESC
 			LIMIT 1
 		) sc ON true
@@ -343,8 +343,8 @@ func scanExecutionRecord(rows interface {
 		&attempt.FailureReason, &attempt.ExitCode, &attempt.DurationMs, &attempt.ZFSWritten, &attempt.StdoutBytes, &attempt.StderrBytes,
 		&attempt.RootfsProvisionedBytes, &attempt.BootTimeUs, &attempt.BlockReadBytes, &attempt.BlockWriteBytes, &attempt.NetRXBytes, &attempt.NetTXBytes,
 		&attempt.VCPUExitCount, &attempt.TraceID, &attempt.StartedAt, &attempt.CompletedAt, &attempt.CreatedAt, &attempt.UpdatedAt,
-		&record.GitHub.InstallationID, &record.GitHub.RunID, &record.GitHub.JobID, &record.GitHub.RepositoryFullName, &record.GitHub.WorkflowName,
-		&record.GitHub.JobName, &record.GitHub.HeadBranch, &record.GitHub.HeadSHA,
+		&record.Runner.ProviderInstallationID, &record.Runner.ProviderRunID, &record.Runner.ProviderJobID, &record.Runner.RepositoryFullName, &record.Runner.WorkflowName,
+		&record.Runner.JobName, &record.Runner.HeadBranch, &record.Runner.HeadSHA,
 		&record.Schedule.ScheduleID, &record.Schedule.DisplayName, &record.Schedule.TemporalWorkflowID, &record.Schedule.TemporalRunID,
 	); err != nil {
 		return ExecutionRecord{}, fmt.Errorf("scan run: %w", err)

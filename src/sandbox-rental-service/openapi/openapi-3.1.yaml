@@ -1018,8 +1018,6 @@ components:
           type: string
         external_task_id:
           type: string
-        github:
-          $ref: "#/components/schemas/SandboxGitHubRunMetadata"
         idempotency_key:
           type: string
         kind:
@@ -1037,6 +1035,8 @@ components:
           type: string
         run_id:
           type: string
+        runner:
+          $ref: "#/components/schemas/SandboxRunnerRunMetadata"
         runner_class:
           type: string
         schedule:
@@ -1317,26 +1317,6 @@ components:
         - created_at
         - updated_at
       type: object
-    SandboxGitHubRunMetadata:
-      additionalProperties: false
-      properties:
-        head_branch:
-          type: string
-        head_sha:
-          type: string
-        installation_id:
-          type: string
-        job_id:
-          type: string
-        job_name:
-          type: string
-        repository_full_name:
-          type: string
-        run_id:
-          type: string
-        workflow_name:
-          type: string
-      type: object
     SandboxJobsAnalytics:
       additionalProperties: false
       properties:
@@ -1547,6 +1527,26 @@ components:
         - stream
         - chunk
         - created_at
+      type: object
+    SandboxRunnerRunMetadata:
+      additionalProperties: false
+      properties:
+        head_branch:
+          type: string
+        head_sha:
+          type: string
+        job_name:
+          type: string
+        provider_installation_id:
+          type: string
+        provider_job_id:
+          type: string
+        provider_run_id:
+          type: string
+        repository_full_name:
+          type: string
+        workflow_name:
+          type: string
       type: object
     SandboxRunnerSizingAnalytics:
       additionalProperties: false

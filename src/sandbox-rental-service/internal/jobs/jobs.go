@@ -35,15 +35,20 @@ const (
 	SourceKindAPI               = "api"
 	SourceKindExecutionSchedule = "execution_schedule"
 	SourceKindGitHubAction      = "github_actions"
+	SourceKindForgejoAction     = "forgejo_actions"
 	SourceKindSourceHosting     = "source_code_hosting"
 	SourceKindCanary            = "canary"
 	SourceKindVMSession         = "vm_session"
 	WorkloadKindDirect          = "direct"
-	WorkloadKindGitHubRunner    = "github_runner"
+	WorkloadKindRunner          = "runner"
 
-	DefaultRunnerClassLabel = "metal-4vcpu-ubuntu-2404"
-	defaultProductID        = "sandbox"
-	defaultRunCommand       = "echo hello"
+	DefaultRunnerClassLabel      = "metal-4vcpu-ubuntu-2404"
+	defaultProductID             = "sandbox"
+	defaultRunCommand            = "echo hello"
+	RunnerProviderGitHub         = "github"
+	RunnerProviderForgejo        = "forgejo"
+	RunnerBootstrapGitHubJIT     = "github_jit"
+	RunnerBootstrapForgejoOneJob = "forgejo_one_job"
 
 	billingSKUComputeVCPUMs             = "sandbox_compute_amd_epyc_4484px_vcpu_ms"
 	billingSKUMemoryGiBMs               = "sandbox_memory_standard_gib_ms"
@@ -86,31 +91,34 @@ type Runner interface {
 
 type SchedulerRuntime interface {
 	EnqueueExecutionAdvanceTx(ctx context.Context, tx pgx.Tx, req scheduler.ExecutionAdvanceRequest) (scheduler.ExecutionAdvanceResult, error)
-	EnqueueGitHubCapacityReconcileTx(ctx context.Context, tx pgx.Tx, req scheduler.GitHubCapacityReconcileRequest) (scheduler.ProbeResult, error)
-	EnqueueGitHubRunnerAllocateTx(ctx context.Context, tx pgx.Tx, req scheduler.GitHubRunnerAllocateRequest) (scheduler.ProbeResult, error)
-	EnqueueGitHubJobBindTx(ctx context.Context, tx pgx.Tx, req scheduler.GitHubJobBindRequest) (scheduler.ProbeResult, error)
-	EnqueueGitHubRunnerCleanup(ctx context.Context, req scheduler.GitHubRunnerCleanupRequest) (scheduler.ProbeResult, error)
+	EnqueueRunnerCapacityReconcileTx(ctx context.Context, tx pgx.Tx, req scheduler.RunnerCapacityReconcileRequest) (scheduler.ProbeResult, error)
+	EnqueueRunnerAllocateTx(ctx context.Context, tx pgx.Tx, req scheduler.RunnerAllocateRequest) (scheduler.ProbeResult, error)
+	EnqueueRunnerJobBindTx(ctx context.Context, tx pgx.Tx, req scheduler.RunnerJobBindRequest) (scheduler.ProbeResult, error)
+	EnqueueRunnerCleanup(ctx context.Context, req scheduler.RunnerCleanupRequest) (scheduler.ProbeResult, error)
+	EnqueueRunnerRepositorySyncTx(ctx context.Context, tx pgx.Tx, req scheduler.RunnerRepositorySyncRequest) (scheduler.ProbeResult, error)
+	EnqueueRunnerRepositorySync(ctx context.Context, req scheduler.RunnerRepositorySyncRequest) (scheduler.ProbeResult, error)
 }
 
 type SubmitRequest struct {
-	Kind               string                           `json:"kind,omitempty"`
-	RunnerClass        string                           `json:"runner_class,omitempty"`
-	ProductID          string                           `json:"product_id,omitempty"`
-	Provider           string                           `json:"provider,omitempty"`
-	IdempotencyKey     string                           `json:"idempotency_key"`
-	SourceKind         string                           `json:"source_kind,omitempty"`
-	WorkloadKind       string                           `json:"workload_kind,omitempty"`
-	SourceRef          string                           `json:"source_ref,omitempty"`
-	ExternalProvider   string                           `json:"external_provider,omitempty"`
-	ExternalTaskID     string                           `json:"external_task_id,omitempty"`
-	RunCommand         string                           `json:"run_command,omitempty"`
-	MaxWallSeconds     uint64                           `json:"max_wall_seconds,omitempty"`
-	Resources          apiwire.VMResources              `json:"resources"`
-	FilesystemMounts   []vmorchestrator.FilesystemMount `json:"-"`
-	StickyDiskMounts   []StickyDiskMountSpec            `json:"-"`
-	AttemptID          uuid.UUID                        `json:"-"`
-	GitHubAllocationID uuid.UUID                        `json:"-"`
-	GitHubJITConfig    string                           `json:"-"`
+	Kind                   string                           `json:"kind,omitempty"`
+	RunnerClass            string                           `json:"runner_class,omitempty"`
+	ProductID              string                           `json:"product_id,omitempty"`
+	Provider               string                           `json:"provider,omitempty"`
+	IdempotencyKey         string                           `json:"idempotency_key"`
+	SourceKind             string                           `json:"source_kind,omitempty"`
+	WorkloadKind           string                           `json:"workload_kind,omitempty"`
+	SourceRef              string                           `json:"source_ref,omitempty"`
+	ExternalProvider       string                           `json:"external_provider,omitempty"`
+	ExternalTaskID         string                           `json:"external_task_id,omitempty"`
+	RunCommand             string                           `json:"run_command,omitempty"`
+	MaxWallSeconds         uint64                           `json:"max_wall_seconds,omitempty"`
+	Resources              apiwire.VMResources              `json:"resources"`
+	FilesystemMounts       []vmorchestrator.FilesystemMount `json:"-"`
+	StickyDiskMounts       []StickyDiskMountSpec            `json:"-"`
+	AttemptID              uuid.UUID                        `json:"-"`
+	RunnerAllocationID     uuid.UUID                        `json:"-"`
+	RunnerBootstrapKind    string                           `json:"-"`
+	RunnerBootstrapPayload string                           `json:"-"`
 }
 
 type ExecutionRecord struct {
@@ -136,7 +144,7 @@ type ExecutionRecord struct {
 	UpdatedAt        time.Time
 	BillingWindows   []BillingWindow
 	BillingSummary   RunBillingSummary
-	GitHub           GitHubRunMetadata
+	Runner           RunnerRunMetadata
 	Schedule         ScheduleRunMetadata
 	StickyDiskMounts []StickyDiskMountRecord
 }
@@ -195,6 +203,7 @@ type Service struct {
 	Billing          *billingclient.ClientWithResponses
 	Bounds           apiwire.VMResourceBounds
 	GitHubRunner     *GitHubRunner
+	ForgejoRunner    *ForgejoRunner
 	Scheduler        SchedulerRuntime
 	Logger           *slog.Logger
 	WorkloadTimeout  time.Duration
@@ -245,9 +254,9 @@ type jobEventRow struct {
 	JobName                string    `ch:"job_name"`
 	HeadBranch             string    `ch:"head_branch"`
 	HeadSHA                string    `ch:"head_sha"`
-	GitHubInstallationID   uint64    `ch:"github_installation_id"`
-	GitHubRunID            uint64    `ch:"github_run_id"`
-	GitHubJobID            uint64    `ch:"github_job_id"`
+	ProviderInstallationID uint64    `ch:"provider_installation_id"`
+	ProviderRunID          uint64    `ch:"provider_run_id"`
+	ProviderJobID          uint64    `ch:"provider_job_id"`
 	ScheduleID             string    `ch:"schedule_id"`
 	ScheduleDisplayName    string    `ch:"schedule_display_name"`
 	TemporalWorkflowID     string    `ch:"temporal_workflow_id"`
@@ -398,11 +407,8 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req 
 	if err := s.insertExecutionStickyDiskMounts(ctx, tx, executionID, attemptID, req.StickyDiskMounts); err != nil {
 		return uuid.Nil, uuid.Nil, err
 	}
-	if req.WorkloadKind == WorkloadKindGitHubRunner && req.GitHubAllocationID != uuid.Nil {
-		if s.GitHubRunner == nil {
-			return uuid.Nil, uuid.Nil, ErrGitHubRunnerNotConfigured
-		}
-		if err := s.GitHubRunner.attachAllocationExecutionTx(ctx, tx, req.GitHubAllocationID, executionID, attemptID, req.GitHubJITConfig); err != nil {
+	if req.WorkloadKind == WorkloadKindRunner && req.RunnerAllocationID != uuid.Nil {
+		if err := s.attachRunnerAllocationExecutionTx(ctx, tx, req.RunnerAllocationID, executionID, attemptID, req.RunnerBootstrapKind, req.RunnerBootstrapPayload); err != nil {
 			return uuid.Nil, uuid.Nil, err
 		}
 	}
@@ -614,7 +620,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		_ = s.markBillingWindow(terminalCtx, item.AttemptID, reservation.WindowID, "voided", 0, apiwire.BillingSettleResult{})
 		return s.failAttempt(terminalCtx, item, "exec_wait_failed", waitErr)
 	}
-	if item.WorkloadKind == WorkloadKindGitHubRunner && s.GitHubRunner != nil {
+	if item.WorkloadKind == WorkloadKindRunner && s.GitHubRunner != nil && item.SourceKind == SourceKindGitHubAction {
 		if err := s.GitHubRunner.CommitPendingStickyDisks(ctx, item, lease.LeaseID); err != nil && s.Logger != nil {
 			s.Logger.WarnContext(ctx, "sticky disk async commits failed", "execution_id", item.ExecutionID, "attempt_id", item.AttemptID, "error", err)
 		}
@@ -655,8 +661,8 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	} else if s.Logger != nil {
 		s.Logger.WarnContext(ctx, "load run projection after execution failed", "execution_id", item.ExecutionID, "attempt_id", item.AttemptID, "error", err)
 	}
-	if item.WorkloadKind == WorkloadKindGitHubRunner && s.GitHubRunner != nil {
-		s.GitHubRunner.MarkExecutionExited(detachedContext(ctx), item.ExecutionID)
+	if item.WorkloadKind == WorkloadKindRunner {
+		s.MarkRunnerExecutionExited(detachedContext(ctx), item.ExecutionID)
 	}
 	return nil
 }
@@ -1058,10 +1064,10 @@ func (s *Service) writeExecutionLogs(ctx context.Context, record ExecutionRecord
 		ExternalProvider:   record.ExternalProvider,
 		ProductID:          record.ProductID,
 		CorrelationID:      record.CorrelationID,
-		RepositoryFullName: record.GitHub.RepositoryFullName,
-		WorkflowName:       record.GitHub.WorkflowName,
-		JobName:            record.GitHub.JobName,
-		HeadBranch:         record.GitHub.HeadBranch,
+		RepositoryFullName: record.Runner.RepositoryFullName,
+		WorkflowName:       record.Runner.WorkflowName,
+		JobName:            record.Runner.JobName,
+		HeadBranch:         record.Runner.HeadBranch,
 		ScheduleID:         zeroUUIDString(record.Schedule.ScheduleID),
 		Seq:                1,
 		Stream:             "combined",
@@ -1113,14 +1119,14 @@ func jobEventRowForRun(record ExecutionRecord) jobEventRow {
 		ProductID:              record.ProductID,
 		LeaseID:                record.LatestAttempt.LeaseID,
 		ExecID:                 record.LatestAttempt.ExecID,
-		RepositoryFullName:     record.GitHub.RepositoryFullName,
-		WorkflowName:           record.GitHub.WorkflowName,
-		JobName:                record.GitHub.JobName,
-		HeadBranch:             record.GitHub.HeadBranch,
-		HeadSHA:                record.GitHub.HeadSHA,
-		GitHubInstallationID:   int64ToUint64(record.GitHub.InstallationID),
-		GitHubRunID:            int64ToUint64(record.GitHub.RunID),
-		GitHubJobID:            int64ToUint64(record.GitHub.JobID),
+		RepositoryFullName:     record.Runner.RepositoryFullName,
+		WorkflowName:           record.Runner.WorkflowName,
+		JobName:                record.Runner.JobName,
+		HeadBranch:             record.Runner.HeadBranch,
+		HeadSHA:                record.Runner.HeadSHA,
+		ProviderInstallationID: int64ToUint64(record.Runner.ProviderInstallationID),
+		ProviderRunID:          int64ToUint64(record.Runner.ProviderRunID),
+		ProviderJobID:          int64ToUint64(record.Runner.ProviderJobID),
 		ScheduleID:             zeroUUIDString(record.Schedule.ScheduleID),
 		ScheduleDisplayName:    record.Schedule.DisplayName,
 		TemporalWorkflowID:     record.Schedule.TemporalWorkflowID,
@@ -1192,7 +1198,7 @@ func (s *Service) normalizeSubmitRequest(ctx context.Context, req SubmitRequest)
 		req.RunCommand = defaultRunCommand
 	}
 	switch req.WorkloadKind {
-	case WorkloadKindDirect, WorkloadKindGitHubRunner:
+	case WorkloadKindDirect, WorkloadKindRunner:
 	default:
 		return SubmitRequest{}, fmt.Errorf("unsupported workload_kind %q", req.WorkloadKind)
 	}
@@ -1243,8 +1249,8 @@ func (s *Service) executionEnv(ctx context.Context, item executionWorkItem) map[
 		"FORGE_METAL_RUNNER_CLASS": item.RunnerClass,
 		"FORGE_METAL_SOURCE_KIND":  item.SourceKind,
 	}
-	if item.WorkloadKind == WorkloadKindGitHubRunner && s.GitHubRunner != nil {
-		for key, value := range s.GitHubRunner.execEnv(ctx, item.ExecutionID, item.AttemptID) {
+	if item.WorkloadKind == WorkloadKindRunner {
+		for key, value := range s.runnerExecEnv(ctx, item.ExecutionID, item.AttemptID) {
 			env[key] = value
 		}
 	}

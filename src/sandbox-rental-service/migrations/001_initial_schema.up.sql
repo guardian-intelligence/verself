@@ -263,20 +263,21 @@ CREATE TABLE execution_filesystem_mounts (
 CREATE INDEX idx_execution_filesystem_mounts_execution
     ON execution_filesystem_mounts (execution_id, sort_order);
 
-CREATE TABLE github_sticky_disk_generations (
-    installation_id     BIGINT      NOT NULL,
-    repository_id       BIGINT      NOT NULL,
+CREATE TABLE runner_sticky_disk_generations (
+    provider            TEXT        NOT NULL CHECK (provider <> ''),
+    provider_installation_id BIGINT  NOT NULL DEFAULT 0,
+    provider_repository_id   BIGINT  NOT NULL,
     key_hash            TEXT        NOT NULL CHECK (key_hash <> ''),
     key                 TEXT        NOT NULL CHECK (key <> ''),
     current_generation  BIGINT      NOT NULL CHECK (current_generation >= 0),
     current_source_ref  TEXT        NOT NULL CHECK (current_source_ref <> ''),
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (installation_id, repository_id, key_hash)
+    PRIMARY KEY (provider, provider_installation_id, provider_repository_id, key_hash)
 );
 
-CREATE INDEX idx_github_sticky_disk_generations_repo
-    ON github_sticky_disk_generations (installation_id, repository_id, updated_at DESC);
+CREATE INDEX idx_runner_sticky_disk_generations_repo
+    ON runner_sticky_disk_generations (provider, provider_installation_id, provider_repository_id, updated_at DESC);
 
 -- ─── GitHub App integration ────────────────────────────────────────────────
 
@@ -304,12 +305,37 @@ CREATE TABLE github_installation_states (
 CREATE INDEX idx_github_installation_states_expires
     ON github_installation_states (expires_at);
 
-CREATE TABLE github_workflow_jobs (
-    github_job_id          BIGINT      PRIMARY KEY,
-    installation_id        BIGINT      NOT NULL,
-    repository_id          BIGINT      NOT NULL,
+CREATE TABLE runner_provider_repositories (
+    provider               TEXT        NOT NULL CHECK (provider <> ''),
+    provider_repository_id BIGINT      NOT NULL,
+    org_id                 BIGINT      NOT NULL CHECK (org_id > 0),
+    source_repository_id   UUID,
+    provider_owner         TEXT        NOT NULL CHECK (provider_owner <> ''),
+    provider_repo          TEXT        NOT NULL CHECK (provider_repo <> ''),
+    repository_full_name   TEXT        NOT NULL CHECK (repository_full_name <> ''),
+    active                 BOOLEAN     NOT NULL DEFAULT true,
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (provider, provider_repository_id),
+    UNIQUE (provider, repository_full_name)
+);
+
+CREATE INDEX idx_runner_provider_repositories_org
+    ON runner_provider_repositories (org_id, provider, active, updated_at DESC);
+
+CREATE INDEX idx_runner_provider_repositories_source
+    ON runner_provider_repositories (source_repository_id)
+    WHERE source_repository_id IS NOT NULL;
+
+CREATE TABLE runner_jobs (
+    provider               TEXT        NOT NULL CHECK (provider <> ''),
+    provider_job_id        BIGINT      NOT NULL,
+    provider_installation_id BIGINT    NOT NULL DEFAULT 0,
+    provider_repository_id BIGINT      NOT NULL,
     repository_full_name   TEXT        NOT NULL,
-    run_id                 BIGINT      NOT NULL,
+    provider_run_id        BIGINT      NOT NULL DEFAULT 0,
+    provider_task_id       BIGINT      NOT NULL DEFAULT 0,
+    provider_job_handle    TEXT        NOT NULL DEFAULT '',
     job_name               TEXT        NOT NULL DEFAULT '',
     head_sha               TEXT        NOT NULL DEFAULT '',
     head_branch            TEXT        NOT NULL DEFAULT '',
@@ -323,26 +349,30 @@ CREATE TABLE github_workflow_jobs (
     completed_at           TIMESTAMPTZ,
     last_webhook_delivery  TEXT        NOT NULL DEFAULT '',
     updated_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
-    created_at             TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (provider, provider_job_id)
 );
 
-CREATE INDEX idx_github_workflow_jobs_installation_status
-    ON github_workflow_jobs (installation_id, status, updated_at DESC);
-CREATE INDEX idx_github_workflow_jobs_runner
-    ON github_workflow_jobs (runner_id, runner_name)
+CREATE INDEX idx_runner_jobs_installation_status
+    ON runner_jobs (provider, provider_installation_id, status, updated_at DESC);
+CREATE INDEX idx_runner_jobs_repository_status
+    ON runner_jobs (provider, provider_repository_id, status, updated_at DESC);
+CREATE INDEX idx_runner_jobs_runner
+    ON runner_jobs (provider, runner_id, runner_name)
     WHERE runner_id <> 0 OR runner_name <> '';
 
-CREATE TABLE github_runner_allocations (
+CREATE TABLE runner_allocations (
     allocation_id                  UUID        PRIMARY KEY,
-    installation_id                BIGINT      NOT NULL,
-    repository_id                  BIGINT      NOT NULL DEFAULT 0,
+    provider                       TEXT        NOT NULL CHECK (provider <> ''),
+    provider_installation_id       BIGINT      NOT NULL DEFAULT 0,
+    provider_repository_id         BIGINT      NOT NULL DEFAULT 0,
     runner_class                   TEXT        NOT NULL REFERENCES runner_classes(runner_class),
     runner_name                    TEXT        NOT NULL,
-    github_runner_id               BIGINT      NOT NULL DEFAULT 0,
+    provider_runner_id             BIGINT      NOT NULL DEFAULT 0,
     execution_id                   UUID        REFERENCES executions(execution_id) ON DELETE SET NULL,
     attempt_id                     UUID        REFERENCES execution_attempts(attempt_id) ON DELETE SET NULL,
     state                          TEXT        NOT NULL,
-    requested_for_github_job_id    BIGINT      NOT NULL DEFAULT 0,
+    requested_for_provider_job_id  BIGINT      NOT NULL DEFAULT 0,
     allocate_by                    TIMESTAMPTZ,
     jit_by                         TIMESTAMPTZ,
     vm_submitted_by                TIMESTAMPTZ,
@@ -355,46 +385,49 @@ CREATE TABLE github_runner_allocations (
     updated_at                     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_github_runner_allocations_state
-    ON github_runner_allocations (state, updated_at);
-CREATE UNIQUE INDEX idx_github_runner_allocations_execution
-    ON github_runner_allocations (execution_id)
+CREATE INDEX idx_runner_allocations_state
+    ON runner_allocations (provider, state, updated_at);
+CREATE UNIQUE INDEX idx_runner_allocations_execution
+    ON runner_allocations (execution_id)
     WHERE execution_id IS NOT NULL;
-CREATE UNIQUE INDEX idx_github_runner_allocations_runner_name
-    ON github_runner_allocations (runner_name)
+CREATE UNIQUE INDEX idx_runner_allocations_runner_name
+    ON runner_allocations (provider, runner_name)
     WHERE runner_name <> '';
 
-CREATE TABLE github_runner_jit_configs (
-    allocation_id      UUID        PRIMARY KEY REFERENCES github_runner_allocations(allocation_id) ON DELETE CASCADE,
+CREATE TABLE runner_bootstrap_configs (
+    allocation_id      UUID        PRIMARY KEY REFERENCES runner_allocations(allocation_id) ON DELETE CASCADE,
     attempt_id         UUID        NOT NULL REFERENCES execution_attempts(attempt_id) ON DELETE CASCADE,
     fetch_token_hash   TEXT        NOT NULL UNIQUE CHECK (fetch_token_hash <> ''),
-    encoded_jit_config TEXT        NOT NULL CHECK (encoded_jit_config <> ''),
+    bootstrap_kind     TEXT        NOT NULL CHECK (bootstrap_kind <> ''),
+    bootstrap_payload  TEXT        NOT NULL CHECK (bootstrap_payload <> ''),
     expires_at         TIMESTAMPTZ NOT NULL,
     consumed_at        TIMESTAMPTZ,
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_github_runner_jit_configs_attempt
-    ON github_runner_jit_configs (attempt_id);
-CREATE INDEX idx_github_runner_jit_configs_expires
-    ON github_runner_jit_configs (expires_at)
+CREATE INDEX idx_runner_bootstrap_configs_attempt
+    ON runner_bootstrap_configs (attempt_id);
+CREATE INDEX idx_runner_bootstrap_configs_expires
+    ON runner_bootstrap_configs (expires_at)
     WHERE consumed_at IS NULL;
 
-CREATE TABLE github_runner_job_bindings (
+CREATE TABLE runner_job_bindings (
     binding_id       UUID        PRIMARY KEY,
-    allocation_id    UUID        NOT NULL REFERENCES github_runner_allocations(allocation_id) ON DELETE CASCADE,
-    github_job_id    BIGINT      NOT NULL REFERENCES github_workflow_jobs(github_job_id) ON DELETE CASCADE,
-    github_runner_id BIGINT      NOT NULL DEFAULT 0,
+    allocation_id    UUID        NOT NULL REFERENCES runner_allocations(allocation_id) ON DELETE CASCADE,
+    provider         TEXT        NOT NULL CHECK (provider <> ''),
+    provider_job_id  BIGINT      NOT NULL,
+    provider_runner_id BIGINT    NOT NULL DEFAULT 0,
     runner_name      TEXT        NOT NULL DEFAULT '',
     bound_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (allocation_id),
-    UNIQUE (github_job_id)
+    UNIQUE (provider, provider_job_id),
+    FOREIGN KEY (provider, provider_job_id) REFERENCES runner_jobs(provider, provider_job_id) ON DELETE CASCADE
 );
 
-CREATE UNIQUE INDEX idx_github_runner_job_bindings_runner
-    ON github_runner_job_bindings (github_runner_id, runner_name)
-    WHERE github_runner_id <> 0 OR runner_name <> '';
+CREATE UNIQUE INDEX idx_runner_job_bindings_runner
+    ON runner_job_bindings (provider, provider_runner_id, runner_name)
+    WHERE provider_runner_id <> 0 OR runner_name <> '';
 
 -- ─── Execution sticky-disk mounts ──────────────────────────────────────────
 -- Defined after allocations so the allocation_id FK resolves.
@@ -403,7 +436,7 @@ CREATE TABLE execution_sticky_disk_mounts (
     mount_id             UUID        PRIMARY KEY,
     execution_id         UUID        NOT NULL REFERENCES executions(execution_id) ON DELETE CASCADE,
     attempt_id           UUID        NOT NULL REFERENCES execution_attempts(attempt_id) ON DELETE CASCADE,
-    allocation_id        UUID        NOT NULL REFERENCES github_runner_allocations(allocation_id) ON DELETE CASCADE,
+    allocation_id        UUID        NOT NULL REFERENCES runner_allocations(allocation_id) ON DELETE CASCADE,
     mount_name           TEXT        NOT NULL CHECK (mount_name <> ''),
     key_hash             TEXT        NOT NULL CHECK (key_hash <> ''),
     key                  TEXT        NOT NULL CHECK (key <> ''),

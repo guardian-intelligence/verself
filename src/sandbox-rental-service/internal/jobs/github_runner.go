@@ -33,6 +33,7 @@ var (
 	ErrGitHubInstallationInvalid      = errors.New("github installation is invalid")
 	ErrGitHubInstallationStateInvalid = errors.New("github installation state is invalid")
 	ErrGitHubJITConfigMissing         = errors.New("github runner jit config is missing")
+	ErrGitHubWebhookSignatureInvalid  = errors.New("github webhook signature invalid")
 )
 
 const (
@@ -337,25 +338,25 @@ func (r *GitHubRunner) HandleWebhook(ctx context.Context, eventName string, deli
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	_, err = tx.Exec(ctx, `INSERT INTO github_workflow_jobs (
-		github_job_id, installation_id, repository_id, repository_full_name, run_id, job_name, head_sha, head_branch, workflow_name,
+	_, err = tx.Exec(ctx, `INSERT INTO runner_jobs (
+		provider, provider_job_id, provider_installation_id, provider_repository_id, repository_full_name, provider_run_id, job_name, head_sha, head_branch, workflow_name,
 		status, conclusion, labels_json, runner_id, runner_name, started_at, completed_at, last_webhook_delivery, updated_at
-	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
-	ON CONFLICT (github_job_id) DO UPDATE SET
+	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+	ON CONFLICT (provider, provider_job_id) DO UPDATE SET
 		job_name = EXCLUDED.job_name,
-		head_sha = COALESCE(NULLIF(EXCLUDED.head_sha, ''), github_workflow_jobs.head_sha),
-		head_branch = COALESCE(NULLIF(EXCLUDED.head_branch, ''), github_workflow_jobs.head_branch),
-		workflow_name = COALESCE(NULLIF(EXCLUDED.workflow_name, ''), github_workflow_jobs.workflow_name),
+		head_sha = COALESCE(NULLIF(EXCLUDED.head_sha, ''), runner_jobs.head_sha),
+		head_branch = COALESCE(NULLIF(EXCLUDED.head_branch, ''), runner_jobs.head_branch),
+		workflow_name = COALESCE(NULLIF(EXCLUDED.workflow_name, ''), runner_jobs.workflow_name),
 		status = EXCLUDED.status,
 		conclusion = EXCLUDED.conclusion,
 		labels_json = EXCLUDED.labels_json,
 		runner_id = EXCLUDED.runner_id,
 		runner_name = EXCLUDED.runner_name,
-		started_at = COALESCE(EXCLUDED.started_at, github_workflow_jobs.started_at),
-		completed_at = COALESCE(EXCLUDED.completed_at, github_workflow_jobs.completed_at),
+		started_at = COALESCE(EXCLUDED.started_at, runner_jobs.started_at),
+		completed_at = COALESCE(EXCLUDED.completed_at, runner_jobs.completed_at),
 		last_webhook_delivery = EXCLUDED.last_webhook_delivery,
 		updated_at = EXCLUDED.updated_at`,
-		event.WorkflowJob.ID, event.Installation.ID, event.Repository.ID, event.Repository.FullName, event.WorkflowJob.RunID, event.WorkflowJob.Name, event.WorkflowJob.HeadSHA, event.WorkflowJob.HeadBranch, event.WorkflowJob.WorkflowName,
+		RunnerProviderGitHub, event.WorkflowJob.ID, event.Installation.ID, event.Repository.ID, event.Repository.FullName, event.WorkflowJob.RunID, event.WorkflowJob.Name, event.WorkflowJob.HeadSHA, event.WorkflowJob.HeadBranch, event.WorkflowJob.WorkflowName,
 		status, event.WorkflowJob.Conclusion, string(labels), event.WorkflowJob.RunnerID, event.WorkflowJob.RunnerName,
 		nullableTime(event.WorkflowJob.StartedAt), nullableTime(event.WorkflowJob.CompletedAt), deliveryID, now)
 	if err != nil {
@@ -364,18 +365,20 @@ func (r *GitHubRunner) HandleWebhook(ctx context.Context, eventName string, deli
 	switch event.Action {
 	case "queued":
 		if r.service.Scheduler != nil {
-			_, err = r.service.Scheduler.EnqueueGitHubCapacityReconcileTx(ctx, tx, scheduler.GitHubCapacityReconcileRequest{
-				InstallationID: event.Installation.ID,
-				RepositoryID:   event.Repository.ID,
-				GitHubJobID:    event.WorkflowJob.ID,
-				CorrelationID:  deliveryID,
-				TraceParent:    traceParent(ctx),
+			_, err = r.service.Scheduler.EnqueueRunnerCapacityReconcileTx(ctx, tx, scheduler.RunnerCapacityReconcileRequest{
+				Provider:               RunnerProviderGitHub,
+				ProviderInstallationID: event.Installation.ID,
+				ProviderRepositoryID:   event.Repository.ID,
+				ProviderJobID:          event.WorkflowJob.ID,
+				CorrelationID:          deliveryID,
+				TraceParent:            traceParent(ctx),
 			})
 		}
 	case "in_progress", "completed":
 		if r.service.Scheduler != nil {
-			_, err = r.service.Scheduler.EnqueueGitHubJobBindTx(ctx, tx, scheduler.GitHubJobBindRequest{
-				GitHubJobID:   event.WorkflowJob.ID,
+			_, err = r.service.Scheduler.EnqueueRunnerJobBindTx(ctx, tx, scheduler.RunnerJobBindRequest{
+				Provider:      RunnerProviderGitHub,
+				ProviderJobID: event.WorkflowJob.ID,
 				CorrelationID: deliveryID,
 				TraceParent:   traceParent(ctx),
 			})
@@ -430,17 +433,17 @@ func (r *GitHubRunner) ReconcileCapacity(ctx context.Context, githubJobID int64)
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx, `INSERT INTO github_runner_allocations (
-		allocation_id, installation_id, repository_id, runner_class, runner_name, state,
-		requested_for_github_job_id, allocate_by, jit_by, vm_submitted_by, runner_listening_by,
+	if _, err := tx.Exec(ctx, `INSERT INTO runner_allocations (
+		allocation_id, provider, provider_installation_id, provider_repository_id, runner_class, runner_name, state,
+		requested_for_provider_job_id, allocate_by, jit_by, vm_submitted_by, runner_listening_by,
 		assignment_by, vm_exit_by, cleanup_by, created_at, updated_at
-	) VALUES ($1,$2,$3,$4,$5,'pending',$6,$7,$8,$9,$10,$11,$12,$13,$14,$14)`,
-		allocationID, job.InstallationID, job.RepositoryID, runnerClass, runnerName, job.GitHubJobID,
+	) VALUES ($1,$2,$3,$4,$5,$6,'pending',$7,$8,$9,$10,$11,$12,$13,$14,$15,$15)`,
+		allocationID, RunnerProviderGitHub, job.InstallationID, job.RepositoryID, runnerClass, runnerName, job.GitHubJobID,
 		now.Add(30*time.Second), now.Add(time.Minute), now.Add(2*time.Minute), now.Add(5*time.Minute),
 		now.Add(10*time.Minute), now.Add(3*time.Hour), now.Add(3*time.Hour), now); err != nil {
 		return err
 	}
-	if _, err := r.service.Scheduler.EnqueueGitHubRunnerAllocateTx(ctx, tx, scheduler.GitHubRunnerAllocateRequest{
+	if _, err := r.service.Scheduler.EnqueueRunnerAllocateTx(ctx, tx, scheduler.RunnerAllocateRequest{
 		AllocationID:  allocationID.String(),
 		CorrelationID: CorrelationIDFromContext(ctx),
 		TraceParent:   traceParent(ctx),
@@ -492,27 +495,29 @@ func (r *GitHubRunner) AllocateRunner(ctx context.Context, allocationID uuid.UUI
 		_ = r.setAllocationState(ctx, allocationID, "failed", "jit_config_missing_runner_id")
 		return fmt.Errorf("github jit config missing runner id")
 	}
-	if _, err := r.service.PGX.Exec(ctx, `UPDATE github_runner_allocations SET github_runner_id = $1, runner_name = $2, state = 'jit_created', updated_at = $3 WHERE allocation_id = $4`, runnerID, firstNonEmpty(jit.Runner.Name, allocation.RunnerName), time.Now().UTC(), allocationID); err != nil {
+	if _, err := r.service.PGX.Exec(ctx, `UPDATE runner_allocations SET provider_runner_id = $1, runner_name = $2, state = 'jit_created', updated_at = $3 WHERE allocation_id = $4`, runnerID, firstNonEmpty(jit.Runner.Name, allocation.RunnerName), time.Now().UTC(), allocationID); err != nil {
 		return err
 	}
 
 	executionID, attemptID, err := r.service.Submit(WithCorrelationID(ctx, CorrelationIDFromContext(ctx)), allocation.OrgID, fmt.Sprintf("github-app:%d", allocation.InstallationID), SubmitRequest{
-		Kind:               KindDirect,
-		SourceKind:         SourceKindGitHubAction,
-		WorkloadKind:       WorkloadKindGitHubRunner,
-		SourceRef:          allocation.RepositoryFullName,
-		RunnerClass:        allocation.RunnerClass,
-		ExternalProvider:   "github",
-		ExternalTaskID:     strconv.FormatInt(allocation.RequestedJobID, 10),
-		ProductID:          allocation.ProductID,
-		IdempotencyKey:     "github-runner:" + allocationID.String(),
-		RunCommand:         githubRunnerCommand(),
-		MaxWallSeconds:     uint64((3 * time.Hour).Seconds()),
-		Resources:          allocation.Resources,
-		AttemptID:          attemptID,
-		StickyDiskMounts:   stickyMounts,
-		GitHubAllocationID: allocationID,
-		GitHubJITConfig:    jit.EncodedJITConfig,
+		Kind:                   KindDirect,
+		SourceKind:             SourceKindGitHubAction,
+		WorkloadKind:           WorkloadKindRunner,
+		SourceRef:              allocation.RepositoryFullName,
+		RunnerClass:            allocation.RunnerClass,
+		ExternalProvider:       RunnerProviderGitHub,
+		ExternalTaskID:         strconv.FormatInt(allocation.RequestedJobID, 10),
+		Provider:               RunnerProviderGitHub,
+		ProductID:              allocation.ProductID,
+		IdempotencyKey:         "github-runner:" + allocationID.String(),
+		RunCommand:             githubRunnerCommand(),
+		MaxWallSeconds:         uint64((3 * time.Hour).Seconds()),
+		Resources:              allocation.Resources,
+		AttemptID:              attemptID,
+		StickyDiskMounts:       stickyMounts,
+		RunnerAllocationID:     allocationID,
+		RunnerBootstrapKind:    RunnerBootstrapGitHubJIT,
+		RunnerBootstrapPayload: jit.EncodedJITConfig,
 	})
 	if err != nil {
 		_ = r.deleteRunner(ctx, allocation.InstallationID, allocation.AccountLogin, runnerID)
@@ -557,26 +562,26 @@ func (r *GitHubRunner) BindJob(ctx context.Context, githubJobID int64) error {
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx, `INSERT INTO github_runner_job_bindings (
-		binding_id, allocation_id, github_job_id, github_runner_id, runner_name, bound_at, created_at
-	) VALUES ($1,$2,$3,$4,$5,$6,$6)
-	ON CONFLICT (github_job_id) DO NOTHING`, uuid.New(), allocationID, githubJobID, job.runnerID, job.runnerName, now); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO runner_job_bindings (
+		binding_id, allocation_id, provider, provider_job_id, provider_runner_id, runner_name, bound_at, created_at
+	) VALUES ($1,$2,$3,$4,$5,$6,$7,$7)
+	ON CONFLICT (provider, provider_job_id) DO NOTHING`, uuid.New(), allocationID, RunnerProviderGitHub, githubJobID, job.runnerID, job.runnerName, now); err != nil {
 		return err
 	}
 	state := "assigned"
 	if job.status == "completed" {
 		state = "job_completed"
 	}
-	if _, err := tx.Exec(ctx, `UPDATE github_runner_allocations SET state = $1, assignment_by = COALESCE(assignment_by, $2), cleanup_by = $3, updated_at = $2 WHERE allocation_id = $4 AND state <> 'cleaned'`, state, now, now.Add(30*time.Minute), allocationID); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE runner_allocations SET state = $1, assignment_by = COALESCE(assignment_by, $2), cleanup_by = $3, updated_at = $2 WHERE allocation_id = $4 AND state <> 'cleaned'`, state, now, now.Add(30*time.Minute), allocationID); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE executions e
 		SET external_task_id = $1,
 		    updated_at = $2
-		FROM github_runner_allocations a
+		FROM runner_allocations a
 		WHERE a.allocation_id = $3
 		  AND a.execution_id = e.execution_id
-		  AND e.workload_kind = 'github_runner'`, strconv.FormatInt(githubJobID, 10), now, allocationID); err != nil {
+		  AND e.workload_kind = 'runner'`, strconv.FormatInt(githubJobID, 10), now, allocationID); err != nil {
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -584,7 +589,7 @@ func (r *GitHubRunner) BindJob(ctx context.Context, githubJobID int64) error {
 	}
 	span.SetAttributes(attribute.String("github.allocation_id", allocationID.String()), attribute.String("github.workflow_job.status", job.status))
 	if job.status == "completed" && r.service.Scheduler != nil {
-		_, _ = r.service.Scheduler.EnqueueGitHubRunnerCleanup(ctx, scheduler.GitHubRunnerCleanupRequest{
+		_, _ = r.service.Scheduler.EnqueueRunnerCleanup(ctx, scheduler.RunnerCleanupRequest{
 			AllocationID:  allocationID.String(),
 			CorrelationID: CorrelationIDFromContext(ctx),
 			TraceParent:   traceParent(ctx),
@@ -617,65 +622,17 @@ func (r *GitHubRunner) CleanupRunner(ctx context.Context, allocationID uuid.UUID
 		}
 	}
 	now := time.Now().UTC()
-	_, err = r.service.PGX.Exec(ctx, `UPDATE github_runner_allocations SET state = 'cleaned', cleanup_by = $1, updated_at = $1 WHERE allocation_id = $2`, now, allocationID)
+	_, err = r.service.PGX.Exec(ctx, `UPDATE runner_allocations SET state = 'cleaned', cleanup_by = $1, updated_at = $1 WHERE allocation_id = $2`, now, allocationID)
 	if err != nil {
 		return err
 	}
-	_, _ = r.service.PGX.Exec(ctx, `DELETE FROM github_runner_jit_configs WHERE allocation_id = $1`, allocationID)
+	_, _ = r.service.PGX.Exec(ctx, `DELETE FROM runner_bootstrap_configs WHERE allocation_id = $1`, allocationID)
 	return nil
-}
-
-func (r *GitHubRunner) MarkExecutionExited(ctx context.Context, executionID uuid.UUID) {
-	if r == nil || r.service == nil || r.service.PGX == nil || executionID == uuid.Nil {
-		return
-	}
-	var allocationID uuid.UUID
-	err := r.service.PGX.QueryRow(ctx, `UPDATE github_runner_allocations
-		SET state = CASE WHEN state = 'cleaned' THEN state ELSE 'vm_exited' END,
-		    vm_exit_by = $1,
-		    updated_at = $1
-		WHERE execution_id = $2
-		RETURNING allocation_id`, time.Now().UTC(), executionID).Scan(&allocationID)
-	if err == nil && r.service.Scheduler != nil {
-		_, _ = r.service.Scheduler.EnqueueGitHubRunnerCleanup(ctx, scheduler.GitHubRunnerCleanupRequest{
-			AllocationID:  allocationID.String(),
-			CorrelationID: CorrelationIDFromContext(ctx),
-			TraceParent:   traceParent(ctx),
-		})
-	}
-}
-
-func (r *GitHubRunner) attachAllocationExecutionTx(ctx context.Context, tx pgx.Tx, allocationID, executionID, attemptID uuid.UUID, encodedJITConfig string) error {
-	if strings.TrimSpace(encodedJITConfig) == "" {
-		return ErrGitHubJITConfigMissing
-	}
-	now := time.Now().UTC()
-	tag, err := tx.Exec(ctx, `UPDATE github_runner_allocations
-		SET execution_id = $1, attempt_id = $2, state = 'vm_submitted', vm_submitted_by = $3, updated_at = $3
-		WHERE allocation_id = $4 AND state IN ('jit_created', 'pending', 'jit_creating')`, executionID, attemptID, now, allocationID)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() != 1 {
-		return fmt.Errorf("github allocation %s is not attachable", allocationID)
-	}
-	token := r.deriveJITFetchToken(allocationID, attemptID)
-	_, err = tx.Exec(ctx, `INSERT INTO github_runner_jit_configs (
-		allocation_id, attempt_id, fetch_token_hash, encoded_jit_config, expires_at, created_at
-	) VALUES ($1,$2,$3,$4,$5,$6)
-	ON CONFLICT (allocation_id) DO UPDATE SET
-		attempt_id = EXCLUDED.attempt_id,
-		fetch_token_hash = EXCLUDED.fetch_token_hash,
-		encoded_jit_config = EXCLUDED.encoded_jit_config,
-		expires_at = EXCLUDED.expires_at,
-		consumed_at = NULL`,
-		allocationID, attemptID, hashToken(token), encodedJITConfig, now.Add(15*time.Minute), now)
-	return err
 }
 
 func (r *GitHubRunner) execEnv(ctx context.Context, executionID, attemptID uuid.UUID) map[string]string {
 	var allocationID uuid.UUID
-	if err := r.service.PGX.QueryRow(ctx, `SELECT allocation_id FROM github_runner_allocations WHERE execution_id = $1`, executionID).Scan(&allocationID); err != nil {
+	if err := r.service.PGX.QueryRow(ctx, `SELECT allocation_id FROM runner_allocations WHERE provider = 'github' AND execution_id = $1`, executionID).Scan(&allocationID); err != nil {
 		return nil
 	}
 	return map[string]string{
@@ -693,50 +650,20 @@ func (r *GitHubRunner) ConsumeJITConfig(ctx context.Context, token string) (stri
 	if token == "" {
 		return "", ErrGitHubJITConfigMissing
 	}
-	ctx, span := tracer.Start(ctx, "github.runner.jit_config.consume")
-	defer span.End()
-	tx, err := r.service.PGX.Begin(ctx)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	var (
-		allocationID uuid.UUID
-		config       string
-		expiresAt    time.Time
-		consumedAt   *time.Time
-	)
-	err = tx.QueryRow(ctx, `SELECT allocation_id, encoded_jit_config, expires_at, consumed_at
-		FROM github_runner_jit_configs
-		WHERE fetch_token_hash = $1
-		FOR UPDATE`, hashToken(token)).Scan(&allocationID, &config, &expiresAt, &consumedAt)
+	config, err := r.service.ConsumeRunnerBootstrapConfig(ctx, token, RunnerBootstrapGitHubJIT)
 	if err != nil {
 		return "", ErrGitHubJITConfigMissing
 	}
-	if consumedAt != nil || time.Now().UTC().After(expiresAt) {
-		return "", ErrGitHubJITConfigMissing
-	}
-	now := time.Now().UTC()
-	if _, err := tx.Exec(ctx, `UPDATE github_runner_jit_configs SET consumed_at = $1 WHERE allocation_id = $2`, now, allocationID); err != nil {
-		return "", err
-	}
-	if _, err := tx.Exec(ctx, `UPDATE github_runner_allocations SET state = CASE WHEN state = 'vm_submitted' THEN 'runner_config_fetched' ELSE state END, updated_at = $1 WHERE allocation_id = $2`, now, allocationID); err != nil {
-		return "", err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return "", err
-	}
-	span.SetAttributes(attribute.String("github.allocation_id", allocationID.String()))
 	return config, nil
 }
 
 func (r *GitHubRunner) loadQueuedJob(ctx context.Context, githubJobID int64) (githubQueuedJob, error) {
 	row := r.service.PGX.QueryRow(ctx, `SELECT
-		j.github_job_id, j.installation_id, j.repository_id, j.repository_full_name, j.run_id, j.job_name, j.head_sha, j.head_branch, j.labels_json,
+		j.provider_job_id, j.provider_installation_id, j.provider_repository_id, j.repository_full_name, j.provider_run_id, j.job_name, j.head_sha, j.head_branch, j.labels_json,
 		i.org_id, i.account_login
-		FROM github_workflow_jobs j
-		JOIN github_installations i ON i.installation_id = j.installation_id AND i.active
-		WHERE j.github_job_id = $1 AND j.status = 'queued'`, githubJobID)
+		FROM runner_jobs j
+		JOIN github_installations i ON i.installation_id = j.provider_installation_id AND i.active
+		WHERE j.provider = 'github' AND j.provider_job_id = $1 AND j.status = 'queued'`, githubJobID)
 	var job githubQueuedJob
 	var labelsRaw []byte
 	if err := row.Scan(&job.GitHubJobID, &job.InstallationID, &job.RepositoryID, &job.RepositoryFullName, &job.RunID, &job.JobName, &job.HeadSHA, &job.HeadBranch, &labelsRaw, &job.OrgID, &job.AccountLogin); err != nil {
@@ -766,8 +693,9 @@ func (r *GitHubRunner) runnerClassForLabels(ctx context.Context, labels []string
 
 func (r *GitHubRunner) activeAllocationForJob(ctx context.Context, githubJobID int64) (uuid.UUID, error) {
 	var allocationID uuid.UUID
-	err := r.service.PGX.QueryRow(ctx, `SELECT allocation_id FROM github_runner_allocations
-		WHERE requested_for_github_job_id = $1
+	err := r.service.PGX.QueryRow(ctx, `SELECT allocation_id FROM runner_allocations
+		WHERE provider = 'github'
+		  AND requested_for_provider_job_id = $1
 		  AND state NOT IN ('failed', 'cleaned')
 		ORDER BY created_at DESC
 		LIMIT 1`, githubJobID).Scan(&allocationID)
@@ -779,16 +707,16 @@ func (r *GitHubRunner) activeAllocationForJob(ctx context.Context, githubJobID i
 
 func (r *GitHubRunner) loadAllocation(ctx context.Context, allocationID uuid.UUID) (githubAllocation, error) {
 	row := r.service.PGX.QueryRow(ctx, `SELECT
-		a.allocation_id, a.installation_id, a.repository_id, a.runner_class, a.runner_name,
-		a.github_runner_id, a.requested_for_github_job_id, COALESCE(j.run_id, 0), COALESCE(j.job_name, ''), COALESCE(j.head_sha, ''), COALESCE(j.head_branch, ''), COALESCE(a.execution_id, '00000000-0000-0000-0000-000000000000'::uuid),
+		a.allocation_id, a.provider_installation_id, a.provider_repository_id, a.runner_class, a.runner_name,
+		a.provider_runner_id, a.requested_for_provider_job_id, COALESCE(j.provider_run_id, 0), COALESCE(j.job_name, ''), COALESCE(j.head_sha, ''), COALESCE(j.head_branch, ''), COALESCE(a.execution_id, '00000000-0000-0000-0000-000000000000'::uuid),
 		COALESCE(a.attempt_id, '00000000-0000-0000-0000-000000000000'::uuid), a.state,
 		i.org_id, i.account_login, COALESCE(j.repository_full_name, ''),
 		c.product_id, c.vcpus, c.memory_mib, c.rootfs_gib
-		FROM github_runner_allocations a
-		JOIN github_installations i ON i.installation_id = a.installation_id
+		FROM runner_allocations a
+		JOIN github_installations i ON i.installation_id = a.provider_installation_id
 		JOIN runner_classes c ON c.runner_class = a.runner_class
-		LEFT JOIN github_workflow_jobs j ON j.github_job_id = a.requested_for_github_job_id
-		WHERE a.allocation_id = $1`, allocationID)
+		LEFT JOIN runner_jobs j ON j.provider = a.provider AND j.provider_job_id = a.requested_for_provider_job_id
+		WHERE a.provider = 'github' AND a.allocation_id = $1`, allocationID)
 	var out githubAllocation
 	var vcpus, memoryMiB, rootfsGiB int
 	if err := row.Scan(&out.AllocationID, &out.InstallationID, &out.RepositoryID, &out.RunnerClass, &out.RunnerName, &out.GitHubRunnerID, &out.RequestedJobID, &out.RunID, &out.JobName, &out.HeadSHA, &out.HeadBranch, &out.ExecutionID, &out.AttemptID, &out.State, &out.OrgID, &out.AccountLogin, &out.RepositoryFullName, &out.ProductID, &vcpus, &memoryMiB, &rootfsGiB); err != nil {
@@ -799,7 +727,7 @@ func (r *GitHubRunner) loadAllocation(ctx context.Context, allocationID uuid.UUI
 }
 
 func (r *GitHubRunner) setAllocationState(ctx context.Context, allocationID uuid.UUID, state, reason string) error {
-	_, err := r.service.PGX.Exec(ctx, `UPDATE github_runner_allocations SET state = $1, failure_reason = $2, updated_at = $3 WHERE allocation_id = $4`, state, strings.TrimSpace(reason), time.Now().UTC(), allocationID)
+	_, err := r.service.PGX.Exec(ctx, `UPDATE runner_allocations SET state = $1, failure_reason = $2, updated_at = $3 WHERE provider = 'github' AND allocation_id = $4`, state, strings.TrimSpace(reason), time.Now().UTC(), allocationID)
 	return err
 }
 
@@ -814,15 +742,16 @@ func (r *GitHubRunner) loadJobForBinding(ctx context.Context, githubJobID int64)
 		runnerName string
 		status     string
 	}
-	err := r.service.PGX.QueryRow(ctx, `SELECT runner_id, runner_name, status FROM github_workflow_jobs WHERE github_job_id = $1`, githubJobID).Scan(&out.runnerID, &out.runnerName, &out.status)
+	err := r.service.PGX.QueryRow(ctx, `SELECT runner_id, runner_name, status FROM runner_jobs WHERE provider = 'github' AND provider_job_id = $1`, githubJobID).Scan(&out.runnerID, &out.runnerName, &out.status)
 	return out, err
 }
 
 func (r *GitHubRunner) findAllocationForRunner(ctx context.Context, runnerID int64, runnerName string) (uuid.UUID, error) {
 	var allocationID uuid.UUID
-	err := r.service.PGX.QueryRow(ctx, `SELECT allocation_id FROM github_runner_allocations
-		WHERE ($1::bigint <> 0 AND github_runner_id = $1)
-		   OR ($2::text <> '' AND runner_name = $2)
+	err := r.service.PGX.QueryRow(ctx, `SELECT allocation_id FROM runner_allocations
+		WHERE provider = 'github'
+		  AND (($1::bigint <> 0 AND provider_runner_id = $1)
+		   OR ($2::text <> '' AND runner_name = $2))
 		ORDER BY created_at DESC
 		LIMIT 1`, runnerID, runnerName).Scan(&allocationID)
 	return allocationID, err
@@ -1000,20 +929,20 @@ func verifyGitHubSignature(secret string, payload []byte, signature string) erro
 	secret = strings.TrimSpace(secret)
 	signature = strings.TrimSpace(signature)
 	if secret == "" {
-		return fmt.Errorf("missing github webhook secret")
+		return fmt.Errorf("%w: missing secret", ErrGitHubWebhookSignatureInvalid)
 	}
 	const prefix = "sha256="
 	if !strings.HasPrefix(signature, prefix) {
-		return fmt.Errorf("missing github webhook signature")
+		return fmt.Errorf("%w: missing signature", ErrGitHubWebhookSignatureInvalid)
 	}
 	got, err := hex.DecodeString(strings.TrimPrefix(signature, prefix))
 	if err != nil {
-		return fmt.Errorf("decode github webhook signature: %w", err)
+		return fmt.Errorf("%w: decode signature: %v", ErrGitHubWebhookSignatureInvalid, err)
 	}
 	mac := hmac.New(sha256.New, []byte(secret))
 	_, _ = mac.Write(payload)
 	if !hmac.Equal(got, mac.Sum(nil)) {
-		return fmt.Errorf("invalid github webhook signature")
+		return ErrGitHubWebhookSignatureInvalid
 	}
 	return nil
 }
@@ -1029,9 +958,15 @@ func githubRunnerName(githubJobID int64, allocationID uuid.UUID) string {
 func githubRunnerCommand() string {
 	return `set -eu
 jit_file="$(mktemp)"
-cleanup() { rm -f "$jit_file"; }
+header_file="$(mktemp)"
+cleanup() { rm -f "$jit_file" "$header_file"; }
 trap cleanup EXIT
-curl -fsS --retry 3 --retry-delay 1 --get --data-urlencode "token=${FORGE_METAL_GITHUB_JIT_TOKEN:?}" "${FORGE_METAL_HOST_SERVICE_HTTP_ORIGIN:?}${FORGE_METAL_GITHUB_JIT_PATH:?}" -o "$jit_file"
+printf 'header = "X-Forge-Metal-Runner-Bootstrap: %s"\n' "${FORGE_METAL_GITHUB_JIT_TOKEN:?}" > "$header_file"
+if [ -n "${FORGE_METAL_TRACEPARENT:-}" ]; then
+  printf 'header = "traceparent: %s"\n' "$FORGE_METAL_TRACEPARENT" >> "$header_file"
+fi
+curl -fsS --retry 3 --retry-delay 1 --config "$header_file" "${FORGE_METAL_HOST_SERVICE_HTTP_ORIGIN:?}${FORGE_METAL_GITHUB_JIT_PATH:?}" -o "$jit_file"
+unset FORGE_METAL_TRACEPARENT
 unset FORGE_METAL_GITHUB_JIT_TOKEN
 cd /opt/actions-runner
 rm -rf _work

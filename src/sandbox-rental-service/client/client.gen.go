@@ -465,7 +465,6 @@ type SandboxExecutionRecord struct {
 	ExecutionId      string                             `json:"execution_id"`
 	ExternalProvider *string                            `json:"external_provider,omitempty"`
 	ExternalTaskId   *string                            `json:"external_task_id,omitempty"`
-	Github           *SandboxGitHubRunMetadata          `json:"github,omitempty"`
 	IdempotencyKey   *string                            `json:"idempotency_key,omitempty"`
 	Kind             string                             `json:"kind"`
 	LatestAttempt    SandboxAttemptRecord               `json:"latest_attempt"`
@@ -474,6 +473,7 @@ type SandboxExecutionRecord struct {
 	Provider         *string                            `json:"provider,omitempty"`
 	RunCommand       *string                            `json:"run_command,omitempty"`
 	RunId            string                             `json:"run_id"`
+	Runner           *SandboxRunnerRunMetadata          `json:"runner,omitempty"`
 	RunnerClass      *string                            `json:"runner_class,omitempty"`
 	Schedule         *SandboxScheduleRunMetadata        `json:"schedule,omitempty"`
 	SourceKind       *string                            `json:"source_kind,omitempty"`
@@ -580,18 +580,6 @@ type SandboxGitHubInstallationRecord struct {
 	UpdatedAt      time.Time `json:"updated_at"`
 }
 
-// SandboxGitHubRunMetadata defines model for SandboxGitHubRunMetadata.
-type SandboxGitHubRunMetadata struct {
-	HeadBranch         *string `json:"head_branch,omitempty"`
-	HeadSha            *string `json:"head_sha,omitempty"`
-	InstallationId     *string `json:"installation_id,omitempty"`
-	JobId              *string `json:"job_id,omitempty"`
-	JobName            *string `json:"job_name,omitempty"`
-	RepositoryFullName *string `json:"repository_full_name,omitempty"`
-	RunId              *string `json:"run_id,omitempty"`
-	WorkflowName       *string `json:"workflow_name,omitempty"`
-}
-
 // SandboxJobsAnalytics defines model for SandboxJobsAnalytics.
 type SandboxJobsAnalytics struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -669,6 +657,18 @@ type SandboxRunLogSearchResult struct {
 	Stream             string    `json:"stream"`
 	WorkflowName       *string   `json:"workflow_name,omitempty"`
 	WorkloadKind       *string   `json:"workload_kind,omitempty"`
+}
+
+// SandboxRunnerRunMetadata defines model for SandboxRunnerRunMetadata.
+type SandboxRunnerRunMetadata struct {
+	HeadBranch             *string `json:"head_branch,omitempty"`
+	HeadSha                *string `json:"head_sha,omitempty"`
+	JobName                *string `json:"job_name,omitempty"`
+	ProviderInstallationId *string `json:"provider_installation_id,omitempty"`
+	ProviderJobId          *string `json:"provider_job_id,omitempty"`
+	ProviderRunId          *string `json:"provider_run_id,omitempty"`
+	RepositoryFullName     *string `json:"repository_full_name,omitempty"`
+	WorkflowName           *string `json:"workflow_name,omitempty"`
 }
 
 // SandboxRunnerSizingAnalytics defines model for SandboxRunnerSizingAnalytics.

@@ -496,17 +496,6 @@ export const vSandboxGitHubInstallationRecord = v.strictObject({
   updated_at: v.pipe(v.string(), v.isoTimestamp()),
 });
 
-export const vSandboxGitHubRunMetadata = v.strictObject({
-  head_branch: v.optional(v.string()),
-  head_sha: v.optional(v.string()),
-  installation_id: v.optional(v.string()),
-  job_id: v.optional(v.string()),
-  job_name: v.optional(v.string()),
-  repository_full_name: v.optional(v.string()),
-  run_id: v.optional(v.string()),
-  workflow_name: v.optional(v.string()),
-});
-
 export const vSandboxRunBillingSummary = v.strictObject({
   billed_charge_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   cost_per_unit: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
@@ -598,6 +587,17 @@ export const vSandboxRunLogSearchPage = v.strictObject({
   results: v.nullable(v.array(vSandboxRunLogSearchResult)),
 });
 
+export const vSandboxRunnerRunMetadata = v.strictObject({
+  head_branch: v.optional(v.string()),
+  head_sha: v.optional(v.string()),
+  job_name: v.optional(v.string()),
+  provider_installation_id: v.optional(v.string()),
+  provider_job_id: v.optional(v.string()),
+  provider_run_id: v.optional(v.string()),
+  repository_full_name: v.optional(v.string()),
+  workflow_name: v.optional(v.string()),
+});
+
 export const vSandboxRunnerSizingSample = v.strictObject({
   avg_block_write_bytes: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   avg_boot_time_us: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
@@ -641,7 +641,6 @@ export const vSandboxExecutionRecord = v.strictObject({
   execution_id: v.string(),
   external_provider: v.optional(v.string()),
   external_task_id: v.optional(v.string()),
-  github: v.optional(vSandboxGitHubRunMetadata),
   idempotency_key: v.optional(v.string()),
   kind: v.string(),
   latest_attempt: vSandboxAttemptRecord,
@@ -650,6 +649,7 @@ export const vSandboxExecutionRecord = v.strictObject({
   provider: v.optional(v.string()),
   run_command: v.optional(v.string()),
   run_id: v.string(),
+  runner: v.optional(vSandboxRunnerRunMetadata),
   runner_class: v.optional(v.string()),
   schedule: v.optional(vSandboxScheduleRunMetadata),
   source_kind: v.optional(v.string()),
@@ -848,7 +848,6 @@ export const vSandboxExecutionRecordWritable = v.strictObject({
   execution_id: v.string(),
   external_provider: v.optional(v.string()),
   external_task_id: v.optional(v.string()),
-  github: v.optional(vSandboxGitHubRunMetadata),
   idempotency_key: v.optional(v.string()),
   kind: v.string(),
   latest_attempt: vSandboxAttemptRecord,
@@ -857,6 +856,7 @@ export const vSandboxExecutionRecordWritable = v.strictObject({
   provider: v.optional(v.string()),
   run_command: v.optional(v.string()),
   run_id: v.string(),
+  runner: v.optional(vSandboxRunnerRunMetadata),
   runner_class: v.optional(v.string()),
   schedule: v.optional(vSandboxScheduleRunMetadata),
   source_kind: v.optional(v.string()),
