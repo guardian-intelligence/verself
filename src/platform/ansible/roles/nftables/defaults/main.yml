@@ -29,3 +29,8 @@ nftables_ssh_public: true
 # Per-source-IP new-connection rate limit for public SSH.
 nftables_ssh_rate: "3/minute"
 nftables_ssh_burst: 5
+
+# Tables from the pre-rebrand namespace can keep base-chain drop rules active
+# even after their replacement files have been removed from /etc/nftables.d.
+nftables_remove_legacy_tables: true
+nftables_legacy_table_name_pattern: "^forge_metal_"
