@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { requireOperatorDomain } from "@forge-metal/web-env";
+import { requireOperatorDomain } from "@verself/web-env";
 
-import { cn } from "@forge-metal/ui/lib/utils";
+import { cn } from "@verself/ui/lib/utils";
 import { RETENTION, formatWindowValue, type Window } from "~/lib/policy-catalog";
 import {
   ChangesSection,
@@ -25,11 +25,11 @@ export const Route = createFileRoute("/policy/data-retention")({
   loader: () => getOperatorDomain(),
   head: () => ({
     meta: [
-      { title: "Data Retention — Forge Metal Platform" },
+      { title: "Data Retention — Verself Platform" },
       {
         name: "description",
         content:
-          "How Forge Metal retains, exports, and deletes customer data across the billing lifecycle.",
+          "How Verself retains, exports, and deletes customer data across the billing lifecycle.",
       },
     ],
   }),
@@ -84,11 +84,11 @@ function Summary() {
       </SummaryPanel>
       <Prose>
         <p>
-          This page describes what Forge Metal keeps on your behalf, how long we keep it, and under
-          what conditions it can be exported, preserved, or deleted. The retention windows listed
-          here are commitments; they apply equally to every customer organization on this
-          deployment, and the same windows drive the observability-store TTLs and deletion scheduler
-          that execute them.
+          This page describes what Verself keeps on your behalf, how long we keep it, and under what
+          conditions it can be exported, preserved, or deleted. The retention windows listed here
+          are commitments; they apply equally to every customer organization on this deployment, and
+          the same windows drive the observability-store TTLs and deletion scheduler that execute
+          them.
         </p>
         <p>
           Our own organizations — the platform tenant and its parent-company tenant — are subject to
@@ -106,9 +106,9 @@ function Scope() {
       <SectionHeading id="scope">Scope &amp; definitions</SectionHeading>
       <Prose>
         <p>
-          This policy covers data Forge Metal stores in your organization's account on this
-          deployment. It does not cover data held by third-party subprocessors we integrate with;
-          their retention is governed by their own DPAs, listed on{" "}
+          This policy covers data Verself stores in your organization's account on this deployment.
+          It does not cover data held by third-party subprocessors we integrate with; their
+          retention is governed by their own DPAs, listed on{" "}
           <a href="/policy/subprocessors">our subprocessor page</a>.
         </p>
         <p>The categories below are referenced throughout this document.</p>
@@ -128,7 +128,7 @@ function Scope() {
         />
         <DefinitionCard
           term="Backups"
-          definition="Forge Metal does not currently offer a backup product. Customers are responsible for their own backups unless a backup product is purchased. Export during the retention window is not a substitute for backups."
+          definition="Verself does not currently offer a backup product. Customers are responsible for their own backups unless a backup product is purchased. Export during the retention window is not a substitute for backups."
         />
       </DefinitionGrid>
     </section>
@@ -141,9 +141,9 @@ function Roles() {
       <SectionHeading id="roles">Roles under data-protection law</SectionHeading>
       <Prose>
         <p>
-          Forge Metal plays two distinct roles with respect to the data it handles. Which role
-          applies determines who is responsible for responding to data-subject requests and under
-          what legal basis the data is processed.
+          Verself plays two distinct roles with respect to the data it handles. Which role applies
+          determines who is responsible for responding to data-subject requests and under what legal
+          basis the data is processed.
         </p>
         <ul>
           <li>
@@ -154,7 +154,7 @@ function Roles() {
           <li>
             <strong>Processor</strong> for the workload data your users place into the substrate —
             durable volumes, execution logs, mailboxes, and other objects your organization creates
-            on our compute. Forge Metal processes that data only on your documented instructions, in
+            on our compute. Verself processes that data only on your documented instructions, in
             line with GDPR Art. 28 and our <a href="/policy/dpa">Data Processing Addendum</a>.
           </li>
         </ul>
@@ -173,9 +173,9 @@ function Lifecycle() {
       <SectionHeading id="lifecycle">Account lifecycle</SectionHeading>
       <Prose>
         <p>
-          Every Forge Metal account passes through up to five observable states. The current state
-          is visible on your billing page, and every transition is written to an audit log you can
-          read at <code>Billing → Activity</code> or via the audit-events API.
+          Every Verself account passes through up to five observable states. The current state is
+          visible on your billing page, and every transition is written to an audit log you can read
+          at <code>Billing → Activity</code> or via the audit-events API.
         </p>
       </Prose>
       <ol className="flex flex-col gap-0 overflow-hidden rounded-lg border border-border bg-card md:flex-row">
@@ -220,7 +220,7 @@ function RetentionWindows() {
       <Prose>
         <p>
           Windows are measured from the state-transition timestamp recorded on your billing page. An{" "}
-          <a href="#extensions">extension</a> granted by Forge Metal supersedes the default window.
+          <a href="#extensions">extension</a> granted by Verself supersedes the default window.
         </p>
       </Prose>
       <div className="overflow-x-auto rounded-lg border border-border bg-card">
@@ -340,13 +340,13 @@ function DataSubjectRights() {
         </p>
         <ul>
           <li>
-            <strong>Where Forge Metal is the processor</strong> — for data your organization
-            processes about its own end users on our substrate — route requests through the customer
-            (that is, your organization). We will forward requests received directly and cooperate
-            with your response on the timeline the law requires.
+            <strong>Where Verself is the processor</strong> — for data your organization processes
+            about its own end users on our substrate — route requests through the customer (that is,
+            your organization). We will forward requests received directly and cooperate with your
+            response on the timeline the law requires.
           </li>
           <li>
-            <strong>Where Forge Metal is the controller</strong> — billing contacts, organization
+            <strong>Where Verself is the controller</strong> — billing contacts, organization
             administrators, support correspondence — requests go to the{" "}
             <a href="#contact">privacy mailbox</a>. We respond within the statutory window (30 days
             under GDPR, 45 days under CPRA) and record each request in the audit log.
@@ -369,7 +369,7 @@ function Extensions() {
       <Prose>
         <p>
           If you need more time to resolve a billing issue or complete an export, you can request an
-          extension. Extensions are granted by Forge Metal staff and recorded with the{" "}
+          extension. Extensions are granted by Verself staff and recorded with the{" "}
           {extensions.audited_fields.join(", ")} on the extension record.
         </p>
         <p>{extensions.clock_behavior}</p>
@@ -407,7 +407,7 @@ function FinalDeletion() {
           {deletion.soft_delete ? "" : " This is not a soft delete."}{" "}
           {deletion.recoverable_after_execution
             ? "Deletion is recoverable by founder intervention."
-            : "Once deletion has executed, Forge Metal cannot recover the data, even with founder intervention."}
+            : "Once deletion has executed, Verself cannot recover the data, even with founder intervention."}
         </p>
         <p>Deletion is implemented using:</p>
         <ul>
@@ -460,7 +460,7 @@ function OperatorHandling() {
       <SectionHeading id="operator">Founder handling</SectionHeading>
       <Prose>
         <p>
-          Forge Metal's own organizations — the platform tenant and its parent-company tenant — are
+          Verself's own organizations — the platform tenant and its parent-company tenant — are
           subject to this policy on the same terms as any other customer. Internal usage accrues
           real invoices; those invoices are finalized with a 100% showback adjustment rather than
           being excluded from the billing pipeline.

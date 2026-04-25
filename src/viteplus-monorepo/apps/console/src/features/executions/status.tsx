@@ -1,4 +1,4 @@
-import { Badge } from "@forge-metal/ui/components/ui/badge";
+import { Badge } from "@verself/ui/components/ui/badge";
 
 export function isExecutionActiveStatus(status?: string): boolean {
   return (

@@ -7,11 +7,11 @@ openbao_raft_dir: /var/lib/openbao/raft
 openbao_log_dir: /var/log/openbao
 openbao_audit_log: /var/log/openbao/audit.log
 openbao_credstore_dir: /etc/credstore/openbao
-openbao_node_id: forge-metal-single-node
+openbao_node_id: verself-single-node
 openbao_key_shares: 3
 openbao_key_threshold: 2
 openbao_oidc_loopback_hosts:
-  - "auth.{{ forge_metal_domain }}"
+  - "auth.{{ verself_domain }}"
 openbao_spiffe_jwt_mount: spiffe-jwt
 openbao_spiffe_jwt_jwks_url: "{{ spire_jwt_bundle_endpoint_url }}"
 openbao_spiffe_jwt_jwks_ca_pem_path: /etc/spire/bundle-endpoint/ca.pem
@@ -19,5 +19,5 @@ openbao_workload_audience: openbao
 openbao_workload_token_ttl: 15m
 openbao_workload_token_max_ttl: 1h
 openbao_audit_request_headers:
-  - name: X-Forge-Metal-Request-Id
+  - name: X-Verself-Request-Id
     hmac: false

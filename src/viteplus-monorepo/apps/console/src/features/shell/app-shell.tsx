@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Outlet, useRouterState } from "@tanstack/react-router";
-import { ElapsedTimeProvider } from "@forge-metal/ui/hooks/use-elapsed-time";
-import { Toaster } from "@forge-metal/ui/components/ui/sonner";
+import { ElapsedTimeProvider } from "@verself/ui/hooks/use-elapsed-time";
+import { Toaster } from "@verself/ui/components/ui/sonner";
 import {
   Sidebar,
   SidebarContent,
@@ -9,7 +9,7 @@ import {
   SidebarHeader,
   SidebarInset,
   SidebarProvider,
-} from "@forge-metal/ui/components/ui/sidebar";
+} from "@verself/ui/components/ui/sidebar";
 import { EVERGREEN_NAV, PRIMARY_NAV } from "./nav-config";
 import { CommandPalette, useCommandPaletteHotkey } from "./command-palette";
 import { SidebarAccountSlot } from "./sidebar-account-menu";

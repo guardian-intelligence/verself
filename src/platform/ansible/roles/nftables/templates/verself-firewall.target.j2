@@ -1,4 +1,4 @@
-# forge-metal-firewall.target — abstraction point for host firewall readiness.
+# verself-firewall.target — abstraction point for host firewall readiness.
 #
 # WHY THIS EXISTS:
 # On boot, systemd starts services by dependency graph — not Ansible role order.
@@ -6,9 +6,9 @@
 # ruleset, that port is briefly reachable under the kernel's default ACCEPT
 # policy — exposed to the internet with no filtering.
 #
-# Every network-facing forge-metal service declares:
-#   After=forge-metal-firewall.target
-#   Requires=forge-metal-firewall.target
+# Every network-facing verself service declares:
+#   After=verself-firewall.target
+#   Requires=verself-firewall.target
 # so it cannot start until the drop policy is active.
 #
 # This target wraps the concrete firewall implementation (currently
@@ -16,7 +16,7 @@
 # needs updating — not every service unit.
 
 [Unit]
-Description=forge-metal host firewall ready
+Description=verself host firewall ready
 Requires=nftables.service
 After=nftables.service
 

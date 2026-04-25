@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/forge-metal/sandbox-rental-service/internal/scheduler"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/verself/sandbox-rental-service/internal/scheduler"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -18,6 +18,7 @@ import (
 type RunnerRepositoryRegistration struct {
 	Provider             string
 	OrgID                uint64
+	ProjectID            uuid.UUID
 	SourceRepositoryID   uuid.UUID
 	ProviderOwner        string
 	ProviderRepo         string
@@ -211,11 +212,11 @@ func (s *Service) runnerExecEnv(ctx context.Context, executionID, attemptID uuid
 		return nil
 	}
 	env := map[string]string{
-		"FORGE_METAL_RUNNER_BOOTSTRAP_TOKEN": token,
-		"FORGE_METAL_RUNNER_BOOTSTRAP_PATH":  runnerBootstrapPath,
+		"VERSELF_RUNNER_BOOTSTRAP_TOKEN": token,
+		"VERSELF_RUNNER_BOOTSTRAP_PATH":  runnerBootstrapPath,
 	}
 	if parent := traceParent(ctx); parent != "" {
-		env["FORGE_METAL_TRACEPARENT"] = parent
+		env["VERSELF_TRACEPARENT"] = parent
 	}
 	return env
 }

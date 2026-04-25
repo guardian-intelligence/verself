@@ -26,7 +26,7 @@
 - name: Probe for expected tables ({{ service_pg_migrations_service }})
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/psql
+      {{ verself_bin }}/psql
       -h {{ services.postgresql.host }}
       -p {{ services.postgresql.port }}
       -U postgres
@@ -98,7 +98,7 @@
     - name: Apply PostgreSQL migration files ({{ service_pg_migrations_service }})
       ansible.builtin.command:
         cmd: >-
-          {{ fm_bin }}/psql
+          {{ verself_bin }}/psql
           -h {{ services.postgresql.host }}
           -p {{ services.postgresql.port }}
           -U {{ service_pg_migrations_db_user }}

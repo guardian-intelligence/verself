@@ -4,10 +4,10 @@
 # Caddy terminates TLS and reverse-proxies /webhooks/stripe to it.
 # This table restricts the billing user's outbound traffic to only what's required.
 
-table inet forge_metal_billing
-delete table inet forge_metal_billing
+table inet verself_billing
+delete table inet verself_billing
 
-table inet forge_metal_billing {
+table inet verself_billing {
     chain output {
         type filter hook output priority filter; policy accept;
 

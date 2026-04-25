@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Button } from "@forge-metal/ui/components/ui/button";
+import { Button } from "@verself/ui/components/ui/button";
 import {
   Page,
   PageActions,
@@ -9,7 +9,7 @@ import {
   PageSection,
   PageSections,
   PageTitle,
-} from "@forge-metal/ui/components/ui/page";
+} from "@verself/ui/components/ui/page";
 import { ExecutionSchedulesPanel } from "~/features/schedules/components";
 import { loadExecutionSchedules } from "~/features/schedules/queries";
 

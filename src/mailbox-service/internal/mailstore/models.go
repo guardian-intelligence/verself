@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/forge-metal/mailbox-service/internal/jmap"
+	"github.com/verself/mailbox-service/internal/jmap"
 )
 
 var unixEpoch = time.Unix(0, 0).UTC()

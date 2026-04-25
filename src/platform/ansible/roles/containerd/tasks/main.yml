@@ -33,12 +33,12 @@
     content: |
       [Unit]
       Description=containerd container runtime
-      After=forge-metal-firewall.target network.target
-      Requires=forge-metal-firewall.target
+      After=verself-firewall.target network.target
+      Requires=verself-firewall.target
 
       [Service]
       Type=notify
-      ExecStart={{ fm_bin }}/containerd --config /etc/containerd/config.toml
+      ExecStart={{ verself_bin }}/containerd --config /etc/containerd/config.toml
       Restart=always
       RestartSec=5
       LimitNPROC=infinity

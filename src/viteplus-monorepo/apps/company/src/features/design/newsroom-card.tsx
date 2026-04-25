@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Lockup } from "@forge-metal/brand";
+import { Lockup } from "@verself/brand";
 
 // NewsroomCard — the single card shape that every Newsroom surface uses.
 //

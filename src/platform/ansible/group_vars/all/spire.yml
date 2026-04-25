@@ -1,5 +1,5 @@
 ---
-spire_trust_domain: "spiffe.{{ forge_metal_domain }}"
+spire_trust_domain: "spiffe.{{ verself_domain }}"
 spire_server_bind_address: 127.0.0.1
 spire_server_bind_port: 8081
 spire_server_socket_path: /run/spire-server/private/api.sock
@@ -9,6 +9,7 @@ spire_agent_id: "spiffe://{{ spire_trust_domain }}/node/single-node"
 spire_identity_service_id: "spiffe://{{ spire_trust_domain }}/svc/identity-service"
 spire_profile_service_id: "spiffe://{{ spire_trust_domain }}/svc/profile-service"
 spire_notifications_service_id: "spiffe://{{ spire_trust_domain }}/svc/notifications-service"
+spire_projects_service_id: "spiffe://{{ spire_trust_domain }}/svc/projects-service"
 spire_source_code_hosting_service_id: "spiffe://{{ spire_trust_domain }}/svc/source-code-hosting-service"
 spire_nats_id: "spiffe://{{ spire_trust_domain }}/svc/nats"
 spire_governance_service_id: "spiffe://{{ spire_trust_domain }}/svc/governance-service"

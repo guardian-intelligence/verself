@@ -13,15 +13,15 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
-	"github.com/forge-metal/apiwire"
-	auth "github.com/forge-metal/auth-middleware"
-	billingclient "github.com/forge-metal/billing-service/client"
+	"github.com/verself/apiwire"
+	auth "github.com/verself/auth-middleware"
+	billingclient "github.com/verself/billing-service/client"
 
-	"github.com/forge-metal/sandbox-rental-service/internal/jobs"
-	"github.com/forge-metal/sandbox-rental-service/internal/recurring"
+	"github.com/verself/sandbox-rental-service/internal/jobs"
+	"github.com/verself/sandbox-rental-service/internal/recurring"
 )
 
-const billingNoStripeCustomerProblemType = "urn:forge-metal:problem:billing:no-stripe-customer"
+const billingNoStripeCustomerProblemType = "urn:verself:problem:billing:no-stripe-customer"
 
 // RegisterRoutes wires all sandbox-rental-service endpoints onto the Huma API.
 func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Service, billing *billingclient.ClientWithResponses, publicConfig PublicAPIConfig) {

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { OrganizationProfile, loadOrganizationPage } from "@forge-metal/auth-web/components";
+import { OrganizationProfile, loadOrganizationPage } from "@verself/auth-web/components";
 import { identityApiClient } from "~/lib/identity-api-client";
 
 export const Route = createFileRoute("/_shell/_authenticated/settings/organization")({

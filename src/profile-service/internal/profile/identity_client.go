@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	identityinternalclient "github.com/forge-metal/identity-service/internalclient"
+	identityinternalclient "github.com/verself/identity-service/internalclient"
 )
 
 type IdentityInternalClient struct {

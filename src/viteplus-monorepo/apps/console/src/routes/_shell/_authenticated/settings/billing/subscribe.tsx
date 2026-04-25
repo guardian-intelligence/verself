@@ -1,14 +1,14 @@
 import { useMemo } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Badge } from "@forge-metal/ui/components/ui/badge";
-import { Button } from "@forge-metal/ui/components/ui/button";
+import { Badge } from "@verself/ui/components/ui/badge";
+import { Button } from "@verself/ui/components/ui/button";
 import {
   Card,
   CardContent,
   CardFooter,
   CardHeader,
   CardTitle,
-} from "@forge-metal/ui/components/ui/card";
+} from "@verself/ui/components/ui/card";
 import {
   PageEyebrow,
   PageSection,
@@ -17,7 +17,7 @@ import {
   SectionHeader,
   SectionHeaderContent,
   SectionTitle,
-} from "@forge-metal/ui/components/ui/page";
+} from "@verself/ui/components/ui/page";
 import { ErrorCallout } from "~/components/error-callout";
 import { usePlanCardActionMutation } from "~/features/billing/mutations";
 import { loadSubscribePage } from "~/features/billing/queries";

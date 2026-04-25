@@ -1,7 +1,7 @@
 ---
 argument_specs:
   main:
-    short_description: "Caddy edge proxy for Forge Metal public origins"
+    short_description: "Caddy edge proxy for Verself public origins"
     description:
       - "Configures Caddy and renders the edge config that fronts console, service API origins,"
       - "Grafana, Temporal Web, Forgejo, Stalwart, and Zitadel with site-specific WAF policies and access logging."
@@ -81,7 +81,7 @@ argument_specs:
         required: true
         description: "Public domain for Zitadel (h2c reverse proxy)."
 
-      fm_bin:
+      verself_bin:
         type: path
         required: true
         description: "Path to the server binary directory."

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/forge-metal/billing-service/internal/billing/ledger"
+	"github.com/verself/billing-service/internal/billing/ledger"
 )
 
 type OrgID uint64

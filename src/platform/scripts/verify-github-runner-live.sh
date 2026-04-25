@@ -12,11 +12,11 @@ artifact_dir="${artifact_root}/${run_id}"
 mkdir -p "${artifact_dir}/clickhouse" "${artifact_dir}/payloads" "${artifact_dir}/postgres" "${artifact_dir}/responses"
 
 proof_persona="${GITHUB_RUNNER_PROOF_PERSONA:-platform-admin}"
-github_repository="${GITHUB_RUNNER_PROOF_REPOSITORY:-guardian-intelligence/forge-metal}"
-github_workflow_file="${GITHUB_RUNNER_PROOF_WORKFLOW_FILE:-forge-metal-runner-canary.yml}"
-github_workflow_name="${GITHUB_RUNNER_PROOF_WORKFLOW_NAME:-Forge Metal runner canary}"
+github_repository="${GITHUB_RUNNER_PROOF_REPOSITORY:-guardian-intelligence/verself}"
+github_workflow_file="${GITHUB_RUNNER_PROOF_WORKFLOW_FILE:-verself-runner-canary.yml}"
+github_workflow_name="${GITHUB_RUNNER_PROOF_WORKFLOW_NAME:-Verself runner canary}"
 github_workflow_ref="${GITHUB_RUNNER_PROOF_REF:-main}"
-github_app_slug="${GITHUB_RUNNER_PROOF_APP_SLUG:-forge-metal-ci}"
+github_app_slug="${GITHUB_RUNNER_PROOF_APP_SLUG:-verself-ci}"
 github_app_id="${GITHUB_RUNNER_PROOF_APP_ID:-$(awk -F': *' '/^sandbox_rental_service_github_app_id:/{print $2}' "${VERIFICATION_VARS_FILE}" | tr -d '\"' | tail -n 1)}"
 api_base_url="${BASE_URL:-https://sandbox.api.${VERIFICATION_DOMAIN}}"
 api_base_url="${api_base_url%/}"
@@ -76,7 +76,7 @@ api_request() {
     -fsS
     -X "${method}"
     -H "Authorization: Bearer ${SANDBOX_RENTAL_TOKEN}"
-    -H "baggage: forge_metal.verification_run=${run_id}"
+    -H "baggage: verself.verification_run=${run_id}"
   )
   if [[ -n "${body_path}" ]]; then
     curl_args+=(
@@ -102,7 +102,7 @@ assert_github_app_configuration() {
     return 1
   fi
   SECRETS_SERVICE_TOKEN="${SECRETS_SERVICE_TOKEN}" \
-    FORGE_METAL_DOMAIN="${FORGE_METAL_DOMAIN}" \
+    VERSELF_DOMAIN="${VERSELF_DOMAIN}" \
     GITHUB_APP_ID="${github_app_id}" \
     GITHUB_APP_SLUG="${github_app_slug}" \
     EXPECTED_GITHUB_WEBHOOK_URL="${expected_github_webhook_url}" \
@@ -118,7 +118,7 @@ import urllib.request
 import jwt
 
 secret_name = "sandbox-rental-service.github.private_key"
-secrets_url = f"https://secrets.api.{os.environ['FORGE_METAL_DOMAIN']}/api/v1/secrets/{secret_name}"
+secrets_url = f"https://secrets.api.{os.environ['VERSELF_DOMAIN']}/api/v1/secrets/{secret_name}"
 secret_req = urllib.request.Request(
     secrets_url,
     headers={"Authorization": "Bearer " + os.environ["SECRETS_SERVICE_TOKEN"]},
@@ -136,7 +136,7 @@ headers = {
     "Authorization": "Bearer " + app_jwt,
     "Accept": "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
-    "User-Agent": "forge-metal-verification",
+    "User-Agent": "verself-verification",
 }
 
 def github(path):
@@ -734,7 +734,7 @@ ORDER BY key_hash;
   ./scripts/clickhouse.sh --query "SYSTEM FLUSH LOGS"
 ) >"${artifact_dir}/clickhouse/flush-logs.tsv"
 
-wait_for_clickhouse_count forge_metal "
+wait_for_clickhouse_count verself "
   SELECT count()
 	  FROM job_events
 	  WHERE execution_id IN (toUUID({run1_execution_id:String}), toUUID({run2_execution_id:String}), toUUID({run3_execution_id:String}))
@@ -756,7 +756,7 @@ wait_for_clickhouse_count forge_metal "
 	  --param_run2_github_job_id="${run2_github_job_id}" \
 	  --param_run3_github_job_id="${run3_github_job_id}"
 
-wait_for_clickhouse_count forge_metal "
+wait_for_clickhouse_count verself "
   SELECT count()
   FROM job_logs
   WHERE execution_id IN (toUUID({run1_execution_id:String}), toUUID({run2_execution_id:String}), toUUID({run3_execution_id:String}))

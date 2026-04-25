@@ -5,8 +5,8 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from "@forge-metal/ui/components/ui/sidebar";
-import { cn } from "@forge-metal/ui";
+} from "@verself/ui/components/ui/sidebar";
+import { cn } from "@verself/ui";
 import { isPathActive, type NavEntry } from "./nav-config";
 import { useShellConfig } from "./shell-config";
 

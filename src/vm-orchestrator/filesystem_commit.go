@@ -139,10 +139,10 @@ func (o *Orchestrator) CommitFilesystemMount(ctx context.Context, runtime *Lease
 		attribute.String("zfs.snapshot", tempSnapshotPath),
 	)
 	snapshotProps := map[string]string{
-		"forge:lease_id":              runtime.LeaseID,
-		"forge:filesystem_mount":      mountName,
-		"forge:filesystem_target_ref": targetSourceRef,
-		"forge:committed_at":          time.Now().UTC().Format(time.RFC3339Nano),
+		"vs:lease_id":              runtime.LeaseID,
+		"vs:filesystem_mount":      mountName,
+		"vs:filesystem_target_ref": targetSourceRef,
+		"vs:committed_at":          time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	if snapErr := o.ops.ZFSSnapshot(sourceSnapshotCtx, mount.Dataset, tempSnapshot, snapshotProps); snapErr != nil {
 		sourceSnapshotEnd(snapErr)
@@ -192,10 +192,10 @@ func (o *Orchestrator) CommitFilesystemMount(ctx context.Context, runtime *Lease
 		attribute.String("zfs.snapshot", targetDataset+"@ready"),
 	)
 	if readyErr := o.ops.ZFSSnapshot(readySnapshotCtx, targetDataset, "ready", map[string]string{
-		"forge:lease_id":              runtime.LeaseID,
-		"forge:filesystem_mount":      mountName,
-		"forge:filesystem_source_ref": targetSourceRef,
-		"forge:committed_at":          time.Now().UTC().Format(time.RFC3339Nano),
+		"vs:lease_id":              runtime.LeaseID,
+		"vs:filesystem_mount":      mountName,
+		"vs:filesystem_source_ref": targetSourceRef,
+		"vs:committed_at":          time.Now().UTC().Format(time.RFC3339Nano),
 	}); readyErr != nil {
 		readySnapshotEnd(readyErr)
 		err = fmt.Errorf("snapshot committed filesystem %s at %s: %w", mountName, targetDataset+"@ready", readyErr)

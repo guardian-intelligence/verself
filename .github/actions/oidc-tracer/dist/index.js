@@ -45,7 +45,7 @@ async function main() {
 
 function readSpec() {
   return {
-    audience: input("audience") || "forge-metal-oidc-tracer",
+    audience: input("audience") || "verself-oidc-tracer",
     expectedRepository: input("expected-repository") || requiredEnv("GITHUB_REPOSITORY"),
     expectedRef: input("expected-ref") || requiredEnv("GITHUB_REF"),
     expectedSHA: (input("expected-sha") || requiredEnv("GITHUB_SHA")).toLowerCase(),
@@ -183,9 +183,9 @@ function writeSummary(payload, spec) {
     ["expires_at", new Date(Number(payload.exp) * 1000).toISOString()],
   ];
   const lines = [
-    "## Forge Metal OIDC tracer",
+    "## Verself OIDC tracer",
     "",
-    "GitHub-issued OIDC token verified successfully on the Forge Metal runner.",
+    "GitHub-issued OIDC token verified successfully on the Verself runner.",
     "",
     "| Claim | Value |",
     "| --- | --- |",

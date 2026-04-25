@@ -1,7 +1,7 @@
 ---
 - name: Verify governance-service binary exists in profile
   ansible.builtin.stat:
-    path: "{{ fm_bin }}/governance-service"
+    path: "{{ verself_bin }}/governance-service"
   register: governance_service_binary
   failed_when: not governance_service_binary.stat.exists
 
@@ -36,9 +36,9 @@
 - name: Read governance-service SPIRE registration
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry show
+      {{ verself_bin }}/spire-server entry show
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-governance-service
+      -entryID verself-governance-service
       -output json
   register: governance_service_spire_entry
   failed_when: false
@@ -47,23 +47,23 @@
 - name: Register governance-service SPIFFE workload
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry create
+      {{ verself_bin }}/spire-server entry create
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-governance-service
+      -entryID verself-governance-service
       -parentID {{ spire_agent_id }}
       -spiffeID {{ spire_governance_service_id }}
       -selector unix:uid:{{ governance_service_uid.stdout | trim }}
       -x509SVIDTTL 3600
-  when: governance_service_spire_entry.rc != 0 or 'forge-metal-governance-service' not in governance_service_spire_entry.stdout
+  when: governance_service_spire_entry.rc != 0 or 'verself-governance-service' not in governance_service_spire_entry.stdout
   changed_when: true
   notify: restart governance-service
 
 - name: Update governance-service SPIRE workload selector drift
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry update
+      {{ verself_bin }}/spire-server entry update
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-governance-service
+      -entryID verself-governance-service
       -parentID {{ spire_agent_id }}
       -spiffeID {{ spire_governance_service_id }}
       -selector unix:uid:{{ governance_service_uid.stdout | trim }}
@@ -110,8 +110,8 @@
     {{ clickhouse_operator_client_command }} --multiquery <<'SQL'
     CREATE USER IF NOT EXISTS governance_service IDENTIFIED WITH ssl_certificate SAN 'URI:{{ spire_governance_service_id }}' HOST LOCAL;
     ALTER USER governance_service IDENTIFIED WITH ssl_certificate SAN 'URI:{{ spire_governance_service_id }}' HOST LOCAL;
-    GRANT INSERT ON forge_metal.audit_events TO governance_service;
-    GRANT SELECT ON forge_metal.audit_events TO governance_service;
+    GRANT INSERT ON verself.audit_events TO governance_service;
+    GRANT SELECT ON verself.audit_events TO governance_service;
     SQL
   args:
     executable: /bin/bash
@@ -141,7 +141,7 @@
     method: POST
     headers:
       Authorization: "Bearer {{ governance_service_zitadel_admin_pat }}"
-      Host: "auth.{{ forge_metal_domain }}"
+      Host: "auth.{{ verself_domain }}"
     body_format: json
     body:
       queries:
@@ -169,8 +169,8 @@
     content: |
       [Unit]
       Description=Governance Service
-      After=forge-metal-firewall.target network.target postgresql.service clickhouse-server.service zitadel.service spire-agent.service
-      Requires=forge-metal-firewall.target
+      After=verself-firewall.target network.target postgresql.service clickhouse-server.service zitadel.service spire-agent.service
+      Requires=verself-firewall.target
       Wants=postgresql.service clickhouse-server.service zitadel.service spire-agent.service
 
       [Service]
@@ -178,7 +178,7 @@
       User=governance_service
       Group=governance_service
       SupplementaryGroups={{ spire_workload_group }}
-      BindReadOnlyPaths=/etc/forge-metal/auth-discovery-hosts:/etc/hosts
+      BindReadOnlyPaths=/etc/verself/auth-discovery-hosts:/etc/hosts
       LoadCredential=audit-hmac-key:/etc/credstore/governance-service/audit-hmac-key
       LoadCredential=clickhouse-ca-cert:/etc/clickhouse-server/tls/server-ca.pem
       Environment=GOVERNANCE_LISTEN_ADDR={{ services.governance_service.host }}:{{ services.governance_service.port }}
@@ -195,7 +195,7 @@
       Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}
       Environment=OTEL_SERVICE_NAME=governance-service
       Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}
-      ExecStart={{ fm_bin }}/governance-service
+      ExecStart={{ verself_bin }}/governance-service
       Restart=on-failure
       RestartSec=5
       CapabilityBoundingSet=

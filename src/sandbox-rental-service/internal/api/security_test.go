@@ -11,7 +11,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	auth "github.com/forge-metal/auth-middleware"
+	auth "github.com/verself/auth-middleware"
 )
 
 func TestOpenAPIPublicAPIOperationsDeclareIAMPolicy(t *testing.T) {
@@ -29,9 +29,9 @@ func TestOpenAPIPublicAPIOperationsDeclareIAMPolicy(t *testing.T) {
 			}
 			checked++
 
-			rawPolicy, ok := op.Extensions["x-forge-metal-iam"].(map[string]any)
+			rawPolicy, ok := op.Extensions["x-verself-iam"].(map[string]any)
 			if !ok {
-				t.Fatalf("%s %s missing x-forge-metal-iam policy", op.Method, path)
+				t.Fatalf("%s %s missing x-verself-iam policy", op.Method, path)
 			}
 			if rawPolicy["permission"] == "" {
 				t.Fatalf("%s %s has empty IAM permission: %#v", op.Method, path, rawPolicy)
@@ -90,7 +90,7 @@ func TestBillingProxyErrorRedactsUpstreamDetails(t *testing.T) {
 }
 
 func TestBillingProxyErrorMapsNoStripeCustomer(t *testing.T) {
-	err := billingPortalProxyResponseError(context.Background(), http.StatusUnprocessableEntity, []byte(`{"type":"urn:forge-metal:problem:billing:no-stripe-customer","detail":"no stripe customer linked to this org","status":422}`))
+	err := billingPortalProxyResponseError(context.Background(), http.StatusUnprocessableEntity, []byte(`{"type":"urn:verself:problem:billing:no-stripe-customer","detail":"no stripe customer linked to this org","status":422}`))
 
 	var statusErr huma.StatusError
 	if !errors.As(err, &statusErr) {
@@ -146,7 +146,7 @@ func TestIdentityPermissionChecksRoleBundlesAndDirectScopes(t *testing.T) {
 		OrgID:   "42",
 		Subject: "credential-1",
 		Raw: map[string]any{
-			"forge_metal:credential_id": "credential-1",
+			"verself:credential_id": "credential-1",
 			"permissions":               []string{"sandbox:logs:read"},
 		},
 	}

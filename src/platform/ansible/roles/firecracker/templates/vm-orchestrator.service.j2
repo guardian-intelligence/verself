@@ -1,7 +1,7 @@
 [Unit]
 Description=vm-orchestrator Firecracker Host Daemon
-After=forge-metal-firewall.target network-online.target forge-metal-firecracker-network.service
-Requires=forge-metal-firewall.target
+After=verself-firewall.target network-online.target verself-firecracker-network.service
+Requires=verself-firewall.target
 Wants=network-online.target
 
 [Service]

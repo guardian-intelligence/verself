@@ -1,7 +1,7 @@
 /*
- * Forge Metal shared shadcn theme tokens.
+ * Verself shared shadcn theme tokens.
  *
- * Apps that want vanilla shadcn defaults can `@import "@forge-metal/ui/globals.css"`
+ * Apps that want vanilla shadcn defaults can `@import "@verself/ui/globals.css"`
  * at the top of their own app.css. Apps that already define their own brand
  * tokens (mail's primary blue, company's Paper editorial tokens, etc.) keep those locally;
  * the file is intentionally limited to the shadcn baseline so per-app

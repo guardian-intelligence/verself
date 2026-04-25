@@ -4,8 +4,8 @@
 
 - name: Create MX record for root domain
   community.general.cloudflare_dns:
-    zone: "{{ forge_metal_domain }}"
-    record: "{{ forge_metal_domain }}"
+    zone: "{{ verself_domain }}"
+    record: "{{ verself_domain }}"
     type: MX
     value: "{{ stalwart_domain }}"
     priority: 10
@@ -18,8 +18,8 @@
 
 - name: Create combined SPF record for root domain
   community.general.cloudflare_dns:
-    zone: "{{ forge_metal_domain }}"
-    record: "{{ forge_metal_domain }}"
+    zone: "{{ verself_domain }}"
+    record: "{{ verself_domain }}"
     type: TXT
     value: "v=spf1 mx include:{{ resend_domain }} -all"
     ttl: 1

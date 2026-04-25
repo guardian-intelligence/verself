@@ -63,7 +63,7 @@ env \
   VERIFICATION_RUN_JSON_PATH="${run_json_path}" \
   BASE_URL="${base_url}" \
   TEST_BASE_URL="${base_url}" \
-  FORGE_METAL_DOMAIN="${VERIFICATION_DOMAIN}" \
+  VERSELF_DOMAIN="${VERIFICATION_DOMAIN}" \
   ZITADEL_BASE_URL="https://auth.${VERIFICATION_DOMAIN}" \
   TEST_EMAIL="ceo@${VERIFICATION_DOMAIN}" \
   TEST_PASSWORD="${ceo_password}" \

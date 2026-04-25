@@ -1,4 +1,4 @@
-module github.com/forge-metal/auth-middleware
+module github.com/verself/auth-middleware
 
 go 1.25.0
 

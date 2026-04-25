@@ -2,7 +2,7 @@ import { createRouter } from "@tanstack/react-router";
 import { QueryClient } from "@tanstack/react-query";
 import { routeTree } from "./routeTree.gen";
 import { AppNotFound, AppPending, AppRouteError } from "./components/route-boundaries";
-import { anonymousAuth } from "@forge-metal/auth-web/isomorphic";
+import { anonymousAuth } from "@verself/auth-web/isomorphic";
 
 function createQueryClient() {
   return new QueryClient({

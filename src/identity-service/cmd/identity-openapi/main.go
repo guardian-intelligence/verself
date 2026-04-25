@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	identityapi "github.com/forge-metal/identity-service/internal/api"
+	identityapi "github.com/verself/identity-service/internal/api"
 )
 
 const publicServerURL = "https://identity.api.anveio.com"

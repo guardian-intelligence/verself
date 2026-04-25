@@ -1,48 +1,50 @@
 ---
 # Global variables for all nodes.
 
-forge_metal_version: "0.1.0"
+verself_version: "0.1.0"
 
 # All binaries here after deploy_profile role.
-fm_bin: "/opt/forge-metal/profile/bin"
+verself_bin: "/opt/verself/profile/bin"
 
 # Root domain (required). Services get subdomains automatically:
 #   console.<domain>       → authenticated product console
 #   <service>.api.<domain> → customer, SDK, and CLI APIs
 #   dashboard.<domain>     → Grafana dashboard
 #   git.<domain>           → source-code-hosting-service Git smart HTTP
-forge_metal_domain: "anveio.com"
+verself_domain: "anveio.com"
 
 console_subdomain: console
-console_domain: "{{ console_subdomain }}.{{ forge_metal_domain }}"
+console_domain: "{{ console_subdomain }}.{{ verself_domain }}"
 billing_service_subdomain: billing.api
-billing_service_domain: "{{ billing_service_subdomain }}.{{ forge_metal_domain }}"
+billing_service_domain: "{{ billing_service_subdomain }}.{{ verself_domain }}"
 sandbox_rental_service_subdomain: sandbox.api
-sandbox_rental_service_domain: "{{ sandbox_rental_service_subdomain }}.{{ forge_metal_domain }}"
+sandbox_rental_service_domain: "{{ sandbox_rental_service_subdomain }}.{{ verself_domain }}"
 identity_service_subdomain: identity.api
-identity_service_domain: "{{ identity_service_subdomain }}.{{ forge_metal_domain }}"
+identity_service_domain: "{{ identity_service_subdomain }}.{{ verself_domain }}"
 profile_service_subdomain: profile.api
-profile_service_domain: "{{ profile_service_subdomain }}.{{ forge_metal_domain }}"
+profile_service_domain: "{{ profile_service_subdomain }}.{{ verself_domain }}"
 notifications_service_subdomain: notifications.api
-notifications_service_domain: "{{ notifications_service_subdomain }}.{{ forge_metal_domain }}"
+notifications_service_domain: "{{ notifications_service_subdomain }}.{{ verself_domain }}"
+projects_service_subdomain: projects.api
+projects_service_domain: "{{ projects_service_subdomain }}.{{ verself_domain }}"
 source_code_hosting_service_subdomain: source.api
-source_code_hosting_service_domain: "{{ source_code_hosting_service_subdomain }}.{{ forge_metal_domain }}"
+source_code_hosting_service_domain: "{{ source_code_hosting_service_subdomain }}.{{ verself_domain }}"
 governance_service_subdomain: governance.api
-governance_service_domain: "{{ governance_service_subdomain }}.{{ forge_metal_domain }}"
+governance_service_domain: "{{ governance_service_subdomain }}.{{ verself_domain }}"
 secrets_service_subdomain: secrets.api
-secrets_service_domain: "{{ secrets_service_subdomain }}.{{ forge_metal_domain }}"
+secrets_service_domain: "{{ secrets_service_subdomain }}.{{ verself_domain }}"
 mailbox_service_subdomain: mail.api
-mailbox_service_domain: "{{ mailbox_service_subdomain }}.{{ forge_metal_domain }}"
+mailbox_service_domain: "{{ mailbox_service_subdomain }}.{{ verself_domain }}"
 
 # Transactional email (Resend)
 resend_subdomain: notify
-resend_domain: "{{ resend_subdomain }}.{{ forge_metal_domain }}"
+resend_domain: "{{ resend_subdomain }}.{{ verself_domain }}"
 resend_sender_address: "noreply@{{ resend_domain }}"
-resend_sender_name: forge-metal
+resend_sender_name: verself
 
 # Self-hosted mail (Stalwart + mailbox-service)
 stalwart_subdomain: mail
-stalwart_domain: "{{ stalwart_subdomain }}.{{ forge_metal_domain }}"
+stalwart_domain: "{{ stalwart_subdomain }}.{{ verself_domain }}"
 
 # Operator email forwarding — all mail to ceo@<domain> is copied here by the
 # mailbox-service internal forwarder. Required for turnkey operator
@@ -55,9 +57,9 @@ stalwart_operator_forward_to: ""
 # secrets and are not committed.
 sandbox_rental_service_github_app_enabled: true
 sandbox_rental_service_github_app_id: 3370540
-sandbox_rental_service_github_app_slug: forge-metal-ci
+sandbox_rental_service_github_app_slug: verself-ci
 sandbox_rental_service_github_app_client_id: "Iv23liDpxGOmBSQwSJ5i"
-sandbox_rental_service_github_app_settings_url: "https://github.com/organizations/guardian-intelligence/settings/apps/forge-metal-ci"
+sandbox_rental_service_github_app_settings_url: "https://github.com/organizations/guardian-intelligence/settings/apps/verself-ci"
 
 # OpenBao relying-party settings for secrets-service workload auth.
 openbao_spiffe_jwt_mount: spiffe-jwt
@@ -103,6 +105,7 @@ postgresql_role_connection_limits:
   governance_service: 15
   profile_service: 10
   notifications_service: 10
+  projects_service: 10
   source_code_hosting_service: 10
   electric_notifications: 15
   mailbox_service: 10

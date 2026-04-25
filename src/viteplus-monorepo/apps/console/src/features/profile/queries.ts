@@ -1,5 +1,5 @@
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
-import { authQueryKey, type AuthenticatedAuth } from "@forge-metal/auth-web/isomorphic";
+import { authQueryKey, type AuthenticatedAuth } from "@verself/auth-web/isomorphic";
 import { getProfile } from "~/server-fns/api";
 
 export const profileQuery = (auth: AuthenticatedAuth) =>

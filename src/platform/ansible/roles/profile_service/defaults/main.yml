@@ -1,6 +1,6 @@
 ---
 profile_service_subdomain: profile.api
-profile_service_domain: "{{ profile_service_subdomain }}.{{ forge_metal_domain }}"
-profile_service_auth_issuer_url: "https://auth.{{ forge_metal_domain }}"
+profile_service_domain: "{{ profile_service_subdomain }}.{{ verself_domain }}"
+profile_service_auth_issuer_url: "https://auth.{{ verself_domain }}"
 profile_service_identity_project_name: "{{ identity_service_auth_project_name | default('identity-service') }}"
 profile_service_force_schema_reset: false

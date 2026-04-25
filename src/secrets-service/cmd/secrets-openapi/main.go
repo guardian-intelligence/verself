@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/forge-metal/secrets-service/internal/api"
+	"github.com/verself/secrets-service/internal/api"
 )
 
 func main() {

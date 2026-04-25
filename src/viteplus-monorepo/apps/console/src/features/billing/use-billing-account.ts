@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
-import { useSignedInAuth } from "@forge-metal/auth-web/react";
+import { useSignedInAuth } from "@verself/auth-web/react";
 import { contractsQuery, entitlementsQuery, plansQuery, statementQuery } from "./queries";
 import { deriveBillingAccount, type BillingAccount, type BillingSnapshot } from "./state";
 import type {

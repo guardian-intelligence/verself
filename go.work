@@ -13,6 +13,7 @@ use (
 	./src/object-storage-service
 	./src/otel
 	./src/profile-service
+	./src/projects-service
 	./src/sandbox-rental-service
 	./src/secrets-service
 	./src/source-code-hosting-service

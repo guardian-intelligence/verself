@@ -162,7 +162,7 @@ func parseFlags() (config, error) {
 	flag.StringVar(&cfg.pgDSN, "pg-dsn", "", "PostgreSQL DSN")
 	flag.StringVar(&cfg.stripeSecretKeyFile, "stripe-secret-key-file", "", "path to Stripe secret key file")
 	flag.StringVar(&cfg.stripeSecretKey, "stripe-secret-key", "", "Stripe secret key")
-	flag.StringVar(&cfg.productID, "product-id", cfg.productID, "Forge Metal product ID")
+	flag.StringVar(&cfg.productID, "product-id", cfg.productID, "Verself product ID")
 	flag.StringVar(&cfg.productDisplayName, "product-display-name", cfg.productDisplayName, "Stripe product display name")
 	flag.StringVar(&cfg.rateSourcePlanID, "rate-source-plan-id", cfg.rateSourcePlanID, "existing plan whose SKU rates should be copied")
 	flag.StringVar(&cfg.tiersJSON, "tiers-json", "", "contract tier catalog JSON")
@@ -253,7 +253,7 @@ func resolveSecret(value string, filePath string, label string) (string, error) 
 func ensureStripeProduct(ctx context.Context, stripeClient *stripe.Client, stripeProductID string, cfg config) (*stripe.Product, error) {
 	product, err := stripeClient.V1Products.Retrieve(ctx, stripeProductID, nil)
 	if err == nil {
-		updated, err := stripeClient.V1Products.Update(ctx, product.ID, &stripe.ProductUpdateParams{Active: stripe.Bool(true), Name: stripe.String(cfg.productDisplayName), Metadata: map[string]string{"forge_metal_product_id": cfg.productID}})
+		updated, err := stripeClient.V1Products.Update(ctx, product.ID, &stripe.ProductUpdateParams{Active: stripe.Bool(true), Name: stripe.String(cfg.productDisplayName), Metadata: map[string]string{"verself_product_id": cfg.productID}})
 		if err != nil {
 			return nil, fmt.Errorf("update stripe product %s: %w", product.ID, err)
 		}
@@ -262,7 +262,7 @@ func ensureStripeProduct(ctx context.Context, stripeClient *stripe.Client, strip
 	if !isStripeMissing(err) {
 		return nil, fmt.Errorf("retrieve stripe product %s: %w", stripeProductID, err)
 	}
-	created, err := stripeClient.V1Products.Create(ctx, &stripe.ProductCreateParams{ID: stripe.String(stripeProductID), Active: stripe.Bool(true), Name: stripe.String(cfg.productDisplayName), Metadata: map[string]string{"forge_metal_product_id": cfg.productID}})
+	created, err := stripeClient.V1Products.Create(ctx, &stripe.ProductCreateParams{ID: stripe.String(stripeProductID), Active: stripe.Bool(true), Name: stripe.String(cfg.productDisplayName), Metadata: map[string]string{"verself_product_id": cfg.productID}})
 	if err != nil {
 		return nil, fmt.Errorf("create stripe product %s: %w", stripeProductID, err)
 	}
@@ -501,19 +501,19 @@ func isStripeMissing(err error) bool {
 }
 
 func stripeProductID(productID string) string {
-	return "forge_metal_" + safeStripeID(productID)
+	return "verself_" + safeStripeID(productID)
 }
 
 func priceLookupKey(productID string, tier tierConfig) string {
-	return strings.Join([]string{"forge-metal", productID, tier.PlanID, tier.Cadence}, ":")
+	return strings.Join([]string{"verself", productID, tier.PlanID, tier.Cadence}, ":")
 }
 
 func priceMetadata(productID string, tier tierConfig) map[string]string {
 	return map[string]string{
-		"forge_metal_product_id": productID,
-		"forge_metal_plan_id":    tier.PlanID,
-		"forge_metal_tier":       tier.Tier,
-		"forge_metal_cadence":    tier.Cadence,
+		"verself_product_id": productID,
+		"verself_plan_id":    tier.PlanID,
+		"verself_tier":       tier.Tier,
+		"verself_cadence":    tier.Cadence,
 	}
 }
 

@@ -1,9 +1,9 @@
 ---
 # Grafana defaults.
 grafana_subdomain: dashboard
-grafana_domain: "{{ grafana_subdomain }}.{{ forge_metal_domain }}"
+grafana_domain: "{{ grafana_subdomain }}.{{ verself_domain }}"
 
-grafana_install_dir: /opt/forge-metal/grafana
+grafana_install_dir: /opt/verself/grafana
 grafana_config_dir: /etc/grafana
 grafana_data_dir: /var/lib/grafana
 grafana_log_dir: /var/log/grafana
@@ -20,8 +20,8 @@ grafana_clickhouse_server_ca_cred: "{{ grafana_credstore_dir }}/clickhouse-serve
 grafana_clickhouse_datasource_path: "{{ grafana_provisioning_dir }}/datasources/clickhouse.yml"
 grafana_clickhouse_refresh_script_path: /usr/local/bin/refresh-grafana-clickhouse-datasource
 grafana_clickhouse_helper_config_path: "{{ grafana_config_dir }}/clickhouse-spiffe-helper.conf"
-grafana_datasource_uid: forge-metal-clickhouse
-grafana_datasource_name: Forge Metal ClickHouse
+grafana_datasource_uid: verself-clickhouse
+grafana_datasource_name: Verself ClickHouse
 grafana_auth_project_name: grafana
 grafana_auth_app_name: grafana
 grafana_oidc_redirect_uri: "https://{{ grafana_domain }}/login/generic_oauth"

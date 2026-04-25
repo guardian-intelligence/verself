@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/forge-metal/identity-service/internal/identity"
+	"github.com/verself/identity-service/internal/identity"
 )
 
 const (
@@ -77,17 +77,17 @@ func zitadelActionHandler(svc *identity.Service, signingKey string) http.Handler
 			return
 		}
 		appendClaims := []zitadelActionClaim{
-			{Key: "forge_metal:credential_id", Value: claims.CredentialID},
-			{Key: "forge_metal:credential_name", Value: claims.DisplayName},
-			{Key: "forge_metal:credential_fingerprint", Value: claims.Fingerprint},
-			{Key: "forge_metal:credential_owner_id", Value: claims.OwnerID},
-			{Key: "forge_metal:credential_owner_display", Value: claims.OwnerDisplay},
-			{Key: "forge_metal:credential_auth_method", Value: string(claims.AuthMethod)},
+			{Key: "verself:credential_id", Value: claims.CredentialID},
+			{Key: "verself:credential_name", Value: claims.DisplayName},
+			{Key: "verself:credential_fingerprint", Value: claims.Fingerprint},
+			{Key: "verself:credential_owner_id", Value: claims.OwnerID},
+			{Key: "verself:credential_owner_display", Value: claims.OwnerDisplay},
+			{Key: "verself:credential_auth_method", Value: string(claims.AuthMethod)},
 			{Key: "org_id", Value: claims.OrgID},
 			{Key: "permissions", Value: claims.Permissions},
 		}
 		if len(claims.OpenBaoRoles) > 0 {
-			appendClaims = append(appendClaims, zitadelActionClaim{Key: "forge_metal:openbao_roles", Value: claims.OpenBaoRoles})
+			appendClaims = append(appendClaims, zitadelActionClaim{Key: "verself:openbao_roles", Value: claims.OpenBaoRoles})
 		}
 		writeActionResponse(w, zitadelActionResponse{AppendClaims: appendClaims})
 	})

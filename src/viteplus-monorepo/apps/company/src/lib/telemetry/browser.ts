@@ -10,7 +10,7 @@ import {
 } from "@opentelemetry/semantic-conventions/incubating";
 import { DEPLOY_META, RESOURCE_ATTR_KEYS } from "./meta-keys";
 
-const TRACER_NAME = "forge-metal/company-web";
+const TRACER_NAME = "verself/company-web";
 const TRACER_VERSION = "0.1.0";
 // Same-origin proxy in apps/company/src/routes/api/otel/v1/traces.ts. The
 // company CSP pins connect-src 'self', which forbids the browser from posting

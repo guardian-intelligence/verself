@@ -32,7 +32,7 @@
     method: POST
     headers:
       Authorization: "Bearer {{ zitadel_oauth_app_pat }}"
-      Host: "auth.{{ forge_metal_domain }}"
+      Host: "auth.{{ verself_domain }}"
     body_format: json
     body:
       queries:
@@ -49,7 +49,7 @@
     method: POST
     headers:
       Authorization: "Bearer {{ zitadel_oauth_app_pat }}"
-      Host: "auth.{{ forge_metal_domain }}"
+      Host: "auth.{{ verself_domain }}"
     body_format: json
     body:
       name: "{{ zitadel_oauth_app_project_name }}"
@@ -87,7 +87,7 @@
     method: PUT
     headers:
       Authorization: "Bearer {{ zitadel_oauth_app_pat }}"
-      Host: "auth.{{ forge_metal_domain }}"
+      Host: "auth.{{ verself_domain }}"
     body_format: json
     body:
       name: "{{ zitadel_oauth_app_project_name }}"
@@ -113,7 +113,7 @@
     method: POST
     headers:
       Authorization: "Bearer {{ zitadel_oauth_app_pat }}"
-      Host: "auth.{{ forge_metal_domain }}"
+      Host: "auth.{{ verself_domain }}"
     body_format: json
     body:
       queries:
@@ -180,7 +180,7 @@
     method: DELETE
     headers:
       Authorization: "Bearer {{ zitadel_oauth_app_pat }}"
-      Host: "auth.{{ forge_metal_domain }}"
+      Host: "auth.{{ verself_domain }}"
     status_code: 200
   when:
     - zitadel_oauth_app_app_exists | bool
@@ -193,7 +193,7 @@
     method: POST
     headers:
       Authorization: "Bearer {{ zitadel_oauth_app_pat }}"
-      Host: "auth.{{ forge_metal_domain }}"
+      Host: "auth.{{ verself_domain }}"
     body_format: json
     body:
       name: "{{ zitadel_oauth_app_name }}"
@@ -228,7 +228,7 @@
     method: POST
     headers:
       Authorization: "Bearer {{ zitadel_oauth_app_pat }}"
-      Host: "auth.{{ forge_metal_domain }}"
+      Host: "auth.{{ verself_domain }}"
     body_format: json
     body:
       queries:
@@ -278,7 +278,7 @@
     method: PUT
     headers:
       Authorization: "Bearer {{ zitadel_oauth_app_pat }}"
-      Host: "auth.{{ forge_metal_domain }}"
+      Host: "auth.{{ verself_domain }}"
     body_format: json
     body:
       redirectUris: "{{ zitadel_oauth_app_redirect_uris }}"

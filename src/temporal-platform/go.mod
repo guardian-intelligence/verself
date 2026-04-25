@@ -1,17 +1,17 @@
-module github.com/forge-metal/temporal-platform
+module github.com/verself/temporal-platform
 
 go 1.25.8
 
 require (
-	github.com/forge-metal/auth-middleware v0.0.0
-	github.com/forge-metal/envconfig v0.0.0
-	github.com/forge-metal/otel v0.0.0
 	github.com/iancoleman/strcase v0.3.0
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/labstack/echo/v4 v4.15.1
 	github.com/lib/pq v1.10.9
 	github.com/spiffe/go-spiffe/v2 v2.6.0
 	github.com/temporalio/ui-server/v2 v2.48.4
+	github.com/verself/auth-middleware v0.0.0
+	github.com/verself/envconfig v0.0.0
+	github.com/verself/otel v0.0.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.59.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
 	go.opentelemetry.io/otel v1.43.0
@@ -170,10 +170,10 @@ require (
 	modernc.org/sqlite v1.39.1 // indirect
 )
 
-replace github.com/forge-metal/auth-middleware => ../auth-middleware
+replace github.com/verself/auth-middleware => ../auth-middleware
 
-replace github.com/forge-metal/envconfig => ../envconfig
+replace github.com/verself/envconfig => ../envconfig
 
-replace github.com/forge-metal/otel => ../otel
+replace github.com/verself/otel => ../otel
 
 replace go.temporal.io/api => go.temporal.io/api v1.62.2

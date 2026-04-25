@@ -3,7 +3,7 @@ package vmorchestrator
 import (
 	"time"
 
-	"github.com/forge-metal/apiwire"
+	"github.com/verself/apiwire"
 )
 
 const DefaultSocketPath = "/run/vm-orchestrator/api.sock"

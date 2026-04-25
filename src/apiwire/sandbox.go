@@ -8,7 +8,7 @@ import (
 
 type SandboxGitHubInstallationConnectResponse struct {
 	State     string    `json:"state" doc:"Opaque installation state token embedded in the GitHub App setup URL."`
-	SetupURL  string    `json:"setup_url" doc:"GitHub App installation URL for the current Forge Metal organization."`
+	SetupURL  string    `json:"setup_url" doc:"GitHub App installation URL for the current Verself organization."`
 	ExpiresAt time.Time `json:"expires_at" doc:"Time after which the setup URL state is no longer accepted."`
 }
 
@@ -262,6 +262,7 @@ type SandboxStickyDiskResetResult struct {
 type SandboxExecutionScheduleCreateRequest struct {
 	IdempotencyKey     string            `json:"idempotency_key" required:"true" maxLength:"128"`
 	DisplayName        string            `json:"display_name,omitempty" maxLength:"255"`
+	ProjectID          uuid.UUID         `json:"project_id" required:"true"`
 	SourceRepositoryID uuid.UUID         `json:"source_repository_id" required:"true"`
 	WorkflowPath       string            `json:"workflow_path" required:"true" minLength:"1" maxLength:"512"`
 	Ref                string            `json:"ref,omitempty" maxLength:"255"`
@@ -280,6 +281,7 @@ type SandboxExecutionScheduleRecord struct {
 	TemporalNamespace  string                                   `json:"temporal_namespace"`
 	TaskQueue          string                                   `json:"task_queue"`
 	State              string                                   `json:"state"`
+	ProjectID          uuid.UUID                                `json:"project_id"`
 	SourceRepositoryID uuid.UUID                                `json:"source_repository_id"`
 	WorkflowPath       string                                   `json:"workflow_path"`
 	Ref                string                                   `json:"ref,omitempty"`

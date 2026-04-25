@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package forge_metal.vm_orchestrator.v1;
+package verself.vm_orchestrator.v1;
 
-option go_package = "github.com/forge-metal/vm-orchestrator/proto/v1;vmrpc";
+option go_package = "github.com/verself/vm-orchestrator/proto/v1;vmrpc";
 
 service VMService {
   rpc AcquireLease(AcquireLeaseRequest) returns (AcquireLeaseResponse);

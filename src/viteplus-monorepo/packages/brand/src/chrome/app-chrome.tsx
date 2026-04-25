@@ -12,7 +12,7 @@ import { useBrandTelemetry } from "./telemetry";
 // repaint together.
 //
 // The wordmark is rendered through a consumer-supplied LinkComponent so
-// @forge-metal/brand stays router-agnostic. Apps typically pass TanStack's
+// @verself/brand stays router-agnostic. Apps typically pass TanStack's
 // <Link> for SPA navigation; defaults to <a href> if omitted.
 //
 // On mount (and on treatment change) the chrome emits app_chrome.render to

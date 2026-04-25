@@ -9,7 +9,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/forge-metal/secrets-service/internal/secrets"
+	"github.com/verself/secrets-service/internal/secrets"
 )
 
 func RegisterRoutes(api huma.API, svc *secrets.Service) {

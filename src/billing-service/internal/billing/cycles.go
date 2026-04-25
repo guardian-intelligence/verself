@@ -9,7 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/forge-metal/billing-service/internal/store"
+	"github.com/verself/billing-service/internal/store"
 )
 
 type billingCycle struct {

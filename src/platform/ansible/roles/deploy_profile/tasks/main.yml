@@ -1,5 +1,5 @@
 ---
-# Populate /opt/forge-metal/profile/bin/ with all server binaries.
+# Populate /opt/verself/profile/bin/ with all server binaries.
 # Builds Go/Caddy on the controller and downloads pinned static binaries.
 
 - name: Load server tool pins
@@ -12,8 +12,8 @@
     state: directory
     mode: "0755"
   loop:
-    - /opt/forge-metal
-    - "{{ fm_bin }}"
+    - /opt/verself
+    - "{{ verself_bin }}"
     - "{{ deploy_profile_staging_dir }}"
 
 - name: Include path setup

@@ -69,6 +69,20 @@
     state: restarted
   when: deploy_profile_notifications_service_unit_file.stat.exists
 
+- name: Check if projects-service unit exists for deploy profile restart
+  listen: deploy-profile restart projects-service
+  ansible.builtin.stat:
+    path: /etc/systemd/system/projects-service.service
+  register: deploy_profile_projects_service_unit_file
+
+- name: Restart projects-service from deploy profile
+  listen: deploy-profile restart projects-service
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: projects-service
+    state: restarted
+  when: deploy_profile_projects_service_unit_file.stat.exists
+
 - name: Check if secrets-service unit exists for deploy profile restart
   listen: deploy-profile restart secrets-service
   ansible.builtin.stat:

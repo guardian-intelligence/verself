@@ -1,4 +1,4 @@
-import { deriveAppBaseURL, deriveAuthIssuerURL, deriveSeededEmail } from "@forge-metal/web-env";
+import { deriveAppBaseURL, deriveAuthIssuerURL, deriveSeededEmail } from "@verself/web-env";
 
 // Test environment configuration. All values can be overridden via env vars.
 function requiredEnv(name: string): string {
@@ -30,11 +30,10 @@ export const env = {
   verificationRunJSONPath: process.env.VERIFICATION_RUN_JSON_PATH || "",
   verificationRepoURL:
     process.env.VERIFICATION_REPO_URL ||
-    `https://git.${process.env.FORGE_METAL_DOMAIN || "anveio.com"}/forgejo-automation/sandbox-verification-metadata.git`,
+    `https://git.${process.env.VERSELF_DOMAIN || "anveio.com"}/forgejo-automation/sandbox-verification-metadata.git`,
   verificationRepoRef: process.env.VERIFICATION_REPO_REF || "refs/heads/main",
-  verificationLogMarker:
-    process.env.VERIFICATION_LOG_MARKER || "FORGE_METAL_DIRECT_EXECUTION_COMPLETE",
-  proofMode: process.env.FORGE_METAL_SANDBOX_PROOF === "1",
+  verificationLogMarker: process.env.VERIFICATION_LOG_MARKER || "VERSELF_DIRECT_EXECUTION_COMPLETE",
+  proofMode: process.env.VERSELF_SANDBOX_PROOF === "1",
 
   // Stripe test card — always succeeds, no 3DS challenge.
   stripeCard: "4242424242424242",

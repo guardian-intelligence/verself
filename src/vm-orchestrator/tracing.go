@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/forge-metal/vm-orchestrator/vmproto"
+	"github.com/verself/vm-orchestrator/vmproto"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/codes"

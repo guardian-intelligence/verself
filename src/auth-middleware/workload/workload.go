@@ -27,7 +27,7 @@ const (
 	sourceInitTimeout = 5 * time.Second
 )
 
-var tracer = otel.Tracer("github.com/forge-metal/auth-middleware/workload")
+var tracer = otel.Tracer("github.com/verself/auth-middleware/workload")
 
 type peerIDContextKey struct{}
 

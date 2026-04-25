@@ -143,9 +143,9 @@
     content: |
       [Unit]
       Description=Caddy HTTP/2 web server
-      After=forge-metal-firewall.target network-online.target forge-metal-firecracker-network.service
-      Requires=forge-metal-firewall.target
-      Wants=network-online.target forge-metal-firecracker-network.service
+      After=verself-firewall.target network-online.target verself-firecracker-network.service
+      Requires=verself-firewall.target
+      Wants=network-online.target verself-firecracker-network.service
 
       [Service]
       Type=simple
@@ -156,8 +156,8 @@
       Environment=XDG_CONFIG_HOME=/etc/caddy
       Environment=XDG_DATA_HOME=/var/lib/caddy
       Environment=XDG_CACHE_HOME=/var/cache/caddy
-      ExecStart={{ fm_bin }}/caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
-      ExecReload={{ fm_bin }}/caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+      ExecStart={{ verself_bin }}/caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+      ExecReload={{ verself_bin }}/caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
       Restart=on-failure
       RestartSec=5
       AmbientCapabilities=CAP_NET_BIND_SERVICE

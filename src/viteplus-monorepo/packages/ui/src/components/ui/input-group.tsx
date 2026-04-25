@@ -3,10 +3,10 @@
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 
-import { cn } from "@forge-metal/ui/lib/utils";
-import { Button } from "@forge-metal/ui/components/ui/button";
-import { Input } from "@forge-metal/ui/components/ui/input";
-import { Textarea } from "@forge-metal/ui/components/ui/textarea";
+import { cn } from "@verself/ui/lib/utils";
+import { Button } from "@verself/ui/components/ui/button";
+import { Input } from "@verself/ui/components/ui/input";
+import { Textarea } from "@verself/ui/components/ui/textarea";
 
 function InputGroup({ className, ...props }: React.ComponentProps<"div">) {
   return (

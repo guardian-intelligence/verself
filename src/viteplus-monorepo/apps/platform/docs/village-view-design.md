@@ -2,7 +2,7 @@
 
 ## 1. Context
 
-forge-metal is a self-hosted product substrate that a solo non-technical founder uses to
+verself is a self-hosted product substrate that a solo non-technical founder uses to
 run an online business off a single bare-metal server. The substrate bundles identity,
 billing, inbound mail, source control, CI runners, isolated VM workloads, observability,
 and frontend apps. It is designed to replace an armful of SaaS vendors at commodity
@@ -446,7 +446,7 @@ Explicitly flagged for the head of design to pressure-test before IC work begins
 
 | Surface               | Source                                                                                                                  |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Building health state | `forge_metal.otel_traces` status codes + `default.otel_logs` severity, per `service.name`, sliding window               |
+| Building health state | `verself.otel_traces` status codes + `default.otel_logs` severity, per `service.name`, sliding window                   |
 | Building bustle tempo | Per-building custom metric (RPS for APIs, VM spawn rate for Smelter, span rate for Scribe, queue depth for Letter Slot) |
 | Raven feed            | New unified view over ClickHouse wide events; schema to be added                                                        |
 | Financials            | TigerBeetle balances + billing Postgres + Stripe events                                                                 |

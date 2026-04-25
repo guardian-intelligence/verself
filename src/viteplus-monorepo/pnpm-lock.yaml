@@ -155,16 +155,16 @@ importers:
 
   apps/company:
     dependencies:
-      '@forge-metal/brand':
+      '@verself/brand':
         specifier: workspace:*
         version: link:../../packages/brand
-      '@forge-metal/nitro-plugins':
+      '@verself/nitro-plugins':
         specifier: workspace:*
         version: link:../../packages/nitro-plugins
-      '@forge-metal/ui':
+      '@verself/ui':
         specifier: workspace:*
         version: link:../../packages/ui
-      '@forge-metal/web-env':
+      '@verself/web-env':
         specifier: workspace:*
         version: link:../../packages/web-env
       '@opentelemetry/api':
@@ -249,16 +249,16 @@ importers:
 
   apps/console:
     dependencies:
-      '@forge-metal/auth-web':
+      '@verself/auth-web':
         specifier: workspace:*
         version: link:../../packages/auth-web
-      '@forge-metal/nitro-plugins':
+      '@verself/nitro-plugins':
         specifier: workspace:*
         version: link:../../packages/nitro-plugins
-      '@forge-metal/ui':
+      '@verself/ui':
         specifier: workspace:*
         version: link:../../packages/ui
-      '@forge-metal/web-env':
+      '@verself/web-env':
         specifier: workspace:*
         version: link:../../packages/web-env
       '@opentelemetry/api':
@@ -346,16 +346,16 @@ importers:
 
   apps/platform:
     dependencies:
-      '@forge-metal/brand':
+      '@verself/brand':
         specifier: workspace:*
         version: link:../../packages/brand
-      '@forge-metal/nitro-plugins':
+      '@verself/nitro-plugins':
         specifier: workspace:*
         version: link:../../packages/nitro-plugins
-      '@forge-metal/ui':
+      '@verself/ui':
         specifier: workspace:*
         version: link:../../packages/ui
-      '@forge-metal/web-env':
+      '@verself/web-env':
         specifier: workspace:*
         version: link:../../packages/web-env
       '@opentelemetry/api':
@@ -443,7 +443,7 @@ importers:
 
   packages/auth-web:
     dependencies:
-      '@forge-metal/ui':
+      '@verself/ui':
         specifier: workspace:*
         version: link:../ui
       '@opentelemetry/api':

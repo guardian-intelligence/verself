@@ -12,9 +12,9 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 
-	"github.com/forge-metal/apiwire"
-	auth "github.com/forge-metal/auth-middleware"
-	"github.com/forge-metal/notifications-service/internal/notifications"
+	"github.com/verself/apiwire"
+	auth "github.com/verself/auth-middleware"
+	"github.com/verself/notifications-service/internal/notifications"
 )
 
 const (
@@ -143,7 +143,7 @@ func register[I, O any](api huma.API, op huma.Operation, permission string, hand
 		op.Extensions = map[string]any{}
 	}
 	op.Security = []map[string][]string{{"bearerAuth": {}}}
-	op.Extensions["x-forge-metal-iam"] = map[string]any{
+	op.Extensions["x-verself-iam"] = map[string]any{
 		"permission":          permission,
 		"resource":            "notification_subject",
 		"action":              actionFromMethod(op.Method),
@@ -163,8 +163,8 @@ func register[I, O any](api huma.API, op huma.Operation, permission string, hand
 		identity := auth.FromContext(ctx)
 		if identity != nil {
 			span.SetAttributes(
-				attribute.String("forge_metal.org_id", identity.OrgID),
-				attribute.String("forge_metal.subject_id", identity.Subject),
+				attribute.String("verself.org_id", identity.OrgID),
+				attribute.String("verself.subject_id", identity.Subject),
 			)
 		}
 		out, err := handler(ctx, input)

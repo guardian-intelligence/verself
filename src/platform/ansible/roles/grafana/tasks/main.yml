@@ -7,7 +7,7 @@
 
 - name: Verify Grafana binary exists in profile
   ansible.builtin.stat:
-    path: "{{ fm_bin }}/grafana"
+    path: "{{ verself_bin }}/grafana"
   register: grafana_binary
   failed_when: not grafana_binary.stat.exists
 
@@ -42,9 +42,9 @@
 - name: Read Grafana SPIRE registration
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry show
+      {{ verself_bin }}/spire-server entry show
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-grafana
+      -entryID verself-grafana
       -output json
   register: grafana_spire_entry
   failed_when: false
@@ -53,14 +53,14 @@
 - name: Register Grafana SPIFFE workload
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry create
+      {{ verself_bin }}/spire-server entry create
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-grafana
+      -entryID verself-grafana
       -parentID {{ spire_agent_id }}
       -spiffeID {{ spire_grafana_id }}
       -selector unix:uid:{{ grafana_uid.stdout | trim }}
       -x509SVIDTTL 3600
-  when: grafana_spire_entry.rc != 0 or 'forge-metal-grafana' not in grafana_spire_entry.stdout
+  when: grafana_spire_entry.rc != 0 or 'verself-grafana' not in grafana_spire_entry.stdout
   changed_when: true
   notify:
     - restart grafana-clickhouse-spiffe-helper
@@ -69,9 +69,9 @@
 - name: Update Grafana SPIRE workload selector drift
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry update
+      {{ verself_bin }}/spire-server entry update
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-grafana
+      -entryID verself-grafana
       -parentID {{ spire_agent_id }}
       -spiffeID {{ spire_grafana_id }}
       -selector unix:uid:{{ grafana_uid.stdout | trim }}
@@ -265,7 +265,7 @@
     CREATE USER IF NOT EXISTS {{ grafana_clickhouse_user }} IDENTIFIED WITH ssl_certificate SAN 'URI:{{ spire_grafana_id }}' HOST LOCAL;
     ALTER USER {{ grafana_clickhouse_user }} IDENTIFIED WITH ssl_certificate SAN 'URI:{{ spire_grafana_id }}' HOST LOCAL;
     GRANT SELECT ON default.* TO {{ grafana_clickhouse_user }};
-    GRANT SELECT ON forge_metal.* TO {{ grafana_clickhouse_user }};
+    GRANT SELECT ON verself.* TO {{ grafana_clickhouse_user }};
     GRANT SELECT ON system.query_log TO {{ grafana_clickhouse_user }};
     GRANT SELECT ON system.settings TO {{ grafana_clickhouse_user }};
     GRANT SELECT ON system.tables TO {{ grafana_clickhouse_user }};
@@ -381,7 +381,7 @@
 - name: Deploy Grafana dashboard provider
   ansible.builtin.template:
     src: dashboards-provider.yml.j2
-    dest: "{{ grafana_provisioning_dir }}/dashboards/forge-metal.yml"
+    dest: "{{ grafana_provisioning_dir }}/dashboards/verself.yml"
     owner: root
     group: grafana
     mode: "0640"
@@ -465,7 +465,7 @@
 - name: Converge Grafana admin password
   ansible.builtin.command:
     argv:
-      - "{{ fm_bin }}/grafana"
+      - "{{ verself_bin }}/grafana"
       - cli
       - --homepath
       - "{{ grafana_install_dir }}"

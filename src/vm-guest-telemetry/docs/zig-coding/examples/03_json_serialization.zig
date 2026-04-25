@@ -78,14 +78,14 @@ test "serialize snapshot — round-trips through parse" {
     const observations = [_]VMObservation{
         .{
             .job_id = "job-abc",
-            .uds_path = "/srv/jailer/firecracker/job-abc/root/run/forge-control.sock",
+            .uds_path = "/srv/jailer/firecracker/job-abc/root/run/vs-control.sock",
             .status = .ok,
             .message = "hello from guest",
             .observed_at_unix_ms = 1700000000000,
         },
         .{
             .job_id = "job-def",
-            .uds_path = "/srv/jailer/firecracker/job-def/root/run/forge-control.sock",
+            .uds_path = "/srv/jailer/firecracker/job-def/root/run/vs-control.sock",
             .status = .@"error",
             .message = "ConnectionRefused",
             .observed_at_unix_ms = 1700000001000,

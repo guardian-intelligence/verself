@@ -1,6 +1,6 @@
 import { createRootRoute, HeadContent, Link, Outlet, Scripts } from "@tanstack/react-router";
 import { type ReactNode } from "react";
-import { AppChrome, BrandTelemetryProvider } from "@forge-metal/brand";
+import { AppChrome, BrandTelemetryProvider } from "@verself/brand";
 import { emitSpan } from "~/lib/telemetry/browser";
 import { TelemetryProbe } from "~/lib/telemetry/page-view";
 import { deployMetaTags } from "~/lib/telemetry/server-deploy-meta";

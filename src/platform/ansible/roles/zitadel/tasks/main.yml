@@ -7,7 +7,7 @@
 
 - name: Verify Zitadel binary exists in profile
   ansible.builtin.stat:
-    path: "{{ fm_bin }}/zitadel"
+    path: "{{ verself_bin }}/zitadel"
   register: zitadel_binary
   failed_when: not zitadel_binary.stat.exists
 
@@ -92,9 +92,9 @@
     group: zitadel
     mode: "0750"
 
-- name: Create Forge Metal host override directory
+- name: Create Verself host override directory
   ansible.builtin.file:
-    path: /etc/forge-metal
+    path: /etc/verself
     state: directory
     owner: root
     group: root
@@ -102,14 +102,14 @@
 
 - name: Deploy local OIDC discovery hosts file
   ansible.builtin.copy:
-    dest: /etc/forge-metal/auth-discovery-hosts
+    dest: /etc/verself/auth-discovery-hosts
     owner: root
     group: root
     mode: "0644"
     content: |
       127.0.0.1 localhost
       ::1 localhost ip6-localhost ip6-loopback
-      127.0.0.1 auth.{{ forge_metal_domain }}
+      127.0.0.1 auth.{{ verself_domain }}
 
 - name: Deploy Zitadel masterkey to credstore
   ansible.builtin.copy:
@@ -148,15 +148,15 @@
     content: |
       [Unit]
       Description=Zitadel Identity Provider
-      After=forge-metal-firewall.target network.target postgresql.service
-      Requires=forge-metal-firewall.target postgresql.service
+      After=verself-firewall.target network.target postgresql.service
+      Requires=verself-firewall.target postgresql.service
 
       [Service]
       Type=simple
       User=zitadel
       Group=zitadel
       LoadCredential=masterkey:/etc/credstore/zitadel/masterkey
-      ExecStart={{ fm_bin }}/zitadel start \
+      ExecStart={{ verself_bin }}/zitadel start \
         --masterkeyFile %d/masterkey \
         --config {{ zitadel_config_dir }}/config.yaml
       Restart=always
@@ -188,7 +188,7 @@
 - name: Run Zitadel init (create database schemas)
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/zitadel init
+      {{ verself_bin }}/zitadel init
       --config {{ zitadel_config_dir }}/config.yaml
   become: true
   become_user: zitadel
@@ -198,7 +198,7 @@
 - name: Run Zitadel setup (migrations + first instance)
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/zitadel setup
+      {{ verself_bin }}/zitadel setup
       --masterkeyFile /etc/credstore/zitadel/masterkey
       --config {{ zitadel_config_dir }}/config.yaml
       --steps {{ zitadel_config_dir }}/steps.yaml

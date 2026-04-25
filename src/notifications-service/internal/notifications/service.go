@@ -95,7 +95,7 @@ func (s *Service) Summary(ctx context.Context, principal Principal) (Summary, er
 	if err := ValidatePrincipal(principal); err != nil {
 		return Summary{}, err
 	}
-	span.SetAttributes(attribute.String("forge_metal.org_id", principal.OrgID), attribute.String("forge_metal.subject_id", principal.Subject))
+	span.SetAttributes(attribute.String("verself.org_id", principal.OrgID), attribute.String("verself.subject_id", principal.Subject))
 	if err := s.ensureInboxState(ctx, s.PG, principal.OrgID, principal.Subject); err != nil {
 		return Summary{}, err
 	}
@@ -525,8 +525,8 @@ func (s *Service) PublishSyntheticTest(ctx context.Context, principal Principal,
 		return Accepted{}, err
 	}
 	span.SetAttributes(
-		attribute.String("forge_metal.org_id", principal.OrgID),
-		attribute.String("forge_metal.subject_id", principal.Subject),
+		attribute.String("verself.org_id", principal.OrgID),
+		attribute.String("verself.subject_id", principal.Subject),
 		attribute.String("notification.event_id", event.EventID.String()),
 	)
 	if err := s.Publisher.PublishDomainEvent(ctx, event); err != nil {
@@ -548,8 +548,8 @@ func (s *Service) AcceptEvent(ctx context.Context, event DomainEvent) (bool, err
 		attribute.String("notification.event_source", event.EventSource),
 		attribute.String("notification.event_id", event.EventID.String()),
 		attribute.String("notification.subject", event.Subject),
-		attribute.String("forge_metal.org_id", event.OrgID),
-		attribute.String("forge_metal.subject_id", event.RecipientSubjectID),
+		attribute.String("verself.org_id", event.OrgID),
+		attribute.String("verself.subject_id", event.RecipientSubjectID),
 	)
 	payload, err := json.Marshal(event.Payload)
 	if err != nil {
@@ -651,8 +651,8 @@ func (s *Service) ProcessEvent(ctx context.Context, eventSource string, eventID 
 	span.SetAttributes(
 		attribute.String("notification.event_source", event.EventSource),
 		attribute.String("notification.event_id", event.EventID.String()),
-		attribute.String("forge_metal.org_id", event.OrgID),
-		attribute.String("forge_metal.subject_id", event.RecipientSubjectID),
+		attribute.String("verself.org_id", event.OrgID),
+		attribute.String("verself.subject_id", event.RecipientSubjectID),
 	)
 	if event.Payload == nil {
 		event.Payload = map[string]any{}
@@ -1202,7 +1202,7 @@ func (s *Service) ledgerEventProjected(ctx context.Context, eventID uuid.UUID) (
 	var found uint8
 	err := s.CH.QueryRow(ctx, `
 SELECT 1
-FROM forge_metal.notification_events
+FROM verself.notification_events
 WHERE ledger_event_id = $1
 LIMIT 1`, eventID).Scan(&found)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -1215,7 +1215,7 @@ LIMIT 1`, eventID).Scan(&found)
 }
 
 func (s *Service) insertLedgerClickHouse(ctx context.Context, row LedgerRow) error {
-	batch, err := s.CH.PrepareBatch(ctx, "INSERT INTO forge_metal.notification_events")
+	batch, err := s.CH.PrepareBatch(ctx, "INSERT INTO verself.notification_events")
 	if err != nil {
 		return fmt.Errorf("%w: prepare notification ledger insert: %v", ErrStoreUnavailable, err)
 	}

@@ -28,11 +28,11 @@ State model:
   host-assigned `lease_id` and `exec_id` only after the host returns them.
 - `execution_billing_windows` are control-plane billing records. The host never
   receives billing, org, customer, attempt, or quota vocabulary.
-- `runner_provider_repositories` binds provider repository IDs to Forge Metal
+- `runner_provider_repositories` binds provider repository IDs to Verself
   org/source repository ownership.
 - `runner_jobs` are provider demand facts from GitHub webhooks or Forgejo action
   job sync.
-- `runner_allocations` are Forge Metal capacity records for runner VMs.
+- `runner_allocations` are Verself capacity records for runner VMs.
 - `runner_job_bindings` are the authoritative job-to-runner assignment records.
 - `runner_sticky_disk_generations` and `execution_sticky_disk_mounts` track the
   Blacksmith-style sticky-disk restore/saveback lifecycle. Sticky disks are
@@ -85,8 +85,8 @@ Expected proof surface:
 
 - PostgreSQL shows each attempt moving through
   `queued -> reserved -> launching -> running -> finalizing -> succeeded`.
-- ClickHouse `forge_metal.job_events` has a terminal row per execution.
-- ClickHouse `forge_metal.vm_lease_evidence` has `lease_ready`,
+- ClickHouse `verself.job_events` has a terminal row per execution.
+- ClickHouse `verself.vm_lease_evidence` has `lease_ready`,
   `exec_started`, and `lease_cleanup` rows for each host lease.
 - OTel traces include sandbox-rental worker spans plus vm-orchestrator
   lease/exec spans for the same execution.

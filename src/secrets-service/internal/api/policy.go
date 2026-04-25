@@ -20,10 +20,10 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/forge-metal/apiwire"
-	auth "github.com/forge-metal/auth-middleware"
-	billingclient "github.com/forge-metal/billing-service/client"
-	"github.com/forge-metal/secrets-service/internal/secrets"
+	"github.com/verself/apiwire"
+	auth "github.com/verself/auth-middleware"
+	billingclient "github.com/verself/billing-service/client"
+	"github.com/verself/secrets-service/internal/secrets"
 )
 
 type permission string
@@ -159,7 +159,7 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 	if op.Extensions == nil {
 		op.Extensions = map[string]any{}
 	}
-	op.Extensions["x-forge-metal-iam"] = map[string]any{
+	op.Extensions["x-verself-iam"] = map[string]any{
 		"permission":          string(policy.Permission),
 		"resource":            policy.TargetKind,
 		"action":              policy.Action,
@@ -245,7 +245,7 @@ func requireIdentity(ctx context.Context) (*auth.Identity, error) {
 
 func principalFromIdentity(identity *auth.Identity, policy operationPolicy) secrets.Principal {
 	principalType := "user"
-	credentialID := claimString(identity.Raw, "forge_metal:credential_id")
+	credentialID := claimString(identity.Raw, "verself:credential_id")
 	if credentialID != "" {
 		principalType = "api_credential"
 	}
@@ -255,11 +255,11 @@ func principalFromIdentity(identity *auth.Identity, policy operationPolicy) secr
 		Email:                 strings.TrimSpace(identity.Email),
 		Type:                  principalType,
 		CredentialID:          credentialID,
-		CredentialName:        claimString(identity.Raw, "forge_metal:credential_name"),
-		CredentialFingerprint: claimString(identity.Raw, "forge_metal:credential_fingerprint"),
-		ActorOwnerID:          claimString(identity.Raw, "forge_metal:credential_owner_id"),
-		ActorOwnerDisplay:     claimString(identity.Raw, "forge_metal:credential_owner_display"),
-		AuthMethod:            claimString(identity.Raw, "forge_metal:credential_auth_method"),
+		CredentialName:        claimString(identity.Raw, "verself:credential_name"),
+		CredentialFingerprint: claimString(identity.Raw, "verself:credential_fingerprint"),
+		ActorOwnerID:          claimString(identity.Raw, "verself:credential_owner_id"),
+		ActorOwnerDisplay:     claimString(identity.Raw, "verself:credential_owner_display"),
+		AuthMethod:            claimString(identity.Raw, "verself:credential_auth_method"),
 		OpenBaoRole:           openBaoRoleForIdentity(identity, policy),
 		JWTID:                 claimString(identity.Raw, "jti"),
 		TokenExpiresAt:        claimNumericDate(identity.Raw, "exp"),
@@ -270,11 +270,11 @@ func openBaoRoleForIdentity(identity *auth.Identity, policy operationPolicy) str
 	if identity == nil {
 		return ""
 	}
-	if claimString(identity.Raw, "forge_metal:credential_id") != "" {
+	if claimString(identity.Raw, "verself:credential_id") != "" {
 		if policy.OpenBaoRole == "" || !identityHasDirectPermission(identity, policy.Permission) {
 			return ""
 		}
-		for _, role := range stringClaimList(identity.Raw["forge_metal:openbao_roles"]) {
+		for _, role := range stringClaimList(identity.Raw["verself:openbao_roles"]) {
 			if role == policy.OpenBaoRole {
 				return role
 			}
@@ -327,7 +327,7 @@ func identityHasPermission(identity *auth.Identity, required permission) bool {
 }
 
 func identityHasDirectPermission(identity *auth.Identity, required permission) bool {
-	credentialID := claimString(identity.Raw, "forge_metal:credential_id")
+	credentialID := claimString(identity.Raw, "verself:credential_id")
 	if credentialID == "" || strings.TrimSpace(identity.OrgID) == "" {
 		return false
 	}
@@ -358,8 +358,8 @@ func reserveBillingForOperation(ctx context.Context, svc *secrets.Service, opera
 	billingCtx, span := apiTracer.Start(ctx, "secrets.billing.reserve")
 	defer span.End()
 	span.SetAttributes(
-		attribute.String("forge_metal.org_id", identity.OrgID),
-		attribute.String("forge_metal.credential_id", claimString(identity.Raw, "forge_metal:credential_id")),
+		attribute.String("verself.org_id", identity.OrgID),
+		attribute.String("verself.credential_id", claimString(identity.Raw, "verself:credential_id")),
 		attribute.String("secrets.operation_id", operationID),
 		attribute.String("billing.product_id", billingProductSecrets),
 		attribute.String("billing.sku_id", policy.BillingSKU),
@@ -421,7 +421,7 @@ func settleBillingReservation(ctx context.Context, svc *secrets.Service, reserva
 	usageSummary := map[string]any{
 		"operation_id":     operationID,
 		"permission":       string(policy.Permission),
-		"credential_id":    claimString(identity.Raw, "forge_metal:credential_id"),
+		"credential_id":    claimString(identity.Raw, "verself:credential_id"),
 		"actor_subject":    identity.Subject,
 		"target_kind":      policy.TargetKind,
 		"target_id":        targetID,
@@ -433,8 +433,8 @@ func settleBillingReservation(ctx context.Context, svc *secrets.Service, reserva
 	billingCtx, span := apiTracer.Start(ctx, "secrets.billing.settle")
 	defer span.End()
 	span.SetAttributes(
-		attribute.String("forge_metal.org_id", identity.OrgID),
-		attribute.String("forge_metal.credential_id", claimString(identity.Raw, "forge_metal:credential_id")),
+		attribute.String("verself.org_id", identity.OrgID),
+		attribute.String("verself.credential_id", claimString(identity.Raw, "verself:credential_id")),
 		attribute.String("secrets.operation_id", operationID),
 		attribute.String("billing.window_id", reservation.WindowID),
 		attribute.String("billing.product_id", reservation.ProductID),
@@ -518,7 +518,7 @@ func billingSourceRef(ctx context.Context, operationID string) string {
 }
 
 func billingActorID(identity *auth.Identity) string {
-	if credentialID := claimString(identity.Raw, "forge_metal:credential_id"); credentialID != "" {
+	if credentialID := claimString(identity.Raw, "verself:credential_id"); credentialID != "" {
 		return credentialID
 	}
 	return strings.TrimSpace(identity.Subject)
@@ -626,12 +626,12 @@ func auditOperation(ctx context.Context, operationID string, policy operationPol
 		ActorType:             principalFromIdentity(identity, policy).Type,
 		ActorID:               identity.Subject,
 		ActorDisplay:          identity.Email,
-		ActorOwnerID:          claimString(identity.Raw, "forge_metal:credential_owner_id"),
-		ActorOwnerDisplay:     claimString(identity.Raw, "forge_metal:credential_owner_display"),
-		CredentialID:          claimString(identity.Raw, "forge_metal:credential_id"),
-		CredentialName:        claimString(identity.Raw, "forge_metal:credential_name"),
-		CredentialFingerprint: claimString(identity.Raw, "forge_metal:credential_fingerprint"),
-		AuthMethod:            claimString(identity.Raw, "forge_metal:credential_auth_method"),
+		ActorOwnerID:          claimString(identity.Raw, "verself:credential_owner_id"),
+		ActorOwnerDisplay:     claimString(identity.Raw, "verself:credential_owner_display"),
+		CredentialID:          claimString(identity.Raw, "verself:credential_id"),
+		CredentialName:        claimString(identity.Raw, "verself:credential_name"),
+		CredentialFingerprint: claimString(identity.Raw, "verself:credential_fingerprint"),
+		AuthMethod:            claimString(identity.Raw, "verself:credential_auth_method"),
 		Permission:            string(policy.Permission),
 		TargetKind:            policy.TargetKind,
 		TargetID:              targetID,

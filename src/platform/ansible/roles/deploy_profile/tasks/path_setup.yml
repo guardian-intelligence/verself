@@ -1,9 +1,9 @@
 ---
-# Ensure fm_bin is in the system PATH for all users.
+# Ensure verself_bin is in the system PATH for all users.
 
 - name: Add profile bin to system PATH
   ansible.builtin.copy:
     content: |
-      export PATH="{{ fm_bin }}:$PATH"
-    dest: /etc/profile.d/forge-metal.sh
+      export PATH="{{ verself_bin }}:$PATH"
+    dest: /etc/profile.d/verself.sh
     mode: "0644"

@@ -8,7 +8,7 @@ import (
 	"net"
 	"time"
 
-	vmrpc "github.com/forge-metal/vm-orchestrator/proto/v1"
+	vmrpc "github.com/verself/vm-orchestrator/proto/v1"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"

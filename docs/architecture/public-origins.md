@@ -1,6 +1,6 @@
 # Public Origins
 
-Forge Metal exposes three public origin classes. Origin shape is part of the
+Verself exposes three public origin classes. Origin shape is part of the
 product contract because it controls browser CSP boundaries, public API
 documentation, SDK/CLI base URLs, WAF policy, and incident isolation.
 
@@ -12,7 +12,7 @@ documentation, SDK/CLI base URLs, WAF policy, and incident isolation.
 | `<service>.api.<domain>` | Owning Go service | Customer, SDK, and CLI HTTP APIs. |
 | Protocol origins | Backing protocol service | Non-HTTP-product or protocol-native surfaces such as Git, JMAP, SMTP, and S3. |
 
-The root `forge_metal_domain` remains the company and marketing site. The
+The root `verself_domain` remains the company and marketing site. The
 console is not a marketing surface and does not own public API paths.
 
 ## API Origins
@@ -26,6 +26,7 @@ Each public Go service gets a service-owned API origin:
 | `identity.api.<domain>` | `identity-service` |
 | `profile.api.<domain>` | `profile-service` |
 | `notifications.api.<domain>` | `notifications-service` |
+| `projects.api.<domain>` | `projects-service` |
 | `governance.api.<domain>` | `governance-service` |
 | `secrets.api.<domain>` | `secrets-service` |
 | `mail.api.<domain>` | `mailbox-service` HTTP API |
@@ -64,7 +65,7 @@ Protocol origins are not generic API hosts:
 | `dashboard.<domain>` | Grafana | Operator observability UI. |
 | `temporal.<domain>` | Temporal Web | Operator workflow UI. |
 
-When a protocol surface also has a Forge Metal product API, the API lives on
+When a protocol surface also has a Verself product API, the API lives on
 `<service>.api.<domain>` and not on the protocol origin.
 
 ## Implementation Source Of Truth

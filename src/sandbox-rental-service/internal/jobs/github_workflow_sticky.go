@@ -133,7 +133,7 @@ func stickyDiskDeclarationsForJob(data []byte, jobName, runnerClass, repositoryF
 	decls := []stickyDiskDeclaration{}
 	for _, step := range job.Steps {
 		switch {
-		case isForgeMetalStickyDiskAction(step.Uses):
+		case isVerselfStickyDiskAction(step.Uses):
 			key, _ := workflowString(step.With["key"])
 			mountPath, _ := workflowString(step.With["path"])
 			key = expandGitHubExpression(key, repositoryFullName)
@@ -142,7 +142,7 @@ func stickyDiskDeclarationsForJob(data []byte, jobName, runnerClass, repositoryF
 				return nil, fmt.Errorf("%w: sticky disk step requires key and path", ErrStickyDiskInvalid)
 			}
 			decls = append(decls, stickyDiskDeclaration{Key: key, Path: mountPath})
-		case isForgeMetalSetupNodeAction(step.Uses):
+		case isVerselfSetupNodeAction(step.Uses):
 			setupDecls, err := setupNodeStickyDiskDeclarations(step.With, runnerClass, repositoryFullName, loadContent)
 			if err != nil {
 				return nil, err
@@ -193,18 +193,18 @@ func workflowRunsOnMatches(value any, runnerClass string) bool {
 	return false
 }
 
-func isForgeMetalStickyDiskAction(uses string) bool {
+func isVerselfStickyDiskAction(uses string) bool {
 	uses = strings.TrimSpace(strings.ToLower(uses))
 	return uses == "./.github/actions/stickydisk" ||
-		strings.HasPrefix(uses, "guardian-intelligence/forge-metal/.github/actions/stickydisk@") ||
-		strings.HasPrefix(uses, "forge-metal/stickydisk@")
+		strings.HasPrefix(uses, "guardian-intelligence/verself/.github/actions/stickydisk@") ||
+		strings.HasPrefix(uses, "verself/stickydisk@")
 }
 
-func isForgeMetalSetupNodeAction(uses string) bool {
+func isVerselfSetupNodeAction(uses string) bool {
 	uses = strings.TrimSpace(strings.ToLower(uses))
 	return uses == "./.github/actions/setup-node" ||
-		strings.HasPrefix(uses, "guardian-intelligence/forge-metal/.github/actions/setup-node@") ||
-		strings.HasPrefix(uses, "forge-metal/setup-node@")
+		strings.HasPrefix(uses, "guardian-intelligence/verself/.github/actions/setup-node@") ||
+		strings.HasPrefix(uses, "verself/setup-node@")
 }
 
 type setupNodeCacheSpec struct {

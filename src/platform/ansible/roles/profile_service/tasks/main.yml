@@ -1,7 +1,7 @@
 ---
 - name: Verify profile-service binary exists in profile
   ansible.builtin.stat:
-    path: "{{ fm_bin }}/profile-service"
+    path: "{{ verself_bin }}/profile-service"
   register: profile_service_binary
   failed_when: not profile_service_binary.stat.exists
 
@@ -35,9 +35,9 @@
 - name: Read profile-service SPIRE registration
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry show
+      {{ verself_bin }}/spire-server entry show
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-profile-service
+      -entryID verself-profile-service
       -output json
   register: profile_service_spire_entry
   failed_when: false
@@ -46,23 +46,23 @@
 - name: Register profile-service SPIFFE workload
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry create
+      {{ verself_bin }}/spire-server entry create
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-profile-service
+      -entryID verself-profile-service
       -parentID {{ spire_agent_id }}
       -spiffeID {{ spire_profile_service_id }}
       -selector unix:uid:{{ profile_service_uid.stdout | trim }}
       -x509SVIDTTL 3600
-  when: profile_service_spire_entry.rc != 0 or 'forge-metal-profile-service' not in profile_service_spire_entry.stdout
+  when: profile_service_spire_entry.rc != 0 or 'verself-profile-service' not in profile_service_spire_entry.stdout
   changed_when: true
   notify: restart profile-service
 
 - name: Update profile-service SPIRE workload selector drift
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry update
+      {{ verself_bin }}/spire-server entry update
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-profile-service
+      -entryID verself-profile-service
       -parentID {{ spire_agent_id }}
       -spiffeID {{ spire_profile_service_id }}
       -selector unix:uid:{{ profile_service_uid.stdout | trim }}
@@ -115,7 +115,7 @@
     method: POST
     headers:
       Authorization: "Bearer {{ profile_service_zitadel_admin_pat }}"
-      Host: "auth.{{ forge_metal_domain }}"
+      Host: "auth.{{ verself_domain }}"
     body_format: json
     body:
       queries:
@@ -143,10 +143,10 @@
     content: |
       [Unit]
       Description=Profile Service
-      After=forge-metal-firewall.target network.target
+      After=verself-firewall.target network.target
       After=postgresql.service zitadel.service spire-agent.service
       After=identity-service.service governance-service.service
-      Requires=forge-metal-firewall.target
+      Requires=verself-firewall.target
       Wants=postgresql.service zitadel.service spire-agent.service identity-service.service governance-service.service
 
       [Service]
@@ -154,7 +154,7 @@
       User=profile_service
       Group=profile_service
       SupplementaryGroups={{ spire_workload_group }}
-      BindReadOnlyPaths=/etc/forge-metal/auth-discovery-hosts:/etc/hosts
+      BindReadOnlyPaths=/etc/verself/auth-discovery-hosts:/etc/hosts
       Environment=PROFILE_LISTEN_ADDR={{ services.profile_service.host }}:{{ services.profile_service.port }}
       Environment=PROFILE_INTERNAL_LISTEN_ADDR={{ services.profile_service.host }}:{{ services.profile_service.internal_port }}
       Environment=PROFILE_PG_DSN=postgres://profile_service@/profile?host=/var/run/postgresql&sslmode=disable
@@ -166,7 +166,7 @@
       Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}
       Environment=OTEL_SERVICE_NAME=profile-service
       Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}
-      ExecStart={{ fm_bin }}/profile-service
+      ExecStart={{ verself_bin }}/profile-service
       Restart=on-failure
       RestartSec=5
       CapabilityBoundingSet=

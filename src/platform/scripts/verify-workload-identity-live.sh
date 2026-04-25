@@ -219,7 +219,7 @@ for system_user, db_user, database in [
         "sudo",
         "-u",
         system_user,
-        "/opt/forge-metal/profile/bin/psql",
+        "/opt/verself/profile/bin/psql",
         dsn,
         "-Atc",
         "select current_user",
@@ -229,7 +229,7 @@ for system_user, db_user, database in [
     peer_auth_checks.append({"system_user": system_user, "db_user": db_user, "database": database})
 
 entries = subprocess.check_output([
-    "/opt/forge-metal/profile/bin/spire-server",
+    "/opt/verself/profile/bin/spire-server",
     "entry",
     "show",
     "-socketPath",
@@ -271,7 +271,7 @@ stalwart_rolpassword = subprocess.check_output([
     "sudo",
     "-u",
     "postgres",
-    "/opt/forge-metal/profile/bin/psql",
+    "/opt/verself/profile/bin/psql",
     "-Atc",
     "select coalesce(rolpassword, '') from pg_authid where rolname='stalwart'",
 ], text=True).strip()
@@ -485,7 +485,7 @@ for service in billing-service sandbox-rental-service mailbox-service; do
     WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
       AND ServiceName = 'secrets-service'
       AND SpanName = 'secrets.platform.resolve'
-      AND SpanAttributes['forge_metal.runtime_secret_consumer'] = {service:String}
+      AND SpanAttributes['verself.runtime_secret_consumer'] = {service:String}
   " 1 "${artifact_dir}/clickhouse/${service_slug}-secrets-service-runtime-secret-resolve-count.tsv" --param_service="${service}"
 
   assert_clickhouse_zero default "
@@ -526,7 +526,7 @@ for clickhouse_user in clickhouse_operator otelcol billing_service governance_se
   " 1 "${artifact_dir}/clickhouse/${clickhouse_user}-query-log-count.tsv" --param_clickhouse_user="${clickhouse_user}"
 done
 
-wait_for_clickhouse_count forge_metal "
+wait_for_clickhouse_count verself "
   SELECT count()
   FROM audit_events
   WHERE recorded_at BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND

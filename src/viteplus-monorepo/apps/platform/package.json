@@ -1,5 +1,5 @@
 {
-  "name": "@forge-metal/platform",
+  "name": "@verself/platform",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -15,10 +15,6 @@
     "generate": "cp ../../../sandbox-rental-service/openapi/openapi-3.1.yaml src/__generated/sandbox-rental-api/openapi-3.1.yaml && cp ../../../identity-service/openapi/openapi-3.1.yaml src/__generated/identity-api/openapi-3.1.yaml && cp ../../../mailbox-service/openapi/openapi-3.1.yaml src/__generated/mailbox-api/openapi-3.1.yaml && cp ../../../billing-service/openapi/openapi-3.1.yaml src/__generated/billing-api/openapi-3.1.yaml && cp ../../../platform/policies/retention.yml src/__generated/policies/retention.yml && cp ../../../platform/policies/subprocessors.yml src/__generated/policies/subprocessors.yml && cp ../../../platform/policies/ropa.yml src/__generated/policies/ropa.yml && cp ../../../platform/policies/contacts.yml src/__generated/policies/contacts.yml && cp ../../../platform/policies/versions.yml src/__generated/policies/versions.yml"
   },
   "dependencies": {
-    "@forge-metal/brand": "workspace:*",
-    "@forge-metal/nitro-plugins": "workspace:*",
-    "@forge-metal/ui": "workspace:*",
-    "@forge-metal/web-env": "workspace:*",
     "@opentelemetry/api": "catalog:",
     "@opentelemetry/context-zone": "catalog:",
     "@opentelemetry/core": "catalog:",
@@ -29,6 +25,10 @@
     "@opentelemetry/semantic-conventions": "catalog:",
     "@tanstack/react-router": "catalog:",
     "@tanstack/react-start": "catalog:",
+    "@verself/brand": "workspace:*",
+    "@verself/nitro-plugins": "workspace:*",
+    "@verself/ui": "workspace:*",
+    "@verself/web-env": "workspace:*",
     "lucide-react": "catalog:",
     "nitro": "catalog:",
     "react": "catalog:",

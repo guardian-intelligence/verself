@@ -16,13 +16,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
-	auth "github.com/forge-metal/auth-middleware"
-	workloadauth "github.com/forge-metal/auth-middleware/workload"
-	"github.com/forge-metal/envconfig"
-	"github.com/forge-metal/httpserver"
-	notificationsapi "github.com/forge-metal/notifications-service/internal/api"
-	"github.com/forge-metal/notifications-service/internal/notifications"
-	fmotel "github.com/forge-metal/otel"
+	auth "github.com/verself/auth-middleware"
+	workloadauth "github.com/verself/auth-middleware/workload"
+	"github.com/verself/envconfig"
+	"github.com/verself/httpserver"
+	notificationsapi "github.com/verself/notifications-service/internal/api"
+	"github.com/verself/notifications-service/internal/notifications"
+	verselfotel "github.com/verself/otel"
 )
 
 const (
@@ -42,7 +42,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	otelShutdown, logger, err := fmotel.Init(ctx, fmotel.Config{ServiceName: serviceName, ServiceVersion: serviceVersion})
+	otelShutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{ServiceName: serviceName, ServiceVersion: serviceVersion})
 	if err != nil {
 		return fmt.Errorf("otel init: %w", err)
 	}
@@ -97,7 +97,7 @@ func run() error {
 	chConn, err := clickhouse.Open(&clickhouse.Options{
 		Addr: []string{chAddress},
 		Auth: clickhouse.Auth{
-			Database: "forge_metal",
+			Database: "verself",
 			Username: chUser,
 		},
 		TLS: chTLSConfig,

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/forge-metal/vm-orchestrator/vmproto"
+	"github.com/verself/vm-orchestrator/vmproto"
 )
 
 func TestValidateFilesystemMountAcceptsVitePlusMount(t *testing.T) {
@@ -13,7 +13,7 @@ func TestValidateFilesystemMountAcceptsVitePlusMount(t *testing.T) {
 		Name:       "viteplus",
 		DriveID:    "fm0",
 		DevicePath: "/dev/vdb",
-		MountPath:  "/opt/forge-metal/nodejs",
+		MountPath:  "/opt/verself/nodejs",
 		FSType:     "ext4",
 		ReadOnly:   true,
 	})
@@ -26,7 +26,7 @@ func TestValidateFilesystemMountRejectsPseudoFilesystemTargets(t *testing.T) {
 	err := validateFilesystemMount(vmproto.FilesystemMount{
 		Name:       "bad",
 		DevicePath: "/dev/vdb",
-		MountPath:  "/run/forge-metal",
+		MountPath:  "/run/verself",
 		FSType:     "ext4",
 	})
 	if err == nil || !strings.Contains(err.Error(), "not allowed") {

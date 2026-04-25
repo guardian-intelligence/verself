@@ -1,3 +1,3 @@
-import { initOtel } from "@forge-metal/nitro-plugins/otel";
+import { initOtel } from "@verself/nitro-plugins/otel";
 
 await initOtel("company");

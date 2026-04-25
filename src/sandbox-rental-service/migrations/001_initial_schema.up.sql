@@ -31,9 +31,9 @@ INSERT INTO runner_classes (
     rootfs_gib,
     runtime_image
 ) VALUES (
-    'metal-4vcpu-ubuntu-2404',
+    'verself-4vcpu-ubuntu-2404',
     'sandbox',
-    'Metal 4 vCPU Ubuntu 24.04',
+    'Verself 4 vCPU Ubuntu 24.04',
     'ubuntu',
     '24.04',
     'x86_64',
@@ -42,9 +42,9 @@ INSERT INTO runner_classes (
     80,
     'ubuntu-2404-actions-runner'
 ), (
-    'metal-2vcpu-ubuntu-2404',
+    'verself-2vcpu-ubuntu-2404',
     'sandbox',
-    'Metal 2 vCPU Ubuntu 24.04',
+    'Verself 2 vCPU Ubuntu 24.04',
     'ubuntu',
     '24.04',
     'x86_64',
@@ -231,18 +231,18 @@ INSERT INTO runner_class_filesystem_mounts (
     read_only,
     sort_order
 ) VALUES (
-    'metal-4vcpu-ubuntu-2404',
+    'verself-4vcpu-ubuntu-2404',
     'viteplus',
     'viteplus',
-    '/opt/forge-metal/nodejs',
+    '/opt/verself/nodejs',
     'ext4',
     true,
     10
 ), (
-    'metal-2vcpu-ubuntu-2404',
+    'verself-2vcpu-ubuntu-2404',
     'viteplus',
     'viteplus',
-    '/opt/forge-metal/nodejs',
+    '/opt/verself/nodejs',
     'ext4',
     true,
     10
@@ -309,6 +309,7 @@ CREATE TABLE runner_provider_repositories (
     provider               TEXT        NOT NULL CHECK (provider <> ''),
     provider_repository_id BIGINT      NOT NULL,
     org_id                 BIGINT      NOT NULL CHECK (org_id > 0),
+    project_id             UUID        NOT NULL,
     source_repository_id   UUID,
     provider_owner         TEXT        NOT NULL CHECK (provider_owner <> ''),
     provider_repo          TEXT        NOT NULL CHECK (provider_repo <> ''),
@@ -326,6 +327,9 @@ CREATE INDEX idx_runner_provider_repositories_org
 CREATE INDEX idx_runner_provider_repositories_source
     ON runner_provider_repositories (source_repository_id)
     WHERE source_repository_id IS NOT NULL;
+
+CREATE INDEX idx_runner_provider_repositories_project
+    ON runner_provider_repositories (org_id, project_id, provider, active, updated_at DESC);
 
 CREATE TABLE runner_jobs (
     provider               TEXT        NOT NULL CHECK (provider <> ''),
@@ -475,6 +479,7 @@ CREATE TABLE execution_schedules (
     task_queue            TEXT        NOT NULL CHECK (task_queue <> ''),
     state                 TEXT        NOT NULL CHECK (state IN ('active', 'paused')),
     interval_seconds      INTEGER     NOT NULL CHECK (interval_seconds >= 15),
+    project_id            UUID        NOT NULL,
     source_repository_id  UUID        NOT NULL,
     workflow_path         TEXT        NOT NULL CHECK (workflow_path <> ''),
     ref                   TEXT        NOT NULL DEFAULT '',
@@ -491,11 +496,15 @@ CREATE INDEX idx_execution_schedules_org_created
 CREATE INDEX idx_execution_schedules_org_state
     ON execution_schedules (org_id, state, updated_at DESC, schedule_id);
 
+CREATE INDEX idx_execution_schedules_project_created
+    ON execution_schedules (org_id, project_id, created_at DESC, schedule_id);
+
 CREATE TABLE execution_schedule_dispatches (
     dispatch_id           UUID        PRIMARY KEY,
     schedule_id           UUID        NOT NULL REFERENCES execution_schedules(schedule_id) ON DELETE CASCADE,
     temporal_workflow_id  TEXT        NOT NULL CHECK (temporal_workflow_id <> ''),
     temporal_run_id       TEXT        NOT NULL CHECK (temporal_run_id <> ''),
+    project_id            UUID        NOT NULL,
     source_workflow_run_id UUID,
     workflow_state        TEXT        NOT NULL DEFAULT '',
     state                 TEXT        NOT NULL CHECK (state IN ('pending', 'submitted', 'failed')),

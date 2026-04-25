@@ -25,8 +25,8 @@ telemetry {
   disable_hostname = true
 }
 
-audit "file" "forge-metal" {
-  description = "Forge Metal forensic backstop audit log"
+audit "file" "verself" {
+  description = "Verself forensic backstop audit log"
   options {
     file_path = "{{ openbao_audit_log }}"
     mode = "0600"

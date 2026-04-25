@@ -1,14 +1,14 @@
 import { createRootRouteWithContext, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { type ReactNode } from "react";
-import { AuthProvider } from "@forge-metal/auth-web/react";
+import { AuthProvider } from "@verself/auth-web/react";
 import {
   type Auth,
   type AuthSnapshot,
   authCacheKey,
   parseAuthSnapshot,
   syncAuthPartitionedCache,
-} from "@forge-metal/auth-web/isomorphic";
+} from "@verself/auth-web/isomorphic";
 import {
   getClientAuthSnapshot,
   getSignInRedirectURL,

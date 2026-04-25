@@ -10,7 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/forge-metal/vm-orchestrator/vmproto"
+	"github.com/verself/vm-orchestrator/vmproto"
 )
 
 const checkpointSnapshotPrefix = "ckpt-"
@@ -70,11 +70,11 @@ func (o *Orchestrator) handleCheckpointRequest(ctx context.Context, leaseID stri
 	defer cancel()
 	snapshotCtx, endSnapshotSpan := startStepSpan(snapshotCtx, "vmorchestrator.checkpoint.snapshot")
 	props := map[string]string{
-		"forge:lease_id":             leaseID,
-		"forge:checkpoint_ref":       resp.Ref,
-		"forge:checkpoint_version":   versionID,
-		"forge:checkpoint_created":   time.Now().UTC().Format(time.RFC3339Nano),
-		"forge:checkpoint_operation": req.Operation,
+		"vs:lease_id":             leaseID,
+		"vs:checkpoint_ref":       resp.Ref,
+		"vs:checkpoint_version":   versionID,
+		"vs:checkpoint_created":   time.Now().UTC().Format(time.RFC3339Nano),
+		"vs:checkpoint_operation": req.Operation,
 	}
 	if err := o.ops.ZFSSnapshot(snapshotCtx, dataset, snapshotName, props); err != nil {
 		endSnapshotSpan(err)

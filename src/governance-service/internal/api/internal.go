@@ -8,8 +8,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	workloadauth "github.com/forge-metal/auth-middleware/workload"
-	"github.com/forge-metal/governance-service/internal/governance"
+	workloadauth "github.com/verself/auth-middleware/workload"
+	"github.com/verself/governance-service/internal/governance"
 )
 
 type appendAuditEventInput struct {

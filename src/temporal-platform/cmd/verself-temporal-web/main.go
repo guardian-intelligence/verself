@@ -8,10 +8,10 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/forge-metal/envconfig"
-	fmotel "github.com/forge-metal/otel"
+	"github.com/verself/envconfig"
+	verselfotel "github.com/verself/otel"
 
-	"github.com/forge-metal/temporal-platform/internal/temporalweb"
+	"github.com/verself/temporal-platform/internal/temporalweb"
 )
 
 var version = "dev"
@@ -27,7 +27,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	otelShutdown, logger, err := fmotel.Init(ctx, fmotel.Config{
+	otelShutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{
 		ServiceName:    "temporal-web",
 		ServiceVersion: version,
 	})
@@ -41,9 +41,9 @@ func run() error {
 
 	l := envconfig.New()
 	cfg := temporalweb.Config{
-		ConfigDir:        l.String("FM_TEMPORAL_WEB_CONFIG_DIR", "/etc/temporal-web"),
-		Environment:      l.String("FM_TEMPORAL_WEB_CONFIG_ENV", "production"),
-		FrontendAddress:  l.RequireString("FM_TEMPORAL_FRONTEND_ADDRESS"),
+		ConfigDir:        l.String("VERSELF_TEMPORAL_WEB_CONFIG_DIR", "/etc/temporal-web"),
+		Environment:      l.String("VERSELF_TEMPORAL_WEB_CONFIG_ENV", "production"),
+		FrontendAddress:  l.RequireString("VERSELF_TEMPORAL_FRONTEND_ADDRESS"),
 		SPIFFESocketAddr: l.RequireString("SPIFFE_ENDPOINT_SOCKET"),
 	}
 	if err := l.Err(); err != nil {

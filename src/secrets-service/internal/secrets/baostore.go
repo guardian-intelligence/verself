@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	workloadauth "github.com/forge-metal/auth-middleware/workload"
+	workloadauth "github.com/verself/auth-middleware/workload"
 	"github.com/google/uuid"
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
@@ -631,8 +631,8 @@ func (s *BaoStore) readTransitMetadata(ctx context.Context, entry baoTokenEntry,
 		KeyID:          value.Record.SecretID,
 		OrgID:          value.Record.OrgID,
 		Name:           value.Record.Name,
-		EncryptionKey:  "fm-" + value.Record.SecretID[:32] + "-enc",
-		SigningKey:     "fm-" + value.Record.SecretID[:32] + "-sig",
+		EncryptionKey:  "verself-" + value.Record.SecretID[:32] + "-enc",
+		SigningKey:     "verself-" + value.Record.SecretID[:32] + "-sig",
 		CurrentVersion: value.Record.CurrentVersion,
 		CreatedAt:      value.Record.CreatedAt,
 		UpdatedAt:      value.Record.UpdatedAt,
@@ -819,7 +819,7 @@ func (s *BaoStore) tokenCacheSpan(ctx context.Context, namespace, outcome string
 	}
 	span.SetAttributes(
 		attribute.String("bao.namespace", namespace),
-		attribute.String("forge_metal.cache_outcome", outcome),
+		attribute.String("verself.cache_outcome", outcome),
 		attribute.Int64("bao.ttl_remaining_ms", ttl),
 	)
 }
@@ -855,8 +855,8 @@ func (s *BaoStore) jwtLogin(ctx context.Context, principal Principal, role strin
 		attribute.String("bao.role", role),
 		attribute.String("bao.request_id", response.RequestID),
 		attribute.Int("bao.http_status", status),
-		attribute.String("forge_metal.org_id", principal.OrgID),
-		attribute.String("forge_metal.cache_outcome", "miss"),
+		attribute.String("verself.org_id", principal.OrgID),
+		attribute.String("verself.cache_outcome", "miss"),
 	)
 	recordOpenBaoAuditInfo(ctx, "", response.RequestID, accessorHash, 0)
 	return entry, nil
@@ -916,7 +916,7 @@ func (s *BaoStore) do(ctx context.Context, method, path, token string, logicalPa
 	}
 	clientRequestID := "client:" + uuid.NewString()
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-Forge-Metal-Request-Id", clientRequestID)
+	req.Header.Set("X-Verself-Request-Id", clientRequestID)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -1029,8 +1029,8 @@ func newTransitMetadata(orgID, name string) transitMetadata {
 		KeyID:          keyID,
 		OrgID:          orgID,
 		Name:           normalizeName(name),
-		EncryptionKey:  "fm-" + keyID[:32] + "-enc",
-		SigningKey:     "fm-" + keyID[:32] + "-sig",
+		EncryptionKey:  "verself-" + keyID[:32] + "-enc",
+		SigningKey:     "verself-" + keyID[:32] + "-sig",
 		CurrentVersion: 1,
 		CreatedAt:      now,
 		UpdatedAt:      now,

@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/forge-metal/sandbox-rental-service/internal/jobs"
+	"github.com/verself/sandbox-rental-service/internal/jobs"
 )
 
 const (
@@ -18,7 +18,7 @@ const (
 	githubInstallationCallbackPath = "/github/installations/callback"
 	githubRunnerJITConfigPath      = "/internal/sandbox/v1/github-runner-jit"
 	runnerBootstrapConfigPath      = "/internal/sandbox/v1/runner-bootstrap"
-	runnerBootstrapTokenHeader     = "X-Forge-Metal-Runner-Bootstrap"
+	runnerBootstrapTokenHeader     = "X-Verself-Runner-Bootstrap"
 	githubStickyDiskSavePath       = "/internal/sandbox/v1/stickydisk/save"
 	githubCheckoutBundlePath       = "/internal/sandbox/v1/github-checkout/bundle"
 	publicWebhookBodyLimit         = 1 << 20
@@ -263,8 +263,8 @@ func githubCheckoutBundleHandler(svc *jobs.Service) http.HandlerFunc {
 		}
 		identity, err := svc.GitHubRunner.AuthenticateCheckout(
 			r.Context(),
-			r.Header.Get("X-Forge-Metal-Execution-Id"),
-			r.Header.Get("X-Forge-Metal-Attempt-Id"),
+			r.Header.Get("X-Verself-Execution-Id"),
+			r.Header.Get("X-Verself-Attempt-Id"),
 			r.Header.Get("Authorization"),
 		)
 		if err != nil {
@@ -295,9 +295,9 @@ func githubCheckoutBundleHandler(svc *jobs.Service) http.HandlerFunc {
 		defer file.Close()
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("X-Forge-Metal-Checkout-Cache-Hit", strconv.FormatBool(bundle.CacheHit))
-		w.Header().Set("X-Forge-Metal-Checkout-Size-Bytes", strconv.FormatInt(bundle.SizeBytes, 10))
-		w.Header().Set("X-Forge-Metal-Checkout-Sha", bundle.SHA)
+		w.Header().Set("X-Verself-Checkout-Cache-Hit", strconv.FormatBool(bundle.CacheHit))
+		w.Header().Set("X-Verself-Checkout-Size-Bytes", strconv.FormatInt(bundle.SizeBytes, 10))
+		w.Header().Set("X-Verself-Checkout-Sha", bundle.SHA)
 		_, _ = io.Copy(w, file)
 	}
 }
@@ -305,8 +305,8 @@ func githubCheckoutBundleHandler(svc *jobs.Service) http.HandlerFunc {
 func authenticateStickyDiskRequest(w http.ResponseWriter, r *http.Request, svc *jobs.Service) (jobs.StickyDiskIdentity, bool) {
 	identity, err := svc.GitHubRunner.AuthenticateStickyDisk(
 		r.Context(),
-		r.Header.Get("X-Forge-Metal-Execution-Id"),
-		r.Header.Get("X-Forge-Metal-Attempt-Id"),
+		r.Header.Get("X-Verself-Execution-Id"),
+		r.Header.Get("X-Verself-Attempt-Id"),
 		r.Header.Get("Authorization"),
 	)
 	if err != nil {

@@ -1,8 +1,8 @@
 import type { ComponentProps } from "react";
 import { ClientOnly } from "@tanstack/react-router";
-import { ElapsedTime } from "@forge-metal/ui/components/elapsed-time";
+import { ElapsedTime } from "@verself/ui/components/elapsed-time";
 import { formatDateTimeUTC } from "~/lib/format";
-import { cn } from "@forge-metal/ui/lib/utils";
+import { cn } from "@verself/ui/lib/utils";
 
 export type AutoSyncState = "idle" | "syncing";
 

@@ -4,18 +4,18 @@
 #
 # Flow:
 #   1. Derive deterministic deploy identity via scripts/deploy_identity.sh.
-#      FORGE_METAL_DEPLOY_ID's UUIDv5 becomes the trace-id shared by the
-#      upstream Ansible OTel callback (via TRACEPARENT) and fm_uri probes.
+#      VERSELF_DEPLOY_ID's UUIDv5 becomes the trace-id shared by the
+#      upstream Ansible OTel callback (via TRACEPARENT) and verself_uri probes.
 #   2. Run observability-smoke.yml through scripts/ansible-with-tunnel.sh.
 #   3. Poll ClickHouse for matching ansible.playbook/ansible.task spans
 #      (renamed from the upstream plugin's raw names by the otelcol
 #      transform/ansible_spans processor).
-#   4. Assert the collector transform copied forge_metal.deploy_id from
+#   4. Assert the collector transform copied verself.deploy_id from
 #      ResourceAttributes onto SpanAttributes, giving ansible and service
 #      spans a shared query shape.
 #   5. On the happy path, assert billing-service spans carry matching
-#      forge_metal.deploy_id (proves fm_uri traceparent+baggage propagation
-#      reached the service via otelhttp + fmotel baggage span processor).
+#      verself.deploy_id (proves verself_uri traceparent+baggage propagation
+#      reached the service via otelhttp + verselfotel baggage span processor).
 #
 # Env:
 #   TELEMETRY_PROOF_EXPECT_FAIL=1 — assert the playbook *failed* and the
@@ -29,7 +29,7 @@ cd "$(dirname "$0")/.."
 # so concurrent runs on the same day don't collide.
 run_date="$(date -u +%Y-%m-%d)"
 run_host="$(hostname -s 2>/dev/null || hostname)"
-counter_dir="${XDG_CACHE_HOME:-$HOME/.cache}/forge-metal/telemetry-proof"
+counter_dir="${XDG_CACHE_HOME:-$HOME/.cache}/verself/telemetry-proof"
 counter_file="${counter_dir}/${run_date}.counter"
 lock_file="${counter_dir}/${run_date}.lock"
 mkdir -p "${counter_dir}"
@@ -53,15 +53,15 @@ PY
 )"
 
 deploy_run_key="${run_date}.${run_counter}@${run_host}"
-deploy_id="$(python3 -c 'import sys, uuid; print(uuid.uuid5(uuid.NAMESPACE_URL, f"forge-metal:{sys.argv[1]}"))' "${deploy_run_key}")"
+deploy_id="$(python3 -c 'import sys, uuid; print(uuid.uuid5(uuid.NAMESPACE_URL, f"verself:{sys.argv[1]}"))' "${deploy_run_key}")"
 
 # Export so ansible-with-tunnel.sh's deploy_identity.sh picks them up instead
 # of generating its own.
-export FORGE_METAL_DEPLOY_ID="${deploy_id}"
-export FORGE_METAL_DEPLOY_RUN_KEY="${deploy_run_key}"
-export FORGE_METAL_VERIFICATION_RUN="${deploy_run_key}"
-export FORGE_METAL_CORRELATION_ID="${deploy_id}"
-export FORGE_METAL_DEPLOY_KIND="telemetry-proof"
+export VERSELF_DEPLOY_ID="${deploy_id}"
+export VERSELF_DEPLOY_RUN_KEY="${deploy_run_key}"
+export VERSELF_VERIFICATION_RUN="${deploy_run_key}"
+export VERSELF_CORRELATION_ID="${deploy_id}"
+export VERSELF_DEPLOY_KIND="telemetry-proof"
 
 expect_fail="${TELEMETRY_PROOF_EXPECT_FAIL:-0}"
 if [[ "${expect_fail}" == "1" ]]; then
@@ -122,7 +122,7 @@ for _ in $(seq 1 45); do
       countIf(SpanName = 'ansible.task') AS tasks,
       countIf(StatusCode = 'Error') AS errors,
       anyIf(StatusCode, SpanName = 'ansible.playbook') AS root_status,
-      countIf(SpanAttributes['forge_metal.deploy_id'] = '${deploy_id}') AS deploy_id_attrs
+      countIf(SpanAttributes['verself.deploy_id'] = '${deploy_id}') AS deploy_id_attrs
     FROM default.otel_traces
     WHERE ServiceName = 'ansible'
       AND TraceId = '${trace_id_hex}'
@@ -141,11 +141,11 @@ if ! assert_spans_ready "${query_output}"; then
 fi
 
 # --- Service-level correlation (happy path only) ---------------------------
-# fm_uri probes the billing-service /healthz. otelhttp on the service side
-# extracts traceparent + baggage; the fmotel baggage span processor
-# projects forge_metal.* baggage members onto every span the service
-# creates. A matching SpanAttributes['forge_metal.deploy_id'] row confirms
-# the full pipeline: deploy_identity → fm_uri → otelhttp → baggage → span.
+# verself_uri probes the billing-service /healthz. otelhttp on the service side
+# extracts traceparent + baggage; the verselfotel baggage span processor
+# projects verself.* baggage members onto every span the service
+# creates. A matching SpanAttributes['verself.deploy_id'] row confirms
+# the full pipeline: deploy_identity → verself_uri → otelhttp → baggage → span.
 if [[ "${expect_fail}" != "1" ]]; then
   billing_corr_row=""
   for _ in $(seq 1 30); do
@@ -153,7 +153,7 @@ if [[ "${expect_fail}" != "1" ]]; then
       SELECT count() AS rows
       FROM default.otel_traces
       WHERE ServiceName = 'billing-service'
-        AND SpanAttributes['forge_metal.deploy_id'] = '${deploy_id}'
+        AND SpanAttributes['verself.deploy_id'] = '${deploy_id}'
         AND Timestamp > now() - INTERVAL 20 MINUTE
       FORMAT JSONEachRow
     " || true)"

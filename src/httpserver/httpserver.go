@@ -1,4 +1,4 @@
-// Package httpserver provides the standard Forge Metal HTTP server timeouts
+// Package httpserver provides the standard Verself HTTP server timeouts
 // and the public/internal dual-listener runtime used by every service that
 // exposes both a customer-facing API and an SPIFFE-mTLS internal plane.
 package httpserver
@@ -26,7 +26,7 @@ const (
 // managed by Run/RunPair.
 const ShutdownTimeout = 5 * time.Second
 
-// New returns an *http.Server wired with the standard Forge Metal timeouts.
+// New returns an *http.Server wired with the standard Verself timeouts.
 // Any handler wrapping (otelhttp, request-body limits, allowlists) and TLS
 // configuration remain the caller's responsibility.
 func New(addr string, handler http.Handler) *http.Server {

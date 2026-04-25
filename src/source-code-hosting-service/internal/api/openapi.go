@@ -7,7 +7,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
-	"github.com/forge-metal/apiwire"
+	"github.com/verself/apiwire"
 )
 
 func NewAPI(mux *http.ServeMux, version, listenAddr string, cfg Config) huma.API {
@@ -75,6 +75,6 @@ func applySecuritySchemes(api huma.API) {
 	}
 	openapi.Components.SecuritySchemes["mutualTLS"] = &huma.SecurityScheme{
 		Type:        "mutualTLS",
-		Description: "SPIFFE mTLS between Forge Metal workloads.",
+		Description: "SPIFFE mTLS between Verself workloads.",
 	}
 }

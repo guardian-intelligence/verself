@@ -7,10 +7,10 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
-	"github.com/forge-metal/apiwire"
-	billingclient "github.com/forge-metal/billing-service/client"
-	"github.com/forge-metal/sandbox-rental-service/internal/jobs"
-	"github.com/forge-metal/sandbox-rental-service/internal/recurring"
+	"github.com/verself/apiwire"
+	billingclient "github.com/verself/billing-service/client"
+	"github.com/verself/sandbox-rental-service/internal/jobs"
+	"github.com/verself/sandbox-rental-service/internal/recurring"
 )
 
 type PublicAPIConfig struct {

@@ -17,10 +17,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/forge-metal/apiwire"
-	"github.com/forge-metal/sandbox-rental-service/internal/scheduler"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/verself/apiwire"
+	"github.com/verself/sandbox-rental-service/internal/scheduler"
 	"go.opentelemetry.io/otel/attribute"
 )
 
@@ -49,6 +49,7 @@ type ForgejoRunner struct {
 type forgejoRepositoryRecord struct {
 	ProviderRepositoryID int64
 	OrgID                uint64
+	ProjectID            uuid.UUID
 	SourceRepositoryID   uuid.UUID
 	ProviderOwner        string
 	ProviderRepo         string
@@ -180,17 +181,18 @@ func (r *ForgejoRunner) RegisterRepository(ctx context.Context, req RunnerReposi
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	_, err = tx.Exec(ctx, `INSERT INTO runner_provider_repositories (
-		provider, provider_repository_id, org_id, source_repository_id, provider_owner, provider_repo, repository_full_name, active, created_at, updated_at
-	) VALUES ('forgejo',$1,$2,$3,$4,$5,$6,true,$7,$7)
+		provider, provider_repository_id, org_id, project_id, source_repository_id, provider_owner, provider_repo, repository_full_name, active, created_at, updated_at
+	) VALUES ('forgejo',$1,$2,$3,$4,$5,$6,$7,true,$8,$8)
 	ON CONFLICT (provider, provider_repository_id) DO UPDATE SET
 		org_id = EXCLUDED.org_id,
+		project_id = EXCLUDED.project_id,
 		source_repository_id = EXCLUDED.source_repository_id,
 		provider_owner = EXCLUDED.provider_owner,
 		provider_repo = EXCLUDED.provider_repo,
 		repository_full_name = EXCLUDED.repository_full_name,
 		active = true,
 		updated_at = EXCLUDED.updated_at`,
-		req.ProviderRepositoryID, req.OrgID, nullableUUID(req.SourceRepositoryID), req.ProviderOwner, req.ProviderRepo, req.RepositoryFullName, now)
+		req.ProviderRepositoryID, req.OrgID, req.ProjectID, nullableUUID(req.SourceRepositoryID), req.ProviderOwner, req.ProviderRepo, req.RepositoryFullName, now)
 	if err != nil {
 		recordRunnerError(span, err)
 		return err
@@ -517,10 +519,10 @@ func (r *ForgejoRunner) ConsumeBootstrapConfig(ctx context.Context, token string
 func (r *ForgejoRunner) loadRepository(ctx context.Context, providerRepositoryID int64) (forgejoRepositoryRecord, error) {
 	var repo forgejoRepositoryRecord
 	var sourceRepo *uuid.UUID
-	err := r.service.PGX.QueryRow(ctx, `SELECT provider_repository_id, org_id, source_repository_id, provider_owner, provider_repo, repository_full_name
+	err := r.service.PGX.QueryRow(ctx, `SELECT provider_repository_id, org_id, project_id, source_repository_id, provider_owner, provider_repo, repository_full_name
 		FROM runner_provider_repositories
 		WHERE provider = 'forgejo' AND provider_repository_id = $1 AND active`, providerRepositoryID).
-		Scan(&repo.ProviderRepositoryID, &repo.OrgID, &sourceRepo, &repo.ProviderOwner, &repo.ProviderRepo, &repo.RepositoryFullName)
+		Scan(&repo.ProviderRepositoryID, &repo.OrgID, &repo.ProjectID, &sourceRepo, &repo.ProviderOwner, &repo.ProviderRepo, &repo.RepositoryFullName)
 	if sourceRepo != nil {
 		repo.SourceRepositoryID = *sourceRepo
 	}
@@ -727,7 +729,7 @@ func (r *ForgejoRunner) ensureWebhook(ctx context.Context, owner, repo string) e
 func (r *ForgejoRunner) registerEphemeralRunner(ctx context.Context, allocation forgejoAllocation) (forgejoRunnerRegistrationResponse, error) {
 	body := map[string]any{
 		"name":        allocation.RunnerName,
-		"description": "Forge Metal one-job runner " + allocation.AllocationID.String(),
+		"description": "Verself one-job runner " + allocation.AllocationID.String(),
 		"ephemeral":   true,
 	}
 	path := fmt.Sprintf("/api/v1/repos/%s/%s/actions/runners", url.PathEscape(allocation.ProviderOwner), url.PathEscape(allocation.ProviderRepo))
@@ -761,7 +763,7 @@ func (r *ForgejoRunner) forgejoJSON(ctx context.Context, method, path string, bo
 	}
 	req.Header.Set("Authorization", "token "+r.cfg.Token)
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "forge-metal-sandbox-rental")
+	req.Header.Set("User-Agent", "verself-sandbox-rental")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -783,7 +785,7 @@ func (r *ForgejoRunner) forgejoJSON(ctx context.Context, method, path string, bo
 }
 
 func (r *ForgejoRunner) deriveBootstrapFetchToken(allocationID, attemptID uuid.UUID) string {
-	mac := hmac.New(sha256.New, []byte("forge-metal-forgejo-bootstrap:"+r.cfg.BootstrapSecret))
+	mac := hmac.New(sha256.New, []byte("verself-forgejo-bootstrap:"+r.cfg.BootstrapSecret))
 	mac.Write([]byte(allocationID.String()))
 	mac.Write([]byte(":"))
 	mac.Write([]byte(attemptID.String()))
@@ -860,7 +862,7 @@ func normalizeRunnerRepositoryRegistration(req RunnerRepositoryRegistration) (Ru
 	req.ProviderOwner = strings.TrimSpace(req.ProviderOwner)
 	req.ProviderRepo = strings.TrimSpace(req.ProviderRepo)
 	req.RepositoryFullName = strings.TrimSpace(req.RepositoryFullName)
-	if req.Provider != RunnerProviderForgejo || req.OrgID == 0 || req.ProviderRepositoryID <= 0 || req.ProviderOwner == "" || req.ProviderRepo == "" {
+	if req.Provider != RunnerProviderForgejo || req.OrgID == 0 || req.ProjectID == uuid.Nil || req.ProviderRepositoryID <= 0 || req.ProviderOwner == "" || req.ProviderRepo == "" {
 		return RunnerRepositoryRegistration{}, ErrRunnerUnavailable
 	}
 	if req.RepositoryFullName == "" {
@@ -881,7 +883,7 @@ func forgejoRunnerName(providerJobID int64, allocationID uuid.UUID) string {
 	if len(shortID) > 10 {
 		shortID = shortID[:10]
 	}
-	return fmt.Sprintf("forge-metal-fj-%d-%s", providerJobID, shortID)
+	return fmt.Sprintf("verself-fj-%d-%s", providerJobID, shortID)
 }
 
 func forgejoRunnerHostLabels(labels []string, runnerClass string) []string {
@@ -926,13 +928,13 @@ token_file="$(mktemp)"
 header_file="$(mktemp)"
 cleanup() { rm -f "$bootstrap_file" "$token_file" "$header_file"; }
 trap cleanup EXIT
-printf 'header = "X-Forge-Metal-Runner-Bootstrap: %s"\n' "${FORGE_METAL_RUNNER_BOOTSTRAP_TOKEN:?}" > "$header_file"
-if [ -n "${FORGE_METAL_TRACEPARENT:-}" ]; then
-  printf 'header = "traceparent: %s"\n' "$FORGE_METAL_TRACEPARENT" >> "$header_file"
+printf 'header = "X-Verself-Runner-Bootstrap: %s"\n' "${VERSELF_RUNNER_BOOTSTRAP_TOKEN:?}" > "$header_file"
+if [ -n "${VERSELF_TRACEPARENT:-}" ]; then
+  printf 'header = "traceparent: %s"\n' "$VERSELF_TRACEPARENT" >> "$header_file"
 fi
-curl -fsS --retry 3 --retry-delay 1 --config "$header_file" "${FORGE_METAL_HOST_SERVICE_HTTP_ORIGIN:?}${FORGE_METAL_RUNNER_BOOTSTRAP_PATH:?}" -o "$bootstrap_file"
-unset FORGE_METAL_TRACEPARENT
-unset FORGE_METAL_RUNNER_BOOTSTRAP_TOKEN
+curl -fsS --retry 3 --retry-delay 1 --config "$header_file" "${VERSELF_HOST_SERVICE_HTTP_ORIGIN:?}${VERSELF_RUNNER_BOOTSTRAP_PATH:?}" -o "$bootstrap_file"
+unset VERSELF_TRACEPARENT
+unset VERSELF_RUNNER_BOOTSTRAP_TOKEN
 runner_uuid="$(jq -er '.runner_uuid' "$bootstrap_file")"
 runner_token="$(jq -er '.runner_token' "$bootstrap_file")"
 server_url="$(jq -er '.server_url' "$bootstrap_file")"

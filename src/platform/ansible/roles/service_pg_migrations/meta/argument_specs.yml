@@ -54,4 +54,4 @@ argument_specs:
         description: Absolute path to a tasks file to include after the db reset and before migration files are applied.
       service_pg_migrations_staging_root:
         type: str
-        default: /opt/forge-metal
+        default: /opt/verself

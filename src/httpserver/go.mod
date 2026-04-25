@@ -1,3 +1,3 @@
-module github.com/forge-metal/httpserver
+module github.com/verself/httpserver
 
 go 1.25.0

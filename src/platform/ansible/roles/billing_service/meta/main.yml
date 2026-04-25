@@ -1,4 +1,4 @@
 ---
-# deploy_profile: provides billing-service binary at fm_bin.
+# deploy_profile: provides billing-service binary at verself_bin.
 dependencies:
   - role: deploy_profile

@@ -3,10 +3,10 @@
 # internal mTLS for name writes, governance-service internal audit, Zitadel OIDC discovery,
 # and OTLP egress.
 
-table inet forge_metal_profile_service
-delete table inet forge_metal_profile_service
+table inet verself_profile_service
+delete table inet verself_profile_service
 
-table inet forge_metal_profile_service {
+table inet verself_profile_service {
     chain input {
         type filter hook input priority filter; policy accept;
 

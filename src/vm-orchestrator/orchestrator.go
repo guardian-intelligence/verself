@@ -21,8 +21,8 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/forge-metal/apiwire"
-	"github.com/forge-metal/vm-orchestrator/vmproto"
+	"github.com/verself/apiwire"
+	"github.com/verself/vm-orchestrator/vmproto"
 )
 
 var tracer = otel.Tracer("vm-orchestrator")
@@ -61,11 +61,11 @@ type Config struct {
 
 func DefaultConfig() Config {
 	return Config{
-		Pool:            "forgepool",
+		Pool:            "vspool",
 		GoldenZvol:      "golden-zvol",
 		ImageDataset:    "images",
 		WorkloadDataset: "workloads",
-		KernelPath:      "/var/lib/forge-metal/guest-artifacts/vmlinux",
+		KernelPath:      "/var/lib/verself/guest-artifacts/vmlinux",
 		FirecrackerBin:  "/usr/local/bin/firecracker",
 		JailerBin:       "/usr/local/bin/jailer",
 		JailerRoot:      "/srv/jailer",
@@ -528,7 +528,7 @@ func (o *Orchestrator) prepareFilesystemMounts(ctx context.Context, leaseID stri
 		if cloneErr != nil {
 			return prepared, fmt.Errorf("clone filesystem zvol %s -> %s: %w", sourceSnapshot, target, cloneErr)
 		}
-		driveID := fmt.Sprintf("fm%d", idx)
+		driveID := fmt.Sprintf("fs%d", idx)
 		prepared = append(prepared, preparedFilesystemMount{
 			Spec:            mount,
 			DriveID:         driveID,
@@ -654,7 +654,7 @@ func (o *Orchestrator) bootDataset(ctx context.Context, leaseID string, spec Lea
 	runtime.cleanups = append(runtime.cleanups, netCleanup)
 
 	apiSockHost := filepath.Join(jailRoot, "run", "firecracker.sock")
-	controlSockHost := filepath.Join(jailRoot, "run", "forge-control.sock")
+	controlSockHost := filepath.Join(jailRoot, "run", "vs-control.sock")
 	runtime.metricsPath = filepath.Join(jailRoot, "metrics.json")
 
 	jailerCtx, endJailerSpan := startStepSpan(ctx, "vmorchestrator.jailer.start",
@@ -739,7 +739,7 @@ func (o *Orchestrator) bootDataset(ctx context.Context, leaseID string, spec Lea
 		}},
 		{"vsock", func(stepCtx context.Context) error {
 			cid := uint32(netSetup.Lease.SlotIndex) + 3
-			return client.putVsock(stepCtx, cid, "/run/forge-control.sock")
+			return client.putVsock(stepCtx, cid, "/run/vs-control.sock")
 		}},
 		{"entropy", func(stepCtx context.Context) error { return client.putEntropy(stepCtx) }},
 	}...)

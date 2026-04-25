@@ -6,10 +6,10 @@
 # The service runs as User=sandbox_rental. Egress is restricted by skuid:
 # loopback platform dependencies plus DNS/HTTPS to public git hosts only.
 
-table inet forge_metal_sandbox_rental
-delete table inet forge_metal_sandbox_rental
+table inet verself_sandbox_rental
+delete table inet verself_sandbox_rental
 
-table inet forge_metal_sandbox_rental {
+table inet verself_sandbox_rental {
     chain input {
         type filter hook input priority filter; policy accept;
 

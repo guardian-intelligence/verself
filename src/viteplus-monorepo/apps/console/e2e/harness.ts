@@ -305,6 +305,7 @@ export class SandboxHarness {
   async ensureLoggedIn(): Promise<void> {
     const loginNameInput = this.page.locator("#loginName");
     const passwordInput = this.page.locator("#password");
+    const consoleLoginButton = this.page.getByRole("button", { name: /continue to sign in/i });
     const loginRedirectButton = this.page.getByRole("button", { name: /click here/i });
     const otherUserButton = this.page.getByRole("button", { name: /other user/i });
     const skipButton = this.page.getByRole("button", { name: /^Skip$/ });
@@ -329,6 +330,19 @@ export class SandboxHarness {
 
       if (await loginRedirectButton.isVisible().catch(() => false)) {
         await loginRedirectButton.click();
+        await waitForAuthBoundary(this.page, {
+          dashboardHeading,
+          loginNameInput,
+          loginRedirectButton,
+          otherUserButton,
+          passwordInput,
+          skipButton,
+        });
+        return false;
+      }
+
+      if (await consoleLoginButton.isEnabled().catch(() => false)) {
+        await consoleLoginButton.click();
         await waitForAuthBoundary(this.page, {
           dashboardHeading,
           loginNameInput,

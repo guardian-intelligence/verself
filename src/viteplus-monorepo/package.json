@@ -1,10 +1,10 @@
 {
-  "name": "@forge-metal/viteplus-monorepo",
+  "name": "@verself/viteplus-monorepo",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vp run @forge-metal/console#dev",
+    "dev": "vp run @verself/console#dev",
     "generate": "vp run -r generate",
     "check": "vp check",
     "typecheck": "vp run -r typecheck",

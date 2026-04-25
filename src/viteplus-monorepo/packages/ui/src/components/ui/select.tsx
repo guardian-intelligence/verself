@@ -1,7 +1,7 @@
 import * as React from "react";
 import { ChevronDown } from "lucide-react";
 
-import { cn } from "@forge-metal/ui/lib/utils";
+import { cn } from "@verself/ui/lib/utils";
 
 // Styled native <select>. We intentionally do not use a custom popover-based
 // select — Base UI's Select is a fastComponent and trips the SSR module-graph

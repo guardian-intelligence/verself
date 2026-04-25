@@ -1,15 +1,10 @@
-module github.com/forge-metal/notifications-service
+module github.com/verself/notifications-service
 
 go 1.25.0
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.30.1
 	github.com/danielgtaylor/huma/v2 v2.37.3
-	github.com/forge-metal/apiwire v0.0.0
-	github.com/forge-metal/auth-middleware v0.0.0
-	github.com/forge-metal/envconfig v0.0.0
-	github.com/forge-metal/httpserver v0.0.0
-	github.com/forge-metal/otel v0.0.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.1
 	github.com/nats-io/nats.go v1.51.0
@@ -19,6 +14,11 @@ require (
 	github.com/riverqueue/river/rivertype v0.34.0
 	github.com/riverqueue/rivercontrib/otelriver v0.7.0
 	github.com/spiffe/go-spiffe/v2 v2.6.0
+	github.com/verself/apiwire v0.0.0
+	github.com/verself/auth-middleware v0.0.0
+	github.com/verself/envconfig v0.0.0
+	github.com/verself/httpserver v0.0.0
+	github.com/verself/otel v0.0.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
@@ -84,12 +84,12 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/forge-metal/apiwire => ../apiwire
+replace github.com/verself/apiwire => ../apiwire
 
-replace github.com/forge-metal/auth-middleware => ../auth-middleware
+replace github.com/verself/auth-middleware => ../auth-middleware
 
-replace github.com/forge-metal/envconfig => ../envconfig
+replace github.com/verself/envconfig => ../envconfig
 
-replace github.com/forge-metal/httpserver => ../httpserver
+replace github.com/verself/httpserver => ../httpserver
 
-replace github.com/forge-metal/otel => ../otel
+replace github.com/verself/otel => ../otel

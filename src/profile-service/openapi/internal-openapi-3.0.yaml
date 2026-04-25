@@ -213,7 +213,7 @@ paths:
       security:
         - mutualTLS: []
       summary: Export organization-local profile data
-      x-forge-metal-iam:
+      x-verself-iam:
         action: export
         audit_event: profile.data_rights.org_export
         data_classification: controller_personal_data
@@ -254,7 +254,7 @@ paths:
       security:
         - mutualTLS: []
       summary: Get profile data-rights request status
-      x-forge-metal-iam:
+      x-verself-iam:
         action: read
         audit_event: profile.data_rights.status
         data_classification: controller_personal_data
@@ -292,7 +292,7 @@ paths:
       security:
         - mutualTLS: []
       summary: Erase subject-local profile data
-      x-forge-metal-iam:
+      x-verself-iam:
         action: erase
         audit_event: profile.data_rights.subject_erasure
         data_classification: controller_personal_data
@@ -331,7 +331,7 @@ paths:
       security:
         - mutualTLS: []
       summary: Export subject-local profile data
-      x-forge-metal-iam:
+      x-verself-iam:
         action: export
         audit_event: profile.data_rights.subject_export
         data_classification: controller_personal_data

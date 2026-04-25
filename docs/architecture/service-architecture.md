@@ -152,7 +152,7 @@ contract.
 Repo-owned service calls still use service APIs, not package-level shortcuts.
 When the operation is safe for customer/human auth it belongs in the public Huma
 API and generated `client` package. When the operation requires workload auth or
-body-scoped attribution from another Forge Metal service, it belongs in a
+body-scoped attribution from another Verself service, it belongs in a
 SPIFFE-only internal Huma API, a committed `internal-openapi-3.0.yaml`, and a
 generated `internalclient` package. The caller supplies
 `workloadauth.MTLSClientForService`; authorization stays in the callee's mTLS
@@ -164,15 +164,15 @@ See [wire-contracts.md](../../src/apiwire/docs/wire-contracts.md). `src/apiwire`
 
 ## Identity And IAM
 
-See [identity-and-iam.md](../../src/platform/docs/identity-and-iam.md). Zitadel owns human, organization, and customer/API credential identity and role assignments. SPIRE owns repo-owned workload identity; see [workload-identity.md](workload-identity.md). Forge Metal pins three role keys per project (`owner`, `admin`, `member`), exposes a fixed switchboard of code-owned member-capability bundles in the org console, and each Go service owns the operation catalog it enforces. Members can never receive a permission whose operation is not tagged `member_eligible: true`; the boundary is enforced at catalog `init()` and at credential issuance.
+See [identity-and-iam.md](../../src/platform/docs/identity-and-iam.md). Zitadel owns human, organization, and customer/API credential identity and role assignments. SPIRE owns repo-owned workload identity; see [workload-identity.md](workload-identity.md). Verself pins three role keys per project (`owner`, `admin`, `member`), exposes a fixed switchboard of code-owned member-capability bundles in the org console, and each Go service owns the operation catalog it enforces. Members can never receive a permission whose operation is not tagged `member_eligible: true`; the boundary is enforced at catalog `init()` and at credential issuance.
 
 ## Authorization Direction (Future)
 
-Authorization today is enforced per service in Go: `auth-middleware` validates the Zitadel JWT, each service's `policy.go` maps roles and permissions to operations, and `x-forge-metal-iam` OpenAPI extensions surface the catalog to identity-service. The role-to-capability matrix is duplicated across services; retiring that duplication is the direction, not committed work.
+Authorization today is enforced per service in Go: `auth-middleware` validates the Zitadel JWT, each service's `policy.go` maps roles and permissions to operations, and `x-verself-iam` OpenAPI extensions surface the catalog to identity-service. The role-to-capability matrix is duplicated across services; retiring that duplication is the direction, not committed work.
 
 The target is a centralized Policy Decision Point (PDP) — Open Policy Agent (OPA) is the planned choice — deployed as a sidecar beside each service. The shape:
 
-- `x-forge-metal-iam` extensions remain the declared input contract.
+- `x-verself-iam` extensions remain the declared input contract.
 - Per-service `policy.go` shrinks to: shape the OPA input, make a localhost decision call, honor the result. Rate limiting, idempotency, body limits, and governance audit emission stay in Go.
 - Rego policies live in the monorepo, reviewed in PRs, tested with `opa test` in CI, distributed as signed bundles.
 - Decision logs ship to ClickHouse alongside governance audit; the two are different grains — governance records business events, OPA records policy decisions.
@@ -203,23 +203,23 @@ Deterministic identity is exported by `src/platform/scripts/deploy_identity.sh`
 before `ansible-playbook` runs:
 
 - `deploy_run_key = YYYY-MM-DD.<counter>@<controller-host>`
-- `deploy_id      = UUIDv5("forge-metal:" + deploy_run_key)`
+- `deploy_id      = UUIDv5("verself:" + deploy_run_key)`
 - `TRACEPARENT    = 00-<hex(deploy_id)>-<stable_span>-01`
-- `OTEL_RESOURCE_ATTRIBUTES = forge_metal.deploy_id=…,forge_metal.deploy_run_key=…,forge_metal.commit_sha=…,forge_metal.dirty=…,forge_metal.branch=…,forge_metal.commit_message=…,forge_metal.author=…,forge_metal.deploy_kind=…`
+- `OTEL_RESOURCE_ATTRIBUTES = verself.deploy_id=…,verself.deploy_run_key=…,verself.commit_sha=…,verself.dirty=…,verself.branch=…,verself.commit_message=…,verself.author=…,verself.deploy_kind=…`
 
 The callback inherits the TRACEPARENT-anchored trace-id, so its
-playbook/task spans share it with every `fm_uri` probe (which emits the
+playbook/task spans share it with every `verself_uri` probe (which emits the
 same `traceparent` and a `baggage` header carrying the same
-`forge_metal.*` members).
+`verself.*` members).
 
 Two collector-side normalizations keep the query surface flat:
 
 1. `transform/ansible_spans` in `otelcol-config.yaml.j2` rewrites the
    upstream span names (`<playbook>.yml`, `<task.name>`) to
-   `ansible.playbook` / `ansible.task` and mirrors `forge_metal.*` from
+   `ansible.playbook` / `ansible.task` and mirrors `verself.*` from
    `ResourceAttributes` onto `SpanAttributes`.
-2. `fmotel.baggageSpanProcessor` (`src/otel/otel.go`) copies every
-   incoming baggage member with the `forge_metal.` prefix onto every
+2. `verselfotel.baggageSpanProcessor` (`src/otel/otel.go`) copies every
+   incoming baggage member with the `verself.` prefix onto every
    span a service creates.
 
 One ClickHouse query joins deploy and service spans:
@@ -227,6 +227,6 @@ One ClickHouse query joins deploy and service spans:
 ```sql
 SELECT SpanName, ServiceName, StatusCode
 FROM default.otel_traces
-WHERE SpanAttributes['forge_metal.deploy_id'] = '…'
+WHERE SpanAttributes['verself.deploy_id'] = '…'
 ORDER BY Timestamp;
 ```

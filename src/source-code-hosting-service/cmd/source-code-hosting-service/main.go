@@ -14,13 +14,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
-	auth "github.com/forge-metal/auth-middleware"
-	workloadauth "github.com/forge-metal/auth-middleware/workload"
-	"github.com/forge-metal/envconfig"
-	"github.com/forge-metal/httpserver"
-	fmotel "github.com/forge-metal/otel"
-	sourceapi "github.com/forge-metal/source-code-hosting-service/internal/api"
-	"github.com/forge-metal/source-code-hosting-service/internal/source"
+	auth "github.com/verself/auth-middleware"
+	workloadauth "github.com/verself/auth-middleware/workload"
+	"github.com/verself/envconfig"
+	"github.com/verself/httpserver"
+	verselfotel "github.com/verself/otel"
+	sourceapi "github.com/verself/source-code-hosting-service/internal/api"
+	"github.com/verself/source-code-hosting-service/internal/source"
 )
 
 const (
@@ -40,7 +40,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	otelShutdown, logger, err := fmotel.Init(ctx, fmotel.Config{ServiceName: serviceName, ServiceVersion: serviceVersion})
+	otelShutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{ServiceName: serviceName, ServiceVersion: serviceVersion})
 	if err != nil {
 		return fmt.Errorf("otel init: %w", err)
 	}
@@ -62,6 +62,7 @@ func run() error {
 	forgejoToken := cfg.RequireCredential("forgejo-token")
 	sandboxInternalURL := cfg.URL("SOURCE_SANDBOX_INTERNAL_URL", "https://127.0.0.1:4263")
 	secretsInternalURL := cfg.URL("SOURCE_SECRETS_INTERNAL_URL", "https://127.0.0.1:4253")
+	projectsInternalURL := cfg.URL("SOURCE_PROJECTS_INTERNAL_URL", "https://127.0.0.1:4265")
 	publicBaseURL := cfg.RequireURL("SOURCE_PUBLIC_BASE_URL")
 	webhookSecret := cfg.CredentialOr("webhook-secret", cfg.String("SOURCE_WEBHOOK_SECRET", ""))
 	pgMaxConns := cfg.Int("SOURCE_PG_MAX_CONNS", 8)
@@ -98,6 +99,14 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("create secrets internal client: %w", err)
 	}
+	projectsHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceProjects, nil)
+	if err != nil {
+		return fmt.Errorf("source projects mtls: %w", err)
+	}
+	projectsClient, err := source.NewProjectsClient(projectsInternalURL, projectsHTTPClient)
+	if err != nil {
+		return fmt.Errorf("create projects internal client: %w", err)
+	}
 
 	pg, err := openPool(ctx, pgDSN, pgMaxConns)
 	if err != nil {
@@ -114,9 +123,10 @@ func run() error {
 			Client:  &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport), Timeout: 5 * time.Second},
 		},
 		Runner:        runnerClient,
+		Projects:      projectsClient,
 		Credentials:   credentialClient,
 		CheckoutTTL:   5 * time.Minute,
-		ForgejoPrefix: "fm",
+		ForgejoPrefix: "verself",
 	}
 	if err := svc.Ready(ctx); err != nil {
 		return fmt.Errorf("source readiness: %w", err)

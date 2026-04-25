@@ -119,7 +119,7 @@ func (s *Service) GetJobsAnalytics(ctx context.Context, orgID uint64, window Ana
 			quantileTDigest(0.50)(duration_ms),
 			quantileTDigest(0.95)(duration_ms),
 			quantileTDigest(0.99)(duration_ms)
-		FROM forge_metal.job_events
+		FROM verself.job_events
 		WHERE org_id = $1
 		  AND created_at BETWEEN $2 AND $3
 	`, orgID, window.Start, window.End).Scan(&analytics.TotalRuns, &analytics.SucceededRuns, &analytics.FailedRuns, &p50Duration, &p95Duration, &p99Duration); err != nil {
@@ -131,7 +131,7 @@ func (s *Service) GetJobsAnalytics(ctx context.Context, orgID uint64, window Ana
 	var err error
 	if analytics.BySource, err = s.queryAnalyticsBuckets(ctx, `
 		SELECT source_kind AS key, toUInt64(count()) AS count, toUInt64(0) AS reserved_charge_units, toUInt64(0) AS billed_charge_units, toUInt64(0) AS writeoff_charge_units
-		FROM forge_metal.job_events
+		FROM verself.job_events
 		WHERE org_id = $1
 		  AND created_at BETWEEN $2 AND $3
 		GROUP BY source_kind
@@ -141,7 +141,7 @@ func (s *Service) GetJobsAnalytics(ctx context.Context, orgID uint64, window Ana
 	}
 	if analytics.ByRunnerClass, err = s.queryAnalyticsBuckets(ctx, `
 		SELECT runner_class AS key, toUInt64(count()) AS count, toUInt64(0) AS reserved_charge_units, toUInt64(0) AS billed_charge_units, toUInt64(0) AS writeoff_charge_units
-		FROM forge_metal.job_events
+		FROM verself.job_events
 		WHERE org_id = $1
 		  AND created_at BETWEEN $2 AND $3
 		GROUP BY runner_class
@@ -152,7 +152,7 @@ func (s *Service) GetJobsAnalytics(ctx context.Context, orgID uint64, window Ana
 
 	rows, err := s.CH.Query(ctx, `
 		SELECT execution_id, status, runner_class, repository_full_name, workflow_name, job_name, duration_ms, completed_at
-		FROM forge_metal.job_events
+		FROM verself.job_events
 		WHERE org_id = $1
 		  AND created_at BETWEEN $2 AND $3
 		ORDER BY duration_ms DESC, completed_at DESC
@@ -189,7 +189,7 @@ func (s *Service) GetCostsAnalytics(ctx context.Context, orgID uint64, window An
 			COALESCE(sum(reserved_charge_units), 0),
 			COALESCE(sum(billed_charge_units), 0),
 			COALESCE(sum(writeoff_charge_units), 0)
-		FROM forge_metal.job_events
+		FROM verself.job_events
 		WHERE org_id = $1
 		  AND created_at BETWEEN $2 AND $3
 	`, orgID, window.Start, window.End).Scan(&analytics.ReservedChargeUnits, &analytics.BilledChargeUnits, &analytics.WriteoffChargeUnits); err != nil {
@@ -198,7 +198,7 @@ func (s *Service) GetCostsAnalytics(ctx context.Context, orgID uint64, window An
 	var err error
 	if analytics.BySource, err = s.queryAnalyticsBuckets(ctx, `
 		SELECT source_kind AS key, count() AS count, sum(reserved_charge_units) AS reserved_charge_units, sum(billed_charge_units) AS billed_charge_units, sum(writeoff_charge_units) AS writeoff_charge_units
-		FROM forge_metal.job_events
+		FROM verself.job_events
 		WHERE org_id = $1
 		  AND created_at BETWEEN $2 AND $3
 		GROUP BY source_kind
@@ -208,7 +208,7 @@ func (s *Service) GetCostsAnalytics(ctx context.Context, orgID uint64, window An
 	}
 	if analytics.ByRunnerClass, err = s.queryAnalyticsBuckets(ctx, `
 		SELECT runner_class AS key, count() AS count, sum(reserved_charge_units) AS reserved_charge_units, sum(billed_charge_units) AS billed_charge_units, sum(writeoff_charge_units) AS writeoff_charge_units
-		FROM forge_metal.job_events
+		FROM verself.job_events
 		WHERE org_id = $1
 		  AND created_at BETWEEN $2 AND $3
 		GROUP BY runner_class
@@ -218,7 +218,7 @@ func (s *Service) GetCostsAnalytics(ctx context.Context, orgID uint64, window An
 	}
 	if analytics.ByRepository, err = s.queryAnalyticsBuckets(ctx, `
 		SELECT repository_full_name AS key, count() AS count, sum(reserved_charge_units) AS reserved_charge_units, sum(billed_charge_units) AS billed_charge_units, sum(writeoff_charge_units) AS writeoff_charge_units
-		FROM forge_metal.job_events
+		FROM verself.job_events
 		WHERE org_id = $1
 		  AND created_at BETWEEN $2 AND $3
 		  AND repository_full_name != ''
@@ -248,7 +248,7 @@ func (s *Service) GetCachesAnalytics(ctx context.Context, orgID uint64, window A
 			COALESCE(sumIf(sticky_restore_miss_count, event_name = 'github.stickydisk.compile'), 0),
 			countIf(event_name = 'github.stickydisk.save_request'),
 			countIf(event_name = 'github.stickydisk.commit_zfs' AND sticky_state = 'committed')
-		FROM forge_metal.job_cache_events
+		FROM verself.job_cache_events
 		WHERE org_id = $1
 		  AND event_time BETWEEN $2 AND $3
 	`, orgID, window.Start, window.End).Scan(
@@ -267,7 +267,7 @@ func (s *Service) GetCachesAnalytics(ctx context.Context, orgID uint64, window A
 		SELECT
 			repository_full_name AS key,
 			count() AS count
-		FROM forge_metal.job_cache_events
+		FROM verself.job_cache_events
 		WHERE org_id = $1
 		  AND event_time BETWEEN $2 AND $3
 		  AND repository_full_name != ''
@@ -309,7 +309,7 @@ func (s *Service) GetRunnerSizingAnalytics(ctx context.Context, orgID uint64, wi
 			avg(boot_time_us),
 			avg(block_write_bytes),
 			avg(net_tx_bytes)
-		FROM forge_metal.job_events
+		FROM verself.job_events
 		WHERE org_id = $1
 		  AND created_at BETWEEN $2 AND $3
 		  AND runner_class != ''

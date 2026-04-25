@@ -16,7 +16,7 @@ After `make grafana-proof`, verify ClickHouse evidence with:
 SELECT event_time, type, initial_user, query
 FROM system.query_log
 WHERE event_time >= now() - INTERVAL 15 MINUTE
-  AND query LIKE '%fm:grafana verify=%'
+  AND query LIKE '%verself:grafana verify=%'
 ORDER BY event_time;
 ```
 
@@ -24,13 +24,13 @@ ORDER BY event_time;
 
 ClickHouse is not exposed for unauthenticated remote access. Use the repo wrapper so you do not have to manually prefix SSH, the remote client-certificate config, or the stable worker client path each time.
 
-The wrapper resolves the worker from `ansible/inventory/hosts.ini` and invokes `/opt/forge-metal/profile/bin/clickhouse-client` on the worker as the SPIFFE-authenticated `clickhouse_operator` user. Do not hardcode a `/nix/store/...` path.
+The wrapper resolves the worker from `ansible/inventory/hosts.ini` and invokes `/opt/verself/profile/bin/clickhouse-client` on the worker as the SPIFFE-authenticated `clickhouse_operator` user. Do not hardcode a `/nix/store/...` path.
 
 Use it from the repo root:
 
 ```bash
-make clickhouse-query QUERY='SHOW TABLES' DATABASE=forge_metal
-./src/platform/scripts/clickhouse.sh --database forge_metal --query 'SHOW TABLES'
+make clickhouse-query QUERY='SHOW TABLES' DATABASE=verself
+./src/platform/scripts/clickhouse.sh --database verself --query 'SHOW TABLES'
 ```
 
 Interactive ClickHouse shells are intentionally unsupported. Use replayable
@@ -79,9 +79,9 @@ Implementation follows the in-flight SPIRE deploy commit.
 
 The current database layout is:
 
-- `forge_metal.job_events`
-- `forge_metal.job_logs`
-- `forge_metal.metering`
+- `verself.job_events`
+- `verself.job_logs`
+- `verself.metering`
 - `default.otel_logs`
 - `default.otel_traces`
 - `default.otel_metrics_gauge`
@@ -132,7 +132,7 @@ make telemetry-proof-fail      # sad path: assert Error spans are emitted
 ## Company Site Proof
 
 End-to-end canary for the Guardian Intelligence company site at
-`forge_metal_domain` (anveio.com today). Walks every IA route in a
+`verself_domain` (anveio.com today). Walks every IA route in a
 headless browser, hits the dynamic OG generator, downloads the press
 brand kit, and asserts the corresponding `company.*` spans land in
 ClickHouse within 60 seconds of emit.
@@ -159,16 +159,16 @@ Assertions (all on `default.otel_traces` with `ServiceName = 'company-web'`):
 Deterministic deploy correlation:
 
 - `deploy_run_key`: `YYYY-MM-DD.<counter>@<controller-host>`
-- `deploy_id`: UUIDv5 over `forge-metal:${deploy_run_key}`
-- `scripts/deploy_identity.sh` exports `TRACEPARENT=00-<deploy_id_hex>-<stable>-01` and `OTEL_RESOURCE_ATTRIBUTES=forge_metal.deploy_id=…,forge_metal.deploy_run_key=…,…`, anchoring the upstream `community.general.opentelemetry` Ansible callback and `fm_uri` probes to the same trace-id.
-- The otelcol `transform/ansible_spans` processor renames upstream-emitted `<playbook>.yml` / `<task name>` spans to `ansible.playbook` / `ansible.task` and mirrors `forge_metal.*` from `ResourceAttributes` onto `SpanAttributes`, so the same query shape (`SpanAttributes['forge_metal.deploy_id']`) works for both ansible and service spans.
-- Service spans pick up `forge_metal.*` via the `fmotel` baggage span processor (`src/otel/otel.go`), which projects every W3C baggage member with the `forge_metal.` prefix onto spans it sees.
+- `deploy_id`: UUIDv5 over `verself:${deploy_run_key}`
+- `scripts/deploy_identity.sh` exports `TRACEPARENT=00-<deploy_id_hex>-<stable>-01` and `OTEL_RESOURCE_ATTRIBUTES=verself.deploy_id=…,verself.deploy_run_key=…,…`, anchoring the upstream `community.general.opentelemetry` Ansible callback and `verself_uri` probes to the same trace-id.
+- The otelcol `transform/ansible_spans` processor renames upstream-emitted `<playbook>.yml` / `<task name>` spans to `ansible.playbook` / `ansible.task` and mirrors `verself.*` from `ResourceAttributes` onto `SpanAttributes`, so the same query shape (`SpanAttributes['verself.deploy_id']`) works for both ansible and service spans.
+- Service spans pick up `verself.*` via the `verselfotel` baggage span processor (`src/otel/otel.go`), which projects every W3C baggage member with the `verself.` prefix onto spans it sees.
 
 ## TLS with a Real Domain (Cloudflare)
 
 ```bash
 cd src/platform/ansible
-sops group_vars/all/secrets.sops.yml   # set forge_metal_domain and cloudflare_api_token
+sops group_vars/all/secrets.sops.yml   # set verself_domain and cloudflare_api_token
 ansible-playbook playbooks/dev-single-node.yml
 ```
 
@@ -176,7 +176,7 @@ Services get subdomains configured via Cloudflare:
 
 | Subdomain | Service |
 |-----------|---------|
-| `console.<domain>` | Authenticated Forge Metal product console |
+| `console.<domain>` | Authenticated Verself product console |
 | `<service>.api.<domain>` | Public service APIs (`billing.api`, `sandbox.api`, `identity.api`, etc.) |
 | `dashboard.<domain>` | Grafana |
 | `git.<domain>` | Forgejo |
@@ -188,12 +188,12 @@ origin split.
 
 ## Server Profile
 
-All server software is managed by the `deploy_profile` Ansible role. It populates `/opt/forge-metal/profile/bin/` via three strategies:
+All server software is managed by the `deploy_profile` Ansible role. It populates `/opt/verself/profile/bin/` via three strategies:
 
 - **Go service binaries** (billing-service, sandbox-rental-service, mailbox-service): built on the controller via `go build`, copied to server.
 - **Caddy** (with Coraza WAF plugin): built on the controller via `xcaddy`, copied to server.
 - **Static binaries** (ClickHouse, TigerBeetle, Zitadel, Forgejo, Grafana, grafana-clickhouse-datasource plugin, otelcol-contrib, containerd, Node.js, Stalwart, stalwart-cli): pinned in `src/platform/server-tools.json` with URLs and SHA256 hashes, downloaded and verified on the server.
-- **apt packages** (PostgreSQL 16, wireguard-tools): installed from PGDG/Ubuntu repos, symlinked into `fm_bin`.
+- **apt packages** (PostgreSQL 16, wireguard-tools): installed from PGDG/Ubuntu repos, symlinked into `verself_bin`.
 
 The only other `apt install` is `zfsutils-linux` (kernel-dependent, must match the running kernel).
 
@@ -210,7 +210,7 @@ All remote orchestration runs via Ansible playbooks from `src/platform/ansible/`
 | `playbooks/dev-single-node.yml` | Deploy to single node (idempotent). |
 | `playbooks/site.yml` | Deploy to multi-node cluster (workers + infra). |
 | `playbooks/guest-rootfs.yml` | Build guest rootfs and stage Firecracker guest artifacts. |
-| `playbooks/observability-smoke.yml` | Minimal smoke probe used by `telemetry-proof` (`debug/assert` + `fm_uri`). |
+| `playbooks/observability-smoke.yml` | Minimal smoke probe used by `telemetry-proof` (`debug/assert` + `verself_uri`). |
 | `playbooks/vm-guest-telemetry-dev.yml` | Hot-swap `vm-guest-telemetry`, boot + probe in Firecracker VM (~10s). |
 | `playbooks/security-patch.yml` | Rolling OS security updates. |
 | `playbooks/billing-reset.yml` | Exhaustively wipe TigerBeetle + billing PostgreSQL database `billing` and restart billing callers. |

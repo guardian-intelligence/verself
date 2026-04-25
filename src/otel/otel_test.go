@@ -1,4 +1,4 @@
-package fmotel
+package verselfotel
 
 import (
 	"context"
@@ -12,11 +12,11 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// TestBaggageSpanProcessorProjectsForgeMetalMembers is the contract under
-// which every service span in the repo gets forge_metal.* attributes
+// TestBaggageSpanProcessorProjectsVerselfMembers is the contract under
+// which every service span in the repo gets verself.* attributes
 // without per-service wiring. If this breaks, deploy correlation queries
 // return zero rows.
-func TestBaggageSpanProcessorProjectsForgeMetalMembers(t *testing.T) {
+func TestBaggageSpanProcessorProjectsVerselfMembers(t *testing.T) {
 	recorder := tracetest.NewSpanRecorder()
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithSpanProcessor(baggageSpanProcessor{}),
@@ -28,7 +28,7 @@ func TestBaggageSpanProcessorProjectsForgeMetalMembers(t *testing.T) {
 		}
 	})
 
-	deployID, err := baggage.NewMember("forge_metal.deploy_id", "deploy-1")
+	deployID, err := baggage.NewMember("verself.deploy_id", "deploy-1")
 	if err != nil {
 		t.Fatalf("deploy member: %v", err)
 	}
@@ -54,12 +54,12 @@ func TestBaggageSpanProcessorProjectsForgeMetalMembers(t *testing.T) {
 		t.Fatalf("ended spans = %d, want 2", len(ended))
 	}
 	for _, s := range ended {
-		if got := findAttr(s.Attributes(), "forge_metal.deploy_id"); got != "deploy-1" {
-			t.Fatalf("span %q: forge_metal.deploy_id = %q, want deploy-1", s.Name(), got)
+		if got := findAttr(s.Attributes(), "verself.deploy_id"); got != "deploy-1" {
+			t.Fatalf("span %q: verself.deploy_id = %q, want deploy-1", s.Name(), got)
 		}
 		for _, a := range s.Attributes() {
 			if string(a.Key) == "other.noise" {
-				t.Fatalf("span %q: unexpected non-forge_metal attribute leaked", s.Name())
+				t.Fatalf("span %q: unexpected non-verself attribute leaked", s.Name())
 			}
 		}
 	}
@@ -71,7 +71,7 @@ func TestTextMapPropagatorIncludesTraceContextAndBaggage(t *testing.T) {
 		t.Fatalf("fields = %v, want traceparent/tracestate/baggage", fields)
 	}
 
-	member, err := baggage.NewMember("forge_metal.deploy_id", "deploy-1")
+	member, err := baggage.NewMember("verself.deploy_id", "deploy-1")
 	if err != nil {
 		t.Fatalf("new baggage member: %v", err)
 	}

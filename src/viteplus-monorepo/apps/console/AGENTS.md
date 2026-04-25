@@ -4,7 +4,7 @@ Customer-facing UI for the sandbox rental product. TanStack Start (SSR) + React 
 
 Read @src/viteplus-monorepo/packages/ui/src/components/ui/page.tsx for visual hierarchy rules.
 
-Lives at `src/viteplus-monorepo/apps/console/` within a pnpm workspace managed by Vite+. Shared UI primitives (`cn`, `Skeleton`) come from `@forge-metal/ui` (`packages/ui/`).
+Lives at `src/viteplus-monorepo/apps/console/` within a pnpm workspace managed by Vite+. Shared UI primitives (`cn`, `Skeleton`) come from `@verself/ui` (`packages/ui/`).
 
 ## React Patterns
 
@@ -17,7 +17,7 @@ Do not introduce useEffect. Every common `useEffect` pattern has a proper TanSta
 | `useEffect` to fetch data                                                         | `useQuery` from `@tanstack/react-query`                                                                                      |
 | `useEffect` + `useState(mounted)` for SSR hydration guard                         | `useHydrated()` or `<ClientOnly>` from `@tanstack/react-router`                                                              |
 | `useEffect` to run side effects on navigation (e.g. Stripe redirect invalidation) | `beforeLoad` on the route definition — it runs once per navigation, not per render                                           |
-| `useEffect` to trigger login/logout/callback auth flows                           | Route-level `beforeLoad` plus `@forge-metal/auth-web/server` helpers                                                         |
+| `useEffect` to trigger login/logout/callback auth flows                           | Route-level `beforeLoad` plus `@verself/auth-web/server` helpers                                                             |
 | `useEffect` to invalidate queries when external data changes                      | `onSuccess` / `onSettled` on the `useMutation` that caused the change                                                        |
 | `useEffect` for DOM interactions (scroll, focus, resize)                          | `use-stick-to-bottom` for scroll-follow; for other DOM cases, evaluate whether a library exists before writing a `useEffect` |
 
@@ -25,9 +25,9 @@ The one exception: `useEffect` is acceptable for DOM manipulation that has no li
 
 ### Auth + Query Cache
 
-Auth state is server-owned (`@forge-metal/auth-web/server` + HTTP-only session cookie + `frontend_auth_sessions`). `/login`, `/callback`, and `/logout` are route-level `beforeLoad` flows that run on the server and during client navigations. Do not mirror auth state into React Query or persist bearer tokens in the browser.
+Auth state is server-owned (`@verself/auth-web/server` + HTTP-only session cookie + `frontend_auth_sessions`). `/login`, `/callback`, and `/logout` are route-level `beforeLoad` flows that run on the server and during client navigations. Do not mirror auth state into React Query or persist bearer tokens in the browser.
 
-`src/routes/__root.tsx` calls `getClientAuthSnapshot()` once per navigation, seeds `AuthProvider`, and syncs the React Query cache through `syncAuthPartitionedCache(...)` using the server-issued auth cache partition. Component code should read `useAuth()`, `useSignedInAuth()`, `useUser()`, or `useSession()` from `@forge-metal/auth-web/react`; it should not call server auth helpers directly.
+`src/routes/__root.tsx` calls `getClientAuthSnapshot()` once per navigation, seeds `AuthProvider`, and syncs the React Query cache through `syncAuthPartitionedCache(...)` using the server-issued auth cache partition. Component code should read `useAuth()`, `useSignedInAuth()`, `useUser()`, or `useSession()` from `@verself/auth-web/react`; it should not call server auth helpers directly.
 
 ### Routing + Auth
 
@@ -40,7 +40,7 @@ Auth state is server-owned (`@forge-metal/auth-web/server` + HTTP-only session c
 ### SSR + Loading States
 
 - Never treat `undefined` (query still loading) the same as `[]` (loaded but empty). Use `isPending` from `useQuery` to show `<Skeleton>` placeholders during loading. Show empty-state messages only after the query resolves.
-- `<Skeleton>` is exported from `@forge-metal/ui` (shadcn pattern: `animate-pulse rounded-md bg-primary/10`).
+- `<Skeleton>` is exported from `@verself/ui` (shadcn pattern: `animate-pulse rounded-md bg-primary/10`).
 - Use route boundaries for transport loading/error/not-found. Use `EmptyState`, `TableEmptyRow`, `Callout`, and `ErrorCallout` for ready-empty and mutation-error states.
 
 ### Query Composition

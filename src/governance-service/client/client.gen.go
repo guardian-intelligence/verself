@@ -204,7 +204,7 @@ type GovernanceAuditEvent struct {
 	// CredentialFingerprint Non-secret credential fingerprint when known.
 	CredentialFingerprint *string `json:"credential_fingerprint,omitempty"`
 
-	// CredentialId Forge Metal API credential ID when the actor is a credential.
+	// CredentialId Verself API credential ID when the actor is a credential.
 	CredentialId *string `json:"credential_id,omitempty"`
 
 	// CredentialName API credential display name when known.
@@ -264,7 +264,7 @@ type GovernanceAuditEvent struct {
 	// OrgScope Organization scoping rule used for the decision.
 	OrgScope string `json:"org_scope"`
 
-	// Permission Forge Metal operation permission.
+	// Permission Verself operation permission.
 	Permission string `json:"permission"`
 
 	// PrevHmac Previous audit row HMAC in the organization chain.

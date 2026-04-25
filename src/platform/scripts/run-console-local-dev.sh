@@ -11,7 +11,7 @@ if [[ "${1:-}" == "--print-env" ]]; then
   print_env_only=1
 fi
 
-state_file="${CONSOLE_DEV_STATE_FILE:-/tmp/forge-metal-console-dev.env}"
+state_file="${CONSOLE_DEV_STATE_FILE:-/tmp/verself-console-dev.env}"
 remote_env_path="${CONSOLE_DEV_REMOTE_ENV_PATH:-/etc/console/env}"
 control_dir="$(mktemp -d)"
 control_socket="${control_dir}/ssh-control"
@@ -179,7 +179,7 @@ if [[ "${print_env_only}" != "1" ]]; then
   wait_for_local_tcp_port "OTLP HTTP" "${local_otel_http_port}"
 fi
 
-export FORGE_METAL_DOMAIN="${FORGE_METAL_DOMAIN:-${VERIFICATION_DOMAIN}}"
+export VERSELF_DOMAIN="${VERSELF_DOMAIN:-${VERIFICATION_DOMAIN}}"
 export AUTH_SUBDOMAIN="${AUTH_SUBDOMAIN:-auth}"
 export AUTH_CLIENT_ID="${AUTH_CLIENT_ID:-${auth_client_id}}"
 export AUTH_PROJECT_ID="${AUTH_PROJECT_ID:-${auth_project_id}}"
@@ -202,7 +202,7 @@ export CONSOLE_DEV_LOCAL_APP_PORT="${local_app_port}"
 export BASE_URL="${BASE_URL:-http://127.0.0.1:${local_app_port}}"
 
 cat >"${state_file_tmp}" <<EOF
-export FORGE_METAL_DOMAIN=${FORGE_METAL_DOMAIN}
+export VERSELF_DOMAIN=${VERSELF_DOMAIN}
 export AUTH_SUBDOMAIN=${AUTH_SUBDOMAIN}
 export AUTH_CLIENT_ID=${AUTH_CLIENT_ID}
 export AUTH_PROJECT_ID=${AUTH_PROJECT_ID}
@@ -230,7 +230,7 @@ fi
 cat >&2 <<EOF
 console local dev
   app:       ${BASE_URL}
-  auth:      https://auth.${FORGE_METAL_DOMAIN}
+  auth:      https://auth.${VERSELF_DOMAIN}
   pg tunnel: 127.0.0.1:${local_pg_port}
   api:       ${SANDBOX_RENTAL_SERVICE_BASE_URL}
   identity:  ${IDENTITY_SERVICE_BASE_URL}
@@ -243,9 +243,9 @@ EOF
 
 if [[ "${print_env_only}" == "1" ]]; then
   cat "${state_file_tmp}"
-  printf '%s\n' "vp run @forge-metal/console#dev"
+  printf '%s\n' "vp run @verself/console#dev"
   exit 0
 fi
 
 cd "${VERIFICATION_REPO_ROOT}/src/viteplus-monorepo"
-vp run @forge-metal/console#dev
+vp run @verself/console#dev

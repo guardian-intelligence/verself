@@ -1,7 +1,7 @@
--- ClickHouse initial schema for forge-metal.
+-- ClickHouse initial schema for verself.
 --
--- The ansible clickhouse role applies this file with --database forge_metal,
--- so bare table names land in forge_metal; OTel-compatible tables use fully
+-- The ansible clickhouse role applies this file with --database verself,
+-- so bare table names land in verself; OTel-compatible tables use fully
 -- qualified default.* since the OTel ClickHouse exporter runs with
 -- create_schema: false and expects tables in `default`.
 --
@@ -424,10 +424,10 @@ FROM default.otel_logs
 WHERE mapContains(LogAttributes, 'http_method');
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- forge_metal: sandbox execution logs and wide events
+-- verself: sandbox execution logs and wide events
 -- ═══════════════════════════════════════════════════════════════════════════
 
-CREATE TABLE IF NOT EXISTS forge_metal.job_logs
+CREATE TABLE IF NOT EXISTS verself.job_logs
 (
     execution_id        UUID,
     attempt_id          UUID,
@@ -454,7 +454,7 @@ ORDER BY (org_id, source_kind, runner_class, created_at, execution_id, attempt_i
 TTL toDateTime(created_at) + INTERVAL 90 DAY
 SETTINGS index_granularity = 8192;
 
-CREATE TABLE IF NOT EXISTS forge_metal.job_events
+CREATE TABLE IF NOT EXISTS verself.job_events
 (
     execution_id            UUID,
     attempt_id              UUID,
@@ -515,20 +515,20 @@ ORDER BY (org_id, source_kind, runner_class, repository_full_name, created_at, e
 TTL toDateTime(created_at) + INTERVAL 1 YEAR
 SETTINGS index_granularity = 8192;
 
-ALTER TABLE forge_metal.job_events
+ALTER TABLE verself.job_events
     ADD COLUMN IF NOT EXISTS provider_installation_id UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)) AFTER head_sha;
-ALTER TABLE forge_metal.job_events
+ALTER TABLE verself.job_events
     ADD COLUMN IF NOT EXISTS provider_run_id UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)) AFTER provider_installation_id;
-ALTER TABLE forge_metal.job_events
+ALTER TABLE verself.job_events
     ADD COLUMN IF NOT EXISTS provider_job_id UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)) AFTER provider_run_id;
-ALTER TABLE forge_metal.job_events
+ALTER TABLE verself.job_events
     DROP COLUMN IF EXISTS github_installation_id;
-ALTER TABLE forge_metal.job_events
+ALTER TABLE verself.job_events
     DROP COLUMN IF EXISTS github_run_id;
-ALTER TABLE forge_metal.job_events
+ALTER TABLE verself.job_events
     DROP COLUMN IF EXISTS github_job_id;
 
-CREATE TABLE IF NOT EXISTS forge_metal.job_cache_events
+CREATE TABLE IF NOT EXISTS verself.job_cache_events
 (
     event_time                 DateTime64(9, 'UTC')    CODEC(Delta(8), ZSTD(3)),
     org_id                     UInt64,
@@ -548,14 +548,14 @@ ORDER BY (org_id, event_name, repository_full_name, runner_class, event_time, tr
 TTL toDateTime(event_time) + INTERVAL 1 YEAR
 SETTINGS index_granularity = 8192;
 
-DROP VIEW IF EXISTS forge_metal.job_cache_events_mv;
+DROP VIEW IF EXISTS verself.job_cache_events_mv;
 
-CREATE MATERIALIZED VIEW forge_metal.job_cache_events_mv
-TO forge_metal.job_cache_events
+CREATE MATERIALIZED VIEW verself.job_cache_events_mv
+TO verself.job_cache_events
 AS
 SELECT
     Timestamp AS event_time,
-    toUInt64OrZero(SpanAttributes['forge_metal.org_id']) AS org_id,
+    toUInt64OrZero(SpanAttributes['verself.org_id']) AS org_id,
     SpanName AS event_name,
     SpanAttributes['github.repository'] AS repository_full_name,
     SpanAttributes['github.runner_class'] AS runner_class,
@@ -573,15 +573,15 @@ WHERE ServiceName = 'sandbox-rental-service'
     'github.stickydisk.save_request',
     'github.stickydisk.commit_zfs'
   )
-  AND SpanAttributes['forge_metal.org_id'] != '';
+  AND SpanAttributes['verself.org_id'] != '';
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- forge_metal: billing ledger and windowed metering
+-- verself: billing ledger and windowed metering
 -- ═══════════════════════════════════════════════════════════════════════════
 
-DROP TABLE IF EXISTS forge_metal.metering;
+DROP TABLE IF EXISTS verself.metering;
 
-CREATE TABLE forge_metal.metering (
+CREATE TABLE verself.metering (
     window_id                   String                               CODEC(ZSTD(3)),
     org_id                      LowCardinality(String)               CODEC(ZSTD(3)),
     actor_id                    String DEFAULT ''                    CODEC(ZSTD(3)),
@@ -630,9 +630,9 @@ CREATE TABLE forge_metal.metering (
 ENGINE = MergeTree()
 ORDER BY (org_id, product_id, started_at, source_ref, window_seq, window_id);
 
-DROP TABLE IF EXISTS forge_metal.billing_events;
+DROP TABLE IF EXISTS verself.billing_events;
 
-CREATE TABLE forge_metal.billing_events (
+CREATE TABLE verself.billing_events (
     event_id           String                 CODEC(ZSTD(3)),
     event_type         LowCardinality(String) CODEC(ZSTD(3)),
     event_version      UInt16                 DEFAULT 1 CODEC(T64, ZSTD(3)),
@@ -660,12 +660,12 @@ ENGINE = ReplacingMergeTree(recorded_at)
 ORDER BY (event_id, occurred_at, aggregate_type, aggregate_id);
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- forge_metal: notification delivery ledger
+-- verself: notification delivery ledger
 -- ═══════════════════════════════════════════════════════════════════════════
 
-DROP TABLE IF EXISTS forge_metal.notification_events;
+DROP TABLE IF EXISTS verself.notification_events;
 
-CREATE TABLE forge_metal.notification_events
+CREATE TABLE verself.notification_events
 (
     recorded_at DateTime64(9, 'UTC') CODEC(Delta(8), ZSTD(3)),
     occurred_at DateTime64(9, 'UTC') CODEC(Delta(8), ZSTD(3)),
@@ -694,12 +694,12 @@ ORDER BY (event_type, org_id, kind, status, recipient_subject_id, occurred_at, l
 SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1;
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- forge_metal: domain update ledger
+-- verself: domain update ledger
 -- ═══════════════════════════════════════════════════════════════════════════
 
-DROP TABLE IF EXISTS forge_metal.domain_update_ledger;
+DROP TABLE IF EXISTS verself.domain_update_ledger;
 
-CREATE TABLE forge_metal.domain_update_ledger
+CREATE TABLE verself.domain_update_ledger
 (
     recorded_at DateTime64(9, 'UTC') CODEC(Delta(8), ZSTD(3)),
     occurred_at DateTime64(9, 'UTC') CODEC(Delta(8), ZSTD(3)),
@@ -737,11 +737,11 @@ ORDER BY (service_name, event_type, org_id, aggregate_kind, result, occurred_at,
 SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1;
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- forge_metal: vm-orchestrator lease evidence projection
+-- verself: vm-orchestrator lease evidence projection
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Typed projection of lease lifecycle, exec starts, and telemetry diagnostics.
 
-CREATE TABLE IF NOT EXISTS forge_metal.vm_lease_evidence
+CREATE TABLE IF NOT EXISTS verself.vm_lease_evidence
 (
     `evidence_time`                 DateTime64(9)            CODEC(Delta(8), ZSTD(3)),
     `evidence_date`                 Date                      DEFAULT toDate(evidence_time),
@@ -767,10 +767,10 @@ PARTITION BY evidence_date
 ORDER BY (evidence_type, diagnostic_kind, reason_code, lease_id, exec_id, evidence_time)
 SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1;
 
-DROP VIEW IF EXISTS forge_metal.vm_lease_evidence_mv;
+DROP VIEW IF EXISTS verself.vm_lease_evidence_mv;
 
-CREATE MATERIALIZED VIEW forge_metal.vm_lease_evidence_mv
-TO forge_metal.vm_lease_evidence
+CREATE MATERIALIZED VIEW verself.vm_lease_evidence_mv
+TO verself.vm_lease_evidence
 AS
 SELECT
     Timestamp AS evidence_time,
@@ -817,12 +817,12 @@ WHERE ServiceName = 'vm-orchestrator'
   AND LogAttributes['lease_id'] != '';
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- forge_metal: governance audit events (OCSF-aligned append-only ledger)
+-- verself: governance audit events (OCSF-aligned append-only ledger)
 -- ═══════════════════════════════════════════════════════════════════════════
 
-DROP TABLE IF EXISTS forge_metal.audit_events;
+DROP TABLE IF EXISTS verself.audit_events;
 
-CREATE TABLE forge_metal.audit_events
+CREATE TABLE verself.audit_events
 (
     recorded_at DateTime64(6, 'UTC'),
     event_date Date DEFAULT toDate(recorded_at),
@@ -948,12 +948,12 @@ ORDER BY (org_id, event_date, risk_level, operation_type, source_product_area, r
 SETTINGS index_granularity = 8192;
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- forge_metal: object-storage access events
+-- verself: object-storage access events
 -- ═══════════════════════════════════════════════════════════════════════════
 
-DROP TABLE IF EXISTS forge_metal.object_access_events;
+DROP TABLE IF EXISTS verself.object_access_events;
 
-CREATE TABLE forge_metal.object_access_events
+CREATE TABLE verself.object_access_events
 (
     recorded_at DateTime64(6, 'UTC'),
     event_date Date DEFAULT toDate(recorded_at),

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { useClerk } from "@forge-metal/auth-web/react";
-import { cn } from "@forge-metal/ui/lib/utils";
+import { useClerk } from "@verself/auth-web/react";
+import { cn } from "@verself/ui/lib/utils";
 import { EVERGREEN_NAV, PRIMARY_NAV, SETTINGS_NAV } from "./nav-config";
 
 // Hand-rolled command palette. We deliberately avoid cmdk + Radix Dialog:

@@ -4,14 +4,14 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/forge-metal/vm-orchestrator/vmproto"
+	"github.com/verself/vm-orchestrator/vmproto"
 )
 
 func TestNormalizeFilesystemMounts(t *testing.T) {
 	mounts, err := normalizeFilesystemMounts([]FilesystemMount{{
 		Name:      "viteplus",
 		SourceRef: "viteplus",
-		MountPath: "/opt/forge-metal/nodejs/",
+		MountPath: "/opt/verself/nodejs/",
 		ReadOnly:  true,
 	}})
 	if err != nil {
@@ -20,7 +20,7 @@ func TestNormalizeFilesystemMounts(t *testing.T) {
 	want := []FilesystemMount{{
 		Name:      "viteplus",
 		SourceRef: "viteplus",
-		MountPath: "/opt/forge-metal/nodejs",
+		MountPath: "/opt/verself/nodejs",
 		FSType:    "ext4",
 		ReadOnly:  true,
 	}}
@@ -33,7 +33,7 @@ func TestNormalizeFilesystemMountsRejectsUnsafeMountPath(t *testing.T) {
 	_, err := normalizeFilesystemMounts([]FilesystemMount{{
 		Name:      "bad",
 		SourceRef: "viteplus",
-		MountPath: "/proc/forge-metal",
+		MountPath: "/proc/verself",
 	}})
 	if err == nil {
 		t.Fatal("expected unsafe mount path to be rejected")
@@ -42,10 +42,10 @@ func TestNormalizeFilesystemMountsRejectsUnsafeMountPath(t *testing.T) {
 
 func TestNormalizeFilesystemMountsRejectsHostPathRefs(t *testing.T) {
 	cases := []FilesystemMount{
-		{Name: "bad/name", SourceRef: "viteplus", MountPath: "/opt/forge-metal/nodejs"},
-		{Name: "bad@snap", SourceRef: "viteplus", MountPath: "/opt/forge-metal/nodejs"},
-		{Name: "viteplus", SourceRef: "images/viteplus", MountPath: "/opt/forge-metal/nodejs"},
-		{Name: "viteplus", SourceRef: "viteplus@ready", MountPath: "/opt/forge-metal/nodejs"},
+		{Name: "bad/name", SourceRef: "viteplus", MountPath: "/opt/verself/nodejs"},
+		{Name: "bad@snap", SourceRef: "viteplus", MountPath: "/opt/verself/nodejs"},
+		{Name: "viteplus", SourceRef: "images/viteplus", MountPath: "/opt/verself/nodejs"},
+		{Name: "viteplus", SourceRef: "viteplus@ready", MountPath: "/opt/verself/nodejs"},
 	}
 	for _, tc := range cases {
 		if _, err := normalizeFilesystemMounts([]FilesystemMount{tc}); err == nil {
@@ -59,7 +59,7 @@ func TestPreparedFilesystemMountsBecomeGuestManifest(t *testing.T) {
 		Spec: FilesystemMount{
 			Name:      "viteplus",
 			SourceRef: "viteplus",
-			MountPath: "/opt/forge-metal/nodejs",
+			MountPath: "/opt/verself/nodejs",
 			FSType:    "ext4",
 			ReadOnly:  true,
 		},
@@ -70,7 +70,7 @@ func TestPreparedFilesystemMountsBecomeGuestManifest(t *testing.T) {
 		Name:       "viteplus",
 		DriveID:    "fm0",
 		DevicePath: "/dev/vdb",
-		MountPath:  "/opt/forge-metal/nodejs",
+		MountPath:  "/opt/verself/nodejs",
 		FSType:     "ext4",
 		ReadOnly:   true,
 	}}

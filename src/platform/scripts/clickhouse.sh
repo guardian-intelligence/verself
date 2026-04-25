@@ -2,7 +2,7 @@
 set -euo pipefail
 
 inventory="${INVENTORY:-ansible/inventory/hosts.ini}"
-remote_path="${CLICKHOUSE_CLIENT_PATH:-/opt/forge-metal/profile/bin/clickhouse-client}"
+remote_path="${CLICKHOUSE_CLIENT_PATH:-/opt/verself/profile/bin/clickhouse-client}"
 remote_config_path="${CLICKHOUSE_CLIENT_CONFIG_PATH:-/etc/clickhouse-client/operator.xml}"
 remote_run_as_user="${CLICKHOUSE_RUN_AS_USER:-clickhouse_operator}"
 remote_db_user="${CLICKHOUSE_DB_USER:-clickhouse_operator}"

@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/forge-metal/billing-service/internal/store"
+	"github.com/verself/billing-service/internal/store"
 )
 
 const clickHouseBillingEventsSink = "clickhouse.billing_events"
@@ -156,7 +156,7 @@ func (c *Client) projectBillingEventDelivery(ctx context.Context, eventID string
 		CausationEventID:  event.CausationEventID,
 		RecordedAt:        event.CreatedAt.Time.UTC(),
 	}
-	batch, err := c.ch.PrepareBatch(ctx, "INSERT INTO forge_metal.billing_events")
+	batch, err := c.ch.PrepareBatch(ctx, "INSERT INTO verself.billing_events")
 	if err != nil {
 		return fmt.Errorf("prepare billing event ClickHouse batch: %w", err)
 	}

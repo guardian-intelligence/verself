@@ -5,20 +5,20 @@ import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
 import { cva, type VariantProps } from "class-variance-authority";
 
-import { useIsMobile } from "@forge-metal/ui/hooks/use-mobile";
-import { cn } from "@forge-metal/ui/lib/utils";
-import { Button } from "@forge-metal/ui/components/ui/button";
-import { Input } from "@forge-metal/ui/components/ui/input";
-import { Separator } from "@forge-metal/ui/components/ui/separator";
+import { useIsMobile } from "@verself/ui/hooks/use-mobile";
+import { cn } from "@verself/ui/lib/utils";
+import { Button } from "@verself/ui/components/ui/button";
+import { Input } from "@verself/ui/components/ui/input";
+import { Separator } from "@verself/ui/components/ui/separator";
 import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
-} from "@forge-metal/ui/components/ui/sheet";
-import { Skeleton } from "@forge-metal/ui/components/ui/skeleton";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@forge-metal/ui/components/ui/tooltip";
+} from "@verself/ui/components/ui/sheet";
+import { Skeleton } from "@verself/ui/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@verself/ui/components/ui/tooltip";
 
 import { PanelLeftIcon } from "lucide-react";
 const SIDEBAR_COOKIE_NAME = "sidebar_state";

@@ -1,6 +1,6 @@
 # GitHub App Runner Setup
 
-Forge Metal's GitHub Actions runner integration is a GitHub App installed on a
+Verself's GitHub Actions runner integration is a GitHub App installed on a
 customer GitHub Organization. Personal-account installations are deliberately
 rejected until the product model has a personal-owner tenant story.
 
@@ -15,7 +15,7 @@ https://github.com/settings/apps/new
 Edit the current dev app at:
 
 ```text
-https://github.com/organizations/guardian-intelligence/settings/apps/forge-metal-ci
+https://github.com/organizations/guardian-intelligence/settings/apps/verself-ci
 ```
 
 Current dev public identifiers:
@@ -23,9 +23,9 @@ Current dev public identifiers:
 ```yaml
 sandbox_rental_service_github_app_enabled: true
 sandbox_rental_service_github_app_id: 3370540
-sandbox_rental_service_github_app_slug: forge-metal-ci
+sandbox_rental_service_github_app_slug: verself-ci
 sandbox_rental_service_github_app_client_id: "Iv23liDpxGOmBSQwSJ5i"
-sandbox_rental_service_github_app_settings_url: "https://github.com/organizations/guardian-intelligence/settings/apps/forge-metal-ci"
+sandbox_rental_service_github_app_settings_url: "https://github.com/organizations/guardian-intelligence/settings/apps/verself-ci"
 ```
 
 Use these GitHub App settings:
@@ -85,7 +85,7 @@ credential set, or a complete legacy credstore set to migrate.
 
 ## Connect a GitHub Organization
 
-Start the Forge Metal side of the install flow as a sandbox org admin:
+Start the Verself side of the install flow as a sandbox org admin:
 
 ```bash
 source <(src/platform/scripts/assume-persona.sh platform-admin --print)
@@ -113,7 +113,7 @@ curl -sS "https://sandbox.api.<domain>/api/v1/github/installations" \
 Use all labels for the first proof:
 
 ```yaml
-name: forge-metal-ci
+name: verself-ci
 on: [push]
 
 permissions:
@@ -122,12 +122,12 @@ permissions:
 
 jobs:
   hello:
-    runs-on: [self-hosted, linux, x64, metal-4vcpu-ubuntu-2404]
+    runs-on: [self-hosted, linux, x64, verself-4vcpu-ubuntu-2404]
     steps:
       - uses: actions/checkout@v5
-      - uses: guardian-intelligence/forge-metal/.github/actions/oidc-tracer@main
+      - uses: guardian-intelligence/verself/.github/actions/oidc-tracer@main
         with:
-          audience: forge-metal-ci
+          audience: verself-ci
       - run: echo "github-runner-marker $(uname -a)"
 ```
 
@@ -143,11 +143,11 @@ Expected control-plane order:
    the runner identity that accepted the job.
 5. The execution path emits the same lease/exec evidence as scheduled canaries:
    `rpc.AcquireLease`, `rpc.StartExec`, `rpc.WaitExec`, `rpc.ReleaseLease`, and
-   `forge_metal.vm_lease_evidence`.
+   `verself.vm_lease_evidence`.
 
 ## OIDC Tracer Bullet
 
-Forge Metal does not host customer secrets for the GitHub CI product. Workflows
+Verself does not host customer secrets for the GitHub CI product. Workflows
 use GitHub's standard OpenID Connect path: grant `id-token: write`, ask GitHub
 for a job-scoped ID token with the audience required by the target cloud or
 secret broker, and exchange that token directly with the customer's AWS, GCP,
@@ -161,7 +161,7 @@ claims. It prints only sanitized claims and never prints the JWT.
 
 Successful proof means:
 
-1. GitHub issued an OIDC token to a job running on the Forge Metal runner.
+1. GitHub issued an OIDC token to a job running on the Verself runner.
 2. The token can be verified using public GitHub OIDC metadata and JWKS.
 3. The token is bound to the expected repo, ref, SHA, and workflow run.
 4. Customers can bring the same cloud-federation policies they use with

@@ -13,8 +13,8 @@
         fail_msg: "EXPECT_FAIL requested the smoke playbook to fail."
       when: lookup('env', 'EXPECT_FAIL') | default('', true) | lower in ['1', 'true', 'yes']
 
-    - name: Probe billing healthz through fm_uri
-      fm_uri:
+    - name: Probe billing healthz through verself_uri
+      verself_uri:
         url: "http://127.0.0.1:4242/healthz"
         method: GET
         return_content: true

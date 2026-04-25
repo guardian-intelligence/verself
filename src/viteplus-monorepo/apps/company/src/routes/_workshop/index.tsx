@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { WingsArgent } from "@forge-metal/brand";
+import { WingsArgent } from "@verself/brand";
 import { FilmGrain } from "~/components/film-grain";
 import { NewsroomStrip } from "~/components/newsroom-strip";
 import { RevealSpan } from "~/components/reveal-span";

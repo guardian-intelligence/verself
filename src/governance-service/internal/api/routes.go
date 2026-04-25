@@ -12,8 +12,8 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/forge-metal/apiwire"
-	"github.com/forge-metal/governance-service/internal/governance"
+	"github.com/verself/apiwire"
+	"github.com/verself/governance-service/internal/governance"
 )
 
 var apiTracer = otel.Tracer("governance-service/internal/api")
@@ -280,13 +280,13 @@ func downloadExport(svc *governance.Service) func(context.Context, governance.Pr
 			return nil, err
 		}
 		span.SetAttributes(
-			attribute.String("forge_metal.org_id", principal.OrgID),
-			attribute.String("forge_metal.export_id", job.ExportID.String()),
-			attribute.Int("forge_metal.export_bytes", len(body)),
+			attribute.String("verself.org_id", principal.OrgID),
+			attribute.String("verself.export_id", job.ExportID.String()),
+			attribute.Int("verself.export_bytes", len(body)),
 		)
 		return &downloadOutput{
 			ContentType:        "application/gzip",
-			ContentDisposition: fmt.Sprintf(`attachment; filename="forge-metal-%s-%s.tar.gz"`, principal.OrgID, job.ExportID.String()),
+			ContentDisposition: fmt.Sprintf(`attachment; filename="verself-%s-%s.tar.gz"`, principal.OrgID, job.ExportID.String()),
 			Body:               body,
 		}, nil
 	}

@@ -58,7 +58,7 @@
           },
           "format": {{ panel.query_format }},
           "queryType": "{{ panel.query_type }}",
-          "rawSql": {{ (panel.raw_sql ~ "\n/* fm:grafana dashboard=" ~ dashboard.uid ~ " panel=" ~ panel.uid ~ " */") | to_json }},
+          "rawSql": {{ (panel.raw_sql ~ "\n/* verself:grafana dashboard=" ~ dashboard.uid ~ " panel=" ~ panel.uid ~ " */") | to_json }},
           "refId": "A"
         }
       ],

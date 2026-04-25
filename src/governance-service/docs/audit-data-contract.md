@@ -4,7 +4,7 @@
 customer-visible audit query surface. Product services still own their operation
 catalogs, authorization checks, and resource ownership checks; they emit
 governance audit rows after making those decisions. Zitadel remains the identity
-provider, while Forge Metal owns product policy and API credential metadata as
+provider, while Verself owns product policy and API credential metadata as
 described in [identity-and-iam.md](../../platform/docs/identity-and-iam.md).
 
 The canonical implementation writes the schema in
@@ -26,7 +26,7 @@ the caller an `Actor`, not a `Principal`; tenant scope is captured separately as
 - SIEM/export feed: same canonical rows as the UI, with raw service names,
   trace IDs, HMAC chain fields, and stable operation IDs retained for machines.
 - Secrets audit: OpenBao native audit devices remain enabled, but
-  `secrets-service` emits the Forge Metal row used for cross-product search,
+  `secrets-service` emits the Verself row used for cross-product search,
   policy debugging, data export, and billing correlation. Secret material is
   never copied into governance rows. See
   [secrets-service.md](../../platform/docs/secrets-service.md).
@@ -78,7 +78,7 @@ service account itself. The human or automation that created the credential is
 recorded as owner metadata:
 
 - `actor_type = 'api_credential'`
-- `actor_id = <Zitadel customer/API credential subject or Forge Metal credential id>`
+- `actor_id = <Zitadel customer/API credential subject or Verself credential id>`
 - `credential_id`, `credential_name`, and `credential_fingerprint` identify the
   credential without storing secret material.
 - `actor_owner_id` and `actor_owner_display` identify the user or system that
@@ -110,7 +110,7 @@ immutable actor id recorded for the audit event.
   `event_category`, `target_kind`, `action`, `org_scope`, idempotency policy,
   and rate-limit class.
 - Actor and credential fields come from the validated JWT plus Forge
-  Metal-owned API credential metadata. Human OAuth scopes are not product
+  Verself-owned API credential metadata. Human OAuth scopes are not product
   permissions.
 - Request network fields are captured at the service boundary from trusted edge
   headers only. `X-Forwarded-For` is accepted only from Caddy or a configured
@@ -161,7 +161,7 @@ the first-pass artifact builder is in
   retention period expires.
 - The default product posture is at least one year of queryable audit history,
   with enterprise legal hold and extended retention as policy settings. GitHub's
-  enterprise audit log is a useful lower bound at 180 days, but Forge Metal's
+  enterprise audit log is a useful lower bound at 180 days, but Verself's
   self-hosted ClickHouse posture makes longer retention cheap enough to be the
   default.
 - Partition deletion must preserve tamper evidence by keeping chain checkpoints

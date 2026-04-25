@@ -66,6 +66,7 @@ type InternalCreateWorkflowRunRequest struct {
 	IdempotencyKey string             `json:"idempotency_key"`
 	Inputs         *map[string]string `json:"inputs,omitempty"`
 	OrgId          string             `json:"org_id"`
+	ProjectId      string             `json:"project_id"`
 	Ref            *string            `json:"ref,omitempty"`
 	RepoId         string             `json:"repo_id"`
 	WorkflowPath   string             `json:"workflow_path"`
@@ -83,6 +84,7 @@ type WorkflowRun struct {
 	FailureReason     *string           `json:"failure_reason,omitempty"`
 	Inputs            map[string]string `json:"inputs"`
 	OrgId             string            `json:"org_id"`
+	ProjectId         string            `json:"project_id"`
 	Ref               string            `json:"ref"`
 	RepoId            string            `json:"repo_id"`
 	State             string            `json:"state"`
@@ -94,7 +96,7 @@ type WorkflowRun struct {
 
 // DownloadSourceCheckoutArchiveParams defines parameters for DownloadSourceCheckoutArchive.
 type DownloadSourceCheckoutArchiveParams struct {
-	XForgeMetalCheckoutToken string `json:"X-Forge-Metal-Checkout-Token"`
+	XVerselfCheckoutToken string `json:"X-Verself-Checkout-Token"`
 }
 
 // InternalCreateSourceWorkflowRunJSONRequestBody defines body for InternalCreateSourceWorkflowRun for application/json ContentType.
@@ -253,12 +255,12 @@ func NewDownloadSourceCheckoutArchiveRequest(server string, grantId openapi_type
 
 		var headerParam0 string
 
-		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Forge-Metal-Checkout-Token", params.XForgeMetalCheckoutToken, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Verself-Checkout-Token", params.XVerselfCheckoutToken, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
 		if err != nil {
 			return nil, err
 		}
 
-		req.Header.Set("X-Forge-Metal-Checkout-Token", headerParam0)
+		req.Header.Set("X-Verself-Checkout-Token", headerParam0)
 
 	}
 

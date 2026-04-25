@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { requireOperatorDomain } from "@forge-metal/web-env";
+import { requireOperatorDomain } from "@verself/web-env";
 
 import {
   ChangesSection,
@@ -20,11 +20,11 @@ export const Route = createFileRoute("/policy/sla")({
   loader: () => getOperatorDomain(),
   head: () => ({
     meta: [
-      { title: "Service Level Agreement — Forge Metal Platform" },
+      { title: "Service Level Agreement — Verself Platform" },
       {
         name: "description",
         content:
-          "Availability commitments and service credits for the Forge Metal platform, and the deployment topology on which they apply.",
+          "Availability commitments and service credits for the Verself platform, and the deployment topology on which they apply.",
       },
     ],
   }),
@@ -76,8 +76,8 @@ function CurrentTier() {
       <SectionHeading id="current-tier">Current tier: single-node</SectionHeading>
       <Prose>
         <p>
-          Forge Metal is currently deployed on a single bare-metal node. Every component — the
-          compute orchestrator, databases, identity, billing, ingress — runs on that node and is not
+          Verself is currently deployed on a single bare-metal node. Every component — the compute
+          orchestrator, databases, identity, billing, ingress — runs on that node and is not
           replicated across failure domains. A hardware failure, a kernel crash, or a
           datacenter-level event is therefore a correlated outage of the whole service.
         </p>

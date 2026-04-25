@@ -1,6 +1,6 @@
 ---
-openbao_tenancy_oidc_discovery_url: "https://auth.{{ forge_metal_domain }}"
-openbao_tenancy_bound_issuer: "https://auth.{{ forge_metal_domain }}"
+openbao_tenancy_oidc_discovery_url: "https://auth.{{ verself_domain }}"
+openbao_tenancy_bound_issuer: "https://auth.{{ verself_domain }}"
 openbao_tenancy_secrets_project_name: "{{ secrets_service_auth_project_name | default('secrets-service') }}"
 openbao_tenancy_token_ttl: 15m
 openbao_tenancy_token_max_ttl: 1h
@@ -9,4 +9,4 @@ openbao_tenancy_skip_jwks_validation: false
 openbao_tenancy_kv_mount_prefix: kv
 openbao_tenancy_transit_mount_prefix: transit
 openbao_tenancy_jwt_mount_prefix: jwt
-openbao_tenancy_platform_org_name: forge-metal
+openbao_tenancy_platform_org_name: verself

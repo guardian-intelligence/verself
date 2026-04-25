@@ -1,9 +1,9 @@
 ---
 # The company app owns the root domain — unlike platform, which lives on a
-# subdomain, anveio.com (or whatever forge_metal_domain is set to) resolves
+# subdomain, anveio.com (or whatever verself_domain is set to) resolves
 # directly to this service. The Caddy block in roles/caddy/templates
 # /Caddyfile.j2 routes `{{ company_domain }}` here.
-company_domain: "{{ forge_metal_domain }}"
+company_domain: "{{ verself_domain }}"
 company_install_dir: /opt/company
 company_app_dir: "{{ company_install_dir }}/apps/company"
 company_dependencies_fingerprint_path: "{{ company_install_dir }}/.pnpm-install-fingerprint"

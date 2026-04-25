@@ -111,7 +111,7 @@ export function parseOperatorDomain(value: string, label: string): string {
 }
 
 export function requireOperatorDomain(
-  envName = "FORGE_METAL_DOMAIN",
+  envName = "VERSELF_DOMAIN",
   env: EnvSource = process.env,
 ): string {
   return parseOperatorDomain(requireEnv(envName, env), envName);
@@ -136,7 +136,7 @@ export function deriveHTTPSOrigin(subdomain: string, domain: string): string {
 
 export function deriveAuthIssuerURL(env: EnvSource = process.env): string {
   const authSubdomain = readEnv(env, "AUTH_SUBDOMAIN") ?? "auth";
-  return deriveHTTPSOrigin(authSubdomain, requireOperatorDomain("FORGE_METAL_DOMAIN", env));
+  return deriveHTTPSOrigin(authSubdomain, requireOperatorDomain("VERSELF_DOMAIN", env));
 }
 
 export function deriveAppBaseURL(appSubdomain: string, env: EnvSource = process.env): string {
@@ -144,7 +144,7 @@ export function deriveAppBaseURL(appSubdomain: string, env: EnvSource = process.
   if (explicitBaseURL) {
     return parseAbsoluteURL(explicitBaseURL, "BASE_URL");
   }
-  return deriveHTTPSOrigin(appSubdomain, requireOperatorDomain("FORGE_METAL_DOMAIN", env));
+  return deriveHTTPSOrigin(appSubdomain, requireOperatorDomain("VERSELF_DOMAIN", env));
 }
 
 export function deriveSeededEmail(env: EnvSource = process.env, localPart = "acme-user"): string {
@@ -152,7 +152,7 @@ export function deriveSeededEmail(env: EnvSource = process.env, localPart = "acm
   if (explicitEmail) {
     return explicitEmail;
   }
-  return `${localPart}@${requireOperatorDomain("FORGE_METAL_DOMAIN", env)}`;
+  return `${localPart}@${requireOperatorDomain("VERSELF_DOMAIN", env)}`;
 }
 
 // Electric requires an absolute shape URL. Keep the real sync path same-origin

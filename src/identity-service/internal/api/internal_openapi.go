@@ -6,15 +6,15 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
-	"github.com/forge-metal/apiwire"
-	"github.com/forge-metal/identity-service/internal/identity"
+	"github.com/verself/apiwire"
+	"github.com/verself/identity-service/internal/identity"
 )
 
 func NewInternalAPI(mux *http.ServeMux, version, serverURL string, svc *identity.Service) huma.API {
 	if version == "" {
 		version = "1.0.0"
 	}
-	config := huma.DefaultConfig("Forge Metal Identity Service Internal API", version)
+	config := huma.DefaultConfig("Verself Identity Service Internal API", version)
 	config.OpenAPI.Servers = []*huma.Server{{URL: serverURL}}
 	api := humago.New(mux, config)
 	applyInternalAPISecuritySchemes(api)

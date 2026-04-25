@@ -8,15 +8,15 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/forge-metal/envconfig"
-	fmotel "github.com/forge-metal/otel"
+	"github.com/verself/envconfig"
+	verselfotel "github.com/verself/otel"
 	"go.temporal.io/server/common/authorization"
 	"go.temporal.io/server/common/config"
 	"go.temporal.io/server/temporal"
 
-	"github.com/forge-metal/temporal-platform/internal/pgsocket"
-	"github.com/forge-metal/temporal-platform/internal/spiffeauth"
-	"github.com/forge-metal/temporal-platform/internal/tlsprovider"
+	"github.com/verself/temporal-platform/internal/pgsocket"
+	"github.com/verself/temporal-platform/internal/spiffeauth"
+	"github.com/verself/temporal-platform/internal/tlsprovider"
 )
 
 var temporalServices = []string{
@@ -40,7 +40,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	otelShutdown, logger, err := fmotel.Init(ctx, fmotel.Config{
+	otelShutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{
 		ServiceName:    "temporal-server",
 		ServiceVersion: version,
 	})
@@ -53,7 +53,7 @@ func run() error {
 	slog.SetDefault(logger)
 
 	l := envconfig.New()
-	cfgPath := l.RequireString("FM_TEMPORAL_CONFIG_PATH")
+	cfgPath := l.RequireString("VERSELF_TEMPORAL_CONFIG_PATH")
 	spiffeSocket := l.String("SPIFFE_ENDPOINT_SOCKET", "")
 	if err := l.Err(); err != nil {
 		return err

@@ -1,5 +1,5 @@
 ---
-# Install apt-managed software and symlink binaries into fm_bin.
+# Install apt-managed software and symlink binaries into verself_bin.
 
 # ── PostgreSQL 16 (PGDG repo) ────────────────────────────────────────────────
 
@@ -33,10 +33,10 @@
     removes: "/var/lib/postgresql/{{ deploy_profile_postgresql_version }}/main"
   failed_when: false
 
-- name: Symlink PostgreSQL binaries into fm_bin
+- name: Symlink PostgreSQL binaries into verself_bin
   ansible.builtin.file:
     src: "/usr/lib/postgresql/{{ deploy_profile_postgresql_version }}/bin/{{ item }}"
-    dest: "{{ fm_bin }}/{{ item }}"
+    dest: "{{ verself_bin }}/{{ item }}"
     state: link
     force: true
   loop:
@@ -54,14 +54,14 @@
     name: wireguard-tools
     state: present
 
-- name: Symlink wg into fm_bin
+- name: Symlink wg into verself_bin
   ansible.builtin.file:
     src: /usr/bin/wg
-    dest: "{{ fm_bin }}/wg"
+    dest: "{{ verself_bin }}/wg"
     state: link
     force: true
 
-# ── System tools (not in fm_bin, just need to be present) ────────────────────
+# ── System tools (not in verself_bin, just need to be present) ────────────────────
 
 - name: Install system tools
   ansible.builtin.apt:

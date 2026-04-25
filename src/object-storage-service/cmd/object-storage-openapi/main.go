@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	objectstorageapi "github.com/forge-metal/object-storage-service/internal/api"
+	objectstorageapi "github.com/verself/object-storage-service/internal/api"
 )
 
 func main() {

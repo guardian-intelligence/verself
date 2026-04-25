@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/forge-metal/profile-service/internal/api"
+	"github.com/verself/profile-service/internal/api"
 )
 
 func main() {

@@ -7,9 +7,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/forge-metal/apiwire"
-	workloadauth "github.com/forge-metal/auth-middleware/workload"
-	"github.com/forge-metal/profile-service/internal/profile"
+	"github.com/verself/apiwire"
+	workloadauth "github.com/verself/auth-middleware/workload"
+	"github.com/verself/profile-service/internal/profile"
 )
 
 type dataRightsInput struct {

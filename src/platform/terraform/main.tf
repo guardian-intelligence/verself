@@ -5,16 +5,16 @@ provider "latitudesh" {}
 # -----------------------------------------------------------------
 # SSH Key
 # -----------------------------------------------------------------
-resource "latitudesh_ssh_key" "forge_metal" {
-  name       = "forge-metal-${var.cluster_name}"
+resource "latitudesh_ssh_key" "verself" {
+  name       = "verself-${var.cluster_name}"
   public_key = trimspace(file(var.ssh_public_key_path))
 }
 
 # -----------------------------------------------------------------
 # User Data
 # -----------------------------------------------------------------
-resource "latitudesh_user_data" "forge_metal" {
-  description = "forge-metal-${var.cluster_name} bootstrap"
+resource "latitudesh_user_data" "verself" {
+  description = "verself-${var.cluster_name} bootstrap"
   content = base64encode(templatefile("${path.module}/cloud-init.yml.tpl", {
     ssh_public_key = trimspace(file(var.ssh_public_key_path))
   }))
@@ -25,15 +25,15 @@ resource "latitudesh_user_data" "forge_metal" {
 # -----------------------------------------------------------------
 resource "latitudesh_server" "worker" {
   count            = var.worker_count
-  hostname         = "fm-${var.cluster_name}-w${count.index}"
+  hostname         = "vs-${var.cluster_name}-w${count.index}"
   plan             = var.plan
   site             = var.region
   operating_system = var.operating_system
   project          = var.project_id
   billing          = var.billing
-  ssh_keys         = [latitudesh_ssh_key.forge_metal.id]
+  ssh_keys         = [latitudesh_ssh_key.verself.id]
   allow_reinstall  = true
-  user_data        = latitudesh_user_data.forge_metal.id
+  user_data        = latitudesh_user_data.verself.id
 }
 
 # -----------------------------------------------------------------
@@ -41,13 +41,13 @@ resource "latitudesh_server" "worker" {
 # -----------------------------------------------------------------
 resource "latitudesh_server" "infra" {
   count            = var.infra_count
-  hostname         = "fm-${var.cluster_name}-i${count.index}"
+  hostname         = "vs-${var.cluster_name}-i${count.index}"
   plan             = var.infra_plan
   site             = var.region
   operating_system = var.operating_system
   project          = var.project_id
   billing          = var.billing
-  ssh_keys         = [latitudesh_ssh_key.forge_metal.id]
+  ssh_keys         = [latitudesh_ssh_key.verself.id]
   allow_reinstall  = true
-  user_data        = latitudesh_user_data.forge_metal.id
+  user_data        = latitudesh_user_data.verself.id
 }

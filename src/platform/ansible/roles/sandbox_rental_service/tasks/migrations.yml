@@ -27,7 +27,7 @@
 - name: Restore sandbox-rental GitHub installations after schema reset
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/psql
+      {{ verself_bin }}/psql
       -h {{ services.postgresql.host }}
       -p {{ services.postgresql.port }}
       -U sandbox_rental
@@ -53,7 +53,7 @@
 - name: Reconcile sandbox-rental object ownership and privileges
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/psql
+      {{ verself_bin }}/psql
       -h {{ services.postgresql.host }}
       -p {{ services.postgresql.port }}
       -U postgres

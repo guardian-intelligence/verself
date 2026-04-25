@@ -1,5 +1,5 @@
 
-Forge Metal is the open reference architecture for a single-founder software company that fundamentally changes the math around starting a business. It raises the revenue ceiling of a single-person business from ~$10M to ~$1B by eliminating the integration, compliance, and operations tax that everyone else rebuilds from scratch.
+Verself is the open reference architecture for a single-founder software company that fundamentally changes the math around starting a business. It raises the revenue ceiling of a single-person business from ~$10M to ~$1B by eliminating the integration, compliance, and operations tax that everyone else rebuilds from scratch.
 
 This new type of company consists of just two entities:
 
@@ -16,4 +16,4 @@ The principles of this new type of company:
 
 3. Operations are agent-managed. In 2026, no human should ever be paged first. The founder's labor is agent-multiplied, which means infrastructure has to be legible to agents (structured APIs, wide-event telemetry, deterministic deploys, reversible state). Bash-driven ops and click-through dashboards are dead ends. Huma+OpenAPI-everywhere + ClickHouse-wide-events thesis is exactly this
 
-When you're making a more than $1B/year from your business, you can hire experts to manage a high-availability multi-region multi-cluster K8s infrastructure. Forge Metal is how you get there.
+When you're making a more than $1B/year from your business, you can hire experts to manage a high-availability multi-region multi-cluster K8s infrastructure. Verself is how you get there.

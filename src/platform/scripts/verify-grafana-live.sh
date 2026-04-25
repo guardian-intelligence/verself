@@ -12,7 +12,7 @@ run_id="${VERIFICATION_RUN_ID:-${kind}-$(date -u +%Y%m%dT%H%M%SZ)}"
 artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_REPO_ROOT}/artifacts/${kind}}"
 artifact_dir="${artifact_root}/${run_id}"
 dashboard_url="${GRAFANA_BASE_URL:-https://dashboard.${VERIFICATION_DOMAIN}}"
-marker="fm:grafana verify=${run_id}"
+marker="verself:grafana verify=${run_id}"
 dashboard_definitions_path="${VERIFICATION_PLATFORM_ROOT}/ansible/roles/grafana/vars/main.yml"
 
 if [[ ! -f "${dashboard_definitions_path}" ]]; then
@@ -136,7 +136,7 @@ case "${grafana_dashboard_storage}" in
     SELECT name, value::jsonb #>> '{spec,title}' AS title
     FROM resource
     WHERE resource = 'dashboards'
-      AND name LIKE 'forge-metal-%'
+      AND name LIKE 'verself-%'
     ORDER BY name;
     " >"${artifact_dir}/postgres-grafana-dashboards.tsv"
     ;;
@@ -144,7 +144,7 @@ case "${grafana_dashboard_storage}" in
     remote_psql grafana "
     SELECT uid AS name, title
     FROM dashboard
-    WHERE uid LIKE 'forge-metal-%'
+    WHERE uid LIKE 'verself-%'
     ORDER BY uid;
     " >"${artifact_dir}/postgres-grafana-dashboards.tsv"
     ;;
@@ -160,7 +160,7 @@ grafana_api_post "/api/ds/query" >"${artifact_dir}/grafana-datasource-query.json
     {
       "refId": "A",
       "datasource": {
-        "uid": "forge-metal-clickhouse",
+        "uid": "verself-clickhouse",
         "type": "grafana-clickhouse-datasource"
       },
       "format": 1,
@@ -197,13 +197,13 @@ verification_ssh "sudo ss -ltnH '( sport = :8123 or sport = :8443 or sport = :90
 
 grafana_api_get "/api/search?type=dash-db" >"${artifact_dir}/grafana-dashboard-search.json"
 
-jq -r '.[] | select(.uid | startswith("forge-metal-")) | .uid' \
+jq -r '.[] | select(.uid | startswith("verself-")) | .uid' \
   "${artifact_dir}/grafana-dashboard-search.json" \
   | sort >"${artifact_dir}/grafana-dashboard-uids.tsv"
 
 dashboard_count="$(wc -l <"${artifact_dir}/grafana-dashboard-uids.tsv")"
 if [[ "${dashboard_count}" -ne "${expected_dashboard_count}" ]]; then
-  echo "Expected ${expected_dashboard_count} Forge Metal dashboards, got ${dashboard_count}" >&2
+  echo "Expected ${expected_dashboard_count} Verself dashboards, got ${dashboard_count}" >&2
   exit 1
 fi
 
@@ -219,7 +219,7 @@ for dashboard_uid in "${dashboard_uids[@]}"; do
   jq \
     --arg run_id "${run_id}" \
     --arg dashboard_uid "${dashboard_uid}" \
-    --arg datasource_uid "forge-metal-clickhouse" \
+    --arg datasource_uid "verself-clickhouse" \
     '
     [
       .dashboard.panels[]
@@ -235,7 +235,7 @@ for dashboard_uid in "${dashboard_uids[@]}"; do
           refId: ("P" + ($panel.id | tostring)),
           rawSql: (
             .rawSql
-            + "\n/* fm:grafana verify="
+            + "\n/* verself:grafana verify="
             + $run_id
             + " dashboard="
             + $dashboard_uid
@@ -293,7 +293,7 @@ WHERE event_time >= parseDateTimeBestEffort('${started_at}')
   AND type = 'QueryFinish'
   AND initial_user = 'grafana_observer'
   AND exception_code = 0
-  AND query LIKE '%fm:grafana verify=${run_id} dashboard=%'
+  AND query LIKE '%verself:grafana verify=${run_id} dashboard=%'
 FORMAT TabSeparated
 ")"
 
@@ -309,7 +309,7 @@ FROM (
   FROM system.query_log
   WHERE event_time >= parseDateTimeBestEffort('${started_at}')
     AND initial_user = 'grafana_observer'
-    AND query LIKE '%fm:grafana verify=${run_id} dashboard=%'
+    AND query LIKE '%verself:grafana verify=${run_id} dashboard=%'
   GROUP BY query
   HAVING starts >= 1
     AND finishes >= 1

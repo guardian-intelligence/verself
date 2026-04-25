@@ -4,7 +4,7 @@ set -euo pipefail
 # Enable IP forwarding (also persisted via sysctl.d, this covers the first boot).
 sysctl -w net.ipv4.ip_forward=1 >/dev/null
 
-# Explicitly undo the old localhost-DNAT path; guests use fm-host0 instead.
+# Explicitly undo the old localhost-DNAT path; guests use verself-host0 instead.
 sysctl -w net.ipv4.conf.all.route_localnet=0 >/dev/null
 sysctl -w net.ipv4.conf.default.route_localnet=0 >/dev/null
 
@@ -25,16 +25,16 @@ ip link set "$HOST_SERVICE_IF" up
 UPLINK="{{ firecracker_resolved_uplink }}"
 POOL="{{ firecracker_guest_pool_cidr }}"
 
-# filter table: FORGE_METAL_FC_FWD chain + jump rules
-iptables -D FORWARD -s "$POOL" -j FORGE_METAL_FC_FWD 2>/dev/null || true
+# filter table: VERSELF_FC_FWD chain + jump rules
+iptables -D FORWARD -s "$POOL" -j VERSELF_FC_FWD 2>/dev/null || true
 iptables -D FORWARD -i "$UPLINK" -d "$POOL" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
-iptables -F FORGE_METAL_FC_FWD 2>/dev/null || true
-iptables -X FORGE_METAL_FC_FWD 2>/dev/null || true
+iptables -F VERSELF_FC_FWD 2>/dev/null || true
+iptables -X VERSELF_FC_FWD 2>/dev/null || true
 
-# nat table: FORGE_METAL_FC_NAT chain + jump rule
-iptables -t nat -D POSTROUTING -s "$POOL" -j FORGE_METAL_FC_NAT 2>/dev/null || true
-iptables -t nat -F FORGE_METAL_FC_NAT 2>/dev/null || true
-iptables -t nat -X FORGE_METAL_FC_NAT 2>/dev/null || true
+# nat table: VERSELF_FC_NAT chain + jump rule
+iptables -t nat -D POSTROUTING -s "$POOL" -j VERSELF_FC_NAT 2>/dev/null || true
+iptables -t nat -F VERSELF_FC_NAT 2>/dev/null || true
+iptables -t nat -X VERSELF_FC_NAT 2>/dev/null || true
 
 # Remove stale /30 masquerade rules (accumulated from earlier CIDR mismatch)
 for _ in $(seq 1 10); do

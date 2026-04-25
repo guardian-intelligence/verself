@@ -61,6 +61,7 @@ type WorkflowDispatcher interface {
 type WorkflowDispatchRequest struct {
 	OrgID              uint64
 	ActorID            string
+	ProjectID          uuid.UUID
 	SourceRepositoryID uuid.UUID
 	WorkflowPath       string
 	Ref                string
@@ -94,6 +95,7 @@ type Service struct {
 type CreateRequest struct {
 	DisplayName        string
 	IdempotencyKey     string
+	ProjectID          uuid.UUID
 	SourceRepositoryID uuid.UUID
 	WorkflowPath       string
 	Ref                string
@@ -113,6 +115,7 @@ type ScheduleRecord struct {
 	TaskQueue          string
 	State              string
 	IntervalSeconds    uint32
+	ProjectID          uuid.UUID
 	SourceRepositoryID uuid.UUID
 	WorkflowPath       string
 	Ref                string
@@ -125,6 +128,7 @@ type ScheduleRecord struct {
 type DispatchRecord struct {
 	DispatchID          uuid.UUID
 	ScheduleID          uuid.UUID
+	ProjectID           uuid.UUID
 	TemporalWorkflowID  string
 	TemporalRunID       string
 	SourceWorkflowRunID *uuid.UUID
@@ -141,6 +145,7 @@ type WorkflowInput struct {
 	ScheduleID         string
 	OrgID              uint64
 	ActorID            string
+	ProjectID          string
 	SourceRepositoryID string
 	WorkflowPath       string
 	Ref                string
@@ -152,6 +157,7 @@ type DispatchInput struct {
 	ScheduleID         string
 	OrgID              uint64
 	ActorID            string
+	ProjectID          string
 	SourceRepositoryID string
 	WorkflowPath       string
 	Ref                string
@@ -241,6 +247,7 @@ func (s *Service) CreateSchedule(ctx context.Context, orgID uint64, actorID stri
 				ScheduleID:         scheduleID.String(),
 				OrgID:              orgID,
 				ActorID:            actorID,
+				ProjectID:          normalized.ProjectID.String(),
 				SourceRepositoryID: normalized.SourceRepositoryID.String(),
 				WorkflowPath:       normalized.WorkflowPath,
 				Ref:                normalized.Ref,
@@ -254,6 +261,7 @@ func (s *Service) CreateSchedule(ctx context.Context, orgID uint64, actorID stri
 		Memo: map[string]interface{}{
 			"schedule_id":          scheduleID.String(),
 			"org_id":               fmt.Sprintf("%d", orgID),
+			"project_id":           normalized.ProjectID.String(),
 			"temporal_schedule_id": temporalScheduleID,
 			"display_name":         normalized.DisplayName,
 		},
@@ -274,6 +282,7 @@ func (s *Service) CreateSchedule(ctx context.Context, orgID uint64, actorID stri
 		TaskQueue:          s.taskQueue,
 		State:              stateForPaused(normalized.Paused),
 		IntervalSeconds:    normalized.IntervalSeconds,
+		ProjectID:          normalized.ProjectID,
 		SourceRepositoryID: normalized.SourceRepositoryID,
 		WorkflowPath:       normalized.WorkflowPath,
 		Ref:                normalized.Ref,
@@ -289,6 +298,7 @@ func (s *Service) CreateSchedule(ctx context.Context, orgID uint64, actorID stri
 	}
 	span.SetAttributes(
 		attribute.String("sandbox.schedule_id", row.ScheduleID.String()),
+		attribute.String("verself.project_id", row.ProjectID.String()),
 		attribute.String("temporal.schedule_id", row.TemporalScheduleID),
 		attribute.String("temporal.namespace", row.TemporalNamespace),
 		attribute.String("temporal.task_queue", row.TaskQueue),
@@ -308,7 +318,7 @@ func (s *Service) ListSchedules(ctx context.Context, orgID uint64) (_ []Schedule
 	rows, err := s.pgx.Query(ctx, `SELECT
 		schedule_id, org_id, actor_id, display_name, idempotency_key,
 		temporal_schedule_id, temporal_namespace, task_queue, state,
-		interval_seconds, source_repository_id, workflow_path, ref, inputs_json, created_at, updated_at
+		interval_seconds, project_id, source_repository_id, workflow_path, ref, inputs_json, created_at, updated_at
 		FROM execution_schedules
 		WHERE org_id = $1
 		ORDER BY created_at DESC, schedule_id DESC`, orgID)
@@ -427,6 +437,7 @@ func ExecutionScheduleDispatchWorkflow(ctx workflow.Context, input WorkflowInput
 		ScheduleID:         input.ScheduleID,
 		OrgID:              input.OrgID,
 		ActorID:            input.ActorID,
+		ProjectID:          input.ProjectID,
 		SourceRepositoryID: input.SourceRepositoryID,
 		WorkflowPath:       input.WorkflowPath,
 		Ref:                input.Ref,
@@ -468,6 +479,11 @@ func (s *Service) DispatchExecutionActivity(ctx context.Context, input DispatchI
 	}
 
 	idempotencyKey := dispatchIdempotencyKey(scheduleID, input.TemporalWorkflowID, input.TemporalRunID)
+	projectID, err := uuid.Parse(strings.TrimSpace(input.ProjectID))
+	if err != nil {
+		_ = s.markDispatchFailed(context.Background(), record.DispatchID, err.Error())
+		return DispatchResult{}, fmt.Errorf("parse project id: %w", err)
+	}
 	sourceRepoID, err := uuid.Parse(strings.TrimSpace(input.SourceRepositoryID))
 	if err != nil {
 		_ = s.markDispatchFailed(context.Background(), record.DispatchID, err.Error())
@@ -476,6 +492,7 @@ func (s *Service) DispatchExecutionActivity(ctx context.Context, input DispatchI
 	result, err := s.dispatcher.DispatchWorkflow(ctx, WorkflowDispatchRequest{
 		OrgID:              input.OrgID,
 		ActorID:            input.ActorID,
+		ProjectID:          projectID,
 		SourceRepositoryID: sourceRepoID,
 		WorkflowPath:       input.WorkflowPath,
 		Ref:                input.Ref,
@@ -492,6 +509,7 @@ func (s *Service) DispatchExecutionActivity(ctx context.Context, input DispatchI
 	span.SetAttributes(
 		attribute.String("sandbox.schedule_id", scheduleID.String()),
 		attribute.String("sandbox.dispatch_id", record.DispatchID.String()),
+		attribute.String("verself.project_id", projectID.String()),
 		attribute.String("source.workflow_run_id", result.WorkflowRunID.String()),
 		attribute.String("source.workflow_state", result.State),
 		attribute.String("temporal.schedule_id", input.TemporalScheduleID),
@@ -514,11 +532,11 @@ func (s *Service) insertScheduleRow(ctx context.Context, record ScheduleRecord) 
 	_, err = s.pgx.Exec(ctx, `INSERT INTO execution_schedules (
 		schedule_id, org_id, actor_id, display_name, idempotency_key,
 		temporal_schedule_id, temporal_namespace, task_queue, state,
-		interval_seconds, source_repository_id, workflow_path, ref, inputs_json, created_at, updated_at
-	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+		interval_seconds, project_id, source_repository_id, workflow_path, ref, inputs_json, created_at, updated_at
+	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
 		record.ScheduleID, record.OrgID, record.ActorID, record.DisplayName, record.IdempotencyKey,
 		record.TemporalScheduleID, record.TemporalNamespace, record.TaskQueue, record.State,
-		int(record.IntervalSeconds), record.SourceRepositoryID, record.WorkflowPath, record.Ref, inputs, record.CreatedAt, record.UpdatedAt)
+		int(record.IntervalSeconds), record.ProjectID, record.SourceRepositoryID, record.WorkflowPath, record.Ref, inputs, record.CreatedAt, record.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("insert execution schedule: %w", err)
 	}
@@ -529,7 +547,7 @@ func (s *Service) loadSchedule(ctx context.Context, orgID uint64, scheduleID uui
 	row := s.pgx.QueryRow(ctx, `SELECT
 		schedule_id, org_id, actor_id, display_name, idempotency_key,
 		temporal_schedule_id, temporal_namespace, task_queue, state,
-		interval_seconds, source_repository_id, workflow_path, ref, inputs_json, created_at, updated_at
+		interval_seconds, project_id, source_repository_id, workflow_path, ref, inputs_json, created_at, updated_at
 		FROM execution_schedules
 		WHERE org_id = $1 AND schedule_id = $2`, orgID, scheduleID)
 	record, err := scanScheduleRecord(row)
@@ -546,7 +564,7 @@ func (s *Service) loadScheduleByIdempotencyKey(ctx context.Context, orgID uint64
 	row := s.pgx.QueryRow(ctx, `SELECT
 		schedule_id, org_id, actor_id, display_name, idempotency_key,
 		temporal_schedule_id, temporal_namespace, task_queue, state,
-		interval_seconds, source_repository_id, workflow_path, ref, inputs_json, created_at, updated_at
+		interval_seconds, project_id, source_repository_id, workflow_path, ref, inputs_json, created_at, updated_at
 		FROM execution_schedules
 		WHERE org_id = $1 AND idempotency_key = $2`, orgID, strings.TrimSpace(idempotencyKey))
 	record, err := scanScheduleRecord(row)
@@ -573,7 +591,7 @@ func (s *Service) updateScheduleState(ctx context.Context, scheduleID uuid.UUID,
 func (s *Service) loadDispatches(ctx context.Context, scheduleID uuid.UUID) ([]DispatchRecord, error) {
 	rows, err := s.pgx.Query(ctx, `SELECT
 		dispatch_id, schedule_id, temporal_workflow_id, temporal_run_id, source_workflow_run_id,
-		workflow_state, state, failure_reason, scheduled_at, submitted_at, created_at, updated_at
+		project_id, workflow_state, state, failure_reason, scheduled_at, submitted_at, created_at, updated_at
 		FROM execution_schedule_dispatches
 		WHERE schedule_id = $1
 		ORDER BY created_at DESC, dispatch_id DESC
@@ -600,15 +618,15 @@ func (s *Service) recordDispatchStart(ctx context.Context, scheduleID uuid.UUID,
 	now := time.Now().UTC()
 	row := s.pgx.QueryRow(ctx, `INSERT INTO execution_schedule_dispatches (
 		dispatch_id, schedule_id, temporal_workflow_id, temporal_run_id,
-		state, failure_reason, scheduled_at, submitted_at, created_at, updated_at
-	) VALUES ($1,$2,$3,$4,$5,'',$6,NULL,$7,$7)
+		project_id, state, failure_reason, scheduled_at, submitted_at, created_at, updated_at
+	) VALUES ($1,$2,$3,$4,$5,$6,'',$7,NULL,$8,$8)
 	ON CONFLICT (schedule_id, temporal_workflow_id, temporal_run_id)
 	DO UPDATE SET updated_at = EXCLUDED.updated_at
 	RETURNING
 		dispatch_id, schedule_id, temporal_workflow_id, temporal_run_id, source_workflow_run_id,
-		workflow_state, state, failure_reason, scheduled_at, submitted_at, created_at, updated_at`,
+		project_id, workflow_state, state, failure_reason, scheduled_at, submitted_at, created_at, updated_at`,
 		uuid.New(), scheduleID, strings.TrimSpace(input.TemporalWorkflowID), strings.TrimSpace(input.TemporalRunID),
-		DispatchStatePending, input.ScheduledAt.UTC(), now)
+		strings.TrimSpace(input.ProjectID), DispatchStatePending, input.ScheduledAt.UTC(), now)
 	record, err := scanDispatchRecord(row)
 	if err != nil {
 		return DispatchRecord{}, err
@@ -668,6 +686,9 @@ func normalizeCreateRequest(req CreateRequest) (CreateRequest, error) {
 	if req.IdempotencyKey == "" {
 		return CreateRequest{}, fmt.Errorf("%w: idempotency_key is required", ErrInvalid)
 	}
+	if req.ProjectID == uuid.Nil {
+		return CreateRequest{}, fmt.Errorf("%w: project_id is required", ErrInvalid)
+	}
 	if req.SourceRepositoryID == uuid.Nil {
 		return CreateRequest{}, fmt.Errorf("%w: source_repository_id is required", ErrInvalid)
 	}
@@ -688,6 +709,7 @@ func normalizeCreateRequest(req CreateRequest) (CreateRequest, error) {
 
 func scheduleMatchesCreateRequest(record ScheduleRecord, req CreateRequest) bool {
 	return record.DisplayName == req.DisplayName &&
+		record.ProjectID == req.ProjectID &&
 		record.SourceRepositoryID == req.SourceRepositoryID &&
 		record.WorkflowPath == req.WorkflowPath &&
 		record.Ref == req.Ref &&
@@ -730,6 +752,7 @@ func scanScheduleRecord(scanner interface {
 		&record.TaskQueue,
 		&record.State,
 		&intervalSeconds,
+		&record.ProjectID,
 		&record.SourceRepositoryID,
 		&record.WorkflowPath,
 		&record.Ref,
@@ -762,6 +785,7 @@ func scanDispatchRecord(scanner interface {
 		&record.TemporalWorkflowID,
 		&record.TemporalRunID,
 		&record.SourceWorkflowRunID,
+		&record.ProjectID,
 		&record.WorkflowState,
 		&record.State,
 		&record.FailureReason,

@@ -11,8 +11,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/forge-metal/billing-service/internal/billing/ledger"
-	"github.com/forge-metal/envconfig"
+	"github.com/verself/billing-service/internal/billing/ledger"
+	"github.com/verself/envconfig"
 )
 
 type accountRow struct {

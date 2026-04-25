@@ -15,7 +15,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-var tracer = otel.Tracer("github.com/forge-metal/temporal-platform/spiffeauth")
+var tracer = otel.Tracer("github.com/verself/temporal-platform/spiffeauth")
 
 type Config struct {
 	systemRoles    map[string]authorization.Role
@@ -27,16 +27,16 @@ func LoadFromEnv() (*Config, error) {
 		systemRoles:    map[string]authorization.Role{},
 		namespaceRoles: map[string]map[string]authorization.Role{},
 	}
-	if err := cfg.mergeSystemRoleEnv("FM_TEMPORAL_SYSTEM_ADMIN_IDS", authorization.RoleAdmin); err != nil {
+	if err := cfg.mergeSystemRoleEnv("VERSELF_TEMPORAL_SYSTEM_ADMIN_IDS", authorization.RoleAdmin); err != nil {
 		return nil, err
 	}
-	if err := cfg.mergeSystemRoleEnv("FM_TEMPORAL_SYSTEM_WRITER_IDS", authorization.RoleWriter); err != nil {
+	if err := cfg.mergeSystemRoleEnv("VERSELF_TEMPORAL_SYSTEM_WRITER_IDS", authorization.RoleWriter); err != nil {
 		return nil, err
 	}
-	if err := cfg.mergeSystemRoleEnv("FM_TEMPORAL_SYSTEM_READER_IDS", authorization.RoleReader); err != nil {
+	if err := cfg.mergeSystemRoleEnv("VERSELF_TEMPORAL_SYSTEM_READER_IDS", authorization.RoleReader); err != nil {
 		return nil, err
 	}
-	if err := cfg.mergeNamespaceRoleEnv("FM_TEMPORAL_NAMESPACE_ROLES"); err != nil {
+	if err := cfg.mergeNamespaceRoleEnv("VERSELF_TEMPORAL_NAMESPACE_ROLES"); err != nil {
 		return nil, err
 	}
 	return cfg, nil

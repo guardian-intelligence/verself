@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { requireOperatorDomain } from "@forge-metal/web-env";
+import { requireOperatorDomain } from "@verself/web-env";
 
 import { VERSIONS, formatPrettyDate } from "~/lib/policy-catalog";
 import {
@@ -19,11 +19,11 @@ export const Route = createFileRoute("/policy/changelog")({
   loader: () => getOperatorDomain(),
   head: () => ({
     meta: [
-      { title: "Policy Changelog — Forge Metal Platform" },
+      { title: "Policy Changelog — Verself Platform" },
       {
         name: "description",
         content:
-          "Every policy change Forge Metal has announced, in the order it took effect, rendered from the canonical versions.yml source.",
+          "Every policy change Verself has announced, in the order it took effect, rendered from the canonical versions.yml source.",
       },
     ],
   }),

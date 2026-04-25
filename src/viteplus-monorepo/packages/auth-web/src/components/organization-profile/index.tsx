@@ -1,9 +1,9 @@
 import { useForm } from "@tanstack/react-form";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { Button } from "@forge-metal/ui/components/ui/button";
-import { Input } from "@forge-metal/ui/components/ui/input";
-import { Label } from "@forge-metal/ui/components/ui/label";
+import { Button } from "@verself/ui/components/ui/button";
+import { Input } from "@verself/ui/components/ui/input";
+import { Label } from "@verself/ui/components/ui/label";
 import {
   PageSection,
   PageSections,
@@ -11,10 +11,10 @@ import {
   SectionHeader,
   SectionHeaderContent,
   SectionTitle,
-} from "@forge-metal/ui/components/ui/page";
-import { Select } from "@forge-metal/ui/components/ui/select";
-import { Switch } from "@forge-metal/ui/components/ui/switch";
-import { toast } from "@forge-metal/ui/components/ui/sonner";
+} from "@verself/ui/components/ui/page";
+import { Select } from "@verself/ui/components/ui/select";
+import { Switch } from "@verself/ui/components/ui/switch";
+import { toast } from "@verself/ui/components/ui/sonner";
 import {
   Table,
   TableBody,
@@ -22,7 +22,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@forge-metal/ui/components/ui/table";
+} from "@verself/ui/components/ui/table";
 import {
   useInviteMemberMutation,
   usePutMemberCapabilitiesMutation,

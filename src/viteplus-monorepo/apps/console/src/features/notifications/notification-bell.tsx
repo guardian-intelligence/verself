@@ -2,19 +2,19 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Bell, Check, CheckCheck, Inbox, Loader2, Send, Trash2, X } from "lucide-react";
-import { useSignedInAuth } from "@forge-metal/auth-web/react";
-import { ElapsedTime } from "@forge-metal/ui/components/elapsed-time";
-import { Badge } from "@forge-metal/ui/components/ui/badge";
-import { Button } from "@forge-metal/ui/components/ui/button";
+import { useSignedInAuth } from "@verself/auth-web/react";
+import { ElapsedTime } from "@verself/ui/components/elapsed-time";
+import { Badge } from "@verself/ui/components/ui/badge";
+import { Button } from "@verself/ui/components/ui/button";
 import {
   Popover,
   PopoverContent,
   PopoverHeader,
   PopoverTitle,
   PopoverTrigger,
-} from "@forge-metal/ui/components/ui/popover";
-import { Skeleton } from "@forge-metal/ui/components/ui/skeleton";
-import { cn } from "@forge-metal/ui";
+} from "@verself/ui/components/ui/popover";
+import { Skeleton } from "@verself/ui/components/ui/skeleton";
+import { cn } from "@verself/ui";
 import {
   Page,
   PageActions,
@@ -24,7 +24,7 @@ import {
   PageSection,
   PageSections,
   PageTitle,
-} from "@forge-metal/ui/components/ui/page";
+} from "@verself/ui/components/ui/page";
 import { ErrorCallout } from "~/components/error-callout";
 import { formatDateTimeUTC } from "~/lib/format";
 import type { Notification } from "~/server-fns/api";

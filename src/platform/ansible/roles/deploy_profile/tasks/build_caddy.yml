@@ -27,5 +27,5 @@
 - name: Copy Caddy binary to server
   ansible.builtin.copy:
     src: "{{ deploy_profile_repo_root }}/.build/caddy"
-    dest: "{{ fm_bin }}/caddy"
+    dest: "{{ verself_bin }}/caddy"
     mode: "0755"

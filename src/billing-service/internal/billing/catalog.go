@@ -6,7 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/forge-metal/billing-service/internal/store"
+	"github.com/verself/billing-service/internal/store"
 )
 
 func (c *Client) EnsureOrg(ctx context.Context, orgID OrgID, displayName string, trustTier string) error {

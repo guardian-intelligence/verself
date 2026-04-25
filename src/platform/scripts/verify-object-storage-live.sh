@@ -13,8 +13,8 @@ mkdir -p "${artifact_dir}/clickhouse"
 
 window_start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 s3_url="https://127.0.0.1:4256"
-s3_ca_cert="/etc/forge-metal/local-cas/object-storage-s3-ca.pem"
-proof_bin="/opt/forge-metal/profile/bin/object-storage-proof"
+s3_ca_cert="/etc/verself/local-cas/object-storage-s3-ca.pem"
+proof_bin="/opt/verself/profile/bin/object-storage-proof"
 garage_admin_port="3903"
 garage_failed_instance="1"
 garage_failed_admin_port="3913"
@@ -147,7 +147,7 @@ wait_for_clickhouse_count default "
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
     AND ServiceName = 'secrets-service'
     AND SpanName = 'secrets.platform.resolve'
-    AND SpanAttributes['forge_metal.runtime_secret_consumer'] = 'object-storage-service'
+    AND SpanAttributes['verself.runtime_secret_consumer'] = 'object-storage-service'
 " 1 "${artifact_dir}/clickhouse/object-storage-secrets-resolve-count.tsv"
 
 assert_clickhouse_zero default "

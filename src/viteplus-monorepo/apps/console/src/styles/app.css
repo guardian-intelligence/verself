@@ -3,7 +3,7 @@
 /*
  * Tailwind v4 auto-detects source files in this app's directory tree but
  * does not follow the module graph into sibling workspace packages. Any
- * utility class referenced only inside @forge-metal/ui or /auth-web
+ * utility class referenced only inside @verself/ui or /auth-web
  * primitives (Card/Table padding, gap-6, bg-card, etc.) must be registered
  * here or it never reaches the final stylesheet.
  * https://tailwindcss.com/docs/detecting-classes-in-source-files
@@ -34,7 +34,7 @@
   --color-success: oklch(0.6 0.2 145);
   --color-warning: oklch(0.75 0.18 85);
   --color-danger: oklch(0.577 0.245 27.325);
-  /* Sidebar palette consumed by @forge-metal/ui's Sidebar block. Kept
+  /* Sidebar palette consumed by @verself/ui's Sidebar block. Kept
      distinct from the core tokens so the rail can carry its own visual
      weight: sidebar-accent is deliberately darker than --color-muted so
      a low-opacity rest tint (/25) is still legible against the sidebar

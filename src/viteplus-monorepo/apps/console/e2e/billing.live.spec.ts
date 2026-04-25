@@ -276,7 +276,7 @@ test.describe("Console Billing", () => {
           );
         },
       );
-      expect(document.document_number).toMatch(/^FM-\d{4}-\d{6}$/);
+      expect(document.document_number).toMatch(/^VS-\d{4}-\d{6}$/);
 
       run.detail_url = "/settings/billing";
       run.finished_balance = await app.readBalance();

@@ -109,7 +109,7 @@ windows:
 
   - id: backups
     label: Backups
-    description: Forge Metal does not currently offer a backup product. Customers are responsible for their own backups unless a backup product is purchased. Export during the retention window is not a substitute for backups.
+    description: Verself does not currently offer a backup product. Customers are responsible for their own backups unless a backup product is purchased. Export during the retention window is not a substitute for backups.
     active: { kind: not_provided }
     past_due: { kind: not_provided }
     suspended: { kind: not_provided }
@@ -146,7 +146,7 @@ extensions:
     - granted_at
 
 legal_hold:
-  behavior: When Forge Metal receives valid legal process or issues a preservation hold, the retention clock is paused for the scope of the hold and resumes when the hold is lifted. A hold supersedes the account's state-transition schedule but does not restore compute.
+  behavior: When Verself receives valid legal process or issues a preservation hold, the retention clock is paused for the scope of the hold and resumes when the hold is lifted. A hold supersedes the account's state-transition schedule but does not restore compute.
 
 deletion:
   soft_delete: false

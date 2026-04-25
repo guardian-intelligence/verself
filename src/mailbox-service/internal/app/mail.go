@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/forge-metal/mailbox-service/internal/jmap"
-	"github.com/forge-metal/mailbox-service/internal/mailstore"
+	"github.com/verself/mailbox-service/internal/jmap"
+	"github.com/verself/mailbox-service/internal/mailstore"
 )
 
 func (s *Service) ResolveBoundAccount(ctx context.Context, subject string) (string, error) {

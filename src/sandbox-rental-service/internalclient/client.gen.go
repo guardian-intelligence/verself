@@ -74,6 +74,7 @@ type InternalRegisterRunnerRepositoryRequest struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema               *string                                         `json:"$schema,omitempty"`
 	OrgId                string                                          `json:"org_id"`
+	ProjectId            string                                          `json:"project_id"`
 	Provider             InternalRegisterRunnerRepositoryRequestProvider `json:"provider"`
 	ProviderOwner        string                                          `json:"provider_owner"`
 	ProviderRepo         string                                          `json:"provider_repo"`
@@ -89,6 +90,7 @@ type InternalRegisterRunnerRepositoryRequestProvider string
 type InternalRunnerRepositoryRegistration struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema               *string `json:"$schema,omitempty"`
+	ProjectId            string  `json:"project_id"`
 	Provider             string  `json:"provider"`
 	ProviderRepositoryId string  `json:"provider_repository_id"`
 	SourceRepositoryId   *string `json:"source_repository_id,omitempty"`

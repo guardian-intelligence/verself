@@ -42,13 +42,13 @@ if ! python3 -c "import socket; socket.create_connection(('127.0.0.1', ${port}),
   exit 1
 fi
 
-export FORGE_METAL_OTLP_ENDPOINT="127.0.0.1:${port}"
-export FORGE_METAL_DEPLOY_KIND="${FORGE_METAL_DEPLOY_KIND:-observe}"
+export VERSELF_OTLP_ENDPOINT="127.0.0.1:${port}"
+export VERSELF_DEPLOY_KIND="${VERSELF_DEPLOY_KIND:-observe}"
 
 # Derive stable correlation for the observe command's OTel spans.
 # shellcheck source=src/platform/scripts/deploy_identity.sh
 source "${script_dir}/deploy_identity.sh"
-export FM_OBSERVE_RUN_ID="${FM_OBSERVE_RUN_ID:-${FORGE_METAL_DEPLOY_RUN_KEY}}"
+export VERSELF_OBSERVE_RUN_ID="${VERSELF_OBSERVE_RUN_ID:-${VERSELF_DEPLOY_RUN_KEY}}"
 
 cd "${repo_root}"
 exec go run ./src/otel/cmd/observe --platform-root "${platform_root}" "$@"

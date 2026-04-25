@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { deriveHTTPSOrigin, requireOperatorDomain } from "@forge-metal/web-env";
+import { deriveHTTPSOrigin, requireOperatorDomain } from "@verself/web-env";
 import {
   Page,
   PageDescription,
@@ -12,7 +12,7 @@ import {
   SectionHeader,
   SectionHeaderContent,
   SectionTitle,
-} from "@forge-metal/ui/components/ui/page";
+} from "@verself/ui/components/ui/page";
 import { SourceRepositoriesPanel } from "~/features/source/components";
 import { loadSourceDashboard } from "~/features/source/queries";
 
@@ -40,7 +40,7 @@ function SourcePage() {
         <PageHeaderContent>
           <PageTitle>Source</PageTitle>
           <PageDescription>
-            Branches and repository state for the project repository.
+            Project-scoped repositories, branches, and hosted Git credentials.
           </PageDescription>
         </PageHeaderContent>
       </PageHeader>
@@ -49,7 +49,7 @@ function SourcePage() {
         <PageSection>
           <SectionHeader>
             <SectionHeaderContent>
-              <SectionTitle>Project repository</SectionTitle>
+              <SectionTitle>Repositories</SectionTitle>
             </SectionHeaderContent>
           </SectionHeader>
           <SourceRepositoriesPanel gitOrigin={gitOrigin} />

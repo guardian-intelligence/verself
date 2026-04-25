@@ -1,4 +1,4 @@
-# sops configuration for forge-metal secrets.
+# sops configuration for verself secrets.
 # The age public key is written by: ansible-playbook playbooks/setup-sops.yml
 #
 # Encrypted files (*.sops.yml) are safe to commit.

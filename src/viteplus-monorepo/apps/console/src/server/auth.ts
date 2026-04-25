@@ -1,5 +1,5 @@
-import { createAuthConfig } from "@forge-metal/auth-web/config";
-import { deriveAuthIssuerURL, requireEnv, requireURLFromEnv } from "@forge-metal/web-env";
+import { createAuthConfig } from "@verself/auth-web/config";
+import { deriveAuthIssuerURL, requireEnv, requireURLFromEnv } from "@verself/web-env";
 
 export function getAuthConfig() {
   const authProjectID = requireEnv("AUTH_PROJECT_ID");

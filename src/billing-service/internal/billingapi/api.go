@@ -11,14 +11,14 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
-	"github.com/forge-metal/apiwire"
-	workloadauth "github.com/forge-metal/auth-middleware/workload"
-	"github.com/forge-metal/billing-service/internal/billing"
+	"github.com/verself/apiwire"
+	workloadauth "github.com/verself/auth-middleware/workload"
+	"github.com/verself/billing-service/internal/billing"
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 )
 
 const (
-	problemTypeNoStripeCustomer = "urn:forge-metal:problem:billing:no-stripe-customer"
+	problemTypeNoStripeCustomer = "urn:verself:problem:billing:no-stripe-customer"
 )
 
 type Config struct {

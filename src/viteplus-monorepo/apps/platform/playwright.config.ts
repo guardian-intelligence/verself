@@ -1,5 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
-import { deriveAppBaseURL } from "@forge-metal/web-env";
+import { deriveAppBaseURL } from "@verself/web-env";
 
 const BASE_URL = deriveAppBaseURL("platform");
 

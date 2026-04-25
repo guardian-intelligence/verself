@@ -9,11 +9,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/forge-metal/vm-orchestrator/vmproto"
+	"github.com/verself/vm-orchestrator/vmproto"
 )
 
 const (
-	bridgeSocketDir  = "/run/forge-metal"
+	bridgeSocketDir  = "/run/verself"
 	bridgeSocketPath = bridgeSocketDir + "/vm-bridge.sock"
 )
 

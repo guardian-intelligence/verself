@@ -17,7 +17,7 @@ spire_socket="unix:///run/spire-agent/sockets/agent.sock"
 temporal_server_spiffe_id="spiffe://${trust_domain}/svc/temporal-server"
 temporal_frontend_address="127.0.0.1:7233"
 temporal_metrics_address="127.0.0.1:9001"
-temporal_bootstrap_bin="/opt/forge-metal/profile/bin/temporal-bootstrap"
+temporal_bootstrap_bin="/opt/verself/profile/bin/temporal-bootstrap"
 temporal_sandbox_namespace="sandbox-rental-service"
 temporal_billing_namespace="billing-service"
 
@@ -33,9 +33,9 @@ remote_temporal_bootstrap() {
     env
     "SPIFFE_ENDPOINT_SOCKET=${spire_socket}"
     "OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317"
-    "FM_TEMPORAL_FRONTEND_ADDRESS=${temporal_frontend_address}"
-    "FM_TEMPORAL_BOOTSTRAP_NAMESPACES=${temporal_sandbox_namespace},${temporal_billing_namespace}"
-    "FM_TEMPORAL_BOOTSTRAP_NAMESPACE_RETENTION=24h"
+    "VERSELF_TEMPORAL_FRONTEND_ADDRESS=${temporal_frontend_address}"
+    "VERSELF_TEMPORAL_BOOTSTRAP_NAMESPACES=${temporal_sandbox_namespace},${temporal_billing_namespace}"
+    "VERSELF_TEMPORAL_BOOTSTRAP_NAMESPACE_RETENTION=24h"
     "${temporal_bootstrap_bin}"
   )
   local remote_cmd=""
@@ -101,14 +101,14 @@ wait_for_remote_tcp "Temporal metrics" "127.0.0.1" "9001"
 verification_ssh "sudo systemctl is-active temporal-server temporal-web" \
   >"${artifact_dir}/systemd-active.txt"
 
-verification_ssh "test ! -e /opt/forge-metal/profile/bin/temporal-proof"
+verification_ssh "test ! -e /opt/verself/profile/bin/temporal-proof"
 printf 'absent\n' >"${artifact_dir}/temporal-proof-binary.txt"
 
 verification_ssh "test ! -e /etc/systemd/system/temporal-proof-worker.service"
 printf 'absent\n' >"${artifact_dir}/temporal-proof-worker-unit.txt"
 
-if verification_ssh "sudo /opt/forge-metal/profile/bin/spire-server entry show -socketPath /run/spire-server/private/api.sock | grep -q 'forge-metal-temporal-proof'"; then
-  echo "unexpected retired forge-metal-temporal-proof SPIRE entry remains" >&2
+if verification_ssh "sudo /opt/verself/profile/bin/spire-server entry show -socketPath /run/spire-server/private/api.sock | grep -q 'verself-temporal-proof'"; then
+  echo "unexpected retired verself-temporal-proof SPIRE entry remains" >&2
   exit 1
 fi
 printf 'absent\n' >"${artifact_dir}/temporal-proof-spire-entry.txt"

@@ -1,10 +1,10 @@
 @import "tailwindcss";
-@import "@forge-metal/brand/tokens.css";
+@import "@verself/brand/tokens.css";
 
 /*
  * Tailwind v4 auto-detects source files in this app's directory tree but
  * does not follow the module graph into sibling workspace packages. Any
- * utility class referenced only inside @forge-metal/ui or @forge-metal/brand
+ * utility class referenced only inside @verself/ui or @verself/brand
  * primitives must be registered here or it never reaches the final stylesheet.
  * https://tailwindcss.com/docs/detecting-classes-in-source-files
  */

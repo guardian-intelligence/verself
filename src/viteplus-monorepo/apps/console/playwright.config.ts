@@ -1,8 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
-import { deriveAppBaseURL } from "@forge-metal/web-env";
+import { deriveAppBaseURL } from "@verself/web-env";
 
 const BASE_URL = deriveAppBaseURL("console");
-const RECORD_VERIFICATION_ARTIFACTS = process.env.FORGE_METAL_RECORD_ARTIFACTS === "1";
+const RECORD_VERIFICATION_ARTIFACTS = process.env.VERSELF_RECORD_ARTIFACTS === "1";
 
 export default defineConfig({
   testDir: "./e2e",

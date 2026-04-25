@@ -7,7 +7,7 @@
 - name: Restart Firecracker networking
   listen: restart firecracker networking
   ansible.builtin.systemd:
-    name: forge-metal-firecracker-network.service
+    name: verself-firecracker-network.service
     state: restarted
     daemon_reload: true
 

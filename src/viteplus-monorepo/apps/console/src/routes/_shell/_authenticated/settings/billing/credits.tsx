@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Button } from "@forge-metal/ui/components/ui/button";
-import { Card, CardContent } from "@forge-metal/ui/components/ui/card";
+import { Button } from "@verself/ui/components/ui/button";
+import { Card, CardContent } from "@verself/ui/components/ui/card";
 import {
   PageEyebrow,
   PageSection,
@@ -9,7 +9,7 @@ import {
   SectionHeader,
   SectionHeaderContent,
   SectionTitle,
-} from "@forge-metal/ui/components/ui/page";
+} from "@verself/ui/components/ui/page";
 import { ErrorCallout } from "~/components/error-callout";
 import { useCreateCheckoutSessionMutation } from "~/features/billing/mutations";
 

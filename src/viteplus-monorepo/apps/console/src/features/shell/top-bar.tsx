@@ -1,6 +1,6 @@
 import { ClientOnly } from "@tanstack/react-router";
-import { SignedIn } from "@forge-metal/auth-web/components";
-import { SidebarTrigger } from "@forge-metal/ui/components/ui/sidebar";
+import { SignedIn } from "@verself/auth-web/components";
+import { SidebarTrigger } from "@verself/ui/components/ui/sidebar";
 import {
   NotificationBell,
   NotificationBellFallback,

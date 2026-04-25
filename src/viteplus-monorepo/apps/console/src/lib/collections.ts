@@ -1,5 +1,5 @@
 import * as v from "valibot";
-import { authCollectionId, type AuthenticatedAuth } from "@forge-metal/auth-web/isomorphic";
+import { authCollectionId, type AuthenticatedAuth } from "@verself/auth-web/isomorphic";
 import {
   electricAndWhere,
   createElectricShapeCollection,
@@ -8,7 +8,7 @@ import {
   requireDecimalID,
   requireElectricOpaqueID,
   requireUUID,
-} from "@forge-metal/web-env";
+} from "@verself/web-env";
 
 // Module-level cache of live collections keyed by their stable `id`. Route
 // components call the factories below from a `useMemo`, which is per-mount

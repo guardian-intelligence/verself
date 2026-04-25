@@ -8,7 +8,7 @@ import {
   PageSection,
   PageSections,
   PageTitle,
-} from "@forge-metal/ui/components/ui/page";
+} from "@verself/ui/components/ui/page";
 import { ExecutionScheduleForm } from "~/features/schedules/components";
 import { loadSourceRepositories } from "~/features/source/queries";
 

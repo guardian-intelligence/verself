@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { AppChrome } from "@forge-metal/brand";
+import { AppChrome } from "@verself/brand";
 
 // _workshop — Guardian's default layout. Every URL that is not /letters/* or
 // /newsroom lives here: /, /company, /careers, /changelog, /contact, /press,
@@ -62,7 +62,7 @@ function WorkshopFooter() {
         </FooterColumn>
         <FooterColumn heading="Solutions">
           <FooterLink to="/solutions">Overview</FooterLink>
-          <FooterExternal href="https://platform.anveio.com">Metal Platform</FooterExternal>
+          <FooterExternal href="https://platform.anveio.com">Verself Platform</FooterExternal>
         </FooterColumn>
         <FooterColumn heading="Read">
           <FooterLink to="/letters">Letters</FooterLink>

@@ -13,7 +13,7 @@ import (
 	"github.com/stripe/stripe-go/v85"
 	"github.com/stripe/stripe-go/v85/webhook"
 
-	"github.com/forge-metal/billing-service/internal/store"
+	"github.com/verself/billing-service/internal/store"
 )
 
 func (c *Client) CreateCheckoutSession(ctx context.Context, orgID OrgID, productID string, params CheckoutParams) (string, error) {
@@ -141,25 +141,25 @@ func (c *Client) collectUpgradeInvoice(ctx context.Context, quote contractChange
 		metadata["provider_request_id"] = quote.ProviderRequestID
 	}
 	stripeID := cleanNonEmpty(quote.ProviderRequestID, quote.ChangeID)
-	createParams := &stripe.InvoiceCreateParams{AutoAdvance: stripe.Bool(false), CollectionMethod: stripe.String(string(stripe.InvoiceCollectionMethodChargeAutomatically)), Currency: stripe.String("usd"), Customer: stripe.String(customerID), DefaultPaymentMethod: stripe.String(paymentMethodID), Description: stripe.String("Forge Metal plan upgrade"), Metadata: metadata, PendingInvoiceItemsBehavior: stripe.String("exclude")}
-	createParams.SetIdempotencyKey("forge-metal:upgrade:" + stripeID + ":invoice")
+	createParams := &stripe.InvoiceCreateParams{AutoAdvance: stripe.Bool(false), CollectionMethod: stripe.String(string(stripe.InvoiceCollectionMethodChargeAutomatically)), Currency: stripe.String("usd"), Customer: stripe.String(customerID), DefaultPaymentMethod: stripe.String(paymentMethodID), Description: stripe.String("Verself plan upgrade"), Metadata: metadata, PendingInvoiceItemsBehavior: stripe.String("exclude")}
+	createParams.SetIdempotencyKey("verself:upgrade:" + stripeID + ":invoice")
 	invoice, err := c.stripe.V1Invoices.Create(ctx, createParams)
 	if err != nil {
 		return "", "", false, fmt.Errorf("create stripe upgrade invoice: %w", err)
 	}
 	itemParams := &stripe.InvoiceItemCreateParams{Amount: stripe.Int64(int64(quote.PriceDeltaCents)), Currency: stripe.String("usd"), Customer: stripe.String(customerID), Description: stripe.String("Prorated upgrade from " + quote.FromPlanID + " to " + quote.TargetPlanID), Invoice: stripe.String(invoice.ID), Metadata: metadata, Period: &stripe.InvoiceItemCreatePeriodParams{Start: stripe.Int64(quote.EffectiveAt.Unix()), End: stripe.Int64(quote.CycleEnd.Unix())}}
-	itemParams.SetIdempotencyKey("forge-metal:upgrade:" + stripeID + ":item")
+	itemParams.SetIdempotencyKey("verself:upgrade:" + stripeID + ":item")
 	if _, err := c.stripe.V1InvoiceItems.Create(ctx, itemParams); err != nil {
 		return "", invoice.ID, false, fmt.Errorf("create stripe upgrade invoice item: %w", err)
 	}
 	finalizeParams := &stripe.InvoiceFinalizeInvoiceParams{AutoAdvance: stripe.Bool(false)}
-	finalizeParams.SetIdempotencyKey("forge-metal:upgrade:" + stripeID + ":finalize")
+	finalizeParams.SetIdempotencyKey("verself:upgrade:" + stripeID + ":finalize")
 	finalized, err := c.stripe.V1Invoices.FinalizeInvoice(ctx, invoice.ID, finalizeParams)
 	if err != nil {
 		return "", invoice.ID, false, fmt.Errorf("finalize stripe upgrade invoice: %w", err)
 	}
 	payParams := &stripe.InvoicePayParams{PaymentMethod: stripe.String(paymentMethodID), OffSession: stripe.Bool(false)}
-	payParams.SetIdempotencyKey("forge-metal:upgrade:" + stripeID + ":pay")
+	payParams.SetIdempotencyKey("verself:upgrade:" + stripeID + ":pay")
 	paidInvoice, err := c.stripe.V1Invoices.Pay(ctx, finalized.ID, payParams)
 	if err != nil {
 		_ = c.updateUpgradeInvoiceProvider(ctx, quote, finalized.ID, finalized.HostedInvoiceURL, finalized.InvoicePDF, "issued", "pending")

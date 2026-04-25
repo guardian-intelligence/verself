@@ -119,7 +119,7 @@ does not give Workload API-driven certificate management or SPIFFE-based
 authorization decisions in the shape the platform needs.
 
 The platform therefore ships a repo-owned wrapper binary,
-`forge-temporal-server`, around the upstream server library. It injects:
+`verself-temporal-server`, around the upstream server library. It injects:
 
 - Workload API-backed TLS configs via `WithTLSConfigFactory`.
 - A claim mapper that extracts the peer SPIFFE URI-SAN into Temporal
@@ -225,7 +225,7 @@ The current operator surface is ClickHouse-first:
 
 - `make observe WHAT=temporal` for recent auth spans, bootstrap runs,
   logs, and live metric inventory.
-- Grafana dashboard `forge-metal-temporal`.
+- Grafana dashboard `verself-temporal`.
 - `default.otel_traces`, `default.otel_logs`, and
   `default.otel_metric_catalog_live` for Temporal traffic and health.
 - `temporal_visibility.executions_visibility` for workflow status and
@@ -244,7 +244,7 @@ This is enough to answer the practical operator questions:
 concrete things:
 
 1. Asserts the retired `temporal-proof` binary, `temporal-proof-worker`
-   unit, and `forge-metal-temporal-proof` SPIRE entry are absent.
+   unit, and `verself-temporal-proof` SPIRE entry are absent.
 2. Runs `temporal-bootstrap`, restarts `temporal-server`, and runs
    `temporal-bootstrap` again to prove the supported namespace-admin path
    is healthy after restart.
@@ -292,7 +292,7 @@ Tailwinds:
   [`change-data-capture.md`](change-data-capture.md),
   [`domain-event-stream.md`](domain-event-stream.md).
 - Implementation references:
-  `src/temporal-platform/cmd/forge-temporal-server/main.go`,
+  `src/temporal-platform/cmd/verself-temporal-server/main.go`,
   `src/temporal-platform/internal/tlsprovider/tlsprovider.go`,
   `src/temporal-platform/internal/spiffeauth/spiffeauth.go`,
   `src/platform/ansible/roles/temporal/*`,

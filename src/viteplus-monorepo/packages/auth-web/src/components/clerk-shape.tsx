@@ -1,7 +1,7 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { type ReactNode, useMemo } from "react";
-import { Avatar, AvatarFallback, AvatarImage } from "@forge-metal/ui/components/ui/avatar";
-import { Button, type buttonVariants } from "@forge-metal/ui/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@verself/ui/components/ui/avatar";
+import { Button, type buttonVariants } from "@verself/ui/components/ui/button";
 import { useAuth, useClerk, useSignedInAuth, useUser } from "../react.ts";
 import { useIdentityApi } from "./identity-api.ts";
 import { organizationQuery } from "./queries.ts";

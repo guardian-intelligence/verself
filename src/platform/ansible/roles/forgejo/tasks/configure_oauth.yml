@@ -4,7 +4,7 @@
 
 - name: List Forgejo auth sources
   ansible.builtin.command: >
-    {{ fm_bin }}/forgejo admin auth list --config /etc/forgejo/app.ini
+    {{ verself_bin }}/forgejo admin auth list --config /etc/forgejo/app.ini
   become: true
   become_user: forgejo
   environment:
@@ -32,7 +32,7 @@
 - name: Add Zitadel OAuth source
   ansible.builtin.command:
     argv:
-      - "{{ fm_bin }}/forgejo"
+      - "{{ verself_bin }}/forgejo"
       - admin
       - auth
       - add-oauth
@@ -68,7 +68,7 @@
 - name: Update Zitadel OAuth source
   ansible.builtin.command:
     argv:
-      - "{{ fm_bin }}/forgejo"
+      - "{{ verself_bin }}/forgejo"
       - admin
       - auth
       - update-oauth

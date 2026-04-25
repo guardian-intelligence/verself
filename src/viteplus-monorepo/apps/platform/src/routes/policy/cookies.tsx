@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { requireOperatorDomain } from "@forge-metal/web-env";
+import { requireOperatorDomain } from "@verself/web-env";
 
 import {
   ChangesSection,
@@ -20,11 +20,11 @@ export const Route = createFileRoute("/policy/cookies")({
   loader: () => getOperatorDomain(),
   head: () => ({
     meta: [
-      { title: "Cookie Policy — Forge Metal Platform" },
+      { title: "Cookie Policy — Verself Platform" },
       {
         name: "description",
         content:
-          "The cookies Forge Metal sets on customer-facing web surfaces and why each is strictly necessary to deliver the service.",
+          "The cookies Verself sets on customer-facing web surfaces and why each is strictly necessary to deliver the service.",
       },
     ],
   }),
@@ -58,7 +58,7 @@ function Summary() {
           because we do not set anything that requires one under GDPR or the ePrivacy Directive.
         </SummaryItem>
         <SummaryItem term="First-party only">
-          cookies are set by the Forge Metal domain. We do not include third-party trackers.
+          cookies are set by the Verself domain. We do not include third-party trackers.
         </SummaryItem>
         <SummaryItem term="Storage duration">
           is bounded by the session's lifetime; nothing persists beyond sign-out or the expiration
@@ -93,7 +93,7 @@ function Inventory() {
           </thead>
           <tbody>
             <tr className="border-b border-border [&_td]:px-4 [&_td]:py-3 [&_td]:align-top">
-              <td className="font-mono text-xs">fm_session</td>
+              <td className="font-mono text-xs">verself_session</td>
               <td className="text-muted-foreground">Strictly necessary</td>
               <td className="text-muted-foreground">
                 HTTP-only, SameSite=Lax session cookie backing the server-owned single sign-on
@@ -103,7 +103,7 @@ function Inventory() {
               <td className="text-muted-foreground">Session; rotated on sign-in</td>
             </tr>
             <tr className="border-b border-border last:border-b-0 [&_td]:px-4 [&_td]:py-3 [&_td]:align-top">
-              <td className="font-mono text-xs">fm_csrf</td>
+              <td className="font-mono text-xs">verself_csrf</td>
               <td className="text-muted-foreground">Strictly necessary</td>
               <td className="text-muted-foreground">
                 CSRF token paired with the session cookie to authorize state-changing server
@@ -140,8 +140,8 @@ function Controls() {
       <Prose>
         <p>
           Because we set only strictly necessary cookies, there is no consent banner to dismiss. You
-          can clear Forge Metal cookies from your browser at any time; doing so will end the session
-          and require re-authentication on the next request.
+          can clear Verself cookies from your browser at any time; doing so will end the session and
+          require re-authentication on the next request.
         </p>
       </Prose>
     </section>

@@ -13,7 +13,7 @@
     method: POST
     headers:
       Authorization: "Bearer {{ zitadel_project_roles_admin_pat }}"
-      Host: "auth.{{ forge_metal_domain }}"
+      Host: "auth.{{ verself_domain }}"
       Connect-Protocol-Version: "1"
     body_format: json
     body:
@@ -41,7 +41,7 @@
     method: POST
     headers:
       Authorization: "Bearer {{ zitadel_project_roles_admin_pat }}"
-      Host: "auth.{{ forge_metal_domain }}"
+      Host: "auth.{{ verself_domain }}"
       Connect-Protocol-Version: "1"
     body_format: json
     body:

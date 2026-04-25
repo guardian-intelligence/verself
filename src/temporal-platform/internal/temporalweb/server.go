@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	workloadauth "github.com/forge-metal/auth-middleware/workload"
+	workloadauth "github.com/verself/auth-middleware/workload"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"

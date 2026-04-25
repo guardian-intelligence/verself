@@ -10,7 +10,7 @@
     mode: "0700"
 
 - name: Generate WireGuard private key
-  ansible.builtin.command: "{{ fm_bin }}/wg genkey"
+  ansible.builtin.command: "{{ verself_bin }}/wg genkey"
   register: wireguard_private_key
   args:
     creates: /etc/wireguard/private.key
@@ -43,7 +43,7 @@
 - name: Generate WireGuard public key
   ansible.builtin.shell: |
     set -o pipefail
-    cat /etc/wireguard/private.key | {{ fm_bin }}/wg pubkey
+    cat /etc/wireguard/private.key | {{ verself_bin }}/wg pubkey
   register: wireguard_public_key
   args:
     executable: /bin/bash

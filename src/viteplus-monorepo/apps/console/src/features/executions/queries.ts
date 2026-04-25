@@ -1,5 +1,5 @@
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
-import { authQueryKey, type AuthenticatedAuth } from "@forge-metal/auth-web/isomorphic";
+import { authQueryKey, type AuthenticatedAuth } from "@verself/auth-web/isomorphic";
 import { getExecution } from "~/server-fns/api";
 import { ensureOrNotFound } from "~/lib/query-loader";
 import { isExecutionActiveStatus } from "./status";

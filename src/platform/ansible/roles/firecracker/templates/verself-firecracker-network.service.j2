@@ -1,0 +1,13 @@
+[Unit]
+Description=Configure verself Firecracker host networking
+After=verself-firewall.target network-online.target
+Requires=verself-firewall.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/verself-firecracker-network-setup
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

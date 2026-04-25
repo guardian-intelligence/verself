@@ -1,5 +1,5 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { anonymousAuth, requireAuth } from "@forge-metal/auth-web/isomorphic";
+import { anonymousAuth, requireAuth } from "@verself/auth-web/isomorphic";
 
 // Pathless auth gate nested inside _shell. All routes that require a
 // signed-in user live under here. The shell layout (sidebar + top bar)

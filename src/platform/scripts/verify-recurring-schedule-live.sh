@@ -21,6 +21,8 @@ sandbox_api_base_url="${BASE_URL:-https://sandbox.api.${VERIFICATION_DOMAIN}}"
 sandbox_api_base_url="${sandbox_api_base_url%/}"
 source_api_base_url="${SOURCE_CODE_HOSTING_PROOF_BASE_URL:-https://source.api.${VERIFICATION_DOMAIN}}"
 source_api_base_url="${source_api_base_url%/}"
+projects_api_base_url="${PROJECTS_PROOF_BASE_URL:-https://projects.api.${VERIFICATION_DOMAIN}}"
+projects_api_base_url="${projects_api_base_url%/}"
 window_start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 trust_domain="spiffe.${VERIFICATION_DOMAIN}"
 sandbox_service_spiffe_id="spiffe://${trust_domain}/svc/sandbox-rental-service"
@@ -43,6 +45,7 @@ esac
 # shellcheck disable=SC1090
 source <("${script_dir}/assume-persona.sh" "${proof_persona}" --print)
 source_access_token="${SOURCE_CODE_HOSTING_SERVICE_ACCESS_TOKEN:-${IDENTITY_SERVICE_ACCESS_TOKEN}}"
+projects_access_token="${PROJECTS_SERVICE_ACCESS_TOKEN:-${IDENTITY_SERVICE_ACCESS_TOKEN}}"
 
 billing_fixture_path="${artifact_dir}/billing-fixture.json"
 "${script_dir}/set-user-state.sh" \
@@ -77,7 +80,7 @@ sandbox_api_request() {
     -fsS
     -X "${method}"
     -H "Authorization: Bearer ${SANDBOX_RENTAL_TOKEN}"
-    -H "baggage: forge_metal.verification_run=${run_id}"
+    -H "baggage: verself.verification_run=${run_id}"
   )
   if [[ -n "${body_path}" ]]; then
     curl_args+=(
@@ -102,7 +105,7 @@ source_api_request() {
     -X "${method}"
     -H "Authorization: Bearer ${source_access_token}"
     -H "Accept: application/json"
-    -H "baggage: forge_metal.verification_run=${run_id}"
+    -H "baggage: verself.verification_run=${run_id}"
   )
   if [[ -n "${body_path}" ]]; then
     curl_args+=(
@@ -170,7 +173,7 @@ jobs:
   proof:
     runs-on: docker
     steps:
-      - run: echo forge-metal-recurring-proof run_id=${{ inputs.verification_run_id }}
+      - run: echo verself-recurring-proof run_id=${{ inputs.verification_run_id }}
 """
 payload = {
     "owner": os.environ["PROVIDER_OWNER"],
@@ -239,13 +242,48 @@ verification_wait_for_loopback_api "sandbox-rental-service" \
 verification_wait_for_loopback_api "source-code-hosting-service" \
   "http://127.0.0.1:4261/readyz" "200"
 
-source_repo_payload_path="${artifact_dir}/payloads/create-source-repo.json"
-python3 - "${run_id}" >"${source_repo_payload_path}" <<'PY'
+project_slug="recurring-proof-$(printf '%s' "${run_id}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/^-+|-+$//g' | cut -c1-48)"
+if [[ -z "${project_slug}" ]]; then
+  project_slug="recurring-proof"
+fi
+project_payload_path="${artifact_dir}/payloads/create-project.json"
+python3 - "${run_id}" "${project_slug}" >"${project_payload_path}" <<'PY'
 import json
 import sys
 
-run_id = sys.argv[1]
+run_id, project_slug = sys.argv[1:3]
 print(json.dumps({
+    "display_name": f"Recurring Proof {run_id}",
+    "slug": project_slug,
+    "description": "Recurring schedule proof project",
+}, indent=2, sort_keys=True))
+PY
+curl -fsS \
+  -X POST \
+  -H "Authorization: Bearer ${projects_access_token}" \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: recurring-project:${run_id}" \
+  -H "baggage: verself.verification_run=${run_id}" \
+  --data-binary "@${project_payload_path}" \
+  "${projects_api_base_url}/api/v1/projects" >"${artifact_dir}/responses/create-project.json"
+project_id="$(
+  python3 - "${artifact_dir}/responses/create-project.json" <<'PY'
+import json
+import sys
+
+print(json.load(open(sys.argv[1], encoding="utf-8"))["project_id"])
+PY
+)"
+
+source_repo_payload_path="${artifact_dir}/payloads/create-source-repo.json"
+python3 - "${run_id}" "${project_id}" >"${source_repo_payload_path}" <<'PY'
+import json
+import sys
+
+run_id, project_id = sys.argv[1:3]
+print(json.dumps({
+    "project_id": project_id,
     "name": f"Recurring Proof {run_id}",
     "description": "Recurring schedule workflow dispatch proof",
     "default_branch": "main",
@@ -263,29 +301,32 @@ PY
 
 escaped_source_repo_id="${source_repo_id//\'/\'\'}"
 remote_psql source_code_hosting "
-SELECT repo_id, org_id, provider, provider_owner, provider_repo, provider_repo_id
-FROM source_repositories
-WHERE repo_id = '${escaped_source_repo_id}'::uuid;
+SELECT r.repo_id, r.org_id, r.project_id, b.backend, b.backend_owner, b.backend_repo, b.backend_repo_id
+FROM source_repositories r
+JOIN source_repository_backends b ON b.repo_id = r.repo_id
+WHERE r.repo_id = '${escaped_source_repo_id}'::uuid
+  AND b.backend = 'forgejo';
 " >"${artifact_dir}/postgres/source_repository.tsv"
-read -r _source_repo_id _source_org_id provider provider_owner provider_repo provider_repo_id <"${artifact_dir}/postgres/source_repository.tsv"
-if [[ "${_source_org_id}" != "${org_id}" || "${provider}" != "forgejo" || -z "${provider_owner}" || -z "${provider_repo}" || -z "${provider_repo_id}" ]]; then
+read -r _source_repo_id _source_org_id _source_project_id provider provider_owner provider_repo provider_repo_id <"${artifact_dir}/postgres/source_repository.tsv"
+if [[ "${_source_org_id}" != "${org_id}" || "${_source_project_id}" != "${project_id}" || "${provider}" != "forgejo" || -z "${provider_owner}" || -z "${provider_repo}" || -z "${provider_repo_id}" ]]; then
   echo "source repository row did not include expected provider-neutral coordinates" >&2
   exit 1
 fi
 create_forgejo_workflow_file "${provider_owner}" "${provider_repo}" >"${artifact_dir}/responses/create-forgejo-workflow-file.json"
 
 payload_path="${artifact_dir}/payloads/create-schedule.json"
-python3 - "${run_id}" "${source_repo_id}" "${workflow_path}" "${interval_seconds}" >"${payload_path}" <<'PY'
+python3 - "${run_id}" "${project_id}" "${source_repo_id}" "${workflow_path}" "${interval_seconds}" >"${payload_path}" <<'PY'
 import json
 import sys
 
-run_id, source_repo_id, workflow_path, interval_seconds = sys.argv[1:5]
+run_id, project_id, source_repo_id, workflow_path, interval_seconds = sys.argv[1:6]
 print(json.dumps({
     "display_name": f"Recurring proof {run_id}",
     "idempotency_key": run_id,
     "interval_seconds": int(interval_seconds),
     "inputs": {"verification_run_id": run_id},
     "paused": True,
+    "project_id": project_id,
     "ref": "main",
     "source_repository_id": source_repo_id,
     "workflow_path": workflow_path,
@@ -294,17 +335,17 @@ PY
 
 sandbox_api_request "POST" "/api/v1/execution-schedules" "${artifact_dir}/responses/create-schedule.json" "${payload_path}"
 
-read -r schedule_id temporal_schedule_id created_state created_source_repo_id created_workflow_path <<<"$(
+read -r schedule_id temporal_schedule_id created_state created_project_id created_source_repo_id created_workflow_path <<<"$(
   python3 - "${artifact_dir}/responses/create-schedule.json" <<'PY'
 import json
 import sys
 
 payload = json.load(open(sys.argv[1], encoding="utf-8"))
-print(payload["schedule_id"], payload["temporal_schedule_id"], payload["state"], payload["source_repository_id"], payload["workflow_path"])
+print(payload["schedule_id"], payload["temporal_schedule_id"], payload["state"], payload["project_id"], payload["source_repository_id"], payload["workflow_path"])
 PY
 )"
 
-if [[ "${created_state}" != "paused" || "${created_source_repo_id}" != "${source_repo_id}" || "${created_workflow_path}" != "${workflow_path}" ]]; then
+if [[ "${created_state}" != "paused" || "${created_project_id}" != "${project_id}" || "${created_source_repo_id}" != "${source_repo_id}" || "${created_workflow_path}" != "${workflow_path}" ]]; then
   echo "created recurring schedule response did not match source workflow request" >&2
   exit 1
 fi
@@ -444,12 +485,14 @@ if [[ "${paused_cleanup_state}" != "paused" ]]; then
 fi
 
 source_api_request "GET" "/api/v1/workflow-runs/${source_workflow_run_id}" "${artifact_dir}/responses/source-workflow-run.json"
-python3 - "${artifact_dir}/responses/source-workflow-run.json" "${source_repo_id}" "${workflow_path}" "${run_id}" <<'PY'
+python3 - "${artifact_dir}/responses/source-workflow-run.json" "${project_id}" "${source_repo_id}" "${workflow_path}" "${run_id}" <<'PY'
 import json
 import sys
 
 payload = json.load(open(sys.argv[1], encoding="utf-8"))
-source_repo_id, workflow_path, run_id = sys.argv[2:5]
+project_id, source_repo_id, workflow_path, run_id = sys.argv[2:6]
+if payload.get("project_id") != project_id:
+    raise SystemExit("source workflow run project_id mismatch")
 if payload.get("repo_id") != source_repo_id:
     raise SystemExit("source workflow run repo_id mismatch")
 if payload.get("workflow_path") != workflow_path:
@@ -478,20 +521,20 @@ escaped_source_workflow_run_id="${source_workflow_run_id//\'/\'\'}"
 
 remote_psql sandbox_rental "
 SELECT schedule_id, org_id, state, temporal_schedule_id, temporal_namespace, task_queue,
-       interval_seconds, source_repository_id, workflow_path, ref, inputs_json
+       interval_seconds, project_id, source_repository_id, workflow_path, ref, inputs_json
 FROM execution_schedules
 WHERE schedule_id = '${escaped_schedule_id}';
 " >"${artifact_dir}/postgres/execution_schedule.tsv"
 
 remote_psql sandbox_rental "
 SELECT dispatch_id, schedule_id, temporal_workflow_id, temporal_run_id,
-       source_workflow_run_id, workflow_state, state, failure_reason
+       source_workflow_run_id, project_id, workflow_state, state, failure_reason
 FROM execution_schedule_dispatches
 WHERE dispatch_id = '${escaped_dispatch_id}';
 " >"${artifact_dir}/postgres/execution_schedule_dispatch.tsv"
 
 remote_psql source_code_hosting "
-SELECT workflow_run_id, org_id, repo_id, actor_id, provider, workflow_path, ref, state, failure_reason, trace_id
+SELECT workflow_run_id, org_id, project_id, repo_id, actor_id, provider, workflow_path, ref, state, failure_reason, trace_id
 FROM source_workflow_runs
 WHERE workflow_run_id = '${escaped_source_workflow_run_id}'::uuid;
 " >"${artifact_dir}/postgres/source_workflow_run.tsv"
@@ -518,6 +561,7 @@ python3 - \
   "${artifact_dir}/postgres/source_workflow_events.tsv" \
   "${artifact_dir}/postgres/temporal_visibility.tsv" \
   "${org_id}" \
+  "${project_id}" \
   "${source_repo_id}" \
   "${workflow_path}" \
   "${temporal_schedule_id}" \
@@ -529,7 +573,7 @@ import io
 import sys
 
 schedule_path, dispatch_path, workflow_path_tsv, events_path, temporal_path = sys.argv[1:6]
-org_id, source_repo_id, workflow_path, temporal_schedule_id, source_workflow_run_id, temporal_workflow_id, temporal_run_id = sys.argv[6:13]
+org_id, project_id, source_repo_id, workflow_path, temporal_schedule_id, source_workflow_run_id, temporal_workflow_id, temporal_run_id = sys.argv[6:14]
 
 def one_row(path, label):
     text = open(path, encoding="utf-8").read().rstrip("\r\n")
@@ -538,8 +582,8 @@ def one_row(path, label):
     return [cell.strip() for cell in next(csv.reader(io.StringIO(text), delimiter="\t"))]
 
 schedule = one_row(schedule_path, "execution_schedules")
-_, row_org_id, state, row_temporal_schedule_id, temporal_namespace, task_queue, interval_seconds, row_source_repo_id, row_workflow_path, ref, inputs_json = schedule
-if row_org_id != org_id or row_temporal_schedule_id != temporal_schedule_id or row_source_repo_id != source_repo_id:
+_, row_org_id, state, row_temporal_schedule_id, temporal_namespace, task_queue, interval_seconds, row_project_id, row_source_repo_id, row_workflow_path, ref, inputs_json = schedule
+if row_org_id != org_id or row_project_id != project_id or row_temporal_schedule_id != temporal_schedule_id or row_source_repo_id != source_repo_id:
     raise SystemExit("execution_schedules linkage mismatch")
 if state != "paused" or temporal_namespace != "sandbox-rental-service" or task_queue != "sandbox-rental-service.recurring-vm":
     raise SystemExit("execution_schedules state/Temporal metadata mismatch")
@@ -547,15 +591,15 @@ if row_workflow_path != workflow_path or ref != "main" or int(interval_seconds) 
     raise SystemExit("execution_schedules workflow fields mismatch")
 
 dispatch = one_row(dispatch_path, "execution_schedule_dispatches")
-_, _, row_temporal_workflow_id, row_temporal_run_id, row_source_workflow_run_id, workflow_state, dispatch_state, failure_reason = dispatch
+_, _, row_temporal_workflow_id, row_temporal_run_id, row_source_workflow_run_id, row_project_id, workflow_state, dispatch_state, failure_reason = dispatch
 if row_temporal_workflow_id != temporal_workflow_id or row_temporal_run_id != temporal_run_id:
     raise SystemExit("execution_schedule_dispatches temporal linkage mismatch")
-if row_source_workflow_run_id != source_workflow_run_id or workflow_state != "dispatched" or dispatch_state != "submitted" or failure_reason:
+if row_source_workflow_run_id != source_workflow_run_id or row_project_id != project_id or workflow_state != "dispatched" or dispatch_state != "submitted" or failure_reason:
     raise SystemExit("execution_schedule_dispatches source workflow state mismatch")
 
 workflow_run = one_row(workflow_path_tsv, "source_workflow_runs")
-row_workflow_run_id, row_workflow_org_id, row_repo_id, _actor_id, provider, row_workflow_path, row_ref, row_state, failure_reason, trace_id = workflow_run
-if row_workflow_run_id != source_workflow_run_id or row_workflow_org_id != org_id or row_repo_id != source_repo_id:
+row_workflow_run_id, row_workflow_org_id, row_project_id, row_repo_id, _actor_id, provider, row_workflow_path, row_ref, row_state, failure_reason, trace_id = workflow_run
+if row_workflow_run_id != source_workflow_run_id or row_workflow_org_id != org_id or row_project_id != project_id or row_repo_id != source_repo_id:
     raise SystemExit("source_workflow_runs linkage mismatch")
 if provider != "forgejo" or row_workflow_path != workflow_path or row_ref != "main" or row_state != "dispatched" or failure_reason or not trace_id:
     raise SystemExit("source_workflow_runs state/provider/trace mismatch")
@@ -584,7 +628,8 @@ wait_for_clickhouse_count default "
     AND ServiceName = 'sandbox-rental-service'
     AND SpanName = 'sandbox-rental.execution_schedule.create'
     AND SpanAttributes['sandbox.schedule_id'] = {schedule_id:String}
-" 1 "${artifact_dir}/clickhouse/create-span-count.tsv" --param_schedule_id="${schedule_id}"
+    AND SpanAttributes['verself.project_id'] = {project_id:String}
+" 1 "${artifact_dir}/clickhouse/create-span-count.tsv" --param_schedule_id="${schedule_id}" --param_project_id="${project_id}"
 
 wait_for_clickhouse_count default "
   SELECT count()
@@ -613,7 +658,8 @@ wait_for_clickhouse_count default "
     AND SpanName = 'sandbox-rental.execution_schedule.dispatch.submit'
     AND SpanAttributes['sandbox.dispatch_id'] = {dispatch_id:String}
     AND SpanAttributes['source.workflow_run_id'] = {source_workflow_run_id:String}
-" 1 "${artifact_dir}/clickhouse/dispatch-span-count.tsv" --param_dispatch_id="${dispatch_id}" --param_source_workflow_run_id="${source_workflow_run_id}"
+    AND SpanAttributes['verself.project_id'] = {project_id:String}
+" 1 "${artifact_dir}/clickhouse/dispatch-span-count.tsv" --param_dispatch_id="${dispatch_id}" --param_source_workflow_run_id="${source_workflow_run_id}" --param_project_id="${project_id}"
 
 wait_for_clickhouse_count default "
   SELECT count()
@@ -622,7 +668,8 @@ wait_for_clickhouse_count default "
     AND ServiceName = 'sandbox-rental-recurring-worker'
     AND SpanName = 'sandbox-rental.source.workflow.dispatch'
     AND SpanAttributes['source.workflow_run_id'] = {source_workflow_run_id:String}
-" 1 "${artifact_dir}/clickhouse/source-dispatch-client-span-count.tsv" --param_source_workflow_run_id="${source_workflow_run_id}"
+    AND SpanAttributes['verself.project_id'] = {project_id:String}
+" 1 "${artifact_dir}/clickhouse/source-dispatch-client-span-count.tsv" --param_source_workflow_run_id="${source_workflow_run_id}" --param_project_id="${project_id}"
 
 wait_for_clickhouse_count default "
   SELECT count()
@@ -631,7 +678,19 @@ wait_for_clickhouse_count default "
     AND ServiceName = 'source-code-hosting-service'
     AND SpanName IN ('source.workflow.dispatch', 'source.forgejo.workflow.dispatch', 'source.pg.workflow_run.create')
     AND SpanAttributes['source.workflow_run_id'] = {source_workflow_run_id:String}
-" 3 "${artifact_dir}/clickhouse/source-workflow-span-count.tsv" --param_source_workflow_run_id="${source_workflow_run_id}"
+    AND (SpanAttributes['verself.project_id'] = '' OR SpanAttributes['verself.project_id'] = {project_id:String})
+" 3 "${artifact_dir}/clickhouse/source-workflow-span-count.tsv" --param_source_workflow_run_id="${source_workflow_run_id}" --param_project_id="${project_id}"
+
+wait_for_clickhouse_count default "
+  SELECT count()
+  FROM otel_traces
+  WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
+    AND (
+      (ServiceName = 'source-code-hosting-service' AND SpanName = 'source.projects.resolve' AND SpanAttributes['verself.project_id'] = {project_id:String})
+      OR (ServiceName = 'source-code-hosting-service' AND SpanName = 'auth.spiffe.mtls.client' AND position(arrayElement(SpanAttributes, 'spiffe.expected_server_id'), 'projects-service') > 0)
+      OR (ServiceName = 'projects-service' AND SpanName IN ('auth.spiffe.mtls.server', 'projects.project.resolve', 'projects.pg.project.resolve'))
+    )
+" 4 "${artifact_dir}/clickhouse/source-projects-boundary-spans-count.tsv" --param_project_id="${project_id}"
 
 wait_for_clickhouse_count default "
   SELECT count()
@@ -648,6 +707,7 @@ wait_for_clickhouse_count default "
     --database default \
     --param_window_start="${window_start}" \
     --param_window_end="${window_end}" \
+    --param_project_id="${project_id}" \
     --param_schedule_id="${schedule_id}" \
     --param_source_workflow_run_id="${source_workflow_run_id}" \
     --param_sandbox_service_spiffe_id="${sandbox_service_spiffe_id}" \
@@ -661,6 +721,7 @@ wait_for_clickhouse_count default "
         ParentSpanId,
         SpanAttributes['sandbox.schedule_id'] AS schedule_id,
         SpanAttributes['sandbox.dispatch_id'] AS dispatch_id,
+        SpanAttributes['verself.project_id'] AS project_id,
         SpanAttributes['source.workflow_run_id'] AS source_workflow_run_id,
         SpanAttributes['source.workflow_path'] AS source_workflow_path,
         SpanAttributes['temporal.schedule_id'] AS temporal_schedule_id,
@@ -669,6 +730,7 @@ wait_for_clickhouse_count default "
       WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
         AND (
           SpanAttributes['sandbox.schedule_id'] = {schedule_id:String}
+          OR SpanAttributes['verself.project_id'] = {project_id:String}
           OR SpanAttributes['source.workflow_run_id'] = {source_workflow_run_id:String}
           OR SpanAttributes['spiffe.peer_id'] = {sandbox_service_spiffe_id:String}
         )
@@ -679,6 +741,7 @@ wait_for_clickhouse_count default "
 
 run_id="${run_id}" \
 org_id="${org_id}" \
+project_id="${project_id}" \
 source_repo_id="${source_repo_id}" \
 source_workflow_run_id="${source_workflow_run_id}" \
 schedule_id="${schedule_id}" \
@@ -697,6 +760,7 @@ print(json.dumps({
     "artifact_dir": os.environ["artifact_dir"],
     "dispatch_id": os.environ["dispatch_id"],
     "org_id": int(os.environ["org_id"]),
+    "project_id": os.environ["project_id"],
     "schedule_id": os.environ["schedule_id"],
     "source_repo_id": os.environ["source_repo_id"],
     "source_workflow_run_id": os.environ["source_workflow_run_id"],

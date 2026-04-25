@@ -3,7 +3,7 @@
 
 - name: Verify billing-service binary exists in profile
   ansible.builtin.stat:
-    path: "{{ fm_bin }}/billing-service"
+    path: "{{ verself_bin }}/billing-service"
   register: billing_service_binary
   failed_when: not billing_service_binary.stat.exists
 
@@ -39,9 +39,9 @@
 - name: Read billing-service SPIRE registration
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry show
+      {{ verself_bin }}/spire-server entry show
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-billing-service
+      -entryID verself-billing-service
       -output json
   register: billing_service_spire_entry
   failed_when: false
@@ -50,23 +50,23 @@
 - name: Register billing-service SPIFFE workload
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry create
+      {{ verself_bin }}/spire-server entry create
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-billing-service
+      -entryID verself-billing-service
       -parentID {{ spire_agent_id }}
       -spiffeID {{ spire_billing_service_id }}
       -selector unix:uid:{{ billing_service_uid.stdout | trim }}
       -x509SVIDTTL 3600
-  when: billing_service_spire_entry.rc != 0 or 'forge-metal-billing-service' not in billing_service_spire_entry.stdout
+  when: billing_service_spire_entry.rc != 0 or 'verself-billing-service' not in billing_service_spire_entry.stdout
   changed_when: true
   notify: restart billing-service
 
 - name: Update billing-service SPIRE workload selector drift
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry update
+      {{ verself_bin }}/spire-server entry update
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-billing-service
+      -entryID verself-billing-service
       -parentID {{ spire_agent_id }}
       -spiffeID {{ spire_billing_service_id }}
       -selector unix:uid:{{ billing_service_uid.stdout | trim }}
@@ -113,8 +113,8 @@
     {{ clickhouse_operator_client_command }} --multiquery <<'SQL'
     CREATE USER IF NOT EXISTS billing_service IDENTIFIED WITH ssl_certificate SAN 'URI:{{ spire_billing_service_id }}' HOST LOCAL;
     ALTER USER billing_service IDENTIFIED WITH ssl_certificate SAN 'URI:{{ spire_billing_service_id }}' HOST LOCAL;
-    GRANT INSERT ON forge_metal.billing_events TO billing_service;
-    GRANT INSERT ON forge_metal.metering TO billing_service;
+    GRANT INSERT ON verself.billing_events TO billing_service;
+    GRANT INSERT ON verself.metering TO billing_service;
     SQL
   args:
     executable: /bin/bash
@@ -141,7 +141,7 @@
     method: POST
     headers:
       Authorization: "Bearer {{ billing_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
-      Host: "auth.{{ forge_metal_domain }}"
+      Host: "auth.{{ verself_domain }}"
     body_format: json
     body: {}
     return_content: true
@@ -166,7 +166,7 @@
     method: POST
     headers:
       Authorization: "Bearer {{ billing_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
-      Host: "auth.{{ forge_metal_domain }}"
+      Host: "auth.{{ verself_domain }}"
     body_format: json
     body:
       name: "{{ billing_service_auth_project_name }}"
@@ -196,7 +196,7 @@
     method: PUT
     headers:
       Authorization: "Bearer {{ billing_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
-      Host: "auth.{{ forge_metal_domain }}"
+      Host: "auth.{{ verself_domain }}"
     body_format: json
     body:
       name: "{{ billing_service_auth_project_name }}"
@@ -213,8 +213,8 @@
     content: |
       [Unit]
       Description=Billing Service
-      After=forge-metal-firewall.target network.target postgresql.service clickhouse-server.service spire-agent.service secrets-service.service
-      Requires=forge-metal-firewall.target
+      After=verself-firewall.target network.target postgresql.service clickhouse-server.service spire-agent.service secrets-service.service
+      Requires=verself-firewall.target
       Wants=postgresql.service clickhouse-server.service spire-agent.service secrets-service.service
 
       [Service]
@@ -222,7 +222,7 @@
       User=billing
       Group=billing
       SupplementaryGroups={{ spire_workload_group }}
-      BindReadOnlyPaths=/etc/forge-metal/auth-discovery-hosts:/etc/hosts
+      BindReadOnlyPaths=/etc/verself/auth-discovery-hosts:/etc/hosts
       LoadCredential=clickhouse-ca-cert:/etc/clickhouse-server/tls/server-ca.pem
       Environment=BILLING_CH_ADDRESS={{ services.clickhouse.host }}:{{ services.clickhouse.secure_native_port }}
       Environment=BILLING_CH_USER=billing_service
@@ -239,7 +239,7 @@
       Environment=BILLING_PG_CONN_MAX_LIFETIME_SECONDS={{ billing_service_pg_conn_max_lifetime_seconds }}
       Environment=BILLING_PG_CONN_MAX_IDLE_SECONDS={{ billing_service_pg_conn_max_idle_seconds }}
       Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}
-      ExecStart={{ fm_bin }}/billing-service
+      ExecStart={{ verself_bin }}/billing-service
       Restart=on-failure
       RestartSec=5
       ProtectSystem=strict

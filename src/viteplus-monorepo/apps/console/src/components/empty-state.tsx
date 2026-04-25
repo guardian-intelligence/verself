@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { cn } from "@forge-metal/ui/lib/utils";
+import { cn } from "@verself/ui/lib/utils";
 
 export function EmptyState({
   title,

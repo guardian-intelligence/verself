@@ -153,9 +153,9 @@
     state: directory
     mode: "0755"
   loop:
-    - /var/lib/forge-metal
-    - /var/lib/forge-metal/guest-artifacts
-    - /var/lib/forge-metal/guest-artifacts/net
+    - /var/lib/verself
+    - /var/lib/verself/guest-artifacts
+    - /var/lib/verself/guest-artifacts/net
     - "{{ firecracker_state_db_path | dirname }}"
 
 - name: Ensure vm-orchestrator state directory ownership
@@ -191,7 +191,7 @@
   ansible.posix.sysctl:
     name: net.ipv4.ip_forward
     value: "1"
-    sysctl_file: /etc/sysctl.d/99-forge-metal.conf
+    sysctl_file: /etc/sysctl.d/99-verself.conf
     reload: true
 
 - name: Deploy Firecracker nftables ruleset
@@ -204,20 +204,20 @@
 - name: Install Firecracker host networking setup script
   ansible.builtin.template:
     src: firecracker-network-setup.sh.j2
-    dest: /usr/local/bin/forge-metal-firecracker-network-setup
+    dest: /usr/local/bin/verself-firecracker-network-setup
     mode: "0755"
   notify: restart firecracker networking
 
 - name: Install Firecracker host networking service
   ansible.builtin.template:
-    src: forge-metal-firecracker-network.service.j2
-    dest: /etc/systemd/system/forge-metal-firecracker-network.service
+    src: verself-firecracker-network.service.j2
+    dest: /etc/systemd/system/verself-firecracker-network.service
     mode: "0644"
   notify: restart firecracker networking
 
 - name: Ensure Firecracker host networking service is enabled and started
   ansible.builtin.systemd:
-    name: forge-metal-firecracker-network.service
+    name: verself-firecracker-network.service
     enabled: true
     state: started
     daemon_reload: true

@@ -6,9 +6,9 @@ import (
 	"log/slog"
 	"strings"
 
-	workloadauth "github.com/forge-metal/auth-middleware/workload"
-	"github.com/forge-metal/envconfig"
-	"github.com/forge-metal/temporal-platform/internal/temporallog"
+	workloadauth "github.com/verself/auth-middleware/workload"
+	"github.com/verself/envconfig"
+	"github.com/verself/temporal-platform/internal/temporallog"
 	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -29,7 +29,7 @@ type Config struct {
 func LoadConfigFromEnv() (Config, error) {
 	l := envconfig.New()
 	cfg := Config{
-		HostPort: l.String("FM_TEMPORAL_FRONTEND_ADDRESS", DefaultFrontendAddress),
+		HostPort: l.String("VERSELF_TEMPORAL_FRONTEND_ADDRESS", DefaultFrontendAddress),
 	}
 	if err := l.Err(); err != nil {
 		return Config{}, err

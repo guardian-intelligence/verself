@@ -2,8 +2,8 @@
 
 import * as React from "react";
 
-import { cn } from "@forge-metal/ui/lib/utils";
-import { useActiveAnchor } from "@forge-metal/ui/hooks/use-active-anchor";
+import { cn } from "@verself/ui/lib/utils";
+import { useActiveAnchor } from "@verself/ui/hooks/use-active-anchor";
 
 export type AnchorSection = {
   readonly id: string;

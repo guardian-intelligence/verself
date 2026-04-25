@@ -1,6 +1,6 @@
 # Binaries (go build outputs next to source modules)
-/forge-metal
-src/platform/forge-metal
+/verself
+src/platform/verself
 src/billing-service/billing-service
 src/billing-service/billing-seed
 src/billing-service/tb-inspect
@@ -8,10 +8,10 @@ src/mailbox-service/mailbox-service
 src/identity-service/identity-service
 src/governance-service/governance-service
 src/secrets-service/secrets-service
-src/temporal-platform/forge-temporal-server
+src/temporal-platform/verself-temporal-server
 src/temporal-platform/temporal-proof
 src/temporal-platform/temporal-schema
-src/temporal-platform/forge-temporal-web
+src/temporal-platform/verself-temporal-web
 src/sandbox-rental-service/sandbox-rental-recurring-worker
 src/object-storage-service/object-storage-secret-sync
 src/source-code-hosting-service/source-code-hosting-service
@@ -21,7 +21,7 @@ src/object-storage-service/object-storage-service
 src/profile-service/profile-service
 src/notifications-service/notifications-service
 # Config (contains credentials)
-forge-metal.toml
+verself.toml
 
 # Terraform
 src/platform/terraform/.terraform/

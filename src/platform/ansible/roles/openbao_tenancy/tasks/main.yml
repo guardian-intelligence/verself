@@ -65,7 +65,7 @@
     method: POST
     headers:
       Authorization: "Bearer {{ openbao_tenancy_zitadel_admin_pat }}"
-      Host: "auth.{{ forge_metal_domain }}"
+      Host: "auth.{{ verself_domain }}"
     body_format: json
     body: {}
     return_content: true
@@ -94,7 +94,7 @@
     method: POST
     headers:
       Authorization: "Bearer {{ openbao_tenancy_zitadel_admin_pat }}"
-      Host: "auth.{{ forge_metal_domain }}"
+      Host: "auth.{{ verself_domain }}"
     body_format: json
     body:
       queries:

@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { cn } from "@forge-metal/ui/lib/utils";
+import { cn } from "@verself/ui/lib/utils";
 
 function Card({
   className,

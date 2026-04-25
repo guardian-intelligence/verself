@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/forge-metal/identity-service/internal/identity"
+	"github.com/verself/identity-service/internal/identity"
 )
 
 func TestZitadelActionAppendsCredentialClaims(t *testing.T) {
@@ -47,14 +47,14 @@ func TestZitadelActionAppendsCredentialClaims(t *testing.T) {
 	for _, claim := range response.AppendClaims {
 		claims[claim.Key] = claim.Value
 	}
-	if claims["forge_metal:credential_id"] != "credential-1" || claims["org_id"] != "42" {
+	if claims["verself:credential_id"] != "credential-1" || claims["org_id"] != "42" {
 		t.Fatalf("missing identity claims: %#v", claims)
 	}
-	if claims["forge_metal:credential_name"] != "deploy bot" ||
-		claims["forge_metal:credential_fingerprint"] != "sha256:abcdef" ||
-		claims["forge_metal:credential_owner_id"] != "owner-1" ||
-		claims["forge_metal:credential_owner_display"] != "owner@example.test" ||
-		claims["forge_metal:credential_auth_method"] != "private_key_jwt" {
+	if claims["verself:credential_name"] != "deploy bot" ||
+		claims["verself:credential_fingerprint"] != "sha256:abcdef" ||
+		claims["verself:credential_owner_id"] != "owner-1" ||
+		claims["verself:credential_owner_display"] != "owner@example.test" ||
+		claims["verself:credential_auth_method"] != "private_key_jwt" {
 		t.Fatalf("missing credential audit claims: %#v", claims)
 	}
 	permissions, ok := claims["permissions"].([]any)

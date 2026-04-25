@@ -18,7 +18,7 @@
 - name: Reconcile mailbox-service object ownership and privileges
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/psql
+      {{ verself_bin }}/psql
       -h {{ services.postgresql.host }}
       -p {{ services.postgresql.port }}
       -U postgres

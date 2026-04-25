@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/forge-metal/httpserver"
+	"github.com/verself/httpserver"
 )
 
 func discardLogger() *slog.Logger {

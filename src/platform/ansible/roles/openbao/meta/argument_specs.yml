@@ -30,7 +30,7 @@ argument_specs:
         default: /etc/credstore/openbao
       openbao_node_id:
         type: str
-        default: forge-metal-single-node
+        default: verself-single-node
       openbao_key_shares:
         type: int
         default: 3
@@ -62,6 +62,6 @@ argument_specs:
           hmac:
             type: bool
             required: true
-      fm_bin:
+      verself_bin:
         type: path
         required: true

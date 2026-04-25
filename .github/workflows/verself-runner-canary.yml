@@ -1,4 +1,4 @@
-name: Forge Metal runner canary
+name: Verself runner canary
 
 on:
   pull_request:
@@ -9,14 +9,14 @@ permissions:
 
 jobs:
   runner-canary:
-    runs-on: metal-4vcpu-ubuntu-2404
+    runs-on: verself-4vcpu-ubuntu-2404
     timeout-minutes: 10
     steps:
       - name: Check out repository
-        uses: guardian-intelligence/forge-metal/.github/actions/checkout@main
+        uses: guardian-intelligence/verself/.github/actions/checkout@main
 
       - name: Setup Node.js
-        uses: guardian-intelligence/forge-metal/.github/actions/setup-node@main
+        uses: guardian-intelligence/verself/.github/actions/setup-node@main
         with:
           node-version: 24
           package-manager: pnpm
@@ -29,9 +29,9 @@ jobs:
         run: |
           set -euo pipefail
           store_dir="$(pnpm store path)"
-          mkdir -p "${store_dir}/forge-metal-canary" "node_modules/.forge-metal-canary"
-          printf 'run=%s\nsha=%s\n' "${GITHUB_RUN_ID}" "${GITHUB_SHA}" >"${store_dir}/forge-metal-canary/marker.txt"
-          printf 'run=%s\nsha=%s\n' "${GITHUB_RUN_ID}" "${GITHUB_SHA}" >"node_modules/.forge-metal-canary/marker.txt"
+          mkdir -p "${store_dir}/verself-canary" "node_modules/.verself-canary"
+          printf 'run=%s\nsha=%s\n' "${GITHUB_RUN_ID}" "${GITHUB_SHA}" >"${store_dir}/verself-canary/marker.txt"
+          printf 'run=%s\nsha=%s\n' "${GITHUB_RUN_ID}" "${GITHUB_SHA}" >"node_modules/.verself-canary/marker.txt"
           printf 'store=%s\n' "${store_dir}"
 
       - name: Read cached markers
@@ -39,5 +39,5 @@ jobs:
         run: |
           set -euo pipefail
           store_dir="$(pnpm store path)"
-          cat "${store_dir}/forge-metal-canary/marker.txt"
-          cat "node_modules/.forge-metal-canary/marker.txt"
+          cat "${store_dir}/verself-canary/marker.txt"
+          cat "node_modules/.verself-canary/marker.txt"

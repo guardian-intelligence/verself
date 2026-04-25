@@ -84,6 +84,8 @@ components:
           type: object
         org_id:
           type: string
+        project_id:
+          type: string
         ref:
           maxLength: 255
           type: string
@@ -97,6 +99,7 @@ components:
         - org_id
         - actor_id
         - repo_id
+        - project_id
         - workflow_path
         - idempotency_key
       type: object
@@ -130,6 +133,8 @@ components:
           type: object
         org_id:
           type: string
+        project_id:
+          type: string
         ref:
           type: string
         repo_id:
@@ -148,6 +153,7 @@ components:
       required:
         - workflow_run_id
         - org_id
+        - project_id
         - repo_id
         - actor_id
         - backend
@@ -165,7 +171,7 @@ components:
       scheme: bearer
       type: http
     mutualTLS:
-      description: SPIFFE mTLS between Forge Metal workloads.
+      description: SPIFFE mTLS between Verself workloads.
       type: mutualTLS
 info:
   title: Source Code Hosting Service Internal API
@@ -183,7 +189,7 @@ paths:
             format: uuid
             type: string
         - in: header
-          name: X-Forge-Metal-Checkout-Token
+          name: X-Verself-Checkout-Token
           required: true
           schema:
             type: string
@@ -212,7 +218,7 @@ paths:
       security:
         - mutualTLS: []
       summary: Download an archive using a short-lived checkout grant
-      x-forge-metal-iam:
+      x-verself-iam:
         action: consume
         audit_event: source.archive.stream
         data_classification: customer_source_metadata
@@ -250,7 +256,7 @@ paths:
       security:
         - mutualTLS: []
       summary: Dispatch a source workflow on behalf of a service-owned schedule
-      x-forge-metal-iam:
+      x-verself-iam:
         action: create
         audit_event: source.workflow.dispatch.internal
         data_classification: customer_source_metadata

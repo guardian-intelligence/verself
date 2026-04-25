@@ -4,7 +4,7 @@
     "jsx": "react-jsx",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["node"],
-    // We now consume @forge-metal/ui's raw .tsx sources via subpath exports.
+    // We now consume @verself/ui's raw .tsx sources via subpath exports.
     // The UI package itself relaxes exactOptionalPropertyTypes (see its
     // tsconfig.json) because Radix wrappers spread optional props through
     // Slot/asChild plumbing; mirroring that here keeps tsc green when

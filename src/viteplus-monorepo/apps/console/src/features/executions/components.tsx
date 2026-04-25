@@ -2,8 +2,8 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { ClientOnly, Link } from "@tanstack/react-router";
 import { useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useStickToBottom } from "use-stick-to-bottom";
-import { useSignedInAuth } from "@forge-metal/auth-web/react";
-import { Button } from "@forge-metal/ui/components/ui/button";
+import { useSignedInAuth } from "@verself/auth-web/react";
+import { Button } from "@verself/ui/components/ui/button";
 import {
   Page,
   PageEyebrow,
@@ -15,7 +15,7 @@ import {
   SectionHeader,
   SectionHeaderContent,
   SectionTitle,
-} from "@forge-metal/ui/components/ui/page";
+} from "@verself/ui/components/ui/page";
 import {
   Table,
   TableBody,
@@ -23,7 +23,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@forge-metal/ui/components/ui/table";
+} from "@verself/ui/components/ui/table";
 import {
   Pagination,
   PaginationContent,
@@ -32,7 +32,7 @@ import {
   PaginationLink,
   PaginationNext,
   PaginationPrevious,
-} from "@forge-metal/ui/components/ui/pagination";
+} from "@verself/ui/components/ui/pagination";
 import { Callout } from "~/components/callout";
 import { EmptyState } from "~/components/empty-state";
 import { ErrorCallout } from "~/components/error-callout";

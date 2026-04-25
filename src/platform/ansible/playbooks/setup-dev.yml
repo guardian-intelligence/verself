@@ -1,7 +1,7 @@
 ---
 # Install pinned dev tools from dev-tools.json.
 # Usage: cd ansible && ansible-playbook playbooks/setup-dev.yml
-- name: Set up forge-metal development environment
+- name: Set up verself development environment
   hosts: localhost
   connection: local
   become: true

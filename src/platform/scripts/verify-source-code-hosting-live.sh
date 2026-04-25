@@ -13,6 +13,8 @@ run_json_path="${artifact_dir}/run.json"
 source_log_path="${artifact_dir}/source-ui.log"
 source_api_base_url="${SOURCE_CODE_HOSTING_PROOF_BASE_URL:-https://source.api.${VERIFICATION_DOMAIN}}"
 source_api_base_url="${source_api_base_url%/}"
+projects_api_base_url="${PROJECTS_PROOF_BASE_URL:-https://projects.api.${VERIFICATION_DOMAIN}}"
+projects_api_base_url="${projects_api_base_url%/}"
 console_base_url="${TEST_BASE_URL:-https://console.${VERIFICATION_DOMAIN}}"
 git_origin="${SOURCE_CODE_HOSTING_PROOF_GIT_ORIGIN:-https://git.${VERIFICATION_DOMAIN}}"
 git_origin="${git_origin%/}"
@@ -91,7 +93,7 @@ api_request() {
     -X "${method}"
     -H "Authorization: Bearer ${source_access_token}"
     -H "Accept: application/json"
-    -H "baggage: forge_metal.verification_run=${run_id}"
+    -H "baggage: verself.verification_run=${run_id}"
   )
   if [[ -n "${body_path}" ]]; then
     curl_args+=(
@@ -211,6 +213,7 @@ verification_wait_for_http "console UI" "${console_base_url}" "200"
 # shellcheck disable=SC1090
 source <("${script_dir}/assume-persona.sh" acme-admin --print)
 source_access_token="${SOURCE_CODE_HOSTING_SERVICE_ACCESS_TOKEN:-${IDENTITY_SERVICE_ACCESS_TOKEN}}"
+projects_access_token="${PROJECTS_SERVICE_ACCESS_TOKEN:-${IDENTITY_SERVICE_ACCESS_TOKEN}}"
 window_start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 set +e
@@ -220,7 +223,7 @@ env \
   VERIFICATION_RUN_JSON_PATH="${run_json_path}" \
   BASE_URL="${console_base_url}" \
   TEST_BASE_URL="${console_base_url}" \
-  FORGE_METAL_DOMAIN="${VERIFICATION_DOMAIN}" \
+  VERSELF_DOMAIN="${VERIFICATION_DOMAIN}" \
   ZITADEL_BASE_URL="https://auth.${VERIFICATION_DOMAIN}" \
   TEST_EMAIL="${TEST_EMAIL}" \
   TEST_PASSWORD="${TEST_PASSWORD}" \
@@ -243,6 +246,50 @@ repo_slug="source-proof-$(printf '%s' "${run_id}" | tr '[:upper:]' '[:lower:]' |
 if [[ -z "${repo_slug}" ]]; then
   repo_slug="source-proof"
 fi
+
+cat >"${artifact_dir}/payloads/create-project.json" <<EOF
+{
+  "display_name": "Source Proof ${run_id}",
+  "slug": "${repo_slug}",
+  "description": "Source hosting proof project"
+}
+EOF
+curl -fsS \
+  -X POST \
+  -H "Authorization: Bearer ${projects_access_token}" \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: source-project:${run_id}" \
+  -H "baggage: verself.verification_run=${run_id}" \
+  --data-binary "@${artifact_dir}/payloads/create-project.json" \
+  "${projects_api_base_url}/api/v1/projects" >"${artifact_dir}/responses/create-project.json"
+project_id="$(
+  python3 - "${artifact_dir}/responses/create-project.json" <<'PY'
+import json
+import sys
+
+print(json.load(open(sys.argv[1], encoding="utf-8"))["project_id"])
+PY
+)"
+
+cat >"${artifact_dir}/payloads/create-repository.json" <<EOF
+{
+  "project_id": "${project_id}",
+  "name": "${repo_slug}",
+  "description": "Source proof ${run_id}",
+  "default_branch": "main"
+}
+EOF
+api_request "POST" "/api/v1/repos" "${artifact_dir}/responses/create-repository.json" "${artifact_dir}/payloads/create-repository.json" "source-repo:${run_id}"
+read -r repo_id org_path repo_slug <<<"$(
+  python3 - "${artifact_dir}/responses/create-repository.json" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+print(payload["repo_id"], payload["org_path"], payload["slug"])
+PY
+)"
 
 cat >"${artifact_dir}/payloads/create-git-credential.json" <<EOF
 {
@@ -284,8 +331,8 @@ SH
 chmod 700 "${askpass_path}"
 
 git -C "${git_workdir}" init -b main >/dev/null
-git -C "${git_workdir}" config user.name "Forge Metal Source Proof"
-git -C "${git_workdir}" config user.email "source-proof@forge-metal.invalid"
+git -C "${git_workdir}" config user.name "Verself Source Proof"
+git -C "${git_workdir}" config user.email "source-proof@verself.invalid"
 printf '# Source proof\n\nrun: %s\n' "${run_id}" >"${git_workdir}/README.md"
 mkdir -p "${git_workdir}/.forgejo/workflows"
 cat >"${git_workdir}/.forgejo/workflows/proof.yml" <<'EOF'
@@ -294,7 +341,7 @@ on:
   push:
 jobs:
   proof:
-    runs-on: [self-hosted, linux, x64, metal-4vcpu-ubuntu-2404]
+    runs-on: [self-hosted, linux, x64, verself-4vcpu-ubuntu-2404]
     steps:
       - run: echo source proof "$(uname -m)"
 EOF
@@ -307,21 +354,20 @@ env \
   SOURCE_GIT_TOKEN="${git_token}" \
   git -C "${git_workdir}" push "${git_repo_url}" main:main >"${artifact_dir}/responses/git-push.log" 2>&1
 
-api_request "GET" "/api/v1/repos" "${artifact_dir}/responses/list-repositories.json"
-repo_id="$(
-  python3 - "${artifact_dir}/responses/list-repositories.json" "${repo_slug}" <<'PY'
+api_request "GET" "/api/v1/repos?project_id=${project_id}" "${artifact_dir}/responses/list-repositories.json"
+python3 - "${artifact_dir}/responses/list-repositories.json" "${repo_id}" "${project_id}" <<'PY'
 import json
 import sys
 
 payload = json.load(open(sys.argv[1], encoding="utf-8"))
-slug = sys.argv[2]
+repo_id, project_id = sys.argv[2:4]
 for repo in payload.get("repositories") or []:
-    if repo.get("slug") == slug:
-        print(repo["repo_id"])
+    if repo.get("repo_id") == repo_id:
+        if repo.get("project_id") != project_id:
+            raise SystemExit("source proof repo project_id mismatch in list response")
         raise SystemExit(0)
-raise SystemExit(f"source proof repo with slug {slug!r} not found")
+raise SystemExit(f"source proof repo {repo_id!r} not found")
 PY
-)"
 
 api_request "GET" "/api/v1/repos/${repo_id}" "${artifact_dir}/responses/get-repository.json"
 api_request "GET" "/api/v1/repos/${repo_id}/refs" "${artifact_dir}/responses/list-refs.json"
@@ -351,15 +397,28 @@ PY
 escaped_repo_id="${repo_id//\'/\'\'}"
 escaped_credential_id="${credential_id//\'/\'\'}"
 escaped_grant_id="${checkout_grant_id//\'/\'\'}"
+escaped_project_id="${project_id//\'/\'\'}"
+
+remote_psql projects_service "
+SELECT project_id, org_id, slug, state, version
+FROM projects
+WHERE project_id = '${escaped_project_id}'::uuid
+  AND state = 'active';
+" "${artifact_dir}/postgres/project.tsv"
+if [[ ! -s "${artifact_dir}/postgres/project.tsv" ]]; then
+  echo "projects_service.projects did not contain the proof project" >&2
+  exit 1
+fi
 
 remote_psql source_code_hosting "
-SELECT repo_id, org_id, org_path, name, slug, default_branch, visibility, state, last_pushed_at IS NOT NULL AS pushed
+SELECT repo_id, org_id, project_id, org_path, name, slug, default_branch, visibility, state, last_pushed_at IS NOT NULL AS pushed
 FROM source_repositories
 WHERE repo_id = '${escaped_repo_id}'::uuid;
 " "${artifact_dir}/postgres/repository.tsv"
 
 org_id="$(cut -f2 "${artifact_dir}/postgres/repository.tsv" | head -n 1)"
-if [[ -z "${org_id}" ]]; then
+row_project_id="$(cut -f3 "${artifact_dir}/postgres/repository.tsv" | head -n 1)"
+if [[ -z "${org_id}" || "${row_project_id}" != "${project_id}" ]]; then
   echo "source_repositories did not contain the proof repo" >&2
   exit 1
 fi
@@ -403,21 +462,21 @@ if ! grep -q $'^main\t' "${artifact_dir}/postgres/ref-heads.tsv"; then
 fi
 
 remote_psql sandbox_rental "
-SELECT provider, provider_repository_id, org_id, source_repository_id, provider_owner, provider_repo, repository_full_name, active
+SELECT provider, provider_repository_id, org_id, project_id, source_repository_id, provider_owner, provider_repo, repository_full_name, active
 FROM runner_provider_repositories
 WHERE provider = 'forgejo'
   AND source_repository_id = '${escaped_repo_id}'::uuid;
 " "${artifact_dir}/postgres/runner-provider-repository.tsv"
-python3 - "${artifact_dir}/postgres/runner-provider-repository.tsv" "${org_id}" "${backend_repo_id}" "${backend_owner}" "${backend_repo}" <<'PY'
+python3 - "${artifact_dir}/postgres/runner-provider-repository.tsv" "${org_id}" "${project_id}" "${backend_repo_id}" "${backend_owner}" "${backend_repo}" <<'PY'
 import csv
 import sys
 
 rows = list(csv.reader(open(sys.argv[1], encoding="utf-8"), delimiter="\t"))
 if len(rows) != 1:
     raise SystemExit("expected one sandbox runner repository registration row")
-provider, provider_repo_id, org_id, source_repo_id, provider_owner, provider_repo, repository_full_name, active = rows[0]
-expected_org_id, expected_repo_id, expected_owner, expected_repo = sys.argv[2:6]
-if provider != "forgejo" or provider_repo_id != expected_repo_id or org_id != expected_org_id:
+provider, provider_repo_id, org_id, project_id, source_repo_id, provider_owner, provider_repo, repository_full_name, active = rows[0]
+expected_org_id, expected_project_id, expected_repo_id, expected_owner, expected_repo = sys.argv[2:7]
+if provider != "forgejo" or provider_repo_id != expected_repo_id or org_id != expected_org_id or project_id != expected_project_id:
     raise SystemExit("runner repository registration did not match source backend")
 if provider_owner != expected_owner or provider_repo != expected_repo or active != "t":
     raise SystemExit("runner repository registration owner/repo/active mismatch")
@@ -445,7 +504,7 @@ labels = set()
 for row in rows:
     if len(row) >= 5:
         labels.update(json.loads(row[4] or "[]"))
-required = {"self-hosted", "linux", "x64", "metal-4vcpu-ubuntu-2404"}
+required = {"self-hosted", "linux", "x64", "verself-4vcpu-ubuntu-2404"}
 missing = required - labels
 if missing:
     raise SystemExit("Forgejo runner job labels missing: " + ", ".join(sorted(missing)))
@@ -477,7 +536,7 @@ ORDER BY e.updated_at DESC
 LIMIT 1;
 " "${artifact_dir}/postgres/forgejo-runner-execution.tsv" 1 "Forgejo runner execution"
 
-IFS=$'\t' read -r forgejo_execution_id forgejo_attempt_id forgejo_provider_job_id forgejo_allocation_id forgejo_execution_state forgejo_allocation_state forgejo_source_kind forgejo_workload_kind forgejo_external_provider forgejo_external_task_id forgejo_org_id forgejo_actor_id forgejo_labels_json forgejo_billing_job_id forgejo_billing_window_count forgejo_reserved_charge_units forgejo_billed_charge_units forgejo_writeoff_charge_units <"${artifact_dir}/postgres/forgejo-runner-execution.tsv"
+IFS=$'\t' read -r forgejo_execution_id forgejo_attempt_id forgejo_provider_job_id forgejo_allocation_id forgejo_execution_state _forgejo_allocation_state forgejo_source_kind forgejo_workload_kind forgejo_external_provider forgejo_external_task_id forgejo_org_id forgejo_actor_id forgejo_labels_json forgejo_billing_job_id forgejo_billing_window_count forgejo_reserved_charge_units _forgejo_billed_charge_units _forgejo_writeoff_charge_units <"${artifact_dir}/postgres/forgejo-runner-execution.tsv"
 python3 - "${forgejo_execution_id}" "${forgejo_attempt_id}" "${forgejo_provider_job_id}" "${forgejo_allocation_id}" "${forgejo_execution_state}" "${forgejo_source_kind}" "${forgejo_workload_kind}" "${forgejo_external_provider}" "${forgejo_external_task_id}" "${forgejo_org_id}" "${org_id}" "${forgejo_actor_id}" "${backend_repo_id}" "${forgejo_labels_json}" "${forgejo_billing_job_id}" "${forgejo_billing_window_count}" "${forgejo_reserved_charge_units}" <<'PY'
 import json
 import sys
@@ -498,7 +557,7 @@ if actual_org_id != expected_org_id:
 if actor_id != "forgejo-actions:" + backend_repo_id:
     raise SystemExit("Forgejo runner execution actor attribution mismatch")
 labels = set(json.loads(labels_json or "[]"))
-if "metal-4vcpu-ubuntu-2404" not in labels:
+if "verself-4vcpu-ubuntu-2404" not in labels:
     raise SystemExit("Forgejo runner execution did not preserve runner-class label")
 if int(billing_job_id) <= 0 or int(billing_window_count) < 1 or int(reserved_charge_units) <= 0:
     raise SystemExit("Forgejo runner execution did not record billing attribution")
@@ -565,7 +624,7 @@ PY
   ./scripts/clickhouse.sh --query "SYSTEM FLUSH LOGS"
 ) >"${artifact_dir}/clickhouse/flush-logs.tsv"
 
-wait_for_clickhouse_count forge_metal "
+wait_for_clickhouse_count verself "
   SELECT count()
   FROM job_events
 	  WHERE execution_id = toUUID({forgejo_execution_id:String})
@@ -627,7 +686,7 @@ wait_for_clickhouse_count default "
     AND SpanName IN ('rpc.AcquireLease', 'rpc.StartExec', 'rpc.WaitExec', 'rpc.ReleaseLease')
     AND TraceId IN (
       SELECT trace_id
-      FROM forge_metal.job_events
+      FROM verself.job_events
       WHERE execution_id = toUUID({forgejo_execution_id:String})
         AND trace_id != ''
     )
@@ -637,7 +696,7 @@ wait_for_clickhouse_count default "
 (
   cd "${VERIFICATION_PLATFORM_ROOT}"
   ./scripts/clickhouse.sh \
-    --database forge_metal \
+    --database verself \
     --param_forgejo_execution_id="${forgejo_execution_id}" \
     --query "
       SELECT
@@ -753,8 +812,81 @@ wait_for_clickhouse_count default "
   FROM otel_traces
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
     AND ServiceName = 'source-code-hosting-service'
-    AND SpanName IN ('source.pg.git_credential.create', 'source.pg.git_credential.mark_used', 'source.pg.repo.create_from_git', 'source.pg.repo.list', 'source.pg.repo.get', 'source.pg.repo.get_by_slug', 'source.pg.refs.replace', 'source.pg.refs.list_cached', 'source.pg.checkout_grant.create')
+    AND SpanName IN ('source.pg.git_credential.create', 'source.pg.git_credential.mark_used', 'source.pg.repo.create', 'source.pg.repo.list', 'source.pg.repo.get', 'source.pg.repo.get_by_slug', 'source.pg.refs.replace', 'source.pg.refs.list_cached', 'source.pg.checkout_grant.create')
 " 9 "${artifact_dir}/clickhouse/source-postgres-spans-count.tsv"
+
+wait_for_clickhouse_count default "
+  SELECT count()
+  FROM otel_traces
+  WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
+    AND (
+      (ServiceName = 'source-code-hosting-service' AND SpanName = 'source.projects.resolve' AND SpanAttributes['verself.project_id'] = {project_id:String})
+      OR (ServiceName = 'source-code-hosting-service' AND SpanName = 'auth.spiffe.mtls.client' AND position(arrayElement(SpanAttributes, 'spiffe.expected_server_id'), 'projects-service') > 0)
+      OR (ServiceName = 'projects-service' AND SpanName IN ('auth.spiffe.mtls.server', 'projects.project.resolve', 'projects.pg.project.resolve'))
+    )
+" 4 "${artifact_dir}/clickhouse/source-projects-boundary-spans-count.tsv" \
+  --param_project_id="${project_id}"
+
+(
+  cd "${VERIFICATION_PLATFORM_ROOT}"
+  ./scripts/clickhouse.sh \
+    --database default \
+    --param_window_start="${window_start}" \
+    --param_window_end="${window_end}" \
+    --param_project_id="${project_id}" \
+    --query "
+      SELECT *
+      FROM (
+        SELECT
+          multiIf(
+            ServiceName = 'source-code-hosting-service' AND SpanName = 'source.projects.resolve', '01_source_resolve_project',
+            ServiceName = 'source-code-hosting-service' AND SpanName = 'auth.spiffe.mtls.client' AND position(arrayElement(SpanAttributes, 'spiffe.expected_server_id'), 'projects-service') > 0, '02_source_mtls_client',
+            ServiceName = 'projects-service' AND SpanName = 'auth.spiffe.mtls.server', '03_projects_mtls_server',
+            ServiceName = 'projects-service' AND SpanName = 'projects.project.resolve', '04_projects_resolve',
+            ServiceName = 'projects-service' AND SpanName = 'projects.pg.project.resolve', '05_projects_pg_resolve',
+            ''
+          ) AS stage,
+          Timestamp,
+          ServiceName,
+          SpanName,
+          TraceId,
+          SpanId,
+          ParentSpanId,
+          arrayElement(SpanAttributes, 'verself.project_id') AS project_id
+        FROM otel_traces
+        WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
+      )
+      WHERE stage != ''
+        AND (project_id = '' OR project_id = {project_id:String})
+      ORDER BY Timestamp, stage
+      FORMAT TSVWithNames
+    "
+) >"${artifact_dir}/clickhouse/source-projects-boundary-sequence.tsv"
+python3 - "${artifact_dir}/clickhouse/source-projects-boundary-sequence.tsv" <<'PY'
+import csv
+import sys
+
+required = [
+    "01_source_resolve_project",
+    "02_source_mtls_client",
+    "03_projects_mtls_server",
+    "04_projects_resolve",
+    "05_projects_pg_resolve",
+]
+rows = list(csv.DictReader(open(sys.argv[1], encoding="utf-8"), delimiter="\t"))
+by_trace = {}
+for index, row in enumerate(rows):
+    by_trace.setdefault(row["TraceId"], []).append((index, row))
+for trace_rows in by_trace.values():
+    first = {}
+    for index, row in trace_rows:
+        first.setdefault(row["stage"], (index, row))
+    if all(stage in first for stage in required):
+        positions = [first[stage][0] for stage in required]
+        if positions == sorted(positions):
+            raise SystemExit(0)
+raise SystemExit("missing ordered source->projects boundary stages: " + ", ".join(required))
+PY
 
 wait_for_clickhouse_count default "
   SELECT count()
@@ -946,7 +1078,7 @@ fi
         AND (
           positionCaseInsensitive(toString(SpanAttributes), 'runner_token') > 0
           OR positionCaseInsensitive(toString(SpanAttributes), 'bootstrap_token') > 0
-          OR positionCaseInsensitive(toString(SpanAttributes), 'FORGE_METAL_RUNNER_BOOTSTRAP_TOKEN') > 0
+          OR positionCaseInsensitive(toString(SpanAttributes), 'VERSELF_RUNNER_BOOTSTRAP_TOKEN') > 0
           OR positionCaseInsensitive(toString(SpanAttributes), 'token_url') > 0
         )
     "
@@ -983,14 +1115,15 @@ fi
     "
 ) >"${artifact_dir}/clickhouse/otel-traces.tsv"
 
-python3 - "${run_json_path}" "${org_id}" "${repo_id}" "${credential_id}" "${checkout_grant_id}" "${backend_repo_id}" "${forgejo_execution_id}" "${forgejo_attempt_id}" "${forgejo_provider_job_id}" "${forgejo_allocation_id}" "${window_start}" "${window_end}" "${artifact_dir}" "${git_repo_url}" <<'PY'
+python3 - "${run_json_path}" "${org_id}" "${project_id}" "${repo_id}" "${credential_id}" "${checkout_grant_id}" "${backend_repo_id}" "${forgejo_execution_id}" "${forgejo_attempt_id}" "${forgejo_provider_job_id}" "${forgejo_allocation_id}" "${window_start}" "${window_end}" "${artifact_dir}" "${git_repo_url}" <<'PY'
 import json
 import sys
 
-path, org_id, repo_id, credential_id, grant_id, backend_repo_id, forgejo_execution_id, forgejo_attempt_id, forgejo_provider_job_id, forgejo_allocation_id, window_start, window_end, artifact_dir, git_repo_url = sys.argv[1:15]
+path, org_id, project_id, repo_id, credential_id, grant_id, backend_repo_id, forgejo_execution_id, forgejo_attempt_id, forgejo_provider_job_id, forgejo_allocation_id, window_start, window_end, artifact_dir, git_repo_url = sys.argv[1:16]
 payload = json.load(open(path, encoding="utf-8"))
 payload.update({
     "org_id": org_id,
+    "project_id": project_id,
     "repo_id": repo_id,
     "git_credential_id": credential_id,
     "checkout_grant_id": grant_id,

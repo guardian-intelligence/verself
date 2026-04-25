@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/forge-metal/identity-service/internal/identity"
+	"github.com/verself/identity-service/internal/identity"
 )
 
 const (
@@ -630,7 +630,7 @@ func (c *Client) CreateServiceAccountCredential(ctx context.Context, orgID strin
 		"username":       input.ClientID,
 		"machine": map[string]any{
 			"name":            input.DisplayName,
-			"description":     "Forge Metal API credential " + input.CredentialID,
+			"description":     "Verself API credential " + input.CredentialID,
 			"accessTokenType": "ACCESS_TOKEN_TYPE_JWT",
 		},
 	}

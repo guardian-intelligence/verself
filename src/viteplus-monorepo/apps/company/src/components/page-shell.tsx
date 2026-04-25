@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect } from "react";
-import { useBrandTelemetry } from "@forge-metal/brand";
+import { useBrandTelemetry } from "@verself/brand";
 
 // PageShell — the canonical non-landing surface: centered column, kicker +
 // h1 matching the landing type scale, children below. Treatment is inherited

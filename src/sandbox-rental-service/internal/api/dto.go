@@ -3,10 +3,10 @@ package api
 import (
 	"strconv"
 
-	"github.com/forge-metal/apiwire"
-	"github.com/forge-metal/sandbox-rental-service/internal/jobs"
-	"github.com/forge-metal/sandbox-rental-service/internal/recurring"
 	"github.com/google/uuid"
+	"github.com/verself/apiwire"
+	"github.com/verself/sandbox-rental-service/internal/jobs"
+	"github.com/verself/sandbox-rental-service/internal/recurring"
 )
 
 func githubInstallationRecord(record jobs.GitHubInstallationRecord) apiwire.SandboxGitHubInstallationRecord {
@@ -425,6 +425,7 @@ func executionScheduleCreateRequest(request apiwire.SandboxExecutionScheduleCrea
 	return recurring.CreateRequest{
 		DisplayName:        request.DisplayName,
 		IdempotencyKey:     request.IdempotencyKey,
+		ProjectID:          request.ProjectID,
 		SourceRepositoryID: request.SourceRepositoryID,
 		WorkflowPath:       request.WorkflowPath,
 		Ref:                request.Ref,
@@ -446,6 +447,7 @@ func executionScheduleRecord(record recurring.ScheduleRecord) apiwire.SandboxExe
 		TaskQueue:          record.TaskQueue,
 		State:              record.State,
 		IntervalSeconds:    record.IntervalSeconds,
+		ProjectID:          record.ProjectID,
 		SourceRepositoryID: record.SourceRepositoryID,
 		WorkflowPath:       record.WorkflowPath,
 		Ref:                record.Ref,

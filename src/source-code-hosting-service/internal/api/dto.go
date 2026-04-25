@@ -5,12 +5,13 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/forge-metal/source-code-hosting-service/internal/source"
+	"github.com/verself/source-code-hosting-service/internal/source"
 )
 
 type Repository struct {
 	RepoID        uuid.UUID  `json:"repo_id"`
 	OrgID         string     `json:"org_id"`
+	ProjectID     uuid.UUID  `json:"project_id"`
 	OrgPath       string     `json:"org_path"`
 	Name          string     `json:"name"`
 	Slug          string     `json:"slug"`
@@ -30,9 +31,10 @@ type RepositoryList struct {
 }
 
 type CreateRepositoryRequest struct {
-	Name          string `json:"name" required:"true" minLength:"1" maxLength:"128"`
-	Description   string `json:"description,omitempty" maxLength:"1024"`
-	DefaultBranch string `json:"default_branch,omitempty" maxLength:"128"`
+	ProjectID     uuid.UUID `json:"project_id" required:"true"`
+	Name          string    `json:"name" required:"true" minLength:"1" maxLength:"128"`
+	Description   string    `json:"description,omitempty" maxLength:"1024"`
+	DefaultBranch string    `json:"default_branch,omitempty" maxLength:"128"`
 }
 
 type CreateGitCredentialRequest struct {
@@ -96,6 +98,7 @@ type CheckoutGrant struct {
 }
 
 type CreateWorkflowRunRequest struct {
+	ProjectID    uuid.UUID         `json:"project_id" required:"true"`
 	WorkflowPath string            `json:"workflow_path" required:"true" minLength:"1" maxLength:"512"`
 	Ref          string            `json:"ref,omitempty" maxLength:"255"`
 	Inputs       map[string]string `json:"inputs,omitempty"`
@@ -105,6 +108,7 @@ type InternalCreateWorkflowRunRequest struct {
 	OrgID          string            `json:"org_id" required:"true"`
 	ActorID        string            `json:"actor_id" required:"true" minLength:"1" maxLength:"255"`
 	RepoID         uuid.UUID         `json:"repo_id" required:"true"`
+	ProjectID      uuid.UUID         `json:"project_id" required:"true"`
 	WorkflowPath   string            `json:"workflow_path" required:"true" minLength:"1" maxLength:"512"`
 	Ref            string            `json:"ref,omitempty" maxLength:"255"`
 	Inputs         map[string]string `json:"inputs,omitempty"`
@@ -114,6 +118,7 @@ type InternalCreateWorkflowRunRequest struct {
 type WorkflowRun struct {
 	WorkflowRunID     uuid.UUID         `json:"workflow_run_id"`
 	OrgID             string            `json:"org_id"`
+	ProjectID         uuid.UUID         `json:"project_id"`
 	RepoID            uuid.UUID         `json:"repo_id"`
 	ActorID           string            `json:"actor_id"`
 	Backend           string            `json:"backend"`
@@ -137,6 +142,7 @@ func repositoryDTO(repo source.Repository) Repository {
 	return Repository{
 		RepoID:        repo.RepoID,
 		OrgID:         uintString(repo.OrgID),
+		ProjectID:     repo.ProjectID,
 		OrgPath:       repo.OrgPath,
 		Name:          repo.Name,
 		Slug:          repo.Slug,
@@ -220,6 +226,7 @@ func workflowRunDTO(run source.WorkflowRun) WorkflowRun {
 	return WorkflowRun{
 		WorkflowRunID:     run.WorkflowRunID,
 		OrgID:             uintString(run.OrgID),
+		ProjectID:         run.ProjectID,
 		RepoID:            run.RepoID,
 		ActorID:           run.ActorID,
 		Backend:           run.Backend,

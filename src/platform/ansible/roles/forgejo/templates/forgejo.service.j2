@@ -1,15 +1,15 @@
 [Unit]
 Description=Forgejo Git Server
-After=forge-metal-firewall.target network.target
-Requires=forge-metal-firewall.target
+After=verself-firewall.target network.target
+Requires=verself-firewall.target
 
 [Service]
 Type=simple
 User=forgejo
-ExecStart={{ fm_bin }}/forgejo web --config /etc/forgejo/app.ini
+ExecStart={{ verself_bin }}/forgejo web --config /etc/forgejo/app.ini
 Restart=on-failure
 Environment=FORGEJO_WORK_DIR=/var/lib/forgejo
-Environment=PATH={{ fm_bin }}:/usr/bin:/bin
+Environment=PATH={{ verself_bin }}:/usr/bin:/bin
 
 [Install]
 WantedBy=multi-user.target

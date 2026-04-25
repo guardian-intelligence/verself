@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { requireOperatorDomain } from "@forge-metal/web-env";
+import { requireOperatorDomain } from "@verself/web-env";
 
 import {
   ChangesSection,
@@ -20,11 +20,11 @@ export const Route = createFileRoute("/policy/security")({
   loader: () => getOperatorDomain(),
   head: () => ({
     meta: [
-      { title: "Security Overview — Forge Metal Platform" },
+      { title: "Security Overview — Verself Platform" },
       {
         name: "description",
         content:
-          "The technical and organizational measures Forge Metal implements to secure customer data and workloads.",
+          "The technical and organizational measures Verself implements to secure customer data and workloads.",
       },
     ],
   }),

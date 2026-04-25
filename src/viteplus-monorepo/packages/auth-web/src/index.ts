@@ -183,7 +183,7 @@ const metadataCache = new Map<string, Promise<ProviderMetadata>>();
 const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 type SQLClient = Sql<Record<string, unknown>>;
 const sqlCache = new Map<string, SQLClient>();
-const tracer = trace.getTracer("forge-metal/auth-web", "0.1.0");
+const tracer = trace.getTracer("verself/auth-web", "0.1.0");
 
 async function getSQL(databaseURL: string): Promise<SQLClient> {
   let sql = sqlCache.get(databaseURL);

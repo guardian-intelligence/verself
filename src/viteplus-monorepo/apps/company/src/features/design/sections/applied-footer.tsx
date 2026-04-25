@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { Lockup } from "@forge-metal/brand";
+import { Lockup } from "@verself/brand";
 import { Section } from "../section-shell";
 import { BizCard, LINE, ScrimLabel, sectionMeta } from "../shared";
 

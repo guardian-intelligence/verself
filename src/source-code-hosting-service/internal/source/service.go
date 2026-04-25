@@ -22,6 +22,7 @@ type Service struct {
 	Forgejo       ForgejoClient
 	Credentials   GitCredentialIssuer
 	Runner        RunnerRepositoryRegistrar
+	Projects      ProjectResolver
 	CheckoutTTL   time.Duration
 	ForgejoPrefix string
 }
@@ -43,8 +44,17 @@ func (s *Service) CreateRepository(ctx context.Context, principal Principal, inp
 	if err != nil {
 		return Repository{}, err
 	}
+	if err := s.resolveProject(ctx, principal.OrgID, input.ProjectID); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return Repository{}, err
+	}
 	repoName := s.forgejoRepoName(principal.OrgID, input.Name)
-	span.SetAttributes(attribute.Int64("forge_metal.org_id", int64(principal.OrgID)), attribute.String("source.forgejo_repo", repoName))
+	span.SetAttributes(
+		attribute.Int64("verself.org_id", int64(principal.OrgID)),
+		attribute.String("verself.project_id", input.ProjectID.String()),
+		attribute.String("source.forgejo_repo", repoName),
+	)
 	forgejoRepo, err := s.createOrGetForgejoRepository(ctx, repoName, input.Description, input.DefaultBranch)
 	if err != nil {
 		span.RecordError(err)
@@ -56,6 +66,9 @@ func (s *Service) CreateRepository(ctx context.Context, principal Principal, inp
 		if errors.Is(err, ErrConflict) {
 			existing, loadErr := s.Store.GetRepositoryBySlug(ctx, principal.OrgID, NormalizeSlug(input.Name))
 			if loadErr == nil {
+				if existing.ProjectID != input.ProjectID {
+					return Repository{}, err
+				}
 				if registerErr := s.registerRunnerRepository(ctx, span, existing); registerErr != nil {
 					return Repository{}, registerErr
 				}
@@ -130,7 +143,7 @@ func (s *Service) AuthenticateGitCredential(ctx context.Context, username string
 	}
 	span.SetAttributes(
 		attribute.String("source.git_credential_id", principal.CredentialID.String()),
-		attribute.Int64("forge_metal.org_id", int64(principal.OrgID)),
+		attribute.Int64("verself.org_id", int64(principal.OrgID)),
 	)
 	return principal, nil
 }
@@ -155,34 +168,9 @@ func (s *Service) EnsureGitRepository(ctx context.Context, principal GitPrincipa
 		span.SetStatus(codes.Error, err.Error())
 		return Repository{}, false, err
 	}
-	repoName := s.forgejoRepoName(principal.OrgID, slug)
-	forgejoRepo, err := s.createOrGetForgejoRepository(ctx, repoName, "", "main")
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return Repository{}, false, err
-	}
-	repo, err = s.Store.CreateRepositoryFromGit(ctx, principal, slug, s.Forgejo.Owner, forgejoRepo)
-	if err != nil {
-		if errors.Is(err, ErrConflict) {
-			existing, loadErr := s.Store.GetRepositoryBySlug(ctx, principal.OrgID, slug)
-			if loadErr == nil {
-				if registerErr := s.registerRunnerRepository(ctx, span, existing); registerErr != nil {
-					return Repository{}, false, registerErr
-				}
-				span.SetAttributes(attribute.String("source.repo_id", existing.RepoID.String()), attribute.Bool("source.repo_created", false))
-				return existing, false, nil
-			}
-		}
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return Repository{}, false, err
-	}
-	if err := s.registerRunnerRepository(ctx, span, repo); err != nil {
-		return Repository{}, false, err
-	}
-	span.SetAttributes(attribute.String("source.repo_id", repo.RepoID.String()), attribute.Bool("source.repo_created", true))
-	return repo, true, nil
+	span.RecordError(err)
+	span.SetStatus(codes.Error, err.Error())
+	return Repository{}, false, err
 }
 
 func (s *Service) GetGitRepository(ctx context.Context, principal GitPrincipal, slug string) (Repository, error) {
@@ -263,11 +251,11 @@ func (s *Service) listRefsAfterReceive(ctx context.Context, repo Repository) ([]
 	return refs, err
 }
 
-func (s *Service) ListRepositories(ctx context.Context, principal Principal) ([]Repository, error) {
+func (s *Service) ListRepositories(ctx context.Context, principal Principal, projectID uuid.UUID) ([]Repository, error) {
 	if err := ValidatePrincipal(principal); err != nil {
 		return nil, err
 	}
-	return s.Store.ListRepositories(ctx, principal.OrgID)
+	return s.Store.ListRepositories(ctx, principal.OrgID, projectID)
 }
 
 func (s *Service) GetRepository(ctx context.Context, principal Principal, repoID uuid.UUID) (Repository, error) {
@@ -388,12 +376,21 @@ func (s *Service) DispatchWorkflow(ctx context.Context, principal Principal, inp
 	if err != nil {
 		return WorkflowRun{}, err
 	}
+	if input.ProjectID != repo.ProjectID {
+		return WorkflowRun{}, ErrInvalid
+	}
+	if err := s.resolveProject(ctx, principal.OrgID, repo.ProjectID); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return WorkflowRun{}, err
+	}
 	input, err = NormalizeWorkflowDispatch(input, repo.DefaultBranch)
 	if err != nil {
 		return WorkflowRun{}, err
 	}
 	span.SetAttributes(
 		attribute.String("source.repo_id", repo.RepoID.String()),
+		attribute.String("verself.project_id", repo.ProjectID.String()),
 		attribute.String("source.workflow_path", input.WorkflowPath),
 		attribute.String("source.ref", input.Ref),
 		attribute.String("source.backend", repo.Backend.Backend),
@@ -433,11 +430,22 @@ func (s *Service) DispatchWorkflowInternal(ctx context.Context, input InternalWo
 	principal := Principal{Subject: strings.TrimSpace(input.ActorID), OrgID: input.OrgID}
 	return s.DispatchWorkflow(ctx, principal, WorkflowDispatchRequest{
 		RepoID:         input.RepoID,
+		ProjectID:      input.ProjectID,
 		WorkflowPath:   input.WorkflowPath,
 		Ref:            input.Ref,
 		Inputs:         input.Inputs,
 		IdempotencyKey: input.IdempotencyKey,
 	})
+}
+
+func (s *Service) resolveProject(ctx context.Context, orgID uint64, projectID uuid.UUID) error {
+	if projectID == uuid.Nil {
+		return ErrInvalid
+	}
+	if s.Projects == nil {
+		return ErrStoreUnavailable
+	}
+	return s.Projects.ResolveSourceProject(ctx, orgID, projectID)
 }
 
 func (s *Service) ListWorkflowRuns(ctx context.Context, principal Principal, repoID uuid.UUID) ([]WorkflowRun, error) {
@@ -472,16 +480,19 @@ func (s *Service) RecordWebhook(ctx context.Context, backend, event, delivery st
 	span.SetAttributes(attribute.String("source.webhook_backend", backend), attribute.String("source.webhook_event", event), attribute.Bool("source.webhook_valid", valid))
 	result := "denied"
 	var (
-		resolvedOrgID  uint64
-		resolvedRepoID uuid.UUID
-		details        = map[string]any{"backend": backend, "delivery": delivery}
+		resolvedOrgID     uint64
+		resolvedProjectID uuid.UUID
+		resolvedRepoID    uuid.UUID
+		details           = map[string]any{"backend": backend, "delivery": delivery}
 	)
 	if valid {
 		result = "unresolved"
 		if repo, err := s.ResolveWebhookRepository(ctx, backend, body); err == nil {
 			result = "accepted"
 			resolvedOrgID = repo.OrgID
+			resolvedProjectID = repo.ProjectID
 			resolvedRepoID = repo.RepoID
+			details["project_id"] = repo.ProjectID.String()
 			details["repo_id"] = repo.RepoID.String()
 		} else if !errors.Is(err, ErrNotFound) && !errors.Is(err, ErrInvalid) {
 			result = "error"
@@ -489,14 +500,15 @@ func (s *Service) RecordWebhook(ctx context.Context, backend, event, delivery st
 		}
 	}
 	return s.Store.RecordWebhookDelivery(ctx, WebhookDelivery{
-		Backend:        strings.TrimSpace(backend),
-		DeliveryID:     strings.TrimSpace(delivery),
-		EventType:      strings.TrimSpace(event),
-		SignatureValid: valid,
-		Result:         result,
-		ResolvedOrgID:  resolvedOrgID,
-		ResolvedRepoID: resolvedRepoID,
-		Details:        details,
+		Backend:           strings.TrimSpace(backend),
+		DeliveryID:        strings.TrimSpace(delivery),
+		EventType:         strings.TrimSpace(event),
+		SignatureValid:    valid,
+		Result:            result,
+		ResolvedOrgID:     resolvedOrgID,
+		ResolvedProjectID: resolvedProjectID,
+		ResolvedRepoID:    resolvedRepoID,
+		Details:           details,
 	})
 }
 
@@ -556,7 +568,7 @@ func (s *Service) createOrGetForgejoRepository(ctx context.Context, repoName, de
 func (s *Service) forgejoRepoName(orgID uint64, name string) string {
 	prefix := strings.Trim(strings.TrimSpace(s.ForgejoPrefix), "-")
 	if prefix == "" {
-		prefix = "fm"
+		prefix = "verself"
 	}
 	return fmt.Sprintf("%s-%d-%s", prefix, orgID, NormalizeSlug(name))
 }

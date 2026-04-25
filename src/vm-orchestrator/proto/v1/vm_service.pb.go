@@ -328,7 +328,7 @@ func (LeaseEventType) EnumDescriptor() ([]byte, []int) {
 
 type NetworkAttach struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Mode          NetworkAttachMode      `protobuf:"varint,1,opt,name=mode,proto3,enum=forge_metal.vm_orchestrator.v1.NetworkAttachMode" json:"mode,omitempty"`
+	Mode          NetworkAttachMode      `protobuf:"varint,1,opt,name=mode,proto3,enum=verself.vm_orchestrator.v1.NetworkAttachMode" json:"mode,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -663,7 +663,7 @@ func (x *AcquireLeaseRequest) GetSpec() *LeaseSpec {
 type AcquireLeaseResponse struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	LeaseId          string                 `protobuf:"bytes,1,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
-	State            LeaseState             `protobuf:"varint,2,opt,name=state,proto3,enum=forge_metal.vm_orchestrator.v1.LeaseState" json:"state,omitempty"`
+	State            LeaseState             `protobuf:"varint,2,opt,name=state,proto3,enum=verself.vm_orchestrator.v1.LeaseState" json:"state,omitempty"`
 	AcquiredAtUnixNs uint64                 `protobuf:"varint,3,opt,name=acquired_at_unix_ns,json=acquiredAtUnixNs,proto3" json:"acquired_at_unix_ns,omitempty"`
 	ExpiresAtUnixNs  uint64                 `protobuf:"varint,4,opt,name=expires_at_unix_ns,json=expiresAtUnixNs,proto3" json:"expires_at_unix_ns,omitempty"`
 	VmIp             string                 `protobuf:"bytes,5,opt,name=vm_ip,json=vmIp,proto3" json:"vm_ip,omitempty"`
@@ -927,7 +927,7 @@ func (x *ReleaseLeaseRequest) GetFinalCheckpointRef() string {
 type ReleaseLeaseResponse struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	LeaseId          string                 `protobuf:"bytes,1,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
-	State            LeaseState             `protobuf:"varint,2,opt,name=state,proto3,enum=forge_metal.vm_orchestrator.v1.LeaseState" json:"state,omitempty"`
+	State            LeaseState             `protobuf:"varint,2,opt,name=state,proto3,enum=verself.vm_orchestrator.v1.LeaseState" json:"state,omitempty"`
 	ReleasedAtUnixNs uint64                 `protobuf:"varint,3,opt,name=released_at_unix_ns,json=releasedAtUnixNs,proto3" json:"released_at_unix_ns,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
@@ -1031,7 +1031,7 @@ func (x *GetLeaseRequest) GetLeaseId() string {
 type LeaseRecord struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	LeaseId          string                 `protobuf:"bytes,1,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
-	State            LeaseState             `protobuf:"varint,2,opt,name=state,proto3,enum=forge_metal.vm_orchestrator.v1.LeaseState" json:"state,omitempty"`
+	State            LeaseState             `protobuf:"varint,2,opt,name=state,proto3,enum=verself.vm_orchestrator.v1.LeaseState" json:"state,omitempty"`
 	AcquiredAtUnixNs uint64                 `protobuf:"varint,3,opt,name=acquired_at_unix_ns,json=acquiredAtUnixNs,proto3" json:"acquired_at_unix_ns,omitempty"`
 	ReadyAtUnixNs    uint64                 `protobuf:"varint,4,opt,name=ready_at_unix_ns,json=readyAtUnixNs,proto3" json:"ready_at_unix_ns,omitempty"`
 	ExpiresAtUnixNs  uint64                 `protobuf:"varint,5,opt,name=expires_at_unix_ns,json=expiresAtUnixNs,proto3" json:"expires_at_unix_ns,omitempty"`
@@ -1356,7 +1356,7 @@ type LeaseEvent struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	LeaseId         string                 `protobuf:"bytes,1,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
 	EventSeq        uint64                 `protobuf:"varint,2,opt,name=event_seq,json=eventSeq,proto3" json:"event_seq,omitempty"`
-	EventType       LeaseEventType         `protobuf:"varint,3,opt,name=event_type,json=eventType,proto3,enum=forge_metal.vm_orchestrator.v1.LeaseEventType" json:"event_type,omitempty"`
+	EventType       LeaseEventType         `protobuf:"varint,3,opt,name=event_type,json=eventType,proto3,enum=verself.vm_orchestrator.v1.LeaseEventType" json:"event_type,omitempty"`
 	ExecId          string                 `protobuf:"bytes,4,opt,name=exec_id,json=execId,proto3" json:"exec_id,omitempty"`
 	Attrs           map[string]string      `protobuf:"bytes,5,rep,name=attrs,proto3" json:"attrs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	CreatedAtUnixNs uint64                 `protobuf:"varint,6,opt,name=created_at_unix_ns,json=createdAtUnixNs,proto3" json:"created_at_unix_ns,omitempty"`
@@ -1441,9 +1441,9 @@ type ExecSpec struct {
 	Argv           []string               `protobuf:"bytes,1,rep,name=argv,proto3" json:"argv,omitempty"`
 	WorkingDir     string                 `protobuf:"bytes,2,opt,name=working_dir,json=workingDir,proto3" json:"working_dir,omitempty"`
 	Env            map[string]string      `protobuf:"bytes,3,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Stdin          StdioMode              `protobuf:"varint,4,opt,name=stdin,proto3,enum=forge_metal.vm_orchestrator.v1.StdioMode" json:"stdin,omitempty"`
-	Stdout         StdioMode              `protobuf:"varint,5,opt,name=stdout,proto3,enum=forge_metal.vm_orchestrator.v1.StdioMode" json:"stdout,omitempty"`
-	Stderr         StdioMode              `protobuf:"varint,6,opt,name=stderr,proto3,enum=forge_metal.vm_orchestrator.v1.StdioMode" json:"stderr,omitempty"`
+	Stdin          StdioMode              `protobuf:"varint,4,opt,name=stdin,proto3,enum=verself.vm_orchestrator.v1.StdioMode" json:"stdin,omitempty"`
+	Stdout         StdioMode              `protobuf:"varint,5,opt,name=stdout,proto3,enum=verself.vm_orchestrator.v1.StdioMode" json:"stdout,omitempty"`
+	Stderr         StdioMode              `protobuf:"varint,6,opt,name=stderr,proto3,enum=verself.vm_orchestrator.v1.StdioMode" json:"stderr,omitempty"`
 	MaxWallSeconds uint64                 `protobuf:"varint,7,opt,name=max_wall_seconds,json=maxWallSeconds,proto3" json:"max_wall_seconds,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -1592,7 +1592,7 @@ type StartExecResponse struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	LeaseId         string                 `protobuf:"bytes,1,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
 	ExecId          string                 `protobuf:"bytes,2,opt,name=exec_id,json=execId,proto3" json:"exec_id,omitempty"`
-	State           ExecState              `protobuf:"varint,3,opt,name=state,proto3,enum=forge_metal.vm_orchestrator.v1.ExecState" json:"state,omitempty"`
+	State           ExecState              `protobuf:"varint,3,opt,name=state,proto3,enum=verself.vm_orchestrator.v1.ExecState" json:"state,omitempty"`
 	StartedAtUnixNs uint64                 `protobuf:"varint,4,opt,name=started_at_unix_ns,json=startedAtUnixNs,proto3" json:"started_at_unix_ns,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
@@ -1728,7 +1728,7 @@ type CancelExecResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	LeaseId       string                 `protobuf:"bytes,1,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
 	ExecId        string                 `protobuf:"bytes,2,opt,name=exec_id,json=execId,proto3" json:"exec_id,omitempty"`
-	State         ExecState              `protobuf:"varint,3,opt,name=state,proto3,enum=forge_metal.vm_orchestrator.v1.ExecState" json:"state,omitempty"`
+	State         ExecState              `protobuf:"varint,3,opt,name=state,proto3,enum=verself.vm_orchestrator.v1.ExecState" json:"state,omitempty"`
 	Accepted      bool                   `protobuf:"varint,4,opt,name=accepted,proto3" json:"accepted,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1916,7 +1916,7 @@ type ExecRecord struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
 	LeaseId                string                 `protobuf:"bytes,1,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
 	ExecId                 string                 `protobuf:"bytes,2,opt,name=exec_id,json=execId,proto3" json:"exec_id,omitempty"`
-	State                  ExecState              `protobuf:"varint,3,opt,name=state,proto3,enum=forge_metal.vm_orchestrator.v1.ExecState" json:"state,omitempty"`
+	State                  ExecState              `protobuf:"varint,3,opt,name=state,proto3,enum=verself.vm_orchestrator.v1.ExecState" json:"state,omitempty"`
 	ExitCode               int32                  `protobuf:"varint,4,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
 	TerminalReason         string                 `protobuf:"bytes,5,opt,name=terminal_reason,json=terminalReason,proto3" json:"terminal_reason,omitempty"`
 	QueuedAtUnixNs         uint64                 `protobuf:"varint,6,opt,name=queued_at_unix_ns,json=queuedAtUnixNs,proto3" json:"queued_at_unix_ns,omitempty"`
@@ -2724,25 +2724,25 @@ var File_proto_v1_vm_service_proto protoreflect.FileDescriptor
 
 const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\n" +
-	"\x19proto/v1/vm_service.proto\x12\x1eforge_metal.vm_orchestrator.v1\"V\n" +
-	"\rNetworkAttach\x12E\n" +
-	"\x04mode\x18\x01 \x01(\x0e21.forge_metal.vm_orchestrator.v1.NetworkAttachModeR\x04mode\"\x89\x01\n" +
+	"\x19proto/v1/vm_service.proto\x12\x1averself.vm_orchestrator.v1\"R\n" +
+	"\rNetworkAttach\x12A\n" +
+	"\x04mode\x18\x01 \x01(\x0e2-.verself.vm_orchestrator.v1.NetworkAttachModeR\x04mode\"\x89\x01\n" +
 	"\vVMResources\x12\x14\n" +
 	"\x05vcpus\x18\x01 \x01(\rR\x05vcpus\x12\x1d\n" +
 	"\n" +
 	"memory_mib\x18\x02 \x01(\rR\tmemoryMib\x12\"\n" +
 	"\rroot_disk_gib\x18\x03 \x01(\rR\vrootDiskGib\x12!\n" +
-	"\fkernel_image\x18\x04 \x01(\tR\vkernelImage\"\xab\x03\n" +
-	"\tLeaseSpec\x12I\n" +
-	"\tresources\x18\x01 \x01(\v2+.forge_metal.vm_orchestrator.v1.VMResourcesR\tresources\x12.\n" +
+	"\fkernel_image\x18\x04 \x01(\tR\vkernelImage\"\x9f\x03\n" +
+	"\tLeaseSpec\x12E\n" +
+	"\tresources\x18\x01 \x01(\v2'.verself.vm_orchestrator.v1.VMResourcesR\tresources\x12.\n" +
 	"\x13from_checkpoint_ref\x18\x04 \x01(\tR\x11fromCheckpointRef\x12\x1f\n" +
 	"\vttl_seconds\x18\x05 \x01(\x04R\n" +
 	"ttlSeconds\x12\x1f\n" +
 	"\vtrust_class\x18\x06 \x01(\tR\n" +
 	"trustClass\x12:\n" +
-	"\x19checkpoint_save_allowlist\x18\a \x03(\tR\x17checkpointSaveAllowlist\x12G\n" +
-	"\anetwork\x18\b \x01(\v2-.forge_metal.vm_orchestrator.v1.NetworkAttachR\anetwork\x12\\\n" +
-	"\x11filesystem_mounts\x18\t \x03(\v2/.forge_metal.vm_orchestrator.v1.FilesystemMountR\x10filesystemMounts\"\x99\x01\n" +
+	"\x19checkpoint_save_allowlist\x18\a \x03(\tR\x17checkpointSaveAllowlist\x12C\n" +
+	"\anetwork\x18\b \x01(\v2).verself.vm_orchestrator.v1.NetworkAttachR\anetwork\x12X\n" +
+	"\x11filesystem_mounts\x18\t \x03(\v2+.verself.vm_orchestrator.v1.FilesystemMountR\x10filesystemMounts\"\x99\x01\n" +
 	"\x0fFilesystemMount\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1d\n" +
 	"\n" +
@@ -2750,17 +2750,17 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\n" +
 	"mount_path\x18\x03 \x01(\tR\tmountPath\x12\x17\n" +
 	"\afs_type\x18\x04 \x01(\tR\x06fsType\x12\x1b\n" +
-	"\tread_only\x18\x05 \x01(\bR\breadOnly\"}\n" +
+	"\tread_only\x18\x05 \x01(\bR\breadOnly\"y\n" +
 	"\x13AcquireLeaseRequest\x12'\n" +
-	"\x0fidempotency_key\x18\x01 \x01(\tR\x0eidempotencyKey\x12=\n" +
-	"\x04spec\x18\x02 \x01(\v2).forge_metal.vm_orchestrator.v1.LeaseSpecR\x04spec\"\xaf\x02\n" +
+	"\x0fidempotency_key\x18\x01 \x01(\tR\x0eidempotencyKey\x129\n" +
+	"\x04spec\x18\x02 \x01(\v2%.verself.vm_orchestrator.v1.LeaseSpecR\x04spec\"\xa7\x02\n" +
 	"\x14AcquireLeaseResponse\x12\x19\n" +
-	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12@\n" +
-	"\x05state\x18\x02 \x01(\x0e2*.forge_metal.vm_orchestrator.v1.LeaseStateR\x05state\x12-\n" +
+	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12<\n" +
+	"\x05state\x18\x02 \x01(\x0e2&.verself.vm_orchestrator.v1.LeaseStateR\x05state\x12-\n" +
 	"\x13acquired_at_unix_ns\x18\x03 \x01(\x04R\x10acquiredAtUnixNs\x12+\n" +
 	"\x12expires_at_unix_ns\x18\x04 \x01(\x04R\x0fexpiresAtUnixNs\x12\x13\n" +
-	"\x05vm_ip\x18\x05 \x01(\tR\x04vmIp\x12I\n" +
-	"\tresources\x18\x06 \x01(\v2+.forge_metal.vm_orchestrator.v1.VMResourcesR\tresources\"\xba\x01\n" +
+	"\x05vm_ip\x18\x05 \x01(\tR\x04vmIp\x12E\n" +
+	"\tresources\x18\x06 \x01(\v2'.verself.vm_orchestrator.v1.VMResourcesR\tresources\"\xba\x01\n" +
 	"\x11RenewLeaseRequest\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12'\n" +
 	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\x12%\n" +
@@ -2772,82 +2772,82 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\x13ReleaseLeaseRequest\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12'\n" +
 	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\x120\n" +
-	"\x14final_checkpoint_ref\x18\x03 \x01(\tR\x12finalCheckpointRef\"\xa2\x01\n" +
+	"\x14final_checkpoint_ref\x18\x03 \x01(\tR\x12finalCheckpointRef\"\x9e\x01\n" +
 	"\x14ReleaseLeaseResponse\x12\x19\n" +
-	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12@\n" +
-	"\x05state\x18\x02 \x01(\x0e2*.forge_metal.vm_orchestrator.v1.LeaseStateR\x05state\x12-\n" +
+	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12<\n" +
+	"\x05state\x18\x02 \x01(\x0e2&.verself.vm_orchestrator.v1.LeaseStateR\x05state\x12-\n" +
 	"\x13released_at_unix_ns\x18\x03 \x01(\x04R\x10releasedAtUnixNs\",\n" +
 	"\x0fGetLeaseRequest\x12\x19\n" +
-	"\blease_id\x18\x01 \x01(\tR\aleaseId\"\xc8\x03\n" +
+	"\blease_id\x18\x01 \x01(\tR\aleaseId\"\xc0\x03\n" +
 	"\vLeaseRecord\x12\x19\n" +
-	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12@\n" +
-	"\x05state\x18\x02 \x01(\x0e2*.forge_metal.vm_orchestrator.v1.LeaseStateR\x05state\x12-\n" +
+	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12<\n" +
+	"\x05state\x18\x02 \x01(\x0e2&.verself.vm_orchestrator.v1.LeaseStateR\x05state\x12-\n" +
 	"\x13acquired_at_unix_ns\x18\x03 \x01(\x04R\x10acquiredAtUnixNs\x12'\n" +
 	"\x10ready_at_unix_ns\x18\x04 \x01(\x04R\rreadyAtUnixNs\x12+\n" +
 	"\x12expires_at_unix_ns\x18\x05 \x01(\x04R\x0fexpiresAtUnixNs\x12-\n" +
 	"\x13terminal_at_unix_ns\x18\x06 \x01(\x04R\x10terminalAtUnixNs\x12'\n" +
 	"\x0fterminal_reason\x18\a \x01(\tR\x0eterminalReason\x12\x13\n" +
-	"\x05vm_ip\x18\b \x01(\tR\x04vmIp\x12I\n" +
-	"\tresources\x18\t \x01(\v2+.forge_metal.vm_orchestrator.v1.VMResourcesR\tresources\x12\x1f\n" +
+	"\x05vm_ip\x18\b \x01(\tR\x04vmIp\x12E\n" +
+	"\tresources\x18\t \x01(\v2'.verself.vm_orchestrator.v1.VMResourcesR\tresources\x12\x1f\n" +
 	"\vtrust_class\x18\n" +
 	" \x01(\tR\n" +
-	"trustClass\"U\n" +
-	"\x10GetLeaseResponse\x12A\n" +
-	"\x05lease\x18\x01 \x01(\v2+.forge_metal.vm_orchestrator.v1.LeaseRecordR\x05lease\"T\n" +
+	"trustClass\"Q\n" +
+	"\x10GetLeaseResponse\x12=\n" +
+	"\x05lease\x18\x01 \x01(\v2'.verself.vm_orchestrator.v1.LeaseRecordR\x05lease\"T\n" +
 	"\x11ListLeasesRequest\x12)\n" +
 	"\x10include_terminal\x18\x01 \x01(\bR\x0fincludeTerminal\x12\x14\n" +
-	"\x05limit\x18\x02 \x01(\rR\x05limit\"Y\n" +
-	"\x12ListLeasesResponse\x12C\n" +
-	"\x06leases\x18\x01 \x03(\v2+.forge_metal.vm_orchestrator.v1.LeaseRecordR\x06leases\"\x87\x01\n" +
+	"\x05limit\x18\x02 \x01(\rR\x05limit\"U\n" +
+	"\x12ListLeasesResponse\x12?\n" +
+	"\x06leases\x18\x01 \x03(\v2'.verself.vm_orchestrator.v1.LeaseRecordR\x06leases\"\x87\x01\n" +
 	"\x18StreamLeaseEventsRequest\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12\x19\n" +
 	"\bfrom_seq\x18\x02 \x01(\x04R\afromSeq\x12\x16\n" +
 	"\x06follow\x18\x03 \x01(\bR\x06follow\x12\x1d\n" +
 	"\n" +
-	"batch_size\x18\x04 \x01(\rR\tbatchSize\"\xe0\x02\n" +
+	"batch_size\x18\x04 \x01(\rR\tbatchSize\"\xd8\x02\n" +
 	"\n" +
 	"LeaseEvent\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12\x1b\n" +
-	"\tevent_seq\x18\x02 \x01(\x04R\beventSeq\x12M\n" +
+	"\tevent_seq\x18\x02 \x01(\x04R\beventSeq\x12I\n" +
 	"\n" +
-	"event_type\x18\x03 \x01(\x0e2..forge_metal.vm_orchestrator.v1.LeaseEventTypeR\teventType\x12\x17\n" +
-	"\aexec_id\x18\x04 \x01(\tR\x06execId\x12K\n" +
-	"\x05attrs\x18\x05 \x03(\v25.forge_metal.vm_orchestrator.v1.LeaseEvent.AttrsEntryR\x05attrs\x12+\n" +
+	"event_type\x18\x03 \x01(\x0e2*.verself.vm_orchestrator.v1.LeaseEventTypeR\teventType\x12\x17\n" +
+	"\aexec_id\x18\x04 \x01(\tR\x06execId\x12G\n" +
+	"\x05attrs\x18\x05 \x03(\v21.verself.vm_orchestrator.v1.LeaseEvent.AttrsEntryR\x05attrs\x12+\n" +
 	"\x12created_at_unix_ns\x18\x06 \x01(\x04R\x0fcreatedAtUnixNs\x1a8\n" +
 	"\n" +
 	"AttrsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xad\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x9d\x03\n" +
 	"\bExecSpec\x12\x12\n" +
 	"\x04argv\x18\x01 \x03(\tR\x04argv\x12\x1f\n" +
 	"\vworking_dir\x18\x02 \x01(\tR\n" +
-	"workingDir\x12C\n" +
-	"\x03env\x18\x03 \x03(\v21.forge_metal.vm_orchestrator.v1.ExecSpec.EnvEntryR\x03env\x12?\n" +
-	"\x05stdin\x18\x04 \x01(\x0e2).forge_metal.vm_orchestrator.v1.StdioModeR\x05stdin\x12A\n" +
-	"\x06stdout\x18\x05 \x01(\x0e2).forge_metal.vm_orchestrator.v1.StdioModeR\x06stdout\x12A\n" +
-	"\x06stderr\x18\x06 \x01(\x0e2).forge_metal.vm_orchestrator.v1.StdioModeR\x06stderr\x12(\n" +
+	"workingDir\x12?\n" +
+	"\x03env\x18\x03 \x03(\v2-.verself.vm_orchestrator.v1.ExecSpec.EnvEntryR\x03env\x12;\n" +
+	"\x05stdin\x18\x04 \x01(\x0e2%.verself.vm_orchestrator.v1.StdioModeR\x05stdin\x12=\n" +
+	"\x06stdout\x18\x05 \x01(\x0e2%.verself.vm_orchestrator.v1.StdioModeR\x06stdout\x12=\n" +
+	"\x06stderr\x18\x06 \x01(\x0e2%.verself.vm_orchestrator.v1.StdioModeR\x06stderr\x12(\n" +
 	"\x10max_wall_seconds\x18\a \x01(\x04R\x0emaxWallSeconds\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x94\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x90\x01\n" +
 	"\x10StartExecRequest\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12'\n" +
-	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\x12<\n" +
-	"\x04spec\x18\x03 \x01(\v2(.forge_metal.vm_orchestrator.v1.ExecSpecR\x04spec\"\xb5\x01\n" +
+	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\x128\n" +
+	"\x04spec\x18\x03 \x01(\v2$.verself.vm_orchestrator.v1.ExecSpecR\x04spec\"\xb1\x01\n" +
 	"\x11StartExecResponse\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12\x17\n" +
-	"\aexec_id\x18\x02 \x01(\tR\x06execId\x12?\n" +
-	"\x05state\x18\x03 \x01(\x0e2).forge_metal.vm_orchestrator.v1.ExecStateR\x05state\x12+\n" +
+	"\aexec_id\x18\x02 \x01(\tR\x06execId\x12;\n" +
+	"\x05state\x18\x03 \x01(\x0e2%.verself.vm_orchestrator.v1.ExecStateR\x05state\x12+\n" +
 	"\x12started_at_unix_ns\x18\x04 \x01(\x04R\x0fstartedAtUnixNs\"\x88\x01\n" +
 	"\x11CancelExecRequest\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12\x17\n" +
 	"\aexec_id\x18\x02 \x01(\tR\x06execId\x12'\n" +
 	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\x12\x16\n" +
-	"\x06reason\x18\x04 \x01(\tR\x06reason\"\xa5\x01\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\"\xa1\x01\n" +
 	"\x12CancelExecResponse\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12\x17\n" +
-	"\aexec_id\x18\x02 \x01(\tR\x06execId\x12?\n" +
-	"\x05state\x18\x03 \x01(\x0e2).forge_metal.vm_orchestrator.v1.ExecStateR\x05state\x12\x1a\n" +
+	"\aexec_id\x18\x02 \x01(\tR\x06execId\x12;\n" +
+	"\x05state\x18\x03 \x01(\x0e2%.verself.vm_orchestrator.v1.ExecStateR\x05state\x12\x1a\n" +
 	"\baccepted\x18\x04 \x01(\bR\baccepted\"k\n" +
 	"\x0eGetExecRequest\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12\x17\n" +
@@ -2856,12 +2856,12 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\x0fWaitExecRequest\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12\x17\n" +
 	"\aexec_id\x18\x02 \x01(\tR\x06execId\x12%\n" +
-	"\x0einclude_output\x18\x03 \x01(\bR\rincludeOutput\"\xa6\x05\n" +
+	"\x0einclude_output\x18\x03 \x01(\bR\rincludeOutput\"\x9e\x05\n" +
 	"\n" +
 	"ExecRecord\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12\x17\n" +
-	"\aexec_id\x18\x02 \x01(\tR\x06execId\x12?\n" +
-	"\x05state\x18\x03 \x01(\x0e2).forge_metal.vm_orchestrator.v1.ExecStateR\x05state\x12\x1b\n" +
+	"\aexec_id\x18\x02 \x01(\tR\x06execId\x12;\n" +
+	"\x05state\x18\x03 \x01(\x0e2%.verself.vm_orchestrator.v1.ExecStateR\x05state\x12\x1b\n" +
 	"\texit_code\x18\x04 \x01(\x05R\bexitCode\x12'\n" +
 	"\x0fterminal_reason\x18\x05 \x01(\tR\x0eterminalReason\x12)\n" +
 	"\x11queued_at_unix_ns\x18\x06 \x01(\x04R\x0equeuedAtUnixNs\x12+\n" +
@@ -2872,15 +2872,15 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	" \x01(\x04R\vstdoutBytes\x12!\n" +
 	"\fstderr_bytes\x18\v \x01(\x04R\vstderrBytes\x12*\n" +
 	"\x11dropped_log_bytes\x18\f \x01(\x04R\x0fdroppedLogBytes\x12\x16\n" +
-	"\x06output\x18\r \x01(\tR\x06output\x12C\n" +
-	"\ametrics\x18\x0e \x01(\v2).forge_metal.vm_orchestrator.v1.VMMetricsR\ametrics\x12\x1f\n" +
+	"\x06output\x18\r \x01(\tR\x06output\x12?\n" +
+	"\ametrics\x18\x0e \x01(\v2%.verself.vm_orchestrator.v1.VMMetricsR\ametrics\x12\x1f\n" +
 	"\vzfs_written\x18\x0f \x01(\x04R\n" +
 	"zfsWritten\x128\n" +
-	"\x18rootfs_provisioned_bytes\x18\x10 \x01(\x04R\x16rootfsProvisionedBytes\"Q\n" +
-	"\x0fGetExecResponse\x12>\n" +
-	"\x04exec\x18\x01 \x01(\v2*.forge_metal.vm_orchestrator.v1.ExecRecordR\x04exec\"R\n" +
-	"\x10WaitExecResponse\x12>\n" +
-	"\x04exec\x18\x01 \x01(\v2*.forge_metal.vm_orchestrator.v1.ExecRecordR\x04exec\"m\n" +
+	"\x18rootfs_provisioned_bytes\x18\x10 \x01(\x04R\x16rootfsProvisionedBytes\"M\n" +
+	"\x0fGetExecResponse\x12:\n" +
+	"\x04exec\x18\x01 \x01(\v2&.verself.vm_orchestrator.v1.ExecRecordR\x04exec\"N\n" +
+	"\x10WaitExecResponse\x12:\n" +
+	"\x04exec\x18\x01 \x01(\v2&.verself.vm_orchestrator.v1.ExecRecordR\x04exec\"m\n" +
 	"\x15SaveCheckpointRequest\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12'\n" +
 	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\x12\x10\n" +
@@ -2926,10 +2926,10 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\x18max_memory_mib_per_lease\x18\x05 \x01(\rR\x14maxMemoryMibPerLease\x12;\n" +
 	"\x1bmax_root_disk_gib_per_lease\x18\x06 \x01(\rR\x16maxRootDiskGibPerLease\x128\n" +
 	"\x18rootfs_provisioned_bytes\x18\a \x01(\x04R\x16rootfsProvisionedBytes\"\x14\n" +
-	"\x12GetCapacityRequest\"\x81\x01\n" +
+	"\x12GetCapacityRequest\"}\n" +
 	"\x13GetCapacityResponse\x12&\n" +
-	"\x0fguest_pool_cidr\x18\x01 \x01(\tR\rguestPoolCidr\x12B\n" +
-	"\x04pool\x18\x02 \x01(\v2..forge_metal.vm_orchestrator.v1.VMPoolCapacityR\x04pool*\xc1\x01\n" +
+	"\x0fguest_pool_cidr\x18\x01 \x01(\tR\rguestPoolCidr\x12>\n" +
+	"\x04pool\x18\x02 \x01(\v2*.verself.vm_orchestrator.v1.VMPoolCapacityR\x04pool*\xc1\x01\n" +
 	"\n" +
 	"LeaseState\x12\x1b\n" +
 	"\x17LEASE_STATE_UNSPECIFIED\x10\x00\x12\x19\n" +
@@ -2971,24 +2971,24 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\x12#\n" +
 	"\x1fLEASE_EVENT_TYPE_LEASE_RELEASED\x10\v\x12\"\n" +
 	"\x1eLEASE_EVENT_TYPE_LEASE_CRASHED\x10\f\x12)\n" +
-	"%LEASE_EVENT_TYPE_TELEMETRY_DIAGNOSTIC\x10\r2\xa9\f\n" +
-	"\tVMService\x12y\n" +
-	"\fAcquireLease\x123.forge_metal.vm_orchestrator.v1.AcquireLeaseRequest\x1a4.forge_metal.vm_orchestrator.v1.AcquireLeaseResponse\x12s\n" +
+	"%LEASE_EVENT_TYPE_TELEMETRY_DIAGNOSTIC\x10\r2\xc1\v\n" +
+	"\tVMService\x12q\n" +
+	"\fAcquireLease\x12/.verself.vm_orchestrator.v1.AcquireLeaseRequest\x1a0.verself.vm_orchestrator.v1.AcquireLeaseResponse\x12k\n" +
 	"\n" +
-	"RenewLease\x121.forge_metal.vm_orchestrator.v1.RenewLeaseRequest\x1a2.forge_metal.vm_orchestrator.v1.RenewLeaseResponse\x12y\n" +
-	"\fReleaseLease\x123.forge_metal.vm_orchestrator.v1.ReleaseLeaseRequest\x1a4.forge_metal.vm_orchestrator.v1.ReleaseLeaseResponse\x12m\n" +
-	"\bGetLease\x12/.forge_metal.vm_orchestrator.v1.GetLeaseRequest\x1a0.forge_metal.vm_orchestrator.v1.GetLeaseResponse\x12s\n" +
+	"RenewLease\x12-.verself.vm_orchestrator.v1.RenewLeaseRequest\x1a..verself.vm_orchestrator.v1.RenewLeaseResponse\x12q\n" +
+	"\fReleaseLease\x12/.verself.vm_orchestrator.v1.ReleaseLeaseRequest\x1a0.verself.vm_orchestrator.v1.ReleaseLeaseResponse\x12e\n" +
+	"\bGetLease\x12+.verself.vm_orchestrator.v1.GetLeaseRequest\x1a,.verself.vm_orchestrator.v1.GetLeaseResponse\x12k\n" +
 	"\n" +
-	"ListLeases\x121.forge_metal.vm_orchestrator.v1.ListLeasesRequest\x1a2.forge_metal.vm_orchestrator.v1.ListLeasesResponse\x12{\n" +
-	"\x11StreamLeaseEvents\x128.forge_metal.vm_orchestrator.v1.StreamLeaseEventsRequest\x1a*.forge_metal.vm_orchestrator.v1.LeaseEvent0\x01\x12p\n" +
-	"\tStartExec\x120.forge_metal.vm_orchestrator.v1.StartExecRequest\x1a1.forge_metal.vm_orchestrator.v1.StartExecResponse\x12s\n" +
+	"ListLeases\x12-.verself.vm_orchestrator.v1.ListLeasesRequest\x1a..verself.vm_orchestrator.v1.ListLeasesResponse\x12s\n" +
+	"\x11StreamLeaseEvents\x124.verself.vm_orchestrator.v1.StreamLeaseEventsRequest\x1a&.verself.vm_orchestrator.v1.LeaseEvent0\x01\x12h\n" +
+	"\tStartExec\x12,.verself.vm_orchestrator.v1.StartExecRequest\x1a-.verself.vm_orchestrator.v1.StartExecResponse\x12k\n" +
 	"\n" +
-	"CancelExec\x121.forge_metal.vm_orchestrator.v1.CancelExecRequest\x1a2.forge_metal.vm_orchestrator.v1.CancelExecResponse\x12j\n" +
-	"\aGetExec\x12..forge_metal.vm_orchestrator.v1.GetExecRequest\x1a/.forge_metal.vm_orchestrator.v1.GetExecResponse\x12m\n" +
-	"\bWaitExec\x12/.forge_metal.vm_orchestrator.v1.WaitExecRequest\x1a0.forge_metal.vm_orchestrator.v1.WaitExecResponse\x12\x94\x01\n" +
-	"\x15CommitFilesystemMount\x12<.forge_metal.vm_orchestrator.v1.CommitFilesystemMountRequest\x1a=.forge_metal.vm_orchestrator.v1.CommitFilesystemMountResponse\x12\x7f\n" +
-	"\x0eSaveCheckpoint\x125.forge_metal.vm_orchestrator.v1.SaveCheckpointRequest\x1a6.forge_metal.vm_orchestrator.v1.SaveCheckpointResponse\x12v\n" +
-	"\vGetCapacity\x122.forge_metal.vm_orchestrator.v1.GetCapacityRequest\x1a3.forge_metal.vm_orchestrator.v1.GetCapacityResponseB7Z5github.com/forge-metal/vm-orchestrator/proto/v1;vmrpcb\x06proto3"
+	"CancelExec\x12-.verself.vm_orchestrator.v1.CancelExecRequest\x1a..verself.vm_orchestrator.v1.CancelExecResponse\x12b\n" +
+	"\aGetExec\x12*.verself.vm_orchestrator.v1.GetExecRequest\x1a+.verself.vm_orchestrator.v1.GetExecResponse\x12e\n" +
+	"\bWaitExec\x12+.verself.vm_orchestrator.v1.WaitExecRequest\x1a,.verself.vm_orchestrator.v1.WaitExecResponse\x12\x8c\x01\n" +
+	"\x15CommitFilesystemMount\x128.verself.vm_orchestrator.v1.CommitFilesystemMountRequest\x1a9.verself.vm_orchestrator.v1.CommitFilesystemMountResponse\x12w\n" +
+	"\x0eSaveCheckpoint\x121.verself.vm_orchestrator.v1.SaveCheckpointRequest\x1a2.verself.vm_orchestrator.v1.SaveCheckpointResponse\x12n\n" +
+	"\vGetCapacity\x12..verself.vm_orchestrator.v1.GetCapacityRequest\x1a/.verself.vm_orchestrator.v1.GetCapacityResponseB3Z1github.com/verself/vm-orchestrator/proto/v1;vmrpcb\x06proto3"
 
 var (
 	file_proto_v1_vm_service_proto_rawDescOnce sync.Once
@@ -3005,102 +3005,102 @@ func file_proto_v1_vm_service_proto_rawDescGZIP() []byte {
 var file_proto_v1_vm_service_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
 var file_proto_v1_vm_service_proto_msgTypes = make([]protoimpl.MessageInfo, 37)
 var file_proto_v1_vm_service_proto_goTypes = []any{
-	(LeaseState)(0),                       // 0: forge_metal.vm_orchestrator.v1.LeaseState
-	(ExecState)(0),                        // 1: forge_metal.vm_orchestrator.v1.ExecState
-	(StdioMode)(0),                        // 2: forge_metal.vm_orchestrator.v1.StdioMode
-	(NetworkAttachMode)(0),                // 3: forge_metal.vm_orchestrator.v1.NetworkAttachMode
-	(LeaseEventType)(0),                   // 4: forge_metal.vm_orchestrator.v1.LeaseEventType
-	(*NetworkAttach)(nil),                 // 5: forge_metal.vm_orchestrator.v1.NetworkAttach
-	(*VMResources)(nil),                   // 6: forge_metal.vm_orchestrator.v1.VMResources
-	(*LeaseSpec)(nil),                     // 7: forge_metal.vm_orchestrator.v1.LeaseSpec
-	(*FilesystemMount)(nil),               // 8: forge_metal.vm_orchestrator.v1.FilesystemMount
-	(*AcquireLeaseRequest)(nil),           // 9: forge_metal.vm_orchestrator.v1.AcquireLeaseRequest
-	(*AcquireLeaseResponse)(nil),          // 10: forge_metal.vm_orchestrator.v1.AcquireLeaseResponse
-	(*RenewLeaseRequest)(nil),             // 11: forge_metal.vm_orchestrator.v1.RenewLeaseRequest
-	(*RenewLeaseResponse)(nil),            // 12: forge_metal.vm_orchestrator.v1.RenewLeaseResponse
-	(*ReleaseLeaseRequest)(nil),           // 13: forge_metal.vm_orchestrator.v1.ReleaseLeaseRequest
-	(*ReleaseLeaseResponse)(nil),          // 14: forge_metal.vm_orchestrator.v1.ReleaseLeaseResponse
-	(*GetLeaseRequest)(nil),               // 15: forge_metal.vm_orchestrator.v1.GetLeaseRequest
-	(*LeaseRecord)(nil),                   // 16: forge_metal.vm_orchestrator.v1.LeaseRecord
-	(*GetLeaseResponse)(nil),              // 17: forge_metal.vm_orchestrator.v1.GetLeaseResponse
-	(*ListLeasesRequest)(nil),             // 18: forge_metal.vm_orchestrator.v1.ListLeasesRequest
-	(*ListLeasesResponse)(nil),            // 19: forge_metal.vm_orchestrator.v1.ListLeasesResponse
-	(*StreamLeaseEventsRequest)(nil),      // 20: forge_metal.vm_orchestrator.v1.StreamLeaseEventsRequest
-	(*LeaseEvent)(nil),                    // 21: forge_metal.vm_orchestrator.v1.LeaseEvent
-	(*ExecSpec)(nil),                      // 22: forge_metal.vm_orchestrator.v1.ExecSpec
-	(*StartExecRequest)(nil),              // 23: forge_metal.vm_orchestrator.v1.StartExecRequest
-	(*StartExecResponse)(nil),             // 24: forge_metal.vm_orchestrator.v1.StartExecResponse
-	(*CancelExecRequest)(nil),             // 25: forge_metal.vm_orchestrator.v1.CancelExecRequest
-	(*CancelExecResponse)(nil),            // 26: forge_metal.vm_orchestrator.v1.CancelExecResponse
-	(*GetExecRequest)(nil),                // 27: forge_metal.vm_orchestrator.v1.GetExecRequest
-	(*WaitExecRequest)(nil),               // 28: forge_metal.vm_orchestrator.v1.WaitExecRequest
-	(*ExecRecord)(nil),                    // 29: forge_metal.vm_orchestrator.v1.ExecRecord
-	(*GetExecResponse)(nil),               // 30: forge_metal.vm_orchestrator.v1.GetExecResponse
-	(*WaitExecResponse)(nil),              // 31: forge_metal.vm_orchestrator.v1.WaitExecResponse
-	(*SaveCheckpointRequest)(nil),         // 32: forge_metal.vm_orchestrator.v1.SaveCheckpointRequest
-	(*SaveCheckpointResponse)(nil),        // 33: forge_metal.vm_orchestrator.v1.SaveCheckpointResponse
-	(*CommitFilesystemMountRequest)(nil),  // 34: forge_metal.vm_orchestrator.v1.CommitFilesystemMountRequest
-	(*CommitFilesystemMountResponse)(nil), // 35: forge_metal.vm_orchestrator.v1.CommitFilesystemMountResponse
-	(*VMMetrics)(nil),                     // 36: forge_metal.vm_orchestrator.v1.VMMetrics
-	(*VMPoolCapacity)(nil),                // 37: forge_metal.vm_orchestrator.v1.VMPoolCapacity
-	(*GetCapacityRequest)(nil),            // 38: forge_metal.vm_orchestrator.v1.GetCapacityRequest
-	(*GetCapacityResponse)(nil),           // 39: forge_metal.vm_orchestrator.v1.GetCapacityResponse
-	nil,                                   // 40: forge_metal.vm_orchestrator.v1.LeaseEvent.AttrsEntry
-	nil,                                   // 41: forge_metal.vm_orchestrator.v1.ExecSpec.EnvEntry
+	(LeaseState)(0),                       // 0: verself.vm_orchestrator.v1.LeaseState
+	(ExecState)(0),                        // 1: verself.vm_orchestrator.v1.ExecState
+	(StdioMode)(0),                        // 2: verself.vm_orchestrator.v1.StdioMode
+	(NetworkAttachMode)(0),                // 3: verself.vm_orchestrator.v1.NetworkAttachMode
+	(LeaseEventType)(0),                   // 4: verself.vm_orchestrator.v1.LeaseEventType
+	(*NetworkAttach)(nil),                 // 5: verself.vm_orchestrator.v1.NetworkAttach
+	(*VMResources)(nil),                   // 6: verself.vm_orchestrator.v1.VMResources
+	(*LeaseSpec)(nil),                     // 7: verself.vm_orchestrator.v1.LeaseSpec
+	(*FilesystemMount)(nil),               // 8: verself.vm_orchestrator.v1.FilesystemMount
+	(*AcquireLeaseRequest)(nil),           // 9: verself.vm_orchestrator.v1.AcquireLeaseRequest
+	(*AcquireLeaseResponse)(nil),          // 10: verself.vm_orchestrator.v1.AcquireLeaseResponse
+	(*RenewLeaseRequest)(nil),             // 11: verself.vm_orchestrator.v1.RenewLeaseRequest
+	(*RenewLeaseResponse)(nil),            // 12: verself.vm_orchestrator.v1.RenewLeaseResponse
+	(*ReleaseLeaseRequest)(nil),           // 13: verself.vm_orchestrator.v1.ReleaseLeaseRequest
+	(*ReleaseLeaseResponse)(nil),          // 14: verself.vm_orchestrator.v1.ReleaseLeaseResponse
+	(*GetLeaseRequest)(nil),               // 15: verself.vm_orchestrator.v1.GetLeaseRequest
+	(*LeaseRecord)(nil),                   // 16: verself.vm_orchestrator.v1.LeaseRecord
+	(*GetLeaseResponse)(nil),              // 17: verself.vm_orchestrator.v1.GetLeaseResponse
+	(*ListLeasesRequest)(nil),             // 18: verself.vm_orchestrator.v1.ListLeasesRequest
+	(*ListLeasesResponse)(nil),            // 19: verself.vm_orchestrator.v1.ListLeasesResponse
+	(*StreamLeaseEventsRequest)(nil),      // 20: verself.vm_orchestrator.v1.StreamLeaseEventsRequest
+	(*LeaseEvent)(nil),                    // 21: verself.vm_orchestrator.v1.LeaseEvent
+	(*ExecSpec)(nil),                      // 22: verself.vm_orchestrator.v1.ExecSpec
+	(*StartExecRequest)(nil),              // 23: verself.vm_orchestrator.v1.StartExecRequest
+	(*StartExecResponse)(nil),             // 24: verself.vm_orchestrator.v1.StartExecResponse
+	(*CancelExecRequest)(nil),             // 25: verself.vm_orchestrator.v1.CancelExecRequest
+	(*CancelExecResponse)(nil),            // 26: verself.vm_orchestrator.v1.CancelExecResponse
+	(*GetExecRequest)(nil),                // 27: verself.vm_orchestrator.v1.GetExecRequest
+	(*WaitExecRequest)(nil),               // 28: verself.vm_orchestrator.v1.WaitExecRequest
+	(*ExecRecord)(nil),                    // 29: verself.vm_orchestrator.v1.ExecRecord
+	(*GetExecResponse)(nil),               // 30: verself.vm_orchestrator.v1.GetExecResponse
+	(*WaitExecResponse)(nil),              // 31: verself.vm_orchestrator.v1.WaitExecResponse
+	(*SaveCheckpointRequest)(nil),         // 32: verself.vm_orchestrator.v1.SaveCheckpointRequest
+	(*SaveCheckpointResponse)(nil),        // 33: verself.vm_orchestrator.v1.SaveCheckpointResponse
+	(*CommitFilesystemMountRequest)(nil),  // 34: verself.vm_orchestrator.v1.CommitFilesystemMountRequest
+	(*CommitFilesystemMountResponse)(nil), // 35: verself.vm_orchestrator.v1.CommitFilesystemMountResponse
+	(*VMMetrics)(nil),                     // 36: verself.vm_orchestrator.v1.VMMetrics
+	(*VMPoolCapacity)(nil),                // 37: verself.vm_orchestrator.v1.VMPoolCapacity
+	(*GetCapacityRequest)(nil),            // 38: verself.vm_orchestrator.v1.GetCapacityRequest
+	(*GetCapacityResponse)(nil),           // 39: verself.vm_orchestrator.v1.GetCapacityResponse
+	nil,                                   // 40: verself.vm_orchestrator.v1.LeaseEvent.AttrsEntry
+	nil,                                   // 41: verself.vm_orchestrator.v1.ExecSpec.EnvEntry
 }
 var file_proto_v1_vm_service_proto_depIdxs = []int32{
-	3,  // 0: forge_metal.vm_orchestrator.v1.NetworkAttach.mode:type_name -> forge_metal.vm_orchestrator.v1.NetworkAttachMode
-	6,  // 1: forge_metal.vm_orchestrator.v1.LeaseSpec.resources:type_name -> forge_metal.vm_orchestrator.v1.VMResources
-	5,  // 2: forge_metal.vm_orchestrator.v1.LeaseSpec.network:type_name -> forge_metal.vm_orchestrator.v1.NetworkAttach
-	8,  // 3: forge_metal.vm_orchestrator.v1.LeaseSpec.filesystem_mounts:type_name -> forge_metal.vm_orchestrator.v1.FilesystemMount
-	7,  // 4: forge_metal.vm_orchestrator.v1.AcquireLeaseRequest.spec:type_name -> forge_metal.vm_orchestrator.v1.LeaseSpec
-	0,  // 5: forge_metal.vm_orchestrator.v1.AcquireLeaseResponse.state:type_name -> forge_metal.vm_orchestrator.v1.LeaseState
-	6,  // 6: forge_metal.vm_orchestrator.v1.AcquireLeaseResponse.resources:type_name -> forge_metal.vm_orchestrator.v1.VMResources
-	0,  // 7: forge_metal.vm_orchestrator.v1.ReleaseLeaseResponse.state:type_name -> forge_metal.vm_orchestrator.v1.LeaseState
-	0,  // 8: forge_metal.vm_orchestrator.v1.LeaseRecord.state:type_name -> forge_metal.vm_orchestrator.v1.LeaseState
-	6,  // 9: forge_metal.vm_orchestrator.v1.LeaseRecord.resources:type_name -> forge_metal.vm_orchestrator.v1.VMResources
-	16, // 10: forge_metal.vm_orchestrator.v1.GetLeaseResponse.lease:type_name -> forge_metal.vm_orchestrator.v1.LeaseRecord
-	16, // 11: forge_metal.vm_orchestrator.v1.ListLeasesResponse.leases:type_name -> forge_metal.vm_orchestrator.v1.LeaseRecord
-	4,  // 12: forge_metal.vm_orchestrator.v1.LeaseEvent.event_type:type_name -> forge_metal.vm_orchestrator.v1.LeaseEventType
-	40, // 13: forge_metal.vm_orchestrator.v1.LeaseEvent.attrs:type_name -> forge_metal.vm_orchestrator.v1.LeaseEvent.AttrsEntry
-	41, // 14: forge_metal.vm_orchestrator.v1.ExecSpec.env:type_name -> forge_metal.vm_orchestrator.v1.ExecSpec.EnvEntry
-	2,  // 15: forge_metal.vm_orchestrator.v1.ExecSpec.stdin:type_name -> forge_metal.vm_orchestrator.v1.StdioMode
-	2,  // 16: forge_metal.vm_orchestrator.v1.ExecSpec.stdout:type_name -> forge_metal.vm_orchestrator.v1.StdioMode
-	2,  // 17: forge_metal.vm_orchestrator.v1.ExecSpec.stderr:type_name -> forge_metal.vm_orchestrator.v1.StdioMode
-	22, // 18: forge_metal.vm_orchestrator.v1.StartExecRequest.spec:type_name -> forge_metal.vm_orchestrator.v1.ExecSpec
-	1,  // 19: forge_metal.vm_orchestrator.v1.StartExecResponse.state:type_name -> forge_metal.vm_orchestrator.v1.ExecState
-	1,  // 20: forge_metal.vm_orchestrator.v1.CancelExecResponse.state:type_name -> forge_metal.vm_orchestrator.v1.ExecState
-	1,  // 21: forge_metal.vm_orchestrator.v1.ExecRecord.state:type_name -> forge_metal.vm_orchestrator.v1.ExecState
-	36, // 22: forge_metal.vm_orchestrator.v1.ExecRecord.metrics:type_name -> forge_metal.vm_orchestrator.v1.VMMetrics
-	29, // 23: forge_metal.vm_orchestrator.v1.GetExecResponse.exec:type_name -> forge_metal.vm_orchestrator.v1.ExecRecord
-	29, // 24: forge_metal.vm_orchestrator.v1.WaitExecResponse.exec:type_name -> forge_metal.vm_orchestrator.v1.ExecRecord
-	37, // 25: forge_metal.vm_orchestrator.v1.GetCapacityResponse.pool:type_name -> forge_metal.vm_orchestrator.v1.VMPoolCapacity
-	9,  // 26: forge_metal.vm_orchestrator.v1.VMService.AcquireLease:input_type -> forge_metal.vm_orchestrator.v1.AcquireLeaseRequest
-	11, // 27: forge_metal.vm_orchestrator.v1.VMService.RenewLease:input_type -> forge_metal.vm_orchestrator.v1.RenewLeaseRequest
-	13, // 28: forge_metal.vm_orchestrator.v1.VMService.ReleaseLease:input_type -> forge_metal.vm_orchestrator.v1.ReleaseLeaseRequest
-	15, // 29: forge_metal.vm_orchestrator.v1.VMService.GetLease:input_type -> forge_metal.vm_orchestrator.v1.GetLeaseRequest
-	18, // 30: forge_metal.vm_orchestrator.v1.VMService.ListLeases:input_type -> forge_metal.vm_orchestrator.v1.ListLeasesRequest
-	20, // 31: forge_metal.vm_orchestrator.v1.VMService.StreamLeaseEvents:input_type -> forge_metal.vm_orchestrator.v1.StreamLeaseEventsRequest
-	23, // 32: forge_metal.vm_orchestrator.v1.VMService.StartExec:input_type -> forge_metal.vm_orchestrator.v1.StartExecRequest
-	25, // 33: forge_metal.vm_orchestrator.v1.VMService.CancelExec:input_type -> forge_metal.vm_orchestrator.v1.CancelExecRequest
-	27, // 34: forge_metal.vm_orchestrator.v1.VMService.GetExec:input_type -> forge_metal.vm_orchestrator.v1.GetExecRequest
-	28, // 35: forge_metal.vm_orchestrator.v1.VMService.WaitExec:input_type -> forge_metal.vm_orchestrator.v1.WaitExecRequest
-	34, // 36: forge_metal.vm_orchestrator.v1.VMService.CommitFilesystemMount:input_type -> forge_metal.vm_orchestrator.v1.CommitFilesystemMountRequest
-	32, // 37: forge_metal.vm_orchestrator.v1.VMService.SaveCheckpoint:input_type -> forge_metal.vm_orchestrator.v1.SaveCheckpointRequest
-	38, // 38: forge_metal.vm_orchestrator.v1.VMService.GetCapacity:input_type -> forge_metal.vm_orchestrator.v1.GetCapacityRequest
-	10, // 39: forge_metal.vm_orchestrator.v1.VMService.AcquireLease:output_type -> forge_metal.vm_orchestrator.v1.AcquireLeaseResponse
-	12, // 40: forge_metal.vm_orchestrator.v1.VMService.RenewLease:output_type -> forge_metal.vm_orchestrator.v1.RenewLeaseResponse
-	14, // 41: forge_metal.vm_orchestrator.v1.VMService.ReleaseLease:output_type -> forge_metal.vm_orchestrator.v1.ReleaseLeaseResponse
-	17, // 42: forge_metal.vm_orchestrator.v1.VMService.GetLease:output_type -> forge_metal.vm_orchestrator.v1.GetLeaseResponse
-	19, // 43: forge_metal.vm_orchestrator.v1.VMService.ListLeases:output_type -> forge_metal.vm_orchestrator.v1.ListLeasesResponse
-	21, // 44: forge_metal.vm_orchestrator.v1.VMService.StreamLeaseEvents:output_type -> forge_metal.vm_orchestrator.v1.LeaseEvent
-	24, // 45: forge_metal.vm_orchestrator.v1.VMService.StartExec:output_type -> forge_metal.vm_orchestrator.v1.StartExecResponse
-	26, // 46: forge_metal.vm_orchestrator.v1.VMService.CancelExec:output_type -> forge_metal.vm_orchestrator.v1.CancelExecResponse
-	30, // 47: forge_metal.vm_orchestrator.v1.VMService.GetExec:output_type -> forge_metal.vm_orchestrator.v1.GetExecResponse
-	31, // 48: forge_metal.vm_orchestrator.v1.VMService.WaitExec:output_type -> forge_metal.vm_orchestrator.v1.WaitExecResponse
-	35, // 49: forge_metal.vm_orchestrator.v1.VMService.CommitFilesystemMount:output_type -> forge_metal.vm_orchestrator.v1.CommitFilesystemMountResponse
-	33, // 50: forge_metal.vm_orchestrator.v1.VMService.SaveCheckpoint:output_type -> forge_metal.vm_orchestrator.v1.SaveCheckpointResponse
-	39, // 51: forge_metal.vm_orchestrator.v1.VMService.GetCapacity:output_type -> forge_metal.vm_orchestrator.v1.GetCapacityResponse
+	3,  // 0: verself.vm_orchestrator.v1.NetworkAttach.mode:type_name -> verself.vm_orchestrator.v1.NetworkAttachMode
+	6,  // 1: verself.vm_orchestrator.v1.LeaseSpec.resources:type_name -> verself.vm_orchestrator.v1.VMResources
+	5,  // 2: verself.vm_orchestrator.v1.LeaseSpec.network:type_name -> verself.vm_orchestrator.v1.NetworkAttach
+	8,  // 3: verself.vm_orchestrator.v1.LeaseSpec.filesystem_mounts:type_name -> verself.vm_orchestrator.v1.FilesystemMount
+	7,  // 4: verself.vm_orchestrator.v1.AcquireLeaseRequest.spec:type_name -> verself.vm_orchestrator.v1.LeaseSpec
+	0,  // 5: verself.vm_orchestrator.v1.AcquireLeaseResponse.state:type_name -> verself.vm_orchestrator.v1.LeaseState
+	6,  // 6: verself.vm_orchestrator.v1.AcquireLeaseResponse.resources:type_name -> verself.vm_orchestrator.v1.VMResources
+	0,  // 7: verself.vm_orchestrator.v1.ReleaseLeaseResponse.state:type_name -> verself.vm_orchestrator.v1.LeaseState
+	0,  // 8: verself.vm_orchestrator.v1.LeaseRecord.state:type_name -> verself.vm_orchestrator.v1.LeaseState
+	6,  // 9: verself.vm_orchestrator.v1.LeaseRecord.resources:type_name -> verself.vm_orchestrator.v1.VMResources
+	16, // 10: verself.vm_orchestrator.v1.GetLeaseResponse.lease:type_name -> verself.vm_orchestrator.v1.LeaseRecord
+	16, // 11: verself.vm_orchestrator.v1.ListLeasesResponse.leases:type_name -> verself.vm_orchestrator.v1.LeaseRecord
+	4,  // 12: verself.vm_orchestrator.v1.LeaseEvent.event_type:type_name -> verself.vm_orchestrator.v1.LeaseEventType
+	40, // 13: verself.vm_orchestrator.v1.LeaseEvent.attrs:type_name -> verself.vm_orchestrator.v1.LeaseEvent.AttrsEntry
+	41, // 14: verself.vm_orchestrator.v1.ExecSpec.env:type_name -> verself.vm_orchestrator.v1.ExecSpec.EnvEntry
+	2,  // 15: verself.vm_orchestrator.v1.ExecSpec.stdin:type_name -> verself.vm_orchestrator.v1.StdioMode
+	2,  // 16: verself.vm_orchestrator.v1.ExecSpec.stdout:type_name -> verself.vm_orchestrator.v1.StdioMode
+	2,  // 17: verself.vm_orchestrator.v1.ExecSpec.stderr:type_name -> verself.vm_orchestrator.v1.StdioMode
+	22, // 18: verself.vm_orchestrator.v1.StartExecRequest.spec:type_name -> verself.vm_orchestrator.v1.ExecSpec
+	1,  // 19: verself.vm_orchestrator.v1.StartExecResponse.state:type_name -> verself.vm_orchestrator.v1.ExecState
+	1,  // 20: verself.vm_orchestrator.v1.CancelExecResponse.state:type_name -> verself.vm_orchestrator.v1.ExecState
+	1,  // 21: verself.vm_orchestrator.v1.ExecRecord.state:type_name -> verself.vm_orchestrator.v1.ExecState
+	36, // 22: verself.vm_orchestrator.v1.ExecRecord.metrics:type_name -> verself.vm_orchestrator.v1.VMMetrics
+	29, // 23: verself.vm_orchestrator.v1.GetExecResponse.exec:type_name -> verself.vm_orchestrator.v1.ExecRecord
+	29, // 24: verself.vm_orchestrator.v1.WaitExecResponse.exec:type_name -> verself.vm_orchestrator.v1.ExecRecord
+	37, // 25: verself.vm_orchestrator.v1.GetCapacityResponse.pool:type_name -> verself.vm_orchestrator.v1.VMPoolCapacity
+	9,  // 26: verself.vm_orchestrator.v1.VMService.AcquireLease:input_type -> verself.vm_orchestrator.v1.AcquireLeaseRequest
+	11, // 27: verself.vm_orchestrator.v1.VMService.RenewLease:input_type -> verself.vm_orchestrator.v1.RenewLeaseRequest
+	13, // 28: verself.vm_orchestrator.v1.VMService.ReleaseLease:input_type -> verself.vm_orchestrator.v1.ReleaseLeaseRequest
+	15, // 29: verself.vm_orchestrator.v1.VMService.GetLease:input_type -> verself.vm_orchestrator.v1.GetLeaseRequest
+	18, // 30: verself.vm_orchestrator.v1.VMService.ListLeases:input_type -> verself.vm_orchestrator.v1.ListLeasesRequest
+	20, // 31: verself.vm_orchestrator.v1.VMService.StreamLeaseEvents:input_type -> verself.vm_orchestrator.v1.StreamLeaseEventsRequest
+	23, // 32: verself.vm_orchestrator.v1.VMService.StartExec:input_type -> verself.vm_orchestrator.v1.StartExecRequest
+	25, // 33: verself.vm_orchestrator.v1.VMService.CancelExec:input_type -> verself.vm_orchestrator.v1.CancelExecRequest
+	27, // 34: verself.vm_orchestrator.v1.VMService.GetExec:input_type -> verself.vm_orchestrator.v1.GetExecRequest
+	28, // 35: verself.vm_orchestrator.v1.VMService.WaitExec:input_type -> verself.vm_orchestrator.v1.WaitExecRequest
+	34, // 36: verself.vm_orchestrator.v1.VMService.CommitFilesystemMount:input_type -> verself.vm_orchestrator.v1.CommitFilesystemMountRequest
+	32, // 37: verself.vm_orchestrator.v1.VMService.SaveCheckpoint:input_type -> verself.vm_orchestrator.v1.SaveCheckpointRequest
+	38, // 38: verself.vm_orchestrator.v1.VMService.GetCapacity:input_type -> verself.vm_orchestrator.v1.GetCapacityRequest
+	10, // 39: verself.vm_orchestrator.v1.VMService.AcquireLease:output_type -> verself.vm_orchestrator.v1.AcquireLeaseResponse
+	12, // 40: verself.vm_orchestrator.v1.VMService.RenewLease:output_type -> verself.vm_orchestrator.v1.RenewLeaseResponse
+	14, // 41: verself.vm_orchestrator.v1.VMService.ReleaseLease:output_type -> verself.vm_orchestrator.v1.ReleaseLeaseResponse
+	17, // 42: verself.vm_orchestrator.v1.VMService.GetLease:output_type -> verself.vm_orchestrator.v1.GetLeaseResponse
+	19, // 43: verself.vm_orchestrator.v1.VMService.ListLeases:output_type -> verself.vm_orchestrator.v1.ListLeasesResponse
+	21, // 44: verself.vm_orchestrator.v1.VMService.StreamLeaseEvents:output_type -> verself.vm_orchestrator.v1.LeaseEvent
+	24, // 45: verself.vm_orchestrator.v1.VMService.StartExec:output_type -> verself.vm_orchestrator.v1.StartExecResponse
+	26, // 46: verself.vm_orchestrator.v1.VMService.CancelExec:output_type -> verself.vm_orchestrator.v1.CancelExecResponse
+	30, // 47: verself.vm_orchestrator.v1.VMService.GetExec:output_type -> verself.vm_orchestrator.v1.GetExecResponse
+	31, // 48: verself.vm_orchestrator.v1.VMService.WaitExec:output_type -> verself.vm_orchestrator.v1.WaitExecResponse
+	35, // 49: verself.vm_orchestrator.v1.VMService.CommitFilesystemMount:output_type -> verself.vm_orchestrator.v1.CommitFilesystemMountResponse
+	33, // 50: verself.vm_orchestrator.v1.VMService.SaveCheckpoint:output_type -> verself.vm_orchestrator.v1.SaveCheckpointResponse
+	39, // 51: verself.vm_orchestrator.v1.VMService.GetCapacity:output_type -> verself.vm_orchestrator.v1.GetCapacityResponse
 	39, // [39:52] is the sub-list for method output_type
 	26, // [26:39] is the sub-list for method input_type
 	26, // [26:26] is the sub-list for extension type_name

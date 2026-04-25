@@ -1,6 +1,6 @@
 // Package envconfig loads process configuration from environment variables
 // and systemd LoadCredential= files. It is the single source of truth for how
-// Forge Metal Go binaries consume their runtime settings.
+// Verself Go binaries consume their runtime settings.
 //
 // The Loader accumulates errors instead of failing on the first missing value
 // so one misconfigured deploy reports every missing env and credential at once

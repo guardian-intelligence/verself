@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-    title: Forge Metal Secrets Service API
+    title: Verself Secrets Service API
     version: dev
 servers:
     - url: https://secrets.api.anveio.com
@@ -39,7 +39,7 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
             security:
                 - bearerAuth: []
-            x-forge-metal-iam:
+            x-verself-iam:
                 action: list
                 audit_event: secrets.credential.list
                 billing_product_id: secrets
@@ -88,7 +88,7 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
             security:
                 - bearerAuth: []
-            x-forge-metal-iam:
+            x-verself-iam:
                 action: create
                 audit_event: secrets.credential.create
                 billing_product_id: secrets
@@ -130,7 +130,7 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
             security:
                 - bearerAuth: []
-            x-forge-metal-iam:
+            x-verself-iam:
                 action: read
                 audit_event: secrets.credential.read
                 billing_product_id: secrets
@@ -185,7 +185,7 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
             security:
                 - bearerAuth: []
-            x-forge-metal-iam:
+            x-verself-iam:
                 action: revoke
                 audit_event: secrets.credential.revoke
                 billing_product_id: secrets
@@ -241,7 +241,7 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
             security:
                 - bearerAuth: []
-            x-forge-metal-iam:
+            x-verself-iam:
                 action: roll
                 audit_event: secrets.credential.roll
                 billing_product_id: secrets
@@ -285,7 +285,7 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
             security:
                 - bearerAuth: []
-            x-forge-metal-iam:
+            x-verself-iam:
                 action: list
                 audit_event: secrets.secret.list
                 billing_product_id: secrets
@@ -328,7 +328,7 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
             security:
                 - bearerAuth: []
-            x-forge-metal-iam:
+            x-verself-iam:
                 action: read
                 audit_event: secrets.secret.read
                 billing_product_id: secrets
@@ -384,7 +384,7 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
             security:
                 - bearerAuth: []
-            x-forge-metal-iam:
+            x-verself-iam:
                 action: write
                 audit_event: secrets.secret.write
                 billing_product_id: secrets
@@ -467,7 +467,7 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
             security:
                 - bearerAuth: []
-            x-forge-metal-iam:
+            x-verself-iam:
                 action: delete
                 audit_event: secrets.secret.delete
                 billing_product_id: secrets
@@ -517,7 +517,7 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
             security:
                 - bearerAuth: []
-            x-forge-metal-iam:
+            x-verself-iam:
                 action: create
                 audit_event: secrets.transit_key.create
                 billing_product_id: secrets
@@ -566,7 +566,7 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
             security:
                 - bearerAuth: []
-            x-forge-metal-iam:
+            x-verself-iam:
                 action: decrypt
                 audit_event: secrets.transit_key.decrypt
                 billing_product_id: secrets
@@ -615,7 +615,7 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
             security:
                 - bearerAuth: []
-            x-forge-metal-iam:
+            x-verself-iam:
                 action: encrypt
                 audit_event: secrets.transit_key.encrypt
                 billing_product_id: secrets
@@ -666,7 +666,7 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
             security:
                 - bearerAuth: []
-            x-forge-metal-iam:
+            x-verself-iam:
                 action: rotate
                 audit_event: secrets.transit_key.rotate
                 billing_product_id: secrets
@@ -715,7 +715,7 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
             security:
                 - bearerAuth: []
-            x-forge-metal-iam:
+            x-verself-iam:
                 action: sign
                 audit_event: secrets.transit_key.sign
                 billing_product_id: secrets
@@ -764,7 +764,7 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
             security:
                 - bearerAuth: []
-            x-forge-metal-iam:
+            x-verself-iam:
                 action: verify
                 audit_event: secrets.transit_key.verify
                 billing_product_id: secrets
@@ -808,7 +808,7 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
             security:
                 - bearerAuth: []
-            x-forge-metal-iam:
+            x-verself-iam:
                 action: list
                 audit_event: secrets.variable.list
                 billing_product_id: secrets
@@ -851,7 +851,7 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
             security:
                 - bearerAuth: []
-            x-forge-metal-iam:
+            x-verself-iam:
                 action: read
                 audit_event: secrets.variable.read
                 billing_product_id: secrets
@@ -907,7 +907,7 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
             security:
                 - bearerAuth: []
-            x-forge-metal-iam:
+            x-verself-iam:
                 action: write
                 audit_event: secrets.variable.write
                 billing_product_id: secrets
@@ -990,7 +990,7 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
             security:
                 - bearerAuth: []
-            x-forge-metal-iam:
+            x-verself-iam:
                 action: delete
                 audit_event: secrets.variable.delete
                 billing_product_id: secrets

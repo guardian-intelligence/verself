@@ -30,11 +30,11 @@ SERVICE_PORT="4244"
 
 step() { printf '\n\033[1;34m==> %s\033[0m\n' "$*"; }
 
-step "Build @forge-metal/console (local, dependency-aware via vp)"
+step "Build @verself/console (local, dependency-aware via vp)"
 # vp run <pkg>#<script> builds the target's workspace dependencies first, then
 # the target itself. Uses Vite+'s build cache, so unchanged packages skip.
 pushd "${MONOREPO_DIR}" >/dev/null
-vp run "@forge-metal/console#build"
+vp run "@verself/console#build"
 popd >/dev/null
 
 if [[ ! -d "${LOCAL_OUTPUT}" ]]; then

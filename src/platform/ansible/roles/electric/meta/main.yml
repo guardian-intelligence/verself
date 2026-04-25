@@ -6,7 +6,7 @@ allow_duplicates: true
 dependencies: []
 
 galaxy_info:
-  author: forge-metal
+  author: verself
   description: >-
     Provision one ElectricSQL sync container instance — create the pg role,
     reconcile publication + REPLICA IDENTITY + ownership in a single psql

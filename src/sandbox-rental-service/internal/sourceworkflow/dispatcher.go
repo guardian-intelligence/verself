@@ -14,9 +14,9 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	sourceclient "github.com/forge-metal/source-code-hosting-service/internalclient"
+	sourceclient "github.com/verself/source-code-hosting-service/internalclient"
 
-	"github.com/forge-metal/sandbox-rental-service/internal/recurring"
+	"github.com/verself/sandbox-rental-service/internal/recurring"
 )
 
 var tracer = otel.Tracer("sandbox-rental-service/sourceworkflow")
@@ -53,6 +53,7 @@ func (d *Dispatcher) DispatchWorkflow(ctx context.Context, req recurring.Workflo
 		return recurring.WorkflowDispatchResult{}, errors.New("source workflow dispatcher is not configured")
 	}
 	span.SetAttributes(
+		attribute.String("verself.project_id", req.ProjectID.String()),
 		attribute.String("source.repo_id", req.SourceRepositoryID.String()),
 		attribute.String("source.workflow_path", req.WorkflowPath),
 		attribute.String("source.ref", req.Ref),
@@ -60,6 +61,7 @@ func (d *Dispatcher) DispatchWorkflow(ctx context.Context, req recurring.Workflo
 	body := sourceclient.InternalCreateSourceWorkflowRunJSONRequestBody{
 		OrgId:          strconv.FormatUint(req.OrgID, 10),
 		ActorId:        strings.TrimSpace(req.ActorID),
+		ProjectId:      req.ProjectID.String(),
 		RepoId:         req.SourceRepositoryID.String(),
 		WorkflowPath:   strings.TrimSpace(req.WorkflowPath),
 		IdempotencyKey: strings.TrimSpace(req.IdempotencyKey),

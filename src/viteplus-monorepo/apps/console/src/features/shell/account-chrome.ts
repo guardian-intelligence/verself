@@ -1,4 +1,4 @@
-import type { ClientUser } from "@forge-metal/auth-web/isomorphic";
+import type { ClientUser } from "@verself/auth-web/isomorphic";
 import type { ProfileSnapshot } from "~/server-fns/api";
 
 export type AccountChrome = {

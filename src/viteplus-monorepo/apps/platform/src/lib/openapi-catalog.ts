@@ -1,4 +1,4 @@
-// OpenAPI catalog — parses every Forge Metal service spec at module load
+// OpenAPI catalog — parses every Verself service spec at module load
 // and exposes a single ordered list the reference page renders against.
 // Specs live in src/__generated/<service>/openapi-3.1.yaml; the `generate`
 // package script refreshes them from each Go service's canonical
@@ -87,7 +87,7 @@ const OpenApiOperationShape = v.object({
   requestBody: v.optional(OpenApiRequestBodyShape),
   responses: v.optional(v.record(v.string(), OpenApiResponseShape)),
   security: v.optional(v.array(v.record(v.string(), v.array(v.string())))),
-  "x-forge-metal-iam": v.optional(v.unknown()),
+  "x-verself-iam": v.optional(v.unknown()),
 });
 
 const METHODS = ["get", "post", "put", "patch", "delete"] as const;

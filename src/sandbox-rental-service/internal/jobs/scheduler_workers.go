@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/forge-metal/sandbox-rental-service/internal/scheduler"
+	"github.com/verself/sandbox-rental-service/internal/scheduler"
 	"github.com/google/uuid"
 	"github.com/riverqueue/river"
 	"go.opentelemetry.io/otel/attribute"
@@ -81,7 +81,7 @@ func (w *ExecutionAdvanceWorker) Work(ctx context.Context, job *river.Job[schedu
 		attribute.Int64("river.job_id", job.ID),
 		attribute.String("river.job_kind", scheduler.ExecutionAdvanceKind),
 		attribute.String("river.queue", scheduler.QueueExecution),
-		attribute.String("fm.correlation_id", args.CorrelationID),
+		attribute.String("verself.correlation_id", args.CorrelationID),
 	)
 
 	if err := w.service.AdvanceExecution(ctx, executionID, attemptID); err != nil {
@@ -104,7 +104,7 @@ func (w *RunnerCapacityReconcileWorker) Work(ctx context.Context, job *river.Job
 		attribute.Int64("river.job_id", job.ID),
 		attribute.String("river.job_kind", scheduler.RunnerCapacityReconcileKind),
 		attribute.String("river.queue", scheduler.QueueRunner),
-		attribute.String("fm.correlation_id", args.CorrelationID),
+		attribute.String("verself.correlation_id", args.CorrelationID),
 	)
 	if err := w.service.ReconcileRunnerCapacity(ctx, args.Provider, args.ProviderJobID); err != nil {
 		span.RecordError(err)
@@ -127,7 +127,7 @@ func (w *RunnerAllocateWorker) Work(ctx context.Context, job *river.Job[schedule
 		attribute.Int64("river.job_id", job.ID),
 		attribute.String("river.job_kind", scheduler.RunnerAllocateKind),
 		attribute.String("river.queue", scheduler.QueueRunner),
-		attribute.String("fm.correlation_id", args.CorrelationID),
+		attribute.String("verself.correlation_id", args.CorrelationID),
 	)
 	if err := w.service.AllocateRunner(ctx, allocationID); err != nil {
 		span.RecordError(err)
@@ -147,7 +147,7 @@ func (w *RunnerJobBindWorker) Work(ctx context.Context, job *river.Job[scheduler
 		attribute.Int64("river.job_id", job.ID),
 		attribute.String("river.job_kind", scheduler.RunnerJobBindKind),
 		attribute.String("river.queue", scheduler.QueueRunner),
-		attribute.String("fm.correlation_id", args.CorrelationID),
+		attribute.String("verself.correlation_id", args.CorrelationID),
 	)
 	if err := w.service.BindRunnerJob(ctx, args.Provider, args.ProviderJobID); err != nil {
 		span.RecordError(err)
@@ -170,7 +170,7 @@ func (w *RunnerCleanupWorker) Work(ctx context.Context, job *river.Job[scheduler
 		attribute.Int64("river.job_id", job.ID),
 		attribute.String("river.job_kind", scheduler.RunnerCleanupKind),
 		attribute.String("river.queue", scheduler.QueueRunner),
-		attribute.String("fm.correlation_id", args.CorrelationID),
+		attribute.String("verself.correlation_id", args.CorrelationID),
 	)
 	if err := w.service.CleanupRunner(ctx, allocationID); err != nil {
 		span.RecordError(err)
@@ -190,7 +190,7 @@ func (w *RunnerRepositorySyncWorker) Work(ctx context.Context, job *river.Job[sc
 		attribute.Int64("river.job_id", job.ID),
 		attribute.String("river.job_kind", scheduler.RunnerRepositorySyncKind),
 		attribute.String("river.queue", scheduler.QueueRunner),
-		attribute.String("fm.correlation_id", args.CorrelationID),
+		attribute.String("verself.correlation_id", args.CorrelationID),
 	)
 	if err := w.service.SyncRunnerRepository(ctx, args.Provider, args.ProviderRepositoryID); err != nil {
 		span.RecordError(err)

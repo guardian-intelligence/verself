@@ -1,5 +1,5 @@
 ---
-# Install Node.js from the official binary tarball and symlink into fm_bin.
+# Install Node.js from the official binary tarball and symlink into verself_bin.
 
 - name: Download Node.js tarball
   ansible.builtin.get_url:
@@ -23,10 +23,10 @@
       - --strip-components=1
     creates: "{{ deploy_profile_server_tools_pins.nodejs.install_dir }}/bin/node"
 
-- name: Symlink Node.js binaries into fm_bin
+- name: Symlink Node.js binaries into verself_bin
   ansible.builtin.file:
     src: "{{ deploy_profile_server_tools_pins.nodejs.install_dir }}/bin/{{ item }}"
-    dest: "{{ fm_bin }}/{{ item }}"
+    dest: "{{ verself_bin }}/{{ item }}"
     state: link
     force: true
   loop: "{{ deploy_profile_server_tools_pins.nodejs.bin_symlinks }}"

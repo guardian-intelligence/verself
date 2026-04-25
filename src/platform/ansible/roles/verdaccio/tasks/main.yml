@@ -1,7 +1,7 @@
 ---
 # Sealed Verdaccio npm mirror for worker nodes.
 # Installed via npm using Node.js from deploy_profile role into a writable
-# prefix under /opt/forge-metal (Verdaccio has no static binary).
+# prefix under /opt/verself (Verdaccio has no static binary).
 
 - name: Create Verdaccio system user
   ansible.builtin.user:
@@ -33,14 +33,14 @@
 
 - name: Install Verdaccio via npm
   ansible.builtin.command: >
-    {{ fm_bin }}/npm install --global
+    {{ verself_bin }}/npm install --global
     --prefix {{ verdaccio_install_prefix }}
     verdaccio@{{ verdaccio_version }}
     --registry https://registry.npmjs.org
   when: verdaccio_installed_version.stdout | default('') | trim != verdaccio_version
   changed_when: true
   environment:
-    PATH: "{{ fm_bin }}:{{ ansible_facts['env']['PATH'] }}"
+    PATH: "{{ verself_bin }}:{{ ansible_facts['env']['PATH'] }}"
     HOME: /root
   notify: restart verdaccio
 
@@ -51,7 +51,7 @@
     mode: "0755"
 
 # npm resolves globalconfig as $PREFIX/etc/npmrc, where PREFIX is the
-# Node install root — not /etc/npmrc. With Node at /opt/forge-metal/nodejs
+# Node install root — not /etc/npmrc. With Node at /opt/verself/nodejs
 # on workers, /etc/npmrc is a file npm never reads, so writing the
 # registry= binding there leaves default `npm install` escaping to
 # registry.npmjs.org. Anchor to deploy_profile's nodejs pin so an upgrade

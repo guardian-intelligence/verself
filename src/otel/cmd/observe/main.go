@@ -17,8 +17,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/forge-metal/envconfig"
-	fmotel "github.com/forge-metal/otel"
+	"github.com/verself/envconfig"
+	verselfotel "github.com/verself/otel"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -104,7 +104,7 @@ func main() {
 		return
 	}
 
-	shutdown, logger, err := fmotel.Init(ctx, fmotel.Config{
+	shutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{
 		ServiceName:    serviceName,
 		ServiceVersion: "0.2.0",
 	})
@@ -127,8 +127,8 @@ func main() {
 			attribute.String("observe.run_id", runID),
 			attribute.String("observe.what", cfg.what),
 			attribute.String("observe.signal", cfg.signal),
-			attribute.String("forge_metal.deploy_id", os.Getenv("FORGE_METAL_DEPLOY_ID")),
-			attribute.String("forge_metal.deploy_run_key", os.Getenv("FORGE_METAL_DEPLOY_RUN_KEY")),
+			attribute.String("verself.deploy_id", os.Getenv("VERSELF_DEPLOY_ID")),
+			attribute.String("verself.deploy_run_key", os.Getenv("VERSELF_DEPLOY_RUN_KEY")),
 		),
 	)
 	defer span.End()
@@ -519,7 +519,7 @@ func printNext(next []string, format outputFormat) {
 }
 
 func observeRunID() string {
-	for _, key := range []string{"FM_OBSERVE_RUN_ID", "FORGE_METAL_DEPLOY_RUN_KEY"} {
+	for _, key := range []string{"VERSELF_OBSERVE_RUN_ID", "VERSELF_DEPLOY_RUN_KEY"} {
 		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
 			return value
 		}

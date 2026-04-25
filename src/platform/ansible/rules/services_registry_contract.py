@@ -198,7 +198,7 @@ def validate_registry(path: str | Path | None = None) -> list[RegistryIssue]:
         ):
             issues.append(
                 RegistryIssue(
-                    f"{dotted(allocation.path)} uses {allocation.port}; Forge Metal control-plane ports must stay in "
+                    f"{dotted(allocation.path)} uses {allocation.port}; Verself control-plane ports must stay in "
                     f"{CONTROL_PLANE_PORT_MIN}-{CONTROL_PLANE_PORT_MAX} unless the service is upstream-fixed",
                     allocation.line,
                 )
@@ -264,7 +264,7 @@ if Lintable is not None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate the Forge Metal services registry.")
+    parser = argparse.ArgumentParser(description="Validate the Verself services registry.")
     parser.add_argument("path", nargs="?", help=f"registry path, default: {REGISTRY}")
     args = parser.parse_args()
 

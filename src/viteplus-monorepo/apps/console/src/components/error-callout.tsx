@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { Alert, AlertDescription, AlertTitle } from "@forge-metal/ui/components/ui/alert";
-import { cn } from "@forge-metal/ui/lib/utils";
+import { Alert, AlertDescription, AlertTitle } from "@verself/ui/components/ui/alert";
+import { cn } from "@verself/ui/lib/utils";
 
 function errorMessage(error: unknown, fallback: string) {
   if (error instanceof Error && error.message) return error.message;

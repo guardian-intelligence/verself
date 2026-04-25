@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { AppChrome } from "@forge-metal/brand";
+import { AppChrome } from "@verself/brand";
 
 // Letters layout — /letters and /letters/$slug share this chrome. Paper
 // ground, chip Lockup, Bordeaux accent. The layout sets data-treatment so the

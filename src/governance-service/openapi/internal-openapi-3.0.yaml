@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-    title: Forge Metal Governance Service Internal API
+    title: Verself Governance Service Internal API
     version: dev
 servers:
     - url: https://127.0.0.1:4254

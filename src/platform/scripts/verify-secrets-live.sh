@@ -404,7 +404,7 @@ if not payload.get("public_key"):
     raise SystemExit("transit create did not return an ed25519 public key")
 PY
 
-transit_plaintext_b64="$(printf 'forge-metal transit proof %s' "${run_id}" | base64 -w0)"
+transit_plaintext_b64="$(printf 'verself transit proof %s' "${run_id}" | base64 -w0)"
 transit_encrypt="$(mktemp)"
 tmp_files+=("${transit_encrypt}")
 python3 - "${transit_plaintext_b64}" >"${transit_encrypt}" <<'PY'
@@ -439,7 +439,7 @@ if actual != expected:
     raise SystemExit("transit decrypt returned wrong plaintext")
 PY
 
-transit_message_b64="$(printf 'forge-metal signature proof %s' "${run_id}" | base64 -w0)"
+transit_message_b64="$(printf 'verself signature proof %s' "${run_id}" | base64 -w0)"
 transit_sign="$(mktemp)"
 tmp_files+=("${transit_sign}")
 python3 - "${transit_message_b64}" >"${transit_sign}" <<'PY'
@@ -773,7 +773,7 @@ wait_for_clickhouse_count default "
     AND arrayElement(SpanAttributes, 'billing.sku_id') IN ('secrets_kv_operation', 'secrets_transit_operation', 'secrets_credential_operation')
 " 44 "${artifact_dir}/clickhouse/secrets-billing-spans-count.tsv"
 
-wait_for_clickhouse_count forge_metal "
+wait_for_clickhouse_count verself "
   SELECT count()
   FROM audit_events
   WHERE recorded_at BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
@@ -804,7 +804,7 @@ wait_for_clickhouse_count forge_metal "
     AND openbao_accessor_hash != ''
 " 20 "${artifact_dir}/clickhouse/secrets-audit-count.tsv"
 
-wait_for_clickhouse_count forge_metal "
+wait_for_clickhouse_count verself "
   SELECT count()
   FROM audit_events
   WHERE recorded_at BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
@@ -815,7 +815,7 @@ wait_for_clickhouse_count forge_metal "
     AND openbao_request_id != ''
 " 3 "${artifact_dir}/clickhouse/secrets-api-credential-audit-count.tsv"
 
-wait_for_clickhouse_count forge_metal "
+wait_for_clickhouse_count verself "
   SELECT count()
   FROM metering
   WHERE recorded_at BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 30 SECOND
@@ -869,7 +869,7 @@ PY
 (
   cd "${VERIFICATION_PLATFORM_ROOT}"
   ./scripts/clickhouse.sh \
-    --database forge_metal \
+    --database verself \
     --param_window_start="${window_start}" \
     --param_window_end="${window_end}" \
     --param_org_id="${org_id}" \

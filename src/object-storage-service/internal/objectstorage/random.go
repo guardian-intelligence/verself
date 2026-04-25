@@ -12,7 +12,7 @@ func NewAccessKeyID() (string, error) {
 	if _, err := rand.Read(raw); err != nil {
 		return "", fmt.Errorf("generate access key id: %w", err)
 	}
-	return "FM" + stringsUpper(hex.EncodeToString(raw)), nil
+	return "VS" + stringsUpper(hex.EncodeToString(raw)), nil
 }
 
 func NewSecretAccessKey() (string, error) {

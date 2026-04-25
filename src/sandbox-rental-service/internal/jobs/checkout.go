@@ -21,10 +21,10 @@ import (
 )
 
 const (
-	defaultCheckoutCacheDir = "/var/lib/forge-metal/sandbox-rental/github-checkout"
+	defaultCheckoutCacheDir = "/var/lib/verself/sandbox-rental/github-checkout"
 	checkoutBundleFilename  = "checkout.pack"
-	checkoutRequestedRef    = "refs/forge-metal/requested"
-	checkoutFetchedSHARef   = "refs/forge-metal/sha"
+	checkoutRequestedRef    = "refs/verself/requested"
+	checkoutFetchedSHARef   = "refs/verself/sha"
 )
 
 var (

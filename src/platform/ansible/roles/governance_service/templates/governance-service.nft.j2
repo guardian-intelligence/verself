@@ -2,10 +2,10 @@
 # Governance service is loopback-only and needs PostgreSQL, ClickHouse, OpenBao,
 # Zitadel OIDC discovery via local Caddy, and OTLP egress.
 
-table inet forge_metal_governance_service
-delete table inet forge_metal_governance_service
+table inet verself_governance_service
+delete table inet verself_governance_service
 
-table inet forge_metal_governance_service {
+table inet verself_governance_service {
     chain input {
         type filter hook input priority filter; policy accept;
 

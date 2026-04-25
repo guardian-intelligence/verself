@@ -7,7 +7,7 @@ import re
 from ansiblelint.file_utils import Lintable
 from ansiblelint.rules import AnsibleLintRule
 
-PSQL_RE = re.compile(r"{{\s*fm_bin\s*}}/psql\b|\bpsql\b")
+PSQL_RE = re.compile(r"{{\s*verself_bin\s*}}/psql\b|\bpsql\b")
 TASK_START_RE = re.compile(r"^-\s+")
 TASK_NAME_RE = re.compile(r"^-\s+name:\s*(.+?)\s*$")
 

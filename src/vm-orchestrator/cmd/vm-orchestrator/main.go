@@ -14,9 +14,9 @@ import (
 	"syscall"
 	"time"
 
-	fmotel "github.com/forge-metal/otel"
-	vmorchestrator "github.com/forge-metal/vm-orchestrator"
-	vmrpc "github.com/forge-metal/vm-orchestrator/proto/v1"
+	verselfotel "github.com/verself/otel"
+	vmorchestrator "github.com/verself/vm-orchestrator"
+	vmrpc "github.com/verself/vm-orchestrator/proto/v1"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc"
@@ -72,7 +72,7 @@ func run() error {
 		return fmt.Errorf("remove stale socket %s: %w", listenUnix, err)
 	}
 
-	otelShutdown, logger, err := fmotel.Init(ctx, fmotel.Config{
+	otelShutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{
 		ServiceName:    "vm-orchestrator",
 		ServiceVersion: "0.2.0",
 	})

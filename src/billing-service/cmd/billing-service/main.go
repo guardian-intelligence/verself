@@ -19,15 +19,15 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 
-	auth "github.com/forge-metal/auth-middleware"
-	workloadauth "github.com/forge-metal/auth-middleware/workload"
-	"github.com/forge-metal/billing-service/internal/billing"
-	"github.com/forge-metal/billing-service/internal/billing/ledger"
-	"github.com/forge-metal/billing-service/internal/billingapi"
-	"github.com/forge-metal/envconfig"
-	"github.com/forge-metal/httpserver"
-	fmotel "github.com/forge-metal/otel"
-	secretsclient "github.com/forge-metal/secrets-service/client"
+	auth "github.com/verself/auth-middleware"
+	workloadauth "github.com/verself/auth-middleware/workload"
+	"github.com/verself/billing-service/internal/billing"
+	"github.com/verself/billing-service/internal/billing/ledger"
+	"github.com/verself/billing-service/internal/billingapi"
+	"github.com/verself/envconfig"
+	"github.com/verself/httpserver"
+	verselfotel "github.com/verself/otel"
+	secretsclient "github.com/verself/secrets-service/client"
 )
 
 const serviceVersion = "2.0.0"
@@ -64,7 +64,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	otelShutdown, logger, err := fmotel.Init(ctx, fmotel.Config{ServiceName: "billing-service", ServiceVersion: serviceVersion})
+	otelShutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{ServiceName: "billing-service", ServiceVersion: serviceVersion})
 	if err != nil {
 		return fmt.Errorf("otel init: %w", err)
 	}
@@ -124,7 +124,7 @@ func run() error {
 	chConn, err := clickhouse.Open(&clickhouse.Options{
 		Addr: []string{chAddress},
 		Auth: clickhouse.Auth{
-			Database: "forge_metal",
+			Database: "verself",
 			Username: chUser,
 		},
 		TLS: chTLSConfig,
@@ -255,7 +255,7 @@ func isUnauthenticatedBillingPath(path string) bool {
 func readRuntimeSecrets(ctx context.Context, client *secretsclient.ClientWithResponses, secretNames ...string) (map[string]string, error) {
 	ctx, span := otel.Tracer("runtime-secrets").Start(ctx, "secrets.runtime.resolve")
 	defer span.End()
-	span.SetAttributes(attribute.Int("forge_metal.secret_count", len(secretNames)))
+	span.SetAttributes(attribute.Int("verself.secret_count", len(secretNames)))
 
 	if client == nil {
 		err := fmt.Errorf("runtime secrets client is required")

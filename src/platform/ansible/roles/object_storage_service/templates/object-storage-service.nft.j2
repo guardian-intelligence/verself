@@ -1,9 +1,9 @@
 #!/usr/sbin/nft -f
 
-table inet forge_metal_object_storage_service
-delete table inet forge_metal_object_storage_service
+table inet verself_object_storage_service
+delete table inet verself_object_storage_service
 
-table inet forge_metal_object_storage_service {
+table inet verself_object_storage_service {
     chain input {
         type filter hook input priority filter; policy accept;
 

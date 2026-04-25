@@ -1,8 +1,8 @@
 {
-  "name": "@forge-metal/ui",
+  "name": "@verself/ui",
   "version": "0.1.0",
   "private": true,
-  "description": "Shared UI primitives for Forge Metal apps. shadcn/ui components live under src/components/ui and are consumed source-first via subpath exports.",
+  "description": "Shared UI primitives for Verself apps. shadcn/ui components live under src/components/ui and are consumed source-first via subpath exports.",
   "files": [
     "src"
   ],

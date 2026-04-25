@@ -5,7 +5,7 @@ import {
   WingsChip,
   type LockupSize,
   type LockupVariant,
-} from "@forge-metal/brand";
+} from "@verself/brand";
 
 // Mark specimen block. One big carrier cell on the treatment's ground, an
 // info strip below with the hexes that make the carrier up, and optional

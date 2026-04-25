@@ -1,7 +1,7 @@
 ---
 - name: Verify garage binary exists in profile
   ansible.builtin.stat:
-    path: "{{ fm_bin }}/garage"
+    path: "{{ verself_bin }}/garage"
   register: garage_binary
   failed_when: not garage_binary.stat.exists
 
@@ -165,14 +165,14 @@
     content: |
       [Unit]
       Description=Garage instance %i
-      After=forge-metal-firewall.target network.target
-      Requires=forge-metal-firewall.target
+      After=verself-firewall.target network.target
+      Requires=verself-firewall.target
 
       [Service]
       Type=simple
       User=garage
       Group=garage
-      ExecStart={{ fm_bin }}/garage -c /etc/garage/garage-%i.toml server
+      ExecStart={{ verself_bin }}/garage -c /etc/garage/garage-%i.toml server
       Restart=on-failure
       RestartSec=5
       LimitNOFILE=65536
@@ -376,7 +376,7 @@
           time.sleep(1)
   environment:
     GARAGE_HOST: "{{ services.garage.host }}"
-    GARAGE_BIN: "{{ fm_bin }}/garage"
+    GARAGE_BIN: "{{ verself_bin }}/garage"
     GARAGE_NODES: "{{ services.garage.nodes | to_json }}"
     GARAGE_CAPACITY_BYTES: "{{ garage_capacity_bytes | string }}"
     GARAGE_ZONE_REDUNDANCY: "{{ garage_zone_redundancy | string }}"

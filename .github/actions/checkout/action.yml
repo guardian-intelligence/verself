@@ -1,5 +1,5 @@
-name: Forge Metal Checkout
-description: Materialize the current GitHub workflow SHA from the Forge Metal host mirror.
+name: Verself Checkout
+description: Materialize the current GitHub workflow SHA from the Verself host mirror.
 inputs:
   repository:
     description: Repository to checkout, formatted as owner/name.
@@ -18,11 +18,11 @@ inputs:
     required: false
     default: "true"
   fetch-depth:
-    description: Accepted for actions/checkout familiarity. Forge Metal checkout currently materializes one commit.
+    description: Accepted for actions/checkout familiarity. Verself checkout currently materializes one commit.
     required: false
     default: "1"
   persist-credentials:
-    description: Accepted for actions/checkout familiarity. Forge Metal checkout does not persist GitHub credentials.
+    description: Accepted for actions/checkout familiarity. Verself checkout does not persist GitHub credentials.
     required: false
     default: "false"
   token:

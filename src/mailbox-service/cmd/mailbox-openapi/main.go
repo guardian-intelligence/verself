@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/forge-metal/mailbox-service/internal/api"
+	"github.com/verself/mailbox-service/internal/api"
 )
 
 const version = "dev"

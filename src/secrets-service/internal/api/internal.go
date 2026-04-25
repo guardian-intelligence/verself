@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	workloadauth "github.com/forge-metal/auth-middleware/workload"
-	"github.com/forge-metal/secrets-service/internal/secrets"
+	workloadauth "github.com/verself/auth-middleware/workload"
+	"github.com/verself/secrets-service/internal/secrets"
 	"github.com/google/uuid"
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
@@ -424,10 +424,10 @@ func readRuntimeSecret(ctx context.Context, svc *secrets.Service, platformOrgID 
 		return secrets.SecretValue{}, err
 	}
 	span.SetAttributes(
-		attribute.String("forge_metal.org_id", platformOrgID),
+		attribute.String("verself.org_id", platformOrgID),
 		attribute.String("spiffe.peer_id", peerID.String()),
-		attribute.String("forge_metal.runtime_secret_consumer", policy.credentialName),
-		attribute.Int("forge_metal.secret_count", 1),
+		attribute.String("verself.runtime_secret_consumer", policy.credentialName),
+		attribute.Int("verself.secret_count", 1),
 	)
 	principal := secrets.Principal{
 		OrgID:           platformOrgID,
@@ -481,10 +481,10 @@ func writeRuntimeSecret(ctx context.Context, svc *secrets.Service, platformOrgID
 		return secrets.SecretRecord{}, err
 	}
 	span.SetAttributes(
-		attribute.String("forge_metal.org_id", platformOrgID),
+		attribute.String("verself.org_id", platformOrgID),
 		attribute.String("spiffe.peer_id", peerID.String()),
-		attribute.String("forge_metal.runtime_secret_consumer", policy.credentialName),
-		attribute.Int("forge_metal.secret_count", 1),
+		attribute.String("verself.runtime_secret_consumer", policy.credentialName),
+		attribute.Int("verself.secret_count", 1),
 	)
 	principal := secrets.Principal{
 		OrgID:           platformOrgID,
@@ -532,9 +532,9 @@ func createInternalCredential(ctx context.Context, svc *secrets.Service, request
 	}
 	peerID, _ := workloadauth.PeerIDFromContext(ctx)
 	span.SetAttributes(
-		attribute.String("forge_metal.org_id", request.OrgID),
-		attribute.String("forge_metal.subject_id", request.ActorID),
-		attribute.String("forge_metal.credential_kind", request.Kind),
+		attribute.String("verself.org_id", request.OrgID),
+		attribute.String("verself.subject_id", request.ActorID),
+		attribute.String("verself.credential_kind", request.Kind),
 		attribute.String("spiffe.peer_id", peerID.String()),
 	)
 	if request.OrgID == "" || request.ActorID == "" || request.Kind == "" {
@@ -579,11 +579,11 @@ func verifyInternalCredential(ctx context.Context, svc *secrets.Service, request
 	request.Kind = strings.TrimSpace(request.Kind)
 	peerID, _ := workloadauth.PeerIDFromContext(ctx)
 	span.SetAttributes(
-		attribute.String("forge_metal.org_id", request.OrgID),
-		attribute.String("forge_metal.subject_id", request.ActorID),
-		attribute.String("forge_metal.credential_kind", request.Kind),
+		attribute.String("verself.org_id", request.OrgID),
+		attribute.String("verself.subject_id", request.ActorID),
+		attribute.String("verself.credential_kind", request.Kind),
 		attribute.String("spiffe.peer_id", peerID.String()),
-		attribute.Int("forge_metal.required_scope_count", len(request.RequiredScopes)),
+		attribute.Int("verself.required_scope_count", len(request.RequiredScopes)),
 	)
 	if request.OrgID == "" || request.Kind == "" || strings.TrimSpace(request.Token) == "" {
 		return internalVerifyCredentialResponse{}, fmt.Errorf("%w: org_id, kind, and token are required", secrets.ErrInvalidArgument)
@@ -613,7 +613,7 @@ func verifyInternalCredential(ctx context.Context, svc *secrets.Service, request
 		span.SetStatus(codes.Error, err.Error())
 		return internalVerifyCredentialResponse{}, err
 	}
-	span.SetAttributes(attribute.Bool("forge_metal.credential_active", result.Active))
+	span.SetAttributes(attribute.Bool("verself.credential_active", result.Active))
 	return internalVerifyCredentialResponse{
 		Active:       result.Active,
 		DenialReason: result.DenialReason,
@@ -755,11 +755,11 @@ func resolveInjection(ctx context.Context, svc *secrets.Service, request injecti
 	request.AttemptID = strings.TrimSpace(request.AttemptID)
 	peerID, _ := workloadauth.PeerIDFromContext(ctx)
 	span.SetAttributes(
-		attribute.String("forge_metal.org_id", request.OrgID),
-		attribute.String("forge_metal.execution_id", request.ExecutionID),
-		attribute.String("forge_metal.attempt_id", request.AttemptID),
+		attribute.String("verself.org_id", request.OrgID),
+		attribute.String("verself.execution_id", request.ExecutionID),
+		attribute.String("verself.attempt_id", request.AttemptID),
 		attribute.String("spiffe.peer_id", peerID.String()),
-		attribute.Int("forge_metal.secret_env_count", len(request.Secrets)),
+		attribute.Int("verself.secret_env_count", len(request.Secrets)),
 	)
 	if request.OrgID == "" || request.ActorID == "" || request.ExecutionID == "" || request.AttemptID == "" {
 		err := fmt.Errorf("%w: org_id, actor_id, execution_id, and attempt_id are required", secrets.ErrInvalidArgument)
@@ -824,13 +824,13 @@ func verifyInjectionRequest(ctx context.Context, request injectionResolveRequest
 	defer span.End()
 	peerID, _ := workloadauth.PeerIDFromContext(ctx)
 	span.SetAttributes(
-		attribute.String("forge_metal.org_id", request.OrgID),
-		attribute.String("forge_metal.execution_id", request.ExecutionID),
-		attribute.String("forge_metal.attempt_id", request.AttemptID),
+		attribute.String("verself.org_id", request.OrgID),
+		attribute.String("verself.execution_id", request.ExecutionID),
+		attribute.String("verself.attempt_id", request.AttemptID),
 		attribute.String("spiffe.peer_id", peerID.String()),
 		attribute.String("bao.namespace", request.OrgID),
-		attribute.String("forge_metal.cache_outcome", "delegated"),
-		attribute.Int("forge_metal.secret_env_count", len(request.Secrets)),
+		attribute.String("verself.cache_outcome", "delegated"),
+		attribute.Int("verself.secret_env_count", len(request.Secrets)),
 	)
 	seen := map[string]struct{}{}
 	for _, requested := range request.Secrets {

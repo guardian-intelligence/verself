@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import { Lockup, WingsChip, type LockupVariant } from "@forge-metal/brand";
+import { Lockup, WingsChip, type LockupVariant } from "@verself/brand";
 
 // The Guardian email signature, three voices.
 //
@@ -47,7 +47,7 @@ type VariantTokens = {
 };
 
 // Treatment-scoped typographic + surface tokens. Kept co-located with the
-// signature (rather than pulled into @forge-metal/brand) while the API
+// signature (rather than pulled into @verself/brand) while the API
 // stabilises; promote to brand once a second consumer shows up.
 const VARIANT_TOKENS: Record<SignatureVariant, VariantTokens> = {
   workshop: {

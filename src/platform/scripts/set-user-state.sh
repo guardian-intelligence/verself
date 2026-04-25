@@ -137,7 +137,7 @@ mkdir -p "${binary_dir}"
   go build -o "${binary_path}" ./cmd/billing-set-user-state
 )
 
-remote_path="$(verification_upload_executable "${binary_path}" forge-metal-billing-set-user-state)"
+remote_path="$(verification_upload_executable "${binary_path}" verself-billing-set-user-state)"
 cleanup_remote() {
   verification_remove_remote_path "${remote_path}"
 }

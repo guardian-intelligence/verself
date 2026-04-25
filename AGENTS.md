@@ -3,12 +3,20 @@ Set of services + console + marketing page for a software business, almost entir
 
 Canonical layout in `docs/architecture/directory-structure.md`. Read that file directly if exploring the repo.
 
-Polyglot monorepo:
+Polyglot monorepo structured as a modular monolith:
 
 - **TypeScript** — `src/viteplus-monorepo/` (pnpm, Vite Plus + TanStack Start/DB/Query/Router). Apps: `company` (marketing site at anveio.com), `platform` (product console at platform.anveio.com), `mail`.
 - **Go** — `go.work` at repo root, covers most of `src/*`. Services: `sandbox-rental-service`, `billing-service`, `identity-service`, `mailbox-service`, `governance-service`, `secrets-service`, `platform`, `vm-orchestrator`. Shared libs: `apiwire`, `auth-middleware`, `otel`.
 - **Zig** — `src/vm-guest-telemetry/` (guest agent, runs *inside* Firecracker VMs, not on the host).
 - **YAML* -- Infrastructure code defined with Ansible.
+
+Layers:
+
+1. Substrate layer: vm-orchestrator, guest telemetry, Caddy, nftables, ClickHouse, Postgres, Forgejo
+2. Product API layer: service-owned Huma APIs at <service>.api.<domain>, with internal SPIFFE-only APIs separate.
+3. Generated client layer: pure transport clients, validators, DTOs, schemas.
+4. Curated SDK layer: stable hand-written exports that wrap generated clients and own auth, idempotency keys, retries, pagination, waiters, error normalization, tracing headers, and DTO conversion.
+5. Facades: console.<domain> webapp, CLI, docs examples, Terraform provider later. These use the SDK, not private service shortcuts.
 
 Tech Stack:
 
@@ -66,7 +74,7 @@ How the platform is wired today: service topology, three safety rings, self-host
 **Keywords:** Huma v2, OpenAPI 3.0/3.1, oapi-codegen, @hey-api/openapi-ts, apiwire, SOPS, systemd LoadCredential, credstore, nftables, safety rings, Cloudflare, Latitude.sh, Resend, Stripe, Backblaze, PostgreSQL, ClickHouse, TigerBeetle, Zitadel, Stalwart, ElectricSQL, TanStack DB, dual-write, reconciliation, metering, credits, entitlements, Verdaccio NPM mirror, Forgejo, Ubuntu 24.04, Netbird, 3-node topology, self-hosted, vsock 10790.
 
 See `docs/system-context.md`. Auth, identity, IAM, Zitadel, JWT, SCIM, organization model, three-role (owner/admin/member), API credentials, frontend sessions, OIDC discovery — all in `src/platform/docs/identity-and-iam.md`.
-Forge Metal Go service clients are generated from committed OpenAPI 3.0 specs with `oapi-codegen`; consumers must use those generated `client` or `internalclient` packages, with SPIFFE carried by the underlying `http.Client` instead of handwritten transport code. If a service API shape is missing, add the Huma route/OpenAPI spec and regenerate instead of bypassing the SDK.
+Verself Go service clients are generated from committed OpenAPI 3.0 specs with `oapi-codegen`; consumers must use those generated `client` or `internalclient` packages, with SPIFFE carried by the underlying `http.Client` instead of handwritten transport code. If a service API shape is missing, add the Huma route/OpenAPI spec and regenerate instead of bypassing the SDK.
 
 Python package management is done through `uv`.
 
@@ -87,7 +95,7 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - **ZFS volume lifecycle, zvol, clone, snapshot, checkpoint, restore:** `src/vm-orchestrator/docs/zfs-volume-lifecycle.md`
 - **Wire contracts, apiwire, DTO patterns, numeric safety, 64-bit, DecimalUint64, DecimalInt64, openapi-wire-check, generated contract gate:** `src/apiwire/docs/wire-contracts.md`
 - **VM execution control plane, sandbox-rental-service ↔ vm-orchestrator split, attempt state machine, billing windows, execution lifecycle:** `src/sandbox-rental-service/docs/vm-execution-control-plane.md`
-- **Identity and IAM, Zitadel, SCIM 2.0, SSO, authentication, organization model, three-role owner/admin/member, capability catalog, API credentials, Zitadel Actions, pre-access-token, frontend sessions, OIDC discovery, Forge Metal policy split:** `src/platform/docs/identity-and-iam.md`
+- **Identity and IAM, Zitadel, SCIM 2.0, SSO, authentication, organization model, three-role owner/admin/member, capability catalog, API credentials, Zitadel Actions, pre-access-token, frontend sessions, OIDC discovery, Verself policy split:** `src/platform/docs/identity-and-iam.md`
 - **Workload identity, SPIFFE/SPIRE trust domain, service mTLS, OpenBao relying-party model, runtime secret cleanup:** `docs/architecture/workload-identity.md`
 - **Secrets service, identity model, OIDC provider role, resource model, billing, KMS alternative:** `src/platform/docs/secrets-service.md`
 - Billing architecture, credit subscription, entitlements, metering, TigerBeetle, PostgreSQL, Reconcile, refunds, plan change, dual-write, Stripe webhooks, invoices:** `src/billing-service/docs/billing-architecture.md`

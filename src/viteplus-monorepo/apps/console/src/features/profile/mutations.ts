@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useSignedInAuth } from "@forge-metal/auth-web/react";
-import type { AuthenticatedAuth } from "@forge-metal/auth-web/isomorphic";
+import { useSignedInAuth } from "@verself/auth-web/react";
+import type { AuthenticatedAuth } from "@verself/auth-web/isomorphic";
 import { putProfilePreferences, updateProfileIdentity } from "~/server-fns/api";
 import type {
   ProfileSnapshot,

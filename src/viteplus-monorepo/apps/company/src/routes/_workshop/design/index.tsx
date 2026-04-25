@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect } from "react";
-import type { Treatment } from "@forge-metal/brand";
-import { Lockup } from "@forge-metal/brand";
+import type { Treatment } from "@verself/brand";
+import { Lockup } from "@verself/brand";
 import { emitSpan } from "~/lib/telemetry/browser";
 import { AppliedFooter } from "~/features/design/sections/applied-footer";
 import { ogMeta } from "~/lib/head";

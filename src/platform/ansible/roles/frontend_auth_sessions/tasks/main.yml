@@ -89,7 +89,7 @@
 - name: Apply frontend auth schema
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/psql
+      {{ verself_bin }}/psql
       -h {{ services.postgresql.host }}
       -p {{ services.postgresql.port }}
       -U {{ frontend_auth_sessions_db_user }}
@@ -104,7 +104,7 @@
 - name: Remove console sessions carrying retired sandbox role keys
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/psql
+      {{ verself_bin }}/psql
       -h {{ services.postgresql.host }}
       -p {{ services.postgresql.port }}
       -U {{ frontend_auth_sessions_db_user }}

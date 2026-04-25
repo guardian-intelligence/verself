@@ -1,8 +1,8 @@
 import * as React from "react";
 
-import { cn } from "@forge-metal/ui/lib/utils";
+import { cn } from "@verself/ui/lib/utils";
 
-// Page layout primitives for Forge Metal apps. These enforce one
+// Page layout primitives for Verself apps. These enforce one
 // opinionated rhythm, one typography scale, and one container-width
 // decision across every route in every app. Callers describe the page's
 // *information hierarchy* (header, sections, titles) and never pick

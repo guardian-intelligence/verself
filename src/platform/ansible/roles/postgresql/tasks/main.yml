@@ -6,13 +6,13 @@
 
 - name: Verify PostgreSQL binary exists in profile
   ansible.builtin.stat:
-    path: "{{ fm_bin }}/postgres"
+    path: "{{ verself_bin }}/postgres"
   register: postgresql_binary
   failed_when: not postgresql_binary.stat.exists
 
 - name: Capture PostgreSQL version
   ansible.builtin.command:
-    cmd: "{{ fm_bin }}/postgres --version"
+    cmd: "{{ verself_bin }}/postgres --version"
   register: postgresql_version_output
   changed_when: false
 
@@ -107,7 +107,7 @@
 - name: Initialize PostgreSQL data directory
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/initdb
+      {{ verself_bin }}/initdb
       --pgdata={{ postgresql_data_dir }}
       --auth=scram-sha-256
       --encoding=UTF8
@@ -164,14 +164,14 @@
     content: |
       [Unit]
       Description=PostgreSQL
-      After=forge-metal-firewall.target network.target
-      Requires=forge-metal-firewall.target
+      After=verself-firewall.target network.target
+      Requires=verself-firewall.target
 
       [Service]
       Type=simple
       User=postgres
       Group=postgres
-      ExecStart={{ fm_bin }}/postgres -D {{ postgresql_data_dir }} -c config_file={{ postgresql_config_dir }}/postgresql.conf
+      ExecStart={{ verself_bin }}/postgres -D {{ postgresql_data_dir }} -c config_file={{ postgresql_config_dir }}/postgresql.conf
       ExecReload=/bin/kill -HUP $MAINPID
       Restart=on-failure
       RestartSec=5

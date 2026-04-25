@@ -1,5 +1,5 @@
 {
-  "name": "@forge-metal/auth-web",
+  "name": "@verself/auth-web",
   "version": "0.1.0",
   "private": true,
   "description": "Shared server-owned auth helpers for TanStack Start apps.",
@@ -44,12 +44,12 @@
     "typecheck": "vp exec tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@forge-metal/ui": "workspace:*",
     "@opentelemetry/api": "catalog:",
     "@tanstack/react-form": "catalog:",
     "@tanstack/react-query": "catalog:",
     "@tanstack/react-router": "catalog:",
     "@tanstack/react-start": "catalog:",
+    "@verself/ui": "workspace:*",
     "jose": "catalog:",
     "lucide-react": "catalog:",
     "postgres": "catalog:",

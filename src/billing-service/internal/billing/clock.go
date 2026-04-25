@@ -8,7 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/forge-metal/billing-service/internal/store"
+	"github.com/verself/billing-service/internal/store"
 )
 
 func (c *Client) GetBusinessClock(ctx context.Context, orgID OrgID, productID string) (BusinessClockState, error) {

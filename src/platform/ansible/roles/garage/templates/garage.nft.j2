@@ -1,9 +1,9 @@
 #!/usr/sbin/nft -f
 
-table inet forge_metal_garage
-delete table inet forge_metal_garage
+table inet verself_garage
+delete table inet verself_garage
 
-table inet forge_metal_garage {
+table inet verself_garage {
     chain input {
         type filter hook input priority filter; policy accept;
 

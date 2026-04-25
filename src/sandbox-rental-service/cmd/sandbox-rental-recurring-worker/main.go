@@ -12,12 +12,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.temporal.io/sdk/worker"
 
-	workloadauth "github.com/forge-metal/auth-middleware/workload"
-	"github.com/forge-metal/envconfig"
-	fmotel "github.com/forge-metal/otel"
-	"github.com/forge-metal/sandbox-rental-service/internal/recurring"
-	"github.com/forge-metal/sandbox-rental-service/internal/sourceworkflow"
-	"github.com/forge-metal/temporal-platform/sdkclient"
+	workloadauth "github.com/verself/auth-middleware/workload"
+	"github.com/verself/envconfig"
+	verselfotel "github.com/verself/otel"
+	"github.com/verself/sandbox-rental-service/internal/recurring"
+	"github.com/verself/sandbox-rental-service/internal/sourceworkflow"
+	"github.com/verself/temporal-platform/sdkclient"
 )
 
 var version = "dev"
@@ -33,7 +33,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	otelShutdown, logger, err := fmotel.Init(ctx, fmotel.Config{
+	otelShutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{
 		ServiceName:    "sandbox-rental-recurring-worker",
 		ServiceVersion: version,
 	})

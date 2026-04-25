@@ -13,9 +13,9 @@ import (
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/forge-metal/apiwire"
-	workloadauth "github.com/forge-metal/auth-middleware/workload"
-	"github.com/forge-metal/object-storage-service/internal/objectstorage"
+	"github.com/verself/apiwire"
+	workloadauth "github.com/verself/auth-middleware/workload"
+	"github.com/verself/object-storage-service/internal/objectstorage"
 )
 
 type bucketListOutput struct {
@@ -472,11 +472,11 @@ func problem(ctx context.Context, status int, code, detail string, cause error) 
 	}
 	instance := ""
 	if spanContext := trace.SpanContextFromContext(ctx); spanContext.HasTraceID() {
-		instance = "urn:forge-metal:trace:" + spanContext.TraceID().String()
+		instance = "urn:verself:trace:" + spanContext.TraceID().String()
 	}
 	return &huma.ErrorModel{
 		Status:   status,
-		Type:     "urn:forge-metal:problem:" + code,
+		Type:     "urn:verself:problem:" + code,
 		Title:    http.StatusText(status),
 		Detail:   detail,
 		Instance: instance,

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { requireOperatorDomain } from "@forge-metal/web-env";
+import { requireOperatorDomain } from "@verself/web-env";
 
 import { SUBPROCESSORS } from "~/lib/policy-catalog";
 import {
@@ -21,11 +21,11 @@ export const Route = createFileRoute("/policy/subprocessors")({
   loader: () => getOperatorDomain(),
   head: () => ({
     meta: [
-      { title: "Subprocessors — Forge Metal Platform" },
+      { title: "Subprocessors — Verself Platform" },
       {
         name: "description",
         content:
-          "The third parties Forge Metal engages to operate the service, the data categories they process, and where.",
+          "The third parties Verself engages to operate the service, the data categories they process, and where.",
       },
     ],
   }),

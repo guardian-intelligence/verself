@@ -8,10 +8,10 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/forge-metal/apiwire"
-	workloadauth "github.com/forge-metal/auth-middleware/workload"
-	"github.com/forge-metal/sandbox-rental-service/internal/jobs"
 	"github.com/google/uuid"
+	"github.com/verself/apiwire"
+	workloadauth "github.com/verself/auth-middleware/workload"
+	"github.com/verself/sandbox-rental-service/internal/jobs"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -26,6 +26,7 @@ type InternalRegisterRunnerRepositoryInput struct {
 type InternalRegisterRunnerRepositoryRequest struct {
 	Provider             string    `json:"provider" required:"true" enum:"forgejo"`
 	OrgID                string    `json:"org_id" required:"true"`
+	ProjectID            uuid.UUID `json:"project_id" required:"true"`
 	SourceRepositoryID   uuid.UUID `json:"source_repository_id,omitempty"`
 	ProviderOwner        string    `json:"provider_owner" required:"true" minLength:"1" maxLength:"255"`
 	ProviderRepo         string    `json:"provider_repo" required:"true" minLength:"1" maxLength:"255"`
@@ -40,6 +41,7 @@ type InternalRegisterRunnerRepositoryOutput struct {
 type InternalRunnerRepositoryRegistration struct {
 	Provider             string    `json:"provider"`
 	ProviderRepositoryID string    `json:"provider_repository_id"`
+	ProjectID            uuid.UUID `json:"project_id"`
 	SourceRepositoryID   uuid.UUID `json:"source_repository_id,omitempty"`
 	State                string    `json:"state"`
 }
@@ -54,7 +56,7 @@ func RegisterInternalRoutes(api huma.API, svc *jobs.Service) {
 		MaxBodyBytes:  bodyLimitSmallJSON,
 		Security:      []map[string][]string{{"mutualTLS": {}}},
 		Extensions: map[string]any{
-			"x-forge-metal-iam": map[string]any{
+			"x-verself-iam": map[string]any{
 				"permission":          "sandbox:runner_repository:register",
 				"resource":            "runner_repository",
 				"action":              "register",
@@ -101,6 +103,7 @@ func internalRegisterRunnerRepository(svc *jobs.Service) func(context.Context, *
 		registration := jobs.RunnerRepositoryRegistration{
 			Provider:             strings.TrimSpace(req.Provider),
 			OrgID:                orgID,
+			ProjectID:            req.ProjectID,
 			SourceRepositoryID:   req.SourceRepositoryID,
 			ProviderOwner:        strings.TrimSpace(req.ProviderOwner),
 			ProviderRepo:         strings.TrimSpace(req.ProviderRepo),
@@ -109,7 +112,8 @@ func internalRegisterRunnerRepository(svc *jobs.Service) func(context.Context, *
 		}
 		span.SetAttributes(
 			attribute.String("spiffe.peer_id", peerID.String()),
-			attribute.Int64("forge_metal.org_id", int64(orgID)),
+			attribute.Int64("verself.org_id", int64(orgID)),
+			attribute.String("verself.project_id", req.ProjectID.String()),
 			attribute.String("runner.provider", registration.Provider),
 			attribute.Int64("runner.provider_repository_id", providerRepoID),
 		)
@@ -119,6 +123,7 @@ func internalRegisterRunnerRepository(svc *jobs.Service) func(context.Context, *
 		return &InternalRegisterRunnerRepositoryOutput{Body: InternalRunnerRepositoryRegistration{
 			Provider:             registration.Provider,
 			ProviderRepositoryID: strconv.FormatInt(providerRepoID, 10),
+			ProjectID:            registration.ProjectID,
 			SourceRepositoryID:   registration.SourceRepositoryID,
 			State:                "registered",
 		}}, nil

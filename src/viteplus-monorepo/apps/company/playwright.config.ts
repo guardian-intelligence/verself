@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 // The company app serves the root domain. BASE_URL is set by the canary runner
 // (see `make company-proof` / scripts/verify-company-live.sh) and falls back to
-// the local dev bind when a developer runs `pnpm -F @forge-metal/company test:e2e`.
+// the local dev bind when a developer runs `pnpm -F @verself/company test:e2e`.
 const BASE_URL = process.env.BASE_URL ?? "http://127.0.0.1:4252";
 
 export default defineConfig({

@@ -3,9 +3,9 @@
 import { useMemo } from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 
-import { cn } from "@forge-metal/ui/lib/utils";
-import { Label } from "@forge-metal/ui/components/ui/label";
-import { Separator } from "@forge-metal/ui/components/ui/separator";
+import { cn } from "@verself/ui/lib/utils";
+import { Label } from "@verself/ui/components/ui/label";
+import { Separator } from "@verself/ui/components/ui/separator";
 
 function FieldSet({ className, ...props }: React.ComponentProps<"fieldset">) {
   return (

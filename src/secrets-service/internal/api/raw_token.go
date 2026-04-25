@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/forge-metal/secrets-service/internal/secrets"
+	"github.com/verself/secrets-service/internal/secrets"
 )
 
 // CaptureRawBearerToken stores the request bearer in context before the shared

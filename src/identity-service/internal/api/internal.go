@@ -12,10 +12,10 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/forge-metal/apiwire"
-	auth "github.com/forge-metal/auth-middleware"
-	workloadauth "github.com/forge-metal/auth-middleware/workload"
-	"github.com/forge-metal/identity-service/internal/identity"
+	"github.com/verself/apiwire"
+	auth "github.com/verself/auth-middleware"
+	workloadauth "github.com/verself/auth-middleware/workload"
+	"github.com/verself/identity-service/internal/identity"
 )
 
 var internalAPITracer = otel.Tracer("identity-service/internal/api/internal")
@@ -81,8 +81,8 @@ func setInternalProfileIdentityAttributes(span trace.Span, identity *auth.Identi
 		return
 	}
 	span.SetAttributes(
-		attribute.String("forge_metal.org_id", identity.OrgID),
-		attribute.String("forge_metal.subject_id", identity.Subject),
+		attribute.String("verself.org_id", identity.OrgID),
+		attribute.String("verself.subject_id", identity.Subject),
 	)
 }
 
@@ -109,7 +109,7 @@ func requireInternalHumanIdentity(ctx context.Context, subjectID string) (*auth.
 	if err != nil {
 		return authIdentity, err
 	}
-	if strings.TrimSpace(claimString(authIdentity.Raw, "forge_metal:credential_id")) != "" {
+	if strings.TrimSpace(claimString(authIdentity.Raw, "verself:credential_id")) != "" {
 		return authIdentity, forbidden(ctx, "api-credential-not-allowed", "forwarded token must be a human token")
 	}
 	if !hasHumanTokenMarker(authIdentity.Raw) {

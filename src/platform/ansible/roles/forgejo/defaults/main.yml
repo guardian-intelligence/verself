@@ -4,19 +4,19 @@
 # Subdomain prefix for the Forgejo git server.
 forgejo_subdomain: git
 
-# Full domain: auto-derived as <subdomain>.<forge_metal_domain>.
-forgejo_domain: "{{ forgejo_subdomain }}.{{ forge_metal_domain }}"
+# Full domain: auto-derived as <subdomain>.<verself_domain>.
+forgejo_domain: "{{ forgejo_subdomain }}.{{ verself_domain }}"
 
 # Zitadel OIDC integration
 forgejo_auth_project_name: forgejo
 forgejo_auth_source_name: Zitadel
-forgejo_auth_issuer_url: "https://auth.{{ forge_metal_domain }}"
+forgejo_auth_issuer_url: "https://auth.{{ verself_domain }}"
 forgejo_auth_group_claim_name: forgejo_groups
 forgejo_auth_admin_group: forgejo_admin
 
 # Technical automation user for service-driven repository fixture seeding.
 forgejo_automation_username: forgejo-automation
 forgejo_automation_full_name: Forgejo Automation
-forgejo_automation_email: "forgejo-automation@{{ forge_metal_domain }}"
-forgejo_automation_token_name: forge-metal-automation
+forgejo_automation_email: "forgejo-automation@{{ verself_domain }}"
+forgejo_automation_token_name: verself-automation
 forgejo_automation_token_scopes: all

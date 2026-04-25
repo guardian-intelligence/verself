@@ -22,7 +22,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/forge-metal/mailbox-service/internal/jmap"
+	"github.com/verself/mailbox-service/internal/jmap"
 )
 
 const maxForwardBodyChars = 32000
@@ -288,8 +288,8 @@ func (r *Runner) forwardEmail(ctx context.Context, email jmap.Email) error {
 		Subject: forwardSubject(email.Subject),
 		Text:    r.buildForwardBody(email),
 		Headers: map[string]string{
-			"X-Forge-Metal-Mailbox":           r.ceoAddress,
-			"X-Forge-Metal-Original-Email-ID": email.ID,
+			"X-Verself-Mailbox":           r.ceoAddress,
+			"X-Verself-Original-Email-ID": email.ID,
 		},
 	}
 	if replyTo := firstAddress(email.From); replyTo != "" {
@@ -341,7 +341,7 @@ func (r *Runner) buildForwardBody(email jmap.Email) string {
 
 	var lines []string
 	lines = append(lines,
-		"forge-metal operator mailbox forward",
+		"verself operator mailbox forward",
 		"",
 		"Mailbox: "+r.ceoAddress,
 		"Original From: "+formatAddresses(email.From),

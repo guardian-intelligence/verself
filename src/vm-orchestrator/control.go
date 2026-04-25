@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/forge-metal/vm-orchestrator/vmproto"
+	"github.com/verself/vm-orchestrator/vmproto"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -342,9 +342,9 @@ func (c *guestControl) initLease(ctx context.Context, leaseID string, network vm
 }
 
 func (c *guestControl) exec(ctx context.Context, leaseID string, spec ExecSpec, handleCheckpoint checkpointHandler, logger *slog.Logger) (ExecResult, error) {
-	execID := strings.TrimSpace(spec.Env["FORGE_METAL_EXEC_ID"])
+	execID := strings.TrimSpace(spec.Env["VERSELF_EXEC_ID"])
 	if execID == "" {
-		return ExecResult{}, fmt.Errorf("FORGE_METAL_EXEC_ID is required")
+		return ExecResult{}, fmt.Errorf("VERSELF_EXEC_ID is required")
 	}
 	var logBuf strings.Builder
 	var firstByteAt time.Time

@@ -419,6 +419,7 @@ export type SandboxExecutionScheduleCreateRequest = {
   };
   interval_seconds: number;
   paused?: boolean;
+  project_id: string;
   ref?: string;
   source_repository_id: string;
   workflow_path: string;
@@ -454,6 +455,7 @@ export type SandboxExecutionScheduleRecord = {
   };
   interval_seconds: number;
   org_id: string;
+  project_id: string;
   ref?: string;
   schedule_id: string;
   source_repository_id: string;
@@ -489,7 +491,7 @@ export type SandboxGitHubInstallationConnectResponse = {
    */
   expires_at: string;
   /**
-   * GitHub App installation URL for the current Forge Metal organization.
+   * GitHub App installation URL for the current Verself organization.
    */
   setup_url: string;
   /**
@@ -879,6 +881,7 @@ export type SandboxExecutionScheduleCreateRequestWritable = {
   };
   interval_seconds: number;
   paused?: boolean;
+  project_id: string;
   ref?: string;
   source_repository_id: string;
   workflow_path: string;
@@ -895,6 +898,7 @@ export type SandboxExecutionScheduleRecordWritable = {
   };
   interval_seconds: number;
   org_id: string;
+  project_id: string;
   ref?: string;
   schedule_id: string;
   source_repository_id: string;
@@ -912,7 +916,7 @@ export type SandboxGitHubInstallationConnectResponseWritable = {
    */
   expires_at: string;
   /**
-   * GitHub App installation URL for the current Forge Metal organization.
+   * GitHub App installation URL for the current Verself organization.
    */
   setup_url: string;
   /**

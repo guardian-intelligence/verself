@@ -198,7 +198,7 @@ env \
   VERIFICATION_RUN_JSON_PATH="${run_json_path}" \
   BASE_URL="${base_url}" \
   TEST_BASE_URL="${base_url}" \
-  FORGE_METAL_DOMAIN="${VERIFICATION_DOMAIN}" \
+  VERSELF_DOMAIN="${VERIFICATION_DOMAIN}" \
   ZITADEL_BASE_URL="https://auth.${VERIFICATION_DOMAIN}" \
   TEST_EMAIL="${expected_email}" \
   TEST_PASSWORD="${acme_admin_password}" \
@@ -298,7 +298,7 @@ wait_for_clickhouse_count default "
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
     AND ServiceName = 'identity-service'
     AND SpanName = 'identity.human_profile.write'
-    AND arrayElement(SpanAttributes, 'forge_metal.subject_id') = {subject_id:String}
+    AND arrayElement(SpanAttributes, 'verself.subject_id') = {subject_id:String}
 " 1 "${artifact_dir}/clickhouse/identity-human-profile-spans-count.tsv" \
   --param_subject_id="${subject_id}"
 
@@ -320,7 +320,7 @@ wait_for_clickhouse_count default "
     AND endsWith(arrayElement(SpanAttributes, 'spiffe.expected_server_id'), '/svc/governance-service')
 " 2 "${artifact_dir}/clickhouse/profile-governance-mtls-spans-count.tsv"
 
-wait_for_clickhouse_count forge_metal "
+wait_for_clickhouse_count verself "
   SELECT count()
   FROM audit_events
   WHERE recorded_at BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
@@ -385,7 +385,7 @@ fi
 (
   cd "${VERIFICATION_PLATFORM_ROOT}"
   ./scripts/clickhouse.sh \
-    --database forge_metal \
+    --database verself \
     --param_window_start="${window_start}" \
     --param_window_end="${window_end}" \
     --param_org_id="${org_id}" \

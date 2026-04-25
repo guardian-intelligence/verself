@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	mailboxclient "github.com/forge-metal/mailbox-service/client"
+	mailboxclient "github.com/verself/mailbox-service/client"
 )
 
 const (

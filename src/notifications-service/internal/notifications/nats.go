@@ -19,11 +19,11 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
 
-	workloadauth "github.com/forge-metal/auth-middleware/workload"
+	workloadauth "github.com/verself/auth-middleware/workload"
 )
 
 const (
-	DomainEventContentType = "application/vnd.forge-metal.domain-event+json;version=1"
+	DomainEventContentType = "application/vnd.verself.domain-event+json;version=1"
 	NATSDefaultURL         = "tls://127.0.0.1:4222"
 )
 
