@@ -35,6 +35,73 @@ components:
         - size
         - sha
       type: object
+    CIRun:
+      additionalProperties: false
+      properties:
+        ci_run_id:
+          type: string
+        commit_sha:
+          type: string
+        completed_at:
+          format: date-time
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        failure_reason:
+          type: string
+        org_id:
+          type: string
+        ref_name:
+          type: string
+        repo_id:
+          type: string
+        sandbox_attempt_id:
+          type: string
+        sandbox_execution_id:
+          type: string
+        started_at:
+          format: date-time
+          type: string
+        state:
+          type: string
+        trace_id:
+          type: string
+        trigger_event:
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+      required:
+        - ci_run_id
+        - org_id
+        - repo_id
+        - ref_name
+        - commit_sha
+        - trigger_event
+        - state
+        - created_at
+        - updated_at
+      type: object
+    CIRunList:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://source.api.anveio.com/schemas/CIRunList.json
+          format: uri
+          readOnly: true
+          type: string
+        ci_runs:
+          items:
+            $ref: "#/components/schemas/CIRun"
+          type:
+            - array
+            - "null"
+      required:
+        - ci_runs
+      type: object
     CheckoutGrant:
       additionalProperties: false
       properties:
@@ -80,30 +147,24 @@ components:
           maxLength: 255
           type: string
       type: object
-    CreateIntegrationRequest:
+    CreateGitCredentialRequest:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - https://source.api.anveio.com/schemas/CreateIntegrationRequest.json
+            - https://source.api.anveio.com/schemas/CreateGitCredentialRequest.json
           format: uri
           readOnly: true
           type: string
-        credential_ref:
-          maxLength: 512
+        expires_in_seconds:
+          format: int64
+          maximum: 7776000
+          minimum: 60
+          type: integer
+        label:
+          maxLength: 128
           type: string
-        external_repo:
-          maxLength: 512
-          minLength: 1
-          type: string
-        provider:
-          maxLength: 64
-          minLength: 1
-          type: string
-      required:
-        - provider
-        - external_repo
       type: object
     CreateRepositoryRequest:
       additionalProperties: false
@@ -212,42 +273,50 @@ components:
           format: uri
           type: string
       type: object
-    ExternalIntegration:
+    GitCredential:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - https://source.api.anveio.com/schemas/ExternalIntegration.json
+            - https://source.api.anveio.com/schemas/GitCredential.json
           format: uri
           readOnly: true
           type: string
         created_at:
           format: date-time
           type: string
-        credential_ref:
+        credential_id:
           type: string
-        external_repo:
-          type: string
-        integration_id:
+        expires_at:
+          format: date-time
           type: string
         org_id:
           type: string
-        provider:
+        org_path:
           type: string
-        state:
+        scopes:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        token:
           type: string
-        updated_at:
-          format: date-time
+        token_prefix:
+          type: string
+        username:
           type: string
       required:
-        - integration_id
+        - credential_id
         - org_id
-        - provider
-        - external_repo
-        - state
+        - org_path
+        - username
+        - token
+        - token_prefix
+        - scopes
+        - expires_at
         - created_at
-        - updated_at
       type: object
     Ref:
       additionalProperties: false
@@ -289,6 +358,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        backend:
+          type: string
         created_at:
           format: date-time
           type: string
@@ -296,11 +367,14 @@ components:
           type: string
         description:
           type: string
+        last_pushed_at:
+          format: date-time
+          type: string
         name:
           type: string
         org_id:
           type: string
-        provider:
+        org_path:
           type: string
         repo_id:
           type: string
@@ -321,11 +395,12 @@ components:
       required:
         - repo_id
         - org_id
+        - org_path
         - name
         - slug
         - description
         - default_branch
-        - provider
+        - backend
         - visibility
         - state
         - version
@@ -402,6 +477,10 @@ components:
           type: string
         actor_id:
           type: string
+        backend:
+          type: string
+        backend_dispatch_id:
+          type: string
         created_at:
           format: date-time
           type: string
@@ -415,10 +494,6 @@ components:
             type: string
           type: object
         org_id:
-          type: string
-        provider:
-          type: string
-        provider_dispatch_id:
           type: string
         ref:
           type: string
@@ -440,7 +515,7 @@ components:
         - org_id
         - repo_id
         - actor_id
-        - provider
+        - backend
         - workflow_path
         - ref
         - inputs
@@ -481,9 +556,9 @@ info:
   version: 1.0.0
 openapi: 3.1.0
 paths:
-  /api/v1/integrations:
+  /api/v1/git-credentials:
     post:
-      operationId: create-source-integration
+      operationId: create-source-git-credential
       parameters:
         - description: Stable caller-provided key used to make this mutation retry-safe.
           in: header
@@ -497,14 +572,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateIntegrationRequest"
+              $ref: "#/components/schemas/CreateGitCredentialRequest"
         required: true
       responses:
         "201":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ExternalIntegration"
+                $ref: "#/components/schemas/GitCredential"
           description: Created
         default:
           content:
@@ -514,18 +589,18 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Register an external source integration
+      summary: Create a scoped HTTPS Git credential
       x-forge-metal-iam:
         action: create
-        audit_event: source.integration.create
+        audit_event: source.git_credential.create
         data_classification: customer_source_metadata
         event_category: source
-        operation_display: create source integration
+        operation_display: create source Git credential
         operation_type: write
         org_scope: token_org_id
-        permission: source:integration:write
+        permission: source:git_credential:write
         rate_limit_class: source_mutation
-        resource: source_integration
+        resource: source_git_credential
         risk_level: high
         source_product_area: Source
   /api/v1/repos:
@@ -750,6 +825,45 @@ paths:
         rate_limit_class: source_mutation
         resource: source_checkout_grant
         risk_level: high
+        source_product_area: Source
+  /api/v1/repos/{repo_id}/ci-runs:
+    get:
+      operationId: list-source-ci-runs
+      parameters:
+        - in: path
+          name: repo_id
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CIRunList"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: List repository CI runs
+      x-forge-metal-iam:
+        action: list
+        audit_event: source.ci_run.list
+        data_classification: customer_source_metadata
+        event_category: source
+        operation_display: list source CI runs
+        operation_type: read
+        org_scope: token_org_id
+        permission: source:workflow:read
+        rate_limit_class: read
+        resource: source_ci_run
+        risk_level: low
         source_product_area: Source
   /api/v1/repos/{repo_id}/refs:
     get:

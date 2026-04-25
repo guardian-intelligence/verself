@@ -45,6 +45,10 @@ type createRepositoryInput struct {
 	Body CreateRepositoryRequest
 }
 
+type createGitCredentialInput struct {
+	Body CreateGitCredentialRequest
+}
+
 type createCheckoutGrantInput struct {
 	RepoID string `path:"repo_id" format:"uuid"`
 	Body   CreateCheckoutGrantRequest
@@ -68,16 +72,16 @@ type checkoutArchiveInput struct {
 	Token   string `header:"X-Forge-Metal-Checkout-Token" required:"true"`
 }
 
-type createIntegrationInput struct {
-	Body CreateIntegrationRequest
-}
-
 type repositoryOutput struct {
 	Body Repository
 }
 
 type repositoryListOutput struct {
 	Body RepositoryList
+}
+
+type gitCredentialOutput struct {
+	Body GitCredential
 }
 
 type refListOutput struct {
@@ -90,6 +94,10 @@ type treeOutput struct {
 
 type blobOutput struct {
 	Body Blob
+}
+
+type ciRunListOutput struct {
+	Body CIRunList
 }
 
 type checkoutGrantOutput struct {
@@ -108,10 +116,6 @@ type archiveOutput struct {
 	ContentType        string `header:"Content-Type"`
 	ContentDisposition string `header:"Content-Disposition"`
 	Body               []byte
-}
-
-type integrationOutput struct {
-	Body ExternalIntegration
 }
 
 func RegisterRoutes(api huma.API, cfg Config) {
@@ -135,6 +139,26 @@ func RegisterRoutes(api huma.API, cfg Config) {
 		RiskLevel:        "medium",
 		BodyLimitBytes:   bodyLimitSmallJSON,
 	}, createRepository(svc))
+
+	registerSourceRoute(api, huma.Operation{
+		OperationID:   "create-source-git-credential",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/git-credentials",
+		Summary:       "Create a scoped HTTPS Git credential",
+		DefaultStatus: http.StatusCreated,
+	}, operationPolicy{
+		Permission:       permissionGitCredentialWrite,
+		Resource:         "source_git_credential",
+		Action:           "create",
+		OrgScope:         "token_org_id",
+		RateLimitClass:   "source_mutation",
+		Idempotency:      idempotencyHeaderKey,
+		AuditEvent:       "source.git_credential.create",
+		OperationDisplay: "create source Git credential",
+		OperationType:    "write",
+		RiskLevel:        "high",
+		BodyLimitBytes:   bodyLimitSmallJSON,
+	}, createGitCredential(svc))
 
 	registerSourceRoute(api, huma.Operation{
 		OperationID: "list-source-repositories",
@@ -186,6 +210,23 @@ func RegisterRoutes(api huma.API, cfg Config) {
 		OperationType:    "read",
 		RiskLevel:        "low",
 	}, listRefs(svc))
+
+	registerSourceRoute(api, huma.Operation{
+		OperationID: "list-source-ci-runs",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/repos/{repo_id}/ci-runs",
+		Summary:     "List repository CI runs",
+	}, operationPolicy{
+		Permission:       permissionWorkflowRead,
+		Resource:         "source_ci_run",
+		Action:           "list",
+		OrgScope:         "token_org_id",
+		RateLimitClass:   "read",
+		AuditEvent:       "source.ci_run.list",
+		OperationDisplay: "list source CI runs",
+		OperationType:    "read",
+		RiskLevel:        "low",
+	}, listCIRuns(svc))
 
 	registerSourceRoute(api, huma.Operation{
 		OperationID: "get-source-tree",
@@ -295,25 +336,6 @@ func RegisterRoutes(api huma.API, cfg Config) {
 		RiskLevel:        "low",
 	}, getWorkflowRun(svc))
 
-	registerSourceRoute(api, huma.Operation{
-		OperationID:   "create-source-integration",
-		Method:        http.MethodPost,
-		Path:          "/api/v1/integrations",
-		Summary:       "Register an external source integration",
-		DefaultStatus: http.StatusCreated,
-	}, operationPolicy{
-		Permission:       permissionIntegrationWrite,
-		Resource:         "source_integration",
-		Action:           "create",
-		OrgScope:         "token_org_id",
-		RateLimitClass:   "source_mutation",
-		Idempotency:      idempotencyHeaderKey,
-		AuditEvent:       "source.integration.create",
-		OperationDisplay: "create source integration",
-		OperationType:    "write",
-		RiskLevel:        "high",
-		BodyLimitBytes:   bodyLimitSmallJSON,
-	}, createIntegration(svc))
 }
 
 func RegisterInternalRoutes(api huma.API, cfg Config) {
@@ -379,6 +401,19 @@ func createRepository(svc *source.Service) func(context.Context, source.Principa
 	}
 }
 
+func createGitCredential(svc *source.Service) func(context.Context, source.Principal, *createGitCredentialInput) (*gitCredentialOutput, error) {
+	return func(ctx context.Context, principal source.Principal, input *createGitCredentialInput) (*gitCredentialOutput, error) {
+		credential, err := svc.CreateGitCredential(ctx, principal, source.CreateGitCredentialRequest{
+			Label:            input.Body.Label,
+			ExpiresInSeconds: input.Body.ExpiresInSeconds,
+		})
+		if err != nil {
+			return nil, sourceError(ctx, err)
+		}
+		return &gitCredentialOutput{Body: gitCredentialDTO(credential)}, nil
+	}
+}
+
 func listRepositories(svc *source.Service) func(context.Context, source.Principal, *struct{}) (*repositoryListOutput, error) {
 	return func(ctx context.Context, principal source.Principal, _ *struct{}) (*repositoryListOutput, error) {
 		repos, err := svc.ListRepositories(ctx, principal)
@@ -414,6 +449,20 @@ func listRefs(svc *source.Service) func(context.Context, source.Principal, *repo
 			return nil, sourceError(ctx, err)
 		}
 		return &refListOutput{Body: RefList{Refs: refDTOs(refs)}}, nil
+	}
+}
+
+func listCIRuns(svc *source.Service) func(context.Context, source.Principal, *repositoryPath) (*ciRunListOutput, error) {
+	return func(ctx context.Context, principal source.Principal, input *repositoryPath) (*ciRunListOutput, error) {
+		repoID, err := uuid.Parse(input.RepoID)
+		if err != nil {
+			return nil, badRequest(ctx, "invalid-repo-id", "repo_id must be a UUID", err)
+		}
+		runs, err := svc.ListCIRuns(ctx, principal, repoID)
+		if err != nil {
+			return nil, sourceError(ctx, err)
+		}
+		return &ciRunListOutput{Body: CIRunList{CIRuns: ciRunDTOs(runs)}}, nil
 	}
 }
 
@@ -544,16 +593,6 @@ func downloadArchive(svc *source.Service) func(context.Context, source.Principal
 			ContentDisposition: `attachment; filename="source-` + grant.GrantID.String() + `.tar.gz"`,
 			Body:               data,
 		}, nil
-	}
-}
-
-func createIntegration(svc *source.Service) func(context.Context, source.Principal, *createIntegrationInput) (*integrationOutput, error) {
-	return func(ctx context.Context, principal source.Principal, input *createIntegrationInput) (*integrationOutput, error) {
-		integration, err := svc.CreateExternalIntegration(ctx, principal, input.Body.Provider, input.Body.ExternalRepo, input.Body.CredentialRef)
-		if err != nil {
-			return nil, sourceError(ctx, err)
-		}
-		return &integrationOutput{Body: integrationDTO(integration)}, nil
 	}
 }
 

@@ -35,6 +35,32 @@ type Blob struct {
 	Size        int64   `json:"size"`
 }
 
+// CIRun defines model for CIRun.
+type CIRun struct {
+	CiRunId            string     `json:"ci_run_id"`
+	CommitSha          string     `json:"commit_sha"`
+	CompletedAt        *time.Time `json:"completed_at,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
+	FailureReason      *string    `json:"failure_reason,omitempty"`
+	OrgId              string     `json:"org_id"`
+	RefName            string     `json:"ref_name"`
+	RepoId             string     `json:"repo_id"`
+	SandboxAttemptId   *string    `json:"sandbox_attempt_id,omitempty"`
+	SandboxExecutionId *string    `json:"sandbox_execution_id,omitempty"`
+	StartedAt          *time.Time `json:"started_at,omitempty"`
+	State              string     `json:"state"`
+	TraceId            *string    `json:"trace_id,omitempty"`
+	TriggerEvent       string     `json:"trigger_event"`
+	UpdatedAt          time.Time  `json:"updated_at"`
+}
+
+// CIRunList defines model for CIRunList.
+type CIRunList struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string  `json:"$schema,omitempty"`
+	CiRuns *[]CIRun `json:"ci_runs"`
+}
+
 // CheckoutGrant defines model for CheckoutGrant.
 type CheckoutGrant struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -54,13 +80,12 @@ type CreateCheckoutGrantRequest struct {
 	Ref        *string `json:"ref,omitempty"`
 }
 
-// CreateIntegrationRequest defines model for CreateIntegrationRequest.
-type CreateIntegrationRequest struct {
+// CreateGitCredentialRequest defines model for CreateGitCredentialRequest.
+type CreateGitCredentialRequest struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema        *string `json:"$schema,omitempty"`
-	CredentialRef *string `json:"credential_ref,omitempty"`
-	ExternalRepo  string  `json:"external_repo"`
-	Provider      string  `json:"provider"`
+	Schema           *string `json:"$schema,omitempty"`
+	ExpiresInSeconds *int64  `json:"expires_in_seconds,omitempty"`
+	Label            *string `json:"label,omitempty"`
 }
 
 // CreateRepositoryRequest defines model for CreateRepositoryRequest.
@@ -117,18 +142,19 @@ type ErrorModel struct {
 	Type *string `json:"type,omitempty"`
 }
 
-// ExternalIntegration defines model for ExternalIntegration.
-type ExternalIntegration struct {
+// GitCredential defines model for GitCredential.
+type GitCredential struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema        *string   `json:"$schema,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
-	CredentialRef *string   `json:"credential_ref,omitempty"`
-	ExternalRepo  string    `json:"external_repo"`
-	IntegrationId string    `json:"integration_id"`
-	OrgId         string    `json:"org_id"`
-	Provider      string    `json:"provider"`
-	State         string    `json:"state"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	Schema       *string   `json:"$schema,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	CredentialId string    `json:"credential_id"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	OrgId        string    `json:"org_id"`
+	OrgPath      string    `json:"org_path"`
+	Scopes       *[]string `json:"scopes"`
+	Token        string    `json:"token"`
+	TokenPrefix  string    `json:"token_prefix"`
+	Username     string    `json:"username"`
 }
 
 // Ref defines model for Ref.
@@ -147,19 +173,21 @@ type RefList struct {
 // Repository defines model for Repository.
 type Repository struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema        *string   `json:"$schema,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
-	DefaultBranch string    `json:"default_branch"`
-	Description   string    `json:"description"`
-	Name          string    `json:"name"`
-	OrgId         string    `json:"org_id"`
-	Provider      string    `json:"provider"`
-	RepoId        string    `json:"repo_id"`
-	Slug          string    `json:"slug"`
-	State         string    `json:"state"`
-	UpdatedAt     time.Time `json:"updated_at"`
-	Version       int32     `json:"version"`
-	Visibility    string    `json:"visibility"`
+	Schema        *string    `json:"$schema,omitempty"`
+	Backend       string     `json:"backend"`
+	CreatedAt     time.Time  `json:"created_at"`
+	DefaultBranch string     `json:"default_branch"`
+	Description   string     `json:"description"`
+	LastPushedAt  *time.Time `json:"last_pushed_at,omitempty"`
+	Name          string     `json:"name"`
+	OrgId         string     `json:"org_id"`
+	OrgPath       string     `json:"org_path"`
+	RepoId        string     `json:"repo_id"`
+	Slug          string     `json:"slug"`
+	State         string     `json:"state"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+	Version       int32      `json:"version"`
+	Visibility    string     `json:"visibility"`
 }
 
 // RepositoryList defines model for RepositoryList.
@@ -187,22 +215,22 @@ type TreeEntry struct {
 // WorkflowRun defines model for WorkflowRun.
 type WorkflowRun struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema             *string           `json:"$schema,omitempty"`
-	ActorId            string            `json:"actor_id"`
-	CreatedAt          time.Time         `json:"created_at"`
-	DispatchedAt       *time.Time        `json:"dispatched_at,omitempty"`
-	FailureReason      *string           `json:"failure_reason,omitempty"`
-	Inputs             map[string]string `json:"inputs"`
-	OrgId              string            `json:"org_id"`
-	Provider           string            `json:"provider"`
-	ProviderDispatchId *string           `json:"provider_dispatch_id,omitempty"`
-	Ref                string            `json:"ref"`
-	RepoId             string            `json:"repo_id"`
-	State              string            `json:"state"`
-	TraceId            *string           `json:"trace_id,omitempty"`
-	UpdatedAt          time.Time         `json:"updated_at"`
-	WorkflowPath       string            `json:"workflow_path"`
-	WorkflowRunId      string            `json:"workflow_run_id"`
+	Schema            *string           `json:"$schema,omitempty"`
+	ActorId           string            `json:"actor_id"`
+	Backend           string            `json:"backend"`
+	BackendDispatchId *string           `json:"backend_dispatch_id,omitempty"`
+	CreatedAt         time.Time         `json:"created_at"`
+	DispatchedAt      *time.Time        `json:"dispatched_at,omitempty"`
+	FailureReason     *string           `json:"failure_reason,omitempty"`
+	Inputs            map[string]string `json:"inputs"`
+	OrgId             string            `json:"org_id"`
+	Ref               string            `json:"ref"`
+	RepoId            string            `json:"repo_id"`
+	State             string            `json:"state"`
+	TraceId           *string           `json:"trace_id,omitempty"`
+	UpdatedAt         time.Time         `json:"updated_at"`
+	WorkflowPath      string            `json:"workflow_path"`
+	WorkflowRunId     string            `json:"workflow_run_id"`
 }
 
 // WorkflowRunList defines model for WorkflowRunList.
@@ -212,8 +240,8 @@ type WorkflowRunList struct {
 	WorkflowRuns *[]WorkflowRun `json:"workflow_runs"`
 }
 
-// CreateSourceIntegrationParams defines parameters for CreateSourceIntegration.
-type CreateSourceIntegrationParams struct {
+// CreateSourceGitCredentialParams defines parameters for CreateSourceGitCredential.
+type CreateSourceGitCredentialParams struct {
 	// IdempotencyKey Stable caller-provided key used to make this mutation retry-safe.
 	IdempotencyKey string `json:"Idempotency-Key"`
 }
@@ -248,8 +276,8 @@ type CreateSourceWorkflowRunParams struct {
 	IdempotencyKey string `json:"Idempotency-Key"`
 }
 
-// CreateSourceIntegrationJSONRequestBody defines body for CreateSourceIntegration for application/json ContentType.
-type CreateSourceIntegrationJSONRequestBody = CreateIntegrationRequest
+// CreateSourceGitCredentialJSONRequestBody defines body for CreateSourceGitCredential for application/json ContentType.
+type CreateSourceGitCredentialJSONRequestBody = CreateGitCredentialRequest
 
 // CreateSourceRepositoryJSONRequestBody defines body for CreateSourceRepository for application/json ContentType.
 type CreateSourceRepositoryJSONRequestBody = CreateRepositoryRequest
@@ -333,10 +361,10 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
-	// CreateSourceIntegrationWithBody request with any body
-	CreateSourceIntegrationWithBody(ctx context.Context, params *CreateSourceIntegrationParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// CreateSourceGitCredentialWithBody request with any body
+	CreateSourceGitCredentialWithBody(ctx context.Context, params *CreateSourceGitCredentialParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	CreateSourceIntegration(ctx context.Context, params *CreateSourceIntegrationParams, body CreateSourceIntegrationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	CreateSourceGitCredential(ctx context.Context, params *CreateSourceGitCredentialParams, body CreateSourceGitCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListSourceRepositories request
 	ListSourceRepositories(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -357,6 +385,9 @@ type ClientInterface interface {
 
 	CreateSourceCheckoutGrant(ctx context.Context, repoId openapi_types.UUID, params *CreateSourceCheckoutGrantParams, body CreateSourceCheckoutGrantJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListSourceCiRuns request
+	ListSourceCiRuns(ctx context.Context, repoId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListSourceRefs request
 	ListSourceRefs(ctx context.Context, repoId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -375,8 +406,8 @@ type ClientInterface interface {
 	GetSourceWorkflowRun(ctx context.Context, workflowRunId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
-func (c *Client) CreateSourceIntegrationWithBody(ctx context.Context, params *CreateSourceIntegrationParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCreateSourceIntegrationRequestWithBody(c.Server, params, contentType, body)
+func (c *Client) CreateSourceGitCredentialWithBody(ctx context.Context, params *CreateSourceGitCredentialParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateSourceGitCredentialRequestWithBody(c.Server, params, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -387,8 +418,8 @@ func (c *Client) CreateSourceIntegrationWithBody(ctx context.Context, params *Cr
 	return c.Client.Do(req)
 }
 
-func (c *Client) CreateSourceIntegration(ctx context.Context, params *CreateSourceIntegrationParams, body CreateSourceIntegrationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCreateSourceIntegrationRequest(c.Server, params, body)
+func (c *Client) CreateSourceGitCredential(ctx context.Context, params *CreateSourceGitCredentialParams, body CreateSourceGitCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateSourceGitCredentialRequest(c.Server, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -483,6 +514,18 @@ func (c *Client) CreateSourceCheckoutGrant(ctx context.Context, repoId openapi_t
 	return c.Client.Do(req)
 }
 
+func (c *Client) ListSourceCiRuns(ctx context.Context, repoId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListSourceCiRunsRequest(c.Server, repoId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) ListSourceRefs(ctx context.Context, repoId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListSourceRefsRequest(c.Server, repoId)
 	if err != nil {
@@ -555,19 +598,19 @@ func (c *Client) GetSourceWorkflowRun(ctx context.Context, workflowRunId openapi
 	return c.Client.Do(req)
 }
 
-// NewCreateSourceIntegrationRequest calls the generic CreateSourceIntegration builder with application/json body
-func NewCreateSourceIntegrationRequest(server string, params *CreateSourceIntegrationParams, body CreateSourceIntegrationJSONRequestBody) (*http.Request, error) {
+// NewCreateSourceGitCredentialRequest calls the generic CreateSourceGitCredential builder with application/json body
+func NewCreateSourceGitCredentialRequest(server string, params *CreateSourceGitCredentialParams, body CreateSourceGitCredentialJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewCreateSourceIntegrationRequestWithBody(server, params, "application/json", bodyReader)
+	return NewCreateSourceGitCredentialRequestWithBody(server, params, "application/json", bodyReader)
 }
 
-// NewCreateSourceIntegrationRequestWithBody generates requests for CreateSourceIntegration with any type of body
-func NewCreateSourceIntegrationRequestWithBody(server string, params *CreateSourceIntegrationParams, contentType string, body io.Reader) (*http.Request, error) {
+// NewCreateSourceGitCredentialRequestWithBody generates requests for CreateSourceGitCredential with any type of body
+func NewCreateSourceGitCredentialRequestWithBody(server string, params *CreateSourceGitCredentialParams, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -575,7 +618,7 @@ func NewCreateSourceIntegrationRequestWithBody(server string, params *CreateSour
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/v1/integrations")
+	operationPath := fmt.Sprintf("/api/v1/git-credentials")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -845,6 +888,40 @@ func NewCreateSourceCheckoutGrantRequestWithBody(server string, repoId openapi_t
 
 		req.Header.Set("Idempotency-Key", headerParam0)
 
+	}
+
+	return req, nil
+}
+
+// NewListSourceCiRunsRequest generates requests for ListSourceCiRuns
+func NewListSourceCiRunsRequest(server string, repoId openapi_types.UUID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "repo_id", repoId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/repos/%s/ci-runs", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
 	}
 
 	return req, nil
@@ -1127,10 +1204,10 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
-	// CreateSourceIntegrationWithBodyWithResponse request with any body
-	CreateSourceIntegrationWithBodyWithResponse(ctx context.Context, params *CreateSourceIntegrationParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateSourceIntegrationResponse, error)
+	// CreateSourceGitCredentialWithBodyWithResponse request with any body
+	CreateSourceGitCredentialWithBodyWithResponse(ctx context.Context, params *CreateSourceGitCredentialParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateSourceGitCredentialResponse, error)
 
-	CreateSourceIntegrationWithResponse(ctx context.Context, params *CreateSourceIntegrationParams, body CreateSourceIntegrationJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateSourceIntegrationResponse, error)
+	CreateSourceGitCredentialWithResponse(ctx context.Context, params *CreateSourceGitCredentialParams, body CreateSourceGitCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateSourceGitCredentialResponse, error)
 
 	// ListSourceRepositoriesWithResponse request
 	ListSourceRepositoriesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListSourceRepositoriesResponse, error)
@@ -1151,6 +1228,9 @@ type ClientWithResponsesInterface interface {
 
 	CreateSourceCheckoutGrantWithResponse(ctx context.Context, repoId openapi_types.UUID, params *CreateSourceCheckoutGrantParams, body CreateSourceCheckoutGrantJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateSourceCheckoutGrantResponse, error)
 
+	// ListSourceCiRunsWithResponse request
+	ListSourceCiRunsWithResponse(ctx context.Context, repoId openapi_types.UUID, reqEditors ...RequestEditorFn) (*ListSourceCiRunsResponse, error)
+
 	// ListSourceRefsWithResponse request
 	ListSourceRefsWithResponse(ctx context.Context, repoId openapi_types.UUID, reqEditors ...RequestEditorFn) (*ListSourceRefsResponse, error)
 
@@ -1169,15 +1249,15 @@ type ClientWithResponsesInterface interface {
 	GetSourceWorkflowRunWithResponse(ctx context.Context, workflowRunId openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetSourceWorkflowRunResponse, error)
 }
 
-type CreateSourceIntegrationResponse struct {
+type CreateSourceGitCredentialResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON201                       *ExternalIntegration
+	JSON201                       *GitCredential
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
 // Status returns HTTPResponse.Status
-func (r CreateSourceIntegrationResponse) Status() string {
+func (r CreateSourceGitCredentialResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -1185,7 +1265,7 @@ func (r CreateSourceIntegrationResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r CreateSourceIntegrationResponse) StatusCode() int {
+func (r CreateSourceGitCredentialResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -1307,6 +1387,29 @@ func (r CreateSourceCheckoutGrantResponse) StatusCode() int {
 	return 0
 }
 
+type ListSourceCiRunsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *CIRunList
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r ListSourceCiRunsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListSourceCiRunsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type ListSourceRefsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -1422,21 +1525,21 @@ func (r GetSourceWorkflowRunResponse) StatusCode() int {
 	return 0
 }
 
-// CreateSourceIntegrationWithBodyWithResponse request with arbitrary body returning *CreateSourceIntegrationResponse
-func (c *ClientWithResponses) CreateSourceIntegrationWithBodyWithResponse(ctx context.Context, params *CreateSourceIntegrationParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateSourceIntegrationResponse, error) {
-	rsp, err := c.CreateSourceIntegrationWithBody(ctx, params, contentType, body, reqEditors...)
+// CreateSourceGitCredentialWithBodyWithResponse request with arbitrary body returning *CreateSourceGitCredentialResponse
+func (c *ClientWithResponses) CreateSourceGitCredentialWithBodyWithResponse(ctx context.Context, params *CreateSourceGitCredentialParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateSourceGitCredentialResponse, error) {
+	rsp, err := c.CreateSourceGitCredentialWithBody(ctx, params, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseCreateSourceIntegrationResponse(rsp)
+	return ParseCreateSourceGitCredentialResponse(rsp)
 }
 
-func (c *ClientWithResponses) CreateSourceIntegrationWithResponse(ctx context.Context, params *CreateSourceIntegrationParams, body CreateSourceIntegrationJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateSourceIntegrationResponse, error) {
-	rsp, err := c.CreateSourceIntegration(ctx, params, body, reqEditors...)
+func (c *ClientWithResponses) CreateSourceGitCredentialWithResponse(ctx context.Context, params *CreateSourceGitCredentialParams, body CreateSourceGitCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateSourceGitCredentialResponse, error) {
+	rsp, err := c.CreateSourceGitCredential(ctx, params, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseCreateSourceIntegrationResponse(rsp)
+	return ParseCreateSourceGitCredentialResponse(rsp)
 }
 
 // ListSourceRepositoriesWithResponse request returning *ListSourceRepositoriesResponse
@@ -1500,6 +1603,15 @@ func (c *ClientWithResponses) CreateSourceCheckoutGrantWithResponse(ctx context.
 	return ParseCreateSourceCheckoutGrantResponse(rsp)
 }
 
+// ListSourceCiRunsWithResponse request returning *ListSourceCiRunsResponse
+func (c *ClientWithResponses) ListSourceCiRunsWithResponse(ctx context.Context, repoId openapi_types.UUID, reqEditors ...RequestEditorFn) (*ListSourceCiRunsResponse, error) {
+	rsp, err := c.ListSourceCiRuns(ctx, repoId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListSourceCiRunsResponse(rsp)
+}
+
 // ListSourceRefsWithResponse request returning *ListSourceRefsResponse
 func (c *ClientWithResponses) ListSourceRefsWithResponse(ctx context.Context, repoId openapi_types.UUID, reqEditors ...RequestEditorFn) (*ListSourceRefsResponse, error) {
 	rsp, err := c.ListSourceRefs(ctx, repoId, reqEditors...)
@@ -1553,22 +1665,22 @@ func (c *ClientWithResponses) GetSourceWorkflowRunWithResponse(ctx context.Conte
 	return ParseGetSourceWorkflowRunResponse(rsp)
 }
 
-// ParseCreateSourceIntegrationResponse parses an HTTP response from a CreateSourceIntegrationWithResponse call
-func ParseCreateSourceIntegrationResponse(rsp *http.Response) (*CreateSourceIntegrationResponse, error) {
+// ParseCreateSourceGitCredentialResponse parses an HTTP response from a CreateSourceGitCredentialWithResponse call
+func ParseCreateSourceGitCredentialResponse(rsp *http.Response) (*CreateSourceGitCredentialResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &CreateSourceIntegrationResponse{
+	response := &CreateSourceGitCredentialResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
-		var dest ExternalIntegration
+		var dest GitCredential
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1738,6 +1850,39 @@ func ParseCreateSourceCheckoutGrantResponse(rsp *http.Response) (*CreateSourceCh
 			return nil, err
 		}
 		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListSourceCiRunsResponse parses an HTTP response from a ListSourceCiRunsWithResponse call
+func ParseListSourceCiRunsResponse(rsp *http.Response) (*ListSourceCiRunsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListSourceCiRunsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CIRunList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorModel

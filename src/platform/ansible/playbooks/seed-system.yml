@@ -1616,36 +1616,6 @@
           when: seed_system_verify_user is defined and seed_system_verify_user.json.userId is defined
           no_log: true
 
-    # ── Forgejo repo seeding ──────────────────────────────────────────
-    - name: Read Forgejo automation token for repo seeding
-      ansible.builtin.slurp:
-        src: /etc/credstore/forgejo/automation-token
-      register: seed_forgejo_token_raw
-      no_log: true
-      tags: [forgejo]
-
-    - name: Set Forgejo automation token fact
-      ansible.builtin.set_fact:
-        seed_forgejo_automation_token: "{{ seed_forgejo_token_raw.content | b64decode | trim }}"
-      no_log: true
-      tags: [forgejo]
-
-    - name: Seed forge-metal repo on Forgejo
-      ansible.builtin.include_tasks:
-        file: tasks/seed-forgejo-repos.yml
-        apply:
-          tags: [forgejo]
-      vars:
-        seed_forgejo_owner: "{{ seed_system_users.ceo.username }}"
-        seed_forgejo_controller_ssh_pubkey_path: "~/.ssh/id_ed25519.pub"
-        seed_forgejo_repo_local_path: "{{ playbook_dir }}/../../../.."
-        seed_forgejo_admin_pat: "{{ seed_system_admin_pat }}"
-        seed_forgejo_platform_org_id: "{{ seed_system_platform_org_existing.id }}"
-        seed_forgejo_sandbox_project_id: "{{ seed_system_sandbox_project_id }}"
-        seed_forgejo_zitadel_base_url: "{{ seed_system_zitadel_base_url }}"
-        seed_forgejo_zitadel_host: "{{ seed_system_zitadel_host }}"
-      tags: [forgejo]
-
     - name: Print seed-system summary
       ansible.builtin.debug:
         msg:

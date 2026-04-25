@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,11 +23,20 @@ var (
 var slugPattern = regexp.MustCompile(`[^a-z0-9-]+`)
 
 const (
-	ProviderForgejo = "forgejo"
+	BackendForgejo = "forgejo"
+
+	GitCredentialUsername = "fm"
 
 	WorkflowRunStateDispatching = "dispatching"
 	WorkflowRunStateDispatched  = "dispatched"
 	WorkflowRunStateFailed      = "failed"
+
+	CIRunStateQueued    = "queued"
+	CIRunStateRunning   = "running"
+	CIRunStateSucceeded = "succeeded"
+	CIRunStateFailed    = "failed"
+	CIRunStateCanceled  = "canceled"
+	CIRunStateSkipped   = "skipped"
 )
 
 type Principal struct {
@@ -36,22 +46,33 @@ type Principal struct {
 }
 
 type Repository struct {
-	RepoID         uuid.UUID
-	OrgID          uint64
-	CreatedBy      string
-	Name           string
-	Slug           string
-	Description    string
-	DefaultBranch  string
-	Visibility     string
-	Provider       string
-	ProviderOwner  string
-	ProviderRepo   string
-	ProviderRepoID string
-	State          string
-	Version        int64
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	RepoID        uuid.UUID
+	OrgID         uint64
+	OrgPath       string
+	CreatedBy     string
+	Name          string
+	Slug          string
+	Description   string
+	DefaultBranch string
+	Visibility    string
+	State         string
+	Version       int64
+	LastPushedAt  *time.Time
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	Backend       RepositoryBackend
+}
+
+type RepositoryBackend struct {
+	BackendID     uuid.UUID
+	RepoID        uuid.UUID
+	Backend       string
+	BackendOwner  string
+	BackendRepo   string
+	BackendRepoID string
+	State         string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 type CreateRepositoryRequest struct {
@@ -62,6 +83,45 @@ type CreateRepositoryRequest struct {
 
 type RepositoryList struct {
 	Repositories []Repository
+}
+
+type GitCredential struct {
+	CredentialID uuid.UUID
+	OrgID        uint64
+	OrgPath      string
+	ActorID      string
+	Label        string
+	Username     string
+	Token        string
+	TokenPrefix  string
+	Scopes       []string
+	State        string
+	ExpiresAt    time.Time
+	LastUsedAt   *time.Time
+	CreatedAt    time.Time
+}
+
+type CreateGitCredentialRequest struct {
+	Label            string
+	ExpiresInSeconds int64
+}
+
+type GitPrincipal struct {
+	CredentialID uuid.UUID
+	OrgID        uint64
+	OrgPath      string
+	ActorID      string
+	Username     string
+	Scopes       []string
+}
+
+type GitRepositoryPath struct {
+	OrgPath     string
+	Slug        string
+	Endpoint    string
+	Service     string
+	ReceivePack bool
+	UploadPack  bool
 }
 
 type Ref struct {
@@ -86,6 +146,24 @@ type Blob struct {
 	DownloadURL string
 }
 
+type CIRun struct {
+	CIRunID            uuid.UUID
+	OrgID              uint64
+	RepoID             uuid.UUID
+	RefName            string
+	CommitSHA          string
+	TriggerEvent       string
+	State              string
+	SandboxExecutionID uuid.UUID
+	SandboxAttemptID   uuid.UUID
+	FailureReason      string
+	TraceID            string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	StartedAt          *time.Time
+	CompletedAt        *time.Time
+}
+
 type CheckoutGrant struct {
 	GrantID    uuid.UUID
 	RepoID     uuid.UUID
@@ -96,18 +174,6 @@ type CheckoutGrant struct {
 	Token      string
 	ExpiresAt  time.Time
 	CreatedAt  time.Time
-}
-
-type ExternalIntegration struct {
-	IntegrationID uuid.UUID
-	OrgID         uint64
-	CreatedBy     string
-	Provider      string
-	ExternalRepo  string
-	CredentialRef string
-	State         string
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
 }
 
 type WorkflowDispatchRequest struct {
@@ -129,31 +195,31 @@ type InternalWorkflowDispatchRequest struct {
 }
 
 type WorkflowRun struct {
-	WorkflowRunID      uuid.UUID
-	OrgID              uint64
-	RepoID             uuid.UUID
-	ActorID            string
-	IdempotencyKey     string
-	Provider           string
-	WorkflowPath       string
-	Ref                string
-	Inputs             map[string]string
-	State              string
-	ProviderDispatchID string
-	FailureReason      string
-	TraceID            string
-	DispatchedAt       *time.Time
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	WorkflowRunID     uuid.UUID
+	OrgID             uint64
+	RepoID            uuid.UUID
+	ActorID           string
+	IdempotencyKey    string
+	Backend           string
+	WorkflowPath      string
+	Ref               string
+	Inputs            map[string]string
+	State             string
+	BackendDispatchID string
+	FailureReason     string
+	TraceID           string
+	DispatchedAt      *time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
-type ProviderWorkflowDispatch struct {
-	ProviderDispatchID string
+type BackendWorkflowDispatch struct {
+	BackendDispatchID string
 }
 
 type WebhookDelivery struct {
 	WebhookDeliveryID uuid.UUID
-	Provider          string
+	Backend           string
 	DeliveryID        string
 	EventType         string
 	SignatureValid    bool
@@ -175,6 +241,13 @@ func NormalizeSlug(name string) string {
 	return slug
 }
 
+func OrgPath(orgID uint64) string {
+	if orgID == 0 {
+		return ""
+	}
+	return "org-" + strconv.FormatUint(orgID, 10)
+}
+
 func ValidatePrincipal(principal Principal) error {
 	if strings.TrimSpace(principal.Subject) == "" || principal.OrgID == 0 {
 		return ErrInvalid
@@ -194,6 +267,23 @@ func NormalizeCreate(input CreateRepositoryRequest) (CreateRepositoryRequest, er
 	}
 	if len(input.Name) > 128 || len(input.Description) > 1024 || len(input.DefaultBranch) > 128 {
 		return CreateRepositoryRequest{}, ErrInvalid
+	}
+	return input, nil
+}
+
+func NormalizeCreateGitCredential(input CreateGitCredentialRequest) (CreateGitCredentialRequest, error) {
+	input.Label = strings.TrimSpace(input.Label)
+	if input.Label == "" {
+		input.Label = "git push"
+	}
+	if input.ExpiresInSeconds == 0 {
+		input.ExpiresInSeconds = int64((30 * 24 * time.Hour).Seconds())
+	}
+	if input.ExpiresInSeconds < 60 || input.ExpiresInSeconds > int64((90*24*time.Hour).Seconds()) {
+		return CreateGitCredentialRequest{}, ErrInvalid
+	}
+	if len(input.Label) > 128 {
+		return CreateGitCredentialRequest{}, ErrInvalid
 	}
 	return input, nil
 }

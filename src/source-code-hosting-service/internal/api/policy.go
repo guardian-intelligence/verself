@@ -21,12 +21,12 @@ import (
 type permission string
 
 const (
-	permissionRepoRead         permission = "source:repo:read"
-	permissionRepoWrite        permission = "source:repo:write"
-	permissionCheckoutWrite    permission = "source:checkout:write"
-	permissionIntegrationWrite permission = "source:integration:write"
-	permissionWorkflowRead     permission = "source:workflow:read"
-	permissionWorkflowWrite    permission = "source:workflow:write"
+	permissionRepoRead           permission = "source:repo:read"
+	permissionRepoWrite          permission = "source:repo:write"
+	permissionCheckoutWrite      permission = "source:checkout:write"
+	permissionGitCredentialWrite permission = "source:git_credential:write"
+	permissionWorkflowRead       permission = "source:workflow:read"
+	permissionWorkflowWrite      permission = "source:workflow:write"
 
 	roleOwner  = "owner"
 	roleAdmin  = "admin"
@@ -44,7 +44,7 @@ var fullRolePermissions = []permission{
 	permissionRepoRead,
 	permissionRepoWrite,
 	permissionCheckoutWrite,
-	permissionIntegrationWrite,
+	permissionGitCredentialWrite,
 	permissionWorkflowRead,
 	permissionWorkflowWrite,
 }

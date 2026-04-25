@@ -27,10 +27,7 @@ func (s *Service) Ready(ctx context.Context) error {
 	if err := s.Store.Ready(ctx); err != nil {
 		return err
 	}
-	if err := s.Forgejo.Ready(ctx); err != nil {
-		return err
-	}
-	return s.Store.UpsertInstallation(ctx, ProviderForgejo, s.Forgejo.BaseURL, s.Forgejo.Owner)
+	return s.Forgejo.Ready(ctx)
 }
 
 func (s *Service) CreateRepository(ctx context.Context, principal Principal, input CreateRepositoryRequest) (Repository, error) {
@@ -45,7 +42,7 @@ func (s *Service) CreateRepository(ctx context.Context, principal Principal, inp
 	}
 	repoName := s.forgejoRepoName(principal.OrgID, input.Name)
 	span.SetAttributes(attribute.Int64("forge_metal.org_id", int64(principal.OrgID)), attribute.String("source.forgejo_repo", repoName))
-	forgejoRepo, err := s.Forgejo.CreateRepository(ctx, repoName, input.Description, input.DefaultBranch)
+	forgejoRepo, err := s.createOrGetForgejoRepository(ctx, repoName, input.Description, input.DefaultBranch)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -59,6 +56,142 @@ func (s *Service) CreateRepository(ctx context.Context, principal Principal, inp
 	}
 	span.SetAttributes(attribute.String("source.repo_id", repo.RepoID.String()))
 	return repo, nil
+}
+
+func (s *Service) CreateGitCredential(ctx context.Context, principal Principal, input CreateGitCredentialRequest) (GitCredential, error) {
+	ctx, span := tracer.Start(ctx, "source.git_credential.create")
+	defer span.End()
+	credential, err := s.Store.CreateGitCredential(ctx, principal, input)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return GitCredential{}, err
+	}
+	span.SetAttributes(attribute.String("source.git_credential_id", credential.CredentialID.String()))
+	return credential, nil
+}
+
+func (s *Service) AuthenticateGitCredential(ctx context.Context, username string, token string) (GitPrincipal, error) {
+	ctx, span := tracer.Start(ctx, "source.git.auth")
+	defer span.End()
+	principal, err := s.Store.AuthenticateGitCredential(ctx, username, token)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return GitPrincipal{}, err
+	}
+	span.SetAttributes(
+		attribute.String("source.git_credential_id", principal.CredentialID.String()),
+		attribute.Int64("forge_metal.org_id", int64(principal.OrgID)),
+	)
+	return principal, nil
+}
+
+func (s *Service) EnsureGitRepository(ctx context.Context, principal GitPrincipal, slug string) (Repository, bool, error) {
+	ctx, span := tracer.Start(ctx, "source.git.repository.ensure")
+	defer span.End()
+	slug = NormalizeSlug(slug)
+	if slug == "" || principal.OrgID == 0 {
+		return Repository{}, false, ErrInvalid
+	}
+	repo, err := s.Store.GetRepositoryBySlug(ctx, principal.OrgID, slug)
+	if err == nil {
+		span.SetAttributes(attribute.String("source.repo_id", repo.RepoID.String()), attribute.Bool("source.repo_created", false))
+		return repo, false, nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return Repository{}, false, err
+	}
+	repoName := s.forgejoRepoName(principal.OrgID, slug)
+	forgejoRepo, err := s.createOrGetForgejoRepository(ctx, repoName, "", "main")
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return Repository{}, false, err
+	}
+	repo, err = s.Store.CreateRepositoryFromGit(ctx, principal, slug, s.Forgejo.Owner, forgejoRepo)
+	if err != nil {
+		if errors.Is(err, ErrConflict) {
+			existing, loadErr := s.Store.GetRepositoryBySlug(ctx, principal.OrgID, slug)
+			if loadErr == nil {
+				span.SetAttributes(attribute.String("source.repo_id", existing.RepoID.String()), attribute.Bool("source.repo_created", false))
+				return existing, false, nil
+			}
+		}
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return Repository{}, false, err
+	}
+	span.SetAttributes(attribute.String("source.repo_id", repo.RepoID.String()), attribute.Bool("source.repo_created", true))
+	return repo, true, nil
+}
+
+func (s *Service) GetGitRepository(ctx context.Context, principal GitPrincipal, slug string) (Repository, error) {
+	ctx, span := tracer.Start(ctx, "source.git.repository.get")
+	defer span.End()
+	slug = NormalizeSlug(slug)
+	if slug == "" || principal.OrgID == 0 {
+		return Repository{}, ErrInvalid
+	}
+	repo, err := s.Store.GetRepositoryBySlug(ctx, principal.OrgID, slug)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return Repository{}, err
+	}
+	span.SetAttributes(attribute.String("source.repo_id", repo.RepoID.String()), attribute.String("source.slug", slug))
+	return repo, nil
+}
+
+func (s *Service) AfterGitReceive(ctx context.Context, principal GitPrincipal, repo Repository) error {
+	ctx, span := tracer.Start(ctx, "source.git.receive.apply")
+	defer span.End()
+	refs, err := s.listRefsAfterReceive(ctx, repo)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	if err := s.Store.ReplaceRefs(ctx, principal.ActorID, repo, refs); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	queued, err := s.Store.CreateQueuedCIRunsForRefs(ctx, principal.ActorID, repo, refs)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	span.SetAttributes(attribute.String("source.repo_id", repo.RepoID.String()), attribute.Int("source.ci_run_count", queued))
+	return nil
+}
+
+func (s *Service) listRefsAfterReceive(ctx context.Context, repo Repository) ([]Ref, error) {
+	backoff := []time.Duration{0, 25 * time.Millisecond, 75 * time.Millisecond, 150 * time.Millisecond, 300 * time.Millisecond}
+	var refs []Ref
+	var err error
+	for attempt, delay := range backoff {
+		if delay > 0 {
+			timer := time.NewTimer(delay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, ctx.Err()
+			case <-timer.C:
+			}
+		}
+		refs, err = s.Forgejo.ListBranches(ctx, repo)
+		if err != nil {
+			return nil, err
+		}
+		if len(refs) > 0 || attempt == len(backoff)-1 {
+			return refs, nil
+		}
+	}
+	return refs, err
 }
 
 func (s *Service) ListRepositories(ctx context.Context, principal Principal) ([]Repository, error) {
@@ -82,7 +215,7 @@ func (s *Service) ListRefs(ctx context.Context, principal Principal, repoID uuid
 	if err != nil {
 		return nil, err
 	}
-	refs, err := s.Forgejo.ListBranches(ctx, repo)
+	refs, err := s.Store.ListRefs(ctx, principal.OrgID, repo.RepoID)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -129,6 +262,18 @@ func (s *Service) Blob(ctx context.Context, principal Principal, repoID uuid.UUI
 	return *blob, nil
 }
 
+func (s *Service) ListCIRuns(ctx context.Context, principal Principal, repoID uuid.UUID) ([]CIRun, error) {
+	ctx, span := tracer.Start(ctx, "source.ci_runs.list")
+	defer span.End()
+	if err := ValidatePrincipal(principal); err != nil {
+		return nil, err
+	}
+	if _, err := s.GetRepository(ctx, principal, repoID); err != nil {
+		return nil, err
+	}
+	return s.Store.ListCIRuns(ctx, principal.OrgID, repoID)
+}
+
 func (s *Service) CreateCheckoutGrant(ctx context.Context, principal Principal, repoID uuid.UUID, ref, pathPrefix string) (CheckoutGrant, error) {
 	ctx, span := tracer.Start(ctx, "source.checkout_grant.create")
 	defer span.End()
@@ -164,7 +309,7 @@ func (s *Service) ConsumeArchive(ctx context.Context, grantID uuid.UUID, token s
 		span.SetStatus(codes.Error, err.Error())
 		return nil, "", CheckoutGrant{}, Repository{}, err
 	}
-	if err := s.Store.InsertStorageEvent(ctx, repo.OrgID, repo.RepoID, repo.Provider, "repository_archive", "source.repository.archive_served", int64(len(data)), map[string]any{
+	if err := s.Store.InsertStorageEvent(ctx, repo.OrgID, repo.RepoID, repo.Backend.Backend, "repository_archive", "source.repository.archive_served", int64(len(data)), map[string]any{
 		"grant_id": grant.GrantID.String(),
 		"ref":      grant.Ref,
 	}); err != nil {
@@ -174,17 +319,6 @@ func (s *Service) ConsumeArchive(ctx context.Context, grantID uuid.UUID, token s
 	}
 	span.SetAttributes(attribute.String("source.repo_id", repo.RepoID.String()), attribute.String("source.checkout_grant_id", grant.GrantID.String()))
 	return data, contentType, grant, repo, nil
-}
-
-func (s *Service) CreateExternalIntegration(ctx context.Context, principal Principal, provider, externalRepo, credentialRef string) (ExternalIntegration, error) {
-	ctx, span := tracer.Start(ctx, "source.integration.create")
-	defer span.End()
-	integration, err := s.Store.CreateExternalIntegration(ctx, principal, provider, externalRepo, credentialRef)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-	}
-	return integration, err
 }
 
 func (s *Service) DispatchWorkflow(ctx context.Context, principal Principal, input WorkflowDispatchRequest) (WorkflowRun, error) {
@@ -205,7 +339,7 @@ func (s *Service) DispatchWorkflow(ctx context.Context, principal Principal, inp
 		attribute.String("source.repo_id", repo.RepoID.String()),
 		attribute.String("source.workflow_path", input.WorkflowPath),
 		attribute.String("source.ref", input.Ref),
-		attribute.String("source.provider", repo.Provider),
+		attribute.String("source.backend", repo.Backend.Backend),
 	)
 	run, inserted, err := s.Store.CreateWorkflowRun(ctx, principal, repo, input)
 	if err != nil {
@@ -228,7 +362,7 @@ func (s *Service) DispatchWorkflow(ctx context.Context, principal Principal, inp
 		span.SetStatus(codes.Error, err.Error())
 		return WorkflowRun{}, err
 	}
-	run, err = s.Store.MarkWorkflowRunDispatched(ctx, run, dispatch.ProviderDispatchID)
+	run, err = s.Store.MarkWorkflowRunDispatched(ctx, run, dispatch.BackendDispatchID)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -275,19 +409,19 @@ func (s *Service) GetWorkflowRun(ctx context.Context, principal Principal, runID
 	return run, nil
 }
 
-func (s *Service) RecordWebhook(ctx context.Context, provider, event, delivery string, valid bool, body []byte) error {
+func (s *Service) RecordWebhook(ctx context.Context, backend, event, delivery string, valid bool, body []byte) error {
 	ctx, span := tracer.Start(ctx, "source.webhook.apply")
 	defer span.End()
-	span.SetAttributes(attribute.String("source.webhook_provider", provider), attribute.String("source.webhook_event", event), attribute.Bool("source.webhook_valid", valid))
+	span.SetAttributes(attribute.String("source.webhook_backend", backend), attribute.String("source.webhook_event", event), attribute.Bool("source.webhook_valid", valid))
 	result := "denied"
 	var (
 		resolvedOrgID  uint64
 		resolvedRepoID uuid.UUID
-		details        = map[string]any{"provider": provider, "delivery": delivery}
+		details        = map[string]any{"backend": backend, "delivery": delivery}
 	)
 	if valid {
 		result = "unresolved"
-		if repo, err := s.ResolveWebhookRepository(ctx, provider, body); err == nil {
+		if repo, err := s.ResolveWebhookRepository(ctx, backend, body); err == nil {
 			result = "accepted"
 			resolvedOrgID = repo.OrgID
 			resolvedRepoID = repo.RepoID
@@ -298,7 +432,7 @@ func (s *Service) RecordWebhook(ctx context.Context, provider, event, delivery s
 		}
 	}
 	return s.Store.RecordWebhookDelivery(ctx, WebhookDelivery{
-		Provider:       provider,
+		Backend:        strings.TrimSpace(backend),
 		DeliveryID:     strings.TrimSpace(delivery),
 		EventType:      strings.TrimSpace(event),
 		SignatureValid: valid,
@@ -309,9 +443,9 @@ func (s *Service) RecordWebhook(ctx context.Context, provider, event, delivery s
 	})
 }
 
-func (s *Service) ResolveWebhookRepository(ctx context.Context, provider string, body []byte) (Repository, error) {
-	switch strings.TrimSpace(provider) {
-	case ProviderForgejo:
+func (s *Service) ResolveWebhookRepository(ctx context.Context, backend string, body []byte) (Repository, error) {
+	switch strings.TrimSpace(backend) {
+	case BackendForgejo:
 		return s.resolveForgejoWebhookRepository(ctx, body)
 	default:
 		return Repository{}, ErrInvalid
@@ -343,11 +477,23 @@ func (s *Service) resolveForgejoWebhookRepository(ctx context.Context, body []by
 			repoName = firstNonEmpty(repoName, parts[1])
 		}
 	}
-	providerRepoID := ""
+	backendRepoID := ""
 	if payload.Repository.ID > 0 {
-		providerRepoID = fmt.Sprintf("%d", payload.Repository.ID)
+		backendRepoID = fmt.Sprintf("%d", payload.Repository.ID)
 	}
-	return s.Store.FindRepositoryByProvider(ctx, ProviderForgejo, owner, repoName, providerRepoID)
+	return s.Store.FindRepositoryByBackend(ctx, BackendForgejo, owner, repoName, backendRepoID)
+}
+
+func (s *Service) createOrGetForgejoRepository(ctx context.Context, repoName, description, defaultBranch string) (forgejoRepo, error) {
+	repo, err := s.Forgejo.CreateRepository(ctx, repoName, description, defaultBranch)
+	if err == nil {
+		return repo, nil
+	}
+	existing, getErr := s.Forgejo.GetRepository(ctx, s.Forgejo.Owner, repoName)
+	if getErr == nil {
+		return existing, nil
+	}
+	return forgejoRepo{}, err
 }
 
 func (s *Service) forgejoRepoName(orgID uint64, name string) string {
