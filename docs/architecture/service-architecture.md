@@ -188,7 +188,7 @@ Until the PDP migration lands, current `policy.go` files are the reference imple
 
 ## Secrets Plane
 
-See [secrets-service.md](../../src/platform/docs/secrets-service.md). `secrets-service` is the customer-facing control plane for secrets, variables, dynamic credentials, and crypto operations across org, source, environment, and branch scopes. SPIFFE/SPIRE attests repo-owned workloads; see [workload-identity.md](workload-identity.md). OpenBao is the backend resource plane and policy enforcement point for secrets/KMS material, not the product contract and not the workload identity source of truth.
+See [secrets-service.md](../../src/platform/docs/secrets-service.md). `secrets-service` is the customer-facing control plane for retrievable secrets, non-secret variables, non-retrievable opaque credentials, and crypto operations across org, source, environment, and branch scopes. SPIFFE/SPIRE attests repo-owned workloads; see [workload-identity.md](workload-identity.md). OpenBao is the backend resource plane and policy enforcement point for secrets/KMS material, not the product contract and not the workload identity source of truth.
 
 ## Deploy Trace Correlation
 

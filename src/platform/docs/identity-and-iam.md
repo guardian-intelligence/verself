@@ -225,6 +225,13 @@ effective permissions. A member-role caller cannot mint a credential whose
 permissions are not held by the member set under the org's current capability
 configuration.
 
+Product-scoped opaque credentials, such as source Git HTTPS tokens, are not
+Zitadel API credentials. They are issued and verified by secrets-service as
+non-retrievable opaque credential resources over SPIFFE-authenticated internal
+APIs. The product service owns the customer workflow and projection rows;
+secrets-service owns token material, verifier storage, roll/revoke semantics,
+and credential audit rows.
+
 Embedded organization widgets are a special cross-service web-session path.
 The console frontend owns the interactive OIDC application and stores the
 browser session server-side. Before calling `identity-service`, the BFF exchanges
