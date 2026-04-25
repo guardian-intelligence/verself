@@ -10,6 +10,7 @@ require (
 	github.com/forge-metal/httpserver v0.0.0
 	github.com/forge-metal/otel v0.0.0
 	github.com/forge-metal/sandbox-rental-service v0.0.0
+	github.com/forge-metal/secrets-service v0.0.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.1
 	github.com/oapi-codegen/runtime v1.4.0
@@ -62,4 +63,5 @@ replace (
 	github.com/forge-metal/httpserver => ../httpserver
 	github.com/forge-metal/otel => ../otel
 	github.com/forge-metal/sandbox-rental-service => ../sandbox-rental-service
+	github.com/forge-metal/secrets-service => ../secrets-service
 )

@@ -62,6 +62,7 @@ func run() error {
 	forgejoOwner := cfg.RequireString("SOURCE_FORGEJO_OWNER")
 	forgejoToken := cfg.RequireCredential("forgejo-token")
 	sandboxInternalURL := cfg.URL("SOURCE_SANDBOX_INTERNAL_URL", "https://127.0.0.1:4263")
+	secretsInternalURL := cfg.URL("SOURCE_SECRETS_INTERNAL_URL", "https://127.0.0.1:4253")
 	publicBaseURL := cfg.RequireURL("SOURCE_PUBLIC_BASE_URL")
 	webhookSecret := cfg.CredentialOr("webhook-secret", cfg.String("SOURCE_WEBHOOK_SECRET", ""))
 	pgMaxConns := cfg.Int("SOURCE_PG_MAX_CONNS", 8)
@@ -90,6 +91,14 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("create sandbox-rental internal client: %w", err)
 	}
+	secretsHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceSecrets, nil)
+	if err != nil {
+		return fmt.Errorf("source secrets mtls: %w", err)
+	}
+	credentialClient, err := source.NewSecretsCredentialClient(secretsInternalURL, secretsHTTPClient)
+	if err != nil {
+		return fmt.Errorf("create secrets internal client: %w", err)
+	}
 
 	pg, err := openPool(ctx, pgDSN, pgMaxConns)
 	if err != nil {
@@ -106,6 +115,7 @@ func run() error {
 			Client:  &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport), Timeout: 5 * time.Second},
 		},
 		Sandbox:       sandboxClient,
+		Credentials:   credentialClient,
 		CheckoutTTL:   5 * time.Minute,
 		ForgejoPrefix: "fm",
 	}
