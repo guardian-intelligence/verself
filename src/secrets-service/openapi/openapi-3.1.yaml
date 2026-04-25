@@ -3,7 +3,7 @@ info:
     title: Verself Secrets Service API
     version: dev
 servers:
-    - url: https://secrets.api.anveio.com
+    - url: https://secrets.api.verself.sh
 paths:
     /api/v1/credentials:
         get:
@@ -1017,7 +1017,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - https://secrets.api.anveio.com/schemas/CreateOpaqueCredentialBody.json
+                        - https://secrets.api.verself.sh/schemas/CreateOpaqueCredentialBody.json
                     readOnly: true
                 display_name:
                     type: string
@@ -1056,7 +1056,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - https://secrets.api.anveio.com/schemas/CreateTransitKeyInputBody.json
+                        - https://secrets.api.verself.sh/schemas/CreateTransitKeyInputBody.json
                     readOnly: true
                 name:
                     type: string
@@ -1073,7 +1073,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - https://secrets.api.anveio.com/schemas/DecryptOutputBody.json
+                        - https://secrets.api.verself.sh/schemas/DecryptOutputBody.json
                     readOnly: true
                 plaintext_base64:
                     type: string
@@ -1088,7 +1088,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - https://secrets.api.anveio.com/schemas/DeleteSecretInputBody.json
+                        - https://secrets.api.verself.sh/schemas/DeleteSecretInputBody.json
                     readOnly: true
         EncryptOutputBody:
             type: object
@@ -1099,7 +1099,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - https://secrets.api.anveio.com/schemas/EncryptOutputBody.json
+                        - https://secrets.api.verself.sh/schemas/EncryptOutputBody.json
                     readOnly: true
                 ciphertext:
                     type: string
@@ -1129,7 +1129,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - https://secrets.api.anveio.com/schemas/ErrorModel.json
+                        - https://secrets.api.verself.sh/schemas/ErrorModel.json
                     readOnly: true
                 detail:
                     type: string
@@ -1175,7 +1175,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - https://secrets.api.anveio.com/schemas/OpaqueCredentialDTO.json
+                        - https://secrets.api.verself.sh/schemas/OpaqueCredentialDTO.json
                     readOnly: true
                 created_at:
                     type: string
@@ -1240,7 +1240,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - https://secrets.api.anveio.com/schemas/OpaqueCredentialMaterialDTO.json
+                        - https://secrets.api.verself.sh/schemas/OpaqueCredentialMaterialDTO.json
                     readOnly: true
                 credential:
                     $ref: '#/components/schemas/OpaqueCredentialDTO'
@@ -1258,7 +1258,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - https://secrets.api.anveio.com/schemas/OpaqueCredentialsDTO.json
+                        - https://secrets.api.verself.sh/schemas/OpaqueCredentialsDTO.json
                     readOnly: true
                 credentials:
                     type: array
@@ -1275,7 +1275,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - https://secrets.api.anveio.com/schemas/PutSecretBody.json
+                        - https://secrets.api.verself.sh/schemas/PutSecretBody.json
                     readOnly: true
                 branch:
                     type: string
@@ -1307,7 +1307,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - https://secrets.api.anveio.com/schemas/RevokeOpaqueCredentialInputBody.json
+                        - https://secrets.api.verself.sh/schemas/RevokeOpaqueCredentialInputBody.json
                     readOnly: true
         RollOpaqueCredentialBody:
             type: object
@@ -1318,7 +1318,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - https://secrets.api.anveio.com/schemas/RollOpaqueCredentialBody.json
+                        - https://secrets.api.verself.sh/schemas/RollOpaqueCredentialBody.json
                     readOnly: true
                 expires_in_seconds:
                     type: integer
@@ -1334,7 +1334,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - https://secrets.api.anveio.com/schemas/SecretDTO.json
+                        - https://secrets.api.verself.sh/schemas/SecretDTO.json
                     readOnly: true
                 branch:
                     type: string
@@ -1375,7 +1375,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - https://secrets.api.anveio.com/schemas/SecretValueDTO.json
+                        - https://secrets.api.verself.sh/schemas/SecretValueDTO.json
                     readOnly: true
                 branch:
                     type: string
@@ -1419,7 +1419,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - https://secrets.api.anveio.com/schemas/SecretsDTO.json
+                        - https://secrets.api.verself.sh/schemas/SecretsDTO.json
                     readOnly: true
                 secrets:
                     type: array
@@ -1436,7 +1436,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - https://secrets.api.anveio.com/schemas/SignOutputBody.json
+                        - https://secrets.api.verself.sh/schemas/SignOutputBody.json
                     readOnly: true
                 signature:
                     type: string
@@ -1451,7 +1451,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - https://secrets.api.anveio.com/schemas/TransitKeyDTO.json
+                        - https://secrets.api.verself.sh/schemas/TransitKeyDTO.json
                     readOnly: true
                 created_at:
                     type: string
@@ -1483,7 +1483,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - https://secrets.api.anveio.com/schemas/TransitPayloadInputBody.json
+                        - https://secrets.api.verself.sh/schemas/TransitPayloadInputBody.json
                     readOnly: true
                 ciphertext:
                     type: string
@@ -1506,7 +1506,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - https://secrets.api.anveio.com/schemas/VariableDTO.json
+                        - https://secrets.api.verself.sh/schemas/VariableDTO.json
                     readOnly: true
                 branch:
                     type: string
@@ -1547,7 +1547,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - https://secrets.api.anveio.com/schemas/VariableValueDTO.json
+                        - https://secrets.api.verself.sh/schemas/VariableValueDTO.json
                     readOnly: true
                 branch:
                     type: string
@@ -1591,7 +1591,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - https://secrets.api.anveio.com/schemas/VariablesDTO.json
+                        - https://secrets.api.verself.sh/schemas/VariablesDTO.json
                     readOnly: true
                 variables:
                     type: array
@@ -1608,7 +1608,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - https://secrets.api.anveio.com/schemas/VerifyOutputBody.json
+                        - https://secrets.api.verself.sh/schemas/VerifyOutputBody.json
                     readOnly: true
                 valid:
                     type: boolean

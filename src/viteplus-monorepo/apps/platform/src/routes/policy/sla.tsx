@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { requireOperatorDomain } from "@verself/web-env";
+import { requireProductDomain } from "@verself/web-env";
 
 import {
   ChangesSection,
@@ -13,11 +13,11 @@ import {
   SummaryPanel,
 } from "~/features/policy/policy-primitives";
 
-const getOperatorDomain = createServerFn({ method: "GET" }).handler(() => requireOperatorDomain());
+const getProductDomain = createServerFn({ method: "GET" }).handler(() => requireProductDomain());
 
 export const Route = createFileRoute("/policy/sla")({
   component: SLA,
-  loader: () => getOperatorDomain(),
+  loader: () => getProductDomain(),
   head: () => ({
     meta: [
       { title: "Service Level Agreement — Verself Platform" },
@@ -31,7 +31,7 @@ export const Route = createFileRoute("/policy/sla")({
 });
 
 function SLA() {
-  const operatorDomain = Route.useLoaderData();
+  const productDomain = Route.useLoaderData();
   return (
     <PolicyArticle>
       <PolicyHeader title="Service Level Agreement" policyId="sla" />
@@ -41,7 +41,7 @@ function SLA() {
       <Support />
       <FutureTier />
       <ChangesSection policyId="sla" />
-      <ContactSection operatorDomain={operatorDomain} primary="policy" />
+      <ContactSection productDomain={productDomain} primary="policy" />
     </PolicyArticle>
   );
 }

@@ -23,9 +23,9 @@ func main() {
 	)
 	switch *format {
 	case "3.0":
-		spec, err = api.OpenAPIDowngradeYAML(version, "https://mail.api.anveio.com")
+		spec, err = api.OpenAPIDowngradeYAML(version, "https://mail.api.verself.sh")
 	case "3.1":
-		spec, err = api.OpenAPIYAML(version, "https://mail.api.anveio.com")
+		spec, err = api.OpenAPIYAML(version, "https://mail.api.verself.sh")
 	default:
 		fmt.Fprintln(os.Stderr, "invalid -format value, expected 3.0 or 3.1")
 		os.Exit(1)

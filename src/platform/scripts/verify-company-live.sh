@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Prove that the Guardian Intelligence company site at verself_domain
+# Prove that the Guardian Intelligence company site at company_domain
 # emits the expected company.* spans into default.otel_traces when a real
 # browser walks the IA.
 #
 # Flow:
 #   1. Derive deterministic deploy identity (same helper as telemetry-proof).
-#   2. Resolve the live company base URL from verself_domain.
+#   2. Resolve the live company base URL from company_domain.
 #   3. Run the Playwright canary at apps/company/e2e/canary.spec.ts against
 #      the live URL; the canary walks every IA node, the OG cards, and the
 #      brand-kit download.
@@ -13,7 +13,7 @@
 #      have emitted, correlated on TraceId or run_key.
 #
 # Env:
-#   COMPANY_PROOF_BASE_URL  — override the derived anveio.com URL. Useful
+#   COMPANY_PROOF_BASE_URL  — override the derived guardianintelligence.org URL. Useful
 #     for staging or localhost rehearsals.
 set -euo pipefail
 
@@ -62,7 +62,7 @@ resolve_base_url() {
     return 0
   fi
   local domain
-  domain="$(python3 -c 'import yaml, sys; print(yaml.safe_load(open(sys.argv[1]))["verself_domain"])' ansible/group_vars/all/main.yml)"
+  domain="$(python3 -c 'import yaml, sys; print(yaml.safe_load(open(sys.argv[1]))["company_domain"])' ansible/group_vars/all/main.yml)"
   printf 'https://%s\n' "${domain}"
 }
 

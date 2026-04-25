@@ -65,8 +65,8 @@ All five jobs must be completable in under sixty seconds on a phone.
 ## 4. Information Architecture
 
 Three top-level sections. Mobile renders these as a bottom tab bar; tablet as a collapsed
-icon rail; desktop as a full left rail with submenus, mirroring the pattern already used at
-`platform.<domain>`.
+icon rail; desktop as a full left rail with submenus, mirroring the pattern already used in the
+product console.
 
 ```
 System Health              Financials                 Growth
@@ -345,7 +345,7 @@ The Raven feed surfaces each Oracle session as a dedicated event category.
 
 ### 11.3 Desktop (1280px+)
 
-- Full left rail with submenus, mirroring `platform.<domain>` pattern
+- Full left rail with submenus, mirroring the product console pattern
 - Village center
 - Persistent right rail split vertically: Raven top, Oracle bottom
 - Keyboard shortcuts: `1/2/3` switch sections; `r` toggles Raven; `o` opens Oracle; arrows

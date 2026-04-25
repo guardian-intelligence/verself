@@ -39,7 +39,7 @@ function buildEntries(platformOrigin: string): readonly CommandEntry[] {
         ]
       : [],
   );
-  // Docs lives on the platform.<domain> site so it opens in a new tab
+  // Docs lives on the product apex site so it opens in a new tab
   // rather than replacing the product shell the user is working in.
   const docsEntries: CommandEntry[] = EVERGREEN_NAV.flatMap((entry) =>
     entry.kind === "external" && entry.id === "docs"

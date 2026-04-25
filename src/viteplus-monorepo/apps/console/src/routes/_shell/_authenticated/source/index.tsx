@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { deriveHTTPSOrigin, requireOperatorDomain } from "@verself/web-env";
+import { deriveHTTPSOrigin, requireProductDomain } from "@verself/web-env";
 import {
   Page,
   PageDescription,
@@ -17,7 +17,7 @@ import { SourceRepositoriesPanel } from "~/features/source/components";
 import { loadSourceDashboard } from "~/features/source/queries";
 
 const getGitOrigin = createServerFn({ method: "GET" }).handler(() =>
-  deriveHTTPSOrigin("git", requireOperatorDomain()),
+  deriveHTTPSOrigin("git", requireProductDomain()),
 );
 
 export const Route = createFileRoute("/_shell/_authenticated/source/")({

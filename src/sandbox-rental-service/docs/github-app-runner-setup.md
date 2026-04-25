@@ -75,7 +75,7 @@ Then redeploy:
 
 ```bash
 cd src/platform/ansible
-ansible-playbook playbooks/dev-single-node.yml --tags sandbox_rental_service,caddy
+ansible-playbook playbooks/site.yml --tags sandbox_rental_service,caddy
 ```
 
 The sandbox-rental-service role fails before restarting the service when any

@@ -1656,4 +1656,4 @@ paths:
           description: Internal Server Error
       summary: Void billing window
 servers:
-  - url: https://billing.api.anveio.com
+  - url: https://billing.api.verself.sh

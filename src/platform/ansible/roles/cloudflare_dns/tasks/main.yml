@@ -1,5 +1,6 @@
 ---
-# Manage Cloudflare DNS records for service subdomains.
+# Manage Cloudflare DNS records for product service subdomains plus the
+# separate Guardian company apex.
 
 - name: Validate Cloudflare API token is configured
   ansible.builtin.fail:
@@ -7,7 +8,7 @@
       cloudflare_api_token is empty. Set it in the encrypted Ansible group vars before deploying.
   when: cloudflare_api_token | default('', true) | length == 0
 
-- name: Create or update DNS records
+- name: Create or update product DNS records
   community.general.cloudflare_dns:
     zone: "{{ verself_domain }}"
     record: "{{ item }}.{{ verself_domain }}"
@@ -21,17 +22,28 @@
   delegate_to: localhost
   become: false
 
-# Apex record for the company site (anveio.com today). community.general
-# .cloudflare_dns accepts the bare zone as `record:` for apex entries;
-# `solo: true` replaces any pre-existing A/AAAA at the apex so a stale Vercel
-# or redirect-rule target gets overwritten with the Caddy box. A Cloudflare
-# Page Rule or Bulk Redirect at the apex (anveio.com -> www.anveio.com)
-# survives separately — it must be deleted in the Cloudflare dashboard for
-# the A record to take effect. The module cannot manage redirect rules.
-- name: Create or update apex DNS record for the company site
+# Apex record for the product docs/platform site. community.general.cloudflare_dns
+# accepts the bare zone as `record:` for apex entries.
+- name: Create or update product apex DNS record
   community.general.cloudflare_dns:
     zone: "{{ verself_domain }}"
     record: "{{ verself_domain }}"
+    type: "{{ cloudflare_dns_record_type }}"
+    value: "{{ ansible_host }}"
+    ttl: "{{ cloudflare_dns_ttl }}"
+    proxied: "{{ cloudflare_proxied | default(false) }}"
+    solo: true
+    api_token: "{{ cloudflare_api_token }}"
+  delegate_to: localhost
+  become: false
+
+# Apex record for the Guardian company site. Bulk Redirects or Page Rules must
+# still be managed in the Cloudflare dashboard; the DNS module only manages the
+# A/AAAA record.
+- name: Create or update company apex DNS record
+  community.general.cloudflare_dns:
+    zone: "{{ company_domain }}"
+    record: "{{ company_domain }}"
     type: "{{ cloudflare_dns_record_type }}"
     value: "{{ ansible_host }}"
     ttl: "{{ cloudflare_dns_ttl }}"

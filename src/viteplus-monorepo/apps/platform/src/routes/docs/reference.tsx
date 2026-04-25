@@ -1,26 +1,26 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { requireOperatorDomain } from "@verself/web-env";
+import { requireProductDomain } from "@verself/web-env";
 
 import { SERVICE_CATALOG } from "~/lib/openapi-catalog";
 import { SchemasSection, ServiceSection } from "~/features/reference/reference-renderer";
 
-// The operator's bare domain (e.g. "anveio.com") comes from server env
+// The product bare domain (e.g. "verself.sh") comes from server env
 // and is the base of every service API subdomain surfaced in the reference
 // ("sandbox.api.<domain>", "billing.api.<domain>"). Reading it here rather
 // than hardcoding keeps platform docs portable across deployments.
-const getOperatorDomain = createServerFn({ method: "GET" }).handler(() => requireOperatorDomain());
+const getProductDomain = createServerFn({ method: "GET" }).handler(() => requireProductDomain());
 
 export const Route = createFileRoute("/docs/reference")({
   component: ReferencePage,
-  loader: () => getOperatorDomain(),
+  loader: () => getProductDomain(),
   head: () => ({
     meta: [{ title: "API Reference — Verself Platform" }],
   }),
 });
 
 function ReferencePage() {
-  const operatorDomain = Route.useLoaderData();
+  const productDomain = Route.useLoaderData();
 
   return (
     <div className="flex flex-col gap-10">
@@ -37,7 +37,7 @@ function ReferencePage() {
       </header>
 
       {SERVICE_CATALOG.map((service) => (
-        <ServiceSection key={service.id} service={service} publicOrigin={operatorDomain} />
+        <ServiceSection key={service.id} service={service} publicOrigin={productDomain} />
       ))}
 
       <SchemasSection services={SERVICE_CATALOG} />

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { requireOperatorDomain } from "@verself/web-env";
+import { requireProductDomain } from "@verself/web-env";
 
 import { ROPA, SUBPROCESSORS } from "~/lib/policy-catalog";
 import {
@@ -14,11 +14,11 @@ import {
   SummaryPanel,
 } from "~/features/policy/policy-primitives";
 
-const getOperatorDomain = createServerFn({ method: "GET" }).handler(() => requireOperatorDomain());
+const getProductDomain = createServerFn({ method: "GET" }).handler(() => requireProductDomain());
 
 export const Route = createFileRoute("/policy/privacy")({
   component: PrivacyPolicy,
-  loader: () => getOperatorDomain(),
+  loader: () => getProductDomain(),
   head: () => ({
     meta: [
       { title: "Privacy Policy — Verself Platform" },
@@ -32,7 +32,7 @@ export const Route = createFileRoute("/policy/privacy")({
 });
 
 function PrivacyPolicy() {
-  const operatorDomain = Route.useLoaderData();
+  const productDomain = Route.useLoaderData();
   return (
     <PolicyArticle>
       <PolicyHeader title="Privacy Policy" policyId="privacy" />
@@ -48,7 +48,7 @@ function PrivacyPolicy() {
       <SecurityPara />
       <Children />
       <ChangesSection policyId="privacy" />
-      <ContactSection operatorDomain={operatorDomain} primary="privacy" />
+      <ContactSection productDomain={productDomain} primary="privacy" />
     </PolicyArticle>
   );
 }

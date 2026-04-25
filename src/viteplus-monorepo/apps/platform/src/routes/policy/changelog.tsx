@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { requireOperatorDomain } from "@verself/web-env";
+import { requireProductDomain } from "@verself/web-env";
 
 import { VERSIONS, formatPrettyDate } from "~/lib/policy-catalog";
 import {
@@ -12,11 +12,11 @@ import {
   SummaryPanel,
 } from "~/features/policy/policy-primitives";
 
-const getOperatorDomain = createServerFn({ method: "GET" }).handler(() => requireOperatorDomain());
+const getProductDomain = createServerFn({ method: "GET" }).handler(() => requireProductDomain());
 
 export const Route = createFileRoute("/policy/changelog")({
   component: PolicyChangelog,
-  loader: () => getOperatorDomain(),
+  loader: () => getProductDomain(),
   head: () => ({
     meta: [
       { title: "Policy Changelog — Verself Platform" },
@@ -30,7 +30,7 @@ export const Route = createFileRoute("/policy/changelog")({
 });
 
 function PolicyChangelog() {
-  const operatorDomain = Route.useLoaderData();
+  const productDomain = Route.useLoaderData();
   const sorted = [...VERSIONS.entries].sort((a, b) => (a.date < b.date ? 1 : -1));
   return (
     <PolicyArticle>
@@ -66,7 +66,7 @@ function PolicyChangelog() {
           ))}
         </ol>
       </section>
-      <ContactSection operatorDomain={operatorDomain} primary="policy" />
+      <ContactSection productDomain={productDomain} primary="policy" />
     </PolicyArticle>
   );
 }

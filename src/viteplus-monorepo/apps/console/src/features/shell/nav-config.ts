@@ -14,7 +14,7 @@ import {
 
 // Internal destinations navigate within this app via TanStack Router.
 // External destinations open in a new tab — used for the Docs link that
-// now points at the standalone platform.<domain> docs site.
+// points at the product apex docs site.
 export type InternalNavEntry = {
   readonly kind: "internal";
   readonly id: string;
@@ -73,14 +73,13 @@ export const PRIMARY_NAV: readonly NavEntry[] = [
   },
 ];
 
-// Evergreen (non-product) rail entries anchored to the bottom of the
-// sidebar above the account row. Docs is served by the standalone
-// platform.<domain> site, so it's an external nav entry — clicking opens
-// a new tab rather than navigating the product shell away from the
-// customer's workflow. Settings is gated by the underlying route, but we
-// still surface the link to everyone: clicking it while signed out
-// triggers the Zitadel flow via the _shell/_authenticated layout,
-// matching the "no disabled buttons" rule.
+// Evergreen (non-product) rail entries anchored to the bottom of the sidebar
+// above the account row. Docs is served by the product apex, so it's an
+// external nav entry — clicking opens a new tab rather than navigating the
+// product shell away from the customer's workflow. Settings is gated by the
+// underlying route, but we still surface the link to everyone: clicking it
+// while signed out triggers the Zitadel flow via the _shell/_authenticated
+// layout, matching the "no disabled buttons" rule.
 export const EVERGREEN_NAV: readonly NavEntry[] = [
   {
     kind: "external",

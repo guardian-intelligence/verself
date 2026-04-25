@@ -23,9 +23,9 @@ func main() {
 	)
 	switch format {
 	case "3.0":
-		data, err = api.OpenAPIDowngradeYAML("1.0.0", "https://profile.api.anveio.com")
+		data, err = api.OpenAPIDowngradeYAML("1.0.0", "https://profile.api.verself.sh")
 	case "3.1":
-		data, err = api.OpenAPIYAML("1.0.0", "https://profile.api.anveio.com")
+		data, err = api.OpenAPIYAML("1.0.0", "https://profile.api.verself.sh")
 	default:
 		err = fmt.Errorf("unsupported format %q", format)
 	}

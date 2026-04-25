@@ -3,7 +3,7 @@ info:
     title: Verself Governance Service API
     version: dev
 servers:
-    - url: https://governance.api.anveio.com
+    - url: https://governance.api.verself.sh
 paths:
     /api/v1/governance/audit/events:
         get:
@@ -344,7 +344,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - https://governance.api.anveio.com/schemas/ErrorModel.json
+                        - https://governance.api.verself.sh/schemas/ErrorModel.json
                     readOnly: true
                 detail:
                     type: string
@@ -623,7 +623,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - https://governance.api.anveio.com/schemas/GovernanceCreateExportRequest.json
+                        - https://governance.api.verself.sh/schemas/GovernanceCreateExportRequest.json
                     readOnly: true
                 include_logs:
                     type: boolean
@@ -667,7 +667,7 @@ components:
                     description: A URL to the JSON Schema for this object.
                     format: uri
                     examples:
-                        - https://governance.api.anveio.com/schemas/GovernanceExportJob.json
+                        - https://governance.api.verself.sh/schemas/GovernanceExportJob.json
                     readOnly: true
                 artifact_bytes:
                     type: string

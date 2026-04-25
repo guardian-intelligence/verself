@@ -20,7 +20,7 @@ export const LETTERS_META = {
   description:
     "Long-form from Guardian. Published when we have something to say, not on a calendar.",
   editor: "Guardian",
-  siteURL: "https://anveio.com",
+  siteURL: "https://guardianintelligence.org",
 } as const;
 
 export const LETTERS: readonly Letter[] = [

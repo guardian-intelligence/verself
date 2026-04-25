@@ -24,7 +24,7 @@ func NewAPI(mux *http.ServeMux, version, serverURL string, svc *secrets.Service)
 func OpenAPIYAML(format string) ([]byte, error) {
 	mux := http.NewServeMux()
 	svc := &secrets.Service{}
-	api := NewAPI(mux, "dev", "https://secrets.api.anveio.com", svc)
+	api := NewAPI(mux, "dev", "https://secrets.api.verself.sh", svc)
 	switch format {
 	case "3.0":
 		return OpenAPIDowngradeYAML(api.OpenAPI())

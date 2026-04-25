@@ -1,6 +1,7 @@
 ---
-# Multi-node production deployment.
-# Separates worker and infra node roles.
+# Canonical site deployment.
+# Topology lives in inventory: the single-node inventory places the same host in
+# workers and infra; multi-node deployments use distinct hosts in those groups.
 #
 # Usage: ansible-playbook -i inventory/hosts.ini playbooks/site.yml
 
@@ -22,11 +23,17 @@
   become: true
   tags: [always]
   tasks:
-    - name: Require verself_domain
+    - name: Require Verself product domain
       ansible.builtin.assert:
         that: verself_domain | default('', true) | length > 0
         fail_msg: >-
-          verself_domain is required. Set it in the encrypted Ansible group vars before deploying.
+          verself_domain is required for product origins. Set it in the encrypted Ansible group vars before deploying.
+
+    - name: Require Guardian company domain
+      ansible.builtin.assert:
+        that: company_domain | default('', true) | length > 0
+        fail_msg: >-
+          company_domain is required for the Guardian company site. Set it in the encrypted Ansible group vars before deploying.
 
     - name: Require cloudflare_api_token
       ansible.builtin.assert:
@@ -34,11 +41,11 @@
         fail_msg: >-
           cloudflare_api_token is empty. Set it in the encrypted Ansible group vars before deploying.
 
-- name: "Preflight: worker prerequisites"
+- name: "Preflight: Firecracker worker prerequisites"
   hosts: workers
   gather_facts: false
   become: true
-  tags: [always]
+  tags: [firecracker]
   tasks:
     - name: Check ZFS pool exists
       ansible.builtin.command: "zpool status vspool"
@@ -155,9 +162,36 @@
     - role: tigerbeetle
       tags: [tigerbeetle]
     - role: postgresql
-      tags: [postgresql, object_storage_service, profile_service, notifications_service, projects_service, source_code_hosting_service, openbao, openbao_tenancy, temporal]
+      tags:
+        - postgresql
+        - object_storage_service
+        - profile_service
+        - notifications_service
+        - projects_service
+        - source_code_hosting_service
+        - openbao
+        - openbao_tenancy
+        - temporal
+    # Service deploys query Zitadel during auth-project reconciliation; converge
+    # the identity provider first so PostgreSQL resets cannot leave stale auth state.
     - role: zitadel
-      tags: [zitadel, openbao, openbao_tenancy]
+      tags:
+        - zitadel
+        - postgresql
+        - billing_service
+        - governance_service
+        - identity_service
+        - profile_service
+        - notifications_service
+        - projects_service
+        - secrets_service
+        - sandbox_rental_service
+        - source_code_hosting_service
+        - mailbox_service
+        - object_storage_service
+        - console
+        - openbao
+        - openbao_tenancy
     - role: openbao
       tags: [openbao, openbao_tenancy, billing_service, governance_service, sandbox_rental_service, mailbox_service]
     - role: identity_service

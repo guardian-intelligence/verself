@@ -62,7 +62,7 @@ function WorkshopFooter() {
         </FooterColumn>
         <FooterColumn heading="Solutions">
           <FooterLink to="/solutions">Overview</FooterLink>
-          <FooterExternal href="https://platform.anveio.com">Verself Platform</FooterExternal>
+          <FooterExternal href="https://verself.sh">Verself Platform</FooterExternal>
         </FooterColumn>
         <FooterColumn heading="Read">
           <FooterLink to="/letters">Letters</FooterLink>

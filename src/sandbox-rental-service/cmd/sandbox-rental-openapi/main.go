@@ -12,7 +12,7 @@ import (
 
 const (
 	version         = "1.0.0"
-	publicServerURL = "https://sandbox.api.anveio.com"
+	publicServerURL = "https://sandbox.api.verself.sh"
 )
 
 func main() {

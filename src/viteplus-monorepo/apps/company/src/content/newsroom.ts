@@ -128,7 +128,7 @@ export function newsroomCtaLabel(item: NewsroomItem): string {
 export const NEWSROOM_META = {
   title: "Newsroom — Guardian",
   description: "Bulletins, milestones, and public notes from Guardian Intelligence.",
-  siteURL: "https://anveio.com",
+  siteURL: "https://guardianintelligence.org",
 } as const;
 
 export const CATEGORY_LABELS: Record<NewsroomCategory, string> = {

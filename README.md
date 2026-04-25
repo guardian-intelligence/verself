@@ -7,7 +7,7 @@ Features:
 - Bootstrapping: single command to go from a laptop to a bare-metal instance with all services and frontends deployed.
 - Git hosting + fast CI through Forgejo, Firecracker, and ZFS.
 - Billing layered on top of Stripe and TigerBeetle so products can move from idea to revenue without rebuilding metering, transaction processing, tax, accounts receivable, dunning, and invoicing.
-- Public surface split: `console.<domain>` for the authenticated browser console, `<service>.api.<domain>` for customer/SDK/CLI APIs, and protocol origins such as `git.<domain>`, `auth.<domain>`, `mail.<domain>`, and `dashboard.<domain>`.
+- Public surface split: `<domain>` for product docs/policy, `console.<domain>` for the authenticated browser console, `<service>.api.<domain>` for customer/SDK/CLI APIs, and protocol origins such as `git.<domain>`, `auth.<domain>`, `mail.<domain>`, and `dashboard.<domain>`.
 
 ## Quick Start
 
@@ -33,13 +33,13 @@ This provisions a bare metal server via OpenTofu and auto-generates the gitignor
 ### 3. Deploy
 
 ```bash
-cd src/platform/ansible && ansible-playbook playbooks/dev-single-node.yml
+cd src/platform/ansible && ansible-playbook playbooks/site.yml
 ```
 
 Idempotent, no wipe. Safe to run repeatedly. Deploy a single role with `--tags`:
 
 ```bash
-cd src/platform/ansible && ansible-playbook playbooks/dev-single-node.yml --tags caddy
+cd src/platform/ansible && ansible-playbook playbooks/site.yml --tags caddy
 ```
 
 ### 4. Seed and assume rehearsal personas
@@ -174,8 +174,9 @@ Open `https://dashboard.<domain>` for Grafana. Use `https://<ip>` only for
 direct host access when DNS is not configured (self-signed cert for IP
 addresses, auto Let's Encrypt for domains).
 
-The authenticated product console lives at `https://console.<domain>`. Public
-service APIs use service-owned API origins such as
+The product docs and policies live at `https://<domain>`, and the authenticated
+product console lives at `https://console.<domain>`. Public service APIs use
+service-owned API origins such as
 `https://billing.api.<domain>`, `https://sandbox.api.<domain>`, and
 `https://identity.api.<domain>`. See
 [`docs/architecture/public-origins.md`](docs/architecture/public-origins.md).

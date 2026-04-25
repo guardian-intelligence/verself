@@ -244,10 +244,10 @@ deprovision: ## Destroy provisioned bare metal infrastructure: make deprovision 
 	@test "$(CONFIRM)" = "deprovision" || { echo "ERROR: deprovision requires CONFIRM=deprovision"; exit 1; }
 	cd $(PLATFORM_DIR)/ansible && ansible-playbook playbooks/deprovision.yml
 
-deploy: inventory-check ## Deploy single-node environment: make deploy [TAGS=billing_service,caddy]
-	$(PLATFORM_DIR)/scripts/ansible-with-tunnel.sh playbooks/dev-single-node.yml $(if $(TAGS),--tags "$(TAGS)",)
+deploy: inventory-check ## Deploy current site topology: make deploy [TAGS=billing_service,caddy]
+	$(PLATFORM_DIR)/scripts/ansible-with-tunnel.sh playbooks/site.yml $(if $(TAGS),--tags "$(TAGS)",)
 
-site: inventory-check ## Deploy multi-node site playbook
+site: inventory-check ## Deploy current site topology
 	$(PLATFORM_DIR)/scripts/ansible-with-tunnel.sh playbooks/site.yml $(if $(TAGS),--tags "$(TAGS)",)
 
 guest-rootfs: inventory-check ## Build and stage Firecracker guest artifacts
@@ -385,7 +385,7 @@ verification-reset: inventory-check ## Exhaustively wipe verification state (bil
 	$(PLATFORM_DIR)/scripts/ansible-with-tunnel.sh playbooks/verification-reset.yml
 
 wipe-pg-db: inventory-check ## Wipe one managed PostgreSQL service DB: make wipe-pg-db DB=sandbox_rental
-	@test -n "$(DB)" || { echo "ERROR: DB is required (billing|sandbox_rental|mailbox_service|identity_service|secrets_service|notifications_service|projects_service)"; exit 1; }
+	@test -n "$(DB)" || { echo "ERROR: DB is required (billing|sandbox_rental|mailbox_service|identity_service|secrets_service|notifications_service|projects_service|source_code_hosting)"; exit 1; }
 	$(PLATFORM_DIR)/scripts/ansible-with-tunnel.sh playbooks/wipe-pg-db.yml -e "wipe_pg_db_name=$(DB)"
 
 vm-orchestrator-proof: inventory-check ## Live proof for vm-orchestrator lease/exec spans through recurring sandbox executions
@@ -416,7 +416,7 @@ platform-frontend-deploy-fast: inventory-check ## Ship UI-only changes to platfo
 	$(PLATFORM_DIR)/scripts/platform-frontend-deploy-fast.sh
 
 platform-local-dev: ## Start local platform docs HMR dev server (no tunnels; no service deps)
-	cd src/viteplus-monorepo/apps/platform && VERSELF_DOMAIN=$$(awk -F'"' '/^verself_domain:/{print $$2}' $(PLATFORM_DIR)/ansible/group_vars/all/main.yml) vp dev
+	cd src/viteplus-monorepo/apps/platform && VERSELF_DOMAIN=$$(awk -F'"' '/^verself_domain:/{print $$2}' $(PLATFORM_DIR)/ansible/group_vars/all/main.yml) PRODUCT_BASE_URL=https://$$(awk -F'"' '/^verself_domain:/{print $$2}' $(PLATFORM_DIR)/ansible/group_vars/all/main.yml) BASE_URL=https://$$(awk -F'"' '/^verself_domain:/{print $$2}' $(PLATFORM_DIR)/ansible/group_vars/all/main.yml) vp dev
 
 grafana-proof: inventory-check ## Verify Grafana health, datasource execution, PostgreSQL state, and ClickHouse evidence
 	cd $(PLATFORM_DIR) && ./scripts/verify-grafana-live.sh

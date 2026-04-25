@@ -61,6 +61,6 @@ export const SOLUTIONS: readonly SolutionCard[] = [
           "Typed clients generated from the same OpenAPI definitions Console and the CLI share. One source of truth per service.",
       },
     ],
-    href: "https://platform.anveio.com",
+    href: "https://verself.sh",
   },
 ];

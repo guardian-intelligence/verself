@@ -5,7 +5,7 @@ Canonical layout in `docs/architecture/directory-structure.md`. Read that file d
 
 Polyglot monorepo structured as a modular monolith:
 
-- **TypeScript** — `src/viteplus-monorepo/` (pnpm, Vite Plus + TanStack Start/DB/Query/Router). Apps: `company` (marketing site at anveio.com), `platform` (product console at platform.anveio.com), `mail`.
+- **TypeScript** — `src/viteplus-monorepo/` (pnpm, Vite Plus + TanStack Start/DB/Query/Router). Apps: `company` (Guardian Intelligence company site at guardianintelligence.org), `platform` (product docs/policy at verself.sh), `console` (product console at console.verself.sh), `mail`.
 - **Go** — `go.work` at repo root, covers most of `src/*`. Services: `sandbox-rental-service`, `billing-service`, `identity-service`, `mailbox-service`, `governance-service`, `secrets-service`, `platform`, `vm-orchestrator`. Shared libs: `apiwire`, `auth-middleware`, `otel`.
 - **Zig** — `src/vm-guest-telemetry/` (guest agent, runs *inside* Firecracker VMs, not on the host).
 - **YAML* -- Infrastructure code defined with Ansible.
@@ -122,12 +122,11 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - When in doubt, use the industry-standard pattern. Pagination, idempotency, rate limiting, OpenAPI, OpenTelemetry, state machines — these are all solved problems with boring, battle-tested solutions. Don't reinvent the wheel. The one piece of genuinely novel technology in this repo is ZFS + Firecracker for customer workloads. Everything else is tried-and-tested FOSS.
 - `Makefile`, `README.md`, `AGENTS.md`, schema migration files, and OpenAPI 3.1 YAML files are high signal per token. Read them directly; avoid summarizing them with a subagent as important detail may be lost.
 - Do not provide time estimates.
-- The goal is enterprise-grade architecture and implementation. We accomplish this by establishing proper systems to make improper behavior impossible by construction. E.g. to prevent bearer tokens from appearing in logs, we use a mixture of strategies: configure Otel HTTP instrumentation to sanitize it, harden read access to logs, structure our logging abstractions to avoid it, and (aspirational) execute a canary that asserts safety systems omit the token even if one system fails.
-- 
+- We work backwards from ensuring proper systems are in place to make incorrect behavior impossible by construction. E.g. to prevent bearer tokens from appearing in logs, we use a mixture of strategies: configure Otel HTTP instrumentation to sanitize it, harden read access to logs, structure our logging abstractions to avoid it, and (aspirational) execute a canary that asserts safety systems omit the token even if one system fails.
+- My 'd' key is broken so you may see frequently see the letter 'd' missing from user messages
 </assistant_contract>
 
 <tool_use_contract>
-- When executing long-running tasks, run them in the background and check in every 30–60 seconds.
 - Dev tools are system-installed via `ansible-playbook playbooks/setup-dev.yml`.
 - Apply the scientific method: create a bar-raising verification protocol for the planned task *prior* to implementing changes. The verification protocol should fail, and only then begin implementing until green.
 - Avoid one-off, non-syntax-aware scripts for large parallel changes or refactors. Use subagents for that class of task — unexpected edge cases are likely and judgement is often required.

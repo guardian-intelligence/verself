@@ -2,8 +2,10 @@
 
 ## Deployment Surface
 
-Use `dev-single-node.yml` for normal platform iteration. It rebuilds the
-server profile, pushes it to the current worker, and reapplies the Ansible roles
+Use `site.yml` for normal platform iteration. The current single-node inventory
+places the same host in both `workers` and `infra`; a multi-node deployment uses
+the same playbook with distinct hosts in those groups. The playbook rebuilds the
+server profile, pushes it to the current site, and reapplies the Ansible roles
 without wiping host state. Target individual roles with `--tags` (e.g.
 `--tags caddy` or `--tags grafana`).
 
@@ -132,7 +134,7 @@ make telemetry-proof-fail      # sad path: assert Error spans are emitted
 ## Company Site Proof
 
 End-to-end canary for the Guardian Intelligence company site at
-`verself_domain` (anveio.com today). Walks every IA route in a
+`company_domain` (guardianintelligence.org). Walks every IA route in a
 headless browser, hits the dynamic OG generator, downloads the press
 brand kit, and asserts the corresponding `company.*` spans land in
 ClickHouse within 60 seconds of emit.
@@ -168,11 +170,12 @@ Deterministic deploy correlation:
 
 ```bash
 cd src/platform/ansible
-sops group_vars/all/secrets.sops.yml   # set verself_domain and cloudflare_api_token
-ansible-playbook playbooks/dev-single-node.yml
+sops group_vars/all/secrets.sops.yml   # set verself_domain, company_domain, and cloudflare_api_token
+ansible-playbook playbooks/site.yml
 ```
 
-Services get subdomains configured via Cloudflare:
+The product apex (`verself_domain`) serves platform docs/policy. Product
+services get subdomains configured via Cloudflare:
 
 | Subdomain | Service |
 |-----------|---------|
@@ -207,8 +210,7 @@ All remote orchestration runs via Ansible playbooks from `src/platform/ansible/`
 | `playbooks/setup-sops.yml` | Bootstrap SOPS+Age encryption for secrets. |
 | `playbooks/provision.yml` | Provision bare metal via OpenTofu, generate inventory. |
 | `playbooks/deprovision.yml` | Destroy bare-metal infrastructure, remove inventory. |
-| `playbooks/dev-single-node.yml` | Deploy to single node (idempotent). |
-| `playbooks/site.yml` | Deploy to multi-node cluster (workers + infra). |
+| `playbooks/site.yml` | Canonical idempotent deploy for the current inventory topology. |
 | `playbooks/guest-rootfs.yml` | Build guest rootfs and stage Firecracker guest artifacts. |
 | `playbooks/observability-smoke.yml` | Minimal smoke probe used by `telemetry-proof` (`debug/assert` + `verself_uri`). |
 | `playbooks/vm-guest-telemetry-dev.yml` | Hot-swap `vm-guest-telemetry`, boot + probe in Firecracker VM (~10s). |
@@ -216,4 +218,4 @@ All remote orchestration runs via Ansible playbooks from `src/platform/ansible/`
 | `playbooks/billing-reset.yml` | Exhaustively wipe TigerBeetle + billing PostgreSQL database `billing` and restart billing callers. |
 | `playbooks/seed-system.yml` | Seed the platform tenant plus Acme tenant, billing, mailboxes, and auth verify (supports `--tags identity,billing,stalwart,verify,dev-oidc`). |
 
-All deploy playbooks support `--tags` for targeting individual roles (e.g. `--tags caddy`, `--tags clickhouse`). Preflight checks run regardless of tag selection.
+The site deploy supports `--tags` for targeting individual roles (e.g. `--tags caddy`, `--tags clickhouse`). Global preflight checks run regardless of tag selection; Firecracker guest artifact preflight runs with the `firecracker` tag.

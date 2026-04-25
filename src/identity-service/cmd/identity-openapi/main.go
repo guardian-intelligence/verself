@@ -9,7 +9,7 @@ import (
 	identityapi "github.com/verself/identity-service/internal/api"
 )
 
-const publicServerURL = "https://identity.api.anveio.com"
+const publicServerURL = "https://identity.api.verself.sh"
 
 func main() {
 	if err := run(); err != nil {
