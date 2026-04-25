@@ -17,8 +17,10 @@ github_workflow_file="${GITHUB_RUNNER_PROOF_WORKFLOW_FILE:-forge-metal-runner-ca
 github_workflow_name="${GITHUB_RUNNER_PROOF_WORKFLOW_NAME:-Forge Metal runner canary}"
 github_workflow_ref="${GITHUB_RUNNER_PROOF_REF:-main}"
 github_app_slug="${GITHUB_RUNNER_PROOF_APP_SLUG:-forge-metal-ci}"
+github_app_id="${GITHUB_RUNNER_PROOF_APP_ID:-$(awk -F': *' '/^sandbox_rental_service_github_app_id:/{print $2}' "${VERIFICATION_VARS_FILE}" | tr -d '\"' | tail -n 1)}"
 api_base_url="${BASE_URL:-https://sandbox.api.${VERIFICATION_DOMAIN}}"
 api_base_url="${api_base_url%/}"
+expected_github_webhook_url="${api_base_url}/webhooks/github/actions"
 window_start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 clickhouse_timeout_seconds="${GITHUB_RUNNER_PROOF_CLICKHOUSE_TIMEOUT_SECONDS:-240}"
 github_poll_timeout_seconds="${GITHUB_RUNNER_PROOF_GITHUB_TIMEOUT_SECONDS:-900}"
@@ -90,6 +92,108 @@ api_request() {
 
 github_api() {
   gh api "$@"
+}
+
+assert_github_app_configuration() {
+  local app_output_path="${artifact_dir}/responses/github-app.json"
+  local hook_output_path="${artifact_dir}/responses/github-app-hook-config.json"
+  if [[ -z "${github_app_id}" || "${github_app_id}" == "0" ]]; then
+    echo "github app id is not configured" >&2
+    return 1
+  fi
+  SECRETS_SERVICE_TOKEN="${SECRETS_SERVICE_TOKEN}" \
+    FORGE_METAL_DOMAIN="${FORGE_METAL_DOMAIN}" \
+    GITHUB_APP_ID="${github_app_id}" \
+    GITHUB_APP_SLUG="${github_app_slug}" \
+    EXPECTED_GITHUB_WEBHOOK_URL="${expected_github_webhook_url}" \
+    GITHUB_APP_OUTPUT_PATH="${app_output_path}" \
+    GITHUB_APP_HOOK_OUTPUT_PATH="${hook_output_path}" \
+    python3 - <<'PY'
+import json
+import os
+import time
+import urllib.error
+import urllib.request
+
+import jwt
+
+secret_name = "sandbox-rental-service.github.private_key"
+secrets_url = f"https://secrets.api.{os.environ['FORGE_METAL_DOMAIN']}/api/v1/secrets/{secret_name}"
+secret_req = urllib.request.Request(
+    secrets_url,
+    headers={"Authorization": "Bearer " + os.environ["SECRETS_SERVICE_TOKEN"]},
+)
+with urllib.request.urlopen(secret_req, timeout=10) as resp:
+    private_key = json.load(resp)["value"]
+
+now = int(time.time())
+app_jwt = jwt.encode(
+    {"iat": now - 60, "exp": now + 9 * 60, "iss": os.environ["GITHUB_APP_ID"]},
+    private_key,
+    algorithm="RS256",
+)
+headers = {
+    "Authorization": "Bearer " + app_jwt,
+    "Accept": "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+    "User-Agent": "forge-metal-verification",
+}
+
+def github(path):
+    req = urllib.request.Request("https://api.github.com" + path, headers=headers)
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        return json.load(resp)
+
+app = github("/app")
+hook = github("/app/hook/config")
+sanitized_hook = dict(hook)
+if "secret" in sanitized_hook:
+    sanitized_hook["secret"] = "********"
+with open(os.environ["GITHUB_APP_OUTPUT_PATH"], "w", encoding="utf-8") as fh:
+    json.dump(
+        {
+            "id": app.get("id"),
+            "slug": app.get("slug"),
+            "name": app.get("name"),
+            "events": app.get("events"),
+            "permissions": app.get("permissions"),
+            "html_url": app.get("html_url"),
+        },
+        fh,
+        indent=2,
+        sort_keys=True,
+    )
+    fh.write("\n")
+with open(os.environ["GITHUB_APP_HOOK_OUTPUT_PATH"], "w", encoding="utf-8") as fh:
+    json.dump(sanitized_hook, fh, indent=2, sort_keys=True)
+    fh.write("\n")
+
+errors = []
+if app.get("slug") != os.environ["GITHUB_APP_SLUG"]:
+    errors.append(f"expected GitHub App slug {os.environ['GITHUB_APP_SLUG']!r}, got {app.get('slug')!r}")
+if "workflow_job" not in (app.get("events") or []):
+    errors.append("GitHub App is not subscribed to workflow_job events")
+permissions = app.get("permissions") or {}
+if permissions.get("organization_self_hosted_runners") != "write":
+    errors.append("GitHub App needs organization self-hosted runners write permission")
+if permissions.get("actions") != "read":
+    errors.append("GitHub App needs actions read permission")
+if permissions.get("contents") != "read":
+    errors.append("GitHub App needs contents read permission")
+if hook.get("url") != os.environ["EXPECTED_GITHUB_WEBHOOK_URL"]:
+    errors.append(
+        "GitHub App webhook URL drift: expected "
+        + os.environ["EXPECTED_GITHUB_WEBHOOK_URL"]
+        + ", got "
+        + repr(hook.get("url"))
+    )
+if hook.get("content_type") != "json":
+    errors.append("GitHub App webhook content_type must be json")
+if hook.get("insecure_ssl") != "0":
+    errors.append("GitHub App webhook insecure_ssl must be 0")
+if errors:
+    raise SystemExit("\n".join(errors))
+PY
 }
 
 wait_for_clickhouse_count() {
@@ -291,17 +395,17 @@ import sys
 payload = json.load(open(sys.argv[1], encoding="utf-8"))
 needle = sys.argv[2]
 for item in payload.get("runs") or []:
-    github = item.get("github") or {}
-    if github.get("run_id") != needle:
+    runner = item.get("runner") or {}
+    if runner.get("provider_run_id") != needle:
         continue
     latest = item.get("latest_attempt") or {}
     print("\t".join([
         item.get("execution_id", ""),
         latest.get("attempt_id", ""),
         item.get("status", ""),
-        github.get("job_id", ""),
-        github.get("workflow_name", ""),
-        github.get("job_name", ""),
+        runner.get("provider_job_id", ""),
+        runner.get("workflow_name", ""),
+        runner.get("job_name", ""),
     ]))
     raise SystemExit(0)
 PY
@@ -449,6 +553,7 @@ dispatch_and_prove_run() {
 verification_wait_for_loopback_api "sandbox-rental-service" \
   "http://127.0.0.1:4243/api/v1/billing/entitlements" "401"
 
+assert_github_app_configuration
 installation_id="$(resolve_installation_id)"
 connect_installation "${installation_id}"
 reset_repository_sticky_disks
@@ -498,11 +603,11 @@ run1_id = sys.argv[10]
 run2_id = sys.argv[11]
 
 for payload, run_id in ((run1_detail, run1_id), (run2_detail, run2_id)):
-    github = payload.get("github") or {}
-    if github.get("installation_id") != installation_id:
-        raise SystemExit(f"unexpected installation_id in run detail: {github.get('installation_id')!r}")
-    if github.get("run_id") != run_id:
-        raise SystemExit(f"unexpected github run_id in run detail: {github.get('run_id')!r}")
+    runner = payload.get("runner") or {}
+    if runner.get("provider_installation_id") != installation_id:
+        raise SystemExit(f"unexpected installation_id in run detail: {runner.get('provider_installation_id')!r}")
+    if runner.get("provider_run_id") != run_id:
+        raise SystemExit(f"unexpected github run_id in run detail: {runner.get('provider_run_id')!r}")
     summary = payload.get("billing_summary") or {}
     if int(summary.get("window_count") or 0) < 1:
         raise SystemExit("expected billing_summary.window_count >= 1")
@@ -586,18 +691,20 @@ WHERE installation_id = ${installation_id};
 " >"${artifact_dir}/postgres/github_installation.tsv"
 
 remote_psql sandbox_rental "
-SELECT github_job_id, installation_id, repository_id, repository_full_name, run_id, job_name, workflow_name, status, conclusion, runner_id, runner_name
-FROM github_workflow_jobs
-WHERE run_id IN (${run1_github_run_id}, ${run2_github_run_id}, ${run3_github_run_id})
-ORDER BY run_id, github_job_id;
-" >"${artifact_dir}/postgres/github_workflow_jobs.tsv"
+SELECT provider_job_id, provider_installation_id, provider_repository_id, repository_full_name, provider_run_id, job_name, workflow_name, status, conclusion, runner_id, runner_name
+FROM runner_jobs
+WHERE provider = 'github'
+  AND provider_run_id IN (${run1_github_run_id}, ${run2_github_run_id}, ${run3_github_run_id})
+ORDER BY provider_run_id, provider_job_id;
+" >"${artifact_dir}/postgres/runner_jobs.tsv"
 
 remote_psql sandbox_rental "
-SELECT allocation_id, installation_id, repository_id, runner_class, runner_name, requested_for_github_job_id, github_runner_id, execution_id, attempt_id, state
-FROM github_runner_allocations
-WHERE execution_id IN ('${run1_execution_id}'::uuid, '${run2_execution_id}'::uuid, '${run3_execution_id}'::uuid)
+SELECT allocation_id, provider_installation_id, provider_repository_id, runner_class, runner_name, requested_for_provider_job_id, provider_runner_id, execution_id, attempt_id, state
+FROM runner_allocations
+WHERE provider = 'github'
+  AND execution_id IN ('${run1_execution_id}'::uuid, '${run2_execution_id}'::uuid, '${run3_execution_id}'::uuid)
 ORDER BY created_at;
-" >"${artifact_dir}/postgres/github_runner_allocations.tsv"
+" >"${artifact_dir}/postgres/runner_allocations.tsv"
 
 remote_psql sandbox_rental "
 SELECT e.execution_id, a.attempt_id, e.org_id, e.source_kind, e.workload_kind, e.source_ref, e.state, a.trace_id
@@ -615,9 +722,10 @@ ORDER BY created_at, mount_name;
 " >"${artifact_dir}/postgres/sticky_disk_mounts.tsv"
 
 remote_psql sandbox_rental "
-SELECT installation_id, repository_id, key_hash, key, current_generation, current_source_ref
-FROM github_sticky_disk_generations
-WHERE installation_id = ${installation_id}
+SELECT provider_installation_id, provider_repository_id, key_hash, key, current_generation, current_source_ref
+FROM runner_sticky_disk_generations
+WHERE provider = 'github'
+  AND provider_installation_id = ${installation_id}
 ORDER BY key_hash;
 " >"${artifact_dir}/postgres/sticky_disk_generations.tsv"
 
@@ -628,14 +736,25 @@ ORDER BY key_hash;
 
 wait_for_clickhouse_count forge_metal "
   SELECT count()
-  FROM job_events
-  WHERE execution_id IN (toUUID({run1_execution_id:String}), toUUID({run2_execution_id:String}), toUUID({run3_execution_id:String}))
-    AND source_kind = 'github_actions'
-    AND status = 'succeeded'
-" 3 "${artifact_dir}/clickhouse/job_event_count.tsv" \
-  --param_run1_execution_id="${run1_execution_id}" \
-  --param_run2_execution_id="${run2_execution_id}" \
-  --param_run3_execution_id="${run3_execution_id}"
+	  FROM job_events
+	  WHERE execution_id IN (toUUID({run1_execution_id:String}), toUUID({run2_execution_id:String}), toUUID({run3_execution_id:String}))
+	    AND source_kind = 'github_actions'
+	    AND provider = 'github'
+	    AND provider_installation_id = toUInt64({installation_id:String})
+	    AND provider_run_id IN (toUInt64({run1_github_run_id:String}), toUInt64({run2_github_run_id:String}), toUInt64({run3_github_run_id:String}))
+	    AND provider_job_id IN (toUInt64({run1_github_job_id:String}), toUInt64({run2_github_job_id:String}), toUInt64({run3_github_job_id:String}))
+	    AND status = 'succeeded'
+	" 3 "${artifact_dir}/clickhouse/job_event_count.tsv" \
+	  --param_run1_execution_id="${run1_execution_id}" \
+	  --param_run2_execution_id="${run2_execution_id}" \
+	  --param_run3_execution_id="${run3_execution_id}" \
+	  --param_installation_id="${installation_id}" \
+	  --param_run1_github_run_id="${run1_github_run_id}" \
+	  --param_run2_github_run_id="${run2_github_run_id}" \
+	  --param_run3_github_run_id="${run3_github_run_id}" \
+	  --param_run1_github_job_id="${run1_github_job_id}" \
+	  --param_run2_github_job_id="${run2_github_job_id}" \
+	  --param_run3_github_job_id="${run3_github_job_id}"
 
 wait_for_clickhouse_count forge_metal "
   SELECT count()
@@ -746,6 +865,9 @@ wait_for_clickhouse_count default "
     --param_run1_execution_id="${run1_execution_id}" \
     --param_run2_execution_id="${run2_execution_id}" \
     --param_run3_execution_id="${run3_execution_id}" \
+    --param_run1_github_run_id="${run1_github_run_id}" \
+    --param_run2_github_run_id="${run2_github_run_id}" \
+    --param_run3_github_run_id="${run3_github_run_id}" \
     --query "
       SELECT
         Timestamp,
@@ -765,7 +887,7 @@ wait_for_clickhouse_count default "
       WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 60 SECOND
         AND (
           SpanAttributes['execution.id'] IN ({run1_execution_id:String}, {run2_execution_id:String}, {run3_execution_id:String})
-          OR SpanAttributes['github.run_id'] IN ('${run1_github_run_id}', '${run2_github_run_id}', '${run3_github_run_id}')
+          OR SpanAttributes['github.run_id'] IN ({run1_github_run_id:String}, {run2_github_run_id:String}, {run3_github_run_id:String})
         )
       ORDER BY Timestamp
       FORMAT TSVWithNames

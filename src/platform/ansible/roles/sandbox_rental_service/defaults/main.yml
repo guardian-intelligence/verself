@@ -42,5 +42,8 @@ sandbox_rental_service_github_app_settings_url: ""
 sandbox_rental_service_github_api_base_url: "https://api.github.com"
 sandbox_rental_service_github_web_base_url: "https://github.com"
 sandbox_rental_service_github_runner_group_id: 1
+sandbox_rental_service_forgejo_api_base_url: "http://{{ services.forgejo.host }}:{{ services.forgejo.port }}"
+sandbox_rental_service_forgejo_runner_base_url: "http://{{ services.firecracker_host_service.host }}:{{ services.firecracker_host_service.http_port }}"
+sandbox_rental_service_forgejo_webhook_base_url: "https://{{ sandbox_rental_service_domain }}"
 sandbox_rental_service_temporal_namespace: sandbox-rental-service
 sandbox_rental_service_temporal_task_queue_recurring: sandbox-rental-service.recurring-vm

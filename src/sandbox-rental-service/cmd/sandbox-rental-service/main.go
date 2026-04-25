@@ -95,6 +95,12 @@ func run() error {
 	githubWebBaseURL := cfg.URL("SANDBOX_GITHUB_WEB_BASE_URL", "https://github.com")
 	githubRunnerGroupID := cfg.Int64("SANDBOX_GITHUB_RUNNER_GROUP_ID", 1)
 	checkoutCacheDir := cfg.String("SANDBOX_GITHUB_CHECKOUT_CACHE_DIR", "/var/lib/forge-metal/sandbox-rental/github-checkout")
+	forgejoAPIBaseURL := cfg.URL("SANDBOX_FORGEJO_API_BASE_URL", "")
+	forgejoRunnerBaseURL := cfg.String("SANDBOX_FORGEJO_RUNNER_BASE_URL", "")
+	forgejoWebhookBaseURL := cfg.String("SANDBOX_FORGEJO_WEBHOOK_BASE_URL", publicBaseURL)
+	forgejoToken := cfg.CredentialOr("forgejo-token", "")
+	forgejoWebhookSecret := cfg.CredentialOr("forgejo-webhook-secret", "")
+	forgejoBootstrapSecret := cfg.CredentialOr("forgejo-bootstrap-secret", "")
 	pgMaxOpenConns := cfg.Int("SANDBOX_PG_MAX_OPEN_CONNS", 16)
 	pgMaxIdleConns := cfg.Int("SANDBOX_PG_MAX_IDLE_CONNS", 8)
 	pgConnMaxLifetime := cfg.Int("SANDBOX_PG_CONN_MAX_LIFETIME_SECONDS", 1800)
@@ -297,6 +303,21 @@ func run() error {
 		return fmt.Errorf("create github runner adapter: %w", err)
 	}
 	jobService.GitHubRunner = githubRunner
+	forgejoRunner, err := jobs.NewForgejoRunner(jobService, jobs.ForgejoRunnerConfig{
+		APIBaseURL:      forgejoAPIBaseURL,
+		RunnerBaseURL:   forgejoRunnerBaseURL,
+		WebhookBaseURL:  forgejoWebhookBaseURL,
+		Token:           forgejoToken,
+		WebhookSecret:   forgejoWebhookSecret,
+		BootstrapSecret: forgejoBootstrapSecret,
+	}, &http.Client{
+		Transport: otelhttp.NewTransport(http.DefaultTransport),
+		Timeout:   10 * time.Second,
+	})
+	if err != nil {
+		return fmt.Errorf("create forgejo runner adapter: %w", err)
+	}
+	jobService.ForgejoRunner = forgejoRunner
 	sourceDispatcher, err := sourceworkflow.NewDispatcher(sourceInternalURL, sourceHTTPClient)
 	if err != nil {
 		return fmt.Errorf("create source workflow dispatcher: %w", err)

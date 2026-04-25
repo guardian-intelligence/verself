@@ -57,6 +57,29 @@ sys.stdout.write(result.stdout)
 '" >"${output_path}"
 }
 
+wait_for_postgres_rows() {
+  local db="$1"
+  local sql="$2"
+  local output_path="$3"
+  local min_rows="$4"
+  local label="$5"
+  local rows="0"
+  local attempts=$((clickhouse_timeout_seconds / 2))
+  if (( attempts < 1 )); then
+    attempts=1
+  fi
+  for _ in $(seq 1 "${attempts}"); do
+    remote_psql "${db}" "${sql}" "${output_path}"
+    rows="$(grep -cv '^[[:space:]]*$' "${output_path}" || true)"
+    if (( rows >= min_rows )); then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "Postgres assertion failed for ${label}: got ${rows}, expected >= ${min_rows}" >&2
+  return 1
+}
+
 api_request() {
   local method="$1"
   local path="$2"
@@ -268,12 +291,12 @@ mkdir -p "${git_workdir}/.forgejo/workflows"
 cat >"${git_workdir}/.forgejo/workflows/proof.yml" <<'EOF'
 name: proof
 on:
-  workflow_dispatch:
+  push:
 jobs:
   proof:
-    runs-on: metal-4vcpu-ubuntu-2404
+    runs-on: [self-hosted, linux, x64, metal-4vcpu-ubuntu-2404]
     steps:
-      - run: echo source proof
+      - run: echo source proof "$(uname -m)"
 EOF
 git -C "${git_workdir}" add README.md .forgejo/workflows/proof.yml
 git -C "${git_workdir}" commit -m "source proof ${run_id}" >/dev/null
@@ -302,7 +325,6 @@ PY
 
 api_request "GET" "/api/v1/repos/${repo_id}" "${artifact_dir}/responses/get-repository.json"
 api_request "GET" "/api/v1/repos/${repo_id}/refs" "${artifact_dir}/responses/list-refs.json"
-api_request "GET" "/api/v1/repos/${repo_id}/ci-runs" "${artifact_dir}/responses/list-ci-runs.json"
 api_request "GET" "/api/v1/repos/${repo_id}/tree?ref=main" "${artifact_dir}/responses/get-tree.json"
 
 cat >"${artifact_dir}/payloads/create-checkout-grant.json" <<'EOF'
@@ -356,6 +378,8 @@ fi
 backend_owner="$(cut -f4 "${artifact_dir}/postgres/repository-backend.tsv" | head -n 1)"
 backend_repo="$(cut -f5 "${artifact_dir}/postgres/repository-backend.tsv" | head -n 1)"
 backend_repo_id="$(cut -f6 "${artifact_dir}/postgres/repository-backend.tsv" | head -n 1)"
+backend_full_name="${backend_owner}/${backend_repo}"
+escaped_backend_full_name="${backend_full_name//\'/\'\'}"
 
 remote_psql source_code_hosting "
 SELECT credential_id, org_id, org_path, actor_id, username, token_prefix, state, expires_at > now() AS unexpired, last_used_at IS NOT NULL AS used
@@ -378,68 +402,106 @@ if ! grep -q $'^main\t' "${artifact_dir}/postgres/ref-heads.tsv"; then
   exit 1
 fi
 
-remote_psql source_code_hosting "
-SELECT ci_run_id, actor_id, ref_name, commit_sha, trigger_event, state,
-       COALESCE(sandbox_execution_id::text, ''), COALESCE(sandbox_attempt_id::text, '')
-FROM source_ci_runs
-WHERE repo_id = '${escaped_repo_id}'::uuid
-ORDER BY created_at DESC;
-" "${artifact_dir}/postgres/ci-runs.tsv"
-if ! grep -q $'\tmain\t' "${artifact_dir}/postgres/ci-runs.tsv"; then
-  echo "source_ci_runs did not contain queued main CI run" >&2
-  exit 1
-fi
-read -r ci_run_id ci_actor_id sandbox_execution_id sandbox_attempt_id <<<"$(
-  python3 - "${artifact_dir}/postgres/ci-runs.tsv" <<'PY'
-import csv
-import sys
-
-rows = list(csv.reader(open(sys.argv[1], encoding="utf-8"), delimiter="\t"))
-for row in rows:
-    if len(row) >= 8 and row[2] == "main":
-        print("\t".join([row[0], row[1], row[6], row[7]]))
-        raise SystemExit(0)
-raise SystemExit("main CI run row missing")
-PY
-)"
-if [[ -z "${sandbox_execution_id}" || -z "${sandbox_attempt_id}" ]]; then
-  echo "source_ci_runs main row was not submitted to sandbox-rental-service" >&2
-  exit 1
-fi
-
-escaped_sandbox_execution_id="${sandbox_execution_id//\'/\'\'}"
-escaped_sandbox_attempt_id="${sandbox_attempt_id//\'/\'\'}"
-
 remote_psql sandbox_rental "
-SELECT e.execution_id, a.attempt_id, e.org_id, e.actor_id, e.source_kind, e.workload_kind,
-       e.external_provider, e.external_task_id, e.source_ref, e.state, a.state
-FROM executions e
-JOIN execution_attempts a ON a.execution_id = e.execution_id
-WHERE e.execution_id = '${escaped_sandbox_execution_id}'::uuid
-  AND a.attempt_id = '${escaped_sandbox_attempt_id}'::uuid;
-" "${artifact_dir}/postgres/sandbox-source-ci-execution.tsv"
-python3 - "${artifact_dir}/postgres/sandbox-source-ci-execution.tsv" "${org_id}" "${ci_actor_id}" "${ci_run_id}" <<'PY'
+SELECT provider, provider_repository_id, org_id, source_repository_id, provider_owner, provider_repo, repository_full_name, active
+FROM runner_provider_repositories
+WHERE provider = 'forgejo'
+  AND source_repository_id = '${escaped_repo_id}'::uuid;
+" "${artifact_dir}/postgres/runner-provider-repository.tsv"
+python3 - "${artifact_dir}/postgres/runner-provider-repository.tsv" "${org_id}" "${backend_repo_id}" "${backend_owner}" "${backend_repo}" <<'PY'
 import csv
 import sys
 
 rows = list(csv.reader(open(sys.argv[1], encoding="utf-8"), delimiter="\t"))
 if len(rows) != 1:
-    raise SystemExit("expected one sandbox execution row for source CI")
-row = rows[0]
-_, _, org_id, actor_id, source_kind, workload_kind, external_provider, external_task_id, source_ref, execution_state, attempt_state = row
-expected_org_id, expected_actor_id, expected_ci_run_id = sys.argv[2:5]
-if org_id != expected_org_id or actor_id != expected_actor_id:
-    raise SystemExit("sandbox source CI attribution mismatch")
-if source_kind != "source_code_hosting" or workload_kind != "direct":
-    raise SystemExit("sandbox source CI source/workload kind mismatch")
-if external_provider != "source-code-hosting-service" or external_task_id != expected_ci_run_id:
-    raise SystemExit("sandbox source CI external task linkage mismatch")
-if "source-code-hosting://repos/" not in source_ref:
-    raise SystemExit("sandbox source CI source_ref did not identify source repository")
-if execution_state not in {"queued", "reserved", "launching", "running", "finalizing", "succeeded", "failed"}:
-    raise SystemExit("unexpected sandbox execution state " + execution_state)
-if attempt_state not in {"queued", "reserved", "launching", "running", "finalizing", "succeeded", "failed"}:
-    raise SystemExit("unexpected sandbox attempt state " + attempt_state)
+    raise SystemExit("expected one sandbox runner repository registration row")
+provider, provider_repo_id, org_id, source_repo_id, provider_owner, provider_repo, repository_full_name, active = rows[0]
+expected_org_id, expected_repo_id, expected_owner, expected_repo = sys.argv[2:6]
+if provider != "forgejo" or provider_repo_id != expected_repo_id or org_id != expected_org_id:
+    raise SystemExit("runner repository registration did not match source backend")
+if provider_owner != expected_owner or provider_repo != expected_repo or active != "t":
+    raise SystemExit("runner repository registration owner/repo/active mismatch")
+PY
+
+if [[ ! "${backend_repo_id}" =~ ^[0-9]+$ ]]; then
+  echo "Forgejo backend repo id was not numeric: ${backend_repo_id}" >&2
+  exit 1
+fi
+
+wait_for_postgres_rows sandbox_rental "
+SELECT provider_job_id, provider_repository_id, repository_full_name, status, labels_json
+FROM runner_jobs
+WHERE provider = 'forgejo'
+  AND provider_repository_id = ${backend_repo_id}
+ORDER BY updated_at DESC;
+" "${artifact_dir}/postgres/forgejo-runner-jobs.tsv" 1 "Forgejo runner job demand"
+python3 - "${artifact_dir}/postgres/forgejo-runner-jobs.tsv" <<'PY'
+import csv
+import json
+import sys
+
+rows = list(csv.reader(open(sys.argv[1], encoding="utf-8"), delimiter="\t"))
+labels = set()
+for row in rows:
+    if len(row) >= 5:
+        labels.update(json.loads(row[4] or "[]"))
+required = {"self-hosted", "linux", "x64", "metal-4vcpu-ubuntu-2404"}
+missing = required - labels
+if missing:
+    raise SystemExit("Forgejo runner job labels missing: " + ", ".join(sorted(missing)))
+PY
+
+wait_for_postgres_rows sandbox_rental "
+SELECT e.execution_id, a.attempt_id, j.provider_job_id, ra.allocation_id,
+       e.state, ra.state, e.source_kind, e.workload_kind, e.external_provider, e.external_task_id,
+       e.org_id, e.actor_id, j.labels_json, COALESCE(a.billing_job_id, 0),
+       COALESCE(bw.window_count, 0), COALESCE(bw.reserved_charge_units, 0), COALESCE(bw.billed_charge_units, 0),
+       COALESCE(bw.writeoff_charge_units, 0)
+FROM runner_allocations ra
+JOIN executions e ON e.execution_id = ra.execution_id
+JOIN execution_attempts a ON a.execution_id = e.execution_id
+LEFT JOIN runner_jobs j ON j.provider = ra.provider AND j.provider_job_id = ra.requested_for_provider_job_id
+LEFT JOIN LATERAL (
+  SELECT count(*) AS window_count,
+         sum(reserved_charge_units) AS reserved_charge_units,
+         sum(billed_charge_units) AS billed_charge_units,
+         sum(writeoff_charge_units) AS writeoff_charge_units
+  FROM execution_billing_windows w
+  WHERE w.attempt_id = a.attempt_id
+) bw ON true
+WHERE ra.provider = 'forgejo'
+  AND ra.provider_repository_id = ${backend_repo_id}
+  AND e.source_ref = '${escaped_backend_full_name}'
+  AND e.state = 'succeeded'
+ORDER BY e.updated_at DESC
+LIMIT 1;
+" "${artifact_dir}/postgres/forgejo-runner-execution.tsv" 1 "Forgejo runner execution"
+
+IFS=$'\t' read -r forgejo_execution_id forgejo_attempt_id forgejo_provider_job_id forgejo_allocation_id forgejo_execution_state forgejo_allocation_state forgejo_source_kind forgejo_workload_kind forgejo_external_provider forgejo_external_task_id forgejo_org_id forgejo_actor_id forgejo_labels_json forgejo_billing_job_id forgejo_billing_window_count forgejo_reserved_charge_units forgejo_billed_charge_units forgejo_writeoff_charge_units <"${artifact_dir}/postgres/forgejo-runner-execution.tsv"
+python3 - "${forgejo_execution_id}" "${forgejo_attempt_id}" "${forgejo_provider_job_id}" "${forgejo_allocation_id}" "${forgejo_execution_state}" "${forgejo_source_kind}" "${forgejo_workload_kind}" "${forgejo_external_provider}" "${forgejo_external_task_id}" "${forgejo_org_id}" "${org_id}" "${forgejo_actor_id}" "${backend_repo_id}" "${forgejo_labels_json}" "${forgejo_billing_job_id}" "${forgejo_billing_window_count}" "${forgejo_reserved_charge_units}" <<'PY'
+import json
+import sys
+from uuid import UUID
+
+execution_id, attempt_id, provider_job_id, allocation_id, execution_state, source_kind, workload_kind, external_provider, external_task_id, actual_org_id, expected_org_id, actor_id, backend_repo_id, labels_json, billing_job_id, billing_window_count, reserved_charge_units = sys.argv[1:18]
+UUID(execution_id)
+UUID(attempt_id)
+UUID(allocation_id)
+if execution_state != "succeeded":
+    raise SystemExit("Forgejo runner execution did not succeed")
+if source_kind != "forgejo_actions" or workload_kind != "runner" or external_provider != "forgejo":
+    raise SystemExit("Forgejo runner execution metadata was not provider-neutral runner metadata")
+if provider_job_id != external_task_id:
+    raise SystemExit("Forgejo runner external_task_id did not match provider job id")
+if actual_org_id != expected_org_id:
+    raise SystemExit("Forgejo runner execution org attribution mismatch")
+if actor_id != "forgejo-actions:" + backend_repo_id:
+    raise SystemExit("Forgejo runner execution actor attribution mismatch")
+labels = set(json.loads(labels_json or "[]"))
+if "metal-4vcpu-ubuntu-2404" not in labels:
+    raise SystemExit("Forgejo runner execution did not preserve runner-class label")
+if int(billing_job_id) <= 0 or int(billing_window_count) < 1 or int(reserved_charge_units) <= 0:
+    raise SystemExit("Forgejo runner execution did not record billing attribution")
 PY
 
 signed_forgejo_webhook "${artifact_dir}/responses/forgejo-webhook.json" "${backend_owner}" "${backend_repo}" "${backend_repo_id}"
@@ -470,12 +532,7 @@ SELECT event_type, result, trace_id
 FROM source_events
 WHERE (
     repo_id = '${escaped_repo_id}'::uuid
-    AND event_type IN ('source.repo.created', 'source.git.refs_refreshed', 'source.ci_run.queued', 'source.checkout_grant.created', 'source.webhook.repository')
-  )
-  OR (
-    repo_id = '${escaped_repo_id}'::uuid
-    AND event_type = 'source.ci_run.sandbox_submitted'
-    AND details->>'ci_run_id' = '${ci_run_id}'
+    AND event_type IN ('source.repo.created', 'source.git.refs_refreshed', 'source.checkout_grant.created', 'source.webhook.repository')
   )
   OR (
     event_type IN ('source.git_credential.created', 'source.git_credential.used')
@@ -494,8 +551,6 @@ missing = {
     "source.git_credential.used",
     "source.repo.created",
     "source.git.refs_refreshed",
-    "source.ci_run.queued",
-    "source.ci_run.sandbox_submitted",
     "source.checkout_grant.created",
     "source.webhook.repository",
 } - events
@@ -505,13 +560,185 @@ if any(row[1] != "allowed" for row in rows if row):
     raise SystemExit("expected all source proof event rows to be allowed")
 PY
 
+(
+  cd "${VERIFICATION_PLATFORM_ROOT}"
+  ./scripts/clickhouse.sh --query "SYSTEM FLUSH LOGS"
+) >"${artifact_dir}/clickhouse/flush-logs.tsv"
+
+wait_for_clickhouse_count forge_metal "
+  SELECT count()
+  FROM job_events
+	  WHERE execution_id = toUUID({forgejo_execution_id:String})
+	    AND org_id = {org_id:UInt64}
+	    AND source_kind = 'forgejo_actions'
+	    AND workload_kind = 'runner'
+	    AND external_provider = 'forgejo'
+	    AND provider = 'forgejo'
+	    AND external_task_id = {forgejo_provider_job_id:String}
+	    AND provider_job_id = toUInt64({forgejo_provider_job_id:String})
+	    AND billing_job_id > 0
+	    AND status = 'succeeded'
+	" 1 "${artifact_dir}/clickhouse/forgejo-job-event-count.tsv" \
+	  --param_forgejo_execution_id="${forgejo_execution_id}" \
+	  --param_forgejo_provider_job_id="${forgejo_provider_job_id}" \
+	  --param_org_id="${org_id}"
+
+wait_for_clickhouse_count default "
+  SELECT count()
+  FROM otel_traces
+  WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 60 SECOND
+    AND ServiceName = 'sandbox-rental-service'
+    AND SpanName IN (
+      'forgejo.webhook.actions',
+      'forgejo.runner.repository.sync',
+      'forgejo.capacity.reconcile',
+      'forgejo.runner.allocate',
+      'runner.bootstrap.consume',
+      'sandbox-rental.execution.run'
+    )
+" 6 "${artifact_dir}/clickhouse/forgejo-runner-spans-count.tsv"
+
+wait_for_clickhouse_count default "
+  SELECT count()
+  FROM otel_traces
+  WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 60 SECOND
+    AND ServiceName = 'sandbox-rental-service'
+    AND SpanName = 'forgejo.webhook.actions'
+    AND SpanAttributes['forgejo.event'] = 'push'
+    AND SpanAttributes['forgejo.repository_id'] = {forgejo_repository_id:String}
+" 1 "${artifact_dir}/clickhouse/forgejo-push-webhook-span-count.tsv" \
+  --param_forgejo_repository_id="${backend_repo_id}"
+
+wait_for_clickhouse_count default "
+  SELECT count()
+  FROM otel_traces
+  WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 60 SECOND
+    AND ServiceName = 'sandbox-rental-service'
+    AND SpanName = 'sandbox-rental.execution.run'
+    AND SpanAttributes['execution.id'] = {forgejo_execution_id:String}
+" 1 "${artifact_dir}/clickhouse/forgejo-execution-run-span-count.tsv" \
+  --param_forgejo_execution_id="${forgejo_execution_id}"
+
+wait_for_clickhouse_count default "
+  SELECT count()
+  FROM otel_traces
+  WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 60 SECOND
+    AND ServiceName = 'vm-orchestrator'
+    AND SpanName IN ('rpc.AcquireLease', 'rpc.StartExec', 'rpc.WaitExec', 'rpc.ReleaseLease')
+    AND TraceId IN (
+      SELECT trace_id
+      FROM forge_metal.job_events
+      WHERE execution_id = toUUID({forgejo_execution_id:String})
+        AND trace_id != ''
+    )
+" 4 "${artifact_dir}/clickhouse/forgejo-vm-orchestrator-spans-count.tsv" \
+  --param_forgejo_execution_id="${forgejo_execution_id}"
+
+(
+  cd "${VERIFICATION_PLATFORM_ROOT}"
+  ./scripts/clickhouse.sh \
+    --database forge_metal \
+    --param_forgejo_execution_id="${forgejo_execution_id}" \
+    --query "
+      SELECT
+        execution_id,
+        external_provider,
+        source_kind,
+        workload_kind,
+	        runner_class,
+	        provider,
+	        provider_job_id,
+	        repository_full_name,
+	        job_name,
+	        billing_job_id,
+	        reserved_charge_units,
+	        billed_charge_units,
+	        writeoff_charge_units,
+	        duration_ms,
+        started_at,
+        completed_at
+      FROM job_events
+      WHERE execution_id = toUUID({forgejo_execution_id:String})
+      ORDER BY created_at DESC
+      FORMAT TSVWithNames
+    "
+) >"${artifact_dir}/clickhouse/forgejo-job-timing.tsv"
+
+(
+  cd "${VERIFICATION_PLATFORM_ROOT}"
+  ./scripts/clickhouse.sh \
+    --database default \
+    --param_window_start="${window_start}" \
+    --param_window_end="${window_end}" \
+    --query "
+      SELECT
+        multiIf(
+          ServiceName = 'sandbox-rental-service' AND SpanName = 'forgejo.webhook.actions', '01_webhook',
+          ServiceName = 'sandbox-rental-service' AND SpanName = 'forgejo.runner.repository.sync', '02_repository_sync',
+          ServiceName = 'sandbox-rental-service' AND SpanName = 'forgejo.capacity.reconcile', '03_capacity_reconcile',
+          ServiceName = 'sandbox-rental-service' AND SpanName = 'forgejo.runner.allocate', '04_runner_allocate',
+          ServiceName = 'sandbox-rental-service' AND SpanName = 'sandbox-rental.execution.submit', '05_execution_submit',
+          ServiceName = 'sandbox-rental-service' AND SpanName = 'runner.bootstrap.consume', '06_runner_bootstrap',
+          ServiceName = 'sandbox-rental-service' AND SpanName = 'sandbox-rental.execution.run', '07_execution_run',
+          ''
+        ) AS stage,
+        Timestamp,
+        ServiceName,
+        SpanName,
+        TraceId,
+        SpanId,
+        ParentSpanId,
+        SpanAttributes['execution.id'] AS execution_id,
+        SpanAttributes['runner.allocation_id'] AS allocation_id,
+        SpanAttributes['forgejo.repository_id'] AS forgejo_repository_id,
+        SpanAttributes['forgejo.job_id'] AS forgejo_job_id
+      FROM otel_traces
+      WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 60 SECOND
+        AND stage != ''
+      ORDER BY Timestamp, stage
+      FORMAT TSVWithNames
+	    "
+	) >"${artifact_dir}/clickhouse/forgejo-runner-boundary-sequence.tsv"
+	python3 - "${artifact_dir}/clickhouse/forgejo-runner-boundary-sequence.tsv" <<'PY'
+import csv
+import sys
+
+rows = list(csv.DictReader(open(sys.argv[1], encoding="utf-8"), delimiter="\t"))
+if not any(row["stage"] == "01_webhook" for row in rows):
+    raise SystemExit("missing Forgejo webhook span")
+
+scheduler_required = [
+    "02_repository_sync",
+    "03_capacity_reconcile",
+    "04_runner_allocate",
+    "05_execution_submit",
+    "07_execution_run",
+]
+by_trace = {}
+for index, row in enumerate(rows):
+    by_trace.setdefault(row["TraceId"], []).append((index, row))
+for trace_id, trace_rows in by_trace.items():
+    first = {}
+    for index, row in trace_rows:
+        first.setdefault(row["stage"], (index, row))
+    if all(stage in first for stage in scheduler_required):
+        positions = [first[stage][0] for stage in scheduler_required]
+        if positions == sorted(positions):
+            allocation_id = first["04_runner_allocate"][1]["allocation_id"]
+            bootstrap_rows = [row for _, row in trace_rows if row["stage"] == "06_runner_bootstrap"]
+            if any(row["allocation_id"] == allocation_id for row in bootstrap_rows):
+                raise SystemExit(0)
+            raise SystemExit("Forgejo bootstrap span was not observed in the scheduler trace for allocation " + allocation_id)
+raise SystemExit("missing ordered Forgejo scheduler boundary trace with stages: " + ", ".join(scheduler_required))
+PY
+
 wait_for_clickhouse_count default "
   SELECT count()
   FROM otel_traces
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
     AND ServiceName = 'source-code-hosting-service'
-    AND SpanName IN ('source.git_credential.create', 'source.git.receive', 'source.git.auth', 'source.git.repository.ensure', 'source.git.receive.apply', 'source.sandbox.ci_submit', 'source.repo.list', 'source.repo.read', 'source.refs.list', 'source.ci_runs.list', 'source.tree.get', 'source.checkout_grant.create')
-" 12 "${artifact_dir}/clickhouse/source-business-spans-count.tsv"
+    AND SpanName IN ('source.git_credential.create', 'source.git.receive', 'source.git.auth', 'source.git.repository.ensure', 'source.git.receive.apply', 'source.runner.repository.register', 'source.repo.list', 'source.repo.read', 'source.refs.list', 'source.tree.get', 'source.checkout_grant.create')
+" 10 "${artifact_dir}/clickhouse/source-business-spans-count.tsv"
 
 wait_for_clickhouse_count default "
   SELECT count()
@@ -526,8 +753,8 @@ wait_for_clickhouse_count default "
   FROM otel_traces
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
     AND ServiceName = 'source-code-hosting-service'
-    AND SpanName IN ('source.pg.git_credential.create', 'source.pg.git_credential.mark_used', 'source.pg.repo.create_from_git', 'source.pg.repo.list', 'source.pg.repo.get', 'source.pg.repo.get_by_slug', 'source.pg.refs.replace', 'source.pg.refs.list_cached', 'source.pg.ci_run.create_queued', 'source.pg.ci_run.mark_sandbox_submitted', 'source.pg.ci_run.list', 'source.pg.checkout_grant.create')
-" 12 "${artifact_dir}/clickhouse/source-postgres-spans-count.tsv"
+    AND SpanName IN ('source.pg.git_credential.create', 'source.pg.git_credential.mark_used', 'source.pg.repo.create_from_git', 'source.pg.repo.list', 'source.pg.repo.get', 'source.pg.repo.get_by_slug', 'source.pg.refs.replace', 'source.pg.refs.list_cached', 'source.pg.checkout_grant.create')
+" 9 "${artifact_dir}/clickhouse/source-postgres-spans-count.tsv"
 
 wait_for_clickhouse_count default "
   SELECT count()
@@ -546,9 +773,9 @@ wait_for_clickhouse_count default "
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
     AND (
       (ServiceName = 'source-code-hosting-service' AND SpanName = 'auth.spiffe.mtls.client' AND position(arrayElement(SpanAttributes, 'spiffe.expected_server_id'), 'sandbox-rental-service') > 0)
-      OR (ServiceName = 'sandbox-rental-service' AND SpanName IN ('auth.spiffe.mtls.server', 'sandbox-rental.source_ci.submit', 'sandbox-rental.execution.submit'))
+      OR (ServiceName = 'sandbox-rental-service' AND SpanName IN ('auth.spiffe.mtls.server', 'sandbox-rental.runner_repository.register'))
     )
-" 4 "${artifact_dir}/clickhouse/source-sandbox-boundary-spans-count.tsv"
+" 3 "${artifact_dir}/clickhouse/source-sandbox-boundary-spans-count.tsv"
 
 (
   cd "${VERIFICATION_PLATFORM_ROOT}"
@@ -559,11 +786,10 @@ wait_for_clickhouse_count default "
     --query "
       SELECT
         multiIf(
-          ServiceName = 'source-code-hosting-service' AND SpanName = 'source.sandbox.ci_submit', '01_source_submit',
+          ServiceName = 'source-code-hosting-service' AND SpanName = 'source.runner.repository.register', '01_source_register',
           ServiceName = 'source-code-hosting-service' AND SpanName = 'auth.spiffe.mtls.client' AND position(arrayElement(SpanAttributes, 'spiffe.expected_server_id'), 'sandbox-rental-service') > 0, '02_source_mtls_client',
           ServiceName = 'sandbox-rental-service' AND SpanName = 'auth.spiffe.mtls.server', '03_sandbox_mtls_server',
-          ServiceName = 'sandbox-rental-service' AND SpanName = 'sandbox-rental.source_ci.submit', '04_sandbox_source_ci_submit',
-          ServiceName = 'sandbox-rental-service' AND SpanName = 'sandbox-rental.execution.submit', '05_sandbox_execution_submit',
+          ServiceName = 'sandbox-rental-service' AND SpanName = 'sandbox-rental.runner_repository.register', '04_sandbox_runner_repository_register',
           ''
         ) AS stage,
         Timestamp,
@@ -584,11 +810,10 @@ import csv
 import sys
 
 required = [
-    "01_source_submit",
+    "01_source_register",
     "02_source_mtls_client",
     "03_sandbox_mtls_server",
-    "04_sandbox_source_ci_submit",
-    "05_sandbox_execution_submit",
+    "04_sandbox_runner_repository_register",
 ]
 rows = list(csv.DictReader(open(sys.argv[1], encoding="utf-8"), delimiter="\t"))
 first = {}
@@ -666,24 +891,6 @@ for required in required_any_trace:
         raise SystemExit("missing ordered source->secrets boundary stages: " + ", ".join(required))
 PY
 
-wait_for_clickhouse_count forge_metal "
-  SELECT count()
-  FROM job_events
-  WHERE created_at BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
-    AND execution_id = toUUID({sandbox_execution_id:String})
-    AND attempt_id = toUUID({sandbox_attempt_id:String})
-    AND org_id = toUInt64({org_id:String})
-    AND actor_id = {ci_actor_id:String}
-    AND source_kind = 'source_code_hosting'
-    AND external_provider = 'source-code-hosting-service'
-    AND external_task_id = {ci_run_id:String}
-" 1 "${artifact_dir}/clickhouse/sandbox-source-ci-job-events-count.tsv" \
-  --param_sandbox_execution_id="${sandbox_execution_id}" \
-  --param_sandbox_attempt_id="${sandbox_attempt_id}" \
-  --param_org_id="${org_id}" \
-  --param_ci_actor_id="${ci_actor_id}" \
-  --param_ci_run_id="${ci_run_id}"
-
 wait_for_clickhouse_count default "
   SELECT count()
   FROM otel_traces
@@ -732,6 +939,31 @@ fi
     --param_window_start="${window_start}" \
     --param_window_end="${window_end}" \
     --query "
+      SELECT count()
+      FROM otel_traces
+      WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
+        AND ServiceName = 'sandbox-rental-service'
+        AND (
+          positionCaseInsensitive(toString(SpanAttributes), 'runner_token') > 0
+          OR positionCaseInsensitive(toString(SpanAttributes), 'bootstrap_token') > 0
+          OR positionCaseInsensitive(toString(SpanAttributes), 'FORGE_METAL_RUNNER_BOOTSTRAP_TOKEN') > 0
+          OR positionCaseInsensitive(toString(SpanAttributes), 'token_url') > 0
+        )
+    "
+) >"${artifact_dir}/clickhouse/sandbox-runner-secret-span-leak-count.tsv"
+sandbox_runner_secret_span_leaks="$(tail -n 1 "${artifact_dir}/clickhouse/sandbox-runner-secret-span-leak-count.tsv" | tr -d '[:space:]')"
+if [[ "${sandbox_runner_secret_span_leaks}" != "0" ]]; then
+  echo "source proof found runner-token-like material in sandbox-rental-service span attributes" >&2
+  exit 1
+fi
+
+(
+  cd "${VERIFICATION_PLATFORM_ROOT}"
+  ./scripts/clickhouse.sh \
+    --database default \
+    --param_window_start="${window_start}" \
+    --param_window_end="${window_end}" \
+    --query "
       SELECT
         Timestamp,
         ServiceName,
@@ -751,20 +983,22 @@ fi
     "
 ) >"${artifact_dir}/clickhouse/otel-traces.tsv"
 
-python3 - "${run_json_path}" "${org_id}" "${repo_id}" "${credential_id}" "${checkout_grant_id}" "${ci_run_id}" "${sandbox_execution_id}" "${sandbox_attempt_id}" "${window_start}" "${window_end}" "${artifact_dir}" "${git_repo_url}" <<'PY'
+python3 - "${run_json_path}" "${org_id}" "${repo_id}" "${credential_id}" "${checkout_grant_id}" "${backend_repo_id}" "${forgejo_execution_id}" "${forgejo_attempt_id}" "${forgejo_provider_job_id}" "${forgejo_allocation_id}" "${window_start}" "${window_end}" "${artifact_dir}" "${git_repo_url}" <<'PY'
 import json
 import sys
 
-path, org_id, repo_id, credential_id, grant_id, ci_run_id, sandbox_execution_id, sandbox_attempt_id, window_start, window_end, artifact_dir, git_repo_url = sys.argv[1:13]
+path, org_id, repo_id, credential_id, grant_id, backend_repo_id, forgejo_execution_id, forgejo_attempt_id, forgejo_provider_job_id, forgejo_allocation_id, window_start, window_end, artifact_dir, git_repo_url = sys.argv[1:15]
 payload = json.load(open(path, encoding="utf-8"))
 payload.update({
     "org_id": org_id,
     "repo_id": repo_id,
     "git_credential_id": credential_id,
     "checkout_grant_id": grant_id,
-    "ci_run_id": ci_run_id,
-    "sandbox_execution_id": sandbox_execution_id,
-    "sandbox_attempt_id": sandbox_attempt_id,
+    "forgejo_repository_id": backend_repo_id,
+    "forgejo_runner_execution_id": forgejo_execution_id,
+    "forgejo_runner_attempt_id": forgejo_attempt_id,
+    "forgejo_runner_provider_job_id": forgejo_provider_job_id,
+    "forgejo_runner_allocation_id": forgejo_allocation_id,
     "window_start": window_start,
     "window_end": window_end,
     "artifact_dir": artifact_dir,

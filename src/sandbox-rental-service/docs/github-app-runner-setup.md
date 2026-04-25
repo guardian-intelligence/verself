@@ -134,11 +134,11 @@ jobs:
 Expected control-plane order:
 
 1. GitHub `workflow_job` webhook is verified and upserted into
-   `github_workflow_jobs`.
-2. `github.capacity.reconcile` compares queued unbound demand against active
+   `runner_jobs` with `provider = 'github'`.
+2. `runner.capacity.reconcile` compares queued unbound demand against active
    allocations for the installation/repo/runner class.
 3. Runner allocation creates GitHub runner capacity and then submits a
-   `github_runner` execution.
+   `runner` execution with `source_kind = 'github_actions'`.
 4. GitHub assignment is recorded only when webhook or polling evidence proves
    the runner identity that accepted the job.
 5. The execution path emits the same lease/exec evidence as scheduled canaries:
