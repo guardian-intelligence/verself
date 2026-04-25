@@ -28,6 +28,16 @@ func NewAPI(mux *http.ServeMux, version, listenAddr string, svc *jobs.Service, r
 	return api
 }
 
+func NewInternalAPI(mux *http.ServeMux, version, listenAddr string, svc *jobs.Service) huma.API {
+	config := huma.DefaultConfig("Sandbox Rental Service Internal API", version)
+	config.OpenAPI.Servers = []*huma.Server{{URL: serverURL(listenAddr)}}
+	api := humago.New(mux, config)
+	applyInternalAPISecurityScheme(api)
+	RegisterInternalRoutes(api, svc)
+	apiwire.ApplyOpenAPIWireDefaults(api)
+	return api
+}
+
 func serverURL(addr string) string {
 	if strings.Contains(addr, "://") {
 		return addr
@@ -42,5 +52,15 @@ func OpenAPIDowngradeYAML(version, listenAddr string) ([]byte, error) {
 
 func OpenAPIYAML(version, listenAddr string) ([]byte, error) {
 	api := NewAPI(http.NewServeMux(), version, listenAddr, nil, nil, nil, PublicAPIConfig{})
+	return api.OpenAPI().YAML()
+}
+
+func InternalOpenAPIDowngradeYAML(version, listenAddr string) ([]byte, error) {
+	api := NewInternalAPI(http.NewServeMux(), version, listenAddr, &jobs.Service{})
+	return api.OpenAPI().DowngradeYAML()
+}
+
+func InternalOpenAPIYAML(version, listenAddr string) ([]byte, error) {
+	api := NewInternalAPI(http.NewServeMux(), version, listenAddr, &jobs.Service{})
 	return api.OpenAPI().YAML()
 }

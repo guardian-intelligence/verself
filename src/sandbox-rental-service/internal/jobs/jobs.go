@@ -35,6 +35,7 @@ const (
 	SourceKindAPI               = "api"
 	SourceKindExecutionSchedule = "execution_schedule"
 	SourceKindGitHubAction      = "github_actions"
+	SourceKindSourceHosting     = "source_code_hosting"
 	SourceKindCanary            = "canary"
 	SourceKindVMSession         = "vm_session"
 	WorkloadKindDirect          = "direct"

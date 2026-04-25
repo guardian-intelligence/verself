@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"strings"
@@ -418,16 +419,20 @@ ORDER BY is_default DESC, ref_name`, orgID, repoID)
 	return refs, nil
 }
 
-func (s Store) CreateQueuedCIRunsForRefs(ctx context.Context, actorID string, repo Repository, refs []Ref) (int, error) {
+func (s Store) CreateQueuedCIRunsForRefs(ctx context.Context, actorID string, repo Repository, refs []Ref) ([]CIRun, error) {
 	ctx, span := storeTracer.Start(ctx, "source.pg.ci_run.create_queued")
 	defer span.End()
+	actorID = strings.TrimSpace(actorID)
+	if actorID == "" {
+		return nil, ErrInvalid
+	}
 	now := s.now()
 	tx, err := s.PG.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return 0, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+		return nil, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	defer rollback(ctx, tx)
-	inserted := 0
+	inserted := []CIRun{}
 	for _, ref := range refs {
 		ref.Name = strings.TrimSpace(ref.Name)
 		ref.Commit = strings.TrimSpace(ref.Commit)
@@ -436,31 +441,34 @@ func (s Store) CreateQueuedCIRunsForRefs(ctx context.Context, actorID string, re
 		}
 		row := tx.QueryRow(ctx, `
 INSERT INTO source_ci_runs (
-    ci_run_id, org_id, repo_id, ref_name, commit_sha, trigger_event, state, trace_id, created_at, updated_at
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)
+    ci_run_id, org_id, repo_id, actor_id, ref_name, commit_sha, trigger_event, state, trace_id, created_at, updated_at
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10)
 ON CONFLICT (repo_id, ref_name, commit_sha, trigger_event) DO NOTHING
-RETURNING ci_run_id`,
-			uuid.New(), repo.OrgID, repo.RepoID, ref.Name, ref.Commit, "git.push", CIRunStateQueued, traceIDFromContext(ctx), now)
-		var ciRunID uuid.UUID
-		if err := row.Scan(&ciRunID); err != nil {
-			if err == pgx.ErrNoRows {
+RETURNING ci_run_id, org_id, repo_id, actor_id, ref_name, commit_sha, trigger_event, state,
+       COALESCE(sandbox_execution_id, '00000000-0000-0000-0000-000000000000'::uuid),
+       COALESCE(sandbox_attempt_id, '00000000-0000-0000-0000-000000000000'::uuid),
+       failure_reason, trace_id, created_at, updated_at, started_at, completed_at`,
+			uuid.New(), repo.OrgID, repo.RepoID, actorID, ref.Name, ref.Commit, "git.push", CIRunStateQueued, traceIDFromContext(ctx), now)
+		run, err := scanCIRun(row)
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
 				continue
 			}
-			return 0, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+			return nil, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 		}
-		inserted++
+		inserted = append(inserted, run)
 		if err := s.insertEventTx(ctx, tx, repo.OrgID, actorID, repo.RepoID, "source.ci_run.queued", "allowed", map[string]any{
-			"ci_run_id":  ciRunID.String(),
+			"ci_run_id":  run.CIRunID.String(),
 			"ref":        ref.Name,
 			"commit_sha": ref.Commit,
 		}); err != nil {
-			return 0, err
+			return nil, err
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return 0, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+		return nil, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
-	span.SetAttributes(attribute.String("source.repo_id", repo.RepoID.String()), attribute.Int("source.ci_run_count", inserted))
+	span.SetAttributes(attribute.String("source.repo_id", repo.RepoID.String()), attribute.Int("source.ci_run_count", len(inserted)))
 	return inserted, nil
 }
 
@@ -468,7 +476,7 @@ func (s Store) ListCIRuns(ctx context.Context, orgID uint64, repoID uuid.UUID) (
 	ctx, span := storeTracer.Start(ctx, "source.pg.ci_run.list")
 	defer span.End()
 	rows, err := s.PG.Query(ctx, `
-SELECT ci_run_id, org_id, repo_id, ref_name, commit_sha, trigger_event, state,
+SELECT ci_run_id, org_id, repo_id, actor_id, ref_name, commit_sha, trigger_event, state,
        COALESCE(sandbox_execution_id, '00000000-0000-0000-0000-000000000000'::uuid),
        COALESCE(sandbox_attempt_id, '00000000-0000-0000-0000-000000000000'::uuid),
        failure_reason, trace_id, created_at, updated_at, started_at, completed_at
@@ -493,6 +501,95 @@ LIMIT 100`, orgID, repoID)
 	}
 	span.SetAttributes(attribute.String("source.repo_id", repoID.String()), attribute.Int("source.ci_run_count", len(runs)))
 	return runs, nil
+}
+
+func (s Store) MarkCIRunSandboxSubmitted(ctx context.Context, run CIRun, submission SandboxCISubmission) (CIRun, error) {
+	ctx, span := storeTracer.Start(ctx, "source.pg.ci_run.mark_sandbox_submitted")
+	defer span.End()
+	if run.CIRunID == uuid.Nil || submission.ExecutionID == uuid.Nil || submission.AttemptID == uuid.Nil {
+		return CIRun{}, ErrInvalid
+	}
+	now := s.now()
+	tx, err := s.PG.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return CIRun{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	defer rollback(ctx, tx)
+	row := tx.QueryRow(ctx, `
+UPDATE source_ci_runs
+SET sandbox_execution_id = $2,
+    sandbox_attempt_id = $3,
+    updated_at = $4
+WHERE ci_run_id = $1
+RETURNING ci_run_id, org_id, repo_id, actor_id, ref_name, commit_sha, trigger_event, state,
+       COALESCE(sandbox_execution_id, '00000000-0000-0000-0000-000000000000'::uuid),
+       COALESCE(sandbox_attempt_id, '00000000-0000-0000-0000-000000000000'::uuid),
+       failure_reason, trace_id, created_at, updated_at, started_at, completed_at`,
+		run.CIRunID, submission.ExecutionID, submission.AttemptID, now)
+	updated, err := scanCIRun(row)
+	if err != nil {
+		return CIRun{}, err
+	}
+	if err := s.insertEventTx(ctx, tx, updated.OrgID, updated.ActorID, updated.RepoID, "source.ci_run.sandbox_submitted", "allowed", map[string]any{
+		"ci_run_id":            updated.CIRunID.String(),
+		"sandbox_execution_id": updated.SandboxExecutionID.String(),
+		"sandbox_attempt_id":   updated.SandboxAttemptID.String(),
+		"ref":                  updated.RefName,
+		"commit_sha":           updated.CommitSHA,
+	}); err != nil {
+		return CIRun{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return CIRun{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	span.SetAttributes(
+		attribute.String("source.ci_run_id", updated.CIRunID.String()),
+		attribute.String("sandbox.execution_id", updated.SandboxExecutionID.String()),
+		attribute.String("sandbox.attempt_id", updated.SandboxAttemptID.String()),
+	)
+	return updated, nil
+}
+
+func (s Store) MarkCIRunFailed(ctx context.Context, run CIRun, failureReason string) error {
+	ctx, span := storeTracer.Start(ctx, "source.pg.ci_run.mark_failed")
+	defer span.End()
+	if run.CIRunID == uuid.Nil {
+		return ErrInvalid
+	}
+	now := s.now()
+	reason := strings.TrimSpace(failureReason)
+	if reason == "" {
+		reason = "source ci run failed"
+	}
+	tx, err := s.PG.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	defer rollback(ctx, tx)
+	if _, err := tx.Exec(ctx, `
+UPDATE source_ci_runs
+SET state = 'failed',
+    failure_reason = $2,
+    completed_at = $3,
+    updated_at = $3
+WHERE ci_run_id = $1`, run.CIRunID, reason, now); err != nil {
+		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	if err := s.insertEventTx(ctx, tx, run.OrgID, run.ActorID, run.RepoID, "source.ci_run.submit_failed", "error", map[string]any{
+		"ci_run_id":       run.CIRunID.String(),
+		"ref":             run.RefName,
+		"commit_sha":      run.CommitSHA,
+		"failure_reason":  reason,
+		"trigger_event":   run.TriggerEvent,
+		"sandbox_service": "sandbox-rental-service",
+	}); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	span.SetAttributes(attribute.String("source.ci_run_id", run.CIRunID.String()))
+	return nil
 }
 
 func (s Store) CreateCheckoutGrant(ctx context.Context, principal Principal, repo Repository, ref, pathPrefix string, ttl time.Duration) (CheckoutGrant, error) {
@@ -926,6 +1023,7 @@ func scanCIRun(row ciRunScanner) (CIRun, error) {
 		&run.CIRunID,
 		&run.OrgID,
 		&run.RepoID,
+		&run.ActorID,
 		&run.RefName,
 		&run.CommitSHA,
 		&run.TriggerEvent,

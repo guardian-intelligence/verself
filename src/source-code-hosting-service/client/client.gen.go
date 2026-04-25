@@ -37,6 +37,7 @@ type Blob struct {
 
 // CIRun defines model for CIRun.
 type CIRun struct {
+	ActorId            string     `json:"actor_id"`
 	CiRunId            string     `json:"ci_run_id"`
 	CommitSha          string     `json:"commit_sha"`
 	CompletedAt        *time.Time `json:"completed_at,omitempty"`

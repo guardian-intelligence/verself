@@ -288,9 +288,11 @@
     content: |
       [Unit]
       Description=Sandbox Rental Service
-      After=forge-metal-firewall.target network.target postgresql.service clickhouse-server.service spire-agent.service secrets-service.service source-code-hosting-service.service
+      After=forge-metal-firewall.target network.target postgresql.service clickhouse-server.service
+      After=spire-agent.service secrets-service.service source-code-hosting-service.service
       Requires=forge-metal-firewall.target
-      Wants=postgresql.service clickhouse-server.service spire-agent.service secrets-service.service source-code-hosting-service.service
+      Wants=postgresql.service clickhouse-server.service spire-agent.service
+      Wants=secrets-service.service source-code-hosting-service.service
 
       [Service]
       Type=simple
@@ -299,6 +301,7 @@
       SupplementaryGroups={{ sandbox_rental_service_vm_orchestrator_socket_group }} {{ spire_workload_group }}
       LoadCredential=clickhouse-ca-cert:/etc/clickhouse-server/tls/server-ca.pem
       Environment=SANDBOX_LISTEN_ADDR={{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}
+      Environment=SANDBOX_INTERNAL_LISTEN_ADDR={{ services.sandbox_rental.host }}:{{ services.sandbox_rental.internal_port }}
       Environment=SANDBOX_PG_DSN=postgres://sandbox_rental@/sandbox_rental?host=/var/run/postgresql&sslmode=disable
       Environment=SANDBOX_GOVERNANCE_AUDIT_URL={{ sandbox_rental_governance_audit_url }}
       Environment=SANDBOX_SECRETS_URL=https://{{ services.secrets_service.host }}:{{ services.secrets_service.internal_port }}
@@ -377,9 +380,11 @@
     content: |
       [Unit]
       Description=Sandbox Rental Recurring Worker
-      After=forge-metal-firewall.target network.target postgresql.service temporal-server.service spire-agent.service otelcol.service source-code-hosting-service.service
+      After=forge-metal-firewall.target network.target postgresql.service temporal-server.service
+      After=spire-agent.service otelcol.service source-code-hosting-service.service
       Requires=forge-metal-firewall.target
-      Wants=postgresql.service temporal-server.service spire-agent.service otelcol.service source-code-hosting-service.service
+      Wants=postgresql.service temporal-server.service spire-agent.service otelcol.service
+      Wants=source-code-hosting-service.service
 
       [Service]
       Type=simple
@@ -448,6 +453,7 @@
 - name: Set sandbox-rental listen port fact
   ansible.builtin.set_fact:
     sandbox_rental_service_listen_port: "{{ services.sandbox_rental.port }}"
+    sandbox_rental_service_internal_listen_port: "{{ services.sandbox_rental.internal_port }}"
 
 - name: Wait for sandbox-rental-service listener to be present
   ansible.builtin.command:
@@ -457,6 +463,15 @@
   retries: 30
   delay: 1
   until: sandbox_rental_service_listener.stdout is search(':' ~ (sandbox_rental_service_listen_port | string))
+
+- name: Wait for sandbox-rental-service internal listener to be present
+  ansible.builtin.command:
+    cmd: "ss -ltn '( sport = :{{ sandbox_rental_service_internal_listen_port }} )'"
+  register: sandbox_rental_service_internal_listener
+  changed_when: false
+  retries: 30
+  delay: 1
+  until: sandbox_rental_service_internal_listener.stdout is search(':' ~ (sandbox_rental_service_internal_listen_port | string))
 
 - name: Wait for sandbox-rental-recurring-worker to be active
   fm_systemd_status:

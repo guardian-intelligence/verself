@@ -38,6 +38,8 @@ components:
     CIRun:
       additionalProperties: false
       properties:
+        actor_id:
+          type: string
         ci_run_id:
           type: string
         commit_sha:
@@ -76,6 +78,7 @@ components:
         - ci_run_id
         - org_id
         - repo_id
+        - actor_id
         - ref_name
         - commit_sha
         - trigger_event

@@ -773,3 +773,17 @@ func applyPublicAPISecurityScheme(api huma.API) {
 		Description:  "Zitadel-issued bearer token scoped to the sandbox-rental API audience.",
 	}
 }
+
+func applyInternalAPISecurityScheme(api huma.API) {
+	openapi := api.OpenAPI()
+	if openapi.Components == nil {
+		openapi.Components = &huma.Components{}
+	}
+	if openapi.Components.SecuritySchemes == nil {
+		openapi.Components.SecuritySchemes = map[string]*huma.SecurityScheme{}
+	}
+	openapi.Components.SecuritySchemes["mutualTLS"] = &huma.SecurityScheme{
+		Type:        "mutualTLS",
+		Description: "SPIFFE X.509-SVID mutual TLS on the sandbox-rental-service internal listener.",
+	}
+}

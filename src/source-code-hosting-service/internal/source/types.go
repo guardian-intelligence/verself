@@ -1,6 +1,7 @@
 package source
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"regexp"
@@ -18,6 +19,7 @@ var (
 	ErrUnauthorized     = errors.New("source: unauthorized")
 	ErrStoreUnavailable = errors.New("source: store unavailable")
 	ErrForgejo          = errors.New("source: forgejo unavailable")
+	ErrSandbox          = errors.New("source: sandbox unavailable")
 )
 
 var slugPattern = regexp.MustCompile(`[^a-z0-9-]+`)
@@ -26,6 +28,8 @@ const (
 	BackendForgejo = "forgejo"
 
 	GitCredentialUsername = "fm"
+
+	DefaultSourceCIRunCommand = "printf 'forge-metal source ci\\n'"
 
 	WorkflowRunStateDispatching = "dispatching"
 	WorkflowRunStateDispatched  = "dispatched"
@@ -150,6 +154,7 @@ type CIRun struct {
 	CIRunID            uuid.UUID
 	OrgID              uint64
 	RepoID             uuid.UUID
+	ActorID            string
 	RefName            string
 	CommitSHA          string
 	TriggerEvent       string
@@ -162,6 +167,15 @@ type CIRun struct {
 	UpdatedAt          time.Time
 	StartedAt          *time.Time
 	CompletedAt        *time.Time
+}
+
+type SandboxCISubmitter interface {
+	SubmitSourceCIRun(ctx context.Context, repo Repository, run CIRun) (SandboxCISubmission, error)
+}
+
+type SandboxCISubmission struct {
+	ExecutionID uuid.UUID
+	AttemptID   uuid.UUID
 }
 
 type CheckoutGrant struct {
