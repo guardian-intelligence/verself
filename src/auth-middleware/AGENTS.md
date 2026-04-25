@@ -6,15 +6,12 @@ Validates JWTs against Zitadel's JWKS endpoint (cached, local crypto after first
 
 Zitadel is the sole IdP. Social login (Google / GitHub / Microsoft / Apple), MFA, and passkeys are Zitadel-side configuration — not this library's concern.
 
-## Single-node JWKS fetch path
+## OIDC discovery path
 
-On a single bare-metal node, services fetch JWKS directly from Zitadel's loopback address (`http://127.0.0.1:8085/oauth/v2/keys`) using `oidc.ProviderConfig` with a **split issuer / JWKS URL**:
+Services use standard OIDC discovery from the public issuer URL:
 
-- `IssuerURL` = `https://auth.<domain>` — validates the JWT `iss` claim.
-- `JWKSURL` = `http://127.0.0.1:8085/oauth/v2/keys` — controls where keys are actually fetched from.
+- `IssuerURL` = `https://auth.<domain>` — discovers provider metadata and validates the JWT `iss` claim.
 
-A **Host-header-overriding HTTP transport** sends `Host: auth.<domain>` on JWKS requests so Zitadel's instance router accepts them. Without that header, Zitadel's multi-tenant router rejects the loopback request.
+Do not add a second JWKS URL or Host-header transport. That creates a split trust path where the issuer and discovery metadata can disagree.
 
-This layout avoids routing JWKS fetches through Caddy (TLS termination, WAF, DNS resolution) and eliminates the need for port-443 and DNS egress rules in per-service nftables.
-
-The existing `oifname "lo" tcp dport 8085 accept` rule is sufficient **only** for single-node topology. On a 3-node topology, both the JWKS URL and the per-service nftables egress rules need to become topology-aware — Zitadel becomes remote and the loopback rule is no longer enough.
+On the single-node deployment, service units bind-mount `/etc/forge-metal/auth-discovery-hosts` over `/etc/hosts` so `auth.<domain>` resolves to local Caddy (`127.0.0.1:443`) for those services only. Per-service nftables must allow loopback port 443 for discovery and JWKS fetches. A three-node topology can remove the host override and route discovery to the remote auth origin without changing Go service configuration.
