@@ -28,6 +28,7 @@ const (
 	BackendForgejo = "forgejo"
 
 	GitCredentialUsername = "fm"
+	GitCredentialKind     = "source_git_https"
 
 	DefaultSourceCIRunCommand = "printf 'forge-metal source ci\\n'"
 
@@ -117,6 +118,11 @@ type GitPrincipal struct {
 	ActorID      string
 	Username     string
 	Scopes       []string
+}
+
+type GitCredentialIssuer interface {
+	CreateSourceGitCredential(ctx context.Context, principal Principal, input CreateGitCredentialRequest) (GitCredential, error)
+	VerifySourceGitCredential(ctx context.Context, orgID uint64, actorID string, token string, requiredScopes []string) (GitCredential, bool, error)
 }
 
 type GitRepositoryPath struct {
@@ -260,6 +266,18 @@ func OrgPath(orgID uint64) string {
 		return ""
 	}
 	return "org-" + strconv.FormatUint(orgID, 10)
+}
+
+func OrgIDFromPath(orgPath string) (uint64, error) {
+	value := strings.TrimSpace(orgPath)
+	if !strings.HasPrefix(value, "org-") {
+		return 0, ErrInvalid
+	}
+	orgID, err := strconv.ParseUint(strings.TrimPrefix(value, "org-"), 10, 64)
+	if err != nil || orgID == 0 {
+		return 0, ErrInvalid
+	}
+	return orgID, nil
 }
 
 func ValidatePrincipal(principal Principal) error {

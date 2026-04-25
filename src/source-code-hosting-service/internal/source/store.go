@@ -249,34 +249,24 @@ LIMIT 1`
 	return repo, nil
 }
 
-func (s Store) CreateGitCredential(ctx context.Context, principal Principal, input CreateGitCredentialRequest) (GitCredential, error) {
+func (s Store) CreateGitCredential(ctx context.Context, principal Principal, credential GitCredential) (GitCredential, error) {
 	ctx, span := storeTracer.Start(ctx, "source.pg.git_credential.create")
 	defer span.End()
 	if err := ValidatePrincipal(principal); err != nil {
 		return GitCredential{}, err
 	}
-	input, err := NormalizeCreateGitCredential(input)
-	if err != nil {
-		return GitCredential{}, err
-	}
-	token, tokenHash, err := newGitToken()
-	if err != nil {
-		return GitCredential{}, err
-	}
 	now := s.now()
-	credential := GitCredential{
-		CredentialID: uuid.New(),
-		OrgID:        principal.OrgID,
-		OrgPath:      OrgPath(principal.OrgID),
-		ActorID:      principal.Subject,
-		Label:        input.Label,
-		Username:     GitCredentialUsername,
-		Token:        token,
-		TokenPrefix:  tokenPrefix(token),
-		Scopes:       []string{"repo:read", "repo:write"},
-		State:        "active",
-		ExpiresAt:    now.Add(time.Duration(input.ExpiresInSeconds) * time.Second),
-		CreatedAt:    now,
+	if credential.CredentialID == uuid.Nil || credential.OrgID != principal.OrgID || credential.OrgPath != OrgPath(principal.OrgID) || credential.ActorID == "" || credential.TokenPrefix == "" || credential.ExpiresAt.IsZero() {
+		return GitCredential{}, ErrInvalid
+	}
+	if credential.Username == "" {
+		credential.Username = GitCredentialUsername
+	}
+	if credential.State == "" {
+		credential.State = "active"
+	}
+	if credential.CreatedAt.IsZero() {
+		credential.CreatedAt = now
 	}
 	tx, err := s.PG.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -285,11 +275,11 @@ func (s Store) CreateGitCredential(ctx context.Context, principal Principal, inp
 	defer rollback(ctx, tx)
 	_, err = tx.Exec(ctx, `
 INSERT INTO source_git_credentials (
-    credential_id, org_id, org_path, actor_id, label, username, token_hash, token_prefix,
+    credential_id, org_id, org_path, actor_id, label, username, token_prefix,
     scopes, state, expires_at, created_at
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
 		credential.CredentialID, credential.OrgID, credential.OrgPath, credential.ActorID, credential.Label, credential.Username,
-		tokenHash, credential.TokenPrefix, credential.Scopes, credential.State, credential.ExpiresAt, credential.CreatedAt)
+		credential.TokenPrefix, credential.Scopes, credential.State, credential.ExpiresAt, credential.CreatedAt)
 	if err != nil {
 		return GitCredential{}, storeWriteError(err)
 	}
@@ -307,15 +297,12 @@ INSERT INTO source_git_credentials (
 	return credential, nil
 }
 
-func (s Store) AuthenticateGitCredential(ctx context.Context, username string, token string) (GitPrincipal, error) {
-	ctx, span := storeTracer.Start(ctx, "source.pg.git_credential.authenticate")
+func (s Store) MarkGitCredentialUsed(ctx context.Context, credentialID uuid.UUID) (GitPrincipal, error) {
+	ctx, span := storeTracer.Start(ctx, "source.pg.git_credential.mark_used")
 	defer span.End()
-	username = strings.TrimSpace(username)
-	token = strings.TrimSpace(token)
-	if username == "" || token == "" {
+	if credentialID == uuid.Nil {
 		return GitPrincipal{}, ErrUnauthorized
 	}
-	tokenHash := hashToken(token)
 	tx, err := s.PG.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return GitPrincipal{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
@@ -324,17 +311,14 @@ func (s Store) AuthenticateGitCredential(ctx context.Context, username string, t
 	row := tx.QueryRow(ctx, `
 SELECT credential_id, org_id, org_path, actor_id, username, scopes
 FROM source_git_credentials
-WHERE token_hash = $1 AND state = 'active' AND expires_at > $2
-FOR UPDATE`, tokenHash, s.now())
+WHERE credential_id = $1 AND state = 'active' AND expires_at > $2
+FOR UPDATE`, credentialID, s.now())
 	var principal GitPrincipal
 	if err := row.Scan(&principal.CredentialID, &principal.OrgID, &principal.OrgPath, &principal.ActorID, &principal.Username, &principal.Scopes); err != nil {
 		if err == pgx.ErrNoRows {
 			return GitPrincipal{}, ErrUnauthorized
 		}
 		return GitPrincipal{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
-	}
-	if principal.Username != username {
-		return GitPrincipal{}, ErrUnauthorized
 	}
 	if _, err := tx.Exec(ctx, `UPDATE source_git_credentials SET last_used_at = $2 WHERE credential_id = $1`, principal.CredentialID, s.now()); err != nil {
 		return GitPrincipal{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
@@ -1130,22 +1114,6 @@ func newGrantToken() (string, string, error) {
 	}
 	token := hex.EncodeToString(raw)
 	return token, hashToken(token), nil
-}
-
-func newGitToken() (string, string, error) {
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
-		return "", "", err
-	}
-	token := "fmgt_" + hex.EncodeToString(raw)
-	return token, hashToken(token), nil
-}
-
-func tokenPrefix(token string) string {
-	if len(token) <= 12 {
-		return token
-	}
-	return token[:12]
 }
 
 func hashToken(token string) string {

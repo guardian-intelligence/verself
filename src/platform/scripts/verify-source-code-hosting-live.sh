@@ -526,7 +526,7 @@ wait_for_clickhouse_count default "
   FROM otel_traces
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
     AND ServiceName = 'source-code-hosting-service'
-    AND SpanName IN ('source.pg.git_credential.create', 'source.pg.git_credential.authenticate', 'source.pg.repo.create_from_git', 'source.pg.repo.list', 'source.pg.repo.get', 'source.pg.repo.get_by_slug', 'source.pg.refs.replace', 'source.pg.refs.list_cached', 'source.pg.ci_run.create_queued', 'source.pg.ci_run.mark_sandbox_submitted', 'source.pg.ci_run.list', 'source.pg.checkout_grant.create')
+    AND SpanName IN ('source.pg.git_credential.create', 'source.pg.git_credential.mark_used', 'source.pg.repo.create_from_git', 'source.pg.repo.list', 'source.pg.repo.get', 'source.pg.repo.get_by_slug', 'source.pg.refs.replace', 'source.pg.refs.list_cached', 'source.pg.ci_run.create_queued', 'source.pg.ci_run.mark_sandbox_submitted', 'source.pg.ci_run.list', 'source.pg.checkout_grant.create')
 " 12 "${artifact_dir}/clickhouse/source-postgres-spans-count.tsv"
 
 wait_for_clickhouse_count default "
@@ -534,7 +534,18 @@ wait_for_clickhouse_count default "
   FROM otel_traces
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
     AND (
-      (ServiceName = 'source-code-hosting-service' AND SpanName = 'auth.spiffe.mtls.client' AND arrayElement(SpanAttributes, 'spiffe.expected_server_id') != '')
+      (ServiceName = 'source-code-hosting-service' AND SpanName IN ('source.secrets.git_credential.create', 'source.secrets.git_credential.verify'))
+      OR (ServiceName = 'source-code-hosting-service' AND SpanName = 'auth.spiffe.mtls.client' AND position(arrayElement(SpanAttributes, 'spiffe.expected_server_id'), 'secrets-service') > 0)
+      OR (ServiceName = 'secrets-service' AND SpanName IN ('auth.spiffe.mtls.server', 'secrets.credential.internal_create', 'secrets.credential.internal_verify', 'secrets.credential.create', 'secrets.credential.verify', 'secrets.bao.transit.hmac', 'secrets.bao.transit.verify_hmac'))
+    )
+" 8 "${artifact_dir}/clickhouse/source-secrets-boundary-spans-count.tsv"
+
+wait_for_clickhouse_count default "
+  SELECT count()
+  FROM otel_traces
+  WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
+    AND (
+      (ServiceName = 'source-code-hosting-service' AND SpanName = 'auth.spiffe.mtls.client' AND position(arrayElement(SpanAttributes, 'spiffe.expected_server_id'), 'sandbox-rental-service') > 0)
       OR (ServiceName = 'sandbox-rental-service' AND SpanName IN ('auth.spiffe.mtls.server', 'sandbox-rental.source_ci.submit', 'sandbox-rental.execution.submit'))
     )
 " 4 "${artifact_dir}/clickhouse/source-sandbox-boundary-spans-count.tsv"
@@ -549,7 +560,7 @@ wait_for_clickhouse_count default "
       SELECT
         multiIf(
           ServiceName = 'source-code-hosting-service' AND SpanName = 'source.sandbox.ci_submit', '01_source_submit',
-          ServiceName = 'source-code-hosting-service' AND SpanName = 'auth.spiffe.mtls.client' AND arrayElement(SpanAttributes, 'spiffe.expected_server_id') != '', '02_source_mtls_client',
+          ServiceName = 'source-code-hosting-service' AND SpanName = 'auth.spiffe.mtls.client' AND position(arrayElement(SpanAttributes, 'spiffe.expected_server_id'), 'sandbox-rental-service') > 0, '02_source_mtls_client',
           ServiceName = 'sandbox-rental-service' AND SpanName = 'auth.spiffe.mtls.server', '03_sandbox_mtls_server',
           ServiceName = 'sandbox-rental-service' AND SpanName = 'sandbox-rental.source_ci.submit', '04_sandbox_source_ci_submit',
           ServiceName = 'sandbox-rental-service' AND SpanName = 'sandbox-rental.execution.submit', '05_sandbox_execution_submit',
@@ -592,6 +603,67 @@ if positions != sorted(positions):
 trace_ids = {first[stage][1]["TraceId"] for stage in required}
 if len(trace_ids) != 1:
     raise SystemExit("source->sandbox boundary spans did not share one trace")
+PY
+
+(
+  cd "${VERIFICATION_PLATFORM_ROOT}"
+  ./scripts/clickhouse.sh \
+    --database default \
+    --param_window_start="${window_start}" \
+    --param_window_end="${window_end}" \
+    --query "
+      SELECT
+        multiIf(
+          ServiceName = 'source-code-hosting-service' AND SpanName = 'source.secrets.git_credential.create', '01_source_create',
+          ServiceName = 'source-code-hosting-service' AND SpanName = 'auth.spiffe.mtls.client' AND position(arrayElement(SpanAttributes, 'spiffe.expected_server_id'), 'secrets-service') > 0, '02_source_mtls_client',
+          ServiceName = 'secrets-service' AND SpanName = 'auth.spiffe.mtls.server', '03_secrets_mtls_server',
+          ServiceName = 'secrets-service' AND SpanName = 'secrets.credential.internal_create', '04_secrets_internal_create',
+          ServiceName = 'secrets-service' AND SpanName = 'secrets.credential.create', '05_secrets_create',
+          ServiceName = 'secrets-service' AND SpanName = 'secrets.bao.transit.hmac', '06_openbao_hmac',
+          ServiceName = 'source-code-hosting-service' AND SpanName = 'source.secrets.git_credential.verify', '07_source_verify',
+          ServiceName = 'secrets-service' AND SpanName = 'secrets.credential.internal_verify', '08_secrets_internal_verify',
+          ServiceName = 'secrets-service' AND SpanName = 'secrets.credential.verify', '09_secrets_verify',
+          ServiceName = 'secrets-service' AND SpanName = 'secrets.bao.transit.verify_hmac', '10_openbao_verify_hmac',
+          ''
+        ) AS stage,
+        Timestamp,
+        ServiceName,
+        SpanName,
+        TraceId,
+        SpanId,
+        ParentSpanId
+      FROM otel_traces
+      WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
+        AND stage != ''
+      ORDER BY Timestamp, stage
+      FORMAT TSVWithNames
+    "
+) >"${artifact_dir}/clickhouse/source-secrets-boundary-sequence.tsv"
+python3 - "${artifact_dir}/clickhouse/source-secrets-boundary-sequence.tsv" <<'PY'
+import csv
+import sys
+
+rows = list(csv.DictReader(open(sys.argv[1], encoding="utf-8"), delimiter="\t"))
+required_any_trace = [
+    ["01_source_create", "02_source_mtls_client", "03_secrets_mtls_server", "04_secrets_internal_create", "05_secrets_create", "06_openbao_hmac"],
+    ["07_source_verify", "02_source_mtls_client", "03_secrets_mtls_server", "08_secrets_internal_verify", "09_secrets_verify", "10_openbao_verify_hmac"],
+]
+for required in required_any_trace:
+    by_trace = {}
+    for index, row in enumerate(rows):
+        by_trace.setdefault(row["TraceId"], []).append((index, row["stage"]))
+    matched = False
+    for trace_id, trace_rows in by_trace.items():
+        first = {}
+        for index, stage in trace_rows:
+            first.setdefault(stage, index)
+        if all(stage in first for stage in required):
+            positions = [first[stage] for stage in required]
+            if positions == sorted(positions):
+                matched = True
+                break
+    if not matched:
+        raise SystemExit("missing ordered source->secrets boundary stages: " + ", ".join(required))
 PY
 
 wait_for_clickhouse_count forge_metal "

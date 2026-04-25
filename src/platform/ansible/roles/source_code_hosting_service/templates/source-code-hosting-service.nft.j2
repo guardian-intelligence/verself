@@ -22,6 +22,7 @@ table inet forge_metal_source_code_hosting_service {
         oifname "lo" tcp dport {{ services.postgresql.port }} accept
         oifname "lo" tcp dport {{ services.forgejo.port }} accept
         oifname "lo" tcp dport {{ services.sandbox_rental.internal_port }} accept
+        oifname "lo" tcp dport {{ services.secrets_service.internal_port }} accept
         oifname "lo" tcp dport {{ services.zitadel.port }} accept
         oifname "lo" tcp dport {{ services.otelcol.grpc_port }} accept
         meta l4proto != tcp meta l4proto != udp accept

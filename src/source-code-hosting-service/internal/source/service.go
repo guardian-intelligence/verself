@@ -20,6 +20,7 @@ type Service struct {
 	Store         Store
 	Forgejo       ForgejoClient
 	Sandbox       SandboxCISubmitter
+	Credentials   GitCredentialIssuer
 	CheckoutTTL   time.Duration
 	ForgejoPrefix string
 }
@@ -62,7 +63,16 @@ func (s *Service) CreateRepository(ctx context.Context, principal Principal, inp
 func (s *Service) CreateGitCredential(ctx context.Context, principal Principal, input CreateGitCredentialRequest) (GitCredential, error) {
 	ctx, span := tracer.Start(ctx, "source.git_credential.create")
 	defer span.End()
-	credential, err := s.Store.CreateGitCredential(ctx, principal, input)
+	if s.Credentials == nil {
+		return GitCredential{}, ErrStoreUnavailable
+	}
+	credential, err := s.Credentials.CreateSourceGitCredential(ctx, principal, input)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return GitCredential{}, err
+	}
+	credential, err = s.Store.CreateGitCredential(ctx, principal, credential)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -72,10 +82,33 @@ func (s *Service) CreateGitCredential(ctx context.Context, principal Principal, 
 	return credential, nil
 }
 
-func (s *Service) AuthenticateGitCredential(ctx context.Context, username string, token string) (GitPrincipal, error) {
+func (s *Service) AuthenticateGitCredential(ctx context.Context, username string, token string, orgPath string, requiredScopes []string) (GitPrincipal, error) {
 	ctx, span := tracer.Start(ctx, "source.git.auth")
 	defer span.End()
-	principal, err := s.Store.AuthenticateGitCredential(ctx, username, token)
+	username = strings.TrimSpace(username)
+	token = strings.TrimSpace(token)
+	if username != GitCredentialUsername || token == "" {
+		return GitPrincipal{}, ErrUnauthorized
+	}
+	orgID, err := OrgIDFromPath(orgPath)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return GitPrincipal{}, ErrUnauthorized
+	}
+	if s.Credentials == nil {
+		return GitPrincipal{}, ErrStoreUnavailable
+	}
+	verified, active, err := s.Credentials.VerifySourceGitCredential(ctx, orgID, "", token, requiredScopes)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return GitPrincipal{}, err
+	}
+	if !active {
+		return GitPrincipal{}, ErrUnauthorized
+	}
+	principal, err := s.Store.MarkGitCredentialUsed(ctx, verified.CredentialID)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())

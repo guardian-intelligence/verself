@@ -45,7 +45,11 @@ func GitHTTPHandler(svc *source.Service) http.Handler {
 			challengeGitBasicAuth(w)
 			return
 		}
-		principal, err := svc.AuthenticateGitCredential(ctx, username, token)
+		requiredScopes := []string{"repo:read"}
+		if gitPath.ReceivePack {
+			requiredScopes = []string{"repo:write"}
+		}
+		principal, err := svc.AuthenticateGitCredential(ctx, username, token, gitPath.OrgPath, requiredScopes)
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())

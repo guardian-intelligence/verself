@@ -50,7 +50,6 @@ CREATE TABLE source_git_credentials (
     actor_id      TEXT        NOT NULL CHECK (actor_id <> ''),
     label         TEXT        NOT NULL CHECK (label <> ''),
     username      TEXT        NOT NULL CHECK (username <> ''),
-    token_hash    TEXT        NOT NULL UNIQUE CHECK (token_hash <> ''),
     token_prefix  TEXT        NOT NULL CHECK (token_prefix <> ''),
     scopes        TEXT[]      NOT NULL DEFAULT ARRAY['repo:read','repo:write']::TEXT[],
     state         TEXT        NOT NULL DEFAULT 'active' CHECK (state IN ('active', 'revoked')),
