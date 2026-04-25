@@ -57,7 +57,7 @@ test.describe("Console Governance", () => {
       const downloadPromise = app.page.waitForEvent("download", { timeout: shortTimeoutMS });
       await downloadButton.click();
       const download = await downloadPromise;
-      expect(download.suggestedFilename()).toMatch(/^forge-metal-.+\.tar\.gz$/);
+      expect(download.suggestedFilename()).toMatch(/^verself-.+\.tar\.gz$/);
       expect(await download.failure()).toBeNull();
 
       await app.waitForCondition("governance export downloaded_at", shortTimeoutMS, async () => {
@@ -181,7 +181,7 @@ async function readGovernanceCreateAuditCount(): Promise<number> {
   `;
   const stdout = await platformScript("clickhouse.sh", [
     "--database",
-    "forge_metal",
+    "verself",
     "--format",
     "TabSeparatedRaw",
     "--query",
@@ -256,7 +256,7 @@ async function readGovernanceDownloadAuditCount(): Promise<number> {
   `;
   const stdout = await platformScript("clickhouse.sh", [
     "--database",
-    "forge_metal",
+    "verself",
     "--format",
     "TabSeparatedRaw",
     "--query",
@@ -282,7 +282,7 @@ async function readLatestGovernanceAuditTraceID(
   const traceID = (
     await platformScript("clickhouse.sh", [
       "--database",
-      "forge_metal",
+      "verself",
       "--format",
       "TabSeparatedRaw",
       "--query",

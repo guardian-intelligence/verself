@@ -1,7 +1,7 @@
 [Unit]
 Description=Guardian Intelligence Company Site (TanStack Start)
-After=forge-metal-firewall.target network.target
-Requires=forge-metal-firewall.target
+After=verself-firewall.target network.target
+Requires=verself-firewall.target
 
 [Service]
 Type=simple
@@ -9,10 +9,10 @@ User={{ company_runtime_user }}
 Group={{ company_runtime_group }}
 WorkingDirectory={{ company_app_dir }}
 EnvironmentFile=/etc/company/env
-ExecStart={{ fm_bin }}/node --import ./instrumentation.mts .output/server/index.mjs
+ExecStart={{ verself_bin }}/node --import ./instrumentation.mts .output/server/index.mjs
 Restart=on-failure
 RestartSec=5
-Environment=PATH={{ fm_bin }}:/usr/bin:/bin
+Environment=PATH={{ verself_bin }}:/usr/bin:/bin
 Environment=HOME={{ company_state_dir }}
 CapabilityBoundingSet=
 ProtectHome=true

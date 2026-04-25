@@ -173,7 +173,7 @@ env \
   VERIFICATION_RUN_JSON_PATH="${run_json_path}" \
   BASE_URL="${base_url}" \
   TEST_BASE_URL="${base_url}" \
-  FORGE_METAL_DOMAIN="${VERIFICATION_DOMAIN}" \
+  VERSELF_DOMAIN="${VERIFICATION_DOMAIN}" \
   ZITADEL_BASE_URL="https://auth.${VERIFICATION_DOMAIN}" \
   TEST_EMAIL="${expected_email}" \
   TEST_PASSWORD="${acme_admin_password}" \
@@ -321,7 +321,7 @@ if [[ ! -s "${artifact_dir}/postgres/member-role-command-ledger.tsv" ]]; then
   exit 1
 fi
 
-wait_for_clickhouse_count forge_metal "
+wait_for_clickhouse_count verself "
   SELECT count()
   FROM domain_update_ledger
   WHERE recorded_at BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
@@ -333,7 +333,7 @@ wait_for_clickhouse_count forge_metal "
   --param_org_id="${org_id}" \
   --param_target_user_id="${target_user_id}"
 
-wait_for_clickhouse_count forge_metal "
+wait_for_clickhouse_count verself "
   SELECT count()
   FROM domain_update_ledger
   WHERE recorded_at BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
@@ -361,7 +361,7 @@ wait_for_clickhouse_count default "
 (
   cd "${VERIFICATION_PLATFORM_ROOT}"
   ./scripts/clickhouse.sh \
-    --database forge_metal \
+    --database verself \
     --param_window_start="${window_start}" \
     --param_window_end="${window_end}" \
     --param_org_id="${org_id}" \

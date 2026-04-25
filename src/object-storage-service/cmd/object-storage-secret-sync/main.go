@@ -13,10 +13,10 @@ import (
 	"syscall"
 	"time"
 
-	workloadauth "github.com/forge-metal/auth-middleware/workload"
-	"github.com/forge-metal/envconfig"
-	fmotel "github.com/forge-metal/otel"
-	secretsclient "github.com/forge-metal/secrets-service/client"
+	workloadauth "github.com/verself/auth-middleware/workload"
+	"github.com/verself/envconfig"
+	verselfotel "github.com/verself/otel"
+	secretsclient "github.com/verself/secrets-service/client"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -43,7 +43,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	otelShutdown, _, err := fmotel.Init(ctx, fmotel.Config{
+	otelShutdown, _, err := verselfotel.Init(ctx, verselfotel.Config{
 		ServiceName:    "object-storage-secret-sync",
 		ServiceVersion: version,
 	})
@@ -101,7 +101,7 @@ func syncRuntimeSecrets(ctx context.Context, client *secretsclient.ClientWithRes
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	span.SetAttributes(attribute.Int("forge_metal.secret_count", len(names)))
+	span.SetAttributes(attribute.Int("verself.secret_count", len(names)))
 
 	syncCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()

@@ -21,8 +21,8 @@ func (DirectPrivOps) ZFSClone(ctx context.Context, snapshot, target, leaseID str
 	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "zfs", "clone",
-		"-o", "forge:lease_id="+leaseID,
-		"-o", "forge:created_at="+time.Now().UTC().Format(time.RFC3339),
+		"-o", "vs:lease_id="+leaseID,
+		"-o", "vs:created_at="+time.Now().UTC().Format(time.RFC3339),
 		snapshot, target)
 	out, err := cmd.CombinedOutput()
 	if err != nil {

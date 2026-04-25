@@ -287,8 +287,8 @@ write_export() {
 : >"${tmp_path}"
 chmod 600 "${tmp_path}"
 
-write_export FORGE_METAL_PERSONA "${persona}"
-write_export FORGE_METAL_DOMAIN "${VERIFICATION_DOMAIN}"
+write_export VERSELF_PERSONA "${persona}"
+write_export VERSELF_DOMAIN "${VERIFICATION_DOMAIN}"
 write_export ZITADEL_ISSUER_URL "${auth_base_url}"
 write_export ZITADEL_MACHINE_CLIENT_ID "${machine_username}"
 write_export TEST_EMAIL "${human_email}"

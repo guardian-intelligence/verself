@@ -19,8 +19,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	auth "github.com/forge-metal/auth-middleware"
-	"github.com/forge-metal/governance-service/internal/governance"
+	auth "github.com/verself/auth-middleware"
+	"github.com/verself/governance-service/internal/governance"
 )
 
 type permission string
@@ -137,7 +137,7 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 	if policy.BodyLimitBytes > 0 {
 		iam["request_body_max_bytes"] = policy.BodyLimitBytes
 	}
-	op.Extensions["x-forge-metal-iam"] = iam
+	op.Extensions["x-verself-iam"] = iam
 	op.Security = []map[string][]string{{"bearerAuth": {}}}
 	return op
 }
@@ -196,7 +196,7 @@ func principalFromIdentity(identity *auth.Identity) governance.Principal {
 		return governance.Principal{}
 	}
 	principalType := "user"
-	credentialID := claimString(identity.Raw, "forge_metal:credential_id")
+	credentialID := claimString(identity.Raw, "verself:credential_id")
 	if credentialID != "" {
 		principalType = "api_credential"
 	}
@@ -206,11 +206,11 @@ func principalFromIdentity(identity *auth.Identity) governance.Principal {
 		Email:                 strings.TrimSpace(identity.Email),
 		Type:                  principalType,
 		CredentialID:          credentialID,
-		CredentialName:        claimString(identity.Raw, "forge_metal:credential_name"),
-		CredentialFingerprint: claimString(identity.Raw, "forge_metal:credential_fingerprint"),
-		ActorOwnerID:          claimString(identity.Raw, "forge_metal:credential_owner_id"),
-		ActorOwnerDisplay:     claimString(identity.Raw, "forge_metal:credential_owner_display"),
-		AuthMethod:            claimString(identity.Raw, "forge_metal:credential_auth_method"),
+		CredentialName:        claimString(identity.Raw, "verself:credential_name"),
+		CredentialFingerprint: claimString(identity.Raw, "verself:credential_fingerprint"),
+		ActorOwnerID:          claimString(identity.Raw, "verself:credential_owner_id"),
+		ActorOwnerDisplay:     claimString(identity.Raw, "verself:credential_owner_display"),
+		AuthMethod:            claimString(identity.Raw, "verself:credential_auth_method"),
 	}
 }
 
@@ -605,7 +605,7 @@ func identityRolesForCurrentOrg(identity *auth.Identity) []string {
 }
 
 func identityHasDirectPermission(identity *auth.Identity, required permission) bool {
-	credentialID, _ := identity.Raw["forge_metal:credential_id"].(string)
+	credentialID, _ := identity.Raw["verself:credential_id"].(string)
 	if strings.TrimSpace(credentialID) == "" || strings.TrimSpace(identity.OrgID) == "" {
 		return false
 	}

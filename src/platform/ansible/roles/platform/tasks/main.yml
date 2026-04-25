@@ -31,7 +31,7 @@
 
 - name: Verify corepack exists in profile
   ansible.builtin.stat:
-    path: "{{ fm_bin }}/corepack"
+    path: "{{ verself_bin }}/corepack"
   register: platform_corepack
   failed_when: not platform_corepack.stat.exists
 
@@ -106,12 +106,12 @@
   become: false
   ansible.builtin.command:
     argv:
-      - "{{ fm_bin }}/corepack"
+      - "{{ verself_bin }}/corepack"
       - pnpm
       - install
     chdir: "{{ platform_install_dir }}"
   environment:
-    PATH: "{{ fm_bin }}:/usr/bin:/bin"
+    PATH: "{{ verself_bin }}:/usr/bin:/bin"
     HOME: "/home/{{ ansible_user }}"
   changed_when: true
   when: >-
@@ -138,7 +138,7 @@
     group: "{{ platform_runtime_group }}"
     mode: "0755"
 
-# Templated against forge_metal_domain so the file always carries the real
+# Templated against verself_domain so the file always carries the real
 # operator domain without checking a deployment-specific value into git.
 - name: Template platform security.txt (RFC 9116)
   ansible.builtin.template:
@@ -153,15 +153,15 @@
   become: false
   ansible.builtin.command:
     argv:
-      - "{{ fm_bin }}/corepack"
+      - "{{ verself_bin }}/corepack"
       - pnpm
       - --filter
-      - "@forge-metal/platform^..."
+      - "@verself/platform^..."
       - run
       - build
     chdir: "{{ platform_install_dir }}"
   environment:
-    PATH: "{{ fm_bin }}:/usr/bin:/bin"
+    PATH: "{{ verself_bin }}:/usr/bin:/bin"
     HOME: "/home/{{ ansible_user }}"
   changed_when: true
   notify: Restart platform
@@ -170,15 +170,15 @@
   become: false
   ansible.builtin.command:
     argv:
-      - "{{ fm_bin }}/corepack"
+      - "{{ verself_bin }}/corepack"
       - pnpm
       - --filter
-      - "@forge-metal/platform"
+      - "@verself/platform"
       - run
       - build
     chdir: "{{ platform_install_dir }}"
   environment:
-    PATH: "{{ fm_bin }}:/usr/bin:/bin"
+    PATH: "{{ verself_bin }}:/usr/bin:/bin"
     HOME: "/home/{{ ansible_user }}"
   changed_when: true
   notify: Restart platform

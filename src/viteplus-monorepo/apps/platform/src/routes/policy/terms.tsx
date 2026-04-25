@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { requireOperatorDomain } from "@forge-metal/web-env";
+import { requireOperatorDomain } from "@verself/web-env";
 
 import {
   ChangesSection,
@@ -20,11 +20,11 @@ export const Route = createFileRoute("/policy/terms")({
   loader: () => getOperatorDomain(),
   head: () => ({
     meta: [
-      { title: "Terms of Service — Forge Metal Platform" },
+      { title: "Terms of Service — Verself Platform" },
       {
         name: "description",
         content:
-          "The contract under which customer organizations use the Forge Metal platform, and its relationship to the other policy documents.",
+          "The contract under which customer organizations use the Verself platform, and its relationship to the other policy documents.",
       },
     ],
   }),
@@ -58,7 +58,7 @@ function Summary() {
       <SectionHeading id="summary">Summary</SectionHeading>
       <SummaryPanel>
         <SummaryItem term="Contracting party">
-          The Forge Metal entity identified on your invoice.
+          The Verself entity identified on your invoice.
         </SummaryItem>
         <SummaryItem term="Agreement stack">
           These Terms, the <a href="/policy/acceptable-use">AUP</a>, the{" "}
@@ -86,10 +86,10 @@ function Agreement() {
       <Prose>
         <p>
           These Terms of Service form a binding agreement between the customer organization
-          identified on the account (<strong>you</strong>) and the Forge Metal entity identified on
-          your invoice (<strong>we</strong>, <strong>us</strong>, <strong>Forge Metal</strong>). By
-          creating an account, placing an order, or using the service you accept these Terms on
-          behalf of the organization and confirm you have authority to bind it.
+          identified on the account (<strong>you</strong>) and the Verself entity identified on your
+          invoice (<strong>we</strong>, <strong>us</strong>, <strong>Verself</strong>). By creating
+          an account, placing an order, or using the service you accept these Terms on behalf of the
+          organization and confirm you have authority to bind it.
         </p>
         <p>
           These Terms incorporate the <a href="/policy/acceptable-use">Acceptable Use Policy</a>,
@@ -134,7 +134,7 @@ function Use() {
         <p>
           You may use the service only in accordance with these Terms, the{" "}
           <a href="/policy/acceptable-use">Acceptable Use Policy</a>, and applicable law. You are
-          responsible for the workloads you run on Forge Metal, for the data you place into its
+          responsible for the workloads you run on Verself, for the data you place into its
           substrate, and for the consequences of both.
         </p>
         <p>
@@ -232,8 +232,7 @@ function Liability() {
           To the maximum extent permitted by law, neither party will be liable for indirect,
           consequential, incidental, or special damages arising under these Terms. Each party's
           aggregate liability under or in connection with these Terms is capped at the fees paid by
-          the customer to Forge Metal in the twelve months preceding the event giving rise to the
-          claim.
+          the customer to Verself in the twelve months preceding the event giving rise to the claim.
         </p>
         <p>
           The cap does not apply to a party's indemnification obligations, breach of
@@ -273,9 +272,9 @@ function LawAndDisputes() {
       <SectionHeading id="law">Governing law and disputes</SectionHeading>
       <Prose>
         <p>
-          These Terms are governed by the laws of the jurisdiction in which the Forge Metal entity
-          is incorporated, excluding its conflict-of-laws provisions. Each party irrevocably submits
-          to the exclusive jurisdiction of the competent courts of that jurisdiction for any dispute
+          These Terms are governed by the laws of the jurisdiction in which the Verself entity is
+          incorporated, excluding its conflict-of-laws provisions. Each party irrevocably submits to
+          the exclusive jurisdiction of the competent courts of that jurisdiction for any dispute
           arising under these Terms.
         </p>
         <p>

@@ -1,7 +1,7 @@
 ---
 governance_service_subdomain: governance.api
-governance_service_domain: "{{ governance_service_subdomain }}.{{ forge_metal_domain }}"
-governance_service_auth_issuer_url: "https://auth.{{ forge_metal_domain }}"
+governance_service_domain: "{{ governance_service_subdomain }}.{{ verself_domain }}"
+governance_service_auth_issuer_url: "https://auth.{{ verself_domain }}"
 governance_service_identity_project_name: "{{ identity_service_auth_project_name | default('identity-service') }}"
 governance_service_state_dir: /var/lib/governance-service
 governance_service_export_dir: /var/lib/governance-service/exports

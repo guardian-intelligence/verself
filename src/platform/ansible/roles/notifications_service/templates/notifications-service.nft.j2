@@ -1,10 +1,10 @@
 # Notifications service is loopback-only. It needs PostgreSQL, ClickHouse,
 # NATS JetStream, Zitadel OIDC discovery via local Caddy, and OTLP egress.
 
-table inet forge_metal_notifications_service
-delete table inet forge_metal_notifications_service
+table inet verself_notifications_service
+delete table inet verself_notifications_service
 
-table inet forge_metal_notifications_service {
+table inet verself_notifications_service {
     chain input {
         type filter hook input priority filter; policy accept;
 

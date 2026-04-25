@@ -14,10 +14,10 @@ export function deployMetaTags(): DeployMetaTag[] {
   }
   const env = process.env;
   const tags: DeployMetaTag[] = [
-    { name: DEPLOY_META.runKey, content: env.FORGE_METAL_DEPLOY_RUN_KEY ?? "" },
-    { name: DEPLOY_META.id, content: env.FORGE_METAL_DEPLOY_ID ?? "" },
-    { name: DEPLOY_META.commitSha, content: env.FORGE_METAL_COMMIT_SHA ?? "" },
-    { name: DEPLOY_META.profile, content: env.FORGE_METAL_DEPLOY_PROFILE ?? "" },
+    { name: DEPLOY_META.runKey, content: env.VERSELF_DEPLOY_RUN_KEY ?? "" },
+    { name: DEPLOY_META.id, content: env.VERSELF_DEPLOY_ID ?? "" },
+    { name: DEPLOY_META.commitSha, content: env.VERSELF_COMMIT_SHA ?? "" },
+    { name: DEPLOY_META.profile, content: env.VERSELF_DEPLOY_PROFILE ?? "" },
   ];
   return tags.filter((tag) => tag.content !== "");
 }

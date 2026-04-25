@@ -7,9 +7,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/forge-metal/apiwire"
-	"github.com/forge-metal/mailbox-service/internal/jmap"
-	"github.com/forge-metal/mailbox-service/internal/mailstore"
+	"github.com/verself/apiwire"
+	"github.com/verself/mailbox-service/internal/jmap"
+	"github.com/verself/mailbox-service/internal/mailstore"
 )
 
 type operatorAccountPathInput struct {

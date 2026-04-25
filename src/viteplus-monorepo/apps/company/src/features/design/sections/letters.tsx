@@ -1,4 +1,4 @@
-import { WingsChip } from "@forge-metal/brand";
+import { WingsChip } from "@verself/brand";
 import { RulesRow, Section } from "../section-shell";
 import { Colophon } from "../colophon";
 import { LINE, sectionMeta, Surface } from "../shared";

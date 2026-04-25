@@ -9,7 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/forge-metal/billing-service/internal/store"
+	"github.com/verself/billing-service/internal/store"
 )
 
 type billingFinalization struct {
@@ -317,5 +317,5 @@ func insertDocumentLineItemsTx(ctx context.Context, tx pgx.Tx, documentID string
 }
 
 func renderDocumentHTML(statement Statement) string {
-	return fmt.Sprintf("<h1>Forge Metal billing %s to %s</h1><p>Total due units: %d</p>", statement.PeriodStart.Format(time.RFC3339Nano), statement.PeriodEnd.Format(time.RFC3339Nano), statement.Totals.TotalDueUnits)
+	return fmt.Sprintf("<h1>Verself billing %s to %s</h1><p>Total due units: %d</p>", statement.PeriodStart.Format(time.RFC3339Nano), statement.PeriodEnd.Format(time.RFC3339Nano), statement.Totals.TotalDueUnits)
 }

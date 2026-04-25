@@ -1,6 +1,6 @@
 ---
 - name: Probe billing callers before potential ledger reset
-  fm_systemd_status:
+  verself_systemd_status:
     unit: "{{ item }}"
   loop:
     - sandbox-rental-service
@@ -45,7 +45,7 @@
     - name: Format TigerBeetle data file for billing ledger reset
       ansible.builtin.command:
         cmd: >-
-          {{ fm_bin }}/tigerbeetle format
+          {{ verself_bin }}/tigerbeetle format
           --cluster={{ billing_service_tigerbeetle_cluster_id }}
           --replica={{ billing_service_tigerbeetle_replica_id }}
           --replica-count={{ billing_service_tigerbeetle_replica_count }}
@@ -68,7 +68,7 @@
 - name: Reconcile billing object ownership and privileges
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/psql
+      {{ verself_bin }}/psql
       -h {{ services.postgresql.host }}
       -p {{ services.postgresql.port }}
       -U postgres

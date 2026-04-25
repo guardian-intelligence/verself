@@ -1,8 +1,8 @@
 # Page layout and visual rhythm
 
-One opinionated page-layout contract for every Forge Metal app. Every
+One opinionated page-layout contract for every Verself app. Every
 route in every app flows through the primitives in
-`@forge-metal/ui/components/ui/page`, which own spacing and typography
+`@verself/ui/components/ui/page`, which own spacing and typography
 so route files describe hierarchy and content only.
 
 This document is the source of truth. If a screen disagrees with this
@@ -46,7 +46,7 @@ import {
   SectionTitle,
   SectionDescription,
   SectionActions,
-} from "@forge-metal/ui/components/ui/page";
+} from "@verself/ui/components/ui/page";
 ```
 
 ### Composition tree
@@ -342,7 +342,7 @@ is doing semantic work.
 
 Stock shadcn v3 shipped legacy CSS variables like `--sidebar-border`,
 `--sidebar-accent`, etc., referenced in class strings as
-`hsl(var(--sidebar-border))`. **Forge Metal apps do not import that
+`hsl(var(--sidebar-border))`. **Verself apps do not import that
 token set.** We only define the Tailwind v4 `--color-*` tokens inside
 each app's `app.css` `@theme` block. If you write (or borrow) a
 shadcn class that references `--sidebar-*`, `--popover-*`, etc., the

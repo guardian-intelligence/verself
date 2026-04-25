@@ -46,7 +46,7 @@
         mode: "0644"
         content: |
           [Service]
-          Environment=FORGE_METAL_TELEMETRY_FAULT_PROFILE={{ vm_orchestrator_telemetry_fault_profile }}
+          Environment=VERSELF_TELEMETRY_FAULT_PROFILE={{ vm_orchestrator_telemetry_fault_profile }}
       when: vm_orchestrator_telemetry_fault_profile | length > 0
 
     - name: Remove telemetry fault profile drop-in

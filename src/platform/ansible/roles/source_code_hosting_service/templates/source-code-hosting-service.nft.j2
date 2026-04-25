@@ -2,10 +2,10 @@
 # Source-code-hosting-service is loopback-only. Public access must arrive via
 # Caddy and internal archive downloads must arrive over SPIFFE mTLS.
 
-table inet forge_metal_source_code_hosting_service
-delete table inet forge_metal_source_code_hosting_service
+table inet verself_source_code_hosting_service
+delete table inet verself_source_code_hosting_service
 
-table inet forge_metal_source_code_hosting_service {
+table inet verself_source_code_hosting_service {
     chain input {
         type filter hook input priority filter; policy accept;
 
@@ -23,6 +23,7 @@ table inet forge_metal_source_code_hosting_service {
         oifname "lo" tcp dport {{ services.forgejo.port }} accept
         oifname "lo" tcp dport {{ services.sandbox_rental.internal_port }} accept
         oifname "lo" tcp dport {{ services.secrets_service.internal_port }} accept
+        oifname "lo" tcp dport {{ services.projects_service.internal_port }} accept
         oifname "lo" tcp dport {{ services.zitadel.port }} accept
         oifname "lo" tcp dport 443 accept
         oifname "lo" tcp dport {{ services.otelcol.grpc_port }} accept

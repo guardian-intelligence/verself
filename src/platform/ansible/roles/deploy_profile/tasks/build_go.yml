@@ -30,13 +30,13 @@
 - name: Validate Go binary manifest coverage
   ansible.builtin.assert:
     that:
-      - deploy_profile_go_binary_names | length == 17
+      - deploy_profile_go_binary_names | length == 18
       - deploy_profile_go_binary_names | unique | list | length == deploy_profile_go_binary_names | length
       - deploy_profile_go_binary_output_paths | unique | list | length == deploy_profile_go_binary_output_paths | length
       - deploy_profile_go_binary_names | sort == [
           'billing-service',
-          'forge-temporal-server',
-          'forge-temporal-web',
+          'verself-temporal-server',
+          'verself-temporal-web',
           'governance-service',
           'identity-service',
           'mailbox-service',
@@ -44,6 +44,7 @@
           'object-storage-secret-sync',
           'object-storage-service',
           'profile-service',
+          'projects-service',
           'sandbox-rental-recurring-worker',
           'sandbox-rental-service',
           'secrets-service',
@@ -62,7 +63,7 @@
     argv:
       - go
       - build
-      - "{{ '-ldflags=-s -w -X main.version=' ~ (forge_metal_version | default('dev')) if item.version_ldflags else '-ldflags=-s -w' }}"
+      - "{{ '-ldflags=-s -w -X main.version=' ~ (verself_version | default('dev')) if item.version_ldflags else '-ldflags=-s -w' }}"
       - -o
       - "{{ deploy_profile_repo_root }}/{{ item.output_path }}"
       - "{{ item.package }}"
@@ -79,7 +80,7 @@
 - name: Copy Go binaries to server
   ansible.builtin.copy:
     src: "{{ deploy_profile_repo_root }}/{{ item.output_path }}"
-    dest: "{{ fm_bin }}/{{ item.name }}"
+    dest: "{{ verself_bin }}/{{ item.name }}"
     mode: "0755"
   register: deploy_profile_go_binary_copy_results
   loop: "{{ deploy_profile_go_binaries }}"
@@ -88,7 +89,7 @@
 
 - name: Remove retired proof binaries from server profile
   ansible.builtin.file:
-    path: "{{ fm_bin }}/{{ item }}"
+    path: "{{ verself_bin }}/{{ item }}"
     state: absent
   loop: "{{ deploy_profile_retired_go_binaries }}"
 

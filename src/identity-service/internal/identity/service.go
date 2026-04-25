@@ -272,7 +272,7 @@ func (s *Service) CreateAPICredential(ctx context.Context, principal Principal, 
 	}
 	now := s.now()
 	credentialID := uuid.NewString()
-	clientID := "fm-api-" + strings.ReplaceAll(credentialID, "-", "")
+	clientID := "verself-api-" + strings.ReplaceAll(credentialID, "-", "")
 	credential := APICredential{
 		CredentialID:         credentialID,
 		OrgID:                principal.OrgID,

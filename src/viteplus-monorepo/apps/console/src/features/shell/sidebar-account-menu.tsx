@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ClientOnly, useHydrated, useRouter } from "@tanstack/react-router";
 import { Building2, Check, LoaderCircle, LogOut } from "lucide-react";
-import { SignedIn, SignedOut, SignInButton } from "@forge-metal/auth-web/components";
-import { useClerk, useSignedInAuth, useUser } from "@forge-metal/auth-web/react";
-import type { AuthOrganizationContext } from "@forge-metal/auth-web/isomorphic";
-import { Avatar, AvatarFallback } from "@forge-metal/ui/components/ui/avatar";
-import { Badge } from "@forge-metal/ui/components/ui/badge";
+import { SignedIn, SignedOut, SignInButton } from "@verself/auth-web/components";
+import { useClerk, useSignedInAuth, useUser } from "@verself/auth-web/react";
+import type { AuthOrganizationContext } from "@verself/auth-web/isomorphic";
+import { Avatar, AvatarFallback } from "@verself/ui/components/ui/avatar";
+import { Badge } from "@verself/ui/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,12 +14,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@forge-metal/ui/components/ui/dropdown-menu";
-import {
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-} from "@forge-metal/ui/components/ui/sidebar";
+} from "@verself/ui/components/ui/dropdown-menu";
+import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@verself/ui/components/ui/sidebar";
 import { useBillingTierLabel } from "~/features/billing/use-billing-account";
 import { profileQuery } from "~/features/profile/queries";
 import {

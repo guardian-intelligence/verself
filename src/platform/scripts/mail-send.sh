@@ -56,7 +56,7 @@ if [[ ! -f "$secrets_file" ]]; then
   exit 1
 fi
 
-domain="$(awk '/^forge_metal_domain:/ {gsub(/"/, "", $2); print $2}' "$main_file")"
+domain="$(awk '/^verself_domain:/ {gsub(/"/, "", $2); print $2}' "$main_file")"
 resend_subdomain="$(awk '/^resend_subdomain:/ {gsub(/"/, "", $2); print $2}' "$main_file")"
 from_name="$(awk '/^resend_sender_name:/ {$1=""; sub(/^ /, ""); gsub(/"/, "", $0); print $0}' "$main_file")"
 

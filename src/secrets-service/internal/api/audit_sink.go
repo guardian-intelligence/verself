@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	workloadauth "github.com/forge-metal/auth-middleware/workload"
-	governanceinternalclient "github.com/forge-metal/governance-service/internalclient"
+	workloadauth "github.com/verself/auth-middleware/workload"
+	governanceinternalclient "github.com/verself/governance-service/internalclient"
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
 )
 

@@ -1,6 +1,6 @@
 ---
 platform_subdomain: platform
-platform_domain: "{{ platform_subdomain }}.{{ forge_metal_domain }}"
+platform_domain: "{{ platform_subdomain }}.{{ verself_domain }}"
 platform_install_dir: /opt/platform
 platform_app_dir: "{{ platform_install_dir }}/apps/platform"
 platform_dependencies_fingerprint_path: "{{ platform_install_dir }}/.pnpm-install-fingerprint"

@@ -4,7 +4,7 @@
 # This playbook recreates:
 # - TigerBeetle + billing PostgreSQL schema
 # - sandbox_rental PostgreSQL schema
-# - forge_metal ClickHouse schema
+# - verself ClickHouse schema
 # - default ClickHouse telemetry tables used for trace/log correlation
 #
 # Usage:
@@ -53,7 +53,7 @@
         electric_publication_tables: [executions, execution_logs]
         electric_storage_dir: /var/lib/electric
         electric_credstore_dir: /etc/credstore/electric
-        electric_nftables_table: forge_metal_electric
+        electric_nftables_table: verself_electric
         electric_nftables_file: /etc/nftables.d/electric.nft
         electric_db_pool_size: 15
       tags: [electric]

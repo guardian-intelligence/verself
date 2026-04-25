@@ -62,7 +62,7 @@ There are now two mail-adjacent PostgreSQL databases:
 
 ## Mailbox-service boundary
 
-`mailbox-service` is the boundary between Stalwart's JMAP protocol surface and the rest of the Forge Metal product:
+`mailbox-service` is the boundary between Stalwart's JMAP protocol surface and the rest of the Verself product:
 
 - It rewrites `/jmap/session` so clients see the public `https://mail.<domain>` / `wss://mail.<domain>` origin instead of Stalwart's internal `127.0.0.1:8090` listener.
 - It discovers Stalwart accounts through the local management API, maps account IDs to configured passwords, subscribes to JMAP EventSource, and applies `Mailbox/changes`, `Email/changes`, and `Thread/changes` into the `mailbox_service` PostgreSQL schema.
@@ -86,11 +86,11 @@ Seeded product identity bindings:
 
 ## Authentication
 
-Stalwart and the Forge Metal app tier do not share an auth system today.
+Stalwart and the Verself app tier do not share an auth system today.
 
 **Stalwart mailbox auth:** Stalwart uses its own internal directory backed by PostgreSQL. Passwords must be bcrypt-hashed before passing to the Management API (Stalwart stores `secrets` verbatim and detects the hash algorithm by prefix). Accounts require `roles: ["user"]` for JMAP/IMAP access — without it, authentication succeeds but returns 403.
 
-**Forge Metal product auth:** The webmail app authenticates humans with Zitadel, not with Stalwart. The browser signs into Zitadel, the frontend server keeps the OAuth session server-side, and `mailbox-service` resolves the caller's Zitadel `sub` claim through `mailbox_bindings` to find the mailbox account (`ceo`, `agents`, future customer mailbox, etc.).
+**Verself product auth:** The webmail app authenticates humans with Zitadel, not with Stalwart. The browser signs into Zitadel, the frontend server keeps the OAuth session server-side, and `mailbox-service` resolves the caller's Zitadel `sub` claim through `mailbox_bindings` to find the mailbox account (`ceo`, `agents`, future customer mailbox, etc.).
 
 **Why two passwords exist today:** `ceo@<domain>` therefore has:
 

@@ -28,7 +28,7 @@ mkdir -p "$(dirname "$INVENTORY")"
   echo "[workers]"
   i=0
   for ip in $worker_ips; do
-    echo "fm-${cluster}-w${i} ansible_host=${ip}"
+    echo "vs-${cluster}-w${i} ansible_host=${ip}"
     i=$((i + 1))
   done
 
@@ -37,14 +37,14 @@ mkdir -p "$(dirname "$INVENTORY")"
   if [ -n "$infra_ips" ]; then
     i=0
     for ip in $infra_ips; do
-      echo "fm-${cluster}-i${i} ansible_host=${ip}"
+      echo "vs-${cluster}-i${i} ansible_host=${ip}"
       i=$((i + 1))
     done
   else
     # Single-node dev: workers double as infra
     i=0
     for ip in $worker_ips; do
-      echo "fm-${cluster}-w${i} ansible_host=${ip}"
+      echo "vs-${cluster}-w${i} ansible_host=${ip}"
       i=$((i + 1))
     done
   fi

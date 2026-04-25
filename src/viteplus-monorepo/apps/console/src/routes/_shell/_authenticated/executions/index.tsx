@@ -7,7 +7,7 @@ import {
   PageSection,
   PageSections,
   PageTitle,
-} from "@forge-metal/ui/components/ui/page";
+} from "@verself/ui/components/ui/page";
 import { Callout } from "~/components/callout";
 import { ExecutionListPanel } from "~/features/executions/components";
 import { loadExecutionsIndex } from "~/features/executions/queries";

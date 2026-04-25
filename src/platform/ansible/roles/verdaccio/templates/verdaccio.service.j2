@@ -1,7 +1,7 @@
 [Unit]
 Description=Verdaccio npm registry mirror
-After=forge-metal-firewall.target network.target
-Requires=forge-metal-firewall.target
+After=verself-firewall.target network.target
+Requires=verself-firewall.target
 
 [Service]
 Type=simple
@@ -12,7 +12,7 @@ Group=verdaccio
 WorkingDirectory=/var/lib/verdaccio
 CPUAffinity=0 1
 Environment=HOME=/var/lib/verdaccio
-Environment=PATH={{ verdaccio_install_prefix }}/bin:{{ fm_bin }}:/usr/bin:/bin
+Environment=PATH={{ verdaccio_install_prefix }}/bin:{{ verself_bin }}:/usr/bin:/bin
 
 [Install]
 WantedBy=multi-user.target

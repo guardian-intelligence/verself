@@ -1,8 +1,8 @@
 [Unit]
 Description=ElectricSQL sync ({{ electric_instance }})
-After=forge-metal-firewall.target network.target postgresql.service{% for u in electric_extra_systemd_after %} {{ u }}{% endfor %}
+After=verself-firewall.target network.target postgresql.service{% for u in electric_extra_systemd_after %} {{ u }}{% endfor %}
 
-Requires=forge-metal-firewall.target
+Requires=verself-firewall.target
 Wants=postgresql.service{% for u in electric_extra_systemd_after %} {{ u }}{% endfor %}
 
 

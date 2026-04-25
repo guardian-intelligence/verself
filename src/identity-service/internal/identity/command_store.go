@@ -121,8 +121,8 @@ func (s SQLStore) UpdateMemberRolesCommand(ctx context.Context, command UpdateMe
 	requestHash := commandRequestHash(command)
 	span.SetAttributes(
 		attribute.String("identity.command_id", commandID.String()),
-		attribute.String("forge_metal.org_id", command.OrgID),
-		attribute.String("forge_metal.subject_id", command.ActorID),
+		attribute.String("verself.org_id", command.OrgID),
+		attribute.String("verself.subject_id", command.ActorID),
 		attribute.String("identity.target_user_id", command.UserID),
 		attribute.Int("identity.expected_org_acl_version", int(command.ExpectedOrgACLVersion)),
 		attribute.String("identity.conflict_policy", memberRolesConflictPolicy),
@@ -712,7 +712,7 @@ func (s SQLStore) domainLedgerEventProjected(ctx context.Context, eventID uuid.U
 	var found uint8
 	err := s.CH.QueryRow(ctx, `
 SELECT 1
-FROM forge_metal.domain_update_ledger
+FROM verself.domain_update_ledger
 WHERE event_id = $1
 LIMIT 1`, eventID).Scan(&found)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -726,7 +726,7 @@ LIMIT 1`, eventID).Scan(&found)
 
 func (s SQLStore) insertDomainLedgerClickHouse(ctx context.Context, row domainLedgerProjection) error {
 	batch, err := s.CH.PrepareBatch(ctx, `
-INSERT INTO forge_metal.domain_update_ledger (
+INSERT INTO verself.domain_update_ledger (
     recorded_at, occurred_at, schema_version, event_id, event_type, service_name,
     org_id, actor_id, operation_id, command_id, idempotency_key_hash, aggregate_kind,
     aggregate_id, aggregate_version, target_kind, target_id, result, reason,

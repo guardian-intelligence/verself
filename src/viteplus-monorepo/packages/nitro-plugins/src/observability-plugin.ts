@@ -5,7 +5,7 @@ import type { H3Event } from "nitro/h3";
 import { correlationMiddleware } from "./correlation-middleware.ts";
 import { correlationContextKey, correlationHeaderName } from "./correlation.ts";
 
-const requestStartKey = "forge_metal_request_started_at_ns";
+const requestStartKey = "verself_request_started_at_ns";
 
 function correlationIDFromContext(value: unknown): string {
   if (typeof value === "string") {
@@ -86,7 +86,7 @@ export default definePlugin((nitroApp) => {
     emitLog(level, "http request completed", {
       trace_id: spanContext?.traceId ?? "",
       span_id: spanContext?.spanId ?? "",
-      fm_correlation_id: correlationID,
+      verself_correlation_id: correlationID,
       http_method: h3Event.req.method,
       http_target: `${url.pathname}${url.search}`,
       url_path: url.pathname,
@@ -111,7 +111,7 @@ export default definePlugin((nitroApp) => {
     emitLog("error", "nitro request failed", {
       trace_id: spanContext?.traceId ?? "",
       span_id: spanContext?.spanId ?? "",
-      fm_correlation_id: correlationID,
+      verself_correlation_id: correlationID,
       http_method: h3Event?.req.method ?? "",
       http_target: url ? `${url.pathname}${url.search}` : "",
       url_path: url?.pathname ?? "",

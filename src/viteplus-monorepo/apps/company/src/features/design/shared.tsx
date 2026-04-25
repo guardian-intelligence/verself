@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import { Lockup } from "@forge-metal/brand";
+import { Lockup } from "@verself/brand";
 
 // Hairline colour for dark panels and dark-ground borders inside the Workshop
 // dashboard specimen and the treatment Surface wrapper. The treatment

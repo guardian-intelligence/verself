@@ -57,7 +57,7 @@ metrics = get_text(\"/v1/sys/metrics?format=prometheus\")
 audited_headers = get_json(\"/v1/sys/config/auditing/request-headers\", token).get(\"headers\", {})
 audited_headers_lower = {key.lower(): value for key, value in audited_headers.items()}
 correlation_header = \"openbao-proof:\" + str(uuid.uuid4())
-mounts_response = get_json(\"/v1/sys/mounts\", token, {\"X-Forge-Metal-Request-Id\": correlation_header})
+mounts_response = get_json(\"/v1/sys/mounts\", token, {\"X-Verself-Request-Id\": correlation_header})
 mounts = sorted(mounts_response.get(\"data\", mounts_response).keys())
 legacy_internal_token_status, _ = get_json_status(\"/v1/platform-internal/data/service-credentials/secrets-service/internal-injection-token\", token)
 legacy_internal_token_metadata_status, _ = get_json_status(\"/v1/platform-internal/metadata/service-credentials/secrets-service/internal-injection-token\", token)
@@ -108,7 +108,7 @@ payload = {
     \"nft_has_loopback_drop\": \"tcp dport { 8200, 8201 } iifname != \\\"lo\\\" drop\" in nft_ruleset,
     \"credential_stats\": credential_stats,
     \"audit_log_bytes\": audit_stat.st_size,
-    \"audit_request_header\": audited_headers_lower.get(\"x-forge-metal-request-id\", {}),
+    \"audit_request_header\": audited_headers_lower.get(\"x-verself-request-id\", {}),
     \"audit_header_correlation\": correlation_header,
 }
 if not health.get(\"initialized\") or health.get(\"sealed\") or health.get(\"standby\"):
@@ -137,7 +137,7 @@ for name, stat in credential_stats.items():
 if audit_stat.st_size <= 0:
     raise SystemExit(\"OpenBao audit log is empty\")
 if payload[\"audit_request_header\"].get(\"hmac\") is not False:
-    raise SystemExit(\"OpenBao is not auditing X-Forge-Metal-Request-Id in plaintext\")
+    raise SystemExit(\"OpenBao is not auditing X-Verself-Request-Id in plaintext\")
 if audit_grep.returncode != 0:
     raise SystemExit(\"OpenBao audit log did not contain the proof request correlation header\")
 json.dump(payload, sys.stdout, indent=2, sort_keys=True)
@@ -180,9 +180,9 @@ with_otlp_tunnel() {
     return 1
   fi
 
-  export FORGE_METAL_OTLP_ENDPOINT="127.0.0.1:${port}"
-  export FORGE_METAL_DEPLOY_RUN_KEY="${run_id}"
-  export FORGE_METAL_DEPLOY_KIND="openbao-proof"
+  export VERSELF_OTLP_ENDPOINT="127.0.0.1:${port}"
+  export VERSELF_DEPLOY_RUN_KEY="${run_id}"
+  export VERSELF_DEPLOY_KIND="openbao-proof"
   # shellcheck source=src/platform/scripts/deploy_identity.sh
   source "${script_dir}/deploy_identity.sh"
 
@@ -194,7 +194,7 @@ import sys
 run_id, state_path = sys.argv[1:3]
 state = json.load(open(state_path, encoding="utf-8"))
 print(json.dumps({
-    "forge_metal.proof_run_id": run_id,
+    "verself.proof_run_id": run_id,
     "bao.sealed": bool(state["health"].get("sealed")),
     "bao.active": not bool(state["health"].get("standby")),
     "bao.version": state["health"].get("version", ""),
@@ -241,7 +241,7 @@ wait_for_clickhouse_count default "
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 60 SECOND
     AND ServiceName = 'platform-ansible'
     AND SpanName IN ('openbao.bootstrap.init', 'openbao.bootstrap.unseal', 'openbao.bootstrap.ready')
-    AND SpanAttributes['forge_metal.proof_run_id'] = {run_id:String}
+    AND SpanAttributes['verself.proof_run_id'] = {run_id:String}
 " 3 "${artifact_dir}/clickhouse/openbao-proof-spans-count.tsv"
 
 wait_for_clickhouse_count default "

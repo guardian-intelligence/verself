@@ -19,19 +19,19 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	VMService_AcquireLease_FullMethodName          = "/forge_metal.vm_orchestrator.v1.VMService/AcquireLease"
-	VMService_RenewLease_FullMethodName            = "/forge_metal.vm_orchestrator.v1.VMService/RenewLease"
-	VMService_ReleaseLease_FullMethodName          = "/forge_metal.vm_orchestrator.v1.VMService/ReleaseLease"
-	VMService_GetLease_FullMethodName              = "/forge_metal.vm_orchestrator.v1.VMService/GetLease"
-	VMService_ListLeases_FullMethodName            = "/forge_metal.vm_orchestrator.v1.VMService/ListLeases"
-	VMService_StreamLeaseEvents_FullMethodName     = "/forge_metal.vm_orchestrator.v1.VMService/StreamLeaseEvents"
-	VMService_StartExec_FullMethodName             = "/forge_metal.vm_orchestrator.v1.VMService/StartExec"
-	VMService_CancelExec_FullMethodName            = "/forge_metal.vm_orchestrator.v1.VMService/CancelExec"
-	VMService_GetExec_FullMethodName               = "/forge_metal.vm_orchestrator.v1.VMService/GetExec"
-	VMService_WaitExec_FullMethodName              = "/forge_metal.vm_orchestrator.v1.VMService/WaitExec"
-	VMService_CommitFilesystemMount_FullMethodName = "/forge_metal.vm_orchestrator.v1.VMService/CommitFilesystemMount"
-	VMService_SaveCheckpoint_FullMethodName        = "/forge_metal.vm_orchestrator.v1.VMService/SaveCheckpoint"
-	VMService_GetCapacity_FullMethodName           = "/forge_metal.vm_orchestrator.v1.VMService/GetCapacity"
+	VMService_AcquireLease_FullMethodName          = "/verself.vm_orchestrator.v1.VMService/AcquireLease"
+	VMService_RenewLease_FullMethodName            = "/verself.vm_orchestrator.v1.VMService/RenewLease"
+	VMService_ReleaseLease_FullMethodName          = "/verself.vm_orchestrator.v1.VMService/ReleaseLease"
+	VMService_GetLease_FullMethodName              = "/verself.vm_orchestrator.v1.VMService/GetLease"
+	VMService_ListLeases_FullMethodName            = "/verself.vm_orchestrator.v1.VMService/ListLeases"
+	VMService_StreamLeaseEvents_FullMethodName     = "/verself.vm_orchestrator.v1.VMService/StreamLeaseEvents"
+	VMService_StartExec_FullMethodName             = "/verself.vm_orchestrator.v1.VMService/StartExec"
+	VMService_CancelExec_FullMethodName            = "/verself.vm_orchestrator.v1.VMService/CancelExec"
+	VMService_GetExec_FullMethodName               = "/verself.vm_orchestrator.v1.VMService/GetExec"
+	VMService_WaitExec_FullMethodName              = "/verself.vm_orchestrator.v1.VMService/WaitExec"
+	VMService_CommitFilesystemMount_FullMethodName = "/verself.vm_orchestrator.v1.VMService/CommitFilesystemMount"
+	VMService_SaveCheckpoint_FullMethodName        = "/verself.vm_orchestrator.v1.VMService/SaveCheckpoint"
+	VMService_GetCapacity_FullMethodName           = "/verself.vm_orchestrator.v1.VMService/GetCapacity"
 )
 
 // VMServiceClient is the client API for VMService service.
@@ -518,7 +518,7 @@ func _VMService_GetCapacity_Handler(srv interface{}, ctx context.Context, dec fu
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var VMService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "forge_metal.vm_orchestrator.v1.VMService",
+	ServiceName: "verself.vm_orchestrator.v1.VMService",
 	HandlerType: (*VMServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{

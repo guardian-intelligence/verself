@@ -8,7 +8,7 @@ import {
   logout,
   selectOrganization,
   type AuthSession,
-} from "@forge-metal/auth-web/server";
+} from "@verself/auth-web/server";
 import { getAuthConfig } from "../server/auth";
 
 const loginRedirectInputSchema = v.object({

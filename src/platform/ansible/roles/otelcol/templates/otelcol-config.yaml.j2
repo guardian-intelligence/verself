@@ -245,6 +245,14 @@ receivers:
       - type: move
         from: body.MESSAGE
         to: body
+  journald/projects-service:
+    units: [projects-service]
+    resource:
+      service.name: projects-service
+    operators:
+      - type: move
+        from: body.MESSAGE
+        to: body
   journald/grafana:
     units: [grafana]
     resource:
@@ -414,7 +422,7 @@ receivers:
       process:
         include:
           match_type: regexp
-          names: ["billing-service", "sandbox-rental.*", "caddy", "clickhouse.*", "ClickHouse.*", "forgejo.*", "source-code-hosting-service", "grafana.*", "otelcol.*", "node", "forge-metal", "verdaccio", "next-server.*", "npm", "vm-orchestrator.*", "tigerbeetle", "zitadel", "bao", "postgres", "spire-server", "spire-agent", "forge-temporal-server", "forge-temporal-web"]
+          names: ["billing-service", "sandbox-rental.*", "caddy", "clickhouse.*", "ClickHouse.*", "forgejo.*", "source-code-hosting-service", "projects-service", "grafana.*", "otelcol.*", "node", "verself", "verdaccio", "next-server.*", "npm", "vm-orchestrator.*", "tigerbeetle", "zitadel", "bao", "postgres", "spire-server", "spire-agent", "verself-temporal-server", "verself-temporal-web"]
         mute_process_exe_error: true
         mute_process_io_error: true
       cpu: {}
@@ -458,9 +466,9 @@ processors:
   # after the playbook file (e.g. "dev-single-node.yml") and each task span
   # named after the raw task title. Rename to a stable
   # ansible.playbook/ansible.task schema so downstream queries don't have to
-  # special-case per-playbook names, and mirror forge_metal.* resource
+  # special-case per-playbook names, and mirror verself.* resource
   # attributes onto span attributes so ansible and service spans share one
-  # query shape: SpanAttributes['forge_metal.deploy_id'].
+  # query shape: SpanAttributes['verself.deploy_id'].
   transform/ansible_spans:
     error_mode: ignore
     trace_statements:
@@ -470,14 +478,14 @@ processors:
         statements:
           - set(name, "ansible.playbook") where IsMatch(name, ".*\\.ya?ml$")
           - set(name, "ansible.task") where name != "ansible.playbook"
-          - set(attributes["forge_metal.deploy_id"], resource.attributes["forge_metal.deploy_id"]) where resource.attributes["forge_metal.deploy_id"] != nil
-          - set(attributes["forge_metal.deploy_run_key"], resource.attributes["forge_metal.deploy_run_key"]) where resource.attributes["forge_metal.deploy_run_key"] != nil
-          - set(attributes["forge_metal.commit_sha"], resource.attributes["forge_metal.commit_sha"]) where resource.attributes["forge_metal.commit_sha"] != nil
-          - set(attributes["forge_metal.branch"], resource.attributes["forge_metal.branch"]) where resource.attributes["forge_metal.branch"] != nil
-          - set(attributes["forge_metal.commit_message"], resource.attributes["forge_metal.commit_message"]) where resource.attributes["forge_metal.commit_message"] != nil
-          - set(attributes["forge_metal.author"], resource.attributes["forge_metal.author"]) where resource.attributes["forge_metal.author"] != nil
-          - set(attributes["forge_metal.dirty"], resource.attributes["forge_metal.dirty"]) where resource.attributes["forge_metal.dirty"] != nil
-          - set(attributes["forge_metal.deploy_kind"], resource.attributes["forge_metal.deploy_kind"]) where resource.attributes["forge_metal.deploy_kind"] != nil
+          - set(attributes["verself.deploy_id"], resource.attributes["verself.deploy_id"]) where resource.attributes["verself.deploy_id"] != nil
+          - set(attributes["verself.deploy_run_key"], resource.attributes["verself.deploy_run_key"]) where resource.attributes["verself.deploy_run_key"] != nil
+          - set(attributes["verself.commit_sha"], resource.attributes["verself.commit_sha"]) where resource.attributes["verself.commit_sha"] != nil
+          - set(attributes["verself.branch"], resource.attributes["verself.branch"]) where resource.attributes["verself.branch"] != nil
+          - set(attributes["verself.commit_message"], resource.attributes["verself.commit_message"]) where resource.attributes["verself.commit_message"] != nil
+          - set(attributes["verself.author"], resource.attributes["verself.author"]) where resource.attributes["verself.author"] != nil
+          - set(attributes["verself.dirty"], resource.attributes["verself.dirty"]) where resource.attributes["verself.dirty"] != nil
+          - set(attributes["verself.deploy_kind"], resource.attributes["verself.deploy_kind"]) where resource.attributes["verself.deploy_kind"] != nil
 
 exporters:
   clickhouse:
@@ -508,7 +516,7 @@ service:
   extensions: [health_check, file_storage]
   pipelines:
     logs:
-      receivers: [otlp, filelog/caddy, journald/caddy, journald/billing-service, journald/sandbox-rental, journald/sandbox-rental-recurring-worker, journald/console, journald/zitadel, journald/openbao, journald/spire-server, journald/spire-agent, journald/vm-orchestrator, journald/forgejo, journald/source-code-hosting-service, journald/grafana, journald/temporal-server, journald/temporal-web, journald/verdaccio, filelog/postgresql]
+      receivers: [otlp, filelog/caddy, journald/caddy, journald/billing-service, journald/sandbox-rental, journald/sandbox-rental-recurring-worker, journald/console, journald/zitadel, journald/openbao, journald/spire-server, journald/spire-agent, journald/vm-orchestrator, journald/forgejo, journald/source-code-hosting-service, journald/projects-service, journald/grafana, journald/temporal-server, journald/temporal-web, journald/verdaccio, filelog/postgresql]
       processors: [batch]
       exporters: [clickhouse]
     traces:

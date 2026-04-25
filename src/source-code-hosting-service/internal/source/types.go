@@ -27,7 +27,7 @@ var slugPattern = regexp.MustCompile(`[^a-z0-9-]+`)
 const (
 	BackendForgejo = "forgejo"
 
-	GitCredentialUsername = "fm"
+	GitCredentialUsername = "verself"
 	GitCredentialKind     = "source_git_https"
 
 	WorkflowRunStateDispatching = "dispatching"
@@ -44,6 +44,7 @@ type Principal struct {
 type Repository struct {
 	RepoID        uuid.UUID
 	OrgID         uint64
+	ProjectID     uuid.UUID
 	OrgPath       string
 	CreatedBy     string
 	Name          string
@@ -72,6 +73,7 @@ type RepositoryBackend struct {
 }
 
 type CreateRepositoryRequest struct {
+	ProjectID     uuid.UUID
 	Name          string
 	Description   string
 	DefaultBranch string
@@ -120,6 +122,10 @@ type RunnerRepositoryRegistrar interface {
 	RegisterRunnerRepository(ctx context.Context, repo Repository) error
 }
 
+type ProjectResolver interface {
+	ResolveSourceProject(ctx context.Context, orgID uint64, projectID uuid.UUID) error
+}
+
 type GitRepositoryPath struct {
 	OrgPath     string
 	Slug        string
@@ -165,6 +171,7 @@ type CheckoutGrant struct {
 
 type WorkflowDispatchRequest struct {
 	RepoID         uuid.UUID
+	ProjectID      uuid.UUID
 	WorkflowPath   string
 	Ref            string
 	Inputs         map[string]string
@@ -175,6 +182,7 @@ type InternalWorkflowDispatchRequest struct {
 	OrgID          uint64
 	ActorID        string
 	RepoID         uuid.UUID
+	ProjectID      uuid.UUID
 	WorkflowPath   string
 	Ref            string
 	Inputs         map[string]string
@@ -184,6 +192,7 @@ type InternalWorkflowDispatchRequest struct {
 type WorkflowRun struct {
 	WorkflowRunID     uuid.UUID
 	OrgID             uint64
+	ProjectID         uuid.UUID
 	RepoID            uuid.UUID
 	ActorID           string
 	IdempotencyKey    string
@@ -212,6 +221,7 @@ type WebhookDelivery struct {
 	SignatureValid    bool
 	Result            string
 	ResolvedOrgID     uint64
+	ResolvedProjectID uuid.UUID
 	ResolvedRepoID    uuid.UUID
 	TraceID           string
 	Details           map[string]any
@@ -261,7 +271,7 @@ func NormalizeCreate(input CreateRepositoryRequest) (CreateRepositoryRequest, er
 	if input.DefaultBranch == "" {
 		input.DefaultBranch = "main"
 	}
-	if NormalizeSlug(input.Name) == "" {
+	if input.ProjectID == uuid.Nil || NormalizeSlug(input.Name) == "" {
 		return CreateRepositoryRequest{}, ErrInvalid
 	}
 	if len(input.Name) > 128 || len(input.Description) > 1024 || len(input.DefaultBranch) > 128 {
@@ -309,7 +319,7 @@ func NormalizeWorkflowDispatch(input WorkflowDispatchRequest, defaultRef string)
 		cleanInputs[key] = value
 	}
 	input.Inputs = cleanInputs
-	if input.RepoID == uuid.Nil || input.WorkflowPath == "" || input.Ref == "" || input.IdempotencyKey == "" {
+	if input.RepoID == uuid.Nil || input.ProjectID == uuid.Nil || input.WorkflowPath == "" || input.Ref == "" || input.IdempotencyKey == "" {
 		return WorkflowDispatchRequest{}, ErrInvalid
 	}
 	if len(input.WorkflowPath) > 512 || len(input.Ref) > 255 || len(input.IdempotencyKey) > 128 {

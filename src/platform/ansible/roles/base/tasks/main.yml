@@ -19,17 +19,17 @@
     group: root
     mode: "0711"
 
-- name: Create forge-metal system config directory
+- name: Create verself system config directory
   ansible.builtin.file:
-    path: /etc/forge-metal
+    path: /etc/verself
     state: directory
     owner: root
     group: root
     mode: "0700"
 
-- name: Remove stale forge-metal system config
+- name: Remove stale verself system config
   ansible.builtin.file:
-    path: /etc/forge-metal/config.toml
+    path: /etc/verself/config.toml
     state: absent
 
 - name: Disable unsupported GSSAPIAuthentication in ssh_config

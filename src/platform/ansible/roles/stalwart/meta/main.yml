@@ -1,4 +1,4 @@
 ---
-# deploy_profile: provides stalwart binary at fm_bin.
+# deploy_profile: provides stalwart binary at verself_bin.
 dependencies:
   - role: deploy_profile

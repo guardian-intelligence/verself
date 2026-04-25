@@ -17,6 +17,7 @@ cloudflare_dns_records:
   - "{{ identity_service_subdomain | default('identity.api') }}"
   - "{{ profile_service_subdomain | default('profile.api') }}"
   - "{{ notifications_service_subdomain | default('notifications.api') }}"
+  - "{{ projects_service_subdomain | default('projects.api') }}"
   - "{{ source_code_hosting_service_subdomain | default('source.api') }}"
   - "{{ governance_service_subdomain | default('governance.api') }}"
   - "{{ secrets_service_subdomain | default('secrets.api') }}"

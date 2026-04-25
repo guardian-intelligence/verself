@@ -22,7 +22,7 @@ argument_specs:
         type: path
         default: /var/log/grafana
         description: "Grafana log directory."
-      fm_bin:
+      verself_bin:
         type: path
         required: true
         description: "Path to the server binary directory."

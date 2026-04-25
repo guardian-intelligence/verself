@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/forge-metal/mailbox-service/internal/forwarder"
-	"github.com/forge-metal/mailbox-service/internal/mailstore"
-	"github.com/forge-metal/mailbox-service/internal/sessionproxy"
-	mailboxsync "github.com/forge-metal/mailbox-service/internal/sync"
+	"github.com/verself/mailbox-service/internal/forwarder"
+	"github.com/verself/mailbox-service/internal/mailstore"
+	"github.com/verself/mailbox-service/internal/sessionproxy"
+	mailboxsync "github.com/verself/mailbox-service/internal/sync"
 )
 
 type ServiceStatus struct {

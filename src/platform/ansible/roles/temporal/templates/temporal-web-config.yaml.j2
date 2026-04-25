@@ -36,8 +36,8 @@ auth:
       type: oidc
       # Zitadel resolves the tenant instance from the request host, so loopback
       # discovery fails even on-box; use the real public issuer URL here.
-      providerUrl: "https://auth.{{ forge_metal_domain }}"
-      issuerUrl: "https://auth.{{ forge_metal_domain }}"
+      providerUrl: "https://auth.{{ verself_domain }}"
+      issuerUrl: "https://auth.{{ verself_domain }}"
       clientId: "{{ temporal_web_oidc_client_id }}"
       clientSecret: "{{ temporal_web_oidc_client_secret }}"
       callbackUrl: "{{ temporal_web_oidc_redirect_uri }}"

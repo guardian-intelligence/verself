@@ -1,11 +1,11 @@
 import { useForm } from "@tanstack/react-form";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useSignedInAuth } from "@forge-metal/auth-web/react";
-import { Button } from "@forge-metal/ui/components/ui/button";
-import { Field, FieldError, FieldLabel } from "@forge-metal/ui/components/ui/field";
-import { Input } from "@forge-metal/ui/components/ui/input";
-import { Select } from "@forge-metal/ui/components/ui/select";
+import { useSignedInAuth } from "@verself/auth-web/react";
+import { Button } from "@verself/ui/components/ui/button";
+import { Field, FieldError, FieldLabel } from "@verself/ui/components/ui/field";
+import { Input } from "@verself/ui/components/ui/input";
+import { Select } from "@verself/ui/components/ui/select";
 import {
   Page,
   PageEyebrow,
@@ -17,7 +17,7 @@ import {
   SectionHeader,
   SectionHeaderContent,
   SectionTitle,
-} from "@forge-metal/ui/components/ui/page";
+} from "@verself/ui/components/ui/page";
 import {
   Table,
   TableBody,
@@ -25,8 +25,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@forge-metal/ui/components/ui/table";
-import { Textarea } from "@forge-metal/ui/components/ui/textarea";
+} from "@verself/ui/components/ui/table";
+import { Textarea } from "@verself/ui/components/ui/textarea";
 import { EmptyState } from "~/components/empty-state";
 import { ErrorCallout } from "~/components/error-callout";
 import { formatDateTimeUTC } from "~/lib/format";
@@ -90,7 +90,7 @@ export function ExecutionSchedulesPanel() {
                 <div className="min-w-0">
                   <div className="font-mono text-sm break-all">{schedule.workflow_path}</div>
                   <div className="font-mono text-xs text-muted-foreground">
-                    {schedule.source_repository_id.slice(0, 8)}
+                    {schedule.project_id.slice(0, 8)} / {schedule.source_repository_id.slice(0, 8)}
                     {schedule.ref ? ` @ ${schedule.ref}` : ""}
                   </div>
                 </div>
@@ -176,6 +176,10 @@ export function ExecutionScheduleDetailPanel({ scheduleId }: { scheduleId: strin
             <div>
               <dt className="text-sm text-muted-foreground">Task queue</dt>
               <dd className="font-mono text-sm">{schedule.task_queue}</dd>
+            </div>
+            <div>
+              <dt className="text-sm text-muted-foreground">Project</dt>
+              <dd className="font-mono text-sm break-all">{schedule.project_id}</dd>
             </div>
             <div>
               <dt className="text-sm text-muted-foreground">Repository</dt>
@@ -279,10 +283,15 @@ export function ExecutionScheduleForm() {
     },
     onSubmit: async ({ value }) => {
       mutation.reset();
+      const repository = repositories.find((repo) => repo.repo_id === value.sourceRepositoryId);
+      if (!repository) {
+        throw new Error("Selected repository is no longer available.");
+      }
       await mutation.mutateAsync({
         display_name: value.displayName || undefined,
         inputs: parseScheduleInputs(value.inputsJSON),
         interval_seconds: Number(value.intervalSeconds),
+        project_id: repository.project_id,
         ref: value.ref || undefined,
         source_repository_id: value.sourceRepositoryId,
         workflow_path: value.workflowPath,
@@ -364,7 +373,7 @@ export function ExecutionScheduleForm() {
             >
               {repositories.map((repo) => (
                 <option key={repo.repo_id} value={repo.repo_id}>
-                  {repo.name}
+                  {repo.name} ({repo.project_id.slice(0, 8)})
                 </option>
               ))}
             </Select>

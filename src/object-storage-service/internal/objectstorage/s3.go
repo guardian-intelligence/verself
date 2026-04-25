@@ -17,7 +17,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsv4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
-	workloadauth "github.com/forge-metal/auth-middleware/workload"
+	workloadauth "github.com/verself/auth-middleware/workload"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	oteltrace "go.opentelemetry.io/otel/trace"
@@ -208,9 +208,9 @@ func (h *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		event.Status = uint16(resp.StatusCode)
 		span.SetAttributes(
-			attribute.String("forge_metal.org_id", event.OrgID),
-			attribute.String("forge_metal.bucket_id", event.BucketID),
-			attribute.String("forge_metal.object_storage.operation", operation.Name),
+			attribute.String("verself.org_id", event.OrgID),
+			attribute.String("verself.bucket_id", event.BucketID),
+			attribute.String("verself.object_storage.operation", operation.Name),
 		)
 		return
 	}
@@ -228,9 +228,9 @@ func (h *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	event.Status = uint16(resp.StatusCode)
 	event.BytesOut = uint64(writer.N)
 	span.SetAttributes(
-		attribute.String("forge_metal.org_id", event.OrgID),
-		attribute.String("forge_metal.bucket_id", event.BucketID),
-		attribute.String("forge_metal.object_storage.operation", operation.Name),
+		attribute.String("verself.org_id", event.OrgID),
+		attribute.String("verself.bucket_id", event.BucketID),
+		attribute.String("verself.object_storage.operation", operation.Name),
 	)
 }
 

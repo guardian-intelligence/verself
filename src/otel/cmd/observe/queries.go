@@ -271,7 +271,7 @@ FROM
   UNION ALL
   SELECT 'deploys',
          toUInt64(1),
-         countDistinct(SpanAttributes['forge_metal.deploy_run_key']),
+         countDistinct(SpanAttributes['verself.deploy_run_key']),
          'deploy run keys',
          count(),
          'make observe WHAT=catalog SIGNAL=deploys',
@@ -367,7 +367,7 @@ LIMIT {row_limit:UInt32}`
 const deployCatalogSQL = `
 SELECT
   extract(SpanAttributes['ansible.task.name'], ': ([A-Za-z0-9_-]+) :') AS role,
-  SpanAttributes['forge_metal.deploy_run_key'] AS deploy_run_key,
+  SpanAttributes['verself.deploy_run_key'] AS deploy_run_key,
   count() AS tasks,
   countIf(StatusCode IN ('Error', 'STATUS_CODE_ERROR')) AS errors,
   min(Timestamp) AS first_seen,
@@ -378,7 +378,7 @@ WHERE ServiceName = 'ansible'
   AND (
     {search:String} = ''
     OR positionCaseInsensitive(extract(SpanAttributes['ansible.task.name'], ': ([A-Za-z0-9_-]+) :'), {search:String}) > 0
-    OR positionCaseInsensitive(SpanAttributes['forge_metal.deploy_run_key'], {search:String}) > 0
+    OR positionCaseInsensitive(SpanAttributes['verself.deploy_run_key'], {search:String}) > 0
   )
 GROUP BY role, deploy_run_key
 ORDER BY deploy_run_key DESC, role
@@ -496,7 +496,7 @@ LIMIT {row_limit:UInt32}`
 // describe.field.* queries match FIELD as a case-insensitive substring on the
 // attribute map key. That lets callers pass an intuitive fragment
 // (deploy_run_key) and still discover namespaced keys
-// (forge_metal.deploy_run_key) without guessing the namespace.
+// (verself.deploy_run_key) without guessing the namespace.
 const describeLogFieldSQL = `
 SELECT
   attr_key,
@@ -784,7 +784,7 @@ SELECT
   extract(SpanAttributes['ansible.task.name'], ': ([A-Za-z0-9_-]+) :') AS role,
   SpanAttributes['ansible.task.name'] AS task,
   StatusCode AS status,
-  SpanAttributes['forge_metal.deploy_run_key'] AS deploy_run_key,
+  SpanAttributes['verself.deploy_run_key'] AS deploy_run_key,
   TraceId AS trace_id
 FROM default.otel_traces
 WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
@@ -803,7 +803,7 @@ SELECT
 FROM default.otel_traces
 WHERE ServiceName = 'ansible'
   AND SpanName = 'ansible.task'
-  AND SpanAttributes['forge_metal.deploy_run_key'] = {run_key:String}
+  AND SpanAttributes['verself.deploy_run_key'] = {run_key:String}
 ORDER BY Timestamp
 LIMIT {row_limit:UInt32}`
 
@@ -817,7 +817,7 @@ SELECT
   round(Duration / 1000000, 2) AS ms,
   SpanAttributes['http.method'] AS method,
   SpanAttributes['http.target'] AS target,
-  SpanAttributes['forge_metal.deploy_run_key'] AS deploy_run_key
+  SpanAttributes['verself.deploy_run_key'] AS deploy_run_key
 FROM default.otel_traces
 WHERE TraceId = {trace_id:String}
 ORDER BY Timestamp
@@ -896,7 +896,7 @@ LIMIT {row_limit:UInt32}`
 
 const overviewDeploysSQL = `
 SELECT
-  SpanAttributes['forge_metal.deploy_run_key'] AS deploy_run_key,
+  SpanAttributes['verself.deploy_run_key'] AS deploy_run_key,
   countDistinct(extract(SpanAttributes['ansible.task.name'], ': ([A-Za-z0-9_-]+) :')) AS roles,
   count() AS tasks,
   countIf(StatusCode IN ('Error', 'STATUS_CODE_ERROR')) AS errors,
@@ -907,7 +907,7 @@ FROM default.otel_traces
 WHERE ServiceName = 'ansible'
   AND SpanName = 'ansible.task'
   AND Timestamp > now() - toIntervalDay(7)
-  AND SpanAttributes['forge_metal.deploy_run_key'] != ''
+  AND SpanAttributes['verself.deploy_run_key'] != ''
 GROUP BY deploy_run_key
 ORDER BY last_seen DESC
 LIMIT {row_limit:UInt32}`
@@ -927,7 +927,7 @@ ORDER BY total_errors DESC
 LIMIT {row_limit:UInt32}`
 
 // FIELD= filters logs on either LogAttributes or ResourceAttributes. Resource
-// attributes (forge_metal.deploy_run_key, host.name, ...) are discoverable via
+// attributes (verself.deploy_run_key, host.name, ...) are discoverable via
 // `WHAT=describe FIELD=...` — the filter must accept the same keys or the
 // describe → filter flow silently drops every row.
 const logsRecentSQL = `

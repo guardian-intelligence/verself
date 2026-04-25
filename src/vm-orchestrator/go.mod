@@ -1,12 +1,12 @@
-module github.com/forge-metal/vm-orchestrator
+module github.com/verself/vm-orchestrator
 
 go 1.25.0
 
 require (
-	github.com/forge-metal/apiwire v0.0.0
-	github.com/forge-metal/otel v0.0.0
 	github.com/google/uuid v1.6.0
 	github.com/oklog/ulid/v2 v2.1.1
+	github.com/verself/apiwire v0.0.0
+	github.com/verself/otel v0.0.0
 	github.com/vishvananda/netlink v1.3.1
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.68.0
 	go.opentelemetry.io/otel v1.43.0
@@ -49,6 +49,6 @@ require (
 	modernc.org/memory v1.11.0 // indirect
 )
 
-replace github.com/forge-metal/otel => ../otel
+replace github.com/verself/otel => ../otel
 
-replace github.com/forge-metal/apiwire => ../apiwire
+replace github.com/verself/apiwire => ../apiwire

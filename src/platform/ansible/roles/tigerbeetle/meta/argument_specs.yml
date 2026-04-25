@@ -33,7 +33,7 @@ argument_specs:
         default: 1
         description: "Total replica count. Immutable after format."
 
-      fm_bin:
+      verself_bin:
         type: path
         required: true
         description: "Path to the server binary directory."

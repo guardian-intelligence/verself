@@ -17,7 +17,7 @@ type GovernanceAuditEvent struct {
 	ActorDisplay          string `json:"actor_display,omitempty" doc:"Display label for the actor when available."`
 	ActorOwnerID          string `json:"actor_owner_id,omitempty" doc:"Owner of an API credential or workload actor when known."`
 	ActorOwnerDisplay     string `json:"actor_owner_display,omitempty" doc:"Display label for the actor owner when known."`
-	CredentialID          string `json:"credential_id,omitempty" doc:"Forge Metal API credential ID when the actor is a credential."`
+	CredentialID          string `json:"credential_id,omitempty" doc:"Verself API credential ID when the actor is a credential."`
 	CredentialName        string `json:"credential_name,omitempty" doc:"API credential display name when known."`
 	CredentialFingerprint string `json:"credential_fingerprint,omitempty" doc:"Non-secret credential fingerprint when known."`
 	AuthMethod            string `json:"auth_method,omitempty" doc:"Authentication method used by the actor."`
@@ -26,7 +26,7 @@ type GovernanceAuditEvent struct {
 	TargetID              string `json:"target_id,omitempty" doc:"Target identifier when known and safe to expose."`
 	TargetDisplay         string `json:"target_display,omitempty" doc:"Target display label when known."`
 	TargetScope           string `json:"target_scope,omitempty" doc:"Target scoping rule or resolved scope."`
-	Permission            string `json:"permission" doc:"Forge Metal operation permission."`
+	Permission            string `json:"permission" doc:"Verself operation permission."`
 	Action                string `json:"action" doc:"Action declared by the operation catalog."`
 	OrgScope              string `json:"org_scope" doc:"Organization scoping rule used for the decision."`
 	Decision              string `json:"decision" doc:"Authorization decision."`

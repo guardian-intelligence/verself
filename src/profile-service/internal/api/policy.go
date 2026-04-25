@@ -15,8 +15,8 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	auth "github.com/forge-metal/auth-middleware"
-	"github.com/forge-metal/profile-service/internal/profile"
+	auth "github.com/verself/auth-middleware"
+	"github.com/verself/profile-service/internal/profile"
 )
 
 type permission string
@@ -106,8 +106,8 @@ func setIdentitySpanAttributes(span trace.Span, identity *auth.Identity) {
 		return
 	}
 	span.SetAttributes(
-		attribute.String("forge_metal.org_id", identity.OrgID),
-		attribute.String("forge_metal.subject_id", identity.Subject),
+		attribute.String("verself.org_id", identity.OrgID),
+		attribute.String("verself.subject_id", identity.Subject),
 	)
 }
 
@@ -187,7 +187,7 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 	if policy.BodyLimitBytes > 0 {
 		iam["request_body_max_bytes"] = policy.BodyLimitBytes
 	}
-	op.Extensions["x-forge-metal-iam"] = iam
+	op.Extensions["x-verself-iam"] = iam
 	if policy.Internal {
 		op.Security = []map[string][]string{{"mutualTLS": {}}}
 	} else {

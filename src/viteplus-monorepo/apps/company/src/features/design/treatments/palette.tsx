@@ -227,7 +227,7 @@ function PaletteEmpty({ roleLabel }: { readonly roleLabel: string }) {
 
 // Four columns at md+, two at small. Keeping this in a style block (rather
 // than Tailwind utility classes) so the component has no external class-name
-// dependency when we extract it into @forge-metal/brand later.
+// dependency when we extract it into @verself/brand later.
 const PALETTE_CSS = `
   .treatment-palette-grid {
     display: grid;

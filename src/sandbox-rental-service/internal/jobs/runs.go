@@ -436,7 +436,7 @@ func (s *Service) listStickyDiskMountsForAttempts(ctx context.Context, attemptID
 }
 
 func traceOrgID(orgID uint64) attribute.KeyValue {
-	return attribute.String("forge_metal.org_id", strconv.FormatUint(orgID, 10))
+	return attribute.String("verself.org_id", strconv.FormatUint(orgID, 10))
 }
 
 func traceInt(key string, value int) attribute.KeyValue {

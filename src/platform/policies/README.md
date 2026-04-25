@@ -1,7 +1,7 @@
 # policies/
 
 Machine-readable source of truth for every customer-facing policy commitment
-Forge Metal makes. One file per domain, consumed by the rendered `/policy/*`
+Verself makes. One file per domain, consumed by the rendered `/policy/*`
 pages in `src/viteplus-monorepo/apps/platform`.
 
 Files here are public by intent: they encode commitments we make and surfaces

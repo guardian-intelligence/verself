@@ -69,6 +69,7 @@ type CreateRepositoryRequest struct {
 	DefaultBranch *string `json:"default_branch,omitempty"`
 	Description   *string `json:"description,omitempty"`
 	Name          string  `json:"name"`
+	ProjectId     string  `json:"project_id"`
 }
 
 // CreateWorkflowRunRequest defines model for CreateWorkflowRunRequest.
@@ -76,6 +77,7 @@ type CreateWorkflowRunRequest struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema       *string            `json:"$schema,omitempty"`
 	Inputs       *map[string]string `json:"inputs,omitempty"`
+	ProjectId    string             `json:"project_id"`
 	Ref          *string            `json:"ref,omitempty"`
 	WorkflowPath string             `json:"workflow_path"`
 }
@@ -156,6 +158,7 @@ type Repository struct {
 	Name          string     `json:"name"`
 	OrgId         string     `json:"org_id"`
 	OrgPath       string     `json:"org_path"`
+	ProjectId     string     `json:"project_id"`
 	RepoId        string     `json:"repo_id"`
 	Slug          string     `json:"slug"`
 	State         string     `json:"state"`
@@ -198,6 +201,7 @@ type WorkflowRun struct {
 	FailureReason     *string           `json:"failure_reason,omitempty"`
 	Inputs            map[string]string `json:"inputs"`
 	OrgId             string            `json:"org_id"`
+	ProjectId         string            `json:"project_id"`
 	Ref               string            `json:"ref"`
 	RepoId            string            `json:"repo_id"`
 	State             string            `json:"state"`
@@ -218,6 +222,11 @@ type WorkflowRunList struct {
 type CreateSourceGitCredentialParams struct {
 	// IdempotencyKey Stable caller-provided key used to make this mutation retry-safe.
 	IdempotencyKey string `json:"Idempotency-Key"`
+}
+
+// ListSourceRepositoriesParams defines parameters for ListSourceRepositories.
+type ListSourceRepositoriesParams struct {
+	ProjectId *openapi_types.UUID `form:"project_id,omitempty" json:"project_id,omitempty"`
 }
 
 // CreateSourceRepositoryParams defines parameters for CreateSourceRepository.
@@ -341,7 +350,7 @@ type ClientInterface interface {
 	CreateSourceGitCredential(ctx context.Context, params *CreateSourceGitCredentialParams, body CreateSourceGitCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListSourceRepositories request
-	ListSourceRepositories(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ListSourceRepositories(ctx context.Context, params *ListSourceRepositoriesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateSourceRepositoryWithBody request with any body
 	CreateSourceRepositoryWithBody(ctx context.Context, params *CreateSourceRepositoryParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -401,8 +410,8 @@ func (c *Client) CreateSourceGitCredential(ctx context.Context, params *CreateSo
 	return c.Client.Do(req)
 }
 
-func (c *Client) ListSourceRepositories(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListSourceRepositoriesRequest(c.Server)
+func (c *Client) ListSourceRepositories(ctx context.Context, params *ListSourceRepositoriesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListSourceRepositoriesRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -611,7 +620,7 @@ func NewCreateSourceGitCredentialRequestWithBody(server string, params *CreateSo
 }
 
 // NewListSourceRepositoriesRequest generates requests for ListSourceRepositories
-func NewListSourceRepositoriesRequest(server string) (*http.Request, error) {
+func NewListSourceRepositoriesRequest(server string, params *ListSourceRepositoriesParams) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -627,6 +636,28 @@ func NewListSourceRepositoriesRequest(server string) (*http.Request, error) {
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.ProjectId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "project_id", *params.ProjectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "uuid"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
@@ -1135,7 +1166,7 @@ type ClientWithResponsesInterface interface {
 	CreateSourceGitCredentialWithResponse(ctx context.Context, params *CreateSourceGitCredentialParams, body CreateSourceGitCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateSourceGitCredentialResponse, error)
 
 	// ListSourceRepositoriesWithResponse request
-	ListSourceRepositoriesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListSourceRepositoriesResponse, error)
+	ListSourceRepositoriesWithResponse(ctx context.Context, params *ListSourceRepositoriesParams, reqEditors ...RequestEditorFn) (*ListSourceRepositoriesResponse, error)
 
 	// CreateSourceRepositoryWithBodyWithResponse request with any body
 	CreateSourceRepositoryWithBodyWithResponse(ctx context.Context, params *CreateSourceRepositoryParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateSourceRepositoryResponse, error)
@@ -1442,8 +1473,8 @@ func (c *ClientWithResponses) CreateSourceGitCredentialWithResponse(ctx context.
 }
 
 // ListSourceRepositoriesWithResponse request returning *ListSourceRepositoriesResponse
-func (c *ClientWithResponses) ListSourceRepositoriesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListSourceRepositoriesResponse, error) {
-	rsp, err := c.ListSourceRepositories(ctx, reqEditors...)
+func (c *ClientWithResponses) ListSourceRepositoriesWithResponse(ctx context.Context, params *ListSourceRepositoriesParams, reqEditors ...RequestEditorFn) (*ListSourceRepositoriesResponse, error) {
+	rsp, err := c.ListSourceRepositories(ctx, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}

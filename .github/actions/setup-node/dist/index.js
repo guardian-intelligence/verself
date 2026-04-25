@@ -25,7 +25,7 @@ async function setup() {
     fs.mkdirSync(mount.path, { recursive: true });
     if (!isMountPoint(mount.path)) {
       throw new Error(
-        `Forge Metal setup-node expected sticky disk ${mount.key} at ${mount.path}. ` +
+        `Verself setup-node expected sticky disk ${mount.key} at ${mount.path}. ` +
           "The control plane must provision setup-node sticky disks before VM boot.",
       );
     }
@@ -48,14 +48,14 @@ async function setup() {
     throw new Error(`unsupported package-manager ${spec.packageManager}; this tracer bullet supports pnpm`);
   }
 
-  prependPath("/opt/forge-metal/nodejs/bin");
+  prependPath("/opt/verself/nodejs/bin");
   const storeHit = results.find((result) => result.kind === "store")?.warm ?? false;
   const modulesHit = spec.nodeModules ? (results.find((result) => result.kind === "node_modules")?.warm ?? false) : true;
   setOutput("store-cache-hit", String(storeHit));
   setOutput("node-modules-cache-hit", String(modulesHit));
   setOutput("cache-hit", String(storeHit && modulesHit));
   notice(
-    `Forge Metal setup-node ready in ${Date.now() - started}ms ` +
+    `Verself setup-node ready in ${Date.now() - started}ms ` +
       `(node ${nodeVersion.trim()}, ${spec.packageManager} ${packageManagerVersion}, ` +
       `store_hit=${storeHit}, node_modules_hit=${modulesHit})`,
   );
@@ -64,7 +64,7 @@ async function setup() {
 async function commit() {
   const count = Number(process.env.STATE_mount_count || "0");
   if (!Number.isFinite(count) || count <= 0) {
-    notice("Forge Metal setup-node skipped save because no setup-node sticky disks were mounted");
+    notice("Verself setup-node skipped save because no setup-node sticky disks were mounted");
     return;
   }
   for (let i = 0; i < count; i++) {
@@ -74,7 +74,7 @@ async function commit() {
     try {
       mount = JSON.parse(raw);
     } catch (error) {
-      warning(`Forge Metal setup-node skipped malformed mount state ${i}: ${error.message}`);
+      warning(`Verself setup-node skipped malformed mount state ${i}: ${error.message}`);
       continue;
     }
     await requestSave(mount.key, mount.path);
@@ -83,11 +83,11 @@ async function commit() {
 
 async function requestSave(key, mountPath) {
   if (!fs.existsSync(mountPath)) {
-    warning(`Forge Metal setup-node sticky disk path does not exist: ${mountPath}`);
+    warning(`Verself setup-node sticky disk path does not exist: ${mountPath}`);
     return;
   }
   if (!isMountPoint(mountPath)) {
-    warning(`Forge Metal setup-node sticky disk path is no longer mounted: ${mountPath}`);
+    warning(`Verself setup-node sticky disk path is no longer mounted: ${mountPath}`);
     return;
   }
   const response = await fetch(endpointURL("save", key), {
@@ -99,11 +99,11 @@ async function requestSave(key, mountPath) {
     body: JSON.stringify({ key, path: mountPath }),
   });
   if (!response.ok) {
-    warning(`Forge Metal setup-node sticky disk save failed: HTTP ${response.status}: ${await response.text()}`);
+    warning(`Verself setup-node sticky disk save failed: HTTP ${response.status}: ${await response.text()}`);
     return;
   }
   const body = await response.json().catch(() => ({}));
-  notice(`Forge Metal setup-node queued ZFS save ${body.commit_id ?? "unknown"} for ${key}`);
+  notice(`Verself setup-node queued ZFS save ${body.commit_id ?? "unknown"} for ${key}`);
 }
 
 function readSpec() {
@@ -116,7 +116,7 @@ function readSpec() {
   const lockHash = sha256File(lockPath);
   return {
     repository: requiredEnv("GITHUB_REPOSITORY"),
-    runnerClass: process.env.FORGE_METAL_RUNNER_CLASS || "unknown",
+    runnerClass: process.env.VERSELF_RUNNER_CLASS || "unknown",
     nodeVersion: normalizeNodeVersion(input("node-version")),
     packageManager,
     packageManagerSpec,
@@ -235,8 +235,8 @@ function directoryHasEntries(dir) {
 }
 
 function endpointURL(operation, key) {
-  const origin = requiredEnv("FORGE_METAL_HOST_SERVICE_HTTP_ORIGIN");
-  const basePath = process.env.FORGE_METAL_STICKY_PATH || "/internal/sandbox/v1/stickydisk";
+  const origin = requiredEnv("VERSELF_HOST_SERVICE_HTTP_ORIGIN");
+  const basePath = process.env.VERSELF_STICKY_PATH || "/internal/sandbox/v1/stickydisk";
   const url = new URL(basePath.replace(/\/$/, "") + "/" + operation, origin);
   url.searchParams.set("key", key);
   return url;
@@ -244,9 +244,9 @@ function endpointURL(operation, key) {
 
 function requestHeaders() {
   return {
-    Authorization: `Bearer ${requiredEnv("FORGE_METAL_STICKY_TOKEN")}`,
-    "X-Forge-Metal-Execution-Id": requiredEnv("FORGE_METAL_EXECUTION_ID"),
-    "X-Forge-Metal-Attempt-Id": requiredEnv("FORGE_METAL_ATTEMPT_ID"),
+    Authorization: `Bearer ${requiredEnv("VERSELF_STICKY_TOKEN")}`,
+    "X-Verself-Execution-Id": requiredEnv("VERSELF_EXECUTION_ID"),
+    "X-Verself-Attempt-Id": requiredEnv("VERSELF_ATTEMPT_ID"),
   };
 }
 

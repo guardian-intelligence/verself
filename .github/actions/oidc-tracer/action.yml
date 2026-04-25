@@ -1,10 +1,10 @@
-name: Forge Metal OIDC Tracer
-description: Request and verify a GitHub Actions OIDC token on a Forge Metal runner.
+name: Verself OIDC Tracer
+description: Request and verify a GitHub Actions OIDC token on a Verself runner.
 inputs:
   audience:
     description: Audience to request from GitHub's OIDC token endpoint.
     required: false
-    default: forge-metal-oidc-tracer
+    default: verself-oidc-tracer
   expected-repository:
     description: Expected owner/repository claim.
     required: false

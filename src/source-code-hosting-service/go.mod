@@ -1,19 +1,20 @@
-module github.com/forge-metal/source-code-hosting-service
+module github.com/verself/source-code-hosting-service
 
 go 1.25.8
 
 require (
 	github.com/danielgtaylor/huma/v2 v2.37.3
-	github.com/forge-metal/apiwire v0.0.0
-	github.com/forge-metal/auth-middleware v0.0.0
-	github.com/forge-metal/envconfig v0.0.0
-	github.com/forge-metal/httpserver v0.0.0
-	github.com/forge-metal/otel v0.0.0
-	github.com/forge-metal/sandbox-rental-service v0.0.0
-	github.com/forge-metal/secrets-service v0.0.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.1
 	github.com/oapi-codegen/runtime v1.4.0
+	github.com/verself/apiwire v0.0.0
+	github.com/verself/auth-middleware v0.0.0
+	github.com/verself/envconfig v0.0.0
+	github.com/verself/httpserver v0.0.0
+	github.com/verself/otel v0.0.0
+	github.com/verself/projects-service v0.0.0
+	github.com/verself/sandbox-rental-service v0.0.0
+	github.com/verself/secrets-service v0.0.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
@@ -57,11 +58,12 @@ require (
 )
 
 replace (
-	github.com/forge-metal/apiwire => ../apiwire
-	github.com/forge-metal/auth-middleware => ../auth-middleware
-	github.com/forge-metal/envconfig => ../envconfig
-	github.com/forge-metal/httpserver => ../httpserver
-	github.com/forge-metal/otel => ../otel
-	github.com/forge-metal/sandbox-rental-service => ../sandbox-rental-service
-	github.com/forge-metal/secrets-service => ../secrets-service
+	github.com/verself/apiwire => ../apiwire
+	github.com/verself/auth-middleware => ../auth-middleware
+	github.com/verself/envconfig => ../envconfig
+	github.com/verself/httpserver => ../httpserver
+	github.com/verself/otel => ../otel
+	github.com/verself/projects-service => ../projects-service
+	github.com/verself/sandbox-rental-service => ../sandbox-rental-service
+	github.com/verself/secrets-service => ../secrets-service
 )

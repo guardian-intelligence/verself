@@ -14,11 +14,11 @@ export const Route = createFileRoute("/docs/secrets")({
   component: SecretsDocs,
   head: () => ({
     meta: [
-      { title: "Secrets & Keys — Forge Metal Platform" },
+      { title: "Secrets & Keys — Verself Platform" },
       {
         name: "description",
         content:
-          "Store sensitive values, manage encryption keys, and inject both into Forge Metal sandbox workloads.",
+          "Store sensitive values, manage encryption keys, and inject both into Verself sandbox workloads.",
       },
     ],
   }),
@@ -33,8 +33,8 @@ function SecretsDocs() {
         </p>
         <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Secrets &amp; Keys</h1>
         <p className="max-w-2xl text-sm leading-6 text-muted-foreground md:text-base md:leading-7">
-          Store sensitive values, manage encryption keys, and inject both into every Forge Metal
-          sandbox workload.
+          Store sensitive values, manage encryption keys, and inject both into every Verself sandbox
+          workload.
         </p>
       </header>
 
@@ -56,7 +56,7 @@ function Overview() {
       <SectionHeading id="overview">Overview</SectionHeading>
       <Prose>
         <p>
-          Forge Metal ships two related services for handling sensitive material.{" "}
+          Verself ships two related services for handling sensitive material.{" "}
           <strong>Secrets</strong> store values your code needs but shouldn't commit to source
           control — API tokens, database passwords, webhook signing secrets, TLS private keys.{" "}
           <strong>Keys</strong> hold cryptographic material your code uses for encrypt, decrypt,
@@ -98,13 +98,13 @@ function SharedResponsibility() {
       <SectionHeading id="shared-responsibility">Shared responsibility</SectionHeading>
       <Prose>
         <p>
-          Forge Metal is responsible for how secrets and keys are stored, delivered, and isolated.
-          You are responsible for what your code does with the values after it receives them.
+          Verself is responsible for how secrets and keys are stored, delivered, and isolated. You
+          are responsible for what your code does with the values after it receives them.
         </p>
       </Prose>
       <DefinitionGrid>
         <DefinitionCard
-          term="Forge Metal's responsibility"
+          term="Verself's responsibility"
           definition={
             <ul className="list-disc space-y-1.5 pl-5">
               <li>Values stored encrypted at rest.</li>
@@ -235,7 +235,7 @@ function Keys() {
       <Prose>
         <p>
           Keys are cryptographic material your code uses for encryption and signing. A secret holds
-          a value you read as-is; a key is never read as-is. Your code sends data to Forge Metal and
+          a value you read as-is; a key is never read as-is. Your code sends data to Verself and
           receives back ciphertext, plaintext, a signature, or a data key.
         </p>
       </Prose>
@@ -309,9 +309,8 @@ function Sandboxes() {
       <Prose>
         <p>
           Sandbox workloads — CI jobs, one-off scripts, scheduled tasks, long-running development
-          environments — consume secrets without touching storage paths, credentials, or Forge Metal
-          APIs directly. You declare what the workload needs; Forge Metal wires it up at sandbox
-          start.
+          environments — consume secrets without touching storage paths, credentials, or Verself
+          APIs directly. You declare what the workload needs; Verself wires it up at sandbox start.
         </p>
       </Prose>
 
@@ -355,7 +354,7 @@ function Sandboxes() {
           <p>
             Certain environment variable names are reserved and cannot be overridden by profiles,
             including <code>HOME</code>, <code>PATH</code>, runtime-controlled variables used by the
-            sandbox runner, and any name beginning with <code>FORGE_METAL_</code>.
+            sandbox runner, and any name beginning with <code>VERSELF_</code>.
           </p>
         </Prose>
       </div>
@@ -366,7 +365,7 @@ function Sandboxes() {
           <p>
             Short-lived workloads pick up the current value at start and run to completion on that
             value. Long-running sandboxes, including development environments, receive rotation
-            events from Forge Metal and refresh environment variables and tmpfs files in place. Your
+            events from Verself and refresh environment variables and tmpfs files in place. Your
             code can watch for file changes or re-read environment variables on demand; rotation
             never takes effect mid-request for a read already in progress.
           </p>
@@ -456,7 +455,7 @@ function AuditTrail() {
           resource, version, outcome, request ID, client IP, route, and timestamp.
         </p>
         <p>
-          Audit records are stored by Forge Metal's governance service: written to a durable primary
+          Audit records are stored by Verself's governance service: written to a durable primary
           store on the request path, chained with a keyed HMAC so that tampering with any row
           invalidates the chain from that point forward, and projected to a long-term analytics
           store for querying and dashboards. Retention follows your organization's data-retention

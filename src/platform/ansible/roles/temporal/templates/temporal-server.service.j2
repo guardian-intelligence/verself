@@ -5,8 +5,8 @@
 {%- endset %}
 [Unit]
 Description=Temporal Server
-After=forge-metal-firewall.target network.target postgresql.service spire-agent.service otelcol.service
-Requires=forge-metal-firewall.target
+After=verself-firewall.target network.target postgresql.service spire-agent.service otelcol.service
+Requires=verself-firewall.target
 Wants=postgresql.service spire-agent.service otelcol.service
 
 [Service]
@@ -20,12 +20,12 @@ Environment=OTEL_TRACES_EXPORTER=otlp
 Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}
 Environment=OTEL_EXPORTER_OTLP_INSECURE=true
 Environment=OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=grpc
-Environment=FM_TEMPORAL_CONFIG_PATH={{ temporal_config_path }}
-Environment=FM_TEMPORAL_SYSTEM_ADMIN_IDS={{ spire_temporal_server_id }}
-Environment=FM_TEMPORAL_SYSTEM_READER_IDS={{ spire_temporal_web_id }}
-Environment=FM_TEMPORAL_NAMESPACE_ROLES={{ namespace_roles_env }}
+Environment=VERSELF_TEMPORAL_CONFIG_PATH={{ temporal_config_path }}
+Environment=VERSELF_TEMPORAL_SYSTEM_ADMIN_IDS={{ spire_temporal_server_id }}
+Environment=VERSELF_TEMPORAL_SYSTEM_READER_IDS={{ spire_temporal_web_id }}
+Environment=VERSELF_TEMPORAL_NAMESPACE_ROLES={{ namespace_roles_env }}
 WorkingDirectory={{ temporal_state_dir }}
-ExecStart={{ fm_bin }}/forge-temporal-server
+ExecStart={{ verself_bin }}/verself-temporal-server
 Restart=on-failure
 RestartSec=5
 CapabilityBoundingSet=

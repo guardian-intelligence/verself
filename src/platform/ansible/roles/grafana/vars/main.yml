@@ -1,7 +1,7 @@
 ---
-# Provisioned Grafana dashboards for Forge Metal observability.
+# Provisioned Grafana dashboards for Verself observability.
 grafana_dashboards:
-  - uid: "forge-metal-host-process-metrics"
+  - uid: "verself-host-process-metrics"
     title: "Host Process Metrics"
     tags:
       - "infrastructure"
@@ -60,10 +60,10 @@ grafana_dashboards:
             $__timeInterval(TimeUnix) as time, Attributes['mountpoint'] as volume, avgIf(Value, Attributes['state'] = 'used') as bytes,
             avg(avgIf(Value, Attributes['state'] = 'used')) OVER (PARTITION BY Attributes['mountpoint']) as vol_avg FROM
             default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND MetricName = 'system.filesystem.usage' AND Attributes['mountpoint'] IN
-            ('/', '/forgepool') GROUP BY time, volume) UNION ALL SELECT $__timeInterval(TimeUnix) as time, 'capacity' as volume,
+            ('/', '/vspool') GROUP BY time, volume) UNION ALL SELECT $__timeInterval(TimeUnix) as time, 'capacity' as volume,
             max(total_per_mp) as bytes FROM (SELECT TimeUnix, Attributes['mountpoint'] as mp, sum(Value) as total_per_mp FROM
             default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND MetricName = 'system.filesystem.usage' AND Attributes['mountpoint'] IN
-            ('/', '/forgepool') GROUP BY TimeUnix, mp) GROUP BY time) ORDER BY time
+            ('/', '/vspool') GROUP BY TimeUnix, mp) GROUP BY time) ORDER BY time
       - id: 4
         uid: "network-overview"
         title: "Network Overview"
@@ -144,7 +144,7 @@ grafana_dashboards:
             ResourceAttributes['process.command'] as command, formatReadableSize(argMax(Value, TimeUnix)) as mem, round(argMax(Value, TimeUnix)
             / 1048576, 1) as mem_mb FROM default.otel_metrics_sum WHERE TimeUnix >= now() - INTERVAL 30 SECOND AND MetricName =
             'process.memory.usage' GROUP BY process, pid, command ORDER BY mem_mb DESC
-  - uid: "forge-metal-deploy-health"
+  - uid: "verself-deploy-health"
     title: "Deploy Health"
     tags:
       - "infrastructure"
@@ -228,12 +228,12 @@ grafana_dashboards:
         raw_sql:
           >-
             SELECT formatDateTime(Timestamp, '%Y-%m-%d %H:%i:%S') AS time,
-              ResourceAttributes['forge_metal.deploy_kind'] AS kind,
+              ResourceAttributes['verself.deploy_kind'] AS kind,
               if(StatusCode = 'Ok', 'OK', 'FAIL') AS status,
               round(Duration / 1000000000, 1) AS duration_s,
-              substring(ResourceAttributes['forge_metal.commit_sha'], 1, 8) AS commit,
-              if(ResourceAttributes['forge_metal.dirty'] = 'true', 'dirty', 'clean') AS tree,
-              ResourceAttributes['forge_metal.branch'] AS branch
+              substring(ResourceAttributes['verself.commit_sha'], 1, 8) AS commit,
+              if(ResourceAttributes['verself.dirty'] = 'true', 'dirty', 'clean') AS tree,
+              ResourceAttributes['verself.branch'] AS branch
             FROM default.otel_traces
             WHERE ServiceName = 'ansible' AND SpanName = 'ansible.playbook'
             ORDER BY Timestamp DESC LIMIT 20
@@ -258,7 +258,7 @@ grafana_dashboards:
             WHERE ServiceName = 'ansible' AND SpanName = 'ansible.task'
               AND Timestamp >= now() - INTERVAL 30 DAY
             GROUP BY task_name ORDER BY avg_seconds DESC LIMIT 10
-  - uid: "forge-metal-billing-service"
+  - uid: "verself-billing-service"
     title: "Billing Service"
     tags:
       - "infrastructure"
@@ -380,7 +380,7 @@ grafana_dashboards:
           >-
             SELECT toStartOfInterval(recorded_at, INTERVAL 1 hour) AS time, multiIf(event_type = 'billing_window_reserved', 'reserved',
             event_type = 'billing_window_activated', 'active', event_type = 'billing_window_settled', 'settled', event_type =
-            'billing_window_voided', 'voided', event_type) AS state, count() AS cnt FROM forge_metal.billing_events WHERE event_type IN
+            'billing_window_voided', 'voided', event_type) AS state, count() AS cnt FROM verself.billing_events WHERE event_type IN
             ('billing_window_reserved', 'billing_window_activated', 'billing_window_settled', 'billing_window_voided') AND recorded_at >= now()
             - INTERVAL 7 DAY GROUP BY time, state ORDER BY time
       - id: 8
@@ -403,7 +403,7 @@ grafana_dashboards:
             'voided', event_type) AS state, JSONExtractInt(payload, 'reserved_quantity') AS reserved_quantity, JSONExtractInt(payload,
             'actual_quantity') AS actual_quantity, JSONExtractInt(payload, 'billable_quantity') AS billable_quantity, JSONExtractInt(payload,
             'writeoff_quantity') AS writeoff_quantity, JSONExtractInt(payload, 'billed_charge_units') AS billed_charge_units,
-            JSONExtractString(payload, 'writeoff_reason') AS writeoff_reason, '' AS metering_projected_at FROM forge_metal.billing_events
+            JSONExtractString(payload, 'writeoff_reason') AS writeoff_reason, '' AS metering_projected_at FROM verself.billing_events
             WHERE aggregate_type = 'billing_window' ORDER BY recorded_at DESC LIMIT 20
       - id: 9
         uid: "worker-task-queue-depth"
@@ -421,7 +421,7 @@ grafana_dashboards:
             SELECT $__timeInterval(Timestamp) as time, countIf(Body LIKE '%dispatch%') as dispatched, countIf(Body LIKE '%completed%' OR Body
             LIKE '%success%') as completed, countIf(Body LIKE '%fail%' OR Body LIKE '%error%') as failed FROM default.otel_logs WHERE
             $__timeFilter(Timestamp) AND ServiceName = 'billing-service' GROUP BY time ORDER BY time
-  - uid: "forge-metal-billing-health"
+  - uid: "verself-billing-health"
     title: "Billing Health"
     tags:
       - "billing"
@@ -440,7 +440,7 @@ grafana_dashboards:
         raw_sql:
           >-
             SELECT toStartOfHour(started_at) AS time, if(empty(pricing_phase_id), pricing_phase, pricing_phase_id) AS series,
-            toFloat64(sum(charge_units)) AS units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time,
+            toFloat64(sum(charge_units)) AS units FROM verself.metering WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time,
             series ORDER BY time
       - id: 2
         uid: "metering-volume"
@@ -455,7 +455,7 @@ grafana_dashboards:
         unit: "short"
         raw_sql:
           >-
-            SELECT toStartOfHour(started_at) AS time, 'rows' AS series, toFloat64(count()) AS row_count FROM forge_metal.metering WHERE
+            SELECT toStartOfHour(started_at) AS time, 'rows' AS series, toFloat64(count()) AS row_count FROM verself.metering WHERE
             started_at >= now() - INTERVAL 7 DAY GROUP BY time ORDER BY time
       - id: 3
         uid: "per-source-unit-breakdown"
@@ -471,15 +471,15 @@ grafana_dashboards:
         raw_sql:
           >-
             SELECT time, series, units FROM (SELECT toStartOfHour(started_at) AS time, 'free_tier' AS series, toFloat64(sum(free_tier_units)) AS
-            units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time UNION ALL SELECT toStartOfHour(started_at)
-            AS time, 'contract' AS series, toFloat64(sum(contract_units)) AS units FROM forge_metal.metering WHERE started_at >= now() -
+            units FROM verself.metering WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time UNION ALL SELECT toStartOfHour(started_at)
+            AS time, 'contract' AS series, toFloat64(sum(contract_units)) AS units FROM verself.metering WHERE started_at >= now() -
             INTERVAL 7 DAY GROUP BY time UNION ALL SELECT toStartOfHour(started_at) AS time, 'purchase' AS series,
-            toFloat64(sum(purchase_units)) AS units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time UNION ALL
-            SELECT toStartOfHour(started_at) AS time, 'promo' AS series, toFloat64(sum(promo_units)) AS units FROM forge_metal.metering WHERE
+            toFloat64(sum(purchase_units)) AS units FROM verself.metering WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time UNION ALL
+            SELECT toStartOfHour(started_at) AS time, 'promo' AS series, toFloat64(sum(promo_units)) AS units FROM verself.metering WHERE
             started_at >= now() - INTERVAL 7 DAY GROUP BY time UNION ALL SELECT toStartOfHour(started_at) AS time, 'refund' AS series,
-            toFloat64(sum(refund_units)) AS units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time UNION ALL
+            toFloat64(sum(refund_units)) AS units FROM verself.metering WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time UNION ALL
             SELECT toStartOfHour(started_at) AS time, 'receivable' AS series, toFloat64(sum(receivable_units)) AS units FROM
-            forge_metal.metering WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time) ORDER BY time
+            verself.metering WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time) ORDER BY time
       - id: 4
         uid: "billing-windows-by-state"
         title: "Billing Windows by State"
@@ -495,7 +495,7 @@ grafana_dashboards:
           >-
             SELECT toStartOfHour(recorded_at) AS time, multiIf(event_type = 'billing_window_reserved', 'reserved', event_type =
             'billing_window_activated', 'active', event_type = 'billing_window_settled', 'settled', event_type = 'billing_window_voided',
-            'voided', event_type) AS series, toFloat64(count()) AS windows FROM forge_metal.billing_events WHERE event_type IN
+            'voided', event_type) AS series, toFloat64(count()) AS windows FROM verself.billing_events WHERE event_type IN
             ('billing_window_reserved', 'billing_window_activated', 'billing_window_settled', 'billing_window_voided') AND recorded_at >= now()
             - INTERVAL 7 DAY GROUP BY time, series ORDER BY time
       - id: 5
@@ -512,7 +512,7 @@ grafana_dashboards:
         raw_sql:
           >-
             SELECT toStartOfHour(started_at) AS time, if(empty(adjustment_reason), 'unspecified', adjustment_reason) AS series,
-            toFloat64(sum(adjustment_units)) AS units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time,
+            toFloat64(sum(adjustment_units)) AS units FROM verself.metering WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time,
             series ORDER BY time
       - id: 6
         uid: "projection-lag"
@@ -530,7 +530,7 @@ grafana_dashboards:
             SELECT $__timeInterval(Timestamp) AS time, 'billing_metering_projection_failed' AS series, toFloat64(count()) AS windows FROM
             default.otel_logs WHERE $__timeFilter(Timestamp) AND ServiceName = 'billing-service' AND Body LIKE '%billing metering projection
             failed%' GROUP BY time ORDER BY time
-  - uid: "forge-metal-billing-metering"
+  - uid: "verself-billing-metering"
     title: "Billing Metering"
     tags:
       - "billing"
@@ -549,7 +549,7 @@ grafana_dashboards:
         raw_sql:
           >-
             SELECT toStartOfHour(started_at) AS time, if(empty(pricing_phase_id), pricing_phase, pricing_phase_id) AS series,
-            toFloat64(sum(charge_units)) AS units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time,
+            toFloat64(sum(charge_units)) AS units FROM verself.metering WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time,
             series ORDER BY time
       - id: 2
         uid: "overage-units-current-period"
@@ -564,7 +564,7 @@ grafana_dashboards:
         unit: "short"
         raw_sql:
           >-
-            SELECT toStartOfHour(started_at) AS time, org_id AS series, toFloat64(sum(charge_units)) AS overage_units FROM forge_metal.metering
+            SELECT toStartOfHour(started_at) AS time, org_id AS series, toFloat64(sum(charge_units)) AS overage_units FROM verself.metering
             WHERE (pricing_phase_id = 'overage' OR pricing_phase = 'overage') AND started_at >= now() - INTERVAL 30 DAY GROUP BY time,
             series ORDER BY time
       - id: 3
@@ -580,7 +580,7 @@ grafana_dashboards:
         unit: "short"
         raw_sql:
           >-
-            SELECT toStartOfDay(started_at) AS time, 'rows' AS series, toFloat64(count()) AS row_count FROM forge_metal.metering WHERE
+            SELECT toStartOfDay(started_at) AS time, 'rows' AS series, toFloat64(count()) AS row_count FROM verself.metering WHERE
             started_at >= now() - INTERVAL 30 DAY GROUP BY time ORDER BY time
       - id: 4
         uid: "charge-units-by-product"
@@ -595,7 +595,7 @@ grafana_dashboards:
         unit: "short"
         raw_sql:
           >-
-            SELECT toStartOfDay(started_at) AS time, product_id AS series, toFloat64(sum(charge_units)) AS units FROM forge_metal.metering WHERE
+            SELECT toStartOfDay(started_at) AS time, product_id AS series, toFloat64(sum(charge_units)) AS units FROM verself.metering WHERE
             started_at >= now() - INTERVAL 30 DAY GROUP BY time, series ORDER BY time
       - id: 5
         uid: "funding-source-breakdown"
@@ -611,13 +611,13 @@ grafana_dashboards:
         raw_sql:
           >-
             SELECT time, series, units FROM (SELECT toStartOfDay(started_at) AS time, 'free_tier' AS series, toFloat64(sum(free_tier_units)) AS
-            units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 30 DAY GROUP BY time UNION ALL SELECT toStartOfDay(started_at)
-            AS time, 'contract' AS series, toFloat64(sum(contract_units)) AS units FROM forge_metal.metering WHERE started_at >= now() -
+            units FROM verself.metering WHERE started_at >= now() - INTERVAL 30 DAY GROUP BY time UNION ALL SELECT toStartOfDay(started_at)
+            AS time, 'contract' AS series, toFloat64(sum(contract_units)) AS units FROM verself.metering WHERE started_at >= now() -
             INTERVAL 30 DAY GROUP BY time UNION ALL SELECT toStartOfDay(started_at) AS time, 'purchase' AS series,
-            toFloat64(sum(purchase_units)) AS units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 30 DAY GROUP BY time UNION
-            ALL SELECT toStartOfDay(started_at) AS time, 'promo' AS series, toFloat64(sum(promo_units)) AS units FROM forge_metal.metering WHERE
+            toFloat64(sum(purchase_units)) AS units FROM verself.metering WHERE started_at >= now() - INTERVAL 30 DAY GROUP BY time UNION
+            ALL SELECT toStartOfDay(started_at) AS time, 'promo' AS series, toFloat64(sum(promo_units)) AS units FROM verself.metering WHERE
             started_at >= now() - INTERVAL 30 DAY GROUP BY time UNION ALL SELECT toStartOfDay(started_at) AS time, 'receivable' AS series,
-            toFloat64(sum(receivable_units)) AS units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 30 DAY GROUP BY time) ORDER BY
+            toFloat64(sum(receivable_units)) AS units FROM verself.metering WHERE started_at >= now() - INTERVAL 30 DAY GROUP BY time) ORDER BY
             time
       - id: 6
         uid: "recent-metering-activity"
@@ -634,8 +634,8 @@ grafana_dashboards:
           >-
             SELECT formatDateTime(started_at, '%Y-%m-%d %H:%i:%S') AS time, org_id, product_id, cycle_id, pricing_contract_id,
             pricing_phase_id, pricing_plan_id, pricing_phase, charge_units, contract_units, adjustment_units, adjustment_reason,
-            billable_quantity, cost_per_unit, actor_id, source_type, source_ref FROM forge_metal.metering ORDER BY started_at DESC LIMIT 25
-  - uid: "forge-metal-postgresql"
+            billable_quantity, cost_per_unit, actor_id, source_type, source_ref FROM verself.metering ORDER BY started_at DESC LIMIT 25
+  - uid: "verself-postgresql"
     title: "PostgreSQL"
     tags:
       - "infrastructure"
@@ -789,7 +789,7 @@ grafana_dashboards:
             OVER () as avg_pct FROM (SELECT $__timeInterval(TimeUnix) as time, 100 as heartbeat_pct FROM default.otel_metrics_sum WHERE
             $__timeFilter(TimeUnix) AND MetricName = 'process.memory.usage' AND ResourceAttributes['process.executable.name'] = 'postgres' GROUP
             BY time)) ORDER BY time
-  - uid: "forge-metal-tigerbeetle"
+  - uid: "verself-tigerbeetle"
     title: "TigerBeetle"
     tags:
       - "infrastructure"
@@ -892,7 +892,7 @@ grafana_dashboards:
           >-
             SELECT MetricName, count() as samples, round(avg(Value), 2) as avg_value, round(max(Value), 2) as max_value FROM
             default.otel_metrics_gauge WHERE $__timeFilter(TimeUnix) AND MetricName LIKE 'tb.%' GROUP BY MetricName ORDER BY MetricName
-  - uid: "forge-metal-zitadel"
+  - uid: "verself-zitadel"
     title: "Zitadel"
     tags:
       - "infrastructure"
@@ -950,7 +950,7 @@ grafana_dashboards:
             OVER () as avg_pct FROM (SELECT $__timeInterval(TimeUnix) as time, 100 as heartbeat_pct FROM default.otel_metrics_sum WHERE
             $__timeFilter(TimeUnix) AND MetricName = 'process.memory.usage' AND ResourceAttributes['process.executable.name'] = 'zitadel' GROUP
             BY time)) ORDER BY time
-  - uid: "forge-metal-secrets"
+  - uid: "verself-secrets"
     title: "Secrets & OpenBao"
     tags:
       - "security"
@@ -1300,8 +1300,8 @@ grafana_dashboards:
         raw_sql:
           >-
             SELECT formatDateTime(Timestamp, '%Y-%m-%d %H:%i:%S') AS time, SpanName AS operation, StatusMessage AS error,
-            SpanAttributes['forge_metal.org_id'] AS org, SpanAttributes['forge_metal.secret_kind'] AS kind,
-            SpanAttributes['forge_metal.secret_id'] AS secret_id, substring(TraceId, 1, 16) AS trace_id FROM default.otel_traces WHERE
+            SpanAttributes['verself.org_id'] AS org, SpanAttributes['verself.secret_kind'] AS kind,
+            SpanAttributes['verself.secret_id'] AS secret_id, substring(TraceId, 1, 16) AS trace_id FROM default.otel_traces WHERE
             ServiceName = 'secrets-service' AND StatusCode = 'Error' AND SpanName LIKE 'secrets.%' ORDER BY Timestamp DESC LIMIT 20
       - id: 20
         uid: "top-operations"
@@ -1320,7 +1320,7 @@ grafana_dashboards:
             1000000), 2) AS p50_ms, round(quantile(0.95)(Duration / 1000000), 2) AS p95_ms, round(max(Duration / 1000000), 2) AS max_ms FROM
             default.otel_traces WHERE $__timeFilter(Timestamp) AND ServiceName = 'secrets-service' AND SpanName LIKE 'secrets.%' AND
             SpanName != 'secrets.ready' GROUP BY operation ORDER BY calls DESC LIMIT 30
-  - uid: "forge-metal-temporal"
+  - uid: "verself-temporal"
     title: "Temporal"
     tags:
       - "infrastructure"
@@ -1375,7 +1375,7 @@ grafana_dashboards:
           >-
             SELECT $__timeInterval(TimeUnix) AS time, ResourceAttributes['process.executable.name'] AS series, avg(Value) AS bytes FROM
             default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND MetricName = 'process.memory.usage' AND
-            ResourceAttributes['process.executable.name'] IN ('forge-temporal-server', 'forge-temporal-web') GROUP BY time, series ORDER BY
+            ResourceAttributes['process.executable.name'] IN ('verself-temporal-server', 'verself-temporal-web') GROUP BY time, series ORDER BY
             time, series
       - id: 4
         uid: "temporal-process-cpu"
@@ -1394,7 +1394,7 @@ grafana_dashboards:
             $__timeInterval(TimeUnix) AS ts, ResourceAttributes['process.executable.name'] AS process, ResourceAttributes['process.pid'] AS
             pid, Attributes['state'] AS state, max(Value) - min(Value) AS delta, dateDiff('second', min(TimeUnix), max(TimeUnix)) AS span FROM
             default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND MetricName = 'process.cpu.time' AND
-            ResourceAttributes['process.executable.name'] IN ('forge-temporal-server', 'forge-temporal-web') GROUP BY ts, process, pid, state)
+            ResourceAttributes['process.executable.name'] IN ('verself-temporal-server', 'verself-temporal-web') GROUP BY ts, process, pid, state)
             GROUP BY ts, process ORDER BY time, series
       - id: 5
         uid: "temporal-recent-authz"
@@ -1463,7 +1463,7 @@ grafana_dashboards:
             SELECT ServiceName AS service, MetricName AS metric, MetricKind AS kind, MetricUnit AS unit, round(CurrentValue, 4) AS value,
             SampledAt FROM default.otel_metric_latest WHERE $__timeFilter(SampledAt) AND (startsWith(ServiceName, 'temporal-server') OR
             ServiceName = 'temporal-web') ORDER BY SampledAt DESC, service, metric LIMIT 100
-  - uid: "forge-metal-observability-query-model"
+  - uid: "verself-observability-query-model"
     title: "Observability Query Vocabulary"
     tags:
       - "infrastructure"

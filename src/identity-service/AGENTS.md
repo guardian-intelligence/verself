@@ -1,6 +1,6 @@
 # identity-service
 
-`identity-service` is the Forge Metal identity control plane. Zitadel remains the
+`identity-service` is the Verself identity control plane. Zitadel remains the
 identity provider; this service owns the product control plane layered over
 Zitadel identity state.
 
@@ -10,14 +10,14 @@ Zitadel owns authentication, organizations, users, service accounts, OIDC/OAuth
 applications, project roles, role assignments, project grants, JWKS, MFA,
 passkeys, and social identity providers.
 
-Forge Metal owns the fixed three-role product IAM (`owner`, `admin`, `member`),
+Verself owns the fixed three-role product IAM (`owner`, `admin`, `member`),
 the static code-owned capability catalog that gates the `member` role, and the
 organization-management UX. This service is the API surface for those Forge
-Metal-owned concerns.
+Verself-owned concerns.
 
 Go product services remain authorization enforcement points. Each service owns
 and enforces its own operation catalog through Huma/OpenAPI metadata such as
-`x-forge-metal-iam`. `identity-service` does not aggregate other services'
+`x-verself-iam`. `identity-service` does not aggregate other services'
 catalogs at runtime and is not the runtime authorizer for other services — its
 catalog is consulted only for the member-capability resolution path inside its
 own boundary.
@@ -46,13 +46,13 @@ limits, and generated-client contracts cannot drift.
 Public organization APIs derive organization scope from the validated Zitadel
 token. Do not trust `org_id`, role keys, user IDs, or customer IDs supplied by
 browser request bodies as proof of authority. Handlers must still validate
-resource ownership against Zitadel or Forge Metal-owned storage after the
+resource ownership against Zitadel or Verself-owned storage after the
 operation permission check passes.
 
 Use `apiwire` for request/response DTOs shared across services, generated
 clients, or frontend wrappers, including the member-capability document and
 catalog payloads returned by this service. Huma route metadata such as
-`x-forge-metal-iam` remains service-local because it describes enforcement
+`x-verself-iam` remains service-local because it describes enforcement
 behavior rather than a wire payload.
 
 ## Product IAM Model
@@ -72,7 +72,7 @@ union. Drift between the catalog and the capability list is therefore a
 boot-time bug, not a runtime authorization gap.
 
 Zitadel role assignments prove who the caller is and which org/project role
-they hold. The Forge Metal capability state is org-scoped and stored in
+they hold. The Verself capability state is org-scoped and stored in
 `identity_member_capabilities` (PostgreSQL); it is resolved per request at the
 service boundary and is not embedded into Zitadel tokens.
 
@@ -93,7 +93,7 @@ owner can still see themselves in the general section.
 
 All direct Zitadel Management/API calls belong behind an internal adapter
 boundary. API handlers and frontend code should not build raw Zitadel requests.
-The adapter should expose Forge Metal concepts such as organization membership,
+The adapter should expose Verself concepts such as organization membership,
 invitations, service accounts, project role assignments, and project grants.
 
 Credentials used to administer Zitadel are service credentials, not browser
@@ -108,7 +108,7 @@ boundary explicitly.
 
 ## API Credentials
 
-Customer API credentials are Forge Metal-managed Zitadel service-account
+Customer API credentials are Verself-managed Zitadel service-account
 credentials. `identity-service` owns the create/list/read-metadata/roll/revoke
 surface, but product services remain the runtime authorization enforcement
 points.
@@ -123,10 +123,10 @@ metadata such as display name, status, auth method, key or secret fingerprint,
 exact operation permissions, created/revoked timestamps, and last-used
 telemetry. Never persist or return plaintext customer credential secrets.
 
-Use a Zitadel pre-access-token Action to append `forge_metal:credential_id`,
-non-secret credential metadata (`forge_metal:credential_name`,
-`forge_metal:credential_fingerprint`, owner id/display, auth method), `org_id`,
-and the exact Forge Metal operation permissions granted to the active
+Use a Zitadel pre-access-token Action to append `verself:credential_id`,
+non-secret credential metadata (`verself:credential_name`,
+`verself:credential_fingerprint`, owner id/display, auth method), `org_id`,
+and the exact Verself operation permissions granted to the active
 credential. Member capability state stays in `identity_member_capabilities`
 PostgreSQL; it is not embedded into Zitadel tokens. Issuance and roll must
 reject any requested permission that is not in a service-declared operation
@@ -139,6 +139,6 @@ redacted internal causes. Audit logs should capture the operation, permission,
 organization scope, subject, outcome, and stable failure code.
 
 Tests and live rehearsal should prove that public operations declare
-`x-forge-metal-iam`, require bearer auth, enforce idempotency where applicable,
+`x-verself-iam`, require bearer auth, enforce idempotency where applicable,
 and deny callers whose current organization role assignments do not grant the
 required permission.

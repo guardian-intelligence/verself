@@ -310,7 +310,7 @@ paths:
       security:
         - bearerAuth: []
       summary: List current human notifications
-      x-forge-metal-iam:
+      x-verself-iam:
         action: read
         audit_event: notification.list.notifications
         data_classification: controller_personal_data
@@ -350,7 +350,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Dismiss all current human notifications
-      x-forge-metal-iam:
+      x-verself-iam:
         action: write
         audit_event: notification.clear.notifications
         data_classification: controller_personal_data
@@ -396,7 +396,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Replace current human notification preferences
-      x-forge-metal-iam:
+      x-verself-iam:
         action: write
         audit_event: notification.put.notification.preferences
         data_classification: controller_personal_data
@@ -442,7 +442,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Advance current human notification read cursor
-      x-forge-metal-iam:
+      x-verself-iam:
         action: write
         audit_event: notification.advance.notification.read.cursor
         data_classification: controller_personal_data
@@ -474,7 +474,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Get current human notification summary
-      x-forge-metal-iam:
+      x-verself-iam:
         action: read
         audit_event: notification.get.notification.summary
         data_classification: controller_personal_data
@@ -520,7 +520,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Publish a synthetic notification to the current human
-      x-forge-metal-iam:
+      x-verself-iam:
         action: write
         audit_event: notification.publish.test.notification
         data_classification: controller_personal_data
@@ -566,7 +566,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Dismiss a current human notification
-      x-forge-metal-iam:
+      x-verself-iam:
         action: write
         audit_event: notification.dismiss.notification
         data_classification: controller_personal_data
@@ -612,7 +612,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Mark one current human notification read
-      x-forge-metal-iam:
+      x-verself-iam:
         action: write
         audit_event: notification.mark.notification.read
         data_classification: controller_personal_data

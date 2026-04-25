@@ -3,7 +3,7 @@ import { createContext, useContext, type ReactNode } from "react";
 // Brand-package telemetry context. The brand package must stay router- and
 // app-agnostic, but AppChrome wants to emit otel spans when it mounts and
 // when the wordmark is clicked. Rather than import an app-specific emitSpan
-// directly (which would couple @forge-metal/brand to @forge-metal/company),
+// directly (which would couple @verself/brand to @verself/company),
 // the chrome reads an injectable EmitSpan from context. The app wires its
 // own emitSpan (which in turn wraps @opentelemetry/api) at __root.tsx and
 // the brand layer remains a leaf dependency.

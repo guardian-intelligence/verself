@@ -1,10 +1,10 @@
 ---
 argument_specs:
   main:
-    short_description: "ClickHouse service and forge-metal schema migrations"
+    short_description: "ClickHouse service and verself schema migrations"
     description:
       - "Deploys ClickHouse, configures the standalone"
-      - "service unit, and applies forge-metal migrations to the forge_metal"
+      - "service unit, and applies verself migrations to the verself"
       - "database when the local migration fingerprint changes."
       - "Service ports come from the services registry (group_vars/all/services.yml)."
     options:
@@ -13,7 +13,7 @@ argument_specs:
         default: /var/lib/clickhouse
         description: "ClickHouse data directory."
 
-      fm_bin:
+      verself_bin:
         type: path
         required: true
         description: "Path to the server binary directory."

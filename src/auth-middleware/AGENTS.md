@@ -14,4 +14,4 @@ Services use standard OIDC discovery from the public issuer URL:
 
 Do not add a second JWKS URL or Host-header transport. That creates a split trust path where the issuer and discovery metadata can disagree.
 
-On the single-node deployment, service units bind-mount `/etc/forge-metal/auth-discovery-hosts` over `/etc/hosts` so `auth.<domain>` resolves to local Caddy (`127.0.0.1:443`) for those services only. Per-service nftables must allow loopback port 443 for discovery and JWKS fetches. A three-node topology can remove the host override and route discovery to the remote auth origin without changing Go service configuration.
+On the single-node deployment, service units bind-mount `/etc/verself/auth-discovery-hosts` over `/etc/hosts` so `auth.<domain>` resolves to local Caddy (`127.0.0.1:443`) for those services only. Per-service nftables must allow loopback port 443 for discovery and JWKS fetches. A three-node topology can remove the host override and route discovery to the remote auth origin without changing Go service configuration.

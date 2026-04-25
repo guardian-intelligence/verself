@@ -16,8 +16,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/forge-metal/billing-service/internal/billing/ledger"
-	"github.com/forge-metal/billing-service/internal/store"
+	"github.com/verself/billing-service/internal/billing/ledger"
+	"github.com/verself/billing-service/internal/store"
 )
 
 const (
@@ -1267,7 +1267,7 @@ func (c *Client) projectMeteringForWindow(ctx context.Context, w persistedWindow
 	if err != nil {
 		return time.Time{}, err
 	}
-	batch, err := c.ch.PrepareBatch(ctx, "INSERT INTO forge_metal.metering")
+	batch, err := c.ch.PrepareBatch(ctx, "INSERT INTO verself.metering")
 	if err != nil {
 		return time.Time{}, fmt.Errorf("prepare metering batch: %w", err)
 	}

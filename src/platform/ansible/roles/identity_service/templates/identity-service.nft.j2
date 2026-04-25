@@ -2,10 +2,10 @@
 # Identity service is a loopback-only API. It needs PostgreSQL, Zitadel admin APIs,
 # governance's SPIFFE mTLS audit intake, ClickHouse ledger projection, and OTLP egress.
 
-table inet forge_metal_identity_service
-delete table inet forge_metal_identity_service
+table inet verself_identity_service
+delete table inet verself_identity_service
 
-table inet forge_metal_identity_service {
+table inet verself_identity_service {
     chain input {
         type filter hook input priority filter; policy accept;
 

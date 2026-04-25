@@ -1,7 +1,7 @@
 [Unit]
 Description=Console Frontend (TanStack Start)
-After=forge-metal-firewall.target network.target sandbox-rental-service.service identity-service.service notifications-service.service electric.service electric-notifications.service
-Requires=forge-metal-firewall.target
+After=verself-firewall.target network.target sandbox-rental-service.service identity-service.service notifications-service.service electric.service electric-notifications.service
+Requires=verself-firewall.target
 Wants=sandbox-rental-service.service identity-service.service notifications-service.service electric.service electric-notifications.service
 
 [Service]
@@ -10,10 +10,10 @@ User={{ console_runtime_user }}
 Group={{ console_runtime_group }}
 WorkingDirectory={{ console_app_dir }}
 EnvironmentFile=/etc/console/env
-ExecStart={{ fm_bin }}/node --import ./instrumentation.mts .output/server/index.mjs
+ExecStart={{ verself_bin }}/node --import ./instrumentation.mts .output/server/index.mjs
 Restart=on-failure
 RestartSec=5
-Environment=PATH={{ fm_bin }}:/usr/bin:/bin
+Environment=PATH={{ verself_bin }}:/usr/bin:/bin
 Environment=HOME={{ console_state_dir }}
 CapabilityBoundingSet=
 ProtectHome=true

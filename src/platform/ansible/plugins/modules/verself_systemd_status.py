@@ -1,5 +1,5 @@
 #!/usr/bin/python
-"""Read-only systemd unit status probe for Forge Metal playbooks."""
+"""Read-only systemd unit status probe for Verself playbooks."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from ansible.module_utils.basic import AnsibleModule
 
 DOCUMENTATION = r"""
 ---
-module: fm_systemd_status
+module: verself_systemd_status
 short_description: Read systemd unit status without mutating service state
 description:
   - Wraps C(systemctl show) for readiness and recovery probes.
@@ -34,7 +34,7 @@ options:
 
 EXAMPLES = r"""
 - name: Probe worker state
-  fm_systemd_status:
+  verself_systemd_status:
     unit: sandbox-rental-recurring-worker.service
   register: worker_status
   until: worker_status.active
@@ -95,7 +95,7 @@ def main() -> None:
 
     unit = module.params["unit"].strip()
     if not unit:
-        module.fail_json(msg="fm_systemd_status requires a non-empty unit name")
+        module.fail_json(msg="verself_systemd_status requires a non-empty unit name")
 
     properties = [prop.strip() for prop in module.params["properties"]]
     invalid_properties = [prop for prop in properties if not PROPERTY_RE.match(prop)]

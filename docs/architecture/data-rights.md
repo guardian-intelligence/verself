@@ -1,6 +1,6 @@
 # Data Rights
 
-Forge Metal treats enterprise export and data-subject rights as product
+Verself treats enterprise export and data-subject rights as product
 capabilities, not support scripts. Every service that stores customer,
 organization, user, or actor data implements the same service-owned data-rights
 contract; `governance-service` coordinates requests and records evidence.
@@ -217,7 +217,7 @@ Profile data usually deletes or tombstones. Governance audit usually retains.
 Billing records often retain. Signed document evidence retains or restricts
 according to the document contract and legal basis. Customer processor data is
 handled through the customer's organization deletion/export path, not through a
-random end user's direct request unless that customer instructs Forge Metal to
+random end user's direct request unless that customer instructs Verself to
 act.
 
 ## Observability And Proof

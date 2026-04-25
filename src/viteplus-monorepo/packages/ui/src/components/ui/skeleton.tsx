@@ -1,4 +1,4 @@
-import { cn } from "@forge-metal/ui/lib/utils";
+import { cn } from "@verself/ui/lib/utils";
 
 function Skeleton({ className, ...props }: React.ComponentProps<"div">) {
   return (

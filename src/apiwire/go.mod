@@ -1,4 +1,4 @@
-module github.com/forge-metal/apiwire
+module github.com/verself/apiwire
 
 go 1.25.0
 

@@ -3,13 +3,13 @@
 
 - name: Verify sandbox-rental-service binary exists in profile
   ansible.builtin.stat:
-    path: "{{ fm_bin }}/sandbox-rental-service"
+    path: "{{ verself_bin }}/sandbox-rental-service"
   register: sandbox_rental_service_binary
   failed_when: not sandbox_rental_service_binary.stat.exists
 
 - name: Verify sandbox-rental-recurring-worker binary exists in profile
   ansible.builtin.stat:
-    path: "{{ fm_bin }}/sandbox-rental-recurring-worker"
+    path: "{{ verself_bin }}/sandbox-rental-recurring-worker"
   register: sandbox_rental_service_recurring_worker_binary
   failed_when: not sandbox_rental_service_recurring_worker_binary.stat.exists
 
@@ -89,9 +89,9 @@
 - name: Read sandbox-rental SPIRE registration
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry show
+      {{ verself_bin }}/spire-server entry show
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-sandbox-rental-service
+      -entryID verself-sandbox-rental-service
       -output json
   register: sandbox_rental_service_spire_entry
   failed_when: false
@@ -100,23 +100,23 @@
 - name: Register sandbox-rental SPIFFE workload
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry create
+      {{ verself_bin }}/spire-server entry create
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-sandbox-rental-service
+      -entryID verself-sandbox-rental-service
       -parentID {{ spire_agent_id }}
       -spiffeID {{ spire_sandbox_rental_id }}
       -selector unix:uid:{{ sandbox_rental_service_uid.stdout | trim }}
       -x509SVIDTTL 3600
-  when: sandbox_rental_service_spire_entry.rc != 0 or 'forge-metal-sandbox-rental-service' not in sandbox_rental_service_spire_entry.stdout
+  when: sandbox_rental_service_spire_entry.rc != 0 or 'verself-sandbox-rental-service' not in sandbox_rental_service_spire_entry.stdout
   changed_when: true
   notify: restart sandbox-rental-service
 
 - name: Update sandbox-rental SPIRE workload selector drift
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry update
+      {{ verself_bin }}/spire-server entry update
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-sandbox-rental-service
+      -entryID verself-sandbox-rental-service
       -parentID {{ spire_agent_id }}
       -spiffeID {{ spire_sandbox_rental_id }}
       -selector unix:uid:{{ sandbox_rental_service_uid.stdout | trim }}
@@ -165,11 +165,11 @@
     {{ clickhouse_operator_client_command }} --multiquery <<'SQL'
     CREATE USER IF NOT EXISTS sandbox_rental IDENTIFIED WITH ssl_certificate SAN 'URI:{{ spire_sandbox_rental_id }}' HOST LOCAL;
     ALTER USER sandbox_rental IDENTIFIED WITH ssl_certificate SAN 'URI:{{ spire_sandbox_rental_id }}' HOST LOCAL;
-    GRANT INSERT ON forge_metal.job_logs TO sandbox_rental;
-    GRANT INSERT ON forge_metal.job_events TO sandbox_rental;
-    GRANT SELECT ON forge_metal.job_logs TO sandbox_rental;
-    GRANT SELECT ON forge_metal.job_events TO sandbox_rental;
-    GRANT SELECT ON forge_metal.job_cache_events TO sandbox_rental;
+    GRANT INSERT ON verself.job_logs TO sandbox_rental;
+    GRANT INSERT ON verself.job_events TO sandbox_rental;
+    GRANT SELECT ON verself.job_logs TO sandbox_rental;
+    GRANT SELECT ON verself.job_events TO sandbox_rental;
+    GRANT SELECT ON verself.job_cache_events TO sandbox_rental;
     SQL
   args:
     executable: /bin/bash
@@ -196,7 +196,7 @@
     method: POST
     headers:
       Authorization: "Bearer {{ sandbox_rental_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
-      Host: "auth.{{ forge_metal_domain }}"
+      Host: "auth.{{ verself_domain }}"
     body_format: json
     body: {}
     return_content: true
@@ -221,7 +221,7 @@
     method: POST
     headers:
       Authorization: "Bearer {{ sandbox_rental_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
-      Host: "auth.{{ forge_metal_domain }}"
+      Host: "auth.{{ verself_domain }}"
     body_format: json
     body:
       name: "{{ sandbox_rental_service_auth_project_name }}"
@@ -251,7 +251,7 @@
     method: PUT
     headers:
       Authorization: "Bearer {{ sandbox_rental_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
-      Host: "auth.{{ forge_metal_domain }}"
+      Host: "auth.{{ verself_domain }}"
     body_format: json
     body:
       name: "{{ sandbox_rental_service_auth_project_name }}"
@@ -288,9 +288,9 @@
     content: |
       [Unit]
       Description=Sandbox Rental Service
-      After=forge-metal-firewall.target network.target postgresql.service clickhouse-server.service
+      After=verself-firewall.target network.target postgresql.service clickhouse-server.service
       After=spire-agent.service secrets-service.service source-code-hosting-service.service
-      Requires=forge-metal-firewall.target
+      Requires=verself-firewall.target
       Wants=postgresql.service clickhouse-server.service spire-agent.service
       Wants=secrets-service.service source-code-hosting-service.service
 
@@ -299,7 +299,7 @@
       User=sandbox_rental
       Group=sandbox_rental
       SupplementaryGroups={{ sandbox_rental_service_vm_orchestrator_socket_group }} {{ spire_workload_group }}
-      BindReadOnlyPaths=/etc/forge-metal/auth-discovery-hosts:/etc/hosts
+      BindReadOnlyPaths=/etc/verself/auth-discovery-hosts:/etc/hosts
       LoadCredential=clickhouse-ca-cert:/etc/clickhouse-server/tls/server-ca.pem
       LoadCredential=forgejo-token:/etc/credstore/forgejo/automation-token
       LoadCredential=forgejo-webhook-secret:/etc/credstore/sandbox-rental/forgejo-webhook-secret
@@ -342,7 +342,7 @@
       Environment=SANDBOX_FORGEJO_RUNNER_BASE_URL={{ sandbox_rental_service_forgejo_runner_base_url }}
       Environment=SANDBOX_FORGEJO_WEBHOOK_BASE_URL={{ sandbox_rental_service_forgejo_webhook_base_url }}
       Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}
-      ExecStart={{ fm_bin }}/sandbox-rental-service
+      ExecStart={{ verself_bin }}/sandbox-rental-service
       Restart=on-failure
       RestartSec=5
       CapabilityBoundingSet=
@@ -386,9 +386,9 @@
     content: |
       [Unit]
       Description=Sandbox Rental Recurring Worker
-      After=forge-metal-firewall.target network.target postgresql.service temporal-server.service
+      After=verself-firewall.target network.target postgresql.service temporal-server.service
       After=spire-agent.service otelcol.service source-code-hosting-service.service
-      Requires=forge-metal-firewall.target
+      Requires=verself-firewall.target
       Wants=postgresql.service temporal-server.service spire-agent.service otelcol.service
       Wants=source-code-hosting-service.service
 
@@ -407,7 +407,7 @@
       Environment=SANDBOX_TEMPORAL_NAMESPACE={{ sandbox_rental_service_temporal_namespace }}
       Environment=SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING={{ sandbox_rental_service_temporal_task_queue_recurring }}
       Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}
-      ExecStart={{ fm_bin }}/sandbox-rental-recurring-worker
+      ExecStart={{ verself_bin }}/sandbox-rental-recurring-worker
       Restart=on-failure
       RestartSec=5
       CapabilityBoundingSet=
@@ -480,7 +480,7 @@
   until: sandbox_rental_service_internal_listener.stdout is search(':' ~ (sandbox_rental_service_internal_listen_port | string))
 
 - name: Wait for sandbox-rental-recurring-worker to be active
-  fm_systemd_status:
+  verself_systemd_status:
     unit: sandbox-rental-recurring-worker.service
   register: sandbox_rental_service_recurring_worker_status
   retries: 30

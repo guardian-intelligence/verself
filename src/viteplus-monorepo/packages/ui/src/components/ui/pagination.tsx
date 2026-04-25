@@ -1,7 +1,7 @@
 import * as React from "react";
 
-import { cn } from "@forge-metal/ui/lib/utils";
-import { Button } from "@forge-metal/ui/components/ui/button";
+import { cn } from "@verself/ui/lib/utils";
+import { Button } from "@verself/ui/components/ui/button";
 
 import { ChevronLeftIcon, ChevronRightIcon, MoreHorizontalIcon } from "lucide-react";
 function Pagination({ className, ...props }: React.ComponentProps<"nav">) {

@@ -33,9 +33,9 @@
 - name: Read ClickHouse server SPIRE registration
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry show
+      {{ verself_bin }}/spire-server entry show
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-clickhouse-server
+      -entryID verself-clickhouse-server
       -output json
   register: clickhouse_server_spire_entry
   failed_when: false
@@ -44,23 +44,23 @@
 - name: Register ClickHouse server SPIFFE workload
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry create
+      {{ verself_bin }}/spire-server entry create
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-clickhouse-server
+      -entryID verself-clickhouse-server
       -parentID {{ spire_agent_id }}
       -spiffeID {{ spire_clickhouse_server_id }}
       -selector unix:uid:{{ clickhouse_server_uid.stdout | trim }}
       -x509SVIDTTL 3600
-  when: clickhouse_server_spire_entry.rc != 0 or 'forge-metal-clickhouse-server' not in clickhouse_server_spire_entry.stdout
+  when: clickhouse_server_spire_entry.rc != 0 or 'verself-clickhouse-server' not in clickhouse_server_spire_entry.stdout
   changed_when: true
   notify: restart clickhouse-server-spiffe-helper
 
 - name: Update ClickHouse server SPIRE workload selector drift
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry update
+      {{ verself_bin }}/spire-server entry update
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-clickhouse-server
+      -entryID verself-clickhouse-server
       -parentID {{ spire_agent_id }}
       -spiffeID {{ spire_clickhouse_server_id }}
       -selector unix:uid:{{ clickhouse_server_uid.stdout | trim }}
@@ -97,9 +97,9 @@
 - name: Read ClickHouse operator SPIRE registration
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry show
+      {{ verself_bin }}/spire-server entry show
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-clickhouse-operator
+      -entryID verself-clickhouse-operator
       -output json
   register: clickhouse_operator_spire_entry
   failed_when: false
@@ -108,23 +108,23 @@
 - name: Register ClickHouse operator SPIFFE workload
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry create
+      {{ verself_bin }}/spire-server entry create
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-clickhouse-operator
+      -entryID verself-clickhouse-operator
       -parentID {{ spire_agent_id }}
       -spiffeID {{ spire_clickhouse_operator_id }}
       -selector unix:uid:{{ clickhouse_operator_uid.stdout | trim }}
       -x509SVIDTTL 3600
-  when: clickhouse_operator_spire_entry.rc != 0 or 'forge-metal-clickhouse-operator' not in clickhouse_operator_spire_entry.stdout
+  when: clickhouse_operator_spire_entry.rc != 0 or 'verself-clickhouse-operator' not in clickhouse_operator_spire_entry.stdout
   changed_when: true
   notify: restart clickhouse-operator-spiffe-helper
 
 - name: Update ClickHouse operator SPIRE workload selector drift
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry update
+      {{ verself_bin }}/spire-server entry update
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-clickhouse-operator
+      -entryID verself-clickhouse-operator
       -parentID {{ spire_agent_id }}
       -spiffeID {{ spire_clickhouse_operator_id }}
       -selector unix:uid:{{ clickhouse_operator_uid.stdout | trim }}
@@ -138,7 +138,7 @@
 - name: Set ClickHouse operator client command fact
   ansible.builtin.set_fact:
     clickhouse_operator_client_command: >-
-      sudo -u {{ clickhouse_operator_system_user }} {{ fm_bin }}/clickhouse-client
+      sudo -u {{ clickhouse_operator_system_user }} {{ verself_bin }}/clickhouse-client
       --config-file {{ clickhouse_operator_client_config_path }}
       --user {{ clickhouse_operator_db_user }}
 
@@ -281,7 +281,7 @@
       - -out
       - /etc/clickhouse-server/tls/server-ca.pem
       - -subj
-      - /CN=Forge Metal ClickHouse local CA
+      - /CN=Verself ClickHouse local CA
     creates: /etc/clickhouse-server/tls/server-ca.pem
 
 - name: Generate ClickHouse server private key and CSR
@@ -429,14 +429,14 @@
     content: |
       [Unit]
       Description=ClickHouse Server
-      After=forge-metal-firewall.target network.target
-      Requires=forge-metal-firewall.target
+      After=verself-firewall.target network.target
+      Requires=verself-firewall.target
 
       [Service]
       Type=simple
       User={{ clickhouse_system_user }}
       Group={{ clickhouse_system_group }}
-      ExecStart={{ fm_bin }}/clickhouse-server --config-file /etc/clickhouse-server/config.d/forge-metal.xml --pid-file {{ clickhouse_server_pid_path }}
+      ExecStart={{ verself_bin }}/clickhouse-server --config-file /etc/clickhouse-server/config.d/verself.xml --pid-file {{ clickhouse_server_pid_path }}
       ExecReload=/bin/kill -HUP $MAINPID
       Restart=on-failure
       RestartSec=5
@@ -454,7 +454,7 @@
 - name: Deploy ClickHouse server config
   ansible.builtin.template:
     src: clickhouse-config.xml.j2
-    dest: /etc/clickhouse-server/config.d/forge-metal.xml
+    dest: /etc/clickhouse-server/config.d/verself.xml
     owner: root
     group: clickhouse
     mode: "0640"
@@ -506,16 +506,16 @@
 
 - name: Read remote migrations fingerprint
   ansible.builtin.slurp:
-    src: /opt/forge-metal/migrations/.applied-hash
+    src: /opt/verself/migrations/.applied-hash
   register: clickhouse_migrations_remote_hash
   failed_when: false
 
-- name: Probe for expected tables (fingerprint can survive a wipe if /opt/forge-metal is recreated before deploy)
+- name: Probe for expected tables (fingerprint can survive a wipe if /opt/verself is recreated before deploy)
   ansible.builtin.shell: >
     {{ clickhouse_operator_client_command }}
     --query "SELECT count() FROM system.tables
              WHERE (database = 'default' AND name = 'otel_metrics_sum')
-                OR (database = 'forge_metal' AND name IN ('metering', 'billing_events', 'audit_events', 'notification_events', 'domain_update_ledger'))"
+                OR (database = 'verself' AND name IN ('metering', 'billing_events', 'audit_events', 'notification_events', 'domain_update_ledger'))"
   register: clickhouse_expected_table_probe
   changed_when: false
 
@@ -535,12 +535,12 @@
   block:
     - name: Remove deployed migrations directory
       ansible.builtin.file:
-        path: /opt/forge-metal/migrations
+        path: /opt/verself/migrations
         state: absent
 
     - name: Create deployed migrations directory
       ansible.builtin.file:
-        path: /opt/forge-metal/migrations
+        path: /opt/verself/migrations
         state: directory
         owner: root
         group: root
@@ -549,7 +549,7 @@
     - name: Upload migrations
       ansible.builtin.copy:
         src: "{{ playbook_dir }}/../../migrations/"
-        dest: /opt/forge-metal/migrations/
+        dest: /opt/verself/migrations/
         mode: "0644"
 
     - name: Stop ClickHouse writers before force schema reset
@@ -570,10 +570,10 @@
         - "'Could not find' not in (clickhouse_writers_stop_result.msg | default(''))"
       when: clickhouse_force_schema_reset
 
-    - name: Drop forge_metal database before force schema reset
+    - name: Drop verself database before force schema reset
       ansible.builtin.shell: >
         {{ clickhouse_operator_client_command }}
-        --query 'DROP DATABASE IF EXISTS forge_metal SYNC'
+        --query 'DROP DATABASE IF EXISTS verself SYNC'
       changed_when: false
       when: clickhouse_force_schema_reset
 
@@ -603,17 +603,17 @@
       changed_when: false
       when: clickhouse_force_schema_reset
 
-    - name: Create forge_metal database
+    - name: Create verself database
       ansible.builtin.shell: >
         {{ clickhouse_operator_client_command }}
-        --query 'CREATE DATABASE IF NOT EXISTS forge_metal'
+        --query 'CREATE DATABASE IF NOT EXISTS verself'
       changed_when: false
 
     - name: Apply migration files
       ansible.builtin.shell: >
         {{ clickhouse_operator_client_command }}
-        --database forge_metal --multiquery
-        --queries-file /opt/forge-metal/migrations/{{ item }}
+        --database verself --multiquery
+        --queries-file /opt/verself/migrations/{{ item }}
       loop: >-
         {{
           query('ansible.builtin.fileglob', playbook_dir + '/../../migrations/[0-9][0-9][0-9]_*.up.sql')
@@ -627,7 +627,7 @@
     - name: Record migrations fingerprint
       ansible.builtin.copy:
         content: "{{ clickhouse_migrations_local_hash.stdout.split()[0] }}\n"
-        dest: /opt/forge-metal/migrations/.applied-hash
+        dest: /opt/verself/migrations/.applied-hash
         mode: "0644"
 
     - name: Start ClickHouse writers after force schema reset

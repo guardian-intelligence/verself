@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { authQueryKey } from "@forge-metal/auth-web/isomorphic";
-import { useSignedInAuth } from "@forge-metal/auth-web/react";
+import { authQueryKey } from "@verself/auth-web/isomorphic";
+import { useSignedInAuth } from "@verself/auth-web/react";
 import {
   createExecutionSchedule,
   pauseExecutionSchedule,

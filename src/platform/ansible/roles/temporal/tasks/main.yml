@@ -1,25 +1,25 @@
 ---
-- name: Verify forge-temporal-server binary exists in profile
+- name: Verify verself-temporal-server binary exists in profile
   ansible.builtin.stat:
-    path: "{{ fm_bin }}/forge-temporal-server"
+    path: "{{ verself_bin }}/verself-temporal-server"
   register: temporal_server_binary
   failed_when: not temporal_server_binary.stat.exists
 
-- name: Verify forge-temporal-web binary exists in profile
+- name: Verify verself-temporal-web binary exists in profile
   ansible.builtin.stat:
-    path: "{{ fm_bin }}/forge-temporal-web"
+    path: "{{ verself_bin }}/verself-temporal-web"
   register: temporal_web_binary
   failed_when: not temporal_web_binary.stat.exists
 
 - name: Verify temporal-bootstrap binary exists in profile
   ansible.builtin.stat:
-    path: "{{ fm_bin }}/temporal-bootstrap"
+    path: "{{ verself_bin }}/temporal-bootstrap"
   register: temporal_bootstrap_binary
   failed_when: not temporal_bootstrap_binary.stat.exists
 
 - name: Verify temporal-schema binary exists in profile
   ansible.builtin.stat:
-    path: "{{ fm_bin }}/temporal-schema"
+    path: "{{ verself_bin }}/temporal-schema"
   register: temporal_schema_binary
   failed_when: not temporal_schema_binary.stat.exists
 
@@ -68,9 +68,9 @@
 - name: Read Temporal server SPIRE registration
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry show
+      {{ verself_bin }}/spire-server entry show
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-temporal-server
+      -entryID verself-temporal-server
       -output json
   register: temporal_server_spire_entry
   failed_when: false
@@ -79,23 +79,23 @@
 - name: Register Temporal server SPIFFE workload
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry create
+      {{ verself_bin }}/spire-server entry create
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-temporal-server
+      -entryID verself-temporal-server
       -parentID {{ spire_agent_id }}
       -spiffeID {{ spire_temporal_server_id }}
       -selector unix:uid:{{ temporal_server_uid.stdout | trim }}
       -x509SVIDTTL 3600
-  when: temporal_server_spire_entry.rc != 0 or 'forge-metal-temporal-server' not in temporal_server_spire_entry.stdout
+  when: temporal_server_spire_entry.rc != 0 or 'verself-temporal-server' not in temporal_server_spire_entry.stdout
   changed_when: true
   notify: restart temporal-server
 
 - name: Update Temporal server SPIRE workload selector drift
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry update
+      {{ verself_bin }}/spire-server entry update
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-temporal-server
+      -entryID verself-temporal-server
       -parentID {{ spire_agent_id }}
       -spiffeID {{ spire_temporal_server_id }}
       -selector unix:uid:{{ temporal_server_uid.stdout | trim }}
@@ -109,9 +109,9 @@
 - name: Read Temporal web SPIRE registration
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry show
+      {{ verself_bin }}/spire-server entry show
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-temporal-web
+      -entryID verself-temporal-web
       -output json
   register: temporal_web_spire_entry
   failed_when: false
@@ -120,23 +120,23 @@
 - name: Register Temporal web SPIFFE workload
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry create
+      {{ verself_bin }}/spire-server entry create
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-temporal-web
+      -entryID verself-temporal-web
       -parentID {{ spire_agent_id }}
       -spiffeID {{ spire_temporal_web_id }}
       -selector unix:uid:{{ temporal_web_uid.stdout | trim }}
       -x509SVIDTTL 3600
-  when: temporal_web_spire_entry.rc != 0 or 'forge-metal-temporal-web' not in temporal_web_spire_entry.stdout
+  when: temporal_web_spire_entry.rc != 0 or 'verself-temporal-web' not in temporal_web_spire_entry.stdout
   changed_when: true
   notify: restart temporal-web
 
 - name: Update Temporal web SPIRE workload selector drift
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry update
+      {{ verself_bin }}/spire-server entry update
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-temporal-web
+      -entryID verself-temporal-web
       -parentID {{ spire_agent_id }}
       -spiffeID {{ spire_temporal_web_id }}
       -selector unix:uid:{{ temporal_web_uid.stdout | trim }}
@@ -150,9 +150,9 @@
 - name: Read Temporal proof SPIRE registration
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry show
+      {{ verself_bin }}/spire-server entry show
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-temporal-proof
+      -entryID verself-temporal-proof
       -output json
   register: temporal_proof_spire_entry
   failed_when: false
@@ -161,10 +161,10 @@
 - name: Remove retired Temporal proof SPIRE registration
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry delete
+      {{ verself_bin }}/spire-server entry delete
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-temporal-proof
-  when: temporal_proof_spire_entry.rc == 0 and 'forge-metal-temporal-proof' in temporal_proof_spire_entry.stdout
+      -entryID verself-temporal-proof
+  when: temporal_proof_spire_entry.rc == 0 and 'verself-temporal-proof' in temporal_proof_spire_entry.stdout
   changed_when: true
 
 - name: Create Temporal state directories
@@ -306,7 +306,7 @@
     ansible_remote_tmp: "{{ temporal_state_dir }}/.ansible/tmp"
   ansible.builtin.command:
     argv:
-      - "{{ fm_bin }}/temporal-schema"
+      - "{{ verself_bin }}/temporal-schema"
       - setup
       - --config
       - "{{ temporal_config_path }}"
@@ -326,7 +326,7 @@
     ansible_remote_tmp: "{{ temporal_state_dir }}/.ansible/tmp"
   ansible.builtin.command:
     argv:
-      - "{{ fm_bin }}/temporal-schema"
+      - "{{ verself_bin }}/temporal-schema"
       - update
       - --config
       - "{{ temporal_config_path }}"
@@ -346,7 +346,7 @@
     ansible_remote_tmp: "{{ temporal_state_dir }}/.ansible/tmp"
   ansible.builtin.command:
     argv:
-      - "{{ fm_bin }}/temporal-schema"
+      - "{{ verself_bin }}/temporal-schema"
       - setup
       - --config
       - "{{ temporal_config_path }}"
@@ -366,7 +366,7 @@
     ansible_remote_tmp: "{{ temporal_state_dir }}/.ansible/tmp"
   ansible.builtin.command:
     argv:
-      - "{{ fm_bin }}/temporal-schema"
+      - "{{ verself_bin }}/temporal-schema"
       - update
       - --config
       - "{{ temporal_config_path }}"
@@ -426,14 +426,14 @@
     ansible_remote_tmp: "{{ temporal_state_dir }}/.ansible/tmp"
   ansible.builtin.command:
     argv:
-      - "{{ fm_bin }}/temporal-bootstrap"
+      - "{{ verself_bin }}/temporal-bootstrap"
   environment:
     HOME: /tmp
     SPIFFE_ENDPOINT_SOCKET: "unix://{{ spire_agent_socket_path }}"
     OTEL_EXPORTER_OTLP_ENDPOINT: "http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}"
-    FM_TEMPORAL_FRONTEND_ADDRESS: "{{ services.temporal.host }}:{{ services.temporal.grpc_port }}"
-    FM_TEMPORAL_BOOTSTRAP_NAMESPACES: "{{ temporal_bootstrap_namespaces | join(',') }}"
-    FM_TEMPORAL_BOOTSTRAP_NAMESPACE_RETENTION: "{{ temporal_namespace_retention }}"
+    VERSELF_TEMPORAL_FRONTEND_ADDRESS: "{{ services.temporal.host }}:{{ services.temporal.grpc_port }}"
+    VERSELF_TEMPORAL_BOOTSTRAP_NAMESPACES: "{{ temporal_bootstrap_namespaces | join(',') }}"
+    VERSELF_TEMPORAL_BOOTSTRAP_NAMESPACE_RETENTION: "{{ temporal_namespace_retention }}"
   changed_when: false
 
 - name: Enable and start temporal-web

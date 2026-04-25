@@ -13,4 +13,4 @@
 service_pg_migrations_force_reset: false
 service_pg_migrations_pre_reset_tasks: ""
 service_pg_migrations_post_reset_tasks: ""
-service_pg_migrations_staging_root: /opt/forge-metal
+service_pg_migrations_staging_root: /opt/verself

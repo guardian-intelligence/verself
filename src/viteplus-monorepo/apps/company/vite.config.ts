@@ -6,7 +6,7 @@ import { nitro } from "nitro/vite";
 import { defineConfig } from "vite-plus";
 
 const observabilityPlugin = fileURLToPath(
-  import.meta.resolve("@forge-metal/nitro-plugins/observability-plugin"),
+  import.meta.resolve("@verself/nitro-plugins/observability-plugin"),
 );
 
 export default defineConfig({

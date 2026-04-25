@@ -1,7 +1,7 @@
 ---
 - name: Verify mailbox-service binary exists in profile
   ansible.builtin.stat:
-    path: "{{ fm_bin }}/mailbox-service"
+    path: "{{ verself_bin }}/mailbox-service"
   register: mailbox_service_binary
   failed_when: not mailbox_service_binary.stat.exists
 
@@ -35,9 +35,9 @@
 - name: Read mailbox-service SPIRE registration
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry show
+      {{ verself_bin }}/spire-server entry show
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-mailbox-service
+      -entryID verself-mailbox-service
       -output json
   register: mailbox_service_spire_entry
   failed_when: false
@@ -46,23 +46,23 @@
 - name: Register mailbox-service SPIFFE workload
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry create
+      {{ verself_bin }}/spire-server entry create
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-mailbox-service
+      -entryID verself-mailbox-service
       -parentID {{ spire_agent_id }}
       -spiffeID {{ spire_mailbox_service_id }}
       -selector unix:uid:{{ mailbox_service_uid.stdout | trim }}
       -x509SVIDTTL 3600
-  when: mailbox_service_spire_entry.rc != 0 or 'forge-metal-mailbox-service' not in mailbox_service_spire_entry.stdout
+  when: mailbox_service_spire_entry.rc != 0 or 'verself-mailbox-service' not in mailbox_service_spire_entry.stdout
   changed_when: true
   notify: restart mailbox-service
 
 - name: Update mailbox-service SPIRE workload selector drift
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry update
+      {{ verself_bin }}/spire-server entry update
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-mailbox-service
+      -entryID verself-mailbox-service
       -parentID {{ spire_agent_id }}
       -spiffeID {{ spire_mailbox_service_id }}
       -selector unix:uid:{{ mailbox_service_uid.stdout | trim }}
@@ -123,7 +123,7 @@
     method: POST
     headers:
       Authorization: "Bearer {{ mailbox_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
-      Host: "auth.{{ forge_metal_domain }}"
+      Host: "auth.{{ verself_domain }}"
     body_format: json
     body: {}
     return_content: true
@@ -148,7 +148,7 @@
     method: POST
     headers:
       Authorization: "Bearer {{ mailbox_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
-      Host: "auth.{{ forge_metal_domain }}"
+      Host: "auth.{{ verself_domain }}"
     body_format: json
     body:
       name: "{{ mailbox_service_auth_project_name }}"
@@ -178,7 +178,7 @@
     method: PUT
     headers:
       Authorization: "Bearer {{ mailbox_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
-      Host: "auth.{{ forge_metal_domain }}"
+      Host: "auth.{{ verself_domain }}"
     body_format: json
     body:
       name: "{{ mailbox_service_auth_project_name }}"
@@ -205,8 +205,8 @@
     content: |
       [Unit]
       Description=Mailbox Service
-      After=forge-metal-firewall.target network.target postgresql.service stalwart.service zitadel.service spire-agent.service secrets-service.service
-      Requires=forge-metal-firewall.target
+      After=verself-firewall.target network.target postgresql.service stalwart.service zitadel.service spire-agent.service secrets-service.service
+      Requires=verself-firewall.target
       Wants=postgresql.service stalwart.service zitadel.service spire-agent.service secrets-service.service
 
       [Service]
@@ -214,7 +214,7 @@
       User=mailbox_service
       Group=mailbox_service
       SupplementaryGroups={{ spire_workload_group }}
-      BindReadOnlyPaths=/etc/forge-metal/auth-discovery-hosts:/etc/hosts
+      BindReadOnlyPaths=/etc/verself/auth-discovery-hosts:/etc/hosts
       LoadCredential=stalwart-ceo-password:/etc/credstore/mailbox-service/stalwart-ceo-password
       LoadCredential=stalwart-agents-password:/etc/credstore/mailbox-service/stalwart-agents-password
       LoadCredential=forward-to:/etc/credstore/mailbox-service/forward-to
@@ -223,7 +223,7 @@
       Environment=MAILBOX_SERVICE_STALWART_BASE_URL=http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}
       Environment=MAILBOX_SERVICE_STALWART_PUBLIC_BASE_URL=https://{{ stalwart_domain }}
       Environment=MAILBOX_SERVICE_STALWART_MAILBOX=ceo
-      Environment=MAILBOX_SERVICE_STALWART_LOCAL_DOMAIN={{ forge_metal_domain }}
+      Environment=MAILBOX_SERVICE_STALWART_LOCAL_DOMAIN={{ verself_domain }}
       Environment=MAILBOX_SERVICE_SECRETS_URL=https://{{ services.secrets_service.host }}:{{ services.secrets_service.internal_port }}
       Environment=MAILBOX_SERVICE_SYNC_DISCOVERY_INTERVAL=2m
       Environment=MAILBOX_SERVICE_SYNC_RECONCILE_INTERVAL=10m
@@ -235,7 +235,7 @@
       Environment=MAILBOX_SERVICE_FORWARDER_STATE_PATH=/var/lib/mailbox-service/forwarder-state.json
       Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}
       Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}
-      ExecStart={{ fm_bin }}/mailbox-service
+      ExecStart={{ verself_bin }}/mailbox-service
       Restart=always
       RestartSec=5
       ProtectSystem=strict

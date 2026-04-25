@@ -85,8 +85,8 @@
 
 - name: Create DNS records in Cloudflare
   community.general.cloudflare_dns:
-    zone: "{{ forge_metal_domain }}"
-    record: "{{ item.name }}.{{ forge_metal_domain }}"
+    zone: "{{ verself_domain }}"
+    record: "{{ item.name }}.{{ verself_domain }}"
     type: "{{ item.type }}"
     value: "{{ item.value | regex_replace('^\"|\"$', '') }}"
     priority: "{{ item.priority | default(omit) }}"
@@ -96,7 +96,7 @@
     api_token: "{{ cloudflare_api_token }}"
   loop: "{{ resend_dns_records }}"
   loop_control:
-    label: "{{ item.type }} {{ item.name }}.{{ forge_metal_domain }}"
+    label: "{{ item.type }} {{ item.name }}.{{ verself_domain }}"
   delegate_to: localhost
   become: false
   when: resend_domain_status != 'verified'
@@ -145,7 +145,7 @@
 
 - name: Create DMARC record for sending subdomain
   community.general.cloudflare_dns:
-    zone: "{{ forge_metal_domain }}"
+    zone: "{{ verself_domain }}"
     record: "_dmarc.{{ resend_domain }}"
     type: TXT
     value: "v=DMARC1; p={{ resend_dmarc_policy }}; rua=mailto:{{ resend_dmarc_rua }}"
@@ -158,8 +158,8 @@
 
 - name: Create DMARC record for root domain
   community.general.cloudflare_dns:
-    zone: "{{ forge_metal_domain }}"
-    record: "_dmarc.{{ forge_metal_domain }}"
+    zone: "{{ verself_domain }}"
+    record: "_dmarc.{{ verself_domain }}"
     type: TXT
     value: "v=DMARC1; p={{ resend_dmarc_policy }}; rua=mailto:{{ resend_dmarc_rua }}"
     ttl: 1

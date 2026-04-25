@@ -65,4 +65,4 @@ jobs:
         working-directory: src/viteplus-monorepo
         run: |
           set -euo pipefail
-          vp run @forge-metal/rent-a-sandbox#build
+          vp run @verself/rent-a-sandbox#build

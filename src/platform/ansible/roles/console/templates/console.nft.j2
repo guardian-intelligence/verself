@@ -1,7 +1,7 @@
 # Console frontend — loopback only, Caddy reverse proxy.
-table inet forge_metal_console
-delete table inet forge_metal_console
-table inet forge_metal_console {
+table inet verself_console
+delete table inet verself_console
+table inet verself_console {
     chain input {
         type filter hook input priority filter; policy accept;
         tcp dport {{ services.console.port }} iifname != "lo" drop

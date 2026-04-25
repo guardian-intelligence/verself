@@ -8,7 +8,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const problemTypePrefix = "urn:forge-metal:problem:sandbox-rental:"
+const problemTypePrefix = "urn:verself:problem:sandbox-rental:"
 
 func problem(ctx context.Context, status int, code, detail string, cause error) error {
 	if cause != nil {
@@ -17,7 +17,7 @@ func problem(ctx context.Context, status int, code, detail string, cause error) 
 
 	instance := ""
 	if spanContext := trace.SpanContextFromContext(ctx); spanContext.HasTraceID() {
-		instance = "urn:forge-metal:trace:" + spanContext.TraceID().String()
+		instance = "urn:verself:trace:" + spanContext.TraceID().String()
 	}
 
 	return &huma.ErrorModel{

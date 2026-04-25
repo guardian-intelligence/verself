@@ -113,10 +113,10 @@ func (s *Service) CreateExport(ctx context.Context, principal Principal, req Cre
 		return nil, err
 	}
 	span.SetAttributes(
-		attribute.String("forge_metal.org_id", orgID),
-		attribute.String("forge_metal.export_id", exportID.String()),
-		attribute.Int("forge_metal.export_file_count", len(job.Files)),
-		attribute.Int64("forge_metal.export_bytes", job.ArtifactBytes),
+		attribute.String("verself.org_id", orgID),
+		attribute.String("verself.export_id", exportID.String()),
+		attribute.Int("verself.export_file_count", len(job.Files)),
+		attribute.Int64("verself.export_bytes", job.ArtifactBytes),
 	)
 	return job, nil
 }
@@ -224,7 +224,7 @@ func (s *Service) ListExports(ctx context.Context, principal Principal) ([]Expor
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("%w: export rows: %v", ErrStore, err)
 	}
-	span.SetAttributes(attribute.String("forge_metal.org_id", principal.OrgID), attribute.Int("forge_metal.export_count", len(jobs)))
+	span.SetAttributes(attribute.String("verself.org_id", principal.OrgID), attribute.Int("verself.export_count", len(jobs)))
 	return jobs, nil
 }
 
@@ -465,7 +465,7 @@ func (s *Service) sandboxExportFiles(ctx context.Context, orgID string, includeL
 
 func (s *Service) auditExportFiles(ctx context.Context, orgID string) ([]exportArtifactFile, error) {
 	rows, err := s.CH.Query(ctx, auditEventSelectSQL()+`
-		FROM forge_metal.audit_events
+		FROM verself.audit_events
 		WHERE org_id = $1
 		ORDER BY recorded_at, sequence
 	`, orgID)
@@ -820,7 +820,7 @@ func normalizeScopes(scopes []string) ([]string, error) {
 }
 
 func exportReadme(orgID string, exportID uuid.UUID, scopes []string, includeLogs bool, expiresAt time.Time) string {
-	return fmt.Sprintf(`Forge Metal organization export
+	return fmt.Sprintf(`Verself organization export
 
 export_id: %s
 org_id: %s

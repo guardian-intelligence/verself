@@ -1,5 +1,5 @@
 // Clerk-shaped React surface for organizations, members, and member capabilities.
-// Pair this with @forge-metal/auth-web/react's <AuthProvider>: wrap your
+// Pair this with @verself/auth-web/react's <AuthProvider>: wrap your
 // authenticated subtree in <IdentityApiProvider client={...}> and these
 // components do the rest.
 

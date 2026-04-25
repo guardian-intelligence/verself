@@ -99,6 +99,14 @@
 	}
 }
 
+(projects_api_proxy) {
+	import waf_blocking
+	import api_security_headers
+	reverse_proxy {{ services.projects_service.host }}:{{ services.projects_service.port }} {
+		header_up X-Real-IP {remote_host}
+	}
+}
+
 (source_code_hosting_api_proxy) {
 	import waf_blocking
 	import api_security_headers
@@ -389,6 +397,17 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 			max_size 16384
 		}
 		import notifications_api_proxy
+	}
+	respond 404
+}
+
+{{ projects_service_domain }} {
+	import access_log
+	handle /api/* {
+		request_body {
+			max_size 65536
+		}
+		import projects_api_proxy
 	}
 	respond 404
 }

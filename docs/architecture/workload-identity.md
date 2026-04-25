@@ -1,6 +1,6 @@
 # Workload Identity
 
-Forge Metal uses SPIFFE/SPIRE as the workload identity authority for repo-owned
+Verself uses SPIFFE/SPIRE as the workload identity authority for repo-owned
 services. SPIRE asserts workload identity. Product services and resource planes
 enforce authorization against that identity.
 
@@ -26,8 +26,8 @@ The hosted trust domain is operator-configurable at install and immutable after
 SPIRE holds initialized data:
 
 ```yaml
-forge_metal_domain: guardianintelligence.org
-spire_trust_domain: "spiffe.{{ forge_metal_domain }}"
+verself_domain: guardianintelligence.org
+spire_trust_domain: "spiffe.{{ verself_domain }}"
 spire_bundle_endpoint_bind_address: 127.0.0.1
 spire_bundle_endpoint_bind_port: 8082
 spire_jwt_bundle_endpoint_url: "https://{{ spire_bundle_endpoint_bind_address }}:{{ spire_bundle_endpoint_bind_port }}"
@@ -324,7 +324,7 @@ and ClickHouse query-log evidence in ClickHouse.
 Cross-trust-domain federation is out of scope for the single-node topology
 and the three-node topology target. Customer SPIRE trust domains are not
 federated into `spiffe.guardianintelligence.org`. Customer workloads
-authenticate to Forge Metal through customer-facing APIs with Zitadel
+authenticate to Verself through customer-facing APIs with Zitadel
 credentials, not as SPIFFE peers.
 
 ## Observability

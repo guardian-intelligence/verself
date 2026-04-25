@@ -78,7 +78,7 @@
     body_format: json
     body:
       type: kv
-      description: "Forge Metal secrets KV for Zitadel org {{ openbao_tenancy_org_id }}"
+      description: "Verself secrets KV for Zitadel org {{ openbao_tenancy_org_id }}"
       options:
         version: "2"
     ca_path: "{{ openbao_tls_dir }}/cert.pem"
@@ -97,7 +97,7 @@
     body_format: json
     body:
       type: transit
-      description: "Forge Metal transit keys for Zitadel org {{ openbao_tenancy_org_id }}"
+      description: "Verself transit keys for Zitadel org {{ openbao_tenancy_org_id }}"
     ca_path: "{{ openbao_tls_dir }}/cert.pem"
     status_code: 204
   register: openbao_tenancy_transit_enable
@@ -114,7 +114,7 @@
     body_format: json
     body:
       type: jwt
-      description: "Forge Metal Zitadel JWT auth for org {{ openbao_tenancy_org_id }}"
+      description: "Verself Zitadel JWT auth for org {{ openbao_tenancy_org_id }}"
     ca_path: "{{ openbao_tls_dir }}/cert.pem"
     status_code: 204
   register: openbao_tenancy_auth_enable
@@ -534,8 +534,8 @@
         {{
           {
             'org_id': openbao_tenancy_org_id,
-            'forge_metal:credential_id': '*',
-            'forge_metal:openbao_roles': item.item.direct_claim_role,
+            'verself:credential_id': '*',
+            'verself:openbao_roles': item.item.direct_claim_role,
             'permissions': item.item.permission
           }
           if (item.item.direct_claim_role | default('') | length > 0)
@@ -545,8 +545,8 @@
           }
         }}
       claim_mappings:
-        "urn:zitadel:iam:user:resourceowner:id": forge_metal_org_id
-        "urn:zitadel:iam:user:resourceowner:name": forge_metal_org_name
+        "urn:zitadel:iam:user:resourceowner:id": verself_org_id
+        "urn:zitadel:iam:user:resourceowner:name": verself_org_name
       token_policies: "{{ item.item.token_policies }}"
       token_ttl: "{{ openbao_tenancy_token_ttl }}"
       token_max_ttl: "{{ openbao_tenancy_token_max_ttl }}"
@@ -570,9 +570,9 @@
     or (
       (item.item.direct_claim_role | default('') | length > 0)
       and (
-        ((item.json.data | default({})).bound_claims | default({})).get('forge_metal:openbao_roles', '') != item.item.direct_claim_role
+        ((item.json.data | default({})).bound_claims | default({})).get('verself:openbao_roles', '') != item.item.direct_claim_role
         or ((item.json.data | default({})).bound_claims | default({})).get('permissions', '') != item.item.permission
-        or ((item.json.data | default({})).bound_claims | default({})).get('forge_metal:credential_id', '') != '*'
+        or ((item.json.data | default({})).bound_claims | default({})).get('verself:credential_id', '') != '*'
         or ((item.json.data | default({})).bound_claims | default({})).get('org_id', '') != openbao_tenancy_org_id
       )
     )

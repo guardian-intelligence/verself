@@ -7,8 +7,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
-	"github.com/forge-metal/apiwire"
-	"github.com/forge-metal/notifications-service/internal/notifications"
+	"github.com/verself/apiwire"
+	"github.com/verself/notifications-service/internal/notifications"
 )
 
 type Config struct {

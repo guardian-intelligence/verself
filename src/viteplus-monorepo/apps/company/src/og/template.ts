@@ -1,5 +1,5 @@
 import { assertVoice, formatViolation, type VoiceViolation } from "~/brand/voice.ts";
-import { WINGS_PATH_D } from "@forge-metal/brand";
+import { WINGS_PATH_D } from "@verself/brand";
 
 // OG card generator. Produces a 1200×630 SVG matching /design §14 — Iron
 // ground, Argent wings, Fraunces headline with one loud word in Flare, plain

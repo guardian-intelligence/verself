@@ -8,24 +8,24 @@ import (
 	"testing"
 	"time"
 
-	"github.com/forge-metal/envconfig"
+	"github.com/verself/envconfig"
 )
 
 func TestLoaderAggregatesAllErrors(t *testing.T) {
-	t.Setenv("FM_TEST_COUNT", "not-an-int")
-	os.Unsetenv("FM_TEST_REQUIRED")
+	t.Setenv("VERSELF_TEST_COUNT", "not-an-int")
+	os.Unsetenv("VERSELF_TEST_REQUIRED")
 
 	l := envconfig.New()
-	_ = l.RequireString("FM_TEST_REQUIRED")
-	_ = l.Int("FM_TEST_COUNT", 1)
-	_ = l.RequireCredential("fm-test-missing-credential")
+	_ = l.RequireString("VERSELF_TEST_REQUIRED")
+	_ = l.Int("VERSELF_TEST_COUNT", 1)
+	_ = l.RequireCredential("verself-test-missing-credential")
 
 	err := l.Err()
 	if err == nil {
 		t.Fatal("expected error")
 	}
 	msg := err.Error()
-	for _, want := range []string{"FM_TEST_REQUIRED", "FM_TEST_COUNT", "fm-test-missing-credential"} {
+	for _, want := range []string{"VERSELF_TEST_REQUIRED", "VERSELF_TEST_COUNT", "verself-test-missing-credential"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("expected aggregated error to mention %q, got %q", want, msg)
 		}
@@ -33,22 +33,22 @@ func TestLoaderAggregatesAllErrors(t *testing.T) {
 }
 
 func TestLoaderReturnsFallbacksOnEmpty(t *testing.T) {
-	os.Unsetenv("FM_TEST_LISTEN_ADDR")
-	os.Unsetenv("FM_TEST_COUNT")
-	os.Unsetenv("FM_TEST_FLAG")
-	os.Unsetenv("FM_TEST_INTERVAL")
+	os.Unsetenv("VERSELF_TEST_LISTEN_ADDR")
+	os.Unsetenv("VERSELF_TEST_COUNT")
+	os.Unsetenv("VERSELF_TEST_FLAG")
+	os.Unsetenv("VERSELF_TEST_INTERVAL")
 
 	l := envconfig.New()
-	if got := l.String("FM_TEST_LISTEN_ADDR", "127.0.0.1:9999"); got != "127.0.0.1:9999" {
+	if got := l.String("VERSELF_TEST_LISTEN_ADDR", "127.0.0.1:9999"); got != "127.0.0.1:9999" {
 		t.Errorf("String fallback: got %q", got)
 	}
-	if got := l.Int("FM_TEST_COUNT", 7); got != 7 {
+	if got := l.Int("VERSELF_TEST_COUNT", 7); got != 7 {
 		t.Errorf("Int fallback: got %d", got)
 	}
-	if got := l.Bool("FM_TEST_FLAG", true); got != true {
+	if got := l.Bool("VERSELF_TEST_FLAG", true); got != true {
 		t.Errorf("Bool fallback: got %v", got)
 	}
-	if got := l.Duration("FM_TEST_INTERVAL", 3*time.Second); got != 3*time.Second {
+	if got := l.Duration("VERSELF_TEST_INTERVAL", 3*time.Second); got != 3*time.Second {
 		t.Errorf("Duration fallback: got %v", got)
 	}
 	if err := l.Err(); err != nil {
@@ -57,22 +57,22 @@ func TestLoaderReturnsFallbacksOnEmpty(t *testing.T) {
 }
 
 func TestLoaderParsesValidValues(t *testing.T) {
-	t.Setenv("FM_TEST_COUNT", "42")
-	t.Setenv("FM_TEST_FLAG", "yes")
-	t.Setenv("FM_TEST_INTERVAL", "15s")
-	t.Setenv("FM_TEST_URL", "https://example.com")
+	t.Setenv("VERSELF_TEST_COUNT", "42")
+	t.Setenv("VERSELF_TEST_FLAG", "yes")
+	t.Setenv("VERSELF_TEST_INTERVAL", "15s")
+	t.Setenv("VERSELF_TEST_URL", "https://example.com")
 
 	l := envconfig.New()
-	if got := l.Int("FM_TEST_COUNT", 0); got != 42 {
+	if got := l.Int("VERSELF_TEST_COUNT", 0); got != 42 {
 		t.Errorf("Int: got %d", got)
 	}
-	if got := l.Bool("FM_TEST_FLAG", false); got != true {
+	if got := l.Bool("VERSELF_TEST_FLAG", false); got != true {
 		t.Errorf("Bool yes: got %v", got)
 	}
-	if got := l.Duration("FM_TEST_INTERVAL", 0); got != 15*time.Second {
+	if got := l.Duration("VERSELF_TEST_INTERVAL", 0); got != 15*time.Second {
 		t.Errorf("Duration: got %v", got)
 	}
-	if got := l.RequireURL("FM_TEST_URL"); got != "https://example.com" {
+	if got := l.RequireURL("VERSELF_TEST_URL"); got != "https://example.com" {
 		t.Errorf("RequireURL: got %q", got)
 	}
 	if err := l.Err(); err != nil {
@@ -81,9 +81,9 @@ func TestLoaderParsesValidValues(t *testing.T) {
 }
 
 func TestLoaderRejectsRelativeURL(t *testing.T) {
-	t.Setenv("FM_TEST_URL", "not-a-url")
+	t.Setenv("VERSELF_TEST_URL", "not-a-url")
 	l := envconfig.New()
-	_ = l.RequireURL("FM_TEST_URL")
+	_ = l.RequireURL("VERSELF_TEST_URL")
 	if err := l.Err(); err == nil {
 		t.Fatal("expected URL rejection")
 	}

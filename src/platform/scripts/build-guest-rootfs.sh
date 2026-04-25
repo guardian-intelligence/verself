@@ -4,9 +4,9 @@ set -euo pipefail
 # build-guest-rootfs.sh — Build an Ubuntu 24.04 ext4 rootfs for Firecracker VMs.
 #
 # The image is the canonical runner substrate for the first public CI label:
-# metal-4vcpu-ubuntu-2404. It contains the vm-bridge PID 1, guest telemetry,
+# verself-4vcpu-ubuntu-2404. It contains the vm-bridge PID 1, guest telemetry,
 # the official GitHub Actions runner, Go, Node.js, git, and the
-# basic build tools expected by the forge-metal dogfood workflow.
+# basic build tools expected by the verself dogfood workflow.
 #
 # Two-layer architecture:
 #   Layer 1 (this script): base OS + runner toolchain -> rootfs.ext4
@@ -183,7 +183,7 @@ if [[ -n "$GUEST_KERNEL_CONFIG_URL" ]]; then
 fi
 
 echo "-> preparing chroot"
-mkdir -p "$ROOTFS/usr/local/bin" "$ROOTFS/usr/sbin" "$ROOTFS/opt/forge-metal"
+mkdir -p "$ROOTFS/usr/local/bin" "$ROOTFS/usr/sbin" "$ROOTFS/opt/verself"
 rm -f "$ROOTFS/etc/resolv.conf"
 install -m 0644 /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
 cat > "$ROOTFS/etc/hosts" <<'HOSTS'
@@ -251,22 +251,22 @@ ln -sf /usr/local/go/bin/gofmt "$ROOTFS/usr/local/bin/gofmt"
 echo "-> installing Node.js $NODEJS_VERSION"
 NODEJS_TARBALL="$WORKDIR/nodejs.tar.xz"
 download_checked "$NODEJS_URL" "$NODEJS_SHA256" "$NODEJS_TARBALL"
-rm -rf "$ROOTFS/opt/forge-metal/nodejs"
-mkdir -p "$ROOTFS/opt/forge-metal/nodejs"
-tar -xJf "$NODEJS_TARBALL" -C "$ROOTFS/opt/forge-metal/nodejs" --strip-components=1
+rm -rf "$ROOTFS/opt/verself/nodejs"
+mkdir -p "$ROOTFS/opt/verself/nodejs"
+tar -xJf "$NODEJS_TARBALL" -C "$ROOTFS/opt/verself/nodejs" --strip-components=1
 for binary in node npm npx corepack; do
-  ln -sf "/opt/forge-metal/nodejs/bin/$binary" "$ROOTFS/usr/local/bin/$binary"
+  ln -sf "/opt/verself/nodejs/bin/$binary" "$ROOTFS/usr/local/bin/$binary"
 done
 run_chroot /usr/local/bin/corepack enable --install-directory /usr/local/bin
 run_chroot /usr/local/bin/corepack prepare "pnpm@$PNPM_VERSION" --activate
 run_chroot /usr/local/bin/npm install --global --no-audit --no-fund "vite-plus@$VITE_PLUS_VERSION"
-ln -sf /opt/forge-metal/nodejs/bin/vp "$ROOTFS/usr/local/bin/vp"
+ln -sf /opt/verself/nodejs/bin/vp "$ROOTFS/usr/local/bin/vp"
 
 echo "-> priming GitHub Actions toolcache for Node.js $NODEJS_VERSION"
 NODE_TOOLCACHE="$ROOTFS/opt/hostedtoolcache/node/$NODEJS_VERSION/x64"
 rm -rf "$NODE_TOOLCACHE" "$NODE_TOOLCACHE.complete"
 mkdir -p "$NODE_TOOLCACHE"
-cp -a "$ROOTFS/opt/forge-metal/nodejs/." "$NODE_TOOLCACHE/"
+cp -a "$ROOTFS/opt/verself/nodejs/." "$NODE_TOOLCACHE/"
 touch "$NODE_TOOLCACHE.complete"
 
 echo "-> installing GitHub Actions runner $GITHUB_ACTIONS_RUNNER_VERSION"
@@ -325,10 +325,10 @@ cat > "$ROOTFS/etc/npmrc" <<'NPMRC'
 # Registry is injected at runtime by vm-bridge.
 NPMRC
 
-cat > "$ROOTFS/etc/profile.d/forge-metal-toolchain.sh" <<'PROFILE'
-export PATH=/usr/local/go/bin:/opt/forge-metal/nodejs/bin:$PATH
+cat > "$ROOTFS/etc/profile.d/verself-toolchain.sh" <<'PROFILE'
+export PATH=/usr/local/go/bin:/opt/verself/nodejs/bin:$PATH
 PROFILE
-chmod 0644 "$ROOTFS/etc/profile.d/forge-metal-toolchain.sh"
+chmod 0644 "$ROOTFS/etc/profile.d/verself-toolchain.sh"
 
 run_chroot git config --system --add safe.directory '*'
 run_chroot apt-get clean
@@ -348,10 +348,10 @@ VM_GUEST_TELEMETRY_SHA256=$(sha256sum "$ROOTFS/usr/local/bin/vm-guest-telemetry"
 VM_GUEST_TELEMETRY_BYTES=$(stat -c '%s' "$ROOTFS/usr/local/bin/vm-guest-telemetry")
 GO_BINARY_SHA256=$(sha256sum "$ROOTFS/usr/local/go/bin/go" | awk '{print $1}')
 GO_BINARY_BYTES=$(stat -c '%s' "$ROOTFS/usr/local/go/bin/go")
-NODE_BINARY_SHA256=$(sha256sum "$ROOTFS/opt/forge-metal/nodejs/bin/node" | awk '{print $1}')
-NODE_BINARY_BYTES=$(stat -c '%s' "$ROOTFS/opt/forge-metal/nodejs/bin/node")
-VITE_PLUS_BINARY_SHA256=$(sha256sum "$ROOTFS/opt/forge-metal/nodejs/bin/vp" | awk '{print $1}')
-VITE_PLUS_BINARY_BYTES=$(stat -c '%s' "$ROOTFS/opt/forge-metal/nodejs/bin/vp")
+NODE_BINARY_SHA256=$(sha256sum "$ROOTFS/opt/verself/nodejs/bin/node" | awk '{print $1}')
+NODE_BINARY_BYTES=$(stat -c '%s' "$ROOTFS/opt/verself/nodejs/bin/node")
+VITE_PLUS_BINARY_SHA256=$(sha256sum "$ROOTFS/opt/verself/nodejs/bin/vp" | awk '{print $1}')
+VITE_PLUS_BINARY_BYTES=$(stat -c '%s' "$ROOTFS/opt/verself/nodejs/bin/vp")
 GITHUB_RUNNER_SHA256=$(sha256sum "$ROOTFS/opt/actions-runner/run.sh" | awk '{print $1}')
 GITHUB_RUNNER_BYTES=$(stat -c '%s' "$ROOTFS/opt/actions-runner/run.sh")
 FORGEJO_RUNNER_BINARY_SHA256=$(sha256sum "$ROOTFS/usr/local/bin/forgejo-runner" | awk '{print $1}')
@@ -363,9 +363,9 @@ FORGEJO_RUNNER_BINARY_BYTES=$(stat -c '%s' "$ROOTFS/usr/local/bin/forgejo-runner
   echo "file path=/usr/local/bin/vm-bridge component=vm-bridge sha256=$INIT_SHA256 bytes=$INIT_BYTES"
   echo "file path=/usr/local/bin/vm-guest-telemetry component=vm-guest-telemetry sha256=$VM_GUEST_TELEMETRY_SHA256 bytes=$VM_GUEST_TELEMETRY_BYTES"
   echo "file path=/usr/local/go/bin/go component=go version=$GO_VERSION sha256=$GO_BINARY_SHA256 bytes=$GO_BINARY_BYTES"
-  echo "file path=/opt/forge-metal/nodejs/bin/node component=nodejs version=$NODEJS_VERSION sha256=$NODE_BINARY_SHA256 bytes=$NODE_BINARY_BYTES"
-  echo "file path=/opt/forge-metal/nodejs/bin/vp component=vite-plus version=$VITE_PLUS_VERSION sha256=$VITE_PLUS_BINARY_SHA256 bytes=$VITE_PLUS_BINARY_BYTES"
-  echo "symlink path=/usr/local/bin/vp target=/opt/forge-metal/nodejs/bin/vp component=vite-plus version=$VITE_PLUS_VERSION"
+  echo "file path=/opt/verself/nodejs/bin/node component=nodejs version=$NODEJS_VERSION sha256=$NODE_BINARY_SHA256 bytes=$NODE_BINARY_BYTES"
+  echo "file path=/opt/verself/nodejs/bin/vp component=vite-plus version=$VITE_PLUS_VERSION sha256=$VITE_PLUS_BINARY_SHA256 bytes=$VITE_PLUS_BINARY_BYTES"
+  echo "symlink path=/usr/local/bin/vp target=/opt/verself/nodejs/bin/vp component=vite-plus version=$VITE_PLUS_VERSION"
   echo "file path=/opt/actions-runner/run.sh component=github-actions-runner version=$GITHUB_ACTIONS_RUNNER_VERSION sha256=$GITHUB_RUNNER_SHA256 bytes=$GITHUB_RUNNER_BYTES"
   echo "file path=/usr/local/bin/forgejo-runner component=forgejo-runner version=$FORGEJO_RUNNER_VERSION sha256=$FORGEJO_RUNNER_BINARY_SHA256 bytes=$FORGEJO_RUNNER_BINARY_BYTES"
 } >> "$OUTPUT_DIR/sbom.txt"
@@ -376,7 +376,7 @@ echo "-> building ext4 image ($ROOTFS_IMAGE_SIZE)"
 mke2fs -F -t ext4 -d "$ROOTFS" -L guestroot -b 4096 "$OUTPUT_DIR/rootfs.ext4" "$ROOTFS_IMAGE_SIZE"
 
 echo "-> building Vite+ composed zvol image ($VITE_PLUS_IMAGE_SIZE)"
-mke2fs -F -t ext4 -d "$ROOTFS/opt/forge-metal/nodejs" -L viteplus -b 4096 "$OUTPUT_DIR/viteplus.ext4" "$VITE_PLUS_IMAGE_SIZE"
+mke2fs -F -t ext4 -d "$ROOTFS/opt/verself/nodejs" -L viteplus -b 4096 "$OUTPUT_DIR/viteplus.ext4" "$VITE_PLUS_IMAGE_SIZE"
 
 echo "-> computing guest artifact metrics"
 ROOTFS_TREE_BYTES=$(du -sb "$ROOTFS" | awk '{print $1}')

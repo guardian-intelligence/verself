@@ -1,9 +1,9 @@
 # RFC 9116 security.txt — templated by the company Ansible role against
-# {{ forge_metal_domain }}. Regenerated on each deploy; source of truth lives
+# {{ verself_domain }}. Regenerated on each deploy; source of truth lives
 # at src/platform/ansible/roles/company/templates/security.txt.j2.
 
-Contact: mailto:security@{{ forge_metal_domain }}
+Contact: mailto:security@{{ verself_domain }}
 Expires: {{ (ansible_date_time.iso8601[:10] ~ 'T00:00:00.000Z') | replace(ansible_date_time.iso8601[:4], (ansible_date_time.iso8601[:4] | int + 1) | string) }}
 Preferred-Languages: en
-Canonical: https://{{ forge_metal_domain }}/.well-known/security.txt
-Policy: https://platform.{{ forge_metal_domain }}/policy/security#disclosure
+Canonical: https://{{ verself_domain }}/.well-known/security.txt
+Policy: https://platform.{{ verself_domain }}/policy/security#disclosure

@@ -4,13 +4,13 @@
 
 - name: Verify OpenBao binary exists in profile
   ansible.builtin.stat:
-    path: "{{ fm_bin }}/bao"
+    path: "{{ verself_bin }}/bao"
   register: openbao_binary
   failed_when: not openbao_binary.stat.exists
 
 - name: Capture OpenBao version
   ansible.builtin.command:
-    cmd: "{{ fm_bin }}/bao version"
+    cmd: "{{ verself_bin }}/bao version"
   register: openbao_version_output
   changed_when: false
 
@@ -79,7 +79,7 @@
 - name: Remove legacy global OpenBao OIDC hosts override
   ansible.builtin.blockinfile:
     path: /etc/hosts
-    marker: "# {mark} forge-metal-openbao-oidc"
+    marker: "# {mark} verself-openbao-oidc"
     state: absent
     owner: root
     group: root
@@ -124,8 +124,8 @@
     content: |
       [Unit]
       Description=OpenBao
-      After=forge-metal-firewall.target network.target
-      Requires=forge-metal-firewall.target
+      After=verself-firewall.target network.target
+      Requires=verself-firewall.target
 
       [Service]
       Type=simple
@@ -136,7 +136,7 @@
       Environment=BAO_CACERT={{ openbao_tls_dir }}/cert.pem
       Environment=VAULT_ADDR=https://{{ services.openbao.host }}:{{ services.openbao.port }}
       Environment=VAULT_CACERT={{ openbao_tls_dir }}/cert.pem
-      ExecStart={{ fm_bin }}/bao server -config={{ openbao_config_dir }}/openbao.hcl
+      ExecStart={{ verself_bin }}/bao server -config={{ openbao_config_dir }}/openbao.hcl
       ExecReload=/bin/kill -HUP $MAINPID
       Restart=on-failure
       RestartSec=5
@@ -187,7 +187,7 @@
 
 - name: Check OpenBao status
   ansible.builtin.command:
-    cmd: "{{ fm_bin }}/bao status -format=json"
+    cmd: "{{ verself_bin }}/bao status -format=json"
   environment:
     BAO_ADDR: "https://{{ services.openbao.host }}:{{ services.openbao.port }}"
     BAO_CACERT: "{{ openbao_tls_dir }}/cert.pem"
@@ -206,7 +206,7 @@
 - name: Initialize OpenBao when needed
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/bao operator init
+      {{ verself_bin }}/bao operator init
       -key-shares={{ openbao_key_shares }}
       -key-threshold={{ openbao_key_threshold }}
       -format=json
@@ -280,7 +280,7 @@
 
 - name: Re-check OpenBao status after initialization
   ansible.builtin.command:
-    cmd: "{{ fm_bin }}/bao status -format=json"
+    cmd: "{{ verself_bin }}/bao status -format=json"
   environment:
     BAO_ADDR: "https://{{ services.openbao.host }}:{{ services.openbao.port }}"
     BAO_CACERT: "{{ openbao_tls_dir }}/cert.pem"
@@ -344,7 +344,7 @@
     body_format: json
     body:
       type: jwt
-      description: Forge Metal SPIRE JWT-SVID workload auth
+      description: Verself SPIRE JWT-SVID workload auth
     ca_path: "{{ openbao_tls_dir }}/cert.pem"
     status_code: 204
   when: (openbao_spiffe_jwt_mount ~ '/') not in (openbao_auth_mounts_response.json.data.keys() | list)
@@ -422,7 +422,7 @@
     method: GET
     headers:
       X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
-      X-Forge-Metal-Request-Id: "openbao-bootstrap-probe"
+      X-Verself-Request-Id: "openbao-bootstrap-probe"
     ca_path: "{{ openbao_tls_dir }}/cert.pem"
     status_code: 200
     return_content: true

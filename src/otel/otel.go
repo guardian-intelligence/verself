@@ -1,5 +1,5 @@
-// Package fmotel initializes OpenTelemetry trace and log providers for
-// forge-metal Go services. Each service calls Init once at startup; the
+// Package verselfotel initializes OpenTelemetry trace and log providers for
+// verself Go services. Each service calls Init once at startup; the
 // returned shutdown function flushes pending spans/logs on exit.
 //
 // Traces and logs are exported via OTLP gRPC. Endpoint selection follows
@@ -7,12 +7,12 @@
 // 127.0.0.1:4317.
 //
 // Every span created under a context carrying W3C baggage members with
-// key prefix `forge_metal.` receives those members as span attributes
-// (e.g. baggage `forge_metal.deploy_id=X` → span attribute
-// `forge_metal.deploy_id=X`). Services and callers do not wire this per
+// key prefix `verself.` receives those members as span attributes
+// (e.g. baggage `verself.deploy_id=X` → span attribute
+// `verself.deploy_id=X`). Services and callers do not wire this per
 // endpoint — the SpanProcessor registered here does it for the whole
 // TracerProvider.
-package fmotel
+package verselfotel
 
 import (
 	"context"
@@ -40,7 +40,7 @@ import (
 // BaggageAttributePrefix is copied onto every span from W3C baggage members
 // whose key starts with this prefix. Kept exported so tests can assert the
 // contract.
-const BaggageAttributePrefix = "forge_metal."
+const BaggageAttributePrefix = "verself."
 
 const telemetryExportInterval = time.Second
 
@@ -232,7 +232,7 @@ func sensitiveLogKey(key string) bool {
 }
 
 // baggageSpanProcessor copies W3C baggage members with key prefix
-// `forge_metal.` onto every started span as span attributes with the same
+// `verself.` onto every started span as span attributes with the same
 // key and value. It is the single projection point for observability
 // correlation — services wire otelhttp + otlptracegrpc, the processor
 // does the rest.

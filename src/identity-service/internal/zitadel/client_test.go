@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/forge-metal/identity-service/internal/identity"
+	"github.com/verself/identity-service/internal/identity"
 )
 
 func TestCreateAuthorizationRequestShape(t *testing.T) {

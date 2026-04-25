@@ -493,6 +493,7 @@ type SandboxExecutionScheduleCreateRequest struct {
 	Inputs             *map[string]string `json:"inputs,omitempty"`
 	IntervalSeconds    int32              `json:"interval_seconds"`
 	Paused             *bool              `json:"paused,omitempty"`
+	ProjectId          string             `json:"project_id"`
 	Ref                *string            `json:"ref,omitempty"`
 	SourceRepositoryId string             `json:"source_repository_id"`
 	WorkflowPath       string             `json:"workflow_path"`
@@ -526,6 +527,7 @@ type SandboxExecutionScheduleRecord struct {
 	Inputs             *map[string]string                        `json:"inputs,omitempty"`
 	IntervalSeconds    int32                                     `json:"interval_seconds"`
 	OrgId              string                                    `json:"org_id"`
+	ProjectId          string                                    `json:"project_id"`
 	Ref                *string                                   `json:"ref,omitempty"`
 	ScheduleId         string                                    `json:"schedule_id"`
 	SourceRepositoryId string                                    `json:"source_repository_id"`
@@ -560,7 +562,7 @@ type SandboxGitHubInstallationConnectResponse struct {
 	// ExpiresAt Time after which the setup URL state is no longer accepted.
 	ExpiresAt time.Time `json:"expires_at"`
 
-	// SetupUrl GitHub App installation URL for the current Forge Metal organization.
+	// SetupUrl GitHub App installation URL for the current Verself organization.
 	SetupUrl string `json:"setup_url"`
 
 	// State Opaque installation state token embedded in the GitHub App setup URL.

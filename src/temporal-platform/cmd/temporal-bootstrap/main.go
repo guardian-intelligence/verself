@@ -11,10 +11,10 @@ import (
 	"syscall"
 	"time"
 
-	workloadauth "github.com/forge-metal/auth-middleware/workload"
-	fmotel "github.com/forge-metal/otel"
-	"github.com/forge-metal/temporal-platform/internal/namespaceadmin"
-	"github.com/forge-metal/temporal-platform/sdkclient"
+	workloadauth "github.com/verself/auth-middleware/workload"
+	verselfotel "github.com/verself/otel"
+	"github.com/verself/temporal-platform/internal/namespaceadmin"
+	"github.com/verself/temporal-platform/sdkclient"
 )
 
 var version = "dev"
@@ -30,7 +30,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	otelShutdown, logger, err := fmotel.Init(ctx, fmotel.Config{
+	otelShutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{
 		ServiceName:    "temporal-bootstrap",
 		ServiceVersion: version,
 	})
@@ -70,9 +70,9 @@ func run() error {
 }
 
 func loadSpecsFromEnv() ([]namespaceadmin.Spec, error) {
-	raw := strings.TrimSpace(os.Getenv("FM_TEMPORAL_BOOTSTRAP_NAMESPACES"))
+	raw := strings.TrimSpace(os.Getenv("VERSELF_TEMPORAL_BOOTSTRAP_NAMESPACES"))
 	if raw == "" {
-		return nil, errors.New("FM_TEMPORAL_BOOTSTRAP_NAMESPACES is required")
+		return nil, errors.New("VERSELF_TEMPORAL_BOOTSTRAP_NAMESPACES is required")
 	}
 	retention := loadRetention()
 	seen := map[string]struct{}{}
@@ -92,13 +92,13 @@ func loadSpecsFromEnv() ([]namespaceadmin.Spec, error) {
 		})
 	}
 	if len(specs) == 0 {
-		return nil, errors.New("FM_TEMPORAL_BOOTSTRAP_NAMESPACES must contain at least one namespace")
+		return nil, errors.New("VERSELF_TEMPORAL_BOOTSTRAP_NAMESPACES must contain at least one namespace")
 	}
 	return specs, nil
 }
 
 func loadRetention() time.Duration {
-	raw := strings.TrimSpace(os.Getenv("FM_TEMPORAL_BOOTSTRAP_NAMESPACE_RETENTION"))
+	raw := strings.TrimSpace(os.Getenv("VERSELF_TEMPORAL_BOOTSTRAP_NAMESPACE_RETENTION"))
 	if raw == "" {
 		return 24 * time.Hour
 	}

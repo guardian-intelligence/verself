@@ -1,7 +1,7 @@
 ---
 - name: Verify secrets-service binary exists in profile
   ansible.builtin.stat:
-    path: "{{ fm_bin }}/secrets-service"
+    path: "{{ verself_bin }}/secrets-service"
   register: secrets_service_binary
   failed_when: not secrets_service_binary.stat.exists
 
@@ -35,9 +35,9 @@
 - name: Read secrets-service SPIRE registration
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry show
+      {{ verself_bin }}/spire-server entry show
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-secrets-service
+      -entryID verself-secrets-service
       -output json
   register: secrets_service_spire_entry
   failed_when: false
@@ -46,23 +46,23 @@
 - name: Register secrets-service SPIFFE workload
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry create
+      {{ verself_bin }}/spire-server entry create
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-secrets-service
+      -entryID verself-secrets-service
       -parentID {{ spire_agent_id }}
       -spiffeID {{ spire_secrets_service_id }}
       -selector unix:uid:{{ secrets_service_uid.stdout | trim }}
       -x509SVIDTTL 3600
-  when: secrets_service_spire_entry.rc != 0 or 'forge-metal-secrets-service' not in secrets_service_spire_entry.stdout
+  when: secrets_service_spire_entry.rc != 0 or 'verself-secrets-service' not in secrets_service_spire_entry.stdout
   changed_when: true
   notify: restart secrets-service
 
 - name: Update secrets-service SPIRE workload selector drift
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry update
+      {{ verself_bin }}/spire-server entry update
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-secrets-service
+      -entryID verself-secrets-service
       -parentID {{ spire_agent_id }}
       -spiffeID {{ spire_secrets_service_id }}
       -selector unix:uid:{{ secrets_service_uid.stdout | trim }}
@@ -134,7 +134,7 @@
     method: POST
     headers:
       Authorization: "Bearer {{ secrets_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
-      Host: "auth.{{ forge_metal_domain }}"
+      Host: "auth.{{ verself_domain }}"
     body_format: json
     body: {}
     return_content: true
@@ -159,7 +159,7 @@
     method: POST
     headers:
       Authorization: "Bearer {{ secrets_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
-      Host: "auth.{{ forge_metal_domain }}"
+      Host: "auth.{{ verself_domain }}"
     body_format: json
     body:
       name: "{{ secrets_service_auth_project_name }}"
@@ -189,7 +189,7 @@
     method: PUT
     headers:
       Authorization: "Bearer {{ secrets_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
-      Host: "auth.{{ forge_metal_domain }}"
+      Host: "auth.{{ verself_domain }}"
     body_format: json
     body:
       name: "{{ secrets_service_auth_project_name }}"
@@ -223,7 +223,7 @@
     method: POST
     headers:
       Authorization: "Bearer {{ secrets_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
-      Host: "auth.{{ forge_metal_domain }}"
+      Host: "auth.{{ verself_domain }}"
     body_format: json
     body: {}
     return_content: true
@@ -256,8 +256,8 @@
     content: |
       [Unit]
       Description=Secrets Service
-      After=forge-metal-firewall.target network.target openbao.service zitadel.service governance-service.service spire-agent.service
-      Requires=forge-metal-firewall.target
+      After=verself-firewall.target network.target openbao.service zitadel.service governance-service.service spire-agent.service
+      Requires=verself-firewall.target
       Wants=openbao.service zitadel.service governance-service.service spire-agent.service
 
       [Service]
@@ -265,7 +265,7 @@
       User=secrets_service
       Group=secrets_service
       SupplementaryGroups={{ spire_workload_group }}
-      BindReadOnlyPaths=/etc/forge-metal/auth-discovery-hosts:/etc/hosts
+      BindReadOnlyPaths=/etc/verself/auth-discovery-hosts:/etc/hosts
       LoadCredential=openbao-ca-cert:/etc/openbao/tls/cert.pem
       Environment=SECRETS_LISTEN_ADDR={{ services.secrets_service.host }}:{{ services.secrets_service.port }}
       Environment=SECRETS_INTERNAL_LISTEN_ADDR={{ services.secrets_service.host }}:{{ services.secrets_service.internal_port }}
@@ -283,7 +283,7 @@
       Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}
       Environment=OTEL_SERVICE_NAME=secrets-service
       Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}
-      ExecStart={{ fm_bin }}/secrets-service
+      ExecStart={{ verself_bin }}/secrets-service
       Restart=on-failure
       RestartSec=5
       CapabilityBoundingSet=

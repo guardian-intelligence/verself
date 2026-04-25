@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/forge-metal/sandbox-rental-service/internal/api"
+	"github.com/verself/sandbox-rental-service/internal/api"
 )
 
 const (

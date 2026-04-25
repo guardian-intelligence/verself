@@ -2,7 +2,7 @@
 # Variables specific to worker nodes.
 
 # ZFS
-zfs_pool: forgepool
+zfs_pool: vspool
 
 # Verdaccio
 # Latest 6.x as of 2026-04-22. 7.x is still beta; 9.x is pre-release only.

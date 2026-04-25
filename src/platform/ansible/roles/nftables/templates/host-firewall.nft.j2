@@ -2,10 +2,10 @@
 # Host firewall: default-deny ingress with allowlisted services.
 # Managed by Ansible — do not edit manually.
 
-table inet forge_metal_host
-delete table inet forge_metal_host
+table inet verself_host
+delete table inet verself_host
 
-table inet forge_metal_host {
+table inet verself_host {
     chain input {
         type filter hook input priority filter; policy drop;
 

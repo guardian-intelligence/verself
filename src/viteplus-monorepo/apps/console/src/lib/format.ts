@@ -1,4 +1,4 @@
-import { formatUTCDateTime as formatStableUTCDateTime } from "@forge-metal/web-env";
+import { formatUTCDateTime as formatStableUTCDateTime } from "@verself/web-env";
 
 const numberFormatter = new Intl.NumberFormat("en-US");
 const ledgerUnitsPerUSD = 10_000_000;

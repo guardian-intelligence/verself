@@ -1,10 +1,10 @@
 import { type FocusEvent, type ReactNode, useState } from "react";
 import { useIsMutating, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useSignedInAuth } from "@forge-metal/auth-web/react";
-import { Button } from "@forge-metal/ui/components/ui/button";
-import { Input } from "@forge-metal/ui/components/ui/input";
-import { Label } from "@forge-metal/ui/components/ui/label";
+import { useSignedInAuth } from "@verself/auth-web/react";
+import { Button } from "@verself/ui/components/ui/button";
+import { Input } from "@verself/ui/components/ui/input";
+import { Label } from "@verself/ui/components/ui/label";
 import {
   PageSection,
   PageSections,
@@ -12,8 +12,8 @@ import {
   SectionHeader,
   SectionHeaderContent,
   SectionTitle,
-} from "@forge-metal/ui/components/ui/page";
-import { Select } from "@forge-metal/ui/components/ui/select";
+} from "@verself/ui/components/ui/page";
+import { Select } from "@verself/ui/components/ui/select";
 import { AutoSyncStatus } from "~/components/auto-sync-status";
 import { ErrorCallout } from "~/components/error-callout";
 import {

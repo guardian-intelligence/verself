@@ -4,8 +4,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/forge-metal/apiwire"
-	vmrpc "github.com/forge-metal/vm-orchestrator/proto/v1"
+	"github.com/verself/apiwire"
+	vmrpc "github.com/verself/vm-orchestrator/proto/v1"
 )
 
 func leaseSpecFromProto(spec *vmrpc.LeaseSpec, cfg Config) (LeaseSpec, error) {

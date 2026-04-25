@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	vmrpc "github.com/forge-metal/vm-orchestrator/proto/v1"
-	"github.com/forge-metal/vm-orchestrator/vmproto"
+	vmrpc "github.com/verself/vm-orchestrator/proto/v1"
+	"github.com/verself/vm-orchestrator/vmproto"
 	"github.com/oklog/ulid/v2"
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
@@ -419,8 +419,8 @@ func (s *APIServer) StartExec(ctx context.Context, req *vmrpc.StartExecRequest) 
 	if spec.Env == nil {
 		spec.Env = map[string]string{}
 	}
-	spec.Env["FORGE_METAL_LEASE_ID"] = leaseID
-	spec.Env["FORGE_METAL_EXEC_ID"] = execID
+	spec.Env["VERSELF_LEASE_ID"] = leaseID
+	spec.Env["VERSELF_EXEC_ID"] = execID
 	if err := validateExecSpec(spec); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}

@@ -13,7 +13,7 @@
 
 - name: List Forgejo users for automation account
   ansible.builtin.command: >
-    {{ fm_bin }}/forgejo admin user list --config /etc/forgejo/app.ini
+    {{ verself_bin }}/forgejo admin user list --config /etc/forgejo/app.ini
   become: true
   become_user: forgejo
   environment:
@@ -50,7 +50,7 @@
 - name: Create Forgejo automation user
   ansible.builtin.command:
     argv:
-      - "{{ fm_bin }}/forgejo"
+      - "{{ verself_bin }}/forgejo"
       - admin
       - user
       - create
@@ -98,7 +98,7 @@
 - name: Generate Forgejo automation token
   ansible.builtin.command:
     argv:
-      - "{{ fm_bin }}/forgejo"
+      - "{{ verself_bin }}/forgejo"
       - admin
       - user
       - generate-access-token

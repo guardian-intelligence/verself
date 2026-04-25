@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { cn } from "@forge-metal/ui/lib/utils";
-import { useActiveAnchor } from "@forge-metal/ui/hooks/use-active-anchor";
+import { cn } from "@verself/ui/lib/utils";
+import { useActiveAnchor } from "@verself/ui/hooks/use-active-anchor";
 import { DOCS_NAV, type DocsNavChild, type DocsNavEntry, isPathActive } from "~/lib/docs-nav";
 
 export const Route = createFileRoute("/docs")({

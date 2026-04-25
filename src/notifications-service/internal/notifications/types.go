@@ -160,7 +160,7 @@ func ValidatePrincipal(principal Principal) error {
 	if strings.TrimSpace(principal.OrgID) == "" {
 		return fmt.Errorf("%w: org_id is required", ErrInvalidInput)
 	}
-	if credentialID, _ := principal.Raw["forge_metal:credential_id"].(string); strings.TrimSpace(credentialID) != "" {
+	if credentialID, _ := principal.Raw["verself:credential_id"].(string); strings.TrimSpace(credentialID) != "" {
 		return fmt.Errorf("%w: api credentials cannot use human notification inboxes", ErrInvalidInput)
 	}
 	if !hasGenericProjectRolesClaim(principal.Raw) {

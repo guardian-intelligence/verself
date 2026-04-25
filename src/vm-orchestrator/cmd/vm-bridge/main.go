@@ -17,7 +17,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/forge-metal/vm-orchestrator/vmproto"
+	"github.com/verself/vm-orchestrator/vmproto"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 )
@@ -31,7 +31,7 @@ const (
 	runnerGID            = 1000
 	vmGuestTelemetryBin  = "/usr/local/bin/vm-guest-telemetry"
 	vmGuestTelemetryPort = 10790
-	bridgeFaultEnvVar    = "FORGE_METAL_VM_BRIDGE_FAULT"
+	bridgeFaultEnvVar    = "VERSELF_VM_BRIDGE_FAULT"
 )
 
 type bridgeFaultMode string
@@ -180,21 +180,21 @@ func buildRuntimeEnv(overrides map[string]string, network vmproto.NetworkConfig,
 		"HOME":                         "/home/runner",
 		"PATH":                         "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 		"TERM":                         "xterm",
-		"FORGE_METAL_VM_BRIDGE_SOCKET": bridgeSocketPath,
+		"VERSELF_VM_BRIDGE_SOCKET": bridgeSocketPath,
 		"RUNNER_TOOL_CACHE":            "/opt/hostedtoolcache",
 		"AGENT_TOOLSDIRECTORY":         "/opt/hostedtoolcache",
 	}
 	if len(filesystemMountPaths) > 0 {
-		envMap["FORGE_METAL_COMPOSED_ZVOL_MOUNTS"] = strings.Join(filesystemMountPaths, ":")
+		envMap["VERSELF_COMPOSED_ZVOL_MOUNTS"] = strings.Join(filesystemMountPaths, ":")
 	}
 	for key, value := range overrides {
 		envMap[key] = value
 	}
 
 	if network.HostServiceIP != "" {
-		envMap["FORGE_METAL_HOST_SERVICE_IP"] = network.HostServiceIP
+		envMap["VERSELF_HOST_SERVICE_IP"] = network.HostServiceIP
 		if network.HostServicePort > 0 {
-			envMap["FORGE_METAL_HOST_SERVICE_HTTP_ORIGIN"] = fmt.Sprintf("http://%s:%d", network.HostServiceIP, network.HostServicePort)
+			envMap["VERSELF_HOST_SERVICE_HTTP_ORIGIN"] = fmt.Sprintf("http://%s:%d", network.HostServiceIP, network.HostServicePort)
 		}
 	}
 
@@ -203,8 +203,8 @@ func buildRuntimeEnv(overrides map[string]string, network vmproto.NetworkConfig,
 		return nil, err
 	}
 	if registry != "" {
-		if envMap["FORGE_METAL_NPM_REGISTRY"] == "" {
-			envMap["FORGE_METAL_NPM_REGISTRY"] = registry
+		if envMap["VERSELF_NPM_REGISTRY"] == "" {
+			envMap["VERSELF_NPM_REGISTRY"] = registry
 		}
 		if envMap["NPM_CONFIG_REGISTRY"] == "" {
 			envMap["NPM_CONFIG_REGISTRY"] = registry
@@ -225,7 +225,7 @@ func buildRuntimeEnv(overrides map[string]string, network vmproto.NetworkConfig,
 }
 
 func resolveRegistryURL(env map[string]string, network vmproto.NetworkConfig) (string, error) {
-	if value := strings.TrimSpace(env["FORGE_METAL_NPM_REGISTRY"]); value != "" {
+	if value := strings.TrimSpace(env["VERSELF_NPM_REGISTRY"]); value != "" {
 		return value, nil
 	}
 	if value := strings.TrimSpace(env["NPM_CONFIG_REGISTRY"]); value != "" {

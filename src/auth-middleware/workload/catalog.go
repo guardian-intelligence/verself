@@ -1,7 +1,7 @@
 package workload
 
 // Service names double as the SVID path segment (svc/<name>) and as the
-// audit-ledger credential name. Every Forge Metal workload registers with SPIRE
+// audit-ledger credential name. Every Verself workload registers with SPIRE
 // under this convention, so peer identities are deterministic from the name.
 const (
 	ServiceBilling            = "billing-service"
@@ -16,6 +16,7 @@ const (
 	ServiceObjectStorageAdmin = "object-storage-admin"
 	ServiceOTelCollector      = "otelcol"
 	ServiceProfile            = "profile-service"
+	ServiceProjects           = "projects-service"
 	ServiceSandboxRental      = "sandbox-rental-service"
 	ServiceSecrets            = "secrets-service"
 	ServiceSourceCodeHosting  = "source-code-hosting-service"

@@ -1,7 +1,7 @@
 import { Link as LinkIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { cn } from "@forge-metal/ui/lib/utils";
+import { cn } from "@verself/ui/lib/utils";
 
 import {
   deriveMailboxes,

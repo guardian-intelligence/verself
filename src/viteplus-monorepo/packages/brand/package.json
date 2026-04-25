@@ -1,8 +1,8 @@
 {
-  "name": "@forge-metal/brand",
+  "name": "@verself/brand",
   "version": "0.1.0",
   "private": true,
-  "description": "Guardian Intelligence brand system: SVG marks (Wings/Lockup/Favicon), wordmark variants, and tokens. Deliberately separate from @forge-metal/ui (shadcn) so brand assets evolve on their own cadence.",
+  "description": "Guardian Intelligence brand system: SVG marks (Wings/Lockup/Favicon), wordmark variants, and tokens. Deliberately separate from @verself/ui (shadcn) so brand assets evolve on their own cadence.",
   "files": [
     "src"
   ],

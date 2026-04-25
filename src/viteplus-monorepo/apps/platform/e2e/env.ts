@@ -1,4 +1,4 @@
-import { deriveAppBaseURL } from "@forge-metal/web-env";
+import { deriveAppBaseURL } from "@verself/web-env";
 
 // Test environment for the platform app. The site is fully public — no Zitadel
 // dance needed — so the env shape stays minimal compared to console/e2e.
@@ -9,7 +9,7 @@ export const env = {
   // doesn't pick up stale spans from prior runs.
   deployRunKey:
     process.env.PLATFORM_E2E_DEPLOY_RUN_KEY?.trim() ||
-    process.env.FORGE_METAL_DEPLOY_RUN_KEY?.trim() ||
+    process.env.VERSELF_DEPLOY_RUN_KEY?.trim() ||
     "",
   // Optional override pointing at the worker host where ClickHouse runs.
   clickhouseRemote: process.env.PLATFORM_E2E_CLICKHOUSE_REMOTE?.trim() || "",

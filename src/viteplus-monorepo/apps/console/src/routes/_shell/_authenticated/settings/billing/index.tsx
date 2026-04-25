@@ -1,8 +1,8 @@
 import { Fragment, useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Check, Rocket, Sparkles } from "lucide-react";
-import { Badge } from "@forge-metal/ui/components/ui/badge";
-import { Button } from "@forge-metal/ui/components/ui/button";
+import { Badge } from "@verself/ui/components/ui/badge";
+import { Button } from "@verself/ui/components/ui/button";
 import {
   PageSection,
   PageSections,
@@ -10,7 +10,7 @@ import {
   SectionHeader,
   SectionHeaderContent,
   SectionTitle,
-} from "@forge-metal/ui/components/ui/page";
+} from "@verself/ui/components/ui/page";
 import {
   Table,
   TableBody,
@@ -18,7 +18,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@forge-metal/ui/components/ui/table";
+} from "@verself/ui/components/ui/table";
 import { ErrorCallout } from "~/components/error-callout";
 import { BillingFlashNotice } from "~/features/billing/components";
 import { EntitlementsPanel } from "~/features/billing/entitlements";

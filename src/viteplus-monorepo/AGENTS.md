@@ -119,7 +119,7 @@ make sandbox-proof
 `make sandbox-inner` opens the required SSH tunnels, re-queries the `console-dev`
 client ID from Zitadel, and exports the current runtime env for the local server:
 
-- `FORGE_METAL_DOMAIN`
+- `VERSELF_DOMAIN`
 - `AUTH_SUBDOMAIN`
 - `AUTH_CLIENT_ID`
 - `AUTH_PROJECT_ID`
@@ -130,7 +130,7 @@ client ID from Zitadel, and exports the current runtime env for the local server
 
 Open the `app:` URL printed by `make sandbox-inner`. The launcher prefers `http://127.0.0.1:4244`
 but will move to a higher local port if that one is busy, then records the chosen
-URL in `/tmp/forge-metal-console-dev.env` so `make sandbox-inner SANDBOX_INNER_MODE=verify` can target
+URL in `/tmp/verself-console-dev.env` so `make sandbox-inner SANDBOX_INNER_MODE=verify` can target
 the same dev server from another terminal. Vite HMR gives sub-second feedback on
 every file save. API calls, Electric shapes, auth sessions, and OTLP traces all
 flow through the SSH tunnels to the deployed single-node stack.
@@ -150,7 +150,7 @@ Electric SQL delivers real-time data via `useLiveQuery`. This is not a React Que
 
 ## UI Components
 
-- `cn()` and `Skeleton` are in the shared `@forge-metal/ui` package (`packages/ui/`). Import as `import { cn, Skeleton } from "@forge-metal/ui"`.
+- `cn()` and `Skeleton` are in the shared `@verself/ui` package (`packages/ui/`). Import as `import { cn, Skeleton } from "@verself/ui"`.
 - App-specific components live in `src/components/` (e.g. `error-callout.tsx`). Cross-feature panels live under `src/features/<feature>/` (e.g. `features/billing/entitlements/`).
 - shadcn-compatible theme tokens (OKLCH) are in `src/styles/app.css` via Tailwind v4's `@theme` directive.
 
@@ -217,7 +217,7 @@ Use the shadcn/ui components from `src/viteplus-monorepo/packages/ui/src/compone
 
 #### Sidebar block patterns
 
-The `@forge-metal/ui/components/ui/sidebar` block is the shadcn App Shell with Base UI under it. Two patterns worth knowing:
+The `@verself/ui/components/ui/sidebar` block is the shadcn App Shell with Base UI under it. Two patterns worth knowing:
 
 - **Bottom-anchored groups.** To pin a `SidebarGroup` to the bottom of `SidebarContent` (evergreen non-product entries like Settings, Support, Status), give the group `className="mt-auto"`. `SidebarContent` is a `flex-col` with `flex-1`; `mt-auto` does the right thing in both expanded and icon-collapsed states.
 - **`SidebarInset` is the main column.** Place `<header>` + `<main>` inside `<SidebarInset>`, not as a sibling of `<Sidebar>`. The inset variant handles border-radius, shadow, and the sidebar-collapsed margin correctly; hand-rolled flex layouts will drift.

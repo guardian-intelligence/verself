@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { AppChrome } from "@forge-metal/brand";
+import { AppChrome } from "@verself/brand";
 
 // Newsroom layout — /newsroom and any future /newsroom/$slug share this
 // chrome. Flare ground, emboss Lockup, ink type. The broadcast register:

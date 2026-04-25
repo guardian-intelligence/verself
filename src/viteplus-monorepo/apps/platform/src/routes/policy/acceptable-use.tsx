@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { requireOperatorDomain } from "@forge-metal/web-env";
+import { requireOperatorDomain } from "@verself/web-env";
 
 import {
   ChangesSection,
@@ -20,11 +20,11 @@ export const Route = createFileRoute("/policy/acceptable-use")({
   loader: () => getOperatorDomain(),
   head: () => ({
     meta: [
-      { title: "Acceptable Use Policy — Forge Metal Platform" },
+      { title: "Acceptable Use Policy — Verself Platform" },
       {
         name: "description",
         content:
-          "Workloads, traffic patterns, and content prohibited on the Forge Metal substrate, and how violations are handled.",
+          "Workloads, traffic patterns, and content prohibited on the Verself substrate, and how violations are handled.",
       },
     ],
   }),
@@ -55,8 +55,8 @@ function Summary() {
       <SectionHeading id="summary">Summary</SectionHeading>
       <SummaryPanel>
         <SummaryItem term="Customer responsibility">
-          You are responsible for everything your organization runs on Forge Metal, including
-          workloads started by users, automation, and integrations.
+          You are responsible for everything your organization runs on Verself, including workloads
+          started by users, automation, and integrations.
         </SummaryItem>
         <SummaryItem term="No illegal content">
           — including CSAM, content that violates export control, and content that facilitates
@@ -82,7 +82,7 @@ function Scope() {
       <Prose>
         <p>
           This policy applies to every workload, binary, network request, piece of content, and
-          communication originated by or through the customer's organization on the Forge Metal
+          communication originated by or through the customer's organization on the Verself
           substrate. "Customer" here means the organization identified on the account, including its
           users, automation, and third parties it authorizes.
         </p>
@@ -164,7 +164,7 @@ function Mail() {
       <SectionHeading id="mail">Email and messaging</SectionHeading>
       <Prose>
         <p>
-          Outbound email sent through Forge Metal must comply with the CAN-SPAM Act, GDPR lawful
+          Outbound email sent through Verself must comply with the CAN-SPAM Act, GDPR lawful
           marketing bases, and the policies of our upstream email-delivery subprocessor. Inbound
           mail delivered to customer mailboxes is the customer's to handle; automated campaigns,
           subscribe-on-behalf-of-third-parties, and credential-harvesting via email are prohibited.
@@ -198,7 +198,7 @@ function Reporting() {
       <SectionHeading id="reporting">Reporting abuse</SectionHeading>
       <Prose>
         <p>
-          If you believe a workload or account on Forge Metal is violating this policy — yours or
+          If you believe a workload or account on Verself is violating this policy — yours or
           someone else's — contact the abuse mailbox below. Reports are triaged within one business
           day; active abuse is mitigated sooner.
         </p>

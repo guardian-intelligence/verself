@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	workloadauth "github.com/forge-metal/auth-middleware/workload"
+	workloadauth "github.com/verself/auth-middleware/workload"
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"
 	"github.com/spiffe/go-spiffe/v2/workloadapi"

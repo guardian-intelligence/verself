@@ -7,12 +7,12 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"gopkg.in/yaml.v3"
 
-	"github.com/forge-metal/apiwire"
-	"github.com/forge-metal/secrets-service/internal/secrets"
+	"github.com/verself/apiwire"
+	"github.com/verself/secrets-service/internal/secrets"
 )
 
 func NewAPI(mux *http.ServeMux, version, serverURL string, svc *secrets.Service) huma.API {
-	config := huma.DefaultConfig("Forge Metal Secrets Service API", version)
+	config := huma.DefaultConfig("Verself Secrets Service API", version)
 	config.OpenAPI.Servers = []*huma.Server{{URL: serverURL}}
 	api := humago.New(mux, config)
 	applyPublicAPISecurityScheme(api)

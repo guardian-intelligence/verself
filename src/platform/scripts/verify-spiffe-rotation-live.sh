@@ -13,7 +13,7 @@ artifact_dir="${artifact_root}/${run_id}"
 mkdir -p "${artifact_dir}/clickhouse"
 
 window_start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-marker="fm:spiffe-rotation verify=${run_id}"
+marker="verself:spiffe-rotation verify=${run_id}"
 
 verification_ssh "sudo python3 - $(printf '%q' "${window_start}") $(printf '%q' "${marker}")" >"${artifact_dir}/rotation-state.json" <<'PY'
 import json
@@ -69,7 +69,7 @@ for unit in ["nats-cert-rotation.path", "nats-cert-rotation.service"]:
 
 nats_config = read("/etc/nats/nats-server.conf")
 nats_helper_config = read("/etc/nats/nats-spiffe-helper.conf")
-clickhouse_config = read("/etc/clickhouse-server/config.d/forge-metal.xml")
+clickhouse_config = read("/etc/clickhouse-server/config.d/verself.xml")
 clickhouse_helper_config = read("/etc/clickhouse-server/server-spiffe-helper.conf")
 grafana_helper_config = read("/etc/grafana/clickhouse-spiffe-helper.conf")
 otelcol_config = read("/etc/otelcol/config.yaml")
@@ -145,7 +145,7 @@ clickhouse_query = output([
     "sudo",
     "-u",
     "clickhouse_operator",
-    "/opt/forge-metal/profile/bin/clickhouse-client",
+    "/opt/verself/profile/bin/clickhouse-client",
     "--config-file",
     "/etc/clickhouse-client/operator.xml",
     "--user",
@@ -157,7 +157,7 @@ if clickhouse_query != "1":
     raise SystemExit(f"ClickHouse query after reload returned {clickhouse_query!r}")
 
 entries = output([
-    "/opt/forge-metal/profile/bin/spire-server",
+    "/opt/verself/profile/bin/spire-server",
     "entry",
     "show",
     "-socketPath",
@@ -232,9 +232,9 @@ with_otlp_tunnel() {
     return 1
   fi
 
-  export FORGE_METAL_OTLP_ENDPOINT="127.0.0.1:${port}"
-  export FORGE_METAL_DEPLOY_RUN_KEY="${run_id}"
-  export FORGE_METAL_DEPLOY_KIND="${kind}"
+  export VERSELF_OTLP_ENDPOINT="127.0.0.1:${port}"
+  export VERSELF_DEPLOY_RUN_KEY="${run_id}"
+  export VERSELF_DEPLOY_KIND="${kind}"
   # shellcheck source=src/platform/scripts/deploy_identity.sh
   source "${script_dir}/deploy_identity.sh"
 }
@@ -248,7 +248,7 @@ import sys
 
 run_id, consumer, strategy = sys.argv[1:4]
 print(json.dumps({
-    "forge_metal.proof_run_id": run_id,
+    "verself.proof_run_id": run_id,
     "workload_identity.consumer": consumer,
     "workload_identity.rotation_strategy": strategy,
 }))
@@ -300,7 +300,7 @@ wait_for_clickhouse_count default "
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 60 SECOND
     AND ServiceName = 'platform-ansible'
     AND SpanName IN ('workload_identity.rotation.consumer', 'workload_identity.rotation.reload')
-    AND SpanAttributes['forge_metal.proof_run_id'] = {run_id:String}
+    AND SpanAttributes['verself.proof_run_id'] = {run_id:String}
 " 7 "${artifact_dir}/clickhouse/rotation-proof-spans-count.tsv"
 
 wait_for_clickhouse_count system "

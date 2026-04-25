@@ -127,7 +127,7 @@ func (s *Service) SearchRunLogs(ctx context.Context, orgID uint64, filters RunLo
 			execution_id, attempt_id, org_id, source_kind, workload_kind, runner_class, external_provider,
 			product_id, correlation_id, repository_full_name, workflow_name, job_name, head_branch,
 			schedule_id, seq, stream, chunk, created_at
-		FROM forge_metal.job_logs
+		FROM verself.job_logs
 		WHERE org_id = $1
 		  AND ($2 = '' OR source_kind = $2)
 		  AND ($3 = '' OR repository_full_name = $3)

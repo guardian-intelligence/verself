@@ -357,9 +357,9 @@ with_otlp_tunnel() {
     return 1
   fi
 
-  export FORGE_METAL_OTLP_ENDPOINT="127.0.0.1:${port}"
-  export FORGE_METAL_DEPLOY_RUN_KEY="${run_id}"
-  export FORGE_METAL_DEPLOY_KIND="openbao-tenancy-proof"
+  export VERSELF_OTLP_ENDPOINT="127.0.0.1:${port}"
+  export VERSELF_DEPLOY_RUN_KEY="${run_id}"
+  export VERSELF_DEPLOY_KIND="openbao-tenancy-proof"
   # shellcheck source=src/platform/scripts/deploy_identity.sh
   source "${script_dir}/deploy_identity.sh"
 
@@ -371,8 +371,8 @@ run_id, state_path = sys.argv[1:3]
 state = json.load(open(state_path, encoding="utf-8"))
 for org in state["orgs"]:
     attrs = {
-        "forge_metal.proof_run_id": run_id,
-        "forge_metal.org_id": org["id"],
+        "verself.proof_run_id": run_id,
+        "verself.org_id": org["id"],
         "bao.layout": state["layout"],
         "bao.mount": "kv-" + org["id"],
         "bao.auth_mount": "jwt-" + org["id"],
@@ -422,7 +422,7 @@ wait_for_clickhouse_count default "
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 60 SECOND
     AND ServiceName = 'platform-ansible'
     AND startsWith(SpanName, 'openbao.tenancy.reconcile.')
-    AND SpanAttributes['forge_metal.proof_run_id'] = {run_id:String}
+    AND SpanAttributes['verself.proof_run_id'] = {run_id:String}
 " "${org_count}" "${artifact_dir}/clickhouse/openbao-tenancy-spans-count.tsv"
 
 python3 - "${run_id}" "${window_start}" "${window_end}" "${artifact_dir}" >"${artifact_dir}/run.json" <<'PY'

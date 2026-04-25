@@ -57,6 +57,7 @@ export type CreateRepositoryRequest = {
   default_branch?: string;
   description?: string;
   name: string;
+  project_id: string;
 };
 
 export type CreateWorkflowRunRequest = {
@@ -67,6 +68,7 @@ export type CreateWorkflowRunRequest = {
   inputs?: {
     [key: string]: string;
   };
+  project_id: string;
   ref?: string;
   workflow_path: string;
 };
@@ -159,6 +161,7 @@ export type Repository = {
   name: string;
   org_id: string;
   org_path: string;
+  project_id: string;
   repo_id: string;
   slug: string;
   state: string;
@@ -205,6 +208,7 @@ export type WorkflowRun = {
     [key: string]: string;
   };
   org_id: string;
+  project_id: string;
   ref: string;
   repo_id: string;
   state: string;
@@ -254,12 +258,14 @@ export type CreateRepositoryRequestWritable = {
   default_branch?: string;
   description?: string;
   name: string;
+  project_id: string;
 };
 
 export type CreateWorkflowRunRequestWritable = {
   inputs?: {
     [key: string]: string;
   };
+  project_id: string;
   ref?: string;
   workflow_path: string;
 };
@@ -316,6 +322,7 @@ export type RepositoryWritable = {
   name: string;
   org_id: string;
   org_path: string;
+  project_id: string;
   repo_id: string;
   slug: string;
   state: string;
@@ -343,6 +350,7 @@ export type WorkflowRunWritable = {
     [key: string]: string;
   };
   org_id: string;
+  project_id: string;
   ref: string;
   repo_id: string;
   state: string;
@@ -392,7 +400,9 @@ export type CreateSourceGitCredentialResponse =
 export type ListSourceRepositoriesData = {
   body?: never;
   path?: never;
-  query?: never;
+  query?: {
+    project_id?: string;
+  };
   url: "/api/v1/repos";
 };
 

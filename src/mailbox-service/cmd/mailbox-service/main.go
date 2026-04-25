@@ -11,24 +11,24 @@ import (
 	"syscall"
 	"time"
 
-	auth "github.com/forge-metal/auth-middleware"
-	workloadauth "github.com/forge-metal/auth-middleware/workload"
-	"github.com/forge-metal/envconfig"
-	"github.com/forge-metal/httpserver"
-	fmotel "github.com/forge-metal/otel"
-	secretsclient "github.com/forge-metal/secrets-service/client"
+	auth "github.com/verself/auth-middleware"
+	workloadauth "github.com/verself/auth-middleware/workload"
+	"github.com/verself/envconfig"
+	"github.com/verself/httpserver"
+	verselfotel "github.com/verself/otel"
+	secretsclient "github.com/verself/secrets-service/client"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 
-	"github.com/forge-metal/mailbox-service/internal/api"
-	"github.com/forge-metal/mailbox-service/internal/app"
-	"github.com/forge-metal/mailbox-service/internal/forwarder"
-	"github.com/forge-metal/mailbox-service/internal/mailstore"
-	"github.com/forge-metal/mailbox-service/internal/sessionproxy"
-	mailboxsync "github.com/forge-metal/mailbox-service/internal/sync"
+	"github.com/verself/mailbox-service/internal/api"
+	"github.com/verself/mailbox-service/internal/app"
+	"github.com/verself/mailbox-service/internal/forwarder"
+	"github.com/verself/mailbox-service/internal/mailstore"
+	"github.com/verself/mailbox-service/internal/sessionproxy"
+	mailboxsync "github.com/verself/mailbox-service/internal/sync"
 )
 
 var version = "dev"
@@ -74,7 +74,7 @@ func run() error {
 		return err
 	}
 
-	otelShutdown, logger, err := fmotel.Init(ctx, fmotel.Config{
+	otelShutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{
 		ServiceName:    "mailbox-service",
 		ServiceVersion: version,
 	})
@@ -212,7 +212,7 @@ func loadConfig() (config, error) {
 		MailboxUser:           l.String("MAILBOX_SERVICE_STALWART_MAILBOX", "ceo"),
 		LocalDomain:           l.RequireString("MAILBOX_SERVICE_STALWART_LOCAL_DOMAIN"),
 		ForwarderFromAddress:  l.RequireString("MAILBOX_SERVICE_FORWARDER_FROM_ADDRESS"),
-		ForwarderFromName:     l.String("MAILBOX_SERVICE_FORWARDER_FROM_NAME", "forge-metal"),
+		ForwarderFromName:     l.String("MAILBOX_SERVICE_FORWARDER_FROM_NAME", "verself"),
 		ForwarderStatePath:    l.String("MAILBOX_SERVICE_FORWARDER_STATE_PATH", "/var/lib/mailbox-service/forwarder-state.json"),
 		ForwarderPollInterval: l.Duration("MAILBOX_SERVICE_FORWARDER_POLL_INTERVAL", 5*time.Second),
 		ForwarderQueryLimit:   100,
@@ -246,7 +246,7 @@ func requireSecretField(values map[string]string, field string, label string) st
 func readRuntimeSecrets(ctx context.Context, client *secretsclient.ClientWithResponses, secretNames ...string) (map[string]string, error) {
 	ctx, span := otel.Tracer("runtime-secrets").Start(ctx, "secrets.runtime.resolve")
 	defer span.End()
-	span.SetAttributes(attribute.Int("forge_metal.secret_count", len(secretNames)))
+	span.SetAttributes(attribute.Int("verself.secret_count", len(secretNames)))
 
 	if client == nil {
 		err := fmt.Errorf("runtime secrets client is required")

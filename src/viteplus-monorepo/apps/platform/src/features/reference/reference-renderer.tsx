@@ -1,12 +1,12 @@
 import { ChevronRight } from "lucide-react";
 
-import { Badge } from "@forge-metal/ui/components/ui/badge";
+import { Badge } from "@verself/ui/components/ui/badge";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@forge-metal/ui/components/ui/collapsible";
-import { cn } from "@forge-metal/ui/lib/utils";
+} from "@verself/ui/components/ui/collapsible";
+import { cn } from "@verself/ui/lib/utils";
 
 import {
   OPEN_API_METHODS,
@@ -65,7 +65,7 @@ export function ServiceSection({
           ) : service.publicSurface ? (
             "."
           ) : (
-            ". Internal control-plane API; reached from other Forge Metal services, not directly by customers."
+            ". Internal control-plane API; reached from other Verself services, not directly by customers."
           )}
         </p>
       </header>

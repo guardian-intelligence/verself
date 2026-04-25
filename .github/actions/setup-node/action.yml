@@ -1,5 +1,5 @@
-name: Forge Metal Setup Node
-description: Configure Node.js and preboot Forge Metal sticky disks for pnpm workloads.
+name: Verself Setup Node
+description: Configure Node.js and preboot Verself sticky disks for pnpm workloads.
 inputs:
   node-version:
     description: Node.js major or exact version expected in the runner image.
@@ -21,7 +21,7 @@ inputs:
     default: "false"
 outputs:
   cache-hit:
-    description: "true when all configured Forge Metal cache paths had warm contents."
+    description: "true when all configured Verself cache paths had warm contents."
   store-cache-hit:
     description: "true when the package-manager store had warm contents."
   node-modules-cache-hit:

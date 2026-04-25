@@ -11,8 +11,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	auth "github.com/forge-metal/auth-middleware"
-	"github.com/forge-metal/identity-service/internal/identity"
+	auth "github.com/verself/auth-middleware"
+	"github.com/verself/identity-service/internal/identity"
 )
 
 func TestOpenAPIPublicAPIOperationsDeclareIAMPolicy(t *testing.T) {
@@ -29,9 +29,9 @@ func TestOpenAPIPublicAPIOperationsDeclareIAMPolicy(t *testing.T) {
 				continue
 			}
 			checked++
-			rawPolicy, ok := op.Extensions["x-forge-metal-iam"].(map[string]any)
+			rawPolicy, ok := op.Extensions["x-verself-iam"].(map[string]any)
 			if !ok {
-				t.Fatalf("%s %s missing x-forge-metal-iam policy", op.Method, path)
+				t.Fatalf("%s %s missing x-verself-iam policy", op.Method, path)
 			}
 			for _, key := range []string{"permission", "resource", "action", "org_scope", "rate_limit_class", "audit_event"} {
 				if rawPolicy[key] == "" {
@@ -102,7 +102,7 @@ func TestIdentityPermissionChecksCurrentOrgRoleBundlesAndDirectScopes(t *testing
 		Subject: "credential-1",
 		OrgID:   "42",
 		Raw: map[string]any{
-			"forge_metal:credential_id": "credential-1",
+			"verself:credential_id": "credential-1",
 			"permissions":               []string{string(permissionMemberInvite)},
 		},
 	}

@@ -1097,6 +1097,8 @@ components:
           type: integer
         paused:
           type: boolean
+        project_id:
+          type: string
         ref:
           maxLength: 255
           type: string
@@ -1108,6 +1110,7 @@ components:
           type: string
       required:
         - idempotency_key
+        - project_id
         - source_repository_id
         - workflow_path
         - interval_seconds
@@ -1190,6 +1193,8 @@ components:
         org_id:
           pattern: ^[0-9]+$
           type: string
+        project_id:
+          type: string
         ref:
           type: string
         schedule_id:
@@ -1217,6 +1222,7 @@ components:
         - temporal_namespace
         - task_queue
         - state
+        - project_id
         - source_repository_id
         - workflow_path
         - interval_seconds
@@ -1277,7 +1283,7 @@ components:
           format: date-time
           type: string
         setup_url:
-          description: GitHub App installation URL for the current Forge Metal organization.
+          description: GitHub App installation URL for the current Verself organization.
           type: string
         state:
           description: Opaque installation state token embedded in the GitHub App setup URL.
@@ -1841,7 +1847,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Create Stripe checkout session for credit purchase
-      x-forge-metal-iam:
+      x-verself-iam:
         action: create
         audit_event: billing.checkout.create
         data_classification: restricted
@@ -1875,7 +1881,7 @@ paths:
       security:
         - bearerAuth: []
       summary: List org billing contracts
-      x-forge-metal-iam:
+      x-verself-iam:
         action: list
         audit_event: billing.contract.list
         data_classification: restricted
@@ -1921,7 +1927,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Create self-serve contract checkout
-      x-forge-metal-iam:
+      x-verself-iam:
         action: create
         audit_event: billing.contract_checkout.create
         data_classification: restricted
@@ -1971,7 +1977,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Schedule contract cancellation
-      x-forge-metal-iam:
+      x-verself-iam:
         action: cancel
         audit_event: billing.contract.cancel
         data_classification: restricted
@@ -2027,7 +2033,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Create invoice-backed contract change
-      x-forge-metal-iam:
+      x-verself-iam:
         action: create
         audit_event: billing.contract_change.create
         data_classification: restricted
@@ -2061,7 +2067,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Get org entitlements view
-      x-forge-metal-iam:
+      x-verself-iam:
         action: read
         audit_event: billing.entitlements.read
         data_classification: restricted
@@ -2093,7 +2099,7 @@ paths:
       security:
         - bearerAuth: []
       summary: List contract plans
-      x-forge-metal-iam:
+      x-verself-iam:
         action: list
         audit_event: billing.plan.list
         data_classification: restricted
@@ -2140,7 +2146,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Create Stripe billing portal session
-      x-forge-metal-iam:
+      x-verself-iam:
         action: create
         audit_event: billing.portal.create
         data_classification: restricted
@@ -2185,7 +2191,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Get current billing statement
-      x-forge-metal-iam:
+      x-verself-iam:
         action: read
         audit_event: billing.statement.read
         data_classification: restricted
@@ -2221,7 +2227,7 @@ paths:
       security:
         - bearerAuth: []
       summary: List recurring execution schedules
-      x-forge-metal-iam:
+      x-verself-iam:
         action: list
         audit_event: sandbox.execution_schedule.list
         data_classification: restricted
@@ -2258,7 +2264,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Create a recurring execution schedule
-      x-forge-metal-iam:
+      x-verself-iam:
         action: create
         audit_event: sandbox.execution_schedule.create
         data_classification: restricted
@@ -2300,7 +2306,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Get a recurring execution schedule
-      x-forge-metal-iam:
+      x-verself-iam:
         action: read
         audit_event: sandbox.execution_schedule.read
         data_classification: restricted
@@ -2348,7 +2354,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Pause a recurring execution schedule
-      x-forge-metal-iam:
+      x-verself-iam:
         action: pause
         audit_event: sandbox.execution_schedule.pause
         data_classification: restricted
@@ -2398,7 +2404,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Resume a recurring execution schedule
-      x-forge-metal-iam:
+      x-verself-iam:
         action: resume
         audit_event: sandbox.execution_schedule.resume
         data_classification: restricted
@@ -2440,7 +2446,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Get execution status and latest attempt
-      x-forge-metal-iam:
+      x-verself-iam:
         action: read
         audit_event: sandbox.execution.read
         data_classification: restricted
@@ -2480,7 +2486,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Get latest execution attempt log output
-      x-forge-metal-iam:
+      x-verself-iam:
         action: read
         audit_event: sandbox.execution.logs.read
         data_classification: restricted
@@ -2516,7 +2522,7 @@ paths:
       security:
         - bearerAuth: []
       summary: List GitHub App installations for the current org
-      x-forge-metal-iam:
+      x-verself-iam:
         action: list
         audit_event: sandbox.github_installation.list
         data_classification: restricted
@@ -2557,7 +2563,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Start GitHub App installation for the current org
-      x-forge-metal-iam:
+      x-verself-iam:
         action: connect
         audit_event: sandbox.github_installation.connect
         data_classification: restricted
@@ -2608,7 +2614,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Get checkout and sticky disk cache analytics
-      x-forge-metal-iam:
+      x-verself-iam:
         action: read
         audit_event: sandbox.run_analytics.caches.read
         data_classification: restricted
@@ -2657,7 +2663,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Get run cost analytics
-      x-forge-metal-iam:
+      x-verself-iam:
         action: read
         audit_event: sandbox.run_analytics.costs.read
         data_classification: restricted
@@ -2706,7 +2712,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Get run duration and success analytics
-      x-forge-metal-iam:
+      x-verself-iam:
         action: read
         audit_event: sandbox.run_analytics.jobs.read
         data_classification: restricted
@@ -2755,7 +2761,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Get runner sizing analytics
-      x-forge-metal-iam:
+      x-verself-iam:
         action: read
         audit_event: sandbox.run_analytics.runner_sizing.read
         data_classification: restricted
@@ -2858,7 +2864,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Search logs across CI and scheduled runs
-      x-forge-metal-iam:
+      x-verself-iam:
         action: search
         audit_event: sandbox.run_logs.search
         data_classification: restricted
@@ -2945,7 +2951,7 @@ paths:
       security:
         - bearerAuth: []
       summary: List CI and scheduled runs for the current org
-      x-forge-metal-iam:
+      x-verself-iam:
         action: list
         audit_event: sandbox.run.list
         data_classification: restricted
@@ -2985,7 +2991,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Get a CI or scheduled run
-      x-forge-metal-iam:
+      x-verself-iam:
         action: read
         audit_event: sandbox.run.read
         data_classification: restricted
@@ -3042,7 +3048,7 @@ paths:
       security:
         - bearerAuth: []
       summary: List sticky disk inventory for the current org
-      x-forge-metal-iam:
+      x-verself-iam:
         action: list
         audit_event: sandbox.sticky_disk.list
         data_classification: restricted
@@ -3089,7 +3095,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Reset a sticky disk generation so future runs cold-start
-      x-forge-metal-iam:
+      x-verself-iam:
         action: reset
         audit_event: sandbox.sticky_disk.reset
         data_classification: restricted

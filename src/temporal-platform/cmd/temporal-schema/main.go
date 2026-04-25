@@ -11,8 +11,8 @@ import (
 	"strings"
 	"syscall"
 
-	fmotel "github.com/forge-metal/otel"
-	"github.com/forge-metal/temporal-platform/internal/pgsocket"
+	verselfotel "github.com/verself/otel"
+	"github.com/verself/temporal-platform/internal/pgsocket"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	tracer  = otel.Tracer("github.com/forge-metal/temporal-platform/cmd/temporal-schema")
+	tracer  = otel.Tracer("github.com/verself/temporal-platform/cmd/temporal-schema")
 	version = "dev"
 )
 
@@ -43,7 +43,7 @@ func run(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	otelShutdown, logger, err := fmotel.Init(ctx, fmotel.Config{
+	otelShutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{
 		ServiceName:    "temporal-schema",
 		ServiceVersion: version,
 	})
@@ -58,7 +58,7 @@ func run(args []string) error {
 	command := strings.TrimSpace(args[0])
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
-	configPath := flags.String("config", strings.TrimSpace(os.Getenv("FM_TEMPORAL_CONFIG_PATH")), "path to Temporal config file")
+	configPath := flags.String("config", strings.TrimSpace(os.Getenv("VERSELF_TEMPORAL_CONFIG_PATH")), "path to Temporal config file")
 	storeName := flags.String("store", "", "Temporal datastore name")
 	schemaName := flags.String("schema-name", "", "embedded Temporal schema name")
 	initialVersion := flags.String("version", "0.0", "initial schema version for setup")
@@ -66,7 +66,7 @@ func run(args []string) error {
 		return err
 	}
 	if strings.TrimSpace(*configPath) == "" {
-		return errors.New("--config or FM_TEMPORAL_CONFIG_PATH is required")
+		return errors.New("--config or VERSELF_TEMPORAL_CONFIG_PATH is required")
 	}
 	if strings.TrimSpace(*storeName) == "" {
 		return errors.New("--store is required")

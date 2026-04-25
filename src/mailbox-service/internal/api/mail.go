@@ -7,9 +7,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/forge-metal/apiwire"
-	auth "github.com/forge-metal/auth-middleware"
-	"github.com/forge-metal/mailbox-service/internal/mailstore"
+	"github.com/verself/apiwire"
+	auth "github.com/verself/auth-middleware"
+	"github.com/verself/mailbox-service/internal/mailstore"
 )
 
 type mailEmailPathInput struct {

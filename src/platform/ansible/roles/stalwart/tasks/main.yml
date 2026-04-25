@@ -6,7 +6,7 @@
 
 - name: Verify stalwart binary exists in profile
   ansible.builtin.stat:
-    path: "{{ fm_bin }}/stalwart"
+    path: "{{ verself_bin }}/stalwart"
   register: stalwart_binary
   failed_when: not stalwart_binary.stat.exists
 
@@ -138,8 +138,8 @@
     content: |
       [Unit]
       Description=Stalwart Mail Server
-      After=forge-metal-firewall.target network.target postgresql.service
-      Requires=forge-metal-firewall.target
+      After=verself-firewall.target network.target postgresql.service
+      Requires=verself-firewall.target
       Wants=postgresql.service
 
       [Service]
@@ -147,7 +147,7 @@
       User=stalwart
       Group=stalwart
       LoadCredential=admin-password:/etc/credstore/stalwart/admin-password
-      ExecStart={{ fm_bin }}/stalwart --config /etc/stalwart/config.toml
+      ExecStart={{ verself_bin }}/stalwart --config /etc/stalwart/config.toml
       ExecReload=/bin/kill -HUP $MAINPID
       Restart=on-failure
       RestartSec=5
@@ -209,7 +209,7 @@
 
 - name: Check if domain exists in Stalwart
   ansible.builtin.uri:
-    url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal/{{ forge_metal_domain }}"
+    url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal/{{ verself_domain }}"
     method: GET
     url_username: admin
     url_password: "{{ stalwart_admin_password }}"
@@ -229,7 +229,7 @@
     body_format: json
     body:
       type: domain
-      name: "{{ forge_metal_domain }}"
+      name: "{{ verself_domain }}"
       description: "Primary domain"
     status_code: 200
     return_content: true

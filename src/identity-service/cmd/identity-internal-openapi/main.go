@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	identityapi "github.com/forge-metal/identity-service/internal/api"
+	identityapi "github.com/verself/identity-service/internal/api"
 )
 
 func main() {

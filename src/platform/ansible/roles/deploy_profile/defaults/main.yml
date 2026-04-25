@@ -1,5 +1,5 @@
 ---
-# deploy_profile: populate /opt/forge-metal/profile/bin/ with all server binaries.
+# deploy_profile: populate /opt/verself/profile/bin/ with all server binaries.
 
 # Repo root on the Ansible controller (contains go.work, src/, etc.)
 deploy_profile_repo_root: "{{ playbook_dir }}/../../../.."
@@ -8,7 +8,7 @@ deploy_profile_repo_root: "{{ playbook_dir }}/../../../.."
 deploy_profile_server_tools: "{{ playbook_dir }}/../../server-tools.json"
 
 # Staging directory for downloaded archives on the remote host
-deploy_profile_staging_dir: /opt/forge-metal/staging
+deploy_profile_staging_dir: /opt/verself/staging
 
 # PostgreSQL major version (determines apt package and binary paths)
 deploy_profile_postgresql_version: "16"
@@ -94,6 +94,13 @@ deploy_profile_go_binaries:
     version_ldflags: true
     restart_handlers:
       - deploy-profile restart notifications-service
+  - name: projects-service
+    package: ./src/projects-service/cmd/projects-service
+    output_path: src/projects-service/projects-service
+    cgo_enabled: "0"
+    version_ldflags: true
+    restart_handlers:
+      - deploy-profile restart projects-service
   - name: secrets-service
     package: ./src/secrets-service/cmd/secrets-service
     output_path: src/secrets-service/secrets-service
@@ -108,16 +115,16 @@ deploy_profile_go_binaries:
     version_ldflags: true
     restart_handlers:
       - deploy-profile restart source-code-hosting-service
-  - name: forge-temporal-server
-    package: ./src/temporal-platform/cmd/forge-temporal-server
-    output_path: src/temporal-platform/forge-temporal-server
+  - name: verself-temporal-server
+    package: ./src/temporal-platform/cmd/verself-temporal-server
+    output_path: src/temporal-platform/verself-temporal-server
     cgo_enabled: "0"
     version_ldflags: true
     restart_handlers:
       - deploy-profile restart temporal-server
-  - name: forge-temporal-web
-    package: ./src/temporal-platform/cmd/forge-temporal-web
-    output_path: src/temporal-platform/forge-temporal-web
+  - name: verself-temporal-web
+    package: ./src/temporal-platform/cmd/verself-temporal-web
+    output_path: src/temporal-platform/verself-temporal-web
     cgo_enabled: "0"
     version_ldflags: true
     restart_handlers:

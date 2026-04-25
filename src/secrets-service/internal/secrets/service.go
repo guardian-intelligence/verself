@@ -13,7 +13,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 
-	billingclient "github.com/forge-metal/billing-service/client"
+	billingclient "github.com/verself/billing-service/client"
 )
 
 const (
@@ -141,10 +141,10 @@ func (s *Service) PutSecret(ctx context.Context, principal Principal, req PutSec
 		return SecretRecord{}, err
 	}
 	span.SetAttributes(
-		attribute.String("forge_metal.org_id", principal.OrgID),
-		attribute.String("forge_metal.secret_kind", record.Kind),
-		attribute.String("forge_metal.secret_id", record.SecretID),
-		attribute.Int64("forge_metal.secret_version", int64(record.CurrentVersion)),
+		attribute.String("verself.org_id", principal.OrgID),
+		attribute.String("verself.secret_kind", record.Kind),
+		attribute.String("verself.secret_id", record.SecretID),
+		attribute.Int64("verself.secret_version", int64(record.CurrentVersion)),
 	)
 	return record, nil
 }
@@ -160,10 +160,10 @@ func (s *Service) ReadSecret(ctx context.Context, principal Principal, kind, nam
 		return SecretValue{}, err
 	}
 	span.SetAttributes(
-		attribute.String("forge_metal.org_id", principal.OrgID),
-		attribute.String("forge_metal.secret_kind", value.Record.Kind),
-		attribute.String("forge_metal.secret_id", value.Record.SecretID),
-		attribute.Int64("forge_metal.secret_version", int64(value.Record.CurrentVersion)),
+		attribute.String("verself.org_id", principal.OrgID),
+		attribute.String("verself.secret_kind", value.Record.Kind),
+		attribute.String("verself.secret_id", value.Record.SecretID),
+		attribute.Int64("verself.secret_version", int64(value.Record.CurrentVersion)),
 	)
 	return value, nil
 }
@@ -185,7 +185,7 @@ func (s *Service) ListSecrets(ctx context.Context, principal Principal, kind str
 	if err != nil {
 		return nil, err
 	}
-	span.SetAttributes(attribute.String("forge_metal.org_id", principal.OrgID), attribute.Int("forge_metal.secret_count", len(records)))
+	span.SetAttributes(attribute.String("verself.org_id", principal.OrgID), attribute.Int("verself.secret_count", len(records)))
 	return records, nil
 }
 
@@ -199,7 +199,7 @@ func (s *Service) DeleteSecret(ctx context.Context, principal Principal, kind, n
 	if err != nil {
 		return SecretRecord{}, err
 	}
-	span.SetAttributes(attribute.String("forge_metal.secret_id", record.SecretID))
+	span.SetAttributes(attribute.String("verself.secret_id", record.SecretID))
 	return record, nil
 }
 
@@ -213,7 +213,7 @@ func (s *Service) CreateTransitKey(ctx context.Context, principal Principal, nam
 	if err != nil {
 		return TransitKey{}, err
 	}
-	span.SetAttributes(attribute.String("forge_metal.key_id", key.KeyID), attribute.String("forge_metal.org_id", principal.OrgID))
+	span.SetAttributes(attribute.String("verself.key_id", key.KeyID), attribute.String("verself.org_id", principal.OrgID))
 	return key, nil
 }
 
@@ -234,7 +234,7 @@ func (s *Service) RotateTransitKey(ctx context.Context, principal Principal, nam
 	if err != nil {
 		return TransitKey{}, err
 	}
-	span.SetAttributes(attribute.String("forge_metal.key_id", key.KeyID), attribute.Int64("forge_metal.key_version", int64(key.CurrentVersion)))
+	span.SetAttributes(attribute.String("verself.key_id", key.KeyID), attribute.Int64("verself.key_version", int64(key.CurrentVersion)))
 	return key, nil
 }
 
@@ -248,7 +248,7 @@ func (s *Service) TransitEncrypt(ctx context.Context, principal Principal, name 
 	if err != nil {
 		return TransitCiphertext{}, err
 	}
-	span.SetAttributes(attribute.String("forge_metal.key_id", key.KeyID), attribute.Int64("forge_metal.key_version", int64(ciphertext.Version)))
+	span.SetAttributes(attribute.String("verself.key_id", key.KeyID), attribute.Int64("verself.key_version", int64(ciphertext.Version)))
 	return ciphertext, nil
 }
 
@@ -262,7 +262,7 @@ func (s *Service) TransitDecrypt(ctx context.Context, principal Principal, name,
 	if err != nil {
 		return nil, TransitKey{}, err
 	}
-	span.SetAttributes(attribute.String("forge_metal.key_id", key.KeyID), attribute.Int64("forge_metal.key_version", int64(version)))
+	span.SetAttributes(attribute.String("verself.key_id", key.KeyID), attribute.Int64("verself.key_version", int64(version)))
 	return plaintext, key, nil
 }
 
@@ -276,7 +276,7 @@ func (s *Service) TransitSign(ctx context.Context, principal Principal, name str
 	if err != nil {
 		return "", TransitKey{}, err
 	}
-	span.SetAttributes(attribute.String("forge_metal.key_id", key.KeyID), attribute.Int64("forge_metal.key_version", int64(version)))
+	span.SetAttributes(attribute.String("verself.key_id", key.KeyID), attribute.Int64("verself.key_version", int64(version)))
 	return signature, key, nil
 }
 
@@ -290,7 +290,7 @@ func (s *Service) TransitVerify(ctx context.Context, principal Principal, name s
 	if err != nil {
 		return false, TransitKey{}, err
 	}
-	span.SetAttributes(attribute.String("forge_metal.key_id", key.KeyID), attribute.Bool("forge_metal.signature_valid", valid))
+	span.SetAttributes(attribute.String("verself.key_id", key.KeyID), attribute.Bool("verself.signature_valid", valid))
 	return valid, key, nil
 }
 

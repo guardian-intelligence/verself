@@ -1,21 +1,10 @@
-module github.com/forge-metal/sandbox-rental-service
+module github.com/verself/sandbox-rental-service
 
 go 1.25.8
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.30.1
 	github.com/danielgtaylor/huma/v2 v2.37.3
-	github.com/forge-metal/apiwire v0.0.0
-	github.com/forge-metal/auth-middleware v0.0.0
-	github.com/forge-metal/billing-service v0.0.0
-	github.com/forge-metal/envconfig v0.0.0
-	github.com/forge-metal/governance-service v0.0.0
-	github.com/forge-metal/httpserver v0.0.0
-	github.com/forge-metal/otel v0.0.0
-	github.com/forge-metal/secrets-service v0.0.0
-	github.com/forge-metal/source-code-hosting-service v0.0.0
-	github.com/forge-metal/temporal-platform v0.0.0
-	github.com/forge-metal/vm-orchestrator v0.0.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.1
@@ -26,6 +15,17 @@ require (
 	github.com/riverqueue/river/rivertype v0.34.0
 	github.com/riverqueue/rivercontrib/otelriver v0.7.0
 	github.com/spiffe/go-spiffe/v2 v2.6.0
+	github.com/verself/apiwire v0.0.0
+	github.com/verself/auth-middleware v0.0.0
+	github.com/verself/billing-service v0.0.0
+	github.com/verself/envconfig v0.0.0
+	github.com/verself/governance-service v0.0.0
+	github.com/verself/httpserver v0.0.0
+	github.com/verself/otel v0.0.0
+	github.com/verself/secrets-service v0.0.0
+	github.com/verself/source-code-hosting-service v0.0.0
+	github.com/verself/temporal-platform v0.0.0
+	github.com/verself/vm-orchestrator v0.0.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
@@ -112,15 +112,15 @@ require (
 )
 
 replace (
-	github.com/forge-metal/apiwire => ../apiwire
-	github.com/forge-metal/auth-middleware => ../auth-middleware
-	github.com/forge-metal/billing-service => ../billing-service
-	github.com/forge-metal/envconfig => ../envconfig
-	github.com/forge-metal/governance-service => ../governance-service
-	github.com/forge-metal/httpserver => ../httpserver
-	github.com/forge-metal/otel => ../otel
-	github.com/forge-metal/secrets-service => ../secrets-service
-	github.com/forge-metal/source-code-hosting-service => ../source-code-hosting-service
-	github.com/forge-metal/temporal-platform => ../temporal-platform
-	github.com/forge-metal/vm-orchestrator => ../vm-orchestrator
+	github.com/verself/apiwire => ../apiwire
+	github.com/verself/auth-middleware => ../auth-middleware
+	github.com/verself/billing-service => ../billing-service
+	github.com/verself/envconfig => ../envconfig
+	github.com/verself/governance-service => ../governance-service
+	github.com/verself/httpserver => ../httpserver
+	github.com/verself/otel => ../otel
+	github.com/verself/secrets-service => ../secrets-service
+	github.com/verself/source-code-hosting-service => ../source-code-hosting-service
+	github.com/verself/temporal-platform => ../temporal-platform
+	github.com/verself/vm-orchestrator => ../vm-orchestrator
 )

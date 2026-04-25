@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { useSignedInAuth } from "@forge-metal/auth-web/react";
-import { Badge } from "@forge-metal/ui/components/ui/badge";
-import { Button } from "@forge-metal/ui/components/ui/button";
-import { toast } from "@forge-metal/ui/components/ui/sonner";
+import { useSignedInAuth } from "@verself/auth-web/react";
+import { Badge } from "@verself/ui/components/ui/badge";
+import { Button } from "@verself/ui/components/ui/button";
+import { toast } from "@verself/ui/components/ui/sonner";
 import { Copy, GitBranch, GitCommit, GitPullRequest, KeyRound, Terminal } from "lucide-react";
 import { EmptyState } from "~/components/empty-state";
 import { formatDateTimeUTC } from "~/lib/format";
@@ -115,9 +115,11 @@ function SourcePushEmptyState({ gitOrigin }: { gitOrigin: string }) {
               Git remote
             </div>
             <code className="break-all font-mono text-xs text-foreground">
-              git remote add forge {pushURL}
+              git remote add verself {pushURL}
             </code>
-            <code className="break-all font-mono text-xs text-foreground">git push forge main</code>
+            <code className="break-all font-mono text-xs text-foreground">
+              git push verself main
+            </code>
           </div>
           <div className="grid gap-2 rounded-md border bg-background p-3">
             <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">

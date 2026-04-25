@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-    title: Forge Metal Governance Service API
+    title: Verself Governance Service API
     version: dev
 servers:
     - url: https://governance.api.anveio.com
@@ -142,7 +142,7 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
             security:
                 - bearerAuth: []
-            x-forge-metal-iam:
+            x-verself-iam:
                 action: list
                 audit_event: governance.audit_event.list
                 data_classification: restricted
@@ -174,7 +174,7 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
             security:
                 - bearerAuth: []
-            x-forge-metal-iam:
+            x-verself-iam:
                 action: list
                 audit_event: governance.data_export.list
                 data_classification: restricted
@@ -220,7 +220,7 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
             security:
                 - bearerAuth: []
-            x-forge-metal-iam:
+            x-verself-iam:
                 action: create
                 audit_event: governance.data_export.create
                 data_classification: restricted
@@ -261,7 +261,7 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
             security:
                 - bearerAuth: []
-            x-forge-metal-iam:
+            x-verself-iam:
                 action: read
                 audit_event: governance.data_export.read
                 data_classification: restricted
@@ -308,7 +308,7 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
             security:
                 - bearerAuth: []
-            x-forge-metal-iam:
+            x-verself-iam:
                 action: download
                 audit_event: governance.data_export.download
                 data_classification: restricted
@@ -429,7 +429,7 @@ components:
                     description: Non-secret credential fingerprint when known.
                 credential_id:
                     type: string
-                    description: Forge Metal API credential ID when the actor is a credential.
+                    description: Verself API credential ID when the actor is a credential.
                 credential_name:
                     type: string
                     description: API credential display name when known.
@@ -489,7 +489,7 @@ components:
                     description: Organization scoping rule used for the decision.
                 permission:
                     type: string
-                    description: Forge Metal operation permission.
+                    description: Verself operation permission.
                 prev_hmac:
                     type: string
                     description: Previous audit row HMAC in the organization chain.

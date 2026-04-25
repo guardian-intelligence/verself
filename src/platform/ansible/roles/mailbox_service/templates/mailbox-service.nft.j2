@@ -3,10 +3,10 @@
 # Loopback is required for Stalwart JMAP, PostgreSQL, and OIDC discovery through local Caddy.
 # HTTPS and DNS are still required for operator forwarding through Resend.
 
-table inet forge_metal_mailbox_service
-delete table inet forge_metal_mailbox_service
+table inet verself_mailbox_service
+delete table inet verself_mailbox_service
 
-table inet forge_metal_mailbox_service {
+table inet verself_mailbox_service {
     chain output {
         type filter hook output priority filter; policy accept;
 

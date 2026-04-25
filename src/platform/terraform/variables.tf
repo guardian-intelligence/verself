@@ -1,5 +1,5 @@
 variable "cluster_name" {
-  description = "Name for this forge-metal cluster, used in resource naming."
+  description = "Name for this verself cluster, used in resource naming."
   type        = string
 
   validation {

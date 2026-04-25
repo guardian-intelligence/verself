@@ -22,14 +22,14 @@
 - name: Install ClickHouse binary
   ansible.builtin.copy:
     src: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.clickhouse.extract_binary }}"
-    dest: "{{ fm_bin }}/clickhouse"
+    dest: "{{ verself_bin }}/clickhouse"
     remote_src: true
     mode: "0755"
 
 - name: Create ClickHouse multi-call symlinks
   ansible.builtin.file:
-    src: "{{ fm_bin }}/clickhouse"
-    dest: "{{ fm_bin }}/{{ item }}"
+    src: "{{ verself_bin }}/clickhouse"
+    dest: "{{ verself_bin }}/{{ item }}"
     state: link
     force: true
   loop: "{{ deploy_profile_server_tools_pins.clickhouse.symlinks }}"
@@ -53,7 +53,7 @@
 - name: Install TigerBeetle binary
   ansible.builtin.copy:
     src: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.tigerbeetle.extract_binary }}"
-    dest: "{{ fm_bin }}/tigerbeetle"
+    dest: "{{ verself_bin }}/tigerbeetle"
     remote_src: true
     mode: "0755"
 
@@ -76,7 +76,7 @@
 - name: Install Zitadel binary
   ansible.builtin.copy:
     src: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.zitadel.extract_binary }}"
-    dest: "{{ fm_bin }}/zitadel"
+    dest: "{{ verself_bin }}/zitadel"
     remote_src: true
     mode: "0755"
 
@@ -110,7 +110,7 @@
     openbao_extract_dir: "{{ deploy_profile_staging_dir }}/openbao-{{ deploy_profile_server_tools_pins.openbao.version }}"
   ansible.builtin.copy:
     src: "{{ openbao_extract_dir }}/{{ deploy_profile_server_tools_pins.openbao.extract_binary }}"
-    dest: "{{ fm_bin }}/bao"
+    dest: "{{ verself_bin }}/bao"
     remote_src: true
     mode: "0755"
 
@@ -133,7 +133,7 @@
 - name: Install SPIRE binaries
   ansible.builtin.copy:
     src: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.spire.extract_dir }}/bin/{{ item }}"
-    dest: "{{ fm_bin }}/{{ item }}"
+    dest: "{{ verself_bin }}/{{ item }}"
     remote_src: true
     mode: "0755"
   loop: "{{ deploy_profile_server_tools_pins.spire.binaries }}"
@@ -157,7 +157,7 @@
 - name: Install SPIFFE Helper binary
   ansible.builtin.copy:
     src: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.spiffe_helper.extract_binary }}"
-    dest: "{{ fm_bin }}/spiffe-helper"
+    dest: "{{ verself_bin }}/spiffe-helper"
     remote_src: true
     mode: "0755"
 
@@ -180,7 +180,7 @@
 - name: Install NATS Server binary
   ansible.builtin.copy:
     src: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.nats_server.extract_binary }}"
-    dest: "{{ fm_bin }}/nats-server"
+    dest: "{{ verself_bin }}/nats-server"
     remote_src: true
     mode: "0755"
 
@@ -189,7 +189,7 @@
 - name: Download Garage binary
   ansible.builtin.get_url:
     url: "{{ deploy_profile_server_tools_pins.garage.url }}"
-    dest: "{{ fm_bin }}/garage"
+    dest: "{{ verself_bin }}/garage"
     checksum: "sha256:{{ deploy_profile_server_tools_pins.garage.sha256 }}"
     mode: "0755"
 
@@ -198,7 +198,7 @@
 - name: Download Forgejo binary
   ansible.builtin.get_url:
     url: "{{ deploy_profile_server_tools_pins.forgejo.url }}"
-    dest: "{{ fm_bin }}/forgejo"
+    dest: "{{ verself_bin }}/forgejo"
     checksum: "sha256:{{ deploy_profile_server_tools_pins.forgejo.sha256 }}"
     mode: "0755"
 
@@ -221,7 +221,7 @@
 - name: Install otelcol-contrib binary
   ansible.builtin.copy:
     src: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.otelcol_contrib.extract_binary }}"
-    dest: "{{ fm_bin }}/otelcol-contrib"
+    dest: "{{ verself_bin }}/otelcol-contrib"
     remote_src: true
     mode: "0755"
 
@@ -244,7 +244,7 @@
 - name: Install Temporal support binaries
   ansible.builtin.copy:
     src: "{{ deploy_profile_staging_dir }}/{{ item }}"
-    dest: "{{ fm_bin }}/{{ item }}"
+    dest: "{{ verself_bin }}/{{ item }}"
     remote_src: true
     mode: "0755"
   loop: "{{ deploy_profile_server_tools_pins.temporal.binaries }}"
@@ -273,10 +273,10 @@
       - --strip-components=1
     creates: "{{ deploy_profile_server_tools_pins.grafana.install_dir }}/bin/{{ deploy_profile_server_tools_pins.grafana.binary_name }}"
 
-- name: Symlink Grafana binary into fm_bin
+- name: Symlink Grafana binary into verself_bin
   ansible.builtin.file:
     src: "{{ deploy_profile_server_tools_pins.grafana.install_dir }}/bin/{{ deploy_profile_server_tools_pins.grafana.binary_name }}"
-    dest: "{{ fm_bin }}/grafana"
+    dest: "{{ verself_bin }}/grafana"
     state: link
     force: true
 
@@ -299,7 +299,7 @@
 - name: Install Stalwart binary
   ansible.builtin.copy:
     src: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.stalwart.extract_binary }}"
-    dest: "{{ fm_bin }}/stalwart"
+    dest: "{{ verself_bin }}/stalwart"
     remote_src: true
     mode: "0755"
 
@@ -322,7 +322,7 @@
 - name: Install Stalwart CLI binary
   ansible.builtin.copy:
     src: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.stalwart_cli.extract_binary }}"
-    dest: "{{ fm_bin }}/stalwart-cli"
+    dest: "{{ verself_bin }}/stalwart-cli"
     remote_src: true
     mode: "0755"
 
@@ -345,6 +345,6 @@
 - name: Install containerd binary
   ansible.builtin.copy:
     src: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.containerd.extract_binary }}"
-    dest: "{{ fm_bin }}/containerd"
+    dest: "{{ verself_bin }}/containerd"
     remote_src: true
     mode: "0755"

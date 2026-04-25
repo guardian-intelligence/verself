@@ -27,9 +27,9 @@ SERVICE_PORT="4249"
 
 step() { printf '\n\033[1;34m==> %s\033[0m\n' "$*"; }
 
-step "Build @forge-metal/platform (local, dependency-aware via vp)"
+step "Build @verself/platform (local, dependency-aware via vp)"
 pushd "${MONOREPO_DIR}" >/dev/null
-vp run "@forge-metal/platform#build"
+vp run "@verself/platform#build"
 popd >/dev/null
 
 if [[ ! -d "${LOCAL_OUTPUT}" ]]; then

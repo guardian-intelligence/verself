@@ -6,20 +6,24 @@ test.describe("Console Shell", () => {
     await ensureTestUserExists();
   });
 
-  test("unauthenticated root redirects into the sign-in flow", async ({ app }) => {
+  test("unauthenticated protected deep link uses a stable login handoff", async ({ app }) => {
     const run = app.createRun();
 
     try {
-      run.detail_url = "/";
+      run.detail_url = "/executions";
 
-      await app.goto("/");
-      // The authenticated app shell owns every chrome surface, and `/`
-      // now redirects into either `/executions` (authed) or `/login`
-      // (guest). A guest opening `/` should bounce to Zitadel; we assert
-      // the URL lands on the Zitadel origin.
+      await app.goto("/executions");
+      await expect(app.page).toHaveURL(/\/login\?redirect=%2Fexecutions$/);
+      await expect(app.page.getByRole("button", { name: "Continue to sign in" })).toBeEnabled();
+
+      await app.page.getByRole("button", { name: "Continue to sign in" }).click();
       await app.waitForCondition("guest redirect to Zitadel", 10_000, async () => {
         return app.page.url().startsWith(env.zitadelBaseURL) ? true : false;
       });
+
+      await app.page.goBack({ waitUntil: "domcontentloaded" });
+      await expect(app.page).toHaveURL(/\/login\?redirect=%2Fexecutions$/);
+      await expect(app.page.getByRole("button", { name: "Continue to sign in" })).toBeEnabled();
 
       run.status = "succeeded";
       run.terminal_observed_at = new Date().toISOString();

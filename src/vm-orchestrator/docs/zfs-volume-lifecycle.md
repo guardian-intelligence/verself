@@ -39,7 +39,7 @@ This document describes the target architecture. Not every path exists yet.
 
 The customer-facing concepts are:
 
-- `volume`: stable product object owned by one Forge Metal organization.
+- `volume`: stable product object owned by one Verself organization.
 - `volume_generation`: immutable point-in-time generation produced by a commit.
 - `current_generation`: trust-class-scoped pointer used to choose the default
   readable generation.
@@ -137,7 +137,7 @@ sandbox-rental-service owns the product state:
 - `retention_policies(policy_name, ttl_from_last_use, keep_last_n)` seeds
   `short_7d`, `medium_14d`, and `long_30d`.
 
-Sticky disks are the first consumer. `github_sticky_disk_generations` and
+Sticky disks are the first consumer. `runner_sticky_disk_generations` and
 `execution_sticky_disk_mounts.committed_generation` collapse into this model in
 the same migration. There is no compatibility shim.
 

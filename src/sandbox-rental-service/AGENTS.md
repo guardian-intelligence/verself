@@ -18,7 +18,7 @@ Its membership in `vm-clients` is a root-equivalent control-plane capability. Do
 
 Runner integrations have two different auth boundaries. Keep them separate:
 
-- Zitadel authenticates the Forge Metal user or service account configuring an
+- Zitadel authenticates the Verself user or service account configuring an
   integration.
 - The source provider authenticates webhook, installation, and repository facts
   with provider-native mechanisms. Webhooks are not Zitadel-authenticated
@@ -36,7 +36,7 @@ GitHub flow:
 ```text
 Zitadel JWT
   sub = user/service account
-  org_id = Forge Metal org
+  org_id = Verself org
       |
       | POST /api/v1/github/installations/connect
       | internal/api/routes.go: beginGitHubInstallation
@@ -122,7 +122,7 @@ Rules that are easy to get wrong:
   billable customer work. Capacity reconciliation may create a runner
   allocation; runner allocation then submits a normal sandbox execution.
 - Billing is keyed to our execution system of record. `billing_windows.source_ref`
-  is the Forge Metal `execution_id`; provider job IDs are correlation metadata
+  is the Verself `execution_id`; provider job IDs are correlation metadata
   on `executions.external_task_id` and `runner_jobs`.
 - The machine actor for runtime billing is `github-app:<installation_id>`.
   The human installer/updater is audit metadata and should be stored separately
@@ -154,7 +154,7 @@ Concrete code anchors:
 
 Queryable proof for a GitHub job should show one consistent `org_id` across
 `github_installations`, `executions`, `billing_windows`, and
-`forge_metal.metering`.
+`verself.metering`.
 
 Use River OSS as the worker/queue runtime for sandbox-rental-service control-plane work, keep the execution state machine explicit in Postgres, and treat the current execution jobs code as a rewrite target during the execution cutover. vm-orchestrator remains the VM execution boundary. Do not use River Pro features as a foundational dependency. If we need global concurrency beyond a single process, model it in our own PG capacity tables.
 

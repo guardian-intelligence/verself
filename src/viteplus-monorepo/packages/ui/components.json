@@ -12,10 +12,10 @@
   },
   "iconLibrary": "lucide",
   "aliases": {
-    "components": "@forge-metal/ui/components",
-    "utils": "@forge-metal/ui/lib/utils",
-    "ui": "@forge-metal/ui/components/ui",
-    "lib": "@forge-metal/ui/lib",
-    "hooks": "@forge-metal/ui/hooks"
+    "components": "@verself/ui/components",
+    "utils": "@verself/ui/lib/utils",
+    "ui": "@verself/ui/components/ui",
+    "lib": "@verself/ui/lib",
+    "hooks": "@verself/ui/hooks"
   }
 }

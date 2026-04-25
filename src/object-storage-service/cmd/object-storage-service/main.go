@@ -20,13 +20,13 @@ import (
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
-	workloadauth "github.com/forge-metal/auth-middleware/workload"
-	"github.com/forge-metal/envconfig"
-	"github.com/forge-metal/httpserver"
-	objectstorageapi "github.com/forge-metal/object-storage-service/internal/api"
-	"github.com/forge-metal/object-storage-service/internal/objectstorage"
-	fmotel "github.com/forge-metal/otel"
-	secretsclient "github.com/forge-metal/secrets-service/client"
+	workloadauth "github.com/verself/auth-middleware/workload"
+	"github.com/verself/envconfig"
+	"github.com/verself/httpserver"
+	objectstorageapi "github.com/verself/object-storage-service/internal/api"
+	"github.com/verself/object-storage-service/internal/objectstorage"
+	verselfotel "github.com/verself/otel"
+	secretsclient "github.com/verself/secrets-service/client"
 
 	_ "github.com/lib/pq"
 )
@@ -60,7 +60,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	otelShutdown, logger, err := fmotel.Init(ctx, fmotel.Config{ServiceName: role.serviceName(), ServiceVersion: serviceVersion})
+	otelShutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{ServiceName: role.serviceName(), ServiceVersion: serviceVersion})
 	if err != nil {
 		return fmt.Errorf("otel init: %w", err)
 	}
@@ -408,7 +408,7 @@ func newClickHouseConn(ctx context.Context, spiffeSource *workloadapi.X509Source
 	chConn, err := clickhouse.Open(&clickhouse.Options{
 		Addr: []string{chAddress},
 		Auth: clickhouse.Auth{
-			Database: "forge_metal",
+			Database: "verself",
 			Username: chUser,
 		},
 		TLS: chTLSConfig,

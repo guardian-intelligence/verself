@@ -1,8 +1,8 @@
 {
-  "name": "@forge-metal/web-env",
+  "name": "@verself/web-env",
   "version": "0.1.0",
   "private": true,
-  "description": "Validated env parsing and origin derivation for forge-metal web apps.",
+  "description": "Validated env parsing and origin derivation for verself web apps.",
   "files": [
     "dist",
     "src"

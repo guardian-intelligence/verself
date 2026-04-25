@@ -17,13 +17,13 @@ argument_specs:
       zitadel_subdomain:
         type: str
         default: auth
-        description: "Subdomain for Zitadel (prepended to forge_metal_domain)."
+        description: "Subdomain for Zitadel (prepended to verself_domain)."
 
       zitadel_domain:
         type: str
-        description: "Full domain for Zitadel (auto-derived as <subdomain>.<forge_metal_domain>)."
+        description: "Full domain for Zitadel (auto-derived as <subdomain>.<verself_domain>)."
 
-      fm_bin:
+      verself_bin:
         type: path
         required: true
         description: "Path to the server binary directory."

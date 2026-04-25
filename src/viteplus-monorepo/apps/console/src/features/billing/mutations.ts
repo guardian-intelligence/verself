@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useSignedInAuth } from "@forge-metal/auth-web/react";
+import { useSignedInAuth } from "@verself/auth-web/react";
 import {
   cancelContract,
   createCheckoutSession,

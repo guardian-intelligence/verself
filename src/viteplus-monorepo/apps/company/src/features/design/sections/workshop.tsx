@@ -1,4 +1,4 @@
-import { WingsArgent } from "@forge-metal/brand";
+import { WingsArgent } from "@verself/brand";
 import { RulesRow, Section } from "../section-shell";
 import { LINE, sectionMeta } from "../shared";
 import {
@@ -497,13 +497,13 @@ export function SectionWorkshop() {
               }}
             >
               <span style={{ color: "#5d5a52", fontStyle: "italic" }}>
-                {"// Deploy a sandbox from the Metal CLI."}
+                {"// Deploy a sandbox from the Verself CLI."}
               </span>
               {"\n"}
               <span style={{ color: "#C0C0F2" }}>import</span>
               {" { sandbox } "}
               <span style={{ color: "#C0C0F2" }}>from</span>{" "}
-              <span style={{ color: "var(--color-amber)" }}>{`"@metal/compute"`}</span>;{"\n\n"}
+              <span style={{ color: "var(--color-amber)" }}>{`"@verself/compute"`}</span>;{"\n\n"}
               <span style={{ color: "#C0C0F2" }}>await</span> sandbox.run({"{"}
               {"\n"}
               {"  tenant:   "}

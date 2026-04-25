@@ -5,8 +5,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	auth "github.com/forge-metal/auth-middleware"
-	"github.com/forge-metal/mailbox-service/internal/mailstore"
+	auth "github.com/verself/auth-middleware"
+	"github.com/verself/mailbox-service/internal/mailstore"
 )
 
 func boundAccountID(ctx context.Context, svc provider) (string, error) {

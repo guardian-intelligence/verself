@@ -20,7 +20,7 @@
 #   --tags stalwart    Seed Stalwart mailboxes + bindings
 #   --tags dev-oidc    Create dev OIDC apps for local frontend development
 #   --tags verify      Verify billing auth integration only
-#   --tags forgejo     Seed forge-metal repo on Forgejo + configure controller SSH
+#   --tags forgejo     Seed verself repo on Forgejo + configure controller SSH
 #
 # Password overrides:
 #   -e 'seed_system_password_overrides={"ceo":"...", "acme_admin":"...", "acme_user":"..."}'
@@ -32,13 +32,13 @@
   gather_facts: false
   vars:
     seed_system_zitadel_base_url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}"
-    seed_system_zitadel_host: "auth.{{ forge_metal_domain }}"
+    seed_system_zitadel_host: "auth.{{ verself_domain }}"
     seed_system_openbao_tls_dir: /etc/openbao/tls
 
     seed_system_password_overrides: {}
     seed_system_credstore_dir: /etc/credstore/seed-system
 
-    seed_system_platform_org_name: forge-metal
+    seed_system_platform_org_name: verself
     seed_system_acme_org_name: "Acme Corp"
 
     seed_system_sandbox_project_name: "{{ sandbox_rental_service_auth_project_name | default('sandbox-rental') }}"
@@ -51,7 +51,7 @@
       ceo:
         key: ceo
         org_key: platform
-        email: "ceo@{{ forge_metal_domain }}"
+        email: "ceo@{{ verself_domain }}"
         username: ceo
         first_name: CEO
         last_name: Operator
@@ -59,7 +59,7 @@
       platform_agent:
         key: platform_agent
         org_key: platform
-        email: "agent@{{ forge_metal_domain }}"
+        email: "agent@{{ verself_domain }}"
         username: agent
         first_name: Platform
         last_name: Agent
@@ -67,7 +67,7 @@
       acme_admin:
         key: acme_admin
         org_key: acme
-        email: "acme-admin@{{ forge_metal_domain }}"
+        email: "acme-admin@{{ verself_domain }}"
         username: acme-admin
         first_name: Acme
         last_name: Admin
@@ -75,7 +75,7 @@
       acme_user:
         key: acme_user
         org_key: acme
-        email: "acme-user@{{ forge_metal_domain }}"
+        email: "acme-user@{{ verself_domain }}"
         username: acme-user
         first_name: Acme
         last_name: User
@@ -148,9 +148,9 @@
         units: 50000000
         source: promo
     seed_system_helper_local_path: "/tmp/billing-seed-{{ inventory_hostname }}"
-    seed_system_helper_remote_path: "/opt/forge-metal/staging/billing-seed-{{ inventory_hostname }}"
+    seed_system_helper_remote_path: "/opt/verself/staging/billing-seed-{{ inventory_hostname }}"
     seed_system_stripe_catalog_helper_local_path: "/tmp/billing-stripe-catalog-{{ inventory_hostname }}"
-    seed_system_stripe_catalog_helper_remote_path: "/opt/forge-metal/staging/billing-stripe-catalog-{{ inventory_hostname }}"
+    seed_system_stripe_catalog_helper_remote_path: "/opt/verself/staging/billing-stripe-catalog-{{ inventory_hostname }}"
 
     seed_system_stalwart_disabled_permissions:
       - email-send
@@ -801,7 +801,7 @@
 
     - name: Ensure billing helper staging directory exists
       ansible.builtin.file:
-        path: /opt/forge-metal/staging
+        path: /opt/verself/staging
         state: directory
         mode: "0755"
       tags: [billing]
@@ -1000,7 +1000,7 @@
 
     - name: Create billing seed runtime secret directory
       ansible.builtin.file:
-        path: /run/forge-metal/seed-system
+        path: /run/verself/seed-system
         state: directory
         owner: root
         group: billing
@@ -1010,7 +1010,7 @@
     - name: Materialize transient Stripe catalog seed secret
       ansible.builtin.copy:
         content: "{{ seed_system_stripe_provider_secret.json.data.data.value }}"
-        dest: /run/forge-metal/seed-system/stripe-secret-key
+        dest: /run/verself/seed-system/stripe-secret-key
         owner: root
         group: billing
         mode: "0640"
@@ -1024,7 +1024,7 @@
           - --pg-dsn
           - "postgres://billing@/billing?host=/var/run/postgresql&sslmode=disable"
           - --stripe-secret-key-file
-          - /run/forge-metal/seed-system/stripe-secret-key
+          - /run/verself/seed-system/stripe-secret-key
           - --product-id
           - "{{ seed_system_product_id }}"
           - --product-display-name
@@ -1041,7 +1041,7 @@
 
     - name: Remove transient Stripe catalog seed secret
       ansible.builtin.file:
-        path: /run/forge-metal/seed-system/stripe-secret-key
+        path: /run/verself/seed-system/stripe-secret-key
         state: absent
       tags: [billing]
 
@@ -1169,9 +1169,9 @@
         body:
           type: individual
           name: ceo
-          description: "Forge Metal operator mailbox"
+          description: "Verself operator mailbox"
           secrets: ["{{ seed_system_mailbox_hashes['ceo'] }}"]
-          emails: ["ceo@{{ forge_metal_domain }}"]
+          emails: ["ceo@{{ verself_domain }}"]
           roles: ["user"]
           disabledPermissions: "{{ seed_system_stalwart_disabled_permissions }}"
           quota: 0
@@ -1218,7 +1218,7 @@
           name: agents
           description: "Shared agent mailbox"
           secrets: ["{{ seed_system_mailbox_hashes['agents'] }}"]
-          emails: ["agents@{{ forge_metal_domain }}"]
+          emails: ["agents@{{ verself_domain }}"]
           roles: ["user"]
           disabledPermissions: "{{ seed_system_stalwart_disabled_permissions }}"
           quota: 0
@@ -1230,7 +1230,7 @@
     - name: Reset mailbox-service projection for seeded mailboxes
       ansible.builtin.command:
         cmd: >-
-          {{ fm_bin }}/psql
+          {{ verself_bin }}/psql
           -h {{ services.postgresql.host }}
           -p {{ services.postgresql.port }}
           -U mailbox_service
@@ -1332,10 +1332,10 @@
             email_address: "{{ seed_system_users_state.ceo.email }}"
           - subject: "{{ seed_system_users_state.platform_agent.user_id }}"
             account_id: agents
-            email_address: "agents@{{ forge_metal_domain }}"
+            email_address: "agents@{{ verself_domain }}"
           - subject: "{{ seed_system_machine_users_state.platform_admin.user_id }}"
             account_id: agents
-            email_address: "agents@{{ forge_metal_domain }}"
+            email_address: "agents@{{ verself_domain }}"
       when:
         - seed_system_users_state.ceo.user_id | default('', true) | length > 0
         - seed_system_users_state.platform_agent.user_id | default('', true) | length > 0
@@ -1384,8 +1384,8 @@
           {{
             [
               'Stalwart mailboxes created:',
-              '  ceo@' + forge_metal_domain,
-              '  agents@' + forge_metal_domain,
+              '  ceo@' + verself_domain,
+              '  agents@' + verself_domain,
               ''
             ]
             + (
@@ -1636,7 +1636,7 @@
           - " Seed system ready"
           - "============================================"
           - ""
-          - " Operator login: https://console.{{ forge_metal_domain }}/"
+          - " Operator login: https://console.{{ verself_domain }}/"
           - " CEO:            {{ seed_system_users_state.ceo.email }}"
           - " CEO password:   {{ seed_system_users_state.ceo.password_credstore_path }}"
           - " Agent:          {{ seed_system_users_state.platform_agent.email }}"

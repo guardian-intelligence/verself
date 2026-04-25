@@ -1,5 +1,5 @@
 ---
-# deploy_profile: provides zitadel binary at fm_bin.
+# deploy_profile: provides zitadel binary at verself_bin.
 # postgresql: Zitadel requires a running PostgreSQL instance.
 dependencies:
   - role: deploy_profile

@@ -15,7 +15,7 @@ set -euo pipefail
 
 inventory="${INVENTORY:-ansible/inventory/hosts.ini}"
 secrets_file="${SOPS_SECRETS_FILE:-ansible/group_vars/all/secrets.sops.yml}"
-remote_path="${PSQL_PATH:-/opt/forge-metal/profile/bin/psql}"
+remote_path="${PSQL_PATH:-/opt/verself/profile/bin/psql}"
 pg_host="${PG_HOST:-127.0.0.1}"
 pg_port="${PG_PORT:-5432}"
 pg_user="${PG_USER:-postgres}"

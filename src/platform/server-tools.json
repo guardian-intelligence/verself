@@ -84,7 +84,7 @@
     "url": "https://dl.grafana.com/oss/release/grafana-12.4.2.linux-amd64.tar.gz",
     "sha256": "f240b200a803bf64592fae645331750c2681df5f07496743d714db12393a591f",
     "extract_dir": "grafana-v12.4.2",
-    "install_dir": "/opt/forge-metal/grafana",
+    "install_dir": "/opt/verself/grafana",
     "binary_name": "grafana"
   },
   "grafana_clickhouse_datasource": {
@@ -107,7 +107,7 @@
     "url": "https://nodejs.org/dist/v22.22.2/node-v22.22.2-linux-x64.tar.xz",
     "sha256": "88fd1ce767091fd8d4a99fdb2356e98c819f93f3b1f8663853a2dee9b438068a",
     "strip_components": 1,
-    "install_dir": "/opt/forge-metal/nodejs",
+    "install_dir": "/opt/verself/nodejs",
     "bin_symlinks": ["node", "npm", "npx", "corepack"]
   },
   "stalwart": {

@@ -14,7 +14,7 @@ verification_context_init() {
     return 1
   fi
 
-  VERIFICATION_DOMAIN="$(awk -F'"' '/^forge_metal_domain:/{print $2}' "${VERIFICATION_VARS_FILE}")"
+  VERIFICATION_DOMAIN="$(awk -F'"' '/^verself_domain:/{print $2}' "${VERIFICATION_VARS_FILE}")"
   VERIFICATION_REMOTE_HOST="$(grep -m1 'ansible_host=' "${VERIFICATION_INVENTORY}" | sed 's/.*ansible_host=\([^ ]*\).*/\1/')"
   VERIFICATION_REMOTE_USER="$(grep -m1 'ansible_user=' "${VERIFICATION_INVENTORY}" | sed 's/.*ansible_user=\([^ ]*\).*/\1/')"
   VERIFICATION_SSH_OPTS=(-o IPQoS=none -o StrictHostKeyChecking=no)
@@ -37,7 +37,7 @@ verification_ssh() {
 
 verification_remote_temp_path() {
   local prefix="$1"
-  local remote_staging_dir="${VERIFICATION_REMOTE_STAGING_DIR:-/opt/forge-metal/staging}"
+  local remote_staging_dir="${VERIFICATION_REMOTE_STAGING_DIR:-/opt/verself/staging}"
 
   if [[ ! "${prefix}" =~ ^[A-Za-z0-9_.-]+$ ]]; then
     echo "unsafe remote temp prefix: ${prefix}" >&2
@@ -157,7 +157,7 @@ verification_collect_window_evidence() {
   (
     cd "${VERIFICATION_PLATFORM_ROOT}" || return
     ./scripts/clickhouse.sh \
-      --database forge_metal \
+      --database verself \
       --param_window_start="${window_start}" \
       --param_window_end="${window_end}" \
       --query "
@@ -185,7 +185,7 @@ verification_collect_window_evidence() {
   (
     cd "${VERIFICATION_PLATFORM_ROOT}" || return
     ./scripts/clickhouse.sh \
-      --database forge_metal \
+      --database verself \
       --param_window_start="${window_start}" \
       --param_window_end="${window_end}" \
       --query "
@@ -222,7 +222,7 @@ verification_collect_window_evidence() {
   (
     cd "${VERIFICATION_PLATFORM_ROOT}" || return
     ./scripts/clickhouse.sh \
-      --database forge_metal \
+      --database verself \
       --param_window_start="${window_start}" \
       --param_window_end="${window_end}" \
       --query "
@@ -251,7 +251,7 @@ verification_collect_window_evidence() {
   (
     cd "${VERIFICATION_PLATFORM_ROOT}" || return
     ./scripts/clickhouse.sh \
-      --database forge_metal \
+      --database verself \
       --param_window_start="${window_start}" \
       --param_window_end="${window_end}" \
       --query "
@@ -281,7 +281,7 @@ verification_collect_window_evidence() {
   (
     cd "${VERIFICATION_PLATFORM_ROOT}" || return
     ./scripts/clickhouse.sh \
-      --database forge_metal \
+      --database verself \
       --param_window_start="${window_start}" \
       --param_window_end="${window_end}" \
       --query "

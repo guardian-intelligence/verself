@@ -1,4 +1,4 @@
-import { Badge } from "@forge-metal/ui/components/ui/badge";
+import { Badge } from "@verself/ui/components/ui/badge";
 import { Callout } from "~/components/callout";
 import { formatDateTimeUTC } from "~/lib/format";
 import type { FlashIntent } from "./flash";

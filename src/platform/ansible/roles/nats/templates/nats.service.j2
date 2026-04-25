@@ -1,7 +1,7 @@
 [Unit]
 Description=NATS JetStream
-After=forge-metal-firewall.target network.target spire-agent.service nats-spiffe-helper.service
-Requires=forge-metal-firewall.target
+After=verself-firewall.target network.target spire-agent.service nats-spiffe-helper.service
+Requires=verself-firewall.target
 Wants=spire-agent.service nats-spiffe-helper.service
 
 [Service]
@@ -9,8 +9,8 @@ Type=simple
 User=nats
 Group=nats
 SupplementaryGroups={{ spire_workload_group }}
-ExecStart={{ fm_bin }}/nats-server -c {{ nats_config_dir }}/nats-server.conf
-ExecReload={{ fm_bin }}/nats-server --signal reload=/run/nats/nats.pid
+ExecStart={{ verself_bin }}/nats-server -c {{ nats_config_dir }}/nats-server.conf
+ExecReload={{ verself_bin }}/nats-server --signal reload=/run/nats/nats.pid
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=131072

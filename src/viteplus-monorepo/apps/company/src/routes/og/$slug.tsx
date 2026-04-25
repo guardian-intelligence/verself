@@ -13,7 +13,7 @@ import { buildOGCard, formatOGError } from "~/og/template";
 // explicit payload and og.voice_pass=false — loud failures, per the coding
 // contract.
 
-const TRACER = trace.getTracer("forge-metal/company-og", "0.1.0");
+const TRACER = trace.getTracer("verself/company-og", "0.1.0");
 
 // Some social crawlers (and Slack's debugger) issue HEAD before GET to sniff
 // content-type before unfurling. Return the same headers as GET would, with

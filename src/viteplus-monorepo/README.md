@@ -20,7 +20,7 @@ vp check
 vp test run
 vp run -r typecheck
 vp run -r build
-vp run @forge-metal/console#dev
+vp run @verself/console#dev
 ```
 
 `vp check`, `vp test run`, `vp run -r typecheck`, and `vp run -r build` are the baseline gates for changes in this workspace.

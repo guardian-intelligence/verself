@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { getRouteApi, Link, useRouter } from "@tanstack/react-router";
 import { ArrowDown, ArrowUp, Check, Clock, Columns3, Copy, ListFilter, X } from "lucide-react";
-import { Badge } from "@forge-metal/ui/components/ui/badge";
-import { Button } from "@forge-metal/ui/components/ui/button";
+import { Badge } from "@verself/ui/components/ui/badge";
+import { Button } from "@verself/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,8 +11,8 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
-} from "@forge-metal/ui/components/ui/dropdown-menu";
-import { Input } from "@forge-metal/ui/components/ui/input";
+} from "@verself/ui/components/ui/dropdown-menu";
+import { Input } from "@verself/ui/components/ui/input";
 import {
   PageSection,
   PageSections,
@@ -21,16 +21,16 @@ import {
   SectionHeader,
   SectionHeaderContent,
   SectionTitle,
-} from "@forge-metal/ui/components/ui/page";
+} from "@verself/ui/components/ui/page";
 import {
   Popover,
   PopoverContent,
   PopoverHeader,
   PopoverTitle,
   PopoverTrigger,
-} from "@forge-metal/ui/components/ui/popover";
-import { Select } from "@forge-metal/ui/components/ui/select";
-import { toast } from "@forge-metal/ui/components/ui/sonner";
+} from "@verself/ui/components/ui/popover";
+import { Select } from "@verself/ui/components/ui/select";
+import { toast } from "@verself/ui/components/ui/sonner";
 import {
   Table,
   TableBody,
@@ -38,14 +38,14 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@forge-metal/ui/components/ui/table";
+} from "@verself/ui/components/ui/table";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@forge-metal/ui/components/ui/tooltip";
-import { cn } from "@forge-metal/ui/lib/utils";
+} from "@verself/ui/components/ui/tooltip";
+import { cn } from "@verself/ui/lib/utils";
 import { formatDateTimeLocal, formatDateTimeUTC, formatRelative } from "~/lib/format";
 import { createGovernanceDataExport, downloadGovernanceDataExport } from "~/server-fns/api";
 import type { GovernanceAuditEvent, GovernanceExportJob } from "~/server-fns/api";
@@ -81,7 +81,7 @@ const routeApi = getRouteApi("/_shell/_authenticated/settings/governance");
 
 // Time-zone preference lives in localStorage, not the URL: sharing a link
 // should show timestamps in the recipient's zone, not the sender's.
-const TZ_STORAGE_KEY = "forge-metal:governance.audit.timezone";
+const TZ_STORAGE_KEY = "verself:governance.audit.timezone";
 type TimezoneMode = "local" | "utc";
 
 interface GovernanceSettingsProps {

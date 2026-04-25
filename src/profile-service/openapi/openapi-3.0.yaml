@@ -242,7 +242,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Get the current human profile snapshot
-      x-forge-metal-iam:
+      x-verself-iam:
         action: read
         audit_event: profile.subject.read
         data_classification: controller_personal_data
@@ -289,7 +289,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Update the current human's identity profile fields
-      x-forge-metal-iam:
+      x-verself-iam:
         action: write
         audit_event: profile.subject.identity.write
         data_classification: controller_personal_data
@@ -338,7 +338,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Replace the current human's profile preferences
-      x-forge-metal-iam:
+      x-verself-iam:
         action: write
         audit_event: profile.preferences.write
         data_classification: controller_personal_data

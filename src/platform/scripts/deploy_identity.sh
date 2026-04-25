@@ -6,15 +6,15 @@
 # upstream community.general.opentelemetry Ansible callback honors the
 # W3C TRACEPARENT env var and merges OTEL_RESOURCE_ATTRIBUTES onto every
 # exported span's Resource — so once this has run, every subsequent trace
-# from the playbook AND from fm_uri probes shares the same trace-id and
-# carries forge_metal.* on ResourceAttributes.
+# from the playbook AND from verself_uri probes shares the same trace-id and
+# carries verself.* on ResourceAttributes.
 #
-# Idempotent: if FORGE_METAL_DEPLOY_ID and FORGE_METAL_DEPLOY_RUN_KEY are
+# Idempotent: if VERSELF_DEPLOY_ID and VERSELF_DEPLOY_RUN_KEY are
 # already set (e.g. telemetry-proof provided its own), those are preserved
 # and the rest is derived from them.
 #
 # Usage:
-#   source "${FM_PLATFORM}/scripts/deploy_identity.sh"
+#   source "${VERSELF_PLATFORM}/scripts/deploy_identity.sh"
 #   ansible-playbook ...
 
 set -eu
@@ -22,7 +22,7 @@ set -eu
 __deploy_identity_counter() {
   local day="$1"
   local host="$2"
-  local cache_dir="${XDG_CACHE_HOME:-${HOME}/.cache}/forge-metal/deploy-runs"
+  local cache_dir="${XDG_CACHE_HOME:-${HOME}/.cache}/verself/deploy-runs"
   mkdir -p "${cache_dir}"
   local lock_file="${cache_dir}/${day}.${host}.lock"
   local counter_file="${cache_dir}/${day}.${host}.counter"
@@ -43,8 +43,8 @@ PY
 }
 
 __deploy_identity_run_key() {
-  if [ -n "${FORGE_METAL_DEPLOY_RUN_KEY:-}" ]; then
-    printf '%s' "${FORGE_METAL_DEPLOY_RUN_KEY}"
+  if [ -n "${VERSELF_DEPLOY_RUN_KEY:-}" ]; then
+    printf '%s' "${VERSELF_DEPLOY_RUN_KEY}"
     return
   fi
   local day host counter
@@ -57,49 +57,49 @@ __deploy_identity_run_key() {
 }
 
 __deploy_identity_uuid5() {
-  python3 -c 'import sys, uuid; print(uuid.uuid5(uuid.NAMESPACE_URL, f"forge-metal:{sys.argv[1]}"))' "$1"
+  python3 -c 'import sys, uuid; print(uuid.uuid5(uuid.NAMESPACE_URL, f"verself:{sys.argv[1]}"))' "$1"
 }
 
 __deploy_identity_span_id() {
   python3 -c 'import hashlib, sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest()[:16])' "$1"
 }
 
-FORGE_METAL_DEPLOY_RUN_KEY="$(__deploy_identity_run_key)"
-export FORGE_METAL_DEPLOY_RUN_KEY
-if [ -z "${FORGE_METAL_DEPLOY_ID:-}" ]; then
-  FORGE_METAL_DEPLOY_ID="$(__deploy_identity_uuid5 "${FORGE_METAL_DEPLOY_RUN_KEY}")"
+VERSELF_DEPLOY_RUN_KEY="$(__deploy_identity_run_key)"
+export VERSELF_DEPLOY_RUN_KEY
+if [ -z "${VERSELF_DEPLOY_ID:-}" ]; then
+  VERSELF_DEPLOY_ID="$(__deploy_identity_uuid5 "${VERSELF_DEPLOY_RUN_KEY}")"
 fi
-export FORGE_METAL_DEPLOY_ID
+export VERSELF_DEPLOY_ID
 
 # TRACEPARENT = 00-<32hex trace>-<16hex span>-01. The upstream Ansible OTel
-# callback extracts this and makes its playbook span a child of it; fm_uri
+# callback extracts this and makes its playbook span a child of it; verself_uri
 # emits probes using the same trace-id so everything shares the root.
-__trace_hex="$(printf '%s' "${FORGE_METAL_DEPLOY_ID}" | tr -d '-')"
-__span_hex="$(__deploy_identity_span_id "deploy-root:${FORGE_METAL_DEPLOY_ID}")"
+__trace_hex="$(printf '%s' "${VERSELF_DEPLOY_ID}" | tr -d '-')"
+__span_hex="$(__deploy_identity_span_id "deploy-root:${VERSELF_DEPLOY_ID}")"
 export TRACEPARENT="00-${__trace_hex}-${__span_hex}-01"
 
 # Git metadata lands as Resource attributes on every span emitted by the
 # callback, so they survive into ClickHouse ResourceAttributes for reporting.
 __repo_root="$(git rev-parse --show-toplevel 2>/dev/null || echo '')"
 __git() { git -C "${__repo_root}" "$@" 2>/dev/null || true; }
-FORGE_METAL_COMMIT_SHA="$(__git rev-parse HEAD)"
-FORGE_METAL_BRANCH="$(__git rev-parse --abbrev-ref HEAD)"
-FORGE_METAL_COMMIT_MESSAGE="$(__git log -1 --format=%s)"
-FORGE_METAL_AUTHOR="$(__git log -1 --format=%ae)"
-export FORGE_METAL_COMMIT_SHA
-export FORGE_METAL_BRANCH
-export FORGE_METAL_COMMIT_MESSAGE
-export FORGE_METAL_AUTHOR
+VERSELF_COMMIT_SHA="$(__git rev-parse HEAD)"
+VERSELF_BRANCH="$(__git rev-parse --abbrev-ref HEAD)"
+VERSELF_COMMIT_MESSAGE="$(__git log -1 --format=%s)"
+VERSELF_AUTHOR="$(__git log -1 --format=%ae)"
+export VERSELF_COMMIT_SHA
+export VERSELF_BRANCH
+export VERSELF_COMMIT_MESSAGE
+export VERSELF_AUTHOR
 if [ -n "$(__git status --porcelain)" ]; then
-  export FORGE_METAL_DIRTY="true"
+  export VERSELF_DIRTY="true"
 else
-  export FORGE_METAL_DIRTY="false"
+  export VERSELF_DIRTY="false"
 fi
-export FORGE_METAL_DEPLOY_KIND="${FORGE_METAL_DEPLOY_KIND:-ansible-playbook}"
+export VERSELF_DEPLOY_KIND="${VERSELF_DEPLOY_KIND:-ansible-playbook}"
 
-# OTLP endpoint: scripts/ansible-with-tunnel.sh sets FORGE_METAL_OTLP_ENDPOINT
+# OTLP endpoint: scripts/ansible-with-tunnel.sh sets VERSELF_OTLP_ENDPOINT
 # to 127.0.0.1:<tunneled-port>. Fall back to loopback default.
-export OTEL_EXPORTER_OTLP_ENDPOINT="http://${FORGE_METAL_OTLP_ENDPOINT:-127.0.0.1:4317}"
+export OTEL_EXPORTER_OTLP_ENDPOINT="http://${VERSELF_OTLP_ENDPOINT:-127.0.0.1:4317}"
 export OTEL_SERVICE_NAME="ansible"
 
 # OTEL_RESOURCE_ATTRIBUTES members are comma-separated key=value pairs. The
@@ -109,14 +109,14 @@ export OTEL_SERVICE_NAME="ansible"
 OTEL_RESOURCE_ATTRIBUTES="$(python3 - <<'PY'
 import os, urllib.parse as up
 parts = [
-    ("forge_metal.deploy_id", os.environ["FORGE_METAL_DEPLOY_ID"]),
-    ("forge_metal.deploy_run_key", os.environ["FORGE_METAL_DEPLOY_RUN_KEY"]),
-    ("forge_metal.commit_sha", os.environ["FORGE_METAL_COMMIT_SHA"]),
-    ("forge_metal.branch", os.environ["FORGE_METAL_BRANCH"]),
-    ("forge_metal.commit_message", os.environ["FORGE_METAL_COMMIT_MESSAGE"]),
-    ("forge_metal.author", os.environ["FORGE_METAL_AUTHOR"]),
-    ("forge_metal.dirty", os.environ["FORGE_METAL_DIRTY"]),
-    ("forge_metal.deploy_kind", os.environ["FORGE_METAL_DEPLOY_KIND"]),
+    ("verself.deploy_id", os.environ["VERSELF_DEPLOY_ID"]),
+    ("verself.deploy_run_key", os.environ["VERSELF_DEPLOY_RUN_KEY"]),
+    ("verself.commit_sha", os.environ["VERSELF_COMMIT_SHA"]),
+    ("verself.branch", os.environ["VERSELF_BRANCH"]),
+    ("verself.commit_message", os.environ["VERSELF_COMMIT_MESSAGE"]),
+    ("verself.author", os.environ["VERSELF_AUTHOR"]),
+    ("verself.dirty", os.environ["VERSELF_DIRTY"]),
+    ("verself.deploy_kind", os.environ["VERSELF_DEPLOY_KIND"]),
 ]
 print(",".join(f"{k}={up.quote(v, safe='')}" for k, v in parts if v))
 PY

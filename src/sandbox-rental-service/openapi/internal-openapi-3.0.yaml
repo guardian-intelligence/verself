@@ -64,6 +64,8 @@ components:
           type: string
         org_id:
           type: string
+        project_id:
+          type: string
         provider:
           enum:
             - forgejo
@@ -86,6 +88,7 @@ components:
       required:
         - provider
         - org_id
+        - project_id
         - provider_owner
         - provider_repo
         - provider_repository_id
@@ -99,6 +102,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        project_id:
+          type: string
         provider:
           type: string
         provider_repository_id:
@@ -110,6 +115,7 @@ components:
       required:
         - provider
         - provider_repository_id
+        - project_id
         - state
       type: object
   securitySchemes:
@@ -146,7 +152,7 @@ paths:
       security:
         - mutualTLS: []
       summary: Register a repository with the runner product
-      x-forge-metal-iam:
+      x-verself-iam:
         action: register
         audit_event: sandbox.runner_repository.register
         data_classification: restricted

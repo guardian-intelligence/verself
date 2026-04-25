@@ -23,11 +23,11 @@
   become: true
   tags: [always]
   tasks:
-    - name: Require forge_metal_domain
+    - name: Require verself_domain
       ansible.builtin.assert:
-        that: forge_metal_domain | default('', true) | length > 0
+        that: verself_domain | default('', true) | length > 0
         fail_msg: >-
-          forge_metal_domain is required. Set it in the encrypted Ansible group vars before deploying.
+          verself_domain is required. Set it in the encrypted Ansible group vars before deploying.
 
     - name: Require cloudflare_api_token
       ansible.builtin.assert:
@@ -36,34 +36,34 @@
           cloudflare_api_token is empty. Set it in the encrypted Ansible group vars before deploying.
 
     - name: Check ZFS pool exists
-      ansible.builtin.command: "zpool status forgepool"
+      ansible.builtin.command: "zpool status vspool"
       changed_when: false
       failed_when: false
       register: preflight_zpool
 
     - name: Check guest kernel exists
       ansible.builtin.stat:
-        path: /var/lib/forge-metal/guest-artifacts/vmlinux
+        path: /var/lib/verself/guest-artifacts/vmlinux
         get_checksum: false
       register: preflight_guest_kernel
 
     - name: Check guest rootfs exists
       ansible.builtin.stat:
-        path: /var/lib/forge-metal/guest-artifacts/rootfs.ext4
+        path: /var/lib/verself/guest-artifacts/rootfs.ext4
         # get_checksum defaults to true, which would sha1 the multi-GB rootfs every preflight (~4s).
         get_checksum: false
       register: preflight_guest_rootfs
 
     - name: Check Vite+ composed image exists
       ansible.builtin.stat:
-        path: /var/lib/forge-metal/guest-artifacts/viteplus.ext4
+        path: /var/lib/verself/guest-artifacts/viteplus.ext4
         get_checksum: false
       register: preflight_viteplus_image
 
     - name: Warn if ZFS pool is missing (firecracker role will fail)
       ansible.builtin.debug:
         msg: >-
-          WARNING: ZFS pool 'forgepool' not found. The zfs and firecracker roles
+          WARNING: ZFS pool 'vspool' not found. The zfs and firecracker roles
           will create it, but only if a suitable disk is available.
       when: preflight_zpool.rc != 0
 
@@ -71,18 +71,18 @@
       ansible.builtin.fail:
         msg: >-
           Guest artifacts not staged. The firecracker role requires vmlinux, rootfs.ext4, and viteplus.ext4
-          at /var/lib/forge-metal/guest-artifacts/. Run: cd ansible && ansible-playbook playbooks/guest-rootfs.yml
+          at /var/lib/verself/guest-artifacts/. Run: cd ansible && ansible-playbook playbooks/guest-rootfs.yml
       when: not preflight_guest_kernel.stat.exists or not preflight_guest_rootfs.stat.exists or not preflight_viteplus_image.stat.exists
 
 # ── Deploy ───────────────────────────────────────────────────────────────────
 
-- name: Deploy forge-metal (single node, idempotent)
+- name: Deploy verself (single node, idempotent)
   hosts: all
   become: true
   force_handlers: true
   roles:
     - role: deploy_profile
-      tags: [deploy_profile, object_storage_service, profile_service, notifications_service, source_code_hosting_service, nats]
+      tags: [deploy_profile, object_storage_service, profile_service, notifications_service, projects_service, source_code_hosting_service, nats]
     - role: base
       tags: [base]
     - role: nftables
@@ -97,6 +97,7 @@
         - governance_service
         - profile_service
         - notifications_service
+        - projects_service
         - nats
         - secrets_service
         - sandbox_rental_service
@@ -108,7 +109,7 @@
     - role: garage
       tags: [garage, object_storage_service]
     - role: cloudflare_dns
-      tags: [cloudflare_dns, source_code_hosting_service]
+      tags: [cloudflare_dns, projects_service, source_code_hosting_service]
     - role: clickhouse
       tags:
         - clickhouse
@@ -119,6 +120,7 @@
         - governance_service
         - profile_service
         - notifications_service
+        - projects_service
         - object_storage_service
         - openbao
         - openbao_tenancy
@@ -127,13 +129,13 @@
     - role: tigerbeetle
       tags: [tigerbeetle]
     - role: postgresql
-      tags: [postgresql, object_storage_service, profile_service, notifications_service, source_code_hosting_service, openbao, openbao_tenancy, temporal]
+      tags: [postgresql, object_storage_service, profile_service, notifications_service, projects_service, source_code_hosting_service, openbao, openbao_tenancy, temporal]
     - role: zitadel
       tags: [zitadel, openbao, openbao_tenancy]
     - role: openbao
       tags: [openbao, openbao_tenancy, billing_service, governance_service, sandbox_rental_service, mailbox_service]
     - role: identity_service
-      tags: [identity_service, profile_service, source_code_hosting_service]
+      tags: [identity_service, profile_service, projects_service, source_code_hosting_service]
     - role: governance_service
       tags: [governance_service, profile_service, object_storage_service, openbao, openbao_tenancy, temporal]
     - role: profile_service
@@ -142,6 +144,8 @@
       tags: [nats, notifications_service]
     - role: notifications_service
       tags: [notifications_service]
+    - role: projects_service
+      tags: [projects_service]
     - role: secrets_service
       tags: [secrets_service, object_storage_service, openbao_tenancy]
     - role: openbao_tenancy
@@ -164,7 +168,7 @@
           - notification_inbox_state
         electric_storage_dir: /var/lib/electric-notifications
         electric_credstore_dir: /etc/credstore/electric-notifications
-        electric_nftables_table: forge_metal_electric_notifications
+        electric_nftables_table: verself_electric_notifications
         electric_nftables_file: /etc/nftables.d/electric-notifications.nft
         electric_db_pool_size: 8
         electric_extra_systemd_after: [notifications-service.service]
@@ -194,7 +198,7 @@
         electric_publication_tables: [executions, execution_logs]
         electric_storage_dir: /var/lib/electric
         electric_credstore_dir: /etc/credstore/electric
-        electric_nftables_table: forge_metal_electric
+        electric_nftables_table: verself_electric
         electric_nftables_file: /etc/nftables.d/electric.nft
         electric_db_pool_size: 15
       tags: [electric, sandbox_rental_service]
@@ -205,7 +209,7 @@
     - role: stalwart
       tags: [stalwart]
     - role: otelcol
-      tags: [otelcol, temporal, source_code_hosting_service]
+      tags: [otelcol, temporal, projects_service, source_code_hosting_service]
     - role: mailbox_service
       tags: [mailbox_service]
     - role: electric
@@ -227,7 +231,7 @@
           - threads
         electric_storage_dir: /var/lib/electric-mail
         electric_credstore_dir: /etc/credstore/electric-mail
-        electric_nftables_table: forge_metal_electric_mail
+        electric_nftables_table: verself_electric_mail
         electric_nftables_file: /etc/nftables.d/electric-mail.nft
         electric_db_pool_size: 10
         electric_extra_systemd_after: [mailbox-service.service]
@@ -247,4 +251,4 @@
     - role: firecracker
       tags: [firecracker]
     - role: caddy
-      tags: [caddy, profile_service, notifications_service, source_code_hosting_service, openbao_tenancy]
+      tags: [caddy, profile_service, notifications_service, projects_service, source_code_hosting_service, openbao_tenancy]

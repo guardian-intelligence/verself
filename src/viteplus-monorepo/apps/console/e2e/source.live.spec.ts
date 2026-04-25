@@ -5,7 +5,7 @@ test.describe("Console Source", () => {
     await ensureTestUserExists();
   });
 
-  test("shows the headless source repository card or push-first setup", async ({ app }) => {
+  test("shows project-scoped source setup or repository cards", async ({ app }) => {
     const run = app.createRun();
 
     try {
@@ -13,25 +13,30 @@ test.describe("Console Source", () => {
       app.resetBrowserSignals();
 
       run.detail_url = "/source";
-      await app.expectSSRHTML("/source", ["Source", "Project repository"]);
+      await app.expectSSRHTML("/source", ["Source", "Repositories"]);
       await app.assertStableRoute({
         path: "/source",
         ready: app.page.getByRole("heading", { name: "Source", exact: true }),
         stableContent: app.page.locator("main").last(),
-        expectedText: ["Project repository"],
+        expectedText: ["Repositories"],
       });
 
-      const emptyState = app.page.getByRole("heading", { name: "Push the first branch" });
-      if (await emptyState.isVisible({ timeout: shortTimeoutMS }).catch(() => false)) {
-        await expect(app.page.getByText("Git remote", { exact: true })).toBeVisible();
-        await expect(app.page.getByRole("button", { name: "Create Git credential" })).toBeVisible();
-        await app.page.getByRole("button", { name: "Create Git credential" }).click();
+      const createProject = app.page.getByRole("heading", { name: "Create a project" });
+      const createRepository = app.page.getByRole("heading", { name: "Create a repository" });
+      if (await createProject.isVisible({ timeout: shortTimeoutMS }).catch(() => false)) {
+        await expect(app.page.getByRole("button", { name: "Create project" })).toBeVisible();
+        run.source_state = "no_projects";
+      } else if (await createRepository.isVisible({ timeout: shortTimeoutMS }).catch(() => false)) {
+        await expect(app.page.getByRole("button", { name: "Create repository" })).toBeVisible();
+        run.source_state = "no_repository";
+      } else {
+        await expect(app.page.getByText("Git remote", { exact: true }).first()).toBeVisible();
+        await expect(app.page.getByRole("button", { name: "Create Git credential" }).first()).toBeVisible();
+        await app.page.getByRole("button", { name: "Create Git credential" }).first().click();
         await expect(app.page.getByText("Username", { exact: true })).toBeVisible({
           timeout: shortTimeoutMS,
         });
         await expect(app.page.getByText("Token", { exact: true })).toBeVisible();
-        run.source_state = "empty";
-      } else {
         await expect(
           app.page.getByRole("heading", { name: "Branches", exact: true }).first(),
         ).toBeVisible();

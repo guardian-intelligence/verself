@@ -1,12 +1,12 @@
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { cn } from "@forge-metal/ui/lib/utils";
+import { cn } from "@verself/ui/lib/utils";
 import {
   Page,
   PageDescription,
   PageHeader,
   PageHeaderContent,
   PageTitle,
-} from "@forge-metal/ui/components/ui/page";
+} from "@verself/ui/components/ui/page";
 import { isPathActive, SETTINGS_NAV } from "~/features/shell/nav-config";
 
 export const Route = createFileRoute("/_shell/_authenticated/settings")({

@@ -5,7 +5,7 @@
 - name: Export sandbox-rental GitHub installations before schema reset
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/psql
+      {{ verself_bin }}/psql
       -h {{ services.postgresql.host }}
       -p {{ services.postgresql.port }}
       -U postgres

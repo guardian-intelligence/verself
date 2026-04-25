@@ -1,5 +1,5 @@
 {
-  "name": "@forge-metal/company",
+  "name": "@verself/company",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -15,10 +15,6 @@
     "test:e2e:headed": "vp exec playwright test --headed"
   },
   "dependencies": {
-    "@forge-metal/brand": "workspace:*",
-    "@forge-metal/nitro-plugins": "workspace:*",
-    "@forge-metal/ui": "workspace:*",
-    "@forge-metal/web-env": "workspace:*",
     "@opentelemetry/api": "catalog:",
     "@opentelemetry/context-zone": "catalog:",
     "@opentelemetry/core": "catalog:",
@@ -29,6 +25,10 @@
     "@opentelemetry/semantic-conventions": "catalog:",
     "@tanstack/react-router": "catalog:",
     "@tanstack/react-start": "catalog:",
+    "@verself/brand": "workspace:*",
+    "@verself/nitro-plugins": "workspace:*",
+    "@verself/ui": "workspace:*",
+    "@verself/web-env": "workspace:*",
     "lucide-react": "catalog:",
     "nitro": "catalog:",
     "react": "catalog:",

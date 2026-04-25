@@ -14,14 +14,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
-	auth "github.com/forge-metal/auth-middleware"
-	workloadauth "github.com/forge-metal/auth-middleware/workload"
-	"github.com/forge-metal/envconfig"
-	"github.com/forge-metal/httpserver"
-	identityinternalclient "github.com/forge-metal/identity-service/internalclient"
-	fmotel "github.com/forge-metal/otel"
-	profileapi "github.com/forge-metal/profile-service/internal/api"
-	"github.com/forge-metal/profile-service/internal/profile"
+	auth "github.com/verself/auth-middleware"
+	workloadauth "github.com/verself/auth-middleware/workload"
+	"github.com/verself/envconfig"
+	"github.com/verself/httpserver"
+	identityinternalclient "github.com/verself/identity-service/internalclient"
+	verselfotel "github.com/verself/otel"
+	profileapi "github.com/verself/profile-service/internal/api"
+	"github.com/verself/profile-service/internal/profile"
 )
 
 const (
@@ -41,7 +41,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	otelShutdown, logger, err := fmotel.Init(ctx, fmotel.Config{ServiceName: serviceName, ServiceVersion: serviceVersion})
+	otelShutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{ServiceName: serviceName, ServiceVersion: serviceVersion})
 	if err != nil {
 		return fmt.Errorf("otel init: %w", err)
 	}

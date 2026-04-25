@@ -577,7 +577,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Get organization identity state
-      x-forge-metal-iam:
+      x-verself-iam:
         action: read
         audit_event: identity.organization.read
         data_classification: restricted
@@ -609,7 +609,7 @@ paths:
       security:
         - bearerAuth: []
       summary: List organization API credentials
-      x-forge-metal-iam:
+      x-verself-iam:
         action: list
         audit_event: identity.api_credential.list
         data_classification: restricted
@@ -655,7 +655,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Create an API credential
-      x-forge-metal-iam:
+      x-verself-iam:
         action: create
         audit_event: identity.api_credential.create
         data_classification: restricted
@@ -682,12 +682,12 @@ paths:
             maxLength: 128
             minLength: 1
             type: string
-        - description: Forge Metal API credential ID
+        - description: Verself API credential ID
           in: path
           name: credential_id
           required: true
           schema:
-            description: Forge Metal API credential ID
+            description: Verself API credential ID
             type: string
       responses:
         "200":
@@ -705,7 +705,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Revoke an API credential
-      x-forge-metal-iam:
+      x-verself-iam:
         action: revoke
         audit_event: identity.api_credential.revoke
         data_classification: restricted
@@ -723,12 +723,12 @@ paths:
     get:
       operationId: get-api-credential
       parameters:
-        - description: Forge Metal API credential ID
+        - description: Verself API credential ID
           in: path
           name: credential_id
           required: true
           schema:
-            description: Forge Metal API credential ID
+            description: Verself API credential ID
             type: string
       responses:
         "200":
@@ -746,7 +746,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Get API credential metadata
-      x-forge-metal-iam:
+      x-verself-iam:
         action: read
         audit_event: identity.api_credential.read
         data_classification: restricted
@@ -771,12 +771,12 @@ paths:
             maxLength: 128
             minLength: 1
             type: string
-        - description: Forge Metal API credential ID
+        - description: Verself API credential ID
           in: path
           name: credential_id
           required: true
           schema:
-            description: Forge Metal API credential ID
+            description: Verself API credential ID
             type: string
       requestBody:
         content:
@@ -800,7 +800,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Roll API credential secret material
-      x-forge-metal-iam:
+      x-verself-iam:
         action: roll
         audit_event: identity.api_credential.roll
         data_classification: restricted
@@ -834,7 +834,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Get organization member capabilities and the static capability catalog
-      x-forge-metal-iam:
+      x-verself-iam:
         action: read
         audit_event: identity.organization.member_capabilities.read
         data_classification: restricted
@@ -880,7 +880,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Replace the organization's enabled member capability set
-      x-forge-metal-iam:
+      x-verself-iam:
         action: write
         audit_event: identity.organization.member_capabilities.write
         data_classification: restricted
@@ -914,7 +914,7 @@ paths:
       security:
         - bearerAuth: []
       summary: List organization members
-      x-forge-metal-iam:
+      x-verself-iam:
         action: list
         audit_event: identity.organization.member.list
         data_classification: restricted
@@ -960,7 +960,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Invite an organization member
-      x-forge-metal-iam:
+      x-verself-iam:
         action: invite
         audit_event: identity.organization.member.invite
         data_classification: restricted
@@ -1016,7 +1016,7 @@ paths:
       security:
         - bearerAuth: []
       summary: Update organization member roles
-      x-forge-metal-iam:
+      x-verself-iam:
         action: write
         audit_event: identity.organization.member.roles.write
         data_classification: restricted

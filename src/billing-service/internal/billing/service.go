@@ -14,8 +14,8 @@ import (
 	"github.com/stripe/stripe-go/v85"
 	"go.opentelemetry.io/otel"
 
-	"github.com/forge-metal/billing-service/internal/billing/ledger"
-	"github.com/forge-metal/billing-service/internal/store"
+	"github.com/verself/billing-service/internal/billing/ledger"
+	"github.com/verself/billing-service/internal/store"
 )
 
 var tracer = otel.Tracer("billing-service/internal/billing")

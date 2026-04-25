@@ -1,6 +1,6 @@
 import { useLiveQuery } from "@tanstack/react-db";
 import { useMemo } from "react";
-import { useSignedInAuth } from "@forge-metal/auth-web/react";
+import { useSignedInAuth } from "@verself/auth-web/react";
 import { createExecutionLogsCollection, createExecutionsCollection } from "~/lib/collections";
 
 export function useExecutionRows(orgId: string) {

@@ -212,9 +212,9 @@ func (s *Service) CreateBucket(ctx context.Context, input CreateBucketInput) (Bu
 	}
 
 	span.SetAttributes(
-		attribute.String("forge_metal.org_id", bucket.OrgID),
-		attribute.String("forge_metal.bucket_id", bucket.BucketID.String()),
-		attribute.String("forge_metal.bucket_name", bucket.BucketName),
+		attribute.String("verself.org_id", bucket.OrgID),
+		attribute.String("verself.bucket_id", bucket.BucketID.String()),
+		attribute.String("verself.bucket_name", bucket.BucketName),
 	)
 	return bucket, nil
 }
@@ -685,7 +685,7 @@ func (s *Service) RecordAccessEvent(ctx context.Context, event ObjectAccessEvent
 	event.Environment = firstNonEmpty(s.Config.Environment, event.Environment)
 	event.ServiceVersion = firstNonEmpty(s.Config.ServiceVersion, event.ServiceVersion)
 	event.WriterInstanceID = firstNonEmpty(s.Config.WriterInstanceID, event.WriterInstanceID)
-	batch, err := s.CH.PrepareBatch(ctx, "INSERT INTO forge_metal.object_access_events")
+	batch, err := s.CH.PrepareBatch(ctx, "INSERT INTO verself.object_access_events")
 	if err != nil {
 		return fmt.Errorf("prepare object access event batch: %w", err)
 	}

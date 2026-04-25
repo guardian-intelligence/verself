@@ -12,8 +12,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stripe/stripe-go/v85"
 
-	"github.com/forge-metal/billing-service/internal/billing/ledger"
-	"github.com/forge-metal/billing-service/internal/store"
+	"github.com/verself/billing-service/internal/billing/ledger"
+	"github.com/verself/billing-service/internal/store"
 )
 
 type planEntitlementPolicy struct {
@@ -1074,20 +1074,20 @@ func prorateCents(cents uint64, remaining time.Duration, period time.Duration) u
 
 func allocateDocumentNumberTx(ctx context.Context, tx pgx.Tx, issuedAt time.Time) (string, error) {
 	year := issuedAt.UTC().Year()
-	_, err := tx.Exec(ctx, `INSERT INTO document_number_allocators (issuer_id, document_year, prefix, next_number) VALUES ('forge-metal', $1, 'FM', 1) ON CONFLICT (issuer_id, document_year) DO NOTHING`, year)
+	_, err := tx.Exec(ctx, `INSERT INTO document_number_allocators (issuer_id, document_year, prefix, next_number) VALUES ('verself', $1, 'VS', 1) ON CONFLICT (issuer_id, document_year) DO NOTHING`, year)
 	if err != nil {
 		return "", fmt.Errorf("ensure document allocator: %w", err)
 	}
 	var next int64
-	err = tx.QueryRow(ctx, `SELECT next_number FROM document_number_allocators WHERE issuer_id = 'forge-metal' AND document_year = $1 FOR UPDATE`, year).Scan(&next)
+	err = tx.QueryRow(ctx, `SELECT next_number FROM document_number_allocators WHERE issuer_id = 'verself' AND document_year = $1 FOR UPDATE`, year).Scan(&next)
 	if err != nil {
 		return "", fmt.Errorf("lock document allocator: %w", err)
 	}
-	_, err = tx.Exec(ctx, `UPDATE document_number_allocators SET next_number = next_number + 1 WHERE issuer_id = 'forge-metal' AND document_year = $1`, year)
+	_, err = tx.Exec(ctx, `UPDATE document_number_allocators SET next_number = next_number + 1 WHERE issuer_id = 'verself' AND document_year = $1`, year)
 	if err != nil {
 		return "", fmt.Errorf("advance document allocator: %w", err)
 	}
-	return fmt.Sprintf("FM-%d-%06d", year, next), nil
+	return fmt.Sprintf("VS-%d-%06d", year, next), nil
 }
 
 func normalizeTimePtr(value *time.Time) *time.Time {

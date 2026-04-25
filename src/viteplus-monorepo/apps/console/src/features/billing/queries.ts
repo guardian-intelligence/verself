@@ -1,6 +1,6 @@
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { trace } from "@opentelemetry/api";
-import { authQueryKey, type AuthenticatedAuth } from "@forge-metal/auth-web/isomorphic";
+import { authQueryKey, type AuthenticatedAuth } from "@verself/auth-web/isomorphic";
 import { getContracts, getEntitlements, getPlans, getStatement } from "~/server-fns/api";
 import { deriveBillingAccount, type BillingSnapshot } from "./state";
 

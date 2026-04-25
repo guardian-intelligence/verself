@@ -1,7 +1,7 @@
 [Unit]
 Description=OpenTelemetry Collector
-After=forge-metal-firewall.target network.target clickhouse-server.service spire-agent.service otelcol-clickhouse-spiffe-helper.service
-Requires=forge-metal-firewall.target
+After=verself-firewall.target network.target clickhouse-server.service spire-agent.service otelcol-clickhouse-spiffe-helper.service
+Requires=verself-firewall.target
 Wants=clickhouse-server.service spire-agent.service otelcol-clickhouse-spiffe-helper.service
 
 [Service]
@@ -9,8 +9,8 @@ Type=simple
 User={{ otelcol_system_user }}
 Group={{ otelcol_system_group }}
 SupplementaryGroups={{ ([spire_workload_group] + otelcol_log_reader_groups) | join(' ') }}
-ExecStartPre={{ fm_bin }}/spiffe-helper -daemon-mode=false -config {{ otelcol_clickhouse_helper_config_path }}
-ExecStart={{ fm_bin }}/otelcol-contrib --config /etc/otelcol/config.yaml
+ExecStartPre={{ verself_bin }}/spiffe-helper -daemon-mode=false -config {{ otelcol_clickhouse_helper_config_path }}
+ExecStart={{ verself_bin }}/otelcol-contrib --config /etc/otelcol/config.yaml
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true

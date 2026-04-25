@@ -6,9 +6,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/forge-metal/apiwire"
-	"github.com/forge-metal/mailbox-service/internal/app"
-	mailboxsync "github.com/forge-metal/mailbox-service/internal/sync"
+	"github.com/verself/apiwire"
+	"github.com/verself/mailbox-service/internal/app"
+	mailboxsync "github.com/verself/mailbox-service/internal/sync"
 )
 
 type mailboxServiceHealthOutput struct {

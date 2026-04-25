@@ -1,7 +1,7 @@
 ---
 - name: Verify nats-server binary exists in profile
   ansible.builtin.stat:
-    path: "{{ fm_bin }}/nats-server"
+    path: "{{ verself_bin }}/nats-server"
   register: nats_binary
   failed_when: not nats_binary.stat.exists
 
@@ -36,9 +36,9 @@
 - name: Read NATS SPIRE registration
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry show
+      {{ verself_bin }}/spire-server entry show
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-nats
+      -entryID verself-nats
       -output json
   register: nats_spire_entry
   failed_when: false
@@ -47,14 +47,14 @@
 - name: Register NATS SPIFFE workload
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry create
+      {{ verself_bin }}/spire-server entry create
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-nats
+      -entryID verself-nats
       -parentID {{ spire_agent_id }}
       -spiffeID {{ spire_nats_id }}
       -selector unix:uid:{{ nats_uid.stdout | trim }}
       -x509SVIDTTL 3600
-  when: nats_spire_entry.rc != 0 or 'forge-metal-nats' not in nats_spire_entry.stdout
+  when: nats_spire_entry.rc != 0 or 'verself-nats' not in nats_spire_entry.stdout
   changed_when: true
   notify:
     - restart nats-spiffe-helper
@@ -63,9 +63,9 @@
 - name: Update NATS SPIRE workload selector drift
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry update
+      {{ verself_bin }}/spire-server entry update
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-nats
+      -entryID verself-nats
       -parentID {{ spire_agent_id }}
       -spiffeID {{ spire_nats_id }}
       -selector unix:uid:{{ nats_uid.stdout | trim }}

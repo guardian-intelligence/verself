@@ -22,7 +22,7 @@
 
 - name: Verify TigerBeetle binary exists in profile
   ansible.builtin.stat:
-    path: "{{ fm_bin }}/tigerbeetle"
+    path: "{{ verself_bin }}/tigerbeetle"
   register: tigerbeetle_binary
   failed_when: not tigerbeetle_binary.stat.exists
 
@@ -30,7 +30,7 @@
 
 - name: Capture TigerBeetle version
   ansible.builtin.command:
-    cmd: "{{ fm_bin }}/tigerbeetle version"
+    cmd: "{{ verself_bin }}/tigerbeetle version"
   register: tigerbeetle_version_output
   changed_when: false
 
@@ -61,7 +61,7 @@
 - name: Format TigerBeetle data file
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/tigerbeetle format
+      {{ verself_bin }}/tigerbeetle format
       --cluster={{ tigerbeetle_cluster_id }}
       --replica={{ tigerbeetle_replica_id }}
       --replica-count={{ tigerbeetle_replica_count }}
@@ -78,14 +78,14 @@
     content: |
       [Unit]
       Description=TigerBeetle
-      After=forge-metal-firewall.target network.target
-      Requires=forge-metal-firewall.target
+      After=verself-firewall.target network.target
+      Requires=verself-firewall.target
 
       [Service]
       Type=simple
       User=tigerbeetle
       Group=tigerbeetle
-      ExecStart={{ fm_bin }}/tigerbeetle start \
+      ExecStart={{ verself_bin }}/tigerbeetle start \
         --addresses={{ services.tigerbeetle.host }}:{{ services.tigerbeetle.port }} \
         --experimental \
         --statsd={{ services.otelcol.host }}:{{ services.otelcol.statsd_port }} \
@@ -171,14 +171,14 @@
       print("FAIL: REPL client did not connect within 8s")
       print(output.decode("utf-8", errors="replace"))
       sys.exit(1)
-    dest: /opt/forge-metal/tigerbeetle-health.py
+    dest: /opt/verself/tigerbeetle-health.py
     mode: "0755"
 
 - name: Verify REPL client can connect to TigerBeetle server
   ansible.builtin.command:
     cmd: >-
-      python3 /opt/forge-metal/tigerbeetle-health.py
-      {{ fm_bin }}/tigerbeetle
+      python3 /opt/verself/tigerbeetle-health.py
+      {{ verself_bin }}/tigerbeetle
       {{ tigerbeetle_cluster_id }}
       {{ services.tigerbeetle.host }}:{{ services.tigerbeetle.port }}
   register: tigerbeetle_connection_test

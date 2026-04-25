@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/forge-metal/notifications-service/internal/api"
+	"github.com/verself/notifications-service/internal/api"
 )
 
 func main() {

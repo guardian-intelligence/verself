@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/forge-metal/vm-orchestrator/vmproto"
+	"github.com/verself/vm-orchestrator/vmproto"
 )
 
 const bridgeClientTimeout = 30 * time.Second
@@ -63,7 +63,7 @@ func runSnapshotCLI(args []string, stdout io.Writer) error {
 }
 
 func sendLocalCheckpointRequest(req vmproto.CheckpointRequest) (vmproto.CheckpointResponse, error) {
-	socketPath := strings.TrimSpace(os.Getenv("FORGE_METAL_VM_BRIDGE_SOCKET"))
+	socketPath := strings.TrimSpace(os.Getenv("VERSELF_VM_BRIDGE_SOCKET"))
 	if socketPath == "" {
 		socketPath = bridgeSocketPath
 	}

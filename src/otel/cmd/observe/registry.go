@@ -518,7 +518,7 @@ var queryDocs = []queryDoc{
 		},
 		Examples: []string{
 			"make observe WHAT=deploy",
-			"make observe WHAT=deploy RUN_KEY=2026-04-17.000017@rust-forge-01",
+			"make observe WHAT=deploy RUN_KEY=2026-04-17.000017@vs-dev-w0",
 		},
 		Next: []string{
 			"make observe WHAT=catalog SIGNAL=deploys",
@@ -622,7 +622,7 @@ func handleStatic(cfg config) (bool, error) {
 
 func printIndex(cfg config) error {
 	index := staticIndex{
-		Title:    "Forge Metal Observe",
+		Title:    "Verself Observe",
 		Purpose:  "Discover the telemetry vocabulary before running operational queries.",
 		Families: sortedFamilies(),
 		StartHere: []string{

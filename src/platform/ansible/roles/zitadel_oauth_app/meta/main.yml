@@ -2,7 +2,7 @@
 dependencies: []
 
 galaxy_info:
-  author: forge-metal
+  author: verself
   description: >-
     Provision a Zitadel OIDC application end-to-end — search/create project,
     detect drift against desired OIDC config, create or recreate the app,

@@ -17,7 +17,7 @@
     postgresql_db_reset_database_was_dropped: false
 
 - name: Probe PostgreSQL database reset client unit state
-  fm_systemd_status:
+  verself_systemd_status:
     unit: "{{ item }}"
   loop: "{{ postgresql_db_reset_stop_units }}"
   loop_control:

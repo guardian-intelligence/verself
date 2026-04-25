@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/forge-metal/mailbox-service/internal/jmap"
-	"github.com/forge-metal/mailbox-service/internal/mailstore"
+	"github.com/verself/mailbox-service/internal/jmap"
+	"github.com/verself/mailbox-service/internal/mailstore"
 )
 
 type Config struct {

@@ -16,7 +16,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/forge-metal/source-code-hosting-service/internal/source"
+	"github.com/verself/source-code-hosting-service/internal/source"
 )
 
 type Config struct {
@@ -45,6 +45,10 @@ type createRepositoryInput struct {
 	Body CreateRepositoryRequest
 }
 
+type listRepositoriesInput struct {
+	ProjectID string `query:"project_id,omitempty" format:"uuid"`
+}
+
 type createGitCredentialInput struct {
 	Body CreateGitCredentialRequest
 }
@@ -69,7 +73,7 @@ type internalCreateWorkflowRunInput struct {
 
 type checkoutArchiveInput struct {
 	GrantID string `path:"grant_id" format:"uuid"`
-	Token   string `header:"X-Forge-Metal-Checkout-Token" required:"true"`
+	Token   string `header:"X-Verself-Checkout-Token" required:"true"`
 }
 
 type repositoryOutput struct {
@@ -369,6 +373,7 @@ func RegisterInternalRoutes(api huma.API, cfg Config) {
 func createRepository(svc *source.Service) func(context.Context, source.Principal, *createRepositoryInput) (*repositoryOutput, error) {
 	return func(ctx context.Context, principal source.Principal, input *createRepositoryInput) (*repositoryOutput, error) {
 		repo, err := svc.CreateRepository(ctx, principal, source.CreateRepositoryRequest{
+			ProjectID:     input.Body.ProjectID,
 			Name:          input.Body.Name,
 			Description:   input.Body.Description,
 			DefaultBranch: input.Body.DefaultBranch,
@@ -393,9 +398,17 @@ func createGitCredential(svc *source.Service) func(context.Context, source.Princ
 	}
 }
 
-func listRepositories(svc *source.Service) func(context.Context, source.Principal, *struct{}) (*repositoryListOutput, error) {
-	return func(ctx context.Context, principal source.Principal, _ *struct{}) (*repositoryListOutput, error) {
-		repos, err := svc.ListRepositories(ctx, principal)
+func listRepositories(svc *source.Service) func(context.Context, source.Principal, *listRepositoriesInput) (*repositoryListOutput, error) {
+	return func(ctx context.Context, principal source.Principal, input *listRepositoriesInput) (*repositoryListOutput, error) {
+		var projectID uuid.UUID
+		if input.ProjectID != "" {
+			parsed, err := uuid.Parse(input.ProjectID)
+			if err != nil {
+				return nil, badRequest(ctx, "invalid-project-id", "project_id must be a UUID", err)
+			}
+			projectID = parsed
+		}
+		repos, err := svc.ListRepositories(ctx, principal, projectID)
 		if err != nil {
 			return nil, sourceError(ctx, err)
 		}
@@ -481,6 +494,7 @@ func createWorkflowRun(svc *source.Service) func(context.Context, source.Princip
 		}
 		run, err := svc.DispatchWorkflow(ctx, principal, source.WorkflowDispatchRequest{
 			RepoID:         repoID,
+			ProjectID:      input.Body.ProjectID,
 			WorkflowPath:   input.Body.WorkflowPath,
 			Ref:            input.Body.Ref,
 			Inputs:         input.Body.Inputs,
@@ -531,6 +545,7 @@ func internalCreateWorkflowRun(svc *source.Service) func(context.Context, source
 			OrgID:          orgID,
 			ActorID:        input.Body.ActorID,
 			RepoID:         input.Body.RepoID,
+			ProjectID:      input.Body.ProjectID,
 			WorkflowPath:   input.Body.WorkflowPath,
 			Ref:            input.Body.Ref,
 			Inputs:         input.Body.Inputs,

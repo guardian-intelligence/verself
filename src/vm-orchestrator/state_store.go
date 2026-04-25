@@ -16,7 +16,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const defaultStateDBPath = "/var/lib/forge-metal/vm-orchestrator/state.db"
+const defaultStateDBPath = "/var/lib/verself/vm-orchestrator/state.db"
 
 var (
 	errLeaseExists        = errors.New("lease already exists")

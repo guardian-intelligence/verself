@@ -1,7 +1,7 @@
 [Unit]
-Description=Forge Metal Platform Docs Frontend (TanStack Start)
-After=forge-metal-firewall.target network.target
-Requires=forge-metal-firewall.target
+Description=Verself Platform Docs Frontend (TanStack Start)
+After=verself-firewall.target network.target
+Requires=verself-firewall.target
 
 [Service]
 Type=simple
@@ -9,10 +9,10 @@ User={{ platform_runtime_user }}
 Group={{ platform_runtime_group }}
 WorkingDirectory={{ platform_app_dir }}
 EnvironmentFile=/etc/platform/env
-ExecStart={{ fm_bin }}/node --import ./instrumentation.mts .output/server/index.mjs
+ExecStart={{ verself_bin }}/node --import ./instrumentation.mts .output/server/index.mjs
 Restart=on-failure
 RestartSec=5
-Environment=PATH={{ fm_bin }}:/usr/bin:/bin
+Environment=PATH={{ verself_bin }}:/usr/bin:/bin
 Environment=HOME={{ platform_state_dir }}
 CapabilityBoundingSet=
 ProtectHome=true

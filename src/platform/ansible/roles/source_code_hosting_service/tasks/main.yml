@@ -1,7 +1,7 @@
 ---
 - name: Verify source-code-hosting-service binary exists in profile
   ansible.builtin.stat:
-    path: "{{ fm_bin }}/source-code-hosting-service"
+    path: "{{ verself_bin }}/source-code-hosting-service"
   register: source_code_hosting_service_binary
   failed_when: not source_code_hosting_service_binary.stat.exists
 
@@ -35,9 +35,9 @@
 - name: Read source-code-hosting-service SPIRE registration
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry show
+      {{ verself_bin }}/spire-server entry show
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-source-code-hosting-service
+      -entryID verself-source-code-hosting-service
       -output json
   register: source_code_hosting_service_spire_entry
   failed_when: false
@@ -46,23 +46,23 @@
 - name: Register source-code-hosting-service SPIFFE workload
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry create
+      {{ verself_bin }}/spire-server entry create
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-source-code-hosting-service
+      -entryID verself-source-code-hosting-service
       -parentID {{ spire_agent_id }}
       -spiffeID {{ spire_source_code_hosting_service_id }}
       -selector unix:uid:{{ source_code_hosting_service_uid.stdout | trim }}
       -x509SVIDTTL 3600
-  when: source_code_hosting_service_spire_entry.rc != 0 or 'forge-metal-source-code-hosting-service' not in source_code_hosting_service_spire_entry.stdout
+  when: source_code_hosting_service_spire_entry.rc != 0 or 'verself-source-code-hosting-service' not in source_code_hosting_service_spire_entry.stdout
   changed_when: true
   notify: restart source-code-hosting-service
 
 - name: Update source-code-hosting-service SPIRE workload selector drift
   ansible.builtin.command:
     cmd: >-
-      {{ fm_bin }}/spire-server entry update
+      {{ verself_bin }}/spire-server entry update
       -socketPath {{ spire_server_socket_path }}
-      -entryID forge-metal-source-code-hosting-service
+      -entryID verself-source-code-hosting-service
       -parentID {{ spire_agent_id }}
       -spiffeID {{ spire_source_code_hosting_service_id }}
       -selector unix:uid:{{ source_code_hosting_service_uid.stdout | trim }}
@@ -115,7 +115,7 @@
     method: POST
     headers:
       Authorization: "Bearer {{ source_code_hosting_service_zitadel_admin_pat }}"
-      Host: "auth.{{ forge_metal_domain }}"
+      Host: "auth.{{ verself_domain }}"
     body_format: json
     body:
       queries:
@@ -154,17 +154,17 @@
     content: |
       [Unit]
       Description=Source Code Hosting Service
-      After=forge-metal-firewall.target network.target
-      After=postgresql.service zitadel.service spire-agent.service forgejo.service secrets-service.service
-      Requires=forge-metal-firewall.target
-      Wants=postgresql.service zitadel.service spire-agent.service forgejo.service secrets-service.service
+      After=verself-firewall.target network.target
+      After=postgresql.service zitadel.service spire-agent.service forgejo.service secrets-service.service projects-service.service
+      Requires=verself-firewall.target
+      Wants=postgresql.service zitadel.service spire-agent.service forgejo.service secrets-service.service projects-service.service
 
       [Service]
       Type=simple
       User=source_code_hosting_service
       Group=source_code_hosting_service
       SupplementaryGroups={{ spire_workload_group }}
-      BindReadOnlyPaths=/etc/forge-metal/auth-discovery-hosts:/etc/hosts
+      BindReadOnlyPaths=/etc/verself/auth-discovery-hosts:/etc/hosts
       Environment=SOURCE_LISTEN_ADDR={{ services.source_code_hosting_service.host }}:{{ services.source_code_hosting_service.port }}
       Environment=SOURCE_INTERNAL_LISTEN_ADDR={{ services.source_code_hosting_service.host }}:{{ services.source_code_hosting_service.internal_port }}
       Environment=SOURCE_PG_DSN=postgres://source_code_hosting_service@/source_code_hosting?host=/var/run/postgresql&sslmode=disable
@@ -175,13 +175,14 @@
       Environment=SOURCE_FORGEJO_OWNER={{ source_code_hosting_service_forgejo_username }}
       Environment=SOURCE_SANDBOX_INTERNAL_URL=https://{{ services.sandbox_rental.host }}:{{ services.sandbox_rental.internal_port }}
       Environment=SOURCE_SECRETS_INTERNAL_URL=https://{{ services.secrets_service.host }}:{{ services.secrets_service.internal_port }}
+      Environment=SOURCE_PROJECTS_INTERNAL_URL=https://{{ services.projects_service.host }}:{{ services.projects_service.internal_port }}
       Environment=SOURCE_PUBLIC_BASE_URL=https://{{ source_code_hosting_service_domain }}
       Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}
       Environment=OTEL_SERVICE_NAME=source-code-hosting-service
       Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}
       LoadCredential=forgejo-token:/etc/credstore/forgejo/automation-token
       LoadCredential=webhook-secret:/etc/credstore/source-code-hosting-service/webhook-secret
-      ExecStart={{ fm_bin }}/source-code-hosting-service
+      ExecStart={{ verself_bin }}/source-code-hosting-service
       Restart=on-failure
       RestartSec=5
       CapabilityBoundingSet=

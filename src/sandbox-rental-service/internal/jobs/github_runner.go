@@ -19,8 +19,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/forge-metal/apiwire"
-	"github.com/forge-metal/sandbox-rental-service/internal/scheduler"
+	"github.com/verself/apiwire"
+	"github.com/verself/sandbox-rental-service/internal/scheduler"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -636,12 +636,12 @@ func (r *GitHubRunner) execEnv(ctx context.Context, executionID, attemptID uuid.
 		return nil
 	}
 	return map[string]string{
-		"FORGE_METAL_GITHUB_JIT_TOKEN": r.deriveJITFetchToken(allocationID, attemptID),
-		"FORGE_METAL_GITHUB_JIT_PATH":  githubJITConfigFetchPath,
-		"FORGE_METAL_STICKY_TOKEN":     r.deriveStickyDiskToken(executionID, attemptID),
-		"FORGE_METAL_STICKY_PATH":      githubStickyDiskPath,
-		"FORGE_METAL_CHECKOUT_TOKEN":   r.deriveCheckoutToken(executionID, attemptID),
-		"FORGE_METAL_CHECKOUT_PATH":    githubCheckoutPath,
+		"VERSELF_GITHUB_JIT_TOKEN": r.deriveJITFetchToken(allocationID, attemptID),
+		"VERSELF_GITHUB_JIT_PATH":  githubJITConfigFetchPath,
+		"VERSELF_STICKY_TOKEN":     r.deriveStickyDiskToken(executionID, attemptID),
+		"VERSELF_STICKY_PATH":      githubStickyDiskPath,
+		"VERSELF_CHECKOUT_TOKEN":   r.deriveCheckoutToken(executionID, attemptID),
+		"VERSELF_CHECKOUT_PATH":    githubCheckoutPath,
 	}
 }
 
@@ -874,7 +874,7 @@ func (r *GitHubRunner) githubRequest(ctx context.Context, method, path, bearer s
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", githubAPIVersion)
-	req.Header.Set("User-Agent", "forge-metal-sandbox-rental")
+	req.Header.Set("User-Agent", "verself-sandbox-rental")
 	req.Header.Set("Authorization", "Bearer "+bearer)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -897,7 +897,7 @@ func (r *GitHubRunner) githubRequest(ctx context.Context, method, path, bearer s
 }
 
 func (r *GitHubRunner) deriveJITFetchToken(allocationID, attemptID uuid.UUID) string {
-	mac := hmac.New(sha256.New, []byte("forge-metal-github-jit:"+r.cfg.WebhookSecret))
+	mac := hmac.New(sha256.New, []byte("verself-github-jit:"+r.cfg.WebhookSecret))
 	mac.Write([]byte(allocationID.String()))
 	mac.Write([]byte(":"))
 	mac.Write([]byte(attemptID.String()))
@@ -905,7 +905,7 @@ func (r *GitHubRunner) deriveJITFetchToken(allocationID, attemptID uuid.UUID) st
 }
 
 func (r *GitHubRunner) deriveStickyDiskToken(executionID, attemptID uuid.UUID) string {
-	mac := hmac.New(sha256.New, []byte("forge-metal-sticky-disk:"+r.cfg.WebhookSecret))
+	mac := hmac.New(sha256.New, []byte("verself-sticky-disk:"+r.cfg.WebhookSecret))
 	mac.Write([]byte(executionID.String()))
 	mac.Write([]byte(":"))
 	mac.Write([]byte(attemptID.String()))
@@ -913,7 +913,7 @@ func (r *GitHubRunner) deriveStickyDiskToken(executionID, attemptID uuid.UUID) s
 }
 
 func (r *GitHubRunner) deriveCheckoutToken(executionID, attemptID uuid.UUID) string {
-	mac := hmac.New(sha256.New, []byte("forge-metal-checkout:"+r.cfg.WebhookSecret))
+	mac := hmac.New(sha256.New, []byte("verself-checkout:"+r.cfg.WebhookSecret))
 	mac.Write([]byte(executionID.String()))
 	mac.Write([]byte(":"))
 	mac.Write([]byte(attemptID.String()))
@@ -952,7 +952,7 @@ func githubRunnerName(githubJobID int64, allocationID uuid.UUID) string {
 	if len(shortID) > 10 {
 		shortID = shortID[:10]
 	}
-	return fmt.Sprintf("forge-metal-%d-%s", githubJobID, shortID)
+	return fmt.Sprintf("verself-%d-%s", githubJobID, shortID)
 }
 
 func githubRunnerCommand() string {
@@ -961,13 +961,13 @@ jit_file="$(mktemp)"
 header_file="$(mktemp)"
 cleanup() { rm -f "$jit_file" "$header_file"; }
 trap cleanup EXIT
-printf 'header = "X-Forge-Metal-Runner-Bootstrap: %s"\n' "${FORGE_METAL_GITHUB_JIT_TOKEN:?}" > "$header_file"
-if [ -n "${FORGE_METAL_TRACEPARENT:-}" ]; then
-  printf 'header = "traceparent: %s"\n' "$FORGE_METAL_TRACEPARENT" >> "$header_file"
+printf 'header = "X-Verself-Runner-Bootstrap: %s"\n' "${VERSELF_GITHUB_JIT_TOKEN:?}" > "$header_file"
+if [ -n "${VERSELF_TRACEPARENT:-}" ]; then
+  printf 'header = "traceparent: %s"\n' "$VERSELF_TRACEPARENT" >> "$header_file"
 fi
-curl -fsS --retry 3 --retry-delay 1 --config "$header_file" "${FORGE_METAL_HOST_SERVICE_HTTP_ORIGIN:?}${FORGE_METAL_GITHUB_JIT_PATH:?}" -o "$jit_file"
-unset FORGE_METAL_TRACEPARENT
-unset FORGE_METAL_GITHUB_JIT_TOKEN
+curl -fsS --retry 3 --retry-delay 1 --config "$header_file" "${VERSELF_HOST_SERVICE_HTTP_ORIGIN:?}${VERSELF_GITHUB_JIT_PATH:?}" -o "$jit_file"
+unset VERSELF_TRACEPARENT
+unset VERSELF_GITHUB_JIT_TOKEN
 cd /opt/actions-runner
 rm -rf _work
 ln -s /workspace _work

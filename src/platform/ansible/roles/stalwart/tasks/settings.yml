@@ -6,7 +6,7 @@
 - name: Push database settings via stalwart-cli
   ansible.builtin.command:
     argv:
-      - "{{ fm_bin }}/stalwart-cli"
+      - "{{ verself_bin }}/stalwart-cli"
       - -u
       - "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}"
       - server
@@ -37,7 +37,7 @@
 - name: Remove obsolete Stalwart relay and Sieve settings
   ansible.builtin.command:
     argv:
-      - "{{ fm_bin }}/stalwart-cli"
+      - "{{ verself_bin }}/stalwart-cli"
       - -u
       - "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}"
       - server
@@ -63,7 +63,7 @@
 - name: Reload Stalwart configuration after settings update
   ansible.builtin.command:
     argv:
-      - "{{ fm_bin }}/stalwart-cli"
+      - "{{ verself_bin }}/stalwart-cli"
       - -u
       - "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}"
       - server

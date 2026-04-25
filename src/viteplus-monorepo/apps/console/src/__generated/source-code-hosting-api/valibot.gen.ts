@@ -52,11 +52,13 @@ export const vCreateRepositoryRequest = v.strictObject({
   default_branch: v.optional(v.pipe(v.string(), v.maxLength(128))),
   description: v.optional(v.pipe(v.string(), v.maxLength(1024))),
   name: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+  project_id: v.string(),
 });
 
 export const vCreateWorkflowRunRequest = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   inputs: v.optional(v.record(v.string(), v.string())),
+  project_id: v.string(),
   ref: v.optional(v.pipe(v.string(), v.maxLength(255))),
   workflow_path: v.pipe(v.string(), v.minLength(1), v.maxLength(512)),
 });
@@ -120,6 +122,7 @@ export const vRepository = v.strictObject({
   name: v.string(),
   org_id: v.string(),
   org_path: v.string(),
+  project_id: v.string(),
   repo_id: v.string(),
   slug: v.string(),
   state: v.string(),
@@ -160,6 +163,7 @@ export const vWorkflowRun = v.strictObject({
   failure_reason: v.optional(v.string()),
   inputs: v.record(v.string(), v.string()),
   org_id: v.string(),
+  project_id: v.string(),
   ref: v.string(),
   repo_id: v.string(),
   state: v.string(),
@@ -218,10 +222,12 @@ export const vCreateRepositoryRequestWritable = v.strictObject({
   default_branch: v.optional(v.pipe(v.string(), v.maxLength(128))),
   description: v.optional(v.pipe(v.string(), v.maxLength(1024))),
   name: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+  project_id: v.string(),
 });
 
 export const vCreateWorkflowRunRequestWritable = v.strictObject({
   inputs: v.optional(v.record(v.string(), v.string())),
+  project_id: v.string(),
   ref: v.optional(v.pipe(v.string(), v.maxLength(255))),
   workflow_path: v.pipe(v.string(), v.minLength(1), v.maxLength(512)),
 });
@@ -270,6 +276,7 @@ export const vRepositoryWritable = v.strictObject({
   name: v.string(),
   org_id: v.string(),
   org_path: v.string(),
+  project_id: v.string(),
   repo_id: v.string(),
   slug: v.string(),
   state: v.string(),
@@ -295,6 +302,7 @@ export const vWorkflowRunWritable = v.strictObject({
   failure_reason: v.optional(v.string()),
   inputs: v.record(v.string(), v.string()),
   org_id: v.string(),
+  project_id: v.string(),
   ref: v.string(),
   repo_id: v.string(),
   state: v.string(),
@@ -318,6 +326,10 @@ export const vCreateSourceGitCredentialHeaders = v.object({
  * Created
  */
 export const vCreateSourceGitCredentialResponse = vGitCredential;
+
+export const vListSourceRepositoriesQuery = v.object({
+  project_id: v.optional(v.pipe(v.string(), v.uuid())),
+});
 
 /**
  * OK

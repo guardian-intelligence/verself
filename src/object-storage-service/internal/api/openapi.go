@@ -6,8 +6,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
-	"github.com/forge-metal/apiwire"
-	"github.com/forge-metal/object-storage-service/internal/objectstorage"
+	"github.com/verself/apiwire"
+	"github.com/verself/object-storage-service/internal/objectstorage"
 )
 
 type Config struct {

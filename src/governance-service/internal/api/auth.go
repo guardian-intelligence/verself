@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	auth "github.com/forge-metal/auth-middleware"
+	auth "github.com/verself/auth-middleware"
 )
 
 func requireIdentity(ctx context.Context) (*auth.Identity, error) {

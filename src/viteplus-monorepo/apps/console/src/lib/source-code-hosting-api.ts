@@ -4,6 +4,7 @@ import {
   type CreateCheckoutGrantRequestWritable,
   type CreateGitCredentialRequestWritable,
   type CreateRepositoryRequestWritable,
+  type ListSourceRepositoriesData,
   type GetSourceBlobData,
   type GetSourceTreeData,
   type ListSourceWorkflowRunsData,
@@ -28,6 +29,7 @@ import {
   vGetSourceRepositoryPath,
   vGetSourceTreeQuery,
   vGetSourceTreePath,
+  vListSourceRepositoriesQuery,
   vListSourceRefsPath,
   vListSourceWorkflowRunsPath,
   vGitCredential,
@@ -146,12 +148,17 @@ export type CreateCheckoutGrantRequest = v.InferOutput<typeof createCheckoutGran
 export type CreateGitCredentialRequest = v.InferOutput<typeof createGitCredentialRequestSchema>;
 
 export async function listRepositories(
-  options: SourceCodeHostingClientOptions,
+  options: SourceCodeHostingClientOptions & { projectId?: string },
 ): Promise<SourceRepositoryList> {
   const client = createSourceClient(options);
+  const query =
+    options.projectId === undefined
+      ? undefined
+      : v.parse(vListSourceRepositoriesQuery, { project_id: options.projectId });
   const path = "/api/v1/repos";
   const result = await listSourceRepositories({
     client,
+    ...(query ? { query: query as NonNullable<ListSourceRepositoriesData["query"]> } : {}),
     responseStyle: "fields",
     throwOnError: false,
   });

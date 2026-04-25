@@ -841,7 +841,7 @@ CREATE UNIQUE INDEX invoice_adjustments_deterministic_system_idx
 CREATE TABLE document_number_allocators (
     issuer_id     TEXT        NOT NULL CHECK (issuer_id <> ''),
     document_year INTEGER     NOT NULL CHECK (document_year >= 2000),
-    prefix        TEXT        NOT NULL DEFAULT 'FM' CHECK (prefix <> ''),
+    prefix        TEXT        NOT NULL DEFAULT 'VS' CHECK (prefix <> ''),
     next_number   BIGINT      NOT NULL CHECK (next_number > 0),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (issuer_id, document_year)
@@ -858,7 +858,7 @@ CREATE TABLE billing_document_previews (
     document_kind                 TEXT        NOT NULL CHECK (document_kind IN ('invoice', 'statement', 'internal_statement', 'credit_note', 'adjustment_invoice')),
     input_fingerprint             TEXT        NOT NULL CHECK (input_fingerprint <> ''),
     state                         TEXT        NOT NULL CHECK (state IN ('built', 'provider_preview_pending', 'provider_preview_verified', 'failed', 'expired')),
-    forge_metal_snapshot_json     JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    verself_snapshot_json     JSONB       NOT NULL DEFAULT '{}'::jsonb,
     stripe_preview_response_json  JSONB       NOT NULL DEFAULT '{}'::jsonb,
     stripe_preview_expires_at     TIMESTAMPTZ,
     subtotal_units                BIGINT      NOT NULL DEFAULT 0,

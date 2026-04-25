@@ -8,10 +8,10 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/forge-metal/identity-service/internal/identity"
+	"github.com/verself/identity-service/internal/identity"
 )
 
-const problemTypePrefix = "urn:forge-metal:problem:identity:"
+const problemTypePrefix = "urn:verself:problem:identity:"
 
 func problem(ctx context.Context, status int, code, detail string, cause error) error {
 	if cause != nil {
@@ -19,7 +19,7 @@ func problem(ctx context.Context, status int, code, detail string, cause error) 
 	}
 	instance := ""
 	if spanContext := trace.SpanContextFromContext(ctx); spanContext.HasTraceID() {
-		instance = "urn:forge-metal:trace:" + spanContext.TraceID().String()
+		instance = "urn:verself:trace:" + spanContext.TraceID().String()
 	}
 	return &huma.ErrorModel{
 		Type:     problemTypePrefix + code,

@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	sandboxclient "github.com/forge-metal/sandbox-rental-service/internalclient"
+	sandboxclient "github.com/verself/sandbox-rental-service/internalclient"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -48,7 +48,7 @@ func (c RunnerRepositoryClient) RegisterRunnerRepository(ctx context.Context, re
 	}
 	repositoryFullName := strings.TrimSpace(repo.Backend.BackendOwner + "/" + repo.Backend.BackendRepo)
 	span.SetAttributes(
-		attribute.Int64("forge_metal.org_id", int64(repo.OrgID)),
+		attribute.Int64("verself.org_id", int64(repo.OrgID)),
 		attribute.String("source.repo_id", repo.RepoID.String()),
 		attribute.Int64("runner.provider_repository_id", providerRepoID),
 		attribute.String("runner.provider", BackendForgejo),
@@ -57,6 +57,7 @@ func (c RunnerRepositoryClient) RegisterRunnerRepository(ctx context.Context, re
 	resp, err := c.Client.InternalRegisterRunnerRepositoryWithResponse(ctx, sandboxclient.InternalRegisterRunnerRepositoryJSONRequestBody{
 		Provider:             BackendForgejo,
 		OrgId:                fmt.Sprintf("%d", repo.OrgID),
+		ProjectId:            repo.ProjectID.String(),
 		SourceRepositoryId:   &sourceRepositoryID,
 		ProviderOwner:        repo.Backend.BackendOwner,
 		ProviderRepo:         repo.Backend.BackendRepo,

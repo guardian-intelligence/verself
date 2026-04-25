@@ -1,5 +1,5 @@
 // Voice lint. Scans every string export under src/content/** and fails non-zero
-// on any banned word or BuzzFeed hook. Wired into `pnpm -F @forge-metal/company
+// on any banned word or BuzzFeed hook. Wired into `pnpm -F @verself/company
 // lint:voice` and CI.
 //
 // Strategy: dynamic-import each `content/**/*.{ts,mts}` file, walk every

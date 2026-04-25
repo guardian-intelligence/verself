@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { requireOperatorDomain } from "@forge-metal/web-env";
+import { requireOperatorDomain } from "@verself/web-env";
 
 import { ROPA, SUBPROCESSORS } from "~/lib/policy-catalog";
 import {
@@ -21,11 +21,11 @@ export const Route = createFileRoute("/policy/privacy")({
   loader: () => getOperatorDomain(),
   head: () => ({
     meta: [
-      { title: "Privacy Policy — Forge Metal Platform" },
+      { title: "Privacy Policy — Verself Platform" },
       {
         name: "description",
         content:
-          "How Forge Metal handles personal data, the roles it plays under data-protection law, and the rights of data subjects.",
+          "How Verself handles personal data, the roles it plays under data-protection law, and the rights of data subjects.",
       },
     ],
   }),
@@ -82,8 +82,8 @@ function Roles() {
       <SectionHeading id="roles">Roles under data-protection law</SectionHeading>
       <Prose>
         <p>
-          Forge Metal plays two distinct roles under GDPR, UK GDPR, the California CPRA, and
-          comparable laws:
+          Verself plays two distinct roles under GDPR, UK GDPR, the California CPRA, and comparable
+          laws:
         </p>
         <ul>
           <li>
@@ -221,15 +221,15 @@ function DSRSection() {
           portability, and an objection to processing based on legitimate interests.
         </p>
         <p>
-          Where Forge Metal is the <strong>controller</strong> (billing contacts, organization
+          Where Verself is the <strong>controller</strong> (billing contacts, organization
           administrators, support correspondence), send requests to the privacy mailbox below. We
           respond within 30 days under GDPR and 45 days under CPRA, with extensions only where the
           statute permits.
         </p>
         <p>
-          Where Forge Metal is the <strong>processor</strong> (workload data your organization
-          processes about its end users), direct requests to the customer. If we receive one
-          directly we forward it and cooperate with the response.
+          Where Verself is the <strong>processor</strong> (workload data your organization processes
+          about its end users), direct requests to the customer. If we receive one directly we
+          forward it and cooperate with the response.
         </p>
       </Prose>
     </section>
@@ -242,7 +242,7 @@ function InternationalTransfers() {
       <SectionHeading id="transfers">International transfers</SectionHeading>
       <Prose>
         <p>
-          The primary Forge Metal deployment runs on bare-metal hardware in the region chosen by the
+          The primary Verself deployment runs on bare-metal hardware in the region chosen by the
           founder. Some subprocessors process data in the United States and other regions as listed
           on <a href="/policy/subprocessors">/policy/subprocessors</a>.
         </p>
@@ -283,7 +283,7 @@ function RegionalSupplements() {
         <p>
           <strong>Brazil (LGPD), Canada (PIPEDA).</strong> Rights under these statutes are honored
           on the same DSR pipeline. Where the statute requires a local representative, the Forge
-          Metal entity named on your invoice serves that role or designates one in writing.
+          Verself entity named on your invoice serves that role or designates one in writing.
         </p>
       </Prose>
     </section>

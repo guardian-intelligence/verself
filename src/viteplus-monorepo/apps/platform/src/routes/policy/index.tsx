@@ -7,10 +7,10 @@ export const Route = createFileRoute("/policy/")({
   component: PolicyOverview,
   head: () => ({
     meta: [
-      { title: "Policy — Forge Metal Platform" },
+      { title: "Policy — Verself Platform" },
       {
         name: "description",
-        content: "Customer-facing policy documents for the Forge Metal platform.",
+        content: "Customer-facing policy documents for the Verself platform.",
       },
     ],
   }),
@@ -93,9 +93,9 @@ function PolicyOverview() {
         </p>
         <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Policy</h1>
         <p className="max-w-2xl text-sm leading-6 text-muted-foreground md:text-base md:leading-7">
-          Forge Metal's commitments to customers about how we handle your data, your account, and
-          the services we run on your behalf. Every document below applies to every organization on
-          this deployment, including our own. Prior versions and the diff that took them live are at{" "}
+          Verself's commitments to customers about how we handle your data, your account, and the
+          services we run on your behalf. Every document below applies to every organization on this
+          deployment, including our own. Prior versions and the diff that took them live are at{" "}
           <Link to="/policy/changelog">/policy/changelog</Link>.
         </p>
       </header>

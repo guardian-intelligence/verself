@@ -20,7 +20,7 @@ export const contact = {
     {
       name: "Sales",
       email: "sales@guardianintelligence.org",
-      note: "You want to run real work on Metal Platform.",
+      note: "You want to run real work on Verself Platform.",
     },
     {
       name: "Press",
@@ -30,7 +30,7 @@ export const contact = {
     {
       name: "Security",
       email: "security@guardianintelligence.org",
-      note: "Anything that concerns customer data or platform safety is handled with Metal; this address is the marketing-site backstop and we route from here.",
+      note: "Anything that concerns customer data or platform safety is handled with Verself; this address is the marketing-site backstop and we route from here.",
     },
     {
       name: "Careers",

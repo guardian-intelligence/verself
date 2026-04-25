@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Prove that the Guardian Intelligence company site at forge_metal_domain
+# Prove that the Guardian Intelligence company site at verself_domain
 # emits the expected company.* spans into default.otel_traces when a real
 # browser walks the IA.
 #
 # Flow:
 #   1. Derive deterministic deploy identity (same helper as telemetry-proof).
-#   2. Resolve the live company base URL from forge_metal_domain.
+#   2. Resolve the live company base URL from verself_domain.
 #   3. Run the Playwright canary at apps/company/e2e/canary.spec.ts against
 #      the live URL; the canary walks every IA node, the OG cards, and the
 #      brand-kit download.
@@ -21,7 +21,7 @@ cd "$(dirname "$0")/.."
 
 run_date="$(date -u +%Y-%m-%d)"
 run_host="$(hostname -s 2>/dev/null || hostname)"
-counter_dir="${XDG_CACHE_HOME:-$HOME/.cache}/forge-metal/company-proof"
+counter_dir="${XDG_CACHE_HOME:-$HOME/.cache}/verself/company-proof"
 counter_file="${counter_dir}/${run_date}.counter"
 lock_file="${counter_dir}/${run_date}.lock"
 mkdir -p "${counter_dir}"
@@ -45,13 +45,13 @@ PY
 )"
 
 deploy_run_key="${run_date}.${run_counter}@${run_host}"
-deploy_id="$(python3 -c 'import sys, uuid; print(uuid.uuid5(uuid.NAMESPACE_URL, f"forge-metal:{sys.argv[1]}"))' "${deploy_run_key}")"
+deploy_id="$(python3 -c 'import sys, uuid; print(uuid.uuid5(uuid.NAMESPACE_URL, f"verself:{sys.argv[1]}"))' "${deploy_run_key}")"
 
-export FORGE_METAL_DEPLOY_ID="${deploy_id}"
-export FORGE_METAL_DEPLOY_RUN_KEY="${deploy_run_key}"
-export FORGE_METAL_VERIFICATION_RUN="${deploy_run_key}"
-export FORGE_METAL_CORRELATION_ID="${deploy_id}"
-export FORGE_METAL_DEPLOY_KIND="company-proof"
+export VERSELF_DEPLOY_ID="${deploy_id}"
+export VERSELF_DEPLOY_RUN_KEY="${deploy_run_key}"
+export VERSELF_VERIFICATION_RUN="${deploy_run_key}"
+export VERSELF_CORRELATION_ID="${deploy_id}"
+export VERSELF_DEPLOY_KIND="company-proof"
 
 # Resolve the company base URL. The company app owns the root domain; if the
 # caller set COMPANY_PROOF_BASE_URL (local rehearsal against
@@ -62,13 +62,13 @@ resolve_base_url() {
     return 0
   fi
   local domain
-  domain="$(python3 -c 'import yaml, sys; print(yaml.safe_load(open(sys.argv[1]))["forge_metal_domain"])' ansible/group_vars/all/main.yml)"
+  domain="$(python3 -c 'import yaml, sys; print(yaml.safe_load(open(sys.argv[1]))["verself_domain"])' ansible/group_vars/all/main.yml)"
   printf 'https://%s\n' "${domain}"
 }
 
 BASE_URL="$(resolve_base_url)"
 export BASE_URL
-export FORGE_METAL_COMPANY_BASE_URL="${BASE_URL}"
+export VERSELF_COMPANY_BASE_URL="${BASE_URL}"
 
 echo "company-proof: base_url=${BASE_URL} deploy_id=${deploy_id}"
 

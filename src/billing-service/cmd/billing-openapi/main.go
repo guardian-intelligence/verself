@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/forge-metal/billing-service/internal/billingapi"
+	"github.com/verself/billing-service/internal/billingapi"
 )
 
 func main() {

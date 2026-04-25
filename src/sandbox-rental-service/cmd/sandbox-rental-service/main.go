@@ -24,27 +24,27 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/forge-metal/apiwire"
-	auth "github.com/forge-metal/auth-middleware"
-	workloadauth "github.com/forge-metal/auth-middleware/workload"
-	billingclient "github.com/forge-metal/billing-service/client"
-	"github.com/forge-metal/envconfig"
-	"github.com/forge-metal/httpserver"
-	fmotel "github.com/forge-metal/otel"
-	secretsclient "github.com/forge-metal/secrets-service/client"
-	vmorchestrator "github.com/forge-metal/vm-orchestrator"
+	"github.com/verself/apiwire"
+	auth "github.com/verself/auth-middleware"
+	workloadauth "github.com/verself/auth-middleware/workload"
+	billingclient "github.com/verself/billing-service/client"
+	"github.com/verself/envconfig"
+	"github.com/verself/httpserver"
+	verselfotel "github.com/verself/otel"
+	secretsclient "github.com/verself/secrets-service/client"
+	vmorchestrator "github.com/verself/vm-orchestrator"
 
-	sandboxapi "github.com/forge-metal/sandbox-rental-service/internal/api"
-	"github.com/forge-metal/sandbox-rental-service/internal/jobs"
-	"github.com/forge-metal/sandbox-rental-service/internal/recurring"
-	"github.com/forge-metal/sandbox-rental-service/internal/scheduler"
-	"github.com/forge-metal/sandbox-rental-service/internal/sourceworkflow"
-	"github.com/forge-metal/temporal-platform/sdkclient"
+	sandboxapi "github.com/verself/sandbox-rental-service/internal/api"
+	"github.com/verself/sandbox-rental-service/internal/jobs"
+	"github.com/verself/sandbox-rental-service/internal/recurring"
+	"github.com/verself/sandbox-rental-service/internal/scheduler"
+	"github.com/verself/sandbox-rental-service/internal/sourceworkflow"
+	"github.com/verself/temporal-platform/sdkclient"
 )
 
 const (
-	correlationHeader = "X-Forge-Metal-Correlation-Id"
-	correlationCookie = "fm_correlation_id"
+	correlationHeader = "X-Verself-Correlation-Id"
+	correlationCookie = "verself_correlation_id"
 
 	sandboxAPIRequestBodyLimit = 1 << 20
 )
@@ -60,7 +60,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	otelShutdown, logger, err := fmotel.Init(ctx, fmotel.Config{ServiceName: "sandbox-rental-service", ServiceVersion: "1.0.0"})
+	otelShutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{ServiceName: "sandbox-rental-service", ServiceVersion: "1.0.0"})
 	if err != nil {
 		return fmt.Errorf("otel init: %w", err)
 	}
@@ -94,7 +94,7 @@ func run() error {
 	githubAPIBaseURL := cfg.URL("SANDBOX_GITHUB_API_BASE_URL", "https://api.github.com")
 	githubWebBaseURL := cfg.URL("SANDBOX_GITHUB_WEB_BASE_URL", "https://github.com")
 	githubRunnerGroupID := cfg.Int64("SANDBOX_GITHUB_RUNNER_GROUP_ID", 1)
-	checkoutCacheDir := cfg.String("SANDBOX_GITHUB_CHECKOUT_CACHE_DIR", "/var/lib/forge-metal/sandbox-rental/github-checkout")
+	checkoutCacheDir := cfg.String("SANDBOX_GITHUB_CHECKOUT_CACHE_DIR", "/var/lib/verself/sandbox-rental/github-checkout")
 	forgejoAPIBaseURL := cfg.URL("SANDBOX_FORGEJO_API_BASE_URL", "")
 	forgejoRunnerBaseURL := cfg.String("SANDBOX_FORGEJO_RUNNER_BASE_URL", "")
 	forgejoWebhookBaseURL := cfg.String("SANDBOX_FORGEJO_WEBHOOK_BASE_URL", publicBaseURL)
@@ -179,7 +179,7 @@ func run() error {
 	chConn, err := clickhouse.Open(&clickhouse.Options{
 		Addr: []string{chAddress},
 		Auth: clickhouse.Auth{
-			Database: "forge_metal",
+			Database: "verself",
 			Username: chUser,
 		},
 		TLS: chTLSConfig,
@@ -277,7 +277,7 @@ func run() error {
 		PG:               pg,
 		PGX:              pgxPool,
 		CH:               chConn,
-		CHDatabase:       "forge_metal",
+		CHDatabase:       "verself",
 		Orchestrator:     orchestrator,
 		Billing:          billingClient,
 		Bounds:           hostBounds,
@@ -382,11 +382,11 @@ func run() error {
 		if correlationID != "" {
 			ctx := jobs.WithCorrelationID(r.Context(), correlationID)
 			// Mirror correlation_id into baggage so child spans pick it up
-			// via fmotel.baggageSpanProcessor. The otelhttp server span was
+			// via verselfotel.baggageSpanProcessor. The otelhttp server span was
 			// already started before this middleware ran, so set it directly
 			// on the live span too. NewMemberRaw + SetMember are infallible
 			// for our constant key and arbitrary value.
-			attrKey := fmotel.BaggageAttributePrefix + "correlation_id"
+			attrKey := verselfotel.BaggageAttributePrefix + "correlation_id"
 			member, _ := baggage.NewMemberRaw(attrKey, correlationID)
 			bag, _ := baggage.FromContext(ctx).SetMember(member)
 			ctx = baggage.ContextWithBaggage(ctx, bag)
@@ -449,7 +449,7 @@ func requireSecretField(values map[string]string, field string, label string) st
 func readRuntimeSecrets(ctx context.Context, client *secretsclient.ClientWithResponses, secretNames ...string) (map[string]string, error) {
 	ctx, span := otel.Tracer("runtime-secrets").Start(ctx, "secrets.runtime.resolve")
 	defer span.End()
-	span.SetAttributes(attribute.Int("forge_metal.secret_count", len(secretNames)))
+	span.SetAttributes(attribute.Int("verself.secret_count", len(secretNames)))
 
 	if client == nil {
 		err := fmt.Errorf("runtime secrets client is required")

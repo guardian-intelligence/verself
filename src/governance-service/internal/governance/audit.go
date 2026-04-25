@@ -299,11 +299,11 @@ func (s *Service) RecordAuditEvent(ctx context.Context, record AuditRecord) (*Au
 		return nil, err
 	}
 	span.SetAttributes(
-		attribute.String("forge_metal.org_id", event.OrgID),
-		attribute.String("forge_metal.audit_event", event.AuditEvent),
-		attribute.String("forge_metal.actor_type", event.ActorType),
-		attribute.String("forge_metal.risk_level", event.RiskLevel),
-		attribute.Int64("forge_metal.audit_sequence", int64(event.Sequence)),
+		attribute.String("verself.org_id", event.OrgID),
+		attribute.String("verself.audit_event", event.AuditEvent),
+		attribute.String("verself.actor_type", event.ActorType),
+		attribute.String("verself.risk_level", event.RiskLevel),
+		attribute.Int64("verself.audit_sequence", int64(event.Sequence)),
 	)
 	return event, nil
 }
@@ -365,7 +365,7 @@ func (s *Service) ProjectPendingAuditEvents(ctx context.Context, limit int) (int
 	if err := tx.Commit(ctx); err != nil {
 		return projected, fmt.Errorf("%w: commit audit projection tx: %v", ErrStore, err)
 	}
-	span.SetAttributes(attribute.Int("forge_metal.audit_projected_count", projected))
+	span.SetAttributes(attribute.Int("verself.audit_projected_count", projected))
 	return projected, nil
 }
 
@@ -615,7 +615,7 @@ func (s *Service) assignAuditSequence(ctx context.Context, event *AuditEvent) er
 }
 
 func (s *Service) insertAuditClickHouse(ctx context.Context, event *AuditEvent) error {
-	batch, err := s.CH.PrepareBatch(ctx, "INSERT INTO forge_metal.audit_events")
+	batch, err := s.CH.PrepareBatch(ctx, "INSERT INTO verself.audit_events")
 	if err != nil {
 		return fmt.Errorf("%w: prepare audit insert: %v", ErrStore, err)
 	}
@@ -646,7 +646,7 @@ func (s *Service) auditEventProjected(ctx context.Context, eventID uuid.UUID) (b
 	var found int
 	err := s.CH.QueryRow(ctx, `
 		SELECT 1
-		FROM forge_metal.audit_events
+		FROM verself.audit_events
 		WHERE event_id = $1
 		LIMIT 1
 	`, eventID).Scan(&found)
@@ -713,7 +713,7 @@ func (s *Service) ListAuditEvents(ctx context.Context, principal Principal, filt
 	var query string
 	if ascending {
 		query = auditEventSelectSQL() + `
-		FROM forge_metal.audit_events
+		FROM verself.audit_events
 		WHERE org_id = $1
 		  AND ($2 = '' OR service_name = $2)
 		  AND ($3 = '' OR operation_id = $3)
@@ -733,7 +733,7 @@ func (s *Service) ListAuditEvents(ctx context.Context, principal Principal, filt
 	`
 	} else {
 		query = auditEventSelectSQL() + `
-		FROM forge_metal.audit_events
+		FROM verself.audit_events
 		WHERE org_id = $1
 		  AND ($2 = '' OR service_name = $2)
 		  AND ($3 = '' OR operation_id = $3)
@@ -774,7 +774,7 @@ func (s *Service) ListAuditEvents(ctx context.Context, principal Principal, filt
 		nextCursor = makeCursor(last.RecordedAt, last.Sequence)
 		events = events[:limit]
 	}
-	span.SetAttributes(attribute.String("forge_metal.org_id", orgID), attribute.Int("forge_metal.audit_event_count", len(events)))
+	span.SetAttributes(attribute.String("verself.org_id", orgID), attribute.Int("verself.audit_event_count", len(events)))
 	return AuditListPage{Events: events, NextCursor: nextCursor, Limit: limit}, nil
 }
 

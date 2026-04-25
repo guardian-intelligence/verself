@@ -11,6 +11,7 @@
 # - identity_service
 # - secrets_service
 # - notifications_service
+# - projects_service
 
 - name: Wipe one managed PostgreSQL database
   hosts: all
@@ -24,6 +25,7 @@
       - identity_service
       - secrets_service
       - notifications_service
+      - projects_service
   pre_tasks:
     - name: Assert supported PostgreSQL wipe target
       ansible.builtin.assert:
@@ -34,7 +36,7 @@
 
     - name: Check deployed PostgreSQL client binary for wipe
       ansible.builtin.stat:
-        path: "{{ fm_bin }}/psql"
+        path: "{{ verself_bin }}/psql"
       register: wipe_pg_db_psql_binary
 
     - name: Assert deployed PostgreSQL client is present for wipe
@@ -42,7 +44,7 @@
         that:
           - wipe_pg_db_psql_binary.stat.exists
         fail_msg: >-
-          wipe-pg-db runs against an existing deployment, but {{ fm_bin }}/psql is missing.
+          wipe-pg-db runs against an existing deployment, but {{ verself_bin }}/psql is missing.
           Run a deploy playbook before wiping a managed PostgreSQL database.
 
     - name: Wait for deployed PostgreSQL before wipe
@@ -54,7 +56,7 @@
     - name: Verify PostgreSQL admin connectivity before wipe
       ansible.builtin.command:
         argv:
-          - "{{ fm_bin }}/psql"
+          - "{{ verself_bin }}/psql"
           - -h
           - "{{ services.postgresql.host }}"
           - -p
@@ -145,6 +147,14 @@
         notifications_service_force_schema_reset: true
       when: wipe_pg_db_name == 'notifications_service'
 
+    - name: Include projects-service for projects_service PostgreSQL wipe
+      ansible.builtin.include_role:
+        name: projects_service
+      tags: [projects_service]
+      vars:
+        projects_service_force_schema_reset: true
+      when: wipe_pg_db_name == 'projects_service'
+
     - name: Include Electric Notifications after notifications_service PostgreSQL wipe
       ansible.builtin.include_role:
         name: electric
@@ -162,7 +172,7 @@
           - notification_inbox_state
         electric_storage_dir: /var/lib/electric-notifications
         electric_credstore_dir: /etc/credstore/electric-notifications
-        electric_nftables_table: forge_metal_electric_notifications
+        electric_nftables_table: verself_electric_notifications
         electric_nftables_file: /etc/nftables.d/electric-notifications.nft
         electric_db_pool_size: 8
         electric_extra_systemd_after: [notifications-service.service]

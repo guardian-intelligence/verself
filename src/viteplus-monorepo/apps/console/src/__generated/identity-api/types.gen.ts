@@ -447,7 +447,7 @@ export type RevokeApiCredentialData = {
   };
   path: {
     /**
-     * Forge Metal API credential ID
+     * Verself API credential ID
      */
     credential_id: string;
   };
@@ -478,7 +478,7 @@ export type GetApiCredentialData = {
   body?: never;
   path: {
     /**
-     * Forge Metal API credential ID
+     * Verself API credential ID
      */
     credential_id: string;
   };
@@ -514,7 +514,7 @@ export type RollApiCredentialData = {
   };
   path: {
     /**
-     * Forge Metal API credential ID
+     * Verself API credential ID
      */
     credential_id: string;
   };

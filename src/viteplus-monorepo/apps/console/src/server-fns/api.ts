@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import * as v from "valibot";
-import { requireURLFromEnv } from "@forge-metal/web-env";
+import { requireURLFromEnv } from "@verself/web-env";
 import {
   IdentityApiError,
   getMembers as getMembersRequest,
@@ -50,6 +50,14 @@ import {
   putNotificationPreferencesRequestSchema,
 } from "~/lib/notifications-api";
 import {
+  ProjectsApiError,
+  createNewProject as createProjectRequest,
+  createProjectRequestSchema,
+  getProjectByID as getProjectRequest,
+  isProjectsApiError,
+  listActiveProjects as listProjectsRequest,
+} from "~/lib/projects-api";
+import {
   SourceCodeHostingApiError,
   createCheckoutGrant as createSourceCheckoutGrantRequest,
   createCheckoutGrantRequestSchema as createSourceCheckoutGrantRequestSchema,
@@ -98,6 +106,7 @@ import type {
   PublishTestNotificationRequest,
   PutNotificationPreferencesRequest,
 } from "~/lib/notifications-api";
+import type { CreateProjectRequest, Project, ProjectList } from "~/lib/projects-api";
 import type {
   CreateCheckoutGrantRequest as CreateSourceCheckoutGrantRequest,
   CreateGitCredentialRequest as CreateSourceGitCredentialRequest,
@@ -161,8 +170,8 @@ import type {
   ContractRequest,
   ContractsResponse,
 } from "~/lib/sandbox-rental-api";
-import type { AuthSession } from "@forge-metal/auth-web/server";
-import { getAccessTokenForAudience, getAuthSession } from "@forge-metal/auth-web/server";
+import type { AuthSession } from "@verself/auth-web/server";
+import { getAccessTokenForAudience, getAuthSession } from "@verself/auth-web/server";
 import { getAuthConfig } from "../server/auth";
 import { consoleAuthMiddleware } from "./auth";
 
@@ -170,6 +179,7 @@ const IDENTITY_SERVICE_BASE_URL = requireURLFromEnv("IDENTITY_SERVICE_BASE_URL")
 const GOVERNANCE_SERVICE_BASE_URL = requireURLFromEnv("GOVERNANCE_SERVICE_BASE_URL");
 const PROFILE_SERVICE_BASE_URL = requireURLFromEnv("PROFILE_SERVICE_BASE_URL");
 const NOTIFICATIONS_SERVICE_BASE_URL = requireURLFromEnv("NOTIFICATIONS_SERVICE_BASE_URL");
+const PROJECTS_SERVICE_BASE_URL = requireURLFromEnv("PROJECTS_SERVICE_BASE_URL");
 const SOURCE_CODE_HOSTING_SERVICE_BASE_URL = requireURLFromEnv(
   "SOURCE_CODE_HOSTING_SERVICE_BASE_URL",
 );
@@ -181,6 +191,8 @@ const PROFILE_SERVICE_AUTH_AUDIENCE =
   process.env.PROFILE_SERVICE_AUTH_AUDIENCE?.trim() || IDENTITY_SERVICE_AUTH_AUDIENCE;
 const NOTIFICATIONS_SERVICE_AUTH_AUDIENCE =
   process.env.NOTIFICATIONS_SERVICE_AUTH_AUDIENCE?.trim() || IDENTITY_SERVICE_AUTH_AUDIENCE;
+const PROJECTS_SERVICE_AUTH_AUDIENCE =
+  process.env.PROJECTS_SERVICE_AUTH_AUDIENCE?.trim() || IDENTITY_SERVICE_AUTH_AUDIENCE;
 const SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE =
   process.env.SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE?.trim() || IDENTITY_SERVICE_AUTH_AUDIENCE;
 
@@ -188,6 +200,7 @@ export { IdentityApiError, isIdentityApiError };
 export { GovernanceApiError, isGovernanceApiError };
 export { ProfileApiError, isProfileApiError };
 export { NotificationsApiError, isNotificationsApiError };
+export { ProjectsApiError, isProjectsApiError };
 export { SourceCodeHostingApiError, isSourceCodeHostingApiError };
 export { SandboxRentalApiError, isSandboxRentalApiError, isSandboxRentalNotFound };
 export type {
@@ -208,6 +221,7 @@ export type {
   PublishTestNotificationRequest,
   PutNotificationPreferencesRequest,
 };
+export type { CreateProjectRequest, Project, ProjectList };
 export type {
   CreateSourceCheckoutGrantRequest,
   CreateSourceGitCredentialRequest,
@@ -338,6 +352,22 @@ async function notificationsClientOptions(context: { auth?: AuthSession } | unde
   return {
     accessToken,
     baseUrl: NOTIFICATIONS_SERVICE_BASE_URL,
+  };
+}
+
+async function projectsClientOptions(context: { auth?: AuthSession } | undefined) {
+  const auth = await resolveAuthContext(context);
+  if (!PROJECTS_SERVICE_AUTH_AUDIENCE) {
+    throw new Error("PROJECTS_SERVICE_AUTH_AUDIENCE or IDENTITY_SERVICE_AUTH_AUDIENCE is required");
+  }
+  const accessToken = await getAccessTokenForAudience(
+    getAuthConfig(),
+    auth,
+    PROJECTS_SERVICE_AUTH_AUDIENCE,
+  );
+  return {
+    accessToken,
+    baseUrl: PROJECTS_SERVICE_BASE_URL,
   };
 }
 
@@ -505,9 +535,45 @@ export const publishTestNotification = createServerFn({ method: "POST" })
     });
   });
 
+export const listProjects = createServerFn({ method: "GET" })
+  .middleware([consoleAuthMiddleware])
+  .handler(async ({ context }) => {
+    return listProjectsRequest(await projectsClientOptions(context));
+  });
+
+export const createProject = createServerFn({ method: "POST" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(createProjectRequestSchema)
+  .handler(async ({ context, data }) => {
+    return createProjectRequest({
+      ...(await projectsClientOptions(context)),
+      body: data,
+    });
+  });
+
+const projectIDInputSchema = v.strictObject({
+  projectId: v.pipe(v.string(), v.uuid()),
+});
+
+export const getProject = createServerFn({ method: "GET" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(projectIDInputSchema)
+  .handler(async ({ context, data }) => {
+    return getProjectRequest({
+      ...(await projectsClientOptions(context)),
+      projectId: data.projectId,
+    });
+  });
+
 const sourceRepositoryIDInputSchema = v.strictObject({
   repoId: v.pipe(v.string(), v.uuid()),
 });
+
+const sourceRepositoryListInputSchema = v.optional(
+  v.strictObject({
+    projectId: v.optional(v.pipe(v.string(), v.uuid())),
+  }),
+);
 
 const sourceTreeInputSchema = v.strictObject({
   repoId: v.pipe(v.string(), v.uuid()),
@@ -530,8 +596,12 @@ const sourceGitCredentialInputSchema = createSourceGitCredentialRequestSchema;
 
 export const listSourceRepositories = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
-  .handler(async ({ context }) => {
-    return listSourceRepositoriesRequest(await sourceCodeHostingClientOptions(context));
+  .inputValidator(sourceRepositoryListInputSchema)
+  .handler(async ({ context, data }) => {
+    return listSourceRepositoriesRequest({
+      ...(await sourceCodeHostingClientOptions(context)),
+      ...(data?.projectId ? { projectId: data.projectId } : {}),
+    });
   });
 
 export const createSourceRepository = createServerFn({ method: "POST" })
@@ -679,7 +749,7 @@ export const downloadGovernanceDataExport = createServerFn({ method: "POST" })
     const contentDisposition = response.headers.get("content-disposition") ?? "";
     const fileName =
       /filename="([^"]+)"/.exec(contentDisposition)?.[1] ??
-      `forge-metal-export-${data.export_id}.tar.gz`;
+      `verself-export-${data.export_id}.tar.gz`;
     const bytes = Buffer.from(await response.arrayBuffer());
     return {
       content_type: response.headers.get("content-type") ?? "application/gzip",

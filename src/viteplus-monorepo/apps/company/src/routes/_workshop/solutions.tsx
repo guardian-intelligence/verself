@@ -16,7 +16,7 @@ export const Route = createFileRoute("/_workshop/solutions")({
 
 function SolutionsPage() {
   return (
-    <PageShell kicker="One house, one platform." heading="Metal Platform.">
+    <PageShell kicker="One house, one platform." heading="Verself Platform.">
       <p
         style={{
           fontFamily: "'Geist', sans-serif",

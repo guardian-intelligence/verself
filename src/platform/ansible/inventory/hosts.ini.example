@@ -2,14 +2,14 @@
 # Terraform outputs can generate this automatically.
 
 [workers]
-# fm-prod-w0 ansible_host=203.0.113.10
-# fm-prod-w1 ansible_host=203.0.113.11
-# fm-prod-w2 ansible_host=203.0.113.12
+# vs-prod-w0 ansible_host=203.0.113.10
+# vs-prod-w1 ansible_host=203.0.113.11
+# vs-prod-w2 ansible_host=203.0.113.12
 
 [infra]
-# fm-prod-i0 ansible_host=203.0.113.20
-# fm-prod-i1 ansible_host=203.0.113.21
-# fm-prod-i2 ansible_host=203.0.113.22
+# vs-prod-i0 ansible_host=203.0.113.20
+# vs-prod-i1 ansible_host=203.0.113.21
+# vs-prod-i2 ansible_host=203.0.113.22
 
 [all:vars]
 ansible_user=ubuntu

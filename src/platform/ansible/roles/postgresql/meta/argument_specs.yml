@@ -10,12 +10,12 @@ argument_specs:
     options:
       postgresql_data_dir:
         type: path
-        default: /var/lib/postgresql/16/forge-metal
+        default: /var/lib/postgresql/16/verself
         description: "PostgreSQL data directory."
 
       postgresql_config_dir:
         type: path
-        default: /etc/postgresql/forge-metal
+        default: /etc/postgresql/verself
         description: "PostgreSQL configuration directory."
 
       postgresql_log_dir:
@@ -23,7 +23,7 @@ argument_specs:
         default: /var/log/postgresql
         description: "PostgreSQL log directory."
 
-      fm_bin:
+      verself_bin:
         type: path
         required: true
         description: "Path to the server binary directory."

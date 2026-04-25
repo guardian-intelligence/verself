@@ -1,5 +1,5 @@
 import { createFileRoute, getRouteApi, Link, redirect } from "@tanstack/react-router";
-import { Button } from "@forge-metal/ui/components/ui/button";
+import { Button } from "@verself/ui/components/ui/button";
 
 // Parent _shell route already loads the platform docs origin; reuse its
 // loader data so we don't double-fetch it per landing render.
@@ -26,7 +26,7 @@ function LandingPage() {
           GitHub Actions on isolated Firecracker VMs.
         </h1>
         <p className="mt-6 text-lg leading-7 text-muted-foreground">
-          Run your existing workflows on Forge Metal runners, then opt into ZFS-backed checkout and
+          Run your existing workflows on Verself runners, then opt into ZFS-backed checkout and
           persistent mounts where they make the job faster.
         </p>
         <div className="mt-8 flex flex-wrap items-center gap-3">

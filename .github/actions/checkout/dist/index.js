@@ -11,7 +11,7 @@ async function main() {
   const spec = readSpec();
   prepareTarget(spec.targetPath, spec.clean);
 
-  const bundlePath = path.join(os.tmpdir(), `forge-metal-checkout-${process.pid}-${Date.now()}.bundle`);
+  const bundlePath = path.join(os.tmpdir(), `verself-checkout-${process.pid}-${Date.now()}.bundle`);
   try {
     const downloadStarted = Date.now();
     const bundleMeta = await downloadBundle(spec, bundlePath);
@@ -28,7 +28,7 @@ async function main() {
     await git(spec.targetPath, ["config", "--global", "--add", "safe.directory", spec.targetPath]);
     setOutput("commit", spec.sha);
     notice(
-      `Forge Metal checkout ready in ${Date.now() - started}ms ` +
+      `Verself checkout ready in ${Date.now() - started}ms ` +
         `(download ${downloadMs}ms, git ${checkoutMs}ms, cache_hit=${bundleMeta.cacheHit}, bytes=${bundleMeta.sizeBytes})`,
     );
   } finally {
@@ -47,10 +47,10 @@ function readSpec() {
   const clean = parseBoolean(input("clean") || "true");
   const fetchDepth = input("fetch-depth") || "1";
   if (fetchDepth !== "1") {
-    throw new Error("forge-metal/checkout@v1 currently supports fetch-depth: 1 only");
+    throw new Error("verself/checkout@v1 currently supports fetch-depth: 1 only");
   }
   if (parseBoolean(input("persist-credentials") || "false")) {
-    notice("persist-credentials is accepted for compatibility; Forge Metal checkout does not persist credentials.");
+    notice("persist-credentials is accepted for compatibility; Verself checkout does not persist credentials.");
   }
   const token = input("token");
   return { repository, ref, sha, targetPath, clean, token };
@@ -93,7 +93,7 @@ function protectedMountsUnder(targetPath) {
 }
 
 function composedZvolMounts() {
-  return (process.env.FORGE_METAL_COMPOSED_ZVOL_MOUNTS || "")
+  return (process.env.VERSELF_COMPOSED_ZVOL_MOUNTS || "")
     .split(":")
     .map((value) => value.trim())
     .filter(Boolean)
@@ -123,8 +123,8 @@ async function downloadBundle(spec, bundlePath) {
   const bundle = Buffer.from(await response.arrayBuffer());
   fs.writeFileSync(bundlePath, bundle, { mode: 0o600 });
   return {
-    cacheHit: response.headers.get("x-forge-metal-checkout-cache-hit") || "unknown",
-    sizeBytes: response.headers.get("x-forge-metal-checkout-size-bytes") || String(bundle.length),
+    cacheHit: response.headers.get("x-verself-checkout-cache-hit") || "unknown",
+    sizeBytes: response.headers.get("x-verself-checkout-size-bytes") || String(bundle.length),
   };
 }
 
@@ -135,24 +135,24 @@ async function materializeCheckout(spec, bundlePath) {
   });
   await indexPack(spec.targetPath, bundlePath);
   fs.writeFileSync(path.join(spec.targetPath, ".git", "shallow"), `${spec.sha}${os.EOL}`);
-  await git(spec.targetPath, ["update-ref", "refs/forge-metal/checkout", spec.sha]);
+  await git(spec.targetPath, ["update-ref", "refs/verself/checkout", spec.sha]);
   await git(spec.targetPath, ["checkout", "--force", "--detach", spec.sha]);
   await git(spec.targetPath, ["clean", "-ffdx", ...gitCleanMountExclusions(spec.targetPath)]);
 }
 
 function endpointURL(spec) {
-  const origin = requiredEnv("FORGE_METAL_HOST_SERVICE_HTTP_ORIGIN");
-  const basePath = process.env.FORGE_METAL_CHECKOUT_PATH || "/internal/sandbox/v1/github-checkout";
+  const origin = requiredEnv("VERSELF_HOST_SERVICE_HTTP_ORIGIN");
+  const basePath = process.env.VERSELF_CHECKOUT_PATH || "/internal/sandbox/v1/github-checkout";
   const url = new URL(basePath.replace(/\/$/, "") + "/bundle", origin);
   return url;
 }
 
 function requestHeaders() {
   return {
-    Authorization: `Bearer ${requiredEnv("FORGE_METAL_CHECKOUT_TOKEN")}`,
+    Authorization: `Bearer ${requiredEnv("VERSELF_CHECKOUT_TOKEN")}`,
     "Content-Type": "application/json",
-    "X-Forge-Metal-Execution-Id": requiredEnv("FORGE_METAL_EXECUTION_ID"),
-    "X-Forge-Metal-Attempt-Id": requiredEnv("FORGE_METAL_ATTEMPT_ID"),
+    "X-Verself-Execution-Id": requiredEnv("VERSELF_EXECUTION_ID"),
+    "X-Verself-Attempt-Id": requiredEnv("VERSELF_ATTEMPT_ID"),
   };
 }
 

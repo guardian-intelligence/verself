@@ -248,7 +248,7 @@ EOF2
       event_format="TSVWithNames"
     fi
     "${script_dir}/clickhouse.sh" \
-      --database forge_metal \
+      --database verself \
       --param_org_id="${resolved_org_id}" \
       --param_product_id="${product_id}" \
       --param_event_type="${event_type}" \
@@ -256,7 +256,7 @@ EOF2
       --param_row_limit="${limit}" \
       --query "
         SELECT event_id, event_type, aggregate_type, aggregate_id, org_id, product_id, occurred_at, recorded_at, payload
-        FROM forge_metal.billing_events
+        FROM verself.billing_events
         WHERE recorded_at > now() - toIntervalMinute({minutes:UInt32})
           AND ({org_id:String} = '' OR org_id = {org_id:String})
           AND ({product_id:String} = '' OR product_id = {product_id:String})

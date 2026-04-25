@@ -3,10 +3,10 @@
 # Stalwart binds 0.0.0.0:25 (SMTP, public) and 127.0.0.1:{{ services.stalwart.http_port }} (HTTP, behind Caddy).
 # This table restricts the stalwart user's outbound traffic to only what's required.
 
-table inet forge_metal_stalwart
-delete table inet forge_metal_stalwart
+table inet verself_stalwart
+delete table inet verself_stalwart
 
-table inet forge_metal_stalwart {
+table inet verself_stalwart {
     chain output {
         type filter hook output priority filter; policy accept;
 

@@ -5,7 +5,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/forge-metal/vm-orchestrator/vmproto"
+	"github.com/verself/vm-orchestrator/vmproto"
 	"golang.org/x/sys/unix"
 )
 

@@ -31,7 +31,7 @@
 
 - name: Verify corepack exists in profile
   ansible.builtin.stat:
-    path: "{{ fm_bin }}/corepack"
+    path: "{{ verself_bin }}/corepack"
   register: console_corepack
   failed_when: not console_corepack.stat.exists
 
@@ -114,7 +114,7 @@
     argv:
       - vp
       - run
-      - "@forge-metal/console#generate"
+      - "@verself/console#generate"
     chdir: "{{ playbook_dir }}/../../../viteplus-monorepo"
   changed_when: true
 
@@ -209,12 +209,12 @@
   become: false
   ansible.builtin.command:
     argv:
-      - "{{ fm_bin }}/corepack"
+      - "{{ verself_bin }}/corepack"
       - pnpm
       - install
     chdir: "{{ console_install_dir }}"
   environment:
-    PATH: "{{ fm_bin }}:/usr/bin:/bin"
+    PATH: "{{ verself_bin }}:/usr/bin:/bin"
     HOME: "/home/{{ ansible_user }}"
   changed_when: true
   when: >-
@@ -237,15 +237,15 @@
   become: false
   ansible.builtin.command:
     argv:
-      - "{{ fm_bin }}/corepack"
+      - "{{ verself_bin }}/corepack"
       - pnpm
       - --filter
-      - "@forge-metal/console^..."
+      - "@verself/console^..."
       - run
       - build
     chdir: "{{ console_install_dir }}"
   environment:
-    PATH: "{{ fm_bin }}:/usr/bin:/bin"
+    PATH: "{{ verself_bin }}:/usr/bin:/bin"
     HOME: "/home/{{ ansible_user }}"
   changed_when: true
 
@@ -253,15 +253,15 @@
   become: false
   ansible.builtin.command:
     argv:
-      - "{{ fm_bin }}/corepack"
+      - "{{ verself_bin }}/corepack"
       - pnpm
       - --filter
-      - "@forge-metal/console"
+      - "@verself/console"
       - run
       - build
     chdir: "{{ console_install_dir }}"
   environment:
-    PATH: "{{ fm_bin }}:/usr/bin:/bin"
+    PATH: "{{ verself_bin }}:/usr/bin:/bin"
     HOME: "/home/{{ ansible_user }}"
   changed_when: true
 
@@ -316,7 +316,7 @@
     method: POST
     headers:
       Authorization: "Bearer {{ zitadel_oauth_app_pat }}"
-      Host: "auth.{{ forge_metal_domain }}"
+      Host: "auth.{{ verself_domain }}"
     body_format: json
     body:
       queries:

@@ -22,7 +22,7 @@ const (
 	CredentialStatusRevoked = "revoked"
 
 	credentialTokenPrefix = "fmoc"
-	credentialHMACKey     = "fm-opaque-credential-hmac"
+	credentialHMACKey     = "verself-opaque-credential-hmac"
 )
 
 type OpaqueCredential struct {
@@ -104,9 +104,9 @@ func (s *Service) CreateOpaqueCredential(ctx context.Context, principal Principa
 		return OpaqueCredentialMaterial{}, err
 	}
 	span.SetAttributes(
-		attribute.String("forge_metal.org_id", principal.OrgID),
-		attribute.String("forge_metal.credential_id", material.Credential.CredentialID),
-		attribute.String("forge_metal.credential_kind", material.Credential.Kind),
+		attribute.String("verself.org_id", principal.OrgID),
+		attribute.String("verself.credential_id", material.Credential.CredentialID),
+		attribute.String("verself.credential_kind", material.Credential.Kind),
 	)
 	return material, nil
 }
@@ -122,9 +122,9 @@ func (s *Service) GetOpaqueCredential(ctx context.Context, principal Principal, 
 		return OpaqueCredential{}, err
 	}
 	span.SetAttributes(
-		attribute.String("forge_metal.org_id", principal.OrgID),
-		attribute.String("forge_metal.credential_id", credential.CredentialID),
-		attribute.String("forge_metal.credential_kind", credential.Kind),
+		attribute.String("verself.org_id", principal.OrgID),
+		attribute.String("verself.credential_id", credential.CredentialID),
+		attribute.String("verself.credential_kind", credential.Kind),
 	)
 	return credential, nil
 }
@@ -140,9 +140,9 @@ func (s *Service) ListOpaqueCredentials(ctx context.Context, principal Principal
 		return nil, err
 	}
 	span.SetAttributes(
-		attribute.String("forge_metal.org_id", principal.OrgID),
-		attribute.String("forge_metal.credential_kind", strings.TrimSpace(kind)),
-		attribute.Int("forge_metal.credential_count", len(credentials)),
+		attribute.String("verself.org_id", principal.OrgID),
+		attribute.String("verself.credential_kind", strings.TrimSpace(kind)),
+		attribute.Int("verself.credential_count", len(credentials)),
 	)
 	return credentials, nil
 }
@@ -158,9 +158,9 @@ func (s *Service) RollOpaqueCredential(ctx context.Context, principal Principal,
 		return OpaqueCredentialMaterial{}, err
 	}
 	span.SetAttributes(
-		attribute.String("forge_metal.org_id", principal.OrgID),
-		attribute.String("forge_metal.credential_id", material.Credential.CredentialID),
-		attribute.String("forge_metal.credential_kind", material.Credential.Kind),
+		attribute.String("verself.org_id", principal.OrgID),
+		attribute.String("verself.credential_id", material.Credential.CredentialID),
+		attribute.String("verself.credential_kind", material.Credential.Kind),
 	)
 	return material, nil
 }
@@ -176,9 +176,9 @@ func (s *Service) RevokeOpaqueCredential(ctx context.Context, principal Principa
 		return OpaqueCredential{}, err
 	}
 	span.SetAttributes(
-		attribute.String("forge_metal.org_id", principal.OrgID),
-		attribute.String("forge_metal.credential_id", credential.CredentialID),
-		attribute.String("forge_metal.credential_kind", credential.Kind),
+		attribute.String("verself.org_id", principal.OrgID),
+		attribute.String("verself.credential_id", credential.CredentialID),
+		attribute.String("verself.credential_kind", credential.Kind),
 	)
 	return credential, nil
 }
@@ -194,10 +194,10 @@ func (s *Service) VerifyOpaqueCredential(ctx context.Context, principal Principa
 		return VerifyOpaqueCredentialResult{}, err
 	}
 	span.SetAttributes(
-		attribute.String("forge_metal.org_id", principal.OrgID),
-		attribute.String("forge_metal.credential_id", result.Credential.CredentialID),
-		attribute.String("forge_metal.credential_kind", result.Credential.Kind),
-		attribute.Bool("forge_metal.credential_active", result.Active),
+		attribute.String("verself.org_id", principal.OrgID),
+		attribute.String("verself.credential_id", result.Credential.CredentialID),
+		attribute.String("verself.credential_kind", result.Credential.Kind),
+		attribute.Bool("verself.credential_active", result.Active),
 	)
 	return result, nil
 }

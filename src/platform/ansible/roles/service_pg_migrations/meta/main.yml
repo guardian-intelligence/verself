@@ -2,7 +2,7 @@
 dependencies: []
 
 galaxy_info:
-  author: forge-metal
+  author: verself
   description: >-
     Apply Postgres migrations for a Go service — hash the local .up.sql
     set, compare against the fingerprint on the target, reset + replay if

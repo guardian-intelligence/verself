@@ -1,19 +1,19 @@
-module github.com/forge-metal/secrets-service
+module github.com/verself/secrets-service
 
 go 1.25.0
 
 require (
 	github.com/danielgtaylor/huma/v2 v2.37.3
-	github.com/forge-metal/apiwire v0.0.0
-	github.com/forge-metal/auth-middleware v0.0.0
-	github.com/forge-metal/billing-service v0.0.0
-	github.com/forge-metal/envconfig v0.0.0
-	github.com/forge-metal/governance-service v0.0.0
-	github.com/forge-metal/httpserver v0.0.0
-	github.com/forge-metal/otel v0.0.0
 	github.com/google/uuid v1.6.0
 	github.com/oapi-codegen/runtime v1.4.0
 	github.com/spiffe/go-spiffe/v2 v2.6.0
+	github.com/verself/apiwire v0.0.0
+	github.com/verself/auth-middleware v0.0.0
+	github.com/verself/billing-service v0.0.0
+	github.com/verself/envconfig v0.0.0
+	github.com/verself/governance-service v0.0.0
+	github.com/verself/httpserver v0.0.0
+	github.com/verself/otel v0.0.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
@@ -52,16 +52,16 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 )
 
-replace github.com/forge-metal/apiwire => ../apiwire
+replace github.com/verself/apiwire => ../apiwire
 
-replace github.com/forge-metal/auth-middleware => ../auth-middleware
+replace github.com/verself/auth-middleware => ../auth-middleware
 
-replace github.com/forge-metal/billing-service => ../billing-service
+replace github.com/verself/billing-service => ../billing-service
 
-replace github.com/forge-metal/envconfig => ../envconfig
+replace github.com/verself/envconfig => ../envconfig
 
-replace github.com/forge-metal/governance-service => ../governance-service
+replace github.com/verself/governance-service => ../governance-service
 
-replace github.com/forge-metal/httpserver => ../httpserver
+replace github.com/verself/httpserver => ../httpserver
 
-replace github.com/forge-metal/otel => ../otel
+replace github.com/verself/otel => ../otel

@@ -14,7 +14,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/forge-metal/source-code-hosting-service/internal/source"
+	"github.com/verself/source-code-hosting-service/internal/source"
 )
 
 func IsGitSmartHTTPRequest(r *http.Request) bool {
@@ -201,7 +201,7 @@ func (r *statusRecorder) WriteHeader(status int) {
 }
 
 func challengeGitBasicAuth(w http.ResponseWriter) {
-	w.Header().Set("WWW-Authenticate", `Basic realm="Forge Metal Git"`)
+	w.Header().Set("WWW-Authenticate", `Basic realm="Verself Git"`)
 	http.Error(w, "git credential required", http.StatusUnauthorized)
 }
 

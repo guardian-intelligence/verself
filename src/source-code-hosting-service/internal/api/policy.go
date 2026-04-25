@@ -13,9 +13,9 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	auth "github.com/forge-metal/auth-middleware"
-	workloadauth "github.com/forge-metal/auth-middleware/workload"
-	"github.com/forge-metal/source-code-hosting-service/internal/source"
+	auth "github.com/verself/auth-middleware"
+	workloadauth "github.com/verself/auth-middleware/workload"
+	"github.com/verself/source-code-hosting-service/internal/source"
 )
 
 type permission string
@@ -120,10 +120,10 @@ func finishOperationSpan(span trace.Span, principal source.Principal, policy ope
 		return
 	}
 	if principal.OrgID != 0 {
-		span.SetAttributes(attribute.Int64("forge_metal.org_id", int64(principal.OrgID)))
+		span.SetAttributes(attribute.Int64("verself.org_id", int64(principal.OrgID)))
 	}
 	if principal.Subject != "" {
-		span.SetAttributes(attribute.String("forge_metal.subject_id", principal.Subject))
+		span.SetAttributes(attribute.String("verself.subject_id", principal.Subject))
 	}
 	span.SetAttributes(
 		attribute.String("source.outcome", outcome),
@@ -175,7 +175,7 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 	if op.Extensions == nil {
 		op.Extensions = map[string]any{}
 	}
-	op.Extensions["x-forge-metal-iam"] = map[string]any{
+	op.Extensions["x-verself-iam"] = map[string]any{
 		"permission":          string(policy.Permission),
 		"resource":            policy.Resource,
 		"action":              policy.Action,
@@ -298,7 +298,7 @@ func identityHasDirectPermission(identity *auth.Identity, required permission) b
 	if identity == nil || strings.TrimSpace(identity.OrgID) == "" {
 		return false
 	}
-	credentialID, _ := identity.Raw["forge_metal:credential_id"].(string)
+	credentialID, _ := identity.Raw["verself:credential_id"].(string)
 	if strings.TrimSpace(credentialID) == "" {
 		return false
 	}

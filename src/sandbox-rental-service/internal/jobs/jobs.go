@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	"github.com/forge-metal/apiwire"
-	billingclient "github.com/forge-metal/billing-service/client"
-	vmorchestrator "github.com/forge-metal/vm-orchestrator"
+	"github.com/verself/apiwire"
+	billingclient "github.com/verself/billing-service/client"
+	vmorchestrator "github.com/verself/vm-orchestrator"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -26,7 +26,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/forge-metal/sandbox-rental-service/internal/scheduler"
+	"github.com/verself/sandbox-rental-service/internal/scheduler"
 )
 
 const (
@@ -42,7 +42,7 @@ const (
 	WorkloadKindDirect          = "direct"
 	WorkloadKindRunner          = "runner"
 
-	DefaultRunnerClassLabel      = "metal-4vcpu-ubuntu-2404"
+	DefaultRunnerClassLabel      = "verself-4vcpu-ubuntu-2404"
 	defaultProductID             = "sandbox"
 	defaultRunCommand            = "echo hello"
 	RunnerProviderGitHub         = "github"
@@ -1244,10 +1244,10 @@ func vmResourcesWithDefaults(resources, defaults apiwire.VMResources) apiwire.VM
 
 func (s *Service) executionEnv(ctx context.Context, item executionWorkItem) map[string]string {
 	env := map[string]string{
-		"FORGE_METAL_EXECUTION_ID": item.ExecutionID.String(),
-		"FORGE_METAL_ATTEMPT_ID":   item.AttemptID.String(),
-		"FORGE_METAL_RUNNER_CLASS": item.RunnerClass,
-		"FORGE_METAL_SOURCE_KIND":  item.SourceKind,
+		"VERSELF_EXECUTION_ID": item.ExecutionID.String(),
+		"VERSELF_ATTEMPT_ID":   item.AttemptID.String(),
+		"VERSELF_RUNNER_CLASS": item.RunnerClass,
+		"VERSELF_SOURCE_KIND":  item.SourceKind,
 	}
 	if item.WorkloadKind == WorkloadKindRunner {
 		for key, value := range s.runnerExecEnv(ctx, item.ExecutionID, item.AttemptID) {

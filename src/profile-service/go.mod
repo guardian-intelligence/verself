@@ -1,20 +1,20 @@
-module github.com/forge-metal/profile-service
+module github.com/verself/profile-service
 
 go 1.25.0
 
 require (
 	github.com/danielgtaylor/huma/v2 v2.37.3
-	github.com/forge-metal/apiwire v0.0.0
-	github.com/forge-metal/auth-middleware v0.0.0
-	github.com/forge-metal/envconfig v0.0.0
-	github.com/forge-metal/governance-service v0.0.0
-	github.com/forge-metal/httpserver v0.0.0
-	github.com/forge-metal/identity-service v0.0.0
-	github.com/forge-metal/otel v0.0.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.1
 	github.com/oapi-codegen/runtime v1.4.0
 	github.com/spiffe/go-spiffe/v2 v2.6.0
+	github.com/verself/apiwire v0.0.0
+	github.com/verself/auth-middleware v0.0.0
+	github.com/verself/envconfig v0.0.0
+	github.com/verself/governance-service v0.0.0
+	github.com/verself/httpserver v0.0.0
+	github.com/verself/identity-service v0.0.0
+	github.com/verself/otel v0.0.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
@@ -57,11 +57,11 @@ require (
 )
 
 replace (
-	github.com/forge-metal/apiwire => ../apiwire
-	github.com/forge-metal/auth-middleware => ../auth-middleware
-	github.com/forge-metal/envconfig => ../envconfig
-	github.com/forge-metal/governance-service => ../governance-service
-	github.com/forge-metal/httpserver => ../httpserver
-	github.com/forge-metal/identity-service => ../identity-service
-	github.com/forge-metal/otel => ../otel
+	github.com/verself/apiwire => ../apiwire
+	github.com/verself/auth-middleware => ../auth-middleware
+	github.com/verself/envconfig => ../envconfig
+	github.com/verself/governance-service => ../governance-service
+	github.com/verself/httpserver => ../httpserver
+	github.com/verself/identity-service => ../identity-service
+	github.com/verself/otel => ../otel
 )

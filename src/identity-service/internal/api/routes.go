@@ -8,9 +8,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/forge-metal/apiwire"
-	auth "github.com/forge-metal/auth-middleware"
-	"github.com/forge-metal/identity-service/internal/identity"
+	"github.com/verself/apiwire"
+	auth "github.com/verself/auth-middleware"
+	"github.com/verself/identity-service/internal/identity"
 )
 
 func RegisterRoutes(api huma.API, svc *identity.Service) {
@@ -223,7 +223,7 @@ type putMemberCapabilitiesInput struct {
 }
 
 type apiCredentialPath struct {
-	CredentialID string `path:"credential_id" doc:"Forge Metal API credential ID"`
+	CredentialID string `path:"credential_id" doc:"Verself API credential ID"`
 }
 
 type apiCredentialsOutput struct {
@@ -243,7 +243,7 @@ type createAPICredentialOutput struct {
 }
 
 type rollAPICredentialInput struct {
-	CredentialID string `path:"credential_id" doc:"Forge Metal API credential ID"`
+	CredentialID string `path:"credential_id" doc:"Verself API credential ID"`
 	Body         apiwire.IdentityRollAPICredentialRequest
 }
 
@@ -574,7 +574,7 @@ func directPermissionsFromAuthIdentity(authIdentity *auth.Identity) []string {
 	if authIdentity == nil {
 		return nil
 	}
-	credentialID, _ := authIdentity.Raw["forge_metal:credential_id"].(string)
+	credentialID, _ := authIdentity.Raw["verself:credential_id"].(string)
 	if strings.TrimSpace(credentialID) == "" {
 		return nil
 	}

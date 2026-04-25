@@ -8,8 +8,8 @@
 # callback's export fails.
 #
 # Fix: open an SSH local-forward to the target's 4317, set
-# FORGE_METAL_OTLP_ENDPOINT, source scripts/deploy_identity.sh (which
-# derives FORGE_METAL_DEPLOY_ID, TRACEPARENT, OTEL_SERVICE_NAME,
+# VERSELF_OTLP_ENDPOINT, source scripts/deploy_identity.sh (which
+# derives VERSELF_DEPLOY_ID, TRACEPARENT, OTEL_SERVICE_NAME,
 # OTEL_RESOURCE_ATTRIBUTES, OTEL_EXPORTER_OTLP_ENDPOINT), then exec
 # ansible-playbook.
 #
@@ -58,9 +58,9 @@ if ! python3 -c "import socket; socket.create_connection(('127.0.0.1', ${port}),
   exit 1
 fi
 
-export FORGE_METAL_OTLP_ENDPOINT="127.0.0.1:${port}"
+export VERSELF_OTLP_ENDPOINT="127.0.0.1:${port}"
 
-# Derive deploy identity + OTel env. Sourcing sets FORGE_METAL_DEPLOY_ID,
+# Derive deploy identity + OTel env. Sourcing sets VERSELF_DEPLOY_ID,
 # TRACEPARENT, OTEL_RESOURCE_ATTRIBUTES, OTEL_EXPORTER_OTLP_ENDPOINT, etc.
 # shellcheck source=src/platform/scripts/deploy_identity.sh
 source "${SCRIPT_DIR}/deploy_identity.sh"

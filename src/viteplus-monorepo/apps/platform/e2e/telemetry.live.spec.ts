@@ -3,7 +3,7 @@ import { clickhouseQuery, expect, test } from "./harness";
 // Phase-0 gate: a real browser visit to the platform site emits a `page_view`
 // span tagged with the route path, that span lands in default.otel_traces under
 // service.name=platform-web, and (if a deploy correlation is set) it carries
-// the right `forge_metal.deploy_run_key` resource attribute.
+// the right `verself.deploy_run_key` resource attribute.
 test.describe("browser telemetry baseline", () => {
   test("page_view span lands in ClickHouse with service.name=platform-web", async ({ page }) => {
     const witness = `e2e-${Date.now().toString(36)}`;

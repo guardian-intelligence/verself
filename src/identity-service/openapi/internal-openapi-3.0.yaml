@@ -115,7 +115,7 @@ components:
       description: SPIFFE X.509-SVID mutual TLS on the identity-service internal listener.
       type: mutualTLS
 info:
-  title: Forge Metal Identity Service Internal API
+  title: Verself Identity Service Internal API
   version: 1.0.0
 openapi: 3.0.3
 paths:

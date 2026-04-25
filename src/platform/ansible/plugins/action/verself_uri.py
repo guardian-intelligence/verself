@@ -1,4 +1,4 @@
-"""fm_uri — `uri` with Forge Metal trace + baggage correlation.
+"""verself_uri — `uri` with Verself trace + baggage correlation.
 
 Delegates to ansible.builtin.uri. Injects exactly two observability headers
 per request:
@@ -6,12 +6,12 @@ per request:
     trace (same trace-id as the playbook span). The span-id is a
     deterministic SHA-256 derived from the task identity so repeated runs
     of the same task share a probe parent span-id.
-  - baggage:      W3C Baggage. Carries forge_metal.* members that downstream
+  - baggage:      W3C Baggage. Carries verself.* members that downstream
     services project onto every span they create (see src/otel/otel.go,
     baggageSpanProcessor). The product correlation header
-    X-Forge-Metal-Correlation-Id is unrelated to this plane.
+    X-Verself-Correlation-Id is unrelated to this plane.
 
-Deploy identity (FORGE_METAL_DEPLOY_ID, FORGE_METAL_DEPLOY_RUN_KEY) must be
+Deploy identity (VERSELF_DEPLOY_ID, VERSELF_DEPLOY_RUN_KEY) must be
 set in the environment before ansible-playbook runs — scripts/deploy_identity.sh
 is the single source of truth. The action fails fast if the identity is
 missing, because guessing it silently would break downstream trace joins.
@@ -32,19 +32,19 @@ from ansible.plugins.action import ActionBase
 
 
 DOCUMENTATION = r"""
-name: fm_uri
+name: verself_uri
 type: action
 short_description: `uri` wrapper emitting W3C traceparent + baggage
 description:
   - Delegates to ansible.builtin.uri / ansible.legacy.uri.
-  - Injects `traceparent` anchored to FORGE_METAL_DEPLOY_ID's UUIDv5 trace id.
-  - Injects `baggage` carrying forge_metal.* correlation members that
-    downstream services project onto their spans via the fmotel baggage
+  - Injects `traceparent` anchored to VERSELF_DEPLOY_ID's UUIDv5 trace id.
+  - Injects `baggage` carrying verself.* correlation members that
+    downstream services project onto their spans via the verselfotel baggage
     span processor.
   - Preserves any explicitly provided task headers.
 requirements:
   - ansible-core
-  - FORGE_METAL_DEPLOY_ID and FORGE_METAL_DEPLOY_RUN_KEY in the environment
+  - VERSELF_DEPLOY_ID and VERSELF_DEPLOY_RUN_KEY in the environment
     (set by src/platform/scripts/deploy_identity.sh).
 """
 
@@ -64,14 +64,14 @@ def _require_env(name: str) -> str:
     value = os.environ.get(name, "").strip()
     if not value:
         raise AnsibleActionFail(
-            f"fm_uri: {name} is not set. Source scripts/deploy_identity.sh "
+            f"verself_uri: {name} is not set. Source scripts/deploy_identity.sh "
             f"before running ansible-playbook."
         )
     return value
 
 
 def _trace_id_hex() -> str:
-    deploy_id = _require_env("FORGE_METAL_DEPLOY_ID")
+    deploy_id = _require_env("VERSELF_DEPLOY_ID")
     return deploy_id.replace("-", "")
 
 
@@ -84,8 +84,8 @@ def _task_template_id(task, task_vars) -> str:
 
 
 def _task_instance_id(task, task_vars, task_template_id: str) -> str:
-    deploy_id = _require_env("FORGE_METAL_DEPLOY_ID")
-    deploy_run_key = _require_env("FORGE_METAL_DEPLOY_RUN_KEY")
+    deploy_id = _require_env("VERSELF_DEPLOY_ID")
+    deploy_run_key = _require_env("VERSELF_DEPLOY_RUN_KEY")
     task_uuid = getattr(task, "_uuid", "") or ""
     inventory_hostname = (task_vars.get("inventory_hostname") or "").strip()
     return _stable_hex(
@@ -101,7 +101,7 @@ def _task_instance_id(task, task_vars, task_template_id: str) -> str:
 def _probe_span_id(task_instance_id: str, method: str, url: str) -> str:
     parsed = urlsplit(url)
     path = parsed.path or "/"
-    key = (_require_env("FORGE_METAL_DEPLOY_ID"), task_instance_id, method.upper(), path)
+    key = (_require_env("VERSELF_DEPLOY_ID"), task_instance_id, method.upper(), path)
     ordinal = _PROBE_ORDINALS.get(key, 0)
     _PROBE_ORDINALS[key] = ordinal + 1
     span = _stable_hex(task_instance_id, method.upper(), path, str(ordinal), length=16)
@@ -116,15 +116,15 @@ def _header_has(headers: dict, name: str) -> bool:
 
 def _baggage_value(task_template_id: str, task_instance_id: str, probe_span_id: str) -> str:
     members: list[tuple[str, str]] = [
-        ("forge_metal.deploy_id", _require_env("FORGE_METAL_DEPLOY_ID")),
-        ("forge_metal.deploy_run_key", _require_env("FORGE_METAL_DEPLOY_RUN_KEY")),
-        ("forge_metal.task_template_id", task_template_id),
-        ("forge_metal.task_instance_id", task_instance_id),
-        ("forge_metal.probe_id", probe_span_id),
+        ("verself.deploy_id", _require_env("VERSELF_DEPLOY_ID")),
+        ("verself.deploy_run_key", _require_env("VERSELF_DEPLOY_RUN_KEY")),
+        ("verself.task_template_id", task_template_id),
+        ("verself.task_instance_id", task_instance_id),
+        ("verself.probe_id", probe_span_id),
     ]
     for env_var, key in (
-        ("FORGE_METAL_VERIFICATION_RUN", "forge_metal.verification_run"),
-        ("FORGE_METAL_CORRELATION_ID", "forge_metal.correlation_id"),
+        ("VERSELF_VERIFICATION_RUN", "verself.verification_run"),
+        ("VERSELF_CORRELATION_ID", "verself.correlation_id"),
     ):
         value = os.environ.get(env_var, "").strip()
         if value:

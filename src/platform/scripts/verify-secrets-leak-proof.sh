@@ -30,7 +30,7 @@ def segment(payload):
 
 print(".".join([
     segment({"alg": "none", "typ": "JWT"}),
-    segment({"sub": "forge-metal-leak-proof", "run": os.environ["RUN_ID"], "nonce": secrets.token_hex(12)}),
+    segment({"sub": "verself-leak-proof", "run": os.environ["RUN_ID"], "nonce": secrets.token_hex(12)}),
     base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip("="),
 ]))
 PY
@@ -143,7 +143,7 @@ import urllib.request
 
 url = sys.argv[1]
 token = sys.stdin.readline().rstrip("\n")
-request = urllib.request.Request(url, headers={"Authorization": "Bearer " + token, "User-Agent": "forge-metal-secrets-leak-proof"})
+request = urllib.request.Request(url, headers={"Authorization": "Bearer " + token, "User-Agent": "verself-secrets-leak-proof"})
 try:
     with urllib.request.urlopen(request, timeout=5) as response:
         status = response.status
@@ -207,16 +207,16 @@ emit_scan_span() {
     return 1
   fi
 
-  export FORGE_METAL_OTLP_ENDPOINT="127.0.0.1:${port}"
-  export FORGE_METAL_DEPLOY_RUN_KEY="${run_id}"
-  export FORGE_METAL_DEPLOY_KIND="secrets-leak-proof"
+  export VERSELF_OTLP_ENDPOINT="127.0.0.1:${port}"
+  export VERSELF_DEPLOY_RUN_KEY="${run_id}"
+  export VERSELF_DEPLOY_KIND="secrets-leak-proof"
   # shellcheck source=src/platform/scripts/deploy_identity.sh
   source "${script_dir}/deploy_identity.sh"
   (
     cd "${VERIFICATION_REPO_ROOT}"
     PROOF_SPAN_SERVICE="proof-runner" \
     PROOF_SPAN_NAME="secrets.leak_proof.scan" \
-    PROOF_SPAN_ATTRS_JSON="$(python3 -c 'import json, sys; print(json.dumps({"forge_metal.proof_run_id": sys.argv[1], "leak.findings": 0}))' "${run_id}")" \
+    PROOF_SPAN_ATTRS_JSON="$(python3 -c 'import json, sys; print(json.dumps({"verself.proof_run_id": sys.argv[1], "leak.findings": 0}))' "${run_id}")" \
       go run ./src/otel/cmd/proof-span
   )
 }
@@ -272,7 +272,7 @@ scan_clickhouse() {
   if ! (
     cd "${VERIFICATION_PLATFORM_ROOT}"
     ./scripts/clickhouse.sh \
-      --database forge_metal \
+      --database verself \
       --param_window_start="${window_start}" \
       --param_window_end="${window_end}" \
       --query "
@@ -283,7 +283,7 @@ scan_clickhouse() {
         ORDER BY recorded_at, sequence
         FORMAT JSONEachRow
       "
-  ) | scan_text "forge_metal.audit_events"; then
+  ) | scan_text "verself.audit_events"; then
     failed=1
   fi
   return "${failed}"
@@ -428,7 +428,7 @@ wait_for_clickhouse_count default "
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort('${span_window_end}') + INTERVAL 60 SECOND
     AND ServiceName = 'proof-runner'
     AND SpanName = 'secrets.leak_proof.scan'
-    AND SpanAttributes['forge_metal.proof_run_id'] = {run_id:String}
+    AND SpanAttributes['verself.proof_run_id'] = {run_id:String}
 " 1 "${artifact_dir}/clickhouse/leak-proof-span-count.tsv"
 
 python3 - "${run_id}" "${window_start}" "${span_window_end}" "${artifact_dir}" >"${artifact_dir}/run.json" <<'PY'
@@ -444,7 +444,7 @@ print(json.dumps({
     "checked_surfaces": [
         "default.otel_logs",
         "default.otel_traces",
-        "forge_metal.audit_events",
+        "verself.audit_events",
         "/var/log/caddy/access.log",
         "journalctl",
         "proof artifacts",

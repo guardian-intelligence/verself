@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/forge-metal/governance-service/internal/api"
+	"github.com/verself/governance-service/internal/api"
 )
 
 func main() {

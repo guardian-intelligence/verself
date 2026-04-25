@@ -1,6 +1,6 @@
 # Secrets Service Direction
 
-`secrets-service` is the Forge Metal product boundary for customer-managed
+`secrets-service` is the Verself product boundary for customer-managed
 retrievable secrets, non-secret variables, opaque credentials, transit keys, and
 execution-time injection into sandboxed workloads. The backend is OpenBao. The
 public API does not expose OpenBao mount names, backend paths, namespace names,
@@ -8,7 +8,7 @@ host paths, or privileged runtime details.
 
 ## Architecture
 
-Each Forge Metal org gets an OpenBao KV v2 mount, Transit mount, JWT auth roles,
+Each Verself org gets an OpenBao KV v2 mount, Transit mount, JWT auth roles,
 and ACL policies reconciled by Ansible from identity-service organization
 inventory. Current single-node deployments use mount-per-org tenancy:
 
@@ -19,7 +19,7 @@ jwt-<org_id>
 ```
 
 The customer API remains the authority for product semantics. OpenBao enforces
-resource capabilities after the service maps an authenticated Forge Metal
+resource capabilities after the service maps an authenticated Verself
 principal or SPIFFE workload caller to a short-lived OpenBao token.
 
 ### KV Layout
@@ -68,7 +68,7 @@ spans.
 
 ## Identity
 
-User and API credential calls use the standard Forge Metal Zitadel path:
+User and API credential calls use the standard Verself Zitadel path:
 `auth-middleware` validates issuer, audience, JWKS, org claim, and project
 roles. `secrets-service` owns its operation catalog and maps roles as:
 
@@ -188,7 +188,7 @@ Transit:
 - `POST /api/v1/transit/keys/{key_name}/verify`
 
 Mutations require `Idempotency-Key`. Request bodies are size-bounded. Public
-routes carry `x-forge-metal-iam` metadata so identity-service can expose the
+routes carry `x-verself-iam` metadata so identity-service can expose the
 operation catalog and generated clients can treat permissions as data.
 
 ## Audit And Traces
@@ -283,8 +283,8 @@ variable, creates/reads/lists/rolls/revokes an opaque credential, creates and
 uses transit keys, exercises API-credential access, and asserts:
 
 - `default.otel_traces` contains the expected secrets-service spans.
-- `forge_metal.audit_events` contains the expected secrets audit sequence.
-- `forge_metal.metering` contains settled secrets operation rows.
+- `verself.audit_events` contains the expected secrets audit sequence.
+- `verself.metering` contains settled secrets operation rows.
 - OpenBao does not contain legacy service-token bootstrap material.
 
 `make source-code-hosting-proof` creates a Git credential through

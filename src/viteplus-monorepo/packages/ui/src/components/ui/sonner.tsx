@@ -1,6 +1,6 @@
 import { Toaster as SonnerToaster, toast } from "sonner";
 
-// Thin wrapper so app code imports from @forge-metal/ui alongside every
+// Thin wrapper so app code imports from @verself/ui alongside every
 // other primitive. We theme-opt-out by default — sonner's built-in themes
 // assume a dark/light toggle the app shell owns; we instead inherit the
 // current foreground/background via CSS variables applied in globals.css.

@@ -4,7 +4,7 @@ effective_at: 2026-04-17
 processing_activities:
   - id: account-administration
     role: controller
-    purpose: Provision and administer the Forge Metal customer organization
+    purpose: Provision and administer the Verself customer organization
     data_categories:
       - Organization administrator name
       - Organization administrator email
@@ -45,7 +45,7 @@ processing_activities:
 
   - id: observability
     role: controller
-    purpose: Operate and secure the Forge Metal platform; detect and respond to availability and security incidents
+    purpose: Operate and secure the Verself platform; detect and respond to availability and security incidents
     data_categories:
       - Service logs
       - Traces

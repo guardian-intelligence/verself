@@ -8,7 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/forge-metal/billing-service/internal/billing/ledger"
+	"github.com/verself/billing-service/internal/billing/ledger"
 )
 
 type fundingLeg struct {

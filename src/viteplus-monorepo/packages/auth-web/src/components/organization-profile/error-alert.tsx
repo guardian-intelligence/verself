@@ -1,5 +1,5 @@
 import { AlertCircleIcon } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@forge-metal/ui/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@verself/ui/components/ui/alert";
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error && error.message) return error.message;

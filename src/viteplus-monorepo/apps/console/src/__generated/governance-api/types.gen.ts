@@ -109,7 +109,7 @@ export type GovernanceAuditEvent = {
    */
   credential_fingerprint?: string;
   /**
-   * Forge Metal API credential ID when the actor is a credential.
+   * Verself API credential ID when the actor is a credential.
    */
   credential_id?: string;
   /**
@@ -189,7 +189,7 @@ export type GovernanceAuditEvent = {
    */
   org_scope: string;
   /**
-   * Forge Metal operation permission.
+   * Verself operation permission.
    */
   permission: string;
   /**

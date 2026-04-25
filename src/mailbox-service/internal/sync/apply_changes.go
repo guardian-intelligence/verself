@@ -7,8 +7,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/forge-metal/mailbox-service/internal/jmap"
-	"github.com/forge-metal/mailbox-service/internal/mailstore"
+	"github.com/verself/mailbox-service/internal/jmap"
+	"github.com/verself/mailbox-service/internal/mailstore"
 )
 
 func (w *Worker) applyPendingChanges(ctx context.Context, client *jmap.Client, principal DiscoveryPrincipal, reason string) error {

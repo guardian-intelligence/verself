@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	fmotel "github.com/forge-metal/otel"
+	verselfotel "github.com/verself/otel"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -26,7 +26,7 @@ func main() {
 		serviceName = "proof-runner"
 	}
 
-	shutdown, _, err := fmotel.Init(ctx, fmotel.Config{
+	shutdown, _, err := verselfotel.Init(ctx, verselfotel.Config{
 		ServiceName:    serviceName,
 		ServiceVersion: "1.0.0",
 	})

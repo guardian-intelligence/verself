@@ -1,4 +1,4 @@
-# Forge Metal
+# Verself
 
 Set of services + console + marketing page for a PaaS software business (that builds itself through dogfooding), almost entirely self-hosted on bare-metal with Forgejo, fast CI via Firecracker + deep ZFS optimizations, Grafana + ClickHouse observability (logs + traces + metrics), TigerBeetle for financial OLTP, Stripe integration, Zitadel for enterprise-grade auth, and PostgreSQL for general purpose RDBMS.
 
@@ -69,7 +69,7 @@ you need to run end-to-end scenarios against a known plan tier or prepaid
 balance:
 
 ```bash
-DOMAIN="$(cd src/platform && awk -F'"' '/^forge_metal_domain:/{print $2}' ansible/group_vars/all/main.yml)"
+DOMAIN="$(cd src/platform && awk -F'"' '/^verself_domain:/{print $2}' ansible/group_vars/all/main.yml)"
 make set-user-state EMAIL="ceo@${DOMAIN}" ORG=platform STATE=free
 make set-user-state EMAIL="ceo@${DOMAIN}" ORG=platform STATE=hobby
 make set-user-state EMAIL="ceo@${DOMAIN}" ORG=platform STATE=pro BALANCE_CENTS=10000
@@ -182,7 +182,7 @@ service APIs use service-owned API origins such as
 
 ## Snapshot-Backed VM Farm
 
-Forge Metal's runtime direction is a checkpoint-backed Firecracker VM farm. CI,
+Verself's runtime direction is a checkpoint-backed Firecracker VM farm. CI,
 direct shell execution, canaries, scheduled automation, and customer workloads
 compile to the same execution model:
 
@@ -197,7 +197,7 @@ and observe the advanced counter without copying the full database image.
 
 Authoritative code entry points:
 
-- `.forgejo/workflows/ci.yml` - first Forgejo Actions tracer for `runs-on: forge-metal`.
+- `.forgejo/workflows/ci.yml` - first Forgejo Actions tracer for `runs-on: verself`.
 - `src/sandbox-rental-service/internal/jobs/` - customer execution state, billing, workflow/checkpoint policy.
 - `src/sandbox-rental-service/migrations/` - PostgreSQL state machines for executions, VM segments, checkpoint refs, checkpoint versions, and save requests.
 - `src/vm-orchestrator/` - privileged host daemon for Firecracker, TAP networking, ZFS clone/snapshot/destroy, and guest telemetry.

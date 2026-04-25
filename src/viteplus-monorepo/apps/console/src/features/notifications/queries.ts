@@ -1,5 +1,5 @@
 import { keepPreviousData, queryOptions } from "@tanstack/react-query";
-import { authQueryKey, type AuthenticatedAuth } from "@forge-metal/auth-web/isomorphic";
+import { authQueryKey, type AuthenticatedAuth } from "@verself/auth-web/isomorphic";
 import { listNotifications } from "~/server-fns/api";
 
 export type NotificationsQueryScope = {

@@ -4,6 +4,7 @@
 CREATE TABLE source_repositories (
     repo_id          UUID        PRIMARY KEY,
     org_id           BIGINT      NOT NULL CHECK (org_id > 0),
+    project_id       UUID        NOT NULL,
     org_path         TEXT        NOT NULL CHECK (org_path <> ''),
     created_by       TEXT        NOT NULL CHECK (created_by <> ''),
     name             TEXT        NOT NULL CHECK (name <> ''),
@@ -17,12 +18,17 @@ CREATE TABLE source_repositories (
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     deleted_at       TIMESTAMPTZ,
+    UNIQUE (org_id, project_id),
     UNIQUE (org_id, slug),
     UNIQUE (org_path, slug)
 );
 
 CREATE INDEX idx_source_repositories_org_updated
     ON source_repositories (org_id, updated_at DESC, repo_id DESC)
+    WHERE state = 'active';
+
+CREATE INDEX idx_source_repositories_project_updated
+    ON source_repositories (org_id, project_id, updated_at DESC, repo_id DESC)
     WHERE state = 'active';
 
 CREATE TABLE source_repository_backends (
@@ -95,6 +101,7 @@ CREATE INDEX idx_source_checkout_grants_repo_created
 CREATE TABLE source_workflow_runs (
     workflow_run_id        UUID        PRIMARY KEY,
     org_id                 BIGINT      NOT NULL CHECK (org_id > 0),
+    project_id             UUID        NOT NULL,
     repo_id                UUID        NOT NULL REFERENCES source_repositories(repo_id) ON DELETE CASCADE,
     actor_id               TEXT        NOT NULL CHECK (actor_id <> ''),
     idempotency_key        TEXT        NOT NULL CHECK (idempotency_key <> ''),
@@ -115,6 +122,9 @@ CREATE TABLE source_workflow_runs (
 CREATE INDEX idx_source_workflow_runs_repo_created
     ON source_workflow_runs (repo_id, created_at DESC, workflow_run_id DESC);
 
+CREATE INDEX idx_source_workflow_runs_project_created
+    ON source_workflow_runs (org_id, project_id, created_at DESC, workflow_run_id DESC);
+
 CREATE INDEX idx_source_workflow_runs_trace_id
     ON source_workflow_runs (trace_id)
     WHERE trace_id <> '';
@@ -123,6 +133,7 @@ CREATE TABLE source_storage_events (
     storage_event_id      UUID        PRIMARY KEY,
     org_id                BIGINT      NOT NULL CHECK (org_id > 0),
     repo_id               UUID        REFERENCES source_repositories(repo_id) ON DELETE SET NULL,
+    project_id            UUID,
     backend               TEXT        NOT NULL CHECK (backend <> ''),
     storage_namespace     TEXT        NOT NULL DEFAULT '',
     storage_object_kind   TEXT        NOT NULL CHECK (storage_object_kind <> ''),
@@ -145,6 +156,7 @@ CREATE TABLE source_webhook_deliveries (
     signature_valid     BOOLEAN     NOT NULL,
     result              TEXT        NOT NULL CHECK (result IN ('accepted', 'denied', 'unresolved', 'error')),
     resolved_org_id     BIGINT      CHECK (resolved_org_id > 0),
+    resolved_project_id UUID,
     resolved_repo_id    UUID        REFERENCES source_repositories(repo_id) ON DELETE SET NULL,
     trace_id            TEXT        NOT NULL DEFAULT '',
     details             JSONB       NOT NULL DEFAULT '{}'::jsonb,
@@ -160,6 +172,7 @@ CREATE TABLE source_events (
     org_id         BIGINT      NOT NULL CHECK (org_id > 0),
     actor_id       TEXT        NOT NULL DEFAULT '',
     repo_id        UUID,
+    project_id     UUID,
     event_type     TEXT        NOT NULL CHECK (event_type <> ''),
     result         TEXT        NOT NULL CHECK (result IN ('allowed', 'denied', 'error')),
     trace_id       TEXT        NOT NULL DEFAULT '',
