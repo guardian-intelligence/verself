@@ -7,7 +7,7 @@
   ansible.builtin.shell: |
     set -o pipefail
     root_disk=$(lsblk -npo PKNAME $(findmnt -no SOURCE /) 2>/dev/null | head -1)
-    lsblk -dnpo NAME,TYPE | awk -v root="$root_disk" '$2 == "disk" && $1 != root {print $1}' | head -1
+    lsblk -dnpo NAME,TYPE | awk -v root="$root_disk" '$2 == "disk" && $1 != root && $1 !~ "^/dev/zd" {print $1}' | head -1
   register: zfs_disk
   args:
     executable: /bin/bash
