@@ -13,6 +13,7 @@ export type {
   Auth,
   AuthSnapshot,
   AuthenticatedAuth,
+  AuthOrganizationContext,
   AuthRoleAssignment,
   ClientUser,
   SessionInfo,

@@ -10,14 +10,26 @@ export const authRoleAssignmentSchema = v.object({
 
 export type AuthRoleAssignment = v.InferOutput<typeof authRoleAssignmentSchema>;
 
+export const authOrganizationContextSchema = v.object({
+  orgID: v.string(),
+  orgName: v.nullable(v.string()),
+  roles: v.array(v.string()),
+  roleAssignments: v.array(authRoleAssignmentSchema),
+});
+
+export type AuthOrganizationContext = v.InferOutput<typeof authOrganizationContextSchema>;
+
 export const clientUserSchema = v.object({
   sub: v.string(),
   email: v.nullable(v.string()),
   name: v.nullable(v.string()),
   preferredUsername: v.nullable(v.string()),
+  homeOrgID: v.nullable(v.string()),
+  selectedOrgID: v.nullable(v.string()),
   orgID: v.nullable(v.string()),
   roles: v.array(v.string()),
   roleAssignments: v.array(authRoleAssignmentSchema),
+  availableOrganizations: v.array(authOrganizationContextSchema),
 });
 
 export type ClientUser = v.InferOutput<typeof clientUserSchema>;
@@ -26,6 +38,7 @@ export const anonymousAuthSchema = v.object({
   isAuthenticated: v.literal(false),
   userId: v.null_(),
   orgId: v.null_(),
+  selectedOrgId: v.null_(),
   roles: v.array(v.string()),
   roleAssignments: v.array(authRoleAssignmentSchema),
   cachePartition: v.null_(),
@@ -37,6 +50,7 @@ export const authenticatedAuthSchema = v.object({
   isAuthenticated: v.literal(true),
   userId: v.string(),
   orgId: v.nullable(v.string()),
+  selectedOrgId: v.nullable(v.string()),
   roles: v.array(v.string()),
   roleAssignments: v.array(authRoleAssignmentSchema),
   cachePartition: v.string(),
@@ -96,6 +110,7 @@ export const anonymousAuth: AnonymousAuth = {
   isAuthenticated: false,
   userId: null,
   orgId: null,
+  selectedOrgId: null,
   roles: [],
   roleAssignments: [],
   cachePartition: null,
@@ -115,8 +130,12 @@ export function parseAuthSnapshot(input: unknown): AuthSnapshot {
     throw new Error("Auth snapshot user does not match cache partition owner");
   }
 
-  if (snapshot.auth.orgId !== snapshot.user.orgID) {
+  if (snapshot.auth.orgId !== snapshot.user.selectedOrgID) {
     throw new Error("Auth snapshot organization does not match user organization");
+  }
+
+  if (snapshot.auth.selectedOrgId !== snapshot.user.selectedOrgID) {
+    throw new Error("Auth snapshot selected organization does not match user organization");
   }
 
   return snapshot;
@@ -140,11 +159,11 @@ export function authQueryKey<TParts extends readonly unknown[]>(
   authState: AuthenticatedAuth,
   ...parts: TParts
 ) {
-  return ["auth", authState.cachePartition, ...parts] as const;
+  return ["auth", authState.cachePartition, authState.selectedOrgId, ...parts] as const;
 }
 
 export function authCollectionId(authState: AuthenticatedAuth, baseId: string): string {
-  return `auth:${authState.cachePartition}:${baseId}`;
+  return `auth:${authState.cachePartition}:${authState.selectedOrgId ?? "no-org"}:${baseId}`;
 }
 
 export interface AuthPartitionedCache {
@@ -154,7 +173,7 @@ export interface AuthPartitionedCache {
 const authPartitionsByCache = new WeakMap<AuthPartitionedCache, string | null>();
 
 export function authCacheKey(snapshot: AuthSnapshot): string {
-  return `auth:${snapshot.auth.cachePartition ?? "anonymous"}`;
+  return `auth:${snapshot.auth.cachePartition ?? "anonymous"}:${snapshot.auth.selectedOrgId ?? "no-org"}`;
 }
 
 export function syncAuthPartitionedCache(
