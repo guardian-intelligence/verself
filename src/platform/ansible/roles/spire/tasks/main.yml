@@ -374,11 +374,6 @@
     group: spire
     mode: "0600"
 
-- name: Remove legacy stored SPIRE join token
-  ansible.builtin.file:
-    path: /etc/credstore/spire/join-token
-    state: absent
-
 - name: Check SPIRE agent attestation state
   ansible.builtin.stat:
     path: /var/lib/spire/agent/agent-data.json

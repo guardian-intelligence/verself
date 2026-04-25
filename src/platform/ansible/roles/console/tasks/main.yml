@@ -81,32 +81,6 @@
     path: /etc/systemd/system/console.service
   register: console_systemd_unit_file
 
-- name: Check whether retired rent-a-sandbox systemd unit exists
-  ansible.builtin.stat:
-    path: /etc/systemd/system/rent-a-sandbox.service
-  register: console_retired_rent_unit_file
-
-- name: Stop retired rent-a-sandbox unit
-  ansible.builtin.systemd:
-    name: rent-a-sandbox
-    enabled: false
-    state: stopped
-    daemon_reload: true
-  when: console_retired_rent_unit_file.stat.exists
-
-- name: Remove retired rent-a-sandbox unit and edge files
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: absent
-  loop:
-    - /etc/systemd/system/rent-a-sandbox.service
-    - /etc/nftables.d/rent-a-sandbox.nft
-    - /etc/rent-a-sandbox/env
-    - /etc/rent-a-sandbox
-    - /etc/credstore/rent-a-sandbox
-    - /opt/rent-a-sandbox
-  notify: Reload nftables
-
 - name: Regenerate console API clients before source sync
   delegate_to: localhost
   become: false
