@@ -10,8 +10,10 @@ import {
   PageTitle,
 } from "@forge-metal/ui/components/ui/page";
 import { ExecutionScheduleForm } from "~/features/schedules/components";
+import { loadSourceRepositories } from "~/features/source/queries";
 
 export const Route = createFileRoute("/_shell/_authenticated/schedules/new")({
+  loader: ({ context }) => loadSourceRepositories(context.queryClient, context.auth),
   component: NewSchedulePage,
 });
 
@@ -27,7 +29,7 @@ function NewSchedulePage() {
           </PageEyebrow>
           <PageTitle>New schedule</PageTitle>
           <PageDescription>
-            Temporal triggers a recurring VM canary on the interval you configure here.
+            Temporal triggers recurring source workflow dispatches on this interval.
           </PageDescription>
         </PageHeaderContent>
       </PageHeader>

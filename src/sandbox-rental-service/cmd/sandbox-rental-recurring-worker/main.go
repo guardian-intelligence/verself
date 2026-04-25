@@ -10,15 +10,13 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/riverqueue/river"
 	"go.temporal.io/sdk/worker"
 
 	workloadauth "github.com/forge-metal/auth-middleware/workload"
 	"github.com/forge-metal/envconfig"
 	fmotel "github.com/forge-metal/otel"
-	"github.com/forge-metal/sandbox-rental-service/internal/jobs"
 	"github.com/forge-metal/sandbox-rental-service/internal/recurring"
-	"github.com/forge-metal/sandbox-rental-service/internal/scheduler"
+	"github.com/forge-metal/sandbox-rental-service/internal/sourceworkflow"
 	"github.com/forge-metal/temporal-platform/sdkclient"
 )
 
@@ -52,6 +50,7 @@ func run() error {
 	temporalFrontendAddress := cfg.String("SANDBOX_TEMPORAL_FRONTEND_ADDRESS", sdkclient.DefaultFrontendAddress)
 	temporalNamespace := cfg.String("SANDBOX_TEMPORAL_NAMESPACE", recurring.DefaultNamespace)
 	temporalRecurringTaskQueue := cfg.String("SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING", recurring.DefaultTaskQueue)
+	sourceInternalURL := cfg.URL("SANDBOX_SOURCE_INTERNAL_URL", "https://127.0.0.1:4262")
 	riverPGMaxConns := cfg.Int("SANDBOX_RIVER_PG_MAX_CONNS", 8)
 	riverPGMinConns := cfg.Int("SANDBOX_RIVER_PG_MIN_CONNS", 1)
 	riverPGConnMaxLifetime := cfg.Int("SANDBOX_RIVER_PG_CONN_MAX_LIFETIME_SECONDS", 1800)
@@ -90,23 +89,14 @@ func run() error {
 		return fmt.Errorf("ping scheduler postgres pool: %w", err)
 	}
 
-	jobService := &jobs.Service{
-		PGX:    pgxPool,
-		Logger: logger,
-	}
-
-	schedulerRuntime, err := scheduler.NewRuntime(pgxPool, scheduler.Config{
-		Logger: logger,
-		// River validates inserted job kinds against the local worker bundle even
-		// when this process only enqueues and never starts a River worker loop.
-		RegisterWorkers: func(workers *river.Workers) error {
-			return jobs.RegisterSchedulerWorkers(workers, jobService)
-		},
-	})
+	sourceHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceSourceCodeHosting, nil)
 	if err != nil {
-		return fmt.Errorf("create scheduler runtime: %w", err)
+		return fmt.Errorf("sandbox-rental recurring source-code-hosting mtls: %w", err)
 	}
-	jobService.Scheduler = schedulerRuntime
+	sourceDispatcher, err := sourceworkflow.NewDispatcher(sourceInternalURL, sourceHTTPClient)
+	if err != nil {
+		return fmt.Errorf("create source workflow dispatcher: %w", err)
+	}
 
 	temporalClient, err := sdkclient.NewWorkflowClient(sdkclient.Config{
 		HostPort: temporalFrontendAddress,
@@ -122,7 +112,7 @@ func run() error {
 		Namespace:      temporalNamespace,
 		TaskQueue:      temporalRecurringTaskQueue,
 		Logger:         logger,
-		Submitter:      jobService,
+		Dispatcher:     sourceDispatcher,
 	})
 	if err != nil {
 		return fmt.Errorf("create recurring service: %w", err)

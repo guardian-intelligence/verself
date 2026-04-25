@@ -1050,38 +1050,39 @@ components:
         idempotency_key:
           maxLength: 128
           type: string
+        inputs:
+          additionalProperties:
+            type: string
+          type: object
         interval_seconds:
           format: int32
           maximum: 4294967295
           minimum: 15
           type: integer
-        max_wall_seconds:
-          format: int64
-          maximum: 9007199254740991
-          minimum: 1
-          type: integer
         paused:
           type: boolean
-        run_command:
-          maxLength: 8192
+        ref:
+          maxLength: 255
+          type: string
+        source_repository_id:
+          type: string
+        workflow_path:
+          maxLength: 512
           minLength: 1
           type: string
       required:
         - idempotency_key
-        - run_command
+        - source_repository_id
+        - workflow_path
         - interval_seconds
       type: object
     SandboxExecutionScheduleDispatchRecord:
       additionalProperties: false
       properties:
-        attempt_id:
-          type: string
         created_at:
           format: date-time
           type: string
         dispatch_id:
-          type: string
-        execution_id:
           type: string
         failure_reason:
           type: string
@@ -1089,6 +1090,8 @@ components:
           type: string
         scheduled_at:
           format: date-time
+          type: string
+        source_workflow_run_id:
           type: string
         state:
           type: string
@@ -1101,6 +1104,8 @@ components:
           type: string
         updated_at:
           format: date-time
+          type: string
+        workflow_state:
           type: string
       required:
         - dispatch_id
@@ -1135,22 +1140,23 @@ components:
           type: string
         idempotency_key:
           type: string
+        inputs:
+          additionalProperties:
+            type: string
+          type: object
         interval_seconds:
           format: int32
           maximum: 4294967295
           minimum: 15
           type: integer
-        max_wall_seconds:
-          format: int64
-          maximum: 9007199254740991
-          minimum: 0
-          type: integer
         org_id:
           pattern: ^[0-9]+$
           type: string
-        run_command:
+        ref:
           type: string
         schedule_id:
+          type: string
+        source_repository_id:
           type: string
         state:
           type: string
@@ -1163,6 +1169,8 @@ components:
         updated_at:
           format: date-time
           type: string
+        workflow_path:
+          type: string
       required:
         - schedule_id
         - org_id
@@ -1171,8 +1179,9 @@ components:
         - temporal_namespace
         - task_queue
         - state
+        - source_repository_id
+        - workflow_path
         - interval_seconds
-        - run_command
         - created_at
         - updated_at
       type: object

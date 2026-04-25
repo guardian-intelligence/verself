@@ -957,6 +957,12 @@ func createExecutionSchedule(recurringSvc *recurring.Service) func(context.Conte
 		}
 		record, err := recurringSvc.CreateSchedule(ctx, orgID, identity.Subject, executionScheduleCreateRequest(input.Body))
 		if err != nil {
+			if errors.Is(err, recurring.ErrInvalid) {
+				return nil, badRequest(ctx, "invalid-execution-schedule", err.Error(), err)
+			}
+			if errors.Is(err, recurring.ErrConflict) {
+				return nil, conflict(ctx, "execution-schedule-conflict", "execution schedule idempotency key conflicts with an existing schedule")
+			}
 			return nil, internalFailure(ctx, "create-execution-schedule-failed", "create execution schedule failed", err)
 		}
 		return &ExecutionScheduleOutput{Body: executionScheduleRecord(record)}, nil

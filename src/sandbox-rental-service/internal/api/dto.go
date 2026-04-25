@@ -423,12 +423,14 @@ func stickyDiskResetResult(result jobs.StickyDiskResetResult) apiwire.SandboxSti
 
 func executionScheduleCreateRequest(request apiwire.SandboxExecutionScheduleCreateRequest) recurring.CreateRequest {
 	return recurring.CreateRequest{
-		DisplayName:     request.DisplayName,
-		IdempotencyKey:  request.IdempotencyKey,
-		RunCommand:      request.RunCommand,
-		IntervalSeconds: request.IntervalSeconds,
-		MaxWallSeconds:  request.MaxWallSeconds,
-		Paused:          request.Paused,
+		DisplayName:        request.DisplayName,
+		IdempotencyKey:     request.IdempotencyKey,
+		SourceRepositoryID: request.SourceRepositoryID,
+		WorkflowPath:       request.WorkflowPath,
+		Ref:                request.Ref,
+		Inputs:             request.Inputs,
+		IntervalSeconds:    request.IntervalSeconds,
+		Paused:             request.Paused,
 	}
 }
 
@@ -444,8 +446,10 @@ func executionScheduleRecord(record recurring.ScheduleRecord) apiwire.SandboxExe
 		TaskQueue:          record.TaskQueue,
 		State:              record.State,
 		IntervalSeconds:    record.IntervalSeconds,
-		RunCommand:         record.RunCommand,
-		MaxWallSeconds:     record.MaxWallSeconds,
+		SourceRepositoryID: record.SourceRepositoryID,
+		WorkflowPath:       record.WorkflowPath,
+		Ref:                record.Ref,
+		Inputs:             record.Inputs,
 		CreatedAt:          record.CreatedAt,
 		UpdatedAt:          record.UpdatedAt,
 		Dispatches:         executionScheduleDispatches(record.Dispatches),
@@ -465,17 +469,17 @@ func executionScheduleDispatches(records []recurring.DispatchRecord) []apiwire.S
 
 func executionScheduleDispatchRecord(record recurring.DispatchRecord) apiwire.SandboxExecutionScheduleDispatchRecord {
 	return apiwire.SandboxExecutionScheduleDispatchRecord{
-		DispatchID:         record.DispatchID,
-		ScheduleID:         record.ScheduleID,
-		TemporalWorkflowID: record.TemporalWorkflowID,
-		TemporalRunID:      record.TemporalRunID,
-		ExecutionID:        record.ExecutionID,
-		AttemptID:          record.AttemptID,
-		State:              record.State,
-		FailureReason:      record.FailureReason,
-		ScheduledAt:        record.ScheduledAt,
-		SubmittedAt:        record.SubmittedAt,
-		CreatedAt:          record.CreatedAt,
-		UpdatedAt:          record.UpdatedAt,
+		DispatchID:          record.DispatchID,
+		ScheduleID:          record.ScheduleID,
+		TemporalWorkflowID:  record.TemporalWorkflowID,
+		TemporalRunID:       record.TemporalRunID,
+		SourceWorkflowRunID: record.SourceWorkflowRunID,
+		WorkflowState:       record.WorkflowState,
+		State:               record.State,
+		FailureReason:       record.FailureReason,
+		ScheduledAt:         record.ScheduledAt,
+		SubmittedAt:         record.SubmittedAt,
+		CreatedAt:           record.CreatedAt,
+		UpdatedAt:           record.UpdatedAt,
 	}
 }

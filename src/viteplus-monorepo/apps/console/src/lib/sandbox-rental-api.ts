@@ -388,30 +388,36 @@ export type CancelContractRequest = v.InferInput<typeof cancelContractRequestSch
 type ExecutionScheduleRequestBody = {
   idempotency_key: string;
   display_name?: string;
+  inputs?: Record<string, string>;
   interval_seconds: number;
-  max_wall_seconds?: number;
   paused?: boolean;
-  run_command: string;
+  ref?: string;
+  source_repository_id: string;
+  workflow_path: string;
 };
 
 export const executionScheduleRequestSchema = v.pipe(
   v.strictObject({
     display_name: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(255))),
     idempotency_key: v.optional(v.string()),
+    inputs: v.optional(v.record(v.string(), v.string())),
     interval_seconds: v.pipe(v.number(), v.integer(), v.minValue(15)),
-    max_wall_seconds: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
     paused: v.optional(v.boolean()),
-    run_command: v.pipe(v.string(), v.trim(), v.minLength(1)),
+    ref: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(255))),
+    source_repository_id: v.pipe(v.string(), v.uuid()),
+    workflow_path: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(512)),
   }),
   v.transform((body) => {
     const providedIdempotencyKey = body.idempotency_key?.trim();
     const requestBody: ExecutionScheduleRequestBody = {
       idempotency_key: providedIdempotencyKey || createIdempotencyKey("execution-schedule"),
       interval_seconds: body.interval_seconds,
-      run_command: body.run_command,
+      source_repository_id: body.source_repository_id,
+      workflow_path: body.workflow_path,
       ...(body.display_name ? { display_name: body.display_name } : {}),
-      ...(body.max_wall_seconds ? { max_wall_seconds: body.max_wall_seconds } : {}),
+      ...(body.inputs && Object.keys(body.inputs).length > 0 ? { inputs: body.inputs } : {}),
       ...(body.paused !== undefined ? { paused: body.paused } : {}),
+      ...(body.ref ? { ref: body.ref } : {}),
     };
     v.parse(vCreateExecutionScheduleBody, requestBody);
     return requestBody;
@@ -452,10 +458,10 @@ function parseExecutionScheduleDispatch(
 ) {
   return {
     ...input,
-    attempt_id: input.attempt_id ?? null,
-    execution_id: input.execution_id ?? null,
     failure_reason: input.failure_reason ?? null,
+    source_workflow_run_id: input.source_workflow_run_id ?? null,
     submitted_at: input.submitted_at ?? null,
+    workflow_state: input.workflow_state ?? null,
   };
 }
 
@@ -469,7 +475,8 @@ function parseExecutionSchedule(input: unknown) {
     dispatches:
       parsed.dispatches?.map((dispatch) => parseExecutionScheduleDispatch(dispatch)) ?? [],
     idempotency_key: parsed.idempotency_key ?? "",
-    max_wall_seconds: toOptionalSafeNumber(parsed.max_wall_seconds, "max_wall_seconds") ?? 0,
+    inputs: parsed.inputs ?? {},
+    ref: parsed.ref ?? "",
   };
 }
 

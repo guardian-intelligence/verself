@@ -5,6 +5,7 @@ import { useSignedInAuth } from "@forge-metal/auth-web/react";
 import { Button } from "@forge-metal/ui/components/ui/button";
 import { Field, FieldError, FieldLabel } from "@forge-metal/ui/components/ui/field";
 import { Input } from "@forge-metal/ui/components/ui/input";
+import { Select } from "@forge-metal/ui/components/ui/select";
 import {
   Page,
   PageEyebrow,
@@ -29,6 +30,7 @@ import { Textarea } from "@forge-metal/ui/components/ui/textarea";
 import { EmptyState } from "~/components/empty-state";
 import { ErrorCallout } from "~/components/error-callout";
 import { formatDateTimeUTC } from "~/lib/format";
+import { sourceRepositoriesQuery } from "~/features/source/queries";
 import { executionScheduleQuery, executionSchedulesQuery } from "./queries";
 import {
   useCreateExecutionScheduleMutation,
@@ -37,8 +39,12 @@ import {
 } from "./mutations";
 import {
   DEFAULT_INTERVAL_SECONDS,
+  parseScheduleInputs,
   validateIntervalSeconds,
-  validateScheduleCommand,
+  validateRef,
+  validateScheduleInputs,
+  validateSourceRepositoryID,
+  validateWorkflowPath,
 } from "./validation";
 
 export function ExecutionSchedulesPanel() {
@@ -49,7 +55,7 @@ export function ExecutionSchedulesPanel() {
     return (
       <EmptyState
         title="No schedules yet"
-        body="Recurring schedules dispatch VM canaries on an interval."
+        body="Recurring schedules dispatch source-hosted workflows on an interval."
         action={<Button render={<Link to="/schedules/new" />}>New schedule</Button>}
       />
     );
@@ -61,9 +67,10 @@ export function ExecutionSchedulesPanel() {
         <TableHeader>
           <TableRow>
             <TableHead>Name</TableHead>
+            <TableHead>Workflow</TableHead>
             <TableHead>Every</TableHead>
             <TableHead>State</TableHead>
-            <TableHead>Recent runs</TableHead>
+            <TableHead>Recent dispatches</TableHead>
             <TableHead>Updated</TableHead>
           </TableRow>
         </TableHeader>
@@ -78,6 +85,15 @@ export function ExecutionSchedulesPanel() {
                 >
                   {schedule.display_name || schedule.schedule_id.slice(0, 8)}
                 </Link>
+              </TableCell>
+              <TableCell>
+                <div className="min-w-0">
+                  <div className="font-mono text-sm break-all">{schedule.workflow_path}</div>
+                  <div className="font-mono text-xs text-muted-foreground">
+                    {schedule.source_repository_id.slice(0, 8)}
+                    {schedule.ref ? ` @ ${schedule.ref}` : ""}
+                  </div>
+                </div>
               </TableCell>
               <TableCell>{schedule.interval_seconds}s</TableCell>
               <TableCell className="capitalize">{schedule.state}</TableCell>
@@ -162,6 +178,18 @@ export function ExecutionScheduleDetailPanel({ scheduleId }: { scheduleId: strin
               <dd className="font-mono text-sm">{schedule.task_queue}</dd>
             </div>
             <div>
+              <dt className="text-sm text-muted-foreground">Repository</dt>
+              <dd className="font-mono text-sm break-all">{schedule.source_repository_id}</dd>
+            </div>
+            <div>
+              <dt className="text-sm text-muted-foreground">Workflow</dt>
+              <dd className="font-mono text-sm break-all">{schedule.workflow_path}</dd>
+            </div>
+            <div>
+              <dt className="text-sm text-muted-foreground">Ref</dt>
+              <dd className="font-mono text-sm">{schedule.ref || "default"}</dd>
+            </div>
+            <div>
               <dt className="text-sm text-muted-foreground">Temporal schedule</dt>
               <dd className="font-mono text-sm">{schedule.temporal_schedule_id}</dd>
             </div>
@@ -170,9 +198,9 @@ export function ExecutionScheduleDetailPanel({ scheduleId }: { scheduleId: strin
               <dd>{formatDateTimeUTC(schedule.updated_at)}</dd>
             </div>
             <div className="sm:col-span-2">
-              <dt className="text-sm text-muted-foreground">Run command</dt>
+              <dt className="text-sm text-muted-foreground">Inputs</dt>
               <dd className="mt-1 rounded-md bg-muted p-3 font-mono text-sm whitespace-pre-wrap">
-                {schedule.run_command}
+                {JSON.stringify(schedule.inputs, null, 2)}
               </dd>
             </div>
           </dl>
@@ -181,13 +209,13 @@ export function ExecutionScheduleDetailPanel({ scheduleId }: { scheduleId: strin
         <PageSection>
           <SectionHeader>
             <SectionHeaderContent>
-              <SectionTitle>Recent runs</SectionTitle>
+              <SectionTitle>Recent dispatches</SectionTitle>
             </SectionHeaderContent>
           </SectionHeader>
           {schedule.dispatches.length === 0 ? (
             <EmptyState
-              title="No runs yet"
-              body="The worker will create an execution row the first time this schedule fires."
+              title="No dispatches yet"
+              body="The worker will dispatch the workflow the first time this schedule fires."
             />
           ) : (
             <div className="overflow-hidden rounded-md border">
@@ -197,7 +225,7 @@ export function ExecutionScheduleDetailPanel({ scheduleId }: { scheduleId: strin
                     <TableHead>Dispatch</TableHead>
                     <TableHead>State</TableHead>
                     <TableHead>Scheduled</TableHead>
-                    <TableHead>Execution</TableHead>
+                    <TableHead>Workflow run</TableHead>
                     <TableHead>Failure</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -209,18 +237,10 @@ export function ExecutionScheduleDetailPanel({ scheduleId }: { scheduleId: strin
                       </TableCell>
                       <TableCell className="capitalize">{dispatch.state}</TableCell>
                       <TableCell>{formatDateTimeUTC(dispatch.scheduled_at)}</TableCell>
-                      <TableCell>
-                        {dispatch.execution_id ? (
-                          <Link
-                            to="/executions/$executionId"
-                            params={{ executionId: dispatch.execution_id }}
-                            className="font-mono text-sm hover:underline"
-                          >
-                            {dispatch.execution_id.slice(0, 8)}
-                          </Link>
-                        ) : (
-                          "—"
-                        )}
+                      <TableCell className="font-mono text-sm">
+                        {dispatch.source_workflow_run_id
+                          ? `${dispatch.source_workflow_run_id.slice(0, 8)} (${dispatch.workflow_state ?? "unknown"})`
+                          : "—"}
                       </TableCell>
                       <TableCell>{dispatch.failure_reason ?? "—"}</TableCell>
                     </TableRow>
@@ -236,6 +256,8 @@ export function ExecutionScheduleDetailPanel({ scheduleId }: { scheduleId: strin
 }
 
 export function ExecutionScheduleForm() {
+  const auth = useSignedInAuth();
+  const repositories = useSuspenseQuery(sourceRepositoriesQuery(auth)).data.repositories;
   const navigate = useNavigate();
   const mutation = useCreateExecutionScheduleMutation({
     onSuccess: async (schedule) => {
@@ -250,17 +272,33 @@ export function ExecutionScheduleForm() {
     defaultValues: {
       displayName: "",
       intervalSeconds: String(DEFAULT_INTERVAL_SECONDS),
-      runCommand: "printf 'scheduled execution\\n'",
+      inputsJSON: "{}",
+      ref: "main",
+      sourceRepositoryId: repositories[0]?.repo_id ?? "",
+      workflowPath: ".forgejo/workflows/smoke.yml",
     },
     onSubmit: async ({ value }) => {
       mutation.reset();
       await mutation.mutateAsync({
         display_name: value.displayName || undefined,
+        inputs: parseScheduleInputs(value.inputsJSON),
         interval_seconds: Number(value.intervalSeconds),
-        run_command: value.runCommand,
+        ref: value.ref || undefined,
+        source_repository_id: value.sourceRepositoryId,
+        workflow_path: value.workflowPath,
       });
     },
   });
+
+  if (repositories.length === 0) {
+    return (
+      <EmptyState
+        title="No repositories"
+        body="Create a source repository before scheduling workflow dispatches."
+        action={<Button render={<Link to="/source" />}>Open source</Button>}
+      />
+    );
+  }
 
   return (
     <form
@@ -310,14 +348,86 @@ export function ExecutionScheduleForm() {
       </form.Field>
 
       <form.Field
-        name="runCommand"
+        name="sourceRepositoryId"
         validators={{
-          onChange: ({ value }) => validateScheduleCommand(value),
+          onChange: ({ value }) => validateSourceRepositoryID(value),
         }}
       >
         {(field) => (
           <Field>
-            <FieldLabel htmlFor={field.name}>Run command</FieldLabel>
+            <FieldLabel htmlFor={field.name}>Repository</FieldLabel>
+            <Select
+              id={field.name}
+              value={field.state.value}
+              onBlur={field.handleBlur}
+              onChange={(event) => field.handleChange(event.target.value)}
+            >
+              {repositories.map((repo) => (
+                <option key={repo.repo_id} value={repo.repo_id}>
+                  {repo.name}
+                </option>
+              ))}
+            </Select>
+            {field.state.meta.isTouched && field.state.meta.errors.length > 0 ? (
+              <FieldError>{field.state.meta.errors[0]}</FieldError>
+            ) : null}
+          </Field>
+        )}
+      </form.Field>
+
+      <form.Field
+        name="workflowPath"
+        validators={{
+          onChange: ({ value }) => validateWorkflowPath(value),
+        }}
+      >
+        {(field) => (
+          <Field>
+            <FieldLabel htmlFor={field.name}>Workflow path</FieldLabel>
+            <Input
+              id={field.name}
+              value={field.state.value}
+              onBlur={field.handleBlur}
+              onChange={(event) => field.handleChange(event.target.value)}
+            />
+            {field.state.meta.isTouched && field.state.meta.errors.length > 0 ? (
+              <FieldError>{field.state.meta.errors[0]}</FieldError>
+            ) : null}
+          </Field>
+        )}
+      </form.Field>
+
+      <form.Field
+        name="ref"
+        validators={{
+          onChange: ({ value }) => validateRef(value),
+        }}
+      >
+        {(field) => (
+          <Field>
+            <FieldLabel htmlFor={field.name}>Ref</FieldLabel>
+            <Input
+              id={field.name}
+              value={field.state.value}
+              onBlur={field.handleBlur}
+              onChange={(event) => field.handleChange(event.target.value)}
+            />
+            {field.state.meta.isTouched && field.state.meta.errors.length > 0 ? (
+              <FieldError>{field.state.meta.errors[0]}</FieldError>
+            ) : null}
+          </Field>
+        )}
+      </form.Field>
+
+      <form.Field
+        name="inputsJSON"
+        validators={{
+          onChange: ({ value }) => validateScheduleInputs(value),
+        }}
+      >
+        {(field) => (
+          <Field>
+            <FieldLabel htmlFor={field.name}>Inputs</FieldLabel>
             <Textarea
               id={field.name}
               rows={5}
