@@ -9,18 +9,20 @@ import (
 )
 
 type Repository struct {
-	RepoID        uuid.UUID `json:"repo_id"`
-	OrgID         string    `json:"org_id"`
-	Name          string    `json:"name"`
-	Slug          string    `json:"slug"`
-	Description   string    `json:"description"`
-	DefaultBranch string    `json:"default_branch"`
-	Provider      string    `json:"provider"`
-	Visibility    string    `json:"visibility"`
-	State         string    `json:"state"`
-	Version       int32     `json:"version" minimum:"0" maximum:"2147483647"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	RepoID        uuid.UUID  `json:"repo_id"`
+	OrgID         string     `json:"org_id"`
+	OrgPath       string     `json:"org_path"`
+	Name          string     `json:"name"`
+	Slug          string     `json:"slug"`
+	Description   string     `json:"description"`
+	DefaultBranch string     `json:"default_branch"`
+	Backend       string     `json:"backend"`
+	Visibility    string     `json:"visibility"`
+	State         string     `json:"state"`
+	Version       int32      `json:"version" minimum:"0" maximum:"2147483647"`
+	LastPushedAt  *time.Time `json:"last_pushed_at,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 type RepositoryList struct {
@@ -31,6 +33,23 @@ type CreateRepositoryRequest struct {
 	Name          string `json:"name" required:"true" minLength:"1" maxLength:"128"`
 	Description   string `json:"description,omitempty" maxLength:"1024"`
 	DefaultBranch string `json:"default_branch,omitempty" maxLength:"128"`
+}
+
+type CreateGitCredentialRequest struct {
+	Label            string `json:"label,omitempty" maxLength:"128"`
+	ExpiresInSeconds int64  `json:"expires_in_seconds,omitempty" minimum:"60" maximum:"7776000"`
+}
+
+type GitCredential struct {
+	CredentialID uuid.UUID `json:"credential_id"`
+	OrgID        string    `json:"org_id"`
+	OrgPath      string    `json:"org_path"`
+	Username     string    `json:"username"`
+	Token        string    `json:"token"`
+	TokenPrefix  string    `json:"token_prefix"`
+	Scopes       []string  `json:"scopes"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 type Ref struct {
@@ -63,6 +82,28 @@ type Blob struct {
 	DownloadURL string `json:"download_url,omitempty"`
 }
 
+type CIRun struct {
+	CIRunID            uuid.UUID  `json:"ci_run_id"`
+	OrgID              string     `json:"org_id"`
+	RepoID             uuid.UUID  `json:"repo_id"`
+	RefName            string     `json:"ref_name"`
+	CommitSHA          string     `json:"commit_sha"`
+	TriggerEvent       string     `json:"trigger_event"`
+	State              string     `json:"state"`
+	SandboxExecutionID *uuid.UUID `json:"sandbox_execution_id,omitempty"`
+	SandboxAttemptID   *uuid.UUID `json:"sandbox_attempt_id,omitempty"`
+	FailureReason      string     `json:"failure_reason,omitempty"`
+	TraceID            string     `json:"trace_id,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
+	StartedAt          *time.Time `json:"started_at,omitempty"`
+	CompletedAt        *time.Time `json:"completed_at,omitempty"`
+}
+
+type CIRunList struct {
+	CIRuns []CIRun `json:"ci_runs"`
+}
+
 type CreateCheckoutGrantRequest struct {
 	Ref        string `json:"ref,omitempty" maxLength:"255"`
 	PathPrefix string `json:"path_prefix,omitempty" maxLength:"1024"`
@@ -93,56 +134,41 @@ type InternalCreateWorkflowRunRequest struct {
 }
 
 type WorkflowRun struct {
-	WorkflowRunID      uuid.UUID         `json:"workflow_run_id"`
-	OrgID              string            `json:"org_id"`
-	RepoID             uuid.UUID         `json:"repo_id"`
-	ActorID            string            `json:"actor_id"`
-	Provider           string            `json:"provider"`
-	WorkflowPath       string            `json:"workflow_path"`
-	Ref                string            `json:"ref"`
-	Inputs             map[string]string `json:"inputs"`
-	State              string            `json:"state"`
-	ProviderDispatchID string            `json:"provider_dispatch_id,omitempty"`
-	FailureReason      string            `json:"failure_reason,omitempty"`
-	TraceID            string            `json:"trace_id,omitempty"`
-	DispatchedAt       *time.Time        `json:"dispatched_at,omitempty"`
-	CreatedAt          time.Time         `json:"created_at"`
-	UpdatedAt          time.Time         `json:"updated_at"`
+	WorkflowRunID     uuid.UUID         `json:"workflow_run_id"`
+	OrgID             string            `json:"org_id"`
+	RepoID            uuid.UUID         `json:"repo_id"`
+	ActorID           string            `json:"actor_id"`
+	Backend           string            `json:"backend"`
+	WorkflowPath      string            `json:"workflow_path"`
+	Ref               string            `json:"ref"`
+	Inputs            map[string]string `json:"inputs"`
+	State             string            `json:"state"`
+	BackendDispatchID string            `json:"backend_dispatch_id,omitempty"`
+	FailureReason     string            `json:"failure_reason,omitempty"`
+	TraceID           string            `json:"trace_id,omitempty"`
+	DispatchedAt      *time.Time        `json:"dispatched_at,omitempty"`
+	CreatedAt         time.Time         `json:"created_at"`
+	UpdatedAt         time.Time         `json:"updated_at"`
 }
 
 type WorkflowRunList struct {
 	WorkflowRuns []WorkflowRun `json:"workflow_runs"`
 }
 
-type CreateIntegrationRequest struct {
-	Provider      string `json:"provider" required:"true" minLength:"1" maxLength:"64"`
-	ExternalRepo  string `json:"external_repo" required:"true" minLength:"1" maxLength:"512"`
-	CredentialRef string `json:"credential_ref,omitempty" maxLength:"512"`
-}
-
-type ExternalIntegration struct {
-	IntegrationID uuid.UUID `json:"integration_id"`
-	OrgID         string    `json:"org_id"`
-	Provider      string    `json:"provider"`
-	ExternalRepo  string    `json:"external_repo"`
-	CredentialRef string    `json:"credential_ref,omitempty"`
-	State         string    `json:"state"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
-}
-
 func repositoryDTO(repo source.Repository) Repository {
 	return Repository{
 		RepoID:        repo.RepoID,
 		OrgID:         uintString(repo.OrgID),
+		OrgPath:       repo.OrgPath,
 		Name:          repo.Name,
 		Slug:          repo.Slug,
 		Description:   repo.Description,
 		DefaultBranch: repo.DefaultBranch,
-		Provider:      repo.Provider,
+		Backend:       repo.Backend.Backend,
 		Visibility:    repo.Visibility,
 		State:         repo.State,
 		Version:       int32(repo.Version),
+		LastPushedAt:  repo.LastPushedAt,
 		CreatedAt:     repo.CreatedAt,
 		UpdatedAt:     repo.UpdatedAt,
 	}
@@ -154,6 +180,20 @@ func repositoryDTOs(repos []source.Repository) []Repository {
 		out = append(out, repositoryDTO(repo))
 	}
 	return out
+}
+
+func gitCredentialDTO(credential source.GitCredential) GitCredential {
+	return GitCredential{
+		CredentialID: credential.CredentialID,
+		OrgID:        uintString(credential.OrgID),
+		OrgPath:      credential.OrgPath,
+		Username:     credential.Username,
+		Token:        credential.Token,
+		TokenPrefix:  credential.TokenPrefix,
+		Scopes:       credential.Scopes,
+		ExpiresAt:    credential.ExpiresAt,
+		CreatedAt:    credential.CreatedAt,
+	}
 }
 
 func refDTOs(refs []source.Ref) []Ref {
@@ -184,6 +224,39 @@ func blobDTO(blob source.Blob) Blob {
 	}
 }
 
+func ciRunDTO(run source.CIRun) CIRun {
+	out := CIRun{
+		CIRunID:       run.CIRunID,
+		OrgID:         uintString(run.OrgID),
+		RepoID:        run.RepoID,
+		RefName:       run.RefName,
+		CommitSHA:     run.CommitSHA,
+		TriggerEvent:  run.TriggerEvent,
+		State:         run.State,
+		FailureReason: run.FailureReason,
+		TraceID:       run.TraceID,
+		CreatedAt:     run.CreatedAt,
+		UpdatedAt:     run.UpdatedAt,
+		StartedAt:     run.StartedAt,
+		CompletedAt:   run.CompletedAt,
+	}
+	if run.SandboxExecutionID != uuid.Nil {
+		out.SandboxExecutionID = &run.SandboxExecutionID
+	}
+	if run.SandboxAttemptID != uuid.Nil {
+		out.SandboxAttemptID = &run.SandboxAttemptID
+	}
+	return out
+}
+
+func ciRunDTOs(runs []source.CIRun) []CIRun {
+	out := make([]CIRun, 0, len(runs))
+	for _, run := range runs {
+		out = append(out, ciRunDTO(run))
+	}
+	return out
+}
+
 func checkoutGrantDTO(grant source.CheckoutGrant) CheckoutGrant {
 	return CheckoutGrant{
 		GrantID:   grant.GrantID,
@@ -200,21 +273,21 @@ func workflowRunDTO(run source.WorkflowRun) WorkflowRun {
 		inputs = map[string]string{}
 	}
 	return WorkflowRun{
-		WorkflowRunID:      run.WorkflowRunID,
-		OrgID:              uintString(run.OrgID),
-		RepoID:             run.RepoID,
-		ActorID:            run.ActorID,
-		Provider:           run.Provider,
-		WorkflowPath:       run.WorkflowPath,
-		Ref:                run.Ref,
-		Inputs:             inputs,
-		State:              run.State,
-		ProviderDispatchID: run.ProviderDispatchID,
-		FailureReason:      run.FailureReason,
-		TraceID:            run.TraceID,
-		DispatchedAt:       run.DispatchedAt,
-		CreatedAt:          run.CreatedAt,
-		UpdatedAt:          run.UpdatedAt,
+		WorkflowRunID:     run.WorkflowRunID,
+		OrgID:             uintString(run.OrgID),
+		RepoID:            run.RepoID,
+		ActorID:           run.ActorID,
+		Backend:           run.Backend,
+		WorkflowPath:      run.WorkflowPath,
+		Ref:               run.Ref,
+		Inputs:            inputs,
+		State:             run.State,
+		BackendDispatchID: run.BackendDispatchID,
+		FailureReason:     run.FailureReason,
+		TraceID:           run.TraceID,
+		DispatchedAt:      run.DispatchedAt,
+		CreatedAt:         run.CreatedAt,
+		UpdatedAt:         run.UpdatedAt,
 	}
 }
 
@@ -224,19 +297,6 @@ func workflowRunDTOs(runs []source.WorkflowRun) []WorkflowRun {
 		out = append(out, workflowRunDTO(run))
 	}
 	return out
-}
-
-func integrationDTO(integration source.ExternalIntegration) ExternalIntegration {
-	return ExternalIntegration{
-		IntegrationID: integration.IntegrationID,
-		OrgID:         uintString(integration.OrgID),
-		Provider:      integration.Provider,
-		ExternalRepo:  integration.ExternalRepo,
-		CredentialRef: integration.CredentialRef,
-		State:         integration.State,
-		CreatedAt:     integration.CreatedAt,
-		UpdatedAt:     integration.UpdatedAt,
-	}
 }
 
 func uintString(value uint64) string {

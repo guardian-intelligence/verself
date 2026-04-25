@@ -131,7 +131,14 @@ func run() error {
 		Audience:  authAudience,
 		JWKSURL:   authJWKSURL,
 	})(privateMux)
-	rootMux.Handle("/", authenticated)
+	gitHTTP := sourceapi.GitHTTPHandler(svc)
+	rootMux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if sourceapi.IsGitSmartHTTPRequest(r) {
+			gitHTTP.ServeHTTP(w, r)
+			return
+		}
+		authenticated.ServeHTTP(w, r)
+	}))
 
 	internalPeerIDs, err := workloadauth.PeerIDsForSource(spiffeSource, workloadauth.ServiceSandboxRental)
 	if err != nil {

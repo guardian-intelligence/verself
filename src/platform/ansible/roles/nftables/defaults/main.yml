@@ -4,7 +4,6 @@ nftables_public_tcp_ports:
   - 25
   - 80
   - 443
-  - "{{ services.forgejo.ssh_port }}"
 
 # Public-facing UDP ports.
 nftables_public_udp_ports:

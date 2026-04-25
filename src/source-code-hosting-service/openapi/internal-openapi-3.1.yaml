@@ -112,6 +112,10 @@ components:
           type: string
         actor_id:
           type: string
+        backend:
+          type: string
+        backend_dispatch_id:
+          type: string
         created_at:
           format: date-time
           type: string
@@ -125,10 +129,6 @@ components:
             type: string
           type: object
         org_id:
-          type: string
-        provider:
-          type: string
-        provider_dispatch_id:
           type: string
         ref:
           type: string
@@ -150,7 +150,7 @@ components:
         - org_id
         - repo_id
         - actor_id
-        - provider
+        - backend
         - workflow_path
         - ref
         - inputs

@@ -34,11 +34,11 @@ type forgejoRepo struct {
 	Private       bool   `json:"private"`
 }
 
-type forgejoBranch struct {
-	Name   string `json:"name"`
-	Commit struct {
-		ID string `json:"id"`
-	} `json:"commit"`
+type forgejoGitRef struct {
+	Ref    string `json:"ref"`
+	Object struct {
+		SHA string `json:"sha"`
+	} `json:"object"`
 }
 
 type forgejoContents struct {
@@ -71,11 +71,28 @@ func (c ForgejoClient) CreateRepository(ctx context.Context, repoName, descripti
 		"name":           repoName,
 		"description":    description,
 		"private":        true,
-		"auto_init":      true,
+		"auto_init":      false,
 		"default_branch": defaultBranch,
 	}
 	var repo forgejoRepo
 	err := c.doJSON(ctx, http.MethodPost, "/api/v1/user/repos", body, &repo)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return forgejoRepo{}, err
+	}
+	span.SetAttributes(attribute.Int64("source.forgejo_repo_id", repo.ID))
+	return repo, nil
+}
+
+func (c ForgejoClient) GetRepository(ctx context.Context, owner, repoName string) (forgejoRepo, error) {
+	ctx, span := forgejoTracer.Start(ctx, "source.forgejo.repo.get")
+	defer span.End()
+	span.SetAttributes(attribute.String("source.forgejo_repo", repoName))
+
+	var repo forgejoRepo
+	path := fmt.Sprintf("/api/v1/repos/%s/%s", url.PathEscape(owner), url.PathEscape(repoName))
+	err := c.doJSON(ctx, http.MethodGet, path, nil, &repo)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -90,16 +107,21 @@ func (c ForgejoClient) ListBranches(ctx context.Context, repo Repository) ([]Ref
 	defer span.End()
 	span.SetAttributes(attribute.String("source.repo_id", repo.RepoID.String()))
 
-	var branches []forgejoBranch
-	path := fmt.Sprintf("/api/v1/repos/%s/%s/branches", url.PathEscape(repo.ProviderOwner), url.PathEscape(repo.ProviderRepo))
-	if err := c.doJSON(ctx, http.MethodGet, path, nil, &branches); err != nil {
+	var gitRefs []forgejoGitRef
+	path := fmt.Sprintf("/api/v1/repos/%s/%s/git/refs/heads", url.PathEscape(repo.Backend.BackendOwner), url.PathEscape(repo.Backend.BackendRepo))
+	if err := c.doJSON(ctx, http.MethodGet, path, nil, &gitRefs); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
-	refs := make([]Ref, 0, len(branches))
-	for _, branch := range branches {
-		refs = append(refs, Ref{Name: branch.Name, Commit: branch.Commit.ID})
+	refs := make([]Ref, 0, len(gitRefs))
+	for _, gitRef := range gitRefs {
+		name := strings.TrimPrefix(strings.TrimSpace(gitRef.Ref), "refs/heads/")
+		commit := strings.TrimSpace(gitRef.Object.SHA)
+		if name == "" || commit == "" {
+			continue
+		}
+		refs = append(refs, Ref{Name: name, Commit: commit})
 	}
 	return refs, nil
 }
@@ -113,7 +135,7 @@ func (c ForgejoClient) Contents(ctx context.Context, repo Repository, ref, path 
 		attribute.String("source.path", path),
 	)
 
-	endpoint := fmt.Sprintf("/api/v1/repos/%s/%s/contents/%s", url.PathEscape(repo.ProviderOwner), url.PathEscape(repo.ProviderRepo), strings.TrimLeft(path, "/"))
+	endpoint := fmt.Sprintf("/api/v1/repos/%s/%s/contents/%s", url.PathEscape(repo.Backend.BackendOwner), url.PathEscape(repo.Backend.BackendRepo), strings.TrimLeft(path, "/"))
 	values := url.Values{}
 	if strings.TrimSpace(ref) != "" {
 		values.Set("ref", ref)
@@ -157,7 +179,7 @@ func (c ForgejoClient) Archive(ctx context.Context, repo Repository, ref string)
 	span.SetAttributes(attribute.String("source.repo_id", repo.RepoID.String()), attribute.String("source.ref", ref))
 
 	archive := url.PathEscape(ref + ".tar.gz")
-	endpoint := fmt.Sprintf("/api/v1/repos/%s/%s/archive/%s", url.PathEscape(repo.ProviderOwner), url.PathEscape(repo.ProviderRepo), archive)
+	endpoint := fmt.Sprintf("/api/v1/repos/%s/%s/archive/%s", url.PathEscape(repo.Backend.BackendOwner), url.PathEscape(repo.Backend.BackendRepo), archive)
 	data, err := c.doBytes(ctx, http.MethodGet, endpoint, nil, "application/gzip")
 	if err != nil {
 		span.RecordError(err)
@@ -167,7 +189,7 @@ func (c ForgejoClient) Archive(ctx context.Context, repo Repository, ref string)
 	return data, "application/gzip", nil
 }
 
-func (c ForgejoClient) DispatchWorkflow(ctx context.Context, repo Repository, workflowRunID uuid.UUID, workflowPath, ref string, inputs map[string]string) (ProviderWorkflowDispatch, error) {
+func (c ForgejoClient) DispatchWorkflow(ctx context.Context, repo Repository, workflowRunID uuid.UUID, workflowPath, ref string, inputs map[string]string) (BackendWorkflowDispatch, error) {
 	ctx, span := forgejoTracer.Start(ctx, "source.forgejo.workflow.dispatch")
 	defer span.End()
 	span.SetAttributes(
@@ -181,13 +203,13 @@ func (c ForgejoClient) DispatchWorkflow(ctx context.Context, repo Repository, wo
 		"inputs": inputs,
 	}
 	workflowName := strings.TrimPrefix(strings.TrimPrefix(workflowPath, ".forgejo/workflows/"), ".github/workflows/")
-	endpoint := fmt.Sprintf("/api/v1/repos/%s/%s/actions/workflows/%s/dispatches", url.PathEscape(repo.ProviderOwner), url.PathEscape(repo.ProviderRepo), url.PathEscape(workflowName))
+	endpoint := fmt.Sprintf("/api/v1/repos/%s/%s/actions/workflows/%s/dispatches", url.PathEscape(repo.Backend.BackendOwner), url.PathEscape(repo.Backend.BackendRepo), url.PathEscape(workflowName))
 	if err := c.doStatus(ctx, http.MethodPost, endpoint, body, http.StatusNoContent, http.StatusCreated, http.StatusOK); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return ProviderWorkflowDispatch{}, err
+		return BackendWorkflowDispatch{}, err
 	}
-	return ProviderWorkflowDispatch{ProviderDispatchID: repo.Provider + ":" + workflowName + ":" + ref}, nil
+	return BackendWorkflowDispatch{BackendDispatchID: repo.Backend.Backend + ":" + workflowName + ":" + ref}, nil
 }
 
 func (c ForgejoClient) doJSON(ctx context.Context, method, path string, body any, out any) error {

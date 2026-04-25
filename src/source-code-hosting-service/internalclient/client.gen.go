@@ -74,22 +74,22 @@ type InternalCreateWorkflowRunRequest struct {
 // WorkflowRun defines model for WorkflowRun.
 type WorkflowRun struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema             *string           `json:"$schema,omitempty"`
-	ActorId            string            `json:"actor_id"`
-	CreatedAt          time.Time         `json:"created_at"`
-	DispatchedAt       *time.Time        `json:"dispatched_at,omitempty"`
-	FailureReason      *string           `json:"failure_reason,omitempty"`
-	Inputs             map[string]string `json:"inputs"`
-	OrgId              string            `json:"org_id"`
-	Provider           string            `json:"provider"`
-	ProviderDispatchId *string           `json:"provider_dispatch_id,omitempty"`
-	Ref                string            `json:"ref"`
-	RepoId             string            `json:"repo_id"`
-	State              string            `json:"state"`
-	TraceId            *string           `json:"trace_id,omitempty"`
-	UpdatedAt          time.Time         `json:"updated_at"`
-	WorkflowPath       string            `json:"workflow_path"`
-	WorkflowRunId      string            `json:"workflow_run_id"`
+	Schema            *string           `json:"$schema,omitempty"`
+	ActorId           string            `json:"actor_id"`
+	Backend           string            `json:"backend"`
+	BackendDispatchId *string           `json:"backend_dispatch_id,omitempty"`
+	CreatedAt         time.Time         `json:"created_at"`
+	DispatchedAt      *time.Time        `json:"dispatched_at,omitempty"`
+	FailureReason     *string           `json:"failure_reason,omitempty"`
+	Inputs            map[string]string `json:"inputs"`
+	OrgId             string            `json:"org_id"`
+	Ref               string            `json:"ref"`
+	RepoId            string            `json:"repo_id"`
+	State             string            `json:"state"`
+	TraceId           *string           `json:"trace_id,omitempty"`
+	UpdatedAt         time.Time         `json:"updated_at"`
+	WorkflowPath      string            `json:"workflow_path"`
+	WorkflowRunId     string            `json:"workflow_run_id"`
 }
 
 // DownloadSourceCheckoutArchiveParams defines parameters for DownloadSourceCheckoutArchive.
