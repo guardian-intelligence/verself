@@ -67,6 +67,15 @@ var defaultCapabilities = []Capability{
 		},
 	},
 	{
+		Key:            "view_source",
+		Label:          "View source",
+		Description:    "Read private source repositories, refs, trees, and blobs through the source hosting API.",
+		DefaultEnabled: true,
+		Permissions: []string{
+			PermissionSourceRepoRead,
+		},
+	},
+	{
 		Key:            "use_secrets",
 		Label:          "Use secrets",
 		Description:    "Read and list secrets, and use Transit keys for encrypt, decrypt, sign, and verify operations.",

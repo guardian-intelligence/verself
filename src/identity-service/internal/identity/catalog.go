@@ -22,6 +22,10 @@ const (
 	PermissionSandboxStickyDiskWrite        = "sandbox:sticky_disk:write"
 	PermissionBillingRead                   = "billing:read"
 	PermissionBillingCheckout               = "billing:checkout"
+	PermissionSourceRepoRead                = "source:repo:read"
+	PermissionSourceRepoWrite               = "source:repo:write"
+	PermissionSourceCheckoutWrite           = "source:checkout:write"
+	PermissionSourceIntegrationWrite        = "source:integration:write"
 	PermissionSecretWrite                   = "secrets:secret:write"
 	PermissionSecretRead                    = "secrets:secret:read"
 	PermissionSecretList                    = "secrets:secret:list"
@@ -99,6 +103,19 @@ var defaultOperations = Operations{
 				{OperationID: "create-billing-contract-change", Permission: PermissionBillingCheckout, Resource: "billing_contract_change", Action: "create", OrgScope: "token_org_id"},
 				{OperationID: "cancel-billing-contract", Permission: PermissionBillingCheckout, Resource: "billing_contract", Action: "cancel", OrgScope: "token_org_id"},
 				{OperationID: "create-billing-portal", Permission: PermissionBillingCheckout, Resource: "billing_portal", Action: "create", OrgScope: "token_org_id"},
+			},
+		},
+		{
+			Service: "source-code-hosting-service",
+			Operations: []Operation{
+				{OperationID: "create-source-repository", Permission: PermissionSourceRepoWrite, Resource: "source_repository", Action: "create", OrgScope: "token_org_id"},
+				{OperationID: "list-source-repositories", Permission: PermissionSourceRepoRead, Resource: "source_repository", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "get-source-repository", Permission: PermissionSourceRepoRead, Resource: "source_repository", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "list-source-refs", Permission: PermissionSourceRepoRead, Resource: "source_ref", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "get-source-tree", Permission: PermissionSourceRepoRead, Resource: "source_tree", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "get-source-blob", Permission: PermissionSourceRepoRead, Resource: "source_blob", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "create-source-checkout-grant", Permission: PermissionSourceCheckoutWrite, Resource: "source_checkout_grant", Action: "create", OrgScope: "token_org_id"},
+				{OperationID: "create-source-integration", Permission: PermissionSourceIntegrationWrite, Resource: "source_integration", Action: "create", OrgScope: "token_org_id"},
 			},
 		},
 		{

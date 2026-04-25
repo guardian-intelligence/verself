@@ -1,7 +1,7 @@
 .PHONY: help test lint lint-scripts lint-conversions lint-ansible lint-voice company-proof fmt vet tidy openapi openapi-check openapi-clients openapi-clients-check openapi-wire-check \
        hooks-install doctor inventory-check setup-dev setup-sops provision deprovision deploy site guest-rootfs security-patch identity-reset seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member \
        set-user-state billing-clock billing-wall-clock billing-state billing-documents billing-finalizations billing-events billing-pg-shell billing-pg-query billing-proof billing-reset verification-reset \
-       profile-proof organization-sync-proof notifications-proof secrets-proof secrets-leak-proof openbao-proof openbao-tenancy-proof workload-identity-proof spiffe-rotation-proof object-storage-verify temporal-verify temporal-web-proof recurring-schedule-proof \
+       profile-proof organization-sync-proof notifications-proof source-code-hosting-proof secrets-proof secrets-leak-proof openbao-proof openbao-tenancy-proof workload-identity-proof spiffe-rotation-proof object-storage-verify temporal-verify temporal-web-proof recurring-schedule-proof \
        vm-guest-telemetry-build observe telemetry-proof telemetry-proof-fail clickhouse-query clickhouse-schemas pg-shell pg-query pg-list tb-shell tb-command mail mail-accounts mail-mailboxes \
        mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets \
        wipe-pg-db wipe-server vm-orchestrator-proof sandbox-inner sandbox-middle sandbox-proof console-ui-smoke console-ui-local console-local-dev console-frontend-deploy-fast grafana-proof observability-smoke services-doctor
@@ -13,6 +13,7 @@ BS       := src/billing-service
 GS       := src/governance-service
 IS       := src/identity-service
 SS       := src/secrets-service
+SCH      := src/source-code-hosting-service
 AM       := src/auth-middleware
 SR       := src/sandbox-rental-service
 MS       := src/mailbox-service
@@ -24,9 +25,9 @@ TP       := src/temporal-platform
 EC       := src/envconfig
 HS       := src/httpserver
 INVENTORY := $(FM)/ansible/inventory/hosts.ini
-GO_DIRS  := $(AW) $(VMO) $(BS) $(GS) $(IS) $(SS) $(AM) $(SR) $(MS) $(OSS) $(PS) $(NS) $(OT) $(TP) $(EC) $(HS)
+GO_DIRS  := $(AW) $(VMO) $(BS) $(GS) $(IS) $(SS) $(SCH) $(AM) $(SR) $(MS) $(OSS) $(PS) $(NS) $(OT) $(TP) $(EC) $(HS)
 GO_PKGS  := $(addsuffix /...,$(addprefix ./,$(GO_DIRS)))
-GO_CLIENT_DIRS := $(BS)/client $(GS)/client $(GS)/internalclient $(IS)/client $(IS)/internalclient $(SS)/client $(SS)/internalclient $(SR)/client $(MS)/client $(OSS)/client $(PS)/client $(PS)/internalclient $(NS)/client
+GO_CLIENT_DIRS := $(BS)/client $(GS)/client $(GS)/internalclient $(IS)/client $(IS)/internalclient $(SS)/client $(SS)/internalclient $(SCH)/client $(SR)/client $(MS)/client $(OSS)/client $(PS)/client $(PS)/internalclient $(NS)/client
 GO_CLIENT_FILES := $(addsuffix /client.gen.go,$(GO_CLIENT_DIRS))
 BILLING_PRODUCT_ID ?= sandbox
 ASSUME_PERSONA_OUTPUT_FLAG := $(if $(OUTPUT),--output "$(OUTPUT)",)
@@ -82,6 +83,7 @@ tidy:
 	cd $(GS) && go mod tidy
 	cd $(IS) && go mod tidy
 	cd $(SS) && go mod tidy
+	cd $(SCH) && go mod tidy
 	cd $(AM) && go mod tidy
 	cd $(SR) && go mod tidy
 	cd $(MS) && go mod tidy
@@ -110,6 +112,9 @@ openapi: ## Regenerate committed OpenAPI 3.0 and 3.1 specs for Go services
 	go run ./$(SS)/cmd/secrets-openapi --format 3.1 > $(SS)/openapi/openapi-3.1.yaml
 	go run ./$(SS)/cmd/secrets-internal-openapi --format 3.0 > $(SS)/openapi/internal-openapi-3.0.yaml
 	go run ./$(SS)/cmd/secrets-internal-openapi --format 3.1 > $(SS)/openapi/internal-openapi-3.1.yaml
+	mkdir -p $(SCH)/openapi
+	go run ./$(SCH)/cmd/source-code-hosting-openapi --format 3.0 > $(SCH)/openapi/openapi-3.0.yaml
+	go run ./$(SCH)/cmd/source-code-hosting-openapi --format 3.1 > $(SCH)/openapi/openapi-3.1.yaml
 	go run ./$(MS)/cmd/mailbox-openapi --format 3.0 > $(MS)/openapi/openapi-3.0.yaml
 	go run ./$(MS)/cmd/mailbox-openapi --format 3.1 > $(MS)/openapi/openapi-3.1.yaml
 	mkdir -p $(OSS)/openapi
@@ -136,6 +141,7 @@ openapi-clients: ## Regenerate committed generated Go clients from OpenAPI 3.0 s
 	cd $(IS)/internalclient && go generate ./...
 	cd $(SS)/client && go generate ./...
 	cd $(SS)/internalclient && go generate ./...
+	cd $(SCH)/client && go generate ./...
 	cd $(SR)/client && go generate ./...
 	cd $(MS)/client && go generate ./...
 	cd $(OSS)/client && go generate ./...
@@ -158,6 +164,8 @@ openapi-check: ## Verify committed OpenAPI specs are up to date
 	cd $(SS) && go run ./cmd/secrets-openapi --format 3.1 --check
 	cd $(SS) && go run ./cmd/secrets-internal-openapi --format 3.0 --check
 	cd $(SS) && go run ./cmd/secrets-internal-openapi --format 3.1 --check
+	cd $(SCH) && go run ./cmd/source-code-hosting-openapi --format 3.0 --check
+	cd $(SCH) && go run ./cmd/source-code-hosting-openapi --format 3.1 --check
 	cd $(MS) && go run ./cmd/mailbox-openapi --format 3.0 --check
 	cd $(MS) && go run ./cmd/mailbox-openapi --format 3.1 --check
 	cd $(OSS) && go run ./cmd/object-storage-openapi --format 3.0 --check
@@ -185,6 +193,7 @@ openapi-wire-check: ## Verify frontend-consumed OpenAPI 3.1 specs are JS wire-sa
 		$(IS)/openapi/openapi-3.1.yaml \
 		$(IS)/openapi/internal-openapi-3.1.yaml \
 		$(SS)/openapi/openapi-3.1.yaml \
+		$(SCH)/openapi/openapi-3.1.yaml \
 		$(MS)/openapi/openapi-3.1.yaml \
 		$(OSS)/openapi/openapi-3.1.yaml \
 		$(PS)/openapi/openapi-3.1.yaml \
@@ -305,6 +314,9 @@ organization-sync-proof: inventory-check ## Run live organization auto-sync/OCC 
 
 notifications-proof: inventory-check ## Run live notifications bell proof and assert PostgreSQL plus ClickHouse traces
 	cd $(FM) && ./scripts/verify-notifications-live.sh
+
+source-code-hosting-proof: inventory-check ## Run live source repository UI/API proof and assert PostgreSQL plus ClickHouse traces
+	cd $(FM) && ./scripts/verify-source-code-hosting-live.sh
 
 secrets-proof: inventory-check ## Run live secrets API proof and collect audit/trace evidence
 	cd $(FM) && ./scripts/verify-secrets-live.sh
