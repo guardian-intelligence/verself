@@ -7,6 +7,14 @@ argument_specs:
       - "The deployed OpenBao build exposes namespace commands but returns 405 for namespace APIs,"
       - "so this role uses the documented mount-per-org fallback until namespace support is usable."
     options:
+      openbao_tenancy_credstore_dir:
+        type: str
+      openbao_tenancy_tls_dir:
+        type: str
+      openbao_tenancy_spiffe_jwt_mount:
+        type: str
+      openbao_tenancy_rebootstrap_stage_dir:
+        type: str
       openbao_tenancy_oidc_discovery_url:
         type: str
       openbao_tenancy_bound_issuer:
