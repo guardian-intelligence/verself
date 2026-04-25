@@ -18,6 +18,7 @@ const (
 	ServiceProfile            = "profile-service"
 	ServiceSandboxRental      = "sandbox-rental-service"
 	ServiceSecrets            = "secrets-service"
+	ServiceSourceCodeHosting  = "source-code-hosting-service"
 	ServiceTemporalServer     = "temporal-server"
 	ServiceTemporalWeb        = "temporal-web"
 )

@@ -15,6 +15,7 @@ use (
 	./src/profile-service
 	./src/sandbox-rental-service
 	./src/secrets-service
+	./src/source-code-hosting-service
 	./src/temporal-platform
 	./src/vm-orchestrator
 )
