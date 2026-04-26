@@ -14,7 +14,18 @@ verification_context_init() {
     return 1
   fi
 
-  VERIFICATION_DOMAIN="$(awk -F'"' '/^verself_domain:/{print $2}' "${VERIFICATION_VARS_FILE}")"
+  VERIFICATION_GENERATED_VARS_FILE="${VERIFICATION_PLATFORM_ROOT}/ansible/group_vars/all/generated/ops.yml"
+  VERIFICATION_DOMAIN="$(
+    awk '
+      /^[[:space:]]*verself_domain:[[:space:]]*/ {
+        value=$0
+        sub(/^[[:space:]]*verself_domain:[[:space:]]*/, "", value)
+        gsub(/^[[:space:]'\''"]+|[[:space:]'\''"]+$/, "", value)
+        print value
+        exit
+      }
+    ' "${VERIFICATION_VARS_FILE}" "${VERIFICATION_GENERATED_VARS_FILE}"
+  )"
   VERIFICATION_REMOTE_HOST="$(grep -m1 'ansible_host=' "${VERIFICATION_INVENTORY}" | sed 's/.*ansible_host=\([^ ]*\).*/\1/')"
   VERIFICATION_REMOTE_USER="$(grep -m1 'ansible_user=' "${VERIFICATION_INVENTORY}" | sed 's/.*ansible_user=\([^ ]*\).*/\1/')"
   VERIFICATION_SSH_OPTS=(-o IPQoS=none -o StrictHostKeyChecking=no)

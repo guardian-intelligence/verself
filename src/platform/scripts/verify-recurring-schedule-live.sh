@@ -284,7 +284,6 @@ import sys
 run_id, project_id = sys.argv[1:3]
 print(json.dumps({
     "project_id": project_id,
-    "name": f"Recurring Proof {run_id}",
     "description": "Recurring schedule workflow dispatch proof",
     "default_branch": "main",
 }, indent=2, sort_keys=True))
