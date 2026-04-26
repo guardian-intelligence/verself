@@ -107,6 +107,7 @@ import (
 		entry_id:    string & !=""
 		user:        runtime.user
 		group:       runtime.group
+		restart_units: [...string] | *[runtime.systemd]
 		...
 	}
 	...
@@ -300,8 +301,8 @@ topology: s.#Topology & {
 				group:   "clickhouse"
 			}
 			identities: {
-				server: {ansible_var: "spire_clickhouse_server_id", path: "/svc/clickhouse-server", user: "clickhouse", group: "clickhouse", entry_id: "verself-clickhouse-server"}
-				operator: {ansible_var: "spire_clickhouse_operator_id", path: "/svc/clickhouse-operator", user: "clickhouse_operator", group: "clickhouse_operator", entry_id: "verself-clickhouse-operator"}
+				server: {ansible_var: "spire_clickhouse_server_id", path: "/svc/clickhouse-server", user: "clickhouse", group: "clickhouse", entry_id: "verself-clickhouse-server", restart_units: ["clickhouse-server-spiffe-helper"]}
+				operator: {ansible_var: "spire_clickhouse_operator_id", path: "/svc/clickhouse-operator", user: "clickhouse_operator", group: "clickhouse_operator", entry_id: "verself-clickhouse-operator", restart_units: ["clickhouse-operator-spiffe-helper"]}
 			}
 			artifact: {kind: "upstream_binary", output: "clickhouse-server", role: "clickhouse"}
 			endpoints: native_tls: {
@@ -319,7 +320,7 @@ topology: s.#Topology & {
 			kind: "resource"
 			host: "127.0.0.1"
 			runtime: {systemd: "otelcol", user: "otelcol", group: "otelcol"}
-			identities: default: {ansible_var: "spire_otelcol_id", path: "/svc/otelcol", entry_id: "verself-otelcol"}
+			identities: default: {ansible_var: "spire_otelcol_id", path: "/svc/otelcol", entry_id: "verself-otelcol", restart_units: ["otelcol-clickhouse-spiffe-helper", "otelcol"]}
 			artifact: {kind: "upstream_binary", output: "otelcol", role: "otelcol"}
 			endpoints: {
 				otlp_grpc: {
@@ -365,7 +366,7 @@ topology: s.#Topology & {
 			kind: "protocol_backend"
 			host: "127.0.0.1"
 			runtime: {systemd: "grafana", user: "grafana", group: "grafana"}
-			identities: default: {ansible_var: "spire_grafana_id", path: "/svc/grafana", entry_id: "verself-grafana"}
+			identities: default: {ansible_var: "spire_grafana_id", path: "/svc/grafana", entry_id: "verself-grafana", restart_units: ["grafana-clickhouse-spiffe-helper", "grafana"]}
 			artifact: {kind: "upstream_binary", output: "grafana", role: "grafana"}
 			endpoints: http: {
 				protocol: "http"
@@ -430,7 +431,7 @@ topology: s.#Topology & {
 			kind: "resource"
 			host: "127.0.0.1"
 			runtime: {systemd: "nats", user: "nats", group: "nats"}
-			identities: default: {ansible_var: "spire_nats_id", path: "/svc/nats", entry_id: "verself-nats"}
+			identities: default: {ansible_var: "spire_nats_id", path: "/svc/nats", entry_id: "verself-nats", restart_units: ["nats-spiffe-helper", "nats"]}
 			artifact: {kind: "static_binary", output: "nats-server", role: "nats"}
 			endpoints: {
 				client: {
@@ -453,7 +454,7 @@ topology: s.#Topology & {
 			kind: "resource"
 			host: "127.0.0.1"
 			runtime: {systemd: "temporal-server", user: "temporal_server", group: "temporal_server"}
-			identities: server: {ansible_var: "spire_temporal_server_id", path: "/svc/temporal-server", user: "temporal_server", group: "temporal_server", entry_id: "verself-temporal-server"}
+			identities: server: {ansible_var: "spire_temporal_server_id", path: "/svc/temporal-server", user: "temporal_server", group: "temporal_server", entry_id: "verself-temporal-server", restart_units: ["temporal-server"]}
 			artifact: {kind: "go_binary", package: "./src/temporal-platform/cmd/verself-temporal-server", output: "verself-temporal-server", role: "temporal"}
 			temporal: {
 				frontend: {grpc_port: 7233, http_port: 7243, membership_port: 6933}
@@ -668,8 +669,8 @@ topology: s.#Topology & {
 			artifact: {package: "./src/object-storage-service/cmd/object-storage-service", output: "object-storage-service", role: "object_storage_service"}
 			runtime: {systemd: "object-storage-service", user: "object_storage_service", group: "object_storage_service"}
 			identities: {
-				service: {ansible_var: "spire_object_storage_service_id", path: "/svc/object-storage-service", user: "object_storage_service", group: "object_storage_service", entry_id: "verself-object-storage-service"}
-				admin: {ansible_var: "spire_object_storage_admin_id", path: "/svc/object-storage-admin", user: "object_storage_admin", group: "object_storage_admin", entry_id: "verself-object-storage-admin"}
+				service: {ansible_var: "spire_object_storage_service_id", path: "/svc/object-storage-service", user: "object_storage_service", group: "object_storage_service", uid_policy: {kind: "fixed", value: _config.object_storage.object_storage_service_uid}, entry_id: "verself-object-storage-service", restart_units: ["object-storage-admin", "object-storage-service"]}
+				admin: {ansible_var: "spire_object_storage_admin_id", path: "/svc/object-storage-admin", user: "object_storage_admin", group: "object_storage_admin", uid_policy: {kind: "fixed", value: _config.object_storage.object_storage_admin_uid}, entry_id: "verself-object-storage-admin", restart_units: ["object-storage-admin", "object-storage-service"]}
 			}
 			endpoints: {
 				public_http: port: 4256
@@ -937,8 +938,10 @@ _workloadIdentities: [
 		spiffe_id:             "spiffe://{{ spire_trust_domain }}\(identityValue.path)"
 		user:                  identityValue.user
 		group:                 identityValue.group
+		uid_policy:            identityValue.uid_policy
 		selector:              identityValue.selector
 		x509_svid_ttl_seconds: identityValue.x509_svid_ttl_seconds
+		restart_units:         identityValue.restart_units
 	},
 ]
 
@@ -1052,8 +1055,10 @@ outputs: {
 					spiffe_id:             identity.spiffe_id
 					user:                  identity.user
 					group:                 identity.group
+					uid_policy:            identity.uid_policy
 					selector:              identity.selector
 					x509_svid_ttl_seconds: identity.x509_svid_ttl_seconds
+					restart_units:         identity.restart_units
 				},
 			]
 			edges: [

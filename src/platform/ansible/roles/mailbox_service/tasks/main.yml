@@ -26,53 +26,6 @@
     shell: /usr/sbin/nologin
     create_home: false
 
-- name: Resolve mailbox-service uid for SPIRE registration
-  ansible.builtin.command:
-    cmd: id -u mailbox_service
-  register: mailbox_service_uid
-  changed_when: false
-
-- name: Read mailbox-service SPIRE registration
-  ansible.builtin.command:
-    cmd: >-
-      {{ verself_bin }}/spire-server entry show
-      -socketPath {{ spire_server_socket_path }}
-      -entryID verself-mailbox-service
-      -output json
-  register: mailbox_service_spire_entry
-  failed_when: false
-  changed_when: false
-
-- name: Register mailbox-service SPIFFE workload
-  ansible.builtin.command:
-    cmd: >-
-      {{ verself_bin }}/spire-server entry create
-      -socketPath {{ spire_server_socket_path }}
-      -entryID verself-mailbox-service
-      -parentID {{ spire_agent_id }}
-      -spiffeID {{ spire_mailbox_service_id }}
-      -selector unix:uid:{{ mailbox_service_uid.stdout | trim }}
-      -x509SVIDTTL 3600
-  when: mailbox_service_spire_entry.rc != 0 or 'verself-mailbox-service' not in mailbox_service_spire_entry.stdout
-  changed_when: true
-  notify: restart mailbox-service
-
-- name: Update mailbox-service SPIRE workload selector drift
-  ansible.builtin.command:
-    cmd: >-
-      {{ verself_bin }}/spire-server entry update
-      -socketPath {{ spire_server_socket_path }}
-      -entryID verself-mailbox-service
-      -parentID {{ spire_agent_id }}
-      -spiffeID {{ spire_mailbox_service_id }}
-      -selector unix:uid:{{ mailbox_service_uid.stdout | trim }}
-      -x509SVIDTTL 3600
-  when:
-    - mailbox_service_spire_entry.rc == 0
-    - "'uid:' ~ (mailbox_service_uid.stdout | trim) not in mailbox_service_spire_entry.stdout"
-  changed_when: true
-  notify: restart mailbox-service
-
 - name: Deploy mailbox-service nftables ruleset
   ansible.builtin.template:
     src: mailbox-service.nft.j2

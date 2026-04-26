@@ -3,7 +3,7 @@
 # Imported at task-level so gather_facts settings are inherited from the
 # importing play.
 
-- name: Require Ansible collection {{ item }}
+- name: Require Ansible collection
   ansible.builtin.command: "ansible-galaxy collection list {{ item }}"
   register: controller_preflight_collection
   changed_when: false

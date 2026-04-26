@@ -200,6 +200,28 @@
         - object_storage_service
         - temporal
         - grafana
+    - role: spire_registrations
+      tags:
+        - spire_registrations
+        - spire
+        - clickhouse
+        - otelcol
+        - billing_service
+        - identity_service
+        - governance_service
+        - profile_service
+        - notifications_service
+        - projects_service
+        - nats
+        - secrets_service
+        - sandbox_rental_service
+        - source_code_hosting_service
+        - mailbox_service
+        - object_storage_service
+        - temporal
+        - grafana
+        - openbao
+        - openbao_tenancy
     - role: garage
       tags: [garage, object_storage_service]
     - role: clickhouse

@@ -27,53 +27,6 @@
     home: "{{ governance_service_state_dir }}"
     create_home: false
 
-- name: Resolve governance-service uid for SPIRE registration
-  ansible.builtin.command:
-    cmd: id -u governance_service
-  register: governance_service_uid
-  changed_when: false
-
-- name: Read governance-service SPIRE registration
-  ansible.builtin.command:
-    cmd: >-
-      {{ verself_bin }}/spire-server entry show
-      -socketPath {{ spire_server_socket_path }}
-      -entryID verself-governance-service
-      -output json
-  register: governance_service_spire_entry
-  failed_when: false
-  changed_when: false
-
-- name: Register governance-service SPIFFE workload
-  ansible.builtin.command:
-    cmd: >-
-      {{ verself_bin }}/spire-server entry create
-      -socketPath {{ spire_server_socket_path }}
-      -entryID verself-governance-service
-      -parentID {{ spire_agent_id }}
-      -spiffeID {{ spire_governance_service_id }}
-      -selector unix:uid:{{ governance_service_uid.stdout | trim }}
-      -x509SVIDTTL 3600
-  when: governance_service_spire_entry.rc != 0 or 'verself-governance-service' not in governance_service_spire_entry.stdout
-  changed_when: true
-  notify: restart governance-service
-
-- name: Update governance-service SPIRE workload selector drift
-  ansible.builtin.command:
-    cmd: >-
-      {{ verself_bin }}/spire-server entry update
-      -socketPath {{ spire_server_socket_path }}
-      -entryID verself-governance-service
-      -parentID {{ spire_agent_id }}
-      -spiffeID {{ spire_governance_service_id }}
-      -selector unix:uid:{{ governance_service_uid.stdout | trim }}
-      -x509SVIDTTL 3600
-  when:
-    - governance_service_spire_entry.rc == 0
-    - "'uid:' ~ (governance_service_uid.stdout | trim) not in governance_service_spire_entry.stdout"
-  changed_when: true
-  notify: restart governance-service
-
 - name: Create governance-service state directories
   ansible.builtin.file:
     path: "{{ item }}"
