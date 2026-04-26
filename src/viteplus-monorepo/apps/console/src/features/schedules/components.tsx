@@ -304,7 +304,7 @@ export function ExecutionScheduleForm() {
       <EmptyState
         title="No repositories"
         body="Create a source repository before scheduling workflow dispatches."
-        action={<Button render={<Link to="/source" />}>Open source</Button>}
+        action={<Button render={<Link to="/builds" />}>Open builds</Button>}
       />
     );
   }

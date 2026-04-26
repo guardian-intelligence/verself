@@ -1,233 +1,56 @@
-import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { organizationQuery, useIdentityApi } from "@verself/auth-web/components";
 import { useSignedInAuth } from "@verself/auth-web/react";
-import { Badge } from "@verself/ui/components/ui/badge";
-import { Button } from "@verself/ui/components/ui/button";
-import { toast } from "@verself/ui/components/ui/sonner";
-import { Copy, GitBranch, GitCommit, GitPullRequest, KeyRound, Terminal } from "lucide-react";
+import { GitBranch } from "lucide-react";
 import { EmptyState } from "~/components/empty-state";
-import { formatDateTimeUTC } from "~/lib/format";
-import { createSourceGitCredential } from "~/server-fns/api";
-import type { SourceGitCredential, SourceRepository } from "~/server-fns/api";
-import { projectsQuery } from "~/features/projects/queries";
-import { sourceRefsQuery, sourceRepositoriesQuery } from "./queries";
+import type { SourceRepository } from "~/server-fns/api";
+import { sourceRepositoriesQuery, sourceWorkflowRunsQuery } from "./queries";
 
-export function SourceRepositoriesPanel({ gitOrigin }: { gitOrigin: string }) {
+export function BuildRepositoriesPanel() {
   const auth = useSignedInAuth();
-  const api = useIdentityApi();
-  const organization = useSuspenseQuery(organizationQuery(auth, api)).data;
-  const projects = useSuspenseQuery(projectsQuery(auth)).data.projects;
   const { repositories } = useSuspenseQuery(sourceRepositoriesQuery(auth)).data;
 
   if (repositories.length === 0) {
     return (
-      <SourcePushEmptyState
-        gitOrigin={gitOrigin}
-        orgSlug={organization.slug}
-        projectSlug={projects[0]?.slug}
+      <EmptyState
+        icon={<GitBranch className="size-5" />}
+        title="No repositories"
+        body="Add a repository to run builds."
       />
     );
   }
 
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-2">
       {repositories.map((repo) => (
-        <SourceRepositoryCard key={repo.repo_id} repo={repo} />
+        <BuildRepositoryRow key={repo.repo_id} repo={repo} />
       ))}
     </div>
   );
 }
 
-function SourceRepositoryCard({ repo }: { repo: SourceRepository }) {
+function BuildRepositoryRow({ repo }: { repo: SourceRepository }) {
   const auth = useSignedInAuth();
-  const refs = useSuspenseQuery(sourceRefsQuery(auth, repo.repo_id)).data.refs;
-  const activeBranches = refs.filter((ref) => ref.name !== repo.default_branch);
+  const runs = useSuspenseQuery(sourceWorkflowRunsQuery(auth, repo.repo_id)).data.workflow_runs;
+  const activeBuilds = runs.filter(isActiveBuild).length;
 
   return (
-    <article className="rounded-md border bg-card">
-      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3 border-b px-4 py-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="truncate text-lg font-semibold leading-6 tracking-tight">{repo.name}</h2>
-            <Badge variant="outline">{repo.backend}</Badge>
-          </div>
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-muted-foreground">
-            <span>
-              {repo.org_slug}/{repo.project_slug}
-            </span>
-            <span className="font-mono">{repo.default_branch}</span>
-            <span>{formatDateTimeUTC(repo.updated_at)}</span>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Badge variant={activeBranches.length > 0 ? "info" : "outline"}>
-            {activeBranches.length} active branches
-          </Badge>
-        </div>
-      </div>
-
-      <div className="px-4 py-4">
-        <div className="mb-4 grid gap-2 rounded-md border bg-background p-3">
-          <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
-            <Terminal className="size-3.5" aria-hidden="true" />
-            Git remote
-          </div>
-          <div className="flex min-w-0 items-center gap-2">
-            <code className="min-w-0 flex-1 break-all font-mono text-xs text-foreground">
-              {repo.git_http_url}
-            </code>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              aria-label="Copy Git remote"
-              onClick={() => copyValue(repo.git_http_url, "Git remote")}
-            >
-              <Copy className="size-3.5" aria-hidden="true" />
-            </Button>
-          </div>
-        </div>
-        <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold">
-          <GitPullRequest className="size-4 text-muted-foreground" aria-hidden="true" />
-          Branches
-        </h3>
-        {activeBranches.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No active PR branches.</p>
-        ) : (
-          <ul className="grid gap-3">
-            {activeBranches.map((branch) => (
-              <li key={branch.name} className="flex min-w-0 items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="truncate font-mono text-sm">{branch.name}</div>
-                  <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                    <GitCommit className="size-3" aria-hidden="true" />
-                    <span className="font-mono">{shortCommit(branch.commit)}</span>
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </article>
-  );
-}
-
-function SourcePushEmptyState({
-  gitOrigin,
-  orgSlug,
-  projectSlug,
-}: {
-  gitOrigin: string;
-  orgSlug: string;
-  projectSlug: string | undefined;
-}) {
-  const [credential, setCredential] = useState<SourceGitCredential | null>(null);
-  const createCredential = useMutation({
-    mutationFn: () => createSourceGitCredential({ data: { label: "console git push" } }),
-    onSuccess: (nextCredential) => {
-      setCredential(nextCredential);
-      toast.success("Git credential created");
-    },
-    onError: (error) => {
-      toast.error("Failed to create Git credential", {
-        description: error instanceof Error ? error.message : String(error),
-      });
-    },
-  });
-  const pushURL = `${gitOrigin.replace(/\/$/, "")}/${orgSlug}/${projectSlug ?? "<project-slug>"}.git`;
-
-  return (
-    <EmptyState
-      icon={<GitBranch className="size-5" aria-hidden="true" />}
-      title="Push the first branch"
-      body={
-        <div className="grid gap-4 text-left">
-          <p>
-            A project gets one hosted repository. The first authenticated push creates that
-            repository; later branch pushes become the active work queue.
-          </p>
-          <div className="grid gap-2 rounded-md border bg-background p-3">
-            <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
-              <Terminal className="size-3.5" aria-hidden="true" />
-              Git remote
-            </div>
-            <code className="break-all font-mono text-xs text-foreground">
-              git remote add verself {pushURL}
-            </code>
-            <code className="break-all font-mono text-xs text-foreground">
-              git push verself main
-            </code>
-          </div>
-          <div className="grid gap-2 rounded-md border bg-background p-3">
-            <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
-              <KeyRound className="size-3.5" aria-hidden="true" />
-              HTTPS credential
-            </div>
-            {credential ? (
-              <div className="grid gap-2">
-                <CredentialLine label="Username" value={credential.username} />
-                <CredentialLine label="Token" value={credential.token} secret />
-              </div>
-            ) : (
-              <Button
-                type="button"
-                size="sm"
-                className="w-fit"
-                onClick={() => createCredential.mutate()}
-                disabled={createCredential.isPending}
-              >
-                <KeyRound className="size-3.5" aria-hidden="true" />
-                {createCredential.isPending ? "Creating..." : "Create Git credential"}
-              </Button>
-            )}
-          </div>
-        </div>
-      }
-    />
-  );
-}
-
-function CredentialLine({
-  label,
-  value,
-  secret = false,
-}: {
-  label: string;
-  value: string;
-  secret?: boolean;
-}) {
-  const displayValue = secret ? `${value.slice(0, 12)}...` : value;
-  return (
-    <div className="grid gap-1">
-      <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      <div className="flex min-w-0 items-center gap-2">
-        <code className="min-w-0 flex-1 break-all rounded-sm bg-muted px-2 py-1 font-mono text-xs text-foreground">
-          {displayValue}
-        </code>
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          aria-label={`Copy ${label.toLowerCase()}`}
-          onClick={() => copyValue(value, label)}
-        >
-          <Copy className="size-3.5" aria-hidden="true" />
-        </Button>
-      </div>
+    <div
+      className="flex min-h-12 items-center justify-between gap-4 rounded-md border bg-card px-4 py-3"
+      data-testid="build-repository-row"
+    >
+      <span className="min-w-0 truncate font-mono text-sm" data-testid="build-repository-slug">
+        {repo.org_slug}/{repo.project_slug}
+      </span>
+      <span
+        className="shrink-0 text-sm font-medium text-muted-foreground tabular-nums"
+        data-testid="build-active-count"
+      >
+        {activeBuilds} {activeBuilds === 1 ? "active build" : "active builds"}
+      </span>
     </div>
   );
 }
 
-function shortCommit(commit: string) {
-  return commit.length > 12 ? commit.slice(0, 12) : commit;
-}
-
-function copyValue(value: string, label: string) {
-  navigator.clipboard?.writeText(value).then(
-    () => toast(`${label} copied`),
-    () => toast.error(`Unable to copy ${label.toLowerCase()}`),
-  );
+function isActiveBuild(run: { readonly state: string }) {
+  return run.state === "dispatching" || run.state === "dispatched";
 }
