@@ -2,7 +2,7 @@ version: "2"
 sql:
   - engine: postgresql
     schema:
-      - migrations/001_initial_schema.up.sql
+      - migrations
     queries:
       - internal/store/queries
     gen:
@@ -32,7 +32,7 @@ sql:
               type: Time
   - engine: postgresql
     schema:
-      - ../identity-service/migrations/001_initial_schema.up.sql
+      - ../identity-service/migrations
     queries:
       - internal/store/identityexport/queries
     gen:
@@ -45,7 +45,7 @@ sql:
         omit_unused_structs: true
   - engine: postgresql
     schema:
-      - ../billing-service/migrations/001_initial_schema.up.sql
+      - ../billing-service/migrations
     queries:
       - internal/store/billingexport/queries
     gen:
@@ -58,7 +58,7 @@ sql:
         omit_unused_structs: true
   - engine: postgresql
     schema:
-      - ../sandbox-rental-service/migrations/001_initial_schema.up.sql
+      - ../sandbox-rental-service/migrations
     queries:
       - internal/store/sandboxexport/queries
     gen:

@@ -274,14 +274,10 @@
       Environment=SANDBOX_AUTH_ISSUER_URL={{ sandbox_rental_service_auth_issuer_url }}
       Environment=SANDBOX_AUTH_AUDIENCE={{ sandbox_rental_service_auth_audience }}
       Environment=SANDBOX_VM_ORCHESTRATOR_SOCKET={{ sandbox_rental_service_vm_orchestrator_socket }}
-      Environment=SANDBOX_PG_MAX_OPEN_CONNS={{ sandbox_rental_service_pg_max_open_conns }}
-      Environment=SANDBOX_PG_MAX_IDLE_CONNS={{ sandbox_rental_service_pg_max_idle_conns }}
+      Environment=SANDBOX_PG_MAX_CONNS={{ sandbox_rental_service_pg_max_conns }}
+      Environment=SANDBOX_PG_MIN_CONNS={{ sandbox_rental_service_pg_min_conns }}
       Environment=SANDBOX_PG_CONN_MAX_LIFETIME_SECONDS={{ sandbox_rental_service_pg_conn_max_lifetime_seconds }}
       Environment=SANDBOX_PG_CONN_MAX_IDLE_SECONDS={{ sandbox_rental_service_pg_conn_max_idle_seconds }}
-      Environment=SANDBOX_RIVER_PG_MAX_CONNS={{ sandbox_rental_service_river_pg_max_conns }}
-      Environment=SANDBOX_RIVER_PG_MIN_CONNS={{ sandbox_rental_service_river_pg_min_conns }}
-      Environment=SANDBOX_RIVER_PG_CONN_MAX_LIFETIME_SECONDS={{ sandbox_rental_service_river_pg_conn_max_lifetime_seconds }}
-      Environment=SANDBOX_RIVER_PG_CONN_MAX_IDLE_SECONDS={{ sandbox_rental_service_river_pg_conn_max_idle_seconds }}
       Environment=SANDBOX_EXECUTION_MAX_WORKERS={{ sandbox_rental_service_execution_max_workers }}
       Environment=SANDBOX_GITHUB_APP_ENABLED={{ sandbox_rental_service_github_app_enabled | bool | ternary('true', 'false') }}
       Environment=SANDBOX_GITHUB_APP_ID={{ sandbox_rental_service_github_app_id }}
@@ -345,10 +341,10 @@
       SupplementaryGroups={{ spire_workload_group }}
       Environment=SANDBOX_PG_DSN=postgres://sandbox_rental@/sandbox_rental?host=/var/run/postgresql&sslmode=disable
       Environment=SANDBOX_SOURCE_INTERNAL_URL=https://{{ topology_endpoints.source_code_hosting_service.endpoints.internal_https.address }}
-      Environment=SANDBOX_RIVER_PG_MAX_CONNS={{ sandbox_rental_service_river_pg_max_conns }}
-      Environment=SANDBOX_RIVER_PG_MIN_CONNS={{ sandbox_rental_service_river_pg_min_conns }}
-      Environment=SANDBOX_RIVER_PG_CONN_MAX_LIFETIME_SECONDS={{ sandbox_rental_service_river_pg_conn_max_lifetime_seconds }}
-      Environment=SANDBOX_RIVER_PG_CONN_MAX_IDLE_SECONDS={{ sandbox_rental_service_river_pg_conn_max_idle_seconds }}
+      Environment=SANDBOX_PG_MAX_CONNS={{ sandbox_rental_service_recurring_pg_max_conns }}
+      Environment=SANDBOX_PG_MIN_CONNS={{ sandbox_rental_service_recurring_pg_min_conns }}
+      Environment=SANDBOX_PG_CONN_MAX_LIFETIME_SECONDS={{ sandbox_rental_service_recurring_pg_conn_max_lifetime_seconds }}
+      Environment=SANDBOX_PG_CONN_MAX_IDLE_SECONDS={{ sandbox_rental_service_recurring_pg_conn_max_idle_seconds }}
       Environment=SANDBOX_TEMPORAL_FRONTEND_ADDRESS={{ topology_endpoints.temporal.endpoints.frontend_grpc.address }}
       Environment=SANDBOX_TEMPORAL_NAMESPACE={{ sandbox_rental_service_temporal_namespace }}
       Environment=SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING={{ sandbox_rental_service_temporal_task_queue_recurring }}

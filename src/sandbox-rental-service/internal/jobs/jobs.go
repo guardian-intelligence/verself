@@ -2,7 +2,6 @@ package jobs
 
 import (
 	"context"
-	"database/sql"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -196,7 +195,6 @@ type BillingWindow struct {
 }
 
 type Service struct {
-	PG               *sql.DB
 	PGX              *pgxpool.Pool
 	CH               driver.Conn
 	CHDatabase       string

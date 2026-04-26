@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -15,7 +14,6 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
-	_ "github.com/lib/pq"
 	"github.com/riverqueue/river"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
@@ -101,14 +99,10 @@ func run() error {
 	forgejoToken := cfg.CredentialOr("forgejo-token", "")
 	forgejoWebhookSecret := cfg.CredentialOr("forgejo-webhook-secret", "")
 	forgejoBootstrapSecret := cfg.CredentialOr("forgejo-bootstrap-secret", "")
-	pgMaxOpenConns := cfg.Int("SANDBOX_PG_MAX_OPEN_CONNS", 16)
-	pgMaxIdleConns := cfg.Int("SANDBOX_PG_MAX_IDLE_CONNS", 8)
+	pgMaxConns := cfg.Int("SANDBOX_PG_MAX_CONNS", 16)
+	pgMinConns := cfg.Int("SANDBOX_PG_MIN_CONNS", 1)
 	pgConnMaxLifetime := cfg.Int("SANDBOX_PG_CONN_MAX_LIFETIME_SECONDS", 1800)
 	pgConnMaxIdle := cfg.Int("SANDBOX_PG_CONN_MAX_IDLE_SECONDS", 300)
-	riverPGMaxConns := cfg.Int("SANDBOX_RIVER_PG_MAX_CONNS", 8)
-	riverPGMinConns := cfg.Int("SANDBOX_RIVER_PG_MIN_CONNS", 1)
-	riverPGConnMaxLifetime := cfg.Int("SANDBOX_RIVER_PG_CONN_MAX_LIFETIME_SECONDS", 1800)
-	riverPGConnMaxIdle := cfg.Int("SANDBOX_RIVER_PG_CONN_MAX_IDLE_SECONDS", 300)
 	workloadTimeout := cfg.Int("SANDBOX_WORKLOAD_TIMEOUT_SECONDS", 7200)
 	executionMaxWorkers := cfg.Int("SANDBOX_EXECUTION_MAX_WORKERS", scheduler.DefaultExecutionMaxWorkers)
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
@@ -138,38 +132,23 @@ func run() error {
 	}
 	// --- open connections ---
 
-	pg, err := sql.Open("postgres", pgDSN)
-	if err != nil {
-		return fmt.Errorf("open postgres: %w", err)
-	}
-	defer pg.Close()
-	pg.SetMaxOpenConns(pgMaxOpenConns)
-	pg.SetMaxIdleConns(pgMaxIdleConns)
-	pg.SetConnMaxLifetime(time.Duration(pgConnMaxLifetime) * time.Second)
-	pg.SetConnMaxIdleTime(time.Duration(pgConnMaxIdle) * time.Second)
-	pingCtx, cancelPing := context.WithTimeout(ctx, 5*time.Second)
-	defer cancelPing()
-	if err := pg.PingContext(pingCtx); err != nil {
-		return fmt.Errorf("ping postgres: %w", err)
-	}
-
 	pgxConfig, err := pgxpool.ParseConfig(pgDSN)
 	if err != nil {
-		return fmt.Errorf("parse scheduler postgres dsn: %w", err)
+		return fmt.Errorf("parse postgres dsn: %w", err)
 	}
-	pgxConfig.MaxConns = int32(riverPGMaxConns)
-	pgxConfig.MinConns = int32(riverPGMinConns)
-	pgxConfig.MaxConnLifetime = time.Duration(riverPGConnMaxLifetime) * time.Second
-	pgxConfig.MaxConnIdleTime = time.Duration(riverPGConnMaxIdle) * time.Second
+	pgxConfig.MaxConns = int32(pgMaxConns)
+	pgxConfig.MinConns = int32(pgMinConns)
+	pgxConfig.MaxConnLifetime = time.Duration(pgConnMaxLifetime) * time.Second
+	pgxConfig.MaxConnIdleTime = time.Duration(pgConnMaxIdle) * time.Second
 	pgxPool, err := pgxpool.NewWithConfig(ctx, pgxConfig)
 	if err != nil {
-		return fmt.Errorf("open scheduler postgres pool: %w", err)
+		return fmt.Errorf("open postgres pool: %w", err)
 	}
 	defer pgxPool.Close()
 	pgxPingCtx, cancelPGXPing := context.WithTimeout(ctx, 5*time.Second)
 	defer cancelPGXPing()
 	if err := pgxPool.Ping(pgxPingCtx); err != nil {
-		return fmt.Errorf("ping scheduler postgres pool: %w", err)
+		return fmt.Errorf("ping postgres pool: %w", err)
 	}
 
 	chTLSConfig, err := workloadauth.TLSConfigWithX509SourceAndCABundle(ctx, spiffeSource, chCACertPath)
@@ -274,7 +253,6 @@ func run() error {
 	// --- job service ---
 
 	jobService := &jobs.Service{
-		PG:               pg,
 		PGX:              pgxPool,
 		CH:               chConn,
 		CHDatabase:       "verself",
