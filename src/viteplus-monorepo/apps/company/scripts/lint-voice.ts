@@ -5,10 +5,13 @@
 // Strategy: dynamic-import each `content/**/*.{ts,mts}` file, walk every
 // exported value recursively, and run assertVoice() on every string it finds.
 // Arrays, objects, and Maps descend; everything else is scanned as-is.
+// Markdown files (`content/letters/*.md`) are read directly: frontmatter is
+// parsed with gray-matter and the body is scanned paragraph-by-paragraph.
 
-import { readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import matter from "gray-matter";
 import { assertVoice, formatViolation } from "../src/brand/voice.ts";
 
 const CONTENT_ROOT = path.resolve(import.meta.dirname, "..", "src", "content");
@@ -22,7 +25,10 @@ async function listContentFiles(dir: string): Promise<string[]> {
       out.push(...(await listContentFiles(full)));
       continue;
     }
-    if (entry.isFile() && /\.(ts|mts|tsx)$/.test(entry.name)) {
+    if (entry.isFile() && /\.(ts|mts|tsx|md)$/.test(entry.name)) {
+      // letters.ts is a Vite-side loader (uses import.meta.glob); the actual
+      // letter strings live in ./letters/*.md and are linted directly below.
+      if (entry.name === "letters.ts") continue;
       out.push(full);
     }
   }
@@ -60,11 +66,21 @@ async function main(): Promise<void> {
 
   for (const file of files) {
     const relative = path.relative(CONTENT_ROOT, file);
-    const mod = (await import(pathToFileURL(file).href)) as Record<string, unknown>;
     const strings: Walked[] = [];
-    for (const [exportName, exportValue] of Object.entries(mod)) {
-      walk(exportName, exportValue, strings);
+
+    if (file.endsWith(".md")) {
+      const raw = await readFile(file, "utf8");
+      const { data, content } = matter(raw);
+      walk("frontmatter", data, strings);
+      const paragraphs = content.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+      paragraphs.forEach((p, idx) => strings.push({ path: `body[${idx}]`, value: p }));
+    } else {
+      const mod = (await import(pathToFileURL(file).href)) as Record<string, unknown>;
+      for (const [exportName, exportValue] of Object.entries(mod)) {
+        walk(exportName, exportValue, strings);
+      }
     }
+
     for (const item of strings) {
       totalStrings += 1;
       const result = assertVoice(item.value, `${relative}#${item.path}`);
