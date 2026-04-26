@@ -308,7 +308,7 @@ and asserts the source -> secrets -> OpenBao trace sequence in ClickHouse.
 
 ## Source Anchors
 
-- Service architecture: `docs/architecture/service-architecture.md`
+- Service topology: `src/platform/topology/`
 - Workload identity: `docs/architecture/workload-identity.md`
 - Identity and IAM split: `src/platform/docs/identity-and-iam.md`
 - Audit contract: `src/governance-service/docs/audit-data-contract.md`

@@ -100,7 +100,7 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - **Secrets service, identity model, OIDC provider role, resource model, billing, KMS alternative:** `src/platform/docs/secrets-service.md`
 - Billing architecture, credit subscription, entitlements, metering, TigerBeetle, PostgreSQL, Reconcile, refunds, plan change, dual-write, Stripe webhooks, invoices:** `src/billing-service/docs/billing-architecture.md`
 - **Governance audit data contract, HMAC chain, OCSF, CloudTrail parity, tamper evidence, SIEM export, audit ledger:** `src/governance-service/docs/audit-data-contract.md`
-- **Service architecture overview, port map, listener matrix, topology:** `docs/architecture/service-architecture.md`
+- **Service topology, port assignments, SPIRE identities, runtime users, generated Ansible inputs:** `src/platform/topology/`
 - **Directory structure, repo layout:** `docs/architecture/directory-structure.md`
 - **Agent workspace, QEMU/KVM, AI coding agent VMs:** `docs/architecture/agent-workspace.md`
 - **Founder workflows, deploy, observe, pg-query, clickhouse-query, playbooks:** `docs/architecture/founder-workflows.md`
@@ -171,9 +171,5 @@ Planned Upcoming Projects
 
 * Newsletter Service
 * Analytics Service (PostHog clone) -- we build this ourselves using ClickHouse
-* `object-storage-service` backed by Garage (dogfood via Verdaccio tarball backing which is using local FS right now)
 * Readyset for Postgres query-result cache.
 * Invoices + Preview Invoice for Current Billing Period
-* SSM Parameter Store + Secrets Management + Key Management Service
-* Profile Service -- edit name, preferences across surfaces.
-* Notifications Service
