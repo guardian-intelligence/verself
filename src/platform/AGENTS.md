@@ -1,6 +1,6 @@
 # platform
 
-All remote orchestration lives here: Ansible roles + playbooks, OpenTofu modules, operator CLI (`cmd/verself/`, being trimmed in favor of services), and generated deploy inputs. `src/platform/topology/catalog/versions.cue` is the canonical source for pinned platform binary versions, URLs, and SHA256 hashes; `make topology-generate` renders those pins into `ansible/group_vars/all/generated/catalog.yml`.
+All remote orchestration lives here: Ansible roles + playbooks, OpenTofu modules, operator CLI (`cmd/verself/`, being trimmed in favor of services), and generated deploy inputs. `src/platform/topology` is the CUE source for the current single-node topology and deploy catalog; `make topology-generate` renders typed Ansible inputs under `ansible/group_vars/all/generated/` (`catalog.yml`, `ops.yml`, `dns.yml`, `spire.yml`, `postgres.yml`, `endpoints.yml`, `routes.yml`, and related topology artifacts).
 
 ## Server profile
 

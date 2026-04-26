@@ -38,18 +38,15 @@ topology_dev_tools:
   ansible-opentelemetry-exporter-otlp-proto-grpc:
     strategy: uv_tool_companion
     version: 1.41.0
-    version_cmd: /opt/uv-tools/ansible-core/bin/python -c "import importlib.metadata
-      as m; print(m.version('opentelemetry-exporter-otlp-proto-grpc'))"
+    version_cmd: /opt/uv-tools/ansible-core/bin/python -c "import importlib.metadata as m; print(m.version('opentelemetry-exporter-otlp-proto-grpc'))"
   ansible-opentelemetry-exporter-otlp-proto-http:
     strategy: uv_tool_companion
     version: 1.41.0
-    version_cmd: /opt/uv-tools/ansible-core/bin/python -c "import importlib.metadata
-      as m; print(m.version('opentelemetry-exporter-otlp-proto-http'))"
+    version_cmd: /opt/uv-tools/ansible-core/bin/python -c "import importlib.metadata as m; print(m.version('opentelemetry-exporter-otlp-proto-http'))"
   ansible-opentelemetry-sdk:
     strategy: uv_tool_companion
     version: 1.41.0
-    version_cmd: /opt/uv-tools/ansible-core/bin/python -c "import importlib.metadata
-      as m; print(m.version('opentelemetry-sdk'))"
+    version_cmd: /opt/uv-tools/ansible-core/bin/python -c "import importlib.metadata as m; print(m.version('opentelemetry-sdk'))"
   buf:
     install_path: /usr/local/bin/buf
     sha256: ef835cb38ed973849f68e0e6a88153cb2168507e09eecbec43a2ada2f6a698be

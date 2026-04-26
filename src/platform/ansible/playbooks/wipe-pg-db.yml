@@ -121,6 +121,8 @@
       ansible.builtin.include_role:
         name: electric
       tags: [electric]
+      vars:
+        electric_config: "{{ topology_electric_instances.default }}"
       when: wipe_pg_db_name == 'sandbox_rental'
 
     - name: Include mailbox-service for mailbox_service PostgreSQL wipe
@@ -133,8 +135,10 @@
 
     - name: Include Electric Mail after mailbox_service PostgreSQL wipe
       ansible.builtin.include_role:
-        name: electric_mail
+        name: electric
       tags: [electric_mail]
+      vars:
+        electric_config: "{{ topology_electric_instances.mail }}"
       when: wipe_pg_db_name == 'mailbox_service'
 
     - name: Include identity-service for identity_service PostgreSQL wipe
@@ -182,20 +186,5 @@
         name: electric
       tags: [electric_notifications]
       vars:
-        electric_instance: notifications
-        electric_service_name: electric-notifications
-        electric_service_port: "{{ topology_endpoints.electric_notifications.endpoints.http.port }}"
-        electric_pg_role: electric_notifications
-        electric_pg_conn_limit: "{{ postgresql_role_connection_limits.electric_notifications }}"
-        electric_db: notifications_service
-        electric_writer_role: notifications_service
-        electric_publication_name: electric_publication_notifications
-        electric_publication_tables:
-          - notification_inbox_state
-        electric_storage_dir: /var/lib/electric-notifications
-        electric_credstore_dir: /etc/credstore/electric-notifications
-        electric_nftables_table: verself_electric_notifications
-        electric_nftables_file: /etc/nftables.d/electric-notifications.nft
-        electric_db_pool_size: 8
-        electric_extra_systemd_after: [notifications-service.service]
+        electric_config: "{{ topology_electric_instances.notifications }}"
       when: wipe_pg_db_name == 'notifications_service'

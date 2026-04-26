@@ -12,8 +12,13 @@ make topology-check
 make topology-proof
 ```
 
-The generated artifacts define `topology_endpoints`, `topology_routes`,
-`topology_runtime`, `topology_postgres`, and the other typed deployment inputs.
+Components own their deployment facets: runtime identity, workload identity,
+PostgreSQL bindings, public routes, and sync adapters such as Electric. The
+generated artifacts are projections of those facets for existing Ansible roles:
+`topology_endpoints`, `topology_routes`, `topology_runtime`,
+`topology_postgres`, `topology_spire`, `topology_electric_instances`, and the
+remaining compatibility variables in `ops.yml`.
+
 Edit CUE, regenerate, then use `make topology-proof` to assert the
 `topology-compiler` and `ansible` spans proving the generated artifacts are
 fresh in ClickHouse. The compiler emits `topology-compiler` spans on every run;

@@ -95,6 +95,185 @@ import (
 	...
 }
 
+#DefaultSPIFFEIdentity: {
+	runtime: {
+		user:  string & !=""
+		group: string & !=""
+		...
+	}
+	identities: default: {
+		path:        string & =~"^/"
+		ansible_var: string & !=""
+		entry_id:    string & !=""
+		user:        runtime.user
+		group:       runtime.group
+		...
+	}
+	...
+}
+
+_config: {
+	verself_version: "0.1.0"
+	verself_bin:     "/opt/verself/profile/bin"
+
+	domains: {
+		verself_domain:  "verself.sh"
+		platform_domain: "{{ verself_domain }}"
+		company_domain:  "guardianintelligence.org"
+
+		console_subdomain: "console"
+		console_domain:    "{{ console_subdomain }}.{{ verself_domain }}"
+
+		billing_service_subdomain: "billing.api"
+		billing_service_domain:    "{{ billing_service_subdomain }}.{{ verself_domain }}"
+
+		sandbox_rental_service_subdomain: "sandbox.api"
+		sandbox_rental_service_domain:    "{{ sandbox_rental_service_subdomain }}.{{ verself_domain }}"
+
+		identity_service_subdomain: "identity.api"
+		identity_service_domain:    "{{ identity_service_subdomain }}.{{ verself_domain }}"
+
+		profile_service_subdomain: "profile.api"
+		profile_service_domain:    "{{ profile_service_subdomain }}.{{ verself_domain }}"
+
+		notifications_service_subdomain: "notifications.api"
+		notifications_service_domain:    "{{ notifications_service_subdomain }}.{{ verself_domain }}"
+
+		projects_service_subdomain: "projects.api"
+		projects_service_domain:    "{{ projects_service_subdomain }}.{{ verself_domain }}"
+
+		source_code_hosting_service_subdomain: "source.api"
+		source_code_hosting_service_domain:    "{{ source_code_hosting_service_subdomain }}.{{ verself_domain }}"
+
+		governance_service_subdomain: "governance.api"
+		governance_service_domain:    "{{ governance_service_subdomain }}.{{ verself_domain }}"
+
+		secrets_service_subdomain: "secrets.api"
+		secrets_service_domain:    "{{ secrets_service_subdomain }}.{{ verself_domain }}"
+
+		mailbox_service_subdomain: "mail.api"
+		mailbox_service_domain:    "{{ mailbox_service_subdomain }}.{{ verself_domain }}"
+
+		resend_subdomain:      "notify"
+		resend_domain:         "{{ resend_subdomain }}.{{ verself_domain }}"
+		resend_sender_address: "noreply@{{ resend_domain }}"
+		resend_sender_name:    "verself"
+
+		stalwart_subdomain: "mail"
+		stalwart_domain:    "{{ stalwart_subdomain }}.{{ verself_domain }}"
+	}
+
+	openbao: {
+		openbao_spiffe_jwt_mount:              "spiffe-jwt"
+		openbao_workload_audience:             "openbao"
+		openbao_tenancy_credstore_dir:         "/etc/credstore/openbao"
+		openbao_tenancy_tls_dir:               "/etc/openbao/tls"
+		openbao_tenancy_spiffe_jwt_mount:      "spiffe-jwt"
+		openbao_tenancy_rebootstrap_stage_dir: "{{ openbao_tenancy_credstore_dir }}/rebootstrap"
+		openbao_tenancy_oidc_discovery_url:    "https://auth.{{ verself_domain }}"
+		openbao_tenancy_bound_issuer:          "https://auth.{{ verself_domain }}"
+		openbao_tenancy_secrets_project_name:  "secrets-service"
+		openbao_tenancy_token_ttl:             "15m"
+		openbao_tenancy_token_max_ttl:         "1h"
+		openbao_tenancy_layout:                "auto"
+		openbao_tenancy_skip_jwks_validation:  false
+		openbao_tenancy_kv_mount_prefix:       "kv"
+		openbao_tenancy_transit_mount_prefix:  "transit"
+		openbao_tenancy_jwt_mount_prefix:      "jwt"
+		openbao_tenancy_platform_org_name:     "verself"
+	}
+
+	wireguard: {
+		wireguard_interface: "wg0"
+		wireguard_port:      51820
+		wireguard_network:   "10.0.0.0/16"
+		wireguard_address:   "10.0.0.1"
+	}
+
+	object_storage: {
+		object_storage_service_uid: 960
+		object_storage_admin_uid:   961
+	}
+
+	retired_product_runtimes: [
+		{unit: "letters.service", user: "letters", group: "letters", paths: ["/etc/letters", "/opt/letters", "/var/lib/letters"]},
+		{unit: "webmail.service", user: "webmail", group: "webmail", paths: ["/etc/webmail", "/opt/webmail", "/var/lib/webmail"]},
+	]
+
+	postgres: {
+		max_connections:                300
+		superuser_reserved_connections: 10
+	}
+
+	temporal: {
+		temporal_sandbox_namespace:   "sandbox-rental-service"
+		temporal_billing_namespace:   "billing-service"
+		temporal_namespace_retention: "24h"
+		temporal_bootstrap_namespaces: ["{{ temporal_sandbox_namespace }}", "{{ temporal_billing_namespace }}"]
+		temporal_namespace_role_bindings: [
+			{spiffe_id: "{{ spire_sandbox_rental_id }}", namespace: "{{ temporal_sandbox_namespace }}", role: "admin"},
+			{spiffe_id: "{{ spire_billing_service_id }}", namespace: "{{ temporal_billing_namespace }}", role: "admin"},
+		]
+		temporal_web_subdomain:             "temporal"
+		temporal_web_domain:                "{{ temporal_web_subdomain }}.{{ verself_domain }}"
+		temporal_web_default_namespace:     "{{ temporal_sandbox_namespace }}"
+		temporal_web_disable_write_actions: true
+		temporal_web_oidc_scopes: ["openid", "profile", "email", "offline_access"]
+		temporal_web_oidc_max_session_duration:     "8h"
+		temporal_web_auth_project_name:             "temporal-web"
+		temporal_web_auth_app_name:                 "temporal-web"
+		temporal_web_oidc_redirect_uri:             "https://{{ temporal_web_domain }}/auth/sso/callback"
+		temporal_web_oidc_post_logout_redirect_uri: "https://{{ temporal_web_domain }}/"
+	}
+
+	seed_system: {
+		seed_system_zitadel_base_url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}"
+		seed_system_zitadel_host:     "auth.{{ verself_domain }}"
+		seed_system_openbao_tls_dir:  "/etc/openbao/tls"
+		seed_system_password_overrides: {}
+		seed_system_credstore_dir:         "/etc/credstore/seed-system"
+		seed_system_platform_org_name:     "verself"
+		seed_system_acme_org_name:         "Acme Corp"
+		seed_system_sandbox_project_name:  "sandbox-rental"
+		seed_system_identity_project_name: "identity-service"
+		seed_system_secrets_project_name:  "secrets-service"
+		seed_system_forgejo_project_name:  "forgejo"
+		seed_system_mailbox_project_name:  "mailbox-service"
+		seed_system_users: {
+			ceo: {key: "ceo", org_key: "platform", email: "ceo@{{ verself_domain }}", username: "ceo", first_name: "CEO", last_name: "Operator", password_credstore_path: "{{ seed_system_credstore_dir }}/ceo-password"}
+			platform_agent: {key: "platform_agent", org_key: "platform", email: "agent@{{ verself_domain }}", username: "agent", first_name: "Platform", last_name: "Agent", password_credstore_path: "{{ seed_system_credstore_dir }}/platform-agent-password"}
+			acme_admin: {key: "acme_admin", org_key: "acme", email: "acme-admin@{{ verself_domain }}", username: "acme-admin", first_name: "Acme", last_name: "Admin", password_credstore_path: "{{ seed_system_credstore_dir }}/acme-admin-password"}
+			acme_user: {key: "acme_user", org_key: "acme", email: "acme-user@{{ verself_domain }}", username: "acme-user", first_name: "Acme", last_name: "User", password_credstore_path: "{{ seed_system_credstore_dir }}/acme-user-password"}
+		}
+		seed_system_machine_users: {
+			platform_admin: {key: "platform_admin", org_key: "platform", username: "assume-platform-admin", name: "Assume Platform Admin", secret_credstore_path: "{{ seed_system_credstore_dir }}/assume-platform-admin-client-secret"}
+			acme_admin: {key: "acme_admin", org_key: "acme", username: "assume-acme-admin", name: "Assume Acme Admin", secret_credstore_path: "{{ seed_system_credstore_dir }}/assume-acme-admin-client-secret"}
+			acme_member: {key: "acme_member", org_key: "acme", username: "assume-acme-member", name: "Assume Acme Member", secret_credstore_path: "{{ seed_system_credstore_dir }}/assume-acme-member-client-secret"}
+		}
+		seed_system_product_id:           "sandbox"
+		seed_system_product_display_name: "Sandbox"
+		seed_system_meter_unit:           "sku_ms"
+		seed_system_billing_model:        "metered"
+		seed_system_plan_id:              "sandbox-default"
+		seed_system_plan_display_name:    "Sandbox PAYG"
+		seed_system_free_tier_buckets: {compute: 10000000, memory: 5000000, execution_root_storage: 2000000}
+		seed_system_plan_entitlements: {}
+		seed_system_contract_tiers: [
+			{plan_id: "sandbox-hobby", display_name: "Hobby", tier: "hobby", currency: "usd", cadence: "monthly", unit_amount_cents: 500, entitlements: {compute: 30000000, memory: 15000000, execution_root_storage: 5000000}},
+			{plan_id: "sandbox-pro", display_name: "Pro", tier: "pro", currency: "usd", cadence: "monthly", unit_amount_cents: 2000, entitlements: {compute: 120000000, memory: 60000000, execution_root_storage: 20000000}},
+		]
+		seed_system_platform_target_prepaid_units: 500000000000
+		seed_system_customer_target_prepaid_units: 500000000000
+		seed_system_expires_after:                 "8760h"
+		seed_system_acme_sku_scoped_grants: [{sku_id: "sandbox_execution_root_storage_premium_nvme_gib_ms", units: 50000000, source: "promo"}]
+		seed_system_helper_local_path:                 "/tmp/billing-seed-{{ inventory_hostname }}"
+		seed_system_helper_remote_path:                "/opt/verself/staging/billing-seed-{{ inventory_hostname }}"
+		seed_system_stripe_catalog_helper_local_path:  "/tmp/billing-stripe-catalog-{{ inventory_hostname }}"
+		seed_system_stripe_catalog_helper_remote_path: "/opt/verself/staging/billing-stripe-catalog-{{ inventory_hostname }}"
+		seed_system_stalwart_disabled_permissions: ["email-send", "jmap-sieve-script-set", "jmap-sieve-script-validate", "sieve-put-script", "sieve-set-active"]
+	}
+}
+
 topology: s.#Topology & {
 	gateways: {
 		public_caddy: {
@@ -120,6 +299,10 @@ topology: s.#Topology & {
 				user:    "clickhouse"
 				group:   "clickhouse"
 			}
+			identities: {
+				server: {ansible_var: "spire_clickhouse_server_id", path: "/svc/clickhouse-server", user: "clickhouse", group: "clickhouse", entry_id: "verself-clickhouse-server"}
+				operator: {ansible_var: "spire_clickhouse_operator_id", path: "/svc/clickhouse-operator", user: "clickhouse_operator", group: "clickhouse_operator", entry_id: "verself-clickhouse-operator"}
+			}
 			artifact: {kind: "upstream_binary", output: "clickhouse-server", role: "clickhouse"}
 			endpoints: native_tls: {
 				protocol: "clickhouse_native"
@@ -132,10 +315,11 @@ topology: s.#Topology & {
 				auth:     "spiffe_mtls"
 			}
 		}
-		otelcol: {
+		otelcol: #DefaultSPIFFEIdentity & {
 			kind: "resource"
 			host: "127.0.0.1"
-			runtime: {systemd: "otelcol"}
+			runtime: {systemd: "otelcol", user: "otelcol", group: "otelcol"}
+			identities: default: {ansible_var: "spire_otelcol_id", path: "/svc/otelcol", entry_id: "verself-otelcol"}
 			artifact: {kind: "upstream_binary", output: "otelcol", role: "otelcol"}
 			endpoints: {
 				otlp_grpc: {
@@ -177,10 +361,11 @@ topology: s.#Topology & {
 				probes:   #ServiceProbes
 			}
 		}
-		grafana: {
+		grafana: #DefaultSPIFFEIdentity & {
 			kind: "protocol_backend"
 			host: "127.0.0.1"
 			runtime: {systemd: "grafana", user: "grafana", group: "grafana"}
+			identities: default: {ansible_var: "spire_grafana_id", path: "/svc/grafana", entry_id: "verself-grafana"}
 			artifact: {kind: "upstream_binary", output: "grafana", role: "grafana"}
 			endpoints: http: {
 				protocol: "http"
@@ -188,11 +373,13 @@ topology: s.#Topology & {
 				exposure: "loopback"
 			}
 			interfaces: operator_ui: {kind: "frontend_http", endpoint: "http", auth: "operator"}
+			postgres: {database: "grafana", owner: "grafana", connection_limit: 10}
 		}
-		temporal_web: {
+		temporal_web: #DefaultSPIFFEIdentity & {
 			kind: "protocol_backend"
 			host: "127.0.0.1"
-			runtime: {systemd: "temporal-web", user: "temporal", group: "temporal"}
+			runtime: {systemd: "temporal-web", user: "temporal_web", group: "temporal_web"}
+			identities: default: {ansible_var: "spire_temporal_web_id", path: "/svc/temporal-web", entry_id: "verself-temporal-web"}
 			artifact: {kind: "go_binary", package: "./src/temporal-platform/cmd/verself-temporal-web", output: "verself-temporal-web", role: "temporal"}
 			endpoints: http: {
 				protocol: "http"
@@ -239,10 +426,11 @@ topology: s.#Topology & {
 			}
 			interfaces: sql: {kind: "resource_protocol", endpoint: "postgres", auth: "operator"}
 		}
-		nats: {
+		nats: #DefaultSPIFFEIdentity & {
 			kind: "resource"
 			host: "127.0.0.1"
 			runtime: {systemd: "nats", user: "nats", group: "nats"}
+			identities: default: {ansible_var: "spire_nats_id", path: "/svc/nats", entry_id: "verself-nats"}
 			artifact: {kind: "static_binary", output: "nats-server", role: "nats"}
 			endpoints: {
 				client: {
@@ -264,7 +452,8 @@ topology: s.#Topology & {
 		temporal: {
 			kind: "resource"
 			host: "127.0.0.1"
-			runtime: {systemd: "temporal-server", user: "temporal", group: "temporal"}
+			runtime: {systemd: "temporal-server", user: "temporal_server", group: "temporal_server"}
+			identities: server: {ansible_var: "spire_temporal_server_id", path: "/svc/temporal-server", user: "temporal_server", group: "temporal_server", entry_id: "verself-temporal-server"}
 			artifact: {kind: "go_binary", package: "./src/temporal-platform/cmd/verself-temporal-server", output: "verself-temporal-server", role: "temporal"}
 			temporal: {
 				frontend: {grpc_port: 7233, http_port: 7243, membership_port: 6933}
@@ -293,80 +482,89 @@ topology: s.#Topology & {
 				frontend: {kind: "resource_protocol", endpoint: "frontend_grpc", auth: "none"}
 				metrics: {kind: "metrics", endpoint: "metrics", auth: "operator"}
 			}
-			postgres: {database: "temporal", owner: "temporal"}
+			postgres: {database: "temporal", owner: "temporal", connection_limit: 80}
 		}
-		billing: #PublicGoService & #InternalGoAPI & {
+		billing: #PublicGoService & #InternalGoAPI & #DefaultSPIFFEIdentity & {
 			artifact: {package: "./src/billing-service/cmd/billing-service", output: "billing-service", role: "billing_service"}
 			runtime: {systemd: "billing-service", user: "billing", group: "billing"}
+			identities: default: {ansible_var: "spire_billing_service_id", path: "/svc/billing-service", entry_id: "verself-billing-service"}
 			endpoints: {
 				public_http: port:    4242
 				internal_https: port: 4255
 			}
-			postgres: {database: "billing", owner: "billing"}
+			postgres: {database: "billing", owner: "billing", connection_limit: 30}
 		}
-		sandbox_rental: #PublicGoService & #InternalGoAPI & {
+		sandbox_rental: #PublicGoService & #InternalGoAPI & #DefaultSPIFFEIdentity & {
 			artifact: {package: "./src/sandbox-rental-service/cmd/sandbox-rental-service", output: "sandbox-rental-service", role: "sandbox_rental_service"}
 			runtime: {systemd: "sandbox-rental-service", user: "sandbox_rental", group: "sandbox_rental"}
+			identities: default: {ansible_var: "spire_sandbox_rental_id", path: "/svc/sandbox-rental-service", entry_id: "verself-sandbox-rental-service"}
 			endpoints: {
 				public_http: port:    4243
 				internal_https: port: 4263
 			}
-			postgres: {database: "sandbox_rental", owner: "sandbox_rental"}
+			postgres: {database: "sandbox_rental", owner: "sandbox_rental", connection_limit: 30}
 		}
-		identity_service: #PublicGoService & #InternalGoAPI & {
+		identity_service: #PublicGoService & #InternalGoAPI & #DefaultSPIFFEIdentity & {
 			artifact: {package: "./src/identity-service/cmd/identity-service", output: "identity-service", role: "identity_service"}
 			runtime: {systemd: "identity-service", user: "identity_service", group: "identity_service"}
+			identities: default: {ansible_var: "spire_identity_service_id", path: "/svc/identity-service", entry_id: "verself-identity-service"}
 			endpoints: {
 				public_http: port:    4248
 				internal_https: port: 4241
 			}
-			postgres: {database: "identity_service", owner: "identity_service"}
+			postgres: {database: "identity_service", owner: "identity_service", connection_limit: 10}
 		}
-		governance_service: #PublicGoService & #InternalGoAPI & {
+		governance_service: #PublicGoService & #InternalGoAPI & #DefaultSPIFFEIdentity & {
 			artifact: {package: "./src/governance-service/cmd/governance-service", output: "governance-service", role: "governance_service"}
 			runtime: {systemd: "governance-service", user: "governance_service", group: "governance_service"}
+			identities: default: {ansible_var: "spire_governance_service_id", path: "/svc/governance-service", entry_id: "verself-governance-service"}
 			endpoints: {
 				public_http: port:    4250
 				internal_https: port: 4254
 			}
-			postgres: {database: "governance_service", owner: "governance_service"}
+			postgres: {database: "governance_service", owner: "governance_service", connection_limit: 15}
 		}
-		secrets_service: #PublicGoService & #InternalGoAPI & {
+		secrets_service: #PublicGoService & #InternalGoAPI & #DefaultSPIFFEIdentity & {
 			artifact: {package: "./src/secrets-service/cmd/secrets-service", output: "secrets-service", role: "secrets_service"}
 			runtime: {systemd: "secrets-service", user: "secrets_service", group: "secrets_service"}
+			identities: default: {ansible_var: "spire_secrets_service_id", path: "/svc/secrets-service", entry_id: "verself-secrets-service"}
 			endpoints: {
 				public_http: port:    4251
 				internal_https: port: 4253
 			}
 			postgres: {database: "secrets_service", owner: "secrets_service"}
 		}
-		profile_service: #PublicGoService & #InternalGoAPI & {
+		profile_service: #PublicGoService & #InternalGoAPI & #DefaultSPIFFEIdentity & {
 			artifact: {package: "./src/profile-service/cmd/profile-service", output: "profile-service", role: "profile_service"}
 			runtime: {systemd: "profile-service", user: "profile_service", group: "profile_service"}
+			identities: default: {ansible_var: "spire_profile_service_id", path: "/svc/profile-service", entry_id: "verself-profile-service"}
 			endpoints: {
 				public_http: port:    4258
 				internal_https: port: 4259
 			}
-			postgres: {database: "profile_service", owner: "profile_service"}
+			postgres: {database: "profile_service", owner: "profile_service", connection_limit: 10}
 		}
-		notifications_service: #PublicGoService & {
+		notifications_service: #PublicGoService & #DefaultSPIFFEIdentity & {
 			artifact: {package: "./src/notifications-service/cmd/notifications-service", output: "notifications-service", role: "notifications_service"}
 			runtime: {systemd: "notifications-service", user: "notifications_service", group: "notifications_service"}
+			identities: default: {ansible_var: "spire_notifications_service_id", path: "/svc/notifications-service", entry_id: "verself-notifications-service"}
 			endpoints: public_http: port: 4260
-			postgres: {database: "notifications_service", owner: "notifications_service"}
+			postgres: {database: "notifications_service", owner: "notifications_service", connection_limit: 10}
 		}
-		projects_service: #PublicGoService & #InternalGoAPI & {
+		projects_service: #PublicGoService & #InternalGoAPI & #DefaultSPIFFEIdentity & {
 			artifact: {package: "./src/projects-service/cmd/projects-service", output: "projects-service", role: "projects_service"}
 			runtime: {systemd: "projects-service", user: "projects_service", group: "projects_service"}
+			identities: default: {ansible_var: "spire_projects_service_id", path: "/svc/projects-service", entry_id: "verself-projects-service"}
 			endpoints: {
 				public_http: port:    4264
 				internal_https: port: 4265
 			}
-			postgres: {database: "projects_service", owner: "projects_service"}
+			postgres: {database: "projects_service", owner: "projects_service", connection_limit: 10}
 		}
-		source_code_hosting_service: #PublicGoService & #InternalGoAPI & {
+		source_code_hosting_service: #PublicGoService & #InternalGoAPI & #DefaultSPIFFEIdentity & {
 			artifact: {package: "./src/source-code-hosting-service/cmd/source-code-hosting-service", output: "source-code-hosting-service", role: "source_code_hosting_service"}
 			runtime: {systemd: "source-code-hosting-service", user: "source_code_hosting_service", group: "source_code_hosting_service"}
+			identities: default: {ansible_var: "spire_source_code_hosting_service_id", path: "/svc/source-code-hosting-service", entry_id: "verself-source-code-hosting-service"}
 			endpoints: {
 				public_http: port:    4261
 				internal_https: port: 4262
@@ -377,13 +575,13 @@ topology: s.#Topology & {
 				path_prefix: "/"
 				auth:        "zitadel_jwt"
 			}
-			postgres: {database: "source_code_hosting_service", owner: "source_code_hosting_service"}
+			postgres: {database: "source_code_hosting_service", owner: "source_code_hosting_service", connection_limit: 10}
 		}
 		console: #Frontend & {
 			artifact: {package: "src/viteplus-monorepo/apps/console", output: "console", role: "console"}
 			runtime: {systemd: "console", user: "console", group: "console"}
 			endpoints: http: port: 4244
-			postgres: {database: "frontend_auth", owner: "frontend_auth"}
+			postgres: {database: "frontend_auth", owner: "frontend_auth", connection_limit: 15}
 		}
 		electric: {
 			kind: "resource"
@@ -392,6 +590,20 @@ topology: s.#Topology & {
 			artifact: {kind: "upstream_binary", output: "electric", role: "electric"}
 			endpoints: http: {protocol: "http", port: 3010, exposure: "loopback"}
 			interfaces: shape_api: {kind: "resource_protocol", endpoint: "http", auth: "shared_secret"}
+			electric: {
+				instance:         "default"
+				pg_role:          "electric"
+				pg_conn_limit:    25
+				source_database:  "sandbox_rental"
+				writer_role:      "sandbox_rental"
+				publication_name: "electric_publication_default"
+				publication_tables: ["executions", "execution_logs"]
+				storage_dir:    "/var/lib/electric"
+				credstore_dir:  "/etc/credstore/electric"
+				nftables_table: "verself_electric"
+				nftables_file:  "/etc/nftables.d/electric.nft"
+				db_pool_size:   15
+			}
 		}
 		zitadel: {
 			kind: "protocol_backend"
@@ -400,7 +612,7 @@ topology: s.#Topology & {
 			artifact: {kind: "static_binary", output: "zitadel", role: "zitadel"}
 			endpoints: http: {protocol: "http", port: 8085, exposure: "loopback"}
 			interfaces: oidc: {kind: "protocol", endpoint: "http", auth: "none", probes: #ServiceProbes}
-			postgres: {database: "zitadel", owner: "zitadel"}
+			postgres: {database: "zitadel", owner: "zitadel", connection_limit: 15}
 		}
 		openbao: {
 			kind: "resource"
@@ -443,17 +655,22 @@ topology: s.#Topology & {
 				jmap: {kind: "protocol", endpoint: "http", auth: "zitadel_jwt"}
 				admin: {kind: "admin_api", endpoint: "http", auth: "operator"}
 			}
-			postgres: {database: "stalwart", owner: "stalwart"}
+			postgres: {database: "stalwart", owner: "stalwart", connection_limit: 10}
 		}
-		mailbox_service: #PublicGoService & {
+		mailbox_service: #PublicGoService & #DefaultSPIFFEIdentity & {
 			artifact: {package: "./src/mailbox-service/cmd/mailbox-service", output: "mailbox-service", role: "mailbox_service"}
 			runtime: {systemd: "mailbox-service", user: "mailbox_service", group: "mailbox_service"}
+			identities: default: {ansible_var: "spire_mailbox_service_id", path: "/svc/mailbox-service", entry_id: "verself-mailbox-service"}
 			endpoints: public_http: port: 4246
-			postgres: {database: "mailbox_service", owner: "mailbox_service"}
+			postgres: {database: "mailbox_service", owner: "mailbox_service", connection_limit: 10}
 		}
 		object_storage_service: #PublicGoService & {
 			artifact: {package: "./src/object-storage-service/cmd/object-storage-service", output: "object-storage-service", role: "object_storage_service"}
 			runtime: {systemd: "object-storage-service", user: "object_storage_service", group: "object_storage_service"}
+			identities: {
+				service: {ansible_var: "spire_object_storage_service_id", path: "/svc/object-storage-service", user: "object_storage_service", group: "object_storage_service", entry_id: "verself-object-storage-service"}
+				admin: {ansible_var: "spire_object_storage_admin_id", path: "/svc/object-storage-admin", user: "object_storage_admin", group: "object_storage_admin", entry_id: "verself-object-storage-admin"}
+			}
 			endpoints: {
 				public_http: port: 4256
 				admin_http: {
@@ -463,7 +680,7 @@ topology: s.#Topology & {
 				}
 			}
 			interfaces: admin_api: {kind: "admin_api", endpoint: "admin_http", auth: "spiffe_mtls", probes: #ServiceProbes}
-			postgres: {database: "object_storage_service", owner: "object_storage_service"}
+			postgres: {database: "object_storage_service", owner: "object_storage_service", connection_limit: 10}
 		}
 		garage: {
 			kind: "resource"
@@ -508,6 +725,21 @@ topology: s.#Topology & {
 			artifact: {kind: "upstream_binary", output: "electric", role: "electric"}
 			endpoints: http: {protocol: "http", port: 3011, exposure: "loopback"}
 			interfaces: shape_api: {kind: "resource_protocol", endpoint: "http", auth: "shared_secret"}
+			electric: {
+				instance:         "mail"
+				pg_role:          "electric_mail"
+				pg_conn_limit:    25
+				source_database:  "mailbox_service"
+				writer_role:      "mailbox_service"
+				publication_name: "electric_publication_mail"
+				publication_tables: ["mailbox_accounts", "mailboxes", "emails", "email_mailboxes", "email_bodies", "threads"]
+				storage_dir:    "/var/lib/electric-mail"
+				credstore_dir:  "/etc/credstore/electric-mail"
+				nftables_table: "verself_electric_mail"
+				nftables_file:  "/etc/nftables.d/electric-mail.nft"
+				db_pool_size:   10
+				extra_systemd_after: ["mailbox-service.service"]
+			}
 		}
 		electric_notifications: {
 			kind: "resource"
@@ -516,6 +748,21 @@ topology: s.#Topology & {
 			artifact: {kind: "upstream_binary", output: "electric", role: "electric"}
 			endpoints: http: {protocol: "http", port: 3012, exposure: "loopback"}
 			interfaces: shape_api: {kind: "resource_protocol", endpoint: "http", auth: "shared_secret"}
+			electric: {
+				instance:         "notifications"
+				pg_role:          "electric_notifications"
+				pg_conn_limit:    15
+				source_database:  "notifications_service"
+				writer_role:      "notifications_service"
+				publication_name: "electric_publication_notifications"
+				publication_tables: ["notification_inbox_state"]
+				storage_dir:    "/var/lib/electric-notifications"
+				credstore_dir:  "/etc/credstore/electric-notifications"
+				nftables_table: "verself_electric_notifications"
+				nftables_file:  "/etc/nftables.d/electric-notifications.nft"
+				db_pool_size:   8
+				extra_systemd_after: ["notifications-service.service"]
+			}
 		}
 		platform: #Frontend & {
 			artifact: {package: "src/viteplus-monorepo/apps/platform", output: "platform", role: "platform"}
@@ -544,7 +791,7 @@ topology: s.#Topology & {
 
 	routes: [
 		{kind: "browser_origin", gateway: "public_caddy", host: "@", to: {component: "platform", interface: "frontend"}, waf: "detection", browser_cors: "same_origin"},
-		{kind: "browser_origin", gateway: "public_caddy", host: "company_domain", to: {component: "company", interface: "frontend"}, waf: "detection", browser_cors: "same_origin"},
+		{kind: "browser_origin", gateway: "public_caddy", zone: "company", host: "@", to: {component: "company", interface: "frontend"}, waf: "detection", browser_cors: "same_origin"},
 		{kind: "browser_origin", gateway: "public_caddy", host: "console", to: {component: "console", interface: "frontend"}, waf: "detection", browser_cors: "same_origin"},
 		{kind: "public_api_origin", gateway: "public_caddy", host: "billing.api", path_prefix: "/api/v1", to: {component: "billing", interface: "public_api"}, waf: "blocking", max_body_bytes: 1048576, browser_cors: "none"},
 		{kind: "public_api_origin", gateway: "public_caddy", host: "sandbox.api", path_prefix: "/api/v1", to: {component: "sandbox_rental", interface: "public_api"}, waf: "blocking", max_body_bytes: 1048576, browser_cors: "none"},
@@ -679,6 +926,42 @@ _controlPlanePortChecks: [
 	},
 ]
 
+_workloadIdentities: [
+	for componentName, componentValue in topology.components
+	for identityName, identityValue in componentValue.identities {
+		key:                   "\(componentName).\(identityName)"
+		component:             "\(componentName)"
+		name:                  "\(identityName)"
+		ansible_var:           identityValue.ansible_var
+		entry_id:              identityValue.entry_id
+		spiffe_id:             "spiffe://{{ spire_trust_domain }}\(identityValue.path)"
+		user:                  identityValue.user
+		group:                 identityValue.group
+		selector:              identityValue.selector
+		x509_svid_ttl_seconds: identityValue.x509_svid_ttl_seconds
+	},
+]
+
+_electricComponents: [
+	for componentName, componentValue in topology.components
+	if componentValue.electric != _|_ {
+		component:    "\(componentName)"
+		service_name: componentValue.runtime.systemd
+		port:         componentValue.endpoints[componentValue.interfaces.shape_api.endpoint].port
+		sync:         componentValue.electric
+	},
+]
+
+_postgresRoleConnectionLimits: {
+	for _, componentValue in topology.components
+	if componentValue.postgres.owner != "" && componentValue.postgres.connection_limit > 0 {
+		"\(componentValue.postgres.owner)": componentValue.postgres.connection_limit
+	}
+	for _, componentValue in _electricComponents {
+		"\(componentValue.sync.pg_role)": componentValue.sync.pg_conn_limit
+	}
+}
+
 outputs: {
 	runtime: {
 		topology_runtime: {
@@ -732,9 +1015,9 @@ outputs: {
 		topology_dns_records: [
 			for route in topology.routes
 			if route.kind != "guest_host_route" && route.host != "10.255.0.1" {
-				host:    route.host
-				kind:    route.kind
-				gateway: route.gateway
+				zone:   route.zone
+				record: route.host
+				kind:   route.kind
 			},
 		]
 	}
@@ -745,14 +1028,32 @@ outputs: {
 		}
 	}
 	spire: {
+		spire_trust_domain:                 "spiffe.{{ verself_domain }}"
+		spire_server_bind_address:          "127.0.0.1"
+		spire_server_bind_port:             "{{ topology_endpoints.spire_server.endpoints.api.port }}"
+		spire_server_socket_path:           "/run/spire-server/private/api.sock"
+		spire_agent_socket_path:            "/run/spire-agent/sockets/agent.sock"
+		spire_workload_group:               "spire_workload"
+		spire_agent_id:                     "spiffe://{{ spire_trust_domain }}/node/single-node"
+		spire_bundle_endpoint_bind_address: "127.0.0.1"
+		spire_bundle_endpoint_bind_port:    "{{ topology_endpoints.spire_bundle_endpoint.endpoints.bundle.port }}"
+		spire_jwt_bundle_endpoint_url:      "https://{{ spire_bundle_endpoint_bind_address }}:{{ spire_bundle_endpoint_bind_port }}"
+		spire_jwt_issuer_url:               "{{ spire_jwt_bundle_endpoint_url }}"
+		for _, identity in _workloadIdentities
+		if identity.ansible_var != "" {
+			"\(identity.ansible_var)": identity.spiffe_id
+		}
 		topology_spire: {
 			identities: [
-				for componentName, componentValue in topology.components
-				if componentValue.runtime.spiffe_id != "" {
-					component: componentName
-					spiffe_id: componentValue.runtime.spiffe_id
-					user:      componentValue.runtime.user
-					group:     componentValue.runtime.group
+				for identity in _workloadIdentities {
+					key:                   identity.key
+					component:             identity.component
+					entry_id:              identity.entry_id
+					spiffe_id:             identity.spiffe_id
+					user:                  identity.user
+					group:                 identity.group
+					selector:              identity.selector
+					x509_svid_ttl_seconds: identity.x509_svid_ttl_seconds
 				},
 			]
 			edges: [
@@ -765,6 +1066,9 @@ outputs: {
 		}
 	}
 	postgres: {
+		postgresql_max_connections:                _config.postgres.max_connections
+		postgresql_superuser_reserved_connections: _config.postgres.superuser_reserved_connections
+		postgresql_role_connection_limits:         _postgresRoleConnectionLimits
 		topology_postgres: {
 			databases: [
 				for componentName, componentValue in topology.components
@@ -786,6 +1090,51 @@ outputs: {
 				},
 			]
 			edges: topology.edges
+		}
+	}
+	ops: {
+		verself_version: _config.verself_version
+		verself_bin:     _config.verself_bin
+		for key, value in _config.domains {
+			"\(key)": value
+		}
+		for key, value in _config.openbao {
+			"\(key)": value
+		}
+		for key, value in _config.wireguard {
+			"\(key)": value
+		}
+		for key, value in _config.object_storage {
+			"\(key)": value
+		}
+		retired_product_runtimes: _config.retired_product_runtimes
+		topology_electric_instances: {
+			for _, componentValue in _electricComponents {
+				"\(componentValue.sync.instance)": {
+					electric_instance:              componentValue.sync.instance
+					electric_service_name:          componentValue.service_name
+					electric_service_port:          componentValue.port
+					electric_pg_role:               componentValue.sync.pg_role
+					electric_pg_conn_limit:         componentValue.sync.pg_conn_limit
+					electric_db:                    componentValue.sync.source_database
+					electric_writer_role:           componentValue.sync.writer_role
+					electric_publication_name:      componentValue.sync.publication_name
+					electric_publication_tables:    componentValue.sync.publication_tables
+					electric_storage_dir:           componentValue.sync.storage_dir
+					electric_credstore_dir:         componentValue.sync.credstore_dir
+					electric_nftables_table:        componentValue.sync.nftables_table
+					electric_nftables_file:         componentValue.sync.nftables_file
+					electric_db_pool_size:          componentValue.sync.db_pool_size
+					electric_replication_stream_id: componentValue.sync.replication_stream_id
+					electric_extra_systemd_after:   componentValue.sync.extra_systemd_after
+				}
+			}
+		}
+		for key, value in _config.temporal {
+			"\(key)": value
+		}
+		for key, value in _config.seed_system {
+			"\(key)": value
 		}
 	}
 	proof: {

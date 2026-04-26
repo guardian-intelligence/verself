@@ -4,64 +4,63 @@ argument_specs:
     short_description: Provision one ElectricSQL sync instance.
     description:
       - >-
-        Invoked once per Electric instance (sandbox_rental = "default",
-        mailbox_service = "mail"). All instance-specific paths, port, role
-        names, and table lists must be passed in; the role owns only shared
-        plumbing (image pin, credstore layout, systemd template, nft egress,
-        and the pg reconcile DO block).
+        Invoked once per generated Electric instance. Instance-specific paths,
+        port, role names, and table lists come from electric_config; the role
+        owns shared plumbing (image pin, credstore layout, systemd template,
+        nft egress, and the pg reconcile DO block).
     options:
-      electric_instance:
-        type: str
+      electric_config:
+        type: dict
         required: true
-        choices: [default, mail, notifications]
-      electric_service_name:
-        type: str
-        required: true
-        description: systemd unit name (also the podman container name).
-      electric_service_port:
-        type: int
-        required: true
-      electric_pg_role:
-        type: str
-        required: true
-        description: Postgres role Electric connects as; must exist or be created here.
-      electric_pg_conn_limit:
-        type: int
-        required: true
-      electric_db:
-        type: str
-        required: true
-        description: Postgres database holding the shape tables.
-      electric_writer_role:
-        type: str
-        required: true
-        description: Application role that owns writes to the shape tables (restored ALL PRIVILEGES after Electric takes ownership).
-      electric_publication_name:
-        type: str
-        required: true
-      electric_publication_tables:
-        type: list
-        elements: str
-        required: true
-      electric_storage_dir:
-        type: str
-        required: true
-      electric_credstore_dir:
-        type: str
-        required: true
-      electric_nftables_table:
-        type: str
-        required: true
-      electric_nftables_file:
-        type: str
-        required: true
-      electric_db_pool_size:
-        type: int
-        required: true
-      electric_replication_stream_id:
-        type: str
-        default: default
-      electric_extra_systemd_after:
-        type: list
-        elements: str
-        default: []
+        options:
+          electric_instance:
+            type: str
+            required: true
+            choices: [default, mail, notifications]
+          electric_service_name:
+            type: str
+            required: true
+          electric_service_port:
+            type: int
+            required: true
+          electric_pg_role:
+            type: str
+            required: true
+          electric_pg_conn_limit:
+            type: int
+            required: true
+          electric_db:
+            type: str
+            required: true
+          electric_writer_role:
+            type: str
+            required: true
+          electric_publication_name:
+            type: str
+            required: true
+          electric_publication_tables:
+            type: list
+            elements: str
+            required: true
+          electric_storage_dir:
+            type: str
+            required: true
+          electric_credstore_dir:
+            type: str
+            required: true
+          electric_nftables_table:
+            type: str
+            required: true
+          electric_nftables_file:
+            type: str
+            required: true
+          electric_db_pool_size:
+            type: int
+            required: true
+          electric_replication_stream_id:
+            type: str
+            required: true
+          electric_extra_systemd_after:
+            type: list
+            elements: str
+            required: true

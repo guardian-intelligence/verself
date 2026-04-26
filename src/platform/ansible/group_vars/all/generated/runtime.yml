@@ -226,10 +226,10 @@ topology_runtime:
       role: otelcol
     kind: resource
     runtime:
-      group: ''
+      group: otelcol
       spiffe_id: ''
       systemd: otelcol
-      user: ''
+      user: otelcol
   platform:
     artifact:
       kind: node_app
@@ -358,10 +358,10 @@ topology_runtime:
       role: temporal
     kind: resource
     runtime:
-      group: temporal
+      group: temporal_server
       spiffe_id: ''
       systemd: temporal-server
-      user: temporal
+      user: temporal_server
   temporal_web:
     artifact:
       kind: go_binary
@@ -370,10 +370,10 @@ topology_runtime:
       role: temporal
     kind: protocol_backend
     runtime:
-      group: temporal
+      group: temporal_web
       spiffe_id: ''
       systemd: temporal-web
-      user: temporal
+      user: temporal_web
   tigerbeetle:
     artifact:
       kind: static_binary
