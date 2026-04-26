@@ -1,6 +1,7 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { AppChrome } from "@verself/brand";
+import { TopNav } from "~/components/top-nav";
 
 // _workshop — Guardian's default layout. Every URL that is not /letters/* or
 // /newsroom lives here: /, /company, /careers, /changelog, /contact, /press,
@@ -22,7 +23,7 @@ function WorkshopLayout() {
         color: "var(--treatment-ink)",
       }}
     >
-      <AppChrome treatment="workshop" LinkComponent={LinkAdapter} />
+      <AppChrome treatment="workshop" LinkComponent={LinkAdapter} slotRight={<TopNav />} />
       <main id="main" className="flex-1">
         <Outlet />
       </main>
@@ -50,39 +51,37 @@ function WorkshopFooter() {
       style={{
         background: "var(--treatment-ground)",
         color: "var(--treatment-ink)",
-        borderTop: "1px solid var(--treatment-hairline)",
       }}
     >
-      <div className="mx-auto grid w-full max-w-7xl gap-8 px-4 py-10 md:grid-cols-3 md:px-6">
-        <FooterColumn heading="Company">
-          <FooterLink to="/company">About</FooterLink>
-          <FooterLink to="/careers">Careers</FooterLink>
-          <FooterLink to="/changelog">Changelog</FooterLink>
-          <FooterLink to="/contact">Contact</FooterLink>
-        </FooterColumn>
-        <FooterColumn heading="Solutions">
-          <FooterLink to="/solutions">Overview</FooterLink>
-          <FooterExternal href="https://verself.sh">Verself Platform</FooterExternal>
-        </FooterColumn>
-        <FooterColumn heading="Read">
-          <FooterLink to="/letters">Letters</FooterLink>
-          <FooterExternal href="/letters/rss">RSS</FooterExternal>
-          <FooterLink to="/newsroom">Newsroom</FooterLink>
-          <FooterLink to="/design">Design system</FooterLink>
-          <FooterLink to="/press">Press kit</FooterLink>
-        </FooterColumn>
-      </div>
-      <div
-        className="mx-auto w-full max-w-7xl px-4 pb-10 md:px-6"
-        style={{
-          fontFamily: "'Geist Mono', ui-monospace, monospace",
-          fontSize: "11px",
-          letterSpacing: "0.12em",
-          textTransform: "uppercase",
-          color: "var(--treatment-muted-faint)",
-        }}
-      >
-        © 2026 Guardian Intelligence LLC · Seattle, Washington
+      <div className="mx-auto w-full max-w-6xl px-4 md:px-6">
+        <div className="grid gap-8 py-10 md:grid-cols-3">
+          <FooterColumn heading="Company">
+            <FooterLink to="/company">About</FooterLink>
+            <FooterLink to="/careers">Careers</FooterLink>
+            <FooterLink to="/changelog">Changelog</FooterLink>
+            <FooterLink to="/contact">Contact</FooterLink>
+          </FooterColumn>
+          <FooterColumn heading="Solutions">
+            <FooterLink to="/solutions">Overview</FooterLink>
+            <FooterExternal href="https://verself.sh">Verself Platform</FooterExternal>
+          </FooterColumn>
+          <FooterColumn heading="Read">
+            <FooterLink to="/design">Design system</FooterLink>
+            <FooterLink to="/press">Press kit</FooterLink>
+          </FooterColumn>
+        </div>
+        <div
+          className="pb-10"
+          style={{
+            fontFamily: "'Geist Mono', ui-monospace, monospace",
+            fontSize: "11px",
+            letterSpacing: "0.12em",
+            textTransform: "uppercase",
+            color: "var(--treatment-muted-faint)",
+          }}
+        >
+          © 2026 Guardian Intelligence LLC · Seattle, Washington
+        </div>
       </div>
     </footer>
   );

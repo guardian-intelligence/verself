@@ -32,6 +32,12 @@
   --color-bordeaux: #5c1f1e;
   --color-amber: #f79326;
   --color-type-iron: #f5f5f5;
+  /* Sepia — warm dark ink for editorial rules (masthead, colophon). The
+     bordeaux pull-quote rule is reserved for prose; sepia is the *structural*
+     editorial ink. Reads as pressed-in newsprint, not laser-cut. Tuned warm
+     (chestnut family, not coffee) so a 4px rule against #f6f4ed paper reads
+     as ink dried on stonepaper rather than black UI chrome. */
+  --color-sepia: #5b3a26;
 
   /* Fonts */
   --font-display: "Fraunces", Georgia, serif;
@@ -102,6 +108,14 @@
     --treatment-surface-subtle: rgba(245, 245, 245, 0.04);
     --treatment-surface-border: rgba(245, 245, 245, 0.12);
     --treatment-hairline: rgba(245, 245, 245, 0.08);
+    /* Editorial rule — the *one* structural rule a treatment may paint
+       (masthead under the chrome, colophon above the footer). Workshop and
+       Newsroom treat this as a hairline; Letters paints a thicker sepia rule
+       because it stands in for a newspaper masthead. Color and thickness are
+       split so consumers can compose `var(--treatment-rule-thickness) solid
+       var(--treatment-rule-color)`. */
+    --treatment-rule-color: rgba(245, 245, 245, 0.08);
+    --treatment-rule-thickness: 1px;
   }
 }
 
@@ -121,6 +135,8 @@
   --treatment-surface-subtle: rgba(245, 245, 245, 0.04);
   --treatment-surface-border: rgba(245, 245, 245, 0.12);
   --treatment-hairline: rgba(245, 245, 245, 0.08);
+  --treatment-rule-color: rgba(245, 245, 245, 0.08);
+  --treatment-rule-thickness: 1px;
 }
 
 [data-treatment="newsroom"] {
@@ -146,6 +162,8 @@
   --treatment-surface-subtle: rgba(11, 11, 11, 0.04);
   --treatment-surface-border: rgba(11, 11, 11, 0.12);
   --treatment-hairline: rgba(11, 11, 11, 0.12);
+  --treatment-rule-color: rgba(11, 11, 11, 0.12);
+  --treatment-rule-thickness: 1px;
 }
 
 [data-treatment="letters"] {
@@ -168,4 +186,11 @@
   --treatment-surface-subtle: rgba(11, 11, 11, 0.04);
   --treatment-surface-border: rgba(11, 11, 11, 0.14);
   --treatment-hairline: rgba(11, 11, 11, 0.14);
+  /* Letters paints the masthead/colophon rule in warm sepia. The thickness
+     is tuned to the optical weight of Fraunces body type — 2px reads as
+     pressed ink at our type scale; thicker reads as UI chrome. The rule is
+     column-aligned by the chrome's max-w-4xl wrapper, so it never touches
+     the viewport edge. */
+  --treatment-rule-color: var(--color-sepia);
+  --treatment-rule-thickness: 2px;
 }

@@ -1,16 +1,24 @@
-import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { AppChrome } from "@verself/brand";
+import { TopNav } from "~/components/top-nav";
 
 // Newsroom layout — /newsroom and any future /newsroom/$slug share this
 // chrome. Flare ground, emboss Lockup, ink type. The broadcast register:
 // Guardian appearing in someone else's feed.
+//
+// The lockup self-targets /newsroom (the section index) instead of /. The
+// chrome's bottom rule renders only on the index — on /newsroom/$slug the
+// article header carries its own structure and the rule against Flare
+// would read as redundant chrome.
 
 export const Route = createFileRoute("/newsroom")({
   component: NewsroomLayout,
 });
 
 function NewsroomLayout() {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const isIndex = pathname === "/newsroom" || pathname === "/newsroom/";
   return (
     <div
       data-treatment="newsroom"
@@ -20,7 +28,13 @@ function NewsroomLayout() {
         color: "var(--treatment-ink)",
       }}
     >
-      <AppChrome treatment="newsroom" LinkComponent={LinkAdapter} />
+      <AppChrome
+        treatment="newsroom"
+        LinkComponent={LinkAdapter}
+        slotRight={<TopNav />}
+        wordmarkHref="/newsroom"
+        bottomRule={isIndex}
+      />
       <main id="main" className="flex-1">
         <Outlet />
       </main>
@@ -41,9 +55,9 @@ function LinkAdapter(props: {
   return <Link {...(props as any)} />;
 }
 
-// Newsroom footer — minimal. Flare is broadcast, not navigation; a loud
-// ground asking the reader to scan nine links is fatiguing. A single masthead
-// line and two escape hatches (back to Workshop, over to Letters).
+// Newsroom footer — minimal colophon. Cross-treatment links live in the
+// chrome's TopNav; the footer just signs the page. No top rule, no link
+// list — same shape as LettersFooter.
 function NewsroomFooter() {
   return (
     <footer
@@ -51,42 +65,21 @@ function NewsroomFooter() {
       style={{
         background: "var(--treatment-ground)",
         color: "var(--treatment-ink)",
-        borderTop: "1px solid var(--treatment-hairline)",
       }}
     >
-      <div className="mx-auto flex w-full max-w-7xl flex-wrap items-baseline gap-x-6 gap-y-2 px-4 py-8 md:px-6">
-        <p
-          className="font-mono text-[11px] font-semibold uppercase tracking-[0.2em]"
-          style={{ color: "var(--treatment-muted)", fontVariationSettings: '"wght" 600' }}
+      <div className="mx-auto w-full max-w-6xl px-4 md:px-6">
+        <div
+          className="py-10"
+          style={{
+            fontFamily: "'Geist Mono', ui-monospace, monospace",
+            fontSize: "11px",
+            letterSpacing: "0.12em",
+            textTransform: "uppercase",
+            color: "var(--treatment-muted-faint)",
+          }}
         >
-          Newsroom · Guardian Intelligence
-        </p>
-        <Link
-          to="/"
-          className="font-mono text-[11px] uppercase tracking-[0.16em] transition-colors hover:underline hover:underline-offset-4"
-          style={{ color: "var(--treatment-muted-meta)" }}
-        >
-          ← Back to Workshop
-        </Link>
-        <Link
-          to="/letters"
-          className="font-mono text-[11px] uppercase tracking-[0.16em] transition-colors hover:underline hover:underline-offset-4"
-          style={{ color: "var(--treatment-muted-meta)" }}
-        >
-          Letters →
-        </Link>
-      </div>
-      <div
-        className="mx-auto w-full max-w-7xl px-4 pb-8 md:px-6"
-        style={{
-          fontFamily: "'Geist Mono', ui-monospace, monospace",
-          fontSize: "11px",
-          letterSpacing: "0.12em",
-          textTransform: "uppercase",
-          color: "var(--treatment-muted-faint)",
-        }}
-      >
-        © 2026 Guardian Intelligence LLC · Seattle, Washington
+          © 2026 Guardian Intelligence LLC · Seattle, Washington
+        </div>
       </div>
     </footer>
   );

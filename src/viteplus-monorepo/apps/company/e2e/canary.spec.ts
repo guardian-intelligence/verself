@@ -26,12 +26,15 @@ const IA_ROUTES: readonly string[] = [
 
 // Retired routes that must not resurrect. /design/company retired with the
 // three-treatment cutover (Company treatment is no longer part of the brand
-// model); Dispatch retired with the Letters rename.
+// model); Dispatch retired with the Letters rename; /letters/rss retired with
+// the gazette-layout cutover (the index now reads like a periodical front
+// page; readers who want a feed get the Newsroom strip on the home page).
 const RETIRED_ROUTES: readonly string[] = [
   "/design/company",
   "/dispatch",
   "/dispatch/rss",
   "/dispatch/ship-the-reference-architecture",
+  "/letters/rss",
 ];
 
 const OG_SLUGS: readonly string[] = ["home", "design", "letters", "newsroom", "solutions"];
@@ -102,16 +105,7 @@ test("company canary — walk IA + exercise OG + brand kit", async ({ page, requ
     }
   }
 
-  // 3. Letters RSS must parse as well-formed XML.
-  const rss = await request.get("/letters/rss");
-  expect(rss.status(), "GET /letters/rss").toBe(200);
-  const rssContentType = rss.headers()["content-type"] ?? "";
-  expect(rssContentType).toContain("application/rss+xml");
-  const rssBody = await rss.text();
-  expect(rssBody).toMatch(/<rss[^>]*>/);
-  expect(rssBody).toContain("Guardian");
-
-  // 4. Every catalogued OG slug renders as a 1200×630 SVG with Argent wings
+  // 3. Every catalogued OG slug renders as a 1200×630 SVG with Argent wings
   // and no voice violations (the route returns 500 on voice failure — if any
   // catalogued spec regresses into a banned term, this test fails loudly).
   for (const slug of OG_SLUGS) {
@@ -127,7 +121,7 @@ test("company canary — walk IA + exercise OG + brand kit", async ({ page, requ
     expect(ogBody).toMatch(/guardian/i);
   }
 
-  // 5. Retired routes must return 404. Asserts the Dispatch → Letters rename
+  // 4. Retired routes must return 404. Asserts the Dispatch → Letters rename
   // and the apps/letters retirement actually cut over — no stale route
   // registration, no regenerated artifact, no 301 shim.
   for (const path of RETIRED_ROUTES) {
@@ -137,7 +131,7 @@ test("company canary — walk IA + exercise OG + brand kit", async ({ page, requ
   const retiredOg = await request.get("/og/dispatch");
   expect(retiredOg.status(), "GET /og/dispatch must be gone").toBe(404);
 
-  // 6. Brand kit download — assert the response is a real zip (starts with
+  // 5. Brand kit download — assert the response is a real zip (starts with
   // the PK signature) and emit a click-handler-equivalent request so the
   // canary has exercised the same path a press visitor would.
   const kit = await request.get("/brand-kit/guardian-intelligence.zip");
@@ -146,7 +140,7 @@ test("company canary — walk IA + exercise OG + brand kit", async ({ page, requ
   expect(kitBytes.length).toBeGreaterThan(256);
   expect(kitBytes.subarray(0, 2).toString("ascii")).toBe("PK");
 
-  // 7. Visit /press and click the brand kit link so the
+  // 6. Visit /press and click the brand kit link so the
   // company.press.kit_download span fires (this is the click-time emission,
   // distinct from the GET above which goes direct to the static file).
   await page.goto("/press");
@@ -157,7 +151,7 @@ test("company canary — walk IA + exercise OG + brand kit", async ({ page, requ
   await kitLink.click({ modifiers: ["Alt"] });
   await page.waitForTimeout(500);
 
-  // 8. /newsroom interaction surface. The mount-time newsroom.index.view span
+  // 7. /newsroom interaction surface. The mount-time newsroom.index.view span
   // already fires when the IA walk above hits /newsroom. The bulletin_click
   // span only fires on a user gesture, so drive the giant bulletin click
   // here — that also navigates to /newsroom/<slug>, which fires

@@ -29,7 +29,7 @@ function LandingPage() {
 
 function LandingHero() {
   return (
-    <div className="relative mx-auto w-full max-w-5xl px-4 py-16 md:px-6 md:py-24">
+    <div className="relative mx-auto w-full max-w-6xl px-4 py-16 md:px-6 md:py-24">
       {/* FilmGrain wraps the container in a warm vintage overlay blended with
           the Iron ground beneath. The hero wings + text sit above it because
           <FilmGrain> is position:absolute and does not capture pointer events.

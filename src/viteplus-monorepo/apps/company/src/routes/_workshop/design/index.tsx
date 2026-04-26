@@ -47,7 +47,7 @@ const CARDS: readonly TreatmentCard[] = [
     title: "Workshop",
     subtitle: "Where the work happens.",
     description:
-      "Iron ground, Geist throughout, Amber as the sole accent. The productivity chrome — marketing, docs, console, the everyday register. Fraunces is reserved for editorial body copy in the other rooms.",
+      "Iron ground, Geist throughout. Ink on argent is the register; Amber is held back for CTAs and moments that need a hand on the elbow. The productivity chrome — marketing, docs, console, the everyday surface — reads quiet first and asks for attention only when it has earned it.",
     ctaLabel: "Enter the Workshop",
   },
   {
@@ -82,7 +82,7 @@ function DesignOverview() {
   }, []);
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-14 md:px-6 md:py-20">
+    <div className="mx-auto w-full max-w-6xl px-4 py-14 md:px-6 md:py-20">
       <header className="mb-12 flex flex-col gap-4">
         <p
           className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em]"
@@ -149,7 +149,6 @@ function OverviewCard({ card }: { card: TreatmentCard }) {
       style={{
         background: "var(--treatment-ground)",
         color: "var(--treatment-ink)",
-        border: "1px solid var(--treatment-hairline)",
       }}
     >
       <div

@@ -18,7 +18,6 @@ import { Route as LettersIndexRouteImport } from './routes/letters/index'
 import { Route as WorkshopIndexRouteImport } from './routes/_workshop/index'
 import { Route as OgSlugRouteImport } from './routes/og/$slug'
 import { Route as NewsroomSlugRouteImport } from './routes/newsroom/$slug'
-import { Route as LettersRssRouteImport } from './routes/letters/rss'
 import { Route as LettersSlugRouteImport } from './routes/letters/$slug'
 import { Route as WorkshopSolutionsRouteImport } from './routes/_workshop/solutions'
 import { Route as WorkshopPressRouteImport } from './routes/_workshop/press'
@@ -76,11 +75,6 @@ const NewsroomSlugRoute = NewsroomSlugRouteImport.update({
   id: '/$slug',
   path: '/$slug',
   getParentRoute: () => NewsroomRouteRoute,
-} as any)
-const LettersRssRoute = LettersRssRouteImport.update({
-  id: '/rss',
-  path: '/rss',
-  getParentRoute: () => LettersRouteRoute,
 } as any)
 const LettersSlugRoute = LettersSlugRouteImport.update({
   id: '/$slug',
@@ -161,7 +155,6 @@ export interface FileRoutesByFullPath {
   '/press': typeof WorkshopPressRoute
   '/solutions': typeof WorkshopSolutionsRoute
   '/letters/$slug': typeof LettersSlugRoute
-  '/letters/rss': typeof LettersRssRoute
   '/newsroom/$slug': typeof NewsroomSlugRoute
   '/og/$slug': typeof OgSlugRoute
   '/letters/': typeof LettersIndexRoute
@@ -181,7 +174,6 @@ export interface FileRoutesByTo {
   '/press': typeof WorkshopPressRoute
   '/solutions': typeof WorkshopSolutionsRoute
   '/letters/$slug': typeof LettersSlugRoute
-  '/letters/rss': typeof LettersRssRoute
   '/newsroom/$slug': typeof NewsroomSlugRoute
   '/og/$slug': typeof OgSlugRoute
   '/': typeof WorkshopIndexRoute
@@ -207,7 +199,6 @@ export interface FileRoutesById {
   '/_workshop/press': typeof WorkshopPressRoute
   '/_workshop/solutions': typeof WorkshopSolutionsRoute
   '/letters/$slug': typeof LettersSlugRoute
-  '/letters/rss': typeof LettersRssRoute
   '/newsroom/$slug': typeof NewsroomSlugRoute
   '/og/$slug': typeof OgSlugRoute
   '/_workshop/': typeof WorkshopIndexRoute
@@ -234,7 +225,6 @@ export interface FileRouteTypes {
     | '/press'
     | '/solutions'
     | '/letters/$slug'
-    | '/letters/rss'
     | '/newsroom/$slug'
     | '/og/$slug'
     | '/letters/'
@@ -254,7 +244,6 @@ export interface FileRouteTypes {
     | '/press'
     | '/solutions'
     | '/letters/$slug'
-    | '/letters/rss'
     | '/newsroom/$slug'
     | '/og/$slug'
     | '/'
@@ -279,7 +268,6 @@ export interface FileRouteTypes {
     | '/_workshop/press'
     | '/_workshop/solutions'
     | '/letters/$slug'
-    | '/letters/rss'
     | '/newsroom/$slug'
     | '/og/$slug'
     | '/_workshop/'
@@ -365,13 +353,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/newsroom/$slug'
       preLoaderRoute: typeof NewsroomSlugRouteImport
       parentRoute: typeof NewsroomRouteRoute
-    }
-    '/letters/rss': {
-      id: '/letters/rss'
-      path: '/rss'
-      fullPath: '/letters/rss'
-      preLoaderRoute: typeof LettersRssRouteImport
-      parentRoute: typeof LettersRouteRoute
     }
     '/letters/$slug': {
       id: '/letters/$slug'
@@ -512,13 +493,11 @@ const WorkshopRouteRouteWithChildren = WorkshopRouteRoute._addFileChildren(
 
 interface LettersRouteRouteChildren {
   LettersSlugRoute: typeof LettersSlugRoute
-  LettersRssRoute: typeof LettersRssRoute
   LettersIndexRoute: typeof LettersIndexRoute
 }
 
 const LettersRouteRouteChildren: LettersRouteRouteChildren = {
   LettersSlugRoute: LettersSlugRoute,
-  LettersRssRoute: LettersRssRoute,
   LettersIndexRoute: LettersIndexRoute,
 }
 
