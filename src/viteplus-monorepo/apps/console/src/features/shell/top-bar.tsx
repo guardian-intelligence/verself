@@ -30,10 +30,7 @@ function TopBarSidebarTrigger() {
   // and on desktop when collapsed (icon rail has no room for the trigger).
   if (!isMobile && state === "expanded") return null;
   return (
-    <SidebarTrigger
-      data-testid="shell-sidebar-trigger-topbar"
-      className="text-muted-foreground"
-    />
+    <SidebarTrigger data-testid="shell-sidebar-trigger-topbar" className="text-muted-foreground" />
   );
 }
 

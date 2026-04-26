@@ -84,7 +84,9 @@
 .letter-prose blockquote,
 .letter-prose li {
   font-family: var(--treatment-body-font);
-  font-variation-settings: "opsz" 18, "SOFT" 0;
+  font-variation-settings:
+    "opsz" 18,
+    "SOFT" 0;
   font-weight: 400;
   font-size: clamp(17px, 1.7vw, 19px);
   line-height: 1.55;
@@ -105,8 +107,12 @@
 .letter-prose ol {
   padding-left: 1.5rem;
 }
-.letter-prose ul { list-style: disc; }
-.letter-prose ol { list-style: decimal; }
+.letter-prose ul {
+  list-style: disc;
+}
+.letter-prose ol {
+  list-style: decimal;
+}
 
 /* Visually-hidden unless focused. Used by the Skip-to-main-content link so
    keyboard users can bypass the sticky header. */

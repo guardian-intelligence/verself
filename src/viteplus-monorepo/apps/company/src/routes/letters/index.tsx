@@ -103,8 +103,7 @@ function StoryGrid({ letters }: { letters: readonly Letter[] }) {
     <section
       className="mt-20 grid gap-x-10 gap-y-14 pt-12 md:grid-cols-2 md:mt-28 md:pt-16"
       style={{
-        borderTop:
-          "var(--treatment-rule-thickness) solid var(--treatment-rule-color)",
+        borderTop: "var(--treatment-rule-thickness) solid var(--treatment-rule-color)",
       }}
     >
       {letters.map((letter) => (
