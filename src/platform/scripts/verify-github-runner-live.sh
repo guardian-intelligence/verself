@@ -536,6 +536,18 @@ dispatch_and_prove_run() {
   service_result="$(wait_for_service_run "${github_run_id}" "${artifact_dir}/responses/${prefix}-runs.json")"
   local execution_id attempt_id service_job_id workflow_name job_name
   IFS=$'\t' read -r execution_id attempt_id service_job_id workflow_name job_name <<<"${service_result}"
+  if [[ "${service_job_id}" != "${github_job_id}" ]]; then
+    echo "service run ${execution_id} linked job ${service_job_id}, expected GitHub job ${github_job_id}" >&2
+    return 1
+  fi
+  if [[ "${workflow_name}" != "${github_workflow_name}" ]]; then
+    echo "service run ${execution_id} recorded workflow ${workflow_name}, expected ${github_workflow_name}" >&2
+    return 1
+  fi
+  if [[ "${job_name}" != "${github_job_name}" ]]; then
+    echo "service run ${execution_id} recorded job ${job_name}, expected ${github_job_name}" >&2
+    return 1
+  fi
   api_request "GET" "/api/v1/runs/${execution_id}" "${artifact_dir}/responses/${prefix}-run-detail.json"
   api_request "GET" "/api/v1/run-logs/search?run_id=${execution_id}&limit=20" "${artifact_dir}/responses/${prefix}-logs-search.json"
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
@@ -569,6 +581,10 @@ IFS=$'\t' read -r run2_dispatch_start run2_github_run_id run2_github_job_id run2
 
 run2_sticky_info="$(wait_for_sticky_disk_inventory "${run2_execution_id}" "${artifact_dir}/responses/run2-sticky-disks.json")"
 IFS=$'\t' read -r _ _ _ sticky_disk_count_after_second <<<"${run2_sticky_info}"
+if (( sticky_disk_count_after_second < 1 )); then
+  echo "expected sticky disk inventory to remain non-empty after second run" >&2
+  exit 1
+fi
 
 api_request "GET" "/api/v1/run-analytics/jobs?start=${window_start}" "${artifact_dir}/responses/jobs-analytics.json"
 api_request "GET" "/api/v1/run-analytics/costs?start=${window_start}" "${artifact_dir}/responses/costs-analytics.json"
@@ -897,16 +913,40 @@ wait_for_clickhouse_count default "
 run_id="${run_id}" \
 artifact_dir="${artifact_dir}" \
 org_id="${org_id}" \
+github_repository="${github_repository}" \
+github_org="${github_org}" \
+github_repo_name="${github_repo_name}" \
+github_workflow_file="${github_workflow_file}" \
+github_workflow_name="${github_workflow_name}" \
+github_workflow_ref="${github_workflow_ref}" \
 installation_id="${installation_id}" \
+run1_dispatch_start="${run1_dispatch_start}" \
 run1_github_run_id="${run1_github_run_id}" \
+run1_github_job_id="${run1_github_job_id}" \
+run1_head_sha="${run1_head_sha}" \
+run1_html_url="${run1_html_url}" \
 run1_execution_id="${run1_execution_id}" \
 run1_attempt_id="${run1_attempt_id}" \
+run1_workflow_name="${run1_workflow_name}" \
+run1_job_name="${run1_job_name}" \
+run2_dispatch_start="${run2_dispatch_start}" \
 run2_github_run_id="${run2_github_run_id}" \
+run2_github_job_id="${run2_github_job_id}" \
+run2_head_sha="${run2_head_sha}" \
+run2_html_url="${run2_html_url}" \
 run2_execution_id="${run2_execution_id}" \
 run2_attempt_id="${run2_attempt_id}" \
+run2_workflow_name="${run2_workflow_name}" \
+run2_job_name="${run2_job_name}" \
+run3_dispatch_start="${run3_dispatch_start}" \
 run3_github_run_id="${run3_github_run_id}" \
+run3_github_job_id="${run3_github_job_id}" \
+run3_head_sha="${run3_head_sha}" \
+run3_html_url="${run3_html_url}" \
 run3_execution_id="${run3_execution_id}" \
 run3_attempt_id="${run3_attempt_id}" \
+run3_workflow_name="${run3_workflow_name}" \
+run3_job_name="${run3_job_name}" \
 sticky_key_hash="${sticky_key_hash}" \
 window_start="${window_start}" \
 window_end="${window_end}" \
@@ -918,25 +958,53 @@ print(json.dumps({
     "artifact_dir": os.environ["artifact_dir"],
     "installation_id": int(os.environ["installation_id"]),
     "org_id": int(os.environ["org_id"]),
+    "repository": {
+        "full_name": os.environ["github_repository"],
+        "name": os.environ["github_repo_name"],
+        "owner": os.environ["github_org"],
+    },
     "run1": {
         "attempt_id": os.environ["run1_attempt_id"],
+        "dispatch_start": os.environ["run1_dispatch_start"],
         "execution_id": os.environ["run1_execution_id"],
+        "github_job_id": int(os.environ["run1_github_job_id"]),
         "github_run_id": int(os.environ["run1_github_run_id"]),
+        "head_sha": os.environ["run1_head_sha"],
+        "html_url": os.environ["run1_html_url"],
+        "job_name": os.environ["run1_job_name"],
+        "workflow_name": os.environ["run1_workflow_name"],
     },
     "run2": {
         "attempt_id": os.environ["run2_attempt_id"],
+        "dispatch_start": os.environ["run2_dispatch_start"],
         "execution_id": os.environ["run2_execution_id"],
+        "github_job_id": int(os.environ["run2_github_job_id"]),
         "github_run_id": int(os.environ["run2_github_run_id"]),
+        "head_sha": os.environ["run2_head_sha"],
+        "html_url": os.environ["run2_html_url"],
+        "job_name": os.environ["run2_job_name"],
+        "workflow_name": os.environ["run2_workflow_name"],
     },
     "run3": {
         "attempt_id": os.environ["run3_attempt_id"],
+        "dispatch_start": os.environ["run3_dispatch_start"],
         "execution_id": os.environ["run3_execution_id"],
+        "github_job_id": int(os.environ["run3_github_job_id"]),
         "github_run_id": int(os.environ["run3_github_run_id"]),
+        "head_sha": os.environ["run3_head_sha"],
+        "html_url": os.environ["run3_html_url"],
+        "job_name": os.environ["run3_job_name"],
+        "workflow_name": os.environ["run3_workflow_name"],
     },
     "sticky_key_hash_reset": os.environ["sticky_key_hash"],
     "verification_run_id": os.environ["run_id"],
     "window_end": os.environ["window_end"],
     "window_start": os.environ["window_start"],
+    "workflow": {
+        "file": os.environ["github_workflow_file"],
+        "name": os.environ["github_workflow_name"],
+        "ref": os.environ["github_workflow_ref"],
+    },
 }, indent=2, sort_keys=True))
 PY
 

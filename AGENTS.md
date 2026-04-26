@@ -11,6 +11,12 @@ Polyglot monorepo structured as a modular monolith:
 - **CUE** — `src/platform/topology/` is the canonical service topology and constraint layer. `make topology-generate` renders generated Ansible inputs, while `make topology-check` and `make topology-proof` validate freshness and ClickHouse proof spans.
 - **YAML* -- Infrastructure code defined with Ansible.
 
+Suggested high-signal reading:
+
+@src/platform/topology/instances/local/artifacts.cue
+@src/platform/topology/instances/local/topology.cue
+@src/platform/topology/schema/schema.cue
+
 Layers:
 
 1. Substrate layer: vm-orchestrator, guest telemetry, Caddy, nftables, ClickHouse, Postgres, Forgejo
@@ -174,9 +180,5 @@ Planned Upcoming Projects
 
 * Newsletter Service
 * Analytics Service (PostHog clone) -- we build this ourselves using ClickHouse
-* `object-storage-service` backed by Garage (dogfood via Verdaccio tarball backing which is using local FS right now)
 * Readyset for Postgres query-result cache.
 * Invoices + Preview Invoice for Current Billing Period
-* SSM Parameter Store + Secrets Management + Key Management Service
-* Profile Service -- edit name, preferences across surfaces.
-* Notifications Service

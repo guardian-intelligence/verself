@@ -367,21 +367,20 @@ try {
   await browser.close();
 }
 JS
-env \
-  TEMPORAL_BASE_URL="${temporal_base_url}" \
-  TEMPORAL_HOST="${temporal_host}" \
-  AUTH_HOST="${auth_host}" \
-  REMOTE_HOST="${VERIFICATION_REMOTE_HOST}" \
-  ARTIFACT_DIR="${artifact_dir}" \
-  BROWSER_EMAIL="${BROWSER_EMAIL}" \
-  BROWSER_PASSWORD="${BROWSER_PASSWORD}" \
-  TEMPORAL_SANDBOX_NAMESPACE="${temporal_sandbox_namespace}" \
-  TEMPORAL_BILLING_NAMESPACE="${temporal_billing_namespace}" \
-  TEMPORAL_BROWSER_SCRIPT="${browser_script_path}" \
-  bash -lc '
-    cd "$1"
-    vp exec node "$TEMPORAL_BROWSER_SCRIPT"
-  ' bash "${platform_app_dir}" >"${browser_log_path}" 2>&1
+(
+  cd "${platform_app_dir}"
+  env \
+    TEMPORAL_BASE_URL="${temporal_base_url}" \
+    TEMPORAL_HOST="${temporal_host}" \
+    AUTH_HOST="${auth_host}" \
+    REMOTE_HOST="${VERIFICATION_REMOTE_HOST}" \
+    ARTIFACT_DIR="${artifact_dir}" \
+    BROWSER_EMAIL="${BROWSER_EMAIL}" \
+    BROWSER_PASSWORD="${BROWSER_PASSWORD}" \
+    TEMPORAL_SANDBOX_NAMESPACE="${temporal_sandbox_namespace}" \
+    TEMPORAL_BILLING_NAMESPACE="${temporal_billing_namespace}" \
+    vp exec node "${browser_script_path}"
+) >"${browser_log_path}" 2>&1
 browser_status=$?
 set -e
 

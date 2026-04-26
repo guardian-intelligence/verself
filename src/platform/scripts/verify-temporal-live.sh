@@ -17,6 +17,8 @@ spire_socket="unix:///run/spire-agent/sockets/agent.sock"
 temporal_server_spiffe_id="spiffe://${trust_domain}/svc/temporal-server"
 temporal_frontend_address="127.0.0.1:7233"
 temporal_metrics_address="127.0.0.1:9001"
+temporal_metrics_host="${temporal_metrics_address%:*}"
+temporal_metrics_port="${temporal_metrics_address##*:}"
 temporal_bootstrap_bin="/opt/verself/profile/bin/temporal-bootstrap"
 temporal_sandbox_namespace="sandbox-rental-service"
 temporal_billing_namespace="billing-service"
@@ -96,7 +98,7 @@ wait_for_clickhouse_count() {
 }
 
 wait_for_remote_tcp "Temporal frontend" "127.0.0.1" "7233"
-wait_for_remote_tcp "Temporal metrics" "127.0.0.1" "9001"
+wait_for_remote_tcp "Temporal metrics" "${temporal_metrics_host}" "${temporal_metrics_port}"
 
 verification_ssh "sudo systemctl is-active temporal-server temporal-web" \
   >"${artifact_dir}/systemd-active.txt"
@@ -117,7 +119,7 @@ remote_temporal_bootstrap >"${artifact_dir}/bootstrap-before-restart.txt"
 
 verification_ssh "sudo systemctl restart temporal-server"
 wait_for_remote_tcp "Temporal frontend after restart" "127.0.0.1" "7233"
-wait_for_remote_tcp "Temporal metrics after restart" "127.0.0.1" "9001"
+wait_for_remote_tcp "Temporal metrics after restart" "${temporal_metrics_host}" "${temporal_metrics_port}"
 verification_ssh "sudo systemctl is-active temporal-server" >"${artifact_dir}/temporal-server-after-restart.txt"
 
 remote_temporal_bootstrap >"${artifact_dir}/bootstrap-after-restart.txt"
