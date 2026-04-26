@@ -48,12 +48,18 @@ export function WingsArgent({ title, cropped, ...rest }: WingsArgentProps) {
 
 export interface WingsEmbossProps extends SvgBase {
   readonly title?: string | undefined;
+  // Optional inner-mark scale, applied around the disc center (176, 177)
+  // which coincides with the wings' optical center. Default 1.0. Used at
+  // chrome size (sm Lockup) where the wings read ~5–8% too large against
+  // the medallion at 22px because anti-aliased ink concentrates visual
+  // mass at small pixel counts; at md/lg the proportions read true.
+  readonly wingsScale?: number;
 }
 
 // Argent on Flare via a circular ink medallion — the broadcast treatment.
 // Used when the brand wants to be noticed: investor covers, billboards,
 // recruiting posters, signage. Reserved for surfaces with broadcast intent.
-export function WingsEmboss({ title, ...rest }: WingsEmbossProps) {
+export function WingsEmboss({ title, wingsScale = 1, ...rest }: WingsEmbossProps) {
   return (
     <svg
       viewBox={WINGS_PADDED_VIEWBOX}
@@ -65,7 +71,13 @@ export function WingsEmboss({ title, ...rest }: WingsEmbossProps) {
       {...rest}
     >
       <circle cx="176" cy="177" r="126" fill="#0B0B0B" />
-      <path fill="#FFFFFF" d={WINGS_PATH_D} />
+      {wingsScale === 1 ? (
+        <path fill="#FFFFFF" d={WINGS_PATH_D} />
+      ) : (
+        <g transform={`translate(176 177) scale(${wingsScale}) translate(-176 -177)`}>
+          <path fill="#FFFFFF" d={WINGS_PATH_D} />
+        </g>
+      )}
     </svg>
   );
 }

@@ -82,7 +82,7 @@ function GiantBulletin({ item, onClick }: { item: NewsroomItem; onClick: () => v
       data-newsroom-bulletin
       data-slug={item.slug}
       onClick={onClick}
-      className="group relative flex items-center justify-center overflow-hidden transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+      className="group relative flex items-center justify-center overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
       style={{
         background: "var(--color-flare)",
         color: "var(--color-ink)",
