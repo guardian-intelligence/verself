@@ -599,7 +599,7 @@ topology: s.#Topology & {
 				source_database:  "sandbox_rental"
 				writer_role:      "sandbox_rental"
 				publication_name: "electric_publication_default"
-				publication_tables: ["executions", "execution_logs"]
+				publication_tables: ["executions", "execution_logs", "runner_provider_repositories"]
 				storage_dir:    "/var/lib/electric"
 				credstore_dir:  "/etc/credstore/electric"
 				nftables_table: "verself_electric"

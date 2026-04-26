@@ -4,6 +4,7 @@ import {
   electricAndWhere,
   createElectricShapeCollection,
   electricEqualsWhere,
+  electricStringifiedBooleanSchema,
   electricStringifiedIntegerSchema,
   requireDecimalID,
   requireElectricOpaqueID,
@@ -76,6 +77,40 @@ export function createExecutionsCollection(auth: AuthenticatedAuth, orgId: strin
       table: "executions",
       where: electricEqualsWhere("org_id", validatedOrgID),
       getKey: (item) => item.execution_id,
+    }),
+  );
+}
+
+// --- Runner repository bindings (execution source_ref -> source repo id) ---
+
+const electricRunnerProviderRepositorySchema = v.object({
+  provider: v.string(),
+  provider_repository_id: electricStringifiedIntegerSchema,
+  org_id: v.string(),
+  project_id: v.nullable(v.string()),
+  source_repository_id: v.nullable(v.string()),
+  provider_owner: v.string(),
+  provider_repo: v.string(),
+  repository_full_name: v.string(),
+  active: electricStringifiedBooleanSchema,
+  created_at: v.string(),
+  updated_at: v.string(),
+});
+
+export type ElectricRunnerProviderRepository = v.InferOutput<
+  typeof electricRunnerProviderRepositorySchema
+>;
+
+export function createRunnerProviderRepositoriesCollection(auth: AuthenticatedAuth, orgId: string) {
+  const validatedOrgID = requireDecimalID(orgId, "org_id");
+  const id = authCollectionId(auth, `sync-runner-provider-repositories-${orgId}`);
+  return cachedElectricCollection(id, () =>
+    createElectricShapeCollection({
+      id,
+      schema: electricRunnerProviderRepositorySchema,
+      table: "runner_provider_repositories",
+      where: electricEqualsWhere("org_id", validatedOrgID),
+      getKey: (item) => `${item.provider}:${item.provider_repository_id}`,
     }),
   );
 }
