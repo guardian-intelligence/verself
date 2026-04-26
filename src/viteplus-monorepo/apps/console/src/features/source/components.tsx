@@ -1,14 +1,17 @@
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useSignedInAuth } from "@verself/auth-web/react";
 import { Badge } from "@verself/ui/components/ui/badge";
 import { Button } from "@verself/ui/components/ui/button";
+import { Field, FieldLabel } from "@verself/ui/components/ui/field";
+import { Input } from "@verself/ui/components/ui/input";
+import { Select } from "@verself/ui/components/ui/select";
 import { toast } from "@verself/ui/components/ui/sonner";
 import { Copy, GitBranch, GitCommit, GitPullRequest, KeyRound, Terminal } from "lucide-react";
 import { EmptyState } from "~/components/empty-state";
+import { projectsQuery } from "~/features/projects/queries";
 import { formatDateTimeUTC } from "~/lib/format";
-import { createSourceGitCredential } from "~/server-fns/api";
+import { createProject, createSourceGitCredential, createSourceRepository } from "~/server-fns/api";
 import type { SourceGitCredential, SourceRepository } from "~/server-fns/api";
 import { sourceRefsQuery, sourceRepositoriesQuery } from "./queries";
 
@@ -17,22 +20,23 @@ export function SourceRepositoriesPanel({ gitOrigin }: { gitOrigin: string }) {
   const { repositories } = useSuspenseQuery(sourceRepositoriesQuery(auth)).data;
 
   if (repositories.length === 0) {
-    return <SourcePushEmptyState gitOrigin={gitOrigin} />;
+    return <SourceRepositoryEmptyState gitOrigin={gitOrigin} />;
   }
 
   return (
     <div className="grid gap-4">
       {repositories.map((repo) => (
-        <SourceRepositoryCard key={repo.repo_id} repo={repo} />
+        <SourceRepositoryCard key={repo.repo_id} gitOrigin={gitOrigin} repo={repo} />
       ))}
     </div>
   );
 }
 
-function SourceRepositoryCard({ repo }: { repo: SourceRepository }) {
+function SourceRepositoryCard({ gitOrigin, repo }: { gitOrigin: string; repo: SourceRepository }) {
   const auth = useSignedInAuth();
   const refs = useSuspenseQuery(sourceRefsQuery(auth, repo.repo_id)).data.refs;
   const activeBranches = refs.filter((ref) => ref.name !== repo.default_branch);
+  const pushURL = `${gitOrigin.replace(/\/$/, "")}/${repo.org_path}/${repo.slug}.git`;
 
   return (
     <article className="rounded-md border bg-card">
@@ -56,6 +60,18 @@ function SourceRepositoryCard({ repo }: { repo: SourceRepository }) {
       </div>
 
       <div className="px-4 py-4">
+        <div className="mb-4 grid gap-2 rounded-md border bg-background p-3">
+          <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+            <Terminal className="size-3.5" aria-hidden="true" />
+            Git remote
+          </div>
+          <code className="break-all font-mono text-xs text-foreground">
+            git remote add verself {pushURL}
+          </code>
+          <code className="break-all font-mono text-xs text-foreground">
+            git push verself {repo.default_branch}
+          </code>
+        </div>
         <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold">
           <GitPullRequest className="size-4 text-muted-foreground" aria-hidden="true" />
           Branches
@@ -82,8 +98,47 @@ function SourceRepositoryCard({ repo }: { repo: SourceRepository }) {
   );
 }
 
-function SourcePushEmptyState({ gitOrigin }: { gitOrigin: string }) {
+function SourceRepositoryEmptyState({ gitOrigin }: { gitOrigin: string }) {
+  const auth = useSignedInAuth();
+  const queryClient = useQueryClient();
+  const projects = useSuspenseQuery(projectsQuery(auth)).data.projects;
+  const [projectID, setProjectID] = useState(projects[0]?.project_id ?? "");
+  const [projectName, setProjectName] = useState("main");
   const [credential, setCredential] = useState<SourceGitCredential | null>(null);
+  const createRepo = useMutation({
+    mutationFn: async () => {
+      const name = projectName.trim();
+      if (!name) {
+        throw new Error("Repository name is required.");
+      }
+      const resolvedProjectID =
+        projectID ||
+        (
+          await createProject({
+            data: { display_name: name },
+          })
+        ).project_id;
+      return createSourceRepository({
+        data: {
+          default_branch: "main",
+          name,
+          project_id: resolvedProjectID,
+        },
+      });
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: projectsQuery(auth).queryKey }),
+        queryClient.invalidateQueries({ queryKey: sourceRepositoriesQuery(auth).queryKey }),
+      ]);
+      toast.success("Repository created");
+    },
+    onError: (error) => {
+      toast.error("Failed to create repository", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    },
+  });
   const createCredential = useMutation({
     mutationFn: () => createSourceGitCredential({ data: { label: "console git push" } }),
     onSuccess: (nextCredential) => {
@@ -97,19 +152,58 @@ function SourcePushEmptyState({ gitOrigin }: { gitOrigin: string }) {
     },
   });
   const orgPath = credential?.org_path ?? "<org>";
-  const pushURL = `${gitOrigin.replace(/\/$/, "")}/${orgPath}/<project>.git`;
+  const repoSlug =
+    projectName
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "<repo>";
+  const pushURL = `${gitOrigin.replace(/\/$/, "")}/${orgPath}/${repoSlug}.git`;
 
   return (
     <EmptyState
       icon={<GitBranch className="size-5" aria-hidden="true" />}
-      title="Push the first branch"
+      title="Create a repository"
       body={
         <div className="grid gap-4 text-left">
-          <p>
-            A project gets one hosted repository. The first authenticated push creates that
-            repository; later branch pushes become the active work queue.
-          </p>
-          <div className="grid gap-2 rounded-md border bg-background p-3">
+          <div className="grid gap-3">
+            <Field>
+              <FieldLabel htmlFor="source-project">Project</FieldLabel>
+              <Select
+                id="source-project"
+                value={projectID}
+                onChange={(event) => setProjectID(event.target.value)}
+              >
+                {projects.length === 0 ? (
+                  <option value="">Create project from repo name</option>
+                ) : null}
+                {projects.map((project) => (
+                  <option key={project.project_id} value={project.project_id}>
+                    {project.display_name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="source-repo-name">Repository name</FieldLabel>
+              <Input
+                id="source-repo-name"
+                value={projectName}
+                onChange={(event) => setProjectName(event.target.value)}
+              />
+            </Field>
+            <Button
+              type="button"
+              size="sm"
+              className="w-fit"
+              onClick={() => createRepo.mutate()}
+              disabled={createRepo.isPending}
+            >
+              <GitBranch className="size-3.5" aria-hidden="true" />
+              {createRepo.isPending ? "Creating..." : "Create repository"}
+            </Button>
+          </div>
+          <div className="grid gap-2 border-t pt-3">
             <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
               <Terminal className="size-3.5" aria-hidden="true" />
               Git remote
@@ -121,7 +215,7 @@ function SourcePushEmptyState({ gitOrigin }: { gitOrigin: string }) {
               git push verself main
             </code>
           </div>
-          <div className="grid gap-2 rounded-md border bg-background p-3">
+          <div className="grid gap-2 border-t pt-3">
             <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
               <KeyRound className="size-3.5" aria-hidden="true" />
               HTTPS credential

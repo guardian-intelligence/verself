@@ -120,11 +120,11 @@ test.describe("Console Shell", () => {
       await expect(app.page).toHaveURL(/\/source$/);
       await expect(app.page.getByRole("heading", { name: "Source", exact: true })).toBeVisible();
       await expect(
-        app.page.getByRole("heading", { name: "Project repository", exact: true }),
+        app.page.getByRole("heading", { name: "Repositories", exact: true }),
       ).toBeVisible();
 
       const emptyStateVisible = await app.page
-        .getByText("Push the first branch", { exact: true })
+        .getByRole("heading", { name: "Create a repository", exact: true })
         .isVisible({ timeout: 1000 })
         .catch(() => false);
       const repositoryCardVisible = await app.page
