@@ -265,6 +265,8 @@ topology_routes:
   paths:
   - /api/actions
   - /api/actions/*
+  - /{owner}/{repo}.git/info/refs
+  - /{owner}/{repo}.git/git-upload-pack
   to:
     component: forgejo
     interface: forgejo_http
