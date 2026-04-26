@@ -325,10 +325,9 @@
         fail_msg: "Platform or Acme organization could not be resolved from Zitadel."
       tags: [identity, billing]
 
-    # identity-service auto-derives a slug from the display name on first
-    # access. Pre-seed the projection so the platform org gets the branded
-    # guardian-platform slug instead of the derived one.
-    - name: Pin platform organization slug in identity-service projection
+    # identity-service auto-derives a slug on first access; pin fixture orgs so
+    # repeated verification runs cannot leave stale display names in the console.
+    - name: Pin seeded organization profiles in identity-service projection
       community.postgresql.postgresql_query:
         login_host: "{{ topology_endpoints.postgresql.host }}"
         login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
@@ -346,9 +345,18 @@
                 updated_at   = now(),
                 version      = identity_organizations.version + 1
         positional_args:
-          - "{{ seed_system_orgs.platform.organization_id }}"
-          - "{{ seed_system_platform_org_name }}"
-          - "{{ seed_system_platform_org_slug }}"
+          - "{{ item.organization_id }}"
+          - "{{ item.name }}"
+          - "{{ item.slug }}"
+      loop:
+        - organization_id: "{{ seed_system_orgs.platform.organization_id }}"
+          name: "{{ seed_system_orgs.platform.name }}"
+          slug: "{{ seed_system_platform_org_slug }}"
+        - organization_id: "{{ seed_system_orgs.acme.organization_id }}"
+          name: "{{ seed_system_orgs.acme.name }}"
+          slug: "{{ seed_system_acme_org_slug }}"
+      loop_control:
+        label: "{{ item.name }}"
       no_log: true
       tags: [identity]
 

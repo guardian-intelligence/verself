@@ -29,6 +29,20 @@ func RegisterRoutes(api huma.API, svc *identity.Service) {
 	}), getOrganization(svc))
 
 	registerSecured(api, svc, secured(huma.Operation{
+		OperationID: "list-my-organizations",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/me/organizations",
+		Summary:     "List organizations available to the caller",
+	}, operationPolicy{
+		Permission:     permissionOrganizationRead,
+		Resource:       "organization",
+		Action:         "list",
+		OrgScope:       orgScopeTokenRoleAssignmentOrgIDs,
+		RateLimitClass: "read",
+		AuditEvent:     "identity.organization.membership.list",
+	}), listMyOrganizations(svc))
+
+	registerSecured(api, svc, secured(huma.Operation{
 		OperationID:   "patch-organization",
 		Method:        http.MethodPatch,
 		Path:          "/api/v1/organization",
@@ -210,6 +224,10 @@ type organizationOutput struct {
 	Body apiwire.IdentityOrganization
 }
 
+type accessibleOrganizationsOutput struct {
+	Body []apiwire.IdentityOrganizationMetadata
+}
+
 type updateOrganizationInput struct {
 	Body apiwire.IdentityUpdateOrganizationRequest
 }
@@ -298,7 +316,6 @@ func principalFromAuthIdentity(ctx context.Context, authIdentity *auth.Identity)
 	return identity.Principal{
 		Subject:           authIdentity.Subject,
 		OrgID:             authIdentity.OrgID,
-		OrgDisplayName:    organizationDisplayNameForTokenOrg(authIdentity),
 		Roles:             identityRolesForCurrentOrg(authIdentity),
 		DirectPermissions: directPermissionsFromAuthIdentity(authIdentity),
 		Email:             authIdentity.Email,
@@ -316,6 +333,24 @@ func getOrganization(svc *identity.Service) func(context.Context, *emptyInput) (
 			return nil, identityError(ctx, err)
 		}
 		return &organizationOutput{Body: organizationDTO(org)}, nil
+	}
+}
+
+func listMyOrganizations(svc *identity.Service) func(context.Context, *emptyInput) (*accessibleOrganizationsOutput, error) {
+	return func(ctx context.Context, _ *emptyInput) (*accessibleOrganizationsOutput, error) {
+		authIdentity, err := requireIdentity(ctx)
+		if err != nil {
+			return nil, err
+		}
+		orgIDs, err := authorizedRoleAssignmentOrgIDs(ctx, svc, authIdentity, permissionOrganizationRead)
+		if err != nil {
+			return nil, err
+		}
+		organizations, err := svc.AccessibleOrganizationsBySubject(ctx, authIdentity.Subject, orgIDs)
+		if err != nil {
+			return nil, identityError(ctx, err)
+		}
+		return &accessibleOrganizationsOutput{Body: organizationMetadataDTOs(organizations)}, nil
 	}
 }
 
@@ -523,6 +558,18 @@ func organizationDTO(org identity.Organization) apiwire.IdentityOrganization {
 	}
 }
 
+func organizationMetadataDTOs(organizations []identity.OrganizationMetadata) []apiwire.IdentityOrganizationMetadata {
+	out := make([]apiwire.IdentityOrganizationMetadata, 0, len(organizations))
+	for _, organization := range organizations {
+		out = append(out, apiwire.IdentityOrganizationMetadata{
+			OrgID:       orgID(organization.OrgID),
+			DisplayName: organization.DisplayName,
+			Slug:        organization.Slug,
+		})
+	}
+	return out
+}
+
 func organizationProfileDTO(profile identity.OrganizationProfile) apiwire.IdentityOrganizationProfile {
 	return apiwire.IdentityOrganizationProfile{
 		OrgID:          orgID(profile.OrgID),
@@ -648,14 +695,29 @@ func orgID(value string) apiwire.OrgID {
 	return apiwire.Uint64(parsed)
 }
 
-func organizationDisplayNameForTokenOrg(authIdentity *auth.Identity) string {
+func roleAssignmentOrgIDs(ctx context.Context, authIdentity *auth.Identity) ([]string, error) {
 	if authIdentity == nil {
-		return ""
+		return nil, unauthorized(ctx)
 	}
+	seen := map[string]struct{}{}
+	orgIDs := make([]string, 0, len(authIdentity.RoleAssignments))
 	for _, assignment := range authIdentity.RoleAssignments {
-		if assignment.OrganizationID == authIdentity.OrgID && strings.TrimSpace(assignment.OrganizationName) != "" {
-			return strings.TrimSpace(assignment.OrganizationName)
+		orgID := strings.TrimSpace(assignment.OrganizationID)
+		if orgID == "" {
+			continue
 		}
+		if _, err := apiwire.ParseUint64(orgID); err != nil {
+			return nil, badRequest(ctx, "invalid-role-assignment-org", "role assignment org_id must be an unsigned integer", err)
+		}
+		if _, ok := seen[orgID]; ok {
+			continue
+		}
+		seen[orgID] = struct{}{}
+		orgIDs = append(orgIDs, orgID)
 	}
-	return ""
+	sort.Strings(orgIDs)
+	if len(orgIDs) == 0 {
+		return nil, forbidden(ctx, "missing-organization-role-assignments", "token has no organization role assignments")
+	}
+	return orgIDs, nil
 }

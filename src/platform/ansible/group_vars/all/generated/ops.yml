@@ -62,6 +62,7 @@ sandbox_rental_service_subdomain: sandbox.api
 secrets_service_domain: '{{ secrets_service_subdomain }}.{{ verself_domain }}'
 secrets_service_subdomain: secrets.api
 seed_system_acme_org_name: Acme Corp
+seed_system_acme_org_slug: acme-corp
 seed_system_acme_sku_scoped_grants:
 - sku_id: sandbox_execution_root_storage_premium_nvme_gib_ms
   source: promo

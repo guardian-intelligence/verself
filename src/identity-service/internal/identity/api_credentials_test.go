@@ -102,8 +102,16 @@ type apiCredentialTestStore struct {
 	createErr    error
 }
 
-func (s *apiCredentialTestStore) GetOrganizationProfile(context.Context, string, string, string) (OrganizationProfile, error) {
+func (s *apiCredentialTestStore) GetOrganizationProfile(context.Context, string, string) (OrganizationProfile, error) {
 	return OrganizationProfile{}, nil
+}
+
+func (s *apiCredentialTestStore) ListOrganizationMetadataByOrgIDs(_ context.Context, orgIDs []string) ([]OrganizationMetadata, error) {
+	out := make([]OrganizationMetadata, 0, len(orgIDs))
+	for _, orgID := range orgIDs {
+		out = append(out, OrganizationMetadata{OrgID: orgID, DisplayName: "Acme", Slug: "acme"})
+	}
+	return out, nil
 }
 
 func (s *apiCredentialTestStore) UpdateOrganizationProfile(context.Context, Principal, UpdateOrganizationRequest) (OrganizationProfile, error) {

@@ -431,6 +431,21 @@ components:
         - member_capabilities
         - permissions
       type: object
+    IdentityOrganizationMetadata:
+      additionalProperties: false
+      properties:
+        display_name:
+          type: string
+        org_id:
+          pattern: ^[0-9]+$
+          type: string
+        slug:
+          type: string
+      required:
+        - org_id
+        - display_name
+        - slug
+      type: object
     IdentityPutMemberCapabilitiesRequest:
       additionalProperties: false
       properties:
@@ -555,6 +570,41 @@ info:
   version: 1.0.0
 openapi: 3.0.3
 paths:
+  /api/v1/me/organizations:
+    get:
+      operationId: list-my-organizations
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/IdentityOrganizationMetadata"
+                nullable: true
+                type: array
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: List organizations available to the caller
+      x-verself-iam:
+        action: list
+        audit_event: identity.organization.membership.list
+        data_classification: restricted
+        event_category: identity
+        operation_display: list my organizations
+        operation_type: read
+        org_scope: token_role_assignment_org_ids
+        permission: identity:organization:read
+        rate_limit_class: read
+        resource: organization
+        risk_level: medium
+        source_product_area: Identity
   /api/v1/organization:
     get:
       operationId: get-organization

@@ -247,6 +247,43 @@ func (q *Queries) InsertOrganizationSlugRedirect(ctx context.Context, arg Insert
 	return err
 }
 
+const listOrganizationMetadataByOrgIDs = `-- name: ListOrganizationMetadataByOrgIDs :many
+SELECT org_id, display_name, slug
+FROM identity_organizations
+WHERE org_id = ANY($1::text[])
+ORDER BY display_name, org_id
+`
+
+type ListOrganizationMetadataByOrgIDsParams struct {
+	OrgIds []string
+}
+
+type ListOrganizationMetadataByOrgIDsRow struct {
+	OrgID       string
+	DisplayName string
+	Slug        string
+}
+
+func (q *Queries) ListOrganizationMetadataByOrgIDs(ctx context.Context, arg ListOrganizationMetadataByOrgIDsParams) ([]ListOrganizationMetadataByOrgIDsRow, error) {
+	rows, err := q.db.Query(ctx, listOrganizationMetadataByOrgIDs, arg.OrgIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListOrganizationMetadataByOrgIDsRow{}
+	for rows.Next() {
+		var i ListOrganizationMetadataByOrgIDsRow
+		if err := rows.Scan(&i.OrgID, &i.DisplayName, &i.Slug); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const organizationSlugUnavailable = `-- name: OrganizationSlugUnavailable :one
 SELECT EXISTS (
     SELECT 1 FROM identity_organizations o WHERE o.slug = $1 AND o.org_id <> $2

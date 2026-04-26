@@ -45,6 +45,9 @@ const (
 
 	bodyLimitNoBody    int64 = 1024
 	bodyLimitSmallJSON int64 = 16 << 10
+
+	orgScopeTokenOrgID                = "token_org_id"
+	orgScopeTokenRoleAssignmentOrgIDs = "token_role_assignment_org_ids"
 )
 
 type operationPolicy struct {
@@ -200,7 +203,7 @@ func enforceOperationPolicy(ctx context.Context, svc *identity.Service, policy o
 	if err != nil {
 		return nil, err
 	}
-	allowed, err := identityHasPermission(ctx, svc, identity, policy.Permission)
+	allowed, err := identityHasPermission(ctx, svc, identity, policy.Permission, policy.OrgScope)
 	if err != nil {
 		return identity, identityError(ctx, err)
 	}
@@ -216,9 +219,13 @@ func enforceOperationPolicy(ctx context.Context, svc *identity.Service, policy o
 	return identity, nil
 }
 
-func identityHasPermission(ctx context.Context, svc *identity.Service, authIdentity *auth.Identity, required permission) (bool, error) {
+func identityHasPermission(ctx context.Context, svc *identity.Service, authIdentity *auth.Identity, required permission, orgScope string) (bool, error) {
 	if authIdentity == nil || required == "" {
 		return false, nil
+	}
+	if orgScope == orgScopeTokenRoleAssignmentOrgIDs {
+		orgIDs, err := authorizedRoleAssignmentOrgIDs(ctx, svc, authIdentity, required)
+		return len(orgIDs) > 0, err
 	}
 	if identityHasDirectPermission(authIdentity, required) {
 		return true, nil
@@ -240,6 +247,62 @@ func identityHasPermission(ctx context.Context, svc *identity.Service, authIdent
 		}
 	}
 	return false, nil
+}
+
+func authorizedRoleAssignmentOrgIDs(ctx context.Context, svc *identity.Service, authIdentity *auth.Identity, required permission) ([]string, error) {
+	if required == "" {
+		return nil, nil
+	}
+	if svc == nil {
+		return nil, identity.ErrStoreUnavailable
+	}
+	orgIDs, err := roleAssignmentOrgIDs(ctx, authIdentity)
+	if err != nil {
+		return nil, err
+	}
+	authorized := make([]string, 0, len(orgIDs))
+	for _, orgID := range orgIDs {
+		principal := identity.Principal{
+			Subject: authIdentity.Subject,
+			OrgID:   orgID,
+			Roles:   rolesForOrg(authIdentity, orgID),
+			Email:   authIdentity.Email,
+		}
+		if strings.TrimSpace(principal.Subject) == "" {
+			return nil, fmt.Errorf("%w: subject is required", identity.ErrInvalidInput)
+		}
+		capabilities, err := svc.MemberCapabilities(ctx, principal)
+		if err != nil {
+			return nil, err
+		}
+		for _, granted := range identity.PermissionsForRoles(capabilities, principal.Roles) {
+			if granted == string(required) {
+				authorized = append(authorized, orgID)
+				break
+			}
+		}
+	}
+	return authorized, nil
+}
+
+func rolesForOrg(authIdentity *auth.Identity, orgID string) []string {
+	if authIdentity == nil || orgID == "" {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	roles := make([]string, 0, len(authIdentity.RoleAssignments))
+	for _, assignment := range authIdentity.RoleAssignments {
+		if assignment.OrganizationID != orgID || assignment.Role == "" {
+			continue
+		}
+		if _, ok := seen[assignment.Role]; ok {
+			continue
+		}
+		seen[assignment.Role] = struct{}{}
+		roles = append(roles, assignment.Role)
+	}
+	sort.Strings(roles)
+	return roles
 }
 
 type operationRequestInfoKey struct{}

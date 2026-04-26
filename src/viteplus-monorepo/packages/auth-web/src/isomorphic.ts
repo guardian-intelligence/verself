@@ -4,7 +4,6 @@ import * as v from "valibot";
 export const authRoleAssignmentSchema = v.object({
   projectID: v.nullable(v.string()),
   orgID: v.string(),
-  orgName: v.nullable(v.string()),
   role: v.string(),
 });
 
@@ -12,7 +11,6 @@ export type AuthRoleAssignment = v.InferOutput<typeof authRoleAssignmentSchema>;
 
 export const authOrganizationContextSchema = v.object({
   orgID: v.string(),
-  orgName: v.nullable(v.string()),
   roles: v.array(v.string()),
   roleAssignments: v.array(authRoleAssignmentSchema),
 });

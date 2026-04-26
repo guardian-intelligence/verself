@@ -25,17 +25,16 @@ var identityKey contextKey
 // Identity is attached to the request context after successful validation.
 type Identity struct {
 	Subject         string           // Zitadel user or service account ID.
-	OrgID           string           // Selected organization ID for the target service token.
-	Roles           []string         // Roles from the target service project claim.
+	OrgID           string           // Explicitly selected organization ID for the target service token.
+	Roles           []string         // Roles from the target service project claim for OrgID.
 	RoleAssignments []RoleAssignment // Structured target-project role assignments.
 	Email           string           // Email, if present in the token.
 	Raw             map[string]any   // All claims, for extensibility.
 }
 
 type RoleAssignment struct {
-	Role             string
-	OrganizationID   string
-	OrganizationName string
+	Role           string
+	OrganizationID string
 }
 
 // Config for the middleware.
@@ -104,7 +103,7 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 			identity := &Identity{
 				Subject:         idToken.Subject,
 				OrgID:           orgID,
-				Roles:           rolesFromAssignments(roleAssignments),
+				Roles:           rolesFromAssignmentsForOrg(roleAssignments, orgID),
 				RoleAssignments: roleAssignments,
 				Email:           stringClaim(rawClaims, "email"),
 				Raw:             rawClaims,
@@ -209,19 +208,16 @@ func stringClaim(claims map[string]any, key string) string {
 }
 
 func extractOrgID(claims map[string]any, assignments []RoleAssignment) string {
+	if value := stringClaim(claims, "urn:zitadel:iam:org:id"); value != "" {
+		return value
+	}
 	if orgID, ok := uniqueAssignmentOrgID(assignments); ok {
 		return orgID
 	}
 	if len(assignments) > 0 {
 		return ""
 	}
-
-	for _, key := range []string{
-		"urn:zitadel:iam:org:id",
-		"urn:zitadel:iam:user:resourceowner:id",
-		"resource_owner",
-		"org_id",
-	} {
+	for _, key := range []string{"urn:zitadel:iam:user:resourceowner:id", "resource_owner", "org_id"} {
 		if value := stringClaim(claims, key); value != "" {
 			return value
 		}
@@ -256,10 +252,10 @@ func roleAssignmentOrgCount(assignments []RoleAssignment) int {
 	return len(seen)
 }
 
-func rolesFromAssignments(assignments []RoleAssignment) []string {
+func rolesFromAssignmentsForOrg(assignments []RoleAssignment, orgID string) []string {
 	roleSet := map[string]struct{}{}
 	for _, assignment := range assignments {
-		if assignment.Role != "" {
+		if assignment.OrganizationID == orgID && assignment.Role != "" {
 			roleSet[assignment.Role] = struct{}{}
 		}
 	}
@@ -309,12 +305,10 @@ func collectRoleAssignments(value any) []RoleAssignment {
 		if !ok {
 			continue
 		}
-		for organizationID, organizationNameValue := range organizations {
-			organizationName, _ := organizationNameValue.(string)
+		for organizationID := range organizations {
 			assignments = append(assignments, RoleAssignment{
-				Role:             role,
-				OrganizationID:   organizationID,
-				OrganizationName: organizationName,
+				Role:           role,
+				OrganizationID: organizationID,
 			})
 		}
 	}

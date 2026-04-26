@@ -236,6 +236,7 @@ _config: {
 		seed_system_platform_org_name:     "Guardian Intelligence LLC"
 		seed_system_platform_org_slug:     "guardian-platform"
 		seed_system_acme_org_name:         "Acme Corp"
+		seed_system_acme_org_slug:         "acme-corp"
 		seed_system_sandbox_project_name:  "sandbox-rental"
 		seed_system_identity_project_name: "identity-service"
 		seed_system_secrets_project_name:  "secrets-service"

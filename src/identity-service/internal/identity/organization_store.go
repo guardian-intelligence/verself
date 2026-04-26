@@ -22,7 +22,7 @@ import (
 
 var organizationStoreTracer = otel.Tracer("identity-service/internal/identity/organization-store")
 
-func (s SQLStore) GetOrganizationProfile(ctx context.Context, orgID, actorID, displayNameSeed string) (profile OrganizationProfile, err error) {
+func (s SQLStore) GetOrganizationProfile(ctx context.Context, orgID, actorID string) (profile OrganizationProfile, err error) {
 	ctx, span := organizationStoreTracer.Start(ctx, "identity.pg.organization_profile.get")
 	defer finishOrganizationSpan(span, orgID, profile, err)
 	if s.PG == nil {
@@ -39,7 +39,39 @@ func (s SQLStore) GetOrganizationProfile(ctx context.Context, orgID, actorID, di
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return OrganizationProfile{}, fmt.Errorf("%w: get organization profile: %v", ErrStoreUnavailable, err)
 	}
-	return s.createDefaultOrganizationProfile(ctx, orgID, actorID, displayNameSeed)
+	return s.createDefaultOrganizationProfile(ctx, orgID, actorID)
+}
+
+func (s SQLStore) ListOrganizationMetadataByOrgIDs(ctx context.Context, orgIDs []string) (organizations []OrganizationMetadata, err error) {
+	ctx, span := organizationStoreTracer.Start(ctx, "identity.pg.organization_metadata.list")
+	defer func() {
+		span.SetAttributes(attribute.Int("identity.organization.count", len(organizations)))
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+	if s.PG == nil {
+		return nil, ErrStoreUnavailable
+	}
+	orgIDs = normalizeOrganizationIDs(orgIDs)
+	if len(orgIDs) == 0 {
+		return nil, fmt.Errorf("%w: org_ids is required", ErrInvalidInput)
+	}
+	rows, err := s.q().ListOrganizationMetadataByOrgIDs(ctx, identitystore.ListOrganizationMetadataByOrgIDsParams{OrgIds: orgIDs})
+	if err != nil {
+		return nil, fmt.Errorf("%w: list organization metadata: %v", ErrStoreUnavailable, err)
+	}
+	organizations = make([]OrganizationMetadata, 0, len(rows))
+	for _, row := range rows {
+		organizations = append(organizations, OrganizationMetadata{
+			OrgID:       row.OrgID,
+			DisplayName: row.DisplayName,
+			Slug:        row.Slug,
+		})
+	}
+	return organizations, nil
 }
 
 func (s SQLStore) UpdateOrganizationProfile(ctx context.Context, principal Principal, input UpdateOrganizationRequest) (profile OrganizationProfile, err error) {
@@ -55,7 +87,7 @@ func (s SQLStore) UpdateOrganizationProfile(ctx context.Context, principal Princ
 	if err != nil {
 		return OrganizationProfile{}, err
 	}
-	if _, err := s.GetOrganizationProfile(ctx, principal.OrgID, principal.Subject, principal.OrgDisplayName); err != nil {
+	if _, err := s.GetOrganizationProfile(ctx, principal.OrgID, principal.Subject); err != nil {
 		return OrganizationProfile{}, err
 	}
 	tx, err := s.PG.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
@@ -135,7 +167,7 @@ func (s SQLStore) ResolveOrganizationProfile(ctx context.Context, input ResolveO
 		return OrganizationProfile{}, fmt.Errorf("%w: org_id or slug is required", ErrInvalidInput)
 	}
 	if input.OrgID != "" {
-		profile, err = s.GetOrganizationProfile(ctx, input.OrgID, "system:identity-resolve", "")
+		profile, err = s.GetOrganizationProfile(ctx, input.OrgID, "system:identity-resolve")
 		if err != nil {
 			return OrganizationProfile{}, err
 		}
@@ -162,9 +194,9 @@ func (s SQLStore) ResolveOrganizationProfile(ctx context.Context, input ResolveO
 	return profile, nil
 }
 
-func (s SQLStore) createDefaultOrganizationProfile(ctx context.Context, orgID, actorID, displayNameSeed string) (OrganizationProfile, error) {
+func (s SQLStore) createDefaultOrganizationProfile(ctx context.Context, orgID, actorID string) (OrganizationProfile, error) {
 	actorID = firstNonEmpty(actorID, "system:identity")
-	displayName := firstNonEmpty(normalizeHumanText(displayNameSeed), "Organization "+orgID)
+	displayName := "Organization " + orgID
 	baseSlug := normalizeSlug(displayName)
 	if baseSlug == "" || reservedLegacyOrgSlug(baseSlug) {
 		baseSlug = "organization"
