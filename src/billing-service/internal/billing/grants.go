@@ -6,9 +6,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/jackc/pgx/v5/pgtype"
-
 	"github.com/verself/billing-service/internal/billing/ledger"
+	"github.com/verself/billing-service/internal/store"
 )
 
 type fundingLeg struct {
@@ -38,48 +37,43 @@ func (c *Client) ListGrantBalances(ctx context.Context, orgID OrgID, productID s
 	} else if _, err := c.PostPendingGrantDeposits(ctx, orgID, ""); err != nil {
 		return nil, err
 	}
-	rows, err := c.pg.Query(ctx, `
-		SELECT g.grant_id, g.scope_type, COALESCE(g.scope_product_id,''), COALESCE(g.scope_bucket_id,''), COALESCE(g.scope_sku_id,''),
-		       g.amount, g.source, g.source_reference_id, COALESCE(g.entitlement_period_id,''), g.policy_version,
-		       COALESCE(cp.plan_id,''), COALESCE(pl.tier,''), COALESCE(pl.display_name,''), g.starts_at, g.period_start, g.period_end, g.expires_at, g.account_id
-		FROM credit_grants g
-		LEFT JOIN entitlement_periods p ON p.period_id = g.entitlement_period_id
-		LEFT JOIN contract_phases cp ON cp.phase_id = p.phase_id
-		LEFT JOIN plans pl ON pl.plan_id = cp.plan_id
-		WHERE g.org_id = $1
-		  AND g.closed_at IS NULL
-		  AND ($2 = '' OR COALESCE(g.scope_product_id, $2) = $2 OR g.scope_type = 'account')
-		  AND (g.expires_at IS NULL OR g.expires_at > $3)
-		ORDER BY CASE g.source WHEN 'free_tier' THEN 1 WHEN 'contract' THEN 2 WHEN 'promo' THEN 3 WHEN 'refund' THEN 4 WHEN 'purchase' THEN 5 ELSE 6 END, g.starts_at, g.grant_id
-	`, orgIDText(orgID), productID, now)
+	rows, err := c.queries.ListGrantBalanceRows(ctx, store.ListGrantBalanceRowsParams{
+		OrgID:     orgIDText(orgID),
+		ProductID: productID,
+		Now:       timestamptz(now),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("query credit grants: %w", err)
 	}
-	defer rows.Close()
 	out := []GrantBalance{}
-	for rows.Next() {
-		var g GrantBalance
-		var amount int64
-		var accountRaw []byte
-		var periodStart, periodEnd, expiresAt pgtype.Timestamptz
-		if err := rows.Scan(&g.GrantID, &g.ScopeType, &g.ScopeProductID, &g.ScopeBucketID, &g.ScopeSKUID, &amount, &g.Source, &g.SourceReferenceID, &g.EntitlementPeriodID, &g.PolicyVersion, &g.PlanID, &g.PlanTier, &g.PlanDisplayName, &g.StartsAt, &periodStart, &periodEnd, &expiresAt, &accountRaw); err != nil {
-			return nil, fmt.Errorf("scan credit grant: %w", err)
-		}
-		accountID, err := ledger.IDFromBytes(accountRaw)
+	for _, row := range rows {
+		accountID, err := ledger.IDFromBytes(row.AccountID)
 		if err != nil {
-			return nil, fmt.Errorf("parse grant account id %s: %w", g.GrantID, err)
+			return nil, fmt.Errorf("parse grant account id %s: %w", row.GrantID, err)
 		}
-		g.OrgID = orgID
-		g.OriginalAmount = uint64(amount)
-		g.Amount = uint64(amount)
-		g.PeriodStart = timePtr(periodStart)
-		g.PeriodEnd = timePtr(periodEnd)
-		g.ExpiresAt = timePtr(expiresAt)
-		g.ledgerAccountID = accountID
+		g := GrantBalance{
+			GrantID:             row.GrantID,
+			OrgID:               orgID,
+			ScopeType:           row.ScopeType,
+			ScopeProductID:      row.ScopeProductID,
+			ScopeBucketID:       row.ScopeBucketID,
+			ScopeSKUID:          row.ScopeSkuID,
+			Source:              row.Source,
+			SourceReferenceID:   row.SourceReferenceID,
+			EntitlementPeriodID: row.EntitlementPeriodID,
+			PolicyVersion:       row.PolicyVersion,
+			PlanID:              row.PlanID,
+			PlanTier:            row.PlanTier,
+			PlanDisplayName:     row.PlanDisplayName,
+			StartsAt:            row.StartsAt.Time.UTC(),
+			OriginalAmount:      uint64(row.Amount),
+			Amount:              uint64(row.Amount),
+			PeriodStart:         timePtr(row.PeriodStart),
+			PeriodEnd:           timePtr(row.PeriodEnd),
+			ExpiresAt:           timePtr(row.ExpiresAt),
+			ledgerAccountID:     accountID,
+		}
 		out = append(out, g)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
 	}
 	if err := c.hydrateGrantLedgerBalances(ctx, out); err != nil {
 		return nil, err
@@ -135,32 +129,17 @@ func (c *Client) hydrateGrantLedgerBalances(ctx context.Context, grants []GrantB
 }
 
 func (c *Client) grantAuthorizedUsage(ctx context.Context, orgID OrgID) (map[string]uint64, error) {
-	rows, err := c.pg.Query(ctx, `
-		SELECT l.grant_id,
-		       SUM(CASE WHEN w.state = 'settling' THEN l.amount_posted ELSE l.amount_reserved END)
-		FROM billing_windows w
-		JOIN billing_window_ledger_legs l ON l.window_id = w.window_id
-		WHERE w.org_id = $1
-		  AND w.state IN ('reserved', 'active', 'settling')
-		  AND l.grant_id IS NOT NULL
-		GROUP BY l.grant_id
-	`, orgIDText(orgID))
+	rows, err := c.queries.ListAuthorizedGrantUsage(ctx, store.ListAuthorizedGrantUsageParams{OrgID: orgIDText(orgID)})
 	if err != nil {
 		return nil, fmt.Errorf("query authorized grant usage: %w", err)
 	}
-	defer rows.Close()
 	authorized := map[string]uint64{}
-	for rows.Next() {
-		var grantID string
-		var amount int64
-		if err := rows.Scan(&grantID, &amount); err != nil {
-			return nil, fmt.Errorf("scan authorized grant usage: %w", err)
-		}
-		if amount > 0 {
-			authorized[grantID] = uint64(amount)
+	for _, row := range rows {
+		if row.GrantID.Valid && row.Amount > 0 {
+			authorized[row.GrantID.String] = uint64(row.Amount)
 		}
 	}
-	return authorized, rows.Err()
+	return authorized, nil
 }
 
 func grantsByFundingPriority(grants []GrantBalance) []GrantBalance {

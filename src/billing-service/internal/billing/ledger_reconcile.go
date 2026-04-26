@@ -53,18 +53,10 @@ func (c *Client) reconcileOperatorLedgerAccounts(ctx context.Context) error {
 }
 
 func (c *Client) reconcileGrantLedgerBalances(ctx context.Context, limit int) (int, error) {
-	rows, err := c.pg.Query(ctx, `
-		SELECT grant_id, org_id, COALESCE(scope_product_id,''), amount, account_id
-		FROM credit_grants
-		WHERE closed_at IS NULL
-		  AND ledger_posting_state = 'posted'
-		ORDER BY starts_at, grant_id
-		LIMIT $1
-	`, limit)
+	rows, err := c.queries.ListPostedGrantSnapshotsForReconcile(ctx, store.ListPostedGrantSnapshotsForReconcileParams{Limit: int32(limit)})
 	if err != nil {
 		return 0, fmt.Errorf("query grants for ledger reconcile: %w", err)
 	}
-	defer rows.Close()
 	type grantSnapshot struct {
 		GrantID   string
 		OrgText   string
@@ -75,25 +67,21 @@ func (c *Client) reconcileGrantLedgerBalances(ctx context.Context, limit int) (i
 	grants := []grantSnapshot{}
 	ids := []ledger.ID{}
 	grantIDs := []string{}
-	for rows.Next() {
-		var grant grantSnapshot
-		var amount int64
-		var raw []byte
-		if err := rows.Scan(&grant.GrantID, &grant.OrgText, &grant.ProductID, &amount, &raw); err != nil {
-			return 0, fmt.Errorf("scan grant for ledger reconcile: %w", err)
-		}
-		id, err := ledger.IDFromBytes(raw)
+	for _, row := range rows {
+		id, err := ledger.IDFromBytes(row.AccountID)
 		if err != nil {
 			return 0, err
 		}
-		grant.Amount = uint64(amount)
-		grant.AccountID = id
+		grant := grantSnapshot{
+			GrantID:   row.GrantID,
+			OrgText:   row.OrgID,
+			ProductID: row.ProductID,
+			Amount:    uint64(row.Amount),
+			AccountID: id,
+		}
 		grants = append(grants, grant)
 		ids = append(ids, id)
 		grantIDs = append(grantIDs, grant.GrantID)
-	}
-	if err := rows.Err(); err != nil {
-		return 0, err
 	}
 	if len(ids) == 0 {
 		return 0, nil
@@ -145,30 +133,16 @@ func (c *Client) settledGrantUsage(ctx context.Context, grantIDs []string) (map[
 	if len(grantIDs) == 0 {
 		return out, nil
 	}
-	rows, err := c.pg.Query(ctx, `
-		SELECT l.grant_id, SUM(l.amount_posted)
-		FROM billing_window_ledger_legs l
-		JOIN billing_windows w ON w.window_id = l.window_id
-		WHERE w.state = 'settled'
-		  AND l.state = 'posted'
-		  AND l.grant_id = ANY($1)
-		GROUP BY l.grant_id
-	`, grantIDs)
+	rows, err := c.queries.ListSettledGrantUsage(ctx, store.ListSettledGrantUsageParams{Column1: grantIDs})
 	if err != nil {
 		return nil, fmt.Errorf("query settled grant usage: %w", err)
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var grantID string
-		var amount int64
-		if err := rows.Scan(&grantID, &amount); err != nil {
-			return nil, fmt.Errorf("scan settled grant usage: %w", err)
-		}
-		if amount > 0 {
-			out[grantID] = uint64(amount)
+	for _, row := range rows {
+		if row.GrantID.Valid && row.AmountPosted > 0 {
+			out[row.GrantID.String] = uint64(row.AmountPosted)
 		}
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func (c *Client) recordLedgerDrift(ctx context.Context, kind, severity, aggregateType, aggregateID string, pgSnapshot map[string]any, tbSnapshot map[string]any) error {
@@ -182,12 +156,15 @@ func (c *Client) recordLedgerDrift(ctx context.Context, kind, severity, aggregat
 			return err
 		}
 		driftID := textID("ledger_drift", kind, aggregateType, aggregateID, time.Now().UTC().Format(time.RFC3339Nano))
-		_, err = tx.Exec(ctx, `
-			INSERT INTO billing_ledger_drift_events (drift_id, drift_kind, severity, aggregate_type, aggregate_id, pg_snapshot, tigerbeetle_snapshot)
-			VALUES ($1,$2,$3,$4,$5,$6,$7)
-			ON CONFLICT (drift_id) DO NOTHING
-		`, driftID, kind, severity, aggregateType, aggregateID, pgBytes, tbBytes)
-		if err != nil {
+		if err := q.InsertLedgerDriftEvent(ctx, store.InsertLedgerDriftEventParams{
+			DriftID:             driftID,
+			DriftKind:           kind,
+			Severity:            severity,
+			AggregateType:       aggregateType,
+			AggregateID:         aggregateID,
+			PgSnapshot:          pgBytes,
+			TigerbeetleSnapshot: tbBytes,
+		}); err != nil {
 			return fmt.Errorf("insert ledger drift event: %w", err)
 		}
 		return appendEvent(ctx, tx, q, eventFact{

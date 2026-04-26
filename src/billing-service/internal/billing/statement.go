@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"time"
+
+	"github.com/verself/billing-service/internal/store"
 )
 
 type statementLineKey struct {
@@ -80,32 +82,23 @@ func (c *Client) statementForCycle(ctx context.Context, orgID OrgID, productID s
 }
 
 func (c *Client) statementWindows(ctx context.Context, orgID OrgID, productID string, cycle billingCycle) ([]persistedWindow, error) {
-	rows, err := c.pg.Query(ctx, `
-		SELECT window_id
-		FROM billing_windows
-		WHERE cycle_id = $1
-		  AND org_id = $2
-		  AND product_id = $3
-		  AND state IN ('reserved','active','settling','settled')
-		ORDER BY window_start, window_seq, window_id
-	`, cycle.CycleID, orgIDText(orgID), productID)
+	windowIDs, err := c.queries.ListStatementWindowIDs(ctx, store.ListStatementWindowIDsParams{
+		CycleID:   cycle.CycleID,
+		OrgID:     orgIDText(orgID),
+		ProductID: productID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("query statement windows: %w", err)
 	}
-	defer rows.Close()
-	out := []persistedWindow{}
-	for rows.Next() {
-		var windowID string
-		if err := rows.Scan(&windowID); err != nil {
-			return nil, fmt.Errorf("scan statement window: %w", err)
-		}
+	out := make([]persistedWindow, 0, len(windowIDs))
+	for _, windowID := range windowIDs {
 		window, err := c.loadWindow(ctx, windowID)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, window)
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func addSettledStatementWindow(statement *Statement, lines map[statementLineKey]*StatementLineItem, window persistedWindow) error {

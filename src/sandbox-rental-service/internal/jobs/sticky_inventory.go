@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/verself/sandbox-rental-service/internal/store"
 	"go.opentelemetry.io/otel/attribute"
 )
 
@@ -118,91 +119,41 @@ func (s *Service) ListStickyDisks(ctx context.Context, orgID uint64, filters Sti
 		cursorEnabled = true
 	}
 
-	rows, err := s.PGX.Query(ctx, `
-		SELECT
-			g.provider_installation_id,
-			g.provider_repository_id,
-			COALESCE(last_mount.repository_full_name, ''),
-			g.key_hash,
-			g.key,
-			g.current_generation,
-			g.current_source_ref,
-			COALESCE(last_mount.last_used_at, NULL),
-			last_mount.completed_at,
-			COALESCE(last_mount.save_state, ''),
-			last_mount.execution_id,
-			last_mount.attempt_id,
-			COALESCE(last_mount.runner_class, ''),
-			COALESCE(last_mount.workflow_name, ''),
-			COALESCE(last_mount.job_name, ''),
-			COALESCE(last_mount.mount_path, ''),
-			g.updated_at
-		FROM runner_sticky_disk_generations g
-		JOIN github_installations i ON i.installation_id = g.provider_installation_id
-		LEFT JOIN LATERAL (
-			SELECT
-				COALESCE(j.repository_full_name, '') AS repository_full_name,
-				COALESCE(m.completed_at, m.requested_at, m.updated_at, m.created_at) AS last_used_at,
-				m.completed_at,
-				m.save_state,
-				m.execution_id,
-				m.attempt_id,
-				a.runner_class,
-				COALESCE(j.workflow_name, '') AS workflow_name,
-				COALESCE(j.job_name, '') AS job_name,
-				m.mount_path
-			FROM execution_sticky_disk_mounts m
-			JOIN runner_allocations a ON a.allocation_id = m.allocation_id
-			LEFT JOIN runner_job_bindings b ON b.allocation_id = a.allocation_id
-			LEFT JOIN runner_jobs j ON j.provider = a.provider AND j.provider_job_id = COALESCE(b.provider_job_id, a.requested_for_provider_job_id)
-			WHERE a.provider = 'github'
-			  AND a.provider_installation_id = g.provider_installation_id
-			  AND a.provider_repository_id = g.provider_repository_id
-			  AND m.key_hash = g.key_hash
-			ORDER BY COALESCE(m.completed_at, m.requested_at, m.updated_at, m.created_at) DESC, m.mount_id DESC
-			LIMIT 1
-		) last_mount ON true
-		WHERE i.org_id = $1
-		  AND i.active
-		  AND ($2 = '' OR COALESCE(last_mount.repository_full_name, '') = $2)
-		  AND g.provider = 'github'
-		  AND ($3 = false OR (g.updated_at, g.provider_installation_id, g.provider_repository_id, g.key_hash) < ($4, $5, $6, $7))
-		ORDER BY g.updated_at DESC, g.provider_installation_id DESC, g.provider_repository_id DESC, g.key_hash DESC
-		LIMIT $8
-	`, orgID, strings.TrimSpace(filters.Repository), cursorEnabled, cursor.UpdatedAt, cursor.InstallationID, cursor.RepositoryID, cursor.KeyHash, limit+1)
+	rows, err := s.storeQueries().ListStickyDisks(ctx, store.ListStickyDisksParams{
+		OrgID:                dbOrgID(orgID),
+		Repository:           strings.TrimSpace(filters.Repository),
+		CursorEnabled:        cursorEnabled,
+		CursorUpdatedAt:      pgTime(cursor.UpdatedAt),
+		CursorInstallationID: cursor.InstallationID,
+		CursorRepositoryID:   cursor.RepositoryID,
+		CursorKeyHash:        cursor.KeyHash,
+		LimitCount:           int32(limit + 1),
+	})
 	if err != nil {
 		return StickyDiskPage{}, fmt.Errorf("list sticky disks: %w", err)
 	}
-	defer rows.Close()
 
 	disks := make([]StickyDiskRecord, 0, limit)
-	for rows.Next() {
-		var record StickyDiskRecord
-		if err := rows.Scan(
-			&record.InstallationID,
-			&record.RepositoryID,
-			&record.RepositoryFullName,
-			&record.KeyHash,
-			&record.Key,
-			&record.CurrentGeneration,
-			&record.CurrentSourceRef,
-			&record.LastUsedAt,
-			&record.LastCompletedAt,
-			&record.LastSaveState,
-			&record.LastExecutionID,
-			&record.LastAttemptID,
-			&record.LastRunnerClass,
-			&record.LastWorkflowName,
-			&record.LastJobName,
-			&record.LastMountPath,
-			&record.UpdatedAt,
-		); err != nil {
-			return StickyDiskPage{}, fmt.Errorf("scan sticky disk: %w", err)
-		}
-		disks = append(disks, record)
-	}
-	if err := rows.Err(); err != nil {
-		return StickyDiskPage{}, fmt.Errorf("iterate sticky disks: %w", err)
+	for _, row := range rows {
+		disks = append(disks, StickyDiskRecord{
+			InstallationID:     row.ProviderInstallationID,
+			RepositoryID:       row.ProviderRepositoryID,
+			RepositoryFullName: row.RepositoryFullName,
+			KeyHash:            row.KeyHash,
+			Key:                row.Key,
+			CurrentGeneration:  row.CurrentGeneration,
+			CurrentSourceRef:   row.CurrentSourceRef,
+			LastUsedAt:         timePtrFromPG(row.LastUsedAt),
+			LastCompletedAt:    timePtrFromPG(row.CompletedAt),
+			LastSaveState:      row.SaveState,
+			LastExecutionID:    uuidPtrFromZero(row.ExecutionID),
+			LastAttemptID:      uuidPtrFromZero(row.AttemptID),
+			LastRunnerClass:    row.RunnerClass,
+			LastWorkflowName:   row.WorkflowName,
+			LastJobName:        row.JobName,
+			LastMountPath:      row.MountPath,
+			UpdatedAt:          timeFromPG(row.UpdatedAt),
+		})
 	}
 
 	nextCursor := ""
@@ -223,19 +174,12 @@ func (s *Service) ResetStickyDisk(ctx context.Context, orgID uint64, installatio
 		return StickyDiskResetResult{}, ErrStickyDiskInvalid
 	}
 	now := time.Now().UTC()
-	var deletedSourceRef string
-	err := s.PGX.QueryRow(ctx, `
-		DELETE FROM runner_sticky_disk_generations g
-		USING github_installations i
-		WHERE g.provider = 'github'
-		  AND g.provider_installation_id = $1
-		  AND g.provider_repository_id = $2
-		  AND g.key_hash = $3
-		  AND i.installation_id = g.provider_installation_id
-		  AND i.org_id = $4
-		  AND i.active
-		RETURNING g.current_source_ref
-	`, installationID, repositoryID, keyHash, orgID).Scan(&deletedSourceRef)
+	deletedSourceRef, err := s.storeQueries().DeleteStickyDiskGenerationForOrg(ctx, store.DeleteStickyDiskGenerationForOrgParams{
+		ProviderInstallationID: installationID,
+		ProviderRepositoryID:   repositoryID,
+		KeyHash:                keyHash,
+		OrgID:                  dbOrgID(orgID),
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return StickyDiskResetResult{}, ErrStickyDiskMissing

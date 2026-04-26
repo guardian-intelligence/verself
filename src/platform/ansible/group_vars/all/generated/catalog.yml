@@ -162,6 +162,11 @@ topology_dev_tools:
     url: https://github.com/getsops/sops/releases/download/v3.12.2/sops-v3.12.2.linux.amd64
     version: 3.12.2
     version_cmd: sops --version
+  sqlc:
+    go_package: github.com/sqlc-dev/sqlc/cmd/sqlc
+    strategy: go_install
+    version: 1.30.0
+    version_cmd: sqlc version
   stripe:
     install_path: /usr/local/bin/stripe
     sha256: a0f9c131d1e06240f97dedfdf05bb9cb96ee33a865e8877807945bab160eaa0f
@@ -397,6 +402,7 @@ topology_versions:
     protocGenGoGrpc: 1.6.1
     shellcheck: 0.11.0
     sops: 3.12.2
+    sqlc: 1.30.0
     stripe: 1.40.0
     uv: 0.11.3
     zig: 0.15.2

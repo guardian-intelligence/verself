@@ -21,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/verself/apiwire"
 	"github.com/verself/sandbox-rental-service/internal/scheduler"
+	"github.com/verself/sandbox-rental-service/internal/store"
 	"go.opentelemetry.io/otel/attribute"
 )
 
@@ -180,20 +181,16 @@ func (r *ForgejoRunner) RegisterRepository(ctx context.Context, req RunnerReposi
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	_, err = tx.Exec(ctx, `INSERT INTO runner_provider_repositories (
-		provider, provider_repository_id, org_id, project_id, source_repository_id, provider_owner, provider_repo, repository_full_name, active, created_at, updated_at
-	) VALUES ('forgejo',$1,$2,$3,$4,$5,$6,$7,true,$8,$8)
-	ON CONFLICT (provider, provider_repository_id) DO UPDATE SET
-		org_id = EXCLUDED.org_id,
-		project_id = EXCLUDED.project_id,
-		source_repository_id = EXCLUDED.source_repository_id,
-		provider_owner = EXCLUDED.provider_owner,
-		provider_repo = EXCLUDED.provider_repo,
-		repository_full_name = EXCLUDED.repository_full_name,
-		active = true,
-		updated_at = EXCLUDED.updated_at`,
-		req.ProviderRepositoryID, req.OrgID, req.ProjectID, nullableUUID(req.SourceRepositoryID), req.ProviderOwner, req.ProviderRepo, req.RepositoryFullName, now)
-	if err != nil {
+	if err := store.New(tx).UpsertForgejoRunnerRepository(ctx, store.UpsertForgejoRunnerRepositoryParams{
+		ProviderRepositoryID: req.ProviderRepositoryID,
+		OrgID:                dbOrgID(req.OrgID),
+		ProjectID:            req.ProjectID,
+		SourceRepositoryID:   uuidPtrFromZero(req.SourceRepositoryID),
+		ProviderOwner:        req.ProviderOwner,
+		ProviderRepo:         req.ProviderRepo,
+		RepositoryFullName:   req.RepositoryFullName,
+		UpdatedAt:            pgTime(now),
+	}); err != nil {
 		recordRunnerError(span, err)
 		return err
 	}
@@ -344,21 +341,34 @@ func (r *ForgejoRunner) ReconcileCapacity(ctx context.Context, providerJobID int
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx, `INSERT INTO runner_allocations (
-		allocation_id, provider, provider_installation_id, provider_repository_id, runner_class, runner_name, state,
-		requested_for_provider_job_id, allocate_by, jit_by, vm_submitted_by, runner_listening_by,
-		assignment_by, vm_exit_by, cleanup_by, created_at, updated_at
-	) VALUES ($1,'forgejo',0,$2,$3,$4,'pending',$5,$6,$7,$8,$9,$10,$11,$12,$13,$13)`,
-		allocationID, job.ProviderRepositoryID, runnerClass, runnerName, providerJobID,
-		now.Add(30*time.Second), now.Add(time.Minute), now.Add(2*time.Minute), now.Add(5*time.Minute),
-		now.Add(10*time.Minute), now.Add(3*time.Hour), now.Add(3*time.Hour), now); err != nil {
+	qtx := store.New(tx)
+	if err := qtx.InsertForgejoRunnerAllocation(ctx, store.InsertForgejoRunnerAllocationParams{
+		AllocationID:              allocationID,
+		ProviderRepositoryID:      job.ProviderRepositoryID,
+		RunnerClass:               runnerClass,
+		RunnerName:                runnerName,
+		RequestedForProviderJobID: providerJobID,
+		AllocateBy:                pgTime(now.Add(30 * time.Second)),
+		JitBy:                     pgTime(now.Add(time.Minute)),
+		VmSubmittedBy:             pgTime(now.Add(2 * time.Minute)),
+		RunnerListeningBy:         pgTime(now.Add(5 * time.Minute)),
+		AssignmentBy:              pgTime(now.Add(10 * time.Minute)),
+		VmExitBy:                  pgTime(now.Add(3 * time.Hour)),
+		CleanupBy:                 pgTime(now.Add(3 * time.Hour)),
+		CreatedAt:                 pgTime(now),
+	}); err != nil {
 		recordRunnerError(span, err)
 		return err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO runner_job_bindings (
-		binding_id, allocation_id, provider, provider_job_id, provider_runner_id, runner_name, bound_at, created_at
-	) VALUES ($1,$2,'forgejo',$3,0,$4,$5,$5)
-	ON CONFLICT (provider, provider_job_id) DO NOTHING`, uuid.New(), allocationID, providerJobID, runnerName, now); err != nil {
+	if err := qtx.InsertRunnerJobBinding(ctx, store.InsertRunnerJobBindingParams{
+		BindingID:        uuid.New(),
+		AllocationID:     allocationID,
+		Provider:         RunnerProviderForgejo,
+		ProviderJobID:    providerJobID,
+		ProviderRunnerID: 0,
+		RunnerName:       runnerName,
+		BoundAt:          pgTime(now),
+	}); err != nil {
 		recordRunnerError(span, err)
 		return err
 	}
@@ -419,9 +429,11 @@ func (r *ForgejoRunner) AllocateRunner(ctx context.Context, allocationID uuid.UU
 		recordRunnerError(span, err)
 		return err
 	}
-	if _, err := r.service.PGX.Exec(ctx, `UPDATE runner_allocations
-		SET provider_runner_id = $1, state = 'bootstrap_created', updated_at = $2
-		WHERE provider = 'forgejo' AND allocation_id = $3`, registration.ID, time.Now().UTC(), allocationID); err != nil {
+	if err := r.service.storeQueries().UpdateForgejoAllocationBootstrapCreated(ctx, store.UpdateForgejoAllocationBootstrapCreatedParams{
+		ProviderRunnerID: registration.ID,
+		UpdatedAt:        pgTime(time.Now().UTC()),
+		AllocationID:     allocationID,
+	}); err != nil {
 		recordRunnerError(span, err)
 		return err
 	}
@@ -460,14 +472,7 @@ func (r *ForgejoRunner) AllocateRunner(ctx context.Context, allocationID uuid.UU
 }
 
 func (r *ForgejoRunner) BindJob(ctx context.Context, providerJobID int64) error {
-	var allocationID uuid.UUID
-	var status string
-	err := r.service.PGX.QueryRow(ctx, `SELECT a.allocation_id, j.status
-		FROM runner_allocations a
-		JOIN runner_jobs j ON j.provider = a.provider AND j.provider_job_id = a.requested_for_provider_job_id
-		WHERE a.provider = 'forgejo' AND j.provider_job_id = $1
-		ORDER BY a.created_at DESC
-		LIMIT 1`, providerJobID).Scan(&allocationID, &status)
+	row, err := r.service.storeQueries().GetForgejoBindAllocation(ctx, store.GetForgejoBindAllocationParams{ProviderJobID: providerJobID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
@@ -475,15 +480,21 @@ func (r *ForgejoRunner) BindJob(ctx context.Context, providerJobID int64) error 
 		return err
 	}
 	state := "assigned"
-	if status == "completed" || status == "success" || status == "failure" || status == "cancelled" || status == "skipped" {
+	if row.Status == "completed" || row.Status == "success" || row.Status == "failure" || row.Status == "cancelled" || row.Status == "skipped" {
 		state = "job_completed"
 	}
 	now := time.Now().UTC()
-	if _, err := r.service.PGX.Exec(ctx, `UPDATE runner_allocations SET state = $1, assignment_by = COALESCE(assignment_by, $2), cleanup_by = $3, updated_at = $2 WHERE provider = 'forgejo' AND allocation_id = $4 AND state <> 'cleaned'`, state, now, now.Add(30*time.Minute), allocationID); err != nil {
+	if err := r.service.storeQueries().UpdateRunnerAllocationAssignment(ctx, store.UpdateRunnerAllocationAssignmentParams{
+		State:        state,
+		UpdatedAt:    pgTime(now),
+		CleanupBy:    pgTime(now.Add(30 * time.Minute)),
+		Provider:     RunnerProviderForgejo,
+		AllocationID: row.AllocationID,
+	}); err != nil {
 		return err
 	}
 	if state == "job_completed" && r.service.Scheduler != nil {
-		_, _ = r.service.Scheduler.EnqueueRunnerCleanup(ctx, schedulerCleanupRequest(ctx, allocationID))
+		_, _ = r.service.Scheduler.EnqueueRunnerCleanup(ctx, schedulerCleanupRequest(ctx, row.AllocationID))
 	}
 	return nil
 }
@@ -505,10 +516,13 @@ func (r *ForgejoRunner) CleanupRunner(ctx context.Context, allocationID uuid.UUI
 		}
 	}
 	now := time.Now().UTC()
-	if _, err := r.service.PGX.Exec(ctx, `UPDATE runner_allocations SET state = 'cleaned', cleanup_by = $1, updated_at = $1 WHERE provider = 'forgejo' AND allocation_id = $2`, now, allocationID); err != nil {
+	if err := r.service.storeQueries().MarkRunnerAllocationCleaned(ctx, store.MarkRunnerAllocationCleanedParams{
+		CleanupBy:    pgTime(now),
+		AllocationID: allocationID,
+	}); err != nil {
 		return err
 	}
-	_, _ = r.service.PGX.Exec(ctx, `DELETE FROM runner_bootstrap_configs WHERE allocation_id = $1`, allocationID)
+	_ = r.service.storeQueries().DeleteRunnerBootstrapConfig(ctx, store.DeleteRunnerBootstrapConfigParams{AllocationID: allocationID})
 	return nil
 }
 
@@ -517,33 +531,26 @@ func (r *ForgejoRunner) ConsumeBootstrapConfig(ctx context.Context, token string
 }
 
 func (r *ForgejoRunner) loadRepository(ctx context.Context, providerRepositoryID int64) (forgejoRepositoryRecord, error) {
-	var repo forgejoRepositoryRecord
-	var sourceRepo *uuid.UUID
-	err := r.service.PGX.QueryRow(ctx, `SELECT provider_repository_id, org_id, project_id, source_repository_id, provider_owner, provider_repo, repository_full_name
-		FROM runner_provider_repositories
-		WHERE provider = 'forgejo' AND provider_repository_id = $1 AND active`, providerRepositoryID).
-		Scan(&repo.ProviderRepositoryID, &repo.OrgID, &repo.ProjectID, &sourceRepo, &repo.ProviderOwner, &repo.ProviderRepo, &repo.RepositoryFullName)
-	if sourceRepo != nil {
-		repo.SourceRepositoryID = *sourceRepo
+	row, err := r.service.storeQueries().GetForgejoRepository(ctx, store.GetForgejoRepositoryParams{ProviderRepositoryID: providerRepositoryID})
+	if err != nil {
+		return forgejoRepositoryRecord{}, err
 	}
-	return repo, err
+	repo := forgejoRepositoryRecord{
+		ProviderRepositoryID: row.ProviderRepositoryID,
+		OrgID:                orgIDFromDB(row.OrgID),
+		ProjectID:            row.ProjectID,
+		ProviderOwner:        row.ProviderOwner,
+		ProviderRepo:         row.ProviderRepo,
+		RepositoryFullName:   row.RepositoryFullName,
+	}
+	if row.SourceRepositoryID != nil {
+		repo.SourceRepositoryID = *row.SourceRepositoryID
+	}
+	return repo, nil
 }
 
 func (r *ForgejoRunner) activeRunnerClasses(ctx context.Context) ([]string, error) {
-	rows, err := r.service.PGX.Query(ctx, `SELECT runner_class FROM runner_classes WHERE active ORDER BY runner_class`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []string
-	for rows.Next() {
-		var runnerClass string
-		if err := rows.Scan(&runnerClass); err != nil {
-			return nil, err
-		}
-		out = append(out, runnerClass)
-	}
-	return out, rows.Err()
+	return r.service.storeQueries().ListActiveRunnerClasses(ctx)
 }
 
 func (r *ForgejoRunner) syncRepositoryJobsOnce(ctx context.Context, repo forgejoRepositoryRecord, runnerClasses []string) (int, error) {
@@ -579,21 +586,18 @@ func (r *ForgejoRunner) upsertJobAndMaybeEnqueue(ctx context.Context, repo forge
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	now := time.Now().UTC()
-	_, err = tx.Exec(ctx, `INSERT INTO runner_jobs (
-		provider, provider_job_id, provider_installation_id, provider_repository_id, repository_full_name,
-		provider_run_id, provider_task_id, provider_job_handle, job_name, status, labels_json, updated_at, created_at
-	) VALUES ('forgejo',$1,0,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10)
-	ON CONFLICT (provider, provider_job_id) DO UPDATE SET
-		provider_repository_id = EXCLUDED.provider_repository_id,
-		repository_full_name = EXCLUDED.repository_full_name,
-		provider_task_id = EXCLUDED.provider_task_id,
-		provider_job_handle = EXCLUDED.provider_job_handle,
-		job_name = EXCLUDED.job_name,
-		status = EXCLUDED.status,
-		labels_json = EXCLUDED.labels_json,
-		updated_at = EXCLUDED.updated_at`,
-		job.ID, repo.ProviderRepositoryID, repo.RepositoryFullName, job.TaskID, job.TaskID, job.Handle, job.Name, strings.TrimSpace(job.Status), string(labels), now)
-	if err != nil {
+	if err := store.New(tx).UpsertForgejoRunnerJob(ctx, store.UpsertForgejoRunnerJobParams{
+		ProviderJobID:        job.ID,
+		ProviderRepositoryID: repo.ProviderRepositoryID,
+		RepositoryFullName:   repo.RepositoryFullName,
+		ProviderRunID:        job.TaskID,
+		ProviderTaskID:       job.TaskID,
+		ProviderJobHandle:    job.Handle,
+		JobName:              job.Name,
+		Status:               strings.TrimSpace(job.Status),
+		LabelsJson:           labels,
+		UpdatedAt:            pgTime(now),
+	}); err != nil {
 		return err
 	}
 	if forgejoJobWantsCapacity(job.Status) && r.service.Scheduler != nil {
@@ -632,18 +636,22 @@ func (r *ForgejoRunner) listRunnerJobs(ctx context.Context, repo forgejoReposito
 }
 
 func (r *ForgejoRunner) loadQueuedJob(ctx context.Context, providerJobID int64) (forgejoQueuedJob, error) {
-	row := r.service.PGX.QueryRow(ctx, `SELECT
-		j.provider_job_id, j.provider_repository_id, j.provider_task_id, j.provider_job_handle,
-		j.repository_full_name, j.job_name, j.head_sha, j.head_branch, j.labels_json, p.org_id
-		FROM runner_jobs j
-		JOIN runner_provider_repositories p ON p.provider = j.provider AND p.provider_repository_id = j.provider_repository_id AND p.active
-		WHERE j.provider = 'forgejo' AND j.provider_job_id = $1 AND j.status IN ('waiting', 'queued')`, providerJobID)
-	var job forgejoQueuedJob
-	var labelsRaw []byte
-	if err := row.Scan(&job.ProviderJobID, &job.ProviderRepositoryID, &job.ProviderTaskID, &job.ProviderJobHandle, &job.RepositoryFullName, &job.JobName, &job.HeadSHA, &job.HeadBranch, &labelsRaw, &job.OrgID); err != nil {
+	row, err := r.service.storeQueries().GetForgejoQueuedJob(ctx, store.GetForgejoQueuedJobParams{ProviderJobID: providerJobID})
+	if err != nil {
 		return forgejoQueuedJob{}, err
 	}
-	_ = json.Unmarshal(labelsRaw, &job.Labels)
+	job := forgejoQueuedJob{
+		ProviderJobID:        row.ProviderJobID,
+		ProviderRepositoryID: row.ProviderRepositoryID,
+		ProviderTaskID:       row.ProviderTaskID,
+		ProviderJobHandle:    row.ProviderJobHandle,
+		RepositoryFullName:   row.RepositoryFullName,
+		JobName:              row.JobName,
+		HeadSHA:              row.HeadSha,
+		HeadBranch:           row.HeadBranch,
+		OrgID:                orgIDFromDB(row.OrgID),
+	}
+	_ = json.Unmarshal(row.LabelsJson, &job.Labels)
 	return job, nil
 }
 
@@ -665,13 +673,10 @@ func (r *ForgejoRunner) runnerClassForLabels(ctx context.Context, labels []strin
 }
 
 func (r *ForgejoRunner) activeAllocationForJob(ctx context.Context, providerJobID int64) (uuid.UUID, error) {
-	var allocationID uuid.UUID
-	err := r.service.PGX.QueryRow(ctx, `SELECT allocation_id FROM runner_allocations
-		WHERE provider = 'forgejo'
-		  AND requested_for_provider_job_id = $1
-		  AND state NOT IN ('failed', 'cleaned')
-		ORDER BY created_at DESC
-		LIMIT 1`, providerJobID).Scan(&allocationID)
+	allocationID, err := r.service.storeQueries().GetActiveAllocationForRunnerJob(ctx, store.GetActiveAllocationForRunnerJobParams{
+		Provider:      RunnerProviderForgejo,
+		ProviderJobID: providerJobID,
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return uuid.Nil, nil
 	}
@@ -679,33 +684,48 @@ func (r *ForgejoRunner) activeAllocationForJob(ctx context.Context, providerJobI
 }
 
 func (r *ForgejoRunner) loadAllocation(ctx context.Context, allocationID uuid.UUID) (forgejoAllocation, error) {
-	row := r.service.PGX.QueryRow(ctx, `SELECT
-		a.allocation_id, a.provider_repository_id, a.runner_class, a.runner_name,
-		a.provider_runner_id, a.requested_for_provider_job_id, COALESCE(j.provider_task_id, 0),
-		COALESCE(j.provider_job_handle, ''), COALESCE(j.job_name, ''), COALESCE(j.head_sha, ''),
-		COALESCE(j.head_branch, ''), COALESCE(a.execution_id, '00000000-0000-0000-0000-000000000000'::uuid),
-		COALESCE(a.attempt_id, '00000000-0000-0000-0000-000000000000'::uuid), a.state,
-		p.org_id, p.provider_owner, p.provider_repo, p.repository_full_name, COALESCE(j.labels_json, '[]'::jsonb),
-		c.product_id, c.vcpus, c.memory_mib, c.rootfs_gib
-		FROM runner_allocations a
-		JOIN runner_provider_repositories p ON p.provider = a.provider AND p.provider_repository_id = a.provider_repository_id
-		JOIN runner_classes c ON c.runner_class = a.runner_class
-		LEFT JOIN runner_jobs j ON j.provider = a.provider AND j.provider_job_id = a.requested_for_provider_job_id
-		WHERE a.provider = 'forgejo' AND a.allocation_id = $1`, allocationID)
-	var out forgejoAllocation
-	var vcpus, memoryMiB, rootfsGiB int
-	var labelsRaw []byte
-	if err := row.Scan(&out.AllocationID, &out.ProviderRepositoryID, &out.RunnerClass, &out.RunnerName, &out.ProviderRunnerID, &out.RequestedJobID, &out.ProviderTaskID, &out.ProviderJobHandle, &out.JobName, &out.HeadSHA, &out.HeadBranch, &out.ExecutionID, &out.AttemptID, &out.State, &out.OrgID, &out.ProviderOwner, &out.ProviderRepo, &out.RepositoryFullName, &labelsRaw, &out.ProductID, &vcpus, &memoryMiB, &rootfsGiB); err != nil {
+	row, err := r.service.storeQueries().GetForgejoAllocation(ctx, store.GetForgejoAllocationParams{AllocationID: allocationID})
+	if err != nil {
 		return forgejoAllocation{}, err
 	}
-	_ = json.Unmarshal(labelsRaw, &out.Labels)
-	out.Resources = apiwire.VMResources{VCPUs: uint32(vcpus), MemoryMiB: uint32(memoryMiB), RootDiskGiB: uint32(rootfsGiB), KernelImage: apiwire.KernelImageDefault}
+	out := forgejoAllocation{
+		AllocationID:         row.AllocationID,
+		ProviderRepositoryID: row.ProviderRepositoryID,
+		RunnerClass:          row.RunnerClass,
+		RunnerName:           row.RunnerName,
+		ProviderRunnerID:     row.ProviderRunnerID,
+		RequestedJobID:       row.RequestedForProviderJobID,
+		ProviderTaskID:       row.ProviderTaskID,
+		ProviderJobHandle:    row.ProviderJobHandle,
+		JobName:              row.JobName,
+		HeadSHA:              row.HeadSha,
+		HeadBranch:           row.HeadBranch,
+		State:                row.State,
+		OrgID:                orgIDFromDB(row.OrgID),
+		ProviderOwner:        row.ProviderOwner,
+		ProviderRepo:         row.ProviderRepo,
+		RepositoryFullName:   row.RepositoryFullName,
+		ProductID:            row.ProductID,
+		Resources:            apiwire.VMResources{VCPUs: uint32(row.Vcpus), MemoryMiB: uint32(row.MemoryMib), RootDiskGiB: uint32(row.RootfsGib), KernelImage: apiwire.KernelImageDefault},
+	}
+	if row.ExecutionID != nil {
+		out.ExecutionID = *row.ExecutionID
+	}
+	if row.AttemptID != nil {
+		out.AttemptID = *row.AttemptID
+	}
+	_ = json.Unmarshal(row.LabelsJson, &out.Labels)
 	return out, nil
 }
 
 func (r *ForgejoRunner) setAllocationState(ctx context.Context, allocationID uuid.UUID, state, reason string) error {
-	_, err := r.service.PGX.Exec(ctx, `UPDATE runner_allocations SET state = $1, failure_reason = $2, updated_at = $3 WHERE provider = 'forgejo' AND allocation_id = $4`, state, strings.TrimSpace(reason), time.Now().UTC(), allocationID)
-	return err
+	return r.service.storeQueries().SetRunnerAllocationState(ctx, store.SetRunnerAllocationStateParams{
+		State:         state,
+		FailureReason: strings.TrimSpace(reason),
+		UpdatedAt:     pgTime(time.Now().UTC()),
+		Provider:      RunnerProviderForgejo,
+		AllocationID:  allocationID,
+	})
 }
 
 func (r *ForgejoRunner) ensureWebhook(ctx context.Context, owner, repo string) error {
@@ -869,13 +889,6 @@ func normalizeRunnerRepositoryRegistration(req RunnerRepositoryRegistration) (Ru
 		req.RepositoryFullName = req.ProviderOwner + "/" + req.ProviderRepo
 	}
 	return req, nil
-}
-
-func nullableUUID(value uuid.UUID) any {
-	if value == uuid.Nil {
-		return nil
-	}
-	return value
 }
 
 func forgejoRunnerName(providerJobID int64, allocationID uuid.UUID) string {

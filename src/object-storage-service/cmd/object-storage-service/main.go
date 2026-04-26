@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"log/slog"
@@ -16,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -27,8 +27,6 @@ import (
 	"github.com/verself/object-storage-service/internal/objectstorage"
 	verselfotel "github.com/verself/otel"
 	secretsclient "github.com/verself/secrets-service/client"
-
-	_ "github.com/lib/pq"
 )
 
 const serviceVersion = "1.0.0"
@@ -124,7 +122,7 @@ func runAdmin(
 	ctx context.Context,
 	logger *slog.Logger,
 	spiffeSource *workloadapi.X509Source,
-	pg *sql.DB,
+	pg *pgxpool.Pool,
 	secretBox *objectstorage.SecretBox,
 	cfg objectstorage.Config,
 ) error {
@@ -154,8 +152,7 @@ func runAdmin(
 
 	objectstorageapi.ConfigureAuditSink(governanceAuditURL, spiffeSource)
 	svc := &objectstorage.Service{
-		PG:      pg,
-		Store:   &objectstorage.Store{DB: pg},
+		Store:   objectstorage.NewStore(pg),
 		Garage:  garageClient,
 		Secrets: secretBox,
 		Logger:  logger,
@@ -200,7 +197,7 @@ func runS3(
 	ctx context.Context,
 	logger *slog.Logger,
 	spiffeSource *workloadapi.X509Source,
-	pg *sql.DB,
+	pg *pgxpool.Pool,
 	secretBox *objectstorage.SecretBox,
 	cfg objectstorage.Config,
 ) error {
@@ -246,9 +243,8 @@ func runS3(
 		Transport: otelhttp.NewTransport(garageS3Transport),
 	}
 	svc := &objectstorage.Service{
-		PG:      pg,
 		CH:      chConn,
-		Store:   &objectstorage.Store{DB: pg},
+		Store:   objectstorage.NewStore(pg),
 		Secrets: secretBox,
 		Logger:  logger,
 		Config:  cfg,
@@ -382,19 +378,22 @@ func newRuntimeSecretsClient(spiffeSource *workloadapi.X509Source, secretsURL st
 	return client, nil
 }
 
-func newPostgres(ctx context.Context, pgDSN string) (*sql.DB, error) {
-	pg, err := sql.Open("postgres", pgDSN)
+func newPostgres(ctx context.Context, pgDSN string) (*pgxpool.Pool, error) {
+	cfg, err := pgxpool.ParseConfig(pgDSN)
 	if err != nil {
-		return nil, fmt.Errorf("open postgres: %w", err)
+		return nil, fmt.Errorf("parse postgres config: %w", err)
 	}
-	pg.SetMaxOpenConns(12)
-	pg.SetMaxIdleConns(4)
-	pg.SetConnMaxLifetime(30 * time.Minute)
-	pg.SetConnMaxIdleTime(5 * time.Minute)
+	cfg.MaxConns = 12
+	cfg.MaxConnLifetime = 30 * time.Minute
+	cfg.MaxConnIdleTime = 5 * time.Minute
+	pg, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("open postgres pool: %w", err)
+	}
 	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if err := pg.PingContext(pingCtx); err != nil {
-		_ = pg.Close()
+	if err := pg.Ping(pingCtx); err != nil {
+		pg.Close()
 		return nil, fmt.Errorf("ping postgres: %w", err)
 	}
 	return pg, nil

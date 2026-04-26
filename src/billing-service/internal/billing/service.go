@@ -102,6 +102,21 @@ func timestamptz(t time.Time) pgtype.Timestamptz {
 	return pgtype.Timestamptz{Time: t.UTC(), Valid: true}
 }
 
+func timestamptzValue(value any) pgtype.Timestamptz {
+	t, ok := value.(time.Time)
+	if !ok {
+		return pgtype.Timestamptz{}
+	}
+	return timestamptz(t)
+}
+
+func pgTextValue(value string) pgtype.Text {
+	if value == "" {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: value, Valid: true}
+}
+
 func nullableTime(t *time.Time) any {
 	if t == nil || t.IsZero() {
 		return nil

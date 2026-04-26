@@ -32,29 +32,9 @@ func (c *Client) PostPendingGrantDeposits(ctx context.Context, orgID OrgID, prod
 	if _, err := c.requireLedger(); err != nil {
 		return 0, err
 	}
-	rows, err := c.pg.Query(ctx, `
-		SELECT grant_id
-		FROM credit_grants
-		WHERE org_id = $1
-		  AND closed_at IS NULL
-		  AND ledger_posting_state IN ('pending','retryable_failed')
-		  AND ($2 = '' OR COALESCE(scope_product_id, $2) = $2 OR scope_type = 'account')
-		ORDER BY starts_at, grant_id
-	`, orgIDText(orgID), productID)
+	grantIDs, err := c.queries.ListPendingGrantDeposits(ctx, store.ListPendingGrantDepositsParams{OrgID: orgIDText(orgID), Column2: productID})
 	if err != nil {
 		return 0, fmt.Errorf("query pending grant deposits: %w", err)
-	}
-	defer rows.Close()
-	grantIDs := []string{}
-	for rows.Next() {
-		var grantID string
-		if err := rows.Scan(&grantID); err != nil {
-			return 0, fmt.Errorf("scan pending grant deposit: %w", err)
-		}
-		grantIDs = append(grantIDs, grantID)
-	}
-	if err := rows.Err(); err != nil {
-		return 0, err
 	}
 	posted := 0
 	for _, grantID := range grantIDs {
@@ -68,8 +48,8 @@ func (c *Client) PostPendingGrantDeposits(ctx context.Context, orgID OrgID, prod
 
 func (c *Client) postGrantDeposit(ctx context.Context, grantID string) error {
 	var commandID string
-	err := c.WithTx(ctx, "billing.ledger.grant_deposit.create_command", func(ctx context.Context, tx pgx.Tx, _ *store.Queries) error {
-		grant, err := c.loadGrantLedgerRowTx(ctx, tx, grantID)
+	err := c.WithTx(ctx, "billing.ledger.grant_deposit.create_command", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
+		grant, err := c.loadGrantLedgerRowTx(ctx, q, grantID)
 		if err != nil {
 			return err
 		}
@@ -88,12 +68,7 @@ func (c *Client) postGrantDeposit(ctx context.Context, grantID string) error {
 		if err != nil {
 			return err
 		}
-		_, err = tx.Exec(ctx, `
-			UPDATE credit_grants
-			SET ledger_posting_state = 'in_progress', ledger_last_error = ''
-			WHERE grant_id = $1 AND ledger_posting_state IN ('pending','retryable_failed','in_progress')
-		`, grant.GrantID)
-		if err != nil {
+		if err := q.MarkGrantLedgerPostingInProgress(ctx, store.MarkGrantLedgerPostingInProgressParams{GrantID: grant.GrantID}); err != nil {
 			return fmt.Errorf("mark grant ledger posting in progress: %w", err)
 		}
 		return nil
@@ -108,38 +83,38 @@ func (c *Client) postGrantDeposit(ctx context.Context, grantID string) error {
 	return c.markGrantLedgerPostingPosted(ctx, grantID)
 }
 
-func (c *Client) loadGrantLedgerRowTx(ctx context.Context, tx pgx.Tx, grantID string) (grantLedgerRow, error) {
-	var row grantLedgerRow
-	var orgText string
-	var accountRaw, depositRaw []byte
-	var amount int64
-	err := tx.QueryRow(ctx, `
-		SELECT g.grant_id, g.org_id, g.scope_type, COALESCE(g.scope_product_id,''), COALESCE(g.scope_bucket_id,''), COALESCE(g.scope_sku_id,''),
-		       g.amount, g.source, g.source_reference_id, g.account_id, g.deposit_transfer_id, g.starts_at,
-		       COALESCE(g.scope_product_id, '')
-		FROM credit_grants g
-		WHERE g.grant_id = $1
-		FOR UPDATE
-	`, grantID).Scan(&row.GrantID, &orgText, &row.ScopeType, &row.ScopeProductID, &row.ScopeBucketID, &row.ScopeSKUID, &amount, &row.Source, &row.SourceReferenceID, &accountRaw, &depositRaw, &row.StartsAt, &row.ProductID)
+func (c *Client) loadGrantLedgerRowTx(ctx context.Context, q *store.Queries, grantID string) (grantLedgerRow, error) {
+	stored, err := q.GetGrantLedgerRowForUpdate(ctx, store.GetGrantLedgerRowForUpdateParams{GrantID: grantID})
 	if err != nil {
 		return grantLedgerRow{}, fmt.Errorf("load grant ledger row %s: %w", grantID, err)
 	}
-	orgID, err := parseOrgID(orgText)
+	orgID, err := parseOrgID(stored.OrgID)
 	if err != nil {
 		return grantLedgerRow{}, err
 	}
-	accountID, err := ledger.IDFromBytes(accountRaw)
+	accountID, err := ledger.IDFromBytes(stored.AccountID)
 	if err != nil {
 		return grantLedgerRow{}, fmt.Errorf("parse grant account id %s: %w", grantID, err)
 	}
-	depositID, err := ledger.IDFromBytes(depositRaw)
+	depositID, err := ledger.IDFromBytes(stored.DepositTransferID)
 	if err != nil {
 		return grantLedgerRow{}, fmt.Errorf("parse grant deposit transfer id %s: %w", grantID, err)
 	}
-	row.OrgID = orgID
-	row.Amount = uint64(amount)
-	row.AccountID = accountID
-	row.DepositID = depositID
+	row := grantLedgerRow{
+		GrantID:           stored.GrantID,
+		OrgID:             orgID,
+		ProductID:         stored.ProductID,
+		ScopeType:         stored.ScopeType,
+		ScopeProductID:    stored.ScopeProductID,
+		ScopeBucketID:     stored.ScopeBucketID,
+		ScopeSKUID:        stored.ScopeSkuID,
+		Amount:            uint64(stored.Amount),
+		Source:            stored.Source,
+		SourceReferenceID: stored.SourceReferenceID,
+		AccountID:         accountID,
+		DepositID:         depositID,
+		StartsAt:          stored.StartsAt.Time.UTC(),
+	}
 	return row, nil
 }
 
@@ -175,21 +150,14 @@ func (c *Client) grantDepositPayload(operators map[string]ledger.ID, grant grant
 
 func (c *Client) markGrantLedgerPostingPosted(ctx context.Context, grantID string) error {
 	return c.WithTx(ctx, "billing.ledger.grant_deposit.posted", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
-		var orgText, productID, source string
-		var amount int64
-		err := tx.QueryRow(ctx, `
-			UPDATE credit_grants
-			SET ledger_posting_state = 'posted', ledger_posted_at = now(), ledger_last_error = ''
-			WHERE grant_id = $1 AND ledger_posting_state <> 'posted'
-			RETURNING org_id, COALESCE(scope_product_id,''), source, amount
-		`, grantID).Scan(&orgText, &productID, &source, &amount)
+		row, err := q.MarkGrantLedgerPostingPosted(ctx, store.MarkGrantLedgerPostingPostedParams{GrantID: grantID})
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
 		if err != nil {
 			return fmt.Errorf("mark grant ledger posting posted: %w", err)
 		}
-		orgID, err := parseOrgID(orgText)
+		orgID, err := parseOrgID(row.OrgID)
 		if err != nil {
 			return err
 		}
@@ -198,26 +166,20 @@ func (c *Client) markGrantLedgerPostingPosted(ctx context.Context, grantID strin
 			AggregateType: "credit_grant",
 			AggregateID:   grantID,
 			OrgID:         orgID,
-			ProductID:     productID,
+			ProductID:     row.ProductID,
 			OccurredAt:    time.Now().UTC(),
-			Payload:       map[string]any{"grant_id": grantID, "source": source, "amount": amount},
+			Payload:       map[string]any{"grant_id": grantID, "source": row.Source, "amount": row.Amount},
 		})
 	})
 }
 
 func (c *Client) markGrantLedgerPostingFailed(ctx context.Context, grantID string, cause error) error {
 	return c.WithTx(ctx, "billing.ledger.grant_deposit.failed", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
-		var orgText, productID string
-		err := tx.QueryRow(ctx, `
-			UPDATE credit_grants
-			SET ledger_posting_state = 'retryable_failed', ledger_last_error = $2
-			WHERE grant_id = $1
-			RETURNING org_id, COALESCE(scope_product_id,'')
-		`, grantID, cause.Error()).Scan(&orgText, &productID)
+		row, err := q.MarkGrantLedgerPostingFailed(ctx, store.MarkGrantLedgerPostingFailedParams{GrantID: grantID, LedgerLastError: cause.Error()})
 		if err != nil {
 			return fmt.Errorf("mark grant ledger posting failed: %w", err)
 		}
-		orgID, err := parseOrgID(orgText)
+		orgID, err := parseOrgID(row.OrgID)
 		if err != nil {
 			return err
 		}
@@ -226,7 +188,7 @@ func (c *Client) markGrantLedgerPostingFailed(ctx context.Context, grantID strin
 			AggregateType: "credit_grant",
 			AggregateID:   grantID,
 			OrgID:         orgID,
-			ProductID:     productID,
+			ProductID:     row.ProductID,
 			OccurredAt:    time.Now().UTC(),
 			Payload:       map[string]any{"grant_id": grantID, "error": cause.Error()},
 		})

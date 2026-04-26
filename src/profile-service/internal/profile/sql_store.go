@@ -12,10 +12,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel/trace"
+
+	profilestore "github.com/verself/profile-service/internal/store"
 )
 
 type SQLStore struct {
@@ -23,22 +24,26 @@ type SQLStore struct {
 	Now func() time.Time
 }
 
+func (s SQLStore) q() *profilestore.Queries {
+	return profilestore.New(s.PG)
+}
+
 func (s SQLStore) Ready(ctx context.Context) error {
 	if s.PG == nil {
 		return ErrStoreUnavailable
 	}
-	var one int
-	if err := s.PG.QueryRow(ctx, "SELECT 1").Scan(&one); err != nil {
+	if _, err := s.q().Ping(ctx); err != nil {
 		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	return nil
 }
 
 func (s SQLStore) Snapshot(ctx context.Context, principal Principal) (Snapshot, error) {
-	if err := s.ensureSubject(ctx, s.PG, principal); err != nil {
+	q := s.q()
+	if err := s.ensureSubject(ctx, q, principal); err != nil {
 		return Snapshot{}, err
 	}
-	return s.loadSnapshot(ctx, s.PG, principal.Subject)
+	return s.loadSnapshot(ctx, q, principal.Subject)
 }
 
 func (s SQLStore) UpdateIdentity(ctx context.Context, principal Principal, input UpdateIdentityRequest, bearerToken string, writer IdentityWriter) (Snapshot, []string, error) {
@@ -47,10 +52,11 @@ func (s SQLStore) UpdateIdentity(ctx context.Context, principal Principal, input
 		return Snapshot{}, nil, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	defer rollback(ctx, tx)
-	if err := s.ensureSubject(ctx, tx, principal); err != nil {
+	q := profilestore.New(tx)
+	if err := s.ensureSubject(ctx, q, principal); err != nil {
 		return Snapshot{}, nil, err
 	}
-	old, err := s.loadIdentityForUpdate(ctx, tx, principal.Subject)
+	old, err := s.loadIdentityForUpdate(ctx, q, principal.Subject)
 	if err != nil {
 		return Snapshot{}, nil, err
 	}
@@ -76,35 +82,21 @@ func (s SQLStore) UpdateIdentity(ctx context.Context, principal Principal, input
 		syncedAt := now
 		updated.SyncedAt = &syncedAt
 	}
-	_, err = tx.Exec(ctx, `
-UPDATE profile_subjects
-SET email_cache = $2,
-    given_name_cache = $3,
-    family_name_cache = $4,
-    display_name_cache = $5,
-    identity_version = $6,
-    identity_synced_at = $7,
-    org_id = $8,
-    updated_at = $9,
-    tombstoned_at = NULL,
-    tombstone_request_id = '',
-    tombstoned_by = ''
-WHERE subject_id = $1`,
-		principal.Subject,
-		updated.Email,
-		updated.GivenName,
-		updated.FamilyName,
-		updated.DisplayName,
-		nextVersion,
-		*updated.SyncedAt,
-		principal.OrgID,
-		now,
-	)
-	if err != nil {
+	if err := q.UpdateIdentityCache(ctx, profilestore.UpdateIdentityCacheParams{
+		SubjectID:        principal.Subject,
+		EmailCache:       updated.Email,
+		GivenNameCache:   updated.GivenName,
+		FamilyNameCache:  updated.FamilyName,
+		DisplayNameCache: updated.DisplayName,
+		IdentityVersion:  nextVersion,
+		IdentitySyncedAt: timestamptz(*updated.SyncedAt),
+		OrgID:            principal.OrgID,
+		UpdatedAt:        timestamptz(now),
+	}); err != nil {
 		return Snapshot{}, nil, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	changed := changedIdentityFields(old, updated)
-	if err := s.insertOutbox(ctx, tx, "events.profile.subject.updated", principal.Subject, nextVersion, map[string]any{
+	if err := s.insertOutbox(ctx, q, "events.profile.subject.updated", principal.Subject, nextVersion, map[string]any{
 		"occurred_at":    now.Format(time.RFC3339Nano),
 		"subject_id":     principal.Subject,
 		"org_id":         principal.OrgID,
@@ -116,7 +108,7 @@ WHERE subject_id = $1`,
 	if err := tx.Commit(ctx); err != nil {
 		return Snapshot{}, nil, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
-	snapshot, err := s.loadSnapshot(ctx, s.PG, principal.Subject)
+	snapshot, err := s.loadSnapshot(ctx, s.q(), principal.Subject)
 	if err != nil {
 		return Snapshot{}, nil, err
 	}
@@ -129,10 +121,11 @@ func (s SQLStore) PutPreferences(ctx context.Context, principal Principal, input
 		return Snapshot{}, nil, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	defer rollback(ctx, tx)
-	if err := s.ensureSubject(ctx, tx, principal); err != nil {
+	q := profilestore.New(tx)
+	if err := s.ensureSubject(ctx, q, principal); err != nil {
 		return Snapshot{}, nil, err
 	}
-	old, err := s.loadPreferences(ctx, tx, principal.Subject)
+	old, err := s.loadPreferences(ctx, q, principal.Subject)
 	if err != nil {
 		return Snapshot{}, nil, err
 	}
@@ -147,59 +140,46 @@ func (s SQLStore) PutPreferences(ctx context.Context, principal Principal, input
 		UpdatedAt:      now,
 		UpdatedBy:      principal.Subject,
 	}
-	var tag pgconn.CommandTag
+	var rowsAffected int64
 	if input.Version == 0 {
 		if old.Version != 0 {
 			return Snapshot{}, nil, ErrConflict
 		}
-		tag, err = tx.Exec(ctx, `
-INSERT INTO profile_preferences (
-    subject_id, version, locale, timezone, time_display, theme, default_surface, updated_at, updated_by
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-			principal.Subject,
-			next.Version,
-			next.Locale,
-			next.Timezone,
-			next.TimeDisplay,
-			next.Theme,
-			next.DefaultSurface,
-			next.UpdatedAt,
-			next.UpdatedBy,
-		)
+		rowsAffected, err = q.InsertPreferences(ctx, profilestore.InsertPreferencesParams{
+			SubjectID:      principal.Subject,
+			Version:        next.Version,
+			Locale:         next.Locale,
+			Timezone:       next.Timezone,
+			TimeDisplay:    next.TimeDisplay,
+			Theme:          next.Theme,
+			DefaultSurface: next.DefaultSurface,
+			UpdatedAt:      timestamptz(next.UpdatedAt),
+			UpdatedBy:      next.UpdatedBy,
+		})
 	} else {
 		if old.Version != input.Version {
 			return Snapshot{}, nil, ErrConflict
 		}
-		tag, err = tx.Exec(ctx, `
-UPDATE profile_preferences
-SET version = version + 1,
-    locale = $2,
-    timezone = $3,
-    time_display = $4,
-    theme = $5,
-    default_surface = $6,
-    updated_at = $7,
-    updated_by = $8
-WHERE subject_id = $1 AND version = $9`,
-			principal.Subject,
-			next.Locale,
-			next.Timezone,
-			next.TimeDisplay,
-			next.Theme,
-			next.DefaultSurface,
-			next.UpdatedAt,
-			next.UpdatedBy,
-			input.Version,
-		)
+		rowsAffected, err = q.UpdatePreferences(ctx, profilestore.UpdatePreferencesParams{
+			SubjectID:      principal.Subject,
+			Locale:         next.Locale,
+			Timezone:       next.Timezone,
+			TimeDisplay:    next.TimeDisplay,
+			Theme:          next.Theme,
+			DefaultSurface: next.DefaultSurface,
+			UpdatedAt:      timestamptz(next.UpdatedAt),
+			UpdatedBy:      next.UpdatedBy,
+			Version:        input.Version,
+		})
 	}
 	if err != nil {
 		return Snapshot{}, nil, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
-	if tag.RowsAffected() != 1 {
+	if rowsAffected != 1 {
 		return Snapshot{}, nil, ErrConflict
 	}
 	changed := changedPreferenceFields(old, next)
-	if err := s.insertOutbox(ctx, tx, "events.profile.preferences.updated", principal.Subject, next.Version, map[string]any{
+	if err := s.insertOutbox(ctx, q, "events.profile.preferences.updated", principal.Subject, next.Version, map[string]any{
 		"occurred_at":    now.Format(time.RFC3339Nano),
 		"subject_id":     principal.Subject,
 		"org_id":         principal.OrgID,
@@ -211,7 +191,7 @@ WHERE subject_id = $1 AND version = $9`,
 	if err := tx.Commit(ctx); err != nil {
 		return Snapshot{}, nil, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
-	snapshot, err := s.loadSnapshot(ctx, s.PG, principal.Subject)
+	snapshot, err := s.loadSnapshot(ctx, s.q(), principal.Subject)
 	if err != nil {
 		return Snapshot{}, nil, err
 	}
@@ -219,23 +199,23 @@ WHERE subject_id = $1 AND version = $9`,
 }
 
 func (s SQLStore) OrgExport(ctx context.Context, input DataRightsRequest) (DataRightsManifest, error) {
-	if manifest, ok, err := s.loadExistingDataRights(ctx, input.RequestID); ok || err != nil {
+	q := s.q()
+	if manifest, ok, err := s.loadExistingDataRights(ctx, q, input.RequestID); ok || err != nil {
 		return manifest, err
 	}
-	subjects, err := s.exportRows(ctx, `
-SELECT subject_id, org_id, email_cache, given_name_cache, family_name_cache, display_name_cache, identity_version, identity_synced_at, created_at, updated_at, tombstoned_at
-FROM profile_subjects
-WHERE org_id = $1
-ORDER BY subject_id`, input.OrgID)
+	subjectRows, err := q.OrgExportSubjects(ctx, profilestore.OrgExportSubjectsParams{OrgID: input.OrgID})
+	if err != nil {
+		return DataRightsManifest{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	subjects, err := exportRowsToJSONL(subjectRows, orgExportSubjectRecord)
 	if err != nil {
 		return DataRightsManifest{}, err
 	}
-	preferences, err := s.exportRows(ctx, `
-SELECT p.subject_id, s.org_id, p.version, p.locale, p.timezone, p.time_display, p.theme, p.default_surface, p.updated_at, p.updated_by
-FROM profile_preferences p
-JOIN profile_subjects s ON s.subject_id = p.subject_id
-WHERE s.org_id = $1
-ORDER BY p.subject_id`, input.OrgID)
+	preferenceRows, err := q.OrgExportPreferences(ctx, profilestore.OrgExportPreferencesParams{OrgID: input.OrgID})
+	if err != nil {
+		return DataRightsManifest{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	preferences, err := exportRowsToJSONL(preferenceRows, orgExportPreferenceRecord)
 	if err != nil {
 		return DataRightsManifest{}, err
 	}
@@ -258,22 +238,23 @@ ORDER BY p.subject_id`, input.OrgID)
 }
 
 func (s SQLStore) SubjectExport(ctx context.Context, input DataRightsRequest) (DataRightsManifest, error) {
-	if manifest, ok, err := s.loadExistingDataRights(ctx, input.RequestID); ok || err != nil {
+	q := s.q()
+	if manifest, ok, err := s.loadExistingDataRights(ctx, q, input.RequestID); ok || err != nil {
 		return manifest, err
 	}
-	subjects, err := s.exportRows(ctx, `
-SELECT subject_id, org_id, email_cache, given_name_cache, family_name_cache, display_name_cache, identity_version, identity_synced_at, created_at, updated_at, tombstoned_at
-FROM profile_subjects
-WHERE subject_id = $1
-ORDER BY subject_id`, input.SubjectID)
+	subjectRows, err := q.SubjectExportSubjects(ctx, profilestore.SubjectExportSubjectsParams{SubjectID: input.SubjectID})
+	if err != nil {
+		return DataRightsManifest{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	subjects, err := exportRowsToJSONL(subjectRows, subjectExportSubjectRecord)
 	if err != nil {
 		return DataRightsManifest{}, err
 	}
-	preferences, err := s.exportRows(ctx, `
-SELECT subject_id, version, locale, timezone, time_display, theme, default_surface, updated_at, updated_by
-FROM profile_preferences
-WHERE subject_id = $1
-ORDER BY subject_id`, input.SubjectID)
+	preferenceRows, err := q.SubjectExportPreferences(ctx, profilestore.SubjectExportPreferencesParams{SubjectID: input.SubjectID})
+	if err != nil {
+		return DataRightsManifest{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	preferences, err := exportRowsToJSONL(preferenceRows, subjectExportPreferenceRecord)
 	if err != nil {
 		return DataRightsManifest{}, err
 	}
@@ -296,7 +277,8 @@ ORDER BY subject_id`, input.SubjectID)
 }
 
 func (s SQLStore) SubjectErasure(ctx context.Context, input DataRightsRequest) (DataRightsManifest, error) {
-	if manifest, ok, err := s.loadExistingDataRights(ctx, input.RequestID); ok || err != nil {
+	q := s.q()
+	if manifest, ok, err := s.loadExistingDataRights(ctx, q, input.RequestID); ok || err != nil {
 		return manifest, err
 	}
 	tx, err := s.PG.BeginTx(ctx, pgx.TxOptions{})
@@ -304,34 +286,28 @@ func (s SQLStore) SubjectErasure(ctx context.Context, input DataRightsRequest) (
 		return DataRightsManifest{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	defer rollback(ctx, tx)
-	prefsTag, err := tx.Exec(ctx, `DELETE FROM profile_preferences WHERE subject_id = $1`, input.SubjectID)
+	q = profilestore.New(tx)
+	deletedPreferences, err := q.DeletePreferencesForSubject(ctx, profilestore.DeletePreferencesForSubjectParams{SubjectID: input.SubjectID})
 	if err != nil {
 		return DataRightsManifest{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	now := s.now()
-	subjectTag, err := tx.Exec(ctx, `
-UPDATE profile_subjects
-SET email_cache = '',
-    given_name_cache = '',
-    family_name_cache = '',
-    display_name_cache = '',
-    identity_synced_at = NULL,
-    updated_at = $2,
-    tombstoned_at = $2,
-    tombstone_request_id = $3,
-    tombstoned_by = $4
-WHERE subject_id = $1`,
-		input.SubjectID, now, input.RequestID, input.RequestedBy)
+	tombstonedSubjects, err := q.TombstoneSubject(ctx, profilestore.TombstoneSubjectParams{
+		SubjectID:          input.SubjectID,
+		UpdatedAt:          timestamptz(now),
+		TombstoneRequestID: input.RequestID,
+		TombstonedBy:       input.RequestedBy,
+	})
 	if err != nil {
 		return DataRightsManifest{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
-	if subjectTag.RowsAffected() == 0 {
-		_, err = tx.Exec(ctx, `
-INSERT INTO profile_subjects (
-    subject_id, org_id, created_at, updated_at, tombstoned_at, tombstone_request_id, tombstoned_by
-) VALUES ($1, '', $2, $2, $2, $3, $4)`,
-			input.SubjectID, now, input.RequestID, input.RequestedBy)
-		if err != nil {
+	if tombstonedSubjects == 0 {
+		if err := q.InsertTombstonedSubject(ctx, profilestore.InsertTombstonedSubjectParams{
+			SubjectID:          input.SubjectID,
+			CreatedAt:          timestamptz(now),
+			TombstoneRequestID: input.RequestID,
+			TombstonedBy:       input.RequestedBy,
+		}); err != nil {
 			return DataRightsManifest{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 		}
 	}
@@ -341,22 +317,22 @@ INSERT INTO profile_subjects (
 		Status:      "completed",
 		SubjectID:   input.SubjectID,
 		ErasureActions: []DataRightsErasureAction{
-			{Name: "delete_profile_preferences", Rows: strconv.FormatInt(prefsTag.RowsAffected(), 10)},
+			{Name: "delete_profile_preferences", Rows: strconv.FormatInt(deletedPreferences, 10)},
 			{Name: "tombstone_profile_subject", Rows: "1"},
 		},
 		RetainedCategories: []DataRightsRetainedCategory{
 			{Category: "governance_audit", Reason: "Immutable audit rows are retained by governance-service and are not rewritten by profile-service."},
 		},
 		RecordCounts: map[string]string{
-			"deleted_preferences": strconv.FormatInt(prefsTag.RowsAffected(), 10),
+			"deleted_preferences": strconv.FormatInt(deletedPreferences, 10),
 			"tombstoned_subjects": "1",
 		},
 		CompletedAt: now,
 	}
-	if err := s.insertDataRightsTx(ctx, tx, input, manifest); err != nil {
+	if err := s.insertDataRightsTx(ctx, q, input, manifest); err != nil {
 		return DataRightsManifest{}, err
 	}
-	if err := s.insertOutbox(ctx, tx, "events.profile.subject.tombstoned", input.SubjectID, 0, map[string]any{
+	if err := s.insertOutbox(ctx, q, "events.profile.subject.tombstoned", input.SubjectID, 0, map[string]any{
 		"occurred_at": now.Format(time.RFC3339Nano),
 		"subject_id":  input.SubjectID,
 		"request_id":  input.RequestID,
@@ -370,7 +346,7 @@ INSERT INTO profile_subjects (
 }
 
 func (s SQLStore) DataRightsStatus(ctx context.Context, requestID string) (DataRightsManifest, error) {
-	manifest, ok, err := s.loadExistingDataRights(ctx, requestID)
+	manifest, ok, err := s.loadExistingDataRights(ctx, s.q(), requestID)
 	if err != nil {
 		return DataRightsManifest{}, err
 	}
@@ -380,31 +356,20 @@ func (s SQLStore) DataRightsStatus(ctx context.Context, requestID string) (DataR
 	return manifest, nil
 }
 
-type queryer interface {
-	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
-	QueryRow(context.Context, string, ...any) pgx.Row
-	Query(context.Context, string, ...any) (pgx.Rows, error)
-}
-
-func (s SQLStore) ensureSubject(ctx context.Context, q queryer, principal Principal) error {
+func (s SQLStore) ensureSubject(ctx context.Context, q *profilestore.Queries, principal Principal) error {
 	now := s.now()
-	_, err := q.Exec(ctx, `
-INSERT INTO profile_subjects (subject_id, org_id, email_cache, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $4)
-ON CONFLICT (subject_id) DO UPDATE
-SET org_id = CASE
-        WHEN profile_subjects.org_id = '' THEN EXCLUDED.org_id
-        ELSE profile_subjects.org_id
-    END,
-    updated_at = EXCLUDED.updated_at`,
-		principal.Subject, principal.OrgID, principal.Email, now)
-	if err != nil {
+	if err := q.EnsureSubject(ctx, profilestore.EnsureSubjectParams{
+		SubjectID:  principal.Subject,
+		OrgID:      principal.OrgID,
+		EmailCache: principal.Email,
+		CreatedAt:  timestamptz(now),
+	}); err != nil {
 		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	return nil
 }
 
-func (s SQLStore) loadSnapshot(ctx context.Context, q queryer, subjectID string) (Snapshot, error) {
+func (s SQLStore) loadSnapshot(ctx context.Context, q *profilestore.Queries, subjectID string) (Snapshot, error) {
 	identity, orgID, err := s.loadIdentity(ctx, q, subjectID)
 	if err != nil {
 		return Snapshot{}, err
@@ -421,87 +386,88 @@ func (s SQLStore) loadSnapshot(ctx context.Context, q queryer, subjectID string)
 	}, nil
 }
 
-func (s SQLStore) loadIdentity(ctx context.Context, q queryer, subjectID string) (IdentitySummary, string, error) {
-	var (
-		orgID    string
-		summary  IdentitySummary
-		syncedAt pgtype.Timestamptz
-	)
-	err := q.QueryRow(ctx, `
-SELECT org_id, email_cache, given_name_cache, family_name_cache, display_name_cache, identity_version, identity_synced_at
-FROM profile_subjects
-WHERE subject_id = $1`, subjectID).Scan(
-		&orgID,
-		&summary.Email,
-		&summary.GivenName,
-		&summary.FamilyName,
-		&summary.DisplayName,
-		&summary.Version,
-		&syncedAt,
-	)
+func (s SQLStore) loadIdentity(ctx context.Context, q *profilestore.Queries, subjectID string) (IdentitySummary, string, error) {
+	row, err := q.GetIdentity(ctx, profilestore.GetIdentityParams{SubjectID: subjectID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return IdentitySummary{}, "", ErrNotFound
 	}
 	if err != nil {
 		return IdentitySummary{}, "", fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
-	if syncedAt.Valid {
-		t := syncedAt.Time.UTC()
-		summary.SyncedAt = &t
-	}
-	return summary, orgID, nil
+	return identityFromRow(row), row.OrgID, nil
 }
 
-func (s SQLStore) loadIdentityForUpdate(ctx context.Context, q queryer, subjectID string) (IdentitySummary, error) {
-	var (
-		summary  IdentitySummary
-		syncedAt pgtype.Timestamptz
-	)
-	err := q.QueryRow(ctx, `
-SELECT email_cache, given_name_cache, family_name_cache, display_name_cache, identity_version, identity_synced_at
-FROM profile_subjects
-WHERE subject_id = $1
-FOR UPDATE`, subjectID).Scan(
-		&summary.Email,
-		&summary.GivenName,
-		&summary.FamilyName,
-		&summary.DisplayName,
-		&summary.Version,
-		&syncedAt,
-	)
+func (s SQLStore) loadIdentityForUpdate(ctx context.Context, q *profilestore.Queries, subjectID string) (IdentitySummary, error) {
+	row, err := q.GetIdentityForUpdate(ctx, profilestore.GetIdentityForUpdateParams{SubjectID: subjectID})
 	if err != nil {
 		return IdentitySummary{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
-	if syncedAt.Valid {
-		t := syncedAt.Time.UTC()
-		summary.SyncedAt = &t
-	}
-	return summary, nil
+	return identityFromLockedRow(row), nil
 }
 
-func (s SQLStore) loadPreferences(ctx context.Context, q queryer, subjectID string) (Preferences, error) {
-	var preferences Preferences
-	err := q.QueryRow(ctx, `
-SELECT version, locale, timezone, time_display, theme, default_surface, updated_at, updated_by
-FROM profile_preferences
-WHERE subject_id = $1`, subjectID).Scan(
-		&preferences.Version,
-		&preferences.Locale,
-		&preferences.Timezone,
-		&preferences.TimeDisplay,
-		&preferences.Theme,
-		&preferences.DefaultSurface,
-		&preferences.UpdatedAt,
-		&preferences.UpdatedBy,
-	)
+func (s SQLStore) loadPreferences(ctx context.Context, q *profilestore.Queries, subjectID string) (Preferences, error) {
+	row, err := q.GetPreferences(ctx, profilestore.GetPreferencesParams{SubjectID: subjectID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return DefaultPreferences(s.now()), nil
 	}
 	if err != nil {
 		return Preferences{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
-	preferences.UpdatedAt = preferences.UpdatedAt.UTC()
-	return preferences, nil
+	return preferencesFromRow(row)
+}
+
+func identityFromRow(row profilestore.GetIdentityRow) IdentitySummary {
+	return identityFromFields(
+		row.EmailCache,
+		row.GivenNameCache,
+		row.FamilyNameCache,
+		row.DisplayNameCache,
+		row.IdentityVersion,
+		row.IdentitySyncedAt,
+	)
+}
+
+func identityFromLockedRow(row profilestore.GetIdentityForUpdateRow) IdentitySummary {
+	return identityFromFields(
+		row.EmailCache,
+		row.GivenNameCache,
+		row.FamilyNameCache,
+		row.DisplayNameCache,
+		row.IdentityVersion,
+		row.IdentitySyncedAt,
+	)
+}
+
+func identityFromFields(email, givenName, familyName, displayName string, version int32, syncedAt pgtype.Timestamptz) IdentitySummary {
+	summary := IdentitySummary{
+		Version:     version,
+		Email:       email,
+		GivenName:   givenName,
+		FamilyName:  familyName,
+		DisplayName: displayName,
+	}
+	if syncedAt.Valid {
+		t := syncedAt.Time.UTC()
+		summary.SyncedAt = &t
+	}
+	return summary
+}
+
+func preferencesFromRow(row profilestore.GetPreferencesRow) (Preferences, error) {
+	updatedAt, err := requiredTime(row.UpdatedAt)
+	if err != nil {
+		return Preferences{}, err
+	}
+	return Preferences{
+		Version:        row.Version,
+		Locale:         row.Locale,
+		Timezone:       row.Timezone,
+		TimeDisplay:    row.TimeDisplay,
+		Theme:          row.Theme,
+		DefaultSurface: row.DefaultSurface,
+		UpdatedAt:      updatedAt,
+		UpdatedBy:      row.UpdatedBy,
+	}, nil
 }
 
 type exportData struct {
@@ -509,40 +475,103 @@ type exportData struct {
 	content []byte
 }
 
-func (s SQLStore) exportRows(ctx context.Context, query string, args ...any) (exportData, error) {
-	rows, err := s.PG.Query(ctx, query, args...)
-	if err != nil {
-		return exportData{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
-	}
-	defer rows.Close()
+func exportRowsToJSONL[T any](rows []T, record func(T) map[string]any) (exportData, error) {
 	var buf bytes.Buffer
-	count := 0
-	for rows.Next() {
-		values, err := rows.Values()
+	for _, row := range rows {
+		line, err := json.Marshal(record(row))
 		if err != nil {
-			return exportData{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
-		}
-		fields := rows.FieldDescriptions()
-		record := make(map[string]any, len(fields))
-		for i, field := range fields {
-			record[string(field.Name)] = normalizeExportValue(values[i])
-		}
-		line, err := json.Marshal(record)
-		if err != nil {
-			return exportData{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+			return exportData{}, fmt.Errorf("%w: marshal data rights row: %v", ErrStoreUnavailable, err)
 		}
 		buf.Write(line)
 		buf.WriteByte('\n')
-		count++
 	}
-	if err := rows.Err(); err != nil {
-		return exportData{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
-	}
-	return exportData{rows: count, content: buf.Bytes()}, nil
+	return exportData{rows: len(rows), content: buf.Bytes()}, nil
 }
 
-func normalizeExportValue(value any) any {
+func orgExportSubjectRecord(row profilestore.OrgExportSubjectsRow) map[string]any {
+	return exportSubjectRecord(
+		row.SubjectID,
+		row.OrgID,
+		row.EmailCache,
+		row.GivenNameCache,
+		row.FamilyNameCache,
+		row.DisplayNameCache,
+		row.IdentityVersion,
+		row.IdentitySyncedAt,
+		row.CreatedAt,
+		row.UpdatedAt,
+		row.TombstonedAt,
+	)
+}
+
+func subjectExportSubjectRecord(row profilestore.SubjectExportSubjectsRow) map[string]any {
+	return exportSubjectRecord(
+		row.SubjectID,
+		row.OrgID,
+		row.EmailCache,
+		row.GivenNameCache,
+		row.FamilyNameCache,
+		row.DisplayNameCache,
+		row.IdentityVersion,
+		row.IdentitySyncedAt,
+		row.CreatedAt,
+		row.UpdatedAt,
+		row.TombstonedAt,
+	)
+}
+
+func exportSubjectRecord(subjectID, orgID, email, givenName, familyName, displayName string, identityVersion int32, identitySyncedAt, createdAt, updatedAt, tombstonedAt pgtype.Timestamptz) map[string]any {
+	return map[string]any{
+		"subject_id":         subjectID,
+		"org_id":             orgID,
+		"email_cache":        email,
+		"given_name_cache":   givenName,
+		"family_name_cache":  familyName,
+		"display_name_cache": displayName,
+		"identity_version":   identityVersion,
+		"identity_synced_at": exportValue(identitySyncedAt),
+		"created_at":         exportValue(createdAt),
+		"updated_at":         exportValue(updatedAt),
+		"tombstoned_at":      exportValue(tombstonedAt),
+	}
+}
+
+func orgExportPreferenceRecord(row profilestore.OrgExportPreferencesRow) map[string]any {
+	return map[string]any{
+		"subject_id":      row.SubjectID,
+		"org_id":          row.OrgID,
+		"version":         row.Version,
+		"locale":          row.Locale,
+		"timezone":        row.Timezone,
+		"time_display":    row.TimeDisplay,
+		"theme":           row.Theme,
+		"default_surface": row.DefaultSurface,
+		"updated_at":      exportValue(row.UpdatedAt),
+		"updated_by":      row.UpdatedBy,
+	}
+}
+
+func subjectExportPreferenceRecord(row profilestore.ProfilePreference) map[string]any {
+	return map[string]any{
+		"subject_id":      row.SubjectID,
+		"version":         row.Version,
+		"locale":          row.Locale,
+		"timezone":        row.Timezone,
+		"time_display":    row.TimeDisplay,
+		"theme":           row.Theme,
+		"default_surface": row.DefaultSurface,
+		"updated_at":      exportValue(row.UpdatedAt),
+		"updated_by":      row.UpdatedBy,
+	}
+}
+
+func exportValue(value any) any {
 	switch v := value.(type) {
+	case pgtype.Timestamptz:
+		if !v.Valid {
+			return ""
+		}
+		return v.Time.UTC().Format(time.RFC3339Nano)
 	case time.Time:
 		return v.UTC().Format(time.RFC3339Nano)
 	case nil:
@@ -552,9 +581,8 @@ func normalizeExportValue(value any) any {
 	}
 }
 
-func (s SQLStore) loadExistingDataRights(ctx context.Context, requestID string) (DataRightsManifest, bool, error) {
-	var data []byte
-	err := s.PG.QueryRow(ctx, `SELECT manifest FROM profile_data_rights_requests WHERE request_id = $1`, requestID).Scan(&data)
+func (s SQLStore) loadExistingDataRights(ctx context.Context, q *profilestore.Queries, requestID string) (DataRightsManifest, bool, error) {
+	data, err := q.GetDataRightsManifest(ctx, profilestore.GetDataRightsManifestParams{RequestID: requestID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return DataRightsManifest{}, false, nil
 	}
@@ -569,33 +597,30 @@ func (s SQLStore) loadExistingDataRights(ctx context.Context, requestID string) 
 }
 
 func (s SQLStore) insertDataRights(ctx context.Context, input DataRightsRequest, manifest DataRightsManifest) error {
-	return s.insertDataRightsTx(ctx, s.PG, input, manifest)
+	return s.insertDataRightsTx(ctx, s.q(), input, manifest)
 }
 
-func (s SQLStore) insertDataRightsTx(ctx context.Context, q queryer, input DataRightsRequest, manifest DataRightsManifest) error {
+func (s SQLStore) insertDataRightsTx(ctx context.Context, q *profilestore.Queries, input DataRightsRequest, manifest DataRightsManifest) error {
 	data, err := json.Marshal(manifest)
 	if err != nil {
 		return fmt.Errorf("%w: marshal data rights manifest: %v", ErrStoreUnavailable, err)
 	}
-	tag, err := q.Exec(ctx, `
-INSERT INTO profile_data_rights_requests (
-    request_id, request_type, org_id, subject_id, requested_at, requested_by, status, manifest, created_at, updated_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
-ON CONFLICT (request_id) DO NOTHING`,
-		manifest.RequestID,
-		manifest.RequestType,
-		firstNonEmpty(manifest.OrgID, input.OrgID),
-		firstNonEmpty(manifest.SubjectID, input.SubjectID),
-		input.RequestedAt.UTC(),
-		input.RequestedBy,
-		manifest.Status,
-		data,
-		s.now(),
-	)
+	now := s.now()
+	rowsAffected, err := q.InsertDataRightsRequest(ctx, profilestore.InsertDataRightsRequestParams{
+		RequestID:   manifest.RequestID,
+		RequestType: manifest.RequestType,
+		OrgID:       firstNonEmpty(manifest.OrgID, input.OrgID),
+		SubjectID:   firstNonEmpty(manifest.SubjectID, input.SubjectID),
+		RequestedAt: timestamptz(input.RequestedAt.UTC()),
+		RequestedBy: input.RequestedBy,
+		Status:      manifest.Status,
+		Manifest:    data,
+		CreatedAt:   timestamptz(now),
+	})
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
-	if tag.RowsAffected() == 0 {
+	if rowsAffected == 0 {
 		return nil
 	}
 	eventSubject := "events.profile.data_rights.exported"
@@ -604,7 +629,7 @@ ON CONFLICT (request_id) DO NOTHING`,
 	}
 	aggregateID := firstNonEmpty(manifest.SubjectID, input.SubjectID, manifest.OrgID, input.OrgID)
 	if err := s.insertOutbox(ctx, q, eventSubject, aggregateID, 0, map[string]any{
-		"occurred_at":  s.now().Format(time.RFC3339Nano),
+		"occurred_at":  now.Format(time.RFC3339Nano),
 		"request_id":   manifest.RequestID,
 		"request_type": manifest.RequestType,
 		"org_id":       firstNonEmpty(manifest.OrgID, input.OrgID),
@@ -616,7 +641,7 @@ ON CONFLICT (request_id) DO NOTHING`,
 	return nil
 }
 
-func (s SQLStore) insertOutbox(ctx context.Context, q queryer, subject string, aggregateSubjectID string, aggregateVersion int32, payload map[string]any) error {
+func (s SQLStore) insertOutbox(ctx context.Context, q *profilestore.Queries, subject string, aggregateSubjectID string, aggregateVersion int32, payload map[string]any) error {
 	if payload == nil {
 		payload = map[string]any{}
 	}
@@ -630,19 +655,15 @@ func (s SQLStore) insertOutbox(ctx context.Context, q queryer, subject string, a
 	if err != nil {
 		return fmt.Errorf("%w: marshal profile outbox payload: %v", ErrStoreUnavailable, err)
 	}
-	_, err = q.Exec(ctx, `
-INSERT INTO profile_domain_event_outbox (
-    event_id, aggregate_subject_id, aggregate_version, subject, payload, traceparent, created_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		eventID.String(),
-		aggregateSubjectID,
-		aggregateVersion,
-		subject,
-		data,
-		traceparentFromContext(ctx),
-		s.now(),
-	)
-	if err != nil {
+	if err := q.InsertOutboxEvent(ctx, profilestore.InsertOutboxEventParams{
+		EventID:            eventID,
+		AggregateSubjectID: aggregateSubjectID,
+		AggregateVersion:   aggregateVersion,
+		Subject:            subject,
+		Payload:            data,
+		Traceparent:        traceparentFromContext(ctx),
+		CreatedAt:          timestamptz(s.now()),
+	}); err != nil {
 		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	return nil
@@ -711,6 +732,17 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func timestamptz(value time.Time) pgtype.Timestamptz {
+	return pgtype.Timestamptz{Time: value.UTC(), Valid: true}
+}
+
+func requiredTime(value pgtype.Timestamptz) (time.Time, error) {
+	if !value.Valid {
+		return time.Time{}, fmt.Errorf("%w: required timestamp was null", ErrStoreUnavailable)
+	}
+	return value.Time.UTC(), nil
 }
 
 func rollback(ctx context.Context, tx pgx.Tx) {

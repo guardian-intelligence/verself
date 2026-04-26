@@ -225,7 +225,7 @@ func validateIdentifierText(field, value string, maxBytes int) error {
 		return fmt.Errorf("%w: %s is too long", ErrInvalidInput, field)
 	}
 	for _, r := range value {
-		if !(r == '-' || r == '_' || r == '.' || unicode.IsLetter(r) || unicode.IsDigit(r)) {
+		if r != '-' && r != '_' && r != '.' && !unicode.IsLetter(r) && !unicode.IsDigit(r) {
 			return fmt.Errorf("%w: %s contains unsupported characters", ErrInvalidInput, field)
 		}
 	}

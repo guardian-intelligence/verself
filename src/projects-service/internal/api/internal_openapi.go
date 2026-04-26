@@ -12,7 +12,7 @@ import (
 
 func NewInternalAPI(mux *http.ServeMux, version, serverURL string, svc *projects.Service) huma.API {
 	config := huma.DefaultConfig("Projects Service Internal API", version)
-	config.OpenAPI.Servers = []*huma.Server{{URL: serverURL}}
+	config.Servers = []*huma.Server{{URL: serverURL}}
 	api := humago.New(mux, config)
 	applyInternalSecurityScheme(api)
 	RegisterInternalRoutes(api, svc)

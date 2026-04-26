@@ -3,7 +3,6 @@ package identity
 import (
 	"context"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -13,12 +12,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/lib/pq"
+	"github.com/jackc/pgx/v5"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
+
+	identitystore "github.com/verself/identity-service/internal/store"
 )
 
 const (
@@ -81,22 +82,17 @@ type domainLedgerProjection struct {
 }
 
 func (s SQLStore) GetOrgACLState(ctx context.Context, orgID, actor string) (OrgACLState, error) {
-	if s.DB == nil {
+	if s.PG == nil {
 		return OrgACLState{}, ErrStoreUnavailable
 	}
-	var state OrgACLState
-	err := s.DB.QueryRowContext(ctx, `
-SELECT org_id, version, updated_at, updated_by
-FROM identity_org_acl_state
-WHERE org_id = $1`, orgID).Scan(&state.OrgID, &state.Version, &state.UpdatedAt, &state.UpdatedBy)
-	if errors.Is(err, sql.ErrNoRows) {
+	row, err := s.q().GetOrgACLState(ctx, identitystore.GetOrgACLStateParams{OrgID: orgID})
+	if errors.Is(err, pgx.ErrNoRows) {
 		return OrgACLState{OrgID: orgID, Version: 1, UpdatedAt: time.Now().UTC(), UpdatedBy: actor}, nil
 	}
 	if err != nil {
 		return OrgACLState{}, fmt.Errorf("get identity org acl state: %w", err)
 	}
-	state.UpdatedAt = state.UpdatedAt.UTC()
-	return state, nil
+	return orgACLStateFromRow(row)
 }
 
 func (s SQLStore) UpdateMemberRolesCommand(ctx context.Context, command UpdateMemberRolesCommand, directory Directory, projectID string) (out UpdateMemberRolesResult, err error) {
@@ -108,7 +104,7 @@ func (s SQLStore) UpdateMemberRolesCommand(ctx context.Context, command UpdateMe
 		}
 		span.End()
 	}()
-	if s.DB == nil {
+	if s.PG == nil {
 		return UpdateMemberRolesResult{}, ErrStoreUnavailable
 	}
 	if directory == nil {
@@ -128,13 +124,14 @@ func (s SQLStore) UpdateMemberRolesCommand(ctx context.Context, command UpdateMe
 		attribute.String("identity.conflict_policy", memberRolesConflictPolicy),
 	)
 
-	tx, err := s.DB.BeginTx(ctx, nil)
+	tx, err := s.PG.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return UpdateMemberRolesResult{}, fmt.Errorf("begin identity member roles command: %w", err)
 	}
-	defer rollback(tx)
+	defer rollback(ctx, tx)
+	q := identitystore.New(tx)
 
-	existing, exists, err := lookupCommandResultTx(ctx, tx, commandID)
+	existing, exists, err := lookupCommandResultTx(ctx, q, commandID)
 	if err != nil {
 		return UpdateMemberRolesResult{}, err
 	}
@@ -146,19 +143,19 @@ func (s SQLStore) UpdateMemberRolesCommand(ctx context.Context, command UpdateMe
 		if replayErr != nil {
 			return UpdateMemberRolesResult{}, replayErr
 		}
-		if err := tx.Commit(); err != nil {
+		if err := tx.Commit(ctx); err != nil {
 			return UpdateMemberRolesResult{}, fmt.Errorf("commit replay identity member roles command: %w", err)
 		}
 		span.SetAttributes(attribute.String("identity.result", "replayed"), attribute.Int("identity.actual_org_acl_version", int(result.OrgACLState.Version)))
 		return result, nil
 	}
 
-	state, err := ensureOrgACLStateForUpdateTx(ctx, tx, command.OrgID, command.ActorID)
+	state, err := ensureOrgACLStateForUpdateTx(ctx, q, command.OrgID, command.ActorID)
 	if err != nil {
 		return UpdateMemberRolesResult{}, err
 	}
 	if state.Version != command.ExpectedOrgACLVersion {
-		result, writeErr := writeMemberRolesCommandOutcomeTx(ctx, tx, memberRolesOutcomeInput{
+		result, writeErr := writeMemberRolesCommandOutcomeTx(ctx, q, memberRolesOutcomeInput{
 			Command:             command,
 			CommandID:           commandID,
 			IdempotencyKeyHash:  idempotencyKeyHash,
@@ -180,7 +177,7 @@ func (s SQLStore) UpdateMemberRolesCommand(ctx context.Context, command UpdateMe
 		if writeErr != nil {
 			return UpdateMemberRolesResult{}, writeErr
 		}
-		if err := tx.Commit(); err != nil {
+		if err := tx.Commit(ctx); err != nil {
 			return UpdateMemberRolesResult{}, fmt.Errorf("commit rejected identity member roles command: %w", err)
 		}
 		span.SetAttributes(attribute.String("identity.result", "rejected"), attribute.String("identity.reason", "stale_org_acl_version"), attribute.Int("identity.actual_org_acl_version", int(state.Version)))
@@ -194,7 +191,7 @@ func (s SQLStore) UpdateMemberRolesCommand(ctx context.Context, command UpdateMe
 		return UpdateMemberRolesResult{}, err
 	}
 	if !stringSlicesEqual(currentRoles, command.ExpectedRoleKeys) {
-		result, writeErr := writeMemberRolesCommandOutcomeTx(ctx, tx, memberRolesOutcomeInput{
+		result, writeErr := writeMemberRolesCommandOutcomeTx(ctx, q, memberRolesOutcomeInput{
 			Command:             command,
 			CommandID:           commandID,
 			IdempotencyKeyHash:  idempotencyKeyHash,
@@ -216,7 +213,7 @@ func (s SQLStore) UpdateMemberRolesCommand(ctx context.Context, command UpdateMe
 		if writeErr != nil {
 			return UpdateMemberRolesResult{}, writeErr
 		}
-		if err := tx.Commit(); err != nil {
+		if err := tx.Commit(ctx); err != nil {
 			return UpdateMemberRolesResult{}, fmt.Errorf("commit rejected identity member roles command: %w", err)
 		}
 		span.SetAttributes(attribute.String("identity.result", "rejected"), attribute.String("identity.reason", "stale_member_roles"))
@@ -232,10 +229,12 @@ func (s SQLStore) UpdateMemberRolesCommand(ctx context.Context, command UpdateMe
 		}
 		nextVersion = state.Version + 1
 		eventType = memberRolesAcceptedEvent
-		if _, err := tx.ExecContext(ctx, `
-UPDATE identity_org_acl_state
-SET version = $2, updated_at = $3, updated_by = $4
-WHERE org_id = $1`, command.OrgID, nextVersion, time.Now().UTC(), command.ActorID); err != nil {
+		if err := q.UpdateOrgACLState(ctx, identitystore.UpdateOrgACLStateParams{
+			OrgID:     command.OrgID,
+			Version:   nextVersion,
+			UpdatedAt: timestamptz(time.Now().UTC()),
+			UpdatedBy: command.ActorID,
+		}); err != nil {
 			return UpdateMemberRolesResult{}, fmt.Errorf("update identity org acl version: %w", err)
 		}
 	}
@@ -243,7 +242,7 @@ WHERE org_id = $1`, command.OrgID, nextVersion, time.Now().UTC(), command.ActorI
 	if len(member.RoleKeys) == 0 {
 		member.RoleKeys = append([]string(nil), command.RoleKeys...)
 	}
-	result, err := writeMemberRolesCommandOutcomeTx(ctx, tx, memberRolesOutcomeInput{
+	result, err := writeMemberRolesCommandOutcomeTx(ctx, q, memberRolesOutcomeInput{
 		Command:             command,
 		CommandID:           commandID,
 		IdempotencyKeyHash:  idempotencyKeyHash,
@@ -266,7 +265,7 @@ WHERE org_id = $1`, command.OrgID, nextVersion, time.Now().UTC(), command.ActorI
 	if err != nil {
 		return UpdateMemberRolesResult{}, err
 	}
-	if err := tx.Commit(); err != nil {
+	if err := tx.Commit(ctx); err != nil {
 		return UpdateMemberRolesResult{}, fmt.Errorf("commit accepted identity member roles command: %w", err)
 	}
 	span.SetAttributes(attribute.String("identity.result", "accepted"), attribute.Int("identity.actual_org_acl_version", int(nextVersion)))
@@ -294,7 +293,7 @@ type memberRolesOutcomeInput struct {
 	Member              Member
 }
 
-func writeMemberRolesCommandOutcomeTx(ctx context.Context, tx *sql.Tx, input memberRolesOutcomeInput) (UpdateMemberRolesResult, error) {
+func writeMemberRolesCommandOutcomeTx(ctx context.Context, q *identitystore.Queries, input memberRolesOutcomeInput) (UpdateMemberRolesResult, error) {
 	if input.OccurredAt.IsZero() {
 		input.OccurredAt = time.Now().UTC()
 	}
@@ -320,129 +319,106 @@ func writeMemberRolesCommandOutcomeTx(ctx context.Context, tx *sql.Tx, input mem
 	if err != nil {
 		return UpdateMemberRolesResult{}, fmt.Errorf("marshal identity command payload: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `
-INSERT INTO identity_command_results (
-    command_id, org_id, actor_id, operation_id, idempotency_key_hash,
-    request_hash, result, reason, aggregate_kind, aggregate_id, aggregate_version,
-    target_user_id, requested_role_keys, expected_role_keys, actual_role_keys, created_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
-		input.CommandID,
-		input.Command.OrgID,
-		input.Command.ActorID,
-		input.Command.OperationID,
-		input.IdempotencyKeyHash,
-		input.RequestHash,
-		input.Result,
-		input.Reason,
-		orgACLAggregateKind,
-		input.Command.OrgID,
-		input.AggregateVersion,
-		input.Command.UserID,
-		pq.StringArray(input.RequestedRoleKeys),
-		pq.StringArray(input.ExpectedRoleKeys),
-		pq.StringArray(input.ActualRoleKeys),
-		input.OccurredAt,
-	); err != nil {
+	if err := q.InsertCommandResult(ctx, identitystore.InsertCommandResultParams{
+		CommandID:          input.CommandID,
+		OrgID:              input.Command.OrgID,
+		ActorID:            input.Command.ActorID,
+		OperationID:        input.Command.OperationID,
+		IdempotencyKeyHash: input.IdempotencyKeyHash,
+		RequestHash:        input.RequestHash,
+		Result:             input.Result,
+		Reason:             input.Reason,
+		AggregateKind:      orgACLAggregateKind,
+		AggregateID:        input.Command.OrgID,
+		AggregateVersion:   input.AggregateVersion,
+		TargetUserID:       input.Command.UserID,
+		RequestedRoleKeys:  nonNilStringSlice(input.RequestedRoleKeys),
+		ExpectedRoleKeys:   nonNilStringSlice(input.ExpectedRoleKeys),
+		ActualRoleKeys:     nonNilStringSlice(input.ActualRoleKeys),
+		CreatedAt:          timestamptz(input.OccurredAt),
+	}); err != nil {
 		return UpdateMemberRolesResult{}, fmt.Errorf("insert identity command result: %w", err)
 	}
 	eventID := deterministicEventID(input.CommandID, input.EventType)
-	if _, err := tx.ExecContext(ctx, `
-INSERT INTO identity_domain_event_outbox (
-    event_id, command_id, event_type, org_id, actor_id, operation_id, idempotency_key_hash,
-    aggregate_kind, aggregate_id, aggregate_version, target_kind, target_id,
-    result, reason, conflict_policy, expected_version, actual_version,
-    expected_hash, actual_hash, requested_hash, changed_fields, payload,
-    traceparent, occurred_at, next_attempt_at
-) VALUES (
-    $1, $2, $3, $4, $5, $6, $7,
-    $8, $9, $10, $11, $12,
-    $13, $14, $15, $16, $17,
-    $18, $19, $20, $21, $22,
-    $23, $24, $24
-)`,
-		eventID,
-		input.CommandID,
-		input.EventType,
-		input.Command.OrgID,
-		input.Command.ActorID,
-		input.Command.OperationID,
-		input.IdempotencyKeyHash,
-		orgACLAggregateKind,
-		input.Command.OrgID,
-		input.AggregateVersion,
-		"organization_member",
-		input.Command.UserID,
-		input.Result,
-		input.Reason,
-		memberRolesConflictPolicy,
-		input.ExpectedVersion,
-		input.ActualVersion,
-		roleSetHash(input.ExpectedRoleKeys),
-		roleSetHash(input.ActualRoleKeys),
-		roleSetHash(input.RequestedRoleKeys),
-		pq.StringArray(input.ChangedFields),
-		string(payloadJSON),
-		input.Traceparent,
-		input.OccurredAt,
-	); err != nil {
+	if err := q.InsertDomainEventOutbox(ctx, identitystore.InsertDomainEventOutboxParams{
+		EventID:            eventID,
+		CommandID:          input.CommandID,
+		EventType:          input.EventType,
+		OrgID:              input.Command.OrgID,
+		ActorID:            input.Command.ActorID,
+		OperationID:        input.Command.OperationID,
+		IdempotencyKeyHash: input.IdempotencyKeyHash,
+		AggregateKind:      orgACLAggregateKind,
+		AggregateID:        input.Command.OrgID,
+		AggregateVersion:   input.AggregateVersion,
+		TargetKind:         "organization_member",
+		TargetID:           input.Command.UserID,
+		Result:             input.Result,
+		Reason:             input.Reason,
+		ConflictPolicy:     memberRolesConflictPolicy,
+		ExpectedVersion:    input.ExpectedVersion,
+		ActualVersion:      input.ActualVersion,
+		ExpectedHash:       roleSetHash(input.ExpectedRoleKeys),
+		ActualHash:         roleSetHash(input.ActualRoleKeys),
+		RequestedHash:      roleSetHash(input.RequestedRoleKeys),
+		ChangedFields:      nonNilStringSlice(input.ChangedFields),
+		Payload:            payloadJSON,
+		Traceparent:        input.Traceparent,
+		OccurredAt:         timestamptz(input.OccurredAt),
+	}); err != nil {
 		return UpdateMemberRolesResult{}, fmt.Errorf("insert identity domain event outbox: %w", err)
 	}
 	return result, nil
 }
 
-func ensureOrgACLStateForUpdateTx(ctx context.Context, tx *sql.Tx, orgID, actor string) (OrgACLState, error) {
+func ensureOrgACLStateForUpdateTx(ctx context.Context, q *identitystore.Queries, orgID, actor string) (OrgACLState, error) {
 	now := time.Now().UTC()
-	if _, err := tx.ExecContext(ctx, `
-INSERT INTO identity_org_acl_state (org_id, version, updated_at, updated_by)
-VALUES ($1, 1, $2, $3)
-ON CONFLICT (org_id) DO NOTHING`, orgID, now, actor); err != nil {
+	if err := q.EnsureOrgACLState(ctx, identitystore.EnsureOrgACLStateParams{
+		OrgID:     orgID,
+		UpdatedAt: timestamptz(now),
+		UpdatedBy: actor,
+	}); err != nil {
 		return OrgACLState{}, fmt.Errorf("ensure identity org acl state: %w", err)
 	}
-	var state OrgACLState
-	if err := tx.QueryRowContext(ctx, `
-SELECT org_id, version, updated_at, updated_by
-FROM identity_org_acl_state
-WHERE org_id = $1
-FOR UPDATE`, orgID).Scan(&state.OrgID, &state.Version, &state.UpdatedAt, &state.UpdatedBy); err != nil {
+	row, err := q.GetOrgACLStateForUpdate(ctx, identitystore.GetOrgACLStateForUpdateParams{OrgID: orgID})
+	if err != nil {
 		return OrgACLState{}, fmt.Errorf("lock identity org acl state: %w", err)
 	}
-	state.UpdatedAt = state.UpdatedAt.UTC()
-	return state, nil
+	return orgACLStateFromRow(row)
 }
 
-func lookupCommandResultTx(ctx context.Context, tx *sql.Tx, commandID uuid.UUID) (commandResultRow, bool, error) {
-	var (
-		row            commandResultRow
-		requestedRoles pq.StringArray
-		expectedRoles  pq.StringArray
-		actualRoles    pq.StringArray
-	)
-	err := tx.QueryRowContext(ctx, `
-SELECT command_id, request_hash, result, reason, aggregate_version, target_user_id,
-       requested_role_keys, expected_role_keys, actual_role_keys
-FROM identity_command_results
-WHERE command_id = $1
-FOR UPDATE`, commandID).Scan(
-		&row.CommandID,
-		&row.RequestHash,
-		&row.Result,
-		&row.Reason,
-		&row.AggregateVersion,
-		&row.TargetUserID,
-		&requestedRoles,
-		&expectedRoles,
-		&actualRoles,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
+func orgACLStateFromRow(row identitystore.IdentityOrgAclState) (OrgACLState, error) {
+	updatedAt, err := requiredTime(row.UpdatedAt, "identity_org_acl_state.updated_at")
+	if err != nil {
+		return OrgACLState{}, err
+	}
+	return OrgACLState{
+		OrgID:     row.OrgID,
+		Version:   row.Version,
+		UpdatedAt: updatedAt,
+		UpdatedBy: row.UpdatedBy,
+	}, nil
+}
+
+func lookupCommandResultTx(ctx context.Context, q *identitystore.Queries, commandID uuid.UUID) (commandResultRow, bool, error) {
+	row, err := q.LookupCommandResultForUpdate(ctx, identitystore.LookupCommandResultForUpdateParams{CommandID: commandID})
+	if errors.Is(err, pgx.ErrNoRows) {
 		return commandResultRow{}, false, nil
 	}
 	if err != nil {
 		return commandResultRow{}, false, fmt.Errorf("lookup identity command result: %w", err)
 	}
-	row.RequestedRoles = append([]string(nil), requestedRoles...)
-	row.ExpectedRoles = append([]string(nil), expectedRoles...)
-	row.ActualRoles = append([]string(nil), actualRoles...)
-	return row, true, nil
+	return commandResultRow{
+		CommandID:        row.CommandID,
+		RequestHash:      row.RequestHash,
+		Result:           row.Result,
+		Reason:           row.Reason,
+		AggregateVersion: row.AggregateVersion,
+		TargetUserID:     row.TargetUserID,
+		RequestedRoles:   append([]string(nil), row.RequestedRoleKeys...),
+		ExpectedRoles:    append([]string(nil), row.ExpectedRoleKeys...),
+		ActualRoles:      append([]string(nil), row.ActualRoleKeys...),
+	}, true, nil
 }
 
 func replayMemberRolesResult(ctx context.Context, directory Directory, command UpdateMemberRolesCommand, projectID string, existing commandResultRow) (UpdateMemberRolesResult, error) {
@@ -460,6 +436,13 @@ func replayMemberRolesResult(ctx context.Context, directory Directory, command U
 			Version: existing.AggregateVersion,
 		},
 	}, nil
+}
+
+func nonNilStringSlice(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return append([]string(nil), values...)
 }
 
 func currentAssignableMember(ctx context.Context, directory Directory, orgID, projectID, userID string) (Member, []string, error) {
@@ -551,7 +534,7 @@ func (s SQLStore) ProjectPendingDomainLedger(ctx context.Context, limit int) (pr
 	if limit <= 0 || limit > 1000 {
 		limit = 100
 	}
-	if s.DB == nil {
+	if s.PG == nil {
 		return 0, ErrStoreUnavailable
 	}
 	if s.CH == nil {
@@ -566,89 +549,56 @@ func (s SQLStore) ProjectPendingDomainLedger(ctx context.Context, limit int) (pr
 		span.SetAttributes(attribute.Int("identity.projected_count", projected))
 		span.End()
 	}()
-	tx, err := s.DB.BeginTx(ctx, nil)
+	tx, err := s.PG.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return 0, fmt.Errorf("begin identity domain ledger projection: %w", err)
 	}
-	defer rollback(tx)
-	rows, err := tx.QueryContext(ctx, `
-SELECT event_id, occurred_at, event_type, org_id, actor_id, operation_id, command_id,
-       idempotency_key_hash, aggregate_kind, aggregate_id, aggregate_version,
-       target_kind, target_id, result, reason, conflict_policy, expected_version,
-       actual_version, expected_hash, actual_hash, requested_hash, changed_fields,
-       payload::text, traceparent
-FROM identity_domain_event_outbox
-WHERE projected_at IS NULL AND next_attempt_at <= now()
-ORDER BY occurred_at, event_id
-LIMIT $1
-FOR UPDATE SKIP LOCKED`, limit)
+	defer rollback(ctx, tx)
+	q := identitystore.New(tx)
+	rows, err := q.ClaimPendingDomainLedgerEvents(ctx, identitystore.ClaimPendingDomainLedgerEventsParams{LimitCount: int32(limit)})
 	if err != nil {
 		return 0, fmt.Errorf("select identity domain ledger outbox: %w", err)
 	}
-	defer rows.Close()
-	claimed := make([]domainLedgerProjection, 0, limit)
-	for rows.Next() {
-		var (
-			row                    domainLedgerProjection
-			aggregateVersion       int32
-			expectedVersion        int32
-			actualVersion          int32
-			changedFields          pq.StringArray
-			payloadJSON            string
-			eventIDText, commandID string
-		)
-		if err := rows.Scan(
-			&eventIDText,
-			&row.OccurredAt,
-			&row.EventType,
-			&row.OrgID,
-			&row.ActorID,
-			&row.OperationID,
-			&commandID,
-			&row.IdempotencyKeyHash,
-			&row.AggregateKind,
-			&row.AggregateID,
-			&aggregateVersion,
-			&row.TargetKind,
-			&row.TargetID,
-			&row.Result,
-			&row.Reason,
-			&row.ConflictPolicy,
-			&expectedVersion,
-			&actualVersion,
-			&row.ExpectedHash,
-			&row.ActualHash,
-			&row.RequestedHash,
-			&changedFields,
-			&payloadJSON,
-			&row.Traceparent,
-		); err != nil {
-			return 0, fmt.Errorf("scan identity domain ledger outbox: %w", err)
-		}
-		row.EventID, err = uuid.Parse(eventIDText)
+	claimed := make([]domainLedgerProjection, 0, len(rows))
+	for _, outbox := range rows {
+		occurredAt, err := requiredTime(outbox.OccurredAt, "identity_domain_event_outbox.occurred_at")
 		if err != nil {
-			return 0, fmt.Errorf("parse identity domain ledger event_id: %w", err)
+			return 0, err
 		}
-		row.CommandID, err = uuid.Parse(commandID)
-		if err != nil {
-			return 0, fmt.Errorf("parse identity domain ledger command_id: %w", err)
+		row := domainLedgerProjection{
+			RecordedAt:         time.Now().UTC(),
+			OccurredAt:         occurredAt,
+			SchemaVersion:      domainLedgerSchemaVersion,
+			EventID:            outbox.EventID,
+			EventType:          outbox.EventType,
+			ServiceName:        domainLedgerServiceName,
+			OrgID:              outbox.OrgID,
+			ActorID:            outbox.ActorID,
+			OperationID:        outbox.OperationID,
+			CommandID:          outbox.CommandID,
+			IdempotencyKeyHash: outbox.IdempotencyKeyHash,
+			AggregateKind:      outbox.AggregateKind,
+			AggregateID:        outbox.AggregateID,
+			AggregateVersion:   uint32(maxInt32(outbox.AggregateVersion, 0)),
+			TargetKind:         outbox.TargetKind,
+			TargetID:           outbox.TargetID,
+			Result:             outbox.Result,
+			Reason:             outbox.Reason,
+			ConflictPolicy:     outbox.ConflictPolicy,
+			ExpectedVersion:    uint32(maxInt32(outbox.ExpectedVersion, 0)),
+			ActualVersion:      uint32(maxInt32(outbox.ActualVersion, 0)),
+			ExpectedHash:       outbox.ExpectedHash,
+			ActualHash:         outbox.ActualHash,
+			RequestedHash:      outbox.RequestedHash,
+			ChangedFields:      append([]string(nil), outbox.ChangedFields...),
+			PayloadJSON:        outbox.PayloadJson,
+			Traceparent:        outbox.Traceparent,
 		}
-		row.RecordedAt = time.Now().UTC()
-		row.SchemaVersion = domainLedgerSchemaVersion
-		row.ServiceName = domainLedgerServiceName
-		row.AggregateVersion = uint32(maxInt32(aggregateVersion, 0))
-		row.ExpectedVersion = uint32(maxInt32(expectedVersion, 0))
-		row.ActualVersion = uint32(maxInt32(actualVersion, 0))
-		row.ChangedFields = append([]string(nil), changedFields...)
 		sort.Strings(row.ChangedFields)
-		row.PayloadJSON = payloadJSON
 		claimed = append(claimed, row)
 	}
-	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("identity domain ledger outbox rows: %w", err)
-	}
 	if len(claimed) == 0 {
-		return 0, tx.Commit()
+		return 0, tx.Commit(ctx)
 	}
 	for _, row := range claimed {
 		rowCtx := ctx
@@ -670,8 +620,8 @@ FOR UPDATE SKIP LOCKED`, limit)
 				rowSpan.RecordError(insertErr)
 				rowSpan.SetStatus(codes.Error, insertErr.Error())
 				rowSpan.End()
-				_ = markDomainLedgerProjectionFailed(ctx, tx, row.EventID, insertErr)
-				_ = tx.Commit()
+				_ = markDomainLedgerProjectionFailed(ctx, q, row.EventID, insertErr)
+				_ = tx.Commit(ctx)
 				return projected, insertErr
 			}
 		}
@@ -681,47 +631,35 @@ FOR UPDATE SKIP LOCKED`, limit)
 			attribute.String("identity.result", row.Result),
 		)
 		rowSpan.End()
-		if _, err := tx.ExecContext(ctx, `
-UPDATE identity_domain_event_outbox
-SET projected_at = COALESCE(projected_at, now()),
-    attempts = attempts + 1,
-    last_error = ''
-WHERE event_id = $1`, row.EventID); err != nil {
+		if err := q.MarkDomainLedgerProjected(ctx, identitystore.MarkDomainLedgerProjectedParams{EventID: row.EventID}); err != nil {
 			return projected, fmt.Errorf("mark identity domain ledger projected: %w", err)
 		}
 		projected++
 	}
-	return projected, tx.Commit()
+	return projected, tx.Commit(ctx)
 }
 
-func markDomainLedgerProjectionFailed(ctx context.Context, tx *sql.Tx, eventID uuid.UUID, cause error) error {
+func markDomainLedgerProjectionFailed(ctx context.Context, q *identitystore.Queries, eventID uuid.UUID, cause error) error {
 	message := cause.Error()
 	if len(message) > 1000 {
 		message = message[:1000]
 	}
-	_, err := tx.ExecContext(ctx, `
-UPDATE identity_domain_event_outbox
-SET attempts = attempts + 1,
-    last_error = $2,
-    next_attempt_at = now() + interval '1 second'
-WHERE event_id = $1`, eventID, message)
-	return err
+	return q.MarkDomainLedgerProjectionFailed(ctx, identitystore.MarkDomainLedgerProjectionFailedParams{
+		EventID:   eventID,
+		LastError: message,
+	})
 }
 
 func (s SQLStore) domainLedgerEventProjected(ctx context.Context, eventID uuid.UUID) (bool, error) {
-	var found uint8
+	var count uint64
 	err := s.CH.QueryRow(ctx, `
-SELECT 1
+SELECT count()
 FROM verself.domain_update_ledger
-WHERE event_id = $1
-LIMIT 1`, eventID).Scan(&found)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
+WHERE event_id = $1`, eventID).Scan(&count)
 	if err != nil {
 		return false, fmt.Errorf("%w: check identity domain ledger projection: %v", ErrStoreUnavailable, err)
 	}
-	return true, nil
+	return count > 0, nil
 }
 
 func (s SQLStore) insertDomainLedgerClickHouse(ctx context.Context, row domainLedgerProjection) error {

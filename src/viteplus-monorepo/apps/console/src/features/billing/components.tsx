@@ -41,6 +41,13 @@ export function BillingFlashNotice({ intent }: { intent: FlashIntent }) {
           charge.
         </Callout>
       );
+    case "contract_upgrade_requested":
+      return (
+        <Callout tone="success" title="Plan upgrade requested">
+          Billing is collecting the prorated payment. Your upgraded plan will activate once the
+          payment is confirmed.
+        </Callout>
+      );
     case "contract_upgraded":
       return (
         <Callout tone="success" title="Plan upgrade complete">

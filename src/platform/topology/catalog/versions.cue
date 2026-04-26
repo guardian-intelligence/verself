@@ -62,6 +62,7 @@ versions: {
 		golangciLint:                              "2.11.3"
 		gosec:                                     "2.25.0"
 		gofumpt:                                   "0.9.2"
+		sqlc:                                      "1.30.0"
 		protocGenGo:                               "1.36.11"
 		protocGenGoGrpc:                           "1.6.1"
 		crun:                                      "1.14.1"
@@ -376,6 +377,12 @@ devTools: {
 		strategy:    "go_install"
 		go_package:  "mvdan.cc/gofumpt"
 		version_cmd: "gofumpt --version"
+	}
+	sqlc: {
+		version:     versions.development.sqlc
+		strategy:    "go_install"
+		go_package:  "github.com/sqlc-dev/sqlc/cmd/sqlc"
+		version_cmd: "sqlc version"
 	}
 	"protoc-gen-go": {
 		version:     versions.development.protocGenGo
