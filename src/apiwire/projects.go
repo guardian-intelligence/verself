@@ -26,18 +26,19 @@ const (
 )
 
 type Project struct {
-	ProjectID   string       `json:"project_id" format:"uuid"`
-	OrgID       OrgID        `json:"org_id"`
-	Slug        string       `json:"slug"`
-	DisplayName string       `json:"display_name"`
-	Description string       `json:"description"`
-	State       ProjectState `json:"state"`
-	Version     DecimalInt64 `json:"version"`
-	CreatedBy   string       `json:"created_by"`
-	UpdatedBy   string       `json:"updated_by"`
-	CreatedAt   time.Time    `json:"created_at"`
-	UpdatedAt   time.Time    `json:"updated_at"`
-	ArchivedAt  *time.Time   `json:"archived_at,omitempty"`
+	ProjectID          string       `json:"project_id" format:"uuid"`
+	OrgID              OrgID        `json:"org_id"`
+	Slug               string       `json:"slug"`
+	RedirectedFromSlug string       `json:"redirected_from_slug,omitempty"`
+	DisplayName        string       `json:"display_name"`
+	Description        string       `json:"description"`
+	State              ProjectState `json:"state"`
+	Version            DecimalInt64 `json:"version"`
+	CreatedBy          string       `json:"created_by"`
+	UpdatedBy          string       `json:"updated_by"`
+	CreatedAt          time.Time    `json:"created_at"`
+	UpdatedAt          time.Time    `json:"updated_at"`
+	ArchivedAt         *time.Time   `json:"archived_at,omitempty"`
 }
 
 type ProjectList struct {

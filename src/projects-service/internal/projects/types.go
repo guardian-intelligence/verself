@@ -36,18 +36,19 @@ type Principal struct {
 }
 
 type Project struct {
-	ID          uuid.UUID
-	OrgID       uint64
-	Slug        string
-	DisplayName string
-	Description string
-	State       string
-	Version     int64
-	CreatedBy   string
-	UpdatedBy   string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	ArchivedAt  *time.Time
+	ID                 uuid.UUID
+	OrgID              uint64
+	Slug               string
+	RedirectedFromSlug string
+	DisplayName        string
+	Description        string
+	State              string
+	Version            int64
+	CreatedBy          string
+	UpdatedBy          string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	ArchivedAt         *time.Time
 }
 
 type Environment struct {

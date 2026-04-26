@@ -16,6 +16,18 @@ CREATE TABLE projects (
 
 CREATE INDEX projects_org_state_idx ON projects (org_id, state, created_at DESC, project_id DESC);
 
+CREATE TABLE project_slug_redirects (
+    org_id BIGINT NOT NULL CHECK (org_id > 0),
+    slug TEXT NOT NULL CHECK (slug ~ '^[a-z0-9]([a-z0-9-]{0,78}[a-z0-9])?$'),
+    project_id UUID NOT NULL REFERENCES projects (project_id) ON DELETE CASCADE,
+    created_by TEXT NOT NULL CHECK (created_by <> ''),
+    created_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (org_id, slug)
+);
+
+CREATE INDEX project_slug_redirects_project_idx
+    ON project_slug_redirects (project_id, created_at DESC);
+
 CREATE TABLE project_environments (
     environment_id UUID PRIMARY KEY,
     project_id UUID NOT NULL REFERENCES projects (project_id) ON DELETE CASCADE,
