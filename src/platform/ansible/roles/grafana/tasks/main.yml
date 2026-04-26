@@ -1,9 +1,9 @@
 ---
 # Grafana observability UI against the existing ClickHouse store.
 
-- name: Load server tool pins
+- name: Use generated server tool pins
   ansible.builtin.set_fact:
-    grafana_server_tools_pins: "{{ lookup('ansible.builtin.file', deploy_profile_server_tools) | from_json }}"
+    grafana_server_tools_pins: "{{ deploy_profile_server_tools_pins }}"
 
 - name: Verify Grafana binary exists in profile
   ansible.builtin.stat:

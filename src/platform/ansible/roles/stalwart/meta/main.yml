@@ -1,4 +1,3 @@
 ---
-# deploy_profile: provides stalwart binary at verself_bin.
-dependencies:
-  - role: deploy_profile
+# deploy_profile is ordered by the playbooks that invoke this role.
+dependencies: []

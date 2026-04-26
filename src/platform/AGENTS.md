@@ -1,6 +1,6 @@
 # platform
 
-All remote orchestration lives here: Ansible roles + playbooks, OpenTofu modules, operator CLI (`cmd/verself/`, being trimmed in favor of services), pinned binary manifests (`server-tools.json`, `dev-tools.json`).
+All remote orchestration lives here: Ansible roles + playbooks, OpenTofu modules, operator CLI (`cmd/verself/`, being trimmed in favor of services), CUE deployment topology, and pinned controller tool manifests (`dev-tools.json`).
 
 ## Server profile
 
@@ -8,7 +8,7 @@ All server software is managed by the `deploy_profile` Ansible role, which popul
 
 - **Go service binaries** (billing-service, sandbox-rental-service, mailbox-service, identity-service, vm-orchestrator): built on the controller via `go build`, copied to server.
 - **Caddy** (with Coraza WAF plugin): built on the controller via `xcaddy`, copied to server.
-- **Static binaries** (ClickHouse, TigerBeetle, Zitadel, Forgejo, Grafana, grafana-clickhouse-datasource plugin, otelcol-contrib, containerd, Node.js, Stalwart, stalwart-cli): pinned in `server-tools.json` with URLs and SHA256 hashes, downloaded and verified on the server.
+- **Static binaries** (ClickHouse, TigerBeetle, Zitadel, Forgejo, Grafana, grafana-clickhouse-datasource plugin, otelcol-contrib, containerd, Node.js, Stalwart, stalwart-cli): pinned in `topology/`, rendered to generated Ansible vars with URLs and SHA256 hashes, downloaded and verified on the server.
 - **apt packages** (PostgreSQL 16, wireguard-tools): installed from PGDG / Ubuntu repos, symlinked into `verself_bin`.
 
 The only other `apt install` is `zfsutils-linux` (kernel-dependent, must match the running kernel). Ubuntu 24.04 only.

@@ -1,0 +1,175 @@
+---
+- name: Resolve server tool manifest for {{ deploy_profile_tool_name }}
+  ansible.builtin.set_fact:
+    deploy_profile_tool: "{{ deploy_profile_server_tools_pins[deploy_profile_tool_name] }}"
+
+- name: Validate server tool manifest for {{ deploy_profile_tool_name }}
+  ansible.builtin.assert:
+    that:
+      - deploy_profile_tool.version is defined
+      - deploy_profile_tool.version | length > 0
+      - deploy_profile_tool.format is defined
+      - deploy_profile_tool.format in ['tarball', 'zip', 'deb', 'binary']
+      - deploy_profile_tool.deploy_tags is defined
+      - deploy_profile_tool.deploy_tags | type_debug == 'list'
+      - deploy_profile_tool.url is defined
+      - deploy_profile_tool.sha256 is defined
+    fail_msg: "Invalid generated server tool manifest for {{ deploy_profile_tool_name }}"
+
+- name: Resolve server tool binary name for {{ deploy_profile_tool_name }}
+  ansible.builtin.set_fact:
+    deploy_profile_tool_binary_name: >-
+      {{
+        deploy_profile_tool.binary_name
+        | default((deploy_profile_tool.extract_binary | default(deploy_profile_tool_name)) | basename | replace('_', '-'))
+      }}
+
+- name: Install direct binary server tool {{ deploy_profile_tool_name }}
+  ansible.builtin.get_url:
+    url: "{{ deploy_profile_tool.url }}"
+    dest: "{{ verself_bin }}/{{ deploy_profile_tool_binary_name }}"
+    checksum: "sha256:{{ deploy_profile_tool.sha256 }}"
+    mode: "0755"
+  when: deploy_profile_tool.format == 'binary'
+
+- name: Resolve archive path for {{ deploy_profile_tool_name }}
+  ansible.builtin.set_fact:
+    deploy_profile_tool_archive_suffix: >-
+      {{ 'zip' if deploy_profile_tool.format == 'zip' else 'deb' if deploy_profile_tool.format == 'deb' else 'tar.gz' }}
+  when: deploy_profile_tool.format != 'binary'
+
+- name: Resolve archive download path for {{ deploy_profile_tool_name }}
+  ansible.builtin.set_fact:
+    deploy_profile_tool_archive_path: >-
+      {{ deploy_profile_staging_dir }}/{{ deploy_profile_tool_name }}-{{ deploy_profile_tool.version }}.{{ deploy_profile_tool_archive_suffix }}
+  when: deploy_profile_tool.format != 'binary'
+
+- name: Download archived server tool {{ deploy_profile_tool_name }}
+  ansible.builtin.get_url:
+    url: "{{ deploy_profile_tool.url }}"
+    dest: "{{ deploy_profile_tool_archive_path }}"
+    checksum: "sha256:{{ deploy_profile_tool.sha256 }}"
+    mode: "0644"
+  when: deploy_profile_tool.format != 'binary'
+
+- name: Install deb-packaged server tool {{ deploy_profile_tool_name }}
+  when: deploy_profile_tool.format == 'deb'
+  vars:
+    deploy_profile_tool_extract_dir: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_tool_name }}-{{ deploy_profile_tool.version }}"
+  block:
+    - name: Create deb extraction directory for {{ deploy_profile_tool_name }}
+      ansible.builtin.file:
+        path: "{{ deploy_profile_tool_extract_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Extract deb package for {{ deploy_profile_tool_name }}
+      ansible.builtin.command:
+        cmd: >-
+          dpkg-deb -x
+          {{ deploy_profile_tool_archive_path }}
+          {{ deploy_profile_tool_extract_dir }}
+        creates: "{{ deploy_profile_tool_extract_dir }}/{{ deploy_profile_tool.extract_binary }}"
+
+    - name: Copy deb-packaged binary for {{ deploy_profile_tool_name }}
+      ansible.builtin.copy:
+        src: "{{ deploy_profile_tool_extract_dir }}/{{ deploy_profile_tool.extract_binary }}"
+        dest: "{{ verself_bin }}/{{ deploy_profile_tool_binary_name }}"
+        remote_src: true
+        mode: "0755"
+
+- name: Install archived server tool into dedicated directory {{ deploy_profile_tool_name }}
+  when:
+    - deploy_profile_tool.format in ['tarball', 'zip']
+    - deploy_profile_tool.install_dir is defined
+  block:
+    - name: Create install directory for {{ deploy_profile_tool_name }}
+      ansible.builtin.file:
+        path: "{{ deploy_profile_tool.install_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Extract archived server tool {{ deploy_profile_tool_name }}
+      ansible.builtin.unarchive:
+        src: "{{ deploy_profile_tool_archive_path }}"
+        dest: "{{ deploy_profile_tool.install_dir }}"
+        remote_src: true
+        extra_opts: >-
+          {{
+            ['--strip-components=' ~ (deploy_profile_tool.strip_components | string)]
+            if deploy_profile_tool.strip_components is defined
+            else omit
+          }}
+        creates: "{{ deploy_profile_tool.install_dir }}/bin/{{ deploy_profile_tool_binary_name }}"
+
+    - name: Symlink installed server tool {{ deploy_profile_tool_name }}
+      ansible.builtin.file:
+        src: "{{ deploy_profile_tool.install_dir }}/bin/{{ deploy_profile_tool_binary_name }}"
+        dest: "{{ verself_bin }}/{{ deploy_profile_tool_binary_name }}"
+        state: link
+        force: true
+
+- name: Resolve staging extraction marker for {{ deploy_profile_tool_name }}
+  ansible.builtin.set_fact:
+    deploy_profile_tool_extract_creates: >-
+      {{
+        deploy_profile_staging_dir ~ '/' ~ deploy_profile_tool.extract_binary
+        if deploy_profile_tool.extract_binary is defined
+        else deploy_profile_staging_dir ~ '/' ~ deploy_profile_tool.extract_dir
+        if deploy_profile_tool.extract_dir is defined
+        else deploy_profile_staging_dir ~ '/' ~ deploy_profile_tool.binaries[0]
+      }}
+  when:
+    - deploy_profile_tool.format in ['tarball', 'zip']
+    - deploy_profile_tool.install_dir is not defined
+
+- name: Extract archived server tool into staging {{ deploy_profile_tool_name }}
+  ansible.builtin.unarchive:
+    src: "{{ deploy_profile_tool_archive_path }}"
+    dest: "{{ deploy_profile_staging_dir }}"
+    remote_src: true
+    creates: "{{ deploy_profile_tool_extract_creates }}"
+  when:
+    - deploy_profile_tool.format in ['tarball', 'zip']
+    - deploy_profile_tool.install_dir is not defined
+
+- name: Copy extracted single binary for {{ deploy_profile_tool_name }}
+  ansible.builtin.copy:
+    src: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_tool.extract_binary }}"
+    dest: "{{ verself_bin }}/{{ deploy_profile_tool_binary_name }}"
+    remote_src: true
+    mode: "0755"
+  when:
+    - deploy_profile_tool.format in ['tarball', 'zip']
+    - deploy_profile_tool.install_dir is not defined
+    - deploy_profile_tool.extract_binary is defined
+
+- name: Copy extracted binary set for {{ deploy_profile_tool_name }}
+  ansible.builtin.copy:
+    src: >-
+      {{ deploy_profile_staging_dir }}/{{
+        (deploy_profile_tool.extract_dir ~ '/bin/')
+        if deploy_profile_tool.extract_dir is defined
+        else ''
+      }}{{ item }}
+    dest: "{{ verself_bin }}/{{ item }}"
+    remote_src: true
+    mode: "0755"
+  loop: "{{ deploy_profile_tool.binaries | default([]) }}"
+  loop_control:
+    label: "{{ item }}"
+  when:
+    - deploy_profile_tool.format in ['tarball', 'zip']
+    - deploy_profile_tool.install_dir is not defined
+    - deploy_profile_tool.binaries is defined
+
+- name: Create multi-call symlinks for {{ deploy_profile_tool_name }}
+  ansible.builtin.file:
+    src: "{{ verself_bin }}/{{ deploy_profile_tool_binary_name }}"
+    dest: "{{ verself_bin }}/{{ item }}"
+    state: link
+    force: true
+  loop: "{{ deploy_profile_tool.symlinks | default([]) }}"
+  loop_control:
+    label: "{{ item }}"
+  when: deploy_profile_tool.symlinks is defined

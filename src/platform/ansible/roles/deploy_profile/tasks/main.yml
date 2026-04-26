@@ -2,9 +2,78 @@
 # Populate /opt/verself/profile/bin/ with all server binaries.
 # Builds Go/Caddy on the controller and downloads pinned static binaries.
 
-- name: Load server tool pins
+- name: Validate generated deploy profile manifest is loaded
+  ansible.builtin.assert:
+    that:
+      - deploy_profile_go_binaries is defined
+      - deploy_profile_go_binaries | type_debug == 'list'
+      - deploy_profile_server_tools_pins is defined
+      - deploy_profile_server_tools_pins | type_debug == 'dict'
+    fail_msg: >-
+      deploy_profile requires generated topology vars. Run make topology-generate
+      so group_vars/all/generated/topology.yml is fresh.
+
+- name: Resolve requested deploy profile tags
   ansible.builtin.set_fact:
-    deploy_profile_server_tools_pins: "{{ lookup('ansible.builtin.file', deploy_profile_server_tools) | from_json }}"
+    deploy_profile_active_tags: "{{ (ansible_run_tags | default([]) | difference(['all'])) | list }}"
+
+- name: Resolve deploy profile selection mode
+  ansible.builtin.set_fact:
+    deploy_profile_install_all_artifacts: >-
+      {{
+        (deploy_profile_active_tags | length == 0)
+        or ('deploy_profile' in deploy_profile_active_tags)
+      }}
+    deploy_profile_selected_go_binaries: []
+    deploy_profile_selected_server_tool_names: []
+
+- name: Select Go binaries for active deploy tags
+  ansible.builtin.set_fact:
+    deploy_profile_selected_go_binaries: "{{ deploy_profile_selected_go_binaries + [item] }}"
+  loop: "{{ deploy_profile_go_binaries }}"
+  loop_control:
+    label: "{{ item.name | default('unnamed') }}"
+  when: >-
+    deploy_profile_install_all_artifacts | bool
+    or ((item.deploy_tags | default([]) | intersect(deploy_profile_active_tags) | length) > 0)
+
+- name: Select server tools for active deploy tags
+  ansible.builtin.set_fact:
+    deploy_profile_selected_server_tool_names: "{{ deploy_profile_selected_server_tool_names + [item.key] }}"
+  loop: "{{ deploy_profile_server_tools_pins | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: >-
+    deploy_profile_install_all_artifacts | bool
+    or ((item.value.deploy_tags | default([]) | intersect(deploy_profile_active_tags) | length) > 0)
+
+- name: Resolve static server tool selection
+  ansible.builtin.set_fact:
+    deploy_profile_static_server_tool_names:
+      - clickhouse
+      - tigerbeetle
+      - zitadel
+      - openbao
+      - spire
+      - spiffe_helper
+      - nats_server
+      - garage
+      - forgejo
+      - otelcol_contrib
+      - temporal
+      - grafana
+      - stalwart
+      - stalwart_cli
+      - containerd
+
+- name: Resolve selected static server tools
+  ansible.builtin.set_fact:
+    deploy_profile_selected_static_server_tool_names: >-
+      {{
+        deploy_profile_selected_server_tool_names
+        | intersect(deploy_profile_static_server_tool_names)
+        | list
+      }}
 
 - name: Create profile directories
   ansible.builtin.file:
@@ -24,12 +93,16 @@
 
 - name: Include Go binary builds
   ansible.builtin.include_tasks: build_go.yml
+  when: deploy_profile_selected_go_binaries | length > 0
 
 - name: Include Caddy build
   ansible.builtin.include_tasks: build_caddy.yml
+  when: "'caddy' in deploy_profile_selected_server_tool_names"
 
 - name: Include static binary downloads
   ansible.builtin.include_tasks: static_binaries.yml
+  when: deploy_profile_selected_static_server_tool_names | length > 0
 
 - name: Include Node.js installation
   ansible.builtin.include_tasks: nodejs.yml
+  when: "'nodejs' in deploy_profile_selected_server_tool_names"

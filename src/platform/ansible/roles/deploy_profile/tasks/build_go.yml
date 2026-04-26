@@ -17,43 +17,24 @@
       - item.version_ldflags | type_debug == 'bool'
       - item.restart_handlers is defined
       - item.restart_handlers | type_debug == 'list'
-    fail_msg: "deploy_profile_go_binaries entries must define name, package, output_path, cgo_enabled, version_ldflags, and restart_handlers"
-  loop: "{{ deploy_profile_go_binaries }}"
+      - item.deploy_tags is defined
+      - item.deploy_tags | type_debug == 'list'
+    fail_msg: "deploy_profile_go_binaries entries must define name, package, output_path, cgo_enabled, version_ldflags, restart_handlers, and deploy_tags"
+  loop: "{{ deploy_profile_selected_go_binaries }}"
   loop_control:
     label: "{{ item.name | default('unnamed') }}"
 
 - name: Collect Go binary manifest names
   ansible.builtin.set_fact:
-    deploy_profile_go_binary_names: "{{ deploy_profile_go_binaries | map(attribute='name') | list }}"
-    deploy_profile_go_binary_output_paths: "{{ deploy_profile_go_binaries | map(attribute='output_path') | list }}"
+    deploy_profile_go_binary_names: "{{ deploy_profile_selected_go_binaries | map(attribute='name') | list }}"
+    deploy_profile_go_binary_output_paths: "{{ deploy_profile_selected_go_binaries | map(attribute='output_path') | list }}"
 
-- name: Validate Go binary manifest coverage
+- name: Validate selected Go binary manifest uniqueness
   ansible.builtin.assert:
     that:
-      - deploy_profile_go_binary_names | length == 18
       - deploy_profile_go_binary_names | unique | list | length == deploy_profile_go_binary_names | length
       - deploy_profile_go_binary_output_paths | unique | list | length == deploy_profile_go_binary_output_paths | length
-      - deploy_profile_go_binary_names | sort == [
-          'billing-service',
-          'governance-service',
-          'identity-service',
-          'mailbox-service',
-          'notifications-service',
-          'object-storage-secret-sync',
-          'object-storage-service',
-          'profile-service',
-          'projects-service',
-          'sandbox-rental-recurring-worker',
-          'sandbox-rental-service',
-          'secrets-service',
-          'source-code-hosting-service',
-          'tb-inspect',
-          'temporal-bootstrap',
-          'temporal-schema',
-          'verself-temporal-server',
-          'verself-temporal-web'
-        ]
-    fail_msg: "deploy_profile_go_binaries must include each current Go binary exactly once with a unique output_path"
+    fail_msg: "selected deploy_profile_go_binaries must have unique names and output_path values"
 
 - name: Build Go binaries
   delegate_to: localhost
@@ -73,7 +54,7 @@
     GOOS: linux
     GOARCH: amd64
   changed_when: false
-  loop: "{{ deploy_profile_go_binaries }}"
+  loop: "{{ deploy_profile_selected_go_binaries }}"
   loop_control:
     label: "{{ item.name }}"
 
@@ -83,7 +64,7 @@
     dest: "{{ verself_bin }}/{{ item.name }}"
     mode: "0755"
   register: deploy_profile_go_binary_copy_results
-  loop: "{{ deploy_profile_go_binaries }}"
+  loop: "{{ deploy_profile_selected_go_binaries }}"
   loop_control:
     label: "{{ item.name }}"
 
