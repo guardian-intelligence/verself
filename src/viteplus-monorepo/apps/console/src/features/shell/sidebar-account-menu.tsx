@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ClientOnly, Link, useHydrated, useRouter } from "@tanstack/react-router";
-import { Building2, Check, ChevronDown, LoaderCircle, LogOut } from "lucide-react";
+import { Check, ChevronDown, LoaderCircle, LogOut } from "lucide-react";
+import { cn } from "@verself/ui/lib/utils";
 import {
   SignedIn,
   SignedOut,
@@ -63,10 +64,17 @@ function SidebarAccountMenu() {
   const memberCount = useActiveMemberCount();
 
   const orgLabel = activeOrganization ? organizationLabel(activeOrganization) : null;
-  const initials = account.initials || (orgLabel ? orgLabel.slice(0, 2).toUpperCase() : "?");
+  // Hold the trigger blank until the profile resolves. Falling back to
+  // orgID-derived initials/labels caused a visible flash (e.g. "VE" then the
+  // real "CO") on every page load — empty + invisible looks intentional.
+  const ready = account.source === "profile";
+  const initials = ready
+    ? account.initials || (orgLabel ? orgLabel.slice(0, 2).toUpperCase() : "?")
+    : "";
+  const triggerLabel = ready ? account.displayName || orgLabel || "Account" : "";
 
   return (
-    <ClientOnly fallback={<TriggerSkeleton initials={initials} label={account.displayName} />}>
+    <ClientOnly fallback={<TriggerSkeleton />}>
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
@@ -74,7 +82,7 @@ function SidebarAccountMenu() {
               type="button"
               data-testid="shell-account-trigger"
               data-account-source={account.source}
-              aria-busy={account.source === "pending"}
+              aria-busy={!ready}
               className="group/trigger flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 text-left text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-popup-open:bg-sidebar-accent data-popup-open:text-sidebar-accent-foreground"
             >
               <Avatar className="size-5 shrink-0 rounded-md">
@@ -86,7 +94,7 @@ function SidebarAccountMenu() {
                 className="min-w-0 flex-1 truncate text-sm font-medium group-data-[collapsible=icon]:hidden"
                 data-testid="shell-account-display-name"
               >
-                {account.displayName || orgLabel || "Account"}
+                {triggerLabel}
               </span>
               <ChevronDown className="size-3.5 shrink-0 text-muted-foreground group-data-[collapsible=icon]:hidden" />
             </button>
@@ -108,13 +116,17 @@ function SidebarAccountMenu() {
               </Avatar>
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium text-foreground">
-                  {orgLabel ?? account.displayName}
+                  {ready ? (orgLabel ?? account.displayName) : ""}
                 </div>
                 <div
                   className="truncate text-xs text-muted-foreground"
                   data-testid="shell-active-organization"
                 >
-                  {orgLabel ? `Organization · ${formatMemberCount(memberCount)}` : account.email}
+                  {ready
+                    ? orgLabel
+                      ? `Organization · ${formatMemberCount(memberCount)}`
+                      : account.email
+                    : ""}
                 </div>
               </div>
             </div>
@@ -144,31 +156,41 @@ function SidebarAccountMenu() {
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
                 <DropdownMenuLabel className="text-xs text-muted-foreground">
-                  Switch organization
+                  Organization
                 </DropdownMenuLabel>
                 {user.availableOrganizations.map((organization) => {
                   const isActive = organization.orgID === auth.selectedOrgId;
+                  const isSwitchingHere =
+                    organizationSwitcher.isPending &&
+                    organizationSwitcher.variables === organization.orgID;
                   return (
                     <DropdownMenuItem
                       key={organization.orgID}
                       data-testid="shell-organization-switch-item"
                       data-org-id={organization.orgID}
                       data-active={isActive ? "true" : "false"}
-                      disabled={isActive || organizationSwitcher.isPending}
+                      // Skip the disabled prop on the active row so it stays full-opacity;
+                      // clicks are still no-ops via the guard below.
+                      disabled={!isActive && organizationSwitcher.isPending}
                       onClick={() => {
                         if (!isActive) {
                           organizationSwitcher.mutate(organization.orgID);
                         }
                       }}
+                      className={cn(isActive && "text-foreground")}
                     >
-                      {organizationSwitcher.isPending &&
-                      organizationSwitcher.variables === organization.orgID ? (
-                        <LoaderCircle className="animate-spin" />
-                      ) : isActive ? (
-                        <Check />
-                      ) : (
-                        <Building2 />
-                      )}
+                      {/* Fixed-width icon slot so unselected rows align with the
+                          selected row's check/spinner instead of shifting left. */}
+                      <span
+                        className="flex size-4 shrink-0 items-center justify-center"
+                        aria-hidden
+                      >
+                        {isSwitchingHere ? (
+                          <LoaderCircle className="animate-spin" />
+                        ) : isActive ? (
+                          <Check />
+                        ) : null}
+                      </span>
                       <span className="min-w-0 flex-1 truncate">
                         {organizationLabel(organization)}
                       </span>
@@ -194,7 +216,7 @@ function SidebarAccountMenu() {
   );
 }
 
-function TriggerSkeleton({ initials, label }: { readonly initials: string; readonly label: string }) {
+function TriggerSkeleton() {
   return (
     <button
       type="button"
@@ -204,11 +226,9 @@ function TriggerSkeleton({ initials, label }: { readonly initials: string; reado
       className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 text-left text-sm"
     >
       <Avatar className="size-5 shrink-0 rounded-md">
-        <AvatarFallback className="rounded-md text-[10px] font-medium">{initials}</AvatarFallback>
+        <AvatarFallback className="rounded-md text-[10px] font-medium" />
       </Avatar>
-      <span className="min-w-0 flex-1 truncate text-sm font-medium group-data-[collapsible=icon]:hidden">
-        {label}
-      </span>
+      <span className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden" />
       <ChevronDown className="size-3.5 shrink-0 text-muted-foreground group-data-[collapsible=icon]:hidden" />
     </button>
   );

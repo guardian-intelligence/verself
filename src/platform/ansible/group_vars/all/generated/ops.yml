@@ -125,7 +125,8 @@ seed_system_password_overrides: {}
 seed_system_plan_display_name: Sandbox PAYG
 seed_system_plan_entitlements: {}
 seed_system_plan_id: sandbox-default
-seed_system_platform_org_name: verself
+seed_system_platform_org_name: Guardian Intelligence LLC
+seed_system_platform_org_slug: guardian-platform
 seed_system_platform_target_prepaid_units: 500000000000
 seed_system_product_display_name: Sandbox
 seed_system_product_id: sandbox

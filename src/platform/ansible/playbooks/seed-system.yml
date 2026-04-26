@@ -325,6 +325,33 @@
         fail_msg: "Platform or Acme organization could not be resolved from Zitadel."
       tags: [identity, billing]
 
+    # identity-service auto-derives a slug from the display name on first
+    # access. Pre-seed the projection so the platform org gets the branded
+    # guardian-platform slug instead of the derived one.
+    - name: Pin platform organization slug in identity-service projection
+      community.postgresql.postgresql_query:
+        login_host: "{{ topology_endpoints.postgresql.host }}"
+        login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
+        login_user: identity_service
+        login_password: "{{ postgresql_identity_service_password }}"
+        login_db: identity_service
+        query: >-
+          INSERT INTO identity_organizations
+            (org_id, display_name, slug, created_by, updated_by)
+          VALUES (%s, %s, %s, 'system:seed-system', 'system:seed-system')
+          ON CONFLICT (org_id) DO UPDATE
+            SET display_name = EXCLUDED.display_name,
+                slug         = EXCLUDED.slug,
+                updated_by   = EXCLUDED.updated_by,
+                updated_at   = now(),
+                version      = identity_organizations.version + 1
+        positional_args:
+          - "{{ seed_system_orgs.platform.organization_id }}"
+          - "{{ seed_system_platform_org_name }}"
+          - "{{ seed_system_platform_org_slug }}"
+      no_log: true
+      tags: [identity]
+
     - name: Create seed-system credstore directory
       ansible.builtin.file:
         path: "{{ seed_system_credstore_dir }}"
