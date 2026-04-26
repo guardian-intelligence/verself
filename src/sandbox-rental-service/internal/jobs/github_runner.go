@@ -19,11 +19,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/verself/apiwire"
-	"github.com/verself/sandbox-rental-service/internal/scheduler"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/verself/apiwire"
+	"github.com/verself/sandbox-rental-service/internal/scheduler"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 )

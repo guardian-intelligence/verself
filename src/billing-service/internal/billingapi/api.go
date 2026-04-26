@@ -11,10 +11,10 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
+	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"github.com/verself/apiwire"
 	workloadauth "github.com/verself/auth-middleware/workload"
 	"github.com/verself/billing-service/internal/billing"
-	"github.com/spiffe/go-spiffe/v2/spiffeid"
 )
 
 const (

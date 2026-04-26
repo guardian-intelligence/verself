@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"time"
 
-	workloadauth "github.com/verself/auth-middleware/workload"
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
+	workloadauth "github.com/verself/auth-middleware/workload"
 	"go.temporal.io/server/common/rpc/encryption"
 )
 

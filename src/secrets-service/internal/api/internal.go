@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	workloadauth "github.com/verself/auth-middleware/workload"
-	"github.com/verself/secrets-service/internal/secrets"
 	"github.com/google/uuid"
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
+	workloadauth "github.com/verself/auth-middleware/workload"
+	"github.com/verself/secrets-service/internal/secrets"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 )

@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	vmorchestrator "github.com/verself/vm-orchestrator"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	vmorchestrator "github.com/verself/vm-orchestrator"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 )

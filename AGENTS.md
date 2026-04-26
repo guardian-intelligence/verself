@@ -72,8 +72,6 @@ See `docs/product-direction.md`.
 
 How the platform is wired today: service topology, three safety rings, self-hosted mandate + allowed third-party providers (Cloudflare, Latitude.sh, Resend, Stripe), dual-write pattern, billing model summary, supply chain, founder focus areas, bare-metal OS/arch invariants.
 
-**Keywords:** Huma v2, OpenAPI 3.0/3.1, oapi-codegen, @hey-api/openapi-ts, apiwire, SOPS, systemd LoadCredential, credstore, nftables, safety rings, Cloudflare, Latitude.sh, Resend, Stripe, Backblaze, PostgreSQL, ClickHouse, TigerBeetle, Zitadel, Stalwart, ElectricSQL, TanStack DB, dual-write, reconciliation, metering, credits, entitlements, Verdaccio NPM mirror, Forgejo, Ubuntu 24.04, Netbird, 3-node topology, self-hosted, vsock 10790.
-
 See `docs/system-context.md`. Auth, identity, IAM, Zitadel, JWT, SCIM, organization model, three-role (owner/admin/member), API credentials, frontend sessions, OIDC discovery — all in `src/platform/docs/identity-and-iam.md`.
 Verself Go service clients are generated from committed OpenAPI 3.0 specs with `oapi-codegen`; consumers must use those generated `client` or `internalclient` packages, with SPIFFE carried by the underlying `http.Client` instead of handwritten transport code. If a service API shape is missing, add the Huma route/OpenAPI spec and regenerate instead of bypassing the SDK.
 

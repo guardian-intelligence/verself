@@ -21,10 +21,10 @@ import (
 	"sync"
 	"time"
 
-	workloadauth "github.com/verself/auth-middleware/workload"
 	"github.com/google/uuid"
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
+	workloadauth "github.com/verself/auth-middleware/workload"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/attribute"
 )

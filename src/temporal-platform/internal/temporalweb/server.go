@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	workloadauth "github.com/verself/auth-middleware/workload"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"
@@ -27,6 +26,7 @@ import (
 	"github.com/temporalio/ui-server/v2/server/headers"
 	"github.com/temporalio/ui-server/v2/server/route"
 	"github.com/temporalio/ui-server/v2/ui"
+	workloadauth "github.com/verself/auth-middleware/workload"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.temporal.io/api/workflowservice/v1"
