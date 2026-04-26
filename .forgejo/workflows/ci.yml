@@ -20,42 +20,15 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Check out repository
-        run: |
-          set -euo pipefail
-          workspace="${FORGEJO_WORKSPACE:-${GITHUB_WORKSPACE:-}}"
-          if [ -z "$workspace" ] || [ "$workspace" = "/" ]; then
-            echo "invalid Forgejo workspace: ${workspace:-<empty>}" >&2
-            exit 1
-          fi
-          mkdir -p "$workspace"
-          cd "$workspace"
-          server_url="${VERSELF_HOST_SERVICE_HTTP_ORIGIN:-${FORGEJO_SERVER_URL:?}}"
-          repo_url="${server_url%/}/${FORGEJO_REPOSITORY:?}.git"
-          if [ -d .git ]; then
-            git remote set-url origin "$repo_url"
-          else
-            if [ -n "$(find . -mindepth 1 -maxdepth 1 -print -quit)" ]; then
-              echo "Forgejo workspace is not empty and is not a Git checkout: $workspace" >&2
-              exit 1
-            fi
-            git init
-            git remote add origin "$repo_url"
-          fi
-          askpass="$(mktemp)"
-          cleanup() { rm -f "$askpass"; }
-          trap cleanup EXIT
-          cat >"$askpass" <<'SH'
-          #!/usr/bin/env sh
-          case "$1" in
-            *Username*) printf '%s\n' x-access-token ;;
-            *Password*) printf '%s\n' "${FORGEJO_TOKEN:?}" ;;
-            *) printf '\n' ;;
-          esac
-          SH
-          chmod 0700 "$askpass"
-          GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 git fetch --depth=1 origin "${FORGEJO_SHA:?}"
-          git -c advice.detachedHead=false checkout --detach FETCH_HEAD
-          git status --short
+        uses: https://data.forgejo.org/actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: https://data.forgejo.org/actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
 
       - name: Configure pnpm
         run: |
