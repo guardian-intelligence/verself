@@ -71,8 +71,8 @@ for _ in $(seq 1 45); do
       countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.cue.fmt_check') AS fmt_checks,
       countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.cue.vet_schema') AS schema_vets,
       countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.cue.vet_instance') AS instance_vets,
-      countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.cue.export_services') AS exports,
-      countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.ansible.registry_check' AND SpanAttributes['topology.registry_fresh'] = 'true') AS fresh_checks,
+      countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.cue.export_ansible') AS exports,
+      countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.ansible.generated_check' AND SpanAttributes['topology.generated_fresh'] = 'true') AS fresh_checks,
       countIf(StatusCode = 'Error') AS errors
     FROM default.otel_traces
     WHERE Timestamp > now() - INTERVAL 20 MINUTE

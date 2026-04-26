@@ -16,10 +16,8 @@ openbao_key_shares: 3
 openbao_key_threshold: 2
 openbao_oidc_loopback_hosts:
   - "auth.{{ verself_domain }}"
-openbao_spiffe_jwt_mount: spiffe-jwt
 openbao_spiffe_jwt_jwks_url: "{{ spire_jwt_bundle_endpoint_url }}"
 openbao_spiffe_jwt_jwks_ca_pem_path: /etc/spire/bundle-endpoint/ca.pem
-openbao_workload_audience: openbao
 openbao_workload_token_ttl: 15m
 openbao_workload_token_max_ttl: 1h
 openbao_audit_request_headers:

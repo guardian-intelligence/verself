@@ -6,7 +6,7 @@ argument_specs:
       - "Deploys otelcol-contrib, configures OTLP"
       - "receivers plus host and Caddy scraping, and exports logs, traces,"
       - "and metrics into ClickHouse."
-      - "Service ports come from the generated services registry (group_vars/all/generated/services.yml)."
+      - "Service ports come from the generated topology vars (group_vars/all/generated/topology.yml)."
     options:
       verself_bin:
         type: path

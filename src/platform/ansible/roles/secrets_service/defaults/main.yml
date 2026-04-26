@@ -1,6 +1,4 @@
 ---
-secrets_service_subdomain: secrets.api
-secrets_service_domain: "{{ secrets_service_subdomain }}.{{ verself_domain }}"
 secrets_service_auth_issuer_url: "https://auth.{{ verself_domain }}"
 secrets_service_auth_project_name: secrets-service
 secrets_service_openbao_addr: "https://{{ services.openbao.host }}:{{ services.openbao.port }}"

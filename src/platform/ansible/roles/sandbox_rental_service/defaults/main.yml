@@ -1,6 +1,4 @@
 ---
-sandbox_rental_service_subdomain: sandbox.api
-sandbox_rental_service_domain: "{{ sandbox_rental_service_subdomain }}.{{ verself_domain }}"
 sandbox_rental_service_auth_issuer_url: "https://auth.{{ verself_domain }}"
 sandbox_rental_service_auth_project_name: sandbox-rental
 sandbox_rental_service_vm_orchestrator_socket: "{{ firecracker_vm_orchestrator_api_socket | default('/run/vm-orchestrator/api.sock', true) }}"

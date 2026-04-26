@@ -195,7 +195,7 @@ All server software is managed by the `deploy_profile` Ansible role. It populate
 
 - **Go service binaries** (billing-service, sandbox-rental-service, mailbox-service): built on the controller via `go build`, copied to server.
 - **Caddy** (with Coraza WAF plugin): built on the controller via `xcaddy`, copied to server.
-- **Static binaries** (ClickHouse, TigerBeetle, Zitadel, Forgejo, Grafana, grafana-clickhouse-datasource plugin, otelcol-contrib, containerd, Node.js, Stalwart, stalwart-cli): pinned in `src/platform/server-tools.json` with URLs and SHA256 hashes, downloaded and verified on the server.
+- **Static binaries** (ClickHouse, TigerBeetle, Zitadel, Forgejo, Grafana, grafana-clickhouse-datasource plugin, otelcol-contrib, containerd, Node.js, Stalwart, stalwart-cli): pinned in `src/platform/topology`, rendered to generated Ansible vars with URLs and SHA256 hashes, downloaded and verified on the server.
 - **apt packages** (PostgreSQL 16, wireguard-tools): installed from PGDG/Ubuntu repos, symlinked into `verself_bin`.
 
 The only other `apt install` is `zfsutils-linux` (kernel-dependent, must match the running kernel).

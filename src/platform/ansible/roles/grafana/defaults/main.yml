@@ -1,7 +1,5 @@
 ---
 # Grafana defaults.
-grafana_subdomain: dashboard
-grafana_domain: "{{ grafana_subdomain }}.{{ verself_domain }}"
 
 grafana_install_dir: /opt/verself/grafana
 grafana_config_dir: /etc/grafana

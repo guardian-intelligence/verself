@@ -1,12 +1,6 @@
 ---
 # Forgejo defaults.
 
-# Subdomain prefix for the Forgejo git server.
-forgejo_subdomain: git
-
-# Full domain: auto-derived as <subdomain>.<verself_domain>.
-forgejo_domain: "{{ forgejo_subdomain }}.{{ verself_domain }}"
-
 # Zitadel OIDC integration
 forgejo_auth_project_name: forgejo
 forgejo_auth_app_name: forgejo

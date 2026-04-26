@@ -1,8 +1,6 @@
 ---
 # Zitadel defaults.
 zitadel_config_dir: /etc/zitadel
-zitadel_subdomain: auth
-zitadel_domain: "{{ zitadel_subdomain }}.{{ verself_domain }}"
 
 # SMTP (Resend)
 zitadel_smtp_host: "smtp.resend.com:465"

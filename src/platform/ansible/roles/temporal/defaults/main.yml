@@ -37,8 +37,6 @@ temporal_namespace_role_bindings:
     namespace: "{{ temporal_billing_namespace }}"
     role: admin
 
-temporal_web_subdomain: temporal
-temporal_web_domain: "{{ temporal_web_subdomain }}.{{ verself_domain }}"
 temporal_web_default_namespace: "{{ temporal_sandbox_namespace }}"
 temporal_web_disable_write_actions: true
 temporal_web_oidc_scopes:

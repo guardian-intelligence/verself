@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Cross-check declared services against live listeners on the box.
 
-Declared source: src/platform/ansible/group_vars/all/generated/services.yml
+Declared source: src/platform/ansible/group_vars/all/generated/topology.yml
 Live source: `sudo ss -Hltnp` on the inventory host (TCP listening sockets).
 
 Output modes (FORMAT env):
@@ -32,7 +32,7 @@ from typing import Iterable
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SERVICES_YAML = REPO_ROOT / "src/platform/ansible/group_vars/all/generated/services.yml"
+SERVICES_YAML = REPO_ROOT / "src/platform/ansible/group_vars/all/generated/topology.yml"
 INVENTORY = REPO_ROOT / "src/platform/ansible/inventory/hosts.ini"
 
 # Ports in these ranges are "ours" — an undeclared listener here is drift.
@@ -395,7 +395,7 @@ def render_nftables(report: Report) -> str:
 
     lines: list[str] = []
     lines.append("#!/usr/sbin/nft -f")
-    lines.append("# Derived from src/platform/ansible/group_vars/all/generated/services.yml")
+    lines.append("# Derived from src/platform/ansible/group_vars/all/generated/topology.yml")
     lines.append("# SUGGESTION ONLY — authoritative rules live in Ansible role templates.")
     lines.append("")
     lines.append("table inet verself_services_suggested")

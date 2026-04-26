@@ -1,6 +1,4 @@
 ---
-mailbox_service_subdomain: mail.api
-mailbox_service_domain: "{{ mailbox_service_subdomain }}.{{ verself_domain }}"
 mailbox_service_auth_issuer_url: "https://auth.{{ verself_domain }}"
 mailbox_service_auth_project_name: mailbox-service
 mailbox_service_force_schema_reset: false

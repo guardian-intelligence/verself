@@ -6,8 +6,6 @@ billing_service_tigerbeetle_replica_id: 0
 billing_service_tigerbeetle_replica_count: 1
 billing_service_force_ledger_reset: false
 
-billing_service_subdomain: billing.api
-billing_service_domain: "{{ billing_service_subdomain }}.{{ verself_domain }}"
 billing_service_pg_database: billing
 billing_service_auth_issuer_url: "https://auth.{{ verself_domain }}"
 billing_service_auth_project_name: billing

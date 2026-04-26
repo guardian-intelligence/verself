@@ -1,6 +1,4 @@
 ---
-identity_service_subdomain: identity.api
-identity_service_domain: "{{ identity_service_subdomain }}.{{ verself_domain }}"
 identity_service_auth_issuer_url: "https://auth.{{ verself_domain }}"
 identity_service_auth_project_name: identity-service
 identity_service_zitadel_base_url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}"

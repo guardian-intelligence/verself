@@ -21,7 +21,7 @@
     that: "'16.' in postgresql_version_output.stdout"
     fail_msg: >-
       Expected PostgreSQL 16.x, got: {{ postgresql_version_output.stdout }}.
-      Update server-tools.json or adjust the version assertion.
+      Update src/platform/topology artifact pins or adjust the version assertion.
 
 # --- System user ---
 
@@ -310,6 +310,65 @@
         - temporal
       loop_control:
         label: "{{ item }}"
+
+    - name: Discover generated PostgreSQL budget roles present in cluster
+      community.postgresql.postgresql_query:
+        query: >-
+          SELECT rolname
+          FROM pg_roles
+          ORDER BY rolname
+      register: postgresql_existing_budget_roles
+      changed_when: false
+
+    - name: Enforce generated PostgreSQL connection limits on existing roles
+      community.postgresql.postgresql_user:
+        name: "{{ item.rolname }}"
+        conn_limit: "{{ postgresql_role_connection_limits[item.rolname] }}"
+      loop: >-
+        {{
+          postgresql_existing_budget_roles.query_result
+          | selectattr('rolname', 'in', postgresql_role_connection_limits.keys() | list)
+          | list
+        }}
+      loop_control:
+        label: "{{ item.rolname }}"
+      no_log: true
+
+    - name: Read live PostgreSQL connection budget
+      community.postgresql.postgresql_query:
+        query: >-
+          SELECT rolname, rolconnlimit
+          FROM pg_roles
+          WHERE rolconnlimit > 0
+          ORDER BY rolname
+      register: postgresql_live_connection_budget
+      changed_when: false
+
+    - name: Compute live PostgreSQL generated role connection budget total
+      ansible.builtin.set_fact:
+        postgresql_live_connection_limit_total: >-
+          {{
+            postgresql_live_connection_budget.query_result
+            | selectattr('rolname', 'in', postgresql_role_connection_limits.keys() | list)
+            | map(attribute='rolconnlimit')
+            | map('int')
+            | sum
+          }}
+
+    - name: Assert live PostgreSQL connection budget preserves generated headroom
+      ansible.builtin.assert:
+        that:
+          - >-
+            (postgresql_live_connection_limit_total | int)
+            <=
+            (
+              (postgresql_max_connections | int)
+              - (postgresql_superuser_reserved_connections | int)
+              - (postgresql_connection_headroom | int)
+            )
+        fail_msg: >-
+          Live PostgreSQL role connection limits exceed the generated CUE budget.
+          Regenerate topology or lower per-role limits before deploying.
 
     - name: Ensure application PostgreSQL databases exist
       community.postgresql.postgresql_db:

@@ -1,6 +1,4 @@
 ---
-source_code_hosting_service_subdomain: source.api
-source_code_hosting_service_domain: "{{ source_code_hosting_service_subdomain }}.{{ verself_domain }}"
 source_code_hosting_service_auth_issuer_url: "https://auth.{{ verself_domain }}"
 source_code_hosting_service_identity_project_name: "{{ identity_service_auth_project_name | default('identity-service') }}"
 source_code_hosting_service_force_schema_reset: false

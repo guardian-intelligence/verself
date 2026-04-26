@@ -1,6 +1,4 @@
 ---
-console_subdomain: console
-console_domain: "{{ console_subdomain }}.{{ verself_domain }}"
 console_install_dir: /opt/console
 console_app_dir: "{{ console_install_dir }}/apps/console"
 console_dependencies_fingerprint_path: "{{ console_install_dir }}/.pnpm-install-fingerprint"

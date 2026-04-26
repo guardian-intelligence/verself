@@ -430,7 +430,7 @@ platform-local-dev: ## Start local platform docs HMR dev server (no tunnels; no 
 grafana-proof: inventory-check ## Verify Grafana health, datasource execution, PostgreSQL state, and ClickHouse evidence
 	cd $(PLATFORM_DIR) && ./scripts/verify-grafana-live.sh
 
-services-doctor: inventory-check ## Cross-check declared services.yml against live listeners on the box: make services-doctor [FORMAT=table|json|nftables]
+services-doctor: inventory-check ## Cross-check declared topology.yml listeners against the box: make services-doctor [FORMAT=table|json|nftables]
 	@python3 $(PLATFORM_DIR)/scripts/services-doctor.py
 
 observe: inventory-check ## Discover/query telemetry: make observe [WHAT=catalog|queries|describe|metric|trace|logs|http|service|errors|mail|deploy|workload-identity|temporal] [SIGNAL=...] [FORMAT=table|json|markdown]

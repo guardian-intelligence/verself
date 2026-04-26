@@ -12,7 +12,7 @@ artifact_dir="${artifact_root}/${run_id}"
 projects_api_base_url="${PROJECTS_PROOF_BASE_URL:-https://projects.api.${VERIFICATION_DOMAIN}}"
 projects_api_base_url="${projects_api_base_url%/}"
 projects_loopback_addr="$(
-  python3 - "${VERIFICATION_PLATFORM_ROOT}/ansible/group_vars/all/generated/services.yml" <<'PY'
+  python3 - "${VERIFICATION_PLATFORM_ROOT}/ansible/group_vars/all/generated/topology.yml" <<'PY'
 import sys
 import yaml
 
@@ -22,7 +22,7 @@ project_service = services["projects_service"]
 host = str(project_service.get("host", "")).strip()
 port = str(project_service.get("port", "")).strip()
 if not host or not port:
-    raise SystemExit("projects_service host/port missing from generated services.yml")
+    raise SystemExit("projects_service host/port missing from generated topology.yml")
 print(f"{host}:{port}")
 PY
 )"

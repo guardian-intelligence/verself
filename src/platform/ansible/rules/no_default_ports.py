@@ -9,8 +9,8 @@ from ansiblelint.file_utils import Lintable
 from ansiblelint.rules import AnsibleLintRule
 
 
-# Only this generated file is allowed to define *_port variables.
-REGISTRY = Path("group_vars/all/generated/services.yml")
+# Only this generated file is allowed to define service *_port variables.
+REGISTRY = Path("group_vars/all/generated/topology.yml")
 
 # Key name ending with _port at the top level of a YAML mapping.
 PORT_KEY_RE = re.compile(r"^(\s*\w*_port)\s*:")
@@ -21,7 +21,7 @@ class NoDefaultPortsRule(AnsibleLintRule):
 
     id = "no-default-ports"
     description = (
-        "All service port numbers belong in group_vars/all/generated/services.yml. "
+        "All service port numbers belong in group_vars/all/generated/topology.yml. "
         "Defining *_port variables in role defaults/ or other group_vars "
         "files re-introduces the scattered-port problem."
     )

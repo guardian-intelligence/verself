@@ -73,7 +73,7 @@ When a protocol surface also has a Verself product API, the API lives on
 ## Implementation Source Of Truth
 
 `src/platform/topology` is the service endpoint registry, rendered to
-`src/platform/ansible/group_vars/all/generated/services.yml` for Ansible. The
+`src/platform/ansible/group_vars/all/generated/topology.yml` for Ansible. The
 next cutover should extend the CUE topology with public origin metadata so
 Caddy, Cloudflare DNS, OpenAPI server URLs, frontend environment, and
 documentation all derive from the same source.

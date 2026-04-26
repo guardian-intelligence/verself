@@ -3,9 +3,3 @@
 postgresql_data_dir: /var/lib/postgresql/16/verself
 postgresql_config_dir: /etc/postgresql/verself
 postgresql_log_dir: /var/log/postgresql
-
-# Single-node Verself runs every product database, Electric sync service, and
-# load-test control plane through this instance. Keep this comfortably above the
-# sum of explicit service pool caps so web visitors are not starved by workers.
-postgresql_max_connections: 300
-postgresql_superuser_reserved_connections: 10
