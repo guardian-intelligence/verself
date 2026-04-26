@@ -104,3 +104,62 @@ func (d *Dispatcher) DispatchWorkflow(ctx context.Context, req recurring.Workflo
 		State:         resp.JSON201.State,
 	}, nil
 }
+
+func (d *Dispatcher) ResolveRepository(ctx context.Context, orgID uint64, repoID uuid.UUID) (_ recurring.SourceRepositoryReference, err error) {
+	ctx, span := tracer.Start(ctx, "sandbox-rental.source.repo.resolve", trace.WithSpanKind(trace.SpanKindClient))
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+	if d == nil || d.client == nil {
+		return recurring.SourceRepositoryReference{}, errors.New("source workflow dispatcher is not configured")
+	}
+	if orgID == 0 || repoID == uuid.Nil {
+		return recurring.SourceRepositoryReference{}, recurring.ErrInvalid
+	}
+	span.SetAttributes(
+		attribute.Int64("verself.org_id", int64(orgID)),
+		attribute.String("source.repo_id", repoID.String()),
+	)
+	resp, err := d.client.InternalResolveSourceRepositoryWithResponse(ctx, sourceclient.InternalResolveRepositoryRequest{
+		OrgId:  strconv.FormatUint(orgID, 10),
+		RepoId: repoID.String(),
+	})
+	if err != nil {
+		return recurring.SourceRepositoryReference{}, fmt.Errorf("resolve source repository: %w", err)
+	}
+	if resp == nil || resp.HTTPResponse == nil {
+		return recurring.SourceRepositoryReference{}, errors.New("resolve source repository: missing response")
+	}
+	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode()))
+	if resp.StatusCode() != http.StatusOK || resp.JSON200 == nil {
+		return recurring.SourceRepositoryReference{}, fmt.Errorf("resolve source repository status %d: %s", resp.StatusCode(), strings.TrimSpace(string(resp.Body)))
+	}
+	orgValue, err := strconv.ParseUint(strings.TrimSpace(resp.JSON200.OrgId), 10, 64)
+	if err != nil {
+		return recurring.SourceRepositoryReference{}, fmt.Errorf("parse source repository org id: %w", err)
+	}
+	if orgValue == 0 {
+		return recurring.SourceRepositoryReference{}, errors.New("parse source repository org id: zero value")
+	}
+	projectID, err := uuid.Parse(resp.JSON200.ProjectId)
+	if err != nil {
+		return recurring.SourceRepositoryReference{}, fmt.Errorf("parse source repository project id: %w", err)
+	}
+	resolvedRepoID, err := uuid.Parse(resp.JSON200.RepoId)
+	if err != nil {
+		return recurring.SourceRepositoryReference{}, fmt.Errorf("parse source repository id: %w", err)
+	}
+	if resolvedRepoID != repoID {
+		return recurring.SourceRepositoryReference{}, fmt.Errorf("resolve source repository returned repo %s for requested repo %s", resolvedRepoID, repoID)
+	}
+	span.SetAttributes(attribute.String("verself.project_id", projectID.String()))
+	return recurring.SourceRepositoryReference{
+		RepoID:    resolvedRepoID,
+		OrgID:     orgValue,
+		ProjectID: projectID,
+	}, nil
+}

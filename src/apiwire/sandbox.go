@@ -262,7 +262,6 @@ type SandboxStickyDiskResetResult struct {
 type SandboxExecutionScheduleCreateRequest struct {
 	IdempotencyKey     string            `json:"idempotency_key" required:"true" maxLength:"128"`
 	DisplayName        string            `json:"display_name,omitempty" maxLength:"255"`
-	ProjectID          uuid.UUID         `json:"project_id" required:"true"`
 	SourceRepositoryID uuid.UUID         `json:"source_repository_id" required:"true"`
 	WorkflowPath       string            `json:"workflow_path" required:"true" minLength:"1" maxLength:"512"`
 	Ref                string            `json:"ref,omitempty" maxLength:"255"`

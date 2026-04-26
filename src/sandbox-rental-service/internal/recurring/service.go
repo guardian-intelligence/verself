@@ -56,6 +56,7 @@ var tracer = otel.Tracer("sandbox-rental-service/recurring")
 
 type WorkflowDispatcher interface {
 	DispatchWorkflow(ctx context.Context, req WorkflowDispatchRequest) (WorkflowDispatchResult, error)
+	ResolveRepository(ctx context.Context, orgID uint64, repoID uuid.UUID) (SourceRepositoryReference, error)
 }
 
 type WorkflowDispatchRequest struct {
@@ -72,6 +73,12 @@ type WorkflowDispatchRequest struct {
 type WorkflowDispatchResult struct {
 	WorkflowRunID uuid.UUID
 	State         string
+}
+
+type SourceRepositoryReference struct {
+	RepoID    uuid.UUID
+	OrgID     uint64
+	ProjectID uuid.UUID
 }
 
 type Config struct {
@@ -223,6 +230,7 @@ func (s *Service) CreateSchedule(ctx context.Context, orgID uint64, actorID stri
 		return ScheduleRecord{}, err
 	}
 	if existing, err := s.loadScheduleByIdempotencyKey(ctx, orgID, normalized.IdempotencyKey); err == nil {
+		normalized.ProjectID = existing.ProjectID
 		if !scheduleMatchesCreateRequest(*existing, normalized) {
 			return ScheduleRecord{}, fmt.Errorf("%w: idempotency key reused with different execution schedule", ErrConflict)
 		}
@@ -230,6 +238,17 @@ func (s *Service) CreateSchedule(ctx context.Context, orgID uint64, actorID stri
 	} else if !errors.Is(err, ErrScheduleMissing) {
 		return ScheduleRecord{}, err
 	}
+	if s.dispatcher == nil {
+		return ScheduleRecord{}, ErrDispatcherNil
+	}
+	repo, err := s.dispatcher.ResolveRepository(ctx, orgID, normalized.SourceRepositoryID)
+	if err != nil {
+		return ScheduleRecord{}, err
+	}
+	if repo.OrgID != orgID || repo.ProjectID == uuid.Nil {
+		return ScheduleRecord{}, fmt.Errorf("%w: source repository is not owned by the schedule organization", ErrInvalid)
+	}
+	normalized.ProjectID = repo.ProjectID
 
 	scheduleID := uuid.New()
 	temporalScheduleID := temporalScheduleIDFor(scheduleID)
@@ -685,9 +704,6 @@ func normalizeCreateRequest(req CreateRequest) (CreateRequest, error) {
 	req.Inputs = cleanInputs
 	if req.IdempotencyKey == "" {
 		return CreateRequest{}, fmt.Errorf("%w: idempotency_key is required", ErrInvalid)
-	}
-	if req.ProjectID == uuid.Nil {
-		return CreateRequest{}, fmt.Errorf("%w: project_id is required", ErrInvalid)
 	}
 	if req.SourceRepositoryID == uuid.Nil {
 		return CreateRequest{}, fmt.Errorf("%w: source_repository_id is required", ErrInvalid)

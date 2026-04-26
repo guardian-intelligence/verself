@@ -315,18 +315,17 @@ fi
 create_forgejo_workflow_file "${provider_owner}" "${provider_repo}" >"${artifact_dir}/responses/create-forgejo-workflow-file.json"
 
 payload_path="${artifact_dir}/payloads/create-schedule.json"
-python3 - "${run_id}" "${project_id}" "${source_repo_id}" "${workflow_path}" "${interval_seconds}" >"${payload_path}" <<'PY'
+python3 - "${run_id}" "${source_repo_id}" "${workflow_path}" "${interval_seconds}" >"${payload_path}" <<'PY'
 import json
 import sys
 
-run_id, project_id, source_repo_id, workflow_path, interval_seconds = sys.argv[1:6]
+run_id, source_repo_id, workflow_path, interval_seconds = sys.argv[1:5]
 print(json.dumps({
     "display_name": f"Recurring proof {run_id}",
     "idempotency_key": run_id,
     "interval_seconds": int(interval_seconds),
     "inputs": {"verification_run_id": run_id},
     "paused": True,
-    "project_id": project_id,
     "ref": "main",
     "source_repository_id": source_repo_id,
     "workflow_path": workflow_path,
@@ -630,6 +629,26 @@ wait_for_clickhouse_count default "
     AND SpanAttributes['sandbox.schedule_id'] = {schedule_id:String}
     AND SpanAttributes['verself.project_id'] = {project_id:String}
 " 1 "${artifact_dir}/clickhouse/create-span-count.tsv" --param_schedule_id="${schedule_id}" --param_project_id="${project_id}"
+
+wait_for_clickhouse_count default "
+  SELECT count()
+  FROM otel_traces
+  WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
+    AND (
+      (ServiceName = 'sandbox-rental-service'
+        AND SpanName = 'sandbox-rental.source.repo.resolve'
+        AND SpanAttributes['source.repo_id'] = {source_repo_id:String}
+        AND SpanAttributes['verself.project_id'] = {project_id:String})
+      OR (ServiceName = 'source-code-hosting-service'
+        AND SpanName = 'source.repo.resolve.internal'
+        AND SpanAttributes['source.repo_id'] = {source_repo_id:String}
+        AND SpanAttributes['verself.project_id'] = {project_id:String}
+        AND SpanAttributes['source.outcome'] = 'allowed')
+      OR (ServiceName = 'source-code-hosting-service'
+        AND SpanName = 'source.pg.repo.get'
+        AND SpanAttributes['source.repo_id'] = {source_repo_id:String})
+    )
+" 3 "${artifact_dir}/clickhouse/source-repo-resolve-spans-count.tsv" --param_source_repo_id="${source_repo_id}" --param_project_id="${project_id}"
 
 wait_for_clickhouse_count default "
   SELECT count()

@@ -425,7 +425,6 @@ func executionScheduleCreateRequest(request apiwire.SandboxExecutionScheduleCrea
 	return recurring.CreateRequest{
 		DisplayName:        request.DisplayName,
 		IdempotencyKey:     request.IdempotencyKey,
-		ProjectID:          request.ProjectID,
 		SourceRepositoryID: request.SourceRepositoryID,
 		WorkflowPath:       request.WorkflowPath,
 		Ref:                request.Ref,

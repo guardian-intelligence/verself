@@ -72,6 +72,35 @@ type InternalCreateWorkflowRunRequest struct {
 	WorkflowPath   string             `json:"workflow_path"`
 }
 
+// InternalResolveRepositoryRequest defines model for InternalResolveRepositoryRequest.
+type InternalResolveRepositoryRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	OrgId  string  `json:"org_id"`
+	RepoId string  `json:"repo_id"`
+}
+
+// Repository defines model for Repository.
+type Repository struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema        *string    `json:"$schema,omitempty"`
+	Backend       string     `json:"backend"`
+	CreatedAt     time.Time  `json:"created_at"`
+	DefaultBranch string     `json:"default_branch"`
+	Description   string     `json:"description"`
+	LastPushedAt  *time.Time `json:"last_pushed_at,omitempty"`
+	Name          string     `json:"name"`
+	OrgId         string     `json:"org_id"`
+	OrgPath       string     `json:"org_path"`
+	ProjectId     string     `json:"project_id"`
+	RepoId        string     `json:"repo_id"`
+	Slug          string     `json:"slug"`
+	State         string     `json:"state"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+	Version       int32      `json:"version"`
+	Visibility    string     `json:"visibility"`
+}
+
 // WorkflowRun defines model for WorkflowRun.
 type WorkflowRun struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -98,6 +127,9 @@ type WorkflowRun struct {
 type DownloadSourceCheckoutArchiveParams struct {
 	XVerselfCheckoutToken string `json:"X-Verself-Checkout-Token"`
 }
+
+// InternalResolveSourceRepositoryJSONRequestBody defines body for InternalResolveSourceRepository for application/json ContentType.
+type InternalResolveSourceRepositoryJSONRequestBody = InternalResolveRepositoryRequest
 
 // InternalCreateSourceWorkflowRunJSONRequestBody defines body for InternalCreateSourceWorkflowRun for application/json ContentType.
 type InternalCreateSourceWorkflowRunJSONRequestBody = InternalCreateWorkflowRunRequest
@@ -178,6 +210,11 @@ type ClientInterface interface {
 	// DownloadSourceCheckoutArchive request
 	DownloadSourceCheckoutArchive(ctx context.Context, grantId openapi_types.UUID, params *DownloadSourceCheckoutArchiveParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// InternalResolveSourceRepositoryWithBody request with any body
+	InternalResolveSourceRepositoryWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	InternalResolveSourceRepository(ctx context.Context, body InternalResolveSourceRepositoryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// InternalCreateSourceWorkflowRunWithBody request with any body
 	InternalCreateSourceWorkflowRunWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -186,6 +223,30 @@ type ClientInterface interface {
 
 func (c *Client) DownloadSourceCheckoutArchive(ctx context.Context, grantId openapi_types.UUID, params *DownloadSourceCheckoutArchiveParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewDownloadSourceCheckoutArchiveRequest(c.Server, grantId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) InternalResolveSourceRepositoryWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewInternalResolveSourceRepositoryRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) InternalResolveSourceRepository(ctx context.Context, body InternalResolveSourceRepositoryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewInternalResolveSourceRepositoryRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -263,6 +324,46 @@ func NewDownloadSourceCheckoutArchiveRequest(server string, grantId openapi_type
 		req.Header.Set("X-Verself-Checkout-Token", headerParam0)
 
 	}
+
+	return req, nil
+}
+
+// NewInternalResolveSourceRepositoryRequest calls the generic InternalResolveSourceRepository builder with application/json body
+func NewInternalResolveSourceRepositoryRequest(server string, body InternalResolveSourceRepositoryJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewInternalResolveSourceRepositoryRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewInternalResolveSourceRepositoryRequestWithBody generates requests for InternalResolveSourceRepository with any type of body
+func NewInternalResolveSourceRepositoryRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/internal/v1/repos/resolve")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -353,6 +454,11 @@ type ClientWithResponsesInterface interface {
 	// DownloadSourceCheckoutArchiveWithResponse request
 	DownloadSourceCheckoutArchiveWithResponse(ctx context.Context, grantId openapi_types.UUID, params *DownloadSourceCheckoutArchiveParams, reqEditors ...RequestEditorFn) (*DownloadSourceCheckoutArchiveResponse, error)
 
+	// InternalResolveSourceRepositoryWithBodyWithResponse request with any body
+	InternalResolveSourceRepositoryWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*InternalResolveSourceRepositoryResponse, error)
+
+	InternalResolveSourceRepositoryWithResponse(ctx context.Context, body InternalResolveSourceRepositoryJSONRequestBody, reqEditors ...RequestEditorFn) (*InternalResolveSourceRepositoryResponse, error)
+
 	// InternalCreateSourceWorkflowRunWithBodyWithResponse request with any body
 	InternalCreateSourceWorkflowRunWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*InternalCreateSourceWorkflowRunResponse, error)
 
@@ -375,6 +481,29 @@ func (r DownloadSourceCheckoutArchiveResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r DownloadSourceCheckoutArchiveResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type InternalResolveSourceRepositoryResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *Repository
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r InternalResolveSourceRepositoryResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r InternalResolveSourceRepositoryResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -413,6 +542,23 @@ func (c *ClientWithResponses) DownloadSourceCheckoutArchiveWithResponse(ctx cont
 	return ParseDownloadSourceCheckoutArchiveResponse(rsp)
 }
 
+// InternalResolveSourceRepositoryWithBodyWithResponse request with arbitrary body returning *InternalResolveSourceRepositoryResponse
+func (c *ClientWithResponses) InternalResolveSourceRepositoryWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*InternalResolveSourceRepositoryResponse, error) {
+	rsp, err := c.InternalResolveSourceRepositoryWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseInternalResolveSourceRepositoryResponse(rsp)
+}
+
+func (c *ClientWithResponses) InternalResolveSourceRepositoryWithResponse(ctx context.Context, body InternalResolveSourceRepositoryJSONRequestBody, reqEditors ...RequestEditorFn) (*InternalResolveSourceRepositoryResponse, error) {
+	rsp, err := c.InternalResolveSourceRepository(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseInternalResolveSourceRepositoryResponse(rsp)
+}
+
 // InternalCreateSourceWorkflowRunWithBodyWithResponse request with arbitrary body returning *InternalCreateSourceWorkflowRunResponse
 func (c *ClientWithResponses) InternalCreateSourceWorkflowRunWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*InternalCreateSourceWorkflowRunResponse, error) {
 	rsp, err := c.InternalCreateSourceWorkflowRunWithBody(ctx, contentType, body, reqEditors...)
@@ -444,6 +590,39 @@ func ParseDownloadSourceCheckoutArchiveResponse(rsp *http.Response) (*DownloadSo
 	}
 
 	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseInternalResolveSourceRepositoryResponse parses an HTTP response from a InternalResolveSourceRepositoryWithResponse call
+func ParseInternalResolveSourceRepositoryResponse(rsp *http.Response) (*InternalResolveSourceRepositoryResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &InternalResolveSourceRepositoryResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Repository
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorModel
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {

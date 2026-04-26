@@ -391,7 +391,6 @@ type ExecutionScheduleRequestBody = {
   inputs?: Record<string, string>;
   interval_seconds: number;
   paused?: boolean;
-  project_id: string;
   ref?: string;
   source_repository_id: string;
   workflow_path: string;
@@ -404,7 +403,6 @@ export const executionScheduleRequestSchema = v.pipe(
     inputs: v.optional(v.record(v.string(), v.string())),
     interval_seconds: v.pipe(v.number(), v.integer(), v.minValue(15)),
     paused: v.optional(v.boolean()),
-    project_id: v.pipe(v.string(), v.uuid()),
     ref: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(255))),
     source_repository_id: v.pipe(v.string(), v.uuid()),
     workflow_path: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(512)),
@@ -414,7 +412,6 @@ export const executionScheduleRequestSchema = v.pipe(
     const requestBody: ExecutionScheduleRequestBody = {
       idempotency_key: providedIdempotencyKey || createIdempotencyKey("execution-schedule"),
       interval_seconds: body.interval_seconds,
-      project_id: body.project_id,
       source_repository_id: body.source_repository_id,
       workflow_path: body.workflow_path,
       ...(body.display_name ? { display_name: body.display_name } : {}),

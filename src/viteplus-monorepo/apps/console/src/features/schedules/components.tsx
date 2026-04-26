@@ -283,15 +283,13 @@ export function ExecutionScheduleForm() {
     },
     onSubmit: async ({ value }) => {
       mutation.reset();
-      const repository = repositories.find((repo) => repo.repo_id === value.sourceRepositoryId);
-      if (!repository) {
+      if (!repositories.some((repo) => repo.repo_id === value.sourceRepositoryId)) {
         throw new Error("Selected repository is no longer available.");
       }
       await mutation.mutateAsync({
         display_name: value.displayName || undefined,
         inputs: parseScheduleInputs(value.inputsJSON),
         interval_seconds: Number(value.intervalSeconds),
-        project_id: repository.project_id,
         ref: value.ref || undefined,
         source_repository_id: value.sourceRepositoryId,
         workflow_path: value.workflowPath,

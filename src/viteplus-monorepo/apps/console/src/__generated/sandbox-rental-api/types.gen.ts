@@ -419,7 +419,6 @@ export type SandboxExecutionScheduleCreateRequest = {
   };
   interval_seconds: number;
   paused?: boolean;
-  project_id: string;
   ref?: string;
   source_repository_id: string;
   workflow_path: string;
@@ -881,7 +880,6 @@ export type SandboxExecutionScheduleCreateRequestWritable = {
   };
   interval_seconds: number;
   paused?: boolean;
-  project_id: string;
   ref?: string;
   source_repository_id: string;
   workflow_path: string;

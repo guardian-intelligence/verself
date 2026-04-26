@@ -71,6 +71,10 @@ type internalCreateWorkflowRunInput struct {
 	Body InternalCreateWorkflowRunRequest
 }
 
+type internalResolveRepositoryInput struct {
+	Body InternalResolveRepositoryRequest
+}
+
 type checkoutArchiveInput struct {
 	GrantID string `path:"grant_id" format:"uuid"`
 	Token   string `header:"X-Verself-Checkout-Token" required:"true"`
@@ -324,6 +328,26 @@ func RegisterRoutes(api huma.API, cfg Config) {
 func RegisterInternalRoutes(api huma.API, cfg Config) {
 	svc := cfg.Service
 	registerSourceRoute(api, huma.Operation{
+		OperationID:   "internal-resolve-source-repository",
+		Method:        http.MethodPost,
+		Path:          "/internal/v1/repos/resolve",
+		Summary:       "Resolve a source repository on behalf of a repo-owned service",
+		DefaultStatus: http.StatusOK,
+	}, operationPolicy{
+		Permission:       permissionRepoRead,
+		Resource:         "source_repository",
+		Action:           "resolve",
+		OrgScope:         "body_org_id",
+		RateLimitClass:   "internal_read",
+		AuditEvent:       "source.repo.resolve.internal",
+		OperationDisplay: "resolve source repository internally",
+		OperationType:    "read",
+		RiskLevel:        "medium",
+		BodyLimitBytes:   bodyLimitSmallJSON,
+		Internal:         true,
+	}, internalResolveRepository(svc))
+
+	registerSourceRoute(api, huma.Operation{
 		OperationID:   "internal-create-source-workflow-run",
 		Method:        http.MethodPost,
 		Path:          "/internal/v1/workflow-runs",
@@ -368,6 +392,25 @@ func RegisterInternalRoutes(api huma.API, cfg Config) {
 		RiskLevel:        "high",
 		Internal:         true,
 	}, downloadArchive(svc))
+}
+
+func internalResolveRepository(svc *source.Service) func(context.Context, source.Principal, *internalResolveRepositoryInput) (*repositoryOutput, error) {
+	return func(ctx context.Context, principal source.Principal, input *internalResolveRepositoryInput) (*repositoryOutput, error) {
+		orgID, err := strconv.ParseUint(strings.TrimSpace(input.Body.OrgID), 10, 64)
+		if err != nil || orgID == 0 {
+			return nil, badRequest(ctx, "invalid-org-id", "org_id must be a non-zero unsigned integer", err)
+		}
+		trace.SpanFromContext(ctx).SetAttributes(attribute.Int64("verself.org_id", int64(orgID)))
+		repo, err := svc.GetRepository(ctx, source.Principal{Subject: principal.Subject, OrgID: orgID}, input.Body.RepoID)
+		if err != nil {
+			return nil, sourceError(ctx, err)
+		}
+		trace.SpanFromContext(ctx).SetAttributes(
+			attribute.String("source.repo_id", repo.RepoID.String()),
+			attribute.String("verself.project_id", repo.ProjectID.String()),
+		)
+		return &repositoryOutput{Body: repositoryDTO(repo)}, nil
+	}
 }
 
 func createRepository(svc *source.Service) func(context.Context, source.Principal, *createRepositoryInput) (*repositoryOutput, error) {

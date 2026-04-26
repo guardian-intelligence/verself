@@ -95,6 +95,84 @@ components:
         - workflow_path
         - idempotency_key
       type: object
+    InternalResolveRepositoryRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://127.0.0.1:4262/schemas/InternalResolveRepositoryRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        org_id:
+          type: string
+        repo_id:
+          type: string
+      required:
+        - org_id
+        - repo_id
+      type: object
+    Repository:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://127.0.0.1:4262/schemas/Repository.json
+          format: uri
+          readOnly: true
+          type: string
+        backend:
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        default_branch:
+          type: string
+        description:
+          type: string
+        last_pushed_at:
+          format: date-time
+          type: string
+        name:
+          type: string
+        org_id:
+          type: string
+        org_path:
+          type: string
+        project_id:
+          type: string
+        repo_id:
+          type: string
+        slug:
+          type: string
+        state:
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+        version:
+          format: int32
+          maximum: 2147483647
+          minimum: 0
+          type: integer
+        visibility:
+          type: string
+      required:
+        - repo_id
+        - org_id
+        - project_id
+        - org_path
+        - name
+        - slug
+        - description
+        - default_branch
+        - backend
+        - visibility
+        - state
+        - version
+        - created_at
+        - updated_at
+      type: object
     WorkflowRun:
       additionalProperties: false
       properties:
@@ -221,6 +299,44 @@ paths:
         rate_limit_class: checkout_download
         resource: source_checkout_grant
         risk_level: high
+        source_product_area: Source
+  /internal/v1/repos/resolve:
+    post:
+      operationId: internal-resolve-source-repository
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InternalResolveRepositoryRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Repository"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - mutualTLS: []
+      summary: Resolve a source repository on behalf of a repo-owned service
+      x-verself-iam:
+        action: resolve
+        audit_event: source.repo.resolve.internal
+        data_classification: customer_source_metadata
+        event_category: source
+        operation_display: resolve source repository internally
+        operation_type: read
+        org_scope: body_org_id
+        permission: source:repo:read
+        rate_limit_class: internal_read
+        resource: source_repository
+        risk_level: medium
         source_product_area: Source
   /internal/v1/workflow-runs:
     post:

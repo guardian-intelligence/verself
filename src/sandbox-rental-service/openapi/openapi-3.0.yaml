@@ -1061,8 +1061,6 @@ components:
           type: integer
         paused:
           type: boolean
-        project_id:
-          type: string
         ref:
           maxLength: 255
           type: string
@@ -1074,7 +1072,6 @@ components:
           type: string
       required:
         - idempotency_key
-        - project_id
         - source_repository_id
         - workflow_path
         - interval_seconds

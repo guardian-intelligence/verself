@@ -493,7 +493,6 @@ type SandboxExecutionScheduleCreateRequest struct {
 	Inputs             *map[string]string `json:"inputs,omitempty"`
 	IntervalSeconds    int32              `json:"interval_seconds"`
 	Paused             *bool              `json:"paused,omitempty"`
-	ProjectId          string             `json:"project_id"`
 	Ref                *string            `json:"ref,omitempty"`
 	SourceRepositoryId string             `json:"source_repository_id"`
 	WorkflowPath       string             `json:"workflow_path"`

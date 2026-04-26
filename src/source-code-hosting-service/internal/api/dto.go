@@ -115,6 +115,11 @@ type InternalCreateWorkflowRunRequest struct {
 	IdempotencyKey string            `json:"idempotency_key" required:"true" minLength:"1" maxLength:"128"`
 }
 
+type InternalResolveRepositoryRequest struct {
+	OrgID  string    `json:"org_id" required:"true"`
+	RepoID uuid.UUID `json:"repo_id" required:"true"`
+}
+
 type WorkflowRun struct {
 	WorkflowRunID     uuid.UUID         `json:"workflow_run_id"`
 	OrgID             string            `json:"org_id"`
