@@ -83,7 +83,11 @@
   no_log: true
 
 - name: "Create PostgreSQL role and publication for {{ electric_service_name }}"
-  ansible.builtin.include_tasks: pg_setup.yml
+  ansible.builtin.include_tasks:
+    file: pg_setup.yml
+    apply:
+      tags:
+        - always
 
 - name: "Deploy runtime credential environment for {{ electric_service_name }}"
   vars:
