@@ -93,7 +93,9 @@ export function TopNav() {
         <Menu size={22} aria-hidden="true" />
       </button>
 
-      {open ? <MobileNavPanel id={panelId} pathname={pathname} onClose={() => setOpen(false)} /> : null}
+      {open ? (
+        <MobileNavPanel id={panelId} pathname={pathname} onClose={() => setOpen(false)} />
+      ) : null}
     </>
   );
 }
@@ -127,8 +129,7 @@ function MobileNavPanel({
         style={{
           background: "var(--treatment-ground)",
           color: "var(--treatment-ink)",
-          borderBottom:
-            "var(--treatment-rule-thickness) solid var(--treatment-rule-color)",
+          borderBottom: "var(--treatment-rule-thickness) solid var(--treatment-rule-color)",
         }}
       >
         <div className="flex items-center justify-end">

@@ -72,7 +72,10 @@ async function main(): Promise<void> {
       const raw = await readFile(file, "utf8");
       const { data, content } = matter(raw);
       walk("frontmatter", data, strings);
-      const paragraphs = content.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+      const paragraphs = content
+        .split(/\n{2,}/)
+        .map((p) => p.trim())
+        .filter(Boolean);
       paragraphs.forEach((p, idx) => strings.push({ path: `body[${idx}]`, value: p }));
     } else {
       const mod = (await import(pathToFileURL(file).href)) as Record<string, unknown>;

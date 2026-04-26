@@ -182,10 +182,7 @@ function Breadcrumb({ title }: { title: string }) {
 function Byline({ item }: { item: NewsroomItem }) {
   const { author } = item;
   return (
-    <div
-      className="mt-10 flex items-center gap-3 md:mt-14"
-      data-newsroom-byline
-    >
+    <div className="mt-10 flex items-center gap-3 md:mt-14" data-newsroom-byline>
       {author.avatar ? (
         <img
           src={author.avatar}

@@ -124,7 +124,9 @@ export function AppChrome({
         >
           <LinkComponent
             to={wordmarkHref}
-            aria-label={resolvedSection ? `Guardian — ${resolvedSection} — home` : "Guardian — home"}
+            aria-label={
+              resolvedSection ? `Guardian — ${resolvedSection} — home` : "Guardian — home"
+            }
             className="inline-flex items-center"
             style={{ color: "var(--treatment-wordmark)" }}
             onClick={handleWordmarkClick}
