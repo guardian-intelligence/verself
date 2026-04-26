@@ -4,9 +4,6 @@
 # Repo root on the Ansible controller (contains go.work, src/, etc.)
 deploy_profile_repo_root: "{{ playbook_dir }}/../../../.."
 
-# server-tools.json location on the Ansible controller
-deploy_profile_server_tools: "{{ playbook_dir }}/../../server-tools.json"
-
 # Staging directory for downloaded archives on the remote host
 deploy_profile_staging_dir: /opt/verself/staging
 

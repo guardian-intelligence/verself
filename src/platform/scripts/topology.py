@@ -63,6 +63,7 @@ ARTIFACTS = (
     Artifact("postgres", "outputs.postgres", GENERATED_DIR / "postgres.yml"),
     Artifact("deploy", "outputs.deploy", GENERATED_DIR / "deploy.yml"),
     Artifact("proof", "outputs.proof", GENERATED_DIR / "proof.yml"),
+    Artifact("catalog", "outputs.catalog", GENERATED_DIR / "catalog.yml"),
 )
 
 SPAN_EVENTS: list[dict[str, object]] = []

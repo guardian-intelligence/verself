@@ -195,7 +195,7 @@ All server software is managed by the `deploy_profile` Ansible role. It populate
 
 - **Go service binaries** (billing-service, sandbox-rental-service, mailbox-service): built on the controller via `go build`, copied to server.
 - **Caddy** (with Coraza WAF plugin): built on the controller via `xcaddy`, copied to server.
-- **Static binaries** (ClickHouse, TigerBeetle, Zitadel, Forgejo, Grafana, grafana-clickhouse-datasource plugin, otelcol-contrib, containerd, Node.js, Stalwart, stalwart-cli): pinned in `src/platform/server-tools.json` with URLs and SHA256 hashes, downloaded and verified on the server.
+- **Static binaries** (ClickHouse, TigerBeetle, Zitadel, Forgejo, Grafana, grafana-clickhouse-datasource plugin, otelcol-contrib, containerd, Node.js, Stalwart, stalwart-cli): pinned in `src/platform/topology/catalog/versions.cue`, rendered to generated topology catalog vars, downloaded and verified on the server.
 - **apt packages** (PostgreSQL 16, wireguard-tools): installed from PGDG/Ubuntu repos, symlinked into `verself_bin`.
 
 The only other `apt install` is `zfsutils-linux` (kernel-dependent, must match the running kernel).
@@ -206,7 +206,7 @@ All remote orchestration runs via Ansible playbooks from `src/platform/ansible/`
 
 | Playbook | Description |
 |----------|-------------|
-| `playbooks/setup-dev.yml` | Install pinned dev tools from `dev-tools.json`. |
+| `playbooks/setup-dev.yml` | Install dev tools from the generated topology catalog vars. |
 | `playbooks/setup-sops.yml` | Bootstrap SOPS+Age encryption for secrets. |
 | `playbooks/provision.yml` | Provision bare metal via OpenTofu, generate inventory. |
 | `playbooks/deprovision.yml` | Destroy bare-metal infrastructure, remove inventory. |

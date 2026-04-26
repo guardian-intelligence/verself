@@ -55,8 +55,8 @@ ready = (
     and row.get("schema_vets", 0) >= 1
     and row.get("instance_vets", 0) >= 1
     and row.get("graph_validations", 0) >= 1
-    and row.get("artifact_exports", 0) >= 10
-    and row.get("fresh_checks", 0) >= 10
+    and row.get("artifact_exports", 0) >= 11
+    and row.get("fresh_checks", 0) >= 11
     and row.get("errors", 0) == 0
 )
 raise SystemExit(0 if ready else 1)

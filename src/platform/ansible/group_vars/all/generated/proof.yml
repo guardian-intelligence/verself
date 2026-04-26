@@ -4,19 +4,16 @@
 topology_proof:
   evidence:
   - attributes: {}
-    component: ''
     kind: span
     name: topology_cue_fmt
     service: topology-compiler
     span_name: topology.cue.fmt_check
   - attributes: {}
-    component: ''
     kind: span
     name: topology_graph_validate
     service: topology-compiler
     span_name: topology.graph.validate
   - attributes: {}
-    component: ''
     kind: span
     name: topology_artifact_freshness
     service: topology-compiler

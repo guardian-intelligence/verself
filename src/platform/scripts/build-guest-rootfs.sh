@@ -19,18 +19,18 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Support two layouts:
-# 1. Running from project root: scripts/build-guest-rootfs.sh -> guest/versions.json
+# 1. Local explicit manifest: GUEST_VERSIONS_JSON=/path/to/versions.json scripts/build-guest-rootfs.sh
 # 2. Flat scp to /tmp: /tmp/build-guest-rootfs.sh + /tmp/versions.json
-if [[ -f "$SCRIPT_DIR/../guest/versions.json" ]]; then
+if [[ -n "${GUEST_VERSIONS_JSON:-}" ]]; then
   PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-  VERSIONS="$PROJECT_ROOT/guest/versions.json"
+  VERSIONS="$GUEST_VERSIONS_JSON"
   OUTPUT_DIR="$PROJECT_ROOT/guest/output"
 elif [[ -f "$SCRIPT_DIR/versions.json" ]]; then
   PROJECT_ROOT="$SCRIPT_DIR"
   VERSIONS="$SCRIPT_DIR/versions.json"
   OUTPUT_DIR="$SCRIPT_DIR/guest/output"
 else
-  echo "ERROR: cannot find versions.json (looked in $SCRIPT_DIR/../guest/ and $SCRIPT_DIR/)" >&2
+  echo "ERROR: cannot find versions.json (set GUEST_VERSIONS_JSON or upload $SCRIPT_DIR/versions.json)" >&2
   exit 1
 fi
 

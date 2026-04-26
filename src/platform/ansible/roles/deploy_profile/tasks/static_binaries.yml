@@ -1,5 +1,5 @@
 ---
-# Download, verify, and install pinned static binaries from server-tools.json.
+# Download, verify, and install static binaries from generated topology catalog vars.
 # Each binary is cached in the staging directory; get_url skips re-download
 # when the checksum matches.
 

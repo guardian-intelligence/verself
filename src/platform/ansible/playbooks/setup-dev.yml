@@ -1,10 +1,12 @@
 ---
-# Install pinned dev tools from dev-tools.json.
+# Install dev tools from generated topology catalog vars.
 # Usage: cd ansible && ansible-playbook playbooks/setup-dev.yml
 - name: Set up verself development environment
   hosts: localhost
   connection: local
   become: true
+  vars_files:
+    - ../group_vars/all/generated/catalog.yml
   vars:
     # Use system Python, not Nix Python, so pip/apt modules work correctly.
     ansible_python_interpreter: /usr/bin/python3

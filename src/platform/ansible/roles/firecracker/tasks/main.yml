@@ -3,9 +3,18 @@
 # Guest artifacts (vmlinux, rootfs.ext4) are built by scripts/build-guest-rootfs.sh
 # and pre-staged before this role runs.
 
-- name: Load Firecracker version pins from repo
+- name: Load generated Firecracker version pins
+  ansible.builtin.assert:
+    that:
+      - topology_guest_versions is defined
+      - topology_guest_versions.firecracker.version is defined
+      - topology_guest_versions.firecracker.sha256 is defined
+    fail_msg: >-
+      topology_guest_versions is missing. Run make topology-generate before deploying firecracker.
+
+- name: Set Firecracker version pins
   ansible.builtin.set_fact:
-    firecracker_version_pins: "{{ lookup('ansible.builtin.file', playbook_dir + '/../../guest/versions.json') | from_json }}"
+    firecracker_version_pins: "{{ topology_guest_versions }}"
 
 - name: Set Firecracker release paths
   ansible.builtin.set_fact:

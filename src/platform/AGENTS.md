@@ -1,6 +1,6 @@
 # platform
 
-All remote orchestration lives here: Ansible roles + playbooks, OpenTofu modules, operator CLI (`cmd/verself/`, being trimmed in favor of services), pinned binary manifests (`server-tools.json`, `dev-tools.json`).
+All remote orchestration lives here: Ansible roles + playbooks, OpenTofu modules, operator CLI (`cmd/verself/`, being trimmed in favor of services), and generated deploy inputs. `src/platform/topology/catalog/versions.cue` is the canonical source for pinned platform binary versions, URLs, and SHA256 hashes; `make topology-generate` renders those pins into `ansible/group_vars/all/generated/catalog.yml`.
 
 ## Server profile
 
@@ -8,7 +8,7 @@ All server software is managed by the `deploy_profile` Ansible role, which popul
 
 - **Go service binaries** (billing-service, sandbox-rental-service, mailbox-service, identity-service, vm-orchestrator): built on the controller via `go build`, copied to server.
 - **Caddy** (with Coraza WAF plugin): built on the controller via `xcaddy`, copied to server.
-- **Static binaries** (ClickHouse, TigerBeetle, Zitadel, Forgejo, Grafana, grafana-clickhouse-datasource plugin, otelcol-contrib, containerd, Node.js, Stalwart, stalwart-cli): pinned in `server-tools.json` with URLs and SHA256 hashes, downloaded and verified on the server.
+- **Static binaries** (ClickHouse, TigerBeetle, Zitadel, Forgejo, Grafana, grafana-clickhouse-datasource plugin, otelcol-contrib, containerd, Node.js, Stalwart, stalwart-cli): pinned in `topology/catalog/versions.cue`, rendered to generated topology vars, downloaded and verified on the server.
 - **apt packages** (PostgreSQL 16, wireguard-tools): installed from PGDG / Ubuntu repos, symlinked into `verself_bin`.
 
 The only other `apt install` is `zfsutils-linux` (kernel-dependent, must match the running kernel). Ubuntu 24.04 only.
@@ -25,7 +25,7 @@ Run from `src/platform/ansible/`. `--tags` targets individual roles (e.g. `--tag
 
 | Playbook | Purpose |
 |---|---|
-| `setup-dev.yml` | Install pinned dev tools from `dev-tools.json` |
+| `setup-dev.yml` | Install dev tools from the generated topology catalog vars |
 | `setup-sops.yml` | Bootstrap SOPS + Age encryption for secrets |
 | `provision.yml` | Provision bare metal via OpenTofu, generate inventory |
 | `deprovision.yml` | Destroy bare metal infrastructure, remove inventory |

@@ -41,9 +41,18 @@
     dest: "{{ guest_rootfs_remote_tmp }}/build-guest-rootfs.sh"
     mode: "0755"
 
+- name: Validate generated guest version pins are loaded
+  ansible.builtin.assert:
+    that:
+      - topology_guest_versions is defined
+      - topology_guest_versions.firecracker.version is defined
+      - topology_guest_versions.guest_kernel.sha256 is defined
+    fail_msg: >-
+      topology_guest_versions is missing. Run make topology-generate before guest-rootfs.
+
 - name: Upload version pins
   ansible.builtin.copy:
-    src: "{{ guest_rootfs_versions_json }}"
+    content: "{{ topology_guest_versions | to_nice_json }}\n"
     dest: "{{ guest_rootfs_remote_tmp }}/versions.json"
     mode: "0644"
 
