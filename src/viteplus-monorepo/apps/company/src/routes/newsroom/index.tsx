@@ -82,14 +82,18 @@ function GiantBulletin({ item, onClick }: { item: NewsroomItem; onClick: () => v
       data-newsroom-bulletin
       data-slug={item.slug}
       onClick={onClick}
-      className="group relative flex items-center justify-center overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+      className="group relative flex w-full items-center justify-center overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
       style={{
         background: "var(--color-flare)",
         color: "var(--color-ink)",
         borderRadius: "24px",
+        // `w-full` pins width to the parent; aspect-ratio + min-height
+        // could otherwise let the box derive its width from min-height ×
+        // aspect, which on a 390px viewport ballooned the card past
+        // viewport (320 × 1.905 ≈ 610px).
         aspectRatio: "1312 / 689",
-        minHeight: "clamp(320px, 38vw, 560px)",
-        padding: "clamp(28px, 4vw, 72px)",
+        minHeight: "clamp(280px, 38vw, 560px)",
+        padding: "clamp(24px, 4vw, 72px)",
         textDecoration: "none",
       }}
     >
@@ -108,7 +112,7 @@ function GiantBulletin({ item, onClick }: { item: NewsroomItem; onClick: () => v
           fontFamily: "'Fraunces', Georgia, serif",
           fontVariationSettings: '"opsz" 144, "SOFT" 30',
           fontWeight: 400,
-          fontSize: "clamp(40px, 7vw, 104px)",
+          fontSize: "clamp(32px, 7vw, 104px)",
           lineHeight: 0.98,
           letterSpacing: "-0.03em",
           color: "var(--color-ink)",
@@ -142,14 +146,14 @@ function EmptyBulletin() {
   return (
     <div
       data-newsroom-bulletin-empty
-      className="flex items-center justify-center"
+      className="flex w-full items-center justify-center"
       style={{
         background: "var(--color-flare)",
         color: "var(--color-ink)",
         borderRadius: "24px",
         aspectRatio: "1312 / 689",
-        minHeight: "clamp(320px, 38vw, 560px)",
-        padding: "clamp(28px, 4vw, 72px)",
+        minHeight: "clamp(280px, 38vw, 560px)",
+        padding: "clamp(24px, 4vw, 72px)",
       }}
     >
       <h2
@@ -157,7 +161,7 @@ function EmptyBulletin() {
           fontFamily: "'Fraunces', Georgia, serif",
           fontVariationSettings: '"opsz" 144, "SOFT" 30',
           fontWeight: 400,
-          fontSize: "clamp(40px, 7vw, 88px)",
+          fontSize: "clamp(32px, 7vw, 88px)",
           lineHeight: 1.0,
           letterSpacing: "-0.03em",
           color: "var(--color-ink)",
