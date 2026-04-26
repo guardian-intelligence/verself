@@ -29,6 +29,14 @@ type updateHumanProfileOutput struct {
 	Body apiwire.IdentityUpdateHumanProfileResponse
 }
 
+type resolveOrganizationInput struct {
+	Body apiwire.IdentityResolveOrganizationRequest
+}
+
+type resolveOrganizationOutput struct {
+	Body apiwire.IdentityResolveOrganizationResponse
+}
+
 func RegisterInternalRoutes(api huma.API, svc *identity.Service) {
 	op := huma.Operation{
 		OperationID:   "update-human-profile",
@@ -42,6 +50,19 @@ func RegisterInternalRoutes(api huma.API, svc *identity.Service) {
 	}
 	op.Middlewares = append(op.Middlewares, operationRequestMiddleware)
 	huma.Register(api, op, updateHumanProfile(svc))
+
+	resolveOp := huma.Operation{
+		OperationID:   "resolve-organization",
+		Method:        http.MethodPost,
+		Path:          "/internal/v1/organizations/resolve",
+		Summary:       "Resolve an organization profile",
+		Description:   "SPIFFE-mTLS internal endpoint for repo-owned services to resolve canonical and redirected organization slugs.",
+		Security:      []map[string][]string{{"mutualTLS": {}}},
+		DefaultStatus: http.StatusOK,
+		MaxBodyBytes:  bodyLimitSmallJSON,
+	}
+	resolveOp.Middlewares = append(resolveOp.Middlewares, operationRequestMiddleware)
+	huma.Register(api, resolveOp, resolveOrganization(svc))
 }
 
 func updateHumanProfile(svc *identity.Service) func(context.Context, *updateHumanProfileInput) (*updateHumanProfileOutput, error) {
@@ -73,6 +94,46 @@ func updateHumanProfile(svc *identity.Service) func(context.Context, *updateHuma
 		finishInternalProfileSpan(span, authIdentity, "allowed", nil)
 		auditInternalProfileUpdate(ctx, input.SubjectID, authIdentity, "allowed", nil)
 		return &updateHumanProfileOutput{Body: humanProfileDTO(profile)}, nil
+	}
+}
+
+func resolveOrganization(svc *identity.Service) func(context.Context, *resolveOrganizationInput) (*resolveOrganizationOutput, error) {
+	return func(ctx context.Context, input *resolveOrganizationInput) (*resolveOrganizationOutput, error) {
+		ctx, span := internalAPITracer.Start(ctx, "identity.organization.resolve")
+		defer span.End()
+		peerID, ok := workloadauth.PeerIDFromContext(ctx)
+		if !ok {
+			err := problem(ctx, http.StatusUnauthorized, "missing-workload-identity", "missing SPIFFE peer identity", nil)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "missing SPIFFE peer identity")
+			return nil, err
+		}
+		orgID := ""
+		if input.Body.OrgID.Uint64() != 0 {
+			orgID = input.Body.OrgID.String()
+		}
+		span.SetAttributes(
+			attribute.String("spiffe.peer_id", peerID.String()),
+			attribute.String("verself.org_id", orgID),
+			attribute.String("identity.org_slug.requested", strings.TrimSpace(input.Body.Slug)),
+		)
+		profile, err := svc.ResolveOrganization(ctx, identity.ResolveOrganizationRequest{
+			OrgID:         orgID,
+			Slug:          input.Body.Slug,
+			RequireActive: input.Body.RequireActive,
+		})
+		if err != nil {
+			mapped := identityError(ctx, err)
+			span.RecordError(mapped)
+			span.SetStatus(codes.Error, problemCode(mapped))
+			return nil, mapped
+		}
+		span.SetAttributes(
+			attribute.String("verself.org_id", profile.OrgID),
+			attribute.String("identity.org_slug", profile.Slug),
+			attribute.String("identity.org_slug.redirected_from", profile.RedirectedFrom),
+		)
+		return &resolveOrganizationOutput{Body: apiwire.IdentityResolveOrganizationResponse{Organization: organizationProfileDTO(profile)}}, nil
 	}
 }
 

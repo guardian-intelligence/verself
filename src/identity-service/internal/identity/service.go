@@ -13,6 +13,9 @@ import (
 )
 
 type Store interface {
+	GetOrganizationProfile(ctx context.Context, orgID, actorID, displayNameSeed string) (OrganizationProfile, error)
+	UpdateOrganizationProfile(ctx context.Context, principal Principal, input UpdateOrganizationRequest) (OrganizationProfile, error)
+	ResolveOrganizationProfile(ctx context.Context, input ResolveOrganizationRequest) (OrganizationProfile, error)
 	GetMemberCapabilities(ctx context.Context, orgID, actor string) (MemberCapabilitiesDocument, error)
 	PutMemberCapabilities(ctx context.Context, doc MemberCapabilitiesDocument) (MemberCapabilitiesDocument, error)
 	GetOrgACLState(ctx context.Context, orgID, actor string) (OrgACLState, error)
@@ -48,15 +51,19 @@ func (s *Service) Organization(ctx context.Context, principal Principal) (Organi
 	if err := principal.validate(); err != nil {
 		return Organization{}, err
 	}
+	store, err := s.store()
+	if err != nil {
+		return Organization{}, err
+	}
+	profile, err := store.GetOrganizationProfile(ctx, principal.OrgID, principal.Subject, principal.OrgDisplayName)
+	if err != nil {
+		return Organization{}, err
+	}
 	capabilities, err := s.memberCapabilities(ctx, principal.OrgID, principal.Subject)
 	if err != nil {
 		return Organization{}, err
 	}
 	members, err := s.members(ctx, principal.OrgID)
-	if err != nil {
-		return Organization{}, err
-	}
-	store, err := s.store()
 	if err != nil {
 		return Organization{}, err
 	}
@@ -67,12 +74,39 @@ func (s *Service) Organization(ctx context.Context, principal Principal) (Organi
 	caller := callerMember(principal, members)
 	return Organization{
 		OrgID:              principal.OrgID,
-		Name:               organizationName(principal),
+		DisplayName:        profile.DisplayName,
+		Slug:               profile.Slug,
+		Version:            profile.Version,
 		OrgACLVersion:      orgACL.Version,
 		Caller:             caller,
 		MemberCapabilities: capabilities,
 		Permissions:        PermissionsForRoles(capabilities, caller.RoleKeys),
 	}, nil
+}
+
+func (s *Service) UpdateOrganization(ctx context.Context, principal Principal, input UpdateOrganizationRequest) (Organization, error) {
+	if err := principal.validate(); err != nil {
+		return Organization{}, err
+	}
+	store, err := s.store()
+	if err != nil {
+		return Organization{}, err
+	}
+	if _, err := store.UpdateOrganizationProfile(ctx, principal, input); err != nil {
+		return Organization{}, err
+	}
+	return s.Organization(ctx, principal)
+}
+
+func (s *Service) ResolveOrganization(ctx context.Context, input ResolveOrganizationRequest) (OrganizationProfile, error) {
+	if strings.TrimSpace(input.OrgID) == "" && strings.TrimSpace(input.Slug) == "" {
+		return OrganizationProfile{}, fmt.Errorf("%w: org_id or slug is required", ErrInvalidInput)
+	}
+	store, err := s.store()
+	if err != nil {
+		return OrganizationProfile{}, err
+	}
+	return store.ResolveOrganizationProfile(ctx, input)
 }
 
 func (s *Service) Members(ctx context.Context, principal Principal) ([]Member, error) {
@@ -633,10 +667,6 @@ func callerMember(principal Principal, members []Member) Member {
 		Email:    principal.Email,
 		RoleKeys: append([]string(nil), principal.Roles...),
 	}
-}
-
-func organizationName(principal Principal) string {
-	return principal.OrgID
 }
 
 func (s *Service) normalizeCreateAPICredentialRequest(ctx context.Context, principal Principal, input CreateAPICredentialRequest) (CreateAPICredentialRequest, MemberCapabilitiesDocument, error) {

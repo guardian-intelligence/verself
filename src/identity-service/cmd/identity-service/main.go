@@ -168,18 +168,25 @@ func run() error {
 	protected := auth.Middleware(authConfig)(privateMux)
 	rootMux.Handle("/", protected)
 
-	profilePeerIDs, err := workloadauth.PeerIDsForSource(spiffeSource, workloadauth.ServiceProfile)
+	internalPeerIDs, err := workloadauth.PeerIDsForSource(spiffeSource, workloadauth.ServiceProfile, workloadauth.ServiceSourceCodeHosting)
 	if err != nil {
 		return err
 	}
-	internalTLSConfig, err := workloadauth.MTLSServerConfigForAny(spiffeSource, profilePeerIDs...)
+	internalTLSConfig, err := workloadauth.MTLSServerConfigForAny(spiffeSource, internalPeerIDs...)
 	if err != nil {
 		return fmt.Errorf("identity spiffe internal tls: %w", err)
 	}
 	internalMux := http.NewServeMux()
 	api.NewInternalAPI(internalMux, serviceVersion, "https://"+internalListenAddr, identityService)
-	internalAuthenticated := auth.Middleware(authConfig)(internalMux)
-	internalAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(profilePeerIDs, internalAuthenticated)
+	profileAuthenticated := auth.Middleware(authConfig)(internalMux)
+	internalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/internal/v1/subjects/") {
+			profileAuthenticated.ServeHTTP(w, r)
+			return
+		}
+		internalMux.ServeHTTP(w, r)
+	})
+	internalAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(internalPeerIDs, internalHandler)
 	if err != nil {
 		return fmt.Errorf("identity internal allowlist: %w", err)
 	}

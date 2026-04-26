@@ -200,7 +200,7 @@ org_id=""
 target_user_id=""
 target_email=""
 original_role_keys_json=""
-python3 - "${artifact_dir}/responses/organization-before.json" "${artifact_dir}/responses/members-before.json" "${VERIFICATION_DOMAIN}" "${artifact_dir}/member-state.env" "${artifact_dir}/responses/member-role-update.json" "${artifact_dir}/responses/member-role-stale-update.json" <<'PY'
+python3 - "${artifact_dir}/responses/organization-before.json" "${artifact_dir}/responses/members-before.json" "${VERIFICATION_DOMAIN}" "${artifact_dir}/member-state.env" "${artifact_dir}/responses/member-role-update.json" "${artifact_dir}/responses/member-role-stale-update.json" "${artifact_dir}/responses/organization-profile-update.json" "${run_id}" <<'PY'
 import json
 import shlex
 import sys
@@ -211,6 +211,11 @@ domain = sys.argv[3]
 env_path = sys.argv[4]
 success_body_path = sys.argv[5]
 stale_body_path = sys.argv[6]
+organization_update_path = sys.argv[7]
+run_id = sys.argv[8]
+for key in ("display_name", "slug", "version"):
+    if key not in organization:
+        raise SystemExit(f"organization response missing {key}")
 
 target_email = f"acme-user@{domain}"
 target = None
@@ -243,9 +248,16 @@ stale_body = {
 }
 json.dump(success_body, open(success_body_path, "w", encoding="utf-8"), sort_keys=True)
 json.dump(stale_body, open(stale_body_path, "w", encoding="utf-8"), sort_keys=True)
+json.dump({
+    "display_name": f"Acme Verification {run_id}",
+    "slug": organization["slug"],
+    "version": int(organization["version"]),
+}, open(organization_update_path, "w", encoding="utf-8"), sort_keys=True)
 with open(env_path, "w", encoding="utf-8") as output:
     for key, value in {
         "org_id": str(organization["org_id"]),
+        "org_display_name": organization["display_name"],
+        "org_slug": organization["slug"],
         "target_user_id": target["user_id"],
         "target_email": target.get("email", ""),
         "original_role_keys_json": json.dumps(original_roles),
@@ -257,8 +269,26 @@ PY
 # shellcheck disable=SC1090
 # shellcheck disable=SC1091
 source "${artifact_dir}/member-state.env"
+: "${org_display_name:?}"
+: "${org_slug:?}"
 success_body="$(<"${artifact_dir}/responses/member-role-update.json")"
 stale_body="$(<"${artifact_dir}/responses/member-role-stale-update.json")"
+organization_update_body="$(<"${artifact_dir}/responses/organization-profile-update.json")"
+
+remote_identity_api PATCH "/api/v1/organization" "${identity_token}" "${artifact_dir}/responses/organization-profile-update-response.json" "${run_id}-organization-profile-update" "${organization_update_body}"
+assert_api_status "${artifact_dir}/responses/organization-profile-update-response.json" 200
+python3 - "${artifact_dir}/responses/organization-before.json" "${artifact_dir}/responses/organization-profile-update-response.json" "${artifact_dir}/responses/organization-profile-restore.json" <<'PY'
+import json
+import sys
+
+original = json.loads(json.load(open(sys.argv[1], encoding="utf-8"))["body"])
+updated = json.loads(json.load(open(sys.argv[2], encoding="utf-8"))["body"])
+json.dump({
+    "display_name": original["display_name"],
+    "slug": original["slug"],
+    "version": int(updated["version"]),
+}, open(sys.argv[3], "w", encoding="utf-8"), sort_keys=True)
+PY
 
 remote_identity_api PUT "/api/v1/organization/members/${target_user_id}/roles" "${identity_token}" "${artifact_dir}/responses/member-role-update-response.json" "${run_id}-member-role-accepted" "${success_body}"
 assert_api_status "${artifact_dir}/responses/member-role-update-response.json" 200
@@ -296,10 +326,23 @@ PY
 restore_body="$(<"${artifact_dir}/responses/member-role-restore.json")"
 remote_identity_api PUT "/api/v1/organization/members/${target_user_id}/roles" "${identity_token}" "${artifact_dir}/responses/member-role-restore-response.json" "${run_id}-member-role-restore" "${restore_body}"
 assert_api_status "${artifact_dir}/responses/member-role-restore-response.json" 200
+organization_profile_restore_body="$(<"${artifact_dir}/responses/organization-profile-restore.json")"
+remote_identity_api PATCH "/api/v1/organization" "${identity_token}" "${artifact_dir}/responses/organization-profile-restore-response.json" "${run_id}-organization-profile-restore" "${organization_profile_restore_body}"
+assert_api_status "${artifact_dir}/responses/organization-profile-restore-response.json" 200
 window_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 escaped_org_id="${org_id//\'/\'\'}"
 escaped_target_user_id="${target_user_id//\'/\'\'}"
+remote_psql identity_service "
+SELECT org_id, display_name, slug, state, version
+FROM identity_organizations
+WHERE org_id = '${escaped_org_id}';
+" "${artifact_dir}/postgres/organization-profile.tsv"
+if ! grep -Fq "${escaped_org_id}"$'\t'"${org_display_name}"$'\t'"${org_slug}"$'\tactive\t' "${artifact_dir}/postgres/organization-profile.tsv"; then
+  echo "identity_organizations did not contain the restored organization profile" >&2
+  exit 1
+fi
+
 remote_psql identity_service "
 SELECT version, updated_by
 FROM identity_org_acl_state
@@ -345,6 +388,20 @@ wait_for_clickhouse_count verself "
 " 1 "${artifact_dir}/clickhouse/domain-update-ledger-conflict-count.tsv" \
   --param_org_id="${org_id}" \
   --param_target_user_id="${target_user_id}"
+
+wait_for_clickhouse_count default "
+  SELECT count()
+  FROM otel_traces
+  WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
+    AND ServiceName = 'identity-service'
+    AND SpanName IN (
+      'identity.organization.update',
+      'identity.pg.organization_profile.update',
+      'identity.pg.organization_profile.get'
+    )
+    AND (arrayElement(SpanAttributes, 'verself.org_id') = '' OR arrayElement(SpanAttributes, 'verself.org_id') = {org_id:String})
+" 3 "${artifact_dir}/clickhouse/identity-organization-profile-traces-count.tsv" \
+  --param_org_id="${org_id}"
 
 wait_for_clickhouse_count default "
   SELECT count()

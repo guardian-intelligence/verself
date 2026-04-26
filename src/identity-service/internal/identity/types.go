@@ -26,23 +26,57 @@ const (
 type Principal struct {
 	Subject           string
 	OrgID             string
+	OrgDisplayName    string
 	Roles             []string
 	DirectPermissions []string
 	Email             string
 }
+
+type OrganizationProfileState string
+
+const (
+	OrganizationProfileStateActive OrganizationProfileState = "active"
+)
 
 type (
 	APICredentialAuthMethod string
 	APICredentialStatus     string
 )
 
+type OrganizationProfile struct {
+	OrgID          string
+	DisplayName    string
+	Slug           string
+	State          OrganizationProfileState
+	Version        int32
+	CreatedBy      string
+	UpdatedBy      string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	RedirectedFrom string
+}
+
 type Organization struct {
 	OrgID              string
-	Name               string
+	DisplayName        string
+	Slug               string
+	Version            int32
 	OrgACLVersion      int32
 	Caller             Member
 	MemberCapabilities MemberCapabilitiesDocument
 	Permissions        []string
+}
+
+type UpdateOrganizationRequest struct {
+	Version     int32
+	DisplayName string
+	Slug        string
+}
+
+type ResolveOrganizationRequest struct {
+	OrgID         string
+	Slug          string
+	RequireActive bool
 }
 
 type Member struct {

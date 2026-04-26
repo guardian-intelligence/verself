@@ -424,10 +424,10 @@ components:
           type: string
         caller:
           $ref: "#/components/schemas/IdentityMember"
+        display_name:
+          type: string
         member_capabilities:
           $ref: "#/components/schemas/IdentityMemberCapabilitiesDocument"
-        name:
-          type: string
         org_acl_version:
           format: int32
           maximum: 2147483647
@@ -442,9 +442,18 @@ components:
           type:
             - array
             - "null"
+        slug:
+          type: string
+        version:
+          format: int32
+          maximum: 2147483647
+          minimum: 0
+          type: integer
       required:
         - org_id
-        - name
+        - display_name
+        - slug
+        - version
         - org_acl_version
         - caller
         - member_capabilities
@@ -547,6 +556,30 @@ components:
         - expected_role_keys
         - expected_org_acl_version
       type: object
+    IdentityUpdateOrganizationRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://identity.api.verself.sh/schemas/IdentityUpdateOrganizationRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        display_name:
+          maxLength: 120
+          type: string
+        slug:
+          maxLength: 80
+          type: string
+        version:
+          format: int32
+          maximum: 2147483647
+          minimum: 0
+          type: integer
+      required:
+        - version
+      type: object
   securitySchemes:
     bearerAuth:
       bearerFormat: JWT
@@ -587,6 +620,54 @@ paths:
         org_scope: token_org_id
         permission: identity:organization:read
         rate_limit_class: read
+        resource: organization
+        risk_level: medium
+        source_product_area: Identity
+    patch:
+      operationId: patch-organization
+      parameters:
+        - description: Stable caller-provided key used to make this mutation retry-safe.
+          in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IdentityUpdateOrganizationRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityOrganization"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Update organization profile
+      x-verself-iam:
+        action: update
+        audit_event: identity.organization.update
+        data_classification: restricted
+        event_category: identity
+        idempotency: idempotency_key_header
+        operation_display: patch organization
+        operation_type: write
+        org_scope: token_org_id
+        permission: identity:organization:write
+        rate_limit_class: organization_mutation
+        request_body_max_bytes: 16384
         resource: organization
         risk_level: medium
         source_product_area: Identity

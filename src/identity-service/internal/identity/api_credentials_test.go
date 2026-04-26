@@ -102,6 +102,18 @@ type apiCredentialTestStore struct {
 	createErr    error
 }
 
+func (s *apiCredentialTestStore) GetOrganizationProfile(context.Context, string, string, string) (OrganizationProfile, error) {
+	return OrganizationProfile{}, nil
+}
+
+func (s *apiCredentialTestStore) UpdateOrganizationProfile(context.Context, Principal, UpdateOrganizationRequest) (OrganizationProfile, error) {
+	return OrganizationProfile{}, nil
+}
+
+func (s *apiCredentialTestStore) ResolveOrganizationProfile(context.Context, ResolveOrganizationRequest) (OrganizationProfile, error) {
+	return OrganizationProfile{}, nil
+}
+
 func (s *apiCredentialTestStore) GetMemberCapabilities(context.Context, string, string) (MemberCapabilitiesDocument, error) {
 	return s.capabilities, nil
 }

@@ -28,6 +28,7 @@ func (p permission) LogValue() slog.Value { return slog.StringValue(string(p)) }
 
 const (
 	permissionOrganizationRead        permission = identity.PermissionOrganizationRead
+	permissionOrganizationWrite       permission = identity.PermissionOrganizationWrite
 	permissionMemberRead              permission = identity.PermissionMemberRead
 	permissionMemberInvite            permission = identity.PermissionMemberInvite
 	permissionMemberRolesWrite        permission = identity.PermissionMemberRolesWrite
@@ -542,6 +543,7 @@ type fixedWindowOperationRateLimiter struct {
 
 var apiOperationRateLimiter = newFixedWindowOperationRateLimiter(map[string]rateLimitRule{
 	"read":                         {Limit: 600, Window: time.Minute},
+	"organization_mutation":        {Limit: 30, Window: time.Minute},
 	"member_mutation":              {Limit: 60, Window: time.Minute},
 	"member_capabilities_mutation": {Limit: 30, Window: time.Minute},
 	"api_credential_mutation":      {Limit: 30, Window: time.Minute},

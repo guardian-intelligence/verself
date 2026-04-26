@@ -29,6 +29,23 @@ func RegisterRoutes(api huma.API, svc *identity.Service) {
 	}), getOrganization(svc))
 
 	registerSecured(api, svc, secured(huma.Operation{
+		OperationID:   "patch-organization",
+		Method:        http.MethodPatch,
+		Path:          "/api/v1/organization",
+		Summary:       "Update organization profile",
+		DefaultStatus: http.StatusOK,
+	}, operationPolicy{
+		Permission:     permissionOrganizationWrite,
+		Resource:       "organization",
+		Action:         "update",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "organization_mutation",
+		Idempotency:    idempotencyHeaderKey,
+		AuditEvent:     "identity.organization.update",
+		BodyLimitBytes: bodyLimitSmallJSON,
+	}), updateOrganization(svc))
+
+	registerSecured(api, svc, secured(huma.Operation{
 		OperationID: "list-organization-members",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/organization/members",
@@ -193,6 +210,10 @@ type organizationOutput struct {
 	Body apiwire.IdentityOrganization
 }
 
+type updateOrganizationInput struct {
+	Body apiwire.IdentityUpdateOrganizationRequest
+}
+
 type membersOutput struct {
 	Body apiwire.IdentityMembers
 }
@@ -277,6 +298,7 @@ func principalFromAuthIdentity(ctx context.Context, authIdentity *auth.Identity)
 	return identity.Principal{
 		Subject:           authIdentity.Subject,
 		OrgID:             authIdentity.OrgID,
+		OrgDisplayName:    organizationDisplayNameForTokenOrg(authIdentity),
 		Roles:             identityRolesForCurrentOrg(authIdentity),
 		DirectPermissions: directPermissionsFromAuthIdentity(authIdentity),
 		Email:             authIdentity.Email,
@@ -290,6 +312,24 @@ func getOrganization(svc *identity.Service) func(context.Context, *emptyInput) (
 			return nil, err
 		}
 		org, err := svc.Organization(ctx, principal)
+		if err != nil {
+			return nil, identityError(ctx, err)
+		}
+		return &organizationOutput{Body: organizationDTO(org)}, nil
+	}
+}
+
+func updateOrganization(svc *identity.Service) func(context.Context, *updateOrganizationInput) (*organizationOutput, error) {
+	return func(ctx context.Context, input *updateOrganizationInput) (*organizationOutput, error) {
+		principal, err := principalFromContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+		org, err := svc.UpdateOrganization(ctx, principal, identity.UpdateOrganizationRequest{
+			Version:     input.Body.Version,
+			DisplayName: input.Body.DisplayName,
+			Slug:        input.Body.Slug,
+		})
 		if err != nil {
 			return nil, identityError(ctx, err)
 		}
@@ -473,11 +513,25 @@ func revokeAPICredential(svc *identity.Service) func(context.Context, *apiCreden
 func organizationDTO(org identity.Organization) apiwire.IdentityOrganization {
 	return apiwire.IdentityOrganization{
 		OrgID:              orgID(org.OrgID),
-		Name:               org.Name,
+		DisplayName:        org.DisplayName,
+		Slug:               org.Slug,
+		Version:            org.Version,
 		OrgACLVersion:      org.OrgACLVersion,
 		Caller:             memberDTO(org.Caller),
 		MemberCapabilities: memberCapabilitiesDocumentDTO(org.MemberCapabilities),
 		Permissions:        append([]string(nil), org.Permissions...),
+	}
+}
+
+func organizationProfileDTO(profile identity.OrganizationProfile) apiwire.IdentityOrganizationProfile {
+	return apiwire.IdentityOrganizationProfile{
+		OrgID:          orgID(profile.OrgID),
+		DisplayName:    profile.DisplayName,
+		Slug:           profile.Slug,
+		State:          string(profile.State),
+		Version:        profile.Version,
+		UpdatedAt:      profile.UpdatedAt,
+		RedirectedFrom: profile.RedirectedFrom,
 	}
 }
 
@@ -592,4 +646,16 @@ func orgID(value string) apiwire.OrgID {
 		return apiwire.Uint64(0)
 	}
 	return apiwire.Uint64(parsed)
+}
+
+func organizationDisplayNameForTokenOrg(authIdentity *auth.Identity) string {
+	if authIdentity == nil {
+		return ""
+	}
+	for _, assignment := range authIdentity.RoleAssignments {
+		if assignment.OrganizationID == authIdentity.OrgID && strings.TrimSpace(assignment.OrganizationName) != "" {
+			return strings.TrimSpace(assignment.OrganizationName)
+		}
+	}
+	return ""
 }
