@@ -9,7 +9,6 @@ Polyglot monorepo structured as a modular monolith:
 - **Go** — `go.work` at repo root, covers most of `src/*`. Services: `sandbox-rental-service`, `billing-service`, `identity-service`, `mailbox-service`, `governance-service`, `secrets-service`, `platform`, `vm-orchestrator`. Shared libs: `apiwire`, `auth-middleware`, `otel`.
 - **Zig** — `src/vm-guest-telemetry/` (guest agent, runs *inside* Firecracker VMs, not on the host).
 - **CUE** — `src/platform/topology/` is the canonical service topology and constraint layer. `make topology-generate` renders generated Ansible inputs, while `make topology-check` and `make topology-proof` validate freshness and ClickHouse proof spans.
-- **YAML* -- Infrastructure code defined with Ansible.
 
 Layers:
 
