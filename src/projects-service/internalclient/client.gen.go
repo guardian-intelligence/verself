@@ -60,18 +60,19 @@ type ErrorModel struct {
 
 // Project defines model for Project.
 type Project struct {
-	ArchivedAt  *time.Time         `json:"archived_at,omitempty"`
-	CreatedAt   time.Time          `json:"created_at"`
-	CreatedBy   string             `json:"created_by"`
-	Description string             `json:"description"`
-	DisplayName string             `json:"display_name"`
-	OrgId       string             `json:"org_id"`
-	ProjectId   openapi_types.UUID `json:"project_id"`
-	Slug        string             `json:"slug"`
-	State       string             `json:"state"`
-	UpdatedAt   time.Time          `json:"updated_at"`
-	UpdatedBy   string             `json:"updated_by"`
-	Version     string             `json:"version"`
+	ArchivedAt         *time.Time         `json:"archived_at,omitempty"`
+	CreatedAt          time.Time          `json:"created_at"`
+	CreatedBy          string             `json:"created_by"`
+	Description        string             `json:"description"`
+	DisplayName        string             `json:"display_name"`
+	OrgId              string             `json:"org_id"`
+	ProjectId          openapi_types.UUID `json:"project_id"`
+	RedirectedFromSlug *string            `json:"redirected_from_slug,omitempty"`
+	Slug               string             `json:"slug"`
+	State              string             `json:"state"`
+	UpdatedAt          time.Time          `json:"updated_at"`
+	UpdatedBy          string             `json:"updated_by"`
+	Version            string             `json:"version"`
 }
 
 // ProjectEnvironment defines model for ProjectEnvironment.

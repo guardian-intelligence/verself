@@ -103,6 +103,7 @@ func (s *Service) ArchiveEnvironment(ctx context.Context, principal Principal, i
 func (s *Service) ResolveProject(ctx context.Context, input ResolveProjectRequest) (project Project, err error) {
 	ctx, span := serviceTracer.Start(ctx, "projects.project.resolve", trace.WithSpanKind(trace.SpanKindServer), trace.WithAttributes(
 		attribute.String("verself.project_id", input.ProjectID.String()),
+		attribute.String("projects.slug.requested", input.Slug),
 		attribute.Bool("projects.require_active", input.RequireActive),
 	))
 	defer finishServiceSpan(span, err)

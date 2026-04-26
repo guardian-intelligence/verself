@@ -131,6 +131,8 @@ components:
         project_id:
           format: uuid
           type: string
+        redirected_from_slug:
+          type: string
         slug:
           type: string
         state:

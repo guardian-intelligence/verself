@@ -458,18 +458,19 @@ func parseUUID(ctx context.Context, value, field string) (uuid.UUID, error) {
 
 func projectDTO(project projects.Project) apiwire.Project {
 	return apiwire.Project{
-		ProjectID:   project.ID.String(),
-		OrgID:       apiwire.Uint64(project.OrgID),
-		Slug:        project.Slug,
-		DisplayName: project.DisplayName,
-		Description: project.Description,
-		State:       apiwire.ProjectState(project.State),
-		Version:     apiwire.Int64(project.Version),
-		CreatedBy:   project.CreatedBy,
-		UpdatedBy:   project.UpdatedBy,
-		CreatedAt:   project.CreatedAt,
-		UpdatedAt:   project.UpdatedAt,
-		ArchivedAt:  project.ArchivedAt,
+		ProjectID:          project.ID.String(),
+		OrgID:              apiwire.Uint64(project.OrgID),
+		Slug:               project.Slug,
+		RedirectedFromSlug: project.RedirectedFromSlug,
+		DisplayName:        project.DisplayName,
+		Description:        project.Description,
+		State:              apiwire.ProjectState(project.State),
+		Version:            apiwire.Int64(project.Version),
+		CreatedBy:          project.CreatedBy,
+		UpdatedBy:          project.UpdatedBy,
+		CreatedAt:          project.CreatedAt,
+		UpdatedAt:          project.UpdatedAt,
+		ArchivedAt:         project.ArchivedAt,
 	}
 }
 

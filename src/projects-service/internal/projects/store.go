@@ -126,6 +126,13 @@ func (s SQLStore) CreateProject(ctx context.Context, principal Principal, input 
 	if err != nil || found {
 		return existing, err
 	}
+	available, err := s.projectSlugAvailable(ctx, tx, orgID, input.Slug, uuid.Nil)
+	if err != nil {
+		return Project{}, err
+	}
+	if !available {
+		return Project{}, ErrConflict
+	}
 	now := s.now()
 	projectID := uuid.New()
 	project = Project{
@@ -307,6 +314,15 @@ func (s SQLStore) UpdateProject(ctx context.Context, principal Principal, input 
 	if input.DisplayName == "" {
 		input.DisplayName = old.DisplayName
 	}
+	if input.Slug != old.Slug {
+		available, err := s.projectSlugAvailable(ctx, tx, orgID, input.Slug, old.ID)
+		if err != nil {
+			return Project{}, err
+		}
+		if !available {
+			return Project{}, ErrConflict
+		}
+	}
 	now := s.now()
 	nextVersion := old.Version + 1
 	tag, err := tx.Exec(ctx, `
@@ -327,6 +343,11 @@ WHERE org_id = $1 AND project_id = $2 AND version = $8 AND state = 'active'`,
 	}
 	if tag.RowsAffected() != 1 {
 		return Project{}, ErrConflict
+	}
+	if input.Slug != old.Slug {
+		if err := s.insertProjectSlugRedirect(ctx, tx, old.OrgID, old.ID, old.Slug, principal.Subject, now); err != nil {
+			return Project{}, err
+		}
 	}
 	if err := s.insertProjectEvent(ctx, tx, old.OrgID, old.ID, uuid.Nil, "project.updated", principal.Subject, map[string]string{
 		"version": strconv.FormatInt(nextVersion, 10),
@@ -591,6 +612,11 @@ func (s SQLStore) ArchiveEnvironment(ctx context.Context, principal Principal, i
 func (s SQLStore) ResolveProject(ctx context.Context, input ResolveProjectRequest) (project Project, err error) {
 	ctx, span := storeTracer.Start(ctx, "projects.pg.project.resolve")
 	defer endSpan(span, err)
+	span.SetAttributes(
+		attribute.Int64("verself.org_id", int64(input.OrgID)),
+		attribute.String("projects.slug.requested", input.Slug),
+		attribute.String("verself.project_id", input.ProjectID.String()),
+	)
 	if input.OrgID == 0 {
 		return Project{}, fmt.Errorf("%w: org_id is required", ErrInvalid)
 	}
@@ -600,11 +626,19 @@ func (s SQLStore) ResolveProject(ctx context.Context, input ResolveProjectReques
 	if input.ProjectID != uuid.Nil {
 		project, err = s.loadProjectByID(ctx, s.PG, input.OrgID, input.ProjectID)
 	} else {
-		project, err = s.loadProjectBySlug(ctx, s.PG, input.OrgID, normalizeSlug(input.Slug))
+		requestedSlug := normalizeSlug(input.Slug)
+		project, err = s.loadProjectBySlug(ctx, s.PG, input.OrgID, requestedSlug)
+		if errors.Is(err, ErrNotFound) {
+			project, err = s.loadProjectByRedirectSlug(ctx, s.PG, input.OrgID, requestedSlug)
+		}
 	}
 	if err != nil {
 		return Project{}, err
 	}
+	span.SetAttributes(
+		attribute.String("projects.slug.canonical", project.Slug),
+		attribute.String("projects.slug.redirected_from", project.RedirectedFromSlug),
+	)
 	if input.RequireActive && project.State != StateActive {
 		return Project{}, ErrArchived
 	}
@@ -921,6 +955,58 @@ func (s SQLStore) loadProjectBySlug(ctx context.Context, q queryer, orgID uint64
 SELECT project_id, org_id, slug, display_name, description, state, version, created_by, updated_by, created_at, updated_at, archived_at
 FROM projects
 WHERE org_id = $1 AND slug = $2`, pgOrg, slug))
+}
+
+func (s SQLStore) loadProjectByRedirectSlug(ctx context.Context, q queryer, orgID uint64, slug string) (Project, error) {
+	pgOrg, err := pgOrgID(orgID)
+	if err != nil {
+		return Project{}, err
+	}
+	project, err := scanProjectRow(q.QueryRow(ctx, `
+SELECT p.project_id, p.org_id, p.slug, p.display_name, p.description, p.state, p.version, p.created_by, p.updated_by, p.created_at, p.updated_at, p.archived_at
+FROM project_slug_redirects r
+JOIN projects p ON p.project_id = r.project_id AND p.org_id = r.org_id
+WHERE r.org_id = $1 AND r.slug = $2`, pgOrg, slug))
+	if err != nil {
+		return Project{}, err
+	}
+	project.RedirectedFromSlug = slug
+	return project, nil
+}
+
+func (s SQLStore) projectSlugAvailable(ctx context.Context, q queryer, orgID int64, slug string, currentProjectID uuid.UUID) (bool, error) {
+	var current any
+	if currentProjectID != uuid.Nil {
+		current = currentProjectID
+	}
+	var unavailable bool
+	if err := q.QueryRow(ctx, `
+SELECT EXISTS (
+    SELECT 1 FROM projects WHERE org_id = $1 AND slug = $2 AND ($3::uuid IS NULL OR project_id <> $3::uuid)
+) OR EXISTS (
+    SELECT 1 FROM project_slug_redirects WHERE org_id = $1 AND slug = $2
+)`, orgID, slug, current).Scan(&unavailable); err != nil {
+		return false, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	return !unavailable, nil
+}
+
+func (s SQLStore) insertProjectSlugRedirect(ctx context.Context, q queryer, orgID uint64, projectID uuid.UUID, slug string, actorID string, createdAt time.Time) error {
+	pgOrg, err := pgOrgID(orgID)
+	if err != nil {
+		return err
+	}
+	_, err = q.Exec(ctx, `
+INSERT INTO project_slug_redirects (org_id, slug, project_id, created_by, created_at)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT DO NOTHING`, pgOrg, slug, projectID, strings.TrimSpace(actorID), createdAt)
+	if err != nil {
+		if uniqueViolation(err) {
+			return ErrConflict
+		}
+		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	return nil
 }
 
 func (s SQLStore) loadEnvironment(ctx context.Context, q queryer, orgID uint64, projectID, environmentID uuid.UUID) (Environment, error) {
