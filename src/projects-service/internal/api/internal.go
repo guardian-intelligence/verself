@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/verself/apiwire"
+	workloadauth "github.com/verself/auth-middleware/workload"
 	"github.com/verself/projects-service/internal/projects"
 )
 
@@ -56,6 +57,10 @@ func RegisterInternalRoutes(api huma.API, svc *projects.Service) {
 		RiskLevel:        "medium",
 		BodyLimitBytes:   bodyLimitSmallJSON,
 		Internal:         true,
+		InternalPeers: []string{
+			workloadauth.ServiceSourceCodeHosting,
+			workloadauth.ServiceSandboxRental,
+		},
 	}, resolveProject(svc))
 
 	registerProjectsRoute(api, huma.Operation{
@@ -76,6 +81,10 @@ func RegisterInternalRoutes(api huma.API, svc *projects.Service) {
 		RiskLevel:        "medium",
 		BodyLimitBytes:   bodyLimitSmallJSON,
 		Internal:         true,
+		InternalPeers: []string{
+			workloadauth.ServiceSourceCodeHosting,
+			workloadauth.ServiceSandboxRental,
+		},
 	}, resolveEnvironment(svc))
 
 	registerProjectsRoute(api, huma.Operation{
@@ -94,6 +103,7 @@ func RegisterInternalRoutes(api huma.API, svc *projects.Service) {
 		OperationType:    "read",
 		RiskLevel:        "medium",
 		Internal:         true,
+		InternalPeers:    []string{workloadauth.ServiceGovernance},
 	}, listEvents(svc))
 }
 

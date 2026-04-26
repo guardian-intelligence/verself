@@ -68,6 +68,7 @@ type operationPolicy struct {
 	DataClassification string
 	BodyLimitBytes     int64
 	Internal           bool
+	InternalPeers      []string
 }
 
 type operationRequestInfoKey struct{}
@@ -160,6 +161,9 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 	if operationRequiresBodyBudget(op) && policy.BodyLimitBytes <= 0 {
 		panic("missing body limit for mutating operation " + op.OperationID)
 	}
+	if policy.Internal && len(policy.InternalPeers) == 0 {
+		panic("missing internal peer allowlist for " + op.OperationID)
+	}
 	if policy.BodyLimitBytes > 0 {
 		op.MaxBodyBytes = policy.BodyLimitBytes
 	}
@@ -223,6 +227,9 @@ func enforceOperationPolicy(ctx context.Context, policy operationPolicy) (projec
 		if !ok {
 			return projects.Principal{}, unauthorized(ctx)
 		}
+		if !internalPeerAllowed(peerID.String(), policy.InternalPeers) {
+			return projects.Principal{Subject: peerID.String()}, forbidden(ctx, "internal-peer-denied", "SPIFFE peer is not allowed to call this projects operation")
+		}
 		return projects.Principal{Subject: peerID.String()}, requireOperationIdempotency(ctx, policy)
 	}
 	identity := auth.FromContext(ctx)
@@ -244,6 +251,18 @@ func enforceOperationPolicy(ctx context.Context, policy operationPolicy) (projec
 		return principal, err
 	}
 	return principal, nil
+}
+
+func internalPeerAllowed(peerID string, allowedServices []string) bool {
+	if len(allowedServices) == 0 {
+		return false
+	}
+	for _, service := range allowedServices {
+		if strings.HasSuffix(peerID, "/svc/"+service) {
+			return true
+		}
+	}
+	return false
 }
 
 func requireOperationIdempotency(ctx context.Context, policy operationPolicy) error {

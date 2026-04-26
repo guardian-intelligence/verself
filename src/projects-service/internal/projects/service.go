@@ -101,21 +101,34 @@ func (s *Service) ArchiveEnvironment(ctx context.Context, principal Principal, i
 }
 
 func (s *Service) ResolveProject(ctx context.Context, input ResolveProjectRequest) (project Project, err error) {
-	ctx, span := serviceTracer.Start(ctx, "projects.project.resolve", trace.WithSpanKind(trace.SpanKindServer), trace.WithAttributes(
-		attribute.String("verself.project_id", input.ProjectID.String()),
-		attribute.String("projects.slug.requested", input.Slug),
+	attrs := []attribute.KeyValue{
+		attribute.Int64("verself.org_id", int64(input.OrgID)),
 		attribute.Bool("projects.require_active", input.RequireActive),
-	))
+	}
+	if input.ProjectID != uuid.Nil {
+		attrs = append(attrs, attribute.String("verself.project_id", input.ProjectID.String()))
+	}
+	if input.Slug != "" {
+		attrs = append(attrs, attribute.String("projects.slug", input.Slug))
+	}
+	ctx, span := serviceTracer.Start(ctx, "projects.project.resolve", trace.WithSpanKind(trace.SpanKindServer), trace.WithAttributes(attrs...))
 	defer finishServiceSpan(span, err)
 	return s.Store.ResolveProject(ctx, input)
 }
 
 func (s *Service) ResolveEnvironment(ctx context.Context, input ResolveEnvironmentRequest) (env Environment, err error) {
-	ctx, span := serviceTracer.Start(ctx, "projects.environment.resolve", trace.WithSpanKind(trace.SpanKindServer), trace.WithAttributes(
+	attrs := []attribute.KeyValue{
+		attribute.Int64("verself.org_id", int64(input.OrgID)),
 		attribute.String("verself.project_id", input.ProjectID.String()),
-		attribute.String("verself.environment_id", input.EnvironmentID.String()),
 		attribute.Bool("projects.require_active", input.RequireActive),
-	))
+	}
+	if input.EnvironmentID != uuid.Nil {
+		attrs = append(attrs, attribute.String("verself.environment_id", input.EnvironmentID.String()))
+	}
+	if input.Slug != "" {
+		attrs = append(attrs, attribute.String("projects.environment_slug", input.Slug))
+	}
+	ctx, span := serviceTracer.Start(ctx, "projects.environment.resolve", trace.WithSpanKind(trace.SpanKindServer), trace.WithAttributes(attrs...))
 	defer finishServiceSpan(span, err)
 	return s.Store.ResolveEnvironment(ctx, input)
 }
