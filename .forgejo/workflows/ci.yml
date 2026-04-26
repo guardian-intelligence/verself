@@ -17,7 +17,7 @@ jobs:
   viteplus:
     name: Vite+ monorepo
     runs-on: [self-hosted, linux, x64, verself-4vcpu-ubuntu-2404]
-    timeout-minutes: 15
+    timeout-minutes: 5
     steps:
       - name: Check out repository
         uses: https://data.forgejo.org/actions/checkout@v6
