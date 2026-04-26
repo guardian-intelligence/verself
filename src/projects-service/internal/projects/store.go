@@ -301,11 +301,17 @@ func (s SQLStore) UpdateProject(ctx context.Context, principal Principal, input 
 	if old.Version != input.Version {
 		return Project{}, ErrConflict
 	}
-	if input.Slug == "" {
-		input.Slug = old.Slug
+	slug := old.Slug
+	if input.Slug != nil {
+		slug = *input.Slug
 	}
-	if input.DisplayName == "" {
-		input.DisplayName = old.DisplayName
+	displayName := old.DisplayName
+	if input.DisplayName != nil {
+		displayName = *input.DisplayName
+	}
+	description := old.Description
+	if input.Description != nil {
+		description = *input.Description
 	}
 	now := s.now()
 	nextVersion := old.Version + 1
@@ -318,7 +324,7 @@ SET slug = $3,
     updated_by = $6,
     updated_at = $7
 WHERE org_id = $1 AND project_id = $2 AND version = $8 AND state = 'active'`,
-		int64(old.OrgID), old.ID, input.Slug, input.DisplayName, input.Description, principal.Subject, now, input.Version)
+		int64(old.OrgID), old.ID, slug, displayName, description, principal.Subject, now, input.Version)
 	if err != nil {
 		if uniqueViolation(err) {
 			return Project{}, ErrConflict
@@ -330,7 +336,7 @@ WHERE org_id = $1 AND project_id = $2 AND version = $8 AND state = 'active'`,
 	}
 	if err := s.insertProjectEvent(ctx, tx, old.OrgID, old.ID, uuid.Nil, "project.updated", principal.Subject, map[string]string{
 		"version": strconv.FormatInt(nextVersion, 10),
-		"slug":    input.Slug,
+		"slug":    slug,
 	}); err != nil {
 		return Project{}, err
 	}
@@ -722,6 +728,9 @@ func (s SQLStore) setProjectState(ctx context.Context, principal Principal, inpu
 	if err != nil {
 		return Project{}, err
 	}
+	if old.State == state {
+		return Project{}, ErrConflict
+	}
 	if old.Version != input.Version {
 		return Project{}, ErrConflict
 	}
@@ -808,6 +817,9 @@ func (s SQLStore) setEnvironmentState(ctx context.Context, principal Principal, 
 	old, err := s.loadEnvironment(ctx, tx, principal.OrgID, input.ProjectID, input.EnvironmentID)
 	if err != nil {
 		return Environment{}, err
+	}
+	if old.State == state {
+		return Environment{}, ErrConflict
 	}
 	if old.Version != input.Version {
 		return Environment{}, ErrConflict

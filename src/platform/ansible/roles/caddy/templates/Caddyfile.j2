@@ -8,6 +8,7 @@
 		directives `
 			Include @coraza.conf-recommended
 			Include @crs-setup.conf.example
+			SecAction "id:900200,phase:1,nolog,pass,t:none,setvar:'tx.allowed_methods=GET HEAD POST OPTIONS PUT PATCH DELETE'"
 			Include @owasp_crs/*.conf
 			SecRuleEngine DetectionOnly
 			SecResponseBodyAccess Off
@@ -21,6 +22,7 @@
 		directives `
 			Include @coraza.conf-recommended
 			Include @crs-setup.conf.example
+			SecAction "id:900200,phase:1,nolog,pass,t:none,setvar:'tx.allowed_methods=GET HEAD POST OPTIONS PUT PATCH DELETE'"
 			Include @owasp_crs/*.conf
 			SecRuleEngine On
 			SecResponseBodyAccess Off

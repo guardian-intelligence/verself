@@ -90,9 +90,9 @@ type CreateProjectRequest struct {
 type UpdateProjectRequest struct {
 	ProjectID      uuid.UUID
 	Version        int64
-	Slug           string
-	DisplayName    string
-	Description    string
+	Slug           *string
+	DisplayName    *string
+	Description    *string
 	IdempotencyKey string
 }
 
@@ -178,24 +178,29 @@ func NormalizeCreateProject(input CreateProjectRequest) (CreateProjectRequest, e
 }
 
 func NormalizeUpdateProject(input UpdateProjectRequest) (UpdateProjectRequest, error) {
-	input.DisplayName = normalizeHumanText(input.DisplayName)
-	input.Description = normalizeHumanText(input.Description)
-	input.Slug = normalizeSlug(input.Slug)
 	if input.Version < 0 {
 		return input, fmt.Errorf("%w: version must be non-negative", ErrInvalid)
 	}
-	if input.Slug != "" {
-		if err := validateSlug("slug", input.Slug); err != nil {
+	if input.Slug != nil {
+		slug := normalizeSlug(*input.Slug)
+		input.Slug = &slug
+		if err := validateSlug("slug", slug); err != nil {
 			return input, err
 		}
 	}
-	if input.DisplayName != "" {
-		if err := validateHumanText("display_name", input.DisplayName, 1, 120, 240); err != nil {
+	if input.DisplayName != nil {
+		displayName := normalizeHumanText(*input.DisplayName)
+		input.DisplayName = &displayName
+		if err := validateHumanText("display_name", displayName, 1, 120, 240); err != nil {
 			return input, err
 		}
 	}
-	if err := validateHumanText("description", input.Description, 0, 500, 1000); err != nil {
-		return input, err
+	if input.Description != nil {
+		description := normalizeHumanText(*input.Description)
+		input.Description = &description
+		if err := validateHumanText("description", description, 0, 500, 1000); err != nil {
+			return input, err
+		}
 	}
 	return input, nil
 }

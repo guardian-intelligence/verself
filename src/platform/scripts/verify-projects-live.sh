@@ -11,6 +11,21 @@ artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_REPO_ROOT}/artifacts
 artifact_dir="${artifact_root}/${run_id}"
 projects_api_base_url="${PROJECTS_PROOF_BASE_URL:-https://projects.api.${VERIFICATION_DOMAIN}}"
 projects_api_base_url="${projects_api_base_url%/}"
+projects_loopback_addr="$(
+  python3 - "${VERIFICATION_PLATFORM_ROOT}/ansible/group_vars/all/generated/services.yml" <<'PY'
+import sys
+import yaml
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    services = yaml.safe_load(handle)["services"]
+project_service = services["projects_service"]
+host = str(project_service.get("host", "")).strip()
+port = str(project_service.get("port", "")).strip()
+if not host or not port:
+    raise SystemExit("projects_service host/port missing from generated services.yml")
+print(f"{host}:{port}")
+PY
+)"
 clickhouse_timeout_seconds="${PROJECTS_PROOF_CLICKHOUSE_TIMEOUT_SECONDS:-180}"
 mkdir -p "${artifact_dir}/clickhouse" "${artifact_dir}/payloads" "${artifact_dir}/postgres" "${artifact_dir}/responses"
 
@@ -143,7 +158,7 @@ wait_for_clickhouse_count() {
 }
 
 verification_print_artifacts "${artifact_dir}" "" "${artifact_dir}/run.json"
-verification_wait_for_loopback_api "projects-service" "http://127.0.0.1:4264/readyz" "200"
+verification_wait_for_loopback_api "projects-service" "http://${projects_loopback_addr}/readyz" "200"
 verification_wait_for_http "projects API auth boundary" "${projects_api_base_url}/api/v1/projects" "401"
 
 # shellcheck disable=SC1090
@@ -203,6 +218,25 @@ payload = json.load(open(sys.argv[1], encoding="utf-8"))
 if not any(project.get("project_id") == project_id for project in payload.get("projects") or []):
     raise SystemExit("created project missing from active list")
 PY
+
+cat >"${artifact_dir}/payloads/update-project.json" <<EOF
+{
+  "version": "${project_version}",
+  "display_name": "Projects Proof Updated ${run_id}"
+}
+EOF
+api_request "PATCH" "/api/v1/projects/${project_id}" "${artifact_dir}/responses/update-project.json" "${artifact_dir}/payloads/update-project.json" "projects-update:${run_id}"
+project_version="$(
+  python3 - "${artifact_dir}/responses/update-project.json" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+if payload["description"] != "Projects service live proof":
+    raise SystemExit("partial project PATCH cleared the existing description")
+print(payload["version"])
+PY
+)"
 
 cat >"${artifact_dir}/payloads/create-environment.json" <<'EOF'
 {
@@ -269,6 +303,13 @@ payload = json.load(open(sys.argv[1], encoding="utf-8"))
 if payload["project_id"] != sys.argv[2] or payload["state"] != "archived" or str(payload["version"]) != sys.argv[3]:
     raise SystemExit("project archive idempotency retry did not return the archived project snapshot")
 PY
+
+cat >"${artifact_dir}/payloads/archive-project-duplicate.json" <<EOF
+{
+  "version": "${archive_version}"
+}
+EOF
+api_request_expect_status "POST" "/api/v1/projects/${project_id}/archive" "${artifact_dir}/responses/archive-project-duplicate.json" "409" "${artifact_dir}/payloads/archive-project-duplicate.json" "projects-archive-duplicate:${run_id}"
 
 cat >"${artifact_dir}/payloads/restore-project.json" <<EOF
 {
@@ -339,6 +380,7 @@ if len(environment_rows) != 1 or environment_rows[0][0] != environment_id or env
 events = {row[0] for row in csv.reader(open(events_path, encoding="utf-8"), delimiter="\t") if row}
 required = {
     "project.created",
+    "project.updated",
     "project.environment.created",
     "project.environment.archived",
     "project.archived",
@@ -353,6 +395,7 @@ required_operations = {
     "environment.create",
     "project.archived",
     "project.create",
+    "project.update",
     "project.environment.archived",
     "project.restored",
 }
@@ -383,13 +426,14 @@ wait_for_clickhouse_count default "
       'projects.project.create',
       'projects.project.list',
       'projects.project.read',
+      'projects.project.update',
       'projects.environment.create',
       'projects.environment.archive',
       'projects.project.archive',
       'projects.project.restore'
     )
     AND (SpanAttributes['verself.project_id'] = '' OR SpanAttributes['verself.project_id'] = {project_id:String})
-" 7 "${artifact_dir}/clickhouse/projects-api-spans-count.tsv" --param_project_id="${project_id}"
+" 8 "${artifact_dir}/clickhouse/projects-api-spans-count.tsv" --param_project_id="${project_id}"
 
 wait_for_clickhouse_count default "
   SELECT count()
@@ -400,12 +444,13 @@ wait_for_clickhouse_count default "
       'projects.pg.project.create',
       'projects.pg.project.list',
       'projects.pg.project.get',
+      'projects.pg.project.update',
       'projects.pg.environment.create',
       'projects.pg.environment.lifecycle',
       'projects.pg.project.lifecycle'
     )
     AND (SpanAttributes['verself.project_id'] = '' OR SpanAttributes['verself.project_id'] = {project_id:String})
-" 6 "${artifact_dir}/clickhouse/projects-pg-spans-count.tsv" --param_project_id="${project_id}"
+" 7 "${artifact_dir}/clickhouse/projects-pg-spans-count.tsv" --param_project_id="${project_id}"
 
 (
   cd "${VERIFICATION_PLATFORM_ROOT}"
