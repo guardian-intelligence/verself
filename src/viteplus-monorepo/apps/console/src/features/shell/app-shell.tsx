@@ -5,14 +5,14 @@ import { Toaster } from "@verself/ui/components/ui/sonner";
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarHeader,
   SidebarInset,
   SidebarProvider,
+  SidebarTrigger,
 } from "@verself/ui/components/ui/sidebar";
 import { EVERGREEN_NAV, PRIMARY_NAV } from "./nav-config";
 import { CommandPalette, useCommandPaletteHotkey } from "./command-palette";
-import { SidebarAccountSlot } from "./sidebar-account-menu";
+import { SidebarAccountTrigger } from "./sidebar-account-menu";
 import { SidebarNavGroup } from "./sidebar-nav";
 import { ShellConfigProvider, useShellConfig } from "./shell-config";
 import { ShellTopBar } from "./top-bar";
@@ -48,13 +48,16 @@ function AppSidebar() {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
-        <div className="flex h-10 items-center gap-2 px-2">
-          <span aria-hidden="true" className="text-base font-semibold">
-            ◼
-          </span>
-          <span className="truncate text-base font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
-            Console
-          </span>
+        <div className="flex h-10 items-center gap-1 px-1">
+          <SidebarAccountTrigger />
+          {/* Collapse affordance lives here while the rail is expanded. When
+              the rail is icon-collapsed, the trigger moves to the top bar
+              (see ShellTopBar) so the user has a visible expand control
+              outside the narrow rail. */}
+          <SidebarTrigger
+            data-testid="shell-sidebar-trigger"
+            className="text-muted-foreground group-data-[collapsible=icon]:hidden"
+          />
         </div>
       </SidebarHeader>
 
@@ -62,10 +65,6 @@ function AppSidebar() {
         <SidebarNavGroup entries={PRIMARY_NAV} />
         <SidebarNavGroup entries={EVERGREEN_NAV} anchor="bottom" />
       </SidebarContent>
-
-      <SidebarFooter>
-        <SidebarAccountSlot />
-      </SidebarFooter>
     </Sidebar>
   );
 }
