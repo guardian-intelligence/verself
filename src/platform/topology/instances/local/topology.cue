@@ -233,7 +233,8 @@ _config: {
 		seed_system_openbao_tls_dir:  "/etc/openbao/tls"
 		seed_system_password_overrides: {}
 		seed_system_credstore_dir:         "/etc/credstore/seed-system"
-		seed_system_platform_org_name:     "verself"
+		seed_system_platform_org_name:     "Guardian Intelligence LLC"
+		seed_system_platform_org_slug:     "guardian-platform"
 		seed_system_acme_org_name:         "Acme Corp"
 		seed_system_sandbox_project_name:  "sandbox-rental"
 		seed_system_identity_project_name: "identity-service"
