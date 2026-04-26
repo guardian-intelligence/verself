@@ -8,9 +8,6 @@ sandbox_rental_service_vm_orchestrator_socket_group: "{{ firecracker_vm_orchestr
 sandbox_rental_service_vm_orchestrator_allowed_socket_users:
   - sandbox_rental
 sandbox_rental_service_force_schema_reset: false
-# GitHub App installations are operator configuration, not runtime execution state.
-# Preserve them across destructive sandbox_rental schema resets unless explicitly disabled.
-sandbox_rental_service_restore_github_installations_on_schema_reset: true
 sandbox_rental_service_github_checkout_cache_dir: /var/lib/verself/sandbox-rental/github-checkout
 
 # Shared pgx pool used by HTTP handlers, execution workers, sqlc stores, and River.

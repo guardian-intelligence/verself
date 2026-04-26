@@ -121,9 +121,40 @@ type githubInstallationToken struct {
 
 type githubInstallationResponse struct {
 	Account struct {
+		ID    int64  `json:"id"`
 		Login string `json:"login"`
 		Type  string `json:"type"`
 	} `json:"account"`
+	RepositorySelection string            `json:"repository_selection"`
+	Permissions         map[string]string `json:"permissions"`
+}
+
+type githubOAuthTokenResponse struct {
+	AccessToken string `json:"access_token"`
+	TokenType   string `json:"token_type"`
+	Error       string `json:"error"`
+	Description string `json:"error_description"`
+}
+
+type githubUserInstallationsResponse struct {
+	TotalCount    int `json:"total_count"`
+	Installations []struct {
+		ID int64 `json:"id"`
+	} `json:"installations"`
+}
+
+type githubRepository struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	FullName string `json:"full_name"`
+	Owner    struct {
+		Login string `json:"login"`
+	} `json:"owner"`
+}
+
+type githubInstallationRepositoriesResponse struct {
+	TotalCount   int                `json:"total_count"`
+	Repositories []githubRepository `json:"repositories"`
 }
 
 type githubAccessTokenResponse struct {
@@ -198,6 +229,7 @@ func (r *GitHubRunner) Configured() bool {
 		r.cfg.AppID != 0 &&
 		strings.TrimSpace(r.cfg.AppSlug) != "" &&
 		strings.TrimSpace(r.cfg.ClientID) != "" &&
+		strings.TrimSpace(r.cfg.ClientSecret) != "" &&
 		strings.TrimSpace(r.cfg.PrivateKeyPEM) != "" &&
 		strings.TrimSpace(r.cfg.WebhookSecret) != ""
 }
@@ -213,13 +245,15 @@ func (r *GitHubRunner) BeginInstallation(ctx context.Context, orgID uint64, acto
 	state := base64.RawURLEncoding.EncodeToString(stateBytes)
 	expiresAt := time.Now().UTC().Add(10 * time.Minute)
 	if r.service != nil && r.service.PGX != nil {
-		_ = r.service.storeQueries().InsertGitHubInstallationState(ctx, store.InsertGitHubInstallationStateParams{
+		if err := r.service.storeQueries().InsertGitHubInstallationState(ctx, store.InsertGitHubInstallationStateParams{
 			State:     state,
 			OrgID:     dbOrgID(orgID),
 			ActorID:   actorID,
 			ExpiresAt: pgTime(expiresAt),
 			CreatedAt: pgTime(time.Now().UTC()),
-		})
+		}); err != nil {
+			return GitHubInstallationConnect{}, err
+		}
 	}
 	webBase := strings.TrimRight(firstNonEmpty(r.cfg.WebBaseURL, "https://github.com"), "/")
 	return GitHubInstallationConnect{
@@ -239,24 +273,31 @@ func (s *Service) ListGitHubInstallations(ctx context.Context, orgID uint64) ([]
 	}
 	out := make([]GitHubInstallationRecord, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, githubInstallationRecordFromStore(row))
+		out = append(out, githubInstallationRecordFromListRow(row))
 	}
 	return out, nil
 }
 
 func (r *GitHubRunner) CompleteInstallation(ctx context.Context, state, code string, installationID int64) (GitHubInstallationRecord, error) {
-	_ = strings.TrimSpace(code)
 	if !r.Configured() {
 		return GitHubInstallationRecord{}, ErrGitHubRunnerNotConfigured
 	}
 	state = strings.TrimSpace(state)
-	if state == "" || installationID <= 0 {
+	code = strings.TrimSpace(code)
+	if state == "" || code == "" || installationID <= 0 {
 		return GitHubInstallationRecord{}, ErrGitHubInstallationInvalid
 	}
 	if r.service == nil || r.service.PGX == nil {
 		return GitHubInstallationRecord{}, ErrGitHubInstallationInvalid
 	}
 
+	userToken, err := r.exchangeUserAccessToken(ctx, code)
+	if err != nil {
+		return GitHubInstallationRecord{}, err
+	}
+	if err := r.verifyUserInstallationAccess(ctx, userToken, installationID); err != nil {
+		return GitHubInstallationRecord{}, err
+	}
 	installation, err := r.fetchInstallation(ctx, installationID)
 	if err != nil {
 		return GitHubInstallationRecord{}, err
@@ -264,7 +305,9 @@ func (r *GitHubRunner) CompleteInstallation(ctx context.Context, state, code str
 	if !strings.EqualFold(installation.Account.Type, "Organization") {
 		return GitHubInstallationRecord{}, ErrGitHubInstallationInvalid
 	}
-
+	if installation.Account.ID <= 0 || strings.TrimSpace(installation.Account.Login) == "" {
+		return GitHubInstallationRecord{}, ErrGitHubInstallationInvalid
+	}
 	tx, err := r.service.PGX.Begin(ctx)
 	if err != nil {
 		return GitHubInstallationRecord{}, err
@@ -281,23 +324,53 @@ func (r *GitHubRunner) CompleteInstallation(ctx context.Context, state, code str
 		return GitHubInstallationRecord{}, ErrGitHubInstallationStateInvalid
 	}
 	now := time.Now().UTC()
-	recordRow, err := qtx.UpsertGitHubInstallation(ctx, store.UpsertGitHubInstallationParams{
-		InstallationID: installationID,
-		OrgID:          dbOrgID(orgID),
-		AccountLogin:   installation.Account.Login,
-		AccountType:    installation.Account.Type,
-		UpdatedAt:      pgTime(now),
-	})
+	if err := qtx.UpsertGitHubAccount(ctx, store.UpsertGitHubAccountParams{
+		AccountID:    installation.Account.ID,
+		AccountLogin: installation.Account.Login,
+		AccountType:  installation.Account.Type,
+		UpdatedAt:    pgTime(now),
+	}); err != nil {
+		return GitHubInstallationRecord{}, err
+	}
+	permissionsJSON, err := json.Marshal(installation.Permissions)
 	if err != nil {
+		return GitHubInstallationRecord{}, err
+	}
+	if len(permissionsJSON) == 0 || string(permissionsJSON) == "null" {
+		permissionsJSON = []byte("{}")
+	}
+	if err := qtx.UpsertGitHubInstallation(ctx, store.UpsertGitHubInstallationParams{
+		InstallationID:      installationID,
+		AccountID:           installation.Account.ID,
+		RepositorySelection: strings.TrimSpace(installation.RepositorySelection),
+		PermissionsJson:     permissionsJSON,
+		UpdatedAt:           pgTime(now),
+	}); err != nil {
+		return GitHubInstallationRecord{}, err
+	}
+	if err := qtx.UpsertGitHubInstallationConnection(ctx, store.UpsertGitHubInstallationConnectionParams{
+		ConnectionID:       uuid.New(),
+		InstallationID:     installationID,
+		OrgID:              dbOrgID(orgID),
+		ConnectedByActorID: stateRow.ActorID,
+		UpdatedAt:          pgTime(now),
+	}); err != nil {
 		return GitHubInstallationRecord{}, err
 	}
 	if err := qtx.DeleteGitHubInstallationState(ctx, store.DeleteGitHubInstallationStateParams{State: state}); err != nil {
 		return GitHubInstallationRecord{}, err
 	}
+	recordRow, err := qtx.GetGitHubInstallationForOrg(ctx, store.GetGitHubInstallationForOrgParams{
+		OrgID:          dbOrgID(orgID),
+		InstallationID: installationID,
+	})
+	if err != nil {
+		return GitHubInstallationRecord{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return GitHubInstallationRecord{}, err
 	}
-	return githubInstallationRecordFromStore(recordRow), nil
+	return githubInstallationRecordFromGetRow(recordRow), nil
 }
 
 func (r *GitHubRunner) VerifyWebhookSignature(payload []byte, signature string) bool {
@@ -428,7 +501,7 @@ func (r *GitHubRunner) ReconcileCapacity(ctx context.Context, githubJobID int64)
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if err := store.New(tx).InsertGitHubRunnerAllocation(ctx, store.InsertGitHubRunnerAllocationParams{
+	rows, err := store.New(tx).InsertGitHubRunnerAllocation(ctx, store.InsertGitHubRunnerAllocationParams{
 		AllocationID:              allocationID,
 		ProviderInstallationID:    job.InstallationID,
 		ProviderRepositoryID:      job.RepositoryID,
@@ -443,8 +516,20 @@ func (r *GitHubRunner) ReconcileCapacity(ctx context.Context, githubJobID int64)
 		VmExitBy:                  pgTime(now.Add(3 * time.Hour)),
 		CleanupBy:                 pgTime(now.Add(3 * time.Hour)),
 		CreatedAt:                 pgTime(now),
-	}); err != nil {
+	})
+	if err != nil {
 		return err
+	}
+	if rows == 0 {
+		existing, err := r.activeAllocationForJob(ctx, job.GitHubJobID)
+		if err != nil {
+			return err
+		}
+		if existing == uuid.Nil {
+			return fmt.Errorf("github runner allocation insert conflicted without active allocation for job %d", job.GitHubJobID)
+		}
+		span.SetAttributes(attribute.String("github.allocation_id", existing.String()), attribute.Bool("github.capacity.existing_allocation", true))
+		return nil
 	}
 	if _, err := r.service.Scheduler.EnqueueRunnerAllocateTx(ctx, tx, scheduler.RunnerAllocateRequest{
 		AllocationID:  allocationID.String(),
@@ -620,7 +705,7 @@ func (r *GitHubRunner) CleanupRunner(ctx context.Context, allocationID uuid.UUID
 	ctx, span := tracer.Start(ctx, "github.runner.cleanup")
 	defer span.End()
 	span.SetAttributes(attribute.String("github.allocation_id", allocationID.String()))
-	allocation, err := r.loadAllocation(ctx, allocationID)
+	allocation, err := r.loadAllocationForCleanup(ctx, allocationID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
@@ -732,32 +817,15 @@ func (r *GitHubRunner) loadAllocation(ctx context.Context, allocationID uuid.UUI
 	if err != nil {
 		return githubAllocation{}, err
 	}
-	out := githubAllocation{
-		AllocationID:       row.AllocationID,
-		InstallationID:     row.ProviderInstallationID,
-		RepositoryID:       row.ProviderRepositoryID,
-		RunnerClass:        row.RunnerClass,
-		RunnerName:         row.RunnerName,
-		GitHubRunnerID:     row.ProviderRunnerID,
-		RequestedJobID:     row.RequestedForProviderJobID,
-		RunID:              row.ProviderRunID,
-		JobName:            row.JobName,
-		HeadSHA:            row.HeadSha,
-		HeadBranch:         row.HeadBranch,
-		State:              row.State,
-		OrgID:              orgIDFromDB(row.OrgID),
-		AccountLogin:       row.AccountLogin,
-		RepositoryFullName: row.RepositoryFullName,
-		ProductID:          row.ProductID,
-		Resources:          apiwire.VMResources{VCPUs: uint32(row.Vcpus), MemoryMiB: uint32(row.MemoryMib), RootDiskGiB: uint32(row.RootfsGib), KernelImage: apiwire.KernelImageDefault},
+	return githubAllocationFromGetRow(row), nil
+}
+
+func (r *GitHubRunner) loadAllocationForCleanup(ctx context.Context, allocationID uuid.UUID) (githubAllocation, error) {
+	row, err := r.service.storeQueries().GetGitHubAllocationForCleanup(ctx, store.GetGitHubAllocationForCleanupParams{AllocationID: allocationID})
+	if err != nil {
+		return githubAllocation{}, err
 	}
-	if row.ExecutionID != nil {
-		out.ExecutionID = *row.ExecutionID
-	}
-	if row.AttemptID != nil {
-		out.AttemptID = *row.AttemptID
-	}
-	return out, nil
+	return githubAllocationFromCleanupRow(row), nil
 }
 
 func (r *GitHubRunner) setAllocationState(ctx context.Context, allocationID uuid.UUID, state, reason string) error {
@@ -851,6 +919,126 @@ func (r *GitHubRunner) fetchInstallation(ctx context.Context, installationID int
 		return githubInstallationResponse{}, err
 	}
 	return resp, nil
+}
+
+func (r *GitHubRunner) exchangeUserAccessToken(ctx context.Context, code string) (string, error) {
+	values := url.Values{}
+	values.Set("client_id", r.cfg.ClientID)
+	values.Set("client_secret", r.cfg.ClientSecret)
+	values.Set("code", code)
+	webBase := strings.TrimRight(firstNonEmpty(r.cfg.WebBaseURL, "https://github.com"), "/")
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webBase+"/login/oauth/access_token", strings.NewReader(values.Encode()))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", "verself-sandbox-rental")
+	resp, err := r.client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	var out githubOAuthTokenResponse
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil {
+		return "", err
+	}
+	if resp.StatusCode != http.StatusOK || strings.TrimSpace(out.Error) != "" || strings.TrimSpace(out.AccessToken) == "" {
+		return "", fmt.Errorf("%w: github user authorization failed: %s", ErrGitHubInstallationInvalid, firstNonEmpty(out.Description, out.Error, resp.Status))
+	}
+	return out.AccessToken, nil
+}
+
+func (r *GitHubRunner) verifyUserInstallationAccess(ctx context.Context, userToken string, installationID int64) error {
+	const perPage = 100
+	for page := 1; ; page++ {
+		var resp githubUserInstallationsResponse
+		path := fmt.Sprintf("/user/installations?per_page=%d&page=%d", perPage, page)
+		if err := r.githubRequest(ctx, http.MethodGet, path, userToken, nil, &resp, http.StatusOK); err != nil {
+			return err
+		}
+		for _, installation := range resp.Installations {
+			if installation.ID == installationID {
+				return nil
+			}
+		}
+		if len(resp.Installations) < perPage || page*perPage >= resp.TotalCount {
+			break
+		}
+	}
+	return ErrGitHubInstallationInvalid
+}
+
+func (r *GitHubRunner) listInstallationRepositories(ctx context.Context, installationID int64) ([]githubRepository, error) {
+	token, err := r.installationToken(ctx, installationID)
+	if err != nil {
+		return nil, err
+	}
+	const perPage = 100
+	var repositories []githubRepository
+	for page := 1; ; page++ {
+		var resp githubInstallationRepositoriesResponse
+		path := fmt.Sprintf("/installation/repositories?per_page=%d&page=%d", perPage, page)
+		if err := r.githubRequest(ctx, http.MethodGet, path, token, nil, &resp, http.StatusOK); err != nil {
+			return nil, err
+		}
+		repositories = append(repositories, resp.Repositories...)
+		if len(resp.Repositories) < perPage || len(repositories) >= resp.TotalCount {
+			break
+		}
+	}
+	return repositories, nil
+}
+
+func (r *GitHubRunner) syncGitHubRunnerRepositories(ctx context.Context, q *store.Queries, orgID uint64, accountLogin string, repositories []githubRepository, now time.Time) error {
+	repositoryIDs := make([]int64, 0, len(repositories))
+	accountLogin = strings.TrimSpace(accountLogin)
+	for _, repo := range repositories {
+		if repo.ID <= 0 {
+			continue
+		}
+		owner, name := githubRepositoryOwnerAndName(repo)
+		if owner == "" || name == "" {
+			continue
+		}
+		repositoryIDs = append(repositoryIDs, repo.ID)
+		rows, err := q.UpsertGitHubRunnerRepository(ctx, store.UpsertGitHubRunnerRepositoryParams{
+			ProviderRepositoryID: repo.ID,
+			OrgID:                dbOrgID(orgID),
+			ProviderOwner:        owner,
+			ProviderRepo:         name,
+			RepositoryFullName:   owner + "/" + name,
+			UpdatedAt:            pgTime(now),
+		})
+		if err != nil {
+			return err
+		}
+		if rows == 0 {
+			return fmt.Errorf("%w: github repository %s is already imported by another organization", ErrGitHubInstallationInvalid, owner+"/"+name)
+		}
+	}
+	if accountLogin == "" {
+		return nil
+	}
+	return q.DeactivateMissingGitHubRunnerRepositories(ctx, store.DeactivateMissingGitHubRunnerRepositoriesParams{
+		UpdatedAt:             pgTime(now),
+		OrgID:                 dbOrgID(orgID),
+		ProviderOwner:         accountLogin,
+		ProviderRepositoryIds: repositoryIDs,
+	})
+}
+
+func githubRepositoryOwnerAndName(repo githubRepository) (string, string) {
+	owner := strings.TrimSpace(repo.Owner.Login)
+	name := strings.TrimSpace(repo.Name)
+	if owner != "" && name != "" {
+		return owner, name
+	}
+	parts := strings.Split(strings.TrimSpace(repo.FullName), "/")
+	if len(parts) == 2 {
+		return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
+	}
+	return "", ""
 }
 
 func (r *GitHubRunner) createJITConfig(ctx context.Context, installationID int64, org, runnerName, runnerClass string) (githubJITConfigResponse, error) {
@@ -1023,7 +1211,77 @@ func traceInt64(key string, value int64) attribute.KeyValue {
 	return attribute.Int64(key, value)
 }
 
-func githubInstallationRecordFromStore(row store.GithubInstallation) GitHubInstallationRecord {
+func githubAllocationFromGetRow(row store.GetGitHubAllocationRow) githubAllocation {
+	out := githubAllocation{
+		AllocationID:       row.AllocationID,
+		InstallationID:     row.ProviderInstallationID,
+		RepositoryID:       row.ProviderRepositoryID,
+		RunnerClass:        row.RunnerClass,
+		RunnerName:         row.RunnerName,
+		GitHubRunnerID:     row.ProviderRunnerID,
+		RequestedJobID:     row.RequestedForProviderJobID,
+		RunID:              row.ProviderRunID,
+		JobName:            row.JobName,
+		HeadSHA:            row.HeadSha,
+		HeadBranch:         row.HeadBranch,
+		State:              row.State,
+		OrgID:              orgIDFromDB(row.OrgID),
+		AccountLogin:       row.AccountLogin,
+		RepositoryFullName: row.RepositoryFullName,
+		ProductID:          row.ProductID,
+		Resources:          apiwire.VMResources{VCPUs: uint32(row.Vcpus), MemoryMiB: uint32(row.MemoryMib), RootDiskGiB: uint32(row.RootfsGib), KernelImage: apiwire.KernelImageDefault},
+	}
+	if row.ExecutionID != nil {
+		out.ExecutionID = *row.ExecutionID
+	}
+	if row.AttemptID != nil {
+		out.AttemptID = *row.AttemptID
+	}
+	return out
+}
+
+func githubAllocationFromCleanupRow(row store.GetGitHubAllocationForCleanupRow) githubAllocation {
+	out := githubAllocation{
+		AllocationID:       row.AllocationID,
+		InstallationID:     row.ProviderInstallationID,
+		RepositoryID:       row.ProviderRepositoryID,
+		RunnerClass:        row.RunnerClass,
+		RunnerName:         row.RunnerName,
+		GitHubRunnerID:     row.ProviderRunnerID,
+		RequestedJobID:     row.RequestedForProviderJobID,
+		RunID:              row.ProviderRunID,
+		JobName:            row.JobName,
+		HeadSHA:            row.HeadSha,
+		HeadBranch:         row.HeadBranch,
+		State:              row.State,
+		OrgID:              orgIDFromDB(row.OrgID),
+		AccountLogin:       row.AccountLogin,
+		RepositoryFullName: row.RepositoryFullName,
+		ProductID:          row.ProductID,
+		Resources:          apiwire.VMResources{VCPUs: uint32(row.Vcpus), MemoryMiB: uint32(row.MemoryMib), RootDiskGiB: uint32(row.RootfsGib), KernelImage: apiwire.KernelImageDefault},
+	}
+	if row.ExecutionID != nil {
+		out.ExecutionID = *row.ExecutionID
+	}
+	if row.AttemptID != nil {
+		out.AttemptID = *row.AttemptID
+	}
+	return out
+}
+
+func githubInstallationRecordFromListRow(row store.ListGitHubInstallationsRow) GitHubInstallationRecord {
+	return GitHubInstallationRecord{
+		InstallationID: row.InstallationID,
+		OrgID:          orgIDFromDB(row.OrgID),
+		AccountLogin:   row.AccountLogin,
+		AccountType:    row.AccountType,
+		Active:         row.Active,
+		CreatedAt:      timeFromPG(row.CreatedAt),
+		UpdatedAt:      timeFromPG(row.UpdatedAt),
+	}
+}
+
+func githubInstallationRecordFromGetRow(row store.GetGitHubInstallationForOrgRow) GitHubInstallationRecord {
 	return GitHubInstallationRecord{
 		InstallationID: row.InstallationID,
 		OrgID:          orgIDFromDB(row.OrgID),

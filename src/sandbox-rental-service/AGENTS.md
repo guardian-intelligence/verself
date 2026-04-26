@@ -26,7 +26,8 @@ Runner integrations have two different auth boundaries. Keep them separate:
 
 The durable tenant binding is provider-specific:
 
-- GitHub uses the GitHub App installation row.
+- GitHub uses an org-scoped GitHub installation connection for onboarding and a
+  `runner_provider_repositories` row for execution ownership.
 - Forgejo repositories imported through source-code-hosting-service register a
   `runner_provider_repositories` row through the SPIFFE-only sandbox internal
   API.
@@ -47,8 +48,9 @@ github_installation_states
       | GitHub callback /github/installations/callback
       | carries installation_id + state
       v
-github_installations
-  installation_id -> org_id, account_login, account_type, active
+github_accounts + github_installations + github_installation_connections
+  installation_id -> GitHub account facts
+  installation_id + org_id -> active Verself org connection
       |
       | GitHub workflow_job webhook, HMAC verified
       | carries installation.id, repository, workflow job id
@@ -56,7 +58,7 @@ github_installations
 runner_jobs(provider=github)
   provider_job_id, provider_installation_id, provider_repository_id, labels, runner identity
       |
-      | capacity reconcile joins github_installations by installation_id
+      | capacity reconcile joins runner_provider_repositories by repository_id
       v
 runner_allocations(provider=github)
   allocation_id, installation_id, requested_for_provider_job_id
@@ -64,7 +66,7 @@ runner_allocations(provider=github)
       | AllocateRunner calls Service.Submit with allocation.OrgID
       v
 executions
-  org_id, actor_id = github-app:<installation_id>,
+  org_id from imported runner repository, actor_id = github-app:<installation_id>,
   source_kind = github_actions, workload_kind = runner,
   external_provider = github, external_task_id = <provider_job_id>
       |
@@ -107,9 +109,12 @@ executions
 Rules that are easy to get wrong:
 
 - Never infer tenant ownership from a GitHub job ID, runner name, repository
-  name, or webhook delivery ID. The only tenant binding for GitHub work is
-  `github_installations.installation_id -> org_id`, established through the
-  Zitadel-authenticated installation connect flow.
+  name, installation ID, or webhook delivery ID. GitHub onboarding is bound by
+  `github_installation_connections(installation_id, org_id)`, while GitHub
+  execution ownership is bound by
+  `runner_provider_repositories(provider, provider_repository_id) -> org_id`.
+  The same GitHub installation may be connected to multiple Verself orgs;
+  repository import ownership is the exclusive execution boundary.
 - Never infer tenant ownership from a Forgejo repository name, job handle,
   runner name, or webhook delivery ID. The tenant binding for Forgejo work is
   `runner_provider_repositories(provider, provider_repository_id) -> org_id`,
@@ -142,7 +147,8 @@ Concrete code anchors:
 - Webhook demand ingestion: `internal/jobs/github_runner.go:HandleWebhook` and
   `internal/jobs/forgejo_runner.go:HandleWebhook`.
 - Org recovery for GitHub demand: `internal/jobs/github_runner.go:loadQueuedJob`
-  joins `runner_jobs` to `github_installations`.
+  joins `runner_jobs` to `runner_provider_repositories`, then verifies the
+  active installation connection for the recovered org.
 - Org recovery for Forgejo demand:
   `internal/jobs/forgejo_runner.go:loadQueuedJob` joins `runner_jobs` to
   `runner_provider_repositories`.
@@ -153,8 +159,8 @@ Concrete code anchors:
   `internal/jobs/jobs.go:reserveBilling`.
 
 Queryable proof for a GitHub job should show one consistent `org_id` across
-`github_installations`, `executions`, `billing_windows`, and
-`verself.metering`.
+`github_installation_connections`, `runner_provider_repositories`,
+`executions`, `billing_windows`, and `verself.metering`.
 
 Use River OSS as the worker/queue runtime for sandbox-rental-service control-plane work, keep the execution state machine explicit in Postgres, and treat the current execution jobs code as a rewrite target during the execution cutover. vm-orchestrator remains the VM execution boundary. Do not use River Pro features as a foundational dependency. If we need global concurrency beyond a single process, model it in our own PG capacity tables.
 

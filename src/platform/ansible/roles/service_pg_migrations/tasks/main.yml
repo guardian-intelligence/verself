@@ -1,8 +1,8 @@
 ---
 # Shared Postgres-migrations flow for Go services. Callers pass the service
 # name, DB, user, source dir, probe table, and the systemd units that must
-# stop during a schema reset. Optional pre/post-reset include hooks carry
-# data across the wipe (e.g. sandbox_rental's github_installations CSV).
+# stop during a schema reset. Pre-reset hooks may export data; post-reset
+# hooks run before migrations and should only clear dependent caches.
 
 - name: Compute local migrations fingerprint ({{ service_pg_migrations_service }})
   delegate_to: localhost

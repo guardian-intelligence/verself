@@ -1,14 +1,16 @@
 -- name: GetGitHubExecutionIdentity :one
 SELECT
     a.allocation_id,
-    i.org_id,
+    p.org_id,
     a.provider_installation_id,
     a.provider_repository_id,
-    COALESCE(j.repository_full_name, '')::text AS repository_full_name,
+    COALESCE(NULLIF(j.repository_full_name, ''), p.repository_full_name, '')::text AS repository_full_name,
     COALESCE(b.provider_job_id, a.requested_for_provider_job_id)::bigint AS provider_job_id,
     a.runner_name
 FROM runner_allocations a
 JOIN github_installations i ON i.installation_id = a.provider_installation_id
+JOIN runner_provider_repositories p ON p.provider = 'github' AND p.provider_repository_id = a.provider_repository_id
+JOIN github_installation_connections c ON c.installation_id = i.installation_id AND c.org_id = p.org_id
 LEFT JOIN runner_job_bindings b ON b.allocation_id = a.allocation_id
 LEFT JOIN runner_jobs j ON j.provider = a.provider AND j.provider_job_id = COALESCE(b.provider_job_id, a.requested_for_provider_job_id)
 WHERE a.provider = 'github'
@@ -41,15 +43,17 @@ SELECT
     m.execution_id,
     m.attempt_id,
     m.allocation_id,
-    i.org_id,
+    p.org_id,
     a.provider_installation_id,
     a.provider_repository_id,
-    COALESCE(j.repository_full_name, '')::text AS repository_full_name,
+    COALESCE(NULLIF(j.repository_full_name, ''), p.repository_full_name, '')::text AS repository_full_name,
     COALESCE(b.provider_job_id, a.requested_for_provider_job_id)::bigint AS provider_job_id,
     a.runner_name
 FROM execution_sticky_disk_mounts m
 JOIN runner_allocations a ON a.allocation_id = m.allocation_id
 JOIN github_installations i ON i.installation_id = a.provider_installation_id
+JOIN runner_provider_repositories p ON p.provider = 'github' AND p.provider_repository_id = a.provider_repository_id
+JOIN github_installation_connections c ON c.installation_id = i.installation_id AND c.org_id = p.org_id
 LEFT JOIN runner_job_bindings b ON b.allocation_id = a.allocation_id
 LEFT JOIN runner_jobs j ON j.provider = a.provider AND j.provider_job_id = COALESCE(b.provider_job_id, a.requested_for_provider_job_id)
 WHERE m.attempt_id = sqlc.arg(attempt_id)

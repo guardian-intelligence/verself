@@ -12,6 +12,34 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const deactivateMissingGitHubRunnerRepositories = `-- name: DeactivateMissingGitHubRunnerRepositories :exec
+UPDATE runner_provider_repositories
+SET active = false,
+    updated_at = $1
+WHERE provider = 'github'
+  AND org_id = $2
+  AND provider_owner = $3
+  AND active
+  AND NOT (provider_repository_id = ANY($4::bigint[]))
+`
+
+type DeactivateMissingGitHubRunnerRepositoriesParams struct {
+	UpdatedAt             pgtype.Timestamptz
+	OrgID                 int64
+	ProviderOwner         string
+	ProviderRepositoryIds []int64
+}
+
+func (q *Queries) DeactivateMissingGitHubRunnerRepositories(ctx context.Context, arg DeactivateMissingGitHubRunnerRepositoriesParams) error {
+	_, err := q.db.Exec(ctx, deactivateMissingGitHubRunnerRepositories,
+		arg.UpdatedAt,
+		arg.OrgID,
+		arg.ProviderOwner,
+		arg.ProviderRepositoryIds,
+	)
+	return err
+}
+
 const deleteGitHubInstallationState = `-- name: DeleteGitHubInstallationState :exec
 DELETE FROM github_installation_states
 WHERE state = $1
@@ -42,15 +70,18 @@ SELECT
     COALESCE(a.execution_id, '00000000-0000-0000-0000-000000000000'::uuid) AS execution_id,
     COALESCE(a.attempt_id, '00000000-0000-0000-0000-000000000000'::uuid) AS attempt_id,
     a.state,
-    i.org_id,
-    i.account_login,
-    COALESCE(j.repository_full_name, '')::text AS repository_full_name,
+    p.org_id,
+    ga.account_login,
+    COALESCE(NULLIF(j.repository_full_name, ''), p.repository_full_name, '')::text AS repository_full_name,
     c.product_id,
     c.vcpus,
     c.memory_mib,
     c.rootfs_gib
 FROM runner_allocations a
 JOIN github_installations i ON i.installation_id = a.provider_installation_id
+JOIN github_accounts ga ON ga.account_id = i.account_id
+JOIN runner_provider_repositories p ON p.provider = 'github' AND p.provider_repository_id = a.provider_repository_id AND p.active
+JOIN github_installation_connections gc ON gc.installation_id = i.installation_id AND gc.org_id = p.org_id AND gc.state = 'active'
 JOIN runner_classes c ON c.runner_class = a.runner_class
 LEFT JOIN runner_jobs j ON j.provider = a.provider AND j.provider_job_id = a.requested_for_provider_job_id
 WHERE a.provider = 'github'
@@ -114,6 +145,96 @@ func (q *Queries) GetGitHubAllocation(ctx context.Context, arg GetGitHubAllocati
 	return i, err
 }
 
+const getGitHubAllocationForCleanup = `-- name: GetGitHubAllocationForCleanup :one
+SELECT
+    a.allocation_id,
+    a.provider_installation_id,
+    a.provider_repository_id,
+    a.runner_class,
+    a.runner_name,
+    a.provider_runner_id,
+    a.requested_for_provider_job_id,
+    COALESCE(j.provider_run_id, 0)::bigint AS provider_run_id,
+    COALESCE(j.job_name, '')::text AS job_name,
+    COALESCE(j.head_sha, '')::text AS head_sha,
+    COALESCE(j.head_branch, '')::text AS head_branch,
+    COALESCE(a.execution_id, '00000000-0000-0000-0000-000000000000'::uuid) AS execution_id,
+    COALESCE(a.attempt_id, '00000000-0000-0000-0000-000000000000'::uuid) AS attempt_id,
+    a.state,
+    p.org_id,
+    ga.account_login,
+    COALESCE(NULLIF(j.repository_full_name, ''), p.repository_full_name, '')::text AS repository_full_name,
+    c.product_id,
+    c.vcpus,
+    c.memory_mib,
+    c.rootfs_gib
+FROM runner_allocations a
+JOIN github_installations i ON i.installation_id = a.provider_installation_id
+JOIN github_accounts ga ON ga.account_id = i.account_id
+JOIN runner_provider_repositories p ON p.provider = 'github' AND p.provider_repository_id = a.provider_repository_id
+JOIN runner_classes c ON c.runner_class = a.runner_class
+LEFT JOIN runner_jobs j ON j.provider = a.provider AND j.provider_job_id = a.requested_for_provider_job_id
+WHERE a.provider = 'github'
+  AND a.allocation_id = $1
+`
+
+type GetGitHubAllocationForCleanupParams struct {
+	AllocationID uuid.UUID
+}
+
+type GetGitHubAllocationForCleanupRow struct {
+	AllocationID              uuid.UUID
+	ProviderInstallationID    int64
+	ProviderRepositoryID      int64
+	RunnerClass               string
+	RunnerName                string
+	ProviderRunnerID          int64
+	RequestedForProviderJobID int64
+	ProviderRunID             int64
+	JobName                   string
+	HeadSha                   string
+	HeadBranch                string
+	ExecutionID               *uuid.UUID
+	AttemptID                 *uuid.UUID
+	State                     string
+	OrgID                     int64
+	AccountLogin              string
+	RepositoryFullName        string
+	ProductID                 string
+	Vcpus                     int32
+	MemoryMib                 int32
+	RootfsGib                 int32
+}
+
+func (q *Queries) GetGitHubAllocationForCleanup(ctx context.Context, arg GetGitHubAllocationForCleanupParams) (GetGitHubAllocationForCleanupRow, error) {
+	row := q.db.QueryRow(ctx, getGitHubAllocationForCleanup, arg.AllocationID)
+	var i GetGitHubAllocationForCleanupRow
+	err := row.Scan(
+		&i.AllocationID,
+		&i.ProviderInstallationID,
+		&i.ProviderRepositoryID,
+		&i.RunnerClass,
+		&i.RunnerName,
+		&i.ProviderRunnerID,
+		&i.RequestedForProviderJobID,
+		&i.ProviderRunID,
+		&i.JobName,
+		&i.HeadSha,
+		&i.HeadBranch,
+		&i.ExecutionID,
+		&i.AttemptID,
+		&i.State,
+		&i.OrgID,
+		&i.AccountLogin,
+		&i.RepositoryFullName,
+		&i.ProductID,
+		&i.Vcpus,
+		&i.MemoryMib,
+		&i.RootfsGib,
+	)
+	return i, err
+}
+
 const getGitHubAllocationIDByExecution = `-- name: GetGitHubAllocationIDByExecution :one
 SELECT allocation_id
 FROM runner_allocations
@@ -132,6 +253,52 @@ func (q *Queries) GetGitHubAllocationIDByExecution(ctx context.Context, arg GetG
 	return allocation_id, err
 }
 
+const getGitHubInstallationForOrg = `-- name: GetGitHubInstallationForOrg :one
+SELECT
+    i.installation_id,
+    c.org_id,
+    a.account_login,
+    a.account_type,
+    (i.active AND c.state = 'active')::boolean AS active,
+    c.created_at,
+    GREATEST(a.updated_at, i.updated_at, c.updated_at)::timestamptz AS updated_at
+FROM github_installation_connections c
+JOIN github_installations i ON i.installation_id = c.installation_id
+JOIN github_accounts a ON a.account_id = i.account_id
+WHERE c.org_id = $1
+  AND i.installation_id = $2
+`
+
+type GetGitHubInstallationForOrgParams struct {
+	OrgID          int64
+	InstallationID int64
+}
+
+type GetGitHubInstallationForOrgRow struct {
+	InstallationID int64
+	OrgID          int64
+	AccountLogin   string
+	AccountType    string
+	Active         bool
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+}
+
+func (q *Queries) GetGitHubInstallationForOrg(ctx context.Context, arg GetGitHubInstallationForOrgParams) (GetGitHubInstallationForOrgRow, error) {
+	row := q.db.QueryRow(ctx, getGitHubInstallationForOrg, arg.OrgID, arg.InstallationID)
+	var i GetGitHubInstallationForOrgRow
+	err := row.Scan(
+		&i.InstallationID,
+		&i.OrgID,
+		&i.AccountLogin,
+		&i.AccountType,
+		&i.Active,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getGitHubQueuedJob = `-- name: GetGitHubQueuedJob :one
 SELECT
     j.provider_job_id,
@@ -143,10 +310,13 @@ SELECT
     j.head_sha,
     j.head_branch,
     j.labels_json,
-    i.org_id,
-    i.account_login
+    p.org_id,
+    a.account_login
 FROM runner_jobs j
 JOIN github_installations i ON i.installation_id = j.provider_installation_id AND i.active
+JOIN github_accounts a ON a.account_id = i.account_id
+JOIN runner_provider_repositories p ON p.provider = 'github' AND p.provider_repository_id = j.provider_repository_id AND p.active
+JOIN github_installation_connections c ON c.installation_id = i.installation_id AND c.org_id = p.org_id AND c.state = 'active'
 WHERE j.provider = 'github'
   AND j.provider_job_id = $1
   AND j.status = 'queued'
@@ -217,7 +387,7 @@ func (q *Queries) InsertGitHubInstallationState(ctx context.Context, arg InsertG
 	return err
 }
 
-const insertGitHubRunnerAllocation = `-- name: InsertGitHubRunnerAllocation :exec
+const insertGitHubRunnerAllocation = `-- name: InsertGitHubRunnerAllocation :execrows
 INSERT INTO runner_allocations (
     allocation_id, provider, provider_installation_id, provider_repository_id, runner_class, runner_name, state,
     requested_for_provider_job_id, allocate_by, jit_by, vm_submitted_by, runner_listening_by,
@@ -228,6 +398,7 @@ INSERT INTO runner_allocations (
     $7, $8, $9, $10,
     $11, $12, $13, $14, $14
 )
+ON CONFLICT DO NOTHING
 `
 
 type InsertGitHubRunnerAllocationParams struct {
@@ -247,8 +418,8 @@ type InsertGitHubRunnerAllocationParams struct {
 	CreatedAt                 pgtype.Timestamptz
 }
 
-func (q *Queries) InsertGitHubRunnerAllocation(ctx context.Context, arg InsertGitHubRunnerAllocationParams) error {
-	_, err := q.db.Exec(ctx, insertGitHubRunnerAllocation,
+func (q *Queries) InsertGitHubRunnerAllocation(ctx context.Context, arg InsertGitHubRunnerAllocationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertGitHubRunnerAllocation,
 		arg.AllocationID,
 		arg.ProviderInstallationID,
 		arg.ProviderRepositoryID,
@@ -264,29 +435,51 @@ func (q *Queries) InsertGitHubRunnerAllocation(ctx context.Context, arg InsertGi
 		arg.CleanupBy,
 		arg.CreatedAt,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const listGitHubInstallations = `-- name: ListGitHubInstallations :many
-SELECT installation_id, org_id, account_login, account_type, active, created_at, updated_at
-FROM github_installations
-WHERE org_id = $1
-ORDER BY updated_at DESC
+SELECT
+    i.installation_id,
+    c.org_id,
+    a.account_login,
+    a.account_type,
+    (i.active AND c.state = 'active')::boolean AS active,
+    c.created_at,
+    GREATEST(a.updated_at, i.updated_at, c.updated_at)::timestamptz AS updated_at
+FROM github_installation_connections c
+JOIN github_installations i ON i.installation_id = c.installation_id
+JOIN github_accounts a ON a.account_id = i.account_id
+WHERE c.org_id = $1
+ORDER BY c.updated_at DESC, i.installation_id DESC
 `
 
 type ListGitHubInstallationsParams struct {
 	OrgID int64
 }
 
-func (q *Queries) ListGitHubInstallations(ctx context.Context, arg ListGitHubInstallationsParams) ([]GithubInstallation, error) {
+type ListGitHubInstallationsRow struct {
+	InstallationID int64
+	OrgID          int64
+	AccountLogin   string
+	AccountType    string
+	Active         bool
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+}
+
+func (q *Queries) ListGitHubInstallations(ctx context.Context, arg ListGitHubInstallationsParams) ([]ListGitHubInstallationsRow, error) {
 	rows, err := q.db.Query(ctx, listGitHubInstallations, arg.OrgID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []GithubInstallation{}
+	items := []ListGitHubInstallationsRow{}
 	for rows.Next() {
-		var i GithubInstallation
+		var i ListGitHubInstallationsRow
 		if err := rows.Scan(
 			&i.InstallationID,
 			&i.OrgID,
@@ -377,48 +570,99 @@ func (q *Queries) UpdateRunnerExecutionExternalTaskID(ctx context.Context, arg U
 	return err
 }
 
-const upsertGitHubInstallation = `-- name: UpsertGitHubInstallation :one
-INSERT INTO github_installations (
-    installation_id, org_id, account_login, account_type, active, created_at, updated_at
+const upsertGitHubAccount = `-- name: UpsertGitHubAccount :exec
+INSERT INTO github_accounts (
+    account_id, account_login, account_type, created_at, updated_at
 ) VALUES (
-    $1, $2, $3, $4, true, $5, $5
+    $1, $2, $3, $4, $4
 )
-ON CONFLICT (installation_id) DO UPDATE SET
-    org_id = EXCLUDED.org_id,
+ON CONFLICT (account_id) DO UPDATE SET
     account_login = EXCLUDED.account_login,
     account_type = EXCLUDED.account_type,
-    active = true,
     updated_at = EXCLUDED.updated_at
-RETURNING installation_id, org_id, account_login, account_type, active, created_at, updated_at
 `
 
-type UpsertGitHubInstallationParams struct {
-	InstallationID int64
-	OrgID          int64
-	AccountLogin   string
-	AccountType    string
-	UpdatedAt      pgtype.Timestamptz
+type UpsertGitHubAccountParams struct {
+	AccountID    int64
+	AccountLogin string
+	AccountType  string
+	UpdatedAt    pgtype.Timestamptz
 }
 
-func (q *Queries) UpsertGitHubInstallation(ctx context.Context, arg UpsertGitHubInstallationParams) (GithubInstallation, error) {
-	row := q.db.QueryRow(ctx, upsertGitHubInstallation,
-		arg.InstallationID,
-		arg.OrgID,
+func (q *Queries) UpsertGitHubAccount(ctx context.Context, arg UpsertGitHubAccountParams) error {
+	_, err := q.db.Exec(ctx, upsertGitHubAccount,
+		arg.AccountID,
 		arg.AccountLogin,
 		arg.AccountType,
 		arg.UpdatedAt,
 	)
-	var i GithubInstallation
-	err := row.Scan(
-		&i.InstallationID,
-		&i.OrgID,
-		&i.AccountLogin,
-		&i.AccountType,
-		&i.Active,
-		&i.CreatedAt,
-		&i.UpdatedAt,
+	return err
+}
+
+const upsertGitHubInstallation = `-- name: UpsertGitHubInstallation :exec
+INSERT INTO github_installations (
+    installation_id, account_id, active, repository_selection, permissions_json, created_at, updated_at
+) VALUES (
+    $1, $2, true, $3, $4::jsonb,
+    $5, $5
+)
+ON CONFLICT (installation_id) DO UPDATE SET
+    account_id = EXCLUDED.account_id,
+    active = true,
+    repository_selection = EXCLUDED.repository_selection,
+    permissions_json = EXCLUDED.permissions_json,
+    updated_at = EXCLUDED.updated_at
+`
+
+type UpsertGitHubInstallationParams struct {
+	InstallationID      int64
+	AccountID           int64
+	RepositorySelection string
+	PermissionsJson     []byte
+	UpdatedAt           pgtype.Timestamptz
+}
+
+func (q *Queries) UpsertGitHubInstallation(ctx context.Context, arg UpsertGitHubInstallationParams) error {
+	_, err := q.db.Exec(ctx, upsertGitHubInstallation,
+		arg.InstallationID,
+		arg.AccountID,
+		arg.RepositorySelection,
+		arg.PermissionsJson,
+		arg.UpdatedAt,
 	)
-	return i, err
+	return err
+}
+
+const upsertGitHubInstallationConnection = `-- name: UpsertGitHubInstallationConnection :exec
+INSERT INTO github_installation_connections (
+    connection_id, installation_id, org_id, connected_by_actor_id, state, created_at, updated_at
+) VALUES (
+    $1, $2, $3, $4,
+    'active', $5, $5
+)
+ON CONFLICT (installation_id, org_id) DO UPDATE SET
+    connected_by_actor_id = EXCLUDED.connected_by_actor_id,
+    state = 'active',
+    updated_at = EXCLUDED.updated_at
+`
+
+type UpsertGitHubInstallationConnectionParams struct {
+	ConnectionID       uuid.UUID
+	InstallationID     int64
+	OrgID              int64
+	ConnectedByActorID string
+	UpdatedAt          pgtype.Timestamptz
+}
+
+func (q *Queries) UpsertGitHubInstallationConnection(ctx context.Context, arg UpsertGitHubInstallationConnectionParams) error {
+	_, err := q.db.Exec(ctx, upsertGitHubInstallationConnection,
+		arg.ConnectionID,
+		arg.InstallationID,
+		arg.OrgID,
+		arg.ConnectedByActorID,
+		arg.UpdatedAt,
+	)
+	return err
 }
 
 const upsertGitHubRunnerJob = `-- name: UpsertGitHubRunnerJob :exec
@@ -492,4 +736,49 @@ func (q *Queries) UpsertGitHubRunnerJob(ctx context.Context, arg UpsertGitHubRun
 		arg.UpdatedAt,
 	)
 	return err
+}
+
+const upsertGitHubRunnerRepository = `-- name: UpsertGitHubRunnerRepository :execrows
+INSERT INTO runner_provider_repositories (
+    provider, provider_repository_id, org_id, project_id, source_repository_id,
+    provider_owner, provider_repo, repository_full_name, active, created_at, updated_at
+) VALUES (
+    'github', $1, $2, NULL, NULL,
+    $3, $4, $5,
+    true, $6, $6
+)
+ON CONFLICT (provider, provider_repository_id) DO UPDATE SET
+    org_id = EXCLUDED.org_id,
+    project_id = NULL,
+    source_repository_id = NULL,
+    provider_owner = EXCLUDED.provider_owner,
+    provider_repo = EXCLUDED.provider_repo,
+    repository_full_name = EXCLUDED.repository_full_name,
+    active = true,
+    updated_at = EXCLUDED.updated_at
+WHERE runner_provider_repositories.org_id = EXCLUDED.org_id
+`
+
+type UpsertGitHubRunnerRepositoryParams struct {
+	ProviderRepositoryID int64
+	OrgID                int64
+	ProviderOwner        string
+	ProviderRepo         string
+	RepositoryFullName   string
+	UpdatedAt            pgtype.Timestamptz
+}
+
+func (q *Queries) UpsertGitHubRunnerRepository(ctx context.Context, arg UpsertGitHubRunnerRepositoryParams) (int64, error) {
+	result, err := q.db.Exec(ctx, upsertGitHubRunnerRepository,
+		arg.ProviderRepositoryID,
+		arg.OrgID,
+		arg.ProviderOwner,
+		arg.ProviderRepo,
+		arg.RepositoryFullName,
+		arg.UpdatedAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

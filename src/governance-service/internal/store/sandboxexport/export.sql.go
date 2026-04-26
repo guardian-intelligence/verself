@@ -258,7 +258,31 @@ func (q *Queries) ExportSandboxExecutionsJSONL(ctx context.Context, arg ExportSa
 
 const exportSandboxGithubInstallationsJSONL = `-- name: ExportSandboxGithubInstallationsJSONL :many
 SELECT row_to_json(t)::text AS row_json
-FROM (SELECT installation_id, org_id, account_login, account_type, active, created_at, updated_at FROM github_installations WHERE org_id::text = $1 ORDER BY created_at, installation_id) t
+FROM (
+    SELECT
+        c.connection_id,
+        c.org_id,
+        c.connected_by_actor_id,
+        c.state AS connection_state,
+        c.created_at AS connected_at,
+        c.updated_at AS connection_updated_at,
+        i.installation_id,
+        i.account_id,
+        i.active AS installation_active,
+        i.repository_selection,
+        i.permissions_json,
+        i.created_at AS installation_created_at,
+        i.updated_at AS installation_updated_at,
+        a.account_login,
+        a.account_type,
+        a.created_at AS account_created_at,
+        a.updated_at AS account_updated_at
+    FROM github_installation_connections c
+    JOIN github_installations i ON i.installation_id = c.installation_id
+    JOIN github_accounts a ON a.account_id = i.account_id
+    WHERE c.org_id::text = $1
+    ORDER BY c.created_at, i.installation_id
+) t
 `
 
 type ExportSandboxGithubInstallationsJSONLParams struct {
@@ -290,9 +314,8 @@ SELECT row_to_json(t)::text AS row_json
 FROM (
     SELECT a.allocation_id, a.provider, a.provider_installation_id, a.provider_repository_id, a.runner_class, a.runner_name, a.provider_runner_id, a.execution_id, a.attempt_id, a.state, a.requested_for_provider_job_id, a.allocate_by, a.jit_by, a.vm_submitted_by, a.runner_listening_by, a.assignment_by, a.vm_exit_by, a.cleanup_by, a.failure_reason, a.created_at, a.updated_at
     FROM runner_allocations a
-    LEFT JOIN github_installations i ON a.provider = 'github' AND i.installation_id = a.provider_installation_id
     LEFT JOIN runner_provider_repositories r ON r.provider = a.provider AND r.provider_repository_id = a.provider_repository_id
-    WHERE COALESCE(i.org_id, r.org_id)::text = $1
+    WHERE r.org_id::text = $1
     ORDER BY a.created_at,
              a.allocation_id
 ) t
@@ -328,9 +351,8 @@ FROM (
     SELECT b.binding_id, b.allocation_id, b.provider, b.provider_job_id, b.provider_runner_id, b.runner_name, b.bound_at, b.created_at
     FROM runner_job_bindings b
     JOIN runner_allocations a ON a.allocation_id = b.allocation_id
-    LEFT JOIN github_installations i ON a.provider = 'github' AND i.installation_id = a.provider_installation_id
     LEFT JOIN runner_provider_repositories r ON r.provider = a.provider AND r.provider_repository_id = a.provider_repository_id
-    WHERE COALESCE(i.org_id, r.org_id)::text = $1
+    WHERE r.org_id::text = $1
     ORDER BY b.created_at,
              b.binding_id
 ) t
@@ -365,9 +387,8 @@ SELECT row_to_json(t)::text AS row_json
 FROM (
     SELECT j.provider, j.provider_job_id, j.provider_installation_id, j.provider_repository_id, j.repository_full_name, j.provider_run_id, j.provider_task_id, j.provider_job_handle, j.job_name, j.head_sha, j.head_branch, j.workflow_name, j.status, j.conclusion, j.labels_json, j.runner_id, j.runner_name, j.started_at, j.completed_at, j.last_webhook_delivery, j.updated_at, j.created_at
     FROM runner_jobs j
-    LEFT JOIN github_installations i ON j.provider = 'github' AND i.installation_id = j.provider_installation_id
     LEFT JOIN runner_provider_repositories r ON r.provider = j.provider AND r.provider_repository_id = j.provider_repository_id
-    WHERE COALESCE(i.org_id, r.org_id)::text = $1
+    WHERE r.org_id::text = $1
     ORDER BY j.created_at,
              j.provider,
              j.provider_job_id
@@ -432,9 +453,8 @@ SELECT row_to_json(t)::text AS row_json
 FROM (
     SELECT g.provider, g.provider_installation_id, g.provider_repository_id, g.key_hash, g.key, g.current_generation, g.current_source_ref, g.created_at, g.updated_at
     FROM runner_sticky_disk_generations g
-    LEFT JOIN github_installations i ON g.provider = 'github' AND i.installation_id = g.provider_installation_id
     LEFT JOIN runner_provider_repositories r ON r.provider = g.provider AND r.provider_repository_id = g.provider_repository_id
-    WHERE COALESCE(i.org_id, r.org_id)::text = $1
+    WHERE r.org_id::text = $1
     ORDER BY g.updated_at,
              g.provider,
              g.provider_installation_id,
