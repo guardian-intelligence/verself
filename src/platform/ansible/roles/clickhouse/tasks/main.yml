@@ -24,53 +24,6 @@
     shell: /usr/sbin/nologin
     create_home: false
 
-- name: Resolve ClickHouse server uid for SPIRE registration
-  ansible.builtin.command:
-    cmd: "id -u {{ clickhouse_system_user }}"
-  register: clickhouse_server_uid
-  changed_when: false
-
-- name: Read ClickHouse server SPIRE registration
-  ansible.builtin.command:
-    cmd: >-
-      {{ verself_bin }}/spire-server entry show
-      -socketPath {{ spire_server_socket_path }}
-      -entryID verself-clickhouse-server
-      -output json
-  register: clickhouse_server_spire_entry
-  failed_when: false
-  changed_when: false
-
-- name: Register ClickHouse server SPIFFE workload
-  ansible.builtin.command:
-    cmd: >-
-      {{ verself_bin }}/spire-server entry create
-      -socketPath {{ spire_server_socket_path }}
-      -entryID verself-clickhouse-server
-      -parentID {{ spire_agent_id }}
-      -spiffeID {{ spire_clickhouse_server_id }}
-      -selector unix:uid:{{ clickhouse_server_uid.stdout | trim }}
-      -x509SVIDTTL 3600
-  when: clickhouse_server_spire_entry.rc != 0 or 'verself-clickhouse-server' not in clickhouse_server_spire_entry.stdout
-  changed_when: true
-  notify: restart clickhouse-server-spiffe-helper
-
-- name: Update ClickHouse server SPIRE workload selector drift
-  ansible.builtin.command:
-    cmd: >-
-      {{ verself_bin }}/spire-server entry update
-      -socketPath {{ spire_server_socket_path }}
-      -entryID verself-clickhouse-server
-      -parentID {{ spire_agent_id }}
-      -spiffeID {{ spire_clickhouse_server_id }}
-      -selector unix:uid:{{ clickhouse_server_uid.stdout | trim }}
-      -x509SVIDTTL 3600
-  when:
-    - clickhouse_server_spire_entry.rc == 0
-    - "'uid:' ~ (clickhouse_server_uid.stdout | trim) not in clickhouse_server_spire_entry.stdout"
-  changed_when: true
-  notify: restart clickhouse-server-spiffe-helper
-
 - name: Create ClickHouse operator system group
   ansible.builtin.group:
     name: "{{ clickhouse_operator_system_group }}"
@@ -87,53 +40,6 @@
     home: /var/lib/clickhouse-operator
     shell: /usr/sbin/nologin
     create_home: false
-
-- name: Resolve ClickHouse operator uid for SPIRE registration
-  ansible.builtin.command:
-    cmd: "id -u {{ clickhouse_operator_system_user }}"
-  register: clickhouse_operator_uid
-  changed_when: false
-
-- name: Read ClickHouse operator SPIRE registration
-  ansible.builtin.command:
-    cmd: >-
-      {{ verself_bin }}/spire-server entry show
-      -socketPath {{ spire_server_socket_path }}
-      -entryID verself-clickhouse-operator
-      -output json
-  register: clickhouse_operator_spire_entry
-  failed_when: false
-  changed_when: false
-
-- name: Register ClickHouse operator SPIFFE workload
-  ansible.builtin.command:
-    cmd: >-
-      {{ verself_bin }}/spire-server entry create
-      -socketPath {{ spire_server_socket_path }}
-      -entryID verself-clickhouse-operator
-      -parentID {{ spire_agent_id }}
-      -spiffeID {{ spire_clickhouse_operator_id }}
-      -selector unix:uid:{{ clickhouse_operator_uid.stdout | trim }}
-      -x509SVIDTTL 3600
-  when: clickhouse_operator_spire_entry.rc != 0 or 'verself-clickhouse-operator' not in clickhouse_operator_spire_entry.stdout
-  changed_when: true
-  notify: restart clickhouse-operator-spiffe-helper
-
-- name: Update ClickHouse operator SPIRE workload selector drift
-  ansible.builtin.command:
-    cmd: >-
-      {{ verself_bin }}/spire-server entry update
-      -socketPath {{ spire_server_socket_path }}
-      -entryID verself-clickhouse-operator
-      -parentID {{ spire_agent_id }}
-      -spiffeID {{ spire_clickhouse_operator_id }}
-      -selector unix:uid:{{ clickhouse_operator_uid.stdout | trim }}
-      -x509SVIDTTL 3600
-  when:
-    - clickhouse_operator_spire_entry.rc == 0
-    - "'uid:' ~ (clickhouse_operator_uid.stdout | trim) not in clickhouse_operator_spire_entry.stdout"
-  changed_when: true
-  notify: restart clickhouse-operator-spiffe-helper
 
 - name: Set ClickHouse operator client command fact
   ansible.builtin.set_fact:

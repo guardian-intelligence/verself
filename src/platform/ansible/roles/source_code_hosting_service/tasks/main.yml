@@ -26,53 +26,6 @@
     shell: /usr/sbin/nologin
     create_home: false
 
-- name: Resolve source-code-hosting-service uid for SPIRE registration
-  ansible.builtin.command:
-    cmd: id -u source_code_hosting_service
-  register: source_code_hosting_service_uid
-  changed_when: false
-
-- name: Read source-code-hosting-service SPIRE registration
-  ansible.builtin.command:
-    cmd: >-
-      {{ verself_bin }}/spire-server entry show
-      -socketPath {{ spire_server_socket_path }}
-      -entryID verself-source-code-hosting-service
-      -output json
-  register: source_code_hosting_service_spire_entry
-  failed_when: false
-  changed_when: false
-
-- name: Register source-code-hosting-service SPIFFE workload
-  ansible.builtin.command:
-    cmd: >-
-      {{ verself_bin }}/spire-server entry create
-      -socketPath {{ spire_server_socket_path }}
-      -entryID verself-source-code-hosting-service
-      -parentID {{ spire_agent_id }}
-      -spiffeID {{ spire_source_code_hosting_service_id }}
-      -selector unix:uid:{{ source_code_hosting_service_uid.stdout | trim }}
-      -x509SVIDTTL 3600
-  when: source_code_hosting_service_spire_entry.rc != 0 or 'verself-source-code-hosting-service' not in source_code_hosting_service_spire_entry.stdout
-  changed_when: true
-  notify: restart source-code-hosting-service
-
-- name: Update source-code-hosting-service SPIRE workload selector drift
-  ansible.builtin.command:
-    cmd: >-
-      {{ verself_bin }}/spire-server entry update
-      -socketPath {{ spire_server_socket_path }}
-      -entryID verself-source-code-hosting-service
-      -parentID {{ spire_agent_id }}
-      -spiffeID {{ spire_source_code_hosting_service_id }}
-      -selector unix:uid:{{ source_code_hosting_service_uid.stdout | trim }}
-      -x509SVIDTTL 3600
-  when:
-    - source_code_hosting_service_spire_entry.rc == 0
-    - "'uid:' ~ (source_code_hosting_service_uid.stdout | trim) not in source_code_hosting_service_spire_entry.stdout"
-  changed_when: true
-  notify: restart source-code-hosting-service
-
 - name: Deploy source-code-hosting-service nftables ruleset
   ansible.builtin.template:
     src: source-code-hosting-service.nft.j2

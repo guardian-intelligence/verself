@@ -24,14 +24,23 @@ package schema
 	...
 }
 
+#UIDPolicy: {
+	kind: "allocated"
+} | {
+	kind:  "fixed"
+	value: int & >0
+}
+
 #WorkloadIdentity: {
-	path:                  string & =~"^/"
-	ansible_var:           string | *""
-	entry_id:              string & !=""
-	user:                  string & !=""
-	group:                 string & !=""
+	path:        string & =~"^/"
+	ansible_var: string | *""
+	entry_id:    string & !=""
+	user:        string & !=""
+	group:       string & !=""
+	uid_policy: #UIDPolicy | *{kind: "allocated"}
 	selector:              "unix:uid" | *"unix:uid"
 	x509_svid_ttl_seconds: int & >0 | *3600
+	restart_units: [...string]
 	...
 }
 

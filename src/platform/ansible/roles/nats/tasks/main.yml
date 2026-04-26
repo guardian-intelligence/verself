@@ -27,57 +27,6 @@
     home: "{{ nats_data_dir }}"
     create_home: false
 
-- name: Resolve NATS uid for SPIRE registration
-  ansible.builtin.command:
-    cmd: id -u nats
-  register: nats_uid
-  changed_when: false
-
-- name: Read NATS SPIRE registration
-  ansible.builtin.command:
-    cmd: >-
-      {{ verself_bin }}/spire-server entry show
-      -socketPath {{ spire_server_socket_path }}
-      -entryID verself-nats
-      -output json
-  register: nats_spire_entry
-  failed_when: false
-  changed_when: false
-
-- name: Register NATS SPIFFE workload
-  ansible.builtin.command:
-    cmd: >-
-      {{ verself_bin }}/spire-server entry create
-      -socketPath {{ spire_server_socket_path }}
-      -entryID verself-nats
-      -parentID {{ spire_agent_id }}
-      -spiffeID {{ spire_nats_id }}
-      -selector unix:uid:{{ nats_uid.stdout | trim }}
-      -x509SVIDTTL 3600
-  when: nats_spire_entry.rc != 0 or 'verself-nats' not in nats_spire_entry.stdout
-  changed_when: true
-  notify:
-    - restart nats-spiffe-helper
-    - restart nats
-
-- name: Update NATS SPIRE workload selector drift
-  ansible.builtin.command:
-    cmd: >-
-      {{ verself_bin }}/spire-server entry update
-      -socketPath {{ spire_server_socket_path }}
-      -entryID verself-nats
-      -parentID {{ spire_agent_id }}
-      -spiffeID {{ spire_nats_id }}
-      -selector unix:uid:{{ nats_uid.stdout | trim }}
-      -x509SVIDTTL 3600
-  when:
-    - nats_spire_entry.rc == 0
-    - "'uid:' ~ (nats_uid.stdout | trim) not in nats_spire_entry.stdout"
-  changed_when: true
-  notify:
-    - restart nats-spiffe-helper
-    - restart nats
-
 - name: Create NATS directories
   ansible.builtin.file:
     path: "{{ item.path }}"

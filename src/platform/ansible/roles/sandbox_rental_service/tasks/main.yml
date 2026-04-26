@@ -80,53 +80,6 @@
       vm-orchestrator access and must contain only
       {{ sandbox_rental_service_vm_orchestrator_allowed_socket_users | join(', ') }}.
 
-- name: Resolve sandbox-rental uid for SPIRE registration
-  ansible.builtin.command:
-    cmd: id -u sandbox_rental
-  register: sandbox_rental_service_uid
-  changed_when: false
-
-- name: Read sandbox-rental SPIRE registration
-  ansible.builtin.command:
-    cmd: >-
-      {{ verself_bin }}/spire-server entry show
-      -socketPath {{ spire_server_socket_path }}
-      -entryID verself-sandbox-rental-service
-      -output json
-  register: sandbox_rental_service_spire_entry
-  failed_when: false
-  changed_when: false
-
-- name: Register sandbox-rental SPIFFE workload
-  ansible.builtin.command:
-    cmd: >-
-      {{ verself_bin }}/spire-server entry create
-      -socketPath {{ spire_server_socket_path }}
-      -entryID verself-sandbox-rental-service
-      -parentID {{ spire_agent_id }}
-      -spiffeID {{ spire_sandbox_rental_id }}
-      -selector unix:uid:{{ sandbox_rental_service_uid.stdout | trim }}
-      -x509SVIDTTL 3600
-  when: sandbox_rental_service_spire_entry.rc != 0 or 'verself-sandbox-rental-service' not in sandbox_rental_service_spire_entry.stdout
-  changed_when: true
-  notify: restart sandbox-rental-service
-
-- name: Update sandbox-rental SPIRE workload selector drift
-  ansible.builtin.command:
-    cmd: >-
-      {{ verself_bin }}/spire-server entry update
-      -socketPath {{ spire_server_socket_path }}
-      -entryID verself-sandbox-rental-service
-      -parentID {{ spire_agent_id }}
-      -spiffeID {{ spire_sandbox_rental_id }}
-      -selector unix:uid:{{ sandbox_rental_service_uid.stdout | trim }}
-      -x509SVIDTTL 3600
-  when:
-    - sandbox_rental_service_spire_entry.rc == 0
-    - "'uid:' ~ (sandbox_rental_service_uid.stdout | trim) not in sandbox_rental_service_spire_entry.stdout"
-  changed_when: true
-  notify: restart sandbox-rental-service
-
 - name: Create sandbox-rental GitHub checkout cache directory
   ansible.builtin.file:
     path: "{{ sandbox_rental_service_github_checkout_cache_dir }}"

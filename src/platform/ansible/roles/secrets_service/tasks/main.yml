@@ -26,53 +26,6 @@
     shell: /usr/sbin/nologin
     create_home: false
 
-- name: Resolve secrets-service uid for SPIRE registration
-  ansible.builtin.command:
-    cmd: id -u secrets_service
-  register: secrets_service_uid
-  changed_when: false
-
-- name: Read secrets-service SPIRE registration
-  ansible.builtin.command:
-    cmd: >-
-      {{ verself_bin }}/spire-server entry show
-      -socketPath {{ spire_server_socket_path }}
-      -entryID verself-secrets-service
-      -output json
-  register: secrets_service_spire_entry
-  failed_when: false
-  changed_when: false
-
-- name: Register secrets-service SPIFFE workload
-  ansible.builtin.command:
-    cmd: >-
-      {{ verself_bin }}/spire-server entry create
-      -socketPath {{ spire_server_socket_path }}
-      -entryID verself-secrets-service
-      -parentID {{ spire_agent_id }}
-      -spiffeID {{ spire_secrets_service_id }}
-      -selector unix:uid:{{ secrets_service_uid.stdout | trim }}
-      -x509SVIDTTL 3600
-  when: secrets_service_spire_entry.rc != 0 or 'verself-secrets-service' not in secrets_service_spire_entry.stdout
-  changed_when: true
-  notify: restart secrets-service
-
-- name: Update secrets-service SPIRE workload selector drift
-  ansible.builtin.command:
-    cmd: >-
-      {{ verself_bin }}/spire-server entry update
-      -socketPath {{ spire_server_socket_path }}
-      -entryID verself-secrets-service
-      -parentID {{ spire_agent_id }}
-      -spiffeID {{ spire_secrets_service_id }}
-      -selector unix:uid:{{ secrets_service_uid.stdout | trim }}
-      -x509SVIDTTL 3600
-  when:
-    - secrets_service_spire_entry.rc == 0
-    - "'uid:' ~ (secrets_service_uid.stdout | trim) not in secrets_service_spire_entry.stdout"
-  changed_when: true
-  notify: restart secrets-service
-
 - name: Deploy secrets-service nftables ruleset
   ansible.builtin.template:
     src: secrets-service.nft.j2
