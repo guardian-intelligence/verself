@@ -12,7 +12,6 @@ on:
 env:
   NODE_VERSION: 24.15.0
   PNPM_VERSION: 10.33.0
-  VITE_PLUS_VERSION: 0.1.16
 
 jobs:
   viteplus:
@@ -58,30 +57,21 @@ jobs:
           git -c advice.detachedHead=false checkout --detach FETCH_HEAD
           git status --short
 
-      - name: Configure Vite+ toolchain
+      - name: Configure pnpm
         run: |
           set -euo pipefail
-          npm config set prefix "$HOME/.npm-global"
-          path_file="${FORGEJO_PATH:-${GITHUB_PATH:-}}"
-          if [ -n "$path_file" ]; then
-            echo "$HOME/.npm-global/bin" >> "$path_file"
-          fi
-          export PATH="$HOME/.npm-global/bin:$PATH"
-          if ! command -v vp >/dev/null 2>&1; then
-            npm install -g "vite-plus@${VITE_PLUS_VERSION}"
-          fi
           corepack enable
           corepack prepare "pnpm@${PNPM_VERSION}" --activate
           pnpm config set store-dir "$HOME/.pnpm-store" --global
           node --version
           pnpm --version
-          vp --version
 
       - name: Install JS dependencies
         working-directory: src/viteplus-monorepo
         run: |
           set -euo pipefail
-          vp install --frozen-lockfile --prefer-offline
+          pnpm install --frozen-lockfile --prefer-offline
+          pnpm exec vp --version
 
       - name: Build workspace
         working-directory: src/viteplus-monorepo
