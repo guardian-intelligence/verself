@@ -27,6 +27,7 @@ import { Route as WorkshopChangelogRouteImport } from './routes/_workshop/change
 import { Route as WorkshopCareersRouteImport } from './routes/_workshop/careers'
 import { Route as WorkshopDesignRouteRouteImport } from './routes/_workshop/design/route'
 import { Route as WorkshopDesignIndexRouteImport } from './routes/_workshop/design/index'
+import { Route as OgLetterSlugRouteImport } from './routes/og/letter/$slug'
 import { Route as WorkshopDesignWorkshopRouteImport } from './routes/_workshop/design/workshop'
 import { Route as WorkshopDesignNewsroomRouteImport } from './routes/_workshop/design/newsroom'
 import { Route as WorkshopDesignLettersRouteImport } from './routes/_workshop/design/letters'
@@ -121,6 +122,11 @@ const WorkshopDesignIndexRoute = WorkshopDesignIndexRouteImport.update({
   path: '/',
   getParentRoute: () => WorkshopDesignRouteRoute,
 } as any)
+const OgLetterSlugRoute = OgLetterSlugRouteImport.update({
+  id: '/og/letter/$slug',
+  path: '/og/letter/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const WorkshopDesignWorkshopRoute = WorkshopDesignWorkshopRouteImport.update({
   id: '/workshop',
   path: '/workshop',
@@ -162,6 +168,7 @@ export interface FileRoutesByFullPath {
   '/design/letters': typeof WorkshopDesignLettersRoute
   '/design/newsroom': typeof WorkshopDesignNewsroomRoute
   '/design/workshop': typeof WorkshopDesignWorkshopRoute
+  '/og/letter/$slug': typeof OgLetterSlugRoute
   '/design/': typeof WorkshopDesignIndexRoute
   '/api/otel/v1/traces': typeof ApiOtelV1TracesRoute
 }
@@ -182,6 +189,7 @@ export interface FileRoutesByTo {
   '/design/letters': typeof WorkshopDesignLettersRoute
   '/design/newsroom': typeof WorkshopDesignNewsroomRoute
   '/design/workshop': typeof WorkshopDesignWorkshopRoute
+  '/og/letter/$slug': typeof OgLetterSlugRoute
   '/design': typeof WorkshopDesignIndexRoute
   '/api/otel/v1/traces': typeof ApiOtelV1TracesRoute
 }
@@ -207,6 +215,7 @@ export interface FileRoutesById {
   '/_workshop/design/letters': typeof WorkshopDesignLettersRoute
   '/_workshop/design/newsroom': typeof WorkshopDesignNewsroomRoute
   '/_workshop/design/workshop': typeof WorkshopDesignWorkshopRoute
+  '/og/letter/$slug': typeof OgLetterSlugRoute
   '/_workshop/design/': typeof WorkshopDesignIndexRoute
   '/api/otel/v1/traces': typeof ApiOtelV1TracesRoute
 }
@@ -232,6 +241,7 @@ export interface FileRouteTypes {
     | '/design/letters'
     | '/design/newsroom'
     | '/design/workshop'
+    | '/og/letter/$slug'
     | '/design/'
     | '/api/otel/v1/traces'
   fileRoutesByTo: FileRoutesByTo
@@ -252,6 +262,7 @@ export interface FileRouteTypes {
     | '/design/letters'
     | '/design/newsroom'
     | '/design/workshop'
+    | '/og/letter/$slug'
     | '/design'
     | '/api/otel/v1/traces'
   id:
@@ -276,6 +287,7 @@ export interface FileRouteTypes {
     | '/_workshop/design/letters'
     | '/_workshop/design/newsroom'
     | '/_workshop/design/workshop'
+    | '/og/letter/$slug'
     | '/_workshop/design/'
     | '/api/otel/v1/traces'
   fileRoutesById: FileRoutesById
@@ -286,6 +298,7 @@ export interface RootRouteChildren {
   NewsroomRouteRoute: typeof NewsroomRouteRouteWithChildren
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   OgSlugRoute: typeof OgSlugRoute
+  OgLetterSlugRoute: typeof OgLetterSlugRoute
   ApiOtelV1TracesRoute: typeof ApiOtelV1TracesRoute
 }
 
@@ -417,6 +430,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkshopDesignIndexRouteImport
       parentRoute: typeof WorkshopDesignRouteRoute
     }
+    '/og/letter/$slug': {
+      id: '/og/letter/$slug'
+      path: '/og/letter/$slug'
+      fullPath: '/og/letter/$slug'
+      preLoaderRoute: typeof OgLetterSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_workshop/design/workshop': {
       id: '/_workshop/design/workshop'
       path: '/workshop'
@@ -525,6 +545,7 @@ const rootRouteChildren: RootRouteChildren = {
   NewsroomRouteRoute: NewsroomRouteRouteWithChildren,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   OgSlugRoute: OgSlugRoute,
+  OgLetterSlugRoute: OgLetterSlugRoute,
   ApiOtelV1TracesRoute: ApiOtelV1TracesRoute,
 }
 export const routeTree = rootRouteImport

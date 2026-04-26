@@ -73,6 +73,41 @@
   }
 }
 
+/* Letters body typography. Mirrors the BodyParagraph component but applies
+   to whatever block-level elements the markdown parser emits (p, blockquote,
+   ul, ol, h2/h3 if a letter ever needs sub-heads). All values resolve from
+   the active treatment scope. */
+.letter-prose > * + * {
+  margin-top: 1.5rem;
+}
+.letter-prose p,
+.letter-prose blockquote,
+.letter-prose li {
+  font-family: var(--treatment-body-font);
+  font-variation-settings: "opsz" 18, "SOFT" 0;
+  font-weight: 400;
+  font-size: clamp(17px, 1.7vw, 19px);
+  line-height: 1.55;
+  color: var(--treatment-muted-strong);
+}
+.letter-prose a {
+  color: var(--treatment-ink);
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+  text-decoration-thickness: 1px;
+}
+.letter-prose blockquote {
+  padding-left: 1.25rem;
+  border-left: 2px solid var(--treatment-rule-color);
+  font-style: italic;
+}
+.letter-prose ul,
+.letter-prose ol {
+  padding-left: 1.5rem;
+}
+.letter-prose ul { list-style: disc; }
+.letter-prose ol { list-style: decimal; }
+
 /* Visually-hidden unless focused. Used by the Skip-to-main-content link so
    keyboard users can bypass the sticky header. */
 .sr-only-focusable:not(:focus):not(:active) {

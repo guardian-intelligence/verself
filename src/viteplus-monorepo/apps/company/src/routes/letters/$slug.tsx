@@ -1,7 +1,6 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { letterBySlug } from "~/content/letters";
-import { BodyParagraph } from "~/components/page-shell";
 import { emitSpan } from "~/lib/telemetry/browser";
 import { ogMeta } from "~/lib/head";
 
@@ -26,7 +25,7 @@ export const Route = createFileRoute("/letters/$slug")({
     }
     return {
       meta: ogMeta({
-        slug: "letters",
+        slug: `letter/${letter.slug}`,
         title: `${letter.title} — Guardian`,
         description: letter.summary,
       }),
@@ -78,11 +77,14 @@ function LetterPost() {
           {formatDate(letter.publishedAt)}
         </p>
       </header>
-      <div className="mx-auto mt-16 flex flex-col gap-6 md:mt-20" style={{ maxWidth: "62ch" }}>
-        {letter.body.map((paragraph, idx) => (
-          <BodyParagraph key={idx}>{paragraph}</BodyParagraph>
-        ))}
-      </div>
+      <div
+        className="letter-prose mx-auto mt-16 md:mt-20"
+        style={{ maxWidth: "62ch" }}
+        // The body is markdown rendered to HTML at build time by the
+        // company:letters-markdown Vite plugin; per-element typography is
+        // applied via the .letter-prose CSS scope.
+        dangerouslySetInnerHTML={{ __html: letter.bodyHtml }}
+      />
     </article>
   );
 }
