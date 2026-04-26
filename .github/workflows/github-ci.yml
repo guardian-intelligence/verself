@@ -78,4 +78,4 @@ jobs:
         working-directory: src/viteplus-monorepo
         run: |
           set -euo pipefail
-          vp run -r build
+          pnpm exec vp run -r build
