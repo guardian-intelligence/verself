@@ -1,5 +1,5 @@
 <repo_overview>
-Set of services + console + marketing page for a software business, almost entirely self-hosted.
+Set of services + console + marketing page for a software business, almost entirely self-hosted on a single bare metal node.
 
 Canonical layout in `docs/architecture/directory-structure.md`. Read that file directly if exploring the repo.
 
@@ -73,9 +73,8 @@ How the platform is wired today: service topology, three safety rings, self-host
 
 See `docs/system-context.md`. Auth, identity, IAM, Zitadel, JWT, SCIM, organization model, three-role (owner/admin/member), API credentials, frontend sessions, OIDC discovery — all in `src/platform/docs/identity-and-iam.md`.
 Verself Go service clients are generated from committed OpenAPI 3.0 specs with `oapi-codegen`; consumers must use those generated `client` or `internalclient` packages, with SPIFFE carried by the underlying `http.Client` instead of handwritten transport code. If a service API shape is missing, add the Huma route/OpenAPI spec and regenerate instead of bypassing the SDK.
-
+Go service code uses sqlc for type safe queries. Avoid reading code in generated directories.
 Python package management is done through `uv`.
-
 No need to be frugal with telemetry. We store 10+ million rows for around ~150MB in ClickHouse thanks to optimizations.
 
 </system_context>
