@@ -72,6 +72,8 @@ var defaultCapabilities = []Capability{
 		Description:    "Read private source repositories, refs, trees, and blobs through the source hosting API.",
 		DefaultEnabled: true,
 		Permissions: []string{
+			PermissionProjectRead,
+			PermissionProjectEnvironmentRead,
 			PermissionSourceRepoRead,
 		},
 	},

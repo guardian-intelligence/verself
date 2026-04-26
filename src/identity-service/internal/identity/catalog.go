@@ -23,6 +23,10 @@ const (
 	PermissionSandboxStickyDiskWrite        = "sandbox:sticky_disk:write"
 	PermissionBillingRead                   = "billing:read"
 	PermissionBillingCheckout               = "billing:checkout"
+	PermissionProjectRead                   = "projects:project:read"
+	PermissionProjectWrite                  = "projects:project:write"
+	PermissionProjectEnvironmentRead        = "projects:environment:read"
+	PermissionProjectEnvironmentWrite       = "projects:environment:write"
 	PermissionSourceRepoRead                = "source:repo:read"
 	PermissionSourceRepoWrite               = "source:repo:write"
 	PermissionSourceCheckoutWrite           = "source:checkout:write"
@@ -105,6 +109,21 @@ var defaultOperations = Operations{
 				{OperationID: "create-billing-contract-change", Permission: PermissionBillingCheckout, Resource: "billing_contract_change", Action: "create", OrgScope: "token_org_id"},
 				{OperationID: "cancel-billing-contract", Permission: PermissionBillingCheckout, Resource: "billing_contract", Action: "cancel", OrgScope: "token_org_id"},
 				{OperationID: "create-billing-portal", Permission: PermissionBillingCheckout, Resource: "billing_portal", Action: "create", OrgScope: "token_org_id"},
+			},
+		},
+		{
+			Service: "projects-service",
+			Operations: []Operation{
+				{OperationID: "create-project", Permission: PermissionProjectWrite, Resource: "project", Action: "create", OrgScope: "token_org_id"},
+				{OperationID: "list-projects", Permission: PermissionProjectRead, Resource: "project", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "get-project", Permission: PermissionProjectRead, Resource: "project", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "patch-project", Permission: PermissionProjectWrite, Resource: "project", Action: "update", OrgScope: "token_org_id"},
+				{OperationID: "archive-project", Permission: PermissionProjectWrite, Resource: "project", Action: "archive", OrgScope: "token_org_id"},
+				{OperationID: "restore-project", Permission: PermissionProjectWrite, Resource: "project", Action: "restore", OrgScope: "token_org_id"},
+				{OperationID: "list-project-environments", Permission: PermissionProjectEnvironmentRead, Resource: "project_environment", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "create-project-environment", Permission: PermissionProjectEnvironmentWrite, Resource: "project_environment", Action: "create", OrgScope: "token_org_id"},
+				{OperationID: "patch-project-environment", Permission: PermissionProjectEnvironmentWrite, Resource: "project_environment", Action: "update", OrgScope: "token_org_id"},
+				{OperationID: "archive-project-environment", Permission: PermissionProjectEnvironmentWrite, Resource: "project_environment", Action: "archive", OrgScope: "token_org_id"},
 			},
 		},
 		{
