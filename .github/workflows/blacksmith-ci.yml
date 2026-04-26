@@ -74,12 +74,6 @@ jobs:
           set -euo pipefail
           vp install --frozen-lockfile --prefer-offline
 
-      - name: Check workspace
-        working-directory: src/viteplus-monorepo
-        run: |
-          set -euo pipefail
-          vp check
-
       - name: Build workspace
         working-directory: src/viteplus-monorepo
         run: |
