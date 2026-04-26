@@ -37,21 +37,13 @@ function SettingsLayout() {
   return (
     <Page>
       <div className="flex flex-col gap-8 md:flex-row md:gap-10">
-        <SettingsRail
-          activePath={path}
-          groups={groups}
-          query={query}
-          onQueryChange={setQuery}
-        />
+        <SettingsRail activePath={path} groups={groups} query={query} onQueryChange={setQuery} />
 
         <div className="min-w-0 flex-1">
           <PageHeader>
             <PageHeaderContent>
               <PageEyebrow>
-                <Link
-                  to="/settings"
-                  className="text-muted-foreground/80 hover:text-foreground"
-                >
+                <Link to="/settings" className="text-muted-foreground/80 hover:text-foreground">
                   Settings
                 </Link>
                 {activeEntry ? (
@@ -88,12 +80,9 @@ function SettingsRail({
   readonly onQueryChange: (value: string) => void;
 }) {
   return (
-    <nav
-      aria-label="Settings sections"
-      className="flex flex-col gap-3 md:w-56 md:shrink-0"
-    >
+    <nav aria-label="Settings sections" className="flex flex-col gap-3 md:w-56 md:shrink-0">
       <Link
-        to="/source"
+        to="/builds"
         className="flex items-center gap-1.5 self-start text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
         data-testid="settings-back"
       >
@@ -212,8 +201,7 @@ function filterGroups(
       ...group,
       entries: group.entries.filter(
         (entry) =>
-          entry.label.toLowerCase().includes(needle) ||
-          group.label.toLowerCase().includes(needle),
+          entry.label.toLowerCase().includes(needle) || group.label.toLowerCase().includes(needle),
       ),
     }))
     .filter((group) => group.entries.length > 0);

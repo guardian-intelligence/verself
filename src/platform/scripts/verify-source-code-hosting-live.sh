@@ -10,7 +10,7 @@ run_id="${VERIFICATION_RUN_ID:-source-code-hosting-proof-$(date -u +%Y%m%dT%H%M%
 artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_REPO_ROOT}/artifacts/source-code-hosting-proof}"
 artifact_dir="${artifact_root}/${run_id}"
 run_json_path="${artifact_dir}/run.json"
-source_log_path="${artifact_dir}/source-ui.log"
+builds_log_path="${artifact_dir}/builds-ui.log"
 source_api_base_url="${SOURCE_CODE_HOSTING_PROOF_BASE_URL:-https://source.api.${VERIFICATION_DOMAIN}}"
 source_api_base_url="${source_api_base_url%/}"
 projects_api_base_url="${PROJECTS_PROOF_BASE_URL:-https://projects.api.${VERIFICATION_DOMAIN}}"
@@ -204,7 +204,7 @@ print()
 '" >"${output_path}"
 }
 
-verification_print_artifacts "${artifact_dir}" "${source_log_path}" "${run_json_path}"
+verification_print_artifacts "${artifact_dir}" "${builds_log_path}" "${run_json_path}"
 verification_wait_for_loopback_api "source-code-hosting-service" "http://127.0.0.1:4261/readyz" "200"
 verification_wait_for_http "source API auth boundary" "${source_api_base_url}/api/v1/repos" "401"
 verification_wait_for_http "git origin is headless" "${git_origin}/" "404"
@@ -229,17 +229,17 @@ env \
   TEST_PASSWORD="${TEST_PASSWORD}" \
   bash -lc '
     cd "$1"
-    vp exec playwright test e2e/source.live.spec.ts \
+    vp exec playwright test e2e/builds.live.spec.ts \
       --project=chromium \
       --output "$2"
   ' bash "${VERIFICATION_REPO_ROOT}/src/viteplus-monorepo/apps/console" "${artifact_dir}/playwright-results" \
-  >"${source_log_path}" 2>&1
-source_status=$?
+  >"${builds_log_path}" 2>&1
+builds_status=$?
 set -e
 
-verification_tail_log_on_failure "${source_status}" "${source_log_path}" "180"
-if [[ "${source_status}" -ne 0 ]]; then
-  exit "${source_status}"
+verification_tail_log_on_failure "${builds_status}" "${builds_log_path}" "180"
+if [[ "${builds_status}" -ne 0 ]]; then
+  exit "${builds_status}"
 fi
 
 repo_slug="source-proof-$(printf '%s' "${run_id}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/^-+|-+$//g' | cut -c1-48)"
@@ -1291,7 +1291,7 @@ wait_for_clickhouse_count default "
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
     AND ServiceName = 'console'
     AND SpanName <> ''
-" 1 "${artifact_dir}/clickhouse/console-source-ui-spans-count.tsv"
+" 1 "${artifact_dir}/clickhouse/console-builds-ui-spans-count.tsv"
 
 (
   cd "${VERIFICATION_PLATFORM_ROOT}"

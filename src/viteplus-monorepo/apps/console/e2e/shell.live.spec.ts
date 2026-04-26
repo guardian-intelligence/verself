@@ -119,18 +119,15 @@ test.describe("Console Shell", () => {
       run.detail_url = "/executions";
 
       await app.page.getByTestId("nav-builds").click();
-      await expect(app.page).toHaveURL(/\/source$/);
-      await expect(app.page.getByRole("heading", { name: "Source", exact: true })).toBeVisible();
-      await expect(
-        app.page.getByRole("heading", { name: "Project repository", exact: true }),
-      ).toBeVisible();
+      await expect(app.page).toHaveURL(/\/builds$/);
+      await expect(app.page.getByRole("heading", { name: "Builds", exact: true })).toBeVisible();
 
       const emptyStateVisible = await app.page
-        .getByText("Push the first branch", { exact: true })
+        .getByText("No repositories", { exact: true })
         .isVisible({ timeout: 1000 })
         .catch(() => false);
       const repositoryCardVisible = await app.page
-        .getByText(/active branches/)
+        .getByTestId("build-repository-row")
         .first()
         .isVisible({ timeout: 1000 })
         .catch(() => false);
