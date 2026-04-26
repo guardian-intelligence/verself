@@ -152,6 +152,18 @@ func (d *fakeMembersDirectory) DeactivateServiceAccount(context.Context, string)
 
 type fakeMembersStore struct{}
 
+func (fakeMembersStore) GetOrganizationProfile(context.Context, string, string, string) (OrganizationProfile, error) {
+	return OrganizationProfile{OrgID: "42", DisplayName: "Acme", Slug: "acme", State: OrganizationProfileStateActive, Version: 1}, nil
+}
+
+func (fakeMembersStore) UpdateOrganizationProfile(context.Context, Principal, UpdateOrganizationRequest) (OrganizationProfile, error) {
+	return OrganizationProfile{OrgID: "42", DisplayName: "Acme", Slug: "acme", State: OrganizationProfileStateActive, Version: 2}, nil
+}
+
+func (fakeMembersStore) ResolveOrganizationProfile(context.Context, ResolveOrganizationRequest) (OrganizationProfile, error) {
+	return OrganizationProfile{OrgID: "42", DisplayName: "Acme", Slug: "acme", State: OrganizationProfileStateActive, Version: 1}, nil
+}
+
 func (fakeMembersStore) GetMemberCapabilities(context.Context, string, string) (MemberCapabilitiesDocument, error) {
 	return MemberCapabilitiesDocument{}, nil
 }

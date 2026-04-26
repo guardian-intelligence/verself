@@ -1,3 +1,35 @@
+CREATE TABLE IF NOT EXISTS identity_organizations (
+    org_id TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    slug TEXT NOT NULL UNIQUE,
+    state TEXT NOT NULL DEFAULT 'active',
+    version INTEGER NOT NULL DEFAULT 1,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_by TEXT NOT NULL,
+    CHECK (org_id ~ '^[0-9]+$'),
+    CHECK (length(btrim(display_name)) > 0),
+    CHECK (slug ~ '^[a-z0-9]([a-z0-9-]{0,78}[a-z0-9])?$'),
+    CHECK (NOT slug ~ '^org-[0-9]+$'),
+    CHECK (state IN ('active')),
+    CHECK (version > 0),
+    CHECK (length(btrim(created_by)) > 0),
+    CHECK (length(btrim(updated_by)) > 0)
+);
+
+CREATE TABLE IF NOT EXISTS identity_organization_slug_redirects (
+    slug TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL REFERENCES identity_organizations (org_id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by TEXT NOT NULL,
+    CHECK (slug ~ '^[a-z0-9]([a-z0-9-]{0,78}[a-z0-9])?$'),
+    CHECK (length(btrim(created_by)) > 0)
+);
+
+CREATE INDEX IF NOT EXISTS identity_organization_slug_redirects_org_idx
+    ON identity_organization_slug_redirects (org_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS identity_member_capabilities (
     org_id TEXT PRIMARY KEY,
     enabled_keys TEXT[] NOT NULL DEFAULT '{}',

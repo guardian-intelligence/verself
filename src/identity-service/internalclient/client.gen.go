@@ -58,6 +58,33 @@ type ErrorModel struct {
 	Type *string `json:"type,omitempty"`
 }
 
+// IdentityOrganizationProfile defines model for IdentityOrganizationProfile.
+type IdentityOrganizationProfile struct {
+	DisplayName    string    `json:"display_name"`
+	OrgId          string    `json:"org_id"`
+	RedirectedFrom *string   `json:"redirected_from,omitempty"`
+	Slug           string    `json:"slug"`
+	State          string    `json:"state"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	Version        int32     `json:"version"`
+}
+
+// IdentityResolveOrganizationRequest defines model for IdentityResolveOrganizationRequest.
+type IdentityResolveOrganizationRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema        *string `json:"$schema,omitempty"`
+	OrgId         *string `json:"org_id,omitempty"`
+	RequireActive bool    `json:"require_active"`
+	Slug          *string `json:"slug,omitempty"`
+}
+
+// IdentityResolveOrganizationResponse defines model for IdentityResolveOrganizationResponse.
+type IdentityResolveOrganizationResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema       *string                     `json:"$schema,omitempty"`
+	Organization IdentityOrganizationProfile `json:"organization"`
+}
+
 // IdentityUpdateHumanProfileRequest defines model for IdentityUpdateHumanProfileRequest.
 type IdentityUpdateHumanProfileRequest struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -78,6 +105,9 @@ type IdentityUpdateHumanProfileResponse struct {
 	SubjectId   string    `json:"subject_id"`
 	SyncedAt    time.Time `json:"synced_at"`
 }
+
+// ResolveOrganizationJSONRequestBody defines body for ResolveOrganization for application/json ContentType.
+type ResolveOrganizationJSONRequestBody = IdentityResolveOrganizationRequest
 
 // UpdateHumanProfileJSONRequestBody defines body for UpdateHumanProfile for application/json ContentType.
 type UpdateHumanProfileJSONRequestBody = IdentityUpdateHumanProfileRequest
@@ -155,10 +185,39 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
+	// ResolveOrganizationWithBody request with any body
+	ResolveOrganizationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	ResolveOrganization(ctx context.Context, body ResolveOrganizationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// UpdateHumanProfileWithBody request with any body
 	UpdateHumanProfileWithBody(ctx context.Context, subjectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	UpdateHumanProfile(ctx context.Context, subjectId string, body UpdateHumanProfileJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+func (c *Client) ResolveOrganizationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewResolveOrganizationRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ResolveOrganization(ctx context.Context, body ResolveOrganizationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewResolveOrganizationRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
 }
 
 func (c *Client) UpdateHumanProfileWithBody(ctx context.Context, subjectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -183,6 +242,46 @@ func (c *Client) UpdateHumanProfile(ctx context.Context, subjectId string, body 
 		return nil, err
 	}
 	return c.Client.Do(req)
+}
+
+// NewResolveOrganizationRequest calls the generic ResolveOrganization builder with application/json body
+func NewResolveOrganizationRequest(server string, body ResolveOrganizationJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewResolveOrganizationRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewResolveOrganizationRequestWithBody generates requests for ResolveOrganization with any type of body
+func NewResolveOrganizationRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/internal/v1/organizations/resolve")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
 }
 
 // NewUpdateHumanProfileRequest calls the generic UpdateHumanProfile builder with application/json body
@@ -275,10 +374,38 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
+	// ResolveOrganizationWithBodyWithResponse request with any body
+	ResolveOrganizationWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResolveOrganizationHTTPResponse, error)
+
+	ResolveOrganizationWithResponse(ctx context.Context, body ResolveOrganizationJSONRequestBody, reqEditors ...RequestEditorFn) (*ResolveOrganizationHTTPResponse, error)
+
 	// UpdateHumanProfileWithBodyWithResponse request with any body
 	UpdateHumanProfileWithBodyWithResponse(ctx context.Context, subjectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateHumanProfileHTTPResponse, error)
 
 	UpdateHumanProfileWithResponse(ctx context.Context, subjectId string, body UpdateHumanProfileJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateHumanProfileHTTPResponse, error)
+}
+
+type ResolveOrganizationHTTPResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *IdentityResolveOrganizationResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r ResolveOrganizationHTTPResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ResolveOrganizationHTTPResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
 }
 
 type UpdateHumanProfileHTTPResponse struct {
@@ -304,6 +431,23 @@ func (r UpdateHumanProfileHTTPResponse) StatusCode() int {
 	return 0
 }
 
+// ResolveOrganizationWithBodyWithResponse request with arbitrary body returning *ResolveOrganizationHTTPResponse
+func (c *ClientWithResponses) ResolveOrganizationWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResolveOrganizationHTTPResponse, error) {
+	rsp, err := c.ResolveOrganizationWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseResolveOrganizationHTTPResponse(rsp)
+}
+
+func (c *ClientWithResponses) ResolveOrganizationWithResponse(ctx context.Context, body ResolveOrganizationJSONRequestBody, reqEditors ...RequestEditorFn) (*ResolveOrganizationHTTPResponse, error) {
+	rsp, err := c.ResolveOrganization(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseResolveOrganizationHTTPResponse(rsp)
+}
+
 // UpdateHumanProfileWithBodyWithResponse request with arbitrary body returning *UpdateHumanProfileHTTPResponse
 func (c *ClientWithResponses) UpdateHumanProfileWithBodyWithResponse(ctx context.Context, subjectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateHumanProfileHTTPResponse, error) {
 	rsp, err := c.UpdateHumanProfileWithBody(ctx, subjectId, contentType, body, reqEditors...)
@@ -319,6 +463,39 @@ func (c *ClientWithResponses) UpdateHumanProfileWithResponse(ctx context.Context
 		return nil, err
 	}
 	return ParseUpdateHumanProfileHTTPResponse(rsp)
+}
+
+// ParseResolveOrganizationHTTPResponse parses an HTTP response from a ResolveOrganizationWithResponse call
+func ParseResolveOrganizationHTTPResponse(rsp *http.Response) (*ResolveOrganizationHTTPResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ResolveOrganizationHTTPResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IdentityResolveOrganizationResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
 }
 
 // ParseUpdateHumanProfileHTTPResponse parses an HTTP response from a UpdateHumanProfileWithResponse call

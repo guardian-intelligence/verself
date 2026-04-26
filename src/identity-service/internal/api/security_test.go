@@ -103,7 +103,7 @@ func TestIdentityPermissionChecksCurrentOrgRoleBundlesAndDirectScopes(t *testing
 		OrgID:   "42",
 		Raw: map[string]any{
 			"verself:credential_id": "credential-1",
-			"permissions":               []string{string(permissionMemberInvite)},
+			"permissions":           []string{string(permissionMemberInvite)},
 		},
 	}
 	if allowed, err := identityHasPermission(ctx, nil, scoped, permissionMemberInvite); err != nil || !allowed {
@@ -128,6 +128,18 @@ func identityServiceToken(orgID string, roles ...string) *auth.Identity {
 
 type staticIdentityStore struct {
 	capabilities identity.MemberCapabilitiesDocument
+}
+
+func (s staticIdentityStore) GetOrganizationProfile(context.Context, string, string, string) (identity.OrganizationProfile, error) {
+	return identity.OrganizationProfile{OrgID: "42", DisplayName: "Acme", Slug: "acme", State: identity.OrganizationProfileStateActive, Version: 1}, nil
+}
+
+func (s staticIdentityStore) UpdateOrganizationProfile(context.Context, identity.Principal, identity.UpdateOrganizationRequest) (identity.OrganizationProfile, error) {
+	return identity.OrganizationProfile{OrgID: "42", DisplayName: "Acme", Slug: "acme", State: identity.OrganizationProfileStateActive, Version: 2}, nil
+}
+
+func (s staticIdentityStore) ResolveOrganizationProfile(context.Context, identity.ResolveOrganizationRequest) (identity.OrganizationProfile, error) {
+	return identity.OrganizationProfile{OrgID: "42", DisplayName: "Acme", Slug: "acme", State: identity.OrganizationProfileStateActive, Version: 1}, nil
 }
 
 func (s staticIdentityStore) GetMemberCapabilities(context.Context, string, string) (identity.MemberCapabilitiesDocument, error) {

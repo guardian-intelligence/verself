@@ -4,11 +4,39 @@ import "time"
 
 type IdentityOrganization struct {
 	OrgID              OrgID                              `json:"org_id"`
-	Name               string                             `json:"name"`
+	DisplayName        string                             `json:"display_name"`
+	Slug               string                             `json:"slug"`
+	Version            int32                              `json:"version" minimum:"0" maximum:"2147483647"`
 	OrgACLVersion      int32                              `json:"org_acl_version" minimum:"0" maximum:"2147483647"`
 	Caller             IdentityMember                     `json:"caller"`
 	MemberCapabilities IdentityMemberCapabilitiesDocument `json:"member_capabilities"`
 	Permissions        []string                           `json:"permissions"`
+}
+
+type IdentityUpdateOrganizationRequest struct {
+	Version     int32  `json:"version" required:"true" minimum:"0" maximum:"2147483647"`
+	DisplayName string `json:"display_name,omitempty" maxLength:"120"`
+	Slug        string `json:"slug,omitempty" maxLength:"80"`
+}
+
+type IdentityOrganizationProfile struct {
+	OrgID          OrgID     `json:"org_id"`
+	DisplayName    string    `json:"display_name"`
+	Slug           string    `json:"slug"`
+	State          string    `json:"state"`
+	Version        int32     `json:"version" minimum:"0" maximum:"2147483647"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	RedirectedFrom string    `json:"redirected_from,omitempty"`
+}
+
+type IdentityResolveOrganizationRequest struct {
+	OrgID         OrgID  `json:"org_id,omitempty"`
+	Slug          string `json:"slug,omitempty" maxLength:"80"`
+	RequireActive bool   `json:"require_active"`
+}
+
+type IdentityResolveOrganizationResponse struct {
+	Organization IdentityOrganizationProfile `json:"organization"`
 }
 
 type IdentityMember struct {

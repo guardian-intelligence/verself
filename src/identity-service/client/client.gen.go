@@ -225,11 +225,13 @@ type IdentityOrganization struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema             *string                            `json:"$schema,omitempty"`
 	Caller             IdentityMember                     `json:"caller"`
+	DisplayName        string                             `json:"display_name"`
 	MemberCapabilities IdentityMemberCapabilitiesDocument `json:"member_capabilities"`
-	Name               string                             `json:"name"`
 	OrgAclVersion      int32                              `json:"org_acl_version"`
 	OrgId              string                             `json:"org_id"`
 	Permissions        *[]string                          `json:"permissions"`
+	Slug               string                             `json:"slug"`
+	Version            int32                              `json:"version"`
 }
 
 // IdentityPutMemberCapabilitiesRequest defines model for IdentityPutMemberCapabilitiesRequest.
@@ -267,6 +269,21 @@ type IdentityUpdateMemberRolesRequest struct {
 	RoleKeys              *[]string `json:"role_keys"`
 }
 
+// IdentityUpdateOrganizationRequest defines model for IdentityUpdateOrganizationRequest.
+type IdentityUpdateOrganizationRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema      *string `json:"$schema,omitempty"`
+	DisplayName *string `json:"display_name,omitempty"`
+	Slug        *string `json:"slug,omitempty"`
+	Version     int32   `json:"version"`
+}
+
+// PatchOrganizationParams defines parameters for PatchOrganization.
+type PatchOrganizationParams struct {
+	// IdempotencyKey Stable caller-provided key used to make this mutation retry-safe.
+	IdempotencyKey string `json:"Idempotency-Key"`
+}
+
 // CreateApiCredentialParams defines parameters for CreateApiCredential.
 type CreateApiCredentialParams struct {
 	// IdempotencyKey Stable caller-provided key used to make this mutation retry-safe.
@@ -302,6 +319,9 @@ type UpdateOrganizationMemberRolesParams struct {
 	// IdempotencyKey Stable caller-provided key used to make this mutation retry-safe.
 	IdempotencyKey string `json:"Idempotency-Key"`
 }
+
+// PatchOrganizationJSONRequestBody defines body for PatchOrganization for application/json ContentType.
+type PatchOrganizationJSONRequestBody = IdentityUpdateOrganizationRequest
 
 // CreateApiCredentialJSONRequestBody defines body for CreateApiCredential for application/json ContentType.
 type CreateApiCredentialJSONRequestBody = IdentityCreateAPICredentialRequest
@@ -394,6 +414,11 @@ type ClientInterface interface {
 	// GetOrganization request
 	GetOrganization(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// PatchOrganizationWithBody request with any body
+	PatchOrganizationWithBody(ctx context.Context, params *PatchOrganizationParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PatchOrganization(ctx context.Context, params *PatchOrganizationParams, body PatchOrganizationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListApiCredentials request
 	ListApiCredentials(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -437,6 +462,30 @@ type ClientInterface interface {
 
 func (c *Client) GetOrganization(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetOrganizationRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PatchOrganizationWithBody(ctx context.Context, params *PatchOrganizationParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPatchOrganizationRequestWithBody(c.Server, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PatchOrganization(ctx context.Context, params *PatchOrganizationParams, body PatchOrganizationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPatchOrganizationRequest(c.Server, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -649,6 +698,59 @@ func NewGetOrganizationRequest(server string) (*http.Request, error) {
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
 	if err != nil {
 		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPatchOrganizationRequest calls the generic PatchOrganization builder with application/json body
+func NewPatchOrganizationRequest(server string, params *PatchOrganizationParams, body PatchOrganizationJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPatchOrganizationRequestWithBody(server, params, "application/json", bodyReader)
+}
+
+// NewPatchOrganizationRequestWithBody generates requests for PatchOrganization with any type of body
+func NewPatchOrganizationRequestWithBody(server string, params *PatchOrganizationParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/organization")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
 	}
 
 	return req, nil
@@ -1141,6 +1243,11 @@ type ClientWithResponsesInterface interface {
 	// GetOrganizationWithResponse request
 	GetOrganizationWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetOrganizationResponse, error)
 
+	// PatchOrganizationWithBodyWithResponse request with any body
+	PatchOrganizationWithBodyWithResponse(ctx context.Context, params *PatchOrganizationParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchOrganizationResponse, error)
+
+	PatchOrganizationWithResponse(ctx context.Context, params *PatchOrganizationParams, body PatchOrganizationJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchOrganizationResponse, error)
+
 	// ListApiCredentialsWithResponse request
 	ListApiCredentialsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListApiCredentialsResponse, error)
 
@@ -1199,6 +1306,29 @@ func (r GetOrganizationResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetOrganizationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PatchOrganizationResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *IdentityOrganization
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PatchOrganizationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PatchOrganizationResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -1444,6 +1574,23 @@ func (c *ClientWithResponses) GetOrganizationWithResponse(ctx context.Context, r
 	return ParseGetOrganizationResponse(rsp)
 }
 
+// PatchOrganizationWithBodyWithResponse request with arbitrary body returning *PatchOrganizationResponse
+func (c *ClientWithResponses) PatchOrganizationWithBodyWithResponse(ctx context.Context, params *PatchOrganizationParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchOrganizationResponse, error) {
+	rsp, err := c.PatchOrganizationWithBody(ctx, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePatchOrganizationResponse(rsp)
+}
+
+func (c *ClientWithResponses) PatchOrganizationWithResponse(ctx context.Context, params *PatchOrganizationParams, body PatchOrganizationJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchOrganizationResponse, error) {
+	rsp, err := c.PatchOrganization(ctx, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePatchOrganizationResponse(rsp)
+}
+
 // ListApiCredentialsWithResponse request returning *ListApiCredentialsResponse
 func (c *ClientWithResponses) ListApiCredentialsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListApiCredentialsResponse, error) {
 	rsp, err := c.ListApiCredentials(ctx, reqEditors...)
@@ -1583,6 +1730,39 @@ func ParseGetOrganizationResponse(rsp *http.Response) (*GetOrganizationResponse,
 	}
 
 	response := &GetOrganizationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IdentityOrganization
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePatchOrganizationResponse parses an HTTP response from a PatchOrganizationWithResponse call
+func ParsePatchOrganizationResponse(rsp *http.Response) (*PatchOrganizationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PatchOrganizationResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
