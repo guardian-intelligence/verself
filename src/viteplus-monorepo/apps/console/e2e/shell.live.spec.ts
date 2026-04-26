@@ -64,9 +64,11 @@ test.describe("Console Shell", () => {
         "active",
       );
 
-      // Click the "Executions" rail item back to the product.
-      await app.page.getByTestId("nav-executions").click();
-      await expect(app.page).toHaveURL(/\/executions$/);
+      // Click the "Schedules" rail item back to the product. Executions
+      // no longer has a top-level rail entry — it's reached from Schedules
+      // and Builds detail pages.
+      await app.page.getByTestId("nav-schedules").click();
+      await expect(app.page).toHaveURL(/\/schedules$/);
 
       run.finished_balance = await app.readBalance();
       run.status = "succeeded";
@@ -107,7 +109,7 @@ test.describe("Console Shell", () => {
     }
   });
 
-  test("authenticated shell navigates to source via the rail", async ({ app }) => {
+  test("authenticated shell navigates to builds via the rail", async ({ app }) => {
     const run = app.createRun();
 
     try {
@@ -116,7 +118,7 @@ test.describe("Console Shell", () => {
       await app.goto("/executions");
       run.detail_url = "/executions";
 
-      await app.page.getByTestId("nav-source").click();
+      await app.page.getByTestId("nav-builds").click();
       await expect(app.page).toHaveURL(/\/source$/);
       await expect(app.page.getByRole("heading", { name: "Source", exact: true })).toBeVisible();
       await expect(

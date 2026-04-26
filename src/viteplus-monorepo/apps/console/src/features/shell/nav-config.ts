@@ -3,7 +3,6 @@ import {
   CalendarClock,
   GitBranch,
   Settings,
-  Terminal,
   type LucideIcon,
 } from "lucide-react";
 
@@ -43,18 +42,16 @@ export type SettingsNavEntry = {
   readonly matchPrefix: string;
 };
 
-// Product surfaces live at the top of the sidebar. Today there is exactly
-// one; new products (Workloads, Long-lived VMs, Observability) slot in
-// here without touching the shell layout.
+export type SettingsNavGroup = {
+  readonly id: string;
+  readonly label: string;
+  readonly entries: readonly SettingsNavEntry[];
+};
+
+// Product surfaces live at the top of the sidebar. The rail is intentionally
+// flat: two product surfaces only. Executions are reachable via Builds and
+// Schedules detail pages (not via a top-level rail entry).
 export const PRIMARY_NAV: readonly NavEntry[] = [
-  {
-    kind: "internal",
-    id: "executions",
-    label: "Executions",
-    to: "/executions",
-    matchPrefix: "/executions",
-    icon: Terminal,
-  },
   {
     kind: "internal",
     id: "schedules",
@@ -65,21 +62,21 @@ export const PRIMARY_NAV: readonly NavEntry[] = [
   },
   {
     kind: "internal",
-    id: "source",
-    label: "Source",
+    id: "builds",
+    label: "Builds",
     to: "/source",
     matchPrefix: "/source",
     icon: GitBranch,
   },
 ];
 
-// Evergreen (non-product) rail entries anchored to the bottom of the sidebar
-// above the account row. Docs is served by the product apex, so it's an
-// external nav entry — clicking opens a new tab rather than navigating the
-// product shell away from the customer's workflow. Settings is gated by the
-// underlying route, but we still surface the link to everyone: clicking it
-// while signed out triggers the Zitadel flow via the _shell/_authenticated
-// layout, matching the "no disabled buttons" rule.
+// Evergreen (non-product) rail entries anchored to the bottom of the sidebar.
+// Docs is served by the product apex, so it's an external nav entry — clicking
+// opens a new tab rather than navigating the product shell away from the
+// customer's workflow. Settings is gated by the underlying route, but we still
+// surface the link to everyone: clicking it while signed out triggers the
+// Zitadel flow via the _shell/_authenticated layout, matching the "no
+// disabled buttons" rule.
 export const EVERGREEN_NAV: readonly NavEntry[] = [
   {
     kind: "external",
@@ -98,34 +95,60 @@ export const EVERGREEN_NAV: readonly NavEntry[] = [
   },
 ];
 
-// Settings subpages. Rendered as the internal left-nav of the settings
-// subtree, not as sidebar rows.
-export const SETTINGS_NAV: readonly SettingsNavEntry[] = [
+// Settings subpages, grouped into the same "Account settings / Membership /
+// Billing" buckets the rest of the industry has converged on. Group order
+// matches the visual order of the secondary rail.
+export const SETTINGS_NAV_GROUPS: readonly SettingsNavGroup[] = [
   {
-    id: "profile",
-    label: "Profile",
-    to: "/settings/profile",
-    matchPrefix: "/settings/profile",
+    id: "account",
+    label: "Account settings",
+    entries: [
+      {
+        id: "profile",
+        label: "Profile",
+        to: "/settings/profile",
+        matchPrefix: "/settings/profile",
+      },
+    ],
+  },
+  {
+    id: "membership",
+    label: "Membership",
+    entries: [
+      {
+        id: "organization",
+        label: "Members",
+        to: "/settings/organization",
+        matchPrefix: "/settings/organization",
+      },
+      {
+        id: "governance",
+        label: "Governance",
+        to: "/settings/governance",
+        matchPrefix: "/settings/governance",
+      },
+    ],
   },
   {
     id: "billing",
     label: "Billing",
-    to: "/settings/billing",
-    matchPrefix: "/settings/billing",
-  },
-  {
-    id: "organization",
-    label: "Organization",
-    to: "/settings/organization",
-    matchPrefix: "/settings/organization",
-  },
-  {
-    id: "governance",
-    label: "Governance",
-    to: "/settings/governance",
-    matchPrefix: "/settings/governance",
+    entries: [
+      {
+        id: "billing",
+        label: "Plans & usage",
+        to: "/settings/billing",
+        matchPrefix: "/settings/billing",
+      },
+    ],
   },
 ];
+
+// Flat view of the same settings entries. Used by anything that wants to
+// iterate across all subpages (command palette, breadcrumb resolver) without
+// caring about grouping.
+export const SETTINGS_NAV: readonly SettingsNavEntry[] = SETTINGS_NAV_GROUPS.flatMap(
+  (group) => group.entries,
+);
 
 export function isPathActive(currentPath: string, entry: { matchPrefix: string }): boolean {
   return currentPath === entry.matchPrefix || currentPath.startsWith(`${entry.matchPrefix}/`);
