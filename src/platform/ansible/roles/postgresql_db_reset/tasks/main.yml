@@ -36,15 +36,15 @@
 - name: Reset PostgreSQL database
   module_defaults:
     community.postgresql.postgresql_query:
-      login_host: "{{ services.postgresql.host }}"
-      login_port: "{{ services.postgresql.port }}"
+      login_host: "{{ topology_endpoints.postgresql.host }}"
+      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
       login_user: postgres
       login_password: "{{ postgresql_admin_password }}"
       login_db: postgres
       trust_input: false
     community.postgresql.postgresql_db:
-      login_host: "{{ services.postgresql.host }}"
-      login_port: "{{ services.postgresql.port }}"
+      login_host: "{{ topology_endpoints.postgresql.host }}"
+      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
       login_user: postgres
       login_password: "{{ postgresql_admin_password }}"
       maintenance_db: postgres

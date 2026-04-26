@@ -80,7 +80,7 @@
 
 - name: Resolve platform organization before OpenBao rebootstrap
   ansible.builtin.uri:
-    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/v2/organizations/_search"
+    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/v2/organizations/_search"
     method: POST
     headers:
       Authorization: "Bearer {{ openbao_rebootstrap_zitadel_admin_pat_raw.content | b64decode | trim }}"
@@ -147,7 +147,7 @@
 - name: Read current sandbox-rental GitHub App runtime secrets before rebootstrap
   ansible.builtin.uri:
     url: >-
-      https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/{{
+      https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/{{
       openbao_tenancy_kv_mount_prefix | default('kv', true) }}-{{ openbao_rebootstrap_github_source_org_id_resolved
       }}/data/secret/org/{{ item.name }}
     method: GET
@@ -323,9 +323,9 @@
       User=openbao
       Group=openbao
       BindReadOnlyPaths={{ openbao_hosts_file }}:/etc/hosts
-      Environment=BAO_ADDR=https://{{ services.openbao.host }}:{{ services.openbao.port }}
+      Environment=BAO_ADDR=https://{{ topology_endpoints.openbao.endpoints.api.address }}
       Environment=BAO_CACERT={{ openbao_tls_dir }}/cert.pem
-      Environment=VAULT_ADDR=https://{{ services.openbao.host }}:{{ services.openbao.port }}
+      Environment=VAULT_ADDR=https://{{ topology_endpoints.openbao.endpoints.api.address }}
       Environment=VAULT_CACERT={{ openbao_tls_dir }}/cert.pem
       ExecStart={{ verself_bin }}/bao server -config={{ openbao_config_dir }}/openbao.hcl
       ExecReload=/bin/kill -HUP $MAINPID
@@ -372,15 +372,15 @@
 
 - name: Wait for OpenBao listener
   ansible.builtin.wait_for:
-    host: "{{ services.openbao.host }}"
-    port: "{{ services.openbao.port }}"
+    host: "{{ topology_endpoints.openbao.host }}"
+    port: "{{ topology_endpoints.openbao.endpoints.api.port }}"
     timeout: 45
 
 - name: Check OpenBao status
   ansible.builtin.command:
     cmd: "{{ verself_bin }}/bao status -format=json"
   environment:
-    BAO_ADDR: "https://{{ services.openbao.host }}:{{ services.openbao.port }}"
+    BAO_ADDR: "https://{{ topology_endpoints.openbao.endpoints.api.address }}"
     BAO_CACERT: "{{ openbao_tls_dir }}/cert.pem"
   register: openbao_status_raw
   changed_when: false
@@ -402,7 +402,7 @@
       -key-threshold={{ openbao_key_threshold }}
       -format=json
   environment:
-    BAO_ADDR: "https://{{ services.openbao.host }}:{{ services.openbao.port }}"
+    BAO_ADDR: "https://{{ topology_endpoints.openbao.endpoints.api.address }}"
     BAO_CACERT: "{{ openbao_tls_dir }}/cert.pem"
   register: openbao_init_raw
   changed_when: true
@@ -473,7 +473,7 @@
   ansible.builtin.command:
     cmd: "{{ verself_bin }}/bao status -format=json"
   environment:
-    BAO_ADDR: "https://{{ services.openbao.host }}:{{ services.openbao.port }}"
+    BAO_ADDR: "https://{{ topology_endpoints.openbao.endpoints.api.address }}"
     BAO_CACERT: "{{ openbao_tls_dir }}/cert.pem"
   register: openbao_status_after_init_raw
   changed_when: false
@@ -493,7 +493,7 @@
 
 - name: Submit OpenBao unseal keys
   ansible.builtin.uri:
-    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/sys/unseal"
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/unseal"
     method: POST
     body_format: json
     body:
@@ -515,7 +515,7 @@
 
 - name: List OpenBao auth mounts for SPIFFE JWT auth
   ansible.builtin.uri:
-    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/sys/auth"
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/auth"
     method: GET
     headers:
       X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
@@ -528,7 +528,7 @@
 
 - name: Enable OpenBao SPIFFE JWT auth mount
   ansible.builtin.uri:
-    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/sys/auth/{{ openbao_spiffe_jwt_mount }}"
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/auth/{{ openbao_spiffe_jwt_mount }}"
     method: POST
     headers:
       X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
@@ -544,7 +544,7 @@
 
 - name: Read OpenBao SPIFFE JWT auth config
   ansible.builtin.uri:
-    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/auth/{{ openbao_spiffe_jwt_mount }}/config"
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/auth/{{ openbao_spiffe_jwt_mount }}/config"
     method: GET
     headers:
       X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
@@ -563,7 +563,7 @@
 
 - name: Configure OpenBao SPIFFE JWT auth JWKS validation
   ansible.builtin.uri:
-    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/auth/{{ openbao_spiffe_jwt_mount }}/config"
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/auth/{{ openbao_spiffe_jwt_mount }}/config"
     method: POST
     headers:
       X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
@@ -585,7 +585,7 @@
 
 - name: Verify OpenBao health
   ansible.builtin.uri:
-    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/sys/health"
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/health"
     method: GET
     ca_path: "{{ openbao_tls_dir }}/cert.pem"
     status_code: 200
@@ -594,7 +594,7 @@
 
 - name: Configure OpenBao audited request headers
   ansible.builtin.uri:
-    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/sys/config/auditing/request-headers/{{ item.name }}"
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/config/auditing/request-headers/{{ item.name }}"
     method: POST
     headers:
       X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
@@ -609,7 +609,7 @@
 
 - name: Probe OpenBao authenticated sys/mounts to exercise audit device
   ansible.builtin.uri:
-    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/sys/mounts"
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/mounts"
     method: GET
     headers:
       X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"

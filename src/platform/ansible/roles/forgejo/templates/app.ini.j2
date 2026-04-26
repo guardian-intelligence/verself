@@ -9,11 +9,10 @@ WORK_PATH = /var/lib/forgejo
 [server]
 DOMAIN = {{ forgejo_domain }}
 ROOT_URL = https://{{ forgejo_domain }}/
-HTTP_PORT = {{ services.forgejo.port }}
-HTTP_ADDR = {{ services.forgejo.host }}
+HTTP_PORT = {{ topology_endpoints.forgejo.endpoints.http.port }}
+HTTP_ADDR = {{ topology_endpoints.forgejo.host }}
 SSH_DOMAIN = {{ forgejo_domain }}
-SSH_PORT = {{ services.forgejo.ssh_port }}
-SSH_LISTEN_PORT = {{ services.forgejo.ssh_port }}
+DISABLE_SSH = true
 START_SSH_SERVER = false
 LFS_START_SERVER = true
 OFFLINE_MODE = true

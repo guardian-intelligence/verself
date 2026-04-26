@@ -25,4 +25,4 @@ caddy_stripe_webhook_ips:
   - "3.69.109.8"
   - "3.120.168.93"
 
-caddy_firecracker_host_service_ip: "{{ services.firecracker_host_service.host }}"
+caddy_firecracker_host_service_ip: "{{ topology_endpoints.firecracker_host_service.host }}"

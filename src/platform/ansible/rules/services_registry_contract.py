@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the service endpoint registry contract."""
+"""Validate the generated topology endpoint contract."""
 
 from __future__ import annotations
 
@@ -20,11 +20,11 @@ except ModuleNotFoundError:
     AnsibleLintRule = object  # type: ignore[assignment,misc]
 
 
-REGISTRY = Path("group_vars/all/generated/services.yml")
+REGISTRY = Path("group_vars/all/generated/endpoints.yml")
 CONTROL_PLANE_PORT_MIN = 4240
 CONTROL_PLANE_PORT_MAX = 4269
-RESERVED_PORTS = {4245}
-PORT_KEY_RE = re.compile(r"^(?:port|internal_port|.*_port)$")
+RESERVED_PORTS = {4245, 4247}
+PORT_KEY_RE = re.compile(r"^port$")
 
 CONTROL_PLANE_SERVICES = {
     "billing",
@@ -44,7 +44,8 @@ CONTROL_PLANE_SERVICES = {
 }
 
 ALLOWED_WILDCARD_LISTEN_HOSTS = {
-    ("services", "verdaccio", "listen_host"),
+    ("topology_endpoints", "stalwart", "endpoints", "smtp", "listen_host"),
+    ("topology_endpoints", "verdaccio", "endpoints", "http", "listen_host"),
 }
 
 
@@ -165,11 +166,16 @@ def validate_registry(path: str | Path | None = None) -> list[RegistryIssue]:
     if not data:
         return [RegistryIssue(f"{registry_path} is empty or is not a YAML mapping", line_for(lines, ("__error__",)))]
 
-    services = data.get("services")
-    if not isinstance(services, dict):
-        return [RegistryIssue("services registry must define a top-level services mapping", line_for(lines, ("services",)))]
+    topology_endpoints = data.get("topology_endpoints")
+    if not isinstance(topology_endpoints, dict):
+        return [
+            RegistryIssue(
+                "topology endpoint artifact must define a top-level topology_endpoints mapping",
+                line_for(lines, ("topology_endpoints",)),
+            )
+        ]
 
-    allocations = collect_ports(services, ("services",), lines)
+    allocations = collect_ports(topology_endpoints, ("topology_endpoints",), lines)
     by_port: dict[int, list[PortAllocation]] = {}
     for allocation in allocations:
         by_port.setdefault(allocation.port, []).append(allocation)
@@ -179,7 +185,7 @@ def validate_registry(path: str | Path | None = None) -> list[RegistryIssue]:
             paths = ", ".join(dotted(match.path) for match in matches)
             issues.append(
                 RegistryIssue(
-                    f"duplicate service port {port}: {paths}",
+                    f"duplicate topology endpoint port {port}: {paths}",
                     min(match.line for match in matches),
                 )
             )
@@ -193,8 +199,8 @@ def validate_registry(path: str | Path | None = None) -> list[RegistryIssue]:
                 )
             )
 
-        service = allocation.path[1] if len(allocation.path) > 1 else ""
-        if service in CONTROL_PLANE_SERVICES and not (
+        component = allocation.path[1] if len(allocation.path) > 1 else ""
+        if component in CONTROL_PLANE_SERVICES and not (
             CONTROL_PLANE_PORT_MIN <= allocation.port <= CONTROL_PLANE_PORT_MAX
         ):
             issues.append(
@@ -205,15 +211,15 @@ def validate_registry(path: str | Path | None = None) -> list[RegistryIssue]:
                 )
             )
 
-    for service_name, service in services.items():
-        service_path = ("services", str(service_name))
-        if not isinstance(service, dict):
+    for component_name, component in topology_endpoints.items():
+        component_path = ("topology_endpoints", str(component_name))
+        if not isinstance(component, dict):
             continue
 
-        host = service.get("host")
-        host_path = (*service_path, "host")
+        host = component.get("host")
+        host_path = (*component_path, "host")
         if host is None or (isinstance(host, str) and host.strip() == ""):
-            issues.append(RegistryIssue(f"{dotted(service_path)} is missing a non-empty host", line_for(lines, host_path)))
+            issues.append(RegistryIssue(f"{dotted(component_path)} is missing a non-empty host", line_for(lines, host_path)))
 
     def check_hosts(value: Any, base: tuple[str, ...]) -> None:
         if isinstance(value, dict):
@@ -231,17 +237,17 @@ def validate_registry(path: str | Path | None = None) -> list[RegistryIssue]:
             for index, child in enumerate(value):
                 check_hosts(child, (*base, f"[{index}]"))
 
-    check_hosts(services, ("services",))
+    check_hosts(topology_endpoints, ("topology_endpoints",))
     return sorted(issues, key=lambda issue: (issue.line, issue.message))
 
 
 if Lintable is not None:
 
     class ServicesRegistryContractRule(AnsibleLintRule):
-        """The services registry must preserve port and host invariants."""
+        """The generated topology endpoints must preserve port and host invariants."""
 
         id = "services-registry-contract"
-        description = "Validate group_vars/all/generated/services.yml port and host invariants."
+        description = "Validate group_vars/all/generated/endpoints.yml port and host invariants."
         severity = "HIGH"
         tags = ["custom", "services"]
         version_changed = "0.1.0"
@@ -265,7 +271,7 @@ if Lintable is not None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate the Verself services registry.")
+    parser = argparse.ArgumentParser(description="Validate the Verself topology endpoint artifact.")
     parser.add_argument("path", nargs="?", help=f"registry path, default: {REGISTRY}")
     args = parser.parse_args()
 

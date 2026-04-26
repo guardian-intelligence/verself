@@ -125,8 +125,8 @@
 
 - name: Wait for Zitadel before configuring billing auth
   ansible.builtin.wait_for:
-    host: "{{ services.zitadel.host }}"
-    port: "{{ services.zitadel.port }}"
+    host: "{{ topology_endpoints.zitadel.host }}"
+    port: "{{ topology_endpoints.zitadel.endpoints.http.port }}"
     timeout: 60
 
 - name: Read Zitadel admin PAT for billing auth setup
@@ -137,7 +137,7 @@
 
 - name: List Zitadel projects for billing auth
   ansible.builtin.uri:
-    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/_search"
+    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects/_search"
     method: POST
     headers:
       Authorization: "Bearer {{ billing_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
@@ -162,7 +162,7 @@
 
 - name: Create billing auth project if missing
   ansible.builtin.uri:
-    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects"
+    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects"
     method: POST
     headers:
       Authorization: "Bearer {{ billing_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
@@ -192,7 +192,7 @@
 
 - name: Ensure billing project does not require stale internal roles
   ansible.builtin.uri:
-    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/{{ billing_service_auth_audience }}"
+    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects/{{ billing_service_auth_audience }}"
     method: PUT
     headers:
       Authorization: "Bearer {{ billing_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
@@ -224,14 +224,14 @@
       SupplementaryGroups={{ spire_workload_group }}
       BindReadOnlyPaths=/etc/verself/auth-discovery-hosts:/etc/hosts
       LoadCredential=clickhouse-ca-cert:/etc/clickhouse-server/tls/server-ca.pem
-      Environment=BILLING_CH_ADDRESS={{ services.clickhouse.host }}:{{ services.clickhouse.secure_native_port }}
+      Environment=BILLING_CH_ADDRESS={{ topology_endpoints.clickhouse.endpoints.native_tls.address }}
       Environment=BILLING_CH_USER=billing_service
-      Environment=BILLING_TB_ADDRESS={{ services.tigerbeetle.host }}:{{ services.tigerbeetle.port }}
+      Environment=BILLING_TB_ADDRESS={{ topology_endpoints.tigerbeetle.endpoints.client.address }}
       Environment=BILLING_TB_CLUSTER_ID={{ billing_service_tigerbeetle_cluster_id }}
       Environment=BILLING_PG_DSN=postgres://billing@/{{ billing_service_pg_database }}?host=/var/run/postgresql&sslmode=disable
-      Environment=BILLING_LISTEN_ADDR={{ services.billing.host }}:{{ services.billing.port }}
-      Environment=BILLING_INTERNAL_LISTEN_ADDR={{ services.billing.host }}:{{ services.billing.internal_port }}
-      Environment=BILLING_SECRETS_URL=https://{{ services.secrets_service.host }}:{{ services.secrets_service.internal_port }}
+      Environment=BILLING_LISTEN_ADDR={{ topology_endpoints.billing.endpoints.public_http.address }}
+      Environment=BILLING_INTERNAL_LISTEN_ADDR={{ topology_endpoints.billing.endpoints.internal_https.address }}
+      Environment=BILLING_SECRETS_URL=https://{{ topology_endpoints.secrets_service.endpoints.internal_https.address }}
       Environment=BILLING_AUTH_ISSUER_URL={{ billing_service_auth_issuer_url }}
       Environment=BILLING_AUTH_AUDIENCE={{ billing_service_auth_audience }}
       Environment=BILLING_PG_MAX_CONNS={{ billing_service_pg_max_conns }}
@@ -281,8 +281,8 @@
 
 - name: Wait for billing-service to be ready
   ansible.builtin.wait_for:
-    host: "{{ services.billing.host }}"
-    port: "{{ services.billing.port }}"
+    host: "{{ topology_endpoints.billing.host }}"
+    port: "{{ topology_endpoints.billing.endpoints.public_http.port }}"
     timeout: 30
 
 - name: Start previously active billing callers after ledger reset

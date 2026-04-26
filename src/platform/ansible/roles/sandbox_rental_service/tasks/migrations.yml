@@ -28,8 +28,8 @@
   ansible.builtin.command:
     cmd: >-
       {{ verself_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
+      -h {{ topology_endpoints.postgresql.host }}
+      -p {{ topology_endpoints.postgresql.endpoints.postgres.port }}
       -U sandbox_rental
       -d sandbox_rental
       -v ON_ERROR_STOP=1
@@ -54,8 +54,8 @@
   ansible.builtin.command:
     cmd: >-
       {{ verself_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
+      -h {{ topology_endpoints.postgresql.host }}
+      -p {{ topology_endpoints.postgresql.endpoints.postgres.port }}
       -U postgres
       -d sandbox_rental
       -v ON_ERROR_STOP=1

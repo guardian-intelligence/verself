@@ -48,7 +48,7 @@
       vars:
         electric_instance: default
         electric_service_name: electric
-        electric_service_port: "{{ services.electric.port }}"
+        electric_service_port: "{{ topology_endpoints.electric.endpoints.http.port }}"
         electric_pg_role: electric
         electric_pg_conn_limit: "{{ postgresql_role_connection_limits.electric }}"
         electric_db: sandbox_rental

@@ -72,24 +72,24 @@ When a protocol surface also has a Verself product API, the API lives on
 
 ## Implementation Source Of Truth
 
-`src/platform/topology` is the service endpoint registry, rendered to
-`src/platform/ansible/group_vars/all/generated/services.yml` for Ansible. The
-next cutover should extend the CUE topology with public origin metadata so
-Caddy, Cloudflare DNS, OpenAPI server URLs, frontend environment, and
-documentation all derive from the same source.
+`src/platform/topology` is the desired-state graph, rendered to typed Ansible
+artifacts under `src/platform/ansible/group_vars/all/generated/`. Public API
+origins, Caddy routes, DNS records, endpoint ports, and interface metadata
+derive from that graph instead of a separate flat topology artifacts.
 
-Required registry fields for public APIs:
+Required graph shape for public APIs:
 
-```yaml
-services:
-  billing:
-    host: "127.0.0.1"
-    port: 4242
-    public_api:
-      subdomain: billing.api
-      path_prefix: /api/v1
-      browser_cors: none
-      max_body_bytes: 1048576
+```cue
+components: billing: {
+	endpoints: public_http: {protocol: "http", port: 4242, exposure: "loopback"}
+	interfaces: public_api: {
+		kind:        "huma_api"
+		endpoint:    "public_http"
+		path_prefix: "/api/v1"
+		auth:        "zitadel_jwt"
+	}
+}
+routes: [{kind: "public_api_origin", gateway: "public_caddy", host: "billing.api", to: {component: "billing", interface: "public_api"}}]
 ```
 
 Exceptions stay explicit. Stripe webhooks, Git smart HTTP, Electric shapes,

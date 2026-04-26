@@ -12,12 +12,12 @@ SupplementaryGroups={{ spire_workload_group }}
 Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}
 Environment=OTEL_SERVICE_NAME=temporal-web
 Environment=OTEL_TRACES_EXPORTER=otlp
-Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}
+Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}
 Environment=OTEL_EXPORTER_OTLP_INSECURE=true
 Environment=OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=grpc
 Environment=VERSELF_TEMPORAL_WEB_CONFIG_DIR={{ temporal_web_config_dir }}
 Environment=VERSELF_TEMPORAL_WEB_CONFIG_ENV=production
-Environment=VERSELF_TEMPORAL_FRONTEND_ADDRESS={{ services.temporal.host }}:{{ services.temporal.grpc_port }}
+Environment=VERSELF_TEMPORAL_FRONTEND_ADDRESS={{ topology_endpoints.temporal.endpoints.frontend_grpc.address }}
 WorkingDirectory={{ temporal_web_state_dir }}
 ExecStart={{ verself_bin }}/verself-temporal-web
 Restart=on-failure

@@ -9,7 +9,7 @@ table inet verself_governance_service {
     chain input {
         type filter hook input priority filter; policy accept;
 
-        tcp dport {{ services.governance_service.port }} iifname != "lo" drop
+        tcp dport {{ topology_endpoints.governance_service.endpoints.public_http.port }} iifname != "lo" drop
     }
 
     chain output {
@@ -18,13 +18,13 @@ table inet verself_governance_service {
         ct state established,related accept
         meta skuid != governance_service accept
 
-        oifname "lo" tcp dport {{ services.postgresql.port }} accept
-        oifname "lo" tcp dport {{ services.clickhouse.secure_native_port }} accept
-        oifname "lo" tcp dport {{ services.openbao.port }} accept
-        oifname "lo" tcp dport {{ services.profile_service.internal_port }} accept
-        oifname "lo" tcp dport {{ services.zitadel.port }} accept
+        oifname "lo" tcp dport {{ topology_endpoints.postgresql.endpoints.postgres.port }} accept
+        oifname "lo" tcp dport {{ topology_endpoints.clickhouse.endpoints.native_tls.port }} accept
+        oifname "lo" tcp dport {{ topology_endpoints.openbao.endpoints.api.port }} accept
+        oifname "lo" tcp dport {{ topology_endpoints.profile_service.endpoints.internal_https.port }} accept
+        oifname "lo" tcp dport {{ topology_endpoints.zitadel.endpoints.http.port }} accept
         oifname "lo" tcp dport 443 accept
-        oifname "lo" tcp dport {{ services.otelcol.grpc_port }} accept
+        oifname "lo" tcp dport {{ topology_endpoints.otelcol.endpoints.otlp_grpc.port }} accept
         meta l4proto != tcp meta l4proto != udp accept
 
         drop

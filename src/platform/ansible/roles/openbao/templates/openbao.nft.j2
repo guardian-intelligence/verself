@@ -8,7 +8,7 @@ table inet verself_openbao {
     chain input {
         type filter hook input priority filter; policy accept;
 
-        tcp dport { {{ services.openbao.port }}, {{ services.openbao.cluster_port }} } iifname != "lo" drop
+        tcp dport { {{ topology_endpoints.openbao.endpoints.api.port }}, {{ topology_endpoints.openbao.endpoints.cluster.port }} } iifname != "lo" drop
     }
 
     chain output {

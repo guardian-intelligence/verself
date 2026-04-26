@@ -2,21 +2,21 @@
 - name: Ensure projects_service PostgreSQL role and database exist
   module_defaults:
     community.postgresql.postgresql_user:
-      login_host: "{{ services.postgresql.host }}"
-      login_port: "{{ services.postgresql.port }}"
+      login_host: "{{ topology_endpoints.postgresql.host }}"
+      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
       login_user: postgres
       login_password: "{{ postgresql_admin_password }}"
       trust_input: false
     community.postgresql.postgresql_db:
-      login_host: "{{ services.postgresql.host }}"
-      login_port: "{{ services.postgresql.port }}"
+      login_host: "{{ topology_endpoints.postgresql.host }}"
+      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
       login_user: postgres
       login_password: "{{ postgresql_admin_password }}"
       maintenance_db: postgres
       trust_input: false
     community.postgresql.postgresql_owner:
-      login_host: "{{ services.postgresql.host }}"
-      login_port: "{{ services.postgresql.port }}"
+      login_host: "{{ topology_endpoints.postgresql.host }}"
+      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
       login_user: postgres
       login_password: "{{ postgresql_admin_password }}"
       login_db: postgres

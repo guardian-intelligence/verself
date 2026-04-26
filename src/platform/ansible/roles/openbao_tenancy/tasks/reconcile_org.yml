@@ -23,16 +23,16 @@
     openbao_tenancy_transit_sign_policy: "secrets-{{ openbao_tenancy_org.id }}-transit-sign"
     openbao_tenancy_transit_verify_policy: "secrets-{{ openbao_tenancy_org.id }}-transit-verify"
     openbao_tenancy_spiffe_injection_role_url: >-
-      https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/auth/{{
+      https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/auth/{{
       openbao_tenancy_spiffe_jwt_mount }}/role/secrets-injection-{{ openbao_tenancy_org.id }}
     openbao_tenancy_spiffe_runtime_write_role_url: >-
-      https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/auth/{{
+      https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/auth/{{
       openbao_tenancy_spiffe_jwt_mount }}/role/secrets-runtime-write-{{ openbao_tenancy_org.id }}
     openbao_tenancy_spiffe_credential_manage_role_url: >-
-      https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/auth/{{
+      https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/auth/{{
       openbao_tenancy_spiffe_jwt_mount }}/role/secrets-credential-manage-{{ openbao_tenancy_org.id }}
     openbao_tenancy_spiffe_credential_verify_role_url: >-
-      https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/auth/{{
+      https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/auth/{{
       openbao_tenancy_spiffe_jwt_mount }}/role/secrets-credential-verify-{{ openbao_tenancy_org.id }}
 
 - name: Render OpenBao tenancy policy documents
@@ -71,7 +71,7 @@
 
 - name: Enable OpenBao KV v2 mount for organization
   ansible.builtin.uri:
-    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/sys/mounts/{{ openbao_tenancy_kv_mount }}"
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/mounts/{{ openbao_tenancy_kv_mount }}"
     method: POST
     headers:
       X-Vault-Token: "{{ openbao_tenancy_root_token }}"
@@ -90,7 +90,7 @@
 
 - name: Enable OpenBao Transit mount for organization
   ansible.builtin.uri:
-    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/sys/mounts/{{ openbao_tenancy_transit_mount }}"
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/mounts/{{ openbao_tenancy_transit_mount }}"
     method: POST
     headers:
       X-Vault-Token: "{{ openbao_tenancy_root_token }}"
@@ -107,7 +107,7 @@
 
 - name: Enable OpenBao JWT auth mount for organization
   ansible.builtin.uri:
-    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/sys/auth/{{ openbao_tenancy_jwt_mount }}"
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/auth/{{ openbao_tenancy_jwt_mount }}"
     method: POST
     headers:
       X-Vault-Token: "{{ openbao_tenancy_root_token }}"
@@ -124,7 +124,7 @@
 
 - name: Read OpenBao JWT auth config for organization
   ansible.builtin.uri:
-    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/auth/{{ openbao_tenancy_jwt_mount }}/config"
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/auth/{{ openbao_tenancy_jwt_mount }}/config"
     method: GET
     headers:
       X-Vault-Token: "{{ openbao_tenancy_root_token }}"
@@ -137,7 +137,7 @@
 
 - name: Configure OpenBao JWT discovery for organization
   ansible.builtin.uri:
-    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/auth/{{ openbao_tenancy_jwt_mount }}/config"
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/auth/{{ openbao_tenancy_jwt_mount }}/config"
     method: POST
     headers:
       X-Vault-Token: "{{ openbao_tenancy_root_token }}"
@@ -158,7 +158,7 @@
 
 - name: Read OpenBao tenancy policies
   ansible.builtin.uri:
-    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/sys/policies/acl/{{ item.name }}"
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/policies/acl/{{ item.name }}"
     method: GET
     headers:
       X-Vault-Token: "{{ openbao_tenancy_root_token }}"
@@ -174,7 +174,7 @@
 
 - name: Write changed OpenBao tenancy policies
   ansible.builtin.uri:
-    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/sys/policies/acl/{{ item.item.name }}"
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/policies/acl/{{ item.item.name }}"
     method: POST
     headers:
       X-Vault-Token: "{{ openbao_tenancy_root_token }}"
@@ -306,7 +306,7 @@
 
 - name: Read OpenBao JWT roles for organization
   ansible.builtin.uri:
-    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/auth/{{ openbao_tenancy_jwt_mount }}/role/{{ item.name }}"
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/auth/{{ openbao_tenancy_jwt_mount }}/role/{{ item.name }}"
     method: GET
     headers:
       X-Vault-Token: "{{ openbao_tenancy_root_token }}"
@@ -519,7 +519,7 @@
 
 - name: Write missing OpenBao JWT roles for organization
   ansible.builtin.uri:
-    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/auth/{{ openbao_tenancy_jwt_mount }}/role/{{ item.item.name }}"
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/auth/{{ openbao_tenancy_jwt_mount }}/role/{{ item.item.name }}"
     method: POST
     headers:
       X-Vault-Token: "{{ openbao_tenancy_root_token }}"

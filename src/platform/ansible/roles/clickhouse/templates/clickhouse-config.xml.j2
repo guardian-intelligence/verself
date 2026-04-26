@@ -1,6 +1,6 @@
 <clickhouse>
-    <listen_host>{{ services.clickhouse.host }}</listen_host>
-    <tcp_port_secure>{{ services.clickhouse.secure_native_port }}</tcp_port_secure>
+    <listen_host>{{ topology_endpoints.clickhouse.host }}</listen_host>
+    <tcp_port_secure>{{ topology_endpoints.clickhouse.endpoints.native_tls.port }}</tcp_port_secure>
 
     <path>{{ clickhouse_data_path }}/</path>
     <tmp_path>{{ clickhouse_data_path }}/tmp/</tmp_path>

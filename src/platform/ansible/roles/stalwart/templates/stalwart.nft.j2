@@ -1,6 +1,6 @@
 #!/usr/sbin/nft -f
 # Stalwart Mail Server egress restrictions.
-# Stalwart binds 0.0.0.0:25 (SMTP, public) and 127.0.0.1:{{ services.stalwart.http_port }} (HTTP, behind Caddy).
+# Stalwart binds 0.0.0.0:25 (SMTP, public) and 127.0.0.1:{{ topology_endpoints.stalwart.endpoints.http.port }} (HTTP, behind Caddy).
 # This table restricts the stalwart user's outbound traffic to only what's required.
 
 table inet verself_stalwart

@@ -1,6 +1,6 @@
-temporalGrpcAddress: "{{ services.temporal.host }}:{{ services.temporal.grpc_port }}"
-host: "{{ services.temporal_web.host }}"
-port: {{ services.temporal_web.port }}
+temporalGrpcAddress: "{{ topology_endpoints.temporal.endpoints.frontend_grpc.address }}"
+host: "{{ topology_endpoints.temporal_web.host }}"
+port: {{ topology_endpoints.temporal_web.endpoints.http.port }}
 publicPath: ""
 enableUi: true
 cloudUi: false

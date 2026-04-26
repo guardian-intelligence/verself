@@ -2,8 +2,8 @@
 # Managed by Ansible — do not edit manually.
 
 # Connection
-listen_addresses = '{{ services.postgresql.host }}'
-port = {{ services.postgresql.port }}
+listen_addresses = '{{ topology_endpoints.postgresql.host }}'
+port = {{ topology_endpoints.postgresql.endpoints.postgres.port }}
 max_connections = {{ postgresql_max_connections }}
 superuser_reserved_connections = {{ postgresql_superuser_reserved_connections }}
 

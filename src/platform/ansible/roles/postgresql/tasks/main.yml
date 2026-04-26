@@ -200,8 +200,8 @@
 
 - name: Wait for PostgreSQL to be ready
   ansible.builtin.wait_for:
-    port: "{{ services.postgresql.port }}"
-    host: "{{ services.postgresql.host }}"
+    port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
+    host: "{{ topology_endpoints.postgresql.host }}"
     timeout: 30
 
 # --- Set admin password (idempotent — always update to match credential file) ---
@@ -254,34 +254,34 @@
         owner: temporal
   module_defaults:
     community.postgresql.postgresql_user:
-      login_host: "{{ services.postgresql.host }}"
-      login_port: "{{ services.postgresql.port }}"
+      login_host: "{{ topology_endpoints.postgresql.host }}"
+      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
       login_user: postgres
       login_password: "{{ postgresql_admin_password }}"
       trust_input: false
     community.postgresql.postgresql_db:
-      login_host: "{{ services.postgresql.host }}"
-      login_port: "{{ services.postgresql.port }}"
+      login_host: "{{ topology_endpoints.postgresql.host }}"
+      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
       login_user: postgres
       login_password: "{{ postgresql_admin_password }}"
       maintenance_db: postgres
       trust_input: false
     community.postgresql.postgresql_owner:
-      login_host: "{{ services.postgresql.host }}"
-      login_port: "{{ services.postgresql.port }}"
+      login_host: "{{ topology_endpoints.postgresql.host }}"
+      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
       login_user: postgres
       login_password: "{{ postgresql_admin_password }}"
       login_db: postgres
       trust_input: false
     community.postgresql.postgresql_ping:
-      login_host: "{{ services.postgresql.host }}"
-      login_port: "{{ services.postgresql.port }}"
+      login_host: "{{ topology_endpoints.postgresql.host }}"
+      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
       login_user: postgres
       login_password: "{{ postgresql_admin_password }}"
       login_db: postgres
     community.postgresql.postgresql_query:
-      login_host: "{{ services.postgresql.host }}"
-      login_port: "{{ services.postgresql.port }}"
+      login_host: "{{ topology_endpoints.postgresql.host }}"
+      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
       login_user: postgres
       login_password: "{{ postgresql_admin_password }}"
       login_db: postgres
@@ -341,4 +341,4 @@
     that: postgresql_ping_result.is_available | default(false)
     fail_msg: >-
       PostgreSQL connectivity check failed for
-      {{ services.postgresql.host }}:{{ services.postgresql.port }}.
+      {{ topology_endpoints.postgresql.endpoints.postgres.address }}.

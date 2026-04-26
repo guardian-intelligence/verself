@@ -286,7 +286,7 @@
 
 - name: Resolve identity-service project ID for console
   ansible.builtin.uri:
-    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/_search"
+    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects/_search"
     method: POST
     headers:
       Authorization: "Bearer {{ zitadel_oauth_app_pat }}"
@@ -350,6 +350,6 @@
 
 - name: Wait for console to be ready
   ansible.builtin.wait_for:
-    host: "{{ services.console.host }}"
-    port: "{{ services.console.port }}"
+    host: "{{ topology_endpoints.console.host }}"
+    port: "{{ topology_endpoints.console.endpoints.http.port }}"
     timeout: 30

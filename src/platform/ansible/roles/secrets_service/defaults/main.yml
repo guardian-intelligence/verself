@@ -3,9 +3,9 @@ secrets_service_subdomain: secrets.api
 secrets_service_domain: "{{ secrets_service_subdomain }}.{{ verself_domain }}"
 secrets_service_auth_issuer_url: "https://auth.{{ verself_domain }}"
 secrets_service_auth_project_name: secrets-service
-secrets_service_openbao_addr: "https://{{ services.openbao.host }}:{{ services.openbao.port }}"
+secrets_service_openbao_addr: "https://{{ topology_endpoints.openbao.endpoints.api.address }}"
 secrets_service_openbao_kv_prefix: kv
 secrets_service_openbao_transit_prefix: transit
 secrets_service_openbao_jwt_prefix: jwt
-secrets_service_billing_url: "https://{{ services.billing.host }}:{{ services.billing.internal_port }}"
+secrets_service_billing_url: "https://{{ topology_endpoints.billing.endpoints.internal_https.address }}"
 secrets_service_platform_org_name: verself

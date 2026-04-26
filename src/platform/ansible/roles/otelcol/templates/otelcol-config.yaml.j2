@@ -2,9 +2,9 @@ receivers:
   otlp:
     protocols:
       grpc:
-        endpoint: 127.0.0.1:{{ services.otelcol.grpc_port }}
+        endpoint: 127.0.0.1:{{ topology_endpoints.otelcol.endpoints.otlp_grpc.port }}
       http:
-        endpoint: 127.0.0.1:{{ services.otelcol.http_port }}
+        endpoint: 127.0.0.1:{{ topology_endpoints.otelcol.endpoints.otlp_http.port }}
   filelog/caddy:
     include: [/var/log/caddy/access.log]
     storage: file_storage
@@ -379,7 +379,7 @@ receivers:
         field: attributes.bytes
         if: attributes.bytes != nil
   postgresql:
-    endpoint: "{{ services.postgresql.host }}:{{ services.postgresql.port }}"
+    endpoint: "{{ topology_endpoints.postgresql.endpoints.postgres.address }}"
     username: postgres
     password: "{{ postgresql_admin_password }}"
     databases: [sandbox_rental]
@@ -435,7 +435,7 @@ receivers:
       disk: {}
       network: {}
   statsd:
-    endpoint: "{{ services.otelcol.host }}:{{ services.otelcol.statsd_port }}"
+    endpoint: "{{ topology_endpoints.otelcol.endpoints.statsd.address }}"
     aggregation_interval: 10s
   prometheus/openbao:
     config:
@@ -449,14 +449,14 @@ receivers:
           tls_config:
             insecure_skip_verify: true
           static_configs:
-            - targets: ["{{ services.openbao.host }}:{{ services.openbao.port }}"]
+            - targets: ["{{ topology_endpoints.openbao.endpoints.api.address }}"]
   prometheus/temporal:
     config:
       scrape_configs:
         - job_name: temporal
           scrape_interval: 10s
           static_configs:
-            - targets: ["{{ services.temporal.host }}:{{ services.temporal.metrics_port }}"]
+            - targets: ["{{ topology_endpoints.temporal.endpoints.metrics.address }}"]
 
 processors:
   batch:
@@ -489,7 +489,7 @@ processors:
 
 exporters:
   clickhouse:
-    endpoint: tcp://{{ services.clickhouse.host }}:{{ services.clickhouse.secure_native_port }}?secure=true&dial_timeout=10s
+    endpoint: tcp://{{ topology_endpoints.clickhouse.endpoints.native_tls.address }}?secure=true&dial_timeout=10s
     username: {{ otelcol_clickhouse_user }}
     database: default
     logs_table_name: otel_logs
@@ -508,7 +508,7 @@ exporters:
 
 extensions:
   health_check:
-    endpoint: 127.0.0.1:13133  # not in service registry — no cross-service consumers
+    endpoint: 127.0.0.1:13133  # not in topology artifacts — no cross-service consumers
   file_storage:
     directory: /var/lib/otelcol/storage
 

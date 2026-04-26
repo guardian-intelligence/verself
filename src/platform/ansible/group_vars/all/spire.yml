@@ -1,7 +1,7 @@
 ---
 spire_trust_domain: "spiffe.{{ verself_domain }}"
 spire_server_bind_address: 127.0.0.1
-spire_server_bind_port: "{{ services.spire_server.port }}"
+spire_server_bind_port: "{{ topology_endpoints.spire_server.endpoints.api.port }}"
 spire_server_socket_path: /run/spire-server/private/api.sock
 spire_agent_socket_path: /run/spire-agent/sockets/agent.sock
 spire_workload_group: spire_workload
@@ -26,6 +26,6 @@ spire_otelcol_id: "spiffe://{{ spire_trust_domain }}/svc/otelcol"
 spire_clickhouse_server_id: "spiffe://{{ spire_trust_domain }}/svc/clickhouse-server"
 spire_clickhouse_operator_id: "spiffe://{{ spire_trust_domain }}/svc/clickhouse-operator"
 spire_bundle_endpoint_bind_address: 127.0.0.1
-spire_bundle_endpoint_bind_port: "{{ services.spire_bundle_endpoint.port }}"
+spire_bundle_endpoint_bind_port: "{{ topology_endpoints.spire_bundle_endpoint.endpoints.bundle.port }}"
 spire_jwt_bundle_endpoint_url: "https://{{ spire_bundle_endpoint_bind_address }}:{{ spire_bundle_endpoint_bind_port }}"
 spire_jwt_issuer_url: "{{ spire_jwt_bundle_endpoint_url }}"

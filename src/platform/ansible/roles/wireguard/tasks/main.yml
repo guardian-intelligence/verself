@@ -9,19 +9,20 @@
     state: directory
     mode: "0700"
 
-- name: Generate WireGuard private key
-  ansible.builtin.command: "{{ verself_bin }}/wg genkey"
-  register: wireguard_private_key
+- name: Generate WireGuard private key file
+  ansible.builtin.shell: |
+    set -euo pipefail
+    umask 077
+    {{ verself_bin }}/wg genkey > /etc/wireguard/private.key
   args:
+    executable: /bin/bash
     creates: /etc/wireguard/private.key
   no_log: true
 
-- name: Save private key
-  ansible.builtin.copy:
-    content: "{{ wireguard_private_key.stdout }}"
-    dest: /etc/wireguard/private.key
+- name: Set WireGuard private key permissions
+  ansible.builtin.file:
+    path: /etc/wireguard/private.key
     mode: "0600"
-  when: wireguard_private_key.stdout | length > 0
   no_log: true
 
 - name: Read WireGuard private key
@@ -32,18 +33,13 @@
 
 - name: Set WireGuard private key fact
   ansible.builtin.set_fact:
-    wireguard_private_key_material: >-
-      {{
-        (wireguard_private_key.stdout | trim)
-        if (wireguard_private_key.stdout | length > 0)
-        else (wireguard_private_key_file.content | b64decode | trim)
-      }}
+    wireguard_private_key_material: "{{ wireguard_private_key_file.content | b64decode | trim }}"
   no_log: true
 
-- name: Generate WireGuard public key
+- name: Validate WireGuard private key material
   ansible.builtin.shell: |
     set -o pipefail
-    cat /etc/wireguard/private.key | {{ verself_bin }}/wg pubkey
+    {{ verself_bin }}/wg pubkey < /etc/wireguard/private.key >/dev/null
   register: wireguard_public_key
   args:
     executable: /bin/bash

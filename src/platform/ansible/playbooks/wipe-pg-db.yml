@@ -51,8 +51,8 @@
 
     - name: Wait for deployed PostgreSQL before wipe
       ansible.builtin.wait_for:
-        host: "{{ services.postgresql.host }}"
-        port: "{{ services.postgresql.port }}"
+        host: "{{ topology_endpoints.postgresql.host }}"
+        port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
         timeout: 5
 
     - name: Verify PostgreSQL admin connectivity before wipe
@@ -60,9 +60,9 @@
         argv:
           - "{{ verself_bin }}/psql"
           - -h
-          - "{{ services.postgresql.host }}"
+          - "{{ topology_endpoints.postgresql.host }}"
           - -p
-          - "{{ services.postgresql.port | string }}"
+          - "{{ topology_endpoints.postgresql.endpoints.postgres.port | string }}"
           - -U
           - postgres
           - -d
@@ -184,7 +184,7 @@
       vars:
         electric_instance: notifications
         electric_service_name: electric-notifications
-        electric_service_port: "{{ services.electric_notifications.port }}"
+        electric_service_port: "{{ topology_endpoints.electric_notifications.endpoints.http.port }}"
         electric_pg_role: electric_notifications
         electric_pg_conn_limit: "{{ postgresql_role_connection_limits.electric_notifications }}"
         electric_db: notifications_service

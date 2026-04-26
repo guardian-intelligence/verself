@@ -108,8 +108,8 @@
 
 - name: Wait for Zitadel before resolving notifications-service auth audience
   ansible.builtin.wait_for:
-    host: "{{ services.zitadel.host }}"
-    port: "{{ services.zitadel.port }}"
+    host: "{{ topology_endpoints.zitadel.host }}"
+    port: "{{ topology_endpoints.zitadel.endpoints.http.port }}"
     timeout: 60
 
 - name: Read Zitadel admin PAT for notifications-service auth setup
@@ -125,7 +125,7 @@
 
 - name: Find identity-service auth project for notifications-service bearer validation
   ansible.builtin.uri:
-    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/_search"
+    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects/_search"
     method: POST
     headers:
       Authorization: "Bearer {{ notifications_service_zitadel_admin_pat }}"
@@ -168,20 +168,20 @@
       SupplementaryGroups={{ spire_workload_group }}
       BindReadOnlyPaths=/etc/verself/auth-discovery-hosts:/etc/hosts
       LoadCredential=clickhouse-ca-cert:/etc/clickhouse-server/tls/server-ca.pem
-      Environment=NOTIFICATIONS_LISTEN_ADDR={{ services.notifications_service.host }}:{{ services.notifications_service.port }}
+      Environment=NOTIFICATIONS_LISTEN_ADDR={{ topology_endpoints.notifications_service.endpoints.public_http.address }}
       Environment=NOTIFICATIONS_PG_DSN=postgres://notifications_service@/{{ notifications_service_pg_database }}?host=/var/run/postgresql&sslmode=disable
       Environment=NOTIFICATIONS_PG_MAX_CONNS={{ notifications_service_pg_max_conns }}
       Environment=NOTIFICATIONS_PG_MIN_CONNS={{ notifications_service_pg_min_conns }}
       Environment=NOTIFICATIONS_PG_CONN_MAX_LIFETIME_SECONDS={{ notifications_service_pg_conn_max_lifetime_seconds }}
       Environment=NOTIFICATIONS_PG_CONN_MAX_IDLE_SECONDS={{ notifications_service_pg_conn_max_idle_seconds }}
-      Environment=NOTIFICATIONS_CH_ADDRESS={{ services.clickhouse.host }}:{{ services.clickhouse.secure_native_port }}
+      Environment=NOTIFICATIONS_CH_ADDRESS={{ topology_endpoints.clickhouse.endpoints.native_tls.address }}
       Environment=NOTIFICATIONS_CH_USER=notifications_service
-      Environment=NOTIFICATIONS_NATS_URL=tls://{{ services.nats.host }}:{{ services.nats.port }}
+      Environment=NOTIFICATIONS_NATS_URL=tls://{{ topology_endpoints.nats.endpoints.client.address }}
       Environment=NOTIFICATIONS_AUTH_ISSUER_URL={{ notifications_service_auth_issuer_url }}
       Environment=NOTIFICATIONS_AUTH_AUDIENCE={{ notifications_service_auth_audience }}
       Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}
       Environment=OTEL_SERVICE_NAME=notifications-service
-      Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}
+      Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}
       ExecStart={{ verself_bin }}/notifications-service
       Restart=on-failure
       RestartSec=5
@@ -226,13 +226,13 @@
 
 - name: Wait for notifications-service listener to be present
   ansible.builtin.wait_for:
-    host: "{{ services.notifications_service.host }}"
-    port: "{{ services.notifications_service.port }}"
+    host: "{{ topology_endpoints.notifications_service.host }}"
+    port: "{{ topology_endpoints.notifications_service.endpoints.public_http.port }}"
     timeout: 60
 
 - name: Wait for notifications-service readiness
   ansible.builtin.uri:
-    url: "http://{{ services.notifications_service.host }}:{{ services.notifications_service.port }}/readyz"
+    url: "http://{{ topology_endpoints.notifications_service.endpoints.public_http.address }}/readyz"
     method: GET
     status_code: 200
   register: notifications_service_readyz

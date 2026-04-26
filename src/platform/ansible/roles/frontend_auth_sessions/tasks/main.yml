@@ -44,21 +44,21 @@
 - name: Ensure frontend auth PostgreSQL role and database exist
   module_defaults:
     community.postgresql.postgresql_user:
-      login_host: "{{ services.postgresql.host }}"
-      login_port: "{{ services.postgresql.port }}"
+      login_host: "{{ topology_endpoints.postgresql.host }}"
+      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
       login_user: postgres
       login_password: "{{ postgresql_admin_password }}"
       trust_input: false
     community.postgresql.postgresql_db:
-      login_host: "{{ services.postgresql.host }}"
-      login_port: "{{ services.postgresql.port }}"
+      login_host: "{{ topology_endpoints.postgresql.host }}"
+      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
       login_user: postgres
       login_password: "{{ postgresql_admin_password }}"
       maintenance_db: postgres
       trust_input: false
     community.postgresql.postgresql_owner:
-      login_host: "{{ services.postgresql.host }}"
-      login_port: "{{ services.postgresql.port }}"
+      login_host: "{{ topology_endpoints.postgresql.host }}"
+      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
       login_user: postgres
       login_password: "{{ postgresql_admin_password }}"
       login_db: postgres
@@ -90,8 +90,8 @@
   ansible.builtin.command:
     cmd: >-
       {{ verself_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
+      -h {{ topology_endpoints.postgresql.host }}
+      -p {{ topology_endpoints.postgresql.endpoints.postgres.port }}
       -U {{ frontend_auth_sessions_db_user }}
       -d {{ frontend_auth_sessions_db_name }}
       -v ON_ERROR_STOP=1
@@ -105,8 +105,8 @@
   ansible.builtin.command:
     cmd: >-
       {{ verself_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
+      -h {{ topology_endpoints.postgresql.host }}
+      -p {{ topology_endpoints.postgresql.endpoints.postgres.port }}
       -U {{ frontend_auth_sessions_db_user }}
       -d {{ frontend_auth_sessions_db_name }}
       -v ON_ERROR_STOP=1

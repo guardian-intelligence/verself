@@ -75,6 +75,7 @@ openbao_workload_audience: openbao
 wireguard_interface: wg0
 wireguard_port: 51820
 wireguard_network: "10.0.0.0/16"
+wireguard_address: "10.0.0.1"
 
 # PostgreSQL connection budget.
 #

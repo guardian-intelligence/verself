@@ -94,8 +94,8 @@
 
 - name: Wait for Zitadel before resolving profile-service auth audience
   ansible.builtin.wait_for:
-    host: "{{ services.zitadel.host }}"
-    port: "{{ services.zitadel.port }}"
+    host: "{{ topology_endpoints.zitadel.host }}"
+    port: "{{ topology_endpoints.zitadel.endpoints.http.port }}"
     timeout: 60
 
 - name: Read Zitadel admin PAT for profile-service auth setup
@@ -111,7 +111,7 @@
 
 - name: Find identity-service auth project for profile-service bearer validation
   ansible.builtin.uri:
-    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/_search"
+    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects/_search"
     method: POST
     headers:
       Authorization: "Bearer {{ profile_service_zitadel_admin_pat }}"
@@ -155,17 +155,17 @@
       Group=profile_service
       SupplementaryGroups={{ spire_workload_group }}
       BindReadOnlyPaths=/etc/verself/auth-discovery-hosts:/etc/hosts
-      Environment=PROFILE_LISTEN_ADDR={{ services.profile_service.host }}:{{ services.profile_service.port }}
-      Environment=PROFILE_INTERNAL_LISTEN_ADDR={{ services.profile_service.host }}:{{ services.profile_service.internal_port }}
+      Environment=PROFILE_LISTEN_ADDR={{ topology_endpoints.profile_service.endpoints.public_http.address }}
+      Environment=PROFILE_INTERNAL_LISTEN_ADDR={{ topology_endpoints.profile_service.endpoints.internal_https.address }}
       Environment=PROFILE_PG_DSN=postgres://profile_service@/profile?host=/var/run/postgresql&sslmode=disable
       Environment=PROFILE_PG_MAX_CONNS=8
       Environment=PROFILE_AUTH_ISSUER_URL={{ profile_service_auth_issuer_url }}
       Environment=PROFILE_AUTH_AUDIENCE={{ profile_service_auth_audience }}
-      Environment=PROFILE_IDENTITY_INTERNAL_URL=https://{{ services.identity_service.host }}:{{ services.identity_service.internal_port }}
-      Environment=PROFILE_GOVERNANCE_AUDIT_URL=https://{{ services.governance_service.host }}:{{ services.governance_service.internal_port }}
+      Environment=PROFILE_IDENTITY_INTERNAL_URL=https://{{ topology_endpoints.identity_service.endpoints.internal_https.address }}
+      Environment=PROFILE_GOVERNANCE_AUDIT_URL=https://{{ topology_endpoints.governance_service.endpoints.internal_https.address }}
       Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}
       Environment=OTEL_SERVICE_NAME=profile-service
-      Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}
+      Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}
       ExecStart={{ verself_bin }}/profile-service
       Restart=on-failure
       RestartSec=5
@@ -205,13 +205,13 @@
 
 - name: Wait for profile-service listener to be present
   ansible.builtin.wait_for:
-    host: "{{ services.profile_service.host }}"
-    port: "{{ services.profile_service.port }}"
+    host: "{{ topology_endpoints.profile_service.host }}"
+    port: "{{ topology_endpoints.profile_service.endpoints.public_http.port }}"
     timeout: 60
 
 - name: Wait for profile-service readiness
   ansible.builtin.uri:
-    url: "http://{{ services.profile_service.host }}:{{ services.profile_service.port }}/readyz"
+    url: "http://{{ topology_endpoints.profile_service.endpoints.public_http.address }}/readyz"
     method: GET
     status_code: 200
   register: profile_service_readyz

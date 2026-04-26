@@ -15,8 +15,8 @@ table inet verself_sandbox_rental {
 
         # Reject external connections to the sandbox-rental port.
         # Only loopback (Caddy reverse proxy) is allowed.
-        tcp dport {{ services.sandbox_rental.port }} iifname != "lo" drop
-        tcp dport {{ services.sandbox_rental.internal_port }} iifname != "lo" drop
+        tcp dport {{ topology_endpoints.sandbox_rental.endpoints.public_http.port }} iifname != "lo" drop
+        tcp dport {{ topology_endpoints.sandbox_rental.endpoints.internal_https.port }} iifname != "lo" drop
     }
 
     chain output {
@@ -29,18 +29,18 @@ table inet verself_sandbox_rental {
         meta skuid != sandbox_rental accept
 
         # Allow loopback traffic to local services.
-        oifname "lo" tcp dport {{ services.postgresql.port }} accept
-        oifname "lo" tcp dport {{ services.clickhouse.secure_native_port }} accept
-        oifname "lo" tcp dport {{ services.billing.internal_port }} accept
-        oifname "lo" tcp dport {{ services.openbao.port }} accept
-        oifname "lo" tcp dport {{ services.zitadel.port }} accept
+        oifname "lo" tcp dport {{ topology_endpoints.postgresql.endpoints.postgres.port }} accept
+        oifname "lo" tcp dport {{ topology_endpoints.clickhouse.endpoints.native_tls.port }} accept
+        oifname "lo" tcp dport {{ topology_endpoints.billing.endpoints.internal_https.port }} accept
+        oifname "lo" tcp dport {{ topology_endpoints.openbao.endpoints.api.port }} accept
+        oifname "lo" tcp dport {{ topology_endpoints.zitadel.endpoints.http.port }} accept
         oifname "lo" tcp dport 443 accept
-        oifname "lo" tcp dport {{ services.governance_service.internal_port }} accept
-        oifname "lo" tcp dport {{ services.secrets_service.internal_port }} accept
-        oifname "lo" tcp dport {{ services.source_code_hosting_service.internal_port }} accept
-        oifname "lo" tcp dport {{ services.forgejo.port }} accept
-        oifname "lo" tcp dport {{ services.temporal.grpc_port }} accept
-        oifname "lo" tcp dport {{ services.otelcol.grpc_port }} accept
+        oifname "lo" tcp dport {{ topology_endpoints.governance_service.endpoints.internal_https.port }} accept
+        oifname "lo" tcp dport {{ topology_endpoints.secrets_service.endpoints.internal_https.port }} accept
+        oifname "lo" tcp dport {{ topology_endpoints.source_code_hosting_service.endpoints.internal_https.port }} accept
+        oifname "lo" tcp dport {{ topology_endpoints.forgejo.endpoints.http.port }} accept
+        oifname "lo" tcp dport {{ topology_endpoints.temporal.endpoints.frontend_grpc.port }} accept
+        oifname "lo" tcp dport {{ topology_endpoints.otelcol.endpoints.otlp_grpc.port }} accept
         oifname "lo" tcp dport 53 accept
         oifname "lo" udp dport 53 accept
 

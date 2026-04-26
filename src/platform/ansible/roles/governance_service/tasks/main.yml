@@ -120,8 +120,8 @@
 
 - name: Wait for Zitadel before resolving governance-service auth audience
   ansible.builtin.wait_for:
-    host: "{{ services.zitadel.host }}"
-    port: "{{ services.zitadel.port }}"
+    host: "{{ topology_endpoints.zitadel.host }}"
+    port: "{{ topology_endpoints.zitadel.endpoints.http.port }}"
     timeout: 60
 
 - name: Read Zitadel admin PAT for governance-service auth setup
@@ -137,7 +137,7 @@
 
 - name: Find identity-service auth project for governance-service bearer validation
   ansible.builtin.uri:
-    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/_search"
+    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects/_search"
     method: POST
     headers:
       Authorization: "Bearer {{ governance_service_zitadel_admin_pat }}"
@@ -181,20 +181,20 @@
       BindReadOnlyPaths=/etc/verself/auth-discovery-hosts:/etc/hosts
       LoadCredential=audit-hmac-key:/etc/credstore/governance-service/audit-hmac-key
       LoadCredential=clickhouse-ca-cert:/etc/clickhouse-server/tls/server-ca.pem
-      Environment=GOVERNANCE_LISTEN_ADDR={{ services.governance_service.host }}:{{ services.governance_service.port }}
-      Environment=GOVERNANCE_INTERNAL_LISTEN_ADDR={{ services.governance_service.host }}:{{ services.governance_service.internal_port }}
+      Environment=GOVERNANCE_LISTEN_ADDR={{ topology_endpoints.governance_service.endpoints.public_http.address }}
+      Environment=GOVERNANCE_INTERNAL_LISTEN_ADDR={{ topology_endpoints.governance_service.endpoints.internal_https.address }}
       Environment=GOVERNANCE_PG_DSN=postgres://governance_service@/governance_service?host=/var/run/postgresql&sslmode=disable
       Environment=GOVERNANCE_IDENTITY_PG_DSN=postgres://identity_service@/identity_service?host=/var/run/postgresql&sslmode=disable
       Environment=GOVERNANCE_BILLING_PG_DSN=postgres://billing@/billing?host=/var/run/postgresql&sslmode=disable
       Environment=GOVERNANCE_SANDBOX_PG_DSN=postgres://sandbox_rental@/sandbox_rental?host=/var/run/postgresql&sslmode=disable
-      Environment=GOVERNANCE_CH_ADDRESS={{ services.clickhouse.host }}:{{ services.clickhouse.secure_native_port }}
+      Environment=GOVERNANCE_CH_ADDRESS={{ topology_endpoints.clickhouse.endpoints.native_tls.address }}
       Environment=GOVERNANCE_CH_USER=governance_service
       Environment=GOVERNANCE_AUTH_ISSUER_URL={{ governance_service_auth_issuer_url }}
       Environment=GOVERNANCE_AUTH_AUDIENCE={{ governance_service_auth_audience }}
       Environment=GOVERNANCE_EXPORT_DIR={{ governance_service_export_dir }}
       Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}
       Environment=OTEL_SERVICE_NAME=governance-service
-      Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}
+      Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}
       ExecStart={{ verself_bin }}/governance-service
       Restart=on-failure
       RestartSec=5
@@ -232,6 +232,6 @@
 
 - name: Wait for governance-service to be ready
   ansible.builtin.wait_for:
-    host: "{{ services.governance_service.host }}"
-    port: "{{ services.governance_service.port }}"
+    host: "{{ topology_endpoints.governance_service.host }}"
+    port: "{{ topology_endpoints.governance_service.endpoints.public_http.port }}"
     timeout: 30

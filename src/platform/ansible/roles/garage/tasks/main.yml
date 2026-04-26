@@ -152,7 +152,7 @@
     owner: root
     group: garage
     mode: "0640"
-  loop: "{{ services.garage.nodes }}"
+  loop: "{{ topology_clusters.garage.nodes }}"
   loop_control:
     loop_var: garage_node
     label: "garage-{{ garage_node.instance }}"
@@ -202,18 +202,18 @@
     enabled: true
     state: started
     daemon_reload: true
-  loop: "{{ services.garage.nodes }}"
+  loop: "{{ topology_clusters.garage.nodes }}"
   loop_control:
     label: "garage@{{ item.instance }}"
 
 - name: Wait for garage admin ports
   ansible.builtin.wait_for:
-    host: "{{ services.garage.host }}"
+    host: "{{ topology_clusters.garage.host }}"
     port: "{{ item.admin_port }}"
     timeout: 30
-  loop: "{{ services.garage.nodes }}"
+  loop: "{{ topology_clusters.garage.nodes }}"
   loop_control:
-    label: "{{ services.garage.host }}:{{ item.admin_port }}"
+    label: "{{ topology_clusters.garage.host }}:{{ item.admin_port }}"
 
 - name: Bootstrap garage cluster and layout
   ansible.builtin.command:
@@ -375,9 +375,9 @@
               raise SystemExit(f"garage layout did not settle: {current}")
           time.sleep(1)
   environment:
-    GARAGE_HOST: "{{ services.garage.host }}"
+    GARAGE_HOST: "{{ topology_clusters.garage.host }}"
     GARAGE_BIN: "{{ verself_bin }}/garage"
-    GARAGE_NODES: "{{ services.garage.nodes | to_json }}"
+    GARAGE_NODES: "{{ topology_clusters.garage.nodes | to_json }}"
     GARAGE_CAPACITY_BYTES: "{{ garage_capacity_bytes | string }}"
     GARAGE_ZONE_REDUNDANCY: "{{ garage_zone_redundancy | string }}"
   register: garage_bootstrap
