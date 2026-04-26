@@ -223,6 +223,6 @@
 
 - name: Wait for platform to be ready
   ansible.builtin.wait_for:
-    host: "{{ services.platform.host }}"
-    port: "{{ services.platform.port }}"
+    host: "{{ topology_endpoints.platform.host }}"
+    port: "{{ topology_endpoints.platform.endpoints.http.port }}"
     timeout: 30

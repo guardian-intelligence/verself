@@ -6,7 +6,7 @@ argument_specs:
       - "Deploys PostgreSQL. Initializes the data"
       - "directory (idempotent), configures listen address and auth,"
       - "and creates application databases and users."
-      - "Service ports come from the generated services registry (group_vars/all/generated/services.yml)."
+      - "Service ports come from the generated topology artifacts (group_vars/all/generated/)."
     options:
       postgresql_data_dir:
         type: path

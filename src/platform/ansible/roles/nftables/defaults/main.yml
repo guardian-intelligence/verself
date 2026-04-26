@@ -16,10 +16,10 @@ nftables_trusted_interfaces:
 
 # Firecracker guests reach selected host-local services via the host gateway.
 nftables_firecracker_guest_cidr: "{{ firecracker_guest_pool_cidr | default('172.16.0.0/16') }}"
-nftables_firecracker_host_service_ip: "{{ services.firecracker_host_service.host }}"
+nftables_firecracker_host_service_ip: "{{ topology_endpoints.firecracker_host_service.host }}"
 nftables_firecracker_guest_tcp_ports:
-  - "{{ services.verdaccio.port }}"
-  - "{{ services.firecracker_host_service.http_port }}"
+  - "{{ topology_endpoints.verdaccio.endpoints.http.port }}"
+  - "{{ topology_endpoints.firecracker_host_service.endpoints.host_http.port }}"
 
 
 # Allow SSH (port 22) from the public internet with per-source-IP rate limiting.

@@ -27,8 +27,8 @@
   ansible.builtin.command:
     cmd: >-
       {{ verself_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
+      -h {{ topology_endpoints.postgresql.host }}
+      -p {{ topology_endpoints.postgresql.endpoints.postgres.port }}
       -U postgres
       -d {{ service_pg_migrations_db }}
       -tAc
@@ -99,8 +99,8 @@
       ansible.builtin.command:
         cmd: >-
           {{ verself_bin }}/psql
-          -h {{ services.postgresql.host }}
-          -p {{ services.postgresql.port }}
+          -h {{ topology_endpoints.postgresql.host }}
+          -p {{ topology_endpoints.postgresql.endpoints.postgres.port }}
           -U {{ service_pg_migrations_db_user }}
           -d {{ service_pg_migrations_db }}
           -v ON_ERROR_STOP=1

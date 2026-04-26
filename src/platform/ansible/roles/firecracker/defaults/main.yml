@@ -25,7 +25,7 @@ firecracker_guest_pool_cidr: 172.16.0.0/16
 firecracker_state_db_path: /var/lib/verself/vm-orchestrator/state.db
 firecracker_host_uplink_interface: ""
 firecracker_host_service_interface: verself-host0
-firecracker_host_service_ip: "{{ services.firecracker_host_service.host }}"
+firecracker_host_service_ip: "{{ topology_endpoints.firecracker_host_service.host }}"
 firecracker_vm_orchestrator_binary_path: /usr/local/bin/vm-orchestrator
 firecracker_vm_orchestrator_api_socket: /run/vm-orchestrator/api.sock
 firecracker_vm_orchestrator_socket_group: vm-clients

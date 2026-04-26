@@ -6,8 +6,8 @@ table inet verself_nats {
     chain input {
         type filter hook input priority filter; policy accept;
 
-        tcp dport {{ services.nats.port }} iifname != "lo" drop
-        tcp dport {{ services.nats.monitoring_port }} iifname != "lo" drop
+        tcp dport {{ topology_endpoints.nats.endpoints.client.port }} iifname != "lo" drop
+        tcp dport {{ topology_endpoints.nats.endpoints.monitoring.port }} iifname != "lo" drop
     }
 
     chain output {

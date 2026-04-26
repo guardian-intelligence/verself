@@ -29,7 +29,7 @@
 
 - name: Probe OpenBao namespace API
   ansible.builtin.uri:
-    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/sys/namespaces"
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/namespaces"
     method: GET
     headers:
       X-Vault-Token: "{{ openbao_tenancy_root_token }}"
@@ -61,7 +61,7 @@
 
 - name: List Zitadel organizations
   ansible.builtin.uri:
-    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/v2/organizations/_search"
+    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/v2/organizations/_search"
     method: POST
     headers:
       Authorization: "Bearer {{ openbao_tenancy_zitadel_admin_pat }}"
@@ -90,7 +90,7 @@
 
 - name: List Zitadel projects for secrets-service audience
   ansible.builtin.uri:
-    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/_search"
+    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects/_search"
     method: POST
     headers:
       Authorization: "Bearer {{ openbao_tenancy_zitadel_admin_pat }}"
@@ -147,7 +147,7 @@
 
 - name: List OpenBao secret mounts before tenancy reconciliation
   ansible.builtin.uri:
-    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/sys/mounts"
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/mounts"
     method: GET
     headers:
       X-Vault-Token: "{{ openbao_tenancy_root_token }}"
@@ -160,7 +160,7 @@
 
 - name: List OpenBao auth mounts before tenancy reconciliation
   ansible.builtin.uri:
-    url: "https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/sys/auth"
+    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/auth"
     method: GET
     headers:
       X-Vault-Token: "{{ openbao_tenancy_root_token }}"

@@ -31,7 +31,7 @@
   become: true
   gather_facts: false
   vars:
-    seed_system_zitadel_base_url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}"
+    seed_system_zitadel_base_url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}"
     seed_system_zitadel_host: "auth.{{ verself_domain }}"
     seed_system_openbao_tls_dir: /etc/openbao/tls
 
@@ -162,15 +162,15 @@
   tasks:
     - name: Wait for Zitadel to be ready
       ansible.builtin.wait_for:
-        host: "{{ services.zitadel.host }}"
-        port: "{{ services.zitadel.port }}"
+        host: "{{ topology_endpoints.zitadel.host }}"
+        port: "{{ topology_endpoints.zitadel.endpoints.http.port }}"
         timeout: 60
       tags: [identity, billing, stalwart, verify, dev-oidc, forgejo]
 
     - name: Wait for billing-service to be ready
       ansible.builtin.wait_for:
-        host: "{{ services.billing.host }}"
-        port: "{{ services.billing.port }}"
+        host: "{{ topology_endpoints.billing.host }}"
+        port: "{{ topology_endpoints.billing.endpoints.public_http.port }}"
         timeout: 60
       tags: [billing, verify]
 
@@ -480,7 +480,7 @@
 
     - name: Ensure CEO is platform organization owner
       ansible.builtin.uri:
-        url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/zitadel.internal_permission.v2.InternalPermissionService/CreateAdministrator"
+        url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/zitadel.internal_permission.v2.InternalPermissionService/CreateAdministrator"
         method: POST
         headers:
           Authorization: "Bearer {{ seed_system_admin_pat }}"
@@ -499,7 +499,7 @@
 
     - name: Ensure Acme admin is Acme organization owner
       ansible.builtin.uri:
-        url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/zitadel.internal_permission.v2.InternalPermissionService/CreateAdministrator"
+        url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/zitadel.internal_permission.v2.InternalPermissionService/CreateAdministrator"
         method: POST
         headers:
           Authorization: "Bearer {{ seed_system_admin_pat }}"
@@ -786,8 +786,8 @@
 
     - name: Wait for OpenBao before reconciling seeded organizations
       ansible.builtin.wait_for:
-        host: "{{ services.openbao.host }}"
-        port: "{{ services.openbao.port }}"
+        host: "{{ topology_endpoints.openbao.host }}"
+        port: "{{ topology_endpoints.openbao.endpoints.api.port }}"
         timeout: 60
       tags: [identity, openbao_tenancy]
 
@@ -1005,7 +1005,7 @@
     - name: Read billing Stripe provider secret from OpenBao
       ansible.builtin.uri:
         url: >-
-          https://{{ services.openbao.host }}:{{ services.openbao.port }}/v1/kv-{{
+          https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/kv-{{
           seed_system_orgs.platform.organization_id }}/data/secret/org/billing-service.stripe.secret_key
         method: GET
         headers:
@@ -1113,8 +1113,8 @@
 
     - name: Wait for Stalwart to be ready
       ansible.builtin.wait_for:
-        host: "{{ services.stalwart.host }}"
-        port: "{{ services.stalwart.http_port }}"
+        host: "{{ topology_endpoints.stalwart.host }}"
+        port: "{{ topology_endpoints.stalwart.endpoints.http.port }}"
         timeout: 60
       tags: [stalwart]
 
@@ -1154,7 +1154,7 @@
 
     - name: Check if CEO mailbox exists
       ansible.builtin.uri:
-        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal/ceo"
+        url: "http://{{ topology_endpoints.stalwart.endpoints.http.address }}/api/principal/ceo"
         method: GET
         url_username: admin
         url_password: "{{ stalwart_admin_password }}"
@@ -1167,7 +1167,7 @@
 
     - name: Delete existing CEO mailbox
       ansible.builtin.uri:
-        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal/ceo"
+        url: "http://{{ topology_endpoints.stalwart.endpoints.http.address }}/api/principal/ceo"
         method: DELETE
         url_username: admin
         url_password: "{{ stalwart_admin_password }}"
@@ -1179,7 +1179,7 @@
 
     - name: Create CEO mailbox
       ansible.builtin.uri:
-        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal"
+        url: "http://{{ topology_endpoints.stalwart.endpoints.http.address }}/api/principal"
         method: POST
         url_username: admin
         url_password: "{{ stalwart_admin_password }}"
@@ -1201,7 +1201,7 @@
 
     - name: Check if agents mailbox exists
       ansible.builtin.uri:
-        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal/agents"
+        url: "http://{{ topology_endpoints.stalwart.endpoints.http.address }}/api/principal/agents"
         method: GET
         url_username: admin
         url_password: "{{ stalwart_admin_password }}"
@@ -1214,7 +1214,7 @@
 
     - name: Delete existing agents mailbox
       ansible.builtin.uri:
-        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal/agents"
+        url: "http://{{ topology_endpoints.stalwart.endpoints.http.address }}/api/principal/agents"
         method: DELETE
         url_username: admin
         url_password: "{{ stalwart_admin_password }}"
@@ -1226,7 +1226,7 @@
 
     - name: Create agents mailbox
       ansible.builtin.uri:
-        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal"
+        url: "http://{{ topology_endpoints.stalwart.endpoints.http.address }}/api/principal"
         method: POST
         url_username: admin
         url_password: "{{ stalwart_admin_password }}"
@@ -1250,8 +1250,8 @@
       ansible.builtin.command:
         cmd: >-
           {{ verself_bin }}/psql
-          -h {{ services.postgresql.host }}
-          -p {{ services.postgresql.port }}
+          -h {{ topology_endpoints.postgresql.host }}
+          -p {{ topology_endpoints.postgresql.endpoints.postgres.port }}
           -U mailbox_service
           -d mailbox_service
           -v ON_ERROR_STOP=1
@@ -1284,8 +1284,8 @@
 
     - name: Wait for Stalwart after mailbox reseed
       ansible.builtin.wait_for:
-        host: "{{ services.stalwart.host }}"
-        port: "{{ services.stalwart.http_port }}"
+        host: "{{ topology_endpoints.stalwart.host }}"
+        port: "{{ topology_endpoints.stalwart.endpoints.http.port }}"
         timeout: 60
       tags: [stalwart]
 
@@ -1363,8 +1363,8 @@
 
     - name: Clear existing seeded mailbox bindings
       community.postgresql.postgresql_query:
-        login_host: "{{ services.postgresql.host }}"
-        login_port: "{{ services.postgresql.port }}"
+        login_host: "{{ topology_endpoints.postgresql.host }}"
+        login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
         login_user: mailbox_service
         login_password: "{{ postgresql_mailbox_service_password }}"
         login_db: mailbox_service
@@ -1375,8 +1375,8 @@
 
     - name: Upsert seeded mailbox bindings
       community.postgresql.postgresql_query:
-        login_host: "{{ services.postgresql.host }}"
-        login_port: "{{ services.postgresql.port }}"
+        login_host: "{{ topology_endpoints.postgresql.host }}"
+        login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
         login_user: mailbox_service
         login_password: "{{ postgresql_mailbox_service_password }}"
         login_db: mailbox_service
@@ -1600,19 +1600,19 @@
 
         - name: Wait for sandbox-rental-service before auth verification
           ansible.builtin.wait_for:
-            host: "{{ services.sandbox_rental.host }}"
-            port: "{{ services.sandbox_rental.port }}"
+            host: "{{ topology_endpoints.sandbox_rental.host }}"
+            port: "{{ topology_endpoints.sandbox_rental.endpoints.public_http.port }}"
             timeout: 60
 
         - name: Verify sandbox-rental billing proxy rejects unauthenticated request
           ansible.builtin.uri:
-            url: "http://{{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}/api/v1/billing/entitlements"
+            url: "http://{{ topology_endpoints.sandbox_rental.endpoints.public_http.address }}/api/v1/billing/entitlements"
             method: GET
             status_code: 401
 
         - name: Verify sandbox-rental billing proxy accepts authenticated request
           ansible.builtin.uri:
-            url: "http://{{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}/api/v1/billing/entitlements"
+            url: "http://{{ topology_endpoints.sandbox_rental.endpoints.public_http.address }}/api/v1/billing/entitlements"
             method: GET
             headers:
               Authorization: "Bearer {{ seed_system_verify_token.json.access_token }}"

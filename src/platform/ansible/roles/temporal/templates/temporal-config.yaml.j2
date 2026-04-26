@@ -40,43 +40,43 @@ persistence:
 global:
   membership:
     maxJoinDuration: 30s
-    broadcastAddress: "{{ services.temporal.host }}"
+    broadcastAddress: "{{ topology_endpoints.temporal.host }}"
   pprof:
-    port: {{ services.temporal.pprof_port }}
+    port: {{ topology_endpoints.temporal.endpoints.pprof.port }}
   metrics:
     prometheus:
       framework: opentelemetry
       timerType: histogram
-      listenAddress: "{{ services.temporal.host }}:{{ services.temporal.metrics_port }}"
+      listenAddress: "{{ topology_endpoints.temporal.endpoints.metrics.address }}"
 
 services:
   frontend:
     rpc:
-      grpcPort: {{ services.temporal.grpc_port }}
-      membershipPort: {{ services.temporal.frontend_membership_port }}
-      bindOnIP: "{{ services.temporal.host }}"
-      httpPort: {{ services.temporal.http_port }}
+      grpcPort: {{ topology_endpoints.temporal.endpoints.frontend_grpc.port }}
+      membershipPort: {{ topology_endpoints.temporal.endpoints.frontend_membership.port }}
+      bindOnIP: "{{ topology_endpoints.temporal.host }}"
+      httpPort: {{ topology_endpoints.temporal.endpoints.frontend_http.port }}
   internal-frontend:
     rpc:
-      grpcPort: {{ services.temporal.internal_frontend_grpc_port }}
-      membershipPort: {{ services.temporal.internal_frontend_membership_port }}
-      bindOnIP: "{{ services.temporal.host }}"
-      httpPort: {{ services.temporal.internal_frontend_http_port }}
+      grpcPort: {{ topology_endpoints.temporal.endpoints.internal_frontend_grpc.port }}
+      membershipPort: {{ topology_endpoints.temporal.endpoints.internal_membership.port }}
+      bindOnIP: "{{ topology_endpoints.temporal.host }}"
+      httpPort: {{ topology_endpoints.temporal.endpoints.internal_frontend_http.port }}
   history:
     rpc:
-      grpcPort: {{ services.temporal.history_grpc_port }}
-      membershipPort: {{ services.temporal.history_membership_port }}
-      bindOnIP: "{{ services.temporal.host }}"
+      grpcPort: {{ topology_endpoints.temporal.endpoints.history_grpc.port }}
+      membershipPort: {{ topology_endpoints.temporal.endpoints.history_membership.port }}
+      bindOnIP: "{{ topology_endpoints.temporal.host }}"
   matching:
     rpc:
-      grpcPort: {{ services.temporal.matching_grpc_port }}
-      membershipPort: {{ services.temporal.matching_membership_port }}
-      bindOnIP: "{{ services.temporal.host }}"
+      grpcPort: {{ topology_endpoints.temporal.endpoints.matching_grpc.port }}
+      membershipPort: {{ topology_endpoints.temporal.endpoints.matching_membership.port }}
+      bindOnIP: "{{ topology_endpoints.temporal.host }}"
   worker:
     rpc:
-      grpcPort: {{ services.temporal.worker_grpc_port }}
-      membershipPort: {{ services.temporal.worker_membership_port }}
-      bindOnIP: "{{ services.temporal.host }}"
+      grpcPort: {{ topology_clusters.temporal.worker.grpc_port }}
+      membershipPort: {{ topology_endpoints.temporal.endpoints.worker_membership.port }}
+      bindOnIP: "{{ topology_endpoints.temporal.host }}"
 
 clusterMetadata:
   enableGlobalNamespace: false
@@ -88,8 +88,8 @@ clusterMetadata:
       enabled: true
       initialFailoverVersion: 1
       rpcName: frontend
-      rpcAddress: "{{ services.temporal.host }}:{{ services.temporal.grpc_port }}"
-      httpAddress: "{{ services.temporal.host }}:{{ services.temporal.http_port }}"
+      rpcAddress: "{{ topology_endpoints.temporal.endpoints.frontend_grpc.address }}"
+      httpAddress: "{{ topology_endpoints.temporal.endpoints.frontend_http.address }}"
 
 dcRedirectionPolicy:
   policy: noop

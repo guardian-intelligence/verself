@@ -5,7 +5,7 @@
     daemon_reload: true
     name: "garage@{{ item.instance }}"
     state: restarted
-  loop: "{{ services.garage.nodes }}"
+  loop: "{{ topology_clusters.garage.nodes }}"
   loop_control:
     label: "garage@{{ item.instance }}"
 

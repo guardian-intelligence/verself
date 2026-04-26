@@ -22,6 +22,22 @@
   gather_facts: false
   become: true
   tags: [always]
+  vars:
+    retired_product_runtimes:
+      - unit: letters.service
+        user: letters
+        group: letters
+        paths:
+          - /etc/letters
+          - /opt/letters
+          - /var/lib/letters
+      - unit: webmail.service
+        user: webmail
+        group: webmail
+        paths:
+          - /etc/webmail
+          - /opt/webmail
+          - /var/lib/webmail
   tasks:
     - name: Require Verself product domain
       ansible.builtin.assert:
@@ -40,6 +56,64 @@
         that: cloudflare_api_token | default('', true) | length > 0
         fail_msg: >-
           cloudflare_api_token is empty. Set it in the encrypted Ansible group vars before deploying.
+
+    - name: Inspect retired product runtime units
+      ansible.builtin.stat:
+        path: "/etc/systemd/system/{{ item.unit }}"
+      loop: "{{ retired_product_runtimes }}"
+      loop_control:
+        label: "{{ item.unit }}"
+      register: retired_product_unit_files
+
+    - name: Stop and disable retired product runtime units
+      ansible.builtin.systemd:
+        name: "{{ item.item.unit }}"
+        state: stopped
+        enabled: false
+        daemon_reload: true
+      loop: "{{ retired_product_unit_files.results }}"
+      loop_control:
+        label: "{{ item.item.unit }}"
+      when: item.stat.exists
+
+    - name: Remove retired product runtime unit files
+      ansible.builtin.file:
+        path: "/etc/systemd/system/{{ item.unit }}"
+        state: absent
+      loop: "{{ retired_product_runtimes }}"
+      loop_control:
+        label: "{{ item.unit }}"
+      notify: Reload systemd after retired product runtime unit removal
+      register: retired_product_unit_delete
+
+    - name: Remove retired product runtime directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop: "{{ retired_product_runtimes | map(attribute='paths') | flatten }}"
+
+    - name: Remove retired product runtime users
+      ansible.builtin.user:
+        name: "{{ item.user }}"
+        state: absent
+        remove: true
+        force: true
+      loop: "{{ retired_product_runtimes }}"
+      loop_control:
+        label: "{{ item.user }}"
+
+    - name: Remove retired product runtime groups
+      ansible.builtin.group:
+        name: "{{ item.group }}"
+        state: absent
+      loop: "{{ retired_product_runtimes }}"
+      loop_control:
+        label: "{{ item.group }}"
+
+  handlers:
+    - name: Reload systemd after retired product runtime unit removal
+      ansible.builtin.systemd:
+        daemon_reload: true
 
 - name: "Preflight: Firecracker worker prerequisites"
   hosts: workers
@@ -218,7 +292,7 @@
       vars:
         electric_instance: notifications
         electric_service_name: electric-notifications
-        electric_service_port: "{{ services.electric_notifications.port }}"
+        electric_service_port: "{{ topology_endpoints.electric_notifications.endpoints.http.port }}"
         electric_pg_role: electric_notifications
         electric_pg_conn_limit: "{{ postgresql_role_connection_limits.electric_notifications }}"
         electric_db: notifications_service
@@ -243,7 +317,7 @@
       vars:
         electric_instance: default
         electric_service_name: electric
-        electric_service_port: "{{ services.electric.port }}"
+        electric_service_port: "{{ topology_endpoints.electric.endpoints.http.port }}"
         electric_pg_role: electric
         electric_pg_conn_limit: "{{ postgresql_role_connection_limits.electric }}"
         electric_db: sandbox_rental
@@ -270,7 +344,7 @@
       vars:
         electric_instance: mail
         electric_service_name: electric-mail
-        electric_service_port: "{{ services.electric_mail.port }}"
+        electric_service_port: "{{ topology_endpoints.electric_mail.endpoints.http.port }}"
         electric_pg_role: electric_mail
         electric_pg_conn_limit: "{{ postgresql_role_connection_limits.electric_mail }}"
         electric_db: mailbox_service

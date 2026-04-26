@@ -9,12 +9,12 @@ max-connections = 256
 # --- Listeners ---
 
 [server.listener."smtp"]
-bind = ["0.0.0.0:{{ services.stalwart.smtp_port }}"]
+bind = ["0.0.0.0:{{ topology_endpoints.stalwart.endpoints.smtp.port }}"]
 protocol = "smtp"
 tls.implicit = false
 
 [server.listener."http"]
-bind = ["{{ services.stalwart.host }}:{{ services.stalwart.http_port }}"]
+bind = ["{{ topology_endpoints.stalwart.endpoints.http.address }}"]
 protocol = "http"
 tls.implicit = false
 
@@ -109,7 +109,7 @@ secret = "%{file:/run/credentials/stalwart.service/admin-password}%"
 [tracer."otel"]
 type = "open-telemetry"
 transport = "grpc"
-endpoint = "http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}"
+endpoint = "http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}"
 level = "info"
 enable = true
 enable.log-exporter = true

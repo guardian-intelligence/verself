@@ -54,8 +54,9 @@ ready = (
     and row.get("fmt_checks", 0) >= 1
     and row.get("schema_vets", 0) >= 1
     and row.get("instance_vets", 0) >= 1
-    and row.get("exports", 0) >= 1
-    and row.get("fresh_checks", 0) >= 1
+    and row.get("graph_validations", 0) >= 1
+    and row.get("artifact_exports", 0) >= 10
+    and row.get("fresh_checks", 0) >= 10
     and row.get("errors", 0) == 0
 )
 raise SystemExit(0 if ready else 1)
@@ -71,8 +72,9 @@ for _ in $(seq 1 45); do
       countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.cue.fmt_check') AS fmt_checks,
       countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.cue.vet_schema') AS schema_vets,
       countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.cue.vet_instance') AS instance_vets,
-      countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.cue.export_services') AS exports,
-      countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.ansible.registry_check' AND SpanAttributes['topology.registry_fresh'] = 'true') AS fresh_checks,
+      countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.graph.validate') AS graph_validations,
+      countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.cue.export_artifact') AS artifact_exports,
+      countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.generated.freshness_check' AND SpanAttributes['topology.generated_fresh'] = 'true') AS fresh_checks,
       countIf(StatusCode = 'Error') AS errors
     FROM default.otel_traces
     WHERE Timestamp > now() - INTERVAL 20 MINUTE

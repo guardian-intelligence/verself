@@ -61,16 +61,16 @@
 
     - name: Wait for TigerBeetle after billing ledger reset
       ansible.builtin.wait_for:
-        host: "{{ services.tigerbeetle.host }}"
-        port: "{{ services.tigerbeetle.port }}"
+        host: "{{ topology_endpoints.tigerbeetle.host }}"
+        port: "{{ topology_endpoints.tigerbeetle.endpoints.client.port }}"
         timeout: 30
 
 - name: Reconcile billing object ownership and privileges
   ansible.builtin.command:
     cmd: >-
       {{ verself_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
+      -h {{ topology_endpoints.postgresql.host }}
+      -p {{ topology_endpoints.postgresql.endpoints.postgres.port }}
       -U postgres
       -d {{ billing_service_pg_database }}
       -v ON_ERROR_STOP=1

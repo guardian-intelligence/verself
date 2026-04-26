@@ -1,7 +1,7 @@
 ui = false
 
-api_addr = "https://{{ services.openbao.host }}:{{ services.openbao.port }}"
-cluster_addr = "https://{{ services.openbao.host }}:{{ services.openbao.cluster_port }}"
+api_addr = "https://{{ topology_endpoints.openbao.endpoints.api.address }}"
+cluster_addr = "https://{{ topology_endpoints.openbao.endpoints.cluster.address }}"
 
 storage "raft" {
   path = "{{ openbao_raft_dir }}"
@@ -9,8 +9,8 @@ storage "raft" {
 }
 
 listener "tcp" {
-  address = "{{ services.openbao.host }}:{{ services.openbao.port }}"
-  cluster_address = "{{ services.openbao.host }}:{{ services.openbao.cluster_port }}"
+  address = "{{ topology_endpoints.openbao.endpoints.api.address }}"
+  cluster_address = "{{ topology_endpoints.openbao.endpoints.cluster.address }}"
   tls_cert_file = "{{ openbao_tls_dir }}/cert.pem"
   tls_key_file = "{{ openbao_tls_dir }}/key.pem"
   tls_min_version = "tls13"

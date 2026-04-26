@@ -94,8 +94,8 @@
 
 - name: Wait for Zitadel before resolving projects-service auth audience
   ansible.builtin.wait_for:
-    host: "{{ services.zitadel.host }}"
-    port: "{{ services.zitadel.port }}"
+    host: "{{ topology_endpoints.zitadel.host }}"
+    port: "{{ topology_endpoints.zitadel.endpoints.http.port }}"
     timeout: 60
 
 - name: Read Zitadel admin PAT for projects-service auth setup
@@ -111,7 +111,7 @@
 
 - name: Find identity-service auth project for projects-service bearer validation
   ansible.builtin.uri:
-    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/_search"
+    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects/_search"
     method: POST
     headers:
       Authorization: "Bearer {{ projects_service_zitadel_admin_pat }}"
@@ -154,15 +154,15 @@
       Group=projects_service
       SupplementaryGroups={{ spire_workload_group }}
       BindReadOnlyPaths=/etc/verself/auth-discovery-hosts:/etc/hosts
-      Environment=PROJECTS_LISTEN_ADDR={{ services.projects_service.host }}:{{ services.projects_service.port }}
-      Environment=PROJECTS_INTERNAL_LISTEN_ADDR={{ services.projects_service.host }}:{{ services.projects_service.internal_port }}
+      Environment=PROJECTS_LISTEN_ADDR={{ topology_endpoints.projects_service.endpoints.public_http.address }}
+      Environment=PROJECTS_INTERNAL_LISTEN_ADDR={{ topology_endpoints.projects_service.endpoints.internal_https.address }}
       Environment=PROJECTS_PG_DSN=postgres://projects_service@/projects_service?host=/var/run/postgresql&sslmode=disable
       Environment=PROJECTS_PG_MAX_CONNS=8
       Environment=PROJECTS_AUTH_ISSUER_URL={{ projects_service_auth_issuer_url }}
       Environment=PROJECTS_AUTH_AUDIENCE={{ projects_service_auth_audience }}
       Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}
       Environment=OTEL_SERVICE_NAME=projects-service
-      Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}
+      Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}
       ExecStart={{ verself_bin }}/projects-service
       Restart=on-failure
       RestartSec=5
@@ -202,13 +202,13 @@
 
 - name: Wait for projects-service listener to be present
   ansible.builtin.wait_for:
-    host: "{{ services.projects_service.host }}"
-    port: "{{ services.projects_service.port }}"
+    host: "{{ topology_endpoints.projects_service.host }}"
+    port: "{{ topology_endpoints.projects_service.endpoints.public_http.port }}"
     timeout: 60
 
 - name: Wait for projects-service readiness
   ansible.builtin.uri:
-    url: "http://{{ services.projects_service.host }}:{{ services.projects_service.port }}/readyz"
+    url: "http://{{ topology_endpoints.projects_service.endpoints.public_http.address }}/readyz"
     method: GET
     status_code: 200
   register: projects_service_readyz

@@ -1,8 +1,8 @@
 server_name: verself-nats
 pid_file: "/run/nats/nats.pid"
-host: {{ services.nats.host }}
-port: {{ services.nats.port }}
-http: {{ services.nats.monitoring_port }}
+host: {{ topology_endpoints.nats.host }}
+port: {{ topology_endpoints.nats.endpoints.client.port }}
+http: {{ topology_endpoints.nats.endpoints.monitoring.port }}
 
 jetstream {
   store_dir: "{{ nats_jetstream_dir }}"

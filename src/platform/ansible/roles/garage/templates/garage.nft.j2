@@ -7,7 +7,7 @@ table inet verself_garage {
     chain input {
         type filter hook input priority filter; policy accept;
 
-        tcp dport { {% for node in services.garage.nodes %}{{ node.s3_port }}, {{ node.rpc_port }}, {{ node.admin_port }}{% if not loop.last %}, {% endif %}{% endfor %} } iifname != "lo" drop
+        tcp dport { {% for node in topology_clusters.garage.nodes %}{{ node.s3_port }}, {{ node.rpc_port }}, {{ node.admin_port }}{% if not loop.last %}, {% endif %}{% endfor %} } iifname != "lo" drop
     }
 
     chain output {
@@ -15,16 +15,16 @@ table inet verself_garage {
 
         ct state established,related accept
 
-        oifname "lo" tcp dport { {% for node in services.garage.nodes %}{{ node.admin_port }}{% if not loop.last %}, {% endif %}{% endfor %} } meta skuid 0 accept
-        oifname "lo" tcp dport { {% for node in services.garage.nodes %}{{ node.admin_port }}{% if not loop.last %}, {% endif %}{% endfor %} } meta skuid {{ object_storage_admin_uid }} accept
-        oifname "lo" tcp dport { {% for node in services.garage.nodes %}{{ node.admin_port }}{% if not loop.last %}, {% endif %}{% endfor %} } drop
+        oifname "lo" tcp dport { {% for node in topology_clusters.garage.nodes %}{{ node.admin_port }}{% if not loop.last %}, {% endif %}{% endfor %} } meta skuid 0 accept
+        oifname "lo" tcp dport { {% for node in topology_clusters.garage.nodes %}{{ node.admin_port }}{% if not loop.last %}, {% endif %}{% endfor %} } meta skuid {{ object_storage_admin_uid }} accept
+        oifname "lo" tcp dport { {% for node in topology_clusters.garage.nodes %}{{ node.admin_port }}{% if not loop.last %}, {% endif %}{% endfor %} } drop
 
-        oifname "lo" tcp dport { {% for node in services.garage.nodes %}{{ node.s3_port }}{% if not loop.last %}, {% endif %}{% endfor %} } meta skuid {{ object_storage_service_uid }} accept
-        oifname "lo" tcp dport { {% for node in services.garage.nodes %}{{ node.s3_port }}{% if not loop.last %}, {% endif %}{% endfor %} } meta skuid {{ object_storage_admin_uid }} accept
-        oifname "lo" tcp dport { {% for node in services.garage.nodes %}{{ node.s3_port }}{% if not loop.last %}, {% endif %}{% endfor %} } drop
+        oifname "lo" tcp dport { {% for node in topology_clusters.garage.nodes %}{{ node.s3_port }}{% if not loop.last %}, {% endif %}{% endfor %} } meta skuid {{ object_storage_service_uid }} accept
+        oifname "lo" tcp dport { {% for node in topology_clusters.garage.nodes %}{{ node.s3_port }}{% if not loop.last %}, {% endif %}{% endfor %} } meta skuid {{ object_storage_admin_uid }} accept
+        oifname "lo" tcp dport { {% for node in topology_clusters.garage.nodes %}{{ node.s3_port }}{% if not loop.last %}, {% endif %}{% endfor %} } drop
 
         # Garage's three local daemons talk to each other over loopback RPC.
-        oifname "lo" tcp dport { {% for node in services.garage.nodes %}{{ node.rpc_port }}{% if not loop.last %}, {% endif %}{% endfor %} } meta skuid garage accept
-        oifname "lo" tcp dport { {% for node in services.garage.nodes %}{{ node.rpc_port }}{% if not loop.last %}, {% endif %}{% endfor %} } drop
+        oifname "lo" tcp dport { {% for node in topology_clusters.garage.nodes %}{{ node.rpc_port }}{% if not loop.last %}, {% endif %}{% endfor %} } meta skuid garage accept
+        oifname "lo" tcp dport { {% for node in topology_clusters.garage.nodes %}{{ node.rpc_port }}{% if not loop.last %}, {% endif %}{% endfor %} } drop
     }
 }

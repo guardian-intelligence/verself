@@ -1,7 +1,7 @@
 <config>
     <secure>1</secure>
-    <host>{{ services.clickhouse.host }}</host>
-    <port>{{ services.clickhouse.secure_native_port }}</port>
+    <host>{{ topology_endpoints.clickhouse.host }}</host>
+    <port>{{ topology_endpoints.clickhouse.endpoints.native_tls.port }}</port>
     <openSSL>
         <client>
             <certificateFile>{{ clickhouse_operator_spiffe_dir }}/svid.pem</certificateFile>

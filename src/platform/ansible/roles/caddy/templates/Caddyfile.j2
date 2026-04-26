@@ -82,7 +82,7 @@
 (sandbox_rental_api_proxy) {
 	import waf_blocking
 	import api_security_headers
-	reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }} {
+	reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }} {
 		header_up X-Real-IP {remote_host}
 	}
 }
@@ -90,7 +90,7 @@
 (profile_api_proxy) {
 	import waf_blocking
 	import api_security_headers
-	reverse_proxy {{ services.profile_service.host }}:{{ services.profile_service.port }} {
+	reverse_proxy {{ topology_endpoints.profile_service.endpoints.public_http.address }} {
 		header_up X-Real-IP {remote_host}
 	}
 }
@@ -98,7 +98,7 @@
 (notifications_api_proxy) {
 	import waf_blocking
 	import api_security_headers
-	reverse_proxy {{ services.notifications_service.host }}:{{ services.notifications_service.port }} {
+	reverse_proxy {{ topology_endpoints.notifications_service.endpoints.public_http.address }} {
 		header_up X-Real-IP {remote_host}
 	}
 }
@@ -106,7 +106,7 @@
 (projects_api_proxy) {
 	import waf_blocking
 	import api_security_headers
-	reverse_proxy {{ services.projects_service.host }}:{{ services.projects_service.port }} {
+	reverse_proxy {{ topology_endpoints.projects_service.endpoints.public_http.address }} {
 		header_up X-Real-IP {remote_host}
 	}
 }
@@ -114,7 +114,7 @@
 (source_code_hosting_api_proxy) {
 	import waf_blocking
 	import api_security_headers
-	reverse_proxy {{ services.source_code_hosting_service.host }}:{{ services.source_code_hosting_service.port }} {
+	reverse_proxy {{ topology_endpoints.source_code_hosting_service.endpoints.public_http.address }} {
 		header_up X-Real-IP {remote_host}
 	}
 }
@@ -122,7 +122,7 @@
 (identity_api_proxy) {
 	import waf_blocking
 	import api_security_headers
-	reverse_proxy {{ services.identity_service.host }}:{{ services.identity_service.port }} {
+	reverse_proxy {{ topology_endpoints.identity_service.endpoints.public_http.address }} {
 		header_up X-Real-IP {remote_host}
 	}
 }
@@ -130,7 +130,7 @@
 (governance_api_proxy) {
 	import waf_blocking
 	import api_security_headers
-	reverse_proxy {{ services.governance_service.host }}:{{ services.governance_service.port }} {
+	reverse_proxy {{ topology_endpoints.governance_service.endpoints.public_http.address }} {
 		header_up X-Real-IP {remote_host}
 	}
 }
@@ -138,7 +138,7 @@
 (secrets_api_proxy) {
 	import waf_blocking
 	import api_security_headers
-	reverse_proxy {{ services.secrets_service.host }}:{{ services.secrets_service.port }} {
+	reverse_proxy {{ topology_endpoints.secrets_service.endpoints.public_http.address }} {
 		header_up X-Real-IP {remote_host}
 	}
 }
@@ -146,7 +146,7 @@
 (mailbox_api_proxy) {
 	import waf_blocking
 	import api_security_headers
-	reverse_proxy {{ services.mailbox_service.host }}:{{ services.mailbox_service.port }} {
+	reverse_proxy {{ topology_endpoints.mailbox_service.endpoints.public_http.address }} {
 		header_up X-Real-IP {remote_host}
 	}
 }
@@ -154,13 +154,13 @@
 {{ grafana_domain }} {
 	import access_log
 	import waf_detection
-	reverse_proxy {{ services.grafana.host }}:{{ services.grafana.port }}
+	reverse_proxy {{ topology_endpoints.grafana.endpoints.http.address }}
 }
 
 {{ temporal_web_domain }} {
 	import access_log
 	import waf_detection
-	reverse_proxy {{ services.temporal_web.host }}:{{ services.temporal_web.port }}
+	reverse_proxy {{ topology_endpoints.temporal_web.endpoints.http.address }}
 }
 
 {{ forgejo_domain }} {
@@ -170,7 +170,7 @@
 		path_regexp source_git ^/[^/]+/[^/]+\.git/(info/refs|git-upload-pack|git-receive-pack)$
 	}
 	handle @source_git {
-		reverse_proxy {{ services.source_code_hosting_service.host }}:{{ services.source_code_hosting_service.port }} {
+		reverse_proxy {{ topology_endpoints.source_code_hosting_service.endpoints.public_http.address }} {
 			header_up X-Real-IP {remote_host}
 			header_up X-Forwarded-Host {{ forgejo_domain }}
 			header_up X-Forwarded-Proto https
@@ -179,7 +179,7 @@
 	respond 404
 }
 
-http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_service.http_port }} {
+http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker_host_service.endpoints.host_http.port }} {
 	import access_log
 	bind {{ caddy_firecracker_host_service_ip }}
 
@@ -188,21 +188,21 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 		path /internal/sandbox/v1/github-runner-jit
 	}
 	handle @github_runner_jit_config {
-		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}
+		reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }}
 	}
 	@runner_bootstrap_config {
 		method GET
 		path /internal/sandbox/v1/runner-bootstrap
 	}
 	handle @runner_bootstrap_config {
-		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}
+		reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }}
 	}
 	@forgejo_actions_runner_rpc {
 		method GET POST
 		path /api/actions /api/actions/*
 	}
 	handle @forgejo_actions_runner_rpc {
-		reverse_proxy {{ services.forgejo.host }}:{{ services.forgejo.port }} {
+		reverse_proxy {{ topology_endpoints.forgejo.endpoints.http.address }} {
 			header_up Host {{ forgejo_domain }}
 			header_up X-Forwarded-Host {{ forgejo_domain }}
 			header_up X-Forwarded-Proto http
@@ -212,14 +212,14 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 		path /internal/sandbox/v1/stickydisk/*
 	}
 	handle @github_sticky_disk {
-		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}
+		reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }}
 	}
 	@github_checkout {
 		method POST
 		path /internal/sandbox/v1/github-checkout/bundle
 	}
 	handle @github_checkout {
-		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}
+		reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }}
 	}
 	respond 403
 }
@@ -242,7 +242,7 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 		request_body {
 			max_size 65536
 		}
-		reverse_proxy {{ services.billing.host }}:{{ services.billing.port }}
+		reverse_proxy {{ topology_endpoints.billing.endpoints.public_http.address }}
 	}
 	handle @stripe_webhook_post {
 		respond 403
@@ -255,7 +255,7 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 		request_body {
 			max_size 1048576
 		}
-		reverse_proxy {{ services.billing.host }}:{{ services.billing.port }} {
+		reverse_proxy {{ topology_endpoints.billing.endpoints.public_http.address }} {
 			header_up X-Real-IP {remote_host}
 		}
 	}
@@ -276,7 +276,7 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 			max_size 1048576
 		}
 		import api_security_headers
-		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }} {
+		reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }} {
 			header_up X-Real-IP {remote_host}
 		}
 	}
@@ -294,7 +294,7 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 			max_size 1048576
 		}
 		import api_security_headers
-		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }} {
+		reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }} {
 			header_up X-Real-IP {remote_host}
 		}
 	}
@@ -309,7 +309,7 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 	handle @sandbox_rental_github_installation_callback {
 		import waf_detection
 		import api_security_headers
-		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }} {
+		reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }} {
 			header_up X-Real-IP {remote_host}
 		}
 	}
@@ -340,7 +340,7 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 		# reject legitimate CI and sandbox workloads. Keep detection telemetry on.
 		import waf_detection
 		import api_security_headers
-		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }} {
+		reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }} {
 			header_up X-Real-IP {remote_host}
 		}
 	}
@@ -357,7 +357,7 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 		# executions; keep CRS telemetry, but do not block valid sandbox jobs.
 		import waf_detection
 		import api_security_headers
-		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }} {
+		reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }} {
 			header_up X-Real-IP {remote_host}
 		}
 	}
@@ -425,7 +425,7 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 		}
 		import waf_detection
 		import api_security_headers
-		reverse_proxy {{ services.source_code_hosting_service.host }}:{{ services.source_code_hosting_service.port }} {
+		reverse_proxy {{ topology_endpoints.source_code_hosting_service.endpoints.public_http.address }} {
 			header_up X-Real-IP {remote_host}
 		}
 	}
@@ -480,20 +480,20 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 		import waf_detection
 		uri query -secret
 		uri query +secret {{ caddy_electric_api_secret }}
-		reverse_proxy {{ services.electric.host }}:{{ services.electric.port }}
+		reverse_proxy {{ topology_endpoints.electric.endpoints.http.address }}
 	}
 
 	handle_path /notifications/* {
 		import waf_detection
 		uri query -secret
 		uri query +secret {{ caddy_electric_notifications_api_secret }}
-		reverse_proxy {{ services.electric_notifications.host }}:{{ services.electric_notifications.port }}
+		reverse_proxy {{ topology_endpoints.electric_notifications.endpoints.http.address }}
 	}
 
 	handle {
 		import waf_detection
 		import frontend_security_headers
-		reverse_proxy {{ services.console.host }}:{{ services.console.port }}
+		reverse_proxy {{ topology_endpoints.console.endpoints.http.address }}
 	}
 }
 
@@ -504,24 +504,24 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 	handle /v1/shape {
 		uri query -secret
 		uri query +secret {{ caddy_electric_mail_api_secret }}
-		reverse_proxy {{ services.electric_mail.host }}:{{ services.electric_mail.port }}
+		reverse_proxy {{ topology_endpoints.electric_mail.endpoints.http.address }}
 	}
 
 	handle /jmap/session {
-		reverse_proxy {{ services.mailbox_service.host }}:{{ services.mailbox_service.port }}
+		reverse_proxy {{ topology_endpoints.mailbox_service.endpoints.public_http.address }}
 	}
 
 	# JMAP discovery + protocol endpoints served by Stalwart directly.
 	# /.well-known/jmap is RFC 8620 service discovery; /jmap is the
 	# protocol endpoint used by JMAP clients after discovery.
 	handle /.well-known/jmap {
-		reverse_proxy {{ services.stalwart.host }}:{{ services.stalwart.http_port }}
+		reverse_proxy {{ topology_endpoints.stalwart.endpoints.http.address }}
 	}
 	handle /jmap/* {
-		reverse_proxy {{ services.stalwart.host }}:{{ services.stalwart.http_port }}
+		reverse_proxy {{ topology_endpoints.stalwart.endpoints.http.address }}
 	}
 	handle /auth/* {
-		reverse_proxy {{ services.stalwart.host }}:{{ services.stalwart.http_port }}
+		reverse_proxy {{ topology_endpoints.stalwart.endpoints.http.address }}
 	}
 
 	# Webmail frontend is retired. `mail.<domain>` remains the JMAP/protocol
@@ -534,7 +534,7 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 
 	handle {
 		import frontend_security_headers
-		reverse_proxy {{ services.platform.host }}:{{ services.platform.port }}
+		reverse_proxy {{ topology_endpoints.platform.endpoints.http.address }}
 	}
 }
 
@@ -544,7 +544,7 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 
 	handle {
 		import frontend_security_headers
-		reverse_proxy {{ services.company.host }}:{{ services.company.port }}
+		reverse_proxy {{ topology_endpoints.company.endpoints.http.address }}
 	}
 }
 
@@ -561,14 +561,14 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 			max_size 65536
 		}
 		import api_security_headers
-		reverse_proxy {{ services.identity_service.host }}:{{ services.identity_service.port }}
+		reverse_proxy {{ topology_endpoints.identity_service.endpoints.public_http.address }}
 	}
 	handle /internal/zitadel/actions/api-credential-claims {
 		respond 405
 	}
 
 	handle {
-		reverse_proxy {{ services.zitadel.host }}:{{ services.zitadel.port }} {
+		reverse_proxy {{ topology_endpoints.zitadel.endpoints.http.address }} {
 			transport http {
 				versions h2c
 			}

@@ -4,6 +4,6 @@ delete table inet verself_console
 table inet verself_console {
     chain input {
         type filter hook input priority filter; policy accept;
-        tcp dport {{ services.console.port }} iifname != "lo" drop
+        tcp dport {{ topology_endpoints.console.endpoints.http.port }} iifname != "lo" drop
     }
 }

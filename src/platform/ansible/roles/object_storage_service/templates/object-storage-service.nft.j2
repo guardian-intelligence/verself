@@ -7,7 +7,7 @@ table inet verself_object_storage_service {
     chain input {
         type filter hook input priority filter; policy accept;
 
-        tcp dport {{ services.object_storage_service.port }} iifname != "lo" drop
+        tcp dport {{ topology_endpoints.object_storage_service.endpoints.public_http.port }} iifname != "lo" drop
     }
 
     chain output {
@@ -16,12 +16,12 @@ table inet verself_object_storage_service {
         ct state established,related accept
         meta skuid != object_storage_service accept
 
-        oifname "lo" tcp dport {{ services.object_storage_service.port }} accept
-        oifname "lo" tcp dport {{ services.postgresql.port }} accept
-        oifname "lo" tcp dport {{ services.clickhouse.secure_native_port }} accept
-        oifname "lo" tcp dport {{ services.secrets_service.internal_port }} accept
-        oifname "lo" tcp dport {{ services.otelcol.grpc_port }} accept
-        oifname "lo" tcp dport { {% for node in services.garage.nodes %}{{ node.s3_port }}{% if not loop.last %}, {% endif %}{% endfor %} } accept
+        oifname "lo" tcp dport {{ topology_endpoints.object_storage_service.endpoints.public_http.port }} accept
+        oifname "lo" tcp dport {{ topology_endpoints.postgresql.endpoints.postgres.port }} accept
+        oifname "lo" tcp dport {{ topology_endpoints.clickhouse.endpoints.native_tls.port }} accept
+        oifname "lo" tcp dport {{ topology_endpoints.secrets_service.endpoints.internal_https.port }} accept
+        oifname "lo" tcp dport {{ topology_endpoints.otelcol.endpoints.otlp_grpc.port }} accept
+        oifname "lo" tcp dport { {% for node in topology_clusters.garage.nodes %}{{ node.s3_port }}{% if not loop.last %}, {% endif %}{% endfor %} } accept
         meta l4proto != tcp meta l4proto != udp accept
 
         drop

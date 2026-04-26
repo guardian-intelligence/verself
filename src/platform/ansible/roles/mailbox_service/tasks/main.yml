@@ -107,8 +107,8 @@
 
 - name: Wait for Zitadel before configuring mailbox-service auth
   ansible.builtin.wait_for:
-    host: "{{ services.zitadel.host }}"
-    port: "{{ services.zitadel.port }}"
+    host: "{{ topology_endpoints.zitadel.host }}"
+    port: "{{ topology_endpoints.zitadel.endpoints.http.port }}"
     timeout: 60
 
 - name: Read Zitadel admin PAT for mailbox-service auth setup
@@ -119,7 +119,7 @@
 
 - name: List Zitadel projects for mailbox-service auth
   ansible.builtin.uri:
-    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/_search"
+    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects/_search"
     method: POST
     headers:
       Authorization: "Bearer {{ mailbox_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
@@ -144,7 +144,7 @@
 
 - name: Create mailbox-service auth project if missing
   ansible.builtin.uri:
-    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects"
+    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects"
     method: POST
     headers:
       Authorization: "Bearer {{ mailbox_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
@@ -174,7 +174,7 @@
 
 - name: Ensure mailbox-service project has role assertion enabled
   ansible.builtin.uri:
-    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/{{ mailbox_service_auth_audience }}"
+    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects/{{ mailbox_service_auth_audience }}"
     method: PUT
     headers:
       Authorization: "Bearer {{ mailbox_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
@@ -218,13 +218,13 @@
       LoadCredential=stalwart-ceo-password:/etc/credstore/mailbox-service/stalwart-ceo-password
       LoadCredential=stalwart-agents-password:/etc/credstore/mailbox-service/stalwart-agents-password
       LoadCredential=forward-to:/etc/credstore/mailbox-service/forward-to
-      Environment=MAILBOX_SERVICE_LISTEN_ADDR={{ services.mailbox_service.host }}:{{ services.mailbox_service.port }}
+      Environment=MAILBOX_SERVICE_LISTEN_ADDR={{ topology_endpoints.mailbox_service.endpoints.public_http.address }}
       Environment=MAILBOX_SERVICE_PG_DSN=postgres://mailbox_service@/mailbox_service?host=/var/run/postgresql&sslmode=disable
-      Environment=MAILBOX_SERVICE_STALWART_BASE_URL=http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}
+      Environment=MAILBOX_SERVICE_STALWART_BASE_URL=http://{{ topology_endpoints.stalwart.endpoints.http.address }}
       Environment=MAILBOX_SERVICE_STALWART_PUBLIC_BASE_URL=https://{{ stalwart_domain }}
       Environment=MAILBOX_SERVICE_STALWART_MAILBOX=ceo
       Environment=MAILBOX_SERVICE_STALWART_LOCAL_DOMAIN={{ verself_domain }}
-      Environment=MAILBOX_SERVICE_SECRETS_URL=https://{{ services.secrets_service.host }}:{{ services.secrets_service.internal_port }}
+      Environment=MAILBOX_SERVICE_SECRETS_URL=https://{{ topology_endpoints.secrets_service.endpoints.internal_https.address }}
       Environment=MAILBOX_SERVICE_SYNC_DISCOVERY_INTERVAL=2m
       Environment=MAILBOX_SERVICE_SYNC_RECONCILE_INTERVAL=10m
       Environment=MAILBOX_SERVICE_AUTH_ISSUER_URL={{ mailbox_service_auth_issuer_url }}
@@ -234,7 +234,7 @@
       Environment=MAILBOX_SERVICE_FORWARDER_POLL_INTERVAL=5s
       Environment=MAILBOX_SERVICE_FORWARDER_STATE_PATH=/var/lib/mailbox-service/forwarder-state.json
       Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}
-      Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}
+      Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}
       ExecStart={{ verself_bin }}/mailbox-service
       Restart=always
       RestartSec=5
@@ -268,13 +268,13 @@
 
 - name: Wait for mailbox-service listener to be present
   ansible.builtin.wait_for:
-    host: "{{ services.mailbox_service.host }}"
-    port: "{{ services.mailbox_service.port }}"
+    host: "{{ topology_endpoints.mailbox_service.host }}"
+    port: "{{ topology_endpoints.mailbox_service.endpoints.public_http.port }}"
     timeout: 60
 
 - name: Wait for mailbox-service readiness
   ansible.builtin.uri:
-    url: "http://{{ services.mailbox_service.host }}:{{ services.mailbox_service.port }}/readyz"
+    url: "http://{{ topology_endpoints.mailbox_service.endpoints.public_http.address }}/readyz"
     method: GET
     status_code: 200
   register: mailbox_service_readyz

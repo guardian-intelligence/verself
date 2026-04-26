@@ -86,9 +86,9 @@
       User=tigerbeetle
       Group=tigerbeetle
       ExecStart={{ verself_bin }}/tigerbeetle start \
-        --addresses={{ services.tigerbeetle.host }}:{{ services.tigerbeetle.port }} \
+        --addresses={{ topology_endpoints.tigerbeetle.endpoints.client.address }} \
         --experimental \
-        --statsd={{ services.otelcol.host }}:{{ services.otelcol.statsd_port }} \
+        --statsd={{ topology_endpoints.otelcol.endpoints.statsd.address }} \
         {{ tigerbeetle_data_file }}
       Restart=on-failure
       RestartSec=5
@@ -134,8 +134,8 @@
 
 - name: Wait for TigerBeetle to be ready
   ansible.builtin.wait_for:
-    port: "{{ services.tigerbeetle.port }}"
-    host: "{{ services.tigerbeetle.host }}"
+    port: "{{ topology_endpoints.tigerbeetle.endpoints.client.port }}"
+    host: "{{ topology_endpoints.tigerbeetle.host }}"
     timeout: 30
 
 # --- Connection smoke test ---
@@ -180,7 +180,7 @@
       python3 /opt/verself/tigerbeetle-health.py
       {{ verself_bin }}/tigerbeetle
       {{ tigerbeetle_cluster_id }}
-      {{ services.tigerbeetle.host }}:{{ services.tigerbeetle.port }}
+      {{ topology_endpoints.tigerbeetle.endpoints.client.address }}
   register: tigerbeetle_connection_test
   changed_when: false
   failed_when: tigerbeetle_connection_test.rc != 0

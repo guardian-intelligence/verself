@@ -234,7 +234,7 @@ topology-generate: ## Regenerate Ansible deploy inputs from CUE topology
 topology-check: ## Verify generated deploy inputs match CUE topology
 	cd $(PLATFORM_DIR) && ./scripts/topology.py check
 
-topology-proof: inventory-check ## Prove topology compile/check spans and generated registry freshness in ClickHouse
+topology-proof: inventory-check ## Prove topology compile/check spans and generated artifact freshness in ClickHouse
 	cd $(PLATFORM_DIR) && ./scripts/verify-topology-live.sh
 
 inventory-check: ## Validate that the generated Ansible inventory exists
@@ -430,7 +430,7 @@ platform-local-dev: ## Start local platform docs HMR dev server (no tunnels; no 
 grafana-proof: inventory-check ## Verify Grafana health, datasource execution, PostgreSQL state, and ClickHouse evidence
 	cd $(PLATFORM_DIR) && ./scripts/verify-grafana-live.sh
 
-services-doctor: inventory-check ## Cross-check declared services.yml against live listeners on the box: make services-doctor [FORMAT=table|json|nftables]
+services-doctor: inventory-check ## Cross-check generated topology endpoints against live listeners: make services-doctor [FORMAT=table|json|nftables]
 	@python3 $(PLATFORM_DIR)/scripts/services-doctor.py
 
 observe: inventory-check ## Discover/query telemetry: make observe [WHAT=catalog|queries|describe|metric|trace|logs|http|service|errors|mail|deploy|workload-identity|temporal] [SIGNAL=...] [FORMAT=table|json|markdown]

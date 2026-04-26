@@ -1,4 +1,4 @@
-"""Enforce that port numbers live only in the services registry."""
+"""Enforce that port numbers live only in generated topology artifacts."""
 
 from __future__ import annotations
 
@@ -9,19 +9,19 @@ from ansiblelint.file_utils import Lintable
 from ansiblelint.rules import AnsibleLintRule
 
 
-# Only this generated file is allowed to define *_port variables.
-REGISTRY = Path("group_vars/all/generated/services.yml")
+# Only generated topology artifacts are allowed to define *_port variables.
+GENERATED_DIR = Path("group_vars/all/generated")
 
 # Key name ending with _port at the top level of a YAML mapping.
 PORT_KEY_RE = re.compile(r"^(\s*\w*_port)\s*:")
 
 
 class NoDefaultPortsRule(AnsibleLintRule):
-    """Port variables must be defined in the services registry, not in role defaults or group_vars."""
+    """Port variables must be defined in generated topology, not in role defaults or group_vars."""
 
     id = "no-default-ports"
     description = (
-        "All service port numbers belong in group_vars/all/generated/services.yml. "
+        "All service port numbers belong in group_vars/all/generated topology artifacts. "
         "Defining *_port variables in role defaults/ or other group_vars "
         "files re-introduces the scattered-port problem."
     )
@@ -39,9 +39,9 @@ class NoDefaultPortsRule(AnsibleLintRule):
         if file.kind not in self._var_kinds:
             return results
 
-        # Skip the registry itself.
+        # Skip generated topology artifacts.
         try:
-            if file.path.resolve() == (Path.cwd() / REGISTRY).resolve():
+            if (Path.cwd() / GENERATED_DIR).resolve() in file.path.resolve().parents:
                 return results
         except (OSError, ValueError):
             pass
@@ -54,7 +54,7 @@ class NoDefaultPortsRule(AnsibleLintRule):
                     self.create_matcherror(
                         message=(
                             f"Port variable '{m.group(1).strip()}' defined outside "
-                            f"services registry — move to {REGISTRY}"
+                            f"generated topology artifacts — move to {GENERATED_DIR}"
                         ),
                         lineno=lineno,
                         filename=file,

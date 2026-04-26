@@ -264,7 +264,7 @@
       - "0.0"
   environment:
     HOME: /tmp
-    OTEL_EXPORTER_OTLP_ENDPOINT: "http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}"
+    OTEL_EXPORTER_OTLP_ENDPOINT: "http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}"
   changed_when: false
 
 - name: Update Temporal schema to latest embedded version
@@ -284,7 +284,7 @@
       - "{{ temporal_schema_name }}"
   environment:
     HOME: /tmp
-    OTEL_EXPORTER_OTLP_ENDPOINT: "http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}"
+    OTEL_EXPORTER_OTLP_ENDPOINT: "http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}"
   changed_when: false
 
 - name: Setup Temporal visibility schema version tables and base schema
@@ -304,7 +304,7 @@
       - "0.0"
   environment:
     HOME: /tmp
-    OTEL_EXPORTER_OTLP_ENDPOINT: "http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}"
+    OTEL_EXPORTER_OTLP_ENDPOINT: "http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}"
   changed_when: false
 
 - name: Update Temporal visibility schema to latest embedded version
@@ -324,7 +324,7 @@
       - "{{ temporal_visibility_schema_name }}"
   environment:
     HOME: /tmp
-    OTEL_EXPORTER_OTLP_ENDPOINT: "http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}"
+    OTEL_EXPORTER_OTLP_ENDPOINT: "http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}"
   changed_when: false
 
 - name: Deploy temporal-server systemd unit
@@ -357,14 +357,14 @@
 
 - name: Wait for Temporal frontend gRPC listener
   ansible.builtin.wait_for:
-    host: "{{ services.temporal.host }}"
-    port: "{{ services.temporal.grpc_port }}"
+    host: "{{ topology_endpoints.temporal.host }}"
+    port: "{{ topology_endpoints.temporal.endpoints.frontend_grpc.port }}"
     timeout: 30
 
 - name: Wait for Temporal metrics listener
   ansible.builtin.wait_for:
-    host: "{{ services.temporal.host }}"
-    port: "{{ services.temporal.metrics_port }}"
+    host: "{{ topology_endpoints.temporal.host }}"
+    port: "{{ topology_endpoints.temporal.endpoints.metrics.port }}"
     timeout: 30
 
 - name: Bootstrap Temporal namespaces with server identity
@@ -378,8 +378,8 @@
   environment:
     HOME: /tmp
     SPIFFE_ENDPOINT_SOCKET: "unix://{{ spire_agent_socket_path }}"
-    OTEL_EXPORTER_OTLP_ENDPOINT: "http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}"
-    VERSELF_TEMPORAL_FRONTEND_ADDRESS: "{{ services.temporal.host }}:{{ services.temporal.grpc_port }}"
+    OTEL_EXPORTER_OTLP_ENDPOINT: "http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}"
+    VERSELF_TEMPORAL_FRONTEND_ADDRESS: "{{ topology_endpoints.temporal.endpoints.frontend_grpc.address }}"
     VERSELF_TEMPORAL_BOOTSTRAP_NAMESPACES: "{{ temporal_bootstrap_namespaces | join(',') }}"
     VERSELF_TEMPORAL_BOOTSTRAP_NAMESPACE_RETENTION: "{{ temporal_namespace_retention }}"
   changed_when: false
@@ -393,13 +393,13 @@
 
 - name: Wait for Temporal web listener
   ansible.builtin.wait_for:
-    host: "{{ services.temporal_web.host }}"
-    port: "{{ services.temporal_web.port }}"
+    host: "{{ topology_endpoints.temporal_web.host }}"
+    port: "{{ topology_endpoints.temporal_web.endpoints.http.port }}"
     timeout: 30
 
 - name: Wait for Temporal web health
   ansible.builtin.uri:
-    url: "http://{{ services.temporal_web.host }}:{{ services.temporal_web.port }}/healthz"
+    url: "http://{{ topology_endpoints.temporal_web.endpoints.http.address }}/healthz"
     status_code: 200
   register: temporal_web_health
   until: temporal_web_health.status == 200

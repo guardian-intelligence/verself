@@ -105,8 +105,8 @@
 
 - name: Wait for Zitadel before configuring identity-service auth
   ansible.builtin.wait_for:
-    host: "{{ services.zitadel.host }}"
-    port: "{{ services.zitadel.port }}"
+    host: "{{ topology_endpoints.zitadel.host }}"
+    port: "{{ topology_endpoints.zitadel.endpoints.http.port }}"
     timeout: 60
 
 - name: Read Zitadel admin PAT for identity-service auth setup
@@ -122,7 +122,7 @@
 
 - name: List Zitadel projects for identity-service auth
   ansible.builtin.uri:
-    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/_search"
+    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects/_search"
     method: POST
     headers:
       Authorization: "Bearer {{ identity_service_zitadel_admin_pat }}"
@@ -147,7 +147,7 @@
 
 - name: Create identity-service auth project if missing
   ansible.builtin.uri:
-    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects"
+    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects"
     method: POST
     headers:
       Authorization: "Bearer {{ identity_service_zitadel_admin_pat }}"
@@ -177,7 +177,7 @@
 
 - name: Ensure identity-service project has role assertion enabled
   ansible.builtin.uri:
-    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/{{ identity_service_auth_audience }}"
+    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects/{{ identity_service_auth_audience }}"
     method: PUT
     headers:
       Authorization: "Bearer {{ identity_service_zitadel_admin_pat }}"
@@ -211,7 +211,7 @@
 
 - name: List Zitadel Actions V2 targets for identity-service API credentials
   ansible.builtin.uri:
-    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/v2/actions/targets/search"
+    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/v2/actions/targets/search"
     method: POST
     headers:
       Authorization: "Bearer {{ identity_service_zitadel_admin_pat }}"
@@ -240,7 +240,7 @@
 
 - name: Create identity-service API credential Actions V2 target if missing
   ansible.builtin.uri:
-    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/v2/actions/targets"
+    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/v2/actions/targets"
     method: POST
     headers:
       Authorization: "Bearer {{ identity_service_zitadel_admin_pat }}"
@@ -282,7 +282,7 @@
 
 - name: Wire identity-service API credential target into pre-access-token execution
   ansible.builtin.uri:
-    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/v2/actions/executions"
+    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/v2/actions/executions"
     method: PUT
     headers:
       Authorization: "Bearer {{ identity_service_zitadel_admin_pat }}"
@@ -318,10 +318,10 @@
       LoadCredential=zitadel-admin-token:/etc/credstore/identity-service/zitadel-admin-token
       LoadCredential=zitadel-action-signing-key:/etc/credstore/identity-service/zitadel-action-signing-key
       LoadCredential=clickhouse-ca-cert:/etc/clickhouse-server/tls/server-ca.pem
-      Environment=IDENTITY_LISTEN_ADDR={{ services.identity_service.host }}:{{ services.identity_service.port }}
-      Environment=IDENTITY_INTERNAL_LISTEN_ADDR={{ services.identity_service.host }}:{{ services.identity_service.internal_port }}
+      Environment=IDENTITY_LISTEN_ADDR={{ topology_endpoints.identity_service.endpoints.public_http.address }}
+      Environment=IDENTITY_INTERNAL_LISTEN_ADDR={{ topology_endpoints.identity_service.endpoints.internal_https.address }}
       Environment=IDENTITY_PG_DSN=postgres://identity_service@/identity_service?host=/var/run/postgresql&sslmode=disable
-      Environment=IDENTITY_CH_ADDRESS={{ services.clickhouse.host }}:{{ services.clickhouse.secure_native_port }}
+      Environment=IDENTITY_CH_ADDRESS={{ topology_endpoints.clickhouse.endpoints.native_tls.address }}
       Environment=IDENTITY_CH_USER=identity_service
       Environment=IDENTITY_GOVERNANCE_AUDIT_URL={{ identity_service_governance_audit_url }}
       Environment=IDENTITY_AUTH_ISSUER_URL={{ identity_service_auth_issuer_url }}
@@ -330,7 +330,7 @@
       Environment=IDENTITY_ZITADEL_HOST={{ identity_service_zitadel_host }}
       Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}
       Environment=OTEL_SERVICE_NAME=identity-service
-      Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}
+      Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}
       ExecStart={{ verself_bin }}/identity-service
       Restart=on-failure
       RestartSec=5
@@ -358,7 +358,7 @@
     mode: "0644"
   vars:
     identity_service_governance_audit_url: >-
-      https://{{ services.governance_service.host }}:{{ services.governance_service.internal_port }}
+      https://{{ topology_endpoints.governance_service.endpoints.internal_https.address }}
   notify: restart identity-service
 
 - name: Apply identity-service unit changes before proceeding
@@ -373,19 +373,19 @@
 
 - name: Wait for identity-service listener to be present
   ansible.builtin.wait_for:
-    host: "{{ services.identity_service.host }}"
-    port: "{{ services.identity_service.port }}"
+    host: "{{ topology_endpoints.identity_service.host }}"
+    port: "{{ topology_endpoints.identity_service.endpoints.public_http.port }}"
     timeout: 60
 
 - name: Wait for identity-service internal listener to be present
   ansible.builtin.wait_for:
-    host: "{{ services.identity_service.host }}"
-    port: "{{ services.identity_service.internal_port }}"
+    host: "{{ topology_endpoints.identity_service.host }}"
+    port: "{{ topology_endpoints.identity_service.endpoints.internal_https.port }}"
     timeout: 60
 
 - name: Wait for identity-service readiness
   ansible.builtin.uri:
-    url: "http://{{ services.identity_service.host }}:{{ services.identity_service.port }}/readyz"
+    url: "http://{{ topology_endpoints.identity_service.endpoints.public_http.address }}/readyz"
     method: GET
     status_code: 200
   register: identity_service_readyz

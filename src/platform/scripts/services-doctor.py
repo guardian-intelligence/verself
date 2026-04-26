@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Cross-check declared services against live listeners on the box.
+"""Cross-check declared topology endpoints against live listeners on the box.
 
-Declared source: src/platform/ansible/group_vars/all/generated/services.yml
+Declared source: src/platform/ansible/group_vars/all/generated/endpoints.yml
 Live source: `sudo ss -Hltnp` on the inventory host (TCP listening sockets).
 
 Output modes (FORMAT env):
     table     - default, human-readable drift report + undeclared listener list
     json      - structured dump of declared, listeners, and drift
-    nftables  - suggested host-firewall rules derived from generated services (not
+    nftables  - suggested host-firewall rules derived from generated endpoints (not
                 authoritative; real rules live in roles/*/templates/*.nft.j2)
 
 Exit codes:
@@ -32,7 +32,7 @@ from typing import Iterable
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SERVICES_YAML = REPO_ROOT / "src/platform/ansible/group_vars/all/generated/services.yml"
+ENDPOINTS_YAML = REPO_ROOT / "src/platform/ansible/group_vars/all/generated/endpoints.yml"
 INVENTORY = REPO_ROOT / "src/platform/ansible/inventory/hosts.ini"
 
 # Ports in these ranges are "ours" — an undeclared listener here is drift.
@@ -48,20 +48,17 @@ PRODUCT_PORT_RANGES = [
     (18000, 18099),  # vm-orchestrator host services
 ]
 
-# Port-field names that designate UDP listeners. Default is TCP. Extend this
-# set if you add a new UDP service instead of hand-editing per-entry schema.
-UDP_FIELD_NAMES = {"statsd_port"}
-
-
 @dataclass(frozen=True)
 class Declared:
-    """One declared (service, port-field) entry from the generated service registry."""
+    """One declared endpoint from the generated topology endpoint artifact."""
 
-    service: str
-    field: str
+    component: str
+    endpoint: str
     host: str
     port: int
     listen_host: str | None
+    protocol: str
+    exposure: str
 
     @property
     def expected_bind(self) -> str:
@@ -70,11 +67,11 @@ class Declared:
 
     @property
     def label(self) -> str:
-        return self.service if self.field == "port" else f"{self.service}.{self.field}"
+        return f"{self.component}.{self.endpoint}"
 
     @property
     def proto(self) -> str:
-        return "udp" if self.field in UDP_FIELD_NAMES else "tcp"
+        return "udp" if self.protocol == "statsd" else "tcp"
 
 
 @dataclass
@@ -115,36 +112,34 @@ def in_product_range(port: int) -> bool:
 
 def load_declared(path: Path) -> list[Declared]:
     data = yaml.safe_load(path.read_text())
-    services = data.get("services") or {}
+    topology_endpoints = data.get("topology_endpoints") or {}
     out: list[Declared] = []
 
-    def collect_ports(name: str, host: str, listen_host: str | None, value: object, prefix: str = "") -> None:
-        if isinstance(value, dict):
-            for key, child in value.items():
-                field = f"{prefix}.{key}" if prefix else str(key)
-                if str(key) == "port" or str(key).endswith("_port"):
-                    if isinstance(child, int):
-                        out.append(
-                            Declared(
-                                service=name,
-                                field=field,
-                                host=str(host),
-                                port=child,
-                                listen_host=str(listen_host) if listen_host else None,
-                            )
-                        )
-                    continue
-                collect_ports(name, host, listen_host, child, field)
-        elif isinstance(value, list):
-            for index, child in enumerate(value):
-                collect_ports(name, host, listen_host, child, f"{prefix}[{index}]")
-
-    for name, spec in services.items():
-        if not isinstance(spec, dict):
+    for component_name, component in topology_endpoints.items():
+        if not isinstance(component, dict):
             continue
-        host = spec.get("host", "127.0.0.1")
-        listen_host = spec.get("listen_host")
-        collect_ports(name, str(host), str(listen_host) if listen_host else None, spec)
+        component_host = str(component.get("host") or "127.0.0.1")
+        endpoints = component.get("endpoints") or {}
+        if not isinstance(endpoints, dict):
+            continue
+        for endpoint_name, endpoint in endpoints.items():
+            if not isinstance(endpoint, dict):
+                continue
+            port = endpoint.get("port")
+            if not isinstance(port, int):
+                continue
+            listen_host = endpoint.get("listen_host")
+            out.append(
+                Declared(
+                    component=str(component_name),
+                    endpoint=str(endpoint_name),
+                    host=str(endpoint.get("host") or component_host),
+                    port=port,
+                    listen_host=str(listen_host) if listen_host else None,
+                    protocol=str(endpoint.get("protocol") or "tcp"),
+                    exposure=str(endpoint.get("exposure") or ""),
+                )
+            )
     return out
 
 
@@ -325,7 +320,7 @@ def render_table(report: Report) -> str:
 
     if report.undeclared:
         lines.append("")
-        lines.append("UNDECLARED LISTENERS (not in generated services registry):")
+        lines.append("UNDECLARED LISTENERS (not in generated topology endpoints):")
         for l in sorted(report.undeclared, key=lambda x: (x.port, x.proto)):
             marker = "  !" if in_product_range(l.port) else "   "
             lines.append(f"{marker} {l.proto:3s} {l.bind}:{l.port}  {l.process}")
@@ -339,11 +334,13 @@ def render_json(report: Report) -> str:
     payload = {
         "declared": [
             {
-                "service": d.service,
-                "field": d.field,
+                "component": d.component,
+                "endpoint": d.endpoint,
                 "host": d.host,
                 "listen_host": d.listen_host,
                 "port": d.port,
+                "protocol": d.protocol,
+                "exposure": d.exposure,
             }
             for d in report.declared
         ],
@@ -374,7 +371,7 @@ def render_json(report: Report) -> str:
 
 
 def render_nftables(report: Report) -> str:
-    """Suggested rules derived from the generated service registry.
+    """Suggested rules derived from the generated topology endpoints.
 
     The real firewall is assembled by src/platform/ansible/roles/nftables and
     per-service roles/*/templates/*.nft.j2. This output is a debugging aid for
@@ -395,7 +392,7 @@ def render_nftables(report: Report) -> str:
 
     lines: list[str] = []
     lines.append("#!/usr/sbin/nft -f")
-    lines.append("# Derived from src/platform/ansible/group_vars/all/generated/services.yml")
+    lines.append("# Derived from src/platform/ansible/group_vars/all/generated/endpoints.yml")
     lines.append("# SUGGESTION ONLY — authoritative rules live in Ansible role templates.")
     lines.append("")
     lines.append("table inet verself_services_suggested")
@@ -457,8 +454,8 @@ def main(argv: list[str]) -> int:
     if fmt not in ("table", "json", "nftables"):
         die(f"unknown FORMAT={fmt} (want: table, json, nftables)", code=2)
 
-    if not SERVICES_YAML.is_file():
-        die(f"{SERVICES_YAML} not found", code=2)
+    if not ENDPOINTS_YAML.is_file():
+        die(f"{ENDPOINTS_YAML} not found", code=2)
     if not INVENTORY.is_file():
         die(
             f"{INVENTORY} not found. Run: cd src/platform/ansible && "
@@ -466,7 +463,7 @@ def main(argv: list[str]) -> int:
             code=2,
         )
 
-    declared = load_declared(SERVICES_YAML)
+    declared = load_declared(ENDPOINTS_YAML)
     host, user = read_inventory(INVENTORY)
 
     skip_ssh = os.environ.get("SKIP_SSH") == "1"

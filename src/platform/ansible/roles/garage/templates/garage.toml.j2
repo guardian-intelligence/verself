@@ -13,16 +13,16 @@ lmdb_map_size = "10G"
 compression_level = 1
 
 rpc_secret = "{{ garage_rpc_secret }}"
-rpc_bind_addr = "{{ services.garage.host }}:{{ garage_node.rpc_port }}"
-rpc_public_addr = "{{ services.garage.host }}:{{ garage_node.rpc_port }}"
+rpc_bind_addr = "{{ topology_clusters.garage.host }}:{{ garage_node.rpc_port }}"
+rpc_public_addr = "{{ topology_clusters.garage.host }}:{{ garage_node.rpc_port }}"
 allow_world_readable_secrets = false
 
 [s3_api]
-api_bind_addr = "{{ services.garage.host }}:{{ garage_node.s3_port }}"
+api_bind_addr = "{{ topology_clusters.garage.host }}:{{ garage_node.s3_port }}"
 s3_region = "garage"
 
 [admin]
-api_bind_addr = "{{ services.garage.host }}:{{ garage_node.admin_port }}"
+api_bind_addr = "{{ topology_clusters.garage.host }}:{{ garage_node.admin_port }}"
 metrics_token = "{{ garage_metrics_token }}"
 metrics_require_token = true
 admin_token = "{{ garage_admin_token }}"

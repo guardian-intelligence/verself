@@ -223,6 +223,6 @@
 
 - name: Wait for company to be ready
   ansible.builtin.wait_for:
-    host: "{{ services.company.host }}"
-    port: "{{ services.company.port }}"
+    host: "{{ topology_endpoints.company.host }}"
+    port: "{{ topology_endpoints.company.endpoints.http.port }}"
     timeout: 30
