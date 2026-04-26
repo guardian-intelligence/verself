@@ -185,7 +185,10 @@ async function updateDisplayNameInParallel(
     const syncStatus = page.getByTestId("profile-sync-status");
     const previousSyncedAt = await syncStatus.getAttribute("data-synced-at");
     await page.getByLabel("Display name").fill(displayName);
-    await page.getByLabel("Locale").focus();
+    await expect(page.getByLabel("Display name")).toHaveValue(displayName);
+    await page.getByTestId("profile-identity-form").evaluate((form: HTMLFormElement) => {
+      form.requestSubmit();
+    });
     await waitForProfileSync(syncStatus, previousSyncedAt);
   } finally {
     await page.close();
