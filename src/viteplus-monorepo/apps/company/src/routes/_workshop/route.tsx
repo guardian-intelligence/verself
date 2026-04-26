@@ -71,11 +71,9 @@ function WorkshopFooter() {
           </FooterColumn>
         </div>
         <div
-          className="pb-10"
+          className="whitespace-nowrap pb-10 text-[10px] tracking-[0.08em] md:text-[11px] md:tracking-[0.12em]"
           style={{
             fontFamily: "'Geist Mono', ui-monospace, monospace",
-            fontSize: "11px",
-            letterSpacing: "0.12em",
             textTransform: "uppercase",
             color: "var(--treatment-muted-faint)",
           }}
