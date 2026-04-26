@@ -16,6 +16,7 @@ export type NewsroomCategory = "announcement" | "milestone" | "note";
 export interface NewsroomAuthor {
   readonly name: string;
   readonly role: string;
+  readonly avatar?: string;
 }
 
 export interface NewsroomItem {
@@ -41,7 +42,7 @@ const ITEMS: readonly NewsroomItem[] = [
     deck: "Bulletins, milestones, and public notes from Guardian now have a home of their own, distinct from the long-form register of Letters.",
     date: "23 April 2026",
     publishedAt: "2026-04-23",
-    author: { name: "Guardian", role: "House editor" },
+    author: { name: "Shovon Hasan", role: "Founder & CEO", avatar: "/people/shovon-hasan.jpg" },
     body: [
       "The house has three rooms. Workshop is where the work happens — Iron ground, Geist everywhere, Amber as the single accent. Letters is where we argue — Paper, Fraunces, one Bordeaux rule for the pull-quote. Today the middle room opens. Newsroom is where Guardian speaks in the public register: short, dated, on the record.",
       "We split it out because the registers were colliding. Bulletins about a milestone or a launch were showing up alongside essays about why the house exists, and the two read at different speeds. An announcement wants a headline and a timestamp. An essay wants a deck and a margin. A single surface cannot serve both without dulling one of them. So we gave the announcement its own room, on its own ground, with its own rhythm.",
@@ -59,7 +60,7 @@ const ITEMS: readonly NewsroomItem[] = [
     deck: "Workshop, Newsroom, and Letters are now the three treatments that carry Guardian across every surface — and the design page walks the whole system.",
     date: "19 April 2026",
     publishedAt: "2026-04-19",
-    author: { name: "Guardian", role: "House editor" },
+    author: { name: "Shovon Hasan", role: "Founder & CEO", avatar: "/people/shovon-hasan.jpg" },
     body: [
       "The brand model collapsed to three rooms. Each one paints its own ground, binds its own display font, and carries its own accent. A single data attribute on the nearest ancestor resolves every token downstream, which means the same page shell renders three different registers depending on where it sits in the site.",
       "Workshop is the everyday register — the product chrome, the marketing site, the console. Newsroom is the broadcast register — this room. Letters is the editorial register — where long-form lives. The rooms share a wordmark, a wings mark, and a single typographic idea; everything else is the treatment's choice.",
@@ -76,7 +77,7 @@ const ITEMS: readonly NewsroomItem[] = [
     deck: "The editorial register shipped with a seeded essay. Letters is the place where we explain the why.",
     date: "12 April 2026",
     publishedAt: "2026-04-12",
-    author: { name: "Guardian", role: "House editor" },
+    author: { name: "Shovon Hasan", role: "Founder & CEO", avatar: "/people/shovon-hasan.jpg" },
     body: [
       "Letters ships on Paper. Ink type, Fraunces display, Bordeaux reserved for the single pull-quote rule — nothing else on the page is allowed that colour. The register is periodical: we publish when we have something to say, not on a calendar.",
       "The first letter is out today. The index lives at /letters and reads like a gazette.",
@@ -92,7 +93,7 @@ const ITEMS: readonly NewsroomItem[] = [
     deck: "Every route on this site emits a trace that lands in our own ClickHouse, on the same pipeline our customers use. We publish what we see there.",
     date: "5 April 2026",
     publishedAt: "2026-04-05",
-    author: { name: "Guardian", role: "House editor" },
+    author: { name: "Shovon Hasan", role: "Founder & CEO", avatar: "/people/shovon-hasan.jpg" },
     body: [
       "The site runs on the same telemetry surface as the rest of the platform. Every route mount, every card click, every subscribe submit is a span. The spans land in ClickHouse. The same proof we ask of our own services we ask of our own website.",
       "The point is not that we have telemetry. The point is that when we say a feature shipped and works, a queryable artifact says so.",

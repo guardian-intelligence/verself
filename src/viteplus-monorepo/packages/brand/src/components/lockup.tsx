@@ -234,7 +234,11 @@ export function Lockup({
       ) : variant === "chip" ? (
         <WingsChip title={title} style={markStyle} />
       ) : (
-        <WingsEmboss title={title} style={markStyle} />
+        // At chrome size (sm) the wings read a touch heavy inside the
+        // medallion — anti-aliased ink concentrates visual mass at 22px in
+        // a way that doesn't show at md/lg. Scale the inner mark down only
+        // at sm so the disc itself stays the same size against the wordmark.
+        <WingsEmboss title={title} style={markStyle} wingsScale={size === "sm" ? 0.92 : 1} />
       )}
       <span style={wordmarkStyle} data-lockup-wordmark="">
         {wordmark}

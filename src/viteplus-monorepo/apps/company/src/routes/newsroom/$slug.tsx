@@ -174,32 +174,59 @@ function Breadcrumb({ title }: { title: string }) {
   );
 }
 
+// Byline — avatar tile + name/role stack. The Ramp /blog/news pattern: a
+// 40px circular crop on the left, name in the page's display register on
+// the upper line, role in muted meta type below. The tile sits as a sibling
+// of the article body (not on a top rule), so the byline reads as the
+// person attached to the dispatch rather than chrome above the article.
 function Byline({ item }: { item: NewsroomItem }) {
+  const { author } = item;
   return (
     <div
-      className="mt-8 flex items-baseline gap-3 pt-6"
-      style={{ borderTop: "1px solid var(--treatment-hairline)" }}
+      className="mt-10 flex items-center gap-3 md:mt-14"
+      data-newsroom-byline
     >
-      <span
-        style={{
-          fontFamily: "'Fraunces', Georgia, serif",
-          fontVariationSettings: '"opsz" 72, "SOFT" 20',
-          fontWeight: 400,
-          fontSize: "18px",
-          color: "var(--treatment-ink)",
-        }}
-      >
-        {item.author.name}
-      </span>
-      <span
-        className="font-mono text-[10px] uppercase"
-        style={{
-          letterSpacing: "0.18em",
-          color: "var(--treatment-muted-meta)",
-        }}
-      >
-        {item.author.role}
-      </span>
+      {author.avatar ? (
+        <img
+          src={author.avatar}
+          alt=""
+          width={40}
+          height={40}
+          loading="lazy"
+          decoding="async"
+          style={{
+            width: "40px",
+            height: "40px",
+            borderRadius: "9999px",
+            objectFit: "cover",
+            flexShrink: 0,
+          }}
+        />
+      ) : null}
+      <div className="flex flex-col">
+        <span
+          style={{
+            fontFamily: "'Geist', sans-serif",
+            fontWeight: 500,
+            fontSize: "14px",
+            lineHeight: 1.2,
+            color: "var(--treatment-ink)",
+          }}
+        >
+          {author.name}
+        </span>
+        <span
+          style={{
+            fontFamily: "'Geist', sans-serif",
+            fontWeight: 400,
+            fontSize: "13px",
+            lineHeight: 1.3,
+            color: "var(--treatment-muted-meta)",
+          }}
+        >
+          {author.role}
+        </span>
+      </div>
     </div>
   );
 }
