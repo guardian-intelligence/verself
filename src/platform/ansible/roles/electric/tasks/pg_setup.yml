@@ -56,6 +56,7 @@
       DO $$
       DECLARE
         tbl  TEXT;
+        missing_tables TEXT;
         tables TEXT[] := ARRAY[{%- for t in electric_publication_tables %}
           '{{ t }}'{% if not loop.last %},{% endif %}
       {%- endfor %}
@@ -83,6 +84,23 @@
         END IF;
 
         EXECUTE 'ALTER PUBLICATION {{ electric_publication_name }} OWNER TO {{ electric_pg_role }}';
+
+        SELECT string_agg(configured.tbl_name, ', ' ORDER BY configured.tbl_name)
+          INTO missing_tables
+        FROM unnest(tables) AS configured(tbl_name)
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM pg_publication p
+          JOIN pg_publication_rel pr ON pr.prpubid = p.oid
+          JOIN pg_class c ON c.oid = pr.prrelid
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE p.pubname = '{{ electric_publication_name }}'
+            AND n.nspname = 'public'
+            AND c.relname = configured.tbl_name
+        );
+        IF missing_tables IS NOT NULL THEN
+          RAISE EXCEPTION 'publication {{ electric_publication_name }} missing configured tables: %', missing_tables;
+        END IF;
       END
       $$;
   environment:
