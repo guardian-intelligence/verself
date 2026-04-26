@@ -10,10 +10,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/spiffe/go-spiffe/v2/workloadapi"
 	workloadauth "github.com/verself/auth-middleware/workload"
 	governanceinternalclient "github.com/verself/governance-service/internalclient"
 	"github.com/verself/object-storage-service/internal/objectstorage"
-	"github.com/spiffe/go-spiffe/v2/workloadapi"
 )
 
 type auditSinkConfig struct {

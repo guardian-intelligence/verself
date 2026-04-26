@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/verself/sandbox-rental-service/internal/scheduler"
 	"github.com/google/uuid"
 	"github.com/riverqueue/river"
+	"github.com/verself/sandbox-rental-service/internal/scheduler"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"

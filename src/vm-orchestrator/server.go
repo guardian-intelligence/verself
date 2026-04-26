@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/oklog/ulid/v2"
 	vmrpc "github.com/verself/vm-orchestrator/proto/v1"
 	"github.com/verself/vm-orchestrator/vmproto"
-	"github.com/oklog/ulid/v2"
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"google.golang.org/grpc/codes"

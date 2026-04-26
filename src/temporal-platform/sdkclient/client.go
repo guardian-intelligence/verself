@@ -6,11 +6,11 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"
+	"github.com/spiffe/go-spiffe/v2/workloadapi"
 	workloadauth "github.com/verself/auth-middleware/workload"
 	"github.com/verself/envconfig"
 	"github.com/verself/temporal-platform/internal/temporallog"
-	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"
-	"github.com/spiffe/go-spiffe/v2/workloadapi"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
 	otelpropagation "go.opentelemetry.io/otel/propagation"

@@ -147,7 +147,7 @@ func TestIdentityPermissionChecksRoleBundlesAndDirectScopes(t *testing.T) {
 		Subject: "credential-1",
 		Raw: map[string]any{
 			"verself:credential_id": "credential-1",
-			"permissions":               []string{"sandbox:logs:read"},
+			"permissions":           []string{"sandbox:logs:read"},
 		},
 	}
 	if !identityHasPermission(scopedClient, permissionLogsRead) {

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/verself/apiwire"
 	"github.com/google/uuid"
+	"github.com/verself/apiwire"
 )
 
 const reconcileStaleAfter = 10 * time.Second
