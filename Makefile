@@ -1,4 +1,4 @@
-.PHONY: help test lint lint-scripts lint-conversions lint-ansible lint-voice company-proof fmt vet tidy openapi openapi-check openapi-clients openapi-clients-check openapi-wire-check topology-generate topology-check topology-proof \
+.PHONY: help test lint lint-scripts lint-conversions lint-ansible lint-voice company-proof fmt vet tidy sqlc sqlc-check openapi openapi-check openapi-clients openapi-clients-check openapi-wire-check topology-generate topology-check topology-proof \
        hooks-install doctor inventory-check setup-dev setup-sops provision deprovision deploy site guest-rootfs security-patch identity-reset seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member \
        set-user-state billing-clock billing-wall-clock billing-state billing-documents billing-finalizations billing-events billing-pg-shell billing-pg-query billing-proof billing-reset verification-reset \
        profile-proof organization-sync-proof notifications-proof projects-proof source-code-hosting-proof secrets-proof secrets-leak-proof openbao-proof openbao-tenancy-proof workload-identity-proof spiffe-rotation-proof object-storage-verify temporal-verify temporal-web-proof recurring-schedule-proof \
@@ -30,6 +30,7 @@ GO_DIRS  := $(AW) $(VMO) $(BS) $(GS) $(IS) $(SS) $(SCH) $(AM) $(SR) $(MS) $(OSS)
 GO_PKGS  := $(addsuffix /...,$(addprefix ./,$(GO_DIRS)))
 GO_CLIENT_DIRS := $(BS)/client $(GS)/client $(GS)/internalclient $(IS)/client $(IS)/internalclient $(SS)/client $(SS)/internalclient $(SCH)/client $(SCH)/internalclient $(SR)/client $(SR)/internalclient $(MS)/client $(OSS)/client $(PS)/client $(PS)/internalclient $(NS)/client $(PJS)/client $(PJS)/internalclient
 GO_CLIENT_FILES := $(addsuffix /client.gen.go,$(GO_CLIENT_DIRS))
+SQLC_DIRS := $(sort $(dir $(shell find src -mindepth 2 -maxdepth 2 -name sqlc.yaml -print)))
 BILLING_PRODUCT_ID ?= sandbox
 ASSUME_PERSONA_OUTPUT_FLAG := $(if $(OUTPUT),--output "$(OUTPUT)",)
 ASSUME_PERSONA_PRINT_FLAG := $(if $(filter 1 true yes,$(PRINT)),--print,)
@@ -95,6 +96,28 @@ tidy:
 	cd $(OT) && go mod tidy
 	cd $(TP) && go mod tidy
 	cd src/viteplus-monorepo && vp fmt . --write
+
+sqlc: ## Regenerate sqlc stores for every service with sqlc.yaml
+	@test -n "$(SQLC_DIRS)" || { echo "ERROR: no sqlc.yaml files found"; exit 1; }
+	@for dir in $(SQLC_DIRS); do \
+		echo "sqlc generate $$dir"; \
+		(cd "$$dir" && sqlc generate); \
+	done
+
+sqlc-check: ## Verify committed sqlc generated stores are up to date
+	@test -n "$(SQLC_DIRS)" || { echo "ERROR: no sqlc.yaml files found"; exit 1; }
+	@for dir in $(SQLC_DIRS); do \
+		echo "sqlc compile $$dir"; \
+		(cd "$$dir" && sqlc compile); \
+		echo "sqlc vet $$dir"; \
+		(cd "$$dir" && sqlc vet); \
+	done
+	$(MAKE) sqlc
+	@generated_files="$$(find $(SQLC_DIRS) -path '*/internal/store/*.go' -print | sort)"; \
+		test -n "$$generated_files" || { echo "ERROR: no sqlc generated files found"; exit 1; }; \
+		git diff --exit-code -- $$generated_files; \
+		untracked="$$(git ls-files --others --exclude-standard -- $$generated_files)"; \
+		test -z "$$untracked" || { echo "ERROR: untracked sqlc generated files:"; echo "$$untracked"; exit 1; }
 
 openapi: ## Regenerate committed OpenAPI 3.0 and 3.1 specs for Go services
 	go run ./$(BS)/cmd/billing-openapi --format 3.0 > $(BS)/openapi/openapi-3.0.yaml

@@ -3,7 +3,6 @@ package objectstorage
 import (
 	"context"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -33,7 +32,6 @@ type Config struct {
 }
 
 type Service struct {
-	PG      *sql.DB
 	CH      clickhouse.Conn
 	Store   *Store
 	Garage  GarageAdmin

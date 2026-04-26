@@ -2,143 +2,144 @@ package identity
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	chdriver "github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	"github.com/lib/pq"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	identitystore "github.com/verself/identity-service/internal/store"
 )
 
 type SQLStore struct {
-	DB *sql.DB
+	PG *pgxpool.Pool
 	CH chdriver.Conn
 }
 
+func (s SQLStore) q() *identitystore.Queries {
+	return identitystore.New(s.PG)
+}
+
 func (s SQLStore) GetMemberCapabilities(ctx context.Context, orgID, actor string) (MemberCapabilitiesDocument, error) {
-	if s.DB == nil {
+	if s.PG == nil {
 		return MemberCapabilitiesDocument{}, ErrStoreUnavailable
 	}
-	var (
-		enabled   pq.StringArray
-		version   int32
-		updatedAt time.Time
-		updatedBy string
-	)
-	err := s.DB.QueryRowContext(ctx, `
-SELECT enabled_keys, version, updated_at, updated_by
-FROM identity_member_capabilities
-WHERE org_id = $1
-`, orgID).Scan(&enabled, &version, &updatedAt, &updatedBy)
-	if errors.Is(err, sql.ErrNoRows) {
+	row, err := s.q().GetMemberCapabilities(ctx, identitystore.GetMemberCapabilitiesParams{OrgID: orgID})
+	if errors.Is(err, pgx.ErrNoRows) {
 		return DefaultMemberCapabilitiesDocument(orgID, actor, time.Now().UTC()), nil
 	}
 	if err != nil {
 		return MemberCapabilitiesDocument{}, fmt.Errorf("get identity member capabilities: %w", err)
 	}
-	return MemberCapabilitiesDocument{
-		OrgID:       orgID,
-		Version:     version,
-		EnabledKeys: append([]string(nil), enabled...),
-		UpdatedAt:   updatedAt,
-		UpdatedBy:   updatedBy,
-	}, nil
+	return memberCapabilitiesFromRow(row)
 }
 
 func (s SQLStore) PutMemberCapabilities(ctx context.Context, doc MemberCapabilitiesDocument) (MemberCapabilitiesDocument, error) {
-	if s.DB == nil {
+	if s.PG == nil {
 		return MemberCapabilitiesDocument{}, ErrStoreUnavailable
 	}
 	if err := ValidateMemberCapabilities(doc); err != nil {
 		return MemberCapabilitiesDocument{}, err
 	}
-	enabled := pq.StringArray(doc.EnabledKeys)
-	query := `
-UPDATE identity_member_capabilities
-SET enabled_keys = $2,
-    version = version + 1,
-    updated_at = now(),
-    updated_by = $3
-WHERE org_id = $1 AND version = $4
-RETURNING version, updated_at
-`
-	args := []any{doc.OrgID, enabled, doc.UpdatedBy, doc.Version}
+	var (
+		row identitystore.IdentityMemberCapability
+		err error
+	)
 	if doc.Version == 0 {
-		query = `
-INSERT INTO identity_member_capabilities (org_id, enabled_keys, version, updated_at, updated_by)
-VALUES ($1, $2, 1, now(), $3)
-ON CONFLICT (org_id) DO NOTHING
-RETURNING version, updated_at
-`
-		args = []any{doc.OrgID, enabled, doc.UpdatedBy}
+		row, err = s.q().InsertMemberCapabilities(ctx, identitystore.InsertMemberCapabilitiesParams{
+			OrgID:       doc.OrgID,
+			EnabledKeys: append([]string(nil), doc.EnabledKeys...),
+			UpdatedBy:   doc.UpdatedBy,
+		})
+	} else {
+		row, err = s.q().UpdateMemberCapabilities(ctx, identitystore.UpdateMemberCapabilitiesParams{
+			OrgID:       doc.OrgID,
+			EnabledKeys: append([]string(nil), doc.EnabledKeys...),
+			UpdatedBy:   doc.UpdatedBy,
+			Version:     doc.Version,
+		})
 	}
-	err := s.DB.QueryRowContext(ctx, query, args...).Scan(&doc.Version, &doc.UpdatedAt)
-	if errors.Is(err, sql.ErrNoRows) {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return MemberCapabilitiesDocument{}, fmt.Errorf("%w: stale version for org %s", ErrCapabilitiesConflict, doc.OrgID)
 	}
 	if err != nil {
 		return MemberCapabilitiesDocument{}, fmt.Errorf("put identity member capabilities: %w", err)
 	}
-	doc.EnabledKeys = append([]string(nil), doc.EnabledKeys...)
-	return doc, nil
+	return memberCapabilitiesFromRow(row)
 }
 
-type credentialScanner interface {
-	Scan(dest ...any) error
+func memberCapabilitiesFromRow(row identitystore.IdentityMemberCapability) (MemberCapabilitiesDocument, error) {
+	updatedAt, err := requiredTime(row.UpdatedAt, "identity_member_capabilities.updated_at")
+	if err != nil {
+		return MemberCapabilitiesDocument{}, err
+	}
+	return MemberCapabilitiesDocument{
+		OrgID:       row.OrgID,
+		Version:     row.Version,
+		EnabledKeys: append([]string(nil), row.EnabledKeys...),
+		UpdatedAt:   updatedAt,
+		UpdatedBy:   row.UpdatedBy,
+	}, nil
 }
 
 func (s SQLStore) CreateAPICredential(ctx context.Context, credential APICredential, secret APICredentialSecret) (APICredential, error) {
-	if s.DB == nil {
+	if s.PG == nil {
 		return APICredential{}, ErrStoreUnavailable
 	}
-	tx, err := s.DB.BeginTx(ctx, nil)
+	tx, err := s.PG.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return APICredential{}, fmt.Errorf("begin create api credential: %w", err)
 	}
-	defer rollback(tx)
-	if _, err := tx.ExecContext(ctx, `
-INSERT INTO identity_api_credentials (
-    credential_id, org_id, subject_id, client_id, display_name, auth_method, status,
-    policy_version_at_issue, created_at, created_by, updated_at, expires_at
-)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $9, $11)
-`, credential.CredentialID, credential.OrgID, credential.SubjectID, credential.ClientID, credential.DisplayName, string(credential.AuthMethod), string(credential.Status), credential.PolicyVersionAtIssue, credential.CreatedAt, credential.CreatedBy, credential.ExpiresAt); err != nil {
+	defer rollback(ctx, tx)
+	q := identitystore.New(tx)
+	if err := q.InsertAPICredential(ctx, identitystore.InsertAPICredentialParams{
+		CredentialID:         credential.CredentialID,
+		OrgID:                credential.OrgID,
+		SubjectID:            credential.SubjectID,
+		ClientID:             credential.ClientID,
+		DisplayName:          credential.DisplayName,
+		AuthMethod:           string(credential.AuthMethod),
+		Status:               string(credential.Status),
+		PolicyVersionAtIssue: credential.PolicyVersionAtIssue,
+		CreatedAt:            timestamptz(credential.CreatedAt),
+		CreatedBy:            credential.CreatedBy,
+		ExpiresAt:            nullableTimestamptz(credential.ExpiresAt),
+	}); err != nil {
 		return APICredential{}, fmt.Errorf("insert api credential: %w", err)
 	}
 	for _, permission := range credential.Permissions {
-		if _, err := tx.ExecContext(ctx, `
-INSERT INTO identity_api_credential_permissions (credential_id, permission, created_at)
-VALUES ($1, $2, $3)
-`, credential.CredentialID, permission, credential.CreatedAt); err != nil {
+		if err := q.InsertAPICredentialPermission(ctx, identitystore.InsertAPICredentialPermissionParams{
+			CredentialID: credential.CredentialID,
+			Permission:   permission,
+			CreatedAt:    timestamptz(credential.CreatedAt),
+		}); err != nil {
 			return APICredential{}, fmt.Errorf("insert api credential permission: %w", err)
 		}
 	}
-	if err := insertAPICredentialSecret(ctx, tx, secret); err != nil {
+	if err := insertAPICredentialSecret(ctx, q, secret); err != nil {
 		return APICredential{}, err
 	}
-	if err := tx.Commit(); err != nil {
+	if err := tx.Commit(ctx); err != nil {
 		return APICredential{}, fmt.Errorf("commit create api credential: %w", err)
 	}
 	return s.GetAPICredential(ctx, credential.OrgID, credential.CredentialID)
 }
 
 func (s SQLStore) ListAPICredentials(ctx context.Context, orgID string) ([]APICredential, error) {
-	if s.DB == nil {
+	if s.PG == nil {
 		return nil, ErrStoreUnavailable
 	}
-	rows, err := s.DB.QueryContext(ctx, apiCredentialSelectSQL()+`
-WHERE c.org_id = $1
-ORDER BY c.created_at DESC, c.credential_id DESC
-`, orgID)
+	rows, err := s.q().ListAPICredentials(ctx, identitystore.ListAPICredentialsParams{OrgID: orgID})
 	if err != nil {
 		return nil, fmt.Errorf("list api credentials: %w", err)
 	}
-	defer rows.Close()
-	credentials := []APICredential{}
-	for rows.Next() {
-		credential, err := scanAPICredential(rows)
+	credentials := make([]APICredential, 0, len(rows))
+	for _, row := range rows {
+		credential, err := apiCredentialFromListRow(row)
 		if err != nil {
 			return nil, err
 		}
@@ -148,22 +149,21 @@ ORDER BY c.created_at DESC, c.credential_id DESC
 		}
 		credentials = append(credentials, credential)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("list api credentials rows: %w", err)
-	}
 	return credentials, nil
 }
 
 func (s SQLStore) GetAPICredential(ctx context.Context, orgID, credentialID string) (APICredential, error) {
-	if s.DB == nil {
+	if s.PG == nil {
 		return APICredential{}, ErrStoreUnavailable
 	}
-	credential, err := scanAPICredential(s.DB.QueryRowContext(ctx, apiCredentialSelectSQL()+`
-WHERE c.org_id = $1 AND c.credential_id = $2
-`, orgID, credentialID))
-	if errors.Is(err, sql.ErrNoRows) {
+	row, err := s.q().GetAPICredential(ctx, identitystore.GetAPICredentialParams{OrgID: orgID, CredentialID: credentialID})
+	if errors.Is(err, pgx.ErrNoRows) {
 		return APICredential{}, ErrAPICredentialMissing
 	}
+	if err != nil {
+		return APICredential{}, err
+	}
+	credential, err := apiCredentialFromGetRow(row)
 	if err != nil {
 		return APICredential{}, err
 	}
@@ -175,288 +175,289 @@ WHERE c.org_id = $1 AND c.credential_id = $2
 }
 
 func (s SQLStore) ActiveAPICredentialSecrets(ctx context.Context, orgID, credentialID string) ([]APICredentialSecret, error) {
-	if s.DB == nil {
+	if s.PG == nil {
 		return nil, ErrStoreUnavailable
 	}
-	rows, err := s.DB.QueryContext(ctx, `
-SELECT s.secret_id, s.credential_id, s.auth_method, s.provider_key_id, s.fingerprint,
-       s.secret_hash, s.hash_algorithm, s.created_at, s.created_by, s.expires_at, s.revoked_at, s.revoked_by
-FROM identity_api_credential_secrets s
-JOIN identity_api_credentials c ON c.credential_id = s.credential_id
-WHERE c.org_id = $1 AND c.credential_id = $2 AND s.revoked_at IS NULL
-ORDER BY s.created_at DESC
-`, orgID, credentialID)
+	rows, err := s.q().ListActiveAPICredentialSecrets(ctx, identitystore.ListActiveAPICredentialSecretsParams{
+		OrgID:        orgID,
+		CredentialID: credentialID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("list active api credential secrets: %w", err)
 	}
-	defer rows.Close()
-	secrets := []APICredentialSecret{}
-	for rows.Next() {
-		secret, err := scanAPICredentialSecret(rows)
+	secrets := make([]APICredentialSecret, 0, len(rows))
+	for _, row := range rows {
+		secret, err := apiCredentialSecretFromRow(row)
 		if err != nil {
 			return nil, err
 		}
 		secrets = append(secrets, secret)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("list active api credential secrets rows: %w", err)
-	}
 	return secrets, nil
 }
 
 func (s SQLStore) AddAPICredentialSecret(ctx context.Context, orgID, credentialID, actor string, secret APICredentialSecret) (APICredential, error) {
-	if s.DB == nil {
+	if s.PG == nil {
 		return APICredential{}, ErrStoreUnavailable
 	}
-	tx, err := s.DB.BeginTx(ctx, nil)
+	tx, err := s.PG.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return APICredential{}, fmt.Errorf("begin add api credential secret: %w", err)
 	}
-	defer rollback(tx)
-	if _, err := tx.ExecContext(ctx, `
-UPDATE identity_api_credential_secrets s
-SET revoked_at = $4, revoked_by = COALESCE(NULLIF(s.revoked_by, ''), $3)
-FROM identity_api_credentials c
-WHERE c.credential_id = s.credential_id
-  AND c.org_id = $1
-  AND c.credential_id = $2
-  AND s.revoked_at IS NULL
-`, orgID, credentialID, actor, secret.CreatedAt); err != nil {
+	defer rollback(ctx, tx)
+	q := identitystore.New(tx)
+	if err := q.RevokeActiveAPICredentialSecrets(ctx, identitystore.RevokeActiveAPICredentialSecretsParams{
+		OrgID:        orgID,
+		CredentialID: credentialID,
+		RevokedBy:    textParam(actor),
+		RevokedAt:    timestamptz(secret.CreatedAt),
+	}); err != nil {
 		return APICredential{}, fmt.Errorf("revoke previous api credential secrets: %w", err)
 	}
-	if err := insertAPICredentialSecret(ctx, tx, secret); err != nil {
+	if err := insertAPICredentialSecret(ctx, q, secret); err != nil {
 		return APICredential{}, err
 	}
-	result, err := tx.ExecContext(ctx, `
-UPDATE identity_api_credentials
-SET auth_method = $3, updated_at = $4
-WHERE org_id = $1 AND credential_id = $2 AND status = 'active'
-`, orgID, credentialID, string(secret.AuthMethod), secret.CreatedAt)
+	count, err := q.UpdateAPICredentialAfterRoll(ctx, identitystore.UpdateAPICredentialAfterRollParams{
+		OrgID:        orgID,
+		CredentialID: credentialID,
+		AuthMethod:   string(secret.AuthMethod),
+		UpdatedAt:    timestamptz(secret.CreatedAt),
+	})
 	if err != nil {
 		return APICredential{}, fmt.Errorf("update api credential after roll: %w", err)
 	}
-	if count, _ := result.RowsAffected(); count == 0 {
+	if count == 0 {
 		return APICredential{}, ErrAPICredentialMissing
 	}
-	if err := tx.Commit(); err != nil {
+	if err := tx.Commit(ctx); err != nil {
 		return APICredential{}, fmt.Errorf("commit add api credential secret: %w", err)
 	}
 	return s.GetAPICredential(ctx, orgID, credentialID)
 }
 
 func (s SQLStore) RevokeAPICredential(ctx context.Context, orgID, credentialID, actor string, now time.Time) (APICredential, error) {
-	if s.DB == nil {
+	if s.PG == nil {
 		return APICredential{}, ErrStoreUnavailable
 	}
-	tx, err := s.DB.BeginTx(ctx, nil)
+	tx, err := s.PG.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return APICredential{}, fmt.Errorf("begin revoke api credential: %w", err)
 	}
-	defer rollback(tx)
-	if _, err := tx.ExecContext(ctx, `
-UPDATE identity_api_credential_secrets s
-SET revoked_at = COALESCE(s.revoked_at, $4), revoked_by = COALESCE(NULLIF(s.revoked_by, ''), $3)
-FROM identity_api_credentials c
-WHERE c.credential_id = s.credential_id
-  AND c.org_id = $1
-  AND c.credential_id = $2
-  AND s.revoked_at IS NULL
-`, orgID, credentialID, actor, now); err != nil {
+	defer rollback(ctx, tx)
+	q := identitystore.New(tx)
+	if err := q.RevokeAPICredentialSecrets(ctx, identitystore.RevokeAPICredentialSecretsParams{
+		OrgID:        orgID,
+		CredentialID: credentialID,
+		RevokedBy:    textParam(actor),
+		RevokedAt:    timestamptz(now),
+	}); err != nil {
 		return APICredential{}, fmt.Errorf("revoke api credential secrets: %w", err)
 	}
-	result, err := tx.ExecContext(ctx, `
-UPDATE identity_api_credentials
-SET status = 'revoked', revoked_at = $4, revoked_by = $3, updated_at = $4
-WHERE org_id = $1 AND credential_id = $2 AND status = 'active'
-`, orgID, credentialID, actor, now)
+	count, err := q.RevokeAPICredential(ctx, identitystore.RevokeAPICredentialParams{
+		OrgID:        orgID,
+		CredentialID: credentialID,
+		RevokedBy:    textParam(actor),
+		RevokedAt:    timestamptz(now),
+	})
 	if err != nil {
 		return APICredential{}, fmt.Errorf("revoke api credential: %w", err)
 	}
-	if count, _ := result.RowsAffected(); count == 0 {
+	if count == 0 {
 		return APICredential{}, ErrAPICredentialMissing
 	}
-	if err := tx.Commit(); err != nil {
+	if err := tx.Commit(ctx); err != nil {
 		return APICredential{}, fmt.Errorf("commit revoke api credential: %w", err)
 	}
 	return s.GetAPICredential(ctx, orgID, credentialID)
 }
 
 func (s SQLStore) ResolveAPICredentialClaims(ctx context.Context, subjectID string, usedAt time.Time) (ResolveAPICredentialClaimsResult, error) {
-	if s.DB == nil {
+	if s.PG == nil {
 		return ResolveAPICredentialClaimsResult{}, ErrStoreUnavailable
 	}
-	var result ResolveAPICredentialClaimsResult
-	var authMethod string
-	err := s.DB.QueryRowContext(ctx, `
-SELECT c.credential_id, c.org_id, c.display_name, c.auth_method,
-       COALESCE((
-           SELECT s.fingerprint
-           FROM identity_api_credential_secrets s
-           WHERE s.credential_id = c.credential_id AND s.revoked_at IS NULL
-           ORDER BY s.created_at DESC
-           LIMIT 1
-       ), '') AS fingerprint,
-       c.created_by
-FROM identity_api_credentials c
-WHERE c.subject_id = $1
-  AND c.status = 'active'
-  AND (c.expires_at IS NULL OR c.expires_at > $2)
-`, subjectID, usedAt).Scan(&result.CredentialID, &result.OrgID, &result.DisplayName, &authMethod, &result.Fingerprint, &result.OwnerID)
-	if errors.Is(err, sql.ErrNoRows) {
+	row, err := s.q().ResolveAPICredentialClaims(ctx, identitystore.ResolveAPICredentialClaimsParams{
+		SubjectID: subjectID,
+		UsedAt:    timestamptz(usedAt),
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
 		return ResolveAPICredentialClaimsResult{}, ErrAPICredentialMissing
 	}
 	if err != nil {
 		return ResolveAPICredentialClaimsResult{}, fmt.Errorf("resolve api credential claims: %w", err)
 	}
-	result.AuthMethod = APICredentialAuthMethod(authMethod)
-	result.OwnerDisplay = result.OwnerID
+	result := ResolveAPICredentialClaimsResult{
+		CredentialID: row.CredentialID,
+		OrgID:        row.OrgID,
+		DisplayName:  row.DisplayName,
+		AuthMethod:   APICredentialAuthMethod(row.AuthMethod),
+		Fingerprint:  row.Fingerprint,
+		OwnerID:      row.CreatedBy,
+		OwnerDisplay: row.CreatedBy,
+	}
 	permissions, err := s.apiCredentialPermissions(ctx, result.CredentialID)
 	if err != nil {
 		return ResolveAPICredentialClaimsResult{}, err
 	}
 	result.Permissions = permissions
 	result.OpenBaoRoles = OpenBaoRolesForPermissions(permissions)
-	if _, err := s.DB.ExecContext(ctx, `
-UPDATE identity_api_credentials
-SET last_used_at = $2, updated_at = $2
-WHERE credential_id = $1
-`, result.CredentialID, usedAt); err != nil {
+	if err := s.q().RecordAPICredentialUse(ctx, identitystore.RecordAPICredentialUseParams{
+		CredentialID: result.CredentialID,
+		UsedAt:       timestamptz(usedAt),
+	}); err != nil {
 		return ResolveAPICredentialClaimsResult{}, fmt.Errorf("record api credential use: %w", err)
 	}
 	return result, nil
 }
 
-func apiCredentialSelectSQL() string {
-	return `
-SELECT c.credential_id, c.org_id, c.subject_id, c.client_id, c.display_name, c.status,
-       c.auth_method,
-       COALESCE((
-           SELECT s.fingerprint
-           FROM identity_api_credential_secrets s
-           WHERE s.credential_id = c.credential_id AND s.revoked_at IS NULL
-           ORDER BY s.created_at DESC
-           LIMIT 1
-       ), '') AS fingerprint,
-       c.policy_version_at_issue, c.created_at, c.created_by, c.updated_at,
-       c.expires_at, c.revoked_at, c.revoked_by, c.last_used_at
-FROM identity_api_credentials c
-`
+func apiCredentialFromGetRow(row identitystore.GetAPICredentialRow) (APICredential, error) {
+	return apiCredentialFromFields(
+		row.CredentialID,
+		row.OrgID,
+		row.SubjectID,
+		row.ClientID,
+		row.DisplayName,
+		row.Status,
+		row.AuthMethod,
+		row.Fingerprint,
+		row.PolicyVersionAtIssue,
+		row.CreatedAt,
+		row.CreatedBy,
+		row.UpdatedAt,
+		row.ExpiresAt,
+		row.RevokedAt,
+		row.RevokedBy,
+		row.LastUsedAt,
+	)
 }
 
-func scanAPICredential(scanner credentialScanner) (APICredential, error) {
-	var credential APICredential
-	var status, method string
-	var expiresAt, revokedAt, lastUsedAt sql.NullTime
-	var revokedBy sql.NullString
-	err := scanner.Scan(
-		&credential.CredentialID,
-		&credential.OrgID,
-		&credential.SubjectID,
-		&credential.ClientID,
-		&credential.DisplayName,
-		&status,
-		&method,
-		&credential.Fingerprint,
-		&credential.PolicyVersionAtIssue,
-		&credential.CreatedAt,
-		&credential.CreatedBy,
-		&credential.UpdatedAt,
-		&expiresAt,
-		&revokedAt,
-		&revokedBy,
-		&lastUsedAt,
+func apiCredentialFromListRow(row identitystore.ListAPICredentialsRow) (APICredential, error) {
+	return apiCredentialFromFields(
+		row.CredentialID,
+		row.OrgID,
+		row.SubjectID,
+		row.ClientID,
+		row.DisplayName,
+		row.Status,
+		row.AuthMethod,
+		row.Fingerprint,
+		row.PolicyVersionAtIssue,
+		row.CreatedAt,
+		row.CreatedBy,
+		row.UpdatedAt,
+		row.ExpiresAt,
+		row.RevokedAt,
+		row.RevokedBy,
+		row.LastUsedAt,
 	)
+}
+
+func apiCredentialFromFields(credentialID, orgID, subjectID, clientID, displayName, status, method, fingerprint string, policyVersionAtIssue int32, createdAt pgtype.Timestamptz, createdBy string, updatedAt, expiresAt, revokedAt pgtype.Timestamptz, revokedBy string, lastUsedAt pgtype.Timestamptz) (APICredential, error) {
+	created, err := requiredTime(createdAt, "identity_api_credentials.created_at")
 	if err != nil {
 		return APICredential{}, err
 	}
-	credential.Status = APICredentialStatus(status)
-	credential.AuthMethod = APICredentialAuthMethod(method)
-	credential.ExpiresAt = nullableTime(expiresAt)
-	credential.RevokedAt = nullableTime(revokedAt)
-	credential.RevokedBy = nullableString(revokedBy)
-	credential.LastUsedAt = nullableTime(lastUsedAt)
-	return credential, nil
+	updated, err := requiredTime(updatedAt, "identity_api_credentials.updated_at")
+	if err != nil {
+		return APICredential{}, err
+	}
+	return APICredential{
+		CredentialID:         credentialID,
+		OrgID:                orgID,
+		SubjectID:            subjectID,
+		ClientID:             clientID,
+		DisplayName:          displayName,
+		Status:               APICredentialStatus(status),
+		AuthMethod:           APICredentialAuthMethod(method),
+		Fingerprint:          fingerprint,
+		Permissions:          nil,
+		PolicyVersionAtIssue: policyVersionAtIssue,
+		CreatedAt:            created,
+		CreatedBy:            createdBy,
+		UpdatedAt:            updated,
+		ExpiresAt:            nullableTime(expiresAt),
+		RevokedAt:            nullableTime(revokedAt),
+		RevokedBy:            revokedBy,
+		LastUsedAt:           nullableTime(lastUsedAt),
+	}, nil
 }
 
 func (s SQLStore) apiCredentialPermissions(ctx context.Context, credentialID string) ([]string, error) {
-	rows, err := s.DB.QueryContext(ctx, `
-SELECT permission
-FROM identity_api_credential_permissions
-WHERE credential_id = $1
-ORDER BY permission
-`, credentialID)
+	permissions, err := s.q().ListAPICredentialPermissions(ctx, identitystore.ListAPICredentialPermissionsParams{CredentialID: credentialID})
 	if err != nil {
 		return nil, fmt.Errorf("list api credential permissions: %w", err)
 	}
-	defer rows.Close()
-	permissions := []string{}
-	for rows.Next() {
-		var permission string
-		if err := rows.Scan(&permission); err != nil {
-			return nil, fmt.Errorf("scan api credential permission: %w", err)
-		}
-		permissions = append(permissions, permission)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("list api credential permission rows: %w", err)
-	}
-	return permissions, nil
+	return append([]string(nil), permissions...), nil
 }
 
-func insertAPICredentialSecret(ctx context.Context, tx *sql.Tx, secret APICredentialSecret) error {
-	if _, err := tx.ExecContext(ctx, `
-INSERT INTO identity_api_credential_secrets (
-    secret_id, credential_id, auth_method, provider_key_id, fingerprint, secret_hash,
-    hash_algorithm, created_at, created_by, expires_at, revoked_at, revoked_by
-)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-`, secret.SecretID, secret.CredentialID, string(secret.AuthMethod), secret.ProviderKeyID, secret.Fingerprint, secret.SecretHash, secret.HashAlgorithm, secret.CreatedAt, secret.CreatedBy, secret.ExpiresAt, secret.RevokedAt, nullableStringParam(secret.RevokedBy)); err != nil {
+func insertAPICredentialSecret(ctx context.Context, q *identitystore.Queries, secret APICredentialSecret) error {
+	if err := q.InsertAPICredentialSecret(ctx, identitystore.InsertAPICredentialSecretParams{
+		SecretID:      secret.SecretID,
+		CredentialID:  secret.CredentialID,
+		AuthMethod:    string(secret.AuthMethod),
+		ProviderKeyID: secret.ProviderKeyID,
+		Fingerprint:   secret.Fingerprint,
+		SecretHash:    append([]byte(nil), secret.SecretHash...),
+		HashAlgorithm: secret.HashAlgorithm,
+		CreatedAt:     timestamptz(secret.CreatedAt),
+		CreatedBy:     secret.CreatedBy,
+		ExpiresAt:     nullableTimestamptz(secret.ExpiresAt),
+		RevokedAt:     nullableTimestamptz(secret.RevokedAt),
+		RevokedBy:     nullableStringParam(secret.RevokedBy),
+	}); err != nil {
 		return fmt.Errorf("insert api credential secret: %w", err)
 	}
 	return nil
 }
 
-func scanAPICredentialSecret(scanner credentialScanner) (APICredentialSecret, error) {
-	var secret APICredentialSecret
-	var method string
-	var expiresAt, revokedAt sql.NullTime
-	var revokedBy sql.NullString
-	if err := scanner.Scan(
-		&secret.SecretID,
-		&secret.CredentialID,
-		&method,
-		&secret.ProviderKeyID,
-		&secret.Fingerprint,
-		&secret.SecretHash,
-		&secret.HashAlgorithm,
-		&secret.CreatedAt,
-		&secret.CreatedBy,
-		&expiresAt,
-		&revokedAt,
-		&revokedBy,
-	); err != nil {
-		return APICredentialSecret{}, fmt.Errorf("scan api credential secret: %w", err)
+func apiCredentialSecretFromRow(row identitystore.ListActiveAPICredentialSecretsRow) (APICredentialSecret, error) {
+	createdAt, err := requiredTime(row.CreatedAt, "identity_api_credential_secrets.created_at")
+	if err != nil {
+		return APICredentialSecret{}, err
 	}
-	secret.AuthMethod = APICredentialAuthMethod(method)
-	secret.ExpiresAt = nullableTime(expiresAt)
-	secret.RevokedAt = nullableTime(revokedAt)
-	secret.RevokedBy = nullableString(revokedBy)
-	return secret, nil
+	return APICredentialSecret{
+		SecretID:      row.SecretID,
+		CredentialID:  row.CredentialID,
+		AuthMethod:    APICredentialAuthMethod(row.AuthMethod),
+		ProviderKeyID: row.ProviderKeyID,
+		Fingerprint:   row.Fingerprint,
+		SecretHash:    append([]byte(nil), row.SecretHash...),
+		HashAlgorithm: row.HashAlgorithm,
+		CreatedAt:     createdAt,
+		CreatedBy:     row.CreatedBy,
+		ExpiresAt:     nullableTime(row.ExpiresAt),
+		RevokedAt:     nullableTime(row.RevokedAt),
+		RevokedBy:     row.RevokedBy,
+	}, nil
 }
 
-func nullableTime(value sql.NullTime) *time.Time {
+func timestamptz(value time.Time) pgtype.Timestamptz {
+	return pgtype.Timestamptz{Time: value.UTC(), Valid: true}
+}
+
+func nullableTimestamptz(value *time.Time) pgtype.Timestamptz {
+	if value == nil {
+		return pgtype.Timestamptz{}
+	}
+	return timestamptz(*value)
+}
+
+func requiredTime(value pgtype.Timestamptz, field string) (time.Time, error) {
+	if !value.Valid {
+		return time.Time{}, fmt.Errorf("%w: %s was null", ErrStoreUnavailable, field)
+	}
+	return value.Time.UTC(), nil
+}
+
+func nullableTime(value pgtype.Timestamptz) *time.Time {
 	if !value.Valid {
 		return nil
 	}
-	instant := value.Time
+	instant := value.Time.UTC()
 	return &instant
 }
 
-func nullableString(value sql.NullString) string {
-	if !value.Valid {
-		return ""
-	}
-	return value.String
+func textParam(value string) pgtype.Text {
+	return pgtype.Text{String: value, Valid: true}
 }
 
 func nullableStringParam(value string) any {
@@ -466,8 +467,8 @@ func nullableStringParam(value string) any {
 	return value
 }
 
-func rollback(tx *sql.Tx) {
+func rollback(ctx context.Context, tx pgx.Tx) {
 	if tx != nil {
-		_ = tx.Rollback()
+		_ = tx.Rollback(ctx)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"strings"
@@ -14,31 +15,33 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+
+	sourcestore "github.com/verself/source-code-hosting-service/internal/store"
 )
 
 var storeTracer = otel.Tracer("source-code-hosting-service/store")
+
+const maxPostgresBigint = uint64(1<<63 - 1)
 
 type Store struct {
 	PG  *pgxpool.Pool
 	Now func() time.Time
 }
 
-const repositorySelect = `
-r.repo_id, r.org_id, r.project_id, r.created_by, r.name, r.slug, r.description, r.default_branch,
-r.visibility, r.state, r.version, r.last_pushed_at, r.created_at, r.updated_at,
-b.backend_id, b.repo_id, b.backend, b.backend_owner, b.backend_repo, b.backend_repo_id,
-b.state, b.created_at, b.updated_at`
+func (s Store) q() *sourcestore.Queries {
+	return sourcestore.New(s.PG)
+}
 
 func (s Store) Ready(ctx context.Context) error {
 	if s.PG == nil {
 		return ErrStoreUnavailable
 	}
-	var one int
-	if err := s.PG.QueryRow(ctx, "SELECT 1").Scan(&one); err != nil {
+	if _, err := s.q().Ping(ctx); err != nil {
 		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	return nil
@@ -67,6 +70,10 @@ func (s Store) CreateRepository(ctx context.Context, principal Principal, req Cr
 }
 
 func (s Store) createRepository(ctx context.Context, principal Principal, req CreateRepositoryRequest, owner string, forgejoRepo forgejoRepo, eventType string, origin string) (Repository, error) {
+	orgID, err := pgOrgID(principal.OrgID)
+	if err != nil {
+		return Repository{}, err
+	}
 	now := s.now()
 	repo := Repository{
 		RepoID:        uuid.New(),
@@ -94,31 +101,42 @@ func (s Store) createRepository(ctx context.Context, principal Principal, req Cr
 		},
 	}
 	repo.Backend.RepoID = repo.RepoID
+
 	tx, err := s.PG.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return Repository{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	defer rollback(ctx, tx)
-	_, err = tx.Exec(ctx, `
-INSERT INTO source_repositories (
-    repo_id, org_id, project_id, created_by, name, slug, description, default_branch,
-    visibility, state, version, created_at, updated_at
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12)`,
-		repo.RepoID, repo.OrgID, repo.ProjectID, repo.CreatedBy, repo.Name, repo.Slug, repo.Description, repo.DefaultBranch,
-		repo.Visibility, repo.State, repo.Version, repo.CreatedAt)
-	if err != nil {
+	q := sourcestore.New(tx)
+	if err := q.InsertRepository(ctx, sourcestore.InsertRepositoryParams{
+		RepoID:        repo.RepoID,
+		OrgID:         orgID,
+		ProjectID:     repo.ProjectID,
+		CreatedBy:     repo.CreatedBy,
+		Name:          repo.Name,
+		Slug:          repo.Slug,
+		Description:   repo.Description,
+		DefaultBranch: repo.DefaultBranch,
+		Visibility:    repo.Visibility,
+		State:         repo.State,
+		Version:       repo.Version,
+		CreatedAt:     timestamptz(repo.CreatedAt),
+	}); err != nil {
 		return Repository{}, storeWriteError(err)
 	}
-	_, err = tx.Exec(ctx, `
-INSERT INTO source_repository_backends (
-    backend_id, repo_id, backend, backend_owner, backend_repo, backend_repo_id, state, created_at, updated_at
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8)`,
-		repo.Backend.BackendID, repo.Backend.RepoID, repo.Backend.Backend, repo.Backend.BackendOwner, repo.Backend.BackendRepo,
-		repo.Backend.BackendRepoID, repo.Backend.State, repo.Backend.CreatedAt)
-	if err != nil {
+	if err := q.InsertRepositoryBackend(ctx, sourcestore.InsertRepositoryBackendParams{
+		BackendID:     repo.Backend.BackendID,
+		RepoID:        repo.Backend.RepoID,
+		Backend:       repo.Backend.Backend,
+		BackendOwner:  repo.Backend.BackendOwner,
+		BackendRepo:   repo.Backend.BackendRepo,
+		BackendRepoID: repo.Backend.BackendRepoID,
+		State:         repo.Backend.State,
+		CreatedAt:     timestamptz(repo.Backend.CreatedAt),
+	}); err != nil {
 		return Repository{}, storeWriteError(err)
 	}
-	if err := s.insertEventTx(ctx, tx, principal.OrgID, principal.Subject, repo.RepoID, eventType, "allowed", map[string]any{
+	if err := s.insertEventTx(ctx, q, principal.OrgID, principal.Subject, repo.RepoID, eventType, "allowed", map[string]any{
 		"name":         repo.Name,
 		"slug":         repo.Slug,
 		"project_id":   repo.ProjectID.String(),
@@ -138,33 +156,36 @@ func (s Store) ListRepositories(ctx context.Context, orgID uint64, projectID uui
 	ctx, span := storeTracer.Start(ctx, "source.pg.repo.list")
 	defer span.End()
 	span.SetAttributes(attribute.Int64("verself.org_id", int64(orgID)))
-	args := []any{orgID, BackendForgejo}
-	projectFilter := ""
-	if projectID != uuid.Nil {
-		args = append(args, projectID)
-		projectFilter = " AND r.project_id = $3"
-		span.SetAttributes(attribute.String("verself.project_id", projectID.String()))
-	}
-	rows, err := s.PG.Query(ctx, `
-SELECT `+repositorySelect+`
-FROM source_repositories r
-JOIN source_repository_backends b ON b.repo_id = r.repo_id AND b.backend = $2 AND b.state = 'active'
-WHERE r.org_id = $1 AND r.state = 'active'`+projectFilter+`
-ORDER BY r.updated_at DESC, r.repo_id DESC`, args...)
+
+	pgOrg, err := pgOrgID(orgID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+		return nil, err
 	}
-	defer rows.Close()
-	repos := []Repository{}
-	for rows.Next() {
-		repo, err := scanRepositoryWithBackend(rows)
+	q := s.q()
+	if projectID != uuid.Nil {
+		span.SetAttributes(attribute.String("verself.project_id", projectID.String()))
+		rows, err := q.ListRepositoriesByProject(ctx, sourcestore.ListRepositoriesByProjectParams{
+			OrgID:     pgOrg,
+			ProjectID: projectID,
+			Backend:   BackendForgejo,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+		}
+		repos, err := repositoriesFromProjectRows(rows)
 		if err != nil {
 			return nil, err
 		}
-		repos = append(repos, repo)
+		span.SetAttributes(attribute.Int("source.repo_count", len(repos)))
+		return repos, nil
 	}
-	if err := rows.Err(); err != nil {
+	rows, err := q.ListRepositories(ctx, sourcestore.ListRepositoriesParams{OrgID: pgOrg, Backend: BackendForgejo})
+	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	repos, err := repositoriesFromListRows(rows)
+	if err != nil {
+		return nil, err
 	}
 	span.SetAttributes(attribute.Int("source.repo_count", len(repos)))
 	return repos, nil
@@ -175,12 +196,15 @@ func (s Store) GetRepository(ctx context.Context, orgID uint64, repoID uuid.UUID
 	defer span.End()
 	span.SetAttributes(attribute.String("source.repo_id", repoID.String()), attribute.Int64("verself.org_id", int64(orgID)))
 
-	row := s.PG.QueryRow(ctx, `
-SELECT `+repositorySelect+`
-FROM source_repositories r
-JOIN source_repository_backends b ON b.repo_id = r.repo_id AND b.backend = $3 AND b.state = 'active'
-WHERE r.org_id = $1 AND r.repo_id = $2 AND r.state = 'active'`, orgID, repoID, BackendForgejo)
-	return scanRepositoryWithBackend(row)
+	pgOrg, err := pgOrgID(orgID)
+	if err != nil {
+		return Repository{}, err
+	}
+	row, err := s.q().GetRepository(ctx, sourcestore.GetRepositoryParams{OrgID: pgOrg, RepoID: repoID, Backend: BackendForgejo})
+	if err != nil {
+		return Repository{}, notFoundOrStoreError(err)
+	}
+	return repositoryFromRow(repositoryRow(row))
 }
 
 func (s Store) GetRepositoryByProject(ctx context.Context, orgID uint64, projectID uuid.UUID) (Repository, error) {
@@ -190,12 +214,15 @@ func (s Store) GetRepositoryByProject(ctx context.Context, orgID uint64, project
 	if orgID == 0 || projectID == uuid.Nil {
 		return Repository{}, ErrInvalid
 	}
-	row := s.PG.QueryRow(ctx, `
-SELECT `+repositorySelect+`
-FROM source_repositories r
-JOIN source_repository_backends b ON b.repo_id = r.repo_id AND b.backend = $3 AND b.state = 'active'
-WHERE r.org_id = $1 AND r.project_id = $2 AND r.state = 'active'`, orgID, projectID, BackendForgejo)
-	return scanRepositoryWithBackend(row)
+	pgOrg, err := pgOrgID(orgID)
+	if err != nil {
+		return Repository{}, err
+	}
+	row, err := s.q().GetRepositoryByProject(ctx, sourcestore.GetRepositoryByProjectParams{OrgID: pgOrg, ProjectID: projectID, Backend: BackendForgejo})
+	if err != nil {
+		return Repository{}, notFoundOrStoreError(err)
+	}
+	return repositoryFromRow(repositoryRow(row))
 }
 
 func (s Store) FindRepositoryByBackend(ctx context.Context, backend, backendOwner, backendRepo, backendRepoID string) (Repository, error) {
@@ -212,19 +239,16 @@ func (s Store) FindRepositoryByBackend(ctx context.Context, backend, backendOwne
 	if backend == "" || (backendRepoID == "" && (backendOwner == "" || backendRepo == "")) {
 		return Repository{}, ErrInvalid
 	}
-	query := `
-SELECT ` + repositorySelect + `
-FROM source_repositories r
-JOIN source_repository_backends b ON b.repo_id = r.repo_id
-WHERE b.backend = $1
-  AND b.state = 'active'
-  AND r.state = 'active'
-  AND (
-    ($2 <> '' AND b.backend_repo_id = $2)
-    OR ($2 = '' AND b.backend_owner = $3 AND b.backend_repo = $4)
-  )
-LIMIT 1`
-	repo, err := scanRepositoryWithBackend(s.PG.QueryRow(ctx, query, backend, backendRepoID, backendOwner, backendRepo))
+	row, err := s.q().FindRepositoryByBackend(ctx, sourcestore.FindRepositoryByBackendParams{
+		Backend:       backend,
+		BackendOwner:  backendOwner,
+		BackendRepo:   backendRepo,
+		BackendRepoID: backendRepoID,
+	})
+	if err != nil {
+		return Repository{}, notFoundOrStoreError(err)
+	}
+	repo, err := repositoryFromRow(repositoryRow(row))
 	if err != nil {
 		return Repository{}, err
 	}
@@ -236,6 +260,10 @@ func (s Store) CreateGitCredential(ctx context.Context, principal Principal, cre
 	ctx, span := storeTracer.Start(ctx, "source.pg.git_credential.create")
 	defer span.End()
 	if err := ValidatePrincipal(principal); err != nil {
+		return GitCredential{}, err
+	}
+	orgID, err := pgOrgID(principal.OrgID)
+	if err != nil {
 		return GitCredential{}, err
 	}
 	now := s.now()
@@ -256,17 +284,22 @@ func (s Store) CreateGitCredential(ctx context.Context, principal Principal, cre
 		return GitCredential{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	defer rollback(ctx, tx)
-	_, err = tx.Exec(ctx, `
-INSERT INTO source_git_credentials (
-    credential_id, org_id, actor_id, label, username, token_prefix,
-    scopes, state, expires_at, created_at
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-		credential.CredentialID, credential.OrgID, credential.ActorID, credential.Label, credential.Username,
-		credential.TokenPrefix, credential.Scopes, credential.State, credential.ExpiresAt, credential.CreatedAt)
-	if err != nil {
+	q := sourcestore.New(tx)
+	if err := q.InsertGitCredential(ctx, sourcestore.InsertGitCredentialParams{
+		CredentialID: credential.CredentialID,
+		OrgID:        orgID,
+		ActorID:      credential.ActorID,
+		Label:        credential.Label,
+		Username:     credential.Username,
+		TokenPrefix:  credential.TokenPrefix,
+		Scopes:       credential.Scopes,
+		State:        credential.State,
+		ExpiresAt:    timestamptz(credential.ExpiresAt),
+		CreatedAt:    timestamptz(credential.CreatedAt),
+	}); err != nil {
 		return GitCredential{}, storeWriteError(err)
 	}
-	if err := s.insertEventTx(ctx, tx, principal.OrgID, principal.Subject, uuid.Nil, "source.git_credential.created", "allowed", map[string]any{
+	if err := s.insertEventTx(ctx, q, principal.OrgID, principal.Subject, uuid.Nil, "source.git_credential.created", "allowed", map[string]any{
 		"credential_id": credential.CredentialID.String(),
 		"token_prefix":  credential.TokenPrefix,
 		"expires_at":    credential.ExpiresAt.Format(time.RFC3339),
@@ -291,22 +324,26 @@ func (s Store) MarkGitCredentialUsed(ctx context.Context, credentialID uuid.UUID
 		return GitPrincipal{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	defer rollback(ctx, tx)
-	row := tx.QueryRow(ctx, `
-SELECT credential_id, org_id, actor_id, username, scopes
-FROM source_git_credentials
-WHERE credential_id = $1 AND state = 'active' AND expires_at > $2
-FOR UPDATE`, credentialID, s.now())
-	var principal GitPrincipal
-	if err := row.Scan(&principal.CredentialID, &principal.OrgID, &principal.ActorID, &principal.Username, &principal.Scopes); err != nil {
-		if err == pgx.ErrNoRows {
-			return GitPrincipal{}, ErrUnauthorized
-		}
+	q := sourcestore.New(tx)
+	now := s.now()
+	row, err := q.LockActiveGitCredentialForUse(ctx, sourcestore.LockActiveGitCredentialForUseParams{
+		CredentialID: credentialID,
+		ExpiresAt:    timestamptz(now),
+	})
+	if err != nil {
+		return GitPrincipal{}, unauthorizedOrStoreError(err)
+	}
+	principal, err := gitPrincipalFromRow(row)
+	if err != nil {
+		return GitPrincipal{}, err
+	}
+	if err := q.MarkGitCredentialUsed(ctx, sourcestore.MarkGitCredentialUsedParams{
+		CredentialID: principal.CredentialID,
+		LastUsedAt:   timestamptz(now),
+	}); err != nil {
 		return GitPrincipal{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
-	if _, err := tx.Exec(ctx, `UPDATE source_git_credentials SET last_used_at = $2 WHERE credential_id = $1`, principal.CredentialID, s.now()); err != nil {
-		return GitPrincipal{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
-	}
-	if err := s.insertEventTx(ctx, tx, principal.OrgID, principal.ActorID, uuid.Nil, "source.git_credential.used", "allowed", map[string]any{
+	if err := s.insertEventTx(ctx, q, principal.OrgID, principal.ActorID, uuid.Nil, "source.git_credential.used", "allowed", map[string]any{
 		"credential_id": principal.CredentialID.String(),
 	}); err != nil {
 		return GitPrincipal{}, err
@@ -321,13 +358,18 @@ FOR UPDATE`, credentialID, s.now())
 func (s Store) ReplaceRefs(ctx context.Context, actorID string, repo Repository, refs []Ref) error {
 	ctx, span := storeTracer.Start(ctx, "source.pg.refs.replace")
 	defer span.End()
+	orgID, err := pgOrgID(repo.OrgID)
+	if err != nil {
+		return err
+	}
 	now := s.now()
 	tx, err := s.PG.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	defer rollback(ctx, tx)
-	if _, err := tx.Exec(ctx, `DELETE FROM source_ref_heads WHERE repo_id = $1`, repo.RepoID); err != nil {
+	q := sourcestore.New(tx)
+	if err := q.DeleteRefsForRepository(ctx, sourcestore.DeleteRefsForRepositoryParams{RepoID: repo.RepoID}); err != nil {
 		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	for _, ref := range refs {
@@ -336,18 +378,21 @@ func (s Store) ReplaceRefs(ctx context.Context, actorID string, repo Repository,
 		if ref.Name == "" || ref.Commit == "" {
 			continue
 		}
-		_, err := tx.Exec(ctx, `
-INSERT INTO source_ref_heads (repo_id, org_id, ref_name, commit_sha, is_default, pushed_at, updated_at)
-VALUES ($1,$2,$3,$4,$5,$6,$6)`,
-			repo.RepoID, repo.OrgID, ref.Name, ref.Commit, ref.Name == repo.DefaultBranch, now)
-		if err != nil {
+		if err := q.InsertRefHead(ctx, sourcestore.InsertRefHeadParams{
+			RepoID:    repo.RepoID,
+			OrgID:     orgID,
+			RefName:   ref.Name,
+			CommitSha: ref.Commit,
+			IsDefault: ref.Name == repo.DefaultBranch,
+			PushedAt:  timestamptz(now),
+		}); err != nil {
 			return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 		}
 	}
-	if _, err := tx.Exec(ctx, `UPDATE source_repositories SET last_pushed_at = $2, updated_at = $2, version = version + 1 WHERE repo_id = $1`, repo.RepoID, now); err != nil {
+	if err := q.MarkRepositoryRefsPushed(ctx, sourcestore.MarkRepositoryRefsPushedParams{RepoID: repo.RepoID, LastPushedAt: timestamptz(now)}); err != nil {
 		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
-	if err := s.insertEventTx(ctx, tx, repo.OrgID, actorID, repo.RepoID, "source.git.refs_refreshed", "allowed", map[string]any{
+	if err := s.insertEventTx(ctx, q, repo.OrgID, actorID, repo.RepoID, "source.git.refs_refreshed", "allowed", map[string]any{
 		"ref_count": len(refs),
 	}); err != nil {
 		return err
@@ -362,25 +407,17 @@ VALUES ($1,$2,$3,$4,$5,$6,$6)`,
 func (s Store) ListRefs(ctx context.Context, orgID uint64, repoID uuid.UUID) ([]Ref, error) {
 	ctx, span := storeTracer.Start(ctx, "source.pg.refs.list_cached")
 	defer span.End()
-	rows, err := s.PG.Query(ctx, `
-SELECT ref_name, commit_sha
-FROM source_ref_heads
-WHERE org_id = $1 AND repo_id = $2
-ORDER BY is_default DESC, ref_name`, orgID, repoID)
+	pgOrg, err := pgOrgID(orgID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.q().ListRefs(ctx, sourcestore.ListRefsParams{OrgID: pgOrg, RepoID: repoID})
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
-	defer rows.Close()
-	refs := []Ref{}
-	for rows.Next() {
-		var ref Ref
-		if err := rows.Scan(&ref.Name, &ref.Commit); err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
-		}
-		refs = append(refs, ref)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	refs := make([]Ref, 0, len(rows))
+	for _, row := range rows {
+		refs = append(refs, Ref{Name: row.RefName, Commit: row.CommitSha})
 	}
 	span.SetAttributes(attribute.String("source.repo_id", repoID.String()), attribute.Int("source.ref_count", len(refs)))
 	return refs, nil
@@ -396,6 +433,10 @@ func (s Store) CreateCheckoutGrant(ctx context.Context, principal Principal, rep
 	}
 	if ttl <= 0 || ttl > 10*time.Minute {
 		return CheckoutGrant{}, ErrInvalid
+	}
+	orgID, err := pgOrgID(principal.OrgID)
+	if err != nil {
+		return CheckoutGrant{}, err
 	}
 	token, tokenHash, err := newGrantToken()
 	if err != nil {
@@ -418,15 +459,21 @@ func (s Store) CreateCheckoutGrant(ctx context.Context, principal Principal, rep
 		return CheckoutGrant{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	defer rollback(ctx, tx)
-	_, err = tx.Exec(ctx, `
-INSERT INTO source_checkout_grants (
-    grant_id, repo_id, org_id, actor_id, ref, path_prefix, token_hash, expires_at, created_at
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-		grant.GrantID, grant.RepoID, grant.OrgID, grant.ActorID, grant.Ref, grant.PathPrefix, tokenHash, grant.ExpiresAt, grant.CreatedAt)
-	if err != nil {
+	q := sourcestore.New(tx)
+	if err := q.InsertCheckoutGrant(ctx, sourcestore.InsertCheckoutGrantParams{
+		GrantID:    grant.GrantID,
+		RepoID:     grant.RepoID,
+		OrgID:      orgID,
+		ActorID:    grant.ActorID,
+		Ref:        grant.Ref,
+		PathPrefix: grant.PathPrefix,
+		TokenHash:  tokenHash,
+		ExpiresAt:  timestamptz(grant.ExpiresAt),
+		CreatedAt:  timestamptz(grant.CreatedAt),
+	}); err != nil {
 		return CheckoutGrant{}, storeWriteError(err)
 	}
-	if err := s.insertEventTx(ctx, tx, principal.OrgID, principal.Subject, repo.RepoID, "source.checkout_grant.created", "allowed", map[string]any{
+	if err := s.insertEventTx(ctx, q, principal.OrgID, principal.Subject, repo.RepoID, "source.checkout_grant.created", "allowed", map[string]any{
 		"grant_id": grant.GrantID.String(),
 		"ref":      grant.Ref,
 	}); err != nil {
@@ -449,30 +496,29 @@ func (s Store) ConsumeCheckoutGrant(ctx context.Context, grantID uuid.UUID, toke
 		return CheckoutGrant{}, Repository{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	defer rollback(ctx, tx)
-	row := tx.QueryRow(ctx, `
-SELECT g.grant_id, g.repo_id, g.org_id, g.actor_id, g.ref, g.path_prefix, g.expires_at, g.created_at,
-       `+repositorySelect+`
-FROM source_checkout_grants g
-JOIN source_repositories r ON r.repo_id = g.repo_id
-JOIN source_repository_backends b ON b.repo_id = r.repo_id AND b.backend = $4 AND b.state = 'active'
-WHERE g.grant_id = $1 AND g.token_hash = $2 AND g.consumed_at IS NULL AND g.expires_at > $3 AND r.state = 'active'
-FOR UPDATE OF g`, grantID, tokenHash, s.now(), BackendForgejo)
-	var grant CheckoutGrant
-	var repo Repository
-	if err := row.Scan(&grant.GrantID, &grant.RepoID, &grant.OrgID, &grant.ActorID, &grant.Ref, &grant.PathPrefix, &grant.ExpiresAt, &grant.CreatedAt,
-		&repo.RepoID, &repo.OrgID, &repo.ProjectID, &repo.CreatedBy, &repo.Name, &repo.Slug, &repo.Description, &repo.DefaultBranch,
-		&repo.Visibility, &repo.State, &repo.Version, &repo.LastPushedAt, &repo.CreatedAt, &repo.UpdatedAt,
-		&repo.Backend.BackendID, &repo.Backend.RepoID, &repo.Backend.Backend, &repo.Backend.BackendOwner, &repo.Backend.BackendRepo,
-		&repo.Backend.BackendRepoID, &repo.Backend.State, &repo.Backend.CreatedAt, &repo.Backend.UpdatedAt); err != nil {
-		if err == pgx.ErrNoRows {
-			return CheckoutGrant{}, Repository{}, ErrUnauthorized
-		}
+	q := sourcestore.New(tx)
+	now := s.now()
+	row, err := q.LockCheckoutGrantForConsume(ctx, sourcestore.LockCheckoutGrantForConsumeParams{
+		GrantID:   grantID,
+		TokenHash: tokenHash,
+		ExpiresAt: timestamptz(now),
+		Backend:   BackendForgejo,
+	})
+	if err != nil {
+		return CheckoutGrant{}, Repository{}, unauthorizedOrStoreError(err)
+	}
+	grant, err := checkoutGrantFromLockedRow(row)
+	if err != nil {
+		return CheckoutGrant{}, Repository{}, err
+	}
+	repo, err := repositoryFromLockedGrantRow(row)
+	if err != nil {
+		return CheckoutGrant{}, Repository{}, err
+	}
+	if err := q.ConsumeCheckoutGrant(ctx, sourcestore.ConsumeCheckoutGrantParams{GrantID: grant.GrantID, ConsumedAt: timestamptz(now)}); err != nil {
 		return CheckoutGrant{}, Repository{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
-	if _, err := tx.Exec(ctx, `UPDATE source_checkout_grants SET consumed_at = $2 WHERE grant_id = $1`, grant.GrantID, s.now()); err != nil {
-		return CheckoutGrant{}, Repository{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
-	}
-	if err := s.insertEventTx(ctx, tx, grant.OrgID, grant.ActorID, grant.RepoID, "source.checkout_grant.consumed", "allowed", map[string]any{
+	if err := s.insertEventTx(ctx, q, grant.OrgID, grant.ActorID, grant.RepoID, "source.checkout_grant.consumed", "allowed", map[string]any{
 		"grant_id": grant.GrantID.String(),
 		"ref":      grant.Ref,
 	}); err != nil {
@@ -488,6 +534,10 @@ FOR UPDATE OF g`, grantID, tokenHash, s.now(), BackendForgejo)
 func (s Store) CreateWorkflowRun(ctx context.Context, principal Principal, repo Repository, req WorkflowDispatchRequest) (WorkflowRun, bool, error) {
 	ctx, span := storeTracer.Start(ctx, "source.pg.workflow_run.create")
 	defer span.End()
+	orgID, err := pgOrgID(principal.OrgID)
+	if err != nil {
+		return WorkflowRun{}, false, err
+	}
 	inputs, err := workflowInputsJSON(req.Inputs)
 	if err != nil {
 		return WorkflowRun{}, false, err
@@ -515,19 +565,25 @@ func (s Store) CreateWorkflowRun(ctx context.Context, principal Principal, repo 
 		return WorkflowRun{}, false, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	defer rollback(ctx, tx)
-	row := tx.QueryRow(ctx, `
-INSERT INTO source_workflow_runs (
-    workflow_run_id, org_id, project_id, repo_id, actor_id, idempotency_key, backend,
-    workflow_path, ref, inputs_json, state, trace_id, created_at, updated_at
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13)
-ON CONFLICT (org_id, idempotency_key) DO NOTHING
-RETURNING workflow_run_id`,
-		run.WorkflowRunID, run.OrgID, run.ProjectID, run.RepoID, run.ActorID, run.IdempotencyKey, run.Backend,
-		run.WorkflowPath, run.Ref, inputs, run.State, run.TraceID, now)
-	var inserted uuid.UUID
-	if err := row.Scan(&inserted); err != nil {
-		if err == pgx.ErrNoRows {
-			existing, loadErr := s.GetWorkflowRunByIdempotencyKey(ctx, principal.OrgID, req.IdempotencyKey)
+	q := sourcestore.New(tx)
+	_, err = q.InsertWorkflowRun(ctx, sourcestore.InsertWorkflowRunParams{
+		WorkflowRunID:  run.WorkflowRunID,
+		OrgID:          orgID,
+		ProjectID:      run.ProjectID,
+		RepoID:         run.RepoID,
+		ActorID:        run.ActorID,
+		IdempotencyKey: run.IdempotencyKey,
+		Backend:        run.Backend,
+		WorkflowPath:   run.WorkflowPath,
+		Ref:            run.Ref,
+		InputsJson:     inputs,
+		State:          run.State,
+		TraceID:        run.TraceID,
+		CreatedAt:      timestamptz(now),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			existing, loadErr := workflowRunByIdempotencyKey(ctx, q, orgID, req.IdempotencyKey)
 			if loadErr == nil && !workflowRunMatchesRequest(existing, principal, repo, req) {
 				return WorkflowRun{}, false, fmt.Errorf("%w: idempotency key reused with different workflow dispatch", ErrConflict)
 			}
@@ -535,7 +591,7 @@ RETURNING workflow_run_id`,
 		}
 		return WorkflowRun{}, false, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
-	if err := s.insertEventTx(ctx, tx, principal.OrgID, principal.Subject, repo.RepoID, "source.workflow.dispatch.requested", "allowed", map[string]any{
+	if err := s.insertEventTx(ctx, q, principal.OrgID, principal.Subject, repo.RepoID, "source.workflow.dispatch.requested", "allowed", map[string]any{
 		"workflow_run_id": run.WorkflowRunID.String(),
 		"project_id":      run.ProjectID.String(),
 		"workflow_path":   run.WorkflowPath,
@@ -552,51 +608,47 @@ RETURNING workflow_run_id`,
 }
 
 func (s Store) GetWorkflowRunByIdempotencyKey(ctx context.Context, orgID uint64, idempotencyKey string) (WorkflowRun, error) {
-	row := s.PG.QueryRow(ctx, `
-SELECT workflow_run_id, org_id, project_id, repo_id, actor_id, idempotency_key, backend, workflow_path, ref,
-       inputs_json, state, backend_dispatch_id, failure_reason, trace_id, dispatched_at, created_at, updated_at
-FROM source_workflow_runs
-WHERE org_id = $1 AND idempotency_key = $2`, orgID, strings.TrimSpace(idempotencyKey))
-	return scanWorkflowRun(row)
+	pgOrg, err := pgOrgID(orgID)
+	if err != nil {
+		return WorkflowRun{}, err
+	}
+	return workflowRunByIdempotencyKey(ctx, s.q(), pgOrg, idempotencyKey)
 }
 
 func (s Store) GetWorkflowRun(ctx context.Context, orgID uint64, workflowRunID uuid.UUID) (WorkflowRun, error) {
 	ctx, span := storeTracer.Start(ctx, "source.pg.workflow_run.get")
 	defer span.End()
 	span.SetAttributes(attribute.String("source.workflow_run_id", workflowRunID.String()), attribute.Int64("verself.org_id", int64(orgID)))
-	row := s.PG.QueryRow(ctx, `
-SELECT workflow_run_id, org_id, project_id, repo_id, actor_id, idempotency_key, backend, workflow_path, ref,
-       inputs_json, state, backend_dispatch_id, failure_reason, trace_id, dispatched_at, created_at, updated_at
-FROM source_workflow_runs
-WHERE org_id = $1 AND workflow_run_id = $2`, orgID, workflowRunID)
-	return scanWorkflowRun(row)
+	pgOrg, err := pgOrgID(orgID)
+	if err != nil {
+		return WorkflowRun{}, err
+	}
+	row, err := s.q().GetWorkflowRun(ctx, sourcestore.GetWorkflowRunParams{OrgID: pgOrg, WorkflowRunID: workflowRunID})
+	if err != nil {
+		return WorkflowRun{}, notFoundOrStoreError(err)
+	}
+	return workflowRunFromRow(row)
 }
 
 func (s Store) ListWorkflowRuns(ctx context.Context, orgID uint64, repoID uuid.UUID) ([]WorkflowRun, error) {
 	ctx, span := storeTracer.Start(ctx, "source.pg.workflow_run.list")
 	defer span.End()
 	span.SetAttributes(attribute.String("source.repo_id", repoID.String()), attribute.Int64("verself.org_id", int64(orgID)))
-	rows, err := s.PG.Query(ctx, `
-SELECT workflow_run_id, org_id, project_id, repo_id, actor_id, idempotency_key, backend, workflow_path, ref,
-       inputs_json, state, backend_dispatch_id, failure_reason, trace_id, dispatched_at, created_at, updated_at
-FROM source_workflow_runs
-WHERE org_id = $1 AND repo_id = $2
-ORDER BY created_at DESC, workflow_run_id DESC
-LIMIT 100`, orgID, repoID)
+	pgOrg, err := pgOrgID(orgID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.q().ListWorkflowRuns(ctx, sourcestore.ListWorkflowRunsParams{OrgID: pgOrg, RepoID: repoID})
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
-	defer rows.Close()
-	out := []WorkflowRun{}
-	for rows.Next() {
-		run, err := scanWorkflowRun(rows)
+	out := make([]WorkflowRun, 0, len(rows))
+	for _, row := range rows {
+		run, err := workflowRunFromRow(row)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, run)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	return out, nil
 }
@@ -608,18 +660,20 @@ func (s Store) MarkWorkflowRunDispatched(ctx context.Context, run WorkflowRun, b
 		return WorkflowRun{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	defer rollback(ctx, tx)
-	row := tx.QueryRow(ctx, `
-UPDATE source_workflow_runs
-SET state = 'dispatched', backend_dispatch_id = $2, dispatched_at = $3, updated_at = $3
-WHERE workflow_run_id = $1
-RETURNING workflow_run_id, org_id, project_id, repo_id, actor_id, idempotency_key, backend, workflow_path, ref,
-       inputs_json, state, backend_dispatch_id, failure_reason, trace_id, dispatched_at, created_at, updated_at`,
-		run.WorkflowRunID, strings.TrimSpace(backendDispatchID), now)
-	updated, err := scanWorkflowRun(row)
+	q := sourcestore.New(tx)
+	row, err := q.MarkWorkflowRunDispatched(ctx, sourcestore.MarkWorkflowRunDispatchedParams{
+		WorkflowRunID:     run.WorkflowRunID,
+		BackendDispatchID: strings.TrimSpace(backendDispatchID),
+		DispatchedAt:      timestamptz(now),
+	})
+	if err != nil {
+		return WorkflowRun{}, notFoundOrStoreError(err)
+	}
+	updated, err := workflowRunFromRow(row)
 	if err != nil {
 		return WorkflowRun{}, err
 	}
-	if err := s.insertEventTx(ctx, tx, updated.OrgID, updated.ActorID, updated.RepoID, "source.workflow.dispatched", "allowed", map[string]any{
+	if err := s.insertEventTx(ctx, q, updated.OrgID, updated.ActorID, updated.RepoID, "source.workflow.dispatched", "allowed", map[string]any{
 		"workflow_run_id": updated.WorkflowRunID.String(),
 		"project_id":      updated.ProjectID.String(),
 		"workflow_path":   updated.WorkflowPath,
@@ -640,14 +694,15 @@ func (s Store) MarkWorkflowRunFailed(ctx context.Context, run WorkflowRun, failu
 		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	defer rollback(ctx, tx)
-	_, err = tx.Exec(ctx, `
-UPDATE source_workflow_runs
-SET state = 'failed', failure_reason = $2, updated_at = $3
-WHERE workflow_run_id = $1`, run.WorkflowRunID, strings.TrimSpace(failureReason), s.now())
-	if err != nil {
+	q := sourcestore.New(tx)
+	if err := q.MarkWorkflowRunFailed(ctx, sourcestore.MarkWorkflowRunFailedParams{
+		WorkflowRunID: run.WorkflowRunID,
+		FailureReason: strings.TrimSpace(failureReason),
+		UpdatedAt:     timestamptz(s.now()),
+	}); err != nil {
 		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
-	if err := s.insertEventTx(ctx, tx, run.OrgID, run.ActorID, run.RepoID, "source.workflow.dispatch_failed", "error", map[string]any{
+	if err := s.insertEventTx(ctx, q, run.OrgID, run.ActorID, run.RepoID, "source.workflow.dispatch_failed", "error", map[string]any{
 		"workflow_run_id": run.WorkflowRunID.String(),
 		"project_id":      run.ProjectID.String(),
 		"workflow_path":   run.WorkflowPath,
@@ -664,20 +719,26 @@ WHERE workflow_run_id = $1`, run.WorkflowRunID, strings.TrimSpace(failureReason)
 }
 
 func (s Store) InsertStorageEvent(ctx context.Context, orgID uint64, repoID uuid.UUID, backend, objectKind, eventType string, byteCount int64, details map[string]any) error {
+	pgOrg, err := pgOrgID(orgID)
+	if err != nil {
+		return err
+	}
 	data, err := json.Marshal(details)
 	if err != nil {
 		return err
 	}
-	var repoValue any
-	if repoID != uuid.Nil {
-		repoValue = repoID
-	}
-	_, err = s.PG.Exec(ctx, `
-INSERT INTO source_storage_events (
-    storage_event_id, org_id, repo_id, project_id, backend, storage_object_kind, event_type, byte_count, trace_id, details, measured_at, created_at
-) VALUES ($1,$2,$3,(SELECT project_id FROM source_repositories WHERE repo_id = $3),$4,$5,$6,$7,$8,$9,$10,$10)`,
-		uuid.New(), orgID, repoValue, strings.TrimSpace(backend), strings.TrimSpace(objectKind), strings.TrimSpace(eventType), byteCount, traceIDFromContext(ctx), data, s.now())
-	if err != nil {
+	if err := s.q().InsertStorageEvent(ctx, sourcestore.InsertStorageEventParams{
+		StorageEventID:    uuid.New(),
+		OrgID:             pgOrg,
+		RepoID:            nullableUUID(repoID),
+		Backend:           strings.TrimSpace(backend),
+		StorageObjectKind: strings.TrimSpace(objectKind),
+		EventType:         strings.TrimSpace(eventType),
+		ByteCount:         byteCount,
+		TraceID:           traceIDFromContext(ctx),
+		Details:           data,
+		MeasuredAt:        timestamptz(s.now()),
+	}); err != nil {
 		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	return nil
@@ -694,40 +755,30 @@ func (s Store) RecordWebhookDelivery(ctx context.Context, delivery WebhookDelive
 	if err != nil {
 		return err
 	}
-	var orgValue any
-	if delivery.ResolvedOrgID != 0 {
-		orgValue = delivery.ResolvedOrgID
-	}
-	var repoValue any
-	if delivery.ResolvedRepoID != uuid.Nil {
-		repoValue = delivery.ResolvedRepoID
-	}
-	var projectValue any
-	if delivery.ResolvedProjectID != uuid.Nil {
-		projectValue = delivery.ResolvedProjectID
+	orgValue, err := nullableOrgID(delivery.ResolvedOrgID)
+	if err != nil {
+		return err
 	}
 	tx, err := s.PG.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	defer rollback(ctx, tx)
-	_, err = tx.Exec(ctx, `
-INSERT INTO source_webhook_deliveries (
-    webhook_delivery_id, backend, delivery_id, event_type, signature_valid, result,
-    resolved_org_id, resolved_project_id, resolved_repo_id, trace_id, details, created_at
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-ON CONFLICT (backend, delivery_id) DO UPDATE SET
-    event_type = EXCLUDED.event_type,
-    signature_valid = EXCLUDED.signature_valid,
-    result = EXCLUDED.result,
-    resolved_org_id = EXCLUDED.resolved_org_id,
-    resolved_project_id = EXCLUDED.resolved_project_id,
-    resolved_repo_id = EXCLUDED.resolved_repo_id,
-    trace_id = EXCLUDED.trace_id,
-    details = EXCLUDED.details`,
-		delivery.WebhookDeliveryID, delivery.Backend, delivery.DeliveryID, delivery.EventType, delivery.SignatureValid, delivery.Result,
-		orgValue, projectValue, repoValue, delivery.TraceID, data, s.now())
-	if err != nil {
+	q := sourcestore.New(tx)
+	if err := q.UpsertWebhookDelivery(ctx, sourcestore.UpsertWebhookDeliveryParams{
+		WebhookDeliveryID: delivery.WebhookDeliveryID,
+		Backend:           delivery.Backend,
+		DeliveryID:        delivery.DeliveryID,
+		EventType:         delivery.EventType,
+		SignatureValid:    delivery.SignatureValid,
+		Result:            delivery.Result,
+		ResolvedOrgID:     orgValue,
+		ResolvedProjectID: nullableUUID(delivery.ResolvedProjectID),
+		ResolvedRepoID:    nullableUUID(delivery.ResolvedRepoID),
+		TraceID:           delivery.TraceID,
+		Details:           data,
+		CreatedAt:         timestamptz(s.now()),
+	}); err != nil {
 		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	if delivery.ResolvedOrgID != 0 && delivery.ResolvedRepoID != uuid.Nil {
@@ -735,7 +786,7 @@ ON CONFLICT (backend, delivery_id) DO UPDATE SET
 		if delivery.Result != "accepted" {
 			result = "error"
 		}
-		if err := s.insertEventTx(ctx, tx, delivery.ResolvedOrgID, "system:webhook", delivery.ResolvedRepoID, "source.webhook."+delivery.EventType, result, map[string]any{
+		if err := s.insertEventTx(ctx, q, delivery.ResolvedOrgID, "system:webhook", delivery.ResolvedRepoID, "source.webhook."+delivery.EventType, result, map[string]any{
 			"backend":  delivery.Backend,
 			"delivery": delivery.DeliveryID,
 			"result":   delivery.Result,
@@ -743,7 +794,10 @@ ON CONFLICT (backend, delivery_id) DO UPDATE SET
 			return err
 		}
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	return nil
 }
 
 func (s Store) InsertEvent(ctx context.Context, orgID uint64, actorID string, repoID uuid.UUID, eventType, result string, details map[string]any) error {
@@ -752,106 +806,253 @@ func (s Store) InsertEvent(ctx context.Context, orgID uint64, actorID string, re
 		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	defer rollback(ctx, tx)
-	if err := s.insertEventTx(ctx, tx, orgID, actorID, repoID, eventType, result, details); err != nil {
+	q := sourcestore.New(tx)
+	if err := s.insertEventTx(ctx, q, orgID, actorID, repoID, eventType, result, details); err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
-}
-
-func (s Store) insertEventTx(ctx context.Context, tx pgx.Tx, orgID uint64, actorID string, repoID uuid.UUID, eventType, result string, details map[string]any) error {
-	traceID := traceIDFromContext(ctx)
-	data, err := json.Marshal(details)
-	if err != nil {
-		return err
-	}
-	var repoValue any
-	if repoID != uuid.Nil {
-		repoValue = repoID
-	}
-	_, err = tx.Exec(ctx, `
-INSERT INTO source_events (event_id, org_id, actor_id, repo_id, project_id, event_type, result, trace_id, details, created_at)
-VALUES ($1,$2,$3,$4,(SELECT project_id FROM source_repositories WHERE repo_id = $4),$5,$6,$7,$8,$9)`, uuid.New(), orgID, actorID, repoValue, eventType, result, traceID, data, s.now())
-	if err != nil {
+	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	return nil
 }
 
-type repositoryScanner interface {
-	Scan(dest ...any) error
-}
-
-func scanRepositoryWithBackend(row repositoryScanner) (Repository, error) {
-	var repo Repository
-	if err := row.Scan(
-		&repo.RepoID,
-		&repo.OrgID,
-		&repo.ProjectID,
-		&repo.CreatedBy,
-		&repo.Name,
-		&repo.Slug,
-		&repo.Description,
-		&repo.DefaultBranch,
-		&repo.Visibility,
-		&repo.State,
-		&repo.Version,
-		&repo.LastPushedAt,
-		&repo.CreatedAt,
-		&repo.UpdatedAt,
-		&repo.Backend.BackendID,
-		&repo.Backend.RepoID,
-		&repo.Backend.Backend,
-		&repo.Backend.BackendOwner,
-		&repo.Backend.BackendRepo,
-		&repo.Backend.BackendRepoID,
-		&repo.Backend.State,
-		&repo.Backend.CreatedAt,
-		&repo.Backend.UpdatedAt,
-	); err != nil {
-		if err == pgx.ErrNoRows {
-			return Repository{}, ErrNotFound
-		}
-		return Repository{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+func (s Store) insertEventTx(ctx context.Context, q *sourcestore.Queries, orgID uint64, actorID string, repoID uuid.UUID, eventType, result string, details map[string]any) error {
+	pgOrg, err := pgOrgID(orgID)
+	if err != nil {
+		return err
 	}
-	return repo, nil
-}
-
-type workflowRunScanner interface {
-	Scan(dest ...any) error
-}
-
-func scanWorkflowRun(row workflowRunScanner) (WorkflowRun, error) {
-	var (
-		run        WorkflowRun
-		inputsJSON []byte
-	)
-	if err := row.Scan(
-		&run.WorkflowRunID,
-		&run.OrgID,
-		&run.ProjectID,
-		&run.RepoID,
-		&run.ActorID,
-		&run.IdempotencyKey,
-		&run.Backend,
-		&run.WorkflowPath,
-		&run.Ref,
-		&inputsJSON,
-		&run.State,
-		&run.BackendDispatchID,
-		&run.FailureReason,
-		&run.TraceID,
-		&run.DispatchedAt,
-		&run.CreatedAt,
-		&run.UpdatedAt,
-	); err != nil {
-		if err == pgx.ErrNoRows {
-			return WorkflowRun{}, ErrNotFound
-		}
-		return WorkflowRun{}, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	data, err := json.Marshal(details)
+	if err != nil {
+		return err
 	}
-	if len(inputsJSON) == 0 {
+	if err := q.InsertSourceEvent(ctx, sourcestore.InsertSourceEventParams{
+		EventID:   uuid.New(),
+		OrgID:     pgOrg,
+		ActorID:   actorID,
+		RepoID:    nullableUUID(repoID),
+		EventType: eventType,
+		Result:    result,
+		TraceID:   traceIDFromContext(ctx),
+		Details:   data,
+		CreatedAt: timestamptz(s.now()),
+	}); err != nil {
+		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	return nil
+}
+
+type repositoryRow struct {
+	RepoID              uuid.UUID
+	OrgID               int64
+	ProjectID           uuid.UUID
+	CreatedBy           string
+	Name                string
+	Slug                string
+	Description         string
+	DefaultBranch       string
+	Visibility          string
+	State               string
+	Version             int64
+	LastPushedAt        pgtype.Timestamptz
+	CreatedAt           pgtype.Timestamptz
+	UpdatedAt           pgtype.Timestamptz
+	BackendID           uuid.UUID
+	BackendSourceRepoID uuid.UUID
+	Backend             string
+	BackendOwner        string
+	BackendRepo         string
+	BackendRepoID       string
+	BackendState        string
+	BackendCreatedAt    pgtype.Timestamptz
+	BackendUpdatedAt    pgtype.Timestamptz
+}
+
+func repositoriesFromListRows(rows []sourcestore.ListRepositoriesRow) ([]Repository, error) {
+	repos := make([]Repository, 0, len(rows))
+	for _, row := range rows {
+		repo, err := repositoryFromRow(repositoryRow(row))
+		if err != nil {
+			return nil, err
+		}
+		repos = append(repos, repo)
+	}
+	return repos, nil
+}
+
+func repositoriesFromProjectRows(rows []sourcestore.ListRepositoriesByProjectRow) ([]Repository, error) {
+	repos := make([]Repository, 0, len(rows))
+	for _, row := range rows {
+		repo, err := repositoryFromRow(repositoryRow(row))
+		if err != nil {
+			return nil, err
+		}
+		repos = append(repos, repo)
+	}
+	return repos, nil
+}
+
+func repositoryFromRow(row repositoryRow) (Repository, error) {
+	orgID, err := domainOrgID(row.OrgID)
+	if err != nil {
+		return Repository{}, err
+	}
+	createdAt, err := requiredTime(row.CreatedAt)
+	if err != nil {
+		return Repository{}, err
+	}
+	updatedAt, err := requiredTime(row.UpdatedAt)
+	if err != nil {
+		return Repository{}, err
+	}
+	backendCreatedAt, err := requiredTime(row.BackendCreatedAt)
+	if err != nil {
+		return Repository{}, err
+	}
+	backendUpdatedAt, err := requiredTime(row.BackendUpdatedAt)
+	if err != nil {
+		return Repository{}, err
+	}
+	return Repository{
+		RepoID:        row.RepoID,
+		OrgID:         orgID,
+		ProjectID:     row.ProjectID,
+		CreatedBy:     row.CreatedBy,
+		Name:          row.Name,
+		Slug:          row.Slug,
+		Description:   row.Description,
+		DefaultBranch: row.DefaultBranch,
+		Visibility:    row.Visibility,
+		State:         row.State,
+		Version:       row.Version,
+		LastPushedAt:  timePtr(row.LastPushedAt),
+		CreatedAt:     createdAt,
+		UpdatedAt:     updatedAt,
+		Backend: RepositoryBackend{
+			BackendID:     row.BackendID,
+			RepoID:        row.BackendSourceRepoID,
+			Backend:       row.Backend,
+			BackendOwner:  row.BackendOwner,
+			BackendRepo:   row.BackendRepo,
+			BackendRepoID: row.BackendRepoID,
+			State:         row.BackendState,
+			CreatedAt:     backendCreatedAt,
+			UpdatedAt:     backendUpdatedAt,
+		},
+	}, nil
+}
+
+func repositoryFromLockedGrantRow(row sourcestore.LockCheckoutGrantForConsumeRow) (Repository, error) {
+	return repositoryFromRow(repositoryRow{
+		RepoID:              row.RepoID,
+		OrgID:               row.OrgID,
+		ProjectID:           row.ProjectID,
+		CreatedBy:           row.CreatedBy,
+		Name:                row.Name,
+		Slug:                row.Slug,
+		Description:         row.Description,
+		DefaultBranch:       row.DefaultBranch,
+		Visibility:          row.Visibility,
+		State:               row.State,
+		Version:             row.Version,
+		LastPushedAt:        row.LastPushedAt,
+		CreatedAt:           row.CreatedAt,
+		UpdatedAt:           row.UpdatedAt,
+		BackendID:           row.BackendID,
+		BackendSourceRepoID: row.BackendSourceRepoID,
+		Backend:             row.Backend,
+		BackendOwner:        row.BackendOwner,
+		BackendRepo:         row.BackendRepo,
+		BackendRepoID:       row.BackendRepoID,
+		BackendState:        row.BackendState,
+		BackendCreatedAt:    row.BackendCreatedAt,
+		BackendUpdatedAt:    row.BackendUpdatedAt,
+	})
+}
+
+func checkoutGrantFromLockedRow(row sourcestore.LockCheckoutGrantForConsumeRow) (CheckoutGrant, error) {
+	orgID, err := domainOrgID(row.GrantOrgID)
+	if err != nil {
+		return CheckoutGrant{}, err
+	}
+	expiresAt, err := requiredTime(row.GrantExpiresAt)
+	if err != nil {
+		return CheckoutGrant{}, err
+	}
+	createdAt, err := requiredTime(row.GrantCreatedAt)
+	if err != nil {
+		return CheckoutGrant{}, err
+	}
+	return CheckoutGrant{
+		GrantID:    row.GrantID,
+		RepoID:     row.GrantRepoID,
+		OrgID:      orgID,
+		ActorID:    row.GrantActorID,
+		Ref:        row.Ref,
+		PathPrefix: row.PathPrefix,
+		ExpiresAt:  expiresAt,
+		CreatedAt:  createdAt,
+	}, nil
+}
+
+func gitPrincipalFromRow(row sourcestore.LockActiveGitCredentialForUseRow) (GitPrincipal, error) {
+	orgID, err := domainOrgID(row.OrgID)
+	if err != nil {
+		return GitPrincipal{}, err
+	}
+	return GitPrincipal{
+		CredentialID: row.CredentialID,
+		OrgID:        orgID,
+		ActorID:      row.ActorID,
+		Username:     row.Username,
+		Scopes:       row.Scopes,
+	}, nil
+}
+
+func workflowRunByIdempotencyKey(ctx context.Context, q *sourcestore.Queries, orgID int64, idempotencyKey string) (WorkflowRun, error) {
+	row, err := q.GetWorkflowRunByIdempotencyKey(ctx, sourcestore.GetWorkflowRunByIdempotencyKeyParams{
+		OrgID:          orgID,
+		IdempotencyKey: strings.TrimSpace(idempotencyKey),
+	})
+	if err != nil {
+		return WorkflowRun{}, notFoundOrStoreError(err)
+	}
+	return workflowRunFromRow(row)
+}
+
+func workflowRunFromRow(row sourcestore.SourceWorkflowRun) (WorkflowRun, error) {
+	orgID, err := domainOrgID(row.OrgID)
+	if err != nil {
+		return WorkflowRun{}, err
+	}
+	createdAt, err := requiredTime(row.CreatedAt)
+	if err != nil {
+		return WorkflowRun{}, err
+	}
+	updatedAt, err := requiredTime(row.UpdatedAt)
+	if err != nil {
+		return WorkflowRun{}, err
+	}
+	run := WorkflowRun{
+		WorkflowRunID:     row.WorkflowRunID,
+		OrgID:             orgID,
+		ProjectID:         row.ProjectID,
+		RepoID:            row.RepoID,
+		ActorID:           row.ActorID,
+		IdempotencyKey:    row.IdempotencyKey,
+		Backend:           row.Backend,
+		WorkflowPath:      row.WorkflowPath,
+		Ref:               row.Ref,
+		State:             row.State,
+		BackendDispatchID: row.BackendDispatchID,
+		FailureReason:     row.FailureReason,
+		TraceID:           row.TraceID,
+		DispatchedAt:      timePtr(row.DispatchedAt),
+		CreatedAt:         createdAt,
+		UpdatedAt:         updatedAt,
+	}
+	if len(row.InputsJson) == 0 {
 		run.Inputs = map[string]string{}
-	} else if err := json.Unmarshal(inputsJSON, &run.Inputs); err != nil {
+	} else if err := json.Unmarshal(row.InputsJson, &run.Inputs); err != nil {
 		return WorkflowRun{}, fmt.Errorf("%w: decode workflow inputs: %v", ErrStoreUnavailable, err)
 	}
 	if run.Inputs == nil {
@@ -889,8 +1090,77 @@ func (s Store) now() time.Time {
 	return time.Now().UTC()
 }
 
+func pgOrgID(orgID uint64) (int64, error) {
+	if orgID == 0 || orgID > maxPostgresBigint {
+		return 0, ErrInvalid
+	}
+	return int64(orgID), nil
+}
+
+func nullableOrgID(orgID uint64) (pgtype.Int8, error) {
+	if orgID == 0 {
+		return pgtype.Int8{}, nil
+	}
+	pgOrg, err := pgOrgID(orgID)
+	if err != nil {
+		return pgtype.Int8{}, err
+	}
+	return pgtype.Int8{Int64: pgOrg, Valid: true}, nil
+}
+
+func domainOrgID(orgID int64) (uint64, error) {
+	if orgID <= 0 {
+		return 0, fmt.Errorf("%w: invalid org_id %d", ErrStoreUnavailable, orgID)
+	}
+	return uint64(orgID), nil
+}
+
+func timestamptz(value time.Time) pgtype.Timestamptz {
+	if value.IsZero() {
+		return pgtype.Timestamptz{}
+	}
+	return pgtype.Timestamptz{Time: value.UTC(), Valid: true}
+}
+
+func requiredTime(value pgtype.Timestamptz) (time.Time, error) {
+	if !value.Valid {
+		return time.Time{}, fmt.Errorf("%w: missing timestamp", ErrStoreUnavailable)
+	}
+	return value.Time.UTC(), nil
+}
+
+func timePtr(value pgtype.Timestamptz) *time.Time {
+	if !value.Valid {
+		return nil
+	}
+	t := value.Time.UTC()
+	return &t
+}
+
+func nullableUUID(value uuid.UUID) pgtype.UUID {
+	if value == uuid.Nil {
+		return pgtype.UUID{}
+	}
+	return pgtype.UUID{Bytes: value, Valid: true}
+}
+
+func notFoundOrStoreError(err error) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+}
+
+func unauthorizedOrStoreError(err error) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrUnauthorized
+	}
+	return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+}
+
 func storeWriteError(err error) error {
-	if pgErr, ok := err.(*pgconn.PgError); ok && pgErr.Code == "23505" {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 		return fmt.Errorf("%w: %v", ErrConflict, err)
 	}
 	return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)

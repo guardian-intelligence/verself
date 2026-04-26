@@ -12,6 +12,11 @@ export type FlashIntent =
   | { readonly kind: "credits_purchased" }
   | { readonly kind: "contract_started"; readonly targetPlanId?: string }
   | {
+      readonly kind: "contract_upgrade_requested";
+      readonly targetPlanId?: string;
+      readonly effectiveAt?: Date;
+    }
+  | {
       readonly kind: "contract_upgraded";
       readonly targetPlanId?: string;
       readonly effectiveAt?: Date;
@@ -40,7 +45,14 @@ const vBoolFlag = v.union([
   ),
 ]);
 
-const vContractAction = v.picklist(["start", "upgrade", "downgrade", "resume", "unchanged"]);
+const vContractAction = v.picklist([
+  "start",
+  "upgrade_requested",
+  "upgrade",
+  "downgrade",
+  "resume",
+  "unchanged",
+]);
 
 // object() not strictObject() — third-party referrer junk (utm_source,
 // fbclid, ...) must pass through silently rather than blow up the route.
@@ -87,6 +99,8 @@ export function projectFlashIntent(search: FlashSearch): FlashIntent {
   switch (search.contractAction) {
     case "start":
       return { kind: "contract_started", ...planIdPart };
+    case "upgrade_requested":
+      return { kind: "contract_upgrade_requested", ...planIdPart, ...effectiveAtPart };
     case "upgrade":
       return { kind: "contract_upgraded", ...planIdPart, ...effectiveAtPart };
     case "downgrade":

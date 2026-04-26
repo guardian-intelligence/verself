@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/verself/apiwire"
 	billingclient "github.com/verself/billing-service/client"
+	"github.com/verself/sandbox-rental-service/internal/store"
 	vmorchestrator "github.com/verself/vm-orchestrator"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -365,30 +366,42 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req 
 		return uuid.Nil, uuid.Nil, fmt.Errorf("begin submit tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	row := tx.QueryRow(ctx, `INSERT INTO executions (
-		execution_id, org_id, actor_id, kind, source_kind, workload_kind, source_ref,
-		runner_class, external_provider, external_task_id, provider, product_id,
-		state, correlation_id, idempotency_key, run_command, max_wall_seconds,
-		requested_vcpus, requested_memory_mib, requested_root_disk_gib, requested_kernel_image,
-		created_at, updated_at
-	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$22)
-	ON CONFLICT (org_id, idempotency_key) DO NOTHING
-	RETURNING execution_id`,
-		executionID, orgID, actorID, req.Kind, req.SourceKind, req.WorkloadKind, req.SourceRef,
-		req.RunnerClass, req.ExternalProvider, req.ExternalTaskID, req.Provider, req.ProductID,
-		StateQueued, correlationID, req.IdempotencyKey, req.RunCommand, req.MaxWallSeconds,
-		int(req.Resources.VCPUs), int(req.Resources.MemoryMiB), int(req.Resources.RootDiskGiB), string(req.Resources.KernelImage),
-		now)
-	var inserted uuid.UUID
-	if err := row.Scan(&inserted); err != nil {
+	qtx := store.New(tx)
+	if _, err := qtx.InsertExecution(ctx, store.InsertExecutionParams{
+		ExecutionID:          executionID,
+		OrgID:                dbOrgID(orgID),
+		ActorID:              actorID,
+		Kind:                 req.Kind,
+		SourceKind:           req.SourceKind,
+		WorkloadKind:         req.WorkloadKind,
+		SourceRef:            req.SourceRef,
+		RunnerClass:          req.RunnerClass,
+		ExternalProvider:     req.ExternalProvider,
+		ExternalTaskID:       req.ExternalTaskID,
+		Provider:             req.Provider,
+		ProductID:            req.ProductID,
+		State:                StateQueued,
+		CorrelationID:        correlationID,
+		IdempotencyKey:       req.IdempotencyKey,
+		RunCommand:           req.RunCommand,
+		MaxWallSeconds:       int64(req.MaxWallSeconds),
+		RequestedVcpus:       int32(req.Resources.VCPUs),
+		RequestedMemoryMib:   int32(req.Resources.MemoryMiB),
+		RequestedRootDiskGib: int32(req.Resources.RootDiskGiB),
+		RequestedKernelImage: string(req.Resources.KernelImage),
+		CreatedAt:            pgTime(now),
+	}); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return s.existingSubmission(ctx, orgID, req.IdempotencyKey)
 		}
 		return uuid.Nil, uuid.Nil, fmt.Errorf("insert execution: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO execution_attempts (
-		attempt_id, execution_id, attempt_seq, state, created_at, updated_at
-	) VALUES ($1,$2,1,$3,$4,$4)`, attemptID, executionID, StateQueued, now); err != nil {
+	if err := qtx.InsertExecutionAttempt(ctx, store.InsertExecutionAttemptParams{
+		AttemptID:   attemptID,
+		ExecutionID: executionID,
+		State:       StateQueued,
+		CreatedAt:   pgTime(now),
+	}); err != nil {
 		return uuid.Nil, uuid.Nil, fmt.Errorf("insert attempt: %w", err)
 	}
 	mounts := req.FilesystemMounts
@@ -444,25 +457,18 @@ func (s *Service) enqueueExecutionAdvance(ctx context.Context, tx pgx.Tx, execut
 }
 
 func (s *Service) existingSubmission(ctx context.Context, orgID uint64, idempotencyKey string) (uuid.UUID, uuid.UUID, error) {
-	row := s.PGX.QueryRow(ctx, `SELECT e.execution_id, a.attempt_id
-		FROM executions e
-		JOIN execution_attempts a ON a.execution_id = e.execution_id
-		WHERE e.org_id = $1 AND e.idempotency_key = $2
-		ORDER BY a.attempt_seq DESC
-		LIMIT 1`, orgID, idempotencyKey)
-	var executionID, attemptID uuid.UUID
-	if err := row.Scan(&executionID, &attemptID); err != nil {
+	row, err := s.storeQueries().GetExistingSubmission(ctx, store.GetExistingSubmissionParams{
+		OrgID:          dbOrgID(orgID),
+		IdempotencyKey: idempotencyKey,
+	})
+	if err != nil {
 		return uuid.Nil, uuid.Nil, fmt.Errorf("load existing execution: %w", err)
 	}
-	return executionID, attemptID, nil
+	return row.ExecutionID, row.AttemptID, nil
 }
 
 func (s *Service) runnerClassResources(ctx context.Context, runnerClass string) (apiwire.VMResources, string, bool, error) {
-	var (
-		productID                   string
-		vcpus, memoryMiB, rootfsGiB int
-	)
-	err := s.PGX.QueryRow(ctx, `SELECT product_id, vcpus, memory_mib, rootfs_gib FROM runner_classes WHERE runner_class = $1 AND active`, runnerClass).Scan(&productID, &vcpus, &memoryMiB, &rootfsGiB)
+	row, err := s.storeQueries().GetRunnerClassResources(ctx, store.GetRunnerClassResourcesParams{RunnerClass: runnerClass})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return apiwire.VMResources{}, "", false, nil
 	}
@@ -470,42 +476,44 @@ func (s *Service) runnerClassResources(ctx context.Context, runnerClass string) 
 		return apiwire.VMResources{}, "", false, fmt.Errorf("load runner class resources: %w", err)
 	}
 	return apiwire.VMResources{
-		VCPUs:       uint32(vcpus),
-		MemoryMiB:   uint32(memoryMiB),
-		RootDiskGiB: uint32(rootfsGiB),
+		VCPUs:       uint32(row.Vcpus),
+		MemoryMiB:   uint32(row.MemoryMib),
+		RootDiskGiB: uint32(row.RootfsGib),
 		KernelImage: apiwire.KernelImageDefault,
-	}, productID, true, nil
+	}, row.ProductID, true, nil
 }
 
 func (s *Service) runnerClassFilesystemMounts(ctx context.Context, tx pgx.Tx, runnerClass string) ([]vmorchestrator.FilesystemMount, error) {
-	rows, err := tx.Query(ctx, `SELECT mount_name, source_ref, mount_path, fs_type, read_only
-		FROM runner_class_filesystem_mounts
-		WHERE runner_class = $1 AND active
-		ORDER BY sort_order, mount_name`, runnerClass)
+	rows, err := store.New(tx).ListRunnerClassFilesystemMounts(ctx, store.ListRunnerClassFilesystemMountsParams{RunnerClass: runnerClass})
 	if err != nil {
 		return nil, fmt.Errorf("load runner class filesystem mounts: %w", err)
 	}
-	defer rows.Close()
-	out := []vmorchestrator.FilesystemMount{}
-	for rows.Next() {
-		var mount vmorchestrator.FilesystemMount
-		if err := rows.Scan(&mount.Name, &mount.SourceRef, &mount.MountPath, &mount.FSType, &mount.ReadOnly); err != nil {
-			return nil, fmt.Errorf("scan runner class filesystem mount: %w", err)
-		}
-		out = append(out, mount)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate runner class filesystem mounts: %w", err)
+	out := make([]vmorchestrator.FilesystemMount, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, vmorchestrator.FilesystemMount{
+			Name:      row.MountName,
+			SourceRef: row.SourceRef,
+			MountPath: row.MountPath,
+			FSType:    row.FsType,
+			ReadOnly:  row.ReadOnly,
+		})
 	}
 	return out, nil
 }
 
 func (s *Service) insertExecutionFilesystemMounts(ctx context.Context, tx pgx.Tx, executionID uuid.UUID, mounts []vmorchestrator.FilesystemMount) error {
+	qtx := store.New(tx)
 	for idx, mount := range mounts {
-		if _, err := tx.Exec(ctx, `INSERT INTO execution_filesystem_mounts (
-			execution_id, mount_name, source_ref, mount_path, fs_type, read_only, sort_order, created_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-			executionID, mount.Name, mount.SourceRef, mount.MountPath, firstNonEmpty(mount.FSType, "ext4"), mount.ReadOnly, idx, time.Now().UTC()); err != nil {
+		if err := qtx.InsertExecutionFilesystemMount(ctx, store.InsertExecutionFilesystemMountParams{
+			ExecutionID: executionID,
+			MountName:   mount.Name,
+			SourceRef:   mount.SourceRef,
+			MountPath:   mount.MountPath,
+			FsType:      firstNonEmpty(mount.FSType, "ext4"),
+			ReadOnly:    mount.ReadOnly,
+			SortOrder:   int32(idx),
+			CreatedAt:   pgTime(time.Now().UTC()),
+		}); err != nil {
 			return fmt.Errorf("insert execution filesystem mount %s: %w", mount.Name, err)
 		}
 	}
@@ -513,17 +521,27 @@ func (s *Service) insertExecutionFilesystemMounts(ctx context.Context, tx pgx.Tx
 }
 
 func (s *Service) insertExecutionStickyDiskMounts(ctx context.Context, tx pgx.Tx, executionID, attemptID uuid.UUID, mounts []StickyDiskMountSpec) error {
+	qtx := store.New(tx)
 	for idx, mount := range mounts {
 		if mount.MountID == uuid.Nil {
 			mount.MountID = uuid.New()
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO execution_sticky_disk_mounts (
-			mount_id, execution_id, attempt_id, allocation_id, mount_name, key_hash, key, mount_path,
-			base_generation, source_ref, target_source_ref, save_requested, save_state, committed_generation,
-			failure_reason, sort_order, created_at, updated_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,false,$12,0,'',$13,$14,$14)`,
-			mount.MountID, executionID, attemptID, mount.AllocationID, mount.MountName, mount.KeyHash, mount.Key, mount.MountPath,
-			mount.BaseGeneration, mount.SourceRef, mount.TargetSourceRef, stickyDiskStateNotRequested, idx, time.Now().UTC()); err != nil {
+		if err := qtx.InsertExecutionStickyDiskMount(ctx, store.InsertExecutionStickyDiskMountParams{
+			MountID:         mount.MountID,
+			ExecutionID:     executionID,
+			AttemptID:       attemptID,
+			AllocationID:    mount.AllocationID,
+			MountName:       mount.MountName,
+			KeyHash:         mount.KeyHash,
+			Key:             mount.Key,
+			MountPath:       mount.MountPath,
+			BaseGeneration:  mount.BaseGeneration,
+			SourceRef:       mount.SourceRef,
+			TargetSourceRef: mount.TargetSourceRef,
+			SaveState:       stickyDiskStateNotRequested,
+			SortOrder:       int32(idx),
+			CreatedAt:       pgTime(time.Now().UTC()),
+		}); err != nil {
 			return fmt.Errorf("insert execution sticky disk mount %s: %w", mount.MountName, err)
 		}
 	}
@@ -668,28 +686,41 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 }
 
 func (s *Service) loadWorkItem(ctx context.Context, executionID, attemptID uuid.UUID) (executionWorkItem, error) {
-	row := s.PGX.QueryRow(ctx, `SELECT e.execution_id, a.attempt_id, e.org_id, e.actor_id, e.kind, e.source_kind, e.workload_kind, e.source_ref,
-		e.runner_class, e.external_provider, e.external_task_id, e.provider, e.product_id, e.run_command, e.max_wall_seconds, e.correlation_id,
-		e.requested_vcpus, e.requested_memory_mib, e.requested_root_disk_gib, e.requested_kernel_image,
-		COALESCE(a.lease_id, ''), COALESCE(a.exec_id, '')
-		FROM executions e JOIN execution_attempts a ON a.execution_id = e.execution_id
-		WHERE e.execution_id = $1 AND a.attempt_id = $2`, executionID, attemptID)
-	var item executionWorkItem
-	var (
-		vcpus, memMiB, diskGiB int
-		kernelImage            string
-	)
-	if err := row.Scan(&item.ExecutionID, &item.AttemptID, &item.OrgID, &item.ActorID, &item.Kind, &item.SourceKind, &item.WorkloadKind, &item.SourceRef, &item.RunnerClass, &item.ExternalProvider, &item.ExternalTaskID, &item.Provider, &item.ProductID, &item.RunCommand, &item.MaxWallSeconds, &item.CorrelationID, &vcpus, &memMiB, &diskGiB, &kernelImage, &item.LeaseID, &item.ExecID); err != nil {
+	row, err := s.storeQueries().GetExecutionWorkItem(ctx, store.GetExecutionWorkItemParams{
+		ExecutionID: executionID,
+		AttemptID:   attemptID,
+	})
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return executionWorkItem{}, ErrExecutionMissing
 		}
 		return executionWorkItem{}, fmt.Errorf("load execution work item: %w", err)
 	}
-	item.Resources = apiwire.VMResources{
-		VCPUs:       uint32(vcpus),
-		MemoryMiB:   uint32(memMiB),
-		RootDiskGiB: uint32(diskGiB),
-		KernelImage: apiwire.KernelImageRef(kernelImage),
+	item := executionWorkItem{
+		ExecutionID:      row.ExecutionID,
+		AttemptID:        row.AttemptID,
+		OrgID:            orgIDFromDB(row.OrgID),
+		ActorID:          row.ActorID,
+		Kind:             row.Kind,
+		SourceKind:       row.SourceKind,
+		WorkloadKind:     row.WorkloadKind,
+		SourceRef:        row.SourceRef,
+		RunnerClass:      row.RunnerClass,
+		ExternalProvider: row.ExternalProvider,
+		ExternalTaskID:   row.ExternalTaskID,
+		Provider:         row.Provider,
+		ProductID:        row.ProductID,
+		RunCommand:       row.RunCommand,
+		MaxWallSeconds:   uint64(row.MaxWallSeconds),
+		LeaseID:          row.LeaseID,
+		ExecID:           row.ExecID,
+		CorrelationID:    row.CorrelationID,
+		Resources: apiwire.VMResources{
+			VCPUs:       uint32(row.RequestedVcpus),
+			MemoryMiB:   uint32(row.RequestedMemoryMib),
+			RootDiskGiB: uint32(row.RequestedRootDiskGib),
+			KernelImage: apiwire.KernelImageRef(row.RequestedKernelImage),
+		},
 	}
 	mounts, err := s.loadExecutionFilesystemMounts(ctx, executionID)
 	if err != nil {
@@ -700,24 +731,19 @@ func (s *Service) loadWorkItem(ctx context.Context, executionID, attemptID uuid.
 }
 
 func (s *Service) loadExecutionFilesystemMounts(ctx context.Context, executionID uuid.UUID) ([]vmorchestrator.FilesystemMount, error) {
-	rows, err := s.PGX.Query(ctx, `SELECT mount_name, source_ref, mount_path, fs_type, read_only
-		FROM execution_filesystem_mounts
-		WHERE execution_id = $1
-		ORDER BY sort_order, mount_name`, executionID)
+	rows, err := s.storeQueries().ListExecutionFilesystemMounts(ctx, store.ListExecutionFilesystemMountsParams{ExecutionID: executionID})
 	if err != nil {
 		return nil, fmt.Errorf("load execution filesystem mounts: %w", err)
 	}
-	defer rows.Close()
-	out := []vmorchestrator.FilesystemMount{}
-	for rows.Next() {
-		var mount vmorchestrator.FilesystemMount
-		if err := rows.Scan(&mount.Name, &mount.SourceRef, &mount.MountPath, &mount.FSType, &mount.ReadOnly); err != nil {
-			return nil, fmt.Errorf("scan execution filesystem mount: %w", err)
-		}
-		out = append(out, mount)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate execution filesystem mounts: %w", err)
+	out := make([]vmorchestrator.FilesystemMount, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, vmorchestrator.FilesystemMount{
+			Name:      row.MountName,
+			SourceRef: row.SourceRef,
+			MountPath: row.MountPath,
+			FSType:    row.FsType,
+			ReadOnly:  row.ReadOnly,
+		})
 	}
 	return out, nil
 }
@@ -763,71 +789,74 @@ func (s *Service) reserveBilling(ctx context.Context, item executionWorkItem, bi
 
 func (s *Service) insertBillingWindow(ctx context.Context, attemptID uuid.UUID, reservation apiwire.BillingWindowReservation) error {
 	payload, _ := json.Marshal(reservation)
-	_, err := s.PGX.Exec(ctx, `INSERT INTO execution_billing_windows (
-		attempt_id, window_seq, billing_window_id, reservation_shape, reserved_quantity, actual_quantity,
-		reserved_charge_units, billed_charge_units, writeoff_charge_units, cost_per_unit,
-		pricing_phase, state, window_start, created_at, reservation_jsonb
-	) VALUES ($1,$2,$3,$4,$5,0,$6,0,0,$7,$8,'reserved',$9,$10,$11)`,
-		attemptID,
-		reservation.WindowSeq,
-		reservation.WindowID,
-		reservation.ReservationShape,
-		reservation.ReservedQuantity,
-		reservation.ReservedChargeUnits.Uint64(),
-		reservation.CostPerUnit.Uint64(),
-		reservation.PricingPhase,
-		reservation.WindowStart,
-		time.Now().UTC(),
-		payload,
-	)
-	if err != nil {
+	if err := s.storeQueries().InsertExecutionBillingWindow(ctx, store.InsertExecutionBillingWindowParams{
+		AttemptID:           attemptID,
+		WindowSeq:           int32(reservation.WindowSeq),
+		BillingWindowID:     reservation.WindowID,
+		ReservationShape:    reservation.ReservationShape,
+		ReservedQuantity:    int32(reservation.ReservedQuantity),
+		ReservedChargeUnits: int64(reservation.ReservedChargeUnits.Uint64()),
+		CostPerUnit:         int64(reservation.CostPerUnit.Uint64()),
+		PricingPhase:        reservation.PricingPhase,
+		WindowStart:         pgTime(reservation.WindowStart),
+		CreatedAt:           pgTime(time.Now().UTC()),
+		ReservationJsonb:    payload,
+	}); err != nil {
 		return fmt.Errorf("insert billing window: %w", err)
 	}
 	return nil
 }
 
 func (s *Service) markBillingWindow(ctx context.Context, attemptID uuid.UUID, windowID, state string, actual int, settled apiwire.BillingSettleResult) error {
-	_, err := s.PGX.Exec(ctx, `UPDATE execution_billing_windows
-		SET state = $1,
-		    actual_quantity = $2,
-		    billed_charge_units = $3,
-		    writeoff_charge_units = $4,
-		    settled_at = $5
-		WHERE attempt_id = $6
-		  AND billing_window_id = $7`,
-		state,
-		actual,
-		settled.BilledChargeUnits.Uint64(),
-		settled.WriteoffChargeUnits.Uint64(),
-		time.Now().UTC(),
-		attemptID,
-		windowID,
-	)
-	return err
+	return s.storeQueries().MarkExecutionBillingWindow(ctx, store.MarkExecutionBillingWindowParams{
+		State:               state,
+		ActualQuantity:      int32(actual),
+		BilledChargeUnits:   int64(settled.BilledChargeUnits.Uint64()),
+		WriteoffChargeUnits: int64(settled.WriteoffChargeUnits.Uint64()),
+		SettledAt:           pgTime(time.Now().UTC()),
+		AttemptID:           attemptID,
+		BillingWindowID:     windowID,
+	})
 }
 
 func (s *Service) transition(ctx context.Context, item executionWorkItem, from, to, reason string, values map[string]any) error {
 	now := time.Now().UTC()
-	var billingJobID any
+	var billingJobID int64
 	if values != nil {
-		billingJobID = values["billing_job_id"]
+		if value, ok := values["billing_job_id"].(int64); ok {
+			billingJobID = value
+		}
 	}
 	tx, err := s.PGX.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx, `UPDATE executions SET state = $1, updated_at = $2 WHERE execution_id = $3`, to, now, item.ExecutionID); err != nil {
+	qtx := store.New(tx)
+	if err := qtx.SetExecutionState(ctx, store.SetExecutionStateParams{State: to, UpdatedAt: pgTime(now), ExecutionID: item.ExecutionID}); err != nil {
 		return err
 	}
-	tag, err := tx.Exec(ctx, `UPDATE execution_attempts SET state = $1, billing_job_id = COALESCE($2, billing_job_id), updated_at = $3 WHERE attempt_id = $4 AND state = $5`, to, billingJobID, now, item.AttemptID, from)
+	rows, err := qtx.CASAttemptState(ctx, store.CASAttemptStateParams{
+		ToState:      to,
+		BillingJobID: billingJobID,
+		UpdatedAt:    pgTime(now),
+		AttemptID:    item.AttemptID,
+		FromState:    from,
+	})
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() != 1 {
+	if rows != 1 {
 		return fmt.Errorf("execution attempt %s is not in expected state %s", item.AttemptID, from)
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO execution_events (execution_id, attempt_id, from_state, to_state, reason, created_at) VALUES ($1,$2,$3,$4,$5,$6)`, item.ExecutionID, item.AttemptID, from, to, reason, now); err != nil {
+	if err := qtx.InsertExecutionEvent(ctx, store.InsertExecutionEventParams{
+		ExecutionID: item.ExecutionID,
+		AttemptID:   item.AttemptID,
+		FromState:   from,
+		ToState:     to,
+		Reason:      reason,
+		CreatedAt:   pgTime(now),
+	}); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -840,25 +869,43 @@ func (s *Service) markRunning(ctx context.Context, item executionWorkItem, start
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx, `UPDATE executions SET state = $1, updated_at = $2 WHERE execution_id = $3`, StateRunning, now, item.ExecutionID); err != nil {
+	qtx := store.New(tx)
+	if err := qtx.SetExecutionState(ctx, store.SetExecutionStateParams{State: StateRunning, UpdatedAt: pgTime(now), ExecutionID: item.ExecutionID}); err != nil {
 		return err
 	}
-	tag, err := tx.Exec(ctx, `UPDATE execution_attempts SET state = $1, started_at = $2, updated_at = $3 WHERE attempt_id = $4 AND state = $5`, StateRunning, startedAt, now, item.AttemptID, StateLaunching)
+	rows, err := qtx.MarkAttemptRunningCAS(ctx, store.MarkAttemptRunningCASParams{
+		ToState:   StateRunning,
+		StartedAt: pgTime(startedAt),
+		UpdatedAt: pgTime(now),
+		AttemptID: item.AttemptID,
+		FromState: StateLaunching,
+	})
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() != 1 {
+	if rows != 1 {
 		return fmt.Errorf("execution attempt %s is not in expected state %s", item.AttemptID, StateLaunching)
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO execution_events (execution_id, attempt_id, from_state, to_state, reason, created_at) VALUES ($1,$2,$3,$4,$5,$6)`, item.ExecutionID, item.AttemptID, StateLaunching, StateRunning, "exec_started", now); err != nil {
+	if err := qtx.InsertExecutionEvent(ctx, store.InsertExecutionEventParams{
+		ExecutionID: item.ExecutionID,
+		AttemptID:   item.AttemptID,
+		FromState:   StateLaunching,
+		ToState:     StateRunning,
+		Reason:      "exec_started",
+		CreatedAt:   pgTime(now),
+	}); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
 }
 
 func (s *Service) setAttemptLeaseExec(ctx context.Context, attemptID uuid.UUID, leaseID, execID string) error {
-	_, err := s.PGX.Exec(ctx, `UPDATE execution_attempts SET lease_id = NULLIF($1, ''), exec_id = NULLIF($2, ''), updated_at = $3 WHERE attempt_id = $4`, leaseID, execID, time.Now().UTC(), attemptID)
-	return err
+	return s.storeQueries().SetAttemptLeaseExec(ctx, store.SetAttemptLeaseExecParams{
+		LeaseID:   leaseID,
+		ExecID:    execID,
+		UpdatedAt: pgTime(time.Now().UTC()),
+		AttemptID: attemptID,
+	})
 }
 
 func (s *Service) completeAttempt(ctx context.Context, item executionWorkItem, state, reason string, exec vmorchestrator.ExecRecord, durationMs int64, completedAt time.Time) error {
@@ -870,59 +917,55 @@ func (s *Service) completeAttempt(ctx context.Context, item executionWorkItem, s
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx, `UPDATE executions SET state = $1, updated_at = $2 WHERE execution_id = $3`, state, now, item.ExecutionID); err != nil {
+	qtx := store.New(tx)
+	if err := qtx.SetExecutionState(ctx, store.SetExecutionStateParams{State: state, UpdatedAt: pgTime(now), ExecutionID: item.ExecutionID}); err != nil {
 		return err
 	}
-	tag, err := tx.Exec(ctx, `UPDATE execution_attempts
-		SET state = $1,
-		    failure_reason = $2,
-		    exit_code = $3,
-		    duration_ms = $4,
-		    zfs_written = $5,
-		    stdout_bytes = $6,
-		    stderr_bytes = $7,
-		    rootfs_provisioned_bytes = $8,
-		    boot_time_us = $9,
-		    block_read_bytes = $10,
-		    block_write_bytes = $11,
-		    net_rx_bytes = $12,
-		    net_tx_bytes = $13,
-		    vcpu_exit_count = $14,
-		    trace_id = $15,
-		    completed_at = $16,
-		    updated_at = $17
-		WHERE attempt_id = $18
-		  AND state = $19`,
-		state,
-		reason,
-		exec.ExitCode,
-		durationMs,
-		int64(exec.ZFSWritten),
-		int64(exec.StdoutBytes),
-		int64(exec.StderrBytes),
-		int64(exec.RootfsProvisionedBytes),
-		vmMetricUint64(metrics, func(m *vmorchestrator.VMMetrics) uint64 { return m.BootTimeUs }),
-		vmMetricUint64(metrics, func(m *vmorchestrator.VMMetrics) uint64 { return m.BlockReadBytes }),
-		vmMetricUint64(metrics, func(m *vmorchestrator.VMMetrics) uint64 { return m.BlockWriteBytes }),
-		vmMetricUint64(metrics, func(m *vmorchestrator.VMMetrics) uint64 { return m.NetRxBytes }),
-		vmMetricUint64(metrics, func(m *vmorchestrator.VMMetrics) uint64 { return m.NetTxBytes }),
-		vmMetricUint64(metrics, func(m *vmorchestrator.VMMetrics) uint64 { return m.VCPUExitCount }),
-		traceID,
-		completedAt,
-		now,
-		item.AttemptID,
-		StateRunning,
-	)
+	rows, err := qtx.CompleteAttemptCAS(ctx, store.CompleteAttemptCASParams{
+		State:                  state,
+		FailureReason:          reason,
+		ExitCode:               int32(exec.ExitCode),
+		DurationMs:             durationMs,
+		ZfsWritten:             int64(exec.ZFSWritten),
+		StdoutBytes:            int64(exec.StdoutBytes),
+		StderrBytes:            int64(exec.StderrBytes),
+		RootfsProvisionedBytes: int64(exec.RootfsProvisionedBytes),
+		BootTimeUs:             vmMetricUint64(metrics, func(m *vmorchestrator.VMMetrics) uint64 { return m.BootTimeUs }),
+		BlockReadBytes:         vmMetricUint64(metrics, func(m *vmorchestrator.VMMetrics) uint64 { return m.BlockReadBytes }),
+		BlockWriteBytes:        vmMetricUint64(metrics, func(m *vmorchestrator.VMMetrics) uint64 { return m.BlockWriteBytes }),
+		NetRxBytes:             vmMetricUint64(metrics, func(m *vmorchestrator.VMMetrics) uint64 { return m.NetRxBytes }),
+		NetTxBytes:             vmMetricUint64(metrics, func(m *vmorchestrator.VMMetrics) uint64 { return m.NetTxBytes }),
+		VcpuExitCount:          vmMetricUint64(metrics, func(m *vmorchestrator.VMMetrics) uint64 { return m.VCPUExitCount }),
+		TraceID:                traceID,
+		CompletedAt:            pgTime(completedAt),
+		UpdatedAt:              pgTime(now),
+		AttemptID:              item.AttemptID,
+		FromState:              StateRunning,
+	})
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() != 1 {
+	if rows != 1 {
 		return fmt.Errorf("execution attempt %s is not in expected state %s", item.AttemptID, StateRunning)
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO execution_events (execution_id, attempt_id, from_state, to_state, reason, created_at) VALUES ($1,$2,$3,$4,$5,$6)`, item.ExecutionID, item.AttemptID, StateRunning, StateFinalizing, "exec_finished", now); err != nil {
+	if err := qtx.InsertExecutionEvent(ctx, store.InsertExecutionEventParams{
+		ExecutionID: item.ExecutionID,
+		AttemptID:   item.AttemptID,
+		FromState:   StateRunning,
+		ToState:     StateFinalizing,
+		Reason:      "exec_finished",
+		CreatedAt:   pgTime(now),
+	}); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO execution_events (execution_id, attempt_id, from_state, to_state, reason, created_at) VALUES ($1,$2,$3,$4,$5,$6)`, item.ExecutionID, item.AttemptID, StateFinalizing, state, reason, now); err != nil {
+	if err := qtx.InsertExecutionEvent(ctx, store.InsertExecutionEventParams{
+		ExecutionID: item.ExecutionID,
+		AttemptID:   item.AttemptID,
+		FromState:   StateFinalizing,
+		ToState:     state,
+		Reason:      reason,
+		CreatedAt:   pgTime(now),
+	}); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -936,13 +979,27 @@ func (s *Service) failAttempt(ctx context.Context, item executionWorkItem, reaso
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx, `UPDATE executions SET state = $1, updated_at = $2 WHERE execution_id = $3`, StateFailed, now, item.ExecutionID); err != nil {
+	qtx := store.New(tx)
+	if err := qtx.SetExecutionState(ctx, store.SetExecutionStateParams{State: StateFailed, UpdatedAt: pgTime(now), ExecutionID: item.ExecutionID}); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE execution_attempts SET state = $1, failure_reason = $2, trace_id = $3, completed_at = $4, updated_at = $4 WHERE attempt_id = $5`, StateFailed, reason, traceID, now, item.AttemptID); err != nil {
+	if err := qtx.MarkAttemptFailed(ctx, store.MarkAttemptFailedParams{
+		State:         StateFailed,
+		FailureReason: reason,
+		TraceID:       traceID,
+		CompletedAt:   pgTime(now),
+		AttemptID:     item.AttemptID,
+	}); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO execution_events (execution_id, attempt_id, from_state, to_state, reason, created_at) VALUES ($1,$2,'',$3,$4,$5)`, item.ExecutionID, item.AttemptID, StateFailed, reason, now); err != nil {
+	if err := qtx.InsertExecutionEvent(ctx, store.InsertExecutionEventParams{
+		ExecutionID: item.ExecutionID,
+		AttemptID:   item.AttemptID,
+		FromState:   "",
+		ToState:     StateFailed,
+		Reason:      reason,
+		CreatedAt:   pgTime(now),
+	}); err != nil {
 		return err
 	}
 	err = tx.Commit(ctx)
@@ -984,67 +1041,62 @@ func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uu
 }
 
 func (s *Service) GetExecutionLogs(ctx context.Context, orgID uint64, executionID uuid.UUID) (uuid.UUID, string, error) {
-	var attemptID uuid.UUID
-	if err := s.PGX.QueryRow(ctx, `SELECT a.attempt_id FROM executions e JOIN execution_attempts a ON a.execution_id = e.execution_id WHERE e.org_id = $1 AND e.execution_id = $2 ORDER BY a.attempt_seq DESC LIMIT 1`, orgID, executionID).Scan(&attemptID); err != nil {
+	attemptID, err := s.storeQueries().GetLatestAttemptForExecution(ctx, store.GetLatestAttemptForExecutionParams{
+		OrgID:       dbOrgID(orgID),
+		ExecutionID: executionID,
+	})
+	if err != nil {
 		return uuid.Nil, "", ErrExecutionMissing
 	}
-	rows, err := s.PGX.Query(ctx, `SELECT chunk FROM execution_logs WHERE attempt_id = $1 ORDER BY seq ASC`, attemptID)
+	chunks, err := s.storeQueries().ListExecutionLogChunks(ctx, store.ListExecutionLogChunksParams{AttemptID: attemptID})
 	if err != nil {
 		return uuid.Nil, "", err
 	}
-	defer rows.Close()
 	var builder strings.Builder
-	for rows.Next() {
-		var chunk string
-		if err := rows.Scan(&chunk); err != nil {
-			return uuid.Nil, "", err
-		}
+	for _, chunk := range chunks {
 		builder.WriteString(chunk)
 	}
-	return attemptID, builder.String(), rows.Err()
+	return attemptID, builder.String(), nil
 }
 
 func (s *Service) listBillingWindows(ctx context.Context, attemptID uuid.UUID) ([]BillingWindow, error) {
-	rows, err := s.PGX.Query(ctx, `SELECT
-			attempt_id,
-			billing_window_id,
-			window_seq,
-			reservation_shape,
-			reserved_quantity,
-			actual_quantity,
-			reserved_charge_units,
-			billed_charge_units,
-			writeoff_charge_units,
-			cost_per_unit,
-			pricing_phase,
-			state,
-			window_start,
-			created_at,
-			settled_at
-		FROM execution_billing_windows
-		WHERE attempt_id = $1
-		ORDER BY window_seq`, attemptID)
+	rows, err := s.storeQueries().ListExecutionBillingWindows(ctx, store.ListExecutionBillingWindowsParams{AttemptID: attemptID})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	out := []BillingWindow{}
-	for rows.Next() {
-		var window BillingWindow
-		if err := rows.Scan(&window.AttemptID, &window.BillingWindowID, &window.WindowSeq, &window.ReservationShape, &window.ReservedQuantity, &window.ActualQuantity, &window.ReservedChargeUnits, &window.BilledChargeUnits, &window.WriteoffChargeUnits, &window.CostPerUnit, &window.PricingPhase, &window.State, &window.WindowStart, &window.CreatedAt, &window.SettledAt); err != nil {
-			return nil, err
-		}
-		out = append(out, window)
+	out := make([]BillingWindow, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, BillingWindow{
+			AttemptID:           row.AttemptID,
+			BillingWindowID:     row.BillingWindowID,
+			WindowSeq:           int(row.WindowSeq),
+			ReservationShape:    row.ReservationShape,
+			ReservedQuantity:    int(row.ReservedQuantity),
+			ActualQuantity:      int(row.ActualQuantity),
+			ReservedChargeUnits: uint64(row.ReservedChargeUnits),
+			BilledChargeUnits:   uint64(row.BilledChargeUnits),
+			WriteoffChargeUnits: uint64(row.WriteoffChargeUnits),
+			CostPerUnit:         uint64(row.CostPerUnit),
+			PricingPhase:        row.PricingPhase,
+			State:               row.State,
+			WindowStart:         timeFromPG(row.WindowStart),
+			CreatedAt:           timeFromPG(row.CreatedAt),
+			SettledAt:           timePtrFromPG(row.SettledAt),
+		})
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func (s *Service) writeExecutionLogs(ctx context.Context, record ExecutionRecord, logs string) error {
 	if logs == "" {
 		return nil
 	}
-	_, err := s.PGX.Exec(ctx, `INSERT INTO execution_logs (execution_id, attempt_id, seq, stream, chunk, created_at) VALUES ($1,$2,1,'combined',$3,$4)`, record.ExecutionID, record.LatestAttempt.AttemptID, logs, time.Now().UTC())
-	if err != nil {
+	if err := s.storeQueries().InsertExecutionLog(ctx, store.InsertExecutionLogParams{
+		ExecutionID: record.ExecutionID,
+		AttemptID:   record.LatestAttempt.AttemptID,
+		Chunk:       logs,
+		CreatedAt:   pgTime(time.Now().UTC()),
+	}); err != nil {
 		return err
 	}
 	if s.CH == nil {

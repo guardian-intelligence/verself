@@ -1,43 +1,36 @@
 package identity
 
 import (
-	"database/sql"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+
+	identitystore "github.com/verself/identity-service/internal/store"
 )
 
-type scannerFunc func(dest ...any) error
-
-func (f scannerFunc) Scan(dest ...any) error {
-	return f(dest...)
-}
-
-func TestScanAPICredentialAcceptsNullRevokedBy(t *testing.T) {
+func TestAPICredentialFromFieldsAcceptsNullRevokedBy(t *testing.T) {
 	now := time.Unix(1700000000, 0).UTC()
-	credential, err := scanAPICredential(scannerFunc(func(dest ...any) error {
-		if len(dest) != 16 {
-			t.Fatalf("unexpected scan destination count: %d", len(dest))
-		}
-		*dest[0].(*string) = "credential-1"
-		*dest[1].(*string) = "org-1"
-		*dest[2].(*string) = "subject-1"
-		*dest[3].(*string) = "client-1"
-		*dest[4].(*string) = "CI bot"
-		*dest[5].(*string) = string(APICredentialStatusActive)
-		*dest[6].(*string) = string(APICredentialAuthMethodClientSecret)
-		*dest[7].(*string) = "sha256:test"
-		*dest[8].(*int32) = 7
-		*dest[9].(*time.Time) = now
-		*dest[10].(*string) = "owner-1"
-		*dest[11].(*time.Time) = now
-		*dest[12].(*sql.NullTime) = sql.NullTime{}
-		*dest[13].(*sql.NullTime) = sql.NullTime{}
-		*dest[14].(*sql.NullString) = sql.NullString{}
-		*dest[15].(*sql.NullTime) = sql.NullTime{}
-		return nil
-	}))
+	credential, err := apiCredentialFromFields(
+		"credential-1",
+		"org-1",
+		"subject-1",
+		"client-1",
+		"CI bot",
+		string(APICredentialStatusActive),
+		string(APICredentialAuthMethodClientSecret),
+		"sha256:test",
+		7,
+		timestamptz(now),
+		"owner-1",
+		timestamptz(now),
+		pgtype.Timestamptz{},
+		pgtype.Timestamptz{},
+		"",
+		pgtype.Timestamptz{},
+	)
 	if err != nil {
-		t.Fatalf("scan credential: %v", err)
+		t.Fatalf("convert credential: %v", err)
 	}
 	if credential.RevokedBy != "" || credential.RevokedAt != nil {
 		t.Fatalf("unexpected revocation metadata: %#v", credential)
@@ -47,28 +40,24 @@ func TestScanAPICredentialAcceptsNullRevokedBy(t *testing.T) {
 	}
 }
 
-func TestScanAPICredentialSecretAcceptsNullRevokedBy(t *testing.T) {
+func TestAPICredentialSecretFromRowAcceptsNullRevokedBy(t *testing.T) {
 	now := time.Unix(1700000000, 0).UTC()
-	secret, err := scanAPICredentialSecret(scannerFunc(func(dest ...any) error {
-		if len(dest) != 12 {
-			t.Fatalf("unexpected scan destination count: %d", len(dest))
-		}
-		*dest[0].(*string) = "secret-1"
-		*dest[1].(*string) = "credential-1"
-		*dest[2].(*string) = string(APICredentialAuthMethodClientSecret)
-		*dest[3].(*string) = "key-1"
-		*dest[4].(*string) = "sha256:test"
-		*dest[5].(*[]byte) = []byte("hash")
-		*dest[6].(*string) = "argon2id"
-		*dest[7].(*time.Time) = now
-		*dest[8].(*string) = "owner-1"
-		*dest[9].(*sql.NullTime) = sql.NullTime{}
-		*dest[10].(*sql.NullTime) = sql.NullTime{}
-		*dest[11].(*sql.NullString) = sql.NullString{}
-		return nil
-	}))
+	secret, err := apiCredentialSecretFromRow(identitystore.ListActiveAPICredentialSecretsRow{
+		SecretID:      "secret-1",
+		CredentialID:  "credential-1",
+		AuthMethod:    string(APICredentialAuthMethodClientSecret),
+		ProviderKeyID: "key-1",
+		Fingerprint:   "sha256:test",
+		SecretHash:    []byte("hash"),
+		HashAlgorithm: "argon2id",
+		CreatedAt:     timestamptz(now),
+		CreatedBy:     "owner-1",
+		ExpiresAt:     pgtype.Timestamptz{},
+		RevokedAt:     pgtype.Timestamptz{},
+		RevokedBy:     "",
+	})
 	if err != nil {
-		t.Fatalf("scan credential secret: %v", err)
+		t.Fatalf("convert credential secret: %v", err)
 	}
 	if secret.RevokedBy != "" || secret.RevokedAt != nil {
 		t.Fatalf("unexpected revocation metadata: %#v", secret)

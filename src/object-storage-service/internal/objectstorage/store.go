@@ -2,14 +2,18 @@ package objectstorage
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/lib/pq"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	storegen "github.com/verself/object-storage-service/internal/store"
 )
 
 var (
@@ -19,32 +23,45 @@ var (
 )
 
 type Store struct {
-	DB *sql.DB
+	pool    *pgxpool.Pool
+	queries *storegen.Queries
+}
+
+func NewStore(pool *pgxpool.Pool) *Store {
+	return &Store{
+		pool:    pool,
+		queries: storegen.New(pool),
+	}
 }
 
 func (s *Store) Ready(ctx context.Context) error {
-	if s == nil || s.DB == nil {
+	if s == nil || s.pool == nil || s.queries == nil {
 		return fmt.Errorf("object-storage store unavailable")
 	}
-	return s.DB.PingContext(ctx)
+	return s.pool.Ping(ctx)
 }
 
 func (s *Store) CreateBucket(ctx context.Context, bucket Bucket) error {
-	if s == nil || s.DB == nil {
-		return fmt.Errorf("object-storage store unavailable")
+	q, err := s.readyQueries()
+	if err != nil {
+		return err
 	}
 	if len(bucket.LifecycleJSON) == 0 {
 		bucket.LifecycleJSON = json.RawMessage("[]")
 	}
-	_, err := s.DB.ExecContext(ctx, `
-INSERT INTO object_storage_buckets (
-    bucket_id, org_id, bucket_name, garage_bucket_id, quota_bytes, quota_objects,
-    lifecycle_json, created_at, created_by, updated_at, updated_by
-)
-VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11)
-`, bucket.BucketID, bucket.OrgID, bucket.BucketName, bucket.GarageBucketID,
-		bucket.QuotaBytes, bucket.QuotaObjects, []byte(bucket.LifecycleJSON),
-		bucket.CreatedAt, bucket.CreatedBy, bucket.UpdatedAt, bucket.UpdatedBy)
+	err = q.CreateBucket(ctx, storegen.CreateBucketParams{
+		BucketID:       bucket.BucketID,
+		OrgID:          bucket.OrgID,
+		BucketName:     bucket.BucketName,
+		GarageBucketID: bucket.GarageBucketID,
+		QuotaBytes:     pgInt8(bucket.QuotaBytes),
+		QuotaObjects:   pgInt8(bucket.QuotaObjects),
+		LifecycleJson:  []byte(bucket.LifecycleJSON),
+		CreatedAt:      pgTimestamptz(bucket.CreatedAt),
+		CreatedBy:      bucket.CreatedBy,
+		UpdatedAt:      pgTimestamptz(bucket.UpdatedAt),
+		UpdatedBy:      bucket.UpdatedBy,
+	})
 	if err != nil {
 		return classifyStoreError("create bucket", err)
 	}
@@ -52,78 +69,80 @@ VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11)
 }
 
 func (s *Store) UpdateBucket(ctx context.Context, bucket Bucket) error {
-	if s == nil || s.DB == nil {
-		return fmt.Errorf("object-storage store unavailable")
+	q, err := s.readyQueries()
+	if err != nil {
+		return err
 	}
 	if len(bucket.LifecycleJSON) == 0 {
 		bucket.LifecycleJSON = json.RawMessage("[]")
 	}
-	result, err := s.DB.ExecContext(ctx, `
-UPDATE object_storage_buckets
-SET quota_bytes = $2,
-    quota_objects = $3,
-    lifecycle_json = $4::jsonb,
-    updated_at = $5,
-    updated_by = $6
-WHERE bucket_id = $1
-`, bucket.BucketID, bucket.QuotaBytes, bucket.QuotaObjects, []byte(bucket.LifecycleJSON), bucket.UpdatedAt, bucket.UpdatedBy)
+	_, err = q.UpdateBucket(ctx, storegen.UpdateBucketParams{
+		QuotaBytes:    pgInt8(bucket.QuotaBytes),
+		QuotaObjects:  pgInt8(bucket.QuotaObjects),
+		LifecycleJson: []byte(bucket.LifecycleJSON),
+		UpdatedAt:     pgTimestamptz(bucket.UpdatedAt),
+		UpdatedBy:     bucket.UpdatedBy,
+		BucketID:      bucket.BucketID,
+	})
 	if err != nil {
-		return classifyStoreError("update bucket", err)
-	}
-	if count, _ := result.RowsAffected(); count == 0 {
-		return ErrNotFound
+		return classifyMutationError("update bucket", err)
 	}
 	return nil
 }
 
 func (s *Store) BucketByID(ctx context.Context, bucketID uuid.UUID) (Bucket, error) {
-	return s.bucketByQuery(ctx, `
-SELECT bucket_id, org_id, bucket_name, garage_bucket_id, quota_bytes, quota_objects,
-       lifecycle_json, created_at, created_by, updated_at, updated_by
-FROM object_storage_buckets
-WHERE bucket_id = $1
-`, bucketID)
+	q, err := s.readyQueries()
+	if err != nil {
+		return Bucket{}, err
+	}
+	row, err := q.BucketByID(ctx, storegen.BucketByIDParams{BucketID: bucketID})
+	if err != nil {
+		return Bucket{}, classifyLookupError("bucket by id", err)
+	}
+	return bucketFromRow(row), nil
 }
 
 func (s *Store) BucketByName(ctx context.Context, bucketName string) (Bucket, error) {
-	return s.bucketByQuery(ctx, `
-SELECT bucket_id, org_id, bucket_name, garage_bucket_id, quota_bytes, quota_objects,
-       lifecycle_json, created_at, created_by, updated_at, updated_by
-FROM object_storage_buckets
-WHERE bucket_name = $1
-`, bucketName)
+	q, err := s.readyQueries()
+	if err != nil {
+		return Bucket{}, err
+	}
+	row, err := q.BucketByName(ctx, storegen.BucketByNameParams{BucketName: bucketName})
+	if err != nil {
+		return Bucket{}, classifyLookupError("bucket by name", err)
+	}
+	return bucketFromRow(row), nil
 }
 
 func (s *Store) ListBuckets(ctx context.Context) ([]Bucket, error) {
-	rows, err := s.DB.QueryContext(ctx, `
-SELECT bucket_id, org_id, bucket_name, garage_bucket_id, quota_bytes, quota_objects,
-       lifecycle_json, created_at, created_by, updated_at, updated_by
-FROM object_storage_buckets
-ORDER BY created_at DESC, bucket_id DESC
-`)
+	q, err := s.readyQueries()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := q.ListBuckets(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list buckets: %w", err)
 	}
-	defer rows.Close()
-	var out []Bucket
-	for rows.Next() {
-		bucket, err := scanBucket(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, bucket)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("list buckets rows: %w", err)
+	out := make([]Bucket, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, bucketFromRow(row))
 	}
 	return out, nil
 }
 
 func (s *Store) CreateAlias(ctx context.Context, alias BucketAlias) error {
-	_, err := s.DB.ExecContext(ctx, `
-INSERT INTO object_storage_bucket_aliases (alias, bucket_id, prefix, service_tag, created_at, created_by)
-VALUES ($1, $2, $3, $4, $5, $6)
-`, alias.Alias, alias.BucketID, alias.Prefix, alias.ServiceTag, alias.CreatedAt, alias.CreatedBy)
+	q, err := s.readyQueries()
+	if err != nil {
+		return err
+	}
+	err = q.CreateAlias(ctx, storegen.CreateAliasParams{
+		Alias:      alias.Alias,
+		BucketID:   alias.BucketID,
+		Prefix:     alias.Prefix,
+		ServiceTag: alias.ServiceTag,
+		CreatedAt:  pgTimestamptz(alias.CreatedAt),
+		CreatedBy:  alias.CreatedBy,
+	})
 	if err != nil {
 		return classifyStoreError("create alias", err)
 	}
@@ -131,103 +150,77 @@ VALUES ($1, $2, $3, $4, $5, $6)
 }
 
 func (s *Store) DeleteAlias(ctx context.Context, alias string) error {
-	result, err := s.DB.ExecContext(ctx, `DELETE FROM object_storage_bucket_aliases WHERE alias = $1`, alias)
+	q, err := s.readyQueries()
 	if err != nil {
-		return fmt.Errorf("delete alias: %w", err)
+		return err
 	}
-	if count, _ := result.RowsAffected(); count == 0 {
-		return ErrNotFound
+	if _, err := q.DeleteAlias(ctx, storegen.DeleteAliasParams{Alias: alias}); err != nil {
+		return classifyMutationError("delete alias", err)
 	}
 	return nil
 }
 
 func (s *Store) AliasesByBucket(ctx context.Context, bucketID uuid.UUID) ([]BucketAlias, error) {
-	rows, err := s.DB.QueryContext(ctx, `
-SELECT alias, bucket_id, prefix, service_tag, created_at, created_by
-FROM object_storage_bucket_aliases
-WHERE bucket_id = $1
-ORDER BY alias
-`, bucketID)
+	q, err := s.readyQueries()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := q.AliasesByBucket(ctx, storegen.AliasesByBucketParams{BucketID: bucketID})
 	if err != nil {
 		return nil, fmt.Errorf("list aliases: %w", err)
 	}
-	defer rows.Close()
-	var out []BucketAlias
-	for rows.Next() {
-		var alias BucketAlias
-		if err := rows.Scan(&alias.Alias, &alias.BucketID, &alias.Prefix, &alias.ServiceTag, &alias.CreatedAt, &alias.CreatedBy); err != nil {
-			return nil, fmt.Errorf("scan alias: %w", err)
-		}
-		out = append(out, alias)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("list aliases rows: %w", err)
+	out := make([]BucketAlias, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, aliasFromRow(row))
 	}
 	return out, nil
 }
 
 func (s *Store) ResolveBucketAlias(ctx context.Context, alias string) (Bucket, BucketAlias, bool, error) {
-	query := `
-SELECT b.bucket_id, b.org_id, b.bucket_name, b.garage_bucket_id, b.quota_bytes, b.quota_objects,
-       b.lifecycle_json, b.created_at, b.created_by, b.updated_at, b.updated_by,
-       a.alias, a.bucket_id, a.prefix, a.service_tag, a.created_at, a.created_by
-FROM object_storage_bucket_aliases a
-JOIN object_storage_buckets b ON b.bucket_id = a.bucket_id
-WHERE a.alias = $1
-`
-	var (
-		bucket            Bucket
-		resolved          BucketAlias
-		lifecycleRaw      []byte
-		quotaBytes        sql.NullInt64
-		quotaObjects      sql.NullInt64
-		resolvedCreatedAt time.Time
-	)
-	err := s.DB.QueryRowContext(ctx, query, alias).Scan(
-		&bucket.BucketID, &bucket.OrgID, &bucket.BucketName, &bucket.GarageBucketID, &quotaBytes, &quotaObjects,
-		&lifecycleRaw, &bucket.CreatedAt, &bucket.CreatedBy, &bucket.UpdatedAt, &bucket.UpdatedBy,
-		&resolved.Alias, &resolved.BucketID, &resolved.Prefix, &resolved.ServiceTag, &resolvedCreatedAt, &resolved.CreatedBy,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
+	q, err := s.readyQueries()
+	if err != nil {
+		return Bucket{}, BucketAlias{}, false, err
+	}
+	row, err := q.ResolveBucketAlias(ctx, storegen.ResolveBucketAliasParams{Alias: alias})
+	if errors.Is(err, pgx.ErrNoRows) {
 		return Bucket{}, BucketAlias{}, false, nil
 	}
 	if err != nil {
 		return Bucket{}, BucketAlias{}, false, fmt.Errorf("resolve bucket alias: %w", err)
 	}
-	if quotaBytes.Valid {
-		v := quotaBytes.Int64
-		bucket.QuotaBytes = &v
-	}
-	if quotaObjects.Valid {
-		v := quotaObjects.Int64
-		bucket.QuotaObjects = &v
-	}
-	bucket.LifecycleJSON = lifecycleRaw
-	resolved.CreatedAt = resolvedCreatedAt
-	return bucket, resolved, true, nil
+	return bucketFromAliasRow(row), aliasFromAliasRow(row), true, nil
 }
 
 func (s *Store) CreateCredential(ctx context.Context, credential Credential) error {
-	// lib/pq maps nil []byte to SQL NULL; normalize to empty bytea so the
-	// auth_mode-specific CHECK constraints can distinguish empty from missing.
+	q, err := s.readyQueries()
+	if err != nil {
+		return err
+	}
+	// pgx encodes nil []byte as SQL NULL; credential constraints distinguish empty bytea from NULL.
 	if credential.SecretCiphertext == nil {
 		credential.SecretCiphertext = []byte{}
 	}
 	if credential.SecretNonce == nil {
 		credential.SecretNonce = []byte{}
 	}
-	_, err := s.DB.ExecContext(ctx, `
-INSERT INTO object_storage_credentials (
-    credential_id, bucket_id, auth_mode, display_name, access_key_id, spiffe_subject,
-    secret_hash, secret_fingerprint, secret_ciphertext, secret_nonce, status,
-    expires_at, created_at, created_by, revoked_at, revoked_by
-)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-`, credential.CredentialID, credential.BucketID, credential.AuthMode, credential.DisplayName,
-		credential.AccessKeyID, credential.SPIFFESubject, credential.SecretHash,
-		credential.SecretFingerprint, credential.SecretCiphertext, credential.SecretNonce,
-		credential.Status, credential.ExpiresAt, credential.CreatedAt, credential.CreatedBy,
-		credential.RevokedAt, credential.RevokedBy)
+	err = q.CreateCredential(ctx, storegen.CreateCredentialParams{
+		CredentialID:      credential.CredentialID,
+		BucketID:          credential.BucketID,
+		AuthMode:          credential.AuthMode,
+		DisplayName:       credential.DisplayName,
+		AccessKeyID:       credential.AccessKeyID,
+		SpiffeSubject:     credential.SPIFFESubject,
+		SecretHash:        credential.SecretHash,
+		SecretFingerprint: credential.SecretFingerprint,
+		SecretCiphertext:  credential.SecretCiphertext,
+		SecretNonce:       credential.SecretNonce,
+		Status:            credential.Status,
+		ExpiresAt:         pgNullableTimestamptz(credential.ExpiresAt),
+		CreatedAt:         pgTimestamptz(credential.CreatedAt),
+		CreatedBy:         credential.CreatedBy,
+		RevokedAt:         pgNullableTimestamptz(credential.RevokedAt),
+		RevokedBy:         credential.RevokedBy,
+	})
 	if err != nil {
 		return classifyStoreError("create credential", err)
 	}
@@ -235,205 +228,267 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 }
 
 func (s *Store) DeleteCredential(ctx context.Context, credentialID uuid.UUID) error {
-	result, err := s.DB.ExecContext(ctx, `DELETE FROM object_storage_credentials WHERE credential_id = $1`, credentialID)
+	q, err := s.readyQueries()
 	if err != nil {
-		return fmt.Errorf("delete credential: %w", err)
+		return err
 	}
-	if count, _ := result.RowsAffected(); count == 0 {
-		return ErrNotFound
+	if _, err := q.DeleteCredential(ctx, storegen.DeleteCredentialParams{CredentialID: credentialID}); err != nil {
+		return classifyMutationError("delete credential", err)
 	}
 	return nil
 }
 
 func (s *Store) RevokeCredentialByAccessKey(ctx context.Context, accessKeyID, actor string, now time.Time) error {
-	result, err := s.DB.ExecContext(ctx, `
-UPDATE object_storage_credentials
-SET status = $2, revoked_at = $3, revoked_by = $4
-WHERE access_key_id = $1 AND auth_mode = $5 AND status = $6
-`, accessKeyID, CredentialStatusRevoked, now, actor, AuthModeSigV4Static, CredentialStatusActive)
+	q, err := s.readyQueries()
 	if err != nil {
-		return classifyStoreError("revoke credential", err)
+		return err
 	}
-	if count, _ := result.RowsAffected(); count == 0 {
-		return ErrNotFound
+	_, err = q.RevokeCredentialByAccessKey(ctx, storegen.RevokeCredentialByAccessKeyParams{
+		RevokedStatus: CredentialStatusRevoked,
+		RevokedAt:     pgTimestamptz(now),
+		RevokedBy:     actor,
+		AccessKeyID:   accessKeyID,
+		AuthMode:      AuthModeSigV4Static,
+		ActiveStatus:  CredentialStatusActive,
+	})
+	if err != nil {
+		return classifyMutationError("revoke credential", err)
 	}
 	return nil
 }
 
 func (s *Store) ActiveCredentialByAccessKeyID(ctx context.Context, accessKeyID string) (Credential, error) {
-	return s.credentialByQuery(ctx, `
-SELECT credential_id, bucket_id, auth_mode, display_name, access_key_id, spiffe_subject,
-       secret_hash, secret_fingerprint, secret_ciphertext, secret_nonce, status, expires_at,
-       created_at, created_by, revoked_at, revoked_by
-FROM object_storage_credentials
-WHERE access_key_id = $1 AND auth_mode = $2 AND status = $3
-`, accessKeyID, AuthModeSigV4Static, CredentialStatusActive)
+	q, err := s.readyQueries()
+	if err != nil {
+		return Credential{}, err
+	}
+	row, err := q.ActiveCredentialByAccessKeyID(ctx, storegen.ActiveCredentialByAccessKeyIDParams{
+		AccessKeyID: accessKeyID,
+		AuthMode:    AuthModeSigV4Static,
+		Status:      CredentialStatusActive,
+	})
+	if err != nil {
+		return Credential{}, classifyLookupError("active credential by access key", err)
+	}
+	return credentialFromRow(row), nil
 }
 
 func (s *Store) CredentialByID(ctx context.Context, credentialID uuid.UUID) (Credential, error) {
-	return s.credentialByQuery(ctx, `
-SELECT credential_id, bucket_id, auth_mode, display_name, access_key_id, spiffe_subject,
-       secret_hash, secret_fingerprint, secret_ciphertext, secret_nonce, status, expires_at,
-       created_at, created_by, revoked_at, revoked_by
-FROM object_storage_credentials
-WHERE credential_id = $1
-`, credentialID)
+	q, err := s.readyQueries()
+	if err != nil {
+		return Credential{}, err
+	}
+	row, err := q.CredentialByID(ctx, storegen.CredentialByIDParams{CredentialID: credentialID})
+	if err != nil {
+		return Credential{}, classifyLookupError("credential by id", err)
+	}
+	return credentialFromRow(row), nil
 }
 
 func (s *Store) ActiveCredentialBySPIFFE(ctx context.Context, spiffeSubject string) (Credential, error) {
-	return s.credentialByQuery(ctx, `
-SELECT credential_id, bucket_id, auth_mode, display_name, access_key_id, spiffe_subject,
-       secret_hash, secret_fingerprint, secret_ciphertext, secret_nonce, status, expires_at,
-       created_at, created_by, revoked_at, revoked_by
-FROM object_storage_credentials
-WHERE spiffe_subject = $1 AND auth_mode = $2 AND status = $3
-`, spiffeSubject, AuthModeSPIFFEMTLS, CredentialStatusActive)
+	q, err := s.readyQueries()
+	if err != nil {
+		return Credential{}, err
+	}
+	row, err := q.ActiveCredentialBySPIFFE(ctx, storegen.ActiveCredentialBySPIFFEParams{
+		SpiffeSubject: spiffeSubject,
+		AuthMode:      AuthModeSPIFFEMTLS,
+		Status:        CredentialStatusActive,
+	})
+	if err != nil {
+		return Credential{}, classifyLookupError("active credential by spiffe", err)
+	}
+	return credentialFromRow(row), nil
 }
 
 func (s *Store) CredentialsByBucket(ctx context.Context, bucketID uuid.UUID) ([]Credential, error) {
-	rows, err := s.DB.QueryContext(ctx, `
-SELECT credential_id, bucket_id, auth_mode, display_name, access_key_id, spiffe_subject,
-       secret_hash, secret_fingerprint, secret_ciphertext, secret_nonce, status, expires_at,
-       created_at, created_by, revoked_at, revoked_by
-FROM object_storage_credentials
-WHERE bucket_id = $1
-ORDER BY created_at DESC, credential_id DESC
-`, bucketID)
+	q, err := s.readyQueries()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := q.CredentialsByBucket(ctx, storegen.CredentialsByBucketParams{BucketID: bucketID})
 	if err != nil {
 		return nil, fmt.Errorf("list credentials: %w", err)
 	}
-	defer rows.Close()
-	var out []Credential
-	for rows.Next() {
-		credential, err := scanCredential(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, credential)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("list credentials rows: %w", err)
+	out := make([]Credential, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, credentialFromRow(row))
 	}
 	return out, nil
 }
 
 func (s *Store) DeleteBucket(ctx context.Context, bucketID uuid.UUID) error {
-	result, err := s.DB.ExecContext(ctx, `DELETE FROM object_storage_buckets WHERE bucket_id = $1`, bucketID)
+	q, err := s.readyQueries()
 	if err != nil {
-		return fmt.Errorf("delete bucket: %w", err)
+		return err
 	}
-	if count, _ := result.RowsAffected(); count == 0 {
-		return ErrNotFound
+	if _, err := q.DeleteBucket(ctx, storegen.DeleteBucketParams{BucketID: bucketID}); err != nil {
+		return classifyMutationError("delete bucket", err)
 	}
 	return nil
 }
 
 func (s *Store) RevokeCredentialByID(ctx context.Context, credentialID uuid.UUID, actor string, now time.Time) error {
-	result, err := s.DB.ExecContext(ctx, `
-UPDATE object_storage_credentials
-SET status = $2, revoked_at = $3, revoked_by = $4
-WHERE credential_id = $1 AND status = $5
-`, credentialID, CredentialStatusRevoked, now, actor, CredentialStatusActive)
+	q, err := s.readyQueries()
 	if err != nil {
-		return classifyStoreError("revoke credential", err)
+		return err
 	}
-	if count, _ := result.RowsAffected(); count == 0 {
-		return ErrNotFound
+	_, err = q.RevokeCredentialByID(ctx, storegen.RevokeCredentialByIDParams{
+		RevokedStatus: CredentialStatusRevoked,
+		RevokedAt:     pgTimestamptz(now),
+		RevokedBy:     actor,
+		CredentialID:  credentialID,
+		ActiveStatus:  CredentialStatusActive,
+	})
+	if err != nil {
+		return classifyMutationError("revoke credential", err)
 	}
 	return nil
 }
 
-func (s *Store) bucketByQuery(ctx context.Context, query string, args ...any) (Bucket, error) {
-	if s == nil || s.DB == nil {
-		return Bucket{}, fmt.Errorf("object-storage store unavailable")
+func (s *Store) readyQueries() (*storegen.Queries, error) {
+	if s == nil || s.pool == nil || s.queries == nil {
+		return nil, fmt.Errorf("object-storage store unavailable")
 	}
-	row := s.DB.QueryRowContext(ctx, query, args...)
-	bucket, err := scanBucket(row)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Bucket{}, ErrNotFound
-	}
-	if err != nil {
-		return Bucket{}, err
-	}
-	return bucket, nil
+	return s.queries, nil
 }
 
-func (s *Store) credentialByQuery(ctx context.Context, query string, args ...any) (Credential, error) {
-	if s == nil || s.DB == nil {
-		return Credential{}, fmt.Errorf("object-storage store unavailable")
+func bucketFromRow(row storegen.ObjectStorageBucket) Bucket {
+	return Bucket{
+		BucketID:       row.BucketID,
+		OrgID:          row.OrgID,
+		BucketName:     row.BucketName,
+		GarageBucketID: row.GarageBucketID,
+		QuotaBytes:     int64Ptr(row.QuotaBytes),
+		QuotaObjects:   int64Ptr(row.QuotaObjects),
+		LifecycleJSON:  json.RawMessage(row.LifecycleJson),
+		CreatedAt:      timeFromPG(row.CreatedAt),
+		CreatedBy:      row.CreatedBy,
+		UpdatedAt:      timeFromPG(row.UpdatedAt),
+		UpdatedBy:      row.UpdatedBy,
 	}
-	row := s.DB.QueryRowContext(ctx, query, args...)
-	credential, err := scanCredential(row)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Credential{}, ErrNotFound
-	}
-	if err != nil {
-		return Credential{}, err
-	}
-	return credential, nil
 }
 
-type scanner interface {
-	Scan(dest ...any) error
+func aliasFromRow(row storegen.ObjectStorageBucketAlias) BucketAlias {
+	return BucketAlias{
+		Alias:      row.Alias,
+		BucketID:   row.BucketID,
+		Prefix:     row.Prefix,
+		ServiceTag: row.ServiceTag,
+		CreatedAt:  timeFromPG(row.CreatedAt),
+		CreatedBy:  row.CreatedBy,
+	}
 }
 
-func scanBucket(row scanner) (Bucket, error) {
-	var (
-		bucket       Bucket
-		lifecycleRaw []byte
-		quotaBytes   sql.NullInt64
-		quotaObjects sql.NullInt64
-	)
-	if err := row.Scan(
-		&bucket.BucketID, &bucket.OrgID, &bucket.BucketName, &bucket.GarageBucketID,
-		&quotaBytes, &quotaObjects, &lifecycleRaw,
-		&bucket.CreatedAt, &bucket.CreatedBy, &bucket.UpdatedAt, &bucket.UpdatedBy,
-	); err != nil {
-		return Bucket{}, fmt.Errorf("scan bucket: %w", err)
+func credentialFromRow(row storegen.ObjectStorageCredential) Credential {
+	return Credential{
+		CredentialID:      row.CredentialID,
+		BucketID:          row.BucketID,
+		AuthMode:          row.AuthMode,
+		DisplayName:       row.DisplayName,
+		AccessKeyID:       row.AccessKeyID,
+		SPIFFESubject:     row.SpiffeSubject,
+		SecretHash:        row.SecretHash,
+		SecretFingerprint: row.SecretFingerprint,
+		SecretCiphertext:  row.SecretCiphertext,
+		SecretNonce:       row.SecretNonce,
+		Status:            row.Status,
+		ExpiresAt:         timePtrFromPG(row.ExpiresAt),
+		CreatedAt:         timeFromPG(row.CreatedAt),
+		CreatedBy:         row.CreatedBy,
+		RevokedAt:         timePtrFromPG(row.RevokedAt),
+		RevokedBy:         row.RevokedBy,
 	}
-	if quotaBytes.Valid {
-		v := quotaBytes.Int64
-		bucket.QuotaBytes = &v
-	}
-	if quotaObjects.Valid {
-		v := quotaObjects.Int64
-		bucket.QuotaObjects = &v
-	}
-	bucket.LifecycleJSON = lifecycleRaw
-	return bucket, nil
 }
 
-func scanCredential(row scanner) (Credential, error) {
-	var (
-		credential Credential
-		expiresAt  sql.NullTime
-		revokedAt  sql.NullTime
-	)
-	if err := row.Scan(
-		&credential.CredentialID, &credential.BucketID, &credential.AuthMode,
-		&credential.DisplayName, &credential.AccessKeyID, &credential.SPIFFESubject,
-		&credential.SecretHash, &credential.SecretFingerprint, &credential.SecretCiphertext,
-		&credential.SecretNonce, &credential.Status, &expiresAt, &credential.CreatedAt,
-		&credential.CreatedBy, &revokedAt, &credential.RevokedBy,
-	); err != nil {
-		return Credential{}, fmt.Errorf("scan credential: %w", err)
+func bucketFromAliasRow(row storegen.ResolveBucketAliasRow) Bucket {
+	return Bucket{
+		BucketID:       row.BucketID,
+		OrgID:          row.OrgID,
+		BucketName:     row.BucketName,
+		GarageBucketID: row.GarageBucketID,
+		QuotaBytes:     int64Ptr(row.QuotaBytes),
+		QuotaObjects:   int64Ptr(row.QuotaObjects),
+		LifecycleJSON:  json.RawMessage(row.LifecycleJson),
+		CreatedAt:      timeFromPG(row.CreatedAt),
+		CreatedBy:      row.CreatedBy,
+		UpdatedAt:      timeFromPG(row.UpdatedAt),
+		UpdatedBy:      row.UpdatedBy,
 	}
-	if expiresAt.Valid {
-		v := expiresAt.Time
-		credential.ExpiresAt = &v
+}
+
+func aliasFromAliasRow(row storegen.ResolveBucketAliasRow) BucketAlias {
+	return BucketAlias{
+		Alias:      row.Alias,
+		BucketID:   row.AliasBucketID,
+		Prefix:     row.Prefix,
+		ServiceTag: row.ServiceTag,
+		CreatedAt:  timeFromPG(row.AliasCreatedAt),
+		CreatedBy:  row.AliasCreatedBy,
 	}
-	if revokedAt.Valid {
-		v := revokedAt.Time
-		credential.RevokedAt = &v
+}
+
+func pgInt8(v *int64) pgtype.Int8 {
+	if v == nil {
+		return pgtype.Int8{}
 	}
-	return credential, nil
+	return pgtype.Int8{Int64: *v, Valid: true}
+}
+
+func int64Ptr(v pgtype.Int8) *int64 {
+	if !v.Valid {
+		return nil
+	}
+	out := v.Int64
+	return &out
+}
+
+func pgTimestamptz(v time.Time) pgtype.Timestamptz {
+	return pgtype.Timestamptz{Time: v.UTC(), Valid: true}
+}
+
+func pgNullableTimestamptz(v *time.Time) pgtype.Timestamptz {
+	if v == nil {
+		return pgtype.Timestamptz{}
+	}
+	return pgTimestamptz(*v)
+}
+
+func timeFromPG(v pgtype.Timestamptz) time.Time {
+	if !v.Valid {
+		return time.Time{}
+	}
+	return v.Time
+}
+
+func timePtrFromPG(v pgtype.Timestamptz) *time.Time {
+	if !v.Valid {
+		return nil
+	}
+	out := v.Time
+	return &out
+}
+
+func classifyLookupError(op string, err error) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	return fmt.Errorf("%s: %w", op, err)
+}
+
+func classifyMutationError(op string, err error) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	return classifyStoreError(op, err)
 }
 
 func classifyStoreError(op string, err error) error {
 	if err == nil {
 		return nil
 	}
-	if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23505" {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 		return fmt.Errorf("%s: %w", op, ErrConflict)
 	}
 	return fmt.Errorf("%s: %w", op, err)

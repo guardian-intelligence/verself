@@ -618,6 +618,24 @@
     - dev_tools_manifest.gofumpt is defined
     - dev_tools_gofumpt_current.rc != 0 or dev_tools_manifest.gofumpt.version not in (dev_tools_gofumpt_current.stdout | default(''))
 
+- name: Check sqlc version
+  ansible.builtin.command: "{{ dev_tools_gopath }}/bin/sqlc version"
+  register: dev_tools_sqlc_current
+  changed_when: false
+  failed_when: false
+  when: dev_tools_manifest.sqlc is defined
+
+- name: Install sqlc via go install
+  ansible.builtin.command:
+    cmd: "/usr/local/go/bin/go install {{ dev_tools_manifest.sqlc.go_package }}@v{{ dev_tools_manifest.sqlc.version }}"
+  environment:
+    GOPATH: "{{ dev_tools_gopath }}"
+    GOBIN: "{{ dev_tools_gopath }}/bin"
+  changed_when: true
+  when:
+    - dev_tools_manifest.sqlc is defined
+    - dev_tools_sqlc_current.rc != 0 or dev_tools_manifest.sqlc.version not in (dev_tools_sqlc_current.stdout | default(''))
+
 - name: Check protoc-gen-go version
   ansible.builtin.command: "{{ dev_tools_gopath }}/bin/protoc-gen-go --version"
   register: dev_tools_protoc_gen_go_current

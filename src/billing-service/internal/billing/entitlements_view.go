@@ -116,51 +116,37 @@ func (c *Client) ListEntitlementsView(ctx context.Context, orgID OrgID) (Entitle
 }
 
 func (c *Client) loadEntitlementCatalog(ctx context.Context) (entitlementCatalog, error) {
-	rows, err := c.pg.Query(ctx, `
-		SELECT p.product_id, p.display_name, b.bucket_id, b.display_name, b.sort_order, s.sku_id, s.display_name
-		FROM products p
-		LEFT JOIN skus s ON s.product_id = p.product_id AND s.active
-		LEFT JOIN credit_buckets b ON b.bucket_id = s.bucket_id
-		WHERE p.active
-		ORDER BY p.display_name, p.product_id, b.sort_order NULLS LAST, b.bucket_id, s.display_name, s.sku_id
-	`)
+	rows, err := c.queries.ListEntitlementCatalogRows(ctx)
 	if err != nil {
 		return entitlementCatalog{}, fmt.Errorf("query entitlement catalog: %w", err)
 	}
-	defer rows.Close()
 	products := []entitlementCatalogProduct{}
 	productIdx := map[string]int{}
 	bucketIdx := map[string]map[string]int{}
-	for rows.Next() {
-		var productID, productDisplay string
-		var bucketID, bucketDisplay, skuID, skuDisplay *string
-		var sortOrder *int
-		if err := rows.Scan(&productID, &productDisplay, &bucketID, &bucketDisplay, &sortOrder, &skuID, &skuDisplay); err != nil {
-			return entitlementCatalog{}, fmt.Errorf("scan entitlement catalog: %w", err)
-		}
-		pi, ok := productIdx[productID]
+	for _, row := range rows {
+		pi, ok := productIdx[row.ProductID]
 		if !ok {
-			products = append(products, entitlementCatalogProduct{ProductID: productID, DisplayName: productDisplay})
+			products = append(products, entitlementCatalogProduct{ProductID: row.ProductID, DisplayName: row.ProductDisplayName})
 			pi = len(products) - 1
-			productIdx[productID] = pi
-			bucketIdx[productID] = map[string]int{}
+			productIdx[row.ProductID] = pi
+			bucketIdx[row.ProductID] = map[string]int{}
 		}
-		if bucketID == nil || skuID == nil {
+		if !row.BucketID.Valid || !row.SkuID.Valid {
 			continue
 		}
-		bi, ok := bucketIdx[productID][*bucketID]
+		bi, ok := bucketIdx[row.ProductID][row.BucketID.String]
 		if !ok {
 			order := 0
-			if sortOrder != nil {
-				order = *sortOrder
+			if row.SortOrder.Valid {
+				order = int(row.SortOrder.Int32)
 			}
-			products[pi].Buckets = append(products[pi].Buckets, entitlementCatalogBucket{BucketID: *bucketID, DisplayName: derefString(bucketDisplay), SortOrder: order})
+			products[pi].Buckets = append(products[pi].Buckets, entitlementCatalogBucket{BucketID: row.BucketID.String, DisplayName: row.BucketDisplayName.String, SortOrder: order})
 			bi = len(products[pi].Buckets) - 1
-			bucketIdx[productID][*bucketID] = bi
+			bucketIdx[row.ProductID][row.BucketID.String] = bi
 		}
-		products[pi].Buckets[bi].SKUs = append(products[pi].Buckets[bi].SKUs, entitlementCatalogSKU{SKUID: *skuID, DisplayName: derefString(skuDisplay)})
+		products[pi].Buckets[bi].SKUs = append(products[pi].Buckets[bi].SKUs, entitlementCatalogSKU{SKUID: row.SkuID.String, DisplayName: row.SkuDisplayName.String})
 	}
-	return entitlementCatalog{Products: products}, rows.Err()
+	return entitlementCatalog{Products: products}, nil
 }
 
 func buildEntitlementsView(orgID OrgID, defaultNow time.Time, nowByProduct map[string]time.Time, catalog entitlementCatalog, grants []GrantBalance) EntitlementsView {

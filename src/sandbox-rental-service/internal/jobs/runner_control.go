@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/verself/sandbox-rental-service/internal/scheduler"
+	"github.com/verself/sandbox-rental-service/internal/store"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -132,19 +133,15 @@ func (s *Service) MarkRunnerExecutionExited(ctx context.Context, executionID uui
 	if s == nil || s.PGX == nil || executionID == uuid.Nil {
 		return
 	}
-	rows, err := s.PGX.Query(ctx, `UPDATE runner_allocations
-		SET state = CASE WHEN state = 'cleaned' THEN state ELSE 'vm_exited' END,
-		    vm_exit_by = $1,
-		    updated_at = $1
-		WHERE execution_id = $2
-		RETURNING allocation_id`, time.Now().UTC(), executionID)
+	allocationIDs, err := s.storeQueries().MarkRunnerExecutionExited(ctx, store.MarkRunnerExecutionExitedParams{
+		UpdatedAt:   pgTime(time.Now().UTC()),
+		ExecutionID: &executionID,
+	})
 	if err != nil {
 		return
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var allocationID uuid.UUID
-		if err := rows.Scan(&allocationID); err == nil && s.Scheduler != nil {
+	for _, allocationID := range allocationIDs {
+		if s.Scheduler != nil {
 			_, _ = s.Scheduler.EnqueueRunnerCleanup(ctx, schedulerCleanupRequest(ctx, allocationID))
 		}
 	}
@@ -173,41 +170,38 @@ func (s *Service) attachRunnerAllocationExecutionTx(ctx context.Context, tx pgx.
 		return err
 	}
 	now := time.Now().UTC()
-	tag, err := tx.Exec(ctx, `UPDATE runner_allocations
-		SET execution_id = $1, attempt_id = $2, state = 'vm_submitted', vm_submitted_by = $3, updated_at = $3
-		WHERE allocation_id = $4 AND state IN ('jit_created', 'pending', 'jit_creating', 'bootstrap_created', 'bootstrap_creating')`, executionID, attemptID, now, allocationID)
+	rows, err := store.New(tx).AttachRunnerAllocationExecution(ctx, store.AttachRunnerAllocationExecutionParams{
+		ExecutionID:  &executionID,
+		AttemptID:    &attemptID,
+		UpdatedAt:    pgTime(now),
+		AllocationID: allocationID,
+	})
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() != 1 {
+	if rows != 1 {
 		return fmt.Errorf("runner allocation %s is not attachable", allocationID)
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO runner_bootstrap_configs (
-		allocation_id, attempt_id, fetch_token_hash, bootstrap_kind, bootstrap_payload, expires_at, created_at
-	) VALUES ($1,$2,$3,$4,$5,$6,$7)
-	ON CONFLICT (allocation_id) DO UPDATE SET
-		attempt_id = EXCLUDED.attempt_id,
-		fetch_token_hash = EXCLUDED.fetch_token_hash,
-		bootstrap_kind = EXCLUDED.bootstrap_kind,
-		bootstrap_payload = EXCLUDED.bootstrap_payload,
-		expires_at = EXCLUDED.expires_at,
-		consumed_at = NULL`,
-		allocationID, attemptID, hashToken(token), bootstrapKind, bootstrapPayload, now.Add(15*time.Minute), now)
-	return err
+	return store.New(tx).UpsertRunnerBootstrapConfig(ctx, store.UpsertRunnerBootstrapConfigParams{
+		AllocationID:     allocationID,
+		AttemptID:        attemptID,
+		FetchTokenHash:   hashToken(token),
+		BootstrapKind:    bootstrapKind,
+		BootstrapPayload: bootstrapPayload,
+		ExpiresAt:        pgTime(now.Add(15 * time.Minute)),
+		CreatedAt:        pgTime(now),
+	})
 }
 
 func (s *Service) runnerExecEnv(ctx context.Context, executionID, attemptID uuid.UUID) map[string]string {
-	var (
-		allocationID uuid.UUID
-		provider     string
-	)
-	if err := s.PGX.QueryRow(ctx, `SELECT allocation_id, provider FROM runner_allocations WHERE execution_id = $1`, executionID).Scan(&allocationID, &provider); err != nil {
+	row, err := s.storeQueries().GetRunnerAllocationByExecution(ctx, store.GetRunnerAllocationByExecutionParams{ExecutionID: &executionID})
+	if err != nil {
 		return nil
 	}
-	if provider == RunnerProviderGitHub && s.GitHubRunner != nil {
+	if row.Provider == RunnerProviderGitHub && s.GitHubRunner != nil {
 		return s.GitHubRunner.execEnv(ctx, executionID, attemptID)
 	}
-	token, err := s.deriveRunnerBootstrapToken(provider, allocationID, attemptID)
+	token, err := s.deriveRunnerBootstrapToken(row.Provider, row.AllocationID, attemptID)
 	if err != nil {
 		return nil
 	}
@@ -241,13 +235,15 @@ func (s *Service) ConsumeRunnerBootstrapConfig(ctx context.Context, token, expec
 		expiresAt    time.Time
 		consumedAt   *time.Time
 	)
-	err = tx.QueryRow(ctx, `SELECT allocation_id, bootstrap_kind, bootstrap_payload, expires_at, consumed_at
-		FROM runner_bootstrap_configs
-		WHERE fetch_token_hash = $1
-		FOR UPDATE`, hashToken(token)).Scan(&allocationID, &kind, &payload, &expiresAt, &consumedAt)
+	row, err := store.New(tx).LockRunnerBootstrapConfigByTokenHash(ctx, store.LockRunnerBootstrapConfigByTokenHashParams{FetchTokenHash: hashToken(token)})
 	if err != nil {
 		return "", ErrRunnerUnavailable
 	}
+	allocationID = row.AllocationID
+	kind = row.BootstrapKind
+	payload = row.BootstrapPayload
+	expiresAt = timeFromPG(row.ExpiresAt)
+	consumedAt = timePtrFromPG(row.ConsumedAt)
 	if expectedKind != "" && kind != expectedKind {
 		return "", ErrRunnerUnavailable
 	}
@@ -255,10 +251,11 @@ func (s *Service) ConsumeRunnerBootstrapConfig(ctx context.Context, token, expec
 		return "", ErrRunnerUnavailable
 	}
 	now := time.Now().UTC()
-	if _, err := tx.Exec(ctx, `UPDATE runner_bootstrap_configs SET consumed_at = $1 WHERE allocation_id = $2`, now, allocationID); err != nil {
+	qtx := store.New(tx)
+	if err := qtx.MarkRunnerBootstrapConsumed(ctx, store.MarkRunnerBootstrapConsumedParams{ConsumedAt: pgTime(now), AllocationID: allocationID}); err != nil {
 		return "", err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE runner_allocations SET state = CASE WHEN state = 'vm_submitted' THEN 'runner_config_fetched' ELSE state END, updated_at = $1 WHERE allocation_id = $2`, now, allocationID); err != nil {
+	if err := qtx.MarkRunnerAllocationConfigFetched(ctx, store.MarkRunnerAllocationConfigFetchedParams{UpdatedAt: pgTime(now), AllocationID: allocationID}); err != nil {
 		return "", err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -269,8 +266,7 @@ func (s *Service) ConsumeRunnerBootstrapConfig(ctx context.Context, token, expec
 }
 
 func (s *Service) runnerAllocationProvider(ctx context.Context, allocationID uuid.UUID) (string, error) {
-	var provider string
-	err := s.PGX.QueryRow(ctx, `SELECT provider FROM runner_allocations WHERE allocation_id = $1`, allocationID).Scan(&provider)
+	provider, err := s.storeQueries().GetRunnerAllocationProvider(ctx, store.GetRunnerAllocationProviderParams{AllocationID: allocationID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", ErrRunnerUnavailable
 	}
@@ -278,8 +274,7 @@ func (s *Service) runnerAllocationProvider(ctx context.Context, allocationID uui
 }
 
 func (s *Service) runnerAllocationProviderTx(ctx context.Context, tx pgx.Tx, allocationID uuid.UUID) (string, error) {
-	var provider string
-	err := tx.QueryRow(ctx, `SELECT provider FROM runner_allocations WHERE allocation_id = $1 FOR UPDATE`, allocationID).Scan(&provider)
+	provider, err := store.New(tx).LockRunnerAllocationProvider(ctx, store.LockRunnerAllocationProviderParams{AllocationID: allocationID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", ErrRunnerUnavailable
 	}

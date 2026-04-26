@@ -22,7 +22,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/verself/governance-service/internal/store"
+	"github.com/verself/governance-service/internal/store/billingexport"
+	"github.com/verself/governance-service/internal/store/identityexport"
+	"github.com/verself/governance-service/internal/store/sandboxexport"
 	"go.opentelemetry.io/otel/attribute"
 )
 
@@ -91,25 +94,27 @@ func (s *Service) CreateExport(ctx context.Context, principal Principal, req Cre
 	} else if !errorsIsNotFound(err) {
 		return nil, err
 	}
+	queries := store.New(s.PG)
 	exportID := uuid.New()
 	expiresAt := time.Now().UTC().Add(s.ExportTTL)
-	if _, err := s.PG.Exec(ctx, `
-		INSERT INTO governance_export_jobs (
-			export_id, org_id, requested_by, idempotency_key_hash, scopes, include_logs,
-			format, state, expires_at
-		)
-		VALUES ($1, $2, $3, $4, $5, $6, 'tar.gz', 'running', $7)
-	`, exportID, orgID, principal.Subject, idempotencyHash, scopes, req.IncludeLogs, expiresAt); err != nil {
+	if err := queries.InsertExportJob(ctx, store.InsertExportJobParams{
+		ExportID:           exportID,
+		OrgID:              orgID,
+		RequestedBy:        principal.Subject,
+		IdempotencyKeyHash: idempotencyHash,
+		Scopes:             scopes,
+		IncludeLogs:        req.IncludeLogs,
+		ExpiresAt:          pgtype.Timestamptz{Time: expiresAt, Valid: true},
+	}); err != nil {
 		return nil, fmt.Errorf("%w: create export job: %v", ErrStore, err)
 	}
 
 	job, err := s.buildExportArtifact(ctx, principal, exportID, scopes, req.IncludeLogs, expiresAt)
 	if err != nil {
-		_, _ = s.PG.Exec(ctx, `
-			UPDATE governance_export_jobs
-			SET state = 'failed', error_code = 'export-build-failed', error_message = $2, updated_at = now()
-			WHERE export_id = $1
-		`, exportID, err.Error())
+		_ = queries.MarkExportFailed(ctx, store.MarkExportFailedParams{
+			ExportID:     exportID,
+			ErrorMessage: err.Error(),
+		})
 		return nil, err
 	}
 	span.SetAttributes(
@@ -161,27 +166,28 @@ func (s *Service) buildExportArtifact(ctx context.Context, principal Principal, 
 		return nil, err
 	}
 	manifestRaw, _ := json.Marshal(manifest)
-	if _, err := s.PG.Exec(ctx, `
-		UPDATE governance_export_jobs
-		SET state = 'completed',
-		    artifact_path = $2,
-		    artifact_sha256 = $3,
-		    artifact_bytes = $4,
-		    manifest = $5,
-		    updated_at = now(),
-		    completed_at = now()
-		WHERE export_id = $1
-	`, exportID, artifactPath, artifactSHA, stat.Size(), manifestRaw); err != nil {
+	queries := store.New(s.PG)
+	if err := queries.CompleteExportJob(ctx, store.CompleteExportJobParams{
+		ExportID:       exportID,
+		ArtifactPath:   artifactPath,
+		ArtifactSha256: artifactSHA,
+		ArtifactBytes:  stat.Size(),
+		Manifest:       manifestRaw,
+	}); err != nil {
 		return nil, fmt.Errorf("%w: update export job: %v", ErrStore, err)
 	}
-	if _, err := s.PG.Exec(ctx, `DELETE FROM governance_export_files WHERE export_id = $1`, exportID); err != nil {
+	if err := queries.DeleteExportFiles(ctx, store.DeleteExportFilesParams{ExportID: exportID}); err != nil {
 		return nil, fmt.Errorf("%w: reset export file metadata: %v", ErrStore, err)
 	}
 	for _, file := range files {
-		if _, err := s.PG.Exec(ctx, `
-			INSERT INTO governance_export_files (export_id, path, content_type, row_count, bytes, sha256)
-			VALUES ($1, $2, $3, $4, $5, $6)
-		`, exportID, file.meta.Path, file.meta.ContentType, file.meta.Rows, file.meta.Bytes, file.meta.SHA256); err != nil {
+		if err := queries.InsertExportFile(ctx, store.InsertExportFileParams{
+			ExportID:    exportID,
+			Path:        file.meta.Path,
+			ContentType: file.meta.ContentType,
+			RowCount:    file.meta.Rows,
+			Bytes:       file.meta.Bytes,
+			Sha256:      file.meta.SHA256,
+		}); err != nil {
 			return nil, fmt.Errorf("%w: insert export file metadata: %v", ErrStore, err)
 		}
 	}
@@ -195,22 +201,13 @@ func (s *Service) buildExportArtifact(ctx context.Context, principal Principal, 
 func (s *Service) ListExports(ctx context.Context, principal Principal) ([]ExportJob, error) {
 	ctx, span := tracer.Start(ctx, "governance.export.list")
 	defer span.End()
-	rows, err := s.PG.Query(ctx, `
-		SELECT export_id, org_id, requested_by, scopes, include_logs, format, state,
-		       artifact_path, artifact_sha256, artifact_bytes, manifest, error_code, error_message,
-		       created_at, updated_at, completed_at, expires_at
-		FROM governance_export_jobs
-		WHERE org_id = $1
-		ORDER BY created_at DESC, export_id DESC
-		LIMIT 25
-	`, principal.OrgID)
+	rows, err := store.New(s.PG).ListExportsForOrg(ctx, store.ListExportsForOrgParams{OrgID: principal.OrgID})
 	if err != nil {
 		return nil, fmt.Errorf("%w: list exports: %v", ErrStore, err)
 	}
-	defer rows.Close()
-	var jobs []ExportJob
-	for rows.Next() {
-		job, err := scanExportJob(rows)
+	jobs := make([]ExportJob, 0, len(rows))
+	for _, row := range rows {
+		job, err := exportJobFromListRow(row)
 		if err != nil {
 			return nil, err
 		}
@@ -221,9 +218,6 @@ func (s *Service) ListExports(ctx context.Context, principal Principal) ([]Expor
 		job.Files = files
 		jobs = append(jobs, job)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("%w: export rows: %v", ErrStore, err)
-	}
 	span.SetAttributes(attribute.String("verself.org_id", principal.OrgID), attribute.Int("verself.export_count", len(jobs)))
 	return jobs, nil
 }
@@ -233,18 +227,18 @@ func (s *Service) GetExport(ctx context.Context, principal Principal, exportID s
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid export id", ErrInvalidArgument)
 	}
-	row := s.PG.QueryRow(ctx, `
-		SELECT export_id, org_id, requested_by, scopes, include_logs, format, state,
-		       artifact_path, artifact_sha256, artifact_bytes, manifest, error_code, error_message,
-		       created_at, updated_at, completed_at, expires_at
-		FROM governance_export_jobs
-		WHERE export_id = $1 AND org_id = $2
-	`, id, principal.OrgID)
-	job, err := scanExportJob(row)
+	row, err := store.New(s.PG).GetExportByIDAndOrg(ctx, store.GetExportByIDAndOrgParams{
+		ExportID: id,
+		OrgID:    principal.OrgID,
+	})
 	if err != nil {
 		if errorsIsNoRows(err) {
 			return nil, ErrNotFound
 		}
+		return nil, fmt.Errorf("%w: get export: %v", ErrStore, err)
+	}
+	job, err := exportJobFromIDRow(row)
+	if err != nil {
 		return nil, err
 	}
 	files, err := s.exportFiles(ctx, job.ExportID)
@@ -256,30 +250,28 @@ func (s *Service) GetExport(ctx context.Context, principal Principal, exportID s
 }
 
 func (s *Service) MarkExportDownloaded(ctx context.Context, principal Principal, exportID uuid.UUID) error {
-	_, err := s.PG.Exec(ctx, `
-		UPDATE governance_export_jobs
-		SET downloaded_at = now(), updated_at = now()
-		WHERE export_id = $1 AND org_id = $2
-	`, exportID, principal.OrgID)
-	if err != nil {
+	if err := store.New(s.PG).MarkExportDownloaded(ctx, store.MarkExportDownloadedParams{
+		ExportID: exportID,
+		OrgID:    principal.OrgID,
+	}); err != nil {
 		return fmt.Errorf("%w: mark export downloaded: %v", ErrStore, err)
 	}
 	return nil
 }
 
 func (s *Service) exportByIdempotency(ctx context.Context, orgID, idempotencyHash string) (*ExportJob, error) {
-	row := s.PG.QueryRow(ctx, `
-		SELECT export_id, org_id, requested_by, scopes, include_logs, format, state,
-		       artifact_path, artifact_sha256, artifact_bytes, manifest, error_code, error_message,
-		       created_at, updated_at, completed_at, expires_at
-		FROM governance_export_jobs
-		WHERE org_id = $1 AND idempotency_key_hash = $2
-	`, orgID, idempotencyHash)
-	job, err := scanExportJob(row)
+	row, err := store.New(s.PG).GetExportByIdempotency(ctx, store.GetExportByIdempotencyParams{
+		OrgID:              orgID,
+		IdempotencyKeyHash: idempotencyHash,
+	})
 	if err != nil {
 		if errorsIsNoRows(err) {
 			return nil, ErrNotFound
 		}
+		return nil, fmt.Errorf("%w: get export by idempotency: %v", ErrStore, err)
+	}
+	job, err := exportJobFromIdempotencyRow(row)
+	if err != nil {
 		return nil, err
 	}
 	files, err := s.exportFiles(ctx, job.ExportID)
@@ -290,53 +282,108 @@ func (s *Service) exportByIdempotency(ctx context.Context, orgID, idempotencyHas
 	return &job, nil
 }
 
-type exportJobScanner interface {
-	Scan(dest ...any) error
+func exportJobFromListRow(row store.ListExportsForOrgRow) (ExportJob, error) {
+	return exportJobFromStoreFields(
+		row.ExportID, row.OrgID, row.RequestedBy, row.Scopes, row.IncludeLogs, row.Format, row.State,
+		row.ArtifactPath, row.ArtifactSha256, row.ArtifactBytes, row.Manifest, row.ErrorCode, row.ErrorMessage,
+		row.CreatedAt, row.UpdatedAt, row.CompletedAt, row.ExpiresAt,
+	)
 }
 
-func scanExportJob(row exportJobScanner) (ExportJob, error) {
-	var job ExportJob
-	var scopes []string
-	var completedAt pgtype.Timestamptz
-	if err := row.Scan(
-		&job.ExportID, &job.OrgID, &job.RequestedBy, &scopes, &job.IncludeLogs, &job.Format, &job.State,
-		&job.ArtifactPath, &job.ArtifactSHA256, &job.ArtifactBytes, &job.Manifest, &job.ErrorCode, &job.ErrorMessage,
-		&job.CreatedAt, &job.UpdatedAt, &completedAt, &job.ExpiresAt,
-	); err != nil {
-		if errorsIsNoRows(err) {
-			return ExportJob{}, err
-		}
-		return ExportJob{}, fmt.Errorf("%w: scan export job: %v", ErrStore, err)
+func exportJobFromIDRow(row store.GetExportByIDAndOrgRow) (ExportJob, error) {
+	return exportJobFromStoreFields(
+		row.ExportID, row.OrgID, row.RequestedBy, row.Scopes, row.IncludeLogs, row.Format, row.State,
+		row.ArtifactPath, row.ArtifactSha256, row.ArtifactBytes, row.Manifest, row.ErrorCode, row.ErrorMessage,
+		row.CreatedAt, row.UpdatedAt, row.CompletedAt, row.ExpiresAt,
+	)
+}
+
+func exportJobFromIdempotencyRow(row store.GetExportByIdempotencyRow) (ExportJob, error) {
+	return exportJobFromStoreFields(
+		row.ExportID, row.OrgID, row.RequestedBy, row.Scopes, row.IncludeLogs, row.Format, row.State,
+		row.ArtifactPath, row.ArtifactSha256, row.ArtifactBytes, row.Manifest, row.ErrorCode, row.ErrorMessage,
+		row.CreatedAt, row.UpdatedAt, row.CompletedAt, row.ExpiresAt,
+	)
+}
+
+func exportJobFromStoreFields(
+	exportID uuid.UUID,
+	orgID string,
+	requestedBy string,
+	scopes []string,
+	includeLogs bool,
+	format string,
+	state string,
+	artifactPath string,
+	artifactSHA256 string,
+	artifactBytes int64,
+	manifest []byte,
+	errorCode string,
+	errorMessage string,
+	createdAt pgtype.Timestamptz,
+	updatedAt pgtype.Timestamptz,
+	completedAt pgtype.Timestamptz,
+	expiresAt pgtype.Timestamptz,
+) (ExportJob, error) {
+	created, err := requiredPGTime(createdAt, "created_at")
+	if err != nil {
+		return ExportJob{}, err
 	}
-	job.Scopes = scopes
+	updated, err := requiredPGTime(updatedAt, "updated_at")
+	if err != nil {
+		return ExportJob{}, err
+	}
+	expires, err := requiredPGTime(expiresAt, "expires_at")
+	if err != nil {
+		return ExportJob{}, err
+	}
+	var completed *time.Time
 	if completedAt.Valid {
 		t := completedAt.Time
-		job.CompletedAt = &t
+		completed = &t
 	}
-	return job, nil
+	return ExportJob{
+		ExportID:       exportID,
+		OrgID:          orgID,
+		RequestedBy:    requestedBy,
+		Scopes:         scopes,
+		IncludeLogs:    includeLogs,
+		Format:         format,
+		State:          state,
+		ArtifactPath:   artifactPath,
+		ArtifactSHA256: artifactSHA256,
+		ArtifactBytes:  artifactBytes,
+		Manifest:       json.RawMessage(manifest),
+		ErrorCode:      errorCode,
+		ErrorMessage:   errorMessage,
+		CreatedAt:      created,
+		UpdatedAt:      updated,
+		CompletedAt:    completed,
+		ExpiresAt:      expires,
+	}, nil
+}
+
+func requiredPGTime(value pgtype.Timestamptz, column string) (time.Time, error) {
+	if !value.Valid {
+		return time.Time{}, fmt.Errorf("%w: export job %s is null", ErrStore, column)
+	}
+	return value.Time, nil
 }
 
 func (s *Service) exportFiles(ctx context.Context, exportID uuid.UUID) ([]ExportFile, error) {
-	rows, err := s.PG.Query(ctx, `
-		SELECT path, content_type, row_count, bytes, sha256
-		FROM governance_export_files
-		WHERE export_id = $1
-		ORDER BY path
-	`, exportID)
+	rows, err := store.New(s.PG).ListExportFiles(ctx, store.ListExportFilesParams{ExportID: exportID})
 	if err != nil {
 		return nil, fmt.Errorf("%w: list export files: %v", ErrStore, err)
 	}
-	defer rows.Close()
-	var files []ExportFile
-	for rows.Next() {
-		var file ExportFile
-		if err := rows.Scan(&file.Path, &file.ContentType, &file.Rows, &file.Bytes, &file.SHA256); err != nil {
-			return nil, fmt.Errorf("%w: scan export file: %v", ErrStore, err)
-		}
-		files = append(files, file)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("%w: export files rows: %v", ErrStore, err)
+	files := make([]ExportFile, 0, len(rows))
+	for _, row := range rows {
+		files = append(files, ExportFile{
+			Path:        row.Path,
+			ContentType: row.ContentType,
+			Rows:        row.RowCount,
+			Bytes:       row.Bytes,
+			SHA256:      row.Sha256,
+		})
 	}
 	return files, nil
 }
@@ -380,53 +427,126 @@ func (s *Service) identityExportFiles(ctx context.Context, orgID string) ([]expo
 	if s.IdentityPG == nil {
 		return nil, nil
 	}
-	return s.pgJSONLFiles(ctx, s.IdentityPG, []pgExportQuery{
-		{Path: "identity/member_capabilities.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT * FROM identity_member_capabilities WHERE org_id = $1) t`, Args: []any{orgID}},
-		{Path: "identity/api_credentials.jsonl", SQL: `
-			SELECT row_to_json(t)::text
-			FROM (
-				SELECT c.credential_id, c.org_id, c.subject_id, c.client_id, c.display_name, c.auth_method,
-				       c.status, c.policy_version_at_issue, c.created_at, c.created_by, c.updated_at,
-				       c.expires_at, c.revoked_at, c.revoked_by, c.last_used_at,
-				       COALESCE(array_agg(p.permission ORDER BY p.permission) FILTER (WHERE p.permission IS NOT NULL), '{}') AS permissions
-				FROM identity_api_credentials c
-				LEFT JOIN identity_api_credential_permissions p ON p.credential_id = c.credential_id
-				WHERE c.org_id = $1
-				GROUP BY c.credential_id
-				ORDER BY c.created_at, c.credential_id
-			) t`, Args: []any{orgID}},
-	})
+	q := identityexport.New(s.IdentityPG)
+	files := []exportArtifactFile{}
+	add := func(path string, rows []string, err error) error {
+		if err != nil {
+			return fmt.Errorf("%s: %w: query postgres export: %v", path, ErrStore, err)
+		}
+		files = append(files, jsonlArtifactFile(path, rows))
+		return nil
+	}
+	rows, err := q.ExportIdentityMemberCapabilitiesJSONL(ctx, identityexport.ExportIdentityMemberCapabilitiesJSONLParams{OrgID: orgID})
+	if err := add("identity/member_capabilities.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportIdentityAPICredentialsJSONL(ctx, identityexport.ExportIdentityAPICredentialsJSONLParams{OrgID: orgID})
+	if err := add("identity/api_credentials.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	return files, nil
 }
 
 func (s *Service) billingExportFiles(ctx context.Context, orgID string) ([]exportArtifactFile, error) {
 	if s.BillingPG == nil {
 		return nil, nil
 	}
-	files, err := s.pgJSONLFiles(ctx, s.BillingPG, []pgExportQuery{
-		{Path: "billing/orgs.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT * FROM orgs WHERE org_id = $1) t`, Args: []any{orgID}},
-		{Path: "billing/catalog/products.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT * FROM products ORDER BY product_id) t`},
-		{Path: "billing/catalog/credit_buckets.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT * FROM credit_buckets ORDER BY sort_order, bucket_id) t`},
-		{Path: "billing/catalog/skus.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT * FROM skus ORDER BY product_id, bucket_id, sku_id) t`},
-		{Path: "billing/catalog/plans.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT * FROM plans ORDER BY product_id, tier, plan_id) t`},
-		{Path: "billing/catalog/plan_sku_rates.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT * FROM plan_sku_rates ORDER BY plan_id, sku_id, active_from) t`},
-		{Path: "billing/catalog/entitlement_policies.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT * FROM entitlement_policies ORDER BY product_id, source, policy_id) t`},
-		{Path: "billing/catalog/plan_entitlements.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT * FROM plan_entitlements ORDER BY plan_id, sort_order, policy_id) t`},
-		{Path: "billing/contracts.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT * FROM contracts WHERE org_id = $1 ORDER BY created_at, contract_id) t`, Args: []any{orgID}},
-		{Path: "billing/contract_changes.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT * FROM contract_changes WHERE org_id = $1 ORDER BY created_at, change_id) t`, Args: []any{orgID}},
-		{Path: "billing/contract_phases.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT * FROM contract_phases WHERE org_id = $1 ORDER BY created_at, phase_id) t`, Args: []any{orgID}},
-		{Path: "billing/contract_entitlement_lines.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT * FROM contract_entitlement_lines WHERE org_id = $1 ORDER BY created_at, line_id) t`, Args: []any{orgID}},
-		{Path: "billing/billing_cycles.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT * FROM billing_cycles WHERE org_id = $1 ORDER BY starts_at, cycle_id) t`, Args: []any{orgID}},
-		{Path: "billing/entitlement_periods.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT * FROM entitlement_periods WHERE org_id = $1 ORDER BY period_start, period_id) t`, Args: []any{orgID}},
-		{Path: "billing/credit_grants.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT * FROM credit_grants WHERE org_id = $1 ORDER BY starts_at, grant_id) t`, Args: []any{orgID}},
-		{Path: "billing/billing_windows.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT * FROM billing_windows WHERE org_id = $1 ORDER BY window_start, window_id) t`, Args: []any{orgID}},
-		{Path: "billing/billing_window_ledger_legs.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT l.* FROM billing_window_ledger_legs l JOIN billing_windows w ON w.window_id = l.window_id WHERE w.org_id = $1 ORDER BY l.window_id, l.leg_seq) t`, Args: []any{orgID}},
-		{Path: "billing/billing_finalizations.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT * FROM billing_finalizations WHERE org_id = $1 ORDER BY created_at, finalization_id) t`, Args: []any{orgID}},
-		{Path: "billing/billing_documents.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT * FROM billing_documents WHERE org_id = $1 ORDER BY created_at, document_id) t`, Args: []any{orgID}},
-		{Path: "billing/billing_document_line_items.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT li.* FROM billing_document_line_items li JOIN billing_documents d ON d.document_id = li.document_id WHERE d.org_id = $1 ORDER BY li.document_id, li.line_item_id) t`, Args: []any{orgID}},
-		{Path: "billing/invoice_adjustments.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT * FROM invoice_adjustments WHERE org_id = $1 ORDER BY created_at, adjustment_id) t`, Args: []any{orgID}},
-		{Path: "billing/billing_events.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT * FROM billing_events WHERE org_id = $1 ORDER BY occurred_at, event_id) t`, Args: []any{orgID}},
-	})
-	if err != nil {
+	q := billingexport.New(s.BillingPG)
+	files := []exportArtifactFile{}
+	add := func(path string, rows []string, err error) error {
+		if err != nil {
+			return fmt.Errorf("%s: %w: query postgres export: %v", path, ErrStore, err)
+		}
+		files = append(files, jsonlArtifactFile(path, rows))
+		return nil
+	}
+	org := billingexport.ExportBillingOrgsJSONLParams{OrgID: orgID}
+	rows, err := q.ExportBillingOrgsJSONL(ctx, org)
+	if err := add("billing/orgs.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportBillingProductsJSONL(ctx)
+	if err := add("billing/catalog/products.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportBillingCreditBucketsJSONL(ctx)
+	if err := add("billing/catalog/credit_buckets.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportBillingSKUsJSONL(ctx)
+	if err := add("billing/catalog/skus.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportBillingPlansJSONL(ctx)
+	if err := add("billing/catalog/plans.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportBillingPlanSKURatesJSONL(ctx)
+	if err := add("billing/catalog/plan_sku_rates.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportBillingEntitlementPoliciesJSONL(ctx)
+	if err := add("billing/catalog/entitlement_policies.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportBillingPlanEntitlementsJSONL(ctx)
+	if err := add("billing/catalog/plan_entitlements.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportBillingContractsJSONL(ctx, billingexport.ExportBillingContractsJSONLParams{OrgID: orgID})
+	if err := add("billing/contracts.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportBillingContractChangesJSONL(ctx, billingexport.ExportBillingContractChangesJSONLParams{OrgID: orgID})
+	if err := add("billing/contract_changes.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportBillingContractPhasesJSONL(ctx, billingexport.ExportBillingContractPhasesJSONLParams{OrgID: orgID})
+	if err := add("billing/contract_phases.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportBillingContractEntitlementLinesJSONL(ctx, billingexport.ExportBillingContractEntitlementLinesJSONLParams{OrgID: orgID})
+	if err := add("billing/contract_entitlement_lines.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportBillingCyclesJSONL(ctx, billingexport.ExportBillingCyclesJSONLParams{OrgID: orgID})
+	if err := add("billing/billing_cycles.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportBillingEntitlementPeriodsJSONL(ctx, billingexport.ExportBillingEntitlementPeriodsJSONLParams{OrgID: orgID})
+	if err := add("billing/entitlement_periods.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportBillingCreditGrantsJSONL(ctx, billingexport.ExportBillingCreditGrantsJSONLParams{OrgID: orgID})
+	if err := add("billing/credit_grants.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportBillingWindowsJSONL(ctx, billingexport.ExportBillingWindowsJSONLParams{OrgID: orgID})
+	if err := add("billing/billing_windows.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportBillingWindowLedgerLegsJSONL(ctx, billingexport.ExportBillingWindowLedgerLegsJSONLParams{OrgID: orgID})
+	if err := add("billing/billing_window_ledger_legs.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportBillingFinalizationsJSONL(ctx, billingexport.ExportBillingFinalizationsJSONLParams{OrgID: orgID})
+	if err := add("billing/billing_finalizations.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportBillingDocumentsJSONL(ctx, billingexport.ExportBillingDocumentsJSONLParams{OrgID: orgID})
+	if err := add("billing/billing_documents.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportBillingDocumentLineItemsJSONL(ctx, billingexport.ExportBillingDocumentLineItemsJSONLParams{OrgID: orgID})
+	if err := add("billing/billing_document_line_items.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportBillingInvoiceAdjustmentsJSONL(ctx, billingexport.ExportBillingInvoiceAdjustmentsJSONLParams{OrgID: orgID})
+	if err := add("billing/invoice_adjustments.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportBillingEventsJSONL(ctx, billingexport.ExportBillingEventsJSONLParams{OrgID: orgID})
+	if err := add("billing/billing_events.jsonl", rows, err); err != nil {
 		return nil, err
 	}
 	invoices, err := s.billingInvoicesCSV(ctx, orgID)
@@ -441,26 +561,78 @@ func (s *Service) sandboxExportFiles(ctx context.Context, orgID string, includeL
 	if s.SandboxPG == nil {
 		return nil, nil
 	}
-	orgWhere := "org_id::text = $1"
-	queries := []pgExportQuery{
-		{Path: "sandbox/executions.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT * FROM executions WHERE ` + orgWhere + ` ORDER BY created_at, execution_id) t`, Args: []any{orgID}},
-		{Path: "sandbox/execution_attempts.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT a.* FROM execution_attempts a JOIN executions e ON e.execution_id = a.execution_id WHERE e.org_id::text = $1 ORDER BY a.created_at, a.attempt_id) t`, Args: []any{orgID}},
-		{Path: "sandbox/execution_events.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT ev.* FROM execution_events ev JOIN executions e ON e.execution_id = ev.execution_id WHERE e.org_id::text = $1 ORDER BY ev.created_at, ev.event_seq) t`, Args: []any{orgID}},
-		{Path: "sandbox/execution_billing_windows.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT bw.* FROM execution_billing_windows bw JOIN execution_attempts a ON a.attempt_id = bw.attempt_id JOIN executions e ON e.execution_id = a.execution_id WHERE e.org_id::text = $1 ORDER BY bw.window_start, bw.billing_window_id) t`, Args: []any{orgID}},
-		{Path: "sandbox/github_installations.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT * FROM github_installations WHERE ` + orgWhere + ` ORDER BY created_at, installation_id) t`, Args: []any{orgID}},
-		{Path: "sandbox/runner_provider_repositories.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT * FROM runner_provider_repositories WHERE org_id::text = $1 ORDER BY created_at, provider, provider_repository_id) t`, Args: []any{orgID}},
-		{Path: "sandbox/runner_jobs.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT j.* FROM runner_jobs j LEFT JOIN github_installations i ON j.provider = 'github' AND i.installation_id = j.provider_installation_id LEFT JOIN runner_provider_repositories r ON r.provider = j.provider AND r.provider_repository_id = j.provider_repository_id WHERE COALESCE(i.org_id, r.org_id)::text = $1 ORDER BY j.created_at, j.provider, j.provider_job_id) t`, Args: []any{orgID}},
-		{Path: "sandbox/runner_allocations.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT a.* FROM runner_allocations a LEFT JOIN github_installations i ON a.provider = 'github' AND i.installation_id = a.provider_installation_id LEFT JOIN runner_provider_repositories r ON r.provider = a.provider AND r.provider_repository_id = a.provider_repository_id WHERE COALESCE(i.org_id, r.org_id)::text = $1 ORDER BY a.created_at, a.allocation_id) t`, Args: []any{orgID}},
-		{Path: "sandbox/runner_job_bindings.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT b.* FROM runner_job_bindings b JOIN runner_allocations a ON a.allocation_id = b.allocation_id LEFT JOIN github_installations i ON a.provider = 'github' AND i.installation_id = a.provider_installation_id LEFT JOIN runner_provider_repositories r ON r.provider = a.provider AND r.provider_repository_id = a.provider_repository_id WHERE COALESCE(i.org_id, r.org_id)::text = $1 ORDER BY b.created_at, b.binding_id) t`, Args: []any{orgID}},
-		{Path: "sandbox/execution_filesystem_mounts.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT m.* FROM execution_filesystem_mounts m JOIN executions e ON e.execution_id = m.execution_id WHERE e.org_id::text = $1 ORDER BY m.execution_id, m.sort_order, m.mount_name) t`, Args: []any{orgID}},
-		{Path: "sandbox/runner_sticky_disk_generations.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT g.* FROM runner_sticky_disk_generations g LEFT JOIN github_installations i ON g.provider = 'github' AND i.installation_id = g.provider_installation_id LEFT JOIN runner_provider_repositories r ON r.provider = g.provider AND r.provider_repository_id = g.provider_repository_id WHERE COALESCE(i.org_id, r.org_id)::text = $1 ORDER BY g.updated_at, g.provider, g.provider_installation_id, g.provider_repository_id, g.key_hash) t`, Args: []any{orgID}},
-		{Path: "sandbox/execution_sticky_disk_mounts.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT m.* FROM execution_sticky_disk_mounts m JOIN executions e ON e.execution_id = m.execution_id WHERE e.org_id::text = $1 ORDER BY m.created_at, m.mount_id) t`, Args: []any{orgID}},
-		{Path: "sandbox/vm_resource_bounds.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT * FROM vm_resource_bounds WHERE ` + orgWhere + ` ORDER BY updated_at) t`, Args: []any{orgID}},
+	sandboxOrgID, err := strconv.ParseInt(orgID, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("%w: parse sandbox export org_id %q: %v", ErrInvalidArgument, orgID, err)
+	}
+	q := sandboxexport.New(s.SandboxPG)
+	files := []exportArtifactFile{}
+	add := func(path string, rows []string, err error) error {
+		if err != nil {
+			return fmt.Errorf("%s: %w: query postgres export: %v", path, ErrStore, err)
+		}
+		files = append(files, jsonlArtifactFile(path, rows))
+		return nil
+	}
+	rows, err := q.ExportSandboxExecutionsJSONL(ctx, sandboxexport.ExportSandboxExecutionsJSONLParams{OrgID: sandboxOrgID})
+	if err := add("sandbox/executions.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportSandboxExecutionAttemptsJSONL(ctx, sandboxexport.ExportSandboxExecutionAttemptsJSONLParams{OrgID: sandboxOrgID})
+	if err := add("sandbox/execution_attempts.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportSandboxExecutionEventsJSONL(ctx, sandboxexport.ExportSandboxExecutionEventsJSONLParams{OrgID: sandboxOrgID})
+	if err := add("sandbox/execution_events.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportSandboxExecutionBillingWindowsJSONL(ctx, sandboxexport.ExportSandboxExecutionBillingWindowsJSONLParams{OrgID: sandboxOrgID})
+	if err := add("sandbox/execution_billing_windows.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportSandboxGithubInstallationsJSONL(ctx, sandboxexport.ExportSandboxGithubInstallationsJSONLParams{OrgID: sandboxOrgID})
+	if err := add("sandbox/github_installations.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportSandboxRunnerProviderRepositoriesJSONL(ctx, sandboxexport.ExportSandboxRunnerProviderRepositoriesJSONLParams{OrgID: sandboxOrgID})
+	if err := add("sandbox/runner_provider_repositories.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportSandboxRunnerJobsJSONL(ctx, sandboxexport.ExportSandboxRunnerJobsJSONLParams{OrgID: sandboxOrgID})
+	if err := add("sandbox/runner_jobs.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportSandboxRunnerAllocationsJSONL(ctx, sandboxexport.ExportSandboxRunnerAllocationsJSONLParams{OrgID: sandboxOrgID})
+	if err := add("sandbox/runner_allocations.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportSandboxRunnerJobBindingsJSONL(ctx, sandboxexport.ExportSandboxRunnerJobBindingsJSONLParams{OrgID: sandboxOrgID})
+	if err := add("sandbox/runner_job_bindings.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportSandboxExecutionFilesystemMountsJSONL(ctx, sandboxexport.ExportSandboxExecutionFilesystemMountsJSONLParams{OrgID: sandboxOrgID})
+	if err := add("sandbox/execution_filesystem_mounts.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportSandboxRunnerStickyDiskGenerationsJSONL(ctx, sandboxexport.ExportSandboxRunnerStickyDiskGenerationsJSONLParams{OrgID: sandboxOrgID})
+	if err := add("sandbox/runner_sticky_disk_generations.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportSandboxExecutionStickyDiskMountsJSONL(ctx, sandboxexport.ExportSandboxExecutionStickyDiskMountsJSONLParams{OrgID: sandboxOrgID})
+	if err := add("sandbox/execution_sticky_disk_mounts.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportSandboxVMResourceBoundsJSONL(ctx, sandboxexport.ExportSandboxVMResourceBoundsJSONLParams{OrgID: sandboxOrgID})
+	if err := add("sandbox/vm_resource_bounds.jsonl", rows, err); err != nil {
+		return nil, err
 	}
 	if includeLogs {
-		queries = append(queries, pgExportQuery{Path: "sandbox/execution_logs.jsonl", SQL: `SELECT row_to_json(t)::text FROM (SELECT l.* FROM execution_logs l JOIN executions e ON e.execution_id = l.execution_id WHERE e.org_id::text = $1 ORDER BY l.attempt_id, l.seq) t`, Args: []any{orgID}})
+		rows, err = q.ExportSandboxExecutionLogsJSONL(ctx, sandboxexport.ExportSandboxExecutionLogsJSONLParams{OrgID: sandboxOrgID})
+		if err := add("sandbox/execution_logs.jsonl", rows, err); err != nil {
+			return nil, err
+		}
 	}
-	return s.pgJSONLFiles(ctx, s.SandboxPG, queries)
+	return files, nil
 }
 
 func (s *Service) auditExportFiles(ctx context.Context, orgID string) ([]exportArtifactFile, error) {
@@ -494,61 +666,11 @@ func (s *Service) auditExportFiles(ctx context.Context, orgID string) ([]exportA
 	return []exportArtifactFile{newArtifactFile("audit/audit_events.jsonl", "application/x-ndjson", body.Bytes(), count)}, nil
 }
 
-type pgExportQuery struct {
-	Path string
-	SQL  string
-	Args []any
-}
-
-func (s *Service) pgJSONLFiles(ctx context.Context, pool *pgxpool.Pool, queries []pgExportQuery) ([]exportArtifactFile, error) {
-	files := make([]exportArtifactFile, 0, len(queries))
-	for _, query := range queries {
-		body, count, err := pgRowsJSONL(ctx, pool, query.SQL, query.Args...)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", query.Path, err)
-		}
-		files = append(files, newArtifactFile(query.Path, "application/x-ndjson", body, count))
-	}
-	return files, nil
-}
-
-func pgRowsJSONL(ctx context.Context, pool *pgxpool.Pool, query string, args ...any) ([]byte, int64, error) {
-	rows, err := pool.Query(ctx, query, args...)
-	if err != nil {
-		return nil, 0, fmt.Errorf("%w: query postgres export: %v", ErrStore, err)
-	}
-	defer rows.Close()
-	var out bytes.Buffer
-	var count int64
-	for rows.Next() {
-		var raw string
-		if err := rows.Scan(&raw); err != nil {
-			return nil, 0, fmt.Errorf("%w: scan postgres export row: %v", ErrStore, err)
-		}
-		out.WriteString(raw)
-		out.WriteByte('\n')
-		count++
-	}
-	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("%w: postgres export rows: %v", ErrStore, err)
-	}
-	return out.Bytes(), count, nil
-}
-
 func (s *Service) billingInvoicesCSV(ctx context.Context, orgID string) (exportArtifactFile, error) {
-	rows, err := s.BillingPG.Query(ctx, `
-		SELECT document_id, COALESCE(document_number, ''), document_kind, status, payment_status,
-		       period_start, period_end, COALESCE(issued_at, 'epoch'::timestamptz),
-		       currency, subtotal_units, adjustment_units, tax_units, total_due_units,
-		       recipient_email, stripe_hosted_invoice_url, stripe_invoice_pdf_url
-		FROM billing_documents
-		WHERE org_id = $1
-		ORDER BY created_at, document_id
-	`, orgID)
+	rows, err := billingexport.New(s.BillingPG).ListBillingInvoiceExportRows(ctx, billingexport.ListBillingInvoiceExportRowsParams{OrgID: orgID})
 	if err != nil {
 		return exportArtifactFile{}, fmt.Errorf("%w: query invoices csv: %v", ErrStore, err)
 	}
-	defer rows.Close()
 	var body bytes.Buffer
 	writer := csv.NewWriter(&body)
 	header := []string{"document_id", "document_number", "document_kind", "status", "payment_status", "period_start", "period_end", "issued_at", "currency", "subtotal_units", "adjustment_units", "tax_units", "total_due_units", "recipient_email", "hosted_invoice_url", "invoice_pdf_url"}
@@ -556,29 +678,29 @@ func (s *Service) billingInvoicesCSV(ctx context.Context, orgID string) (exportA
 		return exportArtifactFile{}, fmt.Errorf("%w: write invoices csv header: %v", ErrStore, err)
 	}
 	var count int64
-	for rows.Next() {
-		values := make([]any, len(header))
-		ptrs := make([]any, len(header))
-		for i := range values {
-			ptrs[i] = &values[i]
-		}
-		if err := rows.Scan(ptrs...); err != nil {
-			return exportArtifactFile{}, fmt.Errorf("%w: scan invoices csv: %v", ErrStore, err)
-		}
-		record := make([]string, len(values))
-		for i, value := range values {
-			record[i] = exportValueString(value)
-			if i == 7 && record[i] == "1970-01-01T00:00:00Z" {
-				record[i] = ""
-			}
+	for _, row := range rows {
+		record := []string{
+			row.DocumentID,
+			row.DocumentNumber,
+			row.DocumentKind,
+			row.Status,
+			row.PaymentStatus,
+			exportPGTime(row.PeriodStart),
+			exportPGTime(row.PeriodEnd),
+			exportPGTime(row.IssuedAt),
+			row.Currency,
+			strconv.FormatInt(row.SubtotalUnits, 10),
+			strconv.FormatInt(row.AdjustmentUnits, 10),
+			strconv.FormatInt(row.TaxUnits, 10),
+			strconv.FormatInt(row.TotalDueUnits, 10),
+			row.RecipientEmail,
+			exportPGText(row.StripeHostedInvoiceUrl),
+			exportPGText(row.StripeInvoicePdfUrl),
 		}
 		if err := writer.Write(record); err != nil {
 			return exportArtifactFile{}, fmt.Errorf("%w: write invoices csv row: %v", ErrStore, err)
 		}
 		count++
-	}
-	if err := rows.Err(); err != nil {
-		return exportArtifactFile{}, fmt.Errorf("%w: invoices rows: %v", ErrStore, err)
 	}
 	writer.Flush()
 	if err := writer.Error(); err != nil {
@@ -587,23 +709,27 @@ func (s *Service) billingInvoicesCSV(ctx context.Context, orgID string) (exportA
 	return newArtifactFile("billing/invoices.csv", "text/csv", body.Bytes(), count), nil
 }
 
-func exportValueString(value any) string {
-	switch v := value.(type) {
-	case nil:
-		return ""
-	case time.Time:
-		return v.UTC().Format(time.RFC3339)
-	case []byte:
-		return hex.EncodeToString(v)
-	case int64:
-		return strconv.FormatInt(v, 10)
-	case int32:
-		return strconv.FormatInt(int64(v), 10)
-	case bool:
-		return strconv.FormatBool(v)
-	default:
-		return fmt.Sprint(v)
+func jsonlArtifactFile(path string, rows []string) exportArtifactFile {
+	var body bytes.Buffer
+	for _, raw := range rows {
+		body.WriteString(raw)
+		body.WriteByte('\n')
 	}
+	return newArtifactFile(path, "application/x-ndjson", body.Bytes(), int64(len(rows)))
+}
+
+func exportPGText(value pgtype.Text) string {
+	if !value.Valid {
+		return ""
+	}
+	return value.String
+}
+
+func exportPGTime(value pgtype.Timestamptz) string {
+	if !value.Valid {
+		return ""
+	}
+	return value.Time.UTC().Format(time.RFC3339)
 }
 
 func auditEventExportRow(event AuditEvent) map[string]any {

@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/verself/sandbox-rental-service/internal/store"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -315,20 +316,13 @@ func (s *Service) ListSchedules(ctx context.Context, orgID uint64) (_ []Schedule
 		}
 		span.End()
 	}()
-	rows, err := s.pgx.Query(ctx, `SELECT
-		schedule_id, org_id, actor_id, display_name, idempotency_key,
-		temporal_schedule_id, temporal_namespace, task_queue, state,
-		interval_seconds, project_id, source_repository_id, workflow_path, ref, inputs_json, created_at, updated_at
-		FROM execution_schedules
-		WHERE org_id = $1
-		ORDER BY created_at DESC, schedule_id DESC`, orgID)
+	rows, err := s.storeQueries().ListExecutionSchedules(ctx, store.ListExecutionSchedulesParams{OrgID: dbOrgID(orgID)})
 	if err != nil {
 		return nil, fmt.Errorf("list execution schedules: %w", err)
 	}
-	defer rows.Close()
 	out := make([]ScheduleRecord, 0, 16)
-	for rows.Next() {
-		record, scanErr := scanScheduleRecord(rows)
+	for _, row := range rows {
+		record, scanErr := scheduleRecordFromStore(row)
 		if scanErr != nil {
 			return nil, scanErr
 		}
@@ -338,9 +332,6 @@ func (s *Service) ListSchedules(ctx context.Context, orgID uint64) (_ []Schedule
 		}
 		record.Dispatches = dispatches
 		out = append(out, record)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate execution schedules: %w", err)
 	}
 	return out, nil
 }
@@ -529,138 +520,142 @@ func (s *Service) insertScheduleRow(ctx context.Context, record ScheduleRecord) 
 	if err != nil {
 		return fmt.Errorf("encode workflow schedule inputs: %w", err)
 	}
-	_, err = s.pgx.Exec(ctx, `INSERT INTO execution_schedules (
-		schedule_id, org_id, actor_id, display_name, idempotency_key,
-		temporal_schedule_id, temporal_namespace, task_queue, state,
-		interval_seconds, project_id, source_repository_id, workflow_path, ref, inputs_json, created_at, updated_at
-	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
-		record.ScheduleID, record.OrgID, record.ActorID, record.DisplayName, record.IdempotencyKey,
-		record.TemporalScheduleID, record.TemporalNamespace, record.TaskQueue, record.State,
-		int(record.IntervalSeconds), record.ProjectID, record.SourceRepositoryID, record.WorkflowPath, record.Ref, inputs, record.CreatedAt, record.UpdatedAt)
-	if err != nil {
+	if err := s.storeQueries().InsertExecutionSchedule(ctx, store.InsertExecutionScheduleParams{
+		ScheduleID:         record.ScheduleID,
+		OrgID:              dbOrgID(record.OrgID),
+		ActorID:            record.ActorID,
+		DisplayName:        record.DisplayName,
+		IdempotencyKey:     record.IdempotencyKey,
+		TemporalScheduleID: record.TemporalScheduleID,
+		TemporalNamespace:  record.TemporalNamespace,
+		TaskQueue:          record.TaskQueue,
+		State:              record.State,
+		IntervalSeconds:    int32(record.IntervalSeconds),
+		ProjectID:          record.ProjectID,
+		SourceRepositoryID: record.SourceRepositoryID,
+		WorkflowPath:       record.WorkflowPath,
+		Ref:                record.Ref,
+		InputsJson:         inputs,
+		CreatedAt:          pgTime(record.CreatedAt),
+		UpdatedAt:          pgTime(record.UpdatedAt),
+	}); err != nil {
 		return fmt.Errorf("insert execution schedule: %w", err)
 	}
 	return nil
 }
 
 func (s *Service) loadSchedule(ctx context.Context, orgID uint64, scheduleID uuid.UUID) (*ScheduleRecord, error) {
-	row := s.pgx.QueryRow(ctx, `SELECT
-		schedule_id, org_id, actor_id, display_name, idempotency_key,
-		temporal_schedule_id, temporal_namespace, task_queue, state,
-		interval_seconds, project_id, source_repository_id, workflow_path, ref, inputs_json, created_at, updated_at
-		FROM execution_schedules
-		WHERE org_id = $1 AND schedule_id = $2`, orgID, scheduleID)
-	record, err := scanScheduleRecord(row)
+	row, err := s.storeQueries().GetExecutionSchedule(ctx, store.GetExecutionScheduleParams{
+		OrgID:      dbOrgID(orgID),
+		ScheduleID: scheduleID,
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrScheduleMissing
 		}
+		return nil, err
+	}
+	record, err := scheduleRecordFromStore(row)
+	if err != nil {
 		return nil, err
 	}
 	return &record, nil
 }
 
 func (s *Service) loadScheduleByIdempotencyKey(ctx context.Context, orgID uint64, idempotencyKey string) (*ScheduleRecord, error) {
-	row := s.pgx.QueryRow(ctx, `SELECT
-		schedule_id, org_id, actor_id, display_name, idempotency_key,
-		temporal_schedule_id, temporal_namespace, task_queue, state,
-		interval_seconds, project_id, source_repository_id, workflow_path, ref, inputs_json, created_at, updated_at
-		FROM execution_schedules
-		WHERE org_id = $1 AND idempotency_key = $2`, orgID, strings.TrimSpace(idempotencyKey))
-	record, err := scanScheduleRecord(row)
+	row, err := s.storeQueries().GetExecutionScheduleByIdempotencyKey(ctx, store.GetExecutionScheduleByIdempotencyKeyParams{
+		OrgID:          dbOrgID(orgID),
+		IdempotencyKey: strings.TrimSpace(idempotencyKey),
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrScheduleMissing
 		}
 		return nil, err
 	}
+	record, err := scheduleRecordFromStore(row)
+	if err != nil {
+		return nil, err
+	}
 	return &record, nil
 }
 
 func (s *Service) updateScheduleState(ctx context.Context, scheduleID uuid.UUID, state string) error {
-	commandTag, err := s.pgx.Exec(ctx, `UPDATE execution_schedules SET state = $1, updated_at = $2 WHERE schedule_id = $3`, state, time.Now().UTC(), scheduleID)
+	rows, err := s.storeQueries().UpdateExecutionScheduleState(ctx, store.UpdateExecutionScheduleStateParams{
+		State:      state,
+		UpdatedAt:  pgTime(time.Now().UTC()),
+		ScheduleID: scheduleID,
+	})
 	if err != nil {
 		return fmt.Errorf("update execution schedule state: %w", err)
 	}
-	if commandTag.RowsAffected() != 1 {
+	if rows != 1 {
 		return ErrScheduleMissing
 	}
 	return nil
 }
 
 func (s *Service) loadDispatches(ctx context.Context, scheduleID uuid.UUID) ([]DispatchRecord, error) {
-	rows, err := s.pgx.Query(ctx, `SELECT
-		dispatch_id, schedule_id, temporal_workflow_id, temporal_run_id, source_workflow_run_id,
-		project_id, workflow_state, state, failure_reason, scheduled_at, submitted_at, created_at, updated_at
-		FROM execution_schedule_dispatches
-		WHERE schedule_id = $1
-		ORDER BY created_at DESC, dispatch_id DESC
-		LIMIT $2`, scheduleID, maxDispatches)
+	rows, err := s.storeQueries().ListExecutionScheduleDispatches(ctx, store.ListExecutionScheduleDispatchesParams{
+		ScheduleID: scheduleID,
+		LimitCount: int32(maxDispatches),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("list execution schedule dispatches: %w", err)
 	}
-	defer rows.Close()
 	out := make([]DispatchRecord, 0, maxDispatches)
-	for rows.Next() {
-		record, scanErr := scanDispatchRecord(rows)
-		if scanErr != nil {
-			return nil, scanErr
-		}
-		out = append(out, record)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate execution schedule dispatches: %w", err)
+	for _, row := range rows {
+		out = append(out, dispatchRecordFromStore(row))
 	}
 	return out, nil
 }
 
 func (s *Service) recordDispatchStart(ctx context.Context, scheduleID uuid.UUID, input DispatchInput) (_ DispatchRecord, err error) {
 	now := time.Now().UTC()
-	row := s.pgx.QueryRow(ctx, `INSERT INTO execution_schedule_dispatches (
-		dispatch_id, schedule_id, temporal_workflow_id, temporal_run_id,
-		project_id, state, failure_reason, scheduled_at, submitted_at, created_at, updated_at
-	) VALUES ($1,$2,$3,$4,$5,$6,'',$7,NULL,$8,$8)
-	ON CONFLICT (schedule_id, temporal_workflow_id, temporal_run_id)
-	DO UPDATE SET updated_at = EXCLUDED.updated_at
-	RETURNING
-		dispatch_id, schedule_id, temporal_workflow_id, temporal_run_id, source_workflow_run_id,
-		project_id, workflow_state, state, failure_reason, scheduled_at, submitted_at, created_at, updated_at`,
-		uuid.New(), scheduleID, strings.TrimSpace(input.TemporalWorkflowID), strings.TrimSpace(input.TemporalRunID),
-		strings.TrimSpace(input.ProjectID), DispatchStatePending, input.ScheduledAt.UTC(), now)
-	record, err := scanDispatchRecord(row)
+	projectID, err := uuid.Parse(strings.TrimSpace(input.ProjectID))
+	if err != nil {
+		return DispatchRecord{}, fmt.Errorf("parse dispatch project id: %w", err)
+	}
+	row, err := s.storeQueries().UpsertExecutionScheduleDispatchStart(ctx, store.UpsertExecutionScheduleDispatchStartParams{
+		DispatchID:         uuid.New(),
+		ScheduleID:         scheduleID,
+		TemporalWorkflowID: strings.TrimSpace(input.TemporalWorkflowID),
+		TemporalRunID:      strings.TrimSpace(input.TemporalRunID),
+		ProjectID:          projectID,
+		State:              DispatchStatePending,
+		ScheduledAt:        pgTime(input.ScheduledAt.UTC()),
+		CreatedAt:          pgTime(now),
+	})
 	if err != nil {
 		return DispatchRecord{}, err
 	}
-	return record, nil
+	return dispatchRecordFromUpsert(row), nil
 }
 
 func (s *Service) markDispatchSubmitted(ctx context.Context, dispatchID, sourceWorkflowRunID uuid.UUID, workflowState string) error {
-	commandTag, err := s.pgx.Exec(ctx, `UPDATE execution_schedule_dispatches
-		SET state = $1,
-			failure_reason = '',
-			source_workflow_run_id = $2,
-			workflow_state = $3,
-			submitted_at = $4,
-			updated_at = $4
-		WHERE dispatch_id = $5`,
-		DispatchStateSubmitted, sourceWorkflowRunID, strings.TrimSpace(workflowState), time.Now().UTC(), dispatchID)
+	rows, err := s.storeQueries().MarkExecutionScheduleDispatchSubmitted(ctx, store.MarkExecutionScheduleDispatchSubmittedParams{
+		State:               DispatchStateSubmitted,
+		SourceWorkflowRunID: &sourceWorkflowRunID,
+		WorkflowState:       strings.TrimSpace(workflowState),
+		SubmittedAt:         pgTime(time.Now().UTC()),
+		DispatchID:          dispatchID,
+	})
 	if err != nil {
 		return fmt.Errorf("mark dispatch submitted: %w", err)
 	}
-	if commandTag.RowsAffected() != 1 {
+	if rows != 1 {
 		return ErrScheduleMissing
 	}
 	return nil
 }
 
 func (s *Service) markDispatchFailed(ctx context.Context, dispatchID uuid.UUID, reason string) error {
-	_, err := s.pgx.Exec(ctx, `UPDATE execution_schedule_dispatches
-		SET state = $1,
-			failure_reason = $2,
-			updated_at = $3
-		WHERE dispatch_id = $4`,
-		DispatchStateFailed, truncateReason(reason), time.Now().UTC(), dispatchID)
-	if err != nil {
+	if err := s.storeQueries().MarkExecutionScheduleDispatchFailed(ctx, store.MarkExecutionScheduleDispatchFailedParams{
+		State:         DispatchStateFailed,
+		FailureReason: truncateReason(reason),
+		UpdatedAt:     pgTime(time.Now().UTC()),
+		DispatchID:    dispatchID,
+	}); err != nil {
 		return fmt.Errorf("mark dispatch failed: %w", err)
 	}
 	return nil
@@ -732,71 +727,6 @@ func normalizeWorkflowPath(value string) string {
 		return ""
 	}
 	return path
-}
-
-func scanScheduleRecord(scanner interface {
-	Scan(dest ...any) error
-},
-) (ScheduleRecord, error) {
-	var record ScheduleRecord
-	var intervalSeconds int
-	var inputsJSON []byte
-	if err := scanner.Scan(
-		&record.ScheduleID,
-		&record.OrgID,
-		&record.ActorID,
-		&record.DisplayName,
-		&record.IdempotencyKey,
-		&record.TemporalScheduleID,
-		&record.TemporalNamespace,
-		&record.TaskQueue,
-		&record.State,
-		&intervalSeconds,
-		&record.ProjectID,
-		&record.SourceRepositoryID,
-		&record.WorkflowPath,
-		&record.Ref,
-		&inputsJSON,
-		&record.CreatedAt,
-		&record.UpdatedAt,
-	); err != nil {
-		return ScheduleRecord{}, err
-	}
-	record.IntervalSeconds = uint32(intervalSeconds)
-	if len(inputsJSON) > 0 {
-		if err := json.Unmarshal(inputsJSON, &record.Inputs); err != nil {
-			return ScheduleRecord{}, fmt.Errorf("decode workflow schedule inputs: %w", err)
-		}
-	}
-	if record.Inputs == nil {
-		record.Inputs = map[string]string{}
-	}
-	return record, nil
-}
-
-func scanDispatchRecord(scanner interface {
-	Scan(dest ...any) error
-},
-) (DispatchRecord, error) {
-	var record DispatchRecord
-	if err := scanner.Scan(
-		&record.DispatchID,
-		&record.ScheduleID,
-		&record.TemporalWorkflowID,
-		&record.TemporalRunID,
-		&record.SourceWorkflowRunID,
-		&record.ProjectID,
-		&record.WorkflowState,
-		&record.State,
-		&record.FailureReason,
-		&record.ScheduledAt,
-		&record.SubmittedAt,
-		&record.CreatedAt,
-		&record.UpdatedAt,
-	); err != nil {
-		return DispatchRecord{}, fmt.Errorf("scan execution schedule dispatch: %w", err)
-	}
-	return record, nil
 }
 
 func temporalScheduleIDFor(scheduleID uuid.UUID) string {

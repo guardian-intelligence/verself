@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/verself/sandbox-rental-service/internal/store"
 	vmorchestrator "github.com/verself/vm-orchestrator"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -121,30 +122,27 @@ func (r *GitHubRunner) authenticateGitHubExecution(ctx context.Context, executio
 		return StickyDiskIdentity{}, unauthorizedErr
 	}
 
-	var identity StickyDiskIdentity
-	err := r.service.PGX.QueryRow(ctx, `SELECT
-			a.allocation_id,
-			i.org_id,
-			a.provider_installation_id,
-			a.provider_repository_id,
-			COALESCE(j.repository_full_name, ''),
-			COALESCE(b.provider_job_id, a.requested_for_provider_job_id),
-			a.runner_name
-			FROM runner_allocations a
-			JOIN github_installations i ON i.installation_id = a.provider_installation_id
-			LEFT JOIN runner_job_bindings b ON b.allocation_id = a.allocation_id
-			LEFT JOIN runner_jobs j ON j.provider = a.provider AND j.provider_job_id = COALESCE(b.provider_job_id, a.requested_for_provider_job_id)
-			WHERE a.provider = 'github' AND a.execution_id = $1 AND a.attempt_id = $2`,
-		executionID, attemptID).Scan(&identity.AllocationID, &identity.OrgID, &identity.Installation, &identity.RepositoryID, &identity.RepositoryFullName, &identity.GitHubJobID, &identity.RunnerName)
+	row, err := r.service.storeQueries().GetGitHubExecutionIdentity(ctx, store.GetGitHubExecutionIdentityParams{
+		ExecutionID: &executionID,
+		AttemptID:   &attemptID,
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return StickyDiskIdentity{}, unauthorizedErr
 	}
 	if err != nil {
 		return StickyDiskIdentity{}, err
 	}
-	identity.ExecutionID = executionID
-	identity.AttemptID = attemptID
-	return identity, nil
+	return StickyDiskIdentity{
+		ExecutionID:        executionID,
+		AttemptID:          attemptID,
+		AllocationID:       row.AllocationID,
+		OrgID:              orgIDFromDB(row.OrgID),
+		Installation:       row.ProviderInstallationID,
+		RepositoryID:       row.ProviderRepositoryID,
+		RepositoryFullName: row.RepositoryFullName,
+		GitHubJobID:        row.ProviderJobID,
+		RunnerName:         row.RunnerName,
+	}, nil
 }
 
 func (r *GitHubRunner) RequestStickyDiskCommit(ctx context.Context, identity StickyDiskIdentity, key, mountPath string) (StickyDiskSave, error) {
@@ -169,19 +167,13 @@ func (r *GitHubRunner) RequestStickyDiskCommit(ctx context.Context, identity Sti
 
 	now := time.Now().UTC()
 	keyHash := stickyDiskKeyHash(key)
-	var save StickyDiskSave
-	err = r.service.PGX.QueryRow(ctx, `UPDATE execution_sticky_disk_mounts
-		SET save_requested = true,
-		    save_state = $1,
-		    requested_at = $2,
-		    started_at = NULL,
-		    completed_at = NULL,
-		    failure_reason = '',
-		    updated_at = $2
-		WHERE attempt_id = $3
-		  AND key_hash = $4
-		  AND mount_path = $5
-		RETURNING mount_id, requested_at`, stickyDiskStateRequested, now, identity.AttemptID, keyHash, mountPath).Scan(&save.CommitID, &save.RequestedAt)
+	row, err := r.service.storeQueries().RequestStickyDiskCommit(ctx, store.RequestStickyDiskCommitParams{
+		SaveState:   stickyDiskStateRequested,
+		RequestedAt: pgTime(now),
+		AttemptID:   identity.AttemptID,
+		KeyHash:     keyHash,
+		MountPath:   mountPath,
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = fmt.Errorf("%w: sticky disk %s at %s was not provisioned before VM boot", ErrStickyDiskInvalid, keyHash, mountPath)
 	}
@@ -190,9 +182,13 @@ func (r *GitHubRunner) RequestStickyDiskCommit(ctx context.Context, identity Sti
 		span.SetStatus(codes.Error, err.Error())
 		return StickyDiskSave{}, err
 	}
-	save.Identity = identity
-	save.Key = key
-	save.MountPath = mountPath
+	save := StickyDiskSave{
+		Identity:    identity,
+		CommitID:    row.MountID,
+		Key:         key,
+		MountPath:   mountPath,
+		RequestedAt: timeFromPG(row.RequestedAt),
+	}
 	span.SetAttributes(attribute.String("github.stickydisk.mount_id", save.CommitID.String()))
 	return save, nil
 }
@@ -223,37 +219,37 @@ func (r *GitHubRunner) CommitPendingStickyDisks(ctx context.Context, item execut
 }
 
 func (r *GitHubRunner) pendingStickyDiskCommits(ctx context.Context, attemptID uuid.UUID) ([]stickyDiskPendingCommit, error) {
-	rows, err := r.service.PGX.Query(ctx, `SELECT
-		m.mount_id, m.mount_name, m.key, m.key_hash, m.mount_path, m.base_generation, m.target_source_ref,
-		m.execution_id, m.attempt_id, m.allocation_id,
-		i.org_id,
-		a.provider_installation_id, a.provider_repository_id, COALESCE(j.repository_full_name, ''),
-		COALESCE(b.provider_job_id, a.requested_for_provider_job_id), a.runner_name
-		FROM execution_sticky_disk_mounts m
-		JOIN runner_allocations a ON a.allocation_id = m.allocation_id
-		JOIN github_installations i ON i.installation_id = a.provider_installation_id
-		LEFT JOIN runner_job_bindings b ON b.allocation_id = a.allocation_id
-		LEFT JOIN runner_jobs j ON j.provider = a.provider AND j.provider_job_id = COALESCE(b.provider_job_id, a.requested_for_provider_job_id)
-		WHERE m.attempt_id = $1 AND m.save_requested AND m.save_state = $2
-		  AND a.provider = 'github'
-		ORDER BY m.requested_at, m.mount_name`, attemptID, stickyDiskStateRequested)
+	rows, err := r.service.storeQueries().ListPendingStickyDiskCommits(ctx, store.ListPendingStickyDiskCommitsParams{
+		AttemptID: attemptID,
+		SaveState: stickyDiskStateRequested,
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	out := []stickyDiskPendingCommit{}
-	for rows.Next() {
-		var commit stickyDiskPendingCommit
-		if err := rows.Scan(&commit.MountID, &commit.MountName, &commit.Key, &commit.KeyHash, &commit.MountPath, &commit.BaseGeneration, &commit.TargetSourceRef,
-			&commit.Identity.ExecutionID, &commit.Identity.AttemptID, &commit.Identity.AllocationID,
-			&commit.Identity.OrgID,
-			&commit.Identity.Installation, &commit.Identity.RepositoryID, &commit.Identity.RepositoryFullName,
-			&commit.Identity.GitHubJobID, &commit.Identity.RunnerName); err != nil {
-			return nil, err
-		}
-		out = append(out, commit)
+	out := make([]stickyDiskPendingCommit, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, stickyDiskPendingCommit{
+			MountID:         row.MountID,
+			MountName:       row.MountName,
+			Key:             row.Key,
+			KeyHash:         row.KeyHash,
+			MountPath:       row.MountPath,
+			BaseGeneration:  row.BaseGeneration,
+			TargetSourceRef: row.TargetSourceRef,
+			Identity: StickyDiskIdentity{
+				ExecutionID:        row.ExecutionID,
+				AttemptID:          row.AttemptID,
+				AllocationID:       row.AllocationID,
+				OrgID:              orgIDFromDB(row.OrgID),
+				Installation:       row.ProviderInstallationID,
+				RepositoryID:       row.ProviderRepositoryID,
+				RepositoryFullName: row.RepositoryFullName,
+				GitHubJobID:        row.ProviderJobID,
+				RunnerName:         row.RunnerName,
+			},
+		})
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func (r *GitHubRunner) commitStickyDiskMount(ctx context.Context, item executionWorkItem, leaseID string, commit stickyDiskPendingCommit) error {
@@ -305,28 +301,30 @@ func (r *GitHubRunner) commitStickyDiskMount(ctx context.Context, item execution
 }
 
 func (r *GitHubRunner) markStickyDiskCommitRunning(ctx context.Context, mountID uuid.UUID) (bool, error) {
-	tag, err := r.service.PGX.Exec(ctx, `UPDATE execution_sticky_disk_mounts
-		SET save_state = $1, started_at = $2, updated_at = $2
-		WHERE mount_id = $3 AND save_state = $4`, stickyDiskStateRunning, time.Now().UTC(), mountID, stickyDiskStateRequested)
+	rows, err := r.service.storeQueries().MarkStickyDiskCommitRunning(ctx, store.MarkStickyDiskCommitRunningParams{
+		ToState:   stickyDiskStateRunning,
+		StartedAt: pgTime(time.Now().UTC()),
+		MountID:   mountID,
+		FromState: stickyDiskStateRequested,
+	})
 	if err != nil {
 		return false, err
 	}
-	return tag.RowsAffected() == 1, nil
+	return rows == 1, nil
 }
 
 func (r *GitHubRunner) markStickyDiskCommitFinished(ctx context.Context, mountID uuid.UUID, state, reason string, generation int64, snapshot string) error {
 	if len(reason) > 2048 {
 		reason = reason[:2048]
 	}
-	_, err := r.service.PGX.Exec(ctx, `UPDATE execution_sticky_disk_mounts
-		SET save_state = $1,
-		    failure_reason = $2,
-		    committed_generation = $3,
-		    committed_snapshot = $4,
-		    completed_at = $5,
-		    updated_at = $5
-		WHERE mount_id = $6`, state, reason, generation, snapshot, time.Now().UTC(), mountID)
-	return err
+	return r.service.storeQueries().MarkStickyDiskCommitFinished(ctx, store.MarkStickyDiskCommitFinishedParams{
+		SaveState:           state,
+		FailureReason:       reason,
+		CommittedGeneration: generation,
+		CommittedSnapshot:   snapshot,
+		CompletedAt:         pgTime(time.Now().UTC()),
+		MountID:             mountID,
+	})
 }
 
 func (r *GitHubRunner) promoteStickyDiskGeneration(ctx context.Context, commit stickyDiskPendingCommit, generation int64) error {
@@ -335,11 +333,12 @@ func (r *GitHubRunner) promoteStickyDiskGeneration(ctx context.Context, commit s
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	var current int64
-	err = tx.QueryRow(ctx, `SELECT current_generation
-		FROM runner_sticky_disk_generations
-		WHERE provider = 'github' AND provider_installation_id = $1 AND provider_repository_id = $2 AND key_hash = $3
-		FOR UPDATE`, commit.Identity.Installation, commit.Identity.RepositoryID, commit.KeyHash).Scan(&current)
+	qtx := store.New(tx)
+	current, err := qtx.LockStickyDiskGeneration(ctx, store.LockStickyDiskGenerationParams{
+		ProviderInstallationID: commit.Identity.Installation,
+		ProviderRepositoryID:   commit.Identity.RepositoryID,
+		KeyHash:                commit.KeyHash,
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		current = 0
 	} else if err != nil {
@@ -349,32 +348,34 @@ func (r *GitHubRunner) promoteStickyDiskGeneration(ctx context.Context, commit s
 		return fmt.Errorf("sticky disk generation moved from %d to %d while execution was running", commit.BaseGeneration, current)
 	}
 	now := time.Now().UTC()
-	_, err = tx.Exec(ctx, `INSERT INTO runner_sticky_disk_generations (
-		provider, provider_installation_id, provider_repository_id, key_hash, key, current_generation, current_source_ref, created_at, updated_at
-	) VALUES ('github',$1,$2,$3,$4,$5,$6,$7,$7)
-	ON CONFLICT (provider, provider_installation_id, provider_repository_id, key_hash) DO UPDATE SET
-		key = EXCLUDED.key,
-		current_generation = EXCLUDED.current_generation,
-		current_source_ref = EXCLUDED.current_source_ref,
-		updated_at = EXCLUDED.updated_at`, commit.Identity.Installation, commit.Identity.RepositoryID, commit.KeyHash, commit.Key, generation, commit.TargetSourceRef, now)
-	if err != nil {
+	if err := qtx.UpsertStickyDiskGeneration(ctx, store.UpsertStickyDiskGenerationParams{
+		ProviderInstallationID: commit.Identity.Installation,
+		ProviderRepositoryID:   commit.Identity.RepositoryID,
+		KeyHash:                commit.KeyHash,
+		Key:                    commit.Key,
+		CurrentGeneration:      generation,
+		CurrentSourceRef:       commit.TargetSourceRef,
+		UpdatedAt:              pgTime(now),
+	}); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
 }
 
 func (r *GitHubRunner) currentStickyDiskGeneration(ctx context.Context, installationID, repositoryID int64, key, keyHash string) (int64, string, error) {
-	var generation int64
-	var sourceRef string
-	err := r.service.PGX.QueryRow(ctx, `SELECT current_generation, current_source_ref
-		FROM runner_sticky_disk_generations
-		WHERE provider = 'github' AND provider_installation_id = $1 AND provider_repository_id = $2 AND key_hash = $3`, installationID, repositoryID, keyHash).Scan(&generation, &sourceRef)
+	row, err := r.service.storeQueries().GetCurrentStickyDiskGeneration(ctx, store.GetCurrentStickyDiskGenerationParams{
+		ProviderInstallationID: installationID,
+		ProviderRepositoryID:   repositoryID,
+		KeyHash:                keyHash,
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, stickyDiskEmptySourceRef, nil
 	}
 	if err != nil {
 		return 0, "", err
 	}
+	generation := row.CurrentGeneration
+	sourceRef := row.CurrentSourceRef
 	if strings.TrimSpace(sourceRef) == "" {
 		sourceRef = stickyDiskEmptySourceRef
 	}

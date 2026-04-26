@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -14,7 +13,7 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
-	_ "github.com/lib/pq"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	auth "github.com/verself/auth-middleware"
@@ -56,6 +55,7 @@ func run() error {
 
 	cfg := envconfig.New()
 	pgDSN := cfg.RequireString("IDENTITY_PG_DSN")
+	pgMaxConns := cfg.Int("IDENTITY_PG_MAX_CONNS", 8)
 	zitadelAdminToken := cfg.RequireCredential("zitadel-admin-token")
 	zitadelActionSigningKey := cfg.RequireCredential("zitadel-action-signing-key")
 	chAddress := cfg.String("IDENTITY_CH_ADDRESS", "127.0.0.1:9440")
@@ -73,18 +73,11 @@ func run() error {
 		return err
 	}
 
-	pg, err := sql.Open("postgres", pgDSN)
+	pg, err := openPool(ctx, pgDSN, pgMaxConns)
 	if err != nil {
 		return fmt.Errorf("open postgres: %w", err)
 	}
-	defer func() {
-		if err := pg.Close(); err != nil {
-			logger.ErrorContext(context.Background(), "identity-service postgres close", "error", err)
-		}
-	}()
-	if err := pg.Ping(); err != nil {
-		return fmt.Errorf("ping postgres: %w", err)
-	}
+	defer pg.Close()
 
 	zitadelClient, err := zitadel.New(zitadel.Config{
 		BaseURL:    zitadelBaseURL,
@@ -128,7 +121,7 @@ func run() error {
 	if err := chConn.Ping(chPingCtx); err != nil {
 		return fmt.Errorf("ping identity clickhouse: %w", err)
 	}
-	store := identity.SQLStore{DB: pg, CH: chConn}
+	store := identity.SQLStore{PG: pg, CH: chConn}
 	identityService := &identity.Service{
 		Store:     store,
 		Directory: zitadelClient,
@@ -146,7 +139,7 @@ func run() error {
 		_, _ = w.Write([]byte("ok"))
 	})
 	rootMux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
-		if err := pg.PingContext(r.Context()); err != nil {
+		if err := pg.Ping(r.Context()); err != nil {
 			http.Error(w, "not ready", http.StatusServiceUnavailable)
 			return
 		}
@@ -195,6 +188,28 @@ func run() error {
 	internal := httpserver.New(internalListenAddr, otelhttp.NewHandler(limitRequestBodies(internalAllowlist, requestBodyLimit), serviceName+"-internal"))
 	internal.TLSConfig = internalTLSConfig
 	return httpserver.RunPair(ctx, logger, srv, internal)
+}
+
+func openPool(ctx context.Context, dsn string, maxConns int) (*pgxpool.Pool, error) {
+	config, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		return nil, err
+	}
+	config.MaxConns = int32(maxConns)
+	config.MinConns = 1
+	config.MaxConnLifetime = 30 * time.Minute
+	config.MaxConnIdleTime = 5 * time.Minute
+	pool, err := pgxpool.NewWithConfig(ctx, config)
+	if err != nil {
+		return nil, err
+	}
+	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := pool.Ping(pingCtx); err != nil {
+		pool.Close()
+		return nil, err
+	}
+	return pool, nil
 }
 
 func runDomainLedgerProjectionLoop(ctx context.Context, logger *slog.Logger, store identity.SQLStore) {

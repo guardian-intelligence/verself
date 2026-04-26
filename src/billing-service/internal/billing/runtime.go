@@ -27,6 +27,7 @@ const (
 	EventDeliveryProjectPendingKind = "billing.event_delivery.project_pending"
 	LedgerDispatchPendingKind       = "billing.ledger.dispatch_pending"
 	LedgerReconcileKind             = "billing.ledger.reconcile"
+	ContractUpgradePaymentKind      = "billing.contract_upgrade.collect_payment"
 	MeteringProjectWindowKind       = "billing.metering.project_window"
 	MeteringProjectPendingKind      = "billing.metering.project_pending"
 	DueWorkApplyPendingKind         = "billing.due_work.apply_pending"
@@ -69,6 +70,12 @@ type LedgerReconcileArgs struct {
 }
 
 func (LedgerReconcileArgs) Kind() string { return LedgerReconcileKind }
+
+type ContractUpgradePaymentArgs struct {
+	ChangeID string `json:"change_id" river:"unique"`
+}
+
+func (ContractUpgradePaymentArgs) Kind() string { return ContractUpgradePaymentKind }
 
 type MeteringProjectWindowArgs struct {
 	WindowID string `json:"window_id" river:"unique"`
@@ -125,6 +132,11 @@ type LedgerReconcileWorker struct {
 	billing *Client
 }
 
+type ContractUpgradePaymentWorker struct {
+	river.WorkerDefaults[ContractUpgradePaymentArgs]
+	billing *Client
+}
+
 type MeteringProjectWindowWorker struct {
 	river.WorkerDefaults[MeteringProjectWindowArgs]
 	billing *Client
@@ -166,6 +178,7 @@ func NewRuntime(pool *pgxpool.Pool, billingClient *Client, logger *slog.Logger) 
 	river.AddWorker(workers, &EventDeliveryProjectPendingWorker{billing: billingClient})
 	river.AddWorker(workers, &LedgerDispatchPendingWorker{billing: billingClient})
 	river.AddWorker(workers, &LedgerReconcileWorker{billing: billingClient})
+	river.AddWorker(workers, &ContractUpgradePaymentWorker{billing: billingClient})
 	river.AddWorker(workers, &MeteringProjectWindowWorker{billing: billingClient})
 	river.AddWorker(workers, &MeteringProjectPendingWorker{billing: billingClient})
 	river.AddWorker(workers, &DueWorkApplyPendingWorker{billing: billingClient})
@@ -230,6 +243,19 @@ func (r *Runtime) EnqueueMeteringProjectWindowTx(ctx context.Context, tx pgx.Tx,
 	})
 	if err != nil {
 		return fmt.Errorf("enqueue metering project window: %w", err)
+	}
+	return nil
+}
+
+func (r *Runtime) EnqueueContractUpgradePaymentTx(ctx context.Context, tx pgx.Tx, changeID string) error {
+	_, err := r.client.InsertTx(ctx, tx, ContractUpgradePaymentArgs{ChangeID: changeID}, &river.InsertOpts{
+		MaxAttempts: 5,
+		Queue:       QueueBillingProvider,
+		Tags:        []string{"contract-upgrade-payment"},
+		UniqueOpts:  river.UniqueOpts{ByArgs: true, ByQueue: true},
+	})
+	if err != nil {
+		return fmt.Errorf("enqueue contract upgrade payment: %w", err)
 	}
 	return nil
 }
@@ -332,6 +358,17 @@ func (w *LedgerReconcileWorker) Work(ctx context.Context, job *river.Job[LedgerR
 	span := trace.SpanFromContext(ctx)
 	span.SetAttributes(attribute.Int("billing.limit", job.Args.Limit), attribute.Int64("river.job_id", job.ID), attribute.String("river.job_kind", LedgerReconcileKind), attribute.String("river.queue", QueueBillingReconcile))
 	_, err := w.billing.ReconcileLedger(ctx, job.Args.Limit)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	return err
+}
+
+func (w *ContractUpgradePaymentWorker) Work(ctx context.Context, job *river.Job[ContractUpgradePaymentArgs]) error {
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(attribute.String("billing.change_id", job.Args.ChangeID), attribute.Int64("river.job_id", job.ID), attribute.String("river.job_kind", ContractUpgradePaymentKind), attribute.String("river.queue", QueueBillingProvider))
+	_, err := w.billing.CollectContractUpgradePayment(ctx, job.Args.ChangeID)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())

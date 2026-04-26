@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"strconv"
 	"strings"
@@ -16,7 +17,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/verself/governance-service/internal/store"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -262,14 +264,6 @@ type AuditListPage struct {
 	Limit      int
 }
 
-type auditExecQuerier interface {
-	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
-}
-
-type auditPendingRow struct {
-	RowJSON string
-}
-
 func (s *Service) RecordAuditEvent(ctx context.Context, record AuditRecord) (*AuditEvent, error) {
 	ctx, span := tracer.Start(ctx, "governance.audit.record")
 	defer span.End()
@@ -295,7 +289,7 @@ func (s *Service) RecordAuditEvent(ctx context.Context, record AuditRecord) (*Au
 	if err := s.assignAuditSequence(ctx, event); err != nil {
 		return nil, err
 	}
-	if err := s.projectAuditEvent(ctx, s.PG, event); err != nil {
+	if err := s.projectAuditEvent(ctx, store.New(s.PG), event); err != nil {
 		return nil, err
 	}
 	span.SetAttributes(
@@ -326,38 +320,23 @@ func (s *Service) ProjectPendingAuditEvents(ctx context.Context, limit int) (int
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	rows, err := tx.Query(ctx, `
-		SELECT row_json
-		FROM governance_audit_events
-		WHERE projected_at IS NULL
-		ORDER BY recorded_at ASC, sequence ASC, event_id ASC
-		LIMIT $1
-		FOR UPDATE SKIP LOCKED
-	`, limit)
+	qtx := store.New(tx)
+	rowJSONs, err := qtx.ClaimPendingAuditEventRows(ctx, store.ClaimPendingAuditEventRowsParams{LimitCount: int32(limit)})
 	if err != nil {
 		return 0, fmt.Errorf("%w: list pending audit events: %v", ErrStore, err)
 	}
-	defer rows.Close()
 
-	pending := make([]AuditEvent, 0, limit)
-	for rows.Next() {
-		var row auditPendingRow
-		if err := rows.Scan(&row.RowJSON); err != nil {
-			return 0, fmt.Errorf("%w: scan pending audit event: %v", ErrStore, err)
-		}
+	pending := make([]AuditEvent, 0, len(rowJSONs))
+	for _, rowJSON := range rowJSONs {
 		var event AuditEvent
-		if err := json.Unmarshal([]byte(row.RowJSON), &event); err != nil {
+		if err := json.Unmarshal([]byte(rowJSON), &event); err != nil {
 			return 0, fmt.Errorf("%w: unmarshal pending audit event: %v", ErrStore, err)
 		}
 		pending = append(pending, event)
 	}
-	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("%w: pending audit rows: %v", ErrStore, err)
-	}
-	rows.Close()
 	projected := 0
 	for i := range pending {
-		if err := s.projectAuditEvent(ctx, tx, &pending[i]); err != nil {
+		if err := s.projectAuditEvent(ctx, qtx, &pending[i]); err != nil {
 			return projected, err
 		}
 		projected++
@@ -566,46 +545,53 @@ func (s *Service) assignAuditSequence(ctx context.Context, event *AuditEvent) er
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO governance_audit_chain_state (org_id, sequence, row_hmac)
-		VALUES ($1, 0, $2)
-		ON CONFLICT (org_id) DO NOTHING
-	`, event.OrgID, zeroHMAC); err != nil {
+	qtx := store.New(tx)
+	if err := qtx.InitializeAuditChainState(ctx, store.InitializeAuditChainStateParams{
+		OrgID:   event.OrgID,
+		RowHmac: zeroHMAC,
+	}); err != nil {
 		return fmt.Errorf("%w: initialize audit chain: %v", ErrStore, err)
 	}
 
-	var previousSequence uint64
-	var previousHMAC string
-	err = tx.QueryRow(ctx, `
-		SELECT sequence, row_hmac
-		FROM governance_audit_chain_state
-		WHERE org_id = $1
-		FOR UPDATE
-	`, event.OrgID).Scan(&previousSequence, &previousHMAC)
+	chain, err := qtx.LockAuditChainState(ctx, store.LockAuditChainStateParams{OrgID: event.OrgID})
 	if err != nil {
 		return fmt.Errorf("%w: lock audit chain: %v", ErrStore, err)
 	}
-	event.Sequence = previousSequence + 1
-	event.PrevHMAC = previousHMAC
+	if chain.Sequence < 0 || chain.Sequence == math.MaxInt64 {
+		return fmt.Errorf("%w: audit chain sequence out of range", ErrStore)
+	}
+	event.Sequence = uint64(chain.Sequence) + 1
+	event.PrevHMAC = chain.RowHmac
 	event.RowHMAC = s.computeRowHMAC(event)
-	if _, err := tx.Exec(ctx, `
-		UPDATE governance_audit_chain_state
-		SET sequence = $2, row_hmac = $3, updated_at = now()
-		WHERE org_id = $1
-	`, event.OrgID, event.Sequence, event.RowHMAC); err != nil {
+	sequence, err := auditSequenceInt64(event.Sequence)
+	if err != nil {
+		return err
+	}
+	if err := qtx.AdvanceAuditChainState(ctx, store.AdvanceAuditChainStateParams{
+		OrgID:    event.OrgID,
+		Sequence: sequence,
+		RowHmac:  event.RowHMAC,
+	}); err != nil {
 		return fmt.Errorf("%w: advance audit chain: %v", ErrStore, err)
 	}
 	rowJSON, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("%w: marshal audit row: %v", ErrStore, err)
 	}
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO governance_audit_events (
-			org_id, sequence, event_id, recorded_at, event_date, ingested_at,
-			schema_version, payload_json, row_json, prev_hmac, row_hmac, hmac_key_id
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-	`, event.OrgID, int64(event.Sequence), event.EventID, event.RecordedAt, event.EventDate, event.IngestedAt,
-		event.SchemaVersion, event.PayloadJSON, string(rowJSON), event.PrevHMAC, event.RowHMAC, event.HMACKeyID); err != nil {
+	if err := qtx.InsertAuditEvent(ctx, store.InsertAuditEventParams{
+		OrgID:         event.OrgID,
+		Sequence:      sequence,
+		EventID:       event.EventID,
+		RecordedAt:    pgtype.Timestamptz{Time: event.RecordedAt, Valid: true},
+		EventDate:     event.EventDate,
+		IngestedAt:    pgtype.Timestamptz{Time: event.IngestedAt, Valid: true},
+		SchemaVersion: event.SchemaVersion,
+		PayloadJson:   event.PayloadJSON,
+		RowJson:       string(rowJSON),
+		PrevHmac:      event.PrevHMAC,
+		RowHmac:       event.RowHMAC,
+		HmacKeyID:     event.HMACKeyID,
+	}); err != nil {
 		return fmt.Errorf("%w: stage audit event: %v", ErrStore, err)
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -629,7 +615,7 @@ func (s *Service) insertAuditClickHouse(ctx context.Context, event *AuditEvent) 
 }
 
 // projectAuditEvent keeps the Postgres outbox row pending until ClickHouse has the event.
-func (s *Service) projectAuditEvent(ctx context.Context, exec auditExecQuerier, event *AuditEvent) error {
+func (s *Service) projectAuditEvent(ctx context.Context, q *store.Queries, event *AuditEvent) error {
 	projected, err := s.auditEventProjected(ctx, event.EventID)
 	if err != nil {
 		return err
@@ -639,7 +625,11 @@ func (s *Service) projectAuditEvent(ctx context.Context, exec auditExecQuerier, 
 			return err
 		}
 	}
-	return s.markAuditEventProjected(ctx, exec, event.OrgID, int64(event.Sequence))
+	sequence, err := auditSequenceInt64(event.Sequence)
+	if err != nil {
+		return err
+	}
+	return s.markAuditEventProjected(ctx, q, event.OrgID, sequence)
 }
 
 func (s *Service) auditEventProjected(ctx context.Context, eventID uuid.UUID) (bool, error) {
@@ -659,17 +649,15 @@ func (s *Service) auditEventProjected(ctx context.Context, eventID uuid.UUID) (b
 	return true, nil
 }
 
-func (s *Service) markAuditEventProjected(ctx context.Context, exec auditExecQuerier, orgID string, sequence int64) error {
-	tag, err := exec.Exec(ctx, `
-		UPDATE governance_audit_events
-		SET projected_at = COALESCE(projected_at, now())
-		WHERE org_id = $1
-		  AND sequence = $2
-	`, orgID, sequence)
+func (s *Service) markAuditEventProjected(ctx context.Context, q *store.Queries, orgID string, sequence int64) error {
+	affected, err := q.MarkAuditEventProjected(ctx, store.MarkAuditEventProjectedParams{
+		OrgID:    orgID,
+		Sequence: sequence,
+	})
 	if err != nil {
 		return fmt.Errorf("%w: mark audit projection: %v", ErrStore, err)
 	}
-	if tag.RowsAffected() == 0 {
+	if affected == 0 {
 		return fmt.Errorf("%w: mark audit projection: missing staging row", ErrStore)
 	}
 	return nil
@@ -823,6 +811,14 @@ func (s *Service) computeRowHMAC(event *AuditEvent) string {
 		event.TraceID,
 	)
 	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// PostgreSQL BIGINT is signed, so generated query calls must reject wrapped audit sequences.
+func auditSequenceInt64(sequence uint64) (int64, error) {
+	if sequence > uint64(math.MaxInt64) {
+		return 0, fmt.Errorf("%w: audit sequence out of range", ErrStore)
+	}
+	return int64(sequence), nil
 }
 
 func canonicalJSON(value any) ([]byte, error) {

@@ -1,0 +1,27 @@
+version: "2"
+sql:
+  - engine: postgresql
+    schema:
+      - migrations/001_profile.up.sql
+    queries:
+      - internal/store/queries
+    gen:
+      go:
+        package: store
+        out: internal/store
+        sql_package: pgx/v5
+        query_parameter_limit: 0
+        emit_empty_slices: true
+        emit_enum_valid_method: true
+        emit_all_enum_values: true
+        omit_unused_structs: true
+        overrides:
+          - db_type: uuid
+            go_type:
+              import: github.com/google/uuid
+              type: UUID
+          - db_type: pg_catalog.timestamptz
+            nullable: false
+            go_type:
+              import: time
+              type: Time

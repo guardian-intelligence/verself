@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/verself/apiwire"
+	"github.com/verself/sandbox-rental-service/internal/store"
 )
 
 const reconcileStaleAfter = 10 * time.Second
@@ -28,23 +29,16 @@ func (s *Service) Reconcile(ctx context.Context) error {
 }
 
 func (s *Service) reconcileReservedAttempts(ctx context.Context) error {
-	rows, err := s.PGX.Query(ctx, `
-		SELECT e.execution_id, a.attempt_id, COALESCE(w.billing_window_id, '')
-		FROM executions e
-		JOIN execution_attempts a ON a.execution_id = e.execution_id
-		LEFT JOIN execution_billing_windows w ON w.attempt_id = a.attempt_id
-		WHERE a.state = $1
-		  AND COALESCE(w.state, 'reserved') = 'reserved'
-		  AND COALESCE(a.lease_id, '') = ''
-		  AND a.updated_at < (now() - ($2 * interval '1 second'))
-	`, StateReserved, int(reconcileStaleAfter.Seconds()))
+	rows, err := s.storeQueries().ListStaleReservedAttempts(ctx, store.ListStaleReservedAttemptsParams{
+		State:        StateReserved,
+		StaleSeconds: int32(reconcileStaleAfter.Seconds()),
+	})
 	if err != nil {
 		return fmt.Errorf("query stale reserved attempts: %w", err)
 	}
-	defer rows.Close()
 
-	for rows.Next() {
-		item, err := s.scanReconcileWorkItem(ctx, rows)
+	for _, row := range rows {
+		item, err := s.loadReconcileWorkItem(ctx, row.ExecutionID, row.AttemptID, row.BillingWindowID)
 		if err != nil {
 			return err
 		}
@@ -55,32 +49,20 @@ func (s *Service) reconcileReservedAttempts(ctx context.Context) error {
 			return fmt.Errorf("fail stale reserved attempt %s: %w", item.AttemptID, err)
 		}
 	}
-	return rows.Err()
+	return nil
 }
 
 func (s *Service) reconcileLaunchingAttempts(ctx context.Context) error {
-	rows, err := s.PGX.Query(ctx, `
-		SELECT e.execution_id, a.attempt_id, COALESCE(w.billing_window_id, '')
-		FROM executions e
-		JOIN execution_attempts a ON a.execution_id = e.execution_id
-		LEFT JOIN LATERAL (
-			SELECT billing_window_id
-			FROM execution_billing_windows
-			WHERE attempt_id = a.attempt_id
-			ORDER BY window_seq DESC
-			LIMIT 1
-		) w ON true
-		WHERE a.state = $1
-		  AND COALESCE(a.exec_id, '') = ''
-		  AND a.updated_at < (now() - ($2 * interval '1 second'))
-	`, StateLaunching, int((5 * time.Minute).Seconds()))
+	rows, err := s.storeQueries().ListStaleLaunchingAttempts(ctx, store.ListStaleLaunchingAttemptsParams{
+		State:        StateLaunching,
+		StaleSeconds: int32((5 * time.Minute).Seconds()),
+	})
 	if err != nil {
 		return fmt.Errorf("query stale launching attempts: %w", err)
 	}
-	defer rows.Close()
 
-	for rows.Next() {
-		item, err := s.scanReconcileWorkItem(ctx, rows)
+	for _, row := range rows {
+		item, err := s.loadReconcileWorkItem(ctx, row.ExecutionID, row.AttemptID, row.BillingWindowID)
 		if err != nil {
 			return err
 		}
@@ -94,34 +76,21 @@ func (s *Service) reconcileLaunchingAttempts(ctx context.Context) error {
 			return fmt.Errorf("fail stale launching attempt %s: %w", item.AttemptID, err)
 		}
 	}
-	return rows.Err()
+	return nil
 }
 
 func (s *Service) reconcileCleanedRunnerAttempts(ctx context.Context) error {
-	rows, err := s.PGX.Query(ctx, `
-		SELECT e.execution_id, a.attempt_id, COALESCE(w.billing_window_id, '')
-		FROM executions e
-		JOIN execution_attempts a ON a.execution_id = e.execution_id
-		JOIN runner_allocations ra ON ra.execution_id = e.execution_id
-		LEFT JOIN LATERAL (
-			SELECT billing_window_id
-			FROM execution_billing_windows
-			WHERE attempt_id = a.attempt_id
-			ORDER BY window_seq DESC
-			LIMIT 1
-		) w ON true
-		WHERE e.workload_kind = $1
-		  AND a.state = $2
-		  AND ra.state = 'cleaned'
-		  AND ra.updated_at < (now() - ($3 * interval '1 second'))
-	`, WorkloadKindRunner, StateRunning, int((2 * time.Minute).Seconds()))
+	rows, err := s.storeQueries().ListCleanedRunnerAttempts(ctx, store.ListCleanedRunnerAttemptsParams{
+		WorkloadKind: WorkloadKindRunner,
+		State:        StateRunning,
+		StaleSeconds: int32((2 * time.Minute).Seconds()),
+	})
 	if err != nil {
 		return fmt.Errorf("query cleaned runner attempts: %w", err)
 	}
-	defer rows.Close()
 
-	for rows.Next() {
-		item, err := s.scanReconcileWorkItem(ctx, rows)
+	for _, row := range rows {
+		item, err := s.loadReconcileWorkItem(ctx, row.ExecutionID, row.AttemptID, row.BillingWindowID)
 		if err != nil {
 			return err
 		}
@@ -135,7 +104,7 @@ func (s *Service) reconcileCleanedRunnerAttempts(ctx context.Context) error {
 			return fmt.Errorf("fail cleaned runner attempt %s: %w", item.AttemptID, err)
 		}
 	}
-	return rows.Err()
+	return nil
 }
 
 type reconcileWorkItem struct {
@@ -143,18 +112,7 @@ type reconcileWorkItem struct {
 	windowID string
 }
 
-func (s *Service) scanReconcileWorkItem(ctx context.Context, scanner interface {
-	Scan(dest ...any) error
-},
-) (reconcileWorkItem, error) {
-	var (
-		executionID uuid.UUID
-		attemptID   uuid.UUID
-		windowID    string
-	)
-	if err := scanner.Scan(&executionID, &attemptID, &windowID); err != nil {
-		return reconcileWorkItem{}, fmt.Errorf("scan reconcile candidate: %w", err)
-	}
+func (s *Service) loadReconcileWorkItem(ctx context.Context, executionID, attemptID uuid.UUID, windowID string) (reconcileWorkItem, error) {
 	item, err := s.loadWorkItem(ctx, executionID, attemptID)
 	if err != nil {
 		return reconcileWorkItem{}, err

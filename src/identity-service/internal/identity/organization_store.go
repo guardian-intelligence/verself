@@ -3,43 +3,41 @@ package identity
 import (
 	"context"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
 	"unicode"
 
-	"github.com/lib/pq"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+
+	identitystore "github.com/verself/identity-service/internal/store"
 )
 
 var organizationStoreTracer = otel.Tracer("identity-service/internal/identity/organization-store")
 
-type organizationProfileScanner interface {
-	Scan(dest ...any) error
-}
-
 func (s SQLStore) GetOrganizationProfile(ctx context.Context, orgID, actorID, displayNameSeed string) (profile OrganizationProfile, err error) {
 	ctx, span := organizationStoreTracer.Start(ctx, "identity.pg.organization_profile.get")
 	defer finishOrganizationSpan(span, orgID, profile, err)
-	if s.DB == nil {
+	if s.PG == nil {
 		return OrganizationProfile{}, ErrStoreUnavailable
 	}
 	orgID = strings.TrimSpace(orgID)
 	if orgID == "" {
 		return OrganizationProfile{}, fmt.Errorf("%w: org_id is required", ErrInvalidInput)
 	}
-	profile, err = scanOrganizationProfile(s.DB.QueryRowContext(ctx, organizationProfileSelect()+`
-WHERE org_id = $1`, orgID))
+	row, err := s.q().GetOrganizationProfile(ctx, identitystore.GetOrganizationProfileParams{OrgID: orgID})
 	if err == nil {
-		return profile, nil
+		return organizationProfileFromGetRow(row)
 	}
-	if !errors.Is(err, ErrOrganizationMissing) {
-		return OrganizationProfile{}, err
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return OrganizationProfile{}, fmt.Errorf("%w: get organization profile: %v", ErrStoreUnavailable, err)
 	}
 	return s.createDefaultOrganizationProfile(ctx, orgID, actorID, displayNameSeed)
 }
@@ -47,7 +45,7 @@ WHERE org_id = $1`, orgID))
 func (s SQLStore) UpdateOrganizationProfile(ctx context.Context, principal Principal, input UpdateOrganizationRequest) (profile OrganizationProfile, err error) {
 	ctx, span := organizationStoreTracer.Start(ctx, "identity.pg.organization_profile.update")
 	defer finishOrganizationSpan(span, principal.OrgID, profile, err)
-	if s.DB == nil {
+	if s.PG == nil {
 		return OrganizationProfile{}, ErrStoreUnavailable
 	}
 	if err := principal.validate(); err != nil {
@@ -60,14 +58,17 @@ func (s SQLStore) UpdateOrganizationProfile(ctx context.Context, principal Princ
 	if _, err := s.GetOrganizationProfile(ctx, principal.OrgID, principal.Subject, principal.OrgDisplayName); err != nil {
 		return OrganizationProfile{}, err
 	}
-	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	tx, err := s.PG.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
 		return OrganizationProfile{}, fmt.Errorf("%w: begin organization profile update: %v", ErrStoreUnavailable, err)
 	}
-	defer rollback(tx)
-	old, err := scanOrganizationProfile(tx.QueryRowContext(ctx, organizationProfileSelect()+`
-WHERE org_id = $1
-FOR UPDATE`, principal.OrgID))
+	defer rollback(ctx, tx)
+	q := identitystore.New(tx)
+	oldRow, err := q.GetOrganizationProfileForUpdate(ctx, identitystore.GetOrganizationProfileForUpdateParams{OrgID: principal.OrgID})
+	if err != nil {
+		return OrganizationProfile{}, organizationProfileLoadError(err)
+	}
+	old, err := organizationProfileFromForUpdateRow(oldRow)
 	if err != nil {
 		return OrganizationProfile{}, err
 	}
@@ -81,31 +82,29 @@ FOR UPDATE`, principal.OrgID))
 		input.Slug = old.Slug
 	}
 	if input.Slug != old.Slug {
-		available, err := organizationSlugAvailable(ctx, tx, principal.OrgID, input.Slug)
+		available, err := organizationSlugAvailable(ctx, q, principal.OrgID, input.Slug)
 		if err != nil {
 			return OrganizationProfile{}, err
 		}
 		if !available {
 			return OrganizationProfile{}, fmt.Errorf("%w: organization slug is unavailable", ErrOrganizationConflict)
 		}
-		if _, err := tx.ExecContext(ctx, `
-INSERT INTO identity_organization_slug_redirects (slug, org_id, created_by, created_at)
-VALUES ($1, $2, $3, now())
-ON CONFLICT DO NOTHING`, old.Slug, old.OrgID, principal.Subject); err != nil {
+		if err := q.InsertOrganizationSlugRedirect(ctx, identitystore.InsertOrganizationSlugRedirectParams{
+			Slug:    old.Slug,
+			OrgID:   old.OrgID,
+			ActorID: principal.Subject,
+		}); err != nil {
 			return OrganizationProfile{}, fmt.Errorf("%w: insert organization slug redirect: %v", ErrStoreUnavailable, err)
 		}
 	}
-	profile, err = scanOrganizationProfile(tx.QueryRowContext(ctx, `
-UPDATE identity_organizations
-SET slug = $2,
-    display_name = $3,
-    version = version + 1,
-    updated_by = $4,
-    updated_at = now()
-WHERE org_id = $1 AND version = $5
-RETURNING org_id, display_name, slug, state, version, created_by, updated_by, created_at, updated_at, '' AS redirected_from`,
-		principal.OrgID, input.Slug, input.DisplayName, principal.Subject, input.Version))
-	if errors.Is(err, ErrOrganizationMissing) {
+	row, err := q.UpdateOrganizationProfile(ctx, identitystore.UpdateOrganizationProfileParams{
+		OrgID:       principal.OrgID,
+		Slug:        input.Slug,
+		DisplayName: input.DisplayName,
+		ActorID:     principal.Subject,
+		Version:     input.Version,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
 		return OrganizationProfile{}, fmt.Errorf("%w: stale organization profile version", ErrOrganizationConflict)
 	}
 	if err != nil {
@@ -114,7 +113,11 @@ RETURNING org_id, display_name, slug, state, version, created_by, updated_by, cr
 		}
 		return OrganizationProfile{}, fmt.Errorf("%w: update organization profile: %v", ErrStoreUnavailable, err)
 	}
-	if err := tx.Commit(); err != nil {
+	profile, err = organizationProfileFromUpdateRow(row)
+	if err != nil {
+		return OrganizationProfile{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return OrganizationProfile{}, fmt.Errorf("%w: commit organization profile update: %v", ErrStoreUnavailable, err)
 	}
 	return profile, nil
@@ -123,7 +126,7 @@ RETURNING org_id, display_name, slug, state, version, created_by, updated_by, cr
 func (s SQLStore) ResolveOrganizationProfile(ctx context.Context, input ResolveOrganizationRequest) (profile OrganizationProfile, err error) {
 	ctx, span := organizationStoreTracer.Start(ctx, "identity.pg.organization_profile.resolve")
 	defer finishOrganizationSpan(span, input.OrgID, profile, err)
-	if s.DB == nil {
+	if s.PG == nil {
 		return OrganizationProfile{}, ErrStoreUnavailable
 	}
 	input.OrgID = strings.TrimSpace(input.OrgID)
@@ -137,14 +140,17 @@ func (s SQLStore) ResolveOrganizationProfile(ctx context.Context, input ResolveO
 			return OrganizationProfile{}, err
 		}
 	} else {
-		profile, err = scanOrganizationProfile(s.DB.QueryRowContext(ctx, organizationProfileSelect()+`
-WHERE slug = $1`, input.Slug))
-		if errors.Is(err, ErrOrganizationMissing) {
-			profile, err = scanOrganizationProfile(s.DB.QueryRowContext(ctx, `
-SELECT o.org_id, o.display_name, o.slug, o.state, o.version, o.created_by, o.updated_by, o.created_at, o.updated_at, r.slug
-FROM identity_organization_slug_redirects r
-JOIN identity_organizations o ON o.org_id = r.org_id
-WHERE r.slug = $1`, input.Slug))
+		row, err := s.q().GetOrganizationProfileBySlug(ctx, identitystore.GetOrganizationProfileBySlugParams{Slug: input.Slug})
+		if err == nil {
+			profile, err = organizationProfileFromSlugRow(row)
+		} else if errors.Is(err, pgx.ErrNoRows) {
+			redirectRow, redirectErr := s.q().GetOrganizationProfileByRedirectSlug(ctx, identitystore.GetOrganizationProfileByRedirectSlugParams{Slug: input.Slug})
+			if redirectErr != nil {
+				return OrganizationProfile{}, organizationProfileLoadError(redirectErr)
+			}
+			profile, err = organizationProfileFromRedirectRow(redirectRow)
+		} else {
+			return OrganizationProfile{}, organizationProfileLoadError(err)
 		}
 		if err != nil {
 			return OrganizationProfile{}, err
@@ -164,89 +170,112 @@ func (s SQLStore) createDefaultOrganizationProfile(ctx context.Context, orgID, a
 		baseSlug = "organization"
 	}
 	suffix := shortStableSuffix(orgID)
-	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	tx, err := s.PG.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
 		return OrganizationProfile{}, fmt.Errorf("%w: begin organization profile create: %v", ErrStoreUnavailable, err)
 	}
-	defer rollback(tx)
+	defer rollback(ctx, tx)
+	q := identitystore.New(tx)
 	for attempt := 0; attempt < 16; attempt++ {
 		slug := slugCandidate(baseSlug, suffix, attempt)
-		row := tx.QueryRowContext(ctx, `
-INSERT INTO identity_organizations (org_id, display_name, slug, state, version, created_by, updated_by, created_at, updated_at)
-SELECT $1, $2, $3, 'active', 1, $4, $4, now(), now()
-WHERE NOT EXISTS (
-    SELECT 1 FROM identity_organization_slug_redirects WHERE slug = $3
-)
-ON CONFLICT DO NOTHING
-RETURNING org_id, display_name, slug, state, version, created_by, updated_by, created_at, updated_at, '' AS redirected_from`,
-			orgID, displayName, slug, actorID)
-		profile, err := scanOrganizationProfile(row)
+		row, err := q.CreateOrganizationProfile(ctx, identitystore.CreateOrganizationProfileParams{
+			OrgID:       orgID,
+			DisplayName: displayName,
+			Slug:        slug,
+			ActorID:     actorID,
+		})
 		if err == nil {
+			profile, err := organizationProfileFromCreateRow(row)
+			if err != nil {
+				return OrganizationProfile{}, err
+			}
 			if legacy := legacyOrgSlug(orgID); legacy != "" && legacy != profile.Slug {
-				if _, err := tx.ExecContext(ctx, `
-INSERT INTO identity_organization_slug_redirects (slug, org_id, created_by, created_at)
-VALUES ($1, $2, $3, now())
-ON CONFLICT DO NOTHING`, legacy, orgID, actorID); err != nil {
+				if err := q.InsertOrganizationSlugRedirect(ctx, identitystore.InsertOrganizationSlugRedirectParams{
+					Slug:    legacy,
+					OrgID:   orgID,
+					ActorID: actorID,
+				}); err != nil {
 					return OrganizationProfile{}, fmt.Errorf("%w: reserve legacy organization slug: %v", ErrStoreUnavailable, err)
 				}
 			}
-			if err := tx.Commit(); err != nil {
+			if err := tx.Commit(ctx); err != nil {
 				return OrganizationProfile{}, fmt.Errorf("%w: commit organization profile create: %v", ErrStoreUnavailable, err)
 			}
 			return profile, nil
 		}
-		if !errors.Is(err, ErrOrganizationMissing) {
-			return OrganizationProfile{}, err
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return OrganizationProfile{}, organizationProfileLoadError(err)
 		}
-		existing, loadErr := scanOrganizationProfile(tx.QueryRowContext(ctx, organizationProfileSelect()+`
-WHERE org_id = $1`, orgID))
+		existingRow, loadErr := q.GetOrganizationProfile(ctx, identitystore.GetOrganizationProfileParams{OrgID: orgID})
 		if loadErr == nil {
-			if err := tx.Commit(); err != nil {
+			existing, err := organizationProfileFromGetRow(existingRow)
+			if err != nil {
+				return OrganizationProfile{}, err
+			}
+			if err := tx.Commit(ctx); err != nil {
 				return OrganizationProfile{}, fmt.Errorf("%w: commit existing organization profile: %v", ErrStoreUnavailable, err)
 			}
 			return existing, nil
 		}
-		if !errors.Is(loadErr, ErrOrganizationMissing) {
-			return OrganizationProfile{}, loadErr
+		if !errors.Is(loadErr, pgx.ErrNoRows) {
+			return OrganizationProfile{}, organizationProfileLoadError(loadErr)
 		}
 	}
 	return OrganizationProfile{}, fmt.Errorf("%w: unable to allocate organization slug", ErrOrganizationConflict)
 }
 
-func organizationProfileSelect() string {
-	return `
-SELECT org_id, display_name, slug, state, version, created_by, updated_by, created_at, updated_at, '' AS redirected_from
-FROM identity_organizations
-`
+func organizationProfileFromGetRow(row identitystore.GetOrganizationProfileRow) (OrganizationProfile, error) {
+	return organizationProfileFromFields(row.OrgID, row.DisplayName, row.Slug, row.State, row.Version, row.CreatedBy, row.UpdatedBy, row.CreatedAt, row.UpdatedAt, row.RedirectedFrom)
 }
 
-func scanOrganizationProfile(scanner organizationProfileScanner) (OrganizationProfile, error) {
-	var profile OrganizationProfile
-	var state string
-	var redirectedFrom sql.NullString
-	err := scanner.Scan(
-		&profile.OrgID,
-		&profile.DisplayName,
-		&profile.Slug,
-		&state,
-		&profile.Version,
-		&profile.CreatedBy,
-		&profile.UpdatedBy,
-		&profile.CreatedAt,
-		&profile.UpdatedAt,
-		&redirectedFrom,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
-		return OrganizationProfile{}, ErrOrganizationMissing
-	}
+func organizationProfileFromForUpdateRow(row identitystore.GetOrganizationProfileForUpdateRow) (OrganizationProfile, error) {
+	return organizationProfileFromFields(row.OrgID, row.DisplayName, row.Slug, row.State, row.Version, row.CreatedBy, row.UpdatedBy, row.CreatedAt, row.UpdatedAt, row.RedirectedFrom)
+}
+
+func organizationProfileFromSlugRow(row identitystore.GetOrganizationProfileBySlugRow) (OrganizationProfile, error) {
+	return organizationProfileFromFields(row.OrgID, row.DisplayName, row.Slug, row.State, row.Version, row.CreatedBy, row.UpdatedBy, row.CreatedAt, row.UpdatedAt, row.RedirectedFrom)
+}
+
+func organizationProfileFromRedirectRow(row identitystore.GetOrganizationProfileByRedirectSlugRow) (OrganizationProfile, error) {
+	return organizationProfileFromFields(row.OrgID, row.DisplayName, row.Slug, row.State, row.Version, row.CreatedBy, row.UpdatedBy, row.CreatedAt, row.UpdatedAt, row.RedirectedFrom)
+}
+
+func organizationProfileFromCreateRow(row identitystore.CreateOrganizationProfileRow) (OrganizationProfile, error) {
+	return organizationProfileFromFields(row.OrgID, row.DisplayName, row.Slug, row.State, row.Version, row.CreatedBy, row.UpdatedBy, row.CreatedAt, row.UpdatedAt, row.RedirectedFrom)
+}
+
+func organizationProfileFromUpdateRow(row identitystore.UpdateOrganizationProfileRow) (OrganizationProfile, error) {
+	return organizationProfileFromFields(row.OrgID, row.DisplayName, row.Slug, row.State, row.Version, row.CreatedBy, row.UpdatedBy, row.CreatedAt, row.UpdatedAt, row.RedirectedFrom)
+}
+
+func organizationProfileFromFields(orgID, displayName, slug, state string, version int32, createdBy, updatedBy string, createdAt, updatedAt pgtype.Timestamptz, redirectedFrom string) (OrganizationProfile, error) {
+	created, err := requiredTime(createdAt, "identity_organizations.created_at")
 	if err != nil {
-		return OrganizationProfile{}, fmt.Errorf("%w: scan organization profile: %v", ErrStoreUnavailable, err)
+		return OrganizationProfile{}, err
 	}
-	profile.State = OrganizationProfileState(state)
-	profile.RedirectedFrom = nullableString(redirectedFrom)
-	profile.CreatedAt = profile.CreatedAt.UTC()
-	profile.UpdatedAt = profile.UpdatedAt.UTC()
-	return profile, nil
+	updated, err := requiredTime(updatedAt, "identity_organizations.updated_at")
+	if err != nil {
+		return OrganizationProfile{}, err
+	}
+	return OrganizationProfile{
+		OrgID:          orgID,
+		DisplayName:    displayName,
+		Slug:           slug,
+		State:          OrganizationProfileState(state),
+		Version:        version,
+		CreatedBy:      createdBy,
+		UpdatedBy:      updatedBy,
+		CreatedAt:      created,
+		UpdatedAt:      updated,
+		RedirectedFrom: redirectedFrom,
+	}, nil
+}
+
+func organizationProfileLoadError(err error) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrOrganizationMissing
+	}
+	return fmt.Errorf("%w: scan organization profile: %v", ErrStoreUnavailable, err)
 }
 
 func normalizeUpdateOrganizationRequest(input UpdateOrganizationRequest) (UpdateOrganizationRequest, error) {
@@ -330,18 +359,15 @@ func isBidiOverride(r rune) bool {
 	return r == '\u202a' || r == '\u202b' || r == '\u202c' || r == '\u202d' || r == '\u202e' || r == '\u2066' || r == '\u2067' || r == '\u2068' || r == '\u2069'
 }
 
-func organizationSlugAvailable(ctx context.Context, tx *sql.Tx, currentOrgID, slug string) (bool, error) {
-	var unavailable bool
-	err := tx.QueryRowContext(ctx, `
-SELECT EXISTS (
-    SELECT 1 FROM identity_organizations WHERE slug = $1 AND org_id <> $2
-) OR EXISTS (
-    SELECT 1 FROM identity_organization_slug_redirects WHERE slug = $1
-)`, slug, currentOrgID).Scan(&unavailable)
+func organizationSlugAvailable(ctx context.Context, q *identitystore.Queries, currentOrgID, slug string) (bool, error) {
+	unavailable, err := q.OrganizationSlugUnavailable(ctx, identitystore.OrganizationSlugUnavailableParams{
+		CandidateSlug: slug,
+		CurrentOrgID:  currentOrgID,
+	})
 	if err != nil {
 		return false, fmt.Errorf("%w: check organization slug: %v", ErrStoreUnavailable, err)
 	}
-	return !unavailable, nil
+	return !unavailable.Bool, nil
 }
 
 func slugCandidate(baseSlug, suffix string, attempt int) string {
@@ -389,8 +415,8 @@ func shortStableSuffix(value string) string {
 }
 
 func uniqueViolation(err error) bool {
-	var pqErr *pq.Error
-	return errors.As(err, &pqErr) && string(pqErr.Code) == "23505"
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
 func finishOrganizationSpan(span trace.Span, orgID string, profile OrganizationProfile, err error) {
