@@ -3,6 +3,7 @@ package topology
 import (
 	"list"
 
+	cat "guardianintelligence.org/forge-metal/topology/catalog"
 	s "guardianintelligence.org/forge-metal/topology/schema"
 )
 
@@ -791,5 +792,11 @@ outputs: {
 		topology_proof: {
 			evidence: topology.evidence
 		}
+	}
+	catalog: {
+		topology_versions:       cat.versions
+		topology_server_tools:   cat.serverTools
+		topology_dev_tools:      cat.devTools
+		topology_guest_versions: cat.guestVersions
 	}
 }

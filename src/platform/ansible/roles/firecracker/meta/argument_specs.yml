@@ -3,7 +3,7 @@ argument_specs:
   main:
     short_description: "Firecracker host setup: KVM, jailer, golden zvol, vm-orchestrator"
     description:
-      - "Installs Firecracker + jailer from guest/versions.json, configures KVM,"
+      - "Installs Firecracker + jailer from generated topology catalog vars, configures KVM,"
       - "creates the jailer user/group, sets up the golden zvol lifecycle,"
       - "builds and deploys vm-orchestrator, and verifies guest artifacts."
     options:

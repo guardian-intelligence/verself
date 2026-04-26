@@ -1,14 +1,23 @@
 ---
-# Dev tools installation from dev-tools.json.
+# Dev tools installation from generated topology catalog vars.
 # Follows the established firecracker/containerd role pattern:
 # get_url + checksum + version verify.
 #
 # Idempotent: every tool checks its current version before downloading.
 # A no-op re-run should complete in <5s.
 
-- name: Load dev tool pins from repo
+- name: Validate generated dev tool pins are loaded
+  ansible.builtin.assert:
+    that:
+      - topology_dev_tools is defined
+      - topology_dev_tools.go.version is defined
+      - topology_dev_tools.ansible.version is defined
+    fail_msg: >-
+      topology_dev_tools is missing. Run make topology-generate before setup-dev.
+
+- name: Set dev tool pins
   ansible.builtin.set_fact:
-    dev_tools_manifest: "{{ lookup('ansible.builtin.file', dev_tools_json) | from_json }}"
+    dev_tools_manifest: "{{ topology_dev_tools }}"
 
 # ============================================================================
 # Go (must be first — go install tools depend on it)

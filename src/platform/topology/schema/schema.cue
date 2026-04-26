@@ -93,19 +93,6 @@ package schema
 	...
 }
 
-#EvidenceExpectation: {
-	name:      string
-	kind:      "span" | "query" | "listener" | "route"
-	service:   string | *""
-	span_name: string | *""
-	component: string | *""
-	attributes: {
-		[string]: string
-		...
-	}
-	...
-}
-
 #GarageNode: {
 	instance:   int & >=0
 	s3_port:    #Port
@@ -198,6 +185,5 @@ package schema
 		[string]: #Policy
 		...
 	}
-	evidence: [...#EvidenceExpectation]
 	...
 }
