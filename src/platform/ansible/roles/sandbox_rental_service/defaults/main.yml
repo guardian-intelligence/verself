@@ -13,22 +13,19 @@ sandbox_rental_service_force_schema_reset: false
 sandbox_rental_service_restore_github_installations_on_schema_reset: true
 sandbox_rental_service_github_checkout_cache_dir: /var/lib/verself/sandbox-rental/github-checkout
 
-# Regular database pool used by HTTP handlers and execution workers for service-owned
-# PostgreSQL state. This is separate from the River PGX pool below, so the two caps
-# must fit inside the node-wide PostgreSQL max_connections budget with Electric and
-# other service pools.
-sandbox_rental_service_pg_max_open_conns: 16
-sandbox_rental_service_pg_max_idle_conns: 8
+# Shared pgx pool used by HTTP handlers, execution workers, sqlc stores, and River.
+# Keep this plus the recurring worker pool inside the sandbox_rental PostgreSQL
+# role limit with Electric and migration headroom.
+sandbox_rental_service_pg_max_conns: 16
+sandbox_rental_service_pg_min_conns: 1
 sandbox_rental_service_pg_conn_max_lifetime_seconds: 1800
 sandbox_rental_service_pg_conn_max_idle_seconds: 300
 
-# River uses its own pgxpool for queue polling, inserts, and worker leases. Keep this
-# close to the execution worker count; over-provisioning it can consume Postgres
-# slots without increasing VM throughput.
-sandbox_rental_service_river_pg_max_conns: 8
-sandbox_rental_service_river_pg_min_conns: 1
-sandbox_rental_service_river_pg_conn_max_lifetime_seconds: 1800
-sandbox_rental_service_river_pg_conn_max_idle_seconds: 300
+# Recurring worker has its own process-local pgx pool.
+sandbox_rental_service_recurring_pg_max_conns: 4
+sandbox_rental_service_recurring_pg_min_conns: 1
+sandbox_rental_service_recurring_pg_conn_max_lifetime_seconds: 1800
+sandbox_rental_service_recurring_pg_conn_max_idle_seconds: 300
 
 # VM execution queue parallelism. Each worker can hold one default 4 vCPU /
 # 16 GiB / 80 GiB Firecracker VM session, so this is the primary concurrency

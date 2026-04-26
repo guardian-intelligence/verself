@@ -51,10 +51,10 @@ func run() error {
 	temporalNamespace := cfg.String("SANDBOX_TEMPORAL_NAMESPACE", recurring.DefaultNamespace)
 	temporalRecurringTaskQueue := cfg.String("SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING", recurring.DefaultTaskQueue)
 	sourceInternalURL := cfg.URL("SANDBOX_SOURCE_INTERNAL_URL", "https://127.0.0.1:4262")
-	riverPGMaxConns := cfg.Int("SANDBOX_RIVER_PG_MAX_CONNS", 8)
-	riverPGMinConns := cfg.Int("SANDBOX_RIVER_PG_MIN_CONNS", 1)
-	riverPGConnMaxLifetime := cfg.Int("SANDBOX_RIVER_PG_CONN_MAX_LIFETIME_SECONDS", 1800)
-	riverPGConnMaxIdle := cfg.Int("SANDBOX_RIVER_PG_CONN_MAX_IDLE_SECONDS", 300)
+	pgMaxConns := cfg.Int("SANDBOX_PG_MAX_CONNS", 4)
+	pgMinConns := cfg.Int("SANDBOX_PG_MIN_CONNS", 1)
+	pgConnMaxLifetime := cfg.Int("SANDBOX_PG_CONN_MAX_LIFETIME_SECONDS", 1800)
+	pgConnMaxIdle := cfg.Int("SANDBOX_PG_CONN_MAX_IDLE_SECONDS", 300)
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
 	if err := cfg.Err(); err != nil {
 		return err
@@ -72,21 +72,21 @@ func run() error {
 
 	pgxConfig, err := pgxpool.ParseConfig(pgDSN)
 	if err != nil {
-		return fmt.Errorf("parse scheduler postgres dsn: %w", err)
+		return fmt.Errorf("parse postgres dsn: %w", err)
 	}
-	pgxConfig.MaxConns = int32(riverPGMaxConns)
-	pgxConfig.MinConns = int32(riverPGMinConns)
-	pgxConfig.MaxConnLifetime = time.Duration(riverPGConnMaxLifetime) * time.Second
-	pgxConfig.MaxConnIdleTime = time.Duration(riverPGConnMaxIdle) * time.Second
+	pgxConfig.MaxConns = int32(pgMaxConns)
+	pgxConfig.MinConns = int32(pgMinConns)
+	pgxConfig.MaxConnLifetime = time.Duration(pgConnMaxLifetime) * time.Second
+	pgxConfig.MaxConnIdleTime = time.Duration(pgConnMaxIdle) * time.Second
 	pgxPool, err := pgxpool.NewWithConfig(ctx, pgxConfig)
 	if err != nil {
-		return fmt.Errorf("open scheduler postgres pool: %w", err)
+		return fmt.Errorf("open postgres pool: %w", err)
 	}
 	defer pgxPool.Close()
 	pgxPingCtx, cancelPGXPing := context.WithTimeout(ctx, 5*time.Second)
 	defer cancelPGXPing()
 	if err := pgxPool.Ping(pgxPingCtx); err != nil {
-		return fmt.Errorf("ping scheduler postgres pool: %w", err)
+		return fmt.Errorf("ping postgres pool: %w", err)
 	}
 
 	sourceHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceSourceCodeHosting, nil)

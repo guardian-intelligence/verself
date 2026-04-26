@@ -2,8 +2,7 @@ version: "2"
 sql:
   - engine: postgresql
     schema:
-      - migrations/001_initial_schema.up.sql
-      - migrations/003_git_credentials_secrets_service.up.sql
+      - migrations
     queries:
       - internal/store/queries
     gen:

@@ -206,8 +206,11 @@ Use River OSS as the worker/queue runtime for sandbox-rental-service control-pla
   - VM launch/running limits: host/orchestrator safety.
   - Billing reserve concurrency: TigerBeetle/billing safety.
 
-  Having RAM means we can raise Postgres max_connections, but it does not mean we leave Go pools unbounded. Go’s database/sql defaults to unlimited open connections unless SetMaxOpenConns is called: Go database/sql docs (https://pkg.go.dev/database/sql#DB.SetMaxOpenConns). If we adopt River, I’d also move sandbox-rental’s
-  PG access to pgxpool because River is built around pgx and it gives better pool instrumentation.
+  Having RAM means we can raise Postgres max_connections, but it does not mean
+  we leave Go pools unbounded. Sandbox-rental uses one bounded pgxpool for
+  HTTP handlers, sqlc stores, River queue work, and execution workers. Keep its
+  max/min pool settings in Ansible aligned with the node-wide Postgres
+  connection budget and the separate recurring worker process pool.
 
   Pagination
   We should add pagination as a service invariant, not endpoint-by-endpoint improvisation:
