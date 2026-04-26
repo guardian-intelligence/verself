@@ -28,17 +28,13 @@ function SolutionsPage() {
       >
         {SOLUTIONS_META.description}
       </p>
-      <ul className="mt-6 flex flex-col gap-4">
+      <ul className="mt-6 flex flex-col gap-12">
         {SOLUTIONS.map((solution) => (
           <li key={solution.slug}>
             <a
               href={solution.href}
-              className="group flex flex-col gap-3 rounded-lg border p-5 transition-colors"
-              style={{
-                borderColor: "var(--treatment-surface-border)",
-                background: "var(--treatment-surface-subtle)",
-                color: "var(--treatment-ink)",
-              }}
+              className="group flex flex-col gap-3 transition-colors"
+              style={{ color: "var(--treatment-ink)" }}
             >
               <span
                 className="font-mono text-[10px] uppercase tracking-[0.18em]"

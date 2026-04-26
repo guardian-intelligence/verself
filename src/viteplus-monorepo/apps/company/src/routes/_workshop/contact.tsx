@@ -19,16 +19,9 @@ function ContactPage() {
     <PageShell kicker={contact.kicker} heading={contact.hero}>
       <BodyParagraph>{contact.intro}</BodyParagraph>
 
-      <ul className="mt-6 flex flex-col gap-4">
+      <ul className="mt-6 flex flex-col gap-8">
         {contact.channels.map((channel) => (
-          <li
-            key={channel.email}
-            className="flex flex-col gap-1 rounded-lg p-5"
-            style={{
-              border: "1px solid var(--treatment-surface-border)",
-              background: "var(--treatment-surface-subtle)",
-            }}
-          >
+          <li key={channel.email} className="flex flex-col gap-1.5">
             <span
               className="font-mono text-[10px] uppercase tracking-[0.18em]"
               style={{ color: "var(--treatment-muted-faint)" }}
@@ -38,8 +31,11 @@ function ContactPage() {
             <a
               href={`mailto:${channel.email}`}
               style={{
-                color: "var(--treatment-accent)",
+                color: "var(--treatment-ink)",
                 fontSize: "16px",
+                textDecoration: "underline",
+                textDecorationThickness: "1px",
+                textUnderlineOffset: "4px",
               }}
             >
               {channel.email}

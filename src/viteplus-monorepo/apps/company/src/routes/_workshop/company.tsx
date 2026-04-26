@@ -21,16 +21,9 @@ function CompanyPage() {
         <BodyParagraph key={idx}>{paragraph}</BodyParagraph>
       ))}
 
-      <div className="mt-10 grid gap-4 md:grid-cols-3">
+      <div className="mt-10 grid gap-8 md:grid-cols-3">
         {company.values.map((value) => (
-          <div
-            key={value.name}
-            className="flex flex-col gap-2 rounded-lg p-5"
-            style={{
-              border: "1px solid var(--treatment-surface-border)",
-              background: "var(--treatment-surface-subtle)",
-            }}
-          >
+          <div key={value.name} className="flex flex-col gap-2">
             <span
               className="font-mono text-[10px] uppercase tracking-[0.18em]"
               style={{ color: "var(--treatment-muted-faint)" }}

@@ -6,7 +6,7 @@
 // string in this module passes assertVoice() before build.
 
 export const landing = {
-  kicker: "Guardian · An American applied intelligence firm · Seattle, Washington",
+  kicker: "Seattle, Washington",
   hero: "The world needs your business to succeed. We're here to help.",
   mission: [
     "Every founder spends the first year on the same dozen systems — identity, billing, analytics, email, infrastructure, security, the thousand edges where a real company touches the real world. None of it is what you started the company to build. We build the reference architecture for all of it — open-source, documented, and clean enough that one founder with Claude Code can run a billion-dollar company.",

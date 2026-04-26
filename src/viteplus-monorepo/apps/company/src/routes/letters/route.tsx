@@ -1,6 +1,7 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { AppChrome } from "@verself/brand";
+import { TopNav } from "~/components/top-nav";
 
 // Letters layout — /letters and /letters/$slug share this chrome. Paper
 // ground, chip Lockup, Bordeaux accent. The layout sets data-treatment so the
@@ -21,7 +22,12 @@ function LettersLayout() {
         color: "var(--treatment-ink)",
       }}
     >
-      <AppChrome treatment="letters" LinkComponent={LinkAdapter} />
+      <AppChrome
+        treatment="letters"
+        LinkComponent={LinkAdapter}
+        slotRight={<TopNav />}
+        wordmarkHref="/letters"
+      />
       <main id="main" className="flex-1">
         <Outlet />
       </main>
@@ -42,10 +48,9 @@ function LinkAdapter(props: {
   return <Link {...(props as any)} />;
 }
 
-// Letters footer — leaner than the Workshop footer. Paper readers expect a
-// colophon-style sign-off, not a three-column site nav. One column with the
-// routes that still make sense inside the editorial register; the uppercase
-// tracked-mono masthead line anchors the page like a periodical.
+// Letters footer — minimal colophon. Cross-treatment links live in the
+// chrome's TopNav; the footer just signs the page. No top rule (the page's
+// own rule above the story grid is enough), no link list.
 function LettersFooter() {
   return (
     <footer
@@ -53,66 +58,21 @@ function LettersFooter() {
       style={{
         background: "var(--treatment-ground)",
         color: "var(--treatment-ink)",
-        borderTop: "1px solid var(--treatment-hairline)",
       }}
     >
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 px-4 py-10 md:px-6">
-        <p
-          className="font-mono text-[10px] font-medium uppercase tracking-[0.18em]"
-          style={{ color: "var(--treatment-muted-faint)" }}
+      <div className="mx-auto w-full max-w-6xl px-4 md:px-6">
+        <div
+          className="py-10"
+          style={{
+            fontFamily: "'Geist Mono', ui-monospace, monospace",
+            fontSize: "11px",
+            letterSpacing: "0.12em",
+            textTransform: "uppercase",
+            color: "var(--treatment-muted-faint)",
+          }}
         >
-          Read also
-        </p>
-        <ul className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
-          <li>
-            <Link
-              to="/letters"
-              className="transition-colors hover:underline hover:underline-offset-4"
-              style={{ color: "var(--treatment-muted)" }}
-            >
-              Letters index
-            </Link>
-          </li>
-          <li>
-            <a
-              href="/letters/rss"
-              className="transition-colors hover:underline hover:underline-offset-4"
-              style={{ color: "var(--treatment-muted)" }}
-            >
-              RSS
-            </a>
-          </li>
-          <li>
-            <Link
-              to="/newsroom"
-              className="transition-colors hover:underline hover:underline-offset-4"
-              style={{ color: "var(--treatment-muted)" }}
-            >
-              Newsroom
-            </Link>
-          </li>
-          <li>
-            <Link
-              to="/"
-              className="transition-colors hover:underline hover:underline-offset-4"
-              style={{ color: "var(--treatment-muted)" }}
-            >
-              Workshop
-            </Link>
-          </li>
-        </ul>
-      </div>
-      <div
-        className="mx-auto w-full max-w-4xl px-4 pb-10 md:px-6"
-        style={{
-          fontFamily: "'Geist Mono', ui-monospace, monospace",
-          fontSize: "11px",
-          letterSpacing: "0.12em",
-          textTransform: "uppercase",
-          color: "var(--treatment-muted-faint)",
-        }}
-      >
-        © 2026 Guardian Intelligence LLC · Seattle, Washington
+          © 2026 Guardian Intelligence LLC · Seattle, Washington
+        </div>
       </div>
     </footer>
   );

@@ -59,7 +59,6 @@ export function DesignTabStrip({ currentRoute }: DesignTabStripProps) {
       className="sticky top-[var(--header-h)] z-20"
       style={{
         background: "var(--treatment-ground)",
-        borderBottom: "1px solid var(--treatment-hairline)",
       }}
     >
       <div className="mx-auto w-full max-w-7xl px-4 pt-3 pb-0 md:px-6">
@@ -75,7 +74,10 @@ export function DesignTabStrip({ currentRoute }: DesignTabStripProps) {
         </p>
       </div>
       <div className="mx-auto w-full max-w-7xl overflow-x-auto overflow-y-hidden px-4 md:px-6">
-        <ul className="flex min-w-max items-center gap-1">
+        <ul
+          className="flex min-w-max items-center gap-1"
+          style={{ borderBottom: "1px solid var(--treatment-hairline)" }}
+        >
           {TABS.map((tab) => {
             const isActive = tab.to === currentRoute;
             const accent = TREATMENT_ACCENT[tab.treatment];

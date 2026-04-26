@@ -62,7 +62,7 @@ function NewsroomArticle() {
   return (
     <article data-newsroom-article data-slug={item.slug}>
       <FlareHeroBand item={item} />
-      <div className="mx-auto w-full max-w-3xl px-4 pb-16 md:px-6 md:pb-24">
+      <div className="mx-auto w-full max-w-6xl px-4 pb-16 md:px-6 md:pb-24">
         <Breadcrumb title={item.title} />
         <Byline item={item} />
         <ArticleBody item={item} />
@@ -88,7 +88,7 @@ function FlareHeroBand({ item }: { item: NewsroomItem }) {
       }}
     >
       <div
-        className="mx-auto flex w-full max-w-5xl flex-col items-center justify-center gap-5 px-4 py-16 text-center md:gap-6 md:px-6 md:py-24"
+        className="mx-auto flex w-full max-w-6xl flex-col items-center justify-center gap-5 px-4 py-16 text-center md:gap-6 md:px-6 md:py-24"
         style={{ minHeight: "clamp(360px, 36vw, 520px)" }}
       >
         <p

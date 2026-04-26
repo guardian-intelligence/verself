@@ -20,13 +20,7 @@ function PressPage() {
     <PageShell kicker={press.kicker} heading={press.hero}>
       <BodyParagraph>{press.intro}</BodyParagraph>
 
-      <div
-        className="mt-6 flex flex-col gap-4 rounded-lg p-5"
-        style={{
-          border: "1px solid var(--treatment-surface-border)",
-          background: "var(--treatment-surface-subtle)",
-        }}
-      >
+      <div className="mt-6 flex flex-col gap-4">
         <a
           href={press.kitHref}
           download
@@ -39,7 +33,10 @@ function PressPage() {
             fontFamily: "'Geist', sans-serif",
             fontSize: "15px",
             fontWeight: 500,
-            color: "var(--treatment-accent)",
+            color: "var(--treatment-ink)",
+            textDecoration: "underline",
+            textDecorationThickness: "1px",
+            textUnderlineOffset: "4px",
           }}
         >
           {press.kitLabel}
@@ -67,7 +64,13 @@ function PressPage() {
         </span>
         <a
           href={`mailto:${press.contactEmail}`}
-          style={{ color: "var(--treatment-accent)", fontSize: "16px" }}
+          style={{
+            color: "var(--treatment-ink)",
+            fontSize: "16px",
+            textDecoration: "underline",
+            textDecorationThickness: "1px",
+            textUnderlineOffset: "4px",
+          }}
         >
           {press.contactEmail}
         </a>

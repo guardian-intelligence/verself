@@ -29,7 +29,7 @@ export function PageShell({ kicker, heading, children, route }: PageShellProps) 
   }, [route, emitSpan]);
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-4 py-16 md:px-6 md:py-24">
+    <div className="mx-auto w-full max-w-6xl px-4 py-16 md:px-6 md:py-24">
       <p
         className="font-mono text-[11px] font-medium uppercase tracking-[0.16em]"
         style={{ color: "var(--treatment-muted-faint)" }}

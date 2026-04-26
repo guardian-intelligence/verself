@@ -41,7 +41,7 @@ export function NewsroomStrip() {
         borderBottom: "1px solid rgba(11, 11, 11, 0.14)",
       }}
     >
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-8 md:flex-row md:items-center md:justify-between md:gap-8 md:px-6 md:py-10">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-8 md:flex-row md:items-center md:justify-between md:gap-8 md:px-6 md:py-10">
         <div className="flex flex-col gap-2">
           <p
             className="font-mono text-[10px] font-semibold uppercase tracking-[0.2em]"
@@ -51,7 +51,7 @@ export function NewsroomStrip() {
               margin: 0,
             }}
           >
-            From the Newsroom · {item.kicker} · {item.date}
+            From the Newsroom · {item.date}
           </p>
           <p
             style={{

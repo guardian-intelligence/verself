@@ -43,6 +43,10 @@ export interface AppChromeProps {
   // cover page that wants the full masthead without a section tag.
   // `undefined` (the default) resolves to the treatment's default section.
   readonly section?: string | null;
+  // Whether to draw the chrome's bottom rule. Default true. Layouts may set
+  // false on routes where the page already provides its own separation
+  // (e.g. /newsroom/$slug, where the article header is the masthead).
+  readonly bottomRule?: boolean;
 }
 
 function DefaultLink({ to, children, ...rest }: LinkLikeProps) {
@@ -60,6 +64,7 @@ export function AppChrome({
   route,
   LinkComponent = DefaultLink,
   section,
+  bottomRule = true,
 }: AppChromeProps) {
   const emitSpan = useBrandTelemetry();
   const variant = TREATMENT_WORDMARK_VARIANT[treatment];
@@ -92,31 +97,47 @@ export function AppChrome({
     });
   };
 
+  // The chrome reads as one bar across all three treatments: same width,
+  // same items, same placement. Each treatment paints itself via the
+  // var(--treatment-*) ramp, but the geometry stays uniform so the masthead
+  // does not change shape when a reader crosses /letters → /newsroom → /.
+  // Consumers align their content wrappers to the same max-w-6xl so the
+  // wordmark and the page body sit on the same column. The rule is drawn
+  // on the inner container, never on the <header> element, so it cannot
+  // reach the viewport edge.
   return (
     <header
       className="sticky top-0 z-30 transition-colors duration-300 ease-out"
       style={{
         background: "var(--treatment-ground)",
-        borderBottom: "1px solid var(--treatment-hairline)",
         color: "var(--treatment-wordmark)",
       }}
     >
-      <div className="mx-auto flex h-[var(--header-h)] w-full max-w-7xl items-center justify-between px-4 md:px-6">
-        <LinkComponent
-          to={wordmarkHref}
-          aria-label={resolvedSection ? `Guardian — ${resolvedSection} — home` : "Guardian — home"}
-          className="inline-flex items-center"
-          style={{ color: "var(--treatment-wordmark)" }}
-          onClick={handleWordmarkClick}
+      <div className="mx-auto w-full max-w-6xl px-4 md:px-6">
+        <div
+          className="flex h-[var(--header-h)] items-center justify-between"
+          style={{
+            borderBottom: bottomRule
+              ? "var(--treatment-rule-thickness) solid var(--treatment-rule-color)"
+              : undefined,
+          }}
         >
-          <Lockup
-            size="sm"
-            variant={variant}
-            title="Guardian"
-            {...(resolvedSection ? { section: resolvedSection } : {})}
-          />
-        </LinkComponent>
-        {slotRight ? <div className="flex items-center gap-4">{slotRight}</div> : null}
+          <LinkComponent
+            to={wordmarkHref}
+            aria-label={resolvedSection ? `Guardian — ${resolvedSection} — home` : "Guardian — home"}
+            className="inline-flex items-center"
+            style={{ color: "var(--treatment-wordmark)" }}
+            onClick={handleWordmarkClick}
+          >
+            <Lockup
+              size="sm"
+              variant={variant}
+              title="Guardian"
+              {...(resolvedSection ? { section: resolvedSection } : {})}
+            />
+          </LinkComponent>
+          {slotRight ? <div className="flex items-center gap-4">{slotRight}</div> : null}
+        </div>
       </div>
     </header>
   );

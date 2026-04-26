@@ -33,7 +33,15 @@ function CareersPage() {
           }}
         >
           {careers.emptyState}{" "}
-          <a href={`mailto:${careers.contactEmail}`} style={{ color: "var(--treatment-accent)" }}>
+          <a
+            href={`mailto:${careers.contactEmail}`}
+            style={{
+              color: "var(--treatment-ink)",
+              textDecoration: "underline",
+              textDecorationThickness: "1px",
+              textUnderlineOffset: "4px",
+            }}
+          >
             {careers.contactEmail}
           </a>
         </p>

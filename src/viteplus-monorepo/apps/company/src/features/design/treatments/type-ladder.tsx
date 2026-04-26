@@ -66,10 +66,6 @@ export function TreatmentTypeLadder({
     <div
       style={{
         marginBottom: "16px",
-        padding: "8px 4px 4px",
-        border: "1px solid var(--treatment-surface-border)",
-        borderRadius: "12px",
-        background: "var(--treatment-surface-subtle)",
         overflowX: "auto",
         color: "var(--treatment-ink)",
       }}

@@ -1,7 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect } from "react";
 import {
-  CATEGORY_LABELS,
   NEWSROOM_META,
   currentNewsroomItem,
   newsroomCtaHref,
@@ -12,12 +11,14 @@ import { ogMeta } from "~/lib/head";
 
 // /newsroom — the press-room index.
 //
-// Structural debt to Ramp's /blog/news: a calm masthead, then one giant
-// bulletin banner, then a metadata tile linking into the article. Our palette
-// swap: Flare ground with Ink type, nothing else. Archive grid and subscribe
-// band are retired until we have a second bulletin and a newsletter service
-// — running them empty read as decoration, and Flare is an event, not
-// decoration. One Flare giant bulletin per page.
+// The chrome already names the room ("GUARDIAN · NEWSROOM"); a section
+// masthead with a headline + deck above the bulletin is a third announcement
+// of the same thing and reads as ceremony. The page leads directly with the
+// one Flare giant bulletin (Ramp /blog/news structural debt) and a metadata
+// tile linking into the article. Archive grid and subscribe band are retired
+// until we have a second bulletin and a newsletter service — running them
+// empty read as decoration, and Flare is an event, not decoration. One
+// Flare giant bulletin per page.
 
 export const Route = createFileRoute("/newsroom/")({
   component: NewsroomIndex,
@@ -52,56 +53,11 @@ function NewsroomIndex() {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-10 md:px-6 md:py-14">
-      <Masthead />
-      <section aria-label="Featured bulletin" className="mt-10 md:mt-14">
+      <section aria-label="Featured bulletin">
         {item ? <GiantBulletin item={item} onClick={onBulletinClick} /> : <EmptyBulletin />}
       </section>
       {item ? <BulletinMeta item={item} /> : null}
     </div>
-  );
-}
-
-function Masthead() {
-  return (
-    <header className="flex flex-col gap-4">
-      <p
-        className="font-mono text-[11px] font-semibold uppercase tracking-[0.2em]"
-        style={{
-          color: "var(--treatment-muted-meta)",
-          fontVariationSettings: '"wght" 600',
-          margin: 0,
-        }}
-      >
-        Newsroom
-      </p>
-      <h1
-        style={{
-          fontFamily: "var(--treatment-display-font)",
-          fontVariationSettings: '"opsz" 144, "SOFT" 30',
-          fontWeight: 400,
-          fontSize: "clamp(44px, 6vw, 72px)",
-          lineHeight: 1.02,
-          letterSpacing: "-0.028em",
-          color: "var(--treatment-ink)",
-          margin: 0,
-        }}
-      >
-        Bulletins from the house.
-      </h1>
-      <p
-        className="max-w-2xl"
-        style={{
-          fontFamily: "'Geist', sans-serif",
-          fontSize: "clamp(15px, 1.4vw, 17px)",
-          lineHeight: 1.55,
-          color: "var(--treatment-muted-strong)",
-          margin: 0,
-        }}
-      >
-        Milestones, announcements, and public notes from Guardian Intelligence. Short, dated, on the
-        record.
-      </p>
-    </header>
   );
 }
 
@@ -131,7 +87,6 @@ function GiantBulletin({ item, onClick }: { item: NewsroomItem; onClick: () => v
         background: "var(--color-flare)",
         color: "var(--color-ink)",
         borderRadius: "24px",
-        border: "1px solid rgba(11, 11, 11, 0.08)",
         aspectRatio: "1312 / 689",
         minHeight: "clamp(320px, 38vw, 560px)",
         padding: "clamp(28px, 4vw, 72px)",
@@ -146,7 +101,7 @@ function GiantBulletin({ item, onClick }: { item: NewsroomItem; onClick: () => v
           fontVariationSettings: '"wght" 600',
         }}
       >
-        {CATEGORY_LABELS[item.category]} · {item.date}
+        {item.date}
       </span>
       <h2
         style={{
@@ -192,7 +147,6 @@ function EmptyBulletin() {
         background: "var(--color-flare)",
         color: "var(--color-ink)",
         borderRadius: "24px",
-        border: "1px solid rgba(11, 11, 11, 0.08)",
         aspectRatio: "1312 / 689",
         minHeight: "clamp(320px, 38vw, 560px)",
         padding: "clamp(28px, 4vw, 72px)",
@@ -241,7 +195,7 @@ function BulletinMeta({ item }: { item: NewsroomItem }) {
             margin: 0,
           }}
         >
-          Article · {item.date}
+          {item.date}
         </p>
         <h3
           style={{
@@ -257,28 +211,6 @@ function BulletinMeta({ item }: { item: NewsroomItem }) {
         >
           {item.title}
         </h3>
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <span
-            style={{
-              fontFamily: "'Fraunces', Georgia, serif",
-              fontVariationSettings: '"opsz" 72, "SOFT" 20',
-              fontWeight: 400,
-              fontSize: "16px",
-              color: "var(--treatment-ink)",
-            }}
-          >
-            {item.author.name}
-          </span>
-          <span
-            className="font-mono text-[10px] uppercase"
-            style={{
-              letterSpacing: "0.18em",
-              color: "var(--treatment-muted-meta)",
-            }}
-          >
-            {item.author.role}
-          </span>
-        </div>
       </div>
       <p
         style={{

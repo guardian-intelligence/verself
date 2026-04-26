@@ -42,10 +42,6 @@ export function TreatmentPalette({
     <div
       style={{
         marginBottom: "16px",
-        padding: "18px 20px",
-        border: "1px solid var(--treatment-surface-border)",
-        borderRadius: "10px",
-        background: "var(--treatment-surface-subtle)",
         color: "var(--treatment-ink)",
       }}
     >
@@ -67,9 +63,7 @@ export function TreatmentPalette({
       {rule ? (
         <div
           style={{
-            marginTop: "14px",
-            paddingTop: "14px",
-            borderTop: "1px solid var(--treatment-surface-border)",
+            marginTop: "18px",
             fontFamily: "'Geist', sans-serif",
             fontSize: "12px",
             color: "var(--treatment-muted)",
