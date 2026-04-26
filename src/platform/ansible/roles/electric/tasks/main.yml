@@ -1,4 +1,23 @@
 ---
+- name: "Load Electric topology config"
+  ansible.builtin.set_fact:
+    electric_instance: "{{ electric_config.electric_instance }}"
+    electric_service_name: "{{ electric_config.electric_service_name }}"
+    electric_service_port: "{{ electric_config.electric_service_port }}"
+    electric_pg_role: "{{ electric_config.electric_pg_role }}"
+    electric_pg_conn_limit: "{{ electric_config.electric_pg_conn_limit }}"
+    electric_db: "{{ electric_config.electric_db }}"
+    electric_writer_role: "{{ electric_config.electric_writer_role }}"
+    electric_publication_name: "{{ electric_config.electric_publication_name }}"
+    electric_publication_tables: "{{ electric_config.electric_publication_tables }}"
+    electric_storage_dir: "{{ electric_config.electric_storage_dir }}"
+    electric_credstore_dir: "{{ electric_config.electric_credstore_dir }}"
+    electric_nftables_table: "{{ electric_config.electric_nftables_table }}"
+    electric_nftables_file: "{{ electric_config.electric_nftables_file }}"
+    electric_db_pool_size: "{{ electric_config.electric_db_pool_size }}"
+    electric_replication_stream_id: "{{ electric_config.electric_replication_stream_id }}"
+    electric_extra_systemd_after: "{{ electric_config.electric_extra_systemd_after }}"
+
 - name: "Create storage directory for {{ electric_service_name }}"
   ansible.builtin.file:
     path: "{{ electric_storage_dir }}"

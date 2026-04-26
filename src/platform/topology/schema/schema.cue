@@ -24,6 +24,42 @@ package schema
 	...
 }
 
+#WorkloadIdentity: {
+	path:                  string & =~"^/"
+	ansible_var:           string | *""
+	entry_id:              string & !=""
+	user:                  string & !=""
+	group:                 string & !=""
+	selector:              "unix:uid" | *"unix:uid"
+	x509_svid_ttl_seconds: int & >0 | *3600
+	...
+}
+
+#PostgresBinding: {
+	database:         string | *""
+	owner:            string | *""
+	connection_limit: int & >=0 | *0
+	...
+}
+
+#ElectricSync: {
+	instance:         string & !=""
+	pg_role:          string & !=""
+	pg_conn_limit:    int & >0
+	source_database:  string & !=""
+	writer_role:      string & !=""
+	publication_name: string & !=""
+	publication_tables: [...string]
+	storage_dir:           string & =~"^/"
+	credstore_dir:         string & =~"^/"
+	nftables_table:        string & !=""
+	nftables_file:         string & =~"^/"
+	db_pool_size:          int & >0
+	replication_stream_id: string | *instance
+	extra_systemd_after: [...string] | *[]
+	...
+}
+
 #Endpoint: {
 	protocol:    #Protocol
 	host:        #ServiceHost | *"127.0.0.1"
@@ -69,6 +105,7 @@ package schema
 #Route: {
 	kind:        "browser_origin" | "public_api_origin" | "protocol_origin" | "operator_origin" | "guest_host_route" | "webhook_route"
 	gateway:     string
+	zone:        "product" | "company" | *"product"
 	host:        string | *""
 	path_prefix: string | *""
 	paths: [...string] | *[]
@@ -159,14 +196,15 @@ package schema
 		[string]: #Interface
 		...
 	}
+	identities: {
+		[string]: #WorkloadIdentity
+		...
+	}
 	probes: #Probes | *{}
 	garage?:   #GarageCluster
 	temporal?: #TemporalCluster
-	postgres: {
-		database: string | *""
-		owner:    string | *""
-		...
-	}
+	postgres:  #PostgresBinding
+	electric?: #ElectricSync
 	...
 }
 

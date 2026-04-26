@@ -23,9 +23,10 @@ topology_routes:
     component: platform
     interface: frontend
   waf: detection
+  zone: product
 - browser_cors: same_origin
   gateway: public_caddy
-  host: company_domain
+  host: '@'
   kind: browser_origin
   max_body_bytes: 0
   path_prefix: ''
@@ -34,6 +35,7 @@ topology_routes:
     component: company
     interface: frontend
   waf: detection
+  zone: company
 - browser_cors: same_origin
   gateway: public_caddy
   host: console
@@ -45,6 +47,7 @@ topology_routes:
     component: console
     interface: frontend
   waf: detection
+  zone: product
 - browser_cors: none
   gateway: public_caddy
   host: billing.api
@@ -56,6 +59,7 @@ topology_routes:
     component: billing
     interface: public_api
   waf: blocking
+  zone: product
 - browser_cors: none
   gateway: public_caddy
   host: sandbox.api
@@ -67,6 +71,7 @@ topology_routes:
     component: sandbox_rental
     interface: public_api
   waf: blocking
+  zone: product
 - browser_cors: none
   gateway: public_caddy
   host: identity.api
@@ -78,6 +83,7 @@ topology_routes:
     component: identity_service
     interface: public_api
   waf: blocking
+  zone: product
 - browser_cors: none
   gateway: public_caddy
   host: profile.api
@@ -89,6 +95,7 @@ topology_routes:
     component: profile_service
     interface: public_api
   waf: blocking
+  zone: product
 - browser_cors: none
   gateway: public_caddy
   host: notifications.api
@@ -100,6 +107,7 @@ topology_routes:
     component: notifications_service
     interface: public_api
   waf: blocking
+  zone: product
 - browser_cors: none
   gateway: public_caddy
   host: projects.api
@@ -111,6 +119,7 @@ topology_routes:
     component: projects_service
     interface: public_api
   waf: blocking
+  zone: product
 - browser_cors: none
   gateway: public_caddy
   host: source.api
@@ -122,6 +131,7 @@ topology_routes:
     component: source_code_hosting_service
     interface: public_api
   waf: blocking
+  zone: product
 - browser_cors: none
   gateway: public_caddy
   host: governance.api
@@ -133,6 +143,7 @@ topology_routes:
     component: governance_service
     interface: public_api
   waf: blocking
+  zone: product
 - browser_cors: none
   gateway: public_caddy
   host: secrets.api
@@ -144,6 +155,7 @@ topology_routes:
     component: secrets_service
     interface: public_api
   waf: blocking
+  zone: product
 - browser_cors: none
   gateway: public_caddy
   host: mail.api
@@ -155,6 +167,7 @@ topology_routes:
     component: mailbox_service
     interface: public_api
   waf: blocking
+  zone: product
 - browser_cors: not_browser_reachable
   gateway: public_caddy
   host: dashboard
@@ -166,6 +179,7 @@ topology_routes:
     component: grafana
     interface: operator_ui
   waf: detection
+  zone: product
 - browser_cors: not_browser_reachable
   gateway: public_caddy
   host: temporal
@@ -177,6 +191,7 @@ topology_routes:
     component: temporal_web
     interface: operator_ui
   waf: detection
+  zone: product
 - browser_cors: not_browser_reachable
   gateway: public_caddy
   host: git
@@ -188,6 +203,7 @@ topology_routes:
     component: source_code_hosting_service
     interface: git_smart_http
   waf: detection
+  zone: product
 - browser_cors: not_browser_reachable
   gateway: public_caddy
   host: auth
@@ -199,6 +215,7 @@ topology_routes:
     component: zitadel
     interface: oidc
   waf: detection
+  zone: product
 - browser_cors: not_browser_reachable
   gateway: public_caddy
   host: mail
@@ -210,6 +227,7 @@ topology_routes:
     component: stalwart
     interface: jmap
   waf: detection
+  zone: product
 - browser_cors: not_browser_reachable
   gateway: direct_smtp
   host: mail
@@ -221,6 +239,7 @@ topology_routes:
     component: stalwart
     interface: smtp
   waf: 'off'
+  zone: product
 - browser_cors: not_browser_reachable
   gateway: firecracker_host
   host: 10.255.0.1
@@ -236,6 +255,7 @@ topology_routes:
     component: sandbox_rental
     interface: public_api
   waf: 'off'
+  zone: product
 - browser_cors: not_browser_reachable
   gateway: firecracker_host
   host: 10.255.0.1
@@ -249,3 +269,4 @@ topology_routes:
     component: forgejo
     interface: forgejo_http
   waf: 'off'
+  zone: product

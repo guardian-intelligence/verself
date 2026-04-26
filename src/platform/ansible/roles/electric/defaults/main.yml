@@ -1,20 +1,15 @@
 ---
-# Shared across instances. Instance-specific vars (name, db, port, tables,
-# credstore, nft table, ...) must be passed by the caller.
+# Shared across instances. Instance-specific topology is passed as
+# electric_config from generated CUE vars.
 electric_version: "1.5.0"
 electric_image: "docker.io/electricsql/electric:{{ electric_version }}"
+
+# Handler names are templated when the role loads; expose only the value needed
+# for handler registration here and load the rest from generated topology in tasks.
+electric_service_name: "{{ electric_config.electric_service_name }}"
 
 # Derived defaults — paths live under the caller's electric_credstore_dir.
 electric_pg_password_file: "{{ electric_credstore_dir }}/pg-password"
 electric_api_secret_file: "{{ electric_credstore_dir }}/api-secret"
 electric_runtime_env_file: "{{ electric_credstore_dir }}/runtime.env"
 electric_transient_pgpass_file: "/root/.pgpass-electric-{{ electric_instance }}-reconcile"
-
-# Electric's replication stream id drives the Postgres slot name
-# (electric_slot_{stream_id}). Default Electric behaviour when the env var is
-# unset is "default"; we still set it for symmetry.
-electric_replication_stream_id: "{{ electric_instance }}"
-
-# Optional: extra systemd After/Wants units (e.g. the mail instance waits on
-# mailbox-service so emails aren't written before the shape slot is live).
-electric_extra_systemd_after: []

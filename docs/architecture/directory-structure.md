@@ -33,6 +33,6 @@ Monorepo rooted at the repo top level. All Go services share one `go.work`; the 
 - `ansible/` — playbooks, roles, SOPS-encrypted `group_vars/`, inventory.
 - `terraform/` — OpenTofu bare-metal provisioning (Latitude.sh).
 - `scripts/` — founder wrappers invoked by the Makefile.
-- `topology/catalog/versions.cue` — canonical pinned binary catalog; `make topology-generate` renders it into `ansible/group_vars/all/generated/catalog.yml` for Ansible consumers.
+- `topology/` — CUE source for the deploy topology and pinned binary catalog; `make topology-generate` renders typed Ansible inputs into `ansible/group_vars/all/generated/`.
 
 Service-local docs live under each service's `docs/` directory (e.g. `src/sandbox-rental-service/docs/`). Directory-specific conventions are captured in per-directory `AGENTS.md` files.

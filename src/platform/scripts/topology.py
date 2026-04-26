@@ -62,6 +62,7 @@ ARTIFACTS = (
     Artifact("spire", "outputs.spire", GENERATED_DIR / "spire.yml"),
     Artifact("postgres", "outputs.postgres", GENERATED_DIR / "postgres.yml"),
     Artifact("deploy", "outputs.deploy", GENERATED_DIR / "deploy.yml"),
+    Artifact("ops", "outputs.ops", GENERATED_DIR / "ops.yml"),
     Artifact("proof", "outputs.proof", GENERATED_DIR / "proof.yml"),
     Artifact("catalog", "outputs.catalog", GENERATED_DIR / "catalog.yml"),
 )
@@ -163,6 +164,7 @@ def yaml_document(payload: object) -> str:
         payload,
         default_flow_style=False,
         sort_keys=True,
+        width=4096,
     )
 
 

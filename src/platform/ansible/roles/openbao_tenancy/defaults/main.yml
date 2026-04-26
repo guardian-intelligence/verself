@@ -1,16 +1,3 @@
 ---
-openbao_tenancy_credstore_dir: /etc/credstore/openbao
-openbao_tenancy_tls_dir: /etc/openbao/tls
-openbao_tenancy_spiffe_jwt_mount: spiffe-jwt
-openbao_tenancy_rebootstrap_stage_dir: "{{ openbao_tenancy_credstore_dir }}/rebootstrap"
-openbao_tenancy_oidc_discovery_url: "https://auth.{{ verself_domain }}"
-openbao_tenancy_bound_issuer: "https://auth.{{ verself_domain }}"
-openbao_tenancy_secrets_project_name: "{{ secrets_service_auth_project_name | default('secrets-service') }}"
-openbao_tenancy_token_ttl: 15m
-openbao_tenancy_token_max_ttl: 1h
-openbao_tenancy_layout: auto
-openbao_tenancy_skip_jwks_validation: false
-openbao_tenancy_kv_mount_prefix: kv
-openbao_tenancy_transit_mount_prefix: transit
-openbao_tenancy_jwt_mount_prefix: jwt
-openbao_tenancy_platform_org_name: verself
+# OpenBao tenancy topology vars are generated from CUE in
+# group_vars/all/generated/ops.yml.

@@ -22,32 +22,3 @@ temporal_num_history_shards: 4
 temporal_force_schema_reset: false
 temporal_schema_name: postgresql/v12/temporal
 temporal_visibility_schema_name: postgresql/v12/visibility
-
-temporal_sandbox_namespace: sandbox-rental-service
-temporal_billing_namespace: billing-service
-temporal_namespace_retention: 24h
-temporal_bootstrap_namespaces:
-  - "{{ temporal_sandbox_namespace }}"
-  - "{{ temporal_billing_namespace }}"
-temporal_namespace_role_bindings:
-  - spiffe_id: "{{ spire_sandbox_rental_id }}"
-    namespace: "{{ temporal_sandbox_namespace }}"
-    role: admin
-  - spiffe_id: "{{ spire_billing_service_id }}"
-    namespace: "{{ temporal_billing_namespace }}"
-    role: admin
-
-temporal_web_subdomain: temporal
-temporal_web_domain: "{{ temporal_web_subdomain }}.{{ verself_domain }}"
-temporal_web_default_namespace: "{{ temporal_sandbox_namespace }}"
-temporal_web_disable_write_actions: true
-temporal_web_oidc_scopes:
-  - openid
-  - profile
-  - email
-  - offline_access
-temporal_web_oidc_max_session_duration: 8h
-temporal_web_auth_project_name: temporal-web
-temporal_web_auth_app_name: temporal-web
-temporal_web_oidc_redirect_uri: "https://{{ temporal_web_domain }}/auth/sso/callback"
-temporal_web_oidc_post_logout_redirect_uri: "https://{{ temporal_web_domain }}/"
