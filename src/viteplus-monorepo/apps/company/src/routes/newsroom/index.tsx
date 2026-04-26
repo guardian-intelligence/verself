@@ -126,7 +126,7 @@ function GiantBulletin({ item, onClick }: { item: NewsroomItem; onClick: () => v
       </h2>
       <span
         aria-hidden="true"
-        className="absolute bottom-5 right-5 font-mono text-[11px] font-semibold uppercase opacity-0 transition-opacity group-hover:opacity-100 md:bottom-7 md:right-7"
+        className="absolute bottom-5 right-5 font-mono text-[11px] font-semibold uppercase md:bottom-7 md:right-7 after:pointer-events-none after:absolute after:inset-x-0 after:-bottom-1 after:block after:h-px after:origin-left after:scale-x-0 after:bg-current after:transition-transform after:duration-300 after:ease-out group-hover:after:scale-x-100 group-focus-visible:after:scale-x-100 group-active:after:scale-x-100"
         style={{
           letterSpacing: "0.22em",
           color: "rgba(11, 11, 11, 0.72)",
