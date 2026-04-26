@@ -405,7 +405,51 @@ jobs:
   proof:
     runs-on: [self-hosted, linux, x64, verself-4vcpu-ubuntu-2404]
     steps:
-      - run: echo source proof "$(uname -m)"
+      - name: Check out repository
+        run: |
+          set -euo pipefail
+          workspace="${FORGEJO_WORKSPACE:-${GITHUB_WORKSPACE:-}}"
+          if [ -z "$workspace" ] || [ "$workspace" = "/" ]; then
+            echo "invalid Forgejo workspace: ${workspace:-<empty>}" >&2
+            exit 1
+          fi
+          mkdir -p "$workspace"
+          cd "$workspace"
+          server_url="${VERSELF_HOST_SERVICE_HTTP_ORIGIN:-${FORGEJO_SERVER_URL:?}}"
+          repo_url="${server_url%/}/${FORGEJO_REPOSITORY:?}.git"
+          if [ -d .git ]; then
+            git remote set-url origin "$repo_url"
+          else
+            if [ -n "$(find . -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+              echo "Forgejo workspace is not empty and is not a Git checkout: $workspace" >&2
+              exit 1
+            fi
+            git init
+            git remote add origin "$repo_url"
+          fi
+          askpass="$(mktemp)"
+          cleanup() { rm -f "$askpass"; }
+          trap cleanup EXIT
+          cat >"$askpass" <<'SH'
+          #!/usr/bin/env sh
+          case "$1" in
+            *Username*) printf '%s\n' x-access-token ;;
+            *Password*) printf '%s\n' "${FORGEJO_TOKEN:?}" ;;
+            *) printf '\n' ;;
+          esac
+          SH
+          chmod 0700 "$askpass"
+          GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 git fetch --depth=1 origin "${FORGEJO_SHA:?}"
+          git -c advice.detachedHead=false checkout --detach FETCH_HEAD
+          git status --short
+      - name: Verify checkout
+        run: |
+          set -euo pipefail
+          test -f README.md
+          grep -F "run:" README.md
+          printf 'checkout-file=README.md\n'
+          git rev-parse --verify HEAD
+          echo source proof "$(uname -m)"
 EOF
 git -C "${git_workdir}" add README.md .forgejo/workflows/proof.yml
 git -C "${git_workdir}" commit -m "source proof ${run_id}" >/dev/null
@@ -744,6 +788,28 @@ wait_for_clickhouse_count verself "
 	  --param_forgejo_execution_id="${forgejo_execution_id}" \
 	  --param_forgejo_provider_job_id="${forgejo_provider_job_id}" \
 	  --param_org_id="${org_id}"
+
+wait_for_clickhouse_count default "
+  SELECT count()
+  FROM otel_logs
+  WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 60 SECOND
+    AND ServiceName = 'caddy'
+    AND arrayElement(LogAttributes, 'http_host') = '10.255.0.1:18080'
+    AND arrayElement(LogAttributes, 'user_agent') LIKE 'git/%'
+    AND arrayElement(LogAttributes, 'http_status') = '200'
+    AND arrayElement(LogAttributes, 'client_ip') != ''
+" 2 "${artifact_dir}/clickhouse/forgejo-checkout-caddy-log-count.tsv"
+
+wait_for_clickhouse_count default "
+  SELECT count()
+  FROM otel_logs
+  WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 60 SECOND
+    AND ServiceName = 'forgejo'
+    AND position(Body, {backend_git_path:String}) > 0
+    AND position(Body, 'git-upload-pack') > 0
+    AND position(Body, '200 OK') > 0
+" 2 "${artifact_dir}/clickhouse/forgejo-checkout-git-log-count.tsv" \
+  --param_backend_git_path="/${backend_full_name}.git/"
 
 wait_for_clickhouse_count default "
   SELECT count()

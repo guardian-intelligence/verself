@@ -208,6 +208,17 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 			header_up X-Forwarded-Proto http
 		}
 	}
+	@forgejo_git_smart_http {
+		method GET POST
+		path_regexp forgejo_git ^/[^/]+/[^/]+\.git/(info/refs|git-upload-pack)$
+	}
+	handle @forgejo_git_smart_http {
+		reverse_proxy {{ topology_endpoints.forgejo.endpoints.http.address }} {
+			header_up Host {{ forgejo_domain }}
+			header_up X-Forwarded-Host {{ forgejo_domain }}
+			header_up X-Forwarded-Proto http
+		}
+	}
 	@github_sticky_disk {
 		path /internal/sandbox/v1/stickydisk/*
 	}
