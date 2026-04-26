@@ -22,10 +22,7 @@ started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 verification_wait_for_http "console UI" "${base_url}" "200"
 
-(
-  cd "${VERIFICATION_PLATFORM_ROOT}/ansible"
-  ansible-playbook -i inventory/hosts.ini playbooks/seed-system.yml --tags billing
-)
+verification_deploy_playbook seed-system --tags billing
 
 ceo_password="$(
   verification_remote_sudo_cat /etc/credstore/seed-system/ceo-password

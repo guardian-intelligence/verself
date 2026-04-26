@@ -15,23 +15,13 @@ deploy() {
     none)
       ;;
     ui)
-      (
-        cd "${VERIFICATION_PLATFORM_ROOT}/ansible"
-        ansible-playbook -i inventory/hosts.ini playbooks/site.yml --tags console
-      )
+      verification_deploy_playbook site --tags console
       ;;
     service)
-      (
-        cd "${VERIFICATION_PLATFORM_ROOT}/ansible"
-        ansible-playbook -i inventory/hosts.ini playbooks/site.yml --tags deploy_profile,sandbox_rental_service
-      )
+      verification_deploy_playbook site --tags deploy_profile,sandbox_rental_service
       ;;
     both)
-      (
-        cd "${VERIFICATION_PLATFORM_ROOT}/ansible"
-        ansible-playbook -i inventory/hosts.ini playbooks/site.yml \
-          --tags deploy_profile,sandbox_rental_service,console
-      )
+      verification_deploy_playbook site --tags deploy_profile,sandbox_rental_service,console
       ;;
     *)
       echo "unsupported SANDBOX_DEPLOY_TARGET: ${deploy_target}" >&2
@@ -42,10 +32,7 @@ deploy() {
 
 seed() {
   if [[ "${seed_verify}" == "1" ]]; then
-    (
-      cd "${VERIFICATION_PLATFORM_ROOT}/ansible"
-      ansible-playbook -i inventory/hosts.ini playbooks/seed-system.yml --tags verify
-    )
+    verification_deploy_playbook seed-system --tags verify
   fi
 }
 

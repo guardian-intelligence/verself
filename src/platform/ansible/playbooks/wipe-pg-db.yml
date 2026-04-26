@@ -2,7 +2,7 @@
 # Wipe one managed PostgreSQL service database and re-run the owning schema path.
 #
 # Usage:
-#   make wipe-pg-db DB=sandbox_rental
+#   make deploy PLAYBOOK=wipe-pg-db EXTRA_VARS='wipe_pg_db_name=sandbox_rental'
 #
 # Supported DBs:
 # - billing: billing ledger reset, including TigerBeetle

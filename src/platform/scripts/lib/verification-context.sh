@@ -35,6 +35,21 @@ verification_ssh() {
     "${VERIFICATION_REMOTE_USER}@${VERIFICATION_REMOTE_HOST}" "$@"
 }
 
+verification_deploy_playbook() {
+  local playbook="$1"
+  shift
+
+  if [[ ! "${playbook}" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+    echo "unsafe deploy playbook name: ${playbook}" >&2
+    return 1
+  fi
+
+  (
+    cd "${VERIFICATION_PLATFORM_ROOT}" || return
+    ./scripts/ansible-with-tunnel.sh "playbooks/${playbook}.yml" "$@"
+  )
+}
+
 verification_remote_temp_path() {
   local prefix="$1"
   local remote_staging_dir="${VERIFICATION_REMOTE_STAGING_DIR:-/opt/verself/staging}"

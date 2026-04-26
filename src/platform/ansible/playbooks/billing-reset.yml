@@ -5,7 +5,7 @@
 # schema, then restarts the billing callers against the fresh ledger.
 #
 # Usage:
-#   cd src/platform/ansible && ansible-playbook playbooks/billing-reset.yml
+#   make deploy PLAYBOOK=billing-reset
 
 - name: Exhaustive billing ledger reset
   hosts: all

@@ -273,7 +273,7 @@ Completion requires live ClickHouse evidence, not only unit tests:
 
 ```bash
 make deploy TAGS=deploy_profile,identity_service,governance_service,billing_service,secrets_service,source_code_hosting_service,sandbox_rental_service
-make seed-system
+make deploy PLAYBOOK=seed-system
 make secrets-proof
 make source-code-hosting-proof
 ```

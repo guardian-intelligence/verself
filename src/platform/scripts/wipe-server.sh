@@ -69,5 +69,5 @@ echo "=== Done — server is wiped ==="
 EOF
 
 echo "Server wiped. Next steps:"
-echo "  cd ansible && ansible-playbook playbooks/guest-rootfs.yml"
-echo "  cd ansible && ansible-playbook playbooks/site.yml"
+echo "  make deploy PLAYBOOK=guest-rootfs"
+echo "  make deploy"

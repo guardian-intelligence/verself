@@ -3,7 +3,7 @@
 # Topology lives in inventory: the single-node inventory places the same host in
 # workers and infra; multi-node deployments use distinct hosts in those groups.
 #
-# Usage: ansible-playbook -i inventory/hosts.ini playbooks/site.yml
+# Usage: make deploy
 
 # ── Preflight (~2s) ──────────────────────────────────────────────────────────
 # Catch missing prerequisites before the slow work starts.
@@ -84,7 +84,7 @@
         msg: >-
           Guest artifacts not staged on {{ inventory_hostname }}. The firecracker role
           requires vmlinux, rootfs.ext4, and viteplus.ext4 at /var/lib/verself/guest-artifacts/.
-          Run: cd ansible && ansible-playbook playbooks/guest-rootfs.yml
+          Run: make deploy PLAYBOOK=guest-rootfs
       when: not preflight_guest_kernel.stat.exists or not preflight_guest_rootfs.stat.exists or not preflight_viteplus_image.stat.exists
 
 # ── Deploy ───────────────────────────────────────────────────────────────────

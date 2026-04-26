@@ -11,7 +11,7 @@
 # deploy_profile binary-copy handlers resolve cleanly.
 #
 # Usage:
-#   cd src/platform/ansible && ansible-playbook playbooks/identity-reset.yml
+#   make deploy PLAYBOOK=identity-reset
 
 - name: Exhaustive identity-service state reset
   hosts: all

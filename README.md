@@ -14,7 +14,7 @@ Features:
 ### 1. Install dev tools
 
 ```bash
-cd src/platform/ansible && ansible-playbook playbooks/setup-dev.yml
+make setup-dev
 ```
 
 ### 2. Provision bare metal
@@ -25,7 +25,7 @@ cp src/platform/terraform/terraform.tfvars.example.json src/platform/terraform/t
 # Edit terraform.tfvars.json — set project_id to your Latitude.sh project
 
 # Provision server + generate Ansible inventory
-cd src/platform/ansible && ansible-playbook playbooks/provision.yml
+make provision
 ```
 
 This provisions a bare metal server via OpenTofu and auto-generates the gitignored `src/platform/ansible/inventory/hosts.ini` from the outputs. The Latitude.sh auth token is read from SOPS-encrypted secrets.
@@ -33,13 +33,13 @@ This provisions a bare metal server via OpenTofu and auto-generates the gitignor
 ### 3. Deploy
 
 ```bash
-cd src/platform/ansible && ansible-playbook playbooks/site.yml
+make deploy
 ```
 
 Idempotent, no wipe. Safe to run repeatedly. Deploy a single role with `--tags`:
 
 ```bash
-cd src/platform/ansible && ansible-playbook playbooks/site.yml --tags caddy
+make deploy TAGS=caddy
 ```
 
 ### 4. Seed and assume rehearsal personas
@@ -48,7 +48,7 @@ After deploy, seed the platform tenant, Acme tenant, billing state, mailboxes,
 and auth fixtures:
 
 ```bash
-make seed-system
+make deploy PLAYBOOK=seed-system
 ```
 
 The `assume-*` targets are extremely useful utility scripts for operators and

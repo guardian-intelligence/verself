@@ -30,7 +30,7 @@ crafting tricky migrations.
 ## Reset
 
 ```bash
-ansible-playbook playbooks/billing-reset.yml
+make deploy PLAYBOOK=billing-reset
 ```
 
 Wipes billing PostgreSQL database `billing`, recreates the TigerBeetle data

@@ -5,10 +5,10 @@
 # runs the Ubuntu rootfs builder, and copies output to /var/lib/verself/guest-artifacts/.
 #
 # Usage:
-#   cd ansible && ansible-playbook playbooks/guest-rootfs.yml
+#   make deploy PLAYBOOK=guest-rootfs
 #
 # To stage artifacts only (skip the build):
-#   cd ansible && ansible-playbook playbooks/guest-rootfs.yml --tags deploy_guest_artifacts
+#   make deploy PLAYBOOK=guest-rootfs TAGS=deploy_guest_artifacts
 
 - name: Build guest rootfs and stage guest artifacts
   hosts: all

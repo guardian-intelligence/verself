@@ -171,7 +171,7 @@ Deterministic deploy correlation:
 ```bash
 cd src/platform/ansible
 sops group_vars/all/secrets.sops.yml   # set verself_domain, company_domain, and cloudflare_api_token
-ansible-playbook playbooks/site.yml
+make -C ../../.. deploy
 ```
 
 The product apex (`verself_domain`) serves platform docs/policy. Product
@@ -202,7 +202,18 @@ The only other `apt install` is `zfsutils-linux` (kernel-dependent, must match t
 
 ## Ansible Playbooks
 
-All remote orchestration runs via Ansible playbooks from `src/platform/ansible/`.
+All deploy/reconcile orchestration runs through `make deploy`, which renders
+`src/platform/topology` CUE into generated Ansible inputs before invoking
+`scripts/ansible-with-tunnel.sh`.
+
+Examples:
+
+```bash
+make deploy
+make deploy TAGS=caddy
+make deploy PLAYBOOK=guest-rootfs
+make deploy PLAYBOOK=wipe-pg-db EXTRA_VARS='wipe_pg_db_name=sandbox_rental'
+```
 
 | Playbook | Description |
 |----------|-------------|
@@ -218,4 +229,7 @@ All remote orchestration runs via Ansible playbooks from `src/platform/ansible/`
 | `playbooks/billing-reset.yml` | Exhaustively wipe TigerBeetle + billing PostgreSQL database `billing` and restart billing callers. |
 | `playbooks/seed-system.yml` | Seed the platform tenant plus Acme tenant, billing, mailboxes, and auth verify (supports `--tags identity,billing,stalwart,verify,dev-oidc`). |
 
-The site deploy supports `--tags` for targeting individual roles (e.g. `--tags caddy`, `--tags clickhouse`). Global preflight checks run regardless of tag selection; Firecracker guest artifact preflight runs with the `firecracker` tag.
+The default `PLAYBOOK` is `site`. `TAGS`, `LIMIT`, `EXTRA_VARS`, and
+`EXTRA_ARGS` pass through to Ansible. Global preflight checks run regardless of
+tag selection; Firecracker guest artifact preflight runs with the `firecracker`
+tag.

@@ -8,7 +8,7 @@
 # - default ClickHouse telemetry tables used for trace/log correlation
 #
 # Usage:
-#   cd src/platform/ansible && ansible-playbook playbooks/verification-reset.yml
+#   make deploy PLAYBOOK=verification-reset
 
 - name: Exhaustive verification reset
   hosts: all

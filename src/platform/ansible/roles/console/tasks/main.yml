@@ -112,7 +112,7 @@
 
 # Opt-in clean rebuild: wipe node_modules and the install fingerprint so the
 # next pnpm install runs from scratch instead of reusing the cached store.
-# Trigger with `ansible-playbook ... --tags console --extra-vars console_full_rebuild=true`.
+# Trigger with `make deploy TAGS=console EXTRA_VARS='console_full_rebuild=true'`.
 # Use when a prior install left a corrupted store or an upstream package
 # linked the wrong version.
 - name: Wipe console install for clean rebuild (FULL=1)

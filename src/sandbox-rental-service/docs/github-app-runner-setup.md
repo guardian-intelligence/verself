@@ -74,8 +74,7 @@ reads only from `secrets-service` via SPIFFE-authenticated startup code.
 Then redeploy:
 
 ```bash
-cd src/platform/ansible
-ansible-playbook playbooks/site.yml --tags sandbox_rental_service,caddy
+make deploy TAGS=sandbox_rental_service,caddy
 ```
 
 The sandbox-rental-service role fails before restarting the service when any

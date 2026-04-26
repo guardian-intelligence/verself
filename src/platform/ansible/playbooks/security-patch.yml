@@ -1,6 +1,6 @@
 ---
 # Rolling OS security updates across the fleet.
-# Usage: ansible-playbook -i inventory/hosts.ini playbooks/security-patch.yml
+# Usage: make deploy PLAYBOOK=security-patch
 
 - name: Apply security patches
   hosts: all

@@ -7,7 +7,7 @@
 #   - src/viteplus-monorepo/apps/console/src/**
 #   - src/viteplus-monorepo/packages/**  (UI + env + auth-web)
 #
-# NOT safe (run the Ansible role via `ansible-playbook ... --tags console`):
+# NOT safe (run the Ansible role via `make deploy TAGS=console`):
 #   - Go API changed (regenerates __generated/**)
 #   - console.service.j2 or env.j2 templates changed
 #   - nftables rules changed

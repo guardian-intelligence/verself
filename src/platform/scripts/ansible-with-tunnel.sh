@@ -10,8 +10,8 @@
 # Fix: open an SSH local-forward to the target's 4317, set
 # VERSELF_OTLP_ENDPOINT, source scripts/deploy_identity.sh (which
 # derives VERSELF_DEPLOY_ID, TRACEPARENT, OTEL_SERVICE_NAME,
-# OTEL_RESOURCE_ATTRIBUTES, OTEL_EXPORTER_OTLP_ENDPOINT), then exec
-# ansible-playbook.
+# OTEL_RESOURCE_ATTRIBUTES, OTEL_EXPORTER_OTLP_ENDPOINT), render CUE topology
+# into generated deploy inputs, then exec ansible-playbook.
 #
 # Usage:
 #   scripts/ansible-with-tunnel.sh <playbook> [extra ansible-playbook args]
@@ -64,6 +64,8 @@ export VERSELF_OTLP_ENDPOINT="127.0.0.1:${port}"
 # TRACEPARENT, OTEL_RESOURCE_ATTRIBUTES, OTEL_EXPORTER_OTLP_ENDPOINT, etc.
 # shellcheck source=src/platform/scripts/deploy_identity.sh
 source "${SCRIPT_DIR}/deploy_identity.sh"
+
+./scripts/topology.py generate
 
 cd ansible
 exec ansible-playbook "$@"

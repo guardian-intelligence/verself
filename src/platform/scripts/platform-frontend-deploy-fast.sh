@@ -6,7 +6,7 @@
 #   - src/viteplus-monorepo/apps/platform/src/**
 #   - src/viteplus-monorepo/packages/**
 #
-# NOT safe (run the Ansible role via `ansible-playbook ... --tags platform`):
+# NOT safe (run the Ansible role via `make deploy TAGS=platform`):
 #   - platform.service.j2 or env.j2 templates changed
 #   - nftables rules changed
 #   - First-ever deploy (needs systemd unit + env + DNS + Caddy block)

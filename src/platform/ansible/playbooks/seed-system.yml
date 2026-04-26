@@ -12,7 +12,7 @@
 # - optional dev OIDC apps and billing auth verification
 #
 # Usage:
-#   cd src/platform/ansible && ansible-playbook playbooks/seed-system.yml
+#   make deploy PLAYBOOK=seed-system
 #
 # Cherry-pick:
 #   --tags identity    Create/update orgs, users, and project grants only

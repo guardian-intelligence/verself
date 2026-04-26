@@ -1,10 +1,10 @@
 .PHONY: help test lint lint-scripts lint-conversions lint-ansible lint-voice company-proof fmt vet tidy openapi openapi-check openapi-clients openapi-clients-check openapi-wire-check topology-generate topology-check topology-proof \
-       hooks-install doctor inventory-check setup-dev setup-sops provision deprovision deploy site guest-rootfs security-patch identity-reset seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member \
-       set-user-state billing-clock billing-wall-clock billing-state billing-documents billing-finalizations billing-events billing-pg-shell billing-pg-query billing-proof billing-reset verification-reset \
+       hooks-install doctor inventory-check setup-dev setup-sops provision deprovision deploy assume-persona assume-platform-admin assume-acme-admin assume-acme-member \
+       set-user-state billing-clock billing-wall-clock billing-state billing-documents billing-finalizations billing-events billing-pg-shell billing-pg-query billing-proof \
        profile-proof organization-sync-proof notifications-proof projects-proof source-code-hosting-proof secrets-proof secrets-leak-proof openbao-proof openbao-tenancy-proof workload-identity-proof spiffe-rotation-proof object-storage-verify temporal-verify temporal-web-proof recurring-schedule-proof \
        vm-guest-telemetry-build observe telemetry-proof telemetry-proof-fail clickhouse-query clickhouse-schemas pg-shell pg-query pg-list tb-shell tb-command mail mail-accounts mail-mailboxes \
        mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets \
-       wipe-pg-db wipe-server vm-orchestrator-proof sandbox-inner sandbox-middle sandbox-proof console-ui-smoke console-ui-local console-local-dev console-frontend-deploy-fast grafana-proof observability-smoke services-doctor
+       wipe-server vm-orchestrator-proof sandbox-inner sandbox-middle sandbox-proof console-ui-smoke console-ui-local console-local-dev console-frontend-deploy-fast platform-frontend-deploy-fast platform-local-dev grafana-proof observability-smoke services-doctor
 
 PLATFORM_DIR := src/platform
 AW       := src/apiwire
@@ -34,6 +34,16 @@ BILLING_PRODUCT_ID ?= sandbox
 ASSUME_PERSONA_OUTPUT_FLAG := $(if $(OUTPUT),--output "$(OUTPUT)",)
 ASSUME_PERSONA_PRINT_FLAG := $(if $(filter 1 true yes,$(PRINT)),--print,)
 ASSUME_PERSONA_FLAGS := $(ASSUME_PERSONA_OUTPUT_FLAG) $(ASSUME_PERSONA_PRINT_FLAG)
+PLAYBOOK ?= site
+PLAYBOOK_NAME := $(basename $(notdir $(PLAYBOOK)))
+PLAYBOOK_PATH := playbooks/$(PLAYBOOK_NAME).yml
+PLAYBOOK_FILE := $(PLATFORM_DIR)/ansible/$(PLAYBOOK_PATH)
+DEPLOY_TAG_ARGS := $(if $(TAGS),--tags "$(TAGS)",)
+DEPLOY_LIMIT_ARGS := $(if $(LIMIT),--limit "$(LIMIT)",)
+DEPLOY_EXTRA_VAR_ARGS := $(if $(EXTRA_VARS),-e "$(EXTRA_VARS)",)
+DEPLOY_CHECK_ARGS := $(if $(filter 1 true yes,$(CHECK)),--check,)
+DEPLOY_DIFF_ARGS := $(if $(filter 1 true yes,$(DIFF)),--diff,)
+DEPLOY_ARGS := $(DEPLOY_TAG_ARGS) $(DEPLOY_LIMIT_ARGS) $(DEPLOY_EXTRA_VAR_ARGS) $(DEPLOY_CHECK_ARGS) $(DEPLOY_DIFF_ARGS) $(EXTRA_ARGS)
 
 help: ## Show available root automation targets
 	@awk 'BEGIN {FS = ":.*## "; printf "Verself targets:\n"} /^[A-Za-z0-9_.-]+:.*## / {printf "  %-32s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -253,23 +263,11 @@ deprovision: ## Destroy provisioned bare metal infrastructure: make deprovision 
 	@test "$(CONFIRM)" = "deprovision" || { echo "ERROR: deprovision requires CONFIRM=deprovision"; exit 1; }
 	cd $(PLATFORM_DIR)/ansible && ansible-playbook playbooks/deprovision.yml
 
-deploy: inventory-check ## Deploy current site topology: make deploy [TAGS=billing_service,caddy]
-	$(PLATFORM_DIR)/scripts/ansible-with-tunnel.sh playbooks/site.yml $(if $(TAGS),--tags "$(TAGS)",)
-
-site: inventory-check ## Deploy current site topology
-	$(PLATFORM_DIR)/scripts/ansible-with-tunnel.sh playbooks/site.yml $(if $(TAGS),--tags "$(TAGS)",)
-
-guest-rootfs: inventory-check ## Build and stage Firecracker guest artifacts
-	$(PLATFORM_DIR)/scripts/ansible-with-tunnel.sh playbooks/guest-rootfs.yml $(if $(TAGS),--tags "$(TAGS)",)
-
-security-patch: inventory-check ## Apply OS security updates through Ansible
-	$(PLATFORM_DIR)/scripts/ansible-with-tunnel.sh playbooks/security-patch.yml
-
-identity-reset: inventory-check ## Exhaustively wipe identity-service PostgreSQL state and restart dependents
-	$(PLATFORM_DIR)/scripts/ansible-with-tunnel.sh playbooks/identity-reset.yml
-
-seed-system: inventory-check ## Seed platform + Acme tenants, billing, mailboxes, and auth verify
-	$(PLATFORM_DIR)/scripts/ansible-with-tunnel.sh playbooks/seed-system.yml
+deploy: inventory-check ## Render CUE, then run one deploy playbook: make deploy [PLAYBOOK=site] [TAGS=caddy] [LIMIT=host] [EXTRA_VARS='k=v'] [EXTRA_ARGS='--check']
+	@test -n "$(PLAYBOOK_NAME)" || { echo "ERROR: PLAYBOOK must name a file in $(PLATFORM_DIR)/ansible/playbooks without requiring a path."; exit 1; }
+	@case "$(PLAYBOOK_NAME)" in *[!A-Za-z0-9_.-]* ) echo "ERROR: invalid PLAYBOOK='$(PLAYBOOK)'. Use a playbook basename such as site or guest-rootfs."; exit 1;; esac
+	@test -f "$(PLAYBOOK_FILE)" || { echo "ERROR: $(PLAYBOOK_FILE) not found. Use PLAYBOOK=<basename> from $(PLATFORM_DIR)/ansible/playbooks/."; exit 1; }
+	$(PLATFORM_DIR)/scripts/ansible-with-tunnel.sh $(PLAYBOOK_PATH) $(DEPLOY_ARGS)
 
 assume-persona: inventory-check ## Useful utility: write persona env file: make assume-persona PERSONA=platform-admin [OUTPUT=path] [PRINT=1]
 	@test -n "$(PERSONA)" || { echo "ERROR: PERSONA is required (platform-admin, acme-admin, acme-member)"; exit 1; }
@@ -387,16 +385,6 @@ temporal-web-proof: inventory-check ## Verify Temporal Web login, operator routi
 recurring-schedule-proof: inventory-check ## Create a paused Temporal-backed recurring schedule, resume it, and assert PostgreSQL + ClickHouse evidence
 	cd $(PLATFORM_DIR) && ./scripts/verify-recurring-schedule-live.sh
 
-billing-reset: inventory-check ## Exhaustively wipe billing state (TigerBeetle + billing PostgreSQL schema) and restart billing callers
-	$(PLATFORM_DIR)/scripts/ansible-with-tunnel.sh playbooks/billing-reset.yml
-
-verification-reset: inventory-check ## Exhaustively wipe verification state (billing, sandbox_rental, ClickHouse verself + telemetry)
-	$(PLATFORM_DIR)/scripts/ansible-with-tunnel.sh playbooks/verification-reset.yml
-
-wipe-pg-db: inventory-check ## Wipe one managed PostgreSQL service DB: make wipe-pg-db DB=sandbox_rental
-	@test -n "$(DB)" || { echo "ERROR: DB is required (billing|sandbox_rental|mailbox_service|identity_service|secrets_service|notifications_service|projects_service|source_code_hosting)"; exit 1; }
-	$(PLATFORM_DIR)/scripts/ansible-with-tunnel.sh playbooks/wipe-pg-db.yml -e "wipe_pg_db_name=$(DB)"
-
 vm-orchestrator-proof: inventory-check ## Live proof for vm-orchestrator lease/exec spans through recurring sandbox executions
 	cd $(PLATFORM_DIR) && ./scripts/verify-vm-orchestrator-live.sh
 
@@ -418,10 +406,10 @@ console-ui-local: inventory-check ## Run console smoke against local HMR dev ser
 console-local-dev: inventory-check ## Start local console dev tunnels and HMR server
 	cd $(PLATFORM_DIR) && ./scripts/run-console-local-dev.sh $(if $(PRINT_ENV),--print-env,)
 
-console-frontend-deploy-fast: inventory-check ## Ship UI-only changes to console: local build + rsync .output/ + restart (~5-10s). For API/env/systemd/OIDC changes use `ansible-playbook ... --tags console`.
+console-frontend-deploy-fast: inventory-check ## Ship UI-only changes to console: local build + rsync .output/ + restart (~5-10s). For API/env/systemd/OIDC changes use `make deploy TAGS=console`.
 	$(PLATFORM_DIR)/scripts/console-frontend-deploy-fast.sh
 
-platform-frontend-deploy-fast: inventory-check ## Ship UI-only changes to platform docs: local build + rsync .output/ + restart (~5-10s). For env/systemd/nftables/Caddy changes use `ansible-playbook ... --tags platform`.
+platform-frontend-deploy-fast: inventory-check ## Ship UI-only changes to platform docs: local build + rsync .output/ + restart (~5-10s). For env/systemd/nftables/Caddy changes use `make deploy TAGS=platform`.
 	$(PLATFORM_DIR)/scripts/platform-frontend-deploy-fast.sh
 
 platform-local-dev: ## Start local platform docs HMR dev server (no tunnels; no service deps)

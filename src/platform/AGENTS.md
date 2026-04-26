@@ -107,7 +107,7 @@ make telemetry-proof-fail      # sad path: assert Error spans are emitted
 ```bash
 cd src/platform/ansible
 sops group_vars/all/secrets.sops.yml  # set verself_domain, company_domain, and cloudflare_api_token
-ansible-playbook playbooks/site.yml
+make -C ../../.. deploy
 ```
 
 Services get subdomains automatically:
