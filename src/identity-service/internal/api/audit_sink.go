@@ -72,6 +72,7 @@ type governanceAuditRecord struct {
 	RateLimitClass        string `json:"rate_limit_class"`
 	Decision              string `json:"decision"`
 	Result                string `json:"result"`
+	DurationMS            float64 `json:"duration_ms,omitempty"`
 	DenialReason          string `json:"denial_reason,omitempty"`
 	ErrorCode             string `json:"error_code,omitempty"`
 	ErrorClass            string `json:"error_class,omitempty"`

@@ -42,6 +42,12 @@ export interface Organization {
   readonly member_capabilities: MemberCapabilitiesDocument;
 }
 
+export interface OrganizationMetadata {
+  readonly org_id: string;
+  readonly display_name: string;
+  readonly slug: string;
+}
+
 // Request DTOs use mutable arrays so consuming-app validators (which produce
 // `string[]` after parsing) can satisfy the shape without a `[...arr]` copy
 // at every call site. Response DTOs stay readonly.

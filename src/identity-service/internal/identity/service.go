@@ -13,7 +13,8 @@ import (
 )
 
 type Store interface {
-	GetOrganizationProfile(ctx context.Context, orgID, actorID, displayNameSeed string) (OrganizationProfile, error)
+	GetOrganizationProfile(ctx context.Context, orgID, actorID string) (OrganizationProfile, error)
+	ListOrganizationMetadataByOrgIDs(ctx context.Context, orgIDs []string) ([]OrganizationMetadata, error)
 	UpdateOrganizationProfile(ctx context.Context, principal Principal, input UpdateOrganizationRequest) (OrganizationProfile, error)
 	ResolveOrganizationProfile(ctx context.Context, input ResolveOrganizationRequest) (OrganizationProfile, error)
 	GetMemberCapabilities(ctx context.Context, orgID, actor string) (MemberCapabilitiesDocument, error)
@@ -55,7 +56,7 @@ func (s *Service) Organization(ctx context.Context, principal Principal) (Organi
 	if err != nil {
 		return Organization{}, err
 	}
-	profile, err := store.GetOrganizationProfile(ctx, principal.OrgID, principal.Subject, principal.OrgDisplayName)
+	profile, err := store.GetOrganizationProfile(ctx, principal.OrgID, principal.Subject)
 	if err != nil {
 		return Organization{}, err
 	}
@@ -82,6 +83,32 @@ func (s *Service) Organization(ctx context.Context, principal Principal) (Organi
 		MemberCapabilities: capabilities,
 		Permissions:        PermissionsForRoles(capabilities, caller.RoleKeys),
 	}, nil
+}
+
+// AccessibleOrganizationsBySubject enumerates org metadata across the entire
+// set of orgs the JWT proves the subject is a member of. The token-derived
+// orgIDs list is itself the authorization boundary, so no single Principal
+// is required (multi-org bearers have no "selected org").
+func (s *Service) AccessibleOrganizationsBySubject(ctx context.Context, subject string, orgIDs []string) ([]OrganizationMetadata, error) {
+	if strings.TrimSpace(subject) == "" {
+		return nil, fmt.Errorf("%w: subject is required", ErrInvalidInput)
+	}
+	orgIDs = normalizeOrganizationIDs(orgIDs)
+	if len(orgIDs) == 0 {
+		return nil, fmt.Errorf("%w: organization role assignments are required", ErrInvalidInput)
+	}
+	store, err := s.store()
+	if err != nil {
+		return nil, err
+	}
+	organizations, err := store.ListOrganizationMetadataByOrgIDs(ctx, orgIDs)
+	if err != nil {
+		return nil, err
+	}
+	if len(organizations) != len(orgIDs) {
+		return nil, fmt.Errorf("%w: organization metadata is missing for one or more role assignments", ErrOrganizationMissing)
+	}
+	return organizations, nil
 }
 
 func (s *Service) UpdateOrganization(ctx context.Context, principal Principal, input UpdateOrganizationRequest) (Organization, error) {
@@ -621,6 +648,27 @@ func normalizeRoleKeys(roleKeys []string) []string {
 		}
 		seen[role] = struct{}{}
 		out = append(out, role)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func normalizeOrganizationIDs(orgIDs []string) []string {
+	if len(orgIDs) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(orgIDs))
+	for _, orgID := range orgIDs {
+		orgID = strings.TrimSpace(orgID)
+		if orgID == "" {
+			continue
+		}
+		if _, ok := seen[orgID]; ok {
+			continue
+		}
+		seen[orgID] = struct{}{}
+		out = append(out, orgID)
 	}
 	sort.Strings(out)
 	return out

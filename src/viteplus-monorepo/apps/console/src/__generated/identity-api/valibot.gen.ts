@@ -144,6 +144,12 @@ export const vIdentityOrganization = v.strictObject({
   version: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(2147483647)),
 });
 
+export const vIdentityOrganizationMetadata = v.strictObject({
+  display_name: v.string(),
+  org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  slug: v.string(),
+});
+
 export const vIdentityPutMemberCapabilitiesRequest = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   enabled_keys: v.nullable(v.pipe(v.array(v.string()), v.minLength(0), v.maxLength(32))),
@@ -298,6 +304,11 @@ export const vIdentityUpdateOrganizationRequestWritable = v.strictObject({
   slug: v.optional(v.pipe(v.string(), v.maxLength(80))),
   version: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(2147483647)),
 });
+
+/**
+ * OK
+ */
+export const vListMyOrganizationsResponse = v.nullable(v.array(vIdentityOrganizationMetadata));
 
 /**
  * OK

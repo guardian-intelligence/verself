@@ -13,6 +13,12 @@ type IdentityOrganization struct {
 	Permissions        []string                           `json:"permissions"`
 }
 
+type IdentityOrganizationMetadata struct {
+	OrgID       OrgID  `json:"org_id"`
+	DisplayName string `json:"display_name"`
+	Slug        string `json:"slug"`
+}
+
 type IdentityUpdateOrganizationRequest struct {
 	Version     int32  `json:"version" required:"true" minimum:"0" maximum:"2147483647"`
 	DisplayName string `json:"display_name,omitempty" maxLength:"120"`

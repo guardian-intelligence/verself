@@ -66,6 +66,7 @@ var defaultOperations = Operations{
 			Service: "identity-service",
 			Operations: []Operation{
 				{OperationID: "get-organization", Permission: PermissionOrganizationRead, Resource: "organization", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "list-my-organizations", Permission: PermissionOrganizationRead, Resource: "organization", Action: "list", OrgScope: "token_role_assignment_org_ids", MemberEligible: true},
 				{OperationID: "patch-organization", Permission: PermissionOrganizationWrite, Resource: "organization", Action: "update", OrgScope: "token_org_id"},
 				{OperationID: "list-organization-members", Permission: PermissionMemberRead, Resource: "organization_member", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "invite-organization-member", Permission: PermissionMemberInvite, Resource: "organization_member", Action: "invite", OrgScope: "token_org_id", MemberEligible: true},

@@ -9,6 +9,7 @@ import {
   inviteMember as inviteMemberRequest,
   inviteMemberRequestSchema,
   isIdentityApiError,
+  listMyOrganizations as listMyOrganizationsRequest,
   putMemberCapabilities as putMemberCapabilitiesRequest,
   putMemberCapabilitiesRequestSchema,
   updateOrganization as updateOrganizationRequest,
@@ -83,6 +84,7 @@ import type {
   MemberCapabilitiesDocument,
   MemberCapability,
   Organization,
+  OrganizationMetadata,
   PutMemberCapabilitiesRequest,
   UpdateOrganizationRequest,
   UpdateMemberRolesRequest,
@@ -267,6 +269,7 @@ export type {
   MemberCapabilitiesDocument,
   MemberCapability,
   Organization,
+  OrganizationMetadata,
   PutMemberCapabilitiesRequest,
   UpdateOrganizationRequest,
   UpdateMemberRolesRequest,
@@ -301,7 +304,10 @@ async function sandboxRentalClientOptions(context: { auth?: AuthSession } | unde
   };
 }
 
-async function identityClientOptions(context: { auth?: AuthSession } | undefined) {
+async function identityClientOptions(
+  context: { auth?: AuthSession } | undefined,
+  options: { roleAssignmentScope?: "selected_org" | "all_granted_orgs" } = {},
+) {
   const auth = await resolveAuthContext(context);
   if (!IDENTITY_SERVICE_AUTH_AUDIENCE) {
     throw new Error("IDENTITY_SERVICE_AUTH_AUDIENCE is required");
@@ -310,6 +316,7 @@ async function identityClientOptions(context: { auth?: AuthSession } | undefined
     getAuthConfig(),
     auth,
     IDENTITY_SERVICE_AUTH_AUDIENCE,
+    options,
   );
   return {
     accessToken,
@@ -397,6 +404,14 @@ export const getOrganization = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .handler(async ({ context }) => {
     return getOrganizationRequest(await identityClientOptions(context));
+  });
+
+export const listMyOrganizations = createServerFn({ method: "GET" })
+  .middleware([consoleAuthMiddleware])
+  .handler(async ({ context }) => {
+    return listMyOrganizationsRequest(
+      await identityClientOptions(context, { roleAssignmentScope: "all_granted_orgs" }),
+    );
   });
 
 export const updateOrganization = createServerFn({ method: "POST" })

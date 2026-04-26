@@ -6,6 +6,12 @@ SELECT org_id, display_name, slug, state, version, created_by, updated_by, creat
 FROM identity_organizations
 WHERE org_id = sqlc.arg(org_id);
 
+-- name: ListOrganizationMetadataByOrgIDs :many
+SELECT org_id, display_name, slug
+FROM identity_organizations
+WHERE org_id = ANY(sqlc.arg(org_ids)::text[])
+ORDER BY display_name, org_id;
+
 -- name: GetOrganizationProfileForUpdate :one
 SELECT org_id, display_name, slug, state, version, created_by, updated_by, created_at, updated_at, ''::text AS redirected_from
 FROM identity_organizations

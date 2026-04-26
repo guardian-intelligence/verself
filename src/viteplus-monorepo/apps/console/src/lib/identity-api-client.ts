@@ -3,6 +3,7 @@ import {
   getMembers,
   getMemberCapabilities,
   getOrganization,
+  listMyOrganizations,
   inviteMember,
   putMemberCapabilities,
   updateOrganization,
@@ -15,6 +16,7 @@ import {
 // reads the session cookie server-side and forwards the bearer onward.
 export const identityApiClient: IdentityApiClient = {
   getOrganization: () => getOrganization(),
+  listMyOrganizations: () => listMyOrganizations(),
   updateOrganization: (data) => updateOrganization({ data }),
   listMembers: () => getMembers(),
   getMemberCapabilities: () => getMemberCapabilities(),

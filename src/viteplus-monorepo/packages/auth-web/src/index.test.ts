@@ -37,7 +37,6 @@ const anonymousAuth: Auth = {
 const authenticatedRoleAssignments = [
   {
     orgID: "org-1",
-    orgName: "Acme",
     projectID: "sandbox-project",
     role: "sandbox_operator",
   },
@@ -79,7 +78,6 @@ const authenticatedSnapshot: AuthSnapshot = {
     availableOrganizations: [
       {
         orgID: "org-1",
-        orgName: "Acme",
         roles: ["sandbox_operator"],
         roleAssignments: authenticatedRoleAssignments,
       },

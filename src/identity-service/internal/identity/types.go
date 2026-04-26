@@ -26,7 +26,6 @@ const (
 type Principal struct {
 	Subject           string
 	OrgID             string
-	OrgDisplayName    string
 	Roles             []string
 	DirectPermissions []string
 	Email             string
@@ -65,6 +64,12 @@ type Organization struct {
 	Caller             Member
 	MemberCapabilities MemberCapabilitiesDocument
 	Permissions        []string
+}
+
+type OrganizationMetadata struct {
+	OrgID       string
+	DisplayName string
+	Slug        string
 }
 
 type UpdateOrganizationRequest struct {

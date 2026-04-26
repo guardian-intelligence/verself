@@ -234,6 +234,13 @@ type IdentityOrganization struct {
 	Version            int32                              `json:"version"`
 }
 
+// IdentityOrganizationMetadata defines model for IdentityOrganizationMetadata.
+type IdentityOrganizationMetadata struct {
+	DisplayName string `json:"display_name"`
+	OrgId       string `json:"org_id"`
+	Slug        string `json:"slug"`
+}
+
 // IdentityPutMemberCapabilitiesRequest defines model for IdentityPutMemberCapabilitiesRequest.
 type IdentityPutMemberCapabilitiesRequest struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -411,6 +418,9 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
+	// ListMyOrganizations request
+	ListMyOrganizations(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetOrganization request
 	GetOrganization(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -458,6 +468,18 @@ type ClientInterface interface {
 	UpdateOrganizationMemberRolesWithBody(ctx context.Context, userId string, params *UpdateOrganizationMemberRolesParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	UpdateOrganizationMemberRoles(ctx context.Context, userId string, params *UpdateOrganizationMemberRolesParams, body UpdateOrganizationMemberRolesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+func (c *Client) ListMyOrganizations(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListMyOrganizationsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
 }
 
 func (c *Client) GetOrganization(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -674,6 +696,33 @@ func (c *Client) UpdateOrganizationMemberRoles(ctx context.Context, userId strin
 		return nil, err
 	}
 	return c.Client.Do(req)
+}
+
+// NewListMyOrganizationsRequest generates requests for ListMyOrganizations
+func NewListMyOrganizationsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/me/organizations")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
 }
 
 // NewGetOrganizationRequest generates requests for GetOrganization
@@ -1240,6 +1289,9 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
+	// ListMyOrganizationsWithResponse request
+	ListMyOrganizationsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListMyOrganizationsResponse, error)
+
 	// GetOrganizationWithResponse request
 	GetOrganizationWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetOrganizationResponse, error)
 
@@ -1287,6 +1339,29 @@ type ClientWithResponsesInterface interface {
 	UpdateOrganizationMemberRolesWithBodyWithResponse(ctx context.Context, userId string, params *UpdateOrganizationMemberRolesParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateOrganizationMemberRolesResponse, error)
 
 	UpdateOrganizationMemberRolesWithResponse(ctx context.Context, userId string, params *UpdateOrganizationMemberRolesParams, body UpdateOrganizationMemberRolesJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateOrganizationMemberRolesResponse, error)
+}
+
+type ListMyOrganizationsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *[]IdentityOrganizationMetadata
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r ListMyOrganizationsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListMyOrganizationsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
 }
 
 type GetOrganizationResponse struct {
@@ -1565,6 +1640,15 @@ func (r UpdateOrganizationMemberRolesResponse) StatusCode() int {
 	return 0
 }
 
+// ListMyOrganizationsWithResponse request returning *ListMyOrganizationsResponse
+func (c *ClientWithResponses) ListMyOrganizationsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListMyOrganizationsResponse, error) {
+	rsp, err := c.ListMyOrganizations(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListMyOrganizationsResponse(rsp)
+}
+
 // GetOrganizationWithResponse request returning *GetOrganizationResponse
 func (c *ClientWithResponses) GetOrganizationWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetOrganizationResponse, error) {
 	rsp, err := c.GetOrganization(ctx, reqEditors...)
@@ -1719,6 +1803,39 @@ func (c *ClientWithResponses) UpdateOrganizationMemberRolesWithResponse(ctx cont
 		return nil, err
 	}
 	return ParseUpdateOrganizationMemberRolesResponse(rsp)
+}
+
+// ParseListMyOrganizationsResponse parses an HTTP response from a ListMyOrganizationsWithResponse call
+func ParseListMyOrganizationsResponse(rsp *http.Response) (*ListMyOrganizationsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListMyOrganizationsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []IdentityOrganizationMetadata
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
 }
 
 // ParseGetOrganizationResponse parses an HTTP response from a GetOrganizationWithResponse call

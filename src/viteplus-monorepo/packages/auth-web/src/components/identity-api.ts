@@ -5,6 +5,7 @@ import type {
   Member,
   MemberCapabilities,
   Organization,
+  OrganizationMetadata,
   PutMemberCapabilitiesRequest,
   UpdateOrganizationRequest,
   UpdateMemberRolesRequest,
@@ -17,6 +18,7 @@ import type {
 // holds Zitadel tokens).
 export interface IdentityApiClient {
   getOrganization: () => Promise<Organization>;
+  listMyOrganizations: () => Promise<ReadonlyArray<OrganizationMetadata>>;
   updateOrganization: (input: UpdateOrganizationRequest) => Promise<Organization>;
   listMembers: () => Promise<ReadonlyArray<Member>>;
   getMemberCapabilities: () => Promise<MemberCapabilities>;

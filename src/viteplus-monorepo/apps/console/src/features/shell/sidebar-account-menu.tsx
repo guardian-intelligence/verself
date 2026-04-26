@@ -6,8 +6,10 @@ import {
   SignedIn,
   SignedOut,
   SignInButton,
+  availableOrganizationMetadataQuery,
   organizationMembersQuery,
   useIdentityApi,
+  type OrganizationMetadataValue,
 } from "@verself/auth-web/components";
 import { useClerk, useSignedInAuth, useUser } from "@verself/auth-web/react";
 import type { AuthOrganizationContext } from "@verself/auth-web/isomorphic";
@@ -62,8 +64,11 @@ function SidebarAccountMenu() {
   );
   const organizationSwitcher = useOrganizationSwitcher();
   const memberCount = useActiveMemberCount();
+  const organizationProfiles = useAvailableOrganizationProfiles();
 
-  const orgLabel = activeOrganization ? organizationLabel(activeOrganization) : null;
+  const orgLabel = activeOrganization
+    ? organizationLabel(activeOrganization, organizationProfiles)
+    : null;
   // Hold the trigger blank until the profile resolves. Falling back to
   // orgID-derived initials/labels caused a visible flash (e.g. "VE" then the
   // real "CO") on every page load — empty + invisible looks intentional.
@@ -116,7 +121,7 @@ function SidebarAccountMenu() {
               </Avatar>
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium text-foreground">
-                  {ready ? (orgLabel ?? account.displayName) : ""}
+                  {ready ? orgLabel || account.displayName : ""}
                 </div>
                 <div
                   className="truncate text-xs text-muted-foreground"
@@ -151,7 +156,7 @@ function SidebarAccountMenu() {
               />
             </div>
           </div>
-          {user.availableOrganizations.length > 1 ? (
+          {user.availableOrganizations.length > 1 && organizationProfiles ? (
             <>
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
@@ -192,7 +197,7 @@ function SidebarAccountMenu() {
                         ) : null}
                       </span>
                       <span className="min-w-0 flex-1 truncate">
-                        {organizationLabel(organization)}
+                        {organizationLabel(organization, organizationProfiles)}
                       </span>
                     </DropdownMenuItem>
                   );
@@ -286,11 +291,31 @@ function useActiveMemberCount(): number | null {
   return data.filter((member) => member.state === ACTIVE_MEMBER_STATE).length;
 }
 
+// Display names live in identity-service (Zitadel only carries the primary
+// domain, which is infra detail and never reaches the browser). One fetch
+// covers every org the actor can switch into.
+function useAvailableOrganizationProfiles(): ReadonlyMap<string, OrganizationMetadataValue> | null {
+  const auth = useSignedInAuth();
+  const hydrated = useHydrated();
+  const api = useIdentityApi();
+  const { data } = useQuery({
+    ...availableOrganizationMetadataQuery(auth, api),
+    enabled: hydrated,
+  });
+  return data ?? null;
+}
+
 function formatMemberCount(count: number | null): string {
   if (count === null) return "Organization";
   return `${count} member${count === 1 ? "" : "s"}`;
 }
 
-function organizationLabel(organization: AuthOrganizationContext): string {
-  return organization.orgName?.trim() || organization.orgID;
+function organizationLabel(
+  organization: AuthOrganizationContext,
+  profiles: ReadonlyMap<string, OrganizationMetadataValue> | null,
+): string {
+  // Empty while the identity-service profile is in flight — the surrounding
+  // skeleton/`ready` gating keeps the trigger blank rather than flashing the
+  // raw orgID, which would be a worse UX than nothing.
+  return profiles?.get(organization.orgID)?.display_name ?? "";
 }

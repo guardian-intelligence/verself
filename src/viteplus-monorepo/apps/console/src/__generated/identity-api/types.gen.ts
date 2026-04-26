@@ -196,6 +196,12 @@ export type IdentityOrganization = {
   version: number;
 };
 
+export type IdentityOrganizationMetadata = {
+  display_name: string;
+  org_id: string;
+  slug: string;
+};
+
 export type IdentityPutMemberCapabilitiesRequest = {
   /**
    * A URL to the JSON Schema for this object.
@@ -373,6 +379,32 @@ export type IdentityUpdateOrganizationRequestWritable = {
   slug?: string;
   version: number;
 };
+
+export type ListMyOrganizationsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/api/v1/me/organizations";
+};
+
+export type ListMyOrganizationsErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type ListMyOrganizationsError = ListMyOrganizationsErrors[keyof ListMyOrganizationsErrors];
+
+export type ListMyOrganizationsResponses = {
+  /**
+   * OK
+   */
+  200: Array<IdentityOrganizationMetadata> | null;
+};
+
+export type ListMyOrganizationsResponse =
+  ListMyOrganizationsResponses[keyof ListMyOrganizationsResponses];
 
 export type GetOrganizationData = {
   body?: never;

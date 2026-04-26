@@ -12,17 +12,20 @@ export type {
   MemberCapabilitiesDocument,
   MemberCapability,
   Organization,
+  OrganizationMetadata,
   PutMemberCapabilitiesRequest,
   UpdateOrganizationRequest,
   UpdateMemberRolesRequest,
 } from "./types.ts";
 
 export {
+  availableOrganizationMetadataQuery,
   invalidateOrganizationQueries,
   loadOrganizationPage,
   organizationMembersQuery,
   organizationMemberCapabilitiesQuery,
   organizationQuery,
+  type OrganizationMetadataValue,
 } from "./queries.ts";
 export {
   useInviteMemberMutation,

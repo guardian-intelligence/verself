@@ -227,6 +227,7 @@
     - role: clickhouse
       tags:
         - clickhouse
+        - identity_service
         - otelcol
         - billing_service
         - sandbox_rental_service

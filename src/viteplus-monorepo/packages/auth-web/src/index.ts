@@ -140,6 +140,12 @@ interface TokenResponse {
   scope?: string;
 }
 
+export type ResourceTokenRoleAssignmentScope = "selected_org" | "all_granted_orgs";
+
+export interface ResourceTokenOptions {
+  roleAssignmentScope?: ResourceTokenRoleAssignmentScope;
+}
+
 interface OAuthErrorBody {
   error?: string;
   error_description?: string;
@@ -231,13 +237,19 @@ async function verifyAccessTokenExpiresAt(
   audience: string,
   fallbackExpiresIn?: number,
   selectedOrgID?: string,
+  roleAssignmentScope: ResourceTokenRoleAssignmentScope = "selected_org",
 ): Promise<Date> {
   const verified = await jwtVerify(accessToken, getJWKS(metadata), {
     issuer: metadata.issuer,
     audience,
   });
   if (selectedOrgID) {
-    verifySelectedOrganizationClaims(verified.payload, audience, selectedOrgID);
+    verifySelectedOrganizationClaims(
+      verified.payload,
+      audience,
+      selectedOrgID,
+      roleAssignmentScope,
+    );
   }
   if (typeof verified.payload.exp === "number") {
     return new Date(verified.payload.exp * 1000);
@@ -260,6 +272,7 @@ function verifySelectedOrganizationClaims(
   payload: JWTPayload,
   audience: string,
   selectedOrgID: string,
+  roleAssignmentScope: ResourceTokenRoleAssignmentScope = "selected_org",
 ): void {
   const assertedOrgID = selectedOrganizationClaimID(payload);
   if (assertedOrgID && assertedOrgID !== selectedOrgID) {
@@ -271,8 +284,13 @@ function verifySelectedOrganizationClaims(
     throw new Error("OIDC access token is missing selected organization roles");
   }
 
-  // Zitadel resourceowner is the user's home org, not necessarily the active org selected by scope.
   const assignmentOrgIDs = new Set(assignments.map((assignment) => assignment.orgID));
+  if (roleAssignmentScope === "all_granted_orgs") {
+    if (!assignmentOrgIDs.has(selectedOrgID)) {
+      throw new Error("OIDC access token is missing the selected organization role assignment");
+    }
+    return;
+  }
   if (assignmentOrgIDs.size !== 1 || !assignmentOrgIDs.has(selectedOrgID)) {
     throw new Error("OIDC access token carries roles outside the selected organization");
   }
@@ -588,11 +606,10 @@ function extractRoleAssignments(payload: JWTPayload): AuthRoleAssignment[] {
       if (!organizations || typeof organizations !== "object" || Array.isArray(organizations)) {
         continue;
       }
-      for (const [orgID, orgName] of Object.entries(organizations as Record<string, unknown>)) {
+      for (const orgID of Object.keys(organizations as Record<string, unknown>)) {
         assignments.push({
           projectID,
           orgID,
-          orgName: typeof orgName === "string" ? orgName : null,
           role,
         });
       }
@@ -625,7 +642,6 @@ function buildOrganizationContexts(
   const contexts = new Map<
     string,
     {
-      orgName: string | null;
       roles: Set<string>;
       roleAssignments: AuthRoleAssignment[];
     }
@@ -635,14 +651,10 @@ function buildOrganizationContexts(
     let context = contexts.get(assignment.orgID);
     if (!context) {
       context = {
-        orgName: assignment.orgName,
         roles: new Set<string>(),
         roleAssignments: [],
       };
       contexts.set(assignment.orgID, context);
-    }
-    if (!context.orgName && assignment.orgName) {
-      context.orgName = assignment.orgName;
     }
     context.roles.add(assignment.role);
     context.roleAssignments.push(assignment);
@@ -651,7 +663,6 @@ function buildOrganizationContexts(
   return [...contexts.entries()]
     .map(([orgID, context]) => ({
       orgID,
-      orgName: context.orgName,
       roles: [...context.roles].sort(),
       roleAssignments: context.roleAssignments.sort((left, right) => {
         const projectOrder = (left.projectID ?? "").localeCompare(right.projectID ?? "");
@@ -1304,6 +1315,7 @@ export async function getAccessTokenForAudience(
   config: AuthConfig,
   session: AuthSession,
   audience: string,
+  options: ResourceTokenOptions = {},
 ): Promise<string> {
   const trimmedAudience = audience.trim();
   if (!trimmedAudience) {
@@ -1314,15 +1326,19 @@ export async function getAccessTokenForAudience(
     throw new Error("Selected organization is required for resource token exchange");
   }
 
-  const requestedScope = [
+  const roleAssignmentScope = options.roleAssignmentScope ?? "selected_org";
+  const requestedScopes = [
     "openid",
     "profile",
     "email",
     `urn:zitadel:iam:org:id:${selectedOrgID}`,
-    `urn:zitadel:iam:org:roles:id:${selectedOrgID}`,
     `urn:zitadel:iam:org:project:id:${trimmedAudience}:aud`,
     "urn:zitadel:iam:org:projects:roles",
-  ].join(" ");
+  ];
+  if (roleAssignmentScope === "selected_org") {
+    requestedScopes.splice(4, 0, `urn:zitadel:iam:org:roles:id:${selectedOrgID}`);
+  }
+  const requestedScope = requestedScopes.join(" ");
   const scopeHash = await sha256Token(requestedScope);
 
   return withAuthSpan(
@@ -1349,6 +1365,7 @@ export async function getAccessTokenForAudience(
           trimmedAudience,
           undefined,
           selectedOrgID,
+          roleAssignmentScope,
         ).catch(() => null);
         if (cachedExpiresAt && cachedExpiresAt.getTime() - Date.now() > refreshLeewayMs) {
           span.setAttribute("auth.cache_hit", true);
@@ -1383,6 +1400,7 @@ export async function getAccessTokenForAudience(
         trimmedAudience,
         tokens.expires_in,
         selectedOrgID,
+        roleAssignmentScope,
       );
 
       await writeStoredResourceToken(

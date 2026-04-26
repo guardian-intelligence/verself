@@ -130,19 +130,19 @@ The runtime identity object for Zitadel-authenticated public/customer APIs is:
   `sub`.
 - `OrgID`: active organization/resource-owner ID when present.
 - `Roles`: role keys extracted from the configured-audience project claim.
-- `RoleAssignments`: structured role assignments (role key, organization ID,
-  organization display name) for the configured-audience project.
+- `RoleAssignments`: structured role assignments (role key and organization ID)
+  for the configured-audience project. The claim value beside each org ID is a
+  Zitadel-owned domain/name detail and is not product display metadata.
 - `Email`: email claim when present.
 - `Raw`: the full claim map for service-specific extraction.
 
-Organization ID extraction is intentionally tolerant while the system converges
-on one canonical token shape. Services currently accept the first non-empty
-claim among:
-
-- `urn:zitadel:iam:user:resourceowner:id`
-- `urn:zitadel:iam:org:id`
-- `resource_owner`
-- `org_id`
+Selected organization ID extraction is deliberately separate from role
+assignment extraction. Services first accept the explicit selected-org claim
+`urn:zitadel:iam:org:id`. If the token carries role assignments for exactly one
+organization, the middleware may infer that organization for single-org service
+tokens. Multi-org role claims never select an org implicitly. Only tokens with
+no role assignments fall back to `urn:zitadel:iam:user:resourceowner:id`,
+`resource_owner`, or `org_id`.
 
 Role extraction only accepts Zitadel's project-qualified claim for the target
 service project:

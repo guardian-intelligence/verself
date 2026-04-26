@@ -2,6 +2,11 @@ import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { authQueryKey, type AuthenticatedAuth } from "../isomorphic.ts";
 import type { IdentityApiClient } from "./identity-api.ts";
 
+export interface OrganizationMetadataValue {
+  readonly display_name: string;
+  readonly slug: string;
+}
+
 function organizationQueryKey<TParts extends readonly unknown[]>(
   auth: AuthenticatedAuth,
   ...parts: TParts
@@ -13,6 +18,26 @@ export const organizationQuery = (auth: AuthenticatedAuth, api: IdentityApiClien
   queryOptions({
     queryKey: organizationQueryKey(auth, "summary"),
     queryFn: () => api.getOrganization(),
+  });
+
+export const availableOrganizationMetadataQuery = (
+  auth: AuthenticatedAuth,
+  api: IdentityApiClient,
+) =>
+  queryOptions({
+    queryKey: organizationQueryKey(auth, "available-metadata"),
+    queryFn: async () => {
+      const organizations = await api.listMyOrganizations();
+      return new Map<string, OrganizationMetadataValue>(
+        organizations.map((organization) => [
+          organization.org_id,
+          {
+            display_name: organization.display_name,
+            slug: organization.slug,
+          },
+        ]),
+      );
+    },
   });
 
 export const organizationMembersQuery = (auth: AuthenticatedAuth, api: IdentityApiClient) =>

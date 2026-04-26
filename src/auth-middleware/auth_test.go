@@ -94,14 +94,12 @@ func TestMiddlewareAttachesIdentity(t *testing.T) {
 		}
 		expectedAssignments := []RoleAssignment{
 			{
-				OrganizationID:   "org-456",
-				OrganizationName: "billing",
-				Role:             "admin",
+				OrganizationID: "org-456",
+				Role:           "admin",
 			},
 			{
-				OrganizationID:   "org-456",
-				OrganizationName: "billing",
-				Role:             "viewer",
+				OrganizationID: "org-456",
+				Role:           "viewer",
 			},
 		}
 		if len(identity.RoleAssignments) != len(expectedAssignments) {
@@ -215,6 +213,50 @@ func TestMiddlewareDoesNotSelectOrgFromMultiOrgRoleClaims(t *testing.T) {
 	}
 }
 
+func TestMiddlewareSelectsExplicitOrgWithMultiOrgRoleClaims(t *testing.T) {
+	t.Parallel()
+
+	provider := newTestProvider(t)
+	defer provider.Close()
+
+	token := provider.signToken(t, jwt.MapClaims{
+		"iss":                    provider.URL,
+		"sub":                    "user-123",
+		"aud":                    []string{"billing-project"},
+		"exp":                    time.Now().Add(time.Hour).Unix(),
+		"urn:zitadel:iam:org:id": "org-456",
+		"urn:zitadel:iam:org:project:billing-project:roles": map[string]any{
+			"admin": map[string]any{
+				"org-456": "billing",
+				"org-789": "billing-alt",
+			},
+		},
+	})
+
+	handler := Middleware(Config{
+		IssuerURL: provider.URL,
+		Audience:  "billing-project",
+	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		identity := FromContext(r.Context())
+		if identity == nil {
+			t.Fatal("expected identity in context")
+		}
+		if identity.OrgID != "org-456" {
+			t.Fatalf("explicit selected org must survive multi-org role claims: %q", identity.OrgID)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/private", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", rec.Code)
+	}
+}
+
 func TestMiddlewareRejectsWrongAudience(t *testing.T) {
 	t.Parallel()
 
@@ -247,9 +289,6 @@ func TestMiddlewareRejectsWrongAudience(t *testing.T) {
 
 func compareRoleAssignment(a, b RoleAssignment) int {
 	if diff := cmp.Compare(a.OrganizationID, b.OrganizationID); diff != 0 {
-		return diff
-	}
-	if diff := cmp.Compare(a.OrganizationName, b.OrganizationName); diff != 0 {
 		return diff
 	}
 	return cmp.Compare(a.Role, b.Role)

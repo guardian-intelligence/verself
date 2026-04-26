@@ -22,6 +22,9 @@ import type {
   ListApiCredentialsData,
   ListApiCredentialsErrors,
   ListApiCredentialsResponses,
+  ListMyOrganizationsData,
+  ListMyOrganizationsErrors,
+  ListMyOrganizationsResponses,
   ListOrganizationMembersData,
   ListOrganizationMembersErrors,
   ListOrganizationMembersResponses,
@@ -59,6 +62,22 @@ export type Options<
    */
   meta?: Record<string, unknown>;
 };
+
+/**
+ * List organizations available to the caller
+ */
+export const listMyOrganizations = <ThrowOnError extends boolean = false>(
+  options?: Options<ListMyOrganizationsData, ThrowOnError>,
+) =>
+  (options?.client ?? client).get<
+    ListMyOrganizationsResponses,
+    ListMyOrganizationsErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/me/organizations",
+    ...options,
+  });
 
 /**
  * Get organization identity state

@@ -38,7 +38,7 @@ func TestOpenAPIPublicAPIOperationsDeclareIAMPolicy(t *testing.T) {
 					t.Fatalf("%s %s empty policy field %q: %#v", op.Method, path, key, rawPolicy)
 				}
 			}
-			if rawPolicy["org_scope"] != "token_org_id" {
+			if rawPolicy["org_scope"] != "token_org_id" && rawPolicy["org_scope"] != "token_role_assignment_org_ids" {
 				t.Fatalf("%s %s unexpected org_scope: %#v", op.Method, path, rawPolicy)
 			}
 			if len(op.Security) != 1 || len(op.Security[0]["bearerAuth"]) != 0 {
@@ -70,31 +70,31 @@ func TestIdentityPermissionChecksCurrentOrgRoleBundlesAndDirectScopes(t *testing
 		ProjectID: "identity-project",
 	}
 	admin := identityServiceToken("42", identity.RoleAdmin)
-	if allowed, err := identityHasPermission(ctx, svc, admin, permissionMemberCapabilitiesWrite); err != nil || !allowed {
+	if allowed, err := identityHasPermission(ctx, svc, admin, permissionMemberCapabilitiesWrite, orgScopeTokenOrgID); err != nil || !allowed {
 		t.Fatal("org admin should be allowed to write member capabilities")
 	}
 
 	wrongOrg := identityServiceToken("99", identity.RoleAdmin)
 	wrongOrg.OrgID = "42"
-	if allowed, err := identityHasPermission(ctx, svc, wrongOrg, permissionMemberCapabilitiesWrite); err != nil || allowed {
+	if allowed, err := identityHasPermission(ctx, svc, wrongOrg, permissionMemberCapabilitiesWrite, orgScopeTokenOrgID); err != nil || allowed {
 		t.Fatal("role assignment for another org must not grant current org")
 	}
 
 	member := identityServiceToken("42", identity.RoleMember)
-	if allowed, err := identityHasPermission(ctx, svc, member, permissionMemberRead); err != nil || !allowed {
+	if allowed, err := identityHasPermission(ctx, svc, member, permissionMemberRead, orgScopeTokenOrgID); err != nil || !allowed {
 		t.Fatal("member should be allowed to read members")
 	}
-	if allowed, err := identityHasPermission(ctx, svc, member, permissionMemberCapabilitiesWrite); err != nil || allowed {
+	if allowed, err := identityHasPermission(ctx, svc, member, permissionMemberCapabilitiesWrite, orgScopeTokenOrgID); err != nil || allowed {
 		t.Fatal("member should not be allowed to write member capabilities")
 	}
 
 	owner := identityServiceToken("42", identity.RoleOwner)
-	if allowed, err := identityHasPermission(ctx, svc, owner, permissionMemberCapabilitiesWrite); err != nil || !allowed {
+	if allowed, err := identityHasPermission(ctx, svc, owner, permissionMemberCapabilitiesWrite, orgScopeTokenOrgID); err != nil || !allowed {
 		t.Fatal("owner should grant all identity-service permissions")
 	}
 
 	unmarkedScope := &auth.Identity{Subject: "user-1", OrgID: "42", Raw: map[string]any{"scope": string(permissionMemberInvite)}}
-	if allowed, err := identityHasPermission(ctx, svc, unmarkedScope, permissionMemberInvite); err != nil || allowed {
+	if allowed, err := identityHasPermission(ctx, svc, unmarkedScope, permissionMemberInvite, orgScopeTokenOrgID); err != nil || allowed {
 		t.Fatal("plain OAuth scope should not grant operation permissions without an API credential marker")
 	}
 
@@ -106,7 +106,7 @@ func TestIdentityPermissionChecksCurrentOrgRoleBundlesAndDirectScopes(t *testing
 			"permissions":           []string{string(permissionMemberInvite)},
 		},
 	}
-	if allowed, err := identityHasPermission(ctx, nil, scoped, permissionMemberInvite); err != nil || !allowed {
+	if allowed, err := identityHasPermission(ctx, nil, scoped, permissionMemberInvite, orgScopeTokenOrgID); err != nil || !allowed {
 		t.Fatal("API credential scope should grant matching permission")
 	}
 }
@@ -130,8 +130,16 @@ type staticIdentityStore struct {
 	capabilities identity.MemberCapabilitiesDocument
 }
 
-func (s staticIdentityStore) GetOrganizationProfile(context.Context, string, string, string) (identity.OrganizationProfile, error) {
+func (s staticIdentityStore) GetOrganizationProfile(context.Context, string, string) (identity.OrganizationProfile, error) {
 	return identity.OrganizationProfile{OrgID: "42", DisplayName: "Acme", Slug: "acme", State: identity.OrganizationProfileStateActive, Version: 1}, nil
+}
+
+func (s staticIdentityStore) ListOrganizationMetadataByOrgIDs(_ context.Context, orgIDs []string) ([]identity.OrganizationMetadata, error) {
+	out := make([]identity.OrganizationMetadata, 0, len(orgIDs))
+	for _, orgID := range orgIDs {
+		out = append(out, identity.OrganizationMetadata{OrgID: orgID, DisplayName: "Acme", Slug: "acme"})
+	}
+	return out, nil
 }
 
 func (s staticIdentityStore) UpdateOrganizationProfile(context.Context, identity.Principal, identity.UpdateOrganizationRequest) (identity.OrganizationProfile, error) {

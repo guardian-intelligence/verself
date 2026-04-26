@@ -4,6 +4,7 @@ import {
   getOrganization as getGeneratedOrganization,
   getOrganizationMemberCapabilities as getGeneratedOrganizationMemberCapabilities,
   inviteOrganizationMember as inviteGeneratedOrganizationMember,
+  listMyOrganizations as listGeneratedMyOrganizations,
   listOrganizationMembers as listGeneratedOrganizationMembers,
   patchOrganization as patchGeneratedOrganization,
   putOrganizationMemberCapabilities as putGeneratedOrganizationMemberCapabilities,
@@ -23,6 +24,7 @@ import {
   vIdentityMemberCapability,
   vIdentityMembers,
   vIdentityOrganization,
+  vIdentityOrganizationMetadata,
   vIdentityPutMemberCapabilitiesRequestWritable,
   vIdentityUpdateOrganizationRequestWritable,
   vIdentityUpdateMemberRolesRequestWritable,
@@ -136,6 +138,12 @@ function parseOrganization(input: unknown) {
 
 export type Organization = ReturnType<typeof parseOrganization>;
 
+function parseOrganizationMetadata(input: unknown) {
+  return v.parse(vIdentityOrganizationMetadata, input);
+}
+
+export type OrganizationMetadata = ReturnType<typeof parseOrganizationMetadata>;
+
 const organizationSlugSchema = v.pipe(
   v.string(),
   v.trim(),
@@ -205,6 +213,24 @@ export async function getOrganization(options: IdentityClientOptions): Promise<O
   }
 
   return parseOrganization(result.data);
+}
+
+export async function listMyOrganizations(
+  options: IdentityClientOptions,
+): Promise<Array<OrganizationMetadata>> {
+  const client = createIdentityClient(options);
+  const path = "/api/v1/me/organizations";
+  const result = await listGeneratedMyOrganizations({
+    client,
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+
+  if (result.error !== undefined) {
+    throwIdentityError(path, result.response, result.error);
+  }
+
+  return result.data?.map((organization) => parseOrganizationMetadata(organization)) ?? [];
 }
 
 export async function updateOrganization(
