@@ -20,35 +20,10 @@
     service_pg_migrations_stop_units:
       - electric
       - sandbox-rental-service
+      - sandbox-rental-recurring-worker
     service_pg_migrations_force_reset: "{{ sandbox_rental_service_force_schema_reset | default(false) | bool }}"
-    service_pg_migrations_pre_reset_tasks: "{{ sandbox_rental_service_role_dir }}/tasks/migrations_pre_reset.yml"
+    service_pg_migrations_pre_reset_tasks: ""
     service_pg_migrations_post_reset_tasks: "{{ sandbox_rental_service_role_dir }}/tasks/migrations_post_reset.yml"
-
-- name: Restore sandbox-rental GitHub installations after schema reset
-  ansible.builtin.command:
-    cmd: >-
-      {{ verself_bin }}/psql
-      -h {{ topology_endpoints.postgresql.host }}
-      -p {{ topology_endpoints.postgresql.endpoints.postgres.port }}
-      -U sandbox_rental
-      -d sandbox_rental
-      -v ON_ERROR_STOP=1
-    stdin: |
-      COPY public.github_installations (
-        installation_id, org_id, account_login, account_type, active, created_at, updated_at
-      ) FROM STDIN WITH (FORMAT csv, HEADER true);
-      {{ sandbox_rental_service_github_installations_export.stdout }}
-      \.
-  environment:
-    PGPASSWORD: "{{ postgresql_sandbox_rental_password }}"
-  changed_when: true
-  no_log: true
-  when:
-    - service_pg_migrations_should_reset | default(false) | bool
-    - sandbox_rental_service_restore_github_installations_on_schema_reset | bool
-    - sandbox_rental_service_github_installations_export is defined
-    - sandbox_rental_service_github_installations_export.rc == 0
-    - (sandbox_rental_service_github_installations_export.stdout | trim) != ''
 
 - name: Reconcile sandbox-rental object ownership and privileges
   ansible.builtin.command:
@@ -92,8 +67,14 @@
         IF to_regclass('public.runner_jobs') IS NOT NULL THEN
           EXECUTE 'ALTER TABLE public.runner_jobs OWNER TO sandbox_rental';
         END IF;
+        IF to_regclass('public.github_accounts') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.github_accounts OWNER TO sandbox_rental';
+        END IF;
         IF to_regclass('public.github_installations') IS NOT NULL THEN
           EXECUTE 'ALTER TABLE public.github_installations OWNER TO sandbox_rental';
+        END IF;
+        IF to_regclass('public.github_installation_connections') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.github_installation_connections OWNER TO sandbox_rental';
         END IF;
         IF to_regclass('public.github_installation_states') IS NOT NULL THEN
           EXECUTE 'ALTER TABLE public.github_installation_states OWNER TO sandbox_rental';
@@ -127,7 +108,9 @@
         public.execution_sticky_disk_mounts,
         public.runner_classes,
         public.runner_class_filesystem_mounts,
+        public.github_accounts,
         public.github_installations,
+        public.github_installation_connections,
         public.github_installation_states,
         public.runner_provider_repositories,
         public.runner_jobs,

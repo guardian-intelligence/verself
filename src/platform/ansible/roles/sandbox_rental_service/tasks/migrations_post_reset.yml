@@ -1,7 +1,6 @@
 ---
 # Post-reset hook for service_pg_migrations: clear Electric's per-shape
-# snapshot cache (stale after the upstream DB is wiped) and restore the
-# github_installations export captured by migrations_pre_reset.yml.
+# snapshot cache, which is stale after the upstream DB is wiped.
 
 # Electric caches per-shape snapshots (rows + last-seen LSN) in
 # /var/lib/electric/. When the upstream database is dropped, those snapshots

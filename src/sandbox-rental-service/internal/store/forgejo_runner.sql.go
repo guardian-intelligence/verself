@@ -201,7 +201,7 @@ type GetForgejoRepositoryParams struct {
 type GetForgejoRepositoryRow struct {
 	ProviderRepositoryID int64
 	OrgID                int64
-	ProjectID            uuid.UUID
+	ProjectID            *uuid.UUID
 	SourceRepositoryID   *uuid.UUID
 	ProviderOwner        string
 	ProviderRepo         string
@@ -223,7 +223,7 @@ func (q *Queries) GetForgejoRepository(ctx context.Context, arg GetForgejoReposi
 	return i, err
 }
 
-const insertForgejoRunnerAllocation = `-- name: InsertForgejoRunnerAllocation :exec
+const insertForgejoRunnerAllocation = `-- name: InsertForgejoRunnerAllocation :execrows
 INSERT INTO runner_allocations (
     allocation_id, provider, provider_installation_id, provider_repository_id, runner_class, runner_name, state,
     requested_for_provider_job_id, allocate_by, jit_by, vm_submitted_by, runner_listening_by,
@@ -234,6 +234,7 @@ INSERT INTO runner_allocations (
     $8, $9, $10,
     $11, $12, $13, $13
 )
+ON CONFLICT DO NOTHING
 `
 
 type InsertForgejoRunnerAllocationParams struct {
@@ -252,8 +253,8 @@ type InsertForgejoRunnerAllocationParams struct {
 	CreatedAt                 pgtype.Timestamptz
 }
 
-func (q *Queries) InsertForgejoRunnerAllocation(ctx context.Context, arg InsertForgejoRunnerAllocationParams) error {
-	_, err := q.db.Exec(ctx, insertForgejoRunnerAllocation,
+func (q *Queries) InsertForgejoRunnerAllocation(ctx context.Context, arg InsertForgejoRunnerAllocationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertForgejoRunnerAllocation,
 		arg.AllocationID,
 		arg.ProviderRepositoryID,
 		arg.RunnerClass,
@@ -268,7 +269,10 @@ func (q *Queries) InsertForgejoRunnerAllocation(ctx context.Context, arg InsertF
 		arg.CleanupBy,
 		arg.CreatedAt,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateForgejoAllocationBootstrapCreated = `-- name: UpdateForgejoAllocationBootstrapCreated :exec
@@ -361,7 +365,7 @@ ON CONFLICT (provider, provider_repository_id) DO UPDATE SET
 type UpsertForgejoRunnerRepositoryParams struct {
 	ProviderRepositoryID int64
 	OrgID                int64
-	ProjectID            uuid.UUID
+	ProjectID            *uuid.UUID
 	SourceRepositoryID   *uuid.UUID
 	ProviderOwner        string
 	ProviderRepo         string

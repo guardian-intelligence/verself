@@ -14,13 +14,21 @@ import (
 
 const deleteStickyDiskGenerationForOrg = `-- name: DeleteStickyDiskGenerationForOrg :one
 DELETE FROM runner_sticky_disk_generations g
-USING github_installations i
+USING github_installations i,
+      runner_provider_repositories p,
+      github_installation_connections c
 WHERE g.provider = 'github'
   AND g.provider_installation_id = $1
   AND g.provider_repository_id = $2
   AND g.key_hash = $3
   AND i.installation_id = g.provider_installation_id
-  AND i.org_id = $4
+  AND p.provider = 'github'
+  AND p.provider_repository_id = g.provider_repository_id
+  AND p.org_id = $4
+  AND p.active
+  AND c.installation_id = i.installation_id
+  AND c.org_id = p.org_id
+  AND c.state = 'active'
   AND i.active
 RETURNING g.current_source_ref
 `
@@ -48,7 +56,7 @@ const listStickyDisks = `-- name: ListStickyDisks :many
 SELECT
     g.provider_installation_id,
     g.provider_repository_id,
-    COALESCE(last_mount.repository_full_name, '')::text AS repository_full_name,
+    p.repository_full_name,
     g.key_hash,
     g.key,
     g.current_generation,
@@ -65,9 +73,10 @@ SELECT
     g.updated_at
 FROM runner_sticky_disk_generations g
 JOIN github_installations i ON i.installation_id = g.provider_installation_id
+JOIN runner_provider_repositories p ON p.provider = 'github' AND p.provider_repository_id = g.provider_repository_id AND p.active
+JOIN github_installation_connections c ON c.installation_id = i.installation_id AND c.org_id = p.org_id AND c.state = 'active'
 LEFT JOIN LATERAL (
     SELECT
-        COALESCE(j.repository_full_name, '') AS repository_full_name,
         COALESCE(m.completed_at, m.requested_at, m.updated_at, m.created_at) AS last_used_at,
         m.completed_at,
         m.save_state,
@@ -88,9 +97,9 @@ LEFT JOIN LATERAL (
     ORDER BY COALESCE(m.completed_at, m.requested_at, m.updated_at, m.created_at) DESC, m.mount_id DESC
     LIMIT 1
 ) last_mount ON true
-WHERE i.org_id = $1
+WHERE p.org_id = $1
   AND i.active
-  AND ($2::text = '' OR COALESCE(last_mount.repository_full_name, '') = $2)
+  AND ($2::text = '' OR p.repository_full_name = $2)
   AND g.provider = 'github'
   AND ($3::boolean = false OR (g.updated_at, g.provider_installation_id, g.provider_repository_id, g.key_hash) < ($4::timestamptz, $5::bigint, $6::bigint, $7::text))
 ORDER BY g.updated_at DESC, g.provider_installation_id DESC, g.provider_repository_id DESC, g.key_hash DESC

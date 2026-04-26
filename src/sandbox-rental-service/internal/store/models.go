@@ -28,13 +28,3 @@ type ExecutionSchedule struct {
 	CreatedAt          pgtype.Timestamptz
 	UpdatedAt          pgtype.Timestamptz
 }
-
-type GithubInstallation struct {
-	InstallationID int64
-	OrgID          int64
-	AccountLogin   string
-	AccountType    string
-	Active         bool
-	CreatedAt      pgtype.Timestamptz
-	UpdatedAt      pgtype.Timestamptz
-}

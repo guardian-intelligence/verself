@@ -7,10 +7,19 @@ INSERT INTO github_installation_states (
 ON CONFLICT (state) DO NOTHING;
 
 -- name: ListGitHubInstallations :many
-SELECT installation_id, org_id, account_login, account_type, active, created_at, updated_at
-FROM github_installations
-WHERE org_id = sqlc.arg(org_id)
-ORDER BY updated_at DESC;
+SELECT
+    i.installation_id,
+    c.org_id,
+    a.account_login,
+    a.account_type,
+    (i.active AND c.state = 'active')::boolean AS active,
+    c.created_at,
+    GREATEST(a.updated_at, i.updated_at, c.updated_at)::timestamptz AS updated_at
+FROM github_installation_connections c
+JOIN github_installations i ON i.installation_id = c.installation_id
+JOIN github_accounts a ON a.account_id = i.account_id
+WHERE c.org_id = sqlc.arg(org_id)
+ORDER BY c.updated_at DESC, i.installation_id DESC;
 
 -- name: LockGitHubInstallationState :one
 SELECT org_id, actor_id, expires_at
@@ -18,19 +27,87 @@ FROM github_installation_states
 WHERE state = sqlc.arg(state)
 FOR UPDATE;
 
--- name: UpsertGitHubInstallation :one
-INSERT INTO github_installations (
-    installation_id, org_id, account_login, account_type, active, created_at, updated_at
+-- name: UpsertGitHubAccount :exec
+INSERT INTO github_accounts (
+    account_id, account_login, account_type, created_at, updated_at
 ) VALUES (
-    sqlc.arg(installation_id), sqlc.arg(org_id), sqlc.arg(account_login), sqlc.arg(account_type), true, sqlc.arg(updated_at), sqlc.arg(updated_at)
+    sqlc.arg(account_id), sqlc.arg(account_login), sqlc.arg(account_type), sqlc.arg(updated_at), sqlc.arg(updated_at)
 )
-ON CONFLICT (installation_id) DO UPDATE SET
-    org_id = EXCLUDED.org_id,
+ON CONFLICT (account_id) DO UPDATE SET
     account_login = EXCLUDED.account_login,
     account_type = EXCLUDED.account_type,
+    updated_at = EXCLUDED.updated_at;
+
+-- name: UpsertGitHubInstallation :exec
+INSERT INTO github_installations (
+    installation_id, account_id, active, repository_selection, permissions_json, created_at, updated_at
+) VALUES (
+    sqlc.arg(installation_id), sqlc.arg(account_id), true, sqlc.arg(repository_selection), sqlc.arg(permissions_json)::jsonb,
+    sqlc.arg(updated_at), sqlc.arg(updated_at)
+)
+ON CONFLICT (installation_id) DO UPDATE SET
+    account_id = EXCLUDED.account_id,
+    active = true,
+    repository_selection = EXCLUDED.repository_selection,
+    permissions_json = EXCLUDED.permissions_json,
+    updated_at = EXCLUDED.updated_at;
+
+-- name: UpsertGitHubInstallationConnection :exec
+INSERT INTO github_installation_connections (
+    connection_id, installation_id, org_id, connected_by_actor_id, state, created_at, updated_at
+) VALUES (
+    sqlc.arg(connection_id), sqlc.arg(installation_id), sqlc.arg(org_id), sqlc.arg(connected_by_actor_id),
+    'active', sqlc.arg(updated_at), sqlc.arg(updated_at)
+)
+ON CONFLICT (installation_id, org_id) DO UPDATE SET
+    connected_by_actor_id = EXCLUDED.connected_by_actor_id,
+    state = 'active',
+    updated_at = EXCLUDED.updated_at;
+
+-- name: GetGitHubInstallationForOrg :one
+SELECT
+    i.installation_id,
+    c.org_id,
+    a.account_login,
+    a.account_type,
+    (i.active AND c.state = 'active')::boolean AS active,
+    c.created_at,
+    GREATEST(a.updated_at, i.updated_at, c.updated_at)::timestamptz AS updated_at
+FROM github_installation_connections c
+JOIN github_installations i ON i.installation_id = c.installation_id
+JOIN github_accounts a ON a.account_id = i.account_id
+WHERE c.org_id = sqlc.arg(org_id)
+  AND i.installation_id = sqlc.arg(installation_id);
+
+-- name: UpsertGitHubRunnerRepository :execrows
+INSERT INTO runner_provider_repositories (
+    provider, provider_repository_id, org_id, project_id, source_repository_id,
+    provider_owner, provider_repo, repository_full_name, active, created_at, updated_at
+) VALUES (
+    'github', sqlc.arg(provider_repository_id), sqlc.arg(org_id), NULL, NULL,
+    sqlc.arg(provider_owner), sqlc.arg(provider_repo), sqlc.arg(repository_full_name),
+    true, sqlc.arg(updated_at), sqlc.arg(updated_at)
+)
+ON CONFLICT (provider, provider_repository_id) DO UPDATE SET
+    org_id = EXCLUDED.org_id,
+    project_id = NULL,
+    source_repository_id = NULL,
+    provider_owner = EXCLUDED.provider_owner,
+    provider_repo = EXCLUDED.provider_repo,
+    repository_full_name = EXCLUDED.repository_full_name,
     active = true,
     updated_at = EXCLUDED.updated_at
-RETURNING installation_id, org_id, account_login, account_type, active, created_at, updated_at;
+WHERE runner_provider_repositories.org_id = EXCLUDED.org_id;
+
+-- name: DeactivateMissingGitHubRunnerRepositories :exec
+UPDATE runner_provider_repositories
+SET active = false,
+    updated_at = sqlc.arg(updated_at)
+WHERE provider = 'github'
+  AND org_id = sqlc.arg(org_id)
+  AND provider_owner = sqlc.arg(provider_owner)
+  AND active
+  AND NOT (provider_repository_id = ANY(sqlc.arg(provider_repository_ids)::bigint[]));
 
 -- name: DeleteGitHubInstallationState :exec
 DELETE FROM github_installation_states
@@ -74,15 +151,18 @@ SELECT
     j.head_sha,
     j.head_branch,
     j.labels_json,
-    i.org_id,
-    i.account_login
+    p.org_id,
+    a.account_login
 FROM runner_jobs j
 JOIN github_installations i ON i.installation_id = j.provider_installation_id AND i.active
+JOIN github_accounts a ON a.account_id = i.account_id
+JOIN runner_provider_repositories p ON p.provider = 'github' AND p.provider_repository_id = j.provider_repository_id AND p.active
+JOIN github_installation_connections c ON c.installation_id = i.installation_id AND c.org_id = p.org_id AND c.state = 'active'
 WHERE j.provider = 'github'
   AND j.provider_job_id = sqlc.arg(provider_job_id)
   AND j.status = 'queued';
 
--- name: InsertGitHubRunnerAllocation :exec
+-- name: InsertGitHubRunnerAllocation :execrows
 INSERT INTO runner_allocations (
     allocation_id, provider, provider_installation_id, provider_repository_id, runner_class, runner_name, state,
     requested_for_provider_job_id, allocate_by, jit_by, vm_submitted_by, runner_listening_by,
@@ -92,7 +172,8 @@ INSERT INTO runner_allocations (
     sqlc.arg(runner_class), sqlc.arg(runner_name), 'pending', sqlc.arg(requested_for_provider_job_id),
     sqlc.arg(allocate_by), sqlc.arg(jit_by), sqlc.arg(vm_submitted_by), sqlc.arg(runner_listening_by),
     sqlc.arg(assignment_by), sqlc.arg(vm_exit_by), sqlc.arg(cleanup_by), sqlc.arg(created_at), sqlc.arg(created_at)
-);
+)
+ON CONFLICT DO NOTHING;
 
 -- name: UpdateGitHubAllocationJITCreated :exec
 UPDATE runner_allocations
@@ -133,15 +214,50 @@ SELECT
     COALESCE(a.execution_id, '00000000-0000-0000-0000-000000000000'::uuid) AS execution_id,
     COALESCE(a.attempt_id, '00000000-0000-0000-0000-000000000000'::uuid) AS attempt_id,
     a.state,
-    i.org_id,
-    i.account_login,
-    COALESCE(j.repository_full_name, '')::text AS repository_full_name,
+    p.org_id,
+    ga.account_login,
+    COALESCE(NULLIF(j.repository_full_name, ''), p.repository_full_name, '')::text AS repository_full_name,
     c.product_id,
     c.vcpus,
     c.memory_mib,
     c.rootfs_gib
 FROM runner_allocations a
 JOIN github_installations i ON i.installation_id = a.provider_installation_id
+JOIN github_accounts ga ON ga.account_id = i.account_id
+JOIN runner_provider_repositories p ON p.provider = 'github' AND p.provider_repository_id = a.provider_repository_id AND p.active
+JOIN github_installation_connections gc ON gc.installation_id = i.installation_id AND gc.org_id = p.org_id AND gc.state = 'active'
+JOIN runner_classes c ON c.runner_class = a.runner_class
+LEFT JOIN runner_jobs j ON j.provider = a.provider AND j.provider_job_id = a.requested_for_provider_job_id
+WHERE a.provider = 'github'
+  AND a.allocation_id = sqlc.arg(allocation_id);
+
+-- name: GetGitHubAllocationForCleanup :one
+SELECT
+    a.allocation_id,
+    a.provider_installation_id,
+    a.provider_repository_id,
+    a.runner_class,
+    a.runner_name,
+    a.provider_runner_id,
+    a.requested_for_provider_job_id,
+    COALESCE(j.provider_run_id, 0)::bigint AS provider_run_id,
+    COALESCE(j.job_name, '')::text AS job_name,
+    COALESCE(j.head_sha, '')::text AS head_sha,
+    COALESCE(j.head_branch, '')::text AS head_branch,
+    COALESCE(a.execution_id, '00000000-0000-0000-0000-000000000000'::uuid) AS execution_id,
+    COALESCE(a.attempt_id, '00000000-0000-0000-0000-000000000000'::uuid) AS attempt_id,
+    a.state,
+    p.org_id,
+    ga.account_login,
+    COALESCE(NULLIF(j.repository_full_name, ''), p.repository_full_name, '')::text AS repository_full_name,
+    c.product_id,
+    c.vcpus,
+    c.memory_mib,
+    c.rootfs_gib
+FROM runner_allocations a
+JOIN github_installations i ON i.installation_id = a.provider_installation_id
+JOIN github_accounts ga ON ga.account_id = i.account_id
+JOIN runner_provider_repositories p ON p.provider = 'github' AND p.provider_repository_id = a.provider_repository_id
 JOIN runner_classes c ON c.runner_class = a.runner_class
 LEFT JOIN runner_jobs j ON j.provider = a.provider AND j.provider_job_id = a.requested_for_provider_job_id
 WHERE a.provider = 'github'

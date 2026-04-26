@@ -15,7 +15,7 @@ ON CONFLICT (provider, provider_repository_id) DO UPDATE SET
     active = true,
     updated_at = EXCLUDED.updated_at;
 
--- name: InsertForgejoRunnerAllocation :exec
+-- name: InsertForgejoRunnerAllocation :execrows
 INSERT INTO runner_allocations (
     allocation_id, provider, provider_installation_id, provider_repository_id, runner_class, runner_name, state,
     requested_for_provider_job_id, allocate_by, jit_by, vm_submitted_by, runner_listening_by,
@@ -25,7 +25,8 @@ INSERT INTO runner_allocations (
     'pending', sqlc.arg(requested_for_provider_job_id), sqlc.arg(allocate_by), sqlc.arg(jit_by),
     sqlc.arg(vm_submitted_by), sqlc.arg(runner_listening_by), sqlc.arg(assignment_by),
     sqlc.arg(vm_exit_by), sqlc.arg(cleanup_by), sqlc.arg(created_at), sqlc.arg(created_at)
-);
+)
+ON CONFLICT DO NOTHING;
 
 -- name: UpdateForgejoAllocationBootstrapCreated :exec
 UPDATE runner_allocations

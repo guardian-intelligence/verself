@@ -281,18 +281,43 @@ CREATE INDEX idx_runner_sticky_disk_generations_repo
 
 -- ─── GitHub App integration ────────────────────────────────────────────────
 
-CREATE TABLE github_installations (
-    installation_id BIGINT      PRIMARY KEY,
-    org_id          BIGINT      NOT NULL CHECK (org_id > 0),
-    account_login   TEXT        NOT NULL,
-    account_type    TEXT        NOT NULL DEFAULT '',
-    active          BOOLEAN     NOT NULL DEFAULT true,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE TABLE github_accounts (
+    account_id    BIGINT      PRIMARY KEY CHECK (account_id > 0),
+    account_login TEXT        NOT NULL CHECK (account_login <> ''),
+    account_type  TEXT        NOT NULL DEFAULT '',
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_github_installations_org
-    ON github_installations (org_id, active, updated_at DESC);
+CREATE UNIQUE INDEX idx_github_accounts_login
+    ON github_accounts (lower(account_login), account_type);
+
+CREATE TABLE github_installations (
+    installation_id      BIGINT      PRIMARY KEY CHECK (installation_id > 0),
+    account_id           BIGINT      NOT NULL REFERENCES github_accounts(account_id) ON DELETE RESTRICT,
+    active               BOOLEAN     NOT NULL DEFAULT true,
+    repository_selection TEXT        NOT NULL DEFAULT '',
+    permissions_json     JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_github_installations_account
+    ON github_installations (account_id, active, updated_at DESC);
+
+CREATE TABLE github_installation_connections (
+    connection_id         UUID        PRIMARY KEY,
+    installation_id       BIGINT      NOT NULL REFERENCES github_installations(installation_id) ON DELETE CASCADE,
+    org_id                BIGINT      NOT NULL CHECK (org_id > 0),
+    connected_by_actor_id TEXT        NOT NULL CHECK (connected_by_actor_id <> ''),
+    state                 TEXT        NOT NULL DEFAULT 'active' CHECK (state IN ('active', 'inactive')),
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (installation_id, org_id)
+);
+
+CREATE INDEX idx_github_installation_connections_org
+    ON github_installation_connections (org_id, state, updated_at DESC);
 
 CREATE TABLE github_installation_states (
     state        TEXT        PRIMARY KEY,
@@ -309,7 +334,7 @@ CREATE TABLE runner_provider_repositories (
     provider               TEXT        NOT NULL CHECK (provider <> ''),
     provider_repository_id BIGINT      NOT NULL,
     org_id                 BIGINT      NOT NULL CHECK (org_id > 0),
-    project_id             UUID        NOT NULL,
+    project_id             UUID,
     source_repository_id   UUID,
     provider_owner         TEXT        NOT NULL CHECK (provider_owner <> ''),
     provider_repo          TEXT        NOT NULL CHECK (provider_repo <> ''),
@@ -318,7 +343,8 @@ CREATE TABLE runner_provider_repositories (
     created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (provider, provider_repository_id),
-    UNIQUE (provider, repository_full_name)
+    UNIQUE (provider, repository_full_name),
+    CHECK (provider <> 'forgejo' OR (project_id IS NOT NULL AND source_repository_id IS NOT NULL))
 );
 
 CREATE INDEX idx_runner_provider_repositories_org
@@ -329,7 +355,8 @@ CREATE INDEX idx_runner_provider_repositories_source
     WHERE source_repository_id IS NOT NULL;
 
 CREATE INDEX idx_runner_provider_repositories_project
-    ON runner_provider_repositories (org_id, project_id, provider, active, updated_at DESC);
+    ON runner_provider_repositories (org_id, project_id, provider, active, updated_at DESC)
+    WHERE project_id IS NOT NULL;
 
 CREATE TABLE runner_jobs (
     provider               TEXT        NOT NULL CHECK (provider <> ''),
@@ -397,6 +424,9 @@ CREATE UNIQUE INDEX idx_runner_allocations_execution
 CREATE UNIQUE INDEX idx_runner_allocations_runner_name
     ON runner_allocations (provider, runner_name)
     WHERE runner_name <> '';
+CREATE UNIQUE INDEX idx_runner_allocations_active_job
+    ON runner_allocations (provider, requested_for_provider_job_id)
+    WHERE requested_for_provider_job_id <> 0 AND state NOT IN ('failed', 'cleaned');
 
 CREATE TABLE runner_bootstrap_configs (
     allocation_id      UUID        PRIMARY KEY REFERENCES runner_allocations(allocation_id) ON DELETE CASCADE,

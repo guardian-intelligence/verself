@@ -184,7 +184,7 @@ func (r *ForgejoRunner) RegisterRepository(ctx context.Context, req RunnerReposi
 	if err := store.New(tx).UpsertForgejoRunnerRepository(ctx, store.UpsertForgejoRunnerRepositoryParams{
 		ProviderRepositoryID: req.ProviderRepositoryID,
 		OrgID:                dbOrgID(req.OrgID),
-		ProjectID:            req.ProjectID,
+		ProjectID:            &req.ProjectID,
 		SourceRepositoryID:   uuidPtrFromZero(req.SourceRepositoryID),
 		ProviderOwner:        req.ProviderOwner,
 		ProviderRepo:         req.ProviderRepo,
@@ -342,7 +342,7 @@ func (r *ForgejoRunner) ReconcileCapacity(ctx context.Context, providerJobID int
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	qtx := store.New(tx)
-	if err := qtx.InsertForgejoRunnerAllocation(ctx, store.InsertForgejoRunnerAllocationParams{
+	rows, err := qtx.InsertForgejoRunnerAllocation(ctx, store.InsertForgejoRunnerAllocationParams{
 		AllocationID:              allocationID,
 		ProviderRepositoryID:      job.ProviderRepositoryID,
 		RunnerClass:               runnerClass,
@@ -356,9 +356,24 @@ func (r *ForgejoRunner) ReconcileCapacity(ctx context.Context, providerJobID int
 		VmExitBy:                  pgTime(now.Add(3 * time.Hour)),
 		CleanupBy:                 pgTime(now.Add(3 * time.Hour)),
 		CreatedAt:                 pgTime(now),
-	}); err != nil {
+	})
+	if err != nil {
 		recordRunnerError(span, err)
 		return err
+	}
+	if rows == 0 {
+		existing, err := r.activeAllocationForJob(ctx, providerJobID)
+		if err != nil {
+			recordRunnerError(span, err)
+			return err
+		}
+		if existing == uuid.Nil {
+			err := fmt.Errorf("forgejo runner allocation insert conflicted without active allocation for job %d", providerJobID)
+			recordRunnerError(span, err)
+			return err
+		}
+		span.SetAttributes(attribute.String("runner.allocation_id", existing.String()), attribute.Bool("forgejo.capacity.existing_allocation", true))
+		return nil
 	}
 	if err := qtx.InsertRunnerJobBinding(ctx, store.InsertRunnerJobBindingParams{
 		BindingID:        uuid.New(),
@@ -535,10 +550,13 @@ func (r *ForgejoRunner) loadRepository(ctx context.Context, providerRepositoryID
 	if err != nil {
 		return forgejoRepositoryRecord{}, err
 	}
+	if row.ProjectID == nil {
+		return forgejoRepositoryRecord{}, fmt.Errorf("forgejo repository %d missing project_id", providerRepositoryID)
+	}
 	repo := forgejoRepositoryRecord{
 		ProviderRepositoryID: row.ProviderRepositoryID,
 		OrgID:                orgIDFromDB(row.OrgID),
-		ProjectID:            row.ProjectID,
+		ProjectID:            *row.ProjectID,
 		ProviderOwner:        row.ProviderOwner,
 		ProviderRepo:         row.ProviderRepo,
 		RepositoryFullName:   row.RepositoryFullName,
@@ -882,7 +900,7 @@ func normalizeRunnerRepositoryRegistration(req RunnerRepositoryRegistration) (Ru
 	req.ProviderOwner = strings.TrimSpace(req.ProviderOwner)
 	req.ProviderRepo = strings.TrimSpace(req.ProviderRepo)
 	req.RepositoryFullName = strings.TrimSpace(req.RepositoryFullName)
-	if req.Provider != RunnerProviderForgejo || req.OrgID == 0 || req.ProjectID == uuid.Nil || req.ProviderRepositoryID <= 0 || req.ProviderOwner == "" || req.ProviderRepo == "" {
+	if req.Provider != RunnerProviderForgejo || req.OrgID == 0 || req.ProjectID == uuid.Nil || req.SourceRepositoryID == uuid.Nil || req.ProviderRepositoryID <= 0 || req.ProviderOwner == "" || req.ProviderRepo == "" {
 		return RunnerRepositoryRegistration{}, ErrRunnerUnavailable
 	}
 	if req.RepositoryFullName == "" {

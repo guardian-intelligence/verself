@@ -350,13 +350,14 @@ func githubInstallationCallbackHandler(svc *jobs.Service) http.HandlerFunc {
 		}
 		query := r.URL.Query()
 		state := strings.TrimSpace(query.Get("state"))
+		code := strings.TrimSpace(query.Get("code"))
 		rawInstallationID := strings.TrimSpace(query.Get("installation_id"))
 		installationID, err := strconv.ParseInt(rawInstallationID, 10, 64)
-		if err != nil || installationID <= 0 || state == "" {
+		if err != nil || installationID <= 0 || state == "" || code == "" {
 			http.Error(w, "invalid github installation callback", http.StatusBadRequest)
 			return
 		}
-		record, err := svc.GitHubRunner.CompleteInstallation(r.Context(), state, "", installationID)
+		record, err := svc.GitHubRunner.CompleteInstallation(r.Context(), state, code, installationID)
 		if err != nil {
 			status := http.StatusInternalServerError
 			switch {

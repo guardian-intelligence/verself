@@ -38,7 +38,31 @@ FROM (
 
 -- name: ExportSandboxGithubInstallationsJSONL :many
 SELECT row_to_json(t)::text AS row_json
-FROM (SELECT * FROM github_installations WHERE org_id::text = sqlc.arg(org_id) ORDER BY created_at, installation_id) t;
+FROM (
+    SELECT
+        c.connection_id,
+        c.org_id,
+        c.connected_by_actor_id,
+        c.state AS connection_state,
+        c.created_at AS connected_at,
+        c.updated_at AS connection_updated_at,
+        i.installation_id,
+        i.account_id,
+        i.active AS installation_active,
+        i.repository_selection,
+        i.permissions_json,
+        i.created_at AS installation_created_at,
+        i.updated_at AS installation_updated_at,
+        a.account_login,
+        a.account_type,
+        a.created_at AS account_created_at,
+        a.updated_at AS account_updated_at
+    FROM github_installation_connections c
+    JOIN github_installations i ON i.installation_id = c.installation_id
+    JOIN github_accounts a ON a.account_id = i.account_id
+    WHERE c.org_id::text = sqlc.arg(org_id)
+    ORDER BY c.created_at, i.installation_id
+) t;
 
 -- name: ExportSandboxRunnerProviderRepositoriesJSONL :many
 SELECT row_to_json(t)::text AS row_json
@@ -49,9 +73,8 @@ SELECT row_to_json(t)::text AS row_json
 FROM (
     SELECT j.*
     FROM runner_jobs j
-    LEFT JOIN github_installations i ON j.provider = 'github' AND i.installation_id = j.provider_installation_id
     LEFT JOIN runner_provider_repositories r ON r.provider = j.provider AND r.provider_repository_id = j.provider_repository_id
-    WHERE COALESCE(i.org_id, r.org_id)::text = sqlc.arg(org_id)
+    WHERE r.org_id::text = sqlc.arg(org_id)
     ORDER BY j.created_at,
              j.provider,
              j.provider_job_id
@@ -62,9 +85,8 @@ SELECT row_to_json(t)::text AS row_json
 FROM (
     SELECT a.*
     FROM runner_allocations a
-    LEFT JOIN github_installations i ON a.provider = 'github' AND i.installation_id = a.provider_installation_id
     LEFT JOIN runner_provider_repositories r ON r.provider = a.provider AND r.provider_repository_id = a.provider_repository_id
-    WHERE COALESCE(i.org_id, r.org_id)::text = sqlc.arg(org_id)
+    WHERE r.org_id::text = sqlc.arg(org_id)
     ORDER BY a.created_at,
              a.allocation_id
 ) t;
@@ -75,9 +97,8 @@ FROM (
     SELECT b.*
     FROM runner_job_bindings b
     JOIN runner_allocations a ON a.allocation_id = b.allocation_id
-    LEFT JOIN github_installations i ON a.provider = 'github' AND i.installation_id = a.provider_installation_id
     LEFT JOIN runner_provider_repositories r ON r.provider = a.provider AND r.provider_repository_id = a.provider_repository_id
-    WHERE COALESCE(i.org_id, r.org_id)::text = sqlc.arg(org_id)
+    WHERE r.org_id::text = sqlc.arg(org_id)
     ORDER BY b.created_at,
              b.binding_id
 ) t;
@@ -99,9 +120,8 @@ SELECT row_to_json(t)::text AS row_json
 FROM (
     SELECT g.*
     FROM runner_sticky_disk_generations g
-    LEFT JOIN github_installations i ON g.provider = 'github' AND i.installation_id = g.provider_installation_id
     LEFT JOIN runner_provider_repositories r ON r.provider = g.provider AND r.provider_repository_id = g.provider_repository_id
-    WHERE COALESCE(i.org_id, r.org_id)::text = sqlc.arg(org_id)
+    WHERE r.org_id::text = sqlc.arg(org_id)
     ORDER BY g.updated_at,
              g.provider,
              g.provider_installation_id,
