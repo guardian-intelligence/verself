@@ -54,9 +54,9 @@ type CreateProjectRequest struct {
 
 type UpdateProjectRequest struct {
 	Version     DecimalInt64 `json:"version"`
-	Slug        string       `json:"slug,omitempty" minLength:"1" maxLength:"80"`
-	DisplayName string       `json:"display_name,omitempty" maxLength:"120"`
-	Description string       `json:"description,omitempty" maxLength:"500"`
+	Slug        *string      `json:"slug,omitempty" minLength:"1" maxLength:"80"`
+	DisplayName *string      `json:"display_name,omitempty" maxLength:"120"`
+	Description *string      `json:"description,omitempty" maxLength:"500"`
 }
 
 type ProjectLifecycleRequest struct {

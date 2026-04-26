@@ -327,14 +327,20 @@ func (s SQLStore) UpdateProject(ctx context.Context, principal Principal, input 
 	if old.Version != input.Version {
 		return Project{}, ErrConflict
 	}
-	if input.Slug == "" {
-		input.Slug = old.Slug
+	slug := old.Slug
+	if input.Slug != nil {
+		slug = *input.Slug
 	}
-	if input.DisplayName == "" {
-		input.DisplayName = old.DisplayName
+	displayName := old.DisplayName
+	if input.DisplayName != nil {
+		displayName = *input.DisplayName
 	}
-	if input.Slug != old.Slug {
-		available, err := s.projectSlugAvailable(ctx, q, orgID, input.Slug, old.ID)
+	description := old.Description
+	if input.Description != nil {
+		description = *input.Description
+	}
+	if slug != old.Slug {
+		available, err := s.projectSlugAvailable(ctx, q, orgID, slug, old.ID)
 		if err != nil {
 			return Project{}, err
 		}
@@ -347,9 +353,9 @@ func (s SQLStore) UpdateProject(ctx context.Context, principal Principal, input 
 	rowsAffected, err := q.UpdateProject(ctx, projectstore.UpdateProjectParams{
 		OrgID:       int64(old.OrgID),
 		ProjectID:   old.ID,
-		Slug:        input.Slug,
-		DisplayName: input.DisplayName,
-		Description: input.Description,
+		Slug:        slug,
+		DisplayName: displayName,
+		Description: description,
 		UpdatedBy:   principal.Subject,
 		UpdatedAt:   timestamptz(now),
 		Version:     input.Version,
@@ -363,14 +369,14 @@ func (s SQLStore) UpdateProject(ctx context.Context, principal Principal, input 
 	if rowsAffected != 1 {
 		return Project{}, ErrConflict
 	}
-	if input.Slug != old.Slug {
+	if slug != old.Slug {
 		if err := s.insertProjectSlugRedirect(ctx, q, old.OrgID, old.ID, old.Slug, principal.Subject, now); err != nil {
 			return Project{}, err
 		}
 	}
 	if err := s.insertProjectEvent(ctx, q, old.OrgID, old.ID, uuid.Nil, "project.updated", principal.Subject, map[string]string{
 		"version": strconv.FormatInt(nextVersion, 10),
-		"slug":    input.Slug,
+		"slug":    slug,
 	}); err != nil {
 		return Project{}, err
 	}
@@ -776,6 +782,9 @@ func (s SQLStore) setProjectState(ctx context.Context, principal Principal, inpu
 	if err != nil {
 		return Project{}, err
 	}
+	if old.State == state {
+		return Project{}, ErrConflict
+	}
 	if old.Version != input.Version {
 		return Project{}, ErrConflict
 	}
@@ -863,6 +872,9 @@ func (s SQLStore) setEnvironmentState(ctx context.Context, principal Principal, 
 	old, err := s.loadEnvironment(ctx, q, principal.OrgID, input.ProjectID, input.EnvironmentID)
 	if err != nil {
 		return Environment{}, err
+	}
+	if old.State == state {
+		return Environment{}, ErrConflict
 	}
 	if old.Version != input.Version {
 		return Environment{}, ErrConflict
