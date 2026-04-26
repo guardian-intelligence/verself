@@ -26,6 +26,7 @@ import {
 import {
   useInviteMemberMutation,
   usePutMemberCapabilitiesMutation,
+  useUpdateOrganizationMutation,
   useUpdateMemberRolesMutation,
 } from "../mutations.ts";
 import {
@@ -35,9 +36,10 @@ import {
 } from "../queries.ts";
 import { useSignedInAuth } from "../../react.ts";
 import { useIdentityApi } from "../identity-api.ts";
-import type { Member, MemberCapabilities } from "../types.ts";
+import type { Member, MemberCapabilities, Organization } from "../types.ts";
 import { PermissionAlert } from "./error-alert.tsx";
 
+const PERMISSION_ORGANIZATION_WRITE = "identity:organization:write";
 const PERMISSION_MEMBER_INVITE = "identity:member:invite";
 const PERMISSION_MEMBER_ROLES_WRITE = "identity:member:roles:write";
 const PERMISSION_MEMBER_CAPABILITIES_WRITE = "identity:member_capabilities:write";
@@ -77,6 +79,10 @@ export function OrganizationProfile(_props: OrganizationProfileProps = {}) {
   const memberCapabilities = useSuspenseQuery(organizationMemberCapabilitiesQuery(auth, api)).data;
 
   const canInvite = hasPermission(organization.permissions, PERMISSION_MEMBER_INVITE);
+  const canUpdateOrganization = hasPermission(
+    organization.permissions,
+    PERMISSION_ORGANIZATION_WRITE,
+  );
   const canUpdateRoles = hasPermission(organization.permissions, PERMISSION_MEMBER_ROLES_WRITE);
   const canEditCapabilities = hasPermission(
     organization.permissions,
@@ -87,6 +93,11 @@ export function OrganizationProfile(_props: OrganizationProfileProps = {}) {
 
   return (
     <PageSections>
+      <OrganizationSettingsSection
+        canUpdateOrganization={canUpdateOrganization}
+        key={organization.version}
+        organization={organization}
+      />
       <InviteMemberSection canInvite={canInvite} />
       <MembersSection
         canUpdateRoles={canUpdateRoles}
@@ -99,6 +110,122 @@ export function OrganizationProfile(_props: OrganizationProfileProps = {}) {
         memberCapabilities={memberCapabilities}
       />
     </PageSections>
+  );
+}
+
+function OrganizationSettingsSection({
+  canUpdateOrganization,
+  organization,
+}: {
+  canUpdateOrganization: boolean;
+  organization: Organization;
+}) {
+  const mutation = useUpdateOrganizationMutation();
+  const form = useForm({
+    defaultValues: {
+      displayName: organization.display_name,
+      slug: organization.slug,
+    },
+    onSubmit: async ({ value }) => {
+      if (!canUpdateOrganization) {
+        toast.error("You don't have permission to update the organization.");
+        return;
+      }
+      if (mutation.isPending) {
+        toast.info("Still syncing the last organization change.");
+        return;
+      }
+      const displayName = value.displayName.trim();
+      const slug = value.slug.trim().toLowerCase();
+      if (!displayName || !slug) {
+        toast.error("Display name and slug are required.");
+        return;
+      }
+      if (displayName === organization.display_name && slug === organization.slug) {
+        toast.info("Organization is already up to date.");
+        return;
+      }
+      try {
+        await mutation.mutateAsync({
+          display_name: displayName,
+          slug,
+          version: organization.version,
+        });
+        toast.success("Organization synced");
+      } catch (error) {
+        toast.error("Organization sync failed", {
+          description: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+  });
+
+  return (
+    <PageSection>
+      <SectionHeader>
+        <SectionHeaderContent>
+          <SectionTitle>Organization</SectionTitle>
+          <SectionDescription>
+            Friendly names used across the console and Git remotes.
+          </SectionDescription>
+        </SectionHeaderContent>
+      </SectionHeader>
+
+      {!canUpdateOrganization ? (
+        <PermissionAlert title="Organization edit permission required">
+          Your current role can view the organization but cannot edit it.
+        </PermissionAlert>
+      ) : null}
+
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          void form.handleSubmit();
+        }}
+        className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end"
+      >
+        <form.Field name="displayName">
+          {(field) => (
+            <div className="space-y-1.5">
+              <Label htmlFor={field.name}>Display name</Label>
+              <Input
+                id={field.name}
+                value={field.state.value}
+                onBlur={field.handleBlur}
+                onChange={(event) => field.handleChange(event.target.value)}
+              />
+            </div>
+          )}
+        </form.Field>
+
+        <form.Field name="slug">
+          {(field) => (
+            <div className="space-y-1.5">
+              <Label htmlFor={field.name}>Slug</Label>
+              <Input
+                id={field.name}
+                value={field.state.value}
+                onBlur={field.handleBlur}
+                onChange={(event) => field.handleChange(event.target.value)}
+              />
+            </div>
+          )}
+        </form.Field>
+
+        <form.Subscribe selector={(state) => state.isSubmitting}>
+          {(isSubmitting) => (
+            <Button
+              type="submit"
+              aria-busy={isSubmitting || mutation.isPending}
+              className="sm:shrink-0"
+            >
+              {isSubmitting || mutation.isPending ? "Saving…" : "Save"}
+            </Button>
+          )}
+        </form.Subscribe>
+      </form>
+    </PageSection>
   );
 }
 

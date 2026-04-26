@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -45,7 +44,6 @@ type Repository struct {
 	RepoID        uuid.UUID
 	OrgID         uint64
 	ProjectID     uuid.UUID
-	OrgPath       string
 	CreatedBy     string
 	Name          string
 	Slug          string
@@ -86,7 +84,6 @@ type RepositoryList struct {
 type GitCredential struct {
 	CredentialID uuid.UUID
 	OrgID        uint64
-	OrgPath      string
 	ActorID      string
 	Label        string
 	Username     string
@@ -107,7 +104,6 @@ type CreateGitCredentialRequest struct {
 type GitPrincipal struct {
 	CredentialID uuid.UUID
 	OrgID        uint64
-	OrgPath      string
 	ActorID      string
 	Username     string
 	Scopes       []string
@@ -122,13 +118,34 @@ type RunnerRepositoryRegistrar interface {
 	RegisterRunnerRepository(ctx context.Context, repo Repository) error
 }
 
+type OrganizationReference struct {
+	OrgID          uint64
+	Slug           string
+	DisplayName    string
+	RedirectedFrom string
+}
+
+type OrganizationResolver interface {
+	ResolveSourceOrganization(ctx context.Context, slug string) (OrganizationReference, error)
+	ResolveSourceOrganizationID(ctx context.Context, orgID uint64) (OrganizationReference, error)
+}
+
+type ProjectReference struct {
+	ProjectID          uuid.UUID
+	OrgID              uint64
+	Slug               string
+	DisplayName        string
+	RedirectedFromSlug string
+}
+
 type ProjectResolver interface {
-	ResolveSourceProject(ctx context.Context, orgID uint64, projectID uuid.UUID) error
+	ResolveSourceProject(ctx context.Context, orgID uint64, projectID uuid.UUID) (ProjectReference, error)
+	ResolveSourceProjectSlug(ctx context.Context, orgID uint64, slug string) (ProjectReference, error)
 }
 
 type GitRepositoryPath struct {
-	OrgPath     string
-	Slug        string
+	OrgSlug     string
+	ProjectSlug string
 	Endpoint    string
 	Service     string
 	ReceivePack bool
@@ -238,25 +255,6 @@ func NormalizeSlug(name string) string {
 	return slug
 }
 
-func OrgPath(orgID uint64) string {
-	if orgID == 0 {
-		return ""
-	}
-	return "org-" + strconv.FormatUint(orgID, 10)
-}
-
-func OrgIDFromPath(orgPath string) (uint64, error) {
-	value := strings.TrimSpace(orgPath)
-	if !strings.HasPrefix(value, "org-") {
-		return 0, ErrInvalid
-	}
-	orgID, err := strconv.ParseUint(strings.TrimPrefix(value, "org-"), 10, 64)
-	if err != nil || orgID == 0 {
-		return 0, ErrInvalid
-	}
-	return orgID, nil
-}
-
 func ValidatePrincipal(principal Principal) error {
 	if strings.TrimSpace(principal.Subject) == "" || principal.OrgID == 0 {
 		return ErrInvalid
@@ -271,7 +269,7 @@ func NormalizeCreate(input CreateRepositoryRequest) (CreateRepositoryRequest, er
 	if input.DefaultBranch == "" {
 		input.DefaultBranch = "main"
 	}
-	if input.ProjectID == uuid.Nil || NormalizeSlug(input.Name) == "" {
+	if input.ProjectID == uuid.Nil {
 		return CreateRepositoryRequest{}, ErrInvalid
 	}
 	if len(input.Name) > 128 || len(input.Description) > 1024 || len(input.DefaultBranch) > 128 {

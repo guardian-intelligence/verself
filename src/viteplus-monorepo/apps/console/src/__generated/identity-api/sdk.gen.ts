@@ -25,6 +25,9 @@ import type {
   ListOrganizationMembersData,
   ListOrganizationMembersErrors,
   ListOrganizationMembersResponses,
+  PatchOrganizationData,
+  PatchOrganizationErrors,
+  PatchOrganizationResponses,
   PutOrganizationMemberCapabilitiesData,
   PutOrganizationMemberCapabilitiesErrors,
   PutOrganizationMemberCapabilitiesResponses,
@@ -67,6 +70,26 @@ export const getOrganization = <ThrowOnError extends boolean = false>(
     security: [{ scheme: "bearer", type: "http" }],
     url: "/api/v1/organization",
     ...options,
+  });
+
+/**
+ * Update organization profile
+ */
+export const patchOrganization = <ThrowOnError extends boolean = false>(
+  options: Options<PatchOrganizationData, ThrowOnError>,
+) =>
+  (options.client ?? client).patch<
+    PatchOrganizationResponses,
+    PatchOrganizationErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/organization",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
   });
 
 /**

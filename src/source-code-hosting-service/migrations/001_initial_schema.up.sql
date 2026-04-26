@@ -5,7 +5,6 @@ CREATE TABLE source_repositories (
     repo_id          UUID        PRIMARY KEY,
     org_id           BIGINT      NOT NULL CHECK (org_id > 0),
     project_id       UUID        NOT NULL,
-    org_path         TEXT        NOT NULL CHECK (org_path <> ''),
     created_by       TEXT        NOT NULL CHECK (created_by <> ''),
     name             TEXT        NOT NULL CHECK (name <> ''),
     slug             TEXT        NOT NULL CHECK (slug <> ''),
@@ -18,9 +17,7 @@ CREATE TABLE source_repositories (
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     deleted_at       TIMESTAMPTZ,
-    UNIQUE (org_id, project_id),
-    UNIQUE (org_id, slug),
-    UNIQUE (org_path, slug)
+    UNIQUE (org_id, project_id)
 );
 
 CREATE INDEX idx_source_repositories_org_updated
@@ -52,7 +49,6 @@ CREATE INDEX idx_source_repository_backends_backend_id
 CREATE TABLE source_git_credentials (
     credential_id UUID        PRIMARY KEY,
     org_id        BIGINT      NOT NULL CHECK (org_id > 0),
-    org_path      TEXT        NOT NULL CHECK (org_path <> ''),
     actor_id      TEXT        NOT NULL CHECK (actor_id <> ''),
     label         TEXT        NOT NULL CHECK (label <> ''),
     username      TEXT        NOT NULL CHECK (username <> ''),

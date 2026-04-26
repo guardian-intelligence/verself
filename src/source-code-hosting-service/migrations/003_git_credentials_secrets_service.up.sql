@@ -3,7 +3,6 @@ DROP TABLE source_git_credentials;
 CREATE TABLE source_git_credentials (
     credential_id UUID        PRIMARY KEY,
     org_id        BIGINT      NOT NULL CHECK (org_id > 0),
-    org_path      TEXT        NOT NULL CHECK (org_path <> ''),
     actor_id      TEXT        NOT NULL CHECK (actor_id <> ''),
     label         TEXT        NOT NULL CHECK (label <> ''),
     username      TEXT        NOT NULL CHECK (username <> ''),

@@ -8,6 +8,8 @@
 		directives `
 			Include @coraza.conf-recommended
 			Include @crs-setup.conf.example
+			# CRS defaults block PATCH/PUT/DELETE before REST API handlers can enforce per-route methods.
+			SecAction "id:900200,phase:1,pass,t:none,nolog,tag:'OWASP_CRS',setvar:'tx.allowed_methods=GET HEAD POST OPTIONS PUT PATCH DELETE'"
 			Include @owasp_crs/*.conf
 			SecRuleEngine DetectionOnly
 			SecResponseBodyAccess Off
@@ -21,6 +23,8 @@
 		directives `
 			Include @coraza.conf-recommended
 			Include @crs-setup.conf.example
+			# CRS defaults block PATCH/PUT/DELETE before REST API handlers can enforce per-route methods.
+			SecAction "id:900200,phase:1,pass,t:none,nolog,tag:'OWASP_CRS',setvar:'tx.allowed_methods=GET HEAD POST OPTIONS PUT PATCH DELETE'"
 			Include @owasp_crs/*.conf
 			SecRuleEngine On
 			SecResponseBodyAccess Off

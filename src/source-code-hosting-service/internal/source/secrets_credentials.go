@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	secretsinternalclient "github.com/verself/secrets-service/internalclient"
 	"github.com/google/uuid"
+	secretsinternalclient "github.com/verself/secrets-service/internalclient"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -51,9 +51,8 @@ func (c SecretsCredentialClient) CreateSourceGitCredential(ctx context.Context, 
 	expiresAt := time.Now().UTC().Add(time.Duration(input.ExpiresInSeconds) * time.Second)
 	orgID := strconv.FormatUint(principal.OrgID, 10)
 	metadata := map[string]string{
-		"source":   "source-code-hosting-service",
-		"org_path": OrgPath(principal.OrgID),
-		"label":    input.Label,
+		"source": "source-code-hosting-service",
+		"label":  input.Label,
 	}
 	displayName := input.Label
 	expiresAtText := expiresAt.Format(time.RFC3339Nano)
@@ -168,7 +167,6 @@ func gitCredentialFromSecrets(principal Principal, fallbackLabel string, wire se
 	return GitCredential{
 		CredentialID: credentialID,
 		OrgID:        orgID,
-		OrgPath:      firstNonEmpty(metadata["org_path"], OrgPath(orgID)),
 		ActorID:      firstNonEmpty(stringPtrValue(wire.Subject), principal.Subject),
 		Label:        label,
 		Username:     GitCredentialUsername,

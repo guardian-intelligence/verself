@@ -22,6 +22,7 @@ type Service struct {
 	Forgejo       ForgejoClient
 	Credentials   GitCredentialIssuer
 	Runner        RunnerRepositoryRegistrar
+	Organizations OrganizationResolver
 	Projects      ProjectResolver
 	CheckoutTTL   time.Duration
 	ForgejoPrefix string
@@ -44,12 +45,14 @@ func (s *Service) CreateRepository(ctx context.Context, principal Principal, inp
 	if err != nil {
 		return Repository{}, err
 	}
-	if err := s.resolveProject(ctx, principal.OrgID, input.ProjectID); err != nil {
+	project, err := s.resolveProject(ctx, principal.OrgID, input.ProjectID)
+	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return Repository{}, err
 	}
-	repoName := s.forgejoRepoName(principal.OrgID, input.Name)
+	input.Name = firstNonEmpty(input.Name, project.DisplayName, project.Slug)
+	repoName := s.forgejoRepoName(principal.OrgID, input.ProjectID)
 	span.SetAttributes(
 		attribute.Int64("verself.org_id", int64(principal.OrgID)),
 		attribute.String("verself.project_id", input.ProjectID.String()),
@@ -64,7 +67,7 @@ func (s *Service) CreateRepository(ctx context.Context, principal Principal, inp
 	repo, err := s.Store.CreateRepository(ctx, principal, input, s.Forgejo.Owner, forgejoRepo)
 	if err != nil {
 		if errors.Is(err, ErrConflict) {
-			existing, loadErr := s.Store.GetRepositoryBySlug(ctx, principal.OrgID, NormalizeSlug(input.Name))
+			existing, loadErr := s.Store.GetRepositoryByProject(ctx, principal.OrgID, input.ProjectID)
 			if loadErr == nil {
 				if existing.ProjectID != input.ProjectID {
 					return Repository{}, err
@@ -109,18 +112,12 @@ func (s *Service) CreateGitCredential(ctx context.Context, principal Principal, 
 	return credential, nil
 }
 
-func (s *Service) AuthenticateGitCredential(ctx context.Context, username string, token string, orgPath string, requiredScopes []string) (GitPrincipal, error) {
+func (s *Service) AuthenticateGitCredential(ctx context.Context, username string, token string, orgID uint64, requiredScopes []string) (GitPrincipal, error) {
 	ctx, span := tracer.Start(ctx, "source.git.auth")
 	defer span.End()
 	username = strings.TrimSpace(username)
 	token = strings.TrimSpace(token)
-	if username != GitCredentialUsername || token == "" {
-		return GitPrincipal{}, ErrUnauthorized
-	}
-	orgID, err := OrgIDFromPath(orgPath)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+	if username != GitCredentialUsername || token == "" || orgID == 0 {
 		return GitPrincipal{}, ErrUnauthorized
 	}
 	if s.Credentials == nil {
@@ -148,14 +145,13 @@ func (s *Service) AuthenticateGitCredential(ctx context.Context, username string
 	return principal, nil
 }
 
-func (s *Service) EnsureGitRepository(ctx context.Context, principal GitPrincipal, slug string) (Repository, bool, error) {
+func (s *Service) EnsureGitRepository(ctx context.Context, principal GitPrincipal, projectID uuid.UUID) (Repository, bool, error) {
 	ctx, span := tracer.Start(ctx, "source.git.repository.ensure")
 	defer span.End()
-	slug = NormalizeSlug(slug)
-	if slug == "" || principal.OrgID == 0 {
+	if projectID == uuid.Nil || principal.OrgID == 0 {
 		return Repository{}, false, ErrInvalid
 	}
-	repo, err := s.Store.GetRepositoryBySlug(ctx, principal.OrgID, slug)
+	repo, err := s.Store.GetRepositoryByProject(ctx, principal.OrgID, projectID)
 	if err == nil {
 		if err := s.registerRunnerRepository(ctx, span, repo); err != nil {
 			return Repository{}, false, err
@@ -173,20 +169,19 @@ func (s *Service) EnsureGitRepository(ctx context.Context, principal GitPrincipa
 	return Repository{}, false, err
 }
 
-func (s *Service) GetGitRepository(ctx context.Context, principal GitPrincipal, slug string) (Repository, error) {
+func (s *Service) GetGitRepository(ctx context.Context, principal GitPrincipal, projectID uuid.UUID) (Repository, error) {
 	ctx, span := tracer.Start(ctx, "source.git.repository.get")
 	defer span.End()
-	slug = NormalizeSlug(slug)
-	if slug == "" || principal.OrgID == 0 {
+	if projectID == uuid.Nil || principal.OrgID == 0 {
 		return Repository{}, ErrInvalid
 	}
-	repo, err := s.Store.GetRepositoryBySlug(ctx, principal.OrgID, slug)
+	repo, err := s.Store.GetRepositoryByProject(ctx, principal.OrgID, projectID)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return Repository{}, err
 	}
-	span.SetAttributes(attribute.String("source.repo_id", repo.RepoID.String()), attribute.String("source.slug", slug))
+	span.SetAttributes(attribute.String("source.repo_id", repo.RepoID.String()), attribute.String("verself.project_id", projectID.String()))
 	return repo, nil
 }
 
@@ -379,7 +374,7 @@ func (s *Service) DispatchWorkflow(ctx context.Context, principal Principal, inp
 	if input.ProjectID != repo.ProjectID {
 		return WorkflowRun{}, ErrInvalid
 	}
-	if err := s.resolveProject(ctx, principal.OrgID, repo.ProjectID); err != nil {
+	if _, err := s.resolveProject(ctx, principal.OrgID, repo.ProjectID); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return WorkflowRun{}, err
@@ -438,14 +433,54 @@ func (s *Service) DispatchWorkflowInternal(ctx context.Context, input InternalWo
 	})
 }
 
-func (s *Service) resolveProject(ctx context.Context, orgID uint64, projectID uuid.UUID) error {
+func (s *Service) resolveProject(ctx context.Context, orgID uint64, projectID uuid.UUID) (ProjectReference, error) {
 	if projectID == uuid.Nil {
-		return ErrInvalid
+		return ProjectReference{}, ErrInvalid
 	}
 	if s.Projects == nil {
-		return ErrStoreUnavailable
+		return ProjectReference{}, ErrStoreUnavailable
 	}
 	return s.Projects.ResolveSourceProject(ctx, orgID, projectID)
+}
+
+func (s *Service) ResolveGitPath(ctx context.Context, orgSlug, projectSlug string) (OrganizationReference, ProjectReference, Repository, bool, error) {
+	ctx, span := tracer.Start(ctx, "source.git.path.resolve")
+	defer span.End()
+	orgSlug = NormalizeSlug(orgSlug)
+	projectSlug = NormalizeSlug(projectSlug)
+	if orgSlug == "" || projectSlug == "" || s.Organizations == nil || s.Projects == nil {
+		return OrganizationReference{}, ProjectReference{}, Repository{}, false, ErrInvalid
+	}
+	org, err := s.Organizations.ResolveSourceOrganization(ctx, orgSlug)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return OrganizationReference{}, ProjectReference{}, Repository{}, false, err
+	}
+	project, err := s.Projects.ResolveSourceProjectSlug(ctx, org.OrgID, projectSlug)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return OrganizationReference{}, ProjectReference{}, Repository{}, false, err
+	}
+	repo, err := s.Store.GetRepositoryByProject(ctx, org.OrgID, project.ProjectID)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return OrganizationReference{}, ProjectReference{}, Repository{}, false, err
+	}
+	redirect := org.Slug != orgSlug || project.Slug != projectSlug
+	span.SetAttributes(
+		attribute.Int64("verself.org_id", int64(org.OrgID)),
+		attribute.String("verself.project_id", project.ProjectID.String()),
+		attribute.String("source.git.org_slug", orgSlug),
+		attribute.String("source.git.project_slug", projectSlug),
+		attribute.String("source.git.canonical_org_slug", org.Slug),
+		attribute.String("source.git.canonical_project_slug", project.Slug),
+		attribute.Bool("source.git.redirected", redirect),
+		attribute.String("source.repo_id", repo.RepoID.String()),
+	)
+	return org, project, repo, redirect, nil
 }
 
 func (s *Service) ListWorkflowRuns(ctx context.Context, principal Principal, repoID uuid.UUID) ([]WorkflowRun, error) {
@@ -565,12 +600,12 @@ func (s *Service) createOrGetForgejoRepository(ctx context.Context, repoName, de
 	return forgejoRepo{}, err
 }
 
-func (s *Service) forgejoRepoName(orgID uint64, name string) string {
+func (s *Service) forgejoRepoName(orgID uint64, projectID uuid.UUID) string {
 	prefix := strings.Trim(strings.TrimSpace(s.ForgejoPrefix), "-")
 	if prefix == "" {
 		prefix = "verself"
 	}
-	return fmt.Sprintf("%s-%d-%s", prefix, orgID, NormalizeSlug(name))
+	return fmt.Sprintf("%s-%d-%s", prefix, orgID, strings.ReplaceAll(projectID.String(), "-", ""))
 }
 
 func firstNonEmpty(values ...string) string {

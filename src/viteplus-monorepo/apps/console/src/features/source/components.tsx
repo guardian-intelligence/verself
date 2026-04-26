@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useSuspenseQuery } from "@tanstack/react-query";
+import { organizationQuery, useIdentityApi } from "@verself/auth-web/components";
 import { useSignedInAuth } from "@verself/auth-web/react";
 import { Badge } from "@verself/ui/components/ui/badge";
 import { Button } from "@verself/ui/components/ui/button";
@@ -10,14 +11,24 @@ import { EmptyState } from "~/components/empty-state";
 import { formatDateTimeUTC } from "~/lib/format";
 import { createSourceGitCredential } from "~/server-fns/api";
 import type { SourceGitCredential, SourceRepository } from "~/server-fns/api";
+import { projectsQuery } from "~/features/projects/queries";
 import { sourceRefsQuery, sourceRepositoriesQuery } from "./queries";
 
 export function SourceRepositoriesPanel({ gitOrigin }: { gitOrigin: string }) {
   const auth = useSignedInAuth();
+  const api = useIdentityApi();
+  const organization = useSuspenseQuery(organizationQuery(auth, api)).data;
+  const projects = useSuspenseQuery(projectsQuery(auth)).data.projects;
   const { repositories } = useSuspenseQuery(sourceRepositoriesQuery(auth)).data;
 
   if (repositories.length === 0) {
-    return <SourcePushEmptyState gitOrigin={gitOrigin} />;
+    return (
+      <SourcePushEmptyState
+        gitOrigin={gitOrigin}
+        orgSlug={organization.slug}
+        projectSlug={projects[0]?.slug}
+      />
+    );
   }
 
   return (
@@ -43,7 +54,9 @@ function SourceRepositoryCard({ repo }: { repo: SourceRepository }) {
             <Badge variant="outline">{repo.backend}</Badge>
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-muted-foreground">
-            <span>{repo.slug}</span>
+            <span>
+              {repo.org_slug}/{repo.project_slug}
+            </span>
             <span className="font-mono">{repo.default_branch}</span>
             <span>{formatDateTimeUTC(repo.updated_at)}</span>
           </div>
@@ -56,6 +69,26 @@ function SourceRepositoryCard({ repo }: { repo: SourceRepository }) {
       </div>
 
       <div className="px-4 py-4">
+        <div className="mb-4 grid gap-2 rounded-md border bg-background p-3">
+          <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+            <Terminal className="size-3.5" aria-hidden="true" />
+            Git remote
+          </div>
+          <div className="flex min-w-0 items-center gap-2">
+            <code className="min-w-0 flex-1 break-all font-mono text-xs text-foreground">
+              {repo.git_http_url}
+            </code>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              aria-label="Copy Git remote"
+              onClick={() => copyValue(repo.git_http_url, "Git remote")}
+            >
+              <Copy className="size-3.5" aria-hidden="true" />
+            </Button>
+          </div>
+        </div>
         <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold">
           <GitPullRequest className="size-4 text-muted-foreground" aria-hidden="true" />
           Branches
@@ -82,7 +115,15 @@ function SourceRepositoryCard({ repo }: { repo: SourceRepository }) {
   );
 }
 
-function SourcePushEmptyState({ gitOrigin }: { gitOrigin: string }) {
+function SourcePushEmptyState({
+  gitOrigin,
+  orgSlug,
+  projectSlug,
+}: {
+  gitOrigin: string;
+  orgSlug: string;
+  projectSlug: string | undefined;
+}) {
   const [credential, setCredential] = useState<SourceGitCredential | null>(null);
   const createCredential = useMutation({
     mutationFn: () => createSourceGitCredential({ data: { label: "console git push" } }),
@@ -96,8 +137,7 @@ function SourcePushEmptyState({ gitOrigin }: { gitOrigin: string }) {
       });
     },
   });
-  const orgPath = credential?.org_path ?? "<org>";
-  const pushURL = `${gitOrigin.replace(/\/$/, "")}/${orgPath}/<project>.git`;
+  const pushURL = `${gitOrigin.replace(/\/$/, "")}/${orgSlug}/${projectSlug ?? "<project-slug>"}.git`;
 
   return (
     <EmptyState

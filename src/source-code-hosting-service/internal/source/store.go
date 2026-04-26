@@ -28,7 +28,7 @@ type Store struct {
 }
 
 const repositorySelect = `
-r.repo_id, r.org_id, r.project_id, r.org_path, r.created_by, r.name, r.slug, r.description, r.default_branch,
+r.repo_id, r.org_id, r.project_id, r.created_by, r.name, r.slug, r.description, r.default_branch,
 r.visibility, r.state, r.version, r.last_pushed_at, r.created_at, r.updated_at,
 b.backend_id, b.repo_id, b.backend, b.backend_owner, b.backend_repo, b.backend_repo_id,
 b.state, b.created_at, b.updated_at`
@@ -72,7 +72,6 @@ func (s Store) createRepository(ctx context.Context, principal Principal, req Cr
 		RepoID:        uuid.New(),
 		OrgID:         principal.OrgID,
 		ProjectID:     req.ProjectID,
-		OrgPath:       OrgPath(principal.OrgID),
 		CreatedBy:     principal.Subject,
 		Name:          req.Name,
 		Slug:          NormalizeSlug(req.Name),
@@ -102,10 +101,10 @@ func (s Store) createRepository(ctx context.Context, principal Principal, req Cr
 	defer rollback(ctx, tx)
 	_, err = tx.Exec(ctx, `
 INSERT INTO source_repositories (
-    repo_id, org_id, project_id, org_path, created_by, name, slug, description, default_branch,
+    repo_id, org_id, project_id, created_by, name, slug, description, default_branch,
     visibility, state, version, created_at, updated_at
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13)`,
-		repo.RepoID, repo.OrgID, repo.ProjectID, repo.OrgPath, repo.CreatedBy, repo.Name, repo.Slug, repo.Description, repo.DefaultBranch,
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12)`,
+		repo.RepoID, repo.OrgID, repo.ProjectID, repo.CreatedBy, repo.Name, repo.Slug, repo.Description, repo.DefaultBranch,
 		repo.Visibility, repo.State, repo.Version, repo.CreatedAt)
 	if err != nil {
 		return Repository{}, storeWriteError(err)
@@ -184,19 +183,18 @@ WHERE r.org_id = $1 AND r.repo_id = $2 AND r.state = 'active'`, orgID, repoID, B
 	return scanRepositoryWithBackend(row)
 }
 
-func (s Store) GetRepositoryBySlug(ctx context.Context, orgID uint64, slug string) (Repository, error) {
-	ctx, span := storeTracer.Start(ctx, "source.pg.repo.get_by_slug")
+func (s Store) GetRepositoryByProject(ctx context.Context, orgID uint64, projectID uuid.UUID) (Repository, error) {
+	ctx, span := storeTracer.Start(ctx, "source.pg.repo.get_by_project")
 	defer span.End()
-	slug = NormalizeSlug(slug)
-	span.SetAttributes(attribute.String("source.slug", slug), attribute.Int64("verself.org_id", int64(orgID)))
-	if orgID == 0 || slug == "" {
+	span.SetAttributes(attribute.String("verself.project_id", projectID.String()), attribute.Int64("verself.org_id", int64(orgID)))
+	if orgID == 0 || projectID == uuid.Nil {
 		return Repository{}, ErrInvalid
 	}
 	row := s.PG.QueryRow(ctx, `
 SELECT `+repositorySelect+`
 FROM source_repositories r
 JOIN source_repository_backends b ON b.repo_id = r.repo_id AND b.backend = $3 AND b.state = 'active'
-WHERE r.org_id = $1 AND r.slug = $2 AND r.state = 'active'`, orgID, slug, BackendForgejo)
+WHERE r.org_id = $1 AND r.project_id = $2 AND r.state = 'active'`, orgID, projectID, BackendForgejo)
 	return scanRepositoryWithBackend(row)
 }
 
@@ -241,7 +239,7 @@ func (s Store) CreateGitCredential(ctx context.Context, principal Principal, cre
 		return GitCredential{}, err
 	}
 	now := s.now()
-	if credential.CredentialID == uuid.Nil || credential.OrgID != principal.OrgID || credential.OrgPath != OrgPath(principal.OrgID) || credential.ActorID == "" || credential.TokenPrefix == "" || credential.ExpiresAt.IsZero() {
+	if credential.CredentialID == uuid.Nil || credential.OrgID != principal.OrgID || credential.ActorID == "" || credential.TokenPrefix == "" || credential.ExpiresAt.IsZero() {
 		return GitCredential{}, ErrInvalid
 	}
 	if credential.Username == "" {
@@ -260,10 +258,10 @@ func (s Store) CreateGitCredential(ctx context.Context, principal Principal, cre
 	defer rollback(ctx, tx)
 	_, err = tx.Exec(ctx, `
 INSERT INTO source_git_credentials (
-    credential_id, org_id, org_path, actor_id, label, username, token_prefix,
+    credential_id, org_id, actor_id, label, username, token_prefix,
     scopes, state, expires_at, created_at
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-		credential.CredentialID, credential.OrgID, credential.OrgPath, credential.ActorID, credential.Label, credential.Username,
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+		credential.CredentialID, credential.OrgID, credential.ActorID, credential.Label, credential.Username,
 		credential.TokenPrefix, credential.Scopes, credential.State, credential.ExpiresAt, credential.CreatedAt)
 	if err != nil {
 		return GitCredential{}, storeWriteError(err)
@@ -294,12 +292,12 @@ func (s Store) MarkGitCredentialUsed(ctx context.Context, credentialID uuid.UUID
 	}
 	defer rollback(ctx, tx)
 	row := tx.QueryRow(ctx, `
-SELECT credential_id, org_id, org_path, actor_id, username, scopes
+SELECT credential_id, org_id, actor_id, username, scopes
 FROM source_git_credentials
 WHERE credential_id = $1 AND state = 'active' AND expires_at > $2
 FOR UPDATE`, credentialID, s.now())
 	var principal GitPrincipal
-	if err := row.Scan(&principal.CredentialID, &principal.OrgID, &principal.OrgPath, &principal.ActorID, &principal.Username, &principal.Scopes); err != nil {
+	if err := row.Scan(&principal.CredentialID, &principal.OrgID, &principal.ActorID, &principal.Username, &principal.Scopes); err != nil {
 		if err == pgx.ErrNoRows {
 			return GitPrincipal{}, ErrUnauthorized
 		}
@@ -462,7 +460,7 @@ FOR UPDATE OF g`, grantID, tokenHash, s.now(), BackendForgejo)
 	var grant CheckoutGrant
 	var repo Repository
 	if err := row.Scan(&grant.GrantID, &grant.RepoID, &grant.OrgID, &grant.ActorID, &grant.Ref, &grant.PathPrefix, &grant.ExpiresAt, &grant.CreatedAt,
-		&repo.RepoID, &repo.OrgID, &repo.ProjectID, &repo.OrgPath, &repo.CreatedBy, &repo.Name, &repo.Slug, &repo.Description, &repo.DefaultBranch,
+		&repo.RepoID, &repo.OrgID, &repo.ProjectID, &repo.CreatedBy, &repo.Name, &repo.Slug, &repo.Description, &repo.DefaultBranch,
 		&repo.Visibility, &repo.State, &repo.Version, &repo.LastPushedAt, &repo.CreatedAt, &repo.UpdatedAt,
 		&repo.Backend.BackendID, &repo.Backend.RepoID, &repo.Backend.Backend, &repo.Backend.BackendOwner, &repo.Backend.BackendRepo,
 		&repo.Backend.BackendRepoID, &repo.Backend.State, &repo.Backend.CreatedAt, &repo.Backend.UpdatedAt); err != nil {
@@ -789,7 +787,6 @@ func scanRepositoryWithBackend(row repositoryScanner) (Repository, error) {
 		&repo.RepoID,
 		&repo.OrgID,
 		&repo.ProjectID,
-		&repo.OrgPath,
 		&repo.CreatedBy,
 		&repo.Name,
 		&repo.Slug,

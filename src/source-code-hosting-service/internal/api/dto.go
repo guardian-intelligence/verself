@@ -1,6 +1,9 @@
 package api
 
 import (
+	"net/url"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,9 +15,10 @@ type Repository struct {
 	RepoID        uuid.UUID  `json:"repo_id"`
 	OrgID         string     `json:"org_id"`
 	ProjectID     uuid.UUID  `json:"project_id"`
-	OrgPath       string     `json:"org_path"`
+	OrgSlug       string     `json:"org_slug"`
+	ProjectSlug   string     `json:"project_slug"`
+	GitHTTPURL    string     `json:"git_http_url"`
 	Name          string     `json:"name"`
-	Slug          string     `json:"slug"`
 	Description   string     `json:"description"`
 	DefaultBranch string     `json:"default_branch"`
 	Backend       string     `json:"backend"`
@@ -32,7 +36,6 @@ type RepositoryList struct {
 
 type CreateRepositoryRequest struct {
 	ProjectID     uuid.UUID `json:"project_id" required:"true"`
-	Name          string    `json:"name" required:"true" minLength:"1" maxLength:"128"`
 	Description   string    `json:"description,omitempty" maxLength:"1024"`
 	DefaultBranch string    `json:"default_branch,omitempty" maxLength:"128"`
 }
@@ -45,7 +48,6 @@ type CreateGitCredentialRequest struct {
 type GitCredential struct {
 	CredentialID uuid.UUID `json:"credential_id"`
 	OrgID        string    `json:"org_id"`
-	OrgPath      string    `json:"org_path"`
 	Username     string    `json:"username"`
 	Token        string    `json:"token"`
 	TokenPrefix  string    `json:"token_prefix"`
@@ -138,14 +140,15 @@ type WorkflowRunList struct {
 	WorkflowRuns []WorkflowRun `json:"workflow_runs"`
 }
 
-func repositoryDTO(repo source.Repository) Repository {
+func repositoryDTO(repo source.Repository, org source.OrganizationReference, project source.ProjectReference, publicBaseURL string) Repository {
 	return Repository{
 		RepoID:        repo.RepoID,
 		OrgID:         uintString(repo.OrgID),
 		ProjectID:     repo.ProjectID,
-		OrgPath:       repo.OrgPath,
+		OrgSlug:       org.Slug,
+		ProjectSlug:   project.Slug,
+		GitHTTPURL:    gitHTTPURL(publicBaseURL, org.Slug, project.Slug),
 		Name:          repo.Name,
-		Slug:          repo.Slug,
 		Description:   repo.Description,
 		DefaultBranch: repo.DefaultBranch,
 		Backend:       repo.Backend.Backend,
@@ -158,10 +161,10 @@ func repositoryDTO(repo source.Repository) Repository {
 	}
 }
 
-func repositoryDTOs(repos []source.Repository) []Repository {
+func repositoryDTOs(repos []source.Repository, org source.OrganizationReference, projects map[uuid.UUID]source.ProjectReference, publicBaseURL string) []Repository {
 	out := make([]Repository, 0, len(repos))
 	for _, repo := range repos {
-		out = append(out, repositoryDTO(repo))
+		out = append(out, repositoryDTO(repo, org, projects[repo.ProjectID], publicBaseURL))
 	}
 	return out
 }
@@ -170,7 +173,6 @@ func gitCredentialDTO(credential source.GitCredential) GitCredential {
 	return GitCredential{
 		CredentialID: credential.CredentialID,
 		OrgID:        uintString(credential.OrgID),
-		OrgPath:      credential.OrgPath,
 		Username:     credential.Username,
 		Token:        credential.Token,
 		TokenPrefix:  credential.TokenPrefix,
@@ -178,6 +180,17 @@ func gitCredentialDTO(credential source.GitCredential) GitCredential {
 		ExpiresAt:    credential.ExpiresAt,
 		CreatedAt:    credential.CreatedAt,
 	}
+}
+
+func gitHTTPURL(publicBaseURL, orgSlug, projectSlug string) string {
+	base := strings.TrimRight(strings.TrimSpace(publicBaseURL), "/")
+	if parsed, err := url.Parse(base); err == nil && parsed.Scheme != "" && parsed.Host != "" {
+		parsed.Path = path.Join(parsed.Path, orgSlug, projectSlug+".git")
+		parsed.RawQuery = ""
+		parsed.Fragment = ""
+		return parsed.String()
+	}
+	return base + "/" + url.PathEscape(orgSlug) + "/" + url.PathEscape(projectSlug) + ".git"
 }
 
 func refDTOs(refs []source.Ref) []Ref {

@@ -5,12 +5,14 @@ import {
   getOrganizationMemberCapabilities as getGeneratedOrganizationMemberCapabilities,
   inviteOrganizationMember as inviteGeneratedOrganizationMember,
   listOrganizationMembers as listGeneratedOrganizationMembers,
+  patchOrganization as patchGeneratedOrganization,
   putOrganizationMemberCapabilities as putGeneratedOrganizationMemberCapabilities,
   updateOrganizationMemberRoles as updateGeneratedOrganizationMemberRoles,
 } from "../__generated/identity-api/index.js";
 import type {
   IdentityInviteMemberRequestWritable,
   IdentityPutMemberCapabilitiesRequestWritable,
+  IdentityUpdateOrganizationRequestWritable,
 } from "../__generated/identity-api/types.gen.js";
 import {
   vIdentityInviteMemberRequestWritable,
@@ -22,6 +24,7 @@ import {
   vIdentityMembers,
   vIdentityOrganization,
   vIdentityPutMemberCapabilitiesRequestWritable,
+  vIdentityUpdateOrganizationRequestWritable,
   vIdentityUpdateMemberRolesRequestWritable,
 } from "../__generated/identity-api/valibot.gen.js";
 import {
@@ -133,6 +136,22 @@ function parseOrganization(input: unknown) {
 
 export type Organization = ReturnType<typeof parseOrganization>;
 
+const organizationSlugSchema = v.pipe(
+  v.string(),
+  v.trim(),
+  v.toLowerCase(),
+  v.regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  v.maxLength(80),
+);
+
+export const updateOrganizationRequestSchema = v.strictObject({
+  display_name: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(120))),
+  slug: v.optional(organizationSlugSchema),
+  version: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(2147483647)),
+});
+
+export type UpdateOrganizationRequest = v.InferInput<typeof updateOrganizationRequestSchema>;
+
 function parseMembers(input: unknown): Array<Member> {
   const { $schema: _schema, members } = v.parse(vIdentityMembers, input);
   return members?.map((member) => parseMember(member)) ?? [];
@@ -177,6 +196,33 @@ export async function getOrganization(options: IdentityClientOptions): Promise<O
   const path = "/api/v1/organization";
   const result = await getGeneratedOrganization({
     client,
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+
+  if (result.error !== undefined) {
+    throwIdentityError(path, result.response, result.error);
+  }
+
+  return parseOrganization(result.data);
+}
+
+export async function updateOrganization(
+  options: IdentityClientOptions & { body: UpdateOrganizationRequest },
+): Promise<Organization> {
+  const client = createIdentityClient(options);
+  const input = v.parse(updateOrganizationRequestSchema, options.body);
+  const parsedBody = v.parse(vIdentityUpdateOrganizationRequestWritable, input);
+  const body: IdentityUpdateOrganizationRequestWritable = {
+    version: parsedBody.version,
+    ...(parsedBody.display_name !== undefined ? { display_name: parsedBody.display_name } : {}),
+    ...(parsedBody.slug !== undefined ? { slug: parsedBody.slug } : {}),
+  };
+  const path = "/api/v1/organization";
+  const result = await patchGeneratedOrganization({
+    body,
+    client,
+    headers: idempotencyHeaders("identity-organization"),
     responseStyle: "fields",
     throwOnError: false,
   });

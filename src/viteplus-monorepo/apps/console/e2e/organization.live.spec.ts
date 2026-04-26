@@ -15,6 +15,9 @@ test.describe("Console Organization", () => {
       app.resetBrowserSignals();
 
       await app.expectSSRHTML("/settings/organization", [
+        "Organization",
+        "Display name",
+        "Slug",
         "Invite member",
         "Members",
         "Member capabilities",
@@ -25,11 +28,21 @@ test.describe("Console Organization", () => {
       await app.assertStableRoute({
         path: "/settings/organization",
         ready: app.page.getByRole("heading", { name: "Member capabilities" }),
-        expectedText: ["Invite member", "Members", "Member capabilities", "Deploy executions"],
+        expectedText: [
+          "Organization",
+          "Display name",
+          "Slug",
+          "Invite member",
+          "Members",
+          "Member capabilities",
+          "Deploy executions",
+        ],
       });
 
+      await expect(app.page.getByLabel("Display name")).toBeVisible();
+      await expect(app.page.getByLabel("Slug")).toBeVisible();
+      await expect(app.page.getByRole("button", { name: /^save/i })).toBeEnabled();
       await expect(app.page.getByRole("button", { name: "Invite" })).toBeEnabled();
-      await expect(app.page.getByRole("button", { name: /^save/i })).toHaveCount(0);
       await expect(app.page.locator("button:disabled")).toHaveCount(0);
       await expect(app.page.getByRole("switch", { name: "Deploy executions" })).toBeChecked();
 

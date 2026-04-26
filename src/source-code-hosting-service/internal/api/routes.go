@@ -138,7 +138,7 @@ func RegisterRoutes(api huma.API, cfg Config) {
 		OperationType:    "write",
 		RiskLevel:        "medium",
 		BodyLimitBytes:   bodyLimitSmallJSON,
-	}, createRepository(svc))
+	}, createRepository(svc, cfg))
 
 	registerSourceRoute(api, huma.Operation{
 		OperationID:   "create-source-git-credential",
@@ -175,7 +175,7 @@ func RegisterRoutes(api huma.API, cfg Config) {
 		OperationDisplay: "list source repositories",
 		OperationType:    "read",
 		RiskLevel:        "low",
-	}, listRepositories(svc))
+	}, listRepositories(svc, cfg))
 
 	registerSourceRoute(api, huma.Operation{
 		OperationID: "get-source-repository",
@@ -192,7 +192,7 @@ func RegisterRoutes(api huma.API, cfg Config) {
 		OperationDisplay: "read source repository",
 		OperationType:    "read",
 		RiskLevel:        "low",
-	}, getRepository(svc))
+	}, getRepository(svc, cfg))
 
 	registerSourceRoute(api, huma.Operation{
 		OperationID: "list-source-refs",
@@ -318,7 +318,6 @@ func RegisterRoutes(api huma.API, cfg Config) {
 		OperationType:    "read",
 		RiskLevel:        "low",
 	}, getWorkflowRun(svc))
-
 }
 
 func RegisterInternalRoutes(api huma.API, cfg Config) {
@@ -370,18 +369,21 @@ func RegisterInternalRoutes(api huma.API, cfg Config) {
 	}, downloadArchive(svc))
 }
 
-func createRepository(svc *source.Service) func(context.Context, source.Principal, *createRepositoryInput) (*repositoryOutput, error) {
+func createRepository(svc *source.Service, cfg Config) func(context.Context, source.Principal, *createRepositoryInput) (*repositoryOutput, error) {
 	return func(ctx context.Context, principal source.Principal, input *createRepositoryInput) (*repositoryOutput, error) {
 		repo, err := svc.CreateRepository(ctx, principal, source.CreateRepositoryRequest{
 			ProjectID:     input.Body.ProjectID,
-			Name:          input.Body.Name,
 			Description:   input.Body.Description,
 			DefaultBranch: input.Body.DefaultBranch,
 		})
 		if err != nil {
 			return nil, sourceError(ctx, err)
 		}
-		return &repositoryOutput{Body: repositoryDTO(repo)}, nil
+		dto, err := repositoryResponse(ctx, svc, cfg, repo)
+		if err != nil {
+			return nil, sourceError(ctx, err)
+		}
+		return &repositoryOutput{Body: dto}, nil
 	}
 }
 
@@ -398,7 +400,7 @@ func createGitCredential(svc *source.Service) func(context.Context, source.Princ
 	}
 }
 
-func listRepositories(svc *source.Service) func(context.Context, source.Principal, *listRepositoriesInput) (*repositoryListOutput, error) {
+func listRepositories(svc *source.Service, cfg Config) func(context.Context, source.Principal, *listRepositoriesInput) (*repositoryListOutput, error) {
 	return func(ctx context.Context, principal source.Principal, input *listRepositoriesInput) (*repositoryListOutput, error) {
 		var projectID uuid.UUID
 		if input.ProjectID != "" {
@@ -412,11 +414,15 @@ func listRepositories(svc *source.Service) func(context.Context, source.Principa
 		if err != nil {
 			return nil, sourceError(ctx, err)
 		}
-		return &repositoryListOutput{Body: RepositoryList{Repositories: repositoryDTOs(repos)}}, nil
+		dto, err := repositoryListResponse(ctx, svc, cfg, repos)
+		if err != nil {
+			return nil, sourceError(ctx, err)
+		}
+		return &repositoryListOutput{Body: RepositoryList{Repositories: dto}}, nil
 	}
 }
 
-func getRepository(svc *source.Service) func(context.Context, source.Principal, *repositoryPath) (*repositoryOutput, error) {
+func getRepository(svc *source.Service, cfg Config) func(context.Context, source.Principal, *repositoryPath) (*repositoryOutput, error) {
 	return func(ctx context.Context, principal source.Principal, input *repositoryPath) (*repositoryOutput, error) {
 		repoID, err := uuid.Parse(input.RepoID)
 		if err != nil {
@@ -426,8 +432,52 @@ func getRepository(svc *source.Service) func(context.Context, source.Principal, 
 		if err != nil {
 			return nil, sourceError(ctx, err)
 		}
-		return &repositoryOutput{Body: repositoryDTO(repo)}, nil
+		dto, err := repositoryResponse(ctx, svc, cfg, repo)
+		if err != nil {
+			return nil, sourceError(ctx, err)
+		}
+		return &repositoryOutput{Body: dto}, nil
 	}
+}
+
+func repositoryResponse(ctx context.Context, svc *source.Service, cfg Config, repo source.Repository) (Repository, error) {
+	if svc == nil || svc.Organizations == nil || svc.Projects == nil {
+		return Repository{}, source.ErrStoreUnavailable
+	}
+	org, err := svc.Organizations.ResolveSourceOrganizationID(ctx, repo.OrgID)
+	if err != nil {
+		return Repository{}, err
+	}
+	project, err := svc.Projects.ResolveSourceProject(ctx, repo.OrgID, repo.ProjectID)
+	if err != nil {
+		return Repository{}, err
+	}
+	return repositoryDTO(repo, org, project, cfg.PublicBaseURL), nil
+}
+
+func repositoryListResponse(ctx context.Context, svc *source.Service, cfg Config, repos []source.Repository) ([]Repository, error) {
+	if len(repos) == 0 {
+		return []Repository{}, nil
+	}
+	if svc == nil || svc.Organizations == nil || svc.Projects == nil {
+		return nil, source.ErrStoreUnavailable
+	}
+	org, err := svc.Organizations.ResolveSourceOrganizationID(ctx, repos[0].OrgID)
+	if err != nil {
+		return nil, err
+	}
+	projects := make(map[uuid.UUID]source.ProjectReference, len(repos))
+	for _, repo := range repos {
+		if _, ok := projects[repo.ProjectID]; ok {
+			continue
+		}
+		project, err := svc.Projects.ResolveSourceProject(ctx, repo.OrgID, repo.ProjectID)
+		if err != nil {
+			return nil, err
+		}
+		projects[repo.ProjectID] = project
+	}
+	return repositoryDTOs(repos, org, projects, cfg.PublicBaseURL), nil
 }
 
 func listRefs(svc *source.Service) func(context.Context, source.Principal, *repositoryPath) (*refListOutput, error) {

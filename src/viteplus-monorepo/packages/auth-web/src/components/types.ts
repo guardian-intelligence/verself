@@ -33,7 +33,9 @@ export interface Member {
 
 export interface Organization {
   readonly org_id: string;
-  readonly name: string;
+  readonly display_name: string;
+  readonly slug: string;
+  readonly version: number;
   readonly org_acl_version: number;
   readonly caller: Member;
   readonly permissions: ReadonlyArray<string>;
@@ -60,6 +62,12 @@ export interface UpdateMemberRolesRequest {
   roleKeys: Array<string>;
   expectedRoleKeys: Array<string>;
   expectedOrgAclVersion: number;
+}
+
+export interface UpdateOrganizationRequest {
+  version: number;
+  display_name?: string;
+  slug?: string;
 }
 
 export interface PutMemberCapabilitiesRequest {

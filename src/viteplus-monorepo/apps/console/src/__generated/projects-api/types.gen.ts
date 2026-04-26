@@ -86,6 +86,7 @@ export type Project = {
   display_name: string;
   org_id: string;
   project_id: string;
+  redirected_from_slug?: string;
   slug: string;
   state: string;
   updated_at: string;
@@ -215,6 +216,7 @@ export type ProjectWritable = {
   display_name: string;
   org_id: string;
   project_id: string;
+  redirected_from_slug?: string;
   slug: string;
   state: string;
   updated_at: string;

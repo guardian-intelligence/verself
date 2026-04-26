@@ -11,6 +11,7 @@ require (
 	github.com/verself/auth-middleware v0.0.0
 	github.com/verself/envconfig v0.0.0
 	github.com/verself/httpserver v0.0.0
+	github.com/verself/identity-service v0.0.0
 	github.com/verself/otel v0.0.0
 	github.com/verself/projects-service v0.0.0
 	github.com/verself/sandbox-rental-service v0.0.0
@@ -62,6 +63,7 @@ replace (
 	github.com/verself/auth-middleware => ../auth-middleware
 	github.com/verself/envconfig => ../envconfig
 	github.com/verself/httpserver => ../httpserver
+	github.com/verself/identity-service => ../identity-service
 	github.com/verself/otel => ../otel
 	github.com/verself/projects-service => ../projects-service
 	github.com/verself/sandbox-rental-service => ../sandbox-rental-service

@@ -6,6 +6,7 @@ import type {
   MemberCapabilities,
   Organization,
   PutMemberCapabilitiesRequest,
+  UpdateOrganizationRequest,
   UpdateMemberRolesRequest,
 } from "./types.ts";
 
@@ -16,6 +17,7 @@ import type {
 // holds Zitadel tokens).
 export interface IdentityApiClient {
   getOrganization: () => Promise<Organization>;
+  updateOrganization: (input: UpdateOrganizationRequest) => Promise<Organization>;
   listMembers: () => Promise<ReadonlyArray<Member>>;
   getMemberCapabilities: () => Promise<MemberCapabilities>;
   putMemberCapabilities: (input: PutMemberCapabilitiesRequest) => Promise<MemberCapabilities>;
