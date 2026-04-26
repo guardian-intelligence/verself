@@ -64,7 +64,7 @@ raise SystemExit(0 if ready else 1)
 
 query_output=""
 for _ in $(seq 1 45); do
-  query_output="$(./scripts/clickhouse.sh --database default --query "
+  query_output="$(./scripts/clickhouse.sh --database default --param_deploy_id="${deploy_id}" --query "
     SELECT
       countIf(ServiceName = 'ansible' AND SpanName = 'ansible.playbook') AS playbooks,
       countIf(ServiceName = 'ansible' AND SpanName = 'ansible.task') AS tasks,
@@ -77,8 +77,8 @@ for _ in $(seq 1 45); do
     FROM default.otel_traces
     WHERE Timestamp > now() - INTERVAL 20 MINUTE
       AND (
-        SpanAttributes['verself.deploy_id'] = '${deploy_id}'
-        OR ResourceAttributes['verself.deploy_id'] = '${deploy_id}'
+        SpanAttributes['verself.deploy_id'] = {deploy_id:String}
+        OR ResourceAttributes['verself.deploy_id'] = {deploy_id:String}
       )
     FORMAT JSONEachRow
   " || true)"

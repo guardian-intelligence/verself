@@ -163,6 +163,25 @@
   no_log: true
   tags: [identity]
 
+- name: Converge seeded human password
+  ansible.builtin.uri:
+    url: "{{ seed_system_zitadel_base_url }}/v2/users/{{ seed_system_existing_user.userId }}/password"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ seed_system_admin_pat }}"
+      Host: "{{ seed_system_zitadel_host }}"
+    body_format: json
+    body:
+      newPassword:
+        password: "{{ seed_system_effective_user_password }}"
+        changeRequired: false
+    status_code: 200
+    return_content: true
+  register: seed_system_password_converged
+  when: seed_system_existing_user.userId is defined
+  no_log: true
+  tags: [identity]
+
 - name: Record seeded user state
   ansible.builtin.set_fact:
     seed_system_users_state: >-
