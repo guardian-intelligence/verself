@@ -221,6 +221,7 @@ topology_electric_instances:
     electric_publication_tables:
     - executions
     - execution_logs
+    - runner_provider_repositories
     electric_replication_stream_id: default
     electric_service_name: electric
     electric_service_port: 3010

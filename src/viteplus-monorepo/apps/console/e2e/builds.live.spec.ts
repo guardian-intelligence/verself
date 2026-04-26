@@ -28,10 +28,42 @@ test.describe("Console Builds", () => {
       } else {
         const rows = app.page.getByTestId("build-repository-row");
         await expect(rows.first()).toBeVisible();
-        await expect(rows.first().getByTestId("build-repository-slug")).toContainText("/");
-        await expect(rows.first().getByTestId("build-active-count")).toContainText(
-          /active builds?$/,
-        );
+        const firstRow = rows.first();
+        await expect(firstRow.getByTestId("build-repository-slug")).toContainText("/");
+
+        const repoId = await firstRow.getAttribute("data-repo-id");
+        const repoSlug = await firstRow.getAttribute("data-repo-slug");
+        const activeBuildCountText = await firstRow.getAttribute("data-active-build-count");
+        expect(repoId, "repository row must expose a repo id for the builds route").toBeTruthy();
+        expect(repoSlug, "repository row must expose the slug shown to users").toContain("/");
+        expect(
+          activeBuildCountText,
+          "repository row must expose the live active build count",
+        ).toMatch(/^\d+$/);
+
+        const activeBuildCount = Number.parseInt(activeBuildCountText ?? "", 10);
+        const activeBuildLabel = `${activeBuildCount} ${
+          activeBuildCount === 1 ? "active build" : "active builds"
+        }`;
+        await expect(firstRow).toContainText(activeBuildLabel);
+        const activeLink = firstRow.getByTestId("build-active-link");
+        if (activeBuildCount === 0) {
+          await expect(activeLink).toHaveCount(0);
+        } else if (activeBuildCount === 1) {
+          const href = await activeLink.getAttribute("href");
+          expect(href).toContain("/executions/");
+        } else {
+          const href = await activeLink.getAttribute("href");
+          expect(href).toContain(`/builds/${repoId}`);
+        }
+
+        await app.expectSSRHTML(`/builds/${repoId}`, ["Builds", repoSlug ?? ""]);
+        await app.assertStableRoute({
+          path: `/builds/${repoId}`,
+          ready: app.page.getByRole("heading", { name: repoSlug ?? "", exact: true }),
+          stableContent: app.page.locator("main").last(),
+          expectedText: ["Active Builds"],
+        });
         run.builds_state = "repositories";
       }
 
