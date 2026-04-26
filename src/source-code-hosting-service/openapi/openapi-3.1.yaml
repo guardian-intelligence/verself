@@ -115,15 +115,10 @@ components:
         description:
           maxLength: 1024
           type: string
-        name:
-          maxLength: 128
-          minLength: 1
-          type: string
         project_id:
           type: string
       required:
         - project_id
-        - name
       type: object
     CreateWorkflowRunRequest:
       additionalProperties: false
@@ -232,8 +227,6 @@ components:
           type: string
         org_id:
           type: string
-        org_path:
-          type: string
         scopes:
           items:
             type: string
@@ -249,7 +242,6 @@ components:
       required:
         - credential_id
         - org_id
-        - org_path
         - username
         - token
         - token_prefix
@@ -306,6 +298,8 @@ components:
           type: string
         description:
           type: string
+        git_http_url:
+          type: string
         last_pushed_at:
           format: date-time
           type: string
@@ -313,13 +307,13 @@ components:
           type: string
         org_id:
           type: string
-        org_path:
+        org_slug:
           type: string
         project_id:
           type: string
-        repo_id:
+        project_slug:
           type: string
-        slug:
+        repo_id:
           type: string
         state:
           type: string
@@ -337,9 +331,10 @@ components:
         - repo_id
         - org_id
         - project_id
-        - org_path
+        - org_slug
+        - project_slug
+        - git_http_url
         - name
-        - slug
         - description
         - default_branch
         - backend

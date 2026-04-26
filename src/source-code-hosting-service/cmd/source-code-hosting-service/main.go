@@ -63,6 +63,7 @@ func run() error {
 	sandboxInternalURL := cfg.URL("SOURCE_SANDBOX_INTERNAL_URL", "https://127.0.0.1:4263")
 	secretsInternalURL := cfg.URL("SOURCE_SECRETS_INTERNAL_URL", "https://127.0.0.1:4253")
 	projectsInternalURL := cfg.URL("SOURCE_PROJECTS_INTERNAL_URL", "https://127.0.0.1:4265")
+	identityInternalURL := cfg.URL("SOURCE_IDENTITY_INTERNAL_URL", "https://127.0.0.1:4241")
 	publicBaseURL := cfg.RequireURL("SOURCE_PUBLIC_BASE_URL")
 	webhookSecret := cfg.CredentialOr("webhook-secret", cfg.String("SOURCE_WEBHOOK_SECRET", ""))
 	pgMaxConns := cfg.Int("SOURCE_PG_MAX_CONNS", 8)
@@ -107,6 +108,14 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("create projects internal client: %w", err)
 	}
+	identityHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceIdentity, nil)
+	if err != nil {
+		return fmt.Errorf("source identity mtls: %w", err)
+	}
+	identityClient, err := source.NewIdentityClient(identityInternalURL, identityHTTPClient)
+	if err != nil {
+		return fmt.Errorf("create identity internal client: %w", err)
+	}
 
 	pg, err := openPool(ctx, pgDSN, pgMaxConns)
 	if err != nil {
@@ -123,6 +132,7 @@ func run() error {
 			Client:  &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport), Timeout: 5 * time.Second},
 		},
 		Runner:        runnerClient,
+		Organizations: identityClient,
 		Projects:      projectsClient,
 		Credentials:   credentialClient,
 		CheckoutTTL:   5 * time.Minute,

@@ -68,7 +68,6 @@ type CreateRepositoryRequest struct {
 	Schema        *string `json:"$schema,omitempty"`
 	DefaultBranch *string `json:"default_branch,omitempty"`
 	Description   *string `json:"description,omitempty"`
-	Name          string  `json:"name"`
 	ProjectId     string  `json:"project_id"`
 }
 
@@ -126,7 +125,6 @@ type GitCredential struct {
 	CredentialId string    `json:"credential_id"`
 	ExpiresAt    time.Time `json:"expires_at"`
 	OrgId        string    `json:"org_id"`
-	OrgPath      string    `json:"org_path"`
 	Scopes       *[]string `json:"scopes"`
 	Token        string    `json:"token"`
 	TokenPrefix  string    `json:"token_prefix"`
@@ -154,13 +152,14 @@ type Repository struct {
 	CreatedAt     time.Time  `json:"created_at"`
 	DefaultBranch string     `json:"default_branch"`
 	Description   string     `json:"description"`
+	GitHttpUrl    string     `json:"git_http_url"`
 	LastPushedAt  *time.Time `json:"last_pushed_at,omitempty"`
 	Name          string     `json:"name"`
 	OrgId         string     `json:"org_id"`
-	OrgPath       string     `json:"org_path"`
+	OrgSlug       string     `json:"org_slug"`
 	ProjectId     string     `json:"project_id"`
+	ProjectSlug   string     `json:"project_slug"`
 	RepoId        string     `json:"repo_id"`
-	Slug          string     `json:"slug"`
 	State         string     `json:"state"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 	Version       int32      `json:"version"`

@@ -176,7 +176,8 @@
       Environment=SOURCE_SANDBOX_INTERNAL_URL=https://{{ services.sandbox_rental.host }}:{{ services.sandbox_rental.internal_port }}
       Environment=SOURCE_SECRETS_INTERNAL_URL=https://{{ services.secrets_service.host }}:{{ services.secrets_service.internal_port }}
       Environment=SOURCE_PROJECTS_INTERNAL_URL=https://{{ services.projects_service.host }}:{{ services.projects_service.internal_port }}
-      Environment=SOURCE_PUBLIC_BASE_URL=https://{{ source_code_hosting_service_domain }}
+      Environment=SOURCE_IDENTITY_INTERNAL_URL=https://{{ services.identity_service.host }}:{{ services.identity_service.internal_port }}
+      Environment=SOURCE_PUBLIC_BASE_URL=https://{{ forgejo_domain }}
       Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}
       Environment=OTEL_SERVICE_NAME=source-code-hosting-service
       Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}

@@ -34,12 +34,23 @@ func GitHTTPHandler(svc *source.Service) http.Handler {
 			return
 		}
 		span.SetAttributes(
-			attribute.String("source.git_org_path", gitPath.OrgPath),
-			attribute.String("source.slug", gitPath.Slug),
+			attribute.String("source.git.org_slug", gitPath.OrgSlug),
+			attribute.String("source.git.project_slug", gitPath.ProjectSlug),
 			attribute.String("source.git_service", gitPath.Service),
 			attribute.Bool("source.git_receive_pack", gitPath.ReceivePack),
 		)
 
+		if svc.Organizations == nil {
+			writeGitError(ctx, w, source.ErrStoreUnavailable)
+			return
+		}
+		org, err := svc.Organizations.ResolveSourceOrganization(ctx, gitPath.OrgSlug)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			writeGitError(ctx, w, err)
+			return
+		}
 		username, token, ok := r.BasicAuth()
 		if !ok {
 			challengeGitBasicAuth(w)
@@ -49,16 +60,16 @@ func GitHTTPHandler(svc *source.Service) http.Handler {
 		if gitPath.ReceivePack {
 			requiredScopes = []string{"repo:write"}
 		}
-		principal, err := svc.AuthenticateGitCredential(ctx, username, token, gitPath.OrgPath, requiredScopes)
+		principal, err := svc.AuthenticateGitCredential(ctx, username, token, org.OrgID, requiredScopes)
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 			challengeGitBasicAuth(w)
 			return
 		}
-		if principal.OrgPath != gitPath.OrgPath {
-			span.SetStatus(codes.Error, "git credential org path mismatch")
-			http.Error(w, "git credential is not valid for this org path", http.StatusForbidden)
+		if principal.OrgID != org.OrgID {
+			span.SetStatus(codes.Error, "git credential org mismatch")
+			http.Error(w, "git credential is not valid for this organization", http.StatusForbidden)
 			return
 		}
 		if gitPath.ReceivePack && !hasScope(principal, "repo:write") {
@@ -70,11 +81,31 @@ func GitHTTPHandler(svc *source.Service) http.Handler {
 			return
 		}
 
+		resolvedOrg, project, _, redirect, err := svc.ResolveGitPath(ctx, gitPath.OrgSlug, gitPath.ProjectSlug)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			writeGitError(ctx, w, err)
+			return
+		}
+		if resolvedOrg.OrgID != principal.OrgID {
+			span.SetStatus(codes.Error, "git resolved org mismatch")
+			http.Error(w, "git credential is not valid for this organization", http.StatusForbidden)
+			return
+		}
+		if redirect {
+			writeGitPermanentRedirect(w, r, gitPath, resolvedOrg.Slug, project.Slug)
+			span.SetAttributes(
+				attribute.Bool("source.git.redirected", true),
+				attribute.String("source.git.canonical_path", "/"+resolvedOrg.Slug+"/"+project.Slug+".git"),
+			)
+			return
+		}
 		var repo source.Repository
 		if gitPath.ReceivePack {
-			repo, _, err = svc.EnsureGitRepository(ctx, principal, gitPath.Slug)
+			repo, _, err = svc.EnsureGitRepository(ctx, principal, project.ProjectID)
 		} else {
-			repo, err = svc.GetGitRepository(ctx, principal, gitPath.Slug)
+			repo, err = svc.GetGitRepository(ctx, principal, project.ProjectID)
 		}
 		if err != nil {
 			span.RecordError(err)
@@ -96,8 +127,8 @@ func GitHTTPHandler(svc *source.Service) http.Handler {
 }
 
 type gitSmartHTTPPath struct {
-	OrgPath     string
-	Slug        string
+	OrgSlug     string
+	ProjectSlug string
 	Endpoint    string
 	Service     string
 	ReceivePack bool
@@ -112,13 +143,13 @@ func parseGitSmartHTTPPath(r *http.Request) (gitSmartHTTPPath, error) {
 	if len(parts) != 3 && len(parts) != 4 {
 		return gitSmartHTTPPath{}, errors.New("unsupported git HTTP path")
 	}
-	orgPath, _ := url.PathUnescape(parts[0])
+	orgSlug, _ := url.PathUnescape(parts[0])
 	repoPart, _ := url.PathUnescape(parts[1])
 	if !strings.HasSuffix(repoPart, ".git") {
 		return gitSmartHTTPPath{}, errors.New("git repository path must end in .git")
 	}
-	slug := strings.TrimSuffix(repoPart, ".git")
-	if slug == "" || source.NormalizeSlug(slug) != slug || orgPath == "" {
+	projectSlug := strings.TrimSuffix(repoPart, ".git")
+	if projectSlug == "" || source.NormalizeSlug(projectSlug) != projectSlug || orgSlug == "" || source.NormalizeSlug(orgSlug) != orgSlug {
 		return gitSmartHTTPPath{}, errors.New("invalid git repository path")
 	}
 	endpoint := ""
@@ -140,8 +171,8 @@ func parseGitSmartHTTPPath(r *http.Request) (gitSmartHTTPPath, error) {
 		return gitSmartHTTPPath{}, errors.New("unsupported git endpoint")
 	}
 	out := gitSmartHTTPPath{
-		OrgPath:     orgPath,
-		Slug:        slug,
+		OrgSlug:     orgSlug,
+		ProjectSlug: projectSlug,
 		Endpoint:    endpoint,
 		Service:     service,
 		ReceivePack: service == "git-receive-pack",
@@ -151,6 +182,23 @@ func parseGitSmartHTTPPath(r *http.Request) (gitSmartHTTPPath, error) {
 		return gitSmartHTTPPath{}, errors.New("unsupported git service")
 	}
 	return out, nil
+}
+
+func writeGitPermanentRedirect(w http.ResponseWriter, r *http.Request, gitPath gitSmartHTTPPath, orgSlug, projectSlug string) {
+	_, span := apiTracer.Start(r.Context(), "source.git.redirect", trace.WithSpanKind(trace.SpanKindServer))
+	defer span.End()
+	locationPath := "/" + path.Join(orgSlug, projectSlug+".git", gitPath.Endpoint)
+	location := locationPath
+	if r.URL.RawQuery != "" {
+		location += "?" + r.URL.RawQuery
+	}
+	span.SetAttributes(
+		attribute.String("source.git.redirect_location", location),
+		attribute.String("source.git.canonical_org_slug", orgSlug),
+		attribute.String("source.git.canonical_project_slug", projectSlug),
+	)
+	w.Header().Set("Location", location)
+	w.WriteHeader(http.StatusPermanentRedirect)
 }
 
 func proxyGitToForgejo(w http.ResponseWriter, r *http.Request, svc *source.Service, repo source.Repository, gitPath gitSmartHTTPPath) int {

@@ -56,7 +56,6 @@ export type CreateRepositoryRequest = {
   readonly $schema?: string;
   default_branch?: string;
   description?: string;
-  name: string;
   project_id: string;
 };
 
@@ -128,7 +127,6 @@ export type GitCredential = {
   credential_id: string;
   expires_at: string;
   org_id: string;
-  org_path: string;
   scopes: Array<string> | null;
   token: string;
   token_prefix: string;
@@ -157,13 +155,14 @@ export type Repository = {
   created_at: string;
   default_branch: string;
   description: string;
+  git_http_url: string;
   last_pushed_at?: string;
   name: string;
   org_id: string;
-  org_path: string;
+  org_slug: string;
   project_id: string;
+  project_slug: string;
   repo_id: string;
-  slug: string;
   state: string;
   updated_at: string;
   version: number;
@@ -257,7 +256,6 @@ export type CreateGitCredentialRequestWritable = {
 export type CreateRepositoryRequestWritable = {
   default_branch?: string;
   description?: string;
-  name: string;
   project_id: string;
 };
 
@@ -302,7 +300,6 @@ export type GitCredentialWritable = {
   credential_id: string;
   expires_at: string;
   org_id: string;
-  org_path: string;
   scopes: Array<string> | null;
   token: string;
   token_prefix: string;
@@ -318,13 +315,14 @@ export type RepositoryWritable = {
   created_at: string;
   default_branch: string;
   description: string;
+  git_http_url: string;
   last_pushed_at?: string;
   name: string;
   org_id: string;
-  org_path: string;
+  org_slug: string;
   project_id: string;
+  project_slug: string;
   repo_id: string;
-  slug: string;
   state: string;
   updated_at: string;
   version: number;

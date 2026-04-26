@@ -263,31 +263,75 @@ curl -fsS \
   -H "baggage: verself.verification_run=${run_id}" \
   --data-binary "@${artifact_dir}/payloads/create-project.json" \
   "${projects_api_base_url}/api/v1/projects" >"${artifact_dir}/responses/create-project.json"
-project_id="$(
+read -r project_id project_version <<<"$(
   python3 - "${artifact_dir}/responses/create-project.json" <<'PY'
 import json
 import sys
 
-print(json.load(open(sys.argv[1], encoding="utf-8"))["project_id"])
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+print(payload["project_id"], payload["version"])
 PY
 )"
 
 cat >"${artifact_dir}/payloads/create-repository.json" <<EOF
 {
   "project_id": "${project_id}",
-  "name": "${repo_slug}",
   "description": "Source proof ${run_id}",
   "default_branch": "main"
 }
 EOF
 api_request "POST" "/api/v1/repos" "${artifact_dir}/responses/create-repository.json" "${artifact_dir}/payloads/create-repository.json" "source-repo:${run_id}"
-read -r repo_id org_path repo_slug <<<"$(
+read -r repo_id org_id org_slug project_slug git_repo_url <<<"$(
   python3 - "${artifact_dir}/responses/create-repository.json" <<'PY'
 import json
 import sys
 
 payload = json.load(open(sys.argv[1], encoding="utf-8"))
-print(payload["repo_id"], payload["org_path"], payload["slug"])
+print(payload["repo_id"], payload["org_id"], payload["org_slug"], payload["project_slug"], payload["git_http_url"])
+PY
+)"
+old_project_slug="${project_slug}"
+
+renamed_project_slug="${repo_slug}-renamed"
+cat >"${artifact_dir}/payloads/update-project.json" <<EOF
+{
+  "display_name": "Source Proof Renamed ${run_id}",
+  "slug": "${renamed_project_slug}",
+  "description": "Source hosting proof project renamed",
+  "version": "${project_version}"
+}
+EOF
+curl -fsS \
+  -X PATCH \
+  -H "Authorization: Bearer ${projects_access_token}" \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: source-project-rename:${run_id}" \
+  -H "baggage: verself.verification_run=${run_id}" \
+  --data-binary "@${artifact_dir}/payloads/update-project.json" \
+  "${projects_api_base_url}/api/v1/projects/${project_id}" >"${artifact_dir}/responses/update-project.json"
+project_version="$(
+  python3 - "${artifact_dir}/responses/update-project.json" "${renamed_project_slug}" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+if payload["slug"] != sys.argv[2]:
+    raise SystemExit("project rename did not return the renamed slug")
+print(payload["version"])
+PY
+)"
+
+api_request "GET" "/api/v1/repos/${repo_id}" "${artifact_dir}/responses/get-repository-before-push.json"
+read -r project_slug git_repo_url <<<"$(
+  python3 - "${artifact_dir}/responses/get-repository-before-push.json" "${renamed_project_slug}" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+if payload["project_slug"] != sys.argv[2]:
+    raise SystemExit("source repo response did not reflect the renamed project slug")
+print(payload["project_slug"], payload["git_http_url"])
 PY
 )"
 
@@ -301,10 +345,11 @@ credential_raw_path="$(mktemp)"
 checkout_raw_path="$(mktemp)"
 git_workdir="$(mktemp -d)"
 askpass_path="$(mktemp)"
-trap 'rm -f "${credential_raw_path}" "${checkout_raw_path}" "${askpass_path}"; rm -rf "${git_workdir}"' EXIT
+netrc_path="$(mktemp)"
+trap 'rm -f "${credential_raw_path}" "${checkout_raw_path}" "${askpass_path}" "${netrc_path}"; rm -rf "${git_workdir}"' EXIT
 
 api_request "POST" "/api/v1/git-credentials" "${credential_raw_path}" "${artifact_dir}/payloads/create-git-credential.json" "source-git-credential:${run_id}"
-read -r credential_id org_path git_username git_token <<<"$(
+read -r credential_id git_username git_token <<<"$(
   python3 - "${credential_raw_path}" "${artifact_dir}/responses/create-git-credential.json" <<'PY'
 import json
 import sys
@@ -315,11 +360,28 @@ if not token:
     raise SystemExit("git credential response did not include token")
 payload["token"] = "[redacted]"
 json.dump(payload, open(sys.argv[2], "w", encoding="utf-8"), indent=2, sort_keys=True)
-print(payload["credential_id"], payload["org_path"], payload["username"], token)
+print(payload["credential_id"], payload["username"], token)
 PY
 )"
 
-git_repo_url="${git_origin}/${org_path}/${repo_slug}.git"
+git_host="$(
+  python3 - "${git_origin}" <<'PY'
+import sys
+from urllib.parse import urlparse
+
+host = urlparse(sys.argv[1]).hostname
+if not host:
+    raise SystemExit("git origin did not contain a host")
+print(host)
+PY
+)"
+cat >"${netrc_path}" <<EOF
+machine ${git_host}
+  login ${git_username}
+  password ${git_token}
+EOF
+chmod 600 "${netrc_path}"
+
 cat >"${askpass_path}" <<'SH'
 #!/usr/bin/env bash
 case "$1" in
@@ -354,17 +416,41 @@ env \
   SOURCE_GIT_TOKEN="${git_token}" \
   git -C "${git_workdir}" push "${git_repo_url}" main:main >"${artifact_dir}/responses/git-push.log" 2>&1
 
+legacy_git_repo_url="${git_origin}/org-${org_id}/${old_project_slug}.git"
+legacy_info_refs_url="${legacy_git_repo_url}/info/refs?service=git-upload-pack"
+legacy_redirect_status="$(
+  curl -sS \
+    --netrc-file "${netrc_path}" \
+    -o /dev/null \
+    -D "${artifact_dir}/responses/git-legacy-redirect.headers" \
+    -w '%{http_code}' \
+    "${legacy_info_refs_url}"
+)"
+if [[ "${legacy_redirect_status}" != "308" ]]; then
+  echo "legacy Git org path returned ${legacy_redirect_status}, expected 308" >&2
+  exit 1
+fi
+expected_legacy_location="/${org_slug}/${project_slug}.git/info/refs?service=git-upload-pack"
+if ! grep -Fqi "Location: ${expected_legacy_location}" "${artifact_dir}/responses/git-legacy-redirect.headers"; then
+  echo "legacy Git org path did not redirect to ${expected_legacy_location}" >&2
+  exit 1
+fi
+
 api_request "GET" "/api/v1/repos?project_id=${project_id}" "${artifact_dir}/responses/list-repositories.json"
-python3 - "${artifact_dir}/responses/list-repositories.json" "${repo_id}" "${project_id}" <<'PY'
+python3 - "${artifact_dir}/responses/list-repositories.json" "${repo_id}" "${project_id}" "${org_slug}" "${project_slug}" "${git_repo_url}" <<'PY'
 import json
 import sys
 
 payload = json.load(open(sys.argv[1], encoding="utf-8"))
-repo_id, project_id = sys.argv[2:4]
+repo_id, project_id, org_slug, project_slug, git_repo_url = sys.argv[2:7]
 for repo in payload.get("repositories") or []:
     if repo.get("repo_id") == repo_id:
         if repo.get("project_id") != project_id:
             raise SystemExit("source proof repo project_id mismatch in list response")
+        if repo.get("org_slug") != org_slug or repo.get("project_slug") != project_slug:
+            raise SystemExit("source proof repo friendly path mismatch in list response")
+        if repo.get("git_http_url") != git_repo_url:
+            raise SystemExit("source proof repo git_http_url mismatch in list response")
         raise SystemExit(0)
 raise SystemExit(f"source proof repo {repo_id!r} not found")
 PY
@@ -398,6 +484,7 @@ escaped_repo_id="${repo_id//\'/\'\'}"
 escaped_credential_id="${credential_id//\'/\'\'}"
 escaped_grant_id="${checkout_grant_id//\'/\'\'}"
 escaped_project_id="${project_id//\'/\'\'}"
+escaped_old_project_slug="${old_project_slug//\'/\'\'}"
 
 remote_psql projects_service "
 SELECT project_id, org_id, slug, state, version
@@ -409,9 +496,25 @@ if [[ ! -s "${artifact_dir}/postgres/project.tsv" ]]; then
   echo "projects_service.projects did not contain the proof project" >&2
   exit 1
 fi
+if ! grep -Fq $'\t'"${project_slug}"$'\t' "${artifact_dir}/postgres/project.tsv"; then
+  echo "projects_service.projects did not contain the renamed project slug" >&2
+  exit 1
+fi
+
+remote_psql projects_service "
+SELECT org_id, slug, project_id
+FROM project_slug_redirects
+WHERE org_id = '${org_id}'
+  AND slug = '${escaped_old_project_slug}'
+  AND project_id = '${escaped_project_id}'::uuid;
+" "${artifact_dir}/postgres/project-slug-redirect.tsv"
+if [[ ! -s "${artifact_dir}/postgres/project-slug-redirect.tsv" ]]; then
+  echo "project_slug_redirects did not contain the old project slug redirect" >&2
+  exit 1
+fi
 
 remote_psql source_code_hosting "
-SELECT repo_id, org_id, project_id, org_path, name, slug, default_branch, visibility, state, last_pushed_at IS NOT NULL AS pushed
+SELECT repo_id, org_id, project_id, name, slug, default_branch, visibility, state, last_pushed_at IS NOT NULL AS pushed
 FROM source_repositories
 WHERE repo_id = '${escaped_repo_id}'::uuid;
 " "${artifact_dir}/postgres/repository.tsv"
@@ -441,7 +544,7 @@ backend_full_name="${backend_owner}/${backend_repo}"
 escaped_backend_full_name="${backend_full_name//\'/\'\'}"
 
 remote_psql source_code_hosting "
-SELECT credential_id, org_id, org_path, actor_id, username, token_prefix, state, expires_at > now() AS unexpired, last_used_at IS NOT NULL AS used
+SELECT credential_id, org_id, actor_id, username, token_prefix, state, expires_at > now() AS unexpired, last_used_at IS NOT NULL AS used
 FROM source_git_credentials
 WHERE credential_id = '${escaped_credential_id}'::uuid;
 " "${artifact_dir}/postgres/git-credential.tsv"
@@ -796,7 +899,7 @@ wait_for_clickhouse_count default "
   FROM otel_traces
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
     AND ServiceName = 'source-code-hosting-service'
-    AND SpanName IN ('source.git_credential.create', 'source.git.receive', 'source.git.auth', 'source.git.repository.ensure', 'source.git.receive.apply', 'source.runner.repository.register', 'source.repo.list', 'source.repo.read', 'source.refs.list', 'source.tree.get', 'source.checkout_grant.create')
+    AND SpanName IN ('source.git_credential.create', 'source.git.receive', 'source.git.auth', 'source.git.path.resolve', 'source.git.redirect', 'source.identity.organization.resolve', 'source.git.repository.ensure', 'source.git.receive.apply', 'source.runner.repository.register', 'source.repo.list', 'source.repo.read', 'source.refs.list', 'source.tree.get', 'source.checkout_grant.create')
 " 10 "${artifact_dir}/clickhouse/source-business-spans-count.tsv"
 
 wait_for_clickhouse_count default "
@@ -812,7 +915,7 @@ wait_for_clickhouse_count default "
   FROM otel_traces
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
     AND ServiceName = 'source-code-hosting-service'
-    AND SpanName IN ('source.pg.git_credential.create', 'source.pg.git_credential.mark_used', 'source.pg.repo.create', 'source.pg.repo.list', 'source.pg.repo.get', 'source.pg.repo.get_by_slug', 'source.pg.refs.replace', 'source.pg.refs.list_cached', 'source.pg.checkout_grant.create')
+    AND SpanName IN ('source.pg.git_credential.create', 'source.pg.git_credential.mark_used', 'source.pg.repo.create', 'source.pg.repo.list', 'source.pg.repo.get', 'source.pg.repo.get_by_project', 'source.pg.refs.replace', 'source.pg.refs.list_cached', 'source.pg.checkout_grant.create')
 " 9 "${artifact_dir}/clickhouse/source-postgres-spans-count.tsv"
 
 wait_for_clickhouse_count default "
@@ -887,6 +990,91 @@ for trace_rows in by_trace.values():
             raise SystemExit(0)
 raise SystemExit("missing ordered source->projects boundary stages: " + ", ".join(required))
 PY
+
+wait_for_clickhouse_count default "
+  SELECT count()
+  FROM otel_traces
+  WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
+    AND (
+      (ServiceName = 'source-code-hosting-service' AND SpanName = 'source.identity.organization.resolve' AND arrayElement(SpanAttributes, 'verself.org_id') = {org_id:String})
+      OR (ServiceName = 'source-code-hosting-service' AND SpanName = 'auth.spiffe.mtls.client' AND position(arrayElement(SpanAttributes, 'spiffe.expected_server_id'), 'identity-service') > 0)
+      OR (ServiceName = 'identity-service' AND SpanName IN ('auth.spiffe.mtls.server', 'identity.organization.resolve', 'identity.pg.organization_profile.resolve') AND (arrayElement(SpanAttributes, 'verself.org_id') = '' OR arrayElement(SpanAttributes, 'verself.org_id') = {org_id:String}))
+    )
+" 5 "${artifact_dir}/clickhouse/source-identity-boundary-spans-count.tsv" \
+  --param_org_id="${org_id}"
+
+(
+  cd "${VERIFICATION_PLATFORM_ROOT}"
+  ./scripts/clickhouse.sh \
+    --database default \
+    --param_window_start="${window_start}" \
+    --param_window_end="${window_end}" \
+    --param_org_id="${org_id}" \
+    --query "
+      SELECT *
+      FROM (
+        SELECT
+          multiIf(
+            ServiceName = 'source-code-hosting-service' AND SpanName = 'source.identity.organization.resolve', '01_source_resolve_org',
+            ServiceName = 'source-code-hosting-service' AND SpanName = 'auth.spiffe.mtls.client' AND position(arrayElement(SpanAttributes, 'spiffe.expected_server_id'), 'identity-service') > 0, '02_source_mtls_client',
+            ServiceName = 'identity-service' AND SpanName = 'auth.spiffe.mtls.server', '03_identity_mtls_server',
+            ServiceName = 'identity-service' AND SpanName = 'identity.organization.resolve', '04_identity_resolve',
+            ServiceName = 'identity-service' AND SpanName = 'identity.pg.organization_profile.resolve', '05_identity_pg_resolve',
+            ''
+          ) AS stage,
+          Timestamp,
+          ServiceName,
+          SpanName,
+          TraceId,
+          SpanId,
+          ParentSpanId,
+          arrayElement(SpanAttributes, 'verself.org_id') AS org_id
+        FROM otel_traces
+        WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
+      )
+      WHERE stage != ''
+        AND (org_id = '' OR org_id = {org_id:String})
+      ORDER BY Timestamp, stage
+      FORMAT TSVWithNames
+    "
+) >"${artifact_dir}/clickhouse/source-identity-boundary-sequence.tsv"
+python3 - "${artifact_dir}/clickhouse/source-identity-boundary-sequence.tsv" <<'PY'
+import csv
+import sys
+
+required = [
+    "01_source_resolve_org",
+    "02_source_mtls_client",
+    "03_identity_mtls_server",
+    "04_identity_resolve",
+    "05_identity_pg_resolve",
+]
+rows = list(csv.DictReader(open(sys.argv[1], encoding="utf-8"), delimiter="\t"))
+by_trace = {}
+for index, row in enumerate(rows):
+    by_trace.setdefault(row["TraceId"], []).append((index, row))
+for trace_rows in by_trace.values():
+    first = {}
+    for index, row in trace_rows:
+        first.setdefault(row["stage"], (index, row))
+    if all(stage in first for stage in required):
+        positions = [first[stage][0] for stage in required]
+        if positions == sorted(positions):
+            raise SystemExit(0)
+raise SystemExit("missing ordered source->identity boundary stages: " + ", ".join(required))
+PY
+
+wait_for_clickhouse_count default "
+  SELECT count()
+  FROM otel_traces
+  WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
+    AND ServiceName = 'source-code-hosting-service'
+    AND (
+      (SpanName = 'source.git.path.resolve' AND arrayElement(SpanAttributes, 'source.git.redirected') = 'true')
+      OR (SpanName = 'source.git.redirect' AND arrayElement(SpanAttributes, 'source.git.redirect_location') = {redirect_location:String})
+    )
+" 2 "${artifact_dir}/clickhouse/source-git-redirect-spans-count.tsv" \
+  --param_redirect_location="${expected_legacy_location}"
 
 wait_for_clickhouse_count default "
   SELECT count()

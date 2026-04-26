@@ -187,11 +187,13 @@ export type IdentityOrganization = {
    */
   readonly $schema?: string;
   caller: IdentityMember;
+  display_name: string;
   member_capabilities: IdentityMemberCapabilitiesDocument;
-  name: string;
   org_acl_version: number;
   org_id: string;
   permissions: Array<string> | null;
+  slug: string;
+  version: number;
 };
 
 export type IdentityPutMemberCapabilitiesRequest = {
@@ -228,6 +230,16 @@ export type IdentityUpdateMemberRolesRequest = {
   expected_org_acl_version: number;
   expected_role_keys: Array<string> | null;
   role_keys: Array<string> | null;
+};
+
+export type IdentityUpdateOrganizationRequest = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  display_name?: string;
+  slug?: string;
+  version: number;
 };
 
 export type ErrorModelWritable = {
@@ -327,11 +339,13 @@ export type IdentityMembersWritable = {
 
 export type IdentityOrganizationWritable = {
   caller: IdentityMemberWritable;
+  display_name: string;
   member_capabilities: IdentityMemberCapabilitiesDocument;
-  name: string;
   org_acl_version: number;
   org_id: string;
   permissions: Array<string> | null;
+  slug: string;
+  version: number;
 };
 
 export type IdentityPutMemberCapabilitiesRequestWritable = {
@@ -352,6 +366,12 @@ export type IdentityUpdateMemberRolesRequestWritable = {
   expected_org_acl_version: number;
   expected_role_keys: Array<string> | null;
   role_keys: Array<string> | null;
+};
+
+export type IdentityUpdateOrganizationRequestWritable = {
+  display_name?: string;
+  slug?: string;
+  version: number;
 };
 
 export type GetOrganizationData = {
@@ -378,6 +398,38 @@ export type GetOrganizationResponses = {
 };
 
 export type GetOrganizationResponse = GetOrganizationResponses[keyof GetOrganizationResponses];
+
+export type PatchOrganizationData = {
+  body: IdentityUpdateOrganizationRequestWritable;
+  headers: {
+    /**
+     * Stable caller-provided key used to make this mutation retry-safe.
+     */
+    "Idempotency-Key": string;
+  };
+  path?: never;
+  query?: never;
+  url: "/api/v1/organization";
+};
+
+export type PatchOrganizationErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type PatchOrganizationError = PatchOrganizationErrors[keyof PatchOrganizationErrors];
+
+export type PatchOrganizationResponses = {
+  /**
+   * OK
+   */
+  200: IdentityOrganization;
+};
+
+export type PatchOrganizationResponse =
+  PatchOrganizationResponses[keyof PatchOrganizationResponses];
 
 export type ListApiCredentialsData = {
   body?: never;

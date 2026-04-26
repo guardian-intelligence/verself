@@ -32,10 +32,29 @@ test.describe("Console Source", () => {
         run.source_state = "no_repository";
       } else if (await pushFirstBranch.isVisible({ timeout: shortTimeoutMS }).catch(() => false)) {
         await expect(app.page.getByText("Git remote", { exact: true }).first()).toBeVisible();
-        await expect(
-          app.page.getByRole("button", { name: "Create Git credential" }).first(),
-        ).toBeVisible();
-        await app.page.getByRole("button", { name: "Create Git credential" }).first().click();
+        const credentialButton = app.page
+          .getByRole("button", { name: "Create Git credential" })
+          .first();
+        await expect(credentialButton).toBeVisible();
+        await app.waitForCondition("git credential creation", 10_000, async () => {
+          if (
+            await app.page
+              .getByText("Username", { exact: true })
+              .isVisible()
+              .catch(() => false)
+          ) {
+            return true;
+          }
+          if (!(await credentialButton.isVisible().catch(() => false))) {
+            return false;
+          }
+          // TanStack Start can expose SSR HTML before the client click handler is hydrated.
+          await credentialButton.click();
+          return await app.page
+            .getByText("Username", { exact: true })
+            .isVisible()
+            .catch(() => false);
+        });
         await expect(app.page.getByText("Username", { exact: true })).toBeVisible({
           timeout: shortTimeoutMS,
         });

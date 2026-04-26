@@ -135,11 +135,13 @@ export const vIdentityMembers = v.strictObject({
 export const vIdentityOrganization = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   caller: vIdentityMember,
+  display_name: v.string(),
   member_capabilities: vIdentityMemberCapabilitiesDocument,
-  name: v.string(),
   org_acl_version: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(2147483647)),
   org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   permissions: v.nullable(v.array(v.string())),
+  slug: v.string(),
+  version: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(2147483647)),
 });
 
 export const vIdentityPutMemberCapabilitiesRequest = v.strictObject({
@@ -164,6 +166,13 @@ export const vIdentityUpdateMemberRolesRequest = v.strictObject({
   expected_org_acl_version: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(2147483647)),
   expected_role_keys: v.nullable(v.pipe(v.array(v.string()), v.minLength(1), v.maxLength(16))),
   role_keys: v.nullable(v.pipe(v.array(v.string()), v.minLength(1), v.maxLength(16))),
+});
+
+export const vIdentityUpdateOrganizationRequest = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  display_name: v.optional(v.pipe(v.string(), v.maxLength(120))),
+  slug: v.optional(v.pipe(v.string(), v.maxLength(80))),
+  version: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(2147483647)),
 });
 
 export const vErrorModelWritable = v.strictObject({
@@ -255,11 +264,13 @@ export const vIdentityMembersWritable = v.strictObject({
 
 export const vIdentityOrganizationWritable = v.strictObject({
   caller: vIdentityMemberWritable,
+  display_name: v.string(),
   member_capabilities: vIdentityMemberCapabilitiesDocument,
-  name: v.string(),
   org_acl_version: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(2147483647)),
   org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   permissions: v.nullable(v.array(v.string())),
+  slug: v.string(),
+  version: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(2147483647)),
 });
 
 export const vIdentityPutMemberCapabilitiesRequestWritable = v.strictObject({
@@ -282,10 +293,27 @@ export const vIdentityUpdateMemberRolesRequestWritable = v.strictObject({
   role_keys: v.nullable(v.pipe(v.array(v.string()), v.minLength(1), v.maxLength(16))),
 });
 
+export const vIdentityUpdateOrganizationRequestWritable = v.strictObject({
+  display_name: v.optional(v.pipe(v.string(), v.maxLength(120))),
+  slug: v.optional(v.pipe(v.string(), v.maxLength(80))),
+  version: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(2147483647)),
+});
+
 /**
  * OK
  */
 export const vGetOrganizationResponse = vIdentityOrganization;
+
+export const vPatchOrganizationBody = vIdentityUpdateOrganizationRequestWritable;
+
+export const vPatchOrganizationHeaders = v.object({
+  "Idempotency-Key": v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+});
+
+/**
+ * OK
+ */
+export const vPatchOrganizationResponse = vIdentityOrganization;
 
 /**
  * OK

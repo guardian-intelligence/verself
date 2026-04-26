@@ -5,6 +5,7 @@ import {
   getOrganization,
   inviteMember,
   putMemberCapabilities,
+  updateOrganization,
   updateMemberRoles,
 } from "~/server-fns/api";
 
@@ -14,6 +15,7 @@ import {
 // reads the session cookie server-side and forwards the bearer onward.
 export const identityApiClient: IdentityApiClient = {
   getOrganization: () => getOrganization(),
+  updateOrganization: (data) => updateOrganization({ data }),
   listMembers: () => getMembers(),
   getMemberCapabilities: () => getMemberCapabilities(),
   putMemberCapabilities: (data) => putMemberCapabilities({ data }),

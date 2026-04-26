@@ -11,6 +11,8 @@ import {
   isIdentityApiError,
   putMemberCapabilities as putMemberCapabilitiesRequest,
   putMemberCapabilitiesRequestSchema,
+  updateOrganization as updateOrganizationRequest,
+  updateOrganizationRequestSchema,
   updateMemberRoles as updateMemberRolesRequest,
   updateMemberRolesRequestSchema,
 } from "~/lib/identity-api";
@@ -82,6 +84,7 @@ import type {
   MemberCapability,
   Organization,
   PutMemberCapabilitiesRequest,
+  UpdateOrganizationRequest,
   UpdateMemberRolesRequest,
 } from "~/lib/identity-api";
 import type {
@@ -265,6 +268,7 @@ export type {
   MemberCapability,
   Organization,
   PutMemberCapabilitiesRequest,
+  UpdateOrganizationRequest,
   UpdateMemberRolesRequest,
 };
 
@@ -393,6 +397,16 @@ export const getOrganization = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .handler(async ({ context }) => {
     return getOrganizationRequest(await identityClientOptions(context));
+  });
+
+export const updateOrganization = createServerFn({ method: "POST" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(updateOrganizationRequestSchema)
+  .handler(async ({ context, data }) => {
+    return updateOrganizationRequest({
+      ...(await identityClientOptions(context)),
+      body: data,
+    });
   });
 
 export const getMembers = createServerFn({ method: "GET" })

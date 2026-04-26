@@ -13,6 +13,7 @@ export type {
   MemberCapability,
   Organization,
   PutMemberCapabilitiesRequest,
+  UpdateOrganizationRequest,
   UpdateMemberRolesRequest,
 } from "./types.ts";
 
@@ -26,6 +27,7 @@ export {
 export {
   useInviteMemberMutation,
   usePutMemberCapabilitiesMutation,
+  useUpdateOrganizationMutation,
   useUpdateMemberRolesMutation,
 } from "./mutations.ts";
 
