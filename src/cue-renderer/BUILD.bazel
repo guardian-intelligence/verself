@@ -11,6 +11,15 @@ TOPOLOGY_SRCS = [
     "//src/cue-renderer/schema:schema.cue",
 ]
 
+# Filegroup of every CUE source the loader walks. Tests in the renderer
+# tree depend on this via `data` so they can resolve the topology dir
+# from runfiles via TEST_SRCDIR.
+filegroup(
+    name = "topology_srcs",
+    srcs = TOPOLOGY_SRCS,
+    visibility = ["//src/cue-renderer:__subpackages__"],
+)
+
 genrule(
     name = "bazel_module_render",
     srcs = TOPOLOGY_SRCS,
