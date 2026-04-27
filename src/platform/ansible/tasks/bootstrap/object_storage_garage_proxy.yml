@@ -1,0 +1,104 @@
+---
+- name: Set object-storage-service Garage endpoint facts
+  ansible.builtin.set_fact:
+    component_object_storage_garage_s3_urls: "{{ component_object_storage_garage_s3_endpoints }}"
+    component_object_storage_garage_admin_urls: "{{ component_object_storage_garage_admin_endpoints }}"
+  vars:
+    component_object_storage_garage_s3_endpoints: >-
+      {{
+        'http://' ~ topology_clusters.garage.host ~ ':'
+        ~ (
+          topology_clusters.garage.nodes
+          | map(attribute='s3_api_port')
+          | map('string')
+          | join(',http://' ~ topology_clusters.garage.host ~ ':')
+        )
+      }}
+    component_object_storage_garage_admin_endpoints: >-
+      {{
+        'http://' ~ topology_clusters.garage.host ~ ':'
+        ~ (
+          topology_clusters.garage.nodes
+          | map(attribute='admin_port')
+          | map('string')
+          | join(',http://' ~ topology_clusters.garage.host ~ ':')
+        )
+      }}
+
+- name: Check object-storage-service Garage proxy credential files
+  ansible.builtin.stat:
+    path: "/etc/credstore/object-storage-service/{{ item }}"
+  loop:
+    - garage-proxy-access-key-id
+    - garage-proxy-secret-access-key
+  register: object_storage_service_proxy_credential_files
+  no_log: true
+
+- name: Assert object-storage-service Garage proxy credentials are either both present or both absent
+  ansible.builtin.assert:
+    that:
+      - >-
+        (
+          object_storage_service_proxy_credential_files.results[0].stat.exists
+          and object_storage_service_proxy_credential_files.results[1].stat.exists
+        ) or (
+          not object_storage_service_proxy_credential_files.results[0].stat.exists
+          and not object_storage_service_proxy_credential_files.results[1].stat.exists
+        )
+    fail_msg: Garage proxy credentials are partially present; delete both files and redeploy.
+
+- name: Read Garage admin token for object-storage-service bootstrap
+  ansible.builtin.slurp:
+    src: /etc/garage/admin-token
+  register: object_storage_service_garage_admin_token_raw
+  no_log: true
+
+- name: Create object-storage-service Garage proxy key
+  ansible.builtin.uri:
+    url: "http://{{ topology_clusters.garage.host }}:{{ topology_clusters.garage.nodes[0].admin_port }}/v2/CreateKey"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ object_storage_service_garage_admin_token_raw.content | b64decode | trim }}"
+    body_format: json
+    body:
+      name: object-storage-service-proxy
+      neverExpires: true
+    return_content: true
+    status_code: 200
+  register: object_storage_service_proxy_key_created
+  when: not object_storage_service_proxy_credential_files.results[0].stat.exists
+  no_log: true
+
+- name: Persist object-storage-service Garage proxy access key id
+  ansible.builtin.copy:
+    content: "{{ object_storage_service_proxy_key_created.json.accessKeyId }}\n"
+    dest: /etc/credstore/object-storage-service/garage-proxy-access-key-id
+    owner: root
+    group: object_storage_service
+    mode: "0640"
+  when: not object_storage_service_proxy_credential_files.results[0].stat.exists
+  no_log: true
+
+- name: Persist object-storage-service Garage proxy secret access key
+  ansible.builtin.copy:
+    content: "{{ object_storage_service_proxy_key_created.json.secretAccessKey }}\n"
+    dest: /etc/credstore/object-storage-service/garage-proxy-secret-access-key
+    owner: root
+    group: object_storage_service
+    mode: "0640"
+  when: not object_storage_service_proxy_credential_files.results[1].stat.exists
+  no_log: true
+
+- name: Sync object-storage-service runtime proxy secrets through secrets-service
+  become: true
+  become_user: object_storage_admin
+  ansible.builtin.command:
+    argv:
+      - "{{ verself_bin }}/object-storage-secret-sync"
+  environment:
+    SPIFFE_ENDPOINT_SOCKET: "unix://{{ spire_agent_socket_path }}"
+    OTEL_EXPORTER_OTLP_ENDPOINT: "http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}"
+    OBJECT_STORAGE_SECRET_SYNC_SECRETS_URL: "https://{{ topology_endpoints.secrets_service.endpoints.internal_https.address }}"
+  changed_when: false
+  no_log: true
+

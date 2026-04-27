@@ -1,5 +1,0 @@
----
-# Handler-only role: all behavior lives in handlers/main.yml. Service roles
-# meta-depend on this to bring the "reload nftables" listener into scope
-# without dragging the full nftables role's tasks into every service play.
-dependencies: []

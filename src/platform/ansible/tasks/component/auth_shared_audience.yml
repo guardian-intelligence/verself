@@ -1,0 +1,28 @@
+---
+- name: Find shared Zitadel project for component bearer validation
+  ansible.builtin.uri:
+    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects/_search"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ component_zitadel_admin_pat }}"
+      Host: "auth.{{ verself_domain }}"
+    body_format: json
+    body:
+      queries:
+        - nameQuery:
+            name: "{{ component.converge.auth.project_name }}"
+            method: TEXT_QUERY_METHOD_EQUALS
+    status_code: 200
+    return_content: true
+  register: component_identity_project_search
+  no_log: true
+
+- name: Assert shared Zitadel project exists for component bearer validation
+  ansible.builtin.assert:
+    that: (component_identity_project_search.json.result | default([])) | length > 0
+    fail_msg: >-
+      Zitadel project '{{ component.converge.auth.project_name }}' was not found for {{ component.name }}.
+
+- name: Set shared component auth audience
+  ansible.builtin.set_fact:
+    component_auth_audience: "{{ component_identity_project_search.json.result[0].id }}"

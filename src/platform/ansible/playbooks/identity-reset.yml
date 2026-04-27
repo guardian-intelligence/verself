@@ -1,32 +1,9 @@
 ---
-# Exhaustively wipe identity-service PostgreSQL state on an existing
-# environment, then re-apply migrations and restart the service.
-#
-# Use this whenever the identity schema or default member-capabilities catalog
-# changes in a way that's cheaper to rebuild than to migrate. Per CLAUDE.md
-# the repo is private with no users — wipe-and-redeploy beats in-place
-# migrations during this phase.
-#
-# This includes the same downstream service roles as billing-reset.yml so the
-# deploy_profile binary-copy handlers resolve cleanly.
-#
-# Usage:
-#   cd src/platform/ansible && ansible-playbook playbooks/identity-reset.yml
+# Exhaustively wipe identity-service PostgreSQL state, then run the canonical
+# deploy path.
 
-- name: Exhaustive identity-service state reset
-  hosts: all
-  become: true
-  force_handlers: true
+- import_playbook: wipe-pg-db.yml
   vars:
-    identity_service_force_schema_reset: true
-  roles:
-    - role: deploy_profile
-      tags: [deploy_profile]
-    - role: identity_service
-      tags: [identity_service]
-    - role: billing_service
-      tags: [billing_service]
-    - role: sandbox_rental_service
-      tags: [sandbox_rental_service]
-    - role: mailbox_service
-      tags: [mailbox_service]
+    wipe_pg_db_name: identity_service
+
+- import_playbook: site.yml

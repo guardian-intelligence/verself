@@ -1,0 +1,64 @@
+---
+- name: Resolve component PostgreSQL password from Ansible vars
+  ansible.builtin.set_fact:
+    component_pg_password: "{{ lookup('vars', component.postgres.password_ref.name) }}"
+  when: component.postgres.password_ref.kind == "ansible_var"
+  no_log: true
+
+- name: Resolve component PostgreSQL password from exposed credential
+  ansible.builtin.set_fact:
+    component_pg_password: "{{ component_secret_values[component.postgres.password_ref.expose_as] }}"
+  when: component.postgres.password_ref.kind == "secret_ref"
+  no_log: true
+
+- name: Assert component PostgreSQL password is available
+  ansible.builtin.assert:
+    that:
+      - component_pg_password | default('', true) | length > 0
+    fail_msg: "PostgreSQL-bound component {{ component.name }} did not resolve a password."
+  no_log: true
+
+- name: Ensure component PostgreSQL role and database exist
+  module_defaults:
+    community.postgresql.postgresql_user:
+      login_host: "{{ topology_endpoints.postgresql.host }}"
+      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
+      login_user: postgres
+      login_password: "{{ postgresql_admin_password }}"
+      trust_input: false
+    community.postgresql.postgresql_db:
+      login_host: "{{ topology_endpoints.postgresql.host }}"
+      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
+      login_user: postgres
+      login_password: "{{ postgresql_admin_password }}"
+      maintenance_db: postgres
+      trust_input: false
+    community.postgresql.postgresql_owner:
+      login_host: "{{ topology_endpoints.postgresql.host }}"
+      login_port: "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
+      login_user: postgres
+      login_password: "{{ postgresql_admin_password }}"
+      login_db: postgres
+      trust_input: false
+  block:
+    - name: Ensure component PostgreSQL user exists
+      community.postgresql.postgresql_user:
+        name: "{{ component.postgres.owner }}"
+        password: "{{ component_pg_password }}"
+        role_attr_flags: LOGIN
+        conn_limit: "{{ component.postgres.connection_limit }}"
+      no_log: true
+
+    - name: Ensure component PostgreSQL database exists
+      community.postgresql.postgresql_db:
+        name: "{{ component.postgres.database }}"
+        owner: "{{ component.postgres.owner }}"
+        state: present
+      no_log: true
+
+    - name: Ensure component owns component PostgreSQL database
+      community.postgresql.postgresql_owner:
+        obj_name: "{{ component.postgres.database }}"
+        obj_type: database
+        new_owner: "{{ component.postgres.owner }}"
+      no_log: true

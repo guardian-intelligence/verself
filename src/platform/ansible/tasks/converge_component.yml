@@ -1,0 +1,86 @@
+---
+- name: Assert component converge inputs are present
+  ansible.builtin.assert:
+    that:
+      - component.name | length > 0
+      - component.kind == "service"
+      - component.converge.enabled | bool
+      - component.converge.systemd.units | length > 0
+    fail_msg: "converge_component.yml requires one enabled service component."
+
+- name: Initialize component convergence context
+  ansible.builtin.set_fact:
+    component_auth_audience: ""
+    component_secret_values: {}
+    component_units: "{{ component.converge.systemd.units }}"
+
+- name: Converge component users and directories
+  ansible.builtin.include_tasks:
+    file: component/users.yml
+    apply:
+      tags: always
+  tags: always
+
+- name: Converge component credentials
+  ansible.builtin.include_tasks:
+    file: component/secrets.yml
+    apply:
+      tags: always
+  tags: always
+
+- name: Converge component PostgreSQL binding
+  ansible.builtin.include_tasks:
+    file: component/postgres.yml
+    apply:
+      tags: always
+  when: component.postgres.database | length > 0
+  tags: always
+
+- name: Apply component service-owned migrations
+  ansible.builtin.include_tasks:
+    file: component/migrations.yml
+    apply:
+      tags: always
+  when: component.postgres.database | length > 0
+  tags: always
+
+- name: Converge component ClickHouse binding
+  ansible.builtin.include_tasks:
+    file: component/clickhouse.yml
+    apply:
+      tags: always
+  when: component.converge.clickhouse is defined
+  tags: always
+
+- name: Reconcile component Zitadel auth
+  ansible.builtin.include_tasks:
+    file: component/auth.yml
+    apply:
+      tags: always
+  when: component.converge.auth.kind != "none"
+  tags: always
+
+- name: Run component bootstrap hooks
+  ansible.builtin.include_tasks:
+    file: "bootstrap/{{ component_bootstrap_hook }}.yml"
+    apply:
+      tags: always
+  loop: "{{ component.converge.bootstrap }}"
+  loop_control:
+    loop_var: component_bootstrap_hook
+    label: "{{ component_bootstrap_hook }}"
+  tags: always
+
+- name: Install rendered component artifacts
+  ansible.builtin.include_tasks:
+    file: component/artifacts.yml
+    apply:
+      tags: always
+  tags: always
+
+- name: Enable component units and wait for readiness
+  ansible.builtin.include_tasks:
+    file: component/runtime.yml
+    apply:
+      tags: always
+  tags: always

@@ -1,0 +1,36 @@
+---
+- name: Enable and start component systemd units
+  ansible.builtin.systemd:
+    name: "{{ unit.name }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop: "{{ component_units }}"
+  loop_control:
+    loop_var: unit
+    label: "{{ unit.name }}"
+
+- name: Wait for component TCP readiness probes
+  ansible.builtin.wait_for:
+    host: "{{ topology_endpoints[component.name].host }}"
+    port: "{{ topology_endpoints[component.name].endpoints[probe.endpoint].port }}"
+    timeout: "{{ probe.timeout_seconds }}"
+  loop: "{{ component_units | map(attribute='readiness') | flatten | selectattr('kind', 'equalto', 'tcp') | list }}"
+  loop_control:
+    loop_var: probe
+    label: "{{ probe.endpoint }}"
+
+- name: Wait for component HTTP readiness probes
+  ansible.builtin.uri:
+    url: "{{ probe.scheme }}://{{ topology_endpoints[component.name].endpoints[probe.endpoint].address }}{{ probe.path }}"
+    method: GET
+    status_code: "{{ probe.status_code }}"
+    ca_path: "{{ probe.ca_path | default(omit) }}"
+  register: component_http_readiness
+  retries: "{{ probe.timeout_seconds }}"
+  delay: 1
+  until: component_http_readiness.status == probe.status_code
+  loop: "{{ component_units | map(attribute='readiness') | flatten | selectattr('kind', 'equalto', 'http') | list }}"
+  loop_control:
+    loop_var: probe
+    label: "{{ probe.endpoint }}{{ probe.path }}"

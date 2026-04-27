@@ -1,0 +1,38 @@
+---
+- name: Wait for Zitadel before component auth reconciliation
+  ansible.builtin.wait_for:
+    host: "{{ topology_endpoints.zitadel.host }}"
+    port: "{{ topology_endpoints.zitadel.endpoints.http.port }}"
+    timeout: 60
+
+- name: Read Zitadel admin PAT for component auth reconciliation
+  ansible.builtin.slurp:
+    src: /etc/zitadel/admin.pat
+  register: component_zitadel_admin_pat_raw
+  no_log: true
+
+- name: Set Zitadel admin PAT fact for component auth reconciliation
+  ansible.builtin.set_fact:
+    component_zitadel_admin_pat: "{{ component_zitadel_admin_pat_raw.content | b64decode | trim }}"
+  no_log: true
+
+- name: Reconcile owned component Zitadel project
+  ansible.builtin.include_tasks:
+    file: auth_owned_project.yml
+    apply:
+      tags: always
+  when: component.converge.auth.kind == "owned_project"
+  tags: always
+
+- name: Resolve shared component Zitadel audience
+  ansible.builtin.include_tasks:
+    file: auth_shared_audience.yml
+    apply:
+      tags: always
+  when: component.converge.auth.kind == "identity_project_audience"
+  tags: always
+
+- name: Assert component auth audience is set
+  ansible.builtin.assert:
+    that: component_auth_audience | length > 0
+    fail_msg: "{{ component.name }} auth audience could not be resolved."

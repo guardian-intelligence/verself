@@ -1,65 +1,20 @@
 ---
-# Wipe the verification environment to a clean slate before end-to-end runs.
-#
-# This playbook recreates:
-# - TigerBeetle + billing PostgreSQL schema
-# - sandbox_rental PostgreSQL schema
-# - verself ClickHouse schema
-# - default ClickHouse telemetry tables used for trace/log correlation
-#
-# Usage:
-#   cd src/platform/ansible && ansible-playbook playbooks/verification-reset.yml
+# Wipe the verification environment to a clean slate before end-to-end runs,
+# then run the canonical deploy path.
 
-- name: Exhaustive verification reset
-  hosts: all
-  become: true
-  force_handlers: true
+- import_playbook: wipe-pg-db.yml
   vars:
-    billing_service_force_ledger_reset: true
-    sandbox_rental_service_force_schema_reset: true
-    governance_service_force_schema_reset: true
-    secrets_service_force_schema_reset: true
+    wipe_pg_db_name: billing
+
+- import_playbook: wipe-pg-db.yml
+  vars:
+    wipe_pg_db_name: sandbox_rental
+
+- import_playbook: wipe-pg-db.yml
+  vars:
+    wipe_pg_db_name: governance_service
+
+- import_playbook: site.yml
+  vars:
     temporal_force_schema_reset: true
     clickhouse_force_schema_reset: true
-  roles:
-    - role: deploy_profile
-      tags: [deploy_profile]
-    - role: clickhouse
-      tags: [clickhouse, billing_service, sandbox_rental_service, governance_service, temporal]
-    - role: tigerbeetle
-      tags: [tigerbeetle]
-    - role: postgresql
-      tags: [postgresql]
-    # verification-reset can run immediately after PostgreSQL is recreated; keep
-    # Zitadel structurally ready before billing/sandbox roles query auth projects.
-    - role: zitadel
-      tags: [zitadel, postgresql]
-    - role: billing_service
-      tags: [billing_service]
-    - role: governance_service
-      tags: [governance_service]
-    - role: temporal
-      tags: [temporal]
-    - role: secrets_service
-      tags: [secrets_service]
-    - role: sandbox_rental_service
-      tags: [sandbox_rental_service]
-    - role: electric
-      vars:
-        electric_config: "{{ topology_electric_instances.default }}"
-      tags: [electric]
-    - role: frontend_auth_sessions
-      tags: [frontend_auth_sessions, console, governance_service]
-    - role: console
-      tags: [console, governance_service]
-    - role: otelcol
-      tags: [otelcol, temporal]
-    - role: grafana
-      tags: [grafana, temporal]
-  handlers:
-    - name: Ignore mailbox-service restart during verification reset
-      listen: restart mailbox-service
-      ansible.builtin.systemd:
-        name: mailbox-service
-        state: restarted
-      failed_when: false

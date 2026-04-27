@@ -8,8 +8,8 @@
 # - billing: billing ledger reset, including TigerBeetle
 # - sandbox_rental
 # - mailbox_service
+# - governance_service
 # - identity_service
-# - secrets_service
 # - notifications_service
 # - projects_service
 # - source_code_hosting
@@ -23,8 +23,8 @@
       - billing
       - sandbox_rental
       - mailbox_service
+      - governance_service
       - identity_service
-      - secrets_service
       - notifications_service
       - projects_service
       - source_code_hosting
@@ -77,6 +77,62 @@
       no_log: true
 
   tasks:
+    - name: Resolve component name for PostgreSQL wipe target
+      ansible.builtin.set_fact:
+        wipe_pg_db_component_name: "{{ wipe_pg_db_component_names[wipe_pg_db_name] }}"
+      vars:
+        wipe_pg_db_component_names:
+          billing: billing
+          sandbox_rental: sandbox_rental
+          mailbox_service: mailbox_service
+          governance_service: governance_service
+          identity_service: identity_service
+          notifications_service: notifications_service
+          projects_service: projects_service
+          source_code_hosting: source_code_hosting_service
+
+    - name: Select component for PostgreSQL wipe target
+      ansible.builtin.set_fact:
+        wipe_pg_db_component: >-
+          {{
+            topology_components
+            | selectattr('name', 'equalto', wipe_pg_db_component_name)
+            | list
+            | first
+          }}
+
+    - name: Resolve units to stop for PostgreSQL wipe target
+      ansible.builtin.set_fact:
+        wipe_pg_db_stop_units: "{{ wipe_pg_db_stop_unit_map[wipe_pg_db_name] }}"
+      vars:
+        wipe_pg_db_stop_unit_map:
+          billing:
+            - sandbox-rental-service
+            - billing-service
+          sandbox_rental:
+            - electric
+            - sandbox-rental-service
+            - sandbox-rental-recurring-worker
+          mailbox_service:
+            - mailbox-service
+            - electric-mail
+          governance_service:
+            - governance-service
+          identity_service:
+            - identity-service
+          notifications_service:
+            - notifications-service
+            - electric-notifications
+          projects_service:
+            - projects-service
+          source_code_hosting:
+            - source-code-hosting-service
+
+    - name: Include nftables handler role for component wipe
+      ansible.builtin.include_role:
+        name: nftables
+      tags: [nftables]
+
     - name: Include ClickHouse for PostgreSQL wipe targets that configure ClickHouse users
       ansible.builtin.include_role:
         name: clickhouse
@@ -85,6 +141,7 @@
         wipe_pg_db_name in [
           'billing',
           'sandbox_rental',
+          'governance_service',
           'identity_service',
           'notifications_service',
         ]
@@ -95,27 +152,72 @@
       tags: [tigerbeetle]
       when: wipe_pg_db_name == 'billing'
 
-    - name: Include billing-service for billing PostgreSQL wipe
+    - name: Reset selected PostgreSQL database
       ansible.builtin.include_role:
-        name: billing_service
-      tags: [billing_service]
+        name: postgresql_db_reset
       vars:
-        billing_service_force_ledger_reset: true
-      when: wipe_pg_db_name == 'billing'
+        postgresql_db_reset_name: "{{ wipe_pg_db_component.postgres.database }}"
+        postgresql_db_reset_owner: "{{ wipe_pg_db_component.postgres.owner }}"
+        postgresql_db_reset_stop_units: "{{ wipe_pg_db_stop_units }}"
 
-    - name: Include sandbox-rental-service after billing PostgreSQL wipe
-      ansible.builtin.include_role:
-        name: sandbox_rental_service
-      tags: [sandbox_rental_service]
+    - name: Reset TigerBeetle for billing PostgreSQL wipe
       when: wipe_pg_db_name == 'billing'
+      block:
+        - name: Stop TigerBeetle before billing ledger wipe
+          ansible.builtin.systemd:
+            name: tigerbeetle
+            state: stopped
 
-    - name: Include sandbox-rental-service for sandbox_rental PostgreSQL wipe
-      ansible.builtin.include_role:
-        name: sandbox_rental_service
-      tags: [sandbox_rental_service]
-      vars:
-        sandbox_rental_service_force_schema_reset: true
+        - name: Remove TigerBeetle data file before billing ledger wipe
+          ansible.builtin.file:
+            path: /var/lib/tigerbeetle/data.tigerbeetle
+            state: absent
+
+        - name: Format TigerBeetle data file after billing ledger wipe
+          ansible.builtin.command:
+            cmd: >-
+              {{ verself_bin }}/tigerbeetle format
+              --cluster=0
+              --replica=0
+              --replica-count=1
+              /var/lib/tigerbeetle/data.tigerbeetle
+          become: true
+          become_user: tigerbeetle
+          changed_when: true
+
+        - name: Start TigerBeetle after billing ledger wipe
+          ansible.builtin.systemd:
+            name: tigerbeetle
+            state: started
+
+        - name: Wait for TigerBeetle after billing ledger wipe
+          ansible.builtin.wait_for:
+            host: "{{ topology_endpoints.tigerbeetle.host }}"
+            port: "{{ topology_endpoints.tigerbeetle.endpoints.client.port }}"
+            timeout: 30
+
+    - name: Clear Electric shape storage after sandbox_rental PostgreSQL wipe
+      ansible.builtin.file:
+        path: /var/lib/electric
+        state: absent
       when: wipe_pg_db_name == 'sandbox_rental'
+
+    - name: Recreate empty Electric shape storage after sandbox_rental PostgreSQL wipe
+      ansible.builtin.file:
+        path: /var/lib/electric
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+      when: wipe_pg_db_name == 'sandbox_rental'
+
+    - name: Converge selected service component after PostgreSQL wipe
+      ansible.builtin.include_tasks:
+        file: ../tasks/converge_component.yml
+        apply:
+          tags: always
+      vars:
+        component: "{{ wipe_pg_db_component }}"
 
     - name: Include Electric after sandbox_rental PostgreSQL wipe
       ansible.builtin.include_role:
@@ -125,14 +227,6 @@
         electric_config: "{{ topology_electric_instances.default }}"
       when: wipe_pg_db_name == 'sandbox_rental'
 
-    - name: Include mailbox-service for mailbox_service PostgreSQL wipe
-      ansible.builtin.include_role:
-        name: mailbox_service
-      tags: [mailbox_service]
-      vars:
-        mailbox_service_force_schema_reset: true
-      when: wipe_pg_db_name == 'mailbox_service'
-
     - name: Include Electric Mail after mailbox_service PostgreSQL wipe
       ansible.builtin.include_role:
         name: electric
@@ -141,46 +235,6 @@
         electric_config: "{{ topology_electric_instances.mail }}"
       when: wipe_pg_db_name == 'mailbox_service'
 
-    - name: Include identity-service for identity_service PostgreSQL wipe
-      ansible.builtin.include_role:
-        name: identity_service
-      tags: [identity_service]
-      vars:
-        identity_service_force_schema_reset: true
-      when: wipe_pg_db_name == 'identity_service'
-
-    - name: Include secrets-service for secrets_service PostgreSQL wipe
-      ansible.builtin.include_role:
-        name: secrets_service
-      tags: [secrets_service]
-      vars:
-        secrets_service_force_schema_reset: true
-      when: wipe_pg_db_name == 'secrets_service'
-
-    - name: Include notifications-service for notifications_service PostgreSQL wipe
-      ansible.builtin.include_role:
-        name: notifications_service
-      tags: [notifications_service]
-      vars:
-        notifications_service_force_schema_reset: true
-      when: wipe_pg_db_name == 'notifications_service'
-
-    - name: Include projects-service for projects_service PostgreSQL wipe
-      ansible.builtin.include_role:
-        name: projects_service
-      tags: [projects_service]
-      vars:
-        projects_service_force_schema_reset: true
-      when: wipe_pg_db_name == 'projects_service'
-
-    - name: Include source-code-hosting-service for source_code_hosting PostgreSQL wipe
-      ansible.builtin.include_role:
-        name: source_code_hosting_service
-      tags: [source_code_hosting_service]
-      vars:
-        source_code_hosting_service_force_schema_reset: true
-      when: wipe_pg_db_name == 'source_code_hosting'
-
     - name: Include Electric Notifications after notifications_service PostgreSQL wipe
       ansible.builtin.include_role:
         name: electric
@@ -188,3 +242,7 @@
       vars:
         electric_config: "{{ topology_electric_instances.notifications }}"
       when: wipe_pg_db_name == 'notifications_service'
+
+  handlers:
+    - name: Import generated component systemd handlers
+      ansible.builtin.import_tasks: ../handlers/component-systemd.yml

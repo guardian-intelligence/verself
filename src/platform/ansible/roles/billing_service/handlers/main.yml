@@ -1,7 +1,0 @@
----
-- name: Restart billing-service
-  listen: restart billing-service
-  ansible.builtin.systemd:
-    daemon_reload: true
-    name: billing-service
-    state: restarted

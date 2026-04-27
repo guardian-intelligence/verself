@@ -4,7 +4,7 @@
 # block unless this flag is set.
 allow_duplicates: true
 dependencies:
-  - role: nftables_handler
+  - role: nftables
 
 galaxy_info:
   author: verself

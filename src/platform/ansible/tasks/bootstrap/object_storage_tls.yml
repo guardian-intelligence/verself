@@ -1,0 +1,117 @@
+---
+- name: Deploy object-storage-service server certificate extensions
+  ansible.builtin.copy:
+    dest: /etc/object-storage-service/tls/server-cert.ext
+    owner: root
+    group: object_storage_service
+    mode: "0640"
+    content: |
+      basicConstraints=CA:FALSE
+      keyUsage=digitalSignature,keyEncipherment
+      extendedKeyUsage=serverAuth
+      subjectAltName=IP:127.0.0.1,DNS:localhost
+
+- name: Generate object-storage-service local CA private key
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - genrsa
+      - -out
+      - /etc/object-storage-service/tls/server-ca-key.pem
+      - "4096"
+    creates: /etc/object-storage-service/tls/server-ca-key.pem
+
+- name: Generate object-storage-service local CA certificate
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - req
+      - -x509
+      - -new
+      - -nodes
+      - -key
+      - /etc/object-storage-service/tls/server-ca-key.pem
+      - -sha256
+      - -days
+      - "3650"
+      - -out
+      - /etc/object-storage-service/tls/server-ca.pem
+      - -subj
+      - /CN=Verself object-storage local CA
+    creates: /etc/object-storage-service/tls/server-ca.pem
+
+- name: Generate object-storage-service server private key and CSR
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - req
+      - -new
+      - -newkey
+      - rsa:2048
+      - -nodes
+      - -keyout
+      - /etc/object-storage-service/tls/server-key.pem
+      - -out
+      - /etc/object-storage-service/tls/server.csr
+      - -subj
+      - /CN=127.0.0.1
+    creates: /etc/object-storage-service/tls/server-key.pem
+
+- name: Sign object-storage-service server certificate
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - x509
+      - -req
+      - -in
+      - /etc/object-storage-service/tls/server.csr
+      - -CA
+      - /etc/object-storage-service/tls/server-ca.pem
+      - -CAkey
+      - /etc/object-storage-service/tls/server-ca-key.pem
+      - -CAcreateserial
+      - -out
+      - /etc/object-storage-service/tls/server-cert.pem
+      - -days
+      - "3650"
+      - -sha256
+      - -extfile
+      - /etc/object-storage-service/tls/server-cert.ext
+    creates: /etc/object-storage-service/tls/server-cert.pem
+
+- name: Converge object-storage-service TLS material ownership
+  ansible.builtin.file:
+    path: "/etc/object-storage-service/tls/{{ item.name }}"
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { name: server-ca.pem, owner: root, group: object_storage_service, mode: "0640" }
+    - { name: server-ca-key.pem, owner: root, group: root, mode: "0600" }
+    - { name: server-cert.pem, owner: root, group: object_storage_service, mode: "0640" }
+    - { name: server-key.pem, owner: root, group: object_storage_service, mode: "0640" }
+    - { name: server.csr, owner: root, group: object_storage_service, mode: "0640" }
+    - { name: server-cert.ext, owner: root, group: object_storage_service, mode: "0640" }
+
+- name: Check object-storage-service local CA serial file
+  ansible.builtin.stat:
+    path: /etc/object-storage-service/tls/server-ca.srl
+  register: object_storage_service_server_ca_serial
+
+- name: Set object-storage-service local CA serial ownership
+  ansible.builtin.file:
+    path: /etc/object-storage-service/tls/server-ca.srl
+    owner: root
+    group: root
+    mode: "0600"
+  when: object_storage_service_server_ca_serial.stat.exists
+
+- name: Copy object-storage-service local CA into operator bundle path
+  ansible.builtin.copy:
+    src: /etc/object-storage-service/tls/server-ca.pem
+    dest: /etc/verself/local-cas/object-storage-s3-ca.pem
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0644"
+

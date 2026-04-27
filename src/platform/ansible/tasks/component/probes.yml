@@ -1,0 +1,39 @@
+---
+- name: Probe component systemd units are active
+  ansible.builtin.command:
+    cmd: "systemctl is-active {{ unit.name }}"
+  changed_when: false
+  loop: "{{ component_units }}"
+  loop_control:
+    loop_var: unit
+    label: "{{ unit.name }}"
+
+- name: Probe component nftables tables are present
+  ansible.builtin.command:
+    cmd: "nft list table inet {{ item.table }}"
+  changed_when: false
+  loop: "{{ component.nftables_rulesets }}"
+  loop_control:
+    label: "{{ item.table }}"
+
+- name: Probe component PostgreSQL role exists
+  ansible.builtin.command:
+    cmd: >-
+      {{ verself_bin }}/psql
+      -h {{ topology_endpoints.postgresql.host }}
+      -p {{ topology_endpoints.postgresql.endpoints.postgres.port }}
+      -U postgres
+      -d postgres
+      -tAc "SELECT 1 FROM pg_roles WHERE rolname = '{{ component.postgres.owner }}';"
+  environment:
+    PGPASSWORD: "{{ postgresql_admin_password }}"
+  changed_when: false
+  when: component.postgres.database | length > 0
+  no_log: true
+
+- name: Probe component ClickHouse access path
+  ansible.builtin.command:
+    cmd: "{{ clickhouse_operator_client_command }} --query SELECT 1"
+  changed_when: false
+  when: component.converge.clickhouse is defined
+  no_log: true
