@@ -183,7 +183,7 @@ function ExecutionTable({ executions }: { executions: ElectricExecution[] }) {
   const goTo = (next: number) => setPage(Math.min(Math.max(1, next), pageCount));
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-testid="executions-table">
       <div className="overflow-hidden rounded-md border">
         <Table>
           <TableHeader>
@@ -197,6 +197,7 @@ function ExecutionTable({ executions }: { executions: ElectricExecution[] }) {
             {pageRows.map((execution) => (
               <TableRow
                 key={execution.execution_id}
+                data-testid="executions-row"
                 className="group cursor-pointer hover:bg-muted/50"
               >
                 <TableCell>
@@ -329,15 +330,17 @@ function ExecutionListError({ status }: { status: string }) {
 
 function ExecutionListEmpty() {
   return (
-    <EmptyState
-      title="No executions yet"
-      body="Executions appear here after a GitHub workflow or a scheduled canary runs."
-      action={
-        <Button variant="default" render={<Link to="/schedules/new" />}>
-          Create schedule
-        </Button>
-      }
-    />
+    <div data-testid="executions-empty">
+      <EmptyState
+        title="No executions yet"
+        body="Executions appear here after a GitHub workflow or a scheduled canary runs."
+        action={
+          <Button variant="default" render={<Link to="/schedules/new" />}>
+            Create schedule
+          </Button>
+        }
+      />
+    </div>
   );
 }
 
