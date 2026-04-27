@@ -7,7 +7,7 @@ source "${script_dir}/lib/verification-context.sh"
 verification_context_init "${BASH_SOURCE[0]}"
 
 run_id="${VERIFICATION_RUN_ID:-temporal-web-proof-$(date -u +%Y%m%dT%H%M%SZ)}"
-artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_REPO_ROOT}/artifacts/temporal-web-proof}"
+artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_PROOF_ARTIFACT_ROOT}/temporal-web-proof}"
 artifact_dir="${artifact_root}/${run_id}"
 browser_log_path="${artifact_dir}/browser.log"
 mkdir -p "${artifact_dir}/clickhouse"
@@ -367,6 +367,7 @@ try {
   await browser.close();
 }
 JS
+# shellcheck disable=SC2016 # Positional args are expanded inside the child shell.
 env \
   TEMPORAL_BASE_URL="${temporal_base_url}" \
   TEMPORAL_HOST="${temporal_host}" \

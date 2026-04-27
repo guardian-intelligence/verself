@@ -108,7 +108,7 @@ case "${persona}" in
 esac
 
 if [[ ${print_env} -eq 0 && -z "${output_path}" ]]; then
-  output_path="${VERIFICATION_REPO_ROOT}/artifacts/personas/${persona}.env"
+  output_path="${VERIFICATION_PROOF_ARTIFACT_ROOT}/personas/${persona}.env"
 fi
 
 auth_base_url="https://auth.${VERIFICATION_DOMAIN}"

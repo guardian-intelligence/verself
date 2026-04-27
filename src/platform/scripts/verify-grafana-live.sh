@@ -9,7 +9,7 @@ verification_context_init "${BASH_SOURCE[0]}"
 
 kind="${VERIFICATION_KIND:-grafana-live}"
 run_id="${VERIFICATION_RUN_ID:-${kind}-$(date -u +%Y%m%dT%H%M%SZ)}"
-artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_REPO_ROOT}/artifacts/${kind}}"
+artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_PROOF_ARTIFACT_ROOT}/${kind}}"
 artifact_dir="${artifact_root}/${run_id}"
 dashboard_url="${GRAFANA_BASE_URL:-https://dashboard.${VERIFICATION_DOMAIN}}"
 marker="verself:grafana verify=${run_id}"

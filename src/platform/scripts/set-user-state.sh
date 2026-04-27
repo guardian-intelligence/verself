@@ -127,7 +127,7 @@ if [[ -n "${balance_units}" && -n "${balance_cents}" ]]; then
   exit 1
 fi
 
-binary_dir="${VERIFICATION_REPO_ROOT}/artifacts/bin"
+binary_dir="${VERIFICATION_DEPLOY_ARTIFACT_ROOT}/bin"
 binary_path="${binary_dir}/billing-set-user-state"
 remote_path=""
 mkdir -p "${binary_dir}"

@@ -1,26 +1,5 @@
-# Binaries (go build outputs next to source modules)
+# Binaries
 /verself
-src/platform/verself
-src/billing-service/billing-service
-src/billing-service/billing-seed
-src/billing-service/tb-inspect
-src/mailbox-service/mailbox-service
-src/identity-service/identity-service
-src/governance-service/governance-service
-src/secrets-service/secrets-service
-src/temporal-platform/verself-temporal-server
-src/temporal-platform/temporal-proof
-src/temporal-platform/temporal-schema
-src/temporal-platform/verself-temporal-web
-src/sandbox-rental-service/sandbox-rental-recurring-worker
-src/object-storage-service/object-storage-secret-sync
-src/source-code-hosting-service/source-code-hosting-service
-src/temporal-platform/temporal-bootstrap
-src/object-storage-service/object-storage-proof
-src/object-storage-service/object-storage-service
-src/profile-service/profile-service
-src/notifications-service/notifications-service
-src/projects-service/projects-service
 # Config (contains credentials)
 verself.toml
 
@@ -82,5 +61,8 @@ node_modules
 **/preprocessed_configs/
 **/e2e/access/
 
-# E2E traces + assets
+# Materialized local build/deploy outputs
 artifacts/
+
+# E2E proof bundles, personas, Playwright traces, and query evidence
+proof-artifacts/

@@ -6,7 +6,8 @@ Monorepo rooted at the repo top level. All Go services share one `go.work`; the 
 
 - `src/` — all first-party source.
 - `docs/` — cross-service architecture docs and vendored references (`docs/references/` is read-only third-party material).
-- `artifacts/` — gitignored run outputs (proof bundles, personas, playwright traces).
+- `artifacts/` — gitignored materialized build/deploy outputs.
+- `proof-artifacts/` — gitignored live proof bundles, personas, Playwright traces, and query evidence.
 - `Makefile` — canonical entry point for founder/agent workflows. Read before reaching for ad-hoc scripts.
 
 ## Go services (`src/`)
