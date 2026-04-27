@@ -91,15 +91,15 @@ func registerSecured[I, O any](api huma.API, svc *identity.Service, securedOp se
 	huma.Register(api, op, func(ctx context.Context, input *I) (*O, error) {
 		identity, err := enforceOperationPolicy(ctx, svc, policy)
 		if err != nil {
-			auditOperation(ctx, op.OperationID, policy, identity, input, nil, "denied", err)
+			auditOperation(ctx, op, policy, identity, input, nil, "denied", err)
 			return nil, err
 		}
 		output, err := handler(ctx, input)
 		if err != nil {
-			auditOperation(ctx, op.OperationID, policy, identity, input, nil, "error", err)
+			auditOperation(ctx, op, policy, identity, input, nil, "error", err)
 			return nil, err
 		}
-		auditOperation(ctx, op.OperationID, policy, identity, input, output, "allowed", nil)
+		auditOperation(ctx, op, policy, identity, input, output, "allowed", nil)
 		return output, nil
 	})
 }
@@ -311,6 +311,7 @@ type operationRequestInfo struct {
 	ClientIP       string
 	UserAgent      string
 	IdempotencyKey string
+	StartedAt      time.Time
 }
 
 func operationRequestMiddleware(ctx huma.Context, next func(huma.Context)) {
@@ -318,6 +319,7 @@ func operationRequestMiddleware(ctx huma.Context, next func(huma.Context)) {
 		ClientIP:       clientIPFromHuma(ctx),
 		UserAgent:      strings.TrimSpace(ctx.Header("User-Agent")),
 		IdempotencyKey: strings.TrimSpace(ctx.Header("Idempotency-Key")),
+		StartedAt:      time.Now(),
 	}
 	next(huma.WithValue(ctx, operationRequestInfoKey{}, info))
 }
@@ -376,10 +378,11 @@ func clientIPFromHuma(ctx huma.Context) string {
 	return remote
 }
 
-func auditOperation(ctx context.Context, operationID string, policy operationPolicy, identity *auth.Identity, input any, output any, outcome string, err error) {
+func auditOperation(ctx context.Context, op huma.Operation, policy operationPolicy, identity *auth.Identity, input any, output any, outcome string, err error) {
+	info := operationRequestInfoFromContext(ctx)
 	args := []any{
 		"audit_event", policy.AuditEvent,
-		"operation_id", operationID,
+		"operation_id", op.OperationID,
 		"operation_permission", policy.Permission,
 		"operation_resource", policy.Resource,
 		"operation_action", policy.Action,
@@ -398,7 +401,6 @@ func auditOperation(ctx context.Context, operationID string, policy operationPol
 	if identity == nil {
 		return
 	}
-	info := operationRequestInfoFromContext(ctx)
 	principalType := "user"
 	credentialID := claimString(identity.Raw, "verself:credential_id")
 	if credentialID != "" {
@@ -409,7 +411,7 @@ func auditOperation(ctx context.Context, operationID string, policy operationPol
 		OrgID:                 identity.OrgID,
 		SourceProductArea:     policy.SourceProductArea,
 		ServiceName:           "identity-service",
-		OperationID:           operationID,
+		OperationID:           op.OperationID,
 		AuditEvent:            policy.AuditEvent,
 		OperationDisplay:      policy.OperationDisplay,
 		OperationType:         policy.OperationType,
@@ -435,11 +437,15 @@ func auditOperation(ctx context.Context, operationID string, policy operationPol
 		RateLimitClass:        policy.RateLimitClass,
 		Decision:              outcomeDecision(outcome),
 		Result:                outcome,
+		DurationMS:            durationMillis(info.StartedAt),
 		ClientIP:              info.ClientIP,
 		IPChain:               info.ClientIP,
 		IPChainTrustedHops:    1,
 		UserAgentRaw:          info.UserAgent,
 		IdempotencyKeyHash:    hashTextForAudit(info.IdempotencyKey),
+		RouteTemplate:         op.Path,
+		HTTPMethod:            op.Method,
+		HTTPStatus:            uint16(statusForOutcome(outcome, err, op.DefaultStatus)),
 	}
 	if err != nil {
 		record.ErrorCode = problemCode(err)
@@ -559,6 +565,30 @@ func outcomeDecision(outcome string) string {
 	default:
 		return ""
 	}
+}
+
+func durationMillis(startedAt time.Time) float64 {
+	if startedAt.IsZero() {
+		return 0
+	}
+	return float64(time.Since(startedAt)) / float64(time.Millisecond)
+}
+
+func statusForOutcome(outcome string, err error, defaultStatus int) int {
+	var statusErr huma.StatusError
+	if errors.As(err, &statusErr) && statusErr.GetStatus() > 0 {
+		return statusErr.GetStatus()
+	}
+	if outcome == "allowed" {
+		if defaultStatus > 0 {
+			return defaultStatus
+		}
+		return http.StatusOK
+	}
+	if outcome == "denied" {
+		return http.StatusForbidden
+	}
+	return http.StatusInternalServerError
 }
 
 func problemCode(err error) string {
