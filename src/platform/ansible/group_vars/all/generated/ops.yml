@@ -284,7 +284,9 @@ topology_wireguard:
       address_prefix: 24
       interface: wg-ops
       network: 10.66.66.0/24
-      peers: []
+      peers:
+      - allowed_ips: 10.66.66.2/32
+        public_key: AoVgh4aWFK5Gi7HBdqIzTea37aa5SaemU4Pyk92Nglc=
       port: 51821
     worker:
       address: 10.0.0.1

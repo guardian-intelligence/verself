@@ -206,7 +206,16 @@ _config: {
 				// genkey | wg pubkey` and submitting their public key here. Server
 				// has no `endpoint` for these peers because operators sit behind
 				// NAT and initiate the handshake themselves.
-				peers: [...{public_key: string, allowed_ips: string}] | *[]
+				peers: [
+					{
+						// Controller / founder laptop. Bringing up wg-ops on the
+						// laptop unlocks bazel-remote at grpc://10.66.66.1:9092
+						// for both `make deploy` (so deploy_profile pushes warm
+						// cache) and ad-hoc `bazelisk build --config=remote`.
+						public_key:  "AoVgh4aWFK5Gi7HBdqIzTea37aa5SaemU4Pyk92Nglc="
+						allowed_ips: "10.66.66.2/32"
+					},
+				]
 			}
 		}
 		// Which tunnels each Ansible host group runs. Single-node deployments
