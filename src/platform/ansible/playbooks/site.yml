@@ -238,6 +238,8 @@
         - openbao_tenancy
     - role: garage
       tags: [garage, object_storage_service]
+    - role: bazel_remote
+      tags: [bazel_remote]
     - role: clickhouse
       tags:
         - clickhouse

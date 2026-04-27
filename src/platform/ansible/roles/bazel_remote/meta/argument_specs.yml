@@ -1,0 +1,38 @@
+---
+argument_specs:
+  main:
+    short_description: "bazel-remote build cache daemon"
+    description:
+      - "Brings up the bazel-remote disk cache as a systemd service backed"
+      - "by a dedicated ZFS dataset. The daemon listens on grpc:9092 and"
+      - "http:8080 on every interface; nftables enforces that only loopback"
+      - "and the wg-ops operator mesh can reach those ports."
+    options:
+      verself_bin:
+        type: str
+        required: true
+        description: "Profile bin directory containing the bazel-remote binary."
+      bazel_remote_state_dir:
+        type: str
+        required: true
+        description: "Directory for cache contents (must live on the bazel-remote ZFS dataset)."
+      bazel_remote_config_dir:
+        type: str
+        required: true
+        description: "Configuration directory."
+      bazel_remote_user:
+        type: str
+        required: true
+        description: "System user that runs the daemon."
+      bazel_remote_group:
+        type: str
+        required: true
+        description: "System group that owns config and state."
+      bazel_remote_max_size_gib:
+        type: int
+        required: true
+        description: "Cache size cap in GiB before bazel-remote starts evicting."
+      bazel_remote_max_size_hard_limit_gib:
+        type: int
+        required: true
+        description: "Hard ceiling in GiB; writes are rejected above this until eviction catches up."

@@ -1,0 +1,48 @@
+[Unit]
+Description=bazel-remote build cache
+After=verself-firewall.target network.target zfs-mount.service
+Requires=verself-firewall.target
+
+[Service]
+Type=simple
+User={{ bazel_remote_user }}
+Group={{ bazel_remote_group }}
+Environment=OTEL_SERVICE_NAME=bazel-remote
+WorkingDirectory={{ bazel_remote_state_dir }}
+# bazel-remote listens on every interface so wg-ops peers can reach it; the
+# host firewall enforces that only lo + wg-ops are accepted at L3.
+ExecStart={{ verself_bin }}/bazel-remote \
+    --dir {{ bazel_remote_state_dir }} \
+    --max_size {{ bazel_remote_max_size_gib }} \
+    --max_size_hard_limit {{ bazel_remote_max_size_hard_limit_gib }} \
+    --grpc_address 0.0.0.0:{{ topology_endpoints.bazel_remote.endpoints.grpc.port }} \
+    --http_address 0.0.0.0:{{ topology_endpoints.bazel_remote.endpoints.http.port }} \
+    --enable_endpoint_metrics \
+    --http_metrics_prefix
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+
+# Hardening
+CapabilityBoundingSet=
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+LockPersonality=true
+ReadWritePaths={{ bazel_remote_state_dir }}
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

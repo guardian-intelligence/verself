@@ -1,3 +1,4 @@
 ---
 zfs_pool: vspool
 zfs_verdaccio_dataset: verdaccio
+zfs_bazel_remote_dataset: bazel-remote
