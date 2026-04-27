@@ -31,32 +31,6 @@
     state: started
     daemon_reload: true
 
-- name: List active nftables tables
-  ansible.builtin.command:
-    argv:
-      - nft
-      - -j
-      - list
-      - tables
-  register: nftables_active_tables
-  changed_when: false
-  when: nftables_remove_legacy_tables | bool
-
-- name: Remove legacy nftables tables
-  ansible.builtin.command:
-    argv:
-      - nft
-      - delete
-      - table
-      - "{{ item.table.family }}"
-      - "{{ item.table.name }}"
-  loop: "{{ (nftables_active_tables.stdout | default('{\"nftables\": []}') | from_json).nftables }}"
-  when:
-    - nftables_remove_legacy_tables | bool
-    - item.table is defined
-    - item.table.name is match(nftables_legacy_table_name_pattern)
-  changed_when: true
-
 - name: Deploy verself-firewall target
   ansible.builtin.copy:
     src: "{{ platform_rendered_dir }}/etc/systemd/system/verself-firewall.target"

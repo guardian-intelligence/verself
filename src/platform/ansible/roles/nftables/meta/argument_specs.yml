@@ -5,13 +5,4 @@ argument_specs:
     description:
       - "Copies cue-renderer generated final nftables files."
       - "The CUE ruleset records are the topology contract; Ansible only installs them."
-    options:
-      nftables_remove_legacy_tables:
-        type: bool
-        default: true
-        description: "Remove active nftables tables from previous product namespaces."
-
-      nftables_legacy_table_name_pattern:
-        type: str
-        default: "^forge_metal_"
-        description: "Regex matching legacy nftables table names to remove after the current ruleset is loaded."
+    options: {}
