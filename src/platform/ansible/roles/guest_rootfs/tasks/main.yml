@@ -20,13 +20,22 @@
     chdir: "{{ guest_rootfs_vm_guest_telemetry_dir }}"
   changed_when: true
 
+- name: Create local guest binary artifact directory
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.file:
+    path: "{{ guest_rootfs_build_artifact_dir }}"
+    state: directory
+    mode: "0755"
+
 - name: Build vm-bridge (static, linux/amd64)
   delegate_to: localhost
   become: false
   run_once: true
   ansible.builtin.command:
-    argv: [go, build, "-ldflags=-s -w", -o, /tmp/vm-bridge, ./src/vm-orchestrator/cmd/vm-bridge]
-    chdir: "{{ guest_rootfs_monorepo_root }}"
+    argv: [go, build, "-ldflags=-s -w", -o, "{{ guest_rootfs_build_artifact_dir }}/vm-bridge", ./cmd/vm-bridge]
+    chdir: "{{ guest_rootfs_monorepo_root }}/src/vm-orchestrator"
   environment:
     CGO_ENABLED: "0"
     GOOS: linux
@@ -58,7 +67,7 @@
 
 - name: Upload vm-bridge
   ansible.builtin.copy:
-    src: /tmp/vm-bridge
+    src: "{{ guest_rootfs_build_artifact_dir }}/vm-bridge"
     dest: "{{ guest_rootfs_remote_tmp }}/vm-bridge"
     mode: "0755"
 

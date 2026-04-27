@@ -7,6 +7,8 @@
     that:
       - item.name is defined
       - item.name | length > 0
+      - item.module_dir is defined
+      - item.module_dir | length > 0
       - item.package is defined
       - item.package | length > 0
       - item.output_path is defined
@@ -17,7 +19,7 @@
       - item.version_ldflags | type_debug == 'bool'
       - item.restart_handlers is defined
       - item.restart_handlers | type_debug == 'list'
-    fail_msg: "deploy_profile_go_binaries entries must define name, package, output_path, cgo_enabled, version_ldflags, and restart_handlers"
+    fail_msg: "deploy_profile_go_binaries entries must define name, module_dir, package, output_path, cgo_enabled, version_ldflags, and restart_handlers"
   loop: "{{ deploy_profile_go_binaries }}"
   loop_control:
     label: "{{ item.name | default('unnamed') }}"
@@ -33,7 +35,12 @@
       - deploy_profile_go_binary_names | length == 18
       - deploy_profile_go_binary_names | unique | list | length == deploy_profile_go_binary_names | length
       - deploy_profile_go_binary_output_paths | unique | list | length == deploy_profile_go_binary_output_paths | length
-      - deploy_profile_go_binary_output_paths | select('match', '^artifacts/deploy/bin/[^/]+$') | list | length == deploy_profile_go_binary_output_paths | length
+      - >-
+        deploy_profile_go_binary_output_paths
+        | select('match', '^artifacts/deploy/bin/[^/]+$')
+        | list
+        | length == deploy_profile_go_binary_output_paths | length
+      - deploy_profile_go_binaries | map(attribute='module_dir') | select('match', '^src/[^/]+$') | list | length == deploy_profile_go_binaries | length
       - deploy_profile_go_binary_names | sort == [
           'billing-service',
           'governance-service',
@@ -77,7 +84,7 @@
       - -o
       - "{{ deploy_profile_repo_root }}/{{ item.output_path }}"
       - "{{ item.package }}"
-    chdir: "{{ deploy_profile_repo_root }}"
+    chdir: "{{ deploy_profile_repo_root }}/{{ item.module_dir }}"
   environment:
     CGO_ENABLED: "{{ item.cgo_enabled }}"
     GOOS: linux
