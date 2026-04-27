@@ -4,5 +4,5 @@ title: In AI, Nothing Seems to Stick
 publishedAt: 2026-04-29
 author: Guardian
 flare: Stick
-summary:
+summary: "[Placeholder]"
 ---
