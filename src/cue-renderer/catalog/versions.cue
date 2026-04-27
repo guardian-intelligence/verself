@@ -88,7 +88,7 @@ versions: {
 // pinned version, so any catalog bump produces a new value and forces a
 // re-unpack on the host.
 serverTools: {
-	bazel_label: "//src/platform/binaries:server_tools.tar.zst"
+	bazel_label: "//src/cue-renderer/binaries:server_tools.tar.zst"
 	version:     "clickhouse-\(versions.production.clickhouse)_tigerbeetle-\(versions.production.tigerbeetle)_zitadel-\(versions.production.zitadel)_openbao-\(versions.production.openbao)_spire-\(versions.production.spire)_spiffe-helper-\(versions.production.spiffeHelper)_nats-server-\(versions.production.natsServer)_garage-\(versions.production.garage)_forgejo-\(versions.production.forgejo)_bazel-remote-\(versions.production.bazelRemote)_otelcol-contrib-\(versions.production.otelcolContrib)_temporal-\(versions.production.temporal)_grafana-\(versions.production.grafana)_grafana-clickhouse-datasource-\(versions.production.grafanaClickhouseDatasource)_containerd-\(versions.production.containerd)_nodejs-\(versions.production.nodejs)_stalwart-\(versions.production.stalwart)_stalwart-cli-\(versions.production.stalwartCli)_caddy-\(versions.production.caddy)"
 }
 
