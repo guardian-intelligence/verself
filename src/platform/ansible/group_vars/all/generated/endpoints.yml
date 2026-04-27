@@ -2,6 +2,39 @@
 # Source: src/platform/topology/instances/local
 ---
 topology_endpoints:
+  bazel_remote:
+    endpoints:
+      grpc:
+        address: 127.0.0.1:9092
+        bind_address: 0.0.0.0:9092
+        exposure: wireguard
+        host: 127.0.0.1
+        listen_host: 0.0.0.0
+        port: 9092
+        protocol: grpc
+      http:
+        address: 127.0.0.1:8080
+        bind_address: 0.0.0.0:8080
+        exposure: wireguard
+        host: 127.0.0.1
+        listen_host: 0.0.0.0
+        port: 8080
+        protocol: http
+    host: 127.0.0.1
+    interfaces:
+      cas:
+        auth: operator
+        endpoint: grpc
+        kind: resource_protocol
+        openapi: ''
+        path_prefix: ''
+      status:
+        auth: operator
+        endpoint: http
+        kind: admin_api
+        openapi: ''
+        path_prefix: ''
+    probes: {}
   billing:
     endpoints:
       internal_https:

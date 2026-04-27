@@ -1149,6 +1149,11 @@ topology_server_tool_install_plan:
     key: forgejo
     mode: '0755'
     url: https://codeberg.org/forgejo/forgejo/releases/download/v15.0.0/forgejo-15.0.0-linux-amd64
+  - checksum: sha256:025d53aeb03a7fdd4a0e76262a5ae9eeee9f64d53ca510deff1c84cf3f276784
+    dest: '{{ verself_bin }}/bazel-remote'
+    key: bazel_remote
+    mode: '0755'
+    url: https://github.com/buchgr/bazel-remote/releases/download/v2.6.1/bazel-remote-2.6.1-linux-amd64
   - checksum: sha256:4acb57355e9388f257b28de8c18422ff43e52eb329052bd54ebecde000dcbb47
     dest: '{{ deploy_profile_staging_dir }}/otelcol-contrib-0.149.0.tar.gz'
     key: otelcol_contrib
@@ -1357,6 +1362,14 @@ topology_server_tool_install_plan:
     name: install_plan.artifact.publish
   - attributes:
       install_plan.generated_from: topology
+      install_plan.sha256: 025d53aeb03a7fdd4a0e76262a5ae9eeee9f64d53ca510deff1c84cf3f276784
+      install_plan.strategy: direct_binary
+      install_plan.surface: server_tools
+      install_plan.tool: bazel_remote
+      install_plan.version: 2.6.1
+    name: install_plan.artifact.publish
+  - attributes:
+      install_plan.generated_from: topology
       install_plan.sha256: 4acb57355e9388f257b28de8c18422ff43e52eb329052bd54ebecde000dcbb47
       install_plan.strategy: archive_single_binary
       install_plan.surface: server_tools
@@ -1448,6 +1461,10 @@ topology_server_tool_install_plan:
     sha256: 3919f10a7845f3b71bacc2c7a3bfa2cd71aed58a0b8be6ab5e95f2e150b4ded7
     strategy: direct_binary
     version: 15.0.0
+  - key: bazel_remote
+    sha256: 025d53aeb03a7fdd4a0e76262a5ae9eeee9f64d53ca510deff1c84cf3f276784
+    strategy: direct_binary
+    version: 2.6.1
   - key: otelcol_contrib
     sha256: 4acb57355e9388f257b28de8c18422ff43e52eb329052bd54ebecde000dcbb47
     strategy: archive_single_binary
@@ -1477,6 +1494,12 @@ topology_server_tool_install_plan:
     strategy: archive_directory
     version: 22.22.2
 topology_server_tools:
+  bazel_remote:
+    binary_name: bazel-remote
+    format: binary
+    sha256: 025d53aeb03a7fdd4a0e76262a5ae9eeee9f64d53ca510deff1c84cf3f276784
+    url: https://github.com/buchgr/bazel-remote/releases/download/v2.6.1/bazel-remote-2.6.1-linux-amd64
+    version: 2.6.1
   caddy:
     format: xcaddy_build
     plugins:
@@ -1643,6 +1666,7 @@ topology_versions:
     uv: 0.11.3
     zig: 0.15.2
   production:
+    bazelRemote: 2.6.1
     caddy: 2.11.2
     clickhouse: 26.3.2.3
     containerd: 2.2.2

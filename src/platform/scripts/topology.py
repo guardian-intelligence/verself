@@ -764,6 +764,7 @@ def server_tool_install_plan(server_tools: dict[str, object]) -> dict[str, objec
     archive_single_binary("nats_server", "nats-server")
     direct_binary("garage")
     direct_binary("forgejo")
+    direct_binary("bazel_remote")
     archive_single_binary("otelcol_contrib", "otelcol-contrib")
     archive_multi_binary("temporal")
     archive_directory(

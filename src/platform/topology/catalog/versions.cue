@@ -29,6 +29,7 @@ versions: {
 		stalwartCli:                 "0.15.5"
 		stalwartWebadmin:            "0.1.37"
 		stalwartSpamFilter:          "2.0.5"
+		bazelRemote:                 "2.6.1"
 		electric:                    "1.5.0"
 		firecracker:                 "1.15.0"
 		guestKernel:                 "6.1.155"
@@ -144,6 +145,13 @@ serverTools: {
 		url:         "https://codeberg.org/forgejo/forgejo/releases/download/v\(version)/forgejo-\(version)-linux-amd64"
 		sha256:      "3919f10a7845f3b71bacc2c7a3bfa2cd71aed58a0b8be6ab5e95f2e150b4ded7"
 		binary_name: "forgejo"
+	}
+	bazel_remote: {
+		version:     versions.production.bazelRemote
+		format:      "binary"
+		url:         "https://github.com/buchgr/bazel-remote/releases/download/v\(version)/bazel-remote-\(version)-linux-amd64"
+		sha256:      "025d53aeb03a7fdd4a0e76262a5ae9eeee9f64d53ca510deff1c84cf3f276784"
+		binary_name: "bazel-remote"
 	}
 	otelcol_contrib: {
 		version:        versions.production.otelcolContrib

@@ -646,6 +646,23 @@ topology: s.#Topology & {
 			endpoints: api: {protocol: "tcp", port: 8081, exposure: "loopback"}
 			interfaces: api: {kind: "resource_protocol", endpoint: "api", auth: "operator"}
 		}
+		bazel_remote: {
+			kind: "resource"
+			host: "127.0.0.1"
+			// listen_host 0.0.0.0 so the daemon is reachable on the wg-ops mesh as
+			// well as on loopback; nftables enforces the actual access policy.
+			listen_host: "0.0.0.0"
+			runtime: {systemd: "bazel-remote", user: "bazel_remote", group: "bazel_remote"}
+			artifact: {kind: "static_binary", output: "bazel-remote", role: "bazel_remote"}
+			endpoints: {
+				grpc: {protocol: "grpc", listen_host: "0.0.0.0", port: 9092, exposure: "wireguard"}
+				http: {protocol: "http", listen_host: "0.0.0.0", port: 8080, exposure: "wireguard"}
+			}
+			interfaces: {
+				cas: {kind: "resource_protocol", endpoint: "grpc", auth: "operator"}
+				status: {kind: "admin_api", endpoint: "http", auth: "operator"}
+			}
+		}
 		spire_bundle_endpoint: {
 			kind: "resource"
 			host: "127.0.0.1"
