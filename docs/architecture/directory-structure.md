@@ -14,7 +14,7 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
 
 - `vm-orchestrator/` — privileged host daemon (Firecracker, ZFS, TAP, jailer, vm-bridge, gRPC over Unix socket).
 - `vm-guest-telemetry/` — Zig guest agent streaming 60Hz health over vsock.
-- `cue-renderer/` — CUE topology/catalog source plus the Go renderer replacing `src/platform/scripts/topology.py` incrementally.
+- `cue-renderer/` — CUE topology/catalog source plus the Go renderer for generated platform artifacts.
 - `sandbox-rental-service/` — compute product control plane (executions, checkpoint refs, billing windows).
 - `billing-service/` — Reserve/Settle/Void on TigerBeetle + PostgreSQL.
 - `identity-service/`, `mailbox-service/`, `workload/` — service-owned databases, migrations, and Huma APIs.
@@ -33,6 +33,9 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
 ## Platform (`src/platform/`)
 
 - `ansible/` — playbooks, roles, SOPS-encrypted `group_vars/`, inventory.
+- `ansible/share/rendered/` — committed final files emitted by
+  `src/cue-renderer/`; roles copy these paths to the host rather than
+  re-rendering topology through Jinja.
 - `terraform/` — OpenTofu bare-metal provisioning (Latitude.sh).
 - `scripts/` — founder wrappers invoked by the Makefile.
 

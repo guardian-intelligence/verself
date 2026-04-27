@@ -46,27 +46,220 @@ type Edge map[string]any /* CUE top */
 
 type Policy map[string]any /* CUE top */
 
-type GarageNode map[string]any /* CUE top */
+type WireGuardPeer struct {
+	PublicKey string `json:"public_key"`
 
-type GarageCluster map[string]any /* CUE top */
+	Allowed_ips string `json:"allowed_ips"`
+}
 
-type TemporalRPCService map[string]any /* CUE top */
+type WireGuardTunnel struct {
+	Interface string `json:"interface"`
 
-type TemporalFrontendService map[string]any /* CUE top */
+	Port Port `json:"port"`
 
-type TemporalCluster map[string]any /* CUE top */
+	Network string `json:"network"`
 
-type Component map[string]any /* CUE top */
+	Address Host `json:"address"`
 
-// #Evidence is one promise the deploy makes to itself: "I will produce a
-// span / log line shaped like this." The proof.yml renderer projects this
-// list verbatim into the Ansible-visible evidence ledger so verification
-// queries always know what to expect.
-//
-// Closed shape (no `...`) so cue exp gengotypes emits a real Go struct
-// rather than collapsing it into map[string]any. @go attributes pin the
-// Go-side field names to idiomatic camelCase.
-type Evidence struct {
+	AddressPrefix int64 `json:"address_prefix"`
+
+	Peers []WireGuardPeer `json:"peers"`
+}
+
+type WireGuardConfig struct {
+	Tunnels map[string]WireGuardTunnel `json:"tunnels"`
+
+	HostGroups map[string][]string `json:"host_groups"`
+}
+
+type RetiredRuntime struct {
+	Unit string `json:"unit"`
+
+	User string `json:"user"`
+
+	Group string `json:"group"`
+
+	Paths []string `json:"paths"`
+}
+
+type PostgresConfig struct {
+	MaxConnections int64 `json:"max_connections"`
+
+	SuperuserReservedConnections int64 `json:"superuser_reserved_connections"`
+}
+
+type NftablesSSHConfig struct {
+	Public bool `json:"public"`
+
+	Rate string `json:"rate"`
+
+	Burst int64 `json:"burst"`
+}
+
+type NftablesConfig struct {
+	// Listener ports owned by substrate components not yet modeled as CUE
+	// endpoints. Component endpoints with exposure=public are added by the
+	// renderer.
+	PublicTCPPorts []any/* CUE closed list */ `json:"public_tcp_ports"`
+
+	Ssh NftablesSSHConfig `json:"ssh"`
+}
+
+type NftablesEndpointRef struct {
+	Component string `json:"component"`
+
+	Endpoint string `json:"endpoint"`
+}
+
+type NftablesSkuid any /* CUE disjunction: (int|string) */
+
+type NftablesInputRule struct {
+	Kind string `json:"kind"`
+
+	Endpoints []NftablesEndpointRef `json:"endpoints"`
+}
+
+type NftablesOutputRule map[string]any
+
+type NftablesOutputChain struct {
+	User NftablesSkuid `json:"user,omitempty"`
+
+	Established bool `json:"established"`
+
+	Final string `json:"final"`
+
+	Rules []NftablesOutputRule `json:"rules"`
+}
+
+type NftablesRuleset struct {
+	Target string `json:"target"`
+
+	Table string `json:"table"`
+
+	Component string `json:"component"`
+
+	Input []any/* CUE closed list */ `json:"input"`
+
+	Output NftablesOutputChain `json:"output,omitempty"`
+}
+
+type NftablesTopology struct {
+	Rulesets map[string]NftablesRuleset `json:"rulesets"`
+}
+
+type FirecrackerConfig struct {
+	GuestPoolCIDR string `json:"guest_pool_cidr"`
+}
+
+type SpireConfig struct {
+	TrustDomain string `json:"trust_domain"`
+
+	ServerBindAddress Host `json:"server_bind_address"`
+
+	ServerSocketPath string `json:"server_socket_path"`
+
+	AgentSocketPath string `json:"agent_socket_path"`
+
+	WorkloadGroup string `json:"workload_group"`
+
+	AgentIDPath string `json:"agent_id_path"`
+
+	BundleEndpointBindAddress Host `json:"bundle_endpoint_bind_address"`
+}
+
+type InstanceConfig struct {
+	VerselfVersion string `json:"verself_version"`
+
+	VerselfBin string `json:"verself_bin"`
+
+	Domains map[string]string `json:"domains"`
+
+	Openbao map[string]any/* CUE top */ `json:"openbao"`
+
+	Wireguard WireGuardConfig `json:"wireguard"`
+
+	ObjectStorage struct {
+		ObjectStorageServiceUID int64 `json:"object_storage_service_uid"`
+
+		ObjectStorageAdminUID int64 `json:"object_storage_admin_uid"`
+	} `json:"object_storage"`
+
+	RetiredProductRuntimes []RetiredRuntime `json:"retired_product_runtimes"`
+
+	Postgres PostgresConfig `json:"postgres"`
+
+	Nftables NftablesConfig `json:"nftables"`
+
+	Firecracker FirecrackerConfig `json:"firecracker"`
+
+	Spire SpireConfig `json:"spire"`
+
+	Temporal map[string]any/* CUE top */ `json:"temporal"`
+
+	SeedSystem map[string]any/* CUE top */ `json:"seed_system"`
+}
+
+type GarageNode struct {
+	Instance int64 `json:"instance"`
+
+	S3Port Port `json:"s3_port"`
+
+	RPCPort Port `json:"rpc_port"`
+
+	AdminPort Port `json:"admin_port"`
+}
+
+type GarageCluster struct {
+	Instances struct {
+		Count int64 `json:"count"`
+
+		PortPlan struct {
+			Stride int64 `json:"stride"`
+
+			S3Base Port `json:"s3_base"`
+
+			RPCBase Port `json:"rpc_base"`
+
+			AdminBase Port `json:"admin_base"`
+		} `json:"port_plan"`
+	} `json:"instances"`
+
+	Nodes []GarageNode `json:"nodes"`
+}
+
+type TemporalRPCService struct {
+	GRPCPort Port `json:"grpc_port"`
+
+	MembershipPort Port `json:"membership_port"`
+}
+
+type TemporalFrontendService struct {
+	GRPCPort Port `json:"grpc_port"`
+
+	HTTPPort Port `json:"http_port"`
+
+	MembershipPort Port `json:"membership_port"`
+}
+
+type TemporalCluster struct {
+	Frontend TemporalFrontendService `json:"frontend"`
+
+	InternalFrontend TemporalFrontendService `json:"internal_frontend"`
+
+	History TemporalRPCService `json:"history"`
+
+	Matching TemporalRPCService `json:"matching"`
+
+	Worker TemporalRPCService `json:"worker"`
+
+	Diagnostics struct {
+		MetricsPort Port `json:"metrics_port"`
+
+		PprofPort Port `json:"pprof_port"`
+	} `json:"diagnostics"`
+}
+
+type SmokeTestSpan struct {
 	Name string `json:"name"`
 
 	Kind string `json:"kind"`
@@ -77,5 +270,7 @@ type Evidence struct {
 
 	Attributes map[string]any/* CUE top */ `json:"attributes"`
 }
+
+type Component map[string]any /* CUE top */
 
 type Topology map[string]any /* CUE top */

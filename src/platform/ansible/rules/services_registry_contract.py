@@ -43,10 +43,7 @@ CONTROL_PLANE_SERVICES = {
     "source_code_hosting_service",
 }
 
-ALLOWED_WILDCARD_LISTEN_HOSTS = {
-    ("topology_endpoints", "stalwart", "endpoints", "smtp", "listen_host"),
-    ("topology_endpoints", "verdaccio", "endpoints", "http", "listen_host"),
-}
+WILDCARD_LISTEN_EXPOSURES = {"public", "wireguard", "guest_host"}
 
 
 @dataclass(frozen=True)
@@ -225,10 +222,28 @@ def validate_registry(path: str | Path | None = None) -> list[RegistryIssue]:
         if isinstance(value, dict):
             for key, child in value.items():
                 child_path = (*base, str(key))
-                if str(key).endswith("host") and child == "0.0.0.0" and child_path not in ALLOWED_WILDCARD_LISTEN_HOSTS:
+                if str(key) == "listen_host" and child == "0.0.0.0":
+                    reason = value.get("wildcard_listen_reason")
+                    if not isinstance(reason, str) or reason.strip() == "":
+                        issues.append(
+                            RegistryIssue(
+                                f"{dotted(child_path)} must document intentional wildcard binding with wildcard_listen_reason",
+                                line_for(lines, child_path),
+                            )
+                        )
+                    exposure = value.get("exposure")
+                    if exposure not in WILDCARD_LISTEN_EXPOSURES:
+                        issues.append(
+                            RegistryIssue(
+                                f"{dotted(child_path)} wildcard bind must use one of "
+                                f"{sorted(WILDCARD_LISTEN_EXPOSURES)} exposure values, got {exposure!r}",
+                                line_for(lines, child_path),
+                            )
+                        )
+                elif str(key).endswith("host") and child == "0.0.0.0":
                     issues.append(
                         RegistryIssue(
-                            f"{dotted(child_path)} must not be 0.0.0.0; use an explicit listen_host exception for intentional wildcard binds",
+                            f"{dotted(child_path)} must not be 0.0.0.0; only listen_host may use a documented wildcard bind",
                             line_for(lines, child_path),
                         )
                     )

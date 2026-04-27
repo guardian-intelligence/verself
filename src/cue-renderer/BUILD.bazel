@@ -1,1 +1,213 @@
 # gazelle:prefix github.com/verself/cue-renderer
+
+load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
+
+TOPOLOGY_SRCS = [
+    "cue.mod/module.cue",
+    "//src/cue-renderer/catalog:versions.cue",
+    "//src/cue-renderer/instances/local:config.cue",
+    "//src/cue-renderer/instances/local:topology.cue",
+    "//src/cue-renderer/schema:schema.cue",
+]
+
+genrule(
+    name = "bazel_module_render",
+    srcs = TOPOLOGY_SRCS,
+    outs = ["server_tools.MODULE.bazel"],
+    cmd = "$(location //src/cue-renderer/cmd/cue-renderer) render bazel_module > $@",
+    tools = ["//src/cue-renderer/cmd/cue-renderer"],
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "bazel_server_tools_render",
+    srcs = TOPOLOGY_SRCS,
+    outs = ["server_tools.bzl"],
+    cmd = "$(location //src/cue-renderer/cmd/cue-renderer) render bazel_server_tools > $@",
+    tools = ["//src/cue-renderer/cmd/cue-renderer"],
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "catalog_render",
+    srcs = TOPOLOGY_SRCS,
+    outs = ["catalog.yml"],
+    cmd = "$(location //src/cue-renderer/cmd/cue-renderer) render catalog > $@",
+    tools = ["//src/cue-renderer/cmd/cue-renderer"],
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "clusters_render",
+    srcs = TOPOLOGY_SRCS,
+    outs = ["clusters.yml"],
+    cmd = "$(location //src/cue-renderer/cmd/cue-renderer) render clusters > $@",
+    tools = ["//src/cue-renderer/cmd/cue-renderer"],
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "deploy_render",
+    srcs = TOPOLOGY_SRCS,
+    outs = ["deploy.yml"],
+    cmd = "$(location //src/cue-renderer/cmd/cue-renderer) render deploy > $@",
+    tools = ["//src/cue-renderer/cmd/cue-renderer"],
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "dns_render",
+    srcs = TOPOLOGY_SRCS,
+    outs = ["dns.yml"],
+    cmd = "$(location //src/cue-renderer/cmd/cue-renderer) render dns > $@",
+    tools = ["//src/cue-renderer/cmd/cue-renderer"],
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "endpoints_render",
+    srcs = TOPOLOGY_SRCS,
+    outs = ["endpoints.yml"],
+    cmd = "$(location //src/cue-renderer/cmd/cue-renderer) render endpoints > $@",
+    tools = ["//src/cue-renderer/cmd/cue-renderer"],
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "ops_render",
+    srcs = TOPOLOGY_SRCS,
+    outs = ["ops.yml"],
+    cmd = "$(location //src/cue-renderer/cmd/cue-renderer) render ops > $@",
+    tools = ["//src/cue-renderer/cmd/cue-renderer"],
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "postgres_render",
+    srcs = TOPOLOGY_SRCS,
+    outs = ["postgres.yml"],
+    cmd = "$(location //src/cue-renderer/cmd/cue-renderer) render postgres > $@",
+    tools = ["//src/cue-renderer/cmd/cue-renderer"],
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "routes_render",
+    srcs = TOPOLOGY_SRCS,
+    outs = ["routes.yml"],
+    cmd = "$(location //src/cue-renderer/cmd/cue-renderer) render routes > $@",
+    tools = ["//src/cue-renderer/cmd/cue-renderer"],
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "runtime_render",
+    srcs = TOPOLOGY_SRCS,
+    outs = ["runtime.yml"],
+    cmd = "$(location //src/cue-renderer/cmd/cue-renderer) render runtime > $@",
+    tools = ["//src/cue-renderer/cmd/cue-renderer"],
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "spire_render",
+    srcs = TOPOLOGY_SRCS,
+    outs = ["spire.yml"],
+    cmd = "$(location //src/cue-renderer/cmd/cue-renderer) render spire > $@",
+    tools = ["//src/cue-renderer/cmd/cue-renderer"],
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "smoke_test_render",
+    srcs = TOPOLOGY_SRCS,
+    outs = ["smoke_test.yml"],
+    cmd = "$(location //src/cue-renderer/cmd/cue-renderer) render smoke_test > $@",
+    tools = ["//src/cue-renderer/cmd/cue-renderer"],
+    visibility = ["//visibility:public"],
+)
+
+NFTABLES_RENDERED = [
+    ("nftables_conf", "src/platform/ansible/share/rendered/etc/nftables.conf", "rendered/etc/nftables.conf"),
+    ("billing", "src/platform/ansible/share/rendered/etc/nftables.d/billing.nft", "rendered/etc/nftables.d/billing.nft"),
+    ("company", "src/platform/ansible/share/rendered/etc/nftables.d/company.nft", "rendered/etc/nftables.d/company.nft"),
+    ("console", "src/platform/ansible/share/rendered/etc/nftables.d/console.nft", "rendered/etc/nftables.d/console.nft"),
+    ("electric_mail", "src/platform/ansible/share/rendered/etc/nftables.d/electric-mail.nft", "rendered/etc/nftables.d/electric-mail.nft"),
+    ("electric_notifications", "src/platform/ansible/share/rendered/etc/nftables.d/electric-notifications.nft", "rendered/etc/nftables.d/electric-notifications.nft"),
+    ("electric", "src/platform/ansible/share/rendered/etc/nftables.d/electric.nft", "rendered/etc/nftables.d/electric.nft"),
+    ("garage", "src/platform/ansible/share/rendered/etc/nftables.d/garage.nft", "rendered/etc/nftables.d/garage.nft"),
+    ("governance_service", "src/platform/ansible/share/rendered/etc/nftables.d/governance-service.nft", "rendered/etc/nftables.d/governance-service.nft"),
+    ("host_firewall", "src/platform/ansible/share/rendered/etc/nftables.d/host-firewall.nft", "rendered/etc/nftables.d/host-firewall.nft"),
+    ("identity_service", "src/platform/ansible/share/rendered/etc/nftables.d/identity-service.nft", "rendered/etc/nftables.d/identity-service.nft"),
+    ("mailbox_service", "src/platform/ansible/share/rendered/etc/nftables.d/mailbox-service.nft", "rendered/etc/nftables.d/mailbox-service.nft"),
+    ("nats", "src/platform/ansible/share/rendered/etc/nftables.d/nats.nft", "rendered/etc/nftables.d/nats.nft"),
+    ("notifications_service", "src/platform/ansible/share/rendered/etc/nftables.d/notifications-service.nft", "rendered/etc/nftables.d/notifications-service.nft"),
+    ("object_storage_admin", "src/platform/ansible/share/rendered/etc/nftables.d/object-storage-admin.nft", "rendered/etc/nftables.d/object-storage-admin.nft"),
+    ("object_storage_service", "src/platform/ansible/share/rendered/etc/nftables.d/object-storage-service.nft", "rendered/etc/nftables.d/object-storage-service.nft"),
+    ("openbao", "src/platform/ansible/share/rendered/etc/nftables.d/openbao.nft", "rendered/etc/nftables.d/openbao.nft"),
+    ("platform", "src/platform/ansible/share/rendered/etc/nftables.d/platform.nft", "rendered/etc/nftables.d/platform.nft"),
+    ("profile_service", "src/platform/ansible/share/rendered/etc/nftables.d/profile-service.nft", "rendered/etc/nftables.d/profile-service.nft"),
+    ("projects_service", "src/platform/ansible/share/rendered/etc/nftables.d/projects-service.nft", "rendered/etc/nftables.d/projects-service.nft"),
+    ("sandbox_rental", "src/platform/ansible/share/rendered/etc/nftables.d/sandbox-rental.nft", "rendered/etc/nftables.d/sandbox-rental.nft"),
+    ("secrets_service", "src/platform/ansible/share/rendered/etc/nftables.d/secrets-service.nft", "rendered/etc/nftables.d/secrets-service.nft"),
+    ("source_code_hosting_service", "src/platform/ansible/share/rendered/etc/nftables.d/source-code-hosting-service.nft", "rendered/etc/nftables.d/source-code-hosting-service.nft"),
+    ("stalwart", "src/platform/ansible/share/rendered/etc/nftables.d/stalwart.nft", "rendered/etc/nftables.d/stalwart.nft"),
+    ("verself_firewall_target", "src/platform/ansible/share/rendered/etc/systemd/system/verself-firewall.target", "rendered/etc/systemd/system/verself-firewall.target"),
+]
+
+[
+    genrule(
+        name = "nftables_" + name + "_render",
+        srcs = TOPOLOGY_SRCS,
+        outs = [out_path],
+        cmd = "$(location //src/cue-renderer/cmd/cue-renderer) render --path " + rendered_path + " nftables > $@",
+        tools = ["//src/cue-renderer/cmd/cue-renderer"],
+        visibility = ["//visibility:public"],
+    )
+    for name, rendered_path, out_path in NFTABLES_RENDERED
+]
+
+write_source_files(
+    name = "freshness",
+    check_that_out_file_exists = False,
+    files = {
+        "//src/cue-renderer/binaries:server_tools.MODULE.bazel": ":bazel_module_render",
+        "//src/cue-renderer/binaries:server_tools.bzl": ":bazel_server_tools_render",
+        "//src/platform:ansible/group_vars/all/generated/catalog.yml": ":catalog_render",
+        "//src/platform:ansible/group_vars/all/generated/clusters.yml": ":clusters_render",
+        "//src/platform:ansible/group_vars/all/generated/deploy.yml": ":deploy_render",
+        "//src/platform:ansible/group_vars/all/generated/dns.yml": ":dns_render",
+        "//src/platform:ansible/group_vars/all/generated/endpoints.yml": ":endpoints_render",
+        "//src/platform:ansible/group_vars/all/generated/ops.yml": ":ops_render",
+        "//src/platform:ansible/group_vars/all/generated/postgres.yml": ":postgres_render",
+        "//src/platform:ansible/group_vars/all/generated/routes.yml": ":routes_render",
+        "//src/platform:ansible/group_vars/all/generated/runtime.yml": ":runtime_render",
+        "//src/platform:ansible/group_vars/all/generated/smoke_test.yml": ":smoke_test_render",
+        "//src/platform:ansible/group_vars/all/generated/spire.yml": ":spire_render",
+        "//src/platform:ansible/share/rendered/etc/nftables.conf": ":nftables_nftables_conf_render",
+        "//src/platform:ansible/share/rendered/etc/nftables.d/billing.nft": ":nftables_billing_render",
+        "//src/platform:ansible/share/rendered/etc/nftables.d/company.nft": ":nftables_company_render",
+        "//src/platform:ansible/share/rendered/etc/nftables.d/console.nft": ":nftables_console_render",
+        "//src/platform:ansible/share/rendered/etc/nftables.d/electric-mail.nft": ":nftables_electric_mail_render",
+        "//src/platform:ansible/share/rendered/etc/nftables.d/electric-notifications.nft": ":nftables_electric_notifications_render",
+        "//src/platform:ansible/share/rendered/etc/nftables.d/electric.nft": ":nftables_electric_render",
+        "//src/platform:ansible/share/rendered/etc/nftables.d/garage.nft": ":nftables_garage_render",
+        "//src/platform:ansible/share/rendered/etc/nftables.d/governance-service.nft": ":nftables_governance_service_render",
+        "//src/platform:ansible/share/rendered/etc/nftables.d/host-firewall.nft": ":nftables_host_firewall_render",
+        "//src/platform:ansible/share/rendered/etc/nftables.d/identity-service.nft": ":nftables_identity_service_render",
+        "//src/platform:ansible/share/rendered/etc/nftables.d/mailbox-service.nft": ":nftables_mailbox_service_render",
+        "//src/platform:ansible/share/rendered/etc/nftables.d/nats.nft": ":nftables_nats_render",
+        "//src/platform:ansible/share/rendered/etc/nftables.d/notifications-service.nft": ":nftables_notifications_service_render",
+        "//src/platform:ansible/share/rendered/etc/nftables.d/object-storage-admin.nft": ":nftables_object_storage_admin_render",
+        "//src/platform:ansible/share/rendered/etc/nftables.d/object-storage-service.nft": ":nftables_object_storage_service_render",
+        "//src/platform:ansible/share/rendered/etc/nftables.d/openbao.nft": ":nftables_openbao_render",
+        "//src/platform:ansible/share/rendered/etc/nftables.d/platform.nft": ":nftables_platform_render",
+        "//src/platform:ansible/share/rendered/etc/nftables.d/profile-service.nft": ":nftables_profile_service_render",
+        "//src/platform:ansible/share/rendered/etc/nftables.d/projects-service.nft": ":nftables_projects_service_render",
+        "//src/platform:ansible/share/rendered/etc/nftables.d/sandbox-rental.nft": ":nftables_sandbox_rental_render",
+        "//src/platform:ansible/share/rendered/etc/nftables.d/secrets-service.nft": ":nftables_secrets_service_render",
+        "//src/platform:ansible/share/rendered/etc/nftables.d/source-code-hosting-service.nft": ":nftables_source_code_hosting_service_render",
+        "//src/platform:ansible/share/rendered/etc/nftables.d/stalwart.nft": ":nftables_stalwart_render",
+        "//src/platform:ansible/share/rendered/etc/systemd/system/verself-firewall.target": ":nftables_verself_firewall_target_render",
+    },
+)

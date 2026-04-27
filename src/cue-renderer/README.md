@@ -1,19 +1,21 @@
 # cue-renderer
 
 A Go tool that compiles the CUE topology in this module into the
-artefacts the rest of the platform consumes. Eventually replaces the Python
-implementation at `src/platform/scripts/topology.py` one renderer at a time.
+artefacts the rest of the platform consumes.
 
 This is the renderer side of a deliberate split: the CUE *is* the program;
 this tool is just how Go projects that program onto disk.
 
-## Outputs (planned)
+## Outputs
 
-- `group_vars/all/generated/*.yml` — Ansible projections of the CUE facts.
-- `etc/nftables.d/<component>.nft` — per-component firewall snippets driven
-  by the topology edge graph.
-- `etc/systemd/system/*.service` — per-process unit files driven by
-  `topology_processes`.
+- `src/platform/ansible/group_vars/all/generated/*.yml` — legacy Ansible
+  projections for roles that have not been collapsed to final-file copies yet.
+- `src/platform/ansible/share/rendered/etc/nftables.d/<component>.nft` —
+  per-component firewall snippets driven by CUE `topology.nftables.rulesets`
+  facts.
+- `src/platform/ansible/share/rendered/etc/nftables.conf` and
+  `src/platform/ansible/share/rendered/etc/systemd/system/verself-firewall.target`
+  — host firewall final files copied directly by the nftables role.
 - OTel pipeline spans into ClickHouse, correlated with each deploy's
   `verself.deploy_run_key`.
 
@@ -21,11 +23,10 @@ this tool is just how Go projects that program onto disk.
 
 The CUE Go SDK (`cuelang.org/go/cue`) gives typed access to the graph.
 `cue exp gengotypes` produces `cue_types_*_gen.go` next to the schema, and
-`cue.Value.Decode(&Loaded)` hydrates the whole graph in a single walk —
-cheaper than the `cue export | json.loads` round-trip the Python tool does
-today, and the resulting Go code reaches into the schema with field access
-rather than `dict["foo"]["bar"]`. Single static binary, builds and ships
-through Bazel like every other Go tool in the repo.
+`cue.Value.Decode(&Loaded)` hydrates the whole graph in a single walk, and
+the resulting Go code reaches into the schema with field access rather than
+`dict["foo"]["bar"]`. Single static binary, builds and ships through Bazel
+like every other Go tool in the repo.
 
 ## Layout
 
@@ -41,19 +42,6 @@ The Go types come from `cue exp gengotypes` over `schema/` in this module —
 `internal/model/` does not exist on purpose. As the schema tightens, gengotypes produces real structs and
 renderers get more typed access for free.
 
-## Status
-
-Scaffold. The framework is in place — load, spans, the Renderer interface,
-and `WritableFS` with OS + in-memory implementations — but no renderers
-ship with this commit. `topology.py` remains the source of truth for every
-generated artefact in `group_vars/all/generated/` until specific renderers
-land here and the corresponding Python branches are deleted.
-
-The first renderer to land is the per-component nftables snippet
-generator (Phase A from the Ansible cleanup plan): it's greenfield,
-exercises the "one renderer produces N files" path, and has no parity
-trap because there's no existing PyYAML output to byte-diff against.
-
 ## Usage
 
     bazel run //src/cue-renderer/cmd/cue-renderer -- list
@@ -61,8 +49,10 @@ trap because there's no existing PyYAML output to byte-diff against.
     bazel run //src/cue-renderer/cmd/cue-renderer -- check
     bazel run //src/cue-renderer/cmd/cue-renderer -- render <name>
 
-`generate` and `check` are no-ops while the renderer list is empty;
-`list` returns nothing.
+`generate` writes every registered renderer to disk; `check` fails when any
+registered renderer's output differs from the checked-in file. The operator
+targets are `make topology-generate` and `make topology-check`, backed by
+`write_source_files` freshness targets.
 
 ## Adding a renderer
 
@@ -73,9 +63,11 @@ trap because there's no existing PyYAML output to byte-diff against.
    `map[string]any` from gengotypes, tighten that field's CUE
    definition (close the record, drop `...`, add `@go(...)` for naming)
    and rerun `cue exp gengotypes ./...` from `src/cue-renderer/`.
+   Service-specific firewall policy belongs in CUE; Go renderers transform
+   typed policy facts into syntax and must not own allowlists.
 3. If the renderer wants a typed projection on `load.Loaded`, add the
    field there and the matching `Decode` call in `internal/load/`.
 4. Implement `render.Renderer` in `internal/render/<artefact>/`.
 5. Register it in `cmd/cue-renderer/main.go`'s `renderers()`.
-6. Once the Go output is stable, delete the Python branch that produced
-   it and remove the artefact from `topology.py`'s `ARTIFACTS`.
+6. Add the renderer's generated path to `src/cue-renderer/BUILD.bazel` so
+   `make topology-check` catches drift.
