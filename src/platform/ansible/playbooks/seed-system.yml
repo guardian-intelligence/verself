@@ -717,9 +717,9 @@
           - build
           - -o
           - "{{ seed_system_helper_local_path }}"
-          - ./src/billing-service/cmd/billing-seed
+          - ./cmd/billing-seed
       args:
-        chdir: "{{ playbook_dir }}/../../../.."
+        chdir: "{{ playbook_dir }}/../../../../src/billing-service"
       delegate_to: localhost
       become: false
       changed_when: false
@@ -887,9 +887,9 @@
           - build
           - -o
           - "{{ seed_system_stripe_catalog_helper_local_path }}"
-          - ./src/billing-service/cmd/billing-stripe-catalog
+          - ./cmd/billing-stripe-catalog
       args:
-        chdir: "{{ playbook_dir }}/../../../.."
+        chdir: "{{ playbook_dir }}/../../../../src/billing-service"
       delegate_to: localhost
       become: false
       changed_when: false

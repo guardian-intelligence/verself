@@ -2,6 +2,8 @@
 # Download, verify, and install static binaries from generated topology catalog vars.
 # Each binary is cached in the staging directory; get_url skips re-download
 # when the checksum matches.
+# Stable archive member names extract into versioned directories so creates guards
+# cannot pin an older binary across version bumps.
 
 # ── ClickHouse (multi-call binary + symlinks) ────────────────────────────────
 
@@ -43,16 +45,26 @@
     checksum: "sha256:{{ deploy_profile_server_tools_pins.tigerbeetle.sha256 }}"
     mode: "0644"
 
+- name: Create TigerBeetle extraction directory
+  ansible.builtin.file:
+    path: "{{ deploy_profile_staging_dir }}/tigerbeetle-{{ deploy_profile_server_tools_pins.tigerbeetle.version }}"
+    state: directory
+    mode: "0755"
+
 - name: Extract TigerBeetle binary
+  vars:
+    tigerbeetle_extract_dir: "{{ deploy_profile_staging_dir }}/tigerbeetle-{{ deploy_profile_server_tools_pins.tigerbeetle.version }}"
   ansible.builtin.unarchive:
     src: "{{ deploy_profile_staging_dir }}/tigerbeetle-{{ deploy_profile_server_tools_pins.tigerbeetle.version }}.zip"
-    dest: "{{ deploy_profile_staging_dir }}"
+    dest: "{{ tigerbeetle_extract_dir }}"
     remote_src: true
-    creates: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.tigerbeetle.extract_binary }}"
+    creates: "{{ tigerbeetle_extract_dir }}/{{ deploy_profile_server_tools_pins.tigerbeetle.extract_binary }}"
 
 - name: Install TigerBeetle binary
+  vars:
+    tigerbeetle_extract_dir: "{{ deploy_profile_staging_dir }}/tigerbeetle-{{ deploy_profile_server_tools_pins.tigerbeetle.version }}"
   ansible.builtin.copy:
-    src: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.tigerbeetle.extract_binary }}"
+    src: "{{ tigerbeetle_extract_dir }}/{{ deploy_profile_server_tools_pins.tigerbeetle.extract_binary }}"
     dest: "{{ verself_bin }}/tigerbeetle"
     remote_src: true
     mode: "0755"
@@ -66,16 +78,26 @@
     checksum: "sha256:{{ deploy_profile_server_tools_pins.zitadel.sha256 }}"
     mode: "0644"
 
+- name: Create Zitadel extraction directory
+  ansible.builtin.file:
+    path: "{{ deploy_profile_staging_dir }}/zitadel-{{ deploy_profile_server_tools_pins.zitadel.version }}"
+    state: directory
+    mode: "0755"
+
 - name: Extract Zitadel binary
+  vars:
+    zitadel_extract_dir: "{{ deploy_profile_staging_dir }}/zitadel-{{ deploy_profile_server_tools_pins.zitadel.version }}"
   ansible.builtin.unarchive:
     src: "{{ deploy_profile_staging_dir }}/zitadel-{{ deploy_profile_server_tools_pins.zitadel.version }}.tar.gz"
-    dest: "{{ deploy_profile_staging_dir }}"
+    dest: "{{ zitadel_extract_dir }}"
     remote_src: true
-    creates: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.zitadel.extract_binary }}"
+    creates: "{{ zitadel_extract_dir }}/{{ deploy_profile_server_tools_pins.zitadel.extract_binary }}"
 
 - name: Install Zitadel binary
+  vars:
+    zitadel_extract_dir: "{{ deploy_profile_staging_dir }}/zitadel-{{ deploy_profile_server_tools_pins.zitadel.version }}"
   ansible.builtin.copy:
-    src: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.zitadel.extract_binary }}"
+    src: "{{ zitadel_extract_dir }}/{{ deploy_profile_server_tools_pins.zitadel.extract_binary }}"
     dest: "{{ verself_bin }}/zitadel"
     remote_src: true
     mode: "0755"
@@ -147,16 +169,26 @@
     checksum: "sha256:{{ deploy_profile_server_tools_pins.spiffe_helper.sha256 }}"
     mode: "0644"
 
+- name: Create SPIFFE Helper extraction directory
+  ansible.builtin.file:
+    path: "{{ deploy_profile_staging_dir }}/spiffe-helper-{{ deploy_profile_server_tools_pins.spiffe_helper.version }}"
+    state: directory
+    mode: "0755"
+
 - name: Extract SPIFFE Helper binary
+  vars:
+    spiffe_helper_extract_dir: "{{ deploy_profile_staging_dir }}/spiffe-helper-{{ deploy_profile_server_tools_pins.spiffe_helper.version }}"
   ansible.builtin.unarchive:
     src: "{{ deploy_profile_staging_dir }}/spiffe-helper-{{ deploy_profile_server_tools_pins.spiffe_helper.version }}.tar.gz"
-    dest: "{{ deploy_profile_staging_dir }}"
+    dest: "{{ spiffe_helper_extract_dir }}"
     remote_src: true
-    creates: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.spiffe_helper.extract_binary }}"
+    creates: "{{ spiffe_helper_extract_dir }}/{{ deploy_profile_server_tools_pins.spiffe_helper.extract_binary }}"
 
 - name: Install SPIFFE Helper binary
+  vars:
+    spiffe_helper_extract_dir: "{{ deploy_profile_staging_dir }}/spiffe-helper-{{ deploy_profile_server_tools_pins.spiffe_helper.version }}"
   ansible.builtin.copy:
-    src: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.spiffe_helper.extract_binary }}"
+    src: "{{ spiffe_helper_extract_dir }}/{{ deploy_profile_server_tools_pins.spiffe_helper.extract_binary }}"
     dest: "{{ verself_bin }}/spiffe-helper"
     remote_src: true
     mode: "0755"
@@ -211,16 +243,26 @@
     checksum: "sha256:{{ deploy_profile_server_tools_pins.otelcol_contrib.sha256 }}"
     mode: "0644"
 
+- name: Create otelcol-contrib extraction directory
+  ansible.builtin.file:
+    path: "{{ deploy_profile_staging_dir }}/otelcol-contrib-{{ deploy_profile_server_tools_pins.otelcol_contrib.version }}"
+    state: directory
+    mode: "0755"
+
 - name: Extract otelcol-contrib binary
+  vars:
+    otelcol_contrib_extract_dir: "{{ deploy_profile_staging_dir }}/otelcol-contrib-{{ deploy_profile_server_tools_pins.otelcol_contrib.version }}"
   ansible.builtin.unarchive:
     src: "{{ deploy_profile_staging_dir }}/otelcol-contrib-{{ deploy_profile_server_tools_pins.otelcol_contrib.version }}.tar.gz"
-    dest: "{{ deploy_profile_staging_dir }}"
+    dest: "{{ otelcol_contrib_extract_dir }}"
     remote_src: true
-    creates: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.otelcol_contrib.extract_binary }}"
+    creates: "{{ otelcol_contrib_extract_dir }}/{{ deploy_profile_server_tools_pins.otelcol_contrib.extract_binary }}"
 
 - name: Install otelcol-contrib binary
+  vars:
+    otelcol_contrib_extract_dir: "{{ deploy_profile_staging_dir }}/otelcol-contrib-{{ deploy_profile_server_tools_pins.otelcol_contrib.version }}"
   ansible.builtin.copy:
-    src: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.otelcol_contrib.extract_binary }}"
+    src: "{{ otelcol_contrib_extract_dir }}/{{ deploy_profile_server_tools_pins.otelcol_contrib.extract_binary }}"
     dest: "{{ verself_bin }}/otelcol-contrib"
     remote_src: true
     mode: "0755"
@@ -234,16 +276,26 @@
     checksum: "sha256:{{ deploy_profile_server_tools_pins.temporal.sha256 }}"
     mode: "0644"
 
+- name: Create Temporal extraction directory
+  ansible.builtin.file:
+    path: "{{ deploy_profile_staging_dir }}/temporal-{{ deploy_profile_server_tools_pins.temporal.version }}"
+    state: directory
+    mode: "0755"
+
 - name: Extract Temporal distribution
+  vars:
+    temporal_extract_dir: "{{ deploy_profile_staging_dir }}/temporal-{{ deploy_profile_server_tools_pins.temporal.version }}"
   ansible.builtin.unarchive:
     src: "{{ deploy_profile_staging_dir }}/temporal-{{ deploy_profile_server_tools_pins.temporal.version }}.tar.gz"
-    dest: "{{ deploy_profile_staging_dir }}"
+    dest: "{{ temporal_extract_dir }}"
     remote_src: true
-    creates: "{{ deploy_profile_staging_dir }}/temporal-sql-tool"
+    creates: "{{ temporal_extract_dir }}/temporal-sql-tool"
 
 - name: Install Temporal support binaries
+  vars:
+    temporal_extract_dir: "{{ deploy_profile_staging_dir }}/temporal-{{ deploy_profile_server_tools_pins.temporal.version }}"
   ansible.builtin.copy:
-    src: "{{ deploy_profile_staging_dir }}/{{ item }}"
+    src: "{{ temporal_extract_dir }}/{{ item }}"
     dest: "{{ verself_bin }}/{{ item }}"
     remote_src: true
     mode: "0755"
@@ -289,16 +341,26 @@
     checksum: "sha256:{{ deploy_profile_server_tools_pins.stalwart.sha256 }}"
     mode: "0644"
 
+- name: Create Stalwart extraction directory
+  ansible.builtin.file:
+    path: "{{ deploy_profile_staging_dir }}/stalwart-{{ deploy_profile_server_tools_pins.stalwart.version }}"
+    state: directory
+    mode: "0755"
+
 - name: Extract Stalwart binary
+  vars:
+    stalwart_extract_dir: "{{ deploy_profile_staging_dir }}/stalwart-{{ deploy_profile_server_tools_pins.stalwart.version }}"
   ansible.builtin.unarchive:
     src: "{{ deploy_profile_staging_dir }}/stalwart-{{ deploy_profile_server_tools_pins.stalwart.version }}.tar.gz"
-    dest: "{{ deploy_profile_staging_dir }}"
+    dest: "{{ stalwart_extract_dir }}"
     remote_src: true
-    creates: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.stalwart.extract_binary }}"
+    creates: "{{ stalwart_extract_dir }}/{{ deploy_profile_server_tools_pins.stalwart.extract_binary }}"
 
 - name: Install Stalwart binary
+  vars:
+    stalwart_extract_dir: "{{ deploy_profile_staging_dir }}/stalwart-{{ deploy_profile_server_tools_pins.stalwart.version }}"
   ansible.builtin.copy:
-    src: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.stalwart.extract_binary }}"
+    src: "{{ stalwart_extract_dir }}/{{ deploy_profile_server_tools_pins.stalwart.extract_binary }}"
     dest: "{{ verself_bin }}/stalwart"
     remote_src: true
     mode: "0755"
@@ -312,16 +374,26 @@
     checksum: "sha256:{{ deploy_profile_server_tools_pins.stalwart_cli.sha256 }}"
     mode: "0644"
 
+- name: Create Stalwart CLI extraction directory
+  ansible.builtin.file:
+    path: "{{ deploy_profile_staging_dir }}/stalwart-cli-{{ deploy_profile_server_tools_pins.stalwart_cli.version }}"
+    state: directory
+    mode: "0755"
+
 - name: Extract Stalwart CLI binary
+  vars:
+    stalwart_cli_extract_dir: "{{ deploy_profile_staging_dir }}/stalwart-cli-{{ deploy_profile_server_tools_pins.stalwart_cli.version }}"
   ansible.builtin.unarchive:
     src: "{{ deploy_profile_staging_dir }}/stalwart-cli-{{ deploy_profile_server_tools_pins.stalwart_cli.version }}.tar.gz"
-    dest: "{{ deploy_profile_staging_dir }}"
+    dest: "{{ stalwart_cli_extract_dir }}"
     remote_src: true
-    creates: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.stalwart_cli.extract_binary }}"
+    creates: "{{ stalwart_cli_extract_dir }}/{{ deploy_profile_server_tools_pins.stalwart_cli.extract_binary }}"
 
 - name: Install Stalwart CLI binary
+  vars:
+    stalwart_cli_extract_dir: "{{ deploy_profile_staging_dir }}/stalwart-cli-{{ deploy_profile_server_tools_pins.stalwart_cli.version }}"
   ansible.builtin.copy:
-    src: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.stalwart_cli.extract_binary }}"
+    src: "{{ stalwart_cli_extract_dir }}/{{ deploy_profile_server_tools_pins.stalwart_cli.extract_binary }}"
     dest: "{{ verself_bin }}/stalwart-cli"
     remote_src: true
     mode: "0755"
@@ -335,16 +407,26 @@
     checksum: "sha256:{{ deploy_profile_server_tools_pins.containerd.sha256 }}"
     mode: "0644"
 
+- name: Create containerd extraction directory
+  ansible.builtin.file:
+    path: "{{ deploy_profile_staging_dir }}/containerd-{{ deploy_profile_server_tools_pins.containerd.version }}"
+    state: directory
+    mode: "0755"
+
 - name: Extract containerd binary
+  vars:
+    containerd_extract_dir: "{{ deploy_profile_staging_dir }}/containerd-{{ deploy_profile_server_tools_pins.containerd.version }}"
   ansible.builtin.unarchive:
     src: "{{ deploy_profile_staging_dir }}/containerd-{{ deploy_profile_server_tools_pins.containerd.version }}.tar.gz"
-    dest: "{{ deploy_profile_staging_dir }}"
+    dest: "{{ containerd_extract_dir }}"
     remote_src: true
-    creates: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.containerd.extract_binary }}"
+    creates: "{{ containerd_extract_dir }}/{{ deploy_profile_server_tools_pins.containerd.extract_binary }}"
 
 - name: Install containerd binary
+  vars:
+    containerd_extract_dir: "{{ deploy_profile_staging_dir }}/containerd-{{ deploy_profile_server_tools_pins.containerd.version }}"
   ansible.builtin.copy:
-    src: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.containerd.extract_binary }}"
+    src: "{{ containerd_extract_dir }}/{{ deploy_profile_server_tools_pins.containerd.extract_binary }}"
     dest: "{{ verself_bin }}/containerd"
     remote_src: true
     mode: "0755"

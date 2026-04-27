@@ -238,6 +238,15 @@
   ansible.builtin.command: go version
   changed_when: false
 
+- name: Create local vm-orchestrator artifact directory
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.file:
+    path: "{{ firecracker_build_artifact_dir }}"
+    state: directory
+    mode: "0755"
+
 - name: Build vm-orchestrator binary on controller
   delegate_to: localhost
   become: false
@@ -248,14 +257,14 @@
       - build
       - -ldflags=-s -w
       - -o
-      - /tmp/vm-orchestrator
-      - ./src/vm-orchestrator/cmd/vm-orchestrator
-    chdir: "{{ playbook_dir }}/../../../.."
+      - "{{ firecracker_build_artifact_dir }}/vm-orchestrator"
+      - ./cmd/vm-orchestrator
+    chdir: "{{ playbook_dir }}/../../../../src/vm-orchestrator"
   changed_when: false
 
 - name: Install vm-orchestrator binary
   ansible.builtin.copy:
-    src: /tmp/vm-orchestrator
+    src: "{{ firecracker_build_artifact_dir }}/vm-orchestrator"
     dest: "{{ firecracker_vm_orchestrator_binary_path }}"
     owner: root
     group: root
