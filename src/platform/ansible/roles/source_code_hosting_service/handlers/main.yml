@@ -14,7 +14,6 @@
   when: source_code_hosting_service_unit_file.stat.exists
 
 - name: Reload nftables for source-code-hosting-service
-  listen: reload nftables
   ansible.builtin.systemd:
     name: nftables
     state: reloaded

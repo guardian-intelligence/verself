@@ -1,14 +1,14 @@
 [Interface]
 PrivateKey = {{ tunnel_private_key }}
-Address = {{ wg_tunnel.address }}/{{ wg_tunnel.address_prefix }}
-ListenPort = {{ wg_tunnel.port }}
+Address = {{ wireguard_tunnel.address }}/{{ wireguard_tunnel.address_prefix }}
+ListenPort = {{ wireguard_tunnel.port }}
 
-{% for peer in wg_tunnel.peers | default([]) %}
+{% for peer in wireguard_tunnel.peers | default([]) %}
 [Peer]
 PublicKey = {{ peer.public_key }}
 AllowedIPs = {{ peer.allowed_ips }}
 {% if peer.endpoint is defined and peer.endpoint %}
-Endpoint = {{ peer.endpoint }}:{{ wg_tunnel.port }}
+Endpoint = {{ peer.endpoint }}:{{ wireguard_tunnel.port }}
 {% endif %}
 {% if peer.persistent_keepalive is defined and peer.persistent_keepalive %}
 PersistentKeepalive = {{ peer.persistent_keepalive }}

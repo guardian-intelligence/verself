@@ -10,7 +10,6 @@
     label: "garage@{{ item.instance }}"
 
 - name: Reload nftables for garage
-  listen: reload nftables
   ansible.builtin.systemd:
     name: nftables
     state: reloaded

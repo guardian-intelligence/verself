@@ -8,7 +8,7 @@ Output modes (FORMAT env):
     table     - default, human-readable drift report + undeclared listener list
     json      - structured dump of declared, listeners, and drift
     nftables  - suggested host-firewall rules derived from generated endpoints (not
-                authoritative; real rules live in roles/*/templates/*.nft.j2)
+                authoritative; real rules live in CUE-rendered final files)
 
 Exit codes:
     0 - no drift
@@ -373,8 +373,8 @@ def render_json(report: Report) -> str:
 def render_nftables(report: Report) -> str:
     """Suggested rules derived from the generated topology endpoints.
 
-    The real firewall is assembled by src/platform/ansible/roles/nftables and
-    per-service roles/*/templates/*.nft.j2. This output is a debugging aid for
+    The real firewall is assembled from src/cue-renderer topology records into
+    src/platform/ansible/share/rendered/etc/nftables.d/. This output is a debugging aid for
     answering 'what would a minimal ruleset for the declared topology look like?'
     """
     loopback: list[Declared] = []
@@ -393,7 +393,7 @@ def render_nftables(report: Report) -> str:
     lines: list[str] = []
     lines.append("#!/usr/sbin/nft -f")
     lines.append("# Derived from src/platform/ansible/group_vars/all/generated/endpoints.yml")
-    lines.append("# SUGGESTION ONLY — authoritative rules live in Ansible role templates.")
+    lines.append("# SUGGESTION ONLY - authoritative rules live in CUE-rendered final files.")
     lines.append("")
     lines.append("table inet verself_services_suggested")
     lines.append("delete table inet verself_services_suggested")

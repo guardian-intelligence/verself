@@ -7,7 +7,6 @@
     state: restarted
 
 - name: Reload nftables for billing-service
-  listen: reload nftables
   ansible.builtin.systemd:
     name: nftables
     state: reloaded

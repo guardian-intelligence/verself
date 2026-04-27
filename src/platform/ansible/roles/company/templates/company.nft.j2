@@ -1,9 +1,0 @@
-# Guardian Intelligence company site — loopback only, Caddy reverse proxy.
-table inet verself_company
-delete table inet verself_company
-table inet verself_company {
-    chain input {
-        type filter hook input priority filter; policy accept;
-        tcp dport {{ topology_endpoints.company.endpoints.http.port }} iifname != "lo" drop
-    }
-}

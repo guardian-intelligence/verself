@@ -54,16 +54,16 @@
     create_home: false
 
 - name: Deploy object-storage nftables rulesets
-  ansible.builtin.template:
+  ansible.builtin.copy:
     src: "{{ item.src }}"
     dest: "{{ item.dest }}"
     mode: "0644"
   loop:
-    - { src: object-storage-service.nft.j2, dest: /etc/nftables.d/object-storage-service.nft }
-    - { src: object-storage-admin.nft.j2, dest: /etc/nftables.d/object-storage-admin.nft }
+    - { src: "{{ platform_rendered_dir }}/etc/nftables.d/object-storage-service.nft", dest: /etc/nftables.d/object-storage-service.nft }
+    - { src: "{{ platform_rendered_dir }}/etc/nftables.d/object-storage-admin.nft", dest: /etc/nftables.d/object-storage-admin.nft }
   loop_control:
     label: "{{ item.dest }}"
-  notify: reload nftables
+  notify: Reload nftables for object-storage-service
 
 - name: Apply object-storage nftables before proceeding
   ansible.builtin.meta: flush_handlers

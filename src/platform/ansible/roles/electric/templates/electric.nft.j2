@@ -1,9 +1,0 @@
-# Electric sync service ({{ electric_instance }}) — loopback only, Caddy reverse-proxies.
-table inet {{ electric_nftables_table }}
-delete table inet {{ electric_nftables_table }}
-table inet {{ electric_nftables_table }} {
-    chain input {
-        type filter hook input priority filter; policy accept;
-        tcp dport {{ electric_service_port }} iifname != "lo" drop
-    }
-}

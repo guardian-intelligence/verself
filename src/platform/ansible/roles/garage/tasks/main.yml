@@ -136,11 +136,11 @@
   no_log: true
 
 - name: Deploy garage nftables ruleset
-  ansible.builtin.template:
-    src: garage.nft.j2
+  ansible.builtin.copy:
+    src: "{{ platform_rendered_dir }}/etc/nftables.d/garage.nft"
     dest: /etc/nftables.d/garage.nft
     mode: "0644"
-  notify: reload nftables
+  notify: Reload nftables for garage
 
 - name: Apply garage nftables before proceeding
   ansible.builtin.meta: flush_handlers

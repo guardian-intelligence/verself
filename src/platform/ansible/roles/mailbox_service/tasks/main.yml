@@ -27,11 +27,11 @@
     create_home: false
 
 - name: Deploy mailbox-service nftables ruleset
-  ansible.builtin.template:
-    src: mailbox-service.nft.j2
+  ansible.builtin.copy:
+    src: "{{ platform_rendered_dir }}/etc/nftables.d/mailbox-service.nft"
     dest: /etc/nftables.d/mailbox-service.nft
     mode: "0644"
-  notify: reload nftables
+  notify: Reload nftables for mailbox-service
 
 - name: Apply mailbox-service nftables before proceeding
   ansible.builtin.meta: flush_handlers
