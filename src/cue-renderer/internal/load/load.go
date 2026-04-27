@@ -40,7 +40,6 @@ type Loaded struct {
 	Catalog     Catalog
 	SmokeTests  SmokeTests
 	Clusters    Clusters
-	Nftables    Nftables
 
 	// GraphSHA256 is the hex SHA-256 of the canonical-JSON encoding of
 	// the topology, config, and catalog inputs. Spans use it as a stable
@@ -58,10 +57,6 @@ type Clusters struct {
 
 type SmokeTests struct {
 	Spans []schema.SmokeTestSpan
-}
-
-type Nftables struct {
-	Rulesets map[string]map[string]any
 }
 
 type Catalog struct {
@@ -126,9 +121,6 @@ func Topology(dir, instance string) (Loaded, error) {
 	}
 	if err := topologyVal.LookupPath(cue.ParsePath("components.temporal.temporal")).Decode(&loaded.Clusters.Temporal); err != nil {
 		return Loaded{}, fmt.Errorf("decode topology.components.temporal.temporal: %w", err)
-	}
-	if err := topologyVal.LookupPath(cue.ParsePath("nftables.rulesets")).Decode(&loaded.Nftables.Rulesets); err != nil {
-		return Loaded{}, fmt.Errorf("decode topology.nftables.rulesets: %w", err)
 	}
 
 	if err := decodeCatalog(catalogRoot, &loaded.Catalog); err != nil {

@@ -13,10 +13,6 @@ type Renderer struct{}
 func (Renderer) Name() string { return "postgres" }
 
 func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.WritableFS) error {
-	postgresConfig, err := projection.ConfigMap(loaded, "postgres")
-	if err != nil {
-		return err
-	}
 	limits, err := projection.PostgresRoleConnectionLimits(loaded)
 	if err != nil {
 		return err
@@ -45,8 +41,8 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 		})
 	}
 	return projection.WriteYAML(out, "postgres", map[string]any{
-		"postgresql_max_connections":                postgresConfig["max_connections"],
-		"postgresql_superuser_reserved_connections": postgresConfig["superuser_reserved_connections"],
+		"postgresql_max_connections":                loaded.Config.Postgres.MaxConnections,
+		"postgresql_superuser_reserved_connections": loaded.Config.Postgres.SuperuserReservedConnections,
 		"postgresql_role_connection_limits":         limits,
 		"topology_postgres":                         map[string]any{"databases": databases},
 	})

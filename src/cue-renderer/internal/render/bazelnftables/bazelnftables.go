@@ -24,7 +24,6 @@ import (
 	"github.com/verself/cue-renderer/internal/load"
 	"github.com/verself/cue-renderer/internal/render"
 	"github.com/verself/cue-renderer/internal/render/nftables"
-	"github.com/verself/cue-renderer/internal/render/projection"
 )
 
 const outputPath = "src/cue-renderer/nftables_files.bzl"
@@ -55,13 +54,9 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 		{slug: "host_firewall", renderedPath: nftables.HostFirewallPath},
 		{slug: "verself_firewall_target", renderedPath: nftables.FirewallTargetPath},
 	}
-	for _, name := range sortedKeys(loaded.Nftables.Rulesets) {
-		ruleset := loaded.Nftables.Rulesets[name]
-		target, err := projection.String(ruleset, "topology.nftables.rulesets."+name, "target")
-		if err != nil {
-			return err
-		}
-		entries = append(entries, entry{slug: name, renderedPath: nftables.RulesetPath(target)})
+	for _, name := range sortedKeys(loaded.Topology.Nftables.Rulesets) {
+		ruleset := loaded.Topology.Nftables.Rulesets[name]
+		entries = append(entries, entry{slug: name, renderedPath: nftables.RulesetPath(ruleset.Target)})
 	}
 	for i := range entries {
 		entries[i].outPath = packageOutPath(entries[i].renderedPath)
