@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+bazelisk_version="1.28.1"
+bazelisk_sha256="22e7d3a188699982f661cf4687137ee52d1f24fec1ec893d91a6c4d791a75de8"
+bazelisk_url="https://github.com/bazelbuild/bazelisk/releases/download/v${bazelisk_version}/bazelisk-linux-amd64"
+install_dir="${BAZELISK_INSTALL_DIR:-/usr/local/bin}"
+
+if [[ "$(uname -s)" != "Linux" || "$(uname -m)" != "x86_64" ]]; then
+  echo "unsupported bootstrap platform: $(uname -s) $(uname -m)" >&2
+  echo "scripts/bootstrap currently pins the Linux x86_64 Bazelisk artifact." >&2
+  exit 1
+fi
+
+hash_file() {
+  local path="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "${path}" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "${path}" | awk '{print $1}'
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 - "${path}" <<'PY'
+import hashlib
+import pathlib
+import sys
+
+print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())
+PY
+  else
+    echo "missing sha256sum, shasum, or python3 for checksum verification" >&2
+    exit 1
+  fi
+}
+
+download() {
+  local url="$1"
+  local output="$2"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "${url}" -o "${output}"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "${output}" "${url}"
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 - "${url}" "${output}" <<'PY'
+import sys
+import urllib.request
+
+urllib.request.urlretrieve(sys.argv[1], sys.argv[2])
+PY
+  else
+    echo "missing curl, wget, or python3 for downloading Bazelisk" >&2
+    exit 1
+  fi
+}
+
+if command -v bazelisk >/dev/null 2>&1; then
+  existing_path="$(command -v bazelisk)"
+  if [[ "$(hash_file "${existing_path}")" == "${bazelisk_sha256}" ]]; then
+    echo "bazelisk ${bazelisk_version} already installed at ${existing_path}"
+    exit 0
+  fi
+fi
+
+tmp_dir="$(mktemp -d)"
+trap 'rm -f "${tmp_dir}/bazelisk"; rmdir "${tmp_dir}" 2>/dev/null || true' EXIT
+
+download "${bazelisk_url}" "${tmp_dir}/bazelisk"
+actual_sha256="$(hash_file "${tmp_dir}/bazelisk")"
+if [[ "${actual_sha256}" != "${bazelisk_sha256}" ]]; then
+  echo "bazelisk checksum mismatch: expected ${bazelisk_sha256}, got ${actual_sha256}" >&2
+  exit 1
+fi
+chmod 0755 "${tmp_dir}/bazelisk"
+
+if [[ -d "${install_dir}" && -w "${install_dir}" ]]; then
+  install -m 0755 "${tmp_dir}/bazelisk" "${install_dir}/bazelisk"
+  installed_path="${install_dir}/bazelisk"
+elif command -v sudo >/dev/null 2>&1; then
+  sudo mkdir -p "${install_dir}"
+  sudo install -m 0755 "${tmp_dir}/bazelisk" "${install_dir}/bazelisk"
+  installed_path="${install_dir}/bazelisk"
+else
+  fallback_dir="${HOME}/.local/bin"
+  mkdir -p "${fallback_dir}"
+  install -m 0755 "${tmp_dir}/bazelisk" "${fallback_dir}/bazelisk"
+  installed_path="${fallback_dir}/bazelisk"
+fi
+
+echo "installed bazelisk ${bazelisk_version} at ${installed_path}"
+case ":${PATH}:" in
+  *":$(dirname "${installed_path}"):"*) ;;
+  *) echo "add $(dirname "${installed_path}") to PATH before running bazelisk" >&2 ;;
+esac
