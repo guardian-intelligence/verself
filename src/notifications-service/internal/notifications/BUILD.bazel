@@ -1,0 +1,41 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "notifications",
+    srcs = [
+        "nats.go",
+        "runtime.go",
+        "service.go",
+        "types.go",
+    ],
+    importpath = "github.com/verself/notifications-service/internal/notifications",
+    visibility = ["//src/notifications-service:__subpackages__"],
+    deps = [
+        "//src/auth-middleware/workload",
+        "//src/notifications-service/internal/store",
+        "@com_github_clickhouse_clickhouse_go_v2//lib/driver",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_jackc_pgx_v5//:pgx",
+        "@com_github_jackc_pgx_v5//pgtype",
+        "@com_github_jackc_pgx_v5//pgxpool",
+        "@com_github_nats_io_nats_go//:nats_go",
+        "@com_github_riverqueue_river//:river",
+        "@com_github_riverqueue_river_riverdriver_riverpgxv5//:riverpgxv5",
+        "@com_github_riverqueue_river_rivertype//:rivertype",
+        "@com_github_riverqueue_rivercontrib_otelriver//:otelriver",
+        "@com_github_spiffe_go_spiffe_v2//spiffeid",
+        "@com_github_spiffe_go_spiffe_v2//spiffetls/tlsconfig",
+        "@com_github_spiffe_go_spiffe_v2//workloadapi",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel//propagation",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":notifications",
+    visibility = ["//src/notifications-service:__subpackages__"],
+)

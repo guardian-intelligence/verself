@@ -1,0 +1,22 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+# gazelle:prefix github.com/verself/httpserver
+
+go_library(
+    name = "httpserver",
+    srcs = ["httpserver.go"],
+    importpath = "github.com/verself/httpserver",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":httpserver",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "httpserver_test",
+    srcs = ["httpserver_test.go"],
+    deps = [":httpserver"],
+)

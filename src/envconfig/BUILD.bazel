@@ -1,0 +1,22 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+# gazelle:prefix github.com/verself/envconfig
+
+go_library(
+    name = "envconfig",
+    srcs = ["envconfig.go"],
+    importpath = "github.com/verself/envconfig",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":envconfig",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "envconfig_test",
+    srcs = ["envconfig_test.go"],
+    deps = [":envconfig"],
+)

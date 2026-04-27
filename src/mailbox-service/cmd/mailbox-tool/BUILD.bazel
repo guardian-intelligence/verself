@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "mailbox-tool_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/mailbox-service/cmd/mailbox-tool",
+    visibility = ["//visibility:private"],
+    deps = ["//src/mailbox-service/client"],
+)
+
+go_binary(
+    name = "mailbox-tool",
+    embed = [":mailbox-tool_lib"],
+    visibility = ["//visibility:public"],
+)

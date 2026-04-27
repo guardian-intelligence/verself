@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "identity-internal-openapi_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/identity-service/cmd/identity-internal-openapi",
+    visibility = ["//visibility:private"],
+    deps = ["//src/identity-service/internal/api"],
+)
+
+go_binary(
+    name = "identity-internal-openapi",
+    embed = [":identity-internal-openapi_lib"],
+    visibility = ["//visibility:public"],
+)

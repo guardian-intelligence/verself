@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	tb "github.com/tigerbeetle/tigerbeetle-go"
-	tbtypes "github.com/tigerbeetle/tigerbeetle-go/pkg/types"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -69,10 +68,10 @@ var tracer = otel.Tracer("billing-service/internal/billing/ledger")
 type ID [16]byte
 
 func NewID() ID {
-	return IDFromUint128(tbtypes.ID())
+	return IDFromUint128(tb.ID())
 }
 
-func IDFromUint128(value tbtypes.Uint128) ID {
+func IDFromUint128(value tb.Uint128) ID {
 	return ID(value.Bytes())
 }
 
@@ -115,8 +114,8 @@ func (id ID) Bytes() []byte {
 	return out
 }
 
-func (id ID) Uint128() tbtypes.Uint128 {
-	return tbtypes.BytesToUint128([16]byte(id))
+func (id ID) Uint128() tb.Uint128 {
+	return tb.BytesToUint128([16]byte(id))
 }
 
 type Client struct {
@@ -127,7 +126,7 @@ func NewClient(clusterID uint64, addresses []string) (*Client, error) {
 	if len(addresses) == 0 {
 		return nil, fmt.Errorf("%w: tigerbeetle address is required", ErrUnavailable)
 	}
-	native, err := tb.NewClient(tbtypes.ToUint128(clusterID), addresses)
+	native, err := tb.NewClient(tb.ToUint128(clusterID), addresses)
 	if err != nil {
 		return nil, fmt.Errorf("create tigerbeetle client: %w", err)
 	}
@@ -156,9 +155,9 @@ type AccountDefinition struct {
 }
 
 func OperatorAccountDefinitions() []AccountDefinition {
-	history := tbtypes.AccountFlags{History: true}.ToUint16()
-	creditPositive := tbtypes.AccountFlags{DebitsMustNotExceedCredits: true, History: true}.ToUint16()
-	debitPositive := tbtypes.AccountFlags{CreditsMustNotExceedDebits: true, History: true}.ToUint16()
+	history := tb.AccountFlags{History: true}.ToUint16()
+	creditPositive := tb.AccountFlags{DebitsMustNotExceedCredits: true, History: true}.ToUint16()
+	debitPositive := tb.AccountFlags{CreditsMustNotExceedDebits: true, History: true}.ToUint16()
 	return []AccountDefinition{
 		{Key: "operator_stripe_external", Kind: "operator", Code: AccountCodeStripeExternal, Flags: history, Description: "Stripe and external payment rails"},
 		{Key: "operator_stripe_holding", Kind: "operator", Code: AccountCodeStripeHolding, Flags: creditPositive, Description: "Cash-confirmed prepaid credit clearing"},
@@ -264,7 +263,7 @@ func CustomerGrantAccount(id ID, orgID uint64, source string) (AccountPayload, e
 		UserData32: sourceCode,
 		Ledger:     DefaultLedger,
 		Code:       AccountCodeCustomerGrant,
-		Flags:      tbtypes.AccountFlags{DebitsMustNotExceedCredits: true, History: true}.ToUint16(),
+		Flags:      tb.AccountFlags{DebitsMustNotExceedCredits: true, History: true}.ToUint16(),
 	}, nil
 }
 
@@ -360,7 +359,7 @@ func (c *Client) LookupBalances(ctx context.Context, ids []ID) (map[ID]Balance, 
 	if len(ids) > BatchLimit {
 		return nil, ErrBatchTooLarge
 	}
-	accountIDs := make([]tbtypes.Uint128, 0, len(ids))
+	accountIDs := make([]tb.Uint128, 0, len(ids))
 	for _, id := range ids {
 		if id.IsZero() {
 			continue
@@ -401,7 +400,7 @@ func (c *Client) LookupAccountIDs(ctx context.Context, ids []ID) (map[ID]struct{
 	if len(ids) > BatchLimit {
 		return nil, ErrBatchTooLarge
 	}
-	accountIDs := make([]tbtypes.Uint128, 0, len(ids))
+	accountIDs := make([]tb.Uint128, 0, len(ids))
 	for _, id := range ids {
 		if id.IsZero() {
 			continue
@@ -429,7 +428,7 @@ func (c *Client) LookupAccountSnapshots(ctx context.Context, ids []ID) (map[ID]A
 	if len(ids) > BatchLimit {
 		return nil, ErrBatchTooLarge
 	}
-	accountIDs := make([]tbtypes.Uint128, 0, len(ids))
+	accountIDs := make([]tb.Uint128, 0, len(ids))
 	for _, id := range ids {
 		if id.IsZero() {
 			continue
@@ -470,8 +469,8 @@ func (c *Client) LookupAccountSnapshots(ctx context.Context, ids []ID) (map[ID]A
 	return out, nil
 }
 
-func payloadAccounts(in []AccountPayload) ([]tbtypes.Account, error) {
-	out := make([]tbtypes.Account, 0, len(in))
+func payloadAccounts(in []AccountPayload) ([]tb.Account, error) {
+	out := make([]tb.Account, 0, len(in))
 	for _, account := range in {
 		id, err := ParseID(account.ID)
 		if err != nil {
@@ -484,7 +483,7 @@ func payloadAccounts(in []AccountPayload) ([]tbtypes.Account, error) {
 		if id.IsZero() || account.Ledger == 0 || account.Code == 0 {
 			return nil, fmt.Errorf("%w: account missing id, ledger, or code", ErrInvalidCommand)
 		}
-		out = append(out, tbtypes.Account{
+		out = append(out, tb.Account{
 			ID:          id.Uint128(),
 			UserData128: userData128.Uint128(),
 			UserData64:  account.UserData64,
@@ -497,8 +496,8 @@ func payloadAccounts(in []AccountPayload) ([]tbtypes.Account, error) {
 	return out, nil
 }
 
-func payloadTransfers(in []TransferPayload) ([]tbtypes.Transfer, error) {
-	out := make([]tbtypes.Transfer, 0, len(in))
+func payloadTransfers(in []TransferPayload) ([]tb.Transfer, error) {
+	out := make([]tb.Transfer, 0, len(in))
 	for _, transfer := range in {
 		id, err := ParseID(transfer.ID)
 		if err != nil {
@@ -536,11 +535,11 @@ func payloadTransfers(in []TransferPayload) ([]tbtypes.Transfer, error) {
 		if (flags.PostPendingTransfer || flags.VoidPendingTransfer) && pendingID.IsZero() {
 			return nil, fmt.Errorf("%w: post/void transfer requires pending_id", ErrInvalidCommand)
 		}
-		out = append(out, tbtypes.Transfer{
+		out = append(out, tb.Transfer{
 			ID:              id.Uint128(),
 			DebitAccountID:  debitID.Uint128(),
 			CreditAccountID: creditID.Uint128(),
-			Amount:          tbtypes.ToUint128(transfer.Amount),
+			Amount:          tb.ToUint128(transfer.Amount),
 			PendingID:       pendingID.Uint128(),
 			UserData128:     userData128.Uint128(),
 			UserData64:      transfer.UserData64,
@@ -554,11 +553,11 @@ func payloadTransfers(in []TransferPayload) ([]tbtypes.Transfer, error) {
 	return out, nil
 }
 
-func transferFlagsFromUint16(raw uint16) tbtypes.TransferFlags {
-	return tbtypes.Transfer{Flags: raw}.TransferFlags()
+func transferFlagsFromUint16(raw uint16) tb.TransferFlags {
+	return tb.Transfer{Flags: raw}.TransferFlags()
 }
 
-func (c *Client) createAccounts(ctx context.Context, operation string, accounts []tbtypes.Account) error {
+func (c *Client) createAccounts(ctx context.Context, operation string, accounts []tb.Account) error {
 	_, span := tracer.Start(ctx, "billing.ledger.create_accounts")
 	defer span.End()
 	span.SetAttributes(attribute.String("ledger.operation", operation), attribute.Int("ledger.batch_size", len(accounts)))
@@ -566,25 +565,25 @@ func (c *Client) createAccounts(ctx context.Context, operation string, accounts 
 	if err != nil {
 		return fmt.Errorf("create accounts: %w", err)
 	}
-	for _, result := range results {
-		switch result.Result {
-		case tbtypes.AccountOK, tbtypes.AccountExists:
+	for i, result := range results {
+		switch result.Status {
+		case tb.AccountCreated, tb.AccountExists:
 			continue
-		case tbtypes.AccountExistsWithDifferentFlags,
-			tbtypes.AccountExistsWithDifferentUserData128,
-			tbtypes.AccountExistsWithDifferentUserData64,
-			tbtypes.AccountExistsWithDifferentUserData32,
-			tbtypes.AccountExistsWithDifferentLedger,
-			tbtypes.AccountExistsWithDifferentCode:
-			return fmt.Errorf("%w: account index %d result %s", ErrAccountConflict, result.Index, result.Result)
+		case tb.AccountExistsWithDifferentFlags,
+			tb.AccountExistsWithDifferentUserData128,
+			tb.AccountExistsWithDifferentUserData64,
+			tb.AccountExistsWithDifferentUserData32,
+			tb.AccountExistsWithDifferentLedger,
+			tb.AccountExistsWithDifferentCode:
+			return fmt.Errorf("%w: account index %d result %s", ErrAccountConflict, i, result.Status)
 		default:
-			return fmt.Errorf("create account index %d: %s", result.Index, result.Result)
+			return fmt.Errorf("create account index %d: %s", i, result.Status)
 		}
 	}
 	return nil
 }
 
-func (c *Client) createTransfers(ctx context.Context, operation string, transfers []tbtypes.Transfer) error {
+func (c *Client) createTransfers(ctx context.Context, operation string, transfers []tb.Transfer) error {
 	_, span := tracer.Start(ctx, "billing.ledger.create_transfers")
 	defer span.End()
 	span.SetAttributes(attribute.String("ledger.operation", operation), attribute.Int("ledger.batch_size", len(transfers)))
@@ -592,34 +591,34 @@ func (c *Client) createTransfers(ctx context.Context, operation string, transfer
 	if err != nil {
 		return fmt.Errorf("create transfers: %w", err)
 	}
-	for _, result := range results {
-		switch result.Result {
-		case tbtypes.TransferOK, tbtypes.TransferExists, tbtypes.TransferPendingTransferAlreadyPosted, tbtypes.TransferPendingTransferAlreadyVoided:
+	for i, result := range results {
+		switch result.Status {
+		case tb.TransferCreated, tb.TransferExists, tb.TransferPendingTransferAlreadyPosted, tb.TransferPendingTransferAlreadyVoided:
 			continue
-		case tbtypes.TransferExceedsCredits:
-			return fmt.Errorf("%w: transfer index %d result %s", ErrInsufficientBalance, result.Index, result.Result)
-		case tbtypes.TransferPendingTransferExpired, tbtypes.TransferPendingTransferNotFound, tbtypes.TransferPendingTransferNotPending:
-			return fmt.Errorf("%w: transfer index %d result %s", ErrPendingTransferGone, result.Index, result.Result)
-		case tbtypes.TransferExistsWithDifferentFlags,
-			tbtypes.TransferExistsWithDifferentPendingID,
-			tbtypes.TransferExistsWithDifferentTimeout,
-			tbtypes.TransferExistsWithDifferentDebitAccountID,
-			tbtypes.TransferExistsWithDifferentCreditAccountID,
-			tbtypes.TransferExistsWithDifferentAmount,
-			tbtypes.TransferExistsWithDifferentUserData128,
-			tbtypes.TransferExistsWithDifferentUserData64,
-			tbtypes.TransferExistsWithDifferentUserData32,
-			tbtypes.TransferExistsWithDifferentLedger,
-			tbtypes.TransferExistsWithDifferentCode:
-			return fmt.Errorf("%w: transfer index %d result %s", ErrTransferConflict, result.Index, result.Result)
+		case tb.TransferExceedsCredits:
+			return fmt.Errorf("%w: transfer index %d result %s", ErrInsufficientBalance, i, result.Status)
+		case tb.TransferPendingTransferExpired, tb.TransferPendingTransferNotFound, tb.TransferPendingTransferNotPending:
+			return fmt.Errorf("%w: transfer index %d result %s", ErrPendingTransferGone, i, result.Status)
+		case tb.TransferExistsWithDifferentFlags,
+			tb.TransferExistsWithDifferentPendingID,
+			tb.TransferExistsWithDifferentTimeout,
+			tb.TransferExistsWithDifferentDebitAccountID,
+			tb.TransferExistsWithDifferentCreditAccountID,
+			tb.TransferExistsWithDifferentAmount,
+			tb.TransferExistsWithDifferentUserData128,
+			tb.TransferExistsWithDifferentUserData64,
+			tb.TransferExistsWithDifferentUserData32,
+			tb.TransferExistsWithDifferentLedger,
+			tb.TransferExistsWithDifferentCode:
+			return fmt.Errorf("%w: transfer index %d result %s", ErrTransferConflict, i, result.Status)
 		default:
-			return fmt.Errorf("create transfer index %d: %s", result.Index, result.Result)
+			return fmt.Errorf("create transfer index %d: %s", i, result.Status)
 		}
 	}
 	return nil
 }
 
-func availableFromAccount(account tbtypes.Account) (uint64, error) {
+func availableFromAccount(account tb.Account) (uint64, error) {
 	creditsPosted, err := uint128ToUint64(account.CreditsPosted)
 	if err != nil {
 		return 0, err
@@ -642,7 +641,7 @@ func availableFromAccount(account tbtypes.Account) (uint64, error) {
 	return creditsPosted - committed, nil
 }
 
-func uint128ToUint64(value tbtypes.Uint128) (uint64, error) {
+func uint128ToUint64(value tb.Uint128) (uint64, error) {
 	bytes := value.Bytes()
 	for i := 8; i < 16; i++ {
 		if bytes[i] != 0 {

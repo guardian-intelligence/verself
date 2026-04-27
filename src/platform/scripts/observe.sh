@@ -50,5 +50,5 @@ export VERSELF_DEPLOY_KIND="${VERSELF_DEPLOY_KIND:-observe}"
 source "${script_dir}/deploy_identity.sh"
 export VERSELF_OBSERVE_RUN_ID="${VERSELF_OBSERVE_RUN_ID:-${VERSELF_DEPLOY_RUN_KEY}}"
 
-cd "${repo_root}"
-exec go run ./src/otel/cmd/observe --platform-root "${platform_root}" "$@"
+cd "${repo_root}/src/otel"
+exec go run ./cmd/observe --platform-root "${platform_root}" "$@"

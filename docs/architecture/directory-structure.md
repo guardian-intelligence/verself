@@ -1,6 +1,6 @@
 # Directory Structure
 
-Monorepo rooted at the repo top level. All Go services share one `go.work`; the TypeScript monorepo is pnpm-driven under `src/viteplus-monorepo/`.
+Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; each Go service keeps its own `go.mod`, and the TypeScript monorepo is pnpm-driven under `src/viteplus-monorepo/`.
 
 ## Top level
 

@@ -18,6 +18,7 @@
 - name: Set dev tool pins
   ansible.builtin.set_fact:
     dev_tools_manifest: "{{ topology_dev_tools }}"
+    dev_tools_repo_root: "{{ playbook_dir }}/../../../.."
 
 # ============================================================================
 # Go (must be first — go install tools depend on it)
@@ -275,6 +276,42 @@
   changed_when: false
   failed_when: "dev_tools_manifest.buf.version not in dev_tools_buf_version_check.stdout"
   when: dev_tools_manifest.buf is defined
+
+- name: Install Bazelisk {{ dev_tools_manifest.bazelisk.version }}
+  ansible.builtin.get_url:
+    url: "{{ dev_tools_manifest.bazelisk.url }}"
+    dest: /usr/local/bin/bazelisk
+    checksum: "sha256:{{ dev_tools_manifest.bazelisk.sha256 }}"
+    mode: "0755"
+  when: dev_tools_manifest.bazelisk is defined
+
+- name: Verify Bazelisk and pinned Bazel versions
+  ansible.builtin.command: /usr/local/bin/bazelisk version
+  args:
+    chdir: "{{ dev_tools_repo_root }}"
+  register: dev_tools_bazelisk_version_check
+  changed_when: false
+  failed_when: >-
+    dev_tools_manifest.bazelisk.version not in dev_tools_bazelisk_version_check.stdout
+    or dev_tools_manifest.bazel.version not in dev_tools_bazelisk_version_check.stdout
+  when:
+    - dev_tools_manifest.bazelisk is defined
+    - dev_tools_manifest.bazel is defined
+
+- name: Install buildifier {{ dev_tools_manifest.buildifier.version }}
+  ansible.builtin.get_url:
+    url: "{{ dev_tools_manifest.buildifier.url }}"
+    dest: /usr/local/bin/buildifier
+    checksum: "sha256:{{ dev_tools_manifest.buildifier.sha256 }}"
+    mode: "0755"
+  when: dev_tools_manifest.buildifier is defined
+
+- name: Verify buildifier version
+  ansible.builtin.command: /usr/local/bin/buildifier --version
+  register: dev_tools_buildifier_version_check
+  changed_when: false
+  failed_when: "dev_tools_manifest.buildifier.version not in dev_tools_buildifier_version_check.stdout"
+  when: dev_tools_manifest.buildifier is defined
 
 - name: Install jq {{ dev_tools_manifest.jq.version }}
   ansible.builtin.get_url:

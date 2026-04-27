@@ -5,3 +5,4 @@ tigerbeetle_data_file: /var/lib/tigerbeetle/data.tigerbeetle
 tigerbeetle_cluster_id: 0
 tigerbeetle_replica_id: 0
 tigerbeetle_replica_count: 1
+tigerbeetle_expected_version: "{{ topology_server_tools.tigerbeetle.version }}"

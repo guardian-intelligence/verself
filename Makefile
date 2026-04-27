@@ -1,4 +1,4 @@
-.PHONY: help test lint lint-scripts lint-conversions lint-ansible lint-voice company-proof fmt vet tidy sqlc sqlc-check openapi openapi-check openapi-clients openapi-clients-check openapi-wire-check topology-generate topology-check topology-proof \
+.PHONY: help bazel-doctor bazel-proof bazel-gazelle bazel-tidy bazel-update test lint lint-scripts lint-conversions lint-ansible lint-voice company-proof fmt vet tidy sqlc sqlc-check openapi openapi-check openapi-clients openapi-clients-check openapi-wire-check topology-generate topology-check topology-proof \
        hooks-install doctor inventory-check setup-dev setup-sops provision deprovision deploy site guest-rootfs security-patch identity-reset seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member \
        set-user-state billing-clock billing-wall-clock billing-state billing-documents billing-finalizations billing-events billing-pg-shell billing-pg-query billing-proof billing-reset verification-reset \
        profile-proof organization-sync-proof notifications-proof projects-proof source-code-hosting-proof secrets-proof secrets-leak-proof openbao-proof openbao-tenancy-proof workload-identity-proof spiffe-rotation-proof object-storage-verify temporal-verify temporal-web-proof recurring-schedule-proof \
@@ -27,11 +27,11 @@ EC       := src/envconfig
 HS       := src/httpserver
 INVENTORY := $(PLATFORM_DIR)/ansible/inventory/hosts.ini
 GO_DIRS  := $(AW) $(VMO) $(BS) $(GS) $(IS) $(SS) $(SCH) $(AM) $(SR) $(MS) $(OSS) $(PS) $(NS) $(PJS) $(OT) $(TP) $(EC) $(HS)
-GO_PKGS  := $(addsuffix /...,$(addprefix ./,$(GO_DIRS)))
 GO_CLIENT_DIRS := $(BS)/client $(GS)/client $(GS)/internalclient $(IS)/client $(IS)/internalclient $(SS)/client $(SS)/internalclient $(SCH)/client $(SCH)/internalclient $(SR)/client $(SR)/internalclient $(MS)/client $(OSS)/client $(PS)/client $(PS)/internalclient $(NS)/client $(PJS)/client $(PJS)/internalclient
 GO_CLIENT_FILES := $(addsuffix /client.gen.go,$(GO_CLIENT_DIRS))
 SQLC_DIRS := $(sort $(dir $(shell find src -mindepth 2 -maxdepth 2 -name sqlc.yaml -print)))
 BILLING_PRODUCT_ID ?= sandbox
+BAZELISK ?= bazelisk
 ASSUME_PERSONA_OUTPUT_FLAG := $(if $(OUTPUT),--output "$(OUTPUT)",)
 ASSUME_PERSONA_PRINT_FLAG := $(if $(filter 1 true yes,$(PRINT)),--print,)
 ASSUME_PERSONA_FLAGS := $(ASSUME_PERSONA_OUTPUT_FLAG) $(ASSUME_PERSONA_PRINT_FLAG)
@@ -39,20 +39,34 @@ ASSUME_PERSONA_FLAGS := $(ASSUME_PERSONA_OUTPUT_FLAG) $(ASSUME_PERSONA_PRINT_FLA
 help: ## Show available root automation targets
 	@awk 'BEGIN {FS = ":.*## "; printf "Verself targets:\n"} /^[A-Za-z0-9_.-]+:.*## / {printf "  %-32s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
+bazel-doctor: ## Verify the pinned Bazel/Bazelisk bootstrap contract
+	$(BAZELISK) run //tools/bazel:doctor
+
+bazel-proof: inventory-check ## Prove Bazel bootstrap state with a ClickHouse trace assertion
+	cd $(PLATFORM_DIR) && BAZELISK="$(BAZELISK)" ./scripts/verify-bazel-live.sh
+
+bazel-gazelle: ## Regenerate Bazel Go BUILD files
+	$(BAZELISK) run //:gazelle -- update -go_naming_convention=import_alias -go_naming_convention_external=import_alias
+
+bazel-tidy: ## Update Bzlmod repository wiring from Bazel-managed module metadata
+	$(BAZELISK) mod tidy --lockfile_mode=update
+
+bazel-update: bazel-gazelle bazel-tidy ## Regenerate Gazelle BUILD files and tidy Bzlmod repository wiring
+
 vm-guest-telemetry-build: ## Build the vm-guest-telemetry Zig binary
 	cd src/vm-guest-telemetry && zig build -Doptimize=ReleaseSafe
 
 test: ## Run unit tests
-	go test -race $(GO_PKGS)
+	@set -e; for dir in $(GO_DIRS); do echo "==> $$dir"; (cd "$$dir" && go test -race ./...); done
 
 lint: lint-conversions
-	golangci-lint run $(GO_PKGS)
+	@set -e; for dir in $(GO_DIRS); do echo "==> $$dir"; (cd "$$dir" && golangci-lint run ./...); done
 
 lint-scripts: ## Run ShellCheck over platform shell scripts
 	shellcheck -x -P . $(PLATFORM_DIR)/scripts/*.sh $(PLATFORM_DIR)/scripts/lib/*.sh $(PLATFORM_DIR)/scripts/security/*.sh
 
 lint-conversions:
-	gosec -quiet -include=G115 $(GO_PKGS)
+	@set -e; for dir in $(GO_DIRS); do echo "==> $$dir"; (cd "$$dir" && gosec -quiet -include=G115 ./...); done
 
 lint-ansible:
 	cd $(PLATFORM_DIR)/ansible && ansible-lint playbooks roles
@@ -74,7 +88,7 @@ fmt:
 	gofumpt -w $(GO_DIRS)
 
 vet:
-	go vet $(GO_PKGS)
+	@set -e; for dir in $(GO_DIRS); do echo "==> $$dir"; (cd "$$dir" && go vet ./...); done
 
 tidy:
 	cd $(EC) && go mod tidy

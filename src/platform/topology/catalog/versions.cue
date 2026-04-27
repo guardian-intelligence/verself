@@ -8,7 +8,7 @@ versions: {
 		ubuntuBase:                  "24.04.4"
 		postgresql:                  "16"
 		clickhouse:                  "26.3.2.3"
-		tigerbeetle:                 "0.16.78"
+		tigerbeetle:                 "0.17.1"
 		zitadel:                     "4.13.1"
 		openbao:                     "2.5.2"
 		spire:                       "1.14.5"
@@ -42,6 +42,9 @@ versions: {
 
 	development: {
 		go:                                        "1.25.8"
+		bazel:                                     "9.1.0"
+		bazelisk:                                  "1.28.1"
+		buildifier:                                "8.5.1"
 		zig:                                       "0.15.2"
 		opentofu:                                  "1.11.5"
 		ansibleCore:                               "2.20.3"
@@ -89,7 +92,7 @@ serverTools: {
 		version:        versions.production.tigerbeetle
 		format:         "zip"
 		url:            "https://github.com/tigerbeetle/tigerbeetle/releases/download/\(version)/tigerbeetle-x86_64-linux.zip"
-		sha256:         "d32d7ce6aefd76559eff93efc17e74585243581059d47d988155458e4aaa2beb"
+		sha256:         "0071b5a86876afffea067851f26a90b1e6bb60968fe8afbf8121ea55d4a7af19"
 		extract_binary: "tigerbeetle"
 	}
 	zitadel: {
@@ -304,6 +307,26 @@ devTools: {
 		install_path: "/usr/local/bin/buf"
 		version_cmd:  "buf --version"
 	}
+	bazel: {
+		version: versions.development.bazel
+		sha256:  "a667454f3f4f8878df8199136b82c199f6ada8477b337fae3b1ef854f01e4e2f"
+	}
+	bazelisk: {
+		version:      versions.development.bazelisk
+		strategy:     "binary"
+		url:          "https://github.com/bazelbuild/bazelisk/releases/download/v\(version)/bazelisk-linux-amd64"
+		sha256:       "22e7d3a188699982f661cf4687137ee52d1f24fec1ec893d91a6c4d791a75de8"
+		install_path: "/usr/local/bin/bazelisk"
+		version_cmd:  "bazelisk version"
+	}
+	buildifier: {
+		version:      versions.development.buildifier
+		strategy:     "binary"
+		url:          "https://github.com/bazelbuild/buildtools/releases/download/v\(version)/buildifier-linux-amd64"
+		sha256:       "887377fc64d23a850f4d18a077b5db05b19913f4b99b270d193f3c7334b5a9a7"
+		install_path: "/usr/local/bin/buildifier"
+		version_cmd:  "buildifier --version"
+	}
 	shellcheck: {
 		version:          versions.development.shellcheck
 		strategy:         "tarball"
@@ -449,9 +472,7 @@ guestVersions: {
 		url:     "https://cdimages.ubuntu.com/ubuntu-base/releases/\(versions.production.ubuntu)/release/ubuntu-base-\(version)-base-amd64.tar.gz"
 		sha256:  "c1e67ef7b17a6300e136118bd1dc04725009cb376c1aad10abcf8cd453628d58"
 	}
-	rootfs: {
-		size: "8G"
-	}
+	rootfs: size: "8G"
 	go: {
 		version: versions.production.guestGo
 		url:     "https://go.dev/dl/go\(version).linux-amd64.tar.gz"
@@ -462,12 +483,8 @@ guestVersions: {
 		url:     "https://nodejs.org/dist/v\(version)/node-v\(version)-linux-x64.tar.xz"
 		sha256:  "472655581fb851559730c48763e0c9d3bc25975c59d518003fc0849d3e4ba0f6"
 	}
-	pnpm: {
-		version: versions.production.pnpm
-	}
-	vite_plus: {
-		version: versions.production.vitePlus
-	}
+	pnpm: version:      versions.production.pnpm
+	vite_plus: version: versions.production.vitePlus
 	github_actions_runner: {
 		version: versions.production.githubActionsRunner
 		url:     "https://github.com/actions/runner/releases/download/v\(version)/actions-runner-linux-x64-\(version).tar.gz"

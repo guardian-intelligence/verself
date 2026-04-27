@@ -47,6 +47,16 @@ topology_dev_tools:
     strategy: uv_tool_companion
     version: 1.41.0
     version_cmd: /opt/uv-tools/ansible-core/bin/python -c "import importlib.metadata as m; print(m.version('opentelemetry-sdk'))"
+  bazel:
+    sha256: a667454f3f4f8878df8199136b82c199f6ada8477b337fae3b1ef854f01e4e2f
+    version: 9.1.0
+  bazelisk:
+    install_path: /usr/local/bin/bazelisk
+    sha256: 22e7d3a188699982f661cf4687137ee52d1f24fec1ec893d91a6c4d791a75de8
+    strategy: binary
+    url: https://github.com/bazelbuild/bazelisk/releases/download/v1.28.1/bazelisk-linux-amd64
+    version: 1.28.1
+    version_cmd: bazelisk version
   buf:
     install_path: /usr/local/bin/buf
     sha256: ef835cb38ed973849f68e0e6a88153cb2168507e09eecbec43a2ada2f6a698be
@@ -57,6 +67,13 @@ topology_dev_tools:
   build-essential:
     strategy: apt
     version_cmd: gcc --version
+  buildifier:
+    install_path: /usr/local/bin/buildifier
+    sha256: 887377fc64d23a850f4d18a077b5db05b19913f4b99b270d193f3c7334b5a9a7
+    strategy: binary
+    url: https://github.com/bazelbuild/buildtools/releases/download/v8.5.1/buildifier-linux-amd64
+    version: 8.5.1
+    version_cmd: buildifier --version
   clickhouse:
     install_path: /usr/local/bin/clickhouse
     sha256: 2b0ccdc84bc3cc624408a8a490181c6eed6b8df4e090f9b4ed7e647e46093278
@@ -363,9 +380,9 @@ topology_server_tools:
   tigerbeetle:
     extract_binary: tigerbeetle
     format: zip
-    sha256: d32d7ce6aefd76559eff93efc17e74585243581059d47d988155458e4aaa2beb
-    url: https://github.com/tigerbeetle/tigerbeetle/releases/download/0.16.78/tigerbeetle-x86_64-linux.zip
-    version: 0.16.78
+    sha256: 0071b5a86876afffea067851f26a90b1e6bb60968fe8afbf8121ea55d4a7af19
+    url: https://github.com/tigerbeetle/tigerbeetle/releases/download/0.17.1/tigerbeetle-x86_64-linux.zip
+    version: 0.17.1
   zitadel:
     extract_binary: zitadel-linux-amd64/zitadel
     format: tarball
@@ -381,7 +398,10 @@ topology_versions:
     ansibleOpentelemetryExporterOtlpProtoGrpc: 1.41.0
     ansibleOpentelemetryExporterOtlpProtoHttp: 1.41.0
     ansibleOpentelemetrySdk: 1.41.0
+    bazel: 9.1.0
+    bazelisk: 1.28.1
     buf: 1.66.1
+    buildifier: 8.5.1
     clickhouse: 26.3.2.3
     crun: 1.14.1
     cue: 0.16.1
@@ -436,7 +456,7 @@ topology_versions:
     stalwartSpamFilter: 2.0.5
     stalwartWebadmin: 0.1.37
     temporal: 1.30.4
-    tigerbeetle: 0.16.78
+    tigerbeetle: 0.17.1
     ubuntu: '24.04'
     ubuntuBase: 24.04.4
     vitePlus: 0.1.16

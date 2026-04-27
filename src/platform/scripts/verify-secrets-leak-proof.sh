@@ -213,11 +213,11 @@ emit_scan_span() {
   # shellcheck source=src/platform/scripts/deploy_identity.sh
   source "${script_dir}/deploy_identity.sh"
   (
-    cd "${VERIFICATION_REPO_ROOT}"
+    cd "${VERIFICATION_REPO_ROOT}/src/otel"
     PROOF_SPAN_SERVICE="proof-runner" \
     PROOF_SPAN_NAME="secrets.leak_proof.scan" \
     PROOF_SPAN_ATTRS_JSON="$(python3 -c 'import json, sys; print(json.dumps({"verself.proof_run_id": sys.argv[1], "leak.findings": 0}))' "${run_id}")" \
-      go run ./src/otel/cmd/proof-span
+      go run ./cmd/proof-span
   )
 }
 

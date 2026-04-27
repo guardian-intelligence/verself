@@ -1,0 +1,26 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "secrets-service_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/secrets-service/cmd/secrets-service",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/auth-middleware",
+        "//src/auth-middleware/workload",
+        "//src/billing-service/client",
+        "//src/envconfig",
+        "//src/httpserver",
+        "//src/otel",
+        "//src/secrets-service/client",
+        "//src/secrets-service/internal/api",
+        "//src/secrets-service/internal/secrets",
+        "@io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp//:otelhttp",
+    ],
+)
+
+go_binary(
+    name = "secrets-service",
+    embed = [":secrets-service_lib"],
+    visibility = ["//visibility:public"],
+)

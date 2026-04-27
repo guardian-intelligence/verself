@@ -13,7 +13,7 @@ require (
 	github.com/riverqueue/rivercontrib/otelriver v0.7.0
 	github.com/spiffe/go-spiffe/v2 v2.6.0
 	github.com/stripe/stripe-go/v85 v85.0.0
-	github.com/tigerbeetle/tigerbeetle-go v0.16.78
+	github.com/tigerbeetle/tigerbeetle-go v0.17.1
 	github.com/verself/apiwire v0.0.0
 	github.com/verself/auth-middleware v0.0.0
 	github.com/verself/envconfig v0.0.0

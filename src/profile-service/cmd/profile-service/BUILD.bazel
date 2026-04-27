@@ -1,0 +1,26 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "profile-service_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/profile-service/cmd/profile-service",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/auth-middleware",
+        "//src/auth-middleware/workload",
+        "//src/envconfig",
+        "//src/httpserver",
+        "//src/identity-service/internalclient",
+        "//src/otel",
+        "//src/profile-service/internal/api",
+        "//src/profile-service/internal/profile",
+        "@com_github_jackc_pgx_v5//pgxpool",
+        "@io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp//:otelhttp",
+    ],
+)
+
+go_binary(
+    name = "profile-service",
+    embed = [":profile-service_lib"],
+    visibility = ["//visibility:public"],
+)

@@ -109,8 +109,8 @@ def flush_spans() -> None:
     env["PROOF_SPAN_SERVICE"] = "topology-compiler"
     env["PROOF_SPANS_JSON"] = json.dumps(SPAN_EVENTS, sort_keys=True)
     proc = subprocess.run(
-        ["go", "run", "./src/otel/cmd/proof-span"],
-        cwd=REPO_ROOT,
+        ["go", "run", "./cmd/proof-span"],
+        cwd=REPO_ROOT / "src" / "otel",
         env=env,
         text=True,
         stdout=subprocess.PIPE,

@@ -1,0 +1,32 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "governance",
+    srcs = [
+        "audit.go",
+        "export.go",
+        "service.go",
+    ],
+    importpath = "github.com/verself/governance-service/internal/governance",
+    visibility = ["//src/governance-service:__subpackages__"],
+    deps = [
+        "//src/governance-service/internal/store",
+        "//src/governance-service/internal/store/billingexport",
+        "//src/governance-service/internal/store/identityexport",
+        "//src/governance-service/internal/store/sandboxexport",
+        "@com_github_clickhouse_clickhouse_go_v2//lib/driver",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_jackc_pgx_v5//:pgx",
+        "@com_github_jackc_pgx_v5//pgtype",
+        "@com_github_jackc_pgx_v5//pgxpool",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":governance",
+    visibility = ["//src/governance-service:__subpackages__"],
+)
