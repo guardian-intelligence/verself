@@ -1,0 +1,37 @@
+Bridge Temporal's cross-package //go:embed.
+
+schema/embed.go declares `//go:embed *` over the whole schema/ tree, but
+schema/postgresql/v12/version.go forces a child Bazel package — Gazelle's
+generated embedsrcs in schema/BUILD.bazel can't reach across that boundary
+and silently drops every postgres migration file from the binary's
+embed.FS. `temporal-schema setup`/`update` then fail at runtime trying to
+ReadFile non-existent assets.
+diff --git a/schema/BUILD.bazel b/schema/BUILD.bazel
+index 35aaaad..2250531 100644
+--- a/schema/BUILD.bazel
++++ b/schema/BUILD.bazel
+@@ -39,6 +39,7 @@ go_library(
+         "elasticsearch/visibility/versioned/v9/upgrade.sh",
+         "embed.go",
+         "embed_test.go",
++        "//schema/postgresql/v12:embedded_schema_files",
+     ],
+     importpath = "go.temporal.io/server/schema",
+     visibility = ["//visibility:public"],
+diff --git a/schema/postgresql/v12/BUILD.bazel b/schema/postgresql/v12/BUILD.bazel
+index 714810b..7abdfd0 100644
+--- a/schema/postgresql/v12/BUILD.bazel
++++ b/schema/postgresql/v12/BUILD.bazel
+@@ -13,3 +13,12 @@ alias(
+     actual = ":postgresql",
+     visibility = ["//visibility:public"],
+ )
++
++filegroup(
++    name = "embedded_schema_files",
++    srcs = glob([
++        "temporal/**",
++        "visibility/**",
++    ]),
++    visibility = ["//visibility:public"],
++)
