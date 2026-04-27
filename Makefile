@@ -2,7 +2,7 @@
        hooks-install doctor inventory-check setup-dev setup-sops provision deprovision deploy site guest-rootfs security-patch identity-reset seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member \
        set-user-state billing-clock billing-wall-clock billing-state billing-documents billing-finalizations billing-events billing-pg-shell billing-pg-query billing-proof billing-reset verification-reset \
        profile-proof organization-sync-proof notifications-proof projects-proof source-code-hosting-proof secrets-proof secrets-leak-proof openbao-proof openbao-tenancy-proof workload-identity-proof spiffe-rotation-proof object-storage-verify temporal-verify temporal-web-proof recurring-schedule-proof \
-       vm-guest-telemetry-build observe telemetry-proof telemetry-proof-fail clickhouse-query clickhouse-schemas pg-shell pg-query pg-list tb-shell tb-command mail mail-accounts mail-mailboxes \
+       vm-guest-telemetry-build guest-artifacts-bundle observe telemetry-proof telemetry-proof-fail clickhouse-query clickhouse-schemas pg-shell pg-query pg-list tb-shell tb-command mail mail-accounts mail-mailboxes \
        mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets \
        wipe-pg-db wipe-server vm-orchestrator-proof sandbox-inner sandbox-middle sandbox-proof console-ui-smoke console-ui-local console-local-dev console-frontend-deploy-fast grafana-proof observability-smoke services-doctor
 
@@ -53,8 +53,11 @@ bazel-tidy: ## Update Bzlmod repository wiring from Bazel-managed module metadat
 
 bazel-update: bazel-gazelle bazel-tidy ## Regenerate Gazelle BUILD files and tidy Bzlmod repository wiring
 
-vm-guest-telemetry-build: ## Build the vm-guest-telemetry Zig binary
-	cd src/vm-guest-telemetry && zig build -Doptimize=ReleaseSafe
+vm-guest-telemetry-build: ## Build the vm-guest-telemetry guest binary with Bazel
+	$(BAZELISK) build //src/vm-guest-telemetry:vm-guest-telemetry
+
+guest-artifacts-bundle: ## Build the Bazel guest artifact input bundle
+	$(BAZELISK) build //src/platform/guest:guest_artifacts_bundle
 
 test: ## Run unit tests
 	@set -e; for dir in $(GO_DIRS); do echo "==> $$dir"; (cd "$$dir" && go test -race ./...); done

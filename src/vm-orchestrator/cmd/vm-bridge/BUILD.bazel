@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_cross_binary", "go_library", "go_test")
 
 go_library(
     name = "vm-bridge_lib",
@@ -21,6 +21,18 @@ go_library(
 go_binary(
     name = "vm-bridge",
     embed = [":vm-bridge_lib"],
+    gc_linkopts = [
+        "-s",
+        "-w",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+go_cross_binary(
+    name = "vm-bridge-linux-amd64",
+    compilation_mode = "opt",
+    platform = "@io_bazel_rules_go//go/toolchain:linux_amd64",
+    target = ":vm-bridge",
     visibility = ["//visibility:public"],
 )
 

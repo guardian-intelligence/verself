@@ -12,8 +12,8 @@ set -euo pipefail
 #   Layer 1 (this script): base OS + runner toolchain -> rootfs.ext4
 #   Layer 2 (vm-orchestrator): ZFS clone per runner or canary execution
 #
-# Requires: root, internet access, jq, curl, tar, mount, e2fsprogs. go only if no
-# pre-built vm-bridge exists.
+# Requires: root, internet access, jq, curl, tar, mount, e2fsprogs, plus the
+# Bazel-built vm-bridge and vm-guest-telemetry binaries next to this script.
 # Produces: guest/output/rootfs.ext4, guest/output/sbom.txt, guest/output/guest-artifacts.json
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -55,11 +55,14 @@ require_cmd mount
 require_cmd sha256sum
 require_cmd tar
 
-# go is only required if no pre-built vm-bridge exists.
-if [[ ! -f "$SCRIPT_DIR/vm-bridge" ]] && ! command -v go >/dev/null 2>&1; then
-  echo "ERROR: no pre-built vm-bridge and go not in PATH" >&2
+[[ -f "$SCRIPT_DIR/vm-bridge" ]] || {
+  echo "ERROR: missing Bazel-built vm-bridge at $SCRIPT_DIR/vm-bridge" >&2
   exit 1
-fi
+}
+[[ -f "$SCRIPT_DIR/vm-guest-telemetry" ]] || {
+  echo "ERROR: missing Bazel-built vm-guest-telemetry at $SCRIPT_DIR/vm-guest-telemetry" >&2
+  exit 1
+}
 
 json_string() {
   jq -er "$1" "$VERSIONS"
@@ -284,30 +287,11 @@ install -D -m 0755 "$FORGEJO_RUNNER_BINARY" "$ROOTFS/usr/local/bin/forgejo-runne
 
 echo "-> installing vm-bridge"
 rm -f "$ROOTFS/sbin/init"
-if [[ -f "$SCRIPT_DIR/vm-bridge" ]]; then
-  install -D -m 0755 "$SCRIPT_DIR/vm-bridge" "$ROOTFS/sbin/init"
-elif command -v go >/dev/null 2>&1 && [[ -f "$PROJECT_ROOT/../vm-orchestrator/go.mod" ]]; then
-  CGO_ENABLED=0 go build -ldflags='-s -w' -o "$ROOTFS/sbin/init" "$PROJECT_ROOT/../vm-orchestrator/cmd/vm-bridge"
-else
-  echo "ERROR: no pre-built vm-bridge and no Go project found at $PROJECT_ROOT" >&2
-  exit 1
-fi
+install -D -m 0755 "$SCRIPT_DIR/vm-bridge" "$ROOTFS/sbin/init"
 install -D -m 0755 "$ROOTFS/sbin/init" "$ROOTFS/usr/local/bin/vm-bridge"
 
 echo "-> installing vm-guest-telemetry"
 VM_GUEST_TELEMETRY_SRC="$SCRIPT_DIR/vm-guest-telemetry"
-if [[ ! -f "$VM_GUEST_TELEMETRY_SRC" ]]; then
-  if command -v zig >/dev/null 2>&1 && [[ -f "$PROJECT_ROOT/../vm-guest-telemetry/build.zig" ]]; then
-    (
-      cd "$PROJECT_ROOT/../vm-guest-telemetry"
-      zig build -Doptimize=ReleaseSafe
-    )
-    VM_GUEST_TELEMETRY_SRC="$PROJECT_ROOT/../vm-guest-telemetry/zig-out/bin/vm-guest-telemetry"
-  else
-    echo "ERROR: missing vm-guest-telemetry binary" >&2
-    exit 1
-  fi
-fi
 install -D -m 0755 "$VM_GUEST_TELEMETRY_SRC" "$ROOTFS/usr/local/bin/vm-guest-telemetry"
 
 echo "-> finalizing guest filesystem"
