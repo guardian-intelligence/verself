@@ -31,7 +31,7 @@
     src: "{{ platform_rendered_dir }}/etc/nftables.d/profile-service.nft"
     dest: /etc/nftables.d/profile-service.nft
     mode: "0644"
-  notify: Reload nftables for profile-service
+  notify: reload nftables
 
 - name: Apply profile-service nftables before proceeding
   ansible.builtin.meta: flush_handlers

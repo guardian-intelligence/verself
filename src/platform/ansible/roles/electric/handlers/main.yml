@@ -8,8 +8,3 @@
     name: "{{ electric_service_name }}"
     state: restarted
     daemon_reload: true
-
-- name: Reload nftables for Electric
-  ansible.builtin.systemd:
-    name: nftables
-    state: reloaded

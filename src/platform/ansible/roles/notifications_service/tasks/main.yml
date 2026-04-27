@@ -31,7 +31,7 @@
     src: "{{ platform_rendered_dir }}/etc/nftables.d/notifications-service.nft"
     dest: /etc/nftables.d/notifications-service.nft
     mode: "0644"
-  notify: Reload nftables for notifications-service
+  notify: reload nftables
 
 - name: Apply notifications-service nftables before proceeding
   ansible.builtin.meta: flush_handlers

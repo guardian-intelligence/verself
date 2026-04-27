@@ -3,7 +3,8 @@
 # Ansible's default is to skip repeat invocations of a role in the roles:
 # block unless this flag is set.
 allow_duplicates: true
-dependencies: []
+dependencies:
+  - role: nftables_handler
 
 galaxy_info:
   author: verself

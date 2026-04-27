@@ -95,7 +95,7 @@
     src: "{{ platform_rendered_dir }}/etc/nftables.d/sandbox-rental.nft"
     dest: /etc/nftables.d/sandbox-rental.nft
     mode: "0644"
-  notify: Reload nftables for sandbox-rental-service
+  notify: reload nftables
 
 - name: Apply sandbox-rental-service nftables before proceeding
   ansible.builtin.meta: flush_handlers

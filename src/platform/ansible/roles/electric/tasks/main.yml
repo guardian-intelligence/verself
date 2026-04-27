@@ -132,7 +132,7 @@
     src: "{{ platform_rendered_dir }}{{ electric_nftables_file }}"
     dest: "{{ electric_nftables_file }}"
     mode: "0644"
-  notify: Reload nftables for Electric
+  notify: reload nftables
 
 - name: "Enable and start {{ electric_service_name }}"
   ansible.builtin.systemd:

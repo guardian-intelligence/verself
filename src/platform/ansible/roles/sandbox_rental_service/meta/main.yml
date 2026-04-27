@@ -1,4 +1,5 @@
 ---
 # deploy_profile is ordered by the playbooks that invoke this role.
 # Keeping it as a role dependency defeats tag-scoped service deploys.
-dependencies: []
+dependencies:
+  - role: nftables_handler

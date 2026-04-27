@@ -27,11 +27,6 @@
     state: restarted
   when: sandbox_rental_service_recurring_worker_unit_file.stat.exists
 
-- name: Reload nftables for sandbox-rental-service
-  ansible.builtin.systemd:
-    name: nftables
-    state: reloaded
-
 - name: Check if secrets-service unit exists for secret injection grant restart
   listen: restart secrets-service
   ansible.builtin.stat:

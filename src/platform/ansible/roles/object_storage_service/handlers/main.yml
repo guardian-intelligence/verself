@@ -26,8 +26,3 @@
     name: object-storage-admin
     state: restarted
   when: object_storage_service_admin_unit_file.stat.exists
-
-- name: Reload nftables for object-storage-service
-  ansible.builtin.systemd:
-    name: nftables
-    state: reloaded

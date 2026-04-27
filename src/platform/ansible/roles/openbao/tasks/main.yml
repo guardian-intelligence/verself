@@ -296,7 +296,7 @@
     src: "{{ platform_rendered_dir }}/etc/nftables.d/openbao.nft"
     dest: /etc/nftables.d/openbao.nft
     mode: "0644"
-  notify: Reload nftables for OpenBao
+  notify: reload nftables
 
 - name: Apply OpenBao nftables before proceeding
   ansible.builtin.meta: flush_handlers

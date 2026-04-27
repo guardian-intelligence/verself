@@ -45,7 +45,7 @@
     src: "{{ platform_rendered_dir }}/etc/nftables.d/nats.nft"
     dest: /etc/nftables.d/nats.nft
     mode: "0644"
-  notify: Reload nftables for NATS
+  notify: reload nftables
 
 - name: Apply NATS nftables before proceeding
   ansible.builtin.meta: flush_handlers

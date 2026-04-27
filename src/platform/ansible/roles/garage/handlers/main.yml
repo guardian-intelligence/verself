@@ -8,8 +8,3 @@
   loop: "{{ topology_clusters.garage.nodes }}"
   loop_control:
     label: "garage@{{ item.instance }}"
-
-- name: Reload nftables for garage
-  ansible.builtin.systemd:
-    name: nftables
-    state: reloaded

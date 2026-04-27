@@ -12,8 +12,3 @@
     name: governance-service
     state: restarted
   when: governance_service_unit_file.stat.exists
-
-- name: Reload nftables for governance-service
-  ansible.builtin.systemd:
-    name: nftables
-    state: reloaded
