@@ -1,0 +1,20 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "cue-renderer_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/cue-renderer/cmd/cue-renderer",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/cue-renderer/internal/load",
+        "//src/cue-renderer/internal/render",
+        "//src/cue-renderer/internal/spans",
+        "@io_opentelemetry_go_otel//attribute",
+    ],
+)
+
+go_binary(
+    name = "cue-renderer",
+    embed = [":cue-renderer_lib"],
+    visibility = ["//visibility:public"],
+)

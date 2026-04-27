@@ -1,6 +1,6 @@
 # platform
 
-All remote orchestration lives here: Ansible roles + playbooks, OpenTofu modules, operator CLI (`cmd/verself/`, being trimmed in favor of services), and generated deploy inputs. `src/platform/topology` is the CUE source for the current single-node topology and deploy catalog; `make topology-generate` renders typed Ansible inputs under `ansible/group_vars/all/generated/` (`catalog.yml`, `ops.yml`, `dns.yml`, `spire.yml`, `postgres.yml`, `endpoints.yml`, `routes.yml`, and related topology artifacts).
+All remote orchestration lives here: Ansible roles + playbooks, OpenTofu modules, operator CLI (`cmd/verself/`, being trimmed in favor of services), and generated deploy inputs. `src/cue-renderer` is the CUE source for the current single-node topology and deploy catalog; `make topology-generate` renders typed Ansible inputs under `ansible/group_vars/all/generated/` (`catalog.yml`, `ops.yml`, `dns.yml`, `spire.yml`, `postgres.yml`, `endpoints.yml`, `routes.yml`, and related topology artifacts).
 
 ## Server profile
 
@@ -8,8 +8,8 @@ All server software is managed by the `deploy_profile` Ansible role, which popul
 
 - **Go service binaries** (billing-service, sandbox-rental-service, mailbox-service, identity-service, vm-orchestrator): built on the controller via `go build`, copied to server.
 - **Caddy** (with Coraza WAF plugin): built on the controller via `xcaddy`, copied to server.
-- **Static binaries** (ClickHouse, TigerBeetle, Zitadel, Forgejo, Grafana, grafana-clickhouse-datasource plugin, otelcol-contrib, containerd, Node.js, Stalwart, stalwart-cli): pinned in `topology/catalog/versions.cue`, rendered to generated topology vars, downloaded and verified on the server.
-- **apt packages** (PostgreSQL 16, wireguard-tools): installed from PGDG / Ubuntu repos, symlinked into `verself_bin`.
+- **Static binaries** (ClickHouse, TigerBeetle, Zitadel, Forgejo, Grafana, grafana-clickhouse-datasource plugin, otelcol-contrib, containerd, Node.js, Stalwart, stalwart-cli): pinned and fetched by Bazel under `//src/platform/binaries`, packed as `//src/platform/binaries:server_tools.tar.zst`, copied to the server, and unpacked by Ansible.
+- **apt packages** (PostgreSQL 16, wireguard-tools, unpack/runtime support such as zstd): installed from PGDG / Ubuntu repos, with selected binaries symlinked into `verself_bin`.
 
 The only other `apt install` is `zfsutils-linux` (kernel-dependent, must match the running kernel). Ubuntu 24.04 only.
 

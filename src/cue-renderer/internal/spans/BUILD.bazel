@@ -1,0 +1,20 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "spans",
+    srcs = ["spans.go"],
+    importpath = "github.com/verself/cue-renderer/internal/spans",
+    visibility = ["//src/cue-renderer:__subpackages__"],
+    deps = [
+        "//src/otel",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":spans",
+    visibility = ["//src/cue-renderer:__subpackages__"],
+)

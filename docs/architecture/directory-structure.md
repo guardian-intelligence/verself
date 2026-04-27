@@ -14,6 +14,7 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
 
 - `vm-orchestrator/` — privileged host daemon (Firecracker, ZFS, TAP, jailer, vm-bridge, gRPC over Unix socket).
 - `vm-guest-telemetry/` — Zig guest agent streaming 60Hz health over vsock.
+- `cue-renderer/` — CUE topology/catalog source plus the Go renderer replacing `src/platform/scripts/topology.py` incrementally.
 - `sandbox-rental-service/` — compute product control plane (executions, checkpoint refs, billing windows).
 - `billing-service/` — Reserve/Settle/Void on TigerBeetle + PostgreSQL.
 - `identity-service/`, `mailbox-service/`, `workload/` — service-owned databases, migrations, and Huma APIs.
@@ -32,8 +33,8 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
 ## Platform (`src/platform/`)
 
 - `ansible/` — playbooks, roles, SOPS-encrypted `group_vars/`, inventory.
+- `binaries/` — Bazel-owned third-party server-tool package definitions, including `//src/platform/binaries:server_tools.tar.zst`.
 - `terraform/` — OpenTofu bare-metal provisioning (Latitude.sh).
 - `scripts/` — founder wrappers invoked by the Makefile.
-- `topology/` — CUE source for the deploy topology and pinned binary catalog; `make topology-generate` renders typed Ansible inputs into `ansible/group_vars/all/generated/`.
 
 Service-local docs live under each service's `docs/` directory (e.g. `src/sandbox-rental-service/docs/`). Directory-specific conventions are captured in per-directory `AGENTS.md` files.

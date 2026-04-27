@@ -104,7 +104,7 @@ The current deployment is intentionally narrow:
 - One repo-owned `temporal-bootstrap` command used during deploys and
   live verification to ensure the sandbox and billing namespaces exist.
 - Frontend gRPC on `127.0.0.1:7233`, metrics on `127.0.0.1:9001`,
-  private membership ports reserved in `src/platform/topology` for a later split
+  private membership ports reserved in `src/cue-renderer` for a later split
   into dedicated roles.
 
 The current operator surface is Grafana, Temporal Web,

@@ -1,10 +1,6 @@
 ---
 # Grafana observability UI against the existing ClickHouse store.
 
-- name: Load generated server tool pins
-  ansible.builtin.set_fact:
-    grafana_server_tools_pins: "{{ topology_server_tools }}"
-
 - name: Verify Grafana binary exists in profile
   ansible.builtin.stat:
     path: "{{ verself_bin }}/grafana"
@@ -225,29 +221,39 @@
     src: "{{ grafana_plugin_dir }}/.grafana-clickhouse-datasource-version"
   register: grafana_clickhouse_plugin_marker
   failed_when: false
-  no_log: true
 
 - name: Check installed ClickHouse datasource plugin directory
   ansible.builtin.stat:
-    path: "{{ grafana_plugin_dir }}/{{ grafana_server_tools_pins.grafana_clickhouse_datasource.plugin_dir }}"
+    path: "{{ grafana_plugin_dir }}/grafana-clickhouse-datasource"
   register: grafana_clickhouse_plugin_dir
 
-- name: Determine whether ClickHouse datasource plugin needs install
-  ansible.builtin.set_fact:
-    grafana_clickhouse_plugin_needs_install: >-
-      {{
-        grafana_clickhouse_plugin_marker is failed
-        or not grafana_clickhouse_plugin_dir.stat.exists
-        or (
-          grafana_clickhouse_plugin_marker.content | default('') | b64decode | trim
-        ) != grafana_server_tools_pins.grafana_clickhouse_datasource.version
-      }}
+- name: Verify Bazel-provided ClickHouse datasource plugin
+  ansible.builtin.assert:
+    that:
+      - grafana_clickhouse_plugin_marker is succeeded
+      - grafana_clickhouse_plugin_dir.stat.exists
+      - (grafana_clickhouse_plugin_marker.content | b64decode | trim) == topology_versions.production.grafanaClickhouseDatasource
+    quiet: true
+    fail_msg: >-
+      Grafana ClickHouse datasource plugin is missing or stale. Run deploy_profile so Bazel unpacks server_tools.tar.zst.
 
-- name: Remove old ClickHouse datasource plugin when version drifts
+- name: Set ClickHouse datasource plugin ownership
   ansible.builtin.file:
-    path: "{{ grafana_plugin_dir }}/{{ grafana_server_tools_pins.grafana_clickhouse_datasource.plugin_dir }}"
-    state: absent
-  when: grafana_clickhouse_plugin_needs_install | bool
+    path: "{{ grafana_plugin_dir }}/grafana-clickhouse-datasource"
+    state: directory
+    owner: grafana
+    group: grafana
+    mode: "0750"
+    recurse: true
+  notify: restart grafana
+
+- name: Set ClickHouse datasource plugin marker ownership
+  ansible.builtin.file:
+    path: "{{ grafana_plugin_dir }}/.grafana-clickhouse-datasource-version"
+    owner: grafana
+    group: grafana
+    mode: "0640"
+  notify: restart grafana
 
 - name: Remove Grafana unmanaged preinstalled plugins
   ansible.builtin.file:
@@ -255,33 +261,6 @@
     state: absent
   loop: "{{ grafana_unmanaged_plugin_dirs }}"
   notify: restart grafana
-
-- name: Download Grafana ClickHouse datasource plugin
-  ansible.builtin.get_url:
-    url: "{{ grafana_server_tools_pins.grafana_clickhouse_datasource.url }}"
-    dest: "{{ deploy_profile_staging_dir }}/grafana-clickhouse-datasource-{{ grafana_server_tools_pins.grafana_clickhouse_datasource.version }}.zip"
-    checksum: "sha256:{{ grafana_server_tools_pins.grafana_clickhouse_datasource.sha256 }}"
-    mode: "0644"
-  when: grafana_clickhouse_plugin_needs_install | bool
-
-- name: Extract Grafana ClickHouse datasource plugin
-  ansible.builtin.unarchive:
-    src: "{{ deploy_profile_staging_dir }}/grafana-clickhouse-datasource-{{ grafana_server_tools_pins.grafana_clickhouse_datasource.version }}.zip"
-    dest: "{{ grafana_plugin_dir }}"
-    remote_src: true
-    owner: grafana
-    group: grafana
-  when: grafana_clickhouse_plugin_needs_install | bool
-  notify: restart grafana
-
-- name: Record installed ClickHouse datasource plugin version
-  ansible.builtin.copy:
-    content: "{{ grafana_server_tools_pins.grafana_clickhouse_datasource.version }}\n"
-    dest: "{{ grafana_plugin_dir }}/.grafana-clickhouse-datasource-version"
-    owner: grafana
-    group: grafana
-    mode: "0640"
-  when: grafana_clickhouse_plugin_needs_install | bool
 
 - name: Deploy Grafana configuration
   ansible.builtin.template:

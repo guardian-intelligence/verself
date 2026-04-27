@@ -1,0 +1,17 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "render",
+    srcs = ["render.go"],
+    importpath = "github.com/verself/cue-renderer/internal/render",
+    visibility = ["//src/cue-renderer:__subpackages__"],
+    deps = [
+        "//src/cue-renderer/internal/load",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":render",
+    visibility = ["//src/cue-renderer:__subpackages__"],
+)

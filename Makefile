@@ -296,9 +296,6 @@ deprovision: ## Destroy provisioned bare metal infrastructure: make deprovision 
 deploy: inventory-check ## Deploy current site topology: make deploy [TAGS=billing_service,caddy]
 	$(PLATFORM_DIR)/scripts/ansible-with-tunnel.sh playbooks/site.yml $(if $(TAGS),--tags "$(TAGS)",)
 
-guest-rootfs: inventory-check ## Build and stage Firecracker guest artifacts
-	$(PLATFORM_DIR)/scripts/ansible-with-tunnel.sh playbooks/guest-rootfs.yml $(if $(TAGS),--tags "$(TAGS)",)
-
 security-patch: inventory-check ## Apply OS security updates through Ansible
 	$(PLATFORM_DIR)/scripts/ansible-with-tunnel.sh playbooks/security-patch.yml
 
