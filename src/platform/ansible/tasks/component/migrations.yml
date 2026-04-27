@@ -1,0 +1,15 @@
+---
+- name: Run component-owned PostgreSQL migrator
+  verself_service_migrate:
+    command: "{{ component_units[0].exec }}"
+    args:
+      - migrate
+      - up
+    environment:
+      PGHOST: "{{ topology_endpoints.postgresql.host }}"
+      PGPORT: "{{ topology_endpoints.postgresql.endpoints.postgres.port | string }}"
+      PGDATABASE: "{{ component.postgres.database }}"
+      PGUSER: "{{ component.postgres.owner }}"
+      PGPASSWORD: "{{ component_pg_password }}"
+      PGSSLMODE: disable
+  no_log: true

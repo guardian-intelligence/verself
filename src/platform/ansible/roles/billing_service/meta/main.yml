@@ -1,6 +1,0 @@
----
-# deploy_profile: provides billing-service binary at verself_bin.
-# nftables_handler: brings the shared "reload nftables" listener into scope.
-dependencies:
-  - role: deploy_profile
-  - role: nftables_handler

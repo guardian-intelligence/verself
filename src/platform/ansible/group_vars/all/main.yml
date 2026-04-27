@@ -3,6 +3,7 @@
 # group_vars/all/generated/ops.yml and are intentionally kept out of this file.
 
 platform_rendered_dir: "{{ playbook_dir }}/../share/rendered"
+postgresql_log_dir: /var/log/postgresql
 
 # Operator email forwarding — all mail to ceo@<domain> is copied here by the
 # mailbox-service internal forwarder. Required for turnkey operator

@@ -1,0 +1,17 @@
+---
+- name: Reconcile Stripe test webhook endpoint URL
+  ansible.builtin.uri:
+    url: "https://api.stripe.com/v1/webhook_endpoints/{{ stripe_test_webhook_endpoint_id }}"
+    method: POST
+    url_username: "{{ stripe_secret_key }}"
+    url_password: ""
+    force_basic_auth: true
+    body_format: form-urlencoded
+    body:
+      url: "https://{{ billing_service_domain }}/webhooks/stripe"
+    status_code: 200
+    return_content: false
+  delegate_to: localhost
+  become: false
+  no_log: true
+

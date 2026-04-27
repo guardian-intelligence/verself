@@ -1,0 +1,12 @@
+---
+- name: Ensure component ClickHouse user and grants exist
+  ansible.builtin.command:
+    cmd: "{{ clickhouse_operator_client_command }} --multiquery"
+    stdin: |
+      CREATE USER IF NOT EXISTS {{ component.converge.clickhouse.user }} IDENTIFIED WITH ssl_certificate SAN 'URI:{{ lookup('vars', component.identities[component.converge.clickhouse.spiffe_identity].ansible_var) }}' HOST LOCAL;
+      ALTER USER {{ component.converge.clickhouse.user }} IDENTIFIED WITH ssl_certificate SAN 'URI:{{ lookup('vars', component.identities[component.converge.clickhouse.spiffe_identity].ansible_var) }}' HOST LOCAL;
+      {% for grant in component.converge.clickhouse.grants %}
+      GRANT {{ grant.action }} ON {{ grant.table }} TO {{ component.converge.clickhouse.user }};
+      {% endfor %}
+  changed_when: false
+  no_log: true

@@ -1,0 +1,12 @@
+---
+- name: Assert sandbox-rental GitHub App runtime configuration is explicit
+  ansible.builtin.assert:
+    that:
+      - component.converge.bootstrap_config.sandbox_github_app.enabled in [true, false]
+      - component.converge.bootstrap_config.sandbox_github_app.app_id is match('^[0-9]+$')
+      - component.converge.bootstrap_config.sandbox_github_app.slug | length > 0
+      - component.converge.bootstrap_config.sandbox_github_app.client_id | length > 0
+      - component.converge.bootstrap_config.sandbox_github_app.api_base_url is match('^https://')
+      - component.converge.bootstrap_config.sandbox_github_app.web_base_url is match('^https://')
+    quiet: true
+    fail_msg: sandbox-rental GitHub App settings must be fully declared in CUE.
