@@ -14,7 +14,6 @@ package schema
 	output:       string | *""
 	role:         string | *""
 	bazel_label?: string & =~"^//"
-	...
 }
 
 #Runtime: {
@@ -22,7 +21,6 @@ package schema
 	user:      string | *""
 	group:     string | *""
 	spiffe_id: string | *""
-	...
 }
 
 #Process: {
@@ -42,7 +40,6 @@ package schema
 	restart_units: [...string] | *[systemd]
 	readiness_endpoint?:   string
 	requires_spiffe_sock?: bool | *false
-	...
 }
 
 #UIDPolicy: {
@@ -62,14 +59,12 @@ package schema
 	selector:              "unix:uid" | *"unix:uid"
 	x509_svid_ttl_seconds: int & >0 | *3600
 	restart_units: [...string]
-	...
 }
 
 #PostgresBinding: {
 	database:         string | *""
 	owner:            string | *""
 	connection_limit: int & >=0 | *0
-	...
 }
 
 #ElectricSync: {
@@ -87,7 +82,6 @@ package schema
 	db_pool_size:          int & >0
 	replication_stream_id: string | *instance
 	extra_systemd_after: [...string] | *[]
-	...
 }
 
 #Endpoint: {
@@ -99,18 +93,15 @@ package schema
 	if listen_host == "0.0.0.0" {
 		wildcard_listen_reason: string & !="" @go(WildcardListenReason)
 	}
-	...
 }
 
 #Probe: {
 	path: string & =~"^/"
-	...
 }
 
 #Probes: {
 	healthz?: #Probe
 	readyz?:  #Probe
-	...
 }
 
 #Interface: {
@@ -120,19 +111,16 @@ package schema
 	openapi:     string | *""
 	auth:        "none" | "zitadel_jwt" | "spiffe_mtls" | "shared_secret" | "operator" | *"none"
 	probes?:     #Probes
-	...
 }
 
 #Gateway: {
 	kind: "caddy" | "firecracker_host" | "direct"
 	host: #Host | *""
-	...
 }
 
 #Target: {
 	component: string
 	interface: string
-	...
 }
 
 #Route: {
@@ -146,7 +134,6 @@ package schema
 	waf:            "blocking" | "detection" | "off" | *"off"
 	max_body_bytes: int | *0
 	browser_cors:   "none" | "same_origin" | "not_browser_reachable" | *"not_browser_reachable"
-	...
 }
 
 #Edge: {
@@ -154,13 +141,11 @@ package schema
 	to:      #Target
 	auth:    "none" | "zitadel_jwt" | "spiffe_mtls" | "shared_secret" | "operator"
 	purpose: string | *""
-	...
 }
 
 #Policy: {
 	kind:   "waf" | "csp" | "nftables" | "spire" | "body_limit"
 	values: _
-	...
 }
 
 #WireGuardPeer: {
@@ -180,11 +165,9 @@ package schema
 #WireGuardConfig: {
 	tunnels: {
 		[string]: #WireGuardTunnel
-		...
 	}
 	host_groups: {
 		[string]: [...string]
-		...
 	} @go(HostGroups)
 }
 
@@ -371,40 +354,32 @@ package schema
 	runtime:     #Runtime
 	endpoints: {
 		[string]: #Endpoint
-		...
 	}
 	interfaces: {
 		[string]: #Interface
-		...
 	}
 	identities: {
 		[string]: #WorkloadIdentity
-		...
 	}
 	tools?: {
 		[string]: #Artifact
-		...
 	}
 	processes?: {
 		[string]: #Process
-		...
 	}
-	probes: #Probes | *{}
+	probes?:   #Probes
 	garage?:   #GarageCluster
 	temporal?: #TemporalCluster
 	postgres:  #PostgresBinding
 	electric?: #ElectricSync
-	...
 }
 
 #Topology: {
 	components: {
 		[string]: #Component
-		...
 	}
 	gateways: {
 		[string]: #Gateway
-		...
 	}
 	routes: [...#Route]
 	edges: [...#Edge]
@@ -414,7 +389,5 @@ package schema
 	}
 	policies: {
 		[string]: #Policy
-		...
 	}
-	...
 }

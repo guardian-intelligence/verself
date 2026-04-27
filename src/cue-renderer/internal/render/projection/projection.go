@@ -65,11 +65,27 @@ func WriteYAML(out interface{ WriteFile(string, []byte) error }, name string, pa
 }
 
 func TopologyMap(loaded load.Loaded, key string) (map[string]any, error) {
-	return Map(loaded.Topology, "topology", key)
+	value := loaded.Value.LookupPath(cue.ParsePath(key))
+	if err := value.Err(); err != nil {
+		return nil, fmt.Errorf("lookup topology.%s: %w", key, err)
+	}
+	var out map[string]any
+	if err := value.Decode(&out); err != nil {
+		return nil, fmt.Errorf("decode topology.%s: %w", key, err)
+	}
+	return out, nil
 }
 
 func TopologySlice(loaded load.Loaded, key string) ([]any, error) {
-	return Slice(loaded.Topology, "topology", key)
+	value := loaded.Value.LookupPath(cue.ParsePath(key))
+	if err := value.Err(); err != nil {
+		return nil, fmt.Errorf("lookup topology.%s: %w", key, err)
+	}
+	var out []any
+	if err := value.Decode(&out); err != nil {
+		return nil, fmt.Errorf("decode topology.%s: %w", key, err)
+	}
+	return out, nil
 }
 
 func ConfigMap(loaded load.Loaded, key string) (map[string]any, error) {

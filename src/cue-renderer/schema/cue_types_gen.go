@@ -14,37 +14,203 @@ type Protocol string
 
 type Exposure string
 
-type Artifact map[string]any /* CUE top */
+type Artifact struct {
+	Kind string `json:"kind"`
 
-type Runtime map[string]any /* CUE top */
+	Package string `json:"package"`
 
-type Process map[string]any /* CUE top */
+	Output string `json:"output"`
+
+	Role string `json:"role"`
+
+	Bazel_label string `json:"bazel_label,omitempty"`
+}
+
+type Runtime struct {
+	Systemd string `json:"systemd"`
+
+	User string `json:"user"`
+
+	Group string `json:"group"`
+
+	Spiffe_id string `json:"spiffe_id"`
+}
+
+type Process struct {
+	Systemd string `json:"systemd"`
+
+	User string `json:"user"`
+
+	Group string `json:"group"`
+
+	Artifact Artifact `json:"artifact"`
+
+	Endpoints []any/* CUE closed list */ `json:"endpoints"`
+
+	Identities []any/* CUE closed list */ `json:"identities"`
+
+	Supplementary_groups []any/* CUE closed list */ `json:"supplementary_groups"`
+
+	After []any/* CUE closed list */ `json:"after"`
+
+	Wants []any/* CUE closed list */ `json:"wants"`
+
+	Environment map[string]string `json:"environment"`
+
+	Privileged bool `json:"privileged"`
+
+	Restart_units []any/* CUE closed list */ `json:"restart_units"`
+
+	Readiness_endpoint string `json:"readiness_endpoint,omitempty"`
+
+	Requires_spiffe_sock bool `json:"requires_spiffe_sock,omitempty"`
+}
 
 type UIDPolicy map[string]any
 
-type WorkloadIdentity map[string]any /* CUE top */
+type WorkloadIdentity struct {
+	Path string `json:"path"`
 
-type PostgresBinding map[string]any /* CUE top */
+	Ansible_var string `json:"ansible_var"`
 
-type ElectricSync map[string]any /* CUE top */
+	Entry_id string `json:"entry_id"`
 
-type Endpoint map[string]any /* CUE top */
+	User string `json:"user"`
 
-type Probe map[string]any /* CUE top */
+	Group string `json:"group"`
 
-type Probes map[string]any /* CUE top */
+	Uid_policy map[string]any `json:"uid_policy"`
 
-type Interface map[string]any /* CUE top */
+	Selector string `json:"selector"`
 
-type Gateway map[string]any /* CUE top */
+	X509_svid_ttl_seconds int64 `json:"x509_svid_ttl_seconds"`
 
-type Target map[string]any /* CUE top */
+	Restart_units []string `json:"restart_units"`
+}
 
-type Route map[string]any /* CUE top */
+type PostgresBinding struct {
+	Database string `json:"database"`
 
-type Edge map[string]any /* CUE top */
+	Owner string `json:"owner"`
 
-type Policy map[string]any /* CUE top */
+	Connection_limit int64 `json:"connection_limit"`
+}
+
+type ElectricSync struct {
+	Instance string `json:"instance"`
+
+	Pg_role string `json:"pg_role"`
+
+	Pg_conn_limit int64 `json:"pg_conn_limit"`
+
+	Source_database string `json:"source_database"`
+
+	Writer_role string `json:"writer_role"`
+
+	Publication_name string `json:"publication_name"`
+
+	Publication_tables []string `json:"publication_tables"`
+
+	Storage_dir string `json:"storage_dir"`
+
+	Credstore_dir string `json:"credstore_dir"`
+
+	Nftables_table string `json:"nftables_table"`
+
+	Nftables_file string `json:"nftables_file"`
+
+	Db_pool_size int64 `json:"db_pool_size"`
+
+	Replication_stream_id string `json:"replication_stream_id"`
+
+	Extra_systemd_after []any/* CUE closed list */ `json:"extra_systemd_after"`
+}
+
+type Endpoint struct {
+	Protocol Protocol `json:"protocol"`
+
+	Host string `json:"host"`
+
+	Listen_host string `json:"listen_host"`
+
+	Port Port `json:"port"`
+
+	Exposure Exposure `json:"exposure"`
+}
+
+type Probe struct {
+	Path string `json:"path"`
+}
+
+type Probes struct {
+	Healthz Probe `json:"healthz,omitempty"`
+
+	Readyz Probe `json:"readyz,omitempty"`
+}
+
+type Interface struct {
+	Kind string `json:"kind"`
+
+	Endpoint string `json:"endpoint"`
+
+	Path_prefix string `json:"path_prefix"`
+
+	Openapi string `json:"openapi"`
+
+	Auth string `json:"auth"`
+
+	Probes Probes `json:"probes,omitempty"`
+}
+
+type Gateway struct {
+	Kind string `json:"kind"`
+
+	Host string `json:"host"`
+}
+
+type Target struct {
+	Component string `json:"component"`
+
+	Interface string `json:"interface"`
+}
+
+type Route struct {
+	Kind string `json:"kind"`
+
+	Gateway string `json:"gateway"`
+
+	Zone string `json:"zone"`
+
+	Host string `json:"host"`
+
+	Path_prefix string `json:"path_prefix"`
+
+	Paths []any/* CUE closed list */ `json:"paths"`
+
+	To Target `json:"to"`
+
+	Waf string `json:"waf"`
+
+	Max_body_bytes int64 `json:"max_body_bytes"`
+
+	Browser_cors string `json:"browser_cors"`
+}
+
+type Edge struct {
+	From string `json:"from"`
+
+	To Target `json:"to"`
+
+	Auth string `json:"auth"`
+
+	Purpose string `json:"purpose"`
+}
+
+type Policy struct {
+	Kind string `json:"kind"`
+
+	Values any/* CUE top */ `json:"values"`
+}
 
 type WireGuardPeer struct {
 	PublicKey string `json:"public_key"`
@@ -271,6 +437,52 @@ type SmokeTestSpan struct {
 	Attributes map[string]any/* CUE top */ `json:"attributes"`
 }
 
-type Component map[string]any /* CUE top */
+type Component struct {
+	Kind ComponentKind `json:"kind"`
 
-type Topology map[string]any /* CUE top */
+	Host string `json:"host"`
+
+	Listen_host string `json:"listen_host"`
+
+	Artifact Artifact `json:"artifact"`
+
+	Runtime Runtime `json:"runtime"`
+
+	Endpoints map[string]Endpoint `json:"endpoints"`
+
+	Interfaces map[string]Interface `json:"interfaces"`
+
+	Identities map[string]WorkloadIdentity `json:"identities"`
+
+	Tools map[string]Artifact `json:"tools,omitempty"`
+
+	Processes map[string]Process `json:"processes,omitempty"`
+
+	Probes Probes `json:"probes,omitempty"`
+
+	Garage GarageCluster `json:"garage,omitempty"`
+
+	Temporal TemporalCluster `json:"temporal,omitempty"`
+
+	Postgres PostgresBinding `json:"postgres"`
+
+	Electric ElectricSync `json:"electric,omitempty"`
+}
+
+type Topology struct {
+	Components map[string]Component `json:"components"`
+
+	Gateways map[string]Gateway `json:"gateways"`
+
+	Routes []Route `json:"routes"`
+
+	Edges []Edge `json:"edges"`
+
+	Nftables NftablesTopology `json:"nftables"`
+
+	Smoke_tests struct {
+		Spans []any /* CUE closed list */ `json:"spans"`
+	} `json:"smoke_tests"`
+
+	Policies map[string]Policy `json:"policies"`
+}

@@ -31,11 +31,17 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 			}
 			renderedEndpoints[endpoint.Name] = rendered
 		}
+		probes := component.Value["probes"]
+		if probes == nil {
+			// schema marks #Component.probes optional; renderer materialises
+			// the empty struct so existing consumers keep seeing `probes: {}`.
+			probes = map[string]any{}
+		}
 		payload[component.Name] = map[string]any{
 			"host":       component.Value["host"],
 			"endpoints":  renderedEndpoints,
 			"interfaces": component.Value["interfaces"],
-			"probes":     component.Value["probes"],
+			"probes":     probes,
 		}
 	}
 	return projection.WriteYAML(out, "endpoints", map[string]any{
