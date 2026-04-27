@@ -479,6 +479,13 @@ receivers:
           scrape_interval: 10s
           static_configs:
             - targets: ["{{ topology_endpoints.temporal.endpoints.metrics.address }}"]
+  prometheus/bazel-remote:
+    config:
+      scrape_configs:
+        - job_name: bazel-remote
+          scrape_interval: 10s
+          static_configs:
+            - targets: ["{{ topology_endpoints.bazel_remote.endpoints.http.address }}"]
 
 processors:
   batch:
@@ -546,6 +553,6 @@ service:
       processors: [transform/ansible_spans, batch]
       exporters: [clickhouse]
     metrics:
-      receivers: [otlp, hostmetrics, postgresql, statsd, prometheus/openbao, prometheus/temporal]
+      receivers: [otlp, hostmetrics, postgresql, statsd, prometheus/openbao, prometheus/temporal, prometheus/bazel-remote]
       processors: [batch]
       exporters: [clickhouse]
