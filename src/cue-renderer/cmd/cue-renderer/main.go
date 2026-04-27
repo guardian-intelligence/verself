@@ -159,23 +159,7 @@ func cmdGenerate(args []string) error {
 		return err
 	}
 	return withPipeline(context.Background(), common, func(ctx context.Context, rec *spans.Recorder) error {
-		loaded, err := load.Topology(topoDir, common.instance)
-		if err != nil {
-			return err
-		}
-		inputAttrs := []attribute.KeyValue{
-			attribute.String("topology.graph_sha256", loaded.GraphSHA256),
-			attribute.String("topology.topology_sha256", loaded.TopologySHA256),
-			attribute.String("topology.config_sha256", loaded.ConfigSHA256),
-			attribute.String("topology.catalog_sha256", loaded.CatalogSHA256),
-		}
-		rec.SetRootAttributes(inputAttrs...)
-		rec.Record(ctx, "topology.cue.export_graph", inputAttrs...)
-		rec.Record(ctx, "topology.cue.export_config", attribute.String("topology.config_sha256", loaded.ConfigSHA256))
-		rec.Record(ctx, "topology.cue.export_catalog", attribute.String("topology.catalog_sha256", loaded.CatalogSHA256))
-		recordBazelRenderSpans(ctx, rec, loaded)
-
-		mem, artifacts, err := renderAll(ctx, loaded)
+		mem, artifacts, err := loadAndRender(ctx, rec, topoDir, common.instance)
 		if err != nil {
 			return err
 		}
@@ -211,23 +195,7 @@ func cmdCheck(args []string) error {
 		return err
 	}
 	return withPipeline(context.Background(), common, func(ctx context.Context, rec *spans.Recorder) error {
-		loaded, err := load.Topology(topoDir, common.instance)
-		if err != nil {
-			return err
-		}
-		inputAttrs := []attribute.KeyValue{
-			attribute.String("topology.graph_sha256", loaded.GraphSHA256),
-			attribute.String("topology.topology_sha256", loaded.TopologySHA256),
-			attribute.String("topology.config_sha256", loaded.ConfigSHA256),
-			attribute.String("topology.catalog_sha256", loaded.CatalogSHA256),
-		}
-		rec.SetRootAttributes(inputAttrs...)
-		rec.Record(ctx, "topology.cue.export_graph", inputAttrs...)
-		rec.Record(ctx, "topology.cue.export_config", attribute.String("topology.config_sha256", loaded.ConfigSHA256))
-		rec.Record(ctx, "topology.cue.export_catalog", attribute.String("topology.catalog_sha256", loaded.CatalogSHA256))
-		recordBazelRenderSpans(ctx, rec, loaded)
-
-		mem, artifacts, err := renderAll(ctx, loaded)
+		mem, artifacts, err := loadAndRender(ctx, rec, topoDir, common.instance)
 		if err != nil {
 			return err
 		}
@@ -252,6 +220,35 @@ func cmdCheck(args []string) error {
 		}
 		return nil
 	})
+}
+
+// loadAndRender shares the front half of every command: load the CUE
+// topology, attach the four input-digest attributes to the root span,
+// emit the three `topology.cue.export_*` events, and run every renderer
+// into a MemFS. Callers diverge on what they do with the MemFS — write
+// it to disk (generate), diff it against disk (check), or print a
+// single artefact (render).
+func loadAndRender(ctx context.Context, rec *spans.Recorder, topoDir, instance string) (*render.MemFS, map[string]string, error) {
+	loaded, err := load.Topology(topoDir, instance)
+	if err != nil {
+		return nil, nil, err
+	}
+	inputAttrs := []attribute.KeyValue{
+		attribute.String("topology.graph_sha256", loaded.GraphSHA256),
+		attribute.String("topology.topology_sha256", loaded.TopologySHA256),
+		attribute.String("topology.config_sha256", loaded.ConfigSHA256),
+		attribute.String("topology.catalog_sha256", loaded.CatalogSHA256),
+	}
+	rec.SetRootAttributes(inputAttrs...)
+	rec.Record(ctx, "topology.cue.export_graph", inputAttrs...)
+	rec.Record(ctx, "topology.cue.export_config", attribute.String("topology.config_sha256", loaded.ConfigSHA256))
+	rec.Record(ctx, "topology.cue.export_catalog", attribute.String("topology.catalog_sha256", loaded.CatalogSHA256))
+
+	mem, artifacts, err := renderAll(ctx, loaded)
+	if err != nil {
+		return nil, nil, err
+	}
+	return mem, artifacts, nil
 }
 
 func cmdRender(args []string) error {
@@ -364,19 +361,6 @@ func contains(haystack []string, needle string) bool {
 		}
 	}
 	return false
-}
-
-func recordBazelRenderSpans(ctx context.Context, rec *spans.Recorder, loaded load.Loaded) {
-	rec.Record(ctx,
-		"topology.bazel.module_render",
-		attribute.String("topology.generated_file", "src/cue-renderer/binaries/server_tools.MODULE.bazel"),
-		attribute.Int("topology.http_file_count", len(loaded.Catalog.ServerToolDownloads)),
-	)
-	rec.Record(ctx,
-		"topology.bazel.server_tools_render",
-		attribute.String("topology.generated_file", "src/cue-renderer/binaries/server_tools.bzl"),
-		attribute.Int("topology.server_tool_count", len(loaded.Catalog.ServerToolDownloads)),
-	)
 }
 
 func printUsage(w io.Writer) {

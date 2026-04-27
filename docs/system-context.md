@@ -4,7 +4,7 @@ How the platform is currently wired together. Direction and target state are in 
 
 ## Service Architecture
 
-High-level topology — components, ports, SPIRE identities, runtime users — is declared in `src/cue-renderer/` and rendered as typed artifacts under `src/platform/ansible/group_vars/all/generated/` by `make topology-generate`. Run `make services-doctor` to cross-check generated topology endpoints against live listeners on the box (supports `FORMAT=json|nftables`).
+High-level topology — components, ports, SPIRE identities, runtime users — is declared in `src/cue-renderer/` and rendered by `make topology-generate` into two trees: typed Ansible inputs under `src/platform/ansible/group_vars/all/generated/*.yml`, and final-file copies under `src/platform/ansible/share/rendered/` for the host firewall (`etc/nftables.conf`, `etc/nftables.d/<component>.nft`, `etc/systemd/system/verself-firewall.target`). The Bazel manifests `src/cue-renderer/binaries/server_tools.{MODULE.bazel,bzl}` and `src/cue-renderer/nftables_files.bzl` are checked in via `write_source_files` so adding a CUE-declared ruleset never requires a parallel BUILD edit. Run `make services-doctor` to cross-check generated topology endpoints against live listeners on the box (supports `FORMAT=json|nftables`).
 
 Bootstrap and operator-recovery secrets are SOPS-encrypted in `group_vars/all/secrets.sops.yml` and loaded at service start via systemd `LoadCredential=` into `$CREDENTIALS_DIRECTORY`. Repo-owned service-to-service authentication is SPIFFE/SPIRE; runtime third-party provider credentials are fetched from OpenBao by SPIFFE-authenticated services. See [`docs/architecture/workload-identity.md`](architecture/workload-identity.md).
 
