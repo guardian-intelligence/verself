@@ -1,5 +1,5 @@
 .PHONY: help bazel-doctor bazel-proof bazel-gazelle bazel-tidy bazel-update test lint lint-scripts lint-conversions lint-ansible lint-voice company-proof fmt vet tidy sqlc sqlc-check openapi openapi-check openapi-clients openapi-clients-check openapi-wire-check topology-generate topology-check topology-proof \
-       hooks-install doctor inventory-check setup-dev setup-sops provision deprovision deploy site guest-rootfs security-patch identity-reset seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member \
+       hooks-install doctor inventory-check setup-dev setup-sops provision deprovision deploy guest-rootfs security-patch identity-reset seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member \
        set-user-state billing-clock billing-wall-clock billing-state billing-documents billing-finalizations billing-events billing-pg-shell billing-pg-query billing-proof billing-reset verification-reset \
        profile-proof organization-sync-proof notifications-proof projects-proof source-code-hosting-proof secrets-proof secrets-leak-proof openbao-proof openbao-tenancy-proof workload-identity-proof spiffe-rotation-proof object-storage-verify temporal-verify temporal-web-proof recurring-schedule-proof \
        vm-guest-telemetry-build guest-artifacts-bundle observe telemetry-proof telemetry-proof-fail clickhouse-query clickhouse-schemas pg-shell pg-query pg-list tb-shell tb-command mail mail-accounts mail-mailboxes \
@@ -294,9 +294,6 @@ deprovision: ## Destroy provisioned bare metal infrastructure: make deprovision 
 	cd $(PLATFORM_DIR)/ansible && ansible-playbook playbooks/deprovision.yml
 
 deploy: inventory-check ## Deploy current site topology: make deploy [TAGS=billing_service,caddy]
-	$(PLATFORM_DIR)/scripts/ansible-with-tunnel.sh playbooks/site.yml $(if $(TAGS),--tags "$(TAGS)",)
-
-site: inventory-check ## Deploy current site topology
 	$(PLATFORM_DIR)/scripts/ansible-with-tunnel.sh playbooks/site.yml $(if $(TAGS),--tags "$(TAGS)",)
 
 guest-rootfs: inventory-check ## Build and stage Firecracker guest artifacts

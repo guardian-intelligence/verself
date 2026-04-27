@@ -93,5 +93,5 @@ Self-hosted inbound via Stalwart. Boundary, auth, storage, and the mailbox-servi
   HTTP clients. Public `client` packages are for customer-authenticated API
   shapes; `internalclient` packages are for SPIFFE-only operations that would
   otherwise require spoofable body-scoped attribution.
-- Start telemetry investigation with `make observe` — discoverability-first. See `docs/architecture/founder-workflows.md` for the full flow.
+- Start telemetry investigation with `make observe` — discoverability-first.
 - `make clickhouse-schemas` reads all ClickHouse tables (ground truth). Prefer `make observe` first, fall back to raw `make clickhouse-query` when observe has no named query.

@@ -78,7 +78,7 @@ No need to be frugal with telemetry. We store 10+ million rows for around ~150MB
 
 Run `make observe` to discover available telemetry, run `make clickhouse-query`/`make pg-query` wrappers to easily query ClickHouse/PG with fewer shell string escaping issues, deploy playbooks and correlation model (`deploy_run_key`, `deploy_id`, `traceparent`), TLS via Cloudflare, the `deploy_profile` server-binaries strategy, Ansible playbooks table.
 
-See `docs/architecture/founder-workflows.md` for more. The repo started as a CI orchestrator; that history lives in `README.md`.
+The repo started as a CI orchestrator; that history lives in `README.md`.
 
 ### High-signal Documents.
 
@@ -97,7 +97,6 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - **Service topology, port assignments, SPIRE identities, runtime users, generated Ansible inputs:** `src/platform/topology/`
 - **Directory structure, repo layout:** `docs/architecture/directory-structure.md`
 - **Agent workspace, QEMU/KVM, AI coding agent VMs:** `docs/architecture/agent-workspace.md`
-- **Founder workflows, deploy, observe, pg-query, clickhouse-query, playbooks:** `docs/architecture/founder-workflows.md`
 
 </operational_runbook>
 
