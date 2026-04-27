@@ -19,8 +19,10 @@ import (
 	"github.com/verself/envconfig"
 	"github.com/verself/httpserver"
 	verselfotel "github.com/verself/otel"
+	"github.com/verself/pgmigrate"
 	sourceapi "github.com/verself/source-code-hosting-service/internal/api"
 	"github.com/verself/source-code-hosting-service/internal/source"
+	"github.com/verself/source-code-hosting-service/migrations"
 )
 
 const (
@@ -30,10 +32,28 @@ const (
 )
 
 func main() {
+	if handled, err := runMigrationCLI(context.Background()); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+func runMigrationCLI(ctx context.Context) (bool, error) {
+	if len(os.Args) < 2 || os.Args[1] != "migrate" {
+		return false, nil
+	}
+	return true, pgmigrate.RunCLI(ctx, os.Args[2:], pgmigrate.Config{
+		Service: serviceName,
+		FS:      migrations.Files,
+		DSNEnv:  "SOURCE_PG_DSN",
+	})
 }
 
 func run() error {

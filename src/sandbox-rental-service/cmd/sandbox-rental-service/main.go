@@ -29,6 +29,7 @@ import (
 	"github.com/verself/envconfig"
 	"github.com/verself/httpserver"
 	verselfotel "github.com/verself/otel"
+	"github.com/verself/pgmigrate"
 	secretsclient "github.com/verself/secrets-service/client"
 	vmorchestrator "github.com/verself/vm-orchestrator"
 
@@ -37,6 +38,7 @@ import (
 	"github.com/verself/sandbox-rental-service/internal/recurring"
 	"github.com/verself/sandbox-rental-service/internal/scheduler"
 	"github.com/verself/sandbox-rental-service/internal/sourceworkflow"
+	"github.com/verself/sandbox-rental-service/migrations"
 	"github.com/verself/temporal-platform/sdkclient"
 )
 
@@ -48,10 +50,28 @@ const (
 )
 
 func main() {
+	if handled, err := runMigrationCLI(context.Background()); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+func runMigrationCLI(ctx context.Context) (bool, error) {
+	if len(os.Args) < 2 || os.Args[1] != "migrate" {
+		return false, nil
+	}
+	return true, pgmigrate.RunCLI(ctx, os.Args[2:], pgmigrate.Config{
+		Service: "sandbox-rental-service",
+		FS:      migrations.Files,
+		DSNEnv:  "SANDBOX_PG_DSN",
+	})
 }
 
 func run() error {

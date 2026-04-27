@@ -13,6 +13,7 @@ use (
 	./src/notifications-service
 	./src/object-storage-service
 	./src/otel
+	./src/pgmigrate
 	./src/profile-service
 	./src/projects-service
 	./src/sandbox-rental-service

@@ -46,6 +46,7 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/segmentio/asm v1.2.0 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
+	github.com/verself/pgmigrate v0.0.0
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.17.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.19.0 // indirect
@@ -76,3 +77,5 @@ replace (
 	github.com/verself/otel => ../otel
 	github.com/verself/secrets-service => ../secrets-service
 )
+
+replace github.com/verself/pgmigrate => ../pgmigrate

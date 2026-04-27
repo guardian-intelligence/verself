@@ -79,6 +79,7 @@ require (
 	github.com/tidwall/match v1.2.0 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
+	github.com/verself/pgmigrate v0.0.0
 	github.com/vishvananda/netlink v1.3.1 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
@@ -123,3 +124,5 @@ replace (
 	github.com/verself/temporal-platform => ../temporal-platform
 	github.com/verself/vm-orchestrator => ../vm-orchestrator
 )
+
+replace github.com/verself/pgmigrate => ../pgmigrate

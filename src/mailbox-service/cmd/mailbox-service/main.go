@@ -29,6 +29,8 @@ import (
 	"github.com/verself/mailbox-service/internal/mailstore"
 	"github.com/verself/mailbox-service/internal/sessionproxy"
 	mailboxsync "github.com/verself/mailbox-service/internal/sync"
+	"github.com/verself/mailbox-service/migrations"
+	"github.com/verself/pgmigrate"
 )
 
 var version = "dev"
@@ -59,10 +61,28 @@ type config struct {
 }
 
 func main() {
+	if handled, err := runMigrationCLI(context.Background()); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+func runMigrationCLI(ctx context.Context) (bool, error) {
+	if len(os.Args) < 2 || os.Args[1] != "migrate" {
+		return false, nil
+	}
+	return true, pgmigrate.RunCLI(ctx, os.Args[2:], pgmigrate.Config{
+		Service: "mailbox-service",
+		FS:      migrations.Files,
+		DSNEnv:  "MAILBOX_SERVICE_PG_DSN",
+	})
 }
 
 func run() error {

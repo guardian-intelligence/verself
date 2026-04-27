@@ -37,6 +37,7 @@ require (
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
+	github.com/verself/pgmigrate v0.0.0
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.17.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.19.0 // indirect
@@ -69,3 +70,5 @@ replace (
 	github.com/verself/sandbox-rental-service => ../sandbox-rental-service
 	github.com/verself/secrets-service => ../secrets-service
 )
+
+replace github.com/verself/pgmigrate => ../pgmigrate
