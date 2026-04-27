@@ -526,6 +526,60 @@ var queryDocs = []queryDoc{
 		},
 	},
 	{
+		ID:      "deploy.bazel_builds",
+		Family:  "deploy",
+		Title:   "Deploy Bazel Build Times",
+		Purpose: "Per-deploy duration of the deploy_profile bazel build task. Cold deploys with an empty bazel-remote land near 60s; warm deploys served by the cache land in the single digits.",
+		Optional: []string{
+			"MINUTES=<lookback>",
+			"LIMIT=<rows>",
+			"FORMAT=table|json|markdown",
+		},
+		Examples: []string{
+			"make observe WHAT=deploy",
+			"make observe WHAT=deploy MINUTES=1440",
+		},
+		Next: []string{
+			"make observe WHAT=deploy RUN_KEY=<deploy-run-key>",
+			"make observe WHAT=trace TRACE_ID=<trace-id>",
+		},
+	},
+	{
+		ID:      "deploy.bazel_cache",
+		Family:  "deploy",
+		Title:   "Deploy Bazel Cache Hit/Miss Totals",
+		Purpose: "Total bazel-remote action-cache and CAS lookups in the lookback window broken down by hit/miss. Sums the per-(kind, method, status) counter delta of bazel_remote_incoming_requests_total.",
+		Optional: []string{
+			"MINUTES=<lookback>",
+			"FORMAT=table|json|markdown",
+		},
+		Examples: []string{
+			"make observe WHAT=deploy",
+			"make observe WHAT=deploy MINUTES=1440",
+		},
+		Next: []string{
+			"make observe WHAT=deploy RUN_KEY=<deploy-run-key>",
+		},
+	},
+	{
+		ID:      "deploy.bazel_build_run",
+		Family:  "deploy",
+		Title:   "Deploy Bazel Build (One Run)",
+		Purpose: "Bazel build wall-clock plus bazel-remote hit/miss counts intersected with the chosen deploy_run_key's build window.",
+		Required: []string{
+			"RUN_KEY=<deploy-run-key>",
+		},
+		Optional: []string{
+			"FORMAT=table|json|markdown",
+		},
+		Examples: []string{
+			"make observe WHAT=deploy RUN_KEY=2026-04-27.000057@rust-forge-01",
+		},
+		Next: []string{
+			"make observe WHAT=trace TRACE_ID=<trace-id>",
+		},
+	},
+	{
 		ID:      "mail.events",
 		Family:  "mail",
 		Title:   "Mail Events",
