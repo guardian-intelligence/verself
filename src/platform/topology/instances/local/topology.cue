@@ -179,11 +179,43 @@ _config: {
 		openbao_tenancy_platform_org_name:     "verself"
 	}
 
+	// WireGuard tunnel topology. The host can carry multiple independent tunnels;
+	// `tunnels` holds the per-interface config and `host_groups` selects which
+	// tunnels each Ansible play attaches to. The worker mesh (wg0) keeps the
+	// historical 10.0.0.0/16 plane between platform nodes; the operator mesh
+	// (wg-ops) is a private path for reaching internal substrate (bazel-remote
+	// today; openbao UI / verdaccio admin in the future) without ever fronting
+	// those listeners on the public internet.
 	wireguard: {
-		wireguard_interface: "wg0"
-		wireguard_port:      51820
-		wireguard_network:   "10.0.0.0/16"
-		wireguard_address:   "10.0.0.1"
+		tunnels: {
+			worker: {
+				interface:      "wg0"
+				port:           51820
+				network:        "10.0.0.0/16"
+				address:        "10.0.0.1"
+				address_prefix: 16
+				peers: [...{public_key: string, allowed_ips: string}] | *[]
+			}
+			ops: {
+				interface:      "wg-ops"
+				port:           51821
+				network:        "10.66.66.0/24"
+				address:        "10.66.66.1"
+				address_prefix: 24
+				// Operator laptops join by generating a keypair locally with `wg
+				// genkey | wg pubkey` and submitting their public key here. Server
+				// has no `endpoint` for these peers because operators sit behind
+				// NAT and initiate the handshake themselves.
+				peers: [...{public_key: string, allowed_ips: string}] | *[]
+			}
+		}
+		// Which tunnels each Ansible host group runs. Single-node deployments
+		// hit both groups so workers gets the worker tunnel and infra adds
+		// wg-ops on top.
+		host_groups: {
+			workers: ["worker"]
+			infra: ["worker", "ops"]
+		}
 	}
 
 	object_storage: {

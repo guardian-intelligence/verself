@@ -1204,8 +1204,9 @@ def render_artifact_payloads(
         "verself_bin": config["verself_bin"],
         "retired_product_runtimes": config["retired_product_runtimes"],
         "topology_electric_instances": electric_payload,
+        "topology_wireguard": config["wireguard"],
     }
-    for section_name in ("domains", "openbao", "wireguard", "object_storage", "temporal", "seed_system"):
+    for section_name in ("domains", "openbao", "object_storage", "temporal", "seed_system"):
         section = config[section_name]
         assert isinstance(section, dict)
         ops_payload.update(section)
