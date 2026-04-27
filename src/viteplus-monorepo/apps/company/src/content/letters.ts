@@ -9,6 +9,11 @@ import * as v from "valibot";
 // parses each file at build time; the browser only ever sees pre-rendered
 // HTML. The voice lint scans the body and frontmatter on every build.
 
+// summary is the only frontmatter field allowed to be absent — that absence
+// is the publish gate. A letter with no summary is a draft: it parses, but
+// is filtered out of LETTERS below so it does not show up on /letters or
+// /letters/$slug. Authors can leave a stub file in ./letters/ while drafting
+// without breaking the build, and ship by filling in the summary.
 const LetterFrontmatterSchema = v.pipe(
   v.object({
     slug: v.pipe(v.string(), v.minLength(1)),
@@ -18,7 +23,7 @@ const LetterFrontmatterSchema = v.pipe(
     publishedAt: v.pipe(v.string(), v.regex(/^\d{4}-\d{2}-\d{2}$/)),
     author: v.pipe(v.string(), v.minLength(1)),
     flare: v.pipe(v.string(), v.minLength(1)),
-    summary: v.pipe(v.string(), v.minLength(1)),
+    summary: v.optional(v.nullable(v.string()), ""),
   }),
   v.check(
     (fm) => fm.title.includes(fm.flare),

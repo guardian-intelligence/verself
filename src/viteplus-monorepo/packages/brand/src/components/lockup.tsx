@@ -64,6 +64,16 @@ const WORDMARK_TRACKING: Record<LockupSize, string> = {
 // cap-height-relative.)
 const WORDMARK_CAP_RATIO = 0.7;
 
+// Cap-overshoot ratio — the fraction of font-size by which the visible cap
+// glyphs sit above the line-box vertical centerline. Geist's typo metrics
+// place the baseline below the line-box midline, so even with line-height
+// tight to cap-height the caps render high. Measured at sm (11px font-size,
+// 0.7 cap-ratio): cap mid landed 0.836px above line-box mid, giving
+// 0.836 / 11 ≈ 0.076. Used to translateY the wordmark down so its visible
+// cap centroid coincides with the SVG center (= chip / disc center) under
+// flex align-items: center. Per-face — re-measure when swapping wordmark.
+const CAP_OVERSHOOT_RATIO = 0.076;
+
 // Optical gap between mark-ink-right-edge and wordmark-ink-left-edge, as a
 // fraction of wordmark cap-height. The classic logotype rule: the gap reads
 // like the counter of the lead capital — close enough to lock the mark and
@@ -214,7 +224,16 @@ export function Lockup({
   // flex-centering the em-box drops the caps visually low against a chip or
   // medallion that is centered by its geometric box. line-height tight to
   // cap-height collapses the em-box onto the caps so flex-align-items: center
-  // lands visual centers, not em-box centers. No per-variant nudge needed.
+  // lands the line-box center on the chip center.
+  //
+  // The remaining cap-centroid drift comes from Geist's font metrics: the
+  // baseline does not sit at the line-box vertical centerline, so the actual
+  // cap GLYPHS render slightly above the line-box midline. Empirical
+  // measurement at 11px shows ~7.6% of font-size of cap-overshoot (caps
+  // 0.836px above their bounding box mid). A translateY of that amount
+  // pushes the visible cap centroid onto the chip's geometric center.
+  // CAP_OVERSHOOT_RATIO is per-face — Geist Variable; rebaselining the
+  // wordmark face (e.g. swapping in Inter) needs this re-measured.
   //
   // Geist is hard-coded at the top of the stack (rather than read through
   // var(--font-sans)) so the lockup renders the Guardian wordmark the same
@@ -229,12 +248,25 @@ export function Lockup({
     letterSpacing: tracking,
     textTransform: "uppercase",
     whiteSpace: "nowrap",
+    transform: `translateY(${wordmarkFontSize * CAP_OVERSHOOT_RATIO}px)`,
   };
 
   return (
     <span className={className} style={lockupStyle} data-variant={variant} data-lockup="">
       {variant === "argent" ? (
-        <WingsArgent title={title} viewBoxMode="padded" style={markStyle} />
+        // Figure-ground compensation: bare wings on the canvas read smaller
+        // than the same pixel footprint inside chip/emboss because a framed
+        // mark borrows visual weight from its container. Scale up only at
+        // chrome size (sm) where the eye reads the mark at small pixel
+        // counts; md/lg specimens are large enough that the optical illusion
+        // does not kick in. 1.21 lands two compounded +10% iterations — the
+        // value tuned by eye against the chip on Letters.
+        <WingsArgent
+          title={title}
+          viewBoxMode="padded"
+          style={markStyle}
+          wingsScale={size === "sm" ? 1.21 : 1}
+        />
       ) : variant === "chip" ? (
         <WingsChip title={title} style={markStyle} />
       ) : (

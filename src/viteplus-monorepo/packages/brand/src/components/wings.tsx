@@ -36,12 +36,25 @@ export interface WingsArgentProps extends SvgBase {
   //                       Letters / Newsroom even though Workshop draws no
   //                       frame around the wings.
   readonly viewBoxMode?: "tight" | "cropped" | "padded";
+  // Optional inner-mark scale around the wings' optical center (176, 177 in
+  // the 292-unit viewBox). Default 1.0. Used at chrome size (sm Lockup,
+  // padded mode) where the bare wings read ~10% smaller than the same
+  // pixel footprint inside chip/emboss — figure-ground compensation,
+  // since a framed mark borrows visual weight from its container while a
+  // bare mark on the canvas does not. Mirrors WingsEmboss's wingsScale,
+  // which goes the other way (0.92) to shrink wings inside the medallion.
+  readonly wingsScale?: number;
 }
 
 // Argent on Iron — the canonical mark when the canvas is already the wings'
 // ground (Iron, photography behind a scrim, in-product chrome). Tight viewBox
 // because the surrounding canvas does the work of giving the wings air.
-export function WingsArgent({ title, viewBoxMode = "tight", ...rest }: WingsArgentProps) {
+export function WingsArgent({
+  title,
+  viewBoxMode = "tight",
+  wingsScale = 1,
+  ...rest
+}: WingsArgentProps) {
   const viewBox =
     viewBoxMode === "cropped"
       ? WINGS_CROPPED_VIEWBOX
@@ -58,7 +71,13 @@ export function WingsArgent({ title, viewBoxMode = "tight", ...rest }: WingsArge
       focusable="false"
       {...rest}
     >
-      <path fill="#FFFFFF" d={WINGS_PATH_D} />
+      {wingsScale === 1 ? (
+        <path fill="#FFFFFF" d={WINGS_PATH_D} />
+      ) : (
+        <g transform={`translate(176 177) scale(${wingsScale}) translate(-176 -177)`}>
+          <path fill="#FFFFFF" d={WINGS_PATH_D} />
+        </g>
+      )}
     </svg>
   );
 }

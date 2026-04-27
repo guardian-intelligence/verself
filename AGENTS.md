@@ -3,12 +3,7 @@ Set of services + console + marketing page for a software business, almost entir
 
 Canonical layout in `docs/architecture/directory-structure.md`. Read that file directly if exploring the repo.
 
-Polyglot monorepo structured as a modular monolith:
-
-- **TypeScript** — `src/viteplus-monorepo/` (pnpm, Vite Plus + TanStack Start/DB/Query/Router). Apps: `company` (Guardian Intelligence company site at guardianintelligence.org), `platform` (product docs/policy at verself.sh), `console` (product console at console.verself.sh), `mail`.
-- **Go** — `go.work` at repo root, covers most of `src/*`. Services: `sandbox-rental-service`, `billing-service`, `identity-service`, `mailbox-service`, `governance-service`, `secrets-service`, `platform`, `vm-orchestrator`. Shared libs: `apiwire`, `auth-middleware`, `otel`.
-- **Zig** — `src/vm-guest-telemetry/` (guest agent, runs *inside* Firecracker VMs, not on the host).
-
+Polyglot monorepo structured as a modular monolith.
 Layers:
 
 1. Substrate layer: vm-orchestrator, guest telemetry, Caddy, nftables, ClickHouse, Postgres, Forgejo
