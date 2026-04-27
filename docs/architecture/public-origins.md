@@ -72,7 +72,7 @@ When a protocol surface also has a Verself product API, the API lives on
 
 ## Implementation Source Of Truth
 
-`src/platform/topology` is the desired-state graph, rendered to typed Ansible
+`src/cue-renderer` is the desired-state graph, rendered to typed Ansible
 artifacts under `src/platform/ansible/group_vars/all/generated/`. Public API
 origins, Caddy routes, DNS records, endpoint ports, and interface metadata
 derive from that graph instead of a separate flat topology artifacts.

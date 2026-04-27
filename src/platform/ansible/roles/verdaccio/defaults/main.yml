@@ -1,2 +1,3 @@
 ---
 verdaccio_install_prefix: /opt/verself/verdaccio
+verdaccio_nodejs_install_dir: /opt/verself/nodejs

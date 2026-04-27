@@ -51,21 +51,19 @@
     mode: "0755"
 
 # npm resolves globalconfig as $PREFIX/etc/npmrc, where PREFIX is the
-# Node install root — not /etc/npmrc. With Node at /opt/verself/nodejs
-# on workers, /etc/npmrc is a file npm never reads, so writing the
-# registry= binding there leaves default `npm install` escaping to
-# registry.npmjs.org. Anchor to deploy_profile's nodejs pin so an upgrade
-# to a new install_dir doesn't silently drop the binding.
+# Node install root — not /etc/npmrc. With Node at /opt/verself/nodejs on
+# workers, /etc/npmrc is a file npm never reads, so writing the registry=
+# binding there leaves default `npm install` escaping to registry.npmjs.org.
 - name: Ensure npm globalconfig directory exists
   ansible.builtin.file:
-    path: "{{ deploy_profile_server_tools_pins.nodejs.install_dir }}/etc"
+    path: "{{ verdaccio_nodejs_install_dir }}/etc"
     state: directory
     mode: "0755"
 
 - name: Point npm at local Verdaccio
   ansible.builtin.copy:
     content: "registry=http://{{ topology_endpoints.verdaccio.endpoints.http.address }}\n"
-    dest: "{{ deploy_profile_server_tools_pins.nodejs.install_dir }}/etc/npmrc"
+    dest: "{{ verdaccio_nodejs_install_dir }}/etc/npmrc"
     mode: "0644"
 
 - name: Ensure Verdaccio htpasswd file exists

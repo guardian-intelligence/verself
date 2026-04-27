@@ -213,7 +213,7 @@ TigerBeetle, Forgejo, PostgreSQL) use permissive or weak-copyleft licenses with
 no network-interaction obligations.
 
 **Grafana OSS** and **Stalwart Mail Server** are licensed under AGPL-3.0. If
-you run upstream binaries unmodified (as pinned in `src/platform/topology/catalog/versions.cue`), your
+you run upstream binaries unmodified (as pinned in `src/cue-renderer/catalog/versions.cue`), your
 obligation is to provide users with source links:
 `github.com/grafana/grafana` and `github.com/stalwartlabs/stalwart`.
 

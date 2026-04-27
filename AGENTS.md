@@ -25,7 +25,7 @@ Tech Stack:
 Invariant patterns:
 
 * Bazel owns build artifacts and dependency-scoped rebuilds: deploy code requests specific Bazel targets, so a frontend rebuild must not rebuild unrelated substrate binaries such as TigerBeetle.
-* CUE owns desired platform shape and non-secret deployment configuration in `src/platform/topology/`: components, processes, endpoints, routes, identities, ports, runtime users, required config, and references to Bazel artifact labels. Generated files under `src/platform/ansible/group_vars/all/generated/` are projections, not authority.
+* CUE owns desired platform shape and non-secret deployment configuration in `src/cue-renderer/`: components, processes, endpoints, routes, identities, ports, runtime users, required config, and references to Bazel artifact labels. Generated files under `src/platform/ansible/group_vars/all/generated/` are projections, not authority.
 * Ansible owns host mutations and convergence only: it consumes generated CUE/Bazel manifests plus SOPS secret values, mutates the host idempotently, and must not invent topology, rebuild scope, ports, users, routes, or service relationships. SOPS owns encrypted secret values such as Cloudflare API tokens; CUE may declare that they are required.
 * Service-oriented-architecture: with notable exceptions, all of our services talk to each other through the same APIs as the ones customers use. 
 * Generated clients are the only supported Go service SDKs. Customer/human routes use the committed public OpenAPI specs and `client` packages; repo-owned SPIFFE routes use committed internal OpenAPI specs and `internalclient` packages. The caller injects a SPIFFE mTLS `http.Client` from `auth-middleware/workload`; do not hand-write `http.NewRequest` service calls or mint Zitadel machine-user bearer tokens for repo-owned service-to-service traffic.
@@ -94,7 +94,7 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - **Secrets service, identity model, OIDC provider role, resource model, billing, KMS alternative:** `src/platform/docs/secrets-service.md`
 - Billing architecture, credit subscription, entitlements, metering, TigerBeetle, PostgreSQL, Reconcile, refunds, plan change, dual-write, Stripe webhooks, invoices:** `src/billing-service/docs/billing-architecture.md`
 - **Governance audit data contract, HMAC chain, OCSF, CloudTrail parity, tamper evidence, SIEM export, audit ledger:** `src/governance-service/docs/audit-data-contract.md`
-- **Service topology, port assignments, SPIRE identities, runtime users, generated Ansible inputs:** `src/platform/topology/`
+- **Service topology, port assignments, SPIRE identities, runtime users, generated Ansible inputs:** `src/cue-renderer/`
 - **Directory structure, repo layout:** `docs/architecture/directory-structure.md`
 - **Agent workspace, QEMU/KVM, AI coding agent VMs:** `docs/architecture/agent-workspace.md`
 

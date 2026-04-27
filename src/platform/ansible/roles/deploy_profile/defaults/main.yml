@@ -7,7 +7,7 @@ deploy_profile_repo_root: "{{ playbook_dir }}/../../../.."
 # Bazelisk command on the Ansible controller.
 deploy_profile_bazelisk: bazelisk
 
-# Staging directory for downloaded archives on the remote host
+# Staging directory for Bazel-built deployment archives on the remote host.
 deploy_profile_staging_dir: /opt/verself/staging
 
 # PostgreSQL major version (determines apt package and binary paths)

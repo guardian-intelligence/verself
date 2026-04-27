@@ -1,90 +1,139 @@
 ---
-# Execute the generated server tool install plan. Topology/codegen owns tool
-# layout; Ansible only applies the already-materialized download/extract/copy
-# actions with checksum enforcement.
+# Materialize the Bazel-owned static server tool archive and unpack it onto the
+# host. Bazel owns third-party fetches, checksums, extraction layout, and
+# symlinks; Ansible only applies the resulting artifact.
 
-- name: Require generated server tool install plan
+- name: Require generated server tools Bazel artifact
   ansible.builtin.assert:
     that:
-      - topology_server_tool_install_plan is defined
-      - topology_server_tool_install_plan.downloads is defined
-      - topology_server_tool_install_plan.proof_spans is defined
+      - topology_server_tools is defined
+      - topology_server_tools.bazel_label is defined
+      - topology_server_tools.version is defined
+      - topology_server_tools.bazel_label is match('^//')
+      - topology_server_tools.version | length > 0
     quiet: true
     fail_msg: >-
-      topology_server_tool_install_plan is missing. Run make topology-generate before deploying.
+      topology_server_tools must expose bazel_label and version. Run make topology-generate before deploying.
 
-- name: Set deploy profile server tool install plan
+- name: Set deploy profile server tools artifact facts
   ansible.builtin.set_fact:
-    deploy_profile_server_tool_install_plan: "{{ topology_server_tool_install_plan }}"
+    deploy_profile_server_tools_artifact: "{{ topology_server_tools }}"
+    deploy_profile_server_tools_marker_path: /opt/verself/profile/.server-tools-version
 
-- name: Create generated server tool install directories
-  ansible.builtin.file:
-    path: "{{ item.path }}"
-    state: directory
-    mode: "{{ item.mode }}"
-  loop: "{{ deploy_profile_server_tool_install_plan.directories }}"
-  loop_control:
-    label: "{{ item.path }}"
-
-- name: Download generated server tool artifacts
-  ansible.builtin.get_url:
-    url: "{{ item.url }}"
-    dest: "{{ item.dest }}"
-    checksum: "{{ item.checksum }}"
-    mode: "{{ item.mode }}"
-  register: deploy_profile_server_tool_downloads
-  loop: "{{ deploy_profile_server_tool_install_plan.downloads }}"
-  loop_control:
-    label: "{{ item.key }}"
-
-- name: Extract generated server tool archives
-  ansible.builtin.unarchive:
-    src: "{{ item.src }}"
-    dest: "{{ item.dest }}"
-    remote_src: true
-    creates: "{{ item.creates }}"
-    extra_opts: "{{ item.extra_opts | default(omit) }}"
-  register: deploy_profile_server_tool_extracts
-  loop: "{{ deploy_profile_server_tool_install_plan.extracts }}"
-  loop_control:
-    label: "{{ item.key }}"
-
-- name: Extract generated server tool Debian packages
+- name: Build server tools archive with Bazel
+  delegate_to: localhost
+  become: false
+  run_once: true
   ansible.builtin.command:
     argv:
-      - dpkg-deb
-      - -x
-      - "{{ item.src }}"
-      - "{{ item.dest }}"
-    creates: "{{ item.creates }}"
-  register: deploy_profile_server_tool_deb_extracts
-  loop: "{{ deploy_profile_server_tool_install_plan.deb_extracts }}"
-  loop_control:
-    label: "{{ item.key }}"
+      - "{{ deploy_profile_bazelisk }}"
+      - build
+      - --config=remote-writer
+      - "{{ deploy_profile_server_tools_artifact.bazel_label }}"
+    chdir: "{{ deploy_profile_repo_root }}"
+  changed_when: false
 
-- name: Copy generated server tool outputs
+- name: Resolve server tools archive output path
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.command:
+    argv:
+      - "{{ deploy_profile_bazelisk }}"
+      - cquery
+      - --output=files
+      - "{{ deploy_profile_server_tools_artifact.bazel_label }}"
+    chdir: "{{ deploy_profile_repo_root }}"
+  changed_when: false
+  register: deploy_profile_server_tools_bazel_output
+
+- name: Validate server tools archive output path
+  ansible.builtin.assert:
+    that:
+      - deploy_profile_server_tools_bazel_output.stdout_lines | length == 1
+      - deploy_profile_server_tools_bazel_output.stdout | trim is match('^bazel-out/')
+      - deploy_profile_server_tools_bazel_output.stdout | trim is match('.*server_tools[.]tar[.]zst$')
+    quiet: true
+    fail_msg: >-
+      Bazel cquery did not resolve exactly one server_tools.tar.zst output for {{ deploy_profile_server_tools_artifact.bazel_label }}.
+
+- name: Inspect server tools archive produced by Bazel
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.stat:
+    path: "{{ deploy_profile_repo_root }}/{{ deploy_profile_server_tools_bazel_output.stdout | trim }}"
+    checksum_algorithm: sha256
+  register: deploy_profile_server_tools_archive_stat
+
+- name: Validate server tools archive metadata
+  ansible.builtin.assert:
+    that:
+      - deploy_profile_server_tools_archive_stat.stat.exists | bool
+      - deploy_profile_server_tools_archive_stat.stat.isreg | bool
+      - deploy_profile_server_tools_archive_stat.stat.checksum is defined
+      - deploy_profile_server_tools_archive_stat.stat.checksum is match('^[0-9a-f]{64}$')
+    quiet: true
+    fail_msg: >-
+      Bazel resolved {{ deploy_profile_server_tools_artifact.bazel_label }} but did not produce a readable archive with a SHA-256 checksum.
+
+- name: Set server tools archive deployment facts
+  ansible.builtin.set_fact:
+    deploy_profile_server_tools_archive_sha256: "{{ deploy_profile_server_tools_archive_stat.stat.checksum }}"
+    deploy_profile_server_tools_expected_marker: |-
+      version={{ deploy_profile_server_tools_artifact.version }}
+      sha256={{ deploy_profile_server_tools_archive_stat.stat.checksum }}
+    deploy_profile_server_tools_remote_archive: >-
+      {{ deploy_profile_staging_dir }}/server_tools-{{ (deploy_profile_server_tools_archive_stat.stat.checksum)[:16] }}.tar.zst
+
+- name: Validate server tools staging archive path
+  ansible.builtin.assert:
+    that:
+      - deploy_profile_server_tools_remote_archive | regex_replace('^.*/', '') | length < 240
+    quiet: true
+    fail_msg: >-
+      server_tools staging archive filename is too long; checksum-derived staging names must stay below filesystem limits.
+
+- name: Read installed server tools version marker
+  ansible.builtin.slurp:
+    src: "{{ deploy_profile_server_tools_marker_path }}"
+  register: deploy_profile_server_tools_marker
+  failed_when: false
+
+- name: Decide whether server tools archive needs unpacking
+  ansible.builtin.set_fact:
+    deploy_profile_server_tools_needs_unpack: >-
+      {{
+        deploy_profile_server_tools_marker is failed
+        or (
+          deploy_profile_server_tools_marker.content | default('') | b64decode | trim
+        ) != (deploy_profile_server_tools_expected_marker | trim)
+      }}
+
+- name: Upload server tools archive
   ansible.builtin.copy:
-    src: "{{ item.src }}"
-    dest: "{{ item.dest }}"
+    src: "{{ deploy_profile_repo_root }}/{{ deploy_profile_server_tools_bazel_output.stdout | trim }}"
+    dest: "{{ deploy_profile_server_tools_remote_archive }}"
+    mode: "0644"
+  when: deploy_profile_server_tools_needs_unpack | bool
+
+- name: Unpack server tools archive
+  ansible.builtin.unarchive:
+    src: "{{ deploy_profile_server_tools_remote_archive }}"
+    dest: /
     remote_src: true
-    mode: "{{ item.mode }}"
-  register: deploy_profile_server_tool_copies
-  loop: "{{ deploy_profile_server_tool_install_plan.copies }}"
-  loop_control:
-    label: "{{ item.key }} -> {{ item.dest }}"
+    owner: root
+    group: root
+  when: deploy_profile_server_tools_needs_unpack | bool
 
-- name: Link generated server tool outputs
-  ansible.builtin.file:
-    src: "{{ item.src }}"
-    dest: "{{ item.dest }}"
-    state: link
-    force: "{{ item.force }}"
-  register: deploy_profile_server_tool_links
-  loop: "{{ deploy_profile_server_tool_install_plan.links }}"
-  loop_control:
-    label: "{{ item.key }} -> {{ item.dest }}"
+- name: Record installed server tools version
+  ansible.builtin.copy:
+    content: "{{ deploy_profile_server_tools_expected_marker }}\n"
+    dest: "{{ deploy_profile_server_tools_marker_path }}"
+    mode: "0644"
+  when: deploy_profile_server_tools_needs_unpack | bool
 
-- name: Emit generated server install-plan proof spans
+- name: Emit server tools artifact proof span
   delegate_to: localhost
   become: false
   run_once: true
@@ -93,5 +142,18 @@
     chdir: "{{ deploy_profile_repo_root }}/src/otel"
   environment:
     PROOF_SPAN_SERVICE: proof-runner
-    PROOF_SPANS_JSON: "{{ deploy_profile_server_tool_install_plan.proof_spans | to_json }}"
+    PROOF_SPANS_JSON: >-
+      {{
+        [
+          {
+            'name': 'server_tools.artifact.publish',
+            'attributes': {
+              'server_tools.bazel_label': deploy_profile_server_tools_artifact.bazel_label,
+              'server_tools.version': deploy_profile_server_tools_artifact.version,
+              'server_tools.archive_sha256': deploy_profile_server_tools_archive_sha256,
+              'server_tools.generated_from': 'bazel'
+            }
+          }
+        ] | to_json
+      }}
   changed_when: false

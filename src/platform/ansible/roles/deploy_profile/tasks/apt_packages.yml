@@ -73,5 +73,6 @@
       - sqlite3
       - unzip
       - xz-utils
+      - zstd
       - e2fsprogs
     state: present

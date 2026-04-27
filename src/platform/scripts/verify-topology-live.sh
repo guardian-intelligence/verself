@@ -55,7 +55,8 @@ ready = (
     and row.get("schema_vets", 0) >= 1
     and row.get("instance_vets", 0) >= 1
     and row.get("graph_validations", 0) >= 1
-    and row.get("install_plan_renders", 0) >= 2
+    and row.get("server_tools_artifact_renders", 0) >= 1
+    and row.get("install_plan_renders", 0) >= 1
     and row.get("artifact_renders", 0) >= 11
     and row.get("fresh_checks", 0) >= 11
     and row.get("errors", 0) == 0
@@ -77,6 +78,7 @@ for _ in $(seq 1 45); do
       countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.cue.vet_schema') AS schema_vets,
       countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.cue.vet_instance') AS instance_vets,
       countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.graph.validate') AS graph_validations,
+      countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.server_tools_artifact.render') AS server_tools_artifact_renders,
       countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.install_plan.render') AS install_plan_renders,
       countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.generated.render_artifact') AS artifact_renders,
       countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.generated.freshness_check' AND SpanAttributes['topology.generated_fresh'] = 'true') AS fresh_checks,

@@ -1,6 +1,6 @@
 ---
 # Stalwart Mail Server — receive-only SMTP + JMAP.
-# Binary provided by deploy_profile role (static download).
+# Binary provided by deploy_profile role (Bazel server tools archive).
 
 # --- Verify binary ---
 

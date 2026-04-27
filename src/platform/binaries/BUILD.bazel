@@ -1,0 +1,5 @@
+load(":server_tools.bzl", "server_tools_archive")
+
+package(default_visibility = ["//visibility:public"])
+
+server_tools_archive()

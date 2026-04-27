@@ -1,6 +1,6 @@
 package topology
 
-import s "guardianintelligence.org/forge-metal/topology/schema"
+import s "verself.sh/cue-renderer/schema"
 
 #ServiceProbes: {
 	healthz: {path: "/healthz"}

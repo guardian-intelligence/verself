@@ -10,11 +10,11 @@
     argv:
       - go
       - run
-      - "github.com/caddyserver/xcaddy/cmd/xcaddy@v{{ deploy_profile_server_tools_pins.caddy.xcaddy_version }}"
+      - "github.com/caddyserver/xcaddy/cmd/xcaddy@v{{ topology_versions.production.xcaddy }}"
       - build
-      - "v{{ deploy_profile_server_tools_pins.caddy.version }}"
+      - "v{{ topology_versions.production.caddy }}"
       - --with
-      - "{{ deploy_profile_server_tools_pins.caddy.plugins[0] }}"
+      - "github.com/corazawaf/coraza-caddy/v2@v{{ topology_versions.production.corazaCaddy }}"
       - --output
       - "{{ deploy_profile_repo_root }}/.build/caddy"
     chdir: "{{ deploy_profile_repo_root }}"
