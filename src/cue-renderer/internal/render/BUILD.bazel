@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "render",
@@ -8,6 +8,12 @@ go_library(
     deps = [
         "//src/cue-renderer/internal/load",
     ],
+)
+
+go_test(
+    name = "render_test",
+    srcs = ["render_test.go"],
+    embed = [":render"],
 )
 
 alias(
