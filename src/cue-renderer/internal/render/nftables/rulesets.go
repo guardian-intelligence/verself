@@ -2,11 +2,11 @@ package nftables
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/verself/cue-renderer/internal/load"
 	"github.com/verself/cue-renderer/internal/render/projection"
+	"github.com/verself/cue-renderer/schema"
 )
 
 type endpointRef struct {
@@ -15,63 +15,40 @@ type endpointRef struct {
 }
 
 func renderRulesets(loaded load.Loaded) (map[string][]byte, error) {
-	idx, err := buildTopologyIndex(loaded)
-	if err != nil {
-		return nil, err
-	}
 	out := map[string][]byte{}
-	names := make([]string, 0, len(loaded.Nftables.Rulesets))
-	for name := range loaded.Nftables.Rulesets {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		ruleset := loaded.Nftables.Rulesets[name]
-		target, err := projection.String(ruleset, "topology.nftables.rulesets."+name, "target")
+	for _, name := range sortedKeys(loaded.Topology.Nftables.Rulesets) {
+		ruleset := loaded.Topology.Nftables.Rulesets[name]
+		body, err := renderRuleset(loaded.Topology.Components, name, ruleset)
 		if err != nil {
 			return nil, err
 		}
-		table, err := projection.String(ruleset, "topology.nftables.rulesets."+name, "table")
-		if err != nil {
-			return nil, err
-		}
-		body, err := renderRuleset(idx, name, table, ruleset)
-		if err != nil {
-			return nil, err
-		}
-		path := strings.TrimPrefix(target, "/")
+		path := strings.TrimPrefix(ruleset.Target, "/")
 		if _, exists := out[path]; exists {
-			return nil, fmt.Errorf("duplicate nftables target %s", target)
+			return nil, fmt.Errorf("duplicate nftables target %s", ruleset.Target)
 		}
 		out[path] = body
 	}
 	return out, nil
 }
 
-func renderRuleset(idx topologyIndex, name, table string, ruleset map[string]any) ([]byte, error) {
+func renderRuleset(components map[string]schema.Component, name string, ruleset schema.NftablesRuleset) ([]byte, error) {
 	var b strings.Builder
 	b.WriteString(generatedHeader)
 	fmt.Fprintf(&b, "# nftables ruleset %s.\n", name)
-	writeTableStart(&b, table)
+	writeTableStart(&b, ruleset.Table)
 
-	if rawInput, ok := ruleset["input"]; ok {
-		inputRules, ok := rawInput.([]any)
-		if !ok {
-			return nil, fmt.Errorf("topology.nftables.rulesets.%s.input: expected list, got %T", name, rawInput)
-		}
-		if len(inputRules) > 0 {
-			if err := writeInputRules(&b, idx, name, inputRules); err != nil {
-				return nil, err
-			}
+	if len(ruleset.Input) > 0 {
+		if err := writeInputRules(&b, components, name, ruleset.Input); err != nil {
+			return nil, err
 		}
 	}
 
-	if rawOutput, ok := ruleset["output"]; ok {
-		output, ok := rawOutput.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("topology.nftables.rulesets.%s.output: expected map, got %T", name, rawOutput)
-		}
-		if err := writeOutputChain(&b, idx, name, output); err != nil {
+	// gengotypes emits NftablesOutputChain as a struct even when CUE
+	// declared the field optional. Detect "absent" by Final being its
+	// zero string — every present output chain unifies with the
+	// `final: "drop" | "none" | *"drop"` constraint.
+	if ruleset.Output.Final != "" {
+		if err := writeOutputChain(&b, components, name, ruleset.Output); err != nil {
 			return nil, err
 		}
 	}
@@ -80,80 +57,71 @@ func renderRuleset(idx topologyIndex, name, table string, ruleset map[string]any
 	return []byte(b.String()), nil
 }
 
-func writeInputRules(b *strings.Builder, idx topologyIndex, rulesetName string, rules []any) error {
+func writeInputRules(b *strings.Builder, components map[string]schema.Component, rulesetName string, rules []any) error {
 	b.WriteString(`    chain input {
         type filter hook input priority filter; policy accept;
 
 `)
 	for i, raw := range rules {
+		// Each input rule in CUE is `#NftablesInputRule`, but
+		// `[...#NftablesInputRule] | *[]` collapses to []any in
+		// gengotypes — so we type-assert at the leaves.
 		rule, ok := raw.(map[string]any)
 		if !ok {
 			return fmt.Errorf("topology.nftables.rulesets.%s.input[%d]: expected map, got %T", rulesetName, i, raw)
 		}
-		kind, err := projection.String(rule, fmt.Sprintf("topology.nftables.rulesets.%s.input[%d]", rulesetName, i), "kind")
+		path := fmt.Sprintf("topology.nftables.rulesets.%s.input[%d]", rulesetName, i)
+		kind, err := projection.String(rule, path, "kind")
 		if err != nil {
 			return err
 		}
 		switch kind {
 		case "drop_non_loopback":
-			refs, err := endpointRefs(rule, fmt.Sprintf("topology.nftables.rulesets.%s.input[%d]", rulesetName, i))
+			refs, err := endpointRefs(rule, path)
 			if err != nil {
 				return err
 			}
-			ports, err := idx.endpointPorts(refs)
+			ports, err := endpointPorts(components, refs)
 			if err != nil {
 				return err
 			}
 			fmt.Fprintf(b, "        tcp dport %s iifname != \"lo\" drop\n", portSet(ports))
 		default:
-			return fmt.Errorf("topology.nftables.rulesets.%s.input[%d].kind: unsupported %q", rulesetName, i, kind)
+			return fmt.Errorf("%s.kind: unsupported %q", path, kind)
 		}
 	}
 	b.WriteString("    }\n\n")
 	return nil
 }
 
-func writeOutputChain(b *strings.Builder, idx topologyIndex, rulesetName string, output map[string]any) error {
-	established, err := boolValue(output, "topology.nftables.rulesets."+rulesetName+".output", "established")
-	if err != nil {
-		return err
-	}
-	final, err := projection.String(output, "topology.nftables.rulesets."+rulesetName+".output", "final")
-	if err != nil {
-		return err
-	}
-	rules, err := projection.Slice(output, "topology.nftables.rulesets."+rulesetName+".output", "rules")
-	if err != nil {
-		return err
-	}
-
+func writeOutputChain(b *strings.Builder, components map[string]schema.Component, rulesetName string, output schema.NftablesOutputChain) error {
 	b.WriteString(`    chain output {
         type filter hook output priority filter; policy accept;
 
 `)
-	if established {
+	if output.Established {
 		b.WriteString("        ct state established,related accept\n")
 	}
-	if user, ok := output["user"]; ok {
-		fmt.Fprintf(b, "        meta skuid != %s accept\n", formatSkuid(user))
+	if output.User != nil {
+		fmt.Fprintf(b, "        meta skuid != %s accept\n", formatSkuid(output.User))
 	}
-	for i, raw := range rules {
-		rule, ok := raw.(map[string]any)
-		if !ok {
-			return fmt.Errorf("topology.nftables.rulesets.%s.output.rules[%d]: expected map, got %T", rulesetName, i, raw)
-		}
-		if err := writeOutputRule(b, idx, rulesetName, i, rule); err != nil {
+	for i, rule := range output.Rules {
+		if err := writeOutputRule(b, components, rulesetName, i, rule); err != nil {
 			return err
 		}
 	}
-	if final == "drop" {
+	if output.Final == "drop" {
 		b.WriteString("\n        drop\n")
 	}
 	b.WriteString("    }\n")
 	return nil
 }
 
-func writeOutputRule(b *strings.Builder, idx topologyIndex, rulesetName string, index int, rule map[string]any) error {
+// writeOutputRule renders one element of an output chain. The CUE
+// `#NftablesOutputRule` is a disjunction over kinds; gengotypes types
+// the slice element as a bare `map[string]any` so the renderer
+// discriminates on `kind` and reaches for the rule's own fields.
+func writeOutputRule(b *strings.Builder, components map[string]schema.Component, rulesetName string, index int, rule schema.NftablesOutputRule) error {
 	path := fmt.Sprintf("topology.nftables.rulesets.%s.output.rules[%d]", rulesetName, index)
 	kind, err := projection.String(rule, path, "kind")
 	if err != nil {
@@ -167,7 +135,7 @@ func writeOutputRule(b *strings.Builder, idx topologyIndex, rulesetName string, 
 		if err != nil {
 			return err
 		}
-		ports, err := idx.endpointPorts(refs)
+		ports, err := endpointPorts(components, refs)
 		if err != nil {
 			return err
 		}
@@ -181,7 +149,7 @@ func writeOutputRule(b *strings.Builder, idx topologyIndex, rulesetName string, 
 		if err != nil {
 			return err
 		}
-		ports, err := idx.endpointPorts(refs)
+		ports, err := endpointPorts(components, refs)
 		if err != nil {
 			return err
 		}
@@ -210,7 +178,7 @@ func writeOutputRule(b *strings.Builder, idx topologyIndex, rulesetName string, 
 		if err != nil {
 			return err
 		}
-		addrs, err := stringSlice(rule, path, "addrs")
+		addrs, err := projection.StringList(rule, path, "addrs")
 		if err != nil {
 			return err
 		}
@@ -223,42 +191,18 @@ func writeOutputRule(b *strings.Builder, idx topologyIndex, rulesetName string, 
 	return nil
 }
 
-type topologyIndex struct {
-	components map[string]projection.NamedMap
-}
-
-func buildTopologyIndex(loaded load.Loaded) (topologyIndex, error) {
-	components, err := projection.Components(loaded)
-	if err != nil {
-		return topologyIndex{}, err
-	}
-	idx := topologyIndex{components: map[string]projection.NamedMap{}}
-	for _, component := range components {
-		idx.components[component.Name] = component
-	}
-	return idx, nil
-}
-
-func (idx topologyIndex) endpointPorts(refs []endpointRef) ([]int, error) {
+func endpointPorts(components map[string]schema.Component, refs []endpointRef) ([]int, error) {
 	ports := make([]int, 0, len(refs))
 	for _, ref := range refs {
-		component, ok := idx.components[ref.Component]
+		component, ok := components[ref.Component]
 		if !ok {
 			return nil, fmt.Errorf("topology.components.%s: missing", ref.Component)
 		}
-		endpoints, err := projection.Map(component.Value, ref.Component, "endpoints")
-		if err != nil {
-			return nil, err
+		endpoint, ok := component.Endpoints[ref.Endpoint]
+		if !ok {
+			return nil, fmt.Errorf("topology.components.%s.endpoints.%s: missing", ref.Component, ref.Endpoint)
 		}
-		endpoint, err := projection.Map(endpoints, ref.Component+".endpoints", ref.Endpoint)
-		if err != nil {
-			return nil, err
-		}
-		port, err := projection.Int(endpoint, ref.Component+".endpoints."+ref.Endpoint, "port")
-		if err != nil {
-			return nil, err
-		}
-		ports = append(ports, int(port))
+		ports = append(ports, int(endpoint.Port))
 	}
 	return ports, nil
 }
@@ -293,7 +237,11 @@ func writeTableStart(b *strings.Builder, table string) {
 	fmt.Fprintf(b, "table inet %s {\n", table)
 }
 
-func formatSkuid(value any) string {
+// formatSkuid renders an `meta skuid` operand. CUE types it as the
+// disjunction `(string & =~"...") | (int & >=0)`; gengotypes emits
+// schema.NftablesSkuid as `any` because of the disjunction, so the
+// switch lives here once and the renderer never type-asserts in line.
+func formatSkuid(value schema.NftablesSkuid) string {
 	switch v := value.(type) {
 	case string:
 		return v
@@ -306,20 +254,4 @@ func formatSkuid(value any) string {
 	default:
 		return fmt.Sprintf("%v", v)
 	}
-}
-
-func stringSlice(parent map[string]any, path, key string) ([]string, error) {
-	raw, err := projection.Slice(parent, path, key)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]string, 0, len(raw))
-	for i, item := range raw {
-		value, ok := item.(string)
-		if !ok {
-			return nil, fmt.Errorf("%s.%s[%d]: expected string, got %T", path, key, i, item)
-		}
-		out = append(out, value)
-	}
-	return out, nil
 }
