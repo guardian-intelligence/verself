@@ -32,7 +32,7 @@
     src: "{{ platform_rendered_dir }}/etc/nftables.d/stalwart.nft"
     dest: /etc/nftables.d/stalwart.nft
     mode: "0644"
-  notify: Reload nftables for stalwart
+  notify: reload nftables
 
 - name: Apply stalwart nftables before proceeding
   ansible.builtin.meta: flush_handlers

@@ -1,3 +1,4 @@
 ---
 dependencies:
   - role: deploy_profile
+  - role: nftables_handler

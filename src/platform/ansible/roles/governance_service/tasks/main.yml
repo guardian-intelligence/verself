@@ -43,7 +43,7 @@
     src: "{{ platform_rendered_dir }}/etc/nftables.d/governance-service.nft"
     dest: /etc/nftables.d/governance-service.nft
     mode: "0644"
-  notify: Reload nftables for governance-service
+  notify: reload nftables
 
 - name: Apply governance-service nftables before proceeding
   ansible.builtin.meta: flush_handlers

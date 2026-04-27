@@ -12,8 +12,3 @@
     name: notifications-service
     state: restarted
   when: notifications_service_unit_file.stat.exists
-
-- name: Reload nftables for notifications-service
-  ansible.builtin.systemd:
-    name: nftables
-    state: reloaded

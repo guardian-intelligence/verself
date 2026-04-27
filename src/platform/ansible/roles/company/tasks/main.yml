@@ -212,7 +212,7 @@
     src: "{{ platform_rendered_dir }}/etc/nftables.d/company.nft"
     dest: /etc/nftables.d/company.nft
     mode: "0644"
-  notify: Reload nftables for company
+  notify: reload nftables
 
 - name: Enable and start company
   ansible.builtin.systemd:

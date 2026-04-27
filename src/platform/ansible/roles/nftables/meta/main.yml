@@ -1,2 +1,4 @@
 ---
-dependencies: []
+# nftables_handler: brings the shared "reload nftables" listener into scope.
+dependencies:
+  - role: nftables_handler

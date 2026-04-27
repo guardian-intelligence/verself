@@ -1,0 +1,9 @@
+---
+# Single handler shared via meta dependency by every service role that
+# touches /etc/nftables.d/. Roles notify "reload nftables"; this listener
+# fires once per play even when N rulesets changed in the same run.
+- name: Reload nftables
+  listen: reload nftables
+  ansible.builtin.systemd:
+    name: nftables
+    state: reloaded

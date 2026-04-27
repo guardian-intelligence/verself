@@ -339,7 +339,7 @@
     src: "{{ platform_rendered_dir }}/etc/nftables.d/console.nft"
     dest: /etc/nftables.d/console.nft
     mode: "0644"
-  notify: Reload nftables for console
+  notify: reload nftables
 
 - name: Enable and start console
   ansible.builtin.systemd:

@@ -43,7 +43,7 @@
     src: "{{ platform_rendered_dir }}/etc/nftables.d/billing.nft"
     dest: /etc/nftables.d/billing.nft
     mode: "0644"
-  notify: Reload nftables for billing-service
+  notify: reload nftables
 
 - name: Apply billing-service nftables before proceeding
   ansible.builtin.meta: flush_handlers

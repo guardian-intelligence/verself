@@ -212,7 +212,7 @@
     src: "{{ platform_rendered_dir }}/etc/nftables.d/platform.nft"
     dest: /etc/nftables.d/platform.nft
     mode: "0644"
-  notify: Reload nftables for platform
+  notify: reload nftables
 
 - name: Enable and start platform
   ansible.builtin.systemd:

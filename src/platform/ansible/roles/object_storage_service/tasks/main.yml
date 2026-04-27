@@ -63,7 +63,7 @@
     - { src: "{{ platform_rendered_dir }}/etc/nftables.d/object-storage-admin.nft", dest: /etc/nftables.d/object-storage-admin.nft }
   loop_control:
     label: "{{ item.dest }}"
-  notify: Reload nftables for object-storage-service
+  notify: reload nftables
 
 - name: Apply object-storage nftables before proceeding
   ansible.builtin.meta: flush_handlers

@@ -140,7 +140,7 @@
     src: "{{ platform_rendered_dir }}/etc/nftables.d/garage.nft"
     dest: /etc/nftables.d/garage.nft
     mode: "0644"
-  notify: Reload nftables for garage
+  notify: reload nftables
 
 - name: Apply garage nftables before proceeding
   ansible.builtin.meta: flush_handlers
