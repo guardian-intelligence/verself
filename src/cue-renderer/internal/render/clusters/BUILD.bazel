@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//src/cue-renderer/internal/load",
         "//src/cue-renderer/internal/render",
+        "//src/cue-renderer/internal/render/projection",
         "@org_cuelang_go//cue",
         "@org_cuelang_go//cue/ast",
         "@org_cuelang_go//cue/cuecontext",
