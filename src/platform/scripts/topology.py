@@ -606,211 +606,6 @@ def versioned_archive_path(staging_var: str, key: str, tool: dict[str, object]) 
     return f"{staging_var}/{tool_slug(key)}-{version}.{archive_extension(format_name)}"
 
 
-def server_tool_install_plan(server_tools: dict[str, object]) -> dict[str, object]:
-    """Render server tool catalog entries into Ansible-ready install actions."""
-
-    verself_bin = "{{ verself_bin }}"
-    staging = "{{ deploy_profile_staging_dir }}"
-    downloads: list[dict[str, object]] = []
-    directories: list[dict[str, object]] = []
-    extracts: list[dict[str, object]] = []
-    deb_extracts: list[dict[str, object]] = []
-    copies: list[dict[str, object]] = []
-    links: list[dict[str, object]] = []
-    tools: list[dict[str, object]] = []
-
-    def tool_record(key: str, tool: dict[str, object], strategy: str) -> None:
-        version = tool.get("version", "")
-        sha256_value = tool.get("sha256", "")
-        tools.append(
-            {
-                "key": key,
-                "strategy": strategy,
-                "version": version,
-                "sha256": sha256_value,
-            }
-        )
-
-    def add_download(key: str, tool: dict[str, object], dest: str, mode: str) -> None:
-        downloads.append(
-            {
-                "key": key,
-                "url": tool["url"],
-                "dest": dest,
-                "checksum": f"sha256:{tool['sha256']}",
-                "mode": mode,
-            }
-        )
-
-    def add_directory(path: str, mode: str = "0755") -> None:
-        item = {"path": path, "mode": mode}
-        if item not in directories:
-            directories.append(item)
-
-    def add_copy(key: str, src: str, dest: str, mode: str = "0755") -> None:
-        copies.append({"key": key, "src": src, "dest": dest, "mode": mode})
-
-    def add_link(key: str, src: str, dest: str) -> None:
-        links.append({"key": key, "src": src, "dest": dest, "force": True})
-
-    def archive_single_binary(key: str, dest_name: str | None = None) -> None:
-        tool = server_tools[key]
-        assert isinstance(tool, dict)
-        archive = versioned_archive_path(staging, key, tool)
-        version = tool["version"]
-        assert isinstance(version, str)
-        extract_dir = f"{staging}/{tool_slug(key)}-{version}"
-        member = tool["extract_binary"]
-        assert isinstance(member, str)
-        add_download(key, tool, archive, "0644")
-        add_directory(extract_dir)
-        extracts.append(
-            {
-                "key": key,
-                "src": archive,
-                "dest": extract_dir,
-                "creates": f"{extract_dir}/{member}",
-            }
-        )
-        add_copy(key, f"{extract_dir}/{member}", f"{verself_bin}/{dest_name or member.split('/')[-1]}")
-        tool_record(key, tool, "archive_single_binary")
-
-    def archive_multi_binary(key: str, member_prefix: str = "") -> None:
-        tool = server_tools[key]
-        assert isinstance(tool, dict)
-        archive = versioned_archive_path(staging, key, tool)
-        version = tool["version"]
-        assert isinstance(version, str)
-        extract_dir = f"{staging}/{tool_slug(key)}-{version}"
-        binaries = tool["binaries"]
-        assert isinstance(binaries, list)
-        first_binary = binaries[0]
-        assert isinstance(first_binary, str)
-        add_download(key, tool, archive, "0644")
-        add_directory(extract_dir)
-        extracts.append(
-            {
-                "key": key,
-                "src": archive,
-                "dest": extract_dir,
-                "creates": f"{extract_dir}/{member_prefix}{first_binary}",
-            }
-        )
-        for binary in binaries:
-            assert isinstance(binary, str)
-            add_copy(key, f"{extract_dir}/{member_prefix}{binary}", f"{verself_bin}/{binary}")
-        tool_record(key, tool, "archive_multi_binary")
-
-    def direct_binary(key: str, dest_name: str | None = None) -> None:
-        tool = server_tools[key]
-        assert isinstance(tool, dict)
-        binary_name = dest_name or tool.get("binary_name") or tool_slug(key)
-        assert isinstance(binary_name, str)
-        add_download(key, tool, f"{verself_bin}/{binary_name}", "0755")
-        tool_record(key, tool, "direct_binary")
-
-    def deb_single_binary(key: str, dest_name: str | None = None) -> None:
-        tool = server_tools[key]
-        assert isinstance(tool, dict)
-        archive = versioned_archive_path(staging, key, tool)
-        version = tool["version"]
-        assert isinstance(version, str)
-        extract_dir = f"{staging}/{tool_slug(key)}-{version}"
-        member = tool["extract_binary"]
-        assert isinstance(member, str)
-        add_download(key, tool, archive, "0644")
-        add_directory(extract_dir)
-        deb_extracts.append(
-            {
-                "key": key,
-                "src": archive,
-                "dest": extract_dir,
-                "creates": f"{extract_dir}/{member}",
-            }
-        )
-        add_copy(key, f"{extract_dir}/{member}", f"{verself_bin}/{dest_name or member.split('/')[-1]}")
-        tool_record(key, tool, "deb_single_binary")
-
-    def archive_directory(key: str, creates: str, link_binaries: list[str]) -> None:
-        tool = server_tools[key]
-        assert isinstance(tool, dict)
-        archive = versioned_archive_path(staging, key, tool)
-        install_dir = tool["install_dir"]
-        assert isinstance(install_dir, str)
-        add_download(key, tool, archive, "0644")
-        add_directory(install_dir)
-        extracts.append(
-            {
-                "key": key,
-                "src": archive,
-                "dest": install_dir,
-                "creates": creates,
-                "extra_opts": ["--strip-components=1"],
-            }
-        )
-        for binary in link_binaries:
-            add_link(key, f"{install_dir}/bin/{binary}", f"{verself_bin}/{binary}")
-        tool_record(key, tool, "archive_directory")
-
-    archive_single_binary("clickhouse", "clickhouse")
-    for symlink in server_tools["clickhouse"]["symlinks"]:
-        assert isinstance(symlink, str)
-        add_link("clickhouse", f"{verself_bin}/clickhouse", f"{verself_bin}/{symlink}")
-    archive_single_binary("tigerbeetle")
-    archive_single_binary("zitadel")
-    deb_single_binary("openbao")
-    archive_multi_binary("spire", f"{server_tools['spire']['extract_dir']}/bin/")
-    archive_single_binary("spiffe_helper", "spiffe-helper")
-    archive_single_binary("nats_server", "nats-server")
-    direct_binary("garage")
-    direct_binary("forgejo")
-    direct_binary("bazel_remote")
-    archive_single_binary("otelcol_contrib", "otelcol-contrib")
-    archive_multi_binary("temporal")
-    archive_directory(
-        "grafana",
-        f"{server_tools['grafana']['install_dir']}/bin/{server_tools['grafana']['binary_name']}",
-        ["grafana"],
-    )
-    archive_single_binary("stalwart", "stalwart")
-    archive_single_binary("stalwart_cli", "stalwart-cli")
-    archive_single_binary("containerd", "containerd")
-    archive_directory(
-        "nodejs",
-        f"{server_tools['nodejs']['install_dir']}/bin/node",
-        list(server_tools["nodejs"]["bin_symlinks"]),
-    )
-    server_tool_plan_exclusions = {"caddy", "grafana_clickhouse_datasource"}
-    planned_server_tools = {str(tool["key"]) for tool in tools}
-    unplanned_server_tools = set(server_tools) - planned_server_tools - server_tool_plan_exclusions
-    if unplanned_server_tools:
-        raise ValueError(f"server tools missing install-plan strategy: {sorted(unplanned_server_tools)}")
-
-    return {
-        "tools": tools,
-        "downloads": downloads,
-        "directories": directories,
-        "extracts": extracts,
-        "deb_extracts": deb_extracts,
-        "copies": copies,
-        "links": links,
-        "proof_spans": [
-            {
-                "name": "install_plan.artifact.publish",
-                "attributes": {
-                    "install_plan.surface": "server_tools",
-                    "install_plan.tool": tool["key"],
-                    "install_plan.strategy": tool["strategy"],
-                    "install_plan.version": tool["version"],
-                    "install_plan.sha256": tool["sha256"],
-                    "install_plan.generated_from": "topology",
-                },
-            }
-            for tool in tools
-        ],
-    }
-
-
 def dev_tool_install_plan(dev_tools: dict[str, object]) -> dict[str, object]:
     staging = "{{ dev_tools_staging_dir }}"
     gopath = "{{ dev_tools_gopath }}"
@@ -1091,16 +886,20 @@ def render_artifact_payloads(
     assert isinstance(edges, list)
 
     identities = workload_identities(topology)
-    server_install_plan = server_tool_install_plan(catalog["server_tools"])
-    dev_install_plan = dev_tool_install_plan(catalog["dev_tools"])
+    # Server tools are now a single Bazel artefact ({bazel_label, version}).
+    # Bazel owns per-tool URLs and sha256 in MODULE.bazel http_file rules; CUE
+    # only declares which target Ansible should ask for. Emit a render span so
+    # `verify-topology-live.sh` can prove this run produced the artefact fact.
+    server_tools_artifact = catalog["server_tools"]
+    assert isinstance(server_tools_artifact, dict)
     record_span(
-        "topology.install_plan.render",
+        "topology.server_tools_artifact.render",
         {
-            "topology.install_plan": "server_tools",
-            "topology.install_plan_tool_count": len(server_install_plan["tools"]),
-            "topology.install_plan_download_count": len(server_install_plan["downloads"]),
+            "topology.server_tools.bazel_label": server_tools_artifact["bazel_label"],
+            "topology.server_tools.version": server_tools_artifact["version"],
         },
     )
+    dev_install_plan = dev_tool_install_plan(catalog["dev_tools"])
     record_span(
         "topology.install_plan.render",
         {
@@ -1278,7 +1077,6 @@ def render_artifact_payloads(
             "topology_server_tools": catalog["server_tools"],
             "topology_dev_tools": catalog["dev_tools"],
             "topology_guest_versions": catalog["guest_versions"],
-            "topology_server_tool_install_plan": server_install_plan,
             "topology_dev_tool_install_plan": dev_install_plan,
         },
     }

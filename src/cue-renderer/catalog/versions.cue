@@ -80,145 +80,16 @@ versions: {
 	}
 }
 
+// serverTools advertises the single Bazel artefact Ansible consumes for the
+// pinned third-party server-tool bundle. Per-tool URLs and sha256 sums live
+// in MODULE.bazel http_file rules; this block exists so consumers can request
+// "the server-tools archive" by Bazel label and detect version drift via the
+// version string. The version is a stable composite of every bundled tool's
+// pinned version, so any catalog bump produces a new value and forces a
+// re-unpack on the host.
 serverTools: {
-	clickhouse: {
-		version:        versions.production.clickhouse
-		format:         "tarball"
-		url:            "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-\(version)-amd64.tgz"
-		sha256:         "2b0ccdc84bc3cc624408a8a490181c6eed6b8df4e090f9b4ed7e647e46093278"
-		extract_binary: "clickhouse-common-static-\(version)/usr/bin/clickhouse"
-		symlinks: ["clickhouse-server", "clickhouse-client", "clickhouse-local", "clickhouse-keeper", "clickhouse-benchmark"]
-	}
-	tigerbeetle: {
-		version:        versions.production.tigerbeetle
-		format:         "zip"
-		url:            "https://github.com/tigerbeetle/tigerbeetle/releases/download/\(version)/tigerbeetle-x86_64-linux.zip"
-		sha256:         "0071b5a86876afffea067851f26a90b1e6bb60968fe8afbf8121ea55d4a7af19"
-		extract_binary: "tigerbeetle"
-	}
-	zitadel: {
-		version:        versions.production.zitadel
-		format:         "tarball"
-		url:            "https://github.com/zitadel/zitadel/releases/download/v\(version)/zitadel-linux-amd64.tar.gz"
-		sha256:         "fe1f5231e5dcbdca63ae77adab0d2241daafeb9712e7d6cded3713e9ef50f1cb"
-		extract_binary: "zitadel-linux-amd64/zitadel"
-	}
-	openbao: {
-		version:        versions.production.openbao
-		format:         "deb"
-		url:            "https://github.com/openbao/openbao/releases/download/v\(version)/openbao_\(version)_linux_amd64.deb"
-		sha256:         "5b915011ba8fa8137bd3309830aded0250b8fce42706bd6dcd2b91ac5560cde7"
-		extract_binary: "usr/bin/bao"
-	}
-	spire: {
-		version:     versions.production.spire
-		format:      "tarball"
-		url:         "https://github.com/spiffe/spire/releases/download/v\(version)/spire-\(version)-linux-amd64-musl.tar.gz"
-		sha256:      "cacab9ff32b7a24714edcf4328c4ce27bddd38496b443e8750395883c72a3bfb"
-		extract_dir: "spire-\(version)"
-		binaries: ["spire-server", "spire-agent"]
-	}
-	spiffe_helper: {
-		version:        versions.production.spiffeHelper
-		format:         "tarball"
-		url:            "https://github.com/spiffe/spiffe-helper/releases/download/v\(version)/spiffe-helper_v\(version)_Linux-x86_64.tar.gz"
-		sha256:         "7fba909574320d6a656e2e7d7f0657890fefad08a2abecd86c7bafe62d6d9134"
-		extract_binary: "spiffe-helper"
-	}
-	nats_server: {
-		version:        versions.production.natsServer
-		format:         "tarball"
-		url:            "https://github.com/nats-io/nats-server/releases/download/v\(version)/nats-server-v\(version)-linux-amd64.tar.gz"
-		sha256:         "570d2d627db111e679cc1e6bc57ba78f373ed1769acd8dc9c21c8f62d15b3c52"
-		extract_binary: "nats-server-v\(version)-linux-amd64/nats-server"
-	}
-	garage: {
-		version:     versions.production.garage
-		format:      "binary"
-		url:         "https://garagehq.deuxfleurs.fr/_releases/\(version)/x86_64-unknown-linux-musl/garage"
-		sha256:      "f98d317942bb341151a2775162016bb50cf86b865d0108de03eb5db16e2120cd"
-		binary_name: "garage"
-	}
-	forgejo: {
-		version:     versions.production.forgejo
-		format:      "binary"
-		url:         "https://codeberg.org/forgejo/forgejo/releases/download/v\(version)/forgejo-\(version)-linux-amd64"
-		sha256:      "3919f10a7845f3b71bacc2c7a3bfa2cd71aed58a0b8be6ab5e95f2e150b4ded7"
-		binary_name: "forgejo"
-	}
-	bazel_remote: {
-		version:     versions.production.bazelRemote
-		format:      "binary"
-		url:         "https://github.com/buchgr/bazel-remote/releases/download/v\(version)/bazel-remote-\(version)-linux-amd64"
-		sha256:      "025d53aeb03a7fdd4a0e76262a5ae9eeee9f64d53ca510deff1c84cf3f276784"
-		binary_name: "bazel-remote"
-	}
-	otelcol_contrib: {
-		version:        versions.production.otelcolContrib
-		format:         "tarball"
-		url:            "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v\(version)/otelcol-contrib_\(version)_linux_amd64.tar.gz"
-		sha256:         "4acb57355e9388f257b28de8c18422ff43e52eb329052bd54ebecde000dcbb47"
-		extract_binary: "otelcol-contrib"
-	}
-	temporal: {
-		version: versions.production.temporal
-		format:  "tarball"
-		url:     "https://github.com/temporalio/temporal/releases/download/v\(version)/temporal_\(version)_linux_amd64.tar.gz"
-		sha256:  "83f900fe8f9fd23c0e6369041355d2edbd768a91667dd6bc22a98d8316632177"
-		binaries: ["temporal-server", "temporal-sql-tool", "tdbg"]
-	}
-	grafana: {
-		version:     versions.production.grafana
-		format:      "tarball"
-		url:         "https://dl.grafana.com/oss/release/grafana-\(version).linux-amd64.tar.gz"
-		sha256:      "f240b200a803bf64592fae645331750c2681df5f07496743d714db12393a591f"
-		extract_dir: "grafana-v\(version)"
-		install_dir: "/opt/verself/grafana"
-		binary_name: "grafana"
-	}
-	grafana_clickhouse_datasource: {
-		version:    versions.production.grafanaClickhouseDatasource
-		format:     "zip"
-		url:        "https://github.com/grafana/clickhouse-datasource/releases/download/v\(version)/grafana-clickhouse-datasource-\(version).linux_amd64.zip"
-		sha256:     "11f569287a607043a9c60c4abca493784cc187b6bc4298270e5ef764719a22f1"
-		plugin_dir: "grafana-clickhouse-datasource"
-	}
-	containerd: {
-		version:        versions.production.containerd
-		format:         "tarball"
-		url:            "https://github.com/containerd/containerd/releases/download/v\(version)/containerd-static-\(version)-linux-amd64.tar.gz"
-		sha256:         "5db46232ce716f85bf1e71497a9038c87e63030574bf03f9d09557802188ad27"
-		extract_binary: "bin/containerd"
-	}
-	nodejs: {
-		version:          versions.production.nodejs
-		format:           "tarball_xz"
-		url:              "https://nodejs.org/dist/v\(version)/node-v\(version)-linux-x64.tar.xz"
-		sha256:           "88fd1ce767091fd8d4a99fdb2356e98c819f93f3b1f8663853a2dee9b438068a"
-		strip_components: 1
-		install_dir:      "/opt/verself/nodejs"
-		bin_symlinks: ["node", "npm", "npx", "corepack"]
-	}
-	stalwart: {
-		version:        versions.production.stalwart
-		format:         "tarball"
-		url:            "https://github.com/stalwartlabs/stalwart/releases/download/v\(version)/stalwart-x86_64-unknown-linux-musl.tar.gz"
-		sha256:         "b2042dbcf0a110a4a756a5288de013649fd1f7ee84fa002bb3d2e6ec1e5f1f0b"
-		extract_binary: "stalwart"
-	}
-	stalwart_cli: {
-		version:        versions.production.stalwartCli
-		format:         "tarball"
-		url:            "https://github.com/stalwartlabs/stalwart/releases/download/v\(version)/stalwart-cli-x86_64-unknown-linux-musl.tar.gz"
-		sha256:         "8fbe74206bed46974c272623e184b11d6c8362eb606dddc155fdb6ae9df7b3e9"
-		extract_binary: "stalwart-cli"
-	}
-	caddy: {
-		version: versions.production.caddy
-		format:  "xcaddy_build"
-		plugins: ["github.com/corazawaf/coraza-caddy/v2@v\(versions.production.corazaCaddy)"]
-		xcaddy_version: versions.production.xcaddy
-	}
+	bazel_label: "//src/platform/binaries:server_tools.tar.zst"
+	version:     "clickhouse-\(versions.production.clickhouse)_tigerbeetle-\(versions.production.tigerbeetle)_zitadel-\(versions.production.zitadel)_openbao-\(versions.production.openbao)_spire-\(versions.production.spire)_spiffe-helper-\(versions.production.spiffeHelper)_nats-server-\(versions.production.natsServer)_garage-\(versions.production.garage)_forgejo-\(versions.production.forgejo)_bazel-remote-\(versions.production.bazelRemote)_otelcol-contrib-\(versions.production.otelcolContrib)_temporal-\(versions.production.temporal)_grafana-\(versions.production.grafana)_grafana-clickhouse-datasource-\(versions.production.grafanaClickhouseDatasource)_containerd-\(versions.production.containerd)_nodejs-\(versions.production.nodejs)_stalwart-\(versions.production.stalwart)_stalwart-cli-\(versions.production.stalwartCli)_caddy-\(versions.production.caddy)"
 }
 
 devTools: {
