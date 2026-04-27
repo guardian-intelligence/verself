@@ -1,113 +1,142 @@
 ---
-# Build Go service binaries on the Ansible controller and copy to the server.
-# Follows the delegate_to: localhost pattern from guest_rootfs.
+# Build topology-owned Go binaries on the controller and copy them to the
+# profile directory on each node.
 
-- name: Validate Go binary manifest item schema
+- name: Validate generated topology deploy vars are loaded
   ansible.builtin.assert:
     that:
-      - item.name is defined
-      - item.name | length > 0
-      - item.module_dir is defined
-      - item.module_dir | length > 0
-      - item.package is defined
-      - item.package | length > 0
-      - item.output_path is defined
-      - item.output_path | length > 0
-      - item.cgo_enabled is defined
-      - item.cgo_enabled in ['0', '1']
-      - item.version_ldflags is defined
-      - item.version_ldflags | type_debug == 'bool'
-      - item.restart_handlers is defined
-      - item.restart_handlers | type_debug == 'list'
-    fail_msg: "deploy_profile_go_binaries entries must define name, module_dir, package, output_path, cgo_enabled, version_ldflags, and restart_handlers"
-  loop: "{{ deploy_profile_go_binaries }}"
-  loop_control:
-    label: "{{ item.name | default('unnamed') }}"
+      - topology_deploy is defined
+      - topology_deploy.artifacts is defined
+      - topology_processes is defined
+    quiet: true
+    fail_msg: >-
+      topology_deploy or topology_processes is missing. Run make topology-generate before deploying.
 
-- name: Collect Go binary manifest names
+- name: Collect topology Go deploy artifacts
   ansible.builtin.set_fact:
-    deploy_profile_go_binary_names: "{{ deploy_profile_go_binaries | map(attribute='name') | list }}"
-    deploy_profile_go_binary_output_paths: "{{ deploy_profile_go_binaries | map(attribute='output_path') | list }}"
+    deploy_profile_go_artifacts: "{{ topology_deploy.artifacts | selectattr('artifact.kind', 'equalto', 'go_binary') | list }}"
 
-- name: Validate Go binary manifest coverage
+- name: Collect topology Go artifact labels and outputs
+  ansible.builtin.set_fact:
+    deploy_profile_go_artifact_labels: "{{ deploy_profile_go_artifacts | map(attribute='artifact.bazel_label') | list }}"
+    deploy_profile_go_artifact_outputs: "{{ deploy_profile_go_artifacts | map(attribute='artifact.output') | list }}"
+
+- name: Validate topology Go deploy artifacts
   ansible.builtin.assert:
     that:
-      - deploy_profile_go_binary_names | length == 18
-      - deploy_profile_go_binary_names | unique | list | length == deploy_profile_go_binary_names | length
-      - deploy_profile_go_binary_output_paths | unique | list | length == deploy_profile_go_binary_output_paths | length
-      - >-
-        deploy_profile_go_binary_output_paths
-        | select('match', '^artifacts/deploy/bin/[^/]+$')
-        | list
-        | length == deploy_profile_go_binary_output_paths | length
-      - deploy_profile_go_binaries | map(attribute='module_dir') | select('match', '^src/[^/]+$') | list | length == deploy_profile_go_binaries | length
-      - deploy_profile_go_binary_names | sort == [
-          'billing-service',
-          'governance-service',
-          'identity-service',
-          'mailbox-service',
-          'notifications-service',
-          'object-storage-secret-sync',
-          'object-storage-service',
-          'profile-service',
-          'projects-service',
-          'sandbox-rental-recurring-worker',
-          'sandbox-rental-service',
-          'secrets-service',
-          'source-code-hosting-service',
-          'tb-inspect',
-          'temporal-bootstrap',
-          'temporal-schema',
-          'verself-temporal-server',
-          'verself-temporal-web'
-        ]
-    fail_msg: "deploy_profile_go_binaries must include each current Go binary exactly once with a unique output_path"
+      - deploy_profile_go_artifacts | length > 0
+      - deploy_profile_go_artifact_labels | length == deploy_profile_go_artifacts | length
+      - deploy_profile_go_artifact_labels | unique | list | length == deploy_profile_go_artifact_labels | length
+      - deploy_profile_go_artifact_outputs | unique | list | length == deploy_profile_go_artifact_outputs | length
+      - deploy_profile_go_artifact_labels | select('match', '^//') | list | length == deploy_profile_go_artifact_labels | length
+      - deploy_profile_go_artifact_outputs | reject('equalto', '') | list | length == deploy_profile_go_artifact_outputs | length
+    quiet: true
+    fail_msg: >-
+      topology_deploy.artifacts must contain unique Go artifacts with non-empty Bazel labels and output names.
 
-- name: Create local Go binary artifact directory
+- name: Build topology Go artifacts with Bazel
   delegate_to: localhost
   become: false
   run_once: true
-  ansible.builtin.file:
-    path: "{{ deploy_profile_repo_root }}/artifacts/deploy/bin"
-    state: directory
-    mode: "0755"
+  ansible.builtin.command:
+    argv: "{{ [deploy_profile_bazelisk, 'build'] + deploy_profile_go_artifact_labels }}"
+    chdir: "{{ deploy_profile_repo_root }}"
+  changed_when: false
 
-- name: Build Go binaries
+- name: Resolve topology Go artifact output paths
   delegate_to: localhost
   become: false
   run_once: true
   ansible.builtin.command:
     argv:
-      - go
-      - build
-      - "{{ '-ldflags=-s -w -X main.version=' ~ (verself_version | default('dev')) if item.version_ldflags else '-ldflags=-s -w' }}"
-      - -o
-      - "{{ deploy_profile_repo_root }}/{{ item.output_path }}"
-      - "{{ item.package }}"
-    chdir: "{{ deploy_profile_repo_root }}/{{ item.module_dir }}"
-  environment:
-    CGO_ENABLED: "{{ item.cgo_enabled }}"
-    GOOS: linux
-    GOARCH: amd64
+      - "{{ deploy_profile_bazelisk }}"
+      - cquery
+      - --output=files
+      - "{{ item.artifact.bazel_label }}"
+    chdir: "{{ deploy_profile_repo_root }}"
   changed_when: false
-  loop: "{{ deploy_profile_go_binaries }}"
+  register: deploy_profile_go_bazel_outputs
+  loop: "{{ deploy_profile_go_artifacts }}"
   loop_control:
-    label: "{{ item.name }}"
+    label: "{{ item.artifact.output }}"
 
-- name: Copy Go binaries to server
+- name: Validate topology Go artifact output paths
+  ansible.builtin.assert:
+    that:
+      - item.stdout_lines | length == 1
+      - item.stdout | trim is match('^bazel-out/')
+    quiet: true
+    fail_msg: "Bazel cquery did not resolve exactly one output file for {{ item.item.artifact.bazel_label }}."
+  loop: "{{ deploy_profile_go_bazel_outputs.results }}"
+  loop_control:
+    label: "{{ item.item.artifact.output }}"
+
+- name: Copy topology Go binaries to server
   ansible.builtin.copy:
-    src: "{{ deploy_profile_repo_root }}/{{ item.output_path }}"
-    dest: "{{ verself_bin }}/{{ item.name }}"
+    src: "{{ deploy_profile_repo_root }}/{{ item.stdout | trim }}"
+    dest: "{{ verself_bin }}/{{ item.item.artifact.output }}"
     mode: "0755"
   register: deploy_profile_go_binary_copy_results
-  loop: "{{ deploy_profile_go_binaries }}"
+  loop: "{{ deploy_profile_go_bazel_outputs.results }}"
   loop_control:
-    label: "{{ item.name }}"
+    label: "{{ item.item.artifact.output }}"
 
-- name: Trigger restarts when copied Go binaries changed
-  ansible.builtin.command: /bin/true
-  changed_when: item.changed | default(false)
-  notify: "{{ item.item.restart_handlers }}"
-  loop: "{{ deploy_profile_go_binary_copy_results.results | selectattr('item.restart_handlers') }}"
+- name: Publish topology Go binary copy result facts
+  ansible.builtin.set_fact:
+    "{{ deploy_profile_binary_copy_fact_name }}": "{{ item }}"
+  vars:
+    deploy_profile_binary_copy_fact_name: >-
+      deploy_profile_{{ item.item.item.artifact.output | replace('-', '_') }}_binary_copy
+  loop: "{{ deploy_profile_go_binary_copy_results.results }}"
   loop_control:
-    label: "{{ item.item.name }}"
+    label: "{{ item.item.item.artifact.output }}"
+
+- name: Collect changed topology Go artifact outputs
+  ansible.builtin.set_fact:
+    deploy_profile_changed_go_outputs: >-
+      {{
+        deploy_profile_go_binary_copy_results.results
+        | selectattr('changed')
+        | map(attribute='item.item.artifact.output')
+        | list
+      }}
+
+- name: Initialize changed topology Go restart units
+  ansible.builtin.set_fact:
+    deploy_profile_changed_go_restart_units: []
+
+- name: Collect restart units for changed topology Go binaries
+  ansible.builtin.set_fact:
+    deploy_profile_changed_go_restart_units: >-
+      {{
+        deploy_profile_changed_go_restart_units
+        + (item.restart_units | default([]))
+      }}
+  loop: "{{ topology_processes }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when:
+    - item.artifact.kind == 'go_binary'
+    - item.artifact.output in deploy_profile_changed_go_outputs
+
+- name: Deduplicate changed topology Go restart units
+  ansible.builtin.set_fact:
+    deploy_profile_changed_go_restart_units: "{{ deploy_profile_changed_go_restart_units | unique | list }}"
+
+- name: Inspect changed topology Go systemd units before restart
+  ansible.builtin.stat:
+    path: "/etc/systemd/system/{{ item }}.service"
+  register: deploy_profile_changed_go_unit_files
+  loop: "{{ deploy_profile_changed_go_restart_units }}"
+  loop_control:
+    label: "{{ item }}.service"
+
+- name: Restart existing systemd units for changed topology Go binaries
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: "{{ item.item }}"
+    state: restarted
+  loop: "{{ deploy_profile_changed_go_unit_files.results }}"
+  loop_control:
+    label: "{{ item.item }}.service"
+  when: item.stat.exists

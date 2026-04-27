@@ -141,8 +141,8 @@ argument_specs:
 
       firecracker_vm_orchestrator_binary_path:
         type: path
-        default: /usr/local/bin/vm-orchestrator
-        description: "Install path for the vm-orchestrator host daemon binary."
+        default: /opt/verself/profile/bin/vm-orchestrator
+        description: "Profile path for the topology-built vm-orchestrator host daemon binary."
 
       firecracker_vm_orchestrator_api_socket:
         type: path
