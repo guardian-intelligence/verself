@@ -538,3 +538,43 @@ func SortedKeys(m map[string]any) []string {
 	sort.Strings(keys)
 	return keys
 }
+
+// StringList expects parent[key] to be []any of strings and returns the
+// concrete []string slice. It mirrors String/Slice for cases where the
+// caller wants a typed list at the leaves.
+func StringList(parent map[string]any, path, key string) ([]string, error) {
+	raw, err := Slice(parent, path, key)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(raw))
+	for i, item := range raw {
+		value, ok := item.(string)
+		if !ok {
+			return nil, fmt.Errorf("%s.%s[%d]: expected string, got %T", path, key, i, item)
+		}
+		out = append(out, value)
+	}
+	return out, nil
+}
+
+// OptionalStringList returns the typed []string at parent[key] or nil
+// when the key is absent. Non-string elements are silently dropped to
+// match the historical catalog-renderer behaviour.
+func OptionalStringList(parent map[string]any, key string) []string {
+	value, ok := parent[key]
+	if !ok || value == nil {
+		return nil
+	}
+	items, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if value, ok := item.(string); ok {
+			out = append(out, value)
+		}
+	}
+	return out
+}

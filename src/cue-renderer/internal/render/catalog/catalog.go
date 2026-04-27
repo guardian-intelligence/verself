@@ -58,12 +58,15 @@ func devToolInstallPlan(loaded load.Loaded) (map[string]any, error) {
 
 	for _, item := range tools {
 		tool := item.Value
-		strategy := optionalString(tool, "strategy")
+		strategy, err := projection.OptionalString(tool, item.Name, "strategy")
+		if err != nil {
+			return nil, err
+		}
 		plan.toolRecord(item.Name, tool)
 
 		switch {
 		case strategy == "binary":
-			installPath, err := stringField(tool, item.Name, "install_path")
+			installPath, err := projection.String(tool, item.Name, "install_path")
 			if err != nil {
 				return nil, err
 			}
@@ -71,11 +74,11 @@ func devToolInstallPlan(loaded load.Loaded) (map[string]any, error) {
 		case strategy == "apt":
 			plan.aptPackages = append(plan.aptPackages, item.Name)
 		case strategy == "go_install":
-			pkg, err := stringField(tool, item.Name, "go_package")
+			pkg, err := projection.String(tool, item.Name, "go_package")
 			if err != nil {
 				return nil, err
 			}
-			version, err := stringField(tool, item.Name, "version")
+			version, err := projection.String(tool, item.Name, "version")
 			if err != nil {
 				return nil, err
 			}
@@ -86,24 +89,22 @@ func devToolInstallPlan(loaded load.Loaded) (map[string]any, error) {
 				"gobin":  goPath + "/bin",
 			})
 		case strategy == "uv_tool":
-			pkg, err := stringField(tool, item.Name, "uv_package")
+			pkg, err := projection.String(tool, item.Name, "uv_package")
 			if err != nil {
 				return nil, err
 			}
-			version, err := stringField(tool, item.Name, "version")
+			version, err := projection.String(tool, item.Name, "version")
 			if err != nil {
 				return nil, err
 			}
 			argv := []string{"/usr/local/bin/uv", "tool", "install", "--force", pkg + "==" + version}
-			for _, dep := range optionalStringList(tool, "with") {
-				argv = append(argv, "--with", dep)
-			}
+			argv = append(argv, withArgs(projection.OptionalStringList(tool, "with"))...)
 			plan.uvTools = append(plan.uvTools, map[string]any{"key": item.Name, "argv": argv})
 			if item.Name == "ansible" {
 				plan.addLink("ansible-lint", "/opt/uv-tools/ansible-core/bin/ansible-lint", "/usr/local/bin/ansible-lint")
 			}
 		case item.Name == "go":
-			version, err := stringField(tool, item.Name, "version")
+			version, err := projection.String(tool, item.Name, "version")
 			if err != nil {
 				return nil, err
 			}
@@ -118,7 +119,7 @@ func devToolInstallPlan(loaded load.Loaded) (map[string]any, error) {
 			plan.replacementPaths = append(plan.replacementPaths, "/usr/local/go")
 			plan.addLink(item.Name, installDir, "/usr/local/go")
 		case item.Name == "zig":
-			version, err := stringField(tool, item.Name, "version")
+			version, err := projection.String(tool, item.Name, "version")
 			if err != nil {
 				return nil, err
 			}
@@ -134,7 +135,7 @@ func devToolInstallPlan(loaded load.Loaded) (map[string]any, error) {
 			plan.addLink(item.Name, installDir, "/usr/local/zig")
 			plan.addLink(item.Name, "/usr/local/zig/zig", "/usr/local/bin/zig")
 		case item.Name == "tofu":
-			installPath, err := stringField(tool, item.Name, "install_path")
+			installPath, err := projection.String(tool, item.Name, "install_path")
 			if err != nil {
 				return nil, err
 			}
@@ -156,11 +157,11 @@ func devToolInstallPlan(loaded load.Loaded) (map[string]any, error) {
 			plan.addCopy(item.Name, dest+"/bin/protoc", "/usr/local/bin/protoc", "0755")
 			plan.addDirectoryCopy(item.Name, dest+"/include/", "/usr/local/include/", "0755")
 		case item.Name == "cue":
-			binName, err := stringField(tool, item.Name, "bin_name")
+			binName, err := projection.String(tool, item.Name, "bin_name")
 			if err != nil {
 				return nil, err
 			}
-			installPath, err := stringField(tool, item.Name, "install_path")
+			installPath, err := projection.String(tool, item.Name, "install_path")
 			if err != nil {
 				return nil, err
 			}
@@ -168,11 +169,11 @@ func devToolInstallPlan(loaded load.Loaded) (map[string]any, error) {
 				return nil, err
 			}
 		case item.Name == "shellcheck":
-			binName, err := stringField(tool, item.Name, "bin_name")
+			binName, err := projection.String(tool, item.Name, "bin_name")
 			if err != nil {
 				return nil, err
 			}
-			installPath, err := stringField(tool, item.Name, "install_path")
+			installPath, err := projection.String(tool, item.Name, "install_path")
 			if err != nil {
 				return nil, err
 			}
@@ -192,7 +193,7 @@ func devToolInstallPlan(loaded load.Loaded) (map[string]any, error) {
 			if err != nil {
 				return nil, err
 			}
-			version, err := stringField(tool, item.Name, "version")
+			version, err := projection.String(tool, item.Name, "version")
 			if err != nil {
 				return nil, err
 			}
@@ -205,7 +206,7 @@ func devToolInstallPlan(loaded load.Loaded) (map[string]any, error) {
 				plan.addLink(item.Name, "/usr/local/bin/clickhouse", "/usr/local/bin/clickhouse-"+suffix)
 			}
 		case item.Name == "stripe":
-			installPath, err := stringField(tool, item.Name, "install_path")
+			installPath, err := projection.String(tool, item.Name, "install_path")
 			if err != nil {
 				return nil, err
 			}
@@ -240,12 +241,27 @@ func devToolInstallPlan(loaded load.Loaded) (map[string]any, error) {
 }
 
 func (p *installPlan) toolRecord(key string, tool map[string]any) {
+	strategy, _ := projection.OptionalString(tool, key, "strategy")
+	version, _ := projection.OptionalString(tool, key, "version")
+	sha256, _ := projection.OptionalString(tool, key, "sha256")
 	p.tools = append(p.tools, map[string]any{
 		"key":      key,
-		"strategy": optionalString(tool, "strategy"),
-		"version":  optionalString(tool, "version"),
-		"sha256":   optionalString(tool, "sha256"),
+		"strategy": strategy,
+		"version":  version,
+		"sha256":   sha256,
 	})
+}
+
+// withArgs flattens an `--with X --with Y` flag list for `uv tool install`.
+func withArgs(deps []string) []string {
+	if len(deps) == 0 {
+		return nil
+	}
+	out := make([]string, 0, 2*len(deps))
+	for _, dep := range deps {
+		out = append(out, "--with", dep)
+	}
+	return out
 }
 
 func (p *installPlan) addDirectory(path, mode string) {
@@ -259,11 +275,12 @@ func (p *installPlan) addDirectory(path, mode string) {
 }
 
 func (p *installPlan) addDownload(key string, tool map[string]any, dest, mode string) {
+	sha256, _ := projection.OptionalString(tool, key, "sha256")
 	p.downloads = append(p.downloads, map[string]any{
 		"key":      key,
 		"url":      tool["url"],
 		"dest":     dest,
-		"checksum": "sha256:" + optionalString(tool, "sha256"),
+		"checksum": "sha256:" + sha256,
 		"mode":     mode,
 	})
 }
@@ -313,7 +330,7 @@ func (p *installPlan) archiveBins(key string, tool map[string]any) error {
 	if err != nil {
 		return err
 	}
-	bins, err := stringList(tool, key, "bins")
+	bins, err := projection.StringList(tool, key, "bins")
 	if err != nil {
 		return err
 	}
@@ -348,7 +365,7 @@ func smokeTestSpans(tools []map[string]any) []map[string]any {
 }
 
 func archivePath(key string, tool map[string]any) (string, error) {
-	version, err := stringField(tool, key, "version")
+	version, err := projection.String(tool, key, "version")
 	if err != nil {
 		return "", err
 	}
@@ -360,7 +377,7 @@ func archivePath(key string, tool map[string]any) (string, error) {
 }
 
 func extractDir(key string, tool map[string]any) (string, error) {
-	version, err := stringField(tool, key, "version")
+	version, err := projection.String(tool, key, "version")
 	if err != nil {
 		return "", err
 	}
@@ -368,7 +385,7 @@ func extractDir(key string, tool map[string]any) (string, error) {
 }
 
 func archiveSuffix(tool map[string]any) (string, error) {
-	url, err := stringField(tool, "tool", "url")
+	url, err := projection.String(tool, "tool", "url")
 	if err != nil {
 		return "", err
 	}
@@ -377,7 +394,8 @@ func archiveSuffix(tool map[string]any) (string, error) {
 			return strings.TrimPrefix(suffix, "."), nil
 		}
 	}
-	return archiveExtension(optionalString(tool, "strategy"))
+	strategy, _ := projection.OptionalString(tool, "tool", "strategy")
+	return archiveExtension(strategy)
 }
 
 func archiveExtension(formatName string) (string, error) {
@@ -397,66 +415,4 @@ func archiveExtension(formatName string) (string, error) {
 
 func toolSlug(key string) string {
 	return strings.ReplaceAll(key, "_", "-")
-}
-
-func stringField(parent map[string]any, path, key string) (string, error) {
-	value, ok := parent[key]
-	if !ok {
-		return "", fmt.Errorf("%s.%s: missing", path, key)
-	}
-	out, ok := value.(string)
-	if !ok {
-		return "", fmt.Errorf("%s.%s: expected string, got %T", path, key, value)
-	}
-	return out, nil
-}
-
-func optionalString(parent map[string]any, key string) string {
-	value, ok := parent[key]
-	if !ok || value == nil {
-		return ""
-	}
-	out, ok := value.(string)
-	if !ok {
-		return ""
-	}
-	return out
-}
-
-func stringList(parent map[string]any, path, key string) ([]string, error) {
-	value, ok := parent[key]
-	if !ok {
-		return nil, fmt.Errorf("%s.%s: missing", path, key)
-	}
-	items, ok := value.([]any)
-	if !ok {
-		return nil, fmt.Errorf("%s.%s: expected list, got %T", path, key, value)
-	}
-	out := make([]string, 0, len(items))
-	for i, item := range items {
-		value, ok := item.(string)
-		if !ok {
-			return nil, fmt.Errorf("%s.%s[%d]: expected string, got %T", path, key, i, item)
-		}
-		out = append(out, value)
-	}
-	return out, nil
-}
-
-func optionalStringList(parent map[string]any, key string) []string {
-	value, ok := parent[key]
-	if !ok {
-		return nil
-	}
-	items, ok := value.([]any)
-	if !ok {
-		return nil
-	}
-	out := make([]string, 0, len(items))
-	for _, item := range items {
-		if value, ok := item.(string); ok {
-			out = append(out, value)
-		}
-	}
-	return out
 }
