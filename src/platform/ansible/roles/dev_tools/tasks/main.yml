@@ -1,1007 +1,148 @@
 ---
-# Dev tools installation from generated topology catalog vars.
-# Follows the established firecracker/containerd role pattern:
-# get_url + checksum + version verify.
-#
-# Idempotent: every tool checks its current version before downloading.
-# A no-op re-run should complete in <5s.
+# Execute the generated development tool install plan. The topology compiler
+# owns tool layout; Ansible applies checksumed artifacts and package actions.
 
-- name: Validate generated dev tool pins are loaded
+- name: Require generated dev tool install plan
   ansible.builtin.assert:
     that:
-      - topology_dev_tools is defined
-      - topology_dev_tools.go.version is defined
-      - topology_dev_tools.ansible.version is defined
+      - topology_dev_tool_install_plan is defined
+      - topology_dev_tool_install_plan.downloads is defined
+      - topology_dev_tool_install_plan.uv_tools is defined
+      - topology_dev_tool_install_plan.go_installs is defined
+    quiet: true
     fail_msg: >-
-      topology_dev_tools is missing. Run make topology-generate before setup-dev.
+      topology_dev_tool_install_plan is missing. Run make topology-generate before setup-dev.
 
-- name: Set dev tool pins
+- name: Set dev tool install plan
   ansible.builtin.set_fact:
-    dev_tools_manifest: "{{ topology_dev_tools }}"
-    dev_tools_repo_root: "{{ playbook_dir }}/../../../.."
+    dev_tools_install_plan: "{{ topology_dev_tool_install_plan }}"
 
-# ============================================================================
-# Go (must be first — go install tools depend on it)
-# ============================================================================
+- name: Create generated dev tool directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    mode: "{{ item.mode }}"
+  loop: "{{ dev_tools_install_plan.directories }}"
+  loop_control:
+    label: "{{ item.path }}"
 
-- name: Check current Go version
-  ansible.builtin.command: /usr/local/go/bin/go version
-  register: dev_tools_go_current
-  changed_when: false
-  failed_when: false
-  when: dev_tools_manifest.go is defined
+- name: Install generated apt dev tools
+  ansible.builtin.apt:
+    name: "{{ dev_tools_install_plan.apt_packages }}"
+    state: present
 
-- name: Install Go {{ dev_tools_manifest.go.version }}
-  when:
-    - dev_tools_manifest.go is defined
-    - dev_tools_go_current.rc != 0 or dev_tools_manifest.go.version not in (dev_tools_go_current.stdout | default(''))
-  block:
-    - name: Remove stale Go installation
-      ansible.builtin.file:
-        path: /usr/local/go
-        state: absent
+- name: Download generated dev tool artifacts
+  ansible.builtin.get_url:
+    url: "{{ item.url }}"
+    dest: "{{ item.dest }}"
+    checksum: "{{ item.checksum }}"
+    mode: "{{ item.mode }}"
+  loop: "{{ dev_tools_install_plan.downloads }}"
+  loop_control:
+    label: "{{ item.key }}"
 
-    - name: Download and extract Go
-      ansible.builtin.unarchive:
-        src: "{{ dev_tools_manifest.go.url }}"
-        dest: /usr/local
-        remote_src: true
+- name: Extract generated dev tool archives
+  ansible.builtin.unarchive:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    remote_src: true
+    creates: "{{ item.creates }}"
+    extra_opts: "{{ item.extra_opts | default(omit) }}"
+  loop: "{{ dev_tools_install_plan.extracts }}"
+  loop_control:
+    label: "{{ item.key }}"
 
-- name: Ensure Go and go-install tools are in system PATH
+- name: Copy generated dev tool outputs
   ansible.builtin.copy:
-    content: |
-      export PATH=/usr/local/go/bin:{{ dev_tools_gopath }}/bin:$PATH
-    dest: /etc/profile.d/go.sh
-    mode: "0644"
-  when: dev_tools_manifest.go is defined
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    remote_src: true
+    mode: "{{ item.mode }}"
+  loop: "{{ dev_tools_install_plan.copies }}"
+  loop_control:
+    label: "{{ item.key }} -> {{ item.dest }}"
 
-- name: Verify Go version
-  ansible.builtin.command: /usr/local/go/bin/go version
-  register: dev_tools_go_version_check
-  changed_when: false
-  failed_when: "dev_tools_manifest.go.version not in dev_tools_go_version_check.stdout"
-  when: dev_tools_manifest.go is defined
+- name: Copy generated dev tool support directories
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    remote_src: true
+    mode: "{{ item.mode }}"
+  loop: "{{ dev_tools_install_plan.directory_copies }}"
+  loop_control:
+    label: "{{ item.key }} -> {{ item.dest }}"
 
-# ============================================================================
-# Zig
-# ============================================================================
-
-- name: Create Zig install directory
+- name: Remove generated dev tool replacement paths
   ansible.builtin.file:
-    path: /usr/local/zig
-    state: directory
-    mode: "0755"
-  when: dev_tools_manifest.zig is defined
-
-- name: Check current Zig version
-  ansible.builtin.command: /usr/local/zig/zig version
-  register: dev_tools_zig_current
-  changed_when: false
-  failed_when: false
-  when: dev_tools_manifest.zig is defined
-
-- name: Install Zig {{ dev_tools_manifest.zig.version }}
-  when:
-    - dev_tools_manifest.zig is defined
-    - dev_tools_zig_current.rc != 0 or dev_tools_manifest.zig.version not in (dev_tools_zig_current.stdout | default(''))
-  block:
-    - name: Download and extract Zig
-      ansible.builtin.unarchive:
-        src: "{{ dev_tools_manifest.zig.url }}"
-        dest: /usr/local/zig
-        remote_src: true
-        extra_opts: ["--strip-components=1"]
-
-    - name: Symlink zig to /usr/local/bin
-      ansible.builtin.file:
-        src: /usr/local/zig/zig
-        dest: /usr/local/bin/zig
-        state: link
-
-- name: Verify Zig version
-  ansible.builtin.command: /usr/local/zig/zig version
-  register: dev_tools_zig_version_check
-  changed_when: false
-  failed_when: "dev_tools_manifest.zig.version not in dev_tools_zig_version_check.stdout"
-  when: dev_tools_manifest.zig is defined
-
-# ============================================================================
-# OpenTofu (zip → single binary)
-# ============================================================================
-
-- name: Check current OpenTofu version
-  ansible.builtin.command: /usr/local/bin/tofu version -json
-  register: dev_tools_tofu_current
-  changed_when: false
-  failed_when: false
-  when: dev_tools_manifest.tofu is defined
-
-- name: Install OpenTofu {{ dev_tools_manifest.tofu.version }}
-  when:
-    - dev_tools_manifest.tofu is defined
-    - dev_tools_tofu_current.rc != 0 or dev_tools_manifest.tofu.version not in (dev_tools_tofu_current.stdout | default(''))
-  block:
-    - name: Create temp dir for OpenTofu
-      ansible.builtin.tempfile:
-        state: directory
-      register: dev_tools_tofu_tmp
-
-    - name: Download OpenTofu zip
-      ansible.builtin.get_url:
-        url: "{{ dev_tools_manifest.tofu.url }}"
-        dest: "{{ dev_tools_tofu_tmp.path }}/tofu.zip"
-        checksum: "sha256:{{ dev_tools_manifest.tofu.sha256 }}"
-        mode: "0644"
-
-    - name: Extract OpenTofu
-      ansible.builtin.unarchive:
-        src: "{{ dev_tools_tofu_tmp.path }}/tofu.zip"
-        dest: "{{ dev_tools_tofu_tmp.path }}"
-        remote_src: true
-
-    - name: Install tofu binary
-      ansible.builtin.copy:
-        src: "{{ dev_tools_tofu_tmp.path }}/tofu"
-        dest: /usr/local/bin/tofu
-        remote_src: true
-        mode: "0755"
-
-    - name: Clean up temp dir
-      ansible.builtin.file:
-        path: "{{ dev_tools_tofu_tmp.path }}"
-        state: absent
-
-- name: Verify OpenTofu version
-  ansible.builtin.command: /usr/local/bin/tofu version -json
-  register: dev_tools_tofu_version_check
-  changed_when: false
-  failed_when: "dev_tools_manifest.tofu.version not in dev_tools_tofu_version_check.stdout"
-  when: dev_tools_manifest.tofu is defined
-
-# ============================================================================
-# protoc (zip → /usr/local/bin + /usr/local/include)
-# ============================================================================
-
-- name: Check current protoc version
-  ansible.builtin.command: /usr/local/bin/protoc --version
-  register: dev_tools_protoc_current
-  changed_when: false
-  failed_when: false
-  when: dev_tools_manifest.protoc is defined
-
-- name: Install protoc {{ dev_tools_manifest.protoc.version }}
-  when:
-    - dev_tools_manifest.protoc is defined
-    - dev_tools_protoc_current.rc != 0 or dev_tools_manifest.protoc.version not in (dev_tools_protoc_current.stdout | default(''))
-  block:
-    - name: Create temp dir for protoc
-      ansible.builtin.tempfile:
-        state: directory
-      register: dev_tools_protoc_tmp
-
-    - name: Download protoc zip
-      ansible.builtin.get_url:
-        url: "{{ dev_tools_manifest.protoc.url }}"
-        dest: "{{ dev_tools_protoc_tmp.path }}/protoc.zip"
-        checksum: "sha256:{{ dev_tools_manifest.protoc.sha256 }}"
-        mode: "0644"
-
-    - name: Extract protoc
-      ansible.builtin.unarchive:
-        src: "{{ dev_tools_protoc_tmp.path }}/protoc.zip"
-        dest: /usr/local
-        remote_src: true
-
-    - name: Clean up temp dir
-      ansible.builtin.file:
-        path: "{{ dev_tools_protoc_tmp.path }}"
-        state: absent
-
-- name: Verify protoc version
-  ansible.builtin.command: /usr/local/bin/protoc --version
-  register: dev_tools_protoc_version_check
-  changed_when: false
-  failed_when: "dev_tools_manifest.protoc.version not in dev_tools_protoc_version_check.stdout"
-  when: dev_tools_manifest.protoc is defined
-
-# ============================================================================
-# CUE (tarball → single binary)
-# ============================================================================
-
-- name: Check current CUE version
-  ansible.builtin.command: /usr/local/bin/cue version
-  register: dev_tools_cue_current
-  changed_when: false
-  failed_when: false
-  when: dev_tools_manifest.cue is defined
-
-- name: Install CUE {{ dev_tools_manifest.cue.version }}
-  when:
-    - dev_tools_manifest.cue is defined
-    - dev_tools_cue_current.rc != 0 or ("v" ~ dev_tools_manifest.cue.version) not in (dev_tools_cue_current.stdout | default(''))
-  block:
-    - name: Create temp dir for CUE
-      ansible.builtin.tempfile:
-        state: directory
-      register: dev_tools_cue_tmp
-
-    - name: Download CUE tarball
-      ansible.builtin.get_url:
-        url: "{{ dev_tools_manifest.cue.url }}"
-        dest: "{{ dev_tools_cue_tmp.path }}/cue.tar.gz"
-        checksum: "sha256:{{ dev_tools_manifest.cue.sha256 }}"
-        mode: "0644"
-
-    - name: Extract CUE
-      ansible.builtin.unarchive:
-        src: "{{ dev_tools_cue_tmp.path }}/cue.tar.gz"
-        dest: "{{ dev_tools_cue_tmp.path }}"
-        remote_src: true
-
-    - name: Install CUE binary
-      ansible.builtin.copy:
-        src: "{{ dev_tools_cue_tmp.path }}/{{ dev_tools_manifest.cue.bin_name }}"
-        dest: "{{ dev_tools_manifest.cue.install_path }}"
-        remote_src: true
-        mode: "0755"
-
-    - name: Clean up temp dir
-      ansible.builtin.file:
-        path: "{{ dev_tools_cue_tmp.path }}"
-        state: absent
-
-- name: Verify CUE version
-  ansible.builtin.command: /usr/local/bin/cue version
-  register: dev_tools_cue_version_check
-  changed_when: false
-  failed_when: "('v' ~ dev_tools_manifest.cue.version) not in dev_tools_cue_version_check.stdout"
-  when: dev_tools_manifest.cue is defined
-
-# ============================================================================
-# Single-binary downloads: buf, jq, sops
-# get_url without force: skips download when dest exists and checksum matches.
-# ============================================================================
-
-- name: Install buf {{ dev_tools_manifest.buf.version }}
-  ansible.builtin.get_url:
-    url: "{{ dev_tools_manifest.buf.url }}"
-    dest: /usr/local/bin/buf
-    checksum: "sha256:{{ dev_tools_manifest.buf.sha256 }}"
-    mode: "0755"
-  when: dev_tools_manifest.buf is defined
-
-- name: Verify buf version
-  ansible.builtin.command: /usr/local/bin/buf --version
-  register: dev_tools_buf_version_check
-  changed_when: false
-  failed_when: "dev_tools_manifest.buf.version not in dev_tools_buf_version_check.stdout"
-  when: dev_tools_manifest.buf is defined
-
-- name: Install Bazelisk {{ dev_tools_manifest.bazelisk.version }}
-  ansible.builtin.get_url:
-    url: "{{ dev_tools_manifest.bazelisk.url }}"
-    dest: /usr/local/bin/bazelisk
-    checksum: "sha256:{{ dev_tools_manifest.bazelisk.sha256 }}"
-    mode: "0755"
-  when: dev_tools_manifest.bazelisk is defined
-
-- name: Verify Bazelisk and pinned Bazel versions
-  ansible.builtin.command: /usr/local/bin/bazelisk version
-  args:
-    chdir: "{{ dev_tools_repo_root }}"
-  register: dev_tools_bazelisk_version_check
-  changed_when: false
-  failed_when: >-
-    dev_tools_manifest.bazelisk.version not in dev_tools_bazelisk_version_check.stdout
-    or dev_tools_manifest.bazel.version not in dev_tools_bazelisk_version_check.stdout
-  when:
-    - dev_tools_manifest.bazelisk is defined
-    - dev_tools_manifest.bazel is defined
-
-- name: Install buildifier {{ dev_tools_manifest.buildifier.version }}
-  ansible.builtin.get_url:
-    url: "{{ dev_tools_manifest.buildifier.url }}"
-    dest: /usr/local/bin/buildifier
-    checksum: "sha256:{{ dev_tools_manifest.buildifier.sha256 }}"
-    mode: "0755"
-  when: dev_tools_manifest.buildifier is defined
-
-- name: Verify buildifier version
-  ansible.builtin.command: /usr/local/bin/buildifier --version
-  register: dev_tools_buildifier_version_check
-  changed_when: false
-  failed_when: "dev_tools_manifest.buildifier.version not in dev_tools_buildifier_version_check.stdout"
-  when: dev_tools_manifest.buildifier is defined
-
-- name: Install jq {{ dev_tools_manifest.jq.version }}
-  ansible.builtin.get_url:
-    url: "{{ dev_tools_manifest.jq.url }}"
-    dest: /usr/local/bin/jq
-    checksum: "sha256:{{ dev_tools_manifest.jq.sha256 }}"
-    mode: "0755"
-  when: dev_tools_manifest.jq is defined
-
-- name: Verify jq version
-  ansible.builtin.command: /usr/local/bin/jq --version
-  register: dev_tools_jq_version_check
-  changed_when: false
-  failed_when: "dev_tools_manifest.jq.version not in dev_tools_jq_version_check.stdout"
-  when: dev_tools_manifest.jq is defined
-
-- name: Install sops {{ dev_tools_manifest.sops.version }}
-  ansible.builtin.get_url:
-    url: "{{ dev_tools_manifest.sops.url }}"
-    dest: /usr/local/bin/sops
-    checksum: "sha256:{{ dev_tools_manifest.sops.sha256 }}"
-    mode: "0755"
-  when: dev_tools_manifest.sops is defined
-
-- name: Verify sops version
-  ansible.builtin.command: /usr/local/bin/sops --version
-  register: dev_tools_sops_version_check
-  changed_when: false
-  failed_when: "dev_tools_manifest.sops.version not in dev_tools_sops_version_check.stdout"
-  when: dev_tools_manifest.sops is defined
-
-# ============================================================================
-# agent-browser (vercel-labs) — CDP-driven browser CLI for design iteration
-# ============================================================================
-
-- name: Install agent-browser {{ dev_tools_manifest['agent-browser'].version }}
-  ansible.builtin.get_url:
-    url: "{{ dev_tools_manifest['agent-browser'].url }}"
-    dest: /usr/local/bin/agent-browser
-    checksum: "sha256:{{ dev_tools_manifest['agent-browser'].sha256 }}"
-    mode: "0755"
-  when: dev_tools_manifest['agent-browser'] is defined
-
-- name: Verify agent-browser version
-  ansible.builtin.command: /usr/local/bin/agent-browser --version
-  register: dev_tools_agent_browser_version_check
-  changed_when: false
-  failed_when: "dev_tools_manifest['agent-browser'].version not in dev_tools_agent_browser_version_check.stdout"
-  when: dev_tools_manifest['agent-browser'] is defined
-
-# ============================================================================
-# Stripe CLI (tarball → single binary)
-# ============================================================================
-
-- name: Check current Stripe CLI version
-  ansible.builtin.command: /usr/local/bin/stripe version
-  register: dev_tools_stripe_current
-  changed_when: false
-  failed_when: false
-  when: dev_tools_manifest.stripe is defined
-
-- name: Install Stripe CLI {{ dev_tools_manifest.stripe.version }}
-  when:
-    - dev_tools_manifest.stripe is defined
-    - dev_tools_stripe_current.rc != 0 or dev_tools_manifest.stripe.version not in (dev_tools_stripe_current.stdout | default(''))
-  block:
-    - name: Create temp dir for Stripe CLI
-      ansible.builtin.tempfile:
-        state: directory
-      register: dev_tools_stripe_tmp
-
-    - name: Download Stripe CLI tarball
-      ansible.builtin.get_url:
-        url: "{{ dev_tools_manifest.stripe.url }}"
-        dest: "{{ dev_tools_stripe_tmp.path }}/stripe.tar.gz"
-        checksum: "sha256:{{ dev_tools_manifest.stripe.sha256 }}"
-        mode: "0644"
-
-    - name: Extract Stripe CLI
-      ansible.builtin.unarchive:
-        src: "{{ dev_tools_stripe_tmp.path }}/stripe.tar.gz"
-        dest: "{{ dev_tools_stripe_tmp.path }}"
-        remote_src: true
-
-    - name: Install stripe binary
-      ansible.builtin.copy:
-        src: "{{ dev_tools_stripe_tmp.path }}/stripe"
-        dest: /usr/local/bin/stripe
-        remote_src: true
-        mode: "0755"
-
-    - name: Clean up temp dir
-      ansible.builtin.file:
-        path: "{{ dev_tools_stripe_tmp.path }}"
-        state: absent
-
-- name: Verify Stripe CLI version
-  ansible.builtin.command: /usr/local/bin/stripe version
-  register: dev_tools_stripe_version_check
-  changed_when: false
-  failed_when: "dev_tools_manifest.stripe.version not in dev_tools_stripe_version_check.stdout"
-  when: dev_tools_manifest.stripe is defined
-
-# ============================================================================
-# shellcheck (tarball → single binary)
-# ============================================================================
-
-- name: Check current shellcheck version
-  ansible.builtin.command: /usr/local/bin/shellcheck --version
-  register: dev_tools_shellcheck_current
-  changed_when: false
-  failed_when: false
-  when: dev_tools_manifest.shellcheck is defined
-
-- name: Install shellcheck {{ dev_tools_manifest.shellcheck.version }}
-  when:
-    - dev_tools_manifest.shellcheck is defined
-    - dev_tools_shellcheck_current.rc != 0 or dev_tools_manifest.shellcheck.version not in (dev_tools_shellcheck_current.stdout | default(''))
-  block:
-    - name: Create temp dir for shellcheck
-      ansible.builtin.tempfile:
-        state: directory
-      register: dev_tools_shellcheck_tmp
-
-    - name: Download shellcheck tarball
-      ansible.builtin.get_url:
-        url: "{{ dev_tools_manifest.shellcheck.url }}"
-        dest: "{{ dev_tools_shellcheck_tmp.path }}/shellcheck.tar.xz"
-        checksum: "sha256:{{ dev_tools_manifest.shellcheck.sha256 }}"
-        mode: "0644"
-
-    - name: Extract shellcheck
-      ansible.builtin.unarchive:
-        src: "{{ dev_tools_shellcheck_tmp.path }}/shellcheck.tar.xz"
-        dest: "{{ dev_tools_shellcheck_tmp.path }}"
-        remote_src: true
-
-    - name: Install shellcheck binary
-      ansible.builtin.copy:
-        src: "{{ dev_tools_shellcheck_tmp.path }}/shellcheck-v{{ dev_tools_manifest.shellcheck.version }}/shellcheck"
-        dest: /usr/local/bin/shellcheck
-        remote_src: true
-        mode: "0755"
-
-    - name: Clean up temp dir
-      ansible.builtin.file:
-        path: "{{ dev_tools_shellcheck_tmp.path }}"
-        state: absent
-
-- name: Verify shellcheck version
-  ansible.builtin.command: /usr/local/bin/shellcheck --version
-  register: dev_tools_shellcheck_version_check
-  changed_when: false
-  failed_when: "dev_tools_manifest.shellcheck.version not in dev_tools_shellcheck_version_check.stdout"
-  when: dev_tools_manifest.shellcheck is defined
-
-# ============================================================================
-# age (tarball with two binaries: age, age-keygen)
-# ============================================================================
-
-- name: Check current age version
-  ansible.builtin.command: /usr/local/bin/age --version
-  register: dev_tools_age_current
-  changed_when: false
-  failed_when: false
-  when: dev_tools_manifest.age is defined
-
-- name: Install age {{ dev_tools_manifest.age.version }}
-  when:
-    - dev_tools_manifest.age is defined
-    - dev_tools_age_current.rc != 0 or dev_tools_manifest.age.version not in (dev_tools_age_current.stdout | default(''))
-  block:
-    - name: Create temp dir for age
-      ansible.builtin.tempfile:
-        state: directory
-      register: dev_tools_age_tmp
-
-    - name: Download age tarball
-      ansible.builtin.get_url:
-        url: "{{ dev_tools_manifest.age.url }}"
-        dest: "{{ dev_tools_age_tmp.path }}/age.tar.gz"
-        checksum: "sha256:{{ dev_tools_manifest.age.sha256 }}"
-        mode: "0644"
-
-    - name: Extract age
-      ansible.builtin.unarchive:
-        src: "{{ dev_tools_age_tmp.path }}/age.tar.gz"
-        dest: "{{ dev_tools_age_tmp.path }}"
-        remote_src: true
-
-    - name: Install age binaries
-      ansible.builtin.copy:
-        src: "{{ dev_tools_age_tmp.path }}/age/{{ item }}"
-        dest: "/usr/local/bin/{{ item }}"
-        remote_src: true
-        mode: "0755"
-      loop:
-        - age
-        - age-keygen
-
-    - name: Clean up temp dir
-      ansible.builtin.file:
-        path: "{{ dev_tools_age_tmp.path }}"
-        state: absent
-
-- name: Verify age version
-  ansible.builtin.command: /usr/local/bin/age --version
-  register: dev_tools_age_version_check
-  changed_when: false
-  failed_when: "dev_tools_manifest.age.version not in dev_tools_age_version_check.stdout"
-  when: dev_tools_manifest.age is defined
-
-# ============================================================================
-# ClickHouse (tarball → single multi-tool binary + symlinks)
-# ============================================================================
-
-- name: Check current ClickHouse version
-  ansible.builtin.command: /usr/local/bin/clickhouse client --version
-  register: dev_tools_clickhouse_current
-  changed_when: false
-  failed_when: false
-  when: dev_tools_manifest.clickhouse is defined
-
-- name: Install ClickHouse {{ dev_tools_manifest.clickhouse.version }}
-  when:
-    - dev_tools_manifest.clickhouse is defined
-    - dev_tools_clickhouse_current.rc != 0 or dev_tools_manifest.clickhouse.version not in (dev_tools_clickhouse_current.stdout | default(''))
-  block:
-    - name: Create temp dir for ClickHouse
-      ansible.builtin.tempfile:
-        state: directory
-      register: dev_tools_clickhouse_tmp
-
-    - name: Download ClickHouse tarball
-      ansible.builtin.get_url:
-        url: "{{ dev_tools_manifest.clickhouse.url }}"
-        dest: "{{ dev_tools_clickhouse_tmp.path }}/clickhouse.tgz"
-        checksum: "sha256:{{ dev_tools_manifest.clickhouse.sha256 }}"
-        mode: "0644"
-
-    - name: Extract ClickHouse
-      ansible.builtin.unarchive:
-        src: "{{ dev_tools_clickhouse_tmp.path }}/clickhouse.tgz"
-        dest: "{{ dev_tools_clickhouse_tmp.path }}"
-        remote_src: true
-
-    - name: Install ClickHouse binary
-      ansible.builtin.copy:
-        src: "{{ dev_tools_clickhouse_tmp.path }}/clickhouse-common-static-{{ dev_tools_manifest.clickhouse.version }}/usr/bin/clickhouse"
-        dest: /usr/local/bin/clickhouse
-        remote_src: true
-        mode: "0755"
-
-    - name: Create ClickHouse symlinks
-      ansible.builtin.file:
-        src: /usr/local/bin/clickhouse
-        dest: "/usr/local/bin/clickhouse-{{ item }}"
-        state: link
-      loop:
-        - server
-        - client
-        - local
-        - keeper
-        - benchmark
-
-    - name: Clean up temp dir
-      ansible.builtin.file:
-        path: "{{ dev_tools_clickhouse_tmp.path }}"
-        state: absent
-
-- name: Verify ClickHouse version
-  ansible.builtin.command: /usr/local/bin/clickhouse client --version
-  register: dev_tools_clickhouse_version_check
-  changed_when: false
-  failed_when: "dev_tools_manifest.clickhouse.version not in dev_tools_clickhouse_version_check.stdout"
-  when: dev_tools_manifest.clickhouse is defined
-
-# ============================================================================
-# go install tools (requires Go already installed above)
-# Check version before running go install — go install is a no-op when the
-# binary exists and matches, but the module download still takes seconds.
-# ============================================================================
-
-- name: Ensure GOPATH bin directory exists
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ dev_tools_install_plan.replacement_paths }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Link generated dev tool outputs
   ansible.builtin.file:
-    path: "{{ dev_tools_gopath }}/bin"
-    state: directory
-    mode: "0755"
-
-- name: Check golangci-lint version
-  ansible.builtin.command: "{{ dev_tools_gopath }}/bin/golangci-lint --version"
-  register: dev_tools_golangci_current
-  changed_when: false
-  failed_when: false
-  when: dev_tools_manifest['golangci-lint'] is defined
-
-- name: Install golangci-lint via go install
-  ansible.builtin.command:
-    cmd: "/usr/local/go/bin/go install {{ dev_tools_manifest['golangci-lint'].go_package }}@v{{ dev_tools_manifest['golangci-lint'].version }}"
-  environment:
-    GOPATH: "{{ dev_tools_gopath }}"
-    GOBIN: "{{ dev_tools_gopath }}/bin"
-  changed_when: true
-  when:
-    - dev_tools_manifest['golangci-lint'] is defined
-    - dev_tools_golangci_current.rc != 0 or dev_tools_manifest['golangci-lint'].version not in (dev_tools_golangci_current.stdout | default(''))
-
-- name: Check gosec module version
-  ansible.builtin.command: "/usr/local/go/bin/go version -m {{ dev_tools_gopath }}/bin/gosec"
-  register: dev_tools_gosec_current
-  changed_when: false
-  failed_when: false
-  when: dev_tools_manifest.gosec is defined
-
-- name: Install gosec via go install
-  ansible.builtin.command:
-    cmd: "/usr/local/go/bin/go install {{ dev_tools_manifest.gosec.go_package }}@v{{ dev_tools_manifest.gosec.version }}"
-  environment:
-    GOPATH: "{{ dev_tools_gopath }}"
-    GOBIN: "{{ dev_tools_gopath }}/bin"
-  changed_when: true
-  when:
-    - dev_tools_manifest.gosec is defined
-    - dev_tools_gosec_current.rc != 0 or dev_tools_manifest.gosec.version not in (dev_tools_gosec_current.stdout | default(''))
-
-- name: Check gofumpt version
-  ansible.builtin.command: "{{ dev_tools_gopath }}/bin/gofumpt --version"
-  register: dev_tools_gofumpt_current
-  changed_when: false
-  failed_when: false
-  when: dev_tools_manifest.gofumpt is defined
-
-- name: Install gofumpt via go install
-  ansible.builtin.command:
-    cmd: "/usr/local/go/bin/go install {{ dev_tools_manifest.gofumpt.go_package }}@v{{ dev_tools_manifest.gofumpt.version }}"
-  environment:
-    GOPATH: "{{ dev_tools_gopath }}"
-    GOBIN: "{{ dev_tools_gopath }}/bin"
-  changed_when: true
-  when:
-    - dev_tools_manifest.gofumpt is defined
-    - dev_tools_gofumpt_current.rc != 0 or dev_tools_manifest.gofumpt.version not in (dev_tools_gofumpt_current.stdout | default(''))
-
-- name: Check sqlc version
-  ansible.builtin.command: "{{ dev_tools_gopath }}/bin/sqlc version"
-  register: dev_tools_sqlc_current
-  changed_when: false
-  failed_when: false
-  when: dev_tools_manifest.sqlc is defined
-
-- name: Install sqlc via go install
-  ansible.builtin.command:
-    cmd: "/usr/local/go/bin/go install {{ dev_tools_manifest.sqlc.go_package }}@v{{ dev_tools_manifest.sqlc.version }}"
-  environment:
-    GOPATH: "{{ dev_tools_gopath }}"
-    GOBIN: "{{ dev_tools_gopath }}/bin"
-  changed_when: true
-  when:
-    - dev_tools_manifest.sqlc is defined
-    - dev_tools_sqlc_current.rc != 0 or dev_tools_manifest.sqlc.version not in (dev_tools_sqlc_current.stdout | default(''))
-
-- name: Check protoc-gen-go version
-  ansible.builtin.command: "{{ dev_tools_gopath }}/bin/protoc-gen-go --version"
-  register: dev_tools_protoc_gen_go_current
-  changed_when: false
-  failed_when: false
-  when: dev_tools_manifest['protoc-gen-go'] is defined
-
-- name: Install protoc-gen-go via go install
-  ansible.builtin.command:
-    cmd: "/usr/local/go/bin/go install {{ dev_tools_manifest['protoc-gen-go'].go_package }}@v{{ dev_tools_manifest['protoc-gen-go'].version }}"
-  environment:
-    GOPATH: "{{ dev_tools_gopath }}"
-    GOBIN: "{{ dev_tools_gopath }}/bin"
-  changed_when: true
-  when:
-    - dev_tools_manifest['protoc-gen-go'] is defined
-    - dev_tools_protoc_gen_go_current.rc != 0 or dev_tools_manifest['protoc-gen-go'].version not in (dev_tools_protoc_gen_go_current.stdout | default(''))
-
-- name: Check protoc-gen-go-grpc version
-  ansible.builtin.command: "{{ dev_tools_gopath }}/bin/protoc-gen-go-grpc --version"
-  register: dev_tools_protoc_gen_go_grpc_current
-  changed_when: false
-  failed_when: false
-  when: dev_tools_manifest['protoc-gen-go-grpc'] is defined
-
-- name: Install protoc-gen-go-grpc via go install
-  ansible.builtin.command:
-    cmd: "/usr/local/go/bin/go install {{ dev_tools_manifest['protoc-gen-go-grpc'].go_package }}@v{{ dev_tools_manifest['protoc-gen-go-grpc'].version }}"
-  environment:
-    GOPATH: "{{ dev_tools_gopath }}"
-    GOBIN: "{{ dev_tools_gopath }}/bin"
-  changed_when: true
-  when:
-    - dev_tools_manifest['protoc-gen-go-grpc'] is defined
-    - >-
-      dev_tools_protoc_gen_go_grpc_current.rc != 0 or
-      dev_tools_manifest['protoc-gen-go-grpc'].version not in
-      (dev_tools_protoc_gen_go_grpc_current.stdout | default(''))
-
-# ============================================================================
-# uv (tarball with two binaries: uv, uvx)
-# ============================================================================
-
-- name: Check current uv version
-  ansible.builtin.command: /usr/local/bin/uv --version
-  register: dev_tools_uv_current
-  changed_when: false
-  failed_when: false
-  when: dev_tools_manifest.uv is defined
-
-- name: Install uv {{ dev_tools_manifest.uv.version }}
-  when:
-    - dev_tools_manifest.uv is defined
-    - dev_tools_uv_current.rc != 0 or dev_tools_manifest.uv.version not in (dev_tools_uv_current.stdout | default(''))
-  block:
-    - name: Create temp dir for uv
-      ansible.builtin.tempfile:
-        state: directory
-      register: dev_tools_uv_tmp
-
-    - name: Download uv tarball
-      ansible.builtin.get_url:
-        url: "{{ dev_tools_manifest.uv.url }}"
-        dest: "{{ dev_tools_uv_tmp.path }}/uv.tar.gz"
-        checksum: "sha256:{{ dev_tools_manifest.uv.sha256 }}"
-        mode: "0644"
-
-    - name: Extract uv
-      ansible.builtin.unarchive:
-        src: "{{ dev_tools_uv_tmp.path }}/uv.tar.gz"
-        dest: "{{ dev_tools_uv_tmp.path }}"
-        remote_src: true
-
-    - name: Install uv binaries
-      ansible.builtin.copy:
-        src: "{{ dev_tools_uv_tmp.path }}/uv-x86_64-unknown-linux-gnu/{{ item }}"
-        dest: "/usr/local/bin/{{ item }}"
-        remote_src: true
-        mode: "0755"
-      loop:
-        - uv
-        - uvx
-
-    - name: Clean up temp dir
-      ansible.builtin.file:
-        path: "{{ dev_tools_uv_tmp.path }}"
-        state: absent
-
-- name: Verify uv version
-  ansible.builtin.command: /usr/local/bin/uv --version
-  register: dev_tools_uv_version_check
-  changed_when: false
-  failed_when: "dev_tools_manifest.uv.version not in dev_tools_uv_version_check.stdout"
-  when: dev_tools_manifest.uv is defined
-
-# ============================================================================
-# uv tool: ansible-core (with ansible-lint), pre-commit, guarddog
-# ============================================================================
-
-- name: Check ansible version
-  ansible.builtin.command: /usr/local/bin/ansible --version
-  register: dev_tools_ansible_current
-  changed_when: false
-  failed_when: false
-  when: dev_tools_manifest.ansible is defined
-
-- name: Check ansible-lint version
-  ansible.builtin.command: /usr/local/bin/ansible-lint --version
-  register: dev_tools_ansible_lint_current
-  changed_when: false
-  failed_when: false
-  when: dev_tools_manifest['ansible-lint'] is defined
-
-- name: Check ansible tool OpenTelemetry SDK version
-  ansible.builtin.command: >-
-    /opt/uv-tools/ansible-core/bin/python -c
-    "import importlib.metadata as m; print(m.version('opentelemetry-sdk'))"
-  register: dev_tools_ansible_otel_sdk_current
-  changed_when: false
-  failed_when: false
-  when: dev_tools_manifest['ansible-opentelemetry-sdk'] is defined
-
-- name: Check ansible tool OTLP gRPC exporter version
-  ansible.builtin.command: >-
-    /opt/uv-tools/ansible-core/bin/python -c
-    "import importlib.metadata as m; print(m.version('opentelemetry-exporter-otlp-proto-grpc'))"
-  register: dev_tools_ansible_otel_exporter_current
-  changed_when: false
-  failed_when: false
-  when: dev_tools_manifest['ansible-opentelemetry-exporter-otlp-proto-grpc'] is defined
-
-- name: Check ansible tool OTLP HTTP exporter version
-  ansible.builtin.command: >-
-    /opt/uv-tools/ansible-core/bin/python -c
-    "import importlib.metadata as m; print(m.version('opentelemetry-exporter-otlp-proto-http'))"
-  register: dev_tools_ansible_otel_exporter_http_current
-  changed_when: false
-  failed_when: false
-  when: dev_tools_manifest['ansible-opentelemetry-exporter-otlp-proto-http'] is defined
-
-- name: Install ansible-core with ansible-lint via uv tool
-  ansible.builtin.command:
-    cmd: >-
-      /usr/local/bin/uv tool install
-      ansible-core=={{ dev_tools_manifest.ansible.version }}
-      {% for dep in (dev_tools_manifest.ansible.with | default([])) %}
-      --with {{ dep }}
-      {% endfor %}
-  environment:
-    UV_TOOL_DIR: /opt/uv-tools
-    UV_TOOL_BIN_DIR: /usr/local/bin
-  register: dev_tools_uv_ansible
-  changed_when: "'Installed' in dev_tools_uv_ansible.stdout"
-  failed_when:
-    - dev_tools_uv_ansible.rc != 0
-    - "'is already installed' not in (dev_tools_uv_ansible.stderr | default(''))"
-  when:
-    - dev_tools_manifest.ansible is defined
-    - >-
-      dev_tools_ansible_current.rc != 0
-      or dev_tools_manifest.ansible.version not in (dev_tools_ansible_current.stdout | default(''))
-      or dev_tools_ansible_lint_current.rc != 0
-      or dev_tools_manifest['ansible-lint'].version not in (dev_tools_ansible_lint_current.stdout | default(''))
-      or (dev_tools_manifest['ansible-opentelemetry-sdk'] is defined and (
-            dev_tools_ansible_otel_sdk_current.rc != 0
-            or dev_tools_manifest['ansible-opentelemetry-sdk'].version
-              not in (dev_tools_ansible_otel_sdk_current.stdout | default(''))
-         ))
-      or (dev_tools_manifest['ansible-opentelemetry-exporter-otlp-proto-grpc'] is defined and (
-            dev_tools_ansible_otel_exporter_current.rc != 0
-            or dev_tools_manifest['ansible-opentelemetry-exporter-otlp-proto-grpc'].version
-              not in (dev_tools_ansible_otel_exporter_current.stdout | default(''))
-         ))
-      or (dev_tools_manifest['ansible-opentelemetry-exporter-otlp-proto-http'] is defined and (
-            dev_tools_ansible_otel_exporter_http_current.rc != 0
-            or dev_tools_manifest['ansible-opentelemetry-exporter-otlp-proto-http'].version
-              not in (dev_tools_ansible_otel_exporter_http_current.stdout | default(''))
-         ))
-
-# uv tool install --with does not symlink companion executables; ensure ansible-lint is linked.
-- name: Symlink ansible-lint from uv venv
-  ansible.builtin.file:
-    src: /opt/uv-tools/ansible-core/bin/ansible-lint
-    dest: /usr/local/bin/ansible-lint
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
     state: link
-    force: true
-  when: dev_tools_manifest['ansible-lint'] is defined
+    force: "{{ item.force }}"
+  loop: "{{ dev_tools_install_plan.links }}"
+  loop_control:
+    label: "{{ item.key }} -> {{ item.dest }}"
 
-- name: Verify Ansible version
-  ansible.builtin.command: /usr/local/bin/ansible --version
-  register: dev_tools_ansible_version_check
-  changed_when: false
-  failed_when: "dev_tools_manifest.ansible.version not in dev_tools_ansible_version_check.stdout"
-  when: dev_tools_manifest.ansible is defined
+- name: Write generated dev tool profile files
+  ansible.builtin.copy:
+    content: "{{ item.content }}"
+    dest: "{{ item.dest }}"
+    mode: "{{ item.mode }}"
+  loop: "{{ dev_tools_install_plan.profile_files }}"
+  loop_control:
+    label: "{{ item.dest }}"
 
-- name: Verify ansible-lint version
-  ansible.builtin.command: /usr/local/bin/ansible-lint --version
-  register: dev_tools_ansible_lint_version_check
-  changed_when: false
-  failed_when: "dev_tools_manifest['ansible-lint'].version not in dev_tools_ansible_lint_version_check.stdout"
-  when: dev_tools_manifest['ansible-lint'] is defined
-
-- name: Verify ansible tool OpenTelemetry SDK version
-  ansible.builtin.command: >-
-    /opt/uv-tools/ansible-core/bin/python -c
-    "import importlib.metadata as m; print(m.version('opentelemetry-sdk'))"
-  register: dev_tools_ansible_otel_sdk_version_check
-  changed_when: false
-  failed_when: >-
-    dev_tools_manifest['ansible-opentelemetry-sdk'].version
-    not in dev_tools_ansible_otel_sdk_version_check.stdout
-  when: dev_tools_manifest['ansible-opentelemetry-sdk'] is defined
-
-- name: Verify ansible tool OTLP gRPC exporter version
-  ansible.builtin.command: >-
-    /opt/uv-tools/ansible-core/bin/python -c
-    "import importlib.metadata as m; print(m.version('opentelemetry-exporter-otlp-proto-grpc'))"
-  register: dev_tools_ansible_otel_exporter_version_check
-  changed_when: false
-  failed_when: >-
-    dev_tools_manifest['ansible-opentelemetry-exporter-otlp-proto-grpc'].version
-    not in dev_tools_ansible_otel_exporter_version_check.stdout
-  when: dev_tools_manifest['ansible-opentelemetry-exporter-otlp-proto-grpc'] is defined
-
-- name: Verify ansible tool OTLP HTTP exporter version
-  ansible.builtin.command: >-
-    /opt/uv-tools/ansible-core/bin/python -c
-    "import importlib.metadata as m; print(m.version('opentelemetry-exporter-otlp-proto-http'))"
-  register: dev_tools_ansible_otel_exporter_http_version_check
-  changed_when: false
-  failed_when: >-
-    dev_tools_manifest['ansible-opentelemetry-exporter-otlp-proto-http'].version
-    not in dev_tools_ansible_otel_exporter_http_version_check.stdout
-  when: dev_tools_manifest['ansible-opentelemetry-exporter-otlp-proto-http'] is defined
-
-- name: Check pre-commit version
-  ansible.builtin.command: /usr/local/bin/pre-commit --version
-  register: dev_tools_pre_commit_current
-  changed_when: false
-  failed_when: false
-  when: dev_tools_manifest['pre-commit'] is defined
-
-- name: Install pre-commit via uv tool
+- name: Install generated Go dev tools
   ansible.builtin.command:
-    cmd: "/usr/local/bin/uv tool install pre-commit=={{ dev_tools_manifest['pre-commit'].version }}"
+    argv: "{{ item.argv }}"
+  environment:
+    GOPATH: "{{ item.gopath }}"
+    GOBIN: "{{ item.gobin }}"
+  changed_when: true
+  loop: "{{ dev_tools_install_plan.go_installs }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Install generated uv dev tools
+  ansible.builtin.command:
+    argv: "{{ item.argv }}"
   environment:
     UV_TOOL_DIR: /opt/uv-tools
     UV_TOOL_BIN_DIR: /usr/local/bin
-  register: dev_tools_uv_pre_commit
-  changed_when: "'Installed' in dev_tools_uv_pre_commit.stdout"
-  failed_when:
-    - dev_tools_uv_pre_commit.rc != 0
-    - "'is already installed' not in (dev_tools_uv_pre_commit.stderr | default(''))"
-  when:
-    - dev_tools_manifest['pre-commit'] is defined
-    - dev_tools_pre_commit_current.rc != 0
-      or dev_tools_manifest['pre-commit'].version not in (dev_tools_pre_commit_current.stdout | default(''))
-
-- name: Verify pre-commit version
-  ansible.builtin.command: /usr/local/bin/pre-commit --version
-  register: dev_tools_pre_commit_version_check
-  changed_when: false
-  failed_when: "dev_tools_manifest['pre-commit'].version not in dev_tools_pre_commit_version_check.stdout"
-  when: dev_tools_manifest['pre-commit'] is defined
-
-- name: Check guarddog version
-  ansible.builtin.command: /usr/local/bin/guarddog --version
-  register: dev_tools_guarddog_current
-  changed_when: false
-  failed_when: false
-  when: dev_tools_manifest.guarddog is defined
-
-- name: Install guarddog via uv tool
-  ansible.builtin.command:
-    cmd: "/usr/local/bin/uv tool install guarddog=={{ dev_tools_manifest.guarddog.version }}"
-  environment:
-    UV_TOOL_DIR: /opt/uv-tools
-    UV_TOOL_BIN_DIR: /usr/local/bin
-  register: dev_tools_uv_guarddog
-  changed_when: "'Installed' in dev_tools_uv_guarddog.stdout"
-  failed_when:
-    - dev_tools_uv_guarddog.rc != 0
-    - "'is already installed' not in (dev_tools_uv_guarddog.stderr | default(''))"
-  when:
-    - dev_tools_manifest.guarddog is defined
-    - dev_tools_guarddog_current.rc != 0
-      or dev_tools_manifest.guarddog.version not in (dev_tools_guarddog_current.stdout | default(''))
-
-- name: Verify guarddog version
-  ansible.builtin.command: /usr/local/bin/guarddog --version
-  register: dev_tools_guarddog_version_check
-  changed_when: false
-  failed_when: "dev_tools_manifest.guarddog.version not in dev_tools_guarddog_version_check.stdout"
-  when: dev_tools_manifest.guarddog is defined
+  changed_when: true
+  loop: "{{ dev_tools_install_plan.uv_tools }}"
+  loop_control:
+    label: "{{ item.key }}"
 
 - name: Install required Ansible collections
   ansible.builtin.command:
-    cmd: "/usr/local/bin/ansible-galaxy collection install -r {{ playbook_dir }}/../requirements.yml"
+    argv:
+      - /usr/local/bin/ansible-galaxy
+      - collection
+      - install
+      - -r
+      - "{{ dev_tools_install_plan.ansible_collections_requirements }}"
   register: dev_tools_galaxy_result
   changed_when: >-
     'Installing' in (dev_tools_galaxy_result.stdout + dev_tools_galaxy_result.stderr)
     or 'Downloading' in (dev_tools_galaxy_result.stdout + dev_tools_galaxy_result.stderr)
-  when: dev_tools_manifest.ansible is defined
 
-# ============================================================================
-# apt: crun, debootstrap
-# ============================================================================
-
-- name: Install apt packages
+- name: Remove retired pipx package
   ansible.builtin.apt:
-    name:
-      - build-essential
-      - crun
-      - debootstrap
-    state: present
-
-# ============================================================================
-# Cleanup: remove stale pipx (migrated to uv tool above)
-# Runs last to avoid disrupting the running Ansible process mid-playbook.
-# See ansible/ansible#85668 — replacing modules while a playbook is running
-# causes "Unknown profile name 'module_legacy_m2c'" deserialization errors.
-# ============================================================================
-
-- name: Remove stale pipx installation
-  ansible.builtin.apt:
-    name: pipx
+    name: "{{ dev_tools_install_plan.cleanup_apt_packages }}"
     state: absent
 
-- name: Remove stale pipx home directory
+- name: Remove retired pipx directories
   ansible.builtin.file:
-    path: /opt/pipx
+    path: "{{ item }}"
     state: absent
+  loop: "{{ dev_tools_install_plan.cleanup_paths }}"
+  loop_control:
+    label: "{{ item }}"
