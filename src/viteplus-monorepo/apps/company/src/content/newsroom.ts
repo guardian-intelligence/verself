@@ -95,7 +95,7 @@ const ITEMS: readonly NewsroomItem[] = [
     publishedAt: "2026-04-05",
     author: { name: "Shovon Hasan", role: "Founder & CEO", avatar: "/people/shovon-hasan.jpg" },
     body: [
-      "The site runs on the same telemetry surface as the rest of the platform. Every route mount, every card click, every subscribe submit is a span. The spans land in ClickHouse. The same proof we ask of our own services we ask of our own website.",
+      "The site runs on the same telemetry surface as the rest of the platform. Every route mount, every card click, every subscribe submit is a span. The spans land in ClickHouse. The same evidence we ask of our own services we ask of our own website.",
       "The point is not that we have telemetry. The point is that when we say a feature shipped and works, a queryable artifact says so.",
     ],
   },

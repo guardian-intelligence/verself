@@ -9,9 +9,9 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${script_dir}/lib/verification-context.sh"
 verification_context_init "${BASH_SOURCE[0]}"
 
-export VERIFICATION_KIND="${VERIFICATION_KIND:-vm-orchestrator-proof}"
+export VERIFICATION_KIND="${VERIFICATION_KIND:-vm-orchestrator-smoke-test}"
 base_run_id="${VERIFICATION_RUN_ID:-${VERIFICATION_KIND}-$(date -u +%Y%m%dT%H%M%SZ)}"
-artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_PROOF_ARTIFACT_ROOT}/${VERIFICATION_KIND}}"
+artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_SMOKE_ARTIFACT_ROOT}/${VERIFICATION_KIND}}"
 
 set_telemetry_fault_profile() {
   local profile="$1"
@@ -55,19 +55,19 @@ VERIFICATION_RUN_ID="${base_run_id}-normal" \
 VERIFICATION_ARTIFACT_ROOT="${artifact_root}" \
   "${script_dir}/verify-recurring-schedule-live.sh"
 
-run_telemetry_fault_proof() {
+run_telemetry_fault_smoke_test() {
   local label="$1"
   local profile="$2"
 
   set_telemetry_fault_profile "${profile}"
   VERIFICATION_RUN_ID="${base_run_id}-${label}" \
   VERIFICATION_ARTIFACT_ROOT="${artifact_root}" \
-  SANDBOX_PROOF_TELEMETRY_FAULT_PROFILE="${profile}" \
+  SANDBOX_SMOKE_TEST_TELEMETRY_FAULT_PROFILE="${profile}" \
     "${script_dir}/verify-recurring-schedule-live.sh"
 }
 
-run_telemetry_fault_proof "telemetry-gap" "gap_once@3"
-run_telemetry_fault_proof "telemetry-regression" "regression_once@3"
+run_telemetry_fault_smoke_test "telemetry-gap" "gap_once@3"
+run_telemetry_fault_smoke_test "telemetry-regression" "regression_once@3"
 
 clear_telemetry_fault_profile
 trap - EXIT

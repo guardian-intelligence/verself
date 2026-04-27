@@ -9,7 +9,7 @@ verification_context_init "${BASH_SOURCE[0]}"
 
 kind="${VERIFICATION_KIND:-grafana-live}"
 run_id="${VERIFICATION_RUN_ID:-${kind}-$(date -u +%Y%m%dT%H%M%SZ)}"
-artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_PROOF_ARTIFACT_ROOT}/${kind}}"
+artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_SMOKE_ARTIFACT_ROOT}/${kind}}"
 artifact_dir="${artifact_root}/${run_id}"
 dashboard_url="${GRAFANA_BASE_URL:-https://dashboard.${VERIFICATION_DOMAIN}}"
 marker="verself:grafana verify=${run_id}"
@@ -191,7 +191,7 @@ FORMAT TSVWithNames
 " >"${artifact_dir}/clickhouse-user-auth.tsv"
 
 # ClickHouse does not surface listener ports in system.settings/server_settings,
-# so the live socket table is the only reliable proof that only 9440 is bound.
+# so the live socket table is the only reliable evidence that only 9440 is bound.
 verification_ssh "sudo ss -ltnH '( sport = :8123 or sport = :8443 or sport = :9000 or sport = :9440 )'" \
   >"${artifact_dir}/clickhouse-secure-listeners.tsv"
 

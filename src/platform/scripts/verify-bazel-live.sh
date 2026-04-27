@@ -43,7 +43,7 @@ if ! python3 -c "import socket; socket.create_connection(('127.0.0.1', ${port}),
 fi
 
 export VERSELF_OTLP_ENDPOINT="127.0.0.1:${port}"
-export VERSELF_DEPLOY_KIND="bazel-proof"
+export VERSELF_DEPLOY_KIND="bazel-smoke-test"
 # shellcheck source=src/platform/scripts/deploy_identity.sh
 source "${script_dir}/deploy_identity.sh"
 export VERIFICATION_RUN_ID="${VERSELF_DEPLOY_RUN_KEY}"
@@ -63,21 +63,21 @@ print(json.dumps({
     "verself.verification_run": os.environ["RUN_ID"],
     "verself.deploy_id": os.environ.get("VERSELF_DEPLOY_ID", ""),
     "verself.deploy_run_key": os.environ.get("VERSELF_DEPLOY_RUN_KEY", ""),
-    "verself.deploy_kind": os.environ.get("VERSELF_DEPLOY_KIND", "bazel-proof"),
+    "verself.deploy_kind": os.environ.get("VERSELF_DEPLOY_KIND", "bazel-smoke-test"),
     "build.system": "bazel",
     "bazel.version": "9.1.0",
     "bazelisk.version": "1.28.1",
     "artifact.root": "artifacts",
-    "proof_artifact.root": "proof-artifacts",
+    "smoke_artifact.root": "smoke-artifacts",
 }))
 PY
 )"
 (
   cd "${repo_root}/src/otel"
-  PROOF_SPAN_SERVICE="bazel-doctor" \
-    PROOF_SPAN_NAME="bazel.doctor" \
-    PROOF_SPAN_ATTRS_JSON="${attrs}" \
-    go run ./cmd/proof-span
+  SMOKE_SPAN_SERVICE="bazel-smoke-test" \
+    SMOKE_SPAN_NAME="bazel.smoke_test" \
+    SMOKE_SPAN_ATTRS_JSON="${attrs}" \
+    go run ./cmd/smoke-span
 )
 
 assert_ready() {
@@ -95,7 +95,7 @@ ready = (
     and row.get("bazel_version", "") == "9.1.0"
     and row.get("bazelisk_version", "") == "1.28.1"
     and row.get("artifact_root", "") == "artifacts"
-    and row.get("proof_artifact_root", "") == "proof-artifacts"
+    and row.get("smoke_artifact_root", "") == "smoke-artifacts"
 )
 raise SystemExit(0 if ready else 1)
 ' "${query_output}"
@@ -116,23 +116,23 @@ for _ in $(seq 1 45); do
         any(SpanAttributes['bazel.version']) AS bazel_version,
         any(SpanAttributes['bazelisk.version']) AS bazelisk_version,
         any(SpanAttributes['artifact.root']) AS artifact_root,
-        any(SpanAttributes['proof_artifact.root']) AS proof_artifact_root
+        any(SpanAttributes['smoke_artifact.root']) AS smoke_artifact_root
       FROM default.otel_traces
       WHERE Timestamp > now() - INTERVAL 20 MINUTE
-        AND ServiceName = 'bazel-doctor'
-        AND SpanName = 'bazel.doctor'
+        AND ServiceName = 'bazel-smoke-test'
+        AND SpanName = 'bazel.smoke_test'
         AND SpanAttributes['verself.deploy_id'] = {deploy_id:String}
         AND SpanAttributes['verself.deploy_run_key'] = {deploy_run_key:String}
         AND SpanAttributes['verself.verification_run'] = {verification_run:String}
       FORMAT JSONEachRow
     " || true)"
   if assert_ready "${query_output}"; then
-    echo "bazel-proof: verified deploy_id=${VERSELF_DEPLOY_ID} deploy_run_key=${VERSELF_DEPLOY_RUN_KEY}"
+    echo "bazel-smoke-test: verified deploy_id=${VERSELF_DEPLOY_ID} deploy_run_key=${VERSELF_DEPLOY_RUN_KEY}"
     exit 0
   fi
   sleep 1
 done
 
-echo "ERROR: timed out waiting for Bazel proof span in default.otel_traces." >&2
+echo "ERROR: timed out waiting for Bazel smoke-test span in default.otel_traces." >&2
 printf 'Last query row: %s\n' "${query_output}" >&2
 exit 1

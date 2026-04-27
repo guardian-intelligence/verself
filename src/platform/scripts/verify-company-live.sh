@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Prove that the Guardian Intelligence company site at company_domain
+# Verify that the Guardian Intelligence company site at company_domain
 # emits the expected company.* spans into default.otel_traces when a real
 # browser walks the IA.
 #
 # Flow:
-#   1. Derive deterministic deploy identity (same helper as telemetry-proof).
+#   1. Derive deterministic deploy identity (same helper as telemetry-smoke-test).
 #   2. Resolve the live company base URL from company_domain.
 #   3. Run the Playwright canary at apps/company/e2e/canary.spec.ts against
 #      the live URL; the canary walks every IA node, the OG cards, and the
@@ -13,7 +13,7 @@
 #      have emitted, correlated on TraceId or run_key.
 #
 # Env:
-#   COMPANY_PROOF_BASE_URL  — override the derived guardianintelligence.org URL. Useful
+#   COMPANY_SMOKE_TEST_BASE_URL  — override the derived guardianintelligence.org URL. Useful
 #     for staging or localhost rehearsals.
 set -euo pipefail
 
@@ -21,7 +21,7 @@ cd "$(dirname "$0")/.."
 
 run_date="$(date -u +%Y-%m-%d)"
 run_host="$(hostname -s 2>/dev/null || hostname)"
-counter_dir="${XDG_CACHE_HOME:-$HOME/.cache}/verself/company-proof"
+counter_dir="${XDG_CACHE_HOME:-$HOME/.cache}/verself/company-smoke-test"
 counter_file="${counter_dir}/${run_date}.counter"
 lock_file="${counter_dir}/${run_date}.lock"
 mkdir -p "${counter_dir}"
@@ -51,14 +51,14 @@ export VERSELF_DEPLOY_ID="${deploy_id}"
 export VERSELF_DEPLOY_RUN_KEY="${deploy_run_key}"
 export VERSELF_VERIFICATION_RUN="${deploy_run_key}"
 export VERSELF_CORRELATION_ID="${deploy_id}"
-export VERSELF_DEPLOY_KIND="company-proof"
+export VERSELF_DEPLOY_KIND="company-smoke-test"
 
 # Resolve the company base URL. The company app owns the root domain; if the
-# caller set COMPANY_PROOF_BASE_URL (local rehearsal against
+# caller set COMPANY_SMOKE_TEST_BASE_URL (local rehearsal against
 # http://127.0.0.1:4252 for example) we use that instead.
 resolve_base_url() {
-  if [[ -n "${COMPANY_PROOF_BASE_URL:-}" ]]; then
-    printf '%s\n' "${COMPANY_PROOF_BASE_URL}"
+  if [[ -n "${COMPANY_SMOKE_TEST_BASE_URL:-}" ]]; then
+    printf '%s\n' "${COMPANY_SMOKE_TEST_BASE_URL}"
     return 0
   fi
   local domain
@@ -70,7 +70,7 @@ BASE_URL="$(resolve_base_url)"
 export BASE_URL
 export VERSELF_COMPANY_BASE_URL="${BASE_URL}"
 
-echo "company-proof: base_url=${BASE_URL} deploy_id=${deploy_id}"
+echo "company-smoke-test: base_url=${BASE_URL} deploy_id=${deploy_id}"
 
 # --- Run the Playwright canary -----------------------------------------------
 cd ../viteplus-monorepo/apps/company
@@ -105,7 +105,7 @@ poll_clickhouse() {
     got="$(./scripts/clickhouse.sh --database default --query "${query} FORMAT TSVRaw" || true)"
     got="${got//$'\n'/}"
     if [[ "${got}" == "${expected}" ]]; then
-      echo "company-proof: ${label} = ${got} (ok)"
+      echo "company-smoke-test: ${label} = ${got} (ok)"
       return 0
     fi
     sleep 1
@@ -168,7 +168,7 @@ poll_clickhouse "
 #    bulletin click. If either SpanName is absent, either the instrumentation
 #    regressed or the BatchSpanProcessor missed its flush window — both
 #    treated as a hard failure, per the output contract's "real ClickHouse
-#    traces are the only admissable proof of task completion" rule.
+#    traces are the only admissable smoke test of task completion" rule.
 poll_clickhouse "
   SELECT count(DISTINCT SpanName) AS seen
   FROM default.otel_traces
@@ -192,4 +192,4 @@ poll_clickhouse "
     AND Timestamp > now() - INTERVAL 10 MINUTE
 " "newsroom_article.view.seeded_slug" "1"
 
-echo "company-proof: verified deploy_id=${deploy_id} deploy_run_key=${deploy_run_key}"
+echo "company-smoke-test: verified deploy_id=${deploy_id} deploy_run_key=${deploy_run_key}"

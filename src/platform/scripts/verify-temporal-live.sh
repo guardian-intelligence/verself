@@ -6,8 +6,8 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${script_dir}/lib/verification-context.sh"
 verification_context_init "${BASH_SOURCE[0]}"
 
-run_id="${VERIFICATION_RUN_ID:-temporal-verify-$(date -u +%Y%m%dT%H%M%SZ)}"
-artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_PROOF_ARTIFACT_ROOT}/temporal-verify}"
+run_id="${VERIFICATION_RUN_ID:-temporal-smoke-test-$(date -u +%Y%m%dT%H%M%SZ)}"
+artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_SMOKE_ARTIFACT_ROOT}/temporal-smoke-test}"
 artifact_dir="${artifact_root}/${run_id}"
 mkdir -p "${artifact_dir}/clickhouse" "${artifact_dir}/postgres"
 
@@ -175,7 +175,7 @@ wait_for_clickhouse_count default "
     AND (startsWith(ServiceName, 'temporal-server') OR ServiceName = 'temporal-web')
 " 1 "${artifact_dir}/clickhouse/temporal-metric-catalog-count.tsv"
 
-proof_trace_count="$(
+retired_trace_count="$(
   (
     cd "${VERIFICATION_PLATFORM_ROOT}"
     ./scripts/clickhouse.sh \
@@ -190,12 +190,12 @@ proof_trace_count="$(
       "
   ) | tr -d '[:space:]'
 )"
-if [[ "${proof_trace_count}" != "0" ]]; then
+if [[ "${retired_trace_count}" != "0" ]]; then
   echo "unexpected temporal-proof traces found in the verification window" >&2
   exit 1
 fi
 
-proof_log_count="$(
+retired_log_count="$(
   (
     cd "${VERIFICATION_PLATFORM_ROOT}"
     ./scripts/clickhouse.sh \
@@ -210,7 +210,7 @@ proof_log_count="$(
       "
   ) | tr -d '[:space:]'
 )"
-if [[ "${proof_log_count}" != "0" ]]; then
+if [[ "${retired_log_count}" != "0" ]]; then
   echo "unexpected temporal-proof logs found in the verification window" >&2
   exit 1
 fi

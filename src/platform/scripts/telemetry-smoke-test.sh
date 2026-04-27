@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prove that Ansible deploys emit ClickHouse-queryable spans and that service
+# Verify that Ansible deploys emit ClickHouse-queryable spans and that service
 # spans can be joined to the deploy via deterministic correlation.
 #
 # Flow:
@@ -14,22 +14,22 @@
 #      ResourceAttributes onto SpanAttributes, giving ansible and service
 #      spans a shared query shape.
 #   5. On the happy path, assert billing-service spans carry matching
-#      verself.deploy_id (proves verself_uri traceparent+baggage propagation
+#      verself.deploy_id (verifies verself_uri traceparent+baggage propagation
 #      reached the service via otelhttp + verselfotel baggage span processor).
 #
 # Env:
-#   TELEMETRY_PROOF_EXPECT_FAIL=1 — assert the playbook *failed* and the
+#   TELEMETRY_SMOKE_TEST_EXPECT_FAIL=1 — assert the playbook *failed* and the
 #     playbook span has Error status.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
 # --- Deterministic deploy identity ------------------------------------------
-# Pre-seed the identity helper with a telemetry-proof-specific run counter
+# Pre-seed the identity helper with a telemetry-smoke-test-specific run counter
 # so concurrent runs on the same day don't collide.
 run_date="$(date -u +%Y-%m-%d)"
 run_host="$(hostname -s 2>/dev/null || hostname)"
-counter_dir="${XDG_CACHE_HOME:-$HOME/.cache}/verself/telemetry-proof"
+counter_dir="${XDG_CACHE_HOME:-$HOME/.cache}/verself/telemetry-smoke-test"
 counter_file="${counter_dir}/${run_date}.counter"
 lock_file="${counter_dir}/${run_date}.lock"
 mkdir -p "${counter_dir}"
@@ -61,9 +61,9 @@ export VERSELF_DEPLOY_ID="${deploy_id}"
 export VERSELF_DEPLOY_RUN_KEY="${deploy_run_key}"
 export VERSELF_VERIFICATION_RUN="${deploy_run_key}"
 export VERSELF_CORRELATION_ID="${deploy_id}"
-export VERSELF_DEPLOY_KIND="telemetry-proof"
+export VERSELF_DEPLOY_KIND="telemetry-smoke-test"
 
-expect_fail="${TELEMETRY_PROOF_EXPECT_FAIL:-0}"
+expect_fail="${TELEMETRY_SMOKE_TEST_EXPECT_FAIL:-0}"
 if [[ "${expect_fail}" == "1" ]]; then
   export EXPECT_FAIL=1
 else
@@ -81,7 +81,7 @@ set -e
 
 if [[ "${expect_fail}" == "1" ]]; then
   if [[ "${ansible_rc}" -eq 0 ]]; then
-    echo "ERROR: observability-smoke succeeded but TELEMETRY_PROOF_EXPECT_FAIL=1." >&2
+    echo "ERROR: observability-smoke succeeded but TELEMETRY_SMOKE_TEST_EXPECT_FAIL=1." >&2
     exit 1
   fi
 elif [[ "${ansible_rc}" -ne 0 ]]; then
@@ -180,4 +180,4 @@ raise SystemExit(0 if row.get("rows", 0) >= 1 else 1)
   fi
 fi
 
-echo "telemetry-proof: verified deploy_id=${deploy_id} deploy_run_key=${deploy_run_key} trace_id=${trace_id_hex}"
+echo "telemetry-smoke-test: verified deploy_id=${deploy_id} deploy_run_key=${deploy_run_key} trace_id=${trace_id_hex}"

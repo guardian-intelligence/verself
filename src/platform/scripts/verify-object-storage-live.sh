@@ -6,15 +6,15 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${script_dir}/lib/verification-context.sh"
 verification_context_init "${BASH_SOURCE[0]}"
 
-run_id="${VERIFICATION_RUN_ID:-object-storage-verify-$(date -u +%Y%m%dT%H%M%SZ)}"
-artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_PROOF_ARTIFACT_ROOT}/object-storage-verify}"
+run_id="${VERIFICATION_RUN_ID:-object-storage-smoke-test-$(date -u +%Y%m%dT%H%M%SZ)}"
+artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_SMOKE_ARTIFACT_ROOT}/object-storage-smoke-test}"
 artifact_dir="${artifact_root}/${run_id}"
 mkdir -p "${artifact_dir}/clickhouse"
 
 window_start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 s3_url="https://127.0.0.1:4256"
 s3_ca_cert="/etc/verself/local-cas/object-storage-s3-ca.pem"
-proof_bin="/opt/verself/profile/bin/object-storage-proof"
+retired_bin="/opt/verself/profile/bin/object-storage-proof"
 garage_admin_port="3903"
 garage_failed_instance="1"
 garage_failed_admin_port="3913"
@@ -103,7 +103,7 @@ verification_ssh "curl --fail --silent --show-error --cacert '${s3_ca_cert}' '${
 verification_ssh "curl --fail --silent --show-error --cacert '${s3_ca_cert}' '${s3_url}/readyz'" \
   >"${artifact_dir}/s3-ready.txt"
 
-verification_ssh "test ! -e ${proof_bin@Q}"
+verification_ssh "test ! -e ${retired_bin@Q}"
 printf 'absent\n' >"${artifact_dir}/object-storage-proof-binary.txt"
 
 wait_for_remote_tcp_as object_storage_admin "Garage admin" "127.0.0.1" "${garage_admin_port}"

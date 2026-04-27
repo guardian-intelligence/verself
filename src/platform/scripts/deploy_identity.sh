@@ -10,7 +10,7 @@
 # carries verself.* on ResourceAttributes.
 #
 # Idempotent: if VERSELF_DEPLOY_ID and VERSELF_DEPLOY_RUN_KEY are
-# already set (e.g. telemetry-proof provided its own), those are preserved
+# already set (e.g. telemetry-smoke-test provided its own), those are preserved
 # and the rest is derived from them.
 #
 # Usage:

@@ -6,8 +6,8 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${script_dir}/lib/verification-context.sh"
 verification_context_init "${BASH_SOURCE[0]}"
 
-run_id="${VERIFICATION_RUN_ID:-temporal-web-proof-$(date -u +%Y%m%dT%H%M%SZ)}"
-artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_PROOF_ARTIFACT_ROOT}/temporal-web-proof}"
+run_id="${VERIFICATION_RUN_ID:-temporal-web-smoke-test-$(date -u +%Y%m%dT%H%M%SZ)}"
+artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_SMOKE_ARTIFACT_ROOT}/temporal-web-smoke-test}"
 artifact_dir="${artifact_root}/${run_id}"
 browser_log_path="${artifact_dir}/browser.log"
 mkdir -p "${artifact_dir}/clickhouse"
@@ -23,7 +23,7 @@ temporal_sandbox_namespace="sandbox-rental-service"
 temporal_billing_namespace="billing-service"
 persona_env="${artifact_dir}/platform-admin.env"
 persona_metadata_path="${artifact_dir}/platform-admin.json"
-browser_script_path="$(mktemp "${platform_app_dir}/.temporal-web-proof-XXXXXX.mjs")"
+browser_script_path="$(mktemp "${platform_app_dir}/.temporal-web-smoke-test-XXXXXX.mjs")"
 
 cleanup() {
   rm -f "${browser_script_path}"
@@ -140,7 +140,7 @@ const loginTimeoutMS = 30_000;
 const pollIntervalMS = 100;
 
 if (!artifactDir || !baseURL || !temporalHost || !authHost || !remoteHost || !email || !password) {
-  throw new Error("missing Temporal Web proof browser environment");
+  throw new Error("missing Temporal Web smoke-test browser environment");
 }
 
 const browser = await chromium.launch({
@@ -431,4 +431,4 @@ wait_for_clickhouse_count default "
     AND SpanAttributes['temporal.authz.decision'] = 'allow'
 " 1 "${artifact_dir}/clickhouse/temporal-authz-web-allow-count.tsv" --param_temporal_web_spiffe_id="${temporal_web_spiffe_id}"
 
-echo "temporal web proof ok: ${artifact_dir}"
+echo "temporal web smoke test ok: ${artifact_dir}"

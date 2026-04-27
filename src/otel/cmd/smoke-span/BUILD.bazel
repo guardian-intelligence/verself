@@ -1,9 +1,9 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
 go_library(
-    name = "proof-span_lib",
+    name = "smoke-span_lib",
     srcs = ["main.go"],
-    importpath = "github.com/verself/otel/cmd/proof-span",
+    importpath = "github.com/verself/otel/cmd/smoke-span",
     visibility = ["//visibility:private"],
     deps = [
         "//src/otel",
@@ -14,7 +14,7 @@ go_library(
 )
 
 go_binary(
-    name = "proof-span",
-    embed = [":proof-span_lib"],
+    name = "smoke-span",
+    embed = [":smoke-span_lib"],
     visibility = ["//visibility:public"],
 )

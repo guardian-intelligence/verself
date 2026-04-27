@@ -31,7 +31,7 @@ Run from `src/platform/ansible/`. `--tags` targets individual roles (e.g. `--tag
 | `deprovision.yml` | Destroy bare metal infrastructure, remove inventory |
 | `site.yml` | Canonical idempotent deploy for the current inventory topology |
 | `guest-rootfs.yml` | Build guest rootfs, stage Firecracker guest artifacts |
-| `observability-smoke.yml` | Minimal smoke probe used by `telemetry-proof` (`debug/assert` + `verself_uri`) |
+| `observability-smoke.yml` | Minimal smoke probe used by `telemetry-smoke-test` (`debug/assert` + `verself_uri`) |
 | `security-patch.yml` | Rolling OS security updates |
 | `billing-reset.yml` | Exhaustively wipe TigerBeetle + billing PostgreSQL database `billing` and restart callers |
 | `identity-reset.yml` | Exhaustively wipe identity-service PG state, re-apply migrations, restart |
@@ -90,8 +90,8 @@ Use `make clickhouse-query` only when the observe surface does not yet cover the
 Deploy playbook telemetry smoke probes:
 
 ```bash
-make telemetry-proof           # success path: ansible + service correlation
-make telemetry-proof-fail      # sad path: assert Error spans are emitted
+make telemetry-smoke-test       # success path: ansible + service correlation
+make telemetry-smoke-test-fail  # sad path: assert Error spans are emitted
 ```
 
 **Deterministic deploy correlation**:

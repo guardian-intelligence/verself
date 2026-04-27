@@ -6,8 +6,8 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${script_dir}/lib/verification-context.sh"
 verification_context_init "${BASH_SOURCE[0]}"
 
-run_id="${VERIFICATION_RUN_ID:-recurring-schedule-proof-$(date -u +%Y%m%dT%H%M%SZ)}"
-artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_PROOF_ARTIFACT_ROOT}/recurring-schedule-proof}"
+run_id="${VERIFICATION_RUN_ID:-recurring-schedule-smoke-test-$(date -u +%Y%m%dT%H%M%SZ)}"
+artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_SMOKE_ARTIFACT_ROOT}/recurring-schedule-smoke-test}"
 artifact_dir="${artifact_root}/${run_id}"
 mkdir -p "${artifact_dir}/clickhouse" "${artifact_dir}/payloads" "${artifact_dir}/postgres" "${artifact_dir}/responses"
 
@@ -15,42 +15,42 @@ interval_seconds="${RECURRING_SCHEDULE_INTERVAL_SECONDS:-15}"
 paused_probe_seconds="${RECURRING_SCHEDULE_PAUSED_PROBE_SECONDS:-20}"
 dispatch_timeout_seconds="${RECURRING_SCHEDULE_DISPATCH_TIMEOUT_SECONDS:-180}"
 clickhouse_timeout_seconds="${RECURRING_SCHEDULE_CLICKHOUSE_TIMEOUT_SECONDS:-180}"
-proof_persona="${RECURRING_SCHEDULE_PERSONA:-platform-admin}"
-workflow_path=".forgejo/workflows/recurring-proof.yml"
+smoke_test_persona="${RECURRING_SCHEDULE_PERSONA:-platform-admin}"
+workflow_path=".forgejo/workflows/recurring-smoke-test.yml"
 sandbox_api_base_url="${BASE_URL:-https://sandbox.api.${VERIFICATION_DOMAIN}}"
 sandbox_api_base_url="${sandbox_api_base_url%/}"
-source_api_base_url="${SOURCE_CODE_HOSTING_PROOF_BASE_URL:-https://source.api.${VERIFICATION_DOMAIN}}"
+source_api_base_url="${SOURCE_CODE_HOSTING_SMOKE_TEST_BASE_URL:-https://source.api.${VERIFICATION_DOMAIN}}"
 source_api_base_url="${source_api_base_url%/}"
-projects_api_base_url="${PROJECTS_PROOF_BASE_URL:-https://projects.api.${VERIFICATION_DOMAIN}}"
+projects_api_base_url="${PROJECTS_SMOKE_TEST_BASE_URL:-https://projects.api.${VERIFICATION_DOMAIN}}"
 projects_api_base_url="${projects_api_base_url%/}"
 window_start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 trust_domain="spiffe.${VERIFICATION_DOMAIN}"
 sandbox_service_spiffe_id="spiffe://${trust_domain}/svc/sandbox-rental-service"
 
-case "${proof_persona}" in
+case "${smoke_test_persona}" in
   platform-admin)
-    proof_billing_email="ceo@${VERIFICATION_DOMAIN}"
-    proof_billing_org="platform"
+    smoke_test_billing_email="ceo@${VERIFICATION_DOMAIN}"
+    smoke_test_billing_org="platform"
     ;;
   acme-admin | acme-member)
-    proof_billing_email="acme-admin@${VERIFICATION_DOMAIN}"
-    proof_billing_org="Acme Corp"
+    smoke_test_billing_email="acme-admin@${VERIFICATION_DOMAIN}"
+    smoke_test_billing_org="Acme Corp"
     ;;
   *)
-    echo "unsupported RECURRING_SCHEDULE_PERSONA=${proof_persona}" >&2
+    echo "unsupported RECURRING_SCHEDULE_PERSONA=${smoke_test_persona}" >&2
     exit 1
     ;;
 esac
 
 # shellcheck disable=SC1090
-source <("${script_dir}/assume-persona.sh" "${proof_persona}" --print)
+source <("${script_dir}/assume-persona.sh" "${smoke_test_persona}" --print)
 source_access_token="${SOURCE_CODE_HOSTING_SERVICE_ACCESS_TOKEN:-${IDENTITY_SERVICE_ACCESS_TOKEN}}"
 projects_access_token="${PROJECTS_SERVICE_ACCESS_TOKEN:-${IDENTITY_SERVICE_ACCESS_TOKEN}}"
 
 billing_fixture_path="${artifact_dir}/billing-fixture.json"
 "${script_dir}/set-user-state.sh" \
-  --email "${proof_billing_email}" \
-  --org "${proof_billing_org}" \
+  --email "${smoke_test_billing_email}" \
+  --org "${smoke_test_billing_org}" \
   --product-id "sandbox" \
   --state "pro" \
   --balance-units "500000000000" >"${billing_fixture_path}"
@@ -161,7 +161,7 @@ import base64
 import json
 import os
 
-content = f"""name: Recurring Proof
+content = f"""name: Recurring Smoke Test
 on:
   workflow_dispatch:
     inputs:
@@ -170,10 +170,10 @@ on:
         required: true
         type: string
 jobs:
-  proof:
+  smoke_test:
     runs-on: docker
     steps:
-      - run: echo verself-recurring-proof run_id=${{ inputs.verification_run_id }}
+      - run: echo verself-recurring-smoke-test run_id=${{ inputs.verification_run_id }}
 """
 payload = {
     "owner": os.environ["PROVIDER_OWNER"],
@@ -210,7 +210,7 @@ url = \"http://127.0.0.1:3000/api/v1/repos/{}/{}/contents/{}\".format(
 payload = json.dumps({
     \"branch\": \"main\",
     \"content\": content_b64,
-    \"message\": \"Add recurring schedule proof workflow\",
+    \"message\": \"Add recurring schedule smoke test workflow\",
 }).encode()
 request = urllib.request.Request(
     url,
@@ -242,9 +242,9 @@ verification_wait_for_loopback_api "sandbox-rental-service" \
 verification_wait_for_loopback_api "source-code-hosting-service" \
   "http://127.0.0.1:4261/readyz" "200"
 
-project_slug="recurring-proof-$(printf '%s' "${run_id}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/^-+|-+$//g' | cut -c1-48)"
+project_slug="recurring-smoke-test-$(printf '%s' "${run_id}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/^-+|-+$//g' | cut -c1-48)"
 if [[ -z "${project_slug}" ]]; then
-  project_slug="recurring-proof"
+  project_slug="recurring-smoke-test"
 fi
 project_payload_path="${artifact_dir}/payloads/create-project.json"
 python3 - "${run_id}" "${project_slug}" >"${project_payload_path}" <<'PY'
@@ -253,9 +253,9 @@ import sys
 
 run_id, project_slug = sys.argv[1:3]
 print(json.dumps({
-    "display_name": f"Recurring Proof {run_id}",
+    "display_name": f"Recurring Smoke Test {run_id}",
     "slug": project_slug,
-    "description": "Recurring schedule proof project",
+    "description": "Recurring schedule smoke test project",
 }, indent=2, sort_keys=True))
 PY
 curl -fsS \
@@ -284,7 +284,7 @@ import sys
 run_id, project_id = sys.argv[1:3]
 print(json.dumps({
     "project_id": project_id,
-    "description": "Recurring schedule workflow dispatch proof",
+    "description": "Recurring schedule workflow dispatch smoke test",
     "default_branch": "main",
 }, indent=2, sort_keys=True))
 PY
@@ -320,7 +320,7 @@ import sys
 
 run_id, project_id, source_repo_id, workflow_path, interval_seconds = sys.argv[1:6]
 print(json.dumps({
-    "display_name": f"Recurring proof {run_id}",
+    "display_name": f"Recurring smoke test {run_id}",
     "idempotency_key": run_id,
     "interval_seconds": int(interval_seconds),
     "inputs": {"verification_run_id": run_id},
@@ -772,5 +772,5 @@ print(json.dumps({
 }, indent=2, sort_keys=True))
 PY
 
-printf 'recurring schedule proof passed: run_id=%s schedule_id=%s source_workflow_run_id=%s artifacts=%s\n' \
+printf 'recurring schedule smoke test passed: run_id=%s schedule_id=%s source_workflow_run_id=%s artifacts=%s\n' \
   "${run_id}" "${schedule_id}" "${source_workflow_run_id}" "${artifact_dir}"

@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 
 run_date="$(date -u +%Y-%m-%d)"
 run_host="$(hostname -s 2>/dev/null || hostname)"
-counter_dir="${XDG_CACHE_HOME:-$HOME/.cache}/verself/topology-proof"
+counter_dir="${XDG_CACHE_HOME:-$HOME/.cache}/verself/topology-smoke-test"
 counter_file="${counter_dir}/${run_date}.counter"
 lock_file="${counter_dir}/${run_date}.lock"
 mkdir -p "${counter_dir}"
@@ -36,29 +36,30 @@ export VERSELF_DEPLOY_ID="${deploy_id}"
 export VERSELF_DEPLOY_RUN_KEY="${deploy_run_key}"
 export VERSELF_VERIFICATION_RUN="${deploy_run_key}"
 export VERSELF_CORRELATION_ID="${deploy_id}"
-export VERSELF_DEPLOY_KIND="topology-proof"
+export VERSELF_DEPLOY_KIND="topology-smoke-test"
 
-./scripts/ansible-with-tunnel.sh playbooks/topology-proof.yml
+./scripts/ansible-with-tunnel.sh playbooks/topology-smoke-test.yml
 
 assert_ready() {
   local query_output="$1"
   python3 -c '
 import json
+import re
 import sys
 
 payload = sys.argv[1].strip()
 row = json.loads(payload.splitlines()[0]) if payload else {}
+graph_sha = row.get("graph_sha", "")
+clusters_sha = row.get("clusters_sha", "")
 ready = (
     row.get("playbooks", 0) == 1
     and row.get("tasks", 0) >= 1
-    and row.get("fmt_checks", 0) >= 1
-    and row.get("schema_vets", 0) >= 1
-    and row.get("instance_vets", 0) >= 1
-    and row.get("graph_validations", 0) >= 1
-    and row.get("server_tools_artifact_renders", 0) >= 1
-    and row.get("install_plan_renders", 0) >= 1
-    and row.get("artifact_renders", 0) >= 11
-    and row.get("fresh_checks", 0) >= 11
+    and row.get("root_spans", 0) == 1
+    and row.get("export_spans", 0) == 1
+    and row.get("fresh_checks", 0) >= 1
+    and row.get("clusters_fresh_checks", 0) == 1
+    and bool(re.fullmatch(r"[0-9a-f]{64}", graph_sha))
+    and bool(re.fullmatch(r"[0-9a-f]{64}", clusters_sha))
     and row.get("errors", 0) == 0
 )
 raise SystemExit(0 if ready else 1)
@@ -74,14 +75,25 @@ for _ in $(seq 1 45); do
     SELECT
       countIf(ServiceName = 'ansible' AND SpanName = 'ansible.playbook') AS playbooks,
       countIf(ServiceName = 'ansible' AND SpanName = 'ansible.task') AS tasks,
-      countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.cue.fmt_check') AS fmt_checks,
-      countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.cue.vet_schema') AS schema_vets,
-      countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.cue.vet_instance') AS instance_vets,
-      countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.graph.validate') AS graph_validations,
-      countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.server_tools_artifact.render') AS server_tools_artifact_renders,
-      countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.install_plan.render') AS install_plan_renders,
-      countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.generated.render_artifact') AS artifact_renders,
-      countIf(ServiceName = 'topology-compiler' AND SpanName = 'topology.generated.freshness_check' AND SpanAttributes['topology.generated_fresh'] = 'true') AS fresh_checks,
+      countIf(ServiceName = 'cue-renderer' AND SpanName = 'cue_renderer.run') AS root_spans,
+      countIf(ServiceName = 'cue-renderer' AND SpanName = 'topology.cue.export_graph') AS export_spans,
+      countIf(ServiceName = 'cue-renderer' AND SpanName = 'topology.generated.freshness_check') AS fresh_checks,
+      countIf(
+        ServiceName = 'cue-renderer'
+        AND SpanName = 'topology.generated.freshness_check'
+        AND SpanAttributes['topology.artifact'] = 'clusters'
+        AND SpanAttributes['topology.generated_fresh'] = 'true'
+      ) AS clusters_fresh_checks,
+      anyIf(
+        SpanAttributes['topology.graph_sha256'],
+        ServiceName = 'cue-renderer' AND SpanName = 'cue_renderer.run'
+      ) AS graph_sha,
+      anyIf(
+        SpanAttributes['topology.generated_sha256'],
+        ServiceName = 'cue-renderer'
+          AND SpanName = 'topology.generated.freshness_check'
+          AND SpanAttributes['topology.artifact'] = 'clusters'
+      ) AS clusters_sha,
       countIf(StatusCode = 'Error') AS errors
     FROM default.otel_traces
     WHERE Timestamp > now() - INTERVAL 20 MINUTE
@@ -92,12 +104,12 @@ for _ in $(seq 1 45); do
     FORMAT JSONEachRow
   " || true)"
   if assert_ready "${query_output}"; then
-    echo "topology-proof: verified deploy_id=${deploy_id} deploy_run_key=${deploy_run_key}"
+    echo "topology-smoke-test: verified deploy_id=${deploy_id} deploy_run_key=${deploy_run_key}"
     exit 0
   fi
   sleep 1
 done
 
-echo "ERROR: timed out waiting for topology proof spans in default.otel_traces." >&2
+echo "ERROR: timed out waiting for topology smoke-test spans in default.otel_traces." >&2
 printf 'Last query row: %s\n' "${query_output}" >&2
 exit 1

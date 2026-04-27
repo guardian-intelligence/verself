@@ -16,14 +16,14 @@ import (
 
 func main() {
 	ctx := context.Background()
-	spans, err := proofSpans()
+	spans, err := smokeSpans()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
-	serviceName := strings.TrimSpace(os.Getenv("PROOF_SPAN_SERVICE"))
+	serviceName := strings.TrimSpace(os.Getenv("SMOKE_SPAN_SERVICE"))
 	if serviceName == "" {
-		serviceName = "proof-runner"
+		serviceName = "smoke-runner"
 	}
 
 	shutdown, _, err := verselfotel.Init(ctx, verselfotel.Config{
@@ -44,7 +44,7 @@ func main() {
 
 	tracer := otel.Tracer(serviceName)
 	for _, spec := range spans {
-		attrs, err := proofAttrs(spec.Attributes)
+		attrs, err := smokeAttrs(spec.Attributes)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(2)
@@ -56,25 +56,25 @@ func main() {
 	}
 }
 
-type proofSpan struct {
+type smokeSpan struct {
 	Name       string         `json:"name"`
 	Attributes map[string]any `json:"attributes"`
 }
 
-func proofSpans() ([]proofSpan, error) {
-	raw := strings.TrimSpace(os.Getenv("PROOF_SPANS_JSON"))
+func smokeSpans() ([]smokeSpan, error) {
+	raw := strings.TrimSpace(os.Getenv("SMOKE_SPANS_JSON"))
 	if raw != "" {
-		var spans []proofSpan
+		var spans []smokeSpan
 		if err := json.Unmarshal([]byte(raw), &spans); err != nil {
-			return nil, fmt.Errorf("decode PROOF_SPANS_JSON: %w", err)
+			return nil, fmt.Errorf("decode SMOKE_SPANS_JSON: %w", err)
 		}
 		if len(spans) == 0 {
-			return nil, fmt.Errorf("PROOF_SPANS_JSON must contain at least one span")
+			return nil, fmt.Errorf("SMOKE_SPANS_JSON must contain at least one span")
 		}
 		for i := range spans {
 			spans[i].Name = strings.TrimSpace(spans[i].Name)
 			if spans[i].Name == "" {
-				return nil, fmt.Errorf("PROOF_SPANS_JSON[%d].name is required", i)
+				return nil, fmt.Errorf("SMOKE_SPANS_JSON[%d].name is required", i)
 			}
 			if spans[i].Attributes == nil {
 				spans[i].Attributes = map[string]any{}
@@ -83,31 +83,31 @@ func proofSpans() ([]proofSpan, error) {
 		return spans, nil
 	}
 
-	spanName := strings.TrimSpace(os.Getenv("PROOF_SPAN_NAME"))
+	spanName := strings.TrimSpace(os.Getenv("SMOKE_SPAN_NAME"))
 	if spanName == "" {
-		return nil, fmt.Errorf("PROOF_SPAN_NAME is required")
+		return nil, fmt.Errorf("SMOKE_SPAN_NAME is required")
 	}
 
-	attrs, err := proofAttrPayload()
+	attrs, err := smokeAttrPayload()
 	if err != nil {
 		return nil, err
 	}
-	return []proofSpan{{Name: spanName, Attributes: attrs}}, nil
+	return []smokeSpan{{Name: spanName, Attributes: attrs}}, nil
 }
 
-func proofAttrPayload() (map[string]any, error) {
-	raw := strings.TrimSpace(os.Getenv("PROOF_SPAN_ATTRS_JSON"))
+func smokeAttrPayload() (map[string]any, error) {
+	raw := strings.TrimSpace(os.Getenv("SMOKE_SPAN_ATTRS_JSON"))
 	if raw == "" {
 		return map[string]any{}, nil
 	}
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
-		return nil, fmt.Errorf("decode PROOF_SPAN_ATTRS_JSON: %w", err)
+		return nil, fmt.Errorf("decode SMOKE_SPAN_ATTRS_JSON: %w", err)
 	}
 	return payload, nil
 }
 
-func proofAttrs(payload map[string]any) ([]attribute.KeyValue, error) {
+func smokeAttrs(payload map[string]any) ([]attribute.KeyValue, error) {
 	if payload == nil {
 		return nil, nil
 	}

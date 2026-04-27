@@ -6,28 +6,28 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${script_dir}/lib/verification-context.sh"
 verification_context_init "${BASH_SOURCE[0]}"
 
-run_id="${VERIFICATION_RUN_ID:-workload-identity-proof-$(date -u +%Y%m%dT%H%M%SZ)}"
-artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_PROOF_ARTIFACT_ROOT}/workload-identity-proof}"
+run_id="${VERIFICATION_RUN_ID:-workload-identity-smoke-test-$(date -u +%Y%m%dT%H%M%SZ)}"
+artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_SMOKE_ARTIFACT_ROOT}/workload-identity-smoke-test}"
 artifact_dir="${artifact_root}/${run_id}"
 mkdir -p "${artifact_dir}/clickhouse"
 
 window_start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-if [[ "${WORKLOAD_IDENTITY_PROOF_EXERCISE_SECRETS:-1}" != "0" ]]; then
+if [[ "${WORKLOAD_IDENTITY_SMOKE_TEST_EXERCISE_SECRETS:-1}" != "0" ]]; then
   VERIFICATION_RUN_ID="${run_id}-secrets" \
-  VERIFICATION_ARTIFACT_ROOT="${artifact_dir}/dependencies/secrets-proof" \
+  VERIFICATION_ARTIFACT_ROOT="${artifact_dir}/dependencies/secrets-smoke-test" \
     "${script_dir}/verify-secrets-live.sh"
 fi
 
-if [[ "${WORKLOAD_IDENTITY_PROOF_EXERCISE_GRAFANA:-1}" != "0" ]]; then
+if [[ "${WORKLOAD_IDENTITY_SMOKE_TEST_EXERCISE_GRAFANA:-1}" != "0" ]]; then
   VERIFICATION_RUN_ID="${run_id}-grafana" \
-  VERIFICATION_ARTIFACT_ROOT="${artifact_dir}/dependencies/grafana-proof" \
+  VERIFICATION_ARTIFACT_ROOT="${artifact_dir}/dependencies/grafana-smoke-test" \
     "${script_dir}/verify-grafana-live.sh"
 fi
 
-if [[ "${WORKLOAD_IDENTITY_PROOF_EXERCISE_TEMPORAL:-1}" != "0" ]]; then
+if [[ "${WORKLOAD_IDENTITY_SMOKE_TEST_EXERCISE_TEMPORAL:-1}" != "0" ]]; then
   VERIFICATION_RUN_ID="${run_id}-temporal" \
-  VERIFICATION_ARTIFACT_ROOT="${artifact_dir}/dependencies/temporal-verify" \
+  VERIFICATION_ARTIFACT_ROOT="${artifact_dir}/dependencies/temporal-smoke-test" \
     "${script_dir}/verify-temporal-live.sh"
 fi
 
@@ -547,4 +547,4 @@ print(json.dumps({
 }, indent=2, sort_keys=True))
 PY
 
-echo "workload identity proof ok: ${artifact_dir}"
+echo "workload identity smoke test ok: ${artifact_dir}"

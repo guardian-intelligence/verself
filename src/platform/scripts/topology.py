@@ -62,7 +62,7 @@ ARTIFACTS = (
     Artifact("postgres", GENERATED_DIR / "postgres.yml"),
     Artifact("deploy", GENERATED_DIR / "deploy.yml"),
     Artifact("ops", GENERATED_DIR / "ops.yml"),
-    Artifact("proof", GENERATED_DIR / "proof.yml"),
+    Artifact("smoke_test", GENERATED_DIR / "smoke_test.yml"),
     Artifact("catalog", GENERATED_DIR / "catalog.yml"),
 )
 
@@ -110,10 +110,10 @@ def flush_spans() -> None:
     if not SPAN_EVENTS:
         return
     env = os.environ.copy()
-    env["PROOF_SPAN_SERVICE"] = "topology-compiler"
-    env["PROOF_SPANS_JSON"] = json.dumps(SPAN_EVENTS, sort_keys=True)
+    env["SMOKE_SPAN_SERVICE"] = "topology-compiler"
+    env["SMOKE_SPANS_JSON"] = json.dumps(SPAN_EVENTS, sort_keys=True)
     proc = subprocess.run(
-        ["go", "run", "./cmd/proof-span"],
+        ["go", "run", "./cmd/smoke-span"],
         cwd=REPO_ROOT / "src" / "otel",
         env=env,
         text=True,
@@ -856,7 +856,7 @@ def dev_tool_install_plan(dev_tools: dict[str, object]) -> dict[str, object]:
         "ansible_collections_requirements": "{{ playbook_dir }}/../requirements.yml",
         "cleanup_apt_packages": ["pipx"],
         "cleanup_paths": ["/opt/pipx"],
-        "proof_spans": [
+        "smoke_test_spans": [
             {
                 "name": "install_plan.artifact.publish",
                 "attributes": {
@@ -1067,8 +1067,8 @@ def render_artifact_payloads(
             }
         },
         "ops": ops_payload,
-        "proof": {
-            "topology_proof": {
+        "smoke_test": {
+            "topology_smoke_test": {
                 "evidence": topology["evidence"],
             }
         },

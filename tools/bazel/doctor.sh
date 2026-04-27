@@ -55,6 +55,6 @@ require_line ".bazelrc" "common --enable_bzlmod"
 require_line ".bazelrc" "common --noenable_workspace"
 require_line ".bazelrc" "common --lockfile_mode=error"
 require_line ".gitignore" "artifacts/"
-require_line ".gitignore" "proof-artifacts/"
+require_line ".gitignore" "smoke-artifacts/"
 
 echo "bazel doctor ok"

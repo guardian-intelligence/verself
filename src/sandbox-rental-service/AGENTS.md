@@ -158,7 +158,7 @@ Concrete code anchors:
 - Billing reservation from execution org:
   `internal/jobs/jobs.go:reserveBilling`.
 
-Queryable proof for a GitHub job should show one consistent `org_id` across
+Queryable evidence for a GitHub job should show one consistent `org_id` across
 `github_installation_connections`, `runner_provider_repositories`,
 `executions`, `billing_windows`, and `verself.metering`.
 
@@ -245,6 +245,6 @@ Use River OSS as the worker/queue runtime for sandbox-rental-service control-pla
 
   Async worker traces should be correlated back to the API submit trace. Store trace context in the execution row/job args and extract it before River's OpenTelemetry middleware starts `river.work/*`, or add an explicit span link if parent/child semantics become misleading.
 
-  So the strong path is: River for queue mechanics, PG for execution truth, TigerBeetle for financial truth, ClickHouse for proof/read models, OTel for trace correlation. This avoids building a bespoke job system while keeping the core state machine and billing invariants explicit and reviewable.
+  So the strong path is: River for queue mechanics, PG for execution truth, TigerBeetle for financial truth, ClickHouse for evidence/read models, OTel for trace correlation. This avoids building a bespoke job system while keeping the core state machine and billing invariants explicit and reviewable.
 
 Use sqlc in this service: https://docs.sqlc.dev/en/latest/index.html

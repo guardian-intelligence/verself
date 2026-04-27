@@ -6,8 +6,8 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${script_dir}/lib/verification-context.sh"
 verification_context_init "${BASH_SOURCE[0]}"
 
-run_id="${VERIFICATION_RUN_ID:-secrets-leak-proof-$(date -u +%Y%m%dT%H%M%SZ)}"
-artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_PROOF_ARTIFACT_ROOT}/secrets-leak-proof}"
+run_id="${VERIFICATION_RUN_ID:-secrets-leak-smoke-test-$(date -u +%Y%m%dT%H%M%SZ)}"
+artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_SMOKE_ARTIFACT_ROOT}/secrets-leak-smoke-test}"
 artifact_dir="${artifact_root}/${run_id}"
 mkdir -p "${artifact_dir}/clickhouse" "${artifact_dir}/responses"
 
@@ -30,7 +30,7 @@ def segment(payload):
 
 print(".".join([
     segment({"alg": "none", "typ": "JWT"}),
-    segment({"sub": "verself-leak-proof", "run": os.environ["RUN_ID"], "nonce": secrets.token_hex(12)}),
+    segment({"sub": "verself-leak-smoke-test", "run": os.environ["RUN_ID"], "nonce": secrets.token_hex(12)}),
     base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip("="),
 ]))
 PY
@@ -143,7 +143,7 @@ import urllib.request
 
 url = sys.argv[1]
 token = sys.stdin.readline().rstrip("\n")
-request = urllib.request.Request(url, headers={"Authorization": "Bearer " + token, "User-Agent": "verself-secrets-leak-proof"})
+request = urllib.request.Request(url, headers={"Authorization": "Bearer " + token, "User-Agent": "verself-secrets-leak-smoke-test"})
 try:
     with urllib.request.urlopen(request, timeout=5) as response:
         status = response.status
@@ -209,15 +209,15 @@ emit_scan_span() {
 
   export VERSELF_OTLP_ENDPOINT="127.0.0.1:${port}"
   export VERSELF_DEPLOY_RUN_KEY="${run_id}"
-  export VERSELF_DEPLOY_KIND="secrets-leak-proof"
+  export VERSELF_DEPLOY_KIND="secrets-leak-smoke-test"
   # shellcheck source=src/platform/scripts/deploy_identity.sh
   source "${script_dir}/deploy_identity.sh"
   (
     cd "${VERIFICATION_REPO_ROOT}/src/otel"
-    PROOF_SPAN_SERVICE="proof-runner" \
-    PROOF_SPAN_NAME="secrets.leak_proof.scan" \
-    PROOF_SPAN_ATTRS_JSON="$(python3 -c 'import json, sys; print(json.dumps({"verself.proof_run_id": sys.argv[1], "leak.findings": 0}))' "${run_id}")" \
-      go run ./cmd/proof-span
+    SMOKE_SPAN_SERVICE="smoke-runner" \
+    SMOKE_SPAN_NAME="secrets.leak_smoke_test.scan" \
+    SMOKE_SPAN_ATTRS_JSON="$(python3 -c 'import json, sys; print(json.dumps({"verself.smoke_test_run_id": sys.argv[1], "leak.findings": 0}))' "${run_id}")" \
+      go run ./cmd/smoke-span
   )
 }
 
@@ -262,7 +262,7 @@ scan_clickhouse() {
           toString(ResourceAttributes) AS resource_attributes
         FROM otel_traces
         WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 60 SECOND
-          AND ServiceName IN ('secrets-service', 'sandbox-rental-service', 'governance-service', 'proof-runner')
+          AND ServiceName IN ('secrets-service', 'sandbox-rental-service', 'governance-service', 'smoke-runner')
         ORDER BY Timestamp
         FORMAT JSONEachRow
       "
@@ -385,7 +385,7 @@ if findings:
 PY
 }
 
-secret_name="leak-proof-${run_id}"
+secret_name="leak-smoke-test-${run_id}"
 window_start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 put_body="${artifact_dir}/payload-secret-put.json"
@@ -393,7 +393,7 @@ python3 - "${run_id}" >"${put_body}" <<'PY'
 import json
 import sys
 
-print(json.dumps({"value": "leak-proof-value-" + sys.argv[1]}))
+print(json.dumps({"value": "leak-smoke-test-value-" + sys.argv[1]}))
 PY
 
 remote_secrets_api PUT "/api/v1/secrets/${secret_name}" "${SECRETS_SERVICE_ACCESS_TOKEN}" "${put_body}" "${artifact_dir}/responses/accepted-secret-put.json" "200,201" "${run_id}-put"
@@ -416,7 +416,7 @@ scan_remote_logs || failed=1
 scan_artifacts || failed=1
 
 if (( failed != 0 )); then
-  echo "secrets leak proof failed; sanitized findings are in ${findings_path}" >&2
+  echo "secrets leak smoke test failed; sanitized findings are in ${findings_path}" >&2
   exit 1
 fi
 
@@ -426,10 +426,10 @@ wait_for_clickhouse_count default "
   SELECT count()
   FROM otel_traces
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort('${span_window_end}') + INTERVAL 60 SECOND
-    AND ServiceName = 'proof-runner'
-    AND SpanName = 'secrets.leak_proof.scan'
-    AND SpanAttributes['verself.proof_run_id'] = {run_id:String}
-" 1 "${artifact_dir}/clickhouse/leak-proof-span-count.tsv"
+    AND ServiceName = 'smoke-runner'
+    AND SpanName = 'secrets.leak_smoke_test.scan'
+    AND SpanAttributes['verself.smoke_test_run_id'] = {run_id:String}
+" 1 "${artifact_dir}/clickhouse/leak-smoke-span-count.tsv"
 
 python3 - "${run_id}" "${window_start}" "${span_window_end}" "${artifact_dir}" >"${artifact_dir}/run.json" <<'PY'
 import json
@@ -447,9 +447,9 @@ print(json.dumps({
         "verself.audit_events",
         "/var/log/caddy/access.log",
         "journalctl",
-        "proof artifacts",
+        "smoke test artifacts",
     ],
 }, indent=2, sort_keys=True))
 PY
 
-echo "secrets leak proof ok: ${artifact_dir}"
+echo "secrets leak smoke test ok: ${artifact_dir}"
