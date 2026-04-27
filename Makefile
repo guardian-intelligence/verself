@@ -269,13 +269,13 @@ openapi-wire-check: ## Verify frontend-consumed OpenAPI 3.1 specs are JS wire-sa
 		$(SR)/openapi/internal-openapi-3.1.yaml
 
 topology-generate: ## Regenerate Ansible deploy inputs from CUE topology
-	cd $(PLATFORM_DIR) && ./scripts/topology.py generate
+	bazelisk run //src/cue-renderer:freshness
 
 topology-check: ## Verify generated deploy inputs match CUE topology
-	cd $(PLATFORM_DIR) && ./scripts/topology.py check
+	bazelisk test //src/cue-renderer:freshness_tests
 
 topology-smoke-test: inventory-check ## Verify topology compile/check spans and generated artifact freshness in ClickHouse
-	cd $(PLATFORM_DIR) && ./scripts/verify-topology-live.sh
+	cd $(PLATFORM_DIR) && ./scripts/topology-smoke-test.sh
 
 inventory-check: ## Validate that the generated Ansible inventory exists
 	@test -f "$(INVENTORY)" || { echo "ERROR: $(INVENTORY) not found. Run: cd $(PLATFORM_DIR)/ansible && ansible-playbook playbooks/provision.yml"; exit 1; }

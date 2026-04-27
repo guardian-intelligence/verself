@@ -1,0 +1,20 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "projection",
+    srcs = ["projection.go"],
+    importpath = "github.com/verself/cue-renderer/internal/render/projection",
+    visibility = ["//src/cue-renderer:__subpackages__"],
+    deps = [
+        "//src/cue-renderer/internal/load",
+        "@org_cuelang_go//cue",
+        "@org_cuelang_go//cue/cuecontext",
+        "@org_cuelang_go//encoding/yaml",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":projection",
+    visibility = ["//src/cue-renderer:__subpackages__"],
+)

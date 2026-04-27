@@ -108,211 +108,6 @@ import s "verself.sh/cue-renderer/schema"
 	...
 }
 
-_config: {
-	verself_version: "0.1.0"
-	verself_bin:     "/opt/verself/profile/bin"
-
-	domains: {
-		verself_domain:  "verself.sh"
-		platform_domain: "{{ verself_domain }}"
-		company_domain:  "guardianintelligence.org"
-
-		console_subdomain: "console"
-		console_domain:    "{{ console_subdomain }}.{{ verself_domain }}"
-
-		billing_service_subdomain: "billing.api"
-		billing_service_domain:    "{{ billing_service_subdomain }}.{{ verself_domain }}"
-
-		sandbox_rental_service_subdomain: "sandbox.api"
-		sandbox_rental_service_domain:    "{{ sandbox_rental_service_subdomain }}.{{ verself_domain }}"
-
-		identity_service_subdomain: "identity.api"
-		identity_service_domain:    "{{ identity_service_subdomain }}.{{ verself_domain }}"
-
-		profile_service_subdomain: "profile.api"
-		profile_service_domain:    "{{ profile_service_subdomain }}.{{ verself_domain }}"
-
-		notifications_service_subdomain: "notifications.api"
-		notifications_service_domain:    "{{ notifications_service_subdomain }}.{{ verself_domain }}"
-
-		projects_service_subdomain: "projects.api"
-		projects_service_domain:    "{{ projects_service_subdomain }}.{{ verself_domain }}"
-
-		source_code_hosting_service_subdomain: "source.api"
-		source_code_hosting_service_domain:    "{{ source_code_hosting_service_subdomain }}.{{ verself_domain }}"
-
-		governance_service_subdomain: "governance.api"
-		governance_service_domain:    "{{ governance_service_subdomain }}.{{ verself_domain }}"
-
-		secrets_service_subdomain: "secrets.api"
-		secrets_service_domain:    "{{ secrets_service_subdomain }}.{{ verself_domain }}"
-
-		mailbox_service_subdomain: "mail.api"
-		mailbox_service_domain:    "{{ mailbox_service_subdomain }}.{{ verself_domain }}"
-
-		resend_subdomain:      "notify"
-		resend_domain:         "{{ resend_subdomain }}.{{ verself_domain }}"
-		resend_sender_address: "noreply@{{ resend_domain }}"
-		resend_sender_name:    "verself"
-
-		stalwart_subdomain: "mail"
-		stalwart_domain:    "{{ stalwart_subdomain }}.{{ verself_domain }}"
-	}
-
-	openbao: {
-		openbao_spiffe_jwt_mount:              "spiffe-jwt"
-		openbao_workload_audience:             "openbao"
-		openbao_tenancy_credstore_dir:         "/etc/credstore/openbao"
-		openbao_tenancy_tls_dir:               "/etc/openbao/tls"
-		openbao_tenancy_spiffe_jwt_mount:      "spiffe-jwt"
-		openbao_tenancy_rebootstrap_stage_dir: "{{ openbao_tenancy_credstore_dir }}/rebootstrap"
-		openbao_tenancy_oidc_discovery_url:    "https://auth.{{ verself_domain }}"
-		openbao_tenancy_bound_issuer:          "https://auth.{{ verself_domain }}"
-		openbao_tenancy_secrets_project_name:  "secrets-service"
-		openbao_tenancy_token_ttl:             "15m"
-		openbao_tenancy_token_max_ttl:         "1h"
-		openbao_tenancy_layout:                "auto"
-		openbao_tenancy_skip_jwks_validation:  false
-		openbao_tenancy_kv_mount_prefix:       "kv"
-		openbao_tenancy_transit_mount_prefix:  "transit"
-		openbao_tenancy_jwt_mount_prefix:      "jwt"
-		openbao_tenancy_platform_org_name:     "verself"
-	}
-
-	// WireGuard tunnel topology. The host can carry multiple independent tunnels;
-	// `tunnels` holds the per-interface config and `host_groups` selects which
-	// tunnels each Ansible play attaches to. The worker mesh (wg0) keeps the
-	// historical 10.0.0.0/16 plane between platform nodes; the operator mesh
-	// (wg-ops) is a private path for reaching internal substrate (bazel-remote
-	// today; openbao UI / verdaccio admin in the future) without ever fronting
-	// those listeners on the public internet.
-	wireguard: {
-		tunnels: {
-			worker: {
-				interface:      "wg0"
-				port:           51820
-				network:        "10.0.0.0/16"
-				address:        "10.0.0.1"
-				address_prefix: 16
-				peers: [...{public_key: string, allowed_ips: string}] | *[]
-			}
-			ops: {
-				interface:      "wg-ops"
-				port:           51821
-				network:        "10.66.66.0/24"
-				address:        "10.66.66.1"
-				address_prefix: 24
-				// Operator laptops join by generating a keypair locally with `wg
-				// genkey | wg pubkey` and submitting their public key here. Server
-				// has no `endpoint` for these peers because operators sit behind
-				// NAT and initiate the handshake themselves.
-				peers: [
-					{
-						// Controller / founder laptop. Bringing up wg-ops on the
-						// laptop unlocks bazel-remote at grpc://10.66.66.1:9092
-						// for both `make deploy` (so deploy_profile pushes warm
-						// cache) and ad-hoc `bazelisk build --config=remote`.
-						public_key:  "AoVgh4aWFK5Gi7HBdqIzTea37aa5SaemU4Pyk92Nglc="
-						allowed_ips: "10.66.66.2/32"
-					},
-				]
-			}
-		}
-		// Which tunnels each Ansible host group runs. Single-node deployments
-		// hit both groups so workers gets the worker tunnel and infra adds
-		// wg-ops on top.
-		host_groups: {
-			workers: ["worker"]
-			infra: ["worker", "ops"]
-		}
-	}
-
-	object_storage: {
-		object_storage_service_uid: 960
-		object_storage_admin_uid:   961
-	}
-
-	retired_product_runtimes: [
-		{unit: "letters.service", user: "letters", group: "letters", paths: ["/etc/letters", "/opt/letters", "/var/lib/letters"]},
-		{unit: "webmail.service", user: "webmail", group: "webmail", paths: ["/etc/webmail", "/opt/webmail", "/var/lib/webmail"]},
-	]
-
-	postgres: {
-		max_connections:                300
-		superuser_reserved_connections: 10
-	}
-
-	temporal: {
-		temporal_sandbox_namespace:   "sandbox-rental-service"
-		temporal_billing_namespace:   "billing-service"
-		temporal_namespace_retention: "24h"
-		temporal_bootstrap_namespaces: ["{{ temporal_sandbox_namespace }}", "{{ temporal_billing_namespace }}"]
-		temporal_namespace_role_bindings: [
-			{spiffe_id: "{{ spire_sandbox_rental_id }}", namespace: "{{ temporal_sandbox_namespace }}", role: "admin"},
-			{spiffe_id: "{{ spire_billing_service_id }}", namespace: "{{ temporal_billing_namespace }}", role: "admin"},
-		]
-		temporal_web_subdomain:             "temporal"
-		temporal_web_domain:                "{{ temporal_web_subdomain }}.{{ verself_domain }}"
-		temporal_web_default_namespace:     "{{ temporal_sandbox_namespace }}"
-		temporal_web_disable_write_actions: true
-		temporal_web_oidc_scopes: ["openid", "profile", "email", "offline_access"]
-		temporal_web_oidc_max_session_duration:     "8h"
-		temporal_web_auth_project_name:             "temporal-web"
-		temporal_web_auth_app_name:                 "temporal-web"
-		temporal_web_oidc_redirect_uri:             "https://{{ temporal_web_domain }}/auth/sso/callback"
-		temporal_web_oidc_post_logout_redirect_uri: "https://{{ temporal_web_domain }}/"
-	}
-
-	seed_system: {
-		seed_system_zitadel_base_url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}"
-		seed_system_zitadel_host:     "auth.{{ verself_domain }}"
-		seed_system_openbao_tls_dir:  "/etc/openbao/tls"
-		seed_system_password_overrides: {}
-		seed_system_credstore_dir:         "/etc/credstore/seed-system"
-		seed_system_platform_org_name:     "Guardian Intelligence LLC"
-		seed_system_platform_org_slug:     "guardian-platform"
-		seed_system_acme_org_name:         "Acme Corp"
-		seed_system_acme_org_slug:         "acme-corp"
-		seed_system_sandbox_project_name:  "sandbox-rental"
-		seed_system_identity_project_name: "identity-service"
-		seed_system_secrets_project_name:  "secrets-service"
-		seed_system_forgejo_project_name:  "forgejo"
-		seed_system_mailbox_project_name:  "mailbox-service"
-		seed_system_users: {
-			ceo: {key: "ceo", org_key: "platform", email: "ceo@{{ verself_domain }}", username: "ceo", first_name: "CEO", last_name: "Operator", password_credstore_path: "{{ seed_system_credstore_dir }}/ceo-password"}
-			platform_agent: {key: "platform_agent", org_key: "platform", email: "agent@{{ verself_domain }}", username: "agent", first_name: "Platform", last_name: "Agent", password_credstore_path: "{{ seed_system_credstore_dir }}/platform-agent-password"}
-			acme_admin: {key: "acme_admin", org_key: "acme", email: "acme-admin@{{ verself_domain }}", username: "acme-admin", first_name: "Acme", last_name: "Admin", password_credstore_path: "{{ seed_system_credstore_dir }}/acme-admin-password"}
-			acme_user: {key: "acme_user", org_key: "acme", email: "acme-user@{{ verself_domain }}", username: "acme-user", first_name: "Acme", last_name: "User", password_credstore_path: "{{ seed_system_credstore_dir }}/acme-user-password"}
-		}
-		seed_system_machine_users: {
-			platform_admin: {key: "platform_admin", org_key: "platform", username: "assume-platform-admin", name: "Assume Platform Admin", secret_credstore_path: "{{ seed_system_credstore_dir }}/assume-platform-admin-client-secret"}
-			acme_admin: {key: "acme_admin", org_key: "acme", username: "assume-acme-admin", name: "Assume Acme Admin", secret_credstore_path: "{{ seed_system_credstore_dir }}/assume-acme-admin-client-secret"}
-			acme_member: {key: "acme_member", org_key: "acme", username: "assume-acme-member", name: "Assume Acme Member", secret_credstore_path: "{{ seed_system_credstore_dir }}/assume-acme-member-client-secret"}
-		}
-		seed_system_product_id:           "sandbox"
-		seed_system_product_display_name: "Sandbox"
-		seed_system_meter_unit:           "sku_ms"
-		seed_system_billing_model:        "metered"
-		seed_system_plan_id:              "sandbox-default"
-		seed_system_plan_display_name:    "Sandbox PAYG"
-		seed_system_free_tier_buckets: {compute: 10000000, memory: 5000000, execution_root_storage: 2000000}
-		seed_system_plan_entitlements: {}
-		seed_system_contract_tiers: [
-			{plan_id: "sandbox-hobby", display_name: "Hobby", tier: "hobby", currency: "usd", cadence: "monthly", unit_amount_cents: 500, entitlements: {compute: 30000000, memory: 15000000, execution_root_storage: 5000000}},
-			{plan_id: "sandbox-pro", display_name: "Pro", tier: "pro", currency: "usd", cadence: "monthly", unit_amount_cents: 2000, entitlements: {compute: 120000000, memory: 60000000, execution_root_storage: 20000000}},
-		]
-		seed_system_platform_target_prepaid_units: 500000000000
-		seed_system_customer_target_prepaid_units: 500000000000
-		seed_system_expires_after:                 "8760h"
-		seed_system_acme_sku_scoped_grants: [{sku_id: "sandbox_execution_root_storage_premium_nvme_gib_ms", units: 50000000, source: "promo"}]
-		seed_system_helper_local_path:                 "/tmp/billing-seed-{{ inventory_hostname }}"
-		seed_system_helper_remote_path:                "/opt/verself/staging/billing-seed-{{ inventory_hostname }}"
-		seed_system_stripe_catalog_helper_local_path:  "/tmp/billing-stripe-catalog-{{ inventory_hostname }}"
-		seed_system_stripe_catalog_helper_remote_path: "/opt/verself/staging/billing-stripe-catalog-{{ inventory_hostname }}"
-		seed_system_stalwart_disabled_permissions: ["email-send", "jmap-sieve-script-set", "jmap-sieve-script-validate", "sieve-put-script", "sieve-set-active"]
-	}
-}
-
 topology: s.#Topology & {
 	gateways: {
 		public_caddy: {
@@ -428,16 +223,18 @@ topology: s.#Topology & {
 			interfaces: operator_ui: {kind: "frontend_http", endpoint: "http", auth: "operator", probes: #ServiceProbes}
 		}
 		verdaccio: {
-			kind:        "resource"
-			host:        "127.0.0.1"
-			listen_host: "0.0.0.0"
+			kind: "resource"
+			host: "127.0.0.1"
 			runtime: {systemd: "verdaccio", user: "verdaccio", group: "verdaccio"}
 			artifact: {kind: "upstream_binary", output: "verdaccio", role: "verdaccio"}
 			endpoints: http: {
-				protocol:    "http"
-				listen_host: "0.0.0.0"
-				port:        4873
-				exposure:    "guest_host"
+				protocol: "http"
+				// Firecracker guests reach the npm mirror through the host service
+				// plane; nftables restricts this socket to guest TAP ingress.
+				listen_host:            "0.0.0.0"
+				wildcard_listen_reason: "Firecracker guests reach Verdaccio through the host service plane; nftables restricts this socket to guest TAP ingress."
+				port:                   4873
+				exposure:               "guest_host"
 			}
 			interfaces: registry: {kind: "resource_protocol", endpoint: "http", auth: "none"}
 		}
@@ -549,7 +346,7 @@ topology: s.#Topology & {
 				identities: ["default"]
 				after: ["verself-firewall.target", "network.target", "postgresql.service", "temporal-server.service", "spire-agent.service", "otelcol.service", "source-code-hosting-service.service"]
 				wants: ["postgresql.service", "temporal-server.service", "spire-agent.service", "otelcol.service", "source-code-hosting-service.service"]
-				supplementary_groups: ["{{ spire_workload_group }}"]
+				supplementary_groups: [config.spire.workload_group]
 				requires_spiffe_sock: true
 			}
 			endpoints: {
@@ -690,14 +487,27 @@ topology: s.#Topology & {
 		bazel_remote: {
 			kind: "resource"
 			host: "127.0.0.1"
-			// listen_host 0.0.0.0 so the daemon is reachable on the wg-ops mesh as
-			// well as on loopback; nftables enforces the actual access policy.
-			listen_host: "0.0.0.0"
 			runtime: {systemd: "bazel-remote", user: "bazel_remote", group: "bazel_remote"}
 			artifact: {kind: "static_binary", output: "bazel-remote", role: "bazel_remote"}
 			endpoints: {
-				grpc: {protocol: "grpc", listen_host: "0.0.0.0", port: 9092, exposure: "wireguard"}
-				http: {protocol: "http", listen_host: "0.0.0.0", port: 8080, exposure: "wireguard"}
+				grpc: {
+					protocol: "grpc"
+					// bazel-remote serves both loopback and wg-ops clients; nftables
+					// keeps 9092 off the public interface.
+					listen_host:            "0.0.0.0"
+					wildcard_listen_reason: "bazel-remote serves both loopback and wg-ops clients; nftables keeps the gRPC port off the public interface."
+					port:                   9092
+					exposure:               "wireguard"
+				}
+				http: {
+					protocol: "http"
+					// bazel-remote serves both loopback and wg-ops clients; nftables
+					// keeps 8080 off the public interface.
+					listen_host:            "0.0.0.0"
+					wildcard_listen_reason: "bazel-remote serves both loopback and wg-ops clients; nftables keeps the HTTP port off the public interface."
+					port:                   8080
+					exposure:               "wireguard"
+				}
 			}
 			interfaces: {
 				cas: {kind: "resource_protocol", endpoint: "grpc", auth: "operator"}
@@ -718,7 +528,15 @@ topology: s.#Topology & {
 			runtime: {systemd: "stalwart", user: "stalwart", group: "stalwart"}
 			artifact: {kind: "static_binary", output: "stalwart-mail", role: "stalwart"}
 			endpoints: {
-				smtp: {protocol: "smtp", listen_host: "0.0.0.0", port: 25, exposure: "public"}
+				smtp: {
+					protocol: "smtp"
+					// Public SMTP must bind externally; nftables and Stalwart own the
+					// exposed TCP/25 contract.
+					listen_host:            "0.0.0.0"
+					wildcard_listen_reason: "SMTP accepts public internet mail on TCP/25; nftables exposes that port intentionally."
+					port:                   25
+					exposure:               "public"
+				}
 				http: {protocol: "http", port: 8090, exposure: "loopback"}
 			}
 			interfaces: {
@@ -739,8 +557,8 @@ topology: s.#Topology & {
 			artifact: {package: "./src/object-storage-service/cmd/object-storage-service", output: "object-storage-service", role: "object_storage_service", bazel_label: "//src/object-storage-service/cmd/object-storage-service:object-storage-service"}
 			runtime: {systemd: "object-storage-service", user: "object_storage_service", group: "object_storage_service"}
 			identities: {
-				service: {ansible_var: "spire_object_storage_service_id", path: "/svc/object-storage-service", user: "object_storage_service", group: "object_storage_service", uid_policy: {kind: "fixed", value: _config.object_storage.object_storage_service_uid}, entry_id: "verself-object-storage-service", restart_units: ["object-storage-admin", "object-storage-service"]}
-				admin: {ansible_var: "spire_object_storage_admin_id", path: "/svc/object-storage-admin", user: "object_storage_admin", group: "object_storage_admin", uid_policy: {kind: "fixed", value: _config.object_storage.object_storage_admin_uid}, entry_id: "verself-object-storage-admin", restart_units: ["object-storage-admin", "object-storage-service"]}
+				service: {ansible_var: "spire_object_storage_service_id", path: "/svc/object-storage-service", user: "object_storage_service", group: "object_storage_service", uid_policy: {kind: "fixed", value: config.object_storage.object_storage_service_uid}, entry_id: "verself-object-storage-service", restart_units: ["object-storage-admin", "object-storage-service"]}
+				admin: {ansible_var: "spire_object_storage_admin_id", path: "/svc/object-storage-admin", user: "object_storage_admin", group: "object_storage_admin", uid_policy: {kind: "fixed", value: config.object_storage.object_storage_admin_uid}, entry_id: "verself-object-storage-admin", restart_units: ["object-storage-admin", "object-storage-service"]}
 			}
 			tools: secret_sync: {kind: "go_binary", package: "./src/object-storage-service/cmd/object-storage-secret-sync", output: "object-storage-secret-sync", role: "object_storage_service", bazel_label: "//src/object-storage-service/cmd/object-storage-secret-sync:object-storage-secret-sync"}
 			processes: admin: {
@@ -752,7 +570,7 @@ topology: s.#Topology & {
 				identities: ["service", "admin"]
 				after: ["verself-firewall.target", "network.target", "postgresql.service", "governance-service.service", "garage@0.service", "garage@1.service", "garage@2.service", "spire-agent.service"]
 				wants: ["postgresql.service", "governance-service.service", "garage@0.service", "garage@1.service", "garage@2.service", "spire-agent.service"]
-				supplementary_groups: ["object_storage_service", "{{ spire_workload_group }}"]
+				supplementary_groups: ["object_storage_service", config.spire.workload_group]
 				requires_spiffe_sock: true
 			}
 			endpoints: {
@@ -916,14 +734,298 @@ topology: s.#Topology & {
 		{from: "object_storage_service", to: {component: "garage", interface: "s3"}, auth: "spiffe_mtls", purpose: "object_data_plane"},
 	]
 
+	_sandbox_private_clone_ipv4: ["0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12", "192.0.0.0/24", "192.0.2.0/24", "192.168.0.0/16", "198.18.0.0/15", "198.51.100.0/24", "203.0.113.0/24", "224.0.0.0/4", "240.0.0.0/4"]
+	_sandbox_private_clone_ipv6: ["::/128", "::1/128", "::ffff:0:0/96", "64:ff9b::/96", "100::/64", "2001::/23", "2001:db8::/32", "fc00::/7", "fe80::/10", "ff00::/8"]
+
+	nftables: rulesets: {
+		billing: {
+			target:    "/etc/nftables.d/billing.nft"
+			table:     "verself_billing"
+			component: "billing"
+			output: {
+				user: components.billing.runtime.user
+				rules: [
+					{kind: "accept_loopback_all"},
+					{kind: "accept_port", protocol: "tcp", port: 443},
+					{kind: "accept_port", protocol: "tcp", port: 53},
+					{kind: "accept_port", protocol: "udp", port: 53},
+				]
+			}
+		}
+		company: {
+			target:    "/etc/nftables.d/company.nft"
+			table:     "verself_company"
+			component: "company"
+			input: [{kind: "drop_non_loopback", endpoints: [{component: "company", endpoint: "http"}]}]
+		}
+		console: {
+			target:    "/etc/nftables.d/console.nft"
+			table:     "verself_console"
+			component: "console"
+			input: [{kind: "drop_non_loopback", endpoints: [{component: "console", endpoint: "http"}]}]
+		}
+		electric: {
+			target:    components.electric.electric.nftables_file
+			table:     components.electric.electric.nftables_table
+			component: "electric"
+			input: [{kind: "drop_non_loopback", endpoints: [{component: "electric", endpoint: "http"}]}]
+		}
+		electric_mail: {
+			target:    components.electric_mail.electric.nftables_file
+			table:     components.electric_mail.electric.nftables_table
+			component: "electric_mail"
+			input: [{kind: "drop_non_loopback", endpoints: [{component: "electric_mail", endpoint: "http"}]}]
+		}
+		electric_notifications: {
+			target:    components.electric_notifications.electric.nftables_file
+			table:     components.electric_notifications.electric.nftables_table
+			component: "electric_notifications"
+			input: [{kind: "drop_non_loopback", endpoints: [{component: "electric_notifications", endpoint: "http"}]}]
+		}
+		garage: {
+			target:    "/etc/nftables.d/garage.nft"
+			table:     "verself_garage"
+			component: "garage"
+			input: [{kind: "drop_non_loopback", endpoints: [
+				{component: "garage", endpoint: "s3_0"},
+				{component: "garage", endpoint: "rpc_0"},
+				{component: "garage", endpoint: "admin_0"},
+				{component: "garage", endpoint: "s3_1"},
+				{component: "garage", endpoint: "rpc_1"},
+				{component: "garage", endpoint: "admin_1"},
+				{component: "garage", endpoint: "s3_2"},
+				{component: "garage", endpoint: "rpc_2"},
+				{component: "garage", endpoint: "admin_2"},
+			]}]
+			output: {
+				established: true
+				final:       "none"
+				rules: [
+					{kind: "accept_loopback_endpoints", endpoints: [{component: "garage", endpoint: "admin_0"}, {component: "garage", endpoint: "admin_1"}, {component: "garage", endpoint: "admin_2"}], skuid: 0},
+					{kind: "accept_loopback_endpoints", endpoints: [{component: "garage", endpoint: "admin_0"}, {component: "garage", endpoint: "admin_1"}, {component: "garage", endpoint: "admin_2"}], skuid: config.object_storage.object_storage_admin_uid},
+					{kind: "drop_loopback_endpoints", endpoints: [{component: "garage", endpoint: "admin_0"}, {component: "garage", endpoint: "admin_1"}, {component: "garage", endpoint: "admin_2"}]},
+					{kind: "accept_loopback_endpoints", endpoints: [{component: "garage", endpoint: "s3_0"}, {component: "garage", endpoint: "s3_1"}, {component: "garage", endpoint: "s3_2"}], skuid: config.object_storage.object_storage_service_uid},
+					{kind: "accept_loopback_endpoints", endpoints: [{component: "garage", endpoint: "s3_0"}, {component: "garage", endpoint: "s3_1"}, {component: "garage", endpoint: "s3_2"}], skuid: config.object_storage.object_storage_admin_uid},
+					{kind: "drop_loopback_endpoints", endpoints: [{component: "garage", endpoint: "s3_0"}, {component: "garage", endpoint: "s3_1"}, {component: "garage", endpoint: "s3_2"}]},
+					{kind: "accept_loopback_endpoints", endpoints: [{component: "garage", endpoint: "rpc_0"}, {component: "garage", endpoint: "rpc_1"}, {component: "garage", endpoint: "rpc_2"}], skuid: components.garage.runtime.user},
+					{kind: "drop_loopback_endpoints", endpoints: [{component: "garage", endpoint: "rpc_0"}, {component: "garage", endpoint: "rpc_1"}, {component: "garage", endpoint: "rpc_2"}]},
+				]
+			}
+		}
+		governance_service: {
+			target:    "/etc/nftables.d/governance-service.nft"
+			table:     "verself_governance_service"
+			component: "governance_service"
+			input: [{kind: "drop_non_loopback", endpoints: [{component: "governance_service", endpoint: "public_http"}]}]
+			output: {
+				user: components.governance_service.runtime.user
+				rules: [
+					{kind: "accept_loopback_endpoints", endpoints: [{component: "postgresql", endpoint: "postgres"}, {component: "clickhouse", endpoint: "native_tls"}, {component: "openbao", endpoint: "api"}, {component: "profile_service", endpoint: "internal_https"}, {component: "zitadel", endpoint: "http"}, {component: "otelcol", endpoint: "otlp_grpc"}]},
+					{kind: "accept_port", protocol: "tcp", port: 443, oifname: "lo"},
+					{kind: "accept_non_tcp_udp"},
+				]
+			}
+		}
+		identity_service: {
+			target:    "/etc/nftables.d/identity-service.nft"
+			table:     "verself_identity_service"
+			component: "identity_service"
+			input: [{kind: "drop_non_loopback", endpoints: [{component: "identity_service", endpoint: "public_http"}, {component: "identity_service", endpoint: "internal_https"}]}]
+			output: {
+				user: components.identity_service.runtime.user
+				rules: [
+					{kind: "accept_loopback_endpoints", endpoints: [{component: "postgresql", endpoint: "postgres"}, {component: "clickhouse", endpoint: "native_tls"}, {component: "zitadel", endpoint: "http"}, {component: "governance_service", endpoint: "internal_https"}, {component: "otelcol", endpoint: "otlp_grpc"}]},
+					{kind: "accept_port", protocol: "tcp", port: 443, oifname: "lo"},
+					{kind: "accept_non_tcp_udp"},
+				]
+			}
+		}
+		mailbox_service: {
+			target:    "/etc/nftables.d/mailbox-service.nft"
+			table:     "verself_mailbox_service"
+			component: "mailbox_service"
+			output: {
+				user: components.mailbox_service.runtime.user
+				rules: [
+					{kind: "accept_loopback_all"},
+					{kind: "accept_port", protocol: "tcp", port: 443},
+					{kind: "accept_port", protocol: "tcp", port: 53},
+					{kind: "accept_port", protocol: "udp", port: 53},
+				]
+			}
+		}
+		nats: {
+			target:    "/etc/nftables.d/nats.nft"
+			table:     "verself_nats"
+			component: "nats"
+			input: [{kind: "drop_non_loopback", endpoints: [{component: "nats", endpoint: "client"}, {component: "nats", endpoint: "monitoring"}]}]
+			output: {
+				user: components.nats.runtime.user
+				rules: [{kind: "accept_non_tcp_udp"}]
+			}
+		}
+		notifications_service: {
+			target:    "/etc/nftables.d/notifications-service.nft"
+			table:     "verself_notifications_service"
+			component: "notifications_service"
+			input: [{kind: "drop_non_loopback", endpoints: [{component: "notifications_service", endpoint: "public_http"}]}]
+			output: {
+				user: components.notifications_service.runtime.user
+				rules: [
+					{kind: "accept_loopback_endpoints", endpoints: [{component: "postgresql", endpoint: "postgres"}, {component: "clickhouse", endpoint: "native_tls"}, {component: "nats", endpoint: "client"}, {component: "zitadel", endpoint: "http"}, {component: "otelcol", endpoint: "otlp_grpc"}]},
+					{kind: "accept_port", protocol: "tcp", port: 443, oifname: "lo"},
+					{kind: "accept_non_tcp_udp"},
+				]
+			}
+		}
+		object_storage_admin: {
+			target:    "/etc/nftables.d/object-storage-admin.nft"
+			table:     "verself_object_storage_admin"
+			component: "object_storage_service"
+			input: [{kind: "drop_non_loopback", endpoints: [{component: "object_storage_service", endpoint: "admin_http"}]}]
+			output: {
+				user: "object_storage_admin"
+				rules: [
+					{kind: "accept_loopback_endpoints", endpoints: [{component: "object_storage_service", endpoint: "public_http"}, {component: "object_storage_service", endpoint: "admin_http"}, {component: "postgresql", endpoint: "postgres"}, {component: "governance_service", endpoint: "internal_https"}, {component: "secrets_service", endpoint: "internal_https"}, {component: "otelcol", endpoint: "otlp_grpc"}, {component: "garage", endpoint: "s3_0"}, {component: "garage", endpoint: "s3_1"}, {component: "garage", endpoint: "s3_2"}, {component: "garage", endpoint: "admin_0"}, {component: "garage", endpoint: "admin_1"}, {component: "garage", endpoint: "admin_2"}]},
+					{kind: "accept_non_tcp_udp"},
+				]
+			}
+		}
+		object_storage_service: {
+			target:    "/etc/nftables.d/object-storage-service.nft"
+			table:     "verself_object_storage_service"
+			component: "object_storage_service"
+			input: [{kind: "drop_non_loopback", endpoints: [{component: "object_storage_service", endpoint: "public_http"}]}]
+			output: {
+				user: components.object_storage_service.runtime.user
+				rules: [
+					{kind: "accept_loopback_endpoints", endpoints: [{component: "object_storage_service", endpoint: "public_http"}, {component: "postgresql", endpoint: "postgres"}, {component: "clickhouse", endpoint: "native_tls"}, {component: "secrets_service", endpoint: "internal_https"}, {component: "otelcol", endpoint: "otlp_grpc"}, {component: "garage", endpoint: "s3_0"}, {component: "garage", endpoint: "s3_1"}, {component: "garage", endpoint: "s3_2"}]},
+					{kind: "accept_non_tcp_udp"},
+				]
+			}
+		}
+		openbao: {
+			target:    "/etc/nftables.d/openbao.nft"
+			table:     "verself_openbao"
+			component: "openbao"
+			input: [{kind: "drop_non_loopback", endpoints: [{component: "openbao", endpoint: "api"}, {component: "openbao", endpoint: "cluster"}]}]
+			output: {
+				user: components.openbao.runtime.user
+				rules: [
+					{kind: "accept_non_tcp_udp"},
+					{kind: "accept_port", protocol: "tcp", port: 443, oifname: "lo"},
+					{kind: "accept_loopback_endpoints", endpoints: [{component: "spire_bundle_endpoint", endpoint: "bundle"}]},
+				]
+			}
+		}
+		platform: {
+			target:    "/etc/nftables.d/platform.nft"
+			table:     "verself_platform"
+			component: "platform"
+			input: [{kind: "drop_non_loopback", endpoints: [{component: "platform", endpoint: "http"}]}]
+		}
+		profile_service: {
+			target:    "/etc/nftables.d/profile-service.nft"
+			table:     "verself_profile_service"
+			component: "profile_service"
+			input: [{kind: "drop_non_loopback", endpoints: [{component: "profile_service", endpoint: "public_http"}, {component: "profile_service", endpoint: "internal_https"}]}]
+			output: {
+				user: components.profile_service.runtime.user
+				rules: [
+					{kind: "accept_loopback_endpoints", endpoints: [{component: "postgresql", endpoint: "postgres"}, {component: "identity_service", endpoint: "internal_https"}, {component: "governance_service", endpoint: "internal_https"}, {component: "zitadel", endpoint: "http"}, {component: "otelcol", endpoint: "otlp_grpc"}]},
+					{kind: "accept_port", protocol: "tcp", port: 443, oifname: "lo"},
+					{kind: "accept_non_tcp_udp"},
+				]
+			}
+		}
+		projects_service: {
+			target:    "/etc/nftables.d/projects-service.nft"
+			table:     "verself_projects_service"
+			component: "projects_service"
+			input: [{kind: "drop_non_loopback", endpoints: [{component: "projects_service", endpoint: "public_http"}, {component: "projects_service", endpoint: "internal_https"}]}]
+			output: {
+				user: components.projects_service.runtime.user
+				rules: [
+					{kind: "accept_loopback_endpoints", endpoints: [{component: "postgresql", endpoint: "postgres"}, {component: "zitadel", endpoint: "http"}, {component: "otelcol", endpoint: "otlp_grpc"}]},
+					{kind: "accept_port", protocol: "tcp", port: 443, oifname: "lo"},
+					{kind: "accept_non_tcp_udp"},
+				]
+			}
+		}
+		sandbox_rental: {
+			target:    "/etc/nftables.d/sandbox-rental.nft"
+			table:     "verself_sandbox_rental"
+			component: "sandbox_rental"
+			input: [{kind: "drop_non_loopback", endpoints: [{component: "sandbox_rental", endpoint: "public_http"}, {component: "sandbox_rental", endpoint: "internal_https"}]}]
+			output: {
+				user: components.sandbox_rental.runtime.user
+				rules: [
+					{kind: "accept_loopback_endpoints", endpoints: [{component: "postgresql", endpoint: "postgres"}, {component: "clickhouse", endpoint: "native_tls"}, {component: "billing", endpoint: "internal_https"}, {component: "openbao", endpoint: "api"}, {component: "zitadel", endpoint: "http"}, {component: "governance_service", endpoint: "internal_https"}, {component: "secrets_service", endpoint: "internal_https"}, {component: "source_code_hosting_service", endpoint: "internal_https"}, {component: "forgejo", endpoint: "http"}, {component: "temporal", endpoint: "frontend_grpc"}, {component: "otelcol", endpoint: "otlp_grpc"}]},
+					{kind: "accept_port", protocol: "tcp", port: 443, oifname: "lo"},
+					{kind: "accept_port", protocol: "tcp", port: 53, oifname: "lo"},
+					{kind: "accept_port", protocol: "udp", port: 53, oifname: "lo"},
+					{kind: "drop_ip_daddr_set", family: "ip", addrs: _sandbox_private_clone_ipv4},
+					{kind: "drop_ip_daddr_set", family: "ip6", addrs: _sandbox_private_clone_ipv6},
+					{kind: "accept_port", protocol: "tcp", port: 53},
+					{kind: "accept_port", protocol: "udp", port: 53},
+					{kind: "accept_port", protocol: "tcp", port: 443},
+					{kind: "accept_non_tcp_udp"},
+				]
+			}
+		}
+		secrets_service: {
+			target:    "/etc/nftables.d/secrets-service.nft"
+			table:     "verself_secrets_service"
+			component: "secrets_service"
+			input: [{kind: "drop_non_loopback", endpoints: [{component: "secrets_service", endpoint: "public_http"}, {component: "secrets_service", endpoint: "internal_https"}]}]
+			output: {
+				user: components.secrets_service.runtime.user
+				rules: [
+					{kind: "accept_loopback_endpoints", endpoints: [{component: "zitadel", endpoint: "http"}, {component: "openbao", endpoint: "api"}, {component: "billing", endpoint: "internal_https"}, {component: "governance_service", endpoint: "internal_https"}, {component: "otelcol", endpoint: "otlp_grpc"}]},
+					{kind: "accept_port", protocol: "tcp", port: 443, oifname: "lo"},
+					{kind: "accept_non_tcp_udp"},
+				]
+			}
+		}
+		source_code_hosting_service: {
+			target:    "/etc/nftables.d/source-code-hosting-service.nft"
+			table:     "verself_source_code_hosting_service"
+			component: "source_code_hosting_service"
+			input: [{kind: "drop_non_loopback", endpoints: [{component: "source_code_hosting_service", endpoint: "public_http"}, {component: "source_code_hosting_service", endpoint: "internal_https"}]}]
+			output: {
+				user: components.source_code_hosting_service.runtime.user
+				rules: [
+					{kind: "accept_loopback_endpoints", endpoints: [{component: "postgresql", endpoint: "postgres"}, {component: "forgejo", endpoint: "http"}, {component: "sandbox_rental", endpoint: "internal_https"}, {component: "secrets_service", endpoint: "internal_https"}, {component: "projects_service", endpoint: "internal_https"}, {component: "identity_service", endpoint: "internal_https"}, {component: "zitadel", endpoint: "http"}, {component: "otelcol", endpoint: "otlp_grpc"}]},
+					{kind: "accept_port", protocol: "tcp", port: 443, oifname: "lo"},
+					{kind: "accept_non_tcp_udp"},
+				]
+			}
+		}
+		stalwart: {
+			target:    "/etc/nftables.d/stalwart.nft"
+			table:     "verself_stalwart"
+			component: "stalwart"
+			output: {
+				user: components.stalwart.runtime.user
+				rules: [
+					{kind: "accept_loopback_all"},
+					{kind: "accept_port", protocol: "tcp", port: 53},
+					{kind: "accept_port", protocol: "udp", port: 53},
+				]
+			}
+		}
+	}
+
 	policies: {
 		frontend_csp: {kind: "csp", values: {connect_src: "self"}}
 		public_api_body_limit: {kind: "body_limit", values: {default_bytes: 1048576}}
 	}
 
-	evidence: [
-		{name: "cue_renderer_run", kind: "span", service: "cue-renderer", span_name: "cue_renderer.run", attributes: {}},
-		{name: "topology_graph_export", kind: "span", service: "cue-renderer", span_name: "topology.cue.export_graph", attributes: {}},
-		{name: "topology_clusters_freshness", kind: "span", service: "cue-renderer", span_name: "topology.generated.freshness_check", attributes: {"topology.artifact": "clusters"}},
-	]
+	smoke_tests: {
+		spans: [
+			{name: "cue_renderer_run", kind: "span", service: "cue-renderer", span_name: "cue_renderer.run", attributes: {}},
+			{name: "topology_graph_export", kind: "span", service: "cue-renderer", span_name: "topology.cue.export_graph", attributes: {}},
+			{name: "topology_clusters_freshness", kind: "span", service: "cue-renderer", span_name: "topology.generated.freshness_check", attributes: {"topology.artifact": "clusters"}},
+		]
+	}
 }

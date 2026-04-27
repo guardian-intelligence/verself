@@ -21,31 +21,54 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/verself/cue-renderer/internal/load"
 	"github.com/verself/cue-renderer/internal/render"
+	"github.com/verself/cue-renderer/internal/render/bazelmodule"
+	"github.com/verself/cue-renderer/internal/render/bazelservertools"
+	"github.com/verself/cue-renderer/internal/render/catalog"
+	"github.com/verself/cue-renderer/internal/render/clusters"
+	"github.com/verself/cue-renderer/internal/render/deploy"
+	"github.com/verself/cue-renderer/internal/render/dns"
+	"github.com/verself/cue-renderer/internal/render/endpoints"
+	"github.com/verself/cue-renderer/internal/render/nftables"
+	"github.com/verself/cue-renderer/internal/render/ops"
+	"github.com/verself/cue-renderer/internal/render/postgres"
+	"github.com/verself/cue-renderer/internal/render/routes"
+	"github.com/verself/cue-renderer/internal/render/runtime"
+	"github.com/verself/cue-renderer/internal/render/smoketest"
+	"github.com/verself/cue-renderer/internal/render/spire"
 	"github.com/verself/cue-renderer/internal/spans"
 )
 
 const (
-	defaultTopologyDir  = "src/cue-renderer"
-	defaultInstance     = "./instances/local:topology"
-	defaultRepoRoot     = "."
-	defaultGeneratedDir = "src/platform/ansible/group_vars/all/generated"
+	defaultTopologyDir = "src/cue-renderer"
+	defaultInstance    = "local"
+	defaultRepoRoot    = "."
 )
 
-// renderers is the set of artefacts the Go tool currently owns. The
-// scaffold ships with none — the framework (load + spans + WritableFS +
-// the Renderer interface) is the deliverable, and the first real
-// renderer to land is the per-component nftables snippet generator.
-//
-// Adding a renderer is one line here plus its package under
-// internal/render/. Renderers not yet ported continue to be produced by
-// topology.py until they appear here.
+// renderers is the complete set of generated artefacts currently owned by the
+// Go tool.
 func renderers() []render.Renderer {
-	return nil
+	return []render.Renderer{
+		bazelmodule.Renderer{},
+		bazelservertools.Renderer{},
+		catalog.Renderer{},
+		clusters.Renderer{},
+		deploy.Renderer{},
+		dns.Renderer{},
+		endpoints.Renderer{},
+		nftables.Renderer{},
+		ops.Renderer{},
+		postgres.Renderer{},
+		routes.Renderer{},
+		runtime.Renderer{},
+		smoketest.Renderer{},
+		spire.Renderer{},
+	}
 }
 
 func main() {
@@ -83,15 +106,13 @@ type commonFlags struct {
 	repoRoot    string
 	topologyDir string
 	instance    string
-	flushSpans  bool
 }
 
 func registerCommon(fs *flag.FlagSet) *commonFlags {
 	c := &commonFlags{}
 	fs.StringVar(&c.repoRoot, "repo-root", defaultRepoRoot, "repository root (paths in OutputPath() are resolved against this)")
 	fs.StringVar(&c.topologyDir, "topology-dir", defaultTopologyDir, "directory containing the CUE topology")
-	fs.StringVar(&c.instance, "instance", defaultInstance, "CUE load.Instance argument")
-	fs.BoolVar(&c.flushSpans, "flush-spans", true, "emit OTel proof spans for this run")
+	fs.StringVar(&c.instance, "instance", defaultInstance, "topology instance name under src/cue-renderer/instances")
 	return c
 }
 
@@ -99,7 +120,15 @@ func registerCommon(fs *flag.FlagSet) *commonFlags {
 // dir is what cuelang.org/go's load.Config.Dir wants, and OutputPath
 // values are resolved against the repo root.
 func (c *commonFlags) resolved() (repoRoot, topoDir string, err error) {
-	repoRoot, err = filepath.Abs(c.repoRoot)
+	root := c.repoRoot
+	if root == defaultRepoRoot {
+		// Bazel runs binaries from the execroot; BUILD_WORKSPACE_DIRECTORY
+		// is the checked-out source tree where generated files must land.
+		if workspace := strings.TrimSpace(os.Getenv("BUILD_WORKSPACE_DIRECTORY")); workspace != "" {
+			root = workspace
+		}
+	}
+	repoRoot, err = filepath.Abs(root)
 	if err != nil {
 		return "", "", err
 	}
@@ -110,33 +139,12 @@ func (c *commonFlags) resolved() (repoRoot, topoDir string, err error) {
 	return repoRoot, topoDir, nil
 }
 
-// withPipeline runs body inside a spans.Pipeline (the outer trace
-// envelope) when --flush-spans is on, and unwrapped otherwise. Tests
-// disable spans because there's no OTLP collector to talk to.
-func withPipeline(ctx context.Context, c *commonFlags, body func(context.Context, recorder) error) error {
-	if !c.flushSpans {
-		return body(ctx, noopRecorder{})
-	}
-	return spans.Pipeline(ctx, c.topologyDir, defaultGeneratedDir, func(pctx context.Context, rec *spans.Recorder) error {
-		return body(pctx, &spanRecorder{rec: rec})
-	})
+// withPipeline runs body inside a spans.Pipeline. spans.Pipeline installs a
+// no-op tracer when OTEL_EXPORTER_OTLP_ENDPOINT is unset, so local runs never
+// dial telemetry infrastructure.
+func withPipeline(ctx context.Context, c *commonFlags, body func(context.Context, *spans.Recorder) error) error {
+	return spans.Pipeline(ctx, c.topologyDir, c.instance, body)
 }
-
-// recorder is the minimal interface body needs from spans.Recorder, so
-// the noop variant doesn't have to drag the OTel SDK in.
-type recorder interface {
-	Record(ctx context.Context, name string, extras ...attribute.KeyValue)
-}
-
-type spanRecorder struct{ rec *spans.Recorder }
-
-func (s *spanRecorder) Record(ctx context.Context, name string, extras ...attribute.KeyValue) {
-	s.rec.Record(ctx, name, extras...)
-}
-
-type noopRecorder struct{}
-
-func (noopRecorder) Record(_ context.Context, _ string, _ ...attribute.KeyValue) {}
 
 func cmdGenerate(args []string) error {
 	flags := flag.NewFlagSet("generate", flag.ContinueOnError)
@@ -148,18 +156,26 @@ func cmdGenerate(args []string) error {
 	if err != nil {
 		return err
 	}
-	return withPipeline(context.Background(), common, func(ctx context.Context, rec recorder) error {
+	return withPipeline(context.Background(), common, func(ctx context.Context, rec *spans.Recorder) error {
 		loaded, err := load.Topology(topoDir, common.instance)
 		if err != nil {
 			return err
 		}
-		rec.Record(ctx, "topology.cue.export_graph", attribute.String("topology.graph_sha256", loaded.GraphSHA256))
+		inputAttrs := []attribute.KeyValue{
+			attribute.String("topology.graph_sha256", loaded.GraphSHA256),
+			attribute.String("topology.topology_sha256", loaded.TopologySHA256),
+			attribute.String("topology.config_sha256", loaded.ConfigSHA256),
+			attribute.String("topology.catalog_sha256", loaded.CatalogSHA256),
+		}
+		rec.SetRootAttributes(inputAttrs...)
+		rec.Record(ctx, "topology.cue.export_graph", inputAttrs...)
+		rec.Record(ctx, "topology.cue.export_config", attribute.String("topology.config_sha256", loaded.ConfigSHA256))
+		rec.Record(ctx, "topology.cue.export_catalog", attribute.String("topology.catalog_sha256", loaded.CatalogSHA256))
+		recordBazelRenderSpans(ctx, rec, loaded)
 
-		mem := render.NewMemFS()
-		for _, r := range renderers() {
-			if err := r.Render(ctx, loaded, mem); err != nil {
-				return fmt.Errorf("render %s: %w", r.Name(), err)
-			}
+		mem, artifacts, err := renderAll(ctx, loaded)
+		if err != nil {
+			return err
 		}
 		// Two-phase write: render into MemFS first so a failure in any
 		// renderer aborts the whole run before mutating disk. Only flush
@@ -172,8 +188,10 @@ func cmdGenerate(args []string) error {
 			}
 			rec.Record(ctx,
 				"topology.generated.render_artifact",
+				attribute.String("topology.artifact", artifacts[p]),
 				attribute.String("topology.generated_file", p),
 				attribute.String("topology.generated_sha256", mem.SHA256(p)),
+				attribute.Int("topology.bytes", len(data)),
 			)
 		}
 		return nil
@@ -190,18 +208,26 @@ func cmdCheck(args []string) error {
 	if err != nil {
 		return err
 	}
-	return withPipeline(context.Background(), common, func(ctx context.Context, rec recorder) error {
+	return withPipeline(context.Background(), common, func(ctx context.Context, rec *spans.Recorder) error {
 		loaded, err := load.Topology(topoDir, common.instance)
 		if err != nil {
 			return err
 		}
-		rec.Record(ctx, "topology.cue.export_graph", attribute.String("topology.graph_sha256", loaded.GraphSHA256))
+		inputAttrs := []attribute.KeyValue{
+			attribute.String("topology.graph_sha256", loaded.GraphSHA256),
+			attribute.String("topology.topology_sha256", loaded.TopologySHA256),
+			attribute.String("topology.config_sha256", loaded.ConfigSHA256),
+			attribute.String("topology.catalog_sha256", loaded.CatalogSHA256),
+		}
+		rec.SetRootAttributes(inputAttrs...)
+		rec.Record(ctx, "topology.cue.export_graph", inputAttrs...)
+		rec.Record(ctx, "topology.cue.export_config", attribute.String("topology.config_sha256", loaded.ConfigSHA256))
+		rec.Record(ctx, "topology.cue.export_catalog", attribute.String("topology.catalog_sha256", loaded.CatalogSHA256))
+		recordBazelRenderSpans(ctx, rec, loaded)
 
-		mem := render.NewMemFS()
-		for _, r := range renderers() {
-			if err := r.Render(ctx, loaded, mem); err != nil {
-				return fmt.Errorf("render %s: %w", r.Name(), err)
-			}
+		mem, artifacts, err := renderAll(ctx, loaded)
+		if err != nil {
+			return err
 		}
 		stale, err := mem.DiffAgainstDisk(repoRoot)
 		if err != nil {
@@ -210,6 +236,7 @@ func cmdCheck(args []string) error {
 		for _, p := range mem.Paths() {
 			rec.Record(ctx,
 				"topology.generated.freshness_check",
+				attribute.String("topology.artifact", artifacts[p]),
 				attribute.String("topology.generated_file", p),
 				attribute.String("topology.generated_sha256", mem.SHA256(p)),
 				attribute.Bool("topology.generated_fresh", !contains(stale, p)),
@@ -228,6 +255,7 @@ func cmdCheck(args []string) error {
 func cmdRender(args []string) error {
 	flags := flag.NewFlagSet("render", flag.ContinueOnError)
 	common := registerCommon(flags)
+	selectedPath := flags.String("path", "", "repo-relative output path to print from a multi-file renderer")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -244,7 +272,7 @@ func cmdRender(args []string) error {
 	if err != nil {
 		return err
 	}
-	return withPipeline(context.Background(), common, func(ctx context.Context, _ recorder) error {
+	return withPipeline(context.Background(), common, func(ctx context.Context, _ *spans.Recorder) error {
 		loaded, err := load.Topology(topoDir, common.instance)
 		if err != nil {
 			return err
@@ -253,10 +281,22 @@ func cmdRender(args []string) error {
 		if err := r.Render(ctx, loaded, mem); err != nil {
 			return fmt.Errorf("render %s: %w", r.Name(), err)
 		}
-		// `render <name>` writes to stdout for human inspection, joining
-		// every file the renderer produced. Ordered by path so the dump
-		// is reproducible.
-		for _, p := range mem.Paths() {
+		if *selectedPath != "" {
+			data, ok := mem.Get(*selectedPath)
+			if !ok {
+				return fmt.Errorf("renderer %s did not write %s", r.Name(), *selectedPath)
+			}
+			_, err := os.Stdout.Write(data)
+			return err
+		}
+		paths := mem.Paths()
+		if len(paths) == 1 {
+			data, _ := mem.Get(paths[0])
+			_, err := os.Stdout.Write(data)
+			return err
+		}
+		// Multi-file renderers keep a reproducible debug dump.
+		for _, p := range paths {
 			data, _ := mem.Get(p)
 			fmt.Fprintf(os.Stdout, "# %s\n", p)
 			if _, err := os.Stdout.Write(data); err != nil {
@@ -265,6 +305,28 @@ func cmdRender(args []string) error {
 		}
 		return nil
 	})
+}
+
+func renderAll(ctx context.Context, loaded load.Loaded) (*render.MemFS, map[string]string, error) {
+	mem := render.NewMemFS()
+	artifacts := map[string]string{}
+	for _, r := range renderers() {
+		rendered := render.NewMemFS()
+		if err := r.Render(ctx, loaded, rendered); err != nil {
+			return nil, nil, fmt.Errorf("render %s: %w", r.Name(), err)
+		}
+		for _, p := range rendered.Paths() {
+			if owner, ok := artifacts[p]; ok {
+				return nil, nil, fmt.Errorf("render %s wrote %s already owned by %s", r.Name(), p, owner)
+			}
+			data, _ := rendered.Get(p)
+			if err := mem.WriteFile(p, data); err != nil {
+				return nil, nil, err
+			}
+			artifacts[p] = r.Name()
+		}
+	}
+	return mem, artifacts, nil
 }
 
 func cmdList(args []string) error {
@@ -302,18 +364,30 @@ func contains(haystack []string, needle string) bool {
 	return false
 }
 
+func recordBazelRenderSpans(ctx context.Context, rec *spans.Recorder, loaded load.Loaded) {
+	rec.Record(ctx,
+		"topology.bazel.module_render",
+		attribute.String("topology.generated_file", "src/cue-renderer/binaries/server_tools.MODULE.bazel"),
+		attribute.Int("topology.http_file_count", len(loaded.Catalog.ServerToolDownloads)),
+	)
+	rec.Record(ctx,
+		"topology.bazel.server_tools_render",
+		attribute.String("topology.generated_file", "src/cue-renderer/binaries/server_tools.bzl"),
+		attribute.Int("topology.server_tool_count", len(loaded.Catalog.ServerToolDownloads)),
+	)
+}
+
 func printUsage(w io.Writer) {
 	fmt.Fprintln(w, `usage: cue-renderer <subcommand> [flags]
 
 subcommands:
   generate        render every artefact to disk
   check           diff every artefact against disk; exit 1 on drift
-  render <name>   render a single artefact to stdout (debug)
+  render <name>   render a single artefact to stdout (debug); use --path for one file from multi-file renderers
   list            print the registered artefacts
 
 global flags:
   --repo-root      path to repo root (default ".")
   --topology-dir   path to CUE topology root (default "src/cue-renderer")
-  --instance       CUE load.Instance (default "./instances/local:topology")
-  --flush-spans    emit OTel proof spans (default true)`)
+  --instance       topology instance name under instances/ (default "local")`)
 }

@@ -96,6 +96,9 @@ package schema
 	listen_host: #Host | *""
 	port:        #Port
 	exposure:    #Exposure
+	if listen_host == "0.0.0.0" {
+		wildcard_listen_reason: string & !="" @go(WildcardListenReason)
+	}
 	...
 }
 
@@ -160,12 +163,159 @@ package schema
 	...
 }
 
+#WireGuardPeer: {
+	public_key:  string & !="" @go(PublicKey)
+	allowed_ips: string & !=""
+}
+
+#WireGuardTunnel: {
+	interface:      string & !=""
+	port:           #Port
+	network:        string & !=""
+	address:        #Host
+	address_prefix: int & >=0 & <=128 @go(AddressPrefix)
+	peers: [...#WireGuardPeer]
+}
+
+#WireGuardConfig: {
+	tunnels: {
+		[string]: #WireGuardTunnel
+		...
+	}
+	host_groups: {
+		[string]: [...string]
+		...
+	} @go(HostGroups)
+}
+
+#RetiredRuntime: {
+	unit:  string & !=""
+	user:  string & !=""
+	group: string & !=""
+	paths: [...string & =~"^/"]
+}
+
+#PostgresConfig: {
+	max_connections:                int & >0  @go(MaxConnections)
+	superuser_reserved_connections: int & >=0 @go(SuperuserReservedConnections)
+}
+
+#NftablesSSHConfig: {
+	public: bool | *true
+	rate:   string & !="" | *"3/minute"
+	burst:  int & >0 | *5
+}
+
+#NftablesConfig: {
+	// Listener ports owned by substrate components not yet modeled as CUE
+	// endpoints. Component endpoints with exposure=public are added by the
+	// renderer.
+	public_tcp_ports: [...#Port] | *[80, 443] @go(PublicTCPPorts)
+	ssh: #NftablesSSHConfig
+}
+
+#NftablesEndpointRef: {
+	component: string & !=""
+	endpoint:  string & !=""
+}
+
+#NftablesSkuid: (string & =~"^[A-Za-z_][A-Za-z0-9_-]*$") | (int & >=0)
+
+#NftablesInputRule: {
+	kind: "drop_non_loopback"
+	endpoints: [...#NftablesEndpointRef]
+}
+
+#NftablesOutputRule: {
+	kind: "accept_loopback_all"
+} | {
+	kind: "accept_loopback_endpoints"
+	endpoints: [...#NftablesEndpointRef]
+	skuid?: #NftablesSkuid
+} | {
+	kind: "drop_loopback_endpoints"
+	endpoints: [...#NftablesEndpointRef]
+} | {
+	kind:     "accept_port"
+	protocol: "tcp" | "udp"
+	port:     #Port
+	oifname?: string & !=""
+} | {
+	kind:   "drop_ip_daddr_set"
+	family: "ip" | "ip6"
+	addrs: [...string & !=""]
+} | {
+	kind: "accept_non_tcp_udp"
+}
+
+#NftablesOutputChain: {
+	user?:       #NftablesSkuid
+	established: bool | *true
+	final:       "drop" | "none" | *"drop"
+	rules: [...#NftablesOutputRule]
+}
+
+#NftablesRuleset: {
+	target:    string & =~"^/etc/nftables\\.d/[A-Za-z0-9._-]+\\.nft$"
+	table:     string & =~"^[A-Za-z0-9_]+$"
+	component: string & !="" | *""
+	input: [...#NftablesInputRule] | *[]
+	output?: #NftablesOutputChain
+}
+
+#NftablesTopology: {
+	rulesets: {
+		[string]: #NftablesRuleset
+	}
+}
+
+#FirecrackerConfig: {
+	guest_pool_cidr: string & !="" @go(GuestPoolCIDR)
+}
+
+#SpireConfig: {
+	trust_domain:                 string & !=""   @go(TrustDomain)
+	server_bind_address:          #Host           @go(ServerBindAddress)
+	server_socket_path:           string & =~"^/" @go(ServerSocketPath)
+	agent_socket_path:            string & =~"^/" @go(AgentSocketPath)
+	workload_group:               string & !=""   @go(WorkloadGroup)
+	agent_id_path:                string & =~"^/" @go(AgentIDPath)
+	bundle_endpoint_bind_address: #Host           @go(BundleEndpointBindAddress)
+}
+
+#InstanceConfig: {
+	verself_version: string & !=""   @go(VerselfVersion)
+	verself_bin:     string & =~"^/" @go(VerselfBin)
+
+	domains: {
+		verself_domain:  string & !=""
+		platform_domain: string & !=""
+		company_domain:  string & !=""
+		[string]:        string
+	}
+
+	openbao: {[string]: _}
+	wireguard: #WireGuardConfig
+
+	object_storage: {
+		object_storage_service_uid: int & >0 @go(ObjectStorageServiceUID)
+		object_storage_admin_uid:   int & >0 @go(ObjectStorageAdminUID)
+	} @go(ObjectStorage)
+
+	retired_product_runtimes: [...#RetiredRuntime] @go(RetiredProductRuntimes)
+	postgres:    #PostgresConfig
+	nftables:    #NftablesConfig
+	firecracker: #FirecrackerConfig
+	spire:       #SpireConfig
+	temporal: {[string]: _}
+	seed_system: {[string]: _} @go(SeedSystem)
+}
+
 #GarageNode: {
 	instance:   int & >=0
-	s3_port:    #Port
-	rpc_port:   #Port
-	admin_port: #Port
-	...
+	s3_port:    #Port @go(S3Port)
+	rpc_port:   #Port @go(RPCPort)
+	admin_port: #Port @go(AdminPort)
 }
 
 #GarageCluster: {
@@ -173,43 +323,44 @@ package schema
 		count: int & >=1
 		port_plan: {
 			stride:     int & >0
-			s3_base:    #Port
-			rpc_base:   #Port
-			admin_base: #Port
-			...
-		}
-		...
+			s3_base:    #Port @go(S3Base)
+			rpc_base:   #Port @go(RPCBase)
+			admin_base: #Port @go(AdminBase)
+		} @go(PortPlan)
 	}
 	nodes: [...#GarageNode]
-	...
 }
 
 #TemporalRPCService: {
-	grpc_port:       #Port
-	membership_port: #Port
-	...
+	grpc_port:       #Port @go(GRPCPort)
+	membership_port: #Port @go(MembershipPort)
 }
 
 #TemporalFrontendService: {
-	grpc_port:       #Port
-	http_port:       #Port
-	membership_port: #Port
-	...
+	grpc_port:       #Port @go(GRPCPort)
+	http_port:       #Port @go(HTTPPort)
+	membership_port: #Port @go(MembershipPort)
 }
 
 #TemporalCluster: {
 	frontend:          #TemporalFrontendService
-	internal_frontend: #TemporalFrontendService
+	internal_frontend: #TemporalFrontendService @go(InternalFrontend)
 	history:           #TemporalRPCService
 	matching:          #TemporalRPCService
 	worker:            #TemporalRPCService
 
 	diagnostics: {
-		metrics_port: #Port
-		pprof_port:   #Port
-		...
+		metrics_port: #Port @go(MetricsPort)
+		pprof_port:   #Port @go(PprofPort)
 	}
-	...
+}
+
+#SmokeTestSpan: {
+	name:      string
+	kind:      string
+	service:   string
+	span_name: string @go(SpanName)
+	attributes: {[string]: _} | *{}
 }
 
 #Component: {
@@ -257,6 +408,10 @@ package schema
 	}
 	routes: [...#Route]
 	edges: [...#Edge]
+	nftables: #NftablesTopology
+	smoke_tests: {
+		spans: [...#SmokeTestSpan] | *[]
+	}
 	policies: {
 		[string]: #Policy
 		...

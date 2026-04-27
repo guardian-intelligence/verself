@@ -58,6 +58,8 @@ ready = (
     and row.get("export_spans", 0) == 1
     and row.get("fresh_checks", 0) >= 1
     and row.get("clusters_fresh_checks", 0) == 1
+    and row.get("rendered_fresh_checks", 0) >= 1
+    and row.get("host_firewall_fresh_checks", 0) == 1
     and bool(re.fullmatch(r"[0-9a-f]{64}", graph_sha))
     and bool(re.fullmatch(r"[0-9a-f]{64}", clusters_sha))
     and row.get("errors", 0) == 0
@@ -84,6 +86,18 @@ for _ in $(seq 1 45); do
         AND SpanAttributes['topology.artifact'] = 'clusters'
         AND SpanAttributes['topology.generated_fresh'] = 'true'
       ) AS clusters_fresh_checks,
+      countIf(
+        ServiceName = 'cue-renderer'
+        AND SpanName = 'topology.generated.freshness_check'
+        AND startsWith(SpanAttributes['topology.generated_file'], 'src/platform/ansible/share/rendered/')
+        AND SpanAttributes['topology.generated_fresh'] = 'true'
+      ) AS rendered_fresh_checks,
+      countIf(
+        ServiceName = 'cue-renderer'
+        AND SpanName = 'topology.generated.freshness_check'
+        AND SpanAttributes['topology.generated_file'] = 'src/platform/ansible/share/rendered/etc/nftables.d/host-firewall.nft'
+        AND SpanAttributes['topology.generated_fresh'] = 'true'
+      ) AS host_firewall_fresh_checks,
       anyIf(
         SpanAttributes['topology.graph_sha256'],
         ServiceName = 'cue-renderer' AND SpanName = 'cue_renderer.run'
