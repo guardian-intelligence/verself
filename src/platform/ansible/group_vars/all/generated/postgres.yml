@@ -42,11 +42,8 @@ topology_postgres:
     - component: governance_service
       database: governance_service
       owner: governance_service
-    - component: secrets_service
-      database: secrets_service
-      owner: secrets_service
     - component: profile_service
-      database: profile_service
+      database: profile
       owner: profile_service
     - component: notifications_service
       database: notifications_service
@@ -55,7 +52,7 @@ topology_postgres:
       database: projects_service
       owner: projects_service
     - component: source_code_hosting_service
-      database: source_code_hosting_service
+      database: source_code_hosting
       owner: source_code_hosting_service
     - component: console
       database: frontend_auth

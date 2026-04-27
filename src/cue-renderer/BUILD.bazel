@@ -7,8 +7,26 @@ TOPOLOGY_SRCS = [
     "cue.mod/module.cue",
     "//src/cue-renderer/catalog:versions.cue",
     "//src/cue-renderer/instances/local:config.cue",
+    "//src/cue-renderer/instances/local:convergence.cue",
+    "//src/cue-renderer/instances/local:firewall.cue",
     "//src/cue-renderer/instances/local:topology.cue",
     "//src/cue-renderer/schema:schema.cue",
+]
+
+SYSTEMD_RENDERED = [
+    ("billing_service", "src/platform/ansible/share/rendered/etc/systemd/system/billing-service.service", "rendered/etc/systemd/system/billing-service.service"),
+    ("governance_service", "src/platform/ansible/share/rendered/etc/systemd/system/governance-service.service", "rendered/etc/systemd/system/governance-service.service"),
+    ("identity_service", "src/platform/ansible/share/rendered/etc/systemd/system/identity-service.service", "rendered/etc/systemd/system/identity-service.service"),
+    ("mailbox_service", "src/platform/ansible/share/rendered/etc/systemd/system/mailbox-service.service", "rendered/etc/systemd/system/mailbox-service.service"),
+    ("notifications_service", "src/platform/ansible/share/rendered/etc/systemd/system/notifications-service.service", "rendered/etc/systemd/system/notifications-service.service"),
+    ("object_storage_admin", "src/platform/ansible/share/rendered/etc/systemd/system/object-storage-admin.service", "rendered/etc/systemd/system/object-storage-admin.service"),
+    ("object_storage_service", "src/platform/ansible/share/rendered/etc/systemd/system/object-storage-service.service", "rendered/etc/systemd/system/object-storage-service.service"),
+    ("profile_service", "src/platform/ansible/share/rendered/etc/systemd/system/profile-service.service", "rendered/etc/systemd/system/profile-service.service"),
+    ("projects_service", "src/platform/ansible/share/rendered/etc/systemd/system/projects-service.service", "rendered/etc/systemd/system/projects-service.service"),
+    ("sandbox_rental_recurring_worker", "src/platform/ansible/share/rendered/etc/systemd/system/sandbox-rental-recurring-worker.service", "rendered/etc/systemd/system/sandbox-rental-recurring-worker.service"),
+    ("sandbox_rental_service", "src/platform/ansible/share/rendered/etc/systemd/system/sandbox-rental-service.service", "rendered/etc/systemd/system/sandbox-rental-service.service"),
+    ("secrets_service", "src/platform/ansible/share/rendered/etc/systemd/system/secrets-service.service", "rendered/etc/systemd/system/secrets-service.service"),
+    ("source_code_hosting_service", "src/platform/ansible/share/rendered/etc/systemd/system/source-code-hosting-service.service", "rendered/etc/systemd/system/source-code-hosting-service.service"),
 ]
 
 # Filegroup of every CUE source the loader walks. Tests in the renderer
@@ -61,6 +79,15 @@ genrule(
     srcs = TOPOLOGY_SRCS,
     outs = ["clusters.yml"],
     cmd = "$(location //src/cue-renderer/cmd/cue-renderer) render clusters > $@",
+    tools = ["//src/cue-renderer/cmd/cue-renderer"],
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "components_render",
+    srcs = TOPOLOGY_SRCS,
+    outs = ["components.yml"],
+    cmd = "$(location //src/cue-renderer/cmd/cue-renderer) render components > $@",
     tools = ["//src/cue-renderer/cmd/cue-renderer"],
     visibility = ["//visibility:public"],
 )
@@ -146,6 +173,15 @@ genrule(
     visibility = ["//visibility:public"],
 )
 
+genrule(
+    name = "component_systemd_handlers_render",
+    srcs = TOPOLOGY_SRCS,
+    outs = ["component-systemd-handlers.yml"],
+    cmd = "$(location //src/cue-renderer/cmd/cue-renderer) render --path src/platform/ansible/handlers/component-systemd.yml systemd > $@",
+    tools = ["//src/cue-renderer/cmd/cue-renderer"],
+    visibility = ["//visibility:public"],
+)
+
 # One genrule per nftables manifest entry. NFTABLES_RENDERED is itself a
 # generated artefact: editing topology.cue regenerates nftables_files.bzl
 # and this comprehension picks up the new entry on next build.
@@ -161,6 +197,18 @@ genrule(
     for slug, rendered_path, out_path in NFTABLES_RENDERED
 ]
 
+[
+    genrule(
+        name = "systemd_" + slug + "_render",
+        srcs = TOPOLOGY_SRCS,
+        outs = [out_path],
+        cmd = "$(location //src/cue-renderer/cmd/cue-renderer) render --path " + rendered_path + " systemd > $@",
+        tools = ["//src/cue-renderer/cmd/cue-renderer"],
+        visibility = ["//visibility:public"],
+    )
+    for slug, rendered_path, out_path in SYSTEMD_RENDERED
+]
+
 # Map of source destination → genrule producing the up-to-date bytes.
 # The first dict literal is hand-written; the comprehension below extends it
 # with one key per CUE-declared nftables file (see NFTABLES_RENDERED above).
@@ -170,6 +218,7 @@ _RENDERED_FILES = {
     "//src/cue-renderer/binaries:server_tools.bzl": ":bazel_server_tools_render",
     "//src/platform:ansible/group_vars/all/generated/catalog.yml": ":catalog_render",
     "//src/platform:ansible/group_vars/all/generated/clusters.yml": ":clusters_render",
+    "//src/platform:ansible/group_vars/all/generated/components.yml": ":components_render",
     "//src/platform:ansible/group_vars/all/generated/deploy.yml": ":deploy_render",
     "//src/platform:ansible/group_vars/all/generated/dns.yml": ":dns_render",
     "//src/platform:ansible/group_vars/all/generated/endpoints.yml": ":endpoints_render",
@@ -179,11 +228,17 @@ _RENDERED_FILES = {
     "//src/platform:ansible/group_vars/all/generated/runtime.yml": ":runtime_render",
     "//src/platform:ansible/group_vars/all/generated/smoke_test.yml": ":smoke_test_render",
     "//src/platform:ansible/group_vars/all/generated/spire.yml": ":spire_render",
+    "//src/platform:ansible/handlers/component-systemd.yml": ":component_systemd_handlers_render",
 }
 
 _RENDERED_FILES.update({
     "//src/platform:" + rendered_path[len("src/platform/"):]: ":nftables_" + slug + "_render"
     for slug, rendered_path, _ in NFTABLES_RENDERED
+})
+
+_RENDERED_FILES.update({
+    "//src/platform:" + rendered_path[len("src/platform/"):]: ":systemd_" + slug + "_render"
+    for slug, rendered_path, _ in SYSTEMD_RENDERED
 })
 
 write_source_files(

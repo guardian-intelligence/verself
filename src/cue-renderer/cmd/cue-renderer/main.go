@@ -32,6 +32,7 @@ import (
 	"github.com/verself/cue-renderer/internal/render/bazelservertools"
 	"github.com/verself/cue-renderer/internal/render/catalog"
 	"github.com/verself/cue-renderer/internal/render/clusters"
+	"github.com/verself/cue-renderer/internal/render/components"
 	"github.com/verself/cue-renderer/internal/render/deploy"
 	"github.com/verself/cue-renderer/internal/render/dns"
 	"github.com/verself/cue-renderer/internal/render/endpoints"
@@ -42,6 +43,7 @@ import (
 	"github.com/verself/cue-renderer/internal/render/runtime"
 	"github.com/verself/cue-renderer/internal/render/smoketest"
 	"github.com/verself/cue-renderer/internal/render/spire"
+	"github.com/verself/cue-renderer/internal/render/systemd"
 	"github.com/verself/cue-renderer/internal/spans"
 )
 
@@ -60,6 +62,7 @@ func renderers() []render.Renderer {
 		bazelservertools.Renderer{},
 		catalog.Renderer{},
 		clusters.Renderer{},
+		components.Renderer{},
 		deploy.Renderer{},
 		dns.Renderer{},
 		endpoints.Renderer{},
@@ -70,6 +73,7 @@ func renderers() []render.Renderer {
 		runtime.Renderer{},
 		smoketest.Renderer{},
 		spire.Renderer{},
+		systemd.Renderer{},
 	}
 }
 
