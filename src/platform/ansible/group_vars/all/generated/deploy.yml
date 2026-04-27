@@ -9,204 +9,298 @@ topology_deploy:
       package: ''
       role: clickhouse
     component: clickhouse
+    name: primary
+    source: component
   - artifact:
       kind: upstream_binary
       output: otelcol
       package: ''
       role: otelcol
     component: otelcol
+    name: primary
+    source: component
   - artifact:
       kind: static_binary
       output: forgejo
       package: ''
       role: forgejo
     component: forgejo
+    name: primary
+    source: component
   - artifact:
       kind: upstream_binary
       output: grafana
       package: ''
       role: grafana
     component: grafana
+    name: primary
+    source: component
   - artifact:
+      bazel_label: //src/temporal-platform/cmd/verself-temporal-web:verself-temporal-web
       kind: go_binary
       output: verself-temporal-web
       package: ./src/temporal-platform/cmd/verself-temporal-web
       role: temporal
     component: temporal_web
+    name: primary
+    source: component
   - artifact:
       kind: upstream_binary
       output: verdaccio
       package: ''
       role: verdaccio
     component: verdaccio
+    name: primary
+    source: component
   - artifact:
       kind: static_binary
       output: tigerbeetle
       package: ''
       role: tigerbeetle
     component: tigerbeetle
+    name: primary
+    source: component
   - artifact:
       kind: upstream_binary
       output: postgres
       package: ''
       role: postgresql
     component: postgresql
+    name: primary
+    source: component
   - artifact:
       kind: static_binary
       output: nats-server
       package: ''
       role: nats
     component: nats
+    name: primary
+    source: component
   - artifact:
+      bazel_label: //src/temporal-platform/cmd/verself-temporal-server:verself-temporal-server
       kind: go_binary
       output: verself-temporal-server
       package: ./src/temporal-platform/cmd/verself-temporal-server
       role: temporal
     component: temporal
+    name: primary
+    source: component
   - artifact:
+      bazel_label: //src/temporal-platform/cmd/temporal-bootstrap:temporal-bootstrap
+      kind: go_binary
+      output: temporal-bootstrap
+      package: ./src/temporal-platform/cmd/temporal-bootstrap
+      role: temporal
+    component: temporal
+    name: bootstrap
+    source: tool
+  - artifact:
+      bazel_label: //src/temporal-platform/cmd/temporal-schema:temporal-schema
+      kind: go_binary
+      output: temporal-schema
+      package: ./src/temporal-platform/cmd/temporal-schema
+      role: temporal
+    component: temporal
+    name: schema
+    source: tool
+  - artifact:
+      bazel_label: //src/billing-service/cmd/billing-service:billing-service
       kind: go_binary
       output: billing-service
       package: ./src/billing-service/cmd/billing-service
       role: billing_service
     component: billing
+    name: primary
+    source: component
   - artifact:
+      bazel_label: //src/sandbox-rental-service/cmd/sandbox-rental-service:sandbox-rental-service
       kind: go_binary
       output: sandbox-rental-service
       package: ./src/sandbox-rental-service/cmd/sandbox-rental-service
       role: sandbox_rental_service
     component: sandbox_rental
+    name: primary
+    source: component
   - artifact:
+      bazel_label: //src/sandbox-rental-service/cmd/sandbox-rental-recurring-worker:sandbox-rental-recurring-worker
+      kind: go_binary
+      output: sandbox-rental-recurring-worker
+      package: ./src/sandbox-rental-service/cmd/sandbox-rental-recurring-worker
+      role: sandbox_rental_service
+    component: sandbox_rental
+    name: recurring_worker
+    source: process
+  - artifact:
+      bazel_label: //src/identity-service/cmd/identity-service:identity-service
       kind: go_binary
       output: identity-service
       package: ./src/identity-service/cmd/identity-service
       role: identity_service
     component: identity_service
+    name: primary
+    source: component
   - artifact:
+      bazel_label: //src/governance-service/cmd/governance-service:governance-service
       kind: go_binary
       output: governance-service
       package: ./src/governance-service/cmd/governance-service
       role: governance_service
     component: governance_service
+    name: primary
+    source: component
   - artifact:
+      bazel_label: //src/secrets-service/cmd/secrets-service:secrets-service
       kind: go_binary
       output: secrets-service
       package: ./src/secrets-service/cmd/secrets-service
       role: secrets_service
     component: secrets_service
+    name: primary
+    source: component
   - artifact:
+      bazel_label: //src/profile-service/cmd/profile-service:profile-service
       kind: go_binary
       output: profile-service
       package: ./src/profile-service/cmd/profile-service
       role: profile_service
     component: profile_service
+    name: primary
+    source: component
   - artifact:
+      bazel_label: //src/notifications-service/cmd/notifications-service:notifications-service
       kind: go_binary
       output: notifications-service
       package: ./src/notifications-service/cmd/notifications-service
       role: notifications_service
     component: notifications_service
+    name: primary
+    source: component
   - artifact:
+      bazel_label: //src/projects-service/cmd/projects-service:projects-service
       kind: go_binary
       output: projects-service
       package: ./src/projects-service/cmd/projects-service
       role: projects_service
     component: projects_service
+    name: primary
+    source: component
   - artifact:
+      bazel_label: //src/source-code-hosting-service/cmd/source-code-hosting-service:source-code-hosting-service
       kind: go_binary
       output: source-code-hosting-service
       package: ./src/source-code-hosting-service/cmd/source-code-hosting-service
       role: source_code_hosting_service
     component: source_code_hosting_service
+    name: primary
+    source: component
   - artifact:
       kind: node_app
       output: console
       package: src/viteplus-monorepo/apps/console
       role: console
     component: console
+    name: primary
+    source: component
   - artifact:
       kind: upstream_binary
       output: electric
       package: ''
       role: electric
     component: electric
+    name: primary
+    source: component
   - artifact:
       kind: static_binary
       output: zitadel
       package: ''
       role: zitadel
     component: zitadel
+    name: primary
+    source: component
   - artifact:
       kind: static_binary
       output: bao
       package: ''
       role: openbao
     component: openbao
+    name: primary
+    source: component
   - artifact:
       kind: static_binary
       output: spire-server
       package: ''
       role: spire
     component: spire_server
-  - artifact:
-      kind: static_binary
-      output: spire-server
-      package: ''
-      role: spire
-    component: spire_bundle_endpoint
+    name: primary
+    source: component
   - artifact:
       kind: static_binary
       output: stalwart-mail
       package: ''
       role: stalwart
     component: stalwart
+    name: primary
+    source: component
   - artifact:
+      bazel_label: //src/mailbox-service/cmd/mailbox-service:mailbox-service
       kind: go_binary
       output: mailbox-service
       package: ./src/mailbox-service/cmd/mailbox-service
       role: mailbox_service
     component: mailbox_service
+    name: primary
+    source: component
   - artifact:
+      bazel_label: //src/object-storage-service/cmd/object-storage-service:object-storage-service
       kind: go_binary
       output: object-storage-service
       package: ./src/object-storage-service/cmd/object-storage-service
       role: object_storage_service
     component: object_storage_service
+    name: primary
+    source: component
+  - artifact:
+      bazel_label: //src/object-storage-service/cmd/object-storage-secret-sync:object-storage-secret-sync
+      kind: go_binary
+      output: object-storage-secret-sync
+      package: ./src/object-storage-service/cmd/object-storage-secret-sync
+      role: object_storage_service
+    component: object_storage_service
+    name: secret_sync
+    source: tool
   - artifact:
       kind: static_binary
       output: garage
       package: ''
       role: garage
     component: garage
-  - artifact:
-      kind: upstream_binary
-      output: electric
-      package: ''
-      role: electric
-    component: electric_mail
-  - artifact:
-      kind: upstream_binary
-      output: electric
-      package: ''
-      role: electric
-    component: electric_notifications
+    name: primary
+    source: component
   - artifact:
       kind: node_app
       output: platform
       package: src/viteplus-monorepo/apps/platform
       role: platform
     component: platform
+    name: primary
+    source: component
   - artifact:
       kind: node_app
       output: company
       package: src/viteplus-monorepo/apps/company
       role: company
     component: company
+    name: primary
+    source: component
   - artifact:
+      bazel_label: //src/vm-orchestrator/cmd/vm-orchestrator:vm-orchestrator
       kind: go_binary
       output: vm-orchestrator
       package: ./src/vm-orchestrator/cmd/vm-orchestrator
       role: firecracker
     component: firecracker_host_service
+    name: primary
+    source: component
   edges:
   - auth: zitadel_jwt
     from: console

@@ -9,10 +9,11 @@ package schema
 #Exposure:      "loopback" | "public" | "wireguard" | "guest_host"
 
 #Artifact: {
-	kind:    "go_binary" | "node_app" | "upstream_binary" | "static_binary" | "guest_rootfs" | "none" | *"none"
-	package: string | *""
-	output:  string | *""
-	role:    string | *""
+	kind:         "go_binary" | "node_app" | "upstream_binary" | "static_binary" | "guest_rootfs" | "none" | *"none"
+	package:      string | *""
+	output:       string | *""
+	role:         string | *""
+	bazel_label?: string & =~"^//"
 	...
 }
 
@@ -21,6 +22,26 @@ package schema
 	user:      string | *""
 	group:     string | *""
 	spiffe_id: string | *""
+	...
+}
+
+#Process: {
+	systemd: string & !=""
+	user:    string & !=""
+	group:   string & !=""
+
+	artifact: #Artifact
+
+	endpoints: [...string] | *[]
+	identities: [...string] | *[]
+	supplementary_groups: [...string] | *[]
+	after: [...string] | *[]
+	wants: [...string] | *[]
+	environment: {[string]: string} | *{}
+	privileged: bool | *false
+	restart_units: [...string] | *[systemd]
+	readiness_endpoint?:   string
+	requires_spiffe_sock?: bool | *false
 	...
 }
 
@@ -207,6 +228,14 @@ package schema
 	}
 	identities: {
 		[string]: #WorkloadIdentity
+		...
+	}
+	tools?: {
+		[string]: #Artifact
+		...
+	}
+	processes?: {
+		[string]: #Process
 		...
 	}
 	probes: #Probes | *{}
