@@ -325,11 +325,11 @@ emit_span() {
   local span_name="$1"
   local attrs_json="$2"
   (
-    cd "${VERIFICATION_REPO_ROOT}"
+    cd "${VERIFICATION_REPO_ROOT}/src/otel"
     PROOF_SPAN_SERVICE="platform-ansible" \
     PROOF_SPAN_NAME="${span_name}" \
     PROOF_SPAN_ATTRS_JSON="${attrs_json}" \
-      go run ./src/otel/cmd/proof-span
+      go run ./cmd/proof-span
   )
 }
 

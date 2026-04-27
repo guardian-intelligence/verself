@@ -1,0 +1,23 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "sync",
+    srcs = [
+        "apply_changes.go",
+        "bootstrap.go",
+        "manager.go",
+        "worker.go",
+    ],
+    importpath = "github.com/verself/mailbox-service/internal/sync",
+    visibility = ["//src/mailbox-service:__subpackages__"],
+    deps = [
+        "//src/mailbox-service/internal/jmap",
+        "//src/mailbox-service/internal/mailstore",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":sync",
+    visibility = ["//src/mailbox-service:__subpackages__"],
+)

@@ -1,0 +1,21 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "internalclient",
+    srcs = [
+        "client.gen.go",
+        "generate.go",
+    ],
+    importpath = "github.com/verself/source-code-hosting-service/internalclient",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_oapi_codegen_runtime//:runtime",
+        "@com_github_oapi_codegen_runtime//types",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":internalclient",
+    visibility = ["//visibility:public"],
+)

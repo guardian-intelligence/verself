@@ -64,5 +64,8 @@ node_modules
 # Materialized local build/deploy outputs
 artifacts/
 
+# Bazel convenience symlinks
+/bazel-*
+
 # E2E proof bundles, personas, Playwright traces, and query evidence
 proof-artifacts/

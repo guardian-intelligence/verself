@@ -1,0 +1,14 @@
+common --enable_bzlmod
+common --noenable_workspace
+common --announce_rc
+common --lockfile_mode=error
+
+build --disk_cache=~/.cache/bazel-disk
+build --repository_cache=~/.cache/bazel-repo
+build --incompatible_strict_action_env
+build --jobs=auto
+
+test --test_output=errors
+test --test_summary=terse
+
+build:ci --build_metadata=ROLE=CI

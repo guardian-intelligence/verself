@@ -1,0 +1,122 @@
+diff --git a/BUILD.bazel b/BUILD.bazel
+new file mode 100644
+--- /dev/null
++++ b/BUILD.bazel
+@@ -0,0 +1,29 @@
++load("@io_bazel_rules_go//go:def.bzl", "go_library")
++
++go_library(
++    name = "tigerbeetle-go",
++    srcs = [
++        "bindings.go",
++        "errors.go",
++        "tb_client.go",
++        "uint128.go",
++    ],
++    cgo = True,
++    cdeps = select({
++        "@io_bazel_rules_go//go/platform:darwin_amd64": ["//native:tb_client_darwin_amd64"],
++        "@io_bazel_rules_go//go/platform:darwin_arm64": ["//native:tb_client_darwin_arm64"],
++        "@io_bazel_rules_go//go/platform:linux_amd64": ["//native:tb_client_linux_amd64"],
++        "@io_bazel_rules_go//go/platform:linux_arm64": ["//native:tb_client_linux_arm64"],
++        "//conditions:default": [],
++    }),
++    copts = ["-g -Wall"],
++    importpath = "github.com/tigerbeetle/tigerbeetle-go",
++    visibility = ["//visibility:public"],
++    deps = ["//native:native"],
++)
++
++alias(
++    name = "go_default_library",
++    actual = ":tigerbeetle-go",
++    visibility = ["//visibility:public"],
++)
+diff --git a/native/BUILD.bazel b/native/BUILD.bazel
+new file mode 100644
+--- /dev/null
++++ b/native/BUILD.bazel
+@@ -0,0 +1,83 @@
++load("@io_bazel_rules_go//go:def.bzl", "go_library")
++load("@rules_cc//cc:defs.bzl", "cc_import", "cc_library")
++
++cc_import(
++    name = "tb_client_darwin_amd64_archive",
++    static_library = "libtb_client_x86_64-macos.a",
++)
++
++cc_import(
++    name = "tb_client_darwin_arm64_archive",
++    static_library = "libtb_client_aarch64-macos.a",
++)
++
++cc_import(
++    name = "tb_client_linux_amd64_archive",
++    static_library = "libtb_client_x86_64-linux.a",
++)
++
++cc_import(
++    name = "tb_client_linux_arm64_archive",
++    static_library = "libtb_client_aarch64-linux.a",
++)
++# TigerBeetle's cgo sources include "./native/tb_client.h", so expose the parent include root.
++cc_library(
++    name = "tb_client_darwin_amd64",
++    hdrs = ["tb_client.h"],
++    includes = [".."],
++    linkopts = [
++        "-ldl",
++        "-lm",
++    ],
++    visibility = ["//visibility:public"],
++    deps = [":tb_client_darwin_amd64_archive"],
++)
++
++cc_library(
++    name = "tb_client_darwin_arm64",
++    hdrs = ["tb_client.h"],
++    includes = [".."],
++    linkopts = [
++        "-ldl",
++        "-lm",
++    ],
++    visibility = ["//visibility:public"],
++    deps = [":tb_client_darwin_arm64_archive"],
++)
++
++cc_library(
++    name = "tb_client_linux_amd64",
++    hdrs = ["tb_client.h"],
++    includes = [".."],
++    linkopts = [
++        "-ldl",
++        "-lm",
++    ],
++    visibility = ["//visibility:public"],
++    deps = [":tb_client_linux_amd64_archive"],
++)
++
++cc_library(
++    name = "tb_client_linux_arm64",
++    hdrs = ["tb_client.h"],
++    includes = [".."],
++    linkopts = [
++        "-ldl",
++        "-lm",
++    ],
++    visibility = ["//visibility:public"],
++    deps = [":tb_client_linux_arm64_archive"],
++)
++
++go_library(
++    name = "native",
++    srcs = ["native.go"],
++    importpath = "github.com/tigerbeetle/tigerbeetle-go/native",
++    visibility = ["//visibility:public"],
++)
++
++alias(
++    name = "go_default_library",
++    actual = ":native",
++    visibility = ["//visibility:public"],
++)

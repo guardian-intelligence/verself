@@ -1,0 +1,51 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "identity",
+    srcs = [
+        "capabilities.go",
+        "catalog.go",
+        "command_store.go",
+        "errors.go",
+        "organization_store.go",
+        "service.go",
+        "store.go",
+        "types.go",
+    ],
+    importpath = "github.com/verself/identity-service/internal/identity",
+    visibility = ["//src/identity-service:__subpackages__"],
+    deps = [
+        "//src/identity-service/internal/store",
+        "@com_github_clickhouse_clickhouse_go_v2//lib/driver",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_jackc_pgx_v5//:pgx",
+        "@com_github_jackc_pgx_v5//pgconn",
+        "@com_github_jackc_pgx_v5//pgtype",
+        "@com_github_jackc_pgx_v5//pgxpool",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel//propagation",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+go_test(
+    name = "identity_test",
+    srcs = [
+        "api_credentials_test.go",
+        "service_test.go",
+        "store_test.go",
+    ],
+    embed = [":identity"],
+    deps = [
+        "//src/identity-service/internal/store",
+        "@com_github_jackc_pgx_v5//pgtype",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":identity",
+    visibility = ["//src/identity-service:__subpackages__"],
+)

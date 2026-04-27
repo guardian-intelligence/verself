@@ -1,0 +1,40 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+# gazelle:prefix github.com/verself/apiwire
+
+go_library(
+    name = "apiwire",
+    srcs = [
+        "billing.go",
+        "decimal.go",
+        "doc.go",
+        "governance.go",
+        "identity.go",
+        "mailbox.go",
+        "notifications.go",
+        "openapi.go",
+        "profile.go",
+        "projects.go",
+        "sandbox.go",
+        "vmresources.go",
+    ],
+    importpath = "github.com/verself/apiwire",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_danielgtaylor_huma_v2//:huma",
+        "@com_github_google_uuid//:uuid",
+    ],
+)
+
+go_test(
+    name = "apiwire_test",
+    srcs = ["decimal_test.go"],
+    embed = [":apiwire"],
+    deps = ["@com_github_danielgtaylor_huma_v2//:huma"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":apiwire",
+    visibility = ["//visibility:public"],
+)

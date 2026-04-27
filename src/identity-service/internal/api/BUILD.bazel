@@ -1,0 +1,51 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "api",
+    srcs = [
+        "actions.go",
+        "audit_sink.go",
+        "errors.go",
+        "internal.go",
+        "internal_openapi.go",
+        "openapi.go",
+        "policy.go",
+        "routes.go",
+    ],
+    importpath = "github.com/verself/identity-service/internal/api",
+    visibility = ["//src/identity-service:__subpackages__"],
+    deps = [
+        "//src/apiwire",
+        "//src/auth-middleware",
+        "//src/auth-middleware/workload",
+        "//src/governance-service/internalclient",
+        "//src/identity-service/internal/identity",
+        "@com_github_danielgtaylor_huma_v2//:huma",
+        "@com_github_danielgtaylor_huma_v2//adapters/humago",
+        "@com_github_spiffe_go_spiffe_v2//workloadapi",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+go_test(
+    name = "api_test",
+    srcs = [
+        "actions_test.go",
+        "security_test.go",
+    ],
+    embed = [":api"],
+    deps = [
+        "//src/auth-middleware",
+        "//src/identity-service/internal/identity",
+        "@com_github_danielgtaylor_huma_v2//:huma",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":api",
+    visibility = ["//src/identity-service:__subpackages__"],
+)

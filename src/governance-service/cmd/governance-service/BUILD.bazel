@@ -1,0 +1,26 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "governance-service_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/governance-service/cmd/governance-service",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/auth-middleware",
+        "//src/auth-middleware/workload",
+        "//src/envconfig",
+        "//src/governance-service/internal/api",
+        "//src/governance-service/internal/governance",
+        "//src/httpserver",
+        "//src/otel",
+        "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
+        "@com_github_jackc_pgx_v5//pgxpool",
+        "@io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp//:otelhttp",
+    ],
+)
+
+go_binary(
+    name = "governance-service",
+    embed = [":governance-service_lib"],
+    visibility = ["//visibility:public"],
+)

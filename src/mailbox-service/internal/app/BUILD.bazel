@@ -1,0 +1,24 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "app",
+    srcs = [
+        "app.go",
+        "mail.go",
+    ],
+    importpath = "github.com/verself/mailbox-service/internal/app",
+    visibility = ["//src/mailbox-service:__subpackages__"],
+    deps = [
+        "//src/mailbox-service/internal/forwarder",
+        "//src/mailbox-service/internal/jmap",
+        "//src/mailbox-service/internal/mailstore",
+        "//src/mailbox-service/internal/sessionproxy",
+        "//src/mailbox-service/internal/sync",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":app",
+    visibility = ["//src/mailbox-service:__subpackages__"],
+)

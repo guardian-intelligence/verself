@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "secrets-internal-openapi_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/secrets-service/cmd/secrets-internal-openapi",
+    visibility = ["//visibility:private"],
+    deps = ["//src/secrets-service/internal/api"],
+)
+
+go_binary(
+    name = "secrets-internal-openapi",
+    embed = [":secrets-internal-openapi_lib"],
+    visibility = ["//visibility:public"],
+)

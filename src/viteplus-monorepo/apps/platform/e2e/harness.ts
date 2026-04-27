@@ -140,7 +140,10 @@ function repoRootSync(): string {
   if (cachedRepoRoot) return cachedRepoRoot;
   let dir = path.dirname(fileURLToPath(import.meta.url));
   for (let i = 0; i < 10; i++) {
-    if (fs.existsSync(path.join(dir, "Makefile")) && fs.existsSync(path.join(dir, "go.work"))) {
+    if (
+      fs.existsSync(path.join(dir, "Makefile")) &&
+      fs.existsSync(path.join(dir, "MODULE.bazel"))
+    ) {
       cachedRepoRoot = dir;
       return dir;
     }

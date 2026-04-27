@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "notifications-openapi_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/notifications-service/cmd/notifications-openapi",
+    visibility = ["//visibility:private"],
+    deps = ["//src/notifications-service/internal/api"],
+)
+
+go_binary(
+    name = "notifications-openapi",
+    embed = [":notifications-openapi_lib"],
+    visibility = ["//visibility:public"],
+)

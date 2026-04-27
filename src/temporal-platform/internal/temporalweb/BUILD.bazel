@@ -1,0 +1,35 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "temporalweb",
+    srcs = ["server.go"],
+    importpath = "github.com/verself/temporal-platform/internal/temporalweb",
+    visibility = ["//src/temporal-platform:__subpackages__"],
+    deps = [
+        "//src/auth-middleware/workload",
+        "@com_github_labstack_echo_v4//:echo",
+        "@com_github_labstack_echo_v4//middleware",
+        "@com_github_spiffe_go_spiffe_v2//spiffetls/tlsconfig",
+        "@com_github_spiffe_go_spiffe_v2//workloadapi",
+        "@com_github_temporalio_ui_server_v2//plugins/fs_config_provider",
+        "@com_github_temporalio_ui_server_v2//server/api",
+        "@com_github_temporalio_ui_server_v2//server/auth",
+        "@com_github_temporalio_ui_server_v2//server/config",
+        "@com_github_temporalio_ui_server_v2//server/cors",
+        "@com_github_temporalio_ui_server_v2//server/csrf",
+        "@com_github_temporalio_ui_server_v2//server/headers",
+        "@com_github_temporalio_ui_server_v2//server/route",
+        "@com_github_temporalio_ui_server_v2//ui",
+        "@io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc//:otelgrpc",
+        "@io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp//:otelhttp",
+        "@io_temporal_go_api//workflowservice/v1:workflowservice",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":temporalweb",
+    visibility = ["//src/temporal-platform:__subpackages__"],
+)

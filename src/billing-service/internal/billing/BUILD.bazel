@@ -1,0 +1,60 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "billing",
+    srcs = [
+        "catalog.go",
+        "clock.go",
+        "contracts.go",
+        "cycles.go",
+        "documents.go",
+        "entitlements.go",
+        "entitlements_view.go",
+        "events.go",
+        "finalizations.go",
+        "grants.go",
+        "ids.go",
+        "ledger_commands.go",
+        "ledger_grants.go",
+        "ledger_reconcile.go",
+        "runtime.go",
+        "service.go",
+        "statement.go",
+        "stripe.go",
+        "types.go",
+        "windows.go",
+    ],
+    importpath = "github.com/verself/billing-service/internal/billing",
+    visibility = ["//src/billing-service:__subpackages__"],
+    deps = [
+        "//src/billing-service/internal/billing/ledger",
+        "//src/billing-service/internal/store",
+        "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
+        "@com_github_clickhouse_clickhouse_go_v2//lib/driver",
+        "@com_github_jackc_pgx_v5//:pgx",
+        "@com_github_jackc_pgx_v5//pgtype",
+        "@com_github_jackc_pgx_v5//pgxpool",
+        "@com_github_riverqueue_river//:river",
+        "@com_github_riverqueue_river_riverdriver_riverpgxv5//:riverpgxv5",
+        "@com_github_riverqueue_river_rivertype//:rivertype",
+        "@com_github_riverqueue_rivercontrib_otelriver//:otelriver",
+        "@com_github_stripe_stripe_go_v85//:stripe-go",
+        "@com_github_stripe_stripe_go_v85//webhook",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+go_test(
+    name = "billing_test",
+    srcs = ["windows_test.go"],
+    embed = [":billing"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":billing",
+    visibility = ["//src/billing-service:__subpackages__"],
+)

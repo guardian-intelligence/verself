@@ -1,0 +1,20 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "proof-span_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/otel/cmd/proof-span",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/otel",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+    ],
+)
+
+go_binary(
+    name = "proof-span",
+    embed = [":proof-span_lib"],
+    visibility = ["//visibility:public"],
+)

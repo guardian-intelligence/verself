@@ -1,0 +1,31 @@
+module(
+    name = "forge_metal",
+    version = "0.0.0",
+)
+
+bazel_dep(name = "gazelle", version = "0.50.0", repo_name = "bazel_gazelle")
+bazel_dep(name = "protobuf", version = "33.4", repo_name = "com_google_protobuf")
+bazel_dep(name = "rules_cc", version = "0.2.17")
+bazel_dep(name = "rules_shell", version = "0.8.0")
+bazel_dep(name = "rules_go", version = "0.60.0", repo_name = "io_bazel_rules_go")
+
+go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
+go_sdk.download(version = "1.25.8")
+
+go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
+go_deps.from_file(go_work = "//:bazel.go.work")
+go_deps.gazelle_override(
+    build_file_generation = "clean",
+    directives = ["gazelle:proto disable_global"],
+    path = "go.temporal.io/server",
+)
+go_deps.gazelle_override(
+    build_file_generation = "off",
+    path = "github.com/tigerbeetle/tigerbeetle-go",
+)
+go_deps.module_override(
+    patch_strip = 1,
+    patches = ["//bazel/patches:tigerbeetle-go-bazel-cgo.patch"],
+    path = "github.com/tigerbeetle/tigerbeetle-go",
+)
+use_repo(go_deps, "com_github_aws_aws_sdk_go_v2", "com_github_clickhouse_clickhouse_go_v2", "com_github_coreos_go_oidc_v3", "com_github_danielgtaylor_huma_v2", "com_github_golang_jwt_jwt_v5", "com_github_google_uuid", "com_github_iancoleman_strcase", "com_github_jackc_pgx_v5", "com_github_jmoiron_sqlx", "com_github_labstack_echo_v4", "com_github_lib_pq", "com_github_nats_io_nats_go", "com_github_oapi_codegen_runtime", "com_github_oklog_ulid_v2", "com_github_riverqueue_river", "com_github_riverqueue_river_riverdriver_riverpgxv5", "com_github_riverqueue_river_rivertype", "com_github_riverqueue_rivercontrib_otelriver", "com_github_spiffe_go_spiffe_v2", "com_github_stripe_stripe_go_v85", "com_github_temporalio_ui_server_v2", "com_github_tigerbeetle_tigerbeetle_go", "com_github_verself_apiwire", "com_github_verself_auth_middleware", "com_github_verself_billing_service", "com_github_verself_envconfig", "com_github_verself_governance_service", "com_github_verself_httpserver", "com_github_verself_identity_service", "com_github_verself_otel", "com_github_verself_projects_service", "com_github_verself_sandbox_rental_service", "com_github_verself_secrets_service", "com_github_verself_source_code_hosting_service", "com_github_verself_temporal_platform", "com_github_verself_vm_orchestrator", "com_github_vishvananda_netlink", "in_gopkg_yaml_v3", "io_opentelemetry_go_contrib_bridges_otelslog", "io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc", "io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp", "io_opentelemetry_go_otel", "io_opentelemetry_go_otel_exporters_otlp_otlplog_otlploggrpc", "io_opentelemetry_go_otel_exporters_otlp_otlptrace_otlptracegrpc", "io_opentelemetry_go_otel_sdk", "io_opentelemetry_go_otel_sdk_log", "io_opentelemetry_go_otel_trace", "io_temporal_go_api", "io_temporal_go_sdk", "io_temporal_go_sdk_contrib_opentelemetry", "io_temporal_go_server", "org_golang_google_grpc", "org_golang_google_protobuf", "org_golang_x_sys", "org_golang_x_text", "org_modernc_sqlite")

@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "verself-temporal-web_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/temporal-platform/cmd/verself-temporal-web",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/envconfig",
+        "//src/otel",
+        "//src/temporal-platform/internal/temporalweb",
+    ],
+)
+
+go_binary(
+    name = "verself-temporal-web",
+    embed = [":verself-temporal-web_lib"],
+    visibility = ["//visibility:public"],
+)
