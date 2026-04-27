@@ -58,7 +58,7 @@ make seed-system
 
 The `assume-*` targets are extremely useful utility scripts for operators and
 agents. They mint short-lived, project-scoped Zitadel tokens from the deployed
-credential store and write a `0600` env file under `proof-artifacts/personas/`.
+credential store and write a `0600` env file under `smoke-artifacts/personas/`.
 
 ```bash
 make assume-platform-admin
@@ -127,11 +127,11 @@ make billing-documents ORG=platform
 make billing-finalizations ORG=platform
 make billing-events EVENT=billing_clock_reset_to_wall_clock MINUTES=30
 make billing-pg-query QUERY='SELECT current_database()'
-make billing-proof
+make billing-smoke-test
 ```
 
-`billing-proof` runs the deployed billing Playwright flow and writes artifacts
-under `proof-artifacts/console-billing/<run-id>/`. If the browser test exits before
+`billing-smoke-test` runs the deployed billing Playwright flow and writes artifacts
+under `smoke-artifacts/console-billing/<run-id>/`. If the browser test exits before
 it writes a structured run JSON, the wrapper still collects a time-windowed
 fallback evidence bundle from ClickHouse and billing PostgreSQL.
 
@@ -177,7 +177,7 @@ compile to the same execution model:
 checkpoint ref -> immutable checkpoint version -> writable zvol clone -> VM segment
 ```
 
-The first product proof is a Postgres checkpoint demo: boot a VM from a large
+The first product smoke test is a Postgres checkpoint demo: boot a VM from a large
 Postgres zvol, print `pg_size_pretty(pg_database_size(current_database()))`,
 mutate a counter, call `vm-bridge snapshot save pg-demo`, then run again
 and observe the advanced counter without copying the full database image.

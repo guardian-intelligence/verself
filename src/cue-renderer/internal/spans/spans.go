@@ -1,6 +1,6 @@
 // Package spans emits OTel spans that wrap the codegen pipeline. The
 // pipeline is one trace; per-renderer events get attached to it as child
-// spans rather than living as standalone proofs. Lives outside internal/
+// spans rather than living as standalone smoke-test artifacts. Lives outside internal/
 // render/ because tracing is cross-cutting — it's not a thing the codegen
 // produces, it's how we observe the production.
 //

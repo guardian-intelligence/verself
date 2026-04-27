@@ -240,7 +240,7 @@ This is enough to answer the practical operator questions:
 
 ## Verification
 
-`make temporal-verify` is the Temporal deployment gate. It does three
+`make temporal-smoke-test` is the Temporal deployment gate. It does three
 concrete things:
 
 1. Asserts the retired `temporal-proof` binary, `temporal-proof-worker`
@@ -251,8 +251,8 @@ concrete things:
 3. Asserts ClickHouse traces/logs/metrics and PostgreSQL namespace rows
    for the supported bootstrap surface.
 
-`make grafana-proof` and `make workload-identity-proof` are the two
-supporting gates. Together they prove that Temporal is visible from the
+`make grafana-smoke-test` and `make workload-identity-smoke-test` are the two
+supporting gates. Together they verify that Temporal is visible from the
 standard operator surface and participates correctly in the repo's SPIFFE
 boundary model.
 

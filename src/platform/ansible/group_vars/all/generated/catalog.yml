@@ -305,7 +305,10 @@ topology_dev_tool_install_plan:
       '
     dest: /etc/profile.d/go.sh
     mode: '0644'
-  proof_spans:
+  replacement_paths:
+  - /usr/local/go
+  - /usr/local/zig
+  smoke_test_spans:
   - attributes:
       install_plan.generated_from: topology
       install_plan.sha256: ceb5e041bbc3893846bd1614d76cb4681c91dadee579426cf21a63f2d7e03be6
@@ -578,9 +581,6 @@ topology_dev_tool_install_plan:
       install_plan.tool: agent-browser
       install_plan.version: 0.25.4
     name: install_plan.artifact.publish
-  replacement_paths:
-  - /usr/local/go
-  - /usr/local/zig
   tools:
   - key: go
     sha256: ceb5e041bbc3893846bd1614d76cb4681c91dadee579426cf21a63f2d7e03be6

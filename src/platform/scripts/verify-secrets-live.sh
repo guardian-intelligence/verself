@@ -6,8 +6,8 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${script_dir}/lib/verification-context.sh"
 verification_context_init "${BASH_SOURCE[0]}"
 
-run_id="${VERIFICATION_RUN_ID:-secrets-proof-$(date -u +%Y%m%dT%H%M%SZ)}"
-artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_PROOF_ARTIFACT_ROOT}/secrets-proof}"
+run_id="${VERIFICATION_RUN_ID:-secrets-smoke-test-$(date -u +%Y%m%dT%H%M%SZ)}"
+artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_SMOKE_ARTIFACT_ROOT}/secrets-smoke-test}"
 artifact_dir="${artifact_root}/${run_id}"
 mkdir -p "${artifact_dir}/responses" "${artifact_dir}/payloads" "${artifact_dir}/clickhouse" "${artifact_dir}/postgres"
 
@@ -283,8 +283,8 @@ print()
 '" >"${output_path}"
 }
 
-secret_name="proof-${run_id}"
-transit_key_name="proof-${run_id}"
+secret_name="smoke-test-${run_id}"
+transit_key_name="smoke-test-${run_id}"
 secret_value="$(python3 - <<'PY'
 import secrets
 print(secrets.token_hex(32))
@@ -310,7 +310,7 @@ import json
 import sys
 run_id = sys.argv[1]
 print(json.dumps({
-    "display_name": f"secrets-proof-{run_id}",
+    "display_name": f"secrets-smoke-test-{run_id}",
     "auth_method": "client_secret",
     "permissions": [
         "secrets:secret:read",
@@ -374,7 +374,7 @@ import sys
 name, path = sys.argv[1:3]
 payload = json.load(open(path, encoding="utf-8"))
 if name not in {item.get("name") for item in payload.get("secrets", [])}:
-    raise SystemExit("secret list did not include proof secret")
+    raise SystemExit("secret list did not include smoke test secret")
 PY
 
 remote_secrets_api GET "/api/v1/secrets?limit=50" "${api_credential_secrets_token}" "" "${artifact_dir}/responses/api-credential-secret-list.json"
@@ -384,7 +384,7 @@ import sys
 name, path = sys.argv[1:3]
 payload = json.load(open(path, encoding="utf-8"))
 if name not in {item.get("name") for item in payload.get("secrets", [])}:
-    raise SystemExit("api credential secret list did not include proof secret")
+    raise SystemExit("api credential secret list did not include smoke test secret")
 PY
 
 transit_create="$(mktemp)"
@@ -404,7 +404,7 @@ if not payload.get("public_key"):
     raise SystemExit("transit create did not return an ed25519 public key")
 PY
 
-transit_plaintext_b64="$(printf 'verself transit proof %s' "${run_id}" | base64 -w0)"
+transit_plaintext_b64="$(printf 'verself transit smoke test %s' "${run_id}" | base64 -w0)"
 transit_encrypt="$(mktemp)"
 tmp_files+=("${transit_encrypt}")
 python3 - "${transit_plaintext_b64}" >"${transit_encrypt}" <<'PY'
@@ -439,7 +439,7 @@ if actual != expected:
     raise SystemExit("transit decrypt returned wrong plaintext")
 PY
 
-transit_message_b64="$(printf 'verself signature proof %s' "${run_id}" | base64 -w0)"
+transit_message_b64="$(printf 'verself signature smoke test %s' "${run_id}" | base64 -w0)"
 transit_sign="$(mktemp)"
 tmp_files+=("${transit_sign}")
 python3 - "${transit_message_b64}" >"${transit_sign}" <<'PY'
@@ -489,7 +489,7 @@ import json
 import sys
 run_id = sys.argv[1]
 print(json.dumps({
-    "display_name": f"secrets-proof-verify-only-{run_id}",
+    "display_name": f"secrets-smoke-test-verify-only-{run_id}",
     "auth_method": "client_secret",
     "permissions": [
         "secrets:transit:verify",
@@ -541,7 +541,7 @@ if not payload.get("public_key"):
     raise SystemExit("transit rotate did not return an ed25519 public key")
 PY
 
-variable_name="proof-var-${run_id}"
+variable_name="smoke-test-var-${run_id}"
 variable_value="variable-${run_id}"
 variable_body="$(mktemp)"
 tmp_files+=("${variable_body}")
@@ -566,7 +566,7 @@ import sys
 name, path = sys.argv[1:3]
 payload = json.load(open(path, encoding="utf-8"))
 if name not in {item.get("name") for item in payload.get("variables", [])}:
-    raise SystemExit("variable list did not include proof variable")
+    raise SystemExit("variable list did not include smoke test variable")
 PY
 
 credential_body="$(mktemp)"
@@ -579,10 +579,10 @@ import json
 import sys
 run_id = sys.argv[1]
 print(json.dumps({
-    "kind": "proof_cli",
-    "display_name": f"proof credential {run_id}",
-    "scopes": ["proof:read", "proof:write"],
-    "metadata": {"proof_run_id": run_id},
+    "kind": "smoke_test_cli",
+    "display_name": f"smoke test credential {run_id}",
+    "scopes": ["smoke_test:read", "smoke_test:write"],
+    "metadata": {"smoke_test_run_id": run_id},
     "expires_in_seconds": 3600,
 }))
 PY
@@ -610,14 +610,14 @@ payload = json.load(open(sys.argv[1], encoding="utf-8"))
 if "token" in payload:
     raise SystemExit("credential metadata GET exposed token material")
 PY
-remote_secrets_api GET "/api/v1/credentials?kind=proof_cli&limit=50" "${admin_secrets_token}" "" "${artifact_dir}/responses/credential-list.json"
+remote_secrets_api GET "/api/v1/credentials?kind=smoke_test_cli&limit=50" "${admin_secrets_token}" "" "${artifact_dir}/responses/credential-list.json"
 python3 - "${opaque_credential_id}" "${artifact_dir}/responses/credential-list.json" <<'PY'
 import json
 import sys
 credential_id, path = sys.argv[1:3]
 payload = json.load(open(path, encoding="utf-8"))
 if credential_id not in {item.get("credential_id") for item in payload.get("credentials", [])}:
-    raise SystemExit("credential list did not include proof credential")
+    raise SystemExit("credential list did not include smoke test credential")
 PY
 remote_secrets_api POST "/api/v1/credentials/${opaque_credential_id}/roll" "${admin_secrets_token}" "${credential_roll_body}" "${credential_roll_response}" "${run_id}-credential-roll"
 python3 - "${credential_roll_response}" "${artifact_dir}/responses/credential-roll-redacted.json" "${opaque_credential_token}" <<'PY'
@@ -967,4 +967,4 @@ cat >"${artifact_dir}/run.json" <<EOF
 }
 EOF
 
-echo "secrets proof ok: ${artifact_dir}"
+echo "secrets smoke test ok: ${artifact_dir}"

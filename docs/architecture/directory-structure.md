@@ -7,7 +7,7 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
 - `src/` — all first-party source.
 - `docs/` — cross-service architecture docs and vendored references (`docs/references/` is read-only third-party material).
 - `artifacts/` — gitignored materialized build/deploy outputs.
-- `proof-artifacts/` — gitignored live proof bundles, personas, Playwright traces, and query evidence.
+- `smoke-artifacts/` — gitignored live smoke-test bundles, personas, Playwright traces, and query evidence.
 - `Makefile` — canonical entry point for founder/agent workflows. Read before reaching for ad-hoc scripts.
 
 ## Go services (`src/`)

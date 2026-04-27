@@ -6,19 +6,19 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${script_dir}/lib/verification-context.sh"
 verification_context_init "${BASH_SOURCE[0]}"
 
-run_id="${VERIFICATION_RUN_ID:-source-code-hosting-proof-$(date -u +%Y%m%dT%H%M%SZ)}"
-artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_PROOF_ARTIFACT_ROOT}/source-code-hosting-proof}"
+run_id="${VERIFICATION_RUN_ID:-source-code-hosting-smoke-test-$(date -u +%Y%m%dT%H%M%SZ)}"
+artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_SMOKE_ARTIFACT_ROOT}/source-code-hosting-smoke-test}"
 artifact_dir="${artifact_root}/${run_id}"
 run_json_path="${artifact_dir}/run.json"
 builds_log_path="${artifact_dir}/builds-ui.log"
-source_api_base_url="${SOURCE_CODE_HOSTING_PROOF_BASE_URL:-https://source.api.${VERIFICATION_DOMAIN}}"
+source_api_base_url="${SOURCE_CODE_HOSTING_SMOKE_TEST_BASE_URL:-https://source.api.${VERIFICATION_DOMAIN}}"
 source_api_base_url="${source_api_base_url%/}"
-projects_api_base_url="${PROJECTS_PROOF_BASE_URL:-https://projects.api.${VERIFICATION_DOMAIN}}"
+projects_api_base_url="${PROJECTS_SMOKE_TEST_BASE_URL:-https://projects.api.${VERIFICATION_DOMAIN}}"
 projects_api_base_url="${projects_api_base_url%/}"
 console_base_url="${TEST_BASE_URL:-https://console.${VERIFICATION_DOMAIN}}"
-git_origin="${SOURCE_CODE_HOSTING_PROOF_GIT_ORIGIN:-https://git.${VERIFICATION_DOMAIN}}"
+git_origin="${SOURCE_CODE_HOSTING_SMOKE_TEST_GIT_ORIGIN:-https://git.${VERIFICATION_DOMAIN}}"
 git_origin="${git_origin%/}"
-clickhouse_timeout_seconds="${SOURCE_CODE_HOSTING_PROOF_CLICKHOUSE_TIMEOUT_SECONDS:-180}"
+clickhouse_timeout_seconds="${SOURCE_CODE_HOSTING_SMOKE_TEST_CLICKHOUSE_TIMEOUT_SECONDS:-180}"
 mkdir -p "${artifact_dir}/clickhouse" "${artifact_dir}/payloads" "${artifact_dir}/postgres" "${artifact_dir}/responses"
 
 remote_psql() {
@@ -153,7 +153,7 @@ import os
 
 repo_id = int(os.environ["BACKEND_REPO_ID"]) if os.environ["BACKEND_REPO_ID"] else 0
 body = json.dumps({
-    "proof_run_id": os.environ["RUN_ID"],
+    "smoke_test_run_id": os.environ["RUN_ID"],
     "repository": {
         "id": repo_id,
         "name": os.environ["BACKEND_REPO"],
@@ -181,7 +181,7 @@ secret = subprocess.check_output(
     text=True,
 ).strip().encode()
 signature = \"sha256=\" + hmac.new(secret, body, hashlib.sha256).hexdigest()
-delivery = \"source-proof-\" + payload[\"proof_run_id\"]
+delivery = \"source-smoke-test-\" + payload[\"smoke_test_run_id\"]
 request = urllib.request.Request(
     \"http://127.0.0.1:4261/webhooks/forgejo\",
     data=body,
@@ -242,16 +242,16 @@ if [[ "${builds_status}" -ne 0 ]]; then
   exit "${builds_status}"
 fi
 
-repo_slug="source-proof-$(printf '%s' "${run_id}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/^-+|-+$//g' | cut -c1-48)"
+repo_slug="source-smoke-test-$(printf '%s' "${run_id}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/^-+|-+$//g' | cut -c1-48)"
 if [[ -z "${repo_slug}" ]]; then
-  repo_slug="source-proof"
+  repo_slug="source-smoke-test"
 fi
 
 cat >"${artifact_dir}/payloads/create-project.json" <<EOF
 {
-  "display_name": "Source Proof ${run_id}",
+  "display_name": "Source Smoke Test ${run_id}",
   "slug": "${repo_slug}",
-  "description": "Source hosting proof project"
+  "description": "Source hosting smoke test project"
 }
 EOF
 curl -fsS \
@@ -276,7 +276,7 @@ PY
 cat >"${artifact_dir}/payloads/create-repository.json" <<EOF
 {
   "project_id": "${project_id}",
-  "description": "Source proof ${run_id}",
+  "description": "Source smoke test ${run_id}",
   "default_branch": "main"
 }
 EOF
@@ -295,9 +295,9 @@ old_project_slug="${project_slug}"
 renamed_project_slug="${repo_slug}-renamed"
 cat >"${artifact_dir}/payloads/update-project.json" <<EOF
 {
-  "display_name": "Source Proof Renamed ${run_id}",
+  "display_name": "Source Smoke Test Renamed ${run_id}",
   "slug": "${renamed_project_slug}",
-  "description": "Source hosting proof project renamed",
+  "description": "Source hosting smoke test project renamed",
   "version": "${project_version}"
 }
 EOF
@@ -337,7 +337,7 @@ PY
 
 cat >"${artifact_dir}/payloads/create-git-credential.json" <<EOF
 {
-  "label": "source proof ${run_id}",
+  "label": "source smoke test ${run_id}",
   "expires_in_seconds": 3600
 }
 EOF
@@ -393,16 +393,16 @@ SH
 chmod 700 "${askpass_path}"
 
 git -C "${git_workdir}" init -b main >/dev/null
-git -C "${git_workdir}" config user.name "Verself Source Proof"
-git -C "${git_workdir}" config user.email "source-proof@verself.invalid"
-printf '# Source proof\n\nrun: %s\n' "${run_id}" >"${git_workdir}/README.md"
+git -C "${git_workdir}" config user.name "Verself Source Smoke Test"
+git -C "${git_workdir}" config user.email "source-smoke-test@verself.invalid"
+printf '# Source smoke test\n\nrun: %s\n' "${run_id}" >"${git_workdir}/README.md"
 mkdir -p "${git_workdir}/.forgejo/workflows"
-cat >"${git_workdir}/.forgejo/workflows/proof.yml" <<'EOF'
-name: proof
+cat >"${git_workdir}/.forgejo/workflows/smoke-test.yml" <<'EOF'
+name: smoke test
 on:
   push:
 jobs:
-  proof:
+  smoke_test:
     runs-on: [self-hosted, linux, x64, verself-4vcpu-ubuntu-2404]
     steps:
       - name: Check out repository
@@ -449,10 +449,10 @@ jobs:
           grep -F "run:" README.md
           printf 'checkout-file=README.md\n'
           git rev-parse --verify HEAD
-          echo source proof "$(uname -m)"
+          echo source smoke test "$(uname -m)"
 EOF
-git -C "${git_workdir}" add README.md .forgejo/workflows/proof.yml
-git -C "${git_workdir}" commit -m "source proof ${run_id}" >/dev/null
+git -C "${git_workdir}" add README.md .forgejo/workflows/smoke-test.yml
+git -C "${git_workdir}" commit -m "source smoke test ${run_id}" >/dev/null
 env \
   GIT_ASKPASS="${askpass_path}" \
   GIT_TERMINAL_PROMPT=0 \
@@ -490,13 +490,13 @@ repo_id, project_id, org_slug, project_slug, git_repo_url = sys.argv[2:7]
 for repo in payload.get("repositories") or []:
     if repo.get("repo_id") == repo_id:
         if repo.get("project_id") != project_id:
-            raise SystemExit("source proof repo project_id mismatch in list response")
+            raise SystemExit("source smoke test repo project_id mismatch in list response")
         if repo.get("org_slug") != org_slug or repo.get("project_slug") != project_slug:
-            raise SystemExit("source proof repo friendly path mismatch in list response")
+            raise SystemExit("source smoke test repo friendly path mismatch in list response")
         if repo.get("git_http_url") != git_repo_url:
-            raise SystemExit("source proof repo git_http_url mismatch in list response")
+            raise SystemExit("source smoke test repo git_http_url mismatch in list response")
         raise SystemExit(0)
-raise SystemExit(f"source proof repo {repo_id!r} not found")
+raise SystemExit(f"source smoke test repo {repo_id!r} not found")
 PY
 
 api_request "GET" "/api/v1/repos/${repo_id}" "${artifact_dir}/responses/get-repository.json"
@@ -537,7 +537,7 @@ WHERE project_id = '${escaped_project_id}'::uuid
   AND state = 'active';
 " "${artifact_dir}/postgres/project.tsv"
 if [[ ! -s "${artifact_dir}/postgres/project.tsv" ]]; then
-  echo "projects_service.projects did not contain the proof project" >&2
+  echo "projects_service.projects did not contain the smoke test project" >&2
   exit 1
 fi
 if ! grep -Fq $'\t'"${project_slug}"$'\t' "${artifact_dir}/postgres/project.tsv"; then
@@ -566,7 +566,7 @@ WHERE repo_id = '${escaped_repo_id}'::uuid;
 org_id="$(cut -f2 "${artifact_dir}/postgres/repository.tsv" | head -n 1)"
 row_project_id="$(cut -f3 "${artifact_dir}/postgres/repository.tsv" | head -n 1)"
 if [[ -z "${org_id}" || "${row_project_id}" != "${project_id}" ]]; then
-  echo "source_repositories did not contain the proof repo" >&2
+  echo "source_repositories did not contain the smoke test repo" >&2
   exit 1
 fi
 
@@ -578,7 +578,7 @@ WHERE repo_id = '${escaped_repo_id}'::uuid
   AND state = 'active';
 " "${artifact_dir}/postgres/repository-backend.tsv"
 if [[ ! -s "${artifact_dir}/postgres/repository-backend.tsv" ]]; then
-  echo "source_repository_backends did not contain the proof Forgejo backend" >&2
+  echo "source_repository_backends did not contain the smoke test Forgejo backend" >&2
   exit 1
 fi
 backend_owner="$(cut -f4 "${artifact_dir}/postgres/repository-backend.tsv" | head -n 1)"
@@ -593,7 +593,7 @@ FROM source_git_credentials
 WHERE credential_id = '${escaped_credential_id}'::uuid;
 " "${artifact_dir}/postgres/git-credential.tsv"
 if [[ ! -s "${artifact_dir}/postgres/git-credential.tsv" ]]; then
-  echo "source_git_credentials did not contain the proof credential" >&2
+  echo "source_git_credentials did not contain the smoke test credential" >&2
   exit 1
 fi
 
@@ -717,7 +717,7 @@ import sys
 
 status = json.load(open(sys.argv[1], encoding="utf-8")).get("status")
 if status != 202:
-    raise SystemExit(f"expected Forgejo webhook proof to return 202, got {status}")
+    raise SystemExit(f"expected Forgejo webhook smoke test to return 202, got {status}")
 PY
 
 window_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -729,7 +729,7 @@ WHERE grant_id = '${escaped_grant_id}'::uuid
   AND repo_id = '${escaped_repo_id}'::uuid;
 " "${artifact_dir}/postgres/checkout-grant.tsv"
 if [[ ! -s "${artifact_dir}/postgres/checkout-grant.tsv" ]]; then
-  echo "source_checkout_grants did not contain the proof grant" >&2
+  echo "source_checkout_grants did not contain the smoke test grant" >&2
   exit 1
 fi
 
@@ -763,7 +763,7 @@ missing = {
 if missing:
     raise SystemExit("missing source event rows: " + ", ".join(sorted(missing)))
 if any(row[1] != "allowed" for row in rows if row):
-    raise SystemExit("expected all source proof event rows to be allowed")
+    raise SystemExit("expected all source smoke test event rows to be allowed")
 PY
 
 (
@@ -1314,7 +1314,7 @@ wait_for_clickhouse_count default "
 ) >"${artifact_dir}/clickhouse/source-secret-span-leak-count.tsv"
 secret_span_leaks="$(tail -n 1 "${artifact_dir}/clickhouse/source-secret-span-leak-count.tsv" | tr -d '[:space:]')"
 if [[ "${secret_span_leaks}" != "0" ]]; then
-  echo "source proof found token-like material in source-code-hosting-service span attributes" >&2
+  echo "source smoke test found token-like material in source-code-hosting-service span attributes" >&2
   exit 1
 fi
 
@@ -1339,7 +1339,7 @@ fi
 ) >"${artifact_dir}/clickhouse/sandbox-runner-secret-span-leak-count.tsv"
 sandbox_runner_secret_span_leaks="$(tail -n 1 "${artifact_dir}/clickhouse/sandbox-runner-secret-span-leak-count.tsv" | tr -d '[:space:]')"
 if [[ "${sandbox_runner_secret_span_leaks}" != "0" ]]; then
-  echo "source proof found runner-token-like material in sandbox-rental-service span attributes" >&2
+  echo "source smoke test found runner-token-like material in sandbox-rental-service span attributes" >&2
   exit 1
 fi
 
@@ -1395,4 +1395,4 @@ json.dump(payload, open(path, "w", encoding="utf-8"), indent=2, sort_keys=True)
 print()
 PY
 
-echo "source-code-hosting proof ok: ${artifact_dir}"
+echo "source-code-hosting smoke test ok: ${artifact_dir}"

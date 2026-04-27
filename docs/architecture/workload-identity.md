@@ -118,7 +118,7 @@ metadata at Workload API call time.
 
 Single-node bootstrap uses SPIRE join-token node attestation. The token is
 generated at agent start, written only under `/run/spire-agent/private`, and
-deleted by the unit after startup. Proof asserts no join token remains in
+deleted by the unit after startup. The smoke test asserts no join token remains in
 credstore or runtime state. A residual token is tagged
 `workload_identity.join_token_residual`.
 
@@ -313,10 +313,10 @@ the narrowest reload primitive that workload supports. Current consumers:
 | OTel collector | `spiffe-helper` keeps ClickHouse client SVID/key/bundle fresh; exporter TLS uses `reload_interval: 60s`. |
 | Grafana | `spiffe-helper` keeps ClickHouse client SVID/key/bundle fresh and runs the datasource provisioning refresh command on renewal. |
 
-`make spiffe-rotation-proof` verifies the file-backed rotation contract
+`make spiffe-rotation-smoke-test` verifies the file-backed rotation contract
 without a canary dependency: it reloads NATS and ClickHouse in place,
 asserts stable PIDs and healthy post-reload queries, verifies helper
-configuration for every file-backed consumer, and asserts the proof spans
+configuration for every file-backed consumer, and asserts the smoke-test spans
 and ClickHouse query-log evidence in ClickHouse.
 
 ## Federation Scope
@@ -375,7 +375,7 @@ secrets-service: secrets.secret.inject
   governance.audit.append
 ```
 
-Proof queries assert:
+Smoke-test queries assert:
 
 - **every** `auth.spiffe.mtls.server` span carries a non-empty `spiffe.peer_id`
   attribute, and the peer ID resolves to an identity in the canonical
@@ -386,7 +386,7 @@ Proof queries assert:
 - no OpenBao JWT login with an unbound subject;
 - no service audit rows missing `actor_spiffe_id`;
 - no removed credential names or sentinel values in logs, traces, audit
-  payloads, Caddy logs, journals, or proof artifacts.
+  payloads, Caddy logs, journals, or smoke-test artifacts.
 
 ## Source Notes
 

@@ -33,7 +33,7 @@ export const env = {
     `https://git.${process.env.VERSELF_DOMAIN || "verself.sh"}/forgejo-automation/sandbox-verification-metadata.git`,
   verificationRepoRef: process.env.VERIFICATION_REPO_REF || "refs/heads/main",
   verificationLogMarker: process.env.VERIFICATION_LOG_MARKER || "VERSELF_DIRECT_EXECUTION_COMPLETE",
-  proofMode: process.env.VERSELF_SANDBOX_PROOF === "1",
+  smokeTestMode: process.env.VERSELF_SANDBOX_SMOKE_TEST === "1",
 
   // Stripe test card — always succeeds, no 3DS challenge.
   stripeCard: "4242424242424242",

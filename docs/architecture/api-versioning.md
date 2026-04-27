@@ -366,7 +366,7 @@ src/billing-service/openapi/
 
 Generated client packages namespace by version: `client/v20260425/billing`, `client/v20260101/billing`. SDK consumers pin a version explicitly. The "latest" client is an alias to whichever version ships in the latest stable SDK release.
 
-CI emits all version specs via `apiversion-render`; a make target `make apiversion-render` regenerates them from each service binary. A check target fails CI when the rendered spec differs from the committed one (same pattern as `make topology-proof`).
+CI emits all version specs via `apiversion-render`; a make target `make apiversion-render` regenerates them from each service binary. A check target fails CI when the rendered spec differs from the committed one (same pattern as `make topology-smoke-test`).
 
 ## 15. Telemetry
 

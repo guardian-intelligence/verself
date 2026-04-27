@@ -466,7 +466,7 @@ make assume-acme-member
 make assume-persona PERSONA=platform-admin OUTPUT=/tmp/platform-admin.env
 ```
 
-The default output path is `proof-artifacts/personas/<persona>.env`, written `0600`.
+The default output path is `smoke-artifacts/personas/<persona>.env`, written `0600`.
 The file contains browser credentials (`BROWSER_EMAIL`, `BROWSER_PASSWORD`) and
 project-scoped access tokens such as `SANDBOX_RENTAL_ACCESS_TOKEN` and
 `MAILBOX_SERVICE_ACCESS_TOKEN`. In file-output mode, stdout is identity-service

@@ -87,7 +87,7 @@ The load-bearing commitments are:
 - A payment method on file is not overage consent. Free-tier and hard-cap customers must not receive customer receivables for leaked no-consent usage.
 - Enterprise agreements and self-serve Stripe-backed agreements use the same contract, phase, change, entitlement, cycle, finalization, document, and adjustment tables. Enterprise is a contract kind, phase kind, recurrence policy, collection method, and provider-binding choice, not a second billing engine.
 - Self-serve catalog upgrades must be anti-arbitrage and path-independent at the same effective timestamp: charge the prorated positive price delta, preserve already-issued current-cycle paid grants until their own expiry, and issue only the prorated positive entitlement delta for the target phase.
-- ClickHouse is proof/read-model infrastructure. It must not perform billing transitions, authorize usage, issue documents, or decide ledger correctness.
+- ClickHouse is evidence/read-model infrastructure. It must not perform billing transitions, authorize usage, issue documents, or decide ledger correctness.
 
 The implementation choices that may vary without changing the target architecture are:
 
@@ -320,7 +320,7 @@ Purchased top-up credit is prepaid balance, not postpaid overage consent.
 1. Stripe Checkout, PaymentIntent, or another provider collection path records the intended purchase with provider metadata containing `org_id`, `product_id`, purchase amount, and idempotency key.
 2. The provider webhook is persisted in `billing_provider_events` before any balance mutation.
 3. On `payment_intent.succeeded` or equivalent confirmed payment, PostgreSQL creates a deterministic `credit_grants(source = 'purchase')` row in `ledger_posting_state = 'pending'`, with `account_id`, `deposit_transfer_id`, and a durable `billing_ledger_commands(operation = 'grant_deposit')` envelope.
-4. PostgreSQL emits `grant_issued` when the durable grant metadata row exists. This is a domain fact, not spendable-balance proof.
+4. PostgreSQL emits `grant_issued` when the durable grant metadata row exists. This is a domain fact, not spendable-balance evidence.
 5. The ledger command creates the customer grant account and linked transfers for `stripe_payment_in` and `grant_deposit`, unless the payment-in transfer was already posted by an earlier command for the same provider object.
 6. Only after TigerBeetle acknowledges the command does PostgreSQL mark the grant `ledger_posting_state = 'posted'`, emit `grant_ledger_posted`, and make the balance visible to reserve and balance reads.
 7. Duplicate provider events converge on the same purchase grant and same persisted TigerBeetle IDs.
@@ -1532,7 +1532,7 @@ A queue row is inserted in the same transaction as a new `billing_events` fact f
 
 River runs `billing.event_delivery.project` for one delivery row and `billing.event_delivery.project_pending` as a bounded repair scanner. ClickHouse delivery is at-least-once. If projection succeeds but the queue delete fails, the retry may replay the same fact; the ClickHouse projection must therefore be idempotent by `event_id`.
 
-ClickHouse is proof/read-model infrastructure; PostgreSQL remains authoritative for billing domain state and TigerBeetle remains authoritative for balances and ledger movements.
+ClickHouse is evidence/read-model infrastructure; PostgreSQL remains authoritative for billing domain state and TigerBeetle remains authoritative for balances and ledger movements.
 
 Expected event types include:
 
@@ -1903,7 +1903,7 @@ It must not call Stripe, render document HTML, send email, or wait for payment c
 
 Every closed cycle produces a finalization record. It produces a customer-visible invoice when a collectible amount is due, a customer-visible statement when the total is zero but customer-visible billing activity occurred, or an internal statement when the period must be accounted for but should not notify the customer. Dormant zero-usage zero-total free cycles suppress customer email and customer-facing notification by policy, but they are not absent from accounting history. Paid no-usage periods are customer-visible because the paid contract, recurring entitlement grant, payment, and renewal history are financial activity even when usage is zero.
 
-Cycle catch-up is deterministic. If an org is inactive for several periods, reconciliation advances the cycle chain from the last open or due cycle to the current business time by repeating the same rollover/finalization function. Paid cycles still receive customer-visible invoices or statements even when usage is zero because recurring paid entitlement and collection facts are billing activity. Dormant free cycles may finalize as internal statements with suppressed customer delivery. Billing history and current-period UI must therefore read the finalization/document read model first and use raw usage only as supporting evidence; an absence of usage rows is not proof that the customer has no billing activity.
+Cycle catch-up is deterministic. If an org is inactive for several periods, reconciliation advances the cycle chain from the last open or due cycle to the current business time by repeating the same rollover/finalization function. Paid cycles still receive customer-visible invoices or statements even when usage is zero because recurring paid entitlement and collection facts are billing activity. Dormant free cycles may finalize as internal statements with suppressed customer delivery. Billing history and current-period UI must therefore read the finalization/document read model first and use raw usage only as supporting evidence; an absence of usage rows is not evidence that the customer has no billing activity.
 
 ## Upgrade, downgrade, and cancellation semantics
 
@@ -2233,7 +2233,7 @@ The per-source drain maps are keyed by SKU id, not bucket id. The funder attribu
 
 Raw product usage is not billing truth. The billing read model is built from billing windows, normalized ledger legs, contract/phase context, finalization state, issued documents, payments, disputes, and adjustments. Product services may emit richer usage telemetry for debugging or capacity planning, but customer-facing billing history must derive from settled billing facts and the finalization/document state machine.
 
-Document projections include `billing_cycle_opened`, `billing_cycle_closed_for_usage`, `billing_finalization_started`, `billing_document_issued`, `billing_statement_issued`, `invoice_adjustment_created`, `billing_finalization_blocked`, `billing_document_preview_created`, `billing_document_preview_stripe_verified`, `stripe_invoice_collection_started`, `stripe_invoice_paid`, `stripe_invoice_payment_failed`, and `billing_document_email_sent` events. These are proof/read-model facts; PostgreSQL remains authoritative for the document artifact and finalization state machine.
+Document projections include `billing_cycle_opened`, `billing_cycle_closed_for_usage`, `billing_finalization_started`, `billing_document_issued`, `billing_statement_issued`, `invoice_adjustment_created`, `billing_finalization_blocked`, `billing_document_preview_created`, `billing_document_preview_stripe_verified`, `stripe_invoice_collection_started`, `stripe_invoice_paid`, `stripe_invoice_payment_failed`, and `billing_document_email_sent` events. These are evidence/read-model facts; PostgreSQL remains authoritative for the document artifact and finalization state machine.
 
 Ledger projections include `grant_ledger_posted`, `ledger_command_posted`, `ledger_command_failed`, `ledger_drift_detected`, `billing_window_reserved`, `billing_window_settled`, `billing_window_voided`, `grant_expired`, `receivable_accrued`, `receivable_cleared`, and `no_consent_adjustment_showback_posted`. These projections prove that PostgreSQL domain rows and TigerBeetle side effects converged; they do not replace TigerBeetle account lookup for balance reads.
 
@@ -2465,7 +2465,7 @@ The provider event worker may resolve the event through `provider_bindings` only
 
 **ClickHouse contains duplicate projection rows after a retry.**
 
-This is acceptable for at-least-once delivery. Proof queries use `FINAL`,
+This is acceptable for at-least-once delivery. Evidence queries use `FINAL`,
 deterministic source IDs, or aggregation by source ID depending on the table
 engine. Billing events deduplicate by `event_id`; metering deduplicates by
 `window_id`. Authorization, document issue, and balance reads never depend on
@@ -2508,7 +2508,7 @@ Stripe-specific terms appear only at provider-adapter boundaries, provider bindi
 
 ## Production verification gates
 
-Use PostgreSQL, ClickHouse traces, metering rows, finalization rows, document rows, provider-event rows, and billing events as the proof point for the deployed path.
+Use PostgreSQL, ClickHouse traces, metering rows, finalization rows, document rows, provider-event rows, and billing events as the evidence point for the deployed path.
 
 1. **River billing runtime present**
 

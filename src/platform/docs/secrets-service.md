@@ -199,7 +199,7 @@ Governance persists the HMAC chain and the full event row to PostgreSQL first,
 then projects to ClickHouse. A background projector retries pending rows so a
 transient ClickHouse outage does not lose a high-risk secrets audit event.
 
-Expected audit events for the live secrets proof include:
+Expected audit events for the live secrets smoke test include:
 
 ```text
 secrets.secret.write
@@ -234,7 +234,7 @@ secrets-service: secrets.bao.*
 secrets-service: secrets.billing.*
 ```
 
-The source Git proof additionally asserts this cross-service sequence:
+The source Git smoke test additionally asserts this cross-service sequence:
 
 ```text
 source-code-hosting-service: source.secrets.git_credential.create
@@ -274,11 +274,11 @@ Completion requires live ClickHouse evidence, not only unit tests:
 ```bash
 make deploy TAGS=deploy_profile,identity_service,governance_service,billing_service,secrets_service,source_code_hosting_service,sandbox_rental_service
 make seed-system
-make secrets-proof
-make source-code-hosting-proof
+make secrets-smoke-test
+make source-code-hosting-smoke-test
 ```
 
-`make secrets-proof` creates and deletes a secret, creates and deletes a
+`make secrets-smoke-test` creates and deletes a secret, creates and deletes a
 variable, creates/reads/lists/rolls/revokes an opaque credential, creates and
 uses transit keys, exercises API-credential access, and asserts:
 
@@ -287,7 +287,7 @@ uses transit keys, exercises API-credential access, and asserts:
 - `verself.metering` contains settled secrets operation rows.
 - OpenBao does not contain legacy service-token bootstrap material.
 
-`make source-code-hosting-proof` creates a Git credential through
+`make source-code-hosting-smoke-test` creates a Git credential through
 source-code-hosting-service, pushes to `git.<domain>`, verifies the credential
 through secrets-service over SPIFFE mTLS, asserts source PostgreSQL projections,
 and asserts the source -> secrets -> OpenBao trace sequence in ClickHouse.
@@ -295,7 +295,7 @@ and asserts the source -> secrets -> OpenBao trace sequence in ClickHouse.
 ## Invariants
 
 - Secret values and opaque credential tokens are never written to ClickHouse,
-  PostgreSQL projections, audit records, logs, or proof artifacts.
+  PostgreSQL projections, audit records, logs, or smoke-test artifacts.
 - Secrets-service never receives host privilege or vm-orchestrator access.
 - Secret and variable names should not encode sensitive facts; audit still
   treats path names as sensitive and records hashes.

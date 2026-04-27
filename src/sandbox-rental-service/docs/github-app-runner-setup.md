@@ -110,7 +110,7 @@ curl -sS "https://sandbox.api.<domain>/api/v1/github/installations" \
 
 ## First Workflow
 
-Use all labels for the first proof:
+Use all labels for the first smoke run:
 
 ```yaml
 name: verself-ci
@@ -153,13 +153,13 @@ for a job-scoped ID token with the audience required by the target cloud or
 secret broker, and exchange that token directly with the customer's AWS, GCP,
 Azure, Vault, or OpenBao trust configuration.
 
-The repo canary includes `.github/actions/oidc-tracer` as a local proof action.
+The repo canary includes `.github/actions/oidc-tracer` as a local smoke action.
 It requests a GitHub OIDC token from the runner-provided
 `ACTIONS_ID_TOKEN_REQUEST_URL`, verifies the JWT signature against GitHub's JWKS,
 and asserts `iss`, `aud`, `sub`, `repository`, `ref`, `sha`, and `run_id`
 claims. It prints only sanitized claims and never prints the JWT.
 
-Successful proof means:
+Successful smoke means:
 
 1. GitHub issued an OIDC token to a job running on the Verself runner.
 2. The token can be verified using public GitHub OIDC metadata and JWKS.

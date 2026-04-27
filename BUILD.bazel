@@ -3,7 +3,7 @@ load("@bazel_gazelle//:def.bzl", "gazelle")
 exports_files(["bazel.go.work"])
 
 # gazelle:exclude artifacts
-# gazelle:exclude proof-artifacts
+# gazelle:exclude smoke-artifacts
 # gazelle:exclude docs/references
 # gazelle:exclude src/viteplus-monorepo
 # gazelle:exclude src/vm-guest-telemetry

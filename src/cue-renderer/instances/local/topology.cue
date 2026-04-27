@@ -922,8 +922,8 @@ topology: s.#Topology & {
 	}
 
 	evidence: [
-		{name: "topology_cue_fmt", kind: "span", service: "topology-compiler", span_name: "topology.cue.fmt_check", attributes: {}},
-		{name: "topology_graph_validate", kind: "span", service: "topology-compiler", span_name: "topology.graph.validate", attributes: {}},
-		{name: "topology_artifact_freshness", kind: "span", service: "topology-compiler", span_name: "topology.generated.freshness_check", attributes: {}},
+		{name: "cue_renderer_run", kind: "span", service: "cue-renderer", span_name: "cue_renderer.run", attributes: {}},
+		{name: "topology_graph_export", kind: "span", service: "cue-renderer", span_name: "topology.cue.export_graph", attributes: {}},
+		{name: "topology_clusters_freshness", kind: "span", service: "cue-renderer", span_name: "topology.generated.freshness_check", attributes: {"topology.artifact": "clusters"}},
 	]
 }

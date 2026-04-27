@@ -6,10 +6,10 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${script_dir}/lib/verification-context.sh"
 verification_context_init "${BASH_SOURCE[0]}"
 
-run_id="${VERIFICATION_RUN_ID:-projects-proof-$(date -u +%Y%m%dT%H%M%SZ)}"
-artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_PROOF_ARTIFACT_ROOT}/projects-proof}"
+run_id="${VERIFICATION_RUN_ID:-projects-smoke-test-$(date -u +%Y%m%dT%H%M%SZ)}"
+artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_SMOKE_ARTIFACT_ROOT}/projects-smoke-test}"
 artifact_dir="${artifact_root}/${run_id}"
-projects_api_base_url="${PROJECTS_PROOF_BASE_URL:-https://projects.api.${VERIFICATION_DOMAIN}}"
+projects_api_base_url="${PROJECTS_SMOKE_TEST_BASE_URL:-https://projects.api.${VERIFICATION_DOMAIN}}"
 projects_api_base_url="${projects_api_base_url%/}"
 projects_loopback_addr="$(
   python3 - "${VERIFICATION_PLATFORM_ROOT}/ansible/group_vars/all/generated/endpoints.yml" <<'PY'
@@ -24,7 +24,7 @@ if not str(address).strip():
 print(address)
 PY
 )"
-clickhouse_timeout_seconds="${PROJECTS_PROOF_CLICKHOUSE_TIMEOUT_SECONDS:-180}"
+clickhouse_timeout_seconds="${PROJECTS_SMOKE_TEST_CLICKHOUSE_TIMEOUT_SECONDS:-180}"
 mkdir -p "${artifact_dir}/clickhouse" "${artifact_dir}/payloads" "${artifact_dir}/postgres" "${artifact_dir}/responses"
 
 remote_psql() {
@@ -164,19 +164,19 @@ source <("${script_dir}/assume-persona.sh" acme-admin --print)
 projects_access_token="${PROJECTS_SERVICE_ACCESS_TOKEN:-${IDENTITY_SERVICE_ACCESS_TOKEN}}"
 window_start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-project_slug="projects-proof-$(printf '%s' "${run_id}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/^-+|-+$//g' | cut -c1-48)"
+project_slug="projects-smoke-test-$(printf '%s' "${run_id}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/^-+|-+$//g' | cut -c1-48)"
 if [[ -z "${project_slug}" ]]; then
-  project_slug="projects-proof"
+  project_slug="projects-smoke-test"
 fi
 
 cat >"${artifact_dir}/payloads/create-project.json" <<EOF
 {
-  "display_name": "Projects Proof ${run_id}",
+  "display_name": "Projects Smoke Test ${run_id}",
   "slug": "${project_slug}",
-  "description": "Projects service live proof"
+  "description": "Projects service live smoke test"
 }
 EOF
-api_request "POST" "/api/v1/projects" "${artifact_dir}/responses/create-project.json" "${artifact_dir}/payloads/create-project.json" "projects-proof:${run_id}"
+api_request "POST" "/api/v1/projects" "${artifact_dir}/responses/create-project.json" "${artifact_dir}/payloads/create-project.json" "projects-smoke-test:${run_id}"
 read -r project_id project_version org_id <<<"$(
   python3 - "${artifact_dir}/responses/create-project.json" <<'PY'
 import json
@@ -187,7 +187,7 @@ print(payload["project_id"], payload["version"], payload["org_id"])
 PY
 )"
 
-api_request "POST" "/api/v1/projects" "${artifact_dir}/responses/create-project-retry.json" "${artifact_dir}/payloads/create-project.json" "projects-proof:${run_id}"
+api_request "POST" "/api/v1/projects" "${artifact_dir}/responses/create-project-retry.json" "${artifact_dir}/payloads/create-project.json" "projects-smoke-test:${run_id}"
 python3 - "${artifact_dir}/responses/create-project-retry.json" "${project_id}" <<'PY'
 import json
 import sys
@@ -199,12 +199,12 @@ PY
 
 cat >"${artifact_dir}/payloads/create-project-conflict.json" <<EOF
 {
-  "display_name": "Projects Proof Conflict ${run_id}",
+  "display_name": "Projects Smoke Test Conflict ${run_id}",
   "slug": "${project_slug}-conflict",
-  "description": "Projects service conflicting idempotency proof"
+  "description": "Projects service conflicting idempotency smoke test"
 }
 EOF
-api_request_expect_status "POST" "/api/v1/projects" "${artifact_dir}/responses/create-project-conflict.json" "409" "${artifact_dir}/payloads/create-project-conflict.json" "projects-proof:${run_id}"
+api_request_expect_status "POST" "/api/v1/projects" "${artifact_dir}/responses/create-project-conflict.json" "409" "${artifact_dir}/payloads/create-project-conflict.json" "projects-smoke-test:${run_id}"
 
 api_request "GET" "/api/v1/projects" "${artifact_dir}/responses/list-projects.json"
 python3 - "${artifact_dir}/responses/list-projects.json" "${project_id}" <<'PY'
@@ -220,7 +220,7 @@ PY
 cat >"${artifact_dir}/payloads/update-project.json" <<EOF
 {
   "version": "${project_version}",
-  "display_name": "Projects Proof Updated ${run_id}"
+  "display_name": "Projects Smoke Test Updated ${run_id}"
 }
 EOF
 api_request "PATCH" "/api/v1/projects/${project_id}" "${artifact_dir}/responses/update-project.json" "${artifact_dir}/payloads/update-project.json" "projects-update:${run_id}"
@@ -230,7 +230,7 @@ import json
 import sys
 
 payload = json.load(open(sys.argv[1], encoding="utf-8"))
-if payload["description"] != "Projects service live proof":
+if payload["description"] != "Projects service live smoke test":
     raise SystemExit("partial project PATCH cleared the existing description")
 print(payload["version"])
 PY
@@ -502,5 +502,5 @@ print(json.dumps({
 }, indent=2, sort_keys=True))
 PY
 
-printf 'projects proof passed: run_id=%s project_id=%s environment_id=%s artifacts=%s\n' \
+printf 'projects smoke test passed: run_id=%s project_id=%s environment_id=%s artifacts=%s\n' \
   "${run_id}" "${project_id}" "${environment_id}" "${artifact_dir}"

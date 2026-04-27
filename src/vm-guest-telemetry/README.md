@@ -50,7 +50,7 @@ go_test(
 )
 ```
 
-End-to-end ingestion is exercised by the telemetry proof harness, which produces ClickHouse evidence — that path remains the primary correctness gate.
+End-to-end ingestion is exercised by the telemetry smoke harness, which produces ClickHouse evidence — that path remains the primary correctness gate.
 
 Regenerate after changing the binary protocol layout:
 
@@ -68,13 +68,13 @@ bazelisk run //src/vm-guest-telemetry:bench -- [args]
 
 ## Deterministic Host Faults
 
-The telemetry proof harness uses deterministic host-side ingestion fault profiles to prove diagnostics:
+The telemetry smoke harness uses deterministic host-side ingestion fault profiles to verify diagnostics:
 
 - `gap_once@<seq>`
 - `regression_once@<seq>`
 
 These are host ingestion faults applied after frame decode. They are not guest wire-format changes and do not alter the checked-in protocol vectors.
 
-The proof path should produce ClickHouse evidence for both the normal telemetry stream and the diagnostic path. Practical evidence is a host log row whose body contains `guest telemetry stream diagnostic` and whose structured attributes include `kind`, `expected_seq`, `observed_seq`, and `missing_samples`.
+The smoke path should produce ClickHouse evidence for both the normal telemetry stream and the diagnostic path. Practical evidence is a host log row whose body contains `guest telemetry stream diagnostic` and whose structured attributes include `kind`, `expected_seq`, `observed_seq`, and `missing_samples`.
 
 Read [docs/zig-coding/STYLE.md](docs/zig-coding/STYLE.md) for coding guidance.

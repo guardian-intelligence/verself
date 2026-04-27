@@ -6,8 +6,8 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${script_dir}/lib/verification-context.sh"
 verification_context_init "${BASH_SOURCE[0]}"
 
-run_id="${VERIFICATION_RUN_ID:-openbao-tenancy-proof-$(date -u +%Y%m%dT%H%M%SZ)}"
-artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_PROOF_ARTIFACT_ROOT}/openbao-tenancy-proof}"
+run_id="${VERIFICATION_RUN_ID:-openbao-tenancy-smoke-test-$(date -u +%Y%m%dT%H%M%SZ)}"
+artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_SMOKE_ARTIFACT_ROOT}/openbao-tenancy-smoke-test}"
 artifact_dir="${artifact_root}/${run_id}"
 mkdir -p "${artifact_dir}/clickhouse"
 
@@ -65,7 +65,7 @@ PY
 )"
 acme_org_id="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["acme_org_id"])' <<<"${claim_json}")"
 platform_org_id="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["platform_org_id"])' <<<"${claim_json}")"
-proof_value="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+smoke_test_value="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
 
 remote_payload_b64="$(
   python3 - \
@@ -78,7 +78,7 @@ remote_payload_b64="$(
     "${acme_admin_token}" \
     "${acme_member_token}" \
     "${platform_admin_token}" \
-    "${proof_value}" <<'PY'
+    "${smoke_test_value}" <<'PY'
 import base64
 import json
 import sys
@@ -93,7 +93,7 @@ keys = [
     "acme_admin_token",
     "acme_member_token",
     "platform_admin_token",
-    "proof_value",
+    "smoke_test_value",
 ]
 payload = dict(zip(keys, sys.argv[1:]))
 print(base64.b64encode(json.dumps(payload).encode()).decode())
@@ -243,13 +243,13 @@ bad_status, bad_body, bad_headers = request(
 )
 require_status("cross-org jwt login", bad_status, {400, 403})
 
-secret_path = f"/v1/kv-{payload['acme_org_id']}/data/_proof/openbao-tenancy-proof"
-status, put_body, put_headers = request("POST", secret_path, acme_admin["token"], {"data": {"value": payload["proof_value"]}})
+secret_path = f"/v1/kv-{payload['acme_org_id']}/data/_smoke_test/openbao-tenancy-smoke-test"
+status, put_body, put_headers = request("POST", secret_path, acme_admin["token"], {"data": {"value": payload["smoke_test_value"]}})
 require_status("admin kv put", status, {200, 204})
 status, get_body, get_headers = request("GET", secret_path, acme_member["token"])
 require_status("member kv get", status, {200})
 read_value = ((get_body.get("data") or {}).get("data") or {}).get("value")
-if read_value != payload["proof_value"]:
+if read_value != payload["smoke_test_value"]:
     raise SystemExit("member kv get returned the wrong value")
 member_write_status, member_write_body, member_write_headers = request(
     "POST",
@@ -260,12 +260,12 @@ member_write_status, member_write_body, member_write_headers = request(
 require_status("member kv put", member_write_status, {403})
 cross_read_status, cross_read_body, cross_read_headers = request(
     "GET",
-    f"/v1/kv-{payload['platform_org_id']}/data/_proof/openbao-tenancy-proof",
+    f"/v1/kv-{payload['platform_org_id']}/data/_smoke_test/openbao-tenancy-smoke-test",
     acme_admin["token"],
 )
 require_status("cross-org kv get", cross_read_status, {403})
 for org_id in [payload["acme_org_id"], payload["platform_org_id"]]:
-    request("DELETE", f"/v1/kv-{org_id}/metadata/secret/openbao-tenancy-proof", root_token)
+    request("DELETE", f"/v1/kv-{org_id}/metadata/secret/openbao-tenancy-smoke-test", root_token)
 
 result = {
     "layout": "root_mounts",
@@ -297,7 +297,7 @@ result = {
             "get_request_id": response_request_id(get_body, get_headers),
             "member_write_status": member_write_status,
             "cross_read_status": cross_read_status,
-            "value_sha256": hashlib.sha256(payload["proof_value"].encode()).hexdigest(),
+            "value_sha256": hashlib.sha256(payload["smoke_test_value"].encode()).hexdigest(),
         },
     },
 }
@@ -326,10 +326,10 @@ emit_span() {
   local attrs_json="$2"
   (
     cd "${VERIFICATION_REPO_ROOT}/src/otel"
-    PROOF_SPAN_SERVICE="platform-ansible" \
-    PROOF_SPAN_NAME="${span_name}" \
-    PROOF_SPAN_ATTRS_JSON="${attrs_json}" \
-      go run ./cmd/proof-span
+    SMOKE_SPAN_SERVICE="platform-ansible" \
+    SMOKE_SPAN_NAME="${span_name}" \
+    SMOKE_SPAN_ATTRS_JSON="${attrs_json}" \
+      go run ./cmd/smoke-span
   )
 }
 
@@ -359,7 +359,7 @@ with_otlp_tunnel() {
 
   export VERSELF_OTLP_ENDPOINT="127.0.0.1:${port}"
   export VERSELF_DEPLOY_RUN_KEY="${run_id}"
-  export VERSELF_DEPLOY_KIND="openbao-tenancy-proof"
+  export VERSELF_DEPLOY_KIND="openbao-tenancy-smoke-test"
   # shellcheck source=src/platform/scripts/deploy_identity.sh
   source "${script_dir}/deploy_identity.sh"
 
@@ -371,7 +371,7 @@ run_id, state_path = sys.argv[1:3]
 state = json.load(open(state_path, encoding="utf-8"))
 for org in state["orgs"]:
     attrs = {
-        "verself.proof_run_id": run_id,
+        "verself.smoke_test_run_id": run_id,
         "verself.org_id": org["id"],
         "bao.layout": state["layout"],
         "bao.mount": "kv-" + org["id"],
@@ -422,7 +422,7 @@ wait_for_clickhouse_count default "
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 60 SECOND
     AND ServiceName = 'platform-ansible'
     AND startsWith(SpanName, 'openbao.tenancy.reconcile.')
-    AND SpanAttributes['verself.proof_run_id'] = {run_id:String}
+    AND SpanAttributes['verself.smoke_test_run_id'] = {run_id:String}
 " "${org_count}" "${artifact_dir}/clickhouse/openbao-tenancy-spans-count.tsv"
 
 python3 - "${run_id}" "${window_start}" "${window_end}" "${artifact_dir}" >"${artifact_dir}/run.json" <<'PY'
@@ -438,4 +438,4 @@ print(json.dumps({
 }, indent=2, sort_keys=True))
 PY
 
-echo "openbao tenancy proof ok: ${artifact_dir}"
+echo "openbao tenancy smoke test ok: ${artifact_dir}"

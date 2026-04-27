@@ -77,11 +77,11 @@ Single-node VM concurrency budget:
 - `SANDBOX_EXECUTION_MAX_WORKERS=4` is the current default for the single-node
   bare-metal profile. Treat that worker count as the VM admission limit until
   admission control distinguishes runner classes and requested memory.
-- Do not raise the global default without class-specific admission, proof runs,
+- Do not raise the global default without class-specific admission, smoke runs,
   and tail-latency evidence. The long-term design should scale by adding more
   bare-metal VM hosts, not by overcommitting one node blindly.
 
-Expected proof surface:
+Expected evidence surface:
 
 - PostgreSQL shows each attempt moving through
   `queued -> reserved -> launching -> running -> finalizing -> succeeded`.

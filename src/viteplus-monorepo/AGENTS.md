@@ -112,8 +112,8 @@ make sandbox-inner SANDBOX_INNER_MODE=verify
 # targeted deploy + targeted verification against the current remote stack
 make sandbox-middle
 
-# final merge proof: reset, redeploy, reseed, live repo-exec verification
-make sandbox-proof
+# final merge smoke test: reset, redeploy, reseed, live repo-exec verification
+make sandbox-smoke-test
 ```
 
 `make sandbox-inner` opens the required SSH tunnels, re-queries the `console-dev`
@@ -140,9 +140,9 @@ the `console` frontend role and runs the fast admin smoke. Override
 `SANDBOX_DEPLOY_TARGET=ui|service|both|none`, `SANDBOX_VERIFY_TARGET=admin|import|refresh|execute|none`,
 and `SANDBOX_SEED_VERIFY=1` when you need a different targeted rehearsal.
 
-`make sandbox-proof` is the only destructive/full proof path. It resets the
+`make sandbox-smoke-test` is the only destructive/full smoke-test path. It resets the
 verification state, redeploys the required stack, reseeds, runs the omnibus live
-repo execution proof, and collects ClickHouse-linked artifacts.
+repo execution smoke test, and collects ClickHouse-linked artifacts.
 
 ### External Data Sources
 

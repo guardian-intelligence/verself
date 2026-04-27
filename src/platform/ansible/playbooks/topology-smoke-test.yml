@@ -1,0 +1,24 @@
+---
+- name: Topology smoke test
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Run cue-renderer freshness smoke check
+      ansible.builtin.command:
+        argv:
+          - bazelisk
+          - run
+          - //src/cue-renderer/cmd/cue-renderer
+          - --
+          - check
+        chdir: "{{ playbook_dir }}/../../../.."
+      environment:
+        OTEL_EXPORTER_OTLP_ENDPOINT: "{{ lookup('env', 'OTEL_EXPORTER_OTLP_ENDPOINT') }}"
+        OTEL_RESOURCE_ATTRIBUTES: "{{ lookup('env', 'OTEL_RESOURCE_ATTRIBUTES') }}"
+        TRACEPARENT: "{{ lookup('env', 'TRACEPARENT') }}"
+        VERSELF_DEPLOY_ID: "{{ lookup('env', 'VERSELF_DEPLOY_ID') }}"
+        VERSELF_DEPLOY_RUN_KEY: "{{ lookup('env', 'VERSELF_DEPLOY_RUN_KEY') }}"
+        VERSELF_DEPLOY_KIND: "{{ lookup('env', 'VERSELF_DEPLOY_KIND') }}"
+        VERSELF_VERIFICATION_RUN: "{{ lookup('env', 'VERSELF_VERIFICATION_RUN') }}"
+      changed_when: false

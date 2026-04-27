@@ -6,9 +6,9 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${script_dir}/lib/verification-context.sh"
 verification_context_init "${BASH_SOURCE[0]}"
 
-kind="${VERIFICATION_KIND:-spiffe-rotation-proof}"
+kind="${VERIFICATION_KIND:-spiffe-rotation-smoke-test}"
 run_id="${VERIFICATION_RUN_ID:-${kind}-$(date -u +%Y%m%dT%H%M%SZ)}"
-artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_PROOF_ARTIFACT_ROOT}/${kind}}"
+artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_SMOKE_ARTIFACT_ROOT}/${kind}}"
 artifact_dir="${artifact_root}/${run_id}"
 mkdir -p "${artifact_dir}/clickhouse"
 
@@ -199,10 +199,10 @@ emit_span() {
   local attrs_json="$2"
   (
     cd "${VERIFICATION_REPO_ROOT}/src/otel"
-    PROOF_SPAN_SERVICE="platform-ansible" \
-    PROOF_SPAN_NAME="${span_name}" \
-    PROOF_SPAN_ATTRS_JSON="${attrs_json}" \
-      go run ./cmd/proof-span
+    SMOKE_SPAN_SERVICE="platform-ansible" \
+    SMOKE_SPAN_NAME="${span_name}" \
+    SMOKE_SPAN_ATTRS_JSON="${attrs_json}" \
+      go run ./cmd/smoke-span
   )
 }
 
@@ -248,7 +248,7 @@ import sys
 
 run_id, consumer, strategy = sys.argv[1:4]
 print(json.dumps({
-    "verself.proof_run_id": run_id,
+    "verself.smoke_test_run_id": run_id,
     "workload_identity.consumer": consumer,
     "workload_identity.rotation_strategy": strategy,
 }))
@@ -300,8 +300,8 @@ wait_for_clickhouse_count default "
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 60 SECOND
     AND ServiceName = 'platform-ansible'
     AND SpanName IN ('workload_identity.rotation.consumer', 'workload_identity.rotation.reload')
-    AND SpanAttributes['verself.proof_run_id'] = {run_id:String}
-" 7 "${artifact_dir}/clickhouse/rotation-proof-spans-count.tsv"
+    AND SpanAttributes['verself.smoke_test_run_id'] = {run_id:String}
+" 7 "${artifact_dir}/clickhouse/rotation-smoke-spans-count.tsv"
 
 wait_for_clickhouse_count system "
   SELECT count()
@@ -326,4 +326,4 @@ print(json.dumps({
 }, indent=2, sort_keys=True))
 PY
 
-echo "SPIFFE rotation proof ok: ${artifact_dir}"
+echo "SPIFFE rotation smoke test ok: ${artifact_dir}"

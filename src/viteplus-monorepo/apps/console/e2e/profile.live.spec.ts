@@ -10,19 +10,19 @@ test.describe("Console Profile", () => {
     app,
   }) => {
     const run = app.createRun();
-    const suffix = app.runID.replace(/[^A-Za-z0-9]/g, "").slice(-10) || "proof";
+    const suffix = app.runID.replace(/[^A-Za-z0-9]/g, "").slice(-10) || "smoke";
     const givenName = `Profile${suffix}`;
-    const familyName = "Proof";
+    const familyName = "Smoke Test";
     const displayName = `${givenName} ${familyName}`;
     const initialDisplayName = `${displayName} Initial`;
     const conflictRemoteDisplayName = `${displayName} Remote`;
     const conflictLocalDisplayName = displayName;
     const target = {
-      defaultSurface: process.env.PROFILE_PROOF_DEFAULT_SURFACE || "schedules",
-      locale: process.env.PROFILE_PROOF_LOCALE || "en-GB",
-      theme: process.env.PROFILE_PROOF_THEME || "dark",
-      timeDisplay: process.env.PROFILE_PROOF_TIME_DISPLAY || "local",
-      timezone: process.env.PROFILE_PROOF_TIMEZONE || "America/New_York",
+      defaultSurface: process.env.PROFILE_SMOKE_TEST_DEFAULT_SURFACE || "schedules",
+      locale: process.env.PROFILE_SMOKE_TEST_LOCALE || "en-GB",
+      theme: process.env.PROFILE_SMOKE_TEST_THEME || "dark",
+      timeDisplay: process.env.PROFILE_SMOKE_TEST_TIME_DISPLAY || "local",
+      timezone: process.env.PROFILE_SMOKE_TEST_TIMEZONE || "America/New_York",
     };
 
     try {

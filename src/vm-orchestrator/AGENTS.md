@@ -48,4 +48,4 @@ Guest telemetry is validated as a stream, not as isolated frames:
 - forward gaps emit a `gap` diagnostic and keep the stream alive
 - sequence regressions emit a `regression` diagnostic and are dropped from the telemetry stream
 
-Persist both the telemetry frames and the diagnostic breadcrumbs in host state and ClickHouse. The proof target is not just that the VM booted; it is that the orchestrator can prove what happened from events and logs after a fault drill.
+Persist both the telemetry frames and the diagnostic breadcrumbs in host state and ClickHouse. The target is not just that the VM booted; it is that the orchestrator can reconstruct what happened from events and logs after a fault drill.

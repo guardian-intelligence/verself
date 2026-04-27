@@ -133,16 +133,16 @@
     mode: "0644"
   when: deploy_profile_server_tools_needs_unpack | bool
 
-- name: Emit server tools artifact proof span
+- name: Emit server tools artifact smoke test span
   delegate_to: localhost
   become: false
   run_once: true
   ansible.builtin.command:
-    cmd: go run ./cmd/proof-span
+    cmd: go run ./cmd/smoke-span
     chdir: "{{ deploy_profile_repo_root }}/src/otel"
   environment:
-    PROOF_SPAN_SERVICE: proof-runner
-    PROOF_SPANS_JSON: >-
+    SMOKE_SPAN_SERVICE: smoke-runner
+    SMOKE_SPANS_JSON: >-
       {{
         [
           {

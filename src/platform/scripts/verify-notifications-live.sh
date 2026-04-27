@@ -6,8 +6,8 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${script_dir}/lib/verification-context.sh"
 verification_context_init "${BASH_SOURCE[0]}"
 
-run_id="${VERIFICATION_RUN_ID:-notifications-proof-$(date -u +%Y%m%dT%H%M%SZ)}"
-artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_PROOF_ARTIFACT_ROOT}/notifications-proof}"
+run_id="${VERIFICATION_RUN_ID:-notifications-smoke-test-$(date -u +%Y%m%dT%H%M%SZ)}"
+artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_SMOKE_ARTIFACT_ROOT}/notifications-smoke-test}"
 artifact_dir="${artifact_root}/${run_id}"
 run_json_path="${artifact_dir}/run.json"
 notifications_log_path="${artifact_dir}/notifications-ui.log"
@@ -332,4 +332,4 @@ cat >"${run_json_path}" <<EOF
 }
 EOF
 
-echo "notifications proof ok: ${artifact_dir}"
+echo "notifications smoke test ok: ${artifact_dir}"

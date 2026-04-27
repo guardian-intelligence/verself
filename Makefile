@@ -1,10 +1,10 @@
-.PHONY: help bazel-doctor bazel-proof bazel-gazelle bazel-tidy bazel-update test lint lint-scripts lint-conversions lint-ansible lint-voice company-proof fmt vet tidy sqlc sqlc-check openapi openapi-check openapi-clients openapi-clients-check openapi-wire-check topology-generate topology-check topology-proof \
+.PHONY: help bazel-doctor bazel-smoke-test bazel-gazelle bazel-tidy bazel-update test lint lint-scripts lint-conversions lint-ansible lint-voice company-smoke-test fmt vet tidy sqlc sqlc-check openapi openapi-check openapi-clients openapi-clients-check openapi-wire-check topology-generate topology-check topology-smoke-test \
        hooks-install doctor inventory-check setup-dev setup-sops provision deprovision deploy guest-rootfs security-patch identity-reset seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member \
-       set-user-state billing-clock billing-wall-clock billing-state billing-documents billing-finalizations billing-events billing-pg-shell billing-pg-query billing-proof billing-reset verification-reset \
-       profile-proof organization-sync-proof notifications-proof projects-proof source-code-hosting-proof secrets-proof secrets-leak-proof openbao-proof openbao-tenancy-proof workload-identity-proof spiffe-rotation-proof object-storage-verify temporal-verify temporal-web-proof recurring-schedule-proof \
-       vm-guest-telemetry-build guest-artifacts-bundle observe telemetry-proof telemetry-proof-fail clickhouse-query clickhouse-schemas pg-shell pg-query pg-list tb-shell tb-command mail mail-accounts mail-mailboxes \
+       set-user-state billing-clock billing-wall-clock billing-state billing-documents billing-finalizations billing-events billing-pg-shell billing-pg-query billing-smoke-test billing-reset verification-reset \
+       profile-smoke-test organization-sync-smoke-test notifications-smoke-test projects-smoke-test source-code-hosting-smoke-test secrets-smoke-test secrets-leak-smoke-test openbao-smoke-test openbao-tenancy-smoke-test workload-identity-smoke-test spiffe-rotation-smoke-test object-storage-smoke-test temporal-smoke-test temporal-web-smoke-test recurring-schedule-smoke-test \
+       vm-guest-telemetry-build guest-artifacts-bundle observe telemetry-smoke-test telemetry-smoke-test-fail clickhouse-query clickhouse-schemas pg-shell pg-query pg-list tb-shell tb-command mail mail-accounts mail-mailboxes \
        mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets \
-       wipe-pg-db wipe-server vm-orchestrator-proof sandbox-inner sandbox-middle sandbox-proof console-ui-smoke console-ui-local console-local-dev console-frontend-deploy-fast grafana-proof observability-smoke services-doctor
+       wipe-pg-db wipe-server vm-orchestrator-smoke-test sandbox-inner sandbox-middle sandbox-smoke-test console-ui-smoke console-ui-local console-local-dev console-frontend-deploy-fast grafana-smoke-test observability-smoke services-doctor
 
 PLATFORM_DIR := src/platform
 AW       := src/apiwire
@@ -42,7 +42,7 @@ help: ## Show available root automation targets
 bazel-doctor: ## Verify the pinned Bazel/Bazelisk bootstrap contract
 	$(BAZELISK) run //tools/bazel:doctor
 
-bazel-proof: inventory-check ## Prove Bazel bootstrap state with a ClickHouse trace assertion
+bazel-smoke-test: inventory-check ## Verify Bazel bootstrap state with a ClickHouse trace assertion
 	cd $(PLATFORM_DIR) && BAZELISK="$(BAZELISK)" ./scripts/verify-bazel-live.sh
 
 bazel-gazelle: ## Regenerate Bazel Go BUILD files
@@ -77,7 +77,7 @@ lint-ansible:
 lint-voice: ## Scan apps/company content for banned words and BuzzFeed hooks (Guardian voice spec)
 	cd src/viteplus-monorepo && corepack pnpm --filter "@verself/company" run lint:voice
 
-company-proof: inventory-check ## Walk the Guardian Intelligence site IA, exercise OG + brand kit, verify company.* spans in ClickHouse
+company-smoke-test: inventory-check ## Walk the Guardian Intelligence site IA, exercise OG + brand kit, verify company.* spans in ClickHouse
 	cd $(PLATFORM_DIR) && ./scripts/verify-company-live.sh
 
 hooks-install:
@@ -274,7 +274,7 @@ topology-generate: ## Regenerate Ansible deploy inputs from CUE topology
 topology-check: ## Verify generated deploy inputs match CUE topology
 	cd $(PLATFORM_DIR) && ./scripts/topology.py check
 
-topology-proof: inventory-check ## Prove topology compile/check spans and generated artifact freshness in ClickHouse
+topology-smoke-test: inventory-check ## Verify topology compile/check spans and generated artifact freshness in ClickHouse
 	cd $(PLATFORM_DIR) && ./scripts/verify-topology-live.sh
 
 inventory-check: ## Validate that the generated Ansible inventory exists
@@ -373,52 +373,52 @@ billing-pg-query: inventory-check ## Run a PostgreSQL query against billing: mak
 	@test -n "$(QUERY)" || { echo "ERROR: QUERY is required"; exit 1; }
 	cd $(PLATFORM_DIR) && ./scripts/pg.sh billing --query "$(QUERY)"
 
-billing-proof: inventory-check ## Run live billing browser proof and collect evidence
+billing-smoke-test: inventory-check ## Run live billing browser smoke test and collect evidence
 	cd $(PLATFORM_DIR) && ./scripts/verify-console-billing-flow.sh
 
-profile-proof: inventory-check ## Run live profile API/UI proof and assert PostgreSQL plus ClickHouse evidence
+profile-smoke-test: inventory-check ## Run live profile API/UI smoke test and assert PostgreSQL plus ClickHouse evidence
 	cd $(PLATFORM_DIR) && ./scripts/verify-profile-live.sh
 
-organization-sync-proof: inventory-check ## Run live organization auto-sync/OCC proof and assert PostgreSQL plus ClickHouse evidence
+organization-sync-smoke-test: inventory-check ## Run live organization auto-sync/OCC smoke test and assert PostgreSQL plus ClickHouse evidence
 	cd $(PLATFORM_DIR) && ./scripts/verify-organization-sync-live.sh
 
-notifications-proof: inventory-check ## Run live notifications bell proof and assert PostgreSQL plus ClickHouse traces
+notifications-smoke-test: inventory-check ## Run live notifications bell smoke test and assert PostgreSQL plus ClickHouse traces
 	cd $(PLATFORM_DIR) && ./scripts/verify-notifications-live.sh
 
-projects-proof: inventory-check ## Run live projects API proof and assert PostgreSQL plus ClickHouse traces
+projects-smoke-test: inventory-check ## Run live projects API smoke test and assert PostgreSQL plus ClickHouse traces
 	cd $(PLATFORM_DIR) && ./scripts/verify-projects-live.sh
 
-source-code-hosting-proof: inventory-check ## Run live source repository UI/API proof and assert PostgreSQL plus ClickHouse traces
+source-code-hosting-smoke-test: inventory-check ## Run live source repository UI/API smoke test and assert PostgreSQL plus ClickHouse traces
 	cd $(PLATFORM_DIR) && ./scripts/verify-source-code-hosting-live.sh
 
-secrets-proof: inventory-check ## Run live secrets API proof and collect audit/trace evidence
+secrets-smoke-test: inventory-check ## Run live secrets API smoke test and collect audit/trace evidence
 	cd $(PLATFORM_DIR) && ./scripts/verify-secrets-live.sh
 
-secrets-leak-proof: inventory-check ## Prove bearer/JWT material is absent from traces, logs, audit rows, and proof artifacts
-	cd $(PLATFORM_DIR) && ./scripts/verify-secrets-leak-proof.sh
+secrets-leak-smoke-test: inventory-check ## Verify bearer/JWT material is absent from traces, logs, audit rows, and smoke artifacts
+	cd $(PLATFORM_DIR) && ./scripts/verify-secrets-leak-smoke-test.sh
 
-openbao-proof: inventory-check ## Prove OpenBao process, health, metrics, audit log, nftables, and ClickHouse evidence
+openbao-smoke-test: inventory-check ## Verify OpenBao process, health, metrics, audit log, nftables, and ClickHouse evidence
 	cd $(PLATFORM_DIR) && ./scripts/verify-openbao-live.sh
 
-openbao-tenancy-proof: inventory-check ## Prove OpenBao per-org mounts, JWT roles, SPIFFE workload roles, policies, and ClickHouse spans
+openbao-tenancy-smoke-test: inventory-check ## Verify OpenBao per-org mounts, JWT roles, SPIFFE workload roles, policies, and ClickHouse spans
 	cd $(PLATFORM_DIR) && ./scripts/verify-openbao-tenancy-live.sh
 
-object-storage-verify: inventory-check ## Verify the Garage-backed object-storage runtime and assert ClickHouse evidence
+object-storage-smoke-test: inventory-check ## Verify the Garage-backed object-storage runtime and assert ClickHouse evidence
 	cd $(PLATFORM_DIR) && ./scripts/verify-object-storage-live.sh
 
-workload-identity-proof: inventory-check ## Prove SPIFFE mTLS/JWT-SVID boundaries, SPIRE bundle JWKS, stale credential deletion, and ClickHouse evidence
+workload-identity-smoke-test: inventory-check ## Verify SPIFFE mTLS/JWT-SVID boundaries, SPIRE bundle JWKS, stale credential deletion, and ClickHouse evidence
 	cd $(PLATFORM_DIR) && ./scripts/verify-workload-identity-live.sh
 
-spiffe-rotation-proof: inventory-check ## Prove file-backed SPIFFE consumers reload rotated material and assert ClickHouse evidence
+spiffe-rotation-smoke-test: inventory-check ## Verify file-backed SPIFFE consumers reload rotated material and assert ClickHouse evidence
 	cd $(PLATFORM_DIR) && ./scripts/verify-spiffe-rotation-live.sh
 
-temporal-verify: inventory-check ## Verify the Temporal runtime, bootstrap path, and ClickHouse evidence
+temporal-smoke-test: inventory-check ## Verify the Temporal runtime, bootstrap path, and ClickHouse evidence
 	cd $(PLATFORM_DIR) && ./scripts/verify-temporal-live.sh
 
-temporal-web-proof: inventory-check ## Verify Temporal Web login, operator routing, and ClickHouse evidence
+temporal-web-smoke-test: inventory-check ## Verify Temporal Web login, operator routing, and ClickHouse evidence
 	cd $(PLATFORM_DIR) && ./scripts/verify-temporal-web-live.sh
 
-recurring-schedule-proof: inventory-check ## Create a paused Temporal-backed recurring schedule, resume it, and assert PostgreSQL + ClickHouse evidence
+recurring-schedule-smoke-test: inventory-check ## Create a paused Temporal-backed recurring schedule, resume it, and assert PostgreSQL + ClickHouse evidence
 	cd $(PLATFORM_DIR) && ./scripts/verify-recurring-schedule-live.sh
 
 billing-reset: inventory-check ## Exhaustively wipe billing state (TigerBeetle + billing PostgreSQL schema) and restart billing callers
@@ -431,7 +431,7 @@ wipe-pg-db: inventory-check ## Wipe one managed PostgreSQL service DB: make wipe
 	@test -n "$(DB)" || { echo "ERROR: DB is required (billing|sandbox_rental|mailbox_service|identity_service|secrets_service|notifications_service|projects_service|source_code_hosting)"; exit 1; }
 	$(PLATFORM_DIR)/scripts/ansible-with-tunnel.sh playbooks/wipe-pg-db.yml -e "wipe_pg_db_name=$(DB)"
 
-vm-orchestrator-proof: inventory-check ## Live proof for vm-orchestrator lease/exec spans through recurring sandbox executions
+vm-orchestrator-smoke-test: inventory-check ## Live smoke test for vm-orchestrator lease/exec spans through recurring sandbox executions
 	cd $(PLATFORM_DIR) && ./scripts/verify-vm-orchestrator-live.sh
 
 sandbox-inner: inventory-check ## Inner loop: default starts local HMR; use SANDBOX_INNER_MODE=verify for local smoke evidence
@@ -440,7 +440,7 @@ sandbox-inner: inventory-check ## Inner loop: default starts local HMR; use SAND
 sandbox-middle: inventory-check ## Middle loop: default deploys UI and runs admin smoke; use SANDBOX_DEPLOY_TARGET=ui|service|both|none SANDBOX_VERIFY_TARGET=admin|schedule|billing|none SANDBOX_SEED_VERIFY=1
 	cd $(PLATFORM_DIR) && ./scripts/sandbox-middle.sh
 
-sandbox-proof: inventory-check ## Proof loop: full reset, redeploy, reseed, and live full-lifecycle sandbox verification
+sandbox-smoke-test: inventory-check ## Smoke-test loop: full reset, redeploy, reseed, and live full-lifecycle sandbox verification
 	cd $(PLATFORM_DIR) && ./scripts/verify-sandbox-live.sh
 
 console-ui-smoke: inventory-check ## Run deployed console authenticated shell smoke
@@ -461,7 +461,7 @@ platform-frontend-deploy-fast: inventory-check ## Ship UI-only changes to platfo
 platform-local-dev: ## Start local platform docs HMR dev server (no tunnels; no service deps)
 	cd src/viteplus-monorepo/apps/platform && VERSELF_DOMAIN=$$(awk -F'"' '/^verself_domain:/{print $$2}' $(PLATFORM_DIR)/ansible/group_vars/all/main.yml) PRODUCT_BASE_URL=https://$$(awk -F'"' '/^verself_domain:/{print $$2}' $(PLATFORM_DIR)/ansible/group_vars/all/main.yml) BASE_URL=https://$$(awk -F'"' '/^verself_domain:/{print $$2}' $(PLATFORM_DIR)/ansible/group_vars/all/main.yml) vp dev
 
-grafana-proof: inventory-check ## Verify Grafana health, datasource execution, PostgreSQL state, and ClickHouse evidence
+grafana-smoke-test: inventory-check ## Verify Grafana health, datasource execution, PostgreSQL state, and ClickHouse evidence
 	cd $(PLATFORM_DIR) && ./scripts/verify-grafana-live.sh
 
 services-doctor: inventory-check ## Cross-check generated topology endpoints against live listeners: make services-doctor [FORMAT=table|json|nftables]
@@ -470,11 +470,11 @@ services-doctor: inventory-check ## Cross-check generated topology endpoints aga
 observe: inventory-check ## Discover/query telemetry: make observe [WHAT=catalog|queries|describe|metric|trace|logs|http|service|errors|mail|deploy|workload-identity|temporal] [SIGNAL=...] [FORMAT=table|json|markdown]
 	cd $(PLATFORM_DIR) && ./scripts/observe.sh $(if $(WHAT),--what "$(WHAT)",) $(if $(SIGNAL),--signal "$(SIGNAL)",) $(if $(SERVICE),--service "$(SERVICE)",) $(if $(METRIC),--metric "$(METRIC)",) $(if $(SPAN),--span "$(SPAN)",) $(if $(FIELD),--field "$(FIELD)",) $(if $(QUERY),--query "$(QUERY)",) $(if $(PREFIX),--prefix "$(PREFIX)",) $(if $(SEARCH),--search "$(SEARCH)",) $(if $(GROUP_BY),--group-by "$(GROUP_BY)",) $(if $(MODE),--mode "$(MODE)",) $(if $(TRACE_ID),--trace-id "$(TRACE_ID)",) $(if $(RUN_KEY),--run-key "$(RUN_KEY)",) $(if $(HOST),--host "$(HOST)",) $(if $(STATUS_MIN),--status-min "$(STATUS_MIN)",) $(if $(FORMAT),--format "$(FORMAT)",) $(if $(MINUTES),--minutes "$(MINUTES)",) $(if $(LIMIT),--limit "$(LIMIT)",) $(if $(ERRORS),--errors,)
 
-telemetry-proof: inventory-check ## Run observability smoke and verify ansible spans land in ClickHouse
-	cd $(PLATFORM_DIR) && ./scripts/telemetry-proof.sh
+telemetry-smoke-test: inventory-check ## Run observability smoke and verify ansible spans land in ClickHouse
+	cd $(PLATFORM_DIR) && ./scripts/telemetry-smoke-test.sh
 
-telemetry-proof-fail: inventory-check ## Run observability smoke fail-path and verify Error spans land in ClickHouse
-	cd $(PLATFORM_DIR) && TELEMETRY_PROOF_EXPECT_FAIL=1 ./scripts/telemetry-proof.sh
+telemetry-smoke-test-fail: inventory-check ## Run observability smoke fail-path and verify Error spans land in ClickHouse
+	cd $(PLATFORM_DIR) && TELEMETRY_SMOKE_TEST_EXPECT_FAIL=1 ./scripts/telemetry-smoke-test.sh
 
 observability-smoke: inventory-check ## Run the raw Ansible observability smoke playbook
 	cd $(PLATFORM_DIR)/ansible && ansible-playbook playbooks/observability-smoke.yml

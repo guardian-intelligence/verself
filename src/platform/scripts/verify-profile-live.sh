@@ -6,8 +6,8 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${script_dir}/lib/verification-context.sh"
 verification_context_init "${BASH_SOURCE[0]}"
 
-run_id="${VERIFICATION_RUN_ID:-profile-proof-$(date -u +%Y%m%dT%H%M%SZ)}"
-artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_PROOF_ARTIFACT_ROOT}/profile-proof}"
+run_id="${VERIFICATION_RUN_ID:-profile-smoke-test-$(date -u +%Y%m%dT%H%M%SZ)}"
+artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_SMOKE_ARTIFACT_ROOT}/profile-smoke-test}"
 artifact_dir="${artifact_root}/${run_id}"
 run_json_path="${artifact_dir}/run.json"
 profile_log_path="${artifact_dir}/profile-ui.log"
@@ -17,13 +17,13 @@ mkdir -p "${artifact_dir}/clickhouse" "${artifact_dir}/postgres" "${artifact_dir
 suffix="$(python3 - "${run_id}" <<'PY'
 import re
 import sys
-value = re.sub(r"[^A-Za-z0-9]", "", sys.argv[1])[-10:] or "proof"
+value = re.sub(r"[^A-Za-z0-9]", "", sys.argv[1])[-10:] or "smoke"
 print(value)
 PY
 )"
 expected_email="acme-admin@${VERIFICATION_DOMAIN}"
 expected_given="Profile${suffix}"
-expected_family="Proof"
+expected_family="Smoke Test"
 expected_display="${expected_given} ${expected_family}"
 expected_locale="en-GB"
 expected_timezone="America/New_York"
@@ -202,11 +202,11 @@ env \
   ZITADEL_BASE_URL="https://auth.${VERIFICATION_DOMAIN}" \
   TEST_EMAIL="${expected_email}" \
   TEST_PASSWORD="${acme_admin_password}" \
-  PROFILE_PROOF_LOCALE="${expected_locale}" \
-  PROFILE_PROOF_TIMEZONE="${expected_timezone}" \
-  PROFILE_PROOF_TIME_DISPLAY="${expected_time_display}" \
-  PROFILE_PROOF_THEME="${expected_theme}" \
-  PROFILE_PROOF_DEFAULT_SURFACE="${expected_default_surface}" \
+  PROFILE_SMOKE_TEST_LOCALE="${expected_locale}" \
+  PROFILE_SMOKE_TEST_TIMEZONE="${expected_timezone}" \
+  PROFILE_SMOKE_TEST_TIME_DISPLAY="${expected_time_display}" \
+  PROFILE_SMOKE_TEST_THEME="${expected_theme}" \
+  PROFILE_SMOKE_TEST_DEFAULT_SURFACE="${expected_default_surface}" \
   bash -lc '
     cd "$1"
     vp exec playwright test e2e/profile.live.spec.ts \
@@ -420,4 +420,4 @@ cat >"${run_json_path}" <<EOF
 }
 EOF
 
-echo "profile proof ok: ${artifact_dir}"
+echo "profile smoke test ok: ${artifact_dir}"

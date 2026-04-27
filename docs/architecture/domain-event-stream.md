@@ -93,9 +93,9 @@ SVID TTL and fail-closed startup semantics from
 Grafana receives one dashboard under
 `src/platform/ansible/roles/grafana/dashboards/nats.json`.
 
-## Proof artifact
+## Smoke-test artifact
 
-NATS ships with a publish/subscribe proof that asserts:
+NATS ships with a publish/subscribe smoke test that asserts:
 
 - A publish under an authorized subject succeeds; a publish under an
   unauthorized subject fails with the expected permission error.
@@ -103,14 +103,14 @@ NATS ships with a publish/subscribe proof that asserts:
 - The message's trace propagates to the subscriber with
   `spiffe.peer_id` attributes on both ends.
 
-The proof is invoked by `make telemetry-proof-nats`. The brick is not
+The smoke test is invoked by `make telemetry-smoke-test-nats`. The brick is not
 laid until the query returns green.
 
-`make spiffe-rotation-proof` additionally asserts the NATS rotation
+`make spiffe-rotation-smoke-test` additionally asserts the NATS rotation
 contract: no legacy restart watcher units exist, `spiffe-helper` is
 configured with `pid_file_name` plus `renew_signal = "SIGHUP"`, and
 `systemctl reload nats.service` leaves the broker PID stable while the
-health endpoint remains ready. The proof emits
+health endpoint remains ready. The smoke test emits
 `workload_identity.rotation.*` spans and asserts them in ClickHouse.
 
 ## Source notes

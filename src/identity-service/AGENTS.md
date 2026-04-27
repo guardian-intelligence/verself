@@ -45,7 +45,7 @@ limits, and generated-client contracts cannot drift.
 
 Public organization APIs derive organization scope from the validated Zitadel
 token. Do not trust `org_id`, role keys, user IDs, or customer IDs supplied by
-browser request bodies as proof of authority. Handlers must still validate
+browser request bodies as evidence of authority. Handlers must still validate
 resource ownership against Zitadel or Verself-owned storage after the
 operation permission check passes.
 

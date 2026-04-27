@@ -67,5 +67,5 @@ artifacts/
 # Bazel convenience symlinks
 /bazel-*
 
-# E2E proof bundles, personas, Playwright traces, and query evidence
-proof-artifacts/
+# E2E smoke-test bundles, personas, Playwright traces, and query evidence
+smoke-artifacts/

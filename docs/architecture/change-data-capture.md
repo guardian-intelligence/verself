@@ -24,7 +24,7 @@ the repo no longer commits to a specific external CDC product.
 The current pattern is **application-level projection delivery**:
 
 - PostgreSQL remains the source of truth for product and billing state.
-- ClickHouse remains the proof, analytics, and operator-read-model
+- ClickHouse remains the smoke test, analytics, and operator-read-model
   store.
 - Some services still write both in the same request path.
 - The safer target shape, already reflected in billing, is a
@@ -99,7 +99,7 @@ This keeps the stack aligned with repo invariants:
 - It is not [durable execution](durable-execution.md). Multi-step
   orchestration stays on Temporal or River depending on the boundary.
 - It does not replace reconciliation. WAL transport is not a correctness
-  proof.
+  smoke test.
 - It is not a general connector marketplace. The scope is Postgres
   logical replication into ClickHouse.
 
@@ -148,7 +148,7 @@ For a future shared CDC service:
 `make observe WHAT=cdc` should exist only when a shared CDC service
 exists.
 
-Until then, observability lives on the owning service's existing proof
+Until then, observability lives on the owning service's existing smoke test
 surface:
 
 - PostgreSQL authoritative rows;
@@ -157,7 +157,7 @@ surface:
 - OTel traces spanning the authoritative write and projection delivery;
 - service-specific reconciliation output.
 
-The proof artifact for any dual-write retirement remains the same:
+The smoke-test artifact for any dual-write retirement remains the same:
 
 - write one authoritative fact into PostgreSQL;
 - observe the corresponding ClickHouse row under a fresh trace ID;

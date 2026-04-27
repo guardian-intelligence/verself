@@ -220,9 +220,9 @@ handled through the customer's organization deletion/export path, not through a
 random end user's direct request unless that customer instructs Verself to
 act.
 
-## Observability And Proof
+## Observability And Smoke Tests
 
-The proof target is `make data-rights-proof`. It should:
+The smoke-test target is `make data-rights-smoke-test`. It should:
 
 1. seed a user with data in at least identity, profile, billing, governance, and
    one product service;

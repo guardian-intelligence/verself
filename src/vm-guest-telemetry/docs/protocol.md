@@ -111,7 +111,7 @@ For healthy streams, look for `guest telemetry hello received` and `guest teleme
 
 ## Deterministic Fault Profiles
 
-The proof harness uses deterministic host-side ingestion fault profiles to exercise the diagnostics:
+The smoke harness uses deterministic host-side ingestion fault profiles to exercise the diagnostics:
 
 - `gap_once@<seq>`
 - `regression_once@<seq>`
