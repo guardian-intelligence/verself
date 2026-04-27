@@ -33,8 +33,13 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
 ## Platform (`src/platform/`)
 
 - `ansible/` — playbooks, roles, SOPS-encrypted `group_vars/`, inventory.
-- `binaries/` — Bazel-owned third-party server-tool package definitions, including `//src/platform/binaries:server_tools.tar.zst`.
 - `terraform/` — OpenTofu bare-metal provisioning (Latitude.sh).
 - `scripts/` — founder wrappers invoked by the Makefile.
+
+The Bazel-owned third-party server-tool package definitions, including
+`//src/cue-renderer/binaries:server_tools.tar.zst`, live under
+`src/cue-renderer/binaries/` because the tarball's contents are
+catalog-driven (the catalog declares both the version pins and the
+target label).
 
 Service-local docs live under each service's `docs/` directory (e.g. `src/sandbox-rental-service/docs/`). Directory-specific conventions are captured in per-directory `AGENTS.md` files.
