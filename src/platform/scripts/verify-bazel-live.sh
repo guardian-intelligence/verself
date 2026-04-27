@@ -51,7 +51,33 @@ export VERIFICATION_RUN_ID="${VERSELF_DEPLOY_RUN_KEY}"
 bazelisk="${BAZELISK:-bazelisk}"
 (
   cd "${repo_root}"
-  "${bazelisk}" run //tools/bazel:doctor -- --emit-proof-span
+  "${bazelisk}" run //tools/bazel:doctor
+)
+
+attrs="$(
+  RUN_ID="${VERIFICATION_RUN_ID}" python3 - <<'PY'
+import json
+import os
+
+print(json.dumps({
+    "verself.verification_run": os.environ["RUN_ID"],
+    "verself.deploy_id": os.environ.get("VERSELF_DEPLOY_ID", ""),
+    "verself.deploy_run_key": os.environ.get("VERSELF_DEPLOY_RUN_KEY", ""),
+    "verself.deploy_kind": os.environ.get("VERSELF_DEPLOY_KIND", "bazel-proof"),
+    "build.system": "bazel",
+    "bazel.version": "9.1.0",
+    "bazelisk.version": "1.28.1",
+    "artifact.root": "artifacts",
+    "proof_artifact.root": "proof-artifacts",
+}))
+PY
+)"
+(
+  cd "${repo_root}/src/otel"
+  PROOF_SPAN_SERVICE="bazel-doctor" \
+    PROOF_SPAN_NAME="bazel.doctor" \
+    PROOF_SPAN_ATTRS_JSON="${attrs}" \
+    go run ./cmd/proof-span
 )
 
 assert_ready() {

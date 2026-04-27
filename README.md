@@ -11,11 +11,16 @@ Features:
 
 ## Quick Start
 
-### 1. Install dev tools
+### 1. Bootstrap Bazelisk
 
 ```bash
-cd src/platform/ansible && ansible-playbook playbooks/setup-dev.yml
+./scripts/bootstrap
+bazelisk run //tools/bazel:doctor
 ```
+
+The bootstrap script only installs the pinned Bazelisk binary. The doctor
+command verifies the repo's Bazel/Bzlmod bootstrap contract without assuming
+`make` or the full controller toolchain is installed.
 
 ### 2. Provision bare metal
 
