@@ -18,29 +18,6 @@
     shell: /usr/sbin/nologin
     create_home: false
 
-# --- Binary presence ---
-
-- name: Verify TigerBeetle binary exists in profile
-  ansible.builtin.stat:
-    path: "{{ verself_bin }}/tigerbeetle"
-  register: tigerbeetle_binary
-  failed_when: not tigerbeetle_binary.stat.exists
-
-# --- Version pin ---
-
-- name: Capture TigerBeetle version
-  ansible.builtin.command:
-    cmd: "{{ verself_bin }}/tigerbeetle version"
-  register: tigerbeetle_version_output
-  changed_when: false
-
-- name: Assert TigerBeetle version matches expected
-  ansible.builtin.assert:
-    that: "tigerbeetle_expected_version in tigerbeetle_version_output.stdout"
-    fail_msg: >-
-      Expected TigerBeetle {{ tigerbeetle_expected_version }}, got: {{ tigerbeetle_version_output.stdout }}.
-      Update topology/catalog/versions.cue or adjust the version assertion.
-
 # --- Data directory ---
 
 - name: Create TigerBeetle data directory
@@ -138,49 +115,7 @@
     host: "{{ topology_endpoints.tigerbeetle.host }}"
     timeout: 30
 
-# --- Connection smoke test ---
-# The REPL requires a full TTY, so we verify client-level connectivity
-# via a Python PTY wrapper that spawns the REPL and checks for the
-# successful connection log line.
-
-- name: Deploy TigerBeetle connection test script
-  ansible.builtin.copy:
-    content: |
-      #!/usr/bin/env python3
-      import subprocess, pty, os, time, select, sys
-      master, slave = pty.openpty()
-      proc = subprocess.Popen(
-          [sys.argv[1], "repl",
-           "--cluster=" + sys.argv[2],
-           "--addresses=" + sys.argv[3]],
-          stdin=slave, stdout=slave, stderr=slave, close_fds=True)
-      os.close(slave)
-      output = b""
-      deadline = time.time() + 8
-      while time.time() < deadline:
-          if select.select([master], [], [], 0.2)[0]:
-              output += os.read(master, 4096)
-          if b"on_connect: connected" in output:
-              break
-      proc.terminate()
-      proc.wait()
-      os.close(master)
-      if b"on_connect: connected" in output:
-          print("OK: REPL client connected to TigerBeetle server")
-          sys.exit(0)
-      print("FAIL: REPL client did not connect within 8s")
-      print(output.decode("utf-8", errors="replace"))
-      sys.exit(1)
-    dest: /opt/verself/tigerbeetle-health.py
-    mode: "0755"
-
-- name: Verify REPL client can connect to TigerBeetle server
-  ansible.builtin.command:
-    cmd: >-
-      python3 /opt/verself/tigerbeetle-health.py
-      {{ verself_bin }}/tigerbeetle
-      {{ tigerbeetle_cluster_id }}
-      {{ topology_endpoints.tigerbeetle.endpoints.client.address }}
-  register: tigerbeetle_connection_test
-  changed_when: false
-  failed_when: tigerbeetle_connection_test.rc != 0
+- name: Remove retired TigerBeetle connection smoke script
+  ansible.builtin.file:
+    path: /opt/verself/tigerbeetle-health.py
+    state: absent

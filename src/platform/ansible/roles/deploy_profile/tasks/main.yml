@@ -8,8 +8,9 @@
       - topology_server_tools is defined
       - topology_server_tools.clickhouse.version is defined
       - topology_server_tools.caddy.xcaddy_version is defined
+      - topology_server_tool_install_plan is defined
     fail_msg: >-
-      topology_server_tools is missing. Run make topology-generate before deploying.
+      topology_server_tools or topology_server_tool_install_plan is missing. Run make topology-generate before deploying.
 
 - name: Set deploy profile server tool pins
   ansible.builtin.set_fact:
@@ -39,6 +40,3 @@
 
 - name: Include static binary downloads
   ansible.builtin.include_tasks: static_binaries.yml
-
-- name: Include Node.js installation
-  ansible.builtin.include_tasks: nodejs.yml
