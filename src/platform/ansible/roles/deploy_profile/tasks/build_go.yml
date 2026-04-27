@@ -39,7 +39,11 @@
   become: false
   run_once: true
   ansible.builtin.command:
-    argv: "{{ [deploy_profile_bazelisk, 'build'] + deploy_profile_go_artifact_labels }}"
+    # --config=remote-writer pushes action results to the bazel-remote cache
+    # over the wg-ops mesh. The host running this play is the trusted writer
+    # for the shared cache; laptop dev workflows use --config=remote (read-
+    # only) to avoid poisoning the cache with local builds.
+    argv: "{{ [deploy_profile_bazelisk, 'build', '--config=remote-writer'] + deploy_profile_go_artifact_labels }}"
     chdir: "{{ deploy_profile_repo_root }}"
   changed_when: false
 
