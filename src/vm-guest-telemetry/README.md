@@ -11,34 +11,60 @@ The stream is host-validated, not just guest-emitted:
 - sequence gaps and regressions are diagnosed by the host ingestion path
 - the guest wire format does not change when the host injects telemetry faults
 
+Bazel is the authoritative build system for this package — `rules_zig` orchestrates the Zig compiler directly. There is no `build.zig`.
+
 ## Build
 
 ```bash
-cd vm-guest-telemetry
-zig build -Doptimize=ReleaseSafe
+bazelisk build //src/vm-guest-telemetry:vm-guest-telemetry
 ```
 
-Artifacts land in `vm-guest-telemetry/zig-out/bin/`.
+The deployable binary is pinned to `linux/x86_64/musl` via `zig_configure_binary` regardless of the requesting `-c` mode, and emitted under `bazel-bin/src/vm-guest-telemetry/`.
+
+## Test
+
+```bash
+bazelisk test //src/vm-guest-telemetry/...
+```
+
+This runs:
+
+- the in-source Zig unit tests in `root.zig` (encoder/decoder round-trips)
+- the in-source Zig unit tests in `guest.zig` (`/proc` parsers)
+- `write_vectors_test`, the staleness gate that fails when `protocol/vectors.json` diverges from the canonical encoder
 
 ## Guest Artifact
 
-The guest binary is a required part of the Firecracker rootfs. The `guest-rootfs` automation installs it at `/usr/local/bin/vm-guest-telemetry`, and `vm-bridge` starts it during boot.
+The guest binary is a required part of the Firecracker rootfs. The `guest-rootfs` automation builds `//src/platform/guest:guest_artifacts_bundle`, installs the bundled binary at `/usr/local/bin/vm-guest-telemetry`, and `vm-bridge` starts it during boot.
 
 ## Cross-Language Conformance
 
 `protocol/vectors.json` contains golden test vectors generated from the Zig canonical encoder. Each vector pairs hex-encoded wire bytes with expected decoded field values.
 
-The Zig implementation is the wire-format authority. Go decoder tests should consume the checked-in vectors rather than duplicating frame layout assumptions in test code.
+The Zig implementation is the wire-format authority. The artifact is exported as a public Bazel label so decoders in other languages can consume the checked-in vectors through the action graph rather than via filesystem path:
+
+```python
+go_test(
+    ...
+    data = ["//src/vm-guest-telemetry:protocol/vectors.json"],
+)
+```
+
+End-to-end ingestion is exercised by the telemetry proof harness, which produces ClickHouse evidence — that path remains the primary correctness gate.
 
 Regenerate after changing the binary protocol layout:
 
 ```bash
-cd vm-guest-telemetry
-zig build run-generate-vectors > protocol/vectors.json
-zig build test  # staleness test verifies the checked-in file matches
+bazelisk run //src/vm-guest-telemetry:write_vectors
 ```
 
-See [docs/protocol.md](docs/protocol.md) for the vector file format and conformance testing model.
+`bazel test` will fail until the regenerated file is committed. See [docs/protocol.md](docs/protocol.md) for the vector file format and conformance testing model.
+
+## Bench
+
+```bash
+bazelisk run //src/vm-guest-telemetry:bench -- [args]
+```
 
 ## Deterministic Host Faults
 
