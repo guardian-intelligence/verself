@@ -1,5 +1,16 @@
 #!/usr/bin/env python3
-"""Validate the generated topology endpoint contract."""
+"""Validate the topology endpoint invariants CUE cannot express.
+
+The CUE schema at src/cue-renderer/schema/schema.cue already enforces:
+  - reserved port exclusions via #Port (!=4245 & !=4247)
+  - host non-wildcard via #ServiceHost (!="0.0.0.0" & !="::")
+  - wildcard listen_host requires non-empty wildcard_listen_reason
+
+What CUE does not (currently) express, and is checked here:
+  - port uniqueness across the whole topology
+  - control-plane port range membership for a named service set
+  - wildcard listen_host must use one of public/wireguard/guest_host
+"""
 
 from __future__ import annotations
 
@@ -23,7 +34,6 @@ except ModuleNotFoundError:
 REGISTRY = Path("group_vars/all/generated/endpoints.yml")
 CONTROL_PLANE_PORT_MIN = 4240
 CONTROL_PLANE_PORT_MAX = 4269
-RESERVED_PORTS = {4245, 4247}
 PORT_KEY_RE = re.compile(r"^port$")
 
 CONTROL_PLANE_SERVICES = {
@@ -188,14 +198,6 @@ def validate_registry(path: str | Path | None = None) -> list[RegistryIssue]:
             )
 
     for allocation in allocations:
-        if allocation.port in RESERVED_PORTS:
-            issues.append(
-                RegistryIssue(
-                    f"{dotted(allocation.path)} uses reserved port {allocation.port}",
-                    allocation.line,
-                )
-            )
-
         component = allocation.path[1] if len(allocation.path) > 1 else ""
         if component in CONTROL_PLANE_SERVICES and not (
             CONTROL_PLANE_PORT_MIN <= allocation.port <= CONTROL_PLANE_PORT_MAX
@@ -208,29 +210,11 @@ def validate_registry(path: str | Path | None = None) -> list[RegistryIssue]:
                 )
             )
 
-    for component_name, component in topology_endpoints.items():
-        component_path = ("topology_endpoints", str(component_name))
-        if not isinstance(component, dict):
-            continue
-
-        host = component.get("host")
-        host_path = (*component_path, "host")
-        if host is None or (isinstance(host, str) and host.strip() == ""):
-            issues.append(RegistryIssue(f"{dotted(component_path)} is missing a non-empty host", line_for(lines, host_path)))
-
-    def check_hosts(value: Any, base: tuple[str, ...]) -> None:
+    def check_wildcard_listens(value: Any, base: tuple[str, ...]) -> None:
         if isinstance(value, dict):
             for key, child in value.items():
                 child_path = (*base, str(key))
                 if str(key) == "listen_host" and child == "0.0.0.0":
-                    reason = value.get("wildcard_listen_reason")
-                    if not isinstance(reason, str) or reason.strip() == "":
-                        issues.append(
-                            RegistryIssue(
-                                f"{dotted(child_path)} must document intentional wildcard binding with wildcard_listen_reason",
-                                line_for(lines, child_path),
-                            )
-                        )
                     exposure = value.get("exposure")
                     if exposure not in WILDCARD_LISTEN_EXPOSURES:
                         issues.append(
@@ -240,32 +224,25 @@ def validate_registry(path: str | Path | None = None) -> list[RegistryIssue]:
                                 line_for(lines, child_path),
                             )
                         )
-                elif str(key).endswith("host") and child == "0.0.0.0":
-                    issues.append(
-                        RegistryIssue(
-                            f"{dotted(child_path)} must not be 0.0.0.0; only listen_host may use a documented wildcard bind",
-                            line_for(lines, child_path),
-                        )
-                    )
-                check_hosts(child, child_path)
+                check_wildcard_listens(child, child_path)
         elif isinstance(value, list):
             for index, child in enumerate(value):
-                check_hosts(child, (*base, f"[{index}]"))
+                check_wildcard_listens(child, (*base, f"[{index}]"))
 
-    check_hosts(topology_endpoints, ("topology_endpoints",))
+    check_wildcard_listens(topology_endpoints, ("topology_endpoints",))
     return sorted(issues, key=lambda issue: (issue.line, issue.message))
 
 
 if Lintable is not None:
 
     class ServicesRegistryContractRule(AnsibleLintRule):
-        """The generated topology endpoints must preserve port and host invariants."""
+        """Topology endpoint invariants CUE cannot express."""
 
         id = "services-registry-contract"
-        description = "Validate group_vars/all/generated/endpoints.yml port and host invariants."
+        description = "Validate group_vars/all/generated/endpoints.yml port uniqueness, control-plane port range, and wildcard exposure constraints. CUE owns reserved-port, non-wildcard host, and wildcard_listen_reason invariants."
         severity = "HIGH"
         tags = ["custom", "services"]
-        version_changed = "0.1.0"
+        version_changed = "0.2.0"
 
         _checked = False
 

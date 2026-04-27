@@ -33,7 +33,7 @@ func renderRulesets(loaded load.Loaded) (map[string][]byte, error) {
 
 func renderRuleset(components map[string]schema.Component, name string, ruleset schema.NftablesRuleset) ([]byte, error) {
 	var b strings.Builder
-	b.WriteString(generatedHeader)
+	b.WriteString(projection.Header)
 	fmt.Fprintf(&b, "# nftables ruleset %s.\n", name)
 	writeTableStart(&b, ruleset.Table)
 
