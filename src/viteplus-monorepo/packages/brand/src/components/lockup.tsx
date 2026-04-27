@@ -112,12 +112,16 @@ const VARIANT_BOX: Record<
   LockupVariant,
   { inkScale: number; svgH: number; svgW: number; rightBleed: number }
 > = {
-  // Glyph-tight cropped viewBox: 102.174 × 120.823. The visible wings are the
-  // SVG box. inkScale 0.92 keeps the argent wing close to markH since on a
-  // dark ground (Workshop, photography) the bare mark IS the lockup's
-  // anchor — the wordmark is the whisper beside it, not the cap-line it
-  // must align to.
-  argent: { inkScale: 0.92, svgH: 1, svgW: 102.174 / 120.823, rightBleed: 0 },
+  // Padded viewBox (292 × 292) with no surrounding tile — the same internal
+  // geometry as chip and emboss but with the frame omitted. The wings land
+  // at the exact same pixel position and size they have inside the chip
+  // (102.174/292 wide × 120.823/292 tall of markH); the surrounding 22×22
+  // box is transparent. Sharing the 292-unit footprint with the framed
+  // variants is what keeps the wordmark x-position stable across
+  // Workshop / Letters / Newsroom — without it, the bare-wing SVG is
+  // ~7.7px wide while chip/emboss are 22px, and the wordmark jumps
+  // 14px on every cross-section transition.
+  argent: { inkScale: 1, svgH: 1, svgW: 1, rightBleed: 0 },
   // Iron rounded rect fills the 292 viewBox to the pixel (the 291.14 × 291.14
   // rect nested in a 292 × 292 viewBox rounds to a zero bleed in practice).
   chip: { inkScale: 1, svgH: 1, svgW: 1, rightBleed: 0 },
@@ -230,7 +234,7 @@ export function Lockup({
   return (
     <span className={className} style={lockupStyle} data-variant={variant} data-lockup="">
       {variant === "argent" ? (
-        <WingsArgent title={title} cropped style={markStyle} />
+        <WingsArgent title={title} viewBoxMode="padded" style={markStyle} />
       ) : variant === "chip" ? (
         <WingsChip title={title} style={markStyle} />
       ) : (

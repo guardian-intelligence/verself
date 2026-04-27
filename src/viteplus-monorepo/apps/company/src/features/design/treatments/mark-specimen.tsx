@@ -276,7 +276,7 @@ export function TreatmentWingsOnlyLadder({
           key={px}
           style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}
         >
-          <WingsArgent style={{ width: `${px}px`, height: "auto" }} cropped />
+          <WingsArgent style={{ width: `${px}px`, height: "auto" }} viewBoxMode="cropped" />
           <small
             style={{
               font: '600 10px/1 "Geist Mono", ui-monospace, monospace',
