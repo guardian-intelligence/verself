@@ -5,7 +5,7 @@
     state: restarted
     daemon_reload: true
 
-- name: Reload nftables
+- name: Reload nftables for platform
   ansible.builtin.systemd:
     name: nftables
     state: reloaded

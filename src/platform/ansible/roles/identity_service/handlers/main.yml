@@ -14,7 +14,6 @@
   when: identity_service_unit_file.stat.exists
 
 - name: Reload nftables for identity-service
-  listen: reload nftables
   ansible.builtin.systemd:
     name: nftables
     state: reloaded

@@ -6,6 +6,11 @@
     state: restarted
     daemon_reload: true
 
+- name: Reload nftables for secrets-service
+  ansible.builtin.systemd:
+    name: nftables
+    state: reloaded
+
 - name: Check if sandbox-rental-service unit exists for secret injection grant restart
   listen: restart sandbox-rental-service
   ansible.builtin.stat:

@@ -41,11 +41,11 @@
     - { path: "{{ nats_spiffe_dir }}", owner: nats, group: nats, mode: "0700" }
 
 - name: Deploy NATS nftables ruleset
-  ansible.builtin.template:
-    src: nats.nft.j2
+  ansible.builtin.copy:
+    src: "{{ platform_rendered_dir }}/etc/nftables.d/nats.nft"
     dest: /etc/nftables.d/nats.nft
     mode: "0644"
-  notify: reload nftables
+  notify: Reload nftables for NATS
 
 - name: Apply NATS nftables before proceeding
   ansible.builtin.meta: flush_handlers

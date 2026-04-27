@@ -1,9 +1,0 @@
-# Console frontend — loopback only, Caddy reverse proxy.
-table inet verself_console
-delete table inet verself_console
-table inet verself_console {
-    chain input {
-        type filter hook input priority filter; policy accept;
-        tcp dport {{ topology_endpoints.console.endpoints.http.port }} iifname != "lo" drop
-    }
-}

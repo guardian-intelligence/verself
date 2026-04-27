@@ -28,5 +28,5 @@
   ansible.builtin.include_tasks: tunnel.yml
   loop: "{{ wireguard_tunnels }}"
   loop_control:
-    loop_var: wg_tunnel
-    label: "{{ wg_tunnel.interface }}"
+    loop_var: wireguard_tunnel
+    label: "{{ wireguard_tunnel.interface }}"

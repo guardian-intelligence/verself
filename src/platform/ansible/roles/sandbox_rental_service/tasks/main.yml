@@ -91,11 +91,11 @@
 # --- nftables egress rules ---
 
 - name: Deploy sandbox-rental-service nftables ruleset
-  ansible.builtin.template:
-    src: sandbox-rental.nft.j2
+  ansible.builtin.copy:
+    src: "{{ platform_rendered_dir }}/etc/nftables.d/sandbox-rental.nft"
     dest: /etc/nftables.d/sandbox-rental.nft
     mode: "0644"
-  notify: reload nftables
+  notify: Reload nftables for sandbox-rental-service
 
 - name: Apply sandbox-rental-service nftables before proceeding
   ansible.builtin.meta: flush_handlers

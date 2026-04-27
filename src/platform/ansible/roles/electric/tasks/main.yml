@@ -128,11 +128,11 @@
   notify: "Restart {{ electric_service_name }}"
 
 - name: "Deploy nftables rules for {{ electric_service_name }}"
-  ansible.builtin.template:
-    src: electric.nft.j2
+  ansible.builtin.copy:
+    src: "{{ platform_rendered_dir }}{{ electric_nftables_file }}"
     dest: "{{ electric_nftables_file }}"
     mode: "0644"
-  notify: Reload nftables
+  notify: Reload nftables for Electric
 
 - name: "Enable and start {{ electric_service_name }}"
   ansible.builtin.systemd:

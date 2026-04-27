@@ -3,40 +3,9 @@ argument_specs:
   main:
     short_description: "Host firewall via nftables (default-deny ingress)"
     description:
-      - "Deploys a default-deny nftables ruleset that allowlists public services"
-      - "(Caddy, WireGuard, Forgejo SSH) and trusts the WireGuard mesh interface."
-      - "Each role drops its own .nft file into /etc/nftables.d/ for atomic loading."
+      - "Copies cue-renderer generated final nftables files."
+      - "The CUE ruleset records are the topology contract; Ansible only installs them."
     options:
-      nftables_public_tcp_ports:
-        type: list
-        elements: raw
-        description: "TCP ports accessible from the public internet."
-
-      nftables_public_udp_ports:
-        type: list
-        elements: raw
-        description: "UDP ports accessible from the public internet."
-
-      nftables_trusted_interfaces:
-        type: list
-        elements: str
-        description: "Interfaces where all inbound traffic is accepted."
-
-      nftables_ssh_public:
-        type: bool
-        default: true
-        description: "Allow SSH from the internet (rate-limited). False = WireGuard only."
-
-      nftables_ssh_rate:
-        type: str
-        default: "3/minute"
-        description: "Per-source-IP rate limit for new SSH connections."
-
-      nftables_ssh_burst:
-        type: int
-        default: 5
-        description: "Burst allowance for SSH rate limiter."
-
       nftables_remove_legacy_tables:
         type: bool
         default: true

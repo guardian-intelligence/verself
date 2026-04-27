@@ -11,15 +11,15 @@
     mode: "0755"
 
 - name: Deploy main nftables config
-  ansible.builtin.template:
-    src: nftables.conf.j2
+  ansible.builtin.copy:
+    src: "{{ platform_rendered_dir }}/etc/nftables.conf"
     dest: /etc/nftables.conf
     mode: "0644"
   notify: reload nftables
 
 - name: Deploy host firewall ruleset
-  ansible.builtin.template:
-    src: host-firewall.nft.j2
+  ansible.builtin.copy:
+    src: "{{ platform_rendered_dir }}/etc/nftables.d/host-firewall.nft"
     dest: /etc/nftables.d/host-firewall.nft
     mode: "0644"
   notify: reload nftables
@@ -58,8 +58,8 @@
   changed_when: true
 
 - name: Deploy verself-firewall target
-  ansible.builtin.template:
-    src: verself-firewall.target.j2
+  ansible.builtin.copy:
+    src: "{{ platform_rendered_dir }}/etc/systemd/system/verself-firewall.target"
     dest: /etc/systemd/system/verself-firewall.target
     mode: "0644"
 

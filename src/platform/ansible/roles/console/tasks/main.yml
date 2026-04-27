@@ -335,11 +335,11 @@
     mode: "0644"
 
 - name: Deploy console nftables rules
-  ansible.builtin.template:
-    src: console.nft.j2
+  ansible.builtin.copy:
+    src: "{{ platform_rendered_dir }}/etc/nftables.d/console.nft"
     dest: /etc/nftables.d/console.nft
     mode: "0644"
-  notify: Reload nftables
+  notify: Reload nftables for console
 
 - name: Enable and start console
   ansible.builtin.systemd:

@@ -28,7 +28,6 @@
   when: sandbox_rental_service_recurring_worker_unit_file.stat.exists
 
 - name: Reload nftables for sandbox-rental-service
-  listen: reload nftables
   ansible.builtin.systemd:
     name: nftables
     state: reloaded

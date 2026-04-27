@@ -27,11 +27,11 @@
     create_home: false
 
 - name: Deploy secrets-service nftables ruleset
-  ansible.builtin.template:
-    src: secrets-service.nft.j2
+  ansible.builtin.copy:
+    src: "{{ platform_rendered_dir }}/etc/nftables.d/secrets-service.nft"
     dest: /etc/nftables.d/secrets-service.nft
     mode: "0644"
-  notify: reload nftables
+  notify: Reload nftables for secrets-service
 
 - name: Apply secrets-service nftables before proceeding
   ansible.builtin.meta: flush_handlers

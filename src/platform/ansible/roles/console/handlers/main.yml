@@ -1,4 +1,4 @@
-- name: Reload nftables
+- name: Reload nftables for console
   ansible.builtin.systemd:
     name: nftables
     state: reloaded
