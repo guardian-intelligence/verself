@@ -28,6 +28,7 @@ import (
 	"github.com/verself/cue-renderer/internal/load"
 	"github.com/verself/cue-renderer/internal/render"
 	"github.com/verself/cue-renderer/internal/render/bazelmodule"
+	"github.com/verself/cue-renderer/internal/render/bazelnftables"
 	"github.com/verself/cue-renderer/internal/render/bazelservertools"
 	"github.com/verself/cue-renderer/internal/render/catalog"
 	"github.com/verself/cue-renderer/internal/render/clusters"
@@ -55,6 +56,7 @@ const (
 func renderers() []render.Renderer {
 	return []render.Renderer{
 		bazelmodule.Renderer{},
+		bazelnftables.Renderer{},
 		bazelservertools.Renderer{},
 		catalog.Renderer{},
 		clusters.Renderer{},

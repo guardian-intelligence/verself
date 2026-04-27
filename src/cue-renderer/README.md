@@ -70,4 +70,15 @@ targets are `make topology-generate` and `make topology-check`, backed by
 4. Implement `render.Renderer` in `internal/render/<artefact>/`.
 5. Register it in `cmd/cue-renderer/main.go`'s `renderers()`.
 6. Add the renderer's generated path to `src/cue-renderer/BUILD.bazel` so
-   `make topology-check` catches drift.
+   `make topology-check` catches drift. The nftables ruleset list is the
+   exception: adding a `topology.nftables.rulesets.<name>` entry in CUE
+   regenerates `nftables_files.bzl` (a fan-out renderer) and the
+   per-component genrule + write_source_files mapping pick up the new
+   entry on next build, no BUILD.bazel edit required.
+
+## Boundaries that intentionally stay outside CUE
+
+- `roles/firecracker/templates/firecracker-network.nft.j2` — mixed input:
+  guest CIDR comes from CUE (`config.firecracker.guest_pool_cidr`), but
+  the uplink interface is host-discovered at apply time. The Jinja
+  template is the canonical "this stays as Ansible" example.

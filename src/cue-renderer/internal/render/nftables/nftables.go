@@ -18,11 +18,7 @@ type Renderer struct{}
 func (Renderer) Name() string { return "nftables" }
 
 func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.WritableFS) error {
-	conf, err := renderMainConfig()
-	if err != nil {
-		return err
-	}
-	if err := out.WriteFile(projection.RenderedPath("etc/nftables.conf"), conf); err != nil {
+	if err := out.WriteFile(ConfPath, renderMainConfig()); err != nil {
 		return err
 	}
 
@@ -30,15 +26,11 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 	if err != nil {
 		return err
 	}
-	if err := out.WriteFile(projection.RenderedPath("etc/nftables.d/host-firewall.nft"), hostFirewall); err != nil {
+	if err := out.WriteFile(HostFirewallPath, hostFirewall); err != nil {
 		return err
 	}
 
-	target, err := renderFirewallTarget()
-	if err != nil {
-		return err
-	}
-	if err := out.WriteFile(projection.RenderedPath("etc/systemd/system/verself-firewall.target"), target); err != nil {
+	if err := out.WriteFile(FirewallTargetPath, renderFirewallTarget()); err != nil {
 		return err
 	}
 
@@ -47,21 +39,21 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 		return err
 	}
 	for target, data := range files {
-		if err := out.WriteFile(projection.RenderedPath(target), data); err != nil {
+		if err := out.WriteFile(RulesetPath(target), data); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func renderMainConfig() ([]byte, error) {
+func renderMainConfig() []byte {
 	return []byte(generatedHeader + `#!/usr/sbin/nft -f
 # Load all rulesets from /etc/nftables.d/.
 #
 # No "flush ruleset": each .nft file does its own atomic table replace, and
 # provider rules such as Latitude.sh metadata DNAT are left untouched.
 include "/etc/nftables.d/*.nft"
-`), nil
+`)
 }
 
 type hostFirewallConfig struct {
@@ -146,7 +138,7 @@ table inet verself_host {
 	return []byte(b.String()), nil
 }
 
-func renderFirewallTarget() ([]byte, error) {
+func renderFirewallTarget() []byte {
 	return []byte(generatedHeader + `# verself-firewall.target is the host firewall readiness point.
 #
 # Network-facing verself services declare After= and Requires= on this target so
@@ -159,7 +151,7 @@ After=nftables.service
 
 [Install]
 WantedBy=multi-user.target
-`), nil
+`)
 }
 
 func hostFirewallConfigFromLoaded(loaded load.Loaded) (hostFirewallConfig, error) {
