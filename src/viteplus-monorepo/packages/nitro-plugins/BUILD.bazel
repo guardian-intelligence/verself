@@ -1,0 +1,19 @@
+load("//src/viteplus-monorepo:viteplus_rules.bzl", "viteplus_packed_package")
+
+package(default_visibility = ["//visibility:public"])
+
+viteplus_packed_package(
+    srcs = [
+        "package.json",
+        "src/**/*",
+        "tsconfig.json",
+        "vite.config.ts",
+    ],
+    dts = True,
+    entries = [
+        "src/index.ts",
+        "src/observability-plugin.ts",
+        "src/otel.ts",
+    ],
+    npm_name = "@verself/nitro-plugins",
+)

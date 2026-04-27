@@ -25,6 +25,13 @@
       "esbuild",
       "protobufjs"
     ],
+    "packageExtensions": {
+      "@voidzero-dev/vite-plus-core@*": {
+        "dependencies": {
+          "picomatch": "4.0.4"
+        }
+      }
+    },
     "patchedDependencies": {
       "srvx@0.11.15": "patches/srvx@0.11.15.patch"
     }

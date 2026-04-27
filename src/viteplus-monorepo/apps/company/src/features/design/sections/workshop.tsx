@@ -76,7 +76,7 @@ export function SectionWorkshop() {
             { label: "wings", value: "#FFFFFF", emphasise: "hex" },
           ]}
         >
-          <WingsArgent style={{ width: "56%", height: "auto" }} cropped />
+          <WingsArgent style={{ width: "56%", height: "auto" }} viewBoxMode="cropped" />
         </TreatmentMarkCard>
         <TreatmentTypeLadder
           rows={[

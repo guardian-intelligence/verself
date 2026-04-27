@@ -8,7 +8,6 @@ Polyglot monorepo structured as a modular monolith:
 - **TypeScript** — `src/viteplus-monorepo/` (pnpm, Vite Plus + TanStack Start/DB/Query/Router). Apps: `company` (Guardian Intelligence company site at guardianintelligence.org), `platform` (product docs/policy at verself.sh), `console` (product console at console.verself.sh), `mail`.
 - **Go** — `go.work` at repo root, covers most of `src/*`. Services: `sandbox-rental-service`, `billing-service`, `identity-service`, `mailbox-service`, `governance-service`, `secrets-service`, `platform`, `vm-orchestrator`. Shared libs: `apiwire`, `auth-middleware`, `otel`.
 - **Zig** — `src/vm-guest-telemetry/` (guest agent, runs *inside* Firecracker VMs, not on the host).
-- **CUE** — `src/platform/topology/` is the canonical service topology and constraint layer. `make topology-generate` renders generated Ansible inputs, while `make topology-check` and `make topology-proof` validate freshness and ClickHouse proof spans.
 
 Layers:
 
@@ -30,6 +29,9 @@ Tech Stack:
 
 Invariant patterns:
 
+* Bazel owns build artifacts and dependency-scoped rebuilds: deploy code requests specific Bazel targets, so a frontend rebuild must not rebuild unrelated substrate binaries such as TigerBeetle.
+* CUE owns desired platform shape and non-secret deployment configuration in `src/platform/topology/`: components, processes, endpoints, routes, identities, ports, runtime users, required config, and references to Bazel artifact labels. Generated files under `src/platform/ansible/group_vars/all/generated/` are projections, not authority.
+* Ansible owns host mutations and convergence only: it consumes generated CUE/Bazel manifests plus SOPS secret values, mutates the host idempotently, and must not invent topology, rebuild scope, ports, users, routes, or service relationships. SOPS owns encrypted secret values such as Cloudflare API tokens; CUE may declare that they are required.
 * Service-oriented-architecture: with notable exceptions, all of our services talk to each other through the same APIs as the ones customers use. 
 * Generated clients are the only supported Go service SDKs. Customer/human routes use the committed public OpenAPI specs and `client` packages; repo-owned SPIFFE routes use committed internal OpenAPI specs and `internalclient` packages. The caller injects a SPIFFE mTLS `http.Client` from `auth-middleware/workload`; do not hand-write `http.NewRequest` service calls or mint Zitadel machine-user bearer tokens for repo-owned service-to-service traffic.
 * Non-retrievable product token material belongs in `secrets-service` as an opaque credential. Product services may keep metadata/projection rows, but token generation, verifier storage, roll/revoke semantics, and verification must go through generated secrets-service clients over SPIFFE.
@@ -60,8 +62,6 @@ Public commitments for Data Processing, Acceptable Use, Security, SLA, and Data 
 <product_direction>
 
 Where the platform is headed: open-source-per-subdirectory, privileged-host / product-service split, multi-tenant + customer dogfooding, three customer-facing sandbox products (CI runner, Lambda-like workload, long-running VM), self-hosted Forgejo/CI with `main`/`beta`/`gamma`/preview promotion lanes.
-
-**Keywords:** roadmap, direction, dogfooding, sandbox-rental-service, vm-orchestrator, vm-bridge, vm-guest-telemetry, Firecracker, ZFS, Blacksmith-like CI runner, Lambda-like workload, long-running VM, IAM direction, Zitadel, Forgejo dogfood, e2e canaries, CI promotion lanes, preview environments.
 
 See `docs/product-direction.md`.
 

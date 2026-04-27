@@ -22,18 +22,35 @@ type SvgBase = Omit<SVGProps<SVGSVGElement>, "viewBox" | "xmlns" | "children">;
 
 export interface WingsArgentProps extends SvgBase {
   readonly title?: string | undefined;
-  readonly cropped?: boolean;
+  // Three viewBox modes:
+  //   tight (default)   — WINGS_TIGHT_VIEWBOX, the canonical breathing-room
+  //                       crop used by favicons, OG cards, email signatures.
+  //   cropped           — WINGS_CROPPED_VIEWBOX, glyph-hugging crop used when
+  //                       the bounding box must coincide with the wing tip
+  //                       (e.g. wordmark-tip alignment in standalone art).
+  //   padded            — WINGS_PADDED_VIEWBOX, the same 292×292 box chip and
+  //                       emboss render into, with no surrounding tile or
+  //                       disc. Lockup uses this so argent shares the chip's
+  //                       footprint and internal wing position — the chrome
+  //                       wordmark sits at the same x across Workshop /
+  //                       Letters / Newsroom even though Workshop draws no
+  //                       frame around the wings.
+  readonly viewBoxMode?: "tight" | "cropped" | "padded";
 }
 
 // Argent on Iron — the canonical mark when the canvas is already the wings'
 // ground (Iron, photography behind a scrim, in-product chrome). Tight viewBox
-// because the surrounding canvas does the work of giving the wings air. Pass
-// `cropped` when the consumer needs the bounding box to hug the glyph exactly
-// (e.g. horizontal lockups where the wordmark aligns to the wing tip).
-export function WingsArgent({ title, cropped, ...rest }: WingsArgentProps) {
+// because the surrounding canvas does the work of giving the wings air.
+export function WingsArgent({ title, viewBoxMode = "tight", ...rest }: WingsArgentProps) {
+  const viewBox =
+    viewBoxMode === "cropped"
+      ? WINGS_CROPPED_VIEWBOX
+      : viewBoxMode === "padded"
+        ? WINGS_PADDED_VIEWBOX
+        : WINGS_TIGHT_VIEWBOX;
   return (
     <svg
-      viewBox={cropped ? WINGS_CROPPED_VIEWBOX : WINGS_TIGHT_VIEWBOX}
+      viewBox={viewBox}
       xmlns="http://www.w3.org/2000/svg"
       role={title ? "img" : "presentation"}
       aria-label={title}

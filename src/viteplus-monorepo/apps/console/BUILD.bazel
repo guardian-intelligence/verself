@@ -1,0 +1,15 @@
+load("//src/viteplus-monorepo:viteplus_rules.bzl", "viteplus_app")
+
+package(default_visibility = ["//visibility:public"])
+
+viteplus_app(
+    srcs = [
+        "instrumentation.mts",
+        "package.json",
+        "public/**/*",
+        "src/**/*",
+        "tsconfig.json",
+        "vite.config.ts",
+    ],
+    npm_name = "@verself/console",
+)

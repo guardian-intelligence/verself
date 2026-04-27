@@ -4,10 +4,67 @@ module(
 )
 
 bazel_dep(name = "gazelle", version = "0.50.0", repo_name = "bazel_gazelle")
+bazel_dep(name = "aspect_rules_js", version = "3.0.3")
+bazel_dep(name = "bazel_lib", version = "3.2.2")
 bazel_dep(name = "protobuf", version = "33.4", repo_name = "com_google_protobuf")
 bazel_dep(name = "rules_cc", version = "0.2.17")
+bazel_dep(name = "rules_nodejs", version = "6.7.4")
+bazel_dep(name = "rules_pkg", version = "1.2.0")
 bazel_dep(name = "rules_shell", version = "0.8.0")
 bazel_dep(name = "rules_go", version = "0.60.0", repo_name = "io_bazel_rules_go")
+
+node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
+node.toolchain(
+    node_repositories = {
+        "24.15.0-darwin_amd64": [
+            "node-v24.15.0-darwin-x64.tar.gz",
+            "node-v24.15.0-darwin-x64",
+            "ffd5ee293467927f3ee731a553eb88fd1f48cf74eebc2d74a6babe4af228673b",
+        ],
+        "24.15.0-darwin_arm64": [
+            "node-v24.15.0-darwin-arm64.tar.gz",
+            "node-v24.15.0-darwin-arm64",
+            "372331b969779ab5d15b949884fc6eaf88d5afe87bde8ba881d6400b9100ffc4",
+        ],
+        "24.15.0-linux_amd64": [
+            "node-v24.15.0-linux-x64.tar.xz",
+            "node-v24.15.0-linux-x64",
+            "472655581fb851559730c48763e0c9d3bc25975c59d518003fc0849d3e4ba0f6",
+        ],
+        "24.15.0-linux_arm64": [
+            "node-v24.15.0-linux-arm64.tar.xz",
+            "node-v24.15.0-linux-arm64",
+            "f3d5a797b5d210ce8e2cb265544c8e482eaedcb8aa409a8b46da7e8595d0dda0",
+        ],
+        "24.15.0-windows_amd64": [
+            "node-v24.15.0-win-x64.zip",
+            "node-v24.15.0-win-x64",
+            "cc5149eabd53779ce1e7bdc5401643622d0c7e6800ade18928a767e940bb0e62",
+        ],
+        "24.15.0-windows_arm64": [
+            "node-v24.15.0-win-arm64.zip",
+            "node-v24.15.0-win-arm64",
+            "c9eb7402eda26e2ba7e44b6727fc85a8de56c5095b1f71ebd3062892211aa116",
+        ],
+    },
+    node_version = "24.15.0",
+)
+use_repo(node, "nodejs_toolchains")
+
+pnpm = use_extension("@aspect_rules_js//npm:extensions.bzl", "pnpm")
+pnpm.pnpm(pnpm_version_from = "//src/viteplus-monorepo:package.json")
+use_repo(pnpm, "pnpm")
+
+npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm")
+npm.npm_translate_lock(
+    name = "npm",
+    bins = {
+        "@hey-api/openapi-ts": ["openapi-ts=./bin/index.cjs"],
+        "vite-plus": ["vp=./dist/cli/index.js"],
+    },
+    pnpm_lock = "//src/viteplus-monorepo:pnpm-lock.yaml",
+)
+use_repo(npm, "npm")
 
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.download(version = "1.25.8")

@@ -1,0 +1,15 @@
+load("//src/viteplus-monorepo:viteplus_rules.bzl", "viteplus_packed_package")
+
+package(default_visibility = ["//visibility:public"])
+
+viteplus_packed_package(
+    srcs = [
+        "package.json",
+        "src/**/*",
+        "tsconfig.json",
+    ],
+    entries = [
+        "src/index.ts",
+    ],
+    npm_name = "@verself/web-env",
+)
