@@ -197,7 +197,7 @@ Hard runtime boundaries:
 
 - ZFS snapshots are immutable; customer-facing checkpoint refs are mutable.
 - Guests may request `vm-bridge snapshot save <ref>`; they never send or receive host dataset paths.
-- `vm-bridge` is an untrusted guest client; vm-orchestrator accepts checkpoint saves only for host-authorized refs.
+- `vm-bridge` and `vm-guest-telemetry` are untrusted guest clienst; vm-orchestrator accepts checkpoint saves only for host-authorized refs.
 - vm-orchestrator constructs all ZFS paths from trusted host-side IDs and operates only on the active segment's known writable zvol.
 - The host never mounts or fscks untrusted guest filesystems in the default checkpoint path.
 - Host-local services are exposed through the host-service plane, not DNAT to `127.0.0.1`.
