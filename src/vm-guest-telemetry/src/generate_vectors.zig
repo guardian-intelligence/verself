@@ -6,10 +6,11 @@
 //! against the same checked-in file.
 //!
 //! Regenerate:
-//!   cd vm-guest-telemetry && zig build run-generate-vectors > protocol/vectors.json
+//!   bazel run //src/vm-guest-telemetry:write_vectors
 //!
-//! The staleness test (`zig build test`) asserts that the checked-in
-//! vectors.json matches the output of this generator.
+//! Staleness is enforced by the Bazel write_source_files diff_test:
+//! `bazel test //src/vm-guest-telemetry:write_vectors_test` fails whenever
+//! protocol/vectors.json diverges from the encoder output.
 
 const std = @import("std");
 const hs = @import("vm_guest_telemetry");
@@ -278,7 +279,8 @@ pub fn writeVectors(w: *Writer) !void {
 }
 
 // ---------------------------------------------------------------------------
-// Entry point (zig build run-generate-vectors)
+// Entry point: writes canonical vectors JSON to stdout. Staleness is enforced
+// at the Bazel-graph level — see write_source_files target in BUILD.bazel.
 // ---------------------------------------------------------------------------
 
 pub fn main() !void {
@@ -286,22 +288,4 @@ pub fn main() !void {
     var fw = std.fs.File.stdout().writer(&buf);
     try writeVectors(&fw.interface);
     try fw.interface.flush();
-}
-
-// ---------------------------------------------------------------------------
-// Staleness test (zig build test)
-// ---------------------------------------------------------------------------
-
-test "vectors.json matches canonical encoder output" {
-    // Embedded at compile time via the "vectors_json" module import wired up
-    // in build.zig. Keeps the test runnable from any cwd (IDEs, package
-    // consumers pulling this repo via build.zig.zon, CI runners) while
-    // protocol/vectors.json remains the canonical on-disk conformance artifact
-    // that Go/TypeScript decoders also consume.
-    const checked_in = @embedFile("vectors_json");
-
-    var buf: [32 * 1024]u8 = undefined;
-    var w = Writer.fixed(&buf);
-    try writeVectors(&w);
-    try std.testing.expectEqualStrings(checked_in, w.buffered());
 }

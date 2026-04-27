@@ -1,2 +1,2 @@
-.zig-cache
-zig-out
+# bazel-* symlinks if local tooling emits them
+bazel-*

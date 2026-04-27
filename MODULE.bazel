@@ -6,12 +6,15 @@ module(
 bazel_dep(name = "gazelle", version = "0.50.0", repo_name = "bazel_gazelle")
 bazel_dep(name = "aspect_rules_js", version = "3.0.3")
 bazel_dep(name = "bazel_lib", version = "3.2.2")
+bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "protobuf", version = "33.4", repo_name = "com_google_protobuf")
-bazel_dep(name = "rules_cc", version = "0.2.17")
+bazel_dep(name = "rules_cc", version = "0.2.18")
 bazel_dep(name = "rules_nodejs", version = "6.7.4")
 bazel_dep(name = "rules_pkg", version = "1.2.0")
 bazel_dep(name = "rules_shell", version = "0.8.0")
 bazel_dep(name = "rules_go", version = "0.60.0", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "rules_zig", version = "0.13.0")
+bazel_dep(name = "yq.bzl", version = "0.3.2")
 
 node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
 node.toolchain(
@@ -65,6 +68,19 @@ npm.npm_translate_lock(
     pnpm_lock = "//src/viteplus-monorepo:pnpm-lock.yaml",
 )
 use_repo(npm, "npm")
+
+zig = use_extension("@rules_zig//zig:extensions.bzl", "zig")
+zig.toolchain(
+    default = True,
+    zig_version = "0.15.2",
+)
+use_repo(zig, "zig_toolchains")
+
+# Two distinct toolchain registrations: target/platform constraints (so
+# zig_configure_binary can transition to e.g. linux/x86_64/musl) and the host
+# Zig SDK that actually runs the compiler. Removing either breaks Zig builds.
+register_toolchains("@rules_zig//zig/target:all")
+register_toolchains("@zig_toolchains//:all")
 
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.download(version = "1.25.8")
