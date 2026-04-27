@@ -166,6 +166,20 @@ receivers:
       - type: move
         from: body.MESSAGE
         to: body
+  # Capture lifecycle / handshake messages for every WireGuard tunnel so an
+  # operator can confirm `wg-quick@<iface>` came up on each deploy. Driven
+  # off the topology so adding a tunnel doesn't require editing this list.
+  journald/wireguard:
+    units:
+{% for tunnel_name, tunnel in (topology_wireguard.tunnels | dictsort) %}
+      - wg-quick@{{ tunnel.interface }}
+{% endfor %}
+    resource:
+      service.name: wireguard
+    operators:
+      - type: move
+        from: body.MESSAGE
+        to: body
   # App logs for billing-service and sandbox-rental flow through OTLP (via
   # otelslog bridge), not journald. These receivers capture only systemd
   # lifecycle messages (start/stop/crash) and pre-init fatal errors.
@@ -516,7 +530,7 @@ service:
   extensions: [health_check, file_storage]
   pipelines:
     logs:
-      receivers: [otlp, filelog/caddy, journald/caddy, journald/billing-service, journald/sandbox-rental, journald/sandbox-rental-recurring-worker, journald/console, journald/zitadel, journald/openbao, journald/spire-server, journald/spire-agent, journald/vm-orchestrator, journald/forgejo, journald/source-code-hosting-service, journald/projects-service, journald/grafana, journald/temporal-server, journald/temporal-web, journald/verdaccio, filelog/postgresql]
+      receivers: [otlp, filelog/caddy, journald/caddy, journald/billing-service, journald/sandbox-rental, journald/sandbox-rental-recurring-worker, journald/console, journald/zitadel, journald/openbao, journald/spire-server, journald/spire-agent, journald/vm-orchestrator, journald/forgejo, journald/source-code-hosting-service, journald/projects-service, journald/grafana, journald/temporal-server, journald/temporal-web, journald/verdaccio, journald/wireguard, filelog/postgresql]
       processors: [batch]
       exporters: [clickhouse]
     traces:
