@@ -620,6 +620,29 @@ topology_processes:
 - after: []
   artifact:
     kind: static_binary
+    output: bazel-remote
+    package: ''
+    role: bazel_remote
+  component: bazel_remote
+  endpoints:
+  - grpc
+  - http
+  environment: {}
+  group: bazel_remote
+  identities: []
+  key: bazel_remote.primary
+  name: primary
+  privileged: false
+  requires_spiffe_sock: false
+  restart_units:
+  - bazel-remote
+  supplementary_groups: []
+  systemd: bazel-remote
+  user: bazel_remote
+  wants: []
+- after: []
+  artifact:
+    kind: static_binary
     output: spire-server
     package: ''
     role: spire
@@ -895,6 +918,18 @@ topology_processes:
   user: root
   wants: []
 topology_runtime:
+  bazel_remote:
+    artifact:
+      kind: static_binary
+      output: bazel-remote
+      package: ''
+      role: bazel_remote
+    kind: resource
+    runtime:
+      group: bazel_remote
+      spiffe_id: ''
+      systemd: bazel-remote
+      user: bazel_remote
   billing:
     artifact:
       bazel_label: //src/billing-service/cmd/billing-service:billing-service

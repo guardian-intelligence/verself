@@ -334,6 +334,16 @@ topology_nftables:
     exposure: loopback
     port: 8081
     protocol: tcp
+  - component: bazel_remote
+    endpoint: grpc
+    exposure: wireguard
+    port: 9092
+    protocol: grpc
+  - component: bazel_remote
+    endpoint: http
+    exposure: wireguard
+    port: 8080
+    protocol: http
   - component: spire_bundle_endpoint
     endpoint: bundle
     exposure: loopback

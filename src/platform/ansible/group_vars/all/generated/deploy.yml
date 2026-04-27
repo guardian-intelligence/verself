@@ -235,6 +235,14 @@ topology_deploy:
     source: component
   - artifact:
       kind: static_binary
+      output: bazel-remote
+      package: ''
+      role: bazel_remote
+    component: bazel_remote
+    name: primary
+    source: component
+  - artifact:
+      kind: static_binary
       output: stalwart-mail
       package: ''
       role: stalwart
