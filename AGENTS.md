@@ -1,6 +1,8 @@
 <repo_overview>
 Set of services + console + marketing page for a software business, almost entirely self-hosted on a single bare metal node.
 
+Most commands should begin with either `make` or `bazelisk`.
+
 Canonical layout in `docs/architecture/directory-structure.md`. Read that file directly if exploring the repo.
 
 Polyglot monorepo structured as a modular monolith.
@@ -64,7 +66,7 @@ See `docs/product-direction.md`.
 
 <system_context>
 
-How the platform is wired today: service topology, three safety rings, self-hosted mandate + allowed third-party providers (Cloudflare, Latitude.sh, Resend, Stripe), dual-write pattern, billing model summary, supply chain, founder focus areas, bare-metal OS/arch invariants.
+Service topology, three safety rings, self-hosted mandate + allowed third-party providers (Cloudflare, Latitude.sh, Resend, Stripe), dual-write pattern, billing model summary, supply chain, founder focus areas, bare-metal OS/arch invariants.
 
 See `docs/system-context.md`. Auth, identity, IAM, Zitadel, JWT, SCIM, organization model, three-role (owner/admin/member), API credentials, frontend sessions, OIDC discovery — all in `src/platform/docs/identity-and-iam.md`.
 Verself Go service clients are generated from committed OpenAPI 3.0 specs with `oapi-codegen`; consumers must use those generated `client` or `internalclient` packages, with SPIFFE carried by the underlying `http.Client` instead of handwritten transport code. If a service API shape is missing, add the Huma route/OpenAPI spec and regenerate instead of bypassing the SDK.
@@ -73,6 +75,15 @@ Python package management is done through `uv`.
 No need to be frugal with telemetry. We store 10+ million rows for around ~150MB in ClickHouse thanks to optimizations.
 
 </system_context>
+
+<read_directly>
+The below documents contain critical sources of truth about the system, extremely high signal. Recommended that you read these directly regardless of your task instead of trusting summaries. Note that they contents are not exhaustive as the system is migrating away from handwritten ansible to CUE with a golang renderer.
+```
+@src/cue-renderer/instances/local/topology.cue
+@src/cue-renderer/instances/local/config.cue
+@src/cue-renderer/catalog/versions.cue
+```
+</read_directly>
 
 <operational_runbook>
 

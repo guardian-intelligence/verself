@@ -4,76 +4,7 @@ The platform adopts [Temporal] as its durable execution plane: the substrate
 for workflows that span service boundaries, survive node failure mid-flight,
 and need introspection after the fact.
 
-Temporal is one of three async-infrastructure planes being added alongside
-[change data capture](change-data-capture.md) and the
-[domain event stream](domain-event-stream.md). This document covers
-durable execution only.
-
 [Temporal]: https://docs.temporal.io/
-
-## What Temporal is
-
-Temporal runs *durable code*. A workflow is a Go (or TypeScript, Python, etc.)
-function whose execution state is persisted to storage at every step. If the
-process crashes, another worker picks up the workflow and replays its history
-to reconstruct in-memory state; it continues from where the crash interrupted
-it. A workflow that sleeps for seven days and fires a notification survives
-any number of deploys, node reboots, and datacenter incidents in between.
-
-The workflow is deterministic code. The code that touches the world — HTTP
-calls, database writes, SDK calls — is factored into *activities*, which
-Temporal invokes, retries per policy, and records the result of. Activities
-are expected to be idempotent; Temporal's retry machinery assumes it can run
-them more than once.
-
-## When to reach for Temporal
-
-- **Multi-step processes that cross service boundaries.** Sandbox
-  provisioning: allocate a VM via `vm-orchestrator`, configure network,
-  wait for guest boot, register with `sandbox-rental-service`, mark billing
-  window open. Any step can fail; compensation for earlier steps must run
-  on failure; the whole thing must survive a node bounce mid-provision.
-- **Saga patterns.** Anywhere "did step N succeed? If not, undo steps 1..N-1"
-  would otherwise be handwritten.
-- **Scheduled work with durability guarantees.** `billing-service`'s
-  `Reconcile()` today is a goroutine with a ticker; Temporal gives it a
-  persistent schedule, structured retries, and a UI to see why a run was
-  skipped.
-- **Long waits.** Welcome sequences (send now, wait 24h, send follow-up,
-  wait 7 days, send reactivation). Approval flows that pause for a webhook
-  that may take days.
-- **Stripe webhook and other externally-driven flows.** Deduplicate by
-  event ID, update ledger, emit domain event, update customer-facing
-  status — each step retryable independently, with full history available
-  when a customer asks "what happened to my payment."
-- **Fan-out / fan-in.** Run N activities in parallel, wait for all, continue.
-- **Work that needs introspection.** Temporal's UI answers "where is this
-  request, why is it stuck, what was the last error" for free. When the
-  alternative is adding structured logging and a status table in Postgres
-  to every multi-step process, Temporal is cheaper.
-
-## When not to reach for Temporal
-
-- **Hot-path request handling.** Workflow overhead is milliseconds-scale.
-  If it fits in a single HTTP request and doesn't need to survive a crash,
-  do it inline.
-- **Pub/sub fan-out.** That is what the [domain event
-  stream](domain-event-stream.md) is for. Temporal is not a broker.
-- **Streaming or continuous transformation.** That is what
-  [change data capture](change-data-capture.md) and ClickHouse
-  materialized views are for.
-- **Intra-service transactional background jobs.** [River Queue] is the
-  right tool: the job is enqueued in the same Postgres transaction as the
-  business state change, so commit/rollback keeps the job and the state in
-  sync. Temporal cannot do transactional enqueue against a service's own
-  database; it operates one layer up.
-- **Simple cron on a single service.** A systemd timer or a River
-  periodic job is less machinery.
-- **Replacing a database for CRUD state.** Workflows are not rows.
-  Temporal's history is an execution log, not a query surface.
-- **Real-time work with sub-100ms SLOs.** Temporal trades latency for
-  durability. If a request blocks on a workflow completing, you will feel
-  it.
 
 Rule of thumb: reach for Temporal when the process has more than one step,
 the steps cross a failure domain (service, network, external provider),
@@ -139,9 +70,7 @@ spiffe://<td>/svc/temporal-web
 ```
 
 Single-node combined mode deliberately collapses frontend, history,
-matching, and worker into `svc/temporal-server`. That keeps the first
-brick small and avoids inventing an internal multi-identity story on one
-box before the three-node split exists.
+matching, and worker into `svc/temporal-server`.
 
 One observability wrinkle matters: combined-mode Temporal performs local
 startup polls and task-queue work that do not cross the frontend mTLS
@@ -271,19 +200,6 @@ Drawbacks:
 - The current shard count is intentionally disposable. If the cluster
   becomes durable customer infrastructure before that is revisited, the
   repo will have painted itself into a needless migration.
-
-Tailwinds:
-
-- The hard part is solved. Any repo-owned workload can now become a
-  Temporal client with the same SPIFFE X.509 client pattern.
-- Additional repo-owned clients can reuse the Temporal frontend authz
-  path instead of inventing separate trust models for workflow
-  orchestration.
-- Namespace bootstrap is already instrumented, so deploy-time
-  administrative traffic shows up on the same auth/authz and transport
-  surfaces as future repo-owned clients.
-- Grafana and `make observe` already expose the relevant traces, logs,
-  metrics, and visibility rows in one place.
 
 ## Source notes
 
