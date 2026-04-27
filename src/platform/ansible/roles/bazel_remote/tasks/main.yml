@@ -1,0 +1,86 @@
+---
+# bazel-remote: build cache daemon. The binary is laid down by deploy_profile
+# (server_tools direct_binary), the state dir is a dedicated ZFS dataset
+# managed by the zfs role, and access is bounded by host_firewall (loopback +
+# wg-ops trusted interfaces only).
+
+- name: Verify bazel-remote binary exists in profile
+  ansible.builtin.stat:
+    path: "{{ verself_bin }}/bazel-remote"
+  register: bazel_remote_binary
+  failed_when: not bazel_remote_binary.stat.exists
+
+- name: Create bazel-remote system group
+  ansible.builtin.group:
+    name: "{{ bazel_remote_group }}"
+    system: true
+
+- name: Create bazel-remote system user
+  ansible.builtin.user:
+    name: "{{ bazel_remote_user }}"
+    group: "{{ bazel_remote_group }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ bazel_remote_state_dir }}"
+    create_home: false
+
+- name: Create bazel-remote configuration directory
+  ansible.builtin.file:
+    path: "{{ bazel_remote_config_dir }}"
+    state: directory
+    owner: root
+    group: "{{ bazel_remote_group }}"
+    mode: "0750"
+
+# zfs role creates the {{ zfs_pool }}/bazel-remote dataset mounted at this
+# state dir; this task converges ownership/perms underneath. The dataset
+# inherits compression=lz4 + atime=off from the pool defaults.
+- name: Converge bazel-remote state directory
+  ansible.builtin.file:
+    path: "{{ bazel_remote_state_dir }}"
+    state: directory
+    owner: "{{ bazel_remote_user }}"
+    group: "{{ bazel_remote_group }}"
+    mode: "0750"
+
+- name: Deploy bazel-remote systemd unit
+  ansible.builtin.template:
+    src: bazel-remote.service.j2
+    dest: /etc/systemd/system/bazel-remote.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: bazel_remote_unit_state
+  notify: restart bazel-remote
+
+- name: Apply bazel-remote unit changes before readiness
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start bazel-remote
+  ansible.builtin.systemd:
+    name: bazel-remote
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for bazel-remote gRPC listener
+  ansible.builtin.wait_for:
+    host: "{{ topology_endpoints.bazel_remote.host }}"
+    port: "{{ topology_endpoints.bazel_remote.endpoints.grpc.port }}"
+    timeout: 30
+
+- name: Wait for bazel-remote HTTP listener
+  ansible.builtin.wait_for:
+    host: "{{ topology_endpoints.bazel_remote.host }}"
+    port: "{{ topology_endpoints.bazel_remote.endpoints.http.port }}"
+    timeout: 30
+
+- name: Confirm bazel-remote /status responds
+  ansible.builtin.uri:
+    url: "http://{{ topology_endpoints.bazel_remote.endpoints.http.address }}/status"
+    return_content: true
+  register: bazel_remote_status
+  until: bazel_remote_status.status == 200
+  retries: 10
+  delay: 2
+  changed_when: false
