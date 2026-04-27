@@ -231,45 +231,11 @@
     state: started
     daemon_reload: true
 
-- name: Verify Go is available on controller for vm-orchestrator build
-  delegate_to: localhost
-  become: false
-  run_once: true
-  ansible.builtin.command: go version
-  changed_when: false
-
-- name: Create local vm-orchestrator artifact directory
-  delegate_to: localhost
-  become: false
-  run_once: true
-  ansible.builtin.file:
-    path: "{{ firecracker_build_artifact_dir }}"
-    state: directory
-    mode: "0755"
-
-- name: Build vm-orchestrator binary on controller
-  delegate_to: localhost
-  become: false
-  run_once: true
-  ansible.builtin.command:
-    argv:
-      - go
-      - build
-      - -ldflags=-s -w
-      - -o
-      - "{{ firecracker_build_artifact_dir }}/vm-orchestrator"
-      - ./cmd/vm-orchestrator
-    chdir: "{{ playbook_dir }}/../../../../src/vm-orchestrator"
-  changed_when: false
-
-- name: Install vm-orchestrator binary
-  ansible.builtin.copy:
-    src: "{{ firecracker_build_artifact_dir }}/vm-orchestrator"
-    dest: "{{ firecracker_vm_orchestrator_binary_path }}"
-    owner: root
-    group: root
-    mode: "0755"
-  notify: restart vm-orchestrator
+- name: Verify topology-built vm-orchestrator binary exists in profile
+  ansible.builtin.stat:
+    path: "{{ firecracker_vm_orchestrator_binary_path }}"
+  register: firecracker_vm_orchestrator_binary
+  failed_when: not firecracker_vm_orchestrator_binary.stat.exists
 
 - name: Install vm-orchestrator service
   ansible.builtin.template:
