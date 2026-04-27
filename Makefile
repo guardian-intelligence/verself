@@ -22,11 +22,12 @@ PS       := src/profile-service
 NS       := src/notifications-service
 PJS      := src/projects-service
 OT       := src/otel
+PGM      := src/pgmigrate
 TP       := src/temporal-platform
 EC       := src/envconfig
 HS       := src/httpserver
 INVENTORY := $(PLATFORM_DIR)/ansible/inventory/hosts.ini
-GO_DIRS  := $(AW) $(VMO) $(BS) $(GS) $(IS) $(SS) $(SCH) $(AM) $(SR) $(MS) $(OSS) $(PS) $(NS) $(PJS) $(OT) $(TP) $(EC) $(HS)
+GO_DIRS  := $(AW) $(VMO) $(BS) $(GS) $(IS) $(SS) $(SCH) $(AM) $(SR) $(MS) $(OSS) $(PS) $(NS) $(PJS) $(OT) $(PGM) $(TP) $(EC) $(HS)
 GO_CLIENT_DIRS := $(BS)/client $(GS)/client $(GS)/internalclient $(IS)/client $(IS)/internalclient $(SS)/client $(SS)/internalclient $(SCH)/client $(SCH)/internalclient $(SR)/client $(SR)/internalclient $(MS)/client $(OSS)/client $(PS)/client $(PS)/internalclient $(NS)/client $(PJS)/client $(PJS)/internalclient
 GO_CLIENT_FILES := $(addsuffix /client.gen.go,$(GO_CLIENT_DIRS))
 SQLC_DIRS := $(sort $(dir $(shell find src -mindepth 2 -maxdepth 2 -name sqlc.yaml -print)))
@@ -111,6 +112,7 @@ tidy:
 	cd $(NS) && go mod tidy
 	cd $(PJS) && go mod tidy
 	cd $(OT) && go mod tidy
+	cd $(PGM) && go mod tidy
 	cd $(TP) && go mod tidy
 	cd src/viteplus-monorepo && vp fmt . --write
 
@@ -428,7 +430,7 @@ verification-reset: inventory-check ## Exhaustively wipe verification state (bil
 	$(PLATFORM_DIR)/scripts/ansible-with-tunnel.sh playbooks/verification-reset.yml
 
 wipe-pg-db: inventory-check ## Wipe one managed PostgreSQL service DB: make wipe-pg-db DB=sandbox_rental
-	@test -n "$(DB)" || { echo "ERROR: DB is required (billing|sandbox_rental|mailbox_service|identity_service|secrets_service|notifications_service|projects_service|source_code_hosting)"; exit 1; }
+	@test -n "$(DB)" || { echo "ERROR: DB is required (billing|sandbox_rental|mailbox_service|governance_service|identity_service|notifications_service|projects_service|source_code_hosting)"; exit 1; }
 	$(PLATFORM_DIR)/scripts/ansible-with-tunnel.sh playbooks/wipe-pg-db.yml -e "wipe_pg_db_name=$(DB)"
 
 vm-orchestrator-smoke-test: inventory-check ## Live smoke test for vm-orchestrator lease/exec spans through recurring sandbox executions

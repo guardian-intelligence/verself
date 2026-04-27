@@ -23,7 +23,9 @@ import (
 	"github.com/verself/identity-service/internal/api"
 	"github.com/verself/identity-service/internal/identity"
 	"github.com/verself/identity-service/internal/zitadel"
+	"github.com/verself/identity-service/migrations"
 	verselfotel "github.com/verself/otel"
+	"github.com/verself/pgmigrate"
 )
 
 const (
@@ -33,10 +35,28 @@ const (
 )
 
 func main() {
+	if handled, err := runMigrationCLI(context.Background()); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+func runMigrationCLI(ctx context.Context) (bool, error) {
+	if len(os.Args) < 2 || os.Args[1] != "migrate" {
+		return false, nil
+	}
+	return true, pgmigrate.RunCLI(ctx, os.Args[2:], pgmigrate.Config{
+		Service: serviceName,
+		FS:      migrations.Files,
+		DSNEnv:  "IDENTITY_PG_DSN",
+	})
 }
 
 func run() error {

@@ -24,19 +24,39 @@ import (
 	"github.com/verself/billing-service/internal/billing"
 	"github.com/verself/billing-service/internal/billing/ledger"
 	"github.com/verself/billing-service/internal/billingapi"
+	"github.com/verself/billing-service/migrations"
 	"github.com/verself/envconfig"
 	"github.com/verself/httpserver"
 	verselfotel "github.com/verself/otel"
+	"github.com/verself/pgmigrate"
 	secretsclient "github.com/verself/secrets-service/client"
 )
 
 const serviceVersion = "2.0.0"
 
 func main() {
+	if handled, err := runMigrationCLI(context.Background()); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+func runMigrationCLI(ctx context.Context) (bool, error) {
+	if len(os.Args) < 2 || os.Args[1] != "migrate" {
+		return false, nil
+	}
+	return true, pgmigrate.RunCLI(ctx, os.Args[2:], pgmigrate.Config{
+		Service: "billing-service",
+		FS:      migrations.Files,
+		DSNEnv:  "BILLING_PG_DSN",
+	})
 }
 
 func run() error {
