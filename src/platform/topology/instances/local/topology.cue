@@ -1,11 +1,6 @@
 package topology
 
-import (
-	"list"
-
-	cat "guardianintelligence.org/forge-metal/topology/catalog"
-	s "guardianintelligence.org/forge-metal/topology/schema"
-)
+import s "guardianintelligence.org/forge-metal/topology/schema"
 
 #ServiceProbes: {
 	healthz: {path: "/healthz"}
@@ -383,7 +378,7 @@ topology: s.#Topology & {
 			host: "127.0.0.1"
 			runtime: {systemd: "temporal-web", user: "temporal_web", group: "temporal_web"}
 			identities: default: {ansible_var: "spire_temporal_web_id", path: "/svc/temporal-web", entry_id: "verself-temporal-web"}
-			artifact: {kind: "go_binary", package: "./src/temporal-platform/cmd/verself-temporal-web", output: "verself-temporal-web", role: "temporal"}
+			artifact: {kind: "go_binary", package: "./src/temporal-platform/cmd/verself-temporal-web", output: "verself-temporal-web", role: "temporal", bazel_label: "//src/temporal-platform/cmd/verself-temporal-web:verself-temporal-web"}
 			endpoints: http: {
 				protocol: "http"
 				port:     4301
@@ -457,7 +452,11 @@ topology: s.#Topology & {
 			host: "127.0.0.1"
 			runtime: {systemd: "temporal-server", user: "temporal_server", group: "temporal_server"}
 			identities: server: {ansible_var: "spire_temporal_server_id", path: "/svc/temporal-server", user: "temporal_server", group: "temporal_server", entry_id: "verself-temporal-server", restart_units: ["temporal-server"]}
-			artifact: {kind: "go_binary", package: "./src/temporal-platform/cmd/verself-temporal-server", output: "verself-temporal-server", role: "temporal"}
+			artifact: {kind: "go_binary", package: "./src/temporal-platform/cmd/verself-temporal-server", output: "verself-temporal-server", role: "temporal", bazel_label: "//src/temporal-platform/cmd/verself-temporal-server:verself-temporal-server"}
+			tools: {
+				bootstrap: {kind: "go_binary", package: "./src/temporal-platform/cmd/temporal-bootstrap", output: "temporal-bootstrap", role: "temporal", bazel_label: "//src/temporal-platform/cmd/temporal-bootstrap:temporal-bootstrap"}
+				schema: {kind: "go_binary", package: "./src/temporal-platform/cmd/temporal-schema", output: "temporal-schema", role: "temporal", bazel_label: "//src/temporal-platform/cmd/temporal-schema:temporal-schema"}
+			}
 			temporal: {
 				frontend: {grpc_port: 7233, http_port: 7243, membership_port: 6933}
 				internal_frontend: {grpc_port: 7236, http_port: 7246, membership_port: 6936}
@@ -488,7 +487,7 @@ topology: s.#Topology & {
 			postgres: {database: "temporal", owner: "temporal", connection_limit: 80}
 		}
 		billing: #PublicGoService & #InternalGoAPI & #DefaultSPIFFEIdentity & {
-			artifact: {package: "./src/billing-service/cmd/billing-service", output: "billing-service", role: "billing_service"}
+			artifact: {package: "./src/billing-service/cmd/billing-service", output: "billing-service", role: "billing_service", bazel_label: "//src/billing-service/cmd/billing-service:billing-service"}
 			runtime: {systemd: "billing-service", user: "billing", group: "billing"}
 			identities: default: {ansible_var: "spire_billing_service_id", path: "/svc/billing-service", entry_id: "verself-billing-service"}
 			endpoints: {
@@ -498,9 +497,20 @@ topology: s.#Topology & {
 			postgres: {database: "billing", owner: "billing", connection_limit: 30}
 		}
 		sandbox_rental: #PublicGoService & #InternalGoAPI & #DefaultSPIFFEIdentity & {
-			artifact: {package: "./src/sandbox-rental-service/cmd/sandbox-rental-service", output: "sandbox-rental-service", role: "sandbox_rental_service"}
+			artifact: {package: "./src/sandbox-rental-service/cmd/sandbox-rental-service", output: "sandbox-rental-service", role: "sandbox_rental_service", bazel_label: "//src/sandbox-rental-service/cmd/sandbox-rental-service:sandbox-rental-service"}
 			runtime: {systemd: "sandbox-rental-service", user: "sandbox_rental", group: "sandbox_rental"}
 			identities: default: {ansible_var: "spire_sandbox_rental_id", path: "/svc/sandbox-rental-service", entry_id: "verself-sandbox-rental-service"}
+			processes: recurring_worker: {
+				systemd: "sandbox-rental-recurring-worker"
+				user:    "sandbox_rental"
+				group:   "sandbox_rental"
+				artifact: {kind: "go_binary", package: "./src/sandbox-rental-service/cmd/sandbox-rental-recurring-worker", output: "sandbox-rental-recurring-worker", role: "sandbox_rental_service", bazel_label: "//src/sandbox-rental-service/cmd/sandbox-rental-recurring-worker:sandbox-rental-recurring-worker"}
+				identities: ["default"]
+				after: ["verself-firewall.target", "network.target", "postgresql.service", "temporal-server.service", "spire-agent.service", "otelcol.service", "source-code-hosting-service.service"]
+				wants: ["postgresql.service", "temporal-server.service", "spire-agent.service", "otelcol.service", "source-code-hosting-service.service"]
+				supplementary_groups: ["{{ spire_workload_group }}"]
+				requires_spiffe_sock: true
+			}
 			endpoints: {
 				public_http: port:    4243
 				internal_https: port: 4263
@@ -508,7 +518,7 @@ topology: s.#Topology & {
 			postgres: {database: "sandbox_rental", owner: "sandbox_rental", connection_limit: 30}
 		}
 		identity_service: #PublicGoService & #InternalGoAPI & #DefaultSPIFFEIdentity & {
-			artifact: {package: "./src/identity-service/cmd/identity-service", output: "identity-service", role: "identity_service"}
+			artifact: {package: "./src/identity-service/cmd/identity-service", output: "identity-service", role: "identity_service", bazel_label: "//src/identity-service/cmd/identity-service:identity-service"}
 			runtime: {systemd: "identity-service", user: "identity_service", group: "identity_service"}
 			identities: default: {ansible_var: "spire_identity_service_id", path: "/svc/identity-service", entry_id: "verself-identity-service"}
 			endpoints: {
@@ -518,7 +528,7 @@ topology: s.#Topology & {
 			postgres: {database: "identity_service", owner: "identity_service", connection_limit: 10}
 		}
 		governance_service: #PublicGoService & #InternalGoAPI & #DefaultSPIFFEIdentity & {
-			artifact: {package: "./src/governance-service/cmd/governance-service", output: "governance-service", role: "governance_service"}
+			artifact: {package: "./src/governance-service/cmd/governance-service", output: "governance-service", role: "governance_service", bazel_label: "//src/governance-service/cmd/governance-service:governance-service"}
 			runtime: {systemd: "governance-service", user: "governance_service", group: "governance_service"}
 			identities: default: {ansible_var: "spire_governance_service_id", path: "/svc/governance-service", entry_id: "verself-governance-service"}
 			endpoints: {
@@ -528,7 +538,7 @@ topology: s.#Topology & {
 			postgres: {database: "governance_service", owner: "governance_service", connection_limit: 15}
 		}
 		secrets_service: #PublicGoService & #InternalGoAPI & #DefaultSPIFFEIdentity & {
-			artifact: {package: "./src/secrets-service/cmd/secrets-service", output: "secrets-service", role: "secrets_service"}
+			artifact: {package: "./src/secrets-service/cmd/secrets-service", output: "secrets-service", role: "secrets_service", bazel_label: "//src/secrets-service/cmd/secrets-service:secrets-service"}
 			runtime: {systemd: "secrets-service", user: "secrets_service", group: "secrets_service"}
 			identities: default: {ansible_var: "spire_secrets_service_id", path: "/svc/secrets-service", entry_id: "verself-secrets-service"}
 			endpoints: {
@@ -538,7 +548,7 @@ topology: s.#Topology & {
 			postgres: {database: "secrets_service", owner: "secrets_service"}
 		}
 		profile_service: #PublicGoService & #InternalGoAPI & #DefaultSPIFFEIdentity & {
-			artifact: {package: "./src/profile-service/cmd/profile-service", output: "profile-service", role: "profile_service"}
+			artifact: {package: "./src/profile-service/cmd/profile-service", output: "profile-service", role: "profile_service", bazel_label: "//src/profile-service/cmd/profile-service:profile-service"}
 			runtime: {systemd: "profile-service", user: "profile_service", group: "profile_service"}
 			identities: default: {ansible_var: "spire_profile_service_id", path: "/svc/profile-service", entry_id: "verself-profile-service"}
 			endpoints: {
@@ -548,14 +558,14 @@ topology: s.#Topology & {
 			postgres: {database: "profile_service", owner: "profile_service", connection_limit: 10}
 		}
 		notifications_service: #PublicGoService & #DefaultSPIFFEIdentity & {
-			artifact: {package: "./src/notifications-service/cmd/notifications-service", output: "notifications-service", role: "notifications_service"}
+			artifact: {package: "./src/notifications-service/cmd/notifications-service", output: "notifications-service", role: "notifications_service", bazel_label: "//src/notifications-service/cmd/notifications-service:notifications-service"}
 			runtime: {systemd: "notifications-service", user: "notifications_service", group: "notifications_service"}
 			identities: default: {ansible_var: "spire_notifications_service_id", path: "/svc/notifications-service", entry_id: "verself-notifications-service"}
 			endpoints: public_http: port: 4260
 			postgres: {database: "notifications_service", owner: "notifications_service", connection_limit: 10}
 		}
 		projects_service: #PublicGoService & #InternalGoAPI & #DefaultSPIFFEIdentity & {
-			artifact: {package: "./src/projects-service/cmd/projects-service", output: "projects-service", role: "projects_service"}
+			artifact: {package: "./src/projects-service/cmd/projects-service", output: "projects-service", role: "projects_service", bazel_label: "//src/projects-service/cmd/projects-service:projects-service"}
 			runtime: {systemd: "projects-service", user: "projects_service", group: "projects_service"}
 			identities: default: {ansible_var: "spire_projects_service_id", path: "/svc/projects-service", entry_id: "verself-projects-service"}
 			endpoints: {
@@ -565,7 +575,7 @@ topology: s.#Topology & {
 			postgres: {database: "projects_service", owner: "projects_service", connection_limit: 10}
 		}
 		source_code_hosting_service: #PublicGoService & #InternalGoAPI & #DefaultSPIFFEIdentity & {
-			artifact: {package: "./src/source-code-hosting-service/cmd/source-code-hosting-service", output: "source-code-hosting-service", role: "source_code_hosting_service"}
+			artifact: {package: "./src/source-code-hosting-service/cmd/source-code-hosting-service", output: "source-code-hosting-service", role: "source_code_hosting_service", bazel_label: "//src/source-code-hosting-service/cmd/source-code-hosting-service:source-code-hosting-service"}
 			runtime: {systemd: "source-code-hosting-service", user: "source_code_hosting_service", group: "source_code_hosting_service"}
 			identities: default: {ansible_var: "spire_source_code_hosting_service_id", path: "/svc/source-code-hosting-service", entry_id: "verself-source-code-hosting-service"}
 			endpoints: {
@@ -661,18 +671,31 @@ topology: s.#Topology & {
 			postgres: {database: "stalwart", owner: "stalwart", connection_limit: 10}
 		}
 		mailbox_service: #PublicGoService & #DefaultSPIFFEIdentity & {
-			artifact: {package: "./src/mailbox-service/cmd/mailbox-service", output: "mailbox-service", role: "mailbox_service"}
+			artifact: {package: "./src/mailbox-service/cmd/mailbox-service", output: "mailbox-service", role: "mailbox_service", bazel_label: "//src/mailbox-service/cmd/mailbox-service:mailbox-service"}
 			runtime: {systemd: "mailbox-service", user: "mailbox_service", group: "mailbox_service"}
 			identities: default: {ansible_var: "spire_mailbox_service_id", path: "/svc/mailbox-service", entry_id: "verself-mailbox-service"}
 			endpoints: public_http: port: 4246
 			postgres: {database: "mailbox_service", owner: "mailbox_service", connection_limit: 10}
 		}
 		object_storage_service: #PublicGoService & {
-			artifact: {package: "./src/object-storage-service/cmd/object-storage-service", output: "object-storage-service", role: "object_storage_service"}
+			artifact: {package: "./src/object-storage-service/cmd/object-storage-service", output: "object-storage-service", role: "object_storage_service", bazel_label: "//src/object-storage-service/cmd/object-storage-service:object-storage-service"}
 			runtime: {systemd: "object-storage-service", user: "object_storage_service", group: "object_storage_service"}
 			identities: {
 				service: {ansible_var: "spire_object_storage_service_id", path: "/svc/object-storage-service", user: "object_storage_service", group: "object_storage_service", uid_policy: {kind: "fixed", value: _config.object_storage.object_storage_service_uid}, entry_id: "verself-object-storage-service", restart_units: ["object-storage-admin", "object-storage-service"]}
 				admin: {ansible_var: "spire_object_storage_admin_id", path: "/svc/object-storage-admin", user: "object_storage_admin", group: "object_storage_admin", uid_policy: {kind: "fixed", value: _config.object_storage.object_storage_admin_uid}, entry_id: "verself-object-storage-admin", restart_units: ["object-storage-admin", "object-storage-service"]}
+			}
+			tools: secret_sync: {kind: "go_binary", package: "./src/object-storage-service/cmd/object-storage-secret-sync", output: "object-storage-secret-sync", role: "object_storage_service", bazel_label: "//src/object-storage-service/cmd/object-storage-secret-sync:object-storage-secret-sync"}
+			processes: admin: {
+				systemd: "object-storage-admin"
+				user:    "object_storage_admin"
+				group:   "object_storage_admin"
+				artifact: {kind: "go_binary", package: "./src/object-storage-service/cmd/object-storage-service", output: "object-storage-service", role: "object_storage_service", bazel_label: "//src/object-storage-service/cmd/object-storage-service:object-storage-service"}
+				endpoints: ["admin_http"]
+				identities: ["service", "admin"]
+				after: ["verself-firewall.target", "network.target", "postgresql.service", "governance-service.service", "garage@0.service", "garage@1.service", "garage@2.service", "spire-agent.service"]
+				wants: ["postgresql.service", "governance-service.service", "garage@0.service", "garage@1.service", "garage@2.service", "spire-agent.service"]
+				supplementary_groups: ["object_storage_service", "{{ spire_workload_group }}"]
+				requires_spiffe_sock: true
 			}
 			endpoints: {
 				public_http: port: 4256
@@ -701,20 +724,21 @@ topology: s.#Topology & {
 					}
 				}
 				nodes: [
-					for i in list.Range(0, instances.count, 1) {
-						instance:   i
-						s3_port:    instances.port_plan.s3_base + i*instances.port_plan.stride
-						rpc_port:   instances.port_plan.rpc_base + i*instances.port_plan.stride
-						admin_port: instances.port_plan.admin_base + i*instances.port_plan.stride
-					},
+					{instance: 0, s3_port: 3900, rpc_port: 3901, admin_port: 3903},
+					{instance: 1, s3_port: 3910, rpc_port: 3911, admin_port: 3913},
+					{instance: 2, s3_port: 3920, rpc_port: 3921, admin_port: 3923},
 				]
 			}
 			endpoints: {
-				for node in garage.nodes {
-					"s3_\(node.instance)": {protocol: "http", port: node.s3_port, exposure: "loopback"}
-					"rpc_\(node.instance)": {protocol: "tcp", port: node.rpc_port, exposure: "loopback"}
-					"admin_\(node.instance)": {protocol: "http", port: node.admin_port, exposure: "loopback"}
-				}
+				s3_0: {protocol: "http", port: 3900, exposure: "loopback"}
+				rpc_0: {protocol: "tcp", port: 3901, exposure: "loopback"}
+				admin_0: {protocol: "http", port: 3903, exposure: "loopback"}
+				s3_1: {protocol: "http", port: 3910, exposure: "loopback"}
+				rpc_1: {protocol: "tcp", port: 3911, exposure: "loopback"}
+				admin_1: {protocol: "http", port: 3913, exposure: "loopback"}
+				s3_2: {protocol: "http", port: 3920, exposure: "loopback"}
+				rpc_2: {protocol: "tcp", port: 3921, exposure: "loopback"}
+				admin_2: {protocol: "http", port: 3923, exposure: "loopback"}
 			}
 			interfaces: {
 				s3: {kind: "resource_protocol", endpoint: "s3_0", auth: "spiffe_mtls"}
@@ -781,7 +805,7 @@ topology: s.#Topology & {
 			kind: "privileged_daemon"
 			host: "10.255.0.1"
 			runtime: {systemd: "vm-orchestrator", user: "root", group: "root"}
-			artifact: {kind: "go_binary", package: "./src/vm-orchestrator/cmd/vm-orchestrator", output: "vm-orchestrator", role: "firecracker"}
+			artifact: {kind: "go_binary", package: "./src/vm-orchestrator/cmd/vm-orchestrator", output: "vm-orchestrator", role: "firecracker", bazel_label: "//src/vm-orchestrator/cmd/vm-orchestrator:vm-orchestrator"}
 			endpoints: host_http: {
 				protocol: "http"
 				host:     "10.255.0.1"
@@ -844,315 +868,4 @@ topology: s.#Topology & {
 		{name: "topology_graph_validate", kind: "span", service: "topology-compiler", span_name: "topology.graph.validate", attributes: {}},
 		{name: "topology_artifact_freshness", kind: "span", service: "topology-compiler", span_name: "topology.generated.freshness_check", attributes: {}},
 	]
-}
-
-_interfaceEndpointChecks: [
-	for componentName, componentValue in topology.components
-	for interfaceName, interfaceValue in componentValue.interfaces {
-		component: componentName
-		interface: interfaceName
-		endpoint:  componentValue.endpoints[interfaceValue.endpoint]
-	},
-]
-
-_routeTargetChecks: [
-	for route in topology.routes {
-		gateway:   topology.gateways[route.gateway]
-		component: topology.components[route.to.component]
-		interface: topology.components[route.to.component].interfaces[route.to.interface]
-	},
-]
-
-_edgeTargetChecks: [
-	for edge in topology.edges {
-		from:      topology.components[edge.from]
-		component: topology.components[edge.to.component]
-		interface: topology.components[edge.to.component].interfaces[edge.to.interface]
-	},
-]
-
-_publicAPIRouteChecks: [
-	for route in topology.routes
-	if route.kind == "public_api_origin" {
-		kind:         topology.components[route.to.component].interfaces[route.to.interface].kind & "huma_api"
-		path_prefix:  route.path_prefix & "/api/v1"
-		browser_cors: route.browser_cors & "none"
-	},
-]
-
-_resourceExposureChecks: [
-	for componentName, componentValue in topology.components
-	if componentValue.kind == "resource"
-	for endpointName, endpointValue in componentValue.endpoints
-	if endpointValue.exposure == "public" {
-		component: componentName
-		endpoint:  endpointName
-		_route:    true & false
-	},
-]
-
-_endpointEntries: [
-	for componentName, componentValue in topology.components
-	for endpointName, endpointValue in componentValue.endpoints {
-		component: componentName
-		endpoint:  endpointName
-		port:      endpointValue.port
-		protocol:  endpointValue.protocol
-		exposure:  endpointValue.exposure
-	},
-]
-
-_ports: [for entry in _endpointEntries {entry.port}]
-_uniquePorts: true & list.UniqueItems(_ports)
-
-_controlPlaneComponents: [
-	"billing",
-	"company",
-	"console",
-	"governance_service",
-	"identity_service",
-	"mailbox_service",
-	"notifications_service",
-	"object_storage_service",
-	"platform",
-	"profile_service",
-	"projects_service",
-	"sandbox_rental",
-	"secrets_service",
-	"source_code_hosting_service",
-]
-
-_controlPlanePortChecks: [
-	for name in _controlPlaneComponents
-	for _, endpointValue in topology.components[name].endpoints {
-		port: endpointValue.port & >=4240 & <=4269
-	},
-]
-
-_workloadIdentities: [
-	for componentName, componentValue in topology.components
-	for identityName, identityValue in componentValue.identities {
-		key:                   "\(componentName).\(identityName)"
-		component:             "\(componentName)"
-		name:                  "\(identityName)"
-		ansible_var:           identityValue.ansible_var
-		entry_id:              identityValue.entry_id
-		spiffe_id:             "spiffe://{{ spire_trust_domain }}\(identityValue.path)"
-		user:                  identityValue.user
-		group:                 identityValue.group
-		uid_policy:            identityValue.uid_policy
-		selector:              identityValue.selector
-		x509_svid_ttl_seconds: identityValue.x509_svid_ttl_seconds
-		restart_units:         identityValue.restart_units
-	},
-]
-
-_electricComponents: [
-	for componentName, componentValue in topology.components
-	if componentValue.electric != _|_ {
-		component:    "\(componentName)"
-		service_name: componentValue.runtime.systemd
-		port:         componentValue.endpoints[componentValue.interfaces.shape_api.endpoint].port
-		sync:         componentValue.electric
-	},
-]
-
-_postgresRoleConnectionLimits: {
-	for _, componentValue in topology.components
-	if componentValue.postgres.owner != "" && componentValue.postgres.connection_limit > 0 {
-		"\(componentValue.postgres.owner)": componentValue.postgres.connection_limit
-	}
-	for _, componentValue in _electricComponents {
-		"\(componentValue.sync.pg_role)": componentValue.sync.pg_conn_limit
-	}
-}
-
-outputs: {
-	runtime: {
-		topology_runtime: {
-			for componentName, componentValue in topology.components {
-				"\(componentName)": {
-					kind:     componentValue.kind
-					artifact: componentValue.artifact
-					runtime:  componentValue.runtime
-				}
-			}
-		}
-	}
-	endpoints: {
-		topology_endpoints: {
-			for componentName, componentValue in topology.components {
-				"\(componentName)": {
-					host: componentValue.host
-					endpoints: {
-						for endpointName, endpointValue in componentValue.endpoints {
-							"\(endpointName)": endpointValue & {
-								address: "\(endpointValue.host):\(endpointValue.port)"
-								if endpointValue.listen_host == "" {
-									bind_address: "\(endpointValue.host):\(endpointValue.port)"
-								}
-								if endpointValue.listen_host != "" {
-									bind_address: "\(endpointValue.listen_host):\(endpointValue.port)"
-								}
-							}
-						}
-					}
-					interfaces: componentValue.interfaces
-					probes:     componentValue.probes
-				}
-			}
-		}
-	}
-	clusters: {
-		topology_clusters: {
-			garage: {
-				host:  topology.components.garage.host
-				nodes: topology.components.garage.garage.nodes
-			}
-			temporal: topology.components.temporal.temporal
-		}
-	}
-	routes: {
-		topology_gateways: topology.gateways
-		topology_routes:   topology.routes
-	}
-	dns: {
-		topology_dns_records: [
-			for route in topology.routes
-			if route.kind != "guest_host_route" && route.host != "10.255.0.1" {
-				zone:   route.zone
-				record: route.host
-				kind:   route.kind
-			},
-		]
-	}
-	nftables: {
-		topology_nftables: {
-			endpoints: _endpointEntries
-			edges:     topology.edges
-		}
-	}
-	spire: {
-		spire_trust_domain:                 "spiffe.{{ verself_domain }}"
-		spire_server_bind_address:          "127.0.0.1"
-		spire_server_bind_port:             "{{ topology_endpoints.spire_server.endpoints.api.port }}"
-		spire_server_socket_path:           "/run/spire-server/private/api.sock"
-		spire_agent_socket_path:            "/run/spire-agent/sockets/agent.sock"
-		spire_workload_group:               "spire_workload"
-		spire_agent_id:                     "spiffe://{{ spire_trust_domain }}/node/single-node"
-		spire_bundle_endpoint_bind_address: "127.0.0.1"
-		spire_bundle_endpoint_bind_port:    "{{ topology_endpoints.spire_bundle_endpoint.endpoints.bundle.port }}"
-		spire_jwt_bundle_endpoint_url:      "https://{{ spire_bundle_endpoint_bind_address }}:{{ spire_bundle_endpoint_bind_port }}"
-		spire_jwt_issuer_url:               "{{ spire_jwt_bundle_endpoint_url }}"
-		for _, identity in _workloadIdentities
-		if identity.ansible_var != "" {
-			"\(identity.ansible_var)": identity.spiffe_id
-		}
-		topology_spire: {
-			identities: [
-				for identity in _workloadIdentities {
-					key:                   identity.key
-					component:             identity.component
-					entry_id:              identity.entry_id
-					spiffe_id:             identity.spiffe_id
-					user:                  identity.user
-					group:                 identity.group
-					uid_policy:            identity.uid_policy
-					selector:              identity.selector
-					x509_svid_ttl_seconds: identity.x509_svid_ttl_seconds
-					restart_units:         identity.restart_units
-				},
-			]
-			edges: [
-				for edge in topology.edges
-				if edge.auth == "spiffe_mtls" {
-					from: edge.from
-					to:   edge.to
-				},
-			]
-		}
-	}
-	postgres: {
-		postgresql_max_connections:                _config.postgres.max_connections
-		postgresql_superuser_reserved_connections: _config.postgres.superuser_reserved_connections
-		postgresql_role_connection_limits:         _postgresRoleConnectionLimits
-		topology_postgres: {
-			databases: [
-				for componentName, componentValue in topology.components
-				if componentValue.postgres.database != "" {
-					component: componentName
-					database:  componentValue.postgres.database
-					owner:     componentValue.postgres.owner
-				},
-			]
-		}
-	}
-	deploy: {
-		topology_deploy: {
-			artifacts: [
-				for componentName, componentValue in topology.components
-				if componentValue.artifact.kind != "none" {
-					component: componentName
-					artifact:  componentValue.artifact
-				},
-			]
-			edges: topology.edges
-		}
-	}
-	ops: {
-		verself_version: _config.verself_version
-		verself_bin:     _config.verself_bin
-		for key, value in _config.domains {
-			"\(key)": value
-		}
-		for key, value in _config.openbao {
-			"\(key)": value
-		}
-		for key, value in _config.wireguard {
-			"\(key)": value
-		}
-		for key, value in _config.object_storage {
-			"\(key)": value
-		}
-		retired_product_runtimes: _config.retired_product_runtimes
-		topology_electric_instances: {
-			for _, componentValue in _electricComponents {
-				"\(componentValue.sync.instance)": {
-					electric_instance:              componentValue.sync.instance
-					electric_service_name:          componentValue.service_name
-					electric_service_port:          componentValue.port
-					electric_pg_role:               componentValue.sync.pg_role
-					electric_pg_conn_limit:         componentValue.sync.pg_conn_limit
-					electric_db:                    componentValue.sync.source_database
-					electric_writer_role:           componentValue.sync.writer_role
-					electric_publication_name:      componentValue.sync.publication_name
-					electric_publication_tables:    componentValue.sync.publication_tables
-					electric_storage_dir:           componentValue.sync.storage_dir
-					electric_credstore_dir:         componentValue.sync.credstore_dir
-					electric_nftables_table:        componentValue.sync.nftables_table
-					electric_nftables_file:         componentValue.sync.nftables_file
-					electric_db_pool_size:          componentValue.sync.db_pool_size
-					electric_replication_stream_id: componentValue.sync.replication_stream_id
-					electric_extra_systemd_after:   componentValue.sync.extra_systemd_after
-				}
-			}
-		}
-		for key, value in _config.temporal {
-			"\(key)": value
-		}
-		for key, value in _config.seed_system {
-			"\(key)": value
-		}
-	}
-	proof: {
-		topology_proof: {
-			evidence: topology.evidence
-		}
-	}
-	catalog: {
-		topology_versions:       cat.versions
-		topology_server_tools:   cat.serverTools
-		topology_dev_tools:      cat.devTools
-		topology_guest_versions: cat.guestVersions
-	}
 }

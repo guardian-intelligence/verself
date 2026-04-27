@@ -48,26 +48,30 @@ CONTROL_PLANE_MAX_PORT = 4269
 @dataclass(frozen=True)
 class Artifact:
     name: str
-    expression: str
     path: Path
 
 
 ARTIFACTS = (
-    Artifact("runtime", "outputs.runtime", GENERATED_DIR / "runtime.yml"),
-    Artifact("endpoints", "outputs.endpoints", GENERATED_DIR / "endpoints.yml"),
-    Artifact("clusters", "outputs.clusters", GENERATED_DIR / "clusters.yml"),
-    Artifact("routes", "outputs.routes", GENERATED_DIR / "routes.yml"),
-    Artifact("dns", "outputs.dns", GENERATED_DIR / "dns.yml"),
-    Artifact("nftables", "outputs.nftables", GENERATED_DIR / "nftables.yml"),
-    Artifact("spire", "outputs.spire", GENERATED_DIR / "spire.yml"),
-    Artifact("postgres", "outputs.postgres", GENERATED_DIR / "postgres.yml"),
-    Artifact("deploy", "outputs.deploy", GENERATED_DIR / "deploy.yml"),
-    Artifact("ops", "outputs.ops", GENERATED_DIR / "ops.yml"),
-    Artifact("proof", "outputs.proof", GENERATED_DIR / "proof.yml"),
-    Artifact("catalog", "outputs.catalog", GENERATED_DIR / "catalog.yml"),
+    Artifact("runtime", GENERATED_DIR / "runtime.yml"),
+    Artifact("endpoints", GENERATED_DIR / "endpoints.yml"),
+    Artifact("clusters", GENERATED_DIR / "clusters.yml"),
+    Artifact("routes", GENERATED_DIR / "routes.yml"),
+    Artifact("dns", GENERATED_DIR / "dns.yml"),
+    Artifact("nftables", GENERATED_DIR / "nftables.yml"),
+    Artifact("spire", GENERATED_DIR / "spire.yml"),
+    Artifact("postgres", GENERATED_DIR / "postgres.yml"),
+    Artifact("deploy", GENERATED_DIR / "deploy.yml"),
+    Artifact("ops", GENERATED_DIR / "ops.yml"),
+    Artifact("proof", GENERATED_DIR / "proof.yml"),
+    Artifact("catalog", GENERATED_DIR / "catalog.yml"),
 )
 
 SPAN_EVENTS: list[dict[str, object]] = []
+
+
+class NoAliasDumper(yaml.SafeDumper):
+    def ignore_aliases(self, data: object) -> bool:
+        return True
 
 
 def rel(path: Path) -> str:
@@ -160,26 +164,71 @@ def run(
 
 
 def yaml_document(payload: object) -> str:
-    return HEADER + yaml.safe_dump(
+    return HEADER + yaml.dump(
         payload,
+        Dumper=NoAliasDumper,
         default_flow_style=False,
         sort_keys=True,
         width=4096,
     )
 
 
-def load_topology() -> dict[str, object]:
+def validate_artifact(owner: str, artifact: object) -> None:
+    assert isinstance(artifact, dict)
+    kind = artifact["kind"]
+    assert isinstance(kind, str)
+    output = artifact["output"]
+    assert isinstance(output, str)
+    if kind != "none" and not output:
+        raise ValueError(f"{owner} artifact is missing output")
+    if kind == "go_binary" and not artifact.get("bazel_label"):
+        raise ValueError(f"{owner} go_binary artifact is missing bazel_label")
+
+
+def cue_export(package: str, expression: str) -> tuple[object, str]:
     proc = run(
-        ["cue", "export", TOPOLOGY_INSTANCE, "-e", "topology", "--out", "json"],
+        ["cue", "export", package, "-e", expression, "--out", "json"],
         cwd=TOPOLOGY_DIR,
         capture=True,
     )
-    topology = json.loads(proc.stdout)
+    return json.loads(proc.stdout), proc.stdout
+
+
+def load_topology() -> dict[str, object]:
+    exported, raw = cue_export(TOPOLOGY_INSTANCE, "topology")
+    assert isinstance(exported, dict)
     record_span(
         "topology.cue.export_graph",
-        {"topology.graph_sha256": sha256(proc.stdout)},
+        {"topology.graph_sha256": sha256(raw)},
     )
-    return topology
+    return exported
+
+
+def load_config() -> dict[str, object]:
+    exported, raw = cue_export(TOPOLOGY_INSTANCE, "_config")
+    assert isinstance(exported, dict)
+    record_span("topology.cue.export_config", {"topology.config_sha256": sha256(raw)})
+    return exported
+
+
+def load_catalog() -> dict[str, object]:
+    catalog: dict[str, object] = {}
+    for key, expression in (
+        ("versions", "versions"),
+        ("server_tools", "serverTools"),
+        ("dev_tools", "devTools"),
+        ("guest_versions", "guestVersions"),
+    ):
+        exported, raw = cue_export("./catalog:catalog", expression)
+        catalog[key] = exported
+        record_span(
+            "topology.cue.export_catalog",
+            {
+                "topology.catalog": key,
+                "topology.catalog_sha256": sha256(raw),
+            },
+        )
+    return catalog
 
 
 def validate_graph(topology: dict[str, object]) -> None:
@@ -202,6 +251,15 @@ def validate_graph(topology: dict[str, object]) -> None:
         interfaces = component["interfaces"]
         assert isinstance(endpoints, dict)
         assert isinstance(interfaces, dict)
+        identities = component.get("identities", {})
+        assert isinstance(identities, dict)
+
+        validate_artifact(component_name, component["artifact"])
+
+        tools = component.get("tools", {})
+        assert isinstance(tools, dict)
+        for tool_name, tool_artifact in tools.items():
+            validate_artifact(f"{component_name}.tools.{tool_name}", tool_artifact)
 
         for endpoint_name, endpoint in endpoints.items():
             assert isinstance(endpoint, dict)
@@ -232,6 +290,29 @@ def validate_graph(topology: dict[str, object]) -> None:
             if endpoint_name not in endpoints:
                 raise ValueError(f"{component_name}.{interface_name} references missing endpoint {endpoint_name}")
 
+        processes = component.get("processes", {})
+        assert isinstance(processes, dict)
+        if "primary" in processes:
+            raise ValueError(f"{component_name}.processes.primary is reserved for the component runtime")
+        for process_name, process in processes.items():
+            assert isinstance(process, dict)
+            validate_artifact(f"{component_name}.processes.{process_name}", process["artifact"])
+            for endpoint_name in process.get("endpoints", []):
+                if endpoint_name not in endpoints:
+                    raise ValueError(
+                        f"{component_name}.{process_name} references missing endpoint {endpoint_name}"
+                    )
+            for identity_name in process.get("identities", []):
+                if identity_name not in identities:
+                    raise ValueError(
+                        f"{component_name}.{process_name} references missing identity {identity_name}"
+                    )
+            readiness_endpoint = process.get("readiness_endpoint")
+            if readiness_endpoint is not None and readiness_endpoint not in endpoints:
+                raise ValueError(
+                    f"{component_name}.{process_name} references missing readiness endpoint {readiness_endpoint}"
+                )
+
     for route in routes:
         assert isinstance(route, dict)
         gateway = route["gateway"]
@@ -248,6 +329,15 @@ def validate_graph(topology: dict[str, object]) -> None:
         assert isinstance(interfaces, dict)
         if interface_name not in interfaces:
             raise ValueError(f"route references missing interface {component_name}.{interface_name}")
+        interface = interfaces[interface_name]
+        assert isinstance(interface, dict)
+        if route["kind"] == "public_api_origin":
+            if interface.get("kind") != "huma_api":
+                raise ValueError(f"public API route targets non-Huma interface {component_name}.{interface_name}")
+            if route.get("path_prefix") != "/api/v1":
+                raise ValueError(f"public API route for {component_name}.{interface_name} must use /api/v1")
+            if route.get("browser_cors") != "none":
+                raise ValueError(f"public API route for {component_name}.{interface_name} must not be browser CORS")
 
     for edge in edges:
         assert isinstance(edge, dict)
@@ -278,6 +368,405 @@ def validate_graph(topology: dict[str, object]) -> None:
     )
 
 
+def endpoint_entries(topology: dict[str, object]) -> list[dict[str, object]]:
+    entries: list[dict[str, object]] = []
+    components = topology["components"]
+    assert isinstance(components, dict)
+    for component_name, component in components.items():
+        assert isinstance(component, dict)
+        endpoints = component["endpoints"]
+        assert isinstance(endpoints, dict)
+        for endpoint_name, endpoint in endpoints.items():
+            assert isinstance(endpoint, dict)
+            entries.append(
+                {
+                    "component": component_name,
+                    "endpoint": endpoint_name,
+                    "port": endpoint["port"],
+                    "protocol": endpoint["protocol"],
+                    "exposure": endpoint["exposure"],
+                }
+            )
+    return entries
+
+
+def endpoint_with_addresses(endpoint: dict[str, object]) -> dict[str, object]:
+    rendered = dict(endpoint)
+    host = rendered["host"]
+    listen_host = rendered.get("listen_host", "")
+    port = rendered["port"]
+    rendered["address"] = f"{host}:{port}"
+    rendered["bind_address"] = f"{listen_host or host}:{port}"
+    return rendered
+
+
+def workload_identities(topology: dict[str, object]) -> list[dict[str, object]]:
+    identities: list[dict[str, object]] = []
+    components = topology["components"]
+    assert isinstance(components, dict)
+    for component_name, component in components.items():
+        assert isinstance(component, dict)
+        for identity_name, identity in component.get("identities", {}).items():
+            assert isinstance(identity, dict)
+            spiffe_id = f"spiffe://{{{{ spire_trust_domain }}}}{identity['path']}"
+            identities.append(
+                {
+                    "key": f"{component_name}.{identity_name}",
+                    "component": component_name,
+                    "name": identity_name,
+                    "ansible_var": identity["ansible_var"],
+                    "entry_id": identity["entry_id"],
+                    "spiffe_id": spiffe_id,
+                    "user": identity["user"],
+                    "group": identity["group"],
+                    "uid_policy": identity["uid_policy"],
+                    "selector": identity["selector"],
+                    "x509_svid_ttl_seconds": identity["x509_svid_ttl_seconds"],
+                    "restart_units": identity["restart_units"],
+                }
+            )
+    return identities
+
+
+def processes(topology: dict[str, object]) -> list[dict[str, object]]:
+    rendered: list[dict[str, object]] = []
+    components = topology["components"]
+    assert isinstance(components, dict)
+    for component_name, component in components.items():
+        assert isinstance(component, dict)
+        runtime = component["runtime"]
+        assert isinstance(runtime, dict)
+        systemd = runtime["systemd"]
+        assert isinstance(systemd, str)
+        identities = component.get("identities", {})
+        assert isinstance(identities, dict)
+        rendered.append(
+            {
+                "key": f"{component_name}.primary",
+                "component": component_name,
+                "name": "primary",
+                "systemd": systemd,
+                "user": runtime["user"],
+                "group": runtime["group"],
+                "artifact": component["artifact"],
+                "privileged": component["kind"] == "privileged_daemon",
+                "endpoints": list(component["endpoints"].keys()),
+                "identities": list(identities.keys()),
+                "after": [],
+                "wants": [],
+                "environment": {},
+                "supplementary_groups": [],
+                "requires_spiffe_sock": bool(identities),
+                "restart_units": [systemd] if systemd else [],
+            }
+        )
+        explicit_processes = component.get("processes")
+        if explicit_processes is None:
+            continue
+        assert isinstance(explicit_processes, dict)
+        for process_name, process in explicit_processes.items():
+            assert isinstance(process, dict)
+            item = {
+                "key": f"{component_name}.{process_name}",
+                "component": component_name,
+                "name": process_name,
+                "systemd": process["systemd"],
+                "user": process["user"],
+                "group": process["group"],
+                "artifact": process["artifact"],
+                "privileged": process["privileged"],
+                "endpoints": process["endpoints"],
+                "identities": process["identities"],
+                "after": process["after"],
+                "wants": process["wants"],
+                "environment": process["environment"],
+                "supplementary_groups": process["supplementary_groups"],
+                "requires_spiffe_sock": process["requires_spiffe_sock"],
+                "restart_units": process["restart_units"],
+            }
+            if "readiness_endpoint" in process:
+                item["readiness_endpoint"] = process["readiness_endpoint"]
+            rendered.append(item)
+    return rendered
+
+
+def electric_components(topology: dict[str, object]) -> list[dict[str, object]]:
+    components = topology["components"]
+    assert isinstance(components, dict)
+    rendered: list[dict[str, object]] = []
+    for component_name, component in components.items():
+        assert isinstance(component, dict)
+        sync = component.get("electric")
+        if sync is None:
+            continue
+        assert isinstance(sync, dict)
+        shape_api = component["interfaces"]["shape_api"]
+        assert isinstance(shape_api, dict)
+        endpoint_name = shape_api["endpoint"]
+        endpoint = component["endpoints"][endpoint_name]
+        assert isinstance(endpoint, dict)
+        rendered.append(
+            {
+                "component": component_name,
+                "service_name": component["runtime"]["systemd"],
+                "port": endpoint["port"],
+                "sync": sync,
+            }
+        )
+    return rendered
+
+
+def postgres_role_connection_limits(topology: dict[str, object]) -> dict[str, int]:
+    limits: dict[str, int] = {}
+    components = topology["components"]
+    assert isinstance(components, dict)
+    for component in components.values():
+        assert isinstance(component, dict)
+        postgres = component["postgres"]
+        assert isinstance(postgres, dict)
+        owner = postgres["owner"]
+        connection_limit = postgres["connection_limit"]
+        if owner and connection_limit > 0:
+            limits[owner] = connection_limit
+    for component in electric_components(topology):
+        sync = component["sync"]
+        assert isinstance(sync, dict)
+        limits[sync["pg_role"]] = sync["pg_conn_limit"]
+    return limits
+
+
+def deploy_artifacts(topology: dict[str, object]) -> list[dict[str, object]]:
+    components = topology["components"]
+    assert isinstance(components, dict)
+    rendered: list[dict[str, object]] = []
+    by_output: dict[str, dict[str, object]] = {}
+
+    def append_artifact(component_name: str, source: str, name: str, artifact: object) -> None:
+        assert isinstance(artifact, dict)
+        if artifact["kind"] == "none":
+            return
+        output = artifact["output"]
+        assert isinstance(output, str)
+        item = {
+            "component": component_name,
+            "source": source,
+            "name": name,
+            "artifact": artifact,
+        }
+        existing = by_output.get(output)
+        if existing is not None:
+            if existing["artifact"] != artifact:
+                raise ValueError(
+                    f"deploy artifact output {output} has conflicting definitions: "
+                    f"{existing['component']}.{existing['source']}.{existing['name']} and "
+                    f"{component_name}.{source}.{name}"
+                )
+            return
+        by_output[output] = item
+        rendered.append(item)
+
+    for component_name, component in components.items():
+        assert isinstance(component, dict)
+        append_artifact(component_name, "component", "primary", component["artifact"])
+        tools = component.get("tools", {})
+        assert isinstance(tools, dict)
+        for tool_name, artifact in tools.items():
+            append_artifact(component_name, "tool", tool_name, artifact)
+        explicit_processes = component.get("processes", {})
+        assert isinstance(explicit_processes, dict)
+        for process_name, process in explicit_processes.items():
+            assert isinstance(process, dict)
+            append_artifact(component_name, "process", process_name, process["artifact"])
+
+    return rendered
+
+
+def render_artifact_payloads(
+    topology: dict[str, object],
+    config: dict[str, object],
+    catalog: dict[str, object],
+) -> dict[str, object]:
+    components = topology["components"]
+    assert isinstance(components, dict)
+    routes = topology["routes"]
+    edges = topology["edges"]
+    assert isinstance(routes, list)
+    assert isinstance(edges, list)
+
+    identities = workload_identities(topology)
+
+    runtime_payload = {
+        "topology_runtime": {
+            component_name: {
+                "kind": component["kind"],
+                "artifact": component["artifact"],
+                "runtime": component["runtime"],
+            }
+            for component_name, component in components.items()
+        },
+        "topology_processes": processes(topology),
+    }
+
+    endpoints_payload = {
+        "topology_endpoints": {
+            component_name: {
+                "host": component["host"],
+                "endpoints": {
+                    endpoint_name: endpoint_with_addresses(endpoint)
+                    for endpoint_name, endpoint in component["endpoints"].items()
+                },
+                "interfaces": component["interfaces"],
+                "probes": component["probes"],
+            }
+            for component_name, component in components.items()
+        }
+    }
+
+    spire_payload: dict[str, object] = {
+        "spire_trust_domain": "spiffe.{{ verself_domain }}",
+        "spire_server_bind_address": "127.0.0.1",
+        "spire_server_bind_port": "{{ topology_endpoints.spire_server.endpoints.api.port }}",
+        "spire_server_socket_path": "/run/spire-server/private/api.sock",
+        "spire_agent_socket_path": "/run/spire-agent/sockets/agent.sock",
+        "spire_workload_group": "spire_workload",
+        "spire_agent_id": "spiffe://{{ spire_trust_domain }}/node/single-node",
+        "spire_bundle_endpoint_bind_address": "127.0.0.1",
+        "spire_bundle_endpoint_bind_port": "{{ topology_endpoints.spire_bundle_endpoint.endpoints.bundle.port }}",
+        "spire_jwt_bundle_endpoint_url": "https://{{ spire_bundle_endpoint_bind_address }}:{{ spire_bundle_endpoint_bind_port }}",
+        "spire_jwt_issuer_url": "{{ spire_jwt_bundle_endpoint_url }}",
+        "topology_spire": {
+            "identities": [
+                {
+                    "key": identity["key"],
+                    "component": identity["component"],
+                    "entry_id": identity["entry_id"],
+                    "spiffe_id": identity["spiffe_id"],
+                    "user": identity["user"],
+                    "group": identity["group"],
+                    "uid_policy": identity["uid_policy"],
+                    "selector": identity["selector"],
+                    "x509_svid_ttl_seconds": identity["x509_svid_ttl_seconds"],
+                    "restart_units": identity["restart_units"],
+                }
+                for identity in identities
+            ],
+            "edges": [
+                {"from": edge["from"], "to": edge["to"]}
+                for edge in edges
+                if edge["auth"] == "spiffe_mtls"
+            ],
+        },
+    }
+    for identity in identities:
+        ansible_var = identity["ansible_var"]
+        if ansible_var:
+            spire_payload[ansible_var] = identity["spiffe_id"]
+
+    electric_payload: dict[str, object] = {}
+    for component in electric_components(topology):
+        sync = component["sync"]
+        assert isinstance(sync, dict)
+        electric_payload[sync["instance"]] = {
+            "electric_instance": sync["instance"],
+            "electric_service_name": component["service_name"],
+            "electric_service_port": component["port"],
+            "electric_pg_role": sync["pg_role"],
+            "electric_pg_conn_limit": sync["pg_conn_limit"],
+            "electric_db": sync["source_database"],
+            "electric_writer_role": sync["writer_role"],
+            "electric_publication_name": sync["publication_name"],
+            "electric_publication_tables": sync["publication_tables"],
+            "electric_storage_dir": sync["storage_dir"],
+            "electric_credstore_dir": sync["credstore_dir"],
+            "electric_nftables_table": sync["nftables_table"],
+            "electric_nftables_file": sync["nftables_file"],
+            "electric_db_pool_size": sync["db_pool_size"],
+            "electric_replication_stream_id": sync["replication_stream_id"],
+            "electric_extra_systemd_after": sync["extra_systemd_after"],
+        }
+
+    ops_payload: dict[str, object] = {
+        "verself_version": config["verself_version"],
+        "verself_bin": config["verself_bin"],
+        "retired_product_runtimes": config["retired_product_runtimes"],
+        "topology_electric_instances": electric_payload,
+    }
+    for section_name in ("domains", "openbao", "wireguard", "object_storage", "temporal", "seed_system"):
+        section = config[section_name]
+        assert isinstance(section, dict)
+        ops_payload.update(section)
+
+    return {
+        "runtime": runtime_payload,
+        "endpoints": endpoints_payload,
+        "clusters": {
+            "topology_clusters": {
+                "garage": {
+                    "host": components["garage"]["host"],
+                    "nodes": components["garage"]["garage"]["nodes"],
+                },
+                "temporal": components["temporal"]["temporal"],
+            }
+        },
+        "routes": {
+            "topology_gateways": topology["gateways"],
+            "topology_routes": routes,
+        },
+        "dns": {
+            "topology_dns_records": [
+                {
+                    "zone": route["zone"],
+                    "record": route["host"],
+                    "kind": route["kind"],
+                }
+                for route in routes
+                if route["kind"] != "guest_host_route" and route["host"] != "10.255.0.1"
+            ]
+        },
+        "nftables": {
+            "topology_nftables": {
+                "endpoints": endpoint_entries(topology),
+                "edges": edges,
+            }
+        },
+        "spire": spire_payload,
+        "postgres": {
+            "postgresql_max_connections": config["postgres"]["max_connections"],
+            "postgresql_superuser_reserved_connections": config["postgres"]["superuser_reserved_connections"],
+            "postgresql_role_connection_limits": postgres_role_connection_limits(topology),
+            "topology_postgres": {
+                "databases": [
+                    {
+                        "component": component_name,
+                        "database": component["postgres"]["database"],
+                        "owner": component["postgres"]["owner"],
+                    }
+                    for component_name, component in components.items()
+                    if component["postgres"]["database"]
+                ]
+            },
+        },
+        "deploy": {
+            "topology_deploy": {
+                "artifacts": deploy_artifacts(topology),
+                "edges": edges,
+            }
+        },
+        "ops": ops_payload,
+        "proof": {
+            "topology_proof": {
+                "evidence": topology["evidence"],
+            }
+        },
+        "catalog": {
+            "topology_versions": catalog["versions"],
+            "topology_server_tools": catalog["server_tools"],
+            "topology_dev_tools": catalog["dev_tools"],
+            "topology_guest_versions": catalog["guest_versions"],
+        },
+    }
+
+
 def compile_artifacts() -> dict[Artifact, str]:
     run(["cue", "fmt", "--check", "--files", "."], cwd=TOPOLOGY_DIR, capture=True)
     record_span("topology.cue.fmt_check")
@@ -288,19 +777,18 @@ def compile_artifacts() -> dict[Artifact, str]:
     run(["cue", "vet", "-c", "./instances/..."], cwd=TOPOLOGY_DIR, capture=True)
     record_span("topology.cue.vet_instance")
 
-    validate_graph(load_topology())
+    topology = load_topology()
+    config = load_config()
+    catalog = load_catalog()
+    validate_graph(topology)
+    payloads = render_artifact_payloads(topology, config, catalog)
 
     generated: dict[Artifact, str] = {}
     for artifact in ARTIFACTS:
-        proc = run(
-            ["cue", "export", TOPOLOGY_INSTANCE, "-e", artifact.expression, "--out", "json"],
-            cwd=TOPOLOGY_DIR,
-            capture=True,
-        )
-        content = yaml_document(json.loads(proc.stdout))
+        content = yaml_document(payloads[artifact.name])
         generated[artifact] = content
         record_span(
-            "topology.cue.export_artifact",
+            "topology.generated.render_artifact",
             {
                 "topology.artifact": artifact.name,
                 "topology.generated_file": rel(artifact.path),
