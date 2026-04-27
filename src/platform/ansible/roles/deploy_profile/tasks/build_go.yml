@@ -33,6 +33,7 @@
       - deploy_profile_go_binary_names | length == 18
       - deploy_profile_go_binary_names | unique | list | length == deploy_profile_go_binary_names | length
       - deploy_profile_go_binary_output_paths | unique | list | length == deploy_profile_go_binary_output_paths | length
+      - deploy_profile_go_binary_output_paths | select('match', '^artifacts/deploy/bin/[^/]+$') | list | length == deploy_profile_go_binary_output_paths | length
       - deploy_profile_go_binary_names | sort == [
           'billing-service',
           'governance-service',
@@ -54,6 +55,15 @@
           'verself-temporal-web'
         ]
     fail_msg: "deploy_profile_go_binaries must include each current Go binary exactly once with a unique output_path"
+
+- name: Create local Go binary artifact directory
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.file:
+    path: "{{ deploy_profile_repo_root }}/artifacts/deploy/bin"
+    state: directory
+    mode: "0755"
 
 - name: Build Go binaries
   delegate_to: localhost

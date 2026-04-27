@@ -11,7 +11,7 @@ verification_context_init "${BASH_SOURCE[0]}"
 
 export VERIFICATION_KIND="${VERIFICATION_KIND:-vm-orchestrator-proof}"
 base_run_id="${VERIFICATION_RUN_ID:-${VERIFICATION_KIND}-$(date -u +%Y%m%dT%H%M%SZ)}"
-artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_REPO_ROOT}/artifacts/${VERIFICATION_KIND}}"
+artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_PROOF_ARTIFACT_ROOT}/${VERIFICATION_KIND}}"
 
 set_telemetry_fault_profile() {
   local profile="$1"

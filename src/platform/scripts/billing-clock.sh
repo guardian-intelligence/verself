@@ -92,7 +92,7 @@ if [[ "${selected}" -gt 1 ]]; then
   exit 1
 fi
 
-binary_dir="${VERIFICATION_REPO_ROOT}/artifacts/bin"
+binary_dir="${VERIFICATION_DEPLOY_ARTIFACT_ROOT}/bin"
 binary_path="${binary_dir}/billing-clock"
 remote_path=""
 mkdir -p "${binary_dir}"

@@ -1,7 +1,7 @@
 ---
 # deploy_profile: populate /opt/verself/profile/bin/ with all server binaries.
 
-# Repo root on the Ansible controller (contains go.work, src/, etc.)
+# Repo root on the Ansible controller.
 deploy_profile_repo_root: "{{ playbook_dir }}/../../../.."
 
 # Staging directory for downloaded archives on the remote host
@@ -13,41 +13,41 @@ deploy_profile_postgresql_version: "16"
 deploy_profile_go_binaries:
   - name: billing-service
     package: ./src/billing-service/cmd/billing-service
-    output_path: src/billing-service/billing-service
+    output_path: artifacts/deploy/bin/billing-service
     cgo_enabled: "1"
     version_ldflags: true
     restart_handlers:
       - deploy-profile restart billing-service
   - name: tb-inspect
     package: ./src/billing-service/cmd/tb-inspect
-    output_path: src/billing-service/tb-inspect
+    output_path: artifacts/deploy/bin/tb-inspect
     cgo_enabled: "1"
     version_ldflags: false
     restart_handlers: []
   - name: sandbox-rental-service
     package: ./src/sandbox-rental-service/cmd/sandbox-rental-service
-    output_path: src/sandbox-rental-service/sandbox-rental-service
+    output_path: artifacts/deploy/bin/sandbox-rental-service
     cgo_enabled: "0"
     version_ldflags: true
     restart_handlers:
       - deploy-profile restart sandbox-rental-service
   - name: sandbox-rental-recurring-worker
     package: ./src/sandbox-rental-service/cmd/sandbox-rental-recurring-worker
-    output_path: src/sandbox-rental-service/sandbox-rental-recurring-worker
+    output_path: artifacts/deploy/bin/sandbox-rental-recurring-worker
     cgo_enabled: "0"
     version_ldflags: true
     restart_handlers:
       - deploy-profile restart sandbox-rental-recurring-worker
   - name: mailbox-service
     package: ./src/mailbox-service/cmd/mailbox-service
-    output_path: src/mailbox-service/mailbox-service
+    output_path: artifacts/deploy/bin/mailbox-service
     cgo_enabled: "0"
     version_ldflags: true
     restart_handlers:
       - deploy-profile restart mailbox-service
   - name: object-storage-service
     package: ./src/object-storage-service/cmd/object-storage-service
-    output_path: src/object-storage-service/object-storage-service
+    output_path: artifacts/deploy/bin/object-storage-service
     cgo_enabled: "0"
     version_ldflags: true
     restart_handlers:
@@ -55,82 +55,82 @@ deploy_profile_go_binaries:
       - deploy-profile restart object-storage-service
   - name: object-storage-secret-sync
     package: ./src/object-storage-service/cmd/object-storage-secret-sync
-    output_path: src/object-storage-service/object-storage-secret-sync
+    output_path: artifacts/deploy/bin/object-storage-secret-sync
     cgo_enabled: "0"
     version_ldflags: true
     restart_handlers: []
   - name: identity-service
     package: ./src/identity-service/cmd/identity-service
-    output_path: src/identity-service/identity-service
+    output_path: artifacts/deploy/bin/identity-service
     cgo_enabled: "0"
     version_ldflags: true
     restart_handlers:
       - deploy-profile restart identity-service
   - name: governance-service
     package: ./src/governance-service/cmd/governance-service
-    output_path: src/governance-service/governance-service
+    output_path: artifacts/deploy/bin/governance-service
     cgo_enabled: "0"
     version_ldflags: true
     restart_handlers:
       - deploy-profile restart governance-service
   - name: profile-service
     package: ./src/profile-service/cmd/profile-service
-    output_path: src/profile-service/profile-service
+    output_path: artifacts/deploy/bin/profile-service
     cgo_enabled: "0"
     version_ldflags: true
     restart_handlers:
       - deploy-profile restart profile-service
   - name: notifications-service
     package: ./src/notifications-service/cmd/notifications-service
-    output_path: src/notifications-service/notifications-service
+    output_path: artifacts/deploy/bin/notifications-service
     cgo_enabled: "0"
     version_ldflags: true
     restart_handlers:
       - deploy-profile restart notifications-service
   - name: projects-service
     package: ./src/projects-service/cmd/projects-service
-    output_path: src/projects-service/projects-service
+    output_path: artifacts/deploy/bin/projects-service
     cgo_enabled: "0"
     version_ldflags: true
     restart_handlers:
       - deploy-profile restart projects-service
   - name: secrets-service
     package: ./src/secrets-service/cmd/secrets-service
-    output_path: src/secrets-service/secrets-service
+    output_path: artifacts/deploy/bin/secrets-service
     cgo_enabled: "0"
     version_ldflags: true
     restart_handlers:
       - deploy-profile restart secrets-service
   - name: source-code-hosting-service
     package: ./src/source-code-hosting-service/cmd/source-code-hosting-service
-    output_path: src/source-code-hosting-service/source-code-hosting-service
+    output_path: artifacts/deploy/bin/source-code-hosting-service
     cgo_enabled: "0"
     version_ldflags: true
     restart_handlers:
       - deploy-profile restart source-code-hosting-service
   - name: verself-temporal-server
     package: ./src/temporal-platform/cmd/verself-temporal-server
-    output_path: src/temporal-platform/verself-temporal-server
+    output_path: artifacts/deploy/bin/verself-temporal-server
     cgo_enabled: "0"
     version_ldflags: true
     restart_handlers:
       - deploy-profile restart temporal-server
   - name: verself-temporal-web
     package: ./src/temporal-platform/cmd/verself-temporal-web
-    output_path: src/temporal-platform/verself-temporal-web
+    output_path: artifacts/deploy/bin/verself-temporal-web
     cgo_enabled: "0"
     version_ldflags: true
     restart_handlers:
       - deploy-profile restart temporal-web
   - name: temporal-bootstrap
     package: ./src/temporal-platform/cmd/temporal-bootstrap
-    output_path: src/temporal-platform/temporal-bootstrap
+    output_path: artifacts/deploy/bin/temporal-bootstrap
     cgo_enabled: "0"
     version_ldflags: true
     restart_handlers: []
   - name: temporal-schema
     package: ./src/temporal-platform/cmd/temporal-schema
-    output_path: src/temporal-platform/temporal-schema
+    output_path: artifacts/deploy/bin/temporal-schema
     cgo_enabled: "0"
     version_ldflags: true
     restart_handlers: []
