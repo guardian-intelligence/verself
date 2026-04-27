@@ -120,7 +120,7 @@ Current service-owned database names:
 The billing product ID remains `sandbox`. Do not use `DB=sandbox`; that was a
 legacy billing database name and should not exist on a current deployment.
 
-Use `guest-rootfs.yml` when the guest kernel, rootfs, or staged Firecracker guest artifacts changed. It rebuilds and restages the guest artifacts without touching the rest of the platform.
+Use `guest-rootfs.yml` when the guest kernel, rootfs, or staged Firecracker guest artifacts changed. It builds the Bazel guest artifact bundle, rebuilds the rootfs, and restages the Firecracker guest artifacts without touching the rest of the platform.
 
 ## Telemetry Proof
 

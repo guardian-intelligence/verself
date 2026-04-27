@@ -1,81 +1,62 @@
 ---
-# Build the Firecracker guest rootfs: compile local binaries, upload to the
-# remote host, and run the Ubuntu rootfs builder.
+# Build the Firecracker guest rootfs: materialize the Bazel-owned guest input
+# bundle, upload it to the remote host, and run the Ubuntu rootfs builder.
 
 # ── Controller-side builds ──────────────────────────────────────────────────
 
-- name: Assert zig is available
+- name: Assert bazelisk is available
   delegate_to: localhost
   become: false
   run_once: true
-  ansible.builtin.command: zig version
+  ansible.builtin.command: bazelisk version
   changed_when: false
 
-- name: Build vm-guest-telemetry (Zig)
+- name: Build guest artifact input bundle
   delegate_to: localhost
   become: false
   run_once: true
   ansible.builtin.command:
-    argv: [zig, build, -Doptimize=ReleaseSafe]
-    chdir: "{{ guest_rootfs_vm_guest_telemetry_dir }}"
+    argv: [bazelisk, build, "{{ guest_rootfs_bazel_bundle_label }}"]
+    chdir: "{{ guest_rootfs_monorepo_root }}"
   changed_when: true
 
-- name: Create local guest binary artifact directory
+- name: Verify guest artifact input bundle exists
   delegate_to: localhost
   become: false
   run_once: true
-  ansible.builtin.file:
-    path: "{{ guest_rootfs_build_artifact_dir }}"
-    state: directory
-    mode: "0755"
-
-- name: Build vm-bridge (static, linux/amd64)
-  delegate_to: localhost
-  become: false
-  run_once: true
-  ansible.builtin.command:
-    argv: [go, build, "-ldflags=-s -w", -o, "{{ guest_rootfs_build_artifact_dir }}/vm-bridge", ./cmd/vm-bridge]
-    chdir: "{{ guest_rootfs_monorepo_root }}/src/vm-orchestrator"
-  environment:
-    CGO_ENABLED: "0"
-    GOOS: linux
-    GOARCH: amd64
-  changed_when: true
+  ansible.builtin.stat:
+    path: "{{ guest_rootfs_bazel_bundle_path }}"
+    get_checksum: false
+  register: guest_rootfs_bazel_bundle
+  failed_when: not guest_rootfs_bazel_bundle.stat.exists
 
 # ── Upload to remote ───────────────────────────────────────────────────────
 
-- name: Upload build script
+- name: Upload guest artifact input bundle
   ansible.builtin.copy:
-    src: "{{ guest_rootfs_build_script }}"
-    dest: "{{ guest_rootfs_remote_tmp }}/build-guest-rootfs.sh"
-    mode: "0755"
-
-- name: Validate generated guest version pins are loaded
-  ansible.builtin.assert:
-    that:
-      - topology_guest_versions is defined
-      - topology_guest_versions.firecracker.version is defined
-      - topology_guest_versions.guest_kernel.sha256 is defined
-    fail_msg: >-
-      topology_guest_versions is missing. Run make topology-generate before guest-rootfs.
-
-- name: Upload version pins
-  ansible.builtin.copy:
-    content: "{{ topology_guest_versions | to_nice_json }}\n"
-    dest: "{{ guest_rootfs_remote_tmp }}/versions.json"
+    src: "{{ guest_rootfs_bazel_bundle_path }}"
+    dest: "{{ guest_rootfs_remote_bundle }}"
     mode: "0644"
 
-- name: Upload vm-bridge
-  ansible.builtin.copy:
-    src: "{{ guest_rootfs_build_artifact_dir }}/vm-bridge"
-    dest: "{{ guest_rootfs_remote_tmp }}/vm-bridge"
-    mode: "0755"
+- name: Extract guest artifact input bundle
+  ansible.builtin.unarchive:
+    src: "{{ guest_rootfs_remote_bundle }}"
+    dest: "{{ guest_rootfs_remote_tmp }}"
+    remote_src: true
+    owner: root
+    group: root
 
-- name: Upload vm-guest-telemetry
-  ansible.builtin.copy:
-    src: "{{ guest_rootfs_vm_guest_telemetry_dir }}/zig-out/bin/vm-guest-telemetry"
-    dest: "{{ guest_rootfs_remote_tmp }}/vm-guest-telemetry"
-    mode: "0755"
+- name: Verify extracted guest artifact inputs exist
+  ansible.builtin.stat:
+    path: "{{ guest_rootfs_remote_tmp }}/{{ item }}"
+    get_checksum: false
+  loop:
+    - build-guest-rootfs.sh
+    - versions.json
+    - vm-bridge
+    - vm-guest-telemetry
+  register: guest_rootfs_extracted_input_check
+  failed_when: not guest_rootfs_extracted_input_check.stat.exists
 
 # ── Build rootfs on remote ─────────────────────────────────────────────────
 
