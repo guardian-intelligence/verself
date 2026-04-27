@@ -1,0 +1,42 @@
+---
+argument_specs:
+  main:
+    short_description: "WireGuard tunnel converger"
+    description:
+      - "Brings up one or more WireGuard tunnels on the host."
+      - "Plays pass `wireguard_tunnels` — a slice of topology_wireguard.tunnels"
+      - "selected via topology_wireguard.host_groups — so different host groups"
+      - "can run different combinations of tunnels (workers run wg0; the infra"
+      - "node also runs wg-ops for operator access to private substrate)."
+    options:
+      wireguard_tunnels:
+        type: list
+        elements: dict
+        required: true
+        description: "List of tunnel definitions to converge on this host."
+        options:
+          interface:
+            type: str
+            required: true
+            description: "Linux interface name (e.g. wg0, wg-ops)."
+          port:
+            type: int
+            required: true
+            description: "UDP listen port."
+          address:
+            type: str
+            required: true
+            description: "This host's IP within the tunnel network."
+          address_prefix:
+            type: int
+            required: true
+            description: "CIDR prefix length for the tunnel subnet."
+          network:
+            type: str
+            required: true
+            description: "Tunnel subnet (e.g. 10.0.0.0/16)."
+          peers:
+            type: list
+            elements: dict
+            default: []
+            description: "Peer entries; each requires public_key + allowed_ips."

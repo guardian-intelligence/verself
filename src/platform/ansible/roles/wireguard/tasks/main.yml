@@ -1,7 +1,22 @@
 ---
-# WireGuard mesh networking setup.
-# wireguard-tools provided by deploy_profile role (apt).
-# Kernel module is built-in on Linux 6.8+.
+# WireGuard mesh networking. Handles every tunnel attached to this host:
+# wg0 (worker mesh between platform nodes) and wg-ops (operator mesh for
+# private substrate access). Driven by `wireguard_tunnels`, a list of
+# tunnel definitions sourced from topology_wireguard.
+#
+# wireguard-tools is laid down by deploy_profile (apt). The kernel module
+# is built-in on Linux 6.8+, so the role only needs to manage userspace
+# config + systemd units.
+
+- name: Validate wireguard_tunnels input
+  ansible.builtin.assert:
+    that:
+      - wireguard_tunnels is defined
+      - wireguard_tunnels | length > 0
+    quiet: true
+    fail_msg: >-
+      wireguard_tunnels must be a non-empty list of tunnel definitions.
+      Plays should pass the appropriate slice of topology_wireguard.tunnels.
 
 - name: Create WireGuard config directory
   ansible.builtin.file:
@@ -9,52 +24,9 @@
     state: directory
     mode: "0700"
 
-- name: Generate WireGuard private key file
-  ansible.builtin.shell: |
-    set -euo pipefail
-    umask 077
-    {{ verself_bin }}/wg genkey > /etc/wireguard/private.key
-  args:
-    executable: /bin/bash
-    creates: /etc/wireguard/private.key
-  no_log: true
-
-- name: Set WireGuard private key permissions
-  ansible.builtin.file:
-    path: /etc/wireguard/private.key
-    mode: "0600"
-  no_log: true
-
-- name: Read WireGuard private key
-  ansible.builtin.slurp:
-    src: /etc/wireguard/private.key
-  register: wireguard_private_key_file
-  no_log: true
-
-- name: Set WireGuard private key fact
-  ansible.builtin.set_fact:
-    wireguard_private_key_material: "{{ wireguard_private_key_file.content | b64decode | trim }}"
-  no_log: true
-
-- name: Validate WireGuard private key material
-  ansible.builtin.shell: |
-    set -o pipefail
-    {{ verself_bin }}/wg pubkey < /etc/wireguard/private.key >/dev/null
-  register: wireguard_public_key
-  args:
-    executable: /bin/bash
-  changed_when: false
-  no_log: true
-
-- name: Deploy WireGuard config
-  ansible.builtin.template:
-    src: wg0.conf.j2
-    dest: "/etc/wireguard/{{ wireguard_interface }}.conf"
-    mode: "0600"
-  notify: restart wireguard
-
-- name: Enable and start WireGuard
-  ansible.builtin.systemd:
-    name: "wg-quick@{{ wireguard_interface }}"
-    enabled: true
-    state: started
+- name: Configure each WireGuard tunnel
+  ansible.builtin.include_tasks: tunnel.yml
+  loop: "{{ wireguard_tunnels }}"
+  loop_control:
+    loop_var: wg_tunnel
+    label: "{{ wg_tunnel.interface }}"

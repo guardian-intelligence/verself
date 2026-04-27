@@ -5,14 +5,28 @@ nftables_public_tcp_ports:
   - 80
   - 443
 
-# Public-facing UDP ports.
-nftables_public_udp_ports:
-  - "{{ wireguard_port | default(51820) }}"
+# Public-facing UDP ports — every WireGuard tunnel's listen port must ingress.
+# Sourced from topology_wireguard so adding a tunnel is one CUE edit, not a
+# split between topology and firewall defaults.
+nftables_public_udp_ports: >-
+  {{
+    topology_wireguard.tunnels.values()
+    | map(attribute='port')
+    | list
+  }}
 
 # Interfaces where all inbound traffic is accepted without port filtering.
-nftables_trusted_interfaces:
-  - lo
-  - "{{ wireguard_interface | default('wg0') }}"
+# wg0 is the worker mesh; wg-ops is the operator mesh that fronts private
+# substrate (bazel-remote, future operator UIs). Both are authenticated by
+# WireGuard public-key cryptography so anything that lands on these
+# interfaces is a verified peer.
+nftables_trusted_interfaces: >-
+  {{
+    ['lo'] +
+    (topology_wireguard.tunnels.values()
+     | map(attribute='interface')
+     | list)
+  }}
 
 # Firecracker guests reach selected host-local services via the host gateway.
 nftables_firecracker_guest_cidr: "{{ firecracker_guest_pool_cidr | default('172.16.0.0/16') }}"

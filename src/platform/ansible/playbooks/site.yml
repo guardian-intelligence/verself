@@ -167,6 +167,13 @@
     - role: containerd
       tags: [containerd]
     - role: wireguard
+      vars:
+        wireguard_tunnels: >-
+          {{
+            topology_wireguard.host_groups.workers
+            | map('extract', topology_wireguard.tunnels)
+            | list
+          }}
       tags: [wireguard]
     - role: firecracker
       tags: [firecracker]
@@ -176,6 +183,13 @@
   become: true
   roles:
     - role: wireguard
+      vars:
+        wireguard_tunnels: >-
+          {{
+            topology_wireguard.host_groups.infra
+            | map('extract', topology_wireguard.tunnels)
+            | list
+          }}
       tags: [wireguard]
     - role: cloudflare_dns
       tags: [cloudflare_dns, projects_service, source_code_hosting_service]

@@ -271,10 +271,28 @@ topology_electric_instances:
     electric_service_port: 3012
     electric_storage_dir: /var/lib/electric-notifications
     electric_writer_role: notifications_service
+topology_wireguard:
+  host_groups:
+    infra:
+    - worker
+    - ops
+    workers:
+    - worker
+  tunnels:
+    ops:
+      address: 10.66.66.1
+      address_prefix: 24
+      interface: wg-ops
+      network: 10.66.66.0/24
+      peers: []
+      port: 51821
+    worker:
+      address: 10.0.0.1
+      address_prefix: 16
+      interface: wg0
+      network: 10.0.0.0/16
+      peers: []
+      port: 51820
 verself_bin: /opt/verself/profile/bin
 verself_domain: verself.sh
 verself_version: 0.1.0
-wireguard_address: 10.0.0.1
-wireguard_interface: wg0
-wireguard_network: 10.0.0.0/16
-wireguard_port: 51820

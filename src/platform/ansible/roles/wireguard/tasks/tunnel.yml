@@ -1,0 +1,66 @@
+---
+# Converge a single WireGuard tunnel. The role calls this once per entry in
+# wireguard_tunnels so the bare-metal host runs both wg0 and wg-ops out of
+# the same role.
+#
+# Restart logic is inlined rather than handler-based: handlers run after the
+# loop ends, by which point the loop_var (wg_tunnel) is unset, so the handler
+# would lose the interface name. Inlining keeps each tunnel's restart bound to
+# its own iteration and runs deterministically per change.
+
+- name: "[{{ wg_tunnel.interface }}] Generate WireGuard private key file"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    umask 077
+    {{ verself_bin }}/wg genkey > /etc/wireguard/{{ wg_tunnel.interface }}-private.key
+  args:
+    executable: /bin/bash
+    creates: "/etc/wireguard/{{ wg_tunnel.interface }}-private.key"
+  no_log: true
+
+- name: "[{{ wg_tunnel.interface }}] Set WireGuard private key permissions"
+  ansible.builtin.file:
+    path: "/etc/wireguard/{{ wg_tunnel.interface }}-private.key"
+    mode: "0600"
+  no_log: true
+
+- name: "[{{ wg_tunnel.interface }}] Read WireGuard private key"
+  ansible.builtin.slurp:
+    src: "/etc/wireguard/{{ wg_tunnel.interface }}-private.key"
+  register: wg_tunnel_private_key_file
+  no_log: true
+
+- name: "[{{ wg_tunnel.interface }}] Set WireGuard private key fact"
+  ansible.builtin.set_fact:
+    wg_tunnel_private_key_material: "{{ wg_tunnel_private_key_file.content | b64decode | trim }}"
+  no_log: true
+
+- name: "[{{ wg_tunnel.interface }}] Validate WireGuard private key material"
+  ansible.builtin.shell: |
+    set -o pipefail
+    {{ verself_bin }}/wg pubkey < /etc/wireguard/{{ wg_tunnel.interface }}-private.key >/dev/null
+  args:
+    executable: /bin/bash
+  changed_when: false
+  no_log: true
+
+- name: "[{{ wg_tunnel.interface }}] Deploy WireGuard config"
+  ansible.builtin.template:
+    src: tunnel.conf.j2
+    dest: "/etc/wireguard/{{ wg_tunnel.interface }}.conf"
+    mode: "0600"
+  vars:
+    tunnel_private_key: "{{ wg_tunnel_private_key_material }}"
+  register: wg_tunnel_config
+
+- name: "[{{ wg_tunnel.interface }}] Enable and start WireGuard"
+  ansible.builtin.systemd:
+    name: "wg-quick@{{ wg_tunnel.interface }}"
+    enabled: true
+    state: started
+
+- name: "[{{ wg_tunnel.interface }}] Restart WireGuard on config change"
+  ansible.builtin.systemd:
+    name: "wg-quick@{{ wg_tunnel.interface }}"
+    state: restarted
+  when: wg_tunnel_config.changed
