@@ -6,6 +6,8 @@ billing_service_subdomain: billing.api
 company_domain: guardianintelligence.org
 console_domain: '{{ console_subdomain }}.{{ verself_domain }}'
 console_subdomain: console
+forgejo_domain: '{{ forgejo_subdomain }}.{{ verself_domain }}'
+forgejo_subdomain: git
 governance_service_domain: '{{ governance_service_subdomain }}.{{ verself_domain }}'
 governance_service_subdomain: governance.api
 identity_service_domain: '{{ identity_service_subdomain }}.{{ verself_domain }}'
@@ -298,3 +300,5 @@ topology_wireguard:
 verself_bin: /opt/verself/profile/bin
 verself_domain: verself.sh
 verself_version: 0.1.0
+zitadel_domain: '{{ zitadel_subdomain }}.{{ verself_domain }}'
+zitadel_subdomain: auth

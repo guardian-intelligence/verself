@@ -8,6 +8,8 @@ type ServiceHost string
 
 type Port int64
 
+type FileMode string
+
 type ComponentKind string
 
 type Protocol string
@@ -94,7 +96,11 @@ type PostgresBinding struct {
 	Owner string `json:"owner"`
 
 	Connection_limit int64 `json:"connection_limit"`
+
+	PasswordRef map[string]any `json:"password_ref"`
 }
+
+type PostgresPasswordRef map[string]any
 
 type ElectricSync struct {
 	Instance string `json:"instance"`
@@ -437,6 +443,212 @@ type SmokeTestSpan struct {
 	Attributes map[string]any/* CUE top */ `json:"attributes"`
 }
 
+type ComponentDirectory struct {
+	Path string `json:"path"`
+
+	Owner string `json:"owner"`
+
+	Group string `json:"group"`
+
+	Mode FileMode `json:"mode"`
+}
+
+type SecretGeneration struct {
+	Kind string `json:"kind"`
+
+	Length int64 `json:"length"`
+
+	Chars string `json:"chars"`
+}
+
+type SecretRef struct {
+	Name string `json:"name"`
+
+	Path string `json:"path"`
+
+	Owner string `json:"owner"`
+
+	Group string `json:"group"`
+
+	Mode FileMode `json:"mode"`
+
+	NoLog bool `json:"no_log"`
+
+	RestartUnits []any/* CUE closed list */ `json:"restart_units"`
+
+	ExposeAs string `json:"expose_as,omitempty"`
+
+	Source map[string]any `json:"source"`
+}
+
+type ClickHouseGrant struct {
+	Action string `json:"action"`
+
+	Table string `json:"table"`
+}
+
+type ClickHouseBinding struct {
+	User string `json:"user"`
+
+	SpiffeIdentity string `json:"spiffe_identity"`
+
+	Grants []any/* CUE closed list */ `json:"grants"`
+}
+
+type ZitadelProjectRole struct {
+	Key string `json:"key"`
+
+	DisplayName string `json:"display_name"`
+
+	Group string `json:"group"`
+}
+
+type ZitadelAuth map[string]any
+
+type SystemdCredential struct {
+	Name string `json:"name"`
+
+	Path string `json:"path"`
+}
+
+type SystemdHardening struct {
+	CapabilityBoundingSet string `json:"capability_bounding_set"`
+
+	ProtectHome bool `json:"protect_home"`
+
+	ProtectSystem string `json:"protect_system"`
+
+	PrivateDevices bool `json:"private_devices"`
+
+	PrivateTmp bool `json:"private_tmp"`
+
+	ProtectClock bool `json:"protect_clock"`
+
+	ProtectControlGroups bool `json:"protect_control_groups"`
+
+	ProtectKernelLogs bool `json:"protect_kernel_logs"`
+
+	ProtectKernelModules bool `json:"protect_kernel_modules"`
+
+	ProtectKernelTunables bool `json:"protect_kernel_tunables"`
+
+	LockPersonality bool `json:"lock_personality"`
+
+	NoNewPrivileges bool `json:"no_new_privileges"`
+
+	RestrictAddressFamilies []any/* CUE closed list */ `json:"restrict_address_families"`
+
+	RestrictNamespaces bool `json:"restrict_namespaces,omitempty"`
+
+	RestrictRealtime bool `json:"restrict_realtime"`
+
+	RestrictSUIDSGID bool `json:"restrict_suid_sgid"`
+
+	SystemCallArchitectures string `json:"system_call_architectures"`
+
+	UMask string `json:"umask"`
+
+	ReadWritePaths []any/* CUE closed list */ `json:"read_write_paths"`
+}
+
+type ReadinessProbe map[string]any
+
+type SystemdUnit struct {
+	Name string `json:"name"`
+
+	Description string `json:"description"`
+
+	User string `json:"user"`
+
+	Group string `json:"group"`
+
+	Uid int64 `json:"uid,omitempty"`
+
+	Home string `json:"home"`
+
+	CreateHome bool `json:"create_home"`
+
+	Exec string `json:"exec"`
+
+	After []any/* CUE closed list */ `json:"after"`
+
+	Wants []any/* CUE closed list */ `json:"wants"`
+
+	Requires []any/* CUE closed list */ `json:"requires"`
+
+	SupplementaryGroups []any/* CUE closed list */ `json:"supplementary_groups"`
+
+	BindReadOnlyPaths []any/* CUE closed list */ `json:"bind_read_only_paths"`
+
+	LoadCredentials []any/* CUE closed list */ `json:"load_credentials"`
+
+	Environment map[string]string `json:"environment"`
+
+	Restart string `json:"restart"`
+
+	RestartSec int64 `json:"restart_sec"`
+
+	Hardening map[string]any `json:"hardening"`
+
+	Readiness []any/* CUE closed list */ `json:"readiness"`
+}
+
+type ComponentVerification struct {
+	Systemd bool `json:"systemd"`
+
+	Nftables bool `json:"nftables"`
+
+	Postgres bool `json:"postgres"`
+
+	Clickhouse bool `json:"clickhouse"`
+
+	Health bool `json:"health"`
+}
+
+type SandboxGithubAppBootstrap struct {
+	Enabled bool `json:"enabled"`
+
+	AppID string `json:"app_id"`
+
+	Slug string `json:"slug"`
+
+	ClientID string `json:"client_id"`
+
+	APIBaseURL string `json:"api_base_url"`
+
+	WebBaseURL string `json:"web_base_url"`
+}
+
+type ComponentBootstrapConfig struct {
+	SandboxGithubApp SandboxGithubAppBootstrap `json:"sandbox_github_app,omitempty"`
+}
+
+type ComponentConverge struct {
+	Enabled bool `json:"enabled"`
+
+	DeployTag string `json:"deploy_tag"`
+
+	Order int64 `json:"order"`
+
+	Directories []any/* CUE closed list */ `json:"directories"`
+
+	SecretRefs []any/* CUE closed list */ `json:"secret_refs"`
+
+	Clickhouse ClickHouseBinding `json:"clickhouse,omitempty"`
+
+	Auth map[string]any `json:"auth"`
+
+	Systemd struct {
+		Units []any /* CUE closed list */ `json:"units"`
+	} `json:"systemd"`
+
+	Bootstrap []any/* CUE closed list */ `json:"bootstrap"`
+
+	BootstrapConfig map[string]any `json:"bootstrap_config"`
+
+	Verification map[string]any `json:"verification"`
+}
+
 type Component struct {
 	Kind ComponentKind `json:"kind"`
 
@@ -467,6 +679,8 @@ type Component struct {
 	Postgres PostgresBinding `json:"postgres"`
 
 	Electric ElectricSync `json:"electric,omitempty"`
+
+	Converge map[string]any `json:"converge"`
 }
 
 type Topology struct {

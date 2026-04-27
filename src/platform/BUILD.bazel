@@ -3,6 +3,7 @@ package(default_visibility = ["//visibility:public"])
 exports_files([
     "ansible/group_vars/all/generated/catalog.yml",
     "ansible/group_vars/all/generated/clusters.yml",
+    "ansible/group_vars/all/generated/components.yml",
     "ansible/group_vars/all/generated/deploy.yml",
     "ansible/group_vars/all/generated/dns.yml",
     "ansible/group_vars/all/generated/endpoints.yml",
@@ -12,5 +13,6 @@ exports_files([
     "ansible/group_vars/all/generated/runtime.yml",
     "ansible/group_vars/all/generated/smoke_test.yml",
     "ansible/group_vars/all/generated/spire.yml",
+    "ansible/handlers/component-systemd.yml",
     "scripts/build-guest-rootfs.sh",
 ] + glob(["ansible/share/rendered/**"]))

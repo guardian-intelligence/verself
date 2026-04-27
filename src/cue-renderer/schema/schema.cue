@@ -3,6 +3,7 @@ package schema
 #Host:        string & !=""
 #ServiceHost: #Host & !="0.0.0.0" & !="::"
 #Port:        int & >=1 & <=65535 & !=4245 & !=4247
+#FileMode:    string & =~"^0[0-7]{3}$"
 
 #ComponentKind: "service" | "frontend" | "resource" | "protocol_backend" | "privileged_daemon"
 #Protocol:      "http" | "https" | "grpc" | "tcp" | "smtp" | "ssh" | "statsd" | "clickhouse_native"
@@ -65,6 +66,19 @@ package schema
 	database:         string | *""
 	owner:            string | *""
 	connection_limit: int & >=0 | *0
+	password_ref: #PostgresPasswordRef | *{kind: "none"} @go(PasswordRef)
+}
+
+#PostgresPasswordRef: {
+	kind: "none"
+} | {
+	kind:   "ansible_var"
+	name:   string & !=""
+	no_log: bool | *true
+} | {
+	kind:      "secret_ref"
+	expose_as: string & !=""
+	no_log:    bool | *true
 }
 
 #ElectricSync: {
@@ -346,6 +360,170 @@ package schema
 	attributes: {[string]: _} | *{}
 }
 
+#ComponentDirectory: {
+	path:  string & =~"^/"
+	owner: string & !=""
+	group: string & !=""
+	mode:  #FileMode
+}
+
+#SecretGeneration: {
+	kind:   "password"
+	length: int & >0
+	chars:  string & !=""
+}
+
+#SecretRef: {
+	name:   string & !=""
+	path:   string & =~"^/"
+	owner:  string & !=""
+	group:  string & !=""
+	mode:   #FileMode
+	no_log: bool | *true @go(NoLog)
+	restart_units: [...string] | *[] @go(RestartUnits)
+	expose_as?: string & !="" @go(ExposeAs)
+	source: {
+		kind:     "generated"
+		generate: #SecretGeneration
+	} | {
+		kind:        "ansible_var"
+		ansible_var: string & !="" @go(AnsibleVar)
+	} | {
+		kind:       "remote_src"
+		remote_src: string & =~"^/" @go(RemoteSrc)
+	}
+}
+
+#ClickHouseGrant: {
+	action: "INSERT" | "SELECT" | "ALTER" | "CREATE" | "DROP"
+	table:  string & =~"^[A-Za-z0-9_]+\\.[A-Za-z0-9_]+$"
+}
+
+#ClickHouseBinding: {
+	user:            string & !=""
+	spiffe_identity: string & !="" @go(SpiffeIdentity)
+	grants: [...#ClickHouseGrant] | *[]
+}
+
+#ZitadelProjectRole: {
+	key:          string & !=""
+	display_name: string & !="" @go(DisplayName)
+	group:        string & !=""
+}
+
+#ZitadelAuth: {
+	kind: "none"
+} | {
+	kind:                   "owned_project"
+	project_name:           string & !="" @go(ProjectName)
+	project_role_assertion: bool          @go(ProjectRoleAssertion)
+	project_role_check:     bool          @go(ProjectRoleCheck)
+	roles: [...#ZitadelProjectRole] | *[]
+} | {
+	kind:         "identity_project_audience"
+	project_name: string & !="" @go(ProjectName)
+}
+
+#SystemdCredential: {
+	name: string & !=""
+	path: string & =~"^/"
+}
+
+#SystemdHardening: {
+	capability_bounding_set: string | *""                                     @go(CapabilityBoundingSet)
+	protect_home:            bool | *true                                     @go(ProtectHome)
+	protect_system:          "strict" | "full" | "true" | "false" | *"strict" @go(ProtectSystem)
+	private_devices:         bool | *true                                     @go(PrivateDevices)
+	private_tmp:             bool | *true                                     @go(PrivateTmp)
+	protect_clock:           bool | *true                                     @go(ProtectClock)
+	protect_control_groups:  bool | *true                                     @go(ProtectControlGroups)
+	protect_kernel_logs:     bool | *true                                     @go(ProtectKernelLogs)
+	protect_kernel_modules:  bool | *true                                     @go(ProtectKernelModules)
+	protect_kernel_tunables: bool | *true                                     @go(ProtectKernelTunables)
+	lock_personality:        bool | *true                                     @go(LockPersonality)
+	no_new_privileges:       bool | *true                                     @go(NoNewPrivileges)
+	restrict_address_families: [...string] | *["AF_INET", "AF_INET6", "AF_UNIX"] @go(RestrictAddressFamilies)
+	restrict_namespaces?:      bool                @go(RestrictNamespaces)
+	restrict_realtime:         bool | *true        @go(RestrictRealtime)
+	restrict_suid_sgid:        bool | *true        @go(RestrictSUIDSGID)
+	system_call_architectures: string | *"native"  @go(SystemCallArchitectures)
+	umask:                     #FileMode | *"0077" @go(UMask)
+	read_write_paths: [...string & =~"^/"] | *[] @go(ReadWritePaths)
+}
+
+#ReadinessProbe: {
+	kind:            "tcp"
+	endpoint:        string & !=""
+	timeout_seconds: int & >0 | *5 @go(TimeoutSeconds)
+} | {
+	kind:            "http"
+	endpoint:        string & !=""
+	path:            string & =~"^/"
+	status_code:     int & >=100 & <=599 | *200 @go(StatusCode)
+	timeout_seconds: int & >0 | *5              @go(TimeoutSeconds)
+	scheme:          "http" | "https" | *"http"
+	ca_path?:        string & =~"^/" @go(CAPath)
+}
+
+#SystemdUnit: {
+	name:        string & !=""
+	description: string & !=""
+	user:        string & !=""
+	group:       string & !=""
+	uid?:        int & >0
+	home:        string | *""
+	create_home: bool | *false @go(CreateHome)
+	exec:        string & !=""
+	after: [...string] | *[]
+	wants: [...string] | *[]
+	requires: [...string] | *["verself-firewall.target"]
+	supplementary_groups: [...string] | *[] @go(SupplementaryGroups)
+	bind_read_only_paths: [...string] | *[] @go(BindReadOnlyPaths)
+	load_credentials: [...#SystemdCredential] | *[] @go(LoadCredentials)
+	environment: {[string]: string} | *{}
+	restart:     "always" | "on-failure" | "no" | *"on-failure"
+	restart_sec: int & >=0 | *5 @go(RestartSec)
+	hardening: #SystemdHardening | *{}
+	readiness: [...#ReadinessProbe] | *[]
+}
+
+#ComponentVerification: {
+	systemd:    bool | *true
+	nftables:   bool | *true
+	postgres:   bool | *true
+	clickhouse: bool | *true
+	health:     bool | *true
+}
+
+#SandboxGithubAppBootstrap: {
+	enabled:      bool
+	app_id:       string & =~"^[0-9]+$" @go(AppID)
+	slug:         string & !=""
+	client_id:    string & !="" @go(ClientID)
+	api_base_url: string & =~"^https://" @go(APIBaseURL)
+	web_base_url: string & =~"^https://" @go(WebBaseURL)
+}
+
+#ComponentBootstrapConfig: {
+	sandbox_github_app?: #SandboxGithubAppBootstrap @go(SandboxGithubApp)
+}
+
+#ComponentConverge: {
+	enabled:    bool | *false
+	deploy_tag: string | *"" @go(DeployTag)
+	order:      int | *0
+	directories: [...#ComponentDirectory] | *[]
+	secret_refs: [...#SecretRef] | *[] @go(SecretRefs)
+	clickhouse?: #ClickHouseBinding
+	auth: #ZitadelAuth | *{kind: "none"}
+	systemd: {
+		units: [...#SystemdUnit] | *[]
+	}
+	bootstrap: [...string] | *[]
+	bootstrap_config: #ComponentBootstrapConfig | *{} @go(BootstrapConfig)
+	verification: #ComponentVerification | *{}
+}
+
 #Component: {
 	kind:        #ComponentKind
 	host:        #ServiceHost | *"127.0.0.1"
@@ -372,6 +550,7 @@ package schema
 	temporal?: #TemporalCluster
 	postgres:  #PostgresBinding
 	electric?: #ElectricSync
+	converge: #ComponentConverge | *{}
 }
 
 #Topology: {

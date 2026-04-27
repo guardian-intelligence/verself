@@ -49,6 +49,12 @@ config: s.#InstanceConfig & {
 		mailbox_service_subdomain: "mail.api"
 		mailbox_service_domain:    "{{ mailbox_service_subdomain }}.{{ verself_domain }}"
 
+		forgejo_subdomain: "git"
+		forgejo_domain:    "{{ forgejo_subdomain }}.{{ verself_domain }}"
+
+		zitadel_subdomain: "auth"
+		zitadel_domain:    "{{ zitadel_subdomain }}.{{ verself_domain }}"
+
 		resend_subdomain:      "notify"
 		resend_domain:         "{{ resend_subdomain }}.{{ verself_domain }}"
 		resend_sender_address: "noreply@{{ resend_domain }}"
