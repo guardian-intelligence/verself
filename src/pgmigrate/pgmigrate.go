@@ -20,7 +20,6 @@ type Config struct {
 	Service string
 	FS      fs.FS
 	Dir     string
-	DSNEnv  string
 }
 
 type migration struct {
@@ -103,13 +102,7 @@ func Up(ctx context.Context, cfg Config) error {
 }
 
 func migrationDSN(cfg Config) string {
-	if value := strings.TrimSpace(os.Getenv("PG_DSN")); value != "" {
-		return value
-	}
-	if cfg.DSNEnv != "" {
-		return strings.TrimSpace(os.Getenv(cfg.DSNEnv))
-	}
-	return ""
+	return strings.TrimSpace(os.Getenv("VERSELF_PG_DSN"))
 }
 
 func loadMigrations(cfg Config) ([]migration, error) {

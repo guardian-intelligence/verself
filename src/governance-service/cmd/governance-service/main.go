@@ -47,7 +47,6 @@ func runMigrationCLI(ctx context.Context) (bool, error) {
 	return true, pgmigrate.RunCLI(ctx, os.Args[2:], pgmigrate.Config{
 		Service: "governance-service",
 		FS:      migrations.Files,
-		DSNEnv:  "GOVERNANCE_PG_DSN",
 	})
 }
 
@@ -63,24 +62,24 @@ func run() error {
 	slog.SetDefault(logger)
 
 	cfg := envconfig.New()
-	pgDSN := cfg.RequireString("GOVERNANCE_PG_DSN")
+	pgDSN := cfg.RequireString("VERSELF_PG_DSN")
 	identityPGDSN := cfg.RequireString("GOVERNANCE_IDENTITY_PG_DSN")
 	billingPGDSN := cfg.RequireString("GOVERNANCE_BILLING_PG_DSN")
 	sandboxPGDSN := cfg.RequireString("GOVERNANCE_SANDBOX_PG_DSN")
 	auditHMACKey := cfg.RequireCredential("audit-hmac-key")
-	listenAddr := cfg.String("GOVERNANCE_LISTEN_ADDR", "127.0.0.1:4250")
-	internalListenAddr := cfg.String("GOVERNANCE_INTERNAL_LISTEN_ADDR", "127.0.0.1:4254")
-	chAddress := cfg.String("GOVERNANCE_CH_ADDRESS", "127.0.0.1:9440")
-	chUser := cfg.String("GOVERNANCE_CH_USER", "governance_service")
-	authIssuerURL := cfg.RequireURL("GOVERNANCE_AUTH_ISSUER_URL")
-	authAudience := cfg.RequireString("GOVERNANCE_AUTH_AUDIENCE")
+	listenAddr := cfg.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4250")
+	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4254")
+	chAddress := cfg.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
+	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "governance_service")
+	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
+	authAudience := cfg.RequireString("VERSELF_AUTH_AUDIENCE")
 	exportDir := cfg.String("GOVERNANCE_EXPORT_DIR", "/var/lib/governance-service/exports")
 	publicBaseURL := cfg.String("GOVERNANCE_PUBLIC_BASE_URL", "")
 	writerInstanceID := cfg.String("GOVERNANCE_WRITER_INSTANCE_ID", hostname())
 	hmacKeyID := cfg.String("GOVERNANCE_AUDIT_HMAC_KEY_ID", "governance-service.v1")
 	exportTTLHours := cfg.Int("GOVERNANCE_EXPORT_TTL_HOURS", 168)
 	environment := cfg.String("GOVERNANCE_ENVIRONMENT", "single-node")
-	pgMaxConns := cfg.Int("GOVERNANCE_PG_MAX_CONNS", 8)
+	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
 	identityPGMaxConns := cfg.Int("GOVERNANCE_IDENTITY_PG_MAX_CONNS", 4)
 	billingPGMaxConns := cfg.Int("GOVERNANCE_BILLING_PG_MAX_CONNS", 4)
 	sandboxPGMaxConns := cfg.Int("GOVERNANCE_SANDBOX_PG_MAX_CONNS", 4)

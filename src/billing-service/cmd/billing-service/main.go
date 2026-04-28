@@ -55,26 +55,25 @@ func runMigrationCLI(ctx context.Context) (bool, error) {
 	return true, pgmigrate.RunCLI(ctx, os.Args[2:], pgmigrate.Config{
 		Service: "billing-service",
 		FS:      migrations.Files,
-		DSNEnv:  "BILLING_PG_DSN",
 	})
 }
 
 func run() error {
 	cfg := envconfig.New()
-	pgDSN := cfg.RequireString("BILLING_PG_DSN")
-	listenAddr := cfg.String("BILLING_LISTEN_ADDR", "127.0.0.1:4242")
-	internalListenAddr := cfg.String("BILLING_INTERNAL_LISTEN_ADDR", "127.0.0.1:4255")
-	chAddress := cfg.String("BILLING_CH_ADDRESS", "127.0.0.1:9440")
-	chUser := cfg.String("BILLING_CH_USER", "billing_service")
+	pgDSN := cfg.RequireString("VERSELF_PG_DSN")
+	listenAddr := cfg.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4242")
+	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4255")
+	chAddress := cfg.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
+	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "billing_service")
 	tbAddress := cfg.String("BILLING_TB_ADDRESS", "127.0.0.1:3320")
 	tbClusterID := cfg.Uint64("BILLING_TB_CLUSTER_ID", 0)
 	secretsURL := cfg.RequireURL("BILLING_SECRETS_URL")
-	authIssuerURL := cfg.RequireURL("BILLING_AUTH_ISSUER_URL")
-	authAudience := cfg.RequireString("BILLING_AUTH_AUDIENCE")
-	pgMaxConns := cfg.Int("BILLING_PG_MAX_CONNS", 12)
-	pgMinConns := cfg.Int("BILLING_PG_MIN_CONNS", 1)
-	pgMaxLifetime := cfg.Int("BILLING_PG_CONN_MAX_LIFETIME_SECONDS", 1800)
-	pgMaxIdle := cfg.Int("BILLING_PG_CONN_MAX_IDLE_SECONDS", 300)
+	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
+	authAudience := cfg.RequireString("VERSELF_AUTH_AUDIENCE")
+	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 12)
+	pgMinConns := cfg.Int("VERSELF_PG_MIN_CONNS", 1)
+	pgMaxLifetime := cfg.Int("VERSELF_PG_CONN_MAX_LIFETIME_SECONDS", 1800)
+	pgMaxIdle := cfg.Int("VERSELF_PG_CONN_MAX_IDLE_SECONDS", 300)
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
 	chCACertPath := cfg.RequireCredentialPath("clickhouse-ca-cert")
 	if err := cfg.Err(); err != nil {

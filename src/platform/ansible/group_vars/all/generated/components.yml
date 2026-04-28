@@ -712,7 +712,9 @@ topology_components:
             group: identity
             key: member
       bootstrap:
-        - identity_zitadel_actions
+        - class: identity_provider
+          name: identity_zitadel_actions
+          reason: Installs Zitadel Actions V2 targets and executions that are identity-provider control-plane state.
       bootstrap_config: {}
       clickhouse:
         grants:
@@ -737,6 +739,13 @@ topology_components:
             exec: '{{ verself_bin }}/identity-service'
             group: identity_service
             home: ""
+            load_credentials:
+              - name: zitadel-admin-token
+                path: /etc/credstore/identity-service/zitadel-admin-token
+              - name: zitadel-action-signing-key
+                path: /etc/credstore/identity-service/zitadel-action-signing-key
+              - name: clickhouse-ca-cert
+                path: /etc/clickhouse-server/tls/server-ca.pem
             name: identity-service
             readiness:
               - endpoint: public_http
@@ -845,6 +854,11 @@ topology_components:
             exec: '{{ verself_bin }}/governance-service'
             group: governance_service
             home: ""
+            load_credentials:
+              - name: audit-hmac-key
+                path: /etc/credstore/governance-service/audit-hmac-key
+              - name: clickhouse-ca-cert
+                path: /etc/clickhouse-server/tls/server-ca.pem
             name: governance-service
             readiness:
               - endpoint: public_http
@@ -921,6 +935,7 @@ topology_components:
             exec: '{{ verself_bin }}/profile-service'
             group: profile_service
             home: ""
+            load_credentials: []
             name: profile-service
             readiness:
               - endpoint: public_http
@@ -1005,6 +1020,9 @@ topology_components:
             exec: '{{ verself_bin }}/notifications-service'
             group: notifications_service
             home: ""
+            load_credentials:
+              - name: clickhouse-ca-cert
+                path: /etc/clickhouse-server/tls/server-ca.pem
             name: notifications-service
             readiness:
               - endpoint: public_http
@@ -1081,6 +1099,7 @@ topology_components:
             exec: '{{ verself_bin }}/projects-service'
             group: projects_service
             home: ""
+            load_credentials: []
             name: projects-service
             readiness:
               - endpoint: public_http
@@ -1139,8 +1158,12 @@ topology_components:
             group: secrets
             key: member
       bootstrap:
-        - secrets_platform_org
-        - openbao_tenancy
+        - class: identity_lookup
+          name: secrets_platform_org
+          reason: Resolves the platform organization ID from Zitadel until identity object lookups become a generic projection.
+        - class: secret_backend
+          name: openbao_tenancy
+          reason: Reconciles OpenBao mounts, auth backends, policies, and platform runtime secrets.
       bootstrap_config: {}
       deploy_tag: secrets_service
       directories:
@@ -1157,6 +1180,9 @@ topology_components:
             exec: '{{ verself_bin }}/secrets-service'
             group: secrets_service
             home: ""
+            load_credentials:
+              - name: openbao-ca-cert
+                path: /etc/openbao/tls/cert.pem
             name: secrets-service
             readiness:
               - endpoint: public_http
@@ -1200,8 +1226,12 @@ topology_components:
       auth:
         kind: none
       bootstrap:
-        - object_storage_tls
-        - object_storage_garage_proxy
+        - class: storage_provider
+          name: object_storage_tls
+          reason: Creates the local S3 TLS CA, server certificate, and operator CA bundle for Garage proxy traffic.
+        - class: storage_provider
+          name: object_storage_garage_proxy
+          reason: Creates Garage proxy credentials and syncs the runtime proxy secret through secrets-service.
       bootstrap_config: {}
       clickhouse:
         grants:
@@ -1277,6 +1307,15 @@ topology_components:
             exec: '{{ verself_bin }}/object-storage-service'
             group: object_storage_service
             home: /var/lib/object-storage-service
+            load_credentials:
+              - name: credential-kek
+                path: /etc/credstore/object-storage-service/credential-kek
+              - name: clickhouse-ca-cert
+                path: /etc/clickhouse-server/tls/server-ca.pem
+              - name: s3-tls-cert
+                path: /etc/object-storage-service/tls/server-cert.pem
+              - name: s3-tls-key
+                path: /etc/object-storage-service/tls/server-key.pem
             name: object-storage-service
             readiness:
               - ca_path: /etc/verself/local-cas/object-storage-s3-ca.pem
@@ -1294,6 +1333,13 @@ topology_components:
             exec: '{{ verself_bin }}/object-storage-service'
             group: object_storage_admin
             home: /var/lib/object-storage-admin
+            load_credentials:
+              - name: credential-kek
+                path: /etc/credstore/object-storage-service/credential-kek
+              - name: garage-admin-token
+                path: /etc/garage/admin-token
+              - name: garage-proxy-access-key-id
+                path: /etc/credstore/object-storage-service/garage-proxy-access-key-id
             name: object-storage-admin
             readiness:
               - endpoint: admin_http
@@ -1357,8 +1403,7 @@ topology_components:
       auth:
         kind: identity_project_audience
         project_name: identity-service
-      bootstrap:
-        - source_forgejo_owner
+      bootstrap: []
       bootstrap_config: {}
       deploy_tag: source_code_hosting_service
       directories:
@@ -1402,6 +1447,11 @@ topology_components:
             exec: '{{ verself_bin }}/source-code-hosting-service'
             group: source_code_hosting_service
             home: ""
+            load_credentials:
+              - name: forgejo-token
+                path: /etc/credstore/forgejo/automation-token
+              - name: webhook-secret
+                path: /etc/credstore/source-code-hosting-service/webhook-secret
             name: source-code-hosting-service
             readiness:
               - endpoint: public_http
@@ -1451,7 +1501,9 @@ topology_components:
         project_role_check: false
         roles: []
       bootstrap:
-        - billing_stripe_webhook
+        - class: external_provider
+          name: billing_stripe_webhook
+          reason: Reconciles the Stripe webhook endpoint and runtime provider secret outside the generic service shape.
       bootstrap_config: {}
       clickhouse:
         grants:
@@ -1496,6 +1548,9 @@ topology_components:
             exec: '{{ verself_bin }}/billing-service'
             group: billing
             home: ""
+            load_credentials:
+              - name: clickhouse-ca-cert
+                path: /etc/clickhouse-server/tls/server-ca.pem
             name: billing-service
             readiness:
               - endpoint: public_http
@@ -1554,8 +1609,9 @@ topology_components:
             group: sandbox
             key: member
       bootstrap:
-        - sandbox_vm_socket_acl
-        - sandbox_github_app
+        - class: security_audit
+          name: sandbox_vm_socket_acl
+          reason: Asserts the vm-clients privileged group remains limited to the sandbox rental runtime.
       bootstrap_config:
         sandbox_github_app:
           api_base_url: https://api.github.com
@@ -1623,6 +1679,15 @@ topology_components:
             exec: '{{ verself_bin }}/sandbox-rental-service'
             group: sandbox_rental
             home: ""
+            load_credentials:
+              - name: clickhouse-ca-cert
+                path: /etc/clickhouse-server/tls/server-ca.pem
+              - name: forgejo-token
+                path: /etc/credstore/forgejo/automation-token
+              - name: forgejo-webhook-secret
+                path: /etc/credstore/sandbox-rental/forgejo-webhook-secret
+              - name: forgejo-bootstrap-secret
+                path: /etc/credstore/sandbox-rental/forgejo-bootstrap-secret
             name: sandbox-rental-service
             readiness:
               - endpoint: public_http
@@ -1639,6 +1704,7 @@ topology_components:
             exec: '{{ verself_bin }}/sandbox-rental-recurring-worker'
             group: sandbox_rental
             home: ""
+            load_credentials: []
             name: sandbox-rental-recurring-worker
             readiness: []
             supplementary_groups:
@@ -1684,8 +1750,7 @@ topology_components:
           - display_name: Mailbox User
             group: mailbox
             key: mailbox_user
-      bootstrap:
-        - mailbox_state
+      bootstrap: []
       bootstrap_config: {}
       deploy_tag: mailbox_service
       directories:
@@ -1739,6 +1804,13 @@ topology_components:
             exec: '{{ verself_bin }}/mailbox-service'
             group: mailbox_service
             home: ""
+            load_credentials:
+              - name: stalwart-ceo-password
+                path: /etc/credstore/mailbox-service/stalwart-ceo-password
+              - name: stalwart-agents-password
+                path: /etc/credstore/mailbox-service/stalwart-agents-password
+              - name: forward-to
+                path: /etc/credstore/mailbox-service/forward-to
             name: mailbox-service
             readiness:
               - endpoint: public_http

@@ -48,7 +48,7 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 				return err
 			}
 			unitNames[name] = struct{}{}
-			body, err := renderUnit(unit)
+			body, err := renderUnit(component, unit)
 			if err != nil {
 				return fmt.Errorf("render %s: %w", name, err)
 			}
@@ -95,9 +95,13 @@ func renderHandlers(unitNames map[string]struct{}) []byte {
 	return []byte(b.String())
 }
 
-func renderUnit(unit map[string]any) ([]byte, error) {
+func renderUnit(component projection.NamedMap, unit map[string]any) ([]byte, error) {
 	name := mustString(unit, "name")
 	hardening := normalizedHardening(mustMap(unit, "hardening"))
+	environment, err := unitEnvironment(component, unit)
+	if err != nil {
+		return nil, err
+	}
 
 	var b strings.Builder
 	b.WriteString(projection.Header)
@@ -118,8 +122,8 @@ func renderUnit(unit map[string]any) ([]byte, error) {
 	for _, credential := range mustMapSlice(unit, "load_credentials") {
 		fmt.Fprintf(&b, "LoadCredential=%s:%s\n", mustString(credential, "name"), mustString(credential, "path"))
 	}
-	for _, key := range sortedKeys(mustMap(unit, "environment")) {
-		fmt.Fprintf(&b, "Environment=%s=%s\n", key, mustMap(unit, "environment")[key])
+	for _, key := range sortedStringKeys(environment) {
+		fmt.Fprintf(&b, "Environment=%s=%s\n", key, environment[key])
 	}
 	fmt.Fprintf(&b, "ExecStart=%s\n", mustString(unit, "exec"))
 	fmt.Fprintf(&b, "Restart=%s\n", mustString(unit, "restart"))
@@ -154,6 +158,217 @@ func renderUnit(unit map[string]any) ([]byte, error) {
 		return nil, fmt.Errorf("unit name is empty")
 	}
 	return []byte(b.String()), nil
+}
+
+func unitEnvironment(component projection.NamedMap, unit map[string]any) (map[string]string, error) {
+	environment := map[string]string{}
+	kind, err := projection.String(component.Value, component.Name, "kind")
+	if err != nil {
+		return nil, err
+	}
+	if kind == "service" {
+		derived, err := derivedServiceEnvironment(component, unit)
+		if err != nil {
+			return nil, err
+		}
+		for key, value := range derived {
+			environment[key] = value
+		}
+	}
+	for key, value := range mustMap(unit, "environment") {
+		stringValue, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("%s.converge.systemd.units.%s.environment.%s: expected string, got %T", component.Name, mustString(unit, "name"), key, value)
+		}
+		environment[key] = stringValue
+	}
+	return environment, nil
+}
+
+func derivedServiceEnvironment(component projection.NamedMap, unit map[string]any) (map[string]string, error) {
+	unitName := mustString(unit, "name")
+	unitProcess, err := processForUnit(component, unitName)
+	if err != nil {
+		return nil, err
+	}
+	endpoints := endpointSet(component, unitProcess)
+	environment := map[string]string{
+		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}",
+		"OTEL_SERVICE_NAME":           unitName,
+	}
+	if _, ok := endpoints["public_http"]; ok {
+		environment["VERSELF_LISTEN_ADDR"] = topologyEndpointAddress(component.Name, "public_http")
+	}
+	if _, ok := endpoints["internal_https"]; ok {
+		environment["VERSELF_INTERNAL_LISTEN_ADDR"] = topologyEndpointAddress(component.Name, "internal_https")
+	}
+	if requiresSpiffe(component, unit, unitProcess) {
+		environment["SPIFFE_ENDPOINT_SOCKET"] = "unix://{{ spire_agent_socket_path }}"
+	}
+	postgres, err := projection.Map(component.Value, component.Name, "postgres")
+	if err != nil {
+		return nil, err
+	}
+	database, err := projection.String(postgres, component.Name+".postgres", "database")
+	if err != nil {
+		return nil, err
+	}
+	owner, err := projection.String(postgres, component.Name+".postgres", "owner")
+	if err != nil {
+		return nil, err
+	}
+	if database != "" || owner != "" {
+		if database == "" || owner == "" {
+			return nil, fmt.Errorf("%s.postgres: database and owner must both be set for service env derivation", component.Name)
+		}
+		environment["VERSELF_PG_DSN"] = fmt.Sprintf("postgres://%s@/%s?host=/var/run/postgresql&sslmode=disable", owner, database)
+		pool, err := projection.Map(postgres, component.Name+".postgres", "pool")
+		if err != nil {
+			return nil, err
+		}
+		if err := appendPostgresPoolEnvironment(environment, component.Name+".postgres.pool", pool); err != nil {
+			return nil, err
+		}
+	}
+	if unitHasCredential(unit, "clickhouse-ca-cert") {
+		converge, err := projection.Map(component.Value, component.Name, "converge")
+		if err != nil {
+			return nil, err
+		}
+		if raw, ok := converge["clickhouse"]; ok {
+			clickhouse, ok := raw.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("%s.converge.clickhouse: expected map, got %T", component.Name, raw)
+			}
+			user, err := projection.String(clickhouse, component.Name+".converge.clickhouse", "user")
+			if err != nil {
+				return nil, err
+			}
+			environment["VERSELF_CLICKHOUSE_ADDRESS"] = "{{ topology_endpoints.clickhouse.endpoints.native_tls.address }}"
+			environment["VERSELF_CLICKHOUSE_USER"] = user
+		}
+	}
+	if len(endpoints) > 0 {
+		converge, err := projection.Map(component.Value, component.Name, "converge")
+		if err != nil {
+			return nil, err
+		}
+		auth, err := projection.Map(converge, component.Name+".converge", "auth")
+		if err != nil {
+			return nil, err
+		}
+		authKind, err := projection.String(auth, component.Name+".converge.auth", "kind")
+		if err != nil {
+			return nil, err
+		}
+		if authKind != "none" {
+			environment["VERSELF_AUTH_ISSUER_URL"] = "https://auth.{{ verself_domain }}"
+			environment["VERSELF_AUTH_AUDIENCE"] = "{{ component_auth_audience }}"
+		}
+	}
+	return environment, nil
+}
+
+func appendPostgresPoolEnvironment(environment map[string]string, path string, pool map[string]any) error {
+	maxConns, err := projection.Int(pool, path, "max_conns")
+	if err != nil {
+		return err
+	}
+	minConns, err := projection.Int(pool, path, "min_conns")
+	if err != nil {
+		return err
+	}
+	maxLifetime, err := projection.Int(pool, path, "conn_max_lifetime_seconds")
+	if err != nil {
+		return err
+	}
+	maxIdle, err := projection.Int(pool, path, "conn_max_idle_seconds")
+	if err != nil {
+		return err
+	}
+	environment["VERSELF_PG_MAX_CONNS"] = fmt.Sprint(maxConns)
+	environment["VERSELF_PG_MIN_CONNS"] = fmt.Sprint(minConns)
+	environment["VERSELF_PG_CONN_MAX_LIFETIME_SECONDS"] = fmt.Sprint(maxLifetime)
+	environment["VERSELF_PG_CONN_MAX_IDLE_SECONDS"] = fmt.Sprint(maxIdle)
+	return nil
+}
+
+func processForUnit(component projection.NamedMap, unitName string) (map[string]any, error) {
+	runtime, err := projection.Map(component.Value, component.Name, "runtime")
+	if err != nil {
+		return nil, err
+	}
+	primarySystemd, err := projection.String(runtime, component.Name+".runtime", "systemd")
+	if err != nil {
+		return nil, err
+	}
+	if unitName == primarySystemd {
+		return map[string]any{"name": "primary"}, nil
+	}
+	processes, err := projection.NestedFields(component, "processes")
+	if err != nil {
+		return nil, err
+	}
+	for _, process := range processes {
+		systemd, err := projection.String(process.Value, component.Name+".processes."+process.Name, "systemd")
+		if err != nil {
+			return nil, err
+		}
+		if unitName == systemd {
+			out := projection.CloneMap(process.Value)
+			out["name"] = process.Name
+			return out, nil
+		}
+	}
+	return nil, fmt.Errorf("%s.converge.systemd.units.%s: no matching runtime or process", component.Name, unitName)
+}
+
+func endpointSet(component projection.NamedMap, process map[string]any) map[string]struct{} {
+	out := map[string]struct{}{}
+	if process["name"] == "primary" {
+		endpoints, _ := component.Value["endpoints"].(map[string]any)
+		for name := range endpoints {
+			out[name] = struct{}{}
+		}
+		return out
+	}
+	for _, endpoint := range mustStringSlice(process, "endpoints") {
+		out[endpoint] = struct{}{}
+	}
+	return out
+}
+
+func topologyEndpointAddress(componentName, endpointName string) string {
+	return "{{ topology_endpoints." + componentName + ".endpoints." + endpointName + ".address }}"
+}
+
+func requiresSpiffe(component projection.NamedMap, unit map[string]any, process map[string]any) bool {
+	if value, ok := process["requires_spiffe_sock"].(bool); ok && value {
+		return true
+	}
+	if process["name"] == "primary" {
+		identities, _ := component.Value["identities"].(map[string]any)
+		if len(identities) > 0 {
+			return true
+		}
+	} else if len(mustStringSlice(process, "identities")) > 0 {
+		return true
+	}
+	for _, group := range mustStringSlice(unit, "supplementary_groups") {
+		if strings.Contains(group, "spire_workload_group") || group == "spire" {
+			return true
+		}
+	}
+	return false
+}
+
+func unitHasCredential(unit map[string]any, name string) bool {
+	for _, credential := range mustMapSlice(unit, "load_credentials") {
+		if mustString(credential, "name") == name {
+			return true
+		}
+	}
+	return false
 }
 
 func writeJoined(b *strings.Builder, key string, values []string) {
@@ -243,7 +458,7 @@ func mustBool(values map[string]any, key string) bool {
 	return value
 }
 
-func sortedKeys(values map[string]any) []string {
+func sortedStringKeys(values map[string]string) []string {
 	keys := make([]string, 0, len(values))
 	for key := range values {
 		keys = append(keys, key)

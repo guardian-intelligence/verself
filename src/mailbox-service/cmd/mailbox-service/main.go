@@ -81,7 +81,6 @@ func runMigrationCLI(ctx context.Context) (bool, error) {
 	return true, pgmigrate.RunCLI(ctx, os.Args[2:], pgmigrate.Config{
 		Service: "mailbox-service",
 		FS:      migrations.Files,
-		DSNEnv:  "MAILBOX_SERVICE_PG_DSN",
 	})
 }
 
@@ -225,8 +224,8 @@ func run() error {
 func loadConfig() (config, error) {
 	l := envconfig.New()
 	cfg := config{
-		ListenAddr:            l.String("MAILBOX_SERVICE_LISTEN_ADDR", "127.0.0.1:4246"),
-		PGDSN:                 l.String("MAILBOX_SERVICE_PG_DSN", "postgres://mailbox_service@/mailbox_service?host=/var/run/postgresql&sslmode=disable"),
+		ListenAddr:            l.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4246"),
+		PGDSN:                 l.RequireString("VERSELF_PG_DSN"),
 		StalwartBaseURL:       l.String("MAILBOX_SERVICE_STALWART_BASE_URL", "http://127.0.0.1:8090"),
 		PublicBaseURL:         l.RequireURL("MAILBOX_SERVICE_STALWART_PUBLIC_BASE_URL"),
 		MailboxUser:           l.String("MAILBOX_SERVICE_STALWART_MAILBOX", "ceo"),
@@ -240,8 +239,8 @@ func loadConfig() (config, error) {
 		ForwarderBootstrapMax: 100,
 		SyncDiscoveryInterval: l.Duration("MAILBOX_SERVICE_SYNC_DISCOVERY_INTERVAL", 2*time.Minute),
 		SyncReconcileInterval: l.Duration("MAILBOX_SERVICE_SYNC_RECONCILE_INTERVAL", 10*time.Minute),
-		AuthIssuerURL:         l.RequireURL("MAILBOX_SERVICE_AUTH_ISSUER_URL"),
-		AuthAudience:          l.RequireString("MAILBOX_SERVICE_AUTH_AUDIENCE"),
+		AuthIssuerURL:         l.RequireURL("VERSELF_AUTH_ISSUER_URL"),
+		AuthAudience:          l.RequireString("VERSELF_AUTH_AUDIENCE"),
 		SecretsURL:            l.RequireURL("MAILBOX_SERVICE_SECRETS_URL"),
 		CEOPassword:           l.RequireCredential("stalwart-ceo-password"),
 		AgentsPassword:        l.RequireCredential("stalwart-agents-password"),

@@ -97,6 +97,16 @@ type PostgresBinding struct {
 
 	Connection_limit int64 `json:"connection_limit"`
 
+	Pool struct {
+		MaxConns int64 `json:"max_conns"`
+
+		MinConns int64 `json:"min_conns"`
+
+		ConnMaxLifetimeSeconds int64 `json:"conn_max_lifetime_seconds"`
+
+		ConnMaxIdleSeconds int64 `json:"conn_max_idle_seconds"`
+	} `json:"pool"`
+
 	PasswordRef map[string]any `json:"password_ref"`
 }
 
@@ -621,6 +631,18 @@ type SandboxGithubAppBootstrap struct {
 
 type ComponentBootstrapConfig struct {
 	SandboxGithubApp SandboxGithubAppBootstrap `json:"sandbox_github_app,omitempty"`
+}
+
+type BootstrapHookName string
+
+type BootstrapHookClass string
+
+type ComponentBootstrapHook struct {
+	Name BootstrapHookName `json:"name"`
+
+	Class BootstrapHookClass `json:"class"`
+
+	Reason string `json:"reason"`
 }
 
 type ComponentConverge struct {

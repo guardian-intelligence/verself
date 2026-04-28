@@ -53,7 +53,6 @@ func runMigrationCLI(ctx context.Context) (bool, error) {
 	return true, pgmigrate.RunCLI(ctx, os.Args[2:], pgmigrate.Config{
 		Service: serviceName,
 		FS:      migrations.Files,
-		DSNEnv:  "PROFILE_PG_DSN",
 	})
 }
 
@@ -73,14 +72,14 @@ func run() error {
 	slog.SetDefault(logger)
 
 	cfg := envconfig.New()
-	pgDSN := cfg.RequireString("PROFILE_PG_DSN")
-	listenAddr := cfg.String("PROFILE_LISTEN_ADDR", "127.0.0.1:4258")
-	internalListenAddr := cfg.String("PROFILE_INTERNAL_LISTEN_ADDR", "127.0.0.1:4259")
-	authIssuerURL := cfg.RequireURL("PROFILE_AUTH_ISSUER_URL")
-	authAudience := cfg.RequireString("PROFILE_AUTH_AUDIENCE")
+	pgDSN := cfg.RequireString("VERSELF_PG_DSN")
+	listenAddr := cfg.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4258")
+	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4259")
+	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
+	authAudience := cfg.RequireString("VERSELF_AUTH_AUDIENCE")
 	identityInternalURL := cfg.RequireURL("PROFILE_IDENTITY_INTERNAL_URL")
 	governanceAuditURL := cfg.String("PROFILE_GOVERNANCE_AUDIT_URL", "")
-	pgMaxConns := cfg.Int("PROFILE_PG_MAX_CONNS", 8)
+	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
 	if err := cfg.Err(); err != nil {
 		return err

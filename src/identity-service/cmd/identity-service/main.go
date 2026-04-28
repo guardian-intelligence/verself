@@ -55,7 +55,6 @@ func runMigrationCLI(ctx context.Context) (bool, error) {
 	return true, pgmigrate.RunCLI(ctx, os.Args[2:], pgmigrate.Config{
 		Service: serviceName,
 		FS:      migrations.Files,
-		DSNEnv:  "IDENTITY_PG_DSN",
 	})
 }
 
@@ -74,18 +73,18 @@ func run() error {
 	}()
 
 	cfg := envconfig.New()
-	pgDSN := cfg.RequireString("IDENTITY_PG_DSN")
-	pgMaxConns := cfg.Int("IDENTITY_PG_MAX_CONNS", 8)
+	pgDSN := cfg.RequireString("VERSELF_PG_DSN")
+	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
 	zitadelAdminToken := cfg.RequireCredential("zitadel-admin-token")
 	zitadelActionSigningKey := cfg.RequireCredential("zitadel-action-signing-key")
-	chAddress := cfg.String("IDENTITY_CH_ADDRESS", "127.0.0.1:9440")
-	chUser := cfg.String("IDENTITY_CH_USER", "identity_service")
+	chAddress := cfg.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
+	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "identity_service")
 	chCACertPath := cfg.RequireCredentialPath("clickhouse-ca-cert")
-	listenAddr := cfg.String("IDENTITY_LISTEN_ADDR", "127.0.0.1:4248")
-	internalListenAddr := cfg.String("IDENTITY_INTERNAL_LISTEN_ADDR", "127.0.0.1:4241")
+	listenAddr := cfg.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4248")
+	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4241")
 	governanceAuditURL := cfg.String("IDENTITY_GOVERNANCE_AUDIT_URL", "")
-	authIssuerURL := cfg.RequireURL("IDENTITY_AUTH_ISSUER_URL")
-	authAudience := cfg.RequireString("IDENTITY_AUTH_AUDIENCE")
+	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
+	authAudience := cfg.RequireString("VERSELF_AUTH_AUDIENCE")
 	zitadelBaseURL := cfg.RequireURL("IDENTITY_ZITADEL_BASE_URL")
 	zitadelHostHeader := cfg.RequireString("IDENTITY_ZITADEL_HOST")
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")

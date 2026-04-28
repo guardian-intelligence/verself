@@ -16,20 +16,23 @@ LoadCredential=forgejo-token:/etc/credstore/forgejo/automation-token
 LoadCredential=webhook-secret:/etc/credstore/source-code-hosting-service/webhook-secret
 Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}
 Environment=OTEL_SERVICE_NAME=source-code-hosting-service
-Environment=SOURCE_AUTH_AUDIENCE={{ component_auth_audience }}
-Environment=SOURCE_AUTH_ISSUER_URL=https://auth.{{ verself_domain }}
 Environment=SOURCE_FORGEJO_BASE_URL=http://{{ topology_endpoints.forgejo.endpoints.http.address }}
-Environment=SOURCE_FORGEJO_OWNER={{ component_source_forgejo_username }}
+Environment=SOURCE_FORGEJO_OWNER=forgejo-automation
 Environment=SOURCE_IDENTITY_INTERNAL_URL=https://{{ topology_endpoints.identity_service.endpoints.internal_https.address }}
-Environment=SOURCE_INTERNAL_LISTEN_ADDR={{ topology_endpoints.source_code_hosting_service.endpoints.internal_https.address }}
-Environment=SOURCE_LISTEN_ADDR={{ topology_endpoints.source_code_hosting_service.endpoints.public_http.address }}
-Environment=SOURCE_PG_DSN=postgres://source_code_hosting_service@/source_code_hosting?host=/var/run/postgresql&sslmode=disable
-Environment=SOURCE_PG_MAX_CONNS=8
 Environment=SOURCE_PROJECTS_INTERNAL_URL=https://{{ topology_endpoints.projects_service.endpoints.internal_https.address }}
 Environment=SOURCE_PUBLIC_BASE_URL=https://{{ forgejo_domain }}
 Environment=SOURCE_SANDBOX_INTERNAL_URL=https://{{ topology_endpoints.sandbox_rental.endpoints.internal_https.address }}
 Environment=SOURCE_SECRETS_INTERNAL_URL=https://{{ topology_endpoints.secrets_service.endpoints.internal_https.address }}
 Environment=SPIFFE_ENDPOINT_SOCKET=unix://{{ spire_agent_socket_path }}
+Environment=VERSELF_AUTH_AUDIENCE={{ component_auth_audience }}
+Environment=VERSELF_AUTH_ISSUER_URL=https://auth.{{ verself_domain }}
+Environment=VERSELF_INTERNAL_LISTEN_ADDR={{ topology_endpoints.source_code_hosting_service.endpoints.internal_https.address }}
+Environment=VERSELF_LISTEN_ADDR={{ topology_endpoints.source_code_hosting_service.endpoints.public_http.address }}
+Environment=VERSELF_PG_CONN_MAX_IDLE_SECONDS=300
+Environment=VERSELF_PG_CONN_MAX_LIFETIME_SECONDS=1800
+Environment=VERSELF_PG_DSN=postgres://source_code_hosting_service@/source_code_hosting?host=/var/run/postgresql&sslmode=disable
+Environment=VERSELF_PG_MAX_CONNS=8
+Environment=VERSELF_PG_MIN_CONNS=1
 ExecStart={{ verself_bin }}/source-code-hosting-service
 Restart=on-failure
 RestartSec=5

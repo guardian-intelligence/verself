@@ -54,7 +54,6 @@ func runMigrationCLI(ctx context.Context) (bool, error) {
 	return true, pgmigrate.RunCLI(ctx, os.Args[2:], pgmigrate.Config{
 		Service: serviceName,
 		FS:      migrations.Files,
-		DSNEnv:  "NOTIFICATIONS_PG_DSN",
 	})
 }
 
@@ -74,18 +73,18 @@ func run() error {
 	slog.SetDefault(logger)
 
 	cfg := envconfig.New()
-	pgDSN := cfg.RequireString("NOTIFICATIONS_PG_DSN")
-	listenAddr := cfg.String("NOTIFICATIONS_LISTEN_ADDR", "127.0.0.1:4260")
-	authIssuerURL := cfg.RequireURL("NOTIFICATIONS_AUTH_ISSUER_URL")
-	authAudience := cfg.RequireString("NOTIFICATIONS_AUTH_AUDIENCE")
+	pgDSN := cfg.RequireString("VERSELF_PG_DSN")
+	listenAddr := cfg.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4260")
+	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
+	authAudience := cfg.RequireString("VERSELF_AUTH_AUDIENCE")
 	natsURL := cfg.String("NOTIFICATIONS_NATS_URL", notifications.NATSDefaultURL)
-	chAddress := cfg.String("NOTIFICATIONS_CH_ADDRESS", "127.0.0.1:9440")
-	chUser := cfg.String("NOTIFICATIONS_CH_USER", "notifications_service")
+	chAddress := cfg.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
+	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "notifications_service")
 	chCACertPath := cfg.RequireCredentialPath("clickhouse-ca-cert")
-	pgMaxConns := cfg.Int("NOTIFICATIONS_PG_MAX_CONNS", 8)
-	pgMinConns := cfg.Int("NOTIFICATIONS_PG_MIN_CONNS", 1)
-	pgMaxLifetime := cfg.Int("NOTIFICATIONS_PG_CONN_MAX_LIFETIME_SECONDS", 1800)
-	pgMaxIdle := cfg.Int("NOTIFICATIONS_PG_CONN_MAX_IDLE_SECONDS", 300)
+	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
+	pgMinConns := cfg.Int("VERSELF_PG_MIN_CONNS", 1)
+	pgMaxLifetime := cfg.Int("VERSELF_PG_CONN_MAX_LIFETIME_SECONDS", 1800)
+	pgMaxIdle := cfg.Int("VERSELF_PG_CONN_MAX_IDLE_SECONDS", 300)
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
 	if err := cfg.Err(); err != nil {
 		return err

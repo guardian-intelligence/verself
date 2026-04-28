@@ -81,7 +81,7 @@ config: s.#InstanceConfig & {
 		openbao_tenancy_kv_mount_prefix:       "kv"
 		openbao_tenancy_transit_mount_prefix:  "transit"
 		openbao_tenancy_jwt_mount_prefix:      "jwt"
-		openbao_tenancy_platform_org_name:     "verself"
+		openbao_tenancy_platform_org_name:     "Guardian Intelligence LLC"
 	}
 
 	// WireGuard tunnel topology. The worker mesh is for platform nodes; the
