@@ -513,6 +513,7 @@ package schema
 	home:        string | *""
 	create_home: bool | *false @go(CreateHome)
 	exec:        string & !=""
+	type:        "simple" | "exec" | "forking" | "oneshot" | "dbus" | "notify" | "idle" | *"simple"
 	after: [...string] | *[]
 	wants: [...string] | *[]
 	requires: [...string] | *["verself-firewall.target"]
@@ -522,8 +523,10 @@ package schema
 	environment: {[string]: string} | *{}
 	restart:     "always" | "on-failure" | "no" | *"on-failure"
 	restart_sec: int & >=0 | *5 @go(RestartSec)
-	hardening: #SystemdHardening | *{}
+	hardening: #SystemdHardening
 	readiness: [...#ReadinessProbe] | *[]
+	wanted_by: [...string] | *["multi-user.target"]                    @go(WantedBy)
+	requires_spiffe_sock: bool | *false @go(RequiresSpiffeSock)
 }
 
 #ComponentVerification: {

@@ -26,6 +26,7 @@ topology: components: {
 				user:        "billing"
 				group:       "billing"
 				exec:        "{{ verself_bin }}/billing-service"
+				requires_spiffe_sock: true
 				after: ["verself-firewall.target", "network.target", "postgresql.service", "clickhouse-server.service", "spire-agent.service", "secrets-service.service"]
 				wants: ["postgresql.service", "clickhouse-server.service", "spire-agent.service", "secrets-service.service"]
 				supplementary_groups: ["{{ spire_workload_group }}"]
@@ -104,6 +105,7 @@ topology: components: {
 					user:        "sandbox_rental"
 					group:       "sandbox_rental"
 					exec:        "{{ verself_bin }}/sandbox-rental-service"
+					requires_spiffe_sock: true
 					after: ["verself-firewall.target", "network.target", "postgresql.service", "clickhouse-server.service", "spire-agent.service", "secrets-service.service", "source-code-hosting-service.service"]
 					wants: ["postgresql.service", "clickhouse-server.service", "spire-agent.service", "secrets-service.service", "source-code-hosting-service.service"]
 					supplementary_groups: ["vm-clients", "{{ spire_workload_group }}"]
@@ -150,6 +152,7 @@ topology: components: {
 					user:        "sandbox_rental"
 					group:       "sandbox_rental"
 					exec:        "{{ verself_bin }}/sandbox-rental-recurring-worker"
+					requires_spiffe_sock: true
 					after:       components.sandbox_rental.processes.recurring_worker.after
 					wants:       components.sandbox_rental.processes.recurring_worker.wants
 					supplementary_groups: ["{{ spire_workload_group }}"]
@@ -204,6 +207,7 @@ topology: components: {
 				user:        "identity_service"
 				group:       "identity_service"
 				exec:        "{{ verself_bin }}/identity-service"
+				requires_spiffe_sock: true
 				after: ["verself-firewall.target", "network.target", "postgresql.service", "clickhouse-server.service", "zitadel.service", "spire-agent.service"]
 				wants: ["postgresql.service", "clickhouse-server.service", "zitadel.service", "spire-agent.service"]
 				supplementary_groups: ["{{ spire_workload_group }}"]
@@ -259,6 +263,7 @@ topology: components: {
 				user:        "governance_service"
 				group:       "governance_service"
 				exec:        "{{ verself_bin }}/governance-service"
+				requires_spiffe_sock: true
 				after: ["verself-firewall.target", "network.target", "postgresql.service", "clickhouse-server.service", "zitadel.service", "spire-agent.service"]
 				wants: ["postgresql.service", "clickhouse-server.service", "zitadel.service", "spire-agent.service"]
 				supplementary_groups: ["{{ spire_workload_group }}"]
@@ -301,6 +306,7 @@ topology: components: {
 				user:        "secrets_service"
 				group:       "secrets_service"
 				exec:        "{{ verself_bin }}/secrets-service"
+				requires_spiffe_sock: true
 				after: ["verself-firewall.target", "network.target", "openbao.service", "zitadel.service", "governance-service.service", "spire-agent.service"]
 				wants: ["openbao.service", "zitadel.service", "governance-service.service", "spire-agent.service"]
 				supplementary_groups: ["{{ spire_workload_group }}"]
@@ -347,6 +353,7 @@ topology: components: {
 				user:        "profile_service"
 				group:       "profile_service"
 				exec:        "{{ verself_bin }}/profile-service"
+				requires_spiffe_sock: true
 				after: ["verself-firewall.target", "network.target", "postgresql.service", "zitadel.service", "spire-agent.service", "identity-service.service", "governance-service.service"]
 				wants: ["postgresql.service", "zitadel.service", "spire-agent.service", "identity-service.service", "governance-service.service"]
 				supplementary_groups: ["{{ spire_workload_group }}"]
@@ -381,6 +388,7 @@ topology: components: {
 				user:        "notifications_service"
 				group:       "notifications_service"
 				exec:        "{{ verself_bin }}/notifications-service"
+				requires_spiffe_sock: true
 				after: ["verself-firewall.target", "network.target", "postgresql.service", "clickhouse-server.service", "nats.service", "zitadel.service", "spire-agent.service"]
 				wants: ["postgresql.service", "clickhouse-server.service", "nats.service", "zitadel.service", "spire-agent.service"]
 				supplementary_groups: ["{{ spire_workload_group }}"]
@@ -407,6 +415,7 @@ topology: components: {
 				user:        "projects_service"
 				group:       "projects_service"
 				exec:        "{{ verself_bin }}/projects-service"
+				requires_spiffe_sock: true
 				after: ["verself-firewall.target", "network.target", "postgresql.service", "zitadel.service", "spire-agent.service"]
 				wants: ["postgresql.service", "zitadel.service", "spire-agent.service"]
 				supplementary_groups: ["{{ spire_workload_group }}"]
@@ -432,6 +441,7 @@ topology: components: {
 				user:        "source_code_hosting_service"
 				group:       "source_code_hosting_service"
 				exec:        "{{ verself_bin }}/source-code-hosting-service"
+				requires_spiffe_sock: true
 				after: ["verself-firewall.target", "network.target", "postgresql.service", "zitadel.service", "spire-agent.service", "forgejo.service", "secrets-service.service", "projects-service.service"]
 				wants: ["postgresql.service", "zitadel.service", "spire-agent.service", "forgejo.service", "secrets-service.service", "projects-service.service"]
 				supplementary_groups: ["{{ spire_workload_group }}"]
@@ -480,6 +490,7 @@ topology: components: {
 				user:        "mailbox_service"
 				group:       "mailbox_service"
 				exec:        "{{ verself_bin }}/mailbox-service"
+				requires_spiffe_sock: true
 				after: ["verself-firewall.target", "network.target", "postgresql.service", "stalwart.service", "zitadel.service", "spire-agent.service", "secrets-service.service"]
 				wants: ["postgresql.service", "stalwart.service", "zitadel.service", "spire-agent.service", "secrets-service.service"]
 				supplementary_groups: ["{{ spire_workload_group }}"]
@@ -551,6 +562,7 @@ topology: components: {
 					uid:         config.object_storage.object_storage_service_uid
 					home:        "/var/lib/object-storage-service"
 					exec:        "{{ verself_bin }}/object-storage-service"
+					requires_spiffe_sock: true
 					after: ["verself-firewall.target", "network.target", "postgresql.service", "clickhouse-server.service", "secrets-service.service", "garage@0.service", "garage@1.service", "garage@2.service", "spire-agent.service"]
 					wants: ["postgresql.service", "clickhouse-server.service", "secrets-service.service", "garage@0.service", "garage@1.service", "garage@2.service", "spire-agent.service"]
 					supplementary_groups: ["{{ spire_workload_group }}"]
@@ -585,6 +597,7 @@ topology: components: {
 					uid:         config.object_storage.object_storage_admin_uid
 					home:        "/var/lib/object-storage-admin"
 					exec:        "{{ verself_bin }}/object-storage-service"
+					requires_spiffe_sock: true
 					after: ["verself-firewall.target", "network.target", "postgresql.service", "governance-service.service", "garage@0.service", "garage@1.service", "garage@2.service", "spire-agent.service"]
 					wants: ["postgresql.service", "governance-service.service", "garage@0.service", "garage@1.service", "garage@2.service", "spire-agent.service"]
 					supplementary_groups: ["object_storage_service", "{{ spire_workload_group }}"]

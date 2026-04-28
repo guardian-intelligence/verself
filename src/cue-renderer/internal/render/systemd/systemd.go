@@ -97,7 +97,7 @@ func renderHandlers(unitNames map[string]struct{}) []byte {
 
 func renderUnit(component projection.NamedMap, unit map[string]any) ([]byte, error) {
 	name := mustString(unit, "name")
-	hardening := normalizedHardening(mustMap(unit, "hardening"))
+	hardening := mustMap(unit, "hardening")
 	environment, err := unitEnvironment(component, unit)
 	if err != nil {
 		return nil, err
@@ -112,7 +112,7 @@ func renderUnit(component projection.NamedMap, unit map[string]any) ([]byte, err
 	writeJoined(&b, "Wants", mustStringSlice(unit, "wants"))
 
 	b.WriteString("\n[Service]\n")
-	b.WriteString("Type=simple\n")
+	fmt.Fprintf(&b, "Type=%s\n", mustString(unit, "type"))
 	fmt.Fprintf(&b, "User=%s\n", mustString(unit, "user"))
 	fmt.Fprintf(&b, "Group=%s\n", mustString(unit, "group"))
 	writeJoined(&b, "SupplementaryGroups", mustStringSlice(unit, "supplementary_groups"))
@@ -153,7 +153,7 @@ func renderUnit(component projection.NamedMap, unit map[string]any) ([]byte, err
 	fmt.Fprintf(&b, "UMask=%s\n", mustString(hardening, "umask"))
 
 	b.WriteString("\n[Install]\n")
-	b.WriteString("WantedBy=multi-user.target\n")
+	writeJoined(&b, "WantedBy", mustStringSlice(unit, "wanted_by"))
 	if name == "" {
 		return nil, fmt.Errorf("unit name is empty")
 	}
@@ -202,7 +202,7 @@ func derivedServiceEnvironment(component projection.NamedMap, unit map[string]an
 	if _, ok := endpoints["internal_https"]; ok {
 		environment["VERSELF_INTERNAL_LISTEN_ADDR"] = topologyEndpointAddress(component.Name, "internal_https")
 	}
-	if requiresSpiffe(component, unit, unitProcess) {
+	if mustBool(unit, "requires_spiffe_sock") {
 		environment["SPIFFE_ENDPOINT_SOCKET"] = "unix://{{ spire_agent_socket_path }}"
 	}
 	postgres, err := projection.Map(component.Value, component.Name, "postgres")
@@ -342,26 +342,6 @@ func topologyEndpointAddress(componentName, endpointName string) string {
 	return "{{ topology_endpoints." + componentName + ".endpoints." + endpointName + ".address }}"
 }
 
-func requiresSpiffe(component projection.NamedMap, unit map[string]any, process map[string]any) bool {
-	if value, ok := process["requires_spiffe_sock"].(bool); ok && value {
-		return true
-	}
-	if process["name"] == "primary" {
-		identities, _ := component.Value["identities"].(map[string]any)
-		if len(identities) > 0 {
-			return true
-		}
-	} else if len(mustStringSlice(process, "identities")) > 0 {
-		return true
-	}
-	for _, group := range mustStringSlice(unit, "supplementary_groups") {
-		if strings.Contains(group, "spire_workload_group") || group == "spire" {
-			return true
-		}
-	}
-	return false
-}
-
 func unitHasCredential(unit map[string]any, name string) bool {
 	for _, credential := range mustMapSlice(unit, "load_credentials") {
 		if mustString(credential, "name") == name {
@@ -387,33 +367,6 @@ func boolString(v bool) string {
 		return "true"
 	}
 	return "false"
-}
-
-func normalizedHardening(values map[string]any) map[string]any {
-	out := map[string]any{
-		"capability_bounding_set":   "",
-		"protect_home":              true,
-		"protect_system":            "strict",
-		"read_write_paths":          []any{},
-		"private_devices":           true,
-		"private_tmp":               true,
-		"protect_clock":             true,
-		"protect_control_groups":    true,
-		"protect_kernel_logs":       true,
-		"protect_kernel_modules":    true,
-		"protect_kernel_tunables":   true,
-		"lock_personality":          true,
-		"no_new_privileges":         true,
-		"restrict_address_families": []any{"AF_INET", "AF_INET6", "AF_UNIX"},
-		"restrict_realtime":         true,
-		"restrict_suid_sgid":        true,
-		"system_call_architectures": "native",
-		"umask":                     "0077",
-	}
-	for key, value := range values {
-		out[key] = value
-	}
-	return out
 }
 
 func mustMap(values map[string]any, key string) map[string]any {
