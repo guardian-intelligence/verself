@@ -5,7 +5,6 @@
 // Subcommands:
 //
 //	cue-renderer generate            # write every renderer's output to disk
-//	cue-renderer check               # exit non-zero if any output is stale
 //	cue-renderer render <name>       # write one renderer to stdout (debug)
 //	cue-renderer list                # print the registered artefacts
 //
@@ -91,8 +90,6 @@ func run(args []string) error {
 	switch sub {
 	case "generate":
 		return cmdGenerate(rest)
-	case "check":
-		return cmdCheck(rest)
 	case "render":
 		return cmdRender(rest)
 	case "list":
@@ -186,50 +183,11 @@ func cmdGenerate(args []string) error {
 	})
 }
 
-func cmdCheck(args []string) error {
-	flags := flag.NewFlagSet("check", flag.ContinueOnError)
-	common := registerCommon(flags)
-	if err := flags.Parse(args); err != nil {
-		return err
-	}
-	repoRoot, topoDir, err := common.resolved()
-	if err != nil {
-		return err
-	}
-	return withPipeline(context.Background(), common, func(ctx context.Context, rec *spans.Recorder) error {
-		mem, artifacts, err := loadAndRender(ctx, rec, topoDir, common.instance)
-		if err != nil {
-			return err
-		}
-		stale, err := mem.DiffAgainstDisk(repoRoot)
-		if err != nil {
-			return err
-		}
-		for _, p := range mem.Paths() {
-			rec.Record(ctx,
-				"topology.generated.freshness_check",
-				attribute.String("topology.artifact", artifacts[p]),
-				attribute.String("topology.generated_file", p),
-				attribute.String("topology.generated_sha256", mem.SHA256(p)),
-				attribute.Bool("topology.generated_fresh", !contains(stale, p)),
-			)
-		}
-		if len(stale) > 0 {
-			for _, p := range stale {
-				fmt.Fprintf(os.Stderr, "stale: %s\n", p)
-			}
-			return fmt.Errorf("%d artefact(s) stale; rerun `cue-renderer generate`", len(stale))
-		}
-		return nil
-	})
-}
-
 // loadAndRender shares the front half of every command: load the CUE
 // topology, attach the four input-digest attributes to the root span,
 // emit the three `topology.cue.export_*` events, and run every renderer
 // into a MemFS. Callers diverge on what they do with the MemFS — write
-// it to disk (generate), diff it against disk (check), or print a
-// single artefact (render).
+// it to disk (generate) or print a single artefact (render).
 func loadAndRender(ctx context.Context, rec *spans.Recorder, topoDir, instance string) (*render.MemFS, map[string]string, error) {
 	loaded, err := load.Topology(topoDir, instance)
 	if err != nil {
@@ -356,21 +314,11 @@ func rendererByName(name string) (render.Renderer, bool) {
 	return nil, false
 }
 
-func contains(haystack []string, needle string) bool {
-	for _, s := range haystack {
-		if s == needle {
-			return true
-		}
-	}
-	return false
-}
-
 func printUsage(w io.Writer) {
 	fmt.Fprintln(w, `usage: cue-renderer <subcommand> [flags]
 
 subcommands:
   generate        render every artefact to disk
-  check           diff every artefact against disk; exit 1 on drift
   render <name>   render a single artefact to stdout (debug); use --path for one file from multi-file renderers
   list            print the registered artefacts
 
