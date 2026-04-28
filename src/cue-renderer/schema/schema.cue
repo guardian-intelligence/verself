@@ -204,8 +204,8 @@ package schema
 
 #NftablesConfig: {
 	// Listener ports owned by substrate components not yet modeled as CUE
-	// endpoints. Component endpoints with exposure=public are added by the
-	// renderer.
+	// endpoints. Component endpoints with exposure=public are merged in
+	// by the host_firewall.cue comprehension, not by the renderer.
 	public_tcp_ports: [...#Port] | *[80, 443] @go(PublicTCPPorts)
 	ssh: #NftablesSSHConfig
 }
@@ -259,7 +259,48 @@ package schema
 	output?: #NftablesOutputChain
 }
 
+#NftablesHostInputRule: {
+	kind:    "accept_iifname"
+	iifname: string & !=""
+} | {
+	kind:     "accept_guest_iifname_endpoints"
+	iifname:  string & !=""
+	saddr:    string & !=""
+	daddr:    string & !=""
+	protocol: "tcp" | "udp"
+	endpoints: [...#NftablesEndpointRef]
+} | {
+	kind:   "accept_protocol_family"
+	family: "icmp" | "icmpv6"
+} | {
+	kind:     "accept_port_set"
+	protocol: "tcp" | "udp"
+	ports: [...#Port] | *[]
+	endpoints: [...#NftablesEndpointRef] | *[]
+} | {
+	kind:     "accept_rate_limited_port"
+	protocol: "tcp" | "udp"
+	port:     #Port
+	meter:    string & !=""
+	rate:     string & !=""
+	burst:    int & >0
+}
+
+#NftablesHostInputChain: {
+	accept_established_related: bool | *true @go(AcceptEstablishedRelated)
+	drop_invalid:               bool | *true @go(DropInvalid)
+	rules: [...#NftablesHostInputRule]
+}
+
+#NftablesHostChain: {
+	target: string & =~"^/etc/nftables\\.d/[A-Za-z0-9._-]+\\.nft$"
+	table:  string & =~"^[A-Za-z0-9_]+$"
+	policy: "drop" | "accept" | *"drop"
+	input:  #NftablesHostInputChain
+}
+
 #NftablesTopology: {
+	host?: #NftablesHostChain
 	rulesets: {
 		[string]: #NftablesRuleset
 	}

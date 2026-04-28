@@ -270,8 +270,8 @@ type NftablesSSHConfig struct {
 
 type NftablesConfig struct {
 	// Listener ports owned by substrate components not yet modeled as CUE
-	// endpoints. Component endpoints with exposure=public are added by the
-	// renderer.
+	// endpoints. Component endpoints with exposure=public are merged in
+	// by the host_firewall.cue comprehension, not by the renderer.
 	PublicTCPPorts []any/* CUE closed list */ `json:"public_tcp_ports"`
 
 	Ssh NftablesSSHConfig `json:"ssh"`
@@ -315,7 +315,29 @@ type NftablesRuleset struct {
 	Output NftablesOutputChain `json:"output,omitempty"`
 }
 
+type NftablesHostInputRule map[string]any
+
+type NftablesHostInputChain struct {
+	AcceptEstablishedRelated bool `json:"accept_established_related"`
+
+	DropInvalid bool `json:"drop_invalid"`
+
+	Rules []NftablesHostInputRule `json:"rules"`
+}
+
+type NftablesHostChain struct {
+	Target string `json:"target"`
+
+	Table string `json:"table"`
+
+	Policy string `json:"policy"`
+
+	Input NftablesHostInputChain `json:"input"`
+}
+
 type NftablesTopology struct {
+	Host NftablesHostChain `json:"host,omitempty"`
+
 	Rulesets map[string]NftablesRuleset `json:"rulesets"`
 }
 

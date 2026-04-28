@@ -9,6 +9,7 @@ import (
 	"github.com/verself/cue-renderer/internal/load"
 	"github.com/verself/cue-renderer/internal/render"
 	"github.com/verself/cue-renderer/internal/render/projection"
+	"github.com/verself/cue-renderer/schema"
 )
 
 type Renderer struct{}
@@ -20,7 +21,7 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 		return err
 	}
 
-	hostFirewall, err := renderHostFirewall(loaded)
+	hostFirewall, err := renderHostChain(loaded)
 	if err != nil {
 		return err
 	}
@@ -54,86 +55,186 @@ include "/etc/nftables.d/*.nft"
 `)
 }
 
-type hostFirewallConfig struct {
-	TrustedInterfaces []string
-	PublicTCPPorts    []int
-	PublicUDPPorts    []int
-	GuestTCPPorts     []int
-	GuestCIDR         string
-	GuestHostIP       string
-	SSHPublic         bool
-	SSHRate           string
-	SSHBurst          int
-}
-
-func renderHostFirewall(loaded load.Loaded) ([]byte, error) {
-	cfg, err := hostFirewallConfigFromLoaded(loaded)
-	if err != nil {
-		return nil, err
+func renderHostChain(loaded load.Loaded) ([]byte, error) {
+	chain := loaded.Topology.Nftables.Host
+	if chain.Table == "" {
+		return nil, fmt.Errorf("topology.nftables.host: missing host firewall declaration")
 	}
 
 	var b strings.Builder
 	b.WriteString(projection.Header)
-	b.WriteString(`#!/usr/sbin/nft -f
-# Host firewall: default-deny ingress with allowlisted services.
+	b.WriteString("#!/usr/sbin/nft -f\n")
+	b.WriteString("# Host firewall: default-deny ingress with allowlisted services.\n\n")
+	fmt.Fprintf(&b, "table inet %s\n", chain.Table)
+	fmt.Fprintf(&b, "delete table inet %s\n\n", chain.Table)
+	fmt.Fprintf(&b, "table inet %s {\n", chain.Table)
+	b.WriteString("    chain input {\n")
+	fmt.Fprintf(&b, "        type filter hook input priority filter; policy %s;\n", chain.Policy)
 
-table inet verself_host
-delete table inet verself_host
-
-table inet verself_host {
-    chain input {
-        type filter hook input priority filter; policy drop;
-
-        # Existing connections.
-        ct state established,related accept
-        ct state invalid drop
-
-        # Trusted interfaces: loopback and WireGuard meshes.
-`)
-	for _, iface := range cfg.TrustedInterfaces {
-		fmt.Fprintf(&b, "        iifname %q accept\n", iface)
+	if chain.Input.AcceptEstablishedRelated {
+		b.WriteString("        ct state established,related accept\n")
+	}
+	if chain.Input.DropInvalid {
+		b.WriteString("        ct state invalid drop\n")
 	}
 
-	if len(cfg.GuestTCPPorts) > 0 {
-		b.WriteString(`
-        # Firecracker guests may reach selected services on the host-only service plane.
-`)
-		fmt.Fprintf(&b, "        iifname \"fc-tap-*\" ip saddr %s ip daddr %s tcp dport %s accept\n", cfg.GuestCIDR, cfg.GuestHostIP, portSet(cfg.GuestTCPPorts))
+	for i, rule := range chain.Input.Rules {
+		if err := writeHostInputRule(&b, loaded.Topology.Components, i, rule); err != nil {
+			return nil, err
+		}
 	}
 
-	b.WriteString(`
-        # ICMP / ICMPv6 (ping, PMTUD, neighbor discovery).
-        ip protocol icmp accept
-        ip6 nexthdr icmpv6 accept
-`)
-
-	if len(cfg.PublicTCPPorts) > 0 {
-		b.WriteString(`
-        # Public TCP services.
-`)
-		fmt.Fprintf(&b, "        tcp dport %s accept\n", portSet(cfg.PublicTCPPorts))
-	}
-
-	if len(cfg.PublicUDPPorts) > 0 {
-		b.WriteString(`
-        # Public UDP services.
-`)
-		fmt.Fprintf(&b, "        udp dport %s accept\n", portSet(cfg.PublicUDPPorts))
-	}
-
-	if cfg.SSHPublic {
-		b.WriteString(`
-        # SSH from the public internet with per-source-IP rate limiting.
-`)
-		fmt.Fprintf(&b, "        tcp dport 22 ct state new meter ssh_rate { ip saddr limit rate %s burst %d packets } accept\n", cfg.SSHRate, cfg.SSHBurst)
-	}
-
-	b.WriteString(`
-        # Everything else hits policy drop.
-    }
-}
-`)
+	b.WriteString("    }\n}\n")
 	return []byte(b.String()), nil
+}
+
+func writeHostInputRule(b *strings.Builder, components map[string]schema.Component, index int, rule schema.NftablesHostInputRule) error {
+	path := fmt.Sprintf("topology.nftables.host.input.rules[%d]", index)
+	kind, err := projection.String(rule, path, "kind")
+	if err != nil {
+		return err
+	}
+	switch kind {
+	case "accept_iifname":
+		iifname, err := projection.String(rule, path, "iifname")
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(b, "        iifname %q accept\n", iifname)
+	case "accept_guest_iifname_endpoints":
+		iifname, err := projection.String(rule, path, "iifname")
+		if err != nil {
+			return err
+		}
+		saddr, err := projection.String(rule, path, "saddr")
+		if err != nil {
+			return err
+		}
+		daddr, err := projection.String(rule, path, "daddr")
+		if err != nil {
+			return err
+		}
+		protocol, err := projection.String(rule, path, "protocol")
+		if err != nil {
+			return err
+		}
+		ports, err := portsFromRule(components, rule, path)
+		if err != nil {
+			return err
+		}
+		if len(ports) == 0 {
+			return fmt.Errorf("%s: no endpoints resolved to ports", path)
+		}
+		fmt.Fprintf(b, "        iifname %q ip saddr %s ip daddr %s %s dport %s accept\n", iifname, saddr, daddr, protocol, portSet(ports))
+	case "accept_protocol_family":
+		family, err := projection.String(rule, path, "family")
+		if err != nil {
+			return err
+		}
+		switch family {
+		case "icmp":
+			b.WriteString("        ip protocol icmp accept\n")
+		case "icmpv6":
+			b.WriteString("        ip6 nexthdr icmpv6 accept\n")
+		default:
+			return fmt.Errorf("%s.family: unsupported %q", path, family)
+		}
+	case "accept_port_set":
+		protocol, err := projection.String(rule, path, "protocol")
+		if err != nil {
+			return err
+		}
+		ports, err := portsFromRule(components, rule, path)
+		if err != nil {
+			return err
+		}
+		if len(ports) == 0 {
+			return nil
+		}
+		fmt.Fprintf(b, "        %s dport %s accept\n", protocol, portSet(ports))
+	case "accept_rate_limited_port":
+		protocol, err := projection.String(rule, path, "protocol")
+		if err != nil {
+			return err
+		}
+		port, err := projection.Int(rule, path, "port")
+		if err != nil {
+			return err
+		}
+		meter, err := projection.String(rule, path, "meter")
+		if err != nil {
+			return err
+		}
+		rate, err := projection.String(rule, path, "rate")
+		if err != nil {
+			return err
+		}
+		burst, err := projection.Int(rule, path, "burst")
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(b, "        %s dport %d ct state new meter %s { ip saddr limit rate %s burst %d packets } accept\n", protocol, port, meter, rate, burst)
+	default:
+		return fmt.Errorf("%s.kind: unsupported %q", path, kind)
+	}
+	return nil
+}
+
+// portsFromRule resolves the rule's `ports` literal list and `endpoints`
+// component/endpoint refs into a sorted, deduplicated []int. Ports and
+// endpoints are both optional; an "accept_port_set" rule may carry either
+// or both, mirroring how config.nftables.public_tcp_ports merges with
+// component endpoints in CUE.
+func portsFromRule(components map[string]schema.Component, rule schema.NftablesHostInputRule, path string) ([]int, error) {
+	seen := map[int]bool{}
+	if raw, ok := rule["ports"]; ok && raw != nil {
+		list, ok := raw.([]any)
+		if !ok {
+			return nil, fmt.Errorf("%s.ports: expected list, got %T", path, raw)
+		}
+		for i, item := range list {
+			p, err := asInt(item)
+			if err != nil {
+				return nil, fmt.Errorf("%s.ports[%d]: %w", path, i, err)
+			}
+			seen[p] = true
+		}
+	}
+	if _, ok := rule["endpoints"]; ok {
+		refs, err := endpointRefs(rule, path)
+		if err != nil {
+			return nil, err
+		}
+		ports, err := endpointPorts(components, refs)
+		if err != nil {
+			return nil, err
+		}
+		for _, p := range ports {
+			seen[p] = true
+		}
+	}
+	out := make([]int, 0, len(seen))
+	for p := range seen {
+		out = append(out, p)
+	}
+	sort.Ints(out)
+	return out, nil
+}
+
+func asInt(value any) (int, error) {
+	switch v := value.(type) {
+	case int:
+		return v, nil
+	case int64:
+		return int(v), nil
+	case float64:
+		if v != float64(int64(v)) {
+			return 0, fmt.Errorf("expected integer, got %v", v)
+		}
+		return int(v), nil
+	default:
+		return 0, fmt.Errorf("expected integer, got %T", value)
+	}
 }
 
 func renderFirewallTarget() []byte {
@@ -152,101 +253,12 @@ WantedBy=multi-user.target
 `)
 }
 
-func hostFirewallConfigFromLoaded(loaded load.Loaded) (hostFirewallConfig, error) {
-	nft := loaded.Config.Nftables
-	publicTCP := map[int]bool{}
-	for i, raw := range nft.PublicTCPPorts {
-		// PublicTCPPorts is `[...#Port] | *[80, 443]` in CUE; gengotypes
-		// degrades a list-with-default to []any, so we reach for the
-		// element type at the leaves rather than re-modelling the schema.
-		port, ok := raw.(int64)
-		if !ok {
-			return hostFirewallConfig{}, fmt.Errorf("config.nftables.public_tcp_ports[%d]: expected int, got %T", i, raw)
-		}
-		publicTCP[int(port)] = true
-	}
-
-	publicUDP := map[int]bool{}
-	trustedInterfaces := map[string]bool{"lo": true}
-	for _, name := range sortedKeys(loaded.Config.Wireguard.Tunnels) {
-		tunnel := loaded.Config.Wireguard.Tunnels[name]
-		trustedInterfaces[tunnel.Interface] = true
-		publicUDP[int(tunnel.Port)] = true
-	}
-
-	guestTCP := map[int]bool{}
-	var guestHostIP string
-	for _, name := range sortedKeys(loaded.Topology.Components) {
-		component := loaded.Topology.Components[name]
-		if name == "firecracker_host_service" {
-			guestHostIP = component.Host
-		}
-		for _, endpoint := range component.Endpoints {
-			switch endpoint.Exposure {
-			case "public":
-				if endpoint.Protocol == "statsd" {
-					publicUDP[int(endpoint.Port)] = true
-				} else {
-					publicTCP[int(endpoint.Port)] = true
-				}
-			case "guest_host":
-				if endpoint.Protocol == "statsd" {
-					continue
-				}
-				guestTCP[int(endpoint.Port)] = true
-			}
-		}
-	}
-	if guestHostIP == "" {
-		return hostFirewallConfig{}, fmt.Errorf("firecracker_host_service.host is required for guest host firewall rules")
-	}
-
-	return hostFirewallConfig{
-		TrustedInterfaces: sortedStringSet(trustedInterfaces),
-		PublicTCPPorts:    sortedIntSet(publicTCP),
-		PublicUDPPorts:    sortedIntSet(publicUDP),
-		GuestTCPPorts:     sortedIntSet(guestTCP),
-		GuestCIDR:         loaded.Config.Firecracker.GuestPoolCIDR,
-		GuestHostIP:       guestHostIP,
-		SSHPublic:         nft.Ssh.Public,
-		SSHRate:           nft.Ssh.Rate,
-		SSHBurst:          int(nft.Ssh.Burst),
-	}, nil
-}
-
 func sortedKeys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)
 	}
 	sort.Strings(out)
-	return out
-}
-
-func sortedStringSet(set map[string]bool) []string {
-	out := make([]string, 0, len(set))
-	for item := range set {
-		out = append(out, item)
-	}
-	sort.Strings(out)
-	if len(out) > 0 && out[0] != "lo" {
-		for i, item := range out {
-			if item == "lo" {
-				copy(out[1:i+1], out[0:i])
-				out[0] = "lo"
-				break
-			}
-		}
-	}
-	return out
-}
-
-func sortedIntSet(set map[int]bool) []int {
-	out := make([]int, 0, len(set))
-	for item := range set {
-		out = append(out, item)
-	}
-	sort.Ints(out)
 	return out
 }
 
