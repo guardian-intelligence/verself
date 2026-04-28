@@ -121,11 +121,6 @@ config: s.#InstanceConfig & {
 		object_storage_admin_uid:   961
 	}
 
-	retired_product_runtimes: [
-		{unit: "letters.service", user: "letters", group: "letters", paths: ["/etc/letters", "/opt/letters", "/var/lib/letters"]},
-		{unit: "webmail.service", user: "webmail", group: "webmail", paths: ["/etc/webmail", "/opt/webmail", "/var/lib/webmail"]},
-	]
-
 	postgres: {
 		max_connections:                300
 		superuser_reserved_connections: 10

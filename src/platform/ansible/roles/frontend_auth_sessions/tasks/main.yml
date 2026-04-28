@@ -100,22 +100,3 @@
     PGPASSWORD: "{{ frontend_auth_sessions_pg_password }}"
   changed_when: false
   no_log: true
-
-- name: Remove console sessions carrying retired sandbox role keys
-  ansible.builtin.command:
-    cmd: >-
-      {{ verself_bin }}/psql
-      -h {{ topology_endpoints.postgresql.host }}
-      -p {{ topology_endpoints.postgresql.endpoints.postgres.port }}
-      -U {{ frontend_auth_sessions_db_user }}
-      -d {{ frontend_auth_sessions_db_name }}
-      -v ON_ERROR_STOP=1
-    stdin: |
-      DELETE FROM auth_sessions
-      WHERE app_name = 'console'
-        AND roles ?| ARRAY['sandbox_org_admin', 'sandbox_org_member'];
-  environment:
-    PGPASSWORD: "{{ frontend_auth_sessions_pg_password }}"
-  register: frontend_auth_sessions_retired_sandbox_role_delete
-  changed_when: "'DELETE 0' not in frontend_auth_sessions_retired_sandbox_role_delete.stdout"
-  no_log: true

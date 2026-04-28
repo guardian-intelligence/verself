@@ -234,8 +234,6 @@ func devToolInstallPlan(loaded load.Loaded) (map[string]any, error) {
 		"replacement_paths":                plan.replacementPaths,
 		"profile_files":                    []map[string]any{{"dest": "/etc/profile.d/go.sh", "mode": "0644", "content": "export PATH=/usr/local/go/bin:" + goPath + "/bin:$PATH\n"}},
 		"ansible_collections_requirements": "{{ playbook_dir }}/../requirements.yml",
-		"cleanup_apt_packages":             []string{"pipx"},
-		"cleanup_paths":                    []string{"/opt/pipx"},
 		"smoke_test_spans":                 smokeTestSpans(plan.tools),
 	}, nil
 }

@@ -14,10 +14,9 @@ func (Renderer) Name() string { return "ops" }
 
 func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.WritableFS) error {
 	payload := map[string]any{
-		"verself_version":          loaded.ConfigMap["verself_version"],
-		"verself_bin":              loaded.ConfigMap["verself_bin"],
-		"retired_product_runtimes": loaded.ConfigMap["retired_product_runtimes"],
-		"topology_wireguard":       loaded.ConfigMap["wireguard"],
+		"verself_version":    loaded.ConfigMap["verself_version"],
+		"verself_bin":        loaded.ConfigMap["verself_bin"],
+		"topology_wireguard": loaded.ConfigMap["wireguard"],
 	}
 
 	electric, err := electricInstances(loaded)

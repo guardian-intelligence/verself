@@ -191,13 +191,6 @@ package schema
 	} @go(HostGroups)
 }
 
-#RetiredRuntime: {
-	unit:  string & !=""
-	user:  string & !=""
-	group: string & !=""
-	paths: [...string & =~"^/"]
-}
-
 #PostgresConfig: {
 	max_connections:                int & >0  @go(MaxConnections)
 	superuser_reserved_connections: int & >=0 @go(SuperuserReservedConnections)
@@ -305,7 +298,6 @@ package schema
 		object_storage_admin_uid:   int & >0 @go(ObjectStorageAdminUID)
 	} @go(ObjectStorage)
 
-	retired_product_runtimes: [...#RetiredRuntime] @go(RetiredProductRuntimes)
 	postgres:    #PostgresConfig
 	nftables:    #NftablesConfig
 	firecracker: #FirecrackerConfig

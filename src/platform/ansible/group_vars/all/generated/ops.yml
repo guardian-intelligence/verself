@@ -44,21 +44,6 @@ resend_domain: '{{ resend_subdomain }}.{{ verself_domain }}'
 resend_sender_address: noreply@{{ resend_domain }}
 resend_sender_name: verself
 resend_subdomain: notify
-retired_product_runtimes:
-  - group: letters
-    paths:
-      - /etc/letters
-      - /opt/letters
-      - /var/lib/letters
-    unit: letters.service
-    user: letters
-  - group: webmail
-    paths:
-      - /etc/webmail
-      - /opt/webmail
-      - /var/lib/webmail
-    unit: webmail.service
-    user: webmail
 sandbox_rental_service_domain: '{{ sandbox_rental_service_subdomain }}.{{ verself_domain }}'
 sandbox_rental_service_subdomain: sandbox.api
 secrets_service_domain: '{{ secrets_service_subdomain }}.{{ verself_domain }}'
