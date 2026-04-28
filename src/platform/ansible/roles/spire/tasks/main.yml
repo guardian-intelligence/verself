@@ -152,78 +152,6 @@
     mode: "0600"
   when: spire_bundle_endpoint_ca_serial.stat.exists
 
-- name: Check recorded SPIRE trust domain
-  ansible.builtin.stat:
-    path: /var/lib/spire/server/trust-domain
-  register: spire_trust_domain_marker
-
-- name: Read recorded SPIRE trust domain
-  ansible.builtin.slurp:
-    src: /var/lib/spire/server/trust-domain
-  register: spire_trust_domain_marker_content
-  when: spire_trust_domain_marker.stat.exists
-
-- name: Check existing SPIRE server datastore
-  ansible.builtin.stat:
-    path: /var/lib/spire/server/datastore.sqlite3
-  register: spire_server_datastore
-
-- name: Decide whether SPIRE local state must be reset for trust-domain cutover
-  ansible.builtin.set_fact:
-    spire_reset_for_trust_domain_cutover: >-
-      {{
-        (
-          spire_trust_domain_marker.stat.exists
-          and (
-            spire_trust_domain_marker_content.content
-            | b64decode
-            | trim
-          ) != spire_trust_domain
-        )
-        or (
-          (not spire_trust_domain_marker.stat.exists)
-          and spire_server_datastore.stat.exists
-        )
-      }}
-
-- name: Stop SPIRE units before trust-domain state reset
-  ansible.builtin.systemd:
-    name: "{{ item }}"
-    state: stopped
-    daemon_reload: true
-  loop:
-    - spire-agent
-    - spire-server
-  failed_when: false
-  when: spire_reset_for_trust_domain_cutover | bool
-
-- name: Remove SPIRE server state for trust-domain cutover
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: absent
-  loop:
-    - /var/lib/spire/server/datastore.sqlite3
-    - /var/lib/spire/server/datastore.sqlite3-shm
-    - /var/lib/spire/server/datastore.sqlite3-wal
-    - /var/lib/spire/server/keys.json
-    - /var/lib/spire/server/trust-domain
-  when: spire_reset_for_trust_domain_cutover | bool
-
-- name: Remove SPIRE agent state for trust-domain cutover
-  ansible.builtin.file:
-    path: /var/lib/spire/agent
-    state: absent
-  when: spire_reset_for_trust_domain_cutover | bool
-
-- name: Recreate SPIRE agent state directory after trust-domain cutover
-  ansible.builtin.file:
-    path: /var/lib/spire/agent
-    state: directory
-    owner: spire
-    group: "{{ spire_workload_group }}"
-    mode: "0700"
-  when: spire_reset_for_trust_domain_cutover | bool
-
 - name: Converge SPIRE agent state ownership
   ansible.builtin.file:
     path: /var/lib/spire/agent
@@ -353,14 +281,6 @@
     that:
       - (spire_bundle_endpoint_response.json['keys'] | default([])) | length > 0
     fail_msg: SPIRE bundle endpoint returned no signing keys.
-
-- name: Record active SPIRE trust domain
-  ansible.builtin.copy:
-    content: "{{ spire_trust_domain }}\n"
-    dest: /var/lib/spire/server/trust-domain
-    owner: spire
-    group: spire
-    mode: "0600"
 
 - name: Check SPIRE agent attestation state
   ansible.builtin.stat:
