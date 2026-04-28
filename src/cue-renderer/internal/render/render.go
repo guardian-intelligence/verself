@@ -1,6 +1,6 @@
 // Package render defines the Renderer interface every artefact implements.
 // One package per artefact lives under render/<name>/; each registers a
-// Renderer that the CLI iterates over for `generate` and `check`.
+// Renderer that the CLI iterates over for `generate`.
 //
 // The interface accepts a writable filesystem rather than returning
 // bytes-and-an-OutputPath: a single artefact can produce multiple files
@@ -11,11 +11,9 @@
 package render
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -109,24 +107,6 @@ func (m *MemFS) Paths() []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-// DiffAgainstDisk reads each path in m relative to root and returns the
-// list of paths whose disk content differs from the in-memory render.
-// Missing files count as drift. Used by `cue-renderer check`.
-func (m *MemFS) DiffAgainstDisk(root string) ([]string, error) {
-	var stale []string
-	for _, p := range m.Paths() {
-		want, _ := m.Get(p)
-		got, err := os.ReadFile(filepath.Join(root, p))
-		if err != nil && !os.IsNotExist(err) {
-			return nil, fmt.Errorf("read %s: %w", p, err)
-		}
-		if !bytes.Equal(got, want) {
-			stale = append(stale, p)
-		}
-	}
-	return stale, nil
 }
 
 // SHA256 of a path written into m, hex-encoded. Empty for missing paths.

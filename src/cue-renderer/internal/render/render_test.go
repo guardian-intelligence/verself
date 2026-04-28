@@ -71,33 +71,6 @@ func TestMemFS_SHA256(t *testing.T) {
 	}
 }
 
-func TestMemFS_DiffAgainstDisk(t *testing.T) {
-	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, "sub"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "match.txt"), []byte("ok"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "sub", "diverged.txt"), []byte("disk"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	fs := NewMemFS()
-	_ = fs.WriteFile("match.txt", []byte("ok"))
-	_ = fs.WriteFile("sub/diverged.txt", []byte("memory"))
-	_ = fs.WriteFile("sub/missing.txt", []byte("only-in-memory"))
-
-	stale, err := fs.DiffAgainstDisk(root)
-	if err != nil {
-		t.Fatalf("DiffAgainstDisk: %v", err)
-	}
-	want := []string{"sub/diverged.txt", "sub/missing.txt"}
-	if !reflect.DeepEqual(stale, want) {
-		t.Fatalf("stale: got %v want %v", stale, want)
-	}
-}
-
 func TestOSFS_CreatesParentDirs(t *testing.T) {
 	root := t.TempDir()
 	fs := OSFS{Root: root}
