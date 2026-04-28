@@ -760,7 +760,6 @@ topology_components:
             supplementary_groups:
               - '{{ spire_workload_group }}'
             user: identity_service
-      verification: {}
     deploy_tag: identity_service
     identities:
       default:
@@ -870,7 +869,6 @@ topology_components:
             supplementary_groups:
               - '{{ spire_workload_group }}'
             user: governance_service
-      verification: {}
     deploy_tag: governance_service
     identities:
       default:
@@ -947,7 +945,6 @@ topology_components:
             supplementary_groups:
               - '{{ spire_workload_group }}'
             user: profile_service
-      verification: {}
     deploy_tag: profile_service
     identities:
       default:
@@ -1034,7 +1031,6 @@ topology_components:
             supplementary_groups:
               - '{{ spire_workload_group }}'
             user: notifications_service
-      verification: {}
     deploy_tag: notifications_service
     identities:
       default:
@@ -1111,7 +1107,6 @@ topology_components:
             supplementary_groups:
               - '{{ spire_workload_group }}'
             user: projects_service
-      verification: {}
     deploy_tag: projects_service
     identities:
       default:
@@ -1194,7 +1189,6 @@ topology_components:
             supplementary_groups:
               - '{{ spire_workload_group }}'
             user: secrets_service
-      verification: {}
     deploy_tag: secrets_service
     identities:
       default:
@@ -1350,7 +1344,6 @@ topology_components:
               - '{{ spire_workload_group }}'
             uid: 961
             user: object_storage_admin
-      verification: {}
     deploy_tag: object_storage_service
     identities:
       admin:
@@ -1463,7 +1456,6 @@ topology_components:
             supplementary_groups:
               - '{{ spire_workload_group }}'
             user: source_code_hosting_service
-      verification: {}
     deploy_tag: source_code_hosting_service
     identities:
       default:
@@ -1562,7 +1554,6 @@ topology_components:
             supplementary_groups:
               - '{{ spire_workload_group }}'
             user: billing
-      verification: {}
     deploy_tag: billing_service
     identities:
       default:
@@ -1710,7 +1701,6 @@ topology_components:
             supplementary_groups:
               - '{{ spire_workload_group }}'
             user: sandbox_rental
-      verification: {}
     deploy_tag: sandbox_rental_service
     identities:
       default:
@@ -1822,7 +1812,6 @@ topology_components:
             supplementary_groups:
               - '{{ spire_workload_group }}'
             user: mailbox_service
-      verification: {}
     deploy_tag: mailbox_service
     identities:
       default:

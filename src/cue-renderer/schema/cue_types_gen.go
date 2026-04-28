@@ -607,18 +607,6 @@ type SystemdUnit struct {
 	RequiresSpiffeSock bool `json:"requires_spiffe_sock"`
 }
 
-type ComponentVerification struct {
-	Systemd bool `json:"systemd"`
-
-	Nftables bool `json:"nftables"`
-
-	Postgres bool `json:"postgres"`
-
-	Clickhouse bool `json:"clickhouse"`
-
-	Health bool `json:"health"`
-}
-
 type SandboxGithubAppBootstrap struct {
 	Enabled bool `json:"enabled"`
 
@@ -671,8 +659,6 @@ type ComponentConverge struct {
 	Bootstrap []any/* CUE closed list */ `json:"bootstrap"`
 
 	BootstrapConfig map[string]any `json:"bootstrap_config"`
-
-	Verification map[string]any `json:"verification"`
 }
 
 type Component struct {

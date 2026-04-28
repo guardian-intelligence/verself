@@ -109,9 +109,6 @@ func componentConvergeProjection(name string, converge map[string]any, deployTag
 	if clickhouse, ok := converge["clickhouse"]; ok {
 		out["clickhouse"] = clickhouse
 	}
-	if verification, ok := converge["verification"]; ok {
-		out["verification"] = verification
-	}
 
 	systemdConfig, ok := converge["systemd"].(map[string]any)
 	if !ok {
