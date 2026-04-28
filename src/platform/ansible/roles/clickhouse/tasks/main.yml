@@ -117,33 +117,6 @@
       group: "{{ clickhouse_system_group }}"
       mode: "0700"
 
-- name: Discover legacy billing bridge metadata files
-  ansible.builtin.find:
-    paths: "{{ clickhouse_data_path }}/store"
-    recurse: true
-    file_type: file
-    patterns: "billing_windows_pg.sql*"
-  register: clickhouse_legacy_billing_bridge_metadata
-  failed_when: false
-  changed_when: false
-
-- name: Stop ClickHouse before removing legacy billing bridge metadata
-  ansible.builtin.systemd:
-    name: clickhouse-server
-    state: stopped
-  when: (clickhouse_legacy_billing_bridge_metadata.matched | default(0) | int) > 0
-
-- name: Remove legacy billing bridge metadata files
-  # Atomic databases keep table definitions in /var/lib/clickhouse/store; remove
-  # the obsolete billing_windows_pg metadata before startup or every query fails.
-  ansible.builtin.file:
-    path: "{{ item.path }}"
-    state: absent
-  loop: "{{ clickhouse_legacy_billing_bridge_metadata.files | default([]) }}"
-  loop_control:
-    label: "{{ item.path }}"
-  when: (clickhouse_legacy_billing_bridge_metadata.matched | default(0) | int) > 0
-
 - name: Deploy ClickHouse server certificate extensions
   ansible.builtin.copy:
     dest: /etc/clickhouse-server/tls/server-cert.ext

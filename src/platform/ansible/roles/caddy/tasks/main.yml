@@ -37,32 +37,6 @@
     - /var/lib/caddy
     - /var/cache/caddy
 
-- name: Check for legacy root-owned Caddy TLS storage
-  ansible.builtin.stat:
-    path: /root/.local/share/caddy
-  register: caddy_legacy_root_storage
-
-- name: Migrate legacy root-owned Caddy TLS storage
-  ansible.builtin.copy:
-    src: /root/.local/share/caddy/
-    dest: /var/lib/caddy/
-    remote_src: true
-    owner: caddy
-    group: caddy
-    mode: preserve
-    directory_mode: "0750"
-  when: caddy_legacy_root_storage.stat.exists
-  no_log: true
-
-- name: Converge Caddy state ownership after TLS storage migration
-  ansible.builtin.file:
-    path: /var/lib/caddy
-    state: directory
-    owner: caddy
-    group: caddy
-    mode: "0750"
-    recurse: true
-
 - name: Create Caddy log directory
   ansible.builtin.file:
     path: /var/log/caddy
