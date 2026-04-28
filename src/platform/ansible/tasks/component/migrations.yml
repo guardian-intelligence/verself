@@ -6,10 +6,11 @@
       - migrate
       - up
     environment:
-      PGHOST: "{{ topology_endpoints.postgresql.host }}"
-      PGPORT: "{{ topology_endpoints.postgresql.endpoints.postgres.port | string }}"
-      PGDATABASE: "{{ component.postgres.database }}"
-      PGUSER: "{{ component.postgres.owner }}"
-      PGPASSWORD: "{{ component_pg_password }}"
-      PGSSLMODE: disable
-  no_log: true
+      # Match the runtime unit: service-owned migrations authenticate through the local peer socket.
+      VERSELF_PG_DSN: >-
+        {{
+          'postgres://' ~ (component.postgres.owner | urlencode) ~ '@/' ~
+          (component.postgres.database | urlencode) ~ '?host=/var/run/postgresql&sslmode=disable'
+        }}
+  become: true
+  become_user: "{{ component_units[0].user }}"

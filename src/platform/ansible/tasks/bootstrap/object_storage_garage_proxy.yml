@@ -9,7 +9,7 @@
         'http://' ~ topology_clusters.garage.host ~ ':'
         ~ (
           topology_clusters.garage.nodes
-          | map(attribute='s3_api_port')
+          | map(attribute='s3_port')
           | map('string')
           | join(',http://' ~ topology_clusters.garage.host ~ ':')
         )
@@ -101,4 +101,3 @@
     OBJECT_STORAGE_SECRET_SYNC_SECRETS_URL: "https://{{ topology_endpoints.secrets_service.endpoints.internal_https.address }}"
   changed_when: false
   no_log: true
-

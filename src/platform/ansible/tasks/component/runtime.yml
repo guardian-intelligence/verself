@@ -1,10 +1,10 @@
 ---
-- name: Enable and start component systemd units
-  ansible.builtin.systemd:
+- name: Enable and converge component systemd units
+  verself_systemd_converge:
     name: "{{ unit.name }}"
+    artifact_path: "{{ unit.exec }}"
     enabled: true
-    state: started
-    daemon_reload: true
+    watched_paths: "{{ unit.load_credentials | default([]) | map(attribute='path') | list }}"
   loop: "{{ component_units }}"
   loop_control:
     loop_var: unit

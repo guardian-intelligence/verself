@@ -18,4 +18,3 @@
   loop_control:
     loop_var: unit
     label: "{{ unit.name }}"
-  notify: "restart {{ unit.name }}"
