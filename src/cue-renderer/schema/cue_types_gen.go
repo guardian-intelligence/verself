@@ -590,6 +590,8 @@ type SystemdUnit struct {
 
 	Exec string `json:"exec"`
 
+	Type string `json:"type"`
+
 	After []any/* CUE closed list */ `json:"after"`
 
 	Wants []any/* CUE closed list */ `json:"wants"`
@@ -608,9 +610,13 @@ type SystemdUnit struct {
 
 	RestartSec int64 `json:"restart_sec"`
 
-	Hardening map[string]any `json:"hardening"`
+	Hardening SystemdHardening `json:"hardening"`
 
 	Readiness []any/* CUE closed list */ `json:"readiness"`
+
+	WantedBy []any/* CUE closed list */ `json:"wanted_by"`
+
+	RequiresSpiffeSock bool `json:"requires_spiffe_sock"`
 }
 
 type ComponentVerification struct {
