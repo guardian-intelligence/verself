@@ -36,7 +36,16 @@
     name: "{{ unit.user }}"
     uid: "{{ unit.uid | default(omit) }}"
     group: "{{ unit.group }}"
-    groups: "{{ unit.supplementary_groups }}"
+    # Multiple units can share one runtime user; converge the union so later units do not drop required groups.
+    groups: >-
+      {{
+        component_units
+        | selectattr('user', 'equalto', unit.user)
+        | map(attribute='supplementary_groups')
+        | flatten
+        | unique
+        | list
+      }}
     append: false
     system: true
     shell: /usr/sbin/nologin

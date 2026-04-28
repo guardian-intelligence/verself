@@ -62,13 +62,13 @@
 
 - name: Run component bootstrap hooks
   ansible.builtin.include_tasks:
-    file: "bootstrap/{{ component_bootstrap_hook }}.yml"
+    file: "bootstrap/{{ component_bootstrap_hook.name }}.yml"
     apply:
       tags: always
   loop: "{{ component.converge.bootstrap }}"
   loop_control:
     loop_var: component_bootstrap_hook
-    label: "{{ component_bootstrap_hook }}"
+    label: "{{ component_bootstrap_hook.name }} ({{ component_bootstrap_hook.class }})"
   tags: always
 
 - name: Install rendered component artifacts

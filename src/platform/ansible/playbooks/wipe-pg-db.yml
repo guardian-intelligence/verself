@@ -11,6 +11,8 @@
 # - governance_service
 # - identity_service
 # - notifications_service
+# - object_storage_service
+# - profile
 # - projects_service
 # - source_code_hosting
 
@@ -26,6 +28,8 @@
       - governance_service
       - identity_service
       - notifications_service
+      - object_storage_service
+      - profile
       - projects_service
       - source_code_hosting
   pre_tasks:
@@ -88,6 +92,8 @@
           governance_service: governance_service
           identity_service: identity_service
           notifications_service: notifications_service
+          object_storage_service: object_storage_service
+          profile: profile_service
           projects_service: projects_service
           source_code_hosting: source_code_hosting_service
 
@@ -123,6 +129,11 @@
           notifications_service:
             - notifications-service
             - electric-notifications
+          object_storage_service:
+            - object-storage-admin
+            - object-storage-service
+          profile:
+            - profile-service
           projects_service:
             - projects-service
           source_code_hosting:
@@ -133,18 +144,51 @@
         name: nftables
       tags: [nftables]
 
-    - name: Include ClickHouse for PostgreSQL wipe targets that configure ClickHouse users
-      ansible.builtin.include_role:
-        name: clickhouse
-      tags: [clickhouse]
-      when: >-
-        wipe_pg_db_name in [
-          'billing',
-          'sandbox_rental',
-          'governance_service',
-          'identity_service',
-          'notifications_service',
-        ]
+    - name: Classify PostgreSQL wipe target ClickHouse binding
+      ansible.builtin.set_fact:
+        wipe_pg_db_uses_clickhouse: >-
+          {{ wipe_pg_db_component.converge.clickhouse is defined }}
+
+    - name: Load deployed ClickHouse operator defaults for PostgreSQL wipe target
+      ansible.builtin.include_vars:
+        file: ../roles/clickhouse/defaults/main.yml
+      when: wipe_pg_db_uses_clickhouse | bool
+
+    - name: Check deployed ClickHouse client binary for PostgreSQL wipe target
+      ansible.builtin.stat:
+        path: "{{ verself_bin }}/clickhouse-client"
+      register: wipe_pg_db_clickhouse_client_binary
+      when: wipe_pg_db_uses_clickhouse | bool
+
+    - name: Assert deployed ClickHouse client is present for PostgreSQL wipe target
+      ansible.builtin.assert:
+        that:
+          - wipe_pg_db_clickhouse_client_binary.stat.exists
+        fail_msg: >-
+          wipe-pg-db reconciles ClickHouse grants for {{ wipe_pg_db_name }},
+          but {{ verself_bin }}/clickhouse-client is missing. Run make deploy first.
+      when: wipe_pg_db_uses_clickhouse | bool
+
+    - name: Set deployed ClickHouse operator client command for PostgreSQL wipe target
+      ansible.builtin.set_fact:
+        clickhouse_operator_client_command: >-
+          sudo -u {{ clickhouse_operator_system_user }} {{ verself_bin }}/clickhouse-client
+          --config-file {{ clickhouse_operator_client_config_path }}
+          --user {{ clickhouse_operator_db_user }}
+      when: wipe_pg_db_uses_clickhouse | bool
+
+    - name: Wait for deployed ClickHouse before PostgreSQL wipe target reconciliation
+      ansible.builtin.wait_for:
+        host: "{{ topology_endpoints.clickhouse.host }}"
+        port: "{{ topology_endpoints.clickhouse.endpoints.native_tls.port }}"
+        timeout: 5
+      when: wipe_pg_db_uses_clickhouse | bool
+
+    - name: Verify deployed ClickHouse operator access before PostgreSQL wipe target reconciliation
+      ansible.builtin.command:
+        cmd: "{{ clickhouse_operator_client_command }} --query 'SELECT 1'"
+      changed_when: false
+      when: wipe_pg_db_uses_clickhouse | bool
 
     - name: Include TigerBeetle for billing PostgreSQL wipe
       ansible.builtin.include_role:

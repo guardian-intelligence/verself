@@ -33,7 +33,6 @@
 
 - name: Probe component ClickHouse access path
   ansible.builtin.command:
-    cmd: "{{ clickhouse_operator_client_command }} --query SELECT 1"
+    cmd: "{{ clickhouse_operator_client_command }} --query 'SELECT 1'"
   changed_when: false
   when: component.converge.clickhouse is defined
-  no_log: true

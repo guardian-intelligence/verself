@@ -10,6 +10,13 @@ from ansible.module_utils.basic import AnsibleModule
 
 
 RESULT_RE = re.compile(r"migrations ok: applied=(?P<applied>[0-9]+) skipped=(?P<skipped>[0-9]+)")
+URL_PASSWORD_RE = re.compile(r"(postgres(?:ql)?://[^:\s/@]+:)[^@\s]+(@)")
+KEY_VALUE_SECRET_RE = re.compile(r"(?i)(password|token|secret)=([^ \n]+)")
+
+
+def redact_output(value: str) -> str:
+    value = URL_PASSWORD_RE.sub(r"\1REDACTED\2", value)
+    return KEY_VALUE_SECRET_RE.sub(r"\1=REDACTED", value)
 
 
 def main() -> None:
@@ -31,8 +38,8 @@ def main() -> None:
         module.fail_json(
             msg="service migrator failed",
             rc=proc.returncode,
-            stdout=proc.stdout,
-            stderr=proc.stderr,
+            stdout=redact_output(proc.stdout),
+            stderr=redact_output(proc.stderr),
             cmd=argv,
         )
 
@@ -40,8 +47,8 @@ def main() -> None:
     if match is None:
         module.fail_json(
             msg="service migrator did not emit the required result contract",
-            stdout=proc.stdout,
-            stderr=proc.stderr,
+            stdout=redact_output(proc.stdout),
+            stderr=redact_output(proc.stderr),
             cmd=argv,
         )
 
@@ -52,8 +59,8 @@ def main() -> None:
         applied=applied,
         # Ansible reserves the result key "skipped" for task control flow.
         skipped_migrations=skipped,
-        stdout=proc.stdout,
-        stderr=proc.stderr,
+        stdout=redact_output(proc.stdout),
+        stderr=redact_output(proc.stderr),
         cmd=argv,
     )
 

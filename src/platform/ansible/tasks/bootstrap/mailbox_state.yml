@@ -1,9 +1,0 @@
----
-- name: Ensure mailbox-service state directory exists
-  ansible.builtin.file:
-    path: /var/lib/mailbox-service
-    state: directory
-    owner: mailbox_service
-    group: mailbox_service
-    mode: "0750"
-

@@ -355,7 +355,7 @@
         ('all' in (ansible_run_tags | default(['all'])))
         or (component.name in (ansible_run_tags | default([])))
         or (component.deploy_tag in (ansible_run_tags | default([])))
-        or (((component.converge.bootstrap | default([])) | intersect(ansible_run_tags | default([]))) | length > 0)
+        or ((((component.converge.bootstrap | default([])) | map(attribute='name') | list) | intersect(ansible_run_tags | default([]))) | length > 0)
       tags:
         - always
         - billing_service
@@ -403,7 +403,7 @@
         ('all' in (ansible_run_tags | default(['all'])))
         or (component.name in (ansible_run_tags | default([])))
         or (component.deploy_tag in (ansible_run_tags | default([])))
-        or (((component.converge.bootstrap | default([])) | intersect(ansible_run_tags | default([]))) | length > 0)
+        or ((((component.converge.bootstrap | default([])) | map(attribute='name') | list) | intersect(ansible_run_tags | default([]))) | length > 0)
       tags:
         - always
         - billing_service
