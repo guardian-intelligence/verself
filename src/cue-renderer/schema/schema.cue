@@ -391,14 +391,6 @@ package schema
 	}
 }
 
-#SmokeTestSpan: {
-	name:      string
-	kind:      string
-	service:   string
-	span_name: string @go(SpanName)
-	attributes: {[string]: _} | *{}
-}
-
 #ComponentDirectory: {
 	path:  string & =~"^/"
 	owner: string & !=""
@@ -629,9 +621,6 @@ package schema
 	routes: [...#Route]
 	edges: [...#Edge]
 	nftables: #NftablesTopology
-	smoke_tests: {
-		spans: [...#SmokeTestSpan] | *[]
-	}
 	policies: {
 		[string]: #Policy
 	}

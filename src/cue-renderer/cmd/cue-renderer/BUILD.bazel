@@ -22,7 +22,6 @@ go_library(
         "//src/cue-renderer/internal/render/postgres",
         "//src/cue-renderer/internal/render/routes",
         "//src/cue-renderer/internal/render/runtime",
-        "//src/cue-renderer/internal/render/smoketest",
         "//src/cue-renderer/internal/render/spire",
         "//src/cue-renderer/internal/render/systemd",
         "//src/cue-renderer/internal/spans",

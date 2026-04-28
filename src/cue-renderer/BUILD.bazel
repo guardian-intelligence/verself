@@ -166,15 +166,6 @@ genrule(
 )
 
 genrule(
-    name = "smoke_test_render",
-    srcs = TOPOLOGY_SRCS,
-    outs = ["smoke_test.yml"],
-    cmd = "$(location //src/cue-renderer/cmd/cue-renderer) render smoke_test > $@",
-    tools = ["//src/cue-renderer/cmd/cue-renderer"],
-    visibility = ["//visibility:public"],
-)
-
-genrule(
     name = "component_systemd_handlers_render",
     srcs = TOPOLOGY_SRCS,
     outs = ["component-systemd-handlers.yml"],
@@ -227,7 +218,6 @@ _RENDERED_FILES = {
     "//src/platform:ansible/group_vars/all/generated/postgres.yml": ":postgres_render",
     "//src/platform:ansible/group_vars/all/generated/routes.yml": ":routes_render",
     "//src/platform:ansible/group_vars/all/generated/runtime.yml": ":runtime_render",
-    "//src/platform:ansible/group_vars/all/generated/smoke_test.yml": ":smoke_test_render",
     "//src/platform:ansible/group_vars/all/generated/spire.yml": ":spire_render",
     "//src/platform:ansible/handlers/component-systemd.yml": ":component_systemd_handlers_render",
 }

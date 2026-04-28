@@ -24,7 +24,7 @@ import (
 
 // Loaded is the in-memory snapshot every renderer receives. The raw
 // Topology field carries every CUE value the graph projects; typed
-// projections (SmokeTests, ...) are filled in alongside so renderers don't
+// projections (Clusters, ...) are filled in alongside so renderers don't
 // need to know how to walk a cue.Value.
 //
 // Today most of Topology is map[string]any because schema.cue still uses
@@ -38,7 +38,6 @@ type Loaded struct {
 	Config      schema.InstanceConfig
 	ConfigMap   map[string]any
 	Catalog     Catalog
-	SmokeTests  SmokeTests
 	Clusters    Clusters
 
 	// GraphSHA256 is the hex SHA-256 of the canonical-JSON encoding of
@@ -53,10 +52,6 @@ type Loaded struct {
 type Clusters struct {
 	Garage   schema.GarageCluster
 	Temporal schema.TemporalCluster
-}
-
-type SmokeTests struct {
-	Spans []schema.SmokeTestSpan
 }
 
 type Catalog struct {
@@ -113,9 +108,6 @@ func Topology(dir, instance string) (Loaded, error) {
 	loaded.ConfigValue = configVal
 	loaded.Catalog.Raw = catalogRoot
 
-	if err := topologyVal.LookupPath(cue.ParsePath("smoke_tests.spans")).Decode(&loaded.SmokeTests.Spans); err != nil {
-		return Loaded{}, fmt.Errorf("decode topology.smoke_tests.spans: %w", err)
-	}
 	if err := topologyVal.LookupPath(cue.ParsePath("components.garage.garage")).Decode(&loaded.Clusters.Garage); err != nil {
 		return Loaded{}, fmt.Errorf("decode topology.components.garage.garage: %w", err)
 	}

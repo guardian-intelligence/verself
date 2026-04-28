@@ -41,7 +41,6 @@ import (
 	"github.com/verself/cue-renderer/internal/render/postgres"
 	"github.com/verself/cue-renderer/internal/render/routes"
 	"github.com/verself/cue-renderer/internal/render/runtime"
-	"github.com/verself/cue-renderer/internal/render/smoketest"
 	"github.com/verself/cue-renderer/internal/render/spire"
 	"github.com/verself/cue-renderer/internal/render/systemd"
 	"github.com/verself/cue-renderer/internal/spans"
@@ -71,7 +70,6 @@ func renderers() []render.Renderer {
 		postgres.Renderer{},
 		routes.Renderer{},
 		runtime.Renderer{},
-		smoketest.Renderer{},
 		spire.Renderer{},
 		systemd.Renderer{},
 	}

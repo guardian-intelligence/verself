@@ -1,4 +1,4 @@
-.PHONY: help bazel-doctor bazel-smoke-test bazel-gazelle bazel-tidy bazel-update test lint lint-scripts lint-conversions lint-ansible lint-voice company-smoke-test fmt vet tidy sqlc sqlc-check openapi openapi-check openapi-clients openapi-clients-check openapi-wire-check topology-generate topology-check topology-smoke-test \
+.PHONY: help bazel-doctor bazel-smoke-test bazel-gazelle bazel-tidy bazel-update test lint lint-scripts lint-conversions lint-ansible lint-voice company-smoke-test fmt vet tidy sqlc sqlc-check openapi openapi-check openapi-clients openapi-clients-check openapi-wire-check topology-generate topology-check \
        hooks-install doctor inventory-check setup-dev setup-sops provision deprovision deploy guest-rootfs security-patch identity-reset seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member \
        set-user-state billing-clock billing-wall-clock billing-state billing-documents billing-finalizations billing-events billing-pg-shell billing-pg-query billing-smoke-test billing-reset verification-reset \
        profile-smoke-test organization-sync-smoke-test notifications-smoke-test projects-smoke-test source-code-hosting-smoke-test secrets-smoke-test secrets-leak-smoke-test openbao-smoke-test openbao-tenancy-smoke-test workload-identity-smoke-test spiffe-rotation-smoke-test object-storage-smoke-test temporal-smoke-test temporal-web-smoke-test recurring-schedule-smoke-test \
@@ -275,9 +275,6 @@ topology-generate: ## Regenerate Ansible deploy inputs from CUE topology
 
 topology-check: ## Verify generated deploy inputs match CUE topology
 	bazelisk test //src/cue-renderer:freshness_tests
-
-topology-smoke-test: inventory-check ## Verify topology compile/check spans and generated artifact freshness in ClickHouse
-	cd $(PLATFORM_DIR) && ./scripts/topology-smoke-test.sh
 
 inventory-check: ## Validate that the generated Ansible inventory exists
 	@test -f "$(INVENTORY)" || { echo "ERROR: $(INVENTORY) not found. Run: cd $(PLATFORM_DIR)/ansible && ansible-playbook playbooks/provision.yml"; exit 1; }

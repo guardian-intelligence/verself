@@ -791,12 +791,4 @@ topology: s.#Topology & {
 		frontend_csp: {kind: "csp", values: {connect_src: "self"}}
 		public_api_body_limit: {kind: "body_limit", values: {default_bytes: 1048576}}
 	}
-
-	smoke_tests: {
-		spans: [
-			{name: "cue_renderer_run", kind: "span", service: "cue-renderer", span_name: "cue_renderer.run", attributes: {}},
-			{name: "topology_graph_export", kind: "span", service: "cue-renderer", span_name: "topology.cue.export_graph", attributes: {}},
-			{name: "topology_clusters_freshness", kind: "span", service: "cue-renderer", span_name: "topology.generated.freshness_check", attributes: {"topology.artifact": "clusters"}},
-		]
-	}
 }

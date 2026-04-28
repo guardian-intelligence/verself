@@ -451,18 +451,6 @@ type TemporalCluster struct {
 	} `json:"diagnostics"`
 }
 
-type SmokeTestSpan struct {
-	Name string `json:"name"`
-
-	Kind string `json:"kind"`
-
-	Service string `json:"service"`
-
-	SpanName string `json:"span_name"`
-
-	Attributes map[string]any/* CUE top */ `json:"attributes"`
-}
-
 type ComponentDirectory struct {
 	Path string `json:"path"`
 
@@ -731,10 +719,6 @@ type Topology struct {
 	Edges []Edge `json:"edges"`
 
 	Nftables NftablesTopology `json:"nftables"`
-
-	Smoke_tests struct {
-		Spans []any /* CUE closed list */ `json:"spans"`
-	} `json:"smoke_tests"`
 
 	Policies map[string]Policy `json:"policies"`
 }
