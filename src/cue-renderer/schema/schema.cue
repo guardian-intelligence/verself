@@ -521,14 +521,6 @@ package schema
 	requires_spiffe_sock: bool | *false @go(RequiresSpiffeSock)
 }
 
-#ComponentVerification: {
-	systemd:    bool | *true
-	nftables:   bool | *true
-	postgres:   bool | *true
-	clickhouse: bool | *true
-	health:     bool | *true
-}
-
 #SandboxGithubAppBootstrap: {
 	enabled:      bool
 	app_id:       string & =~"^[0-9]+$" @go(AppID)
@@ -579,7 +571,6 @@ package schema
 	}
 	bootstrap: [...#ComponentBootstrapHook] | *[]
 	bootstrap_config: #ComponentBootstrapConfig | *{} @go(BootstrapConfig)
-	verification: #ComponentVerification | *{}
 }
 
 #Component: {
