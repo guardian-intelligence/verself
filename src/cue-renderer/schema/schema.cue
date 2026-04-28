@@ -66,6 +66,12 @@ package schema
 	database:         string | *""
 	owner:            string | *""
 	connection_limit: int & >=0 | *0
+	pool: {
+		max_conns:                 int & >0 | *8    @go(MaxConns)
+		min_conns:                 int & >=0 | *1   @go(MinConns)
+		conn_max_lifetime_seconds: int & >0 | *1800 @go(ConnMaxLifetimeSeconds)
+		conn_max_idle_seconds:     int & >0 | *300  @go(ConnMaxIdleSeconds)
+	}
 	password_ref: #PostgresPasswordRef | *{kind: "none"} @go(PasswordRef)
 }
 
@@ -499,13 +505,37 @@ package schema
 	enabled:      bool
 	app_id:       string & =~"^[0-9]+$" @go(AppID)
 	slug:         string & !=""
-	client_id:    string & !="" @go(ClientID)
+	client_id:    string & !=""          @go(ClientID)
 	api_base_url: string & =~"^https://" @go(APIBaseURL)
 	web_base_url: string & =~"^https://" @go(WebBaseURL)
 }
 
 #ComponentBootstrapConfig: {
 	sandbox_github_app?: #SandboxGithubAppBootstrap @go(SandboxGithubApp)
+}
+
+#BootstrapHookName:
+	"billing_stripe_webhook" |
+	"identity_zitadel_actions" |
+	"secrets_platform_org" |
+	"openbao_tenancy" |
+	"object_storage_tls" |
+	"object_storage_garage_proxy" |
+	"sandbox_vm_socket_acl"
+
+#BootstrapHookClass:
+	"external_provider" |
+	"identity_provider" |
+	"identity_lookup" |
+	"secret_backend" |
+	"substrate_bridge" |
+	"storage_provider" |
+	"security_audit"
+
+#ComponentBootstrapHook: {
+	name:   #BootstrapHookName
+	class:  #BootstrapHookClass
+	reason: string & !=""
 }
 
 #ComponentConverge: {
@@ -519,7 +549,7 @@ package schema
 	systemd: {
 		units: [...#SystemdUnit] | *[]
 	}
-	bootstrap: [...string] | *[]
+	bootstrap: [...#ComponentBootstrapHook] | *[]
 	bootstrap_config: #ComponentBootstrapConfig | *{} @go(BootstrapConfig)
 	verification: #ComponentVerification | *{}
 }

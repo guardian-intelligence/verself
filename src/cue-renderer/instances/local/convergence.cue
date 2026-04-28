@@ -32,21 +32,9 @@ topology: components: {
 				bind_read_only_paths: ["/etc/verself/auth-discovery-hosts:/etc/hosts"]
 				load_credentials: [{name: "clickhouse-ca-cert", path: "/etc/clickhouse-server/tls/server-ca.pem"}]
 				environment: {
-					BILLING_CH_ADDRESS:                   "{{ topology_endpoints.clickhouse.endpoints.native_tls.address }}"
-					BILLING_CH_USER:                      "billing_service"
-					BILLING_TB_ADDRESS:                   "{{ topology_endpoints.tigerbeetle.endpoints.client.address }}"
-					BILLING_TB_CLUSTER_ID:                "0"
-					BILLING_PG_DSN:                       "postgres://billing@/billing?host=/var/run/postgresql&sslmode=disable"
-					BILLING_LISTEN_ADDR:                  "{{ topology_endpoints.billing.endpoints.public_http.address }}"
-					BILLING_INTERNAL_LISTEN_ADDR:         "{{ topology_endpoints.billing.endpoints.internal_https.address }}"
-					BILLING_SECRETS_URL:                  "https://{{ topology_endpoints.secrets_service.endpoints.internal_https.address }}"
-					BILLING_AUTH_ISSUER_URL:              "https://auth.{{ verself_domain }}"
-					BILLING_AUTH_AUDIENCE:                "{{ component_auth_audience }}"
-					BILLING_PG_MAX_CONNS:                 "12"
-					BILLING_PG_MIN_CONNS:                 "1"
-					BILLING_PG_CONN_MAX_LIFETIME_SECONDS: "1800"
-					BILLING_PG_CONN_MAX_IDLE_SECONDS:     "300"
-					SPIFFE_ENDPOINT_SOCKET:               "unix://{{ spire_agent_socket_path }}"
+					BILLING_TB_ADDRESS:    "{{ topology_endpoints.tigerbeetle.endpoints.client.address }}"
+					BILLING_TB_CLUSTER_ID: "0"
+					BILLING_SECRETS_URL:   "https://{{ topology_endpoints.secrets_service.endpoints.internal_https.address }}"
 				}
 				hardening: {
 					private_devices:     false
@@ -59,7 +47,11 @@ topology: components: {
 				}
 				readiness: [{kind: "http", endpoint: "public_http", path: "/readyz"}]
 			}]
-			bootstrap: ["billing_stripe_webhook"]
+			bootstrap: [{
+				name:   "billing_stripe_webhook"
+				class:  "external_provider"
+				reason: "Reconciles the Stripe webhook endpoint and runtime provider secret outside the generic service shape."
+			}]
 		}
 	}
 	sandbox_rental: {
@@ -123,27 +115,16 @@ topology: components: {
 						{name: "forgejo-bootstrap-secret", path: "/etc/credstore/sandbox-rental/forgejo-bootstrap-secret"},
 					]
 					environment: {
-						SANDBOX_LISTEN_ADDR:                   "{{ topology_endpoints.sandbox_rental.endpoints.public_http.address }}"
-						SANDBOX_INTERNAL_LISTEN_ADDR:          "{{ topology_endpoints.sandbox_rental.endpoints.internal_https.address }}"
-						SANDBOX_PG_DSN:                        "postgres://sandbox_rental@/sandbox_rental?host=/var/run/postgresql&sslmode=disable"
 						SANDBOX_GOVERNANCE_AUDIT_URL:          "https://{{ topology_endpoints.governance_service.endpoints.internal_https.address }}"
 						SANDBOX_SECRETS_URL:                   "https://{{ topology_endpoints.secrets_service.endpoints.internal_https.address }}"
 						SANDBOX_SOURCE_INTERNAL_URL:           "https://{{ topology_endpoints.source_code_hosting_service.endpoints.internal_https.address }}"
 						SANDBOX_TEMPORAL_FRONTEND_ADDRESS:     "{{ topology_endpoints.temporal.endpoints.frontend_grpc.address }}"
 						SANDBOX_TEMPORAL_NAMESPACE:            "sandbox-rental-service"
 						SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING: "sandbox-rental-service.recurring-vm"
-						SANDBOX_CH_ADDRESS:                    "{{ topology_endpoints.clickhouse.endpoints.native_tls.address }}"
-						SANDBOX_CH_USER:                       "sandbox_rental"
 						SANDBOX_BILLING_URL:                   "https://{{ topology_endpoints.billing.endpoints.internal_https.address }}"
 						SANDBOX_BILLING_RETURN_ORIGINS:        "https://{{ console_domain }}"
 						SANDBOX_PUBLIC_BASE_URL:               "https://{{ sandbox_rental_service_domain }}"
-						SANDBOX_AUTH_ISSUER_URL:               "https://auth.{{ verself_domain }}"
-						SANDBOX_AUTH_AUDIENCE:                 "{{ component_auth_audience }}"
 						SANDBOX_VM_ORCHESTRATOR_SOCKET:        "/run/vm-orchestrator/api.sock"
-						SANDBOX_PG_MAX_CONNS:                  "16"
-						SANDBOX_PG_MIN_CONNS:                  "1"
-						SANDBOX_PG_CONN_MAX_LIFETIME_SECONDS:  "1800"
-						SANDBOX_PG_CONN_MAX_IDLE_SECONDS:      "300"
 						SANDBOX_EXECUTION_MAX_WORKERS:         "4"
 						SANDBOX_GITHUB_APP_ENABLED:            "\(bootstrap_config.sandbox_github_app.enabled)"
 						SANDBOX_GITHUB_APP_ID:                 bootstrap_config.sandbox_github_app.app_id
@@ -156,7 +137,6 @@ topology: components: {
 						SANDBOX_FORGEJO_API_BASE_URL:          "http://{{ topology_endpoints.forgejo.endpoints.http.address }}"
 						SANDBOX_FORGEJO_RUNNER_BASE_URL:       "http://{{ topology_endpoints.firecracker_host_service.endpoints.host_http.address }}"
 						SANDBOX_FORGEJO_WEBHOOK_BASE_URL:      "https://{{ sandbox_rental_service_domain }}"
-						SPIFFE_ENDPOINT_SOCKET:                "unix://{{ spire_agent_socket_path }}"
 					}
 					hardening: {protect_system: "full"}
 					readiness: [
@@ -174,21 +154,23 @@ topology: components: {
 					wants:       components.sandbox_rental.processes.recurring_worker.wants
 					supplementary_groups: ["{{ spire_workload_group }}"]
 					environment: {
-						SANDBOX_PG_DSN:                        "postgres://sandbox_rental@/sandbox_rental?host=/var/run/postgresql&sslmode=disable"
 						SANDBOX_SOURCE_INTERNAL_URL:           "https://{{ topology_endpoints.source_code_hosting_service.endpoints.internal_https.address }}"
-						SANDBOX_PG_MAX_CONNS:                  "4"
-						SANDBOX_PG_MIN_CONNS:                  "1"
-						SANDBOX_PG_CONN_MAX_LIFETIME_SECONDS:  "1800"
-						SANDBOX_PG_CONN_MAX_IDLE_SECONDS:      "300"
 						SANDBOX_TEMPORAL_FRONTEND_ADDRESS:     "{{ topology_endpoints.temporal.endpoints.frontend_grpc.address }}"
 						SANDBOX_TEMPORAL_NAMESPACE:            "sandbox-rental-service"
 						SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING: "sandbox-rental-service.recurring-vm"
-						SPIFFE_ENDPOINT_SOCKET:                "unix://{{ spire_agent_socket_path }}"
+						VERSELF_PG_MAX_CONNS:                  "4"
+						VERSELF_PG_MIN_CONNS:                  "1"
+						VERSELF_PG_CONN_MAX_LIFETIME_SECONDS:  "1800"
+						VERSELF_PG_CONN_MAX_IDLE_SECONDS:      "300"
 					}
 					hardening: {protect_system: "full"}
 				},
 			]
-			bootstrap: ["sandbox_vm_socket_acl", "sandbox_github_app"]
+			bootstrap: [{
+				name:   "sandbox_vm_socket_acl"
+				class:  "security_audit"
+				reason: "Asserts the vm-clients privileged group remains limited to the sandbox rental runtime."
+			}]
 		}
 	}
 	identity_service: {
@@ -232,26 +214,20 @@ topology: components: {
 					{name: "clickhouse-ca-cert", path: "/etc/clickhouse-server/tls/server-ca.pem"},
 				]
 				environment: {
-					IDENTITY_LISTEN_ADDR:          "{{ topology_endpoints.identity_service.endpoints.public_http.address }}"
-					IDENTITY_INTERNAL_LISTEN_ADDR: "{{ topology_endpoints.identity_service.endpoints.internal_https.address }}"
-					IDENTITY_PG_DSN:               "postgres://identity_service@/identity_service?host=/var/run/postgresql&sslmode=disable"
-					IDENTITY_CH_ADDRESS:           "{{ topology_endpoints.clickhouse.endpoints.native_tls.address }}"
-					IDENTITY_CH_USER:              "identity_service"
 					IDENTITY_GOVERNANCE_AUDIT_URL: "https://{{ topology_endpoints.governance_service.endpoints.internal_https.address }}"
-					IDENTITY_AUTH_ISSUER_URL:      "https://auth.{{ verself_domain }}"
-					IDENTITY_AUTH_AUDIENCE:        "{{ component_auth_audience }}"
 					IDENTITY_ZITADEL_BASE_URL:     "http://{{ topology_endpoints.zitadel.endpoints.http.address }}"
 					IDENTITY_ZITADEL_HOST:         "auth.{{ verself_domain }}"
-					SPIFFE_ENDPOINT_SOCKET:        "unix://{{ spire_agent_socket_path }}"
-					OTEL_SERVICE_NAME:             "identity-service"
-					OTEL_EXPORTER_OTLP_ENDPOINT:   "http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}"
 				}
 				readiness: [
 					{kind: "http", endpoint: "public_http", path: "/readyz"},
 					{kind: "tcp", endpoint: "internal_https"},
 				]
 			}]
-			bootstrap: ["identity_zitadel_actions"]
+			bootstrap: [{
+				name:   "identity_zitadel_actions"
+				class:  "identity_provider"
+				reason: "Installs Zitadel Actions V2 targets and executions that are identity-provider control-plane state."
+			}]
 		}
 	}
 	governance_service: {
@@ -292,20 +268,10 @@ topology: components: {
 					{name: "clickhouse-ca-cert", path: "/etc/clickhouse-server/tls/server-ca.pem"},
 				]
 				environment: {
-					GOVERNANCE_LISTEN_ADDR:          "{{ topology_endpoints.governance_service.endpoints.public_http.address }}"
-					GOVERNANCE_INTERNAL_LISTEN_ADDR: "{{ topology_endpoints.governance_service.endpoints.internal_https.address }}"
-					GOVERNANCE_PG_DSN:               "postgres://governance_service@/governance_service?host=/var/run/postgresql&sslmode=disable"
-					GOVERNANCE_IDENTITY_PG_DSN:      "postgres://identity_service@/identity_service?host=/var/run/postgresql&sslmode=disable"
-					GOVERNANCE_BILLING_PG_DSN:       "postgres://billing@/billing?host=/var/run/postgresql&sslmode=disable"
-					GOVERNANCE_SANDBOX_PG_DSN:       "postgres://sandbox_rental@/sandbox_rental?host=/var/run/postgresql&sslmode=disable"
-					GOVERNANCE_CH_ADDRESS:           "{{ topology_endpoints.clickhouse.endpoints.native_tls.address }}"
-					GOVERNANCE_CH_USER:              "governance_service"
-					GOVERNANCE_AUTH_ISSUER_URL:      "https://auth.{{ verself_domain }}"
-					GOVERNANCE_AUTH_AUDIENCE:        "{{ component_auth_audience }}"
-					GOVERNANCE_EXPORT_DIR:           "/var/lib/governance-service/exports"
-					SPIFFE_ENDPOINT_SOCKET:          "unix://{{ spire_agent_socket_path }}"
-					OTEL_SERVICE_NAME:               "governance-service"
-					OTEL_EXPORTER_OTLP_ENDPOINT:     "http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}"
+					GOVERNANCE_IDENTITY_PG_DSN: "postgres://identity_service@/identity_service?host=/var/run/postgresql&sslmode=disable"
+					GOVERNANCE_BILLING_PG_DSN:  "postgres://billing@/billing?host=/var/run/postgresql&sslmode=disable"
+					GOVERNANCE_SANDBOX_PG_DSN:  "postgres://sandbox_rental@/sandbox_rental?host=/var/run/postgresql&sslmode=disable"
+					GOVERNANCE_EXPORT_DIR:      "/var/lib/governance-service/exports"
 				}
 				hardening: read_write_paths: ["/var/lib/governance-service"]
 				readiness: [{kind: "http", endpoint: "public_http", path: "/readyz"}]
@@ -341,12 +307,8 @@ topology: components: {
 				bind_read_only_paths: ["/etc/verself/auth-discovery-hosts:/etc/hosts"]
 				load_credentials: [{name: "openbao-ca-cert", path: "/etc/openbao/tls/cert.pem"}]
 				environment: {
-					SECRETS_LISTEN_ADDR:               "{{ topology_endpoints.secrets_service.endpoints.public_http.address }}"
-					SECRETS_INTERNAL_LISTEN_ADDR:      "{{ topology_endpoints.secrets_service.endpoints.internal_https.address }}"
 					SECRETS_PLATFORM_ORG_ID:           "{{ component_secrets_platform_org_id }}"
 					SECRETS_GOVERNANCE_AUDIT_URL:      "https://{{ topology_endpoints.governance_service.endpoints.internal_https.address }}"
-					SECRETS_AUTH_ISSUER_URL:           "https://auth.{{ verself_domain }}"
-					SECRETS_AUTH_AUDIENCE:             "{{ component_auth_audience }}"
 					SECRETS_OPENBAO_ADDR:              "https://{{ topology_endpoints.openbao.endpoints.api.address }}"
 					SECRETS_OPENBAO_KV_PREFIX:         "kv"
 					SECRETS_OPENBAO_TRANSIT_PREFIX:    "transit"
@@ -354,13 +316,21 @@ topology: components: {
 					SECRETS_OPENBAO_SPIFFE_JWT_PREFIX: "spiffe-jwt"
 					SECRETS_OPENBAO_WORKLOAD_AUDIENCE: "openbao"
 					SECRETS_BILLING_URL:               "https://{{ topology_endpoints.billing.endpoints.internal_https.address }}"
-					SPIFFE_ENDPOINT_SOCKET:            "unix://{{ spire_agent_socket_path }}"
-					OTEL_SERVICE_NAME:                 "secrets-service"
-					OTEL_EXPORTER_OTLP_ENDPOINT:       "http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}"
 				}
 				readiness: [{kind: "http", endpoint: "public_http", path: "/readyz"}]
 			}]
-			bootstrap: ["secrets_platform_org", "openbao_tenancy"]
+			bootstrap: [
+				{
+					name:   "secrets_platform_org"
+					class:  "identity_lookup"
+					reason: "Resolves the platform organization ID from Zitadel until identity object lookups become a generic projection."
+				},
+				{
+					name:   "openbao_tenancy"
+					class:  "secret_backend"
+					reason: "Reconciles OpenBao mounts, auth backends, policies, and platform runtime secrets."
+				},
+			]
 		}
 	}
 	profile_service: {
@@ -382,17 +352,8 @@ topology: components: {
 				supplementary_groups: ["{{ spire_workload_group }}"]
 				bind_read_only_paths: ["/etc/verself/auth-discovery-hosts:/etc/hosts"]
 				environment: {
-					PROFILE_LISTEN_ADDR:           "{{ topology_endpoints.profile_service.endpoints.public_http.address }}"
-					PROFILE_INTERNAL_LISTEN_ADDR:  "{{ topology_endpoints.profile_service.endpoints.internal_https.address }}"
-					PROFILE_PG_DSN:                "postgres://profile_service@/profile?host=/var/run/postgresql&sslmode=disable"
-					PROFILE_PG_MAX_CONNS:          "8"
-					PROFILE_AUTH_ISSUER_URL:       "https://auth.{{ verself_domain }}"
-					PROFILE_AUTH_AUDIENCE:         "{{ component_auth_audience }}"
 					PROFILE_IDENTITY_INTERNAL_URL: "https://{{ topology_endpoints.identity_service.endpoints.internal_https.address }}"
 					PROFILE_GOVERNANCE_AUDIT_URL:  "https://{{ topology_endpoints.governance_service.endpoints.internal_https.address }}"
-					SPIFFE_ENDPOINT_SOCKET:        "unix://{{ spire_agent_socket_path }}"
-					OTEL_SERVICE_NAME:             "profile-service"
-					OTEL_EXPORTER_OTLP_ENDPOINT:   "http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}"
 				}
 				readiness: [{kind: "http", endpoint: "public_http", path: "/readyz"}]
 			}]
@@ -426,20 +387,7 @@ topology: components: {
 				bind_read_only_paths: ["/etc/verself/auth-discovery-hosts:/etc/hosts"]
 				load_credentials: [{name: "clickhouse-ca-cert", path: "/etc/clickhouse-server/tls/server-ca.pem"}]
 				environment: {
-					NOTIFICATIONS_LISTEN_ADDR:                  "{{ topology_endpoints.notifications_service.endpoints.public_http.address }}"
-					NOTIFICATIONS_PG_DSN:                       "postgres://notifications_service@/notifications_service?host=/var/run/postgresql&sslmode=disable"
-					NOTIFICATIONS_PG_MAX_CONNS:                 "8"
-					NOTIFICATIONS_PG_MIN_CONNS:                 "1"
-					NOTIFICATIONS_PG_CONN_MAX_LIFETIME_SECONDS: "1800"
-					NOTIFICATIONS_PG_CONN_MAX_IDLE_SECONDS:     "300"
-					NOTIFICATIONS_CH_ADDRESS:                   "{{ topology_endpoints.clickhouse.endpoints.native_tls.address }}"
-					NOTIFICATIONS_CH_USER:                      "notifications_service"
-					NOTIFICATIONS_NATS_URL:                     "tls://{{ topology_endpoints.nats.endpoints.client.address }}"
-					NOTIFICATIONS_AUTH_ISSUER_URL:              "https://auth.{{ verself_domain }}"
-					NOTIFICATIONS_AUTH_AUDIENCE:                "{{ component_auth_audience }}"
-					SPIFFE_ENDPOINT_SOCKET:                     "unix://{{ spire_agent_socket_path }}"
-					OTEL_SERVICE_NAME:                          "notifications-service"
-					OTEL_EXPORTER_OTLP_ENDPOINT:                "http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}"
+					NOTIFICATIONS_NATS_URL: "tls://{{ topology_endpoints.nats.endpoints.client.address }}"
 				}
 				readiness: [{kind: "http", endpoint: "public_http", path: "/readyz"}]
 			}]
@@ -463,17 +411,6 @@ topology: components: {
 				wants: ["postgresql.service", "zitadel.service", "spire-agent.service"]
 				supplementary_groups: ["{{ spire_workload_group }}"]
 				bind_read_only_paths: ["/etc/verself/auth-discovery-hosts:/etc/hosts"]
-				environment: {
-					PROJECTS_LISTEN_ADDR:          "{{ topology_endpoints.projects_service.endpoints.public_http.address }}"
-					PROJECTS_INTERNAL_LISTEN_ADDR: "{{ topology_endpoints.projects_service.endpoints.internal_https.address }}"
-					PROJECTS_PG_DSN:               "postgres://projects_service@/projects_service?host=/var/run/postgresql&sslmode=disable"
-					PROJECTS_PG_MAX_CONNS:         "8"
-					PROJECTS_AUTH_ISSUER_URL:      "https://auth.{{ verself_domain }}"
-					PROJECTS_AUTH_AUDIENCE:        "{{ component_auth_audience }}"
-					SPIFFE_ENDPOINT_SOCKET:        "unix://{{ spire_agent_socket_path }}"
-					OTEL_SERVICE_NAME:             "projects-service"
-					OTEL_EXPORTER_OTLP_ENDPOINT:   "http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}"
-				}
 				readiness: [{kind: "http", endpoint: "public_http", path: "/readyz"}]
 			}]
 		}
@@ -504,26 +441,16 @@ topology: components: {
 					{name: "webhook-secret", path: "/etc/credstore/source-code-hosting-service/webhook-secret"},
 				]
 				environment: {
-					SOURCE_LISTEN_ADDR:           "{{ topology_endpoints.source_code_hosting_service.endpoints.public_http.address }}"
-					SOURCE_INTERNAL_LISTEN_ADDR:  "{{ topology_endpoints.source_code_hosting_service.endpoints.internal_https.address }}"
-					SOURCE_PG_DSN:                "postgres://source_code_hosting_service@/source_code_hosting?host=/var/run/postgresql&sslmode=disable"
-					SOURCE_PG_MAX_CONNS:          "8"
-					SOURCE_AUTH_ISSUER_URL:       "https://auth.{{ verself_domain }}"
-					SOURCE_AUTH_AUDIENCE:         "{{ component_auth_audience }}"
 					SOURCE_FORGEJO_BASE_URL:      "http://{{ topology_endpoints.forgejo.endpoints.http.address }}"
-					SOURCE_FORGEJO_OWNER:         "{{ component_source_forgejo_username }}"
+					SOURCE_FORGEJO_OWNER:         "forgejo-automation"
 					SOURCE_SANDBOX_INTERNAL_URL:  "https://{{ topology_endpoints.sandbox_rental.endpoints.internal_https.address }}"
 					SOURCE_SECRETS_INTERNAL_URL:  "https://{{ topology_endpoints.secrets_service.endpoints.internal_https.address }}"
 					SOURCE_PROJECTS_INTERNAL_URL: "https://{{ topology_endpoints.projects_service.endpoints.internal_https.address }}"
 					SOURCE_IDENTITY_INTERNAL_URL: "https://{{ topology_endpoints.identity_service.endpoints.internal_https.address }}"
 					SOURCE_PUBLIC_BASE_URL:       "https://{{ forgejo_domain }}"
-					SPIFFE_ENDPOINT_SOCKET:       "unix://{{ spire_agent_socket_path }}"
-					OTEL_SERVICE_NAME:            "source-code-hosting-service"
-					OTEL_EXPORTER_OTLP_ENDPOINT:  "http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}"
 				}
 				readiness: [{kind: "http", endpoint: "public_http", path: "/readyz"}]
 			}]
-			bootstrap: ["source_forgejo_owner"]
 		}
 	}
 	mailbox_service: {
@@ -563,8 +490,6 @@ topology: components: {
 					{name: "forward-to", path: "/etc/credstore/mailbox-service/forward-to"},
 				]
 				environment: {
-					MAILBOX_SERVICE_LISTEN_ADDR:              "{{ topology_endpoints.mailbox_service.endpoints.public_http.address }}"
-					MAILBOX_SERVICE_PG_DSN:                   "postgres://mailbox_service@/mailbox_service?host=/var/run/postgresql&sslmode=disable"
 					MAILBOX_SERVICE_STALWART_BASE_URL:        "http://{{ topology_endpoints.stalwart.endpoints.http.address }}"
 					MAILBOX_SERVICE_STALWART_PUBLIC_BASE_URL: "https://{{ stalwart_domain }}"
 					MAILBOX_SERVICE_STALWART_MAILBOX:         "ceo"
@@ -572,14 +497,10 @@ topology: components: {
 					MAILBOX_SERVICE_SECRETS_URL:              "https://{{ topology_endpoints.secrets_service.endpoints.internal_https.address }}"
 					MAILBOX_SERVICE_SYNC_DISCOVERY_INTERVAL:  "2m"
 					MAILBOX_SERVICE_SYNC_RECONCILE_INTERVAL:  "10m"
-					MAILBOX_SERVICE_AUTH_ISSUER_URL:          "https://auth.{{ verself_domain }}"
-					MAILBOX_SERVICE_AUTH_AUDIENCE:            "{{ component_auth_audience }}"
 					MAILBOX_SERVICE_FORWARDER_FROM_ADDRESS:   "{{ resend_sender_address }}"
 					MAILBOX_SERVICE_FORWARDER_FROM_NAME:      "{{ resend_sender_name }}"
 					MAILBOX_SERVICE_FORWARDER_POLL_INTERVAL:  "5s"
 					MAILBOX_SERVICE_FORWARDER_STATE_PATH:     "/var/lib/mailbox-service/forwarder-state.json"
-					SPIFFE_ENDPOINT_SOCKET:                   "unix://{{ spire_agent_socket_path }}"
-					OTEL_EXPORTER_OTLP_ENDPOINT:              "http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}"
 				}
 				restart: "always"
 				hardening: {
@@ -593,7 +514,6 @@ topology: components: {
 				}
 				readiness: [{kind: "http", endpoint: "public_http", path: "/readyz"}]
 			}]
-			bootstrap: ["mailbox_state"]
 		}
 	}
 	object_storage_service: {
@@ -642,15 +562,9 @@ topology: components: {
 					]
 					environment: {
 						OBJECT_STORAGE_ROLE:           "s3"
-						OBJECT_STORAGE_S3_LISTEN_ADDR: "{{ topology_endpoints.object_storage_service.endpoints.public_http.address }}"
-						OBJECT_STORAGE_PG_DSN:         "postgres://object_storage_service@/object_storage_service?host=/var/run/postgresql&sslmode=disable"
-						OBJECT_STORAGE_CH_ADDRESS:     "{{ topology_endpoints.clickhouse.endpoints.native_tls.address }}"
-						OBJECT_STORAGE_CH_USER:        "object_storage_service"
 						OBJECT_STORAGE_SECRETS_URL:    "https://{{ topology_endpoints.secrets_service.endpoints.internal_https.address }}"
 						OBJECT_STORAGE_GARAGE_S3_URLS: "{{ component_object_storage_garage_s3_urls }}"
 						OBJECT_STORAGE_GARAGE_REGION:  "garage"
-						SPIFFE_ENDPOINT_SOCKET:        "unix://{{ spire_agent_socket_path }}"
-						OTEL_EXPORTER_OTLP_ENDPOINT:   "http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}"
 					}
 					hardening: {
 						read_write_paths: ["/var/lib/object-storage-service"]
@@ -682,12 +596,9 @@ topology: components: {
 					environment: {
 						OBJECT_STORAGE_ROLE:                 "admin"
 						OBJECT_STORAGE_ADMIN_LISTEN_ADDR:    "{{ topology_endpoints.object_storage_service.endpoints.admin_http.address }}"
-						OBJECT_STORAGE_PG_DSN:               "postgres://object_storage_service@/object_storage_service?host=/var/run/postgresql&sslmode=disable"
 						OBJECT_STORAGE_GARAGE_ADMIN_URLS:    "{{ component_object_storage_garage_admin_urls }}"
 						OBJECT_STORAGE_GARAGE_REGION:        "garage"
 						OBJECT_STORAGE_GOVERNANCE_AUDIT_URL: "https://{{ topology_endpoints.governance_service.endpoints.internal_https.address }}"
-						SPIFFE_ENDPOINT_SOCKET:              "unix://{{ spire_agent_socket_path }}"
-						OTEL_EXPORTER_OTLP_ENDPOINT:         "http://{{ topology_endpoints.otelcol.endpoints.otlp_grpc.address }}"
 					}
 					hardening: {
 						read_write_paths: ["/var/lib/object-storage-admin"]
@@ -701,7 +612,18 @@ topology: components: {
 					readiness: [{kind: "tcp", endpoint: "admin_http"}]
 				},
 			]
-			bootstrap: ["object_storage_tls", "object_storage_garage_proxy"]
+			bootstrap: [
+				{
+					name:   "object_storage_tls"
+					class:  "storage_provider"
+					reason: "Creates the local S3 TLS CA, server certificate, and operator CA bundle for Garage proxy traffic."
+				},
+				{
+					name:   "object_storage_garage_proxy"
+					class:  "storage_provider"
+					reason: "Creates Garage proxy credentials and syncs the runtime proxy secret through secrets-service."
+				},
+			]
 		}
 	}
 }

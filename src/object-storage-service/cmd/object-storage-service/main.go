@@ -61,7 +61,6 @@ func runMigrationCLI(ctx context.Context) (bool, error) {
 	return true, pgmigrate.RunCLI(ctx, os.Args[2:], pgmigrate.Config{
 		Service: "object-storage-service",
 		FS:      migrations.Files,
-		DSNEnv:  "OBJECT_STORAGE_PG_DSN",
 	})
 }
 
@@ -86,7 +85,7 @@ func run() error {
 	slog.SetDefault(logger)
 
 	shared := envconfig.New()
-	pgDSN := shared.RequireString("OBJECT_STORAGE_PG_DSN")
+	pgDSN := shared.RequireString("VERSELF_PG_DSN")
 	secretKeyHex := shared.RequireCredential("credential-kek")
 	spiffeEndpoint := shared.String(workloadauth.EndpointSocketEnv, "")
 	environment := shared.String("OBJECT_STORAGE_ENVIRONMENT", "single-node")
@@ -222,9 +221,9 @@ func runS3(
 	cfg objectstorage.Config,
 ) error {
 	l := envconfig.New()
-	s3ListenAddr := l.String("OBJECT_STORAGE_S3_LISTEN_ADDR", "127.0.0.1:4256")
-	chAddress := l.String("OBJECT_STORAGE_CH_ADDRESS", "127.0.0.1:9440")
-	chUser := l.String("OBJECT_STORAGE_CH_USER", "object_storage_service")
+	s3ListenAddr := l.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4256")
+	chAddress := l.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
+	chUser := l.String("VERSELF_CLICKHOUSE_USER", "object_storage_service")
 	garageS3URLs := splitEnvList(l.RequireString("OBJECT_STORAGE_GARAGE_S3_URLS"))
 	secretsURL := l.RequireURL("OBJECT_STORAGE_SECRETS_URL")
 	s3TLSCertPath := l.RequireCredentialPath("s3-tls-cert")

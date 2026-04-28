@@ -46,15 +46,15 @@ func run() error {
 	slog.SetDefault(logger)
 
 	cfg := envconfig.New()
-	pgDSN := cfg.RequireString("SANDBOX_PG_DSN")
+	pgDSN := cfg.RequireString("VERSELF_PG_DSN")
 	temporalFrontendAddress := cfg.String("SANDBOX_TEMPORAL_FRONTEND_ADDRESS", sdkclient.DefaultFrontendAddress)
 	temporalNamespace := cfg.String("SANDBOX_TEMPORAL_NAMESPACE", recurring.DefaultNamespace)
 	temporalRecurringTaskQueue := cfg.String("SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING", recurring.DefaultTaskQueue)
 	sourceInternalURL := cfg.URL("SANDBOX_SOURCE_INTERNAL_URL", "https://127.0.0.1:4262")
-	pgMaxConns := cfg.Int("SANDBOX_PG_MAX_CONNS", 4)
-	pgMinConns := cfg.Int("SANDBOX_PG_MIN_CONNS", 1)
-	pgConnMaxLifetime := cfg.Int("SANDBOX_PG_CONN_MAX_LIFETIME_SECONDS", 1800)
-	pgConnMaxIdle := cfg.Int("SANDBOX_PG_CONN_MAX_IDLE_SECONDS", 300)
+	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 4)
+	pgMinConns := cfg.Int("VERSELF_PG_MIN_CONNS", 1)
+	pgConnMaxLifetime := cfg.Int("VERSELF_PG_CONN_MAX_LIFETIME_SECONDS", 1800)
+	pgConnMaxIdle := cfg.Int("VERSELF_PG_CONN_MAX_IDLE_SECONDS", 300)
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
 	if err := cfg.Err(); err != nil {
 		return err

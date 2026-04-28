@@ -336,6 +336,7 @@ topology: s.#Topology & {
 				database:         "billing"
 				owner:            "billing"
 				connection_limit: 30
+				pool: max_conns: 12
 				password_ref: {kind: "ansible_var", name: "postgresql_billing_password"}
 			}
 		}
@@ -362,6 +363,7 @@ topology: s.#Topology & {
 				database:         "sandbox_rental"
 				owner:            "sandbox_rental"
 				connection_limit: 30
+				pool: max_conns: 16
 				password_ref: {kind: "ansible_var", name: "postgresql_sandbox_rental_password"}
 			}
 		}
@@ -631,6 +633,7 @@ topology: s.#Topology & {
 				database:         "object_storage_service"
 				owner:            "object_storage_service"
 				connection_limit: 10
+				pool: max_conns: 12
 				password_ref: {kind: "secret_ref", expose_as: "postgres_password"}
 			}
 		}

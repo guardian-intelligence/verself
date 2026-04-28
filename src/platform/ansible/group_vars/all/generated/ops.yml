@@ -25,7 +25,7 @@ openbao_tenancy_jwt_mount_prefix: jwt
 openbao_tenancy_kv_mount_prefix: kv
 openbao_tenancy_layout: auto
 openbao_tenancy_oidc_discovery_url: https://auth.{{ verself_domain }}
-openbao_tenancy_platform_org_name: verself
+openbao_tenancy_platform_org_name: Guardian Intelligence LLC
 openbao_tenancy_rebootstrap_stage_dir: '{{ openbao_tenancy_credstore_dir }}/rebootstrap'
 openbao_tenancy_secrets_project_name: secrets-service
 openbao_tenancy_skip_jwks_validation: false

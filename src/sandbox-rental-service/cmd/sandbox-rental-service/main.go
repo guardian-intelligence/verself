@@ -70,7 +70,6 @@ func runMigrationCLI(ctx context.Context) (bool, error) {
 	return true, pgmigrate.RunCLI(ctx, os.Args[2:], pgmigrate.Config{
 		Service: "sandbox-rental-service",
 		FS:      migrations.Files,
-		DSNEnv:  "SANDBOX_PG_DSN",
 	})
 }
 
@@ -88,19 +87,19 @@ func run() error {
 	cfg := envconfig.New()
 	// PostgreSQL runtime auth is local peer over the Unix socket. Runtime
 	// provider credentials are fetched from secrets-service over SPIFFE mTLS.
-	pgDSN := cfg.RequireString("SANDBOX_PG_DSN")
-	listenAddr := cfg.String("SANDBOX_LISTEN_ADDR", "127.0.0.1:4243")
-	internalListenAddr := cfg.String("SANDBOX_INTERNAL_LISTEN_ADDR", "127.0.0.1:4263")
-	chAddress := cfg.String("SANDBOX_CH_ADDRESS", "127.0.0.1:9440")
-	chUser := cfg.String("SANDBOX_CH_USER", "sandbox_rental")
+	pgDSN := cfg.RequireString("VERSELF_PG_DSN")
+	listenAddr := cfg.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4243")
+	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4263")
+	chAddress := cfg.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
+	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "sandbox_rental")
 	billingURL := cfg.URL("SANDBOX_BILLING_URL", "http://127.0.0.1:4242")
 	governanceAuditURL := cfg.String("SANDBOX_GOVERNANCE_AUDIT_URL", "")
 	secretsURL := cfg.URL("SANDBOX_SECRETS_URL", "https://127.0.0.1:4253")
 	sourceInternalURL := cfg.URL("SANDBOX_SOURCE_INTERNAL_URL", "https://127.0.0.1:4262")
 	billingReturnOriginsRaw := cfg.RequireString("SANDBOX_BILLING_RETURN_ORIGINS")
 	publicBaseURL := cfg.RequireString("SANDBOX_PUBLIC_BASE_URL")
-	authIssuerURL := cfg.RequireURL("SANDBOX_AUTH_ISSUER_URL")
-	authAudience := cfg.RequireString("SANDBOX_AUTH_AUDIENCE")
+	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
+	authAudience := cfg.RequireString("VERSELF_AUTH_AUDIENCE")
 	temporalFrontendAddress := cfg.String("SANDBOX_TEMPORAL_FRONTEND_ADDRESS", sdkclient.DefaultFrontendAddress)
 	temporalNamespace := cfg.String("SANDBOX_TEMPORAL_NAMESPACE", recurring.DefaultNamespace)
 	temporalRecurringTaskQueue := cfg.String("SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING", recurring.DefaultTaskQueue)
@@ -119,10 +118,10 @@ func run() error {
 	forgejoToken := cfg.CredentialOr("forgejo-token", "")
 	forgejoWebhookSecret := cfg.CredentialOr("forgejo-webhook-secret", "")
 	forgejoBootstrapSecret := cfg.CredentialOr("forgejo-bootstrap-secret", "")
-	pgMaxConns := cfg.Int("SANDBOX_PG_MAX_CONNS", 16)
-	pgMinConns := cfg.Int("SANDBOX_PG_MIN_CONNS", 1)
-	pgConnMaxLifetime := cfg.Int("SANDBOX_PG_CONN_MAX_LIFETIME_SECONDS", 1800)
-	pgConnMaxIdle := cfg.Int("SANDBOX_PG_CONN_MAX_IDLE_SECONDS", 300)
+	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 16)
+	pgMinConns := cfg.Int("VERSELF_PG_MIN_CONNS", 1)
+	pgConnMaxLifetime := cfg.Int("VERSELF_PG_CONN_MAX_LIFETIME_SECONDS", 1800)
+	pgConnMaxIdle := cfg.Int("VERSELF_PG_CONN_MAX_IDLE_SECONDS", 300)
 	workloadTimeout := cfg.Int("SANDBOX_WORKLOAD_TIMEOUT_SECONDS", 7200)
 	executionMaxWorkers := cfg.Int("SANDBOX_EXECUTION_MAX_WORKERS", scheduler.DefaultExecutionMaxWorkers)
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")

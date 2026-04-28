@@ -54,12 +54,16 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 		if componentRulesets == nil {
 			componentRulesets = []map[string]any{}
 		}
+		postgres, err := postgresProjection(component.Name, component.Value)
+		if err != nil {
+			return err
+		}
 		item := map[string]any{
 			"name":              component.Name,
 			"kind":              kind,
 			"deploy_tag":        deployTag,
 			"order":             order,
-			"postgres":          mapValue(component.Value, "postgres"),
+			"postgres":          postgres,
 			"identities":        mapValue(component.Value, "identities"),
 			"converge":          convergeProjection,
 			"nftables_rulesets": componentRulesets,
@@ -138,12 +142,27 @@ func unitProjection(unit map[string]any) map[string]any {
 		"home":                 stringValue(unit, "home"),
 		"create_home":          boolValue(unit, "create_home"),
 		"supplementary_groups": sliceValue(unit, "supplementary_groups"),
+		"load_credentials":     sliceValue(unit, "load_credentials"),
 		"readiness":            sliceValue(unit, "readiness"),
 	}
 	if uid, ok := unit["uid"]; ok {
 		out["uid"] = uid
 	}
 	return out
+}
+
+func postgresProjection(name string, component map[string]any) (map[string]any, error) {
+	postgres, err := projection.Map(component, name, "postgres")
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]any{
+		"database":         stringValue(postgres, "database"),
+		"owner":            stringValue(postgres, "owner"),
+		"connection_limit": postgres["connection_limit"],
+		"password_ref":     mapValue(postgres, "password_ref"),
+	}
+	return out, nil
 }
 
 func mapValue(parent map[string]any, key string) map[string]any {
