@@ -234,7 +234,6 @@ func devToolInstallPlan(loaded load.Loaded) (map[string]any, error) {
 		"replacement_paths":                plan.replacementPaths,
 		"profile_files":                    []map[string]any{{"dest": "/etc/profile.d/go.sh", "mode": "0644", "content": "export PATH=/usr/local/go/bin:" + goPath + "/bin:$PATH\n"}},
 		"ansible_collections_requirements": "{{ playbook_dir }}/../requirements.yml",
-		"smoke_test_spans":                 smokeTestSpans(plan.tools),
 	}, nil
 }
 
@@ -342,24 +341,6 @@ func (p *installPlan) archiveBins(key string, tool map[string]any) error {
 		p.addCopy(key, dest+"/"+binary, "/usr/local/bin/"+binary, "0755")
 	}
 	return nil
-}
-
-func smokeTestSpans(tools []map[string]any) []map[string]any {
-	spans := make([]map[string]any, 0, len(tools))
-	for _, tool := range tools {
-		spans = append(spans, map[string]any{
-			"name": "install_plan.artifact.publish",
-			"attributes": map[string]any{
-				"install_plan.surface":        "dev_tools",
-				"install_plan.tool":           tool["key"],
-				"install_plan.strategy":       tool["strategy"],
-				"install_plan.version":        tool["version"],
-				"install_plan.sha256":         tool["sha256"],
-				"install_plan.generated_from": "topology",
-			},
-		})
-	}
-	return spans
 }
 
 func archivePath(key string, tool map[string]any) (string, error) {
