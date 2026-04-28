@@ -12,16 +12,28 @@ artifact_dir="${artifact_root}/${run_id}"
 
 mkdir -p "${artifact_dir}"
 
+# Deploy fan-out covers every role the sandbox lifecycle exercises end-to-end.
+deploy_tags="deploy_profile,clickhouse,tigerbeetle,postgresql,billing_service,sandbox_rental_service,otelcol,grafana,caddy,firecracker,identity_service,mailbox_service,forgejo"
+
+site_extra_vars=()
+if [[ "${VERIFICATION_RESET:-0}" == "1" ]]; then
+  # The wipe drops Temporal/ClickHouse schema-derived state. Force the
+  # follow-up site.yml to rebuild schemas instead of re-running migrations
+  # against an empty store.
+  site_extra_vars=(-e "temporal_force_schema_reset=true" -e "clickhouse_force_schema_reset=true")
+fi
+
 (
   cd "${VERIFICATION_PLATFORM_ROOT}/ansible"
-  ansible-playbook -i inventory/hosts.ini playbooks/verification-reset.yml \
-    --tags deploy_profile,clickhouse,tigerbeetle,postgresql,billing_service,sandbox_rental_service,otelcol,grafana
+  if [[ "${VERIFICATION_RESET:-0}" == "1" ]]; then
+    ansible-playbook -i inventory/hosts.ini playbooks/verification-reset.yml
+  fi
   ansible-playbook -i inventory/hosts.ini playbooks/guest-rootfs.yml
   ansible-playbook -i inventory/hosts.ini playbooks/site.yml \
-    --tags deploy_profile,caddy,firecracker,clickhouse,billing_service,sandbox_rental_service,identity_service,mailbox_service,otelcol,forgejo
+    --tags "${deploy_tags}" "${site_extra_vars[@]}"
+  # site.yml restarts the service stack; wait for the loopback API before
+  # seed-system starts probing authz behavior against sandbox-rental.
   verification_wait_for_loopback_api "billing-service" "http://127.0.0.1:4242/readyz" "200"
-  # verification-reset restarts the service stack; wait for the loopback API
-  # before seed-system starts probing authz behavior against sandbox-rental.
   verification_wait_for_loopback_api "sandbox-rental-service" \
     "http://127.0.0.1:4243/api/v1/billing/entitlements" "401"
   ansible-playbook -i inventory/hosts.ini playbooks/seed-system.yml

@@ -426,14 +426,16 @@ recurring-schedule-smoke-test: inventory-check ## Create a paused Temporal-backe
 billing-reset: inventory-check ## Exhaustively wipe billing state (TigerBeetle + billing PostgreSQL schema) and restart billing callers
 	$(PLATFORM_DIR)/scripts/ansible-with-tunnel.sh playbooks/billing-reset.yml
 
-verification-reset: inventory-check ## Exhaustively wipe verification state (billing, sandbox_rental, ClickHouse verself + telemetry)
+verification-reset: inventory-check ## Exhaustively wipe verification state (billing, sandbox_rental, governance_service) and redeploy with schema reset
 	$(PLATFORM_DIR)/scripts/ansible-with-tunnel.sh playbooks/verification-reset.yml
+	$(PLATFORM_DIR)/scripts/ansible-with-tunnel.sh playbooks/site.yml \
+		-e temporal_force_schema_reset=true -e clickhouse_force_schema_reset=true
 
 wipe-pg-db: inventory-check ## Wipe one managed PostgreSQL service DB: make wipe-pg-db DB=sandbox_rental
 	@test -n "$(DB)" || { echo "ERROR: DB is required (billing|sandbox_rental|mailbox_service|governance_service|identity_service|notifications_service|projects_service|source_code_hosting)"; exit 1; }
 	$(PLATFORM_DIR)/scripts/ansible-with-tunnel.sh playbooks/wipe-pg-db.yml -e "wipe_pg_db_name=$(DB)"
 
-vm-orchestrator-smoke-test: inventory-check ## Live smoke test for vm-orchestrator lease/exec spans through recurring sandbox executions
+vm-orchestrator-smoke-test: inventory-check ## Live smoke test for vm-orchestrator lease/exec spans (set VERIFICATION_RESET=1 to wipe verification state first)
 	cd $(PLATFORM_DIR) && ./scripts/verify-vm-orchestrator-live.sh
 
 sandbox-inner: inventory-check ## Inner loop: default starts local HMR; use SANDBOX_INNER_MODE=verify for local smoke evidence
@@ -442,7 +444,7 @@ sandbox-inner: inventory-check ## Inner loop: default starts local HMR; use SAND
 sandbox-middle: inventory-check ## Middle loop: default deploys UI and runs admin smoke; use SANDBOX_DEPLOY_TARGET=ui|service|both|none SANDBOX_VERIFY_TARGET=admin|schedule|billing|none SANDBOX_SEED_VERIFY=1
 	cd $(PLATFORM_DIR) && ./scripts/sandbox-middle.sh
 
-sandbox-smoke-test: inventory-check ## Smoke-test loop: full reset, redeploy, reseed, and live full-lifecycle sandbox verification
+sandbox-smoke-test: inventory-check ## Smoke-test loop: redeploy, reseed, and live full-lifecycle sandbox verification (set VERIFICATION_RESET=1 to wipe verification state first)
 	cd $(PLATFORM_DIR) && ./scripts/verify-sandbox-live.sh
 
 console-ui-smoke: inventory-check ## Run deployed console authenticated shell smoke
