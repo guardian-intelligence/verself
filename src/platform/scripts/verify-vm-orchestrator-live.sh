@@ -32,13 +32,21 @@ cleanup() {
 }
 trap cleanup EXIT
 
+deploy_tags="deploy_profile,clickhouse,tigerbeetle,postgresql,billing_service,sandbox_rental_service,otelcol,grafana,caddy,firecracker,identity_service,mailbox_service,forgejo"
+
+site_extra_vars=()
+if [[ "${VERIFICATION_RESET:-0}" == "1" ]]; then
+  site_extra_vars=(-e "temporal_force_schema_reset=true" -e "clickhouse_force_schema_reset=true")
+fi
+
 (
   cd "${VERIFICATION_PLATFORM_ROOT}/ansible"
-  ansible-playbook -i inventory/hosts.ini playbooks/verification-reset.yml \
-    --tags deploy_profile,clickhouse,tigerbeetle,postgresql,billing_service,sandbox_rental_service,otelcol,grafana
+  if [[ "${VERIFICATION_RESET:-0}" == "1" ]]; then
+    ansible-playbook -i inventory/hosts.ini playbooks/verification-reset.yml
+  fi
   ansible-playbook -i inventory/hosts.ini playbooks/guest-rootfs.yml
   ansible-playbook -i inventory/hosts.ini playbooks/site.yml \
-    --tags deploy_profile,caddy,firecracker,clickhouse,billing_service,sandbox_rental_service,identity_service,mailbox_service,otelcol,forgejo
+    --tags "${deploy_tags}" "${site_extra_vars[@]}"
 )
 
 clear_telemetry_fault_profile

@@ -1,6 +1,9 @@
 ---
-# Wipe the verification environment to a clean slate before end-to-end runs,
-# then run the canonical deploy path.
+# Wipe verification-environment PostgreSQL state to a clean slate.
+#
+# Wipe-only: run site.yml separately after this playbook to redeploy. Pass
+# temporal_force_schema_reset=true / clickhouse_force_schema_reset=true on
+# the follow-up site.yml call when the wipe requires a schema rebuild.
 
 - import_playbook: wipe-pg-db.yml
   vars:
@@ -13,8 +16,3 @@
 - import_playbook: wipe-pg-db.yml
   vars:
     wipe_pg_db_name: governance_service
-
-- import_playbook: site.yml
-  vars:
-    temporal_force_schema_reset: true
-    clickhouse_force_schema_reset: true
