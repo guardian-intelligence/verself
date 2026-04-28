@@ -7,10 +7,6 @@ topology_dev_tool_install_plan:
     - build-essential
     - crun
     - debootstrap
-  cleanup_apt_packages:
-    - pipx
-  cleanup_paths:
-    - /opt/pipx
   copies:
     - dest: /usr/local/bin/tofu
       key: tofu

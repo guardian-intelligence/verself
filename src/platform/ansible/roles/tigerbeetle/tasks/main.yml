@@ -114,8 +114,3 @@
     port: "{{ topology_endpoints.tigerbeetle.endpoints.client.port }}"
     host: "{{ topology_endpoints.tigerbeetle.host }}"
     timeout: 30
-
-- name: Remove retired TigerBeetle connection smoke script
-  ansible.builtin.file:
-    path: /opt/verself/tigerbeetle-health.py
-    state: absent

@@ -134,15 +134,3 @@
     'Installing' in (dev_tools_galaxy_result.stdout + dev_tools_galaxy_result.stderr)
     or 'Downloading' in (dev_tools_galaxy_result.stdout + dev_tools_galaxy_result.stderr)
 
-- name: Remove retired pipx package
-  ansible.builtin.apt:
-    name: "{{ dev_tools_install_plan.cleanup_apt_packages }}"
-    state: absent
-
-- name: Remove retired pipx directories
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: absent
-  loop: "{{ dev_tools_install_plan.cleanup_paths }}"
-  loop_control:
-    label: "{{ item }}"

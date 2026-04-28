@@ -254,16 +254,6 @@ type WireGuardConfig struct {
 	HostGroups map[string][]string `json:"host_groups"`
 }
 
-type RetiredRuntime struct {
-	Unit string `json:"unit"`
-
-	User string `json:"user"`
-
-	Group string `json:"group"`
-
-	Paths []string `json:"paths"`
-}
-
 type PostgresConfig struct {
 	MaxConnections int64 `json:"max_connections"`
 
@@ -365,8 +355,6 @@ type InstanceConfig struct {
 
 		ObjectStorageAdminUID int64 `json:"object_storage_admin_uid"`
 	} `json:"object_storage"`
-
-	RetiredProductRuntimes []RetiredRuntime `json:"retired_product_runtimes"`
 
 	Postgres PostgresConfig `json:"postgres"`
 
