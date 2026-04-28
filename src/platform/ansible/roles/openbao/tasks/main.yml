@@ -2,12 +2,6 @@
 # OpenBao single-node Raft bootstrap. OpenBao configuration references the
 # historic Vault env/header names (`VAULT_*`, `X-Vault-*`) for compatibility.
 
-- name: Verify OpenBao binary exists in profile
-  ansible.builtin.stat:
-    path: "{{ verself_bin }}/bao"
-  register: openbao_binary
-  failed_when: not openbao_binary.stat.exists
-
 - name: Capture OpenBao version
   ansible.builtin.command:
     cmd: "{{ verself_bin }}/bao version"

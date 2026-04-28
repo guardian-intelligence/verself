@@ -4,12 +4,6 @@
     path: "{{ spire_server_socket_path }}"
     timeout: 30
 
-- name: Ensure SPIRE workload socket group exists
-  ansible.builtin.group:
-    name: "{{ spire_workload_group }}"
-    system: true
-    state: present
-
 - name: Ensure SPIRE identity primary groups exist
   ansible.builtin.group:
     name: "{{ item }}"

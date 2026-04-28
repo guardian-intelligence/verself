@@ -2,14 +2,6 @@
 # PostgreSQL database server.
 # Binary provided by deploy_profile role (apt from PGDG repo).
 
-# --- Binary presence ---
-
-- name: Verify PostgreSQL binary exists in profile
-  ansible.builtin.stat:
-    path: "{{ verself_bin }}/postgres"
-  register: postgresql_binary
-  failed_when: not postgresql_binary.stat.exists
-
 - name: Capture PostgreSQL version
   ansible.builtin.command:
     cmd: "{{ verself_bin }}/postgres --version"

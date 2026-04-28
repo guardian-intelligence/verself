@@ -1,18 +1,7 @@
 ---
-- name: Verify nats-server binary exists in profile
-  ansible.builtin.stat:
-    path: "{{ verself_bin }}/nats-server"
-  register: nats_binary
-  failed_when: not nats_binary.stat.exists
-
 - name: Create NATS system group
   ansible.builtin.group:
     name: nats
-    system: true
-
-- name: Ensure spire workload socket group exists
-  ansible.builtin.group:
-    name: "{{ spire_workload_group }}"
     system: true
 
 - name: Create NATS system user
