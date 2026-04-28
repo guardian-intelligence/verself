@@ -4,6 +4,7 @@ exports_files([
     "config.cue",
     "convergence.cue",
     "firewall.cue",
+    "host_firewall.cue",
     "topology.cue",
 ])
 
