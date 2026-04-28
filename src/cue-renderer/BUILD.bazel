@@ -9,6 +9,7 @@ TOPOLOGY_SRCS = [
     "//src/cue-renderer/instances/local:config.cue",
     "//src/cue-renderer/instances/local:convergence.cue",
     "//src/cue-renderer/instances/local:firewall.cue",
+    "//src/cue-renderer/instances/local:host_firewall.cue",
     "//src/cue-renderer/instances/local:topology.cue",
     "//src/cue-renderer/schema:schema.cue",
 ]
