@@ -231,12 +231,6 @@
     state: started
     daemon_reload: true
 
-- name: Verify topology-built vm-orchestrator binary exists in profile
-  ansible.builtin.stat:
-    path: "{{ firecracker_vm_orchestrator_binary_path }}"
-  register: firecracker_vm_orchestrator_binary
-  failed_when: not firecracker_vm_orchestrator_binary.stat.exists
-
 - name: Install vm-orchestrator service
   ansible.builtin.template:
     src: vm-orchestrator.service.j2

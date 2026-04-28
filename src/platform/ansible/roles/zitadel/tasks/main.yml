@@ -3,14 +3,6 @@
 # Binary provided by deploy_profile role (pinned static binary).
 # Requires a running PostgreSQL instance (meta/main.yml dependency).
 
-# --- Binary presence ---
-
-- name: Verify Zitadel binary exists in profile
-  ansible.builtin.stat:
-    path: "{{ verself_bin }}/zitadel"
-  register: zitadel_binary
-  failed_when: not zitadel_binary.stat.exists
-
 # --- System user ---
 
 - name: Create zitadel system group

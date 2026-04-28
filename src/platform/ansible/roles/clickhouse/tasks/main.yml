@@ -7,11 +7,6 @@
     name: clickhouse
     system: true
 
-- name: Ensure SPIRE workload socket group exists
-  ansible.builtin.group:
-    name: "{{ spire_workload_group }}"
-    system: true
-
 - name: Create ClickHouse system user
   ansible.builtin.user:
     name: "{{ clickhouse_system_user }}"

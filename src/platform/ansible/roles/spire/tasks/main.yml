@@ -1,16 +1,4 @@
 ---
-- name: Verify spire-server binary exists in profile
-  ansible.builtin.stat:
-    path: "{{ verself_bin }}/spire-server"
-  register: spire_server_binary
-  failed_when: not spire_server_binary.stat.exists
-
-- name: Verify spire-agent binary exists in profile
-  ansible.builtin.stat:
-    path: "{{ verself_bin }}/spire-agent"
-  register: spire_agent_binary
-  failed_when: not spire_agent_binary.stat.exists
-
 - name: Assert SPIRE JWT bundle endpoint remains loopback-only
   ansible.builtin.assert:
     that:

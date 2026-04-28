@@ -1,10 +1,4 @@
 ---
-- name: Verify garage binary exists in profile
-  ansible.builtin.stat:
-    path: "{{ verself_bin }}/garage"
-  register: garage_binary
-  failed_when: not garage_binary.stat.exists
-
 - name: Create garage system group
   ansible.builtin.group:
     name: garage

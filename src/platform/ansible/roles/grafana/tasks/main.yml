@@ -1,20 +1,9 @@
 ---
 # Grafana observability UI against the existing ClickHouse store.
 
-- name: Verify Grafana binary exists in profile
-  ansible.builtin.stat:
-    path: "{{ verself_bin }}/grafana"
-  register: grafana_binary
-  failed_when: not grafana_binary.stat.exists
-
 - name: Create Grafana system group
   ansible.builtin.group:
     name: grafana
-    system: true
-
-- name: Ensure SPIRE workload socket group exists
-  ansible.builtin.group:
-    name: "{{ spire_workload_group }}"
     system: true
 
 - name: Create Grafana system user

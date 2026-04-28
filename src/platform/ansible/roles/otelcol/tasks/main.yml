@@ -2,11 +2,6 @@
 # OpenTelemetry Collector configuration.
 # Binary provided by deploy_profile role (pinned static binary).
 
-- name: Ensure SPIRE workload socket group exists
-  ansible.builtin.group:
-    name: "{{ spire_workload_group }}"
-    system: true
-
 - name: Create OTel Collector system group
   ansible.builtin.group:
     name: "{{ otelcol_system_group }}"

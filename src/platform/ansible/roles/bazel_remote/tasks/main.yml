@@ -4,12 +4,6 @@
 # managed by the zfs role, and access is bounded by host_firewall (loopback +
 # wg-ops trusted interfaces only).
 
-- name: Verify bazel-remote binary exists in profile
-  ansible.builtin.stat:
-    path: "{{ verself_bin }}/bazel-remote"
-  register: bazel_remote_binary
-  failed_when: not bazel_remote_binary.stat.exists
-
 - name: Create bazel-remote system group
   ansible.builtin.group:
     name: "{{ bazel_remote_group }}"

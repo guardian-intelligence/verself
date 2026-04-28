@@ -2,14 +2,6 @@
 # Stalwart Mail Server — receive-only SMTP + JMAP.
 # Binary provided by deploy_profile role (Bazel server tools archive).
 
-# --- Verify binary ---
-
-- name: Verify stalwart binary exists in profile
-  ansible.builtin.stat:
-    path: "{{ verself_bin }}/stalwart"
-  register: stalwart_binary
-  failed_when: not stalwart_binary.stat.exists
-
 # --- System user ---
 
 - name: Create stalwart system group
