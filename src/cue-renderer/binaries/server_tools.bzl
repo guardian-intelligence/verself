@@ -20,6 +20,7 @@ TAR_SINGLE_BINARIES = [
     ("stalwart", "@server_tool_stalwart//file", "z", "stalwart", "stalwart"),
     ("stalwart_cli", "@server_tool_stalwart_cli//file", "z", "stalwart-cli", "stalwart-cli"),
     ("containerd", "@server_tool_containerd//file", "z", "bin/containerd", "containerd"),
+    ("caddy", "@server_tool_caddy//file", "z", "caddy", "caddy"),
 ]
 
 ZIP_SINGLE_BINARIES = [
@@ -43,6 +44,7 @@ ARCHIVE_DIRECTORIES = [
 
 SERVER_TOOL_DEPS = [
     ":bazel_remote",
+    ":caddy",
     ":clickhouse",
     ":containerd",
     ":forgejo",

@@ -1,6 +1,6 @@
 ---
 # Caddy reverse proxy with automatic TLS.
-# Binary provided by deploy_profile role (xcaddy build on controller).
+# Binary provided by deploy_profile role via server_tools.tar.zst.
 
 - name: Create Caddy system group
   ansible.builtin.group:

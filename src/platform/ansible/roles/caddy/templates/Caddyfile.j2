@@ -1,37 +1,3 @@
-{
-	order coraza_waf first
-}
-
-(waf_detection) {
-	coraza_waf {
-		load_owasp_crs
-		directives `
-			Include @coraza.conf-recommended
-			Include @crs-setup.conf.example
-			# CRS defaults block PATCH/PUT/DELETE before REST API handlers can enforce per-route methods.
-			SecAction "id:900200,phase:1,pass,t:none,nolog,tag:'OWASP_CRS',setvar:'tx.allowed_methods=GET HEAD POST OPTIONS PUT PATCH DELETE'"
-			Include @owasp_crs/*.conf
-			SecRuleEngine DetectionOnly
-			SecResponseBodyAccess Off
-		`
-	}
-}
-
-(waf_blocking) {
-	coraza_waf {
-		load_owasp_crs
-		directives `
-			Include @coraza.conf-recommended
-			Include @crs-setup.conf.example
-			# CRS defaults block PATCH/PUT/DELETE before REST API handlers can enforce per-route methods.
-			SecAction "id:900200,phase:1,pass,t:none,nolog,tag:'OWASP_CRS',setvar:'tx.allowed_methods=GET HEAD POST OPTIONS PUT PATCH DELETE'"
-			Include @owasp_crs/*.conf
-			SecRuleEngine On
-			SecResponseBodyAccess Off
-		`
-	}
-}
-
 (access_log) {
 	log_append <user_agent {http.request.header.User-Agent}
 	log {
@@ -80,7 +46,6 @@
 }
 
 (sandbox_rental_api_proxy) {
-	import waf_blocking
 	import api_security_headers
 	reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }} {
 		header_up X-Real-IP {remote_host}
@@ -88,7 +53,6 @@
 }
 
 (profile_api_proxy) {
-	import waf_blocking
 	import api_security_headers
 	reverse_proxy {{ topology_endpoints.profile_service.endpoints.public_http.address }} {
 		header_up X-Real-IP {remote_host}
@@ -96,7 +60,6 @@
 }
 
 (notifications_api_proxy) {
-	import waf_blocking
 	import api_security_headers
 	reverse_proxy {{ topology_endpoints.notifications_service.endpoints.public_http.address }} {
 		header_up X-Real-IP {remote_host}
@@ -104,7 +67,6 @@
 }
 
 (projects_api_proxy) {
-	import waf_blocking
 	import api_security_headers
 	reverse_proxy {{ topology_endpoints.projects_service.endpoints.public_http.address }} {
 		header_up X-Real-IP {remote_host}
@@ -112,7 +74,6 @@
 }
 
 (source_code_hosting_api_proxy) {
-	import waf_blocking
 	import api_security_headers
 	reverse_proxy {{ topology_endpoints.source_code_hosting_service.endpoints.public_http.address }} {
 		header_up X-Real-IP {remote_host}
@@ -120,7 +81,6 @@
 }
 
 (identity_api_proxy) {
-	import waf_blocking
 	import api_security_headers
 	reverse_proxy {{ topology_endpoints.identity_service.endpoints.public_http.address }} {
 		header_up X-Real-IP {remote_host}
@@ -128,7 +88,6 @@
 }
 
 (governance_api_proxy) {
-	import waf_blocking
 	import api_security_headers
 	reverse_proxy {{ topology_endpoints.governance_service.endpoints.public_http.address }} {
 		header_up X-Real-IP {remote_host}
@@ -136,7 +95,6 @@
 }
 
 (secrets_api_proxy) {
-	import waf_blocking
 	import api_security_headers
 	reverse_proxy {{ topology_endpoints.secrets_service.endpoints.public_http.address }} {
 		header_up X-Real-IP {remote_host}
@@ -144,7 +102,6 @@
 }
 
 (mailbox_api_proxy) {
-	import waf_blocking
 	import api_security_headers
 	reverse_proxy {{ topology_endpoints.mailbox_service.endpoints.public_http.address }} {
 		header_up X-Real-IP {remote_host}
@@ -153,13 +110,11 @@
 
 {{ grafana_domain }} {
 	import access_log
-	import waf_detection
 	reverse_proxy {{ topology_endpoints.grafana.endpoints.http.address }}
 }
 
 {{ temporal_web_domain }} {
 	import access_log
-	import waf_detection
 	reverse_proxy {{ topology_endpoints.temporal_web.endpoints.http.address }}
 }
 
@@ -237,7 +192,6 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 
 {{ billing_service_domain }} {
 	import access_log
-	import waf_blocking
 	import api_security_headers
 
 	@stripe_webhook {
@@ -282,7 +236,6 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 		path /webhooks/github/actions
 	}
 	handle @sandbox_rental_github_actions_webhook {
-		import waf_detection
 		request_body {
 			max_size 1048576
 		}
@@ -300,7 +253,6 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 		path /webhooks/forgejo/actions
 	}
 	handle @sandbox_rental_forgejo_actions_webhook {
-		import waf_detection
 		request_body {
 			max_size 1048576
 		}
@@ -318,7 +270,6 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 		path /github/installations/callback
 	}
 	handle @sandbox_rental_github_installation_callback {
-		import waf_detection
 		import api_security_headers
 		reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }} {
 			header_up X-Real-IP {remote_host}
@@ -349,7 +300,6 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 		}
 		# This route intentionally accepts shell commands; CRS RCE blocking would
 		# reject legitimate CI and sandbox workloads. Keep detection telemetry on.
-		import waf_detection
 		import api_security_headers
 		reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }} {
 			header_up X-Real-IP {remote_host}
@@ -366,7 +316,6 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 		}
 		# Schedule creation persists the same run_command payload used by direct
 		# executions; keep CRS telemetry, but do not block valid sandbox jobs.
-		import waf_detection
 		import api_security_headers
 		reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }} {
 			header_up X-Real-IP {remote_host}
@@ -434,7 +383,6 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 		request_body {
 			max_size 1048576
 		}
-		import waf_detection
 		import api_security_headers
 		reverse_proxy {{ topology_endpoints.source_code_hosting_service.endpoints.public_http.address }} {
 			header_up X-Real-IP {remote_host}
@@ -488,21 +436,18 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 	import access_log
 
 	handle /v1/shape {
-		import waf_detection
 		uri query -secret
 		uri query +secret {{ caddy_electric_api_secret }}
 		reverse_proxy {{ topology_endpoints.electric.endpoints.http.address }}
 	}
 
 	handle_path /notifications/* {
-		import waf_detection
 		uri query -secret
 		uri query +secret {{ caddy_electric_notifications_api_secret }}
 		reverse_proxy {{ topology_endpoints.electric_notifications.endpoints.http.address }}
 	}
 
 	handle {
-		import waf_detection
 		import frontend_security_headers
 		reverse_proxy {{ topology_endpoints.console.endpoints.http.address }}
 	}
@@ -510,7 +455,6 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 
 {{ stalwart_domain }} {
 	import access_log
-	import waf_detection
 
 	handle /v1/shape {
 		uri query -secret
@@ -541,7 +485,6 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 
 {{ platform_domain }} {
 	import access_log
-	import waf_detection
 
 	handle {
 		import frontend_security_headers
@@ -551,7 +494,6 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 
 {{ company_domain }} {
 	import access_log
-	import waf_detection
 
 	handle {
 		import frontend_security_headers
@@ -561,7 +503,6 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 
 {{ zitadel_domain }} {
 	import access_log
-	import waf_detection
 
 	@identity_zitadel_action_api_credentials {
 		method POST

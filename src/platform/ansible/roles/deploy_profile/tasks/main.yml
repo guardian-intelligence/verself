@@ -1,6 +1,7 @@
 ---
-# Populate /opt/verself/profile/bin/ with all server binaries.
-# Builds Go/Caddy on the controller and unpacks Bazel-owned static binaries.
+# Populate /opt/verself/profile/bin/ with all server binaries. Builds
+# topology-owned verself Go services on the controller and unpacks
+# Bazel-owned static third-party binaries (server_tools.tar.zst).
 
 - name: Create profile directories
   ansible.builtin.file:
@@ -20,9 +21,6 @@
 
 - name: Include Go binary builds
   ansible.builtin.include_tasks: build_go.yml
-
-- name: Include Caddy build
-  ansible.builtin.include_tasks: build_caddy.yml
 
 - name: Include static binary downloads
   ansible.builtin.include_tasks: static_binaries.yml
