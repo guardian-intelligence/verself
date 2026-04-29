@@ -12,7 +12,7 @@ ExecStart={{ firecracker_vm_orchestrator_binary_path }} \
   --pool {{ firecracker_zfs_pool }} \
   --image-dataset {{ firecracker_image_dataset }} \
   --workload-dataset {{ firecracker_workload_dataset }} \
-  --default-boot-image-ref {{ firecracker_default_boot_image_ref }} \
+  --default-substrate-ref {{ firecracker_default_substrate_ref }} \
   --kernel-path {{ firecracker_kernel_path }} \
   --firecracker-bin /usr/local/bin/firecracker \
   --jailer-bin /usr/local/bin/jailer \

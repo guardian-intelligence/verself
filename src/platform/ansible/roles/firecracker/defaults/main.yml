@@ -5,7 +5,7 @@
 firecracker_zfs_pool: vspool
 firecracker_image_dataset: images
 firecracker_workload_dataset: workloads
-firecracker_default_boot_image_ref: substrate
+firecracker_default_substrate_ref: substrate
 firecracker_jailer_root: /srv/jailer
 firecracker_jailer_uid: 10000
 firecracker_jailer_gid: 10000

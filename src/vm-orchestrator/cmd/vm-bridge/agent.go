@@ -47,10 +47,17 @@ type agentSession struct {
 
 	// etcOverlayApplied records which /etc/<rel> paths have already
 	// been written by an etc-overlay/ from some toolchain image. A
-	// second image trying to overlay the same path is a hard error
-	// rather than a silent last-writer-wins, so collisions surface at
-	// the first deploy that introduces them.
-	etcOverlayApplied map[string]string
+	// second image trying to overlay the same path with *different*
+	// content is a hard error; the same content (same sha256) from a
+	// second image is a no-op so toolchain images that share the
+	// runner-overlay-common Bazel filegroup compose cleanly. Either
+	// case surfaces in lease boot logs.
+	etcOverlayApplied map[string]etcOverlayEntry
+}
+
+type etcOverlayEntry struct {
+	imageName string
+	sha256    string
 }
 
 func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-chan os.Signal, bridgeFault bridgeFaultMode, bootTimings vmproto.GuestBootTimings) error {
