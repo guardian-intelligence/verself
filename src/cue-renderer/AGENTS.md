@@ -10,13 +10,12 @@ Every binary the platform provisions belongs to one of these tiers. The
 tier names are CUE values (`#DevToolTier`, `#ServerToolTier` later) and
 control which delivery channel ships the binary.
 
-| Tier                  | Delivery                                                                                              | Pin granularity        |
-|-----------------------|-------------------------------------------------------------------------------------------------------|------------------------|
-| `pinned_http_file`    | Bazel `http_file` rule → packed into a `*_tools.tar.zst` → unpacked by Ansible at `/`                | url + sha256           |
-| `source_built_go`     | Bazel `go_binary` from vendored `go_deps` → packed into the same tarball as `pinned_http_file`        | go.sum (per-module)    |
-| `lockfile_uv`         | `uv sync --frozen` against a committed `uv.lock` per tool project, then symlink the entrypoint        | per-wheel sha256       |
-| `bootstrap_pivot`     | Direct download from `scripts/bootstrap` before Bazel can run; the chicken-and-egg exception          | url + sha256 (in shell)|
-| `legacy_install_plan` | The pre-Bazel install pipeline driven by `catalog.go`'s switch + `roles/dev_tools/tasks/main.yml`     | varies per strategy    |
+| Tier               | Delivery                                                                                       | Pin granularity         |
+|--------------------|------------------------------------------------------------------------------------------------|-------------------------|
+| `pinned_http_file` | Bazel `http_file` rule → packed into a `*_tools.tar.zst` → unpacked by Ansible at `/`          | url + sha256            |
+| `source_built_go`  | Bazel `go_binary` from vendored `go_deps` → packed into the same tarball as `pinned_http_file` | go.sum (per-module)     |
+| `lockfile_uv`      | `uv sync --frozen` against a committed `uv.lock` per tool project, then symlink the entrypoint | per-wheel sha256        |
+| `bootstrap_pivot`  | Direct download from `scripts/bootstrap` before Bazel can run; the chicken-and-egg exception   | url + sha256 (in shell) |
 
 `systemPackages` is a separate top-level CUE block (not a devTools tier)
 for apt-managed packages. Each entry must declare `risk_acknowledgement`
@@ -24,14 +23,10 @@ containing the substring "upstream" so the schema rejects empty or
 boilerplate strings; this is the only delivery channel intentionally
 without content pinning.
 
-`legacy_install_plan` is the migration sentinel: every entry currently
-on it is on the path to one of the other tiers. After the dev-tools
-bridge landed, `roles/dev_tools/` is already (a) one `bazel build` +
-untar for `dev_tools.tar.zst`, (b) one `apt` task, (c) one `go install`
-loop, (d) one `uv tool install` loop. The end state has no
-`legacy_install_plan` entries: the `go install` loop becomes a
-`source_built_go` Bazel rebuild and the `uv tool install` loop becomes
-a `lockfile_uv` `uv sync --frozen` against a committed `uv.lock`.
+The `legacy_install_plan` tier no longer exists; every dev tool now
+lands via Bazel, uv lockfile, or `scripts/bootstrap`. New tools must
+fit one of those tiers — adding a fifth one needs a renderer change,
+not a CUE-only addition.
 
 ## Tier inventory (current state)
 
@@ -46,26 +41,32 @@ shellcheck, jq, sops, age, uv, clickhouse, osv-scanner, stripe,
 agent-browser. These flow through `dev_tools.tar.zst` via Bazel
 `http_file` rules.
 
-`source_built_go` (5): golangci-lint, gosec, gofumpt, protoc-gen-go,
-protoc-gen-go-grpc. Compiled from vendored sources via rules_go's
+`source_built_go` (6): golangci-lint, gosec, gofumpt, protoc-gen-go,
+protoc-gen-go-grpc, sqlc. Compiled from vendored sources via rules_go's
 `go_binary`, packed into the same `dev_tools.tar.zst`. Pinned via
 `go.sum` (per-module). Adding a new entry: add a `tool` and `require`
 directive to `src/devtools/go.mod`, run `go mod tidy` + `bazelisk mod
 tidy`, verify the auto-generated `@<repo>//cmd/<tool>:<tool>` label
 resolves, then add a `sourceBuiltGoTools` entry and a tier=source_built_go
-devTools entry. Runtime `--version` reporting is unreliable (no
-upstream -ldflags stamp); the version_check span only confirms the
-binary is reachable on PATH.
+devTools entry. Runtime `--version` reporting is unreliable for some
+binaries (no upstream -ldflags stamp); we don't gate deploys on it.
+
+sqlc carried two upstream packaging quirks worth knowing about for
+future updates: (1) `github.com/pingcap/tidb/pkg/parser` is a Go
+submodule whose on-disk layout doesn't match its import path; resolved
+via per-subpackage `gazelle:resolve` directives in MODULE.bazel.
+(2) `github.com/pganalyze/pg_query_go/v6` vendors PostgreSQL's parser
+as ~80 .c files plus 400+ headers under `parser/include/`; gazelle's
+auto-generated BUILD missed the headers and concatenated `#cgo CFLAGS`
+into one mangled list entry. Resolved by disabling BUILD generation
+for that module and shipping a hand-written BUILD via
+`bazel/patches/pg-query-go-bazel-cgo.patch`.
 
 `lockfile_uv` (4): ansible, ansible-lint, pre-commit, guarddog. Each
 maps via `project:` to a top-level `lockfileUvTools` entry, which holds
 the project_dir, version pin, and full set of entrypoints to symlink
 into /usr/local/bin/. The OpenTelemetry companions are gone — they're
 transitive deps of ansible-core's pyproject, not separate tools.
-
-`legacy_install_plan` (1): sqlc. Stays here until a gazelle override
-resolves the `github.com/pingcap/tidb/pkg/parser` Go-submodule layout
-mismatch — see the `tool` directive comment in `src/devtools/go.mod`.
 
 `systemPackages` (3): build-essential, crun, debootstrap. Apt-managed,
 intentionally not content-pinned; each entry carries a
@@ -168,25 +169,21 @@ upgrade that drops the badger backend. Until then xcaddy stays in
 `roles/deploy_profile/tasks/build_caddy.yml` and the `xcaddy` +
 `corazaCaddy` version pins remain in `versions.production`.
 
-sqlc (Phase 2a tail, deferred). Stays on `legacy_install_plan` until
-a `gazelle_override` resolves the `github.com/pingcap/tidb/pkg/parser`
-Go-submodule layout — see the comment at the top of
-`src/devtools/go.mod`.
+## Verification: Ansible trusts the render, canaries verify out-of-band
 
-## Verification: Ansible asserts in-band, ClickHouse spans out-of-band
-
-Ansible roles do not emit ClickHouse spans for verification. The pattern
-that briefly existed (smoke-span runs threaded into `dev_tools_archive.yml`
-and friends) is being removed: it duplicated the role's own `assert`
-tasks, drifted span-attribute schemas across emitters of the same span
-name, and coupled deploy progress to the observability stack.
+Ansible roles do not emit ClickHouse spans, do not re-validate the shape
+of generated topology, and do not re-introspect what Bazel/uv just laid
+down. That pattern duplicated work CUE schemas and module-level pins
+already enforce, drifted span-attribute schemas across emitters of the
+same span name, and coupled deploy progress to the observability stack.
 
 Two distinct surfaces, one role each:
 
-- **Ansible** owns idempotent host mutation with loud failures.
-  `ansible.builtin.assert` is the gate inside a play. If a tool's
-  version doesn't match the catalog pin, the play fails right there.
-  No span, no ClickHouse query, no out-of-band wait.
+- **Ansible** owns idempotent host mutation. It trusts the rendered
+  topology and the Bazel artefact, runs the apt/copy/unarchive/symlink
+  steps, and exits non-zero on real OS failures (apt failure, file
+  copy permission, etc.). It does not emit observability spans and does
+  not re-assert facts the renderer or Bazel already enforce.
 - **e2e canaries** under `src/platform/scripts/verify-*-live.sh` own
   continuous verification. Each canary opens an SSH tunnel to OTLP,
   emits a smoke span via `go run //src/otel/cmd/smoke-span`, then polls

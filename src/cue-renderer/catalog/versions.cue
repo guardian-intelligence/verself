@@ -1,10 +1,7 @@
 // versions.cue - pinned versions and binary manifests for platform SBOM surfaces.
 package catalog
 
-// #DevToolTier categorises how a dev tool reaches the controller. Values
-// other than `legacy_install_plan` are migration targets; the end state has
-// no entries on the legacy tier and `roles/dev_tools/` is reduced to the
-// per-tier-driven tasks (Bazel untar / uv sync). See
+// #DevToolTier categorises how a dev tool reaches the controller. See
 // `src/cue-renderer/AGENTS.md` for the per-tier delivery contract.
 //
 // Apt packages live in the top-level `systemPackages` block, not in
@@ -15,8 +12,7 @@ package catalog
 	"pinned_http_file" |
 	"source_built_go" |
 	"lockfile_uv" |
-	"bootstrap_pivot" |
-	"legacy_install_plan"
+	"bootstrap_pivot"
 
 // #SystemPackage describes an apt-managed system package. The risk
 // acknowledgement is mandatory: every entry must explicitly state why
@@ -168,6 +164,11 @@ sourceBuiltGoTools: {
 		bazel_label:  "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:protoc-gen-go-grpc"
 		install_path: "/usr/local/bin/protoc-gen-go-grpc"
 		version:      versions.development.protocGenGoGrpc
+	}
+	sqlc: {
+		bazel_label:  "@com_github_sqlc_dev_sqlc//cmd/sqlc:sqlc"
+		install_path: "/usr/local/bin/sqlc"
+		version:      versions.development.sqlc
 	}
 }
 
@@ -592,14 +593,8 @@ devTools: {
 		version_cmd: "gofumpt --version"
 	}
 	sqlc: {
-		// sqlc transitively pulls github.com/pingcap/tidb/pkg/parser,
-		// whose Go-submodule layout breaks gazelle's auto-generated
-		// BUILDs. Stays on legacy_install_plan until a gazelle override
-		// resolves the path mapping; tracked in src/devtools/go.mod.
-		tier:        #DevToolTier & "legacy_install_plan"
+		tier:        #DevToolTier & "source_built_go"
 		version:     versions.development.sqlc
-		strategy:    "go_install"
-		go_package:  "github.com/sqlc-dev/sqlc/cmd/sqlc"
 		version_cmd: "sqlc version"
 	}
 	"protoc-gen-go": {

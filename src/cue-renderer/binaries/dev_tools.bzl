@@ -44,6 +44,7 @@ SOURCE_BUILT_GO_BINARIES = [
     ("go_gosec", "@com_github_securego_gosec_v2//cmd/gosec:gosec", "usr/local/bin/gosec"),
     ("go_protoc_gen_go", "@org_golang_google_protobuf//cmd/protoc-gen-go:protoc-gen-go", "usr/local/bin/protoc-gen-go"),
     ("go_protoc_gen_go_grpc", "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:protoc-gen-go-grpc", "usr/local/bin/protoc-gen-go-grpc"),
+    ("go_sqlc", "@com_github_sqlc_dev_sqlc//cmd/sqlc:sqlc", "usr/local/bin/sqlc"),
 ]
 
 DEV_TOOL_DEPS = [
@@ -59,6 +60,7 @@ DEV_TOOL_DEPS = [
     ":dev_tools_go_install",
     ":dev_tools_go_protoc_gen_go",
     ":dev_tools_go_protoc_gen_go_grpc",
+    ":dev_tools_go_sqlc",
     ":dev_tools_jq",
     ":dev_tools_osv_scanner",
     ":dev_tools_protoc_bin",

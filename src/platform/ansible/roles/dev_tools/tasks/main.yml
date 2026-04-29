@@ -1,20 +1,16 @@
 ---
-# Bring the controller's dev tools up to topology. Four delivery channels:
+# Bring the controller's dev tools up to topology. Three delivery channels:
 #
 #   1. dev_tools.tar.zst (pinned_http_file + source_built_go tiers) —
 #      Bazel-fetched (http_file with sha256 pin) or Bazel-built (rules_go
 #      go_binary with go.sum pin), packed into one tar and unpacked at /.
-#      Owns 21 binaries plus /usr/local/{go,zig} symlinks.
-#   2. systemPackages — apt-managed entries with explicit risk acknowledgements;
-#      the only intentionally unpinned channel.
+#      Owns 22 binaries plus /usr/local/{go,zig} symlinks.
+#   2. systemPackages — apt-managed entries with explicit risk
+#      acknowledgements; the only intentionally unpinned channel.
 #   3. lockfileUvTools (lockfile_uv tier) — per-project pyproject.toml + uv.lock
 #      under src/platform/uv-tools/, materialised via `uv sync --frozen`.
-#   4. install plan (legacy_install_plan tier) — `go install` for the one
-#      remaining source-built Go tool (sqlc) that hasn't migrated to
-#      source_built_go yet because its tidb dependency needs a gazelle override.
 #
-# Order matters: the tarball must land before lockfile_uv (needs /usr/local/bin/uv)
-# and before `go install` runs (needs /usr/local/go/bin/go).
+# Order matters: the tarball must land before lockfile_uv (needs /usr/local/bin/uv).
 
 - name: Install pinned_http_file dev tools via Bazel-managed archive
   ansible.builtin.include_tasks: dev_tools_archive.yml
@@ -24,34 +20,6 @@
 
 - name: Install lockfile_uv dev tools
   ansible.builtin.include_tasks: lockfile_uv.yml
-
-- name: Set legacy install plan facts
-  ansible.builtin.set_fact:
-    dev_tools_install_plan: "{{ topology_dev_tool_install_plan }}"
-
-- name: Ensure GOPATH bin directory exists
-  ansible.builtin.file:
-    path: "{{ dev_tools_gopath }}/bin"
-    state: directory
-    mode: "0755"
-  when: dev_tools_install_plan.go_installs | length > 0
-
-- name: Install generated Go dev tools
-  ansible.builtin.command:
-    argv: "{{ item.argv }}"
-  environment:
-    GOPATH: "{{ item.gopath }}"
-    GOBIN: "{{ item.gobin }}"
-  changed_when: true
-  loop: "{{ dev_tools_install_plan.go_installs }}"
-  loop_control:
-    label: "{{ item.key }}"
-
-- name: Write Go PATH profile shim
-  ansible.builtin.copy:
-    content: "export PATH=/usr/local/go/bin:{{ dev_tools_gopath }}/bin:$PATH\n"
-    dest: /etc/profile.d/go.sh
-    mode: "0644"
 
 - name: Install required Ansible collections
   ansible.builtin.command:

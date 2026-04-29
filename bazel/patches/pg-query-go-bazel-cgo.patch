@@ -1,0 +1,81 @@
+diff -urN a/BUILD.bazel b/BUILD.bazel
+--- a/BUILD.bazel	1969-12-31 16:00:00.000000000 -0800
++++ b/BUILD.bazel	2026-04-29 00:20:33.633570280 -0700
+@@ -0,0 +1,19 @@
++load("@io_bazel_rules_go//go:def.bzl", "go_library")
++
++go_library(
++    name = "pg_query_go",
++    srcs = [
++        "makefuncs.go",
++        "pg_query.go",
++        "pg_query.pb.go",
++    ],
++    importpath = "github.com/pganalyze/pg_query_go/v6",
++    importpath_aliases = ["github.com/pganalyze/pg_query_go"],
++    visibility = ["//visibility:public"],
++    deps = [
++        "//parser",
++        "@org_golang_google_protobuf//proto",
++        "@org_golang_google_protobuf//reflect/protoreflect",
++        "@org_golang_google_protobuf//runtime/protoimpl",
++    ],
++)
+diff -urN a/parser/BUILD.bazel b/parser/BUILD.bazel
+--- a/parser/BUILD.bazel	1969-12-31 16:00:00.000000000 -0800
++++ b/parser/BUILD.bazel	2026-04-29 00:20:48.036657875 -0700
+@@ -0,0 +1,54 @@
++load("@io_bazel_rules_go//go:def.bzl", "go_library")
++load("@rules_cc//cc:defs.bzl", "cc_library")
++
++# pg_query_go bundles a copy of PostgreSQL's parser as ~80 .c files at
++# parser/ plus 400+ headers under parser/include/. Gazelle's auto-generated
++# go_library was wrong on two axes:
++#   1. Headers under include/ were not in srcs, so cgo could not find
++#      pg_query.h.
++#   2. The #cgo CFLAGS string was kept verbatim as a single list entry,
++#      so all -I/-W/-std/-g flags collapsed into one mangled argv element.
++# Fix: a cc_library(:pg_query_headers) exposes the include tree via
++# `includes`, and the go_library depends on it through cdeps so Bazel
++# resolves the include paths to their execroot-relative form.
++cc_library(
++    name = "pg_query_headers",
++    hdrs = glob([
++        "include/**/*.h",
++        "include/**/*.c",
++    ]),
++    includes = [
++        "include",
++        "include/postgres",
++    ],
++    visibility = [":__subpackages__"],
++)
++
++go_library(
++    name = "parser",
++    srcs = glob(
++        [
++            "*.c",
++            "*.go",
++            "*.h",
++        ],
++        exclude = [
++            "build_cgo.go",
++            "*_test.go",
++        ],
++    ),
++    cgo = True,
++    cdeps = [":pg_query_headers"],
++    copts = [
++        "-g",
++        "-fstack-protector",
++        "-std=gnu99",
++        "-Wno-unknown-warning-option",
++    ] + select({
++        "@io_bazel_rules_go//go/platform:windows": ["-Iinclude/postgres/port/win32"],
++        "//conditions:default": [],
++    }),
++    importpath = "github.com/pganalyze/pg_query_go/v6/parser",
++    importpath_aliases = ["github.com/pganalyze/pg_query_go/parser"],
++    visibility = ["//visibility:public"],
++)
