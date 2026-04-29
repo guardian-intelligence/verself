@@ -66,12 +66,6 @@
         get_checksum: false
       register: preflight_guest_rootfs
 
-    - name: Check Vite+ composed image exists
-      ansible.builtin.stat:
-        path: /var/lib/verself/guest-artifacts/viteplus.ext4
-        get_checksum: false
-      register: preflight_viteplus_image
-
     - name: Warn if ZFS pool is missing
       ansible.builtin.debug:
         msg: >-
@@ -83,9 +77,9 @@
       ansible.builtin.fail:
         msg: >-
           Guest artifacts not staged on {{ inventory_hostname }}. The firecracker role
-          requires vmlinux, rootfs.ext4, and viteplus.ext4 at /var/lib/verself/guest-artifacts/.
+          requires vmlinux and rootfs.ext4 at /var/lib/verself/guest-artifacts/.
           Run: cd ansible && ansible-playbook playbooks/guest-rootfs.yml
-      when: not preflight_guest_kernel.stat.exists or not preflight_guest_rootfs.stat.exists or not preflight_viteplus_image.stat.exists
+      when: not preflight_guest_kernel.stat.exists or not preflight_guest_rootfs.stat.exists
 
 # ── Deploy ───────────────────────────────────────────────────────────────────
 

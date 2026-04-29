@@ -343,7 +343,7 @@ enum SeedOutcome {
 }
 
 message SeedImageRequest {
-  // image_ref is the composable image identifier (e.g. "golden", "viteplus",
+  // image_ref is the composable image identifier (e.g. "golden",
   // "sticky-empty"). Same alphabet as other service-authorized refs.
   string image_ref = 1;
 

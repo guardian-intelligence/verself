@@ -1,0 +1,33 @@
+[Unit]
+Description=Seed Firecracker composable image zvols via vm-orchestrator
+# Runs once after the daemon socket is up and before any sandbox-rental
+# traffic accepts leases. Each ExecStart= is a single SeedImage RPC; the
+# daemon owns staging zvol, dd/mkfs, snapshot, and dependent-clone teardown.
+After=vm-orchestrator.service
+Requires=vm-orchestrator.service
+Before=sandbox-rental-service.service
+PartOf=vm-orchestrator.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+{% for image in firecracker_seed_images %}
+ExecStart={{ firecracker_vm_orchestrator_cli_path }} seed-image \
+  --socket {{ firecracker_vm_orchestrator_api_socket }} \
+  --ref {{ image.ref }} \
+  --strategy {{ image.strategy }} \
+  --size-bytes {{ image.size_bytes }} \
+  --volblocksize {{ image.volblocksize }} \
+{% if image.source_path | length > 0 %}
+  --source-path {{ image.source_path }} \
+{% endif %}
+{% if image.filesystem_label | length > 0 %}
+  --filesystem-label {{ image.filesystem_label }} \
+{% endif %}
+  --allow-destroying-active-clones
+{% endfor %}
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

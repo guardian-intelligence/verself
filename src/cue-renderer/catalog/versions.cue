@@ -36,7 +36,6 @@ versions: {
 		guestGo:                     "1.25.8"
 		guestNodejs:                 "24.15.0"
 		pnpm:                        "10.33.0"
-		vitePlus:                    "0.1.16"
 		githubActionsRunner:         "2.333.1"
 		forgejoRunner:               "12.9.0"
 	}
@@ -523,8 +522,7 @@ guestVersions: {
 		url:     "https://nodejs.org/dist/v\(version)/node-v\(version)-linux-x64.tar.xz"
 		sha256:  "472655581fb851559730c48763e0c9d3bc25975c59d518003fc0849d3e4ba0f6"
 	}
-	pnpm: version:      versions.production.pnpm
-	vite_plus: version: versions.production.vitePlus
+	pnpm: version: versions.production.pnpm
 	github_actions_runner: {
 		version: versions.production.githubActionsRunner
 		url:     "https://github.com/actions/runner/releases/download/v\(version)/actions-runner-linux-x64-\(version).tar.gz"

@@ -281,184 +281,57 @@
     get_checksum: false
   register: firecracker_guest_artifacts
 
-- name: Verify Vite+ composed image exists
+- name: Verify dd_from_file source artifacts referenced by the seed catalog exist
   ansible.builtin.stat:
-    path: "{{ firecracker_viteplus_image_path }}"
+    path: "{{ item }}"
     get_checksum: false
-  register: firecracker_viteplus_image
+  register: firecracker_seed_source_stats
+  loop: "{{ firecracker_seed_images | selectattr('strategy', 'equalto', 'dd_from_file') | map(attribute='source_path') | reject('equalto', '') | list }}"
 
-- name: Fail if guest artifacts are missing
+- name: Fail if guest artifacts or seed sources are missing
   ansible.builtin.fail:
     msg: >
       Guest artifacts not found at {{ firecracker_kernel_path }},
-      {{ firecracker_rootfs_path }}, {{ firecracker_viteplus_image_path }},
-      and/or {{ firecracker_guest_artifact_manifest_path }}.
+      {{ firecracker_rootfs_path }}, {{ firecracker_guest_artifact_manifest_path }},
+      and/or one or more seed source paths.
       Stage them with: cd ansible && ansible-playbook playbooks/guest-rootfs.yml
   when: >-
     not firecracker_guest_kernel.stat.exists
     or not firecracker_guest_rootfs.stat.exists
-    or not firecracker_viteplus_image.stat.exists
     or not firecracker_guest_artifacts.stat.exists
+    or (firecracker_seed_source_stats.results | rejectattr('stat.exists') | list | length > 0)
 
-# --- Composable image zvols ---
+# --- Composable image seeding ---
+# vm-orchestrator-seed.service is a systemd oneshot that issues one
+# SeedImage RPC per entry in firecracker_seed_images (sourced from CUE
+# config.firecracker.images). The daemon owns staging zvol creation,
+# dd/mkfs, snapshot, dependent-clone teardown, and idempotency via
+# vs:source_digest user properties on the @ready snapshot. Ansible
+# carries no zfs(8)/dd/mkfs.ext4 invocations for these images.
 
-- name: Ensure composable image dataset exists
-  community.general.zfs:
-    name: "{{ firecracker_zfs_pool }}/{{ firecracker_image_dataset }}"
-    state: present
-
-- name: Check if empty sticky disk image zvol exists
-  ansible.builtin.command: "zfs list -H {{ firecracker_zfs_pool }}/{{ firecracker_image_dataset }}/{{ firecracker_sticky_empty_image_ref }}"
-  register: firecracker_sticky_empty_zvol_check
-  changed_when: false
-  failed_when: false
-
-- name: Check if empty sticky disk image snapshot exists
-  ansible.builtin.command: "zfs list -H {{ firecracker_zfs_pool }}/{{ firecracker_image_dataset }}/{{ firecracker_sticky_empty_image_ref }}@ready"
-  register: firecracker_sticky_empty_snapshot_check
-  changed_when: false
-  failed_when: false
-
-- name: Decide whether the empty sticky disk image needs refresh
-  ansible.builtin.set_fact:
-    firecracker_refresh_sticky_empty_image_needed: >-
-      {{
-        firecracker_sticky_empty_zvol_check.rc != 0
-        or firecracker_sticky_empty_snapshot_check.rc != 0
-      }}
-
-- name: Destroy stale empty sticky disk image zvol
-  ansible.builtin.command: "zfs destroy -R {{ firecracker_zfs_pool }}/{{ firecracker_image_dataset }}/{{ firecracker_sticky_empty_image_ref }}"
-  register: firecracker_sticky_empty_destroy
-  when: firecracker_refresh_sticky_empty_image_needed
-  changed_when: firecracker_sticky_empty_destroy.rc == 0
-  failed_when:
-    - firecracker_sticky_empty_destroy.rc != 0
-    - "'dataset does not exist' not in (firecracker_sticky_empty_destroy.stderr | default(''))"
-
-- name: Create empty sticky disk image zvol
-  ansible.builtin.command: >
-    zfs create -V {{ firecracker_sticky_empty_zvol_size }}
-    -o volblocksize=16K
-    -o compression=lz4
-    {{ firecracker_zfs_pool }}/{{ firecracker_image_dataset }}/{{ firecracker_sticky_empty_image_ref }}
-  when: firecracker_refresh_sticky_empty_image_needed
-  changed_when: true
-
-- name: Wait for empty sticky disk image zvol device node
-  ansible.builtin.wait_for:
-    path: "/dev/zvol/{{ firecracker_zfs_pool }}/{{ firecracker_image_dataset }}/{{ firecracker_sticky_empty_image_ref }}"
-    state: present
-    timeout: 10
-  when: firecracker_refresh_sticky_empty_image_needed
-
-- name: Format empty sticky disk image zvol
-  ansible.builtin.command: >
-    mkfs.ext4 -F -L stickydisk
-    /dev/zvol/{{ firecracker_zfs_pool }}/{{ firecracker_image_dataset }}/{{ firecracker_sticky_empty_image_ref }}
-  when: firecracker_refresh_sticky_empty_image_needed
-  changed_when: true
-
-- name: Snapshot empty sticky disk image zvol
-  ansible.builtin.command: "zfs snapshot {{ firecracker_zfs_pool }}/{{ firecracker_image_dataset }}/{{ firecracker_sticky_empty_image_ref }}@ready"
-  when: firecracker_refresh_sticky_empty_image_needed
-  changed_when: true
-
-- name: Check if Vite+ image zvol exists
-  ansible.builtin.command: "zfs list -H {{ firecracker_zfs_pool }}/{{ firecracker_image_dataset }}/{{ firecracker_viteplus_image_ref }}"
-  register: firecracker_viteplus_zvol_check
-  changed_when: false
-  failed_when: false
-
-- name: Check if Vite+ image snapshot exists
-  ansible.builtin.command: "zfs list -H {{ firecracker_zfs_pool }}/{{ firecracker_image_dataset }}/{{ firecracker_viteplus_image_ref }}@ready"
-  register: firecracker_viteplus_snapshot_check
-  changed_when: false
-  failed_when: false
-
-- name: Stat recorded Vite+ image hash marker
-  ansible.builtin.stat:
-    path: "{{ firecracker_viteplus_hash_record }}"
-    get_checksum: false
-  register: firecracker_viteplus_hash_stat
-
-- name: Decide whether the Vite+ image needs refresh
-  ansible.builtin.set_fact:
-    firecracker_refresh_viteplus_image_needed: >-
-      {{
-        firecracker_viteplus_zvol_check.rc != 0
-        or firecracker_viteplus_snapshot_check.rc != 0
-        or not firecracker_viteplus_hash_stat.stat.exists
-        or (firecracker_viteplus_image.stat.mtime | float) > (firecracker_viteplus_hash_stat.stat.mtime | default(0) | float)
-      }}
-
-- name: Compute Vite+ image checksum
-  ansible.builtin.command: "sha256sum {{ firecracker_viteplus_image_path }}"
-  register: firecracker_viteplus_image_sha256
-  changed_when: false
-  when: firecracker_refresh_viteplus_image_needed
-
-- name: Destroy leftover Vite+ staging zvol
-  ansible.builtin.command: "zfs destroy -r {{ firecracker_zfs_pool }}/{{ firecracker_image_dataset }}/{{ firecracker_viteplus_image_ref }}-staging"
-  register: firecracker_viteplus_staging_destroy
-  when: firecracker_refresh_viteplus_image_needed
-  changed_when: firecracker_viteplus_staging_destroy.rc == 0
-  failed_when:
-    - firecracker_viteplus_staging_destroy.rc != 0
-    - "'dataset does not exist' not in (firecracker_viteplus_staging_destroy.stderr | default(''))"
-
-- name: Create Vite+ staging zvol
-  ansible.builtin.command: >
-    zfs create -V {{ firecracker_viteplus_zvol_size }}
-    -o volblocksize=16K
-    -o compression=lz4
-    {{ firecracker_zfs_pool }}/{{ firecracker_image_dataset }}/{{ firecracker_viteplus_image_ref }}-staging
-  when: firecracker_refresh_viteplus_image_needed
-  changed_when: true
-
-- name: Wait for Vite+ staging zvol device node
-  ansible.builtin.wait_for:
-    path: "/dev/zvol/{{ firecracker_zfs_pool }}/{{ firecracker_image_dataset }}/{{ firecracker_viteplus_image_ref }}-staging"
-    state: present
-    timeout: 10
-  when: firecracker_refresh_viteplus_image_needed
-
-- name: Write Vite+ ext4 image to staging zvol
-  ansible.builtin.command: >
-    dd if={{ firecracker_viteplus_image_path }}
-    of=/dev/zvol/{{ firecracker_zfs_pool }}/{{ firecracker_image_dataset }}/{{ firecracker_viteplus_image_ref }}-staging
-    bs=1M conv=fsync status=progress
-  when: firecracker_refresh_viteplus_image_needed
-  changed_when: true
-
-- name: Snapshot Vite+ staging zvol
-  ansible.builtin.command: "zfs snapshot {{ firecracker_zfs_pool }}/{{ firecracker_image_dataset }}/{{ firecracker_viteplus_image_ref }}-staging@ready"
-  when: firecracker_refresh_viteplus_image_needed
-  changed_when: true
-
-- name: Destroy old Vite+ image zvol
-  ansible.builtin.command: "zfs destroy -R {{ firecracker_zfs_pool }}/{{ firecracker_image_dataset }}/{{ firecracker_viteplus_image_ref }}"
-  register: firecracker_viteplus_old_destroy
-  when: firecracker_refresh_viteplus_image_needed
-  changed_when: firecracker_viteplus_old_destroy.rc == 0
-  failed_when:
-    - firecracker_viteplus_old_destroy.rc != 0
-    - "'dataset does not exist' not in (firecracker_viteplus_old_destroy.stderr | default(''))"
-
-- name: Promote Vite+ staging zvol
-  ansible.builtin.command: >
-    zfs rename
-    {{ firecracker_zfs_pool }}/{{ firecracker_image_dataset }}/{{ firecracker_viteplus_image_ref }}-staging
-    {{ firecracker_zfs_pool }}/{{ firecracker_image_dataset }}/{{ firecracker_viteplus_image_ref }}
-  when: firecracker_refresh_viteplus_image_needed
-  changed_when: true
-
-- name: Record Vite+ image checksum
-  ansible.builtin.copy:
-    content: "{{ firecracker_viteplus_image_sha256.stdout.split()[0] }}\n"
-    dest: "{{ firecracker_viteplus_hash_record }}"
+- name: Install vm-orchestrator seed oneshot unit
+  ansible.builtin.template:
+    src: vm-orchestrator-seed.service.j2
+    dest: /etc/systemd/system/vm-orchestrator-seed.service
     mode: "0644"
-  when: firecracker_refresh_viteplus_image_needed
+  register: firecracker_seed_unit
+
+- name: Reload systemd if seed unit changed
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: firecracker_seed_unit.changed  # noqa: no-handler
+
+- name: Reset vm-orchestrator-seed when unit changed or images changed
+  ansible.builtin.systemd:
+    name: vm-orchestrator-seed.service
+    state: stopped
+  when: firecracker_seed_unit.changed  # noqa: no-handler
+
+- name: Run vm-orchestrator-seed oneshot
+  ansible.builtin.systemd:
+    name: vm-orchestrator-seed.service
+    state: started
+    enabled: true
 
 # --- Golden zvol ---
 

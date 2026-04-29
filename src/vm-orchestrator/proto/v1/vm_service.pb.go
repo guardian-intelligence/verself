@@ -2820,7 +2820,7 @@ func (x *GetCapacityResponse) GetPool() *VMPoolCapacity {
 
 type SeedImageRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// image_ref is the composable image identifier (e.g. "golden", "viteplus",
+	// image_ref is the composable image identifier (e.g. "golden",
 	// "sticky-empty"). Same alphabet as other service-authorized refs.
 	ImageRef string       `protobuf:"bytes,1,opt,name=image_ref,json=imageRef,proto3" json:"image_ref,omitempty"`
 	Strategy SeedStrategy `protobuf:"varint,2,opt,name=strategy,proto3,enum=verself.vm_orchestrator.v1.SeedStrategy" json:"strategy,omitempty"`
