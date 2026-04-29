@@ -17,19 +17,19 @@ deploy() {
     ui)
       (
         cd "${VERIFICATION_PLATFORM_ROOT}/ansible"
-        ansible-playbook -i inventory/hosts.ini playbooks/site.yml --tags console
+        ansible-playbook -i "${VERIFICATION_INVENTORY_DIR}" playbooks/site.yml --tags console
       )
       ;;
     service)
       (
         cd "${VERIFICATION_PLATFORM_ROOT}/ansible"
-        ansible-playbook -i inventory/hosts.ini playbooks/site.yml --tags deploy_profile,sandbox_rental_service
+        ansible-playbook -i "${VERIFICATION_INVENTORY_DIR}" playbooks/site.yml --tags deploy_profile,sandbox_rental_service
       )
       ;;
     both)
       (
         cd "${VERIFICATION_PLATFORM_ROOT}/ansible"
-        ansible-playbook -i inventory/hosts.ini playbooks/site.yml \
+        ansible-playbook -i "${VERIFICATION_INVENTORY_DIR}" playbooks/site.yml \
           --tags deploy_profile,sandbox_rental_service,console
       )
       ;;
@@ -44,7 +44,7 @@ seed() {
   if [[ "${seed_verify}" == "1" ]]; then
     (
       cd "${VERIFICATION_PLATFORM_ROOT}/ansible"
-      ansible-playbook -i inventory/hosts.ini playbooks/seed-system.yml --tags verify
+      ansible-playbook -i "${VERIFICATION_INVENTORY_DIR}" playbooks/seed-system.yml --tags verify
     )
   fi
 }

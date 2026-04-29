@@ -202,7 +202,7 @@
 # (CUE) owns the rule logic and Ansible owns just the runtime fact.
 - name: Stage rendered Firecracker nftables ruleset
   ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../share/rendered/etc/nftables.d/firecracker.nft"
+    src: "{{ platform_rendered_dir }}/etc/nftables.d/firecracker.nft"
     dest: /etc/nftables.d/firecracker.nft
     mode: "0644"
   notify: restart firecracker networking

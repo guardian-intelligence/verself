@@ -12,7 +12,7 @@ set -euo pipefail
 # get_account_transfers, get_account_balances, query_accounts, query_transfers.
 # See https://docs.tigerbeetle.com/reference/client/repl/ for the grammar.
 
-inventory="${INVENTORY:-ansible/inventory/hosts.ini}"
+inventory="${INVENTORY:-ansible/inventory/${VERSELF_SITE:-prod}.ini}"
 remote_path="${TIGERBEETLE_PATH:-/opt/verself/profile/bin/tigerbeetle}"
 tb_cluster="${TIGERBEETLE_CLUSTER_ID:-0}"
 tb_addresses="${TIGERBEETLE_ADDRESSES:-127.0.0.1:3320}"

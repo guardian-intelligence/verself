@@ -45,15 +45,23 @@ type ElectricComponent struct {
 	Sync          map[string]any
 }
 
+// GeneratedPath returns the cache-relative location for a group_vars/all
+// generated file. Anchored at `inventory/group_vars/all/generated/<name>.yml`
+// so an `aspect deploy` invocation pointing `-i <cache>/inventory/` lets
+// Ansible's host_group_vars plugin auto-discover the rendered values.
 func GeneratedPath(name string) string {
-	return "src/platform/ansible/group_vars/all/generated/" + name + ".yml"
+	return "inventory/group_vars/all/generated/" + name + ".yml"
 }
 
+// RenderedPath returns the cache-relative location for an etc/-anchored
+// rendered file (nftables fragments, systemd unit files). Lives next to
+// inventory/ under the same cache root so `{{ inventory_dir }}/../share/rendered`
+// resolves cleanly inside Ansible.
 func RenderedPath(target string) string {
 	for len(target) > 0 && target[0] == '/' {
 		target = target[1:]
 	}
-	return "src/platform/ansible/share/rendered/" + target
+	return "share/rendered/" + target
 }
 
 func YAMLDocument(payload any) ([]byte, error) {

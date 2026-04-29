@@ -1,2 +1,9 @@
 # Baseline existing ansible-lint debt so pre-commit can block regressions
 # without forcing a full cleanup before every Ansible change.
+
+# component-systemd.yml is a per-deploy generated artefact rendered by
+# `aspect render --site=<site>` into .cache/render/<site>/handlers/.
+# site.yml resolves it through {{ inventory_dir }}/../handlers/, which
+# ansible-lint cannot evaluate at parse time without an inventory.
+handlers/component-systemd.yml load-failure[filenotfounderror]
+playbooks/site.yml load-failure[filenotfounderror]

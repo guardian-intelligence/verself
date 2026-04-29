@@ -7,7 +7,7 @@ repo_root="$(git -C "${platform_root}" rev-parse --show-toplevel)"
 
 cd "${platform_root}"
 
-inventory="ansible/inventory/hosts.ini"
+inventory="ansible/inventory/${VERSELF_SITE:-prod}.ini"
 if [[ ! -f "${inventory}" ]]; then
   echo "ERROR: ${inventory} not found. Provision the environment first." >&2
   exit 1

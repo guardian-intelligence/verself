@@ -4,7 +4,7 @@
 # Usage: ./scripts/wipe-server.sh [host]
 set -euo pipefail
 
-HOST="${1:-$(grep -m1 'ansible_host=' ansible/inventory/hosts.ini | sed 's/.*ansible_host=\([^ ]*\).*/\1/')}"
+HOST="${1:-$(grep -m1 'ansible_host=' "ansible/inventory/${VERSELF_SITE:-prod}.ini" | sed 's/.*ansible_host=\([^ ]*\).*/\1/')}"
 USER="${2:-ubuntu}"
 
 echo "Wiping verself state on ${USER}@${HOST}..."
@@ -69,5 +69,5 @@ echo "=== Done — server is wiped ==="
 EOF
 
 echo "Server wiped. Next steps:"
-echo "  cd ansible && ansible-playbook playbooks/guest-rootfs.yml"
-echo "  cd ansible && ansible-playbook playbooks/site.yml"
+echo "  aspect platform guest-rootfs"
+echo "  aspect deploy"

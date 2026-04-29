@@ -31,9 +31,10 @@ type Renderer interface {
 	Name() string
 
 	// Render writes the artefact's files to out. Paths inside out are
-	// repo-relative — a per-component nftables renderer writes to
-	// "src/platform/ansible/share/rendered/etc/nftables.d/<name>.nft"
-	// for each component.
+	// cache-relative — a per-component nftables renderer writes to
+	// "share/rendered/etc/nftables.d/<name>.nft" for each component.
+	// The CLI's `--output-dir` flag anchors these under the cache root
+	// (e.g. `.cache/render/prod/`).
 	Render(ctx context.Context, loaded load.Loaded, out WritableFS) error
 }
 

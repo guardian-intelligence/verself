@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-inventory="${INVENTORY:-ansible/inventory/hosts.ini}"
+inventory="${INVENTORY:-ansible/inventory/${VERSELF_SITE:-prod}.ini}"
 remote_path="${CLICKHOUSE_CLIENT_PATH:-/opt/verself/profile/bin/clickhouse-client}"
 remote_config_path="${CLICKHOUSE_CLIENT_CONFIG_PATH:-/etc/clickhouse-client/operator.xml}"
 remote_run_as_user="${CLICKHOUSE_RUN_AS_USER:-clickhouse_operator}"

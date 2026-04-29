@@ -40,7 +40,7 @@ Read `aspect` (no args) for the full task surface; `aspect <task> --help` docume
 
 ## Query ClickHouse
 
-Use the AXL wrappers instead of hand-typing the SSH + client-cert prefix. They invoke `src/platform/scripts/clickhouse.sh`, which resolves the worker from `ansible/inventory/hosts.ini` and runs `clickhouse-client` on the worker as the SPIFFE-authenticated `clickhouse_operator` user.
+Use the AXL wrappers instead of hand-typing the SSH + client-cert prefix. They invoke `src/platform/scripts/clickhouse.sh`, which resolves the worker from `ansible/inventory/<site>.ini` (default `prod`) and runs `clickhouse-client` on the worker as the SPIFFE-authenticated `clickhouse_operator` user.
 
 ```bash
 aspect db ch query --database=verself --query='SHOW TABLES'

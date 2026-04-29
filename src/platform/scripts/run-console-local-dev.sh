@@ -151,7 +151,7 @@ admin_pat="$(
 if ! auth_client_id="$(fetch_dev_client_id "${admin_pat}" "${auth_project_id}" 2>/dev/null)"; then
   (
     cd "${VERIFICATION_PLATFORM_ROOT}/ansible"
-    ansible-playbook -i inventory/hosts.ini playbooks/seed-system.yml --tags dev-oidc
+    ansible-playbook -i "${VERIFICATION_INVENTORY_DIR}" playbooks/seed-system.yml --tags dev-oidc
   )
   auth_client_id="$(fetch_dev_client_id "${admin_pat}" "${auth_project_id}")"
 fi

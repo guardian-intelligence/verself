@@ -834,7 +834,7 @@ devToolPackaging: {
 // pinned alongside the version in `versions.production`; bumping a pin
 // happens here, then `aspect codegen run --kind=topology` regenerates the Bazel
 // manifest. Composable image catalog (firecracker.images in
-// instances/local/config.cue) references the resulting Bazel labels via
+// instances/prod/config.cue) references the resulting Bazel labels via
 // pkg_tar/genrule layouts in //src/guest-images/.
 guestImageDownloads: {
 	ubuntu_base: {

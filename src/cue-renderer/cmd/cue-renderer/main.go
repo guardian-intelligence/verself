@@ -30,7 +30,6 @@ import (
 	"github.com/verself/cue-renderer/internal/render/bazeldevtoolsmodule"
 	"github.com/verself/cue-renderer/internal/render/bazelguestimages"
 	"github.com/verself/cue-renderer/internal/render/bazelmodule"
-	"github.com/verself/cue-renderer/internal/render/bazelnftables"
 	"github.com/verself/cue-renderer/internal/render/bazelservertools"
 	"github.com/verself/cue-renderer/internal/render/catalog"
 	"github.com/verself/cue-renderer/internal/render/clusters"
@@ -62,7 +61,6 @@ func renderers() []render.Renderer {
 		bazeldevtoolsmodule.Renderer{},
 		bazelguestimages.Renderer{},
 		bazelmodule.Renderer{},
-		bazelnftables.Renderer{},
 		bazelservertools.Renderer{},
 		catalog.Renderer{},
 		clusters.Renderer{},
@@ -113,13 +111,15 @@ type commonFlags struct {
 	repoRoot    string
 	topologyDir string
 	instance    string
+	outputDir   string
 }
 
 func registerCommon(fs *flag.FlagSet) *commonFlags {
 	c := &commonFlags{}
-	fs.StringVar(&c.repoRoot, "repo-root", defaultRepoRoot, "repository root (paths in OutputPath() are resolved against this)")
+	fs.StringVar(&c.repoRoot, "repo-root", defaultRepoRoot, "repository root (used to resolve --topology-dir if relative)")
 	fs.StringVar(&c.topologyDir, "topology-dir", defaultTopologyDir, "directory containing the CUE topology")
 	fs.StringVar(&c.instance, "instance", defaultInstance, "topology instance name under src/cue-renderer/instances")
+	fs.StringVar(&c.outputDir, "output-dir", "", "directory the generate command writes the cache layout under (required for generate)")
 	return c
 }
 
@@ -159,11 +159,21 @@ func cmdGenerate(args []string) error {
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
+	if strings.TrimSpace(common.outputDir) == "" {
+		return fmt.Errorf("--output-dir is required for generate")
+	}
 	repoRoot, topoDir, err := common.resolved()
 	if err != nil {
 		return err
 	}
+	// Bazel run shifts cwd to execroot, so relative --output-dir must
+	// anchor against the resolved repo root rather than the process cwd.
+	outputDir := common.outputDir
+	if !filepath.IsAbs(outputDir) {
+		outputDir = filepath.Join(repoRoot, outputDir)
+	}
 	return withPipeline(context.Background(), common, func(ctx context.Context, rec *spans.Recorder) error {
+		rec.SetRootAttributes(attribute.String("topology.output_dir", outputDir))
 		mem, artifacts, err := loadAndRender(ctx, rec, topoDir, common.instance)
 		if err != nil {
 			return err
@@ -171,7 +181,7 @@ func cmdGenerate(args []string) error {
 		// Two-phase write: render into MemFS first so a failure in any
 		// renderer aborts the whole run before mutating disk. Only flush
 		// to OSFS once every render succeeded.
-		disk := render.OSFS{Root: repoRoot}
+		disk := render.OSFS{Root: outputDir}
 		for _, p := range mem.Paths() {
 			data, _ := mem.Get(p)
 			if err := disk.WriteFile(p, data); err != nil {
@@ -331,5 +341,6 @@ subcommands:
 global flags:
   --repo-root      path to repo root (default ".")
   --topology-dir   path to CUE topology root (default "src/cue-renderer")
-  --instance       topology instance name under instances/ (default "prod")`)
+  --instance       topology instance name under instances/ (default "prod")
+  --output-dir     cache directory the generate command writes into (required for generate)`)
 }

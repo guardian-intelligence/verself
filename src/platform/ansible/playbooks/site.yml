@@ -3,7 +3,8 @@
 # Topology lives in inventory: the single-node inventory places the same host in
 # workers and infra; multi-node deployments use distinct hosts in those groups.
 #
-# Usage: ansible-playbook -i inventory/hosts.ini playbooks/site.yml
+# Usage: aspect deploy [--site=prod] [--tags=...]
+# (renders the per-site cache and invokes ansible-with-tunnel.sh).
 
 # ── Preflight (~2s) ──────────────────────────────────────────────────────────
 # Catch missing prerequisites before the slow work starts.
@@ -308,6 +309,11 @@
         - source_code_hosting_service
 
   handlers:
+    # The handler file is rendered by `aspect render --site=<site>`
+    # (writes the cache copy AND the tracked-but-gitignored copy below
+    # so ansible-lint resolves the import at parse time without an
+    # inventory). Site.yml deliberately holds a static path because
+    # handlers must resolve before inventory is loaded.
     - name: Import generated component systemd handlers
       ansible.builtin.import_tasks: ../handlers/component-systemd.yml
 

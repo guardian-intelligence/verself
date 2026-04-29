@@ -16,7 +16,7 @@ Conventions:
 """
 
 PLATFORM_DIR = "src/platform"
-INVENTORY_REL = "src/platform/ansible/inventory/hosts.ini"
+DEFAULT_SITE = "prod"
 
 def ws_path(ctx, *parts):
     """Resolve a workspace-relative path to absolute under the repo root."""
@@ -26,23 +26,78 @@ def ws_path(ctx, *parts):
         out = out + "/" + p
     return out
 
-def inventory_check(ctx):
-    """Fail loud when the generated Ansible inventory is missing.
+def site_inventory_source(site):
+    """Repo-relative path to the per-site authored inventory file."""
+    return "src/platform/ansible/inventory/" + site + ".ini"
+
+def site_cache_inventory(site):
+    """Cache-relative inventory directory for a site (suitable for ansible -i)."""
+    return ".cache/render/" + site + "/inventory"
+
+def inventory_check(ctx, site = DEFAULT_SITE):
+    """Fail loud when the per-site Ansible inventory is missing.
 
     Any task that needs to reach the bare-metal node must call this first so
     error messages point to the provision playbook rather than failing on a
     deeper SSH/tunnel error.
     """
-    inv = ws_path(ctx, INVENTORY_REL)
+    inv = ws_path(ctx, site_inventory_source(site))
     r = (ctx.std.process.command("test")
          .args(["-f", inv])
          .spawn().wait())
     if r.code != 0:
         ctx.std.io.stderr.write(
-            "ERROR: " + INVENTORY_REL + " not found. Run: aspect platform provision\n",
+            "ERROR: " + site_inventory_source(site) + " not found. Run: aspect platform provision\n",
         )
         return 1
     return 0
+
+def render_site(ctx, site = DEFAULT_SITE):
+    """Materialise .cache/render/<site>/ — generated group_vars, rendered
+    nftables/systemd, staged inventory. The deploy flow consumes this cache
+    via -i .cache/render/<site>/inventory/, so callers must run this before
+    invoking ansible-with-tunnel.sh.
+    """
+    if inventory_check(ctx, site) != 0:
+        return 1
+    cache_rel = ".cache/render/" + site
+    cache_abs = ws_path(ctx, cache_rel)
+    rc = checked_spawn(ctx, "rm", ["-rf", cache_abs], label = "clean " + cache_rel)
+    if rc != 0:
+        return rc
+    rc = checked_spawn(
+        ctx, "bazelisk",
+        [
+            "run",
+            "//src/cue-renderer/cmd/cue-renderer",
+            "--",
+            "generate",
+            "--instance=" + site,
+            "--output-dir=" + cache_rel,
+        ],
+        label = "cue-renderer generate --instance=" + site,
+    )
+    if rc != 0:
+        return rc
+    rc = checked_spawn(
+        ctx, "cp",
+        [ws_path(ctx, site_inventory_source(site)), cache_abs + "/inventory/hosts.ini"],
+        label = "stage inventory",
+    )
+    if rc != 0:
+        return rc
+    # Mirror the cache-rendered handler back into the tracked-but-gitignored
+    # path so static `import_tasks` in site.yml resolves at parse time —
+    # handlers must be discoverable before inventory loads, so we cannot
+    # use {{ inventory_dir }} here.
+    return checked_spawn(
+        ctx, "cp",
+        [
+            cache_abs + "/handlers/component-systemd.yml",
+            ws_path(ctx, "src/platform/ansible/handlers/component-systemd.yml"),
+        ],
+        label = "stage handlers/component-systemd.yml",
+    )
 
 def checked_spawn(ctx, program, args, cwd = None, env = None, label = None):
     """Spawn a subprocess attached to the parent's stdio and return its exit code.

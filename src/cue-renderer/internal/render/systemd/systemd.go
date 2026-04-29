@@ -68,7 +68,7 @@ func unitPath(name string) string {
 }
 
 func handlerPath() string {
-	return "src/platform/ansible/handlers/component-systemd.yml"
+	return "handlers/component-systemd.yml"
 }
 
 func renderHandlers(unitNames map[string]struct{}) []byte {

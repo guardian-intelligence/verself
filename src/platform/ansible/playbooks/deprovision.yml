@@ -11,7 +11,7 @@
   vars:
     terraform_project_path: "{{ playbook_dir }}/../../terraform"
     sops_secrets_file: "{{ playbook_dir }}/../group_vars/all/secrets.sops.yml"
-    deprovision_inventory_file: "{{ playbook_dir }}/../inventory/hosts.ini"
+    deprovision_inventory_file: "{{ playbook_dir }}/../inventory/{{ verself_site | default('prod') }}.ini"
   tasks:
     - name: Extract Latitude.sh auth token from SOPS
       ansible.builtin.command:

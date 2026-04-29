@@ -32,22 +32,22 @@ if [[ "${VERIFICATION_DEPLOY:-0}" == "1" || "${VERIFICATION_RESET:-0}" == "1" ]]
   (
     cd "${VERIFICATION_PLATFORM_ROOT}/ansible"
     if [[ "${VERIFICATION_RESET:-0}" == "1" ]]; then
-      ansible-playbook -i inventory/hosts.ini playbooks/verification-reset.yml
+      ansible-playbook -i "${VERIFICATION_INVENTORY_DIR}" playbooks/verification-reset.yml
     fi
-    ansible-playbook -i inventory/hosts.ini playbooks/guest-rootfs.yml
-    ansible-playbook -i inventory/hosts.ini playbooks/site.yml \
+    ansible-playbook -i "${VERIFICATION_INVENTORY_DIR}" playbooks/guest-rootfs.yml
+    ansible-playbook -i "${VERIFICATION_INVENTORY_DIR}" playbooks/site.yml \
       --tags "${deploy_tags}" "${site_extra_vars[@]}"
     # site.yml restarts the service stack; wait for the loopback API before
     # seed-system starts probing authz behavior against sandbox-rental.
     verification_wait_for_loopback_api "billing-service" "http://127.0.0.1:4242/readyz" "200"
     verification_wait_for_loopback_api "sandbox-rental-service" \
       "http://127.0.0.1:4243/api/v1/billing/entitlements" "401"
-    ansible-playbook -i inventory/hosts.ini playbooks/seed-system.yml
+    ansible-playbook -i "${VERIFICATION_INVENTORY_DIR}" playbooks/seed-system.yml
   )
 elif [[ "${VERIFICATION_RESEED:-0}" == "1" ]]; then
   (
     cd "${VERIFICATION_PLATFORM_ROOT}/ansible"
-    ansible-playbook -i inventory/hosts.ini playbooks/seed-system.yml
+    ansible-playbook -i "${VERIFICATION_INVENTORY_DIR}" playbooks/seed-system.yml
   )
 fi
 

@@ -24,7 +24,7 @@ verification_wait_for_http "console UI" "${base_url}" "200"
 
 (
   cd "${VERIFICATION_PLATFORM_ROOT}/ansible"
-  ansible-playbook -i inventory/hosts.ini playbooks/seed-system.yml --tags billing
+  ansible-playbook -i "${VERIFICATION_INVENTORY_DIR}" playbooks/seed-system.yml --tags billing
 )
 
 ceo_password="$(
