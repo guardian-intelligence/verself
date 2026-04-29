@@ -4,7 +4,7 @@
 # exports two env vars before exec'ing otelcol-contrib:
 #
 #   VERSELF_AGENT_FORWARD_ENDPOINT  127.0.0.1:<ssh-forwarded-port>
-#   VERSELF_AGENT_DATA_DIR          .cache/render/<site>/otelcol-data
+#   VERSELF_AGENT_DATA_DIR          ${XDG_CACHE_HOME:-~/.cache}/verself/otelcol-controller/<site>
 #
 # When the wrapped command (ansible-playbook, smoke-span, ...) exits the
 # wrapper sends SIGTERM to this process. otelcol drains its in-memory
