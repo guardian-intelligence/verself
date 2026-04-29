@@ -1,9 +1,8 @@
 ---
-# Build the verself-web deploy_bundle on the controller (Bazel produces a
-# self-contained tarball: `app-entry.mjs` at root + `.output/{server,public}/`).
-# Land it under /opt/verself-web/releases/<deploy_id>/, atomically swap the
-# `current` symlink, then restart the systemd unit. No on-host pnpm install,
-# no on-host vite build, no rsync of the monorepo.
+# Build verself-web on the controller, ship `.output/` + `app-entry.mjs` to
+# the host, restart systemd. `vp build` runs in the source tree (Bazel
+# sandboxing breaks TanStack Start's route-level code splitting); Bazel only
+# builds the small hermetic OTel preload (`:app_entry_bundle`).
 
 - name: Create verself-web runtime group
   ansible.builtin.group:
@@ -79,7 +78,7 @@
     - "{{ verself_web_install_dir }}"
     - "{{ verself_web_release_dir }}"
 
-- name: Regenerate verself-web API clients before bundle build
+- name: Regenerate verself-web API clients
   delegate_to: localhost
   become: false
   run_once: true
@@ -91,23 +90,29 @@
     chdir: "{{ deploy_profile_repo_root }}"
   changed_when: true
 
-- name: Build verself-web deploy_bundle on controller
+- name: Build verself-web .output/ via vp build (source tree)
   delegate_to: localhost
   become: false
   run_once: true
   ansible.builtin.command:
-    # --config=remote-writer matches deploy_profile's Go-build config so
-    # cache hits accumulate across consecutive deploys. The .tar output is
-    # the self-contained payload (app-entry.mjs + .output/), no node_modules.
+    argv: [vp, build]
+    chdir: "{{ verself_web_app_source_dir }}"
+  changed_when: true
+
+- name: Build verself-web OTel preload bundle
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.command:
     argv:
       - "{{ deploy_profile_bazelisk }}"
       - build
       - --config=remote-writer
-      - "{{ verself_web_bazel_target }}"
+      - "{{ verself_web_app_entry_bazel_target }}"
     chdir: "{{ deploy_profile_repo_root }}"
   changed_when: true
 
-- name: Resolve verself-web deploy_bundle output path
+- name: Resolve verself-web OTel preload output path
   delegate_to: localhost
   become: false
   run_once: true
@@ -116,24 +121,14 @@
       - "{{ deploy_profile_bazelisk }}"
       - cquery
       - --output=files
-      - "{{ verself_web_bazel_target }}"
+      - "{{ verself_web_app_entry_bazel_target }}"
     chdir: "{{ deploy_profile_repo_root }}"
-  register: verself_web_bundle_cquery
+  register: verself_web_app_entry_cquery
   changed_when: false
 
-- name: Validate verself-web deploy_bundle output path
-  ansible.builtin.assert:
-    that:
-      - verself_web_bundle_cquery.stdout_lines | length == 1
-      - verself_web_bundle_cquery.stdout | trim is match('^bazel-out/.*deploy_bundle\\.tar$')
-    quiet: true
-    fail_msg: >-
-      Bazel cquery did not resolve exactly one .tar output for
-      {{ verself_web_bazel_target }}.
-
-- name: Set verself-web deploy_bundle local path fact
+- name: Set verself-web OTel preload local path fact
   ansible.builtin.set_fact:
-    verself_web_bundle_local_path: "{{ deploy_profile_repo_root }}/{{ verself_web_bundle_cquery.stdout | trim }}"
+    verself_web_app_entry_local_path: "{{ deploy_profile_repo_root }}/{{ verself_web_app_entry_cquery.stdout | trim }}"
 
 - name: Create verself-web release directory for this deploy
   ansible.builtin.file:
@@ -143,24 +138,25 @@
     group: "{{ verself_web_runtime_group }}"
     mode: "0755"
 
-- name: Extract verself-web deploy_bundle into the release directory
-  ansible.builtin.unarchive:
-    src: "{{ verself_web_bundle_local_path }}"
-    dest: "{{ verself_web_release_path }}"
+- name: Sync verself-web .output/ to release directory
+  ansible.posix.synchronize:
+    src: "{{ verself_web_app_source_dir }}/.output/"
+    dest: "{{ verself_web_release_path }}/.output/"
+    delete: true
+    recursive: true
+    rsync_opts:
+      - "--no-owner"
+      - "--no-group"
+
+- name: Copy verself-web app-entry.mjs into release directory
+  ansible.builtin.copy:
+    src: "{{ verself_web_app_entry_local_path }}"
+    dest: "{{ verself_web_release_path }}/app-entry.mjs"
     owner: "{{ verself_web_runtime_user }}"
     group: "{{ verself_web_runtime_group }}"
-    remote_src: false
-
-- name: Assert app-entry.mjs landed in the release directory
-  ansible.builtin.stat:
-    path: "{{ verself_web_release_path }}/app-entry.mjs"
-  register: verself_web_release_entry
-  failed_when: not verself_web_release_entry.stat.exists
+    mode: "0644"
 
 - name: Atomically swap verself-web current symlink
-  # `ln -sfn` rewrites the symlink in-place; the file replace is atomic on
-  # POSIX filesystems, so the systemd unit always reads either the previous
-  # or the new release — never a half-extracted tree.
   ansible.builtin.file:
     src: "{{ verself_web_release_path }}"
     dest: "{{ verself_web_current_link }}"
@@ -232,13 +228,6 @@
   register: verself_web_identity_project_search
   no_log: true
 
-- name: Assert identity-service project exists for verself-web
-  ansible.builtin.assert:
-    that: (verself_web_identity_project_search.json.result | default([])) | length > 0
-    fail_msg: >-
-      Identity-service Zitadel project '{{ verself_web_identity_project_name }}'
-      not found. Run the identity_service role before verself-web.
-
 - name: Set verself-web identity-service project ID fact
   ansible.builtin.set_fact:
     verself_web_identity_project_id: "{{ verself_web_identity_project_search.json.result[0].id }}"
@@ -273,9 +262,6 @@
   notify: reload nftables
 
 - name: Enable and (re)start verself-web
-  # Always restart so the unit picks up the symlink swap. systemd is fast
-  # enough that the cost is dominated by Node startup; idempotency comes
-  # from `state: started` for first deploys + the always-restart pattern.
   ansible.builtin.systemd:
     name: verself-web
     enabled: true
@@ -288,16 +274,14 @@
     port: "{{ topology_endpoints.verself_web.endpoints.http.port }}"
     timeout: 30
 
-- name: Find verself-web release directories on host
+- name: Find older verself-web release directories
   ansible.builtin.find:
     paths: "{{ verself_web_release_dir }}"
     file_type: directory
     excludes: "{{ verself_web_deploy_id }}"
   register: verself_web_releases_on_host
 
-- name: Prune older verself-web release directories
-  # Keep one rollback target — the most recent prior release. Older releases
-  # are dropped so the node doesn't accumulate stale tarballs over time.
+- name: Prune older verself-web release directories (keep one rollback target)
   ansible.builtin.file:
     path: "{{ item.path }}"
     state: absent

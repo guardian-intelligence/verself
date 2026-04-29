@@ -20,35 +20,29 @@ jobs:
         with:
           persist-credentials: false
 
-      # Bazel owns the build graph. `viteplus_app` wraps `vp build` as a
-      # sandboxed action; the openapi-clients write_source_files rule wraps
-      # @hey-api/openapi-ts; node_modules linkage comes from
-      # `npm_link_all_packages()`. So a single `bazelisk build` covers
-      # source-package validation, app `.output` builds, openapi codegen
-      # snapshot drift, and the deploy_bundle tarballs that get shipped.
-      # No standalone vp install or pnpm step needed — Bazel resolves and
-      # invokes vp inside its hermetic sandbox via the workspace
-      # `node_modules` filegroup.
-      - name: Install Bazelisk + Aspect
+      # scripts/bootstrap installs Bazelisk, Aspect, and Vite+ from the
+      # CUE-pinned versions. Idempotent on warm runners.
+      - name: Bootstrap toolchain
         run: |
           set -euo pipefail
           scripts/bootstrap
+          echo "$HOME/.vite-plus/bin" >> "$GITHUB_PATH"
 
-      - name: Build viteplus deploy_bundles + packages
-        # Explicit targets instead of `//src/viteplus-monorepo/...` because
-        # `:output` (viteplus_app) and `:openapi_clients_*_gen` both target
-        # `src/__generated/<sdk>/` paths in bazel-out — Bazel rejects
-        # prefix-overlapping outputs when both are scheduled in one
-        # invocation. The deploy_bundle path is what `aspect deploy` uses
-        # too, so this matches production reality.
+      - name: vp install
+        working-directory: src/viteplus-monorepo
+        run: vp install --frozen-lockfile --prefer-offline
+
+      - name: vp build
+        working-directory: src/viteplus-monorepo
+        run: vp run -r --no-cache build
+
+      - name: bazelisk build (packages + per-app OTel preload)
         run: |
           set -euo pipefail
           bazelisk build \
             //src/viteplus-monorepo/packages/... \
-            //src/viteplus-monorepo/apps/verself-web:deploy_bundle \
-            //src/viteplus-monorepo/apps/company:deploy_bundle
+            //src/viteplus-monorepo/apps/verself-web:app_entry_bundle \
+            //src/viteplus-monorepo/apps/company:app_entry_bundle
 
-      - name: Test openapi-client drift gates
-        run: |
-          set -euo pipefail
-          bazelisk test //src/viteplus-monorepo/apps/verself-web:openapi_clients_tests
+      - name: bazelisk test (openapi drift gate)
+        run: bazelisk test //src/viteplus-monorepo/apps/verself-web:openapi_clients_tests

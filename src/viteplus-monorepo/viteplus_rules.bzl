@@ -2,21 +2,19 @@ load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
 load("@aspect_rules_js//npm:defs.bzl", "npm_package")
 load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
 load("@npm//:defs.bzl", "npm_link_all_packages")
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
-_APP_EXCLUDES = [
-    ".output/**",
-    "node_modules/**",
-    "playwright-report/**",
-    "test-results/**",
-]
-
-_VITEPLUS_WORKSPACE_CONFIG = "//src/viteplus-monorepo:workspace_config"
 _VITEPLUS_TOOL = "//src/viteplus-monorepo:vp"
 _APP_ENTRY_BUNDLER = "//src/viteplus-monorepo/scripts:bundle_app_entry"
 
 def viteplus_source_package(npm_name, srcs):
-    """Links a source-first workspace package into the rules_js npm graph."""
+    """Source-only workspace package linked into the rules_js npm graph.
+
+    Apps consume the package's `.ts` source directly (per `package.json#exports`
+    pointing at `./src/<entry>.ts` under the `node` condition); there is no
+    pre-build step. The `npm_package` target exists so rules_js's
+    `npm_link_all_packages()` can resolve `@verself/<name>` from any
+    consumer's node_modules.
+    """
     npm_link_all_packages()
 
     native.filegroup(
@@ -31,74 +29,45 @@ def viteplus_source_package(npm_name, srcs):
         version = "0.0.0",
     )
 
-def viteplus_packed_package(npm_name, srcs, entries, dts = False):
-    """Builds a dist-first workspace package and exposes it to npm_link_all_packages()."""
-    npm_link_all_packages()
-
-    native.filegroup(
-        name = "sources",
-        srcs = native.glob(srcs),
-    )
-
-    js_run_binary(
-        name = "dist",
-        srcs = [
-            ":node_modules",
-            ":sources",
-            _VITEPLUS_WORKSPACE_CONFIG,
-        ],
-        out_dirs = ["dist"],
-        args = ["pack"] + entries + (["--dts"] if dts else []),
-        chdir = native.package_name(),
-        progress_message = "Packing %s" % npm_name,
-        tool = _VITEPLUS_TOOL,
-    )
-
-    # rules_js does not peer-resolve first-party npm_package outputs; packed
-    # packages must list runtime imports in package.json dependencies.
-    npm_package(
-        name = "pkg",
-        srcs = [
-            ":dist",
-            ":sources",
-        ],
-        package = npm_name,
-        version = "0.0.0",
-    )
-
 def viteplus_app(npm_name, srcs):
-    """Builds a TanStack Start app .output tree and deployable tarball."""
+    """Bazel surface for a viteplus app — deliberately narrow.
+
+    Bazel does NOT run `vp build` for the app. Putting Vite/Rolldown inside a
+    Bazel action sandbox breaks TanStack Start's route-level code splitting:
+    the compiler plugin computes route filenames via `import.meta.url`, and
+    the `node_modules/.aspect_rules_js/...` layout in the sandbox produces a
+    12-level-deep relative path that the plugin's chunk-split heuristic
+    rejects, collapsing every route into a single 1.6 MB monolithic main
+    bundle (vs. ~148 route-split chunks the source-tree build produces).
+
+    Bazel's job here is to build the small hermetic OTel preload bundle
+    (`:app_entry_bundle`) — `app-entry.mts` plus its `@verself/nitro-plugins`
+    deps, bundled by Rolldown. That action is genuinely sandbox-safe (no
+    filesystem-walking plugin involved).
+
+    The full deploy tarball (`.output/{public,server}/` + `app-entry.mjs`)
+    is composed by the Ansible verself_web/company roles: the role runs
+    `vp build` in the source tree, then `bazelisk build :app_entry_bundle`,
+    then `tar -cf` over both, then ships the tarball to the host.
+
+    `srcs` is kept as a filegroup so a future Bazel target (e.g. a typecheck
+    test, an e2e harness) can reference the app's input set without
+    re-globbing.
+    """
     npm_link_all_packages()
 
     native.filegroup(
         name = "sources",
         srcs = native.glob(
             srcs,
-            exclude = _APP_EXCLUDES,
             allow_empty = True,
         ),
     )
 
-    js_run_binary(
-        name = "output",
-        srcs = [
-            ":node_modules",
-            ":sources",
-            _VITEPLUS_WORKSPACE_CONFIG,
-        ],
-        out_dirs = [".output"],
-        args = ["build"],
-        chdir = native.package_name(),
-        progress_message = "Building %s" % npm_name,
-        tool = _VITEPLUS_TOOL,
-    )
-
     # Bundle the single app entry (`app-entry.mts` — OTel preload + dynamic
-    # import of the Nitro server bundle) as a sibling file so the deploy
-    # tarball runs without a node_modules tree. systemd runs `node ./app-entry.mjs`
-    # and nothing else; the OTel-preload-then-server ordering lives in JS via
-    # top-level await. The driver runs Rolldown (same bundler `vp build` uses
-    # for the server output) with `platform=node`, leaving Node built-ins
+    # import of the Nitro server bundle) so the deploy tarball runs without a
+    # node_modules tree. The driver runs Rolldown (same bundler `vp build`
+    # uses for the server output) with `platform=node`, leaving Node built-ins
     # external and inlining everything else.
     #
     # The entry is named `app-entry.mts` (not `server.mts`) deliberately —
@@ -120,16 +89,6 @@ def viteplus_app(npm_name, srcs):
         chdir = native.package_name(),
         progress_message = "Bundling %s app entry" % npm_name,
         tool = _APP_ENTRY_BUNDLER,
-    )
-
-    pkg_tar(
-        name = "deploy_bundle",
-        srcs = [
-            ":output",
-            ":app_entry_bundle",
-        ],
-        package_dir = ".",
-        strip_prefix = ".",
     )
 
 def viteplus_openapi_clients(name, specs, openapi_ts_bin, plugin_packages = None):
