@@ -366,7 +366,7 @@ src/billing-service/openapi/
 
 Generated client packages namespace by version: `client/v20260425/billing`, `client/v20260101/billing`. SDK consumers pin a version explicitly. The "latest" client is an alias to whichever version ships in the latest stable SDK release.
 
-CI emits all version specs via `apiversion-render`; a make target `make apiversion-render` regenerates them from each service binary. A check target fails CI when the rendered spec differs from the committed one (same pattern as `make topology-smoke-test`).
+CI emits all version specs via `apiversion-render`; an AXL task `aspect codegen run --kind=apiversion` regenerates them from each service binary. The matching `aspect codegen check --kind=apiversion` fails CI when the rendered spec differs from the committed one (same pattern as `aspect codegen check --kind=topology`).
 
 ## 15. Telemetry
 
@@ -409,4 +409,4 @@ A v0 ship is achieved when:
 3. Per-version OpenAPI specs are checked into `src/billing-service/openapi/versions/` and a regenerated TS client compiles against the latest version.
 4. ClickHouse trace spans surface `apiversion.matched` for every billing request.
 5. The console renders the changelog from the bundle.
-6. A `make apiversion-render TAG=billing` target regenerates the version specs from the binary deterministically.
+6. `aspect codegen run --kind=apiversion --service=billing` regenerates the version specs from the binary deterministically.

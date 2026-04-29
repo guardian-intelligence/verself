@@ -145,7 +145,7 @@ For a future shared CDC service:
 
 ## Observability
 
-`make observe WHAT=cdc` should exist only when a shared CDC service
+`aspect observe --what=cdc` should exist only when a shared CDC service
 exists.
 
 Until then, observability lives on the owning service's existing smoke test

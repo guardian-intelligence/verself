@@ -35,7 +35,7 @@ type family struct {
 }
 
 var families = []family{
-	{Name: "overview", Purpose: "Show services emitting telemetry, recent deploy_run_keys, and error counts in one view. Windows are fixed (24h for services and errors, 7d for deploys); MINUTES is ignored."},
+	{Name: "overview", Purpose: "Show services emitting telemetry, recent deploy_run_keys, and error counts in one view. Windows are fixed (24h for services and errors, 7d for deploys); --minutes is ignored."},
 	{Name: "catalog", Purpose: "Discover telemetry vocabulary without turning the landing page into a recency dashboard."},
 	{Name: "describe", Purpose: "Explain one query, metric, service, span, or log field and show valid next commands."},
 	{Name: "metric", Purpose: "Query metric latest values or explicit rate windows."},
@@ -56,15 +56,15 @@ var queryDocs = []queryDoc{
 		Title:   "Overview: Services",
 		Purpose: "Services that have emitted telemetry in the last 24h, ranked by total samples across metrics, traces, logs, and HTTP access.",
 		Optional: []string{
-			"LIMIT=<rows>",
-			"FORMAT=table|json|markdown",
+			"--limit=<rows>",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe WHAT=overview",
+			"aspect observe --what=overview",
 		},
 		Next: []string{
-			"make observe WHAT=describe SERVICE=<service>",
-			"make observe WHAT=service SERVICE=<service>",
+			"aspect observe --what=describe --service=<service>",
+			"aspect observe --what=service --service=<service>",
 		},
 	},
 	{
@@ -73,15 +73,15 @@ var queryDocs = []queryDoc{
 		Title:   "Overview: Recent Deploys",
 		Purpose: "Deploy_run_keys observed in the last 7 days with their role count, task count, error count, and elapsed time.",
 		Optional: []string{
-			"LIMIT=<rows>",
-			"FORMAT=table|json|markdown",
+			"--limit=<rows>",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe WHAT=overview",
+			"aspect observe --what=overview",
 		},
 		Next: []string{
-			"make observe WHAT=deploy RUN_KEY=<deploy-run-key>",
-			"make observe WHAT=catalog SIGNAL=deploys",
+			"aspect observe --what=deploy --run-key=<deploy-run-key>",
+			"aspect observe --what=catalog --signal=deploys",
 		},
 	},
 	{
@@ -90,15 +90,15 @@ var queryDocs = []queryDoc{
 		Title:   "Overview: 24h Error Counts",
 		Purpose: "Top services by error count across trace, log, and HTTP access signals in the last 24h.",
 		Optional: []string{
-			"LIMIT=<rows>",
-			"FORMAT=table|json|markdown",
+			"--limit=<rows>",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe WHAT=overview",
+			"aspect observe --what=overview",
 		},
 		Next: []string{
-			"make observe WHAT=errors SERVICE=<service>",
-			"make observe WHAT=service SERVICE=<service> ERRORS=1",
+			"aspect observe --what=errors --service=<service>",
+			"aspect observe --what=service --service=<service> --errors",
 		},
 	},
 	{
@@ -107,15 +107,15 @@ var queryDocs = []queryDoc{
 		Title:   "Catalog Index",
 		Purpose: "List query families and signal catalogs. Does not query recent activity.",
 		Optional: []string{
-			"FORMAT=table|json|markdown",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe",
+			"aspect observe",
 		},
 		Next: []string{
-			"make observe WHAT=overview",
-			"make observe WHAT=queries",
-			"make observe WHAT=catalog",
+			"aspect observe --what=overview",
+			"aspect observe --what=queries",
+			"aspect observe --what=catalog",
 		},
 	},
 	{
@@ -124,17 +124,17 @@ var queryDocs = []queryDoc{
 		Title:   "Catalog Inventory",
 		Purpose: "One row per signal with service count, distinct-names count (labeled by what kind of names), and 7-day row count. Entry point before drilling into a specific signal.",
 		Optional: []string{
-			"FORMAT=table|json|markdown",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe WHAT=catalog",
+			"aspect observe --what=catalog",
 		},
 		Next: []string{
-			"make observe WHAT=catalog SIGNAL=metrics",
-			"make observe WHAT=catalog SIGNAL=traces",
-			"make observe WHAT=catalog SIGNAL=logs",
-			"make observe WHAT=catalog SIGNAL=http",
-			"make observe WHAT=catalog SIGNAL=deploys",
+			"aspect observe --what=catalog --signal=metrics",
+			"aspect observe --what=catalog --signal=traces",
+			"aspect observe --what=catalog --signal=logs",
+			"aspect observe --what=catalog --signal=http",
+			"aspect observe --what=catalog --signal=deploys",
 		},
 	},
 	{
@@ -143,16 +143,16 @@ var queryDocs = []queryDoc{
 		Title:   "Query Registry",
 		Purpose: "List executable observe queries with parameters, examples, and next-step hints.",
 		Optional: []string{
-			"FORMAT=table|json|markdown",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe WHAT=queries",
-			"make observe WHAT=describe QUERY=metric.latest",
+			"aspect observe --what=queries",
+			"aspect observe --what=describe --query=metric.latest",
 		},
 		Next: []string{
-			"make observe WHAT=catalog SIGNAL=metrics",
-			"make observe WHAT=describe QUERY=metric.latest",
-			"make observe WHAT=errors",
+			"aspect observe --what=catalog --signal=metrics",
+			"aspect observe --what=describe --query=metric.latest",
+			"aspect observe --what=errors",
 		},
 	},
 	{
@@ -161,20 +161,20 @@ var queryDocs = []queryDoc{
 		Title:   "Metric Catalog",
 		Purpose: "Discover metric namespaces and metric names from the semantic metric views.",
 		Optional: []string{
-			"SERVICE=<service-name>",
-			"PREFIX=<metric-prefix>",
-			"SEARCH=<substring>",
-			"LIMIT=<rows>",
-			"FORMAT=table|json|markdown",
+			"--service=<service-name>",
+			"--prefix=<metric-prefix>",
+			"--search=<substring>",
+			"--limit=<rows>",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe WHAT=catalog SIGNAL=metrics",
-			"make observe WHAT=catalog SIGNAL=metrics PREFIX=system.",
-			"make observe WHAT=catalog SIGNAL=metrics SEARCH=wireguard",
+			"aspect observe --what=catalog --signal=metrics",
+			"aspect observe --what=catalog --signal=metrics --prefix=system.",
+			"aspect observe --what=catalog --signal=metrics --search=wireguard",
 		},
 		Next: []string{
-			"make observe WHAT=describe METRIC=<metric>",
-			"make observe WHAT=metric METRIC=<metric>",
+			"aspect observe --what=describe --metric=<metric>",
+			"aspect observe --what=metric --metric=<metric>",
 		},
 	},
 	{
@@ -183,19 +183,19 @@ var queryDocs = []queryDoc{
 		Title:   "Trace Span Catalog",
 		Purpose: "Discover span names, emitting services, span kinds, and status vocabulary.",
 		Optional: []string{
-			"SERVICE=<service-name>",
-			"SEARCH=<substring>",
-			"LIMIT=<rows>",
-			"FORMAT=table|json|markdown",
+			"--service=<service-name>",
+			"--search=<substring>",
+			"--limit=<rows>",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe WHAT=catalog SIGNAL=traces",
-			"make observe WHAT=catalog SIGNAL=traces SERVICE=ansible",
-			"make observe WHAT=describe SPAN=ansible.task",
+			"aspect observe --what=catalog --signal=traces",
+			"aspect observe --what=catalog --signal=traces --service=ansible",
+			"aspect observe --what=describe --span=ansible.task",
 		},
 		Next: []string{
-			"make observe WHAT=describe SPAN=<span>",
-			"make observe WHAT=trace TRACE_ID=<trace-id>",
+			"aspect observe --what=describe --span=<span>",
+			"aspect observe --what=trace --trace-id=<trace-id>",
 		},
 	},
 	{
@@ -204,18 +204,18 @@ var queryDocs = []queryDoc{
 		Title:   "Log Attribute Catalog",
 		Purpose: "Discover structured log attribute keys and sample values.",
 		Optional: []string{
-			"SERVICE=<service-name>",
-			"SEARCH=<substring>",
-			"LIMIT=<rows>",
-			"FORMAT=table|json|markdown",
+			"--service=<service-name>",
+			"--search=<substring>",
+			"--limit=<rows>",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe WHAT=catalog SIGNAL=logs",
-			"make observe WHAT=describe FIELD=http_status",
+			"aspect observe --what=catalog --signal=logs",
+			"aspect observe --what=describe --field=http_status",
 		},
 		Next: []string{
-			"make observe WHAT=describe FIELD=<log-attribute-key>",
-			"make observe WHAT=service SERVICE=<service>",
+			"aspect observe --what=describe --field=<log-attribute-key>",
+			"aspect observe --what=service --service=<service>",
 		},
 	},
 	{
@@ -224,18 +224,18 @@ var queryDocs = []queryDoc{
 		Title:   "HTTP Access Catalog",
 		Purpose: "Discover normalized HTTP hosts, methods, path counts, and status ranges.",
 		Optional: []string{
-			"HOST=<host>",
-			"SEARCH=<substring>",
-			"LIMIT=<rows>",
-			"FORMAT=table|json|markdown",
+			"--host=<host>",
+			"--search=<substring>",
+			"--limit=<rows>",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe WHAT=catalog SIGNAL=http",
-			"make observe WHAT=http HOST=auth.example.com STATUS_MIN=400",
+			"aspect observe --what=catalog --signal=http",
+			"aspect observe --what=http --host=auth.example.com --status-min=400",
 		},
 		Next: []string{
-			"make observe WHAT=http HOST=<host>",
-			"make observe WHAT=errors",
+			"aspect observe --what=http --host=<host>",
+			"aspect observe --what=errors",
 		},
 	},
 	{
@@ -244,16 +244,16 @@ var queryDocs = []queryDoc{
 		Title:   "Deploy Trace Catalog",
 		Purpose: "Discover deploy roles and deploy_run_key values represented in Ansible spans.",
 		Optional: []string{
-			"SEARCH=<role-or-run-key-substring>",
-			"LIMIT=<rows>",
-			"FORMAT=table|json|markdown",
+			"--search=<role-or-run-key-substring>",
+			"--limit=<rows>",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe WHAT=catalog SIGNAL=deploys",
-			"make observe WHAT=deploy RUN_KEY=<deploy-run-key>",
+			"aspect observe --what=catalog --signal=deploys",
+			"aspect observe --what=deploy --run-key=<deploy-run-key>",
 		},
 		Next: []string{
-			"make observe WHAT=deploy RUN_KEY=<deploy-run-key>",
+			"aspect observe --what=deploy --run-key=<deploy-run-key>",
 		},
 	},
 	{
@@ -262,17 +262,17 @@ var queryDocs = []queryDoc{
 		Title:   "Describe Metric",
 		Purpose: "Explain metric kind, unit, emitters, attributes, cardinality, sample values, and rate suitability.",
 		Required: []string{
-			"METRIC=<metric-name>",
+			"--metric=<metric-name>",
 		},
 		Optional: []string{
-			"FORMAT=table|json|markdown",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe WHAT=describe METRIC=system.cpu.time",
+			"aspect observe --what=describe --metric=system.cpu.time",
 		},
 		Next: []string{
-			"make observe WHAT=metric METRIC=<metric>",
-			"make observe WHAT=metric METRIC=<metric> MODE=rate GROUP_BY=<attribute>",
+			"aspect observe --what=metric --metric=<metric>",
+			"aspect observe --what=metric --metric=<metric> --mode=rate --group-by=<attribute>",
 		},
 	},
 	{
@@ -281,18 +281,18 @@ var queryDocs = []queryDoc{
 		Title:   "Describe Service",
 		Purpose: "List telemetry signals, metrics, spans, and log attributes known for one service.",
 		Required: []string{
-			"SERVICE=<service-name>",
+			"--service=<service-name>",
 		},
 		Optional: []string{
-			"LIMIT=<rows>",
-			"FORMAT=table|json|markdown",
+			"--limit=<rows>",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe WHAT=describe SERVICE=billing-service",
+			"aspect observe --what=describe --service=billing-service",
 		},
 		Next: []string{
-			"make observe WHAT=catalog SIGNAL=metrics SERVICE=<service>",
-			"make observe WHAT=service SERVICE=<service>",
+			"aspect observe --what=catalog --signal=metrics --service=<service>",
+			"aspect observe --what=service --service=<service>",
 		},
 	},
 	{
@@ -301,18 +301,18 @@ var queryDocs = []queryDoc{
 		Title:   "Describe Span",
 		Purpose: "Explain one span name, emitting services, duration shape, statuses, and span attributes.",
 		Required: []string{
-			"SPAN=<span-name>",
+			"--span=<span-name>",
 		},
 		Optional: []string{
-			"SERVICE=<service-name>",
-			"FORMAT=table|json|markdown",
+			"--service=<service-name>",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe WHAT=describe SPAN=ansible.task",
+			"aspect observe --what=describe --span=ansible.task",
 		},
 		Next: []string{
-			"make observe WHAT=catalog SIGNAL=traces SERVICE=<service>",
-			"make observe WHAT=trace TRACE_ID=<trace-id>",
+			"aspect observe --what=catalog --signal=traces --service=<service>",
+			"aspect observe --what=trace --trace-id=<trace-id>",
 		},
 	},
 	{
@@ -321,19 +321,19 @@ var queryDocs = []queryDoc{
 		Title:   "Describe Field",
 		Purpose: "Find one attribute across log, span, and resource attribute maps; show services, row counts, and sample values per surface.",
 		Required: []string{
-			"FIELD=<attribute-key>",
+			"--field=<attribute-key>",
 		},
 		Optional: []string{
-			"SERVICE=<service-name>",
-			"FORMAT=table|json|markdown",
+			"--service=<service-name>",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe WHAT=describe FIELD=http_status",
-			"make observe WHAT=describe FIELD=deploy_run_key",
+			"aspect observe --what=describe --field=http_status",
+			"aspect observe --what=describe --field=deploy_run_key",
 		},
 		Next: []string{
-			"make observe WHAT=catalog SIGNAL=logs SERVICE=<service>",
-			"make observe WHAT=describe SPAN=<span>",
+			"aspect observe --what=catalog --signal=logs --service=<service>",
+			"aspect observe --what=describe --span=<span>",
 		},
 	},
 	{
@@ -342,14 +342,14 @@ var queryDocs = []queryDoc{
 		Title:   "Describe Observe Query",
 		Purpose: "Explain one observe query's purpose, parameters, examples, and next commands.",
 		Required: []string{
-			"QUERY=<query-id>",
+			"--query=<query-id>",
 		},
 		Examples: []string{
-			"make observe WHAT=describe QUERY=metric.latest",
-			"make observe WHAT=describe QUERY=catalog.metrics",
+			"aspect observe --what=describe --query=metric.latest",
+			"aspect observe --what=describe --query=catalog.metrics",
 		},
 		Next: []string{
-			"make observe WHAT=queries",
+			"aspect observe --what=queries",
 			"Run one of the described query examples",
 		},
 	},
@@ -359,19 +359,19 @@ var queryDocs = []queryDoc{
 		Title:   "Latest Metric Values",
 		Purpose: "Show latest samples for one metric, optionally grouped by one metric attribute.",
 		Required: []string{
-			"METRIC=<metric-name>",
+			"--metric=<metric-name>",
 		},
 		Optional: []string{
-			"GROUP_BY=<metric-attribute-key>",
-			"LIMIT=<rows>",
-			"FORMAT=table|json|markdown",
+			"--group-by=<metric-attribute-key>",
+			"--limit=<rows>",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe WHAT=metric METRIC=system.cpu.time",
-			"make observe WHAT=metric METRIC=system.cpu.time GROUP_BY=state",
+			"aspect observe --what=metric --metric=system.cpu.time",
+			"aspect observe --what=metric --metric=system.cpu.time --group-by=state",
 		},
 		Next: []string{
-			"make observe WHAT=describe METRIC=<metric>",
+			"aspect observe --what=describe --metric=<metric>",
 		},
 	},
 	{
@@ -380,20 +380,20 @@ var queryDocs = []queryDoc{
 		Title:   "Metric Rate",
 		Purpose: "Calculate an explicit per-second delta window for monotonic sum metrics.",
 		Required: []string{
-			"METRIC=<metric-name>",
-			"MODE=rate",
+			"--metric=<metric-name>",
+			"--mode=rate",
 		},
 		Optional: []string{
-			"GROUP_BY=<metric-attribute-key>",
-			"MINUTES=<lookback>",
-			"LIMIT=<rows>",
-			"FORMAT=table|json|markdown",
+			"--group-by=<metric-attribute-key>",
+			"--minutes=<lookback>",
+			"--limit=<rows>",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe WHAT=metric METRIC=system.network.io MODE=rate GROUP_BY=device",
+			"aspect observe --what=metric --metric=system.network.io --mode=rate --group-by=device",
 		},
 		Next: []string{
-			"make observe WHAT=describe METRIC=<metric>",
+			"aspect observe --what=describe --metric=<metric>",
 		},
 	},
 	{
@@ -402,22 +402,22 @@ var queryDocs = []queryDoc{
 		Title:   "Service Operational View",
 		Purpose: "Explicit recent HTTP spans and logs for one service.",
 		Required: []string{
-			"SERVICE=<service-name>",
+			"--service=<service-name>",
 		},
 		Optional: []string{
-			"ERRORS=1",
-			"MINUTES=<lookback>",
-			"LIMIT=<rows>",
-			"FORMAT=table|json|markdown",
+			"--errors",
+			"--minutes=<lookback>",
+			"--limit=<rows>",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe WHAT=service SERVICE=billing-service",
-			"make observe WHAT=service SERVICE=sandbox-rental-service ERRORS=1",
+			"aspect observe --what=service --service=billing-service",
+			"aspect observe --what=service --service=sandbox-rental-service --errors",
 		},
 		Next: []string{
-			"make observe WHAT=describe SERVICE=<service>",
-			"make observe WHAT=catalog SIGNAL=logs SERVICE=<service>",
-			"make observe WHAT=errors SERVICE=<service>",
+			"aspect observe --what=describe --service=<service>",
+			"aspect observe --what=catalog --signal=logs --service=<service>",
+			"aspect observe --what=errors --service=<service>",
 		},
 	},
 	{
@@ -426,19 +426,19 @@ var queryDocs = []queryDoc{
 		Title:   "Recent Error Signals",
 		Purpose: "Explicit recent errors across trace, log, and HTTP access projections.",
 		Optional: []string{
-			"SERVICE=<service-name>",
-			"MINUTES=<lookback>",
-			"LIMIT=<rows>",
-			"FORMAT=table|json|markdown",
+			"--service=<service-name>",
+			"--minutes=<lookback>",
+			"--limit=<rows>",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe WHAT=errors",
-			"make observe WHAT=errors SERVICE=caddy",
+			"aspect observe --what=errors",
+			"aspect observe --what=errors --service=caddy",
 		},
 		Next: []string{
-			"make observe WHAT=service SERVICE=<service> ERRORS=1",
-			"make observe WHAT=trace TRACE_ID=<trace-id>",
-			"make observe WHAT=http STATUS_MIN=400",
+			"aspect observe --what=service --service=<service> --errors",
+			"aspect observe --what=trace --trace-id=<trace-id>",
+			"aspect observe --what=http --status-min=400",
 		},
 	},
 	{
@@ -447,21 +447,21 @@ var queryDocs = []queryDoc{
 		Title:   "HTTP Access Events",
 		Purpose: "Explicit recent normalized HTTP access rows.",
 		Optional: []string{
-			"HOST=<host>",
-			"STATUS_MIN=<status>",
-			"SEARCH=<path-substring>",
-			"MINUTES=<lookback>",
-			"LIMIT=<rows>",
-			"FORMAT=table|json|markdown",
+			"--host=<host>",
+			"--status-min=<status>",
+			"--search=<path-substring>",
+			"--minutes=<lookback>",
+			"--limit=<rows>",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe WHAT=http STATUS_MIN=400",
-			"make observe WHAT=http HOST=auth.example.com STATUS_MIN=400",
+			"aspect observe --what=http --status-min=400",
+			"aspect observe --what=http --host=auth.example.com --status-min=400",
 		},
 		Next: []string{
-			"make observe WHAT=catalog SIGNAL=http",
-			"make observe WHAT=errors",
-			"make observe WHAT=trace TRACE_ID=<trace-id>",
+			"aspect observe --what=catalog --signal=http",
+			"aspect observe --what=errors",
+			"aspect observe --what=trace --trace-id=<trace-id>",
 		},
 	},
 	{
@@ -470,20 +470,20 @@ var queryDocs = []queryDoc{
 		Title:   "Recent Structured Logs",
 		Purpose: "Explicit recent log rows with optional service, field, and text filters.",
 		Optional: []string{
-			"SERVICE=<service-name>",
-			"FIELD=<log-attribute-key>",
-			"SEARCH=<body-or-attribute-substring>",
-			"MINUTES=<lookback>",
-			"LIMIT=<rows>",
-			"FORMAT=table|json|markdown",
+			"--service=<service-name>",
+			"--field=<log-attribute-key>",
+			"--search=<body-or-attribute-substring>",
+			"--minutes=<lookback>",
+			"--limit=<rows>",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe WHAT=logs SERVICE=observe",
-			"make observe WHAT=logs FIELD=query_id SEARCH=metric.latest",
+			"aspect observe --what=logs --service=observe",
+			"aspect observe --what=logs --field=query_id --search=metric.latest",
 		},
 		Next: []string{
-			"make observe WHAT=catalog SIGNAL=logs",
-			"make observe WHAT=describe FIELD=<log-attribute-key>",
+			"aspect observe --what=catalog --signal=logs",
+			"aspect observe --what=describe --field=<log-attribute-key>",
 		},
 	},
 	{
@@ -492,17 +492,17 @@ var queryDocs = []queryDoc{
 		Title:   "Trace Detail",
 		Purpose: "Inspect one trace tree by TraceId.",
 		Required: []string{
-			"TRACE_ID=<trace-id>",
+			"--trace-id=<trace-id>",
 		},
 		Optional: []string{
-			"FORMAT=table|json|markdown",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe WHAT=trace TRACE_ID=<trace-id>",
+			"aspect observe --what=trace --trace-id=<trace-id>",
 		},
 		Next: []string{
-			"make observe WHAT=describe SPAN=<span>",
-			"make observe WHAT=service SERVICE=<service>",
+			"aspect observe --what=describe --span=<span>",
+			"aspect observe --what=service --service=<service>",
 		},
 	},
 	{
@@ -511,18 +511,18 @@ var queryDocs = []queryDoc{
 		Title:   "Deploy Tasks",
 		Purpose: "Explicit recent Ansible task spans or all tasks for one deploy_run_key.",
 		Optional: []string{
-			"RUN_KEY=<deploy-run-key>",
-			"MINUTES=<lookback>",
-			"LIMIT=<rows>",
-			"FORMAT=table|json|markdown",
+			"--run-key=<deploy-run-key>",
+			"--minutes=<lookback>",
+			"--limit=<rows>",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe WHAT=deploy",
-			"make observe WHAT=deploy RUN_KEY=2026-04-17.000017@vs-dev-w0",
+			"aspect observe --what=deploy",
+			"aspect observe --what=deploy --run-key=2026-04-17.000017@vs-dev-w0",
 		},
 		Next: []string{
-			"make observe WHAT=catalog SIGNAL=deploys",
-			"make observe WHAT=trace TRACE_ID=<trace-id>",
+			"aspect observe --what=catalog --signal=deploys",
+			"aspect observe --what=trace --trace-id=<trace-id>",
 		},
 	},
 	{
@@ -531,17 +531,17 @@ var queryDocs = []queryDoc{
 		Title:   "Deploy Bazel Build Times",
 		Purpose: "Per-deploy duration of the deploy_profile bazel build task. Cold deploys with an empty bazel-remote land near 60s; warm deploys served by the cache land in the single digits.",
 		Optional: []string{
-			"MINUTES=<lookback>",
-			"LIMIT=<rows>",
-			"FORMAT=table|json|markdown",
+			"--minutes=<lookback>",
+			"--limit=<rows>",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe WHAT=deploy",
-			"make observe WHAT=deploy MINUTES=1440",
+			"aspect observe --what=deploy",
+			"aspect observe --what=deploy --minutes=1440",
 		},
 		Next: []string{
-			"make observe WHAT=deploy RUN_KEY=<deploy-run-key>",
-			"make observe WHAT=trace TRACE_ID=<trace-id>",
+			"aspect observe --what=deploy --run-key=<deploy-run-key>",
+			"aspect observe --what=trace --trace-id=<trace-id>",
 		},
 	},
 	{
@@ -550,15 +550,15 @@ var queryDocs = []queryDoc{
 		Title:   "Deploy Bazel Cache Hit/Miss Totals",
 		Purpose: "Total bazel-remote action-cache and CAS lookups in the lookback window broken down by hit/miss. Sums the per-(kind, method, status) counter delta of bazel_remote_incoming_requests_total.",
 		Optional: []string{
-			"MINUTES=<lookback>",
-			"FORMAT=table|json|markdown",
+			"--minutes=<lookback>",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe WHAT=deploy",
-			"make observe WHAT=deploy MINUTES=1440",
+			"aspect observe --what=deploy",
+			"aspect observe --what=deploy --minutes=1440",
 		},
 		Next: []string{
-			"make observe WHAT=deploy RUN_KEY=<deploy-run-key>",
+			"aspect observe --what=deploy --run-key=<deploy-run-key>",
 		},
 	},
 	{
@@ -567,16 +567,16 @@ var queryDocs = []queryDoc{
 		Title:   "Deploy Bazel Build (One Run)",
 		Purpose: "Bazel build wall-clock plus bazel-remote hit/miss counts intersected with the chosen deploy_run_key's build window.",
 		Required: []string{
-			"RUN_KEY=<deploy-run-key>",
+			"--run-key=<deploy-run-key>",
 		},
 		Optional: []string{
-			"FORMAT=table|json|markdown",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe WHAT=deploy RUN_KEY=2026-04-27.000057@rust-forge-01",
+			"aspect observe --what=deploy --run-key=2026-04-27.000057@rust-forge-01",
 		},
 		Next: []string{
-			"make observe WHAT=trace TRACE_ID=<trace-id>",
+			"aspect observe --what=trace --trace-id=<trace-id>",
 		},
 	},
 	{
@@ -585,17 +585,17 @@ var queryDocs = []queryDoc{
 		Title:   "Mail Events",
 		Purpose: "Explicit recent mail events plus latest mail metrics.",
 		Optional: []string{
-			"MINUTES=<lookback>",
-			"LIMIT=<rows>",
-			"FORMAT=table|json|markdown",
+			"--minutes=<lookback>",
+			"--limit=<rows>",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe WHAT=mail",
+			"aspect observe --what=mail",
 		},
 		Next: []string{
-			"make observe WHAT=describe SERVICE=stalwart",
-			"make observe WHAT=catalog SIGNAL=logs SERVICE=stalwart",
-			"make observe WHAT=service SERVICE=stalwart",
+			"aspect observe --what=describe --service=stalwart",
+			"aspect observe --what=catalog --signal=logs --service=stalwart",
+			"aspect observe --what=service --service=stalwart",
 		},
 	},
 	{
@@ -604,17 +604,17 @@ var queryDocs = []queryDoc{
 		Title:   "Workload Identity Spans",
 		Purpose: "Show recent SPIFFE mTLS, JWT-SVID, and OpenBao relying-party auth spans.",
 		Optional: []string{
-			"MINUTES=<lookback>",
-			"LIMIT=<rows>",
-			"FORMAT=table|json|markdown",
+			"--minutes=<lookback>",
+			"--limit=<rows>",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe WHAT=workload-identity",
+			"aspect observe --what=workload-identity",
 		},
 		Next: []string{
-			"make observe WHAT=describe SPAN=auth.spiffe.mtls.client",
-			"make observe WHAT=describe SPAN=workload.openbao.kv.get",
-			"make observe WHAT=describe SPAN=secrets.bao.jwt_svid.login",
+			"aspect observe --what=describe --span=auth.spiffe.mtls.client",
+			"aspect observe --what=describe --span=workload.openbao.kv.get",
+			"aspect observe --what=describe --span=secrets.bao.jwt_svid.login",
 		},
 	},
 	{
@@ -623,16 +623,16 @@ var queryDocs = []queryDoc{
 		Title:   "SPIRE Logs",
 		Purpose: "Show recent SPIRE server and agent logs.",
 		Optional: []string{
-			"MINUTES=<lookback>",
-			"LIMIT=<rows>",
-			"FORMAT=table|json|markdown",
+			"--minutes=<lookback>",
+			"--limit=<rows>",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe WHAT=workload-identity",
+			"aspect observe --what=workload-identity",
 		},
 		Next: []string{
-			"make observe WHAT=logs SERVICE=spire-agent",
-			"make observe WHAT=service SERVICE=spire-server",
+			"aspect observe --what=logs --service=spire-agent",
+			"aspect observe --what=service --service=spire-server",
 		},
 	},
 	{
@@ -641,18 +641,18 @@ var queryDocs = []queryDoc{
 		Title:   "Temporal Activity",
 		Purpose: "Show recent Temporal Web requests, Temporal auth spans, bootstrap runs, service logs, and metric catalog rows.",
 		Optional: []string{
-			"MINUTES=<lookback>",
-			"LIMIT=<rows>",
-			"FORMAT=table|json|markdown",
+			"--minutes=<lookback>",
+			"--limit=<rows>",
+			"--format=table|json|markdown",
 		},
 		Examples: []string{
-			"make observe WHAT=temporal",
+			"aspect observe --what=temporal",
 		},
 		Next: []string{
-			"make observe WHAT=service SERVICE=temporal-web",
-			"make observe WHAT=describe SERVICE=temporal-server",
-			"make observe WHAT=describe SPAN=temporal.auth.authorize",
-			"make observe WHAT=logs SERVICE=temporal-bootstrap",
+			"aspect observe --what=service --service=temporal-web",
+			"aspect observe --what=describe --service=temporal-server",
+			"aspect observe --what=describe --span=temporal.auth.authorize",
+			"aspect observe --what=logs --service=temporal-bootstrap",
 		},
 	},
 }
@@ -666,7 +666,7 @@ func handleStatic(cfg config) (bool, error) {
 	case "describe":
 		if cfg.queryName != "" {
 			if cfg.metric != "" || cfg.service != "" || cfg.span != "" || cfg.field != "" {
-				return true, errors.New("WHAT=describe QUERY does not accept METRIC, SERVICE, SPAN, or FIELD")
+				return true, errors.New("--what=describe --query does not accept --metric, --service, --span, or --field")
 			}
 			return true, printQueryDescription(cfg)
 		}
@@ -680,19 +680,19 @@ func printIndex(cfg config) error {
 		Purpose:  "Discover the telemetry vocabulary before running operational queries.",
 		Families: sortedFamilies(),
 		StartHere: []string{
-			"make observe WHAT=overview",
-			"make observe WHAT=queries",
-			"make observe WHAT=catalog SIGNAL=metrics",
-			"make observe WHAT=describe SERVICE=<service>",
+			"aspect observe --what=overview",
+			"aspect observe --what=queries",
+			"aspect observe --what=catalog --signal=metrics",
+			"aspect observe --what=describe --service=<service>",
 		},
 		Operational: []string{
-			"make observe WHAT=errors",
-			"make observe WHAT=logs SERVICE=<service>",
-			"make observe WHAT=service SERVICE=<service>",
-			"make observe WHAT=http STATUS_MIN=400",
-			"make observe WHAT=workload-identity",
-			"make observe WHAT=temporal",
-			"make observe WHAT=deploy RUN_KEY=<deploy-run-key>",
+			"aspect observe --what=errors",
+			"aspect observe --what=logs --service=<service>",
+			"aspect observe --what=service --service=<service>",
+			"aspect observe --what=http --status-min=400",
+			"aspect observe --what=workload-identity",
+			"aspect observe --what=temporal",
+			"aspect observe --what=deploy --run-key=<deploy-run-key>",
 		},
 	}
 	switch cfg.format {
@@ -749,7 +749,7 @@ func printQueries(cfg config) error {
 			fmt.Printf("%-22s %-10s %s\n", doc.ID, doc.Family, doc.Purpose)
 		}
 		fmt.Println("\nDescribe one query:")
-		fmt.Println("  make observe WHAT=describe QUERY=metric.latest")
+		fmt.Println("  aspect observe --what=describe --query=metric.latest")
 	}
 	return nil
 }
@@ -757,7 +757,7 @@ func printQueries(cfg config) error {
 func printQueryDescription(cfg config) error {
 	doc, ok := findQueryDoc(cfg.queryName)
 	if !ok {
-		return fmt.Errorf("unknown observe query %q; run `make observe WHAT=queries`", cfg.queryName)
+		return fmt.Errorf("unknown observe query %q; run `aspect observe --what=queries`", cfg.queryName)
 	}
 	switch cfg.format {
 	case formatJSON:

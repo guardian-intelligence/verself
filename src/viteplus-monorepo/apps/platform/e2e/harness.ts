@@ -97,7 +97,7 @@ export interface ClickhouseRow {
   readonly [column: string]: string;
 }
 
-// Run a ClickHouse query through the same `make clickhouse-query` plumbing the
+// Run a ClickHouse query through the same `aspect db ch query` plumbing the
 // operator uses. The query MUST end with `FORMAT TabSeparatedWithNames` (or the
 // helper appends it). Returns rows as `{column: value}` objects so tests can
 // assert on actual span content rather than waiting blindly for materialisation.
@@ -141,7 +141,7 @@ function repoRootSync(): string {
   let dir = path.dirname(fileURLToPath(import.meta.url));
   for (let i = 0; i < 10; i++) {
     if (
-      fs.existsSync(path.join(dir, "Makefile")) &&
+      fs.existsSync(path.join(dir, "MODULE.aspect")) &&
       fs.existsSync(path.join(dir, "MODULE.bazel"))
     ) {
       cachedRepoRoot = dir;

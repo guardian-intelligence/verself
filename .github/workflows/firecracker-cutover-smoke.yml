@@ -7,8 +7,8 @@ name: Firecracker Cutover Static Asserts
 # Blacksmith with no SSH, no Ansible, no SOPS, no prod tooling.
 #
 # Live deploy + ClickHouse-trace verification is done separately by
-# the operator via `make sandbox-smoke-test` from a workstation that
-# already has the full controller toolchain pinned.
+# the operator via `src/platform/scripts/verify-sandbox-live.sh` from a
+# workstation that already has the full controller toolchain pinned.
 
 on:
   workflow_dispatch:

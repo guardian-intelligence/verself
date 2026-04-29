@@ -6,7 +6,7 @@ set -euo pipefail
 # toolchain is available; no SSH, no Ansible, no SOPS, no prod
 # tooling. Intended for the Blacksmith CI smoke; the live deploy +
 # ClickHouse-trace verification is done separately by the operator
-# via `make sandbox-smoke-test`.
+# via `src/platform/scripts/verify-sandbox-live.sh`.
 #
 # Asserts:
 #   1. vm-orchestrator daemon, CLI, and vm-bridge build under both

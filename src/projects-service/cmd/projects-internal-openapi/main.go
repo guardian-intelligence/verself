@@ -47,7 +47,7 @@ func main() {
 		os.Exit(1)
 	}
 	if !bytes.Equal(current, data) {
-		fmt.Fprintf(os.Stderr, "%s is out of date; run make openapi\n", path)
+		fmt.Fprintf(os.Stderr, "%s is out of date; run aspect codegen run --kind=openapi\n", path)
 		os.Exit(1)
 	}
 }

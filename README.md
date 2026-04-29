@@ -11,16 +11,18 @@ Features:
 
 ## Quick Start
 
-### 1. Bootstrap Bazelisk
+### 1. Bootstrap Bazelisk and Aspect
 
 ```bash
 ./scripts/bootstrap
-bazelisk run //tools/bazel:doctor
+aspect doctor
 ```
 
-The bootstrap script only installs the pinned Bazelisk binary. The doctor
-command verifies the repo's Bazel/Bzlmod bootstrap contract without assuming
-`make` or the full controller toolchain is installed.
+The bootstrap script installs the pinned Bazelisk + Aspect CLI binaries and
+symlinks `/usr/local/bin/bazel` to bazelisk so AXL's `ctx.bazel.*` APIs flow
+through the version-pinned downloader. `aspect doctor` then verifies the
+toolchain pins (aspect, bazelisk, `.bazelversion`, `MODULE.bazel`) without
+requiring the full controller toolchain.
 
 ### 2. Provision bare metal
 
@@ -53,18 +55,18 @@ After deploy, seed the platform tenant, Acme tenant, billing state, mailboxes,
 and auth fixtures:
 
 ```bash
-make seed-system
+src/platform/scripts/ansible-with-tunnel.sh playbooks/seed-system.yml
 ```
 
-The `assume-*` targets are extremely useful utility scripts for operators and
-agents. They mint short-lived, project-scoped Zitadel tokens from the deployed
-credential store and write a `0600` env file under `smoke-artifacts/personas/`.
+`aspect persona assume <name>` is the operator/agent shortcut for minting
+short-lived, project-scoped Zitadel tokens from the deployed credential store
+and writing a `0600` env file under `smoke-artifacts/personas/`.
 
 ```bash
-make assume-platform-admin
-make assume-acme-admin
-make assume-acme-member
-make assume-persona PERSONA=platform-admin OUTPUT=/tmp/platform-admin.env
+aspect persona assume platform-admin
+aspect persona assume acme-admin
+aspect persona assume acme-member
+aspect persona assume platform-admin --output=/tmp/platform-admin.env
 ```
 
 `platform-admin` is our internal organization for dogfooding internal platform operations.
@@ -75,10 +77,10 @@ balance:
 
 ```bash
 DOMAIN="$(cd src/platform && awk -F'"' '/^verself_domain:/{print $2}' ansible/group_vars/all/main.yml)"
-make set-user-state EMAIL="ceo@${DOMAIN}" ORG=platform STATE=free
-make set-user-state EMAIL="ceo@${DOMAIN}" ORG=platform STATE=hobby
-make set-user-state EMAIL="ceo@${DOMAIN}" ORG=platform STATE=pro BALANCE_CENTS=10000
-make set-user-state EMAIL=ceo@example.com ORG_ID=123 PLAN_ID=sandbox-pro BALANCE_UNITS=500000000 BUSINESS_NOW=2026-04-13T12:00:00Z
+aspect persona user-state --email="ceo@${DOMAIN}" --org=platform --state=free
+aspect persona user-state --email="ceo@${DOMAIN}" --org=platform --state=hobby
+aspect persona user-state --email="ceo@${DOMAIN}" --org=platform --state=pro --balance-cents=10000
+aspect persona user-state --email=ceo@example.com --org-id=123 --plan-id=sandbox-pro --balance-units=500000000 --business-now=2026-04-13T12:00:00Z
 ```
 
 The helper is implemented at `src/platform/scripts/set-user-state.sh`. It builds
@@ -87,33 +89,33 @@ contract, cycle, entitlement, grant, clock override, and billing event rows use
 the same ID rules as billing-service. It is an operator/test fixture helper, not
 a customer API.
 
-Useful overrides:
+Useful flags:
 
-- `EMAIL` (required; written to `orgs.billing_email`)
-- `ORG` or `ORG_ID` (required; `ORG=platform` resolves the platform billing org)
-- `BILLING_PRODUCT_ID` (default: `sandbox`)
-- `STATE` (`free`, `hobby`, `pro`, or another plan tier)
-- `PLAN_ID` (exact plan id; `free`/`none` clears paid contracts)
-- `BALANCE_UNITS` or `BALANCE_CENTS` (exact account purchase balance)
-- `BUSINESS_NOW` (RFC3339/RFC3339Nano org-product billing clock override)
-- `OVERAGE_POLICY`, `TRUST_TIER`, `ORG_NAME`
+- `--email` (required; written to `orgs.billing_email`)
+- `--org` or `--org-id` (required; `--org=platform` resolves the platform billing org)
+- `--product-id` (default: `sandbox`)
+- `--state` (`free`, `hobby`, `pro`, or another plan tier)
+- `--plan-id` (exact plan id; `free`/`none` clears paid contracts)
+- `--balance-units` or `--balance-cents` (exact account purchase balance)
+- `--business-now` (RFC3339/RFC3339Nano org-product billing clock override)
+- `--overage-policy`, `--trust-tier`, `--org-name`
 
 Use `billing-clock` when you want to move billing time without resetting the
 user's contract or balances:
 
 ```bash
-make billing-clock ORG_ID=123
-make billing-clock ORG_ID=123 SET=2026-05-01T00:00:00Z REASON=e2e-rollover
-make billing-clock ORG_ID=123 ADVANCE_SECONDS=2678400 REASON=e2e-rollover
-make billing-clock ORG_ID=123 CLEAR=1 REASON=e2e-cleanup
-make billing-wall-clock ORG=platform REASON=e2e-cleanup
+aspect billing clock --org-id=123
+aspect billing clock --org-id=123 --set=2026-05-01T00:00:00Z --reason=e2e-rollover
+aspect billing clock --org-id=123 --advance-seconds=2678400 --reason=e2e-rollover
+aspect billing clock --org-id=123 --clear --reason=e2e-cleanup
+aspect billing clock --org=platform --wall-clock --reason=e2e-cleanup
 ```
 
 The clock helper builds and runs `src/billing-service/cmd/billing-clock` on the
 target node. It calls billing-service code paths against billing PostgreSQL, so
 clock changes can synchronously apply due cycle rollover, scheduled
 downgrades/cancellations, current-period grants, and corresponding
-`billing_events`. `billing-wall-clock` is the fixture repair path for browser
+`billing_events`. The `--wall-clock` form is the fixture repair path for browser
 and operator testing: it clears the org/product clock override, voids current
 test cycles that no longer overlap wall-clock time, preserves paid plan state
 and account purchase balances, rematerializes current-period entitlements, and
@@ -122,31 +124,32 @@ emits `billing_clock_reset_to_wall_clock`.
 Use the billing inspection wrappers when reviewing live state after a test:
 
 ```bash
-make billing-state ORG=platform
-make billing-documents ORG=platform
-make billing-finalizations ORG=platform
-make billing-events EVENT=billing_clock_reset_to_wall_clock MINUTES=30
-make billing-pg-query QUERY='SELECT current_database()'
-make billing-smoke-test
+aspect billing state --org=platform
+aspect billing documents --org=platform
+aspect billing finalizations --org=platform
+aspect billing events --event=billing_clock_reset_to_wall_clock --minutes=30
+aspect db pg query --db=billing --query='SELECT current_database()'
+src/platform/scripts/verify-console-billing-flow.sh
 ```
 
-`billing-smoke-test` runs the deployed billing Playwright flow and writes artifacts
-under `smoke-artifacts/console-billing/<run-id>/`. If the browser test exits before
-it writes a structured run JSON, the wrapper still collects a time-windowed
+The deployed billing Playwright flow lives at
+`src/platform/scripts/verify-console-billing-flow.sh` and writes artifacts under
+`smoke-artifacts/console-billing/<run-id>/`. If the browser test exits before it
+writes a structured run JSON, the wrapper still collects a time-windowed
 fallback evidence bundle from ClickHouse and billing PostgreSQL.
 
 Billing naming is intentionally split:
 
-- `BILLING_PRODUCT_ID=sandbox` is the product catalog/product-metering ID.
-- `DB=billing` is the billing-service PostgreSQL database.
-- `DB=sandbox_rental` is the sandbox-rental-service PostgreSQL database.
+- `--product-id=sandbox` is the product catalog/product-metering ID.
+- `--db=billing` is the billing-service PostgreSQL database.
+- `--db=sandbox_rental` is the sandbox-rental-service PostgreSQL database.
 
 Use the PostgreSQL wrapper for direct inspection:
 
 ```bash
-make pg-query DB=billing QUERY='SELECT count(*) FROM orgs'
-make pg-query DB=billing QUERY='SELECT event_type, count(*) FROM billing_events GROUP BY event_type ORDER BY event_type'
-make pg-query DB=sandbox_rental QUERY='SELECT count(*) FROM executions'
+aspect db pg query --db=billing --query='SELECT count(*) FROM orgs'
+aspect db pg query --db=billing --query='SELECT event_type, count(*) FROM billing_events GROUP BY event_type ORDER BY event_type'
+aspect db pg query --db=sandbox_rental --query='SELECT count(*) FROM executions'
 ```
 
 ### 5. Log in

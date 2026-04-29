@@ -2,7 +2,7 @@
 # Wipe one managed PostgreSQL service database and re-run the owning schema path.
 #
 # Usage:
-#   make wipe-pg-db DB=sandbox_rental
+#   src/platform/scripts/ansible-with-tunnel.sh playbooks/wipe-pg-db.yml -e wipe_pg_db_name=sandbox_rental
 #
 # Supported DBs:
 # - billing: billing ledger reset, including TigerBeetle
@@ -166,7 +166,7 @@
           - wipe_pg_db_clickhouse_client_binary.stat.exists
         fail_msg: >-
           wipe-pg-db reconciles ClickHouse grants for {{ wipe_pg_db_name }},
-          but {{ verself_bin }}/clickhouse-client is missing. Run make deploy first.
+          but {{ verself_bin }}/clickhouse-client is missing. Run aspect deploy first.
       when: wipe_pg_db_uses_clickhouse | bool
 
     - name: Set deployed ClickHouse operator client command for PostgreSQL wipe target

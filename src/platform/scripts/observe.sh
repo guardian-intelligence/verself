@@ -7,7 +7,7 @@ repo_root="$(cd "${platform_root}/../.." && pwd)"
 inventory="${INVENTORY:-${platform_root}/ansible/inventory/hosts.ini}"
 
 if [[ ! -f "${inventory}" ]]; then
-  echo "ERROR: ${inventory} not found. Run 'make provision' first." >&2
+  echo "ERROR: ${inventory} not found. Run 'aspect platform provision' first." >&2
   exit 1
 fi
 

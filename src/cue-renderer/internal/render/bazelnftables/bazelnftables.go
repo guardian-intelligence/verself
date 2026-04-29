@@ -11,7 +11,7 @@
 //   - One entry per CUE topology.nftables.rulesets key.
 //
 // CUE owns the dynamic set; adding a ruleset to topology.cue regenerates
-// this file via `make topology-generate`, and BUILD.bazel picks up the
+// this file via `aspect codegen run --kind=topology`, and BUILD.bazel picks up the
 // new entry on next build with no hand-edit.
 package bazelnftables
 

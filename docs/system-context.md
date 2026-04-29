@@ -4,7 +4,7 @@ How the platform is currently wired together. Direction and target state are in 
 
 ## Service Architecture
 
-High-level topology — components, ports, SPIRE identities, runtime users — is declared in `src/cue-renderer/` and rendered by `make topology-generate` into two trees: typed Ansible inputs under `src/platform/ansible/group_vars/all/generated/*.yml`, and final-file copies under `src/platform/ansible/share/rendered/` for the host firewall (`etc/nftables.conf`, `etc/nftables.d/<component>.nft`, `etc/systemd/system/verself-firewall.target`). The Bazel manifests `src/cue-renderer/binaries/server_tools.{MODULE.bazel,bzl}` and `src/cue-renderer/nftables_files.bzl` are checked in via `write_source_files` so adding a CUE-declared ruleset never requires a parallel BUILD edit. Run `make services-doctor` to cross-check generated topology endpoints against live listeners on the box (supports `FORMAT=json|nftables`).
+High-level topology — components, ports, SPIRE identities, runtime users — is declared in `src/cue-renderer/` and rendered by `aspect codegen run --kind=topology` into two trees: typed Ansible inputs under `src/platform/ansible/group_vars/all/generated/*.yml`, and final-file copies under `src/platform/ansible/share/rendered/` for the host firewall (`etc/nftables.conf`, `etc/nftables.d/<component>.nft`, `etc/systemd/system/verself-firewall.target`). The Bazel manifests `src/cue-renderer/binaries/server_tools.{MODULE.bazel,bzl}` and `src/cue-renderer/nftables_files.bzl` are checked in via `write_source_files` so adding a CUE-declared ruleset never requires a parallel BUILD edit. Run `python3 src/platform/scripts/services-doctor.py` to cross-check generated topology endpoints against live listeners on the box (supports `--format=json|nftables`).
 
 Bootstrap and operator-recovery secrets are SOPS-encrypted in `group_vars/all/secrets.sops.yml` and loaded at service start via systemd `LoadCredential=` into `$CREDENTIALS_DIRECTORY`. Repo-owned service-to-service authentication is SPIFFE/SPIRE; runtime third-party provider credentials are fetched from OpenBao by SPIFFE-authenticated services. See [`docs/architecture/workload-identity.md`](architecture/workload-identity.md).
 
@@ -93,5 +93,5 @@ Self-hosted inbound via Stalwart. Boundary, auth, storage, and the mailbox-servi
   HTTP clients. Public `client` packages are for customer-authenticated API
   shapes; `internalclient` packages are for SPIFFE-only operations that would
   otherwise require spoofable body-scoped attribution.
-- Start telemetry investigation with `make observe` — discoverability-first.
-- `make clickhouse-schemas` reads all ClickHouse tables (ground truth). Prefer `make observe` first, fall back to raw `make clickhouse-query` when observe has no named query.
+- Start telemetry investigation with `aspect observe` — discoverability-first.
+- `aspect db ch schemas` reads all ClickHouse tables (ground truth). Prefer `aspect observe` first, fall back to raw `aspect db ch query --query='...'` when observe has no named query.

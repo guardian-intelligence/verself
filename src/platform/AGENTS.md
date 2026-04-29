@@ -1,6 +1,6 @@
 # platform
 
-All remote orchestration lives here: Ansible roles + playbooks, OpenTofu modules, operator CLI (`cmd/verself/`, being trimmed in favor of services), and generated deploy inputs. `src/cue-renderer` is the CUE source for the current single-node topology and deploy catalog; `make topology-generate` renders typed Ansible inputs under `ansible/group_vars/all/generated/` (`catalog.yml`, `ops.yml`, `dns.yml`, `spire.yml`, `postgres.yml`, `endpoints.yml`, `routes.yml`, and related topology artifacts).
+All remote orchestration lives here: Ansible roles + playbooks, OpenTofu modules, operator CLI (`cmd/verself/`, being trimmed in favor of services), and generated deploy inputs. `src/cue-renderer` is the CUE source for the current single-node topology and deploy catalog; `aspect codegen run --kind=topology` renders typed Ansible inputs under `ansible/group_vars/all/generated/` (`catalog.yml`, `ops.yml`, `dns.yml`, `spire.yml`, `postgres.yml`, `endpoints.yml`, `routes.yml`, and related topology artifacts).
 
 ## Server profile
 
@@ -30,67 +30,66 @@ Run from `src/platform/ansible/`. `--tags` targets individual roles (e.g. `--tag
 | `deprovision.yml` | Destroy bare metal infrastructure, remove inventory |
 | `site.yml` | Canonical idempotent deploy for the current inventory topology |
 | `guest-rootfs.yml` | Build guest rootfs, stage Firecracker guest artifacts |
-| `observability-smoke.yml` | Minimal smoke probe used by `telemetry-smoke-test` (`debug/assert` + `verself_uri`) |
+| `observability-smoke.yml` | Minimal smoke probe used by `scripts/telemetry-smoke-test.sh` (`debug/assert` + `verself_uri`) |
 | `security-patch.yml` | Rolling OS security updates |
 | `billing-reset.yml` | Exhaustively wipe TigerBeetle + billing PostgreSQL database `billing` and restart callers |
 | `identity-reset.yml` | Exhaustively wipe identity-service PG state, re-apply migrations, restart |
 | `seed-system.yml` | Seed platform tenant + Acme tenant, billing, mailboxes, auth verify. `--tags identity,billing,stalwart,verify,dev-oidc` |
 
-Read the top-level `Makefile` for other common automation wrappers.
+Read `aspect` (no args) for the full task surface; see `docs/architecture/aspect-cli-migration.md` for the durable command list and the retired Make-era shapes.
 
 ## Query ClickHouse
 
-Use the Makefile wrappers instead of hand-typing the SSH + client-cert prefix. They `cd` into `src/platform/` and invoke `scripts/clickhouse.sh`, which resolves the worker from `ansible/inventory/hosts.ini` and runs `clickhouse-client` on the worker as the SPIFFE-authenticated `clickhouse_operator` user.
+Use the AXL wrappers instead of hand-typing the SSH + client-cert prefix. They invoke `src/platform/scripts/clickhouse.sh`, which resolves the worker from `ansible/inventory/hosts.ini` and runs `clickhouse-client` on the worker as the SPIFFE-authenticated `clickhouse_operator` user.
 
 ```bash
-make inventory-check
-make clickhouse-query QUERY='SHOW TABLES' DATABASE=verself
+aspect db ch query --database=verself --query='SHOW TABLES'
 ```
 
 OTel logs live in `default.otel_logs`, not `verself.otel_logs`:
 
 ```bash
-make clickhouse-query QUERY='SELECT Timestamp, Body FROM default.otel_logs ORDER BY Timestamp DESC LIMIT 10'
+aspect db ch query --query='SELECT Timestamp, Body FROM default.otel_logs ORDER BY Timestamp DESC LIMIT 10'
 ```
 
 ## Query PostgreSQL
 
-Use the Makefile wrappers instead of hand-typing SSH, passwords, and deployed
+Use the AXL wrappers instead of hand-typing SSH, passwords, and deployed
 client paths. The billing-service database is `billing`; `sandbox` is a product
 ID, not a PostgreSQL database name. The sandbox-rental-service database remains
 `sandbox_rental`.
 
 ```bash
-make pg-list
-make pg-query DB=billing QUERY='SELECT count(*) FROM orgs'
-make pg-query DB=sandbox_rental QUERY='SELECT count(*) FROM executions'
-make pg-shell DB=billing
+aspect db pg list
+aspect db pg query --db=billing --query='SELECT count(*) FROM orgs'
+aspect db pg query --db=sandbox_rental --query='SELECT count(*) FROM executions'
+aspect db pg shell --db=billing
 ```
 
 ## Debug with observe
 
-`make observe` is the blessed operator query surface for ClickHouse-backed telemetry. It is discoverability-first: begin with the query registry and signal catalogs, then use explicit operational queries for recent errors, services, HTTP access, mail, deploys, and traces.
+`aspect observe` is the blessed operator query surface for ClickHouse-backed telemetry. It is discoverability-first: begin with the query registry and signal catalogs, then use explicit operational queries for recent errors, services, HTTP access, mail, deploys, and traces.
 
 ```bash
-make observe
-make observe WHAT=queries
-make observe WHAT=catalog SIGNAL=metrics
-make observe WHAT=catalog SIGNAL=traces
-make observe WHAT=describe QUERY=metric.latest
-make observe WHAT=describe METRIC=system.cpu.time
-make observe WHAT=service SERVICE=billing-service
-make observe WHAT=errors
-make observe WHAT=mail
-make observe WHAT=deploy RUN_KEY=<deploy-run-key>
+aspect observe
+aspect observe --what=queries
+aspect observe --what=catalog --signal=metrics
+aspect observe --what=catalog --signal=traces
+aspect observe --what=describe --query=metric.latest
+aspect observe --what=describe --metric=system.cpu.time
+aspect observe --what=service --service=billing-service
+aspect observe --what=errors
+aspect observe --what=mail
+aspect observe --what=deploy --run-key=<deploy-run-key>
 ```
 
-Use `make clickhouse-query` only when the observe surface does not yet cover the question. Interactive ClickHouse shells are intentionally unsupported because agent workflows need replayable commands.
+Use `aspect db ch query` only when the observe surface does not yet cover the question. Interactive ClickHouse shells are intentionally unsupported because agent workflows need replayable commands.
 
 Deploy playbook telemetry smoke probes:
 
 ```bash
-make telemetry-smoke-test       # success path: ansible + service correlation
-make telemetry-smoke-test-fail  # sad path: assert Error spans are emitted
+src/platform/scripts/telemetry-smoke-test.sh                                    # success path: ansible + service correlation
+TELEMETRY_SMOKE_TEST_EXPECT_FAIL=1 src/platform/scripts/telemetry-smoke-test.sh # sad path: assert Error spans are emitted
 ```
 
 **Deterministic deploy correlation**:

@@ -97,7 +97,7 @@ Stalwart and the Verself app tier do not share an auth system today.
 - a Zitadel password for logging into repo-owned apps such as webmail, Forgejo, Letters, and console
 - a Stalwart mailbox password for direct mail-protocol access such as JMAP/IMAP/SMTP auth and for box-local operator tooling
 
-The webmail app never asks the human for the Stalwart password. That mailbox password is currently used by Stalwart itself, `mailbox-service` sync/forwarding code, and direct operator access such as `make mail-passwords`.
+The webmail app never asks the human for the Stalwart password. That mailbox password is currently used by Stalwart itself, `mailbox-service` sync/forwarding code, and direct operator access such as `aspect mail passwords`.
 
 **Current binding model:** `mailbox_bindings` is the join between product identity and mailbox identity. Right now the model is intentionally simple: one Zitadel subject maps to one mailbox account, and many subjects may map to the same mailbox account. `seed-system.yml` creates the CEO and platform-admin agent bindings during full seed and `--tags identity` runs so a rotated seeded user or machine-user subject does not strand the webmail app on a stale binding. `--tags stalwart` preserves existing product bindings while resetting Stalwart and the mailbox projection.
 
@@ -145,11 +145,11 @@ curl -s -u admin:<admin_password> http://127.0.0.1:8090/api/principal/name/user
 Native OTLP over gRPC to otelcol-contrib on `127.0.0.1:4317`. Traces, logs, and metrics are all pushed — no scraping required. Data lands in ClickHouse under `ServiceName = 'stalwart'`.
 
 ```bash
-make observe WHAT=describe SERVICE=stalwart        # discover Stalwart telemetry
-make observe WHAT=catalog SIGNAL=logs SERVICE=stalwart
-make observe WHAT=service SERVICE=stalwart           # recent traces + logs
-make observe WHAT=service SERVICE=stalwart ERRORS=1  # errors only
-make observe WHAT=mail                               # mail events + metrics
+aspect observe --what=describe --service=stalwart        # discover Stalwart telemetry
+aspect observe --what=catalog --signal=logs --service=stalwart
+aspect observe --what=service --service=stalwart         # recent traces + logs
+aspect observe --what=service --service=stalwart --errors  # errors only
+aspect observe --what=mail                               # mail events + metrics
 ```
 
 Stalwart emits 500+ event types across SMTP, IMAP, JMAP, auth, delivery, spam, TLS, and queue categories. All flow through the existing otelcol pipeline into `default.otel_logs` and `default.otel_traces`.
@@ -189,11 +189,11 @@ This matters for any future Stalwart queue features: database-scoped keys such a
 ## Developer tooling
 
 ```bash
-make mail                              # List recent agents@ email
-make mail-read ID=eaaaaab              # Read one agents@ email
-make mail-code                         # Extract latest agents@ verification code
-make mail-mailboxes                    # Show agents@ mailbox ids/roles
-make mail MAILBOX=ceo                  # Switch to ceo@
+aspect mail list                              # List recent agents@ email
+aspect mail read --id=eaaaaab                 # Read one agents@ email
+aspect mail code                              # Extract latest agents@ verification code
+aspect mail mailboxes                         # Show agents@ mailbox ids/roles
+aspect mail list --mailbox=ceo                # Switch to ceo@
 ```
 
 ## Relevant files
@@ -211,7 +211,7 @@ make mail MAILBOX=ceo                  # Switch to ceo@
 - `playbooks/seed-system.yml` (tag: `stalwart`) — mailbox + Sieve provisioning
 - `cmd/mailbox-openapi/` + `client/` — generated operator/mutation API client surface
 - `cmd/mailbox-tool/` — typed operator CLI over the generated mailbox-service client
-- `Makefile` `mail*` targets — operator shortcuts over `cmd/mailbox-tool`
+- `aspect mail` task group — operator shortcuts over `cmd/mailbox-tool`
 
 ## Product evolution
 

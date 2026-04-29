@@ -18,4 +18,4 @@ Guardian Intelligence company site. Deployed to `guardianintelligence.org` (root
 
 Every route emits a `company.route_view` span with `route.path`, `route.host`, and navigation metadata. Web Vitals (LCP/CLS/INP) fire independently via `web_vital.*` spans. Dynamic OG renders emit `company.og.render` with `og.voice_pass` (Phase 5).
 
-Run `make observe WHAT=service SERVICE=company-web` to see the live span surface once the app is deployed.
+Run `aspect observe --what=service --service=company-web` to see the live span surface once the app is deployed.

@@ -272,13 +272,13 @@ secrets-service roles. `assume-persona.sh` emits
 Completion requires live ClickHouse evidence, not only unit tests:
 
 ```bash
-make deploy TAGS=deploy_profile,identity_service,governance_service,billing_service,secrets_service,source_code_hosting_service,sandbox_rental_service
-make seed-system
-make secrets-smoke-test
-make source-code-hosting-smoke-test
+aspect deploy --tags=deploy_profile,identity_service,governance_service,billing_service,secrets_service,source_code_hosting_service,sandbox_rental_service
+src/platform/scripts/ansible-with-tunnel.sh playbooks/seed-system.yml
+src/platform/scripts/verify-secrets-live.sh
+src/platform/scripts/verify-source-code-hosting-live.sh
 ```
 
-`make secrets-smoke-test` creates and deletes a secret, creates and deletes a
+`scripts/verify-secrets-live.sh` creates and deletes a secret, creates and deletes a
 variable, creates/reads/lists/rolls/revokes an opaque credential, creates and
 uses transit keys, exercises API-credential access, and asserts:
 
@@ -287,7 +287,7 @@ uses transit keys, exercises API-credential access, and asserts:
 - `verself.metering` contains settled secrets operation rows.
 - OpenBao does not contain legacy service-token bootstrap material.
 
-`make source-code-hosting-smoke-test` creates a Git credential through
+`scripts/verify-source-code-hosting-live.sh` creates a Git credential through
 source-code-hosting-service, pushes to `git.<domain>`, verifies the credential
 through secrets-service over SPIFFE mTLS, asserts source PostgreSQL projections,
 and asserts the source -> secrets -> OpenBao trace sequence in ClickHouse.
@@ -317,4 +317,4 @@ and asserts the source -> secrets -> OpenBao trace sequence in ClickHouse.
 - OpenBao Transit API: <https://openbao.org/api-docs/secret/transit/>
 - Huma v2 API framework: <https://pkg.go.dev/github.com/danielgtaylor/huma/v2>
 - OpenTelemetry trace API: <https://opentelemetry.io/docs/specs/otel/trace/api/>
-- ClickHouse OpenTelemetry schema usage in this repo: `make clickhouse-schemas`
+- ClickHouse OpenTelemetry schema usage in this repo: `aspect db ch schemas`

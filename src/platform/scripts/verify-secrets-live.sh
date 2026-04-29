@@ -649,10 +649,10 @@ window_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 (
   cd "${VERIFICATION_REPO_ROOT}"
-  make pg-list
+  aspect db pg list
 ) >"${artifact_dir}/postgres/pg-list.txt"
 if grep -Eq '(^|[[:space:]|])secrets_service([[:space:]|])' "${artifact_dir}/postgres/pg-list.txt"; then
-  echo "secrets_service PostgreSQL database is still visible in make pg-list" >&2
+  echo "secrets_service PostgreSQL database is still visible in aspect db pg list" >&2
   exit 1
 fi
 

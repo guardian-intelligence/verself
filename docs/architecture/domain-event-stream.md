@@ -83,7 +83,7 @@ SVID TTL and fail-closed startup semantics from
 
 ## Observability
 
-`make observe WHAT=nats` surfaces:
+`aspect observe --what=nats` surfaces:
 
 - `nats-server` systemd state, SVID TTL.
 - JetStream stream state: bytes, messages, consumers per stream.
@@ -103,10 +103,10 @@ NATS ships with a publish/subscribe smoke test that asserts:
 - The message's trace propagates to the subscriber with
   `spiffe.peer_id` attributes on both ends.
 
-The smoke test is invoked by `make telemetry-smoke-test-nats`. The brick is not
+The smoke test is invoked by `src/platform/scripts/telemetry-smoke-test-nats.sh`. The brick is not
 laid until the query returns green.
 
-`make spiffe-rotation-smoke-test` additionally asserts the NATS rotation
+`src/platform/scripts/verify-spiffe-rotation-live.sh` additionally asserts the NATS rotation
 contract: no legacy restart watcher units exist, `spiffe-helper` is
 configured with `pid_file_name` plus `renew_signal = "SIGHUP"`, and
 `systemctl reload nats.service` leaves the broker PID stable while the
