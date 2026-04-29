@@ -203,7 +203,7 @@ aspect mail list --mailbox=ceo                # Switch to ceo@
 - `roles/stalwart/` — Ansible role (tasks, templates, defaults, handlers)
 - `roles/stalwart/templates/stalwart.toml.j2` — local-only server config (TOML)
 - `roles/stalwart/tasks/settings.yml` — database-scoped settings push (session, queue, metrics)
-- `src/cue-renderer/instances/local/topology.cue` (`topology.nftables.rulesets.stalwart`) — authoritative egress firewall policy
+- `src/cue-renderer/instances/prod/topology.cue` (`topology.nftables.rulesets.stalwart`) — authoritative egress firewall policy
 - `src/platform/ansible/share/rendered/etc/nftables.d/stalwart.nft` — rendered Stalwart nftables contract copied by the role
 - `roles/stalwart/templates/stalwart-cert-sync.sh.j2` — ACME cert sync script
 - `roles/stalwart/tasks/dns.yml` — MX + SPF record creation

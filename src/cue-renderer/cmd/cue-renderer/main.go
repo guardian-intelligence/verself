@@ -50,7 +50,7 @@ import (
 
 const (
 	defaultTopologyDir = "src/cue-renderer"
-	defaultInstance    = "local"
+	defaultInstance    = "prod"
 	defaultRepoRoot    = "."
 )
 
@@ -331,5 +331,5 @@ subcommands:
 global flags:
   --repo-root      path to repo root (default ".")
   --topology-dir   path to CUE topology root (default "src/cue-renderer")
-  --instance       topology instance name under instances/ (default "local")`)
+  --instance       topology instance name under instances/ (default "prod")`)
 }

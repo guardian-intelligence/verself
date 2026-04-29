@@ -16,7 +16,7 @@ import (
 
 const outputPath = "src/platform/ansible/group_vars/all/generated/clusters.yml"
 
-var header = []byte(projection.HeaderFor("src/cue-renderer/instances/local/topology.cue") + "---\n")
+var header = []byte(projection.HeaderFor("src/cue-renderer/instances/prod/topology.cue") + "---\n")
 
 type Renderer struct{}
 

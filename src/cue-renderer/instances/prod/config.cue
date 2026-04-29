@@ -119,60 +119,9 @@ config: s.#InstanceConfig & {
 		verself_version: "0.1.0"
 		verself_bin:     "/opt/verself/profile/bin"
 
-		// Domains are emitted as Ansible vars because Caddy, Zitadel,
-		// Resend, seed-system, and browser-facing services all consume
-		// the same public names. Inner Jinja templates resolve at Ansible
-		// runtime against these top-level vars.
-		verself_domain:  "verself.sh"
-		platform_domain: "{{ verself_domain }}"
-		company_domain:  "guardianintelligence.org"
-
-		console_subdomain: "console"
-		console_domain:    "{{ console_subdomain }}.{{ verself_domain }}"
-
-		billing_service_subdomain: "billing.api"
-		billing_service_domain:    "{{ billing_service_subdomain }}.{{ verself_domain }}"
-
-		sandbox_rental_service_subdomain: "sandbox.api"
-		sandbox_rental_service_domain:    "{{ sandbox_rental_service_subdomain }}.{{ verself_domain }}"
-
-		identity_service_subdomain: "identity.api"
-		identity_service_domain:    "{{ identity_service_subdomain }}.{{ verself_domain }}"
-
-		profile_service_subdomain: "profile.api"
-		profile_service_domain:    "{{ profile_service_subdomain }}.{{ verself_domain }}"
-
-		notifications_service_subdomain: "notifications.api"
-		notifications_service_domain:    "{{ notifications_service_subdomain }}.{{ verself_domain }}"
-
-		projects_service_subdomain: "projects.api"
-		projects_service_domain:    "{{ projects_service_subdomain }}.{{ verself_domain }}"
-
-		source_code_hosting_service_subdomain: "source.api"
-		source_code_hosting_service_domain:    "{{ source_code_hosting_service_subdomain }}.{{ verself_domain }}"
-
-		governance_service_subdomain: "governance.api"
-		governance_service_domain:    "{{ governance_service_subdomain }}.{{ verself_domain }}"
-
-		secrets_service_subdomain: "secrets.api"
-		secrets_service_domain:    "{{ secrets_service_subdomain }}.{{ verself_domain }}"
-
-		mailbox_service_subdomain: "mail.api"
-		mailbox_service_domain:    "{{ mailbox_service_subdomain }}.{{ verself_domain }}"
-
-		forgejo_subdomain: "git"
-		forgejo_domain:    "{{ forgejo_subdomain }}.{{ verself_domain }}"
-
-		zitadel_subdomain: "auth"
-		zitadel_domain:    "{{ zitadel_subdomain }}.{{ verself_domain }}"
-
-		resend_subdomain:      "notify"
-		resend_domain:         "{{ resend_subdomain }}.{{ verself_domain }}"
-		resend_sender_address: "noreply@{{ resend_domain }}"
-		resend_sender_name:    "verself"
-
-		stalwart_subdomain: "mail"
-		stalwart_domain:    "{{ stalwart_subdomain }}.{{ verself_domain }}"
+		// Public domains, organization labels, and per-site sender
+		// addresses are split into site.cue. Both files contribute to
+		// `config.ansible_vars` via CUE unification.
 
 		// Object-storage UIDs are also CUE-side identifiers used by
 		// firewall and convergence rules; reference them via
@@ -207,7 +156,6 @@ config: s.#InstanceConfig & {
 		openbao_tenancy_kv_mount_prefix:       "kv"
 		openbao_tenancy_transit_mount_prefix:  "transit"
 		openbao_tenancy_jwt_mount_prefix:      "jwt"
-		openbao_tenancy_platform_org_name:     "Guardian Intelligence LLC"
 
 		// Temporal namespace + web vars consumed by the temporal role.
 		temporal_sandbox_namespace:   "sandbox-rental-service"
@@ -218,8 +166,6 @@ config: s.#InstanceConfig & {
 			{spiffe_id: "{{ spire_sandbox_rental_id }}", namespace: "{{ temporal_sandbox_namespace }}", role: "admin"},
 			{spiffe_id: "{{ spire_billing_service_id }}", namespace: "{{ temporal_billing_namespace }}", role: "admin"},
 		]
-		temporal_web_subdomain:             "temporal"
-		temporal_web_domain:                "{{ temporal_web_subdomain }}.{{ verself_domain }}"
 		temporal_web_default_namespace:     "{{ temporal_sandbox_namespace }}"
 		temporal_web_disable_write_actions: true
 		temporal_web_oidc_scopes: ["openid", "profile", "email", "offline_access"]
@@ -237,10 +183,6 @@ config: s.#InstanceConfig & {
 		seed_system_openbao_tls_dir:  "/etc/openbao/tls"
 		seed_system_password_overrides: {}
 		seed_system_credstore_dir:         "/etc/credstore/seed-system"
-		seed_system_platform_org_name:     "Guardian Intelligence LLC"
-		seed_system_platform_org_slug:     "guardian-platform"
-		seed_system_acme_org_name:         "Acme Corp"
-		seed_system_acme_org_slug:         "acme-corp"
 		seed_system_sandbox_project_name:  "sandbox-rental"
 		seed_system_identity_project_name: "identity-service"
 		seed_system_secrets_project_name:  "secrets-service"

@@ -6,11 +6,12 @@ load(":nftables_files.bzl", "NFTABLES_RENDERED")
 TOPOLOGY_SRCS = [
     "cue.mod/module.cue",
     "//src/cue-renderer/catalog:versions.cue",
-    "//src/cue-renderer/instances/local:config.cue",
-    "//src/cue-renderer/instances/local:convergence.cue",
-    "//src/cue-renderer/instances/local:firewall.cue",
-    "//src/cue-renderer/instances/local:host_firewall.cue",
-    "//src/cue-renderer/instances/local:topology.cue",
+    "//src/cue-renderer/instances/prod:config.cue",
+    "//src/cue-renderer/instances/prod:convergence.cue",
+    "//src/cue-renderer/instances/prod:firewall.cue",
+    "//src/cue-renderer/instances/prod:host_firewall.cue",
+    "//src/cue-renderer/instances/prod:site.cue",
+    "//src/cue-renderer/instances/prod:topology.cue",
     "//src/cue-renderer/schema:schema.cue",
 ]
 

@@ -73,8 +73,8 @@ type Catalog struct {
 	Raw cue.Value
 }
 
-// Topology compiles the named CUE instance (e.g. "local" resolves to
-// "./instances/local:topology") rooted at `dir` and decodes it. One
+// Topology compiles the named CUE instance (e.g. "prod" resolves to
+// "./instances/prod:topology") rooted at `dir` and decodes it. One
 // cue.Value.Decode call hydrates the whole graph; one targeted Decode
 // hydrates each typed projection on Loaded. Both share the same
 // underlying CUE evaluation, so this remains a single graph walk.
