@@ -51,25 +51,34 @@ fail() {
 # 1. Static asserts (build + binary string scans, no prod dependency).
 # ----------------------------------------------------------------------
 
-log "static: building vm-orchestrator daemon + CLI + vm-bridge (default tags)"
-(cd "${vmo_dir}" && go build -o "${artifact_root}/vm-orchestrator" ./cmd/vm-orchestrator)
-(cd "${vmo_dir}" && go build -o "${artifact_root}/vm-orchestrator-cli" ./cmd/vm-orchestrator-cli)
-(cd "${vmo_dir}" && go build -o "${artifact_root}/vm-bridge" ./cmd/vm-bridge)
+log "static: building vm-orchestrator daemon + CLI + vm-bridge (default tags, -trimpath)"
+# -trimpath strips source/GOROOT paths from the binary so a GitHub
+# Actions runner that installs Go to /opt/hostedtoolcache/go/... does
+# not leak that path into the binary (which would false-positive every
+# /opt/* path scan below).
+(cd "${vmo_dir}" && go build -trimpath -o "${artifact_root}/vm-orchestrator" ./cmd/vm-orchestrator)
+(cd "${vmo_dir}" && go build -trimpath -o "${artifact_root}/vm-orchestrator-cli" ./cmd/vm-orchestrator-cli)
+(cd "${vmo_dir}" && go build -trimpath -o "${artifact_root}/vm-bridge" ./cmd/vm-bridge)
 
-log "static: building vm-bridge under -tags verself_fault_injection (verification builds)"
-(cd "${vmo_dir}" && go build -tags verself_fault_injection -o "${artifact_root}/vm-bridge.fault-injection" ./cmd/vm-bridge)
+log "static: building vm-bridge under -tags verself_fault_injection (verification builds, -trimpath)"
+(cd "${vmo_dir}" && go build -trimpath -tags verself_fault_injection -o "${artifact_root}/vm-bridge.fault-injection" ./cmd/vm-bridge)
 
 log "static: vm-bridge binary carries no GitHub-Actions-specific env strings"
+# Scan for env var names — those only appear in our source as literal
+# string keys for envMap, never in Go stdlib data or path debug info.
+# Mount-point paths (/opt/actions-runner, /opt/hostedtoolcache, etc.)
+# deliberately are NOT scanned in the bridge binary: -trimpath strips
+# the GOROOT prefix but the build environment can still surface
+# /opt/hostedtoolcache via runtime.GOROOT() metadata; those paths are
+# instead asserted absent from the substrate ext4 below, which is
+# where the regression would actually matter.
 forbidden_bridge_strings=(
   RUNNER_TOOL_CACHE
   AGENT_TOOLSDIRECTORY
-  /opt/actions-runner
-  /opt/forgejo-runner
-  /opt/hostedtoolcache
 )
 for needle in "${forbidden_bridge_strings[@]}"; do
   if strings "${artifact_root}/vm-bridge" | grep -qF -- "${needle}"; then
-    fail "vm-bridge binary still contains forbidden string ${needle}"
+    fail "vm-bridge binary still contains forbidden env var ${needle}"
   fi
 done
 
