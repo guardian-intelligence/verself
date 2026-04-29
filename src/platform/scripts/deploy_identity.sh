@@ -105,9 +105,11 @@ export VERSELF_SITE="${VERSELF_SITE:-}"
 export VERSELF_DEPLOY_SHA="${VERSELF_DEPLOY_SHA:-${VERSELF_COMMIT_SHA}}"
 export VERSELF_DEPLOY_SCOPE="${VERSELF_DEPLOY_SCOPE:-all}"
 
-# OTLP endpoint: scripts/ansible-with-tunnel.sh sets VERSELF_OTLP_ENDPOINT
-# to 127.0.0.1:<tunneled-port>. Fall back to loopback default.
-export OTEL_EXPORTER_OTLP_ENDPOINT="http://${VERSELF_OTLP_ENDPOINT:-127.0.0.1:4317}"
+# OTLP endpoint: scripts/with-otel-agent.sh sets VERSELF_OTLP_ENDPOINT to
+# the controller-side agent's fixed receiver port. The fallback exists so
+# this script remains sourceable in contexts that only need the
+# correlation IDs (record-deploy-event.sh) and never actually export.
+export OTEL_EXPORTER_OTLP_ENDPOINT="http://${VERSELF_OTLP_ENDPOINT:-127.0.0.1:14317}"
 export OTEL_SERVICE_NAME="ansible"
 
 # OTEL_RESOURCE_ATTRIBUTES members are comma-separated key=value pairs. The

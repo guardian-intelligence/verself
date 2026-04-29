@@ -1,7 +1,7 @@
 ---
 # Rolling OS security updates across the fleet.
 # Usage: aspect platform security-patch
-# (renders the per-site cache and invokes ansible-with-tunnel.sh).
+# (renders the per-site cache and invokes ansible-with-otel.sh).
 
 - name: Apply security patches
   hosts: all

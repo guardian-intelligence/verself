@@ -21,7 +21,7 @@ DEFAULT_SITE = "prod"
 # Identity vars derived once by deploy_identity.sh and threaded through
 # every subprocess spawned by `aspect deploy`. The list is closed: anything
 # else the script exports is local to its own subshell. record-deploy-event.sh
-# only needs VERSELF_DEPLOY_RUN_KEY + VERSELF_AUTHOR; ansible-with-tunnel.sh
+# only needs VERSELF_DEPLOY_RUN_KEY + VERSELF_AUTHOR; ansible-with-otel.sh
 # uses the full set so the OpenTelemetry callback resource attributes match
 # what an in-band re-source of deploy_identity.sh would produce.
 _DEPLOY_IDENTITY_KEYS = [
@@ -80,7 +80,7 @@ def render_site(ctx, site = DEFAULT_SITE):
     """Materialise .cache/render/<site>/ — generated group_vars, rendered
     nftables/systemd, staged inventory. The deploy flow consumes this cache
     via -i .cache/render/<site>/inventory/, so callers must run this before
-    invoking ansible-with-tunnel.sh.
+    invoking ansible-with-otel.sh.
     """
     if inventory_check(ctx, site) != 0:
         return 1
@@ -208,12 +208,12 @@ def derive_deploy_env(ctx, *, site, sha, scope):
     """Source deploy_identity.sh once and return its exported environment.
 
     The deploy task threads this dict via env={...} into every subprocess it
-    spawns (record-deploy-event.sh, ansible-with-tunnel.sh) so all of them
+    spawns (record-deploy-event.sh, ansible-with-otel.sh) so all of them
     share the same VERSELF_DEPLOY_RUN_KEY / TRACEPARENT instead of each
     re-deriving identity in its own subshell. deploy_identity.sh is naturally
-    idempotent — re-sourcing inside ansible-with-tunnel.sh preserves the keys
-    and only refreshes OTEL_EXPORTER_OTLP_ENDPOINT to point at the tunneled
-    port.
+    idempotent — re-sourcing inside scripts/with-otel-agent.sh preserves the
+    keys and only refreshes OTEL_EXPORTER_OTLP_ENDPOINT to point at the
+    controller-side agent's fixed receiver port.
 
     Returns a {key: value} dict on success, None on failure.
     """

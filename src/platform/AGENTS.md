@@ -117,4 +117,6 @@ All listeners require `nftables.service` at boot. Future programmatic enforcemen
 
 ## otelcol
 
-`roles/*/templates/otelcol-config.yaml.j2` holds the custom collection pipelines. Changes here land in every service's trace/metric/log story simultaneously.
+`roles/*/templates/otelcol-config.yaml.j2` holds the on-server otelcol pipelines. Changes here land in every service's trace/metric/log story simultaneously.
+
+`controller-agent/otelcol.yaml` is the controller-side twin: a single-process otelcol-contrib that `scripts/with-otel-agent.sh` stands up around every `aspect deploy` / canary invocation. Receivers bind 127.0.0.1:14317 (gRPC OTLP); the exporter ships to the bare-metal otelcol over an SSH `-L`. The `file_storage` extension persists the sending queue under `.cache/render/<site>/otelcol-data/`, so a flush-after-exit race between ansible's BSP atexit hook and the wrapper's tunnel teardown can no longer drop spans.
