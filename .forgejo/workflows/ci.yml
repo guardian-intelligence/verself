@@ -9,45 +9,46 @@ on:
   pull_request:
   workflow_dispatch:
 
-env:
-  NODE_VERSION: 24.15.0
-  PNPM_VERSION: 10.33.0
-
 jobs:
   viteplus:
     name: Vite+ monorepo
     runs-on: [self-hosted, linux, x64, verself-4vcpu-ubuntu-2404]
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Check out repository
         uses: https://data.forgejo.org/actions/checkout@v6
         with:
           persist-credentials: false
 
-      - name: Setup Node.js
-        uses: https://data.forgejo.org/actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          package-manager-cache: false
-
-      - name: Configure pnpm
+      # Bazel owns the build graph. `viteplus_app` wraps `vp build` as a
+      # sandboxed action; the openapi-clients write_source_files rule wraps
+      # @hey-api/openapi-ts; node_modules linkage comes from
+      # `npm_link_all_packages()`. So a single `bazelisk build` covers
+      # source-package validation, app `.output` builds, openapi codegen
+      # snapshot drift, and the deploy_bundle tarballs that get shipped.
+      # No standalone vp install or pnpm step needed — Bazel resolves and
+      # invokes vp inside its hermetic sandbox via the workspace
+      # `node_modules` filegroup.
+      - name: Install Bazelisk + Aspect
         run: |
           set -euo pipefail
-          corepack enable
-          corepack prepare "pnpm@${PNPM_VERSION}" --activate
-          pnpm config set store-dir "$HOME/.pnpm-store" --global
-          node --version
-          pnpm --version
+          scripts/bootstrap
 
-      - name: Install JS dependencies
-        working-directory: src/viteplus-monorepo
+      - name: Build viteplus deploy_bundles + packages
+        # Explicit targets instead of `//src/viteplus-monorepo/...` because
+        # `:output` (viteplus_app) and `:openapi_clients_*_gen` both target
+        # `src/__generated/<sdk>/` paths in bazel-out — Bazel rejects
+        # prefix-overlapping outputs when both are scheduled in one
+        # invocation. The deploy_bundle path is what `aspect deploy` uses
+        # too, so this matches production reality.
         run: |
           set -euo pipefail
-          pnpm install --frozen-lockfile --prefer-offline
-          pnpm exec vp --version
+          bazelisk build \
+            //src/viteplus-monorepo/packages/... \
+            //src/viteplus-monorepo/apps/verself-web:deploy_bundle \
+            //src/viteplus-monorepo/apps/company:deploy_bundle
 
-      - name: Build workspace
-        working-directory: src/viteplus-monorepo
+      - name: Test openapi-client drift gates
         run: |
           set -euo pipefail
-          pnpm exec vp run -r --no-cache build
+          bazelisk test //src/viteplus-monorepo/apps/verself-web:openapi_clients_tests

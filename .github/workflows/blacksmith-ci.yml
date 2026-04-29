@@ -12,57 +12,54 @@ on:
 permissions:
   contents: read
 
-env:
-  NODE_VERSION: 24.15.0
-  PNPM_VERSION: 10.33.0
-
 jobs:
   viteplus:
     name: Vite+ monorepo
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
         with:
           persist-credentials: false
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          package-manager-cache: false
-
-      - name: Mount pnpm store
+      # Bazel owns the build graph (see `viteplus_rules.bzl` —
+      # `viteplus_app` wraps `vp build`, the openapi-ts SDK generation
+      # runs through `viteplus_openapi_clients`). One bazelisk build/test
+      # pass covers source-package validation, app `.output` builds, the
+      # openapi drift gate, and the deploy_bundle tarballs.
+      - name: Mount Bazel disk + repo cache
         uses: useblacksmith/stickydisk@v1
         with:
-          key: ${{ github.repository }}-viteplus-pnpm-store-node${{ env.NODE_VERSION }}-${{ hashFiles('src/viteplus-monorepo/pnpm-lock.yaml') }}
-          path: /home/runner/.pnpm-store
+          key: ${{ github.repository }}-bazel-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'src/viteplus-monorepo/pnpm-lock.yaml') }}
+          path: /home/runner/.cache/bazel-disk
 
-      - name: Mount node_modules
+      - name: Mount Bazel repo cache
         uses: useblacksmith/stickydisk@v1
         with:
-          key: ${{ github.repository }}-viteplus-node-modules-node${{ env.NODE_VERSION }}-${{ hashFiles('src/viteplus-monorepo/pnpm-lock.yaml') }}
-          path: src/viteplus-monorepo/node_modules
+          key: ${{ github.repository }}-bazel-repo-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'src/viteplus-monorepo/pnpm-lock.yaml') }}
+          path: /home/runner/.cache/bazel-repo
 
-      - name: Configure pnpm
+      - name: Install Bazelisk + Aspect
         run: |
           set -euo pipefail
-          corepack enable
-          corepack prepare "pnpm@${PNPM_VERSION}" --activate
-          pnpm config set store-dir "$HOME/.pnpm-store" --global
-          node --version
-          pnpm --version
+          scripts/bootstrap
 
-      - name: Install JS dependencies
-        working-directory: src/viteplus-monorepo
+      - name: Build viteplus deploy_bundles + packages
+        # Explicit targets instead of `//src/viteplus-monorepo/...` because
+        # `:output` (viteplus_app) and `:openapi_clients_*_gen` both target
+        # `src/__generated/<sdk>/` paths in bazel-out — Bazel rejects
+        # prefix-overlapping outputs when both are scheduled in one
+        # invocation. The deploy_bundle path is what `aspect deploy` uses
+        # too, so this matches production reality.
         run: |
           set -euo pipefail
-          pnpm install --frozen-lockfile --prefer-offline
-          pnpm exec vp --version
+          bazelisk build \
+            //src/viteplus-monorepo/packages/... \
+            //src/viteplus-monorepo/apps/verself-web:deploy_bundle \
+            //src/viteplus-monorepo/apps/company:deploy_bundle
 
-      - name: Build workspace
-        working-directory: src/viteplus-monorepo
+      - name: Test openapi-client drift gates
         run: |
           set -euo pipefail
-          pnpm exec vp run -r --no-cache build
+          bazelisk test //src/viteplus-monorepo/apps/verself-web:openapi_clients_tests
