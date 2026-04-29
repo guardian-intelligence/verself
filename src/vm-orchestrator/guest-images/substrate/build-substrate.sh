@@ -260,7 +260,9 @@ mkfs.ext4 -F -L substrate -d "$ROOTFS" "$OUTPUT_DIR/substrate.ext4" >/dev/null
 
 ROOTFS_SHA256=$(sha256sum "$OUTPUT_DIR/substrate.ext4" | awk '{print $1}')
 ROOTFS_APPARENT_BYTES=$(stat -c '%s' "$OUTPUT_DIR/substrate.ext4")
-ROOTFS_USED_BYTES=$(du --apparent-size --bytes "$ROOTFS" | awk '{print $1}')
+# du -s for the summary (one line, total bytes); without -s du recurses
+# and the resulting multi-line stream breaks downstream jq parsing.
+ROOTFS_USED_BYTES=$(du -sb "$ROOTFS" | awk '{print $1}')
 KERNEL_BYTES=$(stat -c '%s' "$OUTPUT_DIR/vmlinux")
 KERNEL_SHA256=$(sha256sum "$OUTPUT_DIR/vmlinux" | awk '{print $1}')
 SBOM_BYTES=$(stat -c '%s' "$OUTPUT_DIR/sbom.txt")
