@@ -1,32 +1,41 @@
 """aspect platform <subtask> — controller-side Ansible playbook entry points.
 
-Each task is a thin wrapper around an existing platform script or playbook so
-deploy_run_key correlation (set by ansible-with-tunnel.sh) keeps flowing into
-ClickHouse. Anything here that mutates the bare-metal node goes through the
-ansible-with-tunnel.sh wrapper; anything controller-only invokes the script
-directly.
+Each task is a thin wrapper around an existing platform script or playbook.
+Two flavours:
+
+  - `_ansible_remote` — renders .cache/render/<site>/, then runs
+    scripts/ansible-with-tunnel.sh against the cache. The wrapper opens an
+    OTLP tunnel and exec's ansible-playbook so deploy_run_key correlation
+    flows into ClickHouse.
+  - `_ansible_local`  — runs ansible-playbook directly with no tunnel. Used
+    only for the bootstrap playbooks that pre-date a remote (provision,
+    setup-sops) or that destroy it (deprovision).
+
+setup-dev is special: it installs ansible itself (and the rest of the
+controller dev tools), so it has to run on a fresh checkout that has
+neither a remote nor an inventory file. Its only renderer dependency is
+catalog.yml, which we render to a one-off path and pass via -e @path.
 """
 
 load(
     ".aspect/lib/helpers.axl",
+    "DEFAULT_SITE",
     "checked_spawn",
-    "inventory_check",
     "render_site",
     "site_cache_inventory",
     "ws_path",
 )
 
 _PLATFORM = "src/platform"
-_DEFAULT_SITE = "prod"
 
-def _ansible_tunnel(ctx, playbook, *extra_args):
+def _ansible_remote(ctx, playbook, *extra_args):
     """Render the deploy cache then run scripts/ansible-with-tunnel.sh.
 
     Every controller-driven playbook flows through the same cache layout
     (.cache/render/<site>/inventory) so a deploy and a reset see the same
     rendered topology.
     """
-    site = _DEFAULT_SITE
+    site = DEFAULT_SITE
     rc = render_site(ctx, site)
     if rc != 0:
         return rc
@@ -40,24 +49,41 @@ def _ansible_tunnel(ctx, playbook, *extra_args):
         label = "ansible-with-tunnel " + playbook + (" " + " ".join(extra_args) if extra_args else ""),
     )
 
-def _ansible_local(ctx, playbook):
+def _ansible_local(ctx, playbook, *extra_args):
     """Run ansible-playbook directly without the OTLP tunnel.
 
-    Used for playbooks that run before inventory exists (provision, setup-sops)
-    and so cannot resolve a target host to tunnel through.
+    Used for playbooks that run before inventory exists (provision,
+    setup-sops) or that destroy it (deprovision). No render is performed
+    because there is no per-site inventory yet to anchor the cache to.
     """
+    args_list = [playbook] + list(extra_args)
     return checked_spawn(
         ctx,
         "ansible-playbook",
-        [playbook],
+        args_list,
         cwd = ws_path(ctx, _PLATFORM, "ansible"),
-        label = "ansible-playbook " + playbook,
+        label = "ansible-playbook " + " ".join(args_list),
     )
 
 def _setup_dev_impl(ctx):
-    if inventory_check(ctx, _DEFAULT_SITE) == 0:
-        return _ansible_tunnel(ctx, "playbooks/setup-dev.yml")
-    return _ansible_local(ctx, "playbooks/setup-dev.yml")
+    # setup-dev runs pre-provision: there is no per-site inventory yet, so
+    # render_site (which stages the inventory) cannot run. The playbook only
+    # needs catalog.yml, which is a single-artefact stdout from the renderer.
+    # We materialise it into .cache/setup-dev/ and pass it via extra-vars so
+    # the playbook itself stays plain.
+    cache_dir = ws_path(ctx, ".cache/setup-dev")
+    catalog = cache_dir + "/catalog.yml"
+    rc = checked_spawn(
+        ctx, "bash", [
+            "-c",
+            "set -eu; mkdir -p '" + cache_dir + "'; " +
+            "bazelisk run -- //src/cue-renderer/cmd/cue-renderer render catalog > '" + catalog + "'",
+        ],
+        label = "render catalog → " + catalog,
+    )
+    if rc != 0:
+        return rc
+    return _ansible_local(ctx, "playbooks/setup-dev.yml", "-e", "@" + catalog)
 
 def _setup_sops_impl(ctx):
     return _ansible_local(ctx, "playbooks/setup-sops.yml")
@@ -69,13 +95,13 @@ def _deprovision_impl(ctx):
     if not ctx.args.confirm:
         ctx.std.io.stderr.write("ERROR: --confirm is required to deprovision\n")
         return 1
-    return _ansible_local(ctx, "playbooks/deprovision.yml")
+    return _ansible_local(ctx, "playbooks/deprovision.yml", "-e", "verself_site=" + DEFAULT_SITE)
 
 def _security_patch_impl(ctx):
-    return _ansible_tunnel(ctx, "playbooks/security-patch.yml")
+    return _ansible_remote(ctx, "playbooks/security-patch.yml")
 
 def _guest_rootfs_impl(ctx):
-    return _ansible_tunnel(ctx, "playbooks/guest-rootfs.yml")
+    return _ansible_remote(ctx, "playbooks/guest-rootfs.yml")
 
 def _edit_secrets_impl(ctx):
     # No tunnel; sops opens $EDITOR locally on the encrypted file.
@@ -87,8 +113,6 @@ def _edit_secrets_impl(ctx):
     )
 
 def _wipe_server_impl(ctx):
-    if inventory_check(ctx, _DEFAULT_SITE) != 0:
-        return 1
     if not ctx.args.confirm:
         ctx.std.io.stderr.write("ERROR: --confirm is required to wipe-server\n")
         return 1
@@ -110,16 +134,16 @@ def _hooks_install_impl(ctx):
     return checked_spawn(ctx, "pre-commit", ["install"], label = "pre-commit install")
 
 def _reset_identity_impl(ctx):
-    return _ansible_tunnel(ctx, "playbooks/identity-reset.yml")
+    return _ansible_remote(ctx, "playbooks/identity-reset.yml")
 
 def _reset_billing_impl(ctx):
-    return _ansible_tunnel(ctx, "playbooks/billing-reset.yml")
+    return _ansible_remote(ctx, "playbooks/billing-reset.yml")
 
 def _reset_verification_impl(ctx):
-    rc = _ansible_tunnel(ctx, "playbooks/verification-reset.yml")
+    rc = _ansible_remote(ctx, "playbooks/verification-reset.yml")
     if rc != 0:
         return rc
-    return _ansible_tunnel(
+    return _ansible_remote(
         ctx,
         "playbooks/site.yml",
         "-e", "temporal_force_schema_reset=true",
@@ -130,7 +154,7 @@ setup_dev = task(
     implementation = _setup_dev_impl,
     name = "setup-dev",
     group = ["platform"],
-    summary = "Install pinned controller dev tools (uses ansible-with-tunnel.sh once inventory exists).",
+    summary = "Install pinned controller dev tools (renders catalog.yml directly; works on a fresh checkout).",
 )
 
 setup_sops = task(
