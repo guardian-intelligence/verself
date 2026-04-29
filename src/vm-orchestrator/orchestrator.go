@@ -35,22 +35,22 @@ const (
 )
 
 type Config struct {
-	Pool            string
-	GoldenZvol      string
-	ImageDataset    string
-	WorkloadDataset string
-	KernelPath      string
-	FirecrackerBin  string
-	JailerBin       string
-	JailerRoot      string
-	JailerUID       int
-	JailerGID       int
-	Bounds          apiwire.VMResourceBounds
-	HostInterface   string
-	GuestPoolCIDR   string
-	StateDBPath     string
-	HostServiceIP   string
-	HostServicePort int
+	Pool                 string
+	ImageDataset         string
+	WorkloadDataset      string
+	DefaultBootImageRef  string
+	KernelPath           string
+	FirecrackerBin       string
+	JailerBin            string
+	JailerRoot           string
+	JailerUID            int
+	JailerGID            int
+	Bounds               apiwire.VMResourceBounds
+	HostInterface        string
+	GuestPoolCIDR        string
+	StateDBPath          string
+	HostServiceIP        string
+	HostServicePort      int
 
 	// Host-side deterministic telemetry faults are verification-only and must
 	// be empty in normal service operation.
@@ -59,21 +59,21 @@ type Config struct {
 
 func DefaultConfig() Config {
 	return Config{
-		Pool:            "vspool",
-		GoldenZvol:      "golden-zvol",
-		ImageDataset:    "images",
-		WorkloadDataset: "workloads",
-		KernelPath:      "/var/lib/verself/guest-artifacts/vmlinux",
-		FirecrackerBin:  "/usr/local/bin/firecracker",
-		JailerBin:       "/usr/local/bin/jailer",
-		JailerRoot:      "/srv/jailer",
-		JailerUID:       10000,
-		JailerGID:       10000,
-		Bounds:          apiwire.DefaultBounds,
-		GuestPoolCIDR:   defaultGuestPoolCIDR,
-		StateDBPath:     defaultStateDBPath,
-		HostServiceIP:   defaultHostServiceIP,
-		HostServicePort: defaultHostServicePort,
+		Pool:                "vspool",
+		ImageDataset:        "images",
+		WorkloadDataset:     "workloads",
+		DefaultBootImageRef: "golden",
+		KernelPath:          "/var/lib/verself/guest-artifacts/vmlinux",
+		FirecrackerBin:      "/usr/local/bin/firecracker",
+		JailerBin:           "/usr/local/bin/jailer",
+		JailerRoot:          "/srv/jailer",
+		JailerUID:           10000,
+		JailerGID:           10000,
+		Bounds:              apiwire.DefaultBounds,
+		GuestPoolCIDR:       defaultGuestPoolCIDR,
+		StateDBPath:         defaultStateDBPath,
+		HostServiceIP:       defaultHostServiceIP,
+		HostServicePort:     defaultHostServicePort,
 	}
 }
 
@@ -235,12 +235,14 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) *Orchestrator {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	if base.DefaultBootImageRef == "" {
+		base.DefaultBootImageRef = "golden"
+	}
 	o := &Orchestrator{cfg: base, logger: logger, ops: DirectPrivOps{}}
 	o.roots = zfs.Roots{
 		Pool:            base.Pool,
 		ImageDataset:    base.ImageDataset,
 		WorkloadDataset: base.WorkloadDataset,
-		GoldenZvol:      base.GoldenZvol,
 	}
 	// opts may override ops; volumes binds to whichever ops the final
 	// orchestrator carries, so build it after the option loop.
@@ -389,7 +391,12 @@ func (o *Orchestrator) BootLease(ctx context.Context, leaseID string, spec Lease
 		err = fmt.Errorf("lease ref: %w", leaseRefErr)
 		return nil, err
 	}
-	if prepErr := o.volumes.PrepareLeaseRoot(ctx, lease); prepErr != nil {
+	bootImage, bootErr := zfs.NewImage(o.roots, o.cfg.DefaultBootImageRef)
+	if bootErr != nil {
+		err = fmt.Errorf("boot image ref: %w", bootErr)
+		return nil, err
+	}
+	if prepErr := o.volumes.PrepareLeaseRoot(ctx, lease, bootImage); prepErr != nil {
 		err = prepErr
 		return nil, err
 	}

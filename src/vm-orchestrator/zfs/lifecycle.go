@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -55,35 +56,55 @@ func NewVolumeLifecycle(roots Roots, ops PrivZFS, logger *slog.Logger) *VolumeLi
 	return &VolumeLifecycle{roots: roots, ops: ops, logger: logger}
 }
 
-// PrepareLeaseRoot asserts the golden @ready snapshot exists and clones it
-// into lease.RootDataset(). On error the dataset is not created and the
-// caller has nothing to roll back.
-func (vl *VolumeLifecycle) PrepareLeaseRoot(ctx context.Context, lease Lease) error {
-	golden := GoldenSnapshot(vl.roots)
+// PrepareLeaseRoot asserts boot.Snapshot() exists and clones it into
+// lease.RootDataset(). The boot image is the same composable Image type
+// every other mount uses; the daemon's default is configured in
+// Config.DefaultBootImageRef and resolved by the caller. On error the
+// dataset is not created and the caller has nothing to roll back.
+func (vl *VolumeLifecycle) PrepareLeaseRoot(ctx context.Context, lease Lease, boot Image) error {
+	bootSnap := boot.Snapshot()
 	target := lease.RootDataset()
 
 	checkCtx, endCheck := startSpan(ctx, "vmorchestrator.zfs.snapshot_check",
 		attribute.String("lease.id", lease.ID()),
-		attribute.String("zfs.snapshot", golden.String()),
+		attribute.String("image.ref", boot.SourceRef()),
+		attribute.String("zfs.snapshot", bootSnap.String()),
 	)
-	exists, err := vl.ops.ZFSSnapshotExists(checkCtx, golden.String())
+	exists, err := vl.ops.ZFSSnapshotExists(checkCtx, bootSnap.String())
 	endCheck(err)
 	if err != nil {
-		return fmt.Errorf("check golden snapshot: %w", err)
+		return fmt.Errorf("check boot snapshot: %w", err)
 	}
 	if !exists {
-		return fmt.Errorf("golden snapshot %s does not exist", golden)
+		return fmt.Errorf("boot snapshot %s does not exist", bootSnap)
 	}
 
 	cloneCtx, endClone := startSpan(ctx, "vmorchestrator.zfs.clone",
 		attribute.String("lease.id", lease.ID()),
-		attribute.String("zfs.snapshot", golden.String()),
+		attribute.String("image.ref", boot.SourceRef()),
+		attribute.String("zfs.snapshot", bootSnap.String()),
 		attribute.String("zfs.dataset", target),
 	)
-	cloneErr := vl.ops.ZFSClone(cloneCtx, golden.String(), target, lease.ID())
+	cloneErr := vl.ops.ZFSClone(cloneCtx, bootSnap.String(), target, lease.ID())
 	endClone(cloneErr)
 	if cloneErr != nil {
 		return fmt.Errorf("clone zvol: %w", cloneErr)
+	}
+	return nil
+}
+
+// EnsureRoots creates the image and workload parent datasets if they do
+// not already exist. Idempotent; safe to call on every daemon startup. The
+// firecracker Ansible role used to ensure these via direct zfs(8) shell-out
+// — that responsibility now lives here so the privilege contract stays
+// "vm-clients socket access plus host root for the daemon."
+func (vl *VolumeLifecycle) EnsureRoots(ctx context.Context) error {
+	if err := vl.ops.ZFSEnsureFilesystem(ctx, ImageDatasetRoot(vl.roots)); err != nil {
+		return fmt.Errorf("ensure image dataset root: %w", err)
+	}
+	workloadRoot := strings.TrimSuffix(WorkloadPrefix(vl.roots), "/")
+	if err := vl.ops.ZFSEnsureFilesystem(ctx, workloadRoot); err != nil {
+		return fmt.Errorf("ensure workload dataset root: %w", err)
 	}
 	return nil
 }

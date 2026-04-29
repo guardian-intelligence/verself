@@ -1,10 +1,11 @@
 ---
-# Firecracker host setup defaults.
+# Firecracker host setup defaults. All composable images (including the
+# boot image, "golden") are seeded via vm-orchestrator-cli; the role no
+# longer carries per-image vars or hash-record paths.
 firecracker_zfs_pool: vspool
-firecracker_golden_zvol: golden-zvol
-firecracker_golden_zvol_size: 8G
 firecracker_image_dataset: images
 firecracker_workload_dataset: workloads
+firecracker_default_boot_image_ref: golden
 firecracker_jailer_root: /srv/jailer
 firecracker_jailer_uid: 10000
 firecracker_jailer_gid: 10000
@@ -12,8 +13,6 @@ firecracker_jailer_user: firecracker
 firecracker_kernel_path: /var/lib/verself/guest-artifacts/vmlinux
 firecracker_rootfs_path: /var/lib/verself/guest-artifacts/rootfs.ext4
 firecracker_guest_artifact_manifest_path: /var/lib/verself/guest-artifacts/guest-artifacts.json
-firecracker_rootfs_hash_record: /var/lib/verself/guest-artifacts/golden-zvol.rootfs.sha256
-firecracker_refresh_base_golden: false
 firecracker_zfs_arc_max_bytes: 8589934592  # 8 GiB
 firecracker_state_db_path: /var/lib/verself/vm-orchestrator/state.db
 firecracker_host_uplink_interface: ""
