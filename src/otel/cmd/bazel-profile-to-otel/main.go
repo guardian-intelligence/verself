@@ -46,30 +46,37 @@ import (
 )
 
 // keptCategories is the set of Bazel profile event categories worth
-// projecting as OTel spans. The ones we drop ("general information",
-// "build phase marker", "package creation", "Starlark*", "Conflict
-// checking", "Fetching repository", "gc notification", "bazel module
-// processing") are either span-shaped duplicates of the phases we
-// already keep, sub-millisecond debug bread crumbs, or coarse
-// build-spanning events that would double-count against the
-// per-action signal.
+// projecting as OTel spans. The dropped ones ("build phase marker",
+// "gc notification", "bazel module processing") are sub-millisecond
+// debug bread crumbs.
 //
 // A real cold-cache deploy commonly spends the bulk of its time in
 // `skyframe evaluator` (analysis) rather than `action processing`
-// (execution). Keeping both makes "where did the 54s go" answerable
-// from one query: ServiceName='bazel' GROUP BY bazel.cat.
+// (execution). The `skyframe evaluator` umbrella is monolithic — its
+// 53s "Parallel Evaluator evaluation" wall is unactionable on its own;
+// the children that explain it live in the categories below
+// ("Fetching repository", "package creation", "Starlark *", "Conflict
+// checking", "general information"). The min-duration-ms filter
+// keeps the volume sane even with 3000+ raw events of these types.
 var keptCategories = map[string]bool{
-	"action processing":          true,
-	"complete action execution":  true,
-	"critical path component":    true,
-	"remote action execution":    true,
-	"remote action upload":       true,
-	"remote action download":     true,
-	"local action execution":     true,
-	"subprocess":                 true,
-	"include scanning":           true,
-	"skyframe evaluator":         true,
-	"action dependency checking": true,
+	"action processing":            true,
+	"complete action execution":    true,
+	"critical path component":      true,
+	"remote action execution":      true,
+	"remote action upload":         true,
+	"remote action download":       true,
+	"local action execution":       true,
+	"subprocess":                   true,
+	"include scanning":             true,
+	"skyframe evaluator":           true,
+	"action dependency checking":   true,
+	"Fetching repository":          true,
+	"package creation":             true,
+	"Starlark user function call":  true,
+	"Starlark builtin function call": true,
+	"Starlark thread context":      true,
+	"Conflict checking":            true,
+	"general information":          true,
 }
 
 type profile struct {
@@ -159,6 +166,20 @@ func emitSpan(ctx context.Context, tracer trace.Tracer, base time.Time, e event)
 		spanName = "bazel.skyframe"
 	case e.Cat == "action dependency checking":
 		spanName = "bazel.action_dep_check"
+	case e.Cat == "Fetching repository":
+		spanName = "bazel.repo_fetch"
+	case e.Cat == "package creation":
+		spanName = "bazel.package"
+	case e.Cat == "Starlark user function call":
+		spanName = "bazel.starlark_user"
+	case e.Cat == "Starlark builtin function call":
+		spanName = "bazel.starlark_builtin"
+	case e.Cat == "Starlark thread context":
+		spanName = "bazel.starlark_thread"
+	case e.Cat == "Conflict checking":
+		spanName = "bazel.conflict_check"
+	case e.Cat == "general information":
+		spanName = "bazel.info." + sanitizeName(e.Name)
 	}
 
 	attrs := []attribute.KeyValue{
@@ -206,4 +227,17 @@ func readProfile(path string) (*profile, error) {
 func fail(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "bazel-profile-to-otel: "+format+"\n", args...)
 	os.Exit(1)
+}
+
+// sanitizeName turns a free-form Bazel event name into a span-name suffix.
+// Skyframe and "general information" events use camelCase identifiers like
+// "skyframeExecutor.evaluateBuildDriverKeys"; we pass those through but
+// strip whitespace and runs of punctuation so the resulting span name
+// is stable to GROUP BY in ClickHouse.
+func sanitizeName(s string) string {
+	if s == "" {
+		return "anon"
+	}
+	r := strings.NewReplacer(" ", "_", "/", "_", "\\", "_")
+	return r.Replace(s)
 }
