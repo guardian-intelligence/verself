@@ -12,7 +12,7 @@ Layers:
 2. Product API layer: service-owned Huma APIs at <service>.api.<domain>, with internal SPIFFE-only APIs separate.
 3. Generated client layer: pure transport clients, validators, DTOs, schemas.
 4. Curated SDK layer: stable hand-written exports that wrap generated clients and own auth, idempotency keys, retries, pagination, waiters, error normalization, tracing headers, and DTO conversion.
-5. Facades: console.<domain> webapp, CLI, docs examples, Terraform provider later. These use the SDK, not private service shortcuts.
+5. Facades: the verself-web app on the `<domain>` apex (console + docs + policy), CLI, docs examples, Terraform provider later. These use the SDK, not private service shortcuts.
 
 Tech Stack:
 

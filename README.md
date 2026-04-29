@@ -7,7 +7,7 @@ Features:
 - Bootstrapping: single command to go from a laptop to a bare-metal instance with all services and frontends deployed.
 - Git hosting + fast CI through Forgejo, Firecracker, and ZFS.
 - Billing layered on top of Stripe and TigerBeetle so products can move from idea to revenue without rebuilding metering, transaction processing, tax, accounts receivable, dunning, and invoicing.
-- Public surface split: `<domain>` for product docs/policy, `console.<domain>` for the authenticated browser console, `<service>.api.<domain>` for customer/SDK/CLI APIs, and protocol origins such as `git.<domain>`, `auth.<domain>`, `mail.<domain>`, and `dashboard.<domain>`.
+- Public surface split: `<domain>` serves the unified product app — authenticated browser console, public docs, and policy in one TanStack Start app — with `<service>.api.<domain>` for customer/SDK/CLI APIs, and protocol origins such as `git.<domain>`, `auth.<domain>`, `mail.<domain>`, and `dashboard.<domain>`.
 
 ## Quickstart
 
@@ -41,9 +41,9 @@ aspect persona assume platform-admin
 `aspect` (no args) to see the full task surface; `aspect <task> --help`
 documents flags.
 
-The product docs and policies live at `https://<domain>`. The authenticated
-product console lives at `https://console.<domain>`. Public service APIs use
-per-service origins such as `https://billing.api.<domain>`,
+The authenticated product console, the public docs, and the policy tree all
+live at `https://<domain>` in a single TanStack Start app. Public service APIs
+use per-service origins such as `https://billing.api.<domain>`,
 `https://sandbox.api.<domain>`, and `https://identity.api.<domain>`. See
 [`docs/architecture/public-origins.md`](docs/architecture/public-origins.md).
 

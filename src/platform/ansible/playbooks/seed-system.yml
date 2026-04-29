@@ -1325,7 +1325,7 @@
     - name: Set dev OIDC project facts
       ansible.builtin.set_fact:
         seed_system_dev_oidc_apps:
-          - name: console-dev
+          - name: verself-web-dev
             project_id: "{{ seed_system_sandbox_project_id }}"
             port: 4244
       tags: [dev-oidc]
