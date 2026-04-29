@@ -10,6 +10,7 @@ import {
   type MarkNotificationReadRequest,
   type PublishTestNotificationRequest,
 } from "~/server-fns/api";
+import { withInteractionSpan } from "~/lib/telemetry/interaction";
 import { notificationsQueryKey } from "./queries";
 
 export function useMarkNotificationReadMutation() {
@@ -17,7 +18,10 @@ export function useMarkNotificationReadMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (body: MarkNotificationReadRequest) => markNotificationRead({ data: body }),
+    mutationFn: withInteractionSpan(
+      "notifications.mark_read",
+      (body: MarkNotificationReadRequest) => markNotificationRead({ data: body }),
+    ),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: notificationsQueryKey(auth),
@@ -31,7 +35,10 @@ export function useDismissNotificationMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (body: DismissNotificationRequest) => dismissNotification({ data: body }),
+    mutationFn: withInteractionSpan(
+      "notifications.dismiss",
+      (body: DismissNotificationRequest) => dismissNotification({ data: body }),
+    ),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: notificationsQueryKey(auth),

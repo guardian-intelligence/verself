@@ -24,6 +24,12 @@ catalogs:
     '@opentelemetry/exporter-trace-otlp-http':
       specifier: ^0.214.0
       version: 0.214.0
+    '@opentelemetry/instrumentation':
+      specifier: ^0.214.0
+      version: 0.214.0
+    '@opentelemetry/instrumentation-fetch':
+      specifier: ^0.214.0
+      version: 0.214.0
     '@opentelemetry/instrumentation-http':
       specifier: ^0.214.0
       version: 0.214.0
@@ -282,6 +288,12 @@ importers:
         specifier: 'catalog:'
         version: 2.6.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/exporter-trace-otlp-http':
+        specifier: 'catalog:'
+        version: 0.214.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation':
+        specifier: 'catalog:'
+        version: 0.214.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation-fetch':
         specifier: 'catalog:'
         version: 0.214.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/resources':
@@ -1065,6 +1077,12 @@ packages:
     peerDependencies:
       '@opentelemetry/api': ^1.0.0
 
+  '@opentelemetry/instrumentation-fetch@0.214.0':
+    resolution: {integrity: sha512-KiGqvXJCO9VmEXanA85oxNBOAk94vSkOMgJfj/g7G58YxLoI+XzeMPFnuUicexinvfa39IjbG81Z9nU9rSfCDA==}
+    engines: {node: ^18.19.0 || >=20.6.0}
+    peerDependencies:
+      '@opentelemetry/api': ^1.3.0
+
   '@opentelemetry/instrumentation-http@0.214.0':
     resolution: {integrity: sha512-FlkDhZDRjDJDcO2LcSCtjRpkal1NJ8y0fBqBhTvfAR3JSYY2jAIj1kSS5IjmEBt4c3aWv+u/lqLuoCDrrKCSKg==}
     engines: {node: ^18.19.0 || >=20.6.0}
@@ -1157,6 +1175,12 @@ packages:
 
   '@opentelemetry/sdk-trace-node@2.6.1':
     resolution: {integrity: sha512-Hh2i4FwHWRFhnO2Q/p6svMxy8MPsNCG0uuzUY3glqm0rwM0nQvbTO1dXSp9OqQoTKXcQzaz9q1f65fsurmOhNw==}
+    engines: {node: ^18.19.0 || >=20.6.0}
+    peerDependencies:
+      '@opentelemetry/api': '>=1.0.0 <1.10.0'
+
+  '@opentelemetry/sdk-trace-web@2.6.1':
+    resolution: {integrity: sha512-JQevIjBlWGcKBfuwe7tdxGR/75RERsf1OOIvUzPKq86J8qhzkyjnLTTuPNPLRQF1xxEe65W5aI1Uwl6yWUGPQQ==}
     engines: {node: ^18.19.0 || >=20.6.0}
     peerDependencies:
       '@opentelemetry/api': '>=1.0.0 <1.10.0'
@@ -3814,6 +3838,16 @@ snapshots:
       '@opentelemetry/sdk-trace-base': 2.6.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.40.0
 
+  '@opentelemetry/instrumentation-fetch@0.214.0(@opentelemetry/api@1.9.1)':
+    dependencies:
+      '@opentelemetry/api': 1.9.1
+      '@opentelemetry/core': 2.6.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation': 0.214.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-trace-web': 2.6.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/semantic-conventions': 1.40.0
+    transitivePeerDependencies:
+      - supports-color
+
   '@opentelemetry/instrumentation-http@0.214.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
@@ -3952,6 +3986,12 @@ snapshots:
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/context-async-hooks': 2.6.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/core': 2.6.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-trace-base': 2.6.1(@opentelemetry/api@1.9.1)
+
+  '@opentelemetry/sdk-trace-web@2.6.1(@opentelemetry/api@1.9.1)':
+    dependencies:
+      '@opentelemetry/api': 1.9.1
       '@opentelemetry/core': 2.6.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-trace-base': 2.6.1(@opentelemetry/api@1.9.1)
 

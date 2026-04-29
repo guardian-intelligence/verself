@@ -19,6 +19,8 @@
     "@opentelemetry/context-zone": "catalog:",
     "@opentelemetry/core": "catalog:",
     "@opentelemetry/exporter-trace-otlp-http": "catalog:",
+    "@opentelemetry/instrumentation": "catalog:",
+    "@opentelemetry/instrumentation-fetch": "catalog:",
     "@opentelemetry/resources": "catalog:",
     "@opentelemetry/sdk-trace-base": "catalog:",
     "@opentelemetry/sdk-trace-web": "catalog:",
