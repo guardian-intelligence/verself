@@ -1,4 +1,42 @@
 ---
+# Cutover from the legacy console.service (apps/console at console.verself.sh)
+# to verself-web. Stop and remove the old unit + on-disk state if present so
+# port 4244 frees up before this role tries to start verself-web. Loud-fail
+# if `console` happens to be a future role's name; for now it's only the
+# retired frontend's systemd unit.
+- name: Stop legacy console.service if it exists
+  ansible.builtin.systemd:
+    name: console
+    state: stopped
+    enabled: false
+    daemon_reload: true
+  failed_when: false
+
+- name: Remove legacy console.service unit and on-disk state
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/systemd/system/console.service
+    - /etc/nftables.d/console.nft
+    - /etc/console
+    - /etc/credstore/console
+    - /var/lib/console
+    - /opt/console
+
+- name: Remove legacy console runtime user
+  ansible.builtin.user:
+    name: console
+    state: absent
+    remove: false
+  failed_when: false
+
+- name: Remove legacy console runtime group
+  ansible.builtin.group:
+    name: console
+    state: absent
+  failed_when: false
+
 - name: Create verself-web runtime group
   ansible.builtin.group:
     name: "{{ verself_web_runtime_group }}"
