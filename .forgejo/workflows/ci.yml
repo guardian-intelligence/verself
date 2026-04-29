@@ -10,39 +10,23 @@ on:
   workflow_dispatch:
 
 jobs:
-  viteplus:
-    name: Vite+ monorepo
+  build:
+    name: Build + test
     runs-on: [self-hosted, linux, x64, verself-4vcpu-ubuntu-2404]
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - name: Check out repository
         uses: https://data.forgejo.org/actions/checkout@v6
         with:
           persist-credentials: false
 
-      # scripts/bootstrap installs Bazelisk, Aspect, and Vite+ from the
-      # CUE-pinned versions. Idempotent on warm runners.
+      # Self-hosted runner; Bazel disk + repo caches are already on the host's
+      # ~/.cache/bazel-* and survive between jobs without an explicit cache step.
       - name: Bootstrap toolchain
-        run: |
-          set -euo pipefail
-          scripts/bootstrap
-          echo "$HOME/.vite-plus/bin" >> "$GITHUB_PATH"
+        run: scripts/bootstrap
 
-      - name: vp install
-        working-directory: src/viteplus-monorepo
-        run: vp install --frozen-lockfile --prefer-offline
+      - name: bazelisk build //...
+        run: bazelisk build //...
 
-      - name: vp build
-        working-directory: src/viteplus-monorepo
-        run: vp run -r --no-cache build
-
-      - name: bazelisk build (packages + per-app OTel preload)
-        run: |
-          set -euo pipefail
-          bazelisk build \
-            //src/viteplus-monorepo/packages/... \
-            //src/viteplus-monorepo/apps/verself-web:app_entry_bundle \
-            //src/viteplus-monorepo/apps/company:app_entry_bundle
-
-      - name: bazelisk test (openapi drift gate)
-        run: bazelisk test //src/viteplus-monorepo/apps/verself-web:openapi_clients_tests
+      - name: bazelisk test //...
+        run: bazelisk test //...
