@@ -8,6 +8,8 @@ import {
   ATTR_SERVICE_NAME,
   ATTR_DEPLOYMENT_ENVIRONMENT_NAME,
 } from "@opentelemetry/semantic-conventions/incubating";
+
+import { registerFetchInstrumentation } from "./fetch-instrumentation";
 import { DEPLOY_META, RESOURCE_ATTR_KEYS } from "./meta-keys";
 
 const TRACER_NAME = "verself/verself-web";
@@ -66,6 +68,21 @@ export function initBrowserTelemetry(): void {
   });
   next.register({ contextManager: new ZoneContextManager() });
   provider = next;
+
+  // FetchInstrumentation is the load-bearing wire from a user interaction to
+  // a server span: it wraps `window.fetch`, so every TanStack Start server
+  // function carries a `traceparent` header derived from the active span
+  // context. The server-side HttpInstrumentation in nitro-plugins reads that
+  // header and makes the resulting Nitro request span a child of the
+  // browser-emitted span.
+  //
+  // `registerFetchInstrumentation` is `createClientOnlyFn(...)`-wrapped:
+  // TanStack Start's compiler plugin replaces it with `() => undefined` for
+  // the SSR build (and tree-shakes the OTel CJS chain out of the SSR
+  // bundle), so this call is a no-op during server rendering. On the client
+  // it's a synchronous static-imported invocation, so there is no async
+  // window where an outbound fetch could fire without traceparent injection.
+  registerFetchInstrumentation();
 
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") {

@@ -25,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "@verself/ui/components/ui/dropdown-menu";
 import { profileQuery } from "~/features/profile/queries";
+import { withInteractionSpan } from "~/lib/telemetry/interaction";
 import {
   type AccountChrome,
   accountChromeFromProfile,
@@ -208,9 +209,9 @@ function SidebarAccountMenu() {
           <DropdownMenuSeparator />
           <DropdownMenuItem
             data-testid="shell-account-sign-out"
-            onClick={() => {
-              void redirectToSignOut();
-            }}
+            onClick={withInteractionSpan("sign_out", async () => {
+              await redirectToSignOut();
+            })}
           >
             <LogOut />
             Log out

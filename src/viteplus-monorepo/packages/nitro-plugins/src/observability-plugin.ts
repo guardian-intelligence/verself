@@ -54,6 +54,19 @@ function responseStatusCode(response: unknown, event: H3Event): number {
   return event.res.status ?? 200;
 }
 
+// Extracts the TanStack Start server-function ID out of a request URL so the
+// trace shows which fn handled the request. Server fns POST to
+// `/_serverFn/<functionId>`; anything else returns "" and we don't decorate.
+function serverFnIDFromPath(pathname: string): string {
+  const prefix = "/_serverFn/";
+  if (!pathname.startsWith(prefix)) {
+    return "";
+  }
+  const tail = pathname.slice(prefix.length);
+  const slash = tail.indexOf("/");
+  return slash === -1 ? tail : tail.slice(0, slash);
+}
+
 export default definePlugin((nitroApp) => {
   nitroApp.hooks.hook("request", (event) => {
     const h3Event = event as H3Event;
@@ -62,6 +75,24 @@ export default definePlugin((nitroApp) => {
     correlationMiddleware(h3Event);
     const context = h3Event.context as Record<string, unknown>;
     context[requestStartKey] = process.hrtime.bigint();
+
+    // HttpInstrumentation already created the SERVER span and extracted any
+    // browser-emitted `traceparent`. Decorate it with attributes that map to
+    // domain concepts — correlation ID, route path, server fn name — so the
+    // ClickHouse trace tree groups by the intent the user expressed in the
+    // browser. We never start a span here; the http instrumentation owns
+    // lifecycle.
+    const span = trace.getActiveSpan();
+    if (!span) return;
+    const correlationID =
+      h3Event.req.headers.get(correlationHeaderName.toLowerCase()) ??
+      correlationIDFromContext(context[correlationContextKey]);
+    span.setAttribute("verself.correlation_id", correlationID);
+    span.setAttribute("verself.route", h3Event.url.pathname);
+    const serverFnID = serverFnIDFromPath(h3Event.url.pathname);
+    if (serverFnID !== "") {
+      span.setAttribute("verself.server_fn", serverFnID);
+    }
   });
 
   nitroApp.hooks.hook("response", (response, event) => {
