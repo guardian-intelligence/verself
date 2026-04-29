@@ -18,7 +18,6 @@ load("//src/vm-orchestrator/guest-images:guest_image.bzl", "toolchain_ext4_image
 # version bumps without resizing.
 toolchain_ext4_image(
     name = "gh-actions-runner",
-    tarball = "@guest_image_github_actions_runner//file",
     files = {
         "etc-overlay/passwd": ":passwd",
         "etc-overlay/group": ":group",
@@ -27,8 +26,9 @@ toolchain_ext4_image(
         "etc-overlay/profile.d/verself-actions-runner.sh": ":profile-actions-runner.sh",
         ".verself-writable-overlays": ":writable-overlays",
     },
-    size_mib = 1024,
     label = "ghactions",
+    size_mib = 1024,
+    tarball = "@guest_image_github_actions_runner//file",
 )
 
 exports_files([
