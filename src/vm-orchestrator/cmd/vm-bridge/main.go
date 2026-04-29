@@ -22,6 +22,18 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// bridgeFaultMode names a deterministic protocol-violation profile the
+// bridge can be asked to perform, used to drive verification protocols
+// against the host's protocol-checking code paths. Production builds
+// always parse this as bridgeFaultNone; only the verself_fault_injection
+// build tag activates the actual fault profiles.
+type bridgeFaultMode string
+
+const (
+	bridgeFaultNone          bridgeFaultMode = ""
+	bridgeFaultResultSeqZero bridgeFaultMode = "result_seq_zero"
+)
+
 const (
 	logPrefix            = "[vm-bridge]"
 	prSetChildSubreaper  = 36
@@ -32,13 +44,6 @@ const (
 	vmGuestTelemetryBin  = "/usr/local/bin/vm-guest-telemetry"
 	vmGuestTelemetryPort = 10790
 	bridgeFaultEnvVar    = "VERSELF_VM_BRIDGE_FAULT"
-)
-
-type bridgeFaultMode string
-
-const (
-	bridgeFaultNone          bridgeFaultMode = ""
-	bridgeFaultResultSeqZero bridgeFaultMode = "result_seq_zero"
 )
 
 func main() {
@@ -129,16 +134,6 @@ func kernelUptimeMS() int64 {
 		return -1
 	}
 	return ts.Sec*1000 + ts.Nsec/int64(time.Millisecond)
-}
-
-func parseBridgeFaultMode(raw string) (bridgeFaultMode, error) {
-	mode := bridgeFaultMode(strings.TrimSpace(raw))
-	switch mode {
-	case bridgeFaultNone, bridgeFaultResultSeqZero:
-		return mode, nil
-	default:
-		return bridgeFaultNone, fmt.Errorf("unsupported vm-bridge fault mode: %q", raw)
-	}
 }
 
 func mountVirtualFilesystems() {

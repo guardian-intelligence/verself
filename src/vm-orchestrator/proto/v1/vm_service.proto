@@ -343,8 +343,8 @@ enum SeedOutcome {
 }
 
 message SeedImageRequest {
-  // image_ref is the composable image identifier (e.g. "golden",
-  // "sticky-empty"). Same alphabet as other service-authorized refs.
+  // image_ref is the composable image identifier (e.g. "substrate",
+  // "gh-actions-runner"). Same alphabet as other service-authorized refs.
   string image_ref = 1;
 
   SeedStrategy strategy = 2;

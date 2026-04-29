@@ -75,37 +75,6 @@ type metricsReq struct {
 
 type entropyReq struct{}
 
-// The snapshot helpers below are intentionally reserved for the next runtime
-// stage. The current cold-boot path does not call them, but restore support
-// will build on this exact Firecracker v1.15.0 API surface.
-type vmStateReq struct {
-	State string `json:"state"`
-}
-
-type snapshotCreateReq struct {
-	MemFilePath  string `json:"mem_file_path"`
-	SnapshotPath string `json:"snapshot_path"`
-	SnapshotType string `json:"snapshot_type,omitempty"`
-}
-
-type memoryBackend struct {
-	BackendType string `json:"backend_type"`
-	BackendPath string `json:"backend_path"`
-}
-
-type networkOverride struct {
-	IfaceID     string `json:"iface_id"`
-	HostDevName string `json:"host_dev_name"`
-}
-
-type snapshotLoadReq struct {
-	SnapshotPath     string            `json:"snapshot_path"`
-	MemBackend       memoryBackend     `json:"mem_backend"`
-	ResumeVM         bool              `json:"resume_vm"`
-	TrackDirtyPages  bool              `json:"track_dirty_pages,omitempty"`
-	NetworkOverrides []networkOverride `json:"network_overrides,omitempty"`
-}
-
 // --- API methods ---
 
 func (c *apiClient) putBootSource(ctx context.Context, kernelPath, bootArgs string) error {
@@ -157,31 +126,6 @@ func (c *apiClient) putEntropy(ctx context.Context) error {
 	return c.put(ctx, "/entropy", entropyReq{})
 }
 
-func (c *apiClient) patchVMState(ctx context.Context, state string) error {
-	return c.patch(ctx, "/vm", vmStateReq{State: state})
-}
-
-func (c *apiClient) createSnapshot(ctx context.Context, snapshotPath, memFilePath, snapshotType string) error {
-	req := snapshotCreateReq{
-		MemFilePath:  memFilePath,
-		SnapshotPath: snapshotPath,
-		SnapshotType: snapshotType,
-	}
-	return c.put(ctx, "/snapshot/create", req)
-}
-
-func (c *apiClient) loadSnapshot(ctx context.Context, snapshotPath, memFilePath string, networkOverrides []networkOverride, resumeVM bool) error {
-	return c.put(ctx, "/snapshot/load", snapshotLoadReq{
-		SnapshotPath: snapshotPath,
-		MemBackend: memoryBackend{
-			BackendType: "File",
-			BackendPath: memFilePath,
-		},
-		ResumeVM:         resumeVM,
-		NetworkOverrides: networkOverrides,
-	})
-}
-
 func (c *apiClient) startInstance(ctx context.Context) error {
 	return c.put(ctx, "/actions", actionReq{ActionType: "InstanceStart"})
 }
@@ -189,10 +133,6 @@ func (c *apiClient) startInstance(ctx context.Context) error {
 // put sends a PUT request with JSON body.
 func (c *apiClient) put(ctx context.Context, path string, body interface{}) error {
 	return c.doJSON(ctx, http.MethodPut, path, body)
-}
-
-func (c *apiClient) patch(ctx context.Context, path string, body interface{}) error {
-	return c.doJSON(ctx, http.MethodPatch, path, body)
 }
 
 func (c *apiClient) doJSON(ctx context.Context, method, path string, body interface{}) error {
