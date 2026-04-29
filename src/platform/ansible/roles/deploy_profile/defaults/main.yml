@@ -12,3 +12,11 @@ deploy_profile_staging_dir: /opt/verself/staging
 
 # PostgreSQL major version (determines apt package and binary paths)
 deploy_profile_postgresql_version: "16"
+
+# Path the controller-side bazelisk build writes its Chrome-trace profile
+# to. The follow-up `Emit Bazel build profile as OTel spans` task reads
+# this file and replays each action as an OTel span via the controller
+# agent, so the otherwise-opaque ~50s `Build topology Go artifacts`
+# ansible.task span is broken down per Bazel target / mnemonic in
+# default.otel_traces.
+deploy_profile_bazel_profile_path: "{{ deploy_profile_repo_root }}/.cache/bazel-build-go-profile.json.gz"
