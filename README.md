@@ -9,58 +9,50 @@ Features:
 - Billing layered on top of Stripe and TigerBeetle so products can move from idea to revenue without rebuilding metering, transaction processing, tax, accounts receivable, dunning, and invoicing.
 - Public surface split: `<domain>` for product docs/policy, `console.<domain>` for the authenticated browser console, `<service>.api.<domain>` for customer/SDK/CLI APIs, and protocol origins such as `git.<domain>`, `auth.<domain>`, `mail.<domain>`, and `dashboard.<domain>`.
 
-## Quick Start
-
-### 1. Bootstrap Bazelisk and Aspect
+## Quickstart
 
 ```bash
+# 1. Toolchain (one time per controller). Installs pinned Bazelisk + Aspect
+#    and symlinks /usr/local/bin/bazel -> bazelisk so AXL's ctx.bazel.* works.
 ./scripts/bootstrap
 aspect doctor
-```
 
-The bootstrap script installs the pinned Bazelisk + Aspect CLI binaries and
-symlinks `/usr/local/bin/bazel` to bazelisk so AXL's `ctx.bazel.*` APIs flow
-through the version-pinned downloader. `aspect doctor` then verifies the
-toolchain pins (aspect, bazelisk, `.bazelversion`, `MODULE.bazel`) without
-requiring the full controller toolchain.
+# 2. Tell OpenTofu where to provision (one time per environment).
+cp src/platform/terraform/terraform.tfvars.example.json \
+   src/platform/terraform/terraform.tfvars.json
+$EDITOR src/platform/terraform/terraform.tfvars.json   # set project_id
 
-### 2. Provision bare metal
+# 3. Provision bare metal + render inventory.
+aspect platform setup-sops
+aspect platform provision
 
-```bash
-# Create your tfvars (one-time)
-cp src/platform/terraform/terraform.tfvars.example.json src/platform/terraform/terraform.tfvars.json
-# Edit terraform.tfvars.json — set project_id to your Latitude.sh project
+# 4. Deploy. Idempotent; safe to repeat. Scope with --tags=caddy,company,...
+aspect deploy
 
-# Provision server + generate Ansible inventory
-cd src/platform/ansible && ansible-playbook playbooks/provision.yml
-```
-
-This provisions a bare metal server via OpenTofu and auto-generates the gitignored `src/platform/ansible/inventory/hosts.ini` from the outputs. The Latitude.sh auth token is read from SOPS-encrypted secrets.
-
-### 3. Deploy
-
-```bash
-cd src/platform/ansible && ansible-playbook playbooks/site.yml
-```
-
-Idempotent, no wipe. Safe to run repeatedly. Deploy a single role with `--tags`:
-
-```bash
-cd src/platform/ansible && ansible-playbook playbooks/site.yml --tags caddy
-```
-
-### 4. Seed and assume rehearsal personas
-
-After deploy, seed the platform tenant, Acme tenant, billing state, mailboxes,
-and auth fixtures:
-
-```bash
+# 5. Seed tenants, billing, mailboxes, and auth fixtures.
 src/platform/scripts/ansible-with-tunnel.sh playbooks/seed-system.yml
+
+# 6. Mint a persona env file and start working.
+aspect persona assume platform-admin
 ```
 
-`aspect persona assume <name>` is the operator/agent shortcut for minting
-short-lived, project-scoped Zitadel tokens from the deployed credential store
-and writing a `0600` env file under `smoke-artifacts/personas/`.
+`aspect doctor` verifies the toolchain pins (aspect, bazelisk, `.bazelversion`,
+`MODULE.bazel`) without needing the full controller toolchain installed. Run
+`aspect` (no args) to see the full task surface, or read
+`docs/architecture/aspect-cli-migration.md` for the durable command list.
+
+The product docs and policies live at `https://<domain>`. The authenticated
+product console lives at `https://console.<domain>`. Public service APIs use
+per-service origins such as `https://billing.api.<domain>`,
+`https://sandbox.api.<domain>`, and `https://identity.api.<domain>`. See
+[`docs/architecture/public-origins.md`](docs/architecture/public-origins.md).
+
+## Personas
+
+`aspect persona assume <name>` mints a short-lived, project-scoped Zitadel
+token from the deployed credential store and writes a `0600` env file under
+`smoke-artifacts/personas/`. `platform-admin` is the dogfooding org for
+internal platform operations; `acme-*` are the customer rehearsal personas.
 
 ```bash
 aspect persona assume platform-admin
@@ -69,39 +61,33 @@ aspect persona assume acme-member
 aspect persona assume platform-admin --output=/tmp/platform-admin.env
 ```
 
-`platform-admin` is our internal organization for dogfooding internal platform operations.
+## Billing fixtures
 
-Use the helper below to move a seeded user's billing fixture state quickly when
-you need to run end-to-end scenarios against a known plan tier or prepaid
-balance:
+`aspect persona user-state` parks a seeded user at a known plan tier or prepaid
+balance for end-to-end scenarios. The helper builds and runs
+`src/billing-service/cmd/billing-set-user-state` on the target node so contract,
+cycle, entitlement, grant, clock override, and billing event rows use the same
+ID rules as billing-service. It is an operator/test fixture, not a customer API.
 
 ```bash
-DOMAIN="$(cd src/platform && awk -F'"' '/^verself_domain:/{print $2}' ansible/group_vars/all/main.yml)"
+DOMAIN="$(awk -F'"' '/^verself_domain:/{print $2}' src/platform/ansible/group_vars/all/main.yml)"
 aspect persona user-state --email="ceo@${DOMAIN}" --org=platform --state=free
-aspect persona user-state --email="ceo@${DOMAIN}" --org=platform --state=hobby
 aspect persona user-state --email="ceo@${DOMAIN}" --org=platform --state=pro --balance-cents=10000
-aspect persona user-state --email=ceo@example.com --org-id=123 --plan-id=sandbox-pro --balance-units=500000000 --business-now=2026-04-13T12:00:00Z
+aspect persona user-state --email=ceo@example.com --org-id=123 --plan-id=sandbox-pro \
+    --balance-units=500000000 --business-now=2026-04-13T12:00:00Z
 ```
 
-The helper is implemented at `src/platform/scripts/set-user-state.sh`. It builds
-and runs `src/billing-service/cmd/billing-set-user-state` on the target node so
-contract, cycle, entitlement, grant, clock override, and billing event rows use
-the same ID rules as billing-service. It is an operator/test fixture helper, not
-a customer API.
+Useful flags: `--email` (required), `--org` or `--org-id` (required), `--state`,
+`--plan-id`, `--balance-units` or `--balance-cents`, `--business-now`,
+`--product-id` (default `sandbox`), `--overage-policy`, `--trust-tier`,
+`--org-name`.
 
-Useful flags:
-
-- `--email` (required; written to `orgs.billing_email`)
-- `--org` or `--org-id` (required; `--org=platform` resolves the platform billing org)
-- `--product-id` (default: `sandbox`)
-- `--state` (`free`, `hobby`, `pro`, or another plan tier)
-- `--plan-id` (exact plan id; `free`/`none` clears paid contracts)
-- `--balance-units` or `--balance-cents` (exact account purchase balance)
-- `--business-now` (RFC3339/RFC3339Nano org-product billing clock override)
-- `--overage-policy`, `--trust-tier`, `--org-name`
-
-Use `billing-clock` when you want to move billing time without resetting the
-user's contract or balances:
+`aspect billing clock` moves billing time without resetting the user's contract
+or balances. The `--wall-clock` form is the repair path for browser and
+operator testing: it clears the override, voids current test cycles that no
+longer overlap wall-clock time, preserves paid plan state and account purchase
+balances, rematerializes current-period entitlements, and emits
+`billing_clock_reset_to_wall_clock`.
 
 ```bash
 aspect billing clock --org-id=123
@@ -111,17 +97,7 @@ aspect billing clock --org-id=123 --clear --reason=e2e-cleanup
 aspect billing clock --org=platform --wall-clock --reason=e2e-cleanup
 ```
 
-The clock helper builds and runs `src/billing-service/cmd/billing-clock` on the
-target node. It calls billing-service code paths against billing PostgreSQL, so
-clock changes can synchronously apply due cycle rollover, scheduled
-downgrades/cancellations, current-period grants, and corresponding
-`billing_events`. The `--wall-clock` form is the fixture repair path for browser
-and operator testing: it clears the org/product clock override, voids current
-test cycles that no longer overlap wall-clock time, preserves paid plan state
-and account purchase balances, rematerializes current-period entitlements, and
-emits `billing_clock_reset_to_wall_clock`.
-
-Use the billing inspection wrappers when reviewing live state after a test:
+Inspect live billing state after a test:
 
 ```bash
 aspect billing state --org=platform
@@ -132,43 +108,28 @@ aspect db pg query --db=billing --query='SELECT current_database()'
 src/platform/scripts/verify-console-billing-flow.sh
 ```
 
-The deployed billing Playwright flow lives at
-`src/platform/scripts/verify-console-billing-flow.sh` and writes artifacts under
-`smoke-artifacts/console-billing/<run-id>/`. If the browser test exits before it
-writes a structured run JSON, the wrapper still collects a time-windowed
-fallback evidence bundle from ClickHouse and billing PostgreSQL.
+`scripts/verify-console-billing-flow.sh` runs the deployed billing Playwright
+flow and writes artifacts under `smoke-artifacts/console-billing/<run-id>/`. If
+the browser test exits before it writes a structured run JSON, the wrapper
+still collects a time-windowed fallback evidence bundle from ClickHouse and
+billing PostgreSQL.
 
-Billing naming is intentionally split:
+Billing naming is intentionally split: `--product-id=sandbox` is the product
+catalog/metering ID, `--db=billing` is the billing-service PostgreSQL database,
+`--db=sandbox_rental` is the sandbox-rental-service database.
 
-- `--product-id=sandbox` is the product catalog/product-metering ID.
-- `--db=billing` is the billing-service PostgreSQL database.
-- `--db=sandbox_rental` is the sandbox-rental-service PostgreSQL database.
+## Logging in
 
-Use the PostgreSQL wrapper for direct inspection:
-
-```bash
-aspect db pg query --db=billing --query='SELECT count(*) FROM orgs'
-aspect db pg query --db=billing --query='SELECT event_type, count(*) FROM billing_events GROUP BY event_type ORDER BY event_type'
-aspect db pg query --db=sandbox_rental --query='SELECT count(*) FROM executions'
-```
-
-### 5. Log in
+Normal browser login goes through Zitadel at `https://auth.<domain>`. Grafana
+keeps a local bootstrap admin for recovery only:
 
 ```bash
-# Grafana keeps a local bootstrap admin for recovery; normal login uses Zitadel.
 ssh ubuntu@<server-ip> 'sudo cat /etc/credstore/grafana/admin-password'
 ```
 
-Open `https://dashboard.<domain>` for Grafana. Use `https://<ip>` only for
-direct host access when DNS is not configured (self-signed cert for IP
-addresses, auto Let's Encrypt for domains).
-
-The product docs and policies live at `https://<domain>`, and the authenticated
-product console lives at `https://console.<domain>`. Public service APIs use
-service-owned API origins such as
-`https://billing.api.<domain>`, `https://sandbox.api.<domain>`, and
-`https://identity.api.<domain>`. See
-[`docs/architecture/public-origins.md`](docs/architecture/public-origins.md).
+Open `https://dashboard.<domain>` for Grafana. Use `https://<ip>` for direct
+host access only when DNS is not configured (self-signed cert for IPs, auto
+Let's Encrypt for domains).
 
 ## Snapshot-Backed VM Farm
 
