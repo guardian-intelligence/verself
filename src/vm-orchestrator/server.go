@@ -131,17 +131,23 @@ func NewAPIServer(cfg Config, logger *slog.Logger) (*APIServer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open host state ledger %s: %w", base.StateDBPath, err)
 	}
+	if base.DefaultBootImageRef == "" {
+		base.DefaultBootImageRef = "golden"
+	}
 	server := &APIServer{
 		cfg: base,
 		roots: zfs.Roots{
 			Pool:            base.Pool,
 			ImageDataset:    base.ImageDataset,
 			WorkloadDataset: base.WorkloadDataset,
-			GoldenZvol:      base.GoldenZvol,
 		},
 		logger: logger,
 		state:  state,
 		actors: map[string]*vmActor{},
+	}
+	if err := server.ensureZFSRoots(context.Background()); err != nil {
+		_ = state.close()
+		return nil, err
 	}
 	if err := server.recoverNetworkState(context.Background()); err != nil {
 		_ = state.close()
@@ -152,6 +158,23 @@ func NewAPIServer(cfg Config, logger *slog.Logger) (*APIServer, error) {
 		return nil, err
 	}
 	return server, nil
+}
+
+// ensureZFSRoots creates pool/<images> and pool/<workloads> if they do not
+// already exist. The firecracker Ansible role no longer issues these
+// `zfs create` commands directly; the daemon owns that responsibility on
+// every startup so a fresh pool requires no operator intervention beyond
+// `zpool create`.
+func (s *APIServer) ensureZFSRoots(ctx context.Context) error {
+	ensureCtx, end := startStepSpan(ctx, "vmorchestrator.zfs.ensure_roots",
+		attribute.String("zfs.pool", s.roots.Pool),
+		attribute.String("zfs.image_dataset", s.roots.ImageDataset),
+		attribute.String("zfs.workload_dataset", s.roots.WorkloadDataset),
+	)
+	volumes := zfs.NewVolumeLifecycle(s.roots, DirectPrivOps{}, s.logger)
+	err := volumes.EnsureRoots(ensureCtx)
+	end(err)
+	return err
 }
 
 func (s *APIServer) recoverNetworkState(ctx context.Context) error {
@@ -684,9 +707,11 @@ func (s *APIServer) GetCapacity(ctx context.Context, _ *vmrpc.GetCapacityRequest
 	if total > leasesHeld {
 		available = total - leasesHeld
 	}
-	rootfsBytes, err := zfs.Volsize(ctx, zfs.GoldenSnapshot(s.roots).Dataset())
-	if err != nil {
-		rootfsBytes = 0
+	var rootfsBytes uint64
+	if bootImage, bootErr := zfs.NewImage(s.roots, s.cfg.DefaultBootImageRef); bootErr == nil {
+		if size, sizeErr := zfs.Volsize(ctx, bootImage.Dataset()); sizeErr == nil {
+			rootfsBytes = size
+		}
 	}
 	return &vmrpc.GetCapacityResponse{
 		GuestPoolCidr: s.cfg.GuestPoolCIDR,

@@ -1,26 +1,19 @@
 ---
 argument_specs:
   main:
-    short_description: "Firecracker host setup: KVM, jailer, golden zvol, vm-orchestrator"
+    short_description: "Firecracker host setup: KVM, jailer, vm-orchestrator daemon, image seeding"
     description:
       - "Installs Firecracker + jailer from generated topology catalog vars, configures KVM,"
-      - "creates the jailer user/group, sets up the golden zvol lifecycle,"
-      - "builds and deploys vm-orchestrator, and verifies guest artifacts."
+      - "creates the jailer user/group, deploys the vm-orchestrator daemon, and runs the"
+      - "vm-orchestrator-seed oneshot unit to materialize composable image zvols (including"
+      - "the boot image) via the SeedImage RPC. The role does not issue zfs(8), dd, or"
+      - "mkfs commands directly; the daemon owns image lifecycle behind the vm-clients"
+      - "socket-group capability boundary."
     options:
       firecracker_zfs_pool:
         type: str
         default: vspool
-        description: "ZFS pool for golden zvols and ephemeral VM job clones."
-
-      firecracker_golden_zvol:
-        type: str
-        default: golden-zvol
-        description: "Name of the golden zvol within firecracker_zfs_pool."
-
-      firecracker_golden_zvol_size:
-        type: str
-        default: "8G"
-        description: "Size of the golden zvol. Must include unit (e.g. 4G, 8G)."
+        description: "ZFS pool for composable image zvols and ephemeral VM job clones."
 
       firecracker_image_dataset:
         type: str
@@ -31,6 +24,11 @@ argument_specs:
         type: str
         default: workloads
         description: "ZFS dataset under firecracker_zfs_pool for ephemeral VM job clones."
+
+      firecracker_default_boot_image_ref:
+        type: str
+        default: golden
+        description: "Composable image ref the daemon clones as the boot disk for new leases."
 
       firecracker_jailer_root:
         type: path
@@ -66,18 +64,6 @@ argument_specs:
         type: path
         default: /var/lib/verself/guest-artifacts/guest-artifacts.json
         description: "Path to the guest artifact manifest JSON."
-
-      firecracker_rootfs_hash_record:
-        type: path
-        default: /var/lib/verself/guest-artifacts/golden-zvol.rootfs.sha256
-        description: "File recording the SHA256 of the rootfs written to the golden zvol."
-
-      firecracker_refresh_base_golden:
-        type: bool
-        default: false
-        description: >-
-          Force golden zvol refresh even if the rootfs hash matches.
-          WARNING: destroys ephemeral VM job clones.
 
       firecracker_zfs_arc_max_bytes:
         type: int

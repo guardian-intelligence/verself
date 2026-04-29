@@ -74,6 +74,12 @@ config: s.#InstanceConfig & {
 		// catalog is heading.
 		images: [
 			{
+				ref:         "golden"
+				size_bytes:  8589934592 // 8 GiB
+				strategy:    "dd_from_file"
+				source_path: "/var/lib/verself/guest-artifacts/rootfs.ext4"
+			},
+			{
 				ref:              "sticky-empty"
 				size_bytes:       8589934592 // 8 GiB
 				strategy:         "mkfs_ext4"

@@ -8,6 +8,12 @@ console_domain: '{{ console_subdomain }}.{{ verself_domain }}'
 console_subdomain: console
 firecracker_guest_pool_cidr: 172.16.0.0/16
 firecracker_seed_images:
+  - filesystem_label: ""
+    ref: golden
+    size_bytes: 8589934592
+    source_path: /var/lib/verself/guest-artifacts/rootfs.ext4
+    strategy: dd_from_file
+    volblocksize: 16K
   - filesystem_label: stickydisk
     ref: sticky-empty
     size_bytes: 8589934592

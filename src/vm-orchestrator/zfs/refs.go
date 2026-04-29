@@ -11,7 +11,6 @@ type Roots struct {
 	Pool            string // e.g. "vspool"
 	ImageDataset    string // e.g. "images"
 	WorkloadDataset string // e.g. "workloads"
-	GoldenZvol      string // e.g. "golden-zvol"
 }
 
 // Image refs an immutable composable base by service-authorized source ref.
@@ -91,15 +90,6 @@ func WorkloadPrefix(roots Roots) string {
 // datasets live. ZFSEnsureFilesystem on this path creates it if missing.
 func ImageDatasetRoot(roots Roots) string {
 	return roots.Pool + "/" + roots.ImageDataset
-}
-
-// GoldenSnapshot is the ready snapshot of the golden zvol used as the boot
-// clone source.
-func GoldenSnapshot(roots Roots) Snapshot {
-	return Snapshot{
-		dataset: roots.Pool + "/" + roots.GoldenZvol,
-		name:    "ready",
-	}
 }
 
 // Snapshot is a typed dataset@name pair. Constructed only via Image, Lease,
