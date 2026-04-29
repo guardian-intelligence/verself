@@ -189,7 +189,7 @@ func WorkloadIdentities(loaded load.Loaded) ([]map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	trustDomain := loaded.Spire.Trust_domain
+	trustDomain := loaded.Config.Spire.TrustDomain
 	var out []map[string]any
 	for _, component := range components {
 		identities, err := NestedFields(component, "identities")

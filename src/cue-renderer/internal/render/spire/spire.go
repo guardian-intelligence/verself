@@ -23,31 +23,31 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 		return err
 	}
 
-	cfg := loaded.Spire
-	serverPort, err := endpointPort(loaded, cfg.Server_component, cfg.Server_endpoint)
+	spireIdentities := make([]map[string]any, 0, len(identities))
+	serverPort, err := endpointPort(loaded, "spire_server", "api")
 	if err != nil {
 		return err
 	}
-	bundlePort, err := endpointPort(loaded, cfg.Bundle_endpoint_component, cfg.Bundle_endpoint_endpoint)
+	bundlePort, err := endpointPort(loaded, "spire_bundle_endpoint", "bundle")
 	if err != nil {
 		return err
 	}
-	bundleURL := fmt.Sprintf("%s://%s:%d", cfg.Bundle_endpoint_scheme, cfg.Bundle_endpoint_bind_address, bundlePort)
+	cfg := loaded.Config.Spire
+	bundleURL := fmt.Sprintf("https://%s:%d", cfg.BundleEndpointBindAddress, bundlePort)
 	payload := map[string]any{
-		"spire_trust_domain":                 cfg.Trust_domain,
-		"spire_server_bind_address":          cfg.Server_bind_address,
+		"spire_trust_domain":                 cfg.TrustDomain,
+		"spire_server_bind_address":          cfg.ServerBindAddress,
 		"spire_server_bind_port":             serverPort,
-		"spire_server_socket_path":           cfg.Server_socket_path,
-		"spire_agent_socket_path":            cfg.Agent_socket_path,
-		"spire_workload_group":               cfg.Workload_group,
-		"spire_agent_id":                     cfg.Agent_id,
-		"spire_bundle_endpoint_bind_address": cfg.Bundle_endpoint_bind_address,
+		"spire_server_socket_path":           cfg.ServerSocketPath,
+		"spire_agent_socket_path":            cfg.AgentSocketPath,
+		"spire_workload_group":               cfg.WorkloadGroup,
+		"spire_agent_id":                     "spiffe://" + cfg.TrustDomain + cfg.AgentIDPath,
+		"spire_bundle_endpoint_bind_address": cfg.BundleEndpointBindAddress,
 		"spire_bundle_endpoint_bind_port":    bundlePort,
 		"spire_jwt_bundle_endpoint_url":      bundleURL,
 		"spire_jwt_issuer_url":               bundleURL,
 	}
 
-	spireIdentities := make([]map[string]any, 0, len(identities))
 	for _, identity := range identities {
 		spireIdentities = append(spireIdentities, map[string]any{
 			"key":                   identity["key"],
@@ -76,14 +76,7 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 		if err != nil {
 			return err
 		}
-		// The CUE binding pins edge.auth to a spiffe_auth_kinds key, so an
-		// unknown value would have failed evaluation. The renderer just
-		// reads the spiffe_bearing bit.
-		kind, ok := loaded.SpiffeAuthKinds[auth]
-		if !ok {
-			return fmt.Errorf("edge auth %q is not in spiffe_auth_kinds (catalog out of sync with topology binding)", auth)
-		}
-		if !kind.Spiffe_bearing {
+		if auth != "spiffe_mtls" {
 			continue
 		}
 		spiffeEdges = append(spiffeEdges, map[string]any{

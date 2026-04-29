@@ -217,10 +217,6 @@ type Edge struct {
 
 	To Target `json:"to"`
 
-	// auth is constrained to a key of the spiffe_auth_kinds catalog at
-	// instance scope. The catalog and per-kind metadata live in
-	// concerns/spire/spire.cue; schema declares only that the field
-	// exists and is a string.
 	Auth string `json:"auth"`
 
 	Purpose string `json:"purpose"`
@@ -376,6 +372,22 @@ type FirecrackerSeedImage struct {
 	FilesystemLabel string `json:"filesystem_label"`
 }
 
+type SpireConfig struct {
+	TrustDomain string `json:"trust_domain"`
+
+	ServerBindAddress Host `json:"server_bind_address"`
+
+	ServerSocketPath string `json:"server_socket_path"`
+
+	AgentSocketPath string `json:"agent_socket_path"`
+
+	WorkloadGroup string `json:"workload_group"`
+
+	AgentIDPath string `json:"agent_id_path"`
+
+	BundleEndpointBindAddress Host `json:"bundle_endpoint_bind_address"`
+}
+
 type InstanceConfig struct {
 	// Typed config consumed by Go renderers. Each typed section has a
 	// dedicated projection in internal/render/<name>/ and may declare its
@@ -389,12 +401,7 @@ type InstanceConfig struct {
 
 	Firecracker FirecrackerConfig `json:"firecracker"`
 
-	// spire is open here; the typed shape lives in
-	// concerns/spire/spire.cue and is bound at instance scope so schema
-	// stays oblivious to SPIRE-specific fields. Renderers consume the
-	// typed value via load.Loaded.Spire (decoded separately), not via
-	// Config.Spire.
-	Spire any/* CUE top */ `json:"spire"`
+	Spire SpireConfig `json:"spire"`
 
 	// ansible_vars is the explicit Ansible-vars surface. Every key here
 	// becomes a top-level group_vars/all entry; the ops renderer projects

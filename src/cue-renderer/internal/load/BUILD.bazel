@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/verself/cue-renderer/internal/load",
     visibility = ["//src/cue-renderer:__subpackages__"],
     deps = [
-        "//src/cue-renderer/concerns/spire",
         "//src/cue-renderer/schema",
         "@org_cuelang_go//cue",
         "@org_cuelang_go//cue/cuecontext",

@@ -1,15 +1,6 @@
 package topology
 
-import (
-	s "github.com/verself/cue-renderer/schema"
-	sp "github.com/verself/cue-renderer/concerns/spire"
-)
-
-// spiffe_auth_kinds re-exposes the catalog at package scope so the
-// renderer can read it via a stable lookup path. The catalog itself
-// lives in concerns/spire/spire.cue; this binding is composition,
-// not a fact.
-spiffe_auth_kinds: sp.kinds
+import s "verself.sh/cue-renderer/schema"
 
 #ServiceProbes: {
 	healthz: {path: "/healthz"}
@@ -118,11 +109,6 @@ spiffe_auth_kinds: sp.kinds
 }
 
 topology: s.#Topology & {
-	// Pin every edge's auth value to a spiffe_auth_kinds catalog key.
-	// An unknown auth kind fails CUE evaluation rather than silently
-	// passing through to the spire renderer's lookup.
-	edges: [...{auth: or([for k, _ in spiffe_auth_kinds {k}])}]
-
 	gateways: {
 		public_caddy: {
 			kind: "caddy"
