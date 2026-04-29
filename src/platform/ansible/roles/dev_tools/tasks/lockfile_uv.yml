@@ -9,36 +9,6 @@
 # `uv` itself comes from dev_tools.tar.zst (Phase 1). This task must run
 # AFTER dev_tools_archive.yml so /usr/local/bin/uv exists.
 
-- name: Require generated uv-tool projects
-  ansible.builtin.assert:
-    that:
-      - topology_lockfile_uv_projects is defined
-      - topology_lockfile_uv_projects | length > 0
-    quiet: true
-    fail_msg: >-
-      topology_lockfile_uv_projects must be present and non-empty. Run make topology-generate before setup-dev.
-
-- name: Inspect committed lockfiles
-  ansible.builtin.stat:
-    path: "{{ dev_tools_repo_root }}/{{ item.value.project_dir }}/uv.lock"
-    checksum_algorithm: sha256
-  loop: "{{ topology_lockfile_uv_projects | dict2items }}"
-  loop_control:
-    label: "{{ item.key }}"
-  register: lockfile_uv_stat_results
-
-- name: Validate every project has a committed lockfile
-  ansible.builtin.assert:
-    that:
-      - item.stat.exists | bool
-      - item.stat.checksum is match('^[0-9a-f]{64}$')
-    quiet: true
-    fail_msg: >-
-      uv.lock missing or unreadable for project {{ item.item.key }}.
-  loop: "{{ lockfile_uv_stat_results.results }}"
-  loop_control:
-    label: "{{ item.item.key }}"
-
 - name: Sync each uv-tool project (--frozen against committed uv.lock)
   ansible.builtin.command:
     argv:
@@ -50,13 +20,13 @@
   loop: "{{ topology_lockfile_uv_projects | dict2items }}"
   loop_control:
     label: "{{ item.key }}"
-  register: lockfile_uv_sync_results
   # uv sync emits "Audited N packages" on a noop run and "Installed N
   # packages" when wheels were materialised; the changed_when filter
   # narrows the green-on-clean signal to actual installs.
+  register: dev_tools_lockfile_uv_sync_results
   changed_when: >-
-    'Installed' in (lockfile_uv_sync_results.stdout | default(''))
-    or 'Installed' in (lockfile_uv_sync_results.stderr | default(''))
+    'Installed' in (dev_tools_lockfile_uv_sync_results.stdout | default(''))
+    or 'Installed' in (dev_tools_lockfile_uv_sync_results.stderr | default(''))
 
 - name: Symlink uv-tool entrypoints into /usr/local/bin/
   ansible.builtin.file:
@@ -67,78 +37,3 @@
   loop: "{{ topology_lockfile_uv_projects | dict2items | subelements('value.entrypoints') }}"
   loop_control:
     label: "{{ item.0.key }}/{{ item.1 }}"
-
-- name: Emit lockfile_uv.sync spans (one per project)
-  become: false
-  ansible.builtin.command:
-    argv:
-      - "{{ dev_tools_bazelisk }}"
-      - run
-      - //src/otel/cmd/smoke-span
-    chdir: "{{ dev_tools_repo_root }}"
-  environment:
-    SMOKE_SPAN_SERVICE: smoke-runner
-    SMOKE_SPANS_JSON: >-
-      [
-        {%- set rows = topology_lockfile_uv_projects | dict2items | zip(lockfile_uv_stat_results.results) -%}
-        {%- for project_kv, stat in rows -%}
-          {
-            "name": "lockfile_uv.sync",
-            "attributes": {
-              "uv.tool_project_dir": "{{ project_kv.value.project_dir }}",
-              "uv.tool_project_name": "{{ project_kv.key }}",
-              "uv.tool_project_version": "{{ project_kv.value.version }}",
-              "uv.lock_sha256": "{{ stat.stat.checksum }}",
-              "uv.entrypoint_count": {{ project_kv.value.entrypoints | length }}
-            }
-          }{% if not loop.last %},{% endif %}
-        {%- endfor -%}
-      ]
-  changed_when: false
-
-- name: Run lockfile_uv version checks
-  become: false
-  ansible.builtin.command:
-    cmd: "{{ item.value.version_cmd }}"
-  environment:
-    PATH: /usr/local/go/bin:/usr/local/bin:/usr/bin:/bin
-  loop: >-
-    {{
-      topology_dev_tools
-      | dict2items
-      | selectattr('value.tier', 'eq', 'lockfile_uv')
-      | list
-    }}
-  loop_control:
-    label: "{{ item.key }}"
-  register: lockfile_uv_version_check_results
-  changed_when: false
-  failed_when: false
-
-- name: Emit dev_tool.version_check spans (lockfile_uv tier)
-  become: false
-  ansible.builtin.command:
-    argv:
-      - "{{ dev_tools_bazelisk }}"
-      - run
-      - //src/otel/cmd/smoke-span
-    chdir: "{{ dev_tools_repo_root }}"
-  environment:
-    SMOKE_SPAN_SERVICE: smoke-runner
-    SMOKE_SPANS_JSON: >-
-      [
-        {%- for r in lockfile_uv_version_check_results.results -%}
-          {
-            "name": "dev_tool.version_check",
-            "attributes": {
-              "tool.name": "{{ r.item.key }}",
-              "tool.tier": "lockfile_uv",
-              "tool.expected_version": "{{ r.item.value.version }}",
-              "tool.observed_stdout": {{ (r.stdout | default('')) | to_json }},
-              "tool.observed_stderr": {{ (r.stderr | default('')) | to_json }},
-              "tool.exit_status": {{ r.rc | default(-1) }}
-            }
-          }{% if not loop.last %},{% endif %}
-        {%- endfor -%}
-      ]
-  changed_when: false

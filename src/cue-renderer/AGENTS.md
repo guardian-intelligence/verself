@@ -168,20 +168,35 @@ upgrade that drops the badger backend. Until then xcaddy stays in
 `roles/deploy_profile/tasks/build_caddy.yml` and the `xcaddy` +
 `corazaCaddy` version pins remain in `versions.production`.
 
-ClickHouse from source (Phase 5, deferred). The plan adds an opt-in
-`--config=clickhouse_from_source` flag that flips a `select()` in
-`server_tools.bzl` from `@server_tool_clickhouse//file` to a Bazel
-`repository_rule` that runs ClickHouse's upstream `build.sh`. The
-scaffolding is multi-hour to wire correctly because ClickHouse's
-build invokes `cmake` + ~30 GB of intermediate artefacts; the Bazel
-remote cache absorbs the cost on subsequent builds but the first
-build dominates. We flip this on when we actually need a CH bootstrap
-rebuild; today the http_file path is the only consumer.
-
 sqlc (Phase 2a tail, deferred). Stays on `legacy_install_plan` until
 a `gazelle_override` resolves the `github.com/pingcap/tidb/pkg/parser`
 Go-submodule layout — see the comment at the top of
 `src/devtools/go.mod`.
+
+## Verification: Ansible asserts in-band, ClickHouse spans out-of-band
+
+Ansible roles do not emit ClickHouse spans for verification. The pattern
+that briefly existed (smoke-span runs threaded into `dev_tools_archive.yml`
+and friends) is being removed: it duplicated the role's own `assert`
+tasks, drifted span-attribute schemas across emitters of the same span
+name, and coupled deploy progress to the observability stack.
+
+Two distinct surfaces, one role each:
+
+- **Ansible** owns idempotent host mutation with loud failures.
+  `ansible.builtin.assert` is the gate inside a play. If a tool's
+  version doesn't match the catalog pin, the play fails right there.
+  No span, no ClickHouse query, no out-of-band wait.
+- **e2e canaries** under `src/platform/scripts/verify-*-live.sh` own
+  continuous verification. Each canary opens an SSH tunnel to OTLP,
+  emits a smoke span via `go run //src/otel/cmd/smoke-span`, then polls
+  `default.otel_traces` for the row. They run from CI and on a loop;
+  see `verify-bazel-live.sh` as the reference shape.
+
+When adding a new role or extending one: write `assert` tasks for
+in-band gates, and (if continuous external verification is meaningful)
+add or extend a `verify-<area>-live.sh` canary. Do not include
+`//src/otel/cmd/smoke-span` invocations in role tasks.
 
 ## Boundaries that intentionally stay outside CUE
 

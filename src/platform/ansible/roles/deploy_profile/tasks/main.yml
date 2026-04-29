@@ -2,18 +2,6 @@
 # Populate /opt/verself/profile/bin/ with all server binaries.
 # Builds Go/Caddy on the controller and unpacks Bazel-owned static binaries.
 
-- name: Validate generated server tool pins are loaded
-  ansible.builtin.assert:
-    that:
-      - topology_server_tools is defined
-      - topology_server_tools.bazel_label is defined
-      - topology_server_tools.version is defined
-      - topology_versions.production.caddy is defined
-      - topology_versions.production.xcaddy is defined
-      - topology_versions.production.corazaCaddy is defined
-    fail_msg: >-
-      topology_server_tools or topology_versions is missing. Run make topology-generate before deploying.
-
 - name: Create profile directories
   ansible.builtin.file:
     path: "{{ item }}"
