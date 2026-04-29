@@ -71,9 +71,7 @@
   run_once: true
   ansible.builtin.command:
     # --profile=/dev/null on the inner invocation prevents bazelisk from
-    # clobbering the captured profile we are about to read. failed_when
-    # is suppressed so an instrumentation hiccup never fails the deploy
-    # the way a real build failure would.
+    # clobbering the captured profile we are about to read.
     argv:
       - "{{ deploy_profile_bazelisk }}"
       - run
@@ -83,10 +81,7 @@
       - "--"
       - "--profile={{ deploy_profile_bazel_profile_path }}"
       - --service-name=bazel
-      - --min-duration-ms=200
-    chdir: "{{ deploy_profile_repo_root }}"
   changed_when: false
-  failed_when: false
 
 - name: Resolve topology Go artifact output paths
   delegate_to: localhost

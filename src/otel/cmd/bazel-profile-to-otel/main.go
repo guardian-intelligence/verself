@@ -1,30 +1,37 @@
 // bazel-profile-to-otel parses a `bazelisk build --profile=<path>` JSON
-// profile and emits one OTel span per build action it contains. The
-// spans share the calling shell's OTLP endpoint + OTEL_RESOURCE_ATTRIBUTES
-// (set by deploy_identity.sh), so each action is automatically tagged
-// with verself.deploy_run_key and joins the surrounding ansible.task
-// span on a single deploy timeline.
+// profile and emits one OTel span per kept event. The spans share the
+// calling shell's OTLP endpoint + OTEL_RESOURCE_ATTRIBUTES (set by
+// deploy_identity.sh), so each event is automatically tagged with
+// verself.deploy_run_key and joins the surrounding ansible.task span on
+// a single deploy timeline.
 //
-// We use this where ansible's `Build topology Go artifacts with Bazel`
-// task hides ~50s of build inside an opaque shell-out span. The profile
-// breaks that down per target / mnemonic, so a deploy bottleneck query
-// can identify which Go binary (or which action mnemonic) dominates.
+// Scope: this tool is the *timing* projection of a Bazel build —
+// analysis-phase Starlark calls, skyframe evaluation, repository fetches,
+// critical-path components. The *execution* projection (per-action
+// target, mnemonic, runner, cache hit) lives in
+// //src/otel/cmd/bazel-execlog-to-otel; the two pipelines coexist
+// because the Bazel profile JSON does not carry the action's Bazel
+// label, only its mnemonic and a free-form event name. Anything that
+// needs an authoritative target label belongs in the execlog projection.
 //
 // Bazel writes the profile in Chrome Trace Event Format (one JSON
 // object with `otherData` + `traceEvents`). otherData.profile_start_ts
 // is the absolute epoch milliseconds at build start; each event's `ts`
 // is microseconds since profile start, `dur` is microseconds.
 //
-// Filter: phase == "X" AND cat in ACTION_CATEGORIES AND dur >=
-// --min-duration-ms. Bazel emits hundreds of micro-events for trivial
-// internal phases; the threshold keeps the span volume sane.
+// Filter: phase == "X" AND cat in keptCategories. There is no
+// duration threshold — sub-millisecond Starlark events are useful for
+// `Total time spent in <function>` aggregation queries, and a global
+// threshold is the wrong knob for noise reduction (it silently masks
+// short codegen actions, which is exactly the regression that motivated
+// this rewrite). If profile volume ever becomes a real problem, the
+// answer is per-category sampling, not a duration cliff.
 //
 // Usage:
 //
 //	bazel-profile-to-otel \
 //	  --profile=/path/to/profile.json.gz \
-//	  --service-name=bazel \
-//	  --min-duration-ms=200
+//	  --service-name=bazel
 package main
 
 import (
@@ -56,27 +63,26 @@ import (
 // 53s "Parallel Evaluator evaluation" wall is unactionable on its own;
 // the children that explain it live in the categories below
 // ("Fetching repository", "package creation", "Starlark *", "Conflict
-// checking", "general information"). The min-duration-ms filter
-// keeps the volume sane even with 3000+ raw events of these types.
+// checking", "general information").
 var keptCategories = map[string]bool{
-	"action processing":            true,
-	"complete action execution":    true,
-	"critical path component":      true,
-	"remote action execution":      true,
-	"remote action upload":         true,
-	"remote action download":       true,
-	"local action execution":       true,
-	"subprocess":                   true,
-	"include scanning":             true,
-	"skyframe evaluator":           true,
-	"action dependency checking":   true,
-	"Fetching repository":          true,
-	"package creation":             true,
-	"Starlark user function call":  true,
+	"action processing":              true,
+	"complete action execution":      true,
+	"critical path component":        true,
+	"remote action execution":        true,
+	"remote action upload":           true,
+	"remote action download":         true,
+	"local action execution":         true,
+	"subprocess":                     true,
+	"include scanning":               true,
+	"skyframe evaluator":             true,
+	"action dependency checking":     true,
+	"Fetching repository":            true,
+	"package creation":               true,
+	"Starlark user function call":    true,
 	"Starlark builtin function call": true,
-	"Starlark thread context":      true,
-	"Conflict checking":            true,
-	"general information":          true,
+	"Starlark thread context":        true,
+	"Conflict checking":              true,
+	"general information":            true,
 }
 
 type profile struct {
@@ -100,7 +106,6 @@ type event struct {
 func main() {
 	profilePath := flag.String("profile", "", "Path to Bazel profile JSON (gz or plain)")
 	serviceName := flag.String("service-name", "bazel", "OTel service.name for emitted spans")
-	minDurationMs := flag.Int64("min-duration-ms", 200, "Skip events shorter than this; small actions add up to noise")
 	flag.Parse()
 
 	if *profilePath == "" {
@@ -133,20 +138,15 @@ func main() {
 	}()
 
 	tracer := otel.Tracer(*serviceName)
-	minDurMicros := *minDurationMs * 1000
 	emitted := 0
 	for _, e := range prof.TraceEvents {
 		if e.Ph != "X" || !keptCategories[e.Cat] {
 			continue
 		}
-		if e.Dur < minDurMicros {
-			continue
-		}
 		emitSpan(ctx, tracer, startBase, e)
 		emitted++
 	}
-	fmt.Fprintf(os.Stderr, "bazel-profile-to-otel: emitted %d spans (min-duration-ms=%d) from %s\n",
-		emitted, *minDurationMs, *profilePath)
+	fmt.Fprintf(os.Stderr, "bazel-profile-to-otel: emitted %d spans from %s\n", emitted, *profilePath)
 }
 
 func emitSpan(ctx context.Context, tracer trace.Tracer, base time.Time, e event) {
@@ -154,7 +154,6 @@ func emitSpan(ctx context.Context, tracer trace.Tracer, base time.Time, e event)
 	end := start.Add(time.Duration(e.Dur) * time.Microsecond)
 
 	mnemonic, _ := e.Args["mnemonic"].(string)
-	target, _ := e.Args["target"].(string)
 
 	spanName := "bazel.event"
 	switch {
@@ -189,9 +188,6 @@ func emitSpan(ctx context.Context, tracer trace.Tracer, base time.Time, e event)
 	}
 	if mnemonic != "" {
 		attrs = append(attrs, attribute.String("bazel.mnemonic", mnemonic))
-	}
-	if target != "" {
-		attrs = append(attrs, attribute.String("bazel.target", target))
 	}
 
 	_, span := tracer.Start(ctx, spanName, trace.WithTimestamp(start))
