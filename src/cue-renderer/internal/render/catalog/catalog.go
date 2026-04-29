@@ -1,11 +1,9 @@
 // Package catalog projects the dev/server tool catalog into Ansible
-// group_vars. After the dev-tools bridge landed (dev_tools.tar.zst owns
-// every pinned_http_file tool), the renderer no longer materialises an
-// archive-style install plan; what remains is the legacy plan for the
-// three strategies still driven directly by Ansible: `apt`, `go_install`,
-// and `uv_tool`. `bootstrap_pivot` and `pinned_http_file` tools are
-// skipped — bazelisk lives in scripts/bootstrap, the rest land via the
-// tarball.
+// group_vars. dev_tools.tar.zst owns every pinned_http_file tool;
+// systemPackages owns apt-managed entries; the install plan handles the
+// two strategies still driven directly by Ansible (`go_install`,
+// `uv_tool`). `bootstrap_pivot` and `pinned_http_file` tools are skipped
+// — bazelisk lives in scripts/bootstrap, the rest land via the tarball.
 package catalog
 
 import (
@@ -36,15 +34,15 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 		"topology_server_tools":          loaded.Catalog.ServerTools,
 		"topology_dev_tools":             loaded.Catalog.DevTools,
 		"topology_dev_tools_archive":     loaded.Catalog.DevToolsArchive,
+		"topology_system_packages":       loaded.Catalog.SystemPackages,
 		"topology_guest_versions":        loaded.Catalog.GuestVersions,
 		"topology_dev_tool_install_plan": installPlan,
 	})
 }
 
 type installPlan struct {
-	aptPackages []string
-	goInstalls  []map[string]any
-	uvTools     []map[string]any
+	goInstalls []map[string]any
+	uvTools    []map[string]any
 }
 
 func devToolInstallPlan(loaded load.Loaded) (map[string]any, error) {
@@ -60,7 +58,7 @@ func devToolInstallPlan(loaded load.Loaded) (map[string]any, error) {
 		if err != nil {
 			return nil, err
 		}
-		if tier != "system_apt" && tier != "legacy_install_plan" {
+		if tier != "legacy_install_plan" {
 			continue
 		}
 		strategy, err := projection.OptionalString(tool, item.Name, "strategy")
@@ -68,8 +66,6 @@ func devToolInstallPlan(loaded load.Loaded) (map[string]any, error) {
 			return nil, err
 		}
 		switch strategy {
-		case "apt":
-			plan.aptPackages = append(plan.aptPackages, item.Name)
 		case "go_install":
 			pkg, err := projection.String(tool, item.Name, "go_package")
 			if err != nil {
@@ -106,9 +102,8 @@ func devToolInstallPlan(loaded load.Loaded) (map[string]any, error) {
 	}
 
 	return map[string]any{
-		"apt_packages": plan.aptPackages,
-		"go_installs":  plan.goInstalls,
-		"uv_tools":     plan.uvTools,
+		"go_installs": plan.goInstalls,
+		"uv_tools":    plan.uvTools,
 	}, nil
 }
 

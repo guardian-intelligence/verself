@@ -1,0 +1,76 @@
+---
+# Install apt-managed system packages declared in topology_system_packages.
+# These intentionally bypass content pinning — each entry's
+# `risk_acknowledgement` documents why we accept upstream Ubuntu's
+# archive integrity instead of sha256-pinning the binary.
+#
+# This is the only Ansible-side delivery channel for unpinned packages;
+# every other dev tool flows through dev_tools.tar.zst (Bazel-managed),
+# uv lockfile sync, or rules_go source builds.
+
+- name: Require generated system packages catalog
+  ansible.builtin.assert:
+    that:
+      - topology_system_packages is defined
+      - topology_system_packages | length > 0
+    quiet: true
+    fail_msg: >-
+      topology_system_packages must be present and non-empty. Run make topology-generate before setup-dev.
+
+- name: Set system packages facts
+  ansible.builtin.set_fact:
+    system_packages_names: "{{ topology_system_packages | dict2items | map(attribute='key') | list }}"
+
+- name: Install system packages via apt
+  ansible.builtin.apt:
+    name: "{{ system_packages_names }}"
+    state: present
+    update_cache: true
+
+- name: Collect installed system package versions
+  ansible.builtin.command:
+    argv:
+      - dpkg-query
+      - -W
+      - "-f=${Package}=${Version}\\n"
+      - "{{ item }}"
+  loop: "{{ system_packages_names }}"
+  loop_control:
+    label: "{{ item }}"
+  register: system_packages_dpkg
+  changed_when: false
+
+- name: Build installed-versions list for span
+  ansible.builtin.set_fact:
+    system_packages_installed_versions: >-
+      {{
+        system_packages_dpkg.results
+        | map(attribute='stdout')
+        | map('trim')
+        | list
+      }}
+
+- name: Emit system_packages.install span
+  become: false
+  ansible.builtin.command:
+    argv:
+      - "{{ dev_tools_bazelisk }}"
+      - run
+      - //src/otel/cmd/smoke-span
+    chdir: "{{ dev_tools_repo_root }}"
+  environment:
+    SMOKE_SPAN_SERVICE: smoke-runner
+    SMOKE_SPANS_JSON: >-
+      {{
+        [
+          {
+            'name': 'system_packages.install',
+            'attributes': {
+              'apt.packages_count': (system_packages_names | length),
+              'apt.installed_versions': system_packages_installed_versions,
+              'system_packages.unpinned': true
+            }
+          }
+        ] | to_json
+      }}
+  changed_when: false
