@@ -137,21 +137,94 @@ def require_one_of(ctx, names, values):
     ctx.std.io.stderr.write("ERROR: one of " + ", ".join(["--" + n for n in names]) + " is required\n")
     return False
 
+def git_head(ctx):
+    """Return the 40-char SHA at HEAD, or empty string on failure."""
+    r = (ctx.std.process.command("git")
+         .args(["rev-parse", "HEAD"])
+         .stdout("piped").stderr("piped")
+         .spawn().wait_with_output())
+    if r.status.code != 0:
+        return ""
+    return r.stdout.strip()
+
+def resolve_sha(ctx, raw):
+    """Resolve a short SHA, full SHA, or symbolic ref (e.g. prod-tip) to a
+    40-char hex SHA. Empty input resolves to HEAD.
+    """
+    target = raw if raw and raw != "" else "HEAD"
+    r = (ctx.std.process.command("git")
+         .args(["rev-parse", "--verify", target + "^{commit}"])
+         .stdout("piped").stderr("piped")
+         .spawn().wait_with_output())
+    if r.status.code != 0:
+        ctx.std.io.stderr.write("ERROR: cannot resolve git ref " + target + "\n")
+        return ""
+    return r.stdout.strip()
+
+def record_deploy_event(ctx, *, site, sha, scope, components, event_kind, duration_ms = 0, error_message = ""):
+    """Append a row to verself.deploy_events and emit the matching
+    `deploy_events.insert` controller-side span. Failures here do not abort
+    the deploy: the ledger is observability, not gating.
+    """
+    args_list = [
+        "--site=" + site,
+        "--sha=" + sha,
+        "--scope=" + scope,
+        "--components=" + ",".join(components),
+        "--event-kind=" + event_kind,
+        "--duration-ms=" + str(duration_ms),
+    ]
+    if error_message != "":
+        args_list.append("--error-message=" + error_message)
+    rc = checked_spawn(
+        ctx,
+        ws_path(ctx, "src/platform/scripts/record-deploy-event.sh"),
+        args_list,
+        label = "record-deploy-event " + event_kind,
+    )
+    if rc != 0:
+        ctx.std.io.stderr.write(
+            "WARN: record-deploy-event.sh exited " + str(rc) + " (event_kind=" + event_kind + ")\n",
+        )
+    return rc
+
+def emit_bazel_diff_span(ctx, *, base_sha, head_sha, affected_count):
+    """Emit `aspect.bazel_diff` via smoke-span.
+
+    The Bazel-diff machinery itself is a Phase A.5 deliverable; this span
+    lets the deploy contract carry the slot today so downstream tooling
+    sees the schema even while affected_count is hardcoded.
+    """
+    attrs_json = (
+        '{' +
+        '"bazel_diff.base_sha":"' + base_sha + '",' +
+        '"bazel_diff.head_sha":"' + head_sha + '",' +
+        '"bazel_diff.affected_count":' + str(affected_count) +
+        '}'
+    )
+    return checked_spawn(
+        ctx, "bazelisk",
+        ["run", "--", "//src/otel/cmd/smoke-span"],
+        env = {
+            "SMOKE_SPAN_NAME": "aspect.bazel_diff",
+            "SMOKE_SPAN_SERVICE": "aspect-deploy",
+            "SMOKE_SPAN_ATTRS_JSON": attrs_json,
+        },
+        label = "emit aspect.bazel_diff span",
+    )
+
 def cue_pin(ctx, key):
     """Read a single development-tier version pin out of versions.cue.
 
-    Used by `aspect doctor` to assert that the on-disk binary version matches
-    the catalog. The renderer's freshness gate guarantees the projected catalog
-    YAML matches versions.cue, so we read the YAML for cheap parsing rather
-    than evaluating CUE inside the Aspect process.
+    Spawns `cue-renderer render catalog` (single-artefact stdout) and pipes
+    the YAML through python yaml.safe_load. No on-disk cache is consulted —
+    aspect doctor must work before any render has run.
     """
-    path = ws_path(ctx, "src/platform/ansible/group_vars/all/generated/catalog.yml")
-    r = (ctx.std.process.command("python3")
+    r = (ctx.std.process.command("bash")
          .args([
              "-c",
-             "import sys, yaml; d=yaml.safe_load(open(sys.argv[1]))['topology_versions']['development']; print(d[sys.argv[2]])",
-             path,
-             key,
+             "bazelisk run -- //src/cue-renderer/cmd/cue-renderer render catalog 2>/dev/null | " +
+             "python3 -c \"import sys, yaml; d=yaml.safe_load(sys.stdin)['topology_versions']['development']; print(d['" + key + "'])\"",
          ])
          .stdout("piped").stderr("piped")
          .spawn().wait_with_output())

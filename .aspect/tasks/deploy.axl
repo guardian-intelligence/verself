@@ -1,55 +1,158 @@
-"""aspect deploy [--site=prod] [--tags=...]
+"""aspect deploy [--site=prod] [--sha=<rev>] [--scope=all|affected] [--tags=...]
 
-Renders the per-site deploy cache at .cache/render/<site>/ then invokes
-ansible-with-tunnel.sh against playbooks/site.yml using that cache as the
-Ansible inventory. Optionally scoped to one or more --tags.
+The single deploy verb. The body:
 
-The reset subgroup (identity, billing, verification) lives under
-`aspect platform reset ...` because Aspect's CLI treats a name as either
-a task or a group, never both — so `aspect deploy` (the task) cannot also
-host `aspect deploy reset` (a group).
+  1. Resolves --sha. If non-HEAD, a temporary git worktree is added and the
+     deploy is re-run inside it (where HEAD == resolved sha) — keeping the
+     render/tunnel/playbook flow identical regardless of revision.
+  2. Emits the optional `aspect.bazel_diff` span when --scope=affected. The
+     scope=affected machinery itself is a Phase A.5 deliverable; the span
+     surface is in place today so downstream tooling sees the schema.
+  3. Renders .cache/render/<site>/ via aspect render.
+  4. Records `started` in verself.deploy_events via record-deploy-event.sh,
+     which also emits the controller-side `deploy_events.insert` span.
+  5. Invokes scripts/ansible-with-tunnel.sh against playbooks/site.yml. The
+     wrapper exports verself.site/deploy_sha/deploy_scope as resource
+     attributes onto every ansible.task span.
+  6. Records `succeeded` or `failed` in verself.deploy_events.
 
-deploy_run_key correlation is preserved by ansible-with-tunnel.sh sourcing
-deploy_identity.sh; ClickHouse rows for the playbook span family are
-joinable on SpanAttributes['deploy_run_key'].
+Reset playbooks (identity, billing, verification) live under `aspect platform
+reset ...` because aspect's CLI treats a name as either a task or a group,
+never both — so `aspect deploy` cannot also host `aspect deploy reset`.
+
+deploy_run_key correlation is owned by deploy_identity.sh; ClickHouse rows
+for verself.deploy_events and the ansible.task span family are joinable on
+ResourceAttributes['verself.deploy_run_key'].
 """
 
 load(
     ".aspect/lib/helpers.axl",
     "checked_spawn",
+    "emit_bazel_diff_span",
+    "git_head",
+    "record_deploy_event",
     "render_site",
+    "resolve_sha",
     "site_cache_inventory",
     "ws_path",
 )
 
 _PLATFORM = "src/platform"
 
-def _deploy_impl(ctx):
-    site = ctx.args.site or "prod"
+def _run_ansible(ctx, site, sha, scope):
+    args_list = ["playbooks/site.yml"]
+    if ctx.args.tags:
+        args_list.append("--tags")
+        args_list.append(",".join(ctx.args.tags))
+    return checked_spawn(
+        ctx,
+        ws_path(ctx, _PLATFORM, "scripts/ansible-with-tunnel.sh"),
+        args_list,
+        cwd = ws_path(ctx, _PLATFORM),
+        env = {
+            "VERSELF_ANSIBLE_INVENTORY": ws_path(ctx, site_cache_inventory(site)),
+            "VERSELF_SITE": site,
+            "VERSELF_DEPLOY_SHA": sha,
+            "VERSELF_DEPLOY_SCOPE": scope,
+        },
+        label = "ansible-with-tunnel " + " ".join(args_list),
+    )
+
+def _deploy_one(ctx, site, sha, scope):
+    if scope == "affected":
+        # Stub: future Phase A.5 will compute the affected component set from
+        # bazel-diff between deploy_events.last_succeeded.sha and HEAD. The
+        # span shape is in place so dashboards and queries don't have to
+        # change when the body lights up.
+        emit_bazel_diff_span(
+            ctx,
+            base_sha = sha,
+            head_sha = sha,
+            affected_count = 0,
+        )
+
     rc = render_site(ctx, site)
     if rc != 0:
         return rc
 
-    extra = ["playbooks/site.yml"]
-    if ctx.args.tags:
-        extra.append("--tags")
-        extra.append(",".join(ctx.args.tags))
-
-    return checked_spawn(
+    components = []
+    record_deploy_event(
         ctx,
-        ws_path(ctx, _PLATFORM, "scripts/ansible-with-tunnel.sh"),
-        extra,
-        cwd = ws_path(ctx, _PLATFORM),
-        env = {"VERSELF_ANSIBLE_INVENTORY": ws_path(ctx, site_cache_inventory(site))},
-        label = "ansible-with-tunnel " + " ".join(extra),
+        site = site,
+        sha = sha,
+        scope = scope,
+        components = components,
+        event_kind = "started",
     )
+
+    rc = _run_ansible(ctx, site, sha, scope)
+    if rc == 0:
+        record_deploy_event(
+            ctx,
+            site = site,
+            sha = sha,
+            scope = scope,
+            components = components,
+            event_kind = "succeeded",
+        )
+    else:
+        record_deploy_event(
+            ctx,
+            site = site,
+            sha = sha,
+            scope = scope,
+            components = components,
+            event_kind = "failed",
+            error_message = "ansible-with-tunnel exited " + str(rc),
+        )
+    return rc
+
+def _deploy_in_worktree(ctx, site, sha, scope):
+    """Add a temporary worktree at <sha>, exec `aspect deploy` from inside,
+    and clean up. Inside the worktree HEAD == sha, so the inner invocation
+    falls through to the in-tree path with no further branching.
+    """
+    wt = "/tmp/verself-deploy-" + sha[:12]
+    _ = checked_spawn(ctx, "rm", ["-rf", wt], label = "clean " + wt)
+    rc = checked_spawn(
+        ctx, "git",
+        ["worktree", "add", "--detach", wt, sha],
+        label = "git worktree add " + wt,
+    )
+    if rc != 0:
+        return rc
+    deploy_rc = checked_spawn(
+        ctx, "aspect",
+        ["deploy", "--site=" + site, "--scope=" + scope],
+        cwd = wt,
+        label = "aspect deploy (worktree " + sha[:12] + ")",
+    )
+    _ = checked_spawn(
+        ctx, "git",
+        ["worktree", "remove", "--force", wt],
+        label = "git worktree remove " + wt,
+    )
+    return deploy_rc
+
+def _deploy_impl(ctx):
+    site = ctx.args.site or "prod"
+    scope = ctx.args.scope or "all"
+    sha = resolve_sha(ctx, ctx.args.sha or "")
+    if sha == "":
+        return 1
+    head = git_head(ctx)
+    if sha != head:
+        return _deploy_in_worktree(ctx, site, sha, scope)
+    return _deploy_one(ctx, site, sha, scope)
 
 deploy = task(
     implementation = _deploy_impl,
     name = "deploy",
-    summary = "Render the deploy cache and apply it to a site (default --site=prod, optionally scoped to --tags).",
+    summary = "Render the deploy cache, record a deploy_events row, and apply playbooks/site.yml against a site.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site (selects instances/<site>/ and inventory/<site>.ini)."),
+        "sha": args.string(default = "", description = "Git SHA or symbolic ref to deploy (e.g. HEAD~1, prod-tip). Defaults to HEAD."),
+        "scope": args.string(default = "all", description = "all | affected. The affected machinery is a Phase A.5 stub — same behavior as `all`, with an aspect.bazel_diff span emitted for visibility."),
         "tags": args.string_list(
             long = "tags",
             description = "Ansible tags to scope this deploy (e.g. --tags=company,caddy). May be repeated.",
