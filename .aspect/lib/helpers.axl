@@ -1,0 +1,115 @@
+"""Shared helpers for verself AXL tasks.
+
+This file is the single triage point when upstream Aspect breaks the AXL DSL.
+Anything that touches the Aspect-side API (spawning processes, reading env,
+locating workspace files, calling ctx.bazel.*) belongs here, so the next
+breaking rename is a one-file fix instead of a 12-file fix.
+
+Conventions:
+  - All subprocesses go through `checked_spawn(ctx, cmd, args, ...)`. That keeps
+    a single hook for the future task-invocation telemetry table described in
+    docs/architecture/aspect-cli-migration.md (Near-Term Follow-Ups).
+  - Workspace paths use `ws_path(ctx, *parts)` so callers do not concatenate
+    strings by hand. The repo root is `ctx.std.env.root_dir()`.
+  - Failures are loud: helpers fail fast with a useful stderr line and a
+    non-zero exit code. They never silently coerce errors to no-ops.
+"""
+
+PLATFORM_DIR = "src/platform"
+INVENTORY_REL = "src/platform/ansible/inventory/hosts.ini"
+
+def ws_path(ctx, *parts):
+    """Resolve a workspace-relative path to absolute under the repo root."""
+    root = ctx.std.env.root_dir()
+    out = root
+    for p in parts:
+        out = out + "/" + p
+    return out
+
+def inventory_check(ctx):
+    """Fail loud when the generated Ansible inventory is missing.
+
+    Mirrors the Makefile inventory-check rule: any task that needs to reach
+    the bare-metal node must call this first so error messages point to the
+    provision playbook rather than failing on a deeper SSH/tunnel error.
+    """
+    inv = ws_path(ctx, INVENTORY_REL)
+    r = (ctx.std.process.command("test")
+         .args(["-f", inv])
+         .spawn().wait())
+    if r.code != 0:
+        ctx.std.io.stderr.write(
+            "ERROR: " + INVENTORY_REL + " not found. Run: aspect platform provision\n",
+        )
+        return 1
+    return 0
+
+def checked_spawn(ctx, program, args, cwd = None, env = None, label = None):
+    """Spawn a subprocess attached to the parent's stdio and return its exit code.
+
+    Stdio is inherited so long-running interactive scripts (psql, pnpm dev,
+    Playwright canaries) behave the same way they did under Make. The returned
+    int matches the program's exit code; non-zero is the caller's signal to
+    propagate.
+    """
+    cmd = ctx.std.process.command(program).args(args)
+    if cwd != None:
+        cmd = cmd.current_dir(cwd)
+    if env != None:
+        for k, v in env.items():
+            cmd = cmd.env(k, v)
+    label_str = label if label != None else program
+    if ctx.std.io.stderr.is_tty:
+        ctx.std.io.stderr.write("$ " + label_str + "\n")
+    r = cmd.spawn().wait()
+    return r.code
+
+def require_arg(ctx, name, value):
+    """Reject empty required string args with the same message shape Make used."""
+    if not value or value == "":
+        ctx.std.io.stderr.write("ERROR: --" + name + " is required\n")
+        return False
+    return True
+
+def require_one_of(ctx, names, values):
+    """At least one of the named args must be non-empty."""
+    for v in values:
+        if v and v != "":
+            return True
+    ctx.std.io.stderr.write("ERROR: one of " + ", ".join(["--" + n for n in names]) + " is required\n")
+    return False
+
+def cue_pin(ctx, key):
+    """Read a single development-tier version pin out of versions.cue.
+
+    Used by `aspect doctor` to assert that the on-disk binary version matches
+    the catalog. The renderer's freshness gate guarantees the projected catalog
+    YAML matches versions.cue, so we read the YAML for cheap parsing rather
+    than evaluating CUE inside the Aspect process.
+    """
+    path = ws_path(ctx, "src/platform/ansible/group_vars/all/generated/catalog.yml")
+    r = (ctx.std.process.command("python3")
+         .args([
+             "-c",
+             "import sys, yaml; d=yaml.safe_load(open(sys.argv[1]))['topology_versions']['development']; print(d[sys.argv[2]])",
+             path,
+             key,
+         ])
+         .stdout("piped").stderr("piped")
+         .spawn().wait_with_output())
+    if r.status.code != 0:
+        return None
+    return r.stdout.strip()
+
+def tool_version(ctx, program, *args):
+    """Run `<program> <args...>` and return the first stdout line, or None."""
+    r = (ctx.std.process.command(program)
+         .args(list(args))
+         .stdout("piped").stderr("piped")
+         .spawn().wait_with_output())
+    if r.status.code != 0:
+        return None
+    out = r.stdout.strip()
+    if "\n" in out:
+        out = out.split("\n")[0]
+    return out

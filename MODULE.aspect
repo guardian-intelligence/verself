@@ -1,0 +1,10 @@
+"""Verself Aspect CLI module.
+
+Declares AXL extension dependencies. Today the durable surface uses only the
+built-in @aspect extension; this file exists so `aspect axl add` can extend the
+graph in the future without restructuring the workspace.
+
+The Aspect binary version is pinned in src/cue-renderer/catalog/versions.cue
+under devTools.aspect (tier=bootstrap_pivot) and installed by scripts/bootstrap.
+This file is NOT the version-of-record for the aspect binary.
+"""
