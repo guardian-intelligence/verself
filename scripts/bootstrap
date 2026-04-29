@@ -1,14 +1,30 @@
 #!/usr/bin/env bash
+# Install the bootstrap_pivot dev tools that have to land before any other
+# delivery channel can run. Today that is Bazelisk and the Aspect CLI.
+#
+# CUE owns the version-of-record (src/cue-renderer/catalog/versions.cue:
+# devTools.bazelisk and devTools.aspect, both tier=bootstrap_pivot). The
+# constants here are hand-mirrored: this script cannot evaluate CUE because
+# CUE evaluation requires Bazel which requires Bazelisk.
+#
+# After install, /usr/local/bin/bazel is symlinked to bazelisk so the Aspect
+# CLI's ctx.bazel.{build,test,run,query} APIs (which spawn `bazel` directly)
+# resolve through Bazelisk's version-pinned download.
 set -euo pipefail
 
 bazelisk_version="1.28.1"
 bazelisk_sha256="22e7d3a188699982f661cf4687137ee52d1f24fec1ec893d91a6c4d791a75de8"
 bazelisk_url="https://github.com/bazelbuild/bazelisk/releases/download/v${bazelisk_version}/bazelisk-linux-amd64"
+
+aspect_version="2026.17.17"
+aspect_sha256="db45968e114c22af0e0d3dddadfb7091c81983f66499eed9d01d782bb09483d0"
+aspect_url="https://github.com/aspect-build/aspect-cli/releases/download/v${aspect_version}/aspect-cli-x86_64-unknown-linux-musl"
+
 install_dir="${BAZELISK_INSTALL_DIR:-/usr/local/bin}"
 
 if [[ "$(uname -s)" != "Linux" || "$(uname -m)" != "x86_64" ]]; then
   echo "unsupported bootstrap platform: $(uname -s) $(uname -m)" >&2
-  echo "scripts/bootstrap currently pins the Linux x86_64 Bazelisk artifact." >&2
+  echo "scripts/bootstrap currently pins the Linux x86_64 bootstrap_pivot artifacts." >&2
   exit 1
 fi
 
@@ -47,46 +63,95 @@ import urllib.request
 urllib.request.urlretrieve(sys.argv[1], sys.argv[2])
 PY
   else
-    echo "missing curl, wget, or python3 for downloading Bazelisk" >&2
+    echo "missing curl, wget, or python3 for downloading bootstrap binaries" >&2
     exit 1
   fi
 }
 
-if command -v bazelisk >/dev/null 2>&1; then
-  existing_path="$(command -v bazelisk)"
-  if [[ "$(hash_file "${existing_path}")" == "${bazelisk_sha256}" ]]; then
-    echo "bazelisk ${bazelisk_version} already installed at ${existing_path}"
-    exit 0
+# install_pivot <name> <version> <sha256> <url>
+#
+# Idempotent: short-circuits when the binary already exists at the expected
+# install_path with the expected sha256. Falls back to ${HOME}/.local/bin if
+# install_dir is non-writable and sudo is unavailable, and warns when that
+# directory is not on PATH.
+install_pivot() {
+  local name="$1"
+  local version="$2"
+  local sha256="$3"
+  local url="$4"
+
+  if command -v "${name}" >/dev/null 2>&1; then
+    local existing_path
+    existing_path="$(command -v "${name}")"
+    if [[ "$(hash_file "${existing_path}")" == "${sha256}" ]]; then
+      echo "${name} ${version} already installed at ${existing_path}"
+      return 0
+    fi
   fi
-fi
 
-tmp_dir="$(mktemp -d)"
-trap 'rm -f "${tmp_dir}/bazelisk"; rmdir "${tmp_dir}" 2>/dev/null || true' EXIT
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+  trap 'rm -rf "'"${tmp_dir}"'"' RETURN
 
-download "${bazelisk_url}" "${tmp_dir}/bazelisk"
-actual_sha256="$(hash_file "${tmp_dir}/bazelisk")"
-if [[ "${actual_sha256}" != "${bazelisk_sha256}" ]]; then
-  echo "bazelisk checksum mismatch: expected ${bazelisk_sha256}, got ${actual_sha256}" >&2
-  exit 1
-fi
-chmod 0755 "${tmp_dir}/bazelisk"
+  download "${url}" "${tmp_dir}/${name}"
+  local actual_sha256
+  actual_sha256="$(hash_file "${tmp_dir}/${name}")"
+  if [[ "${actual_sha256}" != "${sha256}" ]]; then
+    echo "${name} checksum mismatch: expected ${sha256}, got ${actual_sha256}" >&2
+    return 1
+  fi
+  chmod 0755 "${tmp_dir}/${name}"
 
-if [[ -d "${install_dir}" && -w "${install_dir}" ]]; then
-  install -m 0755 "${tmp_dir}/bazelisk" "${install_dir}/bazelisk"
-  installed_path="${install_dir}/bazelisk"
-elif command -v sudo >/dev/null 2>&1; then
-  sudo mkdir -p "${install_dir}"
-  sudo install -m 0755 "${tmp_dir}/bazelisk" "${install_dir}/bazelisk"
-  installed_path="${install_dir}/bazelisk"
-else
-  fallback_dir="${HOME}/.local/bin"
-  mkdir -p "${fallback_dir}"
-  install -m 0755 "${tmp_dir}/bazelisk" "${fallback_dir}/bazelisk"
-  installed_path="${fallback_dir}/bazelisk"
-fi
+  local installed_path
+  if [[ -d "${install_dir}" && -w "${install_dir}" ]]; then
+    install -m 0755 "${tmp_dir}/${name}" "${install_dir}/${name}"
+    installed_path="${install_dir}/${name}"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo mkdir -p "${install_dir}"
+    sudo install -m 0755 "${tmp_dir}/${name}" "${install_dir}/${name}"
+    installed_path="${install_dir}/${name}"
+  else
+    local fallback_dir="${HOME}/.local/bin"
+    mkdir -p "${fallback_dir}"
+    install -m 0755 "${tmp_dir}/${name}" "${fallback_dir}/${name}"
+    installed_path="${fallback_dir}/${name}"
+  fi
 
-echo "installed bazelisk ${bazelisk_version} at ${installed_path}"
-case ":${PATH}:" in
-  *":$(dirname "${installed_path}"):"*) ;;
-  *) echo "add $(dirname "${installed_path}") to PATH before running bazelisk" >&2 ;;
-esac
+  echo "installed ${name} ${version} at ${installed_path}"
+  case ":${PATH}:" in
+    *":$(dirname "${installed_path}"):"*) ;;
+    *) echo "add $(dirname "${installed_path}") to PATH before running ${name}" >&2 ;;
+  esac
+}
+
+# bazelisk_dir resolves to the directory the bazelisk binary just landed in.
+# We point /usr/local/bin/bazel at that exact bazelisk so Aspect CLI's
+# ctx.bazel.{build,test,run,query} (which spawn `bazel` directly) flow
+# through Bazelisk's pinned-version downloader. Bazelisk officially supports
+# being invoked under the name `bazel`.
+ensure_bazel_symlink() {
+  local bazelisk_path
+  if ! bazelisk_path="$(command -v bazelisk)"; then
+    echo "ensure_bazel_symlink: bazelisk not on PATH after install" >&2
+    return 1
+  fi
+  local target_dir
+  target_dir="$(dirname "${bazelisk_path}")"
+  local link_path="${target_dir}/bazel"
+  if [[ -L "${link_path}" && "$(readlink "${link_path}")" == "${bazelisk_path}" ]]; then
+    return 0
+  fi
+  if [[ -w "${target_dir}" ]]; then
+    ln -sf "${bazelisk_path}" "${link_path}"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo ln -sf "${bazelisk_path}" "${link_path}"
+  else
+    echo "cannot symlink ${link_path} -> ${bazelisk_path}: ${target_dir} not writable and sudo unavailable" >&2
+    return 1
+  fi
+  echo "symlinked ${link_path} -> ${bazelisk_path}"
+}
+
+install_pivot bazelisk "${bazelisk_version}" "${bazelisk_sha256}" "${bazelisk_url}"
+install_pivot aspect "${aspect_version}" "${aspect_sha256}" "${aspect_url}"
+ensure_bazel_symlink

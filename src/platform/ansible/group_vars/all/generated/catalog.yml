@@ -33,6 +33,14 @@ topology_dev_tools:
     tier: lockfile_uv
     version: 26.4.0
     version_cmd: ansible-lint --version
+  aspect:
+    install_path: /usr/local/bin/aspect
+    sha256: db45968e114c22af0e0d3dddadfb7091c81983f66499eed9d01d782bb09483d0
+    strategy: binary
+    tier: bootstrap_pivot
+    url: https://github.com/aspect-build/aspect-cli/releases/download/v2026.17.17/aspect-cli-x86_64-unknown-linux-musl
+    version: 2026.17.17
+    version_cmd: aspect --version
   bazel:
     sha256: a667454f3f4f8878df8199136b82c199f6ada8477b337fae3b1ef854f01e4e2f
     tier: bootstrap_pivot
@@ -295,6 +303,7 @@ topology_versions:
     ansibleOpentelemetryExporterOtlpProtoGrpc: 1.41.0
     ansibleOpentelemetryExporterOtlpProtoHttp: 1.41.0
     ansibleOpentelemetrySdk: 1.41.0
+    aspectCLI: 2026.17.17
     bazel: 9.1.0
     bazelisk: 1.28.1
     buf: 1.66.1
