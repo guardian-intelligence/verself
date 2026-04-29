@@ -115,3 +115,10 @@ http_file(
     url = "https://github.com/vercel-labs/agent-browser/releases/download/v0.25.4/agent-browser-linux-x64",
 )
 
+http_file(
+    name = "dev_tool_otelcol_contrib",
+    downloaded_file_path = "otelcol-contrib_0.149.0_linux_amd64.tar.gz",
+    sha256 = "4acb57355e9388f257b28de8c18422ff43e52eb329052bd54ebecde000dcbb47",
+    url = "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.149.0/otelcol-contrib_0.149.0_linux_amd64.tar.gz",
+)
+
