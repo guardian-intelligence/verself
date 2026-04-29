@@ -1,12 +1,10 @@
 ---
-console_subdomain: console
-console_domain: "{{ console_subdomain }}.{{ verself_domain }}"
-console_install_dir: /opt/console
-console_app_dir: "{{ console_install_dir }}/apps/console"
-console_dependencies_fingerprint_path: "{{ console_install_dir }}/.pnpm-install-fingerprint"
-console_runtime_user: console
-console_runtime_group: console
-console_state_dir: /var/lib/console
-console_auth_issuer_url: "https://auth.{{ verself_domain }}"
-console_auth_project_name: sandbox-rental
-console_identity_project_name: "{{ identity_service_auth_project_name | default('identity-service') }}"
+verself_web_install_dir: /opt/verself-web
+verself_web_app_dir: "{{ verself_web_install_dir }}/apps/verself-web"
+verself_web_dependencies_fingerprint_path: "{{ verself_web_install_dir }}/.pnpm-install-fingerprint"
+verself_web_runtime_user: verself-web
+verself_web_runtime_group: verself-web
+verself_web_state_dir: /var/lib/verself-web
+verself_web_auth_issuer_url: "https://auth.{{ verself_domain }}"
+verself_web_auth_project_name: sandbox-rental
+verself_web_identity_project_name: "{{ identity_service_auth_project_name | default('identity-service') }}"
