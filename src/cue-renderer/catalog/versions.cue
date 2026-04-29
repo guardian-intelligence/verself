@@ -729,6 +729,54 @@ devToolPackaging: {
 	}
 }
 
+// guestImageDownloads mirrors serverToolDownloads / devToolDownloads:
+// each entry projects to one http_file rule emitted into
+// src/guest-images/guest_images.MODULE.bazel and is consumed by the
+// guest-image build rules under //src/guest-images/. SHA256 + URL stay
+// pinned alongside the version in `versions.production`; bumping a pin
+// happens here, then `make topology-generate` regenerates the Bazel
+// manifest. Composable image catalog (firecracker.images in
+// instances/local/config.cue) references the resulting Bazel labels via
+// pkg_tar/genrule layouts in //src/guest-images/.
+guestImageDownloads: {
+	ubuntu_base: {
+		name:                 "guest_image_ubuntu_base"
+		downloaded_file_path: "ubuntu-base-\(versions.production.ubuntuBase)-base-amd64.tar.gz"
+		sha256:               "c1e67ef7b17a6300e136118bd1dc04725009cb376c1aad10abcf8cd453628d58"
+		url:                  "https://cdimages.ubuntu.com/ubuntu-base/releases/\(versions.production.ubuntu)/release/ubuntu-base-\(versions.production.ubuntuBase)-base-amd64.tar.gz"
+	}
+	guest_kernel_vmlinux: {
+		name:                 "guest_image_vmlinux"
+		downloaded_file_path: "vmlinux-\(versions.production.guestKernel)"
+		sha256:               "e20e46d0c36c55c0d1014eb20576171b3f3d922260d9f792017aeff53af3d4f2"
+		url:                  "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.15/x86_64/vmlinux-\(versions.production.guestKernel)"
+	}
+	guest_kernel_config: {
+		name:                 "guest_image_vmlinux_config"
+		downloaded_file_path: "vmlinux-\(versions.production.guestKernel).config"
+		sha256:               "024b2aae62fe7131f9a9ab80f27619c882c0a37265dd105adae01d2867bef7c3"
+		url:                  "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.15/x86_64/vmlinux-\(versions.production.guestKernel).config"
+	}
+	firecracker_release: {
+		name:                 "guest_image_firecracker_release"
+		downloaded_file_path: "firecracker-v\(versions.production.firecracker)-x86_64.tgz"
+		sha256:               "00cadf7f21e709e939dc0c8d16e2d2ce7b975a62bec6c50f74b421cc8ab3cab4"
+		url:                  "https://github.com/firecracker-microvm/firecracker/releases/download/v\(versions.production.firecracker)/firecracker-v\(versions.production.firecracker)-x86_64.tgz"
+	}
+	github_actions_runner: {
+		name:                 "guest_image_github_actions_runner"
+		downloaded_file_path: "actions-runner-linux-x64-\(versions.production.githubActionsRunner).tar.gz"
+		sha256:               "18f8f68ed1892854ff2ab1bab4fcaa2f5abeedc98093b6cb13638991725cab74"
+		url:                  "https://github.com/actions/runner/releases/download/v\(versions.production.githubActionsRunner)/actions-runner-linux-x64-\(versions.production.githubActionsRunner).tar.gz"
+	}
+	forgejo_runner: {
+		name:                 "guest_image_forgejo_runner"
+		downloaded_file_path: "forgejo-runner-\(versions.production.forgejoRunner)-linux-amd64"
+		sha256:               "41c40d82ab4bde07d80c3e20254e3474b1d6abc3b4b8f57e181a3e66c1006521"
+		url:                  "https://code.forgejo.org/forgejo/runner/releases/download/v\(versions.production.forgejoRunner)/forgejo-runner-\(versions.production.forgejoRunner)-linux-amd64"
+	}
+}
+
 guestVersions: {
 	ubuntu_base: {
 		version: versions.production.ubuntuBase

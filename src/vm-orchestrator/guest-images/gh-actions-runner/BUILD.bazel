@@ -1,0 +1,41 @@
+load("//src/vm-orchestrator/guest-images:guest_image.bzl", "toolchain_ext4_image")
+
+# gh-actions-runner.ext4 — toolchain image mounted read-only at
+# /opt/actions-runner inside the guest. Carries the upstream GitHub
+# Actions runner tarball plus an etc-overlay/ tree that vm-bridge
+# copies into /etc at lease boot:
+#
+#   etc-overlay/passwd|group|shadow         add the runner@1000 user
+#   etc-overlay/sudoers.d/runner-nopasswd   NOPASSWD sudo for runner
+#   etc-overlay/profile.d/...               toolcache + tools env vars
+#
+# The .verself-writable-overlays manifest tells vm-bridge to tmpfs-mount
+# _work/_diag/_temp on top of the read-only base so the runner can write
+# its scratch dirs without poisoning the shared image.
+#
+# Sized at 1024 MiB; upstream runner tarball is ~150 MiB extracted, the
+# overlay is a few KiB, so this leaves comfortable headroom for runner
+# version bumps without resizing.
+toolchain_ext4_image(
+    name = "gh-actions-runner",
+    tarball = "@guest_image_github_actions_runner//file",
+    files = {
+        "etc-overlay/passwd": ":passwd",
+        "etc-overlay/group": ":group",
+        "etc-overlay/shadow": ":shadow",
+        "etc-overlay/sudoers.d/runner-nopasswd": ":sudoers-runner-nopasswd",
+        "etc-overlay/profile.d/verself-actions-runner.sh": ":profile-actions-runner.sh",
+        ".verself-writable-overlays": ":writable-overlays",
+    },
+    size_mib = 1024,
+    label = "ghactions",
+)
+
+exports_files([
+    "passwd",
+    "group",
+    "shadow",
+    "sudoers-runner-nopasswd",
+    "profile-actions-runner.sh",
+    "writable-overlays",
+])
