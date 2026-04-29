@@ -132,7 +132,7 @@ func NewAPIServer(cfg Config, logger *slog.Logger) (*APIServer, error) {
 		return nil, fmt.Errorf("open host state ledger %s: %w", base.StateDBPath, err)
 	}
 	if base.DefaultBootImageRef == "" {
-		base.DefaultBootImageRef = "golden"
+		base.DefaultBootImageRef = "substrate"
 	}
 	server := &APIServer{
 		cfg: base,

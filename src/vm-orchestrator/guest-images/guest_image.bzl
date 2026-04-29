@@ -7,11 +7,11 @@ Two macros, one for each tier in the firecracker_seed_images catalog:
   tarball, drop in additional files), no chroot, fully hermetic.
 * (substrate uses build-substrate.sh; left intentionally outside Bazel
   for now because it shells out to debootstrap+apt during the deploy
-  flow. See //src/guest-images/substrate/.)
+  flow. See //src/vm-orchestrator/guest-images/substrate/.)
 
 Each toolchain image exports two files:
   <name>.ext4            — the on-disk image staged onto the host at
-                           /var/lib/verself/guest-artifacts/toolchains/
+                           /var/lib/verself/guest-images/toolchains/
                            and ingested by `vm-orchestrator-cli
                            seed-image --strategy dd_from_file`.
   <name>.manifest.json   — sha256, size, source SBOM. Rolled up into a

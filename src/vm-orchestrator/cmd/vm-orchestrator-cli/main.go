@@ -67,7 +67,7 @@ func runSeedImage(args []string) int {
 	fs := flag.NewFlagSet("seed-image", flag.ExitOnError)
 	cfg := seedImageFlags{}
 	fs.StringVar(&cfg.socket, "socket", vmorchestrator.DefaultSocketPath, "Unix socket path of the vm-orchestrator daemon")
-	fs.StringVar(&cfg.ref, "ref", "", "image ref to materialize (e.g. golden, sticky-empty)")
+	fs.StringVar(&cfg.ref, "ref", "", "image ref to materialize (e.g. substrate, gh-actions-runner, sticky-empty)")
 	fs.StringVar(&cfg.strategy, "strategy", "", "seed strategy: dd_from_file or mkfs_ext4")
 	fs.StringVar(&cfg.sourcePath, "source-path", "", "host artifact for dd_from_file")
 	fs.Uint64Var(&cfg.sizeBytes, "size-bytes", 0, "zvol size in bytes")

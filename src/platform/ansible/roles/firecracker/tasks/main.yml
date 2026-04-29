@@ -341,5 +341,5 @@
 # The vm-orchestrator daemon owns ensure-of pool/<images> + pool/<workloads>
 # at startup (see vm-orchestrator/zfs.VolumeLifecycle.EnsureRoots), and the
 # seed oneshot above materializes every composable image — including the
-# boot image (golden) — through the SeedImage RPC. There are no Ansible
+# boot image (substrate) — through the SeedImage RPC. There are no Ansible
 # tasks that issue zfs(8), dd, or mkfs commands directly anymore.
