@@ -1,0 +1,30 @@
+"""Verself Aspect CLI workspace config.
+
+`def config(ctx)` is the single registration point Aspect calls when it loads
+the workspace. Every task lives under `.aspect/tasks/` (subdirectories are NOT
+auto-discovered) and is registered explicitly here. Helpers live under
+`.aspect/lib/` and are imported via `load(".aspect/lib/<file>", ...)`.
+
+The durable command surface is documented in
+docs/architecture/aspect-cli-migration.md. The "Retired Surface" section of
+that doc is binding: smoke aliases, persona shortcuts, mail-recipient
+shortcuts, and Bazel-build aliases are intentionally absent.
+"""
+
+load(".aspect/tasks/doctor.axl", "doctor")
+load(".aspect/tasks/tidy.axl", "tidy")
+load(
+    ".aspect/tasks/bazel.axl",
+    bazel_doctor = "doctor",
+    bazel_gazelle = "gazelle",
+    bazel_tidy = "tidy",
+    bazel_update = "update",
+)
+
+def config(ctx):
+    ctx.tasks.add(doctor)
+    ctx.tasks.add(tidy)
+    ctx.tasks.add(bazel_doctor)
+    ctx.tasks.add(bazel_gazelle)
+    ctx.tasks.add(bazel_tidy)
+    ctx.tasks.add(bazel_update)
