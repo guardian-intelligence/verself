@@ -37,10 +37,11 @@ for the dev tools tarball, (b) one `uv sync` loop, (c) one `apt` task.
 shellcheck, jq, sops, age, uv, clickhouse, osv-scanner, stripe,
 agent-browser. These flow through `dev_tools.tar.zst`.
 
-`legacy_install_plan` (11): ansible (+ 4 OTel companions + ansible-lint),
-pre-commit, golangci-lint, gosec, gofumpt, sqlc, protoc-gen-go,
-protoc-gen-go-grpc, guarddog. To be migrated to `lockfile_uv` (Python)
-or `source_built_go` (Go-installable) in later phases.
+`legacy_install_plan` (13): ansible, the four ansible OTel companions,
+ansible-lint, pre-commit, golangci-lint, gosec, gofumpt, sqlc,
+protoc-gen-go, protoc-gen-go-grpc, guarddog. To be migrated to
+`lockfile_uv` (Python) or `source_built_go` (Go-installable) in later
+phases.
 
 `system_apt` (3): build-essential, crun, debootstrap. Will be moved out
 of `devTools` into a separate `systemPackages` block with an explicit
@@ -71,8 +72,28 @@ exactly. Read these files together:
 
 The dev-tools mirror uses `devToolDownloads` + `devToolPackaging`,
 emits `dev_tools.MODULE.bazel` + `dev_tools.bzl`, and produces
-`:dev_tools.tar.zst`. The Ansible bridge for dev tools is the next
-PR; this PR ends after step 4.
+`:dev_tools.tar.zst`. `devToolsArchive: { bazel_label, version }`
+exposes the consumer surface (parallel to `serverTools`) — Ansible reads
+those two fields to request the artefact and gate re-unpacks. The
+bridge role itself is the next PR; this PR ends after step 4.
+
+Until the bridge ships, two paths describe the same on-disk layout for
+the 16 pinned_http_file dev tools:
+- `topology_dev_tool_install_plan` (legacy: per-tool `get_url` →
+  extract → copy → symlink), still consumed by `roles/dev_tools/`.
+- `dev_tools.tar.zst` (new: one Bazel-fetched archive, one untar at
+  `/`), unconsumed by Ansible today.
+
+The bridge PR must, in the same change that flips Ansible to consume
+the tarball, **delete** the 16 by-name branches and the
+`binary`/`tarball`/`zip` strategy handlers from
+`internal/render/catalog/catalog.go`. Leaving them as a dead path
+produces two competing definitions of the same artefacts and the next
+agent will inevitably copy from the wrong one. The deletion target is
+the entire `case item.Name == "..."` set plus the strategy switches
+that only those tools exercised; what survives is the `apt`,
+`go_install`, `uv_tool`, and `uv_tool_companion` strategies that drive
+the still-`legacy_install_plan` tools.
 
 ## Renderer integration recipe
 

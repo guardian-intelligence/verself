@@ -104,6 +104,15 @@ serverTools: {
 	version:     "clickhouse-\(versions.production.clickhouse)_tigerbeetle-\(versions.production.tigerbeetle)_zitadel-\(versions.production.zitadel)_openbao-\(versions.production.openbao)_spire-\(versions.production.spire)_spiffe-helper-\(versions.production.spiffeHelper)_nats-server-\(versions.production.natsServer)_garage-\(versions.production.garage)_forgejo-\(versions.production.forgejo)_bazel-remote-\(versions.production.bazelRemote)_otelcol-contrib-\(versions.production.otelcolContrib)_temporal-\(versions.production.temporal)_grafana-\(versions.production.grafana)_grafana-clickhouse-datasource-\(versions.production.grafanaClickhouseDatasource)_containerd-\(versions.production.containerd)_nodejs-\(versions.production.nodejs)_stalwart-\(versions.production.stalwart)_stalwart-cli-\(versions.production.stalwartCli)_caddy-\(versions.production.caddy)"
 }
 
+// devToolsArchive is the dev-tools twin of serverTools: the single Bazel
+// label Ansible's bridge will request (next PR), plus a composite version
+// that flips whenever any pinned_http_file dev tool is bumped. Forces a
+// re-unpack on the controller when any version moves.
+devToolsArchive: {
+	bazel_label: "//src/cue-renderer/binaries:dev_tools.tar.zst"
+	version:     "age-\(versions.development.age)_agent-browser-\(versions.development.agentBrowser)_buf-\(versions.development.buf)_buildifier-\(versions.development.buildifier)_clickhouse-\(versions.development.clickhouse)_cue-\(versions.development.cue)_go-\(versions.development.go)_jq-\(versions.development.jq)_osv-scanner-\(versions.development.osvScanner)_protoc-\(versions.development.protoc)_shellcheck-\(versions.development.shellcheck)_sops-\(versions.development.sops)_stripe-\(versions.development.stripe)_tofu-\(versions.development.opentofu)_uv-\(versions.development.uv)_zig-\(versions.development.zig)"
+}
+
 serverToolDownloads: {
 	clickhouse: {
 		name:                 "server_tool_clickhouse"

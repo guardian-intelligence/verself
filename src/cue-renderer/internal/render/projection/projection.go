@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/cuecontext"
@@ -500,6 +501,25 @@ func Slice(parent map[string]any, path, key string) ([]any, error) {
 	return out, nil
 }
 
+// MapSlice extracts parent[key] as []map[string]any, asserting each
+// element is itself a map. The path/key form mirrors String/Slice for
+// uniform error messages.
+func MapSlice(parent map[string]any, path, key string) ([]map[string]any, error) {
+	raw, err := Slice(parent, path, key)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]map[string]any, 0, len(raw))
+	for i, item := range raw {
+		m, ok := item.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("%s.%s[%d]: expected map, got %T", path, key, i, item)
+		}
+		out = append(out, m)
+	}
+	return out, nil
+}
+
 func String(parent map[string]any, path, key string) (string, error) {
 	value, ok := parent[key]
 	if !ok {
@@ -570,6 +590,78 @@ func StringList(parent map[string]any, path, key string) ([]string, error) {
 		out = append(out, value)
 	}
 	return out, nil
+}
+
+// HTTPFileModule renders the `http_file()` Starlark manifest emitted
+// next to MODULE.bazel for a `*ToolDownloads` block. Each entry under
+// `path` (e.g. "serverToolDownloads") becomes one rule; the manifest
+// is prefixed with the canonical generated header pointing at versions.cue.
+func HTTPFileModule(catalogRaw cue.Value, path string) ([]byte, error) {
+	downloads, err := NamedFields(catalogRaw, path)
+	if err != nil {
+		return nil, err
+	}
+	var b strings.Builder
+	b.WriteString(HeaderFor("src/cue-renderer/catalog/versions.cue"))
+	b.WriteString("\n")
+	b.WriteString("http_file = use_repo_rule(\"@bazel_tools//tools/build_defs/repo:http.bzl\", \"http_file\")\n\n")
+	for _, item := range downloads {
+		name, err := String(item.Value, item.Name, "name")
+		if err != nil {
+			return nil, err
+		}
+		downloaded, err := String(item.Value, item.Name, "downloaded_file_path")
+		if err != nil {
+			return nil, err
+		}
+		sha, err := String(item.Value, item.Name, "sha256")
+		if err != nil {
+			return nil, err
+		}
+		url, err := String(item.Value, item.Name, "url")
+		if err != nil {
+			return nil, err
+		}
+		fmt.Fprintf(&b, "http_file(\n")
+		fmt.Fprintf(&b, "    name = %q,\n", name)
+		fmt.Fprintf(&b, "    downloaded_file_path = %q,\n", downloaded)
+		fmt.Fprintf(&b, "    sha256 = %q,\n", sha)
+		fmt.Fprintf(&b, "    url = %q,\n", url)
+		fmt.Fprintf(&b, ")\n\n")
+	}
+	return []byte(b.String()), nil
+}
+
+// StarlarkRepoTupleList writes `NAME = [(...), ...]` projecting each
+// row of `parent[key]` into a tuple of the listed string fields. The
+// `repo` field, if present, is rewritten to `@<repo>//file` so the
+// emitted value can flow straight into a genrule's `srcs` attribute.
+// `parentPath` is the dotted CUE path used in MapSlice's error message.
+func StarlarkRepoTupleList(b *strings.Builder, name string, parent map[string]any, parentPath, key string, fields []string) error {
+	items, err := MapSlice(parent, parentPath, key)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(b, "%s = [\n", name)
+	for _, item := range items {
+		b.WriteString("    (")
+		for i, field := range fields {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			value, err := String(item, key, field)
+			if err != nil {
+				return err
+			}
+			if field == "repo" {
+				value = "@" + value + "//file"
+			}
+			fmt.Fprintf(b, "%q", value)
+		}
+		b.WriteString("),\n")
+	}
+	b.WriteString("]\n\n")
+	return nil
 }
 
 // OptionalStringList returns the typed []string at parent[key] or nil

@@ -9,6 +9,7 @@ import (
 
 	"github.com/verself/cue-renderer/internal/load"
 	"github.com/verself/cue-renderer/internal/render"
+	"github.com/verself/cue-renderer/internal/render/projection"
 )
 
 // topologyDir returns the absolute path to src/cue-renderer/ for the
@@ -178,6 +179,78 @@ func TestLoadTopology_GraphSHA256Stable(t *testing.T) {
 	}
 	if len(a.GraphSHA256) != 64 {
 		t.Fatalf("GraphSHA256 not hex-64: %q", a.GraphSHA256)
+	}
+}
+
+// TestDevToolPinnedHTTPFileTriangle pins the three CUE blocks together:
+// every devTool tagged `tier: pinned_http_file` must have a matching
+// devToolDownloads entry (modulo s/-/_/g for Bazel repo-name rules) and
+// every devToolPackaging row must reference an http_file declared in
+// devToolDownloads via its `repo` field. A drift in any direction means
+// the dev_tools.tar.zst archive is missing or naming a tool that has no
+// fetch rule — silent today (the renderer still produces output) but
+// loud in the bridge PR. The freshness check catches source/projection
+// drift; this test catches semantic drift inside the source itself.
+func TestDevToolPinnedHTTPFileTriangle(t *testing.T) {
+	loaded, err := load.Topology(topologyDir(t), "local")
+	if err != nil {
+		t.Fatalf("load topology: %v", err)
+	}
+
+	pinned := map[string]bool{}
+	for name, raw := range loaded.Catalog.DevTools {
+		tool, ok := raw.(map[string]any)
+		if !ok {
+			t.Fatalf("devTools[%q]: expected map, got %T", name, raw)
+		}
+		tier, _ := tool["tier"].(string)
+		if tier == "pinned_http_file" {
+			pinned[strings.ReplaceAll(name, "-", "_")] = true
+		}
+	}
+
+	downloads, err := projection.NamedFields(loaded.Catalog.Raw, "devToolDownloads")
+	if err != nil {
+		t.Fatalf("read devToolDownloads: %v", err)
+	}
+	declaredKeys := map[string]bool{}
+	declaredRepos := map[string]bool{}
+	for _, item := range downloads {
+		declaredKeys[item.Name] = true
+		repoName, err := projection.String(item.Value, item.Name, "name")
+		if err != nil {
+			t.Fatalf("devToolDownloads.%s.name: %v", item.Name, err)
+		}
+		declaredRepos[repoName] = true
+	}
+
+	for name := range pinned {
+		if !declaredKeys[name] {
+			t.Errorf("dev tool %q has tier=pinned_http_file but no devToolDownloads entry", name)
+		}
+	}
+	for name := range declaredKeys {
+		if !pinned[name] {
+			t.Errorf("devToolDownloads has %q but no devTool with tier=pinned_http_file references it", name)
+		}
+	}
+
+	packaging := loaded.Catalog.DevToolPackaging
+	for _, listKey := range []string{"tar_single", "zip_single", "zip_directory", "tar_multi", "archive_dir", "raw"} {
+		items, err := projection.MapSlice(packaging, "devToolPackaging", listKey)
+		if err != nil {
+			t.Fatalf("devToolPackaging.%s: %v", listKey, err)
+		}
+		for _, row := range items {
+			repo, err := projection.String(row, listKey, "repo")
+			if err != nil {
+				t.Errorf("devToolPackaging.%s row missing repo: %v", listKey, err)
+				continue
+			}
+			if !declaredRepos[repo] {
+				t.Errorf("devToolPackaging.%s row references repo %q which is not declared in devToolDownloads", listKey, repo)
+			}
+		}
 	}
 }
 

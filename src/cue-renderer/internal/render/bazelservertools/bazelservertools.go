@@ -35,19 +35,19 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 	fmt.Fprintf(&b, "PROFILE_BIN = %q\n", profileBin)
 	fmt.Fprintf(&b, "GRAFANA_CLICKHOUSE_DATASOURCE_VERSION = %q\n\n", grafanaVersion)
 
-	if err := writeTupleList(&b, "TAR_SINGLE_BINARIES", packaging, "tar_single", []string{"name", "repo", "tar_flag", "binary", "dest"}); err != nil {
+	if err := projection.StarlarkRepoTupleList(&b, "TAR_SINGLE_BINARIES", packaging, "serverToolPackaging", "tar_single", []string{"name", "repo", "tar_flag", "binary", "dest"}); err != nil {
 		return err
 	}
-	if err := writeTupleList(&b, "ZIP_SINGLE_BINARIES", packaging, "zip_single", []string{"name", "repo", "binary", "dest"}); err != nil {
+	if err := projection.StarlarkRepoTupleList(&b, "ZIP_SINGLE_BINARIES", packaging, "serverToolPackaging", "zip_single", []string{"name", "repo", "binary", "dest"}); err != nil {
 		return err
 	}
-	if err := writeTupleList(&b, "DEB_BINARY_SPECS", packaging, "deb_member", []string{"name", "repo", "binary", "dest"}); err != nil {
+	if err := projection.StarlarkRepoTupleList(&b, "DEB_BINARY_SPECS", packaging, "serverToolPackaging", "deb_member", []string{"name", "repo", "binary", "dest"}); err != nil {
 		return err
 	}
-	if err := writeTupleList(&b, "RAW_BINARY_SPECS", packaging, "raw", []string{"name", "repo", "dest"}); err != nil {
+	if err := projection.StarlarkRepoTupleList(&b, "RAW_BINARY_SPECS", packaging, "serverToolPackaging", "raw", []string{"name", "repo", "dest"}); err != nil {
 		return err
 	}
-	if err := writeTupleList(&b, "ARCHIVE_DIRECTORIES", packaging, "archive_dir", []string{"name", "repo", "tar_flag", "dest"}); err != nil {
+	if err := projection.StarlarkRepoTupleList(&b, "ARCHIVE_DIRECTORIES", packaging, "serverToolPackaging", "archive_dir", []string{"name", "repo", "tar_flag", "dest"}); err != nil {
 		return err
 	}
 
@@ -79,39 +79,12 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 	return out.WriteFile(outputPath, []byte(b.String()))
 }
 
-func writeTupleList(b *strings.Builder, name string, packaging map[string]any, key string, fields []string) error {
-	items, err := mapSlice(packaging, "serverToolPackaging", key)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(b, "%s = [\n", name)
-	for _, item := range items {
-		b.WriteString("    (")
-		for i, field := range fields {
-			if i > 0 {
-				b.WriteString(", ")
-			}
-			value, err := projection.String(item, key, field)
-			if err != nil {
-				return err
-			}
-			if field == "repo" {
-				value = "@" + value + "//file"
-			}
-			fmt.Fprintf(b, "%q", value)
-		}
-		b.WriteString("),\n")
-	}
-	b.WriteString("]\n\n")
-	return nil
-}
-
 func serverToolDeps(packaging map[string]any) ([]string, error) {
 	deps := map[string]struct{}{
 		"grafana_clickhouse_datasource_version": {},
 	}
 	for _, key := range []string{"tar_single", "zip_single", "deb_member", "raw", "archive_dir", "zip_dir"} {
-		items, err := mapSlice(packaging, "serverToolPackaging", key)
+		items, err := projection.MapSlice(packaging, "serverToolPackaging", key)
 		if err != nil {
 			return nil, err
 		}
@@ -128,26 +101,6 @@ func serverToolDeps(packaging map[string]any) ([]string, error) {
 		out = append(out, dep)
 	}
 	sort.Strings(out)
-	return out, nil
-}
-
-func mapSlice(parent map[string]any, path, key string) ([]map[string]any, error) {
-	value, ok := parent[key]
-	if !ok {
-		return nil, fmt.Errorf("%s.%s: missing", path, key)
-	}
-	items, ok := value.([]any)
-	if !ok {
-		return nil, fmt.Errorf("%s.%s: expected list, got %T", path, key, value)
-	}
-	out := make([]map[string]any, 0, len(items))
-	for i, item := range items {
-		m, ok := item.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("%s.%s[%d]: expected map, got %T", path, key, i, item)
-		}
-		out = append(out, m)
-	}
 	return out, nil
 }
 

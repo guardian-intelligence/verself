@@ -57,15 +57,16 @@ type Clusters struct {
 type Catalog struct {
 	Versions            map[string]any
 	ServerTools         map[string]any
-	ServerToolDownloads map[string]any
 	ServerToolPackaging map[string]any
 	DevTools            map[string]any
-	DevToolDownloads    map[string]any
+	DevToolsArchive     map[string]any
 	DevToolPackaging    map[string]any
 	GuestVersions       map[string]any
 
 	// Raw is the loaded catalog package value. Renderers that need lossless
-	// CUE projection should prefer this over the decoded maps.
+	// CUE projection should prefer this over the decoded maps. The
+	// `*ToolDownloads` blocks are projected from Raw on demand by the
+	// MODULE.bazel emitters; no pre-decoded mirror is kept.
 	Raw cue.Value
 }
 
@@ -193,10 +194,9 @@ func decodeCatalog(root cue.Value, out *Catalog) error {
 	}{
 		{path: "versions", dst: &out.Versions},
 		{path: "serverTools", dst: &out.ServerTools},
-		{path: "serverToolDownloads", dst: &out.ServerToolDownloads},
 		{path: "serverToolPackaging", dst: &out.ServerToolPackaging},
 		{path: "devTools", dst: &out.DevTools},
-		{path: "devToolDownloads", dst: &out.DevToolDownloads},
+		{path: "devToolsArchive", dst: &out.DevToolsArchive},
 		{path: "devToolPackaging", dst: &out.DevToolPackaging},
 		{path: "guestVersions", dst: &out.GuestVersions},
 	} {
