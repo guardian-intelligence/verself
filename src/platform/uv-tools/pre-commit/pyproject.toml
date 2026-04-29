@@ -1,0 +1,9 @@
+# pre-commit uv-tool project.
+[project]
+name = "verself-pre-commit"
+version = "0.0.0"
+description = "pre-commit hook runner."
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "pre-commit==4.5.1",
+]

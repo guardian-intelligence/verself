@@ -1,23 +1,23 @@
 ---
-# Bring the controller's dev tools up to topology. Three delivery channels:
+# Bring the controller's dev tools up to topology. Four delivery channels:
 #
 #   1. dev_tools.tar.zst (pinned_http_file tier) — Bazel-fetched, sha256-pinned,
 #      one untar at /. Owns 16 binaries plus /usr/local/{go,zig} symlinks.
 #   2. systemPackages — apt-managed entries with explicit risk acknowledgements;
 #      the only intentionally unpinned channel.
-#   3. install plan (legacy_install_plan tier) — `go install` and `uv tool install`
-#      for tools that haven't migrated to a hermetic tier yet.
+#   3. lockfileUvTools (lockfile_uv tier) — per-project pyproject.toml + uv.lock
+#      under src/platform/uv-tools/, materialised via `uv sync --frozen`.
+#   4. install plan (legacy_install_plan tier) — `go install` for the source-built
+#      Go tools that haven't migrated to a hermetic tier yet.
 #
-# Order matters: the tarball must land before `go install` runs (which needs
-# /usr/local/go/bin/go) and before `uv tool install` runs (which needs
-# /usr/local/bin/uv).
+# Order matters: the tarball must land before lockfile_uv (needs /usr/local/bin/uv)
+# and before `go install` runs (needs /usr/local/go/bin/go).
 
 - name: Require generated dev tool install plan
   ansible.builtin.assert:
     that:
       - topology_dev_tool_install_plan is defined
       - topology_dev_tool_install_plan.go_installs is defined
-      - topology_dev_tool_install_plan.uv_tools is defined
     quiet: true
     fail_msg: >-
       topology_dev_tool_install_plan is missing or stale. Run make topology-generate before setup-dev.
@@ -27,6 +27,9 @@
 
 - name: Install system packages
   ansible.builtin.include_tasks: system_packages.yml
+
+- name: Install lockfile_uv dev tools
+  ansible.builtin.include_tasks: lockfile_uv.yml
 
 - name: Set legacy install plan facts
   ansible.builtin.set_fact:
@@ -47,17 +50,6 @@
     GOBIN: "{{ item.gobin }}"
   changed_when: true
   loop: "{{ dev_tools_install_plan.go_installs }}"
-  loop_control:
-    label: "{{ item.key }}"
-
-- name: Install generated uv dev tools
-  ansible.builtin.command:
-    argv: "{{ item.argv }}"
-  environment:
-    UV_TOOL_DIR: /opt/uv-tools
-    UV_TOOL_BIN_DIR: /usr/local/bin
-  changed_when: true
-  loop: "{{ dev_tools_install_plan.uv_tools }}"
   loop_control:
     label: "{{ item.key }}"
 

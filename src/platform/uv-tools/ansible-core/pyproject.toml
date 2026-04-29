@@ -1,0 +1,20 @@
+# ansible-core uv-tool project. Consumed by roles/dev_tools via
+# `uv sync --frozen` against the committed uv.lock; the resulting venv's
+# entrypoints (ansible, ansible-galaxy, ansible-lint, ...) are symlinked
+# into /usr/local/bin/ by the role.
+#
+# Adding a new dependency: edit dependencies, run `uv lock` from this
+# directory, commit pyproject.toml + uv.lock together. The renderer's
+# triangle invariant test asserts CUE versions still match the lockfile.
+[project]
+name = "verself-ansible-core"
+version = "0.0.0"
+description = "ansible-core toolchain bundled with ansible-lint and the OTel callback's runtime imports."
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "ansible-core==2.20.3",
+    "ansible-lint==26.4.0",
+    "opentelemetry-sdk==1.41.0",
+    "opentelemetry-exporter-otlp-proto-grpc==1.41.0",
+    "opentelemetry-exporter-otlp-proto-http==1.41.0",
+]

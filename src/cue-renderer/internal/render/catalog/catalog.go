@@ -1,9 +1,10 @@
 // Package catalog projects the dev/server tool catalog into Ansible
 // group_vars. dev_tools.tar.zst owns every pinned_http_file tool;
-// systemPackages owns apt-managed entries; the install plan handles the
-// two strategies still driven directly by Ansible (`go_install`,
-// `uv_tool`). `bootstrap_pivot` and `pinned_http_file` tools are skipped
-// — bazelisk lives in scripts/bootstrap, the rest land via the tarball.
+// systemPackages owns apt-managed entries; lockfileUvTools owns Python
+// tools delivered via committed uv.lock files; the install plan handles
+// the one strategy still driven directly by Ansible (`go_install`).
+// `bootstrap_pivot` and `pinned_http_file` tools are skipped — bazelisk
+// lives in scripts/bootstrap, the rest land via the tarball.
 package catalog
 
 import (
@@ -34,6 +35,7 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 		"topology_server_tools":          loaded.Catalog.ServerTools,
 		"topology_dev_tools":             loaded.Catalog.DevTools,
 		"topology_dev_tools_archive":     loaded.Catalog.DevToolsArchive,
+		"topology_lockfile_uv_projects":  loaded.Catalog.LockfileUvTools,
 		"topology_system_packages":       loaded.Catalog.SystemPackages,
 		"topology_guest_versions":        loaded.Catalog.GuestVersions,
 		"topology_dev_tool_install_plan": installPlan,
@@ -42,7 +44,6 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 
 type installPlan struct {
 	goInstalls []map[string]any
-	uvTools    []map[string]any
 }
 
 func devToolInstallPlan(loaded load.Loaded) (map[string]any, error) {
@@ -81,21 +82,6 @@ func devToolInstallPlan(loaded load.Loaded) (map[string]any, error) {
 				"gopath": goPath,
 				"gobin":  goPath + "/bin",
 			})
-		case "uv_tool":
-			pkg, err := projection.String(tool, item.Name, "uv_package")
-			if err != nil {
-				return nil, err
-			}
-			version, err := projection.String(tool, item.Name, "version")
-			if err != nil {
-				return nil, err
-			}
-			argv := []string{"/usr/local/bin/uv", "tool", "install", "--force", pkg + "==" + version}
-			argv = append(argv, withArgs(projection.OptionalStringList(tool, "with"))...)
-			plan.uvTools = append(plan.uvTools, map[string]any{"key": item.Name, "argv": argv})
-		case "uv_tool_companion":
-			// Companion of a uv_tool entry; the parent's `with:` covers it.
-			continue
 		default:
 			return nil, fmt.Errorf("dev tool %s (tier=%s) has unsupported install-plan strategy %q", item.Name, tier, strategy)
 		}
@@ -103,18 +89,5 @@ func devToolInstallPlan(loaded load.Loaded) (map[string]any, error) {
 
 	return map[string]any{
 		"go_installs": plan.goInstalls,
-		"uv_tools":    plan.uvTools,
 	}, nil
-}
-
-// withArgs flattens an `--with X --with Y` flag list for `uv tool install`.
-func withArgs(deps []string) []string {
-	if len(deps) == 0 {
-		return nil
-	}
-	out := make([]string, 0, 2*len(deps))
-	for _, dep := range deps {
-		out = append(out, "--with", dep)
-	}
-	return out
 }

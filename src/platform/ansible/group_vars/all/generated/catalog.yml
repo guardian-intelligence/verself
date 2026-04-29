@@ -45,36 +45,6 @@ topology_dev_tool_install_plan:
       gobin: '{{ dev_tools_gopath }}/bin'
       gopath: '{{ dev_tools_gopath }}'
       key: protoc-gen-go-grpc
-  uv_tools:
-    - argv:
-        - /usr/local/bin/uv
-        - tool
-        - install
-        - --force
-        - ansible-core==2.20.3
-        - --with
-        - ansible-lint==26.4.0
-        - --with
-        - opentelemetry-sdk==1.41.0
-        - --with
-        - opentelemetry-exporter-otlp-proto-grpc==1.41.0
-        - --with
-        - opentelemetry-exporter-otlp-proto-http==1.41.0
-      key: ansible
-    - argv:
-        - /usr/local/bin/uv
-        - tool
-        - install
-        - --force
-        - pre-commit==4.5.1
-      key: pre-commit
-    - argv:
-        - /usr/local/bin/uv
-        - tool
-        - install
-        - --force
-        - guarddog==2.9.0
-      key: guarddog
 topology_dev_tools:
   age:
     bins:
@@ -98,36 +68,15 @@ topology_dev_tools:
     version: 0.25.4
     version_cmd: agent-browser --version
   ansible:
-    strategy: uv_tool
-    tier: legacy_install_plan
-    uv_package: ansible-core
+    project: ansible-core
+    tier: lockfile_uv
     version: 2.20.3
     version_cmd: ansible --version
-    with:
-      - ansible-lint==26.4.0
-      - opentelemetry-sdk==1.41.0
-      - opentelemetry-exporter-otlp-proto-grpc==1.41.0
-      - opentelemetry-exporter-otlp-proto-http==1.41.0
   ansible-lint:
-    strategy: uv_tool_companion
-    tier: legacy_install_plan
+    project: ansible-core
+    tier: lockfile_uv
     version: 26.4.0
     version_cmd: ansible-lint --version
-  ansible-opentelemetry-exporter-otlp-proto-grpc:
-    strategy: uv_tool_companion
-    tier: legacy_install_plan
-    version: 1.41.0
-    version_cmd: /opt/uv-tools/ansible-core/bin/python -c "import importlib.metadata as m; print(m.version('opentelemetry-exporter-otlp-proto-grpc'))"
-  ansible-opentelemetry-exporter-otlp-proto-http:
-    strategy: uv_tool_companion
-    tier: legacy_install_plan
-    version: 1.41.0
-    version_cmd: /opt/uv-tools/ansible-core/bin/python -c "import importlib.metadata as m; print(m.version('opentelemetry-exporter-otlp-proto-http'))"
-  ansible-opentelemetry-sdk:
-    strategy: uv_tool_companion
-    tier: legacy_install_plan
-    version: 1.41.0
-    version_cmd: /opt/uv-tools/ansible-core/bin/python -c "import importlib.metadata as m; print(m.version('opentelemetry-sdk'))"
   bazel:
     sha256: a667454f3f4f8878df8199136b82c199f6ada8477b337fae3b1ef854f01e4e2f
     tier: bootstrap_pivot
@@ -203,9 +152,8 @@ topology_dev_tools:
     version: 2.25.0
     version_cmd: go version -m /usr/local/go-tools/bin/gosec
   guarddog:
-    strategy: uv_tool
-    tier: legacy_install_plan
-    uv_package: guarddog
+    project: guarddog
+    tier: lockfile_uv
     version: 2.9.0
     version_cmd: guarddog --version
   jq:
@@ -225,9 +173,8 @@ topology_dev_tools:
     version: 2.3.5
     version_cmd: osv-scanner --version
   pre-commit:
-    strategy: uv_tool
-    tier: legacy_install_plan
-    uv_package: pre-commit
+    project: pre-commit
+    tier: lockfile_uv
     version: 4.5.1
     version_cmd: pre-commit --version
   protoc:
@@ -355,6 +302,31 @@ topology_guest_versions:
     sha256: c1e67ef7b17a6300e136118bd1dc04725009cb376c1aad10abcf8cd453628d58
     url: https://cdimages.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.4-base-amd64.tar.gz
     version: 24.04.4
+topology_lockfile_uv_projects:
+  ansible-core:
+    entrypoints:
+      - ansible
+      - ansible-config
+      - ansible-console
+      - ansible-doc
+      - ansible-galaxy
+      - ansible-inventory
+      - ansible-lint
+      - ansible-playbook
+      - ansible-pull
+      - ansible-vault
+    project_dir: src/platform/uv-tools/ansible-core
+    version: 2.20.3
+  guarddog:
+    entrypoints:
+      - guarddog
+    project_dir: src/platform/uv-tools/guarddog
+    version: 2.9.0
+  pre-commit:
+    entrypoints:
+      - pre-commit
+    project_dir: src/platform/uv-tools/pre-commit
+    version: 4.5.1
 topology_server_tools:
   bazel_label: //src/cue-renderer/binaries:server_tools.tar.zst
   version: clickhouse-26.3.2.3_tigerbeetle-0.17.1_zitadel-4.13.1_openbao-2.5.2_spire-1.14.5_spiffe-helper-0.11.0_nats-server-2.12.7_garage-v2.3.0_forgejo-15.0.0_bazel-remote-2.6.1_otelcol-contrib-0.149.0_temporal-1.30.4_grafana-12.4.2_grafana-clickhouse-datasource-4.14.1_containerd-2.2.2_nodejs-22.22.2_stalwart-0.15.5_stalwart-cli-0.15.5_caddy-2.11.2
