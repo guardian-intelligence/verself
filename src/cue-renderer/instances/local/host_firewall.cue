@@ -2,7 +2,7 @@ package topology
 
 import (
 	"list"
-	s "github.com/verself/cue-renderer/schema"
+	s "verself.sh/cue-renderer/schema"
 )
 
 // Host firewall: the default-deny ingress chain that fronts every public
