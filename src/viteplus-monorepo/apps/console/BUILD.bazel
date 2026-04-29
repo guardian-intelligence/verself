@@ -1,4 +1,8 @@
-load("//src/viteplus-monorepo:viteplus_rules.bzl", "viteplus_app")
+load(
+    "@npm//src/viteplus-monorepo/apps/console:@hey-api/openapi-ts/package_json.bzl",
+    openapi_ts_bin = "bin",
+)
+load("//src/viteplus-monorepo:viteplus_rules.bzl", "viteplus_app", "viteplus_openapi_clients")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -12,4 +16,25 @@ viteplus_app(
         "vite.config.ts",
     ],
     npm_name = "@verself/console",
+)
+
+# Customer-facing OpenAPI client SDKs for every service the console talks to.
+# Outputs are written to bazel-out, then projected onto disk under
+# src/__generated/<sdk>/ via write_source_files. Run
+# `bazelisk run //src/viteplus-monorepo/apps/console:openapi_clients` to refresh
+# the on-disk copies after a spec change; CI gates drift via
+# `bazelisk test //src/viteplus-monorepo/apps/console:openapi_clients_test`.
+viteplus_openapi_clients(
+    name = "openapi_clients",
+    openapi_ts_bin = openapi_ts_bin,
+    plugin_packages = [":node_modules/valibot"],
+    specs = [
+        ("sandbox-rental-api", "//src/sandbox-rental-service/openapi:openapi-3.1.yaml.bin"),
+        ("identity-api", "//src/identity-service/openapi:openapi-3.1.yaml.bin"),
+        ("governance-api", "//src/governance-service/openapi:openapi-3.1.yaml.bin"),
+        ("profile-api", "//src/profile-service/openapi:openapi-3.1.yaml.bin"),
+        ("notifications-api", "//src/notifications-service/openapi:openapi-3.1.yaml.bin"),
+        ("projects-api", "//src/projects-service/openapi:openapi-3.1.yaml.bin"),
+        ("source-code-hosting-api", "//src/source-code-hosting-service/openapi:openapi-3.1.yaml.bin"),
+    ],
 )

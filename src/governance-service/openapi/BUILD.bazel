@@ -1,0 +1,17 @@
+load("@bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
+
+exports_files(
+    [
+        "openapi-3.1.yaml",
+        "openapi-3.0.yaml",
+        "internal-openapi-3.1.yaml",
+        "internal-openapi-3.0.yaml",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+copy_to_bin(
+    name = "openapi-3.1.yaml.bin",
+    srcs = ["openapi-3.1.yaml"],
+    visibility = ["//visibility:public"],
+)
