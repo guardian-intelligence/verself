@@ -17,11 +17,6 @@ import (
 	"github.com/verself/billing-service/internal/billing"
 )
 
-// Tracer comment for the Phase 1 codegen cutover verification: editing
-// this source forces OpenAPISpec → OAPICodegen → GoCompilePkg through
-// the action graph, producing the bazel.action.* spans that the
-// deploy.codegen_actions / deploy.rebuild_blast_radius observe queries
-// exist to surface.
 const (
 	problemTypeNoStripeCustomer = "urn:verself:problem:billing:no-stripe-customer"
 )
