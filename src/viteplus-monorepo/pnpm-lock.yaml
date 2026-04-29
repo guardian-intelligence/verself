@@ -114,6 +114,9 @@ catalogs:
     react-dom:
       specifier: ^19.0.0
       version: 19.2.4
+    rolldown:
+      specifier: 1.0.0-rc.13
+      version: 1.0.0-rc.13
     sonner:
       specifier: ^1.7.0
       version: 1.7.4
@@ -157,6 +160,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 22.19.17
+      rolldown:
+        specifier: 'catalog:'
+        version: 1.0.0-rc.13
       vite-plus:
         specifier: 'catalog:'
         version: 0.1.16(@opentelemetry/api@1.9.1)(@types/node@22.19.17)(jiti@2.6.1)(tsx@4.21.0)(typescript@6.0.2)(vite@8.0.6(@types/node@22.19.17)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))(yaml@2.8.3)
@@ -1336,18 +1342,18 @@ packages:
     peerDependencies:
       '@opentelemetry/api': '>=1.0.0 <1.10.0'
 
-  '@opentelemetry/redis-common@0.38.2':
-    resolution: {integrity: sha512-1BCcU93iwSRZvDAgwUxC/DV4T/406SkMfxGqu5ojc3AvNI+I9GhV7v0J1HljsczuuhcnFLYqD5VmwVXfCGHzxA==}
+  '@opentelemetry/redis-common@0.38.3':
+    resolution: {integrity: sha512-VCghU1JYs/4gP6Gqf/xro9MEsZ7LrMv2uONVsaESKL38ZOB9BqnI98FfS23wjMnHlpuE+TTaWSoAVNpTwYXzjw==}
     engines: {node: ^18.19.0 || >=20.6.0}
 
-  '@opentelemetry/resource-detector-alibaba-cloud@0.33.4':
-    resolution: {integrity: sha512-S07KBOB3+BHV0xjuN4sCRP7x44p2rW0ieGDzoRu1f8Sbvw9Gw4f1oL83tfXiOb0fGPVt8DF4P+39UcggHQsACA==}
+  '@opentelemetry/resource-detector-alibaba-cloud@0.33.5':
+    resolution: {integrity: sha512-KtbVu0Q+I+yg2/fL0pINxekNrejmxw9gpXB8rc3L8WAA0BXnKEp6KEe/glHyzyXOD8V2eZ+AfaoZixFp76ZJDw==}
     engines: {node: ^18.19.0 || >=20.6.0}
     peerDependencies:
       '@opentelemetry/api': ^1.0.0
 
-  '@opentelemetry/resource-detector-aws@2.14.0':
-    resolution: {integrity: sha512-1a0YMG6wZuLUfwkSgfe77vN60V5SmK//kM+JsQFT7dOKLyFvpN5A+TpX/eFdaqnhg89CxyF7XpKMBbg1DGv5bw==}
+  '@opentelemetry/resource-detector-aws@2.15.0':
+    resolution: {integrity: sha512-+aiEkI+JA94XVIJtltt3XKYbLSaHRqHFdvGOwulBpfNKtEIWDEkKm3qfTl7Q0q9gY9621oXMU1sT5MM7koCnyA==}
     engines: {node: ^18.19.0 || >=20.6.0}
     peerDependencies:
       '@opentelemetry/api': ^1.0.0
@@ -1358,8 +1364,8 @@ packages:
     peerDependencies:
       '@opentelemetry/api': ^1.0.0
 
-  '@opentelemetry/resource-detector-container@0.8.5':
-    resolution: {integrity: sha512-vWlfpiCHKWVrT/3EHgJfRLGX8ghVsEZ6CBHhJo5sAQQnwInDNcXjbBJm74Jiyqt0eg7NLeT0EfpXHCUSeYgFaA==}
+  '@opentelemetry/resource-detector-container@0.8.6':
+    resolution: {integrity: sha512-b3/SzjmbANgZYfQn40+Mx5Bl0f4IIRTrCRSTN3FQ7j1KB8h3jl+JeJpFZZFY1OU5BtDFXI7VQ334SbKi5Z2R1A==}
     engines: {node: ^18.19.0 || >=20.6.0}
     peerDependencies:
       '@opentelemetry/api': ^1.0.0
@@ -4096,10 +4102,10 @@ snapshots:
       '@opentelemetry/instrumentation-tedious': 0.33.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/instrumentation-undici': 0.24.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/instrumentation-winston': 0.58.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/resource-detector-alibaba-cloud': 0.33.4(@opentelemetry/api@1.9.1)
-      '@opentelemetry/resource-detector-aws': 2.14.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/resource-detector-alibaba-cloud': 0.33.5(@opentelemetry/api@1.9.1)
+      '@opentelemetry/resource-detector-aws': 2.15.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/resource-detector-azure': 0.22.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/resource-detector-container': 0.8.5(@opentelemetry/api@1.9.1)
+      '@opentelemetry/resource-detector-container': 0.8.6(@opentelemetry/api@1.9.1)
       '@opentelemetry/resource-detector-gcp': 0.49.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/resources': 2.7.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-node': 0.214.0(@opentelemetry/api@1.9.1)
@@ -4382,7 +4388,7 @@ snapshots:
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/instrumentation': 0.214.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/redis-common': 0.38.2
+      '@opentelemetry/redis-common': 0.38.3
       '@opentelemetry/semantic-conventions': 1.40.0
     transitivePeerDependencies:
       - supports-color
@@ -4522,7 +4528,7 @@ snapshots:
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/instrumentation': 0.214.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/redis-common': 0.38.2
+      '@opentelemetry/redis-common': 0.38.3
       '@opentelemetry/semantic-conventions': 1.40.0
     transitivePeerDependencies:
       - supports-color
@@ -4628,15 +4634,15 @@ snapshots:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/core': 2.6.1(@opentelemetry/api@1.9.1)
 
-  '@opentelemetry/redis-common@0.38.2': {}
+  '@opentelemetry/redis-common@0.38.3': {}
 
-  '@opentelemetry/resource-detector-alibaba-cloud@0.33.4(@opentelemetry/api@1.9.1)':
+  '@opentelemetry/resource-detector-alibaba-cloud@0.33.5(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/core': 2.7.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/resources': 2.7.0(@opentelemetry/api@1.9.1)
 
-  '@opentelemetry/resource-detector-aws@2.14.0(@opentelemetry/api@1.9.1)':
+  '@opentelemetry/resource-detector-aws@2.15.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/core': 2.7.0(@opentelemetry/api@1.9.1)
@@ -4650,7 +4656,7 @@ snapshots:
       '@opentelemetry/resources': 2.7.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.40.0
 
-  '@opentelemetry/resource-detector-container@0.8.5(@opentelemetry/api@1.9.1)':
+  '@opentelemetry/resource-detector-container@0.8.6(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/core': 2.7.0(@opentelemetry/api@1.9.1)

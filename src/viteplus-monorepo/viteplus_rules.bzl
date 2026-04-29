@@ -13,6 +13,7 @@ _APP_EXCLUDES = [
 
 _VITEPLUS_WORKSPACE_CONFIG = "//src/viteplus-monorepo:workspace_config"
 _VITEPLUS_TOOL = "//src/viteplus-monorepo:vp"
+_ESBUILD_TOOL = "//src/viteplus-monorepo/scripts:bundle_instrumentation"
 
 def viteplus_source_package(npm_name, srcs):
     """Links a source-first workspace package into the rules_js npm graph."""
@@ -92,11 +93,33 @@ def viteplus_app(npm_name, srcs):
         tool = _VITEPLUS_TOOL,
     )
 
+    # Bundle the OTel preload as a sibling file so the deploy tarball runs
+    # without a node_modules tree. The preload runs ahead of the server
+    # bundle (Node `--import`), so it cannot live inside `.output/server/`;
+    # the driver runs Rolldown (same bundler `vp build` uses for the server
+    # bundle) over `instrumentation.mts` with `platform=node`, leaving Node
+    # built-ins external and inlining everything else.
+    js_run_binary(
+        name = "instrumentation_bundle",
+        srcs = [
+            ":node_modules",
+            "instrumentation.mts",
+        ],
+        outs = ["instrumentation.mjs"],
+        args = [
+            "--entry=instrumentation.mts",
+            "--outfile=instrumentation.mjs",
+        ],
+        chdir = native.package_name(),
+        progress_message = "Bundling %s instrumentation preload" % npm_name,
+        tool = _ESBUILD_TOOL,
+    )
+
     pkg_tar(
         name = "deploy_bundle",
         srcs = [
             ":output",
-            "instrumentation.mts",
+            ":instrumentation_bundle",
         ],
         package_dir = ".",
         strip_prefix = ".",
