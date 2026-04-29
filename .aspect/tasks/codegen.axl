@@ -239,8 +239,7 @@ def _clients_check(ctx):
     rc = checked_spawn(ctx, "git", ["diff", "--exit-code", "--"] + files, label = "git diff generated clients")
     if rc != 0:
         return rc
-    # Hand-written transport in a generated tree is a regression indicator;
-    # forbid it the same way the Makefile did.
+    # Hand-written transport in a generated tree is a regression indicator.
     forbidden = "http\\.NewRequestWithContext\\(|\\.Do\\(req\\)|json\\.NewDecoder\\(|json\\.Marshal\\("
     cmd = "! rg -n '" + forbidden + "' " + " ".join(_CLIENT_DIRS) + " --glob '!**/client.gen.go' --glob '!**/generate.go'"
     return checked_spawn(ctx, "bash", ["-c", cmd], label = "rg generated-client guard")
@@ -258,6 +257,8 @@ _RUN_KINDS = {
 
 _RUN_ALL_ORDER = ["topology", "sqlc", "openapi", "clients"]
 
+# `wire` is check-only: it asserts an invariant on existing committed specs,
+# not a regeneration. There is no _wire_run by design.
 _CHECK_KINDS = {
     "topology": _topology_check,
     "sqlc": _sqlc_check,

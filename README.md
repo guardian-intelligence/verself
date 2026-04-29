@@ -38,8 +38,8 @@ aspect persona assume platform-admin
 
 `aspect doctor` verifies the toolchain pins (aspect, bazelisk, `.bazelversion`,
 `MODULE.bazel`) without needing the full controller toolchain installed. Run
-`aspect` (no args) to see the full task surface, or read
-`docs/architecture/aspect-cli-migration.md` for the durable command list.
+`aspect` (no args) to see the full task surface; `aspect <task> --help`
+documents flags.
 
 The product docs and policies live at `https://<domain>`. The authenticated
 product console lives at `https://console.<domain>`. Public service APIs use
