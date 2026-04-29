@@ -12,6 +12,10 @@ on:
 permissions:
   contents: read
 
+env:
+  NODE_VERSION: 24.15.0
+  PNPM_VERSION: 10.33.0
+
 jobs:
   viteplus:
     name: Vite+ monorepo
@@ -23,33 +27,42 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Mount Vite+ toolchain
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Mount pnpm store
         uses: useblacksmith/stickydisk@v1
         with:
-          key: ${{ github.repository }}-vite-plus-${{ hashFiles('src/viteplus-monorepo/pnpm-lock.yaml') }}
-          path: /home/runner/.vite-plus
+          key: ${{ github.repository }}-viteplus-pnpm-store-node${{ env.NODE_VERSION }}-${{ hashFiles('src/viteplus-monorepo/pnpm-lock.yaml') }}
+          path: /home/runner/.pnpm-store
 
       - name: Mount node_modules
         uses: useblacksmith/stickydisk@v1
         with:
-          key: ${{ github.repository }}-viteplus-node-modules-${{ hashFiles('src/viteplus-monorepo/pnpm-lock.yaml') }}
+          key: ${{ github.repository }}-viteplus-node-modules-node${{ env.NODE_VERSION }}-${{ hashFiles('src/viteplus-monorepo/pnpm-lock.yaml') }}
           path: src/viteplus-monorepo/node_modules
 
-      - name: Install Vite+
+      - name: Configure pnpm
         run: |
           set -euo pipefail
-          curl -fsSL https://vite.plus | bash
-          echo "$HOME/.vite-plus/bin" >> "$GITHUB_PATH"
+          corepack enable
+          corepack prepare "pnpm@${PNPM_VERSION}" --activate
+          pnpm config set store-dir "$HOME/.pnpm-store" --global
+          node --version
+          pnpm --version
 
       - name: Install JS dependencies
         working-directory: src/viteplus-monorepo
         run: |
           set -euo pipefail
-          vp install --frozen-lockfile --prefer-offline
-          vp --version
+          pnpm install --frozen-lockfile --prefer-offline
+          pnpm exec vp --version
 
       - name: Build workspace
         working-directory: src/viteplus-monorepo
         run: |
           set -euo pipefail
-          vp run -r --no-cache build
+          pnpm exec vp run -r --no-cache build
