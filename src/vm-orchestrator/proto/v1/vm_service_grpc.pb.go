@@ -32,6 +32,7 @@ const (
 	VMService_CommitFilesystemMount_FullMethodName = "/verself.vm_orchestrator.v1.VMService/CommitFilesystemMount"
 	VMService_SaveCheckpoint_FullMethodName        = "/verself.vm_orchestrator.v1.VMService/SaveCheckpoint"
 	VMService_GetCapacity_FullMethodName           = "/verself.vm_orchestrator.v1.VMService/GetCapacity"
+	VMService_SeedImage_FullMethodName             = "/verself.vm_orchestrator.v1.VMService/SeedImage"
 )
 
 // VMServiceClient is the client API for VMService service.
@@ -51,6 +52,12 @@ type VMServiceClient interface {
 	CommitFilesystemMount(ctx context.Context, in *CommitFilesystemMountRequest, opts ...grpc.CallOption) (*CommitFilesystemMountResponse, error)
 	SaveCheckpoint(ctx context.Context, in *SaveCheckpointRequest, opts ...grpc.CallOption) (*SaveCheckpointResponse, error)
 	GetCapacity(ctx context.Context, in *GetCapacityRequest, opts ...grpc.CallOption) (*GetCapacityResponse, error)
+	// SeedImage is the privileged image-seeding entry point used by deploy-time
+	// tooling (vm-orchestrator-cli seed-image). It materializes a composable
+	// image at pool/images/<ref>@ready from a host-local artifact (dd_from_file)
+	// or fresh filesystem (mkfs_ext4). Authorization is by SO_PEERCRED uid=0:
+	// only callers running as root on the host may invoke it.
+	SeedImage(ctx context.Context, in *SeedImageRequest, opts ...grpc.CallOption) (*SeedImageResponse, error)
 }
 
 type vMServiceClient struct {
@@ -200,6 +207,16 @@ func (c *vMServiceClient) GetCapacity(ctx context.Context, in *GetCapacityReques
 	return out, nil
 }
 
+func (c *vMServiceClient) SeedImage(ctx context.Context, in *SeedImageRequest, opts ...grpc.CallOption) (*SeedImageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SeedImageResponse)
+	err := c.cc.Invoke(ctx, VMService_SeedImage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // VMServiceServer is the server API for VMService service.
 // All implementations must embed UnimplementedVMServiceServer
 // for forward compatibility.
@@ -217,6 +234,12 @@ type VMServiceServer interface {
 	CommitFilesystemMount(context.Context, *CommitFilesystemMountRequest) (*CommitFilesystemMountResponse, error)
 	SaveCheckpoint(context.Context, *SaveCheckpointRequest) (*SaveCheckpointResponse, error)
 	GetCapacity(context.Context, *GetCapacityRequest) (*GetCapacityResponse, error)
+	// SeedImage is the privileged image-seeding entry point used by deploy-time
+	// tooling (vm-orchestrator-cli seed-image). It materializes a composable
+	// image at pool/images/<ref>@ready from a host-local artifact (dd_from_file)
+	// or fresh filesystem (mkfs_ext4). Authorization is by SO_PEERCRED uid=0:
+	// only callers running as root on the host may invoke it.
+	SeedImage(context.Context, *SeedImageRequest) (*SeedImageResponse, error)
 	mustEmbedUnimplementedVMServiceServer()
 }
 
@@ -265,6 +288,9 @@ func (UnimplementedVMServiceServer) SaveCheckpoint(context.Context, *SaveCheckpo
 }
 func (UnimplementedVMServiceServer) GetCapacity(context.Context, *GetCapacityRequest) (*GetCapacityResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetCapacity not implemented")
+}
+func (UnimplementedVMServiceServer) SeedImage(context.Context, *SeedImageRequest) (*SeedImageResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SeedImage not implemented")
 }
 func (UnimplementedVMServiceServer) mustEmbedUnimplementedVMServiceServer() {}
 func (UnimplementedVMServiceServer) testEmbeddedByValue()                   {}
@@ -514,6 +540,24 @@ func _VMService_GetCapacity_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _VMService_SeedImage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SeedImageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VMServiceServer).SeedImage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VMService_SeedImage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VMServiceServer).SeedImage(ctx, req.(*SeedImageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // VMService_ServiceDesc is the grpc.ServiceDesc for VMService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -568,6 +612,10 @@ var VMService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetCapacity",
 			Handler:    _VMService_GetCapacity_Handler,
+		},
+		{
+			MethodName: "SeedImage",
+			Handler:    _VMService_SeedImage_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

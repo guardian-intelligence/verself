@@ -7,3 +7,9 @@ go_library(
     importpath = "github.com/verself/object-storage-service/migrations",
     visibility = ["//src/object-storage-service:__subpackages__"],
 )
+
+alias(
+    name = "go_default_library",
+    actual = ":migrations",
+    visibility = ["//visibility:public"],
+)

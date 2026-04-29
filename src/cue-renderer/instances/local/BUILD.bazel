@@ -18,3 +18,9 @@ go_library(
     importpath = "github.com/verself/cue-renderer/instances/local",
     visibility = ["//visibility:public"],
 )
+
+alias(
+    name = "go_default_library",
+    actual = ":local",
+    visibility = ["//visibility:public"],
+)

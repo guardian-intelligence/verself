@@ -7,3 +7,9 @@ go_library(
     importpath = "github.com/verself/projects-service/migrations",
     visibility = ["//src/projects-service:__subpackages__"],
 )
+
+alias(
+    name = "go_default_library",
+    actual = ":migrations",
+    visibility = ["//visibility:public"],
+)

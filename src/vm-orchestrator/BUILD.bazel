@@ -16,6 +16,7 @@ go_library(
         "network.go",
         "observer.go",
         "orchestrator.go",
+        "peer_creds.go",
         "privops.go",
         "privops_direct.go",
         "rpc_convert.go",
@@ -32,6 +33,7 @@ go_library(
         "//src/apiwire",
         "//src/vm-orchestrator/proto/v1:proto",
         "//src/vm-orchestrator/vmproto",
+        "//src/vm-orchestrator/zfs",
         "@com_github_google_uuid//:uuid",
         "@com_github_oklog_ulid_v2//:ulid",
         "@com_github_vishvananda_netlink//:netlink",
@@ -43,8 +45,11 @@ go_library(
         "@io_opentelemetry_go_otel_trace//:trace",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials",
         "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//peer",
         "@org_golang_google_grpc//status",
+        "@org_golang_x_sys//unix",
         "@org_modernc_sqlite//:sqlite",
     ],
 )
@@ -57,7 +62,10 @@ go_test(
         "telemetry_stream_test.go",
     ],
     embed = [":vm-orchestrator"],
-    deps = ["//src/vm-orchestrator/vmproto"],
+    deps = [
+        "//src/vm-orchestrator/vmproto",
+        "//src/vm-orchestrator/zfs",
+    ],
 )
 
 alias(

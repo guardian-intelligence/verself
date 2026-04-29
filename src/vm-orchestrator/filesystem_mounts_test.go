@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/verself/vm-orchestrator/vmproto"
+	"github.com/verself/vm-orchestrator/zfs"
 )
 
 func TestNormalizeFilesystemMounts(t *testing.T) {
@@ -80,8 +81,12 @@ func TestPreparedFilesystemMountsBecomeGuestManifest(t *testing.T) {
 }
 
 func TestImageSnapshotUsesConfiguredImageDataset(t *testing.T) {
-	orch := New(Config{Pool: "pool", ImageDataset: "images", WorkloadDataset: "workloads"}, nil)
-	if got, want := orch.imageSnapshot("viteplus"), "pool/images/viteplus@ready"; got != want {
+	roots := zfs.Roots{Pool: "pool", ImageDataset: "images", WorkloadDataset: "workloads"}
+	img, err := zfs.NewImage(roots, "viteplus")
+	if err != nil {
+		t.Fatalf("NewImage: %v", err)
+	}
+	if got, want := img.Snapshot().String(), "pool/images/viteplus@ready"; got != want {
 		t.Fatalf("image snapshot = %q, want %q", got, want)
 	}
 }

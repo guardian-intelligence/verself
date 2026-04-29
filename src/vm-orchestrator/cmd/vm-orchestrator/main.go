@@ -101,6 +101,7 @@ func run() error {
 	server := grpc.NewServer(
 		grpc.MaxRecvMsgSize(maxMessageSize),
 		grpc.MaxSendMsgSize(maxMessageSize),
+		grpc.Creds(vmorchestrator.NewPeerCredsTransportCredentials()),
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 	)
 	vmService, err := vmorchestrator.NewAPIServer(cfg, logger)

@@ -10,70 +10,10 @@ import (
 	"time"
 )
 
-const zfsTimeout = 30 * time.Second
-
 // zvolDevicePath returns the block device path for a ZFS zvol.
 // e.g. "vspool/workloads/lease-abc" -> "/dev/zvol/vspool/workloads/lease-abc"
 func zvolDevicePath(dataset string) string {
 	return "/dev/zvol/" + dataset
-}
-
-// zfsSnapshotExists checks if a ZFS snapshot exists.
-func zfsSnapshotExists(ctx context.Context, snapshot string) (bool, error) {
-	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "zfs", "list", "-H", snapshot)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		if strings.Contains(string(out), "does not exist") {
-			return false, nil
-		}
-		return false, fmt.Errorf("zfs list %s: %w", snapshot, err)
-	}
-	return true, nil
-}
-
-// zfsDatasetExists checks whether a ZFS filesystem or volume exists.
-func zfsDatasetExists(ctx context.Context, dataset string) (bool, error) {
-	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "zfs", "list", "-H", dataset)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		if strings.Contains(string(out), "does not exist") {
-			return false, nil
-		}
-		return false, fmt.Errorf("zfs list %s: %w", dataset, err)
-	}
-	return true, nil
-}
-
-// zfsWritten returns bytes written to a dataset since it was cloned.
-func zfsWritten(ctx context.Context, dataset string) (uint64, error) {
-	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "zfs", "get", "-H", "-p", "-o", "value", "written", dataset)
-	out, err := cmd.Output()
-	if err != nil {
-		return 0, fmt.Errorf("zfs get written %s: %w", dataset, err)
-	}
-	return strconv.ParseUint(strings.TrimSpace(string(out)), 10, 64)
-}
-
-// zfsVolsize returns the provisioned size in bytes for a ZFS dataset.
-func zfsVolsize(ctx context.Context, dataset string) (uint64, error) {
-	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "zfs", "get", "-H", "-p", "-o", "value", "volsize", dataset)
-	out, err := cmd.Output()
-	if err != nil {
-		return 0, fmt.Errorf("zfs get volsize %s: %w", dataset, err)
-	}
-	return strconv.ParseUint(strings.TrimSpace(string(out)), 10, 64)
 }
 
 // waitForDevice polls for a device node to appear (zvols take a moment

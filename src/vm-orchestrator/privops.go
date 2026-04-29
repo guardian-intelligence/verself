@@ -3,16 +3,15 @@ package vmorchestrator
 import (
 	"context"
 	"io"
+
+	"github.com/verself/vm-orchestrator/zfs"
 )
 
+// PrivOps is the privileged host adapter the orchestrator depends on. The
+// ZFS half is contributed by zfs.PrivZFS so the same contract describes
+// what VolumeLifecycle needs without duplicating method signatures.
 type PrivOps interface {
-	ZFSClone(ctx context.Context, snapshot, target, leaseID string) error
-	ZFSSnapshot(ctx context.Context, dataset, snapshotName string, properties map[string]string) error
-	ZFSDestroy(ctx context.Context, dataset string) error
-	ZFSDestroyRecursive(ctx context.Context, dataset string) error
-	ZFSEnsureFilesystem(ctx context.Context, dataset string) error
-	ZFSSendReceive(ctx context.Context, snapshot, target string) error
-	ZFSSetProperty(ctx context.Context, dataset, key, value string) error
+	zfs.PrivZFS
 	FlushBlockDevice(ctx context.Context, path string) error
 	TapCreate(ctx context.Context, tapName, hostCIDR string, ownerUID, ownerGID int) error
 	TapUp(ctx context.Context, tapName string) error
