@@ -10,7 +10,6 @@
     "preview": "vp preview",
     "start": "node --import ./instrumentation.mts .output/server/index.mjs",
     "typecheck": "vp exec tsc -p tsconfig.json",
-    "lint:voice": "node --experimental-strip-types --no-warnings ./scripts/lint-voice.ts",
     "test:e2e": "vp exec playwright test",
     "test:e2e:headed": "vp exec playwright test --headed"
   },

@@ -1,10 +1,7 @@
 // Machine-readable voice spec. Human version lives alongside at voice.md.
 //
-// Two consumers:
-//   1. Build-time lint (scripts/lint-voice.ts) scans every string export under
-//      src/content/** and fails the build on violations.
-//   2. The dynamic OG card generator (Phase 5) calls assertVoice() on every
-//      string before PNG encode and refuses to emit a bad asset.
+// The dynamic OG card generator calls assertVoice() on every string before
+// PNG encode and refuses to emit a bad asset.
 
 export type VoiceViolation =
   | {
