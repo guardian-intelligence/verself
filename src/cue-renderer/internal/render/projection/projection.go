@@ -106,10 +106,6 @@ func TopologySlice(loaded load.Loaded, key string) ([]any, error) {
 	return out, nil
 }
 
-func ConfigMap(loaded load.Loaded, key string) (map[string]any, error) {
-	return Map(loaded.ConfigMap, "config", key)
-}
-
 func Components(loaded load.Loaded) ([]NamedMap, error) {
 	return NamedFields(loaded.Value, "components")
 }

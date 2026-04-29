@@ -343,6 +343,22 @@ type NftablesTopology struct {
 
 type FirecrackerConfig struct {
 	GuestPoolCIDR string `json:"guest_pool_cidr"`
+
+	Images []FirecrackerSeedImage `json:"images"`
+}
+
+type FirecrackerSeedImage struct {
+	Ref string `json:"ref"`
+
+	SizeBytes int64 `json:"size_bytes"`
+
+	VolBlockSize string `json:"volblocksize"`
+
+	Strategy string `json:"strategy"`
+
+	SourcePath string `json:"source_path"`
+
+	FilesystemLabel string `json:"filesystem_label"`
 }
 
 type SpireConfig struct {
@@ -362,21 +378,7 @@ type SpireConfig struct {
 }
 
 type InstanceConfig struct {
-	VerselfVersion string `json:"verself_version"`
-
-	VerselfBin string `json:"verself_bin"`
-
-	Domains map[string]string `json:"domains"`
-
-	Openbao map[string]any/* CUE top */ `json:"openbao"`
-
 	Wireguard WireGuardConfig `json:"wireguard"`
-
-	ObjectStorage struct {
-		ObjectStorageServiceUID int64 `json:"object_storage_service_uid"`
-
-		ObjectStorageAdminUID int64 `json:"object_storage_admin_uid"`
-	} `json:"object_storage"`
 
 	Postgres PostgresConfig `json:"postgres"`
 
@@ -386,9 +388,7 @@ type InstanceConfig struct {
 
 	Spire SpireConfig `json:"spire"`
 
-	Temporal map[string]any/* CUE top */ `json:"temporal"`
-
-	SeedSystem map[string]any/* CUE top */ `json:"seed_system"`
+	AnsibleVars map[string]any/* CUE top */ `json:"ansible_vars"`
 }
 
 type GarageNode struct {

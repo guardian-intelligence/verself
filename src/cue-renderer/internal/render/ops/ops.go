@@ -1,7 +1,12 @@
+// Package ops projects the explicit Ansible-vars surface declared in
+// loaded.Config.AnsibleVars into group_vars/all/generated/ops.yml, plus
+// the per-component electric instance projection that has to be computed
+// from topology rather than authored as static config.
 package ops
 
 import (
 	"context"
+	"maps"
 
 	"github.com/verself/cue-renderer/internal/load"
 	"github.com/verself/cue-renderer/internal/render"
@@ -13,28 +18,15 @@ type Renderer struct{}
 func (Renderer) Name() string { return "ops" }
 
 func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.WritableFS) error {
-	payload := map[string]any{
-		"verself_version":    loaded.ConfigMap["verself_version"],
-		"verself_bin":        loaded.ConfigMap["verself_bin"],
-		"topology_wireguard": loaded.ConfigMap["wireguard"],
+	payload := maps.Clone(loaded.Config.AnsibleVars)
+	if payload == nil {
+		payload = map[string]any{}
 	}
-
 	electric, err := electricInstances(loaded)
 	if err != nil {
 		return err
 	}
 	payload["topology_electric_instances"] = electric
-
-	for _, sectionName := range []string{"domains", "openbao", "object_storage", "temporal", "seed_system"} {
-		section, err := projection.ConfigMap(loaded, sectionName)
-		if err != nil {
-			return err
-		}
-		for key, value := range section {
-			payload[key] = value
-		}
-	}
-
 	return projection.WriteYAML(out, "ops", payload)
 }
 

@@ -308,6 +308,21 @@ package schema
 
 #FirecrackerConfig: {
 	guest_pool_cidr: string & !="" @go(GuestPoolCIDR)
+
+	// images declares the composable image zvols vm-orchestrator-cli seeds
+	// at deploy time. Each entry projects to one ExecStart line in the
+	// vm-orchestrator-seed.service oneshot unit; the daemon owns staging,
+	// dd/mkfs, snapshotting, and dependent-clone teardown.
+	images: [...#FirecrackerSeedImage] @go(Images)
+}
+
+#FirecrackerSeedImage: {
+	ref:              string & !="" @go(Ref)
+	size_bytes:       int & >0 @go(SizeBytes)
+	volblocksize:     string | *"16K" @go(VolBlockSize)
+	strategy:         "dd_from_file" | "mkfs_ext4" @go(Strategy)
+	source_path:      string | *"" @go(SourcePath)
+	filesystem_label: string | *"" @go(FilesystemLabel)
 }
 
 #SpireConfig: {
@@ -321,30 +336,22 @@ package schema
 }
 
 #InstanceConfig: {
-	verself_version: string & !=""   @go(VerselfVersion)
-	verself_bin:     string & =~"^/" @go(VerselfBin)
-
-	domains: {
-		verself_domain:  string & !=""
-		platform_domain: string & !=""
-		company_domain:  string & !=""
-		[string]:        string
-	}
-
-	openbao: {[string]: _}
-	wireguard: #WireGuardConfig
-
-	object_storage: {
-		object_storage_service_uid: int & >0 @go(ObjectStorageServiceUID)
-		object_storage_admin_uid:   int & >0 @go(ObjectStorageAdminUID)
-	} @go(ObjectStorage)
-
+	// Typed config consumed by Go renderers. Each typed section has a
+	// dedicated projection in internal/render/<name>/ and may declare its
+	// own Ansible-vars projections by referencing fields from inside
+	// ansible_vars below.
+	wireguard:   #WireGuardConfig
 	postgres:    #PostgresConfig
 	nftables:    #NftablesConfig
 	firecracker: #FirecrackerConfig
 	spire:       #SpireConfig
-	temporal: {[string]: _}
-	seed_system: {[string]: _} @go(SeedSystem)
+
+	// ansible_vars is the explicit Ansible-vars surface. Every key here
+	// becomes a top-level group_vars/all entry; the ops renderer projects
+	// this map verbatim. Authors spell out the literal Ansible variable
+	// name. Cross-section references are CUE values (type-checked) rather
+	// than Jinja strings, so a typo surfaces at CUE evaluation time.
+	ansible_vars: {[string]: _} @go(AnsibleVars)
 }
 
 #GarageNode: {

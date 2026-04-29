@@ -309,6 +309,15 @@ topology_deploy:
       component: firecracker_host_service
       name: primary
       source: component
+    - artifact:
+        bazel_label: //src/vm-orchestrator/cmd/vm-orchestrator-cli:vm-orchestrator-cli
+        kind: go_binary
+        output: vm-orchestrator-cli
+        package: ./src/vm-orchestrator/cmd/vm-orchestrator-cli
+        role: firecracker
+      component: firecracker_host_service
+      name: cli
+      source: tool
   edges:
     - auth: zitadel_jwt
       from: console
