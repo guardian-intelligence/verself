@@ -1,10 +1,6 @@
 ---
 # Caddy defaults.
-# WAF policy is site-specific:
-# - billing blocks immediately at the edge
-# - Grafana, Forgejo, and Zitadel remain DetectionOnly until they get
-#   route-specific exclusions or their own hardening passes
-
+#
 # Stripe webhook IPs published at:
 # https://docs.stripe.com/ips#webhook-notifications
 # Update this list when Stripe updates their published set.

@@ -2,9 +2,24 @@
 
 package catalog
 
-// #DevToolTier categorises how a dev tool reaches the controller. Values
-// other than `legacy_install_plan` are migration targets; the end state has
-// no entries on the legacy tier and `roles/dev_tools/` is reduced to the
-// per-tier-driven tasks (Bazel untar / uv sync / apt). See
+// #DevToolTier categorises how a dev tool reaches the controller. See
 // `src/cue-renderer/AGENTS.md` for the per-tier delivery contract.
+//
+// Apt packages live in the top-level `systemPackages` block, not in
+// devTools, because they are not version-pinned by sha256 — the
+// `risk_acknowledgement` field forces an explicit declaration that we
+// trust upstream Ubuntu archive integrity for the affected entries.
 type DevToolTier string
+
+// #SystemPackage describes an apt-managed system package. The risk
+// acknowledgement is mandatory: every entry must explicitly state why
+// we accept apt's lack of content pinning. The pattern requires the
+// substring "upstream" so an empty or boilerplate string fails CUE
+// evaluation rather than passing silently.
+type SystemPackage struct {
+	Risk_acknowledgement string `json:"risk_acknowledgement"`
+
+	Apt_version_constraint string `json:"apt_version_constraint,omitempty"`
+
+	Version_cmd string `json:"version_cmd"`
+}
