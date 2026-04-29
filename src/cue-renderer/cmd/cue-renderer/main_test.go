@@ -87,23 +87,32 @@ func TestRenderAll_OutputPathShape(t *testing.T) {
 	if len(paths) == 0 {
 		t.Fatal("renderAll produced no files")
 	}
+	// Per-deploy artefacts are cache-relative under inventory/, share/, or
+	// handlers/. Bazel-input artefacts live at exactly two source paths
+	// because Bazel evaluates them at load time and `aspect codegen run
+	// --kind=topology` writes them via write_source_files; anything else
+	// under src/ is a layout drift.
+	validRoots := []string{
+		"inventory/",
+		"share/",
+		"handlers/",
+		"src/cue-renderer/binaries/",
+		"src/vm-orchestrator/guest-images/",
+	}
 	produced := map[string]bool{}
 	for _, p := range paths {
 		if filepath.IsAbs(p) {
 			t.Errorf("path %q is absolute; renderers must emit cache-relative paths", p)
 		}
-		// Cache-relative roots: inventory/ (group_vars), share/ (rendered etc/),
-		// handlers/ (component-systemd), or src/ (Bazel-input artefacts in the
-		// renderer package). Anything outside these roots is a layout drift.
 		validRoot := false
-		for _, root := range []string{"inventory/", "share/", "handlers/", "src/"} {
+		for _, root := range validRoots {
 			if strings.HasPrefix(p, root) {
 				validRoot = true
 				break
 			}
 		}
 		if !validRoot {
-			t.Errorf("path %q is not anchored at inventory/, share/, handlers/, or src/", p)
+			t.Errorf("path %q is not anchored at one of %v", p, validRoots)
 		}
 		produced[artifacts[p]] = true
 	}

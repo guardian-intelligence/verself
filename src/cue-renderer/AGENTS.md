@@ -146,11 +146,11 @@ Adding any new generated file:
    add an `include()` line to root `MODULE.bazel` or a `load()` to the
    consuming `BUILD.bazel`.
 
-The nftables ruleset list is the one fan-out exception:
-`bazel_nftables` emits `nftables_files.bzl` containing one tuple per
-ruleset, and `BUILD.bazel` comprehends over that list to generate one
-genrule per ruleset. Adding a ruleset to topology.cue regenerates the
-manifest and the per-ruleset genrules appear automatically.
+Per-component nftables fragments and systemd unit files are no longer
+fanned-out via Bazel genrules. They land under `.cache/render/<site>/share/rendered/`
+when `aspect render --site=<site>` runs, alongside the rest of the deploy
+cache the Ansible roles consume. Adding a ruleset is a CUE-only change:
+extend `topology.nftables.rulesets` and the next render picks it up.
 
 ## Verification: Ansible trusts the render, canaries verify out-of-band
 

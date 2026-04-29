@@ -1,2 +1,3 @@
 ---
-# SPIRE topology vars are generated from CUE in group_vars/all/generated/spire.yml.
+# SPIRE topology vars are generated from CUE; aspect render materialises
+# them at .cache/render/<site>/inventory/group_vars/all/generated/spire.yml.

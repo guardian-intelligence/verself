@@ -1,3 +1,4 @@
 ---
-# OpenBao tenancy topology vars are generated from CUE in
-# group_vars/all/generated/ops.yml.
+# OpenBao tenancy topology vars are generated from CUE and surface as
+# top-level Ansible variables via the per-site deploy cache; this role
+# reads them by name without referencing a fixed file path.

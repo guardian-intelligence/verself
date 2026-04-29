@@ -397,8 +397,9 @@ Smoke-test queries assert:
 - Audit actor fields:
   [audit-data-contract.md](../../src/governance-service/docs/audit-data-contract.md).
 - Listener and port inventory:
-  [`src/cue-renderer`](../../src/cue-renderer), rendered to
-  [`src/platform/ansible/group_vars/all/generated/`](../../src/platform/ansible/group_vars/all/generated/).
+  [`src/cue-renderer`](../../src/cue-renderer), materialised by
+  `aspect render --site=<site>` into
+  `.cache/render/<site>/inventory/group_vars/all/generated/`.
 - Trust domain exclusion for the privileged host daemon:
   [`src/vm-orchestrator/AGENTS.md`](../../src/vm-orchestrator/AGENTS.md).
 - SPIRE trust domains and attestation:

@@ -79,8 +79,9 @@ No need to be frugal with telemetry. We store 10+ million rows for around ~150MB
 <read_directly>
 The below documents contain critical sources of truth about the system, extremely high signal. Recommended that you read these directly regardless of your task instead of trusting summaries. Note that they contents are not exhaustive as the system is migrating away from handwritten ansible to CUE with a golang renderer.
 ```
-@src/cue-renderer/instances/local/topology.cue
-@src/cue-renderer/instances/local/config.cue
+@src/cue-renderer/instances/prod/topology.cue
+@src/cue-renderer/instances/prod/config.cue
+@src/cue-renderer/instances/prod/site.cue
 @src/cue-renderer/catalog/versions.cue
 ```
 </read_directly>
