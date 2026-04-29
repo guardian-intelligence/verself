@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Append a row to verself.deploy_events on the worker and emit a matching
-# `deploy_events.insert` span on the controller side.
+# Append a row to verself.deploy_events.
 #
-# The span attaches to the deploy run via VERSELF_DEPLOY_RUN_KEY (set by
-# scripts/ansible-with-tunnel.sh); the row in ClickHouse correlates back
-# to ansible.task / topology.generate spans on the same key.
+# The row carries the deploy_run_key derived by deploy_identity.sh, and
+# correlates to the ansible.* / cue_renderer.run span family in
+# default.otel_traces on ResourceAttributes['verself.deploy_run_key'].
 #
 # Usage:
 #   record-deploy-event.sh \
@@ -12,11 +11,11 @@
 #     --components=<comma,separated> --event-kind=<started|succeeded|failed> \
 #     [--duration-ms=N] [--error-message=...]
 #
-# Required env (set by scripts/ansible-with-tunnel.sh):
-#   VERSELF_DEPLOY_RUN_KEY      — correlation key (deploy_identity.sh)
-#   VERSELF_OTLP_ENDPOINT       — controller-side OTLP forward host:port
-#   OTEL_EXPORTER_OTLP_ENDPOINT — full URL form of the above
-#   VERSELF_AUTHOR              — git committer email (deploy_identity.sh)
+# Required env (the aspect deploy task sources deploy_identity.sh once and
+# threads the result via env={} into this script — see
+# .aspect/lib/helpers.axl::derive_deploy_env):
+#   VERSELF_DEPLOY_RUN_KEY — correlation key
+#   VERSELF_AUTHOR         — git committer email
 set -euo pipefail
 
 site=""
