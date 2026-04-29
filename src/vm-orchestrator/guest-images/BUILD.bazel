@@ -4,7 +4,7 @@ package(default_visibility = ["//visibility:public"])
 
 # Guest-image build infrastructure for vm-orchestrator. The split
 # substrate / toolchain catalog declared in
-# src/cue-renderer/instances/local/config.cue:firecracker.images is
+# src/cue-renderer/instances/prod/config.cue:firecracker.images is
 # materialised here:
 #
 #   guest_image.bzl    — Starlark macro `toolchain_ext4_image` for
@@ -29,7 +29,7 @@ exports_files([
 # firecracker Ansible role can scp one tarball to the host and lay
 # the artefacts under /var/lib/verself/guest-images/toolchains/.
 # Adding a new toolchain image = add one line here and one entry to
-# instances/local/config.cue:firecracker.images.
+# instances/prod/config.cue:firecracker.images.
 pkg_tar(
     name = "toolchain_images_bundle",
     files = {

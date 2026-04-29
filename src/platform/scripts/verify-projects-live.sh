@@ -12,7 +12,7 @@ artifact_dir="${artifact_root}/${run_id}"
 projects_api_base_url="${PROJECTS_SMOKE_TEST_BASE_URL:-https://projects.api.${VERIFICATION_DOMAIN}}"
 projects_api_base_url="${projects_api_base_url%/}"
 projects_loopback_addr="$(
-  python3 - "${VERIFICATION_PLATFORM_ROOT}/ansible/group_vars/all/generated/endpoints.yml" <<'PY'
+  python3 - "${VERIFICATION_GENERATED_VARS_FILE%/*}/endpoints.yml" <<'PY'
 import sys
 import yaml
 

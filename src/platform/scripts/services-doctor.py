@@ -375,7 +375,7 @@ def render_nftables(report: Report) -> str:
     """Suggested rules derived from the generated topology endpoints.
 
     The real firewall is assembled from src/cue-renderer topology records into
-    src/platform/ansible/share/rendered/etc/nftables.d/. This output is a debugging aid for
+    .cache/render/<site>/share/rendered/etc/nftables.d/. This output is a debugging aid for
     answering 'what would a minimal ruleset for the declared topology look like?'
     """
     loopback: list[Declared] = []
@@ -393,7 +393,7 @@ def render_nftables(report: Report) -> str:
 
     lines: list[str] = []
     lines.append("#!/usr/sbin/nft -f")
-    lines.append("# Derived from src/platform/ansible/group_vars/all/generated/endpoints.yml")
+    lines.append("# Derived from .cache/render/<site>/inventory/group_vars/all/generated/endpoints.yml")
     lines.append("# SUGGESTION ONLY - authoritative rules live in CUE-rendered final files.")
     lines.append("")
     lines.append("table inet verself_services_suggested")
