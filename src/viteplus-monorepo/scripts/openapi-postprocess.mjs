@@ -35,9 +35,7 @@ async function copyAndStamp(srcDir, dstDir) {
 
 const [, , inputDir, outputDir] = process.argv;
 if (!inputDir || !outputDir) {
-  throw new Error(
-    "expected: node openapi-postprocess.mjs <input_dir> <output_dir>",
-  );
+  throw new Error("expected: node openapi-postprocess.mjs <input_dir> <output_dir>");
 }
 
 await copyAndStamp(path.resolve(inputDir), path.resolve(outputDir));

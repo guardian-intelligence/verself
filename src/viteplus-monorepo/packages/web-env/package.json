@@ -2,14 +2,12 @@
   "name": "@verself/web-env",
   "version": "0.1.0",
   "private": true,
-  "description": "Validated env parsing and origin derivation for verself web apps.",
+  "description": "Validated env parsing and origin derivation for verself web apps. Source-only — apps bundle the .ts directly.",
   "files": [
-    "dist",
     "src"
   ],
   "type": "module",
   "sideEffects": false,
-  "types": "./src/index.ts",
   "exports": {
     ".": {
       "types": "./src/index.ts",
@@ -18,8 +16,6 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "vp pack src/index.ts",
-    "dev": "vp pack src/index.ts --watch",
     "typecheck": "vp exec tsc -p tsconfig.json"
   },
   "dependencies": {

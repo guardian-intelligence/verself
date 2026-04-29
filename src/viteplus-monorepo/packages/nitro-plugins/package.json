@@ -2,22 +2,26 @@
   "name": "@verself/nitro-plugins",
   "version": "0.1.0",
   "private": true,
-  "description": "Shared Nitro plugins and middleware for TanStack Start apps.",
+  "description": "Server-only Nitro plugin + OpenTelemetry preload, consumed source-first by the apps that bundle them.",
   "files": [
-    "dist",
     "src"
   ],
   "type": "module",
   "sideEffects": false,
   "exports": {
-    ".": "./dist/index.mjs",
-    "./observability-plugin": "./dist/observability-plugin.mjs",
-    "./otel": "./dist/otel.mjs",
+    "./observability-plugin": {
+      "types": "./src/observability-plugin.ts",
+      "node": "./src/observability-plugin.ts",
+      "default": "./src/server-only.ts"
+    },
+    "./otel": {
+      "types": "./src/otel.ts",
+      "node": "./src/otel.ts",
+      "default": "./src/server-only.ts"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "vp pack src/index.ts src/observability-plugin.ts src/otel.ts --dts",
-    "dev": "vp pack src/index.ts src/observability-plugin.ts src/otel.ts --dts --watch",
     "typecheck": "vp exec tsc -p tsconfig.json"
   },
   "dependencies": {
