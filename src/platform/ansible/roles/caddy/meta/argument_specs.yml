@@ -4,7 +4,7 @@ argument_specs:
     short_description: "Caddy edge proxy for Verself public origins"
     description:
       - "Configures Caddy and renders the edge config that fronts console, service API origins,"
-      - "Grafana, Temporal Web, Forgejo, Stalwart, and Zitadel with site-specific WAF policies and access logging."
+      - "Grafana, Temporal Web, Forgejo, Stalwart, and Zitadel with TLS termination and access logging."
       - "Service APIs live on <service>.api.<domain>; console browser traffic stays same-origin."
       - "The billing webhook route is allowlisted to Stripe's published source IPs."
       - "Zitadel uses h2c (HTTP/2 cleartext) for gRPC on the same port."

@@ -298,8 +298,6 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 		request_body {
 			max_size 65536
 		}
-		# This route intentionally accepts shell commands; CRS RCE blocking would
-		# reject legitimate CI and sandbox workloads. Keep detection telemetry on.
 		import api_security_headers
 		reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }} {
 			header_up X-Real-IP {remote_host}
@@ -314,8 +312,6 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 		request_body {
 			max_size 65536
 		}
-		# Schedule creation persists the same run_command payload used by direct
-		# executions; keep CRS telemetry, but do not block valid sandbox jobs.
 		import api_security_headers
 		reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }} {
 			header_up X-Real-IP {remote_host}
