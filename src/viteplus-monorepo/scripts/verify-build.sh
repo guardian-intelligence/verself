@@ -84,10 +84,14 @@ fi
 # ─────────────────────────────────────────────────────────────────────────────
 # Test 4 — deploy_bundle is self-contained and runs without node_modules.
 # Build the bundle with Bazel, extract into a clean directory, and confirm
-# that node --import ./instrumentation.mjs .output/server/index.mjs serves
-# a request without ever touching pnpm.
+# that `node ./app-entry.mjs` serves a request without ever touching pnpm.
 # ─────────────────────────────────────────────────────────────────────────────
 echo "[4] deploy_bundle runs without node_modules"
+# Whitelist Node built-ins that Rolldown emits as bare specifiers (some with
+# the `node:` prefix, some without — Node accepts both forms). Imports that
+# don't match this set or a `node:` prefix are workspace-package bleed and
+# would fail at runtime in a tarball with no node_modules.
+NODE_BUILTINS="^(assert|async_hooks|buffer|child_process|cluster|console|constants|crypto|dgram|diagnostics_channel|dns|domain|events|fs|http|http2|https|inspector|module|net|os|path|perf_hooks|process|punycode|querystring|readline|repl|stream|string_decoder|sys|timers|tls|trace_events|tty|url|util|v8|vm|worker_threads|zlib)(/[a-z]+)?$"
 for app in "${APPS[@]}"; do
   bundle_target="//src/viteplus-monorepo/apps/${app}:deploy_bundle"
   if ! bazelisk build "${bundle_target}" >/dev/null 2>&1; then
@@ -102,8 +106,8 @@ for app in "${APPS[@]}"; do
   sandbox="$(mktemp -d -t verify-viteplus-${app}-XXXXXX)"
   trap 'rm -rf "${sandbox}"' EXIT
   tar -xf "${bundle_path}" -C "${sandbox}"
-  if [[ ! -f "${sandbox}/instrumentation.mjs" ]]; then
-    record_fail "${app}: tarball missing instrumentation.mjs (was it bundled by esbuild?)"
+  if [[ ! -f "${sandbox}/app-entry.mjs" ]]; then
+    record_fail "${app}: tarball missing app-entry.mjs (was it bundled by Rolldown?)"
     continue
   fi
   if [[ ! -f "${sandbox}/.output/server/index.mjs" ]]; then
@@ -114,13 +118,21 @@ for app in "${APPS[@]}"; do
     record_fail "${app}: tarball contains node_modules — bundle is not self-contained"
     continue
   fi
-  # Test that nothing in instrumentation.mjs has unresolved bare specifiers.
-  # ESM import-statement scan: top-level imports only, not require().
-  unresolved="$(grep -hoE '^\s*import [^"'\'']*from\s+["'\''][^./][^"'\'']*' \
-    "${sandbox}/instrumentation.mjs" 2>/dev/null \
-    | grep -vE '"node:|''node:' || true)"
+  # Catch workspace-package bleed: every top-level `import … from "<spec>"`
+  # must either be a `node:`-prefixed built-in or a bare Node built-in name.
+  # Anything else (e.g. `from "@opentelemetry/sdk-node"`) means a runtime
+  # dep didn't get bundled.
+  unresolved="$(grep -hoE '^\s*import [^"'\'']*from\s+"[^.][^"]*"' \
+      "${sandbox}/app-entry.mjs" 2>/dev/null \
+    | grep -oE '"[^"]+"' \
+    | tr -d '"' \
+    | awk -v re="${NODE_BUILTINS}" '
+        $0 ~ /^node:/ { next }
+        $0 ~ re      { next }
+                     { print }
+      ' || true)"
   if [[ -n "${unresolved}" ]]; then
-    record_fail "${app}: instrumentation.mjs has unresolved bare imports — would fail without node_modules"
+    record_fail "${app}: app-entry.mjs has unresolved bare imports — would fail without node_modules"
     echo "${unresolved}" | sed 's/^/        /'
     continue
   fi

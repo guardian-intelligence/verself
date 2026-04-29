@@ -8,7 +8,7 @@
     "dev": "vp dev",
     "build": "vp build",
     "preview": "vp preview",
-    "start": "node --import ./instrumentation.mts .output/server/index.mjs",
+    "start": "node ./app-entry.mjs",
     "generate": "mkdir -p src/__generated/policies src/__generated/openapi-specs/sandbox-rental-api src/__generated/openapi-specs/identity-api src/__generated/openapi-specs/mailbox-api src/__generated/openapi-specs/billing-api && cp ../../../platform/policies/retention.yml src/__generated/policies/retention.yml && cp ../../../platform/policies/subprocessors.yml src/__generated/policies/subprocessors.yml && cp ../../../platform/policies/ropa.yml src/__generated/policies/ropa.yml && cp ../../../platform/policies/contacts.yml src/__generated/policies/contacts.yml && cp ../../../platform/policies/versions.yml src/__generated/policies/versions.yml && cp ../../../sandbox-rental-service/openapi/openapi-3.1.yaml src/__generated/openapi-specs/sandbox-rental-api/openapi-3.1.yaml && cp ../../../identity-service/openapi/openapi-3.1.yaml src/__generated/openapi-specs/identity-api/openapi-3.1.yaml && cp ../../../mailbox-service/openapi/openapi-3.1.yaml src/__generated/openapi-specs/mailbox-api/openapi-3.1.yaml && cp ../../../billing-service/openapi/openapi-3.1.yaml src/__generated/openapi-specs/billing-api/openapi-3.1.yaml && echo 'Run: bazelisk run //src/viteplus-monorepo/apps/verself-web:openapi_clients to refresh client SDKs' >&2",
     "typecheck": "vp exec tsc -p tsconfig.json",
     "test:e2e": "vp exec playwright test",

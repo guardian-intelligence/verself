@@ -8,7 +8,7 @@ js_binary(
 )
 
 js_binary(
-    name = "bundle_instrumentation",
+    name = "bundle_app_entry",
     data = ["//src/viteplus-monorepo:node_modules/rolldown"],
-    entry_point = "bundle-instrumentation.mjs",
+    entry_point = "bundle-app-entry.mjs",
 )
