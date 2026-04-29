@@ -6,45 +6,10 @@ topology_dev_tool_install_plan:
     - argv:
         - /usr/local/go/bin/go
         - install
-        - github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.3
-      gobin: '{{ dev_tools_gopath }}/bin'
-      gopath: '{{ dev_tools_gopath }}'
-      key: golangci-lint
-    - argv:
-        - /usr/local/go/bin/go
-        - install
-        - github.com/securego/gosec/v2/cmd/gosec@v2.25.0
-      gobin: '{{ dev_tools_gopath }}/bin'
-      gopath: '{{ dev_tools_gopath }}'
-      key: gosec
-    - argv:
-        - /usr/local/go/bin/go
-        - install
-        - mvdan.cc/gofumpt@v0.9.2
-      gobin: '{{ dev_tools_gopath }}/bin'
-      gopath: '{{ dev_tools_gopath }}'
-      key: gofumpt
-    - argv:
-        - /usr/local/go/bin/go
-        - install
         - github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0
       gobin: '{{ dev_tools_gopath }}/bin'
       gopath: '{{ dev_tools_gopath }}'
       key: sqlc
-    - argv:
-        - /usr/local/go/bin/go
-        - install
-        - google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
-      gobin: '{{ dev_tools_gopath }}/bin'
-      gopath: '{{ dev_tools_gopath }}'
-      key: protoc-gen-go
-    - argv:
-        - /usr/local/go/bin/go
-        - install
-        - google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.1
-      gobin: '{{ dev_tools_gopath }}/bin'
-      gopath: '{{ dev_tools_gopath }}'
-      key: protoc-gen-go-grpc
 topology_dev_tools:
   age:
     bins:
@@ -134,23 +99,17 @@ topology_dev_tools:
     version: 1.25.8
     version_cmd: go version
   gofumpt:
-    go_package: mvdan.cc/gofumpt
-    strategy: go_install
-    tier: legacy_install_plan
+    tier: source_built_go
     version: 0.9.2
     version_cmd: gofumpt --version
   golangci-lint:
-    go_package: github.com/golangci/golangci-lint/v2/cmd/golangci-lint
-    strategy: go_install
-    tier: legacy_install_plan
+    tier: source_built_go
     version: 2.11.3
     version_cmd: golangci-lint --version
   gosec:
-    go_package: github.com/securego/gosec/v2/cmd/gosec
-    strategy: go_install
-    tier: legacy_install_plan
+    tier: source_built_go
     version: 2.25.0
-    version_cmd: go version -m /usr/local/go-tools/bin/gosec
+    version_cmd: gosec --help
   guarddog:
     project: guarddog
     tier: lockfile_uv
@@ -186,15 +145,11 @@ topology_dev_tools:
     version: "34.0"
     version_cmd: protoc --version
   protoc-gen-go:
-    go_package: google.golang.org/protobuf/cmd/protoc-gen-go
-    strategy: go_install
-    tier: legacy_install_plan
+    tier: source_built_go
     version: 1.36.11
     version_cmd: protoc-gen-go --version
   protoc-gen-go-grpc:
-    go_package: google.golang.org/grpc/cmd/protoc-gen-go-grpc
-    strategy: go_install
-    tier: legacy_install_plan
+    tier: source_built_go
     version: 1.6.1
     version_cmd: protoc-gen-go-grpc --version
   shellcheck:

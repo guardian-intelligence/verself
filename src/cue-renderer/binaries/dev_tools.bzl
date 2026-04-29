@@ -38,6 +38,14 @@ RAW_BINARY_SPECS = [
     ("agent_browser", "@dev_tool_agent_browser//file", "usr/local/bin/agent-browser"),
 ]
 
+SOURCE_BUILT_GO_BINARIES = [
+    ("go_gofumpt", "@cc_mvdan_gofumpt//:gofumpt", "usr/local/bin/gofumpt"),
+    ("go_golangci_lint", "@com_github_golangci_golangci_lint_v2//cmd/golangci-lint:golangci-lint", "usr/local/bin/golangci-lint"),
+    ("go_gosec", "@com_github_securego_gosec_v2//cmd/gosec:gosec", "usr/local/bin/gosec"),
+    ("go_protoc_gen_go", "@org_golang_google_protobuf//cmd/protoc-gen-go:protoc-gen-go", "usr/local/bin/protoc-gen-go"),
+    ("go_protoc_gen_go_grpc", "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:protoc-gen-go-grpc", "usr/local/bin/protoc-gen-go-grpc"),
+]
+
 DEV_TOOL_DEPS = [
     ":dev_tools_age",
     ":dev_tools_agent_browser",
@@ -45,7 +53,12 @@ DEV_TOOL_DEPS = [
     ":dev_tools_buildifier",
     ":dev_tools_clickhouse",
     ":dev_tools_cue",
+    ":dev_tools_go_gofumpt",
+    ":dev_tools_go_golangci_lint",
+    ":dev_tools_go_gosec",
     ":dev_tools_go_install",
+    ":dev_tools_go_protoc_gen_go",
+    ":dev_tools_go_protoc_gen_go_grpc",
     ":dev_tools_jq",
     ":dev_tools_osv_scanner",
     ":dev_tools_protoc_bin",
@@ -179,6 +192,24 @@ install -D -m 0755 "$(location {src})" "$$tmp/{dest}"
         ),
     )
 
+def _source_built_go_binary(name, src, dest):
+    # Source-built Go binaries (rules_go go_binary outputs) are dropped
+    # into the tar in exactly the same shape as raw http_files: install
+    # the single executable at tmp/dest and let pkg_tar collect it. The
+    # src here is a Bazel label such as @<repo>//cmd/<tool>:<tool> rather
+    # than @<repo>//file, so the genrule srcs attribute resolves the
+    # go_binary compiled output instead of an http_file payload.
+    _tar_fragment(
+        name = name,
+        src = src,
+        cmd = """
+install -D -m 0755 "$(location {src})" "$$tmp/{dest}"
+""".format(
+            dest = dest,
+            src = src,
+        ),
+    )
+
 def dev_tools_archive():
     if not native.existing_rule("zstd_compressor"):
         sh_binary(
@@ -231,6 +262,13 @@ def dev_tools_archive():
 
     for name, src, dest in RAW_BINARY_SPECS:
         _raw_binary(
+            name = name,
+            src = src,
+            dest = dest,
+        )
+
+    for name, src, dest in SOURCE_BUILT_GO_BINARIES:
+        _source_built_go_binary(
             name = name,
             src = src,
             dest = dest,

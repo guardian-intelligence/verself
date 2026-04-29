@@ -43,7 +43,19 @@ a `lockfile_uv` `uv sync --frozen` against a committed `uv.lock`.
 
 `pinned_http_file` (16): go, zig, tofu, protoc, cue, buf, buildifier,
 shellcheck, jq, sops, age, uv, clickhouse, osv-scanner, stripe,
-agent-browser. These flow through `dev_tools.tar.zst`.
+agent-browser. These flow through `dev_tools.tar.zst` via Bazel
+`http_file` rules.
+
+`source_built_go` (5): golangci-lint, gosec, gofumpt, protoc-gen-go,
+protoc-gen-go-grpc. Compiled from vendored sources via rules_go's
+`go_binary`, packed into the same `dev_tools.tar.zst`. Pinned via
+`go.sum` (per-module). Adding a new entry: add a `tool` and `require`
+directive to `src/devtools/go.mod`, run `go mod tidy` + `bazelisk mod
+tidy`, verify the auto-generated `@<repo>//cmd/<tool>:<tool>` label
+resolves, then add a `sourceBuiltGoTools` entry and a tier=source_built_go
+devTools entry. Runtime `--version` reporting is unreliable (no
+upstream -ldflags stamp); the version_check span only confirms the
+binary is reachable on PATH.
 
 `lockfile_uv` (4): ansible, ansible-lint, pre-commit, guarddog. Each
 maps via `project:` to a top-level `lockfileUvTools` entry, which holds
@@ -51,10 +63,9 @@ the project_dir, version pin, and full set of entrypoints to symlink
 into /usr/local/bin/. The OpenTelemetry companions are gone — they're
 transitive deps of ansible-core's pyproject, not separate tools.
 
-`legacy_install_plan` (6): golangci-lint, gosec, gofumpt, sqlc,
-protoc-gen-go, protoc-gen-go-grpc. To be migrated to `source_built_go`
-in Phase 2a; the `go install` strategy is the last unhermetic delivery
-channel for dev tools.
+`legacy_install_plan` (1): sqlc. Stays here until a gazelle override
+resolves the `github.com/pingcap/tidb/pkg/parser` Go-submodule layout
+mismatch — see the `tool` directive comment in `src/devtools/go.mod`.
 
 `systemPackages` (3): build-essential, crun, debootstrap. Apt-managed,
 intentionally not content-pinned; each entry carries a

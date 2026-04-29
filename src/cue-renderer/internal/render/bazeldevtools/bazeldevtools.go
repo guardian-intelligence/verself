@@ -65,8 +65,11 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 	if err := projection.StarlarkRepoTupleList(&b, "RAW_BINARY_SPECS", packaging, "devToolPackaging", "raw", []string{"name", "repo", "dest"}); err != nil {
 		return err
 	}
+	if err := writeSourceBuiltGoList(&b, loaded.Catalog.SourceBuiltGoTools); err != nil {
+		return err
+	}
 
-	deps, err := devToolDeps(packaging)
+	deps, err := devToolDeps(packaging, loaded.Catalog.SourceBuiltGoTools)
 	if err != nil {
 		return err
 	}
@@ -182,9 +185,52 @@ func writeArchiveDirList(b *strings.Builder, packaging map[string]any) error {
 	return nil
 }
 
+// writeSourceBuiltGoList emits SOURCE_BUILT_GO_BINARIES from the
+// top-level sourceBuiltGoTools CUE block. Each entry is (name, label,
+// dest); the dest is the install_path with the leading "/" stripped so
+// pkg_tar lays it down at the right location when extracted at /.
+// Names are normalised hyphen→underscore so they're safe Bazel target
+// labels.
+func writeSourceBuiltGoList(b *strings.Builder, tools map[string]any) error {
+	names := make([]string, 0, len(tools))
+	for name := range tools {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	b.WriteString("SOURCE_BUILT_GO_BINARIES = [\n")
+	for _, name := range names {
+		entry, ok := tools[name].(map[string]any)
+		if !ok {
+			return fmt.Errorf("sourceBuiltGoTools[%q]: expected map, got %T", name, tools[name])
+		}
+		label, err := projection.String(entry, "sourceBuiltGoTools."+name, "bazel_label")
+		if err != nil {
+			return err
+		}
+		installPath, err := projection.String(entry, "sourceBuiltGoTools."+name, "install_path")
+		if err != nil {
+			return err
+		}
+		dest := strings.TrimPrefix(installPath, "/")
+		fragment := sourceBuiltGoFragmentName(name)
+		fmt.Fprintf(b, "    (%q, %q, %q),\n", fragment, label, dest)
+	}
+	b.WriteString("]\n\n")
+	return nil
+}
+
+// sourceBuiltGoFragmentName normalises a tool name into a Bazel-safe
+// genrule target name. Hyphens become underscores so a tool like
+// `protoc-gen-go` becomes the fragment `go_protoc_gen_go`.
+func sourceBuiltGoFragmentName(toolName string) string {
+	return "go_" + strings.ReplaceAll(toolName, "-", "_")
+}
+
 // devToolDeps returns the sorted union of every fragment name across
-// every packaging list. pkg_tar consumes this list as `deps`.
-func devToolDeps(packaging map[string]any) ([]string, error) {
+// every packaging list. pkg_tar consumes this list as `deps`. Includes
+// source_built_go fragments (each tool produces one tar fragment named
+// via sourceBuiltGoFragmentName) alongside the devToolPackaging shapes.
+func devToolDeps(packaging map[string]any, sourceBuiltGo map[string]any) ([]string, error) {
 	deps := map[string]struct{}{}
 	for _, key := range []string{"tar_single", "zip_single", "zip_directory", "tar_multi", "archive_dir", "raw"} {
 		items, err := projection.MapSlice(packaging, "devToolPackaging", key)
@@ -198,6 +244,9 @@ func devToolDeps(packaging map[string]any) ([]string, error) {
 			}
 			deps[name] = struct{}{}
 		}
+	}
+	for name := range sourceBuiltGo {
+		deps[sourceBuiltGoFragmentName(name)] = struct{}{}
 	}
 	out := make([]string, 0, len(deps))
 	for dep := range deps {
@@ -330,6 +379,24 @@ install -D -m 0755 "$(location {src})" "$$tmp/{dest}"
         ),
     )
 
+def _source_built_go_binary(name, src, dest):
+    # Source-built Go binaries (rules_go go_binary outputs) are dropped
+    # into the tar in exactly the same shape as raw http_files: install
+    # the single executable at tmp/dest and let pkg_tar collect it. The
+    # src here is a Bazel label such as @<repo>//cmd/<tool>:<tool> rather
+    # than @<repo>//file, so the genrule srcs attribute resolves the
+    # go_binary compiled output instead of an http_file payload.
+    _tar_fragment(
+        name = name,
+        src = src,
+        cmd = """
+install -D -m 0755 "$(location {src})" "$$tmp/{dest}"
+""".format(
+            dest = dest,
+            src = src,
+        ),
+    )
+
 def dev_tools_archive():
     if not native.existing_rule("zstd_compressor"):
         sh_binary(
@@ -382,6 +449,13 @@ def dev_tools_archive():
 
     for name, src, dest in RAW_BINARY_SPECS:
         _raw_binary(
+            name = name,
+            src = src,
+            dest = dest,
+        )
+
+    for name, src, dest in SOURCE_BUILT_GO_BINARIES:
+        _source_built_go_binary(
             name = name,
             src = src,
             dest = dest,

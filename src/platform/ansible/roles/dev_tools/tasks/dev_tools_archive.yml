@@ -159,13 +159,16 @@
       }}
   changed_when: false
 
-- name: Build pinned_http_file version-check inputs
+- name: Build dev_tools.tar.zst version-check inputs
+  # Both pinned_http_file and source_built_go tools land via the
+  # archive's untar at /, so a single version-check loop covers them.
+  # Per-tier filtering happens via item.value.tier in the emitted span.
   ansible.builtin.set_fact:
     dev_tools_version_check_inputs: >-
       {{
         topology_dev_tools
         | dict2items
-        | selectattr('value.tier', 'eq', 'pinned_http_file')
+        | selectattr('value.tier', 'in', ['pinned_http_file', 'source_built_go'])
         | list
       }}
 
@@ -200,7 +203,7 @@
       {{
         {
           'tool.name': item.item.key,
-          'tool.tier': 'pinned_http_file',
+          'tool.tier': item.item.value.tier,
           'tool.expected_version': item.item.value.version,
           'tool.cmd': (item.cmd | default([]) | join(' ')),
           'tool.cmd_exit_code': (item.rc | default(-1)),
@@ -219,7 +222,12 @@
     label: "{{ item.item.key }}"
   changed_when: false
 
-- name: Assert every dev tool reported its expected version
+- name: Assert every pinned_http_file dev tool reported its expected version
+  # source_built_go binaries lack upstream's -ldflags version stamp, so
+  # the runtime --version string is unreliable. Their byte integrity is
+  # pinned via go.sum at Bazel build time, not enforced here. The
+  # assertion above runs only against pinned_http_file tools whose
+  # version_cmd is a real upstream release-time stamped output.
   ansible.builtin.assert:
     that:
       - item.rc == 0
@@ -231,3 +239,20 @@
   loop: "{{ dev_tools_version_check_results.results }}"
   loop_control:
     label: "{{ item.item.key }}"
+  when: item.item.value.tier == 'pinned_http_file'
+
+- name: Assert every source_built_go dev tool is reachable on PATH
+  # Source-built Go binaries are validated by go.sum at build time; the
+  # deploy-time check only proves the binary was packed into the tarball
+  # and lands on PATH with non-zero exit code being a packaging failure.
+  ansible.builtin.assert:
+    that:
+      - item.rc == 0 or item.rc == 2  # gosec --help exits 2; treat as "binary ran"
+    quiet: true
+    fail_msg: >-
+      Source-built Go tool {{ item.item.key }} failed to execute its version_cmd
+      (rc={{ item.rc }}, stdout={{ (item.stdout | default('') | truncate(160)) | string }}).
+  loop: "{{ dev_tools_version_check_results.results }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+  when: item.item.value.tier == 'source_built_go'

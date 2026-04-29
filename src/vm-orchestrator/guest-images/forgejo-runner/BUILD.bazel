@@ -21,8 +21,8 @@ toolchain_ext4_image(
         "etc-overlay/sudoers.d/runner-nopasswd": ":sudoers-runner-nopasswd",
         "etc-overlay/profile.d/verself-forgejo-runner.sh": ":profile-forgejo-runner.sh",
     },
-    size_mib = 256,
     label = "forgejorun",
+    size_mib = 256,
 )
 
 exports_files([
