@@ -7,6 +7,7 @@ go_library(
         "cli.go",
         "local_control.go",
         "main.go",
+        "overlays.go",
         "vsock_linux.go",
     ],
     importpath = "github.com/verself/vm-orchestrator/cmd/vm-bridge",

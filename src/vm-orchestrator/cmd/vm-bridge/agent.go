@@ -44,6 +44,13 @@ type agentSession struct {
 
 	checkpointMu      sync.Mutex
 	checkpointWaiters map[string]chan vmproto.CheckpointResponse
+
+	// etcOverlayApplied records which /etc/<rel> paths have already
+	// been written by an etc-overlay/ from some toolchain image. A
+	// second image trying to overlay the same path is a hard error
+	// rather than a silent last-writer-wins, so collisions surface at
+	// the first deploy that introduces them.
+	etcOverlayApplied map[string]string
 }
 
 func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-chan os.Signal, bridgeFault bridgeFaultMode, bootTimings vmproto.GuestBootTimings) error {
@@ -601,6 +608,16 @@ func (s *agentSession) mountFilesystems(filesystems []vmproto.FilesystemMount) e
 			if err := os.Chown(fs.MountPath, runnerUID, runnerGID); err != nil {
 				return fmt.Errorf("chown composed filesystem %s root %s: %w", fs.Name, fs.MountPath, err)
 			}
+		} else {
+			// Read-only toolchain images carry an overlay contract:
+			// /etc-overlay/ is copied into /etc, .verself-writable-overlays
+			// lists paths to tmpfs-mount on top of the read-only base, and
+			// any /etc-overlay/passwd entries get their $HOME materialised.
+			// Substrate-only images and writable mounts skip this; they
+			// don't have somewhere to publish overlay metadata.
+			if err := s.applyToolchainOverlays(fs.Name, fs.MountPath); err != nil {
+				return fmt.Errorf("apply overlays for %s: %w", fs.Name, err)
+			}
 		}
 		fmt.Fprintf(os.Stdout, "%s mounted composed filesystem name=%s device=%s path=%s read_only=%t\n", logPrefix, fs.Name, fs.DevicePath, fs.MountPath, fs.ReadOnly)
 		mounted = append(mounted, fs)
@@ -628,36 +645,20 @@ func removeEmptyLostFound(mountPath string) error {
 }
 
 func prepareWritableMountPath(path string) error {
+	// Chown the leaf to the runner uid/gid so the workload can write
+	// into the freshly-mounted filesystem without first sudoing.
+	// Intermediate directories stay whatever the substrate / overlay
+	// installed them as — typically root:755 — because granting the
+	// runner ownership of /home or /opt would be a privilege leak.
+	// validateFilesystemMount has already rejected the system roots
+	// (/proc, /sys, /dev, /run) and the bare /, so any path we see
+	// here is a safe leaf to chown.
 	clean := filepath.Clean(path)
-	var root string
-	switch {
-	case clean == "/home/runner" || strings.HasPrefix(clean, "/home/runner/"):
-		root = "/home/runner"
-	case clean == defaultWorkDir || strings.HasPrefix(clean, defaultWorkDir+"/"):
-		root = defaultWorkDir
-	default:
-		return fmt.Errorf("writable composed filesystem path %q must live under /home/runner or %s", path, defaultWorkDir)
-	}
-
-	current := root
-	if err := os.Chown(current, runnerUID, runnerGID); err != nil {
-		return fmt.Errorf("chown composed filesystem path %s: %w", current, err)
-	}
-	rel, err := filepath.Rel(root, clean)
-	if err != nil {
-		return fmt.Errorf("rel composed filesystem path %s: %w", clean, err)
-	}
-	if rel == "." {
+	if clean == "/" {
 		return nil
 	}
-	for _, part := range strings.Split(rel, string(os.PathSeparator)) {
-		if part == "" || part == "." {
-			continue
-		}
-		current = filepath.Join(current, part)
-		if err := os.Chown(current, runnerUID, runnerGID); err != nil {
-			return fmt.Errorf("chown composed filesystem path %s: %w", current, err)
-		}
+	if err := os.Chown(clean, runnerUID, runnerGID); err != nil {
+		return fmt.Errorf("chown composed filesystem path %s: %w", clean, err)
 	}
 	return nil
 }
