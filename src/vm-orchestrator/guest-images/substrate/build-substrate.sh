@@ -199,22 +199,19 @@ install -D -m 0755 "$VM_BRIDGE_SRC" "$ROOTFS/usr/local/bin/vm-bridge"
 echo "-> installing vm-guest-telemetry"
 install -D -m 0755 "$VM_GUEST_TELEMETRY_SRC" "$ROOTFS/usr/local/bin/vm-guest-telemetry"
 
-# Mount-point stubs for toolchain images. vm-bridge mounts each
-# composed image at the path declared in runner_class_filesystem_mounts;
-# pre-creating the mount points keeps the substrate's directory
-# structure stable across deploys. Empty dirs cost nothing on disk.
-echo "-> creating toolchain mount-point stubs"
-mkdir -p \
-  "$ROOTFS/opt/actions-runner" \
-  "$ROOTFS/opt/forgejo-runner" \
-  "$ROOTFS/opt/hostedtoolcache" \
-  "$ROOTFS/workspace" \
-  "$ROOTFS/home"
-
-# Workspace is a write target inside the lease clone; vm-bridge
+# Workspace + /home are write targets inside the lease clone; vm-bridge
 # additionally mounts /tmp, /run, /dev/shm as tmpfs at boot. /workspace
 # is part of the rwroot clone so writes survive within the lease but
 # disappear when the lease is destroyed.
+#
+# Toolchain mount points (e.g. /opt/actions-runner, /opt/forgejo-runner,
+# /opt/hostedtoolcache) are deliberately NOT pre-created here.
+# vm-bridge.mountFilesystems creates each mount point on demand from the
+# LeaseSpec.FilesystemMounts list, and baking workload-specific paths
+# into the substrate would re-couple the platform binary to the GitHub
+# Actions / Forgejo conventions we just split out.
+echo "-> creating substrate write targets"
+mkdir -p "$ROOTFS/workspace" "$ROOTFS/home"
 chmod 1777 "$ROOTFS/workspace"
 
 cat > "$ROOTFS/etc/profile.d/verself-base.sh" <<'PROFILE'

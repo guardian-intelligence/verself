@@ -3,7 +3,7 @@ load("//src/vm-orchestrator/guest-images:guest_image.bzl", "toolchain_ext4_image
 # forgejo-runner.ext4 — toolchain image mounted read-only at
 # /opt/forgejo-runner inside the guest. Carries the upstream Forgejo
 # runner binary at /bin/forgejo-runner plus the runner@1000 user
-# overlay, mirroring gh-actions-runner.
+# overlay sourced from //runner-overlay-common.
 #
 # Forgejo runner is shipped as a single binary (not a tarball), so the
 # `tarball` slot is unused and we install the binary directly via the
@@ -15,10 +15,10 @@ toolchain_ext4_image(
     name = "forgejo-runner",
     files = {
         "bin/forgejo-runner": "@guest_image_forgejo_runner//file",
-        "etc-overlay/passwd": ":passwd",
-        "etc-overlay/group": ":group",
-        "etc-overlay/shadow": ":shadow",
-        "etc-overlay/sudoers.d/runner-nopasswd": ":sudoers-runner-nopasswd",
+        "etc-overlay/passwd": "//src/vm-orchestrator/guest-images/runner-overlay-common:passwd",
+        "etc-overlay/group": "//src/vm-orchestrator/guest-images/runner-overlay-common:group",
+        "etc-overlay/shadow": "//src/vm-orchestrator/guest-images/runner-overlay-common:shadow",
+        "etc-overlay/sudoers.d/runner-nopasswd": "//src/vm-orchestrator/guest-images/runner-overlay-common:sudoers-runner-nopasswd",
         "etc-overlay/profile.d/verself-forgejo-runner.sh": ":profile-forgejo-runner.sh",
     },
     label = "forgejorun",
@@ -26,9 +26,5 @@ toolchain_ext4_image(
 )
 
 exports_files([
-    "passwd",
-    "group",
-    "shadow",
-    "sudoers-runner-nopasswd",
     "profile-forgejo-runner.sh",
 ])

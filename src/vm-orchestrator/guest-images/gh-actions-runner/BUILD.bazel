@@ -6,8 +6,13 @@ load("//src/vm-orchestrator/guest-images:guest_image.bzl", "toolchain_ext4_image
 # copies into /etc at lease boot:
 #
 #   etc-overlay/passwd|group|shadow         add the runner@1000 user
+#                                           (sourced from the shared
+#                                            //runner-overlay-common
+#                                            filegroup)
 #   etc-overlay/sudoers.d/runner-nopasswd   NOPASSWD sudo for runner
 #   etc-overlay/profile.d/...               toolcache + tools env vars
+#                                           (RUNNER_TOOL_CACHE,
+#                                            AGENT_TOOLSDIRECTORY)
 #
 # The .verself-writable-overlays manifest tells vm-bridge to tmpfs-mount
 # _work/_diag/_temp on top of the read-only base so the runner can write
@@ -19,10 +24,10 @@ load("//src/vm-orchestrator/guest-images:guest_image.bzl", "toolchain_ext4_image
 toolchain_ext4_image(
     name = "gh-actions-runner",
     files = {
-        "etc-overlay/passwd": ":passwd",
-        "etc-overlay/group": ":group",
-        "etc-overlay/shadow": ":shadow",
-        "etc-overlay/sudoers.d/runner-nopasswd": ":sudoers-runner-nopasswd",
+        "etc-overlay/passwd": "//src/vm-orchestrator/guest-images/runner-overlay-common:passwd",
+        "etc-overlay/group": "//src/vm-orchestrator/guest-images/runner-overlay-common:group",
+        "etc-overlay/shadow": "//src/vm-orchestrator/guest-images/runner-overlay-common:shadow",
+        "etc-overlay/sudoers.d/runner-nopasswd": "//src/vm-orchestrator/guest-images/runner-overlay-common:sudoers-runner-nopasswd",
         "etc-overlay/profile.d/verself-actions-runner.sh": ":profile-actions-runner.sh",
         ".verself-writable-overlays": ":writable-overlays",
     },
@@ -32,10 +37,6 @@ toolchain_ext4_image(
 )
 
 exports_files([
-    "passwd",
-    "group",
-    "shadow",
-    "sudoers-runner-nopasswd",
     "profile-actions-runner.sh",
     "writable-overlays",
 ])
