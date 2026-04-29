@@ -26,8 +26,7 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
 
 - `apps/` — TanStack Start applications:
   - `company` — Guardian Intelligence company site on `company_domain` (guardianintelligence.org). Owns landing, `/design`, `/letters` (+ RSS), `/solutions`, `/company`, `/careers`, `/press`, `/changelog`, `/contact`, `/og/*` dynamic OG cards. Forker-friendly split: `src/content/`, `src/brand/`, `src/routes/`, `src/components/`.
-  - `console` — authenticated product console on `console.<domain>`. Owns sandbox, billing, identity, profile, notifications, mail, source, and future product workflows behind TanStack Start server functions.
-  - `platform` — public product docs/legal app on the `verself_domain` apex. Owns `/docs`, `/docs/reference`, and the canonical legal tree at `/policy/*` (Terms, Privacy, DPA, AUP, Cookies, Security, SLA, Subprocessors, Data Retention, Policy Changelog).
+  - `verself-web` — the unified product app on the `verself_domain` apex. Owns the authenticated browser console (sandbox, billing, identity, profile, notifications, mail, source, future product workflows behind TanStack Start server functions), the public docs at `/docs` and `/docs/reference`, and the canonical legal tree at `/policy/*` (Terms, Privacy, DPA, AUP, Cookies, Security, SLA, Subprocessors, Data Retention, Policy Changelog).
 - `packages/` — shared UI, brand marks, generated OpenAPI clients, Valibot validators.
 
 ## Platform (`src/platform/`)

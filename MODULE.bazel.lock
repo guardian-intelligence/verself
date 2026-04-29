@@ -368,7 +368,7 @@
     "@@rules_nodejs+//nodejs:extensions.bzl%node": {
       "general": {
         "bzlTransitiveDigest": "oZFClfRhTTwsYzpxVPkOpOt/r0+OzEfEV37au0jFZ0s=",
-        "usagesDigest": "AB6CyaVUIPA8NGU1W/t4m9kVF9QkLz53ElPqi46rB78=",
+        "usagesDigest": "bhans2WR8jK3M2IIAPeZuZLFmQmB97YYmf0FpzkMZ8g=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "nodejs_linux_amd64": {
@@ -945,7 +945,7 @@
     "@@rules_zig+//zig:extensions.bzl%zig": {
       "general": {
         "bzlTransitiveDigest": "2N/bPP3F/BmxIlsKg+Bpt+Klpwy9jlN2xuKqIRFIhZw=",
-        "usagesDigest": "MyRWrDC/wcU8M6JFkfYSSwltCkKAJ61ukmFZptU0wqw=",
+        "usagesDigest": "1JhsxJbtq3asABTcRbt7v4+fbKI9SXh4idtPQvkG938=",
         "recordedInputs": [
           "REPO_MAPPING:rules_zig+,bazel_skylib bazel_skylib+",
           "REPO_MAPPING:rules_zig+,bazel_tools bazel_tools",

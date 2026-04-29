@@ -195,10 +195,10 @@ receivers:
     units: [sandbox-rental-recurring-worker]
     resource:
       service.name: sandbox-rental-recurring-worker
-  journald/console:
-    units: [console]
+  journald/verself-web:
+    units: [verself-web]
     resource:
-      service.name: console
+      service.name: verself-web
     operators:
       - type: move
         from: body.MESSAGE
@@ -304,14 +304,6 @@ receivers:
       - type: remove
         field: attributes.level
         if: attributes.level != nil
-  journald/temporal-web:
-    units: [temporal-web]
-    resource:
-      service.name: temporal-web
-    operators:
-      - type: move
-        from: body.MESSAGE
-        to: body
   journald/bazel-remote:
     units: [bazel-remote]
     resource:
@@ -444,7 +436,7 @@ receivers:
       process:
         include:
           match_type: regexp
-          names: ["billing-service", "sandbox-rental.*", "caddy", "clickhouse.*", "ClickHouse.*", "forgejo.*", "source-code-hosting-service", "projects-service", "grafana.*", "otelcol.*", "node", "verself", "verdaccio", "next-server.*", "npm", "vm-orchestrator.*", "tigerbeetle", "zitadel", "bao", "postgres", "spire-server", "spire-agent", "verself-temporal-server", "verself-temporal-web"]
+          names: ["billing-service", "sandbox-rental.*", "caddy", "clickhouse.*", "ClickHouse.*", "forgejo.*", "source-code-hosting-service", "projects-service", "grafana.*", "otelcol.*", "node", "verself", "verdaccio", "next-server.*", "npm", "vm-orchestrator.*", "tigerbeetle", "zitadel", "bao", "postgres", "spire-server", "spire-agent", "verself-temporal-server"]
         mute_process_exe_error: true
         mute_process_io_error: true
       cpu: {}
@@ -545,7 +537,7 @@ service:
   extensions: [health_check, file_storage]
   pipelines:
     logs:
-      receivers: [otlp, filelog/caddy, journald/caddy, journald/billing-service, journald/sandbox-rental, journald/sandbox-rental-recurring-worker, journald/console, journald/zitadel, journald/openbao, journald/spire-server, journald/spire-agent, journald/vm-orchestrator, journald/forgejo, journald/source-code-hosting-service, journald/projects-service, journald/grafana, journald/temporal-server, journald/temporal-web, journald/verdaccio, journald/wireguard, journald/bazel-remote, filelog/postgresql]
+      receivers: [otlp, filelog/caddy, journald/caddy, journald/billing-service, journald/sandbox-rental, journald/sandbox-rental-recurring-worker, journald/verself-web, journald/zitadel, journald/openbao, journald/spire-server, journald/spire-agent, journald/vm-orchestrator, journald/forgejo, journald/source-code-hosting-service, journald/projects-service, journald/grafana, journald/temporal-server, journald/verdaccio, journald/wireguard, journald/bazel-remote, filelog/postgresql]
       processors: [batch]
       exporters: [clickhouse]
     traces:
