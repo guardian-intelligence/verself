@@ -8,16 +8,32 @@ this tool is just how Go projects that program onto disk.
 
 ## Outputs
 
-- `src/platform/ansible/group_vars/all/generated/*.yml` — legacy Ansible
-  projections for roles that have not been collapsed to final-file copies yet.
-- `src/platform/ansible/share/rendered/etc/nftables.d/<component>.nft` —
-  per-component firewall snippets driven by CUE `topology.nftables.rulesets`
-  facts.
-- `src/platform/ansible/share/rendered/etc/nftables.conf` and
-  `src/platform/ansible/share/rendered/etc/systemd/system/verself-firewall.target`
+The renderer's `generate` subcommand requires `--output-dir` and writes
+every artefact under that root. `aspect render --site=<site>` calls it
+with `--output-dir=.cache/render/<site>/`, producing:
+
+- `inventory/group_vars/all/generated/*.yml` — Ansible group_vars
+  projections (catalog, ops, postgres, spire, endpoints, routes, …).
+- `inventory/group_vars/all/main.yml`, `secrets.sops.yml`, `spire.yml`,
+  `inventory/hosts.ini` — staged from the authored `src/platform/ansible/`
+  tree by the render task so Ansible's host_group_vars + community.sops
+  plugins find both the generated and authored vars from one
+  `inventory_dir`.
+- `share/rendered/etc/nftables.d/<component>.nft` — per-component firewall
+  snippets driven by CUE `topology.nftables.rulesets`.
+- `share/rendered/etc/nftables.conf`, `share/rendered/etc/systemd/system/verself-firewall.target`
   — host firewall final files copied directly by the nftables role.
-- OTel pipeline spans into ClickHouse, correlated with each deploy's
-  `verself.deploy_run_key`.
+- `handlers/component-systemd.yml` — generated handler fragment imported
+  statically by `playbooks/site.yml`.
+
+Bazel-input artefacts (`binaries/{server,dev}_tools.MODULE.bazel`,
+`binaries/{server,dev}_tools.bzl`, `vm-orchestrator/guest-images/guest_images.MODULE.bazel`)
+are still tracked in git via `write_source_files`/`aspect codegen run --kind=topology`
+because Bazel evaluates them at load time.
+
+The renderer also emits OTel pipeline spans (`cue_renderer.run`,
+`topology.cue.export_*`, `topology.generated.render_artifact`) into
+ClickHouse, correlated with each deploy's `verself.deploy_run_key`.
 
 ## Why Go (not Python)
 
@@ -44,16 +60,17 @@ renderers get more typed access for free.
 
 ## Usage
 
+    aspect render --site=prod                                 # canonical
     bazel run //src/cue-renderer/cmd/cue-renderer -- list
-    bazel run //src/cue-renderer/cmd/cue-renderer -- generate
-    bazel run //src/cue-renderer/cmd/cue-renderer -- check
+    bazel run //src/cue-renderer/cmd/cue-renderer -- generate --output-dir=<path>
     bazel run //src/cue-renderer/cmd/cue-renderer -- render <name>
 
-`generate` writes every registered renderer to disk; `check` fails when any
-registered renderer's output differs from the checked-in file. The operator
-entry points are `aspect codegen run --kind=topology` and
-`aspect codegen check --kind=topology`, backed by `write_source_files`
-freshness targets.
+`generate` materialises every registered renderer under `--output-dir`;
+the operator entry point is `aspect render --site=<site>` which sets it
+to `.cache/render/<site>/` and stages the inventory + hand-written
+group_vars alongside. `aspect codegen run --kind=topology` and
+`aspect codegen check --kind=topology` cover the Bazel-input artefacts
+via `write_source_files`.
 
 ## Adding a renderer
 
@@ -70,12 +87,14 @@ freshness targets.
    field there and the matching `Decode` call in `internal/load/`.
 4. Implement `render.Renderer` in `internal/render/<artefact>/`.
 5. Register it in `cmd/cue-renderer/main.go`'s `renderers()`.
-6. Add the renderer's generated path to `src/cue-renderer/BUILD.bazel` so
-   `aspect codegen check --kind=topology` catches drift. The nftables ruleset list is the
-   exception: adding a `topology.nftables.rulesets.<name>` entry in CUE
-   regenerates `nftables_files.bzl` (a fan-out renderer) and the
-   per-component genrule + write_source_files mapping pick up the new
-   entry on next build, no BUILD.bazel edit required.
+6. If the renderer's output is a Bazel input (a `*.MODULE.bazel`,
+   `*.bzl`, or other file Bazel evaluates at load time), add a genrule
+   in `src/cue-renderer/BUILD.bazel` and register it in `_RENDERED_FILES`
+   under `write_source_files(name = "freshness")`. Per-component
+   nftables fragments and systemd unit files are NOT tracked through
+   write_source_files — they flow through `aspect render --site=<site>`
+   into `.cache/render/<site>/` along with the rest of the rendered
+   tree.
 
 ## Boundaries that intentionally stay outside CUE
 

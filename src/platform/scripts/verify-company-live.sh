@@ -62,9 +62,16 @@ resolve_base_url() {
     return 0
   fi
   # company_domain is rendered into generated/ops.yml by the cue-renderer; the
-  # operator-editable main.yml does not carry it.
+  # operator-editable main.yml does not carry it. site-cache.sh ensures the
+  # cache exists and exports VERSELF_RENDER_CACHE_DIR.
   local domain
-  domain="$(python3 -c 'import yaml, sys; print(yaml.safe_load(open(sys.argv[1]))["company_domain"])' ansible/group_vars/all/generated/ops.yml)"
+  local script_dir generated_ops
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  # shellcheck source=src/platform/scripts/lib/site-cache.sh
+  source "${script_dir}/lib/site-cache.sh"
+  site_cache_init
+  generated_ops="${VERSELF_RENDER_CACHE_DIR}/inventory/group_vars/all/generated/ops.yml"
+  domain="$(python3 -c 'import yaml, sys; print(yaml.safe_load(open(sys.argv[1]))["company_domain"])' "${generated_ops}")"
   printf 'https://%s\n' "${domain}"
 }
 

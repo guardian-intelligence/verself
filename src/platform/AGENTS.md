@@ -1,6 +1,6 @@
 # platform
 
-All remote orchestration lives here: Ansible roles + playbooks, OpenTofu modules, operator CLI (`cmd/verself/`, being trimmed in favor of services), and generated deploy inputs. `src/cue-renderer` is the CUE source for the current single-node topology and deploy catalog; `aspect codegen run --kind=topology` renders typed Ansible inputs under `ansible/group_vars/all/generated/` (`catalog.yml`, `ops.yml`, `dns.yml`, `spire.yml`, `postgres.yml`, `endpoints.yml`, `routes.yml`, and related topology artifacts).
+All remote orchestration lives here: Ansible roles + playbooks, OpenTofu modules, operator CLI (`cmd/verself/`, being trimmed in favor of services), and the deploy catalog source. `src/cue-renderer` is the CUE source for the current single-node topology and deploy catalog; `aspect render --site=<site>` materialises typed Ansible inputs under `.cache/render/<site>/inventory/group_vars/all/generated/` (`catalog.yml`, `ops.yml`, `dns.yml`, `spire.yml`, `postgres.yml`, `endpoints.yml`, `routes.yml`, and related topology artifacts).
 
 ## Server profile
 
