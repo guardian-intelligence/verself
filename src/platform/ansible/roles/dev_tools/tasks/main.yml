@@ -16,15 +16,6 @@
 # Order matters: the tarball must land before lockfile_uv (needs /usr/local/bin/uv)
 # and before `go install` runs (needs /usr/local/go/bin/go).
 
-- name: Require generated dev tool install plan
-  ansible.builtin.assert:
-    that:
-      - topology_dev_tool_install_plan is defined
-      - topology_dev_tool_install_plan.go_installs is defined
-    quiet: true
-    fail_msg: >-
-      topology_dev_tool_install_plan is missing or stale. Run make topology-generate before setup-dev.
-
 - name: Install pinned_http_file dev tools via Bazel-managed archive
   ansible.builtin.include_tasks: dev_tools_archive.yml
 

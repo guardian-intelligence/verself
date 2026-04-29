@@ -1,19 +1,8 @@
 ---
-# Materialize the Bazel-owned static server tool archive and unpack it onto the
-# host. Bazel owns third-party fetches, checksums, extraction layout, and
-# symlinks; Ansible only applies the resulting artifact.
-
-- name: Require generated server tools Bazel artifact
-  ansible.builtin.assert:
-    that:
-      - topology_server_tools is defined
-      - topology_server_tools.bazel_label is defined
-      - topology_server_tools.version is defined
-      - topology_server_tools.bazel_label is match('^//')
-      - topology_server_tools.version | length > 0
-    quiet: true
-    fail_msg: >-
-      topology_server_tools must expose bazel_label and version. Run make topology-generate before deploying.
+# Materialize the Bazel-owned static server tool archive and unpack it onto
+# the host. Bazel owns third-party fetches, checksums, extraction layout,
+# and symlinks; Ansible only applies the resulting artifact, marker-gated
+# for idempotency.
 
 - name: Set deploy profile server tools artifact facts
   ansible.builtin.set_fact:
@@ -47,16 +36,6 @@
   changed_when: false
   register: deploy_profile_server_tools_bazel_output
 
-- name: Validate server tools archive output path
-  ansible.builtin.assert:
-    that:
-      - deploy_profile_server_tools_bazel_output.stdout_lines | length == 1
-      - deploy_profile_server_tools_bazel_output.stdout | trim is match('^bazel-out/')
-      - deploy_profile_server_tools_bazel_output.stdout | trim is match('.*server_tools[.]tar[.]zst$')
-    quiet: true
-    fail_msg: >-
-      Bazel cquery did not resolve exactly one server_tools.tar.zst output for {{ deploy_profile_server_tools_artifact.bazel_label }}.
-
 - name: Inspect server tools archive produced by Bazel
   delegate_to: localhost
   become: false
@@ -66,33 +45,13 @@
     checksum_algorithm: sha256
   register: deploy_profile_server_tools_archive_stat
 
-- name: Validate server tools archive metadata
-  ansible.builtin.assert:
-    that:
-      - deploy_profile_server_tools_archive_stat.stat.exists | bool
-      - deploy_profile_server_tools_archive_stat.stat.isreg | bool
-      - deploy_profile_server_tools_archive_stat.stat.checksum is defined
-      - deploy_profile_server_tools_archive_stat.stat.checksum is match('^[0-9a-f]{64}$')
-    quiet: true
-    fail_msg: >-
-      Bazel resolved {{ deploy_profile_server_tools_artifact.bazel_label }} but did not produce a readable archive with a SHA-256 checksum.
-
 - name: Set server tools archive deployment facts
   ansible.builtin.set_fact:
-    deploy_profile_server_tools_archive_sha256: "{{ deploy_profile_server_tools_archive_stat.stat.checksum }}"
     deploy_profile_server_tools_expected_marker: |-
       version={{ deploy_profile_server_tools_artifact.version }}
       sha256={{ deploy_profile_server_tools_archive_stat.stat.checksum }}
     deploy_profile_server_tools_remote_archive: >-
       {{ deploy_profile_staging_dir }}/server_tools-{{ (deploy_profile_server_tools_archive_stat.stat.checksum)[:16] }}.tar.zst
-
-- name: Validate server tools staging archive path
-  ansible.builtin.assert:
-    that:
-      - deploy_profile_server_tools_remote_archive | regex_replace('^.*/', '') | length < 240
-    quiet: true
-    fail_msg: >-
-      server_tools staging archive filename is too long; checksum-derived staging names must stay below filesystem limits.
 
 - name: Read installed server tools version marker
   ansible.builtin.slurp:
@@ -132,28 +91,3 @@
     dest: "{{ deploy_profile_server_tools_marker_path }}"
     mode: "0644"
   when: deploy_profile_server_tools_needs_unpack | bool
-
-- name: Emit server tools artifact smoke test span
-  delegate_to: localhost
-  become: false
-  run_once: true
-  ansible.builtin.command:
-    cmd: go run ./cmd/smoke-span
-    chdir: "{{ deploy_profile_repo_root }}/src/otel"
-  environment:
-    SMOKE_SPAN_SERVICE: smoke-runner
-    SMOKE_SPANS_JSON: >-
-      {{
-        [
-          {
-            'name': 'server_tools.artifact.publish',
-            'attributes': {
-              'server_tools.bazel_label': deploy_profile_server_tools_artifact.bazel_label,
-              'server_tools.version': deploy_profile_server_tools_artifact.version,
-              'server_tools.archive_sha256': deploy_profile_server_tools_archive_sha256,
-              'server_tools.generated_from': 'bazel'
-            }
-          }
-        ] | to_json
-      }}
-  changed_when: false

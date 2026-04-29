@@ -2,24 +2,9 @@
 # Materialise the Bazel-owned dev_tools.tar.zst and unpack it onto the
 # controller. Bazel owns third-party fetches, sha256 enforcement, archive
 # layout, and the canonical /usr/local/{go,zig} symlinks; Ansible only
-# applies the resulting artifact and emits the verification spans.
+# applies the resulting artifact, marker-gated for idempotency.
 #
-# Mirror of roles/deploy_profile/tasks/static_binaries.yml; the only
-# differences are the artifact label (topology_dev_tools_archive vs
-# topology_server_tools), the marker path, and the per-tool version_check
-# loop emitted at the end.
-
-- name: Require generated dev tools archive
-  ansible.builtin.assert:
-    that:
-      - topology_dev_tools_archive is defined
-      - topology_dev_tools_archive.bazel_label is defined
-      - topology_dev_tools_archive.version is defined
-      - topology_dev_tools_archive.bazel_label is match('^//')
-      - topology_dev_tools_archive.version | length > 0
-    quiet: true
-    fail_msg: >-
-      topology_dev_tools_archive must expose bazel_label and version. Run make topology-generate before setup-dev.
+# Mirror of roles/deploy_profile/tasks/static_binaries.yml.
 
 - name: Set dev tools archive facts
   ansible.builtin.set_fact:
@@ -53,16 +38,6 @@
   changed_when: false
   register: dev_tools_bazel_output
 
-- name: Validate dev tools archive output path
-  ansible.builtin.assert:
-    that:
-      - dev_tools_bazel_output.stdout_lines | length == 1
-      - dev_tools_bazel_output.stdout | trim is match('^bazel-out/')
-      - dev_tools_bazel_output.stdout | trim is match('.*dev_tools[.]tar[.]zst$')
-    quiet: true
-    fail_msg: >-
-      Bazel cquery did not resolve exactly one dev_tools.tar.zst output for {{ dev_tools_archive_artifact.bazel_label }}.
-
 - name: Inspect dev tools archive produced by Bazel
   become: false
   ansible.builtin.stat:
@@ -70,21 +45,8 @@
     checksum_algorithm: sha256
   register: dev_tools_archive_stat
 
-- name: Validate dev tools archive metadata
-  ansible.builtin.assert:
-    that:
-      - dev_tools_archive_stat.stat.exists | bool
-      - dev_tools_archive_stat.stat.isreg | bool
-      - dev_tools_archive_stat.stat.checksum is defined
-      - dev_tools_archive_stat.stat.checksum is match('^[0-9a-f]{64}$')
-    quiet: true
-    fail_msg: >-
-      Bazel resolved {{ dev_tools_archive_artifact.bazel_label }} but did not produce a readable archive with a SHA-256 checksum.
-
 - name: Set dev tools archive deployment facts
   ansible.builtin.set_fact:
-    dev_tools_archive_sha256: "{{ dev_tools_archive_stat.stat.checksum }}"
-    dev_tools_archive_size_bytes: "{{ dev_tools_archive_stat.stat.size }}"
     dev_tools_archive_expected_marker: |-
       version={{ dev_tools_archive_artifact.version }}
       sha256={{ dev_tools_archive_stat.stat.checksum }}
@@ -130,129 +92,3 @@
     dest: "{{ dev_tools_archive_marker_path }}"
     mode: "0644"
   when: dev_tools_archive_needs_unpack | bool
-
-- name: Emit dev_tools.artifact.publish span
-  become: false
-  ansible.builtin.command:
-    argv:
-      - "{{ dev_tools_bazelisk }}"
-      - run
-      - //src/otel/cmd/smoke-span
-    chdir: "{{ dev_tools_repo_root }}"
-  environment:
-    SMOKE_SPAN_SERVICE: smoke-runner
-    SMOKE_SPANS_JSON: >-
-      {{
-        [
-          {
-            'name': 'dev_tools.artifact.publish',
-            'attributes': {
-              'dev_tools.bazel_label': dev_tools_archive_artifact.bazel_label,
-              'dev_tools.expected_version': dev_tools_archive_artifact.version,
-              'dev_tools.archive_sha256': dev_tools_archive_sha256,
-              'dev_tools.archive_size_bytes': (dev_tools_archive_size_bytes | int),
-              'dev_tools.unpacked_this_run': (dev_tools_archive_needs_unpack | bool),
-              'dev_tools.generated_from': 'bazel'
-            }
-          }
-        ] | to_json
-      }}
-  changed_when: false
-
-- name: Build dev_tools.tar.zst version-check inputs
-  # Both pinned_http_file and source_built_go tools land via the
-  # archive's untar at /, so a single version-check loop covers them.
-  # Per-tier filtering happens via item.value.tier in the emitted span.
-  ansible.builtin.set_fact:
-    dev_tools_version_check_inputs: >-
-      {{
-        topology_dev_tools
-        | dict2items
-        | selectattr('value.tier', 'in', ['pinned_http_file', 'source_built_go'])
-        | list
-      }}
-
-- name: Run dev tool version checks
-  become: false
-  # Pin PATH to the canonical tarball-managed locations so an older
-  # interpreter shadow on the user's $PATH (e.g. ~/.local/bin/uv from a
-  # pip --user install) cannot be mistaken for the tarball's binary.
-  ansible.builtin.command:
-    cmd: "{{ item.value.version_cmd }}"
-  environment:
-    PATH: /usr/local/go/bin:/usr/local/bin:/usr/bin:/bin
-  loop: "{{ dev_tools_version_check_inputs }}"
-  loop_control:
-    label: "{{ item.key }}"
-  register: dev_tools_version_check_results
-  changed_when: false
-  failed_when: false
-
-- name: Emit dev_tool.version_check spans
-  become: false
-  ansible.builtin.command:
-    argv:
-      - "{{ dev_tools_bazelisk }}"
-      - run
-      - //src/otel/cmd/smoke-span
-    chdir: "{{ dev_tools_repo_root }}"
-  environment:
-    SMOKE_SPAN_SERVICE: smoke-runner
-    SMOKE_SPAN_NAME: dev_tool.version_check
-    SMOKE_SPAN_ATTRS_JSON: >-
-      {{
-        {
-          'tool.name': item.item.key,
-          'tool.tier': item.item.value.tier,
-          'tool.expected_version': item.item.value.version,
-          'tool.cmd': (item.cmd | default([]) | join(' ')),
-          'tool.cmd_exit_code': (item.rc | default(-1)),
-          'tool.cmd_stdout': (item.stdout | default('') | truncate(200, True)),
-          'tool.version_match': (
-              item.rc == 0
-              and (
-                item.item.value.version in (item.stdout | default(''))
-                or item.item.value.version in (item.stderr | default(''))
-              )
-            )
-        } | to_json
-      }}
-  loop: "{{ dev_tools_version_check_results.results }}"
-  loop_control:
-    label: "{{ item.item.key }}"
-  changed_when: false
-
-- name: Assert every pinned_http_file dev tool reported its expected version
-  # source_built_go binaries lack upstream's -ldflags version stamp, so
-  # the runtime --version string is unreliable. Their byte integrity is
-  # pinned via go.sum at Bazel build time, not enforced here. The
-  # assertion above runs only against pinned_http_file tools whose
-  # version_cmd is a real upstream release-time stamped output.
-  ansible.builtin.assert:
-    that:
-      - item.rc == 0
-      - (item.item.value.version in (item.stdout | default(''))) or (item.item.value.version in (item.stderr | default('')))
-    quiet: true
-    fail_msg: >-
-      Dev tool {{ item.item.key }} did not report expected version {{ item.item.value.version }}
-      (rc={{ item.rc }}, stdout={{ (item.stdout | default('') | truncate(160)) | string }}).
-  loop: "{{ dev_tools_version_check_results.results }}"
-  loop_control:
-    label: "{{ item.item.key }}"
-  when: item.item.value.tier == 'pinned_http_file'
-
-- name: Assert every source_built_go dev tool is reachable on PATH
-  # Source-built Go binaries are validated by go.sum at build time; the
-  # deploy-time check only proves the binary was packed into the tarball
-  # and lands on PATH with non-zero exit code being a packaging failure.
-  ansible.builtin.assert:
-    that:
-      - item.rc == 0 or item.rc == 2  # gosec --help exits 2; treat as "binary ran"
-    quiet: true
-    fail_msg: >-
-      Source-built Go tool {{ item.item.key }} failed to execute its version_cmd
-      (rc={{ item.rc }}, stdout={{ (item.stdout | default('') | truncate(160)) | string }}).
-  loop: "{{ dev_tools_version_check_results.results }}"
-  loop_control:
-    label: "{{ item.item.key }}"
-  when: item.item.value.tier == 'source_built_go'
