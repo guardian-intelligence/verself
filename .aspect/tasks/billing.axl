@@ -1,0 +1,143 @@
+"""aspect billing clock|state|documents|finalizations|events — billing inspection + clock control.
+
+Wraps scripts/billing-clock.sh and scripts/billing-inspect.sh. Per-org billing
+PostgreSQL queries (billing-pg-shell, billing-pg-query) are deliberately not
+preserved — use `aspect db pg shell --db=billing` / `aspect db pg query
+--db=billing --query=...` instead.
+"""
+
+load(".aspect/lib/helpers.axl", "checked_spawn", "inventory_check", "require_one_of", "ws_path")
+
+_PLATFORM = "src/platform"
+_DEFAULT_PRODUCT_ID = "sandbox"
+
+def _clock_impl(ctx):
+    if inventory_check(ctx) != 0:
+        return 1
+    if not require_one_of(ctx, ["org", "org-id"], [ctx.args.org, ctx.args.org_id]):
+        return 1
+    cli_args = [
+        "--org", ctx.args.org,
+        "--org-id", ctx.args.org_id,
+        "--product-id", ctx.args.product_id,
+    ]
+    if ctx.args.set:
+        cli_args = cli_args + ["--set", ctx.args.set]
+    if ctx.args.advance_seconds:
+        cli_args = cli_args + ["--advance-seconds", ctx.args.advance_seconds]
+    if ctx.args.clear:
+        cli_args.append("--clear")
+    if ctx.args.wall_clock:
+        cli_args.append("--wall-clock")
+    if ctx.args.reason:
+        cli_args = cli_args + ["--reason", ctx.args.reason]
+    return checked_spawn(
+        ctx,
+        ws_path(ctx, _PLATFORM, "scripts/billing-clock.sh"),
+        cli_args,
+        cwd = ws_path(ctx, _PLATFORM),
+        label = "billing-clock.sh",
+    )
+
+def _inspect(ctx, kind):
+    if inventory_check(ctx) != 0:
+        return 1
+    if kind != "events":
+        if not require_one_of(ctx, ["org", "org-id"], [ctx.args.org, ctx.args.org_id]):
+            return 1
+    cli_args = [
+        "--kind", kind,
+        "--org", ctx.args.org,
+        "--org-id", ctx.args.org_id,
+        "--product-id", ctx.args.product_id,
+    ]
+    if kind == "events":
+        if ctx.args.event:
+            cli_args = cli_args + ["--event-type", ctx.args.event]
+        if ctx.args.minutes:
+            cli_args = cli_args + ["--minutes", ctx.args.minutes]
+    if ctx.args.format:
+        cli_args = cli_args + ["--format", ctx.args.format]
+    return checked_spawn(
+        ctx,
+        ws_path(ctx, _PLATFORM, "scripts/billing-inspect.sh"),
+        cli_args,
+        cwd = ws_path(ctx, _PLATFORM),
+        label = "billing-inspect.sh --kind " + kind,
+    )
+
+def _state_impl(ctx):
+    return _inspect(ctx, "state")
+
+def _documents_impl(ctx):
+    return _inspect(ctx, "documents")
+
+def _finalizations_impl(ctx):
+    return _inspect(ctx, "finalizations")
+
+def _events_impl(ctx):
+    return _inspect(ctx, "events")
+
+_INSPECT_ARGS = {
+    "org": args.string(default = "", description = "Org slug (alternative to --org-id)."),
+    "org_id": args.string(default = "", description = "Numeric org ID."),
+    "product_id": args.string(default = _DEFAULT_PRODUCT_ID, description = "Billing product ID."),
+    "format": args.string(default = "", description = "Output format (table|json)."),
+}
+
+clock = task(
+    implementation = _clock_impl,
+    name = "clock",
+    group = ["billing"],
+    summary = "Inspect or mutate billing business time.",
+    args = {
+        "org": args.string(default = "", description = "Org slug."),
+        "org_id": args.string(default = "", description = "Numeric org ID."),
+        "product_id": args.string(default = _DEFAULT_PRODUCT_ID, description = "Billing product ID."),
+        "set": args.string(default = "", description = "Set business-time to RFC3339 timestamp."),
+        "advance_seconds": args.string(default = "", description = "Advance business-time by N seconds."),
+        "clear": args.boolean(default = False, description = "Clear business-time override."),
+        "wall_clock": args.boolean(default = False, description = "Reset to wall-clock and repair current cycle."),
+        "reason": args.string(default = "", description = "Audit reason for the mutation."),
+    },
+)
+
+state = task(
+    implementation = _state_impl,
+    name = "state",
+    group = ["billing"],
+    summary = "Inspect billing state for an org.",
+    args = _INSPECT_ARGS,
+)
+
+documents = task(
+    implementation = _documents_impl,
+    name = "documents",
+    group = ["billing"],
+    summary = "List billing documents for an org.",
+    args = _INSPECT_ARGS,
+)
+
+finalizations = task(
+    implementation = _finalizations_impl,
+    name = "finalizations",
+    group = ["billing"],
+    summary = "List billing finalizations for an org.",
+    args = _INSPECT_ARGS,
+)
+
+# events accepts an extra --event-type and --minutes window.
+events = task(
+    implementation = _events_impl,
+    name = "events",
+    group = ["billing"],
+    summary = "Query recent billing events in ClickHouse.",
+    args = {
+        "org": args.string(default = "", description = "Org slug."),
+        "org_id": args.string(default = "", description = "Numeric org ID."),
+        "product_id": args.string(default = _DEFAULT_PRODUCT_ID, description = "Billing product ID."),
+        "format": args.string(default = "", description = "Output format (table|json)."),
+        "event": args.string(default = "", description = "Event type filter (e.g. billing_document_issued)."),
+        "minutes": args.string(default = "", description = "Time window in minutes (default: 60)."),
+    },
+)

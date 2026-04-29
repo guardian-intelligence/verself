@@ -1,0 +1,203 @@
+"""aspect platform <subtask> — controller-side Ansible playbook entry points.
+
+Each task is a thin wrapper around an existing platform script or playbook so
+deploy_run_key correlation (set by ansible-with-tunnel.sh) keeps flowing into
+ClickHouse. Anything here that mutates the bare-metal node goes through the
+ansible-with-tunnel.sh wrapper; anything controller-only invokes the script
+directly.
+"""
+
+load(".aspect/lib/helpers.axl", "checked_spawn", "inventory_check", "ws_path")
+
+_PLATFORM = "src/platform"
+
+def _ansible_tunnel(ctx, playbook, *extra_args):
+    """Run scripts/ansible-with-tunnel.sh against a playbook with optional args."""
+    if inventory_check(ctx) != 0:
+        return 1
+    args = [playbook] + list(extra_args)
+    return checked_spawn(
+        ctx,
+        ws_path(ctx, _PLATFORM, "scripts/ansible-with-tunnel.sh"),
+        args,
+        cwd = ws_path(ctx, _PLATFORM),
+        label = "ansible-with-tunnel " + playbook + (" " + " ".join(extra_args) if extra_args else ""),
+    )
+
+def _ansible_local(ctx, playbook):
+    """Run ansible-playbook directly without the OTLP tunnel.
+
+    Used for playbooks that run before inventory exists (provision, setup-sops)
+    and so cannot resolve a target host to tunnel through.
+    """
+    return checked_spawn(
+        ctx,
+        "ansible-playbook",
+        [playbook],
+        cwd = ws_path(ctx, _PLATFORM, "ansible"),
+        label = "ansible-playbook " + playbook,
+    )
+
+def _setup_dev_impl(ctx):
+    inv = ws_path(ctx, "src/platform/ansible/inventory/hosts.ini")
+    r = (ctx.std.process.command("test").args(["-f", inv]).spawn().wait())
+    if r.code == 0:
+        return _ansible_tunnel(ctx, "playbooks/setup-dev.yml")
+    return _ansible_local(ctx, "playbooks/setup-dev.yml")
+
+def _setup_sops_impl(ctx):
+    return _ansible_local(ctx, "playbooks/setup-sops.yml")
+
+def _provision_impl(ctx):
+    return _ansible_local(ctx, "playbooks/provision.yml")
+
+def _deprovision_impl(ctx):
+    if not ctx.args.confirm:
+        ctx.std.io.stderr.write("ERROR: --confirm is required to deprovision\n")
+        return 1
+    return _ansible_local(ctx, "playbooks/deprovision.yml")
+
+def _security_patch_impl(ctx):
+    return _ansible_tunnel(ctx, "playbooks/security-patch.yml")
+
+def _guest_rootfs_impl(ctx):
+    return _ansible_tunnel(ctx, "playbooks/guest-rootfs.yml")
+
+def _edit_secrets_impl(ctx):
+    # No tunnel; sops opens $EDITOR locally on the encrypted file.
+    return checked_spawn(
+        ctx,
+        "sops",
+        [ws_path(ctx, _PLATFORM, "ansible/group_vars/all/secrets.sops.yml")],
+        label = "sops edit secrets",
+    )
+
+def _wipe_server_impl(ctx):
+    if inventory_check(ctx) != 0:
+        return 1
+    if not ctx.args.confirm:
+        ctx.std.io.stderr.write("ERROR: --confirm is required to wipe-server\n")
+        return 1
+    return checked_spawn(
+        ctx,
+        ws_path(ctx, _PLATFORM, "scripts/wipe-server.sh"),
+        [],
+        cwd = ws_path(ctx, _PLATFORM),
+        label = "wipe-server.sh",
+    )
+
+def _hooks_install_impl(ctx):
+    # Drop any project-level core.hooksPath override, then let pre-commit
+    # write the hooks under .git/hooks.
+    (ctx.std.process.command("git")
+        .args(["config", "--unset-all", "core.hooksPath"])
+        .stdout("piped").stderr("piped")
+        .spawn().wait())
+    return checked_spawn(ctx, "pre-commit", ["install"], label = "pre-commit install")
+
+def _reset_identity_impl(ctx):
+    return _ansible_tunnel(ctx, "playbooks/identity-reset.yml")
+
+def _reset_billing_impl(ctx):
+    return _ansible_tunnel(ctx, "playbooks/billing-reset.yml")
+
+def _reset_verification_impl(ctx):
+    rc = _ansible_tunnel(ctx, "playbooks/verification-reset.yml")
+    if rc != 0:
+        return rc
+    return _ansible_tunnel(
+        ctx,
+        "playbooks/site.yml",
+        "-e", "temporal_force_schema_reset=true",
+        "-e", "clickhouse_force_schema_reset=true",
+    )
+
+setup_dev = task(
+    implementation = _setup_dev_impl,
+    name = "setup-dev",
+    group = ["platform"],
+    summary = "Install pinned controller dev tools (uses ansible-with-tunnel.sh once inventory exists).",
+)
+
+setup_sops = task(
+    implementation = _setup_sops_impl,
+    name = "setup-sops",
+    group = ["platform"],
+    summary = "Bootstrap SOPS + Age encryption.",
+)
+
+provision = task(
+    implementation = _provision_impl,
+    name = "provision",
+    group = ["platform"],
+    summary = "Provision bare metal and generate inventory.",
+)
+
+deprovision = task(
+    implementation = _deprovision_impl,
+    name = "deprovision",
+    group = ["platform"],
+    summary = "Destroy provisioned bare metal infrastructure (requires --confirm).",
+    args = {
+        "confirm": args.boolean(default = False, description = "Required gate; pass --confirm to proceed."),
+    },
+)
+
+security_patch = task(
+    implementation = _security_patch_impl,
+    name = "security-patch",
+    group = ["platform"],
+    summary = "Apply OS security updates through Ansible.",
+)
+
+guest_rootfs = task(
+    implementation = _guest_rootfs_impl,
+    name = "guest-rootfs",
+    group = ["platform"],
+    summary = "Build the substrate ext4 on the worker and stage toolchain ext4s.",
+)
+
+edit_secrets = task(
+    implementation = _edit_secrets_impl,
+    name = "edit-secrets",
+    group = ["platform"],
+    summary = "Open encrypted secrets in $EDITOR via sops.",
+)
+
+wipe_server = task(
+    implementation = _wipe_server_impl,
+    name = "wipe-server",
+    group = ["platform"],
+    summary = "Wipe all verself state from the provisioned server (requires --confirm).",
+    args = {
+        "confirm": args.boolean(default = False, description = "Required gate; pass --confirm to proceed."),
+    },
+)
+
+hooks_install = task(
+    implementation = _hooks_install_impl,
+    name = "hooks-install",
+    group = ["platform"],
+    summary = "Install repo git hooks via pre-commit.",
+)
+
+reset_identity = task(
+    implementation = _reset_identity_impl,
+    name = "identity",
+    group = ["platform", "reset"],
+    summary = "Wipe identity-service PostgreSQL state and restart dependents.",
+)
+
+reset_billing = task(
+    implementation = _reset_billing_impl,
+    name = "billing",
+    group = ["platform", "reset"],
+    summary = "Wipe billing state (TigerBeetle + billing PostgreSQL) and restart billing callers.",
+)
+
+reset_verification = task(
+    implementation = _reset_verification_impl,
+    name = "verification",
+    group = ["platform", "reset"],
+    summary = "Wipe verification state (billing + sandbox_rental + governance) and redeploy with schema reset.",
+)
