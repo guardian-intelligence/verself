@@ -2,50 +2,31 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
+self_path="${script_dir}/$(basename "$0")"
 platform_root="$(cd "${script_dir}/.." && pwd)"
 repo_root="$(git -C "${platform_root}" rev-parse --show-toplevel)"
 
-cd "${platform_root}"
-
-inventory="ansible/inventory/${VERSELF_SITE:-prod}.ini"
+inventory="${platform_root}/ansible/inventory/${VERSELF_SITE:-prod}.ini"
 if [[ ! -f "${inventory}" ]]; then
   echo "ERROR: ${inventory} not found. Provision the environment first." >&2
   exit 1
 fi
 
-remote_host="$(grep -m1 'ansible_host=' "${inventory}" | sed 's/.*ansible_host=\([^ ]*\).*/\1/')"
-remote_user="$(grep -m1 'ansible_user=' "${inventory}" | sed 's/.*ansible_user=\([^ ]*\).*/\1/')"
-if [[ -z "${remote_host}" || -z "${remote_user}" ]]; then
-  echo "ERROR: could not resolve ansible_host/ansible_user from ${inventory}." >&2
-  exit 1
+# Re-exec under the controller-side OTLP buffer agent so the smoke span
+# we emit below is buffered by scripts/with-otel-agent.sh's file_storage
+# queue. Same agent ansible deploys use, same disk durability, same SSH
+# transport — no per-canary `ssh -L` race.
+if [[ -z "${VERSELF_OTEL_AGENT_INNER:-}" ]]; then
+  export VERSELF_OTEL_AGENT_INNER=1
+  export VERSELF_ANSIBLE_INVENTORY="${inventory}"
+  export VERSELF_DEPLOY_KIND="bazel-smoke-test"
+  exec "${script_dir}/with-otel-agent.sh" "${self_path}" "$@"
 fi
 
-port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
-ssh -N \
-  -o ExitOnForwardFailure=yes \
-  -o ServerAliveInterval=15 \
-  -o ServerAliveCountMax=3 \
-  -o StrictHostKeyChecking=no \
-  -L "${port}:127.0.0.1:4317" \
-  "${remote_user}@${remote_host}" </dev/null >/dev/null 2>&1 &
-tunnel_pid=$!
-trap 'kill "${tunnel_pid}" 2>/dev/null || true; wait "${tunnel_pid}" 2>/dev/null || true' EXIT
+cd "${platform_root}"
 
-for _ in $(seq 1 20); do
-  if python3 -c "import socket; socket.create_connection(('127.0.0.1', ${port}), 1).close()" 2>/dev/null; then
-    break
-  fi
-  sleep 0.25
-done
-if ! python3 -c "import socket; socket.create_connection(('127.0.0.1', ${port}), 1).close()" 2>/dev/null; then
-  echo "ERROR: OTLP tunnel to ${remote_user}@${remote_host} did not come up on 127.0.0.1:${port}." >&2
-  exit 1
-fi
-
-export VERSELF_OTLP_ENDPOINT="127.0.0.1:${port}"
-export VERSELF_DEPLOY_KIND="bazel-smoke-test"
-# shellcheck source=src/platform/scripts/deploy_identity.sh
-source "${script_dir}/deploy_identity.sh"
+# Inside the wrapper now: VERSELF_OTLP_ENDPOINT and OTEL_RESOURCE_ATTRIBUTES
+# are set, deploy_identity.sh has been sourced.
 export VERIFICATION_RUN_ID="${VERSELF_DEPLOY_RUN_KEY}"
 
 bazelisk="${BAZELISK:-bazelisk}"

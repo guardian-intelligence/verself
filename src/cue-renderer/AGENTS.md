@@ -168,10 +168,12 @@ Two distinct surfaces, one role each:
   copy permission, etc.). It does not emit observability spans and does
   not re-assert facts the renderer or Bazel already enforce.
 - **e2e canaries** under `src/platform/scripts/verify-*-live.sh` own
-  continuous verification. Each canary opens an SSH tunnel to OTLP,
-  emits a smoke span via `go run //src/otel/cmd/smoke-span`, then polls
-  `default.otel_traces` for the row. They run from CI and on a loop;
-  see `verify-bazel-live.sh` as the reference shape.
+  continuous verification. Each canary re-execs itself through
+  `scripts/with-otel-agent.sh` (the same controller-side OTLP buffer
+  agent `aspect deploy` uses), emits a smoke span via
+  `go run //src/otel/cmd/smoke-span`, then polls `default.otel_traces`
+  for the row. They run from CI and on a loop; see `verify-bazel-live.sh`
+  as the reference shape.
 
 When adding a new role or extending one: write `assert` tasks for
 in-band gates, and (if continuous external verification is meaningful)
