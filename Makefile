@@ -4,7 +4,7 @@
        profile-smoke-test organization-sync-smoke-test notifications-smoke-test projects-smoke-test source-code-hosting-smoke-test secrets-smoke-test secrets-leak-smoke-test openbao-smoke-test openbao-tenancy-smoke-test workload-identity-smoke-test spiffe-rotation-smoke-test object-storage-smoke-test temporal-smoke-test temporal-web-smoke-test recurring-schedule-smoke-test \
        vm-guest-telemetry-build guest-images-build observe telemetry-smoke-test telemetry-smoke-test-fail clickhouse-query clickhouse-schemas pg-shell pg-query pg-list tb-shell tb-command mail mail-accounts mail-mailboxes \
        mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets \
-       wipe-pg-db wipe-server vm-orchestrator-smoke-test sandbox-inner sandbox-middle sandbox-smoke-test console-ui-smoke console-ui-local console-local-dev console-frontend-deploy-fast grafana-smoke-test observability-smoke services-doctor
+       wipe-pg-db wipe-server vm-orchestrator-smoke-test firecracker-cutover-smoke-test sandbox-inner sandbox-middle sandbox-smoke-test console-ui-smoke console-ui-local console-local-dev console-frontend-deploy-fast grafana-smoke-test observability-smoke services-doctor
 
 PLATFORM_DIR := src/platform
 AW       := src/apiwire
@@ -441,6 +441,9 @@ wipe-pg-db: inventory-check ## Wipe one managed PostgreSQL service DB: make wipe
 
 vm-orchestrator-smoke-test: inventory-check ## Live smoke test for vm-orchestrator lease/exec spans (set VERIFICATION_RESET=1 to wipe verification state first)
 	cd $(PLATFORM_DIR) && ./scripts/verify-vm-orchestrator-live.sh
+
+firecracker-cutover-smoke-test: inventory-check ## Cutover-specific invariants for substrate + toolchain + bridge cleanup (drives a vm-orchestrator smoke and asserts the new spans/logs)
+	cd $(PLATFORM_DIR) && ./scripts/verify-firecracker-cutover-live.sh
 
 sandbox-inner: inventory-check ## Inner loop: default starts local HMR; use SANDBOX_INNER_MODE=verify for local smoke evidence
 	cd $(PLATFORM_DIR) && ./scripts/sandbox-inner.sh

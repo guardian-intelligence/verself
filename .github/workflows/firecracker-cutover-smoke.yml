@@ -1,0 +1,108 @@
+name: Firecracker Cutover Smoke
+
+# Drives `make firecracker-cutover-smoke-test` against the prod
+# bare-metal node from a Blacksmith runner. The cutover script does its
+# own static binary checks, SSHes to prod for substrate + toolchain
+# debugfs assertions, drives `verify-vm-orchestrator-live.sh`, and then
+# queries the prod ClickHouse for the post-cutover trace shape.
+#
+# Triggers:
+#   - workflow_dispatch (the canonical "rerun the smoke against prod"
+#     button)
+#   - push to main when the cutover surface changes (vm-orchestrator,
+#     guest-images, or the substrate/firecracker Ansible roles).
+#
+# Required repository secrets:
+#   PROD_SSH_PRIVATE_KEY  — private half of the deploy key the prod
+#                           inventory's ansible_user accepts.
+#   PROD_KNOWN_HOSTS      — pre-resolved entries for the inventory
+#                           hostnames (avoids first-connect prompt).
+
+on:
+  workflow_dispatch:
+    inputs:
+      verification_deploy:
+        description: "Run guest-rootfs + site.yml --tags firecracker before the smoke (set 1 to redeploy)"
+        required: false
+        default: "0"
+      verification_reset:
+        description: "Wipe verification state + reset Temporal/CH schema before the smoke (set 1 to reset)"
+        required: false
+        default: "0"
+  push:
+    branches: [main]
+    paths:
+      - "src/vm-orchestrator/**"
+      - "src/vm-orchestrator/guest-images/**"
+      - "src/platform/ansible/roles/firecracker/**"
+      - "src/platform/scripts/verify-firecracker-cutover-live.sh"
+      - "src/platform/scripts/verify-vm-orchestrator-live.sh"
+      - ".github/workflows/firecracker-cutover-smoke.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  # Single in-flight smoke per branch; cancel queued runs because each
+  # one drives a real deploy + sandbox roundtrip on the prod box.
+  group: firecracker-cutover-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Cutover smoke against prod
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 45
+    env:
+      VERIFICATION_DEPLOY: ${{ github.event.inputs.verification_deploy || '0' }}
+      VERIFICATION_RESET: ${{ github.event.inputs.verification_reset || '0' }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: src/vm-orchestrator/go.mod
+          cache: false
+
+      - name: Install ansible + e2fsprogs (for debugfs locally if needed)
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ansible e2fsprogs
+
+      - name: Configure SSH for prod
+        env:
+          PROD_SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+          PROD_KNOWN_HOSTS: ${{ secrets.PROD_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -d -m 0700 "$HOME/.ssh"
+          printf '%s\n' "$PROD_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_prod"
+          chmod 0600 "$HOME/.ssh/id_prod"
+          printf '%s\n' "$PROD_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 0644 "$HOME/.ssh/known_hosts"
+          eval "$(ssh-agent -s)" >/dev/null
+          ssh-add "$HOME/.ssh/id_prod" >/dev/null
+          # The verification scripts read SSH_OPTS for tunables; pin
+          # the identity here so they don't fall back to ~/.ssh/id_rsa.
+          echo "SSH_OPTS=-i $HOME/.ssh/id_prod -o IPQoS=none -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts" >> "$GITHUB_ENV"
+          # Persist agent for subsequent steps.
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$GITHUB_ENV"
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> "$GITHUB_ENV"
+
+      - name: Run cutover smoke
+        run: make firecracker-cutover-smoke-test
+
+      - name: Upload smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firecracker-cutover-smoke-${{ github.run_id }}
+          path: |
+            smoke-artifacts/firecracker-cutover/**
+          if-no-files-found: warn
+          retention-days: 14
