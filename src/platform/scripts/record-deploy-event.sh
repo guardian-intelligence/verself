@@ -103,23 +103,10 @@ VALUES
 SQL
 )
 
-# Emit the controller-side `deploy_events.insert` span before running the
-# remote INSERT. smoke-span flushes its own provider on exit so the span
-# lands on otelcol regardless of the INSERT's success.
-SMOKE_SPAN_NAME="deploy_events.insert" \
-SMOKE_SPAN_SERVICE="deploy-event-writer" \
-SMOKE_SPAN_ATTRS_JSON="$(python3 -c '
-import json, os, sys
-print(json.dumps({
-    "clickhouse.table": "verself.deploy_events",
-    "clickhouse.event_kind": os.environ["EK"],
-    "verself.site": os.environ["SITE"],
-    "verself.deploy_sha": os.environ["SHA"],
-    "verself.deploy_scope": os.environ["SCOPE"],
-}))
-' )" \
-EK="${event_kind}" SITE="${site}" SHA="${sha}" SCOPE="${scope}" \
-  bazelisk run -- //src/otel/cmd/smoke-span >/dev/null
+# The row in verself.deploy_events is the canonical record; we deliberately
+# do not emit a separate `deploy_events.insert` OTel span here because the
+# controller-side OTLP endpoint is owned by ansible-with-tunnel.sh's tunnel
+# (out-of-scope at this point) and the row carries the same dimensions.
 
 cd "${repo_root}/src/platform"
 INVENTORY="ansible/inventory/${site}.ini" ./scripts/clickhouse.sh \
