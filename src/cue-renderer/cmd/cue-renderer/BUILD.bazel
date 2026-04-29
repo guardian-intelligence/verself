@@ -8,6 +8,8 @@ go_library(
     deps = [
         "//src/cue-renderer/internal/load",
         "//src/cue-renderer/internal/render",
+        "//src/cue-renderer/internal/render/bazeldevtools",
+        "//src/cue-renderer/internal/render/bazeldevtoolsmodule",
         "//src/cue-renderer/internal/render/bazelmodule",
         "//src/cue-renderer/internal/render/bazelnftables",
         "//src/cue-renderer/internal/render/bazelservertools",
