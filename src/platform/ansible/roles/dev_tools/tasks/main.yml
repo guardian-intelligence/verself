@@ -1,103 +1,46 @@
 ---
-# Execute the generated development tool install plan. The topology compiler
-# owns tool layout; Ansible applies checksumed artifacts and package actions.
+# Bring the controller's dev tools up to topology. Two delivery channels:
+#
+#   1. dev_tools.tar.zst (pinned_http_file tier) — Bazel-fetched, sha256-pinned,
+#      one untar at /. Owns 16 binaries plus /usr/local/{go,zig} symlinks.
+#   2. install plan (system_apt + legacy_install_plan tiers) — apt for system
+#      packages, `go install` and `uv tool install` for the source-built tools
+#      that haven't migrated to a hermetic tier yet.
+#
+# Order matters: the tarball must land before `go install` runs (which needs
+# /usr/local/go/bin/go) and before `uv tool install` runs (which needs
+# /usr/local/bin/uv).
 
 - name: Require generated dev tool install plan
   ansible.builtin.assert:
     that:
       - topology_dev_tool_install_plan is defined
-      - topology_dev_tool_install_plan.downloads is defined
-      - topology_dev_tool_install_plan.uv_tools is defined
+      - topology_dev_tool_install_plan.apt_packages is defined
       - topology_dev_tool_install_plan.go_installs is defined
+      - topology_dev_tool_install_plan.uv_tools is defined
     quiet: true
     fail_msg: >-
-      topology_dev_tool_install_plan is missing. Run make topology-generate before setup-dev.
+      topology_dev_tool_install_plan is missing or stale. Run make topology-generate before setup-dev.
 
-- name: Set dev tool install plan
+- name: Install pinned_http_file dev tools via Bazel-managed archive
+  ansible.builtin.include_tasks: dev_tools_archive.yml
+
+- name: Set legacy install plan facts
   ansible.builtin.set_fact:
     dev_tools_install_plan: "{{ topology_dev_tool_install_plan }}"
-
-- name: Create generated dev tool directories
-  ansible.builtin.file:
-    path: "{{ item.path }}"
-    state: directory
-    mode: "{{ item.mode }}"
-  loop: "{{ dev_tools_install_plan.directories }}"
-  loop_control:
-    label: "{{ item.path }}"
 
 - name: Install generated apt dev tools
   ansible.builtin.apt:
     name: "{{ dev_tools_install_plan.apt_packages }}"
     state: present
+  when: dev_tools_install_plan.apt_packages | length > 0
 
-- name: Download generated dev tool artifacts
-  ansible.builtin.get_url:
-    url: "{{ item.url }}"
-    dest: "{{ item.dest }}"
-    checksum: "{{ item.checksum }}"
-    mode: "{{ item.mode }}"
-  loop: "{{ dev_tools_install_plan.downloads }}"
-  loop_control:
-    label: "{{ item.key }}"
-
-- name: Extract generated dev tool archives
-  ansible.builtin.unarchive:
-    src: "{{ item.src }}"
-    dest: "{{ item.dest }}"
-    remote_src: true
-    creates: "{{ item.creates }}"
-    extra_opts: "{{ item.extra_opts | default(omit) }}"
-  loop: "{{ dev_tools_install_plan.extracts }}"
-  loop_control:
-    label: "{{ item.key }}"
-
-- name: Copy generated dev tool outputs
-  ansible.builtin.copy:
-    src: "{{ item.src }}"
-    dest: "{{ item.dest }}"
-    remote_src: true
-    mode: "{{ item.mode }}"
-  loop: "{{ dev_tools_install_plan.copies }}"
-  loop_control:
-    label: "{{ item.key }} -> {{ item.dest }}"
-
-- name: Copy generated dev tool support directories
-  ansible.builtin.copy:
-    src: "{{ item.src }}"
-    dest: "{{ item.dest }}"
-    remote_src: true
-    mode: "{{ item.mode }}"
-  loop: "{{ dev_tools_install_plan.directory_copies }}"
-  loop_control:
-    label: "{{ item.key }} -> {{ item.dest }}"
-
-- name: Remove generated dev tool replacement paths
+- name: Ensure GOPATH bin directory exists
   ansible.builtin.file:
-    path: "{{ item }}"
-    state: absent
-  loop: "{{ dev_tools_install_plan.replacement_paths }}"
-  loop_control:
-    label: "{{ item }}"
-
-- name: Link generated dev tool outputs
-  ansible.builtin.file:
-    src: "{{ item.src }}"
-    dest: "{{ item.dest }}"
-    state: link
-    force: "{{ item.force }}"
-  loop: "{{ dev_tools_install_plan.links }}"
-  loop_control:
-    label: "{{ item.key }} -> {{ item.dest }}"
-
-- name: Write generated dev tool profile files
-  ansible.builtin.copy:
-    content: "{{ item.content }}"
-    dest: "{{ item.dest }}"
-    mode: "{{ item.mode }}"
-  loop: "{{ dev_tools_install_plan.profile_files }}"
-  loop_control:
-    label: "{{ item.dest }}"
+    path: "{{ dev_tools_gopath }}/bin"
+    state: directory
+    mode: "0755"
+  when: dev_tools_install_plan.go_installs | length > 0
 
 - name: Install generated Go dev tools
   ansible.builtin.command:
@@ -121,6 +64,12 @@
   loop_control:
     label: "{{ item.key }}"
 
+- name: Write Go PATH profile shim
+  ansible.builtin.copy:
+    content: "export PATH=/usr/local/go/bin:{{ dev_tools_gopath }}/bin:$PATH\n"
+    dest: /etc/profile.d/go.sh
+    mode: "0644"
+
 - name: Install required Ansible collections
   ansible.builtin.command:
     argv:
@@ -128,9 +77,8 @@
       - collection
       - install
       - -r
-      - "{{ dev_tools_install_plan.ansible_collections_requirements }}"
+      - "{{ playbook_dir }}/../requirements.yml"
   register: dev_tools_galaxy_result
   changed_when: >-
     'Installing' in (dev_tools_galaxy_result.stdout + dev_tools_galaxy_result.stderr)
     or 'Downloading' in (dev_tools_galaxy_result.stdout + dev_tools_galaxy_result.stderr)
-

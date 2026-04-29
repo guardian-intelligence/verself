@@ -1,3 +1,9 @@
 ---
+# Dev tools install controls. Mirrors deploy_profile's defaults; the dev
+# bridge consumes Bazel-managed dev_tools.tar.zst the same way deploy_profile
+# consumes server_tools.tar.zst.
 dev_tools_gopath: /usr/local/go-tools
+dev_tools_repo_root: "{{ playbook_dir }}/../../../.."
+dev_tools_bazelisk: bazelisk
 dev_tools_staging_dir: /opt/verself/dev-tools/staging
+dev_tools_archive_marker_path: /opt/verself/dev-tools/.installed-version
