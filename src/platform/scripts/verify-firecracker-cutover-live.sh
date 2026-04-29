@@ -22,11 +22,19 @@ set -euo pipefail
 #      Step cutover) and the lease lifecycle logs contain zero
 #      "etc-overlay collision" rows (content-digest collision check).
 #
-# Layered: static checks first (no prod), then SSH-side substrate
-# debugfs, then a sandbox smoke roundtrip, then ClickHouse asserts on
-# what the smoke produced. Each layer fails fast with the exact line
-# the assertion fired on so the GitHub Actions log pinpoints the
-# regression.
+# Layered:
+#   1. static checks (no prod) — the source tree we'd deploy.
+#   2. sandbox smoke roundtrip — runs verify-vm-orchestrator-live.sh,
+#      which honours VERIFICATION_DEPLOY=1 to rebuild guest-rootfs +
+#      redeploy the firecracker stack before driving the smoke. This
+#      step is what brings prod up to the cutover bits.
+#   3. SSH-side substrate + toolchain debugfs — asserted *after* the
+#      deploy so we're inspecting the post-cutover state, not whatever
+#      shape prod was in when the workflow started.
+#   4. ClickHouse asserts on what the smoke produced.
+#
+# Each layer fails fast with the exact line the assertion fired on so
+# the GitHub Actions log pinpoints the regression.
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=src/platform/scripts/lib/verification-context.sh
@@ -97,7 +105,28 @@ for build_file in \
 done
 
 # ----------------------------------------------------------------------
-# 2. Substrate + toolchain ext4 asserts (SSH to the deployed host).
+# 2. Drive a sandbox smoke roundtrip. The smoke fixture rebuilds
+#    guest-rootfs + redeploys the firecracker stack (when
+#    VERIFICATION_DEPLOY=1) and then pushes a real Forgejo workflow
+#    run, allocates a runner, leases a VM, executes, and tears down —
+#    exactly the path the cutover touched. The timestamp window we
+#    capture frames the post-smoke ClickHouse queries below. Run this
+#    BEFORE the substrate/toolchain debugfs checks so those checks see
+#    the post-cutover artefacts on disk.
+# ----------------------------------------------------------------------
+
+log "smoke: triggering verify-vm-orchestrator-live.sh"
+window_start_unix="$(date -u +%s)"
+VERIFICATION_RUN_ID="firecracker-cutover-$(date -u +%Y%m%dT%H%M%SZ)" \
+VERIFICATION_ARTIFACT_ROOT="${artifact_root}/smoke" \
+  "${script_dir}/verify-vm-orchestrator-live.sh"
+window_end_unix="$(date -u +%s)"
+
+# ----------------------------------------------------------------------
+# 3. Substrate + toolchain ext4 asserts (SSH to the deployed host).
+#    The smoke above already redeployed (if VERIFICATION_DEPLOY=1) so
+#    these reads inspect the cutover artefacts, not whatever shape
+#    prod was in when the workflow started.
 # ----------------------------------------------------------------------
 
 guest_images_dir="/var/lib/verself/guest-images"
@@ -110,16 +139,20 @@ substrate_passwd="$(verification_ssh "sudo debugfs -R 'cat /etc/passwd' ${substr
 if printf '%s' "${substrate_passwd}" | awk -F: '$3 == "1000" {found=1} END {exit !found}'; then
   fail "substrate /etc/passwd unexpectedly contains a UID-1000 entry"
 fi
+# debugfs `ls -l <dir>` on a missing path emits "File not found"; an
+# extant directory emits inode+mode columns. The `<>` syntax in
+# debugfs is reserved for inode references, not paths — use `ls`.
 for opt_dir in /opt/actions-runner /opt/forgejo-runner /opt/hostedtoolcache; do
-  if verification_ssh "sudo debugfs -R 'stat <${opt_dir}>' ${substrate_path} 2>&1" | grep -qE "^Inode: [0-9]+"; then
-    fail "substrate still contains stub directory ${opt_dir}"
+  ls_output="$(verification_ssh "sudo debugfs -R 'ls -l ${opt_dir}' ${substrate_path} 2>&1" || true)"
+  if ! printf '%s' "${ls_output}" | grep -qiE "(File not found|does not exist)"; then
+    fail "substrate still contains stub directory ${opt_dir}: ${ls_output}"
   fi
 done
 
 log "remote: gh-actions-runner toolchain etc-overlay carries the runner@1000 user from runner-overlay-common"
 gh_overlay_passwd="$(verification_ssh "sudo debugfs -R 'cat /etc-overlay/passwd' ${gh_toolchain_path}" 2>/dev/null || true)"
 if ! printf '%s' "${gh_overlay_passwd}" | grep -q "^runner:x:1000:1000:verself runner"; then
-  fail "gh-actions-runner toolchain image is missing the shared runner@1000 entry from runner-overlay-common"
+  fail "gh-actions-runner toolchain image is missing the shared runner@1000 entry from runner-overlay-common (got: ${gh_overlay_passwd})"
 fi
 
 log "remote: forgejo-runner toolchain etc-overlay carries the same runner@1000 entry (DRY check)"
@@ -127,21 +160,6 @@ forgejo_overlay_passwd="$(verification_ssh "sudo debugfs -R 'cat /etc-overlay/pa
 if [[ "${gh_overlay_passwd}" != "${forgejo_overlay_passwd}" ]]; then
   fail "gh-actions-runner and forgejo-runner /etc-overlay/passwd differ; they must both consume runner-overlay-common verbatim"
 fi
-
-# ----------------------------------------------------------------------
-# 3. Drive a sandbox smoke roundtrip. The smoke fixture pushes a real
-#    Forgejo workflow run, allocates a runner, leases a VM, executes,
-#    and tears down — exactly the path the cutover touched. The
-#    timestamp window we capture frames the post-smoke ClickHouse
-#    queries below.
-# ----------------------------------------------------------------------
-
-log "smoke: triggering verify-vm-orchestrator-live.sh"
-window_start_unix="$(date -u +%s)"
-VERIFICATION_RUN_ID="firecracker-cutover-$(date -u +%Y%m%dT%H%M%SZ)" \
-VERIFICATION_ARTIFACT_ROOT="${artifact_root}/smoke" \
-  "${script_dir}/verify-vm-orchestrator-live.sh"
-window_end_unix="$(date -u +%s)"
 
 window_start="$(date -u -d "@${window_start_unix}" +'%Y-%m-%d %H:%M:%S')"
 window_end="$(date -u -d "@${window_end_unix}" +'%Y-%m-%d %H:%M:%S')"
