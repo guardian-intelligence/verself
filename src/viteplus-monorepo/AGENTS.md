@@ -69,10 +69,10 @@ Only frontends need OIDC apps. Go backend services (mailbox-service, billing-ser
 
 | Zitadel Project   | OIDC Apps (frontends) | JWT Validators (backends)               |
 | ----------------- | --------------------- | --------------------------------------- |
-| `sandbox-rental`  | console               | sandbox-rental-service, billing-service |
+| `sandbox-rental`  | verself-web           | sandbox-rental-service, billing-service |
 | `mailbox-service` | (pending)             | mailbox-service                         |
 
-The `mailbox-service` project previously had a `webmail` OIDC app; that frontend was retired and its surfaces will be folded into `console`. The project stays because `mailbox-service` backend JWT validation still targets it.
+The `mailbox-service` project previously had a `webmail` OIDC app; that frontend was retired and its surfaces will be folded into `verself-web`. The project stays because `mailbox-service` backend JWT validation still targets it.
 
 ### Dev Mode OIDC Apps
 
@@ -83,13 +83,13 @@ Each frontend needs **two Zitadel OIDC applications**: one for production and on
 
 Production OIDC apps are created automatically by each app's Ansible role (`zitadel_app.yml`). Dev OIDC apps are created once manually or via `seed-system.yml`.
 
-For each frontend, create a dev OIDC app in the same Zitadel project as the production app. Use the Zitadel console at `https://auth.<domain>` or the Management API:
+For each frontend, create a dev OIDC app in the same Zitadel project as the production app. Use the Zitadel admin UI at `https://auth.<domain>` or the Management API:
 
-| Frontend | Zitadel Project | Preferred Port | Dev Redirect URI              |
-| -------- | --------------- | -------------- | ----------------------------- |
-| console  | sandbox-rental  | 4244           | `http://127.0.0.1:*/callback` |
+| Frontend    | Zitadel Project | Preferred Port | Dev Redirect URI              |
+| ----------- | --------------- | -------------- | ----------------------------- |
+| verself-web | sandbox-rental  | 4244           | `http://127.0.0.1:*/callback` |
 
-Port 4245 (previously webmail) is reserved; webmail's surfaces will be folded into console.
+Port 4245 (previously webmail) is reserved; webmail's surfaces will be folded into verself-web.
 
 The dev app must have:
 
@@ -103,7 +103,7 @@ The dev app must have:
 ### Running a frontend locally
 
 ```bash
-# run console locally against the deployed services
+# run verself-web locally against the deployed services
 aspect dev sandbox-inner
 
 # separate terminal: verify the local dev server and collect ClickHouse evidence
@@ -116,7 +116,7 @@ aspect dev sandbox-middle
 src/platform/scripts/verify-sandbox-live.sh
 ```
 
-`aspect dev sandbox-inner` opens the required SSH tunnels, re-queries the `console-dev`
+`aspect dev sandbox-inner` opens the required SSH tunnels, re-queries the `verself-web-dev`
 client ID from Zitadel, and exports the current runtime env for the local server:
 
 - `VERSELF_DOMAIN`
@@ -130,13 +130,13 @@ client ID from Zitadel, and exports the current runtime env for the local server
 
 Open the `app:` URL printed by `aspect dev sandbox-inner`. The launcher prefers `http://127.0.0.1:4244`
 but will move to a higher local port if that one is busy, then records the chosen
-URL in `/tmp/verself-console-dev.env` so `SANDBOX_INNER_MODE=verify aspect dev sandbox-inner` can target
+URL in `/tmp/verself-web-dev.env` so `SANDBOX_INNER_MODE=verify aspect dev sandbox-inner` can target
 the same dev server from another terminal. Vite HMR gives sub-second feedback on
 every file save. API calls, Electric shapes, auth sessions, and OTLP traces all
 flow through the SSH tunnels to the deployed single-node stack.
 
 `aspect dev sandbox-middle` is the non-destructive remote loop. By default it deploys
-the `console` frontend role and runs the fast admin smoke. Override
+the `verself_web` frontend role and runs the fast admin smoke. Override
 `SANDBOX_DEPLOY_TARGET=ui|service|both|none`, `SANDBOX_VERIFY_TARGET=admin|import|refresh|execute|none`,
 and `SANDBOX_SEED_VERIFY=1` when you need a different targeted rehearsal.
 
@@ -200,7 +200,7 @@ Each Electric instance also needs its own publication (`CREATE PUBLICATION ... F
 
 **Frontend SSR footgun:** browser-visible time formatting is hydration-sensitive. `toLocaleString()` / `toLocaleDateString()` / `toLocaleTimeString()` without an explicit timezone will drift between server and browser and can cause React to throw away SSR output during hydration. Do not introduce app-local date formatting helpers for SSR-visible timestamps.
 
-**Shared frontend time abstraction:** use `formatUTCDateTime()` from `src/viteplus-monorepo/packages/web-env/src/time.ts` for SSR-visible timestamps in the web apps. It centralizes `Intl.DateTimeFormat` with `timeZone: "UTC"` and caches formatters so `mail` and `console` render the same text on the server and client.
+**Shared frontend time abstraction:** use `formatUTCDateTime()` from `src/viteplus-monorepo/packages/web-env/src/time.ts` for SSR-visible timestamps in the web apps. It centralizes `Intl.DateTimeFormat` with `timeZone: "UTC"` and caches formatters so the rendered text agrees on the server and client.
 
 ### UI primitives
 

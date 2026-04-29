@@ -11,8 +11,9 @@ Where the platform is headed. When this doc disagrees with `docs/system-context.
   1. Be designed for use by customers in a multi-tenant, organization-based fashion and integrated into the policy and billing abstractions.
   2. Be designed such that we are the principal customers (dogfooding). We go through the same policy and billing abstractions, except our usage is unlimited and our bill at invoice time nets to zero after applying an adjustment. Not currently upheld for Mail; worth dogfooding there too. This philosophy is direction, not current state; uphold as the codebase is upgraded.
 - Product IAM direction: Zitadel owns identity, organizations, users, OAuth/OIDC, project roles, and role assignments; Verself owns the product policy model; each Go service owns and enforces its operation catalog. The platform ships working default role bundles and policy documents, then exposes customer editing through a constrained Verself organization console rather than requiring founders to hand-author IAM documents. See `src/platform/docs/identity-and-iam.md`.
-- Public surface direction: product workflows converge into `console.<domain>`,
-  while customer, SDK, and CLI APIs live on service-owned
+- Public surface direction: product workflows converge into the
+  authenticated browser app at `<domain>` (sharing the apex with docs and
+  policy), while customer, SDK, and CLI APIs live on service-owned
   `<service>.api.<domain>` origins. Verself does not use a shared
   `api.<domain>/<service>/...` gateway; service subdomains are the public
   ownership boundary.

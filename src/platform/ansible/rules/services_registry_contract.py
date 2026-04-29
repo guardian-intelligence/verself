@@ -44,13 +44,12 @@ CONTROL_PLANE_SERVICES = {
     "mailbox_service",
     "notifications_service",
     "object_storage_service",
-    "platform",
     "profile_service",
     "projects_service",
-    "console",
     "sandbox_rental",
     "secrets_service",
     "source_code_hosting_service",
+    "verself_web",
 }
 
 WILDCARD_LISTEN_EXPOSURES = {"public", "wireguard", "guest_host"}
