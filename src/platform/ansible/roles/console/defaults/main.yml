@@ -2,8 +2,8 @@
 console_subdomain: console
 console_domain: "{{ console_subdomain }}.{{ verself_domain }}"
 console_install_dir: /opt/console
-console_app_dir: "{{ console_install_dir }}/apps/console"
-console_dependencies_fingerprint_path: "{{ console_install_dir }}/.pnpm-install-fingerprint"
+console_app_dir: "{{ console_install_dir }}"
+console_bazel_label: //src/viteplus-monorepo/apps/console:deploy_bundle
 console_runtime_user: console
 console_runtime_group: console
 console_state_dir: /var/lib/console

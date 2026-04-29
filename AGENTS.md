@@ -43,7 +43,7 @@ Boundary components that sit outside the usual service shape:
 
 Top-level landmarks:
 
-- `.aspect/` — typed task surface. `aspect` (no args) lists every command; `aspect <task> --help` documents flags; `.aspect/config.axl` is the registration list. Retired Make-era shortcuts (smoke aliases, persona/mail-recipient/Bazel-build wrappers) are intentionally absent — use the typed `aspect <group> <action> --flag=value` form or raw `bazelisk`.
+- `.aspect/` — typed task surface. `aspect` (no args) lists every command; `aspect <task> --help` documents flags; `.aspect/config.axl` is the registration list. Use the typed `aspect <group> <action> --flag=value` form or raw `bazelisk`.
 - `docs/` — cross-service architecture; `docs/references/` is read-only third-party material. Grep through docs/references instead of reading directly.
 
 Orienting commands: `aspect db pg list` enumerates per-service PostgreSQL databases, `aspect observe` opens the telemetry surface, `aspect db ch schemas` lists ClickHouse tables.
