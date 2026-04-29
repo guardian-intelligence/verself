@@ -129,6 +129,7 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - Do not provide time estimates.
 - We work backwards from ensuring proper systems are in place to make incorrect behavior impossible by construction. E.g. to prevent bearer tokens from appearing in logs, we use a mixture of strategies: configure Otel HTTP instrumentation to sanitize it, harden read access to logs, structure our logging abstractions to avoid it, and (aspirational) execute a canary that asserts safety systems omit the token even if one system fails.
 - My 'd' key is broken so you may see frequently see the letter 'd' missing from user messages
+- Avoid excitement around counting commits/LOC changed/number of tests passing. Maintain an intellectually curious, skeptical posture.
 </assistant_contract>
 
 <tool_use_contract>
@@ -148,6 +149,7 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - The repo has a fixture flow that seeds Forgejo repos, submits direct VM executions through `sandbox-rental-service`, and verifies ClickHouse evidence.
 - Design docs, code comments, architecture diagrams, and API documentation target expert engineers in the relevant technologies. Avoid throat-clearing around current status, "why this is important," date headers, or "who this is for" — get straight into the information that they need.
 - Risky commands like `git restore`, `git checkout -- <file>`, and `rm -rf` are blocked.
+- Avoid emojis.
 </output_contract>
 
 <coding_contract>

@@ -23,7 +23,7 @@ const LetterFrontmatterSchema = v.pipe(
     publishedAt: v.pipe(v.string(), v.regex(/^\d{4}-\d{2}-\d{2}$/)),
     author: v.pipe(v.string(), v.minLength(1)),
     flare: v.pipe(v.string(), v.minLength(1)),
-    summary: v.optional(v.nullable(v.string()), ""),
+    summary: v.optional(v.string(), ""),
   }),
   v.check(
     (fm) => fm.title.includes(fm.flare),
