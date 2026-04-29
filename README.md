@@ -155,7 +155,7 @@ Authoritative code entry points:
 - `src/vm-orchestrator/vmproto/` - host/guest vsock protocol.
 - `src/vm-orchestrator/cmd/vm-bridge/` - guest PID 1 and user-facing in-guest snapshot CLI.
 - `src/vm-guest-telemetry/` - guest telemetry sampler.
-- `src/viteplus-monorepo/apps/console/` - product console UI.
+- `src/viteplus-monorepo/apps/verself-web/` - product console + docs + policy UI (verself.sh apex).
 
 Hard runtime boundaries:
 

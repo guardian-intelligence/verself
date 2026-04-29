@@ -52,7 +52,7 @@ Orienting commands: `aspect db pg list` enumerates per-service PostgreSQL databa
 
 <product_policy>
 
-Public commitments for Data Processing, Acceptable Use, Security, SLA, and Data Retention live in `src/viteplus-monorepo/apps/platform/src/routes/policy`.
+Public commitments for Data Processing, Acceptable Use, Security, SLA, and Data Retention live in `src/viteplus-monorepo/apps/verself-web/src/routes/_workshop/policy`.
 
 </product_policy>
 

@@ -17,6 +17,11 @@ export const CHANGELOG_META = {
 
 export const changelog: readonly ChangelogEntry[] = [
   {
+    date: "2026-04-29",
+    title: "Verself docs, policy, and console consolidate at verself.sh",
+    body: "The product apex (docs, policy) and the authenticated console merge into a single TanStack Start app at verself.sh. The console.verself.sh subdomain is retired — bookmarks should point at verself.sh. Auth still flows through auth.verself.sh and lands on verself.sh/callback.",
+  },
+  {
     date: "2026-04-20",
     title: "Solutions replace Products. Trust and Legal move to Verself.",
     body: "The public IA collapses to a single Solution — Verself Platform — and the /products route is retired. Verself Platform is the bundle a customer buys; services, the web console, CLIs, and SDKs are its products and are described on Verself's own surfaces. The /trust and /legal routes are retired on guardianintelligence.org; terms, privacy, the SLA, subprocessors, data retention, and security disclosures live with Verself at verself.sh/policy where the data is actually processed. The marketing site keeps its company-level surfaces: Letters, Design, Press, Careers, Changelog, Contact.",
@@ -24,6 +29,6 @@ export const changelog: readonly ChangelogEntry[] = [
   {
     date: "2026-04-19",
     title: "guardianintelligence.org moves to apps/company",
-    body: "The Guardian company site gets its own TanStack Start app, separate from the Verself product surface. Verself docs and policy live at verself.sh, while the authenticated console lives at console.verself.sh.",
+    body: "The Guardian company site gets its own TanStack Start app, separate from the Verself product surface.",
   },
 ];
