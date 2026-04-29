@@ -335,8 +335,33 @@ type NftablesHostChain struct {
 	Input NftablesHostInputChain `json:"input"`
 }
 
+// Firecracker guest networking: the FORWARD chain that routes
+// guest egress out the uplink and blocks guest-to-guest, plus the
+// POSTROUTING NAT chain that masquerades guest packets onto the
+// uplink IP. The uplink interface is auto-resolved by the
+// firecracker Ansible role at deploy time (some deployments take
+// the default route's interface, others pin it explicitly), so the
+// renderer emits a literal `__VERSELF_UPLINK__` placeholder and the
+// Ansible role substitutes the resolved value with one `replace`
+// task before reloading nftables.
+type NftablesFirecrackerForwardRule map[string]any
+
+type NftablesFirecrackerChain struct {
+	Target string `json:"target"`
+
+	Table string `json:"table"`
+
+	GuestCIDR string `json:"guest_cidr"`
+
+	UplinkPlaceholder string `json:"uplink_placeholder"`
+
+	Forward []NftablesFirecrackerForwardRule `json:"forward"`
+}
+
 type NftablesTopology struct {
 	Host NftablesHostChain `json:"host,omitempty"`
+
+	Firecracker NftablesFirecrackerChain `json:"firecracker,omitempty"`
 
 	Rulesets map[string]NftablesRuleset `json:"rulesets"`
 }

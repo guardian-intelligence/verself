@@ -55,6 +55,9 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 		{slug: "host_firewall", renderedPath: nftables.HostFirewallPath},
 		{slug: "verself_firewall_target", renderedPath: nftables.FirewallTargetPath},
 	}
+	if loaded.Topology.Nftables.Firecracker.Table != "" {
+		entries = append(entries, entry{slug: "firecracker_forward", renderedPath: nftables.FirecrackerChainPath})
+	}
 	for _, name := range sortedKeys(loaded.Topology.Nftables.Rulesets) {
 		ruleset := loaded.Topology.Nftables.Rulesets[name]
 		entries = append(entries, entry{slug: name, renderedPath: nftables.RulesetPath(ruleset.Target)})

@@ -29,6 +29,16 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 		return err
 	}
 
+	if loaded.Topology.Nftables.Firecracker.Table != "" {
+		firecracker, err := renderFirecrackerChain(loaded)
+		if err != nil {
+			return err
+		}
+		if err := out.WriteFile(FirecrackerChainPath, firecracker); err != nil {
+			return err
+		}
+	}
+
 	if err := out.WriteFile(FirewallTargetPath, renderFirewallTarget()); err != nil {
 		return err
 	}
@@ -235,6 +245,101 @@ func asInt(value any) (int, error) {
 	default:
 		return 0, fmt.Errorf("expected integer, got %T", value)
 	}
+}
+
+// renderFirecrackerChain emits the verself_firecracker table — a FORWARD
+// chain that gates Firecracker guest egress and a POSTROUTING NAT chain
+// that masquerades guest packets onto the uplink. The uplink interface
+// is left as a literal __VERSELF_UPLINK__ placeholder; the firecracker
+// Ansible role substitutes the resolved value (auto-detected from
+// ansible_default_ipv4.interface or pinned via firecracker_host_uplink_interface)
+// with one `replace` task before reloading nftables.
+func renderFirecrackerChain(loaded load.Loaded) ([]byte, error) {
+	chain := loaded.Topology.Nftables.Firecracker
+	if chain.Table == "" {
+		return nil, fmt.Errorf("topology.nftables.firecracker: missing chain declaration")
+	}
+	if chain.GuestCIDR == "" {
+		return nil, fmt.Errorf("topology.nftables.firecracker.guest_cidr: required")
+	}
+	if chain.UplinkPlaceholder == "" {
+		return nil, fmt.Errorf("topology.nftables.firecracker.uplink_placeholder: required")
+	}
+
+	var b strings.Builder
+	b.WriteString(projection.Header)
+	b.WriteString("#!/usr/sbin/nft -f\n")
+	b.WriteString("# Firecracker guest networking: NAT + forwarding for the guest pool.\n")
+	b.WriteString("# Generated from CUE topology.nftables.firecracker; the uplink interface\n")
+	b.WriteString("# placeholder below is substituted by the firecracker Ansible role at\n")
+	b.WriteString("# deploy time. Do not edit by hand.\n\n")
+	fmt.Fprintf(&b, "table ip %s\n", chain.Table)
+	fmt.Fprintf(&b, "delete table ip %s\n\n", chain.Table)
+	fmt.Fprintf(&b, "table ip %s {\n", chain.Table)
+	b.WriteString("    chain forward {\n")
+	b.WriteString("        type filter hook forward priority filter; policy drop;\n\n")
+
+	for i, rule := range chain.Forward {
+		if err := writeFirecrackerForwardRule(&b, chain, i, rule); err != nil {
+			return nil, err
+		}
+	}
+
+	b.WriteString("    }\n\n")
+	b.WriteString("    chain postrouting {\n")
+	b.WriteString("        type nat hook postrouting priority srcnat; policy accept;\n")
+	fmt.Fprintf(&b, "        ip saddr %s oifname %q masquerade\n", chain.GuestCIDR, chain.UplinkPlaceholder)
+	b.WriteString("    }\n")
+	b.WriteString("}\n")
+	return []byte(b.String()), nil
+}
+
+func writeFirecrackerForwardRule(b *strings.Builder, chain schema.NftablesFirecrackerChain, index int, rule schema.NftablesFirecrackerForwardRule) error {
+	path := fmt.Sprintf("topology.nftables.firecracker.forward[%d]", index)
+	kind, err := projection.String(rule, path, "kind")
+	if err != nil {
+		return err
+	}
+	switch kind {
+	case "guest_to_guest_drop":
+		fmt.Fprintf(b, "        ip saddr %s ip daddr %s drop\n", chain.GuestCIDR, chain.GuestCIDR)
+	case "rate_limited_log_then_drop":
+		protocol, err := projection.String(rule, path, "protocol")
+		if err != nil {
+			return err
+		}
+		port, err := projection.Int(rule, path, "port")
+		if err != nil {
+			return err
+		}
+		logPrefix, err := projection.String(rule, path, "log_prefix")
+		if err != nil {
+			return err
+		}
+		rate, err := projection.String(rule, path, "rate")
+		if err != nil {
+			return err
+		}
+		// Two rules: a rate-limited log (`limit` is a match, not a
+		// log modifier — combining the drop with limit on one rule
+		// would let packets through past the rate cap), and the
+		// unconditional counter+drop that actually enforces the
+		// policy.
+		fmt.Fprintf(b, "        ip saddr %s %s dport %d limit rate %s log prefix %q\n",
+			chain.GuestCIDR, protocol, port, rate, logPrefix)
+		fmt.Fprintf(b, "        ip saddr %s %s dport %d counter drop\n",
+			chain.GuestCIDR, protocol, port)
+	case "guest_egress":
+		fmt.Fprintf(b, "        ip saddr %s oifname %q accept\n", chain.GuestCIDR, chain.UplinkPlaceholder)
+	case "return_traffic":
+		fmt.Fprintf(b, "        ip daddr %s iifname %q ct state established,related accept\n",
+			chain.GuestCIDR, chain.UplinkPlaceholder)
+	case "catch_all_drop":
+		fmt.Fprintf(b, "        ip daddr %s drop\n", chain.GuestCIDR)
+	default:
+		return fmt.Errorf("%s.kind: unsupported %q", path, kind)
+	}
+	return nil
 }
 
 func renderFirewallTarget() []byte {

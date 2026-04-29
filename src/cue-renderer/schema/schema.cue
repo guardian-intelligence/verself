@@ -299,8 +299,39 @@ package schema
 	input:  #NftablesHostInputChain
 }
 
+// Firecracker guest networking: the FORWARD chain that routes
+// guest egress out the uplink and blocks guest-to-guest, plus the
+// POSTROUTING NAT chain that masquerades guest packets onto the
+// uplink IP. The uplink interface is auto-resolved by the
+// firecracker Ansible role at deploy time (some deployments take
+// the default route's interface, others pin it explicitly), so the
+// renderer emits a literal `__VERSELF_UPLINK__` placeholder and the
+// Ansible role substitutes the resolved value with one `replace`
+// task before reloading nftables.
+#NftablesFirecrackerForwardRule:
+	{kind: "guest_to_guest_drop"} |
+	{
+		kind:       "rate_limited_log_then_drop"
+		protocol:   "tcp" | "udp"
+		port:       #Port
+		log_prefix: string & !="" @go(LogPrefix)
+		rate:       string & !=""
+	} |
+	{kind: "guest_egress"} |
+	{kind: "return_traffic"} |
+	{kind: "catch_all_drop"}
+
+#NftablesFirecrackerChain: {
+	target:     string & =~"^/etc/nftables\\.d/[A-Za-z0-9._-]+\\.nft$"
+	table:      string & =~"^[A-Za-z0-9_]+$"
+	guest_cidr: string & !="" @go(GuestCIDR)
+	uplink_placeholder: string & !="" | *"__VERSELF_UPLINK__" @go(UplinkPlaceholder)
+	forward: [...#NftablesFirecrackerForwardRule]
+}
+
 #NftablesTopology: {
-	host?: #NftablesHostChain
+	host?:        #NftablesHostChain
+	firecracker?: #NftablesFirecrackerChain
 	rulesets: {
 		[string]: #NftablesRuleset
 	}
