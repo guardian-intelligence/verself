@@ -7,10 +7,9 @@
 # has no otelcol — otelcol only runs on the target. Without an override the
 # callback's export fails.
 #
-# Fix: open SSH local-forwards to the target's OTLP gRPC (4317) and the
-# ClickHouse HTTP interface (8123); export the matching env vars; source
-# scripts/deploy_identity.sh (which derives VERSELF_DEPLOY_ID, TRACEPARENT,
-# OTEL_SERVICE_NAME, OTEL_RESOURCE_ATTRIBUTES, OTEL_EXPORTER_OTLP_ENDPOINT);
+# Fix: open an SSH local-forward to the target's OTLP gRPC (4317), set
+# VERSELF_OTLP_ENDPOINT, source scripts/deploy_identity.sh (idempotent if
+# the parent already sourced it via .aspect/lib/helpers.axl::derive_deploy_env),
 # then exec ansible-playbook.
 #
 # The deploy cache layout (.cache/render/<site>/) is supplied by the caller
@@ -57,7 +56,6 @@ if [[ -z "${remote_host}" || -z "${remote_user}" ]]; then
 fi
 
 otlp_port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')"
-ch_port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')"
 
 # Tunnel as a background child. Redirect FDs so bash doesn't flip stdin/out
 # non-blocking for the eventual exec — ansible refuses non-blocking streams.
@@ -67,14 +65,12 @@ ssh -N \
     -o ServerAliveCountMax=3 \
     -o StrictHostKeyChecking=no \
     -L "${otlp_port}:127.0.0.1:4317" \
-    -L "${ch_port}:127.0.0.1:8123" \
     "${remote_user}@${remote_host}" </dev/null >/dev/null 2>&1 &
 tunnel_pid=$!
 trap 'kill "${tunnel_pid}" 2>/dev/null || true; wait "${tunnel_pid}" 2>/dev/null || true' EXIT
 
 for _ in $(seq 1 20); do
-  if python3 -c "import socket; socket.create_connection(('127.0.0.1', ${otlp_port}), 1).close()" 2>/dev/null \
-     && python3 -c "import socket; socket.create_connection(('127.0.0.1', ${ch_port}), 1).close()" 2>/dev/null; then
+  if python3 -c "import socket; socket.create_connection(('127.0.0.1', ${otlp_port}), 1).close()" 2>/dev/null; then
     break
   fi
   sleep 0.25
@@ -83,16 +79,14 @@ if ! python3 -c "import socket; socket.create_connection(('127.0.0.1', ${otlp_po
   echo "ERROR: OTLP tunnel to ${remote_user}@${remote_host} did not come up on 127.0.0.1:${otlp_port}." >&2
   exit 1
 fi
-if ! python3 -c "import socket; socket.create_connection(('127.0.0.1', ${ch_port}), 1).close()" 2>/dev/null; then
-  echo "ERROR: ClickHouse tunnel to ${remote_user}@${remote_host} did not come up on 127.0.0.1:${ch_port}." >&2
-  exit 1
-fi
 
 export VERSELF_OTLP_ENDPOINT="127.0.0.1:${otlp_port}"
-export VERSELF_CLICKHOUSE_HTTP="http://127.0.0.1:${ch_port}"
 
-# Derive deploy identity + OTel env. Sourcing sets VERSELF_DEPLOY_ID,
-# TRACEPARENT, OTEL_RESOURCE_ATTRIBUTES, OTEL_EXPORTER_OTLP_ENDPOINT, etc.
+# Derive deploy identity + OTel env. deploy_identity.sh is idempotent on
+# VERSELF_DEPLOY_RUN_KEY / VERSELF_DEPLOY_ID, so when this script is invoked
+# from `aspect deploy` (which has already sourced the script via
+# derive_deploy_env), the run-key and trace-id are preserved here and only
+# OTEL_EXPORTER_OTLP_ENDPOINT is refreshed to point at the local tunnel.
 # shellcheck source=src/platform/scripts/deploy_identity.sh
 source "${SCRIPT_DIR}/deploy_identity.sh"
 
