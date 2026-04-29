@@ -1,6 +1,9 @@
 package topology
 
-import s "verself.sh/cue-renderer/schema"
+import (
+	s "github.com/verself/cue-renderer/schema"
+	sp "github.com/verself/cue-renderer/concerns/spire"
+)
 
 // config is the operator-facing, non-secret instance configuration for the
 // single-node deployment. Topology describes components and relationships;
@@ -105,7 +108,7 @@ config: s.#InstanceConfig & {
 		]
 	}
 
-	spire: {
+	spire: sp.#Config & {
 		trust_domain:                 "spiffe.\(config.ansible_vars.verself_domain)"
 		server_bind_address:          "127.0.0.1"
 		server_socket_path:           "/run/spire-server/private/api.sock"
@@ -113,6 +116,10 @@ config: s.#InstanceConfig & {
 		workload_group:               "spire_workload"
 		agent_id_path:                "/node/single-node"
 		bundle_endpoint_bind_address: "127.0.0.1"
+		bundle_endpoint_component:    "spire_bundle_endpoint"
+		bundle_endpoint_endpoint:     "bundle"
+		server_component:             "spire_server"
+		server_endpoint:              "api"
 	}
 
 	ansible_vars: {
