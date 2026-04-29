@@ -60,6 +60,8 @@ type Catalog struct {
 	ServerToolDownloads map[string]any
 	ServerToolPackaging map[string]any
 	DevTools            map[string]any
+	DevToolDownloads    map[string]any
+	DevToolPackaging    map[string]any
 	GuestVersions       map[string]any
 
 	// Raw is the loaded catalog package value. Renderers that need lossless
@@ -194,6 +196,8 @@ func decodeCatalog(root cue.Value, out *Catalog) error {
 		{path: "serverToolDownloads", dst: &out.ServerToolDownloads},
 		{path: "serverToolPackaging", dst: &out.ServerToolPackaging},
 		{path: "devTools", dst: &out.DevTools},
+		{path: "devToolDownloads", dst: &out.DevToolDownloads},
+		{path: "devToolPackaging", dst: &out.DevToolPackaging},
 		{path: "guestVersions", dst: &out.GuestVersions},
 	} {
 		value, err := lookupConcrete(root, item.path)

@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "bazeldevtools",
+    srcs = ["bazeldevtools.go"],
+    importpath = "github.com/verself/cue-renderer/internal/render/bazeldevtools",
+    visibility = ["//src/cue-renderer:__subpackages__"],
+    deps = [
+        "//src/cue-renderer/internal/load",
+        "//src/cue-renderer/internal/render",
+        "//src/cue-renderer/internal/render/projection",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":bazeldevtools",
+    visibility = ["//src/cue-renderer:__subpackages__"],
+)
