@@ -13,7 +13,7 @@
       - topology_guest_versions.firecracker.version is defined
       - topology_guest_versions.firecracker.sha256 is defined
     fail_msg: >-
-      topology_guest_versions is missing. Run make topology-generate before deploying firecracker.
+      topology_guest_versions is missing. Run aspect codegen run --kind=topology before deploying firecracker.
 
 - name: Set Firecracker version pins
   ansible.builtin.set_fact:

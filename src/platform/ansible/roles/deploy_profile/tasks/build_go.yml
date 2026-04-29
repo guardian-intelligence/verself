@@ -10,7 +10,7 @@
       - topology_processes is defined
     quiet: true
     fail_msg: >-
-      topology_deploy or topology_processes is missing. Run make topology-generate before deploying.
+      topology_deploy or topology_processes is missing. Run aspect codegen run --kind=topology before deploying.
 
 - name: Collect topology Go deploy artifacts
   ansible.builtin.set_fact:

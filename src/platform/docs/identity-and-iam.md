@@ -483,14 +483,14 @@ Current access coverage:
 | console organization surface / `identity-service` | browser and machine `owner` | browser `owner`, machine `admin` | Acme `member` | BFF token exchange and `IDENTITY_SERVICE_ACCESS_TOKEN` |
 | `mailbox-service` (webmail folded into console; frontend path TBD) | `mailbox_user`, bound to `agents` | none | none | Zitadel browser login and `MAILBOX_SERVICE_ACCESS_TOKEN` |
 | Forgejo OIDC login | `forgejo_admin` | none | none | Zitadel browser login and `FORGEJO_OIDC_ACCESS_TOKEN` |
-| ClickHouse | founder access only | none | none | `CLICKHOUSE_OPERATOR_COMMAND`, currently `make clickhouse-query` |
+| ClickHouse | founder access only | none | none | `CLICKHOUSE_OPERATOR_COMMAND`, currently `aspect db ch query --query='...'` |
 | Forgejo provider API automation | founder access only | none | none | `FORGEJO_OPERATOR_CREDENTIAL`, currently the remote `forgejo-automation` token |
 | Stalwart direct JMAP/IMAP/SMTP | not a persona grant | not a persona grant | not a persona grant | use `mailbox-service` (webmail UI pending console absorption) or explicit founder mail tooling |
 | `billing-service` direct API | service-to-service only | service-to-service only | service-to-service only | customer-facing billing access goes through `sandbox-rental-service` |
 
 The platform admin persona intentionally does not export the Zitadel admin PAT,
 any ClickHouse password, or Forgejo automation token. ClickHouse access
-remains the founder Make wrapper (`make clickhouse-query`) because it is not a
+remains the founder AXL wrapper (`aspect db ch query --query='...'`) because it is not a
 Zitadel resource yet. Forgejo API automation remains provider-native
 `forgejo-automation` until Forgejo OIDC group/role claims are proven for the
 interactive UI path and a separate provider API credential model is introduced.

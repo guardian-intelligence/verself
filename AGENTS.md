@@ -1,7 +1,7 @@
 <repo_overview>
 Set of services + console + marketing page for a software business, almost entirely self-hosted on a single bare metal node.
 
-Most commands should begin with either `make` or `bazelisk`.
+Most commands should begin with either `aspect` (the typed task surface) or `bazelisk` (raw Bazel-graph access).
 
 Canonical layout in `docs/architecture/directory-structure.md`. Read that file directly if exploring the repo.
 
@@ -43,10 +43,11 @@ Boundary components that sit outside the usual service shape:
 
 Top-level landmarks:
 
-- `Makefile` — canonical founder/agent entry point. Read before reaching for ad-hoc scripts.
+- `.aspect/` — typed task surface. `aspect` (no args) lists every command; `aspect <task> --help` documents flags. Read before reaching for ad-hoc scripts.
+- `docs/architecture/aspect-cli-migration.md` — durable command surface, retired Make-era shapes.
 - `docs/` — cross-service architecture; `docs/references/` is read-only third-party material. Grep through docs/references instead of reading directly.
 
-Orienting commands: `make pg-list` enumerates per-service PostgreSQL databases, `make observe` opens the telemetry surface, `make clickhouse-schemas` lists ClickHouse tables.
+Orienting commands: `aspect db pg list` enumerates per-service PostgreSQL databases, `aspect observe` opens the telemetry surface, `aspect db ch schemas` lists ClickHouse tables.
 
 </repo_overview>
 
@@ -87,7 +88,7 @@ The below documents contain critical sources of truth about the system, extremel
 
 <operational_runbook>
 
-Run `make observe` to discover available telemetry, run `make clickhouse-query`/`make pg-query` wrappers to easily query ClickHouse/PG with fewer shell string escaping issues, deploy playbooks and correlation model (`deploy_run_key`, `deploy_id`, `traceparent`), TLS via Cloudflare, the `deploy_profile` server-binaries strategy, Ansible playbooks table.
+Run `aspect observe` to discover available telemetry, run `aspect db ch query`/`aspect db pg query` wrappers to easily query ClickHouse/PG with fewer shell string escaping issues, deploy playbooks and correlation model (`deploy_run_key`, `deploy_id`, `traceparent`), TLS via Cloudflare, the `deploy_profile` server-binaries strategy, Ansible playbooks table.
 
 The repo started as a CI orchestrator; that history lives in `README.md`.
 
@@ -124,7 +125,7 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - Some directories have their own `AGENTS.md` file. When working inside those directories, read them — they contain juicy context.
 - Incidental edits from running linters and formatters are expected. Don't worry about them.
 - When in doubt, use the industry-standard pattern. Pagination, idempotency, rate limiting, OpenAPI, OpenTelemetry, state machines — these are all solved problems with boring, battle-tested solutions. Don't reinvent the wheel. The one piece of genuinely novel technology in this repo is ZFS + Firecracker for customer workloads. Everything else is tried-and-tested FOSS.
-- `Makefile`, `README.md`, `AGENTS.md`, schema migration files, and OpenAPI 3.1 YAML files are high signal per token. Read them directly; avoid summarizing them with a subagent as important detail may be lost.
+- `.aspect/`, `README.md`, `AGENTS.md`, schema migration files, and OpenAPI 3.1 YAML files are high signal per token. Read them directly; avoid summarizing them with a subagent as important detail may be lost.
 - Do not provide time estimates.
 - We work backwards from ensuring proper systems are in place to make incorrect behavior impossible by construction. E.g. to prevent bearer tokens from appearing in logs, we use a mixture of strategies: configure Otel HTTP instrumentation to sanitize it, harden read access to logs, structure our logging abstractions to avoid it, and (aspirational) execute a canary that asserts safety systems omit the token even if one system fails.
 - My 'd' key is broken so you may see frequently see the letter 'd' missing from user messages
@@ -134,15 +135,15 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - Dev tools are system-installed via `ansible-playbook playbooks/setup-dev.yml`.
 - Apply the scientific method: create a bar-raising verification protocol for the planned task *prior* to implementing changes. The verification protocol should fail, and only then begin implementing until green.
 - Avoid one-off, non-syntax-aware scripts for large parallel changes or refactors. Use subagents for that class of task — unexpected edge cases are likely and judgement is often required.
-- use `make tidy` to format Go and TypeScript code.
+- use `aspect tidy` to run `go mod tidy` per service and format the JS monorepo.
 - When using agent-browser, don't use the sandbox (`--no-sandbox`)
-- Deploy frontend changes to prod fearlessly (e.g. `make deploy TAGS=company` to deploy the company marketing website) -- I can't see your dev server.
+- Deploy frontend changes to prod fearlessly (e.g. `aspect deploy --tags=company` to deploy the company marketing website) -- I can't see your dev server.
 </tool_use_contract>
 
 <output_contract>
 - When providing a recommendation, consider different plausible options and provide a differentiated recommendation leaning toward the simplest solution that best sets this project up for the *long term* in terms of functionality, elegance of architecture, security, performance, and best-practices.
 - Unit tests and successful builds are low signal and are not to be trusted. Real observability traces in ClickHouse that exercise the modified code are the only admissible completion evidence. ClickHouse exists for producing verifiable completion artifacts. If a new schema is needed, create one.
-- Do not speculate without evidence. Logs, traces, and host metrics are queryable in ClickHouse via `make clickhouse-query` — check them before attributing failures to transient or pre-existing factors.
+- Do not speculate without evidence. Logs, traces, and host metrics are queryable in ClickHouse via `aspect db ch query --query='...'` — check them before attributing failures to transient or pre-existing factors.
 - Do not stop work short of verifying changes with a live rehearsal of a playbook to execute fresh rebuild and redeploy. You have full authority to wipe databases and recreate them. Prefer that over time-consuming, tricky migrations during this early phase.
 - The repo has a fixture flow that seeds Forgejo repos, submits direct VM executions through `sandbox-rental-service`, and verifies ClickHouse evidence.
 - Design docs, code comments, architecture diagrams, and API documentation target expert engineers in the relevant technologies. Avoid throat-clearing around current status, "why this is important," date headers, or "who this is for" — get straight into the information that they need.

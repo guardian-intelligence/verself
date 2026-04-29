@@ -36,7 +36,7 @@ remote_run_as_user_q="$(printf '%q' "$remote_run_as_user")"
 remote_db_user_q="$(printf '%q' "$remote_db_user")"
 
 if [[ $# -eq 0 ]]; then
-  echo "ERROR: interactive ClickHouse shells are not supported. Use: make clickhouse-query QUERY='SELECT 1'" >&2
+  echo "ERROR: interactive ClickHouse shells are not supported. Use: aspect db ch query --query='SELECT 1'" >&2
   exit 2
 fi
 

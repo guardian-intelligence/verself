@@ -51,8 +51,9 @@ renderers get more typed access for free.
 
 `generate` writes every registered renderer to disk; `check` fails when any
 registered renderer's output differs from the checked-in file. The operator
-targets are `make topology-generate` and `make topology-check`, backed by
-`write_source_files` freshness targets.
+entry points are `aspect codegen run --kind=topology` and
+`aspect codegen check --kind=topology`, backed by `write_source_files`
+freshness targets.
 
 ## Adding a renderer
 
@@ -70,7 +71,7 @@ targets are `make topology-generate` and `make topology-check`, backed by
 4. Implement `render.Renderer` in `internal/render/<artefact>/`.
 5. Register it in `cmd/cue-renderer/main.go`'s `renderers()`.
 6. Add the renderer's generated path to `src/cue-renderer/BUILD.bazel` so
-   `make topology-check` catches drift. The nftables ruleset list is the
+   `aspect codegen check --kind=topology` catches drift. The nftables ruleset list is the
    exception: adding a `topology.nftables.rulesets.<name>` entry in CUE
    regenerates `nftables_files.bzl` (a fan-out renderer) and the
    per-component genrule + write_source_files mapping pick up the new

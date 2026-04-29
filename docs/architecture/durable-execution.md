@@ -39,7 +39,7 @@ The current deployment is intentionally narrow:
   into dedicated roles.
 
 The current operator surface is Grafana, Temporal Web,
-`make observe WHAT=temporal`, `tdbg`, and SQL against the visibility
+`aspect observe --what=temporal`, `tdbg`, and SQL against the visibility
 database.
 
 ## SPIFFE posture
@@ -152,7 +152,7 @@ Two implications matter for the next stage:
 
 The current operator surface is ClickHouse-first:
 
-- `make observe WHAT=temporal` for recent auth spans, bootstrap runs,
+- `aspect observe --what=temporal` for recent auth spans, bootstrap runs,
   logs, and live metric inventory.
 - Grafana dashboard `verself-temporal`.
 - `default.otel_traces`, `default.otel_logs`, and
@@ -169,7 +169,7 @@ This is enough to answer the practical operator questions:
 
 ## Verification
 
-`make temporal-smoke-test` is the Temporal deployment gate. It does three
+`src/platform/scripts/verify-temporal-live.sh` is the Temporal deployment gate. It does three
 concrete things:
 
 1. Asserts the retired `temporal-proof` binary, `temporal-proof-worker`
@@ -180,7 +180,7 @@ concrete things:
 3. Asserts ClickHouse traces/logs/metrics and PostgreSQL namespace rows
    for the supported bootstrap surface.
 
-`make grafana-smoke-test` and `make workload-identity-smoke-test` are the two
+`src/platform/scripts/verify-grafana-live.sh` and `src/platform/scripts/verify-workload-identity-live.sh` are the two
 supporting gates. Together they verify that Temporal is visible from the
 standard operator surface and participates correctly in the repo's SPIFFE
 boundary model.

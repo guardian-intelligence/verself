@@ -104,19 +104,19 @@ The dev app must have:
 
 ```bash
 # run console locally against the deployed services
-make sandbox-inner
+aspect dev sandbox-inner
 
 # separate terminal: verify the local dev server and collect ClickHouse evidence
-make sandbox-inner SANDBOX_INNER_MODE=verify
+SANDBOX_INNER_MODE=verify aspect dev sandbox-inner
 
 # targeted deploy + targeted verification against the current remote stack
-make sandbox-middle
+aspect dev sandbox-middle
 
 # final merge smoke test: reset, redeploy, reseed, live repo-exec verification
-make sandbox-smoke-test
+src/platform/scripts/verify-sandbox-live.sh
 ```
 
-`make sandbox-inner` opens the required SSH tunnels, re-queries the `console-dev`
+`aspect dev sandbox-inner` opens the required SSH tunnels, re-queries the `console-dev`
 client ID from Zitadel, and exports the current runtime env for the local server:
 
 - `VERSELF_DOMAIN`
@@ -128,19 +128,19 @@ client ID from Zitadel, and exports the current runtime env for the local server
 - `SANDBOX_RENTAL_SERVICE_BASE_URL`
 - `ELECTRIC_URL`
 
-Open the `app:` URL printed by `make sandbox-inner`. The launcher prefers `http://127.0.0.1:4244`
+Open the `app:` URL printed by `aspect dev sandbox-inner`. The launcher prefers `http://127.0.0.1:4244`
 but will move to a higher local port if that one is busy, then records the chosen
-URL in `/tmp/verself-console-dev.env` so `make sandbox-inner SANDBOX_INNER_MODE=verify` can target
+URL in `/tmp/verself-console-dev.env` so `SANDBOX_INNER_MODE=verify aspect dev sandbox-inner` can target
 the same dev server from another terminal. Vite HMR gives sub-second feedback on
 every file save. API calls, Electric shapes, auth sessions, and OTLP traces all
 flow through the SSH tunnels to the deployed single-node stack.
 
-`make sandbox-middle` is the non-destructive remote loop. By default it deploys
+`aspect dev sandbox-middle` is the non-destructive remote loop. By default it deploys
 the `console` frontend role and runs the fast admin smoke. Override
 `SANDBOX_DEPLOY_TARGET=ui|service|both|none`, `SANDBOX_VERIFY_TARGET=admin|import|refresh|execute|none`,
 and `SANDBOX_SEED_VERIFY=1` when you need a different targeted rehearsal.
 
-`make sandbox-smoke-test` is the only destructive/full smoke-test path. It resets the
+`src/platform/scripts/verify-sandbox-live.sh` is the only destructive/full smoke-test path. It resets the
 verification state, redeploys the required stack, reseeds, runs the omnibus live
 repo execution smoke test, and collects ClickHouse-linked artifacts.
 

@@ -23,20 +23,20 @@ func buildQueries(cfg config) ([]query, error) {
 		}, nil
 	case "metric":
 		if cfg.metric == "" {
-			return nil, errors.New("WHAT=metric requires METRIC=<metric_name>")
+			return nil, errors.New("--what=metric requires --metric=<metric_name>")
 		}
 		if cfg.mode == "rate" {
 			return []query{newQuery("metric.rate", metricRateSQL, params)}, nil
 		}
 		if cfg.mode != "latest" {
-			return nil, errors.New("WHAT=metric MODE must be latest or rate")
+			return nil, errors.New("--what=metric --mode must be latest or rate")
 		}
 		return []query{newQuery("metric.latest", metricLatestSQL, params)}, nil
 	case "errors":
 		return []query{newQuery("errors.recent", errorsRecentSQL, params)}, nil
 	case "service":
 		if cfg.service == "" {
-			return nil, errors.New("WHAT=service requires SERVICE=<service_name>")
+			return nil, errors.New("--what=service requires --service=<service_name>")
 		}
 		if cfg.errorsOnly {
 			return []query{newQuery("errors.recent", errorsRecentSQL, params)}, nil
@@ -77,7 +77,7 @@ func buildQueries(cfg config) ([]query, error) {
 		}, nil
 	case "trace":
 		if cfg.traceID == "" {
-			return nil, errors.New("WHAT=trace requires TRACE_ID=<trace-id>")
+			return nil, errors.New("--what=trace requires --trace-id=<trace-id>")
 		}
 		return []query{newQuery("trace.detail", traceDetailSQL, params)}, nil
 	case "http":
@@ -85,7 +85,7 @@ func buildQueries(cfg config) ([]query, error) {
 	case "logs":
 		return []query{newQuery("logs.recent", logsRecentSQL, params)}, nil
 	default:
-		return nil, fmt.Errorf("unknown WHAT=%q; run `make observe` for the discovery index", cfg.what)
+		return nil, fmt.Errorf("unknown --what=%q; run `aspect observe` for the discovery index", cfg.what)
 	}
 }
 
@@ -107,7 +107,7 @@ func buildCatalogQueries(cfg config, params map[string]string) ([]query, error) 
 	case "deploy", "deploys":
 		return []query{newQuery("catalog.deploys", deployCatalogSQL, params)}, nil
 	default:
-		return nil, fmt.Errorf("WHAT=catalog requires SIGNAL=metrics|traces|logs|http|deploys; got %q", cfg.signal)
+		return nil, fmt.Errorf("--what=catalog requires --signal=metrics|traces|logs|http|deploys; got %q", cfg.signal)
 	}
 }
 
@@ -125,16 +125,16 @@ func buildDescribeQueries(cfg config, params map[string]string) ([]query, error)
 		primaryTargets++
 	}
 	if primaryTargets > 1 {
-		return nil, errors.New("WHAT=describe requires exactly one primary target: METRIC, SPAN, FIELD, SERVICE, or QUERY")
+		return nil, errors.New("--what=describe requires exactly one primary target: --metric, --span, --field, --service, or --query")
 	}
 	if cfg.queryName != "" {
-		return nil, errors.New("WHAT=describe QUERY is handled without ClickHouse; run `make observe WHAT=describe QUERY=<query-id>`")
+		return nil, errors.New("--what=describe --query is handled without ClickHouse; run `aspect observe --what=describe --query=<query-id>`")
 	}
 	if cfg.metric != "" && cfg.service != "" {
-		return nil, errors.New("WHAT=describe METRIC does not accept SERVICE; use WHAT=catalog SIGNAL=metrics SERVICE=...")
+		return nil, errors.New("--what=describe --metric does not accept --service; use --what=catalog --signal=metrics --service=...")
 	}
 	if primaryTargets == 0 {
-		return nil, errors.New("WHAT=describe requires METRIC, SERVICE, SPAN, FIELD, or QUERY")
+		return nil, errors.New("--what=describe requires --metric, --service, --span, --field, or --query")
 	}
 	switch {
 	case cfg.metric != "":
@@ -161,7 +161,7 @@ func buildDescribeQueries(cfg config, params map[string]string) ([]query, error)
 			newQuery("describe.service.log_fields", describeServiceLogFieldsSQL, params),
 		}, nil
 	default:
-		return nil, errors.New("WHAT=describe requires one of METRIC, SERVICE, SPAN, FIELD, or QUERY")
+		return nil, errors.New("--what=describe requires one of --metric, --service, --span, --field, or --query")
 	}
 }
 
@@ -199,7 +199,7 @@ func newQuery(id, sql string, params map[string]string) query {
 }
 
 // emptyHintFor returns a one-line reason that a specific query id might be
-// empty even across a wide window, so the hint beats "try MINUTES=..." when
+// empty even across a wide window, so the hint beats "try --minutes=..." when
 // widening the lookback won't help.
 func emptyHintFor(id string) string {
 	switch id {
@@ -216,14 +216,14 @@ func emptyHintFor(id string) string {
 	case "describe.field.resource_attributes":
 		return "No ResourceAttribute with this name across traces or logs."
 	case "catalog.deploys":
-		return "No ansible.task spans have been recorded. Run `make deploy` to populate deploy traces."
+		return "No ansible.task spans have been recorded. Run `aspect deploy` to populate deploy traces."
 	default:
 		return ""
 	}
 }
 
 // catalog.inventory emits one row per signal. `names` counts the vocabulary
-// a caller can drill into with `SIGNAL=...`, and `names_of` labels what those
+// a caller can drill into with `--signal=...`, and `names_of` labels what those
 // names are — otherwise the number is ambiguous (13 severity levels vs ~170
 // log attribute keys, for example).
 const catalogInventorySQL = `
@@ -240,7 +240,7 @@ FROM
          countDistinct(MetricName) AS names,
          'metric names' AS names_of,
          toUInt64(sum(Samples)) AS rows_7d,
-         'make observe WHAT=catalog SIGNAL=metrics' AS drill_in,
+         'aspect observe --what=catalog --signal=metrics' AS drill_in,
          1 AS sort_key
   FROM default.otel_metric_catalog_live
   UNION ALL
@@ -249,7 +249,7 @@ FROM
          countDistinct(SpanName),
          'span names',
          count(),
-         'make observe WHAT=catalog SIGNAL=traces',
+         'aspect observe --what=catalog --signal=traces',
          2
   FROM default.otel_traces
   WHERE Timestamp > now() - toIntervalDay(7)
@@ -261,7 +261,7 @@ FROM
          length(arrayDistinct(arrayFlatten(groupArray(mapKeys(LogAttributes))))),
          'log attribute keys',
          count(),
-         'make observe WHAT=catalog SIGNAL=logs',
+         'aspect observe --what=catalog --signal=logs',
          3
   FROM default.otel_logs
   WHERE Timestamp > now() - toIntervalDay(7)
@@ -271,7 +271,7 @@ FROM
          countDistinct(Host),
          'hosts',
          count(),
-         'make observe WHAT=catalog SIGNAL=http',
+         'aspect observe --what=catalog --signal=http',
          4
   FROM default.http_access_logs
   WHERE Timestamp > now() - toIntervalDay(7)
@@ -281,7 +281,7 @@ FROM
          countDistinct(SpanAttributes['verself.deploy_run_key']),
          'deploy run keys',
          count(),
-         'make observe WHAT=catalog SIGNAL=deploys',
+         'aspect observe --what=catalog --signal=deploys',
          5
   FROM default.otel_traces
   WHERE ServiceName = 'ansible'
@@ -1037,7 +1037,7 @@ LIMIT {row_limit:UInt32}`
 
 // FIELD= filters logs on either LogAttributes or ResourceAttributes. Resource
 // attributes (verself.deploy_run_key, host.name, ...) are discoverable via
-// `WHAT=describe FIELD=...` — the filter must accept the same keys or the
+// `--what=describe --field=...` — the filter must accept the same keys or the
 // describe → filter flow silently drops every row.
 const logsRecentSQL = `
 SELECT

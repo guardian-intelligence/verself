@@ -330,8 +330,8 @@ fi
 
 if [[ ${include_platform_ops} -eq 1 ]]; then
   write_export MAILBOX_ACCOUNT "${mailbox_account}"
-  write_export MAIL_OPERATOR_COMMAND "make mail MAILBOX=${mailbox_account}"
-  write_export CLICKHOUSE_OPERATOR_COMMAND "make clickhouse-query QUERY='SELECT 1'"
+  write_export MAIL_OPERATOR_COMMAND "aspect mail list --mailbox=${mailbox_account}"
+  write_export CLICKHOUSE_OPERATOR_COMMAND "aspect db ch query --query='SELECT 1'"
   write_export FORGEJO_OPERATOR_CREDENTIAL "provider-native forgejo-automation token in /etc/credstore/forgejo/automation-token"
 fi
 

@@ -832,7 +832,7 @@ devToolPackaging: {
 // src/guest-images/guest_images.MODULE.bazel and is consumed by the
 // guest-image build rules under //src/guest-images/. SHA256 + URL stay
 // pinned alongside the version in `versions.production`; bumping a pin
-// happens here, then `make topology-generate` regenerates the Bazel
+// happens here, then `aspect codegen run --kind=topology` regenerates the Bazel
 // manifest. Composable image catalog (firecracker.images in
 // instances/local/config.cue) references the resulting Bazel labels via
 // pkg_tar/genrule layouts in //src/guest-images/.

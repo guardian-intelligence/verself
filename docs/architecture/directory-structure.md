@@ -8,7 +8,7 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
 - `docs/` — cross-service architecture docs and vendored references (`docs/references/` is read-only third-party material).
 - `artifacts/` — gitignored materialized build/deploy outputs.
 - `smoke-artifacts/` — gitignored live smoke-test bundles, personas, Playwright traces, and query evidence.
-- `Makefile` — canonical entry point for founder/agent workflows. Read before reaching for ad-hoc scripts.
+- `MODULE.aspect` + `.aspect/` — canonical task surface for founder/agent workflows. Run `aspect` (no args) for the full list; read before reaching for ad-hoc scripts.
 
 ## Go services (`src/`)
 
@@ -37,7 +37,7 @@ Monorepo rooted at the repo top level. Bazel owns the repo-level build graph; ea
   `src/cue-renderer/`; roles copy these paths to the host rather than
   re-rendering topology through Jinja.
 - `terraform/` — OpenTofu bare-metal provisioning (Latitude.sh).
-- `scripts/` — founder wrappers invoked by the Makefile.
+- `scripts/` — founder/agent shell wrappers invoked by AXL tasks (deploy, persona, billing, mail, db, etc.) and directly callable canaries (`verify-*-live.sh`).
 
 The Bazel-owned third-party server-tool package definitions, including
 `//src/cue-renderer/binaries:server_tools.tar.zst`, live under
