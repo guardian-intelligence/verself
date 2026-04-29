@@ -1,6 +1,19 @@
 // versions.cue - pinned versions and binary manifests for platform SBOM surfaces.
 package catalog
 
+// #DevToolTier categorises how a dev tool reaches the controller. Values
+// other than `legacy_install_plan` are migration targets; the end state has
+// no entries on the legacy tier and `roles/dev_tools/` is reduced to the
+// per-tier-driven tasks (Bazel untar / uv sync / apt). See
+// `src/cue-renderer/AGENTS.md` for the per-tier delivery contract.
+#DevToolTier:
+	"pinned_http_file" |
+	"source_built_go" |
+	"lockfile_uv" |
+	"system_apt" |
+	"bootstrap_pivot" |
+	"legacy_install_plan"
+
 versions: {
 	production: {
 		platform:                    "0.1.0"
@@ -254,6 +267,7 @@ serverToolPackaging: {
 
 devTools: {
 	go: {
+		tier:             #DevToolTier & "pinned_http_file"
 		version:          versions.development.go
 		strategy:         "tarball"
 		url:              "https://go.dev/dl/go\(version).linux-amd64.tar.gz"
@@ -264,6 +278,7 @@ devTools: {
 		version_cmd:      "go version"
 	}
 	zig: {
+		tier:             #DevToolTier & "pinned_http_file"
 		version:          versions.development.zig
 		strategy:         "tarball"
 		url:              "https://ziglang.org/download/\(version)/zig-x86_64-linux-\(version).tar.xz"
@@ -275,6 +290,7 @@ devTools: {
 		version_cmd:      "zig version"
 	}
 	tofu: {
+		tier:         #DevToolTier & "pinned_http_file"
 		version:      versions.development.opentofu
 		strategy:     "zip"
 		url:          "https://github.com/opentofu/opentofu/releases/download/v\(version)/tofu_\(version)_linux_amd64.zip"
@@ -283,6 +299,7 @@ devTools: {
 		version_cmd:  "tofu version -json"
 	}
 	ansible: {
+		tier:       #DevToolTier & "legacy_install_plan"
 		version:    versions.development.ansibleCore
 		strategy:   "uv_tool"
 		uv_package: "ansible-core"
@@ -295,32 +312,38 @@ devTools: {
 		version_cmd: "ansible --version"
 	}
 	"ansible-opentelemetry-sdk": {
+		tier:        #DevToolTier & "legacy_install_plan"
 		version:     versions.development.ansibleOpentelemetrySdk
 		strategy:    "uv_tool_companion"
 		version_cmd: "/opt/uv-tools/ansible-core/bin/python -c \"import importlib.metadata as m; print(m.version('opentelemetry-sdk'))\""
 	}
 	"ansible-opentelemetry-exporter-otlp-proto-grpc": {
+		tier:        #DevToolTier & "legacy_install_plan"
 		version:     versions.development.ansibleOpentelemetryExporterOtlpProtoGrpc
 		strategy:    "uv_tool_companion"
 		version_cmd: "/opt/uv-tools/ansible-core/bin/python -c \"import importlib.metadata as m; print(m.version('opentelemetry-exporter-otlp-proto-grpc'))\""
 	}
 	"ansible-opentelemetry-exporter-otlp-proto-http": {
+		tier:        #DevToolTier & "legacy_install_plan"
 		version:     versions.development.ansibleOpentelemetryExporterOtlpProtoHttp
 		strategy:    "uv_tool_companion"
 		version_cmd: "/opt/uv-tools/ansible-core/bin/python -c \"import importlib.metadata as m; print(m.version('opentelemetry-exporter-otlp-proto-http'))\""
 	}
 	"ansible-lint": {
+		tier:        #DevToolTier & "legacy_install_plan"
 		version:     versions.development.ansibleLint
 		strategy:    "uv_tool_companion"
 		version_cmd: "ansible-lint --version"
 	}
 	"pre-commit": {
+		tier:        #DevToolTier & "legacy_install_plan"
 		version:     versions.development.preCommit
 		strategy:    "uv_tool"
 		uv_package:  "pre-commit"
 		version_cmd: "pre-commit --version"
 	}
 	protoc: {
+		tier:        #DevToolTier & "pinned_http_file"
 		version:     versions.development.protoc
 		strategy:    "zip"
 		url:         "https://github.com/protocolbuffers/protobuf/releases/download/v\(version)/protoc-\(version)-linux-x86_64.zip"
@@ -329,6 +352,7 @@ devTools: {
 		version_cmd: "protoc --version"
 	}
 	cue: {
+		tier:             #DevToolTier & "pinned_http_file"
 		version:          versions.development.cue
 		strategy:         "tarball"
 		url:              "https://github.com/cue-lang/cue/releases/download/v\(version)/cue_v\(version)_linux_amd64.tar.gz"
@@ -339,6 +363,7 @@ devTools: {
 		version_cmd:      "cue version"
 	}
 	buf: {
+		tier:         #DevToolTier & "pinned_http_file"
 		version:      versions.development.buf
 		strategy:     "binary"
 		url:          "https://github.com/bufbuild/buf/releases/download/v\(version)/buf-Linux-x86_64"
@@ -347,10 +372,15 @@ devTools: {
 		version_cmd:  "buf --version"
 	}
 	bazel: {
+		tier:    #DevToolTier & "bootstrap_pivot"
 		version: versions.development.bazel
 		sha256:  "a667454f3f4f8878df8199136b82c199f6ada8477b337fae3b1ef854f01e4e2f"
 	}
 	bazelisk: {
+		// scripts/bootstrap installs bazelisk before Bazel can run; this entry
+		// is the version-of-record for that script's pin and is intentionally
+		// excluded from devToolDownloads / devToolPackaging.
+		tier:         #DevToolTier & "bootstrap_pivot"
 		version:      versions.development.bazelisk
 		strategy:     "binary"
 		url:          "https://github.com/bazelbuild/bazelisk/releases/download/v\(version)/bazelisk-linux-amd64"
@@ -359,6 +389,7 @@ devTools: {
 		version_cmd:  "bazelisk version"
 	}
 	buildifier: {
+		tier:         #DevToolTier & "pinned_http_file"
 		version:      versions.development.buildifier
 		strategy:     "binary"
 		url:          "https://github.com/bazelbuild/buildtools/releases/download/v\(version)/buildifier-linux-amd64"
@@ -367,6 +398,7 @@ devTools: {
 		version_cmd:  "buildifier --version"
 	}
 	shellcheck: {
+		tier:             #DevToolTier & "pinned_http_file"
 		version:          versions.development.shellcheck
 		strategy:         "tarball"
 		url:              "https://github.com/koalaman/shellcheck/releases/download/v\(version)/shellcheck-v\(version).linux.x86_64.tar.xz"
@@ -377,6 +409,7 @@ devTools: {
 		version_cmd:      "shellcheck --version"
 	}
 	jq: {
+		tier:         #DevToolTier & "pinned_http_file"
 		version:      versions.development.jq
 		strategy:     "binary"
 		url:          "https://github.com/jqlang/jq/releases/download/jq-\(version)/jq-linux-amd64"
@@ -385,6 +418,7 @@ devTools: {
 		version_cmd:  "jq --version"
 	}
 	sops: {
+		tier:         #DevToolTier & "pinned_http_file"
 		version:      versions.development.sops
 		strategy:     "binary"
 		url:          "https://github.com/getsops/sops/releases/download/v\(version)/sops-v\(version).linux.amd64"
@@ -393,6 +427,7 @@ devTools: {
 		version_cmd:  "sops --version"
 	}
 	age: {
+		tier:             #DevToolTier & "pinned_http_file"
 		version:          versions.development.age
 		strategy:         "tarball"
 		url:              "https://github.com/FiloSottile/age/releases/download/v\(version)/age-v\(version)-linux-amd64.tar.gz"
@@ -404,6 +439,7 @@ devTools: {
 		version_cmd:  "age --version"
 	}
 	uv: {
+		tier:             #DevToolTier & "pinned_http_file"
 		version:          versions.development.uv
 		strategy:         "tarball"
 		url:              "https://github.com/astral-sh/uv/releases/download/\(version)/uv-x86_64-unknown-linux-gnu.tar.gz"
@@ -415,6 +451,7 @@ devTools: {
 		version_cmd:  "uv --version"
 	}
 	clickhouse: {
+		tier:         #DevToolTier & "pinned_http_file"
 		version:      versions.development.clickhouse
 		strategy:     "tarball"
 		url:          "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-\(version)-amd64.tgz"
@@ -423,62 +460,73 @@ devTools: {
 		version_cmd:  "clickhouse client --version"
 	}
 	"golangci-lint": {
+		tier:        #DevToolTier & "legacy_install_plan"
 		version:     versions.development.golangciLint
 		strategy:    "go_install"
 		go_package:  "github.com/golangci/golangci-lint/v2/cmd/golangci-lint"
 		version_cmd: "golangci-lint --version"
 	}
 	gosec: {
+		tier:        #DevToolTier & "legacy_install_plan"
 		version:     versions.development.gosec
 		strategy:    "go_install"
 		go_package:  "github.com/securego/gosec/v2/cmd/gosec"
 		version_cmd: "go version -m /usr/local/go-tools/bin/gosec"
 	}
 	gofumpt: {
+		tier:        #DevToolTier & "legacy_install_plan"
 		version:     versions.development.gofumpt
 		strategy:    "go_install"
 		go_package:  "mvdan.cc/gofumpt"
 		version_cmd: "gofumpt --version"
 	}
 	sqlc: {
+		tier:        #DevToolTier & "legacy_install_plan"
 		version:     versions.development.sqlc
 		strategy:    "go_install"
 		go_package:  "github.com/sqlc-dev/sqlc/cmd/sqlc"
 		version_cmd: "sqlc version"
 	}
 	"protoc-gen-go": {
+		tier:        #DevToolTier & "legacy_install_plan"
 		version:     versions.development.protocGenGo
 		strategy:    "go_install"
 		go_package:  "google.golang.org/protobuf/cmd/protoc-gen-go"
 		version_cmd: "protoc-gen-go --version"
 	}
 	"protoc-gen-go-grpc": {
+		tier:        #DevToolTier & "legacy_install_plan"
 		version:     versions.development.protocGenGoGrpc
 		strategy:    "go_install"
 		go_package:  "google.golang.org/grpc/cmd/protoc-gen-go-grpc"
 		version_cmd: "protoc-gen-go-grpc --version"
 	}
 	"build-essential": {
+		tier:        #DevToolTier & "system_apt"
 		strategy:    "apt"
 		version_cmd: "gcc --version"
 	}
 	crun: {
+		tier:        #DevToolTier & "system_apt"
 		version:     versions.development.crun
 		strategy:    "apt"
 		version_cmd: "crun --version"
 	}
 	debootstrap: {
+		tier:        #DevToolTier & "system_apt"
 		version:     versions.development.debootstrap
 		strategy:    "apt"
 		version_cmd: "debootstrap --version"
 	}
 	guarddog: {
+		tier:        #DevToolTier & "legacy_install_plan"
 		version:     versions.development.guarddog
 		strategy:    "uv_tool"
 		uv_package:  "guarddog"
 		version_cmd: "guarddog --version"
 	}
 	"osv-scanner": {
+		tier:         #DevToolTier & "pinned_http_file"
 		version:      versions.development.osvScanner
 		strategy:     "binary"
 		url:          "https://github.com/google/osv-scanner/releases/download/v\(version)/osv-scanner_linux_amd64"
@@ -487,6 +535,7 @@ devTools: {
 		version_cmd:  "osv-scanner --version"
 	}
 	stripe: {
+		tier:         #DevToolTier & "pinned_http_file"
 		version:      versions.development.stripe
 		strategy:     "tarball"
 		url:          "https://github.com/stripe/stripe-cli/releases/download/v\(version)/stripe_\(version)_linux_x86_64.tar.gz"
@@ -495,12 +544,179 @@ devTools: {
 		version_cmd:  "stripe version"
 	}
 	"agent-browser": {
+		tier:         #DevToolTier & "pinned_http_file"
 		version:      versions.development.agentBrowser
 		strategy:     "binary"
 		url:          "https://github.com/vercel-labs/agent-browser/releases/download/v\(version)/agent-browser-linux-x64"
 		sha256:       "02d26f105a9d8e203f8f966acfeb4bab191cfa4625431a535b8be5f8f5905472"
 		install_path: "/usr/local/bin/agent-browser"
 		version_cmd:  "agent-browser --version"
+	}
+}
+
+// devToolDownloads mirrors serverToolDownloads: each entry projects to one
+// http_file() rule in dev_tools.MODULE.bazel. Only the 16 pinned_http_file
+// dev tools appear here; bazelisk is the bootstrap_pivot exception that
+// scripts/bootstrap installs directly. url and sha256 reference the
+// devTools entry so the version pin lives in exactly one place.
+devToolDownloads: {
+	go: {
+		name:                 "dev_tool_go"
+		downloaded_file_path: "go\(versions.development.go).linux-amd64.tar.gz"
+		sha256:               devTools.go.sha256
+		url:                  devTools.go.url
+	}
+	zig: {
+		name:                 "dev_tool_zig"
+		downloaded_file_path: "zig-x86_64-linux-\(versions.development.zig).tar.xz"
+		sha256:               devTools.zig.sha256
+		url:                  devTools.zig.url
+	}
+	tofu: {
+		name:                 "dev_tool_tofu"
+		downloaded_file_path: "tofu_\(versions.development.opentofu)_linux_amd64.zip"
+		sha256:               devTools.tofu.sha256
+		url:                  devTools.tofu.url
+	}
+	protoc: {
+		name:                 "dev_tool_protoc"
+		downloaded_file_path: "protoc-\(versions.development.protoc)-linux-x86_64.zip"
+		sha256:               devTools.protoc.sha256
+		url:                  devTools.protoc.url
+	}
+	cue: {
+		name:                 "dev_tool_cue"
+		downloaded_file_path: "cue_v\(versions.development.cue)_linux_amd64.tar.gz"
+		sha256:               devTools.cue.sha256
+		url:                  devTools.cue.url
+	}
+	buf: {
+		name:                 "dev_tool_buf"
+		downloaded_file_path: "buf-Linux-x86_64"
+		sha256:               devTools.buf.sha256
+		url:                  devTools.buf.url
+	}
+	buildifier: {
+		name:                 "dev_tool_buildifier"
+		downloaded_file_path: "buildifier-linux-amd64"
+		sha256:               devTools.buildifier.sha256
+		url:                  devTools.buildifier.url
+	}
+	shellcheck: {
+		name:                 "dev_tool_shellcheck"
+		downloaded_file_path: "shellcheck-v\(versions.development.shellcheck).linux.x86_64.tar.xz"
+		sha256:               devTools.shellcheck.sha256
+		url:                  devTools.shellcheck.url
+	}
+	jq: {
+		name:                 "dev_tool_jq"
+		downloaded_file_path: "jq-linux-amd64"
+		sha256:               devTools.jq.sha256
+		url:                  devTools.jq.url
+	}
+	sops: {
+		name:                 "dev_tool_sops"
+		downloaded_file_path: "sops-v\(versions.development.sops).linux.amd64"
+		sha256:               devTools.sops.sha256
+		url:                  devTools.sops.url
+	}
+	age: {
+		name:                 "dev_tool_age"
+		downloaded_file_path: "age-v\(versions.development.age)-linux-amd64.tar.gz"
+		sha256:               devTools.age.sha256
+		url:                  devTools.age.url
+	}
+	uv: {
+		name:                 "dev_tool_uv"
+		downloaded_file_path: "uv-x86_64-unknown-linux-gnu.tar.gz"
+		sha256:               devTools.uv.sha256
+		url:                  devTools.uv.url
+	}
+	clickhouse: {
+		name:                 "dev_tool_clickhouse"
+		downloaded_file_path: "clickhouse-common-static-\(versions.development.clickhouse)-amd64.tgz"
+		sha256:               devTools.clickhouse.sha256
+		url:                  devTools.clickhouse.url
+	}
+	osv_scanner: {
+		name:                 "dev_tool_osv_scanner"
+		downloaded_file_path: "osv-scanner_linux_amd64"
+		sha256:               devTools["osv-scanner"].sha256
+		url:                  devTools["osv-scanner"].url
+	}
+	stripe: {
+		name:                 "dev_tool_stripe"
+		downloaded_file_path: "stripe_\(versions.development.stripe)_linux_x86_64.tar.gz"
+		sha256:               devTools.stripe.sha256
+		url:                  devTools.stripe.url
+	}
+	agent_browser: {
+		name:                 "dev_tool_agent_browser"
+		downloaded_file_path: "agent-browser-linux-x64"
+		sha256:               devTools["agent-browser"].sha256
+		url:                  devTools["agent-browser"].url
+	}
+}
+
+// devToolPackaging is the shape `dev_tools.tar.zst` lays down on /. Mirrors
+// serverToolPackaging. Paths are relative (no leading slash) because the
+// tarball gets unpacked at / by Ansible.
+devToolPackaging: {
+	// One binary extracted from a tarball. tar_flag: z=gz, J=xz.
+	tar_single: [
+		{name: "cue", repo:        "dev_tool_cue", tar_flag:        "z", binary: "cue", dest:                                                                   "usr/local/bin/cue"},
+		{name: "shellcheck", repo: "dev_tool_shellcheck", tar_flag: "J", binary: "shellcheck-v\(versions.development.shellcheck)/shellcheck", dest:             "usr/local/bin/shellcheck"},
+		{name: "stripe", repo:     "dev_tool_stripe", tar_flag:     "z", binary: "stripe", dest:                                                                "usr/local/bin/stripe"},
+		{name: "clickhouse", repo: "dev_tool_clickhouse", tar_flag: "z", binary: "clickhouse-common-static-\(versions.development.clickhouse)/usr/bin/clickhouse", dest: "usr/local/bin/clickhouse"},
+	]
+
+	// One binary extracted from a zip.
+	zip_single: [
+		{name: "tofu", repo:       "dev_tool_tofu", binary:    "tofu", dest:       "usr/local/bin/tofu"},
+		{name: "protoc_bin", repo: "dev_tool_protoc", binary:  "bin/protoc", dest: "usr/local/bin/protoc"},
+	]
+
+	// Subdirectory copied from a zip, contents merged into dest. Used for
+	// protoc's well-known proto headers.
+	zip_directory: [
+		{name: "protoc_include", repo: "dev_tool_protoc", src_sub: "include", dest: "usr/local/include"},
+	]
+
+	// Multiple binaries from one tarball with --strip-components.
+	tar_multi: [
+		{name: "age", repo: "dev_tool_age", tar_flag: "z", strip_components: 1, binaries: [
+			{member: "age", dest:        "usr/local/bin/age"},
+			{member: "age-keygen", dest: "usr/local/bin/age-keygen"},
+		]},
+		{name: "uv", repo: "dev_tool_uv", tar_flag: "z", strip_components: 1, binaries: [
+			{member: "uv", dest:  "usr/local/bin/uv"},
+			{member: "uvx", dest: "usr/local/bin/uvx"},
+		]},
+	]
+
+	// Raw single-file binaries (no archive).
+	raw: [
+		{name: "buf", repo:           "dev_tool_buf", dest:           "usr/local/bin/buf"},
+		{name: "buildifier", repo:    "dev_tool_buildifier", dest:    "usr/local/bin/buildifier"},
+		{name: "jq", repo:            "dev_tool_jq", dest:            "usr/local/bin/jq"},
+		{name: "sops", repo:          "dev_tool_sops", dest:          "usr/local/bin/sops"},
+		{name: "osv_scanner", repo:   "dev_tool_osv_scanner", dest:   "usr/local/bin/osv-scanner"},
+		{name: "agent_browser", repo: "dev_tool_agent_browser", dest: "usr/local/bin/agent-browser"},
+	]
+
+	// Whole archive extracted into a versioned install dir. Symlinks
+	// below pin the canonical path to the version that just landed.
+	archive_dir: [
+		{name: "go_install", repo:  "dev_tool_go", tar_flag: "z", dest: "usr/local/go-\(versions.development.go)", strip_components:   1},
+		{name: "zig_install", repo: "dev_tool_zig", tar_flag: "J", dest: "usr/local/zig-\(versions.development.zig)", strip_components: 1},
+	]
+
+	// pkg_tar `symlinks` argument. Keys are tar-internal paths (no leading
+	// slash), values are absolute on-disk symlink targets.
+	symlinks: {
+		"usr/local/go":      "/usr/local/go-\(versions.development.go)"
+		"usr/local/zig":     "/usr/local/zig-\(versions.development.zig)"
+		"usr/local/bin/zig": "/usr/local/zig/zig"
 	}
 }
 

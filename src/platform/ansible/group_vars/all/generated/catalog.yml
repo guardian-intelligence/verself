@@ -480,6 +480,7 @@ topology_dev_tools:
     sha256: bdc69c09cbdd6cf8b1f333d372a1f58247b3a33146406333e30c0f26e8f51377
     strategy: tarball
     strip_components: 1
+    tier: pinned_http_file
     url: https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-linux-amd64.tar.gz
     version: 1.3.1
     version_cmd: age --version
@@ -487,11 +488,13 @@ topology_dev_tools:
     install_path: /usr/local/bin/agent-browser
     sha256: 02d26f105a9d8e203f8f966acfeb4bab191cfa4625431a535b8be5f8f5905472
     strategy: binary
+    tier: pinned_http_file
     url: https://github.com/vercel-labs/agent-browser/releases/download/v0.25.4/agent-browser-linux-x64
     version: 0.25.4
     version_cmd: agent-browser --version
   ansible:
     strategy: uv_tool
+    tier: legacy_install_plan
     uv_package: ansible-core
     version: 2.20.3
     version_cmd: ansible --version
@@ -502,27 +505,33 @@ topology_dev_tools:
       - opentelemetry-exporter-otlp-proto-http==1.41.0
   ansible-lint:
     strategy: uv_tool_companion
+    tier: legacy_install_plan
     version: 26.4.0
     version_cmd: ansible-lint --version
   ansible-opentelemetry-exporter-otlp-proto-grpc:
     strategy: uv_tool_companion
+    tier: legacy_install_plan
     version: 1.41.0
     version_cmd: /opt/uv-tools/ansible-core/bin/python -c "import importlib.metadata as m; print(m.version('opentelemetry-exporter-otlp-proto-grpc'))"
   ansible-opentelemetry-exporter-otlp-proto-http:
     strategy: uv_tool_companion
+    tier: legacy_install_plan
     version: 1.41.0
     version_cmd: /opt/uv-tools/ansible-core/bin/python -c "import importlib.metadata as m; print(m.version('opentelemetry-exporter-otlp-proto-http'))"
   ansible-opentelemetry-sdk:
     strategy: uv_tool_companion
+    tier: legacy_install_plan
     version: 1.41.0
     version_cmd: /opt/uv-tools/ansible-core/bin/python -c "import importlib.metadata as m; print(m.version('opentelemetry-sdk'))"
   bazel:
     sha256: a667454f3f4f8878df8199136b82c199f6ada8477b337fae3b1ef854f01e4e2f
+    tier: bootstrap_pivot
     version: 9.1.0
   bazelisk:
     install_path: /usr/local/bin/bazelisk
     sha256: 22e7d3a188699982f661cf4687137ee52d1f24fec1ec893d91a6c4d791a75de8
     strategy: binary
+    tier: bootstrap_pivot
     url: https://github.com/bazelbuild/bazelisk/releases/download/v1.28.1/bazelisk-linux-amd64
     version: 1.28.1
     version_cmd: bazelisk version
@@ -530,16 +539,19 @@ topology_dev_tools:
     install_path: /usr/local/bin/buf
     sha256: ef835cb38ed973849f68e0e6a88153cb2168507e09eecbec43a2ada2f6a698be
     strategy: binary
+    tier: pinned_http_file
     url: https://github.com/bufbuild/buf/releases/download/v1.66.1/buf-Linux-x86_64
     version: 1.66.1
     version_cmd: buf --version
   build-essential:
     strategy: apt
+    tier: system_apt
     version_cmd: gcc --version
   buildifier:
     install_path: /usr/local/bin/buildifier
     sha256: 887377fc64d23a850f4d18a077b5db05b19913f4b99b270d193f3c7334b5a9a7
     strategy: binary
+    tier: pinned_http_file
     url: https://github.com/bazelbuild/buildtools/releases/download/v8.5.1/buildifier-linux-amd64
     version: 8.5.1
     version_cmd: buildifier --version
@@ -547,11 +559,13 @@ topology_dev_tools:
     install_path: /usr/local/bin/clickhouse
     sha256: 2b0ccdc84bc3cc624408a8a490181c6eed6b8df4e090f9b4ed7e647e46093278
     strategy: tarball
+    tier: pinned_http_file
     url: https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-26.3.2.3-amd64.tgz
     version: 26.3.2.3
     version_cmd: clickhouse client --version
   crun:
     strategy: apt
+    tier: system_apt
     version: 1.14.1
     version_cmd: crun --version
   cue:
@@ -560,11 +574,13 @@ topology_dev_tools:
     sha256: 5d644c1305a2b86504c8dcd2ec829cf5b4999efc2cf51ee375624e0455f774ae
     strategy: tarball
     strip_components: 0
+    tier: pinned_http_file
     url: https://github.com/cue-lang/cue/releases/download/v0.16.1/cue_v0.16.1_linux_amd64.tar.gz
     version: 0.16.1
     version_cmd: cue version
   debootstrap:
     strategy: apt
+    tier: system_apt
     version: 1.0.134
     version_cmd: debootstrap --version
   go:
@@ -573,26 +589,31 @@ topology_dev_tools:
     sha256: ceb5e041bbc3893846bd1614d76cb4681c91dadee579426cf21a63f2d7e03be6
     strategy: tarball
     strip_components: 0
+    tier: pinned_http_file
     url: https://go.dev/dl/go1.25.8.linux-amd64.tar.gz
     version: 1.25.8
     version_cmd: go version
   gofumpt:
     go_package: mvdan.cc/gofumpt
     strategy: go_install
+    tier: legacy_install_plan
     version: 0.9.2
     version_cmd: gofumpt --version
   golangci-lint:
     go_package: github.com/golangci/golangci-lint/v2/cmd/golangci-lint
     strategy: go_install
+    tier: legacy_install_plan
     version: 2.11.3
     version_cmd: golangci-lint --version
   gosec:
     go_package: github.com/securego/gosec/v2/cmd/gosec
     strategy: go_install
+    tier: legacy_install_plan
     version: 2.25.0
     version_cmd: go version -m /usr/local/go-tools/bin/gosec
   guarddog:
     strategy: uv_tool
+    tier: legacy_install_plan
     uv_package: guarddog
     version: 2.9.0
     version_cmd: guarddog --version
@@ -600,6 +621,7 @@ topology_dev_tools:
     install_path: /usr/local/bin/jq
     sha256: 020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d
     strategy: binary
+    tier: pinned_http_file
     url: https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64
     version: 1.8.1
     version_cmd: jq --version
@@ -607,11 +629,13 @@ topology_dev_tools:
     install_path: /usr/local/bin/osv-scanner
     sha256: bb30c580afe5e757d3e959f4afd08a4795ea505ef84c46962b9a738aa573b41b
     strategy: binary
+    tier: pinned_http_file
     url: https://github.com/google/osv-scanner/releases/download/v2.3.5/osv-scanner_linux_amd64
     version: 2.3.5
     version_cmd: osv-scanner --version
   pre-commit:
     strategy: uv_tool
+    tier: legacy_install_plan
     uv_package: pre-commit
     version: 4.5.1
     version_cmd: pre-commit --version
@@ -619,17 +643,20 @@ topology_dev_tools:
     install_dir: /usr/local
     sha256: e9a91b6fcfe4177ec2cd35fc8f15c1e811fa0ecdef9372755cd6d3513d5faaab
     strategy: zip
+    tier: pinned_http_file
     url: https://github.com/protocolbuffers/protobuf/releases/download/v34.0/protoc-34.0-linux-x86_64.zip
     version: "34.0"
     version_cmd: protoc --version
   protoc-gen-go:
     go_package: google.golang.org/protobuf/cmd/protoc-gen-go
     strategy: go_install
+    tier: legacy_install_plan
     version: 1.36.11
     version_cmd: protoc-gen-go --version
   protoc-gen-go-grpc:
     go_package: google.golang.org/grpc/cmd/protoc-gen-go-grpc
     strategy: go_install
+    tier: legacy_install_plan
     version: 1.6.1
     version_cmd: protoc-gen-go-grpc --version
   shellcheck:
@@ -638,6 +665,7 @@ topology_dev_tools:
     sha256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
     strategy: tarball
     strip_components: 1
+    tier: pinned_http_file
     url: https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz
     version: 0.11.0
     version_cmd: shellcheck --version
@@ -645,18 +673,21 @@ topology_dev_tools:
     install_path: /usr/local/bin/sops
     sha256: 14e2e1ba3bef31e74b70cf0b674f6443c80f6c5f3df15d05ffc57c34851b4998
     strategy: binary
+    tier: pinned_http_file
     url: https://github.com/getsops/sops/releases/download/v3.12.2/sops-v3.12.2.linux.amd64
     version: 3.12.2
     version_cmd: sops --version
   sqlc:
     go_package: github.com/sqlc-dev/sqlc/cmd/sqlc
     strategy: go_install
+    tier: legacy_install_plan
     version: 1.30.0
     version_cmd: sqlc version
   stripe:
     install_path: /usr/local/bin/stripe
     sha256: a0f9c131d1e06240f97dedfdf05bb9cb96ee33a865e8877807945bab160eaa0f
     strategy: tarball
+    tier: pinned_http_file
     url: https://github.com/stripe/stripe-cli/releases/download/v1.40.0/stripe_1.40.0_linux_x86_64.tar.gz
     version: 1.40.0
     version_cmd: stripe version
@@ -664,6 +695,7 @@ topology_dev_tools:
     install_path: /usr/local/bin/tofu
     sha256: 901121681e751574d739de5208cad059eddf9bd739b575745cf9e3c961b28a13
     strategy: zip
+    tier: pinned_http_file
     url: https://github.com/opentofu/opentofu/releases/download/v1.11.5/tofu_1.11.5_linux_amd64.zip
     version: 1.11.5
     version_cmd: tofu version -json
@@ -676,6 +708,7 @@ topology_dev_tools:
     sha256: c0f3236f146e55472663cfbcc9be3042a9f1092275bbe3fe2a56a6cbfd3da5ce
     strategy: tarball
     strip_components: 1
+    tier: pinned_http_file
     url: https://github.com/astral-sh/uv/releases/download/0.11.3/uv-x86_64-unknown-linux-gnu.tar.gz
     version: 0.11.3
     version_cmd: uv --version
@@ -686,6 +719,7 @@ topology_dev_tools:
     strategy: tarball
     strip_components: 1
     symlink: /usr/local/bin/zig
+    tier: pinned_http_file
     url: https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz
     version: 0.15.2
     version_cmd: zig version
