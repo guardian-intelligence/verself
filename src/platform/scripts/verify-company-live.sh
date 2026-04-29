@@ -4,7 +4,7 @@
 # browser walks the IA.
 #
 # Flow:
-#   1. Derive deterministic deploy identity (same helper as telemetry-smoke-test).
+#   1. Derive a deterministic correlation id (same UUIDv5 shape as deploy_identity.sh).
 #   2. Resolve the live company base URL from company_domain.
 #   3. Run the Playwright canary at apps/company/e2e/canary.spec.ts against
 #      the live URL; the canary walks every IA node, the OG cards, and the

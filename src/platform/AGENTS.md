@@ -30,7 +30,6 @@ Run from `src/platform/ansible/`. `--tags` targets individual roles (e.g. `--tag
 | `deprovision.yml` | Destroy bare metal infrastructure, remove inventory |
 | `site.yml` | Canonical idempotent deploy for the current inventory topology |
 | `guest-rootfs.yml` | Build guest rootfs, stage Firecracker guest artifacts |
-| `observability-smoke.yml` | Minimal smoke probe used by `scripts/telemetry-smoke-test.sh` (`debug/assert` + `verself_uri`) |
 | `security-patch.yml` | Rolling OS security updates |
 | `billing-reset.yml` | Exhaustively wipe TigerBeetle + billing PostgreSQL database `billing` and restart callers |
 | `identity-reset.yml` | Exhaustively wipe identity-service PG state, re-apply migrations, restart |
@@ -85,12 +84,7 @@ aspect observe --what=deploy --run-key=<deploy-run-key>
 
 Use `aspect db ch query` only when the observe surface does not yet cover the question. Interactive ClickHouse shells are intentionally unsupported because agent workflows need replayable commands.
 
-Deploy playbook telemetry smoke probes:
-
-```bash
-src/platform/scripts/telemetry-smoke-test.sh                                    # success path: ansible + service correlation
-TELEMETRY_SMOKE_TEST_EXPECT_FAIL=1 src/platform/scripts/telemetry-smoke-test.sh # sad path: assert Error spans are emitted
-```
+Product-surface canaries (`scripts/verify-*-live.sh`) are the supported way to assert that a deploy emitted the spans/logs/metrics it should — Ansible no longer self-checks ClickHouse.
 
 **Deterministic deploy correlation**:
 

@@ -9,9 +9,9 @@
 # from the playbook AND from verself_uri probes shares the same trace-id and
 # carries verself.* on ResourceAttributes.
 #
-# Idempotent: if VERSELF_DEPLOY_ID and VERSELF_DEPLOY_RUN_KEY are
-# already set (e.g. telemetry-smoke-test provided its own), those are preserved
-# and the rest is derived from them.
+# Idempotent: if VERSELF_DEPLOY_ID and VERSELF_DEPLOY_RUN_KEY are already set
+# by a caller (e.g. a verify-*-live.sh canary that wants its own correlation
+# id), those are preserved and the rest is derived from them.
 #
 # Usage:
 #   source "${VERSELF_PLATFORM}/scripts/deploy_identity.sh"
