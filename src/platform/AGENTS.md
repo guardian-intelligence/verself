@@ -36,7 +36,7 @@ Run from `src/platform/ansible/`. `--tags` targets individual roles (e.g. `--tag
 | `identity-reset.yml` | Exhaustively wipe identity-service PG state, re-apply migrations, restart |
 | `seed-system.yml` | Seed platform tenant + Acme tenant, billing, mailboxes, auth verify. `--tags identity,billing,stalwart,verify,dev-oidc` |
 
-Read `aspect` (no args) for the full task surface; see `docs/architecture/aspect-cli-migration.md` for the durable command list and the retired Make-era shapes.
+Read `aspect` (no args) for the full task surface; `aspect <task> --help` documents flags.
 
 ## Query ClickHouse
 

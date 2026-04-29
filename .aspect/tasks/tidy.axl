@@ -1,7 +1,7 @@
 """aspect tidy — `go mod tidy` every service module and run the JS monorepo formatter.
 
-Mirrors the Makefile tidy target. Each Go module is tidied in its own working
-directory; viteplus then formats the JS monorepo via `vp fmt . --write`.
+Each Go module is tidied in its own working directory; viteplus then formats
+the JS monorepo via `vp fmt . --write`.
 """
 
 load(".aspect/lib/helpers.axl", "checked_spawn", "ws_path")

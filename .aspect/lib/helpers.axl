@@ -7,8 +7,8 @@ breaking rename is a one-file fix instead of a 12-file fix.
 
 Conventions:
   - All subprocesses go through `checked_spawn(ctx, cmd, args, ...)`. That keeps
-    a single hook for the future task-invocation telemetry table described in
-    docs/architecture/aspect-cli-migration.md (Near-Term Follow-Ups).
+    a single hook for a future task-invocation telemetry table (see TODO inside
+    `checked_spawn`).
   - Workspace paths use `ws_path(ctx, *parts)` so callers do not concatenate
     strings by hand. The repo root is `ctx.std.env.root_dir()`.
   - Failures are loud: helpers fail fast with a useful stderr line and a
@@ -29,9 +29,9 @@ def ws_path(ctx, *parts):
 def inventory_check(ctx):
     """Fail loud when the generated Ansible inventory is missing.
 
-    Mirrors the Makefile inventory-check rule: any task that needs to reach
-    the bare-metal node must call this first so error messages point to the
-    provision playbook rather than failing on a deeper SSH/tunnel error.
+    Any task that needs to reach the bare-metal node must call this first so
+    error messages point to the provision playbook rather than failing on a
+    deeper SSH/tunnel error.
     """
     inv = ws_path(ctx, INVENTORY_REL)
     r = (ctx.std.process.command("test")
@@ -52,6 +52,9 @@ def checked_spawn(ctx, program, args, cwd = None, env = None, label = None):
     int matches the program's exit code; non-zero is the caller's signal to
     propagate.
     """
+    # TODO(aspect-followups): emit a row to default.aspect_task_invocations on
+    # exit so we can answer "how often is each task actually invoked" without
+    # taking on the full OTel task-tracing surface.
     cmd = ctx.std.process.command(program).args(args)
     if cwd != None:
         cmd = cmd.current_dir(cwd)

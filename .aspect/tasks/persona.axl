@@ -1,9 +1,8 @@
 """aspect persona assume <name> [--output=...] [--print]
    aspect persona user-state --email=... --org=... --state=... [...]
 
-Persona shortcuts (assume-platform-admin / assume-acme-admin / assume-acme-member)
-are intentionally NOT carried over from the Makefile; pass the persona name as
-the positional argument instead.
+There are intentionally no per-persona shortcut tasks; pass the persona name
+as the positional argument (`aspect persona assume platform-admin`).
 """
 
 load(".aspect/lib/helpers.axl", "checked_spawn", "inventory_check", "ws_path")
@@ -80,7 +79,7 @@ user_state = task(
     implementation = _user_state_impl,
     name = "user-state",
     group = ["persona"],
-    summary = "Set billing fixture state for a persona (mirrors `make set-user-state`).",
+    summary = "Set billing fixture state for a persona (plan tier, balance, business-time override).",
     args = {
         "email": args.string(default = "", description = "User email."),
         "org": args.string(default = "", description = "Org slug (e.g. platform)."),

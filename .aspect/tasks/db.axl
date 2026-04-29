@@ -9,9 +9,8 @@
   aspect db tb command --command=<op>
 
 These shell out to scripts/{pg.sh, clickhouse.sh, tigerbeetle.sh}, all of
-which open the SSH tunnel themselves. Per-service shortcuts (e.g.
-`make billing-pg-query`) are intentionally not preserved — `aspect db pg
-query --db=billing --query=...` covers them.
+which open the SSH tunnel themselves. There are intentionally no per-service
+shortcuts; `aspect db pg query --db=billing --query=...` covers them.
 """
 
 load(".aspect/lib/helpers.axl", "checked_spawn", "inventory_check", "require_arg", "ws_path")

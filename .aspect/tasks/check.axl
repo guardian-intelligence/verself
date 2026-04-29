@@ -1,8 +1,7 @@
 """aspect check --kind=go-test|go-vet|go-lint|conversions|scripts|ansible|voice|all
 
-Cross-cutting verification gates used during PR review. Each --kind shells out
-to the same loop the Makefile used; --kind=all runs them in the order they
-were listed under `make lint`/`make test`.
+Cross-cutting verification gates used during PR review. `--kind=all` runs in
+fast-failure order: scripts → ansible → voice → conversions → vet → lint → test.
 """
 
 load(".aspect/lib/helpers.axl", "checked_spawn", "ws_path")

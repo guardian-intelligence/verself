@@ -5,10 +5,10 @@ the workspace. Every task lives under `.aspect/tasks/` (subdirectories are NOT
 auto-discovered) and is registered explicitly here. Helpers live under
 `.aspect/lib/` and are imported via `load(".aspect/lib/<file>", ...)`.
 
-The durable command surface is documented in
-docs/architecture/aspect-cli-migration.md. The "Retired Surface" section of
-that doc is binding: smoke aliases, persona shortcuts, mail-recipient
-shortcuts, and Bazel-build aliases are intentionally absent.
+This file is the source of truth for the durable command surface. The retired
+surface (smoke aliases, persona/mail-recipient shortcuts, Bazel-build aliases)
+is enforced by absence: do not reintroduce shortcut tasks for things
+`aspect <group> <action> --flag=value` already covers.
 """
 
 load(".aspect/tasks/doctor.axl", "doctor")
