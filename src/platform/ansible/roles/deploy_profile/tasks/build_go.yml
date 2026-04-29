@@ -34,6 +34,15 @@
     fail_msg: >-
       topology_deploy.artifacts must contain unique Go artifacts with non-empty Bazel labels and output names.
 
+- name: Ensure deploy_profile bazel profile cache directory exists
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.file:
+    path: "{{ deploy_profile_bazel_profile_path | dirname }}"
+    state: directory
+    mode: "0755"
+
 - name: Build topology Go artifacts with Bazel
   delegate_to: localhost
   become: false
@@ -43,9 +52,41 @@
     # over the wg-ops mesh. The host running this play is the trusted writer
     # for the shared cache; laptop dev workflows use --config=remote (read-
     # only) to avoid poisoning the cache with local builds.
-    argv: "{{ [deploy_profile_bazelisk, 'build', '--config=remote-writer'] + deploy_profile_go_artifact_labels }}"
+    #
+    # --profile writes a Chrome-trace JSON of every action; the follow-up
+    # task replays it as OTel spans for per-target timing visibility.
+    argv: >-
+      {{
+        [
+          deploy_profile_bazelisk, 'build', '--config=remote-writer',
+          '--profile=' + deploy_profile_bazel_profile_path,
+        ] + deploy_profile_go_artifact_labels
+      }}
     chdir: "{{ deploy_profile_repo_root }}"
   changed_when: false
+
+- name: Emit Bazel build profile as OTel spans
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.command:
+    # --profile=/dev/null on the inner invocation prevents bazelisk from
+    # clobbering the captured profile we are about to read. failed_when
+    # is suppressed so an instrumentation hiccup never fails the deploy
+    # the way a real build failure would.
+    argv:
+      - "{{ deploy_profile_bazelisk }}"
+      - run
+      - --config=remote-writer
+      - --profile=/dev/null
+      - "//src/otel/cmd/bazel-profile-to-otel"
+      - "--"
+      - "--profile={{ deploy_profile_bazel_profile_path }}"
+      - --service-name=bazel
+      - --min-duration-ms=200
+    chdir: "{{ deploy_profile_repo_root }}"
+  changed_when: false
+  failed_when: false
 
 - name: Resolve topology Go artifact output paths
   delegate_to: localhost
