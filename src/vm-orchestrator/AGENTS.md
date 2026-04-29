@@ -2,6 +2,16 @@
 
 Privileged Go daemon for lease-scoped Firecracker lifecycle management: ZFS clone/snapshot/destroy, jailer setup, TAP networking, vm-bridge control, guest telemetry aggregation, and host-side state reconciliation. The public surface is the V1 lease/exec API over a Unix socket (`/run/vm-orchestrator/api.sock`); the daemon owns no product submission queue, payment policy, or mutable workload policy.
 
+## Subdirectories
+
+- `cmd/vm-orchestrator/` — daemon entry point.
+- `cmd/vm-orchestrator-cli/` — privileged operator CLI (currently just `seed-image`).
+- `cmd/vm-bridge/` — guest PID 1 + local control socket. Reads toolchain-image overlay manifests at lease boot.
+- `zfs/` — typed refs, validation, channel programs, the `VolumeLifecycle` facade.
+- `proto/v1/` — gRPC contracts for the lease/exec API.
+- `vmproto/` — host↔guest control-plane wire types.
+- `guest-images/` — `toolchain_ext4_image` Bazel macro + substrate builder + per-image build rules. Each image declares a `tier` consumed by `vm-orchestrator-seed.service`. See `<guest_rootfs_split>` in the repo-root `AGENTS.md`.
+
 ## Privilege Boundary
 
 vm-orchestrator is the only runtime process allowed to hold host privileges for ZFS, Firecracker, TAP, jailer, `/dev/kvm`, or `/dev/zvol`. Product services never receive `zfs allow`, host device access, root-equivalent capabilities, or Firecracker/jailer arguments. They send service-authorized refs and lifecycle intents over the Unix socket; vm-orchestrator resolves those refs to contained host resources.

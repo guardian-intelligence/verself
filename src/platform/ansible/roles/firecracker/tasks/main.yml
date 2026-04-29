@@ -1,9 +1,10 @@
 ---
 # Firecracker host setup: KVM, jailer user/dirs, host networking, the
 # vm-orchestrator daemon, and the vm-orchestrator-seed oneshot unit that
-# materializes composable image zvols (including the boot image) via the
-# SeedImage RPC. Guest artifacts (vmlinux, rootfs.ext4) are built by
-# scripts/build-guest-rootfs.sh and pre-staged before this role runs.
+# materializes composable image zvols (substrate + every platform_toolchain
+# image) via the SeedImage RPC. The substrate ext4 + vmlinux + toolchain
+# ext4s land at /var/lib/verself/guest-images/ via the guest_rootfs role
+# that runs before this one.
 
 - name: Load generated Firecracker version pins
   ansible.builtin.assert:
@@ -158,15 +159,15 @@
     state: directory
     mode: "0755"
 
-- name: Create guest artifact directories
+- name: Create guest image directories
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
     mode: "0755"
   loop:
     - /var/lib/verself
-    - /var/lib/verself/guest-artifacts
-    - /var/lib/verself/guest-artifacts/net
+    - "{{ firecracker_guest_images_dir }}"
+    - "{{ firecracker_guest_images_dir }}/toolchains"
     - "{{ firecracker_state_db_path | dirname }}"
 
 - name: Ensure vm-orchestrator state directory ownership
@@ -260,8 +261,9 @@
       vm-orchestrator socket must be mode 660 and group {{ firecracker_vm_orchestrator_socket_group }};
       got {{ firecracker_vm_orchestrator_socket_stat.stdout }}.
 
-# --- Guest artifact verification ---
-# Artifacts built by scripts/build-guest-rootfs.sh and staged by deploy_guest_artifacts.
+# --- Guest image verification ---
+# Substrate built on the host by guest_rootfs role; toolchain images
+# Bazel-built and staged by guest_rootfs role.
 
 - name: Verify guest kernel exists
   ansible.builtin.stat:
@@ -270,18 +272,19 @@
     get_checksum: false
   register: firecracker_guest_kernel
 
-- name: Verify guest rootfs exists
+- name: Verify substrate ext4 exists
   ansible.builtin.stat:
-    path: "{{ firecracker_rootfs_path }}"
-    # get_checksum defaults to true, which would sha1 the multi-GB rootfs every run (~4s). We only need existence + mtime.
+    path: "{{ firecracker_substrate_path }}"
+    # Avoid the default sha1 checksum — substrate is multi-hundred-MB and
+    # the seed RPC's vs:source_digest already tracks content drift.
     get_checksum: false
-  register: firecracker_guest_rootfs
+  register: firecracker_substrate
 
-- name: Verify guest artifact manifest exists
+- name: Verify substrate manifest exists
   ansible.builtin.stat:
-    path: "{{ firecracker_guest_artifact_manifest_path }}"
+    path: "{{ firecracker_substrate_manifest_path }}"
     get_checksum: false
-  register: firecracker_guest_artifacts
+  register: firecracker_substrate_manifest
 
 - name: Verify dd_from_file source artifacts referenced by the seed catalog exist
   ansible.builtin.stat:
@@ -290,17 +293,17 @@
   register: firecracker_seed_source_stats
   loop: "{{ firecracker_seed_images | selectattr('strategy', 'equalto', 'dd_from_file') | map(attribute='source_path') | reject('equalto', '') | list }}"
 
-- name: Fail if guest artifacts or seed sources are missing
+- name: Fail if guest images or seed sources are missing
   ansible.builtin.fail:
     msg: >
-      Guest artifacts not found at {{ firecracker_kernel_path }},
-      {{ firecracker_rootfs_path }}, {{ firecracker_guest_artifact_manifest_path }},
+      Guest images not found at {{ firecracker_kernel_path }},
+      {{ firecracker_substrate_path }}, {{ firecracker_substrate_manifest_path }},
       and/or one or more seed source paths.
-      Stage them with: cd ansible && ansible-playbook playbooks/guest-rootfs.yml
+      Build + stage them with: cd ansible && ansible-playbook playbooks/guest-rootfs.yml
   when: >-
     not firecracker_guest_kernel.stat.exists
-    or not firecracker_guest_rootfs.stat.exists
-    or not firecracker_guest_artifacts.stat.exists
+    or not firecracker_substrate.stat.exists
+    or not firecracker_substrate_manifest.stat.exists
     or (firecracker_seed_source_stats.results | rejectattr('stat.exists') | list | length > 0)
 
 # --- Composable image seeding ---

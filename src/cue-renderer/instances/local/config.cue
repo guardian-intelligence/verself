@@ -75,11 +75,25 @@ config: s.#InstanceConfig & {
 		// toolchain split this catalog is built for.
 		images: [
 			{
-				ref:         "golden"
+				ref:         "substrate"
 				tier:        "substrate"
-				size_bytes:  8589934592 // 8 GiB
+				size_bytes:  2147483648 // 2 GiB; substrate.ext4 itself is ~500 MiB, the zvol headroom covers package additions without re-volsizing every clone.
 				strategy:    "dd_from_file"
-				source_path: "/var/lib/verself/guest-artifacts/rootfs.ext4"
+				source_path: "/var/lib/verself/guest-images/substrate.ext4"
+			},
+			{
+				ref:         "gh-actions-runner"
+				tier:        "platform_toolchain"
+				size_bytes:  1073741824 // 1 GiB; the toolchain ext4 itself is ~700 MiB.
+				strategy:    "dd_from_file"
+				source_path: "/var/lib/verself/guest-images/toolchains/gh-actions-runner.ext4"
+			},
+			{
+				ref:         "forgejo-runner"
+				tier:        "platform_toolchain"
+				size_bytes:  268435456 // 256 MiB; the toolchain ext4 itself is ~37 MiB.
+				strategy:    "dd_from_file"
+				source_path: "/var/lib/verself/guest-images/toolchains/forgejo-runner.ext4"
 			},
 			{
 				ref:              "sticky-empty"

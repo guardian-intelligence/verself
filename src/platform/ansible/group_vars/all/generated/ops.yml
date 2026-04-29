@@ -9,11 +9,25 @@ console_subdomain: console
 firecracker_guest_pool_cidr: 172.16.0.0/16
 firecracker_seed_images:
   - filesystem_label: ""
-    ref: golden
-    size_bytes: 8589934592
-    source_path: /var/lib/verself/guest-artifacts/rootfs.ext4
+    ref: substrate
+    size_bytes: 2147483648
+    source_path: /var/lib/verself/guest-images/substrate.ext4
     strategy: dd_from_file
     tier: substrate
+    volblocksize: 16K
+  - filesystem_label: ""
+    ref: gh-actions-runner
+    size_bytes: 1073741824
+    source_path: /var/lib/verself/guest-images/toolchains/gh-actions-runner.ext4
+    strategy: dd_from_file
+    tier: platform_toolchain
+    volblocksize: 16K
+  - filesystem_label: ""
+    ref: forgejo-runner
+    size_bytes: 268435456
+    source_path: /var/lib/verself/guest-images/toolchains/forgejo-runner.ext4
+    strategy: dd_from_file
+    tier: platform_toolchain
     volblocksize: 16K
   - filesystem_label: stickydisk
     ref: sticky-empty

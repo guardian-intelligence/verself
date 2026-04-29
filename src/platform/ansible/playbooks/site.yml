@@ -55,16 +55,16 @@
 
     - name: Check guest kernel exists
       ansible.builtin.stat:
-        path: /var/lib/verself/guest-artifacts/vmlinux
+        path: /var/lib/verself/guest-images/vmlinux
         get_checksum: false
       register: preflight_guest_kernel
 
-    - name: Check guest rootfs exists
+    - name: Check substrate ext4 exists
       ansible.builtin.stat:
-        path: /var/lib/verself/guest-artifacts/rootfs.ext4
-        # get_checksum defaults to true, which would sha1 the multi-GB rootfs every preflight (~4s).
+        path: /var/lib/verself/guest-images/substrate.ext4
+        # get_checksum defaults to true, which would sha1 the multi-hundred-MB substrate every preflight.
         get_checksum: false
-      register: preflight_guest_rootfs
+      register: preflight_substrate
 
     - name: Warn if ZFS pool is missing
       ansible.builtin.debug:
@@ -73,13 +73,13 @@
           The zfs role will create it, but only if a suitable disk is available.
       when: preflight_zpool.rc != 0
 
-    - name: Fail if guest artifacts are missing
+    - name: Fail if guest images are missing
       ansible.builtin.fail:
         msg: >-
-          Guest artifacts not staged on {{ inventory_hostname }}. The firecracker role
-          requires vmlinux and rootfs.ext4 at /var/lib/verself/guest-artifacts/.
+          Guest images not staged on {{ inventory_hostname }}. The firecracker role
+          requires vmlinux and substrate.ext4 at /var/lib/verself/guest-images/.
           Run: cd ansible && ansible-playbook playbooks/guest-rootfs.yml
-      when: not preflight_guest_kernel.stat.exists or not preflight_guest_rootfs.stat.exists
+      when: not preflight_guest_kernel.stat.exists or not preflight_substrate.stat.exists
 
 # ── Deploy ───────────────────────────────────────────────────────────────────
 

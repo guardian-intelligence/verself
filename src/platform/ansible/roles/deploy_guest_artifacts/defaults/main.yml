@@ -1,8 +1,0 @@
----
-deploy_guest_artifacts_source_dir: /tmp/guest/output
-deploy_guest_artifacts_dest_dir: /var/lib/verself/guest-artifacts
-deploy_guest_artifacts_files:
-  - rootfs.ext4
-  - vmlinux
-  - sbom.txt
-  - guest-artifacts.json
