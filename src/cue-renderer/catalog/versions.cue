@@ -47,8 +47,6 @@ versions: {
 		containerd:                  "2.2.2"
 		nodejs:                      "22.22.2"
 		caddy:                       "2.11.2"
-		xcaddy:                      "0.4.5"
-		corazaCaddy:                 "2.4.0"
 		stalwart:                    "0.15.5"
 		stalwartCli:                 "0.15.5"
 		stalwartWebadmin:            "0.1.37"
@@ -351,6 +349,12 @@ serverToolDownloads: {
 		sha256:               "88fd1ce767091fd8d4a99fdb2356e98c819f93f3b1f8663853a2dee9b438068a"
 		url:                  "https://nodejs.org/dist/v\(versions.production.nodejs)/node-v\(versions.production.nodejs)-linux-x64.tar.xz"
 	}
+	caddy: {
+		name:                 "server_tool_caddy"
+		downloaded_file_path: "caddy_\(versions.production.caddy)_linux_amd64.tar.gz"
+		sha256:               "94391dfefe1f278ac8f387ab86162f0e88d87ff97df367f360e51e3cda3df56f"
+		url:                  "https://github.com/caddyserver/caddy/releases/download/v\(versions.production.caddy)/caddy_\(versions.production.caddy)_linux_amd64.tar.gz"
+	}
 }
 
 serverToolPackaging: {
@@ -370,6 +374,7 @@ serverToolPackaging: {
 		{name: "stalwart", repo: "server_tool_stalwart", tar_flag: "z", binary: "stalwart", dest: "stalwart"},
 		{name: "stalwart_cli", repo: "server_tool_stalwart_cli", tar_flag: "z", binary: "stalwart-cli", dest: "stalwart-cli"},
 		{name: "containerd", repo: "server_tool_containerd", tar_flag: "z", binary: "bin/containerd", dest: "containerd"},
+		{name: "caddy", repo: "server_tool_caddy", tar_flag: "z", binary: "caddy", dest: "caddy"},
 	]
 	zip_single: [
 		{name: "tigerbeetle", repo: "server_tool_tigerbeetle", binary: "tigerbeetle", dest: "tigerbeetle"},

@@ -7,8 +7,7 @@ All remote orchestration lives here: Ansible roles + playbooks, OpenTofu modules
 All server software is managed by the `deploy_profile` Ansible role, which populates `/opt/verself/profile/bin/` via three strategies:
 
 - **Go service binaries** (billing-service, sandbox-rental-service, mailbox-service, identity-service, vm-orchestrator): built on the controller via `go build`, copied to server.
-- **Caddy** (with Coraza WAF plugin): built on the controller via `xcaddy`, copied to server.
-- **Static binaries** (ClickHouse, TigerBeetle, Zitadel, Forgejo, Grafana, grafana-clickhouse-datasource plugin, otelcol-contrib, containerd, Node.js, Stalwart, stalwart-cli): pinned and fetched by Bazel under `//src/cue-renderer/binaries`, packed as `//src/cue-renderer/binaries:server_tools.tar.zst`, copied to the server, and unpacked by Ansible.
+- **Static binaries** (Caddy, ClickHouse, TigerBeetle, Zitadel, Forgejo, Grafana, grafana-clickhouse-datasource plugin, otelcol-contrib, containerd, Node.js, Stalwart, stalwart-cli): pinned and fetched by Bazel under `//src/cue-renderer/binaries`, packed as `//src/cue-renderer/binaries:server_tools.tar.zst`, copied to the server, and unpacked by Ansible.
 - **apt packages** (PostgreSQL 16, wireguard-tools, unpack/runtime support such as zstd): installed from PGDG / Ubuntu repos, with selected binaries symlinked into `verself_bin`.
 
 The only other `apt install` is `zfsutils-linux` (kernel-dependent, must match the running kernel). Ubuntu 24.04 only.

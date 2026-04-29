@@ -328,7 +328,6 @@ topology_versions:
     caddy: 2.11.2
     clickhouse: 26.3.2.3
     containerd: 2.2.2
-    corazaCaddy: 2.4.0
     electric: 1.5.0
     firecracker: 1.15.0
     forgejo: 15.0.0
@@ -357,5 +356,4 @@ topology_versions:
     tigerbeetle: 0.17.1
     ubuntu: "24.04"
     ubuntuBase: 24.04.4
-    xcaddy: 0.4.5
     zitadel: 4.13.1
