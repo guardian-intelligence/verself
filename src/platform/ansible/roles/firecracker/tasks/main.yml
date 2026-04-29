@@ -195,7 +195,7 @@
     reload: true
 
 # The verself_firecracker FORWARD + POSTROUTING chains are rendered
-# from src/cue-renderer/instances/local/host_firewall.cue:
+# from src/cue-renderer/instances/prod/host_firewall.cue:
 # topology.nftables.firecracker. The renderer emits the .nft with a
 # literal __VERSELF_UPLINK__ placeholder; substitute it with the
 # resolved uplink interface before reload so a single source of truth

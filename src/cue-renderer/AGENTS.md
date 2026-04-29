@@ -129,7 +129,7 @@ helper.
 
 Adding any new generated file:
 
-1. New CUE values in `catalog/versions.cue` or `instances/local/*.cue`.
+1. New CUE values in `catalog/versions.cue` or `instances/prod/*.cue`.
    If a renderer needs typed access, tighten the schema in
    `schema/schema.cue` and rerun `cue exp gengotypes ./...` from
    `src/cue-renderer/`.
