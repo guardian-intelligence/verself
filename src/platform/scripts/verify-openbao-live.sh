@@ -2,9 +2,20 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+self_path="${script_dir}/$(basename "${BASH_SOURCE[0]}")"
 # shellcheck source=src/platform/scripts/lib/verification-context.sh
 source "${script_dir}/lib/verification-context.sh"
 verification_context_init "${BASH_SOURCE[0]}"
+
+# Re-exec under the controller-side OTLP buffer agent so the smoke spans
+# below land in ClickHouse via scripts/with-otel-agent.sh's file_storage
+# queue — same path aspect deploy uses, no per-canary `ssh -L` race.
+if [[ -z "${VERSELF_OTEL_AGENT_INNER:-}" ]]; then
+  export VERSELF_OTEL_AGENT_INNER=1
+  export VERSELF_ANSIBLE_INVENTORY="${VERIFICATION_INVENTORY_DIR}"
+  export VERSELF_DEPLOY_KIND="openbao-smoke-test"
+  exec "${script_dir}/with-otel-agent.sh" "${self_path}" "$@"
+fi
 
 run_id="${VERIFICATION_RUN_ID:-openbao-smoke-test-$(date -u +%Y%m%dT%H%M%SZ)}"
 artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_SMOKE_ARTIFACT_ROOT}/openbao-smoke-test}"
@@ -156,38 +167,11 @@ emit_span() {
   )
 }
 
-with_otlp_tunnel() {
-  local port
-  port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
-  ssh -N \
-    -o ExitOnForwardFailure=yes \
-    -o ServerAliveInterval=15 \
-    -o ServerAliveCountMax=3 \
-    -o StrictHostKeyChecking=no \
-    -L "${port}:127.0.0.1:4317" \
-    "${VERIFICATION_REMOTE_USER}@${VERIFICATION_REMOTE_HOST}" </dev/null >/dev/null 2>&1 &
-  local tunnel_pid=$!
-  trap 'kill "${tunnel_pid}" 2>/dev/null || true; wait "${tunnel_pid}" 2>/dev/null || true' RETURN
-
-  for _ in $(seq 1 20); do
-    if python3 -c "import socket; socket.create_connection(('127.0.0.1', ${port}), 1).close()" 2>/dev/null; then
-      break
-    fi
-    sleep 0.25
-  done
-  if ! python3 -c "import socket; socket.create_connection(('127.0.0.1', ${port}), 1).close()" 2>/dev/null; then
-    echo "ERROR: OTLP tunnel to ${VERIFICATION_REMOTE_HOST} did not come up on 127.0.0.1:${port}" >&2
-    return 1
-  fi
-
-  export VERSELF_OTLP_ENDPOINT="127.0.0.1:${port}"
-  export VERSELF_DEPLOY_RUN_KEY="${run_id}"
-  export VERSELF_DEPLOY_KIND="openbao-smoke-test"
-  # shellcheck source=src/platform/scripts/deploy_identity.sh
-  source "${script_dir}/deploy_identity.sh"
-
-  local attrs
-  attrs="$(python3 - "${run_id}" "${artifact_dir}/openbao-remote-state.json" <<'PY'
+# Pin the run-key the spans land under so the assertions below filter
+# on a stable verself.smoke_test_run_id; the agent-injected
+# VERSELF_DEPLOY_RUN_KEY (one per controller invocation) drives
+# verself.deploy_run_key separately.
+attrs="$(python3 - "${run_id}" "${artifact_dir}/openbao-remote-state.json" <<'PY'
 import json
 import sys
 
@@ -201,12 +185,9 @@ print(json.dumps({
 }))
 PY
 )"
-  emit_span "openbao.bootstrap.init" "${attrs}"
-  emit_span "openbao.bootstrap.unseal" "${attrs}"
-  emit_span "openbao.bootstrap.ready" "${attrs}"
-}
-
-with_otlp_tunnel
+emit_span "openbao.bootstrap.init" "${attrs}"
+emit_span "openbao.bootstrap.unseal" "${attrs}"
+emit_span "openbao.bootstrap.ready" "${attrs}"
 window_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 wait_for_clickhouse_count() {

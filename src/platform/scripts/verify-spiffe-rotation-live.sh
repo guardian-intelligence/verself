@@ -2,9 +2,20 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+self_path="${script_dir}/$(basename "${BASH_SOURCE[0]}")"
 # shellcheck source=src/platform/scripts/lib/verification-context.sh
 source "${script_dir}/lib/verification-context.sh"
 verification_context_init "${BASH_SOURCE[0]}"
+
+# Re-exec under the controller-side OTLP buffer agent so the smoke spans
+# below land in ClickHouse via scripts/with-otel-agent.sh's file_storage
+# queue — same path aspect deploy uses, no per-canary `ssh -L` race.
+if [[ -z "${VERSELF_OTEL_AGENT_INNER:-}" ]]; then
+  export VERSELF_OTEL_AGENT_INNER=1
+  export VERSELF_ANSIBLE_INVENTORY="${VERIFICATION_INVENTORY_DIR}"
+  export VERSELF_DEPLOY_KIND="${VERIFICATION_KIND:-spiffe-rotation-smoke-test}"
+  exec "${script_dir}/with-otel-agent.sh" "${self_path}" "$@"
+fi
 
 kind="${VERIFICATION_KIND:-spiffe-rotation-smoke-test}"
 run_id="${VERIFICATION_RUN_ID:-${kind}-$(date -u +%Y%m%dT%H%M%SZ)}"
@@ -206,39 +217,6 @@ emit_span() {
   )
 }
 
-with_otlp_tunnel() {
-  local port
-  port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
-  ssh -N \
-    -o ExitOnForwardFailure=yes \
-    -o ServerAliveInterval=15 \
-    -o ServerAliveCountMax=3 \
-    -o StrictHostKeyChecking=no \
-    -L "${port}:127.0.0.1:4317" \
-    "${VERIFICATION_REMOTE_USER}@${VERIFICATION_REMOTE_HOST}" </dev/null >/dev/null 2>&1 &
-  local tunnel_pid=$!
-  OTLP_TUNNEL_PID="${tunnel_pid}"
-  export OTLP_TUNNEL_PID
-  trap 'kill "${OTLP_TUNNEL_PID:-}" 2>/dev/null || true; wait "${OTLP_TUNNEL_PID:-}" 2>/dev/null || true' EXIT
-
-  for _ in $(seq 1 20); do
-    if python3 -c "import socket; socket.create_connection(('127.0.0.1', ${port}), 1).close()" 2>/dev/null; then
-      break
-    fi
-    sleep 0.25
-  done
-  if ! python3 -c "import socket; socket.create_connection(('127.0.0.1', ${port}), 1).close()" 2>/dev/null; then
-    echo "ERROR: OTLP tunnel to ${VERIFICATION_REMOTE_HOST} did not come up on 127.0.0.1:${port}" >&2
-    return 1
-  fi
-
-  export VERSELF_OTLP_ENDPOINT="127.0.0.1:${port}"
-  export VERSELF_DEPLOY_RUN_KEY="${run_id}"
-  export VERSELF_DEPLOY_KIND="${kind}"
-  # shellcheck source=src/platform/scripts/deploy_identity.sh
-  source "${script_dir}/deploy_identity.sh"
-}
-
 span_attrs() {
   local consumer="$1"
   local strategy="$2"
@@ -254,8 +232,6 @@ print(json.dumps({
 }))
 PY
 }
-
-with_otlp_tunnel
 
 emit_span "workload_identity.rotation.consumer" "$(span_attrs nats "spiffe-helper-pid-sighup")"
 emit_span "workload_identity.rotation.reload" "$(span_attrs nats "systemctl-reload-pid-stable")"
