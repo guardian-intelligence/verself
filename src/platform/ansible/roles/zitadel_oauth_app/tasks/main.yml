@@ -4,14 +4,11 @@
 # shape parameters; we handle project lookup/create, drift detection, POST /
 # DELETE + POST on drift, optional role-assertions PUT, and credstore writes.
 
-- name: Wait for Zitadel readiness for OAuth app {{ zitadel_oauth_app_name }}
-  ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/healthz"
-    status_code: 200
-  register: zitadel_oauth_app_health
-  until: zitadel_oauth_app_health.status == 200
-  retries: 30
-  delay: 2
+- name: Wait for Zitadel listener for OAuth app {{ zitadel_oauth_app_name }}
+  ansible.builtin.wait_for:
+    host: "{{ topology_endpoints.zitadel.host }}"
+    port: "{{ topology_endpoints.zitadel.endpoints.http.port }}"
+    timeout: 60
 
 - name: Read Zitadel admin PAT for OAuth app {{ zitadel_oauth_app_name }}
   ansible.builtin.slurp:

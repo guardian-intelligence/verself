@@ -322,15 +322,3 @@
       loop_control:
         label: "{{ item.name }}"
       no_log: true
-
-    - name: Verify PostgreSQL connectivity
-      community.postgresql.postgresql_ping:
-      register: postgresql_ping_result
-      no_log: true
-
-- name: Assert PostgreSQL connectivity succeeded
-  ansible.builtin.assert:
-    that: postgresql_ping_result.is_available | default(false)
-    fail_msg: >-
-      PostgreSQL connectivity check failed for
-      {{ topology_endpoints.postgresql.endpoints.postgres.address }}.

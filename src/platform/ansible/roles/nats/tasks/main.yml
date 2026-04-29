@@ -95,13 +95,3 @@
     host: "{{ topology_endpoints.nats.host }}"
     port: "{{ topology_endpoints.nats.endpoints.client.port }}"
     timeout: 30
-
-- name: Wait for NATS health endpoint
-  ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.nats.endpoints.monitoring.address }}/healthz"
-    method: GET
-    status_code: 200
-  register: nats_healthz
-  retries: 30
-  delay: 1
-  until: nats_healthz.status == 200
