@@ -27,36 +27,6 @@ argument_specs:
         default: images
         description: "ZFS dataset under firecracker_zfs_pool for composable image zvols."
 
-      firecracker_viteplus_image_ref:
-        type: str
-        default: viteplus
-        description: "Composable image reference for the Vite+ toolchain zvol."
-
-      firecracker_viteplus_zvol_size:
-        type: str
-        default: "1G"
-        description: "Size of the Vite+ toolchain zvol. Must include unit (e.g. 1G)."
-
-      firecracker_viteplus_image_path:
-        type: path
-        default: /var/lib/verself/guest-artifacts/viteplus.ext4
-        description: "Path to the Vite+ ext4 image staged by build-guest-rootfs.sh."
-
-      firecracker_viteplus_hash_record:
-        type: path
-        default: /var/lib/verself/guest-artifacts/viteplus-zvol.sha256
-        description: "File recording the SHA256 of the Vite+ image written to the composable zvol."
-
-      firecracker_sticky_empty_image_ref:
-        type: str
-        default: sticky-empty
-        description: "Composable image reference for an empty writable sticky disk base zvol."
-
-      firecracker_sticky_empty_zvol_size:
-        type: str
-        default: "8G"
-        description: "Size of each sticky disk zvol generation. Must include unit (e.g. 8G)."
-
       firecracker_workload_dataset:
         type: str
         default: workloads
@@ -114,11 +84,6 @@ argument_specs:
         default: 8589934592
         description: "ZFS ARC max size in bytes (default 8 GiB). Prevents VM OOM."
 
-      firecracker_guest_pool_cidr:
-        type: str
-        default: "172.16.0.0/16"
-        description: "CIDR block for guest VM IP allocation."
-
       firecracker_state_db_path:
         type: path
         default: /var/lib/verself/vm-orchestrator/state.db
@@ -143,6 +108,11 @@ argument_specs:
         type: path
         default: /opt/verself/profile/bin/vm-orchestrator
         description: "Profile path for the topology-built vm-orchestrator host daemon binary."
+
+      firecracker_vm_orchestrator_cli_path:
+        type: path
+        default: /opt/verself/profile/bin/vm-orchestrator-cli
+        description: "Profile path for the vm-orchestrator-cli binary used by the seed oneshot unit."
 
       firecracker_vm_orchestrator_api_socket:
         type: path

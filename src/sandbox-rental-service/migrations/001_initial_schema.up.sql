@@ -222,31 +222,9 @@ CREATE TABLE runner_class_filesystem_mounts (
 CREATE INDEX idx_runner_class_filesystem_mounts_active
     ON runner_class_filesystem_mounts (runner_class, active, sort_order);
 
-INSERT INTO runner_class_filesystem_mounts (
-    runner_class,
-    mount_name,
-    source_ref,
-    mount_path,
-    fs_type,
-    read_only,
-    sort_order
-) VALUES (
-    'verself-4vcpu-ubuntu-2404',
-    'viteplus',
-    'viteplus',
-    '/opt/verself/nodejs',
-    'ext4',
-    true,
-    10
-), (
-    'verself-2vcpu-ubuntu-2404',
-    'viteplus',
-    'viteplus',
-    '/opt/verself/nodejs',
-    'ext4',
-    true,
-    10
-);
+-- Runner-class baseline mounts are seeded by the workload-image catalog
+-- per <guest_rootfs_direction> in AGENTS.md; the schema does not bake a
+-- specific toolchain into the migration.
 
 CREATE TABLE execution_filesystem_mounts (
     execution_id UUID        NOT NULL REFERENCES executions(execution_id) ON DELETE CASCADE,

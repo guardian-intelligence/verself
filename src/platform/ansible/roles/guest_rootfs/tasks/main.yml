@@ -75,7 +75,6 @@
     path: "/tmp/guest/output/{{ item }}"
   loop:
     - rootfs.ext4
-    - viteplus.ext4
     - vmlinux
     - sbom.txt
     - guest-artifacts.json

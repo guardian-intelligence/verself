@@ -10,20 +10,20 @@ import (
 
 func TestNormalizeFilesystemMounts(t *testing.T) {
 	mounts, err := normalizeFilesystemMounts([]FilesystemMount{{
-		Name:      "viteplus",
-		SourceRef: "viteplus",
-		MountPath: "/opt/verself/nodejs/",
-		ReadOnly:  true,
+		Name:      "data",
+		SourceRef: "sticky-empty",
+		MountPath: "/mnt/data/",
+		ReadOnly:  false,
 	}})
 	if err != nil {
 		t.Fatalf("normalizeFilesystemMounts returned error: %v", err)
 	}
 	want := []FilesystemMount{{
-		Name:      "viteplus",
-		SourceRef: "viteplus",
-		MountPath: "/opt/verself/nodejs",
+		Name:      "data",
+		SourceRef: "sticky-empty",
+		MountPath: "/mnt/data",
 		FSType:    "ext4",
-		ReadOnly:  true,
+		ReadOnly:  false,
 	}}
 	if !reflect.DeepEqual(mounts, want) {
 		t.Fatalf("mounts mismatch\n got: %#v\nwant: %#v", mounts, want)
@@ -33,7 +33,7 @@ func TestNormalizeFilesystemMounts(t *testing.T) {
 func TestNormalizeFilesystemMountsRejectsUnsafeMountPath(t *testing.T) {
 	_, err := normalizeFilesystemMounts([]FilesystemMount{{
 		Name:      "bad",
-		SourceRef: "viteplus",
+		SourceRef: "sticky-empty",
 		MountPath: "/proc/verself",
 	}})
 	if err == nil {
@@ -43,10 +43,10 @@ func TestNormalizeFilesystemMountsRejectsUnsafeMountPath(t *testing.T) {
 
 func TestNormalizeFilesystemMountsRejectsHostPathRefs(t *testing.T) {
 	cases := []FilesystemMount{
-		{Name: "bad/name", SourceRef: "viteplus", MountPath: "/opt/verself/nodejs"},
-		{Name: "bad@snap", SourceRef: "viteplus", MountPath: "/opt/verself/nodejs"},
-		{Name: "viteplus", SourceRef: "images/viteplus", MountPath: "/opt/verself/nodejs"},
-		{Name: "viteplus", SourceRef: "viteplus@ready", MountPath: "/opt/verself/nodejs"},
+		{Name: "bad/name", SourceRef: "sticky-empty", MountPath: "/mnt/data"},
+		{Name: "bad@snap", SourceRef: "sticky-empty", MountPath: "/mnt/data"},
+		{Name: "data", SourceRef: "images/sticky-empty", MountPath: "/mnt/data"},
+		{Name: "data", SourceRef: "sticky-empty@ready", MountPath: "/mnt/data"},
 	}
 	for _, tc := range cases {
 		if _, err := normalizeFilesystemMounts([]FilesystemMount{tc}); err == nil {
@@ -58,22 +58,22 @@ func TestNormalizeFilesystemMountsRejectsHostPathRefs(t *testing.T) {
 func TestPreparedFilesystemMountsBecomeGuestManifest(t *testing.T) {
 	manifest := guestFilesystemMounts([]preparedFilesystemMount{{
 		Spec: FilesystemMount{
-			Name:      "viteplus",
-			SourceRef: "viteplus",
-			MountPath: "/opt/verself/nodejs",
+			Name:      "data",
+			SourceRef: "sticky-empty",
+			MountPath: "/mnt/data",
 			FSType:    "ext4",
-			ReadOnly:  true,
+			ReadOnly:  false,
 		},
 		DriveID:         "fm0",
 		GuestDevicePath: "/dev/vdb",
 	}})
 	want := []vmproto.FilesystemMount{{
-		Name:       "viteplus",
+		Name:       "data",
 		DriveID:    "fm0",
 		DevicePath: "/dev/vdb",
-		MountPath:  "/opt/verself/nodejs",
+		MountPath:  "/mnt/data",
 		FSType:     "ext4",
-		ReadOnly:   true,
+		ReadOnly:   false,
 	}}
 	if !reflect.DeepEqual(manifest, want) {
 		t.Fatalf("guest manifest mismatch\n got: %#v\nwant: %#v", manifest, want)
@@ -82,11 +82,11 @@ func TestPreparedFilesystemMountsBecomeGuestManifest(t *testing.T) {
 
 func TestImageSnapshotUsesConfiguredImageDataset(t *testing.T) {
 	roots := zfs.Roots{Pool: "pool", ImageDataset: "images", WorkloadDataset: "workloads"}
-	img, err := zfs.NewImage(roots, "viteplus")
+	img, err := zfs.NewImage(roots, "sticky-empty")
 	if err != nil {
 		t.Fatalf("NewImage: %v", err)
 	}
-	if got, want := img.Snapshot().String(), "pool/images/viteplus@ready"; got != want {
+	if got, want := img.Snapshot().String(), "pool/images/sticky-empty@ready"; got != want {
 		t.Fatalf("image snapshot = %q, want %q", got, want)
 	}
 }

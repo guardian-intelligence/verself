@@ -4,12 +4,6 @@ firecracker_zfs_pool: vspool
 firecracker_golden_zvol: golden-zvol
 firecracker_golden_zvol_size: 8G
 firecracker_image_dataset: images
-firecracker_viteplus_image_ref: viteplus
-firecracker_viteplus_zvol_size: 1G
-firecracker_viteplus_image_path: /var/lib/verself/guest-artifacts/viteplus.ext4
-firecracker_viteplus_hash_record: /var/lib/verself/guest-artifacts/viteplus-zvol.sha256
-firecracker_sticky_empty_image_ref: sticky-empty
-firecracker_sticky_empty_zvol_size: 8G
 firecracker_workload_dataset: workloads
 firecracker_jailer_root: /srv/jailer
 firecracker_jailer_uid: 10000
@@ -21,11 +15,11 @@ firecracker_guest_artifact_manifest_path: /var/lib/verself/guest-artifacts/guest
 firecracker_rootfs_hash_record: /var/lib/verself/guest-artifacts/golden-zvol.rootfs.sha256
 firecracker_refresh_base_golden: false
 firecracker_zfs_arc_max_bytes: 8589934592  # 8 GiB
-firecracker_guest_pool_cidr: 172.16.0.0/16
 firecracker_state_db_path: /var/lib/verself/vm-orchestrator/state.db
 firecracker_host_uplink_interface: ""
 firecracker_host_service_interface: verself-host0
 firecracker_host_service_ip: "{{ topology_endpoints.firecracker_host_service.host }}"
 firecracker_vm_orchestrator_binary_path: "{{ verself_bin }}/vm-orchestrator"
+firecracker_vm_orchestrator_cli_path: "{{ verself_bin }}/vm-orchestrator-cli"
 firecracker_vm_orchestrator_api_socket: /run/vm-orchestrator/api.sock
 firecracker_vm_orchestrator_socket_group: vm-clients

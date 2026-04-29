@@ -58,11 +58,74 @@ Public commitments for Data Processing, Acceptable Use, Security, SLA, and Data 
 
 <product_direction>
 
-Where the platform is headed: open-source-per-subdirectory, privileged-host / product-service split, multi-tenant + customer dogfooding, three customer-facing sandbox products (CI runner, Lambda-like workload, long-running VM), self-hosted Forgejo/CI with `main`/`beta`/`gamma`/preview promotion lanes.
+Where the platform is headed: open-source-per-subdirectory, privileged-host / product-service split, multi-tenant + customer dogfooding, three customer-facing sandbox products (CI runner, Lambda-like workload, long-running VM), self-hosted Forgejo/CI; agents merge to `main` continuously and environments deploy whichever SHA the `staging-tip`/`prod-tip` refs point at, advancing only after a canary soak passes — no long-lived release branches, unfinished work hidden behind feature flags.
 
 See `docs/product-direction.md`.
 
 </product_direction>
+
+<guest_rootfs_direction>
+
+The current `src/platform/scripts/build-guest-rootfs.sh` bakes a specific
+workload — the GitHub/Forgejo Actions runner stack — into every VM that
+boots. The golden zvol carries Ubuntu base + Go toolchain + Node.js +
+pnpm + GitHub Actions runner + Forgejo runner + a `runner` user with
+NOPASSWD sudo + the GitHub Actions toolcache prime, alongside the actual
+substrate (kernel, vm-bridge as `/sbin/init`, vm-guest-telemetry). Every
+cold boot pays for ~2 GB of toolchain bytes irrespective of whether the
+workload uses them, and "update the GH Actions runner version" forces a
+full golden-zvol refresh. This was acceptable when the only workload was
+our own CI runner; it does not generalize to multi-tenant agnostic
+customer workloads.
+
+Target shape:
+
+- **Substrate rootfs** (golden image): kernel + minimal Ubuntu userland
+  + vm-bridge as `/sbin/init` + vm-guest-telemetry + nothing else.
+  Stable, small, refreshed only when the substrate changes.
+- **Workload toolchain images** (composable, seeded via the
+  `vm-orchestrator-cli seed-image` path): one per cohesive toolchain.
+  Examples: `gh-actions-runner`, `forgejo-runner`, `node-22`, `go-1.25`,
+  customer-bring-your-own. Each is its own ZFS dataset under
+  `pool/images/<ref>` with a `@ready` snapshot, materialized by the
+  daemon's `SeedImage` RPC.
+- **Workflow YAML drives image selection.** The customer's workflow YAML
+  (or our internal runner-class definition) names the toolchain images
+  it wants. sandbox-rental resolves the YAML into a concrete
+  `LeaseSpec.FilesystemMounts` list at acquire time. The platform makes
+  no assumptions about what the customer needs.
+- **Per-workload images are built on the same path as our internal
+  ones.** Building a `node-22` image is `vm-orchestrator-cli seed-image
+  --ref node-22 --strategy dd_from_file --source-path
+  /var/lib/verself/guest-artifacts/node-22.ext4`. Whether the source
+  artifact is one we build (Bazel rule) or one a customer uploaded is
+  upstream of the daemon — the seed path is uniform.
+- **CI runner becomes a workload, not the substrate.** The Actions
+  runner stack moves into a `gh-actions-runner` toolchain image whose
+  build script lives near sandbox-rental, not in
+  `build-guest-rootfs.sh`. `runner_class_filesystem_mounts` becomes the
+  policy table that maps runner class → `(substrate_boot_image,
+  [toolchain_images])`.
+
+Migration scope (for whoever picks this up): touch points are
+`src/platform/scripts/build-guest-rootfs.sh` (collapses to substrate
+only — kernel + minimal userland + vm-bridge as `/sbin/init` +
+vm-guest-telemetry; today it also installs Go, Node.js, pnpm, GitHub
+Actions runner, Forgejo runner, and the `runner` user with NOPASSWD
+sudo, all of which move into workload toolchain images), the
+runner-bootstrap flow on the host-service plane, vm-bridge's expected
+`/opt/actions-runner` paths and `runner` user assumptions,
+`sandbox-rental.runner_class_filesystem_mounts` semantics (becomes the
+runner-class → workload-image policy table; the `viteplus` seed rows
+have already been removed and the table is empty until this work
+lands), the fixture flow that submits direct VM execs, the
+`deploy_guest_artifacts/defaults/main.yml` artifact list, and the
+SBOM/manifest emitter in `build-guest-rootfs.sh`. The SeedImage daemon
+path, CUE `firecracker_seed_images` catalog, and the host-side image
+lifecycle are already structurally in place — this is a content/policy
+migration, not a substrate-orchestration change.
+
+</guest_rootfs_direction>
 
 <system_context>
 
@@ -145,7 +208,7 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - Do not speculate without evidence. Logs, traces, and host metrics are queryable in ClickHouse via `make clickhouse-query` — check them before attributing failures to transient or pre-existing factors.
 - Do not stop work short of verifying changes with a live rehearsal of a playbook to execute fresh rebuild and redeploy. You have full authority to wipe databases and recreate them. Prefer that over time-consuming, tricky migrations during this early phase.
 - The repo has a fixture flow that seeds Forgejo repos, submits direct VM executions through `sandbox-rental-service`, and verifies ClickHouse evidence.
-- Design docs, code comments, architecture diagrams, and API documentation target distinguished engineers expert in the relevant technologies who mostly need information on how the system deviates from standard practice. Avoid throat-clearing around current status, "why this is important," date headers, or "who this is for" — get straight into the information.
+- Design docs, code comments, architecture diagrams, and API documentation target expert engineers in the relevant technologies. Avoid throat-clearing around current status, "why this is important," date headers, or "who this is for" — get straight into the information that they need.
 - Risky commands like `git restore`, `git checkout -- <file>`, and `rm -rf` are blocked.
 </output_contract>
 

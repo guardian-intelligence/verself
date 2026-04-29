@@ -8,14 +8,14 @@ import (
 	"github.com/verself/vm-orchestrator/vmproto"
 )
 
-func TestValidateFilesystemMountAcceptsVitePlusMount(t *testing.T) {
+func TestValidateFilesystemMountAcceptsCustomerMount(t *testing.T) {
 	err := validateFilesystemMount(vmproto.FilesystemMount{
-		Name:       "viteplus",
+		Name:       "data",
 		DriveID:    "fm0",
 		DevicePath: "/dev/vdb",
-		MountPath:  "/opt/verself/nodejs",
+		MountPath:  "/mnt/data",
 		FSType:     "ext4",
-		ReadOnly:   true,
+		ReadOnly:   false,
 	})
 	if err != nil {
 		t.Fatalf("validateFilesystemMount returned error: %v", err)

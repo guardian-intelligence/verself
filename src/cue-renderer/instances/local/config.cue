@@ -70,14 +70,9 @@ config: s.#InstanceConfig & {
 		// template the vm-orchestrator-seed oneshot unit; ordering does
 		// not matter (each image is an independent seed run). Sizes are
 		// bytes because the gRPC field is uint64 and the daemon validates
-		// >0.
+		// >0. See <guest_rootfs_direction> in AGENTS.md for where this
+		// catalog is heading.
 		images: [
-			{
-				ref:         "viteplus"
-				size_bytes:  1073741824 // 1 GiB
-				strategy:    "dd_from_file"
-				source_path: "/var/lib/verself/guest-artifacts/viteplus.ext4"
-			},
 			{
 				ref:              "sticky-empty"
 				size_bytes:       8589934592 // 8 GiB
