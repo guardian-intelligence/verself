@@ -1,7 +1,9 @@
 ---
-# Firecracker host setup: KVM, jailer directories, golden zvol, kernel.
-# Guest artifacts (vmlinux, rootfs.ext4) are built by scripts/build-guest-rootfs.sh
-# and pre-staged before this role runs.
+# Firecracker host setup: KVM, jailer user/dirs, host networking, the
+# vm-orchestrator daemon, and the vm-orchestrator-seed oneshot unit that
+# materializes composable image zvols (including the boot image) via the
+# SeedImage RPC. Guest artifacts (vmlinux, rootfs.ext4) are built by
+# scripts/build-guest-rootfs.sh and pre-staged before this role runs.
 
 - name: Load generated Firecracker version pins
   ansible.builtin.assert:

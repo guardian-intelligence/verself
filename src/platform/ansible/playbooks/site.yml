@@ -91,6 +91,7 @@
       tags:
         - deploy_profile
         - billing_service
+        - firecracker
         - governance_service
         - identity_service
         - mailbox_service
