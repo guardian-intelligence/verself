@@ -97,6 +97,14 @@ else
 fi
 export VERSELF_DEPLOY_KIND="${VERSELF_DEPLOY_KIND:-ansible-playbook}"
 
+# Per-deploy site/sha/scope are populated by the aspect deploy task before
+# sourcing this script. They flow onto every span via OTEL_RESOURCE_ATTRIBUTES
+# so a `verself.deploy_run_key` join lets queries filter by site or scope
+# without re-reading deploy_events.
+export VERSELF_SITE="${VERSELF_SITE:-}"
+export VERSELF_DEPLOY_SHA="${VERSELF_DEPLOY_SHA:-${VERSELF_COMMIT_SHA}}"
+export VERSELF_DEPLOY_SCOPE="${VERSELF_DEPLOY_SCOPE:-all}"
+
 # OTLP endpoint: scripts/ansible-with-tunnel.sh sets VERSELF_OTLP_ENDPOINT
 # to 127.0.0.1:<tunneled-port>. Fall back to loopback default.
 export OTEL_EXPORTER_OTLP_ENDPOINT="http://${VERSELF_OTLP_ENDPOINT:-127.0.0.1:4317}"
@@ -117,6 +125,9 @@ parts = [
     ("verself.author", os.environ["VERSELF_AUTHOR"]),
     ("verself.dirty", os.environ["VERSELF_DIRTY"]),
     ("verself.deploy_kind", os.environ["VERSELF_DEPLOY_KIND"]),
+    ("verself.site", os.environ.get("VERSELF_SITE", "")),
+    ("verself.deploy_sha", os.environ.get("VERSELF_DEPLOY_SHA", "")),
+    ("verself.deploy_scope", os.environ.get("VERSELF_DEPLOY_SCOPE", "")),
 ]
 print(",".join(f"{k}={up.quote(v, safe='')}" for k, v in parts if v))
 PY
