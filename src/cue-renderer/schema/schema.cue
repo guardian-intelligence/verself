@@ -157,9 +157,13 @@ package schema
 }
 
 #Edge: {
-	from:    string
-	to:      #Target
-	auth:    "none" | "zitadel_jwt" | "spiffe_mtls" | "shared_secret" | "operator"
+	from: string
+	to:   #Target
+	// auth is constrained to a key of the spiffe_auth_kinds catalog at
+	// instance scope. The catalog and per-kind metadata live in
+	// concerns/spire/spire.cue; schema declares only that the field
+	// exists and is a string.
+	auth:    string
 	purpose: string | *""
 }
 
@@ -332,16 +336,6 @@ package schema
 	filesystem_label: string | *""                                              @go(FilesystemLabel)
 }
 
-#SpireConfig: {
-	trust_domain:                 string & !=""   @go(TrustDomain)
-	server_bind_address:          #Host           @go(ServerBindAddress)
-	server_socket_path:           string & =~"^/" @go(ServerSocketPath)
-	agent_socket_path:            string & =~"^/" @go(AgentSocketPath)
-	workload_group:               string & !=""   @go(WorkloadGroup)
-	agent_id_path:                string & =~"^/" @go(AgentIDPath)
-	bundle_endpoint_bind_address: #Host           @go(BundleEndpointBindAddress)
-}
-
 #InstanceConfig: {
 	// Typed config consumed by Go renderers. Each typed section has a
 	// dedicated projection in internal/render/<name>/ and may declare its
@@ -351,7 +345,12 @@ package schema
 	postgres:    #PostgresConfig
 	nftables:    #NftablesConfig
 	firecracker: #FirecrackerConfig
-	spire:       #SpireConfig
+	// spire is open here; the typed shape lives in
+	// concerns/spire/spire.cue and is bound at instance scope so schema
+	// stays oblivious to SPIRE-specific fields. Renderers consume the
+	// typed value via load.Loaded.Spire (decoded separately), not via
+	// Config.Spire.
+	spire: _
 
 	// ansible_vars is the explicit Ansible-vars surface. Every key here
 	// becomes a top-level group_vars/all entry; the ops renderer projects

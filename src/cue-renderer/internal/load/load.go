@@ -19,6 +19,7 @@ import (
 	"cuelang.org/go/cue/cuecontext"
 	"cuelang.org/go/cue/load"
 
+	spire "github.com/verself/cue-renderer/concerns/spire"
 	"github.com/verself/cue-renderer/schema"
 )
 
@@ -39,6 +40,17 @@ type Loaded struct {
 	ConfigMap   map[string]any
 	Catalog     Catalog
 	Clusters    Clusters
+
+	// Spire is the typed projection of config.spire. Schema declares the
+	// slot as open (`spire: _`) so it stays oblivious to SPIRE-specific
+	// fields; the typed shape lives in concerns/spire/spire.cue and is
+	// decoded here once per load.
+	Spire spire.Config
+	// SpiffeAuthKinds is the catalog of every #Edge.auth value the
+	// platform admits, with the spiffe_bearing bit each carries. Owned
+	// by concerns/spire/spire.cue; re-exposed at topology package scope
+	// as `spiffe_auth_kinds` for stable lookup.
+	SpiffeAuthKinds map[string]spire.AuthKind
 
 	// GraphSHA256 is the hex SHA-256 of the canonical-JSON encoding of
 	// the topology, config, and catalog inputs. Spans use it as a stable
@@ -106,6 +118,20 @@ func Topology(dir, instance string) (Loaded, error) {
 	}
 	if err := configVal.Decode(&loaded.ConfigMap); err != nil {
 		return Loaded{}, fmt.Errorf("decode config map: %w", err)
+	}
+	spireConfigVal := configVal.LookupPath(cue.ParsePath("spire"))
+	if err := spireConfigVal.Err(); err != nil {
+		return Loaded{}, fmt.Errorf("lookup config.spire: %w", err)
+	}
+	if err := spireConfigVal.Decode(&loaded.Spire); err != nil {
+		return Loaded{}, fmt.Errorf("decode config.spire: %w", err)
+	}
+	authKindsVal := root.LookupPath(cue.ParsePath("spiffe_auth_kinds"))
+	if err := authKindsVal.Err(); err != nil {
+		return Loaded{}, fmt.Errorf("lookup spiffe_auth_kinds: %w", err)
+	}
+	if err := authKindsVal.Decode(&loaded.SpiffeAuthKinds); err != nil {
+		return Loaded{}, fmt.Errorf("decode spiffe_auth_kinds: %w", err)
 	}
 	loaded.Value = topologyVal
 	loaded.ConfigValue = configVal
