@@ -55,8 +55,7 @@ load(
 )
 load(
     ".aspect/tasks/dev.axl",
-    dev_console = "console",
-    dev_platform = "platform",
+    dev_verself_web = "verself_web",
     dev_sandbox_inner = "sandbox_inner",
     dev_sandbox_middle = "sandbox_middle",
 )
@@ -130,8 +129,7 @@ def config(ctx):
     ctx.tasks.add(codegen_check)
 
     # aspect dev ...
-    ctx.tasks.add(dev_console)
-    ctx.tasks.add(dev_platform)
+    ctx.tasks.add(dev_verself_web)
     ctx.tasks.add(dev_sandbox_inner)
     ctx.tasks.add(dev_sandbox_middle)
 

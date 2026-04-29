@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Fast path for shipping console UI changes: build locally, rsync
+# Fast path for shipping verself-web UI changes: build locally, rsync
 # .output/, restart the service. No Ansible, no Zitadel reconcile, no
 # OIDC/env/systemd/nftables rechecks.
 #
 # Safe when you've only touched:
-#   - src/viteplus-monorepo/apps/console/src/**
-#   - src/viteplus-monorepo/packages/**  (UI + env + auth-web)
+#   - src/viteplus-monorepo/apps/verself-web/src/**
+#   - src/viteplus-monorepo/packages/**  (UI + env + auth-web + brand)
 #
-# NOT safe (run the Ansible role via `ansible-playbook ... --tags console`):
+# NOT safe (run the Ansible role via `ansible-playbook ... --tags verself_web`):
 #   - Go API changed (regenerates __generated/**)
-#   - console.service.j2 or env.j2 templates changed
+#   - verself-web.service.j2 or env.j2 templates changed
 #   - nftables rules changed
 #   - OIDC app / Zitadel roles changed
 #   - First-ever deploy (needs credstore + systemd unit + Zitadel app creation)
@@ -23,18 +23,18 @@ verification_context_init "${BASH_SOURCE[0]}"
 
 REMOTE="${VERIFICATION_REMOTE_USER}@${VERIFICATION_REMOTE_HOST}"
 MONOREPO_DIR="${VERIFICATION_REPO_ROOT}/src/viteplus-monorepo"
-LOCAL_OUTPUT="${MONOREPO_DIR}/apps/console/.output/"
-REMOTE_OUTPUT="/opt/console/apps/console/.output/"
+LOCAL_OUTPUT="${MONOREPO_DIR}/apps/verself-web/.output/"
+REMOTE_OUTPUT="/opt/verself-web/apps/verself-web/.output/"
 SERVICE_HOST="127.0.0.1"
 SERVICE_PORT="4244"
 
 step() { printf '\n\033[1;34m==> %s\033[0m\n' "$*"; }
 
-step "Build @verself/console (local, dependency-aware via vp)"
+step "Build @verself/verself-web (local, dependency-aware via vp)"
 # vp run <pkg>#<script> builds the target's workspace dependencies first, then
 # the target itself. Uses Vite+'s build cache, so unchanged packages skip.
 pushd "${MONOREPO_DIR}" >/dev/null
-vp run "@verself/console#build"
+vp run "@verself/verself-web#build"
 popd >/dev/null
 
 if [[ ! -d "${LOCAL_OUTPUT}" ]]; then
@@ -51,8 +51,8 @@ rsync -az --delete --inplace \
   "${LOCAL_OUTPUT}" \
   "${REMOTE}:${REMOTE_OUTPUT}"
 
-step "Restart console"
-verification_ssh sudo systemctl restart console
+step "Restart verself-web"
+verification_ssh sudo systemctl restart verself-web
 
 step "Wait for readiness on ${SERVICE_HOST}:${SERVICE_PORT}"
 verification_ssh bash -s <<EOF
@@ -62,7 +62,7 @@ for attempt in \$(seq 1 60); do
   fi
   sleep 0.25
 done
-echo "console did not become ready on ${SERVICE_HOST}:${SERVICE_PORT}" >&2
+echo "verself-web did not become ready on ${SERVICE_HOST}:${SERVICE_PORT}" >&2
 exit 1
 EOF
 

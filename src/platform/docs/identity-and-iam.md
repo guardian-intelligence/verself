@@ -253,7 +253,7 @@ secrets-service owns token material, verifier storage, roll/revoke semantics,
 and credential audit rows.
 
 Embedded organization widgets are a special cross-service web-session path.
-The console frontend owns the interactive OIDC application and stores the
+The verself-web frontend owns the interactive OIDC application and stores the
 browser session server-side. Before calling `identity-service`, the BFF exchanges
 the session access token for an identity-service audience token and forwards that
 resource token. `identity-service` validates the JWT locally and reads only
@@ -283,7 +283,7 @@ authorization.
 
 This rule is enforced at the edge by a Content-Security-Policy header with
 `connect-src 'self'` applied to every customer-facing frontend domain
-(`console_domain`, `stalwart_domain`). The policy lives
+(`verself_domain`, `stalwart_domain`). The policy lives
 in the `frontend_security_headers` snippet in
 `src/platform/ansible/roles/caddy/templates/Caddyfile.j2`. Because `connect-src`
 is restricted to the frontend's own origin, the browser cannot issue `fetch`,

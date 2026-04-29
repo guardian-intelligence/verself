@@ -11,7 +11,7 @@ artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_SMOKE_ARTIFACT_ROOT}
 artifact_dir="${artifact_root}/${run_id}"
 browser_log_path="${artifact_dir}/browser.log"
 mkdir -p "${artifact_dir}/clickhouse"
-platform_app_dir="${VERIFICATION_REPO_ROOT}/src/viteplus-monorepo/apps/platform"
+verself_web_app_dir="${VERIFICATION_REPO_ROOT}/src/viteplus-monorepo/apps/verself-web"
 
 window_start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 temporal_host="temporal.${VERIFICATION_DOMAIN}"
@@ -23,7 +23,7 @@ temporal_sandbox_namespace="sandbox-rental-service"
 temporal_billing_namespace="billing-service"
 persona_env="${artifact_dir}/platform-admin.env"
 persona_metadata_path="${artifact_dir}/platform-admin.json"
-browser_script_path="$(mktemp "${platform_app_dir}/.temporal-web-smoke-test-XXXXXX.mjs")"
+browser_script_path="$(mktemp "${verself_web_app_dir}/.temporal-web-smoke-test-XXXXXX.mjs")"
 
 cleanup() {
   rm -f "${browser_script_path}"
@@ -382,7 +382,7 @@ env \
   bash -lc '
     cd "$1"
     vp exec node "$TEMPORAL_BROWSER_SCRIPT"
-  ' bash "${platform_app_dir}" >"${browser_log_path}" 2>&1
+  ' bash "${verself_web_app_dir}" >"${browser_log_path}" 2>&1
 browser_status=$?
 set -e
 

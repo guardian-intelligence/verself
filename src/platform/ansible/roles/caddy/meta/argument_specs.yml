@@ -56,15 +56,10 @@ argument_specs:
         required: true
         description: "Public API domain for mailbox-service."
 
-      console_domain:
+      verself_domain:
         type: str
         required: true
-        description: "Public domain for the authenticated product console."
-
-      platform_domain:
-        type: str
-        required: true
-        description: "Public product apex domain for docs, reference, and policy."
+        description: "Public product apex domain for the verself-web app (console + docs + policy)."
 
       company_domain:
         type: str
@@ -75,11 +70,6 @@ argument_specs:
         type: str
         required: true
         description: "Public domain for the Grafana dashboard."
-
-      temporal_web_domain:
-        type: str
-        required: true
-        description: "Public domain for the Temporal operator web UI."
 
       forgejo_domain:
         type: str

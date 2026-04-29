@@ -11,7 +11,7 @@ artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_SMOKE_ARTIFACT_ROOT}
 artifact_dir="${artifact_root}/${run_id}"
 run_json_path="${artifact_dir}/run.json"
 profile_log_path="${artifact_dir}/profile-ui.log"
-base_url="${TEST_BASE_URL:-https://console.${VERIFICATION_DOMAIN}}"
+base_url="${TEST_BASE_URL:-https://${VERIFICATION_DOMAIN}}"
 mkdir -p "${artifact_dir}/clickhouse" "${artifact_dir}/postgres" "${artifact_dir}/responses"
 
 suffix="$(python3 - "${run_id}" <<'PY'
@@ -148,7 +148,7 @@ wait_for_clickhouse_count() {
 }
 
 verification_print_artifacts "${artifact_dir}" "${profile_log_path}" "${run_json_path}"
-verification_wait_for_http "console UI" "${base_url}" "200"
+verification_wait_for_http "verself-web UI" "${base_url}" "200"
 
 # shellcheck disable=SC1090
 source <("${script_dir}/assume-persona.sh" acme-admin --print)
@@ -212,7 +212,7 @@ env \
     vp exec playwright test e2e/profile.live.spec.ts \
       --project=chromium \
       --output "$2"
-  ' bash "${VERIFICATION_REPO_ROOT}/src/viteplus-monorepo/apps/console" "${artifact_dir}/playwright-results" \
+  ' bash "${VERIFICATION_REPO_ROOT}/src/viteplus-monorepo/apps/verself-web" "${artifact_dir}/playwright-results" \
   >"${profile_log_path}" 2>&1
 profile_status=$?
 set -e
@@ -353,7 +353,7 @@ wait_for_clickhouse_count default "
       SELECT count()
       FROM otel_traces
       WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
-        AND ServiceName IN ('profile-service', 'identity-service', 'console')
+        AND ServiceName IN ('profile-service', 'identity-service', 'verself-web')
         AND (
           position(toString(SpanAttributes), {expected_given:String}) > 0
           OR position(toString(SpanAttributes), {expected_display:String}) > 0
@@ -376,7 +376,7 @@ fi
       SELECT Timestamp, ServiceName, SpanName, StatusCode, arrayElement(SpanAttributes, 'profile.outcome') AS profile_outcome, arrayElement(SpanAttributes, 'identity.outcome') AS identity_outcome
       FROM otel_traces
       WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
-        AND ServiceName IN ('profile-service', 'identity-service', 'console')
+        AND ServiceName IN ('profile-service', 'identity-service', 'verself-web')
       ORDER BY Timestamp
       FORMAT TSVWithNames
     "

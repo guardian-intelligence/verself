@@ -6,7 +6,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${script_dir}/lib/verification-context.sh"
 verification_context_init "${BASH_SOURCE[0]}"
 
-kind="${VERIFICATION_KIND:-console-ui-smoke}"
+kind="${VERIFICATION_KIND:-verself-web-ui-smoke}"
 run_id="${VERIFICATION_RUN_ID:-${kind}-$(date -u +%Y%m%dT%H%M%SZ)}"
 base_url="${TEST_BASE_URL:-}"
 artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_SMOKE_ARTIFACT_ROOT}/${kind}}"
@@ -50,7 +50,7 @@ mkdir -p "${artifact_dir}"
 verification_print_artifacts "${artifact_dir}" "${smoke_log_path}" "${run_json_path}"
 started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-verification_wait_for_http "console UI" "${base_url}" "200"
+verification_wait_for_http "verself-web UI" "${base_url}" "200"
 
 ceo_password="$(
   verification_remote_sudo_cat /etc/credstore/seed-system/ceo-password
@@ -73,7 +73,7 @@ env \
       --project=chromium \
       --grep "authenticated shell" \
       --output "$2"
-  ' bash "${VERIFICATION_REPO_ROOT}/src/viteplus-monorepo/apps/console" "${artifact_dir}/playwright-results" \
+  ' bash "${VERIFICATION_REPO_ROOT}/src/viteplus-monorepo/apps/verself-web" "${artifact_dir}/playwright-results" \
   >"${smoke_log_path}" 2>&1
 smoke_status=$?
 set -e
@@ -99,7 +99,7 @@ if [[ "${smoke_status}" -eq 0 ]]; then
     FROM otel_traces
     WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String})
       AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
-      AND ServiceName = 'console'
+      AND ServiceName = 'verself-web'
       AND SpanName = 'auth.organization.switch'
       AND arrayElement(SpanAttributes, 'auth.previous_org_id') != ''
       AND arrayElement(SpanAttributes, 'auth.selected_org_id') != ''
@@ -111,7 +111,7 @@ if [[ "${smoke_status}" -eq 0 ]]; then
     FROM otel_traces
     WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String})
       AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
-      AND ServiceName = 'console'
+      AND ServiceName = 'verself-web'
       AND SpanName = 'auth.resource_token.exchange'
       AND arrayElement(SpanAttributes, 'auth.selected_org_id') != ''
       AND arrayElement(SpanAttributes, 'auth.audience') != ''

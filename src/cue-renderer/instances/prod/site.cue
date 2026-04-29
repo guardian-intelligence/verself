@@ -11,13 +11,10 @@ package topology
 // of the form `{{ verself_domain }}` are resolved at Ansible runtime;
 // the source file that declared the value does not matter to consumers.
 config: ansible_vars: {
-	// Public domains.
-	verself_domain:  "verself.sh"
-	platform_domain: "{{ verself_domain }}"
-	company_domain:  "guardianintelligence.org"
-
-	console_subdomain: "console"
-	console_domain:    "{{ console_subdomain }}.{{ verself_domain }}"
+	// Public domains. The verself-web app (docs + console + policy) lives at
+	// the verself.sh root; there is no separate console subdomain.
+	verself_domain: "verself.sh"
+	company_domain: "guardianintelligence.org"
 
 	billing_service_subdomain: "billing.api"
 	billing_service_domain:    "{{ billing_service_subdomain }}.{{ verself_domain }}"
@@ -62,9 +59,6 @@ config: ansible_vars: {
 
 	stalwart_subdomain: "mail"
 	stalwart_domain:    "{{ stalwart_subdomain }}.{{ verself_domain }}"
-
-	temporal_web_subdomain: "temporal"
-	temporal_web_domain:    "{{ temporal_web_subdomain }}.{{ verself_domain }}"
 
 	// Fixed organization identities for this site. The platform org is the
 	// dogfooding tenant; the acme org is the canonical fixture customer.

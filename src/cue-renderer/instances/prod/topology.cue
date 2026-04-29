@@ -209,19 +209,6 @@ topology: s.#Topology & {
 			interfaces: operator_ui: {kind: "frontend_http", endpoint: "http", auth: "operator"}
 			postgres: {database: "grafana", owner: "grafana", connection_limit: 10}
 		}
-		temporal_web: #DefaultSPIFFEIdentity & {
-			kind: "protocol_backend"
-			host: "127.0.0.1"
-			runtime: {systemd: "temporal-web", user: "temporal_web", group: "temporal_web"}
-			identities: default: {ansible_var: "spire_temporal_web_id", path: "/svc/temporal-web", entry_id: "verself-temporal-web"}
-			artifact: {kind: "go_binary", package: "./src/temporal-platform/cmd/verself-temporal-web", output: "verself-temporal-web", role: "temporal", bazel_label: "//src/temporal-platform/cmd/verself-temporal-web:verself-temporal-web"}
-			endpoints: http: {
-				protocol: "http"
-				port:     4301
-				exposure: "loopback"
-			}
-			interfaces: operator_ui: {kind: "frontend_http", endpoint: "http", auth: "operator", probes: #ServiceProbes}
-		}
 		verdaccio: {
 			kind: "resource"
 			host: "127.0.0.1"
@@ -470,9 +457,9 @@ topology: s.#Topology & {
 				password_ref: {kind: "secret_ref", expose_as: "postgres_password"}
 			}
 		}
-		console: #Frontend & {
-			artifact: {package: "src/viteplus-monorepo/apps/console", output: "console", role: "console"}
-			runtime: {systemd: "console", user: "console", group: "console"}
+		verself_web: #Frontend & {
+			artifact: {package: "src/viteplus-monorepo/apps/verself-web", output: "verself-web", role: "verself_web"}
+			runtime: {systemd: "verself-web", user: "verself-web", group: "verself-web"}
 			endpoints: http: port: 4244
 			postgres: {database: "frontend_auth", owner: "frontend_auth", connection_limit: 15}
 		}
@@ -720,11 +707,6 @@ topology: s.#Topology & {
 				extra_systemd_after: ["notifications-service.service"]
 			}
 		}
-		platform: #Frontend & {
-			artifact: {package: "src/viteplus-monorepo/apps/platform", output: "platform", role: "platform"}
-			runtime: {systemd: "platform", user: "platform", group: "platform"}
-			endpoints: http: port: 4249
-		}
 		company: #Frontend & {
 			artifact: {package: "src/viteplus-monorepo/apps/company", output: "company", role: "company"}
 			runtime: {systemd: "company", user: "company", group: "company"}
@@ -747,9 +729,8 @@ topology: s.#Topology & {
 	}
 
 	routes: [
-		{kind: "browser_origin", gateway: "public_caddy", host: "@", to: {component: "platform", interface: "frontend"}, waf: "detection", browser_cors: "same_origin"},
+		{kind: "browser_origin", gateway: "public_caddy", host: "@", to: {component: "verself_web", interface: "frontend"}, waf: "detection", browser_cors: "same_origin"},
 		{kind: "browser_origin", gateway: "public_caddy", zone: "company", host: "@", to: {component: "company", interface: "frontend"}, waf: "detection", browser_cors: "same_origin"},
-		{kind: "browser_origin", gateway: "public_caddy", host: "console", to: {component: "console", interface: "frontend"}, waf: "detection", browser_cors: "same_origin"},
 		{kind: "public_api_origin", gateway: "public_caddy", host: "billing.api", path_prefix: "/api/v1", to: {component: "billing", interface: "public_api"}, waf: "blocking", max_body_bytes: 1048576, browser_cors: "none"},
 		{kind: "public_api_origin", gateway: "public_caddy", host: "sandbox.api", path_prefix: "/api/v1", to: {component: "sandbox_rental", interface: "public_api"}, waf: "blocking", max_body_bytes: 1048576, browser_cors: "none"},
 		{kind: "public_api_origin", gateway: "public_caddy", host: "identity.api", path_prefix: "/api/v1", to: {component: "identity_service", interface: "public_api"}, waf: "blocking", max_body_bytes: 1048576, browser_cors: "none"},
@@ -761,7 +742,6 @@ topology: s.#Topology & {
 		{kind: "public_api_origin", gateway: "public_caddy", host: "secrets.api", path_prefix: "/api/v1", to: {component: "secrets_service", interface: "public_api"}, waf: "blocking", max_body_bytes: 1048576, browser_cors: "none"},
 		{kind: "public_api_origin", gateway: "public_caddy", host: "mail.api", path_prefix: "/api/v1", to: {component: "mailbox_service", interface: "public_api"}, waf: "blocking", max_body_bytes: 1048576, browser_cors: "none"},
 		{kind: "operator_origin", gateway: "public_caddy", host: "dashboard", to: {component: "grafana", interface: "operator_ui"}, waf: "detection", browser_cors: "not_browser_reachable"},
-		{kind: "operator_origin", gateway: "public_caddy", host: "temporal", to: {component: "temporal_web", interface: "operator_ui"}, waf: "detection", browser_cors: "not_browser_reachable"},
 		{kind: "protocol_origin", gateway: "public_caddy", host: "git", to: {component: "source_code_hosting_service", interface: "git_smart_http"}, waf: "detection", max_body_bytes: 1048576},
 		{kind: "protocol_origin", gateway: "public_caddy", host: "auth", to: {component: "zitadel", interface: "oidc"}, waf: "detection"},
 		{kind: "protocol_origin", gateway: "public_caddy", host: "mail", to: {component: "stalwart", interface: "jmap"}, waf: "detection"},
@@ -771,13 +751,13 @@ topology: s.#Topology & {
 	]
 
 	edges: [
-		{from: "console", to: {component: "billing", interface: "public_api"}, auth: "zitadel_jwt", purpose: "server_functions"},
-		{from: "console", to: {component: "sandbox_rental", interface: "public_api"}, auth: "zitadel_jwt", purpose: "server_functions"},
-		{from: "console", to: {component: "identity_service", interface: "public_api"}, auth: "zitadel_jwt", purpose: "server_functions"},
-		{from: "console", to: {component: "profile_service", interface: "public_api"}, auth: "zitadel_jwt", purpose: "server_functions"},
-		{from: "console", to: {component: "notifications_service", interface: "public_api"}, auth: "zitadel_jwt", purpose: "server_functions"},
-		{from: "console", to: {component: "projects_service", interface: "public_api"}, auth: "zitadel_jwt", purpose: "server_functions"},
-		{from: "console", to: {component: "source_code_hosting_service", interface: "public_api"}, auth: "zitadel_jwt", purpose: "server_functions"},
+		{from: "verself_web", to: {component: "billing", interface: "public_api"}, auth: "zitadel_jwt", purpose: "server_functions"},
+		{from: "verself_web", to: {component: "sandbox_rental", interface: "public_api"}, auth: "zitadel_jwt", purpose: "server_functions"},
+		{from: "verself_web", to: {component: "identity_service", interface: "public_api"}, auth: "zitadel_jwt", purpose: "server_functions"},
+		{from: "verself_web", to: {component: "profile_service", interface: "public_api"}, auth: "zitadel_jwt", purpose: "server_functions"},
+		{from: "verself_web", to: {component: "notifications_service", interface: "public_api"}, auth: "zitadel_jwt", purpose: "server_functions"},
+		{from: "verself_web", to: {component: "projects_service", interface: "public_api"}, auth: "zitadel_jwt", purpose: "server_functions"},
+		{from: "verself_web", to: {component: "source_code_hosting_service", interface: "public_api"}, auth: "zitadel_jwt", purpose: "server_functions"},
 		{from: "sandbox_rental", to: {component: "billing", interface: "internal_api"}, auth: "spiffe_mtls", purpose: "metering_and_entitlements"},
 		{from: "sandbox_rental", to: {component: "governance_service", interface: "internal_api"}, auth: "spiffe_mtls", purpose: "audit"},
 		{from: "sandbox_rental", to: {component: "secrets_service", interface: "internal_api"}, auth: "spiffe_mtls", purpose: "secret_injection"},

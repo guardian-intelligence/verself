@@ -25,11 +25,11 @@ topology: {
 			component: "company"
 			input: [{kind: "drop_non_loopback", endpoints: [{component: "company", endpoint: "http"}]}]
 		}
-		console: {
-			target:    "/etc/nftables.d/console.nft"
-			table:     "verself_console"
-			component: "console"
-			input: [{kind: "drop_non_loopback", endpoints: [{component: "console", endpoint: "http"}]}]
+		verself_web: {
+			target:    "/etc/nftables.d/verself-web.nft"
+			table:     "verself_web"
+			component: "verself_web"
+			input: [{kind: "drop_non_loopback", endpoints: [{component: "verself_web", endpoint: "http"}]}]
 		}
 		electric: {
 			target:    topology.components.electric.electric.nftables_file
@@ -184,12 +184,6 @@ topology: {
 					{kind: "accept_loopback_endpoints", endpoints: [{component: "spire_bundle_endpoint", endpoint: "bundle"}]},
 				]
 			}
-		}
-		platform: {
-			target:    "/etc/nftables.d/platform.nft"
-			table:     "verself_platform"
-			component: "platform"
-			input: [{kind: "drop_non_loopback", endpoints: [{component: "platform", endpoint: "http"}]}]
 		}
 		profile_service: {
 			target:    "/etc/nftables.d/profile-service.nft"

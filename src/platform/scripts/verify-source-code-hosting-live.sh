@@ -15,7 +15,7 @@ source_api_base_url="${SOURCE_CODE_HOSTING_SMOKE_TEST_BASE_URL:-https://source.a
 source_api_base_url="${source_api_base_url%/}"
 projects_api_base_url="${PROJECTS_SMOKE_TEST_BASE_URL:-https://projects.api.${VERIFICATION_DOMAIN}}"
 projects_api_base_url="${projects_api_base_url%/}"
-console_base_url="${TEST_BASE_URL:-https://console.${VERIFICATION_DOMAIN}}"
+verself_web_base_url="${TEST_BASE_URL:-https://${VERIFICATION_DOMAIN}}"
 git_origin="${SOURCE_CODE_HOSTING_SMOKE_TEST_GIT_ORIGIN:-https://git.${VERIFICATION_DOMAIN}}"
 git_origin="${git_origin%/}"
 clickhouse_timeout_seconds="${SOURCE_CODE_HOSTING_SMOKE_TEST_CLICKHOUSE_TIMEOUT_SECONDS:-180}"
@@ -208,7 +208,7 @@ verification_print_artifacts "${artifact_dir}" "${builds_log_path}" "${run_json_
 verification_wait_for_loopback_api "source-code-hosting-service" "http://127.0.0.1:4261/readyz" "200"
 verification_wait_for_http "source API auth boundary" "${source_api_base_url}/api/v1/repos" "401"
 verification_wait_for_http "git origin is headless" "${git_origin}/" "404"
-verification_wait_for_http "console UI" "${console_base_url}" "200"
+verification_wait_for_http "verself-web UI" "${verself_web_base_url}" "200"
 
 # shellcheck disable=SC1090
 source <("${script_dir}/assume-persona.sh" acme-admin --print)
@@ -221,8 +221,8 @@ set +e
 env \
   VERIFICATION_RUN_ID="${run_id}" \
   VERIFICATION_RUN_JSON_PATH="${run_json_path}" \
-  BASE_URL="${console_base_url}" \
-  TEST_BASE_URL="${console_base_url}" \
+  BASE_URL="${verself_web_base_url}" \
+  TEST_BASE_URL="${verself_web_base_url}" \
   VERSELF_DOMAIN="${VERIFICATION_DOMAIN}" \
   ZITADEL_BASE_URL="https://auth.${VERIFICATION_DOMAIN}" \
   TEST_EMAIL="${TEST_EMAIL}" \
@@ -232,7 +232,7 @@ env \
     vp exec playwright test e2e/builds.live.spec.ts \
       --project=chromium \
       --output "$2"
-  ' bash "${VERIFICATION_REPO_ROOT}/src/viteplus-monorepo/apps/console" "${artifact_dir}/playwright-results" \
+  ' bash "${VERIFICATION_REPO_ROOT}/src/viteplus-monorepo/apps/verself-web" "${artifact_dir}/playwright-results" \
   >"${builds_log_path}" 2>&1
 builds_status=$?
 set -e
@@ -1289,9 +1289,9 @@ wait_for_clickhouse_count default "
   SELECT count()
   FROM otel_traces
   WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
-    AND ServiceName = 'console'
+    AND ServiceName = 'verself-web'
     AND SpanName <> ''
-" 1 "${artifact_dir}/clickhouse/console-builds-ui-spans-count.tsv"
+" 1 "${artifact_dir}/clickhouse/verself-web-builds-ui-spans-count.tsv"
 
 (
   cd "${VERIFICATION_PLATFORM_ROOT}"
@@ -1363,7 +1363,7 @@ fi
         arrayElement(SpanAttributes, 'source.git_service') AS git_service
       FROM otel_traces
       WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String}) + INTERVAL 45 SECOND
-        AND ServiceName IN ('source-code-hosting-service', 'console')
+        AND ServiceName IN ('source-code-hosting-service', 'verself-web')
       ORDER BY Timestamp
       FORMAT TSVWithNames
     "

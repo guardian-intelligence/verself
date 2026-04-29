@@ -11,8 +11,8 @@ if [[ "${1:-}" == "--print-env" ]]; then
   print_env_only=1
 fi
 
-state_file="${CONSOLE_DEV_STATE_FILE:-/tmp/verself-console-dev.env}"
-remote_env_path="${CONSOLE_DEV_REMOTE_ENV_PATH:-/etc/console/env}"
+state_file="${VERSELF_WEB_DEV_STATE_FILE:-/tmp/verself-web-dev.env}"
+remote_env_path="${VERSELF_WEB_DEV_REMOTE_ENV_PATH:-/etc/verself-web/env}"
 control_dir="$(mktemp -d)"
 control_socket="${control_dir}/ssh-control"
 state_file_tmp="$(mktemp "${state_file}.XXXXXX")"
@@ -100,7 +100,7 @@ fetch_dev_client_id() {
     curl -fsS \
       -H "Authorization: Bearer ${admin_pat}" \
       -H "Content-Type: application/json" \
-      -d '{"queries":[{"nameQuery":{"name":"console-dev","method":"TEXT_QUERY_METHOD_EQUALS"}}]}' \
+      -d '{"queries":[{"nameQuery":{"name":"verself-web-dev","method":"TEXT_QUERY_METHOD_EQUALS"}}]}' \
       "https://auth.${VERIFICATION_DOMAIN}/management/v1/projects/${auth_project_id}/apps/_search"
   )"
 
@@ -197,8 +197,8 @@ export PROFILE_SERVICE_AUTH_AUDIENCE="${PROFILE_SERVICE_AUTH_AUDIENCE:-${IDENTIT
 export GOVERNANCE_SERVICE_BASE_URL="${GOVERNANCE_SERVICE_BASE_URL:-http://127.0.0.1:${local_governance_port}}"
 export ELECTRIC_URL="${ELECTRIC_URL:-http://127.0.0.1:${local_electric_port}}"
 export OTEL_EXPORTER_OTLP_ENDPOINT="${OTEL_EXPORTER_OTLP_ENDPOINT:-http://127.0.0.1:${local_otel_http_port}}"
-export OTEL_SERVICE_NAME="${OTEL_SERVICE_NAME:-console}"
-export CONSOLE_DEV_LOCAL_APP_PORT="${local_app_port}"
+export OTEL_SERVICE_NAME="${OTEL_SERVICE_NAME:-verself-web}"
+export VERSELF_WEB_DEV_LOCAL_APP_PORT="${local_app_port}"
 export BASE_URL="${BASE_URL:-http://127.0.0.1:${local_app_port}}"
 
 cat >"${state_file_tmp}" <<EOF
@@ -228,7 +228,7 @@ if [[ "${print_env_only}" != "1" ]]; then
 fi
 
 cat >&2 <<EOF
-console local dev
+verself-web local dev
   app:       ${BASE_URL}
   auth:      https://auth.${VERSELF_DOMAIN}
   pg tunnel: 127.0.0.1:${local_pg_port}
@@ -243,9 +243,9 @@ EOF
 
 if [[ "${print_env_only}" == "1" ]]; then
   cat "${state_file_tmp}"
-  printf '%s\n' "vp run @verself/console#dev"
+  printf '%s\n' "vp run @verself/verself-web#dev"
   exit 0
 fi
 
 cd "${VERIFICATION_REPO_ROOT}/src/viteplus-monorepo"
-vp run @verself/console#dev
+vp run @verself/verself-web#dev

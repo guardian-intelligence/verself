@@ -17,7 +17,7 @@ deploy() {
     ui)
       (
         cd "${VERIFICATION_PLATFORM_ROOT}/ansible"
-        ansible-playbook -i "${VERIFICATION_INVENTORY_DIR}" playbooks/site.yml --tags console
+        ansible-playbook -i "${VERIFICATION_INVENTORY_DIR}" playbooks/site.yml --tags verself_web
       )
       ;;
     service)
@@ -30,7 +30,7 @@ deploy() {
       (
         cd "${VERIFICATION_PLATFORM_ROOT}/ansible"
         ansible-playbook -i "${VERIFICATION_INVENTORY_DIR}" playbooks/site.yml \
-          --tags deploy_profile,sandbox_rental_service,console
+          --tags deploy_profile,sandbox_rental_service,verself_web
       )
       ;;
     *)
