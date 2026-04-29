@@ -6,3 +6,9 @@ js_binary(
     name = "openapi_postprocess",
     entry_point = "openapi-postprocess.mjs",
 )
+
+js_binary(
+    name = "bundle_instrumentation",
+    data = ["//src/viteplus-monorepo:node_modules/rolldown"],
+    entry_point = "bundle-instrumentation.mjs",
+)
