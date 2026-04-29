@@ -57,32 +57,35 @@ func NewVolumeLifecycle(roots Roots, ops PrivZFS, logger *slog.Logger) *VolumeLi
 	return &VolumeLifecycle{roots: roots, ops: ops, logger: logger}
 }
 
-// PrepareLeaseRoot asserts boot.Snapshot() exists and clones it into
-// lease.RootDataset(). The boot image is the same composable Image type
-// every other mount uses; the daemon's default is configured in
-// Config.DefaultBootImageRef and resolved by the caller. On error the
-// dataset is not created and the caller has nothing to roll back.
-func (vl *VolumeLifecycle) PrepareLeaseRoot(ctx context.Context, lease Lease, boot Image) error {
-	bootSnap := boot.Snapshot()
+// PrepareSubstrateClone asserts substrate.Snapshot() exists and clones it
+// into lease.RootDataset(). The substrate is the slim boot image every
+// lease starts from (kernel + minimal Ubuntu + vm-bridge as PID 1); the
+// daemon's default is configured in Config.DefaultSubstrateRef and
+// resolved by the caller. Toolchain images and customer images are
+// composed on top via LeaseSpec.FilesystemMounts and PrepareMount, not
+// folded into the lease root. On error the dataset is not created and
+// the caller has nothing to roll back.
+func (vl *VolumeLifecycle) PrepareSubstrateClone(ctx context.Context, lease Lease, substrate Image) error {
+	bootSnap := substrate.Snapshot()
 	target := lease.RootDataset()
 
 	checkCtx, endCheck := startSpan(ctx, "vmorchestrator.zfs.snapshot_check",
 		attribute.String("lease.id", lease.ID()),
-		attribute.String("image.ref", boot.SourceRef()),
+		attribute.String("image.ref", substrate.SourceRef()),
 		attribute.String("zfs.snapshot", bootSnap.String()),
 	)
 	exists, err := vl.ops.ZFSSnapshotExists(checkCtx, bootSnap.String())
 	endCheck(err)
 	if err != nil {
-		return fmt.Errorf("check boot snapshot: %w", err)
+		return fmt.Errorf("check substrate snapshot: %w", err)
 	}
 	if !exists {
-		return fmt.Errorf("boot snapshot %s does not exist", bootSnap)
+		return fmt.Errorf("substrate snapshot %s does not exist", bootSnap)
 	}
 
 	cloneCtx, endClone := startSpan(ctx, "vmorchestrator.zfs.clone",
 		attribute.String("lease.id", lease.ID()),
-		attribute.String("image.ref", boot.SourceRef()),
+		attribute.String("image.ref", substrate.SourceRef()),
 		attribute.String("zfs.snapshot", bootSnap.String()),
 		attribute.String("zfs.dataset", target),
 	)

@@ -131,8 +131,8 @@ func NewAPIServer(cfg Config, logger *slog.Logger) (*APIServer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open host state ledger %s: %w", base.StateDBPath, err)
 	}
-	if base.DefaultBootImageRef == "" {
-		base.DefaultBootImageRef = "substrate"
+	if base.DefaultSubstrateRef == "" {
+		base.DefaultSubstrateRef = "substrate"
 	}
 	server := &APIServer{
 		cfg: base,
@@ -708,8 +708,8 @@ func (s *APIServer) GetCapacity(ctx context.Context, _ *vmrpc.GetCapacityRequest
 		available = total - leasesHeld
 	}
 	var rootfsBytes uint64
-	if bootImage, bootErr := zfs.NewImage(s.roots, s.cfg.DefaultBootImageRef); bootErr == nil {
-		if size, sizeErr := zfs.Volsize(ctx, bootImage.Dataset()); sizeErr == nil {
+	if substrate, bootErr := zfs.NewImage(s.roots, s.cfg.DefaultSubstrateRef); bootErr == nil {
+		if size, sizeErr := zfs.Volsize(ctx, substrate.Dataset()); sizeErr == nil {
 			rootfsBytes = size
 		}
 	}

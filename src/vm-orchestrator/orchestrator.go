@@ -35,22 +35,22 @@ const (
 )
 
 type Config struct {
-	Pool                 string
-	ImageDataset         string
-	WorkloadDataset      string
-	DefaultBootImageRef  string
-	KernelPath           string
-	FirecrackerBin       string
-	JailerBin            string
-	JailerRoot           string
-	JailerUID            int
-	JailerGID            int
-	Bounds               apiwire.VMResourceBounds
-	HostInterface        string
-	GuestPoolCIDR        string
-	StateDBPath          string
-	HostServiceIP        string
-	HostServicePort      int
+	Pool                string
+	ImageDataset        string
+	WorkloadDataset     string
+	DefaultSubstrateRef string
+	KernelPath          string
+	FirecrackerBin      string
+	JailerBin           string
+	JailerRoot          string
+	JailerUID           int
+	JailerGID           int
+	Bounds              apiwire.VMResourceBounds
+	HostInterface       string
+	GuestPoolCIDR       string
+	StateDBPath         string
+	HostServiceIP       string
+	HostServicePort     int
 
 	// Host-side deterministic telemetry faults are verification-only and must
 	// be empty in normal service operation.
@@ -62,7 +62,7 @@ func DefaultConfig() Config {
 		Pool:                "vspool",
 		ImageDataset:        "images",
 		WorkloadDataset:     "workloads",
-		DefaultBootImageRef: "substrate",
+		DefaultSubstrateRef: "substrate",
 		KernelPath:          "/var/lib/verself/guest-images/vmlinux",
 		FirecrackerBin:      "/usr/local/bin/firecracker",
 		JailerBin:           "/usr/local/bin/jailer",
@@ -235,8 +235,8 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) *Orchestrator {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	if base.DefaultBootImageRef == "" {
-		base.DefaultBootImageRef = "substrate"
+	if base.DefaultSubstrateRef == "" {
+		base.DefaultSubstrateRef = "substrate"
 	}
 	o := &Orchestrator{cfg: base, logger: logger, ops: DirectPrivOps{}}
 	o.roots = zfs.Roots{
@@ -391,12 +391,12 @@ func (o *Orchestrator) BootLease(ctx context.Context, leaseID string, spec Lease
 		err = fmt.Errorf("lease ref: %w", leaseRefErr)
 		return nil, err
 	}
-	bootImage, bootErr := zfs.NewImage(o.roots, o.cfg.DefaultBootImageRef)
+	substrate, bootErr := zfs.NewImage(o.roots, o.cfg.DefaultSubstrateRef)
 	if bootErr != nil {
-		err = fmt.Errorf("boot image ref: %w", bootErr)
+		err = fmt.Errorf("substrate image ref: %w", bootErr)
 		return nil, err
 	}
-	if prepErr := o.volumes.PrepareLeaseRoot(ctx, lease, bootImage); prepErr != nil {
+	if prepErr := o.volumes.PrepareSubstrateClone(ctx, lease, substrate); prepErr != nil {
 		err = prepErr
 		return nil, err
 	}

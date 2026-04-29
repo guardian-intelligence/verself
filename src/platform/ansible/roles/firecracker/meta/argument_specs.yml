@@ -25,10 +25,10 @@ argument_specs:
         default: workloads
         description: "ZFS dataset under firecracker_zfs_pool for ephemeral VM job clones."
 
-      firecracker_default_boot_image_ref:
+      firecracker_default_substrate_ref:
         type: str
         default: substrate
-        description: "Composable image ref the daemon clones as the boot disk for new leases."
+        description: "Composable image ref the daemon clones as the substrate root disk for new leases. Toolchain images compose on top via LeaseSpec.FilesystemMounts."
 
       firecracker_jailer_root:
         type: path

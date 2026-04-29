@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -66,7 +68,7 @@ func (s *agentSession) applyEtcOverlay(imageName, mountPath string) error {
 	}
 
 	if s.etcOverlayApplied == nil {
-		s.etcOverlayApplied = map[string]string{}
+		s.etcOverlayApplied = map[string]etcOverlayEntry{}
 	}
 
 	walkErr := filepath.Walk(overlayRoot, func(path string, fi os.FileInfo, err error) error {
@@ -87,13 +89,26 @@ func (s *agentSession) applyEtcOverlay(imageName, mountPath string) error {
 			}
 			return nil
 		}
+		digest, err := overlayFileDigest(path)
+		if err != nil {
+			return err
+		}
 		if prior, ok := s.etcOverlayApplied[rel]; ok {
-			return fmt.Errorf("etc-overlay collision: %s also written by %s", rel, prior)
+			if prior.sha256 == digest {
+				// Same bytes from a second image (typically because
+				// both toolchains pulled this file from the shared
+				// runner-overlay-common filegroup). Skip the rewrite;
+				// re-recording the entry as the second image would
+				// erase the chronological "first writer wins" trail.
+				return nil
+			}
+			return fmt.Errorf("etc-overlay collision: %s previously written by %s with digest %s; %s wants to overwrite with digest %s",
+				rel, prior.imageName, prior.sha256, imageName, digest)
 		}
 		if err := overlayCopyFile(path, dest, fi.Mode().Perm()); err != nil {
 			return err
 		}
-		s.etcOverlayApplied[rel] = imageName
+		s.etcOverlayApplied[rel] = etcOverlayEntry{imageName: imageName, sha256: digest}
 		return nil
 	})
 	if walkErr != nil {
@@ -203,6 +218,24 @@ func (s *agentSession) applyWritableOverlays(mountPath string) error {
 		return fmt.Errorf("read %s: %w", manifest, err)
 	}
 	return nil
+}
+
+// overlayFileDigest returns the sha256 hex digest of an overlay source
+// file. Used so two toolchain images writing the same /etc/<rel> path
+// with byte-identical content (e.g. both consuming the
+// runner-overlay-common Bazel filegroup) compose cleanly while a true
+// content collision still hard-errors at lease boot.
+func overlayFileDigest(path string) (string, error) {
+	in, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("open %s: %w", path, err)
+	}
+	defer in.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, in); err != nil {
+		return "", fmt.Errorf("digest %s: %w", path, err)
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // overlayCopyFile copies src to dest preserving perms. dest's parent
