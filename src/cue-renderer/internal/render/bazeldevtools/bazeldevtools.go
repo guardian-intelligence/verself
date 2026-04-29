@@ -47,13 +47,13 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 	b.WriteString("load(\"@rules_pkg//pkg:tar.bzl\", \"pkg_tar\")\n")
 	b.WriteString("load(\"@rules_shell//shell:sh_binary.bzl\", \"sh_binary\")\n\n")
 
-	if err := writeTupleList(&b, "TAR_SINGLE_BINARIES", packaging, "tar_single", []string{"name", "repo", "tar_flag", "binary", "dest"}); err != nil {
+	if err := projection.StarlarkRepoTupleList(&b, "TAR_SINGLE_BINARIES", packaging, "devToolPackaging", "tar_single", []string{"name", "repo", "tar_flag", "binary", "dest"}); err != nil {
 		return err
 	}
-	if err := writeTupleList(&b, "ZIP_SINGLE_BINARIES", packaging, "zip_single", []string{"name", "repo", "binary", "dest"}); err != nil {
+	if err := projection.StarlarkRepoTupleList(&b, "ZIP_SINGLE_BINARIES", packaging, "devToolPackaging", "zip_single", []string{"name", "repo", "binary", "dest"}); err != nil {
 		return err
 	}
-	if err := writeTupleList(&b, "ZIP_DIRECTORY_INSTALLS", packaging, "zip_directory", []string{"name", "repo", "src_sub", "dest"}); err != nil {
+	if err := projection.StarlarkRepoTupleList(&b, "ZIP_DIRECTORY_INSTALLS", packaging, "devToolPackaging", "zip_directory", []string{"name", "repo", "src_sub", "dest"}); err != nil {
 		return err
 	}
 	if err := writeTarMultiList(&b, packaging); err != nil {
@@ -62,7 +62,7 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 	if err := writeArchiveDirList(&b, packaging); err != nil {
 		return err
 	}
-	if err := writeTupleList(&b, "RAW_BINARY_SPECS", packaging, "raw", []string{"name", "repo", "dest"}); err != nil {
+	if err := projection.StarlarkRepoTupleList(&b, "RAW_BINARY_SPECS", packaging, "devToolPackaging", "raw", []string{"name", "repo", "dest"}); err != nil {
 		return err
 	}
 
@@ -94,37 +94,12 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 	return out.WriteFile(outputPath, []byte(b.String()))
 }
 
-func writeTupleList(b *strings.Builder, name string, packaging map[string]any, key string, fields []string) error {
-	items, err := mapSlice(packaging, "devToolPackaging", key)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(b, "%s = [\n", name)
-	for _, item := range items {
-		b.WriteString("    (")
-		for i, field := range fields {
-			if i > 0 {
-				b.WriteString(", ")
-			}
-			value, err := projection.String(item, key, field)
-			if err != nil {
-				return err
-			}
-			if field == "repo" {
-				value = "@" + value + "//file"
-			}
-			fmt.Fprintf(b, "%q", value)
-		}
-		b.WriteString("),\n")
-	}
-	b.WriteString("]\n\n")
-	return nil
-}
-
 // writeTarMultiList emits TAR_MULTI_BINARIES rows where the last element
-// is a Starlark list of (member, dest) tuples.
+// is a Starlark list of (member, dest) tuples. Local helper because the
+// shape (mixed string/int columns + nested tuple list) doesn't fit
+// projection.StarlarkRepoTupleList's all-strings contract.
 func writeTarMultiList(b *strings.Builder, packaging map[string]any) error {
-	items, err := mapSlice(packaging, "devToolPackaging", "tar_multi")
+	items, err := projection.MapSlice(packaging, "devToolPackaging", "tar_multi")
 	if err != nil {
 		return err
 	}
@@ -146,7 +121,7 @@ func writeTarMultiList(b *strings.Builder, packaging map[string]any) error {
 		if err != nil {
 			return err
 		}
-		binaries, err := mapSlice(item, "tar_multi", "binaries")
+		binaries, err := projection.MapSlice(item, "tar_multi", "binaries")
 		if err != nil {
 			return err
 		}
@@ -171,10 +146,11 @@ func writeTarMultiList(b *strings.Builder, packaging map[string]any) error {
 	return nil
 }
 
-// writeArchiveDirList is identical in shape to writeTupleList except
-// that strip_components is an int, not a string.
+// writeArchiveDirList emits ARCHIVE_DIRECTORIES rows. Local helper
+// because strip_components is an int column; projection.StarlarkRepoTupleList
+// expects every field to round-trip through projection.String.
 func writeArchiveDirList(b *strings.Builder, packaging map[string]any) error {
-	items, err := mapSlice(packaging, "devToolPackaging", "archive_dir")
+	items, err := projection.MapSlice(packaging, "devToolPackaging", "archive_dir")
 	if err != nil {
 		return err
 	}
@@ -211,7 +187,7 @@ func writeArchiveDirList(b *strings.Builder, packaging map[string]any) error {
 func devToolDeps(packaging map[string]any) ([]string, error) {
 	deps := map[string]struct{}{}
 	for _, key := range []string{"tar_single", "zip_single", "zip_directory", "tar_multi", "archive_dir", "raw"} {
-		items, err := mapSlice(packaging, "devToolPackaging", key)
+		items, err := projection.MapSlice(packaging, "devToolPackaging", key)
 		if err != nil {
 			return nil, err
 		}
@@ -228,26 +204,6 @@ func devToolDeps(packaging map[string]any) ([]string, error) {
 		out = append(out, dep)
 	}
 	sort.Strings(out)
-	return out, nil
-}
-
-func mapSlice(parent map[string]any, path, key string) ([]map[string]any, error) {
-	value, ok := parent[key]
-	if !ok {
-		return nil, fmt.Errorf("%s.%s: missing", path, key)
-	}
-	items, ok := value.([]any)
-	if !ok {
-		return nil, fmt.Errorf("%s.%s: expected list, got %T", path, key, value)
-	}
-	out := make([]map[string]any, 0, len(items))
-	for i, item := range items {
-		m, ok := item.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("%s.%s[%d]: expected map, got %T", path, key, i, item)
-		}
-		out = append(out, m)
-	}
 	return out, nil
 }
 

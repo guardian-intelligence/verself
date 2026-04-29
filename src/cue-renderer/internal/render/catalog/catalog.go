@@ -28,6 +28,7 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 		"topology_versions":              loaded.Catalog.Versions,
 		"topology_server_tools":          loaded.Catalog.ServerTools,
 		"topology_dev_tools":             loaded.Catalog.DevTools,
+		"topology_dev_tools_archive":     loaded.Catalog.DevToolsArchive,
 		"topology_guest_versions":        loaded.Catalog.GuestVersions,
 		"topology_dev_tool_install_plan": installPlan,
 	})

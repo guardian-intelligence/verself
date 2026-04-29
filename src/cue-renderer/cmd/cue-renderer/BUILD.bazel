@@ -45,5 +45,6 @@ go_test(
     deps = [
         "//src/cue-renderer/internal/load",
         "//src/cue-renderer/internal/render",
+        "//src/cue-renderer/internal/render/projection",
     ],
 )
