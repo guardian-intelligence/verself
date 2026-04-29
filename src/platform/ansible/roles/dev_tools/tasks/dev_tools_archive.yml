@@ -32,6 +32,7 @@
     mode: "0755"
 
 - name: Build dev tools archive with Bazel
+  become: false
   ansible.builtin.command:
     argv:
       - "{{ dev_tools_bazelisk }}"
@@ -41,6 +42,7 @@
   changed_when: false
 
 - name: Resolve dev tools archive output path
+  become: false
   ansible.builtin.command:
     argv:
       - "{{ dev_tools_bazelisk }}"
@@ -62,6 +64,7 @@
       Bazel cquery did not resolve exactly one dev_tools.tar.zst output for {{ dev_tools_archive_artifact.bazel_label }}.
 
 - name: Inspect dev tools archive produced by Bazel
+  become: false
   ansible.builtin.stat:
     path: "{{ dev_tools_repo_root }}/{{ dev_tools_bazel_output.stdout | trim }}"
     checksum_algorithm: sha256
@@ -129,6 +132,7 @@
   when: dev_tools_archive_needs_unpack | bool
 
 - name: Emit dev_tools.artifact.publish span
+  become: false
   ansible.builtin.command:
     argv:
       - "{{ dev_tools_bazelisk }}"
@@ -166,8 +170,14 @@
       }}
 
 - name: Run dev tool version checks
+  become: false
+  # Pin PATH to the canonical tarball-managed locations so an older
+  # interpreter shadow on the user's $PATH (e.g. ~/.local/bin/uv from a
+  # pip --user install) cannot be mistaken for the tarball's binary.
   ansible.builtin.command:
     cmd: "{{ item.value.version_cmd }}"
+  environment:
+    PATH: /usr/local/go/bin:/usr/local/bin:/usr/bin:/bin
   loop: "{{ dev_tools_version_check_inputs }}"
   loop_control:
     label: "{{ item.key }}"
@@ -176,6 +186,7 @@
   failed_when: false
 
 - name: Emit dev_tool.version_check spans
+  become: false
   ansible.builtin.command:
     argv:
       - "{{ dev_tools_bazelisk }}"
