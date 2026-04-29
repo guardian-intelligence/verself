@@ -61,8 +61,10 @@ resolve_base_url() {
     printf '%s\n' "${COMPANY_SMOKE_TEST_BASE_URL}"
     return 0
   fi
+  # company_domain is rendered into generated/ops.yml by the cue-renderer; the
+  # operator-editable main.yml does not carry it.
   local domain
-  domain="$(python3 -c 'import yaml, sys; print(yaml.safe_load(open(sys.argv[1]))["company_domain"])' ansible/group_vars/all/main.yml)"
+  domain="$(python3 -c 'import yaml, sys; print(yaml.safe_load(open(sys.argv[1]))["company_domain"])' ansible/group_vars/all/generated/ops.yml)"
   printf 'https://%s\n' "${domain}"
 }
 
