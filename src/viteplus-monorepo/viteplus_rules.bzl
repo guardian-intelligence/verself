@@ -13,7 +13,7 @@ _APP_EXCLUDES = [
 
 _VITEPLUS_WORKSPACE_CONFIG = "//src/viteplus-monorepo:workspace_config"
 _VITEPLUS_TOOL = "//src/viteplus-monorepo:vp"
-_ESBUILD_TOOL = "//src/viteplus-monorepo/scripts:bundle_instrumentation"
+_APP_ENTRY_BUNDLER = "//src/viteplus-monorepo/scripts:bundle_app_entry"
 
 def viteplus_source_package(npm_name, srcs):
     """Links a source-first workspace package into the rules_js npm graph."""
@@ -93,33 +93,40 @@ def viteplus_app(npm_name, srcs):
         tool = _VITEPLUS_TOOL,
     )
 
-    # Bundle the OTel preload as a sibling file so the deploy tarball runs
-    # without a node_modules tree. The preload runs ahead of the server
-    # bundle (Node `--import`), so it cannot live inside `.output/server/`;
-    # the driver runs Rolldown (same bundler `vp build` uses for the server
-    # bundle) over `instrumentation.mts` with `platform=node`, leaving Node
-    # built-ins external and inlining everything else.
+    # Bundle the single app entry (`app-entry.mts` — OTel preload + dynamic
+    # import of the Nitro server bundle) as a sibling file so the deploy
+    # tarball runs without a node_modules tree. systemd runs `node ./app-entry.mjs`
+    # and nothing else; the OTel-preload-then-server ordering lives in JS via
+    # top-level await. The driver runs Rolldown (same bundler `vp build` uses
+    # for the server output) with `platform=node`, leaving Node built-ins
+    # external and inlining everything else.
+    #
+    # The entry is named `app-entry.mts` (not `server.mts`) deliberately —
+    # TanStack Start auto-discovers root-level `server.{ts,mts}` as an SSR
+    # hook and pulls it into the Nitro server bundle, which would defeat the
+    # preload-then-server ordering and trip Nitro's dependency tracer over
+    # OTel's `require-in-the-middle`.
     js_run_binary(
-        name = "instrumentation_bundle",
+        name = "app_entry_bundle",
         srcs = [
             ":node_modules",
-            "instrumentation.mts",
+            "app-entry.mts",
         ],
-        outs = ["instrumentation.mjs"],
+        outs = ["app-entry.mjs"],
         args = [
-            "--entry=instrumentation.mts",
-            "--outfile=instrumentation.mjs",
+            "--entry=app-entry.mts",
+            "--outfile=app-entry.mjs",
         ],
         chdir = native.package_name(),
-        progress_message = "Bundling %s instrumentation preload" % npm_name,
-        tool = _ESBUILD_TOOL,
+        progress_message = "Bundling %s app entry" % npm_name,
+        tool = _APP_ENTRY_BUNDLER,
     )
 
     pkg_tar(
         name = "deploy_bundle",
         srcs = [
             ":output",
-            ":instrumentation_bundle",
+            ":app_entry_bundle",
         ],
         package_dir = ".",
         strip_prefix = ".",

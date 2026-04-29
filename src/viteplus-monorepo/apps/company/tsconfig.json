@@ -10,7 +10,7 @@
   },
   "include": [
     "src",
-    "instrumentation.mts",
+    "app-entry.mts",
     "vite.config.ts",
     "playwright.config.ts",
     "e2e",
