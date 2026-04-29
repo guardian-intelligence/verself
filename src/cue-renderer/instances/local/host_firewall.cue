@@ -8,6 +8,40 @@ import (
 // Host firewall: the default-deny ingress chain that fronts every public
 // service on the bare-metal node. All policy lives here so the renderer
 // can stay a pure projection of typed rules into nftables syntax.
+// Firecracker guest networking: forward + NAT chains that gate
+// every Firecracker guest's egress and block guest-to-guest lateral
+// movement. The uplink interface is resolved by the firecracker
+// Ansible role at deploy time and substituted into the rendered
+// file via the __VERSELF_UPLINK__ placeholder before the nftables
+// reload.
+topology: nftables: firecracker: s.#NftablesFirecrackerChain & {
+	target:     "/etc/nftables.d/firecracker.nft"
+	table:      "verself_firecracker"
+	guest_cidr: config.firecracker.guest_pool_cidr
+	forward: [
+		// Block guest-to-guest lateral movement first so the rest of
+		// the chain only sees egress / return-traffic packets.
+		{kind: "guest_to_guest_drop"},
+		// Block outbound SMTP (port 25) from guests with a
+		// rate-limited log + unconditional drop. nftables `limit` is
+		// a *match*, not a log modifier — combining it with the drop
+		// on one rule would let packets through past the rate cap.
+		{
+			kind:       "rate_limited_log_then_drop"
+			protocol:   "tcp"
+			port:       25
+			log_prefix: "fc-smtp-block: "
+			rate:       "10/minute"
+		},
+		// Guest outbound to internet via uplink.
+		{kind: "guest_egress"},
+		// Stateful return traffic from internet to guests.
+		{kind: "return_traffic"},
+		// Default-deny inbound to the guest pool.
+		{kind: "catch_all_drop"},
+	]
+}
+
 topology: nftables: host: s.#NftablesHostChain & {
 	target: "/etc/nftables.d/host-firewall.nft"
 	table:  "verself_host"

@@ -6,6 +6,7 @@ NFTABLES_RENDERED = [
     ("nftables_conf", "src/platform/ansible/share/rendered/etc/nftables.conf", "rendered/etc/nftables.conf"),
     ("host_firewall", "src/platform/ansible/share/rendered/etc/nftables.d/host-firewall.nft", "rendered/etc/nftables.d/host-firewall.nft"),
     ("verself_firewall_target", "src/platform/ansible/share/rendered/etc/systemd/system/verself-firewall.target", "rendered/etc/systemd/system/verself-firewall.target"),
+    ("firecracker_forward", "src/platform/ansible/share/rendered/etc/nftables.d/firecracker.nft", "rendered/etc/nftables.d/firecracker.nft"),
     ("billing", "src/platform/ansible/share/rendered/etc/nftables.d/billing.nft", "rendered/etc/nftables.d/billing.nft"),
     ("company", "src/platform/ansible/share/rendered/etc/nftables.d/company.nft", "rendered/etc/nftables.d/company.nft"),
     ("console", "src/platform/ansible/share/rendered/etc/nftables.d/console.nft", "rendered/etc/nftables.d/console.nft"),

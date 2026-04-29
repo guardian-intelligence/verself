@@ -194,11 +194,24 @@
     sysctl_file: /etc/sysctl.d/99-verself.conf
     reload: true
 
-- name: Deploy Firecracker nftables ruleset
-  ansible.builtin.template:
-    src: firecracker-network.nft.j2
+# The verself_firecracker FORWARD + POSTROUTING chains are rendered
+# from src/cue-renderer/instances/local/host_firewall.cue:
+# topology.nftables.firecracker. The renderer emits the .nft with a
+# literal __VERSELF_UPLINK__ placeholder; substitute it with the
+# resolved uplink interface before reload so a single source of truth
+# (CUE) owns the rule logic and Ansible owns just the runtime fact.
+- name: Stage rendered Firecracker nftables ruleset
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../share/rendered/etc/nftables.d/firecracker.nft"
     dest: /etc/nftables.d/firecracker.nft
     mode: "0644"
+  notify: restart firecracker networking
+
+- name: Substitute resolved uplink interface into Firecracker ruleset
+  ansible.builtin.replace:
+    path: /etc/nftables.d/firecracker.nft
+    regexp: __VERSELF_UPLINK__
+    replace: "{{ firecracker_resolved_uplink }}"
   notify: restart firecracker networking
 
 - name: Install Firecracker host networking setup script

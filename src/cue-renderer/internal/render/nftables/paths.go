@@ -7,9 +7,10 @@ package nftables
 // (3 static + 22 dynamic per ruleset) without re-deriving paths from the
 // nftables package's render flow.
 const (
-	ConfPath           = "src/platform/ansible/share/rendered/etc/nftables.conf"
-	HostFirewallPath   = "src/platform/ansible/share/rendered/etc/nftables.d/host-firewall.nft"
-	FirewallTargetPath = "src/platform/ansible/share/rendered/etc/systemd/system/verself-firewall.target"
+	ConfPath              = "src/platform/ansible/share/rendered/etc/nftables.conf"
+	HostFirewallPath      = "src/platform/ansible/share/rendered/etc/nftables.d/host-firewall.nft"
+	FirecrackerChainPath  = "src/platform/ansible/share/rendered/etc/nftables.d/firecracker.nft"
+	FirewallTargetPath    = "src/platform/ansible/share/rendered/etc/systemd/system/verself-firewall.target"
 )
 
 // RulesetPath returns the repo-relative output path for a CUE
