@@ -1,7 +1,7 @@
 <repo_overview>
 Set of services + console + marketing page for a software business, almost entirely self-hosted on a single bare metal node.
 
-Most commands should begin with either `aspect` (the typed task surface) or `bazelisk` (raw Bazel-graph access).
+Most commands should begin with either `aspect`. Use regular `bazelisk` for basic build/test.
 
 Canonical layout in `docs/architecture/directory-structure.md`. Read that file directly if exploring the repo.
 
@@ -44,7 +44,6 @@ Boundary components that sit outside the usual service shape:
 Top-level landmarks:
 
 - `.aspect/` — typed task surface. `aspect` (no args) lists every command; `aspect <task> --help` documents flags. Read before reaching for ad-hoc scripts.
-- `docs/architecture/aspect-cli-migration.md` — durable command surface, retired Make-era shapes.
 - `docs/` — cross-service architecture; `docs/references/` is read-only third-party material. Grep through docs/references instead of reading directly.
 
 Orienting commands: `aspect db pg list` enumerates per-service PostgreSQL databases, `aspect observe` opens the telemetry surface, `aspect db ch schemas` lists ClickHouse tables.

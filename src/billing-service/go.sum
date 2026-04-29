@@ -1,7 +1,7 @@
-github.com/ClickHouse/ch-go v0.63.1 h1:s2JyZvWLTCSAGdtjMBBmAgQQHMco6pawLJMOXi0FODM=
-github.com/ClickHouse/ch-go v0.63.1/go.mod h1:I1kJJCL3WJcBMGe1m+HVK0+nREaG+JOYYBWjrDrF3R0=
-github.com/ClickHouse/clickhouse-go/v2 v2.30.1 h1:Dy0n0l+cMbPXs8hFkeeWGaPKrB+MDByUNQBSmRO3W6k=
-github.com/ClickHouse/clickhouse-go/v2 v2.30.1/go.mod h1:szk8BMoQV/NgHXZ20ZbwDyvPWmpfhRKjFkc6wzASGxM=
+github.com/ClickHouse/ch-go v0.68.0 h1:zd2VD8l2aVYnXFRyhTyKCrxvhSz1AaY4wBUXu/f0GiU=
+github.com/ClickHouse/ch-go v0.68.0/go.mod h1:C89Fsm7oyck9hr6rRo5gqqiVtaIY6AjdD0WFMyNRQ5s=
+github.com/ClickHouse/clickhouse-go/v2 v2.40.3 h1:46jB4kKwVDUOnECpStKMVXxvR0Cg9zeV9vdbPjtn6po=
+github.com/ClickHouse/clickhouse-go/v2 v2.40.3/go.mod h1:qO0HwvjCnTB4BPL/k6EE3l4d9f/uF+aoimAhJX70eKA=
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
 github.com/RaveNoX/go-jsoncommentstrip v1.0.0/go.mod h1:78ihd09MekBnJnxpICcwzCMzGrKSKYe4AqU6PDYYpjk=
@@ -82,9 +82,8 @@ github.com/oapi-codegen/runtime v1.4.0/go.mod h1:5sw5fxCDmnOzKNYmkVNF8d34kyUeejJ
 github.com/paulmach/orb v0.11.1 h1:3koVegMC4X/WeiXYz9iswopaTwMem53NzTJuTF20JzU=
 github.com/paulmach/orb v0.11.1/go.mod h1:5mULz1xQfs3bmQm63QEJA6lNGujuRafwA5S/EnuLaLU=
 github.com/paulmach/protoscan v0.2.1/go.mod h1:SpcSwydNLrxUGSDvXvO0P7g7AuhJ7lcKfDlhJCDw2gY=
-github.com/pierrec/lz4/v4 v4.1.21 h1:yOVMLb6qSIDP67pl/5F7RepeKYu/VmTyEXvuMI5d9mQ=
-github.com/pierrec/lz4/v4 v4.1.21/go.mod h1:gZWDp/Ze/IJXGXf23ltt2EXimqmTUXEy0GFuRQyBid4=
-github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
+github.com/pierrec/lz4/v4 v4.1.22 h1:cKFw6uJDK+/gfw5BcDL0JL5aBsAFdsIT18eRtLj7VIU=
+github.com/pierrec/lz4/v4 v4.1.22/go.mod h1:gZWDp/Ze/IJXGXf23ltt2EXimqmTUXEy0GFuRQyBid4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
@@ -176,6 +175,8 @@ go.opentelemetry.io/proto/otlp v1.10.0 h1:IQRWgT5srOCYfiWnpqUYz9CVmbO8bFmKcwYxpu
 go.opentelemetry.io/proto/otlp v1.10.0/go.mod h1:/CV4QoCR/S9yaPj8utp3lvQPoqMtxXdzn7ozvvozVqk=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=
 go.uber.org/goleak v1.3.0/go.mod h1:CoHD4mav9JJNrW/WLlf7HGZPjdw8EucARQHekz1X6bE=
+go.yaml.in/yaml/v3 v3.0.4 h1:tfq32ie2Jv2UxXFdLJdh3jXuOzWiL1fo0bu/FbuKpbc=
+go.yaml.in/yaml/v3 v3.0.4/go.mod h1:DhzuOOF2ATzADvBadXxruRBLzYTpT36CKvDb3+aBEFg=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
 golang.org/x/crypto v0.0.0-20191011191535-87dc89f01550/go.mod h1:yigFU9vqHzYiE8UmvKecakEJjdnWj3jj499lnFckfCI=
 golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9/go.mod h1:LzIPMQfyMNhhGPhUkYOs5KpL4U8rLKemX1yGLhDgUto=

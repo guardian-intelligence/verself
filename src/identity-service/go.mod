@@ -3,7 +3,7 @@ module github.com/verself/identity-service
 go 1.25.0
 
 require (
-	github.com/ClickHouse/clickhouse-go/v2 v2.30.1
+	github.com/ClickHouse/clickhouse-go/v2 v2.40.3
 	github.com/danielgtaylor/huma/v2 v2.37.3
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.1
@@ -20,8 +20,10 @@ require (
 	go.opentelemetry.io/otel/trace v1.43.0
 )
 
+require go.yaml.in/yaml/v3 v3.0.4 // indirect
+
 require (
-	github.com/ClickHouse/ch-go v0.63.1 // indirect
+	github.com/ClickHouse/ch-go v0.68.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/andybalholm/brotli v1.2.0 // indirect
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
@@ -41,8 +43,7 @@ require (
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/klauspost/compress v1.18.4 // indirect
 	github.com/paulmach/orb v0.11.1 // indirect
-	github.com/pierrec/lz4/v4 v4.1.21 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
+	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/segmentio/asm v1.2.0 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/verself/pgmigrate v0.0.0
@@ -65,7 +66,6 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260401024825-9d38bb4040a9 // indirect
 	google.golang.org/grpc v1.80.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 replace (

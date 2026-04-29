@@ -54,6 +54,7 @@ require_line ".bazeliskrc" "BAZELISK_VERIFY_SHA256=a667454f3f4f8878df8199136b82c
 require_line ".bazelrc" "common --enable_bzlmod"
 require_line ".bazelrc" "common --noenable_workspace"
 require_line ".bazelrc" "common --lockfile_mode=error"
+require_line "MODULE.bazel" 'go_deps.config(check_direct_dependencies = "error")'
 require_line ".gitignore" "artifacts/"
 require_line ".gitignore" "smoke-artifacts/"
 
