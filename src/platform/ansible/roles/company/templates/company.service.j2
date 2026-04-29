@@ -7,9 +7,9 @@ Requires=verself-firewall.target
 Type=simple
 User={{ company_runtime_user }}
 Group={{ company_runtime_group }}
-WorkingDirectory={{ company_app_dir }}
+WorkingDirectory={{ company_current_link }}
 EnvironmentFile=/etc/company/env
-ExecStart={{ verself_bin }}/node --import ./instrumentation.mts .output/server/index.mjs
+ExecStart={{ verself_bin }}/node ./app-entry.mjs
 Restart=on-failure
 RestartSec=5
 Environment=PATH={{ verself_bin }}:/usr/bin:/bin

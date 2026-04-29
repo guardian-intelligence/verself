@@ -1,4 +1,9 @@
 ---
+# Build the company deploy_bundle on the controller (Bazel produces a
+# self-contained tarball: app-entry.mjs + .output/{server,public}/), land it
+# under /opt/company/releases/<deploy_id>/, atomically swap the `current`
+# symlink, then restart the systemd unit.
+
 - name: Create company runtime group
   ansible.builtin.group:
     name: "{{ company_runtime_group }}"
@@ -21,165 +26,108 @@
     group: "{{ company_runtime_group }}"
     mode: "0700"
 
-- name: Create company install directory
-  ansible.builtin.file:
-    path: "{{ company_install_dir }}"
-    state: directory
-    owner: "{{ ansible_user }}"
-    group: "{{ company_runtime_group }}"
-    mode: "0755"
-
-- name: Verify corepack exists in profile
-  ansible.builtin.stat:
-    path: "{{ verself_bin }}/corepack"
-  register: company_corepack
-  failed_when: not company_corepack.stat.exists
-
-- name: Remove generated company artifacts before sync
+- name: Ensure company release directory tree exists
   ansible.builtin.file:
     path: "{{ item }}"
-    state: absent
+    state: directory
+    owner: root
+    group: "{{ company_runtime_group }}"
+    mode: "0755"
   loop:
-    - "{{ company_install_dir }}/.output"
-    - "{{ company_install_dir }}/.tanstack"
-    - "{{ company_install_dir }}/apps/company/.output"
-    - "{{ company_install_dir }}/apps/company/.tanstack"
-    - "{{ company_install_dir }}/packages/ui/dist"
+    - "{{ company_install_dir }}"
+    - "{{ company_release_dir }}"
 
-- name: Synchronize company source
+- name: Build company deploy_bundle on controller
   delegate_to: localhost
   become: false
-  ansible.posix.synchronize:
-    src: "{{ playbook_dir }}/../../../viteplus-monorepo/"
-    dest: "{{ company_install_dir }}/"
-    delete: true
-    recursive: true
-    rsync_opts:
-      - "--exclude=node_modules"
-      - "--exclude=.output"
-      - "--exclude=dist"
-      - "--exclude=.tanstack"
-      - "--exclude=apps/verself-web"
-      - "--exclude=apps/verself-web/**"
-      - "--exclude=playwright-report"
-      - "--exclude=test-results"
-      - "--exclude=HANDOFF_PROMPT.md"
-      - "--no-owner"
-      - "--no-group"
-
-- name: Compute company workspace dependency fingerprint
-  delegate_to: localhost
-  become: false
+  run_once: true
   ansible.builtin.command:
     argv:
-      - /bin/bash
-      - -lc
-      - |
-        set -euo pipefail
-        cd {{ playbook_dir }}/../../../viteplus-monorepo
-        {
-          printf '%s\0' package.json pnpm-lock.yaml pnpm-workspace.yaml apps/company/package.json
-          find packages -mindepth 2 -maxdepth 2 -name package.json -print0
-        } | sort -z | xargs -0 sha256sum | sha256sum
-  register: company_workspace_dependency_fingerprint
+      - "{{ deploy_profile_bazelisk }}"
+      - build
+      - --config=remote-writer
+      - "{{ company_bazel_target }}"
+    chdir: "{{ deploy_profile_repo_root }}"
+  changed_when: true
+
+- name: Resolve company deploy_bundle output path
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.command:
+    argv:
+      - "{{ deploy_profile_bazelisk }}"
+      - cquery
+      - --output=files
+      - "{{ company_bazel_target }}"
+    chdir: "{{ deploy_profile_repo_root }}"
+  register: company_bundle_cquery
   changed_when: false
 
-- name: Check cached company install fingerprint
-  ansible.builtin.stat:
-    path: "{{ company_dependencies_fingerprint_path }}"
-  register: company_install_fingerprint_file
+- name: Validate company deploy_bundle output path
+  ansible.builtin.assert:
+    that:
+      - company_bundle_cquery.stdout_lines | length == 1
+      - company_bundle_cquery.stdout | trim is match('^bazel-out/.*deploy_bundle\\.tar$')
+    quiet: true
+    fail_msg: >-
+      Bazel cquery did not resolve exactly one .tar output for
+      {{ company_bazel_target }}.
 
-- name: Read cached company install fingerprint
-  ansible.builtin.slurp:
-    src: "{{ company_dependencies_fingerprint_path }}"
-  register: company_install_fingerprint_raw
-  when: company_install_fingerprint_file.stat.exists
+- name: Set company deploy_bundle local path fact
+  ansible.builtin.set_fact:
+    company_bundle_local_path: "{{ deploy_profile_repo_root }}/{{ company_bundle_cquery.stdout | trim }}"
 
-- name: Check cached company node_modules
-  ansible.builtin.stat:
-    path: "{{ company_install_dir }}/node_modules"
-  register: company_node_modules_dir
-
-- name: Install company workspace dependencies when manifests change
-  become: false
-  ansible.builtin.command:
-    argv:
-      - "{{ verself_bin }}/corepack"
-      - pnpm
-      - install
-    chdir: "{{ company_install_dir }}"
-  environment:
-    PATH: "{{ verself_bin }}:/usr/bin:/bin"
-    HOME: "/home/{{ ansible_user }}"
-  changed_when: true
-  when: >-
-    (not company_node_modules_dir.stat.exists)
-    or (not company_install_fingerprint_file.stat.exists)
-    or (
-      (company_install_fingerprint_raw.content | default('') | b64decode | trim)
-      != (company_workspace_dependency_fingerprint.stdout.split()[0] | trim)
-    )
-
-- name: Record cached company install fingerprint
-  ansible.builtin.copy:
-    content: "{{ company_workspace_dependency_fingerprint.stdout.split()[0] | trim }}\n"
-    dest: "{{ company_dependencies_fingerprint_path }}"
-    owner: "{{ ansible_user }}"
-    group: "{{ company_runtime_group }}"
-    mode: "0644"
-
-- name: Ensure company /.well-known directory exists in synced source
+- name: Create company release directory for this deploy
   ansible.builtin.file:
-    path: "{{ company_install_dir }}/apps/company/public/.well-known"
+    path: "{{ company_release_path }}"
     state: directory
-    owner: "{{ ansible_user }}"
+    owner: "{{ company_runtime_user }}"
     group: "{{ company_runtime_group }}"
     mode: "0755"
 
-# Templated against company_domain so the file always carries Guardian's public
-# company domain without checking a deployment-specific value into git.
-- name: Template company security.txt (RFC 9116)
+- name: Extract company deploy_bundle into the release directory
+  ansible.builtin.unarchive:
+    src: "{{ company_bundle_local_path }}"
+    dest: "{{ company_release_path }}"
+    owner: "{{ company_runtime_user }}"
+    group: "{{ company_runtime_group }}"
+    remote_src: false
+
+- name: Assert app-entry.mjs landed in the release directory
+  ansible.builtin.stat:
+    path: "{{ company_release_path }}/app-entry.mjs"
+  register: company_release_entry
+  failed_when: not company_release_entry.stat.exists
+
+- name: Ensure company /.well-known directory exists in the release tree
+  # Templated /.well-known/security.txt is a per-host artefact (carries
+  # public company_domain), not a Bazel build input — write it into the
+  # release tree so .output/public/ keeps serving it.
+  ansible.builtin.file:
+    path: "{{ company_release_path }}/.output/public/.well-known"
+    state: directory
+    owner: "{{ company_runtime_user }}"
+    group: "{{ company_runtime_group }}"
+    mode: "0755"
+
+- name: Template company security.txt (RFC 9116) into the release tree
   ansible.builtin.template:
     src: security.txt.j2
-    dest: "{{ company_install_dir }}/apps/company/public/.well-known/security.txt"
-    owner: "{{ ansible_user }}"
+    dest: "{{ company_release_path }}/.output/public/.well-known/security.txt"
+    owner: "{{ company_runtime_user }}"
     group: "{{ company_runtime_group }}"
     mode: "0644"
-  notify: Restart company
 
-- name: Build company package dependencies
-  become: false
-  ansible.builtin.command:
-    argv:
-      - "{{ verself_bin }}/corepack"
-      - pnpm
-      - --filter
-      - "@verself/company^..."
-      - run
-      - build
-    chdir: "{{ company_install_dir }}"
-  environment:
-    PATH: "{{ verself_bin }}:/usr/bin:/bin"
-    HOME: "/home/{{ ansible_user }}"
-  changed_when: true
-  notify: Restart company
-
-- name: Build company app
-  become: false
-  ansible.builtin.command:
-    argv:
-      - "{{ verself_bin }}/corepack"
-      - pnpm
-      - --filter
-      - "@verself/company"
-      - run
-      - build
-    chdir: "{{ company_install_dir }}"
-  environment:
-    PATH: "{{ verself_bin }}:/usr/bin:/bin"
-    HOME: "/home/{{ ansible_user }}"
-  changed_when: true
-  notify: Restart company
+- name: Atomically swap company current symlink
+  ansible.builtin.file:
+    src: "{{ company_release_path }}"
+    dest: "{{ company_current_link }}"
+    state: link
+    force: true
+    owner: "{{ company_runtime_user }}"
+    group: "{{ company_runtime_group }}"
+    follow: false
 
 - name: Ensure company env directory exists
   ansible.builtin.file:
@@ -196,14 +144,12 @@
     mode: "0640"
     owner: root
     group: "{{ company_runtime_group }}"
-  notify: Restart company
 
 - name: Deploy company systemd unit
   ansible.builtin.template:
     src: company.service.j2
     dest: /etc/systemd/system/company.service
     mode: "0644"
-  notify: Restart company
 
 - name: Deploy company nftables rules
   ansible.builtin.copy:
@@ -212,11 +158,11 @@
     mode: "0644"
   notify: reload nftables
 
-- name: Enable and start company
+- name: Enable and (re)start company
   ansible.builtin.systemd:
     name: company
     enabled: true
-    state: started
+    state: restarted
     daemon_reload: true
 
 - name: Wait for company to be ready
@@ -224,3 +170,18 @@
     host: "{{ topology_endpoints.company.host }}"
     port: "{{ topology_endpoints.company.endpoints.http.port }}"
     timeout: 30
+
+- name: Find company release directories on host
+  ansible.builtin.find:
+    paths: "{{ company_release_dir }}"
+    file_type: directory
+    excludes: "{{ company_deploy_id }}"
+  register: company_releases_on_host
+
+- name: Prune older company release directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ (company_releases_on_host.files | sort(attribute='mtime') | list)[:-1] | default([]) }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
