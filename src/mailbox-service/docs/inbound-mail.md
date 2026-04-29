@@ -35,7 +35,7 @@ Inbound mail now has three distinct boundaries: Stalwart for SMTP/JMAP, Caddy fo
 
 **SMTP (port 25):** Stalwart binds `0.0.0.0:25` directly on the public interface. Caddy is an HTTP reverse proxy — it cannot proxy raw SMTP. Stalwart handles its own STARTTLS using certs synced from Caddy's ACME storage.
 
-**JMAP (port 443):** Stalwart's HTTP listener binds `127.0.0.1:8090` (loopback only, not internet-accessible). Caddy reverse proxies `mail.<domain>` to it, applying TLS termination, Coraza WAF, and access logging — same as every other HTTP service. The only exception is `GET /jmap/session`, which is proxied through `mailbox-service` so the public session document advertises the external `https://` / `wss://` origin rather than Stalwart's internal loopback listener.
+**JMAP (port 443):** Stalwart's HTTP listener binds `127.0.0.1:8090` (loopback only, not internet-accessible). Caddy reverse proxies `mail.<domain>` to it, applying TLS termination, and access logging — same as every other HTTP service. The only exception is `GET /jmap/session`, which is proxied through `mailbox-service` so the public session document advertises the external `https://` / `wss://` origin rather than Stalwart's internal loopback listener.
 
 **Management API:** Same HTTP listener (`127.0.0.1:8090`), `/api/` path prefix. It is intentionally blocked from the public edge: Caddy returns `404` for `/api/*`, and Stalwart's local `http.allowed-endpoint` rules also reject non-loopback `/api` requests. Operational access stays box-local.
 
