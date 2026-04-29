@@ -6,11 +6,3 @@
     state: restarted
     daemon_reload: true
   failed_when: false
-
-- name: Restart temporal-web
-  listen: restart temporal-web
-  ansible.builtin.systemd:
-    name: temporal-web
-    state: restarted
-    daemon_reload: true
-  failed_when: false

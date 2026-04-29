@@ -649,7 +649,7 @@ var queryDocs = []queryDoc{
 			"aspect observe --what=temporal",
 		},
 		Next: []string{
-			"aspect observe --what=service --service=temporal-web",
+			"aspect observe --what=service --service=temporal-server",
 			"aspect observe --what=describe --service=temporal-server",
 			"aspect observe --what=describe --span=temporal.auth.authorize",
 			"aspect observe --what=logs --service=temporal-bootstrap",

@@ -58,7 +58,6 @@ func buildQueries(cfg config) ([]query, error) {
 	case "temporal":
 		return []query{
 			newQuery("temporal.authz", temporalAuthzSQL, params),
-			newQuery("temporal.web_requests", temporalWebRequestsSQL, params),
 			newQuery("temporal.bootstrap", temporalBootstrapSQL, params),
 			newQuery("temporal.logs", temporalLogsSQL, params),
 			newQuery("temporal.metrics", temporalMetricsSQL, params),
@@ -719,22 +718,6 @@ WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
 ORDER BY Timestamp DESC
 LIMIT {row_limit:UInt32}`
 
-const temporalWebRequestsSQL = `
-SELECT
-  formatDateTime(Timestamp, '%H:%i:%S') AS time,
-  SpanName AS span,
-  coalesce(nullIf(SpanAttributes['http.request.method'], ''), nullIf(SpanAttributes['http.method'], ''), '') AS method,
-  coalesce(nullIf(SpanAttributes['url.path'], ''), nullIf(SpanAttributes['http.target'], ''), '') AS path,
-  coalesce(nullIf(SpanAttributes['http.response.status_code'], ''), nullIf(SpanAttributes['http.status_code'], ''), '') AS status_code,
-  StatusCode AS status,
-  intDiv(Duration, 1000000) AS ms,
-  TraceId AS trace_id
-FROM default.otel_traces
-WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
-  AND ServiceName = 'temporal-web'
-ORDER BY Timestamp DESC
-LIMIT {row_limit:UInt32}`
-
 const temporalBootstrapSQL = `
 SELECT
   formatDateTime(Timestamp, '%H:%i:%S') AS time,
@@ -763,7 +746,7 @@ SELECT
   TraceId AS trace_id
 FROM default.otel_logs
 WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
-  AND ServiceName IN ('temporal-server', 'temporal-web', 'temporal-bootstrap')
+  AND ServiceName IN ('temporal-server', 'temporal-bootstrap')
 ORDER BY Timestamp DESC
 LIMIT {row_limit:UInt32}`
 
@@ -777,10 +760,7 @@ SELECT
   sum(Samples) AS samples
 FROM default.otel_metric_catalog_live
 WHERE LastSeenAt > now() - toIntervalMinute({minutes:UInt32})
-  AND (
-    startsWith(ServiceName, 'temporal-server')
-    OR ServiceName = 'temporal-web'
-  )
+  AND startsWith(ServiceName, 'temporal-server')
 GROUP BY service, metric
 ORDER BY service, metric
 LIMIT {row_limit:UInt32}`

@@ -166,15 +166,6 @@ config: s.#InstanceConfig & {
 			{spiffe_id: "{{ spire_sandbox_rental_id }}", namespace: "{{ temporal_sandbox_namespace }}", role: "admin"},
 			{spiffe_id: "{{ spire_billing_service_id }}", namespace: "{{ temporal_billing_namespace }}", role: "admin"},
 		]
-		temporal_web_default_namespace:     "{{ temporal_sandbox_namespace }}"
-		temporal_web_disable_write_actions: true
-		temporal_web_oidc_scopes: ["openid", "profile", "email", "offline_access"]
-		temporal_web_oidc_max_session_duration:     "8h"
-		temporal_web_auth_project_name:             "temporal-web"
-		temporal_web_auth_app_name:                 "temporal-web"
-		temporal_web_oidc_redirect_uri:             "https://{{ temporal_web_domain }}/auth/sso/callback"
-		temporal_web_oidc_post_logout_redirect_uri: "https://{{ temporal_web_domain }}/"
-
 		// seed-system identity + billing fixtures used by the seed-system
 		// playbook. Deliberately authored as flat keys because Ansible
 		// templates them via `{{ seed_system_* }}` directly.

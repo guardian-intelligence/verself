@@ -1,17 +1,11 @@
 ---
 temporal_system_user: temporal_server
 temporal_system_group: temporal_server
-temporal_web_user: temporal_web
-temporal_web_group: temporal_web
 
 temporal_config_dir: /etc/temporal
 temporal_state_dir: /var/lib/temporal
-temporal_web_config_dir: /etc/temporal-web
-temporal_web_state_dir: /var/lib/temporal-web
 temporal_config_path: "{{ temporal_config_dir }}/config.yaml"
 temporal_dynamic_config_path: "{{ temporal_config_dir }}/dynamicconfig.yaml"
-temporal_web_config_path: "{{ temporal_web_config_dir }}/base.yaml"
-temporal_web_credstore_dir: /etc/credstore/temporal-web
 
 temporal_postgresql_user: temporal
 temporal_postgresql_database: temporal

@@ -1,28 +1,20 @@
 ---
-- name: Create Temporal system groups
+- name: Create Temporal system group
   ansible.builtin.group:
-    name: "{{ item }}"
+    name: "{{ temporal_system_group }}"
     system: true
-  loop:
-    - "{{ temporal_system_group }}"
-    - "{{ temporal_web_group }}"
 
-- name: Create Temporal system users
+- name: Create Temporal system user
   ansible.builtin.user:
-    name: "{{ item.name }}"
-    group: "{{ item.group }}"
+    name: "{{ temporal_system_user }}"
+    group: "{{ temporal_system_group }}"
     groups:
       - "{{ spire_workload_group }}"
     append: false
     system: true
     shell: /usr/sbin/nologin
-    home: "{{ item.home }}"
+    home: "{{ temporal_state_dir }}"
     create_home: false
-  loop:
-    - { name: "{{ temporal_system_user }}", group: "{{ temporal_system_group }}", home: "{{ temporal_state_dir }}" }
-    - { name: "{{ temporal_web_user }}", group: "{{ temporal_web_group }}", home: "{{ temporal_web_state_dir }}" }
-  loop_control:
-    label: "{{ item.name }}"
 
 - name: Create Temporal state directories
   ansible.builtin.file:
@@ -35,10 +27,6 @@
     - { path: "{{ temporal_config_dir }}", owner: root, group: "{{ temporal_system_group }}", mode: "0750" }
     - { path: "{{ temporal_state_dir }}", owner: "{{ temporal_system_user }}", group: "{{ temporal_system_group }}", mode: "0750" }
     - { path: "{{ temporal_state_dir }}/.ansible/tmp", owner: "{{ temporal_system_user }}", group: "{{ temporal_system_group }}", mode: "0700" }
-    - { path: "{{ temporal_web_config_dir }}", owner: root, group: "{{ temporal_web_group }}", mode: "0750" }
-    - { path: "{{ temporal_web_state_dir }}", owner: "{{ temporal_web_user }}", group: "{{ temporal_web_group }}", mode: "0750" }
-    - { path: "{{ temporal_web_state_dir }}/.ansible/tmp", owner: "{{ temporal_web_user }}", group: "{{ temporal_web_group }}", mode: "0700" }
-    - { path: "{{ temporal_web_credstore_dir }}", owner: root, group: "{{ temporal_web_group }}", mode: "0750" }
   loop_control:
     label: "{{ item.path }}"
 
@@ -50,7 +38,6 @@
     postgresql_db_reset_owner: "{{ temporal_postgresql_user }}"
     postgresql_db_reset_stop_units:
       - temporal-server.service
-      - temporal-web.service
   when: temporal_force_schema_reset | bool
 
 - name: Reset Temporal visibility database when requested
@@ -61,40 +48,7 @@
     postgresql_db_reset_owner: "{{ temporal_postgresql_user }}"
     postgresql_db_reset_stop_units:
       - temporal-server.service
-      - temporal-web.service
   when: temporal_force_schema_reset | bool
-
-- name: Ensure Temporal web OAuth application exists
-  ansible.builtin.include_role:
-    name: zitadel_oauth_app
-  vars:
-    zitadel_oauth_app_name: "{{ temporal_web_auth_app_name }}"
-    zitadel_oauth_app_project_name: "{{ temporal_web_auth_project_name }}"
-    zitadel_oauth_app_redirect_uris:
-      - "{{ temporal_web_oidc_redirect_uri }}"
-    zitadel_oauth_app_post_logout_redirect_uris:
-      - "{{ temporal_web_oidc_post_logout_redirect_uri }}"
-    zitadel_oauth_app_credstore_dir: "{{ temporal_web_credstore_dir }}"
-    zitadel_oauth_app_credstore_group: "{{ temporal_web_group }}"
-    zitadel_oauth_app_create_project_if_missing: true
-    zitadel_oauth_app_role_assertions: false
-  no_log: true
-
-- name: Persist Temporal web OAuth application facts
-  ansible.builtin.set_fact:
-    temporal_web_app_id: "{{ zitadel_oauth_app_out_id }}"
-    temporal_web_oidc_client_id: "{{ zitadel_oauth_app_out_client_id }}"
-    temporal_web_oidc_client_secret: "{{ zitadel_oauth_app_out_client_secret }}"
-  no_log: true
-
-- name: Write Temporal web OAuth client ID
-  ansible.builtin.copy:
-    dest: "{{ temporal_web_credstore_dir }}/oidc-client-id"
-    content: "{{ temporal_web_oidc_client_id }}\n"
-    owner: root
-    group: "{{ temporal_web_group }}"
-    mode: "0640"
-  no_log: true
 
 - name: Deploy Temporal dynamic config
   ansible.builtin.template:
@@ -113,16 +67,6 @@
     group: "{{ temporal_system_group }}"
     mode: "0640"
   notify: restart temporal-server
-
-- name: Deploy Temporal web config
-  ansible.builtin.template:
-    src: temporal-web-config.yaml.j2
-    dest: "{{ temporal_web_config_path }}"
-    owner: root
-    group: "{{ temporal_web_group }}"
-    mode: "0640"
-  no_log: true
-  notify: restart temporal-web
 
 - name: Setup Temporal schema version tables and base schema
   become: true
@@ -213,15 +157,6 @@
     mode: "0644"
   notify: restart temporal-server
 
-- name: Deploy temporal-web systemd unit
-  ansible.builtin.template:
-    src: temporal-web.service.j2
-    dest: /etc/systemd/system/temporal-web.service
-    owner: root
-    group: root
-    mode: "0644"
-  notify: restart temporal-web
-
 - name: Apply Temporal unit and config changes before readiness
   ansible.builtin.meta: flush_handlers
 
@@ -260,16 +195,3 @@
     VERSELF_TEMPORAL_BOOTSTRAP_NAMESPACES: "{{ temporal_bootstrap_namespaces | join(',') }}"
     VERSELF_TEMPORAL_BOOTSTRAP_NAMESPACE_RETENTION: "{{ temporal_namespace_retention }}"
   changed_when: false
-
-- name: Enable and start temporal-web
-  ansible.builtin.systemd:
-    name: temporal-web
-    enabled: true
-    state: started
-    daemon_reload: true
-
-- name: Wait for Temporal web listener
-  ansible.builtin.wait_for:
-    host: "{{ topology_endpoints.temporal_web.host }}"
-    port: "{{ topology_endpoints.temporal_web.endpoints.http.port }}"
-    timeout: 30
