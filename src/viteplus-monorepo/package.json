@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vp run @verself/console#dev",
+    "dev": "vp run @verself/verself-web#dev",
     "generate": "vp run -r generate",
     "check": "vp check",
     "typecheck": "vp run -r typecheck",

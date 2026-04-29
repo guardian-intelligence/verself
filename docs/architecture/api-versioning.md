@@ -313,7 +313,7 @@ type ChangelogChange struct {
 }
 ```
 
-`apiversion-changelog` CLI emits markdown for `src/viteplus-monorepo/apps/platform/src/routes/changelog/`. `Hidden()` changes are excluded from rendered output but retained in the structured form.
+`apiversion-changelog` CLI emits markdown for `src/viteplus-monorepo/apps/verself-web/src/routes/_workshop/policy/changelog.tsx`. `Hidden()` changes are excluded from rendered output but retained in the structured form.
 
 ## 12. Tooling
 

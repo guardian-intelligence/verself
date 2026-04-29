@@ -1,6 +1,0 @@
----
-- name: Restart platform
-  ansible.builtin.systemd:
-    name: platform
-    state: restarted
-    daemon_reload: true
