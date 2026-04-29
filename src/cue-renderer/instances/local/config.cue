@@ -67,20 +67,23 @@ config: s.#InstanceConfig & {
 		guest_pool_cidr: "172.16.0.0/16"
 		// Composable image zvols seeded by vm-orchestrator-cli at deploy
 		// time. The list is consumed by the firecracker Ansible role to
-		// template the vm-orchestrator-seed oneshot unit; ordering does
-		// not matter (each image is an independent seed run). Sizes are
-		// bytes because the gRPC field is uint64 and the daemon validates
-		// >0. See <guest_rootfs_direction> in AGENTS.md for where this
-		// catalog is heading.
+		// template the vm-orchestrator-seed oneshot unit; entries are
+		// ordered substrate → platform_toolchain → customer_uploaded so
+		// dependents land after their bases. Sizes are bytes because the
+		// gRPC field is uint64 and the daemon validates >0. See
+		// <guest_rootfs_direction> in AGENTS.md for the substrate/
+		// toolchain split this catalog is built for.
 		images: [
 			{
 				ref:         "golden"
+				tier:        "substrate"
 				size_bytes:  8589934592 // 8 GiB
 				strategy:    "dd_from_file"
 				source_path: "/var/lib/verself/guest-artifacts/rootfs.ext4"
 			},
 			{
 				ref:              "sticky-empty"
+				tier:             "platform_toolchain"
 				size_bytes:       8589934592 // 8 GiB
 				strategy:         "mkfs_ext4"
 				filesystem_label: "stickydisk"

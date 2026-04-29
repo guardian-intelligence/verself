@@ -317,12 +317,19 @@ package schema
 }
 
 #FirecrackerSeedImage: {
-	ref:              string & !="" @go(Ref)
-	size_bytes:       int & >0 @go(SizeBytes)
-	volblocksize:     string | *"16K" @go(VolBlockSize)
-	strategy:         "dd_from_file" | "mkfs_ext4" @go(Strategy)
-	source_path:      string | *"" @go(SourcePath)
-	filesystem_label: string | *"" @go(FilesystemLabel)
+	ref: string & !="" @go(Ref)
+
+	// tier names which layer this image belongs to. The seed oneshot
+	// orders ExecStart= entries by tier so substrate is always materialized
+	// before any toolchain image that might depend on its layout, and so
+	// a future customer-uploaded image is structurally distinguishable
+	// from the platform's own toolchains.
+	tier:             "substrate" | "platform_toolchain" | "customer_uploaded" @go(Tier)
+	size_bytes:       int & >0                                                  @go(SizeBytes)
+	volblocksize:     string | *"16K"                                           @go(VolBlockSize)
+	strategy:         "dd_from_file" | "mkfs_ext4"                              @go(Strategy)
+	source_path:      string | *""                                              @go(SourcePath)
+	filesystem_label: string | *""                                              @go(FilesystemLabel)
 }
 
 #SpireConfig: {

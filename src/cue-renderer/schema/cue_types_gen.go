@@ -344,11 +344,22 @@ type NftablesTopology struct {
 type FirecrackerConfig struct {
 	GuestPoolCIDR string `json:"guest_pool_cidr"`
 
+	// images declares the composable image zvols vm-orchestrator-cli seeds
+	// at deploy time. Each entry projects to one ExecStart line in the
+	// vm-orchestrator-seed.service oneshot unit; the daemon owns staging,
+	// dd/mkfs, snapshotting, and dependent-clone teardown.
 	Images []FirecrackerSeedImage `json:"images"`
 }
 
 type FirecrackerSeedImage struct {
 	Ref string `json:"ref"`
+
+	// tier names which layer this image belongs to. The seed oneshot
+	// orders ExecStart= entries by tier so substrate is always materialized
+	// before any toolchain image that might depend on its layout, and so
+	// a future customer-uploaded image is structurally distinguishable
+	// from the platform's own toolchains.
+	Tier string `json:"tier"`
 
 	SizeBytes int64 `json:"size_bytes"`
 
@@ -378,6 +389,10 @@ type SpireConfig struct {
 }
 
 type InstanceConfig struct {
+	// Typed config consumed by Go renderers. Each typed section has a
+	// dedicated projection in internal/render/<name>/ and may declare its
+	// own Ansible-vars projections by referencing fields from inside
+	// ansible_vars below.
 	Wireguard WireGuardConfig `json:"wireguard"`
 
 	Postgres PostgresConfig `json:"postgres"`
@@ -388,6 +403,11 @@ type InstanceConfig struct {
 
 	Spire SpireConfig `json:"spire"`
 
+	// ansible_vars is the explicit Ansible-vars surface. Every key here
+	// becomes a top-level group_vars/all entry; the ops renderer projects
+	// this map verbatim. Authors spell out the literal Ansible variable
+	// name. Cross-section references are CUE values (type-checked) rather
+	// than Jinja strings, so a typo surfaces at CUE evaluation time.
 	AnsibleVars map[string]any/* CUE top */ `json:"ansible_vars"`
 }
 
