@@ -49,6 +49,24 @@ genrule(
 )
 
 genrule(
+    name = "bazel_dev_tools_module_render",
+    srcs = TOPOLOGY_SRCS,
+    outs = ["dev_tools.MODULE.bazel"],
+    cmd = "$(location //src/cue-renderer/cmd/cue-renderer) render bazel_dev_tools_module > $@",
+    tools = ["//src/cue-renderer/cmd/cue-renderer"],
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "bazel_dev_tools_render",
+    srcs = TOPOLOGY_SRCS,
+    outs = ["dev_tools.bzl"],
+    cmd = "$(location //src/cue-renderer/cmd/cue-renderer) render bazel_dev_tools > $@",
+    tools = ["//src/cue-renderer/cmd/cue-renderer"],
+    visibility = ["//visibility:public"],
+)
+
+genrule(
     name = "bazel_nftables_render",
     srcs = TOPOLOGY_SRCS,
     outs = ["nftables_files.bzl.gen"],
@@ -206,6 +224,8 @@ genrule(
 # with one key per CUE-declared nftables file (see NFTABLES_RENDERED above).
 _RENDERED_FILES = {
     "//src/cue-renderer:nftables_files.bzl": ":bazel_nftables_render",
+    "//src/cue-renderer/binaries:dev_tools.MODULE.bazel": ":bazel_dev_tools_module_render",
+    "//src/cue-renderer/binaries:dev_tools.bzl": ":bazel_dev_tools_render",
     "//src/cue-renderer/binaries:server_tools.MODULE.bazel": ":bazel_module_render",
     "//src/cue-renderer/binaries:server_tools.bzl": ":bazel_server_tools_render",
     "//src/platform:ansible/group_vars/all/generated/catalog.yml": ":catalog_render",

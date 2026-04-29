@@ -18,6 +18,8 @@ bazel_dep(name = "yq.bzl", version = "0.3.2")
 
 include("//src/cue-renderer/binaries:server_tools.MODULE.bazel")
 
+include("//src/cue-renderer/binaries:dev_tools.MODULE.bazel")
+
 node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
 node.toolchain(
     node_repositories = {
