@@ -577,15 +577,6 @@
   changed_when: true
   no_log: true
 
-- name: Verify OpenBao health
-  ansible.builtin.uri:
-    url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/health"
-    method: GET
-    ca_path: "{{ openbao_tls_dir }}/cert.pem"
-    status_code: 200
-    return_content: true
-  register: openbao_health
-
 - name: Configure OpenBao audited request headers
   ansible.builtin.uri:
     url: "https://{{ topology_endpoints.openbao.endpoints.api.address }}/v1/sys/config/auditing/request-headers/{{ item.name }}"

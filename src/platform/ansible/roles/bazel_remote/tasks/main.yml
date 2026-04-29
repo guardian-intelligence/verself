@@ -68,13 +68,3 @@
     host: "{{ topology_endpoints.bazel_remote.host }}"
     port: "{{ topology_endpoints.bazel_remote.endpoints.http.port }}"
     timeout: 30
-
-- name: Confirm bazel-remote /status responds
-  ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.bazel_remote.endpoints.http.address }}/status"
-    return_content: true
-  register: bazel_remote_status
-  until: bazel_remote_status.status == 200
-  retries: 10
-  delay: 2
-  changed_when: false

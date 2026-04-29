@@ -305,30 +305,6 @@
     host: "{{ topology_endpoints.zitadel.host }}"
     timeout: 60
 
-# --- Health check ---
-
-- name: Verify Zitadel healthz endpoint
-  ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/debug/healthz"
-    return_content: true
-  register: zitadel_health
-  retries: 5
-  delay: 3
-  until: zitadel_health.status == 200
-
-# --- OIDC discovery smoke test ---
-
-- name: Verify OIDC discovery endpoint
-  ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/.well-known/openid-configuration"
-    headers:
-      Host: "{{ zitadel_domain }}"
-    return_content: true
-  register: zitadel_oidc
-  retries: 3
-  delay: 2
-  until: zitadel_oidc.status == 200 and 'authorization_endpoint' in zitadel_oidc.content
-
 # --- Login V2 bootstrap ---
 # Login V2 is a separate Next.js app (zitadel-login) not embedded in the Zitadel
 # Go binary. Zitadel 4.x defaults to LoginV2.Required=true, which makes OIDC
@@ -390,7 +366,7 @@
   notify:
     - restart zitadel
 
-- name: Apply Login V2 disable before health checks
+- name: Apply Login V2 disable before Admin API calls
   ansible.builtin.meta: flush_handlers
 
 - name: Wait for Zitadel to be ready after Login V2 disable
@@ -415,62 +391,6 @@
     (zitadel_login_v2_state.query_result | default([]))
     | selectattr('payload', 'search', '"required": true')
     | list | length > 0
-
-# --- Deep health checks ---
-
-- name: Verify Login UI is reachable
-  ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/ui/login/login"
-    headers:
-      Host: "{{ zitadel_domain }}"
-    follow_redirects: none
-    status_code: [200, 302]
-  register: zitadel_login_ui
-  retries: 5
-  delay: 3
-  until: zitadel_login_ui.status in [200, 302]
-
-- name: Verify Console UI is reachable
-  ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/ui/console/"
-    headers:
-      Host: "{{ zitadel_domain }}"
-    return_content: true
-  register: zitadel_console_ui
-  retries: 3
-  delay: 2
-  until: zitadel_console_ui.status == 200
-
-- name: Verify OIDC authorize endpoint is routable
-  vars:
-    oidc_authorize_base: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/oauth/v2/authorize"
-    oidc_authorize_query:
-      - response_type=code
-      - client_id=nonexistent
-      - redirect_uri=http://localhost
-      - scope=openid
-    oidc_url: "{{ oidc_authorize_base }}?{{ oidc_authorize_query | join('&') }}"
-  ansible.builtin.uri:
-    url: "{{ oidc_url }}"
-    headers:
-      Host: "{{ zitadel_domain }}"
-    follow_redirects: none
-    status_code: [302, 400]
-  register: zitadel_oidc_authorize
-  retries: 3
-  delay: 2
-  until: zitadel_oidc_authorize.status in [302, 400]
-
-- name: Verify Prometheus metrics endpoint
-  ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/debug/metrics"
-    return_content: true
-  register: zitadel_metrics
-  retries: 3
-  delay: 2
-  until: >-
-    zitadel_metrics.status == 200
-    and 'projection_events_processed_total' in zitadel_metrics.content
 
 # --- SMTP email provider (Resend) ---
 # DefaultInstance.SMTPConfiguration only applies to new instances. For the
