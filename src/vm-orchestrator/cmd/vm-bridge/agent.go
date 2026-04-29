@@ -17,6 +17,36 @@ import (
 	"github.com/verself/vm-orchestrator/vmproto"
 )
 
+// bridgeState enumerates the deterministic control-protocol states the
+// guest bridge cycles through. Each state has a single allowed set of
+// inbound frame types, and any deviation is reported as
+// "control protocol violation in <state>" so traces and the
+// verify-vm-orchestrator-live.sh smoke flow can pin failures to a
+// labeled state machine rather than free-form strings.
+type bridgeState int
+
+const (
+	bridgeStateAwaitLeaseInit bridgeState = iota
+	bridgeStateAwaitExecRequest
+	bridgeStateExecRunning
+	bridgeStateAwaitExecResultAck
+)
+
+func (s bridgeState) String() string {
+	switch s {
+	case bridgeStateAwaitLeaseInit:
+		return "await_lease_init"
+	case bridgeStateAwaitExecRequest:
+		return "await_exec_request"
+	case bridgeStateExecRunning:
+		return "exec_running"
+	case bridgeStateAwaitExecResultAck:
+		return "await_exec_result_ack"
+	default:
+		return fmt.Sprintf("bridge_state_%d", int(s))
+	}
+}
+
 type outboundFrame struct {
 	envelope vmproto.Envelope
 	logBytes uint64
@@ -233,23 +263,23 @@ func (s *agentSession) waitForLeaseInit(controlCh <-chan vmproto.Envelope) (vmpr
 		if err != nil {
 			return vmproto.LeaseInit{}, err
 		}
-		if err := requireControlSeq("await_lease_init", env); err != nil {
+		if err := requireControlSeq(bridgeStateAwaitLeaseInit, env); err != nil {
 			return vmproto.LeaseInit{}, err
 		}
 		switch env.Type {
 		case vmproto.TypeLeaseInit:
 			req, err := vmproto.DecodePayload[vmproto.LeaseInit](env)
 			if err != nil {
-				return vmproto.LeaseInit{}, protocolStateError("await_lease_init", "decode lease_init payload: %v", err)
+				return vmproto.LeaseInit{}, protocolStateError(bridgeStateAwaitLeaseInit, "decode lease_init payload: %v", err)
 			}
 			if req.ProtocolVersion != vmproto.ProtocolVersion {
-				return vmproto.LeaseInit{}, protocolStateError("await_lease_init", "protocol_version mismatch: got %d want %d", req.ProtocolVersion, vmproto.ProtocolVersion)
+				return vmproto.LeaseInit{}, protocolStateError(bridgeStateAwaitLeaseInit, "protocol_version mismatch: got %d want %d", req.ProtocolVersion, vmproto.ProtocolVersion)
 			}
 			return req, nil
 		case vmproto.TypeShutdown:
 			return vmproto.LeaseInit{}, errGuestShutdownRequested
 		default:
-			return vmproto.LeaseInit{}, unexpectedControlFrame("await_lease_init", env.Type, vmproto.TypeLeaseInit, vmproto.TypeShutdown)
+			return vmproto.LeaseInit{}, unexpectedControlFrame(bridgeStateAwaitLeaseInit, env.Type, vmproto.TypeLeaseInit, vmproto.TypeShutdown)
 		}
 	}
 }
@@ -260,30 +290,30 @@ func (s *agentSession) waitForExecRequest(controlCh <-chan vmproto.Envelope) (vm
 		if err != nil {
 			return vmproto.ExecRequest{}, err
 		}
-		if err := requireControlSeq("await_exec_request", env); err != nil {
+		if err := requireControlSeq(bridgeStateAwaitExecRequest, env); err != nil {
 			return vmproto.ExecRequest{}, err
 		}
 		switch env.Type {
 		case vmproto.TypeExecRequest:
 			req, err := vmproto.DecodePayload[vmproto.ExecRequest](env)
 			if err != nil {
-				return vmproto.ExecRequest{}, protocolStateError("await_exec_request", "decode exec_request payload: %v", err)
+				return vmproto.ExecRequest{}, protocolStateError(bridgeStateAwaitExecRequest, "decode exec_request payload: %v", err)
 			}
 			if req.ProtocolVersion != vmproto.ProtocolVersion {
-				return vmproto.ExecRequest{}, protocolStateError("await_exec_request", "protocol_version mismatch: got %d want %d", req.ProtocolVersion, vmproto.ProtocolVersion)
+				return vmproto.ExecRequest{}, protocolStateError(bridgeStateAwaitExecRequest, "protocol_version mismatch: got %d want %d", req.ProtocolVersion, vmproto.ProtocolVersion)
 			}
 			if rawMode, ok := req.Env[bridgeFaultEnvVar]; ok {
 				mode, err := parseBridgeFaultMode(rawMode)
 				if err != nil {
-					return vmproto.ExecRequest{}, protocolStateError("await_exec_request", "invalid bridge fault mode: %v", err)
+					return vmproto.ExecRequest{}, protocolStateError(bridgeStateAwaitExecRequest, "invalid bridge fault mode: %v", err)
 				}
 				s.bridgeFault = mode
 			}
 			if strings.TrimSpace(req.ExecID) == "" {
-				return vmproto.ExecRequest{}, protocolStateError("await_exec_request", "exec_id is required")
+				return vmproto.ExecRequest{}, protocolStateError(bridgeStateAwaitExecRequest, "exec_id is required")
 			}
 			if len(req.Argv) == 0 {
-				return vmproto.ExecRequest{}, protocolStateError("await_exec_request", "argv is required")
+				return vmproto.ExecRequest{}, protocolStateError(bridgeStateAwaitExecRequest, "argv is required")
 			}
 			return req, nil
 		case vmproto.TypeFilesystemSealRequest:
@@ -296,7 +326,7 @@ func (s *agentSession) waitForExecRequest(controlCh <-chan vmproto.Envelope) (vm
 		case vmproto.TypeCancel:
 			continue
 		default:
-			return vmproto.ExecRequest{}, unexpectedControlFrame("await_exec_request", env.Type, vmproto.TypeExecRequest, vmproto.TypeFilesystemSealRequest, vmproto.TypeShutdown, vmproto.TypeCancel)
+			return vmproto.ExecRequest{}, unexpectedControlFrame(bridgeStateAwaitExecRequest, env.Type, vmproto.TypeExecRequest, vmproto.TypeFilesystemSealRequest, vmproto.TypeShutdown, vmproto.TypeCancel)
 		}
 	}
 }
@@ -304,10 +334,10 @@ func (s *agentSession) waitForExecRequest(controlCh <-chan vmproto.Envelope) (vm
 func (s *agentSession) handleFilesystemSealRequest(env vmproto.Envelope) error {
 	req, err := vmproto.DecodePayload[vmproto.FilesystemSealRequest](env)
 	if err != nil {
-		return protocolStateError("await_exec_request", "decode filesystem_seal_request payload: %v", err)
+		return protocolStateError(bridgeStateAwaitExecRequest, "decode filesystem_seal_request payload: %v", err)
 	}
 	if req.ProtocolVersion != vmproto.ProtocolVersion {
-		return protocolStateError("await_exec_request", "protocol_version mismatch: got %d want %d", req.ProtocolVersion, vmproto.ProtocolVersion)
+		return protocolStateError(bridgeStateAwaitExecRequest, "protocol_version mismatch: got %d want %d", req.ProtocolVersion, vmproto.ProtocolVersion)
 	}
 	sealErr := s.sealFilesystem(req.Name)
 	result := vmproto.FilesystemSealResult{
@@ -412,20 +442,20 @@ func (s *agentSession) waitForResultAck(controlCh <-chan vmproto.Envelope, resul
 		if err != nil {
 			return err
 		}
-		if err := requireControlSeq("await_exec_result_ack", env); err != nil {
+		if err := requireControlSeq(bridgeStateAwaitExecResultAck, env); err != nil {
 			return err
 		}
 		switch env.Type {
 		case vmproto.TypeAck:
 			ack, err := vmproto.DecodePayload[vmproto.Ack](env)
 			if err != nil {
-				return protocolStateError("await_exec_result_ack", "decode ack payload: %v", err)
+				return protocolStateError(bridgeStateAwaitExecResultAck, "decode ack payload: %v", err)
 			}
 			if ack.ForType != vmproto.TypeExecResult {
-				return protocolStateError("await_exec_result_ack", "ack for_type mismatch: got %s want %s", ack.ForType, vmproto.TypeExecResult)
+				return protocolStateError(bridgeStateAwaitExecResultAck, "ack for_type mismatch: got %s want %s", ack.ForType, vmproto.TypeExecResult)
 			}
 			if ack.ForSeq != resultSeq {
-				return protocolStateError("await_exec_result_ack", "ack for_seq mismatch: got %d want %d", ack.ForSeq, resultSeq)
+				return protocolStateError(bridgeStateAwaitExecResultAck, "ack for_seq mismatch: got %d want %d", ack.ForSeq, resultSeq)
 			}
 			return nil
 		case vmproto.TypeCancel:
@@ -435,7 +465,7 @@ func (s *agentSession) waitForResultAck(controlCh <-chan vmproto.Envelope, resul
 		case vmproto.TypeShutdown:
 			return errGuestShutdownRequested
 		default:
-			return unexpectedControlFrame("await_exec_result_ack", env.Type, vmproto.TypeAck, vmproto.TypeCancel, vmproto.TypeShutdown)
+			return unexpectedControlFrame(bridgeStateAwaitExecResultAck, env.Type, vmproto.TypeAck, vmproto.TypeCancel, vmproto.TypeShutdown)
 		}
 	}
 }
@@ -785,7 +815,7 @@ func (s *agentSession) runExecCommand(ctx context.Context, req vmproto.ExecReque
 				return time.Since(start), 130, errGuestShutdownRequested
 			default:
 				terminateProcessGroup(cmd.Process.Pid)
-				return time.Since(start), 1, unexpectedControlFrame("exec_running", env.Type, vmproto.TypeCancel, vmproto.TypeShutdown)
+				return time.Since(start), 1, unexpectedControlFrame(bridgeStateExecRunning, env.Type, vmproto.TypeCancel, vmproto.TypeShutdown)
 			}
 		case err := <-s.errCh:
 			terminateProcessGroup(cmd.Process.Pid)
@@ -812,7 +842,7 @@ func execCommand(argv []string, workDir string, env []string) (commandSpec, erro
 	}, nil
 }
 
-func unexpectedControlFrame(state string, got vmproto.MessageType, expected ...vmproto.MessageType) error {
+func unexpectedControlFrame(state bridgeState, got vmproto.MessageType, expected ...vmproto.MessageType) error {
 	allowed := make([]string, 0, len(expected))
 	for _, msgType := range expected {
 		allowed = append(allowed, string(msgType))
@@ -820,11 +850,11 @@ func unexpectedControlFrame(state string, got vmproto.MessageType, expected ...v
 	return protocolStateError(state, "unexpected control frame type %s (expected one of: %s)", got, strings.Join(allowed, ", "))
 }
 
-func protocolStateError(state string, format string, args ...any) error {
+func protocolStateError(state bridgeState, format string, args ...any) error {
 	return fmt.Errorf("control protocol violation in %s: %s", state, fmt.Sprintf(format, args...))
 }
 
-func requireControlSeq(state string, env vmproto.Envelope) error {
+func requireControlSeq(state bridgeState, env vmproto.Envelope) error {
 	if env.Seq == 0 {
 		return protocolStateError(state, "invalid control envelope seq: got %d want > 0", env.Seq)
 	}
