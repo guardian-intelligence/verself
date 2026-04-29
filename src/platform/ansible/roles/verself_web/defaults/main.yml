@@ -1,9 +1,9 @@
 ---
-# Where extracted release tarballs live. <install_dir>/releases/<deploy_id>/
-# holds an extracted bundle (app-entry.mjs + .output/); <install_dir>/current
-# is the symlink the systemd unit and verify scripts read from. Atomic swap
-# via `ln -sfn` keeps the unit pointed at a complete bundle for the entire
-# restart window.
+# Per-deploy release directory layout. <install_dir>/releases/<deploy_id>/
+# holds the synced `.output/` server+client bundle and a sibling
+# `instrumentation.mjs` (the Bazel-built OTel preload). <install_dir>/current
+# is the symlink the systemd unit reads from; atomic swap via `ln -sfn` keeps
+# the unit pointed at a complete release for the entire restart window.
 verself_web_install_dir: /opt/verself-web
 verself_web_release_dir: "{{ verself_web_install_dir }}/releases"
 verself_web_current_link: "{{ verself_web_install_dir }}/current"
@@ -23,7 +23,7 @@ verself_web_release_path: "{{ verself_web_release_dir }}/{{ verself_web_deploy_i
 # compiler plugin computes route paths via `import.meta.url`, and the deep
 # `node_modules/.aspect_rules_js/...` layout in bazel-out produces relative
 # paths the plugin's chunk-split heuristic rejects. Bazel only owns the
-# small hermetic OTel preload bundle (`:app_entry_bundle`), composed with
-# the source-tree `.output/` into the deploy tarball locally.
+# small hermetic OTel preload bundle (`:instrumentation_bundle`); the role
+# rsyncs `.output/` and copies the preload alongside it on the host.
 verself_web_app_source_dir: "{{ deploy_profile_repo_root }}/src/viteplus-monorepo/apps/verself-web"
-verself_web_app_entry_bazel_target: "//src/viteplus-monorepo/apps/verself-web:app_entry_bundle"
+verself_web_instrumentation_bazel_target: "//src/viteplus-monorepo/apps/verself-web:instrumentation_bundle"

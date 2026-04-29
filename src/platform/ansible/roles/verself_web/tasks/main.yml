@@ -1,8 +1,8 @@
 ---
-# Build verself-web on the controller, ship `.output/` + `app-entry.mjs` to
-# the host, restart systemd. `vp build` runs in the source tree (Bazel
+# Build verself-web on the controller, ship `.output/` + `instrumentation.mjs`
+# to the host, restart systemd. `vp build` runs in the source tree (Bazel
 # sandboxing breaks TanStack Start's route-level code splitting); Bazel only
-# builds the small hermetic OTel preload (`:app_entry_bundle`).
+# builds the small hermetic OTel preload (`:instrumentation_bundle`).
 
 - name: Create verself-web runtime group
   ansible.builtin.group:
@@ -108,7 +108,7 @@
       - "{{ deploy_profile_bazelisk }}"
       - build
       - --config=remote-writer
-      - "{{ verself_web_app_entry_bazel_target }}"
+      - "{{ verself_web_instrumentation_bazel_target }}"
     chdir: "{{ deploy_profile_repo_root }}"
   changed_when: true
 
@@ -121,14 +121,14 @@
       - "{{ deploy_profile_bazelisk }}"
       - cquery
       - --output=files
-      - "{{ verself_web_app_entry_bazel_target }}"
+      - "{{ verself_web_instrumentation_bazel_target }}"
     chdir: "{{ deploy_profile_repo_root }}"
-  register: verself_web_app_entry_cquery
+  register: verself_web_instrumentation_cquery
   changed_when: false
 
 - name: Set verself-web OTel preload local path fact
   ansible.builtin.set_fact:
-    verself_web_app_entry_local_path: "{{ deploy_profile_repo_root }}/{{ verself_web_app_entry_cquery.stdout | trim }}"
+    verself_web_instrumentation_local_path: "{{ deploy_profile_repo_root }}/{{ verself_web_instrumentation_cquery.stdout | trim }}"
 
 - name: Create verself-web release directory for this deploy
   ansible.builtin.file:
@@ -148,10 +148,10 @@
       - "--no-owner"
       - "--no-group"
 
-- name: Copy verself-web app-entry.mjs into release directory
+- name: Copy verself-web instrumentation.mjs into release directory
   ansible.builtin.copy:
-    src: "{{ verself_web_app_entry_local_path }}"
-    dest: "{{ verself_web_release_path }}/app-entry.mjs"
+    src: "{{ verself_web_instrumentation_local_path }}"
+    dest: "{{ verself_web_release_path }}/instrumentation.mjs"
     owner: "{{ verself_web_runtime_user }}"
     group: "{{ verself_web_runtime_group }}"
     mode: "0644"

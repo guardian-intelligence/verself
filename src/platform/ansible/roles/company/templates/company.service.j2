@@ -9,7 +9,7 @@ User={{ company_runtime_user }}
 Group={{ company_runtime_group }}
 WorkingDirectory={{ company_current_link }}
 EnvironmentFile=/etc/company/env
-ExecStart={{ verself_bin }}/node ./app-entry.mjs
+ExecStart={{ verself_bin }}/node --import ./instrumentation.mjs ./.output/server/index.mjs
 Restart=on-failure
 RestartSec=5
 Environment=PATH={{ verself_bin }}:/usr/bin:/bin
