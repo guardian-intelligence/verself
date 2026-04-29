@@ -4,14 +4,15 @@
 # The agent (otelcol-contrib, configured by ../controller-agent/otelcol.yaml)
 # binds 127.0.0.1:14317 and forwards spans over an SSH `-L` to the
 # bare-metal node's 4317. Its lifetime is bound to *this* script — when
-# the wrapped command exits, we SIGTERM the agent with a 30s grace
-# window so its in-memory batch and the file_storage-backed sending
-# queue both drain before we tear the SSH tunnel down.
+# the wrapped command exits we sleep briefly so the in-memory batch can
+# drain into the agent's sending queue, then SIGTERM the agent with up
+# to 90s for graceful shutdown, and only then close the SSH tunnel.
 #
-# That ordering — agent flushes first, ssh closes second — is what the
-# prior `ansible-with-tunnel.sh` got wrong: ansible's BSP atexit flush
-# raced with the trap-EXIT ssh kill, dropping ~80 ansible.task spans on
-# every failed deploy. The disk queue under VERSELF_AGENT_DATA_DIR
+# That ordering — flush first, ssh closes second — is what the prior
+# `ansible-with-tunnel.sh` got wrong: ansible's BSP atexit flush raced
+# with the trap-EXIT ssh kill, dropping ~80 ansible.task spans on every
+# failed deploy. The file_storage-backed sending queue at
+# ${XDG_CACHE_HOME:-~/.cache}/verself/otelcol-controller/<site>/
 # additionally survives a SIGKILL of the agent itself; the next
 # invocation drains whatever the previous one couldn't.
 #
@@ -20,10 +21,8 @@
 #                              resolve ansible_host/ansible_user for SSH.
 #
 # Optional env:
-#   VERSELF_RENDER_CACHE_DIR   When set, the file_storage queue lives at
-#                              ${VERSELF_RENDER_CACHE_DIR}/otelcol-data
-#                              (per-site, git-cleanable). Otherwise a
-#                              per-invocation mktemp is used.
+#   VERSELF_SITE               Site name; namespaces the persistent
+#                              queue dir. Defaults to "default".
 #
 # Sets for the wrapped command:
 #   VERSELF_OTLP_ENDPOINT             127.0.0.1:14317
