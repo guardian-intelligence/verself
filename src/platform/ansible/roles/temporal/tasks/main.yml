@@ -273,12 +273,3 @@
     host: "{{ topology_endpoints.temporal_web.host }}"
     port: "{{ topology_endpoints.temporal_web.endpoints.http.port }}"
     timeout: 30
-
-- name: Wait for Temporal web health
-  ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.temporal_web.endpoints.http.address }}/healthz"
-    status_code: 200
-  register: temporal_web_health
-  until: temporal_web_health.status == 200
-  retries: 15
-  delay: 2

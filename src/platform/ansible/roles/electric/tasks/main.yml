@@ -140,12 +140,3 @@
     enabled: true
     state: started
     daemon_reload: true
-
-- name: "Wait for health endpoint on {{ electric_service_name }}"
-  ansible.builtin.uri:
-    url: "http://127.0.0.1:{{ electric_service_port }}/v1/health"
-    status_code: [200, 202]
-  register: electric_health
-  until: electric_health.status in [200, 202]
-  retries: 30
-  delay: 2

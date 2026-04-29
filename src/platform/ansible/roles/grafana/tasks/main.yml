@@ -365,14 +365,11 @@
     state: started
     daemon_reload: true
 
-- name: Wait for Grafana HTTP health
-  ansible.builtin.uri:
-    url: "http://{{ topology_endpoints.grafana.endpoints.http.address }}/api/health"
-    status_code: 200
-  register: grafana_health
-  until: grafana_health.status == 200
-  retries: 30
-  delay: 1
+- name: Wait for Grafana HTTP listener
+  ansible.builtin.wait_for:
+    host: "{{ topology_endpoints.grafana.host }}"
+    port: "{{ topology_endpoints.grafana.endpoints.http.port }}"
+    timeout: 30
 
 - name: Converge Grafana admin password
   ansible.builtin.command:
