@@ -1,11 +1,12 @@
 ---
-# Bring the controller's dev tools up to topology. Two delivery channels:
+# Bring the controller's dev tools up to topology. Three delivery channels:
 #
 #   1. dev_tools.tar.zst (pinned_http_file tier) — Bazel-fetched, sha256-pinned,
 #      one untar at /. Owns 16 binaries plus /usr/local/{go,zig} symlinks.
-#   2. install plan (system_apt + legacy_install_plan tiers) — apt for system
-#      packages, `go install` and `uv tool install` for the source-built tools
-#      that haven't migrated to a hermetic tier yet.
+#   2. systemPackages — apt-managed entries with explicit risk acknowledgements;
+#      the only intentionally unpinned channel.
+#   3. install plan (legacy_install_plan tier) — `go install` and `uv tool install`
+#      for tools that haven't migrated to a hermetic tier yet.
 #
 # Order matters: the tarball must land before `go install` runs (which needs
 # /usr/local/go/bin/go) and before `uv tool install` runs (which needs
@@ -15,7 +16,6 @@
   ansible.builtin.assert:
     that:
       - topology_dev_tool_install_plan is defined
-      - topology_dev_tool_install_plan.apt_packages is defined
       - topology_dev_tool_install_plan.go_installs is defined
       - topology_dev_tool_install_plan.uv_tools is defined
     quiet: true
@@ -25,15 +25,12 @@
 - name: Install pinned_http_file dev tools via Bazel-managed archive
   ansible.builtin.include_tasks: dev_tools_archive.yml
 
+- name: Install system packages
+  ansible.builtin.include_tasks: system_packages.yml
+
 - name: Set legacy install plan facts
   ansible.builtin.set_fact:
     dev_tools_install_plan: "{{ topology_dev_tool_install_plan }}"
-
-- name: Install generated apt dev tools
-  ansible.builtin.apt:
-    name: "{{ dev_tools_install_plan.apt_packages }}"
-    state: present
-  when: dev_tools_install_plan.apt_packages | length > 0
 
 - name: Ensure GOPATH bin directory exists
   ansible.builtin.file:

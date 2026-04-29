@@ -2,10 +2,6 @@
 # Source: src/cue-renderer/instances/local
 ---
 topology_dev_tool_install_plan:
-  apt_packages:
-    - build-essential
-    - crun
-    - debootstrap
   go_installs:
     - argv:
         - /usr/local/go/bin/go
@@ -152,10 +148,6 @@ topology_dev_tools:
     url: https://github.com/bufbuild/buf/releases/download/v1.66.1/buf-Linux-x86_64
     version: 1.66.1
     version_cmd: buf --version
-  build-essential:
-    strategy: apt
-    tier: system_apt
-    version_cmd: gcc --version
   buildifier:
     install_path: /usr/local/bin/buildifier
     sha256: 887377fc64d23a850f4d18a077b5db05b19913f4b99b270d193f3c7334b5a9a7
@@ -172,11 +164,6 @@ topology_dev_tools:
     url: https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-26.3.2.3-amd64.tgz
     version: 26.3.2.3
     version_cmd: clickhouse client --version
-  crun:
-    strategy: apt
-    tier: system_apt
-    version: 1.14.1
-    version_cmd: crun --version
   cue:
     bin_name: cue
     install_path: /usr/local/bin/cue
@@ -187,11 +174,6 @@ topology_dev_tools:
     url: https://github.com/cue-lang/cue/releases/download/v0.16.1/cue_v0.16.1_linux_amd64.tar.gz
     version: 0.16.1
     version_cmd: cue version
-  debootstrap:
-    strategy: apt
-    tier: system_apt
-    version: 1.0.134
-    version_cmd: debootstrap --version
   go:
     bin_path: /usr/local/go/bin/go
     install_dir: /usr/local
@@ -376,6 +358,18 @@ topology_guest_versions:
 topology_server_tools:
   bazel_label: //src/cue-renderer/binaries:server_tools.tar.zst
   version: clickhouse-26.3.2.3_tigerbeetle-0.17.1_zitadel-4.13.1_openbao-2.5.2_spire-1.14.5_spiffe-helper-0.11.0_nats-server-2.12.7_garage-v2.3.0_forgejo-15.0.0_bazel-remote-2.6.1_otelcol-contrib-0.149.0_temporal-1.30.4_grafana-12.4.2_grafana-clickhouse-datasource-4.14.1_containerd-2.2.2_nodejs-22.22.2_stalwart-0.15.5_stalwart-cli-0.15.5_caddy-2.11.2
+topology_system_packages:
+  build-essential:
+    risk_acknowledgement: build-essential is a Debian metapackage that has no version of its own; we accept upstream Ubuntu's archive integrity for the gcc/g++/make versions it pulls in.
+    version_cmd: gcc --version
+  crun:
+    apt_version_constraint: 1.14.1
+    risk_acknowledgement: crun is consumed by Firecracker tooling; we accept upstream Ubuntu's archive integrity in exchange for kernel-matched OCI runtime defaults that a Bazel http_file rule would not give us.
+    version_cmd: crun --version
+  debootstrap:
+    apt_version_constraint: 1.0.134
+    risk_acknowledgement: debootstrap is the bootstrap utility for guest rootfs builds; we accept upstream Ubuntu's archive integrity because the binary's only output is a chroot tree we then sha-pin downstream.
+    version_cmd: debootstrap --version
 topology_versions:
   development:
     age: 1.3.1

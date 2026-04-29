@@ -4,15 +4,30 @@ package catalog
 // #DevToolTier categorises how a dev tool reaches the controller. Values
 // other than `legacy_install_plan` are migration targets; the end state has
 // no entries on the legacy tier and `roles/dev_tools/` is reduced to the
-// per-tier-driven tasks (Bazel untar / uv sync / apt). See
+// per-tier-driven tasks (Bazel untar / uv sync). See
 // `src/cue-renderer/AGENTS.md` for the per-tier delivery contract.
+//
+// Apt packages live in the top-level `systemPackages` block, not in
+// devTools, because they are not version-pinned by sha256 — the
+// `risk_acknowledgement` field forces an explicit declaration that we
+// trust upstream Ubuntu archive integrity for the affected entries.
 #DevToolTier:
 	"pinned_http_file" |
 	"source_built_go" |
 	"lockfile_uv" |
-	"system_apt" |
 	"bootstrap_pivot" |
 	"legacy_install_plan"
+
+// #SystemPackage describes an apt-managed system package. The risk
+// acknowledgement is mandatory: every entry must explicitly state why
+// we accept apt's lack of content pinning. The pattern requires the
+// substring "upstream" so an empty or boilerplate string fails CUE
+// evaluation rather than passing silently.
+#SystemPackage: {
+	risk_acknowledgement: string & =~"upstream"
+	apt_version_constraint?: string
+	version_cmd:             string & !=""
+}
 
 versions: {
 	production: {
@@ -105,12 +120,35 @@ serverTools: {
 }
 
 // devToolsArchive is the dev-tools twin of serverTools: the single Bazel
-// label Ansible's bridge will request (next PR), plus a composite version
-// that flips whenever any pinned_http_file dev tool is bumped. Forces a
-// re-unpack on the controller when any version moves.
+// label Ansible's bridge requests, plus a composite version that flips
+// whenever any pinned_http_file dev tool is bumped. Forces a re-unpack
+// on the controller when any version moves.
 devToolsArchive: {
 	bazel_label: "//src/cue-renderer/binaries:dev_tools.tar.zst"
 	version:     "age-\(versions.development.age)_agent-browser-\(versions.development.agentBrowser)_buf-\(versions.development.buf)_buildifier-\(versions.development.buildifier)_clickhouse-\(versions.development.clickhouse)_cue-\(versions.development.cue)_go-\(versions.development.go)_jq-\(versions.development.jq)_osv-scanner-\(versions.development.osvScanner)_protoc-\(versions.development.protoc)_shellcheck-\(versions.development.shellcheck)_sops-\(versions.development.sops)_stripe-\(versions.development.stripe)_tofu-\(versions.development.opentofu)_uv-\(versions.development.uv)_zig-\(versions.development.zig)"
+}
+
+// systemPackages: apt-managed packages that intentionally bypass content
+// pinning. Each entry must declare `risk_acknowledgement` containing the
+// substring "upstream"; the schema rejects empty or boilerplate strings.
+// The dev_tools role iterates this map verbatim; no install-plan
+// projection is involved.
+systemPackages: [Name=string]: #SystemPackage
+systemPackages: {
+	"build-essential": {
+		risk_acknowledgement: "build-essential is a Debian metapackage that has no version of its own; we accept upstream Ubuntu's archive integrity for the gcc/g++/make versions it pulls in."
+		version_cmd:          "gcc --version"
+	}
+	crun: {
+		apt_version_constraint: versions.development.crun
+		risk_acknowledgement:   "crun is consumed by Firecracker tooling; we accept upstream Ubuntu's archive integrity in exchange for kernel-matched OCI runtime defaults that a Bazel http_file rule would not give us."
+		version_cmd:            "crun --version"
+	}
+	debootstrap: {
+		apt_version_constraint: versions.development.debootstrap
+		risk_acknowledgement:   "debootstrap is the bootstrap utility for guest rootfs builds; we accept upstream Ubuntu's archive integrity because the binary's only output is a chroot tree we then sha-pin downstream."
+		version_cmd:            "debootstrap --version"
+	}
 }
 
 serverToolDownloads: {
@@ -509,23 +547,6 @@ devTools: {
 		strategy:    "go_install"
 		go_package:  "google.golang.org/grpc/cmd/protoc-gen-go-grpc"
 		version_cmd: "protoc-gen-go-grpc --version"
-	}
-	"build-essential": {
-		tier:        #DevToolTier & "system_apt"
-		strategy:    "apt"
-		version_cmd: "gcc --version"
-	}
-	crun: {
-		tier:        #DevToolTier & "system_apt"
-		version:     versions.development.crun
-		strategy:    "apt"
-		version_cmd: "crun --version"
-	}
-	debootstrap: {
-		tier:        #DevToolTier & "system_apt"
-		version:     versions.development.debootstrap
-		strategy:    "apt"
-		version_cmd: "debootstrap --version"
 	}
 	guarddog: {
 		tier:        #DevToolTier & "legacy_install_plan"

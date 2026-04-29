@@ -15,9 +15,14 @@ control which delivery channel ships the binary.
 | `pinned_http_file`    | Bazel `http_file` rule → packed into a `*_tools.tar.zst` → unpacked by Ansible at `/`                | url + sha256           |
 | `source_built_go`     | Bazel `go_binary` from vendored `go_deps` → packed into the same tarball as `pinned_http_file`        | go.sum (per-module)    |
 | `lockfile_uv`         | `uv sync --frozen` against a committed `uv.lock` per tool project, then symlink the entrypoint        | per-wheel sha256       |
-| `system_apt`          | `apt-get install` of an unpinned upstream package; the only tier without content pinning              | version label only     |
 | `bootstrap_pivot`     | Direct download from `scripts/bootstrap` before Bazel can run; the chicken-and-egg exception          | url + sha256 (in shell)|
 | `legacy_install_plan` | The pre-Bazel install pipeline driven by `catalog.go`'s switch + `roles/dev_tools/tasks/main.yml`     | varies per strategy    |
+
+`systemPackages` is a separate top-level CUE block (not a devTools tier)
+for apt-managed packages. Each entry must declare `risk_acknowledgement`
+containing the substring "upstream" so the schema rejects empty or
+boilerplate strings; this is the only delivery channel intentionally
+without content pinning.
 
 `legacy_install_plan` is the migration sentinel: every entry currently
 on it is on the path to one of the other tiers. After the dev-tools
@@ -46,9 +51,10 @@ protoc-gen-go, protoc-gen-go-grpc, guarddog. To be migrated to
 `lockfile_uv` (Python) or `source_built_go` (Go-installable) in later
 phases.
 
-`system_apt` (3): build-essential, crun, debootstrap. Will be moved out
-of `devTools` into a separate `systemPackages` block with an explicit
-risk acknowledgement that they are unpinned.
+`systemPackages` (3): build-essential, crun, debootstrap. Apt-managed,
+intentionally not content-pinned; each entry carries a
+`risk_acknowledgement` string explaining why upstream archive integrity
+is acceptable for that package.
 
 ## Canonical pattern: CUE → http_file → pkg_tar → Ansible-untar
 
