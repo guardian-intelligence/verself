@@ -164,25 +164,12 @@ func (vl *VolumeLifecycle) Seed(ctx context.Context, image Image, spec SeedSpec)
 		return SeedResult{}, fmt.Errorf("ensure image dataset root: %w", ensureErr)
 	}
 
-	dependents := 0
-	if spec.AllowDestroyingActiveClones {
-		torn, tearErr := vl.tearDownDependentClones(ctx, image)
-		if tearErr != nil {
-			return SeedResult{}, tearErr
-		}
-		dependents = torn
-	}
-
-	// Clean any leftover staging from a previous failed run.
+	// Stage the new image first; only after the staging snapshot is good
+	// do we destroy dependents and the old target dataset. A crash before
+	// the staging snapshot leaves the previous (working) image untouched.
 	stagingDestroys, err := vl.cleanupStaging(ctx, stagingDataset)
 	if err != nil {
 		return SeedResult{}, err
-	}
-
-	// Destroy any pre-existing target dataset (recursive — clones already
-	// torn down above when authorized).
-	if existsErr := destroyIfExists(ctx, vl.ops, targetDataset, true); existsErr != nil {
-		return SeedResult{}, fmt.Errorf("destroy old image dataset %s: %w", targetDataset, existsErr)
 	}
 
 	createCtx, endCreate := startSpan(ctx, "vmorchestrator.zfs.seed_staging_create",
@@ -272,6 +259,21 @@ func (vl *VolumeLifecycle) Seed(ctx context.Context, image Image, spec SeedSpec)
 	endSnap(snapErr)
 	if snapErr != nil {
 		return SeedResult{}, fmt.Errorf("snapshot staging %s: %w", stagingReady, snapErr)
+	}
+
+	// Staging is proven good — now tear down dependents of the previous
+	// image (when authorized) and destroy the previous target so the
+	// rename can claim the path.
+	dependents := 0
+	if spec.AllowDestroyingActiveClones {
+		torn, tearErr := vl.tearDownDependentClones(ctx, image)
+		if tearErr != nil {
+			return SeedResult{}, tearErr
+		}
+		dependents = torn
+	}
+	if existsErr := destroyIfExists(ctx, vl.ops, targetDataset, true); existsErr != nil {
+		return SeedResult{}, fmt.Errorf("destroy old image dataset %s: %w", targetDataset, existsErr)
 	}
 
 	renameCtx, endRename := startSpan(ctx, "vmorchestrator.zfs.seed_promote_rename",
