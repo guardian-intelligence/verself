@@ -23,21 +23,33 @@ if [[ "${VERIFICATION_RESET:-0}" == "1" ]]; then
   site_extra_vars=(-e "temporal_force_schema_reset=true" -e "clickhouse_force_schema_reset=true")
 fi
 
-(
-  cd "${VERIFICATION_PLATFORM_ROOT}/ansible"
-  if [[ "${VERIFICATION_RESET:-0}" == "1" ]]; then
-    ansible-playbook -i inventory/hosts.ini playbooks/verification-reset.yml
-  fi
-  ansible-playbook -i inventory/hosts.ini playbooks/guest-rootfs.yml
-  ansible-playbook -i inventory/hosts.ini playbooks/site.yml \
-    --tags "${deploy_tags}" "${site_extra_vars[@]}"
-  # site.yml restarts the service stack; wait for the loopback API before
-  # seed-system starts probing authz behavior against sandbox-rental.
-  verification_wait_for_loopback_api "billing-service" "http://127.0.0.1:4242/readyz" "200"
-  verification_wait_for_loopback_api "sandbox-rental-service" \
-    "http://127.0.0.1:4243/api/v1/billing/entitlements" "401"
-  ansible-playbook -i inventory/hosts.ini playbooks/seed-system.yml
-)
+# Deploys and seed-system reseeds are opt-in. By default we exercise
+# whatever is already on the host. Pass VERIFICATION_DEPLOY=1 to
+# rebuild + redeploy before the checks; VERIFICATION_RESET=1 also runs
+# verification-reset + schema resets. VERIFICATION_RESEED=1 reruns
+# seed-system without touching the deploy.
+if [[ "${VERIFICATION_DEPLOY:-0}" == "1" || "${VERIFICATION_RESET:-0}" == "1" ]]; then
+  (
+    cd "${VERIFICATION_PLATFORM_ROOT}/ansible"
+    if [[ "${VERIFICATION_RESET:-0}" == "1" ]]; then
+      ansible-playbook -i inventory/hosts.ini playbooks/verification-reset.yml
+    fi
+    ansible-playbook -i inventory/hosts.ini playbooks/guest-rootfs.yml
+    ansible-playbook -i inventory/hosts.ini playbooks/site.yml \
+      --tags "${deploy_tags}" "${site_extra_vars[@]}"
+    # site.yml restarts the service stack; wait for the loopback API before
+    # seed-system starts probing authz behavior against sandbox-rental.
+    verification_wait_for_loopback_api "billing-service" "http://127.0.0.1:4242/readyz" "200"
+    verification_wait_for_loopback_api "sandbox-rental-service" \
+      "http://127.0.0.1:4243/api/v1/billing/entitlements" "401"
+    ansible-playbook -i inventory/hosts.ini playbooks/seed-system.yml
+  )
+elif [[ "${VERIFICATION_RESEED:-0}" == "1" ]]; then
+  (
+    cd "${VERIFICATION_PLATFORM_ROOT}/ansible"
+    ansible-playbook -i inventory/hosts.ini playbooks/seed-system.yml
+  )
+fi
 
 VERIFICATION_RUN_ID="${run_id}" \
 VERIFICATION_ARTIFACT_ROOT="${artifact_root}" \
