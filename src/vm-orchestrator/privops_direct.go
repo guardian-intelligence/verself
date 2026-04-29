@@ -13,12 +13,14 @@ import (
 	"time"
 
 	"github.com/vishvananda/netlink"
+
+	"github.com/verself/vm-orchestrator/zfs"
 )
 
 type DirectPrivOps struct{}
 
 func (DirectPrivOps) ZFSClone(ctx context.Context, snapshot, target, leaseID string) error {
-	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
+	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "zfs", "clone",
 		"-o", "vs:lease_id="+leaseID,
@@ -32,9 +34,9 @@ func (DirectPrivOps) ZFSClone(ctx context.Context, snapshot, target, leaseID str
 }
 
 func (DirectPrivOps) ZFSSnapshot(ctx context.Context, dataset, snapshotName string, properties map[string]string) error {
-	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
+	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
 	defer cancel()
-	if err := validateZFSSnapshotName(snapshotName); err != nil {
+	if err := zfs.ValidateSnapshotName(snapshotName); err != nil {
 		return err
 	}
 	if strings.Contains(dataset, "@") {
@@ -55,7 +57,7 @@ func (DirectPrivOps) ZFSSnapshot(ctx context.Context, dataset, snapshotName stri
 }
 
 func (DirectPrivOps) ZFSDestroy(ctx context.Context, dataset string) error {
-	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
+	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "zfs", "destroy", dataset)
 	out, err := cmd.CombinedOutput()
@@ -66,7 +68,7 @@ func (DirectPrivOps) ZFSDestroy(ctx context.Context, dataset string) error {
 }
 
 func (DirectPrivOps) ZFSDestroyRecursive(ctx context.Context, dataset string) error {
-	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
+	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "zfs", "destroy", "-R", dataset)
 	out, err := cmd.CombinedOutput()
@@ -77,12 +79,12 @@ func (DirectPrivOps) ZFSDestroyRecursive(ctx context.Context, dataset string) er
 }
 
 func (DirectPrivOps) ZFSEnsureFilesystem(ctx context.Context, dataset string) error {
-	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
+	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
 	defer cancel()
 	if strings.TrimSpace(dataset) == "" || strings.Contains(dataset, "@") {
 		return fmt.Errorf("zfs filesystem dataset is invalid: %s", dataset)
 	}
-	exists, err := zfsDatasetExists(ctx, dataset)
+	exists, err := zfs.DatasetExists(ctx, dataset)
 	if err != nil {
 		return err
 	}
@@ -98,7 +100,7 @@ func (DirectPrivOps) ZFSEnsureFilesystem(ctx context.Context, dataset string) er
 }
 
 func (DirectPrivOps) ZFSSendReceive(ctx context.Context, snapshot, target string) error {
-	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
+	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
 	defer cancel()
 	if strings.TrimSpace(snapshot) == "" || !strings.Contains(snapshot, "@") {
 		return fmt.Errorf("zfs send snapshot is invalid: %s", snapshot)
@@ -140,8 +142,16 @@ func (DirectPrivOps) ZFSSendReceive(ctx context.Context, snapshot, target string
 	return nil
 }
 
+func (DirectPrivOps) ZFSSnapshotExists(ctx context.Context, snapshot string) (bool, error) {
+	return zfs.SnapshotExists(ctx, snapshot)
+}
+
+func (DirectPrivOps) ZFSDatasetExists(ctx context.Context, dataset string) (bool, error) {
+	return zfs.DatasetExists(ctx, dataset)
+}
+
 func (DirectPrivOps) ZFSSetProperty(ctx context.Context, dataset, key, value string) error {
-	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
+	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "zfs", "set", key+"="+value, dataset)
 	out, err := cmd.CombinedOutput()
@@ -151,8 +161,197 @@ func (DirectPrivOps) ZFSSetProperty(ctx context.Context, dataset, key, value str
 	return nil
 }
 
+// ZFSGetProperty reads a single property value via `zfs get -H -p -o value`.
+// A user property that has never been set returns "-" from zfs(8); we map
+// that to an empty string so callers can compare against expected digests
+// without special-casing the sentinel.
+func (DirectPrivOps) ZFSGetProperty(ctx context.Context, target, key string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "zfs", "get", "-H", "-p", "-o", "value", key, target)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("zfs get %s on %s: %s: %w", key, target, strings.TrimSpace(string(out)), err)
+	}
+	value := strings.TrimSpace(string(out))
+	if value == "-" {
+		return "", nil
+	}
+	return value, nil
+}
+
+// ZFSCreateVolume creates a sparse-by-default zvol with lz4 compression and
+// the requested volblocksize. Compression matches the prior Ansible block;
+// callers needing different compression should plumb a flag rather than
+// branching here.
+func (DirectPrivOps) ZFSCreateVolume(ctx context.Context, dataset string, sizeBytes uint64, volblocksize string) error {
+	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
+	defer cancel()
+	if strings.TrimSpace(dataset) == "" || strings.Contains(dataset, "@") {
+		return fmt.Errorf("zfs volume dataset is invalid: %s", dataset)
+	}
+	if sizeBytes == 0 {
+		return fmt.Errorf("zfs volume size must be > 0")
+	}
+	if strings.TrimSpace(volblocksize) == "" {
+		return fmt.Errorf("zfs volume volblocksize is required")
+	}
+	args := []string{
+		"create", "-V", strconv.FormatUint(sizeBytes, 10),
+		"-o", "volblocksize=" + volblocksize,
+		"-o", "compression=lz4",
+		dataset,
+	}
+	cmd := exec.CommandContext(ctx, "zfs", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("zfs create -V %d %s: %s: %w", sizeBytes, dataset, strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+// ZFSWriteVolumeFromFile dd's the source file's bytes onto a zvol device with
+// fsync at end. Returns total bytes written so the caller can record the
+// seeded size on the trace span. This is the seed equivalent of the legacy
+// Ansible "Write ext4 rootfs to staging zvol" task.
+func (DirectPrivOps) ZFSWriteVolumeFromFile(ctx context.Context, devicePath, sourcePath string) (uint64, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	if !strings.HasPrefix(devicePath, "/dev/zvol/") {
+		return 0, fmt.Errorf("device path must be under /dev/zvol/: %s", devicePath)
+	}
+	src, err := os.Open(sourcePath)
+	if err != nil {
+		return 0, fmt.Errorf("open source %s: %w", sourcePath, err)
+	}
+	defer src.Close()
+	info, err := src.Stat()
+	if err != nil {
+		return 0, fmt.Errorf("stat source %s: %w", sourcePath, err)
+	}
+	if info.Size() <= 0 {
+		return 0, fmt.Errorf("source %s is empty", sourcePath)
+	}
+	dst, err := os.OpenFile(devicePath, os.O_WRONLY, 0)
+	if err != nil {
+		return 0, fmt.Errorf("open device %s: %w", devicePath, err)
+	}
+	defer dst.Close()
+	bytesWritten, copyErr := io.Copy(dst, src)
+	if copyErr != nil {
+		return uint64(bytesWritten), fmt.Errorf("copy %s -> %s: %w", sourcePath, devicePath, copyErr)
+	}
+	if err := dst.Sync(); err != nil {
+		return uint64(bytesWritten), fmt.Errorf("fsync %s: %w", devicePath, err)
+	}
+	if err := ctx.Err(); err != nil {
+		return uint64(bytesWritten), err
+	}
+	return uint64(bytesWritten), nil
+}
+
+// ZFSMkfs runs mkfs on a zvol device. fsType currently must be "ext4"; other
+// filesystems can be added by extending the switch, but each addition must
+// confirm its mkfs(8) accepts the -F (force) and -L (label) flags we use.
+func (DirectPrivOps) ZFSMkfs(ctx context.Context, devicePath, fsType, label string) error {
+	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
+	defer cancel()
+	if !strings.HasPrefix(devicePath, "/dev/zvol/") {
+		return fmt.Errorf("device path must be under /dev/zvol/: %s", devicePath)
+	}
+	switch fsType {
+	case "ext4":
+		args := []string{"-F"}
+		if label != "" {
+			args = append(args, "-L", label)
+		}
+		args = append(args, devicePath)
+		cmd := exec.CommandContext(ctx, "mkfs.ext4", args...)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("mkfs.ext4 %s: %s: %w", devicePath, strings.TrimSpace(string(out)), err)
+		}
+		return nil
+	}
+	return fmt.Errorf("unsupported filesystem %q", fsType)
+}
+
+// ZFSRename moves a dataset name. Used by the seed flow to atomically promote
+// a populated `<image>-staging` zvol into place as `<image>` after the staging
+// snapshot has been taken.
+func (DirectPrivOps) ZFSRename(ctx context.Context, from, to string) error {
+	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "zfs", "rename", from, to)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("zfs rename %s -> %s: %s: %w", from, to, strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+// ZFSListChildren returns the fully-qualified names of the direct children of
+// dataset (depth 1). Used by the seed flow to find workload clones that need
+// to be torn down before the image they are derived from can be destroyed.
+func (DirectPrivOps) ZFSListChildren(ctx context.Context, dataset string) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "zfs", "list", "-H", "-o", "name", "-d", "1", "-r", dataset)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		if strings.Contains(string(out), "does not exist") {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("zfs list -d 1 %s: %s: %w", dataset, strings.TrimSpace(string(out)), err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	children := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || line == dataset {
+			continue
+		}
+		children = append(children, line)
+	}
+	return children, nil
+}
+
+// UnmountStaleZvolMounts force-unmounts every VFS mount whose source is a
+// device under /dev/zvol/<pool>/. Callers run this before destroying clones,
+// because `zfs destroy -f` only force-unmounts ZFS-native mounts; ext4 over
+// zvol is a regular VFS mount and must be detached separately.
+func (DirectPrivOps) UnmountStaleZvolMounts(ctx context.Context, pool string) (int, error) {
+	if strings.TrimSpace(pool) == "" {
+		return 0, fmt.Errorf("pool is required")
+	}
+	prefix := "/dev/zvol/" + pool + "/"
+	data, err := os.ReadFile("/proc/mounts")
+	if err != nil {
+		return 0, fmt.Errorf("read /proc/mounts: %w", err)
+	}
+	count := 0
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		if !strings.HasPrefix(fields[0], prefix) {
+			continue
+		}
+		umountCtx, cancel := context.WithTimeout(ctx, zfs.Timeout)
+		cmd := exec.CommandContext(umountCtx, "umount", "-l", fields[1])
+		out, umountErr := cmd.CombinedOutput()
+		cancel()
+		if umountErr != nil {
+			return count, fmt.Errorf("umount -l %s: %s: %w", fields[1], strings.TrimSpace(string(out)), umountErr)
+		}
+		count++
+	}
+	return count, nil
+}
+
 func (DirectPrivOps) FlushBlockDevice(ctx context.Context, path string) error {
-	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
+	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
 	defer cancel()
 	path = strings.TrimSpace(path)
 	if path == "" || !strings.HasPrefix(path, "/dev/") {

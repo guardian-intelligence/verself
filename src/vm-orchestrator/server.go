@@ -13,6 +13,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	vmrpc "github.com/verself/vm-orchestrator/proto/v1"
 	"github.com/verself/vm-orchestrator/vmproto"
+	"github.com/verself/vm-orchestrator/zfs"
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"google.golang.org/grpc/codes"
@@ -23,6 +24,7 @@ type APIServer struct {
 	vmrpc.UnimplementedVMServiceServer
 
 	cfg    Config
+	roots  zfs.Roots
 	logger *slog.Logger
 	state  *hostStateStore
 
@@ -130,7 +132,13 @@ func NewAPIServer(cfg Config, logger *slog.Logger) (*APIServer, error) {
 		return nil, fmt.Errorf("open host state ledger %s: %w", base.StateDBPath, err)
 	}
 	server := &APIServer{
-		cfg:    base,
+		cfg: base,
+		roots: zfs.Roots{
+			Pool:            base.Pool,
+			ImageDataset:    base.ImageDataset,
+			WorkloadDataset: base.WorkloadDataset,
+			GoldenZvol:      base.GoldenZvol,
+		},
 		logger: logger,
 		state:  state,
 		actors: map[string]*vmActor{},
@@ -520,7 +528,7 @@ func (s *APIServer) CommitFilesystemMount(ctx context.Context, req *vmrpc.Commit
 	if leaseID == "" || mountName == "" || targetSourceRef == "" || key == "" {
 		return nil, status.Error(codes.InvalidArgument, "lease_id, mount_name, target_source_ref, and idempotency_key are required")
 	}
-	if !filesystemRefPattern.MatchString(targetSourceRef) {
+	if !zfs.IsValidRef(targetSourceRef) {
 		return nil, status.Error(codes.InvalidArgument, "target_source_ref is invalid")
 	}
 	scope := "commit_filesystem_mount:" + leaseID
@@ -572,7 +580,7 @@ func (s *APIServer) SaveCheckpoint(ctx context.Context, req *vmrpc.SaveCheckpoin
 		return nil, status.Error(codes.NotFound, err.Error())
 	}
 	orch := New(s.cfg, s.logger)
-	resp := orch.handleCheckpointRequest(ctx, leaseID, actor.runtime.Dataset, normalizeCheckpointRefSet(snap.Allowlist), vmproto.CheckpointRequest{
+	resp := orch.handleCheckpointRequest(ctx, actor.runtime.Lease, normalizeCheckpointRefSet(snap.Allowlist), vmproto.CheckpointRequest{
 		RequestID: req.GetIdempotencyKey(),
 		Operation: vmproto.CheckpointOperationSave,
 		Ref:       ref,
@@ -583,6 +591,84 @@ func (s *APIServer) SaveCheckpoint(ctx context.Context, req *vmrpc.SaveCheckpoin
 	now := time.Now().UTC()
 	_ = s.state.appendLeaseEvent(context.Background(), leaseID, LeaseEventCheckpointSaved, "", map[string]string{"ref": ref, "version_id": resp.VersionID})
 	return &vmrpc.SaveCheckpointResponse{LeaseId: leaseID, Ref: ref, VersionId: resp.VersionID, SavedAtUnixNs: uint64(now.UnixNano())}, nil
+}
+
+func (s *APIServer) SeedImage(ctx context.Context, req *vmrpc.SeedImageRequest) (*vmrpc.SeedImageResponse, error) {
+	ctx, span := tracer.Start(ctx, "rpc.SeedImage")
+	defer span.End()
+	if err := requireRootPeerCreds(ctx); err != nil {
+		span.RecordError(err)
+		span.SetStatus(otelcodes.Error, err.Error())
+		return nil, err
+	}
+	imageRef := strings.TrimSpace(req.GetImageRef())
+	if imageRef == "" {
+		return nil, status.Error(codes.InvalidArgument, "image_ref is required")
+	}
+	image, imgErr := zfs.NewImage(s.roots, imageRef)
+	if imgErr != nil {
+		return nil, status.Error(codes.InvalidArgument, imgErr.Error())
+	}
+	strategy, strategyErr := seedStrategyFromProto(req.GetStrategy())
+	if strategyErr != nil {
+		return nil, status.Error(codes.InvalidArgument, strategyErr.Error())
+	}
+	spec := zfs.SeedSpec{
+		Strategy:                    strategy,
+		SizeBytes:                   req.GetSizeBytes(),
+		VolBlockSize:                strings.TrimSpace(req.GetVolblocksize()),
+		SourcePath:                  strings.TrimSpace(req.GetSourcePath()),
+		FilesystemLabel:             strings.TrimSpace(req.GetFilesystemLabel()),
+		AllowDestroyingActiveClones: req.GetAllowDestroyingActiveClones(),
+	}
+	span.SetAttributes(
+		attribute.String("image.ref", imageRef),
+		attribute.String("seed.strategy", string(strategy)),
+		attribute.Int64("seed.size_bytes", int64(spec.SizeBytes)),
+	)
+	volumes := zfs.NewVolumeLifecycle(s.roots, DirectPrivOps{}, s.logger)
+	result, seedErr := volumes.Seed(ctx, image, spec)
+	if seedErr != nil {
+		span.RecordError(seedErr)
+		span.SetStatus(otelcodes.Error, seedErr.Error())
+		return nil, status.Error(codes.Internal, seedErr.Error())
+	}
+	span.SetAttributes(
+		attribute.String("seed.outcome", string(result.Outcome)),
+		attribute.String("seed.source_digest", result.SourceDigest),
+		attribute.Int("seed.dependents_torn", result.DependentsTorn),
+		attribute.Int64("seed.seeded_bytes", int64(result.SeededBytes)),
+	)
+	return &vmrpc.SeedImageResponse{
+		ImageRef:       imageRef,
+		Outcome:        seedOutcomeToProto(result.Outcome),
+		Dataset:        result.Image.Dataset(),
+		Snapshot:       result.Snapshot.String(),
+		SourceDigest:   result.SourceDigest,
+		SeededBytes:    result.SeededBytes,
+		DependentsTorn: uint32(result.DependentsTorn),
+		SeededAtUnixNs: uint64(result.SeededAt.UnixNano()),
+	}, nil
+}
+
+func seedStrategyFromProto(strategy vmrpc.SeedStrategy) (zfs.SeedStrategy, error) {
+	switch strategy {
+	case vmrpc.SeedStrategy_SEED_STRATEGY_DD_FROM_FILE:
+		return zfs.SeedStrategyDDFromFile, nil
+	case vmrpc.SeedStrategy_SEED_STRATEGY_MKFS_EXT4:
+		return zfs.SeedStrategyMkfsExt4, nil
+	}
+	return "", fmt.Errorf("seed strategy is required")
+}
+
+func seedOutcomeToProto(outcome zfs.SeedOutcome) vmrpc.SeedOutcome {
+	switch outcome {
+	case zfs.SeedOutcomeRefreshed:
+		return vmrpc.SeedOutcome_SEED_OUTCOME_REFRESHED
+	case zfs.SeedOutcomeUpToDate:
+		return vmrpc.SeedOutcome_SEED_OUTCOME_UP_TO_DATE
+	}
+	return vmrpc.SeedOutcome_SEED_OUTCOME_UNSPECIFIED
 }
 
 func (s *APIServer) GetCapacity(ctx context.Context, _ *vmrpc.GetCapacityRequest) (*vmrpc.GetCapacityResponse, error) {
@@ -598,7 +684,7 @@ func (s *APIServer) GetCapacity(ctx context.Context, _ *vmrpc.GetCapacityRequest
 	if total > leasesHeld {
 		available = total - leasesHeld
 	}
-	rootfsBytes, err := zfsVolsize(ctx, s.cfg.Pool+"/"+s.cfg.GoldenZvol)
+	rootfsBytes, err := zfs.Volsize(ctx, zfs.GoldenSnapshot(s.roots).Dataset())
 	if err != nil {
 		rootfsBytes = 0
 	}
@@ -760,7 +846,7 @@ func (a *vmActor) handleStartExec(callerCtx context.Context, execID string, spec
 	startedCh := make(chan time.Time, 1)
 	doneCh := make(chan execDoneCmd, 1)
 	go func() {
-		handleCheckpoint := New(a.server.cfg, a.server.logger).checkpointHandler(execCtx, a.leaseID, a.runtime.Dataset, normalizeCheckpointRefSet(a.spec.CheckpointSaveAllowlist), &leaseObserver{actor: a}, a.server.logger)
+		handleCheckpoint := New(a.server.cfg, a.server.logger).checkpointHandler(execCtx, a.runtime.Lease, normalizeCheckpointRefSet(a.spec.CheckpointSaveAllowlist), &leaseObserver{actor: a}, a.server.logger)
 		result, err := a.runtime.Exec(execCtx, spec, handleCheckpoint)
 		doneCh <- execDoneCmd{execID: execID, result: result, err: err}
 	}()

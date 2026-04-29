@@ -326,6 +326,104 @@ func (LeaseEventType) EnumDescriptor() ([]byte, []int) {
 	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{4}
 }
 
+type SeedStrategy int32
+
+const (
+	SeedStrategy_SEED_STRATEGY_UNSPECIFIED  SeedStrategy = 0
+	SeedStrategy_SEED_STRATEGY_DD_FROM_FILE SeedStrategy = 1
+	SeedStrategy_SEED_STRATEGY_MKFS_EXT4    SeedStrategy = 2
+)
+
+// Enum value maps for SeedStrategy.
+var (
+	SeedStrategy_name = map[int32]string{
+		0: "SEED_STRATEGY_UNSPECIFIED",
+		1: "SEED_STRATEGY_DD_FROM_FILE",
+		2: "SEED_STRATEGY_MKFS_EXT4",
+	}
+	SeedStrategy_value = map[string]int32{
+		"SEED_STRATEGY_UNSPECIFIED":  0,
+		"SEED_STRATEGY_DD_FROM_FILE": 1,
+		"SEED_STRATEGY_MKFS_EXT4":    2,
+	}
+)
+
+func (x SeedStrategy) Enum() *SeedStrategy {
+	p := new(SeedStrategy)
+	*p = x
+	return p
+}
+
+func (x SeedStrategy) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SeedStrategy) Descriptor() protoreflect.EnumDescriptor {
+	return file_proto_v1_vm_service_proto_enumTypes[5].Descriptor()
+}
+
+func (SeedStrategy) Type() protoreflect.EnumType {
+	return &file_proto_v1_vm_service_proto_enumTypes[5]
+}
+
+func (x SeedStrategy) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SeedStrategy.Descriptor instead.
+func (SeedStrategy) EnumDescriptor() ([]byte, []int) {
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{5}
+}
+
+type SeedOutcome int32
+
+const (
+	SeedOutcome_SEED_OUTCOME_UNSPECIFIED SeedOutcome = 0
+	SeedOutcome_SEED_OUTCOME_REFRESHED   SeedOutcome = 1
+	SeedOutcome_SEED_OUTCOME_UP_TO_DATE  SeedOutcome = 2
+)
+
+// Enum value maps for SeedOutcome.
+var (
+	SeedOutcome_name = map[int32]string{
+		0: "SEED_OUTCOME_UNSPECIFIED",
+		1: "SEED_OUTCOME_REFRESHED",
+		2: "SEED_OUTCOME_UP_TO_DATE",
+	}
+	SeedOutcome_value = map[string]int32{
+		"SEED_OUTCOME_UNSPECIFIED": 0,
+		"SEED_OUTCOME_REFRESHED":   1,
+		"SEED_OUTCOME_UP_TO_DATE":  2,
+	}
+)
+
+func (x SeedOutcome) Enum() *SeedOutcome {
+	p := new(SeedOutcome)
+	*p = x
+	return p
+}
+
+func (x SeedOutcome) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SeedOutcome) Descriptor() protoreflect.EnumDescriptor {
+	return file_proto_v1_vm_service_proto_enumTypes[6].Descriptor()
+}
+
+func (SeedOutcome) Type() protoreflect.EnumType {
+	return &file_proto_v1_vm_service_proto_enumTypes[6]
+}
+
+func (x SeedOutcome) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SeedOutcome.Descriptor instead.
+func (SeedOutcome) EnumDescriptor() ([]byte, []int) {
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{6}
+}
+
 type NetworkAttach struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Mode          NetworkAttachMode      `protobuf:"varint,1,opt,name=mode,proto3,enum=verself.vm_orchestrator.v1.NetworkAttachMode" json:"mode,omitempty"`
@@ -2720,6 +2818,211 @@ func (x *GetCapacityResponse) GetPool() *VMPoolCapacity {
 	return nil
 }
 
+type SeedImageRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// image_ref is the composable image identifier (e.g. "golden", "viteplus",
+	// "sticky-empty"). Same alphabet as other service-authorized refs.
+	ImageRef string       `protobuf:"bytes,1,opt,name=image_ref,json=imageRef,proto3" json:"image_ref,omitempty"`
+	Strategy SeedStrategy `protobuf:"varint,2,opt,name=strategy,proto3,enum=verself.vm_orchestrator.v1.SeedStrategy" json:"strategy,omitempty"`
+	// size_bytes is the zvol size in bytes. Required.
+	SizeBytes uint64 `protobuf:"varint,3,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	// volblocksize is the ZFS volblocksize property (e.g. "16K"). Empty
+	// selects the daemon default.
+	Volblocksize string `protobuf:"bytes,4,opt,name=volblocksize,proto3" json:"volblocksize,omitempty"`
+	// source_path is the host-local artifact whose bytes get dd-ed onto the
+	// staging zvol. Required when strategy=SEED_STRATEGY_DD_FROM_FILE.
+	SourcePath string `protobuf:"bytes,5,opt,name=source_path,json=sourcePath,proto3" json:"source_path,omitempty"`
+	// filesystem_label is passed to mkfs -L. Required when
+	// strategy=SEED_STRATEGY_MKFS_EXT4.
+	FilesystemLabel string `protobuf:"bytes,6,opt,name=filesystem_label,json=filesystemLabel,proto3" json:"filesystem_label,omitempty"`
+	// allow_destroying_active_clones authorizes the seed flow to recursively
+	// destroy any workload clones derived from the previous image dataset
+	// before the rename promotion. Set true at deploy time when leases from
+	// before the deploy are guaranteed crashed.
+	AllowDestroyingActiveClones bool `protobuf:"varint,7,opt,name=allow_destroying_active_clones,json=allowDestroyingActiveClones,proto3" json:"allow_destroying_active_clones,omitempty"`
+	unknownFields               protoimpl.UnknownFields
+	sizeCache                   protoimpl.SizeCache
+}
+
+func (x *SeedImageRequest) Reset() {
+	*x = SeedImageRequest{}
+	mi := &file_proto_v1_vm_service_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SeedImageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SeedImageRequest) ProtoMessage() {}
+
+func (x *SeedImageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_vm_service_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SeedImageRequest.ProtoReflect.Descriptor instead.
+func (*SeedImageRequest) Descriptor() ([]byte, []int) {
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *SeedImageRequest) GetImageRef() string {
+	if x != nil {
+		return x.ImageRef
+	}
+	return ""
+}
+
+func (x *SeedImageRequest) GetStrategy() SeedStrategy {
+	if x != nil {
+		return x.Strategy
+	}
+	return SeedStrategy_SEED_STRATEGY_UNSPECIFIED
+}
+
+func (x *SeedImageRequest) GetSizeBytes() uint64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
+}
+
+func (x *SeedImageRequest) GetVolblocksize() string {
+	if x != nil {
+		return x.Volblocksize
+	}
+	return ""
+}
+
+func (x *SeedImageRequest) GetSourcePath() string {
+	if x != nil {
+		return x.SourcePath
+	}
+	return ""
+}
+
+func (x *SeedImageRequest) GetFilesystemLabel() string {
+	if x != nil {
+		return x.FilesystemLabel
+	}
+	return ""
+}
+
+func (x *SeedImageRequest) GetAllowDestroyingActiveClones() bool {
+	if x != nil {
+		return x.AllowDestroyingActiveClones
+	}
+	return false
+}
+
+type SeedImageResponse struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ImageRef       string                 `protobuf:"bytes,1,opt,name=image_ref,json=imageRef,proto3" json:"image_ref,omitempty"`
+	Outcome        SeedOutcome            `protobuf:"varint,2,opt,name=outcome,proto3,enum=verself.vm_orchestrator.v1.SeedOutcome" json:"outcome,omitempty"`
+	Dataset        string                 `protobuf:"bytes,3,opt,name=dataset,proto3" json:"dataset,omitempty"`
+	Snapshot       string                 `protobuf:"bytes,4,opt,name=snapshot,proto3" json:"snapshot,omitempty"`
+	SourceDigest   string                 `protobuf:"bytes,5,opt,name=source_digest,json=sourceDigest,proto3" json:"source_digest,omitempty"`
+	SeededBytes    uint64                 `protobuf:"varint,6,opt,name=seeded_bytes,json=seededBytes,proto3" json:"seeded_bytes,omitempty"`
+	DependentsTorn uint32                 `protobuf:"varint,7,opt,name=dependents_torn,json=dependentsTorn,proto3" json:"dependents_torn,omitempty"`
+	SeededAtUnixNs uint64                 `protobuf:"varint,8,opt,name=seeded_at_unix_ns,json=seededAtUnixNs,proto3" json:"seeded_at_unix_ns,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *SeedImageResponse) Reset() {
+	*x = SeedImageResponse{}
+	mi := &file_proto_v1_vm_service_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SeedImageResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SeedImageResponse) ProtoMessage() {}
+
+func (x *SeedImageResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_vm_service_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SeedImageResponse.ProtoReflect.Descriptor instead.
+func (*SeedImageResponse) Descriptor() ([]byte, []int) {
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *SeedImageResponse) GetImageRef() string {
+	if x != nil {
+		return x.ImageRef
+	}
+	return ""
+}
+
+func (x *SeedImageResponse) GetOutcome() SeedOutcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return SeedOutcome_SEED_OUTCOME_UNSPECIFIED
+}
+
+func (x *SeedImageResponse) GetDataset() string {
+	if x != nil {
+		return x.Dataset
+	}
+	return ""
+}
+
+func (x *SeedImageResponse) GetSnapshot() string {
+	if x != nil {
+		return x.Snapshot
+	}
+	return ""
+}
+
+func (x *SeedImageResponse) GetSourceDigest() string {
+	if x != nil {
+		return x.SourceDigest
+	}
+	return ""
+}
+
+func (x *SeedImageResponse) GetSeededBytes() uint64 {
+	if x != nil {
+		return x.SeededBytes
+	}
+	return 0
+}
+
+func (x *SeedImageResponse) GetDependentsTorn() uint32 {
+	if x != nil {
+		return x.DependentsTorn
+	}
+	return 0
+}
+
+func (x *SeedImageResponse) GetSeededAtUnixNs() uint64 {
+	if x != nil {
+		return x.SeededAtUnixNs
+	}
+	return 0
+}
+
 var File_proto_v1_vm_service_proto protoreflect.FileDescriptor
 
 const file_proto_v1_vm_service_proto_rawDesc = "" +
@@ -2929,7 +3232,26 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\x12GetCapacityRequest\"}\n" +
 	"\x13GetCapacityResponse\x12&\n" +
 	"\x0fguest_pool_cidr\x18\x01 \x01(\tR\rguestPoolCidr\x12>\n" +
-	"\x04pool\x18\x02 \x01(\v2*.verself.vm_orchestrator.v1.VMPoolCapacityR\x04pool*\xc1\x01\n" +
+	"\x04pool\x18\x02 \x01(\v2*.verself.vm_orchestrator.v1.VMPoolCapacityR\x04pool\"\xc9\x02\n" +
+	"\x10SeedImageRequest\x12\x1b\n" +
+	"\timage_ref\x18\x01 \x01(\tR\bimageRef\x12D\n" +
+	"\bstrategy\x18\x02 \x01(\x0e2(.verself.vm_orchestrator.v1.SeedStrategyR\bstrategy\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\x03 \x01(\x04R\tsizeBytes\x12\"\n" +
+	"\fvolblocksize\x18\x04 \x01(\tR\fvolblocksize\x12\x1f\n" +
+	"\vsource_path\x18\x05 \x01(\tR\n" +
+	"sourcePath\x12)\n" +
+	"\x10filesystem_label\x18\x06 \x01(\tR\x0ffilesystemLabel\x12C\n" +
+	"\x1eallow_destroying_active_clones\x18\a \x01(\bR\x1ballowDestroyingActiveClones\"\xc5\x02\n" +
+	"\x11SeedImageResponse\x12\x1b\n" +
+	"\timage_ref\x18\x01 \x01(\tR\bimageRef\x12A\n" +
+	"\aoutcome\x18\x02 \x01(\x0e2'.verself.vm_orchestrator.v1.SeedOutcomeR\aoutcome\x12\x18\n" +
+	"\adataset\x18\x03 \x01(\tR\adataset\x12\x1a\n" +
+	"\bsnapshot\x18\x04 \x01(\tR\bsnapshot\x12#\n" +
+	"\rsource_digest\x18\x05 \x01(\tR\fsourceDigest\x12!\n" +
+	"\fseeded_bytes\x18\x06 \x01(\x04R\vseededBytes\x12'\n" +
+	"\x0fdependents_torn\x18\a \x01(\rR\x0edependentsTorn\x12)\n" +
+	"\x11seeded_at_unix_ns\x18\b \x01(\x04R\x0eseededAtUnixNs*\xc1\x01\n" +
 	"\n" +
 	"LeaseState\x12\x1b\n" +
 	"\x17LEASE_STATE_UNSPECIFIED\x10\x00\x12\x19\n" +
@@ -2971,7 +3293,15 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\x12#\n" +
 	"\x1fLEASE_EVENT_TYPE_LEASE_RELEASED\x10\v\x12\"\n" +
 	"\x1eLEASE_EVENT_TYPE_LEASE_CRASHED\x10\f\x12)\n" +
-	"%LEASE_EVENT_TYPE_TELEMETRY_DIAGNOSTIC\x10\r2\xc1\v\n" +
+	"%LEASE_EVENT_TYPE_TELEMETRY_DIAGNOSTIC\x10\r*j\n" +
+	"\fSeedStrategy\x12\x1d\n" +
+	"\x19SEED_STRATEGY_UNSPECIFIED\x10\x00\x12\x1e\n" +
+	"\x1aSEED_STRATEGY_DD_FROM_FILE\x10\x01\x12\x1b\n" +
+	"\x17SEED_STRATEGY_MKFS_EXT4\x10\x02*d\n" +
+	"\vSeedOutcome\x12\x1c\n" +
+	"\x18SEED_OUTCOME_UNSPECIFIED\x10\x00\x12\x1a\n" +
+	"\x16SEED_OUTCOME_REFRESHED\x10\x01\x12\x1b\n" +
+	"\x17SEED_OUTCOME_UP_TO_DATE\x10\x022\xab\f\n" +
 	"\tVMService\x12q\n" +
 	"\fAcquireLease\x12/.verself.vm_orchestrator.v1.AcquireLeaseRequest\x1a0.verself.vm_orchestrator.v1.AcquireLeaseResponse\x12k\n" +
 	"\n" +
@@ -2988,7 +3318,8 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\bWaitExec\x12+.verself.vm_orchestrator.v1.WaitExecRequest\x1a,.verself.vm_orchestrator.v1.WaitExecResponse\x12\x8c\x01\n" +
 	"\x15CommitFilesystemMount\x128.verself.vm_orchestrator.v1.CommitFilesystemMountRequest\x1a9.verself.vm_orchestrator.v1.CommitFilesystemMountResponse\x12w\n" +
 	"\x0eSaveCheckpoint\x121.verself.vm_orchestrator.v1.SaveCheckpointRequest\x1a2.verself.vm_orchestrator.v1.SaveCheckpointResponse\x12n\n" +
-	"\vGetCapacity\x12..verself.vm_orchestrator.v1.GetCapacityRequest\x1a/.verself.vm_orchestrator.v1.GetCapacityResponseB3Z1github.com/verself/vm-orchestrator/proto/v1;vmrpcb\x06proto3"
+	"\vGetCapacity\x12..verself.vm_orchestrator.v1.GetCapacityRequest\x1a/.verself.vm_orchestrator.v1.GetCapacityResponse\x12h\n" +
+	"\tSeedImage\x12,.verself.vm_orchestrator.v1.SeedImageRequest\x1a-.verself.vm_orchestrator.v1.SeedImageResponseB3Z1github.com/verself/vm-orchestrator/proto/v1;vmrpcb\x06proto3"
 
 var (
 	file_proto_v1_vm_service_proto_rawDescOnce sync.Once
@@ -3002,110 +3333,118 @@ func file_proto_v1_vm_service_proto_rawDescGZIP() []byte {
 	return file_proto_v1_vm_service_proto_rawDescData
 }
 
-var file_proto_v1_vm_service_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_proto_v1_vm_service_proto_msgTypes = make([]protoimpl.MessageInfo, 37)
+var file_proto_v1_vm_service_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
+var file_proto_v1_vm_service_proto_msgTypes = make([]protoimpl.MessageInfo, 39)
 var file_proto_v1_vm_service_proto_goTypes = []any{
 	(LeaseState)(0),                       // 0: verself.vm_orchestrator.v1.LeaseState
 	(ExecState)(0),                        // 1: verself.vm_orchestrator.v1.ExecState
 	(StdioMode)(0),                        // 2: verself.vm_orchestrator.v1.StdioMode
 	(NetworkAttachMode)(0),                // 3: verself.vm_orchestrator.v1.NetworkAttachMode
 	(LeaseEventType)(0),                   // 4: verself.vm_orchestrator.v1.LeaseEventType
-	(*NetworkAttach)(nil),                 // 5: verself.vm_orchestrator.v1.NetworkAttach
-	(*VMResources)(nil),                   // 6: verself.vm_orchestrator.v1.VMResources
-	(*LeaseSpec)(nil),                     // 7: verself.vm_orchestrator.v1.LeaseSpec
-	(*FilesystemMount)(nil),               // 8: verself.vm_orchestrator.v1.FilesystemMount
-	(*AcquireLeaseRequest)(nil),           // 9: verself.vm_orchestrator.v1.AcquireLeaseRequest
-	(*AcquireLeaseResponse)(nil),          // 10: verself.vm_orchestrator.v1.AcquireLeaseResponse
-	(*RenewLeaseRequest)(nil),             // 11: verself.vm_orchestrator.v1.RenewLeaseRequest
-	(*RenewLeaseResponse)(nil),            // 12: verself.vm_orchestrator.v1.RenewLeaseResponse
-	(*ReleaseLeaseRequest)(nil),           // 13: verself.vm_orchestrator.v1.ReleaseLeaseRequest
-	(*ReleaseLeaseResponse)(nil),          // 14: verself.vm_orchestrator.v1.ReleaseLeaseResponse
-	(*GetLeaseRequest)(nil),               // 15: verself.vm_orchestrator.v1.GetLeaseRequest
-	(*LeaseRecord)(nil),                   // 16: verself.vm_orchestrator.v1.LeaseRecord
-	(*GetLeaseResponse)(nil),              // 17: verself.vm_orchestrator.v1.GetLeaseResponse
-	(*ListLeasesRequest)(nil),             // 18: verself.vm_orchestrator.v1.ListLeasesRequest
-	(*ListLeasesResponse)(nil),            // 19: verself.vm_orchestrator.v1.ListLeasesResponse
-	(*StreamLeaseEventsRequest)(nil),      // 20: verself.vm_orchestrator.v1.StreamLeaseEventsRequest
-	(*LeaseEvent)(nil),                    // 21: verself.vm_orchestrator.v1.LeaseEvent
-	(*ExecSpec)(nil),                      // 22: verself.vm_orchestrator.v1.ExecSpec
-	(*StartExecRequest)(nil),              // 23: verself.vm_orchestrator.v1.StartExecRequest
-	(*StartExecResponse)(nil),             // 24: verself.vm_orchestrator.v1.StartExecResponse
-	(*CancelExecRequest)(nil),             // 25: verself.vm_orchestrator.v1.CancelExecRequest
-	(*CancelExecResponse)(nil),            // 26: verself.vm_orchestrator.v1.CancelExecResponse
-	(*GetExecRequest)(nil),                // 27: verself.vm_orchestrator.v1.GetExecRequest
-	(*WaitExecRequest)(nil),               // 28: verself.vm_orchestrator.v1.WaitExecRequest
-	(*ExecRecord)(nil),                    // 29: verself.vm_orchestrator.v1.ExecRecord
-	(*GetExecResponse)(nil),               // 30: verself.vm_orchestrator.v1.GetExecResponse
-	(*WaitExecResponse)(nil),              // 31: verself.vm_orchestrator.v1.WaitExecResponse
-	(*SaveCheckpointRequest)(nil),         // 32: verself.vm_orchestrator.v1.SaveCheckpointRequest
-	(*SaveCheckpointResponse)(nil),        // 33: verself.vm_orchestrator.v1.SaveCheckpointResponse
-	(*CommitFilesystemMountRequest)(nil),  // 34: verself.vm_orchestrator.v1.CommitFilesystemMountRequest
-	(*CommitFilesystemMountResponse)(nil), // 35: verself.vm_orchestrator.v1.CommitFilesystemMountResponse
-	(*VMMetrics)(nil),                     // 36: verself.vm_orchestrator.v1.VMMetrics
-	(*VMPoolCapacity)(nil),                // 37: verself.vm_orchestrator.v1.VMPoolCapacity
-	(*GetCapacityRequest)(nil),            // 38: verself.vm_orchestrator.v1.GetCapacityRequest
-	(*GetCapacityResponse)(nil),           // 39: verself.vm_orchestrator.v1.GetCapacityResponse
-	nil,                                   // 40: verself.vm_orchestrator.v1.LeaseEvent.AttrsEntry
-	nil,                                   // 41: verself.vm_orchestrator.v1.ExecSpec.EnvEntry
+	(SeedStrategy)(0),                     // 5: verself.vm_orchestrator.v1.SeedStrategy
+	(SeedOutcome)(0),                      // 6: verself.vm_orchestrator.v1.SeedOutcome
+	(*NetworkAttach)(nil),                 // 7: verself.vm_orchestrator.v1.NetworkAttach
+	(*VMResources)(nil),                   // 8: verself.vm_orchestrator.v1.VMResources
+	(*LeaseSpec)(nil),                     // 9: verself.vm_orchestrator.v1.LeaseSpec
+	(*FilesystemMount)(nil),               // 10: verself.vm_orchestrator.v1.FilesystemMount
+	(*AcquireLeaseRequest)(nil),           // 11: verself.vm_orchestrator.v1.AcquireLeaseRequest
+	(*AcquireLeaseResponse)(nil),          // 12: verself.vm_orchestrator.v1.AcquireLeaseResponse
+	(*RenewLeaseRequest)(nil),             // 13: verself.vm_orchestrator.v1.RenewLeaseRequest
+	(*RenewLeaseResponse)(nil),            // 14: verself.vm_orchestrator.v1.RenewLeaseResponse
+	(*ReleaseLeaseRequest)(nil),           // 15: verself.vm_orchestrator.v1.ReleaseLeaseRequest
+	(*ReleaseLeaseResponse)(nil),          // 16: verself.vm_orchestrator.v1.ReleaseLeaseResponse
+	(*GetLeaseRequest)(nil),               // 17: verself.vm_orchestrator.v1.GetLeaseRequest
+	(*LeaseRecord)(nil),                   // 18: verself.vm_orchestrator.v1.LeaseRecord
+	(*GetLeaseResponse)(nil),              // 19: verself.vm_orchestrator.v1.GetLeaseResponse
+	(*ListLeasesRequest)(nil),             // 20: verself.vm_orchestrator.v1.ListLeasesRequest
+	(*ListLeasesResponse)(nil),            // 21: verself.vm_orchestrator.v1.ListLeasesResponse
+	(*StreamLeaseEventsRequest)(nil),      // 22: verself.vm_orchestrator.v1.StreamLeaseEventsRequest
+	(*LeaseEvent)(nil),                    // 23: verself.vm_orchestrator.v1.LeaseEvent
+	(*ExecSpec)(nil),                      // 24: verself.vm_orchestrator.v1.ExecSpec
+	(*StartExecRequest)(nil),              // 25: verself.vm_orchestrator.v1.StartExecRequest
+	(*StartExecResponse)(nil),             // 26: verself.vm_orchestrator.v1.StartExecResponse
+	(*CancelExecRequest)(nil),             // 27: verself.vm_orchestrator.v1.CancelExecRequest
+	(*CancelExecResponse)(nil),            // 28: verself.vm_orchestrator.v1.CancelExecResponse
+	(*GetExecRequest)(nil),                // 29: verself.vm_orchestrator.v1.GetExecRequest
+	(*WaitExecRequest)(nil),               // 30: verself.vm_orchestrator.v1.WaitExecRequest
+	(*ExecRecord)(nil),                    // 31: verself.vm_orchestrator.v1.ExecRecord
+	(*GetExecResponse)(nil),               // 32: verself.vm_orchestrator.v1.GetExecResponse
+	(*WaitExecResponse)(nil),              // 33: verself.vm_orchestrator.v1.WaitExecResponse
+	(*SaveCheckpointRequest)(nil),         // 34: verself.vm_orchestrator.v1.SaveCheckpointRequest
+	(*SaveCheckpointResponse)(nil),        // 35: verself.vm_orchestrator.v1.SaveCheckpointResponse
+	(*CommitFilesystemMountRequest)(nil),  // 36: verself.vm_orchestrator.v1.CommitFilesystemMountRequest
+	(*CommitFilesystemMountResponse)(nil), // 37: verself.vm_orchestrator.v1.CommitFilesystemMountResponse
+	(*VMMetrics)(nil),                     // 38: verself.vm_orchestrator.v1.VMMetrics
+	(*VMPoolCapacity)(nil),                // 39: verself.vm_orchestrator.v1.VMPoolCapacity
+	(*GetCapacityRequest)(nil),            // 40: verself.vm_orchestrator.v1.GetCapacityRequest
+	(*GetCapacityResponse)(nil),           // 41: verself.vm_orchestrator.v1.GetCapacityResponse
+	(*SeedImageRequest)(nil),              // 42: verself.vm_orchestrator.v1.SeedImageRequest
+	(*SeedImageResponse)(nil),             // 43: verself.vm_orchestrator.v1.SeedImageResponse
+	nil,                                   // 44: verself.vm_orchestrator.v1.LeaseEvent.AttrsEntry
+	nil,                                   // 45: verself.vm_orchestrator.v1.ExecSpec.EnvEntry
 }
 var file_proto_v1_vm_service_proto_depIdxs = []int32{
 	3,  // 0: verself.vm_orchestrator.v1.NetworkAttach.mode:type_name -> verself.vm_orchestrator.v1.NetworkAttachMode
-	6,  // 1: verself.vm_orchestrator.v1.LeaseSpec.resources:type_name -> verself.vm_orchestrator.v1.VMResources
-	5,  // 2: verself.vm_orchestrator.v1.LeaseSpec.network:type_name -> verself.vm_orchestrator.v1.NetworkAttach
-	8,  // 3: verself.vm_orchestrator.v1.LeaseSpec.filesystem_mounts:type_name -> verself.vm_orchestrator.v1.FilesystemMount
-	7,  // 4: verself.vm_orchestrator.v1.AcquireLeaseRequest.spec:type_name -> verself.vm_orchestrator.v1.LeaseSpec
+	8,  // 1: verself.vm_orchestrator.v1.LeaseSpec.resources:type_name -> verself.vm_orchestrator.v1.VMResources
+	7,  // 2: verself.vm_orchestrator.v1.LeaseSpec.network:type_name -> verself.vm_orchestrator.v1.NetworkAttach
+	10, // 3: verself.vm_orchestrator.v1.LeaseSpec.filesystem_mounts:type_name -> verself.vm_orchestrator.v1.FilesystemMount
+	9,  // 4: verself.vm_orchestrator.v1.AcquireLeaseRequest.spec:type_name -> verself.vm_orchestrator.v1.LeaseSpec
 	0,  // 5: verself.vm_orchestrator.v1.AcquireLeaseResponse.state:type_name -> verself.vm_orchestrator.v1.LeaseState
-	6,  // 6: verself.vm_orchestrator.v1.AcquireLeaseResponse.resources:type_name -> verself.vm_orchestrator.v1.VMResources
+	8,  // 6: verself.vm_orchestrator.v1.AcquireLeaseResponse.resources:type_name -> verself.vm_orchestrator.v1.VMResources
 	0,  // 7: verself.vm_orchestrator.v1.ReleaseLeaseResponse.state:type_name -> verself.vm_orchestrator.v1.LeaseState
 	0,  // 8: verself.vm_orchestrator.v1.LeaseRecord.state:type_name -> verself.vm_orchestrator.v1.LeaseState
-	6,  // 9: verself.vm_orchestrator.v1.LeaseRecord.resources:type_name -> verself.vm_orchestrator.v1.VMResources
-	16, // 10: verself.vm_orchestrator.v1.GetLeaseResponse.lease:type_name -> verself.vm_orchestrator.v1.LeaseRecord
-	16, // 11: verself.vm_orchestrator.v1.ListLeasesResponse.leases:type_name -> verself.vm_orchestrator.v1.LeaseRecord
+	8,  // 9: verself.vm_orchestrator.v1.LeaseRecord.resources:type_name -> verself.vm_orchestrator.v1.VMResources
+	18, // 10: verself.vm_orchestrator.v1.GetLeaseResponse.lease:type_name -> verself.vm_orchestrator.v1.LeaseRecord
+	18, // 11: verself.vm_orchestrator.v1.ListLeasesResponse.leases:type_name -> verself.vm_orchestrator.v1.LeaseRecord
 	4,  // 12: verself.vm_orchestrator.v1.LeaseEvent.event_type:type_name -> verself.vm_orchestrator.v1.LeaseEventType
-	40, // 13: verself.vm_orchestrator.v1.LeaseEvent.attrs:type_name -> verself.vm_orchestrator.v1.LeaseEvent.AttrsEntry
-	41, // 14: verself.vm_orchestrator.v1.ExecSpec.env:type_name -> verself.vm_orchestrator.v1.ExecSpec.EnvEntry
+	44, // 13: verself.vm_orchestrator.v1.LeaseEvent.attrs:type_name -> verself.vm_orchestrator.v1.LeaseEvent.AttrsEntry
+	45, // 14: verself.vm_orchestrator.v1.ExecSpec.env:type_name -> verself.vm_orchestrator.v1.ExecSpec.EnvEntry
 	2,  // 15: verself.vm_orchestrator.v1.ExecSpec.stdin:type_name -> verself.vm_orchestrator.v1.StdioMode
 	2,  // 16: verself.vm_orchestrator.v1.ExecSpec.stdout:type_name -> verself.vm_orchestrator.v1.StdioMode
 	2,  // 17: verself.vm_orchestrator.v1.ExecSpec.stderr:type_name -> verself.vm_orchestrator.v1.StdioMode
-	22, // 18: verself.vm_orchestrator.v1.StartExecRequest.spec:type_name -> verself.vm_orchestrator.v1.ExecSpec
+	24, // 18: verself.vm_orchestrator.v1.StartExecRequest.spec:type_name -> verself.vm_orchestrator.v1.ExecSpec
 	1,  // 19: verself.vm_orchestrator.v1.StartExecResponse.state:type_name -> verself.vm_orchestrator.v1.ExecState
 	1,  // 20: verself.vm_orchestrator.v1.CancelExecResponse.state:type_name -> verself.vm_orchestrator.v1.ExecState
 	1,  // 21: verself.vm_orchestrator.v1.ExecRecord.state:type_name -> verself.vm_orchestrator.v1.ExecState
-	36, // 22: verself.vm_orchestrator.v1.ExecRecord.metrics:type_name -> verself.vm_orchestrator.v1.VMMetrics
-	29, // 23: verself.vm_orchestrator.v1.GetExecResponse.exec:type_name -> verself.vm_orchestrator.v1.ExecRecord
-	29, // 24: verself.vm_orchestrator.v1.WaitExecResponse.exec:type_name -> verself.vm_orchestrator.v1.ExecRecord
-	37, // 25: verself.vm_orchestrator.v1.GetCapacityResponse.pool:type_name -> verself.vm_orchestrator.v1.VMPoolCapacity
-	9,  // 26: verself.vm_orchestrator.v1.VMService.AcquireLease:input_type -> verself.vm_orchestrator.v1.AcquireLeaseRequest
-	11, // 27: verself.vm_orchestrator.v1.VMService.RenewLease:input_type -> verself.vm_orchestrator.v1.RenewLeaseRequest
-	13, // 28: verself.vm_orchestrator.v1.VMService.ReleaseLease:input_type -> verself.vm_orchestrator.v1.ReleaseLeaseRequest
-	15, // 29: verself.vm_orchestrator.v1.VMService.GetLease:input_type -> verself.vm_orchestrator.v1.GetLeaseRequest
-	18, // 30: verself.vm_orchestrator.v1.VMService.ListLeases:input_type -> verself.vm_orchestrator.v1.ListLeasesRequest
-	20, // 31: verself.vm_orchestrator.v1.VMService.StreamLeaseEvents:input_type -> verself.vm_orchestrator.v1.StreamLeaseEventsRequest
-	23, // 32: verself.vm_orchestrator.v1.VMService.StartExec:input_type -> verself.vm_orchestrator.v1.StartExecRequest
-	25, // 33: verself.vm_orchestrator.v1.VMService.CancelExec:input_type -> verself.vm_orchestrator.v1.CancelExecRequest
-	27, // 34: verself.vm_orchestrator.v1.VMService.GetExec:input_type -> verself.vm_orchestrator.v1.GetExecRequest
-	28, // 35: verself.vm_orchestrator.v1.VMService.WaitExec:input_type -> verself.vm_orchestrator.v1.WaitExecRequest
-	34, // 36: verself.vm_orchestrator.v1.VMService.CommitFilesystemMount:input_type -> verself.vm_orchestrator.v1.CommitFilesystemMountRequest
-	32, // 37: verself.vm_orchestrator.v1.VMService.SaveCheckpoint:input_type -> verself.vm_orchestrator.v1.SaveCheckpointRequest
-	38, // 38: verself.vm_orchestrator.v1.VMService.GetCapacity:input_type -> verself.vm_orchestrator.v1.GetCapacityRequest
-	10, // 39: verself.vm_orchestrator.v1.VMService.AcquireLease:output_type -> verself.vm_orchestrator.v1.AcquireLeaseResponse
-	12, // 40: verself.vm_orchestrator.v1.VMService.RenewLease:output_type -> verself.vm_orchestrator.v1.RenewLeaseResponse
-	14, // 41: verself.vm_orchestrator.v1.VMService.ReleaseLease:output_type -> verself.vm_orchestrator.v1.ReleaseLeaseResponse
-	17, // 42: verself.vm_orchestrator.v1.VMService.GetLease:output_type -> verself.vm_orchestrator.v1.GetLeaseResponse
-	19, // 43: verself.vm_orchestrator.v1.VMService.ListLeases:output_type -> verself.vm_orchestrator.v1.ListLeasesResponse
-	21, // 44: verself.vm_orchestrator.v1.VMService.StreamLeaseEvents:output_type -> verself.vm_orchestrator.v1.LeaseEvent
-	24, // 45: verself.vm_orchestrator.v1.VMService.StartExec:output_type -> verself.vm_orchestrator.v1.StartExecResponse
-	26, // 46: verself.vm_orchestrator.v1.VMService.CancelExec:output_type -> verself.vm_orchestrator.v1.CancelExecResponse
-	30, // 47: verself.vm_orchestrator.v1.VMService.GetExec:output_type -> verself.vm_orchestrator.v1.GetExecResponse
-	31, // 48: verself.vm_orchestrator.v1.VMService.WaitExec:output_type -> verself.vm_orchestrator.v1.WaitExecResponse
-	35, // 49: verself.vm_orchestrator.v1.VMService.CommitFilesystemMount:output_type -> verself.vm_orchestrator.v1.CommitFilesystemMountResponse
-	33, // 50: verself.vm_orchestrator.v1.VMService.SaveCheckpoint:output_type -> verself.vm_orchestrator.v1.SaveCheckpointResponse
-	39, // 51: verself.vm_orchestrator.v1.VMService.GetCapacity:output_type -> verself.vm_orchestrator.v1.GetCapacityResponse
-	39, // [39:52] is the sub-list for method output_type
-	26, // [26:39] is the sub-list for method input_type
-	26, // [26:26] is the sub-list for extension type_name
-	26, // [26:26] is the sub-list for extension extendee
-	0,  // [0:26] is the sub-list for field type_name
+	38, // 22: verself.vm_orchestrator.v1.ExecRecord.metrics:type_name -> verself.vm_orchestrator.v1.VMMetrics
+	31, // 23: verself.vm_orchestrator.v1.GetExecResponse.exec:type_name -> verself.vm_orchestrator.v1.ExecRecord
+	31, // 24: verself.vm_orchestrator.v1.WaitExecResponse.exec:type_name -> verself.vm_orchestrator.v1.ExecRecord
+	39, // 25: verself.vm_orchestrator.v1.GetCapacityResponse.pool:type_name -> verself.vm_orchestrator.v1.VMPoolCapacity
+	5,  // 26: verself.vm_orchestrator.v1.SeedImageRequest.strategy:type_name -> verself.vm_orchestrator.v1.SeedStrategy
+	6,  // 27: verself.vm_orchestrator.v1.SeedImageResponse.outcome:type_name -> verself.vm_orchestrator.v1.SeedOutcome
+	11, // 28: verself.vm_orchestrator.v1.VMService.AcquireLease:input_type -> verself.vm_orchestrator.v1.AcquireLeaseRequest
+	13, // 29: verself.vm_orchestrator.v1.VMService.RenewLease:input_type -> verself.vm_orchestrator.v1.RenewLeaseRequest
+	15, // 30: verself.vm_orchestrator.v1.VMService.ReleaseLease:input_type -> verself.vm_orchestrator.v1.ReleaseLeaseRequest
+	17, // 31: verself.vm_orchestrator.v1.VMService.GetLease:input_type -> verself.vm_orchestrator.v1.GetLeaseRequest
+	20, // 32: verself.vm_orchestrator.v1.VMService.ListLeases:input_type -> verself.vm_orchestrator.v1.ListLeasesRequest
+	22, // 33: verself.vm_orchestrator.v1.VMService.StreamLeaseEvents:input_type -> verself.vm_orchestrator.v1.StreamLeaseEventsRequest
+	25, // 34: verself.vm_orchestrator.v1.VMService.StartExec:input_type -> verself.vm_orchestrator.v1.StartExecRequest
+	27, // 35: verself.vm_orchestrator.v1.VMService.CancelExec:input_type -> verself.vm_orchestrator.v1.CancelExecRequest
+	29, // 36: verself.vm_orchestrator.v1.VMService.GetExec:input_type -> verself.vm_orchestrator.v1.GetExecRequest
+	30, // 37: verself.vm_orchestrator.v1.VMService.WaitExec:input_type -> verself.vm_orchestrator.v1.WaitExecRequest
+	36, // 38: verself.vm_orchestrator.v1.VMService.CommitFilesystemMount:input_type -> verself.vm_orchestrator.v1.CommitFilesystemMountRequest
+	34, // 39: verself.vm_orchestrator.v1.VMService.SaveCheckpoint:input_type -> verself.vm_orchestrator.v1.SaveCheckpointRequest
+	40, // 40: verself.vm_orchestrator.v1.VMService.GetCapacity:input_type -> verself.vm_orchestrator.v1.GetCapacityRequest
+	42, // 41: verself.vm_orchestrator.v1.VMService.SeedImage:input_type -> verself.vm_orchestrator.v1.SeedImageRequest
+	12, // 42: verself.vm_orchestrator.v1.VMService.AcquireLease:output_type -> verself.vm_orchestrator.v1.AcquireLeaseResponse
+	14, // 43: verself.vm_orchestrator.v1.VMService.RenewLease:output_type -> verself.vm_orchestrator.v1.RenewLeaseResponse
+	16, // 44: verself.vm_orchestrator.v1.VMService.ReleaseLease:output_type -> verself.vm_orchestrator.v1.ReleaseLeaseResponse
+	19, // 45: verself.vm_orchestrator.v1.VMService.GetLease:output_type -> verself.vm_orchestrator.v1.GetLeaseResponse
+	21, // 46: verself.vm_orchestrator.v1.VMService.ListLeases:output_type -> verself.vm_orchestrator.v1.ListLeasesResponse
+	23, // 47: verself.vm_orchestrator.v1.VMService.StreamLeaseEvents:output_type -> verself.vm_orchestrator.v1.LeaseEvent
+	26, // 48: verself.vm_orchestrator.v1.VMService.StartExec:output_type -> verself.vm_orchestrator.v1.StartExecResponse
+	28, // 49: verself.vm_orchestrator.v1.VMService.CancelExec:output_type -> verself.vm_orchestrator.v1.CancelExecResponse
+	32, // 50: verself.vm_orchestrator.v1.VMService.GetExec:output_type -> verself.vm_orchestrator.v1.GetExecResponse
+	33, // 51: verself.vm_orchestrator.v1.VMService.WaitExec:output_type -> verself.vm_orchestrator.v1.WaitExecResponse
+	37, // 52: verself.vm_orchestrator.v1.VMService.CommitFilesystemMount:output_type -> verself.vm_orchestrator.v1.CommitFilesystemMountResponse
+	35, // 53: verself.vm_orchestrator.v1.VMService.SaveCheckpoint:output_type -> verself.vm_orchestrator.v1.SaveCheckpointResponse
+	41, // 54: verself.vm_orchestrator.v1.VMService.GetCapacity:output_type -> verself.vm_orchestrator.v1.GetCapacityResponse
+	43, // 55: verself.vm_orchestrator.v1.VMService.SeedImage:output_type -> verself.vm_orchestrator.v1.SeedImageResponse
+	42, // [42:56] is the sub-list for method output_type
+	28, // [28:42] is the sub-list for method input_type
+	28, // [28:28] is the sub-list for extension type_name
+	28, // [28:28] is the sub-list for extension extendee
+	0,  // [0:28] is the sub-list for field type_name
 }
 
 func init() { file_proto_v1_vm_service_proto_init() }
@@ -3118,8 +3457,8 @@ func file_proto_v1_vm_service_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_v1_vm_service_proto_rawDesc), len(file_proto_v1_vm_service_proto_rawDesc)),
-			NumEnums:      5,
-			NumMessages:   37,
+			NumEnums:      7,
+			NumMessages:   39,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

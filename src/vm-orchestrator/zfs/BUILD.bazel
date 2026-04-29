@@ -1,0 +1,31 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "zfs",
+    srcs = [
+        "checkpoint.go",
+        "commit.go",
+        "facts.go",
+        "lifecycle.go",
+        "names.go",
+        "props.go",
+        "refs.go",
+        "seed.go",
+    ],
+    importpath = "github.com/verself/vm-orchestrator/zfs",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_google_uuid//:uuid",
+        "@com_github_oklog_ulid_v2//:ulid",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":zfs",
+    visibility = ["//visibility:public"],
+)

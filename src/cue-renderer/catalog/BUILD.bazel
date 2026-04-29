@@ -11,3 +11,9 @@ go_library(
     importpath = "github.com/verself/cue-renderer/catalog",
     visibility = ["//visibility:public"],
 )
+
+alias(
+    name = "go_default_library",
+    actual = ":catalog",
+    visibility = ["//visibility:public"],
+)

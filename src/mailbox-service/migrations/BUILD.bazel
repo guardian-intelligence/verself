@@ -7,3 +7,9 @@ go_library(
     importpath = "github.com/verself/mailbox-service/migrations",
     visibility = ["//src/mailbox-service:__subpackages__"],
 )
+
+alias(
+    name = "go_default_library",
+    actual = ":migrations",
+    visibility = ["//visibility:public"],
+)

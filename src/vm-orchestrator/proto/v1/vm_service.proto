@@ -20,6 +20,13 @@ service VMService {
   rpc CommitFilesystemMount(CommitFilesystemMountRequest) returns (CommitFilesystemMountResponse);
   rpc SaveCheckpoint(SaveCheckpointRequest) returns (SaveCheckpointResponse);
   rpc GetCapacity(GetCapacityRequest) returns (GetCapacityResponse);
+
+  // SeedImage is the privileged image-seeding entry point used by deploy-time
+  // tooling (vm-orchestrator-cli seed-image). It materializes a composable
+  // image at pool/images/<ref>@ready from a host-local artifact (dd_from_file)
+  // or fresh filesystem (mkfs_ext4). Authorization is by SO_PEERCRED uid=0:
+  // only callers running as root on the host may invoke it.
+  rpc SeedImage(SeedImageRequest) returns (SeedImageResponse);
 }
 
 enum LeaseState {
@@ -321,4 +328,56 @@ message GetCapacityRequest {}
 message GetCapacityResponse {
   string guest_pool_cidr = 1;
   VMPoolCapacity pool = 2;
+}
+
+enum SeedStrategy {
+  SEED_STRATEGY_UNSPECIFIED = 0;
+  SEED_STRATEGY_DD_FROM_FILE = 1;
+  SEED_STRATEGY_MKFS_EXT4 = 2;
+}
+
+enum SeedOutcome {
+  SEED_OUTCOME_UNSPECIFIED = 0;
+  SEED_OUTCOME_REFRESHED = 1;
+  SEED_OUTCOME_UP_TO_DATE = 2;
+}
+
+message SeedImageRequest {
+  // image_ref is the composable image identifier (e.g. "golden", "viteplus",
+  // "sticky-empty"). Same alphabet as other service-authorized refs.
+  string image_ref = 1;
+
+  SeedStrategy strategy = 2;
+
+  // size_bytes is the zvol size in bytes. Required.
+  uint64 size_bytes = 3;
+
+  // volblocksize is the ZFS volblocksize property (e.g. "16K"). Empty
+  // selects the daemon default.
+  string volblocksize = 4;
+
+  // source_path is the host-local artifact whose bytes get dd-ed onto the
+  // staging zvol. Required when strategy=SEED_STRATEGY_DD_FROM_FILE.
+  string source_path = 5;
+
+  // filesystem_label is passed to mkfs -L. Required when
+  // strategy=SEED_STRATEGY_MKFS_EXT4.
+  string filesystem_label = 6;
+
+  // allow_destroying_active_clones authorizes the seed flow to recursively
+  // destroy any workload clones derived from the previous image dataset
+  // before the rename promotion. Set true at deploy time when leases from
+  // before the deploy are guaranteed crashed.
+  bool allow_destroying_active_clones = 7;
+}
+
+message SeedImageResponse {
+  string image_ref = 1;
+  SeedOutcome outcome = 2;
+  string dataset = 3;
+  string snapshot = 4;
+  string source_digest = 5;
+  uint64 seeded_bytes = 6;
+  uint32 dependents_torn = 7;
+  uint64 seeded_at_unix_ns = 8;
 }
