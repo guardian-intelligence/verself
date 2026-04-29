@@ -9,7 +9,9 @@
 // The lifecycle is:
 //
 //  1. Acquire a lease with immutable resource shape and a bounded deadline.
-//  2. Clone the golden zvol with ZFS COW.
+//  2. Clone the substrate zvol with ZFS COW; clone any composed
+//     toolchain image zvols (gh-actions-runner, etc.) the runner_class
+//     requests, mounted read-only at the configured guest paths.
 //  3. Allocate a /30 TAP slot for the lease and create the Firecracker jail.
 //  4. Start Firecracker and initialize vm-bridge over a deterministic vsock
 //     control stream.
