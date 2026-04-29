@@ -1,0 +1,222 @@
+---
+# Materialise the Bazel-owned dev_tools.tar.zst and unpack it onto the
+# controller. Bazel owns third-party fetches, sha256 enforcement, archive
+# layout, and the canonical /usr/local/{go,zig} symlinks; Ansible only
+# applies the resulting artifact and emits the verification spans.
+#
+# Mirror of roles/deploy_profile/tasks/static_binaries.yml; the only
+# differences are the artifact label (topology_dev_tools_archive vs
+# topology_server_tools), the marker path, and the per-tool version_check
+# loop emitted at the end.
+
+- name: Require generated dev tools archive
+  ansible.builtin.assert:
+    that:
+      - topology_dev_tools_archive is defined
+      - topology_dev_tools_archive.bazel_label is defined
+      - topology_dev_tools_archive.version is defined
+      - topology_dev_tools_archive.bazel_label is match('^//')
+      - topology_dev_tools_archive.version | length > 0
+    quiet: true
+    fail_msg: >-
+      topology_dev_tools_archive must expose bazel_label and version. Run make topology-generate before setup-dev.
+
+- name: Set dev tools archive facts
+  ansible.builtin.set_fact:
+    dev_tools_archive_artifact: "{{ topology_dev_tools_archive }}"
+
+- name: Ensure dev tools staging directory exists
+  ansible.builtin.file:
+    path: "{{ dev_tools_staging_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Build dev tools archive with Bazel
+  ansible.builtin.command:
+    argv:
+      - "{{ dev_tools_bazelisk }}"
+      - build
+      - "{{ dev_tools_archive_artifact.bazel_label }}"
+    chdir: "{{ dev_tools_repo_root }}"
+  changed_when: false
+
+- name: Resolve dev tools archive output path
+  ansible.builtin.command:
+    argv:
+      - "{{ dev_tools_bazelisk }}"
+      - cquery
+      - --output=files
+      - "{{ dev_tools_archive_artifact.bazel_label }}"
+    chdir: "{{ dev_tools_repo_root }}"
+  changed_when: false
+  register: dev_tools_bazel_output
+
+- name: Validate dev tools archive output path
+  ansible.builtin.assert:
+    that:
+      - dev_tools_bazel_output.stdout_lines | length == 1
+      - dev_tools_bazel_output.stdout | trim is match('^bazel-out/')
+      - dev_tools_bazel_output.stdout | trim is match('.*dev_tools[.]tar[.]zst$')
+    quiet: true
+    fail_msg: >-
+      Bazel cquery did not resolve exactly one dev_tools.tar.zst output for {{ dev_tools_archive_artifact.bazel_label }}.
+
+- name: Inspect dev tools archive produced by Bazel
+  ansible.builtin.stat:
+    path: "{{ dev_tools_repo_root }}/{{ dev_tools_bazel_output.stdout | trim }}"
+    checksum_algorithm: sha256
+  register: dev_tools_archive_stat
+
+- name: Validate dev tools archive metadata
+  ansible.builtin.assert:
+    that:
+      - dev_tools_archive_stat.stat.exists | bool
+      - dev_tools_archive_stat.stat.isreg | bool
+      - dev_tools_archive_stat.stat.checksum is defined
+      - dev_tools_archive_stat.stat.checksum is match('^[0-9a-f]{64}$')
+    quiet: true
+    fail_msg: >-
+      Bazel resolved {{ dev_tools_archive_artifact.bazel_label }} but did not produce a readable archive with a SHA-256 checksum.
+
+- name: Set dev tools archive deployment facts
+  ansible.builtin.set_fact:
+    dev_tools_archive_sha256: "{{ dev_tools_archive_stat.stat.checksum }}"
+    dev_tools_archive_size_bytes: "{{ dev_tools_archive_stat.stat.size }}"
+    dev_tools_archive_expected_marker: |-
+      version={{ dev_tools_archive_artifact.version }}
+      sha256={{ dev_tools_archive_stat.stat.checksum }}
+    dev_tools_archive_staged_path: >-
+      {{ dev_tools_staging_dir }}/dev_tools-{{ (dev_tools_archive_stat.stat.checksum)[:16] }}.tar.zst
+
+- name: Read installed dev tools version marker
+  ansible.builtin.slurp:
+    src: "{{ dev_tools_archive_marker_path }}"
+  register: dev_tools_archive_marker
+  failed_when: false
+
+- name: Decide whether dev tools archive needs unpacking
+  ansible.builtin.set_fact:
+    dev_tools_archive_needs_unpack: >-
+      {{
+        dev_tools_archive_marker is failed
+        or (
+          dev_tools_archive_marker.content | default('') | b64decode | trim
+        ) != (dev_tools_archive_expected_marker | trim)
+      }}
+
+- name: Stage dev tools archive
+  ansible.builtin.copy:
+    src: "{{ dev_tools_repo_root }}/{{ dev_tools_bazel_output.stdout | trim }}"
+    dest: "{{ dev_tools_archive_staged_path }}"
+    mode: "0644"
+    remote_src: true
+  when: dev_tools_archive_needs_unpack | bool
+
+- name: Unpack dev tools archive
+  ansible.builtin.unarchive:
+    src: "{{ dev_tools_archive_staged_path }}"
+    dest: /
+    remote_src: true
+    owner: root
+    group: root
+  when: dev_tools_archive_needs_unpack | bool
+
+- name: Record installed dev tools version
+  ansible.builtin.copy:
+    content: "{{ dev_tools_archive_expected_marker }}\n"
+    dest: "{{ dev_tools_archive_marker_path }}"
+    mode: "0644"
+  when: dev_tools_archive_needs_unpack | bool
+
+- name: Emit dev_tools.artifact.publish span
+  ansible.builtin.command:
+    argv:
+      - "{{ dev_tools_bazelisk }}"
+      - run
+      - //src/otel/cmd/smoke-span
+    chdir: "{{ dev_tools_repo_root }}"
+  environment:
+    SMOKE_SPAN_SERVICE: smoke-runner
+    SMOKE_SPANS_JSON: >-
+      {{
+        [
+          {
+            'name': 'dev_tools.artifact.publish',
+            'attributes': {
+              'dev_tools.bazel_label': dev_tools_archive_artifact.bazel_label,
+              'dev_tools.expected_version': dev_tools_archive_artifact.version,
+              'dev_tools.archive_sha256': dev_tools_archive_sha256,
+              'dev_tools.archive_size_bytes': (dev_tools_archive_size_bytes | int),
+              'dev_tools.unpacked_this_run': (dev_tools_archive_needs_unpack | bool),
+              'dev_tools.generated_from': 'bazel'
+            }
+          }
+        ] | to_json
+      }}
+  changed_when: false
+
+- name: Build pinned_http_file version-check inputs
+  ansible.builtin.set_fact:
+    dev_tools_version_check_inputs: >-
+      {{
+        topology_dev_tools
+        | dict2items
+        | selectattr('value.tier', 'eq', 'pinned_http_file')
+        | list
+      }}
+
+- name: Run dev tool version checks
+  ansible.builtin.command:
+    cmd: "{{ item.value.version_cmd }}"
+  loop: "{{ dev_tools_version_check_inputs }}"
+  loop_control:
+    label: "{{ item.key }}"
+  register: dev_tools_version_check_results
+  changed_when: false
+  failed_when: false
+
+- name: Emit dev_tool.version_check spans
+  ansible.builtin.command:
+    argv:
+      - "{{ dev_tools_bazelisk }}"
+      - run
+      - //src/otel/cmd/smoke-span
+    chdir: "{{ dev_tools_repo_root }}"
+  environment:
+    SMOKE_SPAN_SERVICE: smoke-runner
+    SMOKE_SPAN_NAME: dev_tool.version_check
+    SMOKE_SPAN_ATTRS_JSON: >-
+      {{
+        {
+          'tool.name': item.item.key,
+          'tool.tier': 'pinned_http_file',
+          'tool.expected_version': item.item.value.version,
+          'tool.cmd': (item.cmd | default([]) | join(' ')),
+          'tool.cmd_exit_code': (item.rc | default(-1)),
+          'tool.cmd_stdout': (item.stdout | default('') | truncate(200, True)),
+          'tool.version_match': (
+              item.rc == 0
+              and (
+                item.item.value.version in (item.stdout | default(''))
+                or item.item.value.version in (item.stderr | default(''))
+              )
+            )
+        } | to_json
+      }}
+  loop: "{{ dev_tools_version_check_results.results }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+  changed_when: false
+
+- name: Assert every dev tool reported its expected version
+  ansible.builtin.assert:
+    that:
+      - item.rc == 0
+      - (item.item.value.version in (item.stdout | default(''))) or (item.item.value.version in (item.stderr | default('')))
+    quiet: true
+    fail_msg: >-
+      Dev tool {{ item.item.key }} did not report expected version {{ item.item.value.version }}
+      (rc={{ item.rc }}, stdout={{ (item.stdout | default('') | truncate(160)) | string }}).
+  loop: "{{ dev_tools_version_check_results.results }}"
+  loop_control:
+    label: "{{ item.item.key }}"

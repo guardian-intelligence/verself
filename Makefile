@@ -279,8 +279,12 @@ topology-check: ## Verify generated deploy inputs match CUE topology
 inventory-check: ## Validate that the generated Ansible inventory exists
 	@test -f "$(INVENTORY)" || { echo "ERROR: $(INVENTORY) not found. Run: cd $(PLATFORM_DIR)/ansible && ansible-playbook playbooks/provision.yml"; exit 1; }
 
-setup-dev: ## Install pinned controller dev tools
-	cd $(PLATFORM_DIR)/ansible && ansible-playbook playbooks/setup-dev.yml
+setup-dev: ## Install pinned controller dev tools (uses ansible-with-tunnel.sh once inventory exists so dev_tools spans land in ClickHouse)
+	@if [ -f "$(INVENTORY)" ]; then \
+	  $(PLATFORM_DIR)/scripts/ansible-with-tunnel.sh playbooks/setup-dev.yml; \
+	else \
+	  cd $(PLATFORM_DIR)/ansible && ansible-playbook playbooks/setup-dev.yml; \
+	fi
 
 setup-sops: ## Bootstrap SOPS + Age encryption
 	cd $(PLATFORM_DIR)/ansible && ansible-playbook playbooks/setup-sops.yml

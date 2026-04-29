@@ -20,10 +20,13 @@ control which delivery channel ships the binary.
 | `legacy_install_plan` | The pre-Bazel install pipeline driven by `catalog.go`'s switch + `roles/dev_tools/tasks/main.yml`     | varies per strategy    |
 
 `legacy_install_plan` is the migration sentinel: every entry currently
-on it is on the path to one of the other tiers. The end state has no
-`legacy_install_plan` entries, the `catalog.go` install-plan loops are
-deleted, and `roles/dev_tools/` reduces to (a) one `bazel build` + untar
-for the dev tools tarball, (b) one `uv sync` loop, (c) one `apt` task.
+on it is on the path to one of the other tiers. After the dev-tools
+bridge landed, `roles/dev_tools/` is already (a) one `bazel build` +
+untar for `dev_tools.tar.zst`, (b) one `apt` task, (c) one `go install`
+loop, (d) one `uv tool install` loop. The end state has no
+`legacy_install_plan` entries: the `go install` loop becomes a
+`source_built_go` Bazel rebuild and the `uv tool install` loop becomes
+a `lockfile_uv` `uv sync --frozen` against a committed `uv.lock`.
 
 ## Tier inventory (current state)
 
@@ -73,27 +76,31 @@ exactly. Read these files together:
 The dev-tools mirror uses `devToolDownloads` + `devToolPackaging`,
 emits `dev_tools.MODULE.bazel` + `dev_tools.bzl`, and produces
 `:dev_tools.tar.zst`. `devToolsArchive: { bazel_label, version }`
-exposes the consumer surface (parallel to `serverTools`) — Ansible reads
-those two fields to request the artefact and gate re-unpacks. The
-bridge role itself is the next PR; this PR ends after step 4.
+exposes the consumer surface (parallel to `serverTools`); Ansible's
+`roles/dev_tools/tasks/dev_tools_archive.yml` reads those two fields
+to request the artefact, marker-gates the re-unpack, and emits
+`dev_tools.artifact.publish` + per-tool `dev_tool.version_check`
+spans (one per tool tagged `tier: pinned_http_file`).
 
-Until the bridge ships, two paths describe the same on-disk layout for
-the 16 pinned_http_file dev tools:
-- `topology_dev_tool_install_plan` (legacy: per-tool `get_url` →
-  extract → copy → symlink), still consumed by `roles/dev_tools/`.
-- `dev_tools.tar.zst` (new: one Bazel-fetched archive, one untar at
-  `/`), unconsumed by Ansible today.
+Adding a new pinned_http_file tool is now exactly:
+1. Add a `versions.development.<name>` pin.
+2. Add a `devTools.<name>: { tier: "pinned_http_file", version, sha256, url, install_path, version_cmd }` entry.
+3. Add a matching `devToolDownloads.<name>` entry referencing the
+   above (sha/url come from `devTools.<name>` to keep one source of
+   truth).
+4. Add the layout row in the appropriate `devToolPackaging` list
+   (`raw` for prebuilt single binaries, `tar_single` for one binary
+   from an archive, etc.).
+5. `make topology-generate`.
 
-The bridge PR must, in the same change that flips Ansible to consume
-the tarball, **delete** the 16 by-name branches and the
-`binary`/`tarball`/`zip` strategy handlers from
-`internal/render/catalog/catalog.go`. Leaving them as a dead path
-produces two competing definitions of the same artefacts and the next
-agent will inevitably copy from the wrong one. The deletion target is
-the entire `case item.Name == "..."` set plus the strategy switches
-that only those tools exercised; what survives is the `apt`,
-`go_install`, `uv_tool`, and `uv_tool_companion` strategies that drive
-the still-`legacy_install_plan` tools.
+`MODULE.bazel`, `dev_tools.bzl`, and `catalog.yml` regenerate; the
+`TestDevToolPinnedHTTPFileTriangle` invariant test keeps the three
+blocks coherent. No Go edits, no Ansible edits.
+
+A new packaging *shape* (e.g. dev tools want a `.deb` member install
+the way server tools do) is the rare case where the renderer extends
+— wire a new field through `bazeldevtools.go` and add a Starlark
+helper.
 
 ## Renderer integration recipe
 
