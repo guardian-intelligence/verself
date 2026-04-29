@@ -2,6 +2,52 @@
 
 Privileged Go daemon for lease-scoped Firecracker lifecycle management: ZFS clone/snapshot/destroy, jailer setup, TAP networking, vm-bridge control, guest telemetry aggregation, and host-side state reconciliation. The public surface is the V1 lease/exec API over a Unix socket (`/run/vm-orchestrator/api.sock`); the daemon owns no product submission queue, payment policy, or mutable workload policy.
 
+
+<guest_rootfs_split>
+
+Firecracker guests boot from a slim **substrate** ext4 and compose
+read-only **toolchain images** at lease boot. The catalog lives in
+`src/cue-renderer/instances/local/config.cue:firecracker.images`; each
+entry declares a `tier` of `substrate`, `platform_toolchain`, or
+`customer_uploaded`, and the `vm-orchestrator-seed.service` oneshot
+materialises every entry via `vm-orchestrator-cli seed-image` (one
+SeedImage RPC per image, idempotent via `vs:source_digest` on
+`@ready`).
+
+- **Substrate** (`/var/lib/verself/guest-images/substrate.ext4`):
+  kernel + minimal Ubuntu userland + vm-bridge as `/sbin/init` +
+  vm-guest-telemetry + a few apt deps the runners need at runtime.
+  No Go, no Node.js, no GitHub Actions runner, no Forgejo runner, no
+  `runner` user. Refreshes only when the kernel, vm-bridge,
+  vm-guest-telemetry, or Ubuntu base move. Built by
+  `src/vm-orchestrator/guest-images/substrate/build-substrate.sh`,
+  runs as root on the deploy host.
+- **Toolchain images** (`/var/lib/verself/guest-images/toolchains/<ref>.ext4`):
+  Bazel-built ext4 artefacts under
+  `//src/vm-orchestrator/guest-images/<ref>:`. Today: `gh-actions-runner`
+  (mounted at `/opt/actions-runner`) and `forgejo-runner` (`/opt/forgejo-runner`).
+  Each carries `etc-overlay/` (vm-bridge copies into `/etc/` at lease
+  boot — adds `runner@1000`, NOPASSWD sudo, profile.d hooks) and
+  `.verself-writable-overlays` (vm-bridge tmpfs-mounts each listed path
+  on top of the read-only base — e.g. `/opt/actions-runner/_work`).
+- **Bazel macro** `toolchain_ext4_image` in
+  `//src/vm-orchestrator/guest-images:guest_image.bzl` runs `mkfs.ext4 -d`
+  hermetically with deterministic UUID + hash_seed +
+  SOURCE_DATE_EPOCH=0, so byte-for-byte rebuilds reproduce the same
+  sha256 and deploy-time re-seeds are no-ops when nothing changes.
+- **Runner class → mount list** lives in
+  `runner_class_filesystem_mounts` (sandbox-rental Postgres). Each
+  runner_class names the toolchain images it wants; sandbox-rental
+  resolves them into `LeaseSpec.FilesystemMounts` at acquire time.
+  Sticky-disk mounts (caches, persistent workspace) are per-execution
+  and arrive via `StartExecRequest`, not this table.
+- **Customer-uploaded images** land later under
+  `tier: customer_uploaded`. The seed path is uniform — whether the
+  source artefact is a Bazel rule or a customer upload, the daemon's
+  privilege boundary doesn't change.
+
+</guest_rootfs_split>
+
 ## Subdirectories
 
 - `cmd/vm-orchestrator/` — daemon entry point.
