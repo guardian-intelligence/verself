@@ -1,0 +1,42 @@
+load("@bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools/codegen:openapi.bzl", "verself_openapi_yaml")
+
+package(default_visibility = ["//visibility:public"])
+
+# Bazel-tracked OpenAPI specs. Outputs land in bazel-out/.../openapi/
+# and feed both the Go client codegen (//src/billing-service/client)
+# and the frontend openapi-ts pipeline. There is no on-disk source of
+# truth for these YAMLs — see .gitignore.
+verself_openapi_yaml(
+    name = "spec_3_0",
+    format = "3.0",
+    openapi_binary = "//src/billing-service/cmd/billing-openapi",
+    out = "openapi-3.0.yaml",
+)
+
+verself_openapi_yaml(
+    name = "spec_3_1",
+    format = "3.1",
+    openapi_binary = "//src/billing-service/cmd/billing-openapi",
+    out = "openapi-3.1.yaml",
+)
+
+# js_run_binary's input contract requires every spec the openapi-ts
+# pipeline reads to be staged under bazel-bin via copy_to_bin.
+copy_to_bin(
+    name = "openapi-3.1.yaml.bin",
+    srcs = [":spec_3_1"],
+)
+
+# Apiwire numeric-safety contract test against the rendered 3.1 spec.
+# Replaces billing's row in `_WIRE_SPECS` in .aspect/tasks/codegen.axl
+# with a Bazel-graph-anchored gate that re-runs the moment the spec
+# changes — drift to a non-JS-safe schema fails the deploy build.
+go_test(
+    name = "wire_check_test",
+    srcs = ["wire_check_test.go"],
+    args = ["$(rootpath :spec_3_1)"],
+    data = [":spec_3_1"],
+    deps = ["//src/apiwire/wirecheck"],
+)

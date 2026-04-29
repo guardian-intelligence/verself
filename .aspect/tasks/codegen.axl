@@ -31,11 +31,10 @@ _SR = "src/sandbox-rental-service"
 _AW = "src/apiwire"
 
 # Each tuple is (svc_dir, [(cmd_pkg, format, output_path), ...]).
+# Billing-service is omitted: its spec + Go client are now Bazel-graph
+# artifacts. See //src/billing-service/openapi/BUILD.bazel and
+# //src/billing-service/client/BUILD.bazel.
 _OPENAPI_BINDINGS = [
-    (_BS, [
-        ("billing-openapi", "3.0", "openapi/openapi-3.0.yaml"),
-        ("billing-openapi", "3.1", "openapi/openapi-3.1.yaml"),
-    ]),
     (_GS, [
         ("governance-openapi", "3.0", "openapi/openapi-3.0.yaml"),
         ("governance-openapi", "3.1", "openapi/openapi-3.1.yaml"),
@@ -93,7 +92,7 @@ _OPENAPI_BINDINGS = [
 ]
 
 _CLIENT_DIRS = [
-    _BS + "/client",
+    # _BS/client is omitted: Bazel-driven via verself_openapi_go_client.
     _GS + "/client",
     _GS + "/internalclient",
     _IS + "/client",
@@ -114,7 +113,8 @@ _CLIENT_DIRS = [
 ]
 
 _WIRE_SPECS = [
-    _BS + "/openapi/openapi-3.1.yaml",
+    # _BS/openapi-3.1 is omitted: covered by
+    # //src/billing-service/openapi:wire_check_test.
     _GS + "/openapi/openapi-3.1.yaml",
     _IS + "/openapi/openapi-3.1.yaml",
     _IS + "/openapi/internal-openapi-3.1.yaml",

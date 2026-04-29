@@ -1,14 +1,14 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//tools/codegen:openapi.bzl", "verself_openapi_go_client")
 
-go_library(
+# The Go OpenAPI client lives only in bazel-out — see .gitignore. The
+# action graph rebuilds client.gen.go when the spec changes, and any
+# downstream service that imports github.com/verself/billing-service/client
+# rebuilds in turn. There is no on-disk source of truth.
+verself_openapi_go_client(
     name = "client",
-    srcs = [
-        "client.gen.go",
-        "generate.go",
-    ],
     importpath = "github.com/verself/billing-service/client",
-    visibility = ["//visibility:public"],
-    deps = ["@com_github_oapi_codegen_runtime//:runtime"],
+    package_name = "billingclient",
+    spec = "//src/billing-service/openapi:spec_3_0",
 )
 
 alias(
