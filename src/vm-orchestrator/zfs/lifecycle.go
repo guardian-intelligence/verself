@@ -38,11 +38,12 @@ type PrivZFS interface {
 	UnmountStaleZvolMounts(ctx context.Context, pool string) (int, error)
 }
 
-// VolumeLifecycle owns the lease-scoped ZFS workflows: clone the golden
-// snapshot for a lease root, clone an image snapshot for each mount, and
-// destroy disposable workload datasets on cleanup. It does not own commit
-// or checkpoint workflows yet; those live in the parent package and migrate
-// in a later PR.
+// VolumeLifecycle owns the privileged ZFS workflows the daemon delegates
+// to: ensure roots at startup, clone a configured boot image into a lease
+// dataset, clone composable image snapshots for filesystem mounts, destroy
+// disposable workload datasets on lease cleanup, snapshot+rotate
+// generations on commit, take checkpoint snapshots, and seed composable
+// image zvols.
 type VolumeLifecycle struct {
 	roots  Roots
 	ops    PrivZFS
