@@ -1,4 +1,10 @@
 ---
+# Build the verself-web deploy_bundle on the controller (Bazel produces a
+# self-contained tarball: `app-entry.mjs` at root + `.output/{server,public}/`).
+# Land it under /opt/verself-web/releases/<deploy_id>/, atomically swap the
+# `current` symlink, then restart the systemd unit. No on-host pnpm install,
+# no on-host vite build, no rsync of the monorepo.
+
 - name: Create verself-web runtime group
   ansible.builtin.group:
     name: "{{ verself_web_runtime_group }}"
@@ -28,12 +34,6 @@
     owner: root
     group: "{{ verself_web_runtime_group }}"
     mode: "0750"
-
-- name: Verify corepack exists in profile
-  ansible.builtin.stat:
-    path: "{{ verself_bin }}/corepack"
-  register: verself_web_corepack
-  failed_when: not verself_web_corepack.stat.exists
 
 - name: Check for existing verself-web auth session secret
   ansible.builtin.stat:
@@ -68,22 +68,21 @@
     verself_web_auth_session_secret: "{{ verself_web_auth_session_secret_raw.content | b64decode | trim }}"
   no_log: true
 
-- name: Create verself-web install directory
+- name: Ensure verself-web release directory tree exists
   ansible.builtin.file:
-    path: "{{ verself_web_install_dir }}"
+    path: "{{ item }}"
     state: directory
-    owner: "{{ ansible_user }}"
+    owner: root
     group: "{{ verself_web_runtime_group }}"
     mode: "0755"
+  loop:
+    - "{{ verself_web_install_dir }}"
+    - "{{ verself_web_release_dir }}"
 
-- name: Check whether verself-web systemd unit exists
-  ansible.builtin.stat:
-    path: /etc/systemd/system/verself-web.service
-  register: verself_web_systemd_unit_file
-
-- name: Regenerate verself-web API clients before source sync
+- name: Regenerate verself-web API clients before bundle build
   delegate_to: localhost
   become: false
+  run_once: true
   ansible.builtin.command:
     argv:
       - "{{ deploy_profile_bazelisk }}"
@@ -92,152 +91,84 @@
     chdir: "{{ deploy_profile_repo_root }}"
   changed_when: true
 
-# Stop the live process before mutating .output so it never serves a partially deleted build.
-- name: Stop live verself-web before replacing build output
-  ansible.builtin.systemd:
-    name: verself-web
-    state: stopped
-    daemon_reload: true
-  when: verself_web_systemd_unit_file.stat.exists
-
-- name: Remove generated verself-web artifacts before sync
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: absent
-  loop:
-    - "{{ verself_web_install_dir }}/.output"
-    - "{{ verself_web_install_dir }}/.tanstack"
-    - "{{ verself_web_install_dir }}/apps/verself-web/.output"
-    - "{{ verself_web_install_dir }}/apps/verself-web/.tanstack"
-
-# Opt-in clean rebuild: wipe node_modules and the install fingerprint so the
-# next pnpm install runs from scratch instead of reusing the cached store.
-# Trigger with `ansible-playbook ... --tags verself_web --extra-vars verself_web_full_rebuild=true`.
-# Use when a prior install left a corrupted store or an upstream package
-# linked the wrong version.
-- name: Wipe verself-web install for clean rebuild (FULL=1)
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: absent
-  loop:
-    - "{{ verself_web_install_dir }}/node_modules"
-    - "{{ verself_web_dependencies_fingerprint_path }}"
-  when: verself_web_full_rebuild | default(false) | bool
-
-- name: Synchronize verself-web source
+- name: Build verself-web deploy_bundle on controller
   delegate_to: localhost
   become: false
-  ansible.posix.synchronize:
-    src: "{{ playbook_dir }}/../../../viteplus-monorepo/"
-    dest: "{{ verself_web_install_dir }}/"
-    delete: true
-    recursive: true
-    rsync_opts:
-      - "--exclude=node_modules"
-      - "--exclude=.output"
-      - "--exclude=dist"
-      - "--exclude=.tanstack"
-      - "--exclude=apps/company"
-      - "--exclude=apps/company/**"
-      - "--exclude=playwright-report"
-      - "--exclude=test-results"
-      - "--exclude=HANDOFF_PROMPT.md"
-      # delete-excluded would wipe remote node_modules and defeat incremental deploys.
-      - "--no-owner"
-      - "--no-group"
+  run_once: true
+  ansible.builtin.command:
+    # --config=remote-writer matches deploy_profile's Go-build config so
+    # cache hits accumulate across consecutive deploys. The .tar output is
+    # the self-contained payload (app-entry.mjs + .output/), no node_modules.
+    argv:
+      - "{{ deploy_profile_bazelisk }}"
+      - build
+      - --config=remote-writer
+      - "{{ verself_web_bazel_target }}"
+    chdir: "{{ deploy_profile_repo_root }}"
+  changed_when: true
 
-- name: Compute verself-web workspace dependency fingerprint
+- name: Resolve verself-web deploy_bundle output path
   delegate_to: localhost
   become: false
+  run_once: true
   ansible.builtin.command:
     argv:
-      - /bin/bash
-      - -lc
-      - |
-        set -euo pipefail
-        cd {{ playbook_dir }}/../../../viteplus-monorepo
-        {
-          printf '%s\0' package.json pnpm-lock.yaml pnpm-workspace.yaml apps/verself-web/package.json
-          find packages -mindepth 2 -maxdepth 2 -name package.json -print0
-        } | sort -z | xargs -0 sha256sum | sha256sum
-  register: verself_web_workspace_dependency_fingerprint
+      - "{{ deploy_profile_bazelisk }}"
+      - cquery
+      - --output=files
+      - "{{ verself_web_bazel_target }}"
+    chdir: "{{ deploy_profile_repo_root }}"
+  register: verself_web_bundle_cquery
   changed_when: false
 
-- name: Check cached verself-web install fingerprint
-  ansible.builtin.stat:
-    path: "{{ verself_web_dependencies_fingerprint_path }}"
-  register: verself_web_install_fingerprint_file
+- name: Validate verself-web deploy_bundle output path
+  ansible.builtin.assert:
+    that:
+      - verself_web_bundle_cquery.stdout_lines | length == 1
+      - verself_web_bundle_cquery.stdout | trim is match('^bazel-out/.*deploy_bundle\\.tar$')
+    quiet: true
+    fail_msg: >-
+      Bazel cquery did not resolve exactly one .tar output for
+      {{ verself_web_bazel_target }}.
 
-- name: Read cached verself-web install fingerprint
-  ansible.builtin.slurp:
-    src: "{{ verself_web_dependencies_fingerprint_path }}"
-  register: verself_web_install_fingerprint_raw
-  when: verself_web_install_fingerprint_file.stat.exists
+- name: Set verself-web deploy_bundle local path fact
+  ansible.builtin.set_fact:
+    verself_web_bundle_local_path: "{{ deploy_profile_repo_root }}/{{ verself_web_bundle_cquery.stdout | trim }}"
 
-- name: Check cached verself-web node_modules
-  ansible.builtin.stat:
-    path: "{{ verself_web_install_dir }}/node_modules"
-  register: verself_web_node_modules_dir
-
-- name: Install verself-web workspace dependencies when manifests change
-  become: false
-  ansible.builtin.command:
-    argv:
-      - "{{ verself_bin }}/corepack"
-      - pnpm
-      - install
-    chdir: "{{ verself_web_install_dir }}"
-  environment:
-    PATH: "{{ verself_bin }}:/usr/bin:/bin"
-    HOME: "/home/{{ ansible_user }}"
-  changed_when: true
-  when: >-
-    (not verself_web_node_modules_dir.stat.exists)
-    or (not verself_web_install_fingerprint_file.stat.exists)
-    or (
-      (verself_web_install_fingerprint_raw.content | default('') | b64decode | trim)
-      != (verself_web_workspace_dependency_fingerprint.stdout.split()[0] | trim)
-    )
-
-- name: Record cached verself-web install fingerprint
-  ansible.builtin.copy:
-    content: "{{ verself_web_workspace_dependency_fingerprint.stdout.split()[0] | trim }}\n"
-    dest: "{{ verself_web_dependencies_fingerprint_path }}"
-    owner: "{{ ansible_user }}"
+- name: Create verself-web release directory for this deploy
+  ansible.builtin.file:
+    path: "{{ verself_web_release_path }}"
+    state: directory
+    owner: "{{ verself_web_runtime_user }}"
     group: "{{ verself_web_runtime_group }}"
-    mode: "0644"
+    mode: "0755"
 
-- name: Build verself-web package dependencies
-  become: false
-  ansible.builtin.command:
-    argv:
-      - "{{ verself_bin }}/corepack"
-      - pnpm
-      - --filter
-      - "@verself/verself-web^..."
-      - run
-      - build
-    chdir: "{{ verself_web_install_dir }}"
-  environment:
-    PATH: "{{ verself_bin }}:/usr/bin:/bin"
-    HOME: "/home/{{ ansible_user }}"
-  changed_when: true
+- name: Extract verself-web deploy_bundle into the release directory
+  ansible.builtin.unarchive:
+    src: "{{ verself_web_bundle_local_path }}"
+    dest: "{{ verself_web_release_path }}"
+    owner: "{{ verself_web_runtime_user }}"
+    group: "{{ verself_web_runtime_group }}"
+    remote_src: false
 
-- name: Build verself-web app
-  become: false
-  ansible.builtin.command:
-    argv:
-      - "{{ verself_bin }}/corepack"
-      - pnpm
-      - --filter
-      - "@verself/verself-web"
-      - run
-      - build
-    chdir: "{{ verself_web_install_dir }}"
-  environment:
-    PATH: "{{ verself_bin }}:/usr/bin:/bin"
-    HOME: "/home/{{ ansible_user }}"
-  changed_when: true
+- name: Assert app-entry.mjs landed in the release directory
+  ansible.builtin.stat:
+    path: "{{ verself_web_release_path }}/app-entry.mjs"
+  register: verself_web_release_entry
+  failed_when: not verself_web_release_entry.stat.exists
+
+- name: Atomically swap verself-web current symlink
+  # `ln -sfn` rewrites the symlink in-place; the file replace is atomic on
+  # POSIX filesystems, so the systemd unit always reads either the previous
+  # or the new release — never a half-extracted tree.
+  ansible.builtin.file:
+    src: "{{ verself_web_release_path }}"
+    dest: "{{ verself_web_current_link }}"
+    state: link
+    force: true
+    owner: "{{ verself_web_runtime_user }}"
+    group: "{{ verself_web_runtime_group }}"
+    follow: false
 
 - name: Set up Zitadel OIDC application
   ansible.builtin.include_role:
@@ -341,11 +272,14 @@
     mode: "0644"
   notify: reload nftables
 
-- name: Enable and start verself-web
+- name: Enable and (re)start verself-web
+  # Always restart so the unit picks up the symlink swap. systemd is fast
+  # enough that the cost is dominated by Node startup; idempotency comes
+  # from `state: started` for first deploys + the always-restart pattern.
   ansible.builtin.systemd:
     name: verself-web
     enabled: true
-    state: started
+    state: restarted
     daemon_reload: true
 
 - name: Wait for verself-web to be ready
@@ -353,3 +287,20 @@
     host: "{{ topology_endpoints.verself_web.host }}"
     port: "{{ topology_endpoints.verself_web.endpoints.http.port }}"
     timeout: 30
+
+- name: Find verself-web release directories on host
+  ansible.builtin.find:
+    paths: "{{ verself_web_release_dir }}"
+    file_type: directory
+    excludes: "{{ verself_web_deploy_id }}"
+  register: verself_web_releases_on_host
+
+- name: Prune older verself-web release directories
+  # Keep one rollback target — the most recent prior release. Older releases
+  # are dropped so the node doesn't accumulate stale tarballs over time.
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ (verself_web_releases_on_host.files | sort(attribute='mtime') | list)[:-1] | default([]) }}"
+  loop_control:
+    label: "{{ item.path | basename }}"

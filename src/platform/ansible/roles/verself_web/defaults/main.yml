@@ -1,10 +1,21 @@
 ---
+# Where extracted release tarballs live. <install_dir>/releases/<deploy_id>/
+# holds an extracted bundle (app-entry.mjs + .output/); <install_dir>/current
+# is the symlink the systemd unit and verify scripts read from. Atomic swap
+# via `mv -T` keeps the unit pointed at a complete bundle for the entire
+# restart window.
 verself_web_install_dir: /opt/verself-web
-verself_web_app_dir: "{{ verself_web_install_dir }}/apps/verself-web"
-verself_web_dependencies_fingerprint_path: "{{ verself_web_install_dir }}/.pnpm-install-fingerprint"
+verself_web_release_dir: "{{ verself_web_install_dir }}/releases"
+verself_web_current_link: "{{ verself_web_install_dir }}/current"
 verself_web_runtime_user: verself-web
 verself_web_runtime_group: verself-web
 verself_web_state_dir: /var/lib/verself-web
 verself_web_auth_issuer_url: "https://auth.{{ verself_domain }}"
 verself_web_auth_project_name: sandbox-rental
 verself_web_identity_project_name: "{{ identity_service_auth_project_name | default('identity-service') }}"
+# `aspect deploy` derives a stable per-attempt VERSELF_DEPLOY_ID and threads
+# it into the controller env. Fall back to a UUID locally so dev rehearsals
+# get a fresh release dir each run.
+verself_web_deploy_id: "{{ lookup('env', 'VERSELF_DEPLOY_ID') | default(lookup('pipe', 'cat /proc/sys/kernel/random/uuid'), true) }}"
+verself_web_release_path: "{{ verself_web_release_dir }}/{{ verself_web_deploy_id }}"
+verself_web_bazel_target: "//src/viteplus-monorepo/apps/verself-web:deploy_bundle"
