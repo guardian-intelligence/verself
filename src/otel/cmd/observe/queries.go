@@ -67,6 +67,8 @@ func buildQueries(cfg config) ([]query, error) {
 			return []query{
 				newQuery("deploy.run", deployRunSQL, params),
 				newQuery("deploy.bazel_build_run", deployBazelBuildRunSQL, params),
+				newQuery("deploy.codegen_actions", deployCodegenActionsSQL, params),
+				newQuery("deploy.rebuild_blast_radius", deployRebuildBlastRadiusSQL, params),
 			}, nil
 		}
 		return []query{
@@ -895,6 +897,50 @@ CROSS JOIN (
   GROUP BY status
 ) AS cache
 ORDER BY cache.status`
+
+// deployCodegenActionsSQL surfaces every codegen Bazel action that ran
+// inside one deploy's bazel-build window. The spans are emitted by
+// src/otel/cmd/bazel-profile-to-otel from `--profile=` JSON; the
+// mnemonics come from //tools/codegen:openapi.bzl (OpenAPISpec for
+// `cmd/<svc>-openapi` runs, OAPICodegen for the Go client gen) and
+// from src/viteplus-monorepo/viteplus_rules.bzl (OpenapiTsGen for the
+// frontend TS SDK gen, present once Phase 2 lands). Empty rows mean
+// the deploy hit the action cache (or touched no codegen inputs).
+const deployCodegenActionsSQL = `
+SELECT
+  formatDateTime(Timestamp, '%H:%i:%S') AS time,
+  SpanAttributes['bazel.mnemonic'] AS mnemonic,
+  SpanAttributes['bazel.target'] AS target,
+  toUInt64OrZero(SpanAttributes['bazel.duration_ms']) AS ms
+FROM default.otel_traces
+WHERE ServiceName = 'bazel'
+  AND ResourceAttributes['verself.deploy_run_key'] = {run_key:String}
+  AND SpanAttributes['bazel.mnemonic'] IN ('OpenAPISpec', 'OAPICodegen', 'OpenapiTsGen', 'NpmPackage')
+ORDER BY Timestamp
+LIMIT {row_limit:UInt32}`
+
+// deployRebuildBlastRadiusSQL groups every Bazel action with a
+// //src/<svc>/... target by service so the operator can verify a
+// deploy rebuilt the right things and only the right things. Useful
+// after a Huma-route change to confirm the cross-service consumers
+// (sandbox-rental-service, secrets-service for billing) actually
+// relinked while unrelated services stayed cached.
+const deployRebuildBlastRadiusSQL = `
+SELECT
+  extract(SpanAttributes['bazel.target'], '^//src/([^/]+)') AS service,
+  countIf(SpanAttributes['bazel.mnemonic'] = 'GoCompile') AS go_compiles,
+  countIf(SpanAttributes['bazel.mnemonic'] = 'GoLink') AS go_links,
+  countIf(SpanAttributes['bazel.mnemonic'] IN ('OpenAPISpec', 'OAPICodegen', 'OpenapiTsGen', 'NpmPackage')) AS codegen_actions,
+  count() AS total_actions,
+  sum(toUInt64OrZero(SpanAttributes['bazel.duration_ms'])) AS total_ms
+FROM default.otel_traces
+WHERE ServiceName = 'bazel'
+  AND ResourceAttributes['verself.deploy_run_key'] = {run_key:String}
+  AND startsWith(SpanAttributes['bazel.target'], '//src/')
+GROUP BY service
+HAVING service != ''
+ORDER BY total_actions DESC
+LIMIT {row_limit:UInt32}`
 
 const traceDetailSQL = `
 SELECT
