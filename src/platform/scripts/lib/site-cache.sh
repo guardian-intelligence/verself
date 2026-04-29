@@ -10,9 +10,11 @@
 #   VERSELF_ANSIBLE_INVENTORY   — absolute path to <cache>/inventory/
 #   VERSELF_ANSIBLE_HOSTS_INI   — absolute path to <cache>/inventory/hosts.ini
 #
-# Set VERSELF_SITE in the environment to deploy a different instance.
-# Set VERSELF_SKIP_RENDER=1 to bypass the renderer when iterating on a
-# stale cache (debug-only — failures inside Ansible are likely).
+# The render itself is delegated to `aspect render` so the bash callers,
+# `aspect deploy`, and `aspect platform <task>` all materialise the cache
+# the same way. Set VERSELF_SKIP_RENDER=1 to reuse a stale cache (debug
+# only — secrets and hand-written group_vars may be missing if the
+# previous render predates a SOPS or playbook edit).
 
 site_cache_init() {
   : "${VERSELF_SITE:=prod}"
@@ -30,25 +32,18 @@ site_cache_init() {
   VERSELF_ANSIBLE_INVENTORY="${VERSELF_RENDER_CACHE_DIR}/inventory"
   VERSELF_ANSIBLE_HOSTS_INI="${VERSELF_ANSIBLE_INVENTORY}/hosts.ini"
 
-  local inv_source="${repo_root}/src/platform/ansible/inventory/${VERSELF_SITE}.ini"
-  if [[ ! -f "${inv_source}" ]]; then
-    echo "site-cache.sh: inventory ${inv_source} not found. Run: aspect platform provision" >&2
-    return 1
-  fi
-
   if [[ "${VERSELF_SKIP_RENDER:-0}" == "1" && -f "${VERSELF_ANSIBLE_HOSTS_INI}" ]]; then
     export VERSELF_SITE VERSELF_RENDER_CACHE_DIR VERSELF_ANSIBLE_INVENTORY VERSELF_ANSIBLE_HOSTS_INI
     return 0
   fi
 
-  rm -rf "${VERSELF_RENDER_CACHE_DIR}"
   (
     cd "${repo_root}"
-    bazelisk run //src/cue-renderer/cmd/cue-renderer -- \
-      generate \
-        --instance="${VERSELF_SITE}" \
-        --output-dir=".cache/render/${VERSELF_SITE}" >/dev/null
+    aspect render --site="${VERSELF_SITE}" >/dev/null
   )
-  cp "${inv_source}" "${VERSELF_ANSIBLE_HOSTS_INI}"
+  if [[ ! -f "${VERSELF_ANSIBLE_HOSTS_INI}" ]]; then
+    echo "site-cache.sh: aspect render did not produce ${VERSELF_ANSIBLE_HOSTS_INI}" >&2
+    return 1
+  fi
   export VERSELF_SITE VERSELF_RENDER_CACHE_DIR VERSELF_ANSIBLE_INVENTORY VERSELF_ANSIBLE_HOSTS_INI
 }

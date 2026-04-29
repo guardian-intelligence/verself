@@ -2,8 +2,9 @@
 
 Materialises a site's deploy cache at .cache/render/<site>/ — every
 generated group_var, every nftables fragment, every systemd unit file,
-and the staged inventory file. Ansible's `host_group_vars` plugin
-auto-discovers `<inventory_dir>/group_vars/all/...`, so pointing
+the staged inventory, and the hand-written group_vars copied alongside.
+Ansible's `host_group_vars` plugin auto-discovers
+`<inventory_dir>/group_vars/all/...`, so pointing
 `-i .cache/render/<site>/inventory/` at it is enough for the deploy
 flow to pick up the rendered config without polluting the tracked
 working tree.
@@ -11,81 +12,16 @@ working tree.
 The cache is the single source of truth for "what `aspect deploy`
 will install"; review and debugging happens against `.cache/render/<site>/`
 rather than via `git diff` over committed generated files.
+
+Implementation: this task is a thin shell over .aspect/lib/helpers.axl::render_site
+so the deploy and platform-task wrappers (which need the same cache)
+share one materialisation path.
 """
 
-load(".aspect/lib/helpers.axl", "checked_spawn", "ws_path")
+load(".aspect/lib/helpers.axl", "DEFAULT_SITE", "render_site")
 
 def _render_impl(ctx):
-    site = ctx.args.site or "prod"
-    cache_rel = ".cache/render/" + site
-    cache = ws_path(ctx, cache_rel)
-    inv_src = ws_path(ctx, "src/platform/ansible/inventory", site + ".ini")
-
-    rc = checked_spawn(
-        ctx, "rm", ["-rf", cache],
-        label = "clean " + cache_rel,
-    )
-    if rc != 0:
-        return rc
-
-    rc = checked_spawn(
-        ctx, "bazelisk",
-        [
-            "run",
-            "//src/cue-renderer/cmd/cue-renderer",
-            "--",
-            "generate",
-            "--instance=" + site,
-            "--output-dir=" + cache_rel,
-        ],
-        label = "cue-renderer generate --instance=" + site,
-    )
-    if rc != 0:
-        return rc
-
-    rc = checked_spawn(
-        ctx, "test", ["-f", inv_src],
-        label = "check inventory " + inv_src,
-    )
-    if rc != 0:
-        ctx.std.io.stderr.write(
-            "ERROR: inventory file " + inv_src + " not found. Run: aspect platform provision\n",
-        )
-        return 1
-
-    rc = checked_spawn(
-        ctx, "cp", [inv_src, cache + "/inventory/hosts.ini"],
-        label = "stage inventory",
-    )
-    if rc != 0:
-        return rc
-    # Stage the hand-written group_vars tree (all + per-group main.yml, the
-    # encrypted secrets.sops.yml, etc.) next to the rendered generated/
-    # subtree so community.sops.sops finds them when -i points at the cache.
-    rc = checked_spawn(
-        ctx, "bash", [
-            "-c",
-            "set -eu; " +
-            "src='" + ws_path(ctx, "src/platform/ansible/group_vars") + "'; " +
-            "dst='" + cache + "/inventory/group_vars'; " +
-            "mkdir -p \"${dst}\"; " +
-            "cp -R \"${src}/.\" \"${dst}/\";",
-        ],
-        label = "stage hand-written group_vars",
-    )
-    if rc != 0:
-        return rc
-    # Mirror the cache-rendered handler back into the tracked-but-gitignored
-    # path so site.yml's static import_tasks resolves at parse time —
-    # handlers must be discoverable before inventory loads.
-    return checked_spawn(
-        ctx, "cp",
-        [
-            cache + "/handlers/component-systemd.yml",
-            ws_path(ctx, "src/platform/ansible/handlers/component-systemd.yml"),
-        ],
-        label = "stage handlers/component-systemd.yml",
-    )
+    return render_site(ctx, ctx.args.site or DEFAULT_SITE)
 
 render = task(
     implementation = _render_impl,
