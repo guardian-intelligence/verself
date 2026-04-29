@@ -1,8 +1,8 @@
 ---
-# Build company on the controller, ship `.output/` + `app-entry.mjs` to
-# the host, restart systemd. `vp build` runs in the source tree (Bazel
-# sandboxing breaks TanStack Start's route-level code splitting); Bazel
-# only builds the small hermetic OTel preload (`:app_entry_bundle`).
+# Build company on the controller, ship `.output/` + `instrumentation.mjs`
+# to the host, restart systemd. `vp build` runs in the source tree (Bazel
+# sandboxing breaks TanStack Start's route-level code splitting); Bazel only
+# builds the small hermetic OTel preload (`:instrumentation_bundle`).
 
 - name: Create company runtime group
   ansible.builtin.group:
@@ -55,7 +55,7 @@
       - "{{ deploy_profile_bazelisk }}"
       - build
       - --config=remote-writer
-      - "{{ company_app_entry_bazel_target }}"
+      - "{{ company_instrumentation_bazel_target }}"
     chdir: "{{ deploy_profile_repo_root }}"
   changed_when: true
 
@@ -68,14 +68,14 @@
       - "{{ deploy_profile_bazelisk }}"
       - cquery
       - --output=files
-      - "{{ company_app_entry_bazel_target }}"
+      - "{{ company_instrumentation_bazel_target }}"
     chdir: "{{ deploy_profile_repo_root }}"
-  register: company_app_entry_cquery
+  register: company_instrumentation_cquery
   changed_when: false
 
 - name: Set company OTel preload local path fact
   ansible.builtin.set_fact:
-    company_app_entry_local_path: "{{ deploy_profile_repo_root }}/{{ company_app_entry_cquery.stdout | trim }}"
+    company_instrumentation_local_path: "{{ deploy_profile_repo_root }}/{{ company_instrumentation_cquery.stdout | trim }}"
 
 - name: Create company release directory for this deploy
   ansible.builtin.file:
@@ -95,10 +95,10 @@
       - "--no-owner"
       - "--no-group"
 
-- name: Copy company app-entry.mjs into release directory
+- name: Copy company instrumentation.mjs into release directory
   ansible.builtin.copy:
-    src: "{{ company_app_entry_local_path }}"
-    dest: "{{ company_release_path }}/app-entry.mjs"
+    src: "{{ company_instrumentation_local_path }}"
+    dest: "{{ company_release_path }}/instrumentation.mjs"
     owner: "{{ company_runtime_user }}"
     group: "{{ company_runtime_group }}"
     mode: "0644"

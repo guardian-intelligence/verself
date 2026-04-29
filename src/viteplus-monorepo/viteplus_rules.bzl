@@ -4,7 +4,7 @@ load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
 load("@npm//:defs.bzl", "npm_link_all_packages")
 
 _VITEPLUS_TOOL = "//src/viteplus-monorepo:vp"
-_APP_ENTRY_BUNDLER = "//src/viteplus-monorepo/scripts:bundle_app_entry"
+_INSTRUMENTATION_BUNDLER = "//src/viteplus-monorepo/scripts:bundle_instrumentation"
 
 def viteplus_source_package(npm_name, srcs):
     """Source-only workspace package linked into the rules_js npm graph.
@@ -41,14 +41,15 @@ def viteplus_app(npm_name, srcs):
     bundle (vs. ~148 route-split chunks the source-tree build produces).
 
     Bazel's job here is to build the small hermetic OTel preload bundle
-    (`:app_entry_bundle`) — `app-entry.mts` plus its `@verself/nitro-plugins`
-    deps, bundled by Rolldown. That action is genuinely sandbox-safe (no
-    filesystem-walking plugin involved).
+    (`:instrumentation_bundle`) — `instrumentation.mts` plus its
+    `@verself/nitro-plugins` deps, bundled by Rolldown. That action is
+    genuinely sandbox-safe (no filesystem-walking plugin involved).
 
-    The full deploy tarball (`.output/{public,server}/` + `app-entry.mjs`)
-    is composed by the Ansible verself_web/company roles: the role runs
-    `vp build` in the source tree, then `bazelisk build :app_entry_bundle`,
-    then `tar -cf` over both, then ships the tarball to the host.
+    The Ansible verself_web/company roles compose the deploy: they run
+    `vp build` in the source tree to produce `.output/`, then
+    `bazelisk build :instrumentation_bundle` for the preload, then sync both
+    into the release dir and start systemd with
+    `node --import ./instrumentation.mjs ./.output/server/index.mjs`.
 
     `srcs` is kept as a filegroup so a future Bazel target (e.g. a typecheck
     test, an e2e harness) can reference the app's input set without
@@ -64,31 +65,25 @@ def viteplus_app(npm_name, srcs):
         ),
     )
 
-    # Bundle the single app entry (`app-entry.mts` — OTel preload + dynamic
-    # import of the Nitro server bundle) so the deploy tarball runs without a
-    # node_modules tree. The driver runs Rolldown (same bundler `vp build`
-    # uses for the server output) with `platform=node`, leaving Node built-ins
-    # external and inlining everything else.
-    #
-    # The entry is named `app-entry.mts` (not `server.mts`) deliberately —
-    # TanStack Start auto-discovers root-level `server.{ts,mts}` as an SSR
-    # hook and pulls it into the Nitro server bundle, which would defeat the
-    # preload-then-server ordering and trip Nitro's dependency tracer over
-    # OTel's `require-in-the-middle`.
+    # Bundle `instrumentation.mts` (the OTel preload) into a self-contained
+    # `instrumentation.mjs` that runs without a node_modules tree on the host.
+    # The driver runs Rolldown (same bundler `vp build` uses for the server
+    # output) with `platform=node`, leaving Node built-ins external and
+    # inlining everything else. systemd loads it via Node's `--import` flag.
     js_run_binary(
-        name = "app_entry_bundle",
+        name = "instrumentation_bundle",
         srcs = [
             ":node_modules",
-            "app-entry.mts",
+            "instrumentation.mts",
         ],
-        outs = ["app-entry.mjs"],
+        outs = ["instrumentation.mjs"],
         args = [
-            "--entry=app-entry.mts",
-            "--outfile=app-entry.mjs",
+            "--entry=instrumentation.mts",
+            "--outfile=instrumentation.mjs",
         ],
         chdir = native.package_name(),
-        progress_message = "Bundling %s app entry" % npm_name,
-        tool = _APP_ENTRY_BUNDLER,
+        progress_message = "Bundling %s OTel preload" % npm_name,
+        tool = _INSTRUMENTATION_BUNDLER,
     )
 
 def viteplus_openapi_clients(name, specs, openapi_ts_bin, plugin_packages = None):
