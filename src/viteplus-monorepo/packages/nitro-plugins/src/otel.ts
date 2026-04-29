@@ -1,8 +1,27 @@
-import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
+import { HttpInstrumentation } from "@opentelemetry/instrumentation-http";
+import { UndiciInstrumentation } from "@opentelemetry/instrumentation-undici";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 
+// Curated instrumentation set — deliberately not @opentelemetry/auto-
+// instrumentations-node. The goal of OTel here is one specific wire: trace
+// continuity from a browser interaction to the API behaviour it triggered.
+// That wire only needs two patches:
+//
+//   HttpInstrumentation     — wraps the Node http server so incoming requests
+//                             extract `traceparent` and the resulting span is
+//                             a child of the browser's interaction span. Same
+//                             instrumentation also covers outbound http.request.
+//   UndiciInstrumentation   — Node 18+ `fetch()` runs on undici, not http.request,
+//                             so it bypasses HttpInstrumentation. This patch
+//                             injects `traceparent` on outbound fetch — the call
+//                             path TanStack Start server functions use to reach
+//                             our backend Go services.
+//
+// Everything else (request lifecycle attributes, correlation IDs, server-fn
+// spans, page-view spans) is emitted explicitly from app code via the OTel
+// API. No auto-patching of fs, dns, child_process, ioredis, kafka, …
 function logSdkError(msg: string, error: unknown): void {
   const payload = {
     time: new Date().toISOString(),
@@ -29,11 +48,7 @@ export async function initOtel(serviceName: string): Promise<void> {
       "deployment.environment.name": process.env.NODE_ENV || "production",
     }),
     traceExporter: new OTLPTraceExporter({ url: tracesEndpoint }),
-    instrumentations: [
-      getNodeAutoInstrumentations({
-        "@opentelemetry/instrumentation-fs": { enabled: false },
-      }),
-    ],
+    instrumentations: [new HttpInstrumentation(), new UndiciInstrumentation()],
   });
 
   sdk.start();

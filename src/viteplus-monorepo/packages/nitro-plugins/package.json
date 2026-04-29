@@ -25,8 +25,9 @@
     "typecheck": "vp exec tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@opentelemetry/auto-instrumentations-node": "catalog:",
     "@opentelemetry/exporter-trace-otlp-http": "catalog:",
+    "@opentelemetry/instrumentation-http": "catalog:",
+    "@opentelemetry/instrumentation-undici": "catalog:",
     "@opentelemetry/resources": "catalog:",
     "@opentelemetry/sdk-node": "catalog:",
     "nitro": "catalog:"
