@@ -1,4 +1,5 @@
 exports_files([
+    "pg-query-go-bazel-cgo.patch",
     "temporal-server-bazel-embedded-schemas.patch",
     "tigerbeetle-go-bazel-cgo.patch",
 ])
