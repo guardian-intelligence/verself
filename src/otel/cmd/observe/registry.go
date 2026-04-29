@@ -580,44 +580,6 @@ var queryDocs = []queryDoc{
 		},
 	},
 	{
-		ID:      "deploy.codegen_actions",
-		Family:  "deploy",
-		Title:   "Deploy Codegen Actions",
-		Purpose: "Every OpenAPI/SDK codegen Bazel action that ran during one deploy. Empty rows mean every codegen target hit the action cache, i.e. no spec or Huma route source changed.",
-		Required: []string{
-			"--run-key=<deploy-run-key>",
-		},
-		Optional: []string{
-			"--format=table|json|markdown",
-		},
-		Examples: []string{
-			"aspect observe --what=deploy --run-key=2026-04-29.000003@rust-forge-01",
-		},
-		Next: []string{
-			"aspect observe --what=deploy --run-key=<deploy-run-key>",
-			"aspect observe --what=trace --trace-id=<trace-id>",
-		},
-	},
-	{
-		ID:      "deploy.rebuild_blast_radius",
-		Family:  "deploy",
-		Title:   "Deploy Rebuild Blast Radius",
-		Purpose: "Per-service breakdown of every Bazel action that ran in one deploy. Verifies a Huma-route change rebuilt the right consuming services and only the right ones.",
-		Required: []string{
-			"--run-key=<deploy-run-key>",
-		},
-		Optional: []string{
-			"--format=table|json|markdown",
-		},
-		Examples: []string{
-			"aspect observe --what=deploy --run-key=2026-04-29.000003@rust-forge-01",
-		},
-		Next: []string{
-			"aspect observe --what=deploy --run-key=<deploy-run-key>",
-			"aspect observe --what=catalog --signal=deploys",
-		},
-	},
-	{
 		ID:      "mail.events",
 		Family:  "mail",
 		Title:   "Mail Events",
