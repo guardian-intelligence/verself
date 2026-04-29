@@ -20,11 +20,135 @@ load(
     bazel_tidy = "tidy",
     bazel_update = "update",
 )
+load(
+    ".aspect/tasks/platform.axl",
+    platform_setup_dev = "setup_dev",
+    platform_setup_sops = "setup_sops",
+    platform_provision = "provision",
+    platform_deprovision = "deprovision",
+    platform_security_patch = "security_patch",
+    platform_guest_rootfs = "guest_rootfs",
+    platform_edit_secrets = "edit_secrets",
+    platform_wipe_server = "wipe_server",
+    platform_hooks_install = "hooks_install",
+    platform_reset_identity = "reset_identity",
+    platform_reset_billing = "reset_billing",
+    platform_reset_verification = "reset_verification",
+)
+load(".aspect/tasks/deploy.axl", "deploy")
+load(
+    ".aspect/tasks/db.axl",
+    db_pg_list = "pg_list",
+    db_pg_shell = "pg_shell",
+    db_pg_query = "pg_query",
+    db_ch_query = "ch_query",
+    db_ch_schemas = "ch_schemas",
+    db_tb_shell = "tb_shell",
+    db_tb_command = "tb_command",
+)
+load(".aspect/tasks/check.axl", "check")
+load(
+    ".aspect/tasks/codegen.axl",
+    codegen_run = "codegen_run",
+    codegen_check = "codegen_check",
+)
+load(
+    ".aspect/tasks/dev.axl",
+    dev_console = "console",
+    dev_platform = "platform",
+    dev_sandbox_inner = "sandbox_inner",
+    dev_sandbox_middle = "sandbox_middle",
+)
+load(
+    ".aspect/tasks/persona.axl",
+    persona_assume = "assume",
+    persona_user_state = "user_state",
+)
+load(
+    ".aspect/tasks/billing.axl",
+    billing_clock = "clock",
+    billing_state = "state",
+    billing_documents = "documents",
+    billing_finalizations = "finalizations",
+    billing_events = "events",
+)
+load(
+    ".aspect/tasks/mail.axl",
+    mail_list = "list_task",
+    mail_accounts = "accounts",
+    mail_mailboxes = "mailboxes",
+    mail_code = "code",
+    mail_read = "read",
+    mail_send = "send",
+    mail_passwords = "passwords",
+)
+load(".aspect/tasks/observe.axl", "observe")
 
 def config(ctx):
+    # Top-level tasks.
     ctx.tasks.add(doctor)
     ctx.tasks.add(tidy)
+    ctx.tasks.add(deploy)
+    ctx.tasks.add(observe)
+    ctx.tasks.add(check)
+
+    # aspect bazel ...
     ctx.tasks.add(bazel_doctor)
     ctx.tasks.add(bazel_gazelle)
     ctx.tasks.add(bazel_tidy)
     ctx.tasks.add(bazel_update)
+
+    # aspect platform ...
+    ctx.tasks.add(platform_setup_dev)
+    ctx.tasks.add(platform_setup_sops)
+    ctx.tasks.add(platform_provision)
+    ctx.tasks.add(platform_deprovision)
+    ctx.tasks.add(platform_security_patch)
+    ctx.tasks.add(platform_guest_rootfs)
+    ctx.tasks.add(platform_edit_secrets)
+    ctx.tasks.add(platform_wipe_server)
+    ctx.tasks.add(platform_hooks_install)
+
+    # aspect platform reset ...
+    ctx.tasks.add(platform_reset_identity)
+    ctx.tasks.add(platform_reset_billing)
+    ctx.tasks.add(platform_reset_verification)
+
+    # aspect db pg|ch|tb ...
+    ctx.tasks.add(db_pg_list)
+    ctx.tasks.add(db_pg_shell)
+    ctx.tasks.add(db_pg_query)
+    ctx.tasks.add(db_ch_query)
+    ctx.tasks.add(db_ch_schemas)
+    ctx.tasks.add(db_tb_shell)
+    ctx.tasks.add(db_tb_command)
+
+    # aspect codegen run|check ...
+    ctx.tasks.add(codegen_run)
+    ctx.tasks.add(codegen_check)
+
+    # aspect dev ...
+    ctx.tasks.add(dev_console)
+    ctx.tasks.add(dev_platform)
+    ctx.tasks.add(dev_sandbox_inner)
+    ctx.tasks.add(dev_sandbox_middle)
+
+    # aspect persona ...
+    ctx.tasks.add(persona_assume)
+    ctx.tasks.add(persona_user_state)
+
+    # aspect billing ...
+    ctx.tasks.add(billing_clock)
+    ctx.tasks.add(billing_state)
+    ctx.tasks.add(billing_documents)
+    ctx.tasks.add(billing_finalizations)
+    ctx.tasks.add(billing_events)
+
+    # aspect mail ...
+    ctx.tasks.add(mail_list)
+    ctx.tasks.add(mail_accounts)
+    ctx.tasks.add(mail_mailboxes)
+    ctx.tasks.add(mail_code)
+    ctx.tasks.add(mail_read)
+    ctx.tasks.add(mail_send)
+    ctx.tasks.add(mail_passwords)

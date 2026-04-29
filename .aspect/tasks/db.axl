@@ -1,0 +1,174 @@
+"""aspect db pg|ch|tb — database access wrappers over the SSH tunnel.
+
+  aspect db pg list
+  aspect db pg shell --db=<name>
+  aspect db pg query --db=<name> --query=<sql>
+  aspect db ch schemas [--database=<name>]
+  aspect db ch query --query=<sql> [--database=<name>]
+  aspect db tb shell
+  aspect db tb command --command=<op>
+
+These shell out to scripts/{pg.sh, clickhouse.sh, tigerbeetle.sh}, all of
+which open the SSH tunnel themselves. Per-service shortcuts (e.g.
+`make billing-pg-query`) are intentionally not preserved — `aspect db pg
+query --db=billing --query=...` covers them.
+"""
+
+load(".aspect/lib/helpers.axl", "checked_spawn", "inventory_check", "require_arg", "ws_path")
+
+_PLATFORM = "src/platform"
+
+def _pg_list_impl(ctx):
+    if inventory_check(ctx) != 0:
+        return 1
+    return checked_spawn(
+        ctx,
+        ws_path(ctx, _PLATFORM, "scripts/pg.sh"),
+        ["--list"],
+        cwd = ws_path(ctx, _PLATFORM),
+        label = "pg.sh --list",
+    )
+
+def _pg_shell_impl(ctx):
+    if inventory_check(ctx) != 0:
+        return 1
+    if not require_arg(ctx, "db", ctx.args.db):
+        return 1
+    return checked_spawn(
+        ctx,
+        ws_path(ctx, _PLATFORM, "scripts/pg.sh"),
+        [ctx.args.db],
+        cwd = ws_path(ctx, _PLATFORM),
+        label = "pg.sh " + ctx.args.db,
+    )
+
+def _pg_query_impl(ctx):
+    if inventory_check(ctx) != 0:
+        return 1
+    if not require_arg(ctx, "db", ctx.args.db):
+        return 1
+    if not require_arg(ctx, "query", ctx.args.query):
+        return 1
+    return checked_spawn(
+        ctx,
+        ws_path(ctx, _PLATFORM, "scripts/pg.sh"),
+        [ctx.args.db, "--query", ctx.args.query],
+        cwd = ws_path(ctx, _PLATFORM),
+        label = "pg.sh " + ctx.args.db + " --query",
+    )
+
+def _ch_query_impl(ctx):
+    if inventory_check(ctx) != 0:
+        return 1
+    if not require_arg(ctx, "query", ctx.args.query):
+        return 1
+    cli_args = []
+    if ctx.args.database:
+        cli_args = cli_args + ["--database", ctx.args.database]
+    cli_args = cli_args + ["--query", ctx.args.query]
+    return checked_spawn(
+        ctx,
+        ws_path(ctx, _PLATFORM, "scripts/clickhouse.sh"),
+        cli_args,
+        cwd = ws_path(ctx, _PLATFORM),
+        label = "clickhouse.sh --query",
+    )
+
+def _ch_schemas_impl(ctx):
+    if inventory_check(ctx) != 0:
+        return 1
+    q = "SELECT concat(database, '.', name, '\n', create_table_query, '\n') FROM system.tables WHERE database IN ('verself', 'default') AND name NOT LIKE '.%' ORDER BY database, name FORMAT TSVRaw"
+    return checked_spawn(
+        ctx,
+        ws_path(ctx, _PLATFORM, "scripts/clickhouse.sh"),
+        ["--query", q],
+        cwd = ws_path(ctx, _PLATFORM),
+        label = "clickhouse.sh schemas",
+    )
+
+def _tb_shell_impl(ctx):
+    if inventory_check(ctx) != 0:
+        return 1
+    return checked_spawn(
+        ctx,
+        ws_path(ctx, _PLATFORM, "scripts/tigerbeetle.sh"),
+        [],
+        cwd = ws_path(ctx, _PLATFORM),
+        label = "tigerbeetle.sh",
+    )
+
+def _tb_command_impl(ctx):
+    if inventory_check(ctx) != 0:
+        return 1
+    if not require_arg(ctx, "command", ctx.args.command):
+        return 1
+    return checked_spawn(
+        ctx,
+        ws_path(ctx, _PLATFORM, "scripts/tigerbeetle.sh"),
+        ["--command", ctx.args.command],
+        cwd = ws_path(ctx, _PLATFORM),
+        label = "tigerbeetle.sh --command",
+    )
+
+pg_list = task(
+    implementation = _pg_list_impl,
+    name = "list",
+    group = ["db", "pg"],
+    summary = "List PostgreSQL databases on the worker (authoritative via \\l).",
+)
+
+pg_shell = task(
+    implementation = _pg_shell_impl,
+    name = "shell",
+    group = ["db", "pg"],
+    summary = "Open interactive psql against a service database.",
+    args = {
+        "db": args.string(description = "Database name (run `aspect db pg list` to enumerate)."),
+    },
+)
+
+pg_query = task(
+    implementation = _pg_query_impl,
+    name = "query",
+    group = ["db", "pg"],
+    summary = "Run a SQL query against a service PostgreSQL database.",
+    args = {
+        "db": args.string(description = "Database name."),
+        "query": args.string(description = "SQL to execute."),
+    },
+)
+
+ch_query = task(
+    implementation = _ch_query_impl,
+    name = "query",
+    group = ["db", "ch"],
+    summary = "Run a ClickHouse query on the worker.",
+    args = {
+        "query": args.string(description = "SQL to execute."),
+        "database": args.string(default = "", description = "ClickHouse database (default: server-side default)."),
+    },
+)
+
+ch_schemas = task(
+    implementation = _ch_schemas_impl,
+    name = "schemas",
+    group = ["db", "ch"],
+    summary = "Print CREATE TABLE statements for every project ClickHouse table.",
+)
+
+tb_shell = task(
+    implementation = _tb_shell_impl,
+    name = "shell",
+    group = ["db", "tb"],
+    summary = "Open the TigerBeetle REPL (Ctrl+D to exit).",
+)
+
+tb_command = task(
+    implementation = _tb_command_impl,
+    name = "command",
+    group = ["db", "tb"],
+    summary = "Run a single TigerBeetle REPL op (e.g. --command='lookup_accounts id=1;').",
+    args = {
+        "command": args.string(description = "TigerBeetle REPL command, including trailing ';'."),
+    },
+)

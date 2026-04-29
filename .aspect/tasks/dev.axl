@@ -1,0 +1,107 @@
+"""aspect dev console|platform|sandbox-inner|sandbox-middle — local-loop entry points.
+
+Each subtask shells out to the existing run-*-local-dev.sh / sandbox-*.sh script
+so the env discovery and tunnel setup remain in one place.
+"""
+
+load(".aspect/lib/helpers.axl", "checked_spawn", "inventory_check", "ws_path")
+
+_PLATFORM = "src/platform"
+
+def _console_impl(ctx):
+    if inventory_check(ctx) != 0:
+        return 1
+    cli_args = []
+    if ctx.args.print_env:
+        cli_args.append("--print-env")
+    return checked_spawn(
+        ctx,
+        ws_path(ctx, _PLATFORM, "scripts/run-console-local-dev.sh"),
+        cli_args,
+        cwd = ws_path(ctx, _PLATFORM),
+        label = "run-console-local-dev.sh",
+    )
+
+def _platform_impl(ctx):
+    # Read verself_domain inline so platform docs HMR resolves the same URL
+    # the deployed marketing site uses.
+    main_yml = ws_path(ctx, _PLATFORM, "ansible/group_vars/all/main.yml")
+    r = (ctx.std.process.command("python3")
+         .args([
+             "-c",
+             "import yaml, sys; print(yaml.safe_load(open(sys.argv[1]))['verself_domain'])",
+             main_yml,
+         ])
+         .stdout("piped").stderr("piped")
+         .spawn().wait_with_output())
+    if r.status.code != 0:
+        ctx.std.io.stderr.write("ERROR: could not read verself_domain from " + main_yml + "\n")
+        return 1
+    domain = r.stdout.strip()
+    base = "https://" + domain
+    env = {
+        "VERSELF_DOMAIN": domain,
+        "PRODUCT_BASE_URL": base,
+        "BASE_URL": base,
+    }
+    return checked_spawn(
+        ctx,
+        "vp",
+        ["dev"],
+        cwd = ws_path(ctx, "src/viteplus-monorepo/apps/platform"),
+        env = env,
+        label = "vp dev (platform)",
+    )
+
+def _sandbox_inner_impl(ctx):
+    if inventory_check(ctx) != 0:
+        return 1
+    return checked_spawn(
+        ctx,
+        ws_path(ctx, _PLATFORM, "scripts/sandbox-inner.sh"),
+        [],
+        cwd = ws_path(ctx, _PLATFORM),
+        label = "sandbox-inner.sh",
+    )
+
+def _sandbox_middle_impl(ctx):
+    if inventory_check(ctx) != 0:
+        return 1
+    return checked_spawn(
+        ctx,
+        ws_path(ctx, _PLATFORM, "scripts/sandbox-middle.sh"),
+        [],
+        cwd = ws_path(ctx, _PLATFORM),
+        label = "sandbox-middle.sh",
+    )
+
+console = task(
+    implementation = _console_impl,
+    name = "console",
+    group = ["dev"],
+    summary = "Start local console dev tunnels and HMR server.",
+    args = {
+        "print_env": args.boolean(default = False, description = "Print resolved env and exit before starting HMR."),
+    },
+)
+
+platform = task(
+    implementation = _platform_impl,
+    name = "platform",
+    group = ["dev"],
+    summary = "Start local platform docs HMR dev server (no tunnels; no service deps).",
+)
+
+sandbox_inner = task(
+    implementation = _sandbox_inner_impl,
+    name = "sandbox-inner",
+    group = ["dev"],
+    summary = "Inner loop: default starts local HMR; SANDBOX_INNER_MODE=verify for local smoke evidence.",
+)
+
+sandbox_middle = task(
+    implementation = _sandbox_middle_impl,
+    name = "sandbox-middle",
+    group = ["dev"],
+    summary = "Middle loop: default deploys UI and runs admin smoke. See SANDBOX_DEPLOY_TARGET / SANDBOX_VERIFY_TARGET / SANDBOX_SEED_VERIFY env vars.",
+)

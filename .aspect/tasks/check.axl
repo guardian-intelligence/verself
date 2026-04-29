@@ -1,0 +1,145 @@
+"""aspect check --kind=go-test|go-vet|go-lint|conversions|scripts|ansible|voice|all
+
+Cross-cutting verification gates used during PR review. Each --kind shells out
+to the same loop the Makefile used; --kind=all runs them in the order they
+were listed under `make lint`/`make test`.
+"""
+
+load(".aspect/lib/helpers.axl", "checked_spawn", "ws_path")
+
+_GO_DIRS = [
+    "src/apiwire",
+    "src/vm-orchestrator",
+    "src/billing-service",
+    "src/governance-service",
+    "src/identity-service",
+    "src/secrets-service",
+    "src/source-code-hosting-service",
+    "src/auth-middleware",
+    "src/sandbox-rental-service",
+    "src/mailbox-service",
+    "src/object-storage-service",
+    "src/profile-service",
+    "src/notifications-service",
+    "src/projects-service",
+    "src/otel",
+    "src/pgmigrate",
+    "src/temporal-platform",
+    "src/envconfig",
+    "src/httpserver",
+]
+
+def _go_each(ctx, args, label_prefix):
+    for d in _GO_DIRS:
+        rc = checked_spawn(
+            ctx,
+            "go",
+            args,
+            cwd = ws_path(ctx, d),
+            label = label_prefix + " (" + d + ")",
+        )
+        if rc != 0:
+            return rc
+    return 0
+
+def _go_test(ctx):
+    return _go_each(ctx, ["test", "-race", "./..."], "go test -race")
+
+def _go_vet(ctx):
+    return _go_each(ctx, ["vet", "./..."], "go vet")
+
+def _go_lint(ctx):
+    for d in _GO_DIRS:
+        rc = checked_spawn(
+            ctx,
+            "golangci-lint",
+            ["run", "./..."],
+            cwd = ws_path(ctx, d),
+            label = "golangci-lint (" + d + ")",
+        )
+        if rc != 0:
+            return rc
+    return 0
+
+def _conversions(ctx):
+    for d in _GO_DIRS:
+        rc = checked_spawn(
+            ctx,
+            "gosec",
+            ["-quiet", "-include=G115", "./..."],
+            cwd = ws_path(ctx, d),
+            label = "gosec G115 (" + d + ")",
+        )
+        if rc != 0:
+            return rc
+    return 0
+
+def _scripts(ctx):
+    sh_dirs = [
+        "src/platform/scripts",
+        "src/platform/scripts/lib",
+        "src/platform/scripts/security",
+    ]
+    files = []
+    for d in sh_dirs:
+        files.append(ws_path(ctx, d) + "/*.sh")
+    # shellcheck globs are expanded by the shell, not by checked_spawn; pass
+    # them through bash -c so the wildcards resolve.
+    cmd = "shellcheck -x -P . " + " ".join(files)
+    return checked_spawn(ctx, "bash", ["-c", cmd], label = "shellcheck platform scripts")
+
+def _ansible_lint(ctx):
+    return checked_spawn(
+        ctx,
+        "ansible-lint",
+        ["playbooks", "roles"],
+        cwd = ws_path(ctx, "src/platform/ansible"),
+        label = "ansible-lint",
+    )
+
+def _voice(ctx):
+    return checked_spawn(
+        ctx,
+        "corepack",
+        ["pnpm", "--filter", "@verself/company", "run", "lint:voice"],
+        cwd = ws_path(ctx, "src/viteplus-monorepo"),
+        label = "pnpm lint:voice",
+    )
+
+_CHECKERS = {
+    "go-test": _go_test,
+    "go-vet": _go_vet,
+    "go-lint": _go_lint,
+    "conversions": _conversions,
+    "scripts": _scripts,
+    "ansible": _ansible_lint,
+    "voice": _voice,
+}
+
+# Ordered for the --kind=all path so a fast failure surfaces early.
+_ALL_ORDER = ["scripts", "ansible", "voice", "conversions", "go-vet", "go-lint", "go-test"]
+
+def _impl(ctx):
+    kind = ctx.args.kind
+    if kind == "all":
+        for k in _ALL_ORDER:
+            rc = _CHECKERS[k](ctx)
+            if rc != 0:
+                return rc
+        return 0
+    if kind not in _CHECKERS:
+        ctx.std.io.stderr.write("ERROR: unknown --kind=" + kind + "\n")
+        return 1
+    return _CHECKERS[kind](ctx)
+
+check = task(
+    implementation = _impl,
+    name = "check",
+    summary = "Run a verification gate (--kind=go-test|go-vet|go-lint|conversions|scripts|ansible|voice|all).",
+    args = {
+        "kind": args.string(
+            default = "all",
+            description = "Which check to run.",
+        ),
+    },
+)

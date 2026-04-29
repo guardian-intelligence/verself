@@ -1,0 +1,315 @@
+"""aspect codegen run|check --kind=topology|sqlc|openapi|clients|wire|all
+
+`run` mutates committed generated files. `check` verifies they are up to date
+without mutating the working tree (or, where it must regenerate to compare,
+fails loud on a non-empty `git diff --exit-code`).
+
+Concrete bindings:
+  topology  — //src/cue-renderer:freshness (run) / :freshness_tests (check).
+  sqlc      — sqlc generate / (compile + vet + generate + git diff) per service.
+  openapi   — go run ./<svc>/cmd/<svc>-openapi --format 3.0|3.1 (mutates) /
+              go run --check (verifies). Also generates internal-openapi specs.
+  clients   — go generate ./<svc>/{client,internalclient}/... + assert no
+              hand-written http.NewRequest in the generated tree.
+  wire      — go run ./src/apiwire/cmd/openapi-wire-check across the
+              frontend-consumed 3.1 specs.
+"""
+
+load(".aspect/lib/helpers.axl", "checked_spawn", "ws_path")
+
+_BS = "src/billing-service"
+_GS = "src/governance-service"
+_IS = "src/identity-service"
+_SS = "src/secrets-service"
+_SCH = "src/source-code-hosting-service"
+_MS = "src/mailbox-service"
+_OSS = "src/object-storage-service"
+_PS = "src/profile-service"
+_NS = "src/notifications-service"
+_PJS = "src/projects-service"
+_SR = "src/sandbox-rental-service"
+_AW = "src/apiwire"
+
+# Each tuple is (svc_dir, [(cmd_pkg, format, output_path), ...]).
+_OPENAPI_BINDINGS = [
+    (_BS, [
+        ("billing-openapi", "3.0", "openapi/openapi-3.0.yaml"),
+        ("billing-openapi", "3.1", "openapi/openapi-3.1.yaml"),
+    ]),
+    (_GS, [
+        ("governance-openapi", "3.0", "openapi/openapi-3.0.yaml"),
+        ("governance-openapi", "3.1", "openapi/openapi-3.1.yaml"),
+        ("governance-internal-openapi", "3.0", "openapi/internal-openapi-3.0.yaml"),
+        ("governance-internal-openapi", "3.1", "openapi/internal-openapi-3.1.yaml"),
+    ]),
+    (_IS, [
+        ("identity-openapi", "3.0", "openapi/openapi-3.0.yaml"),
+        ("identity-openapi", "3.1", "openapi/openapi-3.1.yaml"),
+        ("identity-internal-openapi", "3.0", "openapi/internal-openapi-3.0.yaml"),
+        ("identity-internal-openapi", "3.1", "openapi/internal-openapi-3.1.yaml"),
+    ]),
+    (_SS, [
+        ("secrets-openapi", "3.0", "openapi/openapi-3.0.yaml"),
+        ("secrets-openapi", "3.1", "openapi/openapi-3.1.yaml"),
+        ("secrets-internal-openapi", "3.0", "openapi/internal-openapi-3.0.yaml"),
+        ("secrets-internal-openapi", "3.1", "openapi/internal-openapi-3.1.yaml"),
+    ]),
+    (_SCH, [
+        ("source-code-hosting-openapi", "3.0", "openapi/openapi-3.0.yaml"),
+        ("source-code-hosting-openapi", "3.1", "openapi/openapi-3.1.yaml"),
+        ("source-code-hosting-internal-openapi", "3.0", "openapi/internal-openapi-3.0.yaml"),
+        ("source-code-hosting-internal-openapi", "3.1", "openapi/internal-openapi-3.1.yaml"),
+    ]),
+    (_MS, [
+        ("mailbox-openapi", "3.0", "openapi/openapi-3.0.yaml"),
+        ("mailbox-openapi", "3.1", "openapi/openapi-3.1.yaml"),
+    ]),
+    (_OSS, [
+        ("object-storage-openapi", "3.0", "openapi/openapi-3.0.yaml"),
+        ("object-storage-openapi", "3.1", "openapi/openapi-3.1.yaml"),
+    ]),
+    (_PS, [
+        ("profile-openapi", "3.0", "openapi/openapi-3.0.yaml"),
+        ("profile-openapi", "3.1", "openapi/openapi-3.1.yaml"),
+        ("profile-internal-openapi", "3.0", "openapi/internal-openapi-3.0.yaml"),
+        ("profile-internal-openapi", "3.1", "openapi/internal-openapi-3.1.yaml"),
+    ]),
+    (_NS, [
+        ("notifications-openapi", "3.0", "openapi/openapi-3.0.yaml"),
+        ("notifications-openapi", "3.1", "openapi/openapi-3.1.yaml"),
+    ]),
+    (_PJS, [
+        ("projects-openapi", "3.0", "openapi/openapi-3.0.yaml"),
+        ("projects-openapi", "3.1", "openapi/openapi-3.1.yaml"),
+        ("projects-internal-openapi", "3.0", "openapi/internal-openapi-3.0.yaml"),
+        ("projects-internal-openapi", "3.1", "openapi/internal-openapi-3.1.yaml"),
+    ]),
+    (_SR, [
+        ("sandbox-rental-openapi", "3.0", "openapi/openapi-3.0.yaml"),
+        ("sandbox-rental-openapi", "3.1", "openapi/openapi-3.1.yaml"),
+        ("sandbox-rental-internal-openapi", "3.0", "openapi/internal-openapi-3.0.yaml"),
+        ("sandbox-rental-internal-openapi", "3.1", "openapi/internal-openapi-3.1.yaml"),
+    ]),
+]
+
+_CLIENT_DIRS = [
+    _BS + "/client",
+    _GS + "/client",
+    _GS + "/internalclient",
+    _IS + "/client",
+    _IS + "/internalclient",
+    _SS + "/client",
+    _SS + "/internalclient",
+    _SCH + "/client",
+    _SCH + "/internalclient",
+    _SR + "/client",
+    _SR + "/internalclient",
+    _MS + "/client",
+    _OSS + "/client",
+    _PS + "/client",
+    _PS + "/internalclient",
+    _NS + "/client",
+    _PJS + "/client",
+    _PJS + "/internalclient",
+]
+
+_WIRE_SPECS = [
+    _BS + "/openapi/openapi-3.1.yaml",
+    _GS + "/openapi/openapi-3.1.yaml",
+    _IS + "/openapi/openapi-3.1.yaml",
+    _IS + "/openapi/internal-openapi-3.1.yaml",
+    _SS + "/openapi/openapi-3.1.yaml",
+    _SCH + "/openapi/openapi-3.1.yaml",
+    _SCH + "/openapi/internal-openapi-3.1.yaml",
+    _MS + "/openapi/openapi-3.1.yaml",
+    _OSS + "/openapi/openapi-3.1.yaml",
+    _PS + "/openapi/openapi-3.1.yaml",
+    _PS + "/openapi/internal-openapi-3.1.yaml",
+    _NS + "/openapi/openapi-3.1.yaml",
+    _PJS + "/openapi/openapi-3.1.yaml",
+    _PJS + "/openapi/internal-openapi-3.1.yaml",
+    _SR + "/openapi/openapi-3.1.yaml",
+    _SR + "/openapi/internal-openapi-3.1.yaml",
+]
+
+def _topology_run(ctx):
+    return checked_spawn(
+        ctx,
+        "bazelisk",
+        ["run", "//src/cue-renderer:freshness"],
+        label = "bazelisk run //src/cue-renderer:freshness",
+    )
+
+def _topology_check(ctx):
+    inv = ctx.bazel.test("//src/cue-renderer:freshness_tests", inherit_stderr = True)
+    return inv.exit_code
+
+def _sqlc_run(ctx):
+    # Iterate sqlc.yaml files discovered on disk so a new service appears here
+    # automatically without an AXL edit.
+    sqlc_dirs = _discover_sqlc_dirs(ctx)
+    if not sqlc_dirs:
+        ctx.std.io.stderr.write("ERROR: no sqlc.yaml files found\n")
+        return 1
+    for d in sqlc_dirs:
+        rc = checked_spawn(ctx, "sqlc", ["generate"], cwd = ws_path(ctx, d), label = "sqlc generate " + d)
+        if rc != 0:
+            return rc
+    return 0
+
+def _sqlc_check(ctx):
+    sqlc_dirs = _discover_sqlc_dirs(ctx)
+    if not sqlc_dirs:
+        ctx.std.io.stderr.write("ERROR: no sqlc.yaml files found\n")
+        return 1
+    for d in sqlc_dirs:
+        rc = checked_spawn(ctx, "sqlc", ["compile"], cwd = ws_path(ctx, d), label = "sqlc compile " + d)
+        if rc != 0:
+            return rc
+        rc = checked_spawn(ctx, "sqlc", ["vet"], cwd = ws_path(ctx, d), label = "sqlc vet " + d)
+        if rc != 0:
+            return rc
+    rc = _sqlc_run(ctx)
+    if rc != 0:
+        return rc
+    diff_args = ["diff", "--exit-code", "--"]
+    for d in sqlc_dirs:
+        diff_args.append(d + "/internal/store")
+    return checked_spawn(ctx, "git", diff_args, label = "git diff sqlc generated")
+
+def _discover_sqlc_dirs(ctx):
+    r = (ctx.std.process.command("bash")
+         .args(["-c", "find src -mindepth 2 -maxdepth 2 -name sqlc.yaml -print | xargs -n1 dirname | sort -u"])
+         .stdout("piped").stderr("piped")
+         .spawn().wait_with_output())
+    if r.status.code != 0:
+        return []
+    return [d for d in r.stdout.strip().split("\n") if d]
+
+def _gowork_env(ctx):
+    """Return env={GOWORK: bazel.go.work} so `go run ./svc/...` works from repo root."""
+    return {"GOWORK": ws_path(ctx, "bazel.go.work")}
+
+def _openapi_run(ctx):
+    env = _gowork_env(ctx)
+    for svc, gens in _OPENAPI_BINDINGS:
+        for cmd, fmt, out in gens:
+            checked_spawn(ctx, "mkdir", ["-p", ws_path(ctx, svc, "openapi")], label = "mkdir " + svc + "/openapi")
+            shell = "go run ./" + svc + "/cmd/" + cmd + " --format " + fmt + " > " + svc + "/" + out
+            rc = checked_spawn(ctx, "bash", ["-c", shell], env = env, label = svc + " " + cmd + " " + fmt)
+            if rc != 0:
+                return rc
+    return _clients_run(ctx)
+
+def _openapi_check(ctx):
+    for svc, gens in _OPENAPI_BINDINGS:
+        for cmd, fmt, _ in gens:
+            rc = checked_spawn(
+                ctx,
+                "go",
+                ["run", "./cmd/" + cmd, "--format", fmt, "--check"],
+                cwd = ws_path(ctx, svc),
+                label = svc + " " + cmd + " --check " + fmt,
+            )
+            if rc != 0:
+                return rc
+    rc = _clients_check(ctx)
+    if rc != 0:
+        return rc
+    return _wire_check(ctx)
+
+def _clients_run(ctx):
+    for d in _CLIENT_DIRS:
+        rc = checked_spawn(
+            ctx,
+            "go",
+            ["generate", "./..."],
+            cwd = ws_path(ctx, d),
+            label = "go generate " + d,
+        )
+        if rc != 0:
+            return rc
+    return 0
+
+def _clients_check(ctx):
+    rc = _clients_run(ctx)
+    if rc != 0:
+        return rc
+    files = [d + "/client.gen.go" for d in _CLIENT_DIRS]
+    rc = checked_spawn(ctx, "git", ["diff", "--exit-code", "--"] + files, label = "git diff generated clients")
+    if rc != 0:
+        return rc
+    # Hand-written transport in a generated tree is a regression indicator;
+    # forbid it the same way the Makefile did.
+    forbidden = "http\\.NewRequestWithContext\\(|\\.Do\\(req\\)|json\\.NewDecoder\\(|json\\.Marshal\\("
+    cmd = "! rg -n '" + forbidden + "' " + " ".join(_CLIENT_DIRS) + " --glob '!**/client.gen.go' --glob '!**/generate.go'"
+    return checked_spawn(ctx, "bash", ["-c", cmd], label = "rg generated-client guard")
+
+def _wire_check(ctx):
+    args_list = ["run", "./" + _AW + "/cmd/openapi-wire-check"] + _WIRE_SPECS
+    return checked_spawn(ctx, "go", args_list, env = _gowork_env(ctx), label = "openapi-wire-check")
+
+_RUN_KINDS = {
+    "topology": _topology_run,
+    "sqlc": _sqlc_run,
+    "openapi": _openapi_run,
+    "clients": _clients_run,
+}
+
+_RUN_ALL_ORDER = ["topology", "sqlc", "openapi", "clients"]
+
+_CHECK_KINDS = {
+    "topology": _topology_check,
+    "sqlc": _sqlc_check,
+    "openapi": _openapi_check,
+    "clients": _clients_check,
+    "wire": _wire_check,
+}
+
+_CHECK_ALL_ORDER = ["topology", "sqlc", "openapi", "clients", "wire"]
+
+def _run_impl(ctx):
+    kind = ctx.args.kind
+    if kind == "all":
+        for k in _RUN_ALL_ORDER:
+            rc = _RUN_KINDS[k](ctx)
+            if rc != 0:
+                return rc
+        return 0
+    if kind not in _RUN_KINDS:
+        ctx.std.io.stderr.write("ERROR: unknown --kind=" + kind + "\n")
+        return 1
+    return _RUN_KINDS[kind](ctx)
+
+def _check_impl(ctx):
+    kind = ctx.args.kind
+    if kind == "all":
+        for k in _CHECK_ALL_ORDER:
+            rc = _CHECK_KINDS[k](ctx)
+            if rc != 0:
+                return rc
+        return 0
+    if kind not in _CHECK_KINDS:
+        ctx.std.io.stderr.write("ERROR: unknown --kind=" + kind + "\n")
+        return 1
+    return _CHECK_KINDS[kind](ctx)
+
+codegen_run = task(
+    implementation = _run_impl,
+    name = "run",
+    group = ["codegen"],
+    summary = "Regenerate committed generated files (--kind=topology|sqlc|openapi|clients|all).",
+    args = {
+        "kind": args.string(default = "all", description = "Which generator to run."),
+    },
+)
+
+codegen_check = task(
+    implementation = _check_impl,
+    name = "check",
+    group = ["codegen"],
+    summary = "Verify committed generated files (--kind=topology|sqlc|openapi|clients|wire|all).",
+    args = {
+        "kind": args.string(default = "all", description = "Which generated set to verify."),
+    },
+)

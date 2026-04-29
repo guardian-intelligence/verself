@@ -1,0 +1,98 @@
+"""aspect persona assume <name> [--output=...] [--print]
+   aspect persona user-state --email=... --org=... --state=... [...]
+
+Persona shortcuts (assume-platform-admin / assume-acme-admin / assume-acme-member)
+are intentionally NOT carried over from the Makefile; pass the persona name as
+the positional argument instead.
+"""
+
+load(".aspect/lib/helpers.axl", "checked_spawn", "inventory_check", "ws_path")
+
+_PLATFORM = "src/platform"
+_VALID_PERSONAS = ["platform-admin", "acme-admin", "acme-member"]
+
+def _assume_impl(ctx):
+    if inventory_check(ctx) != 0:
+        return 1
+    name = ""
+    if len(ctx.args.name) > 0:
+        name = ctx.args.name[0]
+    if name not in _VALID_PERSONAS:
+        ctx.std.io.stderr.write(
+            "ERROR: persona must be one of " + ", ".join(_VALID_PERSONAS) + "\n",
+        )
+        return 1
+    cli_args = [name]
+    if ctx.args.output:
+        cli_args = cli_args + ["--output", ctx.args.output]
+    if ctx.args.print:
+        cli_args.append("--print")
+    return checked_spawn(
+        ctx,
+        ws_path(ctx, _PLATFORM, "scripts/assume-persona.sh"),
+        cli_args,
+        cwd = ws_path(ctx, _PLATFORM),
+        label = "assume-persona.sh " + name,
+    )
+
+def _user_state_impl(ctx):
+    if inventory_check(ctx) != 0:
+        return 1
+    cli_args = [
+        "--email", ctx.args.email,
+        "--org", ctx.args.org,
+        "--org-id", ctx.args.org_id,
+        "--org-name", ctx.args.org_name,
+        "--state", ctx.args.state,
+        "--plan-id", ctx.args.plan_id,
+        "--product-id", ctx.args.product_id,
+        "--balance-units", ctx.args.balance_units,
+        "--balance-cents", ctx.args.balance_cents,
+        "--business-now", ctx.args.business_now,
+        "--overage-policy", ctx.args.overage_policy,
+        "--trust-tier", ctx.args.trust_tier,
+    ]
+    return checked_spawn(
+        ctx,
+        ws_path(ctx, _PLATFORM, "scripts/set-user-state.sh"),
+        cli_args,
+        cwd = ws_path(ctx, _PLATFORM),
+        label = "set-user-state.sh",
+    )
+
+assume = task(
+    implementation = _assume_impl,
+    name = "assume",
+    group = ["persona"],
+    summary = "Write a persona env file: aspect persona assume <platform-admin|acme-admin|acme-member>.",
+    args = {
+        "name": args.positional(
+            minimum = 1,
+            maximum = 1,
+            description = "Persona to assume (platform-admin, acme-admin, acme-member).",
+        ),
+        "output": args.string(default = "", description = "Output env file path (default: stdout/working file)."),
+        "print": args.boolean(default = False, description = "Print env vars to stdout."),
+    },
+)
+
+user_state = task(
+    implementation = _user_state_impl,
+    name = "user-state",
+    group = ["persona"],
+    summary = "Set billing fixture state for a persona (mirrors `make set-user-state`).",
+    args = {
+        "email": args.string(default = "", description = "User email."),
+        "org": args.string(default = "", description = "Org slug (e.g. platform)."),
+        "org_id": args.string(default = "", description = "Numeric org ID (alternative to --org)."),
+        "org_name": args.string(default = "", description = "Org display name."),
+        "state": args.string(default = "", description = "Billing state (free|hobby|pro|...)."),
+        "plan_id": args.string(default = "", description = "Plan ID override."),
+        "product_id": args.string(default = "sandbox", description = "Billing product ID."),
+        "balance_units": args.string(default = "", description = "Balance in product units."),
+        "balance_cents": args.string(default = "", description = "Balance in cents."),
+        "business_now": args.string(default = "", description = "Business-time override (RFC3339)."),
+        "overage_policy": args.string(default = "", description = "Overage policy override."),
+        "trust_tier": args.string(default = "", description = "Trust tier override."),
+    },
+)

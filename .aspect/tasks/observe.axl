@@ -1,0 +1,78 @@
+"""aspect observe — telemetry discovery / query surface.
+
+Wraps scripts/observe.sh, which is the WHAT-driven discoverability layer for
+ClickHouse traces, metrics, and logs. Flags map 1:1 to the script's --what,
+--signal, --service, etc.
+"""
+
+load(".aspect/lib/helpers.axl", "checked_spawn", "inventory_check", "ws_path")
+
+_PLATFORM = "src/platform"
+
+# Each entry maps an AXL arg name (snake_case) to the script's flag (kebab).
+# Emit only flags whose value is non-empty.
+_FLAG_MAP = [
+    ("what", "--what"),
+    ("signal", "--signal"),
+    ("service", "--service"),
+    ("metric", "--metric"),
+    ("span", "--span"),
+    ("field", "--field"),
+    ("query", "--query"),
+    ("prefix", "--prefix"),
+    ("search", "--search"),
+    ("group_by", "--group-by"),
+    ("mode", "--mode"),
+    ("trace_id", "--trace-id"),
+    ("run_key", "--run-key"),
+    ("host", "--host"),
+    ("status_min", "--status-min"),
+    ("format", "--format"),
+    ("minutes", "--minutes"),
+    ("limit", "--limit"),
+]
+
+def _impl(ctx):
+    if inventory_check(ctx) != 0:
+        return 1
+    cli_args = []
+    for arg_name, flag in _FLAG_MAP:
+        v = getattr(ctx.args, arg_name)
+        if v:
+            cli_args = cli_args + [flag, v]
+    if ctx.args.errors:
+        cli_args.append("--errors")
+    return checked_spawn(
+        ctx,
+        ws_path(ctx, _PLATFORM, "scripts/observe.sh"),
+        cli_args,
+        cwd = ws_path(ctx, _PLATFORM),
+        label = "observe.sh",
+    )
+
+observe = task(
+    implementation = _impl,
+    name = "observe",
+    summary = "Discover or query telemetry (--what catalog|queries|describe|metric|trace|logs|http|service|errors|mail|deploy|workload-identity|temporal).",
+    args = {
+        "what": args.string(default = "", description = "Discovery group."),
+        "signal": args.string(default = "", description = "Signal name."),
+        "service": args.string(default = "", description = "Service name."),
+        "metric": args.string(default = "", description = "Metric name."),
+        "span": args.string(default = "", description = "Span name."),
+        "field": args.string(default = "", description = "Attribute field."),
+        "query": args.string(default = "", description = "Custom SQL."),
+        "prefix": args.string(default = "", description = "Name prefix filter."),
+        "search": args.string(default = "", description = "Free-text search."),
+        "group_by": args.string(default = "", description = "GROUP BY column(s)."),
+        "mode": args.string(default = "", description = "observe.sh --mode value."),
+        "trace_id": args.string(default = "", description = "Filter by trace ID."),
+        "run_key": args.string(default = "", description = "Filter by deploy_run_key."),
+        "host": args.string(default = "", description = "Host filter."),
+        "status_min": args.string(default = "", description = "Minimum status code."),
+        "format": args.string(default = "table", description = "table|json|markdown."),
+        "minutes": args.string(default = "", description = "Time window in minutes."),
+        "limit": args.string(default = "", description = "Row limit."),
+        "errors": args.boolean(default = False, description = "Filter to error rows only."),
+    },
+)
