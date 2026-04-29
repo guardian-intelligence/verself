@@ -64,6 +64,7 @@ versions: {
 
 	development: {
 		go:                                        "1.25.8"
+		aspectCLI:                                 "2026.17.17"
 		bazel:                                     "9.1.0"
 		bazelisk:                                  "1.28.1"
 		buildifier:                                "8.5.1"
@@ -504,6 +505,19 @@ devTools: {
 		sha256:       "22e7d3a188699982f661cf4687137ee52d1f24fec1ec893d91a6c4d791a75de8"
 		install_path: "/usr/local/bin/bazelisk"
 		version_cmd:  "bazelisk version"
+	}
+	aspect: {
+		// scripts/bootstrap installs Aspect alongside Bazelisk before any
+		// `aspect <task>` invocation can run; this entry is the version-of-record
+		// for that script's pin and is intentionally excluded from
+		// devToolDownloads / devToolPackaging.
+		tier:         #DevToolTier & "bootstrap_pivot"
+		version:      versions.development.aspectCLI
+		strategy:     "binary"
+		url:          "https://github.com/aspect-build/aspect-cli/releases/download/v\(version)/aspect-cli-x86_64-unknown-linux-musl"
+		sha256:       "db45968e114c22af0e0d3dddadfb7091c81983f66499eed9d01d782bb09483d0"
+		install_path: "/usr/local/bin/aspect"
+		version_cmd:  "aspect --version"
 	}
 	buildifier: {
 		tier:         #DevToolTier & "pinned_http_file"
