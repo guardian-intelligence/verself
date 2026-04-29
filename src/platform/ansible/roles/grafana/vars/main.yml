@@ -1357,8 +1357,7 @@ grafana_dashboards:
         raw_sql:
           >-
             SELECT $__timeInterval(Timestamp) AS time, concat(ServiceName, ': ', SpanName) AS series, toFloat64(count()) AS calls FROM
-            default.otel_traces WHERE $__timeFilter(Timestamp) AND ((ServiceName = 'temporal-web' AND (SpanAttributes['http.request.method']
-            != '' OR SpanAttributes['http.method'] != '')) OR (ServiceName = 'temporal-bootstrap')) GROUP BY time, series ORDER BY time,
+            default.otel_traces WHERE $__timeFilter(Timestamp) AND ServiceName = 'temporal-bootstrap' GROUP BY time, series ORDER BY time,
             series
       - id: 3
         uid: "temporal-process-memory"
@@ -1375,7 +1374,7 @@ grafana_dashboards:
           >-
             SELECT $__timeInterval(TimeUnix) AS time, ResourceAttributes['process.executable.name'] AS series, avg(Value) AS bytes FROM
             default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND MetricName = 'process.memory.usage' AND
-            ResourceAttributes['process.executable.name'] IN ('verself-temporal-server', 'verself-temporal-web') GROUP BY time, series ORDER BY
+            ResourceAttributes['process.executable.name'] = 'verself-temporal-server' GROUP BY time, series ORDER BY
             time, series
       - id: 4
         uid: "temporal-process-cpu"
@@ -1394,7 +1393,7 @@ grafana_dashboards:
             $__timeInterval(TimeUnix) AS ts, ResourceAttributes['process.executable.name'] AS process, ResourceAttributes['process.pid'] AS
             pid, Attributes['state'] AS state, max(Value) - min(Value) AS delta, dateDiff('second', min(TimeUnix), max(TimeUnix)) AS span FROM
             default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND MetricName = 'process.cpu.time' AND
-            ResourceAttributes['process.executable.name'] IN ('verself-temporal-server', 'verself-temporal-web') GROUP BY ts, process, pid, state)
+            ResourceAttributes['process.executable.name'] = 'verself-temporal-server' GROUP BY ts, process, pid, state)
             GROUP BY ts, process ORDER BY time, series
       - id: 5
         uid: "temporal-recent-authz"
@@ -1445,7 +1444,7 @@ grafana_dashboards:
         raw_sql:
           >-
             SELECT Timestamp, ServiceName AS service, SeverityText AS level, Body AS message, TraceId FROM default.otel_logs WHERE
-            $__timeFilter(Timestamp) AND ServiceName IN ('temporal-server', 'temporal-web', 'temporal-bootstrap') ORDER BY Timestamp DESC
+            $__timeFilter(Timestamp) AND ServiceName IN ('temporal-server', 'temporal-bootstrap') ORDER BY Timestamp DESC
             LIMIT 100
       - id: 8
         uid: "temporal-metric-latest"
@@ -1461,8 +1460,8 @@ grafana_dashboards:
         raw_sql:
           >-
             SELECT ServiceName AS service, MetricName AS metric, MetricKind AS kind, MetricUnit AS unit, round(CurrentValue, 4) AS value,
-            SampledAt FROM default.otel_metric_latest WHERE $__timeFilter(SampledAt) AND (startsWith(ServiceName, 'temporal-server') OR
-            ServiceName = 'temporal-web') ORDER BY SampledAt DESC, service, metric LIMIT 100
+            SampledAt FROM default.otel_metric_latest WHERE $__timeFilter(SampledAt) AND startsWith(ServiceName, 'temporal-server')
+            ORDER BY SampledAt DESC, service, metric LIMIT 100
   - uid: "verself-observability-query-model"
     title: "Observability Query Vocabulary"
     tags:

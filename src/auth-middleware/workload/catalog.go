@@ -21,5 +21,4 @@ const (
 	ServiceSecrets            = "secrets-service"
 	ServiceSourceCodeHosting  = "source-code-hosting-service"
 	ServiceTemporalServer     = "temporal-server"
-	ServiceTemporalWeb        = "temporal-web"
 )

@@ -49,7 +49,6 @@ func New(ctx context.Context, socketPath string) (*Provider, error) {
 	frontendClientIDs, err := workloadauth.PeerIDsForSource(
 		source,
 		workloadauth.ServiceTemporalServer,
-		workloadauth.ServiceTemporalWeb,
 		workloadauth.ServiceSandboxRental,
 		workloadauth.ServiceBilling,
 	)
