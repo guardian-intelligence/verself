@@ -29,6 +29,12 @@
     group: "{{ console_runtime_group }}"
     mode: "0750"
 
+- name: Verify corepack exists in profile
+  ansible.builtin.stat:
+    path: "{{ verself_bin }}/corepack"
+  register: console_corepack
+  failed_when: not console_corepack.stat.exists
+
 - name: Check for existing console auth session secret
   ansible.builtin.stat:
     path: /etc/credstore/console/auth-session-secret
@@ -62,55 +68,7 @@
     console_auth_session_secret: "{{ console_auth_session_secret_raw.content | b64decode | trim }}"
   no_log: true
 
-- name: Build console deploy bundle on controller
-  delegate_to: localhost
-  become: false
-  run_once: true
-  ansible.builtin.command:
-    # --config=remote-writer pushes action results to the bazel-remote cache
-    # for downstream consumers (e.g. CI runners). Mirrors deploy_profile's
-    # Go-binary build flow.
-    argv:
-      - "{{ deploy_profile_bazelisk }}"
-      - build
-      - --config=remote-writer
-      - "{{ console_bazel_label }}"
-    chdir: "{{ deploy_profile_repo_root }}"
-  changed_when: false
-
-- name: Resolve console deploy bundle output path
-  delegate_to: localhost
-  become: false
-  run_once: true
-  ansible.builtin.command:
-    argv:
-      - "{{ deploy_profile_bazelisk }}"
-      - cquery
-      - --output=files
-      - "{{ console_bazel_label }}"
-    chdir: "{{ deploy_profile_repo_root }}"
-  register: console_deploy_bundle_cquery
-  changed_when: false
-
-- name: Check whether console systemd unit exists
-  ansible.builtin.stat:
-    path: /etc/systemd/system/console.service
-  register: console_systemd_unit_file
-
-# Stop the live process before mutating console_install_dir so it never serves a partially deleted build.
-- name: Stop live console before swapping deploy bundle
-  ansible.builtin.systemd:
-    name: console
-    state: stopped
-    daemon_reload: true
-  when: console_systemd_unit_file.stat.exists
-
-- name: Wipe previous console install
-  ansible.builtin.file:
-    path: "{{ console_install_dir }}"
-    state: absent
-
-- name: Recreate console install directory
+- name: Create console install directory
   ansible.builtin.file:
     path: "{{ console_install_dir }}"
     state: directory
@@ -118,13 +76,168 @@
     group: "{{ console_runtime_group }}"
     mode: "0755"
 
-- name: Unpack console deploy bundle on node
-  ansible.builtin.unarchive:
-    src: "{{ deploy_profile_repo_root }}/{{ console_deploy_bundle_cquery.stdout | trim }}"
-    dest: "{{ console_install_dir }}"
+- name: Check whether console systemd unit exists
+  ansible.builtin.stat:
+    path: /etc/systemd/system/console.service
+  register: console_systemd_unit_file
+
+- name: Regenerate console API clients before source sync
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command:
+    argv:
+      - "{{ deploy_profile_bazelisk }}"
+      - run
+      - //src/viteplus-monorepo/apps/console:openapi_clients
+    chdir: "{{ deploy_profile_repo_root }}"
+  changed_when: true
+
+# Stop the live process before mutating .output so it never serves a partially deleted build.
+- name: Stop live console before replacing build output
+  ansible.builtin.systemd:
+    name: console
+    state: stopped
+    daemon_reload: true
+  when: console_systemd_unit_file.stat.exists
+
+- name: Remove generated console artifacts before sync
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ console_install_dir }}/.output"
+    - "{{ console_install_dir }}/.tanstack"
+    - "{{ console_install_dir }}/apps/console/.output"
+    - "{{ console_install_dir }}/apps/console/.tanstack"
+
+# Opt-in clean rebuild: wipe node_modules and the install fingerprint so the
+# next pnpm install runs from scratch instead of reusing the cached store.
+# Trigger with `ansible-playbook ... --tags console --extra-vars console_full_rebuild=true`.
+# Use when a prior install left a corrupted store or an upstream package
+# linked the wrong version.
+- name: Wipe console install for clean rebuild (FULL=1)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ console_install_dir }}/node_modules"
+    - "{{ console_dependencies_fingerprint_path }}"
+  when: console_full_rebuild | default(false) | bool
+
+- name: Synchronize console source
+  delegate_to: localhost
+  become: false
+  ansible.posix.synchronize:
+    src: "{{ playbook_dir }}/../../../viteplus-monorepo/"
+    dest: "{{ console_install_dir }}/"
+    delete: true
+    recursive: true
+    rsync_opts:
+      - "--exclude=node_modules"
+      - "--exclude=.output"
+      - "--exclude=dist"
+      - "--exclude=.tanstack"
+      - "--exclude=apps/company"
+      - "--exclude=apps/company/**"
+      - "--exclude=playwright-report"
+      - "--exclude=test-results"
+      - "--exclude=HANDOFF_PROMPT.md"
+      # delete-excluded would wipe remote node_modules and defeat incremental deploys.
+      - "--no-owner"
+      - "--no-group"
+
+- name: Compute console workspace dependency fingerprint
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command:
+    argv:
+      - /bin/bash
+      - -lc
+      - |
+        set -euo pipefail
+        cd {{ playbook_dir }}/../../../viteplus-monorepo
+        {
+          printf '%s\0' package.json pnpm-lock.yaml pnpm-workspace.yaml apps/console/package.json
+          find packages -mindepth 2 -maxdepth 2 -name package.json -print0
+        } | sort -z | xargs -0 sha256sum | sha256sum
+  register: console_workspace_dependency_fingerprint
+  changed_when: false
+
+- name: Check cached console install fingerprint
+  ansible.builtin.stat:
+    path: "{{ console_dependencies_fingerprint_path }}"
+  register: console_install_fingerprint_file
+
+- name: Read cached console install fingerprint
+  ansible.builtin.slurp:
+    src: "{{ console_dependencies_fingerprint_path }}"
+  register: console_install_fingerprint_raw
+  when: console_install_fingerprint_file.stat.exists
+
+- name: Check cached console node_modules
+  ansible.builtin.stat:
+    path: "{{ console_install_dir }}/node_modules"
+  register: console_node_modules_dir
+
+- name: Install console workspace dependencies when manifests change
+  become: false
+  ansible.builtin.command:
+    argv:
+      - "{{ verself_bin }}/corepack"
+      - pnpm
+      - install
+    chdir: "{{ console_install_dir }}"
+  environment:
+    PATH: "{{ verself_bin }}:/usr/bin:/bin"
+    HOME: "/home/{{ ansible_user }}"
+  changed_when: true
+  when: >-
+    (not console_node_modules_dir.stat.exists)
+    or (not console_install_fingerprint_file.stat.exists)
+    or (
+      (console_install_fingerprint_raw.content | default('') | b64decode | trim)
+      != (console_workspace_dependency_fingerprint.stdout.split()[0] | trim)
+    )
+
+- name: Record cached console install fingerprint
+  ansible.builtin.copy:
+    content: "{{ console_workspace_dependency_fingerprint.stdout.split()[0] | trim }}\n"
+    dest: "{{ console_dependencies_fingerprint_path }}"
     owner: "{{ ansible_user }}"
     group: "{{ console_runtime_group }}"
-    mode: u=rwX,g=rX,o=rX
+    mode: "0644"
+
+- name: Build console package dependencies
+  become: false
+  ansible.builtin.command:
+    argv:
+      - "{{ verself_bin }}/corepack"
+      - pnpm
+      - --filter
+      - "@verself/console^..."
+      - run
+      - build
+    chdir: "{{ console_install_dir }}"
+  environment:
+    PATH: "{{ verself_bin }}:/usr/bin:/bin"
+    HOME: "/home/{{ ansible_user }}"
+  changed_when: true
+
+- name: Build console app
+  become: false
+  ansible.builtin.command:
+    argv:
+      - "{{ verself_bin }}/corepack"
+      - pnpm
+      - --filter
+      - "@verself/console"
+      - run
+      - build
+    chdir: "{{ console_install_dir }}"
+  environment:
+    PATH: "{{ verself_bin }}:/usr/bin:/bin"
+    HOME: "/home/{{ ansible_user }}"
+  changed_when: true
 
 - name: Set up Zitadel OIDC application
   ansible.builtin.include_role:
