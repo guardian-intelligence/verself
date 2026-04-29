@@ -1,8 +1,24 @@
 ---
-# monorepo_root points to the top-level repo.
+# guest_rootfs role builds + stages the firecracker substrate (which
+# runs the host-side build-substrate.sh in a chroot) and stages the
+# Bazel-built toolchain ext4s. Both flows consume bundles produced
+# under //src/vm-orchestrator/guest-images/.
 guest_rootfs_monorepo_root: "{{ playbook_dir }}/../../../.."
-guest_rootfs_bazel_bundle_label: //src/platform/guest:guest_artifacts_bundle
-guest_rootfs_bazel_bundle_path: "{{ guest_rootfs_monorepo_root }}/bazel-bin/src/platform/guest/guest_artifacts_bundle.tar"
+
+# Substrate inputs bundle: build-substrate.sh + ubuntu-base + vmlinux
+# + vmlinux.config + vm-bridge + vm-guest-telemetry + versions.json.
+guest_rootfs_substrate_inputs_label: //src/vm-orchestrator/guest-images/substrate:substrate_inputs_bundle
+guest_rootfs_substrate_inputs_path: "{{ guest_rootfs_monorepo_root }}/bazel-bin/src/vm-orchestrator/guest-images/substrate/substrate_inputs_bundle.tar"
+
+# Toolchain images bundle: every platform-tier toolchain ext4 +
+# manifest under toolchains/<ref>.ext4.
+guest_rootfs_toolchain_bundle_label: //src/vm-orchestrator/guest-images:toolchain_images_bundle
+guest_rootfs_toolchain_bundle_path: "{{ guest_rootfs_monorepo_root }}/bazel-bin/src/vm-orchestrator/guest-images/toolchain_images_bundle.tar"
+
 guest_rootfs_remote_tmp: /tmp
-guest_rootfs_remote_bundle: "{{ guest_rootfs_remote_tmp }}/guest-artifacts-bundle.tar"
+guest_rootfs_remote_substrate_inputs: "{{ guest_rootfs_remote_tmp }}/substrate-inputs-bundle.tar"
+guest_rootfs_remote_substrate_dir: "{{ guest_rootfs_remote_tmp }}/substrate-build"
+guest_rootfs_remote_substrate_output_dir: "{{ guest_rootfs_remote_tmp }}/substrate-output"
+
+guest_rootfs_guest_images_dir: /var/lib/verself/guest-images
 guest_rootfs_remote_path: "{{ verself_bin }}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"

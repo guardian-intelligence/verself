@@ -62,8 +62,8 @@ func DefaultConfig() Config {
 		Pool:                "vspool",
 		ImageDataset:        "images",
 		WorkloadDataset:     "workloads",
-		DefaultBootImageRef: "golden",
-		KernelPath:          "/var/lib/verself/guest-artifacts/vmlinux",
+		DefaultBootImageRef: "substrate",
+		KernelPath:          "/var/lib/verself/guest-images/vmlinux",
 		FirecrackerBin:      "/usr/local/bin/firecracker",
 		JailerBin:           "/usr/local/bin/jailer",
 		JailerRoot:          "/srv/jailer",
@@ -236,7 +236,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) *Orchestrator {
 		logger = slog.Default()
 	}
 	if base.DefaultBootImageRef == "" {
-		base.DefaultBootImageRef = "golden"
+		base.DefaultBootImageRef = "substrate"
 	}
 	o := &Orchestrator{cfg: base, logger: logger, ops: DirectPrivOps{}}
 	o.roots = zfs.Roots{

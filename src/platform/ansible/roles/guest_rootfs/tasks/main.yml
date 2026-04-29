@@ -1,6 +1,8 @@
 ---
-# Build the Firecracker guest rootfs: materialize the Bazel-owned guest input
-# bundle, upload it to the remote host, and run the Ubuntu rootfs builder.
+# Build the Firecracker substrate ext4 + stage the Bazel-built
+# toolchain ext4s. The substrate build runs as root on the firecracker
+# host (chroot+apt path); the toolchain images are pre-built by Bazel
+# on the controller and just shipped to /var/lib/verself/guest-images/.
 
 # ── Controller-side builds ──────────────────────────────────────────────────
 
@@ -11,72 +13,147 @@
   ansible.builtin.command: bazelisk version
   changed_when: false
 
-- name: Build guest artifact input bundle
+- name: Build substrate input bundle
   delegate_to: localhost
   become: false
   run_once: true
   ansible.builtin.command:
-    argv: [bazelisk, build, "{{ guest_rootfs_bazel_bundle_label }}"]
+    argv: [bazelisk, build, "{{ guest_rootfs_substrate_inputs_label }}"]
     chdir: "{{ guest_rootfs_monorepo_root }}"
   changed_when: true
 
-- name: Verify guest artifact input bundle exists
+- name: Verify substrate input bundle exists
   delegate_to: localhost
   become: false
   run_once: true
   ansible.builtin.stat:
-    path: "{{ guest_rootfs_bazel_bundle_path }}"
+    path: "{{ guest_rootfs_substrate_inputs_path }}"
     get_checksum: false
-  register: guest_rootfs_bazel_bundle
-  failed_when: not guest_rootfs_bazel_bundle.stat.exists
+  register: guest_rootfs_substrate_inputs
+  failed_when: not guest_rootfs_substrate_inputs.stat.exists
 
-# ── Upload to remote ───────────────────────────────────────────────────────
+- name: Build toolchain images bundle
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.command:
+    argv: [bazelisk, build, "{{ guest_rootfs_toolchain_bundle_label }}"]
+    chdir: "{{ guest_rootfs_monorepo_root }}"
+  changed_when: true
 
-- name: Upload guest artifact input bundle
+- name: Verify toolchain bundle exists
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.stat:
+    path: "{{ guest_rootfs_toolchain_bundle_path }}"
+    get_checksum: false
+  register: guest_rootfs_toolchain_bundle
+  failed_when: not guest_rootfs_toolchain_bundle.stat.exists
+
+# ── Stage substrate inputs on remote and build the substrate ext4 ──────────
+
+- name: Ensure /var/lib/verself/guest-images exists
+  ansible.builtin.file:
+    path: "{{ guest_rootfs_guest_images_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Ensure /var/lib/verself/guest-images/toolchains exists
+  ansible.builtin.file:
+    path: "{{ guest_rootfs_guest_images_dir }}/toolchains"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Upload substrate input bundle
   ansible.builtin.copy:
-    src: "{{ guest_rootfs_bazel_bundle_path }}"
-    dest: "{{ guest_rootfs_remote_bundle }}"
+    src: "{{ guest_rootfs_substrate_inputs_path }}"
+    dest: "{{ guest_rootfs_remote_substrate_inputs }}"
     mode: "0644"
 
-- name: Extract guest artifact input bundle
+- name: Reset substrate build staging dir
+  ansible.builtin.file:
+    path: "{{ guest_rootfs_remote_substrate_dir }}"
+    state: absent
+
+- name: Recreate substrate build staging dir
+  ansible.builtin.file:
+    path: "{{ guest_rootfs_remote_substrate_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Extract substrate input bundle
   ansible.builtin.unarchive:
-    src: "{{ guest_rootfs_remote_bundle }}"
-    dest: "{{ guest_rootfs_remote_tmp }}"
+    src: "{{ guest_rootfs_remote_substrate_inputs }}"
+    dest: "{{ guest_rootfs_remote_substrate_dir }}"
     remote_src: true
     owner: root
     group: root
 
-- name: Verify extracted guest artifact inputs exist
-  ansible.builtin.stat:
-    path: "{{ guest_rootfs_remote_tmp }}/{{ item }}"
-    get_checksum: false
-  loop:
-    - build-guest-rootfs.sh
-    - versions.json
-    - vm-bridge
-    - vm-guest-telemetry
-  register: guest_rootfs_extracted_input_check
-  failed_when: not guest_rootfs_extracted_input_check.stat.exists
-
-# ── Build rootfs on remote ─────────────────────────────────────────────────
-
-- name: Run guest rootfs builder
+- name: Run substrate builder
   ansible.builtin.command:
-    cmd: bash /tmp/build-guest-rootfs.sh
-    chdir: /tmp
+    cmd: bash {{ guest_rootfs_remote_substrate_dir }}/build-substrate.sh
+    chdir: "{{ guest_rootfs_remote_substrate_dir }}"
   environment:
     PATH: "{{ guest_rootfs_remote_path }}"
+    SUBSTRATE_INPUTS: "{{ guest_rootfs_remote_substrate_dir }}"
+    SUBSTRATE_OUTPUT_DIR: "{{ guest_rootfs_remote_substrate_output_dir }}"
   changed_when: true
 
-# ── Validate output ────────────────────────────────────────────────────────
-
-- name: Verify rootfs output artifacts exist
+- name: Verify substrate output artifacts exist
   ansible.builtin.stat:
-    path: "/tmp/guest/output/{{ item }}"
+    path: "{{ guest_rootfs_remote_substrate_output_dir }}/{{ item }}"
   loop:
-    - rootfs.ext4
+    - substrate.ext4
     - vmlinux
     - sbom.txt
-    - guest-artifacts.json
-  register: guest_rootfs_output_check
-  failed_when: not guest_rootfs_output_check.stat.exists
+    - manifest.json
+  register: guest_rootfs_substrate_output_check
+  failed_when: not guest_rootfs_substrate_output_check.stat.exists
+
+- name: Stage substrate artifacts under guest-images dir
+  ansible.builtin.copy:
+    src: "{{ guest_rootfs_remote_substrate_output_dir }}/{{ item }}"
+    dest: "{{ guest_rootfs_guest_images_dir }}/{{ item }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - substrate.ext4
+    - vmlinux
+    - vmlinux.config
+    - sbom.txt
+    - manifest.json
+
+# ── Stage toolchain ext4s on remote ────────────────────────────────────────
+
+- name: Upload toolchain images bundle
+  ansible.builtin.copy:
+    src: "{{ guest_rootfs_toolchain_bundle_path }}"
+    dest: "{{ guest_rootfs_remote_tmp }}/toolchain-images-bundle.tar"
+    mode: "0644"
+
+- name: Extract toolchain images bundle into guest-images dir
+  ansible.builtin.unarchive:
+    src: "{{ guest_rootfs_remote_tmp }}/toolchain-images-bundle.tar"
+    dest: "{{ guest_rootfs_guest_images_dir }}"
+    remote_src: true
+    owner: root
+    group: root
+
+- name: Verify toolchain ext4s landed
+  ansible.builtin.stat:
+    path: "{{ guest_rootfs_guest_images_dir }}/toolchains/{{ item }}.ext4"
+    get_checksum: false
+  loop:
+    - gh-actions-runner
+    - forgejo-runner
+  register: guest_rootfs_toolchain_check
+  failed_when: not guest_rootfs_toolchain_check.stat.exists

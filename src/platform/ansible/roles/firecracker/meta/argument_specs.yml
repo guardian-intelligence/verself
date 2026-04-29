@@ -27,7 +27,7 @@ argument_specs:
 
       firecracker_default_boot_image_ref:
         type: str
-        default: golden
+        default: substrate
         description: "Composable image ref the daemon clones as the boot disk for new leases."
 
       firecracker_jailer_root:
@@ -50,20 +50,25 @@ argument_specs:
         default: firecracker
         description: "System username for the jailer process."
 
+      firecracker_guest_images_dir:
+        type: path
+        default: /var/lib/verself/guest-images
+        description: "Host directory for staged guest-image artefacts (substrate.ext4, vmlinux, toolchain ext4s)."
+
       firecracker_kernel_path:
         type: path
-        default: /var/lib/verself/guest-artifacts/vmlinux
-        description: "Path to the guest kernel. Pre-staged by build-guest-rootfs.sh."
+        default: /var/lib/verself/guest-images/vmlinux
+        description: "Path to the guest kernel. Pre-staged by guest_rootfs role."
 
-      firecracker_rootfs_path:
+      firecracker_substrate_path:
         type: path
-        default: /var/lib/verself/guest-artifacts/rootfs.ext4
-        description: "Path to the guest ext4 rootfs. Pre-staged by build-guest-rootfs.sh."
+        default: /var/lib/verself/guest-images/substrate.ext4
+        description: "Path to the substrate ext4 (boot disk source). Built on the host by guest_rootfs role."
 
-      firecracker_guest_artifact_manifest_path:
+      firecracker_substrate_manifest_path:
         type: path
-        default: /var/lib/verself/guest-artifacts/guest-artifacts.json
-        description: "Path to the guest artifact manifest JSON."
+        default: /var/lib/verself/guest-images/manifest.json
+        description: "Path to the substrate build manifest JSON (sha256, size, package_count)."
 
       firecracker_zfs_arc_max_bytes:
         type: int

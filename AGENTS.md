@@ -64,68 +64,50 @@ See `docs/product-direction.md`.
 
 </product_direction>
 
-<guest_rootfs_direction>
+<guest_rootfs_split>
 
-The current `src/platform/scripts/build-guest-rootfs.sh` bakes a specific
-workload — the GitHub/Forgejo Actions runner stack — into every VM that
-boots. The golden zvol carries Ubuntu base + Go toolchain + Node.js +
-pnpm + GitHub Actions runner + Forgejo runner + a `runner` user with
-NOPASSWD sudo + the GitHub Actions toolcache prime, alongside the actual
-substrate (kernel, vm-bridge as `/sbin/init`, vm-guest-telemetry). Every
-cold boot pays for ~2 GB of toolchain bytes irrespective of whether the
-workload uses them, and "update the GH Actions runner version" forces a
-full golden-zvol refresh. This was acceptable when the only workload was
-our own CI runner; it does not generalize to multi-tenant agnostic
-customer workloads.
+Firecracker guests boot from a slim **substrate** ext4 and compose
+read-only **toolchain images** at lease boot. The catalog lives in
+`src/cue-renderer/instances/local/config.cue:firecracker.images`; each
+entry declares a `tier` of `substrate`, `platform_toolchain`, or
+`customer_uploaded`, and the `vm-orchestrator-seed.service` oneshot
+materialises every entry via `vm-orchestrator-cli seed-image` (one
+SeedImage RPC per image, idempotent via `vs:source_digest` on
+`@ready`).
 
-Target shape:
+- **Substrate** (`/var/lib/verself/guest-images/substrate.ext4`):
+  kernel + minimal Ubuntu userland + vm-bridge as `/sbin/init` +
+  vm-guest-telemetry + a few apt deps the runners need at runtime.
+  No Go, no Node.js, no GitHub Actions runner, no Forgejo runner, no
+  `runner` user. Refreshes only when the kernel, vm-bridge,
+  vm-guest-telemetry, or Ubuntu base move. Built by
+  `src/vm-orchestrator/guest-images/substrate/build-substrate.sh`,
+  runs as root on the deploy host.
+- **Toolchain images** (`/var/lib/verself/guest-images/toolchains/<ref>.ext4`):
+  Bazel-built ext4 artefacts under
+  `//src/vm-orchestrator/guest-images/<ref>:`. Today: `gh-actions-runner`
+  (mounted at `/opt/actions-runner`) and `forgejo-runner` (`/opt/forgejo-runner`).
+  Each carries `etc-overlay/` (vm-bridge copies into `/etc/` at lease
+  boot — adds `runner@1000`, NOPASSWD sudo, profile.d hooks) and
+  `.verself-writable-overlays` (vm-bridge tmpfs-mounts each listed path
+  on top of the read-only base — e.g. `/opt/actions-runner/_work`).
+- **Bazel macro** `toolchain_ext4_image` in
+  `//src/vm-orchestrator/guest-images:guest_image.bzl` runs `mkfs.ext4 -d`
+  hermetically with deterministic UUID + hash_seed +
+  SOURCE_DATE_EPOCH=0, so byte-for-byte rebuilds reproduce the same
+  sha256 and deploy-time re-seeds are no-ops when nothing changes.
+- **Runner class → mount list** lives in
+  `runner_class_filesystem_mounts` (sandbox-rental Postgres). Each
+  runner_class names the toolchain images it wants; sandbox-rental
+  resolves them into `LeaseSpec.FilesystemMounts` at acquire time.
+  Sticky-disk mounts (caches, persistent workspace) are per-execution
+  and arrive via `StartExecRequest`, not this table.
+- **Customer-uploaded images** land later under
+  `tier: customer_uploaded`. The seed path is uniform — whether the
+  source artefact is a Bazel rule or a customer upload, the daemon's
+  privilege boundary doesn't change.
 
-- **Substrate rootfs** (golden image): kernel + minimal Ubuntu userland
-  + vm-bridge as `/sbin/init` + vm-guest-telemetry + nothing else.
-  Stable, small, refreshed only when the substrate changes.
-- **Workload toolchain images** (composable, seeded via the
-  `vm-orchestrator-cli seed-image` path): one per cohesive toolchain.
-  Examples: `gh-actions-runner`, `forgejo-runner`, `node-22`, `go-1.25`,
-  customer-bring-your-own. Each is its own ZFS dataset under
-  `pool/images/<ref>` with a `@ready` snapshot, materialized by the
-  daemon's `SeedImage` RPC.
-- **Workflow YAML drives image selection.** The customer's workflow YAML
-  (or our internal runner-class definition) names the toolchain images
-  it wants. sandbox-rental resolves the YAML into a concrete
-  `LeaseSpec.FilesystemMounts` list at acquire time. The platform makes
-  no assumptions about what the customer needs.
-- **Per-workload images are built on the same path as our internal
-  ones.** Building a `node-22` image is `vm-orchestrator-cli seed-image
-  --ref node-22 --strategy dd_from_file --source-path
-  /var/lib/verself/guest-artifacts/node-22.ext4`. Whether the source
-  artifact is one we build (Bazel rule) or one a customer uploaded is
-  upstream of the daemon — the seed path is uniform.
-- **CI runner becomes a workload, not the substrate.** The Actions
-  runner stack moves into a `gh-actions-runner` toolchain image whose
-  build script lives near sandbox-rental, not in
-  `build-guest-rootfs.sh`. `runner_class_filesystem_mounts` becomes the
-  policy table that maps runner class → `(substrate_boot_image,
-  [toolchain_images])`.
-
-Migration scope (for whoever picks this up): touch points are
-`src/platform/scripts/build-guest-rootfs.sh` (collapses to substrate
-only — kernel + minimal userland + vm-bridge as `/sbin/init` +
-vm-guest-telemetry; today it also installs Go, Node.js, pnpm, GitHub
-Actions runner, Forgejo runner, and the `runner` user with NOPASSWD
-sudo, all of which move into workload toolchain images), the
-runner-bootstrap flow on the host-service plane, vm-bridge's expected
-`/opt/actions-runner` paths and `runner` user assumptions,
-`sandbox-rental.runner_class_filesystem_mounts` semantics (becomes the
-runner-class → workload-image policy table; the `viteplus` seed rows
-have already been removed and the table is empty until this work
-lands), the fixture flow that submits direct VM execs, the
-`deploy_guest_artifacts/defaults/main.yml` artifact list, and the
-SBOM/manifest emitter in `build-guest-rootfs.sh`. The SeedImage daemon
-path, CUE `firecracker_seed_images` catalog, and the host-side image
-lifecycle are already structurally in place — this is a content/policy
-migration, not a substrate-orchestration change.
-
-</guest_rootfs_direction>
+</guest_rootfs_split>
 
 <system_context>
 

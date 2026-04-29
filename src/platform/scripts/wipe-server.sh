@@ -44,7 +44,7 @@ done
 
 echo "=== Removing data directories ==="
 for d in /var/lib/tigerbeetle /var/lib/forgejo /var/lib/grafana /var/lib/clickhouse \
-         /var/lib/verdaccio /var/lib/verself/guest-artifacts \
+         /var/lib/verdaccio /var/lib/verself/guest-images \
          /var/log/clickhouse-server /opt/verself /opt/verdaccio \
          /var/log/grafana /var/lib/postgresql; do
   [ -d "$d" ] && rm -r "$d"

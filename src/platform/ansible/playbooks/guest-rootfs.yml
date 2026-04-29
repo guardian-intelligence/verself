@@ -1,20 +1,22 @@
 ---
-# Build the Firecracker guest rootfs and stage guest artifacts.
+# Build the Firecracker substrate ext4 + stage Bazel-built toolchain
+# ext4s under /var/lib/verself/guest-images/.
 #
-# Builds Zig + Go binaries locally, uploads them to the remote host,
-# runs the Ubuntu rootfs builder, and copies output to /var/lib/verself/guest-artifacts/.
+# The role builds two pkg_tar bundles on the controller and SCPs them
+# to the host:
+#   //src/vm-orchestrator/guest-images/substrate:substrate_inputs_bundle
+#     ubuntu-base + vmlinux + vm-bridge + vm-guest-telemetry + the
+#     build-substrate.sh script. Run on the host as root to produce
+#     substrate.ext4 + vmlinux.
+#   //src/vm-orchestrator/guest-images:toolchain_images_bundle
+#     gh-actions-runner.ext4 + forgejo-runner.ext4 + manifests.
 #
 # Usage:
 #   cd ansible && ansible-playbook playbooks/guest-rootfs.yml
-#
-# To stage artifacts only (skip the build):
-#   cd ansible && ansible-playbook playbooks/guest-rootfs.yml --tags deploy_guest_artifacts
 
-- name: Build guest rootfs and stage guest artifacts
+- name: Build substrate and stage guest images
   hosts: all
   become: true
   roles:
     - role: guest_rootfs
       tags: [guest_rootfs]
-    - role: deploy_guest_artifacts
-      tags: [deploy_guest_artifacts]
