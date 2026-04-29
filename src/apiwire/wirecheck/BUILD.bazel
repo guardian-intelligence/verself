@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "wirecheck",
+    srcs = ["wirecheck.go"],
+    importpath = "github.com/verself/apiwire/wirecheck",
+    visibility = ["//visibility:public"],
+    deps = ["@in_gopkg_yaml_v3//:yaml_v3"],
+)
+
+go_test(
+    name = "wirecheck_test",
+    srcs = ["wirecheck_test.go"],
+    embed = [":wirecheck"],
+)
