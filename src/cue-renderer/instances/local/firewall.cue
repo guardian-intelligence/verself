@@ -69,10 +69,10 @@ topology: {
 				final:       "none"
 				rules: [
 					{kind: "accept_loopback_endpoints", endpoints: [{component: "garage", endpoint: "admin_0"}, {component: "garage", endpoint: "admin_1"}, {component: "garage", endpoint: "admin_2"}], skuid: 0},
-					{kind: "accept_loopback_endpoints", endpoints: [{component: "garage", endpoint: "admin_0"}, {component: "garage", endpoint: "admin_1"}, {component: "garage", endpoint: "admin_2"}], skuid: config.object_storage.object_storage_admin_uid},
+					{kind: "accept_loopback_endpoints", endpoints: [{component: "garage", endpoint: "admin_0"}, {component: "garage", endpoint: "admin_1"}, {component: "garage", endpoint: "admin_2"}], skuid: config.ansible_vars.object_storage_admin_uid},
 					{kind: "drop_loopback_endpoints", endpoints: [{component: "garage", endpoint: "admin_0"}, {component: "garage", endpoint: "admin_1"}, {component: "garage", endpoint: "admin_2"}]},
-					{kind: "accept_loopback_endpoints", endpoints: [{component: "garage", endpoint: "s3_0"}, {component: "garage", endpoint: "s3_1"}, {component: "garage", endpoint: "s3_2"}], skuid: config.object_storage.object_storage_service_uid},
-					{kind: "accept_loopback_endpoints", endpoints: [{component: "garage", endpoint: "s3_0"}, {component: "garage", endpoint: "s3_1"}, {component: "garage", endpoint: "s3_2"}], skuid: config.object_storage.object_storage_admin_uid},
+					{kind: "accept_loopback_endpoints", endpoints: [{component: "garage", endpoint: "s3_0"}, {component: "garage", endpoint: "s3_1"}, {component: "garage", endpoint: "s3_2"}], skuid: config.ansible_vars.object_storage_service_uid},
+					{kind: "accept_loopback_endpoints", endpoints: [{component: "garage", endpoint: "s3_0"}, {component: "garage", endpoint: "s3_1"}, {component: "garage", endpoint: "s3_2"}], skuid: config.ansible_vars.object_storage_admin_uid},
 					{kind: "drop_loopback_endpoints", endpoints: [{component: "garage", endpoint: "s3_0"}, {component: "garage", endpoint: "s3_1"}, {component: "garage", endpoint: "s3_2"}]},
 					{kind: "accept_loopback_endpoints", endpoints: [{component: "garage", endpoint: "rpc_0"}, {component: "garage", endpoint: "rpc_1"}, {component: "garage", endpoint: "rpc_2"}], skuid: topology.components.garage.runtime.user},
 					{kind: "drop_loopback_endpoints", endpoints: [{component: "garage", endpoint: "rpc_0"}, {component: "garage", endpoint: "rpc_1"}, {component: "garage", endpoint: "rpc_2"}]},

@@ -21,6 +21,6 @@ go_library(
 
 alias(
     name = "go_default_library",
-    actual = ":local",
+    actual = ":topology",
     visibility = ["//visibility:public"],
 )

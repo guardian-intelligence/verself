@@ -5,13 +5,106 @@ import s "verself.sh/cue-renderer/schema"
 // config is the operator-facing, non-secret instance configuration for the
 // single-node deployment. Topology describes components and relationships;
 // this file describes the values an operator expects to tune directly.
+//
+// The file has two layers:
+//
+//   1. Typed sections (wireguard, postgres, nftables, firecracker, spire)
+//      that Go renderers consume directly via loaded.Config.<Section>.
+//      Schema validates them at evaluation time.
+//
+//   2. ansible_vars: the explicit Ansible-vars surface. Every key here
+//      becomes a top-level group_vars/all entry. Cross-references into
+//      typed sections use CUE values, not Jinja strings, so a typo is a
+//      CUE evaluation error instead of an Ansible runtime surprise.
 config: s.#InstanceConfig & {
-	verself_version: "0.1.0"
-	verself_bin:     "/opt/verself/profile/bin"
+	wireguard: {
+		tunnels: {
+			worker: {
+				interface:      "wg0"
+				port:           51820
+				network:        "10.0.0.0/16"
+				address:        "10.0.0.1"
+				address_prefix: 16
+				peers: []
+			}
+			ops: {
+				interface:      "wg-ops"
+				port:           51821
+				network:        "10.66.66.0/24"
+				address:        "10.66.66.1"
+				address_prefix: 24
+				peers: [
+					{
+						public_key:  "AoVgh4aWFK5Gi7HBdqIzTea37aa5SaemU4Pyk92Nglc="
+						allowed_ips: "10.66.66.2/32"
+					},
+				]
+			}
+		}
+		host_groups: {
+			workers: ["worker"]
+			infra: ["worker", "ops"]
+		}
+	}
 
-	// Domains are emitted as Ansible vars because Caddy, Zitadel, Resend,
-	// seed-system, and browser-facing services all consume the same public names.
-	domains: {
+	postgres: {
+		max_connections:                300
+		superuser_reserved_connections: 10
+	}
+
+	nftables: {
+		// Caddy owns the public HTTP/TLS sockets; direct public component
+		// endpoints such as SMTP are added from topology by the renderer.
+		public_tcp_ports: [80, 443]
+		ssh: {
+			public: true
+			rate:   "3/minute"
+			burst:  5
+		}
+	}
+
+	firecracker: {
+		guest_pool_cidr: "172.16.0.0/16"
+		// Composable image zvols seeded by vm-orchestrator-cli at deploy
+		// time. The list is consumed by the firecracker Ansible role to
+		// template the vm-orchestrator-seed oneshot unit; ordering does
+		// not matter (each image is an independent seed run). Sizes are
+		// bytes because the gRPC field is uint64 and the daemon validates
+		// >0.
+		images: [
+			{
+				ref:         "viteplus"
+				size_bytes:  1073741824 // 1 GiB
+				strategy:    "dd_from_file"
+				source_path: "/var/lib/verself/guest-artifacts/viteplus.ext4"
+			},
+			{
+				ref:              "sticky-empty"
+				size_bytes:       8589934592 // 8 GiB
+				strategy:         "mkfs_ext4"
+				filesystem_label: "stickydisk"
+			},
+		]
+	}
+
+	spire: {
+		trust_domain:                 "spiffe.\(config.ansible_vars.verself_domain)"
+		server_bind_address:          "127.0.0.1"
+		server_socket_path:           "/run/spire-server/private/api.sock"
+		agent_socket_path:            "/run/spire-agent/sockets/agent.sock"
+		workload_group:               "spire_workload"
+		agent_id_path:                "/node/single-node"
+		bundle_endpoint_bind_address: "127.0.0.1"
+	}
+
+	ansible_vars: {
+		verself_version: "0.1.0"
+		verself_bin:     "/opt/verself/profile/bin"
+
+		// Domains are emitted as Ansible vars because Caddy, Zitadel,
+		// Resend, seed-system, and browser-facing services all consume
+		// the same public names. Inner Jinja templates resolve at Ansible
+		// runtime against these top-level vars.
 		verself_domain:  "verself.sh"
 		platform_domain: "{{ verself_domain }}"
 		company_domain:  "guardianintelligence.org"
@@ -62,9 +155,24 @@ config: s.#InstanceConfig & {
 
 		stalwart_subdomain: "mail"
 		stalwart_domain:    "{{ stalwart_subdomain }}.{{ verself_domain }}"
-	}
 
-	openbao: {
+		// Object-storage UIDs are also CUE-side identifiers used by
+		// firewall and convergence rules; reference them via
+		// config.ansible_vars rather than redeclaring per call site.
+		object_storage_service_uid: 960
+		object_storage_admin_uid:   961
+
+		// Wireguard projects as a single nested var because the Ansible
+		// role iterates over the structured tunnels/peers.
+		topology_wireguard: config.wireguard
+
+		// Firecracker image-seeding inputs consumed by the firecracker
+		// role's vm-orchestrator-seed oneshot unit.
+		firecracker_guest_pool_cidr: config.firecracker.guest_pool_cidr
+		firecracker_seed_images:     config.firecracker.images
+
+		// OpenBao tenancy configuration consumed by the openbao Ansible
+		// role and the secrets-service relying-party scaffolding.
 		openbao_spiffe_jwt_mount:              "spiffe-jwt"
 		openbao_workload_audience:             "openbao"
 		openbao_tenancy_credstore_dir:         "/etc/credstore/openbao"
@@ -82,76 +190,8 @@ config: s.#InstanceConfig & {
 		openbao_tenancy_transit_mount_prefix:  "transit"
 		openbao_tenancy_jwt_mount_prefix:      "jwt"
 		openbao_tenancy_platform_org_name:     "Guardian Intelligence LLC"
-	}
 
-	// WireGuard tunnel topology. The worker mesh is for platform nodes; the
-	// operator mesh exposes internal substrate over a private path.
-	wireguard: {
-		tunnels: {
-			worker: {
-				interface:      "wg0"
-				port:           51820
-				network:        "10.0.0.0/16"
-				address:        "10.0.0.1"
-				address_prefix: 16
-				peers: []
-			}
-			ops: {
-				interface:      "wg-ops"
-				port:           51821
-				network:        "10.66.66.0/24"
-				address:        "10.66.66.1"
-				address_prefix: 24
-				peers: [
-					{
-						public_key:  "AoVgh4aWFK5Gi7HBdqIzTea37aa5SaemU4Pyk92Nglc="
-						allowed_ips: "10.66.66.2/32"
-					},
-				]
-			}
-		}
-		host_groups: {
-			workers: ["worker"]
-			infra: ["worker", "ops"]
-		}
-	}
-
-	object_storage: {
-		object_storage_service_uid: 960
-		object_storage_admin_uid:   961
-	}
-
-	postgres: {
-		max_connections:                300
-		superuser_reserved_connections: 10
-	}
-
-	nftables: {
-		// Caddy owns the public HTTP/TLS sockets; direct public component
-		// endpoints such as SMTP are added from topology by the renderer.
-		public_tcp_ports: [80, 443]
-		ssh: {
-			public: true
-			rate:   "3/minute"
-			burst:  5
-		}
-	}
-
-	firecracker: {
-		guest_pool_cidr: "172.16.0.0/16"
-	}
-
-	spire: {
-		trust_domain:                 "spiffe.\(domains.verself_domain)"
-		server_bind_address:          "127.0.0.1"
-		server_socket_path:           "/run/spire-server/private/api.sock"
-		agent_socket_path:            "/run/spire-agent/sockets/agent.sock"
-		workload_group:               "spire_workload"
-		agent_id_path:                "/node/single-node"
-		bundle_endpoint_bind_address: "127.0.0.1"
-	}
-
-	temporal: {
+		// Temporal namespace + web vars consumed by the temporal role.
 		temporal_sandbox_namespace:   "sandbox-rental-service"
 		temporal_billing_namespace:   "billing-service"
 		temporal_namespace_retention: "24h"
@@ -170,9 +210,10 @@ config: s.#InstanceConfig & {
 		temporal_web_auth_app_name:                 "temporal-web"
 		temporal_web_oidc_redirect_uri:             "https://{{ temporal_web_domain }}/auth/sso/callback"
 		temporal_web_oidc_post_logout_redirect_uri: "https://{{ temporal_web_domain }}/"
-	}
 
-	seed_system: {
+		// seed-system identity + billing fixtures used by the seed-system
+		// playbook. Deliberately authored as flat keys because Ansible
+		// templates them via `{{ seed_system_* }}` directly.
 		seed_system_zitadel_base_url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}"
 		seed_system_zitadel_host:     "auth.{{ verself_domain }}"
 		seed_system_openbao_tls_dir:  "/etc/openbao/tls"
@@ -188,15 +229,15 @@ config: s.#InstanceConfig & {
 		seed_system_forgejo_project_name:  "forgejo"
 		seed_system_mailbox_project_name:  "mailbox-service"
 		seed_system_users: {
-			ceo: {key: "ceo", org_key: "platform", email: "ceo@{{ verself_domain }}", username: "ceo", first_name: "CEO", last_name: "Operator", password_credstore_path: "{{ seed_system_credstore_dir }}/ceo-password"}
-			platform_agent: {key: "platform_agent", org_key: "platform", email: "agent@{{ verself_domain }}", username: "agent", first_name: "Platform", last_name: "Agent", password_credstore_path: "{{ seed_system_credstore_dir }}/platform-agent-password"}
-			acme_admin: {key: "acme_admin", org_key: "acme", email: "acme-admin@{{ verself_domain }}", username: "acme-admin", first_name: "Acme", last_name: "Admin", password_credstore_path: "{{ seed_system_credstore_dir }}/acme-admin-password"}
-			acme_user: {key: "acme_user", org_key: "acme", email: "acme-user@{{ verself_domain }}", username: "acme-user", first_name: "Acme", last_name: "User", password_credstore_path: "{{ seed_system_credstore_dir }}/acme-user-password"}
+			ceo: {key:             "ceo", org_key:             "platform", email: "ceo@{{ verself_domain }}", username:        "ceo", first_name:        "CEO", last_name:        "Operator", password_credstore_path: "{{ seed_system_credstore_dir }}/ceo-password"}
+			platform_agent: {key:  "platform_agent", org_key:  "platform", email: "agent@{{ verself_domain }}", username:      "agent", first_name:      "Platform", last_name:    "Agent", password_credstore_path: "{{ seed_system_credstore_dir }}/platform-agent-password"}
+			acme_admin: {key:      "acme_admin", org_key:      "acme", email:     "acme-admin@{{ verself_domain }}", username: "acme-admin", first_name: "Acme", last_name:        "Admin", password_credstore_path: "{{ seed_system_credstore_dir }}/acme-admin-password"}
+			acme_user: {key:       "acme_user", org_key:       "acme", email:     "acme-user@{{ verself_domain }}", username:  "acme-user", first_name:  "Acme", last_name:        "User", password_credstore_path:  "{{ seed_system_credstore_dir }}/acme-user-password"}
 		}
 		seed_system_machine_users: {
 			platform_admin: {key: "platform_admin", org_key: "platform", username: "assume-platform-admin", name: "Assume Platform Admin", secret_credstore_path: "{{ seed_system_credstore_dir }}/assume-platform-admin-client-secret"}
-			acme_admin: {key: "acme_admin", org_key: "acme", username: "assume-acme-admin", name: "Assume Acme Admin", secret_credstore_path: "{{ seed_system_credstore_dir }}/assume-acme-admin-client-secret"}
-			acme_member: {key: "acme_member", org_key: "acme", username: "assume-acme-member", name: "Assume Acme Member", secret_credstore_path: "{{ seed_system_credstore_dir }}/assume-acme-member-client-secret"}
+			acme_admin: {key:     "acme_admin", org_key:     "acme", username:     "assume-acme-admin", name:     "Assume Acme Admin", secret_credstore_path:     "{{ seed_system_credstore_dir }}/assume-acme-admin-client-secret"}
+			acme_member: {key:    "acme_member", org_key:    "acme", username:     "assume-acme-member", name:    "Assume Acme Member", secret_credstore_path:    "{{ seed_system_credstore_dir }}/assume-acme-member-client-secret"}
 		}
 		seed_system_product_id:           "sandbox"
 		seed_system_product_display_name: "Sandbox"
@@ -208,7 +249,7 @@ config: s.#InstanceConfig & {
 		seed_system_plan_entitlements: {}
 		seed_system_contract_tiers: [
 			{plan_id: "sandbox-hobby", display_name: "Hobby", tier: "hobby", currency: "usd", cadence: "monthly", unit_amount_cents: 500, entitlements: {compute: 30000000, memory: 15000000, execution_root_storage: 5000000}},
-			{plan_id: "sandbox-pro", display_name: "Pro", tier: "pro", currency: "usd", cadence: "monthly", unit_amount_cents: 2000, entitlements: {compute: 120000000, memory: 60000000, execution_root_storage: 20000000}},
+			{plan_id: "sandbox-pro", display_name:   "Pro", tier:   "pro", currency:   "usd", cadence:   "monthly", unit_amount_cents: 2000, entitlements: {compute: 120000000, memory: 60000000, execution_root_storage: 20000000}},
 		]
 		seed_system_platform_target_prepaid_units: 500000000000
 		seed_system_customer_target_prepaid_units: 500000000000

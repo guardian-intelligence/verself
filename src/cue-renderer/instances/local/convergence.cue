@@ -559,7 +559,7 @@ topology: components: {
 					description: "Object Storage Service"
 					user:        "object_storage_service"
 					group:       "object_storage_service"
-					uid:         config.object_storage.object_storage_service_uid
+					uid:         config.ansible_vars.object_storage_service_uid
 					home:        "/var/lib/object-storage-service"
 					exec:        "{{ verself_bin }}/object-storage-service"
 					requires_spiffe_sock: true
@@ -594,7 +594,7 @@ topology: components: {
 					description: "Object Storage Admin"
 					user:        "object_storage_admin"
 					group:       "object_storage_admin"
-					uid:         config.object_storage.object_storage_admin_uid
+					uid:         config.ansible_vars.object_storage_admin_uid
 					home:        "/var/lib/object-storage-admin"
 					exec:        "{{ verself_bin }}/object-storage-service"
 					requires_spiffe_sock: true

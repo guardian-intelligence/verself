@@ -604,8 +604,8 @@ topology: s.#Topology & {
 			artifact: {package: "./src/object-storage-service/cmd/object-storage-service", output: "object-storage-service", role: "object_storage_service", bazel_label: "//src/object-storage-service/cmd/object-storage-service:object-storage-service"}
 			runtime: {systemd: "object-storage-service", user: "object_storage_service", group: "object_storage_service"}
 			identities: {
-				service: {ansible_var: "spire_object_storage_service_id", path: "/svc/object-storage-service", user: "object_storage_service", group: "object_storage_service", uid_policy: {kind: "fixed", value: config.object_storage.object_storage_service_uid}, entry_id: "verself-object-storage-service", restart_units: ["object-storage-admin", "object-storage-service"]}
-				admin: {ansible_var: "spire_object_storage_admin_id", path: "/svc/object-storage-admin", user: "object_storage_admin", group: "object_storage_admin", uid_policy: {kind: "fixed", value: config.object_storage.object_storage_admin_uid}, entry_id: "verself-object-storage-admin", restart_units: ["object-storage-admin", "object-storage-service"]}
+				service: {ansible_var: "spire_object_storage_service_id", path: "/svc/object-storage-service", user: "object_storage_service", group: "object_storage_service", uid_policy: {kind: "fixed", value: config.ansible_vars.object_storage_service_uid}, entry_id: "verself-object-storage-service", restart_units: ["object-storage-admin", "object-storage-service"]}
+				admin: {ansible_var: "spire_object_storage_admin_id", path: "/svc/object-storage-admin", user: "object_storage_admin", group: "object_storage_admin", uid_policy: {kind: "fixed", value: config.ansible_vars.object_storage_admin_uid}, entry_id: "verself-object-storage-admin", restart_units: ["object-storage-admin", "object-storage-service"]}
 			}
 			tools: secret_sync: {kind: "go_binary", package: "./src/object-storage-service/cmd/object-storage-secret-sync", output: "object-storage-secret-sync", role: "object_storage_service", bazel_label: "//src/object-storage-service/cmd/object-storage-secret-sync:object-storage-secret-sync"}
 			processes: admin: {
@@ -735,6 +735,7 @@ topology: s.#Topology & {
 			host: "10.255.0.1"
 			runtime: {systemd: "vm-orchestrator", user: "root", group: "root"}
 			artifact: {kind: "go_binary", package: "./src/vm-orchestrator/cmd/vm-orchestrator", output: "vm-orchestrator", role: "firecracker", bazel_label: "//src/vm-orchestrator/cmd/vm-orchestrator:vm-orchestrator"}
+			tools: cli: {kind: "go_binary", package: "./src/vm-orchestrator/cmd/vm-orchestrator-cli", output: "vm-orchestrator-cli", role: "firecracker", bazel_label: "//src/vm-orchestrator/cmd/vm-orchestrator-cli:vm-orchestrator-cli"}
 			endpoints: host_http: {
 				protocol: "http"
 				host:     "10.255.0.1"
