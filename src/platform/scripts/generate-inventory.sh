@@ -4,7 +4,8 @@
 set -euo pipefail
 
 TF_DIR="${1:-terraform}"
-INVENTORY="ansible/inventory/hosts.ini"
+SITE="${VERSELF_SITE:-prod}"
+INVENTORY="ansible/inventory/${SITE}.ini"
 
 # Read outputs as JSON
 worker_ips=$(cd "$TF_DIR" && tofu output -json worker_ips 2>/dev/null | jq -r '.[]' 2>/dev/null) || true

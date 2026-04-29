@@ -13,7 +13,7 @@ set -euo pipefail
 # database name against a hardcoded enum — psql's own error is authoritative
 # and `pg.sh --list` shows the live state.
 
-inventory="${INVENTORY:-ansible/inventory/hosts.ini}"
+inventory="${INVENTORY:-ansible/inventory/${VERSELF_SITE:-prod}.ini}"
 secrets_file="${SOPS_SECRETS_FILE:-ansible/group_vars/all/secrets.sops.yml}"
 remote_path="${PSQL_PATH:-/opt/verself/profile/bin/psql}"
 pg_host="${PG_HOST:-127.0.0.1}"

@@ -7,20 +7,36 @@ ansible-with-tunnel.sh wrapper; anything controller-only invokes the script
 directly.
 """
 
-load(".aspect/lib/helpers.axl", "checked_spawn", "inventory_check", "ws_path")
+load(
+    ".aspect/lib/helpers.axl",
+    "checked_spawn",
+    "inventory_check",
+    "render_site",
+    "site_cache_inventory",
+    "ws_path",
+)
 
 _PLATFORM = "src/platform"
+_DEFAULT_SITE = "prod"
 
 def _ansible_tunnel(ctx, playbook, *extra_args):
-    """Run scripts/ansible-with-tunnel.sh against a playbook with optional args."""
-    if inventory_check(ctx) != 0:
-        return 1
+    """Render the deploy cache then run scripts/ansible-with-tunnel.sh.
+
+    Every controller-driven playbook flows through the same cache layout
+    (.cache/render/<site>/inventory) so a deploy and a reset see the same
+    rendered topology.
+    """
+    site = _DEFAULT_SITE
+    rc = render_site(ctx, site)
+    if rc != 0:
+        return rc
     args = [playbook] + list(extra_args)
     return checked_spawn(
         ctx,
         ws_path(ctx, _PLATFORM, "scripts/ansible-with-tunnel.sh"),
         args,
         cwd = ws_path(ctx, _PLATFORM),
+        env = {"VERSELF_ANSIBLE_INVENTORY": ws_path(ctx, site_cache_inventory(site))},
         label = "ansible-with-tunnel " + playbook + (" " + " ".join(extra_args) if extra_args else ""),
     )
 
@@ -39,9 +55,7 @@ def _ansible_local(ctx, playbook):
     )
 
 def _setup_dev_impl(ctx):
-    inv = ws_path(ctx, "src/platform/ansible/inventory/hosts.ini")
-    r = (ctx.std.process.command("test").args(["-f", inv]).spawn().wait())
-    if r.code == 0:
+    if inventory_check(ctx, _DEFAULT_SITE) == 0:
         return _ansible_tunnel(ctx, "playbooks/setup-dev.yml")
     return _ansible_local(ctx, "playbooks/setup-dev.yml")
 
@@ -73,7 +87,7 @@ def _edit_secrets_impl(ctx):
     )
 
 def _wipe_server_impl(ctx):
-    if inventory_check(ctx) != 0:
+    if inventory_check(ctx, _DEFAULT_SITE) != 0:
         return 1
     if not ctx.args.confirm:
         ctx.std.io.stderr.write("ERROR: --confirm is required to wipe-server\n")

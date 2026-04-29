@@ -2,7 +2,11 @@
 # Global variables for all nodes. Generated topology defaults live in
 # group_vars/all/generated/ops.yml and are intentionally kept out of this file.
 
-platform_rendered_dir: "{{ playbook_dir }}/../share/rendered"
+# `aspect render --site=<site>` materialises the rendered tree alongside
+# the staged inventory under .cache/render/<site>/. inventory_dir resolves
+# to .cache/render/<site>/inventory/ at deploy time, putting the rendered
+# nftables/systemd files exactly one level up.
+platform_rendered_dir: "{{ inventory_dir }}/../share/rendered"
 postgresql_log_dir: /var/log/postgresql
 
 # Operator email forwarding — all mail to ceo@<domain> is copied here by the

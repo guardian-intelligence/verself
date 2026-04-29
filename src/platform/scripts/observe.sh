@@ -4,7 +4,7 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 platform_root="$(cd "${script_dir}/.." && pwd)"
 repo_root="$(cd "${platform_root}/../.." && pwd)"
-inventory="${INVENTORY:-${platform_root}/ansible/inventory/hosts.ini}"
+inventory="${INVENTORY:-${platform_root}/ansible/inventory/${VERSELF_SITE:-prod}.ini}"
 
 if [[ ! -f "${inventory}" ]]; then
   echo "ERROR: ${inventory} not found. Run 'aspect platform provision' first." >&2

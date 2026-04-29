@@ -12,7 +12,6 @@ go_library(
         "//src/cue-renderer/internal/render/bazeldevtoolsmodule",
         "//src/cue-renderer/internal/render/bazelguestimages",
         "//src/cue-renderer/internal/render/bazelmodule",
-        "//src/cue-renderer/internal/render/bazelnftables",
         "//src/cue-renderer/internal/render/bazelservertools",
         "//src/cue-renderer/internal/render/catalog",
         "//src/cue-renderer/internal/render/clusters",

@@ -1,6 +1,7 @@
 ---
 # Rolling OS security updates across the fleet.
-# Usage: ansible-playbook -i inventory/hosts.ini playbooks/security-patch.yml
+# Usage: aspect platform security-patch
+# (renders the per-site cache and invokes ansible-with-tunnel.sh).
 
 - name: Apply security patches
   hosts: all

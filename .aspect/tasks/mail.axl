@@ -4,15 +4,23 @@ Mail-recipient shortcuts (mail-send-ceo, mail-send-agents) are intentionally
 not preserved; use `aspect mail send --to=ceo` / `--to=agents`.
 """
 
-load(".aspect/lib/helpers.axl", "checked_spawn", "inventory_check", "require_arg", "ws_path")
+load(
+    ".aspect/lib/helpers.axl",
+    "checked_spawn",
+    "inventory_check",
+    "require_arg",
+    "site_inventory_source",
+    "ws_path",
+)
 
 _PLATFORM = "src/platform"
 _MS = "src/mailbox-service"
+_SITE = "prod"
 
 def _mailbox_tool(ctx, *args):
-    if inventory_check(ctx) != 0:
+    if inventory_check(ctx, _SITE) != 0:
         return 1
-    inv_abs = ws_path(ctx, "src/platform/ansible/inventory/hosts.ini")
+    inv_abs = ws_path(ctx, site_inventory_source(_SITE))
     cli_args = [
         "run",
         "./cmd/mailbox-tool",
@@ -54,7 +62,7 @@ def _read_impl(ctx):
     return _mailbox_tool(ctx, "read", *cli_args)
 
 def _send_impl(ctx):
-    if inventory_check(ctx) != 0:
+    if inventory_check(ctx, _SITE) != 0:
         return 1
     if not require_arg(ctx, "to", ctx.args.to):
         return 1
@@ -71,7 +79,7 @@ def _send_impl(ctx):
     )
 
 def _passwords_impl(ctx):
-    if inventory_check(ctx) != 0:
+    if inventory_check(ctx, _SITE) != 0:
         return 1
     main_yml = ws_path(ctx, _PLATFORM, "ansible/group_vars/all/main.yml")
     secrets = ws_path(ctx, _PLATFORM, "ansible/group_vars/all/secrets.sops.yml")

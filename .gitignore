@@ -13,7 +13,17 @@ src/platform/terraform/*.tfvars.json
 # Ansible
 src/platform/ansible/*.retry
 src/platform/ansible/.cache/
-src/platform/ansible/inventory/hosts.ini
+src/platform/ansible/inventory/*.ini
+!src/platform/ansible/inventory/*.example
+
+# Renderer cache: aspect render --site=<site> writes everything Ansible
+# discovers under .cache/render/<site>/ (inventory, group_vars, share/rendered).
+# Tracked generated files used to live under src/platform/ansible/; they are
+# intentionally absent now so PR review surfaces only authored CUE/Ansible.
+.cache/
+src/platform/ansible/group_vars/all/generated/
+src/platform/ansible/share/rendered/
+src/platform/ansible/handlers/component-systemd.yml
 
 # Age private keys (NEVER commit)
 **/keys.txt

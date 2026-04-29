@@ -14,7 +14,7 @@ import (
 	"github.com/verself/cue-renderer/internal/render/projection"
 )
 
-const outputPath = "src/platform/ansible/group_vars/all/generated/clusters.yml"
+const outputPath = "inventory/group_vars/all/generated/clusters.yml"
 
 var header = []byte(projection.HeaderFor("src/cue-renderer/instances/prod/topology.cue") + "---\n")
 

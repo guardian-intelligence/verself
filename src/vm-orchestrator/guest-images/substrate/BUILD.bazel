@@ -22,7 +22,7 @@ sh_binary(
 
 yq(
     name = "versions",
-    srcs = ["//src/platform:ansible/group_vars/all/generated/catalog.yml"],
+    srcs = ["//src/cue-renderer:catalog.yml"],
     outs = ["versions.json"],
     expression = ".topology_guest_versions",
 )

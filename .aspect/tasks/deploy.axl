@@ -1,43 +1,55 @@
-"""aspect deploy [--tags=...]
+"""aspect deploy [--site=prod] [--tags=...]
 
-Top-level `aspect deploy` invokes ansible-with-tunnel.sh against playbooks/site.yml,
-optionally scoped to one or more --tags. The reset subgroup (identity, billing,
-verification) lives under `aspect platform reset ...` because Aspect's CLI
-treats a name as either a task or a group, never both — so `aspect deploy` (the
-task) cannot also host `aspect deploy reset` (a group).
+Renders the per-site deploy cache at .cache/render/<site>/ then invokes
+ansible-with-tunnel.sh against playbooks/site.yml using that cache as the
+Ansible inventory. Optionally scoped to one or more --tags.
+
+The reset subgroup (identity, billing, verification) lives under
+`aspect platform reset ...` because Aspect's CLI treats a name as either
+a task or a group, never both — so `aspect deploy` (the task) cannot also
+host `aspect deploy reset` (a group).
 
 deploy_run_key correlation is preserved by ansible-with-tunnel.sh sourcing
-deploy_identity.sh; ClickHouse rows for the playbook span family are joinable
-on SpanAttributes['deploy_run_key'].
+deploy_identity.sh; ClickHouse rows for the playbook span family are
+joinable on SpanAttributes['deploy_run_key'].
 """
 
-load(".aspect/lib/helpers.axl", "checked_spawn", "inventory_check", "ws_path")
+load(
+    ".aspect/lib/helpers.axl",
+    "checked_spawn",
+    "render_site",
+    "site_cache_inventory",
+    "ws_path",
+)
 
 _PLATFORM = "src/platform"
 
-def _tunnel(ctx, *extra_args):
-    if inventory_check(ctx) != 0:
-        return 1
+def _deploy_impl(ctx):
+    site = ctx.args.site or "prod"
+    rc = render_site(ctx, site)
+    if rc != 0:
+        return rc
+
+    extra = ["playbooks/site.yml"]
+    if ctx.args.tags:
+        extra.append("--tags")
+        extra.append(",".join(ctx.args.tags))
+
     return checked_spawn(
         ctx,
         ws_path(ctx, _PLATFORM, "scripts/ansible-with-tunnel.sh"),
-        list(extra_args),
+        extra,
         cwd = ws_path(ctx, _PLATFORM),
-        label = "ansible-with-tunnel " + " ".join(extra_args),
+        env = {"VERSELF_ANSIBLE_INVENTORY": ws_path(ctx, site_cache_inventory(site))},
+        label = "ansible-with-tunnel " + " ".join(extra),
     )
-
-def _deploy_impl(ctx):
-    args_list = ["playbooks/site.yml"]
-    if ctx.args.tags:
-        args_list.append("--tags")
-        args_list.append(",".join(ctx.args.tags))
-    return _tunnel(ctx, *args_list)
 
 deploy = task(
     implementation = _deploy_impl,
     name = "deploy",
-    summary = "Deploy current site topology (optionally scoped to --tag values).",
+    summary = "Render the deploy cache and apply it to a site (default --site=prod, optionally scoped to --tags).",
     args = {
+        "site": args.string(default = "prod", description = "Deployment site (selects instances/<site>/ and inventory/<site>.ini)."),
         "tags": args.string_list(
             long = "tags",
             description = "Ansible tags to scope this deploy (e.g. --tags=company,caddy). May be repeated.",

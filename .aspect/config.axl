@@ -36,6 +36,7 @@ load(
     platform_reset_verification = "reset_verification",
 )
 load(".aspect/tasks/deploy.axl", "deploy")
+load(".aspect/tasks/render.axl", "render")
 load(
     ".aspect/tasks/db.axl",
     db_pg_list = "pg_list",
@@ -89,6 +90,7 @@ def config(ctx):
     ctx.tasks.add(doctor)
     ctx.tasks.add(tidy)
     ctx.tasks.add(deploy)
+    ctx.tasks.add(render)
     ctx.tasks.add(observe)
     ctx.tasks.add(check)
 

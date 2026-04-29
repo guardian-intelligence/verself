@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Cross-check declared topology endpoints against live listeners on the box.
 
-Declared source: src/platform/ansible/group_vars/all/generated/endpoints.yml
+Declared source: .cache/render/<site>/inventory/group_vars/all/generated/endpoints.yml
 Live source: `sudo ss -Hltnp` on the inventory host (TCP listening sockets).
 
 Output modes (FORMAT env):
@@ -32,8 +32,9 @@ from typing import Iterable
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-ENDPOINTS_YAML = REPO_ROOT / "src/platform/ansible/group_vars/all/generated/endpoints.yml"
-INVENTORY = REPO_ROOT / "src/platform/ansible/inventory/hosts.ini"
+SITE = os.environ.get("VERSELF_SITE", "prod")
+ENDPOINTS_YAML = REPO_ROOT / f".cache/render/{SITE}/inventory/group_vars/all/generated/endpoints.yml"
+INVENTORY = REPO_ROOT / f"src/platform/ansible/inventory/{SITE}.ini"
 
 # Ports in these ranges are "ours" — an undeclared listener here is drift.
 # Ports outside these ranges (e.g. 22 sshd, 53 systemd-resolved) are noise

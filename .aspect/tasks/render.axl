@@ -1,0 +1,81 @@
+"""aspect render --site=prod
+
+Materialises a site's deploy cache at .cache/render/<site>/ — every
+generated group_var, every nftables fragment, every systemd unit file,
+and the staged inventory file. Ansible's `host_group_vars` plugin
+auto-discovers `<inventory_dir>/group_vars/all/...`, so pointing
+`-i .cache/render/<site>/inventory/` at it is enough for the deploy
+flow to pick up the rendered config without polluting the tracked
+working tree.
+
+The cache is the single source of truth for "what `aspect deploy`
+will install"; review and debugging happens against `.cache/render/<site>/`
+rather than via `git diff` over committed generated files.
+"""
+
+load(".aspect/lib/helpers.axl", "checked_spawn", "ws_path")
+
+def _render_impl(ctx):
+    site = ctx.args.site or "prod"
+    cache_rel = ".cache/render/" + site
+    cache = ws_path(ctx, cache_rel)
+    inv_src = ws_path(ctx, "src/platform/ansible/inventory", site + ".ini")
+
+    rc = checked_spawn(
+        ctx, "rm", ["-rf", cache],
+        label = "clean " + cache_rel,
+    )
+    if rc != 0:
+        return rc
+
+    rc = checked_spawn(
+        ctx, "bazelisk",
+        [
+            "run",
+            "//src/cue-renderer/cmd/cue-renderer",
+            "--",
+            "generate",
+            "--instance=" + site,
+            "--output-dir=" + cache_rel,
+        ],
+        label = "cue-renderer generate --instance=" + site,
+    )
+    if rc != 0:
+        return rc
+
+    rc = checked_spawn(
+        ctx, "test", ["-f", inv_src],
+        label = "check inventory " + inv_src,
+    )
+    if rc != 0:
+        ctx.std.io.stderr.write(
+            "ERROR: inventory file " + inv_src + " not found. Run: aspect platform provision\n",
+        )
+        return 1
+
+    rc = checked_spawn(
+        ctx, "cp", [inv_src, cache + "/inventory/hosts.ini"],
+        label = "stage inventory",
+    )
+    if rc != 0:
+        return rc
+    # Mirror the cache-rendered handler back into the tracked-but-gitignored
+    # path so site.yml's static import_tasks resolves at parse time —
+    # handlers must be discoverable before inventory loads.
+    return checked_spawn(
+        ctx, "cp",
+        [
+            cache + "/handlers/component-systemd.yml",
+            ws_path(ctx, "src/platform/ansible/handlers/component-systemd.yml"),
+        ],
+        label = "stage handlers/component-systemd.yml",
+    )
+
+render = task(
+    implementation = _render_impl,
+    name = "render",
+    summary = "Render the deploy cache for a site at .cache/render/<site>/.",
+    args = {
+        "site": args.string(default = "prod", description = "Site instance under src/cue-renderer/instances/."),
+    },
+)

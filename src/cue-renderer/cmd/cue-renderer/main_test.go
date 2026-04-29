@@ -74,7 +74,7 @@ func TestRendererByName(t *testing.T) {
 }
 
 func TestRenderAll_OutputPathShape(t *testing.T) {
-	loaded, err := load.Topology(topologyDir(t), "local")
+	loaded, err := load.Topology(topologyDir(t), "prod")
 	if err != nil {
 		t.Fatalf("load topology: %v", err)
 	}
@@ -90,10 +90,20 @@ func TestRenderAll_OutputPathShape(t *testing.T) {
 	produced := map[string]bool{}
 	for _, p := range paths {
 		if filepath.IsAbs(p) {
-			t.Errorf("path %q is absolute; renderers must emit repo-relative paths", p)
+			t.Errorf("path %q is absolute; renderers must emit cache-relative paths", p)
 		}
-		if !strings.HasPrefix(p, "src/") {
-			t.Errorf("path %q does not start with src/; renderers must write under the repo tree", p)
+		// Cache-relative roots: inventory/ (group_vars), share/ (rendered etc/),
+		// handlers/ (component-systemd), or src/ (Bazel-input artefacts in the
+		// renderer package). Anything outside these roots is a layout drift.
+		validRoot := false
+		for _, root := range []string{"inventory/", "share/", "handlers/", "src/"} {
+			if strings.HasPrefix(p, root) {
+				validRoot = true
+				break
+			}
+		}
+		if !validRoot {
+			t.Errorf("path %q is not anchored at inventory/, share/, handlers/, or src/", p)
 		}
 		produced[artifacts[p]] = true
 	}
@@ -105,7 +115,7 @@ func TestRenderAll_OutputPathShape(t *testing.T) {
 }
 
 func TestRenderAll_Determinism(t *testing.T) {
-	loaded, err := load.Topology(topologyDir(t), "local")
+	loaded, err := load.Topology(topologyDir(t), "prod")
 	if err != nil {
 		t.Fatalf("load topology: %v", err)
 	}
@@ -137,7 +147,7 @@ func TestRenderAll_NoOverlap(t *testing.T) {
 	// renderAll already errors when two renderers claim the same path; this
 	// is the second-loop assertion that the artifacts map covers every path
 	// emitted by the MemFS, with one renderer per path.
-	loaded, err := load.Topology(topologyDir(t), "local")
+	loaded, err := load.Topology(topologyDir(t), "prod")
 	if err != nil {
 		t.Fatalf("load topology: %v", err)
 	}
@@ -157,11 +167,11 @@ func TestRenderAll_NoOverlap(t *testing.T) {
 
 func TestLoadTopology_GraphSHA256Stable(t *testing.T) {
 	dir := topologyDir(t)
-	a, err := load.Topology(dir, "local")
+	a, err := load.Topology(dir, "prod")
 	if err != nil {
 		t.Fatalf("first load: %v", err)
 	}
-	b, err := load.Topology(dir, "local")
+	b, err := load.Topology(dir, "prod")
 	if err != nil {
 		t.Fatalf("second load: %v", err)
 	}
@@ -192,7 +202,7 @@ func TestLoadTopology_GraphSHA256Stable(t *testing.T) {
 // loud in the bridge PR. The freshness check catches source/projection
 // drift; this test catches semantic drift inside the source itself.
 func TestDevToolPinnedHTTPFileTriangle(t *testing.T) {
-	loaded, err := load.Topology(topologyDir(t), "local")
+	loaded, err := load.Topology(topologyDir(t), "prod")
 	if err != nil {
 		t.Fatalf("load topology: %v", err)
 	}
@@ -255,7 +265,7 @@ func TestDevToolPinnedHTTPFileTriangle(t *testing.T) {
 }
 
 func TestRender_SingleArtifactToMemFS(t *testing.T) {
-	loaded, err := load.Topology(topologyDir(t), "local")
+	loaded, err := load.Topology(topologyDir(t), "prod")
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
