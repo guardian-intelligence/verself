@@ -185,7 +185,7 @@
     firecracker_resolved_uplink: >-
       {{ firecracker_host_uplink_interface
          if firecracker_host_uplink_interface != ''
-         else ansible_default_ipv4.interface }}
+         else ansible_facts['default_ipv4']['interface'] }}
 
 - name: Persist IP forwarding via sysctl
   ansible.posix.sysctl:
