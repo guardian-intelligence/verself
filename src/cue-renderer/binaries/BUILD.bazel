@@ -1,10 +1,15 @@
+load(":dev_tools.bzl", "dev_tools_archive")
 load(":server_tools.bzl", "server_tools_archive")
 
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
+    "dev_tools.MODULE.bazel",
+    "dev_tools.bzl",
     "server_tools.MODULE.bazel",
     "server_tools.bzl",
 ])
 
 server_tools_archive()
+
+dev_tools_archive()
