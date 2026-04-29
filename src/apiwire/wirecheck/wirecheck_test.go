@@ -1,4 +1,4 @@
-package main
+package wirecheck
 
 import (
 	"os"
@@ -22,18 +22,18 @@ components:
       format: int64
 `)
 
-	violations, err := checkFile(path)
+	violations, err := CheckFile(path)
 	if err != nil {
-		t.Fatalf("checkFile: %v", err)
+		t.Fatalf("CheckFile: %v", err)
 	}
 	if len(violations) != 2 {
 		t.Fatalf("expected 2 violations, got %#v", violations)
 	}
-	if !strings.Contains(violations[0].path, "UnsafeID") {
-		t.Fatalf("expected first violation path to include UnsafeID, got %q", violations[0].path)
+	if !strings.Contains(violations[0].Path, "UnsafeID") {
+		t.Fatalf("expected first violation path to include UnsafeID, got %q", violations[0].Path)
 	}
-	if !strings.Contains(violations[1].path, "NullableUnsafeID") {
-		t.Fatalf("expected second violation path to include NullableUnsafeID, got %q", violations[1].path)
+	if !strings.Contains(violations[1].Path, "NullableUnsafeID") {
+		t.Fatalf("expected second violation path to include NullableUnsafeID, got %q", violations[1].Path)
 	}
 }
 
@@ -55,9 +55,9 @@ components:
       pattern: "^[0-9]+$"
 `)
 
-	violations, err := checkFile(path)
+	violations, err := CheckFile(path)
 	if err != nil {
-		t.Fatalf("checkFile: %v", err)
+		t.Fatalf("CheckFile: %v", err)
 	}
 	if len(violations) != 0 {
 		t.Fatalf("expected no violations, got %#v", violations)
@@ -75,9 +75,9 @@ components:
       maximum: 9007199254740992
 `)
 
-	violations, err := checkFile(path)
+	violations, err := CheckFile(path)
 	if err != nil {
-		t.Fatalf("checkFile: %v", err)
+		t.Fatalf("CheckFile: %v", err)
 	}
 	if len(violations) != 1 {
 		t.Fatalf("expected 1 violation, got %#v", violations)
