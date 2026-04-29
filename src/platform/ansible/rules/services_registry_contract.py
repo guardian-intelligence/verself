@@ -31,7 +31,7 @@ except ModuleNotFoundError:
     AnsibleLintRule = object  # type: ignore[assignment,misc]
 
 
-REGISTRY = Path("group_vars/all/generated/endpoints.yml")
+REGISTRY_RELATIVE = Path("inventory/group_vars/all/generated/endpoints.yml")
 CONTROL_PLANE_PORT_MIN = 4240
 CONTROL_PLANE_PORT_MAX = 4269
 PORT_KEY_RE = re.compile(r"^port$")
@@ -70,18 +70,29 @@ class PortAllocation:
 
 
 def resolve_registry_path(path: str | Path | None = None) -> Path:
+    """Locate the rendered endpoints.yml.
+
+    Order of preference:
+      1. Explicit `path` argument (used by `main()` and direct test invocation).
+      2. `${VERSELF_RENDER_CACHE_DIR}/inventory/group_vars/all/generated/endpoints.yml`
+         — `aspect render --site=<site>` exports VERSELF_RENDER_CACHE_DIR via
+         `lib/site-cache.sh` and `aspect check --kind=ansible` runs render
+         first, so this branch is the canonical one.
+      3. CWD-relative `inventory/group_vars/all/generated/endpoints.yml`,
+         which catches the `cd <cache>` test layout used by the rule's
+         pytest fixtures.
+    Returning the env-resolved path even when it does not exist surfaces the
+    "no cache" failure mode loudly.
+    """
+    import os
     if path is not None:
         return Path(path)
 
-    cwd_registry = Path.cwd() / REGISTRY
-    if cwd_registry.exists():
-        return cwd_registry
+    cache_dir = os.environ.get("VERSELF_RENDER_CACHE_DIR", "")
+    if cache_dir:
+        return Path(cache_dir) / REGISTRY_RELATIVE
 
-    repo_registry = Path.cwd() / "src/platform/ansible" / REGISTRY
-    if repo_registry.exists():
-        return repo_registry
-
-    return cwd_registry
+    return Path.cwd() / REGISTRY_RELATIVE
 
 
 def dotted(path: tuple[str, ...]) -> str:
@@ -239,7 +250,7 @@ if Lintable is not None:
         """Topology endpoint invariants CUE cannot express."""
 
         id = "services-registry-contract"
-        description = "Validate group_vars/all/generated/endpoints.yml port uniqueness, control-plane port range, and wildcard exposure constraints. CUE owns reserved-port, non-wildcard host, and wildcard_listen_reason invariants."
+        description = "Validate the rendered topology endpoints.yml (port uniqueness, control-plane port range, wildcard exposure). CUE schema already covers reserved-port, non-wildcard host, and wildcard_listen_reason invariants."
         severity = "HIGH"
         tags = ["custom", "services"]
         version_changed = "0.2.0"
@@ -264,7 +275,7 @@ if Lintable is not None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate the Verself topology endpoint artifact.")
-    parser.add_argument("path", nargs="?", help=f"registry path, default: {REGISTRY}")
+    parser.add_argument("path", nargs="?", help=f"registry path, default: $VERSELF_RENDER_CACHE_DIR/{REGISTRY_RELATIVE}")
     args = parser.parse_args()
 
     registry = resolve_registry_path(args.path)

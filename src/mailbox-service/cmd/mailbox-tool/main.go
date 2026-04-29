@@ -35,7 +35,12 @@ func run(ctx context.Context, args []string) error {
 		return usageError()
 	}
 
-	inventoryDefault := filepath.Join("..", "platform", "ansible", "inventory", "hosts.ini")
+	// The deploy cache is the source of truth at runtime; the authored
+	// hosts.ini is named per-site (prod.ini, staging.ini, …). aspect deploy
+	// stages the chosen one into <cache>/inventory/hosts.ini, but for the
+	// dev tool path a default of `prod.ini` matches the only inventory the
+	// repo currently authors.
+	inventoryDefault := filepath.Join("..", "platform", "ansible", "inventory", "prod.ini")
 	rootFlags := flag.NewFlagSet("mailbox-tool", flag.ContinueOnError)
 	rootFlags.SetOutput(io.Discard)
 	inventoryPath := rootFlags.String("inventory", inventoryDefault, "Path to ansible inventory")

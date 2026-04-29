@@ -1,6 +1,7 @@
 ---
-# Global variables for all nodes. Generated topology defaults live in
-# group_vars/all/generated/ops.yml and are intentionally kept out of this file.
+# Global variables for all nodes. CUE-rendered topology defaults land in
+# inventory/group_vars/all/generated/ops.yml inside the per-site deploy
+# cache and are intentionally kept out of this file.
 
 # `aspect render --site=<site>` materialises the rendered tree alongside
 # the staged inventory under .cache/render/<site>/. inventory_dir resolves
