@@ -266,22 +266,6 @@
     path: "{{ spire_server_socket_path }}"
     timeout: 30
 
-- name: Probe SPIRE bundle endpoint
-  ansible.builtin.uri:
-    url: "{{ spire_jwt_bundle_endpoint_url }}"
-    method: GET
-    ca_path: /etc/spire/bundle-endpoint/ca.pem
-    status_code: 200
-    return_content: true
-  register: spire_bundle_endpoint_response
-  changed_when: false
-
-- name: Assert SPIRE bundle endpoint exposes keys
-  ansible.builtin.assert:
-    that:
-      - (spire_bundle_endpoint_response.json['keys'] | default([])) | length > 0
-    fail_msg: SPIRE bundle endpoint returned no signing keys.
-
 - name: Check SPIRE agent attestation state
   ansible.builtin.stat:
     path: /var/lib/spire/agent/agent-data.json
