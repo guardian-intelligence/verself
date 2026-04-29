@@ -34,6 +34,18 @@ const (
 	maxFilesystemMounts    = 8
 )
 
+// firecrackerStep is one PUT against the Firecracker API socket. The
+// boot path runs them in declaration order under
+// vmorchestrator.firecracker.configure_all; each step gets its own child
+// span keyed off step.name and a per-step timeout (defaulting to
+// firecrackerStepTimeout when zero) so a slow step is observable in
+// traces without lengthening the rest of the pipeline.
+type firecrackerStep struct {
+	name    string
+	timeout time.Duration
+	fn      func(context.Context) error
+}
+
 type Config struct {
 	Pool                string
 	ImageDataset        string
@@ -647,38 +659,32 @@ func (o *Orchestrator) bootDataset(ctx context.Context, lease zfs.Lease, spec Le
 	// lease-specific overrides. See src/apiwire/vmresources.go for why each
 	// flag is on the base list (or deliberately off).
 	bootArgs := apiwire.RenderCmdline(apiwire.DefaultKernelCmdlineBase)
-	apiSteps := []struct {
-		name string
-		fn   func(context.Context) error
-	}{
-		{"metrics", func(stepCtx context.Context) error { return client.putMetrics(stepCtx, "/metrics.json") }},
-		{"boot-source", func(stepCtx context.Context) error { return client.putBootSource(stepCtx, "/vmlinux", bootArgs) }},
-		{"rootfs", func(stepCtx context.Context) error { return client.putDrive(stepCtx, "rootfs", "/rootfs", true, false) }},
+	apiSteps := []firecrackerStep{
+		{name: "metrics", fn: func(stepCtx context.Context) error { return client.putMetrics(stepCtx, "/metrics.json") }},
+		{name: "boot-source", fn: func(stepCtx context.Context) error { return client.putBootSource(stepCtx, "/vmlinux", bootArgs) }},
+		{name: "rootfs", fn: func(stepCtx context.Context) error { return client.putDrive(stepCtx, "rootfs", "/rootfs", true, false) }},
 	}
 	for _, mount := range mounts {
 		mount := mount
-		apiSteps = append(apiSteps, struct {
-			name string
-			fn   func(context.Context) error
-		}{"drive-" + mount.DriveID, func(stepCtx context.Context) error {
-			return client.putDrive(stepCtx, mount.DriveID, mount.JailDevicePath, false, mount.Spec.ReadOnly)
-		}})
+		apiSteps = append(apiSteps, firecrackerStep{
+			name: "drive-" + mount.DriveID,
+			fn: func(stepCtx context.Context) error {
+				return client.putDrive(stepCtx, mount.DriveID, mount.JailDevicePath, false, mount.Spec.ReadOnly)
+			},
+		})
 	}
-	apiSteps = append(apiSteps, []struct {
-		name string
-		fn   func(context.Context) error
-	}{
-		{"machine-config", func(stepCtx context.Context) error {
+	apiSteps = append(apiSteps, []firecrackerStep{
+		{name: "machine-config", fn: func(stepCtx context.Context) error {
 			return client.putMachineConfig(stepCtx, int(spec.Resources.VCPUs), int(spec.Resources.MemoryMiB))
 		}},
-		{"network", func(stepCtx context.Context) error {
+		{name: "network", fn: func(stepCtx context.Context) error {
 			return client.putNetworkInterface(stepCtx, "eth0", netSetup.Lease.TapName, netSetup.Lease.MAC)
 		}},
-		{"vsock", func(stepCtx context.Context) error {
+		{name: "vsock", fn: func(stepCtx context.Context) error {
 			cid := uint32(netSetup.Lease.SlotIndex) + 3
 			return client.putVsock(stepCtx, cid, "/run/vs-control.sock")
 		}},
-		{"entropy", func(stepCtx context.Context) error { return client.putEntropy(stepCtx) }},
+		{name: "entropy", fn: func(stepCtx context.Context) error { return client.putEntropy(stepCtx) }},
 	}...)
 	// Roll up the FC API PUTs under a single parent span so dashboards
 	// can chart "total configure time" without summing across step children.
@@ -690,10 +696,15 @@ func (o *Orchestrator) bootDataset(ctx context.Context, lease zfs.Lease, spec Le
 		attribute.Int("vmresources.root_disk_gib", int(spec.Resources.RootDiskGiB)),
 	)
 	for _, step := range apiSteps {
-		stepCtx, cancel := context.WithTimeout(configureCtx, firecrackerStepTimeout)
+		timeout := step.timeout
+		if timeout <= 0 {
+			timeout = firecrackerStepTimeout
+		}
+		stepCtx, cancel := context.WithTimeout(configureCtx, timeout)
 		stepCtx, endStepSpan := startStepSpan(stepCtx, "vmorchestrator.firecracker.configure",
 			attribute.String("lease.id", leaseID),
 			attribute.String("firecracker.step", step.name),
+			attribute.Int64("firecracker.step_timeout_ms", timeout.Milliseconds()),
 		)
 		stepErr := step.fn(stepCtx)
 		endStepSpan(stepErr)
