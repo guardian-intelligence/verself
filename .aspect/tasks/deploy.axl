@@ -8,16 +8,19 @@ The single deploy verb. The body:
   2. Sources scripts/deploy_identity.sh once via derive_deploy_env. The
      resulting VERSELF_DEPLOY_RUN_KEY / TRACEPARENT / OTEL_RESOURCE_ATTRIBUTES
      are threaded as env={...} into every subprocess this task spawns, so
-     record-deploy-event.sh and ansible-with-tunnel.sh share a single
+     record-deploy-event.sh and ansible-with-otel.sh share a single
      deploy identity instead of each re-deriving its own.
   3. Renders .cache/render/<site>/ via render_site.
   4. Records a `started` row in verself.deploy_events.
   5. If --scope=affected, prints a stderr breadcrumb. Phase A.5 wires the
      real bazel-diff machinery and lifts the breadcrumb to a real span.
-  6. Invokes scripts/ansible-with-tunnel.sh against playbooks/site.yml.
+  6. Invokes scripts/ansible-with-otel.sh against playbooks/site.yml.
      The wrapper inherits VERSELF_DEPLOY_RUN_KEY (deploy_identity.sh's
-     idempotency check preserves it) and emits ansible.task spans against
-     the tunneled OTLP endpoint.
+     idempotency check preserves it), stands up a controller-side
+     otelcol-contrib agent with a file_storage queue, and points the
+     ansible OTel callback at the agent. The agent's SIGTERM-on-wrapper-
+     exit drain window is what lets ansible.task spans from a *failed*
+     run still land in ClickHouse.
   7. Records `succeeded` or `failed` in verself.deploy_events.
 
 Reset playbooks (identity, billing, verification) live under `aspect platform
@@ -63,14 +66,14 @@ def _run_ansible(ctx, site, env):
         args_list.append(",".join(ctx.args.tags))
     return checked_spawn(
         ctx,
-        ws_path(ctx, _PLATFORM, "scripts/ansible-with-tunnel.sh"),
+        ws_path(ctx, _PLATFORM, "scripts/ansible-with-otel.sh"),
         args_list,
         cwd = ws_path(ctx, _PLATFORM),
         env = _merge_env(
             env,
             {"VERSELF_ANSIBLE_INVENTORY": ws_path(ctx, site_cache_inventory(site))},
         ),
-        label = "ansible-with-tunnel " + " ".join(args_list),
+        label = "ansible-with-otel " + " ".join(args_list),
     )
 
 def _deploy_one(ctx, site, sha, scope):
@@ -125,7 +128,7 @@ def _deploy_one(ctx, site, sha, scope):
             scope = scope,
             components = components,
             event_kind = "failed",
-            error_message = "ansible-with-tunnel exited " + str(rc),
+            error_message = "ansible-with-otel exited " + str(rc),
         )
     return rc
 

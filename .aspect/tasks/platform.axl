@@ -4,10 +4,13 @@ Each task is a thin wrapper around an existing platform script or playbook.
 Two flavours:
 
   - `_ansible_remote` — renders .cache/render/<site>/, then runs
-    scripts/ansible-with-tunnel.sh against the cache. The wrapper opens an
-    OTLP tunnel and exec's ansible-playbook so deploy_run_key correlation
-    flows into ClickHouse.
-  - `_ansible_local`  — runs ansible-playbook directly with no tunnel. Used
+    scripts/ansible-with-otel.sh against the cache. The wrapper stands up
+    a controller-side otelcol-contrib agent (with a file_storage queue)
+    that buffers ansible.* spans and forwards them to the bare-metal
+    otelcol over an SSH `-L`. The agent's lifetime is bound to the
+    wrapper, so spans flushed by the BSP atexit hook still land when
+    ansible-playbook exits non-zero.
+  - `_ansible_local`  — runs ansible-playbook directly with no agent. Used
     only for the bootstrap playbooks that pre-date a remote (provision,
     setup-sops) or that destroy it (deprovision).
 
@@ -29,7 +32,7 @@ load(
 _PLATFORM = "src/platform"
 
 def _ansible_remote(ctx, playbook, *extra_args):
-    """Render the deploy cache then run scripts/ansible-with-tunnel.sh.
+    """Render the deploy cache then run scripts/ansible-with-otel.sh.
 
     Every controller-driven playbook flows through the same cache layout
     (.cache/render/<site>/inventory) so a deploy and a reset see the same
@@ -42,11 +45,11 @@ def _ansible_remote(ctx, playbook, *extra_args):
     args = [playbook] + list(extra_args)
     return checked_spawn(
         ctx,
-        ws_path(ctx, _PLATFORM, "scripts/ansible-with-tunnel.sh"),
+        ws_path(ctx, _PLATFORM, "scripts/ansible-with-otel.sh"),
         args,
         cwd = ws_path(ctx, _PLATFORM),
         env = {"VERSELF_ANSIBLE_INVENTORY": ws_path(ctx, site_cache_inventory(site))},
-        label = "ansible-with-tunnel " + playbook + (" " + " ".join(extra_args) if extra_args else ""),
+        label = "ansible-with-otel " + playbook + (" " + " ".join(extra_args) if extra_args else ""),
     )
 
 def _ansible_local(ctx, playbook, *extra_args):

@@ -62,7 +62,7 @@ esac
 
 run_key="${VERSELF_DEPLOY_RUN_KEY:-}"
 if [[ -z "${run_key}" ]]; then
-  echo "ERROR: VERSELF_DEPLOY_RUN_KEY is required (set by ansible-with-tunnel.sh)" >&2
+  echo "ERROR: VERSELF_DEPLOY_RUN_KEY is required (threaded in by aspect deploy via derive_deploy_env)" >&2
   exit 2
 fi
 actor="${VERSELF_AUTHOR:-unknown}"
@@ -104,8 +104,9 @@ SQL
 
 # The row in verself.deploy_events is the canonical record; we deliberately
 # do not emit a separate `deploy_events.insert` OTel span here because the
-# controller-side OTLP endpoint is owned by ansible-with-tunnel.sh's tunnel
-# (out-of-scope at this point) and the row carries the same dimensions.
+# controller-side OTLP agent is owned by scripts/with-otel-agent.sh and is
+# not in scope when this script runs (recording happens before/after the
+# agent's lifetime). The row carries the same dimensions.
 
 cd "${repo_root}/src/platform"
 INVENTORY="ansible/inventory/${site}.ini" ./scripts/clickhouse.sh \

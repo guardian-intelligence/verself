@@ -273,7 +273,7 @@ Completion requires live ClickHouse evidence, not only unit tests:
 
 ```bash
 aspect deploy --tags=deploy_profile,identity_service,governance_service,billing_service,secrets_service,source_code_hosting_service,sandbox_rental_service
-src/platform/scripts/ansible-with-tunnel.sh playbooks/seed-system.yml
+src/platform/scripts/ansible-with-otel.sh playbooks/seed-system.yml
 src/platform/scripts/verify-secrets-live.sh
 src/platform/scripts/verify-source-code-hosting-live.sh
 ```

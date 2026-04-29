@@ -2,7 +2,7 @@
 # Wipe one managed PostgreSQL service database and re-run the owning schema path.
 #
 # Usage:
-#   src/platform/scripts/ansible-with-tunnel.sh playbooks/wipe-pg-db.yml -e wipe_pg_db_name=sandbox_rental
+#   src/platform/scripts/ansible-with-otel.sh playbooks/wipe-pg-db.yml -e wipe_pg_db_name=sandbox_rental
 #
 # Supported DBs:
 # - billing: billing ledger reset, including TigerBeetle

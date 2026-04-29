@@ -4,7 +4,7 @@
 # parse-broken (eg. references a role under construction); ship a platform-only
 # change without coupling to that workstream.
 #
-# Usage: scripts/ansible-with-tunnel.sh playbooks/platform-only.yml
+# Usage: scripts/ansible-with-otel.sh playbooks/platform-only.yml
 
 - name: "Preflight: remote prerequisites"
   hosts: all

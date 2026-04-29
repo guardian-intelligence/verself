@@ -1,0 +1,69 @@
+# Controller-side OTLP agent — owns the durable queue between every
+# `aspect deploy` / verify-*-live.sh invocation and the bare-metal
+# otelcol's :4317. The wrapper script (scripts/with-otel-agent.sh)
+# exports two env vars before exec'ing otelcol-contrib:
+#
+#   VERSELF_AGENT_FORWARD_ENDPOINT  127.0.0.1:<ssh-forwarded-port>
+#   VERSELF_AGENT_DATA_DIR          .cache/render/<site>/otelcol-data
+#
+# When the wrapped command (ansible-playbook, smoke-span, ...) exits the
+# wrapper sends SIGTERM to this process. otelcol drains its in-memory
+# batch and the file_storage-backed sending_queue, then exits. If the
+# upstream tunnel was healthy, all spans land in the bare-metal otelcol.
+# If it wasn't, the spans persist under VERSELF_AGENT_DATA_DIR and the
+# next invocation drains them — which is the property the prior
+# SSH-tunnel-as-OTLP-transport architecture lacked: ansible's BSP atexit
+# flush raced with the wrapper's `trap … EXIT` ssh kill, dropping
+# ~80 ansible.task spans on every failed deploy.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 127.0.0.1:14317
+
+processors:
+  batch:
+    send_batch_size: 1024
+    timeout: 1s
+
+exporters:
+  # `otlp_grpc` is the canonical alias in otelcol-contrib 0.149.0; the
+  # legacy `otlp` shorthand emits a deprecation warning at every startup.
+  otlp_grpc/upstream:
+    endpoint: ${env:VERSELF_AGENT_FORWARD_ENDPOINT}
+    tls:
+      insecure: true
+    sending_queue:
+      enabled: true
+      storage: file_storage
+      num_consumers: 4
+      queue_size: 4096
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 10s
+      max_elapsed_time: 5m
+
+extensions:
+  file_storage:
+    directory: ${env:VERSELF_AGENT_DATA_DIR}
+    timeout: 1s
+
+service:
+  extensions: [file_storage]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp_grpc/upstream]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp_grpc/upstream]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp_grpc/upstream]
+  telemetry:
+    logs:
+      level: warn
