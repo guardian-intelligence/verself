@@ -18,6 +18,30 @@ Conventions:
 PLATFORM_DIR = "src/platform"
 DEFAULT_SITE = "prod"
 
+# Identity vars derived once by deploy_identity.sh and threaded through
+# every subprocess spawned by `aspect deploy`. The list is closed: anything
+# else the script exports is local to its own subshell. record-deploy-event.sh
+# only needs VERSELF_DEPLOY_RUN_KEY + VERSELF_AUTHOR; ansible-with-tunnel.sh
+# uses the full set so the OpenTelemetry callback resource attributes match
+# what an in-band re-source of deploy_identity.sh would produce.
+_DEPLOY_IDENTITY_KEYS = [
+    "VERSELF_DEPLOY_ID",
+    "VERSELF_DEPLOY_RUN_KEY",
+    "VERSELF_COMMIT_SHA",
+    "VERSELF_BRANCH",
+    "VERSELF_COMMIT_MESSAGE",
+    "VERSELF_AUTHOR",
+    "VERSELF_DIRTY",
+    "VERSELF_DEPLOY_KIND",
+    "VERSELF_SITE",
+    "VERSELF_DEPLOY_SHA",
+    "VERSELF_DEPLOY_SCOPE",
+    "TRACEPARENT",
+    "OTEL_EXPORTER_OTLP_ENDPOINT",
+    "OTEL_SERVICE_NAME",
+    "OTEL_RESOURCE_ATTRIBUTES",
+]
+
 def ws_path(ctx, *parts):
     """Resolve a workspace-relative path to absolute under the repo root."""
     root = ctx.std.env.root_dir()
@@ -99,18 +123,16 @@ def render_site(ctx, site = DEFAULT_SITE):
             "src='" + ws_path(ctx, "src/platform/ansible/group_vars") + "'; " +
             "dst='" + cache_abs + "/inventory/group_vars'; " +
             "mkdir -p \"${dst}\"; " +
-            # cp -R -n preserves the renderer's generated/ subtree in dst/all/
-            # while landing every authored group_var beside it.
             "cp -R \"${src}/.\" \"${dst}/\";",
         ],
         label = "stage hand-written group_vars",
     )
     if rc != 0:
         return rc
-    # Mirror the cache-rendered handler back into the tracked-but-gitignored
-    # path so static `import_tasks` in site.yml resolves at parse time —
-    # handlers must be discoverable before inventory loads, so we cannot
-    # use {{ inventory_dir }} here.
+    # Mirror the cache-rendered handler back into the gitignored sibling of
+    # site.yml so that playbook's static `import_tasks` resolves at parse
+    # time. Handlers must be discoverable before inventory loads, so
+    # `{{ inventory_dir }}/...` cannot be used here.
     return checked_spawn(
         ctx, "cp",
         [
@@ -182,10 +204,65 @@ def resolve_sha(ctx, raw):
         return ""
     return r.stdout.strip()
 
-def record_deploy_event(ctx, *, site, sha, scope, components, event_kind, duration_ms = 0, error_message = ""):
-    """Append a row to verself.deploy_events and emit the matching
-    `deploy_events.insert` controller-side span. Failures here do not abort
-    the deploy: the ledger is observability, not gating.
+def derive_deploy_env(ctx, *, site, sha, scope):
+    """Source deploy_identity.sh once and return its exported environment.
+
+    The deploy task threads this dict via env={...} into every subprocess it
+    spawns (record-deploy-event.sh, ansible-with-tunnel.sh) so all of them
+    share the same VERSELF_DEPLOY_RUN_KEY / TRACEPARENT instead of each
+    re-deriving identity in its own subshell. deploy_identity.sh is naturally
+    idempotent — re-sourcing inside ansible-with-tunnel.sh preserves the keys
+    and only refreshes OTEL_EXPORTER_OTLP_ENDPOINT to point at the tunneled
+    port.
+
+    Returns a {key: value} dict on success, None on failure.
+    """
+    script = ws_path(ctx, "src/platform/scripts/deploy_identity.sh")
+    # Print key=value\0 for each requested key. NUL is the only byte that
+    # cannot appear inside an env value (POSIX exec(3) constraint), so it's
+    # safe to split the output on it without escaping multiline values like
+    # OTEL_RESOURCE_ATTRIBUTES.
+    printf_args = " ".join([
+        '"' + k + '=${' + k + ':-}"'
+        for k in _DEPLOY_IDENTITY_KEYS
+    ])
+    cmd = (
+        "set -eu; " +
+        "export VERSELF_SITE='" + site + "'; " +
+        "export VERSELF_DEPLOY_SHA='" + sha + "'; " +
+        "export VERSELF_DEPLOY_SCOPE='" + scope + "'; " +
+        ". '" + script + "'; " +
+        "printf '%s\\0' " + printf_args
+    )
+    r = (ctx.std.process.command("bash")
+         .args(["-c", cmd])
+         .stdout("piped").stderr("piped")
+         .spawn().wait_with_output())
+    if r.status.code != 0:
+        ctx.std.io.stderr.write(
+            "ERROR: deploy_identity.sh failed (rc=" + str(r.status.code) + "):\n" + r.stderr,
+        )
+        return None
+    out = {}
+    for entry in r.stdout.split("\x00"):
+        if "=" not in entry:
+            continue
+        parts = entry.split("=", 1)
+        if len(parts) == 2 and parts[0] != "":
+            out[parts[0]] = parts[1]
+    return out
+
+def record_deploy_event(ctx, *, env, site, sha, scope, components, event_kind, duration_ms = 0, error_message = ""):
+    """Append a row to verself.deploy_events via the controller-side writer.
+
+    `env` MUST be the dict returned by derive_deploy_env so the writer sees
+    the same VERSELF_DEPLOY_RUN_KEY / VERSELF_AUTHOR as every other span the
+    deploy emits. record-deploy-event.sh fails loud if the run-key is unset,
+    so a missing env propagation surfaces here rather than silently dropping
+    the row.
+
+    Failures here do not abort the deploy: the ledger is observability, not
+    gating. The caller may surface the WARN line but should not branch on rc.
     """
     args_list = [
         "--site=" + site,
@@ -201,6 +278,7 @@ def record_deploy_event(ctx, *, site, sha, scope, components, event_kind, durati
         ctx,
         ws_path(ctx, "src/platform/scripts/record-deploy-event.sh"),
         args_list,
+        env = env,
         label = "record-deploy-event " + event_kind,
     )
     if rc != 0:
@@ -209,17 +287,16 @@ def record_deploy_event(ctx, *, site, sha, scope, components, event_kind, durati
         )
     return rc
 
-def emit_bazel_diff_span(ctx, *, base_sha, head_sha, affected_count):
-    """Stub for aspect.bazel_diff observability.
+def note_bazel_diff_stub(ctx, *, base_sha, head_sha, affected_count):
+    """Stderr breadcrumb for the --scope=affected stub.
 
-    Phase A.5 will materialise this as a real OTel span over the tunneled
-    endpoint, with `bazel_diff.base_sha` / `bazel_diff.head_sha` /
-    `bazel_diff.affected_count` attributes. Today we surface the data on
-    stderr so operators see the contract is wired without conflating it
-    with the (out-of-scope) tunnel ownership.
+    Phase A.5 will replace this with a real `aspect.bazel_diff` span emitted
+    inside the playbook (where the OTLP tunnel is alive). Until then the
+    deploy contract carries the slot; this helper exists so the stub call
+    site reads naturally and the rename to a real span emitter is one line.
     """
     ctx.std.io.stderr.write(
-        "[aspect.bazel_diff] base=" + base_sha + " head=" + head_sha +
+        "[aspect.bazel_diff stub] base=" + base_sha + " head=" + head_sha +
         " affected_count=" + str(affected_count) + "\n",
     )
     return 0
