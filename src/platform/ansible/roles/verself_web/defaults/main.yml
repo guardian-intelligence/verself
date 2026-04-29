@@ -2,7 +2,7 @@
 # Where extracted release tarballs live. <install_dir>/releases/<deploy_id>/
 # holds an extracted bundle (app-entry.mjs + .output/); <install_dir>/current
 # is the symlink the systemd unit and verify scripts read from. Atomic swap
-# via `mv -T` keeps the unit pointed at a complete bundle for the entire
+# via `ln -sfn` keeps the unit pointed at a complete bundle for the entire
 # restart window.
 verself_web_install_dir: /opt/verself-web
 verself_web_release_dir: "{{ verself_web_install_dir }}/releases"
@@ -18,4 +18,12 @@ verself_web_identity_project_name: "{{ identity_service_auth_project_name | defa
 # get a fresh release dir each run.
 verself_web_deploy_id: "{{ lookup('env', 'VERSELF_DEPLOY_ID') | default(lookup('pipe', 'cat /proc/sys/kernel/random/uuid'), true) }}"
 verself_web_release_path: "{{ verself_web_release_dir }}/{{ verself_web_deploy_id }}"
-verself_web_bazel_target: "//src/viteplus-monorepo/apps/verself-web:deploy_bundle"
+# `vp build` happens in the source tree (delegate_to: localhost) — Bazel
+# sandboxing breaks TanStack Start's route-level code splitting because the
+# compiler plugin computes route paths via `import.meta.url`, and the deep
+# `node_modules/.aspect_rules_js/...` layout in bazel-out produces relative
+# paths the plugin's chunk-split heuristic rejects. Bazel only owns the
+# small hermetic OTel preload bundle (`:app_entry_bundle`), composed with
+# the source-tree `.output/` into the deploy tarball locally.
+verself_web_app_source_dir: "{{ deploy_profile_repo_root }}/src/viteplus-monorepo/apps/verself-web"
+verself_web_app_entry_bazel_target: "//src/viteplus-monorepo/apps/verself-web:app_entry_bundle"

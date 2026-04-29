@@ -23,17 +23,9 @@ jobs:
         with:
           persist-credentials: false
 
-      # Bazel owns the build graph (see `viteplus_rules.bzl` —
-      # `viteplus_app` wraps `vp build`, the openapi-ts SDK generation
-      # runs through `viteplus_openapi_clients`). One bazelisk build/test
-      # pass covers source-package validation, app `.output` builds, the
-      # openapi drift gate, and the deploy_bundle tarballs.
       - name: Cache Bazel disk + repo
         uses: actions/cache@v5
         with:
-          # The .bazelrc pins both caches under ~/.cache/bazel-{disk,repo};
-          # invalidate on MODULE.bazel + lockfile changes since those are
-          # the workspace-wide resolution inputs.
           key: ${{ github.repository }}-bazel-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'src/viteplus-monorepo/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ github.repository }}-bazel-
@@ -41,26 +33,33 @@ jobs:
             ~/.cache/bazel-disk
             ~/.cache/bazel-repo
 
-      - name: Install Bazelisk + Aspect
+      - name: Cache Vite+ toolchain
+        uses: actions/cache@v5
+        with:
+          key: ${{ github.repository }}-vite-plus-${{ hashFiles('src/viteplus-monorepo/pnpm-lock.yaml') }}
+          path: ~/.vite-plus
+
+      - name: Bootstrap toolchain
         run: |
           set -euo pipefail
           scripts/bootstrap
+          echo "$HOME/.vite-plus/bin" >> "$GITHUB_PATH"
 
-      - name: Build viteplus deploy_bundles + packages
-        # Explicit targets instead of `//src/viteplus-monorepo/...` because
-        # `:output` (viteplus_app) and `:openapi_clients_*_gen` both target
-        # `src/__generated/<sdk>/` paths in bazel-out — Bazel rejects
-        # prefix-overlapping outputs when both are scheduled in one
-        # invocation. The deploy_bundle path is what `aspect deploy` uses
-        # too, so this matches production reality.
+      - name: vp install
+        working-directory: src/viteplus-monorepo
+        run: vp install --frozen-lockfile --prefer-offline
+
+      - name: vp build
+        working-directory: src/viteplus-monorepo
+        run: vp run -r --no-cache build
+
+      - name: bazelisk build (packages + per-app OTel preload)
         run: |
           set -euo pipefail
           bazelisk build \
             //src/viteplus-monorepo/packages/... \
-            //src/viteplus-monorepo/apps/verself-web:deploy_bundle \
-            //src/viteplus-monorepo/apps/company:deploy_bundle
+            //src/viteplus-monorepo/apps/verself-web:app_entry_bundle \
+            //src/viteplus-monorepo/apps/company:app_entry_bundle
 
-      - name: Test openapi-client drift gates
-        run: |
-          set -euo pipefail
-          bazelisk test //src/viteplus-monorepo/apps/verself-web:openapi_clients_tests
+      - name: bazelisk test (openapi drift gate)
+        run: bazelisk test //src/viteplus-monorepo/apps/verself-web:openapi_clients_tests

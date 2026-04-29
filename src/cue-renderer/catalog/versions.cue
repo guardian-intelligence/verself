@@ -107,6 +107,7 @@ versions: {
 		agentBrowser:                              "0.25.4"
 		latitudeProvider:                          "2.9.4"
 		pnpm:                                      "10.33.0"
+		viteplus:                                  "0.1.19"
 	}
 }
 
@@ -526,6 +527,21 @@ devTools: {
 		sha256:       "db45968e114c22af0e0d3dddadfb7091c81983f66499eed9d01d782bb09483d0"
 		install_path: "/usr/local/bin/aspect"
 		version_cmd:  "aspect --version"
+	}
+	viteplus: {
+		// Vite+ ships its own multi-version toolchain under ~/.vite-plus and
+		// owns vite/rolldown/vitest invocation for the JS workspace. The
+		// installer is a shell script (https://vite.plus → bash) that drops
+		// a `vp` shim at ~/.vite-plus/bin/vp; subsequent `vp upgrade <ver>`
+		// pins to the catalog version. scripts/bootstrap installs this
+		// alongside bazelisk and aspect so a fresh controller can run
+		// `vp install` and `vp build` without a separate setup step.
+		tier:         #DevToolTier & "bootstrap_pivot"
+		version:      versions.development.viteplus
+		strategy:     "shell_installer"
+		url:          "https://vite.plus"
+		install_path: "$HOME/.vite-plus/bin/vp"
+		version_cmd:  "vp --version"
 	}
 	buildifier: {
 		tier:         #DevToolTier & "pinned_http_file"

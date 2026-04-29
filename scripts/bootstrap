@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Install the bootstrap_pivot dev tools that have to land before any other
-# delivery channel can run. Today that is Bazelisk and the Aspect CLI.
+# delivery channel can run. Today that is Bazelisk, the Aspect CLI, and
+# Vite+ (which owns vp/vite/rolldown/vitest invocation for the JS workspace).
 #
 # CUE owns the version-of-record (src/cue-renderer/catalog/versions.cue:
-# devTools.bazelisk and devTools.aspect, both tier=bootstrap_pivot). The
+# devTools.{bazelisk,aspect,viteplus}, all tier=bootstrap_pivot). The
 # constants here are hand-mirrored: this script cannot evaluate CUE because
 # CUE evaluation requires Bazel which requires Bazelisk.
 #
@@ -19,6 +20,9 @@ bazelisk_url="https://github.com/bazelbuild/bazelisk/releases/download/v${bazeli
 aspect_version="2026.17.17"
 aspect_sha256="db45968e114c22af0e0d3dddadfb7091c81983f66499eed9d01d782bb09483d0"
 aspect_url="https://github.com/aspect-build/aspect-cli/releases/download/v${aspect_version}/aspect-cli-x86_64-unknown-linux-musl"
+
+viteplus_version="0.1.19"
+viteplus_install_url="https://vite.plus"
 
 install_dir="${BAZELISK_INSTALL_DIR:-/usr/local/bin}"
 
@@ -155,3 +159,38 @@ ensure_bazel_symlink() {
 install_pivot bazelisk "${bazelisk_version}" "${bazelisk_sha256}" "${bazelisk_url}"
 install_pivot aspect "${aspect_version}" "${aspect_sha256}" "${aspect_url}"
 ensure_bazel_symlink
+
+# Vite+ ships its own multi-version toolchain at ~/.vite-plus/, with `vp`
+# at ~/.vite-plus/bin/vp. The installer is a shell script (so no sha256 pin
+# at this layer); subsequent `vp upgrade <version>` pins the catalog
+# version. Idempotent: short-circuits when the catalog version is already
+# the active one.
+install_viteplus() {
+  local install_dir="${HOME}/.vite-plus"
+  local vp_bin="${install_dir}/bin/vp"
+
+  if [[ -x "${vp_bin}" ]]; then
+    local existing_version
+    existing_version="$("${vp_bin}" --version 2>/dev/null | awk '/^vp v/ {print $NF; exit}' | tr -d 'v')"
+    if [[ "${existing_version}" == "${viteplus_version}" ]]; then
+      echo "vite-plus ${viteplus_version} already installed at ${vp_bin}"
+      return 0
+    fi
+  fi
+
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "vite-plus install requires curl" >&2
+    return 1
+  fi
+
+  curl -fsSL "${viteplus_install_url}" | bash
+  "${vp_bin}" upgrade "${viteplus_version}" >/dev/null
+  echo "installed vite-plus ${viteplus_version} at ${vp_bin}"
+
+  case ":${PATH}:" in
+    *":${install_dir}/bin:"*) ;;
+    *) echo "add ${install_dir}/bin to PATH before running vp" >&2 ;;
+  esac
+}
+
+install_viteplus

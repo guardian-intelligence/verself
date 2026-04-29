@@ -1,8 +1,8 @@
 ---
-# Build the company deploy_bundle on the controller (Bazel produces a
-# self-contained tarball: app-entry.mjs + .output/{server,public}/), land it
-# under /opt/company/releases/<deploy_id>/, atomically swap the `current`
-# symlink, then restart the systemd unit.
+# Build company on the controller, ship `.output/` + `app-entry.mjs` to
+# the host, restart systemd. `vp build` runs in the source tree (Bazel
+# sandboxing breaks TanStack Start's route-level code splitting); Bazel
+# only builds the small hermetic OTel preload (`:app_entry_bundle`).
 
 - name: Create company runtime group
   ansible.builtin.group:
@@ -37,7 +37,16 @@
     - "{{ company_install_dir }}"
     - "{{ company_release_dir }}"
 
-- name: Build company deploy_bundle on controller
+- name: Build company .output/ via vp build (source tree)
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.command:
+    argv: [vp, build]
+    chdir: "{{ company_app_source_dir }}"
+  changed_when: true
+
+- name: Build company OTel preload bundle
   delegate_to: localhost
   become: false
   run_once: true
@@ -46,11 +55,11 @@
       - "{{ deploy_profile_bazelisk }}"
       - build
       - --config=remote-writer
-      - "{{ company_bazel_target }}"
+      - "{{ company_app_entry_bazel_target }}"
     chdir: "{{ deploy_profile_repo_root }}"
   changed_when: true
 
-- name: Resolve company deploy_bundle output path
+- name: Resolve company OTel preload output path
   delegate_to: localhost
   become: false
   run_once: true
@@ -59,24 +68,14 @@
       - "{{ deploy_profile_bazelisk }}"
       - cquery
       - --output=files
-      - "{{ company_bazel_target }}"
+      - "{{ company_app_entry_bazel_target }}"
     chdir: "{{ deploy_profile_repo_root }}"
-  register: company_bundle_cquery
+  register: company_app_entry_cquery
   changed_when: false
 
-- name: Validate company deploy_bundle output path
-  ansible.builtin.assert:
-    that:
-      - company_bundle_cquery.stdout_lines | length == 1
-      - company_bundle_cquery.stdout | trim is match('^bazel-out/.*deploy_bundle\\.tar$')
-    quiet: true
-    fail_msg: >-
-      Bazel cquery did not resolve exactly one .tar output for
-      {{ company_bazel_target }}.
-
-- name: Set company deploy_bundle local path fact
+- name: Set company OTel preload local path fact
   ansible.builtin.set_fact:
-    company_bundle_local_path: "{{ deploy_profile_repo_root }}/{{ company_bundle_cquery.stdout | trim }}"
+    company_app_entry_local_path: "{{ deploy_profile_repo_root }}/{{ company_app_entry_cquery.stdout | trim }}"
 
 - name: Create company release directory for this deploy
   ansible.builtin.file:
@@ -86,24 +85,27 @@
     group: "{{ company_runtime_group }}"
     mode: "0755"
 
-- name: Extract company deploy_bundle into the release directory
-  ansible.builtin.unarchive:
-    src: "{{ company_bundle_local_path }}"
-    dest: "{{ company_release_path }}"
+- name: Sync company .output/ to release directory
+  ansible.posix.synchronize:
+    src: "{{ company_app_source_dir }}/.output/"
+    dest: "{{ company_release_path }}/.output/"
+    delete: true
+    recursive: true
+    rsync_opts:
+      - "--no-owner"
+      - "--no-group"
+
+- name: Copy company app-entry.mjs into release directory
+  ansible.builtin.copy:
+    src: "{{ company_app_entry_local_path }}"
+    dest: "{{ company_release_path }}/app-entry.mjs"
     owner: "{{ company_runtime_user }}"
     group: "{{ company_runtime_group }}"
-    remote_src: false
+    mode: "0644"
 
-- name: Assert app-entry.mjs landed in the release directory
-  ansible.builtin.stat:
-    path: "{{ company_release_path }}/app-entry.mjs"
-  register: company_release_entry
-  failed_when: not company_release_entry.stat.exists
-
-- name: Ensure company /.well-known directory exists in the release tree
-  # Templated /.well-known/security.txt is a per-host artefact (carries
-  # public company_domain), not a Bazel build input — write it into the
-  # release tree so .output/public/ keeps serving it.
+- name: Ensure company /.well-known directory exists in release tree
+  # security.txt is a per-host artefact (carries public company_domain),
+  # not part of the build output — write it next to .output/public/.
   ansible.builtin.file:
     path: "{{ company_release_path }}/.output/public/.well-known"
     state: directory
@@ -111,7 +113,7 @@
     group: "{{ company_runtime_group }}"
     mode: "0755"
 
-- name: Template company security.txt (RFC 9116) into the release tree
+- name: Template company security.txt (RFC 9116) into release tree
   ansible.builtin.template:
     src: security.txt.j2
     dest: "{{ company_release_path }}/.output/public/.well-known/security.txt"
@@ -171,14 +173,14 @@
     port: "{{ topology_endpoints.company.endpoints.http.port }}"
     timeout: 30
 
-- name: Find company release directories on host
+- name: Find older company release directories
   ansible.builtin.find:
     paths: "{{ company_release_dir }}"
     file_type: directory
     excludes: "{{ company_deploy_id }}"
   register: company_releases_on_host
 
-- name: Prune older company release directories
+- name: Prune older company release directories (keep one rollback target)
   ansible.builtin.file:
     path: "{{ item.path }}"
     state: absent
