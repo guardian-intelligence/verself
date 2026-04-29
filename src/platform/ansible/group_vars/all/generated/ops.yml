@@ -13,12 +13,14 @@ firecracker_seed_images:
     size_bytes: 8589934592
     source_path: /var/lib/verself/guest-artifacts/rootfs.ext4
     strategy: dd_from_file
+    tier: substrate
     volblocksize: 16K
   - filesystem_label: stickydisk
     ref: sticky-empty
     size_bytes: 8589934592
     source_path: ""
     strategy: mkfs_ext4
+    tier: platform_toolchain
     volblocksize: 16K
 forgejo_domain: '{{ forgejo_subdomain }}.{{ verself_domain }}'
 forgejo_subdomain: git
