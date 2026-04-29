@@ -20,6 +20,8 @@ include("//src/cue-renderer/binaries:server_tools.MODULE.bazel")
 
 include("//src/cue-renderer/binaries:dev_tools.MODULE.bazel")
 
+include("//src/vm-orchestrator/guest-images:guest_images.MODULE.bazel")
+
 node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
 node.toolchain(
     node_repositories = {
