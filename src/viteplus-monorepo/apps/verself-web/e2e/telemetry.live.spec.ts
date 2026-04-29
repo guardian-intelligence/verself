@@ -45,9 +45,7 @@ test.describe("browser telemetry baseline", () => {
       resourceSpans: [
         {
           resource: {
-            attributes: [
-              { key: "service.name", value: { stringValue: "verself-web-e2e-probe" } },
-            ],
+            attributes: [{ key: "service.name", value: { stringValue: "verself-web-e2e-probe" } }],
           },
           scopeSpans: [
             {

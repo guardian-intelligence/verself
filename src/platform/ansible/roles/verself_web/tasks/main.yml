@@ -1,135 +1,135 @@
 ---
-- name: Create console runtime group
+- name: Create verself-web runtime group
   ansible.builtin.group:
-    name: "{{ console_runtime_group }}"
+    name: "{{ verself_web_runtime_group }}"
     system: true
 
-- name: Create console runtime user
+- name: Create verself-web runtime user
   ansible.builtin.user:
-    name: "{{ console_runtime_user }}"
-    group: "{{ console_runtime_group }}"
+    name: "{{ verself_web_runtime_user }}"
+    group: "{{ verself_web_runtime_group }}"
     system: true
     shell: /usr/sbin/nologin
-    home: "{{ console_state_dir }}"
+    home: "{{ verself_web_state_dir }}"
     create_home: false
 
-- name: Create console state directory
+- name: Create verself-web state directory
   ansible.builtin.file:
-    path: "{{ console_state_dir }}"
+    path: "{{ verself_web_state_dir }}"
     state: directory
-    owner: "{{ console_runtime_user }}"
-    group: "{{ console_runtime_group }}"
+    owner: "{{ verself_web_runtime_user }}"
+    group: "{{ verself_web_runtime_group }}"
     mode: "0700"
 
-- name: Create console credstore directory
+- name: Create verself-web credstore directory
   ansible.builtin.file:
-    path: /etc/credstore/console
+    path: /etc/credstore/verself-web
     state: directory
     owner: root
-    group: "{{ console_runtime_group }}"
+    group: "{{ verself_web_runtime_group }}"
     mode: "0750"
 
 - name: Verify corepack exists in profile
   ansible.builtin.stat:
     path: "{{ verself_bin }}/corepack"
-  register: console_corepack
-  failed_when: not console_corepack.stat.exists
+  register: verself_web_corepack
+  failed_when: not verself_web_corepack.stat.exists
 
-- name: Check for existing console auth session secret
+- name: Check for existing verself-web auth session secret
   ansible.builtin.stat:
-    path: /etc/credstore/console/auth-session-secret
-  register: console_auth_session_secret_file
+    path: /etc/credstore/verself-web/auth-session-secret
+  register: verself_web_auth_session_secret_file
 
-- name: Generate console auth session secret
+- name: Generate verself-web auth session secret
   ansible.builtin.copy:
     content: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits') }}"
-    dest: /etc/credstore/console/auth-session-secret
+    dest: /etc/credstore/verself-web/auth-session-secret
     owner: root
-    group: "{{ console_runtime_group }}"
+    group: "{{ verself_web_runtime_group }}"
     mode: "0640"
-  when: not console_auth_session_secret_file.stat.exists
+  when: not verself_web_auth_session_secret_file.stat.exists
   no_log: true
 
-- name: Converge console auth session secret permissions
+- name: Converge verself-web auth session secret permissions
   ansible.builtin.file:
-    path: /etc/credstore/console/auth-session-secret
+    path: /etc/credstore/verself-web/auth-session-secret
     owner: root
-    group: "{{ console_runtime_group }}"
+    group: "{{ verself_web_runtime_group }}"
     mode: "0640"
 
-- name: Read console auth session secret
+- name: Read verself-web auth session secret
   ansible.builtin.slurp:
-    src: /etc/credstore/console/auth-session-secret
-  register: console_auth_session_secret_raw
+    src: /etc/credstore/verself-web/auth-session-secret
+  register: verself_web_auth_session_secret_raw
   no_log: true
 
-- name: Set console auth session secret fact
+- name: Set verself-web auth session secret fact
   ansible.builtin.set_fact:
-    console_auth_session_secret: "{{ console_auth_session_secret_raw.content | b64decode | trim }}"
+    verself_web_auth_session_secret: "{{ verself_web_auth_session_secret_raw.content | b64decode | trim }}"
   no_log: true
 
-- name: Create console install directory
+- name: Create verself-web install directory
   ansible.builtin.file:
-    path: "{{ console_install_dir }}"
+    path: "{{ verself_web_install_dir }}"
     state: directory
     owner: "{{ ansible_user }}"
-    group: "{{ console_runtime_group }}"
+    group: "{{ verself_web_runtime_group }}"
     mode: "0755"
 
-- name: Check whether console systemd unit exists
+- name: Check whether verself-web systemd unit exists
   ansible.builtin.stat:
-    path: /etc/systemd/system/console.service
-  register: console_systemd_unit_file
+    path: /etc/systemd/system/verself-web.service
+  register: verself_web_systemd_unit_file
 
-- name: Regenerate console API clients before source sync
+- name: Regenerate verself-web API clients before source sync
   delegate_to: localhost
   become: false
   ansible.builtin.command:
     argv:
       - "{{ deploy_profile_bazelisk }}"
       - run
-      - //src/viteplus-monorepo/apps/console:openapi_clients
+      - //src/viteplus-monorepo/apps/verself-web:openapi_clients
     chdir: "{{ deploy_profile_repo_root }}"
   changed_when: true
 
 # Stop the live process before mutating .output so it never serves a partially deleted build.
-- name: Stop live console before replacing build output
+- name: Stop live verself-web before replacing build output
   ansible.builtin.systemd:
-    name: console
+    name: verself-web
     state: stopped
     daemon_reload: true
-  when: console_systemd_unit_file.stat.exists
+  when: verself_web_systemd_unit_file.stat.exists
 
-- name: Remove generated console artifacts before sync
+- name: Remove generated verself-web artifacts before sync
   ansible.builtin.file:
     path: "{{ item }}"
     state: absent
   loop:
-    - "{{ console_install_dir }}/.output"
-    - "{{ console_install_dir }}/.tanstack"
-    - "{{ console_install_dir }}/apps/console/.output"
-    - "{{ console_install_dir }}/apps/console/.tanstack"
+    - "{{ verself_web_install_dir }}/.output"
+    - "{{ verself_web_install_dir }}/.tanstack"
+    - "{{ verself_web_install_dir }}/apps/verself-web/.output"
+    - "{{ verself_web_install_dir }}/apps/verself-web/.tanstack"
 
 # Opt-in clean rebuild: wipe node_modules and the install fingerprint so the
 # next pnpm install runs from scratch instead of reusing the cached store.
-# Trigger with `ansible-playbook ... --tags console --extra-vars console_full_rebuild=true`.
+# Trigger with `ansible-playbook ... --tags verself_web --extra-vars verself_web_full_rebuild=true`.
 # Use when a prior install left a corrupted store or an upstream package
 # linked the wrong version.
-- name: Wipe console install for clean rebuild (FULL=1)
+- name: Wipe verself-web install for clean rebuild (FULL=1)
   ansible.builtin.file:
     path: "{{ item }}"
     state: absent
   loop:
-    - "{{ console_install_dir }}/node_modules"
-    - "{{ console_dependencies_fingerprint_path }}"
-  when: console_full_rebuild | default(false) | bool
+    - "{{ verself_web_install_dir }}/node_modules"
+    - "{{ verself_web_dependencies_fingerprint_path }}"
+  when: verself_web_full_rebuild | default(false) | bool
 
-- name: Synchronize console source
+- name: Synchronize verself-web source
   delegate_to: localhost
   become: false
   ansible.posix.synchronize:
     src: "{{ playbook_dir }}/../../../viteplus-monorepo/"
-    dest: "{{ console_install_dir }}/"
+    dest: "{{ verself_web_install_dir }}/"
     delete: true
     recursive: true
     rsync_opts:
@@ -146,7 +146,7 @@
       - "--no-owner"
       - "--no-group"
 
-- name: Compute console workspace dependency fingerprint
+- name: Compute verself-web workspace dependency fingerprint
   delegate_to: localhost
   become: false
   ansible.builtin.command:
@@ -157,83 +157,83 @@
         set -euo pipefail
         cd {{ playbook_dir }}/../../../viteplus-monorepo
         {
-          printf '%s\0' package.json pnpm-lock.yaml pnpm-workspace.yaml apps/console/package.json
+          printf '%s\0' package.json pnpm-lock.yaml pnpm-workspace.yaml apps/verself-web/package.json
           find packages -mindepth 2 -maxdepth 2 -name package.json -print0
         } | sort -z | xargs -0 sha256sum | sha256sum
-  register: console_workspace_dependency_fingerprint
+  register: verself_web_workspace_dependency_fingerprint
   changed_when: false
 
-- name: Check cached console install fingerprint
+- name: Check cached verself-web install fingerprint
   ansible.builtin.stat:
-    path: "{{ console_dependencies_fingerprint_path }}"
-  register: console_install_fingerprint_file
+    path: "{{ verself_web_dependencies_fingerprint_path }}"
+  register: verself_web_install_fingerprint_file
 
-- name: Read cached console install fingerprint
+- name: Read cached verself-web install fingerprint
   ansible.builtin.slurp:
-    src: "{{ console_dependencies_fingerprint_path }}"
-  register: console_install_fingerprint_raw
-  when: console_install_fingerprint_file.stat.exists
+    src: "{{ verself_web_dependencies_fingerprint_path }}"
+  register: verself_web_install_fingerprint_raw
+  when: verself_web_install_fingerprint_file.stat.exists
 
-- name: Check cached console node_modules
+- name: Check cached verself-web node_modules
   ansible.builtin.stat:
-    path: "{{ console_install_dir }}/node_modules"
-  register: console_node_modules_dir
+    path: "{{ verself_web_install_dir }}/node_modules"
+  register: verself_web_node_modules_dir
 
-- name: Install console workspace dependencies when manifests change
+- name: Install verself-web workspace dependencies when manifests change
   become: false
   ansible.builtin.command:
     argv:
       - "{{ verself_bin }}/corepack"
       - pnpm
       - install
-    chdir: "{{ console_install_dir }}"
+    chdir: "{{ verself_web_install_dir }}"
   environment:
     PATH: "{{ verself_bin }}:/usr/bin:/bin"
     HOME: "/home/{{ ansible_user }}"
   changed_when: true
   when: >-
-    (not console_node_modules_dir.stat.exists)
-    or (not console_install_fingerprint_file.stat.exists)
+    (not verself_web_node_modules_dir.stat.exists)
+    or (not verself_web_install_fingerprint_file.stat.exists)
     or (
-      (console_install_fingerprint_raw.content | default('') | b64decode | trim)
-      != (console_workspace_dependency_fingerprint.stdout.split()[0] | trim)
+      (verself_web_install_fingerprint_raw.content | default('') | b64decode | trim)
+      != (verself_web_workspace_dependency_fingerprint.stdout.split()[0] | trim)
     )
 
-- name: Record cached console install fingerprint
+- name: Record cached verself-web install fingerprint
   ansible.builtin.copy:
-    content: "{{ console_workspace_dependency_fingerprint.stdout.split()[0] | trim }}\n"
-    dest: "{{ console_dependencies_fingerprint_path }}"
+    content: "{{ verself_web_workspace_dependency_fingerprint.stdout.split()[0] | trim }}\n"
+    dest: "{{ verself_web_dependencies_fingerprint_path }}"
     owner: "{{ ansible_user }}"
-    group: "{{ console_runtime_group }}"
+    group: "{{ verself_web_runtime_group }}"
     mode: "0644"
 
-- name: Build console package dependencies
+- name: Build verself-web package dependencies
   become: false
   ansible.builtin.command:
     argv:
       - "{{ verself_bin }}/corepack"
       - pnpm
       - --filter
-      - "@verself/console^..."
+      - "@verself/verself-web^..."
       - run
       - build
-    chdir: "{{ console_install_dir }}"
+    chdir: "{{ verself_web_install_dir }}"
   environment:
     PATH: "{{ verself_bin }}:/usr/bin:/bin"
     HOME: "/home/{{ ansible_user }}"
   changed_when: true
 
-- name: Build console app
+- name: Build verself-web app
   become: false
   ansible.builtin.command:
     argv:
       - "{{ verself_bin }}/corepack"
       - pnpm
       - --filter
-      - "@verself/console"
+      - "@verself/verself-web"
       - run
       - build
-    chdir: "{{ console_install_dir }}"
+    chdir: "{{ verself_web_install_dir }}"
   environment:
     PATH: "{{ verself_bin }}:/usr/bin:/bin"
     HOME: "/home/{{ ansible_user }}"
@@ -243,14 +243,14 @@
   ansible.builtin.include_role:
     name: zitadel_oauth_app
   vars:
-    zitadel_oauth_app_name: console
-    zitadel_oauth_app_project_name: "{{ console_auth_project_name }}"
+    zitadel_oauth_app_name: verself-web
+    zitadel_oauth_app_project_name: "{{ verself_web_auth_project_name }}"
     zitadel_oauth_app_redirect_uris:
-      - "https://{{ console_domain }}/callback"
+      - "https://{{ verself_domain }}/callback"
     zitadel_oauth_app_post_logout_redirect_uris:
-      - "https://{{ console_domain }}"
-    zitadel_oauth_app_credstore_dir: /etc/credstore/console
-    zitadel_oauth_app_credstore_group: "{{ console_runtime_group }}"
+      - "https://{{ verself_domain }}"
+    zitadel_oauth_app_credstore_dir: /etc/credstore/verself-web
+    zitadel_oauth_app_credstore_group: "{{ verself_web_runtime_group }}"
     zitadel_oauth_app_auth_method_type: OIDC_AUTH_METHOD_TYPE_POST
     zitadel_oauth_app_grant_types:
       - OIDC_GRANT_TYPE_AUTHORIZATION_CODE
@@ -259,12 +259,12 @@
     zitadel_oauth_app_role_assertions: true
     zitadel_oauth_app_cutover_marker_filename: oidc-web-cutover
 
-- name: Export console OIDC app facts for templates
+- name: Export verself-web OIDC app facts for templates
   ansible.builtin.set_fact:
-    console_app_id: "{{ zitadel_oauth_app_out_id }}"
-    console_project_id: "{{ zitadel_oauth_app_out_project_id }}"
-    console_client_id: "{{ zitadel_oauth_app_out_client_id }}"
-    console_client_secret: "{{ zitadel_oauth_app_out_client_secret }}"
+    verself_web_app_id: "{{ zitadel_oauth_app_out_id }}"
+    verself_web_project_id: "{{ zitadel_oauth_app_out_project_id }}"
+    verself_web_client_id: "{{ zitadel_oauth_app_out_client_id }}"
+    verself_web_client_secret: "{{ zitadel_oauth_app_out_client_secret }}"
   no_log: true
 
 - name: Ensure sandbox-rental project roles exist
@@ -272,7 +272,7 @@
     name: zitadel_project_roles
   vars:
     zitadel_project_roles_admin_pat: "{{ zitadel_oauth_app_pat }}"
-    zitadel_project_roles_project_id: "{{ console_project_id }}"
+    zitadel_project_roles_project_id: "{{ verself_web_project_id }}"
     zitadel_project_roles_definitions:
       - key: owner
         display_name: Owner
@@ -284,7 +284,7 @@
         display_name: Member
         group: sandbox
 
-- name: Resolve identity-service project ID for console
+- name: Resolve identity-service project ID for verself-web
   ansible.builtin.uri:
     url: "http://{{ topology_endpoints.zitadel.endpoints.http.address }}/management/v1/projects/_search"
     method: POST
@@ -295,61 +295,61 @@
     body:
       queries:
         - nameQuery:
-            name: "{{ console_identity_project_name }}"
+            name: "{{ verself_web_identity_project_name }}"
             method: TEXT_QUERY_METHOD_EQUALS
     status_code: 200
-  register: console_identity_project_search
+  register: verself_web_identity_project_search
   no_log: true
 
-- name: Assert identity-service project exists for console
+- name: Assert identity-service project exists for verself-web
   ansible.builtin.assert:
-    that: (console_identity_project_search.json.result | default([])) | length > 0
+    that: (verself_web_identity_project_search.json.result | default([])) | length > 0
     fail_msg: >-
-      Identity-service Zitadel project '{{ console_identity_project_name }}'
-      not found. Run the identity_service role before console.
+      Identity-service Zitadel project '{{ verself_web_identity_project_name }}'
+      not found. Run the identity_service role before verself-web.
 
-- name: Set console identity-service project ID fact
+- name: Set verself-web identity-service project ID fact
   ansible.builtin.set_fact:
-    console_identity_project_id: "{{ console_identity_project_search.json.result[0].id }}"
+    verself_web_identity_project_id: "{{ verself_web_identity_project_search.json.result[0].id }}"
 
-- name: Ensure console env directory exists
+- name: Ensure verself-web env directory exists
   ansible.builtin.file:
-    path: /etc/console
+    path: /etc/verself-web
     state: directory
     owner: root
-    group: "{{ console_runtime_group }}"
+    group: "{{ verself_web_runtime_group }}"
     mode: "0750"
 
-- name: Deploy console environment file
+- name: Deploy verself-web environment file
   ansible.builtin.template:
     src: env.j2
-    dest: /etc/console/env
+    dest: /etc/verself-web/env
     mode: "0640"
     owner: root
-    group: "{{ console_runtime_group }}"
+    group: "{{ verself_web_runtime_group }}"
 
-- name: Deploy console systemd unit
+- name: Deploy verself-web systemd unit
   ansible.builtin.template:
-    src: console.service.j2
-    dest: /etc/systemd/system/console.service
+    src: verself-web.service.j2
+    dest: /etc/systemd/system/verself-web.service
     mode: "0644"
 
-- name: Deploy console nftables rules
+- name: Deploy verself-web nftables rules
   ansible.builtin.copy:
-    src: "{{ platform_rendered_dir }}/etc/nftables.d/console.nft"
-    dest: /etc/nftables.d/console.nft
+    src: "{{ platform_rendered_dir }}/etc/nftables.d/verself-web.nft"
+    dest: /etc/nftables.d/verself-web.nft
     mode: "0644"
   notify: reload nftables
 
-- name: Enable and start console
+- name: Enable and start verself-web
   ansible.builtin.systemd:
-    name: console
+    name: verself-web
     enabled: true
     state: started
     daemon_reload: true
 
-- name: Wait for console to be ready
+- name: Wait for verself-web to be ready
   ansible.builtin.wait_for:
-    host: "{{ topology_endpoints.console.host }}"
-    port: "{{ topology_endpoints.console.endpoints.http.port }}"
+    host: "{{ topology_endpoints.verself_web.host }}"
+    port: "{{ topology_endpoints.verself_web.endpoints.http.port }}"
     timeout: 30
