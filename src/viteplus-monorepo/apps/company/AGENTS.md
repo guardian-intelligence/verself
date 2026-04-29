@@ -12,7 +12,7 @@ Guardian Intelligence company site. Deployed to `guardianintelligence.org` (root
 
 ## Voice
 
-`src/brand/voice.md` is the source of truth for humans. `src/brand/voice.ts` exports `assertVoice(input)` for the build-time lint and the dynamic OG-card generator. Never mention a tech name (Zitadel, Firecracker, ZFS, etc.) in `src/content/**` — translate to product language.
+`src/brand/voice.md` is the source of truth for humans. `src/brand/voice.ts` exports `assertVoice(input)` for the dynamic OG-card generator. Never mention a tech name (Zitadel, Firecracker, ZFS, etc.) in `src/content/**` — translate to product language.
 
 ## Telemetry
 

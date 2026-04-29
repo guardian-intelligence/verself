@@ -2,8 +2,7 @@
 // components reference `landing.hero`, `landing.mission[0]`, etc. — so a forker
 // rewrites this file with their coding agent and the routes keep working.
 //
-// Voice rules in brand/voice.md apply. Phase 3 wires a lint that asserts every
-// string in this module passes assertVoice() before build.
+// Voice rules in brand/voice.md apply.
 
 export const landing = {
   kicker: "Seattle, Washington",
