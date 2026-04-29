@@ -928,7 +928,7 @@ LIMIT {row_limit:UInt32}`
 const deployRebuildBlastRadiusSQL = `
 SELECT
   extract(SpanAttributes['bazel.target'], '^//src/([^/]+)') AS service,
-  countIf(SpanAttributes['bazel.mnemonic'] = 'GoCompile') AS go_compiles,
+  countIf(SpanAttributes['bazel.mnemonic'] = 'GoCompilePkg') AS go_compiles,
   countIf(SpanAttributes['bazel.mnemonic'] = 'GoLink') AS go_links,
   countIf(SpanAttributes['bazel.mnemonic'] IN ('OpenAPISpec', 'OAPICodegen', 'OpenapiTsGen', 'NpmPackage')) AS codegen_actions,
   count() AS total_actions,
