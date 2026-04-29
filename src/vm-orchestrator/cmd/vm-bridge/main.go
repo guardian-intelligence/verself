@@ -171,13 +171,16 @@ func configureLoopback() error {
 }
 
 func buildRuntimeEnv(overrides map[string]string, network vmproto.NetworkConfig, filesystemMountPaths []string) ([]string, error) {
+	// Workload-specific env (RUNNER_TOOL_CACHE, AGENT_TOOLSDIRECTORY,
+	// runner PATH additions, etc.) lives in the toolchain image's
+	// /etc-overlay/profile.d/, not here. The bridge ships only the
+	// platform-stable surface: HOME, PATH, TERM, the bridge control
+	// socket, and the optional host-service plane vars.
 	envMap := map[string]string{
 		"HOME":                     "/home/runner",
 		"PATH":                     "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 		"TERM":                     "xterm",
 		"VERSELF_VM_BRIDGE_SOCKET": bridgeSocketPath,
-		"RUNNER_TOOL_CACHE":        "/opt/hostedtoolcache",
-		"AGENT_TOOLSDIRECTORY":     "/opt/hostedtoolcache",
 	}
 	if len(filesystemMountPaths) > 0 {
 		envMap["VERSELF_COMPOSED_ZVOL_MOUNTS"] = strings.Join(filesystemMountPaths, ":")
