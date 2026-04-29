@@ -1562,7 +1562,7 @@
           - " Seed system ready"
           - "============================================"
           - ""
-          - " Operator login: https://console.{{ verself_domain }}/"
+          - " Operator login: https://{{ verself_domain }}/"
           - " CEO:            {{ seed_system_users_state.ceo.email }}"
           - " CEO password:   {{ seed_system_users_state.ceo.password_credstore_path }}"
           - " Agent:          {{ seed_system_users_state.platform_agent.email }}"

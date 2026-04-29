@@ -113,11 +113,6 @@
 	reverse_proxy {{ topology_endpoints.grafana.endpoints.http.address }}
 }
 
-{{ temporal_web_domain }} {
-	import access_log
-	reverse_proxy {{ topology_endpoints.temporal_web.endpoints.http.address }}
-}
-
 {{ forgejo_domain }} {
 	import access_log
 	@source_git {
@@ -428,7 +423,7 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 	respond 404
 }
 
-{{ console_domain }} {
+{{ verself_domain }} {
 	import access_log
 
 	handle /v1/shape {
@@ -445,7 +440,7 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 
 	handle {
 		import frontend_security_headers
-		reverse_proxy {{ topology_endpoints.console.endpoints.http.address }}
+		reverse_proxy {{ topology_endpoints.verself_web.endpoints.http.address }}
 	}
 }
 
@@ -477,15 +472,6 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 
 	# Webmail frontend is retired. `mail.<domain>` remains the JMAP/protocol
 	# origin; mailbox-service HTTP APIs live on mail.api.<domain>.
-}
-
-{{ platform_domain }} {
-	import access_log
-
-	handle {
-		import frontend_security_headers
-		reverse_proxy {{ topology_endpoints.platform.endpoints.http.address }}
-	}
 }
 
 {{ company_domain }} {

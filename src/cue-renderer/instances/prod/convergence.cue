@@ -124,7 +124,7 @@ topology: components: {
 						SANDBOX_TEMPORAL_NAMESPACE:            "sandbox-rental-service"
 						SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING: "sandbox-rental-service.recurring-vm"
 						SANDBOX_BILLING_URL:                   "https://{{ topology_endpoints.billing.endpoints.internal_https.address }}"
-						SANDBOX_BILLING_RETURN_ORIGINS:        "https://{{ console_domain }}"
+						SANDBOX_BILLING_RETURN_ORIGINS:        "https://{{ verself_domain }}"
 						SANDBOX_PUBLIC_BASE_URL:               "https://{{ sandbox_rental_service_domain }}"
 						SANDBOX_VM_ORCHESTRATOR_SOCKET:        "/run/vm-orchestrator/api.sock"
 						SANDBOX_EXECUTION_MAX_WORKERS:         "4"

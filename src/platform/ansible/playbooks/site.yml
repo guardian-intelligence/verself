@@ -330,17 +330,15 @@
         electric_config: "{{ topology_electric_instances.default }}"
       tags: [electric, sandbox_rental_service]
     - role: frontend_auth_sessions
-      tags: [frontend_auth_sessions, console, governance_service]
-    - role: console
-      tags: [console, governance_service]
+      tags: [frontend_auth_sessions, verself_web, governance_service]
+    - role: verself_web
+      tags: [verself_web, governance_service]
     - role: otelcol
       tags: [otelcol, temporal, projects_service, source_code_hosting_service]
     - role: electric
       vars:
         electric_config: "{{ topology_electric_instances.mail }}"
       tags: [electric_mail, mailbox_service]
-    - role: platform
-      tags: [platform]
     - role: company
       tags: [company]
     - role: grafana

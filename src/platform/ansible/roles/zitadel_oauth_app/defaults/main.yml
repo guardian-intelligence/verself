@@ -1,10 +1,10 @@
 ---
 # Required
-# zitadel_oauth_app_name: e.g. "console"
+# zitadel_oauth_app_name: e.g. "verself-web"
 # zitadel_oauth_app_project_name: e.g. "sandbox-rental"
 # zitadel_oauth_app_redirect_uris: list of URLs
 # zitadel_oauth_app_post_logout_redirect_uris: list of URLs
-# zitadel_oauth_app_credstore_dir: e.g. "/etc/credstore/console"
+# zitadel_oauth_app_credstore_dir: e.g. "/etc/credstore/verself-web"
 # zitadel_oauth_app_credstore_group: group that owns the credstore files
 
 # Optional, with defaults

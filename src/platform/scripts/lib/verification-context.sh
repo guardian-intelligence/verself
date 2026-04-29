@@ -142,7 +142,7 @@ verification_collect_window_evidence() {
           toString(LogAttributes) AS attrs
         FROM otel_logs
         WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String})
-          AND ServiceName IN ('console', 'sandbox-rental-service', 'billing-service', 'vm-orchestrator')
+          AND ServiceName IN ('verself-web', 'sandbox-rental-service', 'billing-service', 'vm-orchestrator')
         ORDER BY Timestamp
         FORMAT TSVWithNames
       "
@@ -166,7 +166,7 @@ verification_collect_window_evidence() {
           SpanAttributes['http.status_code'] AS http_status_code
         FROM otel_traces
         WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String})
-          AND ServiceName IN ('console', 'sandbox-rental-service', 'billing-service', 'vm-orchestrator')
+          AND ServiceName IN ('verself-web', 'sandbox-rental-service', 'billing-service', 'vm-orchestrator')
         ORDER BY Timestamp
         FORMAT TSVWithNames
       "

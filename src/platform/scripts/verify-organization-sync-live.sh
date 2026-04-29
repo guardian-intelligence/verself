@@ -11,7 +11,7 @@ artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_SMOKE_ARTIFACT_ROOT}
 artifact_dir="${artifact_root}/${run_id}"
 run_json_path="${artifact_dir}/run.json"
 organization_log_path="${artifact_dir}/organization-ui.log"
-base_url="${TEST_BASE_URL:-https://console.${VERIFICATION_DOMAIN}}"
+base_url="${TEST_BASE_URL:-https://${VERIFICATION_DOMAIN}}"
 mkdir -p "${artifact_dir}/clickhouse" "${artifact_dir}/postgres" "${artifact_dir}/responses"
 
 remote_json_request() {
@@ -157,7 +157,7 @@ PY
 }
 
 verification_print_artifacts "${artifact_dir}" "${organization_log_path}" "${run_json_path}"
-verification_wait_for_http "console UI" "${base_url}" "200"
+verification_wait_for_http "verself-web UI" "${base_url}" "200"
 
 # shellcheck disable=SC1090
 source <("${script_dir}/assume-persona.sh" acme-admin --print)
@@ -182,7 +182,7 @@ env \
     vp exec playwright test e2e/organization.live.spec.ts \
       --project=chromium \
       --output "$2"
-  ' bash "${VERIFICATION_REPO_ROOT}/src/viteplus-monorepo/apps/console" "${artifact_dir}/playwright-results" \
+  ' bash "${VERIFICATION_REPO_ROOT}/src/viteplus-monorepo/apps/verself-web" "${artifact_dir}/playwright-results" \
   >"${organization_log_path}" 2>&1
 organization_status=$?
 set -e
