@@ -1279,16 +1279,17 @@ GROUP BY ServiceName, MetricGroup, MetricName;
 
 CREATE TABLE IF NOT EXISTS verself.deploy_events
 (
-    `event_at`            DateTime64(9)                     CODEC(Delta(8), ZSTD(3)),
-    `deploy_run_key`      String                            CODEC(ZSTD(3)),
-    `site`                LowCardinality(String)            CODEC(ZSTD(3)),
-    `sha`                 FixedString(40)                   CODEC(ZSTD(3)),
-    `actor`               LowCardinality(String)            CODEC(ZSTD(3)),
-    `scope`               LowCardinality(String)            CODEC(ZSTD(3)),
-    `affected_components` Array(LowCardinality(String))     CODEC(ZSTD(3)),
-    `event_kind`          LowCardinality(String)            CODEC(ZSTD(3)),
-    `duration_ms`         UInt32                            CODEC(T64, ZSTD(3)) DEFAULT 0,
-    `error_message`       String                            CODEC(ZSTD(3))      DEFAULT ''
+    `event_at`            DateTime64(9)                                          CODEC(Delta(8), ZSTD(3)),
+    `deploy_run_key`      String                                                 CODEC(ZSTD(3)),
+    `site`                LowCardinality(String)                                 CODEC(ZSTD(3)),
+    `sha`                 FixedString(40)                                        CODEC(ZSTD(3)),
+    `actor`               LowCardinality(String)                                 CODEC(ZSTD(3)),
+    `scope`               LowCardinality(String)                                 CODEC(ZSTD(3)),
+    `affected_components` Array(LowCardinality(String))                          CODEC(ZSTD(3)),
+    `event_kind`          LowCardinality(String)                                 CODEC(ZSTD(3)),
+    -- Column-level DEFAULT must precede CODEC in ClickHouse DDL grammar.
+    `duration_ms`         UInt32                          DEFAULT 0              CODEC(T64, ZSTD(3)),
+    `error_message`       String                          DEFAULT ''             CODEC(ZSTD(3))
 )
 ENGINE = MergeTree
 ORDER BY (site, event_at, deploy_run_key)

@@ -59,6 +59,22 @@ def _render_impl(ctx):
     )
     if rc != 0:
         return rc
+    # Stage the hand-written group_vars tree (all + per-group main.yml, the
+    # encrypted secrets.sops.yml, etc.) next to the rendered generated/
+    # subtree so community.sops.sops finds them when -i points at the cache.
+    rc = checked_spawn(
+        ctx, "bash", [
+            "-c",
+            "set -eu; " +
+            "src='" + ws_path(ctx, "src/platform/ansible/group_vars") + "'; " +
+            "dst='" + cache + "/inventory/group_vars'; " +
+            "mkdir -p \"${dst}\"; " +
+            "cp -R \"${src}/.\" \"${dst}/\";",
+        ],
+        label = "stage hand-written group_vars",
+    )
+    if rc != 0:
+        return rc
     # Mirror the cache-rendered handler back into the tracked-but-gitignored
     # path so site.yml's static import_tasks resolves at parse time —
     # handlers must be discoverable before inventory loads.

@@ -86,6 +86,27 @@ def render_site(ctx, site = DEFAULT_SITE):
     )
     if rc != 0:
         return rc
+    # Stage the hand-written group_vars tree (all + per-group main.yml, the
+    # encrypted secrets.sops.yml, spire.yml, and any future host_vars groups)
+    # alongside the renderer's generated/ subtree. inventory_dir is the only
+    # place community.sops.sops scans for *.sops.yml files when -i points at
+    # the cache, so without this copy cloudflare_api_token and friends
+    # silently disappear from the deploy.
+    rc = checked_spawn(
+        ctx, "bash", [
+            "-c",
+            "set -eu; " +
+            "src='" + ws_path(ctx, "src/platform/ansible/group_vars") + "'; " +
+            "dst='" + cache_abs + "/inventory/group_vars'; " +
+            "mkdir -p \"${dst}\"; " +
+            # cp -R -n preserves the renderer's generated/ subtree in dst/all/
+            # while landing every authored group_var beside it.
+            "cp -R \"${src}/.\" \"${dst}/\";",
+        ],
+        label = "stage hand-written group_vars",
+    )
+    if rc != 0:
+        return rc
     # Mirror the cache-rendered handler back into the tracked-but-gitignored
     # path so static `import_tasks` in site.yml resolves at parse time —
     # handlers must be discoverable before inventory loads, so we cannot
@@ -189,29 +210,19 @@ def record_deploy_event(ctx, *, site, sha, scope, components, event_kind, durati
     return rc
 
 def emit_bazel_diff_span(ctx, *, base_sha, head_sha, affected_count):
-    """Emit `aspect.bazel_diff` via smoke-span.
+    """Stub for aspect.bazel_diff observability.
 
-    The Bazel-diff machinery itself is a Phase A.5 deliverable; this span
-    lets the deploy contract carry the slot today so downstream tooling
-    sees the schema even while affected_count is hardcoded.
+    Phase A.5 will materialise this as a real OTel span over the tunneled
+    endpoint, with `bazel_diff.base_sha` / `bazel_diff.head_sha` /
+    `bazel_diff.affected_count` attributes. Today we surface the data on
+    stderr so operators see the contract is wired without conflating it
+    with the (out-of-scope) tunnel ownership.
     """
-    attrs_json = (
-        '{' +
-        '"bazel_diff.base_sha":"' + base_sha + '",' +
-        '"bazel_diff.head_sha":"' + head_sha + '",' +
-        '"bazel_diff.affected_count":' + str(affected_count) +
-        '}'
+    ctx.std.io.stderr.write(
+        "[aspect.bazel_diff] base=" + base_sha + " head=" + head_sha +
+        " affected_count=" + str(affected_count) + "\n",
     )
-    return checked_spawn(
-        ctx, "bazelisk",
-        ["run", "--", "//src/otel/cmd/smoke-span"],
-        env = {
-            "SMOKE_SPAN_NAME": "aspect.bazel_diff",
-            "SMOKE_SPAN_SERVICE": "aspect-deploy",
-            "SMOKE_SPAN_ATTRS_JSON": attrs_json,
-        },
-        label = "emit aspect.bazel_diff span",
-    )
+    return 0
 
 def cue_pin(ctx, key):
     """Read a single development-tier version pin out of versions.cue.
