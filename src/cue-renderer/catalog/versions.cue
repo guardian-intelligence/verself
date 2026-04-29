@@ -128,6 +128,53 @@ devToolsArchive: {
 	version:     "age-\(versions.development.age)_agent-browser-\(versions.development.agentBrowser)_buf-\(versions.development.buf)_buildifier-\(versions.development.buildifier)_clickhouse-\(versions.development.clickhouse)_cue-\(versions.development.cue)_go-\(versions.development.go)_jq-\(versions.development.jq)_osv-scanner-\(versions.development.osvScanner)_protoc-\(versions.development.protoc)_shellcheck-\(versions.development.shellcheck)_sops-\(versions.development.sops)_stripe-\(versions.development.stripe)_tofu-\(versions.development.opentofu)_uv-\(versions.development.uv)_zig-\(versions.development.zig)"
 }
 
+// lockfileUvTools: per-project uv project layouts. Each project lives
+// at `src/platform/uv-tools/<name>/` with a committed pyproject.toml +
+// uv.lock pair. The dev_tools role runs `uv sync --frozen --project
+// <project_dir>` for each entry, then symlinks every entrypoint into
+// /usr/local/bin/. Per-tool version_check spans (filtered on
+// tier=lockfile_uv) confirm the symlinked entrypoint reports the
+// CUE-pinned version after sync.
+//
+// Adding a new Python tool:
+//   1. mkdir src/platform/uv-tools/<name> && cd it
+//   2. uv init && uv add <pkg>==<version>; commit pyproject.toml+uv.lock
+//   3. add a row here with project_dir + entrypoints
+//   4. add tier=lockfile_uv devTool entries for any entrypoints that
+//      should appear in the version_check gate
+lockfileUvTools: {
+	"ansible-core": {
+		project_dir: "src/platform/uv-tools/ansible-core"
+		version:     versions.development.ansibleCore
+		// Every entrypoint that should land at /usr/local/bin/. Includes
+		// ansible-lint and the playbook/galaxy/etc. subcommands; OTel
+		// runtime imports are libraries, not entrypoints, so they don't
+		// appear here.
+		entrypoints: [
+			"ansible",
+			"ansible-config",
+			"ansible-console",
+			"ansible-doc",
+			"ansible-galaxy",
+			"ansible-inventory",
+			"ansible-lint",
+			"ansible-playbook",
+			"ansible-pull",
+			"ansible-vault",
+		]
+	}
+	"pre-commit": {
+		project_dir: "src/platform/uv-tools/pre-commit"
+		version:     versions.development.preCommit
+		entrypoints: ["pre-commit"]
+	}
+	guarddog: {
+		project_dir: "src/platform/uv-tools/guarddog"
+		version:     versions.development.guarddog
+		entrypoints: ["guarddog"]
+	}
+}
+
 // systemPackages: apt-managed packages that intentionally bypass content
 // pinning. Each entry must declare `risk_acknowledgement` containing the
 // substring "upstream"; the schema rejects empty or boilerplate strings.
@@ -346,47 +393,21 @@ devTools: {
 		version_cmd:  "tofu version -json"
 	}
 	ansible: {
-		tier:       #DevToolTier & "legacy_install_plan"
-		version:    versions.development.ansibleCore
-		strategy:   "uv_tool"
-		uv_package: "ansible-core"
-		with: [
-			"ansible-lint==\(versions.development.ansibleLint)",
-			"opentelemetry-sdk==\(versions.development.ansibleOpentelemetrySdk)",
-			"opentelemetry-exporter-otlp-proto-grpc==\(versions.development.ansibleOpentelemetryExporterOtlpProtoGrpc)",
-			"opentelemetry-exporter-otlp-proto-http==\(versions.development.ansibleOpentelemetryExporterOtlpProtoHttp)",
-		]
+		tier:        #DevToolTier & "lockfile_uv"
+		version:     versions.development.ansibleCore
+		project:     "ansible-core"
 		version_cmd: "ansible --version"
 	}
-	"ansible-opentelemetry-sdk": {
-		tier:        #DevToolTier & "legacy_install_plan"
-		version:     versions.development.ansibleOpentelemetrySdk
-		strategy:    "uv_tool_companion"
-		version_cmd: "/opt/uv-tools/ansible-core/bin/python -c \"import importlib.metadata as m; print(m.version('opentelemetry-sdk'))\""
-	}
-	"ansible-opentelemetry-exporter-otlp-proto-grpc": {
-		tier:        #DevToolTier & "legacy_install_plan"
-		version:     versions.development.ansibleOpentelemetryExporterOtlpProtoGrpc
-		strategy:    "uv_tool_companion"
-		version_cmd: "/opt/uv-tools/ansible-core/bin/python -c \"import importlib.metadata as m; print(m.version('opentelemetry-exporter-otlp-proto-grpc'))\""
-	}
-	"ansible-opentelemetry-exporter-otlp-proto-http": {
-		tier:        #DevToolTier & "legacy_install_plan"
-		version:     versions.development.ansibleOpentelemetryExporterOtlpProtoHttp
-		strategy:    "uv_tool_companion"
-		version_cmd: "/opt/uv-tools/ansible-core/bin/python -c \"import importlib.metadata as m; print(m.version('opentelemetry-exporter-otlp-proto-http'))\""
-	}
 	"ansible-lint": {
-		tier:        #DevToolTier & "legacy_install_plan"
+		tier:        #DevToolTier & "lockfile_uv"
 		version:     versions.development.ansibleLint
-		strategy:    "uv_tool_companion"
+		project:     "ansible-core"
 		version_cmd: "ansible-lint --version"
 	}
 	"pre-commit": {
-		tier:        #DevToolTier & "legacy_install_plan"
+		tier:        #DevToolTier & "lockfile_uv"
 		version:     versions.development.preCommit
-		strategy:    "uv_tool"
-		uv_package:  "pre-commit"
+		project:     "pre-commit"
 		version_cmd: "pre-commit --version"
 	}
 	protoc: {
@@ -549,10 +570,9 @@ devTools: {
 		version_cmd: "protoc-gen-go-grpc --version"
 	}
 	guarddog: {
-		tier:        #DevToolTier & "legacy_install_plan"
+		tier:        #DevToolTier & "lockfile_uv"
 		version:     versions.development.guarddog
-		strategy:    "uv_tool"
-		uv_package:  "guarddog"
+		project:     "guarddog"
 		version_cmd: "guarddog --version"
 	}
 	"osv-scanner": {

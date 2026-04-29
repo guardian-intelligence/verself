@@ -1,0 +1,9 @@
+# guarddog uv-tool project. Supply-chain risk analysis of pypi/npm packages.
+[project]
+name = "verself-guarddog"
+version = "0.0.0"
+description = "guarddog supply-chain risk scanner."
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "guarddog==2.9.0",
+]

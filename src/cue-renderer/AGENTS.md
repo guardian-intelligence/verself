@@ -45,11 +45,16 @@ a `lockfile_uv` `uv sync --frozen` against a committed `uv.lock`.
 shellcheck, jq, sops, age, uv, clickhouse, osv-scanner, stripe,
 agent-browser. These flow through `dev_tools.tar.zst`.
 
-`legacy_install_plan` (13): ansible, the four ansible OTel companions,
-ansible-lint, pre-commit, golangci-lint, gosec, gofumpt, sqlc,
-protoc-gen-go, protoc-gen-go-grpc, guarddog. To be migrated to
-`lockfile_uv` (Python) or `source_built_go` (Go-installable) in later
-phases.
+`lockfile_uv` (4): ansible, ansible-lint, pre-commit, guarddog. Each
+maps via `project:` to a top-level `lockfileUvTools` entry, which holds
+the project_dir, version pin, and full set of entrypoints to symlink
+into /usr/local/bin/. The OpenTelemetry companions are gone — they're
+transitive deps of ansible-core's pyproject, not separate tools.
+
+`legacy_install_plan` (6): golangci-lint, gosec, gofumpt, sqlc,
+protoc-gen-go, protoc-gen-go-grpc. To be migrated to `source_built_go`
+in Phase 2a; the `go install` strategy is the last unhermetic delivery
+channel for dev tools.
 
 `systemPackages` (3): build-essential, crun, debootstrap. Apt-managed,
 intentionally not content-pinned; each entry carries a
