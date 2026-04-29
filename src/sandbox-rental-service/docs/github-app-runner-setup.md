@@ -30,7 +30,7 @@ sandbox_rental_service_github_app_settings_url: "https://github.com/organization
 
 Use these GitHub App settings:
 
-- Homepage URL: `https://console.<domain>/`
+- Homepage URL: `https://<domain>/`
 - Callback URL: `https://sandbox.api.<domain>/github/installations/callback`
 - Request user authorization during installation: enabled
 - Webhook: active
