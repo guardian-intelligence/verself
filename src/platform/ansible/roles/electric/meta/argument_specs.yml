@@ -60,7 +60,3 @@ argument_specs:
           electric_replication_stream_id:
             type: str
             required: true
-          electric_extra_systemd_after:
-            type: list
-            elements: str
-            required: true

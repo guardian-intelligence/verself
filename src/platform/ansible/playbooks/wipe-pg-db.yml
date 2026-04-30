@@ -146,8 +146,7 @@
           billing: []
           sandbox_rental:
             - electric
-          mailbox_service:
-            - electric-mail
+          mailbox_service: []
           governance_service: []
           identity_service: []
           notifications_service:
@@ -323,13 +322,6 @@
       vars:
         electric_config: "{{ topology_electric_instances.default }}"
       when: wipe_pg_db_name == 'sandbox_rental'
-
-    - name: Include Electric Mail after mailbox_service PostgreSQL wipe
-      ansible.builtin.include_role:
-        name: electric
-      vars:
-        electric_config: "{{ topology_electric_instances.mail }}"
-      when: wipe_pg_db_name == 'mailbox_service'
 
     - name: Include Electric Notifications after notifications_service PostgreSQL wipe
       ansible.builtin.include_role:

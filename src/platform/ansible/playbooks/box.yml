@@ -131,9 +131,6 @@
       vars:
         electric_config: "{{ topology_electric_instances.default }}"
     - role: otelcol
-    - role: electric
-      vars:
-        electric_config: "{{ topology_electric_instances.mail }}"
     - role: grafana
     - role: verdaccio
     - role: caddy
