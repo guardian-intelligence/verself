@@ -508,12 +508,6 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 {{ stalwart_domain }} {
 	import access_log
 
-	handle /v1/shape {
-		uri query -secret
-		uri query +secret {{ caddy_electric_mail_api_secret }}
-		reverse_proxy {{ topology_endpoints.electric_mail.endpoints.http.address }}
-	}
-
 	handle /jmap/session {
 		reverse_proxy {{ topology_endpoints.mailbox_service.endpoints.public_http.address }} {
 			import h2c_upstream

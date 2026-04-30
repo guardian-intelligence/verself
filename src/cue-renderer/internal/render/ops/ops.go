@@ -58,7 +58,6 @@ func electricInstances(loaded load.Loaded) (map[string]any, error) {
 			"electric_nftables_file":         sync["nftables_file"],
 			"electric_db_pool_size":          sync["db_pool_size"],
 			"electric_replication_stream_id": sync["replication_stream_id"],
-			"electric_extra_systemd_after":   sync["extra_systemd_after"],
 		}
 	}
 	return rendered, nil

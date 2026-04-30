@@ -1,8 +1,6 @@
 ---
-# Handler name resolves at handler-load time, so each include_role
-# invocation produces a distinct handler — "Restart electric" and
-# "Restart electric-mail" coexist without collision. Tasks notify the
-# concrete name via `notify: "Restart {{ electric_service_name }}"`.
+# Handler name resolves at handler-load time, so each include_role invocation
+# produces a distinct handler. Tasks notify the concrete service name.
 - name: "Restart {{ electric_service_name }}"
   ansible.builtin.systemd:
     name: "{{ electric_service_name }}"

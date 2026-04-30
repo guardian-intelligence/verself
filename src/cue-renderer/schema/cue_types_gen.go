@@ -138,8 +138,6 @@ type ElectricSync struct {
 	Db_pool_size int64 `json:"db_pool_size"`
 
 	Replication_stream_id string `json:"replication_stream_id"`
-
-	Extra_systemd_after []any/* CUE closed list */ `json:"extra_systemd_after"`
 }
 
 type Endpoint struct {

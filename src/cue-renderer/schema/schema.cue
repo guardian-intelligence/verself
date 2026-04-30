@@ -101,7 +101,6 @@ package schema
 	nftables_file:         string & =~"^/"
 	db_pool_size:          int & >0
 	replication_stream_id: string | *instance
-	extra_systemd_after: [...string] | *[]
 }
 
 #Endpoint: {

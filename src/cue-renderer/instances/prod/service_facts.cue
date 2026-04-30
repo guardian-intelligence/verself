@@ -425,7 +425,6 @@ topology: components: {
 					PROJECTS_SERVICE_BASE_URL:                 "http://{{ topology_endpoints.projects_service.endpoints.public_http.address }}"
 					SOURCE_CODE_HOSTING_SERVICE_BASE_URL:      "http://{{ topology_endpoints.source_code_hosting_service.endpoints.public_http.address }}"
 					GOVERNANCE_SERVICE_BASE_URL:               "http://{{ topology_endpoints.governance_service.endpoints.public_http.address }}"
-					ELECTRIC_URL:                              "http://{{ topology_endpoints.electric.endpoints.http.address }}"
 				}
 				hardening: read_write_paths: ["/var/lib/verself-web"]
 				readiness: [{kind: "http", endpoint: "http", path: "/"}]

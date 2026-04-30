@@ -682,29 +682,6 @@ topology: s.#Topology & {
 				admin: {kind: "admin_api", endpoint: "admin_0", auth: "operator"}
 			}
 		}
-		electric_mail: {
-			kind: "resource"
-			host: "127.0.0.1"
-			runtime: {systemd: "electric-mail", user: "electric", group: "electric"}
-			artifact: {kind: "upstream_binary", output: "electric", role: "electric"}
-			endpoints: http: {protocol: "http", port: 3011, exposure: "loopback"}
-			interfaces: shape_api: {kind: "resource_protocol", endpoint: "http", auth: "shared_secret"}
-			electric: {
-				instance:         "mail"
-				pg_role:          "electric_mail"
-				pg_conn_limit:    25
-				source_database:  "mailbox_service"
-				writer_role:      "mailbox_service"
-				publication_name: "electric_publication_mail"
-				publication_tables: ["mailbox_accounts", "mailboxes", "emails", "email_mailboxes", "email_bodies", "threads"]
-				storage_dir:    "/var/lib/electric-mail"
-				credstore_dir:  "/etc/credstore/electric-mail"
-				nftables_table: "verself_electric_mail"
-				nftables_file:  "/etc/nftables.d/electric-mail.nft"
-				db_pool_size:   10
-				extra_systemd_after: ["mailbox-service.service"]
-			}
-		}
 		electric_notifications: {
 			kind: "resource"
 			host: "127.0.0.1"
@@ -725,7 +702,6 @@ topology: s.#Topology & {
 				nftables_table: "verself_electric_notifications"
 				nftables_file:  "/etc/nftables.d/electric-notifications.nft"
 				db_pool_size:   8
-				extra_systemd_after: ["notifications-service.service"]
 			}
 		}
 		company: #Frontend & {

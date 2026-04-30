@@ -1,9 +1,9 @@
 [Unit]
 Description=ElectricSQL sync ({{ electric_instance }})
-After=verself-firewall.target network.target postgresql.service{% for u in electric_extra_systemd_after %} {{ u }}{% endfor %}
+After=verself-firewall.target network.target postgresql.service
 
 Requires=verself-firewall.target
-Wants=postgresql.service{% for u in electric_extra_systemd_after %} {{ u }}{% endfor %}
+Wants=postgresql.service
 
 
 [Service]

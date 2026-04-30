@@ -16,7 +16,6 @@
     electric_nftables_file: "{{ electric_config.electric_nftables_file }}"
     electric_db_pool_size: "{{ electric_config.electric_db_pool_size }}"
     electric_replication_stream_id: "{{ electric_config.electric_replication_stream_id }}"
-    electric_extra_systemd_after: "{{ electric_config.electric_extra_systemd_after }}"
 
 - name: "Create storage directory for {{ electric_service_name }}"
   ansible.builtin.file:

@@ -37,12 +37,6 @@ topology: {
 			component: "electric"
 			input: [{kind: "drop_non_loopback", endpoints: [{component: "electric", endpoint: "http"}]}]
 		}
-		electric_mail: {
-			target:    topology.components.electric_mail.electric.nftables_file
-			table:     topology.components.electric_mail.electric.nftables_table
-			component: "electric_mail"
-			input: [{kind: "drop_non_loopback", endpoints: [{component: "electric_mail", endpoint: "http"}]}]
-		}
 		electric_notifications: {
 			target:    topology.components.electric_notifications.electric.nftables_file
 			table:     topology.components.electric_notifications.electric.nftables_table
