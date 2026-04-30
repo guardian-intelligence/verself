@@ -36,3 +36,23 @@
   ansible.builtin.assert:
     that: component_auth_audience | length > 0
     fail_msg: "{{ component.name }} auth audience could not be resolved."
+
+# Nomad-supervised components consume the audience via nomad-deploy at
+# submit time; persist it to a stable on-host path so the Go tool reads
+# it without re-running auth reconciliation. Idempotent for systemd
+# components (file simply isn't read).
+- name: Ensure component runtime config directory
+  ansible.builtin.file:
+    path: "/etc/verself/{{ component.name | replace('_', '-') }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Persist component auth audience for nomad-deploy
+  ansible.builtin.copy:
+    content: "{{ component_auth_audience }}"
+    dest: "/etc/verself/{{ component.name | replace('_', '-') }}/auth_audience"
+    owner: root
+    group: root
+    mode: "0644"

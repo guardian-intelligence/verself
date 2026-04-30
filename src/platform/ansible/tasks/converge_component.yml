@@ -71,16 +71,31 @@
     label: "{{ component_bootstrap_hook.name }} ({{ component_bootstrap_hook.class }})"
   tags: always
 
-- name: Install rendered component artifacts
+# Nomad-supervised components hand the runtime contract to Nomad: no
+# systemd unit, no host-side service convergence. `aspect deploy` runs
+# `nomad-deploy` against the box after this playbook returns. Substrate
+# (users, credstore, postgres, clickhouse, auth) above stays
+# Ansible-owned for both supervisors.
+- name: Install rendered component artifacts (systemd path)
   ansible.builtin.include_tasks:
     file: component/artifacts.yml
     apply:
       tags: always
+  when: component.deployment.supervisor != 'nomad'
   tags: always
 
-- name: Enable component units and wait for readiness
+- name: Enable component units and wait for readiness (systemd path)
   ansible.builtin.include_tasks:
     file: component/runtime.yml
     apply:
       tags: always
+  when: component.deployment.supervisor != 'nomad'
+  tags: always
+
+- name: Stage Nomad job spec and tear down legacy systemd unit
+  ansible.builtin.include_tasks:
+    file: component/nomad_substrate.yml
+    apply:
+      tags: always
+  when: component.deployment.supervisor == 'nomad'
   tags: always
