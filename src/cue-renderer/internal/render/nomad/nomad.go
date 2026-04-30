@@ -380,7 +380,11 @@ func buildServices(componentName, unitName string, unit map[string]any, primaryP
 	return []map[string]any{{
 		"Name":      unitName,
 		"PortLabel": primaryPort,
-		"Checks":    checks,
+		// Use Nomad's native service registry (1.3+). The default is
+		// Consul, which adds an automatic ${attr.consul.version} >= 1.8.0
+		// constraint and prevents placement on Consul-less hosts.
+		"Provider": "nomad",
+		"Checks":   checks,
 	}}, nil
 }
 
