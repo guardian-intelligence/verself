@@ -96,6 +96,7 @@ func TestRenderAll_OutputPathShape(t *testing.T) {
 		"inventory/",
 		"share/",
 		"handlers/",
+		"jobs/",
 		"src/cue-renderer/binaries/",
 		"src/vm-orchestrator/guest-images/",
 	}

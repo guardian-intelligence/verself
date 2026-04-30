@@ -340,6 +340,13 @@ topology: components: {
 		}
 	}
 	profile_service: {
+		// Nomad-supervised: converge_component.yml branches on
+		// component.deployment.supervisor and submits the rendered job
+		// spec via tasks/component/nomad_submit.yml instead of installing
+		// a systemd unit. The systemd block below is kept as the source
+		// of truth for env vars / dependency wiring; both renderers read
+		// from it.
+		deployment: supervisor: "nomad"
 		converge: {
 			enabled:    true
 			deploy_tag: "profile_service"
@@ -357,7 +364,10 @@ topology: components: {
 				after: ["verself-firewall.target", "network.target", "postgresql.service", "zitadel.service", "spire-agent.service", "identity-service.service", "governance-service.service"]
 				wants: ["postgresql.service", "zitadel.service", "spire-agent.service", "identity-service.service", "governance-service.service"]
 				supplementary_groups: ["{{ spire_workload_group }}"]
-				bind_read_only_paths: ["/etc/verself/auth-discovery-hosts:/etc/hosts"]
+				// auth-discovery /etc/hosts override is satisfied by
+				// merging the entries into the host's /etc/hosts via the
+				// base role; raw_exec inherits that, no per-task mount
+				// namespace required.
 				environment: {
 					PROFILE_IDENTITY_INTERNAL_URL: "https://{{ topology_endpoints.identity_service.endpoints.internal_https.address }}"
 					PROFILE_GOVERNANCE_AUDIT_URL:  "https://{{ topology_endpoints.governance_service.endpoints.internal_https.address }}"

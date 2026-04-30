@@ -44,3 +44,20 @@
     group: root
     mode: "0644"
   notify: Reload sshd
+
+# auth.<verself_domain> resolves to 127.0.0.1 so on-host services that
+# validate Zitadel-issued JWTs hit the local Zitadel for OIDC discovery
+# instead of routing through Cloudflare. systemd-supervised services pick
+# this up via per-unit BindReadOnlyPaths over a generated
+# /etc/verself/auth-discovery-hosts file. Nomad raw_exec workloads have
+# no mount-namespace facility, so we add the entry directly to the host
+# /etc/hosts and let both supervisors resolve via the same file.
+- name: Ensure auth.<verself_domain> resolves to loopback in /etc/hosts
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    line: "127.0.0.1 auth.{{ verself_domain }}"
+    regexp: '^127\.0\.0\.1\s+auth\.{{ verself_domain | regex_escape }}\s*$'
+    state: present
+    owner: root
+    group: root
+    mode: "0644"

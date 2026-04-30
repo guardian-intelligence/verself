@@ -66,6 +66,7 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 			"postgres":          postgres,
 			"identities":        mapValue(component.Value, "identities"),
 			"converge":          convergeProjection,
+			"deployment":        deploymentProjection(mapValue(component.Value, "deployment")),
 			"nftables_rulesets": componentRulesets,
 		}
 		rendered = append(rendered, item)
@@ -83,6 +84,19 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 	return projection.WriteYAML(out, "components", map[string]any{
 		"topology_components": rendered,
 	})
+}
+
+// deploymentProjection materialises the supervisor knob for downstream
+// Ansible. Only `supervisor` flows to converge_component.yml; the rest of
+// the #Deployment knobs land in the rendered Nomad job spec, not in the
+// per-component fact bundle. The default ("systemd") is what every
+// component without an explicit opt-in receives.
+func deploymentProjection(deployment map[string]any) map[string]any {
+	supervisor := stringValue(deployment, "supervisor")
+	if supervisor == "" {
+		supervisor = "systemd"
+	}
+	return map[string]any{"supervisor": supervisor}
 }
 
 func optionalInt(parent map[string]any, path, key string) (int64, error) {

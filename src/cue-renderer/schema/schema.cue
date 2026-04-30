@@ -618,6 +618,35 @@ package schema
 	bootstrap_config: #ComponentBootstrapConfig | *{} @go(BootstrapConfig)
 }
 
+// #Deployment is the supervisor-shape contract for a component's runtime.
+// supervisor selects between the legacy systemd path (default) and Nomad.
+// The update / drain / resources knobs map directly to Nomad's JSON job
+// spec (https://developer.hashicorp.com/nomad/api-docs/json-jobs); they
+// are inert when supervisor == "systemd".
+//
+// Single rolling-restart is the only mode here. Blue/green and canary
+// arrive as per-component CUE additions on top of Nomad's update {}
+// stanza, not as enum knobs in the schema.
+#Deployment: {
+	supervisor: "systemd" | "nomad" | *"systemd"
+	count:      int & >0 | *1
+	update: {
+		max_parallel:      int & >0 | *1                   @go(MaxParallel)
+		min_healthy_time:  string & !="" | *"30s"          @go(MinHealthyTime)
+		healthy_deadline:  string & !="" | *"5m"           @go(HealthyDeadline)
+		progress_deadline: string & !="" | *"10m"          @go(ProgressDeadline)
+		auto_revert:       bool | *true                    @go(AutoRevert)
+	}
+	drain: {
+		kill_signal:  string & !="" | *"SIGTERM"           @go(KillSignal)
+		kill_timeout: string & !="" | *"30s"               @go(KillTimeout)
+	}
+	resources: {
+		cpu_mhz:   int & >0 | *500                         @go(CPUMHz)
+		memory_mb: int & >0 | *256                         @go(MemoryMB)
+	}
+}
+
 #Component: {
 	kind:        #ComponentKind
 	host:        #ServiceHost | *"127.0.0.1"
@@ -639,12 +668,13 @@ package schema
 	processes?: {
 		[string]: #Process
 	}
-	probes?:   #Probes
-	garage?:   #GarageCluster
-	temporal?: #TemporalCluster
-	postgres:  #PostgresBinding
-	electric?: #ElectricSync
-	converge: #ComponentConverge | *{}
+	probes?:    #Probes
+	garage?:    #GarageCluster
+	temporal?:  #TemporalCluster
+	postgres:   #PostgresBinding
+	electric?:  #ElectricSync
+	converge:   #ComponentConverge | *{}
+	deployment: #Deployment | *{}
 }
 
 #Topology: {

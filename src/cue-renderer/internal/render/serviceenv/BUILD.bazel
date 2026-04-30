@@ -1,20 +1,17 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
-    name = "systemd",
-    srcs = ["systemd.go"],
-    importpath = "github.com/verself/cue-renderer/internal/render/systemd",
+    name = "serviceenv",
+    srcs = ["serviceenv.go"],
+    importpath = "github.com/verself/cue-renderer/internal/render/serviceenv",
     visibility = ["//src/cue-renderer:__subpackages__"],
     deps = [
-        "//src/cue-renderer/internal/load",
-        "//src/cue-renderer/internal/render",
         "//src/cue-renderer/internal/render/projection",
-        "//src/cue-renderer/internal/render/serviceenv",
     ],
 )
 
 alias(
     name = "go_default_library",
-    actual = ":systemd",
+    actual = ":serviceenv",
     visibility = ["//src/cue-renderer:__subpackages__"],
 )

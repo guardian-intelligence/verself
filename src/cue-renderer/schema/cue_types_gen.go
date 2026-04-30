@@ -706,6 +706,45 @@ type ComponentConverge struct {
 	BootstrapConfig map[string]any `json:"bootstrap_config"`
 }
 
+// #Deployment is the supervisor-shape contract for a component's runtime.
+// supervisor selects between the legacy systemd path (default) and Nomad.
+// The update / drain / resources knobs map directly to Nomad's JSON job
+// spec (https://developer.hashicorp.com/nomad/api-docs/json-jobs); they
+// are inert when supervisor == "systemd".
+//
+// Single rolling-restart is the only mode here. Blue/green and canary
+// arrive as per-component CUE additions on top of Nomad's update {}
+// stanza, not as enum knobs in the schema.
+type Deployment struct {
+	Supervisor string `json:"supervisor"`
+
+	Count int64 `json:"count"`
+
+	Update struct {
+		MaxParallel int64 `json:"max_parallel"`
+
+		MinHealthyTime string `json:"min_healthy_time"`
+
+		HealthyDeadline string `json:"healthy_deadline"`
+
+		ProgressDeadline string `json:"progress_deadline"`
+
+		AutoRevert bool `json:"auto_revert"`
+	} `json:"update"`
+
+	Drain struct {
+		KillSignal string `json:"kill_signal"`
+
+		KillTimeout string `json:"kill_timeout"`
+	} `json:"drain"`
+
+	Resources struct {
+		CPUMHz int64 `json:"cpu_mhz"`
+
+		MemoryMB int64 `json:"memory_mb"`
+	} `json:"resources"`
+}
+
 type Component struct {
 	Kind ComponentKind `json:"kind"`
 
@@ -738,6 +777,8 @@ type Component struct {
 	Electric ElectricSync `json:"electric,omitempty"`
 
 	Converge map[string]any `json:"converge"`
+
+	Deployment map[string]any `json:"deployment"`
 }
 
 type Topology struct {
