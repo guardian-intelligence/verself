@@ -79,13 +79,13 @@ func run(ctx context.Context, args runArgs) error {
 		return err
 	}
 
-	currentArtifactDigest, currentSpecDigest, currentVersion, err := currentJobMeta(ctx, args.nomadAddr, jobID)
+	current, err := currentJobState(ctx, args.nomadAddr, jobID)
 	if err != nil {
 		return fmt.Errorf("inspect current job: %w", err)
 	}
-	if currentArtifactDigest == artifactDigest && currentSpecDigest == specDigest {
+	if current.ArtifactDigest == artifactDigest && current.SpecDigest == specDigest && !current.Stopped {
 		fmt.Fprintf(os.Stdout, "nomad-deploy: %s already at artifact_sha256=%s spec_sha256=%s (job version %d); no submit\n",
-			jobID, shortDigest(artifactDigest), shortDigest(specDigest), currentVersion)
+			jobID, shortDigest(artifactDigest), shortDigest(specDigest), current.Version)
 		return nil
 	}
 
@@ -128,32 +128,44 @@ func shortDigest(digest string) string {
 	return digest[:12]
 }
 
-// currentJobMeta returns the (artifact_sha256, spec_sha256, Version)
-// tuple of the currently-registered job, or ("", "", 0) when the job
-// is unknown to the Nomad agent. Both digests live in Job.Meta and are
-// the only knobs the deploy short-circuit consults.
-func currentJobMeta(ctx context.Context, nomadAddr, jobID string) (string, string, int64, error) {
+type currentJob struct {
+	ArtifactDigest string
+	SpecDigest     string
+	Version        int64
+	Stopped        bool
+}
+
+// currentJobState returns the currently-registered job metadata. A stopped
+// Nomad job can still carry the target digests, so Stop must participate in
+// the no-op decision or reset playbooks can leave a service dead.
+func currentJobState(ctx context.Context, nomadAddr, jobID string) (currentJob, error) {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, nomadAddr+"/v1/job/"+jobID, nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", "", 0, err
+		return currentJob{}, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
-		return "", "", 0, nil
+		return currentJob{}, nil
 	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return "", "", 0, fmt.Errorf("GET /v1/job/%s: %d %s", jobID, resp.StatusCode, body)
+		return currentJob{}, fmt.Errorf("GET /v1/job/%s: %d %s", jobID, resp.StatusCode, body)
 	}
 	var payload struct {
 		Meta    map[string]string `json:"Meta"`
 		Version int64             `json:"Version"`
+		Stop    bool              `json:"Stop"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return "", "", 0, err
+		return currentJob{}, err
 	}
-	return payload.Meta["artifact_sha256"], payload.Meta["spec_sha256"], payload.Version, nil
+	return currentJob{
+		ArtifactDigest: payload.Meta["artifact_sha256"],
+		SpecDigest:     payload.Meta["spec_sha256"],
+		Version:        payload.Version,
+		Stopped:        payload.Stop,
+	}, nil
 }
 
 type submitResult struct {

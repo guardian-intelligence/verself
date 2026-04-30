@@ -88,3 +88,34 @@ func TestSpecMetaRequiresBuildDigests(t *testing.T) {
 		t.Fatal("expected missing digest error")
 	}
 }
+
+func TestCurrentJobStateReadsStoppedFlag(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/job/billing" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"Meta": map[string]string{
+				"artifact_sha256": "aaaaaaaa",
+				"spec_sha256":     "bbbbbbbb",
+			},
+			"Version": int64(6),
+			"Stop":    true,
+		})
+	}))
+	defer server.Close()
+
+	current, err := currentJobState(context.Background(), server.URL, "billing")
+	if err != nil {
+		t.Fatalf("currentJobState: %v", err)
+	}
+	if current.ArtifactDigest != "aaaaaaaa" || current.SpecDigest != "bbbbbbbb" {
+		t.Fatalf("digests: got artifact=%q spec=%q", current.ArtifactDigest, current.SpecDigest)
+	}
+	if current.Version != 6 {
+		t.Fatalf("version: got %d want 6", current.Version)
+	}
+	if !current.Stopped {
+		t.Fatal("expected stopped flag")
+	}
+}
