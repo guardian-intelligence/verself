@@ -150,6 +150,19 @@ receivers:
       - type: move
         from: body.MESSAGE
         to: body
+  # sshd journald → default.otel_logs → verself.host_auth_events MV. Captures
+  # every authentication attempt against the host's sshd so failure rate, cert
+  # serials, and source-IP geo can be queried alongside the rest of the
+  # observability surface. The unit on Ubuntu 24.04 is ssh.service; service.name
+  # stays as sshd by convention.
+  journald/sshd:
+    units: [ssh]
+    resource:
+      service.name: sshd
+    operators:
+      - type: move
+        from: body.MESSAGE
+        to: body
   journald/spire-server:
     units: [spire-server]
     resource:
@@ -547,7 +560,7 @@ service:
   extensions: [health_check, file_storage]
   pipelines:
     logs:
-      receivers: [otlp, filelog/caddy, journald/caddy, journald/billing-service, journald/sandbox-rental, journald/sandbox-rental-recurring-worker, journald/verself-web, journald/zitadel, journald/openbao, journald/spire-server, journald/spire-agent, journald/vm-orchestrator, journald/forgejo, journald/source-code-hosting-service, journald/projects-service, journald/grafana, journald/temporal-server, journald/verdaccio, journald/wireguard, journald/bazel-remote, filelog/postgresql]
+      receivers: [otlp, filelog/caddy, journald/caddy, journald/billing-service, journald/sandbox-rental, journald/sandbox-rental-recurring-worker, journald/verself-web, journald/zitadel, journald/openbao, journald/sshd, journald/spire-server, journald/spire-agent, journald/vm-orchestrator, journald/forgejo, journald/source-code-hosting-service, journald/projects-service, journald/grafana, journald/temporal-server, journald/verdaccio, journald/wireguard, journald/bazel-remote, filelog/postgresql]
       processors: [batch]
       exporters: [clickhouse]
     traces:
