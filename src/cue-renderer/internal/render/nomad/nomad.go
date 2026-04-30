@@ -162,6 +162,29 @@ func buildTaskGroup(component projection.NamedMap, unit map[string]any, deployme
 		}
 		envOut[key] = resolved
 	}
+	// Bind own listeners on 0.0.0.0 so Nomad's native-registry HTTP
+	// check (which always uses the host's external advertise address)
+	// can reach them. The host firewall's per-component nftables
+	// drop_non_loopback rule still enforces loopback-only at L3 — the
+	// L4 bind is widened only enough to satisfy same-host check
+	// traffic that arrives via the kernel's local routing path.
+	endpointsForBindOverride, _ := component.Value["endpoints"].(map[string]any)
+	for label, raw := range endpointsForBindOverride {
+		ep, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		port, err := projection.Int(ep, component.Name+".endpoints."+label, "port")
+		if err != nil {
+			return nil, err
+		}
+		switch label {
+		case "public_http":
+			envOut["VERSELF_LISTEN_ADDR"] = fmt.Sprintf("0.0.0.0:%d", port)
+		case "internal_https":
+			envOut["VERSELF_INTERNAL_LISTEN_ADDR"] = fmt.Sprintf("0.0.0.0:%d", port)
+		}
+	}
 
 	count := int64(1)
 	if c, ok := deployment["count"].(int64); ok && c > 0 {
@@ -186,17 +209,27 @@ func buildTaskGroup(component projection.NamedMap, unit map[string]any, deployme
 		return nil, err
 	}
 
-	services, err := buildServices(component.Name, unitName, unit, primaryPort)
+	services, err := buildServices(component.Name, unitName, unit, primaryPort, endpoints)
 	if err != nil {
 		return nil, err
 	}
 
+	// Nomad's raw_exec uses libcontainer to set up the alloc (cgroup-v2,
+	// mount namespace). When `User` is set to a non-root user, libcontainer's
+	// cgroup write happens AFTER the setuid drop, and on systemd-managed
+	// hosts the unprivileged child can't enter the alloc cgroup — fork/exec
+	// fails with EACCES regardless of the binary's own permissions. The
+	// fix: keep the alloc itself running as nomad-agent's user (root) and
+	// wrap the command with runuser, which switches uid via PAM after the
+	// alloc setup is complete. SPIRE's unix workload attestor reads the
+	// effective uid of the calling process from /proc/<pid>/status, so the
+	// `unix:uid:<topology user>` selector still matches.
 	task := map[string]any{
 		"Name":   unitName,
 		"Driver": "raw_exec",
-		"User":   unitUser,
 		"Config": map[string]any{
-			"command": resolvedExec,
+			"command": "/usr/sbin/runuser",
+			"args":    []string{"-u", unitUser, "--", resolvedExec},
 		},
 		"Env":          envOut,
 		"Resources":    resources,
@@ -330,11 +363,12 @@ func endpointsForUnit(componentName string, endpoints map[string]any, unit map[s
 	return out, nil
 }
 
-func buildServices(componentName, unitName string, unit map[string]any, primaryPort string) ([]map[string]any, error) {
+func buildServices(componentName, unitName string, unit map[string]any, primaryPort string, endpoints map[string]any) ([]map[string]any, error) {
 	rawReadiness, _ := unit["readiness"].([]any)
 	if len(rawReadiness) == 0 {
 		return nil, nil
 	}
+	_ = endpoints // referenced through PortLabel resolution at the Nomad client side
 	checks := make([]map[string]any, 0, len(rawReadiness))
 	for _, item := range rawReadiness {
 		probe, ok := item.(map[string]any)
@@ -344,10 +378,10 @@ func buildServices(componentName, unitName string, unit map[string]any, primaryP
 		kind, _ := probe["kind"].(string)
 		endpoint, _ := probe["endpoint"].(string)
 		check := map[string]any{
-			"Name":     unitName + "-" + kind + "-" + endpoint,
+			"Name":      unitName + "-" + kind + "-" + endpoint,
 			"PortLabel": endpoint,
-			"Interval": int64(10 * time.Second / time.Nanosecond),
-			"Timeout":  int64(3 * time.Second / time.Nanosecond),
+			"Interval":  int64(10 * time.Second / time.Nanosecond),
+			"Timeout":   int64(3 * time.Second / time.Nanosecond),
 		}
 		switch kind {
 		case "tcp":
