@@ -140,6 +140,9 @@ func buildTaskGroup(component projection.NamedMap, unit map[string]any, deployme
 	if unitName == "" || unitUser == "" || exec == "" {
 		return nil, fmt.Errorf("%s.converge.units: name/user/exec required", component.Name)
 	}
+	if err := checkUnitCompatibility(component.Name, unit); err != nil {
+		return nil, err
+	}
 	resolvedExec, err := resolver.resolve(exec)
 	if err != nil {
 		return nil, fmt.Errorf("%s.exec: %w", component.Name, err)
@@ -238,6 +241,71 @@ func reservedPortsWithHostNetwork(reserved []map[string]any, hostNetwork string)
 		out = append(out, copy)
 	}
 	return out
+}
+
+// checkUnitCompatibility refuses to render a Nomad TaskGroup for a unit
+// that uses systemd-only knobs we haven't translated yet. The two
+// load-bearing knobs from convergence.cue are load_credentials (which
+// systemd materialises as a tmpfs at $CREDENTIALS_DIRECTORY/<name>)
+// and bind_read_only_paths (per-unit mount-namespace overlays). Both
+// have raw_exec equivalents, but neither is automatic — fail loud at
+// render time so the next service migration explicitly addresses them.
+//
+// Translation guidance:
+//
+//   load_credentials: [{name: "x", path: "/host/path"}]
+//     systemd: LoadCredential=x:/host/path → $CREDENTIALS_DIRECTORY/x
+//     nomad:   the alloc runs as the topology user and inherits read
+//              access to /etc/credstore/<id>/ (group-readable). Set
+//              an explicit env var (VERSELF_CRED_X=/host/path) and
+//              update the service binary to read from that env var
+//              instead of $CREDENTIALS_DIRECTORY/x. The
+//              defense-in-depth gap (no per-alloc tmpfs) is
+//              accepted: same uid as systemd path, same on-disk
+//              perms, same blast radius if the workload is breached.
+//
+//   bind_read_only_paths: ["/etc/verself/foo:/etc/foo"]
+//     systemd: per-unit mount namespace overlay
+//     nomad:   raw_exec has no mount namespace. Two paths:
+//              (a) merge the host-side content into the host's
+//                  /etc/<foo> directly (what we did for the
+//                  auth-discovery-hosts → /etc/hosts case via the
+//                  base role). Use this when content is identical
+//                  across services.
+//              (b) emit a Nomad `template { source = "/host/path"
+//                  destination = "secrets/foo" }` block. Note
+//                  Nomad's template SourcePath is task-local;
+//                  use the `data` form with EmbeddedTmpl that
+//                  reads from a host-volume mount instead.
+func checkUnitCompatibility(componentName string, unit map[string]any) error {
+	if creds, _ := unit["load_credentials"].([]any); len(creds) > 0 {
+		names := make([]string, 0, len(creds))
+		for _, c := range creds {
+			if cm, ok := c.(map[string]any); ok {
+				if n, _ := cm["name"].(string); n != "" {
+					names = append(names, n)
+				}
+			}
+		}
+		return fmt.Errorf("%s.converge.units.%s.load_credentials: nomad supervisor doesn't auto-translate %v; see internal/render/nomad/nomad.go:checkUnitCompatibility for migration guidance",
+			componentName, mustUnitName(unit), names)
+	}
+	if paths, _ := unit["bind_read_only_paths"].([]any); len(paths) > 0 {
+		strs := make([]string, 0, len(paths))
+		for _, p := range paths {
+			if s, ok := p.(string); ok {
+				strs = append(strs, s)
+			}
+		}
+		return fmt.Errorf("%s.converge.units.%s.bind_read_only_paths: nomad supervisor doesn't auto-translate %v; see internal/render/nomad/nomad.go:checkUnitCompatibility for migration guidance",
+			componentName, mustUnitName(unit), strs)
+	}
+	return nil
+}
+
+func mustUnitName(unit map[string]any) string {
+	n, _ := unit["name"].(string)
+	return n
 }
 
 func updateStanza(deployment map[string]any) (map[string]any, error) {
