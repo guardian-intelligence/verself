@@ -154,6 +154,9 @@ func TestRender_ProfileServiceShape(t *testing.T) {
 		t.Fatalf("Task.Artifacts: got %d, want 1", len(artifacts))
 	}
 	artifact := artifacts[0].(map[string]any)
+	if chown, _ := artifact["Chown"].(bool); !chown {
+		t.Errorf("Task.Artifacts[0].Chown: got %v, want true", artifact["Chown"])
+	}
 	if got, _ := artifact["GetterSource"].(string); got != "verself-artifact://profile-service" {
 		t.Errorf("Task.Artifacts[0].GetterSource: got %q", got)
 	}
