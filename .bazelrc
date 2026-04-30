@@ -3,17 +3,23 @@ common --noenable_workspace
 common --announce_rc
 common --lockfile_mode=error
 
-# Hold the bazel server resident for 24h instead of the default 3h so a
-# long-lived host (dev laptop, persistent VPS) reuses warm Skyframe analysis
-# across deploys instead of paying the full cold-start tax each time. No-op
-# on ephemeral CI VMs — the JVM dies with the VM regardless of this flag,
-# so CI cold-start is governed by graph size, not idle timeout.
-startup --max_idle_secs=86400
+# 30 min keeps the JVM warm across a typical edit-build-test cycle without
+# letting Skyframe accumulate a day's worth of drift. The previous 24h value
+# was the upstream of a desync where the server's stat-based file digest
+# cache held a stale view of an in-flight edit (atomic-rename save with
+# colliding mtime+size) and replayed it through every subsequent build until
+# the server was restarted. Long-lived bazel servers are an anti-feature for
+# repos under continuous parallel editing.
+startup --max_idle_secs=1800
 
 build --disk_cache=~/.cache/bazel-disk
 build --repository_cache=~/.cache/bazel-repo
 build --incompatible_strict_action_env
 build --jobs=auto
+# Subscribe to kernel filesystem events for source-file invalidation instead
+# of relying on stat-deltas at command start. Closes the stat-collision window
+# that the prior --max_idle_secs=86400 footgun depended on.
+build --watchfs
 
 test --test_output=errors
 test --test_summary=terse
