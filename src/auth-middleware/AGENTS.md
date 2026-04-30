@@ -14,4 +14,9 @@ Services use standard OIDC discovery from the public issuer URL:
 
 Do not add a second JWKS URL or Host-header transport. That creates a split trust path where the issuer and discovery metadata can disagree.
 
-On the single-node deployment, service units bind-mount `/etc/verself/auth-discovery-hosts` over `/etc/hosts` so `auth.<domain>` resolves to local Caddy (`127.0.0.1:443`) for those services only. Per-service nftables must allow loopback port 443 for discovery and JWKS fetches. A three-node topology can remove the host override and route discovery to the remote auth origin without changing Go service configuration.
+On the single-node deployment, `auth.<domain>` resolves to local Caddy (`127.0.0.1:443`) so service-side discovery and JWKS fetches stay on the loopback. Two paths get there because the supervisors have different namespacing:
+
+- systemd-supervised units bind-mount `/etc/verself/auth-discovery-hosts` over `/etc/hosts` per-unit (`bind_read_only_paths` in `convergence.cue`), keeping the override scoped to the service.
+- Nomad raw_exec workloads have no mount-namespace facility, so the `127.0.0.1 auth.<domain>` line lives directly in the host `/etc/hosts` (added by the `base` Ansible role) and applies process-wide.
+
+Per-service nftables must allow loopback port 443 for discovery and JWKS fetches in either case. A three-node topology can remove both overrides and route discovery to the remote auth origin without changing Go service configuration.

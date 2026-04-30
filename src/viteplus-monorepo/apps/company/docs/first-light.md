@@ -1,21 +1,21 @@
 # First Light — landing hero
 
-A liquid light source that arrives on the Guardian landing page (`guardianintelligence.org/`), passes through the headline along the word *succeed*, draws back, and settles in a glacial orbit beside the wings. Landing route only. Designers and frontend engineers collaborate from this brief.
+A liquid light source that arrives on the Guardian landing page (`guardianintelligence.org/`), passes through the headline along the word _succeed_, draws back, and settles in a glacial orbit beside the wings. Landing route only. Designers and frontend engineers collaborate from this brief.
 
 ## 1. Intent
 
-A single moment, at first-paint settle, where the page goes from dim Argent to lit Argent. The light enters from off-canvas, crosses the headline, draws back, and anchors near the wings, where it remains in a barely-perceptible orbit. The wings are *revealed* by the light, not its source.
+A single moment, at first-paint settle, where the page goes from dim Argent to lit Argent. The light enters from off-canvas, crosses the headline, draws back, and anchors near the wings, where it remains in a barely-perceptible orbit. The wings are _revealed_ by the light, not its source.
 
 We evoke: protectorship, benevolence, sharing prosperity, helping those without anyone else.
 
-We never evoke: descent, ascension, salvation, or the wings emitting light. The word *angel* is banned in copy and the metaphor of one is banned in pixels. The wings receive light and reflect it. Custodial, not divine.
+We never evoke: descent, ascension, salvation, or the wings emitting light. The word _angel_ is banned in copy and the metaphor of one is banned in pixels. The wings receive light and reflect it. Custodial, not divine.
 
 ## 2. References
 
-- **Liquid Series Seed reel** (image attached to the brief) — celestial body, rim light across curvature, lens flare, heavy grain. We take the *frame* and the *grain density*; we are not putting a planet on the page.
-- **Alan Zucconi — *Improving the Rainbow*** (https://www.alanzucconi.com/2017/07/15/improving-the-rainbow-2/). Canonical wavelength→RGB approximation. Source for the trace of cool-shifted dispersion in the falloff; we use a six-bump physical approximation rather than RGB-channel offsets.
-- **Julia Poo — *More accurate Iridescence*** (https://www.shadertoy.com/view/ltKcWh). Thin-film interference from first principles. Source for the brushed-metal iridescence on the wings during arrival.
-- **Inigo Quilez — *Articles*** (https://iquilezles.org/articles/). Reference for gradient noise, fbm, easings, and palette construction used inside the bloom region.
+- **Liquid Series Seed reel** (image attached to the brief) — celestial body, rim light across curvature, lens flare, heavy grain. We take the _frame_ and the _grain density_; we are not putting a planet on the page.
+- **Alan Zucconi — _Improving the Rainbow_** (https://www.alanzucconi.com/2017/07/15/improving-the-rainbow-2/). Canonical wavelength→RGB approximation. Source for the trace of cool-shifted dispersion in the falloff; we use a six-bump physical approximation rather than RGB-channel offsets.
+- **Julia Poo — _More accurate Iridescence_** (https://www.shadertoy.com/view/ltKcWh). Thin-film interference from first principles. Source for the brushed-metal iridescence on the wings during arrival.
+- **Inigo Quilez — _Articles_** (https://iquilezles.org/articles/). Reference for gradient noise, fbm, easings, and palette construction used inside the bloom region.
 - **lygia** (https://github.com/patriciogonzalezvivo/lygia). Curated GLSL/WGSL primitive library. Vendor-pin specific files we use; do not depend as a package.
 
 ## 3. Banned moves
@@ -28,16 +28,16 @@ We never evoke: descent, ascension, salvation, or the wings emitting light. The 
 
 ## 4. Sequence
 
-| t | event |
-|---|---|
-| 0 ms | Route renders. Text + Argent wings present, flat-lit. Page-level `FilmGrain` already on. |
-| 0–700 ms | Hold. Reader's eye lands on the kicker and headline. |
-| ~700 ms | WebGL canvas mounted, shader compiled, MSDF loaded, first frame buffered. |
-| 700 ms | Light source enters viewport from upper-right, off-canvas origin. |
-| 700–1300 ms | **Arrival** — high intensity, high velocity, eased out. A caustic trail follows the source. |
-| 1300–2100 ms | **Trail** — light traverses the bounding box of the marked headline span (default: *succeed*), elongating along its baseline, intensifying as it crosses the word's centroid. |
-| 2100–2800 ms | **Draw-back** — light contracts toward the anchor near the wings; intensity falls to ~30% of arrival peak. |
-| 2800 ms+ | **Settled** — anchor oscillates within a ~24px radius on a Lissajous-like curve at <1°/s. Anisotropic shimmer on wings. Caustic grain inside the lit region only. Permanent state, no further events. |
+| t            | event                                                                                                                                                                                                 |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0 ms         | Route renders. Text + Argent wings present, flat-lit. Page-level `FilmGrain` already on.                                                                                                              |
+| 0–700 ms     | Hold. Reader's eye lands on the kicker and headline.                                                                                                                                                  |
+| ~700 ms      | WebGL canvas mounted, shader compiled, MSDF loaded, first frame buffered.                                                                                                                             |
+| 700 ms       | Light source enters viewport from upper-right, off-canvas origin.                                                                                                                                     |
+| 700–1300 ms  | **Arrival** — high intensity, high velocity, eased out. A caustic trail follows the source.                                                                                                           |
+| 1300–2100 ms | **Trail** — light traverses the bounding box of the marked headline span (default: _succeed_), elongating along its baseline, intensifying as it crosses the word's centroid.                         |
+| 2100–2800 ms | **Draw-back** — light contracts toward the anchor near the wings; intensity falls to ~30% of arrival peak.                                                                                            |
+| 2800 ms+     | **Settled** — anchor oscillates within a ~24px radius on a Lissajous-like curve at <1°/s. Anisotropic shimmer on wings. Caustic grain inside the lit region only. Permanent state, no further events. |
 
 Total arrival ≈ 2.8s.
 
@@ -54,7 +54,7 @@ Easing:
 - Light source: warm white (`#FFFAF0`), shifted ~5° toward amber at peak. No color cycling.
 - **Falloff edge**: ~5–8% cool-blue mix at the outer edge of the bloom, zero at the source. Carries the trace of mystery without tipping into ominous; emerges from spectral dispersion (§2 — Zucconi), not RGB-channel offsets.
 - Caustic ripples: derived from the source color via fbm noise. No saturated rainbow dispersion.
-- Argent shimmer on wings: existing Argent token, modulated up to +20% luminance where the light sits. Never *below* base Argent.
+- Argent shimmer on wings: existing Argent token, modulated up to +20% luminance where the light sits. Never _below_ base Argent.
 - Background ink: unchanged (`var(--color-ink)`, `#0E0E0E`). The light does not raise the global luminance of the page.
 
 ### Light model
@@ -66,7 +66,7 @@ Easing:
 
 ### Type interaction
 
-- The marked span (default: the word *succeed*) receives the trail.
+- The marked span (default: the word _succeed_) receives the trail.
 - Shader reads the span's bounding box at mount and on resize, passes it as a uniform.
 - During trail phase, the letters of the marked span briefly increase in luminance via a CSS variable `--firstlight-luminance` driven by a `requestAnimationFrame` callback that mirrors the shader's intensity envelope. **Type does not move.**
 
@@ -223,7 +223,7 @@ All four phases are MVP. There is no separate WebGPU phase; TSL ships both backe
 
 ## 14. Content shape change
 
-The trail target is currently the word *succeed* in `landing.hero`. The hero is a single string today; routes consume it as one. To mark the span without touching JSX, restructure `landing.ts`:
+The trail target is currently the word _succeed_ in `landing.hero`. The hero is a single string today; routes consume it as one. To mark the span without touching JSX, restructure `landing.ts`:
 
 ```ts
 export const landing = {
