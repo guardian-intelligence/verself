@@ -5,8 +5,10 @@ go 1.25.0
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.40.3
 	github.com/danielgtaylor/huma/v2 v2.37.3
+	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.1
+	github.com/lib/pq v1.10.9
 	github.com/oapi-codegen/runtime v1.4.0
 	github.com/verself/apiwire v0.0.0
 	github.com/verself/auth-middleware v0.0.0
@@ -46,7 +48,6 @@ require (
 	github.com/segmentio/asm v1.2.0 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
-	github.com/verself/pgmigrate v0.0.0
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.17.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.19.0 // indirect
@@ -77,5 +78,3 @@ replace github.com/verself/envconfig => ../envconfig
 replace github.com/verself/httpserver => ../httpserver
 
 replace github.com/verself/otel => ../otel
-
-replace github.com/verself/pgmigrate => ../pgmigrate

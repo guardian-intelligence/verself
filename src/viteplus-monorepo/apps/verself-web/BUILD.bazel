@@ -26,9 +26,9 @@ viteplus_node_app_artifact(
 # Customer-facing OpenAPI client SDKs for every service the verself-web app
 # talks to. Outputs are written to bazel-out, then projected onto disk under
 # src/__generated/<sdk>/ via write_source_files. Run
-# `bazelisk run //src/viteplus-monorepo/apps/verself-web:openapi_clients` to
+# `bazelisk run //src/viteplus-monorepo/apps/verself-web:dev_update` to
 # refresh the on-disk copies after a spec change; CI gates drift via
-# `bazelisk test //src/viteplus-monorepo/apps/verself-web:openapi_clients_test`.
+# `bazelisk test //src/viteplus-monorepo/apps/verself-web:dev_check`.
 viteplus_openapi_clients(
     name = "openapi_clients",
     openapi_ts_bin = openapi_ts_bin,
@@ -42,4 +42,14 @@ viteplus_openapi_clients(
         ("projects-api", "//src/projects-service/openapi:openapi-3.1.yaml.bin"),
         ("source-code-hosting-api", "//src/source-code-hosting-service/openapi:openapi-3.1.yaml.bin"),
     ],
+)
+
+test_suite(
+    name = "dev_check",
+    tests = [":openapi_clients_tests"],
+)
+
+alias(
+    name = "dev_update",
+    actual = ":openapi_clients",
 )

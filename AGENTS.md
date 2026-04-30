@@ -149,7 +149,7 @@ The contained instructions in this block are guidelines that apply to writing ma
 - Dev tools are system-installed via `ansible-playbook playbooks/setup-dev.yml`.
 - Apply the scientific method: create a bar-raising verification protocol for the planned task *prior* to implementing changes. The verification protocol should fail, and only then begin implementing until green.
 - Avoid one-off, non-syntax-aware scripts for large parallel changes or refactors. Use subagents for that class of task — unexpected edge cases are likely and judgement is often required.
-- Use `aspect tidy` to run `go mod tidy` and other language-specific formatters across the code base.
+- Use `aspect bazel tidy` to run `go mod tidy` and other language-specific formatters across the code base.
 - When using agent-browser, don't use the sandbox (`--no-sandbox`)
 - Deploy frontend changes to prod fearlessly (e.g. `aspect deploy site=prod`) -- I can't see your dev server.
 </tool_use_contract>

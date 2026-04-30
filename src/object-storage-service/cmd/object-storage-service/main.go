@@ -27,7 +27,6 @@ import (
 	"github.com/verself/object-storage-service/internal/objectstorage"
 	"github.com/verself/object-storage-service/migrations"
 	verselfotel "github.com/verself/otel"
-	"github.com/verself/pgmigrate"
 	secretsclient "github.com/verself/secrets-service/client"
 )
 
@@ -58,10 +57,7 @@ func runMigrationCLI(ctx context.Context) (bool, error) {
 	if len(os.Args) < 2 || os.Args[1] != "migrate" {
 		return false, nil
 	}
-	return true, pgmigrate.RunCLI(ctx, os.Args[2:], pgmigrate.Config{
-		Service: "object-storage-service",
-		FS:      migrations.Files,
-	})
+	return true, migrations.RunCLI(ctx, os.Args[2:], "object-storage-service")
 }
 
 func run() error {

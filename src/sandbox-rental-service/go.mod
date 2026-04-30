@@ -33,7 +33,11 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-require go.yaml.in/yaml/v3 v3.0.4 // indirect
+require (
+	github.com/golang-migrate/migrate/v4 v4.19.1
+	github.com/lib/pq v1.10.9
+	go.yaml.in/yaml/v3 v3.0.4 // indirect
+)
 
 require (
 	github.com/ClickHouse/ch-go v0.68.0 // indirect
@@ -80,7 +84,6 @@ require (
 	github.com/tidwall/match v1.2.0 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
-	github.com/verself/pgmigrate v0.0.0
 	github.com/vishvananda/netlink v1.3.1 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
@@ -125,5 +128,3 @@ replace (
 	github.com/verself/temporal-platform => ../temporal-platform
 	github.com/verself/vm-orchestrator => ../vm-orchestrator
 )
-
-replace github.com/verself/pgmigrate => ../pgmigrate

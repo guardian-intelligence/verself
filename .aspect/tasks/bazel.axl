@@ -1,4 +1,4 @@
-"""aspect bazel doctor|gazelle|tidy|update — Bazel-graph orchestration shortcuts.
+"""aspect bazel gazelle|tidy|update — Bazel-graph orchestration shortcuts.
 
 These are the durable AXL wrappers around the Bazel-graph workflows that an
 operator runs by hand often enough to want shape and help text. Everything
@@ -7,14 +7,6 @@ raw `bazelisk` and intentionally out of scope.
 """
 
 load(".aspect/lib/helpers.axl", "checked_spawn")
-
-def _doctor_impl(ctx):
-    return checked_spawn(
-        ctx,
-        "bazelisk",
-        ["run", "//tools/bazel:doctor"],
-        label = "bazelisk run //tools/bazel:doctor",
-    )
 
 def _gazelle_impl(ctx):
     return checked_spawn(
@@ -44,13 +36,6 @@ def _update_impl(ctx):
     if rc != 0:
         return rc
     return _tidy_impl(ctx)
-
-doctor = task(
-    implementation = _doctor_impl,
-    name = "doctor",
-    group = ["bazel"],
-    summary = "Run //tools/bazel:doctor to verify the Bazel/Bazelisk bootstrap contract.",
-)
 
 gazelle = task(
     implementation = _gazelle_impl,

@@ -1,5 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
-load("//tools/nomad:artifact.bzl", "nomad_binary_artifact")
+load("//src/cue-renderer/nomad:artifact.bzl", "nomad_binary_artifact")
 
 go_library(
     name = "mailbox-service_lib",
@@ -19,7 +19,6 @@ go_library(
         "//src/mailbox-service/internal/sync",
         "//src/mailbox-service/migrations",
         "//src/otel",
-        "//src/pgmigrate",
         "//src/secrets-service/client",
         "@com_github_jackc_pgx_v5//pgxpool",
         "@io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp//:otelhttp",

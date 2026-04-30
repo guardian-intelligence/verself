@@ -24,7 +24,6 @@ import (
 	"github.com/verself/notifications-service/internal/notifications"
 	"github.com/verself/notifications-service/migrations"
 	verselfotel "github.com/verself/otel"
-	"github.com/verself/pgmigrate"
 )
 
 const (
@@ -51,10 +50,7 @@ func runMigrationCLI(ctx context.Context) (bool, error) {
 	if len(os.Args) < 2 || os.Args[1] != "migrate" {
 		return false, nil
 	}
-	return true, pgmigrate.RunCLI(ctx, os.Args[2:], pgmigrate.Config{
-		Service: serviceName,
-		FS:      migrations.Files,
-	})
+	return true, migrations.RunCLI(ctx, os.Args[2:], serviceName)
 }
 
 func run() error {

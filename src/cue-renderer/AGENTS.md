@@ -113,7 +113,7 @@ Adding a new pinned_http_file tool is now exactly:
 4. Add the layout row in the appropriate `devToolPackaging` list
    (`raw` for prebuilt single binaries, `tar_single` for one binary
    from an archive, etc.).
-5. `aspect codegen run --kind=topology`.
+5. `bazelisk run //src/cue-renderer:dev_update`.
 
 `MODULE.bazel`, `dev_tools.bzl`, and `catalog.yml` regenerate; the
 `TestDevToolPinnedHTTPFileTriangle` invariant test keeps the three
@@ -140,7 +140,7 @@ Adding any new generated file:
    reads.
 4. Add a `genrule(...)` to `src/cue-renderer/BUILD.bazel` invoking
    `cue-renderer render <name>` and add the output to `_RENDERED_FILES`.
-   `aspect codegen check --kind=topology` then catches drift.
+   `bazelisk test //src/cue-renderer:dev_check` then catches drift.
 5. If the rendered file is a Bazel input (`*.MODULE.bazel`, `*.bzl`),
    add an `include()` line to root `MODULE.bazel` or a `load()` to the
    consuming `BUILD.bazel`.
@@ -185,5 +185,5 @@ state, and OTel traces/metrics in ClickHouse after `aspect deploy`.
   `versions.development.bazelisk` and `versions.development.aspectCLI` in
   `versions.cue` by hand. The bootstrap script cannot read CUE because CUE
   evaluation requires Bazel which requires bazelisk. When the version bumps,
-  both move together; `aspect doctor` reads the rendered catalog yaml and
+  both move together; `aspect render` reads the rendered catalog yaml and
   asserts both versions match the on-disk binaries.

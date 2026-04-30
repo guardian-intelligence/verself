@@ -58,6 +58,6 @@ Generated clients are the supported SDK surface. Server functions and service-si
 
 - Run `go test ./...` from `src/apiwire` after changes in this package.
 - Regenerate affected OpenAPI specs and generated clients when a DTO shape changes.
-- Run `aspect codegen check --kind=openapi` after spec regeneration; it includes the wire checker for unsafe `int64` and `uint64` schemas.
+- Run the owning OpenAPI Bazel contract target after spec regeneration; it includes the wire checker for unsafe `int64` and `uint64` schemas.
 - Run affected service tests and frontend typechecks for wrappers consuming the regenerated clients.
 - For behavior-affecting contract changes, prove the deployed path through ClickHouse traces/logs, not just local tests.

@@ -88,9 +88,9 @@ func TestRenderAll_OutputPathShape(t *testing.T) {
 		t.Fatal("renderAll produced no files")
 	}
 	// Per-deploy artefacts are cache-relative under inventory/, share/, or
-	// handlers/. Bazel-input artefacts live at exactly two source paths
-	// because Bazel evaluates them at load time and `aspect codegen run
-	// --kind=topology` writes them via write_source_files; anything else
+	// handlers/. Bazel-input artefacts live at fixed source paths because
+	// Bazel evaluates them at load time and dev_update writes them via
+	// write_source_files; anything else
 	// under src/ is a layout drift.
 	validRoots := []string{
 		"inventory/",

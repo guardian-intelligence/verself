@@ -1,2 +1,0 @@
-# gazelle:prefix github.com/verself/tools/codegen
-exports_files(["openapi.bzl"])

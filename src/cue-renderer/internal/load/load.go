@@ -57,6 +57,7 @@ type Clusters struct {
 type Catalog struct {
 	Versions            map[string]any
 	ServerTools         map[string]any
+	SubstrateTools      map[string]any
 	ServerToolPackaging map[string]any
 	DevTools            map[string]any
 	DevToolsArchive     map[string]any
@@ -197,6 +198,7 @@ func decodeCatalog(root cue.Value, out *Catalog) error {
 	}{
 		{path: "versions", dst: &out.Versions},
 		{path: "serverTools", dst: &out.ServerTools},
+		{path: "substrateToolsArchive", dst: &out.SubstrateTools},
 		{path: "serverToolPackaging", dst: &out.ServerToolPackaging},
 		{path: "devTools", dst: &out.DevTools},
 		{path: "devToolsArchive", dst: &out.DevToolsArchive},

@@ -29,7 +29,6 @@ import (
 	"github.com/verself/envconfig"
 	"github.com/verself/httpserver"
 	verselfotel "github.com/verself/otel"
-	"github.com/verself/pgmigrate"
 	secretsclient "github.com/verself/secrets-service/client"
 	vmorchestrator "github.com/verself/vm-orchestrator"
 
@@ -67,10 +66,7 @@ func runMigrationCLI(ctx context.Context) (bool, error) {
 	if len(os.Args) < 2 || os.Args[1] != "migrate" {
 		return false, nil
 	}
-	return true, pgmigrate.RunCLI(ctx, os.Args[2:], pgmigrate.Config{
-		Service: "sandbox-rental-service",
-		FS:      migrations.Files,
-	})
+	return true, migrations.RunCLI(ctx, os.Args[2:], "sandbox-rental-service")
 }
 
 func run() error {

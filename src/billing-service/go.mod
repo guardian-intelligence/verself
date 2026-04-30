@@ -5,7 +5,9 @@ go 1.25.0
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.40.3
 	github.com/danielgtaylor/huma/v2 v2.37.3
+	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/jackc/pgx/v5 v5.9.1
+	github.com/lib/pq v1.10.9
 	github.com/riverqueue/river v0.34.0
 	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.34.0
 	github.com/riverqueue/river/rivertype v0.34.0
@@ -38,7 +40,7 @@ require (
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/coreos/go-oidc/v3 v3.17.0 // indirect
-	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-faster/city v1.0.1 // indirect
 	github.com/go-faster/errors v0.7.1 // indirect
@@ -53,7 +55,7 @@ require (
 	github.com/klauspost/compress v1.18.4 // indirect
 	github.com/paulmach/orb v0.11.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
-	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/riverqueue/river/riverdriver v0.34.0 // indirect
 	github.com/riverqueue/river/rivershared v0.34.0 // indirect
 	github.com/segmentio/asm v1.2.0 // indirect
@@ -63,7 +65,6 @@ require (
 	github.com/tidwall/match v1.2.0 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
-	github.com/verself/pgmigrate v0.0.0
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.17.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.19.0 // indirect
@@ -98,5 +99,3 @@ replace github.com/verself/httpserver => ../httpserver
 replace github.com/verself/otel => ../otel
 
 replace github.com/verself/secrets-service => ../secrets-service
-
-replace github.com/verself/pgmigrate => ../pgmigrate

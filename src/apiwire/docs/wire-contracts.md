@@ -34,7 +34,7 @@ Do not use hand-written `strconv.FormatUint` string fields in service-local DTOs
 
 ## Generated Contract Gate
 
-`aspect codegen check --kind=openapi` runs `aspect codegen check --kind=wire`, which scans committed frontend-consumed OpenAPI 3.1 specs. It fails for `type: integer`, `format: int64` or `format: uint64` unless one of these is true:
+Each service's OpenAPI package declares the frontend wire-contract gate next to the spec it produces. The gate scans frontend-consumed OpenAPI 3.1 specs and fails for `type: integer`, `format: int64` or `format: uint64` unless one of these is true:
 
 - `maximum <= 9007199254740991`
 - `x-js-wire: bigint`

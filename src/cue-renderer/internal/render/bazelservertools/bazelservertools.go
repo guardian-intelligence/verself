@@ -15,6 +15,11 @@ const outputPath = "src/cue-renderer/binaries/server_tools.bzl"
 
 type Renderer struct{}
 
+type hostGoTool struct {
+	Label  string
+	Output string
+}
+
 func (Renderer) Name() string { return "bazel_server_tools" }
 
 func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.WritableFS) error {
@@ -61,6 +66,16 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 	}
 	b.WriteString("]\n\n")
 
+	hostTools, err := hostGoTools(loaded)
+	if err != nil {
+		return err
+	}
+	b.WriteString("HOST_GO_TOOLS = [\n")
+	for _, item := range hostTools {
+		fmt.Fprintf(&b, "    (%q, %q),\n", item.Label, item.Output)
+	}
+	b.WriteString("]\n\n")
+
 	symlinks, err := projection.Map(packaging, "serverToolPackaging", "symlinks")
 	if err != nil {
 		return err
@@ -77,6 +92,76 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 	b.WriteString(starlarkTemplate)
 
 	return out.WriteFile(outputPath, []byte(b.String()))
+}
+
+func hostGoTools(loaded load.Loaded) ([]hostGoTool, error) {
+	components, err := projection.Components(loaded)
+	if err != nil {
+		return nil, err
+	}
+
+	seen := map[string]hostGoTool{}
+	for _, component := range components {
+		if isHostRuntime(component.Value) {
+			artifact, _ := component.Value["artifact"].(map[string]any)
+			if err := appendHostGoTool(seen, component.Name+".artifact", artifact); err != nil {
+				return nil, err
+			}
+		}
+
+		rawTools, ok := component.Value["tools"].(map[string]any)
+		if !ok {
+			continue
+		}
+		for name, raw := range rawTools {
+			artifact, ok := raw.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("topology.components.%s.tools.%s: expected map, got %T", component.Name, name, raw)
+			}
+			if err := appendHostGoTool(seen, component.Name+".tools."+name, artifact); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	out := make([]hostGoTool, 0, len(seen))
+	for _, item := range seen {
+		out = append(out, item)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Output != out[j].Output {
+			return out[i].Output < out[j].Output
+		}
+		return out[i].Label < out[j].Label
+	})
+	return out, nil
+}
+
+func isHostRuntime(component map[string]any) bool {
+	kind, _ := component["kind"].(string)
+	if kind != "resource" && kind != "privileged_daemon" {
+		return false
+	}
+	deployment, _ := component["deployment"].(map[string]any)
+	supervisor, _ := deployment["supervisor"].(string)
+	return supervisor != "nomad"
+}
+
+func appendHostGoTool(seen map[string]hostGoTool, path string, artifact map[string]any) error {
+	kind, _ := artifact["kind"].(string)
+	if kind != "go_binary" {
+		return nil
+	}
+	label, _ := artifact["bazel_label"].(string)
+	output, _ := artifact["output"].(string)
+	if label == "" || output == "" {
+		return fmt.Errorf("topology.components.%s: go_binary artifact requires bazel_label and output", path)
+	}
+	if existing, ok := seen[output]; ok && existing.Label != label {
+		return fmt.Errorf("host Go tool output %q is declared by both %s and %s", output, existing.Label, label)
+	}
+	seen[output] = hostGoTool{Label: label, Output: output}
+	return nil
 }
 
 func serverToolDeps(packaging map[string]any) ([]string, error) {
@@ -281,5 +366,21 @@ def server_tools_archive():
         deps = SERVER_TOOL_DEPS,
         extension = "tar.zst",
         symlinks = SERVER_TOOL_SYMLINKS,
+    )
+
+def substrate_go_tools_archive():
+    files = {}
+    modes = {}
+    for label, output in HOST_GO_TOOLS:
+        dest = "opt/verself/profile/bin/" + output
+        files[label] = dest
+        modes[dest] = "0755"
+
+    pkg_tar(
+        name = "substrate_go_tools",
+        out = "substrate_go_tools.tar",
+        files = files,
+        modes = modes,
+        visibility = ["//visibility:public"],
     )
 `

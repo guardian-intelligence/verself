@@ -1,6 +1,5 @@
-// Renders the billing-service OpenAPI spec for one format and writes
-// it to --output. Invoked by the verself_openapi_yaml Bazel rule —
-// stdout is not used because run_binary cannot capture it.
+// Renders the billing-service OpenAPI spec for one format. Bazel captures
+// stdout into the declared output; --output remains for direct operator use.
 package main
 
 import (
@@ -31,10 +30,11 @@ func main() {
 		os.Exit(1)
 	}
 	if *output == "" {
-		fmt.Fprintln(os.Stderr, "missing --output path")
-		os.Exit(1)
+		_, err = os.Stdout.Write(spec)
+	} else {
+		err = os.WriteFile(*output, spec, 0o644)
 	}
-	if err := os.WriteFile(*output, spec, 0o644); err != nil {
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
