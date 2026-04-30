@@ -10,6 +10,25 @@
     state: directory
     mode: "0755"
 
+- name: Resolve Firecracker uplink for existing generated ruleset
+  ansible.builtin.set_fact:
+    nftables_firecracker_uplink: >-
+      {{
+        firecracker_host_uplink_interface
+        if (firecracker_host_uplink_interface | default('', true)) != ''
+        else ansible_facts.default_ipv4.interface | default('')
+      }}
+
+# firecracker.nft is rendered from CUE but has one host runtime fact: the
+# uplink interface. Repair any prior generic copy before this role reloads.
+- name: Substitute uplink placeholder in existing Firecracker ruleset
+  ansible.builtin.replace:
+    path: /etc/nftables.d/firecracker.nft
+    regexp: __VERSELF_UPLINK__
+    replace: "{{ nftables_firecracker_uplink }}"
+  when: nftables_firecracker_uplink | length > 0
+  notify: reload nftables
+
 - name: Deploy main nftables config
   ansible.builtin.copy:
     src: "{{ platform_rendered_dir }}/etc/nftables.conf"
@@ -35,6 +54,7 @@
   loop: "{{ nftables_rendered_rulesets }}"
   loop_control:
     label: "{{ item | basename }}"
+  when: (item | basename) != "firecracker.nft"
   notify: reload nftables
 
 - name: Enable and start nftables service
