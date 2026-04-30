@@ -13,20 +13,21 @@
 // codegen-rebuild question wants to ask.
 //
 // Each span:
-//   ServiceName: --service-name (default "bazel")
-//   SpanName:    "bazel.spawn.<Mnemonic>" (or "bazel.spawn" if missing)
-//   Start/End:   metrics.startTime + metrics.totalTime
-//   Status:      Ok if exitCode == 0, Error otherwise
-//   Attributes:
-//     bazel.target_label   — the Bazel label that requested this action
-//     bazel.mnemonic       — action mnemonic (OAPICodegen, GoCompilePkg, ...)
-//     bazel.runner         — execution strategy ("linux-sandbox", "remote
-//                            cache hit", "disk cache hit", "local", ...)
-//     bazel.cache_hit      — true iff the action was served from a cache
-//     bazel.exit_code      — process exit code
-//     bazel.duration_ms    — wall-clock execution time (ms)
-//     bazel.output_count   — number of declared outputs
-//     bazel.output_first   — first output path (best for grep/filter)
+//
+//	ServiceName: --service-name (default "bazel")
+//	SpanName:    "bazel.spawn.<Mnemonic>" (or "bazel.spawn" if missing)
+//	Start/End:   metrics.startTime + metrics.totalTime
+//	Status:      Ok if exitCode == 0, Error otherwise
+//	Attributes:
+//	  bazel.target_label   — the Bazel label that requested this action
+//	  bazel.mnemonic       — action mnemonic (OAPICodegen, GoCompilePkg, ...)
+//	  bazel.runner         — execution strategy ("linux-sandbox", "remote
+//	                         cache hit", "disk cache hit", "local", ...)
+//	  bazel.cache_hit      — true iff the action was served from a cache
+//	  bazel.exit_code      — process exit code
+//	  bazel.duration_ms    — wall-clock execution time (ms)
+//	  bazel.output_count   — number of declared outputs
+//	  bazel.output_first   — first output path (best for grep/filter)
 //
 // The standard verselfotel.Init plumbing inherits OTLP endpoint and
 // OTEL_RESOURCE_ATTRIBUTES from the calling shell, so spans land in
@@ -66,14 +67,14 @@ import (
 // via protojson by --execution_log_json_file) that this tool reads.
 // Field names follow the proto's protojson convention (camelCase).
 type spawnExec struct {
-	Mnemonic       string         `json:"mnemonic"`
-	TargetLabel    string         `json:"targetLabel"`
-	Runner         string         `json:"runner"`
-	CacheHit       bool           `json:"cacheHit"`
-	ExitCode       int32          `json:"exitCode"`
-	Status         string         `json:"status"`
-	ActualOutputs  []spawnOutput  `json:"actualOutputs"`
-	Metrics        *spawnMetrics  `json:"metrics"`
+	Mnemonic      string        `json:"mnemonic"`
+	TargetLabel   string        `json:"targetLabel"`
+	Runner        string        `json:"runner"`
+	CacheHit      bool          `json:"cacheHit"`
+	ExitCode      int32         `json:"exitCode"`
+	Status        string        `json:"status"`
+	ActualOutputs []spawnOutput `json:"actualOutputs"`
+	Metrics       *spawnMetrics `json:"metrics"`
 }
 
 type spawnOutput struct {
