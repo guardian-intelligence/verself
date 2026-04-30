@@ -77,6 +77,11 @@ artifacts/
 # Bazel convenience symlinks
 /bazel-*
 
+# Screenshots dropped into the working directory by macOS pasteboard
+# / capture tools — never tracked.
+Screenshot*.png
+Screenshot*.jpg
+
 # Generated OpenAPI artifacts. Authority is the Huma route source; the
 # action graph rebuilds these into bazel-out via verself_openapi_yaml +
 # verself_openapi_go_client. No on-disk source of truth.
