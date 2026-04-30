@@ -20,10 +20,6 @@ viteplus_app(
 
 viteplus_node_app_artifact(
     name = "node_app_nomad_artifact",
-    migration_data = {
-        "//src/viteplus-monorepo/packages/auth-web:auth_session_schema": "schema/auth_sessions.sql",
-    },
-    migration_entry = "src/server/migrate-auth-sessions.ts",
     output = "verself-web",
 )
 

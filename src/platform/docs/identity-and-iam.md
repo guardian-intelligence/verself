@@ -253,10 +253,10 @@ secrets-service owns token material, verifier storage, roll/revoke semantics,
 and credential audit rows.
 
 Embedded organization widgets are a special cross-service web-session path.
-The verself-web frontend owns the interactive OIDC application and stores the
-browser session server-side. Before calling `identity-service`, the BFF exchanges
-the session access token for an identity-service audience token and forwards that
-resource token. `identity-service` validates the JWT locally and reads only
+`identity-service` owns the interactive OIDC application and browser session.
+Before calling product services, the TanStack BFF asks `identity-service` to
+exchange the browser session access token for the requested service audience and
+forwards that resource token server-side. `identity-service` validates the JWT locally and reads only
 `urn:zitadel:iam:org:project:<identity-service-project-id>:roles`; it does not
 resolve role assignments from Zitadel in the request path.
 
@@ -269,12 +269,12 @@ diverged.
 
 ## Frontend Sessions
 
-TanStack Start frontends use server-owned OAuth web sessions. The frontend
-server performs the Zitadel code exchange, stores access and refresh tokens in
-the `frontend_auth` PostgreSQL database's `auth_sessions` table, and issues an
-HTTP-only session cookie to the browser. CUE declares the frontend component's
-database and credential facts; Ansible applies the substrate state and Nomad
-supervises the frontend job.
+TanStack Start frontends use identity-service-owned OAuth web sessions.
+`identity-service` performs the Zitadel code exchange, stores access and refresh
+tokens in its PostgreSQL database, and issues an HTTP-only session cookie to the
+browser. CUE declares the browser OIDC application and credential facts on the
+identity-service component; Ansible applies the substrate state and Nomad
+supervises the identity-service and frontend jobs.
 
 Server functions, loaders, and route hooks read the server-owned session and
 forward bearer tokens to Go services from the server side. Browser code must not
@@ -302,16 +302,16 @@ inline hydration scripts; moving to per-request nonces is a tracked hardening
 step and does not change the bearer-isolation guarantee, which rides on
 `connect-src`.
 
-Do not assume a web UI persona by inserting rows into `frontend_auth.auth_sessions`.
-Those sessions are coupled to the encrypted HTTP-only cookie, OAuth state,
-nonce, PKCE, token expiry, and refresh semantics owned by the auth server
-package. UI rehearsal should drive the normal Zitadel browser login. API
-rehearsal should use seeded client-credentials machine users with project
-audience and role scopes.
+Do not assume a web UI persona by inserting rows into identity-service browser
+session tables. Those sessions are coupled to the HTTP-only cookie, OAuth state,
+nonce, PKCE, token expiry, and refresh semantics owned by identity-service. UI
+rehearsal should drive the normal Zitadel browser login. API rehearsal should
+use seeded client-credentials machine users with project audience and role
+scopes.
 
-Only frontends need interactive OIDC applications. Go services need the Zitadel
-project/application audience that should appear in tokens; they do not own
-interactive login.
+Only identity-service owns interactive OIDC applications. Other Go services need
+the Zitadel project/application audience that should appear in tokens; they do
+not own interactive login.
 
 ## Role Assignment Provisioning
 

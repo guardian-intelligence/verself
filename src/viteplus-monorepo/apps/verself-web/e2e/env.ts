@@ -20,8 +20,8 @@ export const env = {
   testLastName: process.env.TEST_LAST_NAME || "Operator",
 
   // Zitadel admin PAT — optional. If set, the test will auto-provision the
-  // test user via the Zitadel Management API. If not set, the user must
-  // already exist (e.g., via the seed-system Ansible playbook).
+  // test user via the Zitadel Management API. If not set, provide credentials
+  // for an existing test user.
   zitadelAdminPAT: process.env.ZITADEL_ADMIN_PAT || "",
   zitadelBaseURL: process.env.ZITADEL_BASE_URL?.trim() || deriveAuthIssuerURL(),
   zitadelProjectName: process.env.ZITADEL_PROJECT_NAME || "sandbox-rental",

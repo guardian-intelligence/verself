@@ -217,3 +217,75 @@ CREATE INDEX IF NOT EXISTS identity_api_credential_secrets_active_idx
 CREATE UNIQUE INDEX IF NOT EXISTS identity_api_credential_secrets_provider_key_idx
     ON identity_api_credential_secrets (auth_method, provider_key_id)
     WHERE revoked_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS identity_browser_login_transactions (
+    state_hash TEXT PRIMARY KEY,
+    nonce TEXT NOT NULL,
+    code_verifier TEXT NOT NULL,
+    redirect_to TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (length(btrim(state_hash)) > 0),
+    CHECK (length(btrim(nonce)) > 0),
+    CHECK (length(btrim(code_verifier)) > 0),
+    CHECK (length(btrim(redirect_to)) > 0),
+    CHECK (expires_at > created_at)
+);
+
+CREATE INDEX IF NOT EXISTS identity_browser_login_transactions_expires_at_idx
+    ON identity_browser_login_transactions (expires_at);
+
+CREATE TABLE IF NOT EXISTS identity_browser_sessions (
+    session_hash TEXT PRIMARY KEY,
+    client_cache_partition TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    email TEXT,
+    display_name TEXT,
+    preferred_username TEXT,
+    org_id TEXT,
+    home_org_id TEXT,
+    selected_org_id TEXT,
+    roles TEXT[] NOT NULL DEFAULT '{}',
+    available_org_contexts JSONB NOT NULL DEFAULT '[]'::jsonb,
+    user_claims JSONB NOT NULL DEFAULT '{}'::jsonb,
+    id_token TEXT,
+    access_token TEXT NOT NULL,
+    refresh_token TEXT,
+    token_scope TEXT,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (length(btrim(session_hash)) > 0),
+    CHECK (length(btrim(client_cache_partition)) > 0),
+    CHECK (length(btrim(subject)) > 0),
+    CHECK (length(btrim(access_token)) > 0),
+    CHECK (expires_at > created_at)
+);
+
+CREATE INDEX IF NOT EXISTS identity_browser_sessions_subject_idx
+    ON identity_browser_sessions (subject);
+
+CREATE INDEX IF NOT EXISTS identity_browser_sessions_expires_at_idx
+    ON identity_browser_sessions (expires_at);
+
+CREATE TABLE IF NOT EXISTS identity_browser_resource_tokens (
+    session_hash TEXT NOT NULL REFERENCES identity_browser_sessions (session_hash) ON DELETE CASCADE,
+    audience TEXT NOT NULL,
+    selected_org_id TEXT NOT NULL,
+    scope_hash TEXT NOT NULL,
+    access_token TEXT NOT NULL,
+    token_scope TEXT,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (session_hash, audience, selected_org_id, scope_hash),
+    CHECK (length(btrim(session_hash)) > 0),
+    CHECK (length(btrim(audience)) > 0),
+    CHECK (length(btrim(selected_org_id)) > 0),
+    CHECK (length(btrim(scope_hash)) > 0),
+    CHECK (length(btrim(access_token)) > 0),
+    CHECK (expires_at > created_at)
+);
+
+CREATE INDEX IF NOT EXISTS identity_browser_resource_tokens_expires_at_idx
+    ON identity_browser_resource_tokens (expires_at);

@@ -83,120 +83,84 @@ job_env_value() {
 ' "${job_spec_path}"
 }
 
+require_job_env() {
+  local key="$1"
+  local value="${!key:-}"
+  if [[ -z "${value}" ]]; then
+    value="$(job_env_value "${key}")"
+  fi
+  if [[ -z "${value}" ]]; then
+    echo "failed to resolve ${key} from ${job_spec_path}" >&2
+    exit 1
+  fi
+  printf '%s\n' "${value}"
+}
+
 if [[ ! -f "${job_spec_path}" ]]; then
   echo "missing rendered Nomad job spec: ${job_spec_path}" >&2
   exit 1
 fi
 
-auth_project_id="${AUTH_PROJECT_ID:-$(job_env_value AUTH_PROJECT_ID)}"
-if [[ -z "${auth_project_id}" ]]; then
-  echo "failed to resolve AUTH_PROJECT_ID from ${job_spec_path}" >&2
-  exit 1
-fi
-identity_service_auth_audience="${IDENTITY_SERVICE_AUTH_AUDIENCE:-$(job_env_value IDENTITY_SERVICE_AUTH_AUDIENCE)}"
-if [[ -z "${identity_service_auth_audience}" ]]; then
-  echo "failed to resolve IDENTITY_SERVICE_AUTH_AUDIENCE from ${job_spec_path}" >&2
-  exit 1
-fi
-auth_database_password_file="${AUTH_DATABASE_PASSWORD_FILE:-$(job_env_value AUTH_DATABASE_PASSWORD_FILE)}"
-if [[ -z "${auth_database_password_file}" ]]; then
-  echo "failed to resolve AUTH_DATABASE_PASSWORD_FILE from ${job_spec_path}" >&2
-  exit 1
-fi
+identity_service_auth_audience="$(require_job_env IDENTITY_SERVICE_AUTH_AUDIENCE)"
+sandbox_rental_service_auth_audience="$(require_job_env SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE)"
+profile_service_auth_audience="$(require_job_env PROFILE_SERVICE_AUTH_AUDIENCE)"
+notifications_service_auth_audience="$(require_job_env NOTIFICATIONS_SERVICE_AUTH_AUDIENCE)"
+projects_service_auth_audience="$(require_job_env PROJECTS_SERVICE_AUTH_AUDIENCE)"
+source_code_hosting_service_auth_audience="$(require_job_env SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE)"
 
-fetch_dev_client_id() {
-  local admin_pat="$1"
-  local auth_project_id="$2"
-  local response
-
-  response="$(
-    curl -fsS \
-      -H "Authorization: Bearer ${admin_pat}" \
-      -H "Content-Type: application/json" \
-      -d '{"queries":[{"nameQuery":{"name":"verself-web-dev","method":"TEXT_QUERY_METHOD_EQUALS"}}]}' \
-      "https://auth.${VERIFICATION_DOMAIN}/management/v1/projects/${auth_project_id}/apps/_search"
-  )"
-
-  python3 - <<'PY' "${response}"
-import json
-import sys
-
-payload = json.loads(sys.argv[1])
-apps = payload.get("result") or []
-if not apps:
-    raise SystemExit(1)
-
-client_id = ((apps[0].get("oidcConfig") or {}).get("clientId") or "").strip()
-if not client_id:
-    raise SystemExit(1)
-
-print(client_id)
-PY
-}
-
-local_pg_port="$(choose_local_port "${CONSOLE_DEV_LOCAL_PG_PORT:-}" 15432 25432 35432 45432 55432)"
 local_sandbox_port="$(choose_local_port "${CONSOLE_DEV_LOCAL_SANDBOX_PORT:-}" 14243 24243 34243 44243 54243)"
 local_identity_port="$(choose_local_port "${CONSOLE_DEV_LOCAL_IDENTITY_PORT:-}" 14248 24248 34248 44248 54248)"
 local_profile_port="$(choose_local_port "${CONSOLE_DEV_LOCAL_PROFILE_PORT:-}" 14258 24258 34258 44258 54258)"
 local_governance_port="$(choose_local_port "${CONSOLE_DEV_LOCAL_GOVERNANCE_PORT:-}" 14250 24250 34250 44250 54250)"
+local_notifications_port="$(choose_local_port "${CONSOLE_DEV_LOCAL_NOTIFICATIONS_PORT:-}" 14260 24260 34260 44260 54260)"
+local_projects_port="$(choose_local_port "${CONSOLE_DEV_LOCAL_PROJECTS_PORT:-}" 14264 24264 34264 44264 54264)"
+local_source_port="$(choose_local_port "${CONSOLE_DEV_LOCAL_SOURCE_PORT:-}" 14261 24261 34261 44261 54261)"
 local_electric_port="$(choose_local_port "${CONSOLE_DEV_LOCAL_ELECTRIC_PORT:-}" 13010 23010 33010 43010 53010)"
 local_otel_http_port="$(choose_local_port "${CONSOLE_DEV_LOCAL_OTEL_HTTP_PORT:-}" 14318 24318 34318 44318 54318)"
 local_app_port="$(choose_local_port "${CONSOLE_DEV_LOCAL_APP_PORT:-}" 4244 5244 6244 7244 8244)"
-
-frontend_auth_password="$(
-  verification_remote_sudo_cat "${auth_database_password_file}"
-)"
-admin_pat="$(
-  verification_remote_sudo_cat /etc/zitadel/admin.pat
-)"
-
-if ! auth_client_id="$(fetch_dev_client_id "${admin_pat}" "${auth_project_id}" 2>/dev/null)"; then
-  (
-    cd "${VERIFICATION_PLATFORM_ROOT}/ansible"
-    ansible-playbook -i "${VERIFICATION_INVENTORY_DIR}" playbooks/seed-system.yml --tags dev-oidc
-  )
-  auth_client_id="$(fetch_dev_client_id "${admin_pat}" "${auth_project_id}")"
-fi
 
 if [[ "${print_env_only}" != "1" ]]; then
   ssh -fN -M -S "${control_socket}" \
     -o IPQoS=none \
     -o StrictHostKeyChecking=no \
     -o ExitOnForwardFailure=yes \
-    -L "${local_pg_port}:127.0.0.1:5432" \
     -L "${local_sandbox_port}:127.0.0.1:4243" \
     -L "${local_identity_port}:127.0.0.1:4248" \
     -L "${local_profile_port}:127.0.0.1:4258" \
     -L "${local_governance_port}:127.0.0.1:4250" \
+    -L "${local_notifications_port}:127.0.0.1:4260" \
+    -L "${local_projects_port}:127.0.0.1:4264" \
+    -L "${local_source_port}:127.0.0.1:4261" \
     -L "${local_electric_port}:127.0.0.1:3010" \
     -L "${local_otel_http_port}:127.0.0.1:4318" \
     "${VERIFICATION_REMOTE_USER}@${VERIFICATION_REMOTE_HOST}"
 
-  wait_for_local_tcp_port "frontend_auth PostgreSQL" "${local_pg_port}"
   wait_for_local_tcp_port "sandbox-rental-service" "${local_sandbox_port}"
   wait_for_local_tcp_port "identity-service" "${local_identity_port}"
   wait_for_local_tcp_port "profile-service" "${local_profile_port}"
   wait_for_local_tcp_port "governance-service" "${local_governance_port}"
+  wait_for_local_tcp_port "notifications-service" "${local_notifications_port}"
+  wait_for_local_tcp_port "projects-service" "${local_projects_port}"
+  wait_for_local_tcp_port "source-code-hosting-service" "${local_source_port}"
   wait_for_local_tcp_port "Electric" "${local_electric_port}"
   wait_for_local_tcp_port "OTLP HTTP" "${local_otel_http_port}"
 fi
 
 export VERSELF_DOMAIN="${VERSELF_DOMAIN:-${VERIFICATION_DOMAIN}}"
-export AUTH_SUBDOMAIN="${AUTH_SUBDOMAIN:-auth}"
-export AUTH_CLIENT_ID="${AUTH_CLIENT_ID:-${auth_client_id}}"
-export AUTH_PROJECT_ID="${AUTH_PROJECT_ID:-${auth_project_id}}"
+export PRODUCT_BASE_URL="${PRODUCT_BASE_URL:-https://${VERSELF_DOMAIN}}"
+export SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE="${SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE:-${sandbox_rental_service_auth_audience}}"
 export IDENTITY_SERVICE_AUTH_AUDIENCE="${IDENTITY_SERVICE_AUTH_AUDIENCE:-${identity_service_auth_audience}}"
-export AUTH_DATABASE_URL="${AUTH_DATABASE_URL:-postgresql://frontend_auth:${frontend_auth_password}@127.0.0.1:${local_pg_port}/frontend_auth?sslmode=disable}"
-export AUTH_SESSION_SECRET="${AUTH_SESSION_SECRET:-$(python3 - <<'PY'
-import secrets
-print(secrets.token_urlsafe(48))
-PY
-)}"
+export PROFILE_SERVICE_AUTH_AUDIENCE="${PROFILE_SERVICE_AUTH_AUDIENCE:-${profile_service_auth_audience}}"
+export NOTIFICATIONS_SERVICE_AUTH_AUDIENCE="${NOTIFICATIONS_SERVICE_AUTH_AUDIENCE:-${notifications_service_auth_audience}}"
+export PROJECTS_SERVICE_AUTH_AUDIENCE="${PROJECTS_SERVICE_AUTH_AUDIENCE:-${projects_service_auth_audience}}"
+export SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE="${SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE:-${source_code_hosting_service_auth_audience}}"
 export SANDBOX_RENTAL_SERVICE_BASE_URL="${SANDBOX_RENTAL_SERVICE_BASE_URL:-http://127.0.0.1:${local_sandbox_port}}"
 export IDENTITY_SERVICE_BASE_URL="${IDENTITY_SERVICE_BASE_URL:-http://127.0.0.1:${local_identity_port}}"
 export PROFILE_SERVICE_BASE_URL="${PROFILE_SERVICE_BASE_URL:-http://127.0.0.1:${local_profile_port}}"
-export PROFILE_SERVICE_AUTH_AUDIENCE="${PROFILE_SERVICE_AUTH_AUDIENCE:-${IDENTITY_SERVICE_AUTH_AUDIENCE}}"
 export GOVERNANCE_SERVICE_BASE_URL="${GOVERNANCE_SERVICE_BASE_URL:-http://127.0.0.1:${local_governance_port}}"
+export NOTIFICATIONS_SERVICE_BASE_URL="${NOTIFICATIONS_SERVICE_BASE_URL:-http://127.0.0.1:${local_notifications_port}}"
+export PROJECTS_SERVICE_BASE_URL="${PROJECTS_SERVICE_BASE_URL:-http://127.0.0.1:${local_projects_port}}"
+export SOURCE_CODE_HOSTING_SERVICE_BASE_URL="${SOURCE_CODE_HOSTING_SERVICE_BASE_URL:-http://127.0.0.1:${local_source_port}}"
 export ELECTRIC_URL="${ELECTRIC_URL:-http://127.0.0.1:${local_electric_port}}"
 export OTEL_EXPORTER_OTLP_ENDPOINT="${OTEL_EXPORTER_OTLP_ENDPOINT:-http://127.0.0.1:${local_otel_http_port}}"
 export OTEL_SERVICE_NAME="${OTEL_SERVICE_NAME:-verself-web}"
@@ -205,17 +169,20 @@ export BASE_URL="${BASE_URL:-http://127.0.0.1:${local_app_port}}"
 
 cat >"${state_file_tmp}" <<EOF
 export VERSELF_DOMAIN=${VERSELF_DOMAIN}
-export AUTH_SUBDOMAIN=${AUTH_SUBDOMAIN}
-export AUTH_CLIENT_ID=${AUTH_CLIENT_ID}
-export AUTH_PROJECT_ID=${AUTH_PROJECT_ID}
+export PRODUCT_BASE_URL=${PRODUCT_BASE_URL}
+export SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE=${SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE}
 export IDENTITY_SERVICE_AUTH_AUDIENCE=${IDENTITY_SERVICE_AUTH_AUDIENCE}
-export AUTH_DATABASE_URL=${AUTH_DATABASE_URL}
-export AUTH_SESSION_SECRET=${AUTH_SESSION_SECRET}
+export PROFILE_SERVICE_AUTH_AUDIENCE=${PROFILE_SERVICE_AUTH_AUDIENCE}
+export NOTIFICATIONS_SERVICE_AUTH_AUDIENCE=${NOTIFICATIONS_SERVICE_AUTH_AUDIENCE}
+export PROJECTS_SERVICE_AUTH_AUDIENCE=${PROJECTS_SERVICE_AUTH_AUDIENCE}
+export SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE=${SOURCE_CODE_HOSTING_SERVICE_AUTH_AUDIENCE}
 export SANDBOX_RENTAL_SERVICE_BASE_URL=${SANDBOX_RENTAL_SERVICE_BASE_URL}
 export IDENTITY_SERVICE_BASE_URL=${IDENTITY_SERVICE_BASE_URL}
 export PROFILE_SERVICE_BASE_URL=${PROFILE_SERVICE_BASE_URL}
-export PROFILE_SERVICE_AUTH_AUDIENCE=${PROFILE_SERVICE_AUTH_AUDIENCE}
 export GOVERNANCE_SERVICE_BASE_URL=${GOVERNANCE_SERVICE_BASE_URL}
+export NOTIFICATIONS_SERVICE_BASE_URL=${NOTIFICATIONS_SERVICE_BASE_URL}
+export PROJECTS_SERVICE_BASE_URL=${PROJECTS_SERVICE_BASE_URL}
+export SOURCE_CODE_HOSTING_SERVICE_BASE_URL=${SOURCE_CODE_HOSTING_SERVICE_BASE_URL}
 export ELECTRIC_URL=${ELECTRIC_URL}
 export OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT}
 export OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME}
@@ -232,12 +199,13 @@ fi
 cat >&2 <<EOF
 verself-web local dev
   app:       ${BASE_URL}
-  auth:      https://auth.${VERSELF_DOMAIN}
-  pg tunnel: 127.0.0.1:${local_pg_port}
-  api:       ${SANDBOX_RENTAL_SERVICE_BASE_URL}
   identity:  ${IDENTITY_SERVICE_BASE_URL}
+  sandbox:   ${SANDBOX_RENTAL_SERVICE_BASE_URL}
   profile:   ${PROFILE_SERVICE_BASE_URL}
   governance: ${GOVERNANCE_SERVICE_BASE_URL}
+  notifications: ${NOTIFICATIONS_SERVICE_BASE_URL}
+  projects:  ${PROJECTS_SERVICE_BASE_URL}
+  source:    ${SOURCE_CODE_HOSTING_SERVICE_BASE_URL}
   electric:  ${ELECTRIC_URL}
   otlp:      ${OTEL_EXPORTER_OTLP_ENDPOINT}
   state:     ${state_file}

@@ -2,8 +2,10 @@
 # Exhaustively wipe billing ledger state on an existing environment, then run
 # the canonical deploy path.
 
-- import_playbook: wipe-pg-db.yml
+- name: Wipe billing PostgreSQL and ledger state
+  import_playbook: wipe-pg-db.yml
   vars:
     wipe_pg_db_name: billing
 
-- import_playbook: box.yml
+- name: Re-apply platform substrate after billing reset
+  import_playbook: box.yml

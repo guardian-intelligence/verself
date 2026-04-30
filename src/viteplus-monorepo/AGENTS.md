@@ -65,40 +65,18 @@ Avoid useState -- sync small bits of imperative state to search params. For trul
 
 ### Zitadel OIDC Architecture
 
-Only frontends need OIDC apps. Go backend services (mailbox-service, billing-service, sandbox-rental-service) validate JWTs that frontends already obtained — they don't have their own OIDC apps. A backend only needs the Zitadel **project ID** (as the `audience` claim to validate against).
+Only identity-service owns interactive browser OIDC apps. Frontends start the
+identity-service browser auth flow and consume its HTTP-only session snapshot.
+Other Go backend services validate JWTs that identity-service exchanged for
+their audience. A backend only needs the Zitadel **project ID** as the `audience`
+claim to validate against.
 
-| Zitadel Project   | OIDC Apps (frontends) | JWT Validators (backends)               |
-| ----------------- | --------------------- | --------------------------------------- |
-| `sandbox-rental`  | verself-web           | sandbox-rental-service, billing-service |
-| `mailbox-service` | (pending)             | mailbox-service                         |
+| Zitadel Project   | Browser OIDC App | JWT Validators                          |
+| ----------------- | ---------------- | --------------------------------------- |
+| `sandbox-rental`  | verself-web      | sandbox-rental-service, billing-service |
+| `mailbox-service` | (pending)        | mailbox-service                         |
 
 The `mailbox-service` project previously had a `webmail` OIDC app; that frontend was retired and its surfaces will be folded into `verself-web`. The project stays because `mailbox-service` backend JWT validation still targets it.
-
-### Dev Mode OIDC Apps
-
-Each frontend needs **two Zitadel OIDC applications**: one for production and one for local development. Zitadel's `devMode` toggle controls redirect URI enforcement:
-
-- **`devMode: false`** (production): HTTPS-only redirect URIs, exact match
-- **`devMode: true`** (development): HTTP allowed, glob patterns in redirect URIs (e.g., `http://localhost:*/callback`)
-
-Production OIDC apps are created automatically by each app's Ansible role (`zitadel_app.yml`). Dev OIDC apps are created once manually or via `seed-system.yml`.
-
-For each frontend, create a dev OIDC app in the same Zitadel project as the production app. Use the Zitadel admin UI at `https://auth.<domain>` or the Management API:
-
-| Frontend    | Zitadel Project | Preferred Port | Dev Redirect URI              |
-| ----------- | --------------- | -------------- | ----------------------------- |
-| verself-web | sandbox-rental  | 4244           | `http://127.0.0.1:*/callback` |
-
-Port 4245 (previously webmail) is reserved; webmail's surfaces will be folded into verself-web.
-
-The dev app must have:
-
-- `appType: OIDC_APP_TYPE_WEB`
-- `authMethodType: OIDC_AUTH_METHOD_TYPE_NONE` (public client)
-- `devMode: true`
-- `accessTokenType: OIDC_TOKEN_TYPE_JWT` (so backend middleware can validate)
-- Redirect URI: `http://127.0.0.1:*/callback`
-- Post-logout URI: `http://127.0.0.1:*`
 
 ### Running a frontend locally
 
@@ -111,24 +89,22 @@ aspect dev verself-web --print-env
 ```
 
 `aspect dev verself-web` opens the required SSH tunnels, reads the rendered
-Nomad job env for production facts, re-queries the `verself-web-dev` client ID
-from Zitadel, and exports the current runtime env for the local server:
+Nomad job env for production facts, and exports the current runtime env for the
+local server:
 
 - `VERSELF_DOMAIN`
-- `AUTH_SUBDOMAIN`
-- `AUTH_CLIENT_ID`
-- `AUTH_PROJECT_ID`
-- `AUTH_DATABASE_URL`
-- `AUTH_SESSION_SECRET`
+- `IDENTITY_SERVICE_BASE_URL`
 - `SANDBOX_RENTAL_SERVICE_BASE_URL`
-- `ELECTRIC_URL`
+- service auth audiences for identity-service token exchange
 
 Open the `app:` URL printed by `aspect dev verself-web`. The launcher prefers
 `http://127.0.0.1:4244` but will move to a higher local port if that one is
 busy, then records the chosen URL in `/tmp/verself-web-dev.env`. Vite HMR gives
-sub-second feedback on every file save. API calls, Electric shapes, auth
-sessions, and OTLP traces all flow through the SSH tunnels to the deployed
-single-node stack.
+sub-second feedback on every file save. API calls, Electric shapes, and OTLP
+traces all flow through the SSH tunnels to the deployed single-node stack.
+Interactive browser login is owned by identity-service and the public apex
+route; the frontend does not create local OIDC apps or local auth-session
+databases.
 
 Remote frontend deploys go through `aspect deploy`; Nomad supervises the
 Bazel-built node-app artifacts.

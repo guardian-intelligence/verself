@@ -3,8 +3,15 @@
   ansible.builtin.command:
     cmd: "{{ clickhouse_operator_client_command }} --multiquery"
     stdin: |
-      CREATE USER IF NOT EXISTS {{ component.workload.clickhouse.user }} IDENTIFIED WITH ssl_certificate SAN 'URI:{{ lookup('vars', component.identities[component.workload.clickhouse.spiffe_identity].ansible_var) }}' HOST LOCAL;
-      ALTER USER {{ component.workload.clickhouse.user }} IDENTIFIED WITH ssl_certificate SAN 'URI:{{ lookup('vars', component.identities[component.workload.clickhouse.spiffe_identity].ansible_var) }}' HOST LOCAL;
+      {% set spiffe_uri = lookup('vars', component.identities[component.workload.clickhouse.spiffe_identity].ansible_var) %}
+      CREATE USER IF NOT EXISTS {{ component.workload.clickhouse.user }}
+        IDENTIFIED WITH ssl_certificate
+        SAN 'URI:{{ spiffe_uri }}'
+        HOST LOCAL;
+      ALTER USER {{ component.workload.clickhouse.user }}
+        IDENTIFIED WITH ssl_certificate
+        SAN 'URI:{{ spiffe_uri }}'
+        HOST LOCAL;
       {% for grant in component.workload.clickhouse.grants %}
       GRANT {{ grant.action }} ON {{ grant.table }} TO {{ component.workload.clickhouse.user }};
       {% endfor %}

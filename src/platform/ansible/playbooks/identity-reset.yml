@@ -2,8 +2,10 @@
 # Exhaustively wipe identity-service PostgreSQL state, then run the canonical
 # deploy path.
 
-- import_playbook: wipe-pg-db.yml
+- name: Wipe identity-service PostgreSQL state
+  import_playbook: wipe-pg-db.yml
   vars:
     wipe_pg_db_name: identity_service
 
-- import_playbook: box.yml
+- name: Re-apply platform substrate after identity reset
+  import_playbook: box.yml

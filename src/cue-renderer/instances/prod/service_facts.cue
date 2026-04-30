@@ -199,6 +199,25 @@ topology: components: {
 					{key: "member", display_name: "Member", group: "identity"},
 				]
 			}
+			bootstrap_config: browser_oidc: {
+				app_name:     "verself-web"
+				project_name: "sandbox-rental"
+				redirect_uris: ["https://\(config.ansible_vars.verself_domain)/api/v1/auth/callback"]
+				post_logout_redirect_uris: ["https://\(config.ansible_vars.verself_domain)"]
+				credstore_dir:   "/etc/credstore/identity-service"
+				credstore_group: "identity_service"
+				role_assertions: true
+				grant_types: [
+					"OIDC_GRANT_TYPE_AUTHORIZATION_CODE",
+					"OIDC_GRANT_TYPE_REFRESH_TOKEN",
+					"OIDC_GRANT_TYPE_TOKEN_EXCHANGE",
+				]
+				project_roles: [
+					{key: "owner", display_name: "Owner", group: "sandbox"},
+					{key: "admin", display_name: "Admin", group: "sandbox"},
+					{key: "member", display_name: "Member", group: "sandbox"},
+				]
+			}
 			units: [{
 				name:                 "identity-service"
 				description:          "Identity Service"
@@ -212,20 +231,31 @@ topology: components: {
 					IDENTITY_GOVERNANCE_AUDIT_URL:           "https://{{ topology_endpoints.governance_service.endpoints.internal_https.address }}"
 					IDENTITY_ZITADEL_BASE_URL:               "http://{{ topology_endpoints.zitadel.endpoints.http.address }}"
 					IDENTITY_ZITADEL_HOST:                   "auth.{{ verself_domain }}"
+					IDENTITY_BROWSER_AUTH_PUBLIC_BASE_URL:   "https://{{ verself_domain }}"
+					IDENTITY_BROWSER_AUTH_LOGIN_AUDIENCES:   "370200928688586084,370200564807548260"
 					VERSELF_CRED_ZITADEL_ADMIN_TOKEN:        "/etc/credstore/identity-service/zitadel-admin-token"
 					VERSELF_CRED_ZITADEL_ACTION_SIGNING_KEY: "/etc/credstore/identity-service/zitadel-action-signing-key"
 					VERSELF_CRED_CLICKHOUSE_CA_CERT:         "/etc/credstore/identity-service/clickhouse-ca-cert"
+					VERSELF_CRED_OIDC_CLIENT_ID:             "/etc/credstore/identity-service/oidc-client-id"
+					VERSELF_CRED_OIDC_CLIENT_SECRET:         "/etc/credstore/identity-service/oidc-client-secret"
 				}
 				readiness: [
 					{kind: "http", endpoint: "public_http", path: "/readyz"},
 					{kind: "tcp", endpoint: "internal_https"},
 				]
 			}]
-			bootstrap: [{
-				name:   "identity_zitadel_actions"
-				class:  "identity_provider"
-				reason: "Installs Zitadel Actions V2 targets and executions that are identity-provider control-plane state."
-			}]
+			bootstrap: [
+				{
+					name:   "identity_zitadel_actions"
+					class:  "identity_provider"
+					reason: "Installs Zitadel Actions V2 targets and executions that are identity-provider control-plane state."
+				},
+				{
+					name:   "browser_oidc"
+					class:  "identity_provider"
+					reason: "Reconciles the console OIDC application and persists runtime client credentials for identity-service browser auth."
+				},
+			]
 		}
 	}
 	governance_service: {
@@ -355,36 +385,11 @@ topology: components: {
 	}
 	verself_web: {
 		deployment: {supervisor: "nomad", resources: {memory_mb: 512}}
-		postgres: password_ref: {kind: "secret_ref", expose_as: "postgres_password"}
 		workload: {
 			order: 110
 			directories: [
-				{path: "/etc/credstore/verself-web", owner: "root", group: "verself-web", mode: "0750"},
 				{path: "/var/lib/verself-web", owner: "verself-web", group: "verself-web", mode: "0700"},
 			]
-			secret_refs: [
-				{name: "pg-password", path: "/etc/credstore/verself-web/pg-password", owner: "root", group: "verself-web", mode: "0640", expose_as: "postgres_password", source: {kind: "generated", generate: {kind: "password", length: 64, chars: "ascii_letters,digits"}}},
-				{name: "auth-session-secret", path: "/etc/credstore/verself-web/auth-session-secret", owner: "root", group: "verself-web", mode: "0640", source: {kind: "generated", generate: {kind: "password", length: 64, chars: "ascii_letters,digits"}}},
-			]
-			bootstrap_config: frontend_oidc: {
-				app_name:     "verself-web"
-				project_name: "sandbox-rental"
-				redirect_uris: ["https://\(config.ansible_vars.verself_domain)/callback"]
-				post_logout_redirect_uris: ["https://\(config.ansible_vars.verself_domain)"]
-				credstore_dir:   "/etc/credstore/verself-web"
-				credstore_group: "verself-web"
-				role_assertions: true
-				grant_types: [
-					"OIDC_GRANT_TYPE_AUTHORIZATION_CODE",
-					"OIDC_GRANT_TYPE_REFRESH_TOKEN",
-					"OIDC_GRANT_TYPE_TOKEN_EXCHANGE",
-				]
-				project_roles: [
-					{key: "owner", display_name: "Owner", group: "sandbox"},
-					{key: "admin", display_name: "Admin", group: "sandbox"},
-					{key: "member", display_name: "Member", group: "sandbox"},
-				]
-			}
 			units: [{
 				name:        "verself-web"
 				description: "Verself Web"
@@ -398,18 +403,8 @@ topology: components: {
 					HOME:                                      "/var/lib/verself-web"
 					VERSELF_DOMAIN:                            "{{ verself_domain }}"
 					PRODUCT_BASE_URL:                          "https://{{ verself_domain }}"
-					AUTH_SUBDOMAIN:                            "auth"
 					OTEL_SERVICE_NAME:                         "verself-web"
 					OTEL_EXPORTER_OTLP_ENDPOINT:               "http://{{ topology_endpoints.otelcol.endpoints.otlp_http.address }}"
-					AUTH_PROJECT_ID:                           "370200928688586084"
-					AUTH_CLIENT_ID_FILE:                       "/etc/credstore/verself-web/oidc-client-id"
-					AUTH_CLIENT_SECRET_FILE:                   "/etc/credstore/verself-web/oidc-client-secret"
-					AUTH_SESSION_SECRET_FILE:                  "/etc/credstore/verself-web/auth-session-secret"
-					AUTH_DATABASE_USER:                        "frontend_auth"
-					AUTH_DATABASE_NAME:                        "frontend_auth"
-					AUTH_DATABASE_HOST:                        "{{ topology_endpoints.postgresql.host }}"
-					AUTH_DATABASE_PORT:                        "{{ topology_endpoints.postgresql.endpoints.postgres.port }}"
-					AUTH_DATABASE_PASSWORD_FILE:               "/etc/credstore/verself-web/pg-password"
 					VERSELF_SUPERVISOR:                        "nomad"
 					OTEL_RESOURCE_ATTRIBUTES:                  "verself.supervisor=nomad"
 					SANDBOX_RENTAL_SERVICE_AUTH_AUDIENCE:      "370200928688586084"
@@ -428,11 +423,6 @@ topology: components: {
 				}
 				hardening: read_write_paths: ["/var/lib/verself-web"]
 				readiness: [{kind: "http", endpoint: "http", path: "/"}]
-			}]
-			bootstrap: [{
-				name:   "verself_web_oidc"
-				class:  "identity_provider"
-				reason: "Reconciles the console OIDC application and persists runtime client credentials for the Nomad job."
 			}]
 		}
 	}

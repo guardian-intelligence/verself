@@ -1,8 +1,12 @@
 ---
-# Handler name resolves at handler-load time, so each include_role invocation
-# produces a distinct handler. Tasks notify the concrete service name.
-- name: "Restart {{ electric_service_name }}"
+# Handler names resolve before role vars are available in static role lists.
+# Electric instances are small substrate daemons, so one static topic restarts the rendered set.
+- name: Restart Electric instances
+  listen: restart electric instances
   ansible.builtin.systemd:
-    name: "{{ electric_service_name }}"
+    name: "{{ item.value.electric_service_name }}"
     state: restarted
     daemon_reload: true
+  loop: "{{ topology_electric_instances | dict2items }}"
+  loop_control:
+    label: "{{ item.value.electric_service_name }}"

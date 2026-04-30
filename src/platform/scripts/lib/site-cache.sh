@@ -38,7 +38,7 @@ site_cache_init() {
   fi
 
   (
-    cd "${repo_root}"
+    cd "${repo_root}" || return
     aspect render --site="${VERSELF_SITE}" >/dev/null
   )
   if [[ ! -f "${VERSELF_ANSIBLE_HOSTS_INI}" ]]; then

@@ -100,7 +100,7 @@
     owner: root
     group: root
     mode: "0640"
-  notify: "Restart {{ electric_service_name }}"
+  notify: restart electric instances
   no_log: true
 
 - name: "Check for local container image for {{ electric_service_name }}"
@@ -124,7 +124,7 @@
     src: electric.service.j2
     dest: "/etc/systemd/system/{{ electric_service_name }}.service"
     mode: "0644"
-  notify: "Restart {{ electric_service_name }}"
+  notify: restart electric instances
 
 - name: "Deploy nftables rules for {{ electric_service_name }}"
   ansible.builtin.copy:

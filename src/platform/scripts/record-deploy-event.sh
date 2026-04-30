@@ -72,7 +72,12 @@ repo_root="$(cd "${script_dir}/../../.." && pwd)"
 
 # Build the components array literal: ['a', 'b'] — escaping for ClickHouse string literals.
 escape_ch_string() {
-  printf "%s" "$1" | python3 -c 'import sys; sys.stdout.write(sys.stdin.read().replace("\\","\\\\").replace("'"'"'","\\'"'"'"))'
+  VALUE="$1" python3 <<'PY'
+import os
+import sys
+
+sys.stdout.write(os.environ["VALUE"].replace("\\", "\\\\").replace("'", "\\'"))
+PY
 }
 components_literal="[]"
 if [[ -n "${components}" ]]; then

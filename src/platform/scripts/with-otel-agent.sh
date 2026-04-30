@@ -82,6 +82,7 @@ mkdir -p "${data_dir}"
 
 agent_pid=""
 tunnel_pid=""
+# shellcheck disable=SC2329 # Invoked indirectly by the EXIT trap.
 cleanup() {
   if [[ -n "${agent_pid}" ]] && kill -0 "${agent_pid}" 2>/dev/null; then
     kill -TERM "${agent_pid}" 2>/dev/null || true

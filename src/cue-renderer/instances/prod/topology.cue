@@ -461,7 +461,6 @@ topology: s.#Topology & {
 			artifact: {package: "src/viteplus-monorepo/apps/verself-web", output: "verself-web", role: "verself_web", bazel_label: "//src/viteplus-monorepo/apps/verself-web:node_app_nomad_artifact"}
 			runtime: {user: "verself-web", group: "verself-web"}
 			endpoints: http: port: 4244
-			postgres: {database: "frontend_auth", owner: "frontend_auth", connection_limit: 15}
 		}
 		electric: {
 			kind: "resource"
@@ -726,6 +725,7 @@ topology: s.#Topology & {
 	}
 
 	routes: [
+		{kind: "browser_origin", gateway: "public_caddy", host: "@", paths: ["/api/v1/auth/login", "/api/v1/auth/callback", "/api/v1/auth/session", "/api/v1/auth/organization", "/api/v1/auth/logout"], to: {component: "identity_service", interface: "public_api"}, waf: "detection", max_body_bytes: 65536, browser_cors: "same_origin"},
 		{kind: "browser_origin", gateway: "public_caddy", host: "@", to: {component: "verself_web", interface: "frontend"}, waf: "detection", browser_cors: "same_origin"},
 		{kind: "browser_origin", gateway: "public_caddy", zone: "company", host: "@", to: {component: "company", interface: "frontend"}, waf: "detection", browser_cors: "same_origin"},
 		{kind: "public_api_origin", gateway: "public_caddy", host: "billing.api", path_prefix: "/api/v1", to: {component: "billing", interface: "public_api"}, waf: "blocking", max_body_bytes: 1048576, browser_cors: "none"},
