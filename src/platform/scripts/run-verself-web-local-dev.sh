@@ -30,9 +30,48 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+local_tcp_port_in_use() {
+  local port="$1"
+  # macOS does not ship Linux `ss`; binding the loopback candidates is the portable preflight.
+  python3 - "${port}" <<'PY'
+import errno
+import socket
+import sys
+
+port = int(sys.argv[1])
+sockets = []
+try:
+    for family, host in ((socket.AF_INET, "127.0.0.1"), (socket.AF_INET6, "::1")):
+        try:
+            sock = socket.socket(family, socket.SOCK_STREAM)
+            sock.bind((host, port))
+            sockets.append(sock)
+        except OSError as exc:
+            if exc.errno in (errno.EADDRINUSE, errno.EACCES):
+                raise SystemExit(0)
+    raise SystemExit(1)
+finally:
+    for sock in sockets:
+        sock.close()
+PY
+}
+
+local_tcp_port_accepts() {
+  local port="$1"
+  python3 - "${port}" <<'PY'
+import socket
+import sys
+
+port = int(sys.argv[1])
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+    sock.settimeout(0.25)
+    raise SystemExit(0 if sock.connect_ex(("127.0.0.1", port)) == 0 else 1)
+PY
+}
+
 ensure_local_port_free() {
   local port="$1"
-  if ss -ltn "( sport = :${port} )" | grep -q ":${port}"; then
+  if local_tcp_port_in_use "${port}"; then
     echo "local port ${port} is already in use" >&2
     return 1
   fi
@@ -50,7 +89,7 @@ choose_local_port() {
 
   local port
   for port in "$@"; do
-    if ! ss -ltn "( sport = :${port} )" | grep -q ":${port}"; then
+    if ! local_tcp_port_in_use "${port}"; then
       printf '%s\n' "${port}"
       return 0
     fi
@@ -64,7 +103,7 @@ wait_for_local_tcp_port() {
   local name="$1"
   local port="$2"
   for _ in $(seq 1 20); do
-    if bash -lc "exec 3<>/dev/tcp/127.0.0.1/${port}" >/dev/null 2>&1; then
+    if local_tcp_port_accepts "${port}"; then
       return 0
     fi
     sleep 0.5

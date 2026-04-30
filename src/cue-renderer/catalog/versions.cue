@@ -518,10 +518,24 @@ devTools: {
 		tier:         #DevToolTier & "bootstrap_pivot"
 		version:      versions.development.bazelisk
 		strategy:     "binary"
-		url:          "https://github.com/bazelbuild/bazelisk/releases/download/v\(version)/bazelisk-linux-amd64"
-		sha256:       "22e7d3a188699982f661cf4687137ee52d1f24fec1ec893d91a6c4d791a75de8"
+		url:          bootstrap_platforms.linux_amd64.url
+		sha256:       bootstrap_platforms.linux_amd64.sha256
 		install_path: "/usr/local/bin/bazelisk"
 		version_cmd:  "bazelisk version"
+		bootstrap_platforms: {
+			linux_amd64: {
+				url:    "https://github.com/bazelbuild/bazelisk/releases/download/v\(version)/bazelisk-linux-amd64"
+				sha256: "22e7d3a188699982f661cf4687137ee52d1f24fec1ec893d91a6c4d791a75de8"
+			}
+			darwin_arm64: {
+				url:    "https://github.com/bazelbuild/bazelisk/releases/download/v\(version)/bazelisk-darwin-arm64"
+				sha256: "dea3f3f5de2dbc5e269e0132cdd369d5efe738f7b973d5d4eb2b4f7055a97b39"
+			}
+			darwin_amd64: {
+				url:    "https://github.com/bazelbuild/bazelisk/releases/download/v\(version)/bazelisk-darwin-amd64"
+				sha256: "023225736cea5dc88f2b0807d5b1af4eb0f69a4ed45e3994b2c18c263bc80e48"
+			}
+		}
 	}
 	aspect: {
 		// scripts/bootstrap installs Aspect alongside Bazelisk before any
@@ -531,10 +545,24 @@ devTools: {
 		tier:         #DevToolTier & "bootstrap_pivot"
 		version:      versions.development.aspectCLI
 		strategy:     "binary"
-		url:          "https://github.com/aspect-build/aspect-cli/releases/download/v\(version)/aspect-cli-x86_64-unknown-linux-musl"
-		sha256:       "db45968e114c22af0e0d3dddadfb7091c81983f66499eed9d01d782bb09483d0"
+		url:          bootstrap_platforms.linux_amd64.url
+		sha256:       bootstrap_platforms.linux_amd64.sha256
 		install_path: "/usr/local/bin/aspect"
 		version_cmd:  "aspect --version"
+		bootstrap_platforms: {
+			linux_amd64: {
+				url:    "https://github.com/aspect-build/aspect-cli/releases/download/v\(version)/aspect-cli-x86_64-unknown-linux-musl"
+				sha256: "db45968e114c22af0e0d3dddadfb7091c81983f66499eed9d01d782bb09483d0"
+			}
+			darwin_arm64: {
+				url:    "https://github.com/aspect-build/aspect-cli/releases/download/v\(version)/aspect-cli-aarch64-apple-darwin"
+				sha256: "51260131e52885d6f51c651b3b56101e7f9aaf7468f7cb71ac2e7fdcefdf3f89"
+			}
+			darwin_amd64: {
+				url:    "https://github.com/aspect-build/aspect-cli/releases/download/v\(version)/aspect-cli-x86_64-apple-darwin"
+				sha256: "372e195690a72847c9d0e008797555c249f6b1bee5b88c4fedafee98494a1bd4"
+			}
+		}
 	}
 	viteplus: {
 		// Vite+ ships its own multi-version toolchain under ~/.vite-plus and

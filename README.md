@@ -41,6 +41,22 @@ aspect persona assume platform-admin
 `aspect` (no args) to see the full task surface; `aspect <task> --help`
 documents flags.
 
+### Darwin controller development
+
+`./scripts/bootstrap` supports Darwin arm64/x86_64 for the bootstrap pivot:
+Bazelisk, Aspect CLI, the `bazel` symlink, and Vite+. This is enough for
+Codex App and laptop frontend/controller work against an already provisioned
+Verself environment.
+
+The full `aspect platform setup-dev` tool archive is still Linux x86_64-only:
+it unpacks pinned Go, Zig, OpenTofu, CUE, buf, shellcheck, jq, sops, age,
+ClickHouse, Stripe, and other controller binaries from
+`src/cue-renderer/binaries/dev_tools.MODULE.bazel`. Use a Linux x86_64
+controller for provisioning/deploying until that archive grows per-platform
+artifacts. On Darwin, `aspect dev verself-web` can run the local TanStack Start
+HMR server and SSH tunnels after `src/platform/ansible/inventory/prod.ini`
+exists and the remote seed has created the `verself-web-dev` OIDC client.
+
 The authenticated product console, the public docs, and the policy tree all
 live at `https://<domain>` in a single TanStack Start app. Public service APIs
 use per-service origins such as `https://billing.api.<domain>`,

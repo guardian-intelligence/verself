@@ -3,10 +3,11 @@
 # delivery channel can run. Today that is Bazelisk, the Aspect CLI, and
 # Vite+ (which owns vp/vite/rolldown/vitest invocation for the JS workspace).
 #
-# CUE owns the version-of-record (src/cue-renderer/catalog/versions.cue:
-# devTools.{bazelisk,aspect,viteplus}, all tier=bootstrap_pivot). The
-# constants here are hand-mirrored: this script cannot evaluate CUE because
-# CUE evaluation requires Bazel which requires Bazelisk.
+# CUE owns the version-of-record and per-platform asset metadata
+# (src/cue-renderer/catalog/versions.cue: devTools.{bazelisk,aspect,viteplus},
+# all tier=bootstrap_pivot). The constants here are hand-mirrored: this script
+# cannot evaluate CUE because CUE evaluation requires Bazel which requires
+# Bazelisk.
 #
 # After install, /usr/local/bin/bazel is symlinked to bazelisk so the Aspect
 # CLI's ctx.bazel.{build,test,run,query} APIs (which spawn `bazel` directly)
@@ -14,23 +15,37 @@
 set -euo pipefail
 
 bazelisk_version="1.28.1"
-bazelisk_sha256="22e7d3a188699982f661cf4687137ee52d1f24fec1ec893d91a6c4d791a75de8"
-bazelisk_url="https://github.com/bazelbuild/bazelisk/releases/download/v${bazelisk_version}/bazelisk-linux-amd64"
-
 aspect_version="2026.17.17"
-aspect_sha256="db45968e114c22af0e0d3dddadfb7091c81983f66499eed9d01d782bb09483d0"
-aspect_url="https://github.com/aspect-build/aspect-cli/releases/download/v${aspect_version}/aspect-cli-x86_64-unknown-linux-musl"
-
 viteplus_version="0.1.19"
 viteplus_install_url="https://vite.plus"
 
 install_dir="${BAZELISK_INSTALL_DIR:-/usr/local/bin}"
 
-if [[ "$(uname -s)" != "Linux" || "$(uname -m)" != "x86_64" ]]; then
-  echo "unsupported bootstrap platform: $(uname -s) $(uname -m)" >&2
-  echo "scripts/bootstrap currently pins the Linux x86_64 bootstrap_pivot artifacts." >&2
-  exit 1
-fi
+case "$(uname -s):$(uname -m)" in
+  Linux:x86_64)
+    bazelisk_sha256="22e7d3a188699982f661cf4687137ee52d1f24fec1ec893d91a6c4d791a75de8"
+    bazelisk_url="https://github.com/bazelbuild/bazelisk/releases/download/v${bazelisk_version}/bazelisk-linux-amd64"
+    aspect_sha256="db45968e114c22af0e0d3dddadfb7091c81983f66499eed9d01d782bb09483d0"
+    aspect_url="https://github.com/aspect-build/aspect-cli/releases/download/v${aspect_version}/aspect-cli-x86_64-unknown-linux-musl"
+    ;;
+  Darwin:arm64)
+    bazelisk_sha256="dea3f3f5de2dbc5e269e0132cdd369d5efe738f7b973d5d4eb2b4f7055a97b39"
+    bazelisk_url="https://github.com/bazelbuild/bazelisk/releases/download/v${bazelisk_version}/bazelisk-darwin-arm64"
+    aspect_sha256="51260131e52885d6f51c651b3b56101e7f9aaf7468f7cb71ac2e7fdcefdf3f89"
+    aspect_url="https://github.com/aspect-build/aspect-cli/releases/download/v${aspect_version}/aspect-cli-aarch64-apple-darwin"
+    ;;
+  Darwin:x86_64)
+    bazelisk_sha256="023225736cea5dc88f2b0807d5b1af4eb0f69a4ed45e3994b2c18c263bc80e48"
+    bazelisk_url="https://github.com/bazelbuild/bazelisk/releases/download/v${bazelisk_version}/bazelisk-darwin-amd64"
+    aspect_sha256="372e195690a72847c9d0e008797555c249f6b1bee5b88c4fedafee98494a1bd4"
+    aspect_url="https://github.com/aspect-build/aspect-cli/releases/download/v${aspect_version}/aspect-cli-x86_64-apple-darwin"
+    ;;
+  *)
+    echo "unsupported bootstrap platform: $(uname -s) $(uname -m)" >&2
+    echo "scripts/bootstrap pins bootstrap_pivot artifacts for Linux x86_64, Darwin arm64, and Darwin x86_64." >&2
+    exit 1
+    ;;
+esac
 
 hash_file() {
   local path="$1"
