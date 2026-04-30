@@ -100,7 +100,6 @@
     - role: nats
     - role: temporal
     - role: stalwart
-    - role: forgejo
 
   tasks:
     - name: Select Nomad application components for substrate configuration
@@ -138,3 +137,4 @@
     - role: grafana
     - role: verdaccio
     - role: caddy
+    - role: forgejo
