@@ -9,7 +9,7 @@ Polyglot monorepo structured as a modular monolith.
 Layers:
 
 1. Substrate layer: vm-orchestrator, guest telemetry, Caddy, nftables, ClickHouse, Postgres, Forgejo
-2. Product API layer: service-owned Huma APIs at <service>.api.<domain>, with internal SPIFFE-only APIs separate.
+2. Product API layer: service-owned Go Huma APIs at <service>.api.<domain>, with internal SPIFFE-only APIs separate.
 3. Generated client layer: pure transport clients, validators, DTOs, schemas.
 4. Curated SDK layer: stable hand-written exports that wrap generated clients and own auth, idempotency keys, retries, pagination, waiters, error normalization, tracing headers, and DTO conversion.
 5. Facades: the verself-web app on the `<domain>` apex (console + docs + policy), CLI, docs examples, Terraform provider later. These use the SDK, not private service shortcuts.
@@ -71,7 +71,8 @@ See `docs/product-direction.md`.
 Service topology, three safety rings, self-hosted mandate + allowed third-party providers (Cloudflare, Latitude.sh, Resend, Stripe), dual-write pattern, billing model summary, supply chain, founder focus areas, bare-metal OS/arch invariants.
 
 See `docs/system-context.md`. Auth, identity, IAM, Zitadel, JWT, SCIM, organization model, three-role (owner/admin/member), API credentials, frontend sessions, OIDC discovery — all in `src/platform/docs/identity-and-iam.md`.
-Verself Go service clients are generated from committed OpenAPI 3.0 specs with `oapi-codegen`; consumers must use those generated `client` or `internalclient` packages, with SPIFFE carried by the underlying `http.Client` instead of handwritten transport code. If a service API shape is missing, add the Huma route/OpenAPI spec and regenerate instead of bypassing the SDK.
+Verself Go service clients are generated from committed OpenAPI 3.0 specs with `oapi-codegen`; consumers must use those generated `client` or `internalclient` packages, with SPIFFE carried by the underlying `http.Client` instead of handwritten transport code. If a service API shape is missing, add the Huma route/OpenAPI spec and regenerate instead of bypassing the SDK. 
+Services can be in any language as long as they expose OpenAPI-compatible endpoints.
 Go service code uses sqlc for type safe queries. Avoid reading code in generated directories.
 Python package management is done through `uv`.
 No need to be frugal with telemetry. We store 10+ million rows for around ~150MB in ClickHouse thanks to optimizations.
