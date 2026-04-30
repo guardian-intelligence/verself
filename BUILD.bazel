@@ -1,4 +1,5 @@
 load("@bazel_gazelle//:def.bzl", "gazelle")
+load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
 
 exports_files(["bazel.go.work"])
 
@@ -11,4 +12,21 @@ exports_files(["bazel.go.work"])
 gazelle(
     name = "gazelle",
     args = ["-index=all"],
+)
+
+test_suite(
+    name = "dev_check",
+    tests = [
+        "//src/billing-service:dev_check",
+        "//src/cue-renderer:dev_check",
+        "//src/viteplus-monorepo/apps/verself-web:dev_check",
+    ],
+)
+
+write_source_files(
+    name = "dev_update",
+    additional_update_targets = [
+        "//src/cue-renderer:dev_update",
+        "//src/viteplus-monorepo/apps/verself-web:dev_update",
+    ],
 )

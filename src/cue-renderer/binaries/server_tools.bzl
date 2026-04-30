@@ -70,6 +70,16 @@ SERVER_TOOL_DEPS = [
     ":zitadel",
 ]
 
+HOST_GO_TOOLS = [
+    ("//src/cue-renderer/cmd/nomad-deploy:nomad-deploy", "nomad-deploy"),
+    ("//src/object-storage-service/cmd/object-storage-secret-sync:object-storage-secret-sync", "object-storage-secret-sync"),
+    ("//src/temporal-platform/cmd/temporal-bootstrap:temporal-bootstrap", "temporal-bootstrap"),
+    ("//src/temporal-platform/cmd/temporal-schema:temporal-schema", "temporal-schema"),
+    ("//src/temporal-platform/cmd/verself-temporal-server:verself-temporal-server", "verself-temporal-server"),
+    ("//src/vm-orchestrator/cmd/vm-orchestrator:vm-orchestrator", "vm-orchestrator"),
+    ("//src/vm-orchestrator/cmd/vm-orchestrator-cli:vm-orchestrator-cli", "vm-orchestrator-cli"),
+]
+
 SERVER_TOOL_SYMLINKS = {
     "opt/verself/profile/bin/clickhouse-benchmark": "/opt/verself/profile/bin/clickhouse",
     "opt/verself/profile/bin/clickhouse-client": "/opt/verself/profile/bin/clickhouse",
@@ -260,4 +270,20 @@ def server_tools_archive():
         deps = SERVER_TOOL_DEPS,
         extension = "tar.zst",
         symlinks = SERVER_TOOL_SYMLINKS,
+    )
+
+def substrate_go_tools_archive():
+    files = {}
+    modes = {}
+    for label, output in HOST_GO_TOOLS:
+        dest = "opt/verself/profile/bin/" + output
+        files[label] = dest
+        modes[dest] = "0755"
+
+    pkg_tar(
+        name = "substrate_go_tools",
+        out = "substrate_go_tools.tar",
+        files = files,
+        modes = modes,
+        visibility = ["//visibility:public"],
     )

@@ -820,10 +820,9 @@ ORDER BY status`
 // deployCodegenActionsSQL surfaces every codegen Bazel spawn that ran
 // for one deploy. The spans are emitted by
 // src/otel/cmd/bazel-execlog-to-otel from --execution_log_json_file.
-// Mnemonics come from //tools/codegen:openapi.bzl (OpenAPISpec for
-// `cmd/<svc>-openapi` runs, OAPICodegen for the Go client gen) and
-// src/viteplus-monorepo/viteplus_rules.bzl (OpenapiTsGen for the
-// frontend TS SDK gen). The cache_hit column distinguishes "the action
+// Mnemonics come from package-owned OpenAPI genrules, direct oapi-codegen
+// actions, and src/viteplus-monorepo/viteplus_rules.bzl (OpenapiTsGen for
+// the frontend TS SDK gen). The cache_hit column distinguishes "the action
 // graph correctly invalidated and re-ran" (cache_hit=0) from "every
 // codegen target was already cached" (cache_hit=1) — both are valid
 // outcomes for a deploy, but they answer different operator questions.

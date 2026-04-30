@@ -1,7 +1,7 @@
 # gazelle:prefix github.com/verself/cue-renderer
 
 load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
-load("//tools/nomad:jobs.bzl", "nomad_resolved_jobs")
+load("//src/cue-renderer/nomad:jobs.bzl", "nomad_resolved_jobs")
 
 # Every CUE source the loader walks. Tests in the renderer tree depend
 # on this filegroup via `data` so they can resolve the topology dir
@@ -122,4 +122,17 @@ write_source_files(
         "//src/cue-renderer/binaries:server_tools.bzl": ":bazel_server_tools_render",
         "//src/vm-orchestrator/guest-images:guest_images.MODULE.bazel": ":bazel_guest_images_render",
     },
+    visibility = ["//visibility:public"],
+)
+
+test_suite(
+    name = "dev_check",
+    tests = [":freshness_tests"],
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "dev_update",
+    actual = ":freshness",
+    visibility = ["//visibility:public"],
 )

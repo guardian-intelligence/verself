@@ -51,7 +51,7 @@ func run() error {
 		return err
 	}
 	if !bytes.Equal(existing, data) {
-		return fmt.Errorf("%s is out of date; run aspect codegen run --kind=openapi", path)
+		return fmt.Errorf("%s is out of date; run the owning Bazel OpenAPI target", path)
 	}
 	return nil
 }

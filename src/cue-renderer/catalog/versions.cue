@@ -124,6 +124,14 @@ serverTools: {
 	version:     "clickhouse-\(versions.production.clickhouse)_tigerbeetle-\(versions.production.tigerbeetle)_zitadel-\(versions.production.zitadel)_openbao-\(versions.production.openbao)_spire-\(versions.production.spire)_spiffe-helper-\(versions.production.spiffeHelper)_nats-server-\(versions.production.natsServer)_garage-\(versions.production.garage)_forgejo-\(versions.production.forgejo)_bazel-remote-\(versions.production.bazelRemote)_otelcol-contrib-\(versions.production.otelcolContrib)_temporal-\(versions.production.temporal)_grafana-\(versions.production.grafana)_grafana-clickhouse-datasource-\(versions.production.grafanaClickhouseDatasource)_containerd-\(versions.production.containerd)_nodejs-\(versions.production.nodejs)_stalwart-\(versions.production.stalwart)_stalwart-cli-\(versions.production.stalwartCli)_caddy-\(versions.production.caddy)_nomad-\(versions.production.nomad)"
 }
 
+// substrateToolsArchive is rendered from topology component/tool artifact
+// facts. It carries first-party Go substrate daemons and helper commands;
+// third-party server binaries stay in serverTools.
+substrateToolsArchive: {
+	bazel_label: "//src/cue-renderer/binaries:substrate_go_tools"
+	version:     versions.production.platform
+}
+
 // devToolsArchive is the dev-tools twin of serverTools: the single Bazel
 // label Ansible's bridge requests, plus a composite version that flips
 // whenever any pinned_http_file dev tool is bumped. Forces a re-unpack
@@ -880,7 +888,7 @@ devToolPackaging: {
 // src/guest-images/guest_images.MODULE.bazel and is consumed by the
 // guest-image build rules under //src/guest-images/. SHA256 + URL stay
 // pinned alongside the version in `versions.production`; bumping a pin
-// happens here, then `aspect codegen run --kind=topology` regenerates the Bazel
+// happens here, then `bazelisk run //src/cue-renderer:dev_update` regenerates the Bazel
 // manifest. Composable image catalog (firecracker.images in
 // instances/prod/config.cue) references the resulting Bazel labels via
 // pkg_tar/genrule layouts in //src/guest-images/.

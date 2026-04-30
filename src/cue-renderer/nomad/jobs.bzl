@@ -48,7 +48,7 @@ nomad_resolved_jobs = rule(
             mandatory = True,
         ),
         "_resolver": attr.label(
-            default = Label("//tools/nomad:resolve_jobs.py"),
+            default = Label("//src/cue-renderer/nomad:resolve_jobs.py"),
             cfg = "exec",
             executable = True,
             allow_single_file = True,

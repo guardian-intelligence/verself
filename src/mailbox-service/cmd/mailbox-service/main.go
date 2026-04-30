@@ -30,7 +30,6 @@ import (
 	"github.com/verself/mailbox-service/internal/sessionproxy"
 	mailboxsync "github.com/verself/mailbox-service/internal/sync"
 	"github.com/verself/mailbox-service/migrations"
-	"github.com/verself/pgmigrate"
 )
 
 var version = "dev"
@@ -78,10 +77,7 @@ func runMigrationCLI(ctx context.Context) (bool, error) {
 	if len(os.Args) < 2 || os.Args[1] != "migrate" {
 		return false, nil
 	}
-	return true, pgmigrate.RunCLI(ctx, os.Args[2:], pgmigrate.Config{
-		Service: "mailbox-service",
-		FS:      migrations.Files,
-	})
+	return true, migrations.RunCLI(ctx, os.Args[2:], "mailbox-service")
 }
 
 func run() error {

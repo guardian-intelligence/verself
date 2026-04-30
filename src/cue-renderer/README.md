@@ -26,10 +26,9 @@ with `--output-dir=.cache/render/<site>/`, producing:
 - `jobs/<component>.nomad.json`, `jobs/index.json` — Nomad job specs and
   the controller-side submit/build enumeration for application components.
 
-Bazel-input artefacts (`binaries/{server,dev}_tools.MODULE.bazel`,
-`binaries/{server,dev}_tools.bzl`, `vm-orchestrator/guest-images/guest_images.MODULE.bazel`)
-are still tracked in git via `write_source_files`/`aspect codegen run --kind=topology`
-because Bazel evaluates them at load time.
+Bazel-input artefacts (`binaries/{server,dev,substrate}_tools.MODULE.bazel`,
+`binaries/{server,dev,substrate}_tools.bzl`, `vm-orchestrator/guest-images/guest_images.MODULE.bazel`)
+are still tracked in git via `write_source_files` because Bazel evaluates them at load time.
 
 The renderer also emits OTel pipeline spans (`cue_renderer.run`,
 `topology.cue.export_*`, `topology.generated.render_artifact`) into
@@ -68,9 +67,9 @@ renderers get more typed access for free.
 `generate` materialises every registered renderer under `--output-dir`;
 the operator entry point is `aspect render --site=<site>` which sets it
 to `.cache/render/<site>/` and stages the inventory + hand-written
-group_vars alongside. `aspect codegen run --kind=topology` and
-`aspect codegen check --kind=topology` cover the Bazel-input artefacts
-via `write_source_files`.
+group_vars alongside. `bazelisk run //src/cue-renderer:dev_update` refreshes
+the Bazel-input artefacts via `write_source_files`; `bazelisk test
+//src/cue-renderer:dev_check` fails on drift.
 
 ## Adding a renderer
 

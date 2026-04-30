@@ -22,6 +22,7 @@ func (Renderer) Render(_ context.Context, loaded load.Loaded, out render.Writabl
 	return projection.WriteYAML(out, "catalog", map[string]any{
 		"topology_versions":             loaded.Catalog.Versions,
 		"topology_server_tools":         loaded.Catalog.ServerTools,
+		"topology_substrate_tools":      loaded.Catalog.SubstrateTools,
 		"topology_dev_tools":            loaded.Catalog.DevTools,
 		"topology_dev_tools_archive":    loaded.Catalog.DevToolsArchive,
 		"topology_lockfile_uv_projects": loaded.Catalog.LockfileUvTools,

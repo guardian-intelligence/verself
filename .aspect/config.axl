@@ -11,11 +11,8 @@ is enforced by absence: do not reintroduce shortcut tasks for things
 `aspect <group> <action> --flag=value` already covers.
 """
 
-load(".aspect/tasks/doctor.axl", "doctor")
-load(".aspect/tasks/tidy.axl", "tidy")
 load(
     ".aspect/tasks/bazel.axl",
-    bazel_doctor = "doctor",
     bazel_gazelle = "gazelle",
     bazel_tidy = "tidy",
     bazel_update = "update",
@@ -49,11 +46,6 @@ load(
 )
 load(".aspect/tasks/check.axl", "check")
 load(
-    ".aspect/tasks/codegen.axl",
-    codegen_run = "codegen_run",
-    codegen_check = "codegen_check",
-)
-load(
     ".aspect/tasks/dev.axl",
     dev_verself_web = "verself_web",
 )
@@ -84,15 +76,12 @@ load(".aspect/tasks/observe.axl", "observe")
 
 def config(ctx):
     # Top-level tasks.
-    ctx.tasks.add(doctor)
-    ctx.tasks.add(tidy)
     ctx.tasks.add(deploy)
     ctx.tasks.add(render)
     ctx.tasks.add(observe)
     ctx.tasks.add(check)
 
     # aspect bazel ...
-    ctx.tasks.add(bazel_doctor)
     ctx.tasks.add(bazel_gazelle)
     ctx.tasks.add(bazel_tidy)
     ctx.tasks.add(bazel_update)
@@ -121,10 +110,6 @@ def config(ctx):
     ctx.tasks.add(db_ch_schemas)
     ctx.tasks.add(db_tb_shell)
     ctx.tasks.add(db_tb_command)
-
-    # aspect codegen run|check ...
-    ctx.tasks.add(codegen_run)
-    ctx.tasks.add(codegen_check)
 
     # aspect dev ...
     ctx.tasks.add(dev_verself_web)

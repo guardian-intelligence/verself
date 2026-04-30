@@ -1,6 +1,5 @@
 load("@bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
-load("//tools/codegen:openapi.bzl", "verself_openapi_yaml")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -8,18 +7,18 @@ package(default_visibility = ["//visibility:public"])
 # and feed both the Go client codegen (//src/billing-service/client)
 # and the frontend openapi-ts pipeline. There is no on-disk source of
 # truth for these YAMLs — see .gitignore.
-verself_openapi_yaml(
+genrule(
     name = "spec_3_0",
-    format = "3.0",
-    openapi_binary = "//src/billing-service/cmd/billing-openapi",
-    out = "openapi-3.0.yaml",
+    outs = ["openapi-3.0.yaml"],
+    cmd = "$(location //src/billing-service/cmd/billing-openapi) --format 3.0 > $@",
+    tools = ["//src/billing-service/cmd/billing-openapi"],
 )
 
-verself_openapi_yaml(
+genrule(
     name = "spec_3_1",
-    format = "3.1",
-    openapi_binary = "//src/billing-service/cmd/billing-openapi",
-    out = "openapi-3.1.yaml",
+    outs = ["openapi-3.1.yaml"],
+    cmd = "$(location //src/billing-service/cmd/billing-openapi) --format 3.1 > $@",
+    tools = ["//src/billing-service/cmd/billing-openapi"],
 )
 
 # js_run_binary's input contract requires every spec the openapi-ts
@@ -30,9 +29,9 @@ copy_to_bin(
 )
 
 # Apiwire numeric-safety contract test against the rendered 3.1 spec.
-# Replaces billing's row in `_WIRE_SPECS` in .aspect/tasks/codegen.axl
-# with a Bazel-graph-anchored gate that re-runs the moment the spec
-# changes — drift to a non-JS-safe schema fails the deploy build.
+# The owning package declares this gate directly, so drift to a
+# non-JS-safe schema fails any downstream dev_check/build that depends
+# on billing's OpenAPI surface.
 go_test(
     name = "wire_check_test",
     srcs = ["wire_check_test.go"],

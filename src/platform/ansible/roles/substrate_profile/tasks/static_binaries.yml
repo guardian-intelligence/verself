@@ -101,7 +101,7 @@
       - "{{ substrate_profile_bazelisk }}"
       - build
       - --config=remote-writer
-      - "{{ substrate_profile_go_tools_label }}"
+      - "{{ topology_substrate_tools.bazel_label }}"
     chdir: "{{ substrate_profile_repo_root }}"
   changed_when: false
 
@@ -114,7 +114,7 @@
       - "{{ substrate_profile_bazelisk }}"
       - cquery
       - --output=files
-      - "{{ substrate_profile_go_tools_label }}"
+      - "{{ topology_substrate_tools.bazel_label }}"
     chdir: "{{ substrate_profile_repo_root }}"
   changed_when: false
   register: substrate_profile_go_tools_bazel_output
@@ -132,6 +132,7 @@
   ansible.builtin.set_fact:
     substrate_profile_go_tools_marker_path: /opt/verself/profile/.substrate-go-tools-version
     substrate_profile_go_tools_expected_marker: |-
+      version={{ topology_substrate_tools.version }}
       sha256={{ substrate_profile_go_tools_archive_stat.stat.checksum }}
     substrate_profile_go_tools_remote_archive: >-
       {{ substrate_profile_staging_dir }}/substrate_go_tools-{{ (substrate_profile_go_tools_archive_stat.stat.checksum)[:16] }}.tar

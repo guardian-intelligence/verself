@@ -12,10 +12,9 @@ Features:
 ## Quickstart
 
 ```bash
-# 1. Toolchain (one time per controller). Installs pinned Bazelisk + Aspect
-#    and symlinks /usr/local/bin/bazel -> bazelisk so AXL's ctx.bazel.* works.
+# 1. Toolchain (one time per controller). Installs pinned Bazelisk + Aspect.
 ./scripts/bootstrap
-aspect doctor
+bazelisk mod tidy
 
 # 2. Tell OpenTofu where to provision (one time per environment).
 cp src/platform/terraform/terraform.tfvars.example.json \
@@ -33,10 +32,8 @@ aspect deploy
 aspect persona assume platform-admin
 ```
 
-`aspect doctor` verifies the toolchain pins (aspect, bazelisk, `.bazelversion`,
-`MODULE.bazel`) without needing the full controller toolchain installed. Run
-`aspect` (no args) to see the full task surface; `aspect <task> --help`
-documents flags.
+Run `aspect` (no args) to see the full task surface; `aspect <task> --help`
+documents flags. Bazel graph maintenance lives under `aspect bazel ...`.
 
 The authenticated product console, the public docs, and the policy tree all
 live at `https://<domain>` in a single TanStack Start app. Public service APIs

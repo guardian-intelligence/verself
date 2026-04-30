@@ -6,6 +6,12 @@ go_library(
     embedsrcs = glob(["*.up.sql"]),
     importpath = "github.com/verself/object-storage-service/migrations",
     visibility = ["//src/object-storage-service:__subpackages__"],
+    deps = [
+        "@com_github_golang_migrate_migrate_v4//:migrate",
+        "@com_github_golang_migrate_migrate_v4//database/postgres",
+        "@com_github_golang_migrate_migrate_v4//source/iofs",
+        "@com_github_lib_pq//:pq",
+    ],
 )
 
 alias(

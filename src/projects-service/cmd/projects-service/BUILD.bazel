@@ -1,5 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
-load("//tools/nomad:artifact.bzl", "nomad_binary_artifact")
+load("//src/cue-renderer/nomad:artifact.bzl", "nomad_binary_artifact")
 
 go_library(
     name = "projects-service_lib",
@@ -12,7 +12,6 @@ go_library(
         "//src/envconfig",
         "//src/httpserver",
         "//src/otel",
-        "//src/pgmigrate",
         "//src/projects-service/internal/api",
         "//src/projects-service/internal/projects",
         "//src/projects-service/migrations",

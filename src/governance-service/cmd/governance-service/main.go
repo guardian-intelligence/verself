@@ -23,7 +23,6 @@ import (
 	"github.com/verself/governance-service/migrations"
 	"github.com/verself/httpserver"
 	verselfotel "github.com/verself/otel"
-	"github.com/verself/pgmigrate"
 )
 
 func main() {
@@ -44,10 +43,7 @@ func runMigrationCLI(ctx context.Context) (bool, error) {
 	if len(os.Args) < 2 || os.Args[1] != "migrate" {
 		return false, nil
 	}
-	return true, pgmigrate.RunCLI(ctx, os.Args[2:], pgmigrate.Config{
-		Service: "governance-service",
-		FS:      migrations.Files,
-	})
+	return true, migrations.RunCLI(ctx, os.Args[2:], "governance-service")
 }
 
 func run() error {
