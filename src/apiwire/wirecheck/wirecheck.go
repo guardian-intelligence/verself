@@ -9,9 +9,9 @@ package wirecheck
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -96,18 +96,17 @@ func integerMaximum(node *yaml.Node) (uint64, bool) {
 	if maxNode == nil || maxNode.Kind != yaml.ScalarNode {
 		return 0, false
 	}
-	if strings.ContainsAny(maxNode.Value, ".eE") {
-		value, err := strconv.ParseFloat(maxNode.Value, 64)
-		if err != nil || value < 0 || value != float64(uint64(value)) {
-			return 0, false
-		}
-		return uint64(value), true
+	if value, err := strconv.ParseUint(maxNode.Value, 10, 64); err == nil {
+		return value, true
 	}
-	value, err := strconv.ParseUint(maxNode.Value, 10, 64)
-	if err != nil {
+	// Fall back to float for scientific/decimal notation (e.g. 1e6). Bound at
+	// maxSafeInteger so the cast stays inside float64's exact-integer range;
+	// any larger value would violate the wire contract anyway.
+	value, err := strconv.ParseFloat(maxNode.Value, 64)
+	if err != nil || value < 0 || value > maxSafeInteger || value != math.Trunc(value) {
 		return 0, false
 	}
-	return value, true
+	return uint64(value), true
 }
 
 func mapValue(node *yaml.Node, key string) *yaml.Node {
