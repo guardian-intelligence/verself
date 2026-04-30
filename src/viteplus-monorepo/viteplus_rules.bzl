@@ -94,7 +94,15 @@ set -euo pipefail
 tmp="$$(mktemp -d)"
 trap 'rm -rf "$$tmp"' EXIT
 mkdir -p "$$tmp/runtime/nodejs"
-tar -xJf "$(location {nodejs_archive})" -C "$$tmp/runtime/nodejs" --strip-components=1
+tar -tf "$(location {nodejs_archive})" > "$$tmp/nodejs-members.txt"
+node_member="$$(awk '/\\/bin\\/node$$/ {{ print; exit }}' "$$tmp/nodejs-members.txt")"
+test -n "$$node_member"
+tar -xJf "$(location {nodejs_archive})" -C "$$tmp" "$$node_member"
+mkdir -p "$$tmp/runtime/nodejs/bin"
+mv "$$tmp/$$node_member" "$$tmp/runtime/nodejs/bin/node"
+rm -rf "$$tmp/$${{node_member%%/*}}"
+rm -f "$$tmp/nodejs-members.txt"
+chmod 0755 "$$tmp/runtime/nodejs/bin/node"
 tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp" .
 """.format(nodejs_archive = _NODEJS_ARCHIVE),
     )
