@@ -7,6 +7,10 @@ go_library(
     srcs = ["httpserver.go"],
     importpath = "github.com/verself/httpserver",
     visibility = ["//visibility:public"],
+    deps = [
+        "@org_golang_x_net//http2",
+        "@org_golang_x_net//http2/h2c",
+    ],
 )
 
 alias(
@@ -18,5 +22,8 @@ alias(
 go_test(
     name = "httpserver_test",
     srcs = ["httpserver_test.go"],
-    deps = [":httpserver"],
+    deps = [
+        ":httpserver",
+        "@org_golang_x_net//http2",
+    ],
 )

@@ -10,6 +10,9 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 )
 
 // Standard server timeouts. Changing any of these changes them everywhere
@@ -29,10 +32,15 @@ const ShutdownTimeout = 5 * time.Second
 // New returns an *http.Server wired with the standard Verself timeouts.
 // Any handler wrapping (otelhttp, request-body limits, allowlists) and TLS
 // configuration remain the caller's responsibility.
+//
+// The handler is wrapped with h2c.NewHandler so the public plane accepts
+// HTTP/2 over cleartext from Caddy as well as HTTP/1.1. The wrap is inert on
+// the TLS internal plane: net/http intercepts ALPN h2 via TLSNextProto before
+// the handler runs, so h2c.NewHandler only ever sees cleartext traffic.
 func New(addr string, handler http.Handler) *http.Server {
 	return &http.Server{
 		Addr:              addr,
-		Handler:           handler,
+		Handler:           h2c.NewHandler(handler, &http2.Server{}),
 		ReadHeaderTimeout: ReadHeaderTimeout,
 		ReadTimeout:       ReadTimeout,
 		WriteTimeout:      WriteTimeout,

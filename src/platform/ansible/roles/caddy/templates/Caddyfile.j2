@@ -30,6 +30,19 @@
 	}
 }
 
+# Caddy speaks h2c (HTTP/2 over cleartext, prior knowledge — no Upgrade dance)
+# to every reverse_proxy that points at one of our Go services. h2c is binary-
+# framed end-to-end so the public hop matches HTTP/2 framing strictness from
+# the client edge through to the service. src/httpserver wraps every public-
+# plane handler with h2c.NewHandler; the two must move together. Foreign
+# upstreams (Forgejo, Grafana, Stalwart, Electric, verself-web, company,
+# Zitadel — Zitadel sets its own h2c transport) stay HTTP/1.1.
+(h2c_upstream) {
+	transport http {
+		versions h2c
+	}
+}
+
 (api_security_headers) {
 	header {
 		Content-Security-Policy "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
@@ -64,6 +77,7 @@
 	import api_security_headers
 	reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }} {
 		header_up X-Real-IP {remote_host}
+		import h2c_upstream
 	}
 }
 
@@ -71,6 +85,7 @@
 	import api_security_headers
 	reverse_proxy {{ topology_endpoints.profile_service.endpoints.public_http.address }} {
 		header_up X-Real-IP {remote_host}
+		import h2c_upstream
 	}
 }
 
@@ -78,6 +93,7 @@
 	import api_security_headers
 	reverse_proxy {{ topology_endpoints.notifications_service.endpoints.public_http.address }} {
 		header_up X-Real-IP {remote_host}
+		import h2c_upstream
 	}
 }
 
@@ -85,6 +101,7 @@
 	import api_security_headers
 	reverse_proxy {{ topology_endpoints.projects_service.endpoints.public_http.address }} {
 		header_up X-Real-IP {remote_host}
+		import h2c_upstream
 	}
 }
 
@@ -92,6 +109,7 @@
 	import api_security_headers
 	reverse_proxy {{ topology_endpoints.source_code_hosting_service.endpoints.public_http.address }} {
 		header_up X-Real-IP {remote_host}
+		import h2c_upstream
 	}
 }
 
@@ -99,6 +117,7 @@
 	import api_security_headers
 	reverse_proxy {{ topology_endpoints.identity_service.endpoints.public_http.address }} {
 		header_up X-Real-IP {remote_host}
+		import h2c_upstream
 	}
 }
 
@@ -106,6 +125,7 @@
 	import api_security_headers
 	reverse_proxy {{ topology_endpoints.governance_service.endpoints.public_http.address }} {
 		header_up X-Real-IP {remote_host}
+		import h2c_upstream
 	}
 }
 
@@ -113,6 +133,7 @@
 	import api_security_headers
 	reverse_proxy {{ topology_endpoints.secrets_service.endpoints.public_http.address }} {
 		header_up X-Real-IP {remote_host}
+		import h2c_upstream
 	}
 }
 
@@ -120,6 +141,7 @@
 	import api_security_headers
 	reverse_proxy {{ topology_endpoints.mailbox_service.endpoints.public_http.address }} {
 		header_up X-Real-IP {remote_host}
+		import h2c_upstream
 	}
 }
 
@@ -139,6 +161,7 @@
 			header_up X-Real-IP {remote_host}
 			header_up X-Forwarded-Host {{ forgejo_domain }}
 			header_up X-Forwarded-Proto https
+			import h2c_upstream
 		}
 	}
 	respond 404
@@ -153,14 +176,18 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 		path /internal/sandbox/v1/github-runner-jit
 	}
 	handle @github_runner_jit_config {
-		reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }}
+		reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }} {
+			import h2c_upstream
+		}
 	}
 	@runner_bootstrap_config {
 		method GET
 		path /internal/sandbox/v1/runner-bootstrap
 	}
 	handle @runner_bootstrap_config {
-		reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }}
+		reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }} {
+			import h2c_upstream
+		}
 	}
 	@forgejo_actions_runner_rpc {
 		method GET POST
@@ -188,14 +215,18 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 		path /internal/sandbox/v1/stickydisk/*
 	}
 	handle @github_sticky_disk {
-		reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }}
+		reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }} {
+			import h2c_upstream
+		}
 	}
 	@github_checkout {
 		method POST
 		path /internal/sandbox/v1/github-checkout/bundle
 	}
 	handle @github_checkout {
-		reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }}
+		reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }} {
+			import h2c_upstream
+		}
 	}
 	respond 403
 }
@@ -217,7 +248,9 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 		request_body {
 			max_size 65536
 		}
-		reverse_proxy {{ topology_endpoints.billing.endpoints.public_http.address }}
+		reverse_proxy {{ topology_endpoints.billing.endpoints.public_http.address }} {
+			import h2c_upstream
+		}
 	}
 	handle @stripe_webhook_post {
 		respond 403
@@ -232,6 +265,7 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 		}
 		reverse_proxy {{ topology_endpoints.billing.endpoints.public_http.address }} {
 			header_up X-Real-IP {remote_host}
+			import h2c_upstream
 		}
 	}
 
@@ -252,6 +286,7 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 		import api_security_headers
 		reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }} {
 			header_up X-Real-IP {remote_host}
+			import h2c_upstream
 		}
 	}
 	handle /webhooks/github/actions {
@@ -269,6 +304,7 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 		import api_security_headers
 		reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }} {
 			header_up X-Real-IP {remote_host}
+			import h2c_upstream
 		}
 	}
 	handle /webhooks/forgejo/actions {
@@ -283,6 +319,7 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 		import api_security_headers
 		reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }} {
 			header_up X-Real-IP {remote_host}
+			import h2c_upstream
 		}
 	}
 	handle /github/installations/callback {
@@ -311,6 +348,7 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 		import api_security_headers
 		reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }} {
 			header_up X-Real-IP {remote_host}
+			import h2c_upstream
 		}
 	}
 
@@ -325,6 +363,7 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 		import api_security_headers
 		reverse_proxy {{ topology_endpoints.sandbox_rental.endpoints.public_http.address }} {
 			header_up X-Real-IP {remote_host}
+			import h2c_upstream
 		}
 	}
 
@@ -392,6 +431,7 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 		import api_security_headers
 		reverse_proxy {{ topology_endpoints.source_code_hosting_service.endpoints.public_http.address }} {
 			header_up X-Real-IP {remote_host}
+			import h2c_upstream
 		}
 	}
 
@@ -469,7 +509,9 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 	}
 
 	handle /jmap/session {
-		reverse_proxy {{ topology_endpoints.mailbox_service.endpoints.public_http.address }}
+		reverse_proxy {{ topology_endpoints.mailbox_service.endpoints.public_http.address }} {
+			import h2c_upstream
+		}
 	}
 
 	# JMAP discovery + protocol endpoints served by Stalwart directly.
@@ -510,7 +552,9 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ topology_endpoints.firecracker
 			max_size 65536
 		}
 		import api_security_headers
-		reverse_proxy {{ topology_endpoints.identity_service.endpoints.public_http.address }}
+		reverse_proxy {{ topology_endpoints.identity_service.endpoints.public_http.address }} {
+			import h2c_upstream
+		}
 	}
 	handle /internal/zitadel/actions/api-credential-claims {
 		respond 405

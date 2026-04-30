@@ -2,6 +2,7 @@ package httpserver_test
 
 import (
 	"context"
+	"crypto/tls"
 	"io"
 	"log/slog"
 	"net"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/verself/httpserver"
+	"golang.org/x/net/http2"
 )
 
 func discardLogger() *slog.Logger {
@@ -98,4 +100,51 @@ func TestRunPairRequiresAtLeastOneServer(t *testing.T) {
 	if err := httpserver.RunPair(context.Background(), discardLogger(), nil, nil); err == nil {
 		t.Fatal("expected error for nil,nil RunPair")
 	}
+}
+
+// TestNewServesH2CPriorKnowledge exercises the cleartext HTTP/2 path that
+// Caddy uses to reach service backends. h2c.NewHandler runs only on the
+// public plane (no TLS); a regression here would manifest as Caddy speaking
+// h2c to a backend that only knows HTTP/1.1, taking the public API down.
+func TestNewServesH2CPriorKnowledge(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hits := make(chan string, 1)
+	srv := httpserver.New(ln.Addr().String(), http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		hits <- r.Proto
+	}))
+	ln.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- httpserver.Run(ctx, discardLogger(), srv) }()
+
+	time.Sleep(100 * time.Millisecond)
+
+	client := &http.Client{Transport: &http2.Transport{
+		AllowHTTP: true,
+		DialTLSContext: func(_ context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+			return net.Dial(network, addr)
+		},
+	}}
+	resp, err := client.Get("http://" + srv.Addr)
+	if err != nil {
+		t.Fatalf("h2c GET: %v", err)
+	}
+	resp.Body.Close()
+
+	select {
+	case proto := <-hits:
+		if proto != "HTTP/2.0" {
+			t.Fatalf("handler saw %q, want HTTP/2.0", proto)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("handler not invoked")
+	}
+
+	cancel()
+	<-done
 }
